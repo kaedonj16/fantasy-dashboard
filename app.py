@@ -10,7 +10,6 @@ import math
 import os
 import pandas as pd
 import re
-import sys
 import threading
 import time
 from collections import defaultdict
@@ -86,7 +85,6 @@ from dashboard_services.rank_medals import rank_mark
 from dashboard_services.team_crest import team_crest
 from dashboard_services.platform_api import (
     get_bracket,
-    get_draft_picks,
     get_drafts,
     get_league,
     get_rosters,
@@ -148,11 +146,9 @@ from utils.utils import (
     read_json_cached,
     load_players_index,
     load_teams_index,
-    load_usage_table,
     load_week_projection,
     load_week_schedule,
     streak_class,
-    streak_edge_class,
     canon_team,
     canonicalize_schedule,
     team_abbr_keys,
@@ -190,7 +186,7 @@ def _api_err(msg: str = "Request failed", e: Exception = None, code: int = 500):
     """Return a safe API error response - logs the real exception, sends generic message to client."""
     if e is not None:
         logger.warning("API error: %s", msg, exc_info=True)
-    return _api_error(msg, code="error", status=code)
+    return jsonify({"error": msg, "ok": False}), code
 
 
 # Pure logic lives in utils/relative_time.py so it can be unit-tested without
@@ -253,11 +249,9 @@ _PLOTLY_LOADER = (
 
 DASHBOARD_CACHE = {}
 # Bound the per-league cache. Each entry holds a full league context plus
-# rendered page HTML (tens of MB), and on the public site any visitor can look
-# up any league, so without eviction this dict grows without limit (a slow OOM
-# on a long-running worker). The cap is deliberately small: each gunicorn
-# worker holds its own full copy, so the worst case is 2x this many entries
-# against the 2GB plan. Cap the entry count and evict the oldest ~10% when
+# rendered page HTML, and on the public site any visitor can look up any league,
+# so without eviction this dict grows without limit (a slow OOM on a
+# long-running worker). Cap the entry count and evict the oldest ~10% when
 # exceeded -- the same bounded pattern used by _GAME_LOGS_CACHE below.
 def _positive_env_int(name: str, default: int) -> int:
     try:
@@ -266,7 +260,7 @@ def _positive_env_int(name: str, default: int) -> int:
         return default
 
 
-DASHBOARD_CACHE_MAX = _positive_env_int("DASHBOARD_CACHE_MAX", 8)
+DASHBOARD_CACHE_MAX = _positive_env_int("DASHBOARD_CACHE_MAX", 24)
 _DASHBOARD_CACHE_LOCK = threading.RLock()
 
 
@@ -336,25 +330,8 @@ class _ContextLock:
         self.last_used = time.monotonic()
 
 
-class ContextLockBusy(TimeoutError):
-    """The bounded wait for a league's local context lock expired.
-
-    Raised by _acquire_context_lock when another thread holds the lock past
-    the timeout -- the holder is wedged or its build is pathological. Callers
-    must degrade (stale cache) instead of blocking the request thread forever:
-    under gthread workers an unbounded wait permanently eats a request slot,
-    and enough of those wedged threads takes the whole service down.
-    """
-
-
-def _acquire_context_lock(key, timeout=None):
-    """Acquire a ref-counted lock and prune only entries with no owner/waiter.
-
-    timeout: max seconds to wait for the per-key lock; None waits forever
-    (legacy behavior). On timeout the refcount slot is released and
-    ContextLockBusy is raised so the caller can degrade gracefully instead
-    of wedging the request thread.
-    """
+def _acquire_context_lock(key):
+    """Acquire a ref-counted lock and prune only entries with no owner/waiter."""
     with _CTX_LOCKS_LOCK:
         state = _CTX_LOCKS.get(key)
         if state is None:
@@ -370,16 +347,7 @@ def _acquire_context_lock(key, timeout=None):
             for old_key, _ in idle[:len(_CTX_LOCKS) - _CTX_LOCKS_MAX]:
                 _CTX_LOCKS.pop(old_key, None)
     started = time.monotonic()
-    if timeout is None:
-        state.lock.acquire()
-    elif not state.lock.acquire(timeout=timeout):
-        # Release our refcount slot so the entry stays prunable once the
-        # (wedged) holder eventually lets go of the lock.
-        with _CTX_LOCKS_LOCK:
-            state.users = max(0, state.users - 1)
-        raise ContextLockBusy(
-            f"timed out after {timeout}s waiting for league context lock {key!r}"
-        )
+    state.lock.acquire()
     return state, time.monotonic() - started
 
 
@@ -495,40 +463,11 @@ def _playoff_sim_cached(ctx: dict, platform: str, block: bool = True) -> list:
         return []
 
 
-def _fmt_playoff_pct_display(value):
-    """Format a playoff-odds percentage for Season Hub display.
-
-    Mirrors the Playoff Odds page rule (``fmtProjPct`` in static/app.js):
-    an undecided value reads at one decimal, and the literal "100" / "0"
-    appears only when the raw value is exact (clinched / eliminated). The
-    decimal is truncated (floored) to tenths so this formatting step can
-    never round an undecided 99.9 up to "100"; the simulator already caps
-    undecided odds at 99.9 / 0.1, so this is defense in depth at the last
-    step before paint. The tiny epsilon guards float representation
-    (``99.9 * 10`` can land a hair under 999 and would floor to 99.8).
-    """
-    try:
-        raw = float(value)
-        if raw >= 100:
-            return "100"
-        if raw <= 0:
-            return "0"
-        return f"{math.floor(raw * 10 + 1e-9) / 10:.1f}"
-    except (TypeError, ValueError):
-        return "0"
-
-
 def _playoff_tile_from_cache(odds_rows, viewer_roster_id, *, projected=False):
     """Fill a hub playoff tile from a warm sim cache so first paint is not '-'.
 
-    Returns ``(pct_display, subtitle)`` or ``None`` when this roster has no
-    row (or, for the offseason tile, when the row is not a preseason
-    projection). ``pct_display`` is the string from
-    :func:`_fmt_playoff_pct_display` -- one decimal for undecided odds,
-    literal "100" / "0" only when the raw value is exact -- and callers
-    interpolate it directly as ``f"{pct}%"``. Status text and subtitle
-    selection use the RAW floats, never the display value, so a 99.9 can
-    only read as Clinched when the sim's raw value is actually >= 100.
+    Returns ``(pct_int, subtitle)`` or ``None`` when this roster has no row
+    (or, for the offseason tile, when the row is not a preseason projection).
     """
     if not odds_rows or not viewer_roster_id:
         return None
@@ -539,34 +478,28 @@ def _playoff_tile_from_cache(odds_rows, viewer_roster_id, *, projected=False):
     if projected and not row.get("is_projected"):
         return None
     try:
-        pct_raw = float(row.get("playoff_pct") or 0)
+        pct = int(round(float(row.get("playoff_pct") or 0)))
     except (TypeError, ValueError):
         return None
-    pct = _fmt_playoff_pct_display(pct_raw)
-
-    def _sub_pct(key):
-        try:
-            return float(row.get(key) or 0)
-        except (TypeError, ValueError):
-            return 0.0
-
-    # Pick the subtitle from the value that will actually be displayed: a
-    # sub-percentage that truncates to 0.0 must not print "0.0% top seed".
-    first = _fmt_playoff_pct_display(_sub_pct("first_seed_pct"))
+    first = 0
+    try:
+        first = int(round(float(row.get("first_seed_pct") or 0)))
+    except (TypeError, ValueError):
+        first = 0
     if projected:
-        sub = (
-            f"Projected · {first}% top seed"
-            if float(first) > 0
-            else "Projected from current rosters"
-        )
+        sub = f"Projected · {first}% top seed" if first > 0 else "Projected from current rosters"
         return pct, sub
     if row.get("is_complete"):
-        sub = "Clinched" if pct_raw >= 100 else ("Eliminated" if pct_raw <= 0 else "Playoff bound")
+        sub = "Clinched" if pct >= 100 else ("Eliminated" if pct <= 0 else "Playoff bound")
         return pct, sub
-    bye = _fmt_playoff_pct_display(_sub_pct("bye_pct"))
+    bye = 0
+    try:
+        bye = int(round(float(row.get("bye_pct") or 0)))
+    except (TypeError, ValueError):
+        bye = 0
     sub = (
-        f"{first}% top seed" if float(first) > 0
-        else (f"{bye}% first-round bye" if float(bye) > 0 else "to make the playoffs")
+        f"{first}% top seed" if first > 0
+        else (f"{bye}% first-round bye" if bye > 0 else "to make the playoffs")
     )
     return pct, sub
 
@@ -612,16 +545,6 @@ app = Flask(
     static_folder="static",  # points to site/static
     static_url_path="/static"  # URL base for static files
 )
-
-
-@app.route("/sw.js")
-def service_worker():
-    """Serve the service worker at the root path (required for PWA scope).
-
-    The app registers '/sw.js' but the file lives in static/. Without this
-    route, the SW 404s and installed PWAs never receive updates.
-    """
-    return app.send_static_file("sw.js")
 
 # Behind Render's TLS-terminating proxy, Flask otherwise sees plain http and
 # builds http:// URLs (request.host_url/base_url) - which made the sitemap
@@ -682,7 +605,7 @@ def _ensure_public_js() -> str:
     (shared utils, nav/chrome, changelog, dark mode, custom selects, home lookup)
     PLUS any region wrapped in `@public-js:include-start/end` (small shared
     helpers defined further down, e.g. _advFetch). The heavy feature code below
-    the marker (player modal, advanced metrics, compare, scorezone, trade calc
+    the marker (player modal, advanced metrics, compare, redzone, trade calc
     internals) is excluded. Falls back to app.js on any problem so nothing breaks.
     """
     static_dir = Path(__file__).parent / "static"
@@ -836,7 +759,7 @@ _CSS_V = _static_hash(_CSS_FILE)
 
 # First-paint / per-page assets that used to ship unminified. Minify at boot
 # (same sidecar pattern as app.js / dashboard.css) so signed-in shells and
-# rankings / draft / scorezone pages don't parse 200KB+ of comments and spaces.
+# rankings / draft / redzone pages don't parse 200KB+ of comments and spaces.
 from utils.static_minify import served_name as _served_static  # noqa: E402
 
 
@@ -847,7 +770,7 @@ def _min_asset(name: str) -> tuple:
 _PLAYER_MODAL_JS_FILE, _PLAYER_MODAL_JS_V = _min_asset("player_modal.js")
 _PAYWALL_JS_FILE, _PAYWALL_JS_V = _min_asset("paywall.js")
 _PAYWALL_CSS_FILE, _PAYWALL_CSS_V = _min_asset("paywall.css")
-_SCOREZONE_JS_FILE, _SCOREZONE_JS_V = _min_asset("scorezone.js")
+_REDZONE_JS_FILE, _REDZONE_JS_V = _min_asset("redzone.js")
 _RANKINGS_JS_FILE, _RANKINGS_JS_V = _min_asset("rankings.js")
 _TEAMS_JS_FILE, _TEAMS_JS_V = _min_asset("teams.js")
 _SEO_LITE_CSS_FILE, _SEO_LITE_CSS_V = _min_asset("seo_lite.css")
@@ -895,48 +818,6 @@ def _perf_record(response):
                 )
     except Exception:
         logger.debug("perf record failed", exc_info=True)
-    return response
-
-
-@app.after_request
-def _analytics_pageview(response):
-    """First-party product analytics: one pageview per HTML page render.
-
-    Logs GET requests that return a 200 HTML page. Skips static assets,
-    health checks, all /api/ traffic (API moments are tracked explicitly
-    via track_event at their call sites), /admin/ pages, and bots. Admin
-    sessions are never logged, so Kaedon's own usage stays out of the
-    stats. The analytics module never raises, so this cannot break or
-    slow the response.
-    """
-    try:
-        from dashboard_services import analytics as _analytics
-        from dashboard_services.admin_auth import is_admin
-
-        if is_admin():
-            return response
-        if _analytics.should_log_pageview(
-            request.method,
-            request.path,
-            response.content_type,
-            response.status_code,
-            request.headers.get("User-Agent", ""),
-        ):
-            _pageview_props = None
-            _ref_host = _analytics.external_ref_host(
-                request.headers.get("Referer", ""), request.host
-            )
-            if _ref_host:
-                _pageview_props = {"ref_host": _ref_host}
-            _analytics.track_event(
-                _analytics.EVENT_PAGEVIEW,
-                account_id=_analytics.account_id_from_session(),
-                session_id=_analytics.ensure_anon_session_id(),
-                path=request.path,
-                props=_pageview_props,
-            )
-    except Exception:
-        logger.debug("[analytics] pageview hook failed", exc_info=True)
     return response
 
 
@@ -1070,12 +951,6 @@ PRIMARY_DOMAIN = os.environ.get("PRIMARY_DOMAIN", "").strip().lower()
 if PRIMARY_DOMAIN.startswith("www."):
     PRIMARY_DOMAIN = PRIMARY_DOMAIN[4:]
 
-# SEO canonical host: the site serves on www (apex 301s to www at Render), so
-# canonical tags, og:url, sitemap locs, and social tags advertise the www
-# origin. Kept separate from PRIMARY_DOMAIN, which still drives the
-# onrender.com redirect target and cookie-domain derivation.
-_WWW_HOST = f"www.{PRIMARY_DOMAIN}" if PRIMARY_DOMAIN else ""
-
 _secret_key = os.environ.get('FLASK_SECRET_KEY', '')
 _is_production = os.environ.get('PYTHON_ENV', '').strip().lower() == 'production'
 if not _secret_key:
@@ -1121,17 +996,8 @@ if _cookie_domain:
 from extensions import limiter, LIMITER_BACKEND  # noqa: E402
 
 limiter.init_app(app)
-if LIMITER_BACKEND == "redis":
-    logger.info("[limiter] Flask-Limiter enabled (redis backend)")
-elif LIMITER_BACKEND:
-    # memory:// storage is per worker process: with N gunicorn workers the
-    # effective cap is N x the configured limit, so limits are advisory only.
-    # Set REDIS_URL for shared enforcement.
-    logger.warning(
-        "[limiter] Flask-Limiter enabled (%s backend) - limits are per-worker, "
-        "not shared; set REDIS_URL for multi-worker enforcement",
-        LIMITER_BACKEND,
-    )
+if LIMITER_BACKEND:
+    logger.info("[limiter] Flask-Limiter enabled (%s backend)", LIMITER_BACKEND)
 else:
     logger.warning("[limiter] Flask-Limiter not installed - rate limiting disabled")
 
@@ -1148,32 +1014,6 @@ if Compress is not None:
     # off for large immutable statics, which are CDN/edge-cached after the first hit.
     app.config["COMPRESS_BR_LEVEL"] = 6
     _compress.init_app(app)
-
-# NOTE: this handler MUST stay registered after Flask-Compress (above).
-# after_request handlers run in reverse registration order, so this strips
-# comments BEFORE compression. Registered earlier, it would see gzipped bytes,
-# get_data(as_text=True) would raise, and comments would silently survive.
-@app.after_request
-def _strip_html_comments(response):
-    """Remove developer HTML comments from served pages.
-
-    Reviewers and crawlers see raw page text; internal notes left in comments
-    read as sloppy and can leak implementation detail. Comments inside
-    script/style/pre/textarea blocks are left alone (there `<!--` is content).
-    """
-    try:
-        if not (response.content_type or "").startswith("text/html"):
-            return response
-        if response.is_streamed or response.direct_passthrough:
-            return response
-        html = response.get_data(as_text=True)
-        if "<!--" not in html:
-            return response
-        from utils.html_sanitize import strip_html_comments
-        response.set_data(strip_html_comments(html))
-    except Exception:
-        logger.debug("html comment strip failed", exc_info=True)
-    return response
 
 try:
     init_value_history_db()
@@ -1324,11 +1164,6 @@ try:
 
     app.register_blueprint(admin_api_bp)
     logger.info("[admin-api-bp] registered")
-
-    from routes.analytics_bp import analytics_bp
-
-    app.register_blueprint(analytics_bp)
-    logger.info("[analytics-bp] registered")
 
     from routes.breakout_api_bp2 import breakout_api_bp2
 
@@ -1517,9 +1352,323 @@ FORM_BODY = """
         <span class="home-platform-chip">MFL</span>
         <span class="home-platform-chip">Fleaflicker</span>
       </div>
+      <p class="home-pro-hero-cta">
+        <button type="button" class="home-pro-open-btn" data-home-pro-open>Unlock PRO</button>
+        <span>See what PRO includes. A Google account is required to subscribe.</span>
+      </p>
     </div>
 
-</section>
+    <div class="home-hero-right">
+      <div class="home-card">
+        <h2 class="home-card-title" id="homeCardTitle">{% if session.get('account_id') %}Your leagues{% else %}Get started{% endif %}</h2>
+
+        {% if not session.get('account_id') %}
+        <div class="home-account-entry home-account-top">
+          <span class="home-account-lead">Connect your league below. No account needed to look around.</span>
+          <a class="home-signin-link" href="/auth/google?intent=login&amp;next=/">Already have an account? <strong>Sign in</strong></a>
+        </div>
+        {% else %}
+        <div id="signedInHome" class="signed-in-home">
+          <div class="signed-in-home-header"><p class="signed-in-home-greeting">Welcome back{% if session.get('account_first_name') %}, {{ session.get('account_first_name')|e }}{% endif %}</p><a class="home-reset-user" href="/reset-user">Not me?</a></div>
+          <div id="signedInLeagueList">Loading your saved leagues…</div>
+          <button type="button" id="signedInAddLeague" aria-expanded="false" aria-controls="connectLeagueFlow">Connect another league</button>
+        </div>
+        {% endif %}
+
+        <div id="connectLeagueFlow"{% if session.get('account_id') %} hidden{% endif %}>
+        <button type="button" id="homeConnectBack" class="home-connect-back"{% if not session.get('account_id') %} hidden{% endif %}>← Back</button>
+        <div class="home-steps-hint">
+          <div class="home-step-item" id="hintStep1">
+            <span class="home-step-num">1</span>
+            <span class="home-step-label">Platform</span>
+          </div>
+          <div class="home-step-connector"></div>
+          <div class="home-step-item" id="hintStep2">
+            <span class="home-step-num">2</span>
+            <span class="home-step-label">Connect</span>
+          </div>
+          <div class="home-step-connector"></div>
+          <div class="home-step-item" id="hintStep3">
+            <span class="home-step-num">3</span>
+            <span class="home-step-label">Choose team</span>
+          </div>
+        </div>
+
+        <div class="row">
+          <label for="platformSelect">Platform</label>
+          <div class="platform-selector">
+            <button type="button" class="platform-btn active" data-platform="sleeper">Sleeper</button>
+            <button type="button" class="platform-btn" data-platform="espn">ESPN</button>
+            <button type="button" class="platform-btn" data-platform="yahoo">Yahoo</button>
+            <button type="button" class="platform-btn" data-platform="mfl">MFL</button>
+            <button type="button" class="platform-btn" data-platform="fleaflicker">Fleaflicker</button>
+          </div>
+        </div>
+
+        <!-- Sleeper Flow -->
+        <div id="sleeperFlow">
+          <div class="row">
+            <label for="username">Sleeper Username</label>
+            <input type="text" id="username" name="username" value="{{ username or '' }}">
+          </div>
+
+          <div class="row">
+            <button type="button" id="lookupBtn">Find My Leagues</button>
+          </div>
+        </div>
+
+        <!-- ESPN Flow -->
+        <div id="espnFlow" style="display:none;">
+          <div class="espn-home-methods" role="radiogroup" aria-label="ESPN league type">
+            {% if espn_otp_enabled %}
+            <button type="button" class="espn-home-method" data-espn-method="email" aria-pressed="false">Email</button>
+            {% endif %}
+            <button type="button" class="espn-home-method active" data-espn-method="public" aria-pressed="true">Public League</button>
+            <button type="button" class="espn-home-method" data-espn-method="private" aria-pressed="false">Private League</button>
+          </div>
+          <p class="hint espn-home-description" id="espnHomeDescription">Public leagues: enter the League ID from your ESPN URL. Success = your league dashboard loads with standings and rosters.</p>
+          <div class="row">
+            <label for="espnLeagueIdInput">League ID</label>
+            <input type="text" id="espnLeagueIdInput" placeholder="e.g. 336414" autocomplete="off">
+          </div>
+          {% if espn_otp_enabled %}
+          <div id="espnHomeEmailRow" style="display:none;">
+            <div class="row">
+              <label for="espnHomeEmailInput">ESPN email</label>
+              <input type="email" id="espnHomeEmailInput" placeholder="you@email.com" autocomplete="email">
+            </div>
+          </div>
+          <div class="row" id="espnEmailSendRow" style="display:none;">
+            <button type="button" id="espnEmailSendBtn" class="espn-otp-launch">Email me a code</button>
+          </div>
+          {% endif %}
+          <div id="espnHomePrivateFields" style="display:none;">
+            <p class="hint espn-extension-connect"><strong>Fastest on desktop:</strong> use the BR Fantasy browser extension to securely fill your ESPN connection. On mobile, continue this step on a supported desktop browser.</p>
+            <details class="espn-home-help"><summary>Advanced setup: enter ESPN cookies manually</summary>
+            <div class="row">
+              <label for="espnSwidInput">SWID</label>
+              <input type="text" id="espnSwidInput" autocomplete="off" spellcheck="false" placeholder="{XXXXXXXX-XXXX-XXXX-...}">
+            </div>
+            <div class="row">
+              <label for="espnS2Input">ESPN_S2</label>
+              <input type="text" id="espnS2Input" autocomplete="off" spellcheck="false" placeholder="AEB...">
+            </div>
+            <details class="espn-home-help"><summary>Paste your whole cookie string instead</summary>
+              <textarea id="espnCookieBlob" rows="3" autocomplete="off" spellcheck="false" style="width:100%;box-sizing:border-box;font:inherit;resize:vertical;" placeholder="Paste the whole cookie string here, e.g. SWID=...; espn_s2=AEB…  We'll pull out both values."></textarea>
+              <p class="hint" id="espnCookieStatus" aria-live="polite" style="margin-top:6px;"></p>
+              <ol>
+                <li>In another tab, sign in at <strong>espn.com</strong> and open your league.</li>
+                <li>Right-click the page → <strong>Inspect</strong>, then open <strong>Application → Cookies → https://www.espn.com</strong>.</li>
+                <li>Select the <code>SWID</code> and <code>espn_s2</code> rows (or all of them), copy, and paste here, and we extract the two we need.</li>
+              </ol>
+              <strong>Treat these like a password.</strong> They're stored encrypted and only used to read your league.
+            </details>
+            </details>
+          </div>
+          <div class="row" id="espnSubmitRow">
+            <button type="button" id="espnSubmitBtn">Connect League</button>
+          </div>
+          <div id="espnError" class="error-message" style="display:none;"></div>
+          <div class="row" id="espnTeamPickWrap" style="display:none;">
+            <label for="espnTeamSelect">Your team</label>
+            <select id="espnTeamSelect"></select>
+          </div>
+          <div id="espnPrivateChoice" class="provider-account-choice" style="display:none;">
+            <button type="button" id="espnPrivateGoogle" class="google-continue-btn">
+              <span class="google-button-title">Continue with Google</span>
+              <span>Save your leagues &amp; settings, synced across devices</span>
+              <small>Free &middot; no password</small>
+            </button>
+            <div class="provider-choice-or">OR</div>
+            <button type="button" id="espnPrivateGuest" class="continue-without-account-btn">
+              <strong>Continue without account</strong>
+              <span>Quick view on this device &middot; nothing saved</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Yahoo Flow -->
+        <div id="yahooFlow" style="display:none;">
+          <div class="row">
+            <label for="yahooLeagueIdInput">Yahoo League ID</label>
+            <input type="text" id="yahooLeagueIdInput" placeholder="e.g. 123456" autocomplete="off">
+          </div>
+          <div class="row">
+            <label for="yahooTeamName">Your Team Name <span style="font-weight:400;font-size:0.85em;">(optional)</span></label>
+            <input type="text" id="yahooTeamName" placeholder="e.g. Dynasty Monsters">
+          </div>
+          <div class="row" id="yahooSubmitRow">
+            <button type="button" id="yahooConnectBtn">Connect Yahoo Account</button>
+          </div>
+          <div id="yahooError" class="error-message" style="display:none;"></div>
+          <div id="yahooAccountChoice" class="provider-account-choice" style="display:none;">
+            <button type="button" id="yahooPrivateGoogle" class="google-continue-btn">
+              <span class="google-button-title">Continue with Google</span>
+              <span>Save your leagues &amp; settings, synced across devices</span>
+              <small>Free &middot; no password</small>
+            </button>
+            <div class="provider-choice-or">OR</div>
+            <button type="button" id="yahooPrivateGuest" class="continue-without-account-btn">
+              <strong>Continue without account</strong>
+              <span>Quick view on this device &middot; nothing saved</span>
+            </button>
+          </div>
+          <p class="hint" style="margin-top:6px;">
+            You'll be redirected to Yahoo to authorize access, then returned here.
+          </p>
+        </div>
+
+        <!-- MFL Flow -->
+        <div id="mflFlow" style="display:none;">
+          <div class="espn-home-methods" role="radiogroup" aria-label="MFL league type">
+            <button type="button" class="mfl-home-method active" data-mfl-method="public" aria-pressed="true">Public League</button>
+            <button type="button" class="mfl-home-method" data-mfl-method="private" aria-pressed="false">Private League</button>
+          </div>
+          <p class="hint espn-home-description" id="mflHomeDescription">Connect a publicly accessible MyFantasyLeague league using its League ID.</p>
+          <div class="row">
+            <label for="mflLeagueIdInput">MFL League ID</label>
+            <input type="text" id="mflLeagueIdInput" inputmode="numeric" placeholder="e.g. 12345" autocomplete="off">
+          </div>
+          <div class="row">
+            <label for="mflSeasonInput">Season</label>
+            <input type="text" id="mflSeasonInput" inputmode="numeric" placeholder="{{ viewed_season }}" autocomplete="off">
+          </div>
+          <div id="mflHomePrivateFields" style="display:none;">
+            <div class="row">
+              <label for="mflApikeyInput">League APIKEY <span style="font-weight:400;font-size:0.85em;">(optional)</span></label>
+              <input type="password" id="mflApikeyInput" autocomplete="off" spellcheck="false" placeholder="From MFL Help → Developer's API">
+            </div>
+            <div class="row">
+              <label for="mflCookieInput">MFL_USER_ID cookie <span style="font-weight:400;font-size:0.85em;">(optional)</span></label>
+              <input type="password" id="mflCookieInput" autocomplete="off" spellcheck="false" placeholder="Cookie value or MFL_USER_ID=…">
+            </div>
+            <details class="espn-home-help"><summary>Or sign in once to obtain the cookie</summary>
+              <div class="row">
+                <label for="mflUsernameInput">MFL username</label>
+                <input type="text" id="mflUsernameInput" autocomplete="username">
+              </div>
+              <div class="row">
+                <label for="mflPasswordInput">MFL password</label>
+                <input type="password" id="mflPasswordInput" autocomplete="current-password">
+              </div>
+              <p class="hint">Password is used only to fetch the official login cookie and is never stored.</p>
+            </details>
+          </div>
+          <div class="row" id="mflSubmitRow">
+            <button type="button" id="mflSubmitBtn">Connect League</button>
+          </div>
+          <div id="mflError" class="error-message" style="display:none;"></div>
+          <div id="mflPrivateChoice" class="provider-account-choice" style="display:none;">
+            <button type="button" id="mflPrivateGoogle" class="google-continue-btn">
+              <span class="google-button-title">Continue with Google</span>
+              <span>Save your leagues &amp; settings, synced across devices</span>
+              <small>Free &middot; no password</small>
+            </button>
+            <div class="provider-choice-or">OR</div>
+            <button type="button" id="mflPrivateGuest" class="continue-without-account-btn">
+              <strong>Continue without account</strong>
+              <span>Quick view on this device &middot; nothing saved</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Fleaflicker Flow -->
+        <div id="fleaflickerFlow" style="display:none;">
+          <div class="espn-home-methods" role="radiogroup" aria-label="Fleaflicker league type">
+            <button type="button" class="flea-home-method active" data-flea-method="public" aria-pressed="true">Public League</button>
+            <button type="button" class="flea-home-method" data-flea-method="private" aria-pressed="false">Private League</button>
+          </div>
+          <p class="hint espn-home-description" id="fleaHomeDescription">Connect a publicly accessible Fleaflicker league using its League ID.</p>
+          <div class="row">
+            <label for="fleaLeagueIdInput">Fleaflicker League ID</label>
+            <input type="text" id="fleaLeagueIdInput" inputmode="numeric" placeholder="e.g. 14153" autocomplete="off">
+          </div>
+          <div class="row">
+            <label for="fleaSeasonInput">Season</label>
+            <input type="text" id="fleaSeasonInput" inputmode="numeric" placeholder="{{ viewed_season }}" autocomplete="off">
+          </div>
+          <div id="fleaHomePrivateFields" style="display:none;">
+            <div class="row">
+              <label for="fleaEmailInput">Fleaflicker email</label>
+              <input type="email" id="fleaEmailInput" autocomplete="email" placeholder="you@email.com">
+            </div>
+            <div class="row">
+              <label for="fleaPasswordInput">Password</label>
+              <input type="password" id="fleaPasswordInput" autocomplete="current-password">
+            </div>
+            <p class="hint">We exchange these for a login token and never store your password.</p>
+            <details class="espn-home-help"><summary>Or paste an existing login token</summary>
+              <div class="row">
+                <label for="fleaTokenInput">Authorization token</label>
+                <input type="password" id="fleaTokenInput" autocomplete="off" spellcheck="false" placeholder="Token from /api/Login">
+              </div>
+            </details>
+          </div>
+          <div class="row" id="fleaSubmitRow">
+            <button type="button" id="fleaSubmitBtn">Connect League</button>
+          </div>
+          <div id="fleaError" class="error-message" style="display:none;"></div>
+          <div class="row" id="fleaTeamPickWrap" style="display:none;">
+            <label for="fleaTeamSelect">Your team</label>
+            <select id="fleaTeamSelect"></select>
+          </div>
+          <div id="fleaPrivateChoice" class="provider-account-choice" style="display:none;">
+            <button type="button" id="fleaPrivateGoogle" class="google-continue-btn">
+              <span class="google-button-title">Continue with Google</span>
+              <span>Save your leagues &amp; settings, synced across devices</span>
+              <small>Free &middot; no password</small>
+            </button>
+            <div class="provider-choice-or">OR</div>
+            <button type="button" id="fleaPrivateGuest" class="continue-without-account-btn">
+              <strong>Continue without account</strong>
+              <span>Quick view on this device &middot; nothing saved</span>
+            </button>
+          </div>
+        </div>
+
+<form method="post" id="leagueSelectForm">
+          <input type="hidden" name="platform" id="formPlatform" value="sleeper">
+          <input type="hidden" name="season" value="{{ viewed_season }}">
+          <input type="hidden" name="username" id="formUsername" value="">
+          <input type="hidden" name="team_id" id="formTeamId" value="">
+          <input type="hidden" name="next" id="formNext" value="{{ next_url or '' }}">
+
+          <div class="row" id="leagueSelectWrap" style="display:none;">
+            <label for="league">Choose League</label>
+            <select id="league" name="league" required>
+              <option value="">Select a league</option>
+            </select>
+          </div>
+
+          <div class="row" id="generateWrap" style="display:none;flex-direction:column;gap:0;align-items:stretch;">
+            <button type="button" id="googleContinueBtn" class="google-continue-btn">
+              <span class="google-button-title">Continue with Google</span>
+              <span style="font-size:11px;font-weight:500;color:#5f6368;">Save your leagues &amp; settings, synced across devices</span>
+              <span style="font-size:10px;font-weight:600;color:#80868b;">Free &middot; no password</span>
+            </button>
+            <div style="display:flex;align-items:center;gap:10px;margin:14px 0;color:rgba(255,255,255,.5);font-size:10.5px;font-weight:800;letter-spacing:.1em;">
+              <span style="flex:1;height:1px;background:rgba(255,255,255,.18);"></span>OR<span style="flex:1;height:1px;background:rgba(255,255,255,.18);"></span>
+            </div>
+            <button type="submit" class="continue-without-account-btn">
+              <span style="font-size:13.5px;font-weight:700;color:#fff;">Continue without account</span>
+              <span style="font-size:11px;font-weight:500;color:rgba(255,255,255,.62);">Quick view on this device &middot; nothing saved</span>
+            </button>
+          </div>
+
+          <div id="lookupError" class="error-message" style="display:none;"></div>
+
+          {% if error %}
+          <div class="error-message">{{ error }}</div>
+          {% endif %}
+        </form>
+
+        <p class="hint" id="sleeperHint">
+          Pick a league, then <strong>Continue with Google</strong> to save it across devices, or continue without an account for a quick look.
+        </p>
+        </div>
+      </div>
+    </div>
+  </section>
 
   {% if not session.get('account_id') %}
 <div class="trust-strip">
@@ -1613,7 +1762,7 @@ FORM_BODY = """
 
     <div class="home-preview-block is-flip">
       <div class="home-preview-copy">
-        <span class="home-preview-eyebrow">ScoreZone</span>
+        <span class="home-preview-eyebrow">Redzone</span>
         <h3 class="home-preview-title">Every snap, one screen</h3>
         <p class="home-preview-desc">Live NFL scores, scoring plays, and your players' fantasy points as they happen. Tap any game for the full box score.</p>
       </div>
@@ -1665,7 +1814,7 @@ FORM_BODY = """
         <div class="wv-cx-group">
           <div class="wv-cx-group-head">
             <div class="wv-cx-group-title">RB <span>(2 starters)</span></div>
-            <div class="wv-cx-verdict">Start <b>Gibbs</b> and <b>Jeanty</b>. Flex <b>London</b> over <b>Kamara</b>.</div>
+            <div class="wv-cx-verdict">Start <b>Gibbs</b> and <b>Jeanty</b>. Flex <b>London</b> over <b>Reed</b>.</div>
           </div>
           <div class="wv-cx-card">
             <div class="wv-cx-row-wrap">
@@ -1695,8 +1844,8 @@ FORM_BODY = """
               <button type="button" class="wv-cx-row" aria-expanded="false">
                 <span class="wv-cx-badge wv-cx-sit">SIT</span>
                 <span class="wv-cx-main">
-                  <span class="wv-cx-name">Alvin Kamara</span>
-                  <span class="wv-cx-why">@ TB <span class="wv-cx-chip bad">#24 hardest</span></span>
+                  <span class="wv-cx-name">Jayden Reed</span>
+                  <span class="wv-cx-why">@ DAL <span class="wv-cx-chip bad">#28 hardest</span></span>
                 </span>
                 <span class="wv-cx-proj"><span class="wv-cx-proj-num">9.3</span><span class="wv-cx-proj-lbl">PROJ</span></span>
                 <span class="wv-cx-chev" aria-hidden="true">&rsaquo;</span>
@@ -1785,10 +1934,18 @@ FORM_BODY = """
     <h2 class="section-title">Managers talk</h2>
     <p class="section-lead">From the Blackedraw group chat.</p>
   </div>
-  <div class="quotes-grid quotes-single">
+  <div class="quotes-grid">
     <figure class="quote-card">
       <blockquote>THATS ACTUALLY SO SICK BRO</blockquote>
       <figcaption><strong>Jayden Waddell</strong>Pittsburgh Pilots, on the weekly recap</figcaption>
+    </figure>
+    <figure class="quote-card">
+      <blockquote>If you not already using Kaedon website.. you should, it's got start sit suggestions built into the site, trade suggestions, projections, etc.. outperformed all my projections in 3 leagues last week using it so highly recommend</blockquote>
+      <figcaption><strong>Blackedraw manager</strong>Name coming soon</figcaption>
+    </figure>
+    <figure class="quote-card">
+      <blockquote>Being able to see/do this is sick, can't wait to see what it looks like in season</blockquote>
+      <figcaption><strong>Blackedraw manager</strong>Name coming soon</figcaption>
     </figure>
   </div>
 </section>
@@ -1817,7 +1974,7 @@ FORM_BODY = """
       <header class="home-pro-head">
         <span class="home-pro-eyebrow">Unlock PRO</span>
         <h2 class="home-pro-title" id="homeProTitle">The tools that decide trades, waivers, and playoffs</h2>
-        <p class="home-pro-lead"><strong>From $10 a year.</strong> PRO unlocks roster-aware analysis built for your league, not generic advice. Pick a plan, connect your league, done.</p>
+        <p class="home-pro-lead"><strong>Less than $1 a month.</strong> PRO unlocks roster-aware analysis built for your league, not generic advice. Pick a plan, connect your league, done.</p>
       </header>
       <ul class="home-pro-benefits">
         <li>
@@ -1848,7 +2005,7 @@ FORM_BODY = """
         <li>
           <span class="home-pro-benefit-icon" aria-hidden="true"><i class="fa-solid fa-newspaper"></i></span>
           <strong>Weekly Recap</strong>
-          <span>What happened in your league, written for managers. Only the AI storyline is PRO; the rest stays free</span>
+          <span>What happened in your league, written for managers</span>
         </li>
         <li>
           <span class="home-pro-benefit-icon" aria-hidden="true"><i class="fa-solid fa-clipboard-list"></i></span>
@@ -1918,7 +2075,7 @@ FORM_BODY = """
     <div class="how-step">
       <span class="how-num">3</span>
       <h4>Run your Sunday</h4>
-      <p>Matchups, ScoreZone, start/sit, and waivers, all wired to your league's real scoring.</p>
+      <p>Matchups, Redzone, start/sit, and waivers, all wired to your league's real scoring.</p>
     </div>
   </div>
 </section>
@@ -1946,353 +2103,6 @@ FORM_BODY = """
   </details>
 </section>
 
-  <!-- AdSense Tier 2: the connect card sits after the editorial sections in DOM
-       order so crawlers meet hero/editorial content before account machinery.
-       Grid placement in dashboard.css keeps it visually beside the hero. -->
-    <div class="home-hero-right">
-      <div class="home-card">
-        <h2 class="home-card-title" id="homeCardTitle">{% if session.get('account_id') %}Your leagues{% else %}Get started{% endif %}</h2>
-
-        {% if not session.get('account_id') %}
-        <div class="home-account-entry home-account-top">
-          <span class="home-account-lead">Connect your league below. No account needed to look around.</span>
-          <a class="google-continue-btn" href="/auth/google?intent=login&amp;next=/"><span class="google-button-title">Sign in with Google</span></a>
-        </div>
-        {% else %}
-        <div id="signedInHome" class="signed-in-home">
-          <div class="signed-in-home-header"><p class="signed-in-home-greeting">Welcome back{% if session.get('account_first_name') %}, {{ session.get('account_first_name')|e }}{% endif %}</p><a class="home-reset-user" href="/reset-user">Not me?</a></div>
-          <div id="signedInLeagueList">Loading your saved leagues…</div>
-          <button type="button" id="signedInAddLeague" aria-expanded="false" aria-controls="connectLeagueFlow">Connect another league</button>
-        </div>
-        {% endif %}
-
-        <div id="connectLeagueFlow"{% if session.get('account_id') %} hidden{% endif %}>
-        <button type="button" id="homeConnectBack" class="home-connect-back"{% if not session.get('account_id') %} hidden{% endif %}>← Back</button>
-        <div class="home-steps-hint">
-          <div class="home-step-item" id="hintStep1">
-            <span class="home-step-num">1</span>
-            <span class="home-step-label">Platform</span>
-          </div>
-          <div class="home-step-connector"></div>
-          <div class="home-step-item" id="hintStep2">
-            <span class="home-step-num">2</span>
-            <span class="home-step-label">Connect</span>
-          </div>
-          <div class="home-step-connector"></div>
-          <div class="home-step-item" id="hintStep3">
-            <span class="home-step-num">3</span>
-            <span class="home-step-label">Choose team</span>
-          </div>
-        </div>
-
-        <div class="row">
-          <label for="platformSelect">Platform</label>
-          <div class="platform-selector">
-            <button type="button" class="platform-btn active" data-platform="sleeper">Sleeper</button>
-            <button type="button" class="platform-btn" data-platform="espn">ESPN</button>
-            <button type="button" class="platform-btn" data-platform="yahoo">Yahoo</button>
-            <button type="button" class="platform-btn" data-platform="mfl">MFL</button>
-            <button type="button" class="platform-btn" data-platform="fleaflicker">Fleaflicker</button>
-          </div>
-        </div>
-
-        <!-- Sleeper Flow -->
-        <div id="sleeperFlow">
-          <div class="row url-paste-row">
-            <label for="sleeperUrlInput">Fastest: paste your league link</label>
-            <input type="text" id="sleeperUrlInput" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://sleeper.app/leagues/...">
-            <p class="url-paste-error" id="sleeperUrlError" role="alert" style="display:none;"></p>
-          </div>
-          <div class="row">
-            <label for="username">Sleeper Username</label>
-            <input type="text" id="username" name="username" value="{{ username or '' }}">
-          </div>
-
-          <div class="row">
-            <button type="button" id="lookupBtn">Find My Leagues</button>
-          </div>
-        </div>
-
-        <!-- ESPN Flow -->
-        <div id="espnFlow" style="display:none;">
-          <div class="espn-home-methods" role="radiogroup" aria-label="ESPN league type">
-            {% if espn_otp_enabled %}
-            <button type="button" class="espn-home-method" data-espn-method="email" aria-pressed="false">Email</button>
-            {% endif %}
-            <button type="button" class="espn-home-method active" data-espn-method="public" aria-pressed="true">Public League</button>
-            <button type="button" class="espn-home-method" data-espn-method="private" aria-pressed="false">Private League</button>
-          </div>
-          <p class="hint espn-home-description" id="espnHomeDescription">Public leagues: enter the League ID from your ESPN URL. Success = your league dashboard loads with standings and rosters.</p>
-          <div class="row url-paste-row">
-            <label for="espnUrlInput">Fastest: paste your league link</label>
-            <input type="text" id="espnUrlInput" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://fantasy.espn.com/...">
-            <p class="url-paste-error" id="espnUrlError" role="alert" style="display:none;"></p>
-          </div>
-          <div class="row">
-            <label for="espnLeagueIdInput">League ID</label>
-            <input type="text" id="espnLeagueIdInput" placeholder="e.g. 336414" autocomplete="off">
-          </div>
-          {% if espn_otp_enabled %}
-          <div id="espnHomeEmailRow" style="display:none;">
-            <div class="row">
-              <label for="espnHomeEmailInput">ESPN email</label>
-              <input type="email" id="espnHomeEmailInput" placeholder="you@email.com" autocomplete="email">
-            </div>
-          </div>
-          <div class="row" id="espnEmailSendRow" style="display:none;">
-            <button type="button" id="espnEmailSendBtn" class="espn-otp-launch">Email me a code</button>
-          </div>
-          {% endif %}
-          <div id="espnHomePrivateFields" style="display:none;">
-            <p class="hint espn-extension-connect"><strong>Fastest on desktop:</strong> use the BR Fantasy browser extension to securely fill your ESPN connection. On mobile, continue this step on a supported desktop browser.</p>
-            <details class="espn-home-help"><summary>Advanced setup: enter ESPN cookies manually</summary>
-            <div class="row">
-              <label for="espnSwidInput">SWID</label>
-              <input type="text" id="espnSwidInput" autocomplete="off" spellcheck="false" placeholder="{XXXXXXXX-XXXX-XXXX-...}">
-            </div>
-            <div class="row">
-              <label for="espnS2Input">ESPN_S2</label>
-              <input type="text" id="espnS2Input" autocomplete="off" spellcheck="false" placeholder="AEB...">
-            </div>
-            <details class="espn-home-help"><summary>Paste your whole cookie string instead</summary>
-              <textarea id="espnCookieBlob" rows="3" autocomplete="off" spellcheck="false" style="width:100%;box-sizing:border-box;font:inherit;resize:vertical;" placeholder="Paste the whole cookie string here, e.g. SWID=...; espn_s2=AEB…  We'll pull out both values."></textarea>
-              <p class="hint" id="espnCookieStatus" aria-live="polite" style="margin-top:6px;"></p>
-              <ol>
-                <li>In another tab, sign in at <strong>espn.com</strong> and open your league.</li>
-                <li>Right-click the page → <strong>Inspect</strong>, then open <strong>Application → Cookies → https://www.espn.com</strong>.</li>
-                <li>Select the <code>SWID</code> and <code>espn_s2</code> rows (or all of them), copy, and paste here, and we extract the two we need.</li>
-              </ol>
-              <strong>Treat these like a password.</strong> They're stored encrypted and only used to read your league.
-            </details>
-            </details>
-          </div>
-          <div class="row" id="espnSubmitRow">
-            <button type="button" id="espnSubmitBtn">Connect League</button>
-          </div>
-          <div id="espnError" class="error-message" style="display:none;"></div>
-          <div class="row" id="espnTeamPickWrap" style="display:none;">
-            <label for="espnTeamSelect">Your team</label>
-            <select id="espnTeamSelect"></select>
-          </div>
-          <div id="espnPrivateChoice" class="provider-account-choice" style="display:none;">
-            <button type="button" id="espnPrivateGoogle" class="google-continue-btn">
-              <span class="google-button-title">Continue with Google</span>
-              <span>Save your leagues &amp; settings, synced across devices</span>
-              <small>Free &middot; no password</small>
-            </button>
-            <div class="provider-choice-or">OR</div>
-            <button type="button" id="espnPrivateGuest" class="continue-without-account-btn">
-              <strong>Continue without account</strong>
-              <span>Quick view on this device &middot; nothing saved</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- Yahoo Flow -->
-        <div id="yahooFlow" style="display:none;">
-          <div class="row url-paste-row">
-            <label for="yahooUrlInput">Fastest: paste your league link</label>
-            <input type="text" id="yahooUrlInput" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://football.fantasysports.yahoo.com/...">
-            <p class="url-paste-error" id="yahooUrlError" role="alert" style="display:none;"></p>
-          </div>
-          <div class="row">
-            <label for="yahooLeagueIdInput">Yahoo League ID</label>
-            <input type="text" id="yahooLeagueIdInput" placeholder="e.g. 123456" autocomplete="off">
-          </div>
-          <div class="row">
-            <label for="yahooTeamName">Your Team Name <span style="font-weight:400;font-size:0.85em;">(optional)</span></label>
-            <input type="text" id="yahooTeamName" placeholder="e.g. Dynasty Monsters">
-          </div>
-          <div class="row" id="yahooSubmitRow">
-            <button type="button" id="yahooConnectBtn">Connect Yahoo Account</button>
-          </div>
-          <div id="yahooError" class="error-message" style="display:none;"></div>
-          <div id="yahooAccountChoice" class="provider-account-choice" style="display:none;">
-            <button type="button" id="yahooPrivateGoogle" class="google-continue-btn">
-              <span class="google-button-title">Continue with Google</span>
-              <span>Save your leagues &amp; settings, synced across devices</span>
-              <small>Free &middot; no password</small>
-            </button>
-            <div class="provider-choice-or">OR</div>
-            <button type="button" id="yahooPrivateGuest" class="continue-without-account-btn">
-              <strong>Continue without account</strong>
-              <span>Quick view on this device &middot; nothing saved</span>
-            </button>
-          </div>
-          <p class="hint" style="margin-top:6px;">
-            You'll be redirected to Yahoo to authorize access, then returned here.
-          </p>
-        </div>
-
-        <!-- MFL Flow -->
-        <div id="mflFlow" style="display:none;">
-          <div class="espn-home-methods" role="radiogroup" aria-label="MFL league type">
-            <button type="button" class="mfl-home-method active" data-mfl-method="public" aria-pressed="true">Public League</button>
-            <button type="button" class="mfl-home-method" data-mfl-method="private" aria-pressed="false">Private League</button>
-          </div>
-          <p class="hint espn-home-description" id="mflHomeDescription">Connect a publicly accessible MyFantasyLeague league using its League ID.</p>
-          <div class="row url-paste-row">
-            <label for="mflUrlInput">Fastest: paste your league link</label>
-            <input type="text" id="mflUrlInput" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://www.myfantasyleague.com/...">
-            <p class="url-paste-error" id="mflUrlError" role="alert" style="display:none;"></p>
-          </div>
-          <div class="row">
-            <label for="mflLeagueIdInput">MFL League ID</label>
-            <input type="text" id="mflLeagueIdInput" inputmode="numeric" placeholder="e.g. 12345" autocomplete="off">
-          </div>
-          <div class="row">
-            <label for="mflSeasonInput">Season</label>
-            <input type="text" id="mflSeasonInput" inputmode="numeric" placeholder="{{ viewed_season }}" autocomplete="off">
-          </div>
-          <div id="mflHomePrivateFields" style="display:none;">
-            <div class="row">
-              <label for="mflApikeyInput">League APIKEY <span style="font-weight:400;font-size:0.85em;">(optional)</span></label>
-              <input type="password" id="mflApikeyInput" autocomplete="off" spellcheck="false" placeholder="From MFL Help → Developer's API">
-            </div>
-            <div class="row">
-              <label for="mflCookieInput">MFL_USER_ID cookie <span style="font-weight:400;font-size:0.85em;">(optional)</span></label>
-              <input type="password" id="mflCookieInput" autocomplete="off" spellcheck="false" placeholder="Cookie value or MFL_USER_ID=…">
-            </div>
-            <details class="espn-home-help"><summary>Or sign in once to obtain the cookie</summary>
-              <div class="row">
-                <label for="mflUsernameInput">MFL username</label>
-                <input type="text" id="mflUsernameInput" autocomplete="username">
-              </div>
-              <div class="row">
-                <label for="mflPasswordInput">MFL password</label>
-                <input type="password" id="mflPasswordInput" autocomplete="current-password">
-              </div>
-              <p class="hint">Password is used only to fetch the official login cookie and is never stored.</p>
-            </details>
-          </div>
-          <div class="row" id="mflSubmitRow">
-            <button type="button" id="mflSubmitBtn">Connect League</button>
-          </div>
-          <div id="mflError" class="error-message" style="display:none;"></div>
-          <div id="mflPrivateChoice" class="provider-account-choice" style="display:none;">
-            <button type="button" id="mflPrivateGoogle" class="google-continue-btn">
-              <span class="google-button-title">Continue with Google</span>
-              <span>Save your leagues &amp; settings, synced across devices</span>
-              <small>Free &middot; no password</small>
-            </button>
-            <div class="provider-choice-or">OR</div>
-            <button type="button" id="mflPrivateGuest" class="continue-without-account-btn">
-              <strong>Continue without account</strong>
-              <span>Quick view on this device &middot; nothing saved</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- Fleaflicker Flow -->
-        <div id="fleaflickerFlow" style="display:none;">
-          <div class="espn-home-methods" role="radiogroup" aria-label="Fleaflicker league type">
-            <button type="button" class="flea-home-method active" data-flea-method="public" aria-pressed="true">Public League</button>
-            <button type="button" class="flea-home-method" data-flea-method="private" aria-pressed="false">Private League</button>
-          </div>
-          <p class="hint espn-home-description" id="fleaHomeDescription">Connect a publicly accessible Fleaflicker league using its League ID.</p>
-          <div class="row url-paste-row">
-            <label for="fleaUrlInput">Fastest: paste your league link</label>
-            <input type="text" id="fleaUrlInput" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://www.fleaflicker.com/nfl/leagues/...">
-            <p class="url-paste-error" id="fleaUrlError" role="alert" style="display:none;"></p>
-          </div>
-          <div class="row">
-            <label for="fleaLeagueIdInput">Fleaflicker League ID</label>
-            <input type="text" id="fleaLeagueIdInput" inputmode="numeric" placeholder="e.g. 14153" autocomplete="off">
-          </div>
-          <div class="row">
-            <label for="fleaSeasonInput">Season</label>
-            <input type="text" id="fleaSeasonInput" inputmode="numeric" placeholder="{{ viewed_season }}" autocomplete="off">
-          </div>
-          <div id="fleaHomePrivateFields" style="display:none;">
-            <div class="row">
-              <label for="fleaEmailInput">Fleaflicker email</label>
-              <input type="email" id="fleaEmailInput" autocomplete="email" placeholder="you@email.com">
-            </div>
-            <div class="row">
-              <label for="fleaPasswordInput">Password</label>
-              <input type="password" id="fleaPasswordInput" autocomplete="current-password">
-            </div>
-            <p class="hint">We exchange these for a login token and never store your password.</p>
-            <details class="espn-home-help"><summary>Or paste an existing login token</summary>
-              <div class="row">
-                <label for="fleaTokenInput">Authorization token</label>
-                <input type="password" id="fleaTokenInput" autocomplete="off" spellcheck="false" placeholder="Token from /api/Login">
-              </div>
-            </details>
-          </div>
-          <div class="row" id="fleaSubmitRow">
-            <button type="button" id="fleaSubmitBtn">Connect League</button>
-          </div>
-          <div id="fleaError" class="error-message" style="display:none;"></div>
-          <div class="row" id="fleaTeamPickWrap" style="display:none;">
-            <label for="fleaTeamSelect">Your team</label>
-            <select id="fleaTeamSelect"></select>
-          </div>
-          <div id="fleaPrivateChoice" class="provider-account-choice" style="display:none;">
-            <button type="button" id="fleaPrivateGoogle" class="google-continue-btn">
-              <span class="google-button-title">Continue with Google</span>
-              <span>Save your leagues &amp; settings, synced across devices</span>
-              <small>Free &middot; no password</small>
-            </button>
-            <div class="provider-choice-or">OR</div>
-            <button type="button" id="fleaPrivateGuest" class="continue-without-account-btn">
-              <strong>Continue without account</strong>
-              <span>Quick view on this device &middot; nothing saved</span>
-            </button>
-          </div>
-        </div>
-
-<form method="post" id="leagueSelectForm">
-          <input type="hidden" name="platform" id="formPlatform" value="sleeper">
-          <input type="hidden" name="season" value="{{ viewed_season }}">
-          <input type="hidden" name="username" id="formUsername" value="">
-          <input type="hidden" name="team_id" id="formTeamId" value="">
-          <input type="hidden" name="next" id="formNext" value="{{ next_url or '' }}">
-
-          <div class="row" id="leagueSelectWrap" style="display:none;">
-            <label for="league">Choose League</label>
-            <select id="league" name="league" required>
-              <option value="">Select a league</option>
-            </select>
-          </div>
-
-          <div class="row" id="generateWrap" style="display:none;flex-direction:column;gap:0;align-items:stretch;">
-            <button type="button" id="googleContinueBtn" class="google-continue-btn">
-              <span class="google-button-title">Continue with Google</span>
-              <span style="font-size:11px;font-weight:500;color:#5f6368;">Save your leagues &amp; settings, synced across devices</span>
-              <span style="font-size:10px;font-weight:600;color:#80868b;">Free &middot; no password</span>
-            </button>
-            <div style="display:flex;align-items:center;gap:10px;margin:14px 0;color:rgba(255,255,255,.5);font-size:10.5px;font-weight:800;letter-spacing:.1em;">
-              <span style="flex:1;height:1px;background:rgba(255,255,255,.18);"></span>OR<span style="flex:1;height:1px;background:rgba(255,255,255,.18);"></span>
-            </div>
-            <button type="submit" class="continue-without-account-btn">
-              <span style="font-size:13.5px;font-weight:700;color:#fff;">Continue without account</span>
-              <span style="font-size:11px;font-weight:500;color:rgba(255,255,255,.62);">Quick view on this device &middot; nothing saved</span>
-            </button>
-          </div>
-
-          <div id="lookupError" class="error-message" style="display:none;"></div>
-
-          {% if error %}
-          <div class="error-message">{{ error }}</div>
-          {% endif %}
-        </form>
-
-        <p class="hint" id="sleeperHint">
-          Pick a league, then <strong>Continue with Google</strong> to save it across devices, or continue without an account for a quick look.
-        </p>
-        </div>
-      </div>
-      <figure class="home-hero-proof">
-        <blockquote>THATS ACTUALLY SO SICK BRO</blockquote>
-        <figcaption><strong>Jayden Waddell</strong><span>Pittsburgh Pilots, on the weekly recap</span></figcaption>
-      </figure>
-      <p class="home-pro-hero-cta">
-        <button type="button" class="home-pro-open-btn" data-home-pro-open>Unlock PRO</button>
-        <span>See what PRO includes. A Google account is required to subscribe.</span>
-      </p>
-    </div>
-  
 <section class="indie">
   <p>Built by a fantasy manager, not a media company.<span>Designed for leagues like yours. Tuned every week of the season.</span></p>
 </section>
@@ -2523,11 +2333,6 @@ BASE_HTML = """
          and the <html> background up front so switching pages stays dark. -->
     <style>html{{background:#f8fafc}}html[data-theme="dark"]{{background:#020617}}</style>
     <script>(function(){{try{{if(localStorage.getItem('theme')==='dark')document.documentElement.setAttribute('data-theme','dark');}}catch(e){{}}}})();</script>
-    <!-- Preload ONLY the active theme's #appSplash logo (the theme is already
-         resolved by the boot script above) so the logo paints WITH its splash
-         background instead of a beat after it. A static preload cannot know
-         the manual theme, so the link is created here, still in <head>. -->
-    <script>(function(){{try{{var l=document.createElement('link');l.rel='preload';l.as='image';l.href=(document.documentElement.getAttribute('data-theme')==='dark')?'/static/BR_Logo_dark.png?v=6c0c4828':'/static/BR_Logo.png?v=6c0c4828';document.head.appendChild(l);}}catch(e){{}}}})();</script>
     <meta name="google-adsense-account" content="ca-pub-9164153092633845">
     <meta name="google-site-verification" content="zuH_tCWKG_L4hm4eRDFit3xfMi-ZPFXwK2s9eap20FA">
     <meta name="google-site-verification" content="I_Fkx1dlwJvI96dzPkbM1TkUzT4Nw8DdCtSLvm7MlD4">
@@ -2563,40 +2368,6 @@ BASE_HTML = """
     <link rel="apple-touch-icon" href="/static/app-icon-180.png?v=b152bc26">
     <link rel="apple-touch-icon" sizes="180x180" href="/static/app-icon-180.png?v=b152bc26">
     <link rel="manifest" href="/static/manifest.json?v=b152bc26">
-    <!-- iOS launch images: from icon tap until first HTML paint, iOS shows
-         its OWN launch screen, and without these links it is blank white (iOS
-         ignores the manifest for this). Each image is the BR logo centered on
-         the exact #appSplash background (#f8fafc light / #020617 dark) at the
-         splash's 170px logo width, so the native image hands off to the
-         in-page pulsing splash with no visible jump. Images must be EXACT
-         device pixels or iOS ignores them. Regenerate with
-         scripts/gen_splash_images.py. No ?v= on these hrefs: some iOS
-         versions fail to match startup images whose href carries a query
-         string, and the images are content-stable. -->
-    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: light) and (device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/static/splash/splash-1290x2796.png">
-    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: dark) and (device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/static/splash/splash-1290x2796-dark.png">
-    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: light) and (device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/static/splash/splash-1179x2556.png">
-    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: dark) and (device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/static/splash/splash-1179x2556-dark.png">
-    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: light) and (device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/static/splash/splash-1170x2532.png">
-    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: dark) and (device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/static/splash/splash-1170x2532-dark.png">
-    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: light) and (device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/static/splash/splash-1284x2778.png">
-    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: dark) and (device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/static/splash/splash-1284x2778-dark.png">
-    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: light) and (device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/static/splash/splash-1242x2688.png">
-    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: dark) and (device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/static/splash/splash-1242x2688-dark.png">
-    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: light) and (device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/static/splash/splash-1125x2436.png">
-    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: dark) and (device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/static/splash/splash-1125x2436-dark.png">
-    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: light) and (device-width: 360px) and (device-height: 780px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/static/splash/splash-1080x2340.png">
-    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: dark) and (device-width: 360px) and (device-height: 780px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/static/splash/splash-1080x2340-dark.png">
-    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: light) and (device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" href="/static/splash/splash-828x1792.png">
-    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: dark) and (device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" href="/static/splash/splash-828x1792-dark.png">
-    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: light) and (device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" href="/static/splash/splash-750x1334.png">
-    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: dark) and (device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" href="/static/splash/splash-750x1334-dark.png">
-    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: light) and (device-width: 414px) and (device-height: 736px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/static/splash/splash-1242x2208.png">
-    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: dark) and (device-width: 414px) and (device-height: 736px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/static/splash/splash-1242x2208-dark.png">
-    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: light) and (device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" href="/static/splash/splash-2048x2732.png">
-    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: dark) and (device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" href="/static/splash/splash-2048x2732-dark.png">
-    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: light) and (device-width: 834px) and (device-height: 1194px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" href="/static/splash/splash-1668x2388.png">
-    <link rel="apple-touch-startup-image" media="(prefers-color-scheme: dark) and (device-width: 834px) and (device-height: 1194px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" href="/static/splash/splash-1668x2388-dark.png">
     <!-- Status-bar chrome matches the top nav's background so the app reads as
          one surface. The app theme is a manual toggle (not OS-driven), so this
          is kept in sync by app.js rather than a prefers-color-scheme meta, which
@@ -2736,14 +2507,14 @@ BASE_HTML = """
           <a href="{contact_url}">Contact</a>
         </div>
         <div class="site-footer-note">
-          © <span id="footer-year"></span> BR Fantasy. All rights reserved. Not affiliated with the NFL.
+          © <span id="footer-year"></span> BR Fantasy. All rights reserved.
         </div>
         {yahoo_attribution}
       </div>
     </footer>
 
     <!-- Page navigation loading overlay -->
-    {funding_choices}
+    <!-- Cookie consent handled by Google's certified CMP (Funding Choices) -->
 
     <script>
       {adsense_init}
@@ -2922,7 +2693,6 @@ def _provider_league_for_chrome(platform, league_id) -> dict:
 def _league_chrome_meta(platform, league_id, season, offseason_mode: bool = False) -> dict:
     """League name, format, and week for the persistent nav chip."""
     from utils.league_chrome import merge_chrome_sources
-    from utils.nfl_context import nfl_state_is_stale, nfl_state_last_good_at
     ctx = _peek_league_ctx(platform, league_id, season)
     nfl = get_nfl_state() or {}
     try:
@@ -2937,7 +2707,7 @@ def _league_chrome_meta(platform, league_id, season, offseason_mode: bool = Fals
     saved = ""
     if not (cache_name or (live or {}).get("name")):
         saved = _saved_league_chrome_name(platform, league_id)
-    meta = merge_chrome_sources(
+    return merge_chrome_sources(
         ctx=ctx,
         saved_name=saved,
         provider_league=live,
@@ -2945,11 +2715,6 @@ def _league_chrome_meta(platform, league_id, season, offseason_mode: bool = Fals
         season_type=str(nfl.get("season_type") or ""),
         offseason=bool(offseason_mode),
     )
-    # Surface NFL-week staleness on the nav chip: when get_nfl_state() fell
-    # back to last-good after a failed fetch, the week label may be outdated.
-    meta["nfl_week_stale"] = nfl_state_is_stale(nfl)
-    meta["nfl_week_as_of"] = nfl_state_last_good_at(nfl)
-    return meta
 
 
 def _render_league_chrome_chip(meta: dict, *, can_switch: bool) -> str:
@@ -2959,15 +2724,7 @@ def _render_league_chrome_chip(meta: dict, *, can_switch: bool) -> str:
     name = html.escape(str(meta.get("name") or "This league"))
     fmt = html.escape(str(meta.get("format") or ""))
     week = html.escape(str(meta.get("week_label") or ""))
-    stale_html = ""
-    if meta.get("nfl_week_stale"):
-        # Mirror the ScoreZone stale badge: a small amber honesty chip. The
-        # week label may be outdated because the live NFL state fetch failed.
-        stale_html = (
-            "<span class='br-ctx-stale' title='Week info may be stale. "
-            "Live NFL update unavailable.'>Stale</span>"
-        )
-    week_html = f"<span class='br-ctx-week'>{week}{stale_html}</span>" if week else ""
+    week_html = f"<span class='br-ctx-week'>{week}</span>" if week else ""
     fmt_html = f"<span class='br-ctx-format'>{fmt}</span>" if fmt else ""
     if can_switch:
         league_el = (
@@ -3130,39 +2887,17 @@ def store_awards_agg(platform: str, season: int, league_id: str, payload) -> Non
 
 # -------- global NFL data caches (shared across leagues) --------
 _PLAYERS_GLOBAL = None
-_PLAYERS_GLOBAL_TS = 0.0
-# The Sleeper player feed is ~38MB parsed; refresh hourly (not every request)
-# so roster moves/injuries land without a redeploy, but workers aren't
-# re-downloading + re-parsing it every few minutes. Previously this was pinned
-# for the process lifetime, which also made get_nfl_players' own 300s TTL
-# dead code.
-_PLAYERS_GLOBAL_TTL = 3600.0
 _PLAYERS_INDEX_GLOBAL = None
 _players_global_lock = threading.Lock()
 _players_index_lock = threading.Lock()
 
 
 def get_players_global():
-    global _PLAYERS_GLOBAL, _PLAYERS_GLOBAL_TS
-    now = time.time()
-    if _PLAYERS_GLOBAL is not None and now - _PLAYERS_GLOBAL_TS < _PLAYERS_GLOBAL_TTL:
-        return _PLAYERS_GLOBAL
-    with _players_global_lock:
-        now = time.time()
-        if _PLAYERS_GLOBAL is not None and now - _PLAYERS_GLOBAL_TS < _PLAYERS_GLOBAL_TTL:
-            return _PLAYERS_GLOBAL
-        try:
-            fresh = get_nfl_players()
-        except Exception:
-            fresh = None
-        if fresh:
-            _PLAYERS_GLOBAL = fresh
-            _PLAYERS_GLOBAL_TS = time.time()
-        elif _PLAYERS_GLOBAL is None:
-            # Don't pin a failure: cache the empty result briefly so a
-            # Sleeper outage doesn't retry the 38MB fetch on every request.
-            _PLAYERS_GLOBAL = {}
-            _PLAYERS_GLOBAL_TS = time.time()
+    global _PLAYERS_GLOBAL
+    if _PLAYERS_GLOBAL is None:
+        with _players_global_lock:
+            if _PLAYERS_GLOBAL is None:
+                _PLAYERS_GLOBAL = get_nfl_players()
     return _PLAYERS_GLOBAL
 
 
@@ -3173,55 +2908,6 @@ def get_players_index_global():
             if _PLAYERS_INDEX_GLOBAL is None:
                 _PLAYERS_INDEX_GLOBAL = load_players_index()
     return _PLAYERS_INDEX_GLOBAL
-
-
-_USAGE_TABLE_GLOBAL = None
-_USAGE_TABLE_GLOBAL_TS = 0
-_USAGE_TABLE_GLOBAL_TTL = 6 * 3600
-_usage_table_lock = threading.Lock()
-
-
-def get_usage_table_global():
-    """Usage table for depth charts, preferring the daily JSON file.
-
-    The daily cron writes data/usage_table.json in its own container, which
-    the web service cannot see (no shared disk). When the file is missing,
-    build the usage map in-memory from Sleeper so carry/touch shares still
-    populate instead of falling back to stale embedded index usage.
-    """
-    global _USAGE_TABLE_GLOBAL, _USAGE_TABLE_GLOBAL_TS
-    now = time.time()
-    if _USAGE_TABLE_GLOBAL is not None and now - _USAGE_TABLE_GLOBAL_TS < _USAGE_TABLE_GLOBAL_TTL:
-        return _USAGE_TABLE_GLOBAL
-    with _usage_table_lock:
-        now = time.time()
-        if _USAGE_TABLE_GLOBAL is not None and now - _USAGE_TABLE_GLOBAL_TS < _USAGE_TABLE_GLOBAL_TTL:
-            return _USAGE_TABLE_GLOBAL
-        table = None
-        try:
-            table = load_usage_table()
-        except Exception:
-            table = None
-        if not table:
-            try:
-                from data_building.external_data.sleeper_usage import (
-                    build_usage_map_for_season,
-                )
-                from dashboard_services.api import get_nfl_state
-
-                nfl_state = get_nfl_state() or {}
-                season = int(nfl_state.get("season") or datetime.now().year)
-                week = int(nfl_state.get("week") or 1)
-                weeks = range(1, min(max(week, 1), 18) + 1)
-                built = build_usage_map_for_season(season, weeks)
-                if built:
-                    table = built
-            except Exception:
-                logger.warning("in-memory usage table build failed", exc_info=True)
-        if table:
-            _USAGE_TABLE_GLOBAL = table
-            _USAGE_TABLE_GLOBAL_TS = time.time()
-        return _USAGE_TABLE_GLOBAL or {}
 
 
 # Per-position "elite starter" projection anchors, one set per (season, week,
@@ -3379,8 +3065,8 @@ def get_available_history_seasons(platform: str, league_id: str, current_season:
 def _games_scheduled_today(season, week) -> bool:
     """True if the given week's schedule has any game dated today (local time).
 
-    Drives the LIVE/ScoreZone affordances (weekly LIVE badge, ScoreZone nav dot,
-    ScoreZone page polling) off the real schedule rather than a day-of-week guess.
+    Drives the LIVE/Redzone affordances (weekly LIVE badge, Redzone nav dot,
+    Redzone page polling) off the real schedule rather than a day-of-week guess.
     Past seasons never match today's date, so they resolve to False.
     """
     try:
@@ -3443,7 +3129,7 @@ def _games_live_or_imminent(season, week, *, lead_minutes=60) -> bool:
 
     "Live" is the kickoff → +4h window; "imminent" is the hour before kickoff
     (``lead_minutes``). Unlike :func:`_games_scheduled_today` (whole calendar
-    day, drives polling), this narrows to actual game action so the ScoreZone
+    day, drives polling), this narrows to actual game action so the Redzone
     nav glow only flashes when games are live or about to start. Missing/bad
     kickoff epochs are skipped; any failure resolves to False.
     """
@@ -3475,8 +3161,8 @@ def _games_live_or_imminent(season, week, *, lead_minutes=60) -> bool:
         return False
 
 
-def _scorezone_cta_state(season, week, *, lead_minutes=60) -> str:
-    """ScoreZone CTA state for today's slate: ``'live'``, ``'pregame'`` or ``''``.
+def _redzone_cta_state(season, week, *, lead_minutes=60) -> str:
+    """Redzone CTA state for today's slate: ``'live'``, ``'pregame'`` or ``''``.
 
     ``'live'``    - a game dated today is in progress (kickoff -> +4h).
     ``'pregame'`` - a game dated today kicks off within ``lead_minutes`` (the hour
@@ -3674,9 +3360,6 @@ _NAV_ICON_PATHS = {
     "star": ("<path d='M11.5 3.2a.6.6 0 0 1 1 0l2.1 4.3 4.8.7a.6.6 0 0 1 .3 1L16.5 16l.8 4.8"
              "a.6.6 0 0 1-.9.6L12 19.1l-4.3 2.3a.6.6 0 0 1-.9-.6l.8-4.8-3.5-3.4a.6.6 0 0 1 .3-1l4.8-.7z'/>"),
     "refresh": "<path d='M21 12a9 9 0 1 1-2.64-6.36'/><path d='M21 3v6h-6'/>",
-    "flask": ("<path d='M10 2v7.527a2 2 0 0 1-.211.896L4.72 20.55a1 1 0 0 0 .9 1.45h12.76"
-              "a1 1 0 0 0 .9-1.45l-5.069-10.127A2 2 0 0 1 14 9.527V2'/><path d='M8.5 2h7'/>"
-              "<path d='M7 16h10'/>"),
 }
 
 # Every league page the mobile dock can point at: key -> (icon, endpoint, suffix).
@@ -3698,13 +3381,13 @@ _NAV_PAGE_META = {
     "recap": ("news", "league_pages.page_recap", ""),
     "scout": ("swords", "page_weekly", "?tab=scout"),
     "optimal": ("bars2", "page_weekly", "?tab=optimal"),
-    "scorezone": ("pulse", "page_scorezone", ""),
+    "redzone": ("pulse", "page_redzone", ""),
     "waivers": ("list", "league_pages.page_waivers", ""),
-    "lineup-lab": ("flask", "league_pages.page_waivers", "?tab=lab"),
     "schedule": ("list", "page_schedule", ""),
     "trade": ("swap", "trade.page_trade", ""),
     "trade-suggestions": ("swap", "trade.page_trade", "?tab=suggestions"),
     "trade-database": ("swap", "trade.page_trade_database", ""),
+    "trade-intel": ("radar", "trade.page_trade_intel", ""),
     "compare": ("bars", "seo_pages.page_compare", ""),
     "top-movers": ("bars2", "seo_pages.top_movers_page", ""),
     "advanced-metrics": ("bars2", "league_pages.page_advanced_metrics", ""),
@@ -3722,8 +3405,8 @@ _DOCK_LABELS = {
     "dashboard": "Home", "players": "Rankings", "weekly": "Matchups", "teams": "Teams",
     "draft": "Draft", "keeper": "Keeper", "standings": "Standings", "activity": "Activity",
     "league_health": "Health", "recap": "Recap", "scout": "Scout", "optimal": "Lineup",
-    "scorezone": "ScoreZone", "waivers": "Waivers", "lineup-lab": "Lab", "schedule": "Schedule", "trade": "Trades",
-    "trade-suggestions": "Trades", "trade-database": "Trades",
+    "redzone": "Redzone", "waivers": "Waivers", "schedule": "Schedule", "trade": "Trades",
+    "trade-suggestions": "Trades", "trade-database": "Trades", "trade-intel": "Intel",
     "compare": "Compare", "top-movers": "Movers", "advanced-metrics": "Metrics",
     "nfl-teams": "Teams", "breakouts": "Breakouts", "prospects": "Prospects", "draft-history": "History",
     "draft-cheat-sheet": "Cheat",
@@ -3832,14 +3515,12 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         active_norm = "trade-suggestions"
     if active == "weekly" and _tab in ("scout", "optimal"):
         active_norm = _tab
-    if active == "waivers" and _tab == "lab":
-        active_norm = "lineup-lab"
 
     nfl_state = get_nfl_state() or {}
     offseason = _nfl_offseason_mode(nfl_state, season)
     draft_ended = has_draft_ended(league_id, platform, season)
 
-    # Mirror the desktop nav glow on mobile: the More tab and the ScoreZone sheet
+    # Mirror the desktop nav glow on mobile: the More tab and the Redzone sheet
     # row pulse only while a game is live or kicks off within the hour.
     rz_live = False
     if not offseason:
@@ -3883,7 +3564,7 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
         aria = " aria-current='page'" if on else ""
         items += (
             f"<a class='{cls}'{aria} href='{_href(ep, suffix)}'>"
-            f"{_nav_icon(icon, size=24)}<span class='br-tabbar-lbl'>{label}</span></a>"
+            f"{_nav_icon(icon, size=22)}<span class='br-tabbar-lbl'>{label}</span></a>"
         )
     _more_live_cls = " br-more-live" if rz_live else ""
     _more_dot = "<span class='rz-mnav-dot' aria-hidden='true'></span>" if rz_live else ""
@@ -3894,7 +3575,7 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     items += (
         f"<button type='button' class='br-tabbar-item br-more-tab{_more_live_cls}{_more_active}' id='brMoreTab' "
         f"aria-label='More navigation; current page: {_DOCK_LABELS.get(active_norm, active_norm.replace('-', ' ').title())}'{_more_current} aria-haspopup='true' aria-expanded='false'>"
-        f"{_nav_icon('more', size=24)}<span class='br-tabbar-lbl'>More</span>{_more_dot}</button>"
+        f"{_nav_icon('more', size=22)}<span class='br-tabbar-lbl'>More</span>{_more_dot}</button>"
     )
     # Sliding active-pill indicator: --n tabs wide, sitting at slot --i. Rendered
     # at the active slot so it rests correctly with no flash; app.js animates a
@@ -3955,22 +3636,19 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
             _sl("waivers", "Waivers" if _bb_sheet else "Waivers & Start/Sit"),
             _sl("schedule", "Schedule Assistant"),
         ]
-        if not _bb_sheet:
-            # The Lab is a Start/Sit mode: best-ball leagues have neither.
-            rows.insert(5, _sl("lineup-lab", "Lineup Lab"))
         if not offseason:
             if rz_live:
-                _rz_icon, _rz_ep, _rz_suffix = _NAV_PAGE_META["scorezone"]
-                _rz_on = " active" if active_norm == "scorezone" else ""
-                _rz_aria = " aria-current='page'" if active_norm == "scorezone" else ""
+                _rz_icon, _rz_ep, _rz_suffix = _NAV_PAGE_META["redzone"]
+                _rz_on = " active" if active_norm == "redzone" else ""
+                _rz_aria = " aria-current='page'" if active_norm == "redzone" else ""
                 rows.append(
                     f"<a class='br-sheet-link rz-mnav-live{_rz_on}'{_rz_aria} "
                     f"href='{_href(_rz_ep, _rz_suffix)}'>"
-                    f"{_nav_icon(_rz_icon, size=20)}<span>ScoreZone</span>"
+                    f"{_nav_icon(_rz_icon, size=20)}<span>Redzone</span>"
                     "<span class='rz-mnav-dot' aria-hidden='true'></span></a>"
                 )
             else:
-                rows.append(_sl("scorezone", "ScoreZone"))
+                rows.append(_sl("redzone", "Redzone"))
         weekly_html = _sec("Weekly", rows)
 
     league_html = _sec("League", [
@@ -3979,8 +3657,9 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     ])
 
     trade_rows = [
-        _sl("trade", "Trade Calculator"), _sl("trade-suggestions", "Trade Hub", pro=True),
+        _sl("trade", "Trade Calculator"), _sl("trade-suggestions", "Suggestions", pro=True),
         _sl("trade-database", "Trade Database"),
+        _sl("trade-intel", "Trade Intel", pro=True),
     ]
     trades_html = _sec("Trades", trade_rows)
 
@@ -4017,6 +3696,7 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     )
     tools_html = (
         f"{refresh_row}"
+        + _sheet_action_row("What's New", "whats-new", "bell") +
         "<button type='button' class='br-sheet-link br-sheet-category' data-br-action='help-tours' "
         "aria-controls='brMorePanel-help-tours'><span>Help &amp; Tours</span>"
         "<span class='br-sheet-chevron' aria-hidden='true'>&#8250;</span></button>"
@@ -4033,8 +3713,8 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     ])
 
     category_keys = {
-        "Trades": {"trade", "trade-suggestions", "trade-database"},
-        "Weekly": {"weekly", "recap", "scout", "optimal", "waivers", "lineup-lab", "schedule", "scorezone"},
+        "Trades": {"trade", "trade-suggestions", "trade-database", "trade-intel"},
+        "Weekly": {"weekly", "recap", "scout", "optimal", "waivers", "schedule", "redzone"},
         "League": {"standings", "teams", "activity", "league_health"},
         "Players": {"players", "compare", "top-movers", "advanced-metrics", "nfl-teams", "breakouts", "prospects"},
         "Draft": {"draft", "draft-cheat-sheet", "keeper", "draft-history"},
@@ -4043,9 +3723,9 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     def _category_row(label):
         slug = label.lower()
         current = active_norm in category_keys[label]
-        # ScoreZone lives in the Weekly section, so the Weekly root row pulses red
+        # Redzone lives in the Weekly section, so the Weekly root row pulses red
         # while a game is live/imminent -- same gate and keyframes as the More tab
-        # dot and the ScoreZone sheet row. Only Weekly pulses; other rows never do.
+        # dot and the Redzone sheet row. Only Weekly pulses; other rows never do.
         live = (label == "Weekly" and rz_live)
         live_cls = " rz-mnav-live" if live else ""
         if live:
@@ -4063,7 +3743,7 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     # Every product section is reachable from the More root, Weekly and Trades
     # included. Both are dock destinations, but their extra tools live only in
     # these panels (Weekly: Recap, Scout, Lineup Efficiency, Waivers, Schedule,
-    # ScoreZone; Trades: Suggestions, Database, Intel), so without a root row the
+    # Redzone; Trades: Suggestions, Database, Intel), so without a root row the
     # user cannot reach them on mobile. Weekly only appears once its panel is
     # built (in season or after the draft); trades_html is always present.
     root_labels = (["Weekly"] if weekly_html else []) + ["Trades", "League", "Players", "Draft", "Stats"]
@@ -4131,7 +3811,7 @@ _GUEST_DOCK_TABS = (
 _GUEST_ACTIVE_PARENT = {
     "home": "home",
     "trade": "trade", "trade-suggestions": "trade",
-    "trade-database": "trade",
+    "trade-database": "trade", "trade-intel": "trade",
     "players": "players", "compare": "players", "top-movers": "players",
     "advanced-metrics": "players", "nfl-teams": "players", "breakouts": "players", "prospects": "players",
     "draft": "draft", "draft-history": "draft", "draft-cheat-sheet": "draft",
@@ -4159,12 +3839,12 @@ def _mobile_nav_guest(active: str) -> str:
         aria = " aria-current='page'" if on else ""
         items += (
             f"<a class='{cls}'{aria} href='{href}'>"
-            f"{_nav_icon(icon, size=24)}<span class='br-tabbar-lbl'>{label}</span></a>"
+            f"{_nav_icon(icon, size=22)}<span class='br-tabbar-lbl'>{label}</span></a>"
         )
     items += (
         "<button type='button' class='br-tabbar-item br-more-tab' id='brMoreTab' "
         "aria-label='More' aria-haspopup='true' aria-expanded='false'>"
-        f"{_nav_icon('more', size=24)}<span class='br-tabbar-lbl'>More</span></button>"
+        f"{_nav_icon('more', size=22)}<span class='br-tabbar-lbl'>More</span></button>"
     )
     n_tabs = len(_GUEST_DOCK_TABS) + 1
     ind_hidden = "" if active_index >= 0 else " data-hidden='1'"
@@ -4208,8 +3888,9 @@ def _mobile_nav_guest(active: str) -> str:
 
     trades_html = _sec("Trades", [
         _gl("/trade", "Trade Calculator", "trade"),
-        _gl("/trade?tab=suggestions", "Trade Hub", "trade-suggestions", pro=True),
+        _gl("/trade?tab=suggestions", "Suggestions", "trade-suggestions", pro=True),
         _gl("/trade-database", "Trade Database", "trade-database"),
+        _gl("/trade-intel", "Trade Intel", "trade-intel", pro=True),
     ])
     players_html = _sec("Players", [
         _gl("/players", "Player Rankings", "players"),
@@ -4244,7 +3925,7 @@ def _mobile_nav_guest(active: str) -> str:
     ])
 
     guest_groups = {
-        "Trades": {"trade", "trade-suggestions", "trade-database"},
+        "Trades": {"trade", "trade-suggestions", "trade-database", "trade-intel"},
         "Players": {"players", "compare", "top-movers", "advanced-metrics", "nfl-teams", "breakouts", "prospects"},
         "Draft": {"draft", "draft-cheat-sheet", "draft-history"},
         "Learn": {"guides", "glossary", "faq", "about", "contact"},
@@ -4267,6 +3948,7 @@ def _mobile_nav_guest(active: str) -> str:
         f"{find_html}<h3 class='br-sheet-h'>Navigate</h3><div class='br-sheet-group'>{categories}{portfolio_link or portfolio_fallback}</div>"
         "<div class='br-sheet-utility-divider' aria-hidden='true'></div>"
         "<h3 class='br-sheet-h'>Tools</h3><div class='br-sheet-group'>"
+        + _sheet_action_row("What's New", "whats-new", "bell") +
         "<button type='button' class='br-sheet-link br-sheet-category' data-br-sheet-target='learn' aria-controls='brMorePanel-learn'>"
         "<span>Help</span><span class='br-sheet-chevron' aria-hidden='true'>&#8250;</span></button></div>"
         "<div class='br-sheet-changelog-mount' id='brSheetChangelog'></div>"
@@ -5067,10 +4749,6 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     # not their own pages, so ?tab=scout/optimal highlights the right nav item.
     if active == "weekly" and _tab_param in ("scout", "optimal"):
         active = _tab_param
-    # The Lineup Lab is a mode of the Start/Sit tab on the Waivers page, so
-    # ?tab=lab highlights the Lab nav item instead of Waivers & Start/Sit.
-    if active == "waivers" and _tab_param == "lab":
-        active = "lineup-lab"
 
     nfl_state = get_nfl_state() or {}
     offseason_mode = _nfl_offseason_mode(nfl_state, season)
@@ -5078,8 +4756,8 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     _bo_new_badge = (
         " <span class='nav-new-badge'>NEW</span>" if _breakouts_are_new() else ""
     )
-    # Exposed for client code (e.g. the player-modal ScoreZone tab, which hides in
-    # the offseason). Uses the same condition that gates the ScoreZone nav item.
+    # Exposed for client code (e.g. the player-modal Redzone tab, which hides in
+    # the offseason). Uses the same condition that gates the Redzone nav item.
     season_active_flag = f"<script>window.__seasonActive={'false' if offseason_mode else 'true'};</script>"
 
     # Changelog bell (used in both home and league nav)
@@ -5148,13 +4826,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             return f"<a class='{cls}'{aria} href='{href}'>{label}</a>"
 
         def simple_dropdown(label: str, items: list, active_keys: list, dropdown_id: str = "playersNavDropdown") -> str:
-            # The parent pill is active whenever the current page is one of its
-            # own items, not only when a caller remembered to list the key in
-            # active_keys: the hand-kept lists drifted (Advanced Metrics and
-            # Trade Hub were items whose parents never lit up). active_keys
-            # stays as an explicit extra, never the only source.
-            item_keys = {item_key for _label, _href, item_key in items}
-            is_active = active in active_keys or active in item_keys
+            is_active = active in active_keys
             btn_cls = "nav-pill active" if is_active else "nav-pill"
             item_html = ""
             for item_label, href, item_key in items:
@@ -5180,9 +4852,10 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         pills += [
             simple_dropdown("Trades", [
                 ("Trade Calculator", "/trade", "trade"),
-                ("Trade Hub <span class='nav-pro-badge'>PRO</span>", "/trade?tab=suggestions", "trade-suggestions"),
+                ("Suggestions <span class='nav-pro-badge'>PRO</span>", "/trade?tab=suggestions", "trade-suggestions"),
                 ("Trade Database", "/trade-database", "trade-database"),
-            ], ["trade", "trade-suggestions", "trade-database"], "tradesNavDropdown"),
+                ("Trade Intel <span class='nav-pro-badge'>PRO</span>", "/trade-intel", "trade-intel"),
+            ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"),
             simple_dropdown("Players", [
                 ("Player Rankings", "/players", "players"),
                 ("Compare Players", "/compare", "compare"),
@@ -5191,7 +4864,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
                 ("NFL Teams", "/nfl-teams", "nfl-teams"),
                 (f"Breakout Engine <span class='nav-pro-badge'>PRO</span>{_bo_new_badge}", "/breakouts", "breakouts"),
                 ("Prospects", "/prospects", "prospects"),
-            ], ["players", "prospects", "breakouts", "top-movers", "compare", "advanced-metrics", "nfl-teams"], "playersNavDropdown"),
+            ], ["players", "prospects", "breakouts", "top-movers", "compare", "nfl-teams"], "playersNavDropdown"),
             simple_dropdown("Draft", [
                 ("Draft Room", "/draft", "draft"),
                 ("Cheat Sheet", "/draft/cheat-sheet", "draft-cheat-sheet"),
@@ -5274,11 +4947,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     def nav_pill_dropdown(label: str, items: list, active_keys: list, dropdown_id: str = "playersNavDropdown",
                           btn_extra_cls: str = "") -> str:
         """Build a dropdown nav pill. items = list of (label, endpoint_or_none, key, disabled, href_suffix)."""
-        # Same drift guard as the global nav's simple_dropdown: a page that is
-        # an item of this dropdown always lights the parent pill, whether or
-        # not the caller's active_keys list remembered its key.
-        item_keys = {item_tuple[2] for item_tuple in items if len(item_tuple) > 2}
-        is_active = active in active_keys or active in item_keys
+        is_active = active in active_keys
         btn_cls = "nav-pill active" if is_active else "nav-pill"
         if btn_extra_cls:
             btn_cls += " " + btn_extra_cls
@@ -5325,10 +4994,13 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     nav_pills.append(nav_pill("Dashboard", "page_dashboard", "dashboard"))
     nav_pills.append(nav_pill_dropdown("Trades", [
         ("Trade Calculator", "trade.page_trade", "trade", False),
-        ("Trade Hub <span class='nav-pro-badge'>PRO</span>", "trade.page_trade", "trade-suggestions", False,
+        ("Suggestions <span class='nav-pro-badge'>PRO</span>", "trade.page_trade", "trade-suggestions", False,
          "?tab=suggestions"),
         ("Trade Database", "trade.page_trade_database", "trade-database", False),
-    ], ["trade", "trade-suggestions", "trade-database"], "tradesNavDropdown"))
+        # Market comps are Sleeper-sourced; the page still applies to ESPN/Yahoo/MFL
+        # rosters and explains that on the Trade Intel screen.
+        ("Trade Intel <span class='nav-pro-badge'>PRO</span>", "trade.page_trade_intel", "trade-intel", False),
+    ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"))
     # Weekly dropdown is available as soon as the draft is done
     draft_ended = has_draft_ended(league_id, platform, season)
     if draft_ended or not offseason_mode:
@@ -5348,12 +5020,8 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             (_waiver_label, "league_pages.page_waivers", "waivers", False),
             ("Schedule Assistant", "page_schedule", "schedule", False),
         ]
-        if not _bb:
-            # The Lab is a Start/Sit mode, directly under Waivers & Start/Sit.
-            _weekly_items.insert(
-                5, ("Lineup Lab", "league_pages.page_waivers", "lineup-lab", False, "?tab=lab"))
-        # ScoreZone lives inside the Weekly dropdown. The Weekly button glows and
-        # the ScoreZone item pulses with a live dot only while games are live or
+        # Redzone lives inside the Weekly dropdown. The Weekly button glows and
+        # the Redzone item pulses with a live dot only while games are live or
         # about to kick off (the hour before) -- not for the whole game day.
         # Only available during the active season.
         _rz_pulse = ""
@@ -5362,19 +5030,19 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             _rz_week = nfl_state.get("week") or nfl_state.get("display_week")
             _rz_live = _games_live_or_imminent(nfl_state.get("season") or season, _rz_week)
             _rz_label = (
-                "<span class='rz-nav-live'><span class='rz-nav-dot'></span>ScoreZone</span>"
-                if _rz_live else "ScoreZone"
+                "<span class='rz-nav-live'><span class='rz-nav-dot'></span>Redzone</span>"
+                if _rz_live else "Redzone"
             )
             # Player IDs are canonicalized onto the Tank01 boxscore feed, so
-            # ScoreZone works on Sleeper, ESPN, Yahoo, and MFL.
-            _weekly_items.append((_rz_label, "page_scorezone", "scorezone", False))
+            # Redzone works on Sleeper, ESPN, Yahoo, and MFL.
+            _weekly_items.append((_rz_label, "page_redzone", "redzone", False))
             # Demo stays discoverable without a header Demo pill.
-            _weekly_items.append(("Try ScoreZone Demo", "page_scorezone", "scorezone", False, "?demo=1"))
+            _weekly_items.append(("Try Redzone Demo", "page_redzone", "redzone", False, "?demo=1"))
             if _rz_live:
-                _rz_pulse = "nav-pill-scorezone-live"
+                _rz_pulse = "nav-pill-redzone-live"
         nav_pills.append(nav_pill_dropdown(
             "Weekly", _weekly_items,
-            ["weekly", "recap", "scorezone", "scout", "optimal", "waivers", "lineup-lab", "schedule"],
+            ["weekly", "recap", "redzone", "scout", "optimal", "waivers", "schedule"],
             "weeklyNavDropdown", btn_extra_cls=_rz_pulse,
         ))
     nav_pills.append(nav_pill_dropdown("League", [
@@ -5391,7 +5059,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("NFL Teams", "league_pages.page_nfl_teams", "nfl-teams", False),
         (f"Breakout Engine <span class='nav-pro-badge'>PRO</span>{_bo_new_badge}", "page_breakouts", "breakouts", False),
         ("Prospect Rankings", "page_prospects", "prospects", False),
-    ], ["players", "prospects", "breakouts", "top-movers", "compare", "advanced-metrics", "nfl-teams"], "playersNavDropdown"))
+    ], ["players", "prospects", "breakouts", "top-movers", "compare", "nfl-teams"], "playersNavDropdown"))
     # Keeper Assistant only applies to keeper leagues; hide it for dynasty and
     # plain redraft leagues.
     _draft_items = [
@@ -5619,7 +5287,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         signin_modal = (
             f"<div id='signinModal' class='signin-modal-overlay' role='dialog' aria-modal='true' aria-labelledby='signinModalTitle' aria-hidden='true'>"
             f"  <div class='signin-modal-box'>"
-            f"    <h3 class='signin-modal-title' id='signinModalTitle'>Claim your team</h3>"
+            f"    <h3 class='signin-modal-title' id='signinModalTitle'>Sign in to your team</h3>"
             f"    <p class='signin-modal-sub'>{_signin_sub}</p>"
             f"    <form method='POST' action='/set-viewer'>"
             f"      <input type='hidden' name='platform' value='{platform}'>"
@@ -5675,23 +5343,6 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         "  <div class='nav-right'>"
         f"    {utility_bar}"
         "  </div>"
-        # Mobile-only search shortcut: on phones the utility bar (with the full
-        # search input) hides and the dock takes over, so this floating button
-        # keeps search one tap away, top-right. No-ops where the search screen
-        # isn't rendered.
-        f"  <button type='button' class='br-top-search' aria-label='Search players'"
-        " onclick=\"window.brOpenSearch&&window.brOpenSearch()\">"
-        f"    {_nav_icon('search', size=20)}"
-        "  </button>"
-        # Mobile-only notifications shortcut: mirrors the search button. Opens
-        # Recent Updates directly as a floating panel under the top bar via
-        # window.brToggleChangelog (inline onclick, same pattern as the
-        # working search button, so the tap never depends on bind timing).
-        f"  <button type='button' class='br-top-notif' aria-label='Notifications'"
-        " onclick=\"window.brToggleChangelog&&window.brToggleChangelog(event)\">"
-        f"    {_nav_icon('bell', size=20)}"
-        "    <span class='br-top-notif-dot' id='brTopNotifDot' hidden></span>"
-        "  </button>"
         "</nav>"
         f"{signin_modal}"
         f"{season_active_flag}"
@@ -5701,26 +5352,11 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
 # The AdSense library is the biggest controllable mobile-perf drain: in the
 # <head> it competes for bandwidth on the critical path and runs on the main
 # thread (Total Blocking Time). We now load it lazily (see _AD_INIT) on first
-# user interaction or at idle, so it's off the initial render path. The ad
-# <ins> slots are bare elements with no reserved placeholder box (see _AD_TOP),
-# so an unfilled slot takes no space and deferring the fill causes no CLS.
-# Google Funding Choices (certified CMP): renders the cookie-consent message
-# configured in AdSense > Privacy & messaging. Async so it never blocks first
-# paint; the googlefcPresent signal iframe is Google's documented snippet.
-_FUNDING_CHOICES = """<script async src="https://fundingchoicesmessages.google.com/i/pub-9164153092633845?ers=1"></script>
-<script>(function(){function signalGooglefcPresent(){if(!window.frames['googlefcPresent']){if(document.body){var iframe=document.createElement('iframe');iframe.style='width: 0; height: 0; border: none; z-index: -1000; left: -1000px; top: -1000px;';iframe.style.display='none';iframe.name='googlefcPresent';document.body.appendChild(iframe);}else{setTimeout(signalGooglefcPresent,0);}}}signalGooglefcPresent();})();</script>"""
+# user interaction or at idle, so it's off the initial render path. The ad <ins>
+# slots still reserve their fixed height, so deferring the fill causes no CLS.
 _AD_SCRIPT = ''
-# Ad slots are the bare Google <ins> element ONLY -- no wrapper box and no
-# "Advertisement" label chrome of our own. Account approval/serving is
-# external (AdSense), so there is no server-side signal that a slot will
-# fill; while the account cannot serve, our old labeled placeholder box
-# (aside.ad-container + disclosure span, with a reserved 90px grey band)
-# rendered as an empty "Advertisement" box on nearly every page, which is
-# part of what the "Low value content" review flagged. An unfilled
-# <ins class="adsbygoogle"> collapses on its own; when a real ad fills,
-# the unit renders (and is self-identifying) without our placeholder frame.
-_AD_TOP = """<ins class="adsbygoogle" style="display:block;overflow:hidden;" data-ad-client="ca-pub-9164153092633845" data-ad-slot="5233061286" data-ad-format="horizontal" data-full-width-responsive="false"></ins>"""
-_AD_BOTTOM = """<ins class="adsbygoogle" style="display:block;overflow:hidden;" data-ad-client="ca-pub-9164153092633845" data-ad-slot="5233061286" data-ad-format="horizontal" data-full-width-responsive="false"></ins>"""
+_AD_TOP = """<aside class="ad-container ad-top-banner" aria-label="Advertisement"><span class="ad-disclosure">Advertisement</span><ins class="adsbygoogle" style="display:block;overflow:hidden;" data-ad-client="ca-pub-9164153092633845" data-ad-slot="5233061286" data-ad-format="horizontal" data-full-width-responsive="false"></ins></aside>"""
+_AD_BOTTOM = """<aside class="ad-container ad-bottom-content" aria-label="Advertisement"><span class="ad-disclosure">Advertisement</span><ins class="adsbygoogle" style="display:block;overflow:hidden;" data-ad-client="ca-pub-9164153092633845" data-ad-slot="5233061286" data-ad-format="horizontal" data-full-width-responsive="false"></ins></aside>"""
 # Legal / utility / checkout pages lack enough publisher content for AdSense
 # (Google's "no publisher content" / insufficient-content policies). Never place
 # ad units there -- including when active is None (e.g. /pricing).
@@ -6124,165 +5760,6 @@ def _google_link_pro_banner() -> str:
 """
 
 
-def _pro_trial_banner() -> str:
-    """Persistent PRO trial countdown card plus the one-time "trial ended" nudge.
-
-    Active trial: "Trial ends in N days", dismissible for the tab session
-    (it returns on the next visit, so the countdown stays visible).
-    Expired trial: a single "trial ended" nudge linking to /pricing; the
-    server consumes the one-time flag on this read so it never nags.
-    """
-    from flask import session as _session
-    acct = _session.get("account_id")
-    if not acct:
-        return ""
-    try:
-        from dashboard_services.subscriptions import get_trial_state_for_keys
-        state = get_trial_state_for_keys([f"acct:{acct}", str(acct)])
-    except Exception:
-        return ""
-
-    if state.get("active"):
-        days = state.get("days_left") or 1
-        unit = "day" if days == 1 else "days"
-        title = "PRO Trial"
-        body = f"Trial ends in {days} {unit}. Full PRO is on while it lasts."
-        cta_label = "See PRO plans"
-        if days <= 2:
-            # Trial-ending reminder (from the churn workstream): for the last
-            # two days the banner swaps to the urgent copy instead of the
-            # standard countdown.
-            when = "tomorrow" if days <= 1 else "in 2 days"
-            title = f"Your PRO trial ends {when}"
-            body = "Keep Trade Intel, Breakouts, and the Front Office Report without missing a beat."
-            cta_label = "Keep PRO"
-        storage = "sessionStorage"
-        dismiss_key = "pro-trial-banner-dismissed"
-        accent = "var(--brand-blue, #2563eb)"
-    elif state.get("just_ended"):
-        title = "Trial ended"
-        body = "Your PRO trial has ended. Keep every tool with a PRO plan."
-        cta_label = "See PRO plans"
-        storage = "localStorage"
-        dismiss_key = f"pro-trial-ended-{(state.get('user_key') or 'x')}"
-        accent = "var(--accent)"
-    else:
-        return ""
-
-    return f"""
-<style>
-@keyframes proTrialSlideUp {{
-  from {{ opacity:0; transform:translateY(16px); }}
-  to   {{ opacity:1; transform:translateY(0); }}
-}}
-#proTrialBanner {{ animation: proTrialSlideUp .3s ease forwards; }}
-@media (max-width: 768px) {{
-  #proTrialBanner {{
-    left:12px !important; right:12px !important; width:auto !important;
-    bottom:calc(var(--dock-safe-bottom) + 14px) !important;
-  }}
-}}
-</style>
-<div id="proTrialBanner" role="status" style="
-     display:none;
-     position:fixed;bottom:24px;right:24px;z-index:10000;
-     background:var(--card);
-     border:1px solid var(--border);
-     border-top:3px solid {accent};
-     border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.22);
-     padding:18px 20px;width:320px;
-     flex-direction:column;gap:12px;">
-  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
-    <span style="font-size:14px;font-weight:700;color:var(--text);">{title}</span>
-    <button type="button" id="proTrialBannerClose"
-            style="background:none;border:none;color:var(--muted);font-size:18px;line-height:1;
-                   cursor:pointer;padding:0;flex-shrink:0;"
-            aria-label="Dismiss">&times;</button>
-  </div>
-  <p style="margin:0;font-size:13px;color:var(--muted);line-height:1.45;">{body}</p>
-  <a href="/pricing" style="display:inline-flex;align-items:center;justify-content:center;
-     padding:10px 14px;border-radius:9px;background:var(--brand-blue, #2563eb);color:#fff;
-     font-weight:700;font-size:13px;text-decoration:none;">
-    {cta_label}
-  </a>
-</div>
-<script>
-(function(){{
-  var el = document.getElementById('proTrialBanner');
-  if (!el) return;
-  var store = {storage};
-  var key = '{dismiss_key}';
-  try {{
-    if (store.getItem(key) === '1') return;
-  }} catch (e) {{}}
-  el.style.display = 'flex';
-  document.getElementById('proTrialBannerClose').addEventListener('click', function() {{
-    el.style.display = 'none';
-    try {{ store.setItem(key, '1'); }} catch (e) {{}}
-  }});
-}})();
-</script>
-"""
-
-
-def _dunning_banner() -> str:
-    """Failed-renewal banner for signed-in users with an unresolved episode.
-
-    Stripe retries on its own schedule; this nudges the user to the billing
-    portal to update the card. Dismissible per tab session only, since the
-    underlying payment problem is unresolved.
-    """
-    from flask import session as _session
-    account_id = _session.get("account_id")
-    if not account_id:
-        return ""
-    try:
-        from utils import churn as _churn
-        if not _churn.has_open_dunning(int(account_id)):
-            return ""
-    except Exception:
-        return ""
-    return """
-<div id="brDunningBanner" role="alert" style="
-     position:fixed;bottom:24px;right:24px;z-index:10000;
-     background:var(--card);border:1px solid var(--border);
-     border-top:3px solid #dc2626;border-radius:14px;
-     box-shadow:0 12px 40px rgba(0,0,0,.22);
-     padding:18px 20px;width:330px;display:flex;flex-direction:column;gap:12px;">
-  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
-    <span style="font-size:14px;font-weight:700;color:var(--text);">Your PRO payment failed</span>
-    <button type="button" id="brDunningClose" aria-label="Dismiss"
-            style="background:none;border:none;color:var(--muted);font-size:18px;line-height:1;cursor:pointer;padding:4px 8px;flex-shrink:0;min-width:44px;min-height:44px;">&times;</button>
-  </div>
-  <p style="margin:0;font-size:13px;color:var(--muted);line-height:1.45;">We could not charge your card for PRO. Update your payment method to keep your premium tools.</p>
-  <button type="button" id="brDunningCta"
-     style="display:inline-flex;align-items:center;justify-content:center;padding:10px 14px;border-radius:9px;border:none;background:#dc2626;color:#fff;font-weight:700;font-size:13px;cursor:pointer;">
-    Update payment method</button>
-</div>
-<script>
-(function(){
-  var el = document.getElementById('brDunningBanner');
-  if (!el) return;
-  try { if (sessionStorage.getItem('br-dunning-dismissed') === '1') { el.style.display = 'none'; return; } } catch (e) {}
-  document.getElementById('brDunningClose').addEventListener('click', function() {
-    el.style.display = 'none';
-    try { sessionStorage.setItem('br-dunning-dismissed', '1'); } catch (e) {}
-  });
-  document.getElementById('brDunningCta').addEventListener('click', function() {
-    var btn = this; btn.disabled = true; btn.textContent = 'Opening billing...';
-    fetch('/api/create-portal-session', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({})})
-      .then(function(r) { return r.json(); })
-      .then(function(d) {
-        if (d.url) { window.location.href = d.url; }
-        else { btn.disabled = false; btn.textContent = 'Update payment method'; }
-      })
-      .catch(function() { btn.disabled = false; btn.textContent = 'Update payment method'; });
-  });
-})();
-</script>
-"""
-
-
 def _discord_banner() -> str:
     """Dismissible weekly Discord invite banner shown every Sunday."""
     import datetime as _dt
@@ -6391,14 +5868,10 @@ def _build_seo_meta_tags(
     else:
         parts.append("<meta name=\"robots\" content=\"index, follow\">")
         canon = canonical
-        if canon and canon.startswith("/"):
-            # Relative canonicals (e.g. "/nfl-teams") become absolute on the
-            # www origin so crawlers see one canonical host.
-            canon = f"{_site_origin()}{canon}"
         if not canon:
             try:
-                if _WWW_HOST:
-                    canon = f"https://{_WWW_HOST}{request.path}"
+                if PRIMARY_DOMAIN:
+                    canon = f"https://{PRIMARY_DOMAIN}{request.path}"
                 else:
                     canon = request.base_url
             except Exception:
@@ -6410,13 +5883,10 @@ def _build_seo_meta_tags(
 
 
 def _site_origin() -> str:
-    """Absolute origin (https://host) for building canonical/social URLs.
-
-    Uses the www host: the site serves on www (apex 301s to www at Render).
-    """
+    """Absolute origin (https://host) for building canonical/social URLs."""
     try:
-        if _WWW_HOST:
-            return f"https://{_WWW_HOST}"
+        if PRIMARY_DOMAIN:
+            return f"https://{PRIMARY_DOMAIN}"
         return request.host_url.rstrip("/")
     except Exception:
         return ""
@@ -6614,8 +6084,6 @@ def render_page(
 
     banner_html = _discord_banner()
     banner_html += _google_link_pro_banner()
-    banner_html += _pro_trial_banner()
-    banner_html += _dunning_banner()
     if _session_signed_in():
         banner_html += _recap_ready_banner(league_id or "", platform or "", season or 0)
         banner_html += _draft_imminent_banner(
@@ -6709,7 +6177,6 @@ def render_page(
         user_premium="true" if is_premium else "false",
         ad_eligible="true" if show_ads else "false",
         adsense_script="" if (_soft_nav or not show_ads) else _AD_SCRIPT,
-        funding_choices="" if (_soft_nav or not show_ads) else _FUNDING_CHOICES,
         ad_top="" if (_soft_nav or not show_ads) else _AD_TOP,
         ad_bottom="" if (_soft_nav or not show_ads) else _AD_BOTTOM,
         adsense_init="" if (_soft_nav or not show_ads) else _AD_INIT,
@@ -6824,68 +6291,34 @@ from utils.league_payload import (  # noqa: E402
 )
 
 
-# ── Rookie rankings for league context ─────────────────────────────────────────
-# build_league_context() calls _load_rookie_rankings_for_ctx() at the end of
-# every cold build. The underlying data only changes at the NFL draft, but each
-# call was paying a draft-completion DB lookup + model-values table load/scan
-# + a 5-table rankings query. Cache it per worker, keyed by draft year, with a
-# 6h TTL: a cold league-context build drops that whole chain to a dict lookup.
-_ROOKIE_CTX_RANKINGS: tuple = (None, 0.0, [])  # (draft_year, filled_ts, rows)
-_ROOKIE_CTX_RANKINGS_TTL = 6 * 3600
-_ROOKIE_CTX_RANKINGS_LOCK = threading.Lock()
-
-
-def _fetch_rookie_rankings_for_ctx(draft_year) -> list[dict]:
-    """Uncached rookie-rankings load: draft-completion DB check + rankings query."""
-    from data_building.rookie_pipeline.pipeline import get_rookie_rankings_from_db, \
-        is_draft_complete
-    try:
-        from dashboard_services.db import get_conn as _get_conn
-        with _get_conn() as _dc:
-            _draft_done = is_draft_complete(draft_year, _dc)
-    except Exception:
-        _draft_done = is_draft_complete(draft_year)
-    rows = get_rookie_rankings_from_db(draft_year, filter_undrafted=_draft_done)
-    return [
-        {
-            "player_id": r.get("player_id", ""),
-            "name": r.get("name", ""),
-            "position": str(r.get("position") or "").upper(),
-            "overall_rank": int(r.get("overall_rank") or 999),
-            "value_1qb": float(r.get("rookie_value") or 0),
-            "value_sf": float(r.get("rookie_sf_value") or r.get("rookie_value") or 0),
-        }
-        for r in rows
-        if r.get("position") in ("QB", "RB", "WR", "TE")
-    ]
-
-
 def _load_rookie_rankings_for_ctx() -> list[dict]:
     """Load current draft class rookies sorted by overall_rank for pick projection."""
-    global _ROOKIE_CTX_RANKINGS
     try:
-        from data_building.rookie_pipeline.pipeline import get_active_rookie_class
+        from data_building.rookie_pipeline.pipeline import get_rookie_rankings_from_db, get_active_rookie_class, \
+            is_draft_complete
         draft_year = get_active_rookie_class()
-    except Exception:
-        draft_year = None
-    _cy, _ts, _rows = _ROOKIE_CTX_RANKINGS
-    now = time.time()
-    if _cy == draft_year and now - _ts < _ROOKIE_CTX_RANKINGS_TTL:
-        return [dict(r) for r in _rows]
-    with _ROOKIE_CTX_RANKINGS_LOCK:
-        _cy, _ts, _rows = _ROOKIE_CTX_RANKINGS
-        now = time.time()
-        if _cy == draft_year and now - _ts < _ROOKIE_CTX_RANKINGS_TTL:
-            return [dict(r) for r in _rows]
         try:
-            rows = _fetch_rookie_rankings_for_ctx(draft_year)
-        except Exception as e:
-            logger.info(f"[rookie_rankings] skipped: {e}")
-            # Transient failure: serve the stale copy rather than an empty
-            # list when we have one for this draft year.
-            return [dict(r) for r in _rows] if _cy == draft_year else []
-        _ROOKIE_CTX_RANKINGS = (draft_year, now, rows)
-        return [dict(r) for r in rows]
+            from dashboard_services.db import get_conn as _get_conn
+            with _get_conn() as _dc:
+                _draft_done = is_draft_complete(draft_year, _dc)
+        except Exception:
+            _draft_done = is_draft_complete(draft_year)
+        rows = get_rookie_rankings_from_db(draft_year, filter_undrafted=_draft_done)
+        return [
+            {
+                "player_id": r.get("player_id", ""),
+                "name": r.get("name", ""),
+                "position": str(r.get("position") or "").upper(),
+                "overall_rank": int(r.get("overall_rank") or 999),
+                "value_1qb": float(r.get("rookie_value") or 0),
+                "value_sf": float(r.get("rookie_sf_value") or r.get("rookie_value") or 0),
+            }
+            for r in rows
+            if r.get("position") in ("QB", "RB", "WR", "TE")
+        ]
+    except Exception as e:
+        logger.info(f"[rookie_rankings] skipped: {e}")
+        return []
 
 
 _CTX_TASK_WARN_TS: dict[tuple, float] = {}
@@ -7105,31 +6538,33 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
     roster_map = _build_roster_map(users, rosters)
 
     if df_weekly.empty and not offseason_mode:
-        logger.warning(
-            "[build_league_context] no weekly data for requested_league_id=%s, "
-            "resolved_league_id=%s, season=%s",
-            league_id, resolved_league_id, season,
+        print(
+            f"[build_league_context] no weekly data for requested_league_id={league_id}, "
+            f"resolved_league_id={resolved_league_id}, season={season}"
         )
 
-    # Activity + injury sections are DEFERRED out of this build. The
-    # transactions sweep alone is ~18 of the build's ~42 provider calls
-    # (plus the injury report's full players scan), and no landing surface
-    # reads them -- the only consumers are the Activity page, the
-    # since-last-visit API, Season Wrapped, and the front-office memo.
-    # The keys stay present with None as the explicit pending marker and
-    # are filled on first use by ensure_activity_bits()/ensure_injury_bits()
-    # (same lazy pattern as ensure_weekly_bits). Consumers must never read
-    # None as "empty": they fill first or report the pending state.
-    activity_df = None
-    injury_df = None
+    try:
+        activity_df = build_week_activity(
+            resolved_league_id, platform, season, players_map,
+            users=users, rosters=rosters,
+        )
+    except Exception as e:
+        logger.warning("[build_league_context] week activity failed: %s", e)
+        activity_df = pd.DataFrame(columns=["kind", "week", "ts", "data"])
+    injury_df = build_injury_report(
+        resolved_league_id,
+        players,
+        roster_map,
+        rosters,
+        "America/New_York",
+        False,
+    )
 
     if team_stats is not None and not team_stats.empty and {"Wins", "PF"}.issubset(team_stats.columns):
-        from utils.standings_divisions import division_records, roster_division_map
-        _by_rid = roster_division_map(rosters)
+        from utils.standings_divisions import roster_division_map
         standings_map = build_standings_map(
             team_stats, roster_map,
-            division_by_rid=_by_rid,
-            division_records_by_rid=division_records(df_weekly, _by_rid),
+            division_by_rid=roster_division_map(rosters),
         )
     else:
         standings_map = {}
@@ -7629,30 +7064,6 @@ def _espn_reconnect_home_url(season=None, league_id=None) -> str:
     return "/?" + urlencode(params)
 
 
-def _wants_api_json() -> bool:
-    """True when the caller expects a JSON error body.
-
-    /api/* paths always get JSON; anything else gets JSON only when the
-    request explicitly accepts it (fetch/XHR callers).
-    """
-    try:
-        if request.path.startswith("/api/"):
-            return True
-        return "application/json" in (request.headers.get("Accept") or "")
-    except Exception:
-        return False
-
-
-def _api_error(message: str, code: str = "error", status: int = 500):
-    """JSON error envelope for API callers.
-
-    Keeps the ``error`` key the frontend already reads (``data.error``) and
-    adds a stable machine-readable ``code``. ``ok: False`` is kept for
-    callers that check it.
-    """
-    return jsonify({"ok": False, "error": message, "code": code}), status
-
-
 def _branded_status_page(
     title: str,
     heading: str,
@@ -7663,11 +7074,10 @@ def _branded_status_page(
     primary_label: str = "&#8592; Back to home",
     secondary_href: str | None = None,
     secondary_label: str | None = None,
-    code: str = "error",
 ):
     """JSON for /api/*; branded HTML everywhere else."""
-    if _wants_api_json():
-        return _api_error(message, code=code, status=status)
+    if request.path.startswith("/api/"):
+        return jsonify({"ok": False, "error": message}), status
     safe_title = html.escape(title)
     safe_heading = html.escape(heading)
     safe_message = html.escape(message)
@@ -7720,7 +7130,6 @@ def handle_provider_unavailable(e):
         "League data is temporarily unavailable",
         message + " Please try again in a moment.",
         503,
-        code="provider_unavailable",
     )
 
 
@@ -7749,14 +7158,12 @@ def handle_provider_auth(e):
             primary_label="Reconnect ESPN",
             secondary_href="/",
             secondary_label="Back to home",
-            code="provider_access_denied",
         )
     return _branded_status_page(
         "League access required",
         "This league could not be accessed",
         message,
         403,
-        code="provider_access_denied",
     )
 
 
@@ -7770,35 +7177,12 @@ def handle_provider_not_found(e):
         "League not found",
         message,
         404,
-        code="league_not_found",
     )
-
-
-@app.errorhandler(400)
-def handle_400(e):
-    if _wants_api_json():
-        description = (getattr(e, "description", "") or "").strip()
-        message = description if description and "Traceback" not in description else "Bad request."
-        return _api_error(message, code="bad_request", status=400)
-    return e.get_response() if hasattr(e, "get_response") else (str(e), 400)
-
-
-@app.errorhandler(405)
-def handle_405(e):
-    if _wants_api_json():
-        return _api_error("Method not allowed.", code="method_not_allowed", status=405)
-    return e.get_response() if hasattr(e, "get_response") else (str(e), 405)
 
 
 @app.errorhandler(500)
 def handle_500(e):
     logger.exception("[500] Internal server error")
-    if _wants_api_json():
-        return _api_error(
-            "The server hit an unexpected error. This usually fixes itself - please try again in a moment.",
-            code="internal_error",
-            status=500,
-        )
     return (
             "<!doctype html><html lang='en'><head><title>Error - BR Fantasy</title>"
             "<meta name='viewport' content='width=device-width,initial-scale=1'>"
@@ -7820,12 +7204,6 @@ def handle_500(e):
 
 @app.errorhandler(404)
 def handle_404(e):
-    if _wants_api_json():
-        return _api_error(
-            "The requested API endpoint was not found.",
-            code="not_found",
-            status=404,
-        )
     return (
             "<!doctype html><html lang='en'><head><title>Page Not Found - BR Fantasy</title>"
             "<meta name='viewport' content='width=device-width,initial-scale=1'>"
@@ -7968,84 +7346,6 @@ def ensure_weekly_bits(ctx: dict) -> None:
     _apply_proj_column()
 
 
-def ensure_injury_bits(ctx: dict) -> None:
-    """Lazily populate injury_df into the ctx (deferred out of
-    build_league_context). Pure local computation over the ctx's players
-    snapshot -- no provider calls. No-op once built."""
-    if ctx.get("injury_df") is not None:
-        return
-    ctx["injury_df"] = build_injury_report(
-        ctx.get("resolved_league_id", ctx.get("league_id")),
-        ctx.get("players") or {},
-        ctx.get("roster_map") or {},
-        ctx.get("rosters") or [],
-        "America/New_York",
-        False,
-    )
-
-
-def ensure_activity_bits(ctx: dict) -> None:
-    """Lazily populate activity_df (+ injury_df) into the ctx.
-
-    build_league_context leaves both sections None (pending); the first
-    consumer that actually needs them pays the transactions sweep here
-    instead of every cold league build paying it up front. Mirrors the
-    activity block of refresh_league_ctx_section, minus the provider-cache
-    clearing (that stays refresh-only). No-op once built."""
-    ensure_injury_bits(ctx)
-    if ctx.get("activity_df") is not None:
-        return
-    try:
-        ctx["activity_df"] = build_week_activity(
-            ctx.get("resolved_league_id", ctx.get("league_id")),
-            ctx.get("platform"),
-            ctx.get("season"),
-            ctx.get("players_map"),
-            users=ctx.get("users"),
-            rosters=ctx.get("rosters"),
-        )
-    except Exception as e:
-        logger.warning("[ensure_activity_bits] week activity failed: %s", e)
-        ctx["activity_df"] = pd.DataFrame(columns=["kind", "week", "ts", "data"])
-
-
-_ACTIVITY_FILL_INFLIGHT: set = set()
-_ACTIVITY_FILL_LOCK = threading.Lock()
-
-
-def _fill_activity_section_async(platform: str, league_id: str, season: int) -> None:
-    """Background-fill a cached ctx's deferred activity section.
-
-    For best-effort readers (since-last-visit) that must not block on the
-    transactions sweep: they answer with an explicit pending state and the
-    client retries once this lands. Deduped per league, daemon thread --
-    same shape as _warm_league_ctx_async."""
-    key = _cache_key(platform, season, league_id)
-    with _ACTIVITY_FILL_LOCK:
-        if key in _ACTIVITY_FILL_INFLIGHT:
-            return
-        _ACTIVITY_FILL_INFLIGHT.add(key)
-
-    def _run() -> None:
-        try:
-            entry = DASHBOARD_CACHE.get(key)
-            if entry and entry.get("ctx"):
-                ensure_activity_bits(entry["ctx"])
-        except Exception:
-            logger.debug("[activity-fill] background fill failed", exc_info=True)
-        finally:
-            with _ACTIVITY_FILL_LOCK:
-                _ACTIVITY_FILL_INFLIGHT.discard(key)
-
-    try:
-        threading.Thread(
-            target=_run, name=f"activity-fill-{platform}-{league_id}", daemon=True,
-        ).start()
-    except Exception:
-        with _ACTIVITY_FILL_LOCK:
-            _ACTIVITY_FILL_INFLIGHT.discard(key)
-
-
 def refresh_league_ctx_section(platform: str, league_id: str, page: str, season: int,
                                full: bool = False) -> dict:
     """Refresh the cached league context. By default only the sections the given
@@ -8178,12 +7478,10 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
             ctx["team_stats"] = team_stats
 
             if team_stats is not None and not team_stats.empty and {"Wins", "PF"}.issubset(team_stats.columns):
-                from utils.standings_divisions import division_records, roster_division_map
-                _by_rid = roster_division_map(rosters)
+                from utils.standings_divisions import roster_division_map
                 ctx["standings_map"] = build_standings_map(
                     team_stats, roster_map,
-                    division_by_rid=_by_rid,
-                    division_records_by_rid=division_records(df_weekly, _by_rid),
+                    division_by_rid=roster_division_map(rosters),
                 )
             else:
                 ctx["standings_map"] = {}
@@ -8565,21 +7863,16 @@ def render_standings_compact(team_stats, length=None, movement=None, owner_to_ri
     _seed_teams = [
         {"wins": float(rr["Wins"]), "ties": float(rr.get("Ties", 0) or 0),
          "pf": float(rr["PF"]), "pa": float(rr.get("PA", 0) or 0),
-         "division": int(rr["_division"] or 0),
-         "div_record": _div_record_for(rr["owner"])}
+         "division": int(rr["_division"] or 0)}
         for _, rr in df.iterrows()
     ]
     df["Rank"] = assign_playoff_seeds(_seed_teams)
 
     if _use_div:
-        # Within a division: overall wins, then division win% (a 1-0 division
-        # team outranks a 0-1 team on the same overall record), then PF, PA.
-        from utils.standings_divisions import division_win_pct
-        df["_div_pct"] = [division_win_pct(_div_record_for(o)) for o in df["owner"]]
         df["_div_sort"] = df["_division"].map(lambda d: int(d) if int(d) else 10_000)
         df = df.sort_values(
-            by=["_div_sort", "Wins", "_div_pct", "PF", "PA"],
-            ascending=[True, False, False, False, True],
+            by=["_div_sort", "Wins", "PF", "PA"],
+            ascending=[True, False, False, True],
         ).reset_index(drop=True)
     else:
         df = df.sort_values(by=["Rank"], ascending=[True]).reset_index(drop=True)
@@ -8810,7 +8103,7 @@ def render_standings(team_stats, length, all_play: dict = None,
     # Division records (vs same-division opponents) from the same weekly frame
     # the table is built on, so the week selector's "through week N" view stays
     # exact. Shown as "2-1 (2-0)" only when divisions are active.
-    from utils.standings_divisions import division_records, format_record_html, format_record
+    from utils.standings_divisions import division_records, format_record_html
     _div_records = division_records(detailed_df, _div_by_rid) if _use_div else {}
 
     def _row_div(owner) -> int:
@@ -8847,8 +8140,7 @@ def render_standings(team_stats, length, all_play: dict = None,
     _seed_teams = [
         {"wins": float(rr["Wins"]), "ties": float(rr.get("Ties", 0) or 0),
          "pf": float(rr["PF"]), "pa": float(rr.get("PA", 0) or 0),
-         "division": int(rr["_division"] or 0),
-         "div_record": _div_record_for(rr["owner"])}
+         "division": int(rr["_division"] or 0)}
         for _, rr in df.iterrows()
     ]
     _seeds = assign_playoff_seeds(_seed_teams)
@@ -8857,15 +8149,11 @@ def render_standings(team_stats, length, all_play: dict = None,
     # Display order: by division (then record within), or overall seed.
     # Unassigned (division 0) sorts last so named divisions stay contiguous.
     if _use_div:
-        # Within a division: overall wins, then division win% (a 1-0 division
-        # team outranks a 0-1 team on the same overall record), then PF, PA.
-        from utils.standings_divisions import division_win_pct
-        df["_div_pct"] = [division_win_pct(_div_record_for(o)) for o in df["owner"]]
         df["_div_sort"] = df["_division"].map(lambda d: int(d) if int(d) else 10_000)
         df = (
             df.sort_values(
-                by=["_div_sort", "Wins", "_div_pct", "PF", "PA"],
-                ascending=[True, False, False, False, True],
+                by=["_div_sort", "Wins", "PF", "PA"],
+                ascending=[True, False, False, True],
             )
             .reset_index(drop=True)
         )
@@ -8886,8 +8174,7 @@ def render_standings(team_stats, length, all_play: dict = None,
                 {"id": str(rr["owner"]), "name": str(rr["owner"]),
                  "wins": int(rr["Wins"]), "losses": int(rr["Losses"]),
                  "ties": int(rr.get("Ties", 0) or 0), "pf": float(rr["PF"]),
-                 "division": int(rr["_division"] or 0),
-                 "div_record": _div_record_for(rr["owner"])}
+                 "division": int(rr["_division"] or 0)}
                 for _, rr in df.iterrows()
             ]
             _pic = compute_playoff_picture(_teams, int(playoff_spots), int(total_regular_weeks))
@@ -8972,7 +8259,7 @@ def render_standings(team_stats, length, all_play: dict = None,
         # Division section header between groups (skip when no divisions).
         if _use_div and div_id and div_id != _prev_div:
             _label = str(_div_names.get(div_id) or f"Division {div_id}")
-            rows.append(_standings_div_header(_label, _div_counts.get(div_id, 0), 18))
+            rows.append(_standings_div_header(_label, _div_counts.get(div_id, 0), 17))
             _prev_div = div_id
             _is_div_lead = True
 
@@ -8999,8 +8286,6 @@ def render_standings(team_stats, length, all_play: dict = None,
             _luck_cell = f"<span class='luck-chip {_lcls}' title='Actual wins minus expected wins from all-play'>{_lsign}{_luck:.1f}</span>"
         _seed = _ap.get('expected_seed')
         _seed_cell = _ord_str(_seed) if _seed else "<span class='muted'>&ndash;</span>"
-        # All-Play win %: first detail column; the foundation power rankings sort by.
-        _allplay = _dnum(_ap.get('all_play_pct'), 3)
 
         # Detail-column values (hidden until the "Detailed" toggle is on).
         _winpct = _dnum(row.get("Win%"), 3)
@@ -9019,10 +8304,6 @@ def render_standings(team_stats, length, all_play: dict = None,
 
         _p = pic_by_name.get(owner)
         _trcls = "st-div-leader" if _is_div_lead else ""
-        # Streak edge signal: colored left edge, intensity scales with length.
-        _streak_edge = streak_edge_class(streak)
-        if _streak_edge:
-            _trcls = (_trcls + " " + _streak_edge).strip()
         _tdcls = "team"
         _mo_attr = ""
         _div_lead_tag = (
@@ -9048,25 +8329,6 @@ def render_standings(team_stats, length, all_play: dict = None,
             team_cell = (
                 f"{img} {_clickable_team_name(owner, owner_to_rid)}{_div_lead_tag}"
             )
-        # Mobile Sleeper-style sub-line under the team name: "3-0 (1-0) · ▲ 3W".
-        # Hidden on desktop via CSS; the Record/Streak columns hide on mobile
-        # (non-detail) so the info is not duplicated.
-        _sub_rec = format_record(int(row['Wins']), int(row['Losses']),
-                                 int(row.get("Ties", 0) or 0),
-                                 _div_record_for(row["owner"]))
-        _sub = html.escape(_sub_rec)
-        _stxt = str(streak or "").strip()
-        if _stxt:
-            _m = re.match(r"^([WLwl])\s*(\d+)\s*$", _stxt)
-            if _m:
-                _w = _m.group(1).upper() == "W"
-                _tri = "&#9650;" if _w else "&#9660;"
-                _cls = "up" if _w else "down"
-                _sub += (f" &middot; <span class='st-streak-dir {_cls}'>{_tri}</span>"
-                         f" {_m.group(2)}{'W' if _w else 'L'}")
-            else:
-                _sub += f" &middot; {html.escape(_stxt)}"
-        team_cell += f"<div class='st-team-sub'>{_sub}</div>"
 
         # Week-over-week seed movement (positive = climbed). Same arrows as the
         # compact standings; blank when there's no prior week to compare.
@@ -9086,10 +8348,9 @@ def render_standings(team_stats, length, all_play: dict = None,
               <td>{row['PF']:.1f}</td>
               <td>{row['PA']:.1f}</td>
               <td class="st-trend-cell">{(sparklines or {}).get(owner) or ''}</td>
-              <td>{html.escape(str(streak or ""))}</td>
+              <td>{streak}</td>
               <td>{_luck_cell}</td>
               <td>{_seed_cell}</td>
-              <td class="st-detail-col num">{_allplay}</td>
               <td class="st-detail-col num">{_winpct}</td>
               <td class="st-detail-col num">{_eff}</td>
               <td class="st-detail-col num">{_davg}</td>
@@ -9106,7 +8367,7 @@ def render_standings(team_stats, length, all_play: dict = None,
         if (_p and _p.get("scenario") and _p["status"] == "bubble"
                 and _p["seed"] in (_spots, (_spots or 0) + 1)):
             rows.append(
-                "<tr class='pp-scnrow'><td colspan='18'>"
+                "<tr class='pp-scnrow'><td colspan='17'>"
                 f"<div class='pp-scn'>{html.escape(_p['scenario'])}</div></td></tr>"
             )
 
@@ -9115,7 +8376,7 @@ def render_standings(team_stats, length, all_play: dict = None,
         if (not _use_div and _spots and int(row['Rank']) == _spots
                 and _spots < len(df)):
             rows.append(
-                "<tr class='pp-cutrow'><td colspan='18'>"
+                "<tr class='pp-cutrow'><td colspan='17'>"
                 "<div class='pp-cut'>Playoff line</div></td></tr>"
             )
 
@@ -9139,7 +8400,6 @@ def render_standings(team_stats, length, all_play: dict = None,
               <th scope="col">Streak</th>
               <th scope="col" title="Actual wins minus expected wins (from all-play). + = luckier than your scoring earned.">Luck</th>
               <th scope="col" title="Where you'd be seeded by all-play record instead of actual wins.">Exp. Seed</th>
-              <th scope="col" class="st-detail-col" title="All-play win rate: how this team fares against every other team each week. This is what the power rankings sort by.">All-Play</th>
               <th scope="col" class="st-detail-col" title="Fraction of games won.">Win %</th>
               <th scope="col" class="st-detail-col" title="Season lineup efficiency: actual points ÷ optimal-start points.">EFF</th>
               <th scope="col" class="st-detail-col" title="Average points per game.">Average</th>
@@ -9240,7 +8500,7 @@ def _render_usage_movers(ctx: dict, viewer_roster_id) -> str:
         from data_building.weekly_metrics import get_usage_trends
         trends = get_usage_trends(season) or {}
         players_index = ctx.get("players_index") or {}
-        _stat_lbl = {"snap_pct": "Snap %", "touches": "Touches", "targets": "Targets"}
+        _stat_lbl = {"snap_pct": "snap%", "touches": "touches", "targets": "targets"}
 
         movers = []
         for pid in pids:
@@ -9254,57 +8514,22 @@ def _render_usage_movers(ctx: dict, viewer_roster_id) -> str:
                 continue
             pmeta = players_index.get(pid) or {}
             name = pmeta.get("full_name") or pmeta.get("name") or f"Player {pid}"
-            pos = str(pmeta.get("pos") or pmeta.get("position") or "").strip().upper()
-            team = str(pmeta.get("team") or "").strip().upper()
-            sub = " · ".join(part for part in (pos, team) if part)
-            movers.append((float(delta), str(name), sub, t, pid))
+            movers.append((float(delta), str(name), t))
         if not movers:
             return ""
         movers.sort(key=lambda x: x[0], reverse=True)
         movers = movers[:3]  # concise: top risers only
 
-        def _num(v: float) -> str:
-            return f"{round(float(v), 1):g}"
-
         rows = []
-        for delta, name, sub, t, pid in movers:
-            stat_key = t.get("stat")
-            stat = _stat_lbl.get(stat_key, stat_key or "")
+        for delta, name, t in movers:
+            stat = _stat_lbl.get(t.get("stat"), t.get("stat") or "")
             avg = float(t.get("season_avg") or 0)
             recent = float(t.get("recent_avg") or 0)
-            # Mini bars: snap % scales against 100; volume stats scale to
-            # the row's own larger average so the climb reads proportionally.
-            if stat_key == "snap_pct":
-                season_w = min(max(avg, 0.0), 100.0)
-                recent_w = min(max(recent, 0.0), 100.0)
-            else:
-                peak = max(avg, recent)
-                season_w = (avg / peak * 100.0) if peak > 0 else 0.0
-                recent_w = (recent / peak * 100.0) if peak > 0 else 0.0
-            sub_html = (
-                f'<span class="um-sub">{html.escape(sub)}</span>' if sub else ""
-            )
-            # Whole row opens the player modal via the global
-            # .player-clickable delegate; rows without a real pid stay plain.
-            if pid:
-                li_attrs = (
-                    f' class="usage-mover player-clickable"'
-                    f' data-player-id="{html.escape(str(pid), quote=True)}"'
-                    f' data-player-name="{html.escape(name, quote=True)}"'
-                )
-            else:
-                li_attrs = ' class="usage-mover"'
             rows.append(f"""
-              <li{li_attrs}>
-                <div class="um-main">
-                  <span class="um-name">{html.escape(name)}</span>
-                  {sub_html}
-                </div>
-                <div class="um-trend">
-                  <span class="um-detail">{html.escape(str(stat))} {_num(avg)} &rarr; {_num(recent)}</span>
-                  <span class="um-bars" aria-hidden="true"><span class="um-bar um-bar-season" style="width:{season_w:.1f}%"></span><span class="um-bar um-bar-recent" style="width:{recent_w:.1f}%"></span></span>
-                </div>
-                <span class="um-delta up">&#9650;{_num(delta)}</span>
+              <li class="usage-mover">
+                <span class="um-name">{html.escape(name)}</span>
+                <span class="um-detail">{stat} {avg:g}&rarr;{recent:g}</span>
+                <span class="um-delta up">&#9650;{delta:g}</span>
               </li>""")
 
         return f"""
@@ -9312,7 +8537,7 @@ def _render_usage_movers(ctx: dict, viewer_roster_id) -> str:
           <div class="os-section-head">
             <div class="os-section-head-content">
               <h2 class="os-section-title">Usage risers</h2>
-              <div class="os-section-subtitle">Your players trending up: last 3 weeks vs season average</div>
+              <div class="os-section-subtitle">Your players trending up in snaps &amp; touches</div>
             </div>
           </div>
           <ul class="usage-movers-list">{''.join(rows)}</ul>
@@ -9656,7 +8881,7 @@ def _trade_window_card_html(ctx: dict, viewer_roster_id) -> str:
             lines.append(
                 f'Week {deadline} trade deadline, <span class="la-em">{when}</span>.'
             )
-        _odds_line = f'You\'re at <span class="la-em">{_fmt_playoff_pct_display(pct)}%</span> playoff odds'
+        _odds_line = f'You\'re at <span class="la-em">{pct:.0f}%</span> playoff odds'
         if (not is_redraft) and age_rank and n_teams:
             _sfx = "th" if 10 <= age_rank % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(age_rank % 10, "th")
             _odds_line += f" with the {age_rank}{_sfx}-oldest core of {n_teams}"
@@ -9813,7 +9038,7 @@ def _render_bench_check(ctx: dict, viewer_roster_id, last_final_week: int) -> st
         if not team:
             return ""
 
-        starters = [p for p in (team.get("starters") or []) if p]
+        starters = team.get("starters") or []
         bench = team.get("bench") or []
         if not starters:
             return ""
@@ -9897,7 +9122,6 @@ def render_power_and_playoffs(
         bracket_override=None,
         seed_map_override=None,
         power_rankings=None,
-        prev_power_ranks=None,
 ) -> str:
     """
     Single card that shows:
@@ -9909,9 +9133,6 @@ def render_power_and_playoffs(
         ({"team_name", "power_score", "rank"}). When provided, the podium's
         order and PowerScore are taken from here so this card matches the
         Standings Power Rankings source exactly.
-    prev_power_ranks: {team_name: rank} from last week's power ranking. Drives
-        the constant week-over-week movement arrows (green up / red down /
-        grey dash when unchanged or unknown).
     """
     if team_stats is None or team_stats.empty:
         return ""
@@ -9955,35 +9176,22 @@ def render_power_and_playoffs(
 
     top3 = pr_sorted.head(3)
 
-    # ---- Movement arrows: week-over-week change in power-ranking position ----
-    # Constant (always rendered): green up / red down with magnitude, grey dash
-    # when unchanged or when there is no last-week baseline yet. The previous
-    # week's ranking is reconstructed deterministically from the week-capped
-    # ctx by the caller (see build_standings_body), so this needs no snapshot
-    # table and stays exact even if the page wasn't visited last week.
-    _prev_ranks = {
-        str(k): int(v) for k, v in (prev_power_ranks or {}).items()
-        if v is not None
-    }
-    _cur_rank_by_owner = {}
-    for _pos, _r in enumerate(pr_sorted.itertuples()):
-        _cur_rank_by_owner[str(getattr(_r, "owner", ""))] = _pos + 1
+    # ---- Movement arrows: day-over-day change in power-ranking position ----
+    # Daily (date-keyed) so a trade that reshuffles the ranking shows a ▲/▼ the
+    # next day, in the offseason too -- not just week-over-week during the season.
+    _pr_order_rids = [_o2r.get(str(row.get("owner", "")))
+                      for _, row in pr_sorted.iterrows()]
+    movement: Dict[str, Optional[int]] = _ranking_movement(
+        league_id, season, "power", _pr_order_rids)
 
     def move_arrow(owner_name) -> str:
-        cur = _cur_rank_by_owner.get(str(owner_name))
-        prev = _prev_ranks.get(str(owner_name))
-        if cur is None or prev is None:
-            return ("<span class='pr-move pr-move-flat' title='No last-week ranking'>"
-                    "&ndash;</span>")
-        delta = prev - cur
+        rid = _o2r.get(str(owner_name))
+        delta = movement.get(str(rid)) if rid is not None else None
+        if not delta:
+            return ""  # no prior snapshot yet, or no change
         if delta > 0:
-            return (f"<span class='pr-move pr-move-up' title='Up {delta} since last week'>"
-                    f"&#9650;{delta}</span>")
-        if delta < 0:
-            return (f"<span class='pr-move pr-move-down' title='Down {abs(delta)} since last week'>"
-                    f"&#9660;{abs(delta)}</span>")
-        return ("<span class='pr-move pr-move-flat' title='Unchanged since last week'>"
-                "&ndash;</span>")
+            return f"<span class='pr-move pr-move-up' title='Up {delta} since yesterday'>&#9650;{delta}</span>"
+        return f"<span class='pr-move pr-move-down' title='Down {abs(delta)} since yesterday'>&#9660;{abs(delta)}</span>"
 
     # width scaling based on PowerScore range
     if has_power:
@@ -10892,7 +10100,7 @@ def render_share_rankings(ctx: dict) -> str:
     rows_html = ""
     for i, d in enumerate(rows_data):
         rows_html += f"""
-        <tr data-share-rank="{i + 1}" data-share-team="{html.escape(str(d['owner']), quote=True)}" data-share-value="{d['value_pct']:.10f}" data-share-production="{d['prod_pct']:.10f}">
+        <tr>
           <td class="standings-shares-rk">{i + 1}</td>
           <td class="standings-shares-team">{_clickable_team_name(d['owner'], owner_to_rid)}</td>
           <td>
@@ -10917,13 +10125,13 @@ def render_share_rankings(ctx: dict) -> str:
       Fair share per team: {fair_pct}{proj_note} &nbsp;·&nbsp; bar fills to 2× fair share
     </p>
     <div class="st-tblscroll">
-    <table class="standings-shares-table" data-sort-key="value" data-sort-dir="desc">
+    <table class="standings-shares-table">
       <thead>
         <tr>
-          <th class="standings-shares-rk" scope="col" aria-sort="none"><button type="button" class="standings-shares-sort-btn" data-share-sort="rank" aria-label="Sort by rank" title="Sort by rank">#</button></th>
-          <th class="standings-shares-team" scope="col" aria-sort="none"><button type="button" class="standings-shares-sort-btn" data-share-sort="team" aria-label="Sort by team" title="Sort by team">Team</button></th>
-          <th scope="col" aria-sort="descending" class="sorted-desc"><button type="button" class="standings-shares-sort-btn" data-share-sort="value" aria-label="Sort by value share" title="Sort by value share">Value Share</button></th>
-          <th scope="col" aria-sort="none"><button type="button" class="standings-shares-sort-btn" data-share-sort="production" aria-label="Sort by {prod_label}" title="Sort by {prod_label}">{prod_label}</button></th>
+          <th class="standings-shares-rk"></th>
+          <th class="standings-shares-team">Team</th>
+          <th>Value Share</th>
+          <th>{prod_label}</th>
         </tr>
       </thead>
       <tbody>
@@ -10967,17 +10175,14 @@ def _standings_playoff_params(ctx: dict, team_stats):
     return _pp_spots, _pp_weeks
 
 
-def _standings_panels(ctx: dict, power_rankings=None, prev_power_ranks=None) -> dict:
+def _standings_panels(ctx: dict, power_rankings=None) -> dict:
     """Render the swappable standings surfaces from ctx. Shared by the
     standings page and the week-selector endpoint, so a "through week N" view is
     just this called with a week-capped ctx (see build_standings_as_of_week).
 
     power_rankings: value-blended list from build_power_rankings_context to match
     the Teams page (current view); None ranks by the performance PowerScore in
-    team_stats, which is what a historical week can reconstruct faithfully.
-    prev_power_ranks: {team_name: rank} from last week's power ranking, for the
-    week-over-week movement arrows in the power card. None/{} renders constant
-    grey dashes."""
+    team_stats, which is what a historical week can reconstruct faithfully."""
     team_stats = ctx["team_stats"]
     roster_map = ctx["roster_map"]
     df_weekly = ctx["df_weekly"]
@@ -11033,7 +10238,6 @@ def _standings_panels(ctx: dict, power_rankings=None, prev_power_ranks=None) -> 
         ctx["platform"],
         ctx["season"],
         power_rankings=power_rankings,
-        prev_power_ranks=prev_power_ranks,
     )
     sidebar_html = render_standings_insights(
         team_stats, all_play=_all_play, weekly_points=_weekly_pts, owner_to_rid=_o2r)
@@ -11848,56 +11052,8 @@ def _render_weekly_highlights(
 
 # build_weekly_hub_body lives in dashboard_services/pages/weekly_hub_page.py
 
-# Memo for build_projections_by_week below. Flattening 18 weeks of raw
-# projection files through the league's scoring math is pure CPU (~1s) and the
-# result is fully determined by (season, weeks, scoring settings, file
-# contents), so recomputing it on every dashboard/weekly-hub/start-sit/trade
-# page load is pure waste. Keyed by (season, weeks, scoring fingerprint);
-# entries invalidate when the projection files get newer (daily cron rewrite).
-# The returned bundles are SHARED -- callers must treat them as read-only
-# (sharing also means several cached league contexts with the same scoring no
-# longer each retain their own copy).
-_PROJ_BY_WEEK_MEMO: dict = {}
-_PROJ_BY_WEEK_MEMO_MAX = 8
-_PROJ_BY_WEEK_MEMO_LOCK = threading.RLock()
-
-
-def _proj_files_newest_mtime(season: int) -> float:
-    from utils.utils import CACHE_DIR as _cd
-    try:
-        pattern = os.path.join(str(_cd), "projections", f"projections_s{int(season)}_w*.json")
-        return max((os.path.getmtime(p) for p in glob.glob(pattern)), default=0.0)
-    except Exception:
-        return 0.0
-
-
 def build_projections_by_week(season: int, weeks: int, raw_scoring_settings: dict = None):
-    """Flattened per-week projections, memoized per (season, weeks, scoring).
-
-    Thin wrapper around _build_projections_by_week_uncached; see the
-    _PROJ_BY_WEEK_MEMO comment for the invalidation contract. The result is
-    shared between callers: treat it as read-only.
-    """
-    key = (int(season), int(weeks), _ss_scoring_sig(raw_scoring_settings))
-    newest = _proj_files_newest_mtime(season)
-    with _PROJ_BY_WEEK_MEMO_LOCK:
-        hit = _PROJ_BY_WEEK_MEMO.get(key)
-        if hit is not None and hit[0] >= newest:
-            _PROJ_BY_WEEK_MEMO[key] = _PROJ_BY_WEEK_MEMO.pop(key)  # LRU refresh
-            return hit[1]
-    bundles = _build_projections_by_week_uncached(season, weeks, raw_scoring_settings)
-    # Re-stat AFTER the build: load_week_projection may have fetched and written
-    # missing weekly files mid-call, so the pre-build newest would immediately
-    # (and forever) invalidate the entry we are about to store.
-    newest = _proj_files_newest_mtime(season)
-    with _PROJ_BY_WEEK_MEMO_LOCK:
-        _PROJ_BY_WEEK_MEMO[key] = (newest, bundles)
-        while len(_PROJ_BY_WEEK_MEMO) > _PROJ_BY_WEEK_MEMO_MAX:
-            _PROJ_BY_WEEK_MEMO.pop(next(iter(_PROJ_BY_WEEK_MEMO)))
-    return bundles
-
-
-def _build_projections_by_week_uncached(season: int, weeks: int, raw_scoring_settings: dict = None):
+    from statistics import median
     from utils.fantasy_scoring import projection_points
     _players_for_proj = load_players_index() or {}
 
@@ -11912,7 +11068,7 @@ def _build_projections_by_week_uncached(season: int, weeks: int, raw_scoring_set
             return float(multi)  # legacy flat file
         return None
 
-    bundles = {}
+    raw = {}
     any_projections = False
     for w in range(1, weeks + 1):
         multi_week = load_week_projection(season, w) or {}
@@ -11921,16 +11077,28 @@ def _build_projections_by_week_uncached(season: int, weeks: int, raw_scoring_set
             v = _flat(pid, val)
             if v is not None:
                 flat[pid] = v
+        raw[w] = flat
         if flat:
             any_projections = True
-        # Trust Sleeper's line for this week exactly as published. A player
-        # absent from a week's file has no Sleeper line that week (bye,
-        # doubtful/out, inactive): the fetch drops their ADP-only row, so
-        # absence IS Sleeper's 0.0. Never refill an absent player from the
-        # median of their other weeks -- that resurrected full projections
-        # for doubtful players Sleeper (and ESPN) had zeroed, and invented
-        # points in bye weeks. An explicit 0 in the file is kept as 0 too.
-        bundles[w] = {"projections": flat}
+
+    # Median of this player's other Sleeper weeks fills a hole if one week's
+    # file omitted them. Never invent points from FantasyPros or last-season
+    # actuals -- displayed projections are Sleeper-only.
+    all_vals: dict = {}
+    for w in range(1, weeks + 1):
+        for pid, val in raw[w].items():
+            if val > 0.5:
+                all_vals.setdefault(pid, []).append(val)
+    fallback = {pid: median(vals) for pid, vals in all_vals.items()}
+
+    bundles = {}
+    for w in range(1, weeks + 1):
+        week_proj = dict(fallback)
+        for pid, val in raw[w].items():
+            # Trust Sleeper's number for this week, including an explicit 0
+            # (bye, IR, inactive). Do not replace it with the season median.
+            week_proj[pid] = val
+        bundles[w] = {"projections": week_proj}
 
     if not any_projections:
         logger.info("[projections] No Sleeper projection data for season %s", season)
@@ -12035,7 +11203,7 @@ def build_status_by_week(season: int, weeks: int, players_index, teams_index, id
             statuses = build_status_for_week(season, w, players_index, teams_index, idp_player_index)
             bundles[w] = {"statuses": statuses}
         except Exception as e:
-            logger.warning("Error loading week %s schedule: %s", w, e)
+            print(f"Error loading week {w} schedule: {e}")
             bundles[w] = {"statuses": {}}
     return bundles
 
@@ -12457,112 +11625,6 @@ def _warm_league_ctx_async(platform: str, league_id: str, season: int) -> None:
             _LEAGUE_WARM_INFLIGHT.discard(key)
 
 
-# ── Cross-worker league context persistence (Redis) ──────────────────────────
-# build_league_context costs 7-28s, but the ctx only lived in this worker's
-# DASHBOARD_CACHE, so every sibling worker / recycle / deploy / eviction repaid
-# it. After a successful build the league-specific slice is pickled to Redis
-# (dashboard_services/league_ctx_store.py); a worker missing locally hydrates
-# from Redis instead of rebuilding. Fail-soft: any Redis problem degrades to
-# the exact pre-existing build path. Kill-switch: LEAGUE_CTX_REDIS=0.
-#
-# Slice decision: everything in the built ctx is stored EXCEPT the
-# league-independent globals below (the players payload alone is ~38MB parsed)
-# plus "viewer" (per-request, recomputed on every serve path). The excluded
-# globals are reattached from the loading worker's own shared caches using the
-# same accessors build_league_context uses. Small NFL-state fields
-# (current_season/current_week/season_type/team_game_lookup) stay in the slice:
-# they are snapshots that must stay consistent with the build, not live data.
-_LEAGUE_CTX_REDIS_GLOBAL_KEYS = (
-    "players", "players_map", "players_index", "teams_index",
-    "model_value_table", "rookie_rankings",
-)
-_LEAGUE_CTX_REDIS_EXCLUDE = frozenset(_LEAGUE_CTX_REDIS_GLOBAL_KEYS) | {"viewer"}
-
-
-def _league_ctx_redis_slice(ctx: dict) -> dict:
-    return {
-        k: v for k, v in ctx.items()
-        if k not in _LEAGUE_CTX_REDIS_EXCLUDE and not k.startswith("_cache")
-    }
-
-
-def _league_ctx_reattach_globals(ctx: dict) -> dict:
-    players = get_players_global()
-    ctx["players"] = players
-    ctx["players_map"] = get_players_map(players)
-    ctx["players_index"] = load_players_index()
-    ctx["teams_index"] = load_teams_index()
-    ctx["model_value_table"] = list(get_model_value_table_cached() or [])
-    ctx["rookie_rankings"] = _load_rookie_rankings_for_ctx()
-    return ctx
-
-
-def _league_ctx_redis_store(platform, season, league_id, ctx, built_at, generation) -> None:
-    """Best-effort: persist a freshly built ctx for sibling workers."""
-    try:
-        from dashboard_services import league_ctx_store as _ctx_store
-
-        if not _ctx_store.enabled():
-            return
-        blob = _ctx_store.dump_envelope(
-            generation, built_at, _league_ctx_redis_slice(ctx)
-        )
-        if blob is None:
-            return
-        _ctx_store.save(platform, season, league_id, blob, ttl_seconds=CACHE_TTL)
-    except Exception:
-        logger.debug("[league-ctx-redis] store failed", exc_info=True)
-
-
-def _league_ctx_redis_load(platform, league_id, season):
-    """Hydrate a serve-ready ctx from Redis, or None to fall through to a build.
-
-    Validation mirrors the local path (_league_ctx_cache_valid): the payload
-    must be within CACHE_TTL of its build, at or after the shared bust marker
-    (a Refresh or a roster-change expiry on any worker bumps it), and at the
-    current build generation -- a payload from before the latest successful
-    build must never be resurrected.
-    """
-    try:
-        from dashboard_services import league_ctx_store as _ctx_store
-        from dashboard_services.league_singleflight import read_generation
-
-        if not _ctx_store.enabled():
-            return None
-        envelope = _ctx_store.load(platform, season, league_id)
-        if not envelope:
-            return None
-        built_at = float(envelope.get("built_at") or 0)
-        if built_at <= 0 or (time.time() - built_at) > CACHE_TTL:
-            return None
-        if built_at < _league_bust_mtime(platform, season, league_id):
-            return None
-        current_generation = int(
-            read_generation(platform, season, league_id).get("generation") or 0
-        )
-        if int(envelope.get("generation") or 0) < current_generation:
-            return None
-        ctx = _league_ctx_reattach_globals(dict(envelope["ctx"]))
-        key = _cache_key(platform, season, league_id)
-        with _DASHBOARD_CACHE_LOCK:
-            _prune_dashboard_cache(keep=key)
-            DASHBOARD_CACHE[key] = {"ctx": ctx, "ts": built_at, "page_html": {}}
-        ctx["_cache_synced_at"] = datetime.fromtimestamp(built_at, timezone.utc).isoformat()
-        ctx["_cache_stale"] = False
-        ctx["viewer"] = get_viewer_session_for_league(
-            ctx.get("users") or [], ctx.get("rosters") or [], platform, league_id, season
-        )
-        logger.info("league_context_build %s", json.dumps({
-            "platform": platform, "season": int(season), "league_id": str(league_id),
-            "result": "redis-hit", "success": True,
-            "cache_entries": len(DASHBOARD_CACHE),
-        }, separators=(",", ":")))
-        return ctx
-    except Exception:
-        logger.debug("[league-ctx-redis] load failed", exc_info=True)
-        return None
-
-
 def get_league_ctx_from_cache(
     platform: str, league_id: str, season: int, *, allow_build: bool = True,
 ) -> dict:
@@ -12613,25 +11675,7 @@ def get_league_ctx_from_cache(
             )
             return old
         return {}
-    try:
-        key_lock, local_wait = _acquire_context_lock(
-            key,
-            timeout=_positive_env_int("LEAGUE_CTX_LOCAL_LOCK_TIMEOUT_SECONDS", 60),
-        )
-    except ContextLockBusy:
-        # Another thread is stuck holding this league's lock (wedged build).
-        # Degrade to the stale entry exactly like the cross-worker
-        # LeagueBuildBusy path below, instead of wedging this thread too.
-        old = (stale_entry or {}).get("ctx")
-        old_ts = float((stale_entry or {}).get("ts") or 0)
-        stale_window = _positive_env_int("LEAGUE_STALE_IF_ERROR_SECONDS", 21600)
-        if old and time.time() - old_ts <= stale_window:
-            old["_cache_stale"] = True
-            old["_cache_synced_at"] = (
-                datetime.fromtimestamp(old_ts, timezone.utc).isoformat() if old_ts else None
-            )
-            return old
-        raise
+    key_lock, local_wait = _acquire_context_lock(key)
     try:
         # Re-check after acquiring lock - another thread may have built it while we waited
         entry = DASHBOARD_CACHE.get(key)
@@ -12681,14 +11725,6 @@ def get_league_ctx_from_cache(
                 ctx["_cache_synced_at"] = datetime.fromtimestamp(float(entry.get("ts") or 0), timezone.utc).isoformat() if entry.get("ts") else None
                 ctx["_cache_stale"] = False
                 return ctx
-            # A sibling worker may have persisted its build to Redis (or this
-            # worker was recycled / evicted since): hydrate from there instead
-            # of repeating the 7-28s provider build. Validation inside mirrors
-            # the local freshness rules, so a busted/stale payload falls
-            # through to the build below.
-            redis_ctx = _league_ctx_redis_load(platform, league_id, season)
-            if redis_ctx is not None:
-                return redis_ctx
             # Clear provider payloads only after both lock layers are owned.
             if platform == "sleeper":
                 try:
@@ -12720,11 +11756,7 @@ def get_league_ctx_from_cache(
                 with _DASHBOARD_CACHE_LOCK:
                     _prune_dashboard_cache(keep=key)
                     DASHBOARD_CACHE[key] = {"ctx": ctx, "ts": built_at, "page_html": {}}
-                _gen = mark_success(platform, season, league_id)
-                _league_ctx_redis_store(
-                    platform, season, league_id, ctx, built_at,
-                    int((_gen or {}).get("generation") or 0),
-                )
+                mark_success(platform, season, league_id)
                 rss_after = None
                 try:
                     import psutil
@@ -12803,10 +11835,9 @@ def _sleeper_trending_adds(*args, **kwargs):
 def api_streaming_options():
     """Matchup-based streaming targets for D/ST and K: free-agent defenses ranked
     by how weak the offense they face is (opponent Vegas implied total), and
-    free-agent kickers ranked by their own team's implied total. Ranking lives in
-    utils.streaming_targets (shared with the waiver-candidate K/DST tabs).
-    Empty in the offseason and gated to the positions the league actually
-    starts."""
+    free-agent kickers ranked by their own team's implied total. Reuses the same
+    schedule + Vegas plumbing as Start/Sit. Empty in the offseason and gated to
+    the positions the league actually starts."""
     _empty = {"defense": [], "kicker": [], "in_season": False}
     platform = (request.args.get("platform") or "sleeper").strip().lower()
     league_id = (request.args.get("league_id") or "").strip()
@@ -12818,13 +11849,108 @@ def api_streaming_options():
     except Exception:
         return jsonify(_empty)
 
-    from utils.streaming_targets import streaming_targets
-    res = streaming_targets(
-        ctx, season,
-        players_index=ctx.get("players_index") or get_players_index_global() or {})
-    if not res.get("in_season"):
+    current_week = int(ctx.get("current_week") or 0)
+    if current_week < 1 or ctx.get("offseason_mode"):
         return jsonify(_empty)
-    defense, kicker = res["defense"], res["kicker"]
+
+    # League's started positions gate which streamers are relevant at all.
+    rpos = [str(s).upper() for s in (ctx.get("roster_positions") or [])]
+    uses_def = any(s in ("DEF", "DST", "D/ST") for s in rpos)
+    uses_k = "K" in rpos
+    if not (uses_def or uses_k):
+        return jsonify({"defense": [], "kicker": [], "in_season": True})
+
+    # ── Schedule → opponent map + games for the Vegas lookup ──────────────────
+    opponent_map: dict = {}
+    week_games: list = []
+    teams: set = set()
+    try:
+        from utils.utils import load_week_sched
+        for g in (load_week_sched(season, current_week) or []):
+            home = str(g.get("home") or "").upper()
+            away = str(g.get("away") or "").upper()
+            if home and away:
+                opponent_map[home] = away
+                opponent_map[away] = home
+                week_games.append((home, away, str(g.get("gameDate") or "")))
+                teams.add(home)
+                teams.add(away)
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
+    if not teams:
+        return jsonify({"defense": [], "kicker": [], "in_season": True})
+
+    conditions: dict = {}
+    try:
+        from utils.game_conditions import build_week_conditions
+        conditions = build_week_conditions(season, current_week, week_games) or {}
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
+
+    def _implied(team):
+        v = (conditions.get(team) or {}).get("implied_total")
+        try:
+            return float(v) if v is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    def _matchup(team):
+        opp = opponent_map.get(team)
+        if not opp:
+            return "", None
+        # home_team_of not tracked here; label as "vs OPP" (venue is secondary).
+        return f"vs {opp}", opp
+
+    rostered = {
+        str(pid)
+        for r in (ctx.get("rosters") or [])
+        for pid in (r.get("players") or [])
+    }
+    players_index = ctx.get("players_index") or get_players_index_global() or {}
+
+    # ── Defenses: one per team, pid == team abbr in Sleeper. Best matchup is the
+    # weakest opposing offense (lowest opponent implied total). ────────────────
+    defense = []
+    if uses_def:
+        rows = []
+        for t in teams:
+            if t in rostered:
+                continue
+            label, opp = _matchup(t)
+            rows.append({
+                "player_id": t, "name": f"{t} D/ST", "position": "DEF", "team": t,
+                "opponent": opp, "matchup": label, "opp_implied": _implied(opp),
+            })
+        rows.sort(key=lambda d: (d["opp_implied"] is None,
+                                 d["opp_implied"] if d["opp_implied"] is not None else 99.0))
+        defense = rows[:8]
+
+    # ── Kickers: free-agent Ks on teams playing this week, ranked by their own
+    # implied total (more team scoring → more FGs/XPs). One per team. ──────────
+    kicker = []
+    if uses_k:
+        cand = []
+        for pid, meta in players_index.items():
+            if str(meta.get("pos") or "").upper() != "K":
+                continue
+            pid = str(pid)
+            t = str(meta.get("team") or "").upper()
+            if not t or t not in teams or pid in rostered:
+                continue
+            cand.append((pid, meta.get("name") or f"Player {pid}", t, _implied(t)))
+        cand.sort(key=lambda x: (x[3] is None, -(x[3] if x[3] is not None else 0.0)))
+        seen_team = set()
+        for pid, name, t, imp in cand:
+            if t in seen_team:
+                continue
+            seen_team.add(t)
+            label, opp = _matchup(t)
+            kicker.append({
+                "player_id": pid, "name": name, "position": "K", "team": t,
+                "opponent": opp, "matchup": label, "own_implied": imp,
+            })
+            if len(kicker) >= 8:
+                break
 
     _adds_by_id = {}
     try:
@@ -12839,6 +11965,11 @@ def api_streaming_options():
 
     return jsonify({"defense": defense, "kicker": kicker, "in_season": True})
 
+
+_WEEKLY_PTS_CACHE: dict = {}
+_WEEKLY_PTS_TTL = 900  # 15 min; weekly stat files change at most once a week
+
+
 def _sleeper_stats_week_num(path: str) -> int:
     """Numeric week from ``sleeper_stats_s{season}_w{week}.json`` (not lexical)."""
     m = re.search(r"_w(\d+)", os.path.basename(str(path)))
@@ -12846,10 +11977,6 @@ def _sleeper_stats_week_num(path: str) -> int:
         return int(m.group(1)) if m else -1
     except (TypeError, ValueError):
         return -1
-
-
-_WEEKLY_PTS_CACHE: dict = {}
-_WEEKLY_PTS_TTL = 900  # 15 min; weekly stat files change at most once a week
 
 
 def _load_season_weekly_points(season: int, scoring_settings: dict) -> dict:
@@ -12910,66 +12037,6 @@ def _load_season_weekly_points(season: int, scoring_settings: dict) -> dict:
     except Exception:
         logger.debug("[start-sit] weekly points load failed", exc_info=True)
     _WEEKLY_PTS_CACHE[key] = (time.time(), out)
-    # Key space is per league scoring config (unbounded across visitors);
-    # prune so long-lived workers can't accumulate entries forever.
-    _prune_ttl_cache(_WEEKLY_PTS_CACHE, 32)
-    return out
-
-
-_SNAP_TOTALS_CACHE: dict = {}
-
-
-def _load_season_snap_totals(season: int) -> dict:
-    """{player_id: (off_snaps, team_snaps, games)} for a season.
-
-    Reads the same cached Sleeper weekly stat files as
-    _load_season_weekly_points and sums ``off_snp`` / ``tm_off_snp``; a week
-    counts as a game when the stat line carries a ``tm_off_snp`` value.
-    Used to identify starting offensive linemen by snap share (Sleeper
-    gives linemen no depth-chart data). Cached like the weekly-points
-    cache. Never raises.
-    """
-    from utils.season_qualification import qualification_policy
-    completed_weeks = tuple(qualification_policy(int(season)).completed_weeks)
-    key = (int(season), completed_weeks)
-    hit = _SNAP_TOTALS_CACHE.get(key)
-    _ensure_sleeper_week_files(season)
-    pattern = os.path.join(CACHE_DIR, "sleeper_stats", f"sleeper_stats_s{season}_w*.json")
-    files = glob.glob(pattern)
-    newest = max((os.path.getmtime(p) for p in files), default=0.0)
-    if hit and time.time() - hit[0] < _WEEKLY_PTS_TTL and newest <= hit[0]:
-        return hit[1]
-    out: dict = {}
-    try:
-        for wf in sorted(files, key=_sleeper_stats_week_num):
-            if _sleeper_stats_week_num(wf) not in completed_weeks:
-                continue
-            try:
-                with open(wf) as f:
-                    week_stats = json.load(f)
-            except Exception:
-                continue
-            if not isinstance(week_stats, dict):
-                continue
-            for pid, st in week_stats.items():
-                if not isinstance(st, dict):
-                    continue
-                if st.get("tm_off_snp") is None:
-                    continue
-                try:
-                    tm_snaps = float(st.get("tm_off_snp"))
-                    off_snaps = float(st.get("off_snp") or 0.0)
-                except (TypeError, ValueError):
-                    continue
-                acc = out.setdefault(str(pid), [0.0, 0.0, 0])
-                acc[0] += off_snaps
-                acc[1] += tm_snaps
-                acc[2] += 1
-    except Exception:
-        logger.debug("[start-sit] snap totals load failed", exc_info=True)
-    out = {pid: (v[0], v[1], v[2]) for pid, v in out.items()}
-    _SNAP_TOTALS_CACHE[key] = (time.time(), out)
-    _prune_ttl_cache(_SNAP_TOTALS_CACHE, 8)
     return out
 
 
@@ -13187,8 +12254,7 @@ def _ss_qb_situation(team: "Optional[str]", depth_index: dict,
 
 def _startsit_compare_extras(pid, pos, team, season, week, scoring_settings, *,
                              proj_pts=None, on_bye=False, opponent="",
-                             home_team="", implied_total=None, weather=None,
-                             absences=None):
+                             home_team="", implied_total=None, weather=None):
     """Start/Sit compare fields the player-details response does not already
     carry, matched to what the Waivers start/sit compare shows: projected
     points, last-4-week form, blended consistency (floor/ceiling + boom/bust
@@ -13202,25 +12268,11 @@ def _startsit_compare_extras(pid, pos, team, season, week, scoring_settings, *,
     pos = (pos or "").upper()
     team = (team or "").upper()
     opponent = (opponent or "").upper()
-    home_team = (home_team or "").upper()
-    # Home/away for the Opponent and Venue rows. None on bye so the rows show
-    # BYE instead of guessing.
-    is_home = (home_team == team) if (home_team and team and not on_bye) else None
-    if opponent and not on_bye:
-        # Only prefix when home/away is actually known; otherwise show the
-        # bare abbreviation rather than guessing.
-        opponent_label = (f"vs {opponent}" if is_home is True
-                          else f"@ {opponent}" if is_home is False
-                          else opponent)
-    else:
-        opponent_label = None
     out = {
         "proj_pts": (round(float(proj_pts), 1) if proj_pts else None),
         "recent_ppg": None,
         "consistency": None,
         "opponent": opponent or None,
-        "opponent_label": opponent_label,
-        "is_home": is_home,
         "on_bye": bool(on_bye),
         "fpts_against": None,
         "def_rank": None,
@@ -13228,9 +12280,6 @@ def _startsit_compare_extras(pid, pos, team, season, week, scoring_settings, *,
         "implied_total": implied_total,
         "weather": weather or None,
         "game_env": None,
-        # Display-only absence notes (never scored). The caller builds these
-        # from the Sleeper players map; empty lists render nothing.
-        "absences": absences or {"teammates": [], "opponents": []},
     }
 
     # Last-4-week PPG scored with this league's settings (not hardcoded PPR).
@@ -13374,25 +12423,11 @@ def _apply_q_flex_safeguard(positions_out: dict, flex_slots: int) -> int:
     return swaps
 
 
-_SS_GUEST_CAP = 5
-
-
-def _parse_guest_pids(raw) -> list:
-    """Guest player ids from a comma-separated query param (deduped, capped)."""
-    out: list = []
-    for part in str(raw or "").split(","):
-        pid = part.strip()
-        if pid and pid not in out:
-            out.append(pid)
-    return out[:_SS_GUEST_CAP]
-
-
 @app.route("/api/start-sit-options")
 def api_start_sit_options():
     """
     Returns roster options grouped by position for the viewing user.
-    Query params: platform, league_id, season, guests (optional
-    comma-separated player ids evaluated as guests alongside the roster)
+    Query params: platform, league_id, season
     """
     platform = (request.args.get("platform") or "sleeper").strip().lower()
     league_id = (request.args.get("league_id") or "").strip()
@@ -13401,39 +12436,23 @@ def api_start_sit_options():
     if not league_id:
         return jsonify({"error": "league_id required"}), 400
 
-    payload, status = _build_start_sit_options(
-        platform, league_id, season,
-        _parse_guest_pids(request.args.get("guests")))
-    return jsonify(payload), status
-
-
-def _build_start_sit_options(platform: str, league_id: str, season: int,
-                             guest_pids=()):
-    """Start/Sit options payload + HTTP status (see api_start_sit_options).
-
-    Guests are non-roster players run through the exact same row pipeline
-    as the viewer's roster: each joins its position group carrying a guest
-    flag and an owner label, but guests never take a roster start flag,
-    never enter the flex pools, the close-call pairs, or the optimal-lineup
-    advice -- those keep roster-only semantics.
-    """
     if not _session_signed_in():
-        return {"state": "sign_in_required", "positions": {},
-                "message": "Sign in to see your lineup."}, 401
+        return jsonify({"state": "sign_in_required", "positions": {},
+                        "message": "Sign in to see your lineup."}), 401
 
     try:
         ctx = get_league_ctx_from_cache(platform, league_id, season)
     except Exception as e:
         logger.warning("start/sit lineup unavailable", exc_info=True)
-        return {"state": "temporarily_unavailable", "positions": {},
-                "retryable": True, "message": "Lineup data is temporarily unavailable."}, 503
+        return jsonify({"state": "temporarily_unavailable", "positions": {},
+                        "retryable": True, "message": "Lineup data is temporarily unavailable."}), 503
 
     viewer = ctx.get("viewer") or {}
     viewer_roster_id = viewer.get("viewer_roster_id")
 
     if not viewer_roster_id:
-        return {"state": "team_not_linked", "positions": {},
-                "message": "Select or link your team to view start/sit advice."}, 409
+        return jsonify({"state": "team_not_linked", "positions": {},
+                        "message": "Select or link your team to view start/sit advice."}), 409
 
     rosters = ctx.get("rosters") or []
     viewer_roster = next(
@@ -13441,8 +12460,8 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
         None,
     )
     if not viewer_roster:
-        return {"state": "team_not_linked", "positions": {},
-                "message": "Your linked team could not be resolved in this league."}, 409
+        return jsonify({"state": "team_not_linked", "positions": {},
+                        "message": "Your linked team could not be resolved in this league."}), 409
 
     reserve_set = {str(p) for p in (viewer_roster.get("reserve") or [])}
     taxi_set = {str(p) for p in (viewer_roster.get("taxi") or [])}
@@ -13450,29 +12469,6 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
         str(pid) for pid in (viewer_roster.get("players") or [])
         if str(pid) not in reserve_set and str(pid) not in taxi_set
     ]
-    # Guests already on the viewer's roster are just roster rows; drop them
-    # so a player is never evaluated twice.
-    _roster_pid_set = set(player_ids)
-    guest_pids = [str(p) for p in (guest_pids or [])
-                  if str(p) not in _roster_pid_set]
-
-    # Guest owner labels: whose roster each player sits on in this league
-    # (display name, else team name), or "Free Agent" when unrostered.
-    _owner_by_pid: dict = {}
-    _users_by_id = {str(u.get("user_id")): u
-                    for u in (ctx.get("users") or []) if isinstance(u, dict)}
-    for _r in rosters:
-        _rname = ""
-        _u = _users_by_id.get(str(_r.get("owner_id") or ""))
-        if _u:
-            _rname = str(_u.get("display_name") or _u.get("username") or "")
-        if not _rname:
-            _rname = str((_r.get("metadata") or {}).get("team_name") or "")
-        for _p in (_r.get("players") or []):
-            _owner_by_pid[str(_p)] = _rname or "Another team"
-
-    def _owner_label(pid: str) -> str:
-        return _owner_by_pid.get(str(pid)) or "Free Agent"
     players_index = ctx.get("players_index") or {}
     players_full = ctx.get("players") or {}
     try:
@@ -13524,12 +12520,6 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
         logger.debug("[start-sit] bundle lookup skipped", exc_info=True)
         _ss_variant, _ss_bundles = None, {}
     _ss_use_bundles = bool(_ss_variant and _ss_bundles)
-    if guest_pids:
-        # Bundles cover the viewer's roster only -- a guest has no bundle --
-        # so any request carrying guests takes the live path for every row
-        # (roster and guest alike, keeping their numbers comparable).
-        _ss_bundles = {}
-        _ss_use_bundles = False
 
     # ── FPTS-against data (for "Def vs pos" pts/gm display) ──────────────────
     fpts_against: dict = {}
@@ -13601,12 +12591,6 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
                 game_conditions = build_week_conditions(season, current_week, week_games)
         except Exception:
             logger.debug("suppressed exception", exc_info=True)
-
-    # Rank-based "Low team total" demotion: bottom-8 implied team totals for the
-    # week, computed once on the live fallback path. The bundle path carries
-    # the flag per bundle instead (game_conditions is empty there).
-    from utils.start_sit_score import bottom_teams_by_implied_total
-    _ss_low_total_teams = bottom_teams_by_implied_total(game_conditions) if not _ss_use_bundles else set()
 
     # ── Opponent play volume ("opp plays faced"): pace / possession context ──
     # Offensive plays each NFL defense faces per game, from open play-by-play.
@@ -13747,67 +12731,13 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
     except Exception:
         logger.debug("[start-sit] position anchors skipped", exc_info=True)
 
-    # ── Absence index (display-only teammate / opponent injury notes) ─────────
-    # One pass over the Sleeper players map; per-row lookups below are cheap.
-    # These notes never touch the score (see utils.start_sit_context).
-    _ss_absence_index: dict = {}
-    try:
-        from utils.start_sit_context import build_absence_index as _ss_abs_idx
-        # Importance gate data: pooled current + prior season weekly points
-        # scored with this endpoint's stamped scoring settings, so a proven
-        # producer counts as a notable absence even when the injury slid his
-        # depth-chart order. Best-effort: depth-only gate on any failure.
-        _ss_productive = None
-        try:
-            from utils.start_sit_context import (
-                productive_pids_from_weekly_points as _ss_prod_fn,
-            )
-            _abs_eff = locals().get("_eff_ss")
-            if _abs_eff is None:
-                from utils.league_scoring import stamp_scoring_aliases as _ss_stamp_abs
-                _abs_raw = ctx.get("raw_scoring_settings") or ctx.get("scoring_settings") or {}
-                _abs_eff = _ss_stamp_abs(_abs_raw) if _abs_raw else {}
-            _ss_productive = _ss_prod_fn(
-                _load_season_weekly_points(int(season), _abs_eff),
-                _load_season_weekly_points(int(season) - 1, _abs_eff),
-            )
-        except Exception:
-            _ss_productive = None
-            logger.debug("[start-sit] productive set skipped", exc_info=True)
-        # Starting offensive linemen have no depth data in Sleeper; identify
-        # them by pooled snap share so a hurt starter counts as a notable
-        # absence too. Best-effort: no linemen on any failure.
-        _ss_linemen = None
-        try:
-            from utils.start_sit_context import (
-                starting_lineman_pids as _ss_line_fn,
-            )
-            _ss_linemen = _ss_line_fn(
-                [_load_season_snap_totals(int(season)),
-                 _load_season_snap_totals(int(season) - 1)],
-                {str(_pid): str(_p.get("position") or _p.get("pos") or "")
-                 for _pid, _p in (players_full or {}).items()
-                 if isinstance(_p, dict)},
-            )
-        except Exception:
-            _ss_linemen = None
-            logger.debug("[start-sit] starting linemen skipped", exc_info=True)
-        _ss_absence_index = _ss_abs_idx(players_full, productive_pids=_ss_productive,
-                                        starting_linemen=_ss_linemen) or {}
-    except Exception:
-        logger.debug("[start-sit] absence index skipped", exc_info=True)
-
     positions_out: dict = {pos: [] for pos in _ss_groups}
-
-    def _ss_build_row(pid: str):
-        """One Start/Sit row for any player id, roster or guest, from the
-        same inputs either way. Returns (pos, row), or None when the
-        player's position has no group in this league."""
+    for pid in player_ids:
         row = rows_by_id.get(pid) or {}
         meta = players_index.get(pid) or {}
         pos = _start_sit_pos(row.get("position") or row.get("pos") or meta.get("pos") or "")
         if pos not in positions_out:
-            return None
+            continue
         player_name = row.get("name") or meta.get("name") or f"Player {pid}"
         team = (row.get("team") or meta.get("team") or "").upper()
         opponent = opponent_map.get(team, "")
@@ -13849,18 +12779,9 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
         else:
             def_rank, def_total = None, 32
 
-        # Guard: the bundle path never assigns _wx_ss, so initialize it here;
-        # without this the row build below reads it unbound whenever every
-        # rostered player has a bundle.
-        _wx_ss = None
         if _bun is not None:
             _imp_ss = _bun.get("implied_total") if not on_bye else None
             _wx_kind = _bun.get("weather_kind") if not on_bye else None
-            # Bundles carry the weather tag label ("22 mph wind") so the row
-            # can show specifics without a live weather lookup.
-            _wx_label = _bun.get("weather_label") if not on_bye else None
-            if _wx_label:
-                _wx_ss = {"label": _wx_label, "kind": _wx_kind}
         else:
             _imp_ss = (game_conditions.get(team) or {}).get("implied_total") if not on_bye else None
             _wx_ss = (game_conditions.get(team) or {}).get("weather") if not on_bye else None
@@ -13869,17 +12790,6 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
         # Raw opponent play volume is display context, not itself a score input.
         _pv_ss = (_play_volume_context(team_play_volume, opponent, _tpv_nfl_avg)
                   if (opponent and not on_bye) else None)
-
-        # Teammate / opponent defensive absence notes. Display only: the
-        # scorer never sees these (Sleeper projections already price them in).
-        _abs_ss = {"teammates": [], "opponents": []}
-        if team and opponent and not on_bye:
-            try:
-                from utils.start_sit_context import absence_notes as _ss_abs_notes
-                _abs_ss = _ss_abs_notes(
-                    _ss_absence_index, team, opponent, exclude_pid=pid) or _abs_ss
-            except Exception:
-                logger.debug("[start-sit] absence notes skipped", exc_info=True)
 
         from utils.start_sit_context import expected_plays_context, role_confidence_from_trend
         if _bun is not None:
@@ -13900,9 +12810,6 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
             _ut_ss = _ss_usage_trends.get(pid) or {}
             _role_conf_ss = role_confidence_from_trend(_ut_ss)
         usage_delta = _ut_ss.get("delta")
-        # The bundle path never resolves consistency; keep it per-row so a
-        # bundle row can never inherit the previous player's value.
-        _cons = None
         if _bun is not None:
             _bust = _bun.get("bust_rate")
             _ol_ss = ({"primary_value": _bun.get("oline_index")}
@@ -13931,7 +12838,6 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
             expected_team_plays=_pace_ss.get("expected_team_plays"),
             league_average_plays=_pace_ss.get("league_average_plays"),
             role_confidence=_role_conf_ss,
-            low_total_team=bool(_bun.get("low_total_team")) if _bun is not None else (team in _ss_low_total_teams),
         )
         _form = _factors["form"]
         _mu = _factors["matchup"]
@@ -13961,7 +12867,7 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
             except Exception:
                 _return_plan = None
 
-        return pos, {
+        positions_out[pos].append({
             "player_id": pid,
             "name": player_name,
             "team": team,
@@ -13989,8 +12895,6 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
             "oline": _ol_ss,
             # Raw display context; scoring receives only _pace_ss below.
             "play_volume": _pv_ss,
-            # Display-only injury context (teammate / opponent absences).
-            "absences": _abs_ss,
             "environment_debug": {
                 "play_volume_source": (_tpv_blob or {}).get("play_volume_source"),
                 "play_volume_generated_at": (_tpv_blob or {}).get("generated_at"),
@@ -14022,21 +12926,7 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
             },
             "likely_range": likely_range(score, _role_conf_ss),
             "_score": score,
-        }
-
-    for pid in player_ids:
-        _built = _ss_build_row(pid)
-        if _built:
-            positions_out[_built[0]].append(_built[1])
-
-    guest_rows: list = []
-    for pid in guest_pids:
-        _built = _ss_build_row(pid)
-        if _built:
-            _grow = _built[1]
-            _grow["guest"] = True
-            _grow["owner_label"] = _owner_label(pid)
-            guest_rows.append((_built[0], _grow))
+        })
 
     flex_slots = lineup_requirements.get("FLEX") or 0
     sflex_slots = (lineup_requirements.get("SUPER_FLEX") or 0) + (lineup_requirements.get("SFLEX") or 0)
@@ -14145,100 +13035,6 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
         for p in positions_out[pos]:
             del p["_score"]
 
-    _has_roster_rows = any(bool(players) for players in positions_out.values())
-
-    # ── Guests: verdict vs the viewer's roster, then merge into groups ────
-    # Computed only now, with every roster flag final, and from roster rows
-    # alone: would this guest start, and whose slot would he take? Guests
-    # are inserted by score without disturbing roster order or flags.
-    guests_out: list = []
-    if guest_pids:
-        _flex_floor_row = None
-        for _pos in positions_out:
-            for _p in positions_out[_pos]:
-                if _p.get("flex_start") and (
-                        _flex_floor_row is None
-                        or (_p.get("start_score") or 0.0)
-                        < (_flex_floor_row.get("start_score") or 0.0)):
-                    _flex_floor_row = _p
-        for _gpos, _grow in guest_rows:
-            _roster_pos = [p for p in positions_out[_gpos]
-                           if not p.get("on_bye") and not p.get("guest")]
-            _gscore = _grow.get("start_score") or 0.0
-            _ahead = [p for p in _roster_pos
-                      if (p.get("start_score") or 0.0) > _gscore]
-            _rank = len(_ahead) + 1
-            _pos_starters = [p for p in _roster_pos
-                             if p.get("start") and not p.get("flex_start")]
-            _grow["guest_rank"] = _rank
-            if _grow.get("on_bye"):
-                _grow["would_start"] = False
-                _grow["guest_slot"] = f"{_gpos}{_rank}"
-                _grow["guest_note"] = "On bye this week"
-            elif _pos_starters and _rank <= len(_pos_starters):
-                _disp = _pos_starters[-1]
-                _slot = f"{_gpos}{len(_pos_starters)}"
-                _grow["would_start"] = True
-                _grow["guest_slot"] = _slot
-                _grow["guest_vs_name"] = _disp["name"]
-                _grow["guest_vs_proj"] = _disp.get("proj_pts")
-                _grow["guest_note"] = f"Starts over your {_slot} · {_disp['name']}"
-            elif (_flex_floor_row is not None
-                    and _gpos in ("RB", "WR", "TE", "QB")
-                    and _gscore > (_flex_floor_row.get("start_score") or 0.0)):
-                _slot = "SUPER FLEX" if _gpos == "QB" else "FLEX"
-                _grow["would_start"] = True
-                _grow["guest_slot"] = _slot
-                _grow["guest_vs_name"] = _flex_floor_row["name"]
-                _grow["guest_vs_proj"] = _flex_floor_row.get("proj_pts")
-                _grow["guest_note"] = f"Starts at {_slot} over {_flex_floor_row['name']}"
-            elif not _roster_pos:
-                _grow["would_start"] = False
-                _grow["guest_slot"] = f"{_gpos}{_rank}"
-                _grow["guest_note"] = f"No rostered {_gpos} to compare against"
-            elif _rank >= 3:
-                _grow["would_start"] = False
-                _grow["guest_slot"] = f"{_gpos}{_rank}"
-                _grow["guest_note"] = f"Behind your {_gpos}{_rank - 2} and {_gpos}{_rank - 1}"
-            elif _rank == 2:
-                _grow["would_start"] = False
-                _grow["guest_slot"] = f"{_gpos}{_rank}"
-                _grow["guest_note"] = f"Behind your {_gpos}1 · {_ahead[0]['name']}"
-            else:
-                _grow["would_start"] = False
-                _grow["guest_slot"] = f"{_gpos}{_rank}"
-                _grow["guest_note"] = f"Bench: your {_gpos}{_rank}"
-            _grow.pop("_score", None)
-            _arr = positions_out[_gpos]
-            _ins = len(_arr)
-            for _i, _p in enumerate(_arr):
-                if (_p.get("start_score") or 0.0) < _gscore:
-                    _ins = _i
-                    break
-            _arr.insert(_ins, _grow)
-            guests_out.append({
-                "player_id": _grow["player_id"],
-                "name": _grow["name"],
-                "pos": _gpos,
-                "owner_label": _grow.get("owner_label") or "Free Agent",
-            })
-        # A requested guest with no row (his position is not started in
-        # this league) still surfaces in the guest list so the UI can say
-        # so explicitly instead of silently dropping him.
-        _rowed = {g["player_id"] for g in guests_out}
-        for _pid in guest_pids:
-            if _pid not in _rowed:
-                _m = players_index.get(_pid) or {}
-                _r = rows_by_id.get(_pid) or {}
-                guests_out.append({
-                    "player_id": _pid,
-                    "name": _r.get("name") or _m.get("name") or f"Player {_pid}",
-                    "pos": _start_sit_pos(
-                        _r.get("position") or _r.get("pos") or _m.get("pos") or ""),
-                    "owner_label": _owner_label(_pid),
-                    "no_slot": True,
-                })
-
     try:
         from dashboard_services.market_intelligence.repository import attach_weekly_signals as _attach_mi_ss
         _flat_mi_ss = [p for values in positions_out.values() for p in values]
@@ -14247,8 +13043,8 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
     except Exception:
         logger.debug("market intelligence unavailable for start/sit", exc_info=True)
 
-    has_eligible = _has_roster_rows
-    return {
+    has_eligible = any(bool(players) for players in positions_out.values())
+    return jsonify({
         "state": "loaded" if has_eligible else "empty_roster",
         "positions": positions_out,
         "lineup_requirements": lineup_requirements,
@@ -14256,293 +13052,7 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
         "sflex_slots": sflex_slots,
         "current_week": current_week,
         "lineup_advice": lineup_advice,
-        "guests": guests_out,
-    }, 200
-
-
-# ── Player-modal Start/Sit strip ─────────────────────────────────────────
-# One-line verdict for the modal Overview, distilled from the same
-# Start/Sit options payload the page renders (no second model). Short-TTL
-# in-process cache keyed by viewer + player: a modal open pays one options
-# build per player per couple of minutes, not one per open.
-_SS_STRIP_CACHE: dict = {}  # key -> (monotonic ts, distilled dict)
-_SS_STRIP_TTL = 120.0
-
-
-def _ss_ordinal(n: int) -> str:
-    if 10 <= n % 100 <= 20:
-        suf = "th"
-    else:
-        suf = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
-    return f"{n}{suf}"
-
-
-@app.route("/api/player-startsit-strip")
-def api_player_startsit_strip():
-    """Slim Start/Sit verdict for one player in the viewer's league.
-
-    States: "hidden" (no strip: no league context, signed out, no linked
-    team, or the player's position is not started in this league),
-    "unavailable" (show the text, never a fabricated verdict: bye week, no
-    projection, or the read failed), "ok" (verdict + slot + reason).
-    """
-    platform = (request.args.get("platform") or "sleeper").strip().lower()
-    league_id = (request.args.get("league_id") or "").strip()
-    season = int(request.args.get("season") or datetime.now().year)
-    player_id = (request.args.get("player_id") or "").strip()
-
-    if not league_id or not player_id:
-        return jsonify({"state": "hidden"})
-    if not _session_signed_in():
-        return jsonify({"state": "hidden"})
-    try:
-        ctx = get_league_ctx_from_cache(platform, league_id, season)
-    except Exception:
-        return jsonify({"state": "unavailable",
-                        "text": "Start/sit read unavailable right now"})
-    viewer_roster_id = ((ctx.get("viewer") or {}).get("viewer_roster_id"))
-    if not viewer_roster_id:
-        return jsonify({"state": "hidden"})
-
-    _ckey = (platform, league_id, int(season), str(viewer_roster_id), player_id)
-    _hit = _SS_STRIP_CACHE.get(_ckey)
-    if _hit and time.monotonic() - _hit[0] < _SS_STRIP_TTL:
-        return jsonify(_hit[1])
-
-    payload, status = _build_start_sit_options(
-        platform, league_id, season, [player_id])
-    if status in (401, 409):
-        return jsonify({"state": "hidden"})
-    if status != 200:
-        return jsonify({"state": "unavailable",
-                        "text": "Start/sit read unavailable right now"})
-
-    week = payload.get("current_week") or ""
-    row = None
-    row_pos = None
-    for _pos, _rows in (payload.get("positions") or {}).items():
-        for _r in _rows or []:
-            if str(_r.get("player_id")) == player_id:
-                row, row_pos = _r, _pos
-                break
-        if row is not None:
-            break
-    if row is None:
-        # His position group does not exist in this league (e.g. a kicker
-        # in a no-K league): no strip rather than a misleading verdict.
-        return jsonify({"state": "hidden"})
-
-    def _matchup_note(r) -> str:
-        try:
-            _dr = int(r.get("def_rank") or 0)
-        except (TypeError, ValueError):
-            _dr = 0
-        _opp = str(r.get("opponent_team") or "").upper()
-        if _dr and _opp and _dr <= 10:
-            return f"{_opp} allows the {_ss_ordinal(_dr)} most points to {row_pos}s"
-        return ""
-
-    if row.get("on_bye"):
-        out = {"state": "unavailable", "week": week, "compare": True,
-               "text": f"On bye in Week {week}"}
-    elif not (row.get("proj_pts") or 0):
-        out = {"state": "unavailable", "week": week, "compare": True,
-               "text": f"No projection for Week {week}"}
-    else:
-        proj = row.get("proj_pts") or 0
-        _roster_rows = [p for p in (payload.get("positions") or {}).get(row_pos, [])
-                        if not p.get("guest") and not p.get("on_bye")]
-        if row.get("guest"):
-            if row.get("would_start"):
-                _vs = row.get("guest_vs_proj")
-                if _vs is not None:
-                    _reason = (f"Projects {proj} vs your "
-                               f"{row.get('guest_slot')}'s {_vs}")
-                else:
-                    _reason = f"Projects {proj} · {row.get('guest_note') or ''}"
-                _note = _matchup_note(row)
-                if _note:
-                    _reason += f" · {_note}"
-                out = {"state": "ok", "week": week, "compare": True,
-                       "tone": "start", "verdict": "Would start for you",
-                       "slot": row.get("guest_slot") or "",
-                       "reason": _reason}
-            else:
-                out = {"state": "ok", "week": week, "compare": True,
-                       "tone": "bench", "verdict": "Bench for you",
-                       "slot": row.get("guest_slot") or "",
-                       "reason": f"Projects {proj} · {row.get('guest_note') or ''}"}
-        else:
-            _rank = next((i + 1 for i, p in enumerate(_roster_rows)
-                          if str(p.get("player_id")) == player_id), None)
-            if row.get("start") or row.get("flex_start"):
-                if row.get("flex_start"):
-                    _slot = "SUPER FLEX" if row_pos == "QB" else "FLEX"
-                else:
-                    _slot = f"{row_pos}{_rank}" if _rank else row_pos
-                _parts = [f"Projects {proj}"]
-                if _rank == 1:
-                    _parts.append(f"top {row_pos} score in your lineup")
-                _bench_peer = next(
-                    (p for p in _roster_rows
-                     if not p.get("start") and not p.get("flex_start")), None)
-                if _bench_peer is not None and (proj - (_bench_peer.get("proj_pts") or 0)) > 0:
-                    _parts.append(
-                        f"bench {row_pos} projects "
-                        f"{round(proj - (_bench_peer.get('proj_pts') or 0), 1)} lower")
-                _note = _matchup_note(row)
-                if _note:
-                    _parts.append(_note)
-                out = {"state": "ok", "week": week, "compare": True,
-                       "tone": "start", "verdict": "Start",
-                       "slot": _slot, "reason": " · ".join(_parts)}
-            else:
-                _parts = [f"Projects {proj}"]
-                _starters = [p for p in _roster_rows if p.get("start")]
-                if _starters:
-                    _marg = _starters[-1]
-                    _mrank = _roster_rows.index(_marg) + 1
-                    _parts.append(
-                        f"your {row_pos}{_mrank} {_marg.get('name')} "
-                        f"projects {_marg.get('proj_pts')}")
-                out = {"state": "ok", "week": week, "compare": True,
-                       "tone": "bench", "verdict": "Bench",
-                       "slot": f"{row_pos}{_rank}" if _rank else row_pos,
-                       "reason": " · ".join(_parts)}
-
-    if len(_SS_STRIP_CACHE) > 512:
-        _SS_STRIP_CACHE.clear()
-    _SS_STRIP_CACHE[_ckey] = (time.monotonic(), out)
-    return jsonify(out)
-
-
-# Lineup Lab payload cache: a full payload build recomputes ~40 player
-# distribution profiles plus league-wide passes, so successful builds are
-# reused for a few minutes. The profile-inputs signature in the key
-# invalidates an entry when the players index (injuries/usage) changes
-# mid-week. Only successful payloads are stored; 409/503 paths never land
-# here. Each entry carries its own TTL: while any involved game is still
-# in progress the entry lives only _LAB_PAYLOAD_LIVE_TTL seconds so live
-# state stays near-fresh; all-final and pre-game payloads keep the full
-# TTL.
-_LAB_PAYLOAD_CACHE: dict = {}  # key -> (monotonic ts, ttl seconds, payload)
-_LAB_PAYLOAD_TTL = 300.0
-_LAB_PAYLOAD_LIVE_TTL = 30.0
-_LAB_PAYLOAD_LOCK = threading.Lock()
-_LAB_PAYLOAD_MAX = 64
-
-
-def _lab_payload_ttl(payload: dict) -> float:
-    """TTL for a built Lab payload, decided from its per-player live state.
-
-    Player entries carry ``live: {"status": "final" | "live", ...}`` once
-    their game starts (bench entries nested in each lineup row included).
-    Any live status that is not "final" means a game is still in progress,
-    so the payload gets the short live TTL; all-final and no-live-state
-    payloads keep the standard TTL.
-    """
-    statuses = []
-
-    def _walk(node):
-        if isinstance(node, dict):
-            live = node.get("live")
-            if isinstance(live, dict) and "status" in live:
-                statuses.append(live.get("status"))
-            for value in node.values():
-                _walk(value)
-        elif isinstance(node, list):
-            for value in node:
-                _walk(value)
-
-    _walk(payload)
-    if statuses:
-        if any(status != "final" for status in statuses):
-            return _LAB_PAYLOAD_LIVE_TTL
-        return _LAB_PAYLOAD_TTL
-    # No per-player live state found. The payload-level live flag is set
-    # only alongside per-player state or an opponent lock (which requires
-    # every opposing starter final); if it is ever set without either,
-    # the state cannot be proven all-final, so stay conservative.
-    opponent = payload.get("opponent") or {}
-    if payload.get("live") and "live_points" not in opponent:
-        return _LAB_PAYLOAD_LIVE_TTL
-    return _LAB_PAYLOAD_TTL
-
-
-@app.route("/api/lineup-lab")
-def api_lineup_lab():
-    """Lineup Lab payload: starters + eligible bench + opponent distribution.
-
-    Query params: platform, league_id, season, week (defaults to current).
-    Powers the Lab toggle on the Start/Sit tab; the browser runs the sims.
-    """
-    platform = (request.args.get("platform") or "sleeper").strip().lower()
-    league_id = (request.args.get("league_id") or "").strip()
-    season = int(request.args.get("season") or datetime.now().year)
-    week_arg = request.args.get("week") or ""
-
-    if not league_id:
-        return jsonify({"error": "league_id required"}), 400
-
-    if not _session_signed_in():
-        return jsonify({"state": "sign_in_required",
-                        "message": "Sign in to use the Lineup Lab."}), 401
-
-    try:
-        ctx = get_league_ctx_from_cache(platform, league_id, season)
-    except Exception:
-        logger.warning("lineup lab unavailable", exc_info=True)
-        return jsonify({"state": "temporarily_unavailable", "retryable": True,
-                        "message": "Lineup data is temporarily unavailable."}), 503
-
-    viewer = ctx.get("viewer") or {}
-    viewer_roster_id = viewer.get("viewer_roster_id")
-    if not viewer_roster_id:
-        return jsonify({"state": "team_not_linked",
-                        "message": "Select or link your team to use the Lineup Lab."}), 409
-
-    try:
-        week = int(week_arg) if week_arg else int(ctx.get("current_week") or 1)
-    except (TypeError, ValueError):
-        week = int(ctx.get("current_week") or 1)
-
-    from data_building.player_distributions import profile_inputs_signature
-    guest_pids = _parse_guest_pids(request.args.get("guests"))
-    cache_key = (
-        platform, league_id, int(season), int(week), str(viewer_roster_id),
-        profile_inputs_signature(int(season), int(week)),
-        tuple(guest_pids),
-    )
-    with _LAB_PAYLOAD_LOCK:
-        hit = _LAB_PAYLOAD_CACHE.get(cache_key)
-        if hit and time.monotonic() - hit[0] < hit[1]:
-            return jsonify(hit[2])
-
-    try:
-        from data_building.lineup_lab import build_lineup_lab_payload
-        payload = build_lineup_lab_payload(
-            ctx=ctx,
-            league_id=league_id,
-            viewer_roster_id=viewer_roster_id,
-            season=season,
-            week=week,
-            platform=platform,
-            guest_pids=guest_pids,
-        )
-    except LookupError as e:
-        return jsonify({"state": "team_not_linked", "message": str(e)}), 409
-    except Exception:
-        logger.warning("lineup lab build failed", exc_info=True)
-        return jsonify({"state": "temporarily_unavailable", "retryable": True,
-                        "message": "Lineup Lab is temporarily unavailable."}), 503
-    payload["state"] = "loaded"
-    with _LAB_PAYLOAD_LOCK:
-        _LAB_PAYLOAD_CACHE[cache_key] = (
-            time.monotonic(), _lab_payload_ttl(payload), payload)
-        if len(_LAB_PAYLOAD_CACHE) > _LAB_PAYLOAD_MAX:
-            oldest = min(_LAB_PAYLOAD_CACHE, key=lambda k: _LAB_PAYLOAD_CACHE[k][0])
-            del _LAB_PAYLOAD_CACHE[oldest]
-    return jsonify(payload)
+    })
 
 
 @app.route("/<platform>/<int:season>/<league_id>/weekly")
@@ -14566,13 +13076,13 @@ def page_weekly(platform: str, season: int, league_id: str):
     return render_page("BR Fantasy Weekly Hub", league_id, "weekly", body, platform, season)
 
 
-# ─── BR ScoreZone ────────────────────────────────────────────────────────────────
+# ─── BR Redzone ────────────────────────────────────────────────────────────────
 
 _RZ_BOX_CACHE: dict = {}  # game_id -> (ts, boxscore)
 _RZ_BOX_TTL = 15.0
 _RZ_LIVE_CACHE_TTL = 12.0
 # Bound the scoreboard upstream wait on the live path. The client aborts a
-# ScoreZone poll after _RZ_FETCH_DEADLINE_MS (25s in static/scorezone.js); the
+# Redzone poll after _RZ_FETCH_DEADLINE_MS (25s in static/redzone.js); the
 # scoreboard fetch plus a couple of short box-score calls must fit inside that,
 # so the live path caps the scoreboard at 12s instead of the 20s default other
 # pages use. Aligning the two ends the old mismatch where the client gave up at
@@ -14580,43 +13090,7 @@ _RZ_LIVE_CACHE_TTL = 12.0
 _RZ_SCOREBOARD_TIMEOUT = 12
 
 
-def _start_scorezone_store() -> None:
-    """Start the server-side play-store poller (daemon thread).
-
-    One 15s upstream PBP fetch per live game, shared by every viewer via the
-    ``redzone_plays`` table -- replaces N viewers x M workers of duplicate
-    ESPN/Tank01 polling. The advisory lock in utils.scorezone_store elects a
-    single leader across gunicorn workers. Skipped under pytest so CI never
-    spawns network/DB threads at import time.
-
-    Polling moved to the ``scorezone-store-poll`` Render cron
-    (scripts/scorezone_poll.py): under gunicorn ``--preload`` this thread ran
-    once in the master process, so deploys silently orphaned it and ScoreZone
-    data froze. Off by default; set SCOREZONE_STORE_THREAD=1 to re-enable the
-    in-app thread (e.g. local dev without the cron).
-    """
-    import sys as _sys
-
-    if "pytest" in _sys.modules:
-        return
-    if os.environ.get("SCOREZONE_STORE_THREAD", "").strip().lower() not in (
-        "1", "true", "yes",
-    ):
-        logger.info("[scorezone-store] in-app poller disabled; cron owns polling")
-        return
-    try:
-        from utils.scorezone_store import start_scorezone_store_thread
-
-        start_scorezone_store_thread()
-        logger.info("[scorezone-store] poller thread started")
-    except Exception:
-        logger.warning("[scorezone-store] poller thread failed to start", exc_info=True)
-
-
-_start_scorezone_store()
-
-
-def _scorezone_boxscore(
+def _redzone_boxscore(
     game_id: str, *, play_by_play: bool = False, ttl: float | None = None
 ) -> dict:
     """Fetch the shared ESPN boxscore with a short UI-level TTL cache.
@@ -14683,18 +13157,18 @@ def _rz_get_projections(season: int, week: int, scoring: dict = None) -> dict:
     return data
 
 
-from utils.scorezone_stats import (  # noqa: E402
+from utils.redzone_stats import (  # noqa: E402
     rz_def_stat_line as _rz_def_stat_line,
     rz_safe_epoch as _rz_safe_epoch,
     rz_stat_line_from_ps as _rz_stat_line_from_ps,
     resolve_boxscore_player_stats as _rz_resolve_boxscore_player_stats,
 )
-from utils.scorezone_pbp import (  # noqa: E402
+from utils.redzone_pbp import (  # noqa: E402
     build_games_snapshot as _rz_build_games_snapshot,
     demo_play_text as _rz_demo_play_text,
     extract_pbp_plays as _rz_extract_pbp_plays,
 )
-from utils.scorezone_alt_pbp import (  # noqa: E402
+from utils.redzone_alt_pbp import (  # noqa: E402
     fetch_alt_pbp_plays as _rz_fetch_alt_pbp_plays,
     build_espn_team_game_lookup as _rz_espn_team_game,
 )
@@ -14707,9 +13181,9 @@ from utils.scorezone_alt_pbp import (  # noqa: E402
 
 _RZ_DEMO_START = 150  # sim seconds the page-load snapshot is built at
 
-# The deterministic play-by-play simulation lives in utils/scorezone_demo.py so
+# The deterministic play-by-play simulation lives in utils/redzone_demo.py so
 # it can be unit-tested; re-exported here under the original names.
-from utils.scorezone_demo import (  # noqa: E402
+from utils.redzone_demo import (  # noqa: E402
     DEMO_GAME_SECONDS as _RZ_DEMO_GAME,
     DEMO_SCORING as _RZ_DEMO_SCORING,
     demo_fold as _rz_demo_fold,
@@ -14724,8 +13198,8 @@ _RZ_DEMO_KDEF = {
 }
 
 
-def _scorezone_demo_data(t: float = _RZ_DEMO_START, scope: str = "league"):
-    """Time-parameterised live-game sample data for the ScoreZone demo.
+def _redzone_demo_data(t: float = _RZ_DEMO_START, scope: str = "league"):
+    """Time-parameterised live-game sample data for the Redzone demo.
 
     scope="league": one league, all four teams.
     scope="user":   the viewer's team across three different leagues.
@@ -15106,17 +13580,17 @@ def _scorezone_demo_data(t: float = _RZ_DEMO_START, scope: str = "league"):
 # Process-local set of canonical TD play keys already handed to the push
 # pipeline, so a live game's repeated polls don't spawn a background thread for
 # the same touchdown over and over. This is only an optimization: the AUTHORITATIVE
-# cross-worker dedupe is the atomic app_state claim inside notify_scorezone_scores,
+# cross-worker dedupe is the atomic app_state claim inside notify_redzone_scores,
 # which is what makes multiple gunicorn workers safe.
 _RZ_PUSH_SEEN_TD: set = set()
 
 
-def _scorezone_trigger_scoring_push(platform, league_id, season, week,
+def _redzone_trigger_scoring_push(platform, league_id, season, week,
                                   pbp_by_game, player_info, rosters, scoring):
-    """Off-thread, best-effort trigger for ScoreZone touchdown device pushes.
+    """Off-thread, best-effort trigger for RedZone touchdown device pushes.
 
     Only spawns work when a valid TD play has not yet been handled in THIS
-    process, then delegates to utils.push_notifications.notify_scorezone_scores,
+    process, then delegates to utils.push_notifications.notify_redzone_scores,
     which owner-targets and atomically dedupes across workers.
     """
     if not (pbp_by_game and rosters):
@@ -15143,19 +13617,19 @@ def _scorezone_trigger_scoring_push(platform, league_id, season, week,
 
     def _run():
         try:
-            from utils.push_notifications import notify_scorezone_scores
-            notify_scorezone_scores(
+            from utils.push_notifications import notify_redzone_scores
+            notify_redzone_scores(
                 league_id, platform, pbp_by_game, player_info, rosters, scoring,
                 season=season, week=week,
             )
         except Exception:
-            logger.debug("[scorezone] notify_scorezone_scores failed", exc_info=True)
+            logger.debug("[redzone] notify_redzone_scores failed", exc_info=True)
 
     _threading.Thread(target=_run, daemon=True).start()
 
 
-def _scorezone_collect(platform, league_id, season, week):
-    """Build the raw per-league ScoreZone pieces (no top-level wrapper)."""
+def _redzone_collect(platform, league_id, season, week):
+    """Build the raw per-league Redzone pieces (no top-level wrapper)."""
     from dashboard_services.api import (
         get_nfl_scores_for_date, build_team_game_lookup,
         get_nfl_players, get_normalized_scoring_settings, get_league,
@@ -15172,7 +13646,7 @@ def _scorezone_collect(platform, league_id, season, week):
     # Every provider canonicalizes its player ids to Sleeper ids in rosters /
     # matchups (ESPN canon_pid, Yahoo name+pos crosswalk, MFL _canonical_map),
     # so the Sleeper player feed resolves names/positions/teams for ALL
-    # platforms -- ScoreZone is no longer Sleeper-only.
+    # platforms -- Redzone is no longer Sleeper-only.
     nfl_players = get_nfl_players() or {}
     today_str = date.today().strftime("%Y%m%d")
     # Bounded upstream wait so the whole server response fits inside the client's
@@ -15188,7 +13662,7 @@ def _scorezone_collect(platform, league_id, season, week):
         # settings rather than generic defaults. sync_league_globals routes
         # through the right provider for every platform (Sleeper included).
         sync_league_globals(platform, league_id, season)
-        # Re-stamp the provider result at the ScoreZone boundary.  PBP point
+        # Re-stamp the provider result at the Redzone boundary.  PBP point
         # deltas are calculated client-side from this payload, so it must carry
         # the same canonical `rec` (including explicit 0) contract as the rest
         # of the app rather than falling back to an incomplete provider shape.
@@ -15235,14 +13709,12 @@ def _scorezone_collect(platform, league_id, season, week):
         ep = _rz_safe_epoch(g.get("gameTime_epoch") or g.get("gameTimeEpoch"))
         if ep and now_ts >= ep:
             lag_teams.add(t)
-    espn_sb_status = None  # "stale"/"failed" when the ESPN scoreboard fallback degrades
     if missing_teams or lag_teams:
         try:
-            espn_lookup, espn_sb_status = _rz_espn_team_game(season, week)
-            espn_lookup = espn_lookup or {}
+            espn_lookup = _rz_espn_team_game(season, week) or {}
         except Exception:
-            espn_lookup, espn_sb_status = {}, "failed"
-            logger.warning("[scorezone] espn scoreboard fallback failed", exc_info=True)
+            espn_lookup = {}
+            logger.debug("[redzone] espn scoreboard fallback failed", exc_info=True)
         for team in missing_teams:
             g = lookup_team_map(espn_lookup, team)
             if g:
@@ -15290,21 +13762,10 @@ def _scorezone_collect(platform, league_id, season, week):
             games_to_pids.setdefault(gid, []).append(pid)
 
     pbp_by_game: dict = {}
-    # Server-side play store: one upstream PBP fetch per game per 15s (by the
-    # elected poller thread) instead of per viewer per worker. Bulk-read here;
-    # games missing from the store fall through to the live-fetch path below.
-    store_plays: dict = {}
-    if games_to_pids:
-        try:
-            from utils.scorezone_store import get_plays as _rz_store_get_plays
-
-            store_plays = _rz_store_get_plays(season, list(games_to_pids.keys()))
-        except Exception:
-            logger.debug("[scorezone] play store read failed", exc_info=True)
     for gid, pids in games_to_pids.items():
         # Live AND final games get play-by-play. Skipping PBP on finals left the
         # client with only players_points deltas ("Scored 13.5 pts") after the
-        # whistle -- the bulk cards users see when reopening ScoreZone post-game.
+        # whistle -- the bulk cards users see when reopening Redzone post-game.
         codes = {
             str((player_info.get(pid) or {}).get("game_code") or "")
             for pid in pids
@@ -15312,33 +13773,24 @@ def _scorezone_collect(platform, league_id, season, week):
         live = "1" in codes
         final = "2" in codes
         want_pbp = live or final
-        store_hit = want_pbp and bool(store_plays.get(gid))
         # Final PBP is stable; cache longer to avoid re-hitting Tank01 every poll.
-        # With a store hit we only need the plain boxscore (stat lines) -- the
-        # Tank01 experimental PBP payload is skipped entirely.
-        box = _scorezone_boxscore(
+        box = _redzone_boxscore(
             gid,
-            play_by_play=(want_pbp and not store_hit),
+            play_by_play=want_pbp,
             ttl=(None if live else 300.0) if want_pbp else None,
         )
         # Tank01's playByPlay response is experimental and sometimes returns PBP
         # without aggregate playerStats (or an empty body). Merge a plain
         # boxscore for scoreboard totals only -- Plays never invents boxscore /
         # "Scored X pts" fiction from that merge (client is PBP-lines-only for
-        # live/final). Skipped on a store hit: the box above was already
-        # fetched plain (stat lines only), so this would just re-fetch the
-        # identical payload; PBP comes from the store below.
-        if (not store_hit and want_pbp
-                and not (box.get("playerStats") or box.get("allPlayByPlay")
-                         or box.get("allPlaybyPlay") or box.get("playByPlay"))):
-            plain = _scorezone_boxscore(gid, play_by_play=False)
+        # live/final).
+        if want_pbp and not (box.get("playerStats") or box.get("allPlayByPlay")
+                             or box.get("allPlaybyPlay") or box.get("playByPlay")):
+            plain = _redzone_boxscore(gid, play_by_play=False)
             if plain:
                 box = plain
-        elif not store_hit and want_pbp and box and not box.get("playerStats"):
-            # Skipped on a store hit: the box above was already fetched plain,
-            # so re-fetching it here would just return the identical payload;
-            # PBP comes from the store below, not from a boxscore merge.
-            plain = _scorezone_boxscore(gid, play_by_play=False)
+        elif want_pbp and box and not box.get("playerStats"):
+            plain = _redzone_boxscore(gid, play_by_play=False)
             if plain.get("playerStats"):
                 merged = dict(plain)
                 for k in ("allPlayByPlay", "allPlaybyPlay", "playByPlay", "plays"):
@@ -15381,7 +13833,7 @@ def _scorezone_collect(platform, league_id, season, week):
                     }
         
         # Build name_to_pid from the FULL player index (already in player_meta_by_pid)
-        from utils.scorezone_pbp import _normalize_name, _extract_first_initial_last
+        from utils.redzone_pbp import _normalize_name, _extract_first_initial_last
         for pid, meta in player_meta_by_pid.items():
             full = meta.get("name", "").lower()
             if full:
@@ -15416,7 +13868,7 @@ def _scorezone_collect(platform, league_id, season, week):
             if side and isinstance(tstats.get(side), dict):
                 pi["stat_line"] = _rz_def_stat_line(tstats[side])
             elif team:
-                logger.debug("[scorezone] defense has no teamStats side team=%s game=%s", team, gid)
+                logger.debug("[redzone] defense has no teamStats side team=%s game=%s", team, gid)
             if team:
                 team_to_def_pid[team] = pid
 
@@ -15433,12 +13885,7 @@ def _scorezone_collect(platform, league_id, season, week):
                     if ps:
                         pi["stat_line"] = _rz_stat_line_from_ps(ps)
 
-        if store_hit:
-            # Play store hit: pid-resolved plays from the elected poller. The
-            # boxscore above was fetched plain (stat lines only); no upstream
-            # PBP fetch is needed on this page load or poll.
-            pbp_by_game[gid] = store_plays[gid]
-        elif want_pbp and box:
+        if want_pbp and box:
             try:
                 # Build game_context for opponent team resolution
                 game_context = {}
@@ -15493,13 +13940,13 @@ def _scorezone_collect(platform, league_id, season, week):
                         plays = alt or []
                     except Exception:
                         logger.debug(
-                            "[scorezone] alt pbp failed game=%s", gid, exc_info=True
+                            "[redzone] alt pbp failed game=%s", gid, exc_info=True
                         )
                 # Always record the game key when we attempted PBP so the client
                 # can suppress bulk point dumps even if Tank01 returned no rows.
                 pbp_by_game[gid] = plays
             except Exception:
-                logger.debug("[scorezone] pbp parse failed game=%s", gid, exc_info=True)
+                logger.debug("[redzone] pbp parse failed game=%s", gid, exc_info=True)
                 pbp_by_game.setdefault(gid, [])
         elif want_pbp:
             # No usable Tank01 box at all -- ESPN remains primary, with
@@ -15518,7 +13965,7 @@ def _scorezone_collect(platform, league_id, season, week):
                 )
                 pbp_by_game[gid] = alt or []
             except Exception:
-                logger.debug("[scorezone] alt pbp failed game=%s", gid, exc_info=True)
+                logger.debug("[redzone] alt pbp failed game=%s", gid, exc_info=True)
                 pbp_by_game.setdefault(gid, [])
 
     # Add unrostered players that appeared in PBP to player_info so frontend can display them
@@ -15573,18 +14020,18 @@ def _scorezone_collect(platform, league_id, season, week):
     games = _rz_build_games_snapshot(player_info, pbp_by_game)
 
     # Best-effort device push for live touchdowns via the shared Web Push system
-    # (push_subscriptions / VAPID), so alerts reach the phone even with ScoreZone
+    # (push_subscriptions / VAPID), so alerts reach the phone even with RedZone
     # closed. Fired off-thread and deduped server-side per canonical play+owner,
     # so multiple polling clients/workers cannot double-send. Never blocks or
     # breaks the poll response.
     try:
-        _scorezone_trigger_scoring_push(
+        _redzone_trigger_scoring_push(
             platform, league_id, season, week, pbp_by_game, player_info, rosters, scoring
         )
     except Exception:
-        logger.debug("[scorezone] scoring push trigger failed", exc_info=True)
+        logger.debug("[redzone] scoring push trigger failed", exc_info=True)
 
-    out = {
+    return {
         "matchups": matchups_out,
         "rosters": [
             {"roster_id": r.get("roster_id"), "owner_id": r.get("owner_id"),
@@ -15601,102 +14048,10 @@ def _scorezone_collect(platform, league_id, season, week):
         "pbp_by_game": pbp_by_game,
         "games": games,
     }
-    if espn_sb_status in ("stale", "failed"):
-        # Surface ESPN scoreboard degradation to the client (the old silent
-        # 403 → empty-scores failure mode). The frontend renders a "Scores
-        # delayed" chip. Deliberately NOT the "error" key: the client treats
-        # any payload carrying "error" as a failed poll and discards it.
-        out["scoreboard_status"] = espn_sb_status
-    return out
 
 
-# Short-TTL shared cache for the league-scope scorezone collect. The collect is
-# viewer-independent (viewer_roster_id is stamped afterwards in
-# _scorezone_fetch), so N viewers polling the same league share one collect per
-# TTL window instead of each paying the full per-game assembly. Entries are
-# (expires_ts, etag, collected_at, payload); callers must never mutate the
-# cached payload dict.
-_RZ_COLLECT_CACHE: dict = {}
-# TTL must exceed the worst-case collect build time (~60s of upstream PBP
-# fetches). A shorter TTL can never serve a hit: the entry expires before the
-# build that fills it finishes, so every poll pays the full build price.
-# 60s also matches the client's own freshness window for live data.
-_RZ_COLLECT_TTL = 60.0
-# Single-flight state for in-progress collect builds, keyed like
-# _RZ_COLLECT_CACHE. Each value is a threading.Event set when the build
-# finishes (success or failure). Lets concurrent polls share one build
-# instead of each repeating ~60s of upstream fetches and starving gunicorn's
-# request threads (the 15s live-poll cadence x 60s builds x 4 worker threads
-# was queueing requests until Cloudflare 524'd them).
-_RZ_COLLECT_LOCK = threading.Lock()
-_RZ_COLLECT_INFLIGHT: dict = {}
-# A waiter must never hang longer than a build reasonably takes, even if the
-# builder thread dies without signalling.
-_RZ_COLLECT_WAIT_TIMEOUT = 90.0
-
-
-def _rz_collect_build(key, platform, league_id, season, week):
-    """Run _scorezone_collect, cache it, return (payload, etag, collected_at)."""
-    d = _scorezone_collect(platform, league_id, season, week)
-    collected_at = time.time()
-    try:
-        fp = json.dumps(d, sort_keys=True, default=str)
-        etag = '"rz-%s"' % hashlib.sha1(fp.encode()).hexdigest()[:32]
-    except Exception:
-        etag = '"rz-%d"' % int(collected_at)
-    with _RZ_COLLECT_LOCK:
-        _RZ_COLLECT_CACHE[key] = (time.time() + _RZ_COLLECT_TTL, etag, collected_at, d)
-        _prune_ttl_cache(_RZ_COLLECT_CACHE, 32)
-    return d, etag, collected_at
-
-
-def _rz_cached_collect(platform, league_id, season, week):
-    """Return (payload, etag, collected_at) for the league-scope collect.
-
-    The etag is a content hash of the collect result, so api_scorezone_data can
-    answer conditional polls with 304 without re-serializing the ~1MB body.
-
-    Single-flight: while one thread builds the collect, concurrent polls for
-    the same key wait on the in-flight build (bounded) instead of each
-    duplicating the upstream work.
-    """
-    key = (str(platform), int(season), str(league_id), int(week))
-    for _attempt in range(2):
-        now = time.time()
-        entry = _RZ_COLLECT_CACHE.get(key)
-        if entry is not None and entry[0] > now:
-            return entry[3], entry[1], entry[2]
-        with _RZ_COLLECT_LOCK:
-            # Re-check under the lock: another thread may have filled the
-            # cache between our first check and acquiring the lock.
-            entry = _RZ_COLLECT_CACHE.get(key)
-            if entry is not None and entry[0] > time.time():
-                return entry[3], entry[1], entry[2]
-            inflight = _RZ_COLLECT_INFLIGHT.get(key)
-            if inflight is None:
-                inflight = threading.Event()
-                _RZ_COLLECT_INFLIGHT[key] = inflight
-                is_builder = True
-            else:
-                is_builder = False
-        if is_builder:
-            try:
-                return _rz_collect_build(key, platform, league_id, season, week)
-            finally:
-                with _RZ_COLLECT_LOCK:
-                    _RZ_COLLECT_INFLIGHT.pop(key, None)
-                inflight.set()
-        # Share the in-flight build instead of duplicating it. Bounded wait:
-        # a dead builder must never hang us; on timeout/failure we loop and
-        # either become the builder or share the replacement build.
-        inflight.wait(timeout=_RZ_COLLECT_WAIT_TIMEOUT)
-    # Last resort: build directly (uncached-coordination) rather than wait
-    # on a peer a third time.
-    return _rz_collect_build(key, platform, league_id, season, week)
-
-
-def _scorezone_fetch(platform, league_id, season, week=None, scope="league"):
-    """Return live ScoreZone payload. scope='league' (all teams in this league)
+def _redzone_fetch(platform, league_id, season, week=None, scope="league"):
+    """Return live Redzone payload. scope='league' (all teams in this league)
     or scope='user' (the viewer's team across all their leagues)."""
     from dashboard_services.api import get_nfl_state
     state = get_nfl_state() or {}
@@ -15707,11 +14062,11 @@ def _scorezone_fetch(platform, league_id, season, week=None, scope="league"):
 
     if scope == "user":
         try:
-            d = _scorezone_fetch_user(platform, league_id, season, week)
+            d = _redzone_fetch_user(platform, league_id, season, week)
             d["games_today"] = gt
             return d
         except Exception as _e:
-            logger.warning("[scorezone] user-scope fetch failed: %s", _e)
+            logger.warning("[redzone] user-scope fetch failed: %s", _e)
             # Return an empty *user* payload (not league-scope). The client
             # rejects scope mismatches after the stale-poll guard, so falling
             # through to league collect left My Leagues hung on a skeleton.
@@ -15736,12 +14091,7 @@ def _scorezone_fetch(platform, league_id, season, week=None, scope="league"):
                 "error": "portfolio_unavailable",
             }
 
-    # League-scope collect is shared across viewers (short TTL); stamp the
-    # per-viewer fields onto a copy so the cached payload is never mutated.
-    _rz_d, _rz_etag, _rz_collected_at = _rz_cached_collect(
-        platform, league_id, season, week
-    )
-    d = dict(_rz_d)
+    d = _redzone_collect(platform, league_id, season, week)
     # Resolve the viewer's roster for THIS league the same way the rest of the
     # site does, instead of trusting the raw session viewer_roster_id. Roster
     # ids are league-scoped integers, so a session id resolved for a different
@@ -15761,27 +14111,18 @@ def _scorezone_fetch(platform, league_id, season, week=None, scope="league"):
         "viewer_roster_id": vrid,
         "viewer_roster_ids": [vrid] if vrid else [],
         "games_today": gt,
-        # Honest clock: the data's age is the collect's age, not this request's.
-        "updated_at": _rz_collected_at,
+        "updated_at": time.time(),
     })
-    # Per-viewer etag: the collect etag covers the shared body; fold in the
-    # viewer id so a mid-session identity change can't serve a stale 304.
-    try:
-        g.rz_etag = '"rzv-%s"' % hashlib.sha1(
-            ("%s|%s" % (_rz_etag, vrid)).encode()
-        ).hexdigest()[:32]
-    except Exception:
-        pass
     return d
 
 
-def _scorezone_user_portfolio(season):
+def _redzone_user_portfolio(season):
     """Resolve the viewer's My Leagues portfolio and account identities.
 
     Returns ``(portfolio, identities_by_platform, account_id, viewer_uid)``.
     Reads the Flask ``session``, so call it inside a request context. Raises
     ``ValueError`` when the viewer has no resolvable leagues (same contract the
-    aggregate relied on). Split out of ``_scorezone_fetch_user`` so the aggregate
+    aggregate relied on). Split out of ``_redzone_fetch_user`` so the aggregate
     and the streaming endpoint build the exact same portfolio.
 
     Signed-in Google accounts use the cross-platform portfolio (Sleeper, ESPN,
@@ -15790,7 +14131,7 @@ def _scorezone_user_portfolio(season):
     even when only one was ever explicitly opened. A Sleeper-only session
     without an account still walks that viewer's Sleeper leagues.
     """
-    from utils.scorezone_user import (
+    from utils.redzone_user import (
         portfolio_from_account_leagues,
         portfolio_from_sleeper_leagues,
         MAX_USER_LEAGUES, owner_id_variants,
@@ -15806,7 +14147,7 @@ def _scorezone_user_portfolio(season):
     #   2. Live Sleeper memberships for every Sleeper identity linked to the
     #      account (or the session viewer for a Sleeper-only login).
     # Without (2) a Google account that has only ever opened one league would
-    # show a single ScoreZone card even though it belongs to many Sleeper leagues,
+    # show a single Redzone card even though it belongs to many Sleeper leagues,
     # because the account resolver never auto-attaches undiscovered leagues.
     portfolio: list = []
     seen_keys: set = set()
@@ -15825,7 +14166,7 @@ def _scorezone_user_portfolio(season):
             saved, _ = resolve_my_leagues(viewer_uid or None, int(account_id), season)
             _merge_leagues(portfolio_from_account_leagues(saved, season=season))
         except Exception:
-            logger.debug("[scorezone] account portfolio load failed", exc_info=True)
+            logger.debug("[redzone] account portfolio load failed", exc_info=True)
 
     # Sleeper identities to expand into their full membership list. Prefer the
     # account's linked identities; fall back to the session viewer only for a
@@ -15836,7 +14177,7 @@ def _scorezone_user_portfolio(season):
             from dashboard_services.accounts import list_account_platform_ids
             sleeper_ids.extend(list_account_platform_ids(int(account_id), "sleeper") or [])
         except Exception:
-            logger.debug("[scorezone] sleeper identity load failed", exc_info=True)
+            logger.debug("[redzone] sleeper identity load failed", exc_info=True)
     if viewer_uid and str(session.get("viewer_platform") or "sleeper").lower() == "sleeper":
         sleeper_ids.append(viewer_uid)
     for sid in list(dict.fromkeys(str(s) for s in sleeper_ids if s)):
@@ -15845,7 +14186,7 @@ def _scorezone_user_portfolio(season):
             sleeper_raw = get_sleeper_user_leagues(sid, season) or []
             _merge_leagues(portfolio_from_sleeper_leagues(sleeper_raw, season=season))
         except Exception:
-            logger.debug("[scorezone] sleeper league list failed sid=%s", sid, exc_info=True)
+            logger.debug("[redzone] sleeper league list failed sid=%s", sid, exc_info=True)
 
     if not portfolio:
         raise ValueError("user scope requires a signed-in viewer with at least one league")
@@ -15867,12 +14208,12 @@ def _scorezone_user_portfolio(season):
                     flat.extend(owner_id_variants(pid))
                 identities_by_platform[plat_key] = flat
         except Exception:
-            logger.debug("[scorezone] account identities load failed", exc_info=True)
+            logger.debug("[redzone] account identities load failed", exc_info=True)
 
     return portfolio, identities_by_platform, account_id, viewer_uid
 
 
-def _scorezone_user_league_slice(li, lg, season, week, account_id, viewer_uid,
+def _redzone_user_league_slice(li, lg, season, week, account_id, viewer_uid,
                                identities_by_platform, default_platform="sleeper"):
     """Collect one portfolio league's viewer-matchup slice for My Leagues.
 
@@ -15882,7 +14223,7 @@ def _scorezone_user_league_slice(li, lg, season, week, account_id, viewer_uid,
     the viewer's roster or matchup can't be resolved. Pure per-league work, no
     session reads, so it is safe to call while streaming.
     """
-    from utils.scorezone_user import (
+    from utils.redzone_user import (
         resolve_portfolio_viewer_roster, owner_id_variants,
     )
 
@@ -15893,10 +14234,10 @@ def _scorezone_user_league_slice(li, lg, season, week, account_id, viewer_uid,
     if not lid:
         return None
     try:
-        d = _scorezone_collect(lg_plat, lid, lg_season, week)
+        d = _redzone_collect(lg_plat, lid, lg_season, week)
     except Exception:
         logger.debug(
-            "[scorezone] collect failed platform=%s league=%s season=%s",
+            "[redzone] collect failed platform=%s league=%s season=%s",
             lg_plat, lid, lg_season, exc_info=True,
         )
         return None
@@ -15920,7 +14261,7 @@ def _scorezone_user_league_slice(li, lg, season, week, account_id, viewer_uid,
                 )
         except Exception:
             logger.debug(
-                "[scorezone] account viewer resolve failed platform=%s league=%s",
+                "[redzone] account viewer resolve failed platform=%s league=%s",
                 lg_plat, lid, exc_info=True,
             )
         # ESPN private leagues often store SWID on the connection even when
@@ -15995,14 +14336,14 @@ def _scorezone_user_league_slice(li, lg, season, week, account_id, viewer_uid,
     }
 
 
-def _scorezone_fetch_user(platform, league_id, season, week):
+def _redzone_fetch_user(platform, league_id, season, week):
     """Aggregate the viewer's matchup across every league they belong to.
 
-    Thin consumer of ``_scorezone_user_portfolio`` + ``_scorezone_user_league_slice``
+    Thin consumer of ``_redzone_user_portfolio`` + ``_redzone_user_league_slice``
     (the same pieces the streaming endpoint uses one-league-at-a-time), so the
     all-at-once payload and the progressive stream stay byte-for-byte consistent.
     """
-    portfolio, identities_by_platform, account_id, viewer_uid = _scorezone_user_portfolio(season)
+    portfolio, identities_by_platform, account_id, viewer_uid = _redzone_user_portfolio(season)
 
     matchups, rosters, users, leagues = [], [], [], []
     player_info: dict = {}
@@ -16015,7 +14356,7 @@ def _scorezone_fetch_user(platform, league_id, season, week):
     seen_users = set()
 
     for li, lg in enumerate(portfolio):
-        s = _scorezone_user_league_slice(
+        s = _redzone_user_league_slice(
             li, lg, season, week, account_id, viewer_uid,
             identities_by_platform, default_platform=platform,
         )
@@ -16065,28 +14406,20 @@ def _scorezone_fetch_user(platform, league_id, season, week):
 
 
 @app.route("/<platform>/<int:season>/<league_id>/redzone")
-def page_redzone_legacy(platform: str, season: int, league_id: str):
-    # Legacy alias: the feature was renamed ScoreZone on 2026-09-29. Keep old
-    # links, bookmarks, and PWA shortcuts working with a permanent redirect.
-    qs = f"?{request.query_string.decode()}" if request.query_string else ""
-    return redirect(f"/{platform}/{season}/{league_id}/scorezone{qs}", code=301)
-
-
-@app.route("/<platform>/<int:season>/<league_id>/scorezone")
-def page_scorezone(platform: str, season: int, league_id: str):
+def page_redzone(platform: str, season: int, league_id: str):
     scope = "user" if request.args.get("scope") == "user" else "league"
-    # League-scope ScoreZone works on every platform: providers canonicalize their
+    # League-scope Redzone works on every platform: providers canonicalize their
     # player ids to Sleeper ids, so the live player feed + Tank01 stat lines
     # resolve regardless of provider. Cross-league "My Leagues" uses the signed-in
     # account portfolio (all platforms) or a Sleeper viewer, and falls back to
     # this league when neither identity is available.
     if request.args.get("demo") == "1":
-        data = _scorezone_demo_data(scope=scope)
+        data = _redzone_demo_data(scope=scope)
     else:
         try:
-            data = _scorezone_fetch(platform, league_id, season, scope=scope)
+            data = _redzone_fetch(platform, league_id, season, scope=scope)
         except Exception as _e:
-            logger.warning("[scorezone] initial fetch failed: %s", _e)
+            logger.warning("[redzone] initial fetch failed: %s", _e)
             data = {"matchups": [], "rosters": [], "users": [], "player_info": {},
                     "week": 1, "season": season, "viewer_roster_id": "", "scoring": {},
                     "platform": platform, "league_id": league_id, "updated_at": time.time()}
@@ -16094,15 +14427,15 @@ def page_scorezone(platform: str, season: int, league_id: str):
     body = (
         '<div id="rz-root" class="rz-page"><div class="rz-boot-spinner">Loading...</div></div>'
         f'<script>window.__rz__={json.dumps(data)};</script>'
-        # The ScoreZone live module is split out of app.js so it only loads here.
+        # The Redzone live module is split out of app.js so it only loads here.
         # `defer` runs it after the page's blocking app.js, so the shared helpers
         # (openPlayerModal, window._rzBuildLiveHtml/_rzSyncTabLive) are defined.
-        f'<script src="/static/{_SCOREZONE_JS_FILE}?v={_SCOREZONE_JS_V}" defer></script>'
+        f'<script src="/static/{_REDZONE_JS_FILE}?v={_REDZONE_JS_V}" defer></script>'
     )
-    return render_page("BR ScoreZone", league_id, "scorezone", body, platform, season)
+    return render_page("BR Redzone", league_id, "redzone", body, platform, season)
 
 
-def _scorezone_user_stream_response(platform, season, league_id, week):
+def _redzone_user_stream_response(platform, season, league_id, week):
     """NDJSON stream of the viewer's My Leagues: a ``meta`` line naming every
     league, then one ``league`` line per league as it finishes collecting, so
     the client can paint each card the moment its data lands instead of waiting
@@ -16114,11 +14447,11 @@ def _scorezone_user_stream_response(platform, season, league_id, week):
     _week = int((week or 0) or state.get("week") or 1)
     gt = _games_scheduled_today(_season, _week)
     try:
-        portfolio, identities, account_id, viewer_uid = _scorezone_user_portfolio(_season)
+        portfolio, identities, account_id, viewer_uid = _redzone_user_portfolio(_season)
     except Exception as _e:
-        logger.warning("[scorezone] user-scope stream portfolio failed: %s", _e)
+        logger.warning("[redzone] user-scope stream portfolio failed: %s", _e)
         # No portfolio → let the aggregate path fall through to league scope.
-        return jsonify(_scorezone_fetch(platform, league_id, _season, week=week, scope="user"))
+        return jsonify(_redzone_fetch(platform, league_id, _season, week=week, scope="user"))
 
     def _gen():
         meta = {
@@ -16134,12 +14467,12 @@ def _scorezone_user_stream_response(platform, season, league_id, week):
         yield json.dumps(meta) + "\n"
         for li, lg in enumerate(portfolio):
             try:
-                s = _scorezone_user_league_slice(
+                s = _redzone_user_league_slice(
                     li, lg, _season, _week, account_id, viewer_uid,
                     identities, default_platform=platform,
                 )
             except Exception:
-                logger.debug("[scorezone] stream slice failed idx=%s", li, exc_info=True)
+                logger.debug("[redzone] stream slice failed idx=%s", li, exc_info=True)
                 s = None
             if not s:
                 yield json.dumps({"type": "league", "index": li, "empty": True}) + "\n"
@@ -16151,23 +14484,18 @@ def _scorezone_user_stream_response(platform, season, league_id, week):
     response = Response(stream_with_context(_gen()), mimetype="application/x-ndjson")
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     response.headers["Pragma"] = "no-cache"
-    # Disable proxy buffering so the NDJSON stream flushes to the client
-    # after each league instead of buffering the full ~1MB payload. Without
-    # this, mobile clients time out waiting for the first byte.
-    response.headers["X-Accel-Buffering"] = "no"
     return response
 
 
 @app.route("/api/<platform>/<int:season>/<league_id>/redzone-data")
-@app.route("/api/<platform>/<int:season>/<league_id>/scorezone-data")
-def api_scorezone_data(platform: str, season: int, league_id: str):
+def api_redzone_data(platform: str, season: int, league_id: str):
     scope = "user" if request.args.get("scope") == "user" else "league"
     if request.args.get("demo") == "1":
         try:
             _t = float(request.args.get("t", _RZ_DEMO_START))
         except (TypeError, ValueError):
             _t = _RZ_DEMO_START
-        response = jsonify(_scorezone_demo_data(_t, scope=scope))
+        response = jsonify(_redzone_demo_data(_t, scope=scope))
         response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
         return response
     week = request.args.get("week")
@@ -16175,37 +14503,21 @@ def api_scorezone_data(platform: str, season: int, league_id: str):
     # &stream=1). Any failure inside the stream setup falls back to aggregate.
     if scope == "user" and request.args.get("stream") == "1":
         try:
-            return _scorezone_user_stream_response(platform, season, league_id, week)
+            return _redzone_user_stream_response(platform, season, league_id, week)
         except Exception as _e:
-            logger.warning("[scorezone] user-scope stream failed, using aggregate: %s", _e)
+            logger.warning("[redzone] user-scope stream failed, using aggregate: %s", _e)
     try:
-        data = _scorezone_fetch(platform, league_id, season, week=week, scope=scope)
-        # Conditional polls: when the client already holds this exact payload
-        # (ETag = content hash of the shared collect + viewer id), answer 304
-        # without re-serializing or re-sending the ~1MB body.
-        etag = None
-        try:
-            etag = g.get("rz_etag") if hasattr(g, "get") else getattr(g, "rz_etag", None)
-        except Exception:
-            etag = None
-        if etag and request.headers.get("If-None-Match") == etag:
-            response = app.response_class(status=304)
-            response.headers["ETag"] = etag
-            return response
-        response = jsonify(data)
-        if etag:
-            response.headers["ETag"] = etag
+        response = jsonify(_redzone_fetch(platform, league_id, season, week=week, scope=scope))
         response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
         response.headers["Pragma"] = "no-cache"
         return response
     except Exception as _e:
-        logger.warning("[scorezone] api fetch failed: %s", _e)
+        logger.warning("[redzone] api fetch failed: %s", _e)
         return jsonify({"error": str(_e)}), 500
 
 
 @app.route("/api/<platform>/<int:season>/<league_id>/redzone-player")
-@app.route("/api/<platform>/<int:season>/<league_id>/scorezone-player")
-def api_scorezone_player(platform: str, season: int, league_id: str):
+def api_redzone_player(platform: str, season: int, league_id: str):
     """Return ESPN NFL detail for a player; provider fantasy points stay authoritative."""
     from dashboard_services.api import (
         get_nfl_players, fetch_tank_boxscore, get_normalized_scoring_settings,
@@ -16272,7 +14584,7 @@ def api_scorezone_player(platform: str, season: int, league_id: str):
             "notice": "Fantasy-provider score remains authoritative; unavailable ESPN fields are omitted.",
         })
     except Exception as _e:
-        logger.warning("[scorezone] player fetch %s: %s", pid, _e)
+        logger.warning("[redzone] player fetch %s: %s", pid, _e)
         return jsonify({}), 500
 
 
@@ -16359,16 +14671,10 @@ def page_activity(platform: str, season: int, league_id: str):
     if cached:
         return render_page("BR Fantasy Activity", league_id, "activity", cached, platform, season)
 
-    # If the league context is already warm (user came from another page) AND
-    # its activity section is already built, build synchronously - it's quick
-    # once the data is cached and avoids the poll round-trip. A warm ctx whose
-    # activity section is still pending (deferred out of the first build)
-    # takes the background path below so the sweep doesn't block this request.
+    # If the league context is already warm (user came from another page), build
+    # synchronously - it's quick once the ctx is cached and avoids the poll round-trip.
     ctx_entry = DASHBOARD_CACHE.get(_cache_key(platform, season, league_id))
-    if (
-        _league_ctx_cache_valid(ctx_entry, platform, season, league_id)
-        and ctx_entry["ctx"].get("activity_df") is not None
-    ):
+    if _league_ctx_cache_valid(ctx_entry, platform, season, league_id):
         try:
             body = build_activity_body(ctx_entry["ctx"])
             store_page_html(platform, season, league_id, "activity", body)
@@ -16400,7 +14706,7 @@ def page_activity(platform: str, season: int, league_id: str):
 
 _TOUR_MOCK_TEAMS = [
     "Dynasty Kings", "Gridiron Ghosts", "Blitz Brigade",
-    "ScoreZone Strikers", "Endzone Elite", "Pocket Protectors",
+    "Redzone Rebels", "Endzone Elite", "Pocket Protectors",
 ]
 
 
@@ -16492,11 +14798,6 @@ def _rankings_ssr_content(limit: int = 150):
             age = "–"
         _val_v = float(p.get("value") or 0)
         val = f"{_val_v:.1f}" if _val_v > 0 else "-"
-        _ppg_v = p.get("ppg")
-        try:
-            ppg = f"{float(_ppg_v):.1f}" if _ppg_v not in (None, "") else "–"
-        except (TypeError, ValueError):
-            ppg = "–"
         rows.append(
             '<div class="pr-player-row pr-grid-row">'
             f'<span class="pr-rank">#{i}</span>'
@@ -16505,7 +14806,6 @@ def _rankings_ssr_content(limit: int = 150):
             f'<span class="pr-pos-cell">{pos_rank}</span>'
             f'<span class="pr-age">{age}</span>'
             f'<span class="pr-team">{team}</span>'
-            f'<span class="pr-ppg">{ppg}</span>'
             f'<span class="pr-value">{val}</span>'
             '</div>'
         )
@@ -16761,29 +15061,6 @@ def metrics_graph_og_image(platform: str, season: int, league_id: str):
                     headers={"Cache-Control": "public, max-age=3600"})
 
 
-@app.route("/metrics/og.png")
-def metrics_graph_og_image_public():
-    """League-free variant of the shared-graph social preview: renders
-    /metrics?og=1&... headless so copied graph links (which never carry league
-    info) still unfurl with the graph screenshot."""
-    from dashboard_services.og_render import render_url_to_png
-    from urllib.parse import urlencode as _ue
-    params = {k: request.args.get(k) for k in ("gx", "gy", "gz", "gn", "season", "metric", "pos", "minvol")
-              if request.args.get(k)}
-    params["og"] = "1"
-    render_url = f"{request.host_url.rstrip('/')}/metrics?{_ue(params)}"
-    cache_key = "graph-public:" + _ue({k: v for k, v in sorted(params.items())})
-    png = render_url_to_png(
-        render_url, 1200, 630,
-        wait_selector="html[data-og-ready]",
-        cache_key=cache_key,
-    )
-    if not png:
-        return redirect(f"{request.host_url.rstrip('/')}/static/BR_Logo.png?v=6c0c4828")
-    return Response(png, mimetype="image/png",
-                    headers={"Cache-Control": "public, max-age=3600"})
-
-
 @app.route("/<platform>/<int:season>/<league_id>/breakouts")
 def page_breakouts(platform: str, season: int, league_id: str):
     """Dedicated page for breakout candidates with detailed projections."""
@@ -16837,23 +15114,13 @@ def page_breakouts(platform: str, season: int, league_id: str):
         {_bo_last_updated}
       </div>
       <div class="card-body">
-       <div class="bo-layout">
-        <div class="bo-main">
-        <!-- Position Filter + Week Selector -->
-        <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 16px;">
-          <div class="otc-day-filters breakout-filters">
-            <button class="otc-day-filter breakout-filter-btn active" data-position="ALL" onclick="filterBreakouts('ALL')">All Positions</button>
-            <button class="otc-day-filter breakout-filter-btn" data-position="QB" onclick="filterBreakouts('QB')">QB</button>
-            <button class="otc-day-filter breakout-filter-btn" data-position="RB" onclick="filterBreakouts('RB')">RB</button>
-            <button class="otc-day-filter breakout-filter-btn" data-position="WR" onclick="filterBreakouts('WR')">WR</button>
-            <button class="otc-day-filter breakout-filter-btn" data-position="TE" onclick="filterBreakouts('TE')">TE</button>
-          </div>
-          <label for="breakoutWeekSelect" style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-muted); font-weight: 600;">
-            Week:
-            <select id="breakoutWeekSelect" aria-label="Breakout week">
-              <option value="">Loading weeks...</option>
-            </select>
-          </label>
+        <!-- Position Filter -->
+        <div class="otc-day-filters breakout-filters">
+          <button class="otc-day-filter breakout-filter-btn active" data-position="ALL" onclick="filterBreakouts('ALL')">All Positions</button>
+          <button class="otc-day-filter breakout-filter-btn" data-position="QB" onclick="filterBreakouts('QB')">QB</button>
+          <button class="otc-day-filter breakout-filter-btn" data-position="RB" onclick="filterBreakouts('RB')">RB</button>
+          <button class="otc-day-filter breakout-filter-btn" data-position="WR" onclick="filterBreakouts('WR')">WR</button>
+          <button class="otc-day-filter breakout-filter-btn" data-position="TE" onclick="filterBreakouts('TE')">TE</button>
         </div>
 
         <!-- Loading State -->
@@ -16871,28 +15138,6 @@ def page_breakouts(platform: str, season: int, league_id: str):
           <div id="breakoutsEmptyTitle">No breakout candidates found</div>
           <div id="breakoutsEmptyDetail" style="font-size:13px;margin-top:8px;display:none;"></div>
         </div>
-        </div><!-- /bo-main -->
-
-        <!-- Sidebar: track record, forecast outlook, biggest graded hits/misses -->
-        <aside class="bo-rail" id="boRail" aria-label="Breakout track record and forecast outlook">
-          <div class="bo-rail-section" id="boRailTrackRecord">
-            <div class="bo-rail-title">Track Record</div>
-            <div class="bo-rail-pending">Loading track record...</div>
-          </div>
-          <div class="bo-rail-section" id="boRailOutlook">
-            <div class="bo-rail-title">Forecast Outlook</div>
-            <div class="bo-rail-pending">Loading forecast outlook...</div>
-          </div>
-          <div class="bo-rail-section" id="boRailHits">
-            <div class="bo-rail-title">Biggest Hits</div>
-            <div class="bo-rail-pending">Loading biggest hits...</div>
-          </div>
-          <div class="bo-rail-section" id="boRailMisses">
-            <div class="bo-rail-title">Biggest Misses</div>
-            <div class="bo-rail-pending">Loading biggest misses...</div>
-          </div>
-        </aside>
-       </div><!-- /bo-layout -->
       </div>
     </div>
 
@@ -16904,235 +15149,35 @@ def page_breakouts(platform: str, season: int, league_id: str):
       var currentPage = 1;
       var PAGE_SIZE = 12;
 
-      var currentWeek = 'latest';
-
-      // Fetch breakout candidates (using new BreakoutEngine API).
+      // Fetch breakout candidates on page load (using new BreakoutEngine API)
       // Server selects the engine-specific floor: weekly watchlist calibration
       // is intentionally different from the offseason 50-point board.
-      function _boCandidatesUrl(weekValue) {{
-        var url = '/api/breakout/candidates?season={bo_season}&limit=15&league_id={league_id}&platform={platform}';
-        if (weekValue && weekValue !== 'latest') {{
-          url += '&week=' + encodeURIComponent(weekValue);
-        }}
-        return url;
-      }}
-
-      function handleBreakoutResponse(data) {{
-        breakoutCandidates = (data && data.candidates) || [];
-        lockedCount = data.locked_count || 0;
-        document.getElementById('breakoutsLoading').style.display = 'none';
-        document.getElementById('breakoutsContainer').style.display = 'none';
-        document.getElementById('breakoutsEmpty').style.display = 'none';
-
-        if (data && data.data_available === false) {{
-          var emptyTitle = document.getElementById('breakoutsEmptyTitle');
-          var emptyDetail = document.getElementById('breakoutsEmptyDetail');
-          if (emptyTitle) emptyTitle.textContent = 'Breakout data is not ready';
-          if (emptyDetail) {{
-            emptyDetail.textContent = data.reason || 'Opportunity scores need roster-change data for this season. This page will fill in once that pipeline has run.';
-            emptyDetail.style.display = 'block';
-          }}
-          document.getElementById('breakoutsEmpty').style.display = 'block';
-        }} else if (breakoutCandidates.length === 0 && lockedCount === 0) {{
-          document.getElementById('breakoutsEmpty').style.display = 'block';
-        }} else {{
-          renderBreakouts();
-        }}
-      }}
-
-      function loadBreakouts(weekValue) {{
-        currentWeek = weekValue || 'latest';
-        currentPage = 1;
-        var loadingEl = document.getElementById('breakoutsLoading');
-        if (loadingEl) {{
-          loadingEl.style.display = 'block';
-          if (!loadingEl.querySelector('.loading-spinner')) {{
-            loadingEl.innerHTML = '<div class="loading-spinner"></div><div style="margin-top: 12px;">Loading breakout candidates...</div>';
-          }}
-        }}
-        document.getElementById('breakoutsContainer').style.display = 'none';
-        document.getElementById('breakoutsEmpty').style.display = 'none';
-        fetch(_boCandidatesUrl(currentWeek))
-          .then(res => res.json())
-          .then(handleBreakoutResponse)
-          .catch(err => {{
-            console.error('Error loading breakouts:', err);
-            document.getElementById('breakoutsLoading').innerHTML = '<div style="color: #ef4444;">Failed to load breakout candidates</div>';
-          }});
-      }}
-
-      function onBreakoutWeekChange() {{
-        var sel = document.getElementById('breakoutWeekSelect');
-        loadBreakouts(sel ? sel.value : 'latest');
-      }}
-
-      // Populate the week selector: Preseason (offseason board) plus every
-      // completed weekly snapshot. Defaults to the latest available week.
-      fetch('/api/breakout/weeks?season={bo_season}')
+      fetch('/api/breakout/candidates?season={bo_season}&limit=15&league_id={league_id}&platform={platform}')
         .then(res => res.json())
-        .then(function (data) {{
-          var sel = document.getElementById('breakoutWeekSelect');
-          if (sel && data && Array.isArray(data.weeks)) {{
-            sel.innerHTML = '';
-            data.weeks.forEach(function (w) {{
-              var opt = document.createElement('option');
-              opt.value = String(w.value);
-              opt.textContent = w.label;
-              sel.appendChild(opt);
-            }});
-            var latest = data.latest_week != null ? String(data.latest_week) : 'preseason';
-            sel.value = latest;
-            if (window.initCustomSelects) window.initCustomSelects(sel.closest('div') || document);
-          }}
-          var initWeek = (sel && sel.value) ? sel.value : 'latest';
-          sel.addEventListener('change', onBreakoutWeekChange);
-          loadBreakouts(initWeek);
-        }})
-        .catch(function (err) {{
-          console.error('Error loading breakout weeks:', err);
-          var sel = document.getElementById('breakoutWeekSelect');
-          if (sel) sel.addEventListener('change', onBreakoutWeekChange);
-          loadBreakouts('latest');
-        }});
+        .then(data => {{
+          breakoutCandidates = (data && data.candidates) || [];
+          lockedCount = data.locked_count || 0;
+          document.getElementById('breakoutsLoading').style.display = 'none';
 
-      // Sidebar: track record (finished grades only), the live forecast
-      // outlook over open calls, and the biggest graded hits and misses.
-      // Forecasts and grades are rendered from separate payload sections
-      // and never merged into one number.
-      function _boRailSet(id, html) {{
-        var el = document.getElementById(id);
-        if (el) el.innerHTML = html;
-      }}
-
-      function _boTrackRows(groups, pendingText) {{
-        if (!groups || !groups.length) {{
-          return '<div class="bo-rail-pending-line">' + pendingText + ' · based on 0 graded calls so far</div>';
-        }}
-        var html = '';
-        groups.forEach(function (g) {{
-          if (g.hit_rate != null) {{
-            var pct = Math.round(g.hit_rate * 100);
-            html += '<div class="bo-rail-row"><div class="bo-rail-row-main"><div class="bo-rail-name">' + (g.label || '') + '</div>'
-              + '<div class="bo-rail-bar"><span style="width:' + pct + '%;"></span></div>'
-              + '<div class="bo-rail-meta">based on ' + (g.graded || 0) + ' graded calls</div></div>'
-              + '<div class="bo-rail-value bo-rail-rate">' + pct + '%<span class="bo-rail-rate-word"> hits</span></div></div>';
+          if (data && data.data_available === false) {{
+            var emptyTitle = document.getElementById('breakoutsEmptyTitle');
+            var emptyDetail = document.getElementById('breakoutsEmptyDetail');
+            if (emptyTitle) emptyTitle.textContent = 'Breakout data is not ready';
+            if (emptyDetail) {{
+              emptyDetail.textContent = data.reason || 'Opportunity scores need roster-change data for this season. This page will fill in once that pipeline has run.';
+              emptyDetail.style.display = 'block';
+            }}
+            document.getElementById('breakoutsEmpty').style.display = 'block';
+          }} else if (breakoutCandidates.length === 0 && lockedCount === 0) {{
+            document.getElementById('breakoutsEmpty').style.display = 'block';
           }} else {{
-            html += '<div class="bo-rail-row"><div><div class="bo-rail-name">' + (g.label || '') + '</div>'
-              + '<div class="bo-rail-meta">' + pendingText + ' · based on ' + (g.graded || 0) + ' graded calls</div></div></div>';
+            renderBreakouts();
           }}
+        }})
+        .catch(err => {{
+          console.error('Error loading breakouts:', err);
+          document.getElementById('breakoutsLoading').innerHTML = '<div style="color: #ef4444;">Failed to load breakout candidates</div>';
         }});
-        return html;
-      }}
-
-      function renderBoTrackRecord(data) {{
-        var weekly = data.weekly || {{}};
-        var seasonEng = data.season_engine || {{}};
-        var pendingText = data.pending_text || 'Still grading, not enough finished calls yet';
-        var html = '<div class="bo-rail-title">Track Record</div>';
-        html += '<div class="bo-rail-group">Weekly calls' + (weekly.scoring_version ? ' (' + weekly.scoring_version + ')' : '') + '</div>';
-        html += _boTrackRows(weekly.groups, pendingText);
-        if (weekly.score_bands && weekly.score_bands.length) {{
-          html += '<div class="bo-rail-group" style="margin-top:10px;">By score</div>';
-          html += _boTrackRows(weekly.score_bands, pendingText);
-        }}
-        if (weekly.confidence_bands && weekly.confidence_bands.length) {{
-          html += '<div class="bo-rail-group" style="margin-top:10px;">By confidence</div>';
-          html += _boTrackRows(weekly.confidence_bands, pendingText);
-        }}
-        html += '<div class="bo-rail-group" style="margin-top:10px;">Season calls by phase</div>';
-        if (seasonEng.available) {{
-          html += _boTrackRows(seasonEng.groups, pendingText);
-        }} else {{
-          html += '<div class="bo-rail-pending-line">' + pendingText + '</div>';
-        }}
-        var defs = [];
-        if (weekly.definition) defs.push(weekly.definition);
-        if (seasonEng.definition) defs.push(seasonEng.definition);
-        if (defs.length) {{
-          html += '<div class="bo-rail-sub">' + defs.join(' ') + '</div>';
-        }}
-        _boRailSet('boRailTrackRecord', html);
-      }}
-
-      function _boOutlookBlock(title, block) {{
-        var counts = (block && block.counts) || {{}};
-        var html = '<div class="bo-rail-group">' + title + '</div>';
-        if (!block || ((block.open_calls || 0) === 0 && (block.pending_calls || 0) === 0)) {{
-          return html + '<div class="bo-rail-pending">No open calls right now.</div>';
-        }}
-        var bands = [['tracking_to_hit', 'Tracking to hit', 'bo-band-hit'], ['borderline', 'Borderline', 'bo-band-borderline'], ['tracking_to_miss', 'Tracking to miss', 'bo-band-miss']];
-        bands.forEach(function (b) {{
-          html += '<div class="bo-rail-row"><span class="bo-band-pill ' + b[2] + '">' + b[1] + '</span><div class="bo-rail-value">' + (counts[b[0]] || 0) + '</div></div>';
-        }});
-        if (block.pending_no_games) {{
-          html += '<div class="bo-rail-meta" style="margin-top:4px;">' + block.pending_no_games + ' more open call' + (block.pending_no_games === 1 ? '' : 's') + ' with no games yet, so no band yet.</div>';
-        }}
-        if (block.pending_no_baseline) {{
-          html += '<div class="bo-rail-meta" style="margin-top:4px;">' + block.pending_no_baseline + ' more open call' + (block.pending_no_baseline === 1 ? '' : 's') + ' with no baseline to measure against, so no band yet.</div>';
-        }}
-        var top = block.top_tracking_hit || [];
-        if (top.length) {{
-          html += '<div class="bo-rail-group" style="margin-top:8px;">Top calls tracking to hit</div>';
-          top.forEach(function (t) {{
-            html += '<div style="padding:4px 0;border-top:1px solid var(--border);"><div class="bo-rail-name">' + (t.player_name || 'Unknown')
-              + (t.group_label ? ' <span class="bo-rail-meta">' + t.group_label + '</span>' : '') + '</div>'
-              + '<div class="bo-rail-meta">' + (t.reconstructed ? '<span class="bo-grade-chip bo-grade-chip-bt">Backtest</span> ' : '') + (t.basis || '') + '</div></div>';
-          }});
-        }}
-        return html;
-      }}
-
-      function renderBoOutlook(data) {{
-        var outlook = data.outlook || {{}};
-        var html = '<div class="bo-rail-title">Forecast Outlook</div>';
-        html += _boOutlookBlock('Weekly calls', outlook.weekly);
-        html += '<div style="margin-top:10px;">' + _boOutlookBlock('Preseason calls', outlook.preseason) + '</div>';
-        html += '<div class="bo-rail-sub">Forecasts are live projections from games played so far. They are not grades and never count toward the track record hit rates.</div>';
-        _boRailSet('boRailOutlook', html);
-      }}
-
-      function _boGradeRows(rows, emptyText, color) {{
-        if (!rows || !rows.length) {{
-          return '<div class="bo-rail-pending">' + emptyText + '</div>';
-        }}
-        var html = '';
-        rows.forEach(function (r) {{
-          var delta = r.ppg_delta != null ? (r.ppg_delta >= 0 ? '+' : '') + Number(r.ppg_delta).toFixed(1) + ' PPG' : 'PPG n/a';
-          var role = '';
-          if (r.opp_delta != null) role = (r.opp_delta >= 0 ? '+' : '') + Number(r.opp_delta).toFixed(1) + ' touches/g';
-          else if (r.snap_delta != null) role = (r.snap_delta >= 0 ? '+' : '') + Number(r.snap_delta).toFixed(1) + ' snap pts';
-          var chips = (r.reconstructed ? '<span class="bo-grade-chip bo-grade-chip-bt">Backtest</span> ' : '')
-            + (r.label ? '<span class="bo-grade-chip">' + r.label + '</span> ' : '');
-          html += '<div class="bo-rail-row"><div><div class="bo-rail-name">' + (r.player_name || 'Unknown') + '</div>'
-            + '<div class="bo-rail-meta">' + chips + 'Week ' + (r.call_week != null ? r.call_week : '?') + ' call' + (role ? ' · ' + role : '') + '</div></div>'
-            + '<div class="bo-rail-value bo-delta" style="color:' + color + ';">' + delta + '</div></div>';
-        }});
-        return html;
-      }}
-
-      function renderBoHitsMisses(data) {{
-        _boRailSet('boRailHits', '<div class="bo-rail-title">Biggest Hits</div>' + _boGradeRows(data.hits, 'No graded hits yet. Hits appear here once a call finishes its 3 week window and grades as a hit.', '#10b981'));
-        _boRailSet('boRailMisses', '<div class="bo-rail-title">Biggest Misses</div>' + _boGradeRows(data.misses, 'No graded misses yet. Misses appear here once a call finishes its 3 week window and grades as a miss.', '#ef4444'));
-      }}
-
-      function loadBreakoutSidebar() {{
-        fetch('/api/breakout/track-record?season={bo_season}')
-          .then(res => res.json())
-          .then(function (data) {{
-            renderBoTrackRecord(data || {{}});
-            renderBoOutlook(data || {{}});
-            renderBoHitsMisses(data || {{}});
-          }})
-          .catch(function (err) {{
-            console.error('Error loading breakout sidebar:', err);
-            var msg = '<div class="bo-rail-pending">Could not load. Refresh the page to try again.</div>';
-            _boRailSet('boRailTrackRecord', '<div class="bo-rail-title">Track Record</div>' + msg);
-            _boRailSet('boRailOutlook', '<div class="bo-rail-title">Forecast Outlook</div>' + msg);
-            _boRailSet('boRailHits', '<div class="bo-rail-title">Biggest Hits</div>' + msg);
-            _boRailSet('boRailMisses', '<div class="bo-rail-title">Biggest Misses</div>' + msg);
-          }});
-      }}
-      loadBreakoutSidebar();
 
       function filterBreakouts(position) {{
         currentFilter = position;
@@ -17223,26 +15268,16 @@ def page_breakouts(platform: str, season: int, league_id: str):
           let html = '<div class="breakout-grid">';
           filtered.forEach(candidate => {{ html += renderBreakoutCard(candidate); }});
           if (lockedCount > 0) {{
-            // One dismissible inline nudge instead of the old locked card. The
-            // free preview candidates always stay visible; the nudge sits below
-            // the grid, never blocks anything, and remembers its dismissal.
-            html += '<div id="boUpsellNudge" style="margin-top:14px;"></div>';
+            html += `
+              <div class="breakout-card" onclick="showPaywall('breakout-candidates')" style="cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;min-height:180px;border:2px dashed var(--border);">
+                <i class="fa-solid fa-lock" style="font-size:22px;color:var(--text-muted);"></i>
+                <div style="font-weight:700;font-size:15px;">${{lockedCount}} more candidates locked</div>
+                <div style="font-size:12px;color:var(--text-muted);text-align:center;">Upgrade to PRO to see all breakout<br>candidates with full details</div>
+                <span style="font-size:11px;font-weight:700;padding:4px 12px;background:linear-gradient(135deg,#122d4b,#2563eb);color:white;border-radius:8px;">Upgrade &rarr;</span>
+              </div>`;
           }}
           html += '</div>';
           container.innerHTML = html;
-          if (lockedCount > 0) {{
-            // paywall.js loads deferred; the fetch can resolve before it runs.
-            var _boNudge = function () {{
-              if (window.brUpsell) window.brUpsell.nudge(document.getElementById('boUpsellNudge'), {{
-                key: 'bo-locked',
-                feature: 'breakout-candidates',
-                message: lockedCount + ' more breakout candidates are locked. PRO unlocks the full list with full details.',
-                ctaLabel: 'Unlock'
-              }});
-            }};
-            if (window.brUpsell || document.readyState !== 'loading') _boNudge();
-            else document.addEventListener('DOMContentLoaded', _boNudge, {{ once: true }});
-          }}
           return;
         }}
 
@@ -17355,25 +15390,6 @@ def page_breakouts(platform: str, season: int, league_id: str):
                </div>`
             : '';
 
-          // Live forecast chip: a projection from games played so far, never
-          // a grade. Dashed border + the word Forecast keep it visually
-          // distinct from every grade or hit-rate element on the page.
-          const fc = candidate.forecast || null;
-          let fcColor = '#6b7280';
-          if (fc && fc.band === 'tracking_to_hit') fcColor = '#10b981';
-          else if (fc && fc.band === 'borderline') fcColor = '#d97706';
-          else if (fc && fc.band === 'tracking_to_miss') fcColor = '#ef4444';
-          const forecastHtml = !fc ? ''
-            : fc.band
-            ? `<div style="margin-bottom:10px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
-                 <span class="bo-fc-chip" style="border-color:${{fcColor}};color:${{fcColor}};" title="Live projection from the games played so far. Tracking to hit means the numbers so far already clear the bar this call is graded on. A forecast is not a grade and never counts toward the hit rate.">Forecast: ${{fc.band_label}}</span>
-                 <span style="font-size:11px;color:var(--text-muted);">${{fc.basis || ''}}</span>
-               </div>`
-            : `<div style="margin-bottom:10px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
-                 <span class="bo-fc-chip" title="No forecast band yet. A band appears once there is a game and a baseline to project from.">Forecast: ${{fc.state === 'no_games' ? 'no games yet' : 'not enough data yet'}}</span>
-                 <span style="font-size:11px;color:var(--text-muted);">${{fc.basis || ''}}</span>
-               </div>`;
-
           const signalPoints = weeklySignal ? parseFloat(weeklySignal.points || 0) : 0;
           const barFill = Math.min(100, Math.max(0, isWeekly ? signalPoints : topComp.val));
           const driverLabel = isWeekly ? _boWeeklySignalText(weeklySignal) : `Top Driver: ${{topComp.label}}`;
@@ -17401,7 +15417,6 @@ def page_breakouts(platform: str, season: int, league_id: str):
                 </div>
               </div>
               <div style="margin-bottom:12px;">${{ppgHtml}}</div>
-              ${{forecastHtml}}
               <div style="margin-bottom:10px;">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
                   <span style="font-size:11px;color:var(--text-muted);">${{driverLabel}}</span>
@@ -17993,7 +16008,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
         table_rows_html += f"""
         <tr>
           <td>{_rank_badge(rank)}</td>
-          <td class="hist-team">{html.escape(str(row['display_name']))} {rings}</td>
+          <td>{html.escape(str(row['display_name']))} {rings}</td>
           <td style="font-weight:700;color:var(--accent);">{int(row['Championships'])}</td>
           <td style="{rec_style}">{int(row['Wins'])}-{int(row['Losses'])}</td>
           <td>
@@ -18014,7 +16029,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
         <div class="history-table-wrap">
           <table class="history-table">
             <thead><tr>
-              <th>#</th><th class="hist-team">Team</th><th>Titles</th><th>Record</th>
+              <th>#</th><th>Team</th><th>Titles</th><th>Record</th>
               <th>Win%</th><th>PF</th><th>PA</th><th>Avg/Wk</th><th>Best Wk</th><th>Seasons</th>
             </tr></thead>
             <tbody>{table_rows_html}</tbody>
@@ -18622,7 +16637,7 @@ def _compute_fpts_against(season: int, scoring_settings=None, completed_through_
             if not sched_files:
                 continue
             games = json.load(open(sched_files[0], encoding="utf-8"))
-            _alias = {"WSH": "WAS", "LA": "LAR", "JAC": "JAX"}
+            _alias = {"WSH": "WAS"}
 
             def _n(t):
                 return _alias.get(t, t)
@@ -18862,11 +16877,8 @@ def _load_oline_ratings(season: int) -> dict:
 
     Shape: {team: {"composite","pass_block","run_block","pressure_rate",
     "sack_rate","line_yards","stuffed_rate",...}} on a 0-100 scale (100 = best).
-    Built weekly by data_building/oline_ratings.py (cron_daily.py, Wednesdays
-    in season) and persisted to the oline_ratings table, since the cron's
-    ephemeral container cannot leave the cache/ JSON file behind. The flat
-    file remains as a fallback for environments without a database. Returns {}
-    when neither source has data so callers can degrade gracefully. Cached
+    Produced by data_building/oline_ratings.py via the daily cron. Returns {}
+    when the cache file is absent so callers can degrade gracefully. Cached
     in-process with the same TTL as the matchup ratings."""
     key = str(season)
     now = time.time()
@@ -18875,23 +16887,12 @@ def _load_oline_ratings(season: int) -> dict:
         return _OLINE_RATINGS_CACHE[key]
     data: dict = {}
     try:
-        from dashboard_services.oline_store import (
-            load_oline_ratings as _db_load_oline,
-        )
-
-        row = _db_load_oline(season)
-        if row:
-            data = row.get("ratings") or {}
+        path = os.path.join("cache", f"oline_ratings_s{season}.json")
+        if os.path.exists(path):
+            blob = json.load(open(path))
+            data = blob.get("ratings") or {}
     except Exception:
         data = {}
-    if not data:
-        try:
-            path = os.path.join("cache", f"oline_ratings_s{season}.json")
-            if os.path.exists(path):
-                blob = json.load(open(path))
-                data = blob.get("ratings") or {}
-        except Exception:
-            data = {}
     _OLINE_RATINGS_CACHE[key] = data
     _OLINE_RATINGS_TS[key] = now
     return data
@@ -18915,31 +16916,21 @@ def _oline_rank_table(season: int, metric: str = "composite"):
 def _oline_ratings_with_fallback(season: int) -> tuple:
     """``(used_season, ratings)`` for O-line ratings with prior-season fallback.
 
-    Use the requested season's ratings, else fall back to the newest stored
-    season (database first, then the cache/ files): O-line quality carries
-    across seasons (year-over-year rho ~0.43), so last season's rating beats
-    showing nothing before the in-season build.
+    Use the requested season's ratings, else fall back to the newest built
+    cache: O-line quality carries across seasons (year-over-year rho ~0.43),
+    so last season's rating beats showing nothing before the in-season build.
     """
     used_season = int(season)
     ratings = _load_oline_ratings(used_season)
     if not ratings:
         newest = None
         try:
-            from dashboard_services.oline_store import (
-                newest_oline_season as _db_newest_oline,
-            )
-
-            newest = _db_newest_oline()
+            for fn in os.listdir("cache"):
+                if fn.startswith("oline_ratings_s") and fn.endswith(".json"):
+                    yr = int(fn[len("oline_ratings_s"):-len(".json")])
+                    newest = yr if newest is None else max(newest, yr)
         except Exception:
             newest = None
-        if newest is None:
-            try:
-                for fn in os.listdir("cache"):
-                    if fn.startswith("oline_ratings_s") and fn.endswith(".json"):
-                        yr = int(fn[len("oline_ratings_s"):-len(".json")])
-                        newest = yr if newest is None else max(newest, yr)
-            except Exception:
-                newest = None
         if newest is not None and newest != used_season:
             used_season = newest
             ratings = _load_oline_ratings(newest)
@@ -20084,25 +18075,6 @@ def api_weekly_week():
     )
 
     _api_vid = str((ctx.get("viewer") or {}).get("viewer_roster_id") or "")
-    # ScoreZone Moments launcher for the viewer's matchup slide. The week-change
-    # fetch replaces #weeklyMatchupsContainer, so the launcher must be included
-    # here too (not just on the initial page render), or it vanishes when she
-    # switches weeks.
-    _api_rzm_html = ""
-    try:
-        from dashboard_services.pages.weekly_hub_page import scorezone_moments_hub_html
-        if not ctx.get("offseason_mode"):
-            _api_rzm_html = scorezone_moments_hub_html(platform, league_id, season, week)
-    except Exception:
-        _api_rzm_html = ""
-    def _api_rzm_for_matchup(m):
-        if not _api_rzm_html or not _api_vid:
-            return ""
-        _rids = (
-            str((m.get("left") or {}).get("roster_id", "")),
-            str((m.get("right") or {}).get("roster_id", "")),
-        )
-        return _api_rzm_html if str(_api_vid) in _rids else ""
     matchups = sorted(
         matchups_by_week.get(week, []) or [],
         key=lambda m: 0 if _api_vid and _api_vid in (str((m.get("left") or {}).get("roster_id", "")),
@@ -20163,8 +18135,6 @@ def api_weekly_week():
             scoring_settings=ctx.get("raw_scoring_settings") or ctx.get("scoring_settings"),
             is_gotw=is_gotw,
             gotw_selection=_api_gotw,
-            league_id=ctx.get("resolved_league_id") or league_id,
-            rzm_hub_html=_api_rzm_for_matchup(m),
         )
         for m, is_gotw in zip(matchups, _api_gotw_flags)
     ]
@@ -20189,26 +18159,11 @@ def api_weekly_week():
     except Exception:
         logger.debug("[api_weekly_week] wrapped url check failed", exc_info=True)
 
-    # League Scores payload, built from the same matchup data as the carousel
-    # so the tab renders instantly without a separate API fetch.
-    _api_ls_payload = []
-    try:
-        from dashboard_services.matchups import build_league_scores_list, make_frac_lookup
-        _api_ls_frac = make_frac_lookup(team_game_lookup or {})
-        _api_ls_payload = build_league_scores_list(
-            matchups, _api_vid, status_by_pid, proj_by_week,
-            frac_lookup=_api_ls_frac,
-        )
-    except Exception:
-        logger.debug("[api_weekly_week] league-scores payload failed", exc_info=True)
-        _api_ls_payload = []
-
     return jsonify({
         "ok": True,
         "top_html": top_html,
         "highlights_html": highlights_html,
         "matchups_html": matchups_html,
-        "league_scores": {"matchups": _api_ls_payload, "week": week},
         "week_has_scores": bool(_api_wrapped_url),
         "wrapped_url": _api_wrapped_url,
     })
@@ -20473,11 +18428,6 @@ def _load_usage_rows_cached(season_year: int):
 # A failed fetch (e.g. Sleeper outage) must not stall every modal open.
 _SLEEPER_WEEK_ENSURE_TS: dict = {}  # season(int) -> float
 _SLEEPER_WEEK_ENSURE_COOLDOWN_S = 10 * 60
-# Cooldown for the live (in-progress) week refresh (15 minutes). The live
-# week's file goes stale as each game finishes, so it refetches with
-# force=True; the cooldown keeps it to ~4 Sleeper hits/hour/season.
-_SLEEPER_LIVE_WEEK_TS: dict = {}  # season(int) -> float
-_SLEEPER_LIVE_WEEK_COOLDOWN_S = 15 * 60
 
 
 def _sleeper_week_cache_populated(season_year: int, week: int) -> bool:
@@ -20498,31 +18448,6 @@ def _sleeper_week_cache_populated(season_year: int, week: int) -> bool:
         return False
 
 
-def _live_week_kickoff_passed(season_year: int, week: int) -> bool:
-    """True once the week's first scheduled kickoff has passed.
-
-    Uses the cached schedule's ``gameTime_epoch`` so a Thursday-night game
-    marks its week as live even though the week is not "completed" yet.
-    Never raises.
-    """
-    try:
-        path = os.path.join(
-            CACHE_DIR, "schedule", f"schedule_s{int(season_year)}_w{int(week)}.json"
-        )
-        with open(path) as f:
-            games = json.load(f)
-        now = time.time()
-        for g in games if isinstance(games, list) else []:
-            try:
-                if float((g or {}).get("gameTime_epoch") or 0) <= now:
-                    return True
-            except (TypeError, ValueError):
-                continue
-    except Exception:
-        pass
-    return False
-
-
 def _ensure_sleeper_week_files(season_year: int) -> None:
     """Fetch-on-demand the Sleeper weekly stat files for completed weeks.
 
@@ -20540,13 +18465,6 @@ def _ensure_sleeper_week_files(season_year: int) -> None:
     JSON parsing, no retained memory. Only genuinely missing/empty files
     reach ``fetch_week_stats``, guarded by a per-season cooldown so a
     Sleeper outage can't stall modal opens.
-
-    The in-progress week is handled too: it is never "completed", so without
-    a live refresh a Thursday-night game would keep showing its projection
-    (with dashes) in the Stats tab until the whole week finalizes. Once the
-    week's first kickoff has passed, its file refetches with ``force=True``
-    on a 15-minute per-season cooldown so each finished game lands within
-    minutes.
     """
     try:
         season_year = int(season_year)
@@ -20557,148 +18475,22 @@ def _ensure_sleeper_week_files(season_year: int) -> None:
         completed = [int(w) for w in qualification_policy(season_year).completed_weeks]
     except Exception:
         return
+    missing = [w for w in completed if not _sleeper_week_cache_populated(season_year, w)]
+    if not missing:
+        return
+    now = time.time()
+    if now - _SLEEPER_WEEK_ENSURE_TS.get(season_year, 0.0) < _SLEEPER_WEEK_ENSURE_COOLDOWN_S:
+        return
+    _SLEEPER_WEEK_ENSURE_TS[season_year] = now
     try:
         from data_building.external_data.sleeper_bulk_stats import fetch_week_stats
     except Exception:
         return
-
-    missing = [w for w in completed if not _sleeper_week_cache_populated(season_year, w)]
-    if missing:
-        now = time.time()
-        if now - _SLEEPER_WEEK_ENSURE_TS.get(season_year, 0.0) >= _SLEEPER_WEEK_ENSURE_COOLDOWN_S:
-            _SLEEPER_WEEK_ENSURE_TS[season_year] = now
-            # Weeks are independent (each writes its own file), so fetch in
-            # parallel. Sequential fetches made a cold post-deploy backfill
-            # take 60s+ and risk tripping gunicorn's 120s worker timeout on
-            # the request that triggered it.
-            import concurrent.futures as _futures
-
-            def _fetch(week: int) -> None:
-                try:
-                    fetch_week_stats(season_year, week)
-                except Exception:
-                    pass
-
-            with _futures.ThreadPoolExecutor(
-                max_workers=min(4, len(missing)), thread_name_prefix="sleeper-wk"
-            ) as pool:
-                for fut in _futures.as_completed(
-                    {pool.submit(_fetch, week): week for week in missing}
-                ):
-                    try:
-                        fut.result()
-                    except Exception:
-                        continue
-    # ── Live week ──
-    try:
-        live_week = (max(completed) + 1) if completed else 1
-        if 1 <= live_week <= 18 and live_week not in completed:
-            now = time.time()
-            if now - _SLEEPER_LIVE_WEEK_TS.get(season_year, 0.0) >= _SLEEPER_LIVE_WEEK_COOLDOWN_S:
-                if _live_week_kickoff_passed(season_year, live_week):
-                    _SLEEPER_LIVE_WEEK_TS[season_year] = now
-                    try:
-                        fetch_week_stats(season_year, live_week, force=True)
-                    except Exception:
-                        pass
-    except Exception:
-        pass
-
-
-# ── Shared per-(season, week) stat index ─────────────────────────────────────────
-# The game-log route used to glob + fully parse every weekly stat file for
-# every season on each call (~180 files / ~90MB of JSON) just to extract one
-# player's rows. This index parses each (season, week) file once per worker
-# and keeps a compact per-player view: player_id -> {stat_key: value} of the
-# row's NONZERO stats, or None for a present-but-all-zero row (so a 0.0-point
-# game still renders as 0.0, not DNP).
-#
-# The full key set is kept (not just the 12 display keys) because score_stats
-# scores any stat key the league's scoring settings name: truncating to the
-# display keys silently undercounts custom-scoring leagues (e.g. 1 pt per
-# completion, first downs, 2pt conversions, return yards, kicker scoring).
-# Entries are guarded by the file's mtime, so a refetched week file is
-# re-parsed on next access. Measured ~59MB for all 10 seasons in a worker,
-# vs ~90MB of JSON parsed per request.
-# threading is imported at module top (gthread workers run 2 threads).
-_GAMELOG_STAT_KEYS = (
-    "pass_yd", "pass_td", "pass_int", "pass_att",
-    "rush_att", "rush_yd", "rush_td",
-    "rec", "rec_tgt", "rec_yd", "rec_td", "fum_lost",
-)
-_WEEK_STAT_INDEX: Dict[Tuple[int, int], Tuple[float, Dict[str, Optional[dict]]]] = {}
-_WEEK_STAT_INDEX_LOCK = threading.Lock()
-# Memory bound: a fully parsed week file costs ~1.7MB of Python objects, and
-# ten seasons of history (~180 files) measured ~300MB per gunicorn worker --
-# the single biggest per-worker structure on the 2GB Render box. Game-log
-# traffic is overwhelmingly for recent seasons, so keep only the N most
-# recent seasons in memory; older seasons re-parse on demand (slower but
-# rare and still correct). Override with WEEK_STAT_INDEX_MAX_SEASONS.
-_WEEK_STAT_INDEX_MAX_SEASONS = _positive_env_int("WEEK_STAT_INDEX_MAX_SEASONS", 4)
-
-
-def _evict_old_week_stat_seasons() -> None:
-    """Drop _WEEK_STAT_INDEX entries from the oldest seasons.
-
-    Keeps the _WEEK_STAT_INDEX_MAX_SEASONS most recent seasons by season
-    number. Called with _WEEK_STAT_INDEX_LOCK held, after an insert.
-    """
-    seasons = sorted({s for (s, _w) in _WEEK_STAT_INDEX})
-    while len(seasons) > _WEEK_STAT_INDEX_MAX_SEASONS:
-        oldest = seasons.pop(0)
-        for k in [k for k in _WEEK_STAT_INDEX if k[0] == oldest]:
-            _WEEK_STAT_INDEX.pop(k, None)
-
-
-def _week_stat_index_rows(season: int, week: int) -> Dict[str, Optional[dict]]:
-    """Compact per-player stat rows for one (season, week), parsed at most once.
-
-    Returns {player_id: {stat_key: nonzero value}} for players with any stat
-    and {player_id: None} for players whose row exists but is all zeros.
-    A file whose mtime changed since the cached parse is re-parsed.
-    Never raises; a missing/unreadable file yields {}.
-
-    The index is bounded to the most recent _WEEK_STAT_INDEX_MAX_SEASONS
-    seasons (see _evict_old_week_stat_seasons); older seasons re-parse on
-    demand. Stat keys and player ids are sys.intern()ed so the ~265 stat
-    keys and ~7k player ids are shared instead of duplicated per week file.
-    """
-    season = int(season)
-    week = int(week)
-    path = os.path.join(
-        CACHE_DIR, "sleeper_stats", f"sleeper_stats_s{season}_w{week}.json"
-    )
-    try:
-        mtime = os.path.getmtime(path)
-    except OSError:
-        return {}
-    key = (season, week)
-    hit = _WEEK_STAT_INDEX.get(key)
-    if hit is not None and hit[0] >= mtime:
-        return hit[1]
-    with _WEEK_STAT_INDEX_LOCK:
-        hit = _WEEK_STAT_INDEX.get(key)
-        if hit is not None and hit[0] >= mtime:
-            return hit[1]
-        rows: Dict[str, Optional[dict]] = {}
+    for week in missing:
         try:
-            with open(path) as handle:
-                weekly = json.load(handle) or {}
-            _intern = sys.intern
-            for pid, s in weekly.items():
-                if not isinstance(s, dict):
-                    continue
-                # Keep every nonzero stat, not just the display keys: the
-                # game-log points calc (score_stats) scores any stat key the
-                # league's scoring settings name, so dropping the rest would
-                # silently undercount custom-scoring leagues.
-                nonzero = {_intern(k): v for k, v in s.items() if v}
-                rows[_intern(str(pid))] = nonzero if nonzero else None
+            fetch_week_stats(season_year, week)
         except Exception:
-            rows = {}
-        _WEEK_STAT_INDEX[key] = (mtime, rows)
-        _evict_old_week_stat_seasons()
-        return rows
+            continue
 
 
 def _sleeper_stats_by_week(player_id: str, season_year: int) -> dict:
@@ -20707,49 +18499,25 @@ def _sleeper_stats_by_week(player_id: str, season_year: int) -> dict:
     This is deliberately the same cache family consumed by the game-log route.
     Keeping the small lookup here prevents player-details from deciding that a
     rookie has not played merely because the derived usage_rows snapshot lags.
-
-    Backed by the shared per-(season, week) index above: each week file is
-    parsed once per worker instead of re-parsed on every call. The per-week
-    index loads run in a small thread pool so a cold worker warms a season's
-    weeks concurrently instead of parsing ~18 JSON files one by one.
     """
     _ensure_sleeper_week_files(season_year)
-    pid = str(player_id)
-    season = int(season_year)
-    out: dict = {}
-    pattern = os.path.join(
-        CACHE_DIR, "sleeper_stats", f"sleeper_stats_s{season}_w*.json"
+    import glob as _glob, json as _json, os as _os, re as _re
+    out = {}
+    pattern = _os.path.join(
+        CACHE_DIR, "sleeper_stats", f"sleeper_stats_s{int(season_year)}_w*.json"
     )
-    weeks: list = []
-    for path in glob.glob(pattern):
-        match = re.match(r"sleeper_stats_s\d+_w(\d+)", os.path.basename(path))
+    for path in _glob.glob(pattern):
+        match = _re.match(r"sleeper_stats_s\d+_w(\d+)", _os.path.basename(path))
         if not match:
             continue
-        weeks.append(int(match.group(1)))
-    # _week_stat_index_rows never raises and is parse-once per worker
-    # (mtime-guarded, lock-protected), so on a warm worker this is just cheap
-    # cache hits through the pool.
-    import concurrent.futures as _wk_futures
-    with _wk_futures.ThreadPoolExecutor(
-        max_workers=min(4, len(weeks) or 1), thread_name_prefix="gamelog-wkstat"
-    ) as _wk_pool:
-        rows_by_week = list(
-            _wk_pool.map(lambda w: _week_stat_index_rows(season, w), weeks)
-        )
-    for week, rows in zip(weeks, rows_by_week):
-        if pid in rows:
-            stored = rows[pid]
-            if stored is None:
-                # Present-but-all-zero row: a genuine 0.0 game, not DNP.
-                out[week] = {k: 0 for k in _GAMELOG_STAT_KEYS}
-            else:
-                # Zero-fill the display keys the endpoint's _stats_dict picks
-                # (old full-row parse surfaced them as explicit zeros), then
-                # overlay every stored nonzero stat so score_stats sees the
-                # same values the pre-index parse did for custom scoring.
-                merged = {k: 0 for k in _GAMELOG_STAT_KEYS}
-                merged.update(stored)
-                out[week] = merged
+        try:
+            with open(path) as handle:
+                weekly = _json.load(handle) or {}
+            row = weekly.get(str(player_id)) or weekly.get(player_id)
+            if isinstance(row, dict):
+                out[int(match.group(1))] = row
+        except Exception:
+            continue
     return out
 
 
@@ -21180,28 +18948,8 @@ def api_gm_memo():
 
     try:
         ctx = get_league_ctx_from_cache(platform, league_id, season)
-        # The memo's canonical injury source (injury_df) is deferred out of
-        # the league-context build; fill just that section here (local
-        # computation, no provider calls) so the report uses it instead of
-        # its players-index fallback.
-        if ctx:
-            ensure_injury_bits(ctx)
         force_refresh = bool(payload.get("force"))
         report = get_front_office_report(ctx, viewer_roster_id, force_refresh=force_refresh)
-
-        # Product analytics: a front office report was generated.
-        from dashboard_services import analytics as _analytics
-        _analytics.track_event(
-            _analytics.EVENT_FRONT_OFFICE_GENERATED,
-            account_id=_analytics.account_id_from_session(),
-            session_id=_analytics.ensure_anon_session_id(),
-            path="/api/gm-memo",
-            props={
-                "platform": platform,
-                "league_id": league_id,
-                "cached": bool(report.get("cached")),
-            },
-        )
 
         return jsonify({
             "success": True,
@@ -21210,31 +18958,6 @@ def api_gm_memo():
             "verdict": report.get("verdict"),
             "cached": bool(report.get("cached")),
         })
-    except (ProviderUnavailableError, ESPNUnavailable) as e:
-        # Platform outages (e.g. the Fleaflicker API erroring) are not app
-        # bugs: surface them as 503 with the platform message instead of a
-        # 500 "Internal error" so the UI can show a retry-able notice.
-        logger.warning("[api-gm-memo] provider unavailable: %s", e)
-        return jsonify({
-            "success": False,
-            "error": _provider_error_message(
-                e, "The fantasy platform is temporarily unavailable. Please try again in a bit."
-            ),
-        }), 503
-    except (ProviderAuthenticationError, ESPNAccessDenied) as e:
-        logger.warning("[api-gm-memo] provider auth failed: %s", e)
-        return jsonify({
-            "success": False,
-            "error": _provider_error_message(
-                e, "This league is private or requires authentication."
-            ),
-        }), 403
-    except (LeagueNotFoundError, ESPNInvalidLeague) as e:
-        logger.warning("[api-gm-memo] league not found: %s", e)
-        return jsonify({
-            "success": False,
-            "error": _provider_error_message(e, "No league was found for that ID and season."),
-        }), 404
     except Exception as e:
         logger.exception("[api-gm-memo] Error: %s", e)
         return jsonify({
@@ -21825,16 +19548,6 @@ def api_trade_eval():
     else:
         analysis_error = ""
 
-    # Product analytics: a completed trade evaluation.
-    from dashboard_services import analytics as _analytics
-    _analytics.track_event(
-        _analytics.EVENT_TRADE_EVALUATED,
-        account_id=_analytics.account_id_from_session(),
-        session_id=_analytics.ensure_anon_session_id(),
-        path="/api/trade-eval",
-        props={"platform": platform, "league_id": league_id, "scoring_type": scoring_type},
-    )
-
     return jsonify({
         "side_a": side_a,
         "side_b": side_b,
@@ -22179,58 +19892,6 @@ _LP_PAYLOAD_LOCK = threading.Lock()
 _LP_OVERLAY_CACHE: dict = {}
 _LP_OVERLAY_LOCK = threading.Lock()
 _LP_BOARD_JSON_CACHE: dict = {}
-# ETag versions for /api/league-players default-path responses:
-# version_key -> etag. The key embeds every input that determines the body
-# (overlay cache key incl. model_ts + adp_sig, superflex flip, view, and the
-# historical-aggregates mtime token), so a 304 is served without rebuilding
-# or re-serializing the ~1MB payload. Entries are naturally invalidated when
-# the key changes; pruned on write as a backstop.
-_LP_ETAG_CACHE: dict = {}
-
-
-def _lp_response_version_key(*, overlay_key, is_sf: bool, view: str) -> tuple:
-    """Version tuple identifying one /api/league-players response body."""
-    try:
-        from dashboard_services.historical.aggregates_store import (
-            profile_aggregates_version,
-        )
-        hist_v = profile_aggregates_version()
-    except Exception:
-        hist_v = None
-    return (tuple(overlay_key), bool(is_sf), str(view), hist_v)
-
-
-def _lp_etag_for(version_key: tuple) -> str:
-    cached = _LP_ETAG_CACHE.get(version_key)
-    if cached is not None:
-        return cached
-    etag = '"lp-%s"' % hashlib.sha1(repr(version_key).encode()).hexdigest()[:32]
-    _LP_ETAG_CACHE[version_key] = etag
-    _prune_ttl_cache(_LP_ETAG_CACHE, 128)
-    return etag
-
-
-def _lp_not_modified_response(etag: str):
-    """304 for a matching If-None-Match, else None."""
-    if request.headers.get("If-None-Match") == etag:
-        resp = app.response_class(status=304)
-        resp.headers["ETag"] = etag
-        return resp
-    return None
-
-
-def _lp_cacheable_response(body: str, version_key: tuple):
-    """200 JSON response with ETag + short client cache for league-players."""
-    etag = _lp_etag_for(version_key)
-    not_modified = _lp_not_modified_response(etag)
-    if not_modified is not None:
-        return not_modified
-    resp = app.response_class(body, mimetype="application/json")
-    resp.headers["ETag"] = etag
-    # Data changes at most on cron rebuilds (which change the ETag); a short
-    # client cache absorbs repeat visits, 304s handle everything after.
-    resp.headers["Cache-Control"] = "public, max-age=60"
-    return resp
 
 _ADP_FIELDS = ("avg_pick", "sf_avg_pick", "rookie_avg_pick",
                "sf_rookie_avg_pick", "redraft_avg_pick", "sf_redraft_avg_pick")
@@ -22535,86 +20196,6 @@ def _attach_adp_to_players(players, adp_season, clear_first=False, sleeper_only=
     return _adp_sources
 
 
-def _ppg_map_with_ranks(entries: dict) -> dict:
-    """Attach positional PPG / total-points ranks to a PPG entry map.
-
-    ``entries`` maps player_id -> {"ppg", "total_pts", "games", "season",
-    "position"} with ppg/total already rounded to the displayed 0.1. Ranks use
-    competition semantics on those rounded values (ties share the better
-    rank), matching the usage-file implementation this replaced. Returns a
-    new dict keyed by player_id carrying exactly the payload fields.
-    """
-    pos_ppg: dict = {}
-    pos_total: dict = {}
-    for _e in entries.values():
-        pos_ppg.setdefault(_e["position"], []).append(_e["ppg"])
-        pos_total.setdefault(_e["position"], []).append(_e["total_pts"])
-    for _vals in pos_ppg.values():
-        _vals.sort(reverse=True)
-    for _vals in pos_total.values():
-        _vals.sort(reverse=True)
-    out = {}
-    for _pid, _e in entries.items():
-        _ppg_sorted = pos_ppg.get(_e["position"], [])
-        _tot_sorted = pos_total.get(_e["position"], [])
-        out[_pid] = {
-            "ppg": _e["ppg"],
-            "total_pts": _e["total_pts"],
-            "ppg_games": _e["games"],
-            "ppg_season": _e["season"],
-            "ppg_rank": (_ppg_sorted.index(_e["ppg"]) + 1) if _e["ppg"] in _ppg_sorted else None,
-            "total_pts_rank": (_tot_sorted.index(_e["total_pts"]) + 1) if _e["total_pts"] in _tot_sorted else None,
-        }
-    return out
-
-
-def _current_season_ppg_map(season: int, positions: dict) -> dict:
-    """PPG / total points from the CURRENT season's completed Sleeper weeks.
-
-    Same source the player modal uses: weekly stat files scored full-PPR via
-    _load_season_weekly_points (which backfills missing week files on demand).
-    The prebuilt usage_rows_<season>.json only exists for finished seasons, so
-    pointing the rankings payload at the newest usage file silently served
-    last season's numbers once the new season kicked off. Returns {} when no
-    round is complete yet (preseason) or the weekly files are unavailable;
-    the caller then leaves the PPG cells blank rather than substituting
-    another season. Any completed appearance qualifies (no games gate),
-    matching the modal and _season_rank_rows: the same player shows the same
-    PPG everywhere on the site. Never raises.
-    """
-    try:
-        from utils.season_qualification import qualification_policy
-        _policy = qualification_policy(int(season))
-        if not _policy.completed_weeks:
-            return {}
-        _weekly = _load_season_weekly_points(int(season), {"rec": 1.0}) or {}
-        if not _weekly:
-            return {}
-        from utils.fantasy_scoring import completed_points_summary
-        try:
-            _index_pos = {str(_pid): str(_meta.get("pos") or _meta.get("position") or "")
-                          for _pid, _meta in (load_players_index() or {}).items()}
-        except Exception:
-            _index_pos = {}
-        _entries = {}
-        for _pid, _pts in _weekly.items():
-            _summary = completed_points_summary(_pts)
-            if not _summary:
-                continue
-            _pid = str(_pid)
-            _entries[_pid] = {
-                "ppg": round(float(_summary["ppg"]), 1),
-                "total_pts": round(float(_summary["total"]), 1),
-                "games": int(_summary["games"]),
-                "season": int(season),
-                "position": str(positions.get(_pid) or _index_pos.get(_pid) or ""),
-            }
-        return _ppg_map_with_ranks(_entries)
-    except Exception:
-        logger.debug("[league-players] current-season PPG map failed", exc_info=True)
-        return {}
-
-
 def _build_league_players_payload(kdef: bool = False) -> dict:
     """Memoized wrapper around the (expensive) enriched player-pool build.
 
@@ -22812,17 +20393,11 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
         logger.info(f"[api/league-players] pick injection skipped: {_e_picks}")
 
     # Compute rank_change_7d from player-only pool (QB/RB/WR/TE) so that picks
-    # don't distort movement arrows on the rankings page. Both ranks are
-    # computed over the INTERSECTION of today's pool and the snapshot pool
-    # with competition tie handling on both sides: comparing an enumerate
-    # rank against the snapshot's min-tie rank manufactured phantom
-    # "down N spots" moves whenever the pool grew or players tied at 0.
+    # and newly-added rookies don't distort movement arrows on the rankings page.
+    # Current rank = position in value-sorted player list; historical rank from DB snapshot.
     _PLAYER_POSITIONS = {"QB", "RB", "WR", "TE"}
     try:
-        from data_building.update_player_values_with_rankings import (
-            _load_historical_ranks as _lhr,
-            rank_change_vs_snapshot as _rc_vs,
-        )
+        from data_building.update_player_values_with_rankings import _load_historical_ranks as _lhr
         from datetime import timedelta as _td
 
         # Cache historical ranks by date so we don't hit DB on every request
@@ -22833,36 +20408,35 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
             _hist_ranks = _lhr(_today - _td(days=7))
             setattr(app, _hist_cache_key, _hist_ranks)
 
-        # Current player-only values (1QB and SF orderings)
-        _cur_vals: dict[str, float] = {}
-        _cur_sf_vals: dict[str, float] = {}
-        for _p in model_value_table:
-            if isinstance(_p, dict) and str(_p.get("position", "")).upper() in _PLAYER_POSITIONS:
-                _pid = str(_p.get("id") or "")
-                if not _pid:
-                    continue
-                _cur_vals[_pid] = float(_p.get("value") or 0)
-                _cur_sf_vals[_pid] = float(_p.get("sf_value") or _p.get("value") or 0)
-        _hist_vals = {
-            _pid: float(_h.get("value") or 0)
-            for _pid, _h in _hist_ranks.items() if isinstance(_h, dict)
-        }
-        _hist_sf_vals = {
-            _pid: float(_h.get("sf_value") if _h.get("sf_value") is not None else _h.get("value") or 0)
-            for _pid, _h in _hist_ranks.items() if isinstance(_h, dict)
-        }
-        _changes = _rc_vs(_cur_vals, _hist_vals)
-        _sf_changes = _rc_vs(_cur_sf_vals, _hist_sf_vals)
+        # Current player-only rank: sort QB/RB/WR/TE by value descending
+        _player_rows = sorted(
+            [p for p in model_value_table
+             if isinstance(p, dict) and str(p.get("position", "")).upper() in _PLAYER_POSITIONS],
+            key=lambda p: float(p.get("value") or 0),
+            reverse=True,
+        )
+        _cur_rank_map = {str(p.get("id") or ""): idx + 1 for idx, p in enumerate(_player_rows)}
+
+        # Superflex current rank: same pool ordered by SF value (QBs rise sharply),
+        # paired with the SF historical rank so SF movement arrows are SF-correct.
+        _sf_player_rows = sorted(
+            [p for p in model_value_table
+             if isinstance(p, dict) and str(p.get("position", "")).upper() in _PLAYER_POSITIONS],
+            key=lambda p: float(p.get("sf_value") or p.get("value") or 0),
+            reverse=True,
+        )
+        _cur_sf_rank_map = {str(p.get("id") or ""): idx + 1 for idx, p in enumerate(_sf_player_rows)}
 
         for _p in model_value_table:
             _pid = str(_p.get("id") or "")
-            if _pid in _changes:
-                _p["rank_change_7d"] = _changes[_pid]
-            if _pid in _sf_changes:
-                _p["sf_rank_change_7d"] = _sf_changes[_pid]
-            # leave rank_change_7d as-is (None or from JSON) for players
-            # absent from the 7-day-ago snapshot (new to the pool) and for
-            # non-player-pos entries
+            _cur = _cur_rank_map.get(_pid)
+            _hist = _hist_ranks.get(_pid)
+            if _cur is not None and _hist:
+                _p["rank_change_7d"] = _hist["overall_rank"] - _cur
+            _sf_cur = _cur_sf_rank_map.get(_pid)
+            if _sf_cur is not None and _hist and _hist.get("sf_overall_rank") is not None:
+                _p["sf_rank_change_7d"] = _hist["sf_overall_rank"] - _sf_cur
+            # leave rank_change_7d as-is (None or from JSON) for non-player-pos entries
     except Exception:
         # Fall back to DB-stored values if recomputation fails
         try:
@@ -23074,23 +20648,61 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
     except Exception as e:
         logger.info(f"[api/league-players] Could not add birthday data: {e}")
 
-    # Enrich with PPG and total points (full PPR) from the CURRENT season's
-    # completed weeks only: the same source and rule the player modal uses.
-    # The old lookup took the newest prebuilt usage_rows file, which only
-    # exists for finished seasons, so it silently served last season's
-    # full-year numbers all through the new season. There is deliberately
-    # no prior-season fallback: when current-season numbers are unavailable
-    # (preseason, or the weekly files fail to load) the cells stay blank
-    # instead of showing a plausible-looking old number.
+    # Enrich with PPG and total points from usage cache (full PPR, min 4 games)
     try:
-        _season_lp = int((get_nfl_state() or {}).get("season") or date.today().year)
-        _pos_lp = {str(_p.get("id") or ""): str(_p.get("position") or "")
-                   for _p in model_value_table if _p.get("id")}
-        _ppg_map_lp = _current_season_ppg_map(_season_lp, _pos_lp)
-        for _player in model_value_table:
-            _e_lp = _ppg_map_lp.get(str(_player.get("id") or ""))
-            if _e_lp:
-                _player.update(_e_lp)
+        import os as _os_lp, json as _json_lp
+        _season_lp = date.today().year
+        _usage_data_lp = None
+        _usage_season_lp = None
+        for _s in [_season_lp, _season_lp - 1]:
+            _usage_data_lp = _load_usage_rows_cached(_s)  # short-TTL cached
+            if _usage_data_lp:
+                _usage_season_lp = _s
+                break
+        if _usage_data_lp:
+            _usage_map_lp = {str(p.get("id")): p for p in _usage_data_lp if p.get("id")}
+            # Build positional PPG and total_pts lists for ranking
+            _pos_ppg_lp: dict = {}
+            _pos_total_lp: dict = {}
+            for _p in _usage_data_lp:
+                _u = _p.get("usage") or {}
+                _g = int(_u.get("games") or 0)
+                if _g < 4:
+                    continue
+                _ppg_v = _u.get("ppr_ppg")
+                if _ppg_v is None:
+                    continue
+                _ppg_v = round(float(_ppg_v), 1)
+                _tot_v = round(_ppg_v * _g, 1)
+                _pos_lp = str(_p.get("position") or "")
+                _pos_ppg_lp.setdefault(_pos_lp, []).append(_ppg_v)
+                _pos_total_lp.setdefault(_pos_lp, []).append(_tot_v)
+            # Sort descending for rank lookup
+            _pos_ppg_sorted_lp = {pos: sorted(vals, reverse=True) for pos, vals in _pos_ppg_lp.items()}
+            _pos_total_sorted_lp = {pos: sorted(vals, reverse=True) for pos, vals in _pos_total_lp.items()}
+            for _player in model_value_table:
+                _pid = str(_player.get("id") or "")
+                _entry = _usage_map_lp.get(_pid)
+                if not _entry:
+                    continue
+                _u = _entry.get("usage") or {}
+                _g = int(_u.get("games") or 0)
+                if _g < 4:
+                    continue
+                _ppg_v = _u.get("ppr_ppg")
+                if _ppg_v is None:
+                    continue
+                _ppg_v = round(float(_ppg_v), 1)
+                _tot_v = round(_ppg_v * _g, 1)
+                _pos_lp = str(_entry.get("position") or "")
+                _ppg_sorted = _pos_ppg_sorted_lp.get(_pos_lp, [])
+                _tot_sorted = _pos_total_sorted_lp.get(_pos_lp, [])
+                _player["ppg"] = _ppg_v
+                _player["total_pts"] = _tot_v
+                _player["ppg_games"] = _g
+                _player["ppg_season"] = _usage_season_lp
+                _player["ppg_rank"] = (_ppg_sorted.index(_ppg_v) + 1) if _ppg_v in _ppg_sorted else None
+                _player["total_pts_rank"] = (_tot_sorted.index(_tot_v) + 1) if _tot_v in _tot_sorted else None
     except Exception as _e_lp:
         logger.info(f"[api/league-players] PPG enrichment skipped: {_e_lp}")
 
@@ -23618,32 +21230,24 @@ def _dumps_league_players(payload: dict) -> str:
     return body.replace("<", "\\u003c").replace(">", "\\u003e")
 
 
-def _board_league_players_response(payload: dict, *, overlay_key, is_sf: bool,
-                                    version_key=None):
+def _board_league_players_response(payload: dict, *, overlay_key, is_sf: bool):
     """Cheat-sheet JSON: skill players, board columns, compact encoding."""
-    if version_key is not None:
-        etag = _lp_etag_for(version_key)
-        not_modified = _lp_not_modified_response(etag)
-        if not_modified is not None:
-            return not_modified
     cache_key = overlay_key + (bool(is_sf),)
     cached = _LP_BOARD_JSON_CACHE.get(cache_key)
     if cached is not None:
-        body = cached
-    else:
-        from dashboard_services.league_players_board import slim_board_payload
-        slim = slim_board_payload(payload, is_superflex=is_sf)
-        body = _dumps_league_players(slim)
-        _LP_BOARD_JSON_CACHE[cache_key] = body
-        _prune_ttl_cache(_LP_BOARD_JSON_CACHE, 64)
-    if version_key is not None:
-        return _lp_cacheable_response(body, version_key)
+        resp = app.response_class(cached, mimetype="application/json")
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
+    from dashboard_services.league_players_board import slim_board_payload
+    slim = slim_board_payload(payload, is_superflex=is_sf)
+    body = _dumps_league_players(slim)
+    _LP_BOARD_JSON_CACHE[cache_key] = body
     resp = app.response_class(body, mimetype="application/json")
     resp.headers["Cache-Control"] = "no-store"
     return resp
 
 
-def _league_players_response(payload: dict, version_key=None):
+def _league_players_response(payload: dict):
     """Stamp compact historical signals, then jsonify. Does not change ranking inputs."""
     if "historical_available" not in (payload or {}):
         try:
@@ -23653,8 +21257,6 @@ def _league_players_response(payload: dict, version_key=None):
             logger.debug("[api/league-players] historical stamp skipped", exc_info=True)
             payload = dict(payload or {})
             payload["historical_available"] = False
-    if version_key is not None:
-        return _lp_cacheable_response(_dumps_league_players(payload), version_key)
     resp = jsonify(_sanitize_for_json(payload))
     resp.headers["Cache-Control"] = "no-store"
     return resp
@@ -23694,28 +21296,17 @@ def api_league_players():
         scoring_type=_mi_scoring,
     )
 
-    _lp_version_key = _lp_response_version_key(
-        overlay_key=overlay_key, is_sf=_mi_is_sf,
-        view="board" if _view_board else "full",
-    )
-
     def _finish(result, *, board_cacheable=True):
         if _view_board:
             if board_cacheable:
                 return _board_league_players_response(
                     result, overlay_key=overlay_key, is_sf=_mi_is_sf,
-                    version_key=_lp_version_key,
                 )
             from dashboard_services.league_players_board import slim_board_payload
             slim = slim_board_payload(result, is_superflex=_mi_is_sf)
             resp = app.response_class(_dumps_league_players(slim), mimetype="application/json")
             resp.headers["Cache-Control"] = "no-store"
             return resp
-        if board_cacheable:
-            return _league_players_response(
-                _apply_league_type_market(result, is_sf=_mi_is_sf),
-                version_key=_lp_version_key,
-            )
         return _league_players_response(_apply_league_type_market(result, is_sf=_mi_is_sf))
 
     # Historical draft views pass ?season=<yr> so grades use the ADP OF THAT
@@ -24274,24 +21865,6 @@ def api_since_last_visit():
         logger.debug("since-last-visit ctx failed", exc_info=True)
         return jsonify(result)
 
-    # The activity section is deferred out of the first league build and
-    # fills lazily. While it is still pending, do NOT consume the visit or
-    # report zero trades/waivers (that would read as "nothing happened"):
-    # kick off the background fill and answer with an explicit pending
-    # state; the client retries with the same baseline once it lands.
-    # Only relevant when activity would actually be consulted -- a visitor
-    # with no baseline (no since, no account) never reaches the activity
-    # block below, so the roster snapshot still returns immediately.
-    if (
-        "activity_df" in ctx
-        and ctx.get("activity_df") is None
-        and (since_ms > 0 or session.get("account_id"))
-    ):
-        _fill_activity_section_async(platform, league_id, season)
-        pending_result = dict(result)
-        pending_result["activity_pending"] = True
-        return jsonify(pending_result)
-
     # Viewer roster snapshot (value + injury). Build this before consuming the
     # visit so the account's new baseline is stored in the same request.
     if roster_id:
@@ -24789,12 +22362,6 @@ def api_player_details(player_id: str):
         import glob
         import re
 
-        # First modal open in this process kicks the background warm of the
-        # modal's league-independent caches (players feed, week conditions,
-        # ADP, projections, week-stat files) so later opens skip those cold
-        # fills. Once per process, off the request path, never raises.
-        _kick_player_modal_warm()
-
         # Get league context
         league_id = request.args.get("league_id")
         platform = request.args.get("platform", "sleeper")
@@ -25022,27 +22589,12 @@ def api_player_details(player_id: str):
         fantasy_team = None
         fantasy_team_owner = None
         fantasy_roster_id = None
-        ownership_unknown = False
         if league_id:
             try:
                 from dashboard_services.service import fantasy_team_and_roster_for_player as _ft_lookup
-                # Ownership is best-effort decoration on the modal, so it must
-                # never pay the cold league-context build inline (measured
-                # ~6s, the largest single cold cost on this endpoint) and
-                # never 503 the whole modal when the build loses the
-                # cross-worker race. allow_build=False serves a stale ctx when
-                # one exists and kicks a background warm when none does;
-                # ownership_unknown tells the client "not resolved yet" so a
-                # rostered player is not mislabeled a free agent on the first
-                # open after a deploy.
-                _ctx = _spec_ctx if _speculative else get_league_ctx_from_cache(
-                    platform, league_id, season, allow_build=False
-                )
+                _ctx = _spec_ctx if _speculative else get_league_ctx_from_cache(platform, league_id, season)
                 if not _ctx:
-                    if _speculative:
-                        return ("", 204)
-                    ownership_unknown = True
-                    _ctx = {}
+                    return ("", 204) if _speculative else (jsonify({"error": "League unavailable"}), 503)
                 _rosters = _ctx.get("rosters") or []
                 _users = _ctx.get("users") or []
                 _rmap = _build_roster_map(_users, _rosters)
@@ -25223,7 +22775,7 @@ def api_player_details(player_id: str):
         _start_demotion = None
         _start_sit_payload = None
         try:
-            from utils.start_sit_score import bottom_teams_by_implied_total, compute_start_score
+            from utils.start_sit_score import compute_start_score
             from dashboard_services.api import get_nfl_state as _ss_nfl_state
             _ss_state = _ss_nfl_state() or {}
             _ss_week = int(_ss_state.get("week") or 0)
@@ -25253,7 +22805,6 @@ def api_player_details(player_id: str):
             _ss_wx = None
             _ss_opp = ""
             _ss_home = ""
-            _ss_low_total_teams = set()
             # Best-effort Vegas/weather so Compare matches the Start/Sit page.
             if _ss_team and _ss_week and not _ss_bye:
                 try:
@@ -25272,9 +22823,7 @@ def api_player_details(player_id: str):
                             elif _ss_team == _a:
                                 _ss_opp, _ss_home = _h, _h
                     if _ss_games:
-                        _ss_all_conds = _ss_bwc(int(season), int(_ss_week), _ss_games) or {}
-                        _ss_cond = _ss_all_conds.get(_ss_team) or {}
-                        _ss_low_total_teams = bottom_teams_by_implied_total(_ss_all_conds)
+                        _ss_cond = (_ss_bwc(int(season), int(_ss_week), _ss_games) or {}).get(_ss_team) or {}
                         _ss_imp = _ss_cond.get("implied_total")
                         _ss_wx = _ss_cond.get("weather") or {}
                         if isinstance(_ss_wx, dict):
@@ -25287,67 +22836,11 @@ def api_player_details(player_id: str):
                 # Without them the compare score ignored recent form, usage trend
                 # and consistency and collapsed to raw projection whenever Vegas
                 # and weather were absent.
-                # Display-only absence notes (teammate / opponent injuries).
-                # Built from the cached Sleeper players feed; never scored.
-                _ss_absences = {"teammates": [], "opponents": []}
-                if _ss_team and _ss_opp and not _ss_bye:
-                    try:
-                        from utils.start_sit_context import (
-                            absence_notes as _ss_abs_notes,
-                            build_absence_index as _ss_abs_idx,
-                        )
-                        # Same productive-producer gate as the Start/Sit
-                        # page: pooled weekly points under this scope's
-                        # (stamped) scoring settings. Best-effort.
-                        _ss_productive = None
-                        try:
-                            from utils.league_scoring import (
-                                stamp_scoring_aliases as _ss_stamp_pd,
-                            )
-                            from utils.start_sit_context import (
-                                productive_pids_from_weekly_points as _ss_prod_pd,
-                            )
-                            _eff_pd = _ss_stamp_pd(scoring_settings) if scoring_settings else {}
-                            _ss_productive = _ss_prod_pd(
-                                _load_season_weekly_points(int(season), _eff_pd),
-                                _load_season_weekly_points(int(season) - 1, _eff_pd),
-                            )
-                        except Exception:
-                            _ss_productive = None
-                        # Starting linemen via pooled snap share, same as
-                        # the Start/Sit page. Best-effort: none on failure.
-                        _ss_linemen = None
-                        _pd_players: dict = {}
-                        try:
-                            from utils.start_sit_context import (
-                                starting_lineman_pids as _ss_line_pd,
-                            )
-                            _pd_players = get_players_global() or {}
-                            _ss_linemen = _ss_line_pd(
-                                [_load_season_snap_totals(int(season)),
-                                 _load_season_snap_totals(int(season) - 1)],
-                                {str(_pid): str(_p.get("position") or _p.get("pos") or "")
-                                 for _pid, _p in _pd_players.items()
-                                 if isinstance(_p, dict)},
-                            )
-                        except Exception:
-                            _ss_linemen = None
-                            _pd_players = {}
-                        _ss_absences = _ss_abs_notes(
-                            _ss_abs_idx(_pd_players or get_players_global() or {},
-                                        productive_pids=_ss_productive,
-                                        starting_linemen=_ss_linemen),
-                            _ss_team, _ss_opp, exclude_pid=player_id,
-                        ) or _ss_absences
-                    except Exception:
-                        logger.debug("[api_player_details] absence notes skipped",
-                                     exc_info=True)
                 try:
                     _start_sit_payload = _startsit_compare_extras(
                         player_id, _ss_pos, _ss_team, season, _ss_week, scoring_settings,
                         proj_pts=_ss_proj, on_bye=_ss_bye, opponent=_ss_opp,
                         home_team=_ss_home, implied_total=_ss_imp, weather=_ss_wx,
-                        absences=_ss_absences,
                     )
                 except Exception:
                     logger.debug("[api_player_details] start_sit payload skipped", exc_info=True)
@@ -25386,7 +22879,6 @@ def api_player_details(player_id: str):
                     expected_team_plays=(_ssp.get("pace") or {}).get("expected_team_plays"),
                     league_average_plays=(_ssp.get("pace") or {}).get("league_average_plays"),
                     role_confidence=_ssp.get("role_confidence"),
-                    low_total_team=(_ss_team in _ss_low_total_teams),
                 )
                 _start_score = round(float(_ss_val), 2)
                 _start_factors = _ss_fac
@@ -25552,7 +23044,6 @@ def api_player_details(player_id: str):
             "pos_rank_label": player_value.get("pos_rank_label"),
             "espnHeadshot": player_meta.get("espnHeadshot"),
             "fantasy_team": fantasy_team,
-            "ownership_unknown": ownership_unknown,
             "fantasy_team_owner": fantasy_team_owner,
             "fantasy_roster_id": fantasy_roster_id,
             "injury": injury,
@@ -25693,11 +23184,7 @@ def api_player_adp(player_id: str):
 # weekly stats and updated projections still surface.
 _GAME_LOGS_CACHE: Dict[str, tuple] = {}
 _GAME_LOGS_CACHE_TTL = 300  # seconds
-# Kept small on purpose: each entry holds a player's multi-season game logs and
-# every gunicorn worker keeps its own full copy, so 1500 entries/worker was a
-# meaningful slice of the 2GB plan. 500 still covers the modal prefetch working
-# set; entries evict oldest-first when exceeded.
-_GAME_LOGS_CACHE_MAX = 500  # entries; evict oldest when exceeded
+_GAME_LOGS_CACHE_MAX = 1500  # entries; evict oldest when exceeded
 
 
 def _game_logs_cache_key(player_id: str, season: int, scoring_settings: dict) -> str:
@@ -25741,79 +23228,6 @@ def _game_log_proj_from_week(upcoming, cur_season, cur_week, season_type) -> int
     return 1
 
 
-# team_for_week() resolves in nflverse form (Rams = LA, and that module
-# canonicalises site LAR back to LA), while the schedule files use site form
-# (LAR / WAS / JAX). The game-log loop must translate before matching, or a
-# Rams game never matches: played weeks lose their date/opponent and an
-# unplayed week is misread as a bye (whose row then suppresses the week's
-# projection via _actual_weeks).
-_HISTORY_TEAM_TO_SITE = {"LA": "LAR", "WSH": "WAS", "JAC": "JAX"}
-
-
-def _game_log_matchup(wk_team, games):
-    """Find wk_team's game in one week's schedule list.
-
-    Returns (opponent, is_away, game_date, site_team). Matching goes through
-    team_abbr_keys so a history-form code (LA) matches the schedule's site
-    form (LAR) in either direction - the same helper the projection path
-    uses. opponent/game_date are "" when the team has no game that week (a
-    real bye). site_team is wk_team in site form, for the season header.
-    """
-    raw = str(wk_team or "").strip().upper()
-    site_team = _HISTORY_TEAM_TO_SITE.get(raw, raw)
-    keys = set(team_abbr_keys(site_team)) if site_team else set()
-    if keys:
-        for game in games or []:
-            if not isinstance(game, dict):
-                continue
-            home_team = game.get("home", "")
-            away_team = game.get("away", "")
-            if home_team in keys:
-                return away_team, False, game.get("gameDate", ""), site_team
-            if away_team in keys:
-                return home_team, True, game.get("gameDate", ""), site_team
-    return "", False, "", site_team
-
-
-def _load_schedule_week_file(schedule_file: str):
-    """Parse one schedule week file into (week_num, games) or None.
-
-    Extracted from the game-log route's old inline loop so the per-season
-    schedule parse can run in a thread pool. Semantics match the inline
-    version exactly: only a JSON list counts as games; a missing, unreadable,
-    or non-list file is skipped (None).
-    """
-    try:
-        fn = os.path.basename(schedule_file)
-        week_num = int(fn.split('_w')[1].split('_')[0].split('.')[0])
-        with open(schedule_file) as f:
-            games = json.load(f)
-        if isinstance(games, list):
-            return (week_num, games)
-    except Exception:
-        pass
-    return None
-
-
-def _prefetch_week_projections(season: int) -> None:
-    """Warm all 18 weekly projection files in parallel via the shared memo.
-
-    Cold post-deploy caches turn each missing projection week into a
-    sequential network fetch (up to 18 x 20s timeout) on the request thread.
-    The game-log loop below calls load_week_projection() week by week; warming
-    the memo first keeps that loop off the network. Never raises.
-    """
-    try:
-        from utils.utils import load_week_projection
-        import concurrent.futures as _cf
-        with _cf.ThreadPoolExecutor(max_workers=4,
-                                    thread_name_prefix="gamelog-proj") as _pool:
-            list(_pool.map(lambda _w: load_week_projection(season, _w),
-                           range(1, 19)))
-    except Exception:
-        logger.debug("[api_player_game_logs] proj prefetch failed", exc_info=True)
-
-
 @app.route("/api/player-game-logs/<player_id>")
 def api_player_game_logs(player_id: str):
     """Game logs for the Stats tab -- lazy-loaded separately from player-details."""
@@ -25848,7 +23262,6 @@ def api_player_game_logs(player_id: str):
         _cached = _GAME_LOGS_CACHE.get(_cache_key)
         if _cached and time.time() - _cached[0] < _GAME_LOGS_CACHE_TTL:
             return jsonify({"game_logs_by_year": _cached[1],
-                            "season_teams": _cached[2] if len(_cached) > 2 else {},
                             "has_game_logs": has_game_logs})
 
         players_index = load_relevant_index() or {}
@@ -25880,28 +23293,21 @@ def api_player_game_logs(player_id: str):
         available_years = _PLAYER_DETAIL_YEARS_CACHE
 
         game_logs_by_year: dict = {}
-        season_teams: dict = {}
 
         for season_year in sorted(available_years, reverse=True):
             game_logs = []
-            _team_counts: dict = {}
 
-            # Parse the season's schedule week files in parallel (small files,
-            # but ~18 per season). Sorted input plus pool.map's order
-            # preservation keeps the first-file-wins week dedup deterministic.
-            import concurrent.futures as _sched_futures
             schedule_by_week: dict = {}
-            _sched_files = sorted(glob.glob(os.path.join("cache", "schedule", f"schedule_s{season_year}_w*.json")))
-            with _sched_futures.ThreadPoolExecutor(
-                max_workers=min(4, len(_sched_files) or 1),
-                thread_name_prefix="gamelog-sched",
-            ) as _sched_pool:
-                for _parsed in _sched_pool.map(_load_schedule_week_file, _sched_files):
-                    if _parsed is None:
-                        continue
-                    _wk_num, _games = _parsed
-                    if _wk_num not in schedule_by_week:
-                        schedule_by_week[_wk_num] = _games
+            for schedule_file in glob.glob(os.path.join("cache", "schedule", f"schedule_s{season_year}_w*.json")):
+                try:
+                    fn = os.path.basename(schedule_file)
+                    week_num = int(fn.split('_w')[1].split('_')[0].split('.')[0])
+                    with open(schedule_file) as f:
+                        games = json.load(f)
+                    if isinstance(games, list) and week_num not in schedule_by_week:
+                        schedule_by_week[week_num] = games
+                except Exception:
+                    continue
 
             player_stats_by_week = _sleeper_stats_by_week(player_id, season_year)
             if not player_stats_by_week:
@@ -25914,7 +23320,7 @@ def api_player_game_logs(player_id: str):
 
             def _stats_dict(s):
                 return {k: s.get(k) for k in
-                        ["pass_yd", "pass_td", "pass_int", "pass_att", "rush_att", "rush_yd", "rush_td", "rec", "rec_tgt", "rec_yd",
+                        ["pass_yd", "pass_td", "pass_int", "rush_att", "rush_yd", "rush_td", "rec", "rec_tgt", "rec_yd",
                          "rec_td", "fum_lost"]}
 
             if schedule_by_week:
@@ -25927,12 +23333,25 @@ def api_player_game_logs(player_id: str):
                     games = schedule_by_week[week_num]
                     if not isinstance(games, list):
                         continue
-                    opponent, is_away, game_date, wk_team = _game_log_matchup(
-                        team_for_week(player_id, season_year, week_num) or player_team,
-                        games,
-                    )
-                    if wk_team:
-                        _team_counts[wk_team] = _team_counts.get(wk_team, 0) + 1
+                    wk_team = team_for_week(player_id, season_year, week_num) or player_team
+                    opponent = ""
+                    is_away = False
+                    game_date = ""
+                    for game in games:
+                        if not isinstance(game, dict):
+                            continue
+                        home_team = game.get("home", "")
+                        away_team = game.get("away", "")
+                        if wk_team and wk_team == home_team:
+                            opponent = away_team;
+                            is_away = False;
+                            game_date = game.get("gameDate", "");
+                            break
+                        elif wk_team and wk_team == away_team:
+                            opponent = home_team;
+                            is_away = True;
+                            game_date = game.get("gameDate", "");
+                            break
                     stats = (stats_by_week.get(week_num) or {}).get(player_id)
                     # Bye week: no game found for this team and no stats
                     if not opponent and not game_date and stats is None:
@@ -25965,12 +23384,6 @@ def api_player_game_logs(player_id: str):
             if game_logs:
                 game_logs.sort(key=lambda g: g.get("date", "") or "")
                 game_logs_by_year[season_year] = game_logs
-                # Team label for the season header: most common weekly team
-                # (handles mid-season trades), else the player's current team.
-                if _team_counts:
-                    season_teams[season_year] = max(_team_counts, key=_team_counts.get)
-                elif player_team:
-                    season_teams[season_year] = player_team
 
         # ── Upcoming projected season ─────────────────────────────────────────
         # Use the request `season` param as the upcoming year.  We do NOT use
@@ -26018,8 +23431,6 @@ def api_player_game_logs(player_id: str):
                 from utils.fantasy_scoring import projection_points as _proj_pts_fn
                 from statistics import median as _med_fn
                 _pos_gl = (player_meta.get("pos") or "").upper()
-
-                _prefetch_week_projections(_upcoming)
 
                 _proj_vals: dict = {}
                 for _w in range(1, 19):
@@ -26147,8 +23558,6 @@ def api_player_game_logs(player_id: str):
                             key=lambda g: g.get("week") or 0
                         )
                         game_logs_by_year[_upcoming] = combined
-                        if player_team:
-                            season_teams[_upcoming] = player_team
             except Exception as _proj_err:
                 logger.debug(f"[game_logs] upcoming season projection failed: {_proj_err}")
 
@@ -26184,91 +23593,13 @@ def api_player_game_logs(player_id: str):
                         _g["opp_rank"] = _rk
                         _g["opp_total"] = _total
 
-        # ── Weekly advanced metrics per game ─────────────────────────────────
-        # Join the per-week usage (snap/target/carry shares, red-zone) and
-        # advanced (ADOT, YBC, xFP, broken tackles, WOPR) rows so the game log
-        # can render the expanded advanced table. Best-effort: a DB failure
-        # leaves the games without `adv` and the UI renders dashes.
-        def _fnum(v):
-            try:
-                return float(v) if v is not None else None
-            except (TypeError, ValueError):
-                return None
-
-        def _inum(v):
-            try:
-                return int(v) if v is not None else None
-            except (TypeError, ValueError):
-                return None
-
-        try:
-            from data_building.weekly_metrics import init_weekly_metrics_db
-            from data_building.advanced_metrics import (
-                init_weekly_advanced_metrics_db,
-                get_conn as _adv_get_conn,
-            )
-            init_weekly_metrics_db()
-            init_weekly_advanced_metrics_db()
-            _rec_pts = float((scoring_settings or {}).get("rec", 1.0) or 0)
-            _xfp_col = (
-                "expected_ppr" if _rec_pts >= 0.75
-                else "expected_half_ppr" if _rec_pts >= 0.25
-                else "expected_standard"
-            )
-            with _adv_get_conn() as _aconn:
-                for _yr, _logs in game_logs_by_year.items():
-                    _usage = {
-                        int(r["week"]): r for r in _aconn.execute(
-                            "SELECT week, snap_pct, target_share, carry_share, "
-                            "rz_targets, rz_carries FROM player_weekly_metrics "
-                            "WHERE player_id = %s AND season = %s",
-                            (str(player_id), int(_yr)),
-                        ).fetchall()
-                    }
-                    _adv = {
-                        int(r["week"]): r for r in _aconn.execute(
-                            "SELECT week, avg_depth_of_target, ybc_per_carry, "
-                            f"{_xfp_col} AS xfp, broken_tackles, wopr "
-                            "FROM player_weekly_advanced_metrics "
-                            "WHERE player_id = %s AND season = %s",
-                            (str(player_id), int(_yr)),
-                        ).fetchall()
-                    }
-                    for _g in _logs:
-                        if _g.get("is_bye") or _g.get("is_projection"):
-                            continue
-                        _wk = _g.get("week")
-                        try:
-                            _wk = int(_wk)
-                        except (TypeError, ValueError):
-                            continue
-                        _u = _usage.get(_wk) or {}
-                        _a = _adv.get(_wk) or {}
-                        if not _u and not _a:
-                            continue
-                        _g["adv"] = {
-                            "snap_pct": _fnum(_u.get("snap_pct")),
-                            "target_share": _fnum(_u.get("target_share")),
-                            "carry_share": _fnum(_u.get("carry_share")),
-                            "rz_targets": _inum(_u.get("rz_targets")),
-                            "rz_carries": _inum(_u.get("rz_carries")),
-                            "adot": _fnum(_a.get("avg_depth_of_target")),
-                            "ybc": _fnum(_a.get("ybc_per_carry")),
-                            "xfp": _fnum(_a.get("xfp")),
-                            "btk": _fnum(_a.get("broken_tackles")),
-                            "wopr": _fnum(_a.get("wopr")),
-                        }
-        except Exception:
-            logger.debug("[game_logs] advanced metrics join failed", exc_info=True)
-
         # Cache the fully-computed result (bounded; evict oldest when full).
         if len(_GAME_LOGS_CACHE) >= _GAME_LOGS_CACHE_MAX:
             for _k in sorted(_GAME_LOGS_CACHE, key=lambda k: _GAME_LOGS_CACHE[k][0])[:_GAME_LOGS_CACHE_MAX // 10]:
                 _GAME_LOGS_CACHE.pop(_k, None)
-        _GAME_LOGS_CACHE[_cache_key] = (time.time(), game_logs_by_year, season_teams)
+        _GAME_LOGS_CACHE[_cache_key] = (time.time(), game_logs_by_year)
 
         return jsonify({"game_logs_by_year": game_logs_by_year,
-                        "season_teams": season_teams,
                         "has_game_logs": has_game_logs})
     except Exception as e:
         logger.exception("[api_player_game_logs] error")
@@ -26278,49 +23609,6 @@ def api_player_game_logs(player_id: str):
 # ── Player modal Team tab ─────────────────────────────────────────────────────
 _TEAM_OFFENSE_RANKS_CACHE: dict = {}
 _TEAM_OFFENSE_RANKS_TTL = 3600  # 1 hour
-
-
-def _team_offense_ranks_disk_path(season: int) -> str:
-    return os.path.join(CACHE_DIR, f"team_offense_ranks_{int(season)}.json")
-
-
-def _read_team_offense_ranks_disk(season: int):
-    """Return (computed_at, payload) from the on-disk ranks cache when fresh.
-
-    The container filesystem is shared by all gunicorn workers, so a payload
-    computed by one worker is instantly reusable by the others. Without this,
-    every worker pays the 60s+ cold compute (Sleeper week files + nflverse
-    CSV downloads) on its first hit, which is what made the Teams page look
-    broken on first click. Never raises.
-    """
-    try:
-        path = _team_offense_ranks_disk_path(season)
-        if not os.path.exists(path):
-            return None
-        with open(path, encoding="utf-8") as handle:
-            blob = json.load(handle) or {}
-        computed_at = float(blob.get("computed_at") or 0)
-        payload = blob.get("payload")
-        if not isinstance(payload, dict) or not computed_at:
-            return None
-        if time.time() - computed_at >= _TEAM_OFFENSE_RANKS_TTL:
-            return None
-        return computed_at, payload
-    except Exception:
-        logger.debug("team offense ranks disk cache read failed", exc_info=True)
-        return None
-
-
-def _write_team_offense_ranks_disk(season: int, payload: dict) -> None:
-    """Persist a computed ranks payload for sibling workers. Never raises."""
-    try:
-        path = _team_offense_ranks_disk_path(season)
-        tmp = path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as handle:
-            json.dump({"computed_at": time.time(), "payload": payload}, handle)
-        os.replace(tmp, path)
-    except Exception:
-        logger.debug("team offense ranks disk cache write failed", exc_info=True)
 _PFR_SNAP_CACHE: dict = {}
 _PFR_SNAP_CACHE_TTL = 3600
 # Assembled Team-tab payloads, keyed by (player_id, season). Short TTL so a
@@ -26536,13 +23824,6 @@ def _compute_team_offense_ranks(season: int) -> dict:
     cached = _TEAM_OFFENSE_RANKS_CACHE.get(cache_key)
     if cached and time.time() - cached[0] < _TEAM_OFFENSE_RANKS_TTL:
         return cached[1]
-    # Cross-worker disk check before the expensive compute: the container
-    # filesystem is shared, so one worker's finished compute serves the rest.
-    disk = _read_team_offense_ranks_disk(season)
-    if disk:
-        computed_at, payload = disk
-        _TEAM_OFFENSE_RANKS_CACHE[cache_key] = (computed_at, payload)
-        return payload
 
     from utils.utils import load_teams_index
     from utils.team_offense_ranks import compute_team_offense, rank_offense_table
@@ -26579,7 +23860,6 @@ def _compute_team_offense_ranks(season: int) -> dict:
         "season": season,
         "data_mode": data_mode,
         "completed_weeks": table.get("completed_weeks") or [],
-        "in_progress_weeks": table.get("in_progress_weeks") or [],
         "teams_index": teams_index,
         "ranks": ranks,
         "team_games": {
@@ -26589,145 +23869,7 @@ def _compute_team_offense_ranks(season: int) -> dict:
         "available_seasons": _list_team_tab_seasons(season),
     }
     _TEAM_OFFENSE_RANKS_CACHE[cache_key] = (time.time(), payload)
-    _write_team_offense_ranks_disk(season, payload)
     return payload
-
-
-# ── Defense-vs-position matchup table ─────────────────────────────────────────
-_DEF_VS_POS_CACHE: dict = {}
-_DEF_VS_POS_TTL = 3600  # 1 hour
-
-
-def _def_vs_pos_disk_path(season: int) -> str:
-    return os.path.join(CACHE_DIR, f"defense_vs_position_{int(season)}.json")
-
-
-def _read_def_vs_pos_disk(season: int):
-    """Return (computed_at, fingerprint, payload) from the on-disk table cache.
-
-    Same cross-worker pattern as the team offense ranks: the container
-    filesystem is shared by all gunicorn workers, so one worker's compute
-    serves the rest. Never raises.
-    """
-    try:
-        path = _def_vs_pos_disk_path(season)
-        if not os.path.exists(path):
-            return None
-        with open(path, encoding="utf-8") as handle:
-            blob = json.load(handle) or {}
-        computed_at = float(blob.get("computed_at") or 0)
-        fingerprint = blob.get("fingerprint") or ""
-        payload = blob.get("payload")
-        if not isinstance(payload, dict) or not computed_at:
-            return None
-        if time.time() - computed_at >= _DEF_VS_POS_TTL:
-            return None
-        return computed_at, fingerprint, payload
-    except Exception:
-        logger.debug("defense-vs-position disk cache read failed", exc_info=True)
-        return None
-
-
-def _write_def_vs_pos_disk(season: int, fingerprint: str, payload: dict) -> None:
-    """Persist a computed table for sibling workers. Atomic. Never raises."""
-    try:
-        path = _def_vs_pos_disk_path(season)
-        tmp = path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as handle:
-            json.dump(
-                {"computed_at": time.time(), "fingerprint": fingerprint,
-                 "payload": payload},
-                handle,
-            )
-        os.replace(tmp, path)
-    except Exception:
-        logger.debug("defense-vs-position disk cache write failed", exc_info=True)
-
-
-def _def_vs_pos_week_stats(season: int, week: int) -> dict:
-    """{player_id: stat_row} for one Sleeper weekly file; {} when missing."""
-    try:
-        path = os.path.join(
-            CACHE_DIR, "sleeper_stats",
-            f"sleeper_stats_s{int(season)}_w{int(week)}.json",
-        )
-        if not os.path.exists(path):
-            return {}
-        with open(path, encoding="utf-8") as handle:
-            data = json.load(handle)
-        return data if isinstance(data, dict) else {}
-    except Exception:
-        logger.debug("defense-vs-position week stats read failed", exc_info=True)
-        return {}
-
-
-def _compute_defense_vs_position(season: int) -> dict:
-    """Per-team per-position fantasy points/efficiency allowed, cached.
-
-    Memory cache (1h), then the cross-worker disk cache (1h). A disk entry
-    is only reused when its fingerprint still matches the current set of
-    completed games, so a game going final invalidates it immediately.
-    Never raises: failures degrade to an empty teams table.
-    """
-    season = int(season)
-    now = time.time()
-    try:
-        cached = _DEF_VS_POS_CACHE.get(season)
-        if cached and now - cached[0] < _DEF_VS_POS_TTL:
-            return cached[1]
-
-        from utils.defense_vs_position import (
-            build_defense_vs_position,
-            completed_defense_games,
-            table_fingerprint,
-        )
-
-        try:
-            schedule_rows = _nflverse_team_games_rows()
-        except Exception:
-            schedule_rows = []
-        try:
-            completed = completed_defense_games(schedule_rows, season)
-            fingerprint = table_fingerprint(completed)
-        except Exception:
-            completed, fingerprint = [], ""
-
-        disk = _read_def_vs_pos_disk(season)
-        if disk and fingerprint and disk[1] == fingerprint:
-            _DEF_VS_POS_CACHE[season] = (disk[0], disk[2])
-            return disk[2]
-
-        # Best-effort: make sure completed-week files exist (cooldown-guarded).
-        # Missing files are simply skipped by the aggregation below.
-        try:
-            _ensure_sleeper_week_files(season)
-        except Exception:
-            pass
-        try:
-            players_index = get_players_index_global() or {}
-        except Exception:
-            players_index = {}
-
-        table = build_defense_vs_position(
-            season,
-            schedule_rows,
-            lambda w: _def_vs_pos_week_stats(season, w),
-            players_index,
-        )
-        payload = {
-            "season": season,
-            "computed_at": now,
-            "fingerprint": table.get("fingerprint") or fingerprint,
-            "completed_games": table.get("completed_games") or 0,
-            "teams": table.get("teams") or {},
-        }
-        _DEF_VS_POS_CACHE[season] = (now, payload)
-        _write_def_vs_pos_disk(season, payload["fingerprint"], payload)
-        return payload
-    except Exception:
-        logger.debug("defense-vs-position compute failed", exc_info=True)
-        return {"season": season, "computed_at": now, "fingerprint": "",
-                "completed_games": 0, "teams": {}}
 
 
 def _get_pfr_snap_counts_cached(season: int) -> dict:
@@ -26769,38 +23911,22 @@ def _get_pfr_snap_counts_cached(season: int) -> dict:
 
 
 def _usage_for_player(player_id: str, players_index: dict, usage_table: dict) -> dict:
-    """Resolve usage block for a player, preferring the daily usage table.
-
-    The usage table is rebuilt daily from Sleeper stats; the usage embedded in
-    the relevant-players index is only attached when a player is first added,
-    so it can go stale for existing players. Fall back to the embedded block
-    only when the table has no record for the player.
-    """
-    if not player_id:
-        return {}
-    pid = str(player_id)
+    """Resolve usage block for a player from index or usage table."""
+    meta = (players_index or {}).get(str(player_id)) or {}
+    usage = meta.get("usage")
+    if isinstance(usage, dict) and usage:
+        return usage
     if isinstance(usage_table, dict):
-        u = usage_table.get(pid)
-        if isinstance(u, dict) and u:
+        u = usage_table.get(str(player_id))
+        if isinstance(u, dict):
             return u
     if isinstance(usage_table, list):
         for row in usage_table:
             if not isinstance(row, dict):
                 continue
             rid = str(row.get("id") or row.get("sleeper_id") or "")
-            if rid != pid:
-                continue
-            inner = row.get("usage")
-            if isinstance(inner, dict) and inner:
-                return inner
-            # Tolerate a flat row that already carries usage keys.
-            if any(k in row for k in ("target_share", "carry_share", "touch_share", "ppr_per_game")):
+            if rid == str(player_id):
                 return row
-            break
-    meta = (players_index or {}).get(pid) or {}
-    usage = meta.get("usage")
-    if isinstance(usage, dict) and usage:
-        return usage
     return {}
 
 
@@ -26812,22 +23938,8 @@ def _snap_pct_for_depth_player(
         pfr_by_norm: dict,
         off_snaps_pg,
 ) -> tuple:
-    """Return (snap_pct, snap_pct_source) preferring current-season usage data.
-
-    The daily usage table carries this season's avg_off_snap_pct (0-1) from
-    Sleeper; it outranks PFR, which only has the prior season once the new
-    season is underway. PFR remains the fallback for players with no
-    current-season snaps (injured, new signings, or weeks Sleeper doesn't
-    publish snap percentages for).
-    """
+    """Return (snap_pct, snap_pct_source) preferring PFR, then derived estimate."""
     from utils.utils import normalize_name
-
-    usage_pct = (usage or {}).get("avg_off_snap_pct")
-    try:
-        if usage_pct is not None and float(usage_pct) > 0:
-            return round(float(usage_pct) * 100), "usage"
-    except (TypeError, ValueError):
-        pass
 
     norm = normalize_name(name or "")
     pfr = (pfr_by_norm.get(norm) or {}) if norm else {}
@@ -26839,7 +23951,7 @@ def _snap_pct_for_depth_player(
         except (TypeError, ValueError):
             pass
 
-    avg_snaps = (usage or {}).get("avg_off_snaps")
+    avg_snaps = usage.get("avg_off_snaps")
     if avg_snaps is not None and off_snaps_pg:
         try:
             denom = float(off_snaps_pg)
@@ -27026,7 +24138,7 @@ def api_player_team(player_id: str):
         except Exception:
             logger.debug("get_players_global failed for team tab", exc_info=True)
 
-        usage_table = get_usage_table_global()
+        usage_table = load_usage_table()
         # Snap counts only exist for completed seasons; for in-progress or
         # projection seasons fall back to the latest actual CSV year so
         # depth-chart snap % still populates.
@@ -27051,36 +24163,6 @@ def api_player_team(player_id: str):
         except Exception:
             logger.debug("team schedule build failed for %s %s", team, season, exc_info=True)
             schedule = []
-
-        # Defense-vs-position for the upcoming matchup (best-effort): the
-        # next non-final game on the same schedule the Team tab renders,
-        # looked up in the defense-vs-position table for this payload's
-        # season. Rendered by the modal as
-        # "vs DAL: 24.1 FPTS/G allowed to WRs (8th easiest)".
-        def_vs_pos_matchup = None
-        try:
-            _next_game = next(
-                (g for g in (schedule or [])
-                 if isinstance(g, dict) and not g.get("bye")
-                 and str(g.get("status") or "") != "final"),
-                None,
-            )
-            _next_opp = _canon_team_abbr(str((_next_game or {}).get("opponent") or ""))
-            if _next_opp:
-                _dvp = _compute_defense_vs_position(int(season)) or {}
-                _prow = ((_dvp.get("teams") or {}).get(_next_opp) or {}).get(position) or {}
-                if _prow.get("rank"):
-                    def_vs_pos_matchup = {
-                        "opponent": _next_opp,
-                        "pos": position,
-                        "fpts_ppr_pg": _prow.get("fpts_ppr_pg"),
-                        "eff": _prow.get("eff"),
-                        "eff_label": _prow.get("eff_label"),
-                        "rank": _prow.get("rank"),
-                        "total": _prow.get("total"),
-                    }
-        except Exception:
-            logger.debug("def-vs-pos matchup failed for team tab", exc_info=True)
 
         _payload = {
             "available": True,
@@ -27122,12 +24204,8 @@ def api_player_team(player_id: str):
             "depth_chart": depth_chart,
             "oline": _oline_for_player(int(stats_season), team, position),
             "schedule": schedule,
-            "def_vs_pos_matchup": def_vs_pos_matchup,
         }
         _TEAM_PAYLOAD_CACHE[_payload_key] = (time.time(), _payload)
-        # Keyed per team/season/mode; prune so the key space can't grow
-        # unbounded across long-lived workers.
-        _prune_ttl_cache(_TEAM_PAYLOAD_CACHE, 64)
         return jsonify(_payload)
     except Exception as e:
         logger.exception("[api_player_team] error")
@@ -27153,10 +24231,10 @@ def api_player_team_boxscore():
         players_index = get_players_index_global() or load_relevant_index() or {}
         teams_index = _canonical_teams_index(load_teams_index() or {})
 
-        # Reuse the short-lived scorezone boxscore cache so live polls share work.
+        # Reuse the short-lived redzone boxscore cache so live polls share work.
         def _fetch(gid: str):
             try:
-                return _scorezone_boxscore(gid) or {}
+                return _redzone_boxscore(gid) or {}
             except Exception:
                 from dashboard_services.api import fetch_tank_boxscore
                 return fetch_tank_boxscore(gid) or {}
@@ -27206,18 +24284,14 @@ _NFL_TEAM_DETAILS_CACHE: dict = {}
 _NFL_TEAM_DETAILS_TTL = 15 * 60
 
 
-def _nfl_teams_season_label(season: int, data_mode: str, completed_weeks,
-                            in_progress_weeks=None) -> str:
+def _nfl_teams_season_label(season: int, data_mode: str, completed_weeks) -> str:
     weeks = sorted(int(w) for w in (completed_weeks or []) if w)
-    prog = sorted(int(w) for w in (in_progress_weeks or []) if w)
     if data_mode == "projection":
         return f"{season} projections"
-    if not weeks and not prog:
+    if not weeks:
         return f"{season} actuals"
-    if weeks and max(weeks) >= 18 and not prog:
+    if max(weeks) >= 18:
         return f"{season} actuals, final"
-    if prog:
-        return f"{season} actuals, Week {max(prog)} in progress"
     return f"{season} actuals, through Week {max(weeks)}"
 
 
@@ -27318,8 +24392,7 @@ def api_nfl_team_rankings():
             "data_mode": data_mode,
             "completed_weeks": completed_weeks,
             "season_label": _nfl_teams_season_label(
-                season, data_mode, completed_weeks,
-                offense.get("in_progress_weeks") or [],
+                season, data_mode, completed_weeks
             ),
             "available_seasons": offense.get("available_seasons") or [],
             "oline_season": oline_season,
@@ -27333,71 +24406,6 @@ def api_nfl_team_rankings():
     except Exception as e:
         logger.exception("[api_nfl_team_rankings] error")
         return _api_err("Request failed", e)
-
-
-@app.route("/api/defense-vs-position")
-def api_defense_vs_position():
-    """Public, league-free: fantasy points allowed per game by each NFL
-    defense, broken down by position (QB/RB/WR/TE).
-
-    Query: ?season=. Points come from Sleeper's precomputed weekly
-    pts_ppr / pts_half_ppr / pts_std, so all three scoring formats are
-    served. Ranks are 1 = most allowed = easiest matchup. Only games with
-    final scores count; a team's games are attributed individually, so a
-    Thursday final is included while the rest of the week is pending.
-    """
-    try:
-        season = int(request.args.get("season") or 0)
-        valid = _list_team_tab_seasons(season)
-        if season not in valid:
-            season = valid[0] if valid else season
-        table = _compute_defense_vs_position(season)
-        payload = {
-            "season": table.get("season", season),
-            "scoring": "sleeper_ppr_half_std",
-            "completed_games": table.get("completed_games") or 0,
-            "positions": ["QB", "RB", "WR", "TE"],
-            "rank_note": "rank 1 = most fantasy points allowed = easiest matchup",
-            "teams": table.get("teams") or {},
-        }
-        return jsonify(clean_nan_for_json(payload))
-    except Exception as e:
-        logger.exception("[api_defense_vs_position] error")
-        return _api_err("Request failed", e)
-
-
-@app.route("/api/usage-table-status")
-def api_usage_table_status():
-    """Deploy observability: does this web container have a usage table?
-
-    The table is gitignored and the disk is ephemeral, so it must be rebuilt
-    on-container after every deploy (scripts/post_deploy.py). Without it,
-    depth charts silently fall back to the stale usage embedded in the
-    committed player index. This endpoint makes that visible.
-    """
-    import os
-    import time
-    try:
-        from utils.utils import load_usage_table, path_usage_table
-    except Exception as e:
-        return jsonify({"ok": False, "error": f"import failed: {e}"})
-    table_path = path_usage_table()
-    exists = os.path.exists(table_path)
-    rows = 0
-    table = load_usage_table() if exists else None
-    if isinstance(table, dict):
-        rows = len(table)
-    elif isinstance(table, list):
-        rows = len(table)
-    return jsonify({
-        "ok": True,
-        "exists": exists,
-        "rows": rows,
-        "mtime": (
-            time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(os.path.getmtime(table_path)))
-            if exists else None
-        ),
-    })
 
 
 @app.route("/api/nfl-team-details")
@@ -27435,11 +24443,7 @@ def api_nfl_team_details():
         players_index = get_players_index_global() or {}
         full_players = get_players_global() or {}
         usage_index = load_relevant_index() or players_index
-        usage_table = get_usage_table_global()
-        try:
-            usage_season = int((get_nfl_state() or {}).get("season") or season)
-        except Exception:
-            usage_season = season
+        usage_table = load_usage_table()
         snap_season = (
             stats_season
             if _has_stats_reg_csv(stats_season)
@@ -27479,21 +24483,18 @@ def api_nfl_team_details():
             "season": season,
             "data_mode": data_mode,
             "season_label": _nfl_teams_season_label(
-                season, data_mode, offense.get("completed_weeks") or [],
-                offense.get("in_progress_weeks") or [],
+                season, data_mode, offense.get("completed_weeks") or []
             ),
             "roster_note": "Current roster",
-            "usage_season": usage_season,
-            "usage_note": f"Usage is from the {usage_season} season (latest available)."
-            if usage_season != season
-            else f"Usage is from the {usage_season} season.",
+            "usage_season": snap_season,
+            "usage_note": f"Usage is from the {snap_season} season (latest available)."
+            if snap_season != season
+            else f"Usage is from the {snap_season} season.",
             "depth_chart": depth_chart,
             "oline": oline_team,
             "schedule": schedule,
         }
         _NFL_TEAM_DETAILS_CACHE[cache_key] = (time.time(), payload)
-        # 15m TTL alone doesn't bound the key space; prune on write.
-        _prune_ttl_cache(_NFL_TEAM_DETAILS_CACHE, 64)
         return jsonify(clean_nan_for_json(payload))
     except Exception as e:
         logger.exception("[api_nfl_team_details] error")
@@ -28303,10 +25304,8 @@ def api_team_details(roster_id: str):
                 else:
                     logger.info(f"[api_team_details] No graphs generated - df_weekly is empty after filtering")
             else:
-                logger.info(
-                    "[api_team_details] No graphs generated - team_stats: %s, df_weekly: %s",
-                    team_stats is not None,
-                    df_weekly is not None and not df_weekly.empty)
+                print(
+                    f"[api_team_details] No graphs generated - team_stats: {team_stats is not None}, df_weekly: {df_weekly is not None and not df_weekly.empty}")
         except Exception as graph_err:
             logger.warning("[api_team_details] Error getting graph data: %s", graph_err)
             import traceback
@@ -28421,35 +25420,6 @@ def api_team_details(roster_id: str):
         return _api_err("Request failed", e)
 
 
-# ── Player league-trades response cache ─────────────────────────────────────
-# /api/player-league-trades and /api/player-acquisition both rescan the
-# league's full history chain (every season's transactions plus draft
-# resolution), and the player modal's Overview calls them on every open.
-# League trade data changes rarely, so cache the built payload briefly,
-# keyed by everything that shapes it. Payloads are league data (no
-# per-user content), so entries are safe to share across requests.
-_PLAYER_TRADES_CACHE: dict = {}  # key -> (monotonic ts, payload)
-_PLAYER_TRADES_TTL = 600.0
-_PLAYER_TRADES_MAX = 256
-_PLAYER_TRADES_LOCK = threading.Lock()
-
-
-def _player_trades_cache_get(key):
-    with _PLAYER_TRADES_LOCK:
-        hit = _PLAYER_TRADES_CACHE.get(key)
-        if hit and time.monotonic() - hit[0] < _PLAYER_TRADES_TTL:
-            return hit[1]
-    return None
-
-
-def _player_trades_cache_put(key, payload) -> None:
-    with _PLAYER_TRADES_LOCK:
-        _PLAYER_TRADES_CACHE[key] = (time.monotonic(), payload)
-        if len(_PLAYER_TRADES_CACHE) > _PLAYER_TRADES_MAX:
-            oldest = min(_PLAYER_TRADES_CACHE, key=lambda k: _PLAYER_TRADES_CACHE[k][0])
-            del _PLAYER_TRADES_CACHE[oldest]
-
-
 @app.route("/api/player-league-trades/<player_id>")
 def api_player_league_trades(player_id: str):
     """
@@ -28477,11 +25447,6 @@ def api_player_league_trades(player_id: str):
         if not league_id:
             return jsonify({"error": "league_id required"}), 400
 
-        cache_key = ("trades", platform, league_id, season, limit, str(player_id))
-        cached = _player_trades_cache_get(cache_key)
-        if cached is not None:
-            return jsonify(cached)
-
         payload = get_player_league_trades(
             player_id=player_id,
             platform=platform,
@@ -28489,7 +25454,6 @@ def api_player_league_trades(player_id: str):
             season=season,
             limit=limit,
         )
-        _player_trades_cache_put(cache_key, payload)
         return jsonify(payload)
     except Exception as e:
         logger.exception("[api_player_league_trades] error")
@@ -28511,14 +25475,9 @@ def api_player_acquisition(player_id: str):
             season = datetime.now().year
         if not league_id:
             return jsonify({"error": "league_id required"}), 400
-        cache_key = ("acquisition", platform, league_id, season, str(player_id))
-        cached = _player_trades_cache_get(cache_key)
-        if cached is not None:
-            return jsonify(cached)
         payload = get_player_acquisition_events(
             player_id, platform=platform, league_id=league_id, season=season,
         )
-        _player_trades_cache_put(cache_key, payload)
         return jsonify(payload)
     except Exception as e:
         logger.exception("[api_player_acquisition] error")
@@ -29103,6 +26062,7 @@ def api_draft_grades():
         return jsonify(_dg_hit[1])
 
     try:
+        from dashboard_services.api import fetch_json
         from collections import defaultdict as _defaultdict
 
         # ── Draft picks ─────────────────────────────────────────────────────
@@ -29115,10 +26075,7 @@ def api_draft_grades():
         if not draft_id:
             return jsonify({"error": "Draft has no ID"}), 404
 
-        # Picks come from the platform's own draft-results path. The old code
-        # fed the draft id to Sleeper's /draft/{id}/picks transport for every
-        # platform, so ESPN/Yahoo synthetic draft ids 404'd and the route 500'd.
-        picks_raw = get_draft_picks(platform, league_id, season, draft_id=draft_id) or []
+        picks_raw = fetch_json(f"/draft/{draft_id}/picks") or []
         if not isinstance(picks_raw, list) or not picks_raw:
             return jsonify({"error": "Draft has no picks yet"}), 404
 
@@ -30042,20 +26999,6 @@ def api_trade_intel_trending():
             model_val = float(r["model_value"] or 0)
             market_val = float(r["market_value"] or 0)
             delta = round(market_val - model_val, 1) if model_val and market_val else None
-            market_trend = round(float(r["market_trend_1qb"]) * _market_scale(), 1) if r[
-                                                                                            "market_trend_1qb"] is not None else None
-            # Trade Hub: shared server-computed "Why this" line.
-            try:
-                from dashboard_services.trade_hub import why_line_for_market
-                _why_line = why_line_for_market({
-                    "trade_count_7d": r["trade_count_7d"],
-                    "market_trend": market_trend,
-                    "value_delta": delta,
-                    "model_value": model_val,
-                    "buy_sell_ratio": None,
-                })
-            except Exception:
-                _why_line = ""
             result.append({
                 "player_id": pid,
                 "name": info.get("name", pid),
@@ -30067,8 +27010,8 @@ def api_trade_intel_trending():
                 "market_value": market_val or None,
                 "model_value": model_val or None,
                 "value_delta": delta,
-                "market_trend": market_trend,
-                "why_line": _why_line or None,
+                "market_trend": round(float(r["market_trend_1qb"]) * _market_scale(), 1) if r[
+                                                                                                "market_trend_1qb"] is not None else None,
             })
 
         # Calculate pagination info
@@ -31509,21 +28452,6 @@ def api_trade_targets():
         owner_needs_by_roster=owner_needs_by_roster,
     )
 
-    top_chips = sorted(
-        (
-            {
-                "player_id": p,
-                "name": values_by_id[p]["name"],
-                "position": values_by_id[p]["position"],
-                "team": values_by_id[p].get("team") or "",
-                "pos_rank_label": values_by_id[p].get("pos_rank_label") or "",
-            }
-            for p in viewer_pids
-            if p in values_by_id and values_by_id[p]["position"] in POSITIONS
-        ),
-        key=lambda c: float(values_by_id[c["player_id"]]["value"]),
-        reverse=True,
-    )[:6]
     return jsonify({
         "by_position": picked.get("by_position") or {},
         "all_positions": picked.get("all_positions") or {},
@@ -31533,7 +28461,6 @@ def api_trade_targets():
         "window": picked.get("window") or "balanced",
         "summary": picked.get("summary") or "",
         "needed_positions": picked.get("needed_positions") or [],
-        "top_chips": top_chips,
     })
 
 
@@ -31553,13 +28480,6 @@ def api_archetype_suggestions():
     viewer_roster_id = str(request.args.get("viewer_roster_id") or "").strip()
     league_type = str(request.args.get("league_type") or "1qb").strip().lower()
     league_size = int(request.args.get("league_size") or 10)
-    # Progressive loading: phase=slate returns the analytical slate instantly
-    # (sim fields pending); the per-group sim numbers come from
-    # /api/trade-intel/archetype-suggestion-sim. Default stays the full
-    # one-shot response for non-progressive callers.
-    phase = str(request.args.get("phase") or "full").strip().lower()
-    if phase not in ("full", "slate"):
-        return jsonify({"error": "phase must be full|slate"}), 400
 
     untouchable_raw = str(request.args.get("untouchable_ids") or "").strip()
     untouchable_ids = set(untouchable_raw.split(",")) - {""} if untouchable_raw else None
@@ -31587,124 +28507,10 @@ def api_archetype_suggestions():
             league_size=league_size,
             ctx=ctx,
             untouchable_ids=untouchable_ids,
-            phase=phase,
         )
-        # Trade Hub: shared server-computed "Why this" line on every suggestion.
-        # Pending rows skip it: the line cites playoff impact, which is not
-        # known until that group's sim phase completes.
-        try:
-            from dashboard_services.trade_hub import why_line_for_suggestion
-            for s in results.get("suggestions") or []:
-                if isinstance(s, dict) and not s.get("why_line") and not s.get("sim_pending"):
-                    s["why_line"] = why_line_for_suggestion(s)
-        except Exception:
-            pass
         return jsonify(results)
     except Exception as exc:
         return _api_err("Archetype suggestions failed", exc)
-
-
-@app.route("/api/trade-intel/archetype-suggestion-sim")
-@limiter.limit("30 per minute")
-def api_archetype_suggestion_sim():
-    """
-    GET /api/trade-intel/archetype-suggestion-sim
-    Progressive loading, sim phase: returns the suggestion rows for ONE
-    group_key (one headline player) with their Monte Carlo numbers filled in,
-    exactly as the full archetype-suggestions response computes them.
-    Premium-gated. Same league params as archetype-suggestions plus
-    group_key (from the slate response's groups list).
-    """
-    archetype = str(request.args.get("archetype") or "contending").strip().lower()
-    platform = str(request.args.get("platform") or "sleeper").strip()
-    league_id = str(request.args.get("league_id") or "").strip()
-    season = int(request.args.get("season") or datetime.now().year)
-    viewer_roster_id = str(request.args.get("viewer_roster_id") or "").strip()
-    league_type = str(request.args.get("league_type") or "1qb").strip().lower()
-    league_size = int(request.args.get("league_size") or 10)
-    group_key = str(request.args.get("group_key") or "").strip()
-
-    untouchable_raw = str(request.args.get("untouchable_ids") or "").strip()
-    untouchable_ids = set(untouchable_raw.split(",")) - {""} if untouchable_raw else None
-
-    if not league_id or not viewer_roster_id:
-        return jsonify({"error": "league_id and viewer_roster_id required"}), 400
-    if not group_key:
-        return jsonify({"error": "group_key required"}), 400
-
-    if archetype not in ("contending", "rebuilding", "consolidate", "distribute"):
-        return jsonify({"error": "archetype must be contending|rebuilding|consolidate|distribute"}), 400
-
-    user_id = session.get("viewer_username") or None
-    if not has_premium_for_viewer(user_id, session.get("viewer_user_id"), league_id, platform, season):
-        return jsonify({"paywall": True, "error": "Premium required"}), 403
-
-    try:
-        from dashboard_services.archetype_engine import get_archetype_suggestions
-        ctx = get_league_ctx_from_cache(platform=platform, league_id=league_id, season=season)
-        results = get_archetype_suggestions(
-            archetype=archetype,
-            platform=platform,
-            league_id=league_id,
-            season=season,
-            viewer_roster_id=viewer_roster_id,
-            league_type=league_type,
-            league_size=league_size,
-            ctx=ctx,
-            untouchable_ids=untouchable_ids,
-            phase="sim",
-            group_key=group_key,
-        )
-        try:
-            from dashboard_services.trade_hub import why_line_for_suggestion
-            for s in results.get("suggestions") or []:
-                if isinstance(s, dict) and not s.get("why_line"):
-                    s["why_line"] = why_line_for_suggestion(s)
-        except Exception:
-            pass
-        return jsonify(results)
-    except Exception as exc:
-        return _api_err("Archetype suggestion sim failed", exc)
-
-
-@app.route("/api/trade-hub/shop-package", methods=["POST"])
-def api_trade_hub_shop_package():
-    """POST /api/trade-hub/shop-package
-
-    Trade Hub shop-to-all-teams: re-price an outgoing package against every
-    roster's needs and return a value-matched counter for each team.
-    Premium-gated. Body: {platform, league_id, season, viewer_roster_id,
-    give_asset_ids: [...]}
-    """
-    body = request.get_json(silent=True) or {}
-    platform = str(body.get("platform") or "sleeper").strip()
-    league_id = str(body.get("league_id") or "").strip()
-    season = int(body.get("season") or datetime.now().year)
-    viewer_roster_id = str(body.get("viewer_roster_id") or "").strip()
-    give_asset_ids = [str(a) for a in (body.get("give_asset_ids") or []) if a]
-    if not league_id or not give_asset_ids:
-        return jsonify({"ok": False, "error": "league_id and give_asset_ids required"}), 400
-
-    user_id = session.get("viewer_username") or None
-    if not has_premium_for_viewer(user_id, session.get("viewer_user_id"), league_id, platform, season):
-        return jsonify({"ok": False, "paywall": True, "error": "Premium required"}), 403
-
-    try:
-        from dashboard_services.trade_hub import shop_package
-        from utils.lineup_slots import is_superflex_lineup
-        ctx = get_league_ctx_from_cache(platform=platform, league_id=league_id, season=season)
-        _rp = ctx.get("roster_positions") or []
-        result = shop_package(
-            ctx,
-            viewer_roster_id=viewer_roster_id,
-            send_ids=give_asset_ids,
-            league_type="sf" if is_superflex_lineup(_rp) else "1qb",
-            league_size=len(ctx.get("rosters") or []) or 10,
-        )
-        result["ok"] = True
-        return jsonify(result)
-    except Exception as exc:
-        return _api_err("Shop package failed", exc)
 
 
 # Pick-asset id parsing lives in utils/pick_slots.py; re-exported under the
@@ -33679,8 +30485,6 @@ def _portfolio_movers_card(holdings: list, pos_colors: dict) -> str:
         "border-bottom:1px solid var(--grid,var(--border));cursor:pointer;}"
         ".pfm-row:last-child{border-bottom:none;}"
         ".pfm-row:hover{background:var(--row,rgba(127,127,127,.05));}"
-        ".pfm-row.player-clickable:hover{opacity:1;}"
-        ".pfm-row.player-clickable:hover .pfm-name{opacity:.72;}"
         ".pfm-pos{font-weight:800;font-size:11px;min-width:26px;}"
         ".pfm-name{flex:1;min-width:0;font-weight:600;font-size:13px;line-height:1.25;overflow-wrap:anywhere;}"
         ".pfm-sh{font-size:10px;font-weight:700;color:var(--text-subtle);"
@@ -33713,7 +30517,6 @@ def build_portfolio_body(
         total_wins: int = 0,
         total_losses: int = 0,
         total_ties: int = 0,
-        current_week: int = 0,
 ) -> str:
     _POS_COLORS = {"QB": "#3b82f6", "RB": "#22c55e", "WR": "#f59e0b", "TE": "#8b5cf6"}
     _ARCH_COLORS = {"QB-Heavy": "#3b82f6", "RB Corps": "#22c55e", "WR-Spread": "#f59e0b", "TE-Premium": "#8b5cf6",
@@ -33757,14 +30560,8 @@ def build_portfolio_body(
         ".pf-reset-user{color:var(--text-muted);font-size:12px;font-weight:700;"
         "text-decoration:underline;text-underline-offset:2px;}"
         ".pf-reset-user:hover{color:var(--accent);}"
-        # Notification settings entry point on My Leagues (first-class surface).
-        ".pf-notif-btn{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;"
-        "color:var(--text-muted);background:var(--row);border:1px solid var(--grid);border-radius:10px;"
-        "padding:7px 12px;cursor:pointer;white-space:nowrap;}"
-        ".pf-notif-btn:hover{color:var(--accent);border-color:var(--accent);}"
         ".pf-stat-bar{display:grid;grid-template-columns:repeat(3,1fr);"
         "border:1px solid var(--grid);border-radius:12px;overflow:hidden;background:var(--row);}"
-        ".pf-stat-bar--4{grid-template-columns:repeat(4,1fr);}"
         ".pf-stat{padding:12px 10px;text-align:center;min-width:0;}"
         ".pf-stat+.pf-stat{border-left:1px solid var(--grid);}"
         ".pf-stat-val{font-size:24px;font-weight:800;color:var(--text);line-height:1.15;"
@@ -33912,43 +30709,18 @@ def build_portfolio_body(
     # ── Summary card ────────────────────────────────────────────────────────
     rec_str = f"{total_wins}-{total_losses}" + (f"-{total_ties}" if total_ties else "")
     rec_cls = "color-win" if total_wins > total_losses else ("color-loss" if total_losses > total_wins else "")
-    # Last-week aggregate: W/L/T across leagues with a finalized result for the
-    # most recent week. Only meaningful after week 1, so the cell is omitted
-    # entirely until then (never a dangling "0-0").
-    _lw_w = _lw_l = _lw_t = 0
-    for _lg in valid_leagues or []:
-        _r = (_lg.get("last_week_result") or "").strip().upper()
-        if _r == "W":
-            _lw_w += 1
-        elif _r == "L":
-            _lw_l += 1
-        elif _r == "T":
-            _lw_t += 1
-    _show_lw = bool(current_week and current_week > 1 and (_lw_w + _lw_l + _lw_t) > 0)
-    _lw_str = f"{_lw_w}-{_lw_l}" + (f"-{_lw_t}" if _lw_t else "")
-    _lw_cls = "color-win" if _lw_w > _lw_l else ("color-loss" if _lw_l > _lw_w else "")
-    _lw_cell = (
-        f"<div class='pf-stat'><div class='pf-stat-val {_lw_cls}' data-portfolio-lw-record>{_lw_str}</div>"
-        f"<div class='pf-stat-label'>Last Week</div></div>"
-    ) if _show_lw else ""
-    _bar_cls = "pf-stat-bar pf-stat-bar--4" if _show_lw else "pf-stat-bar"
     _who = html.escape(username or "your account")
     top_strip = (
         f"<div class='card' style='margin-bottom:14px;'>"
         f"<div class='pf-summary'>"
-        f"<div style='display:flex;align-items:flex-start;justify-content:space-between;gap:10px;'>"
         f"<div>"
         f"<div class='pf-summary-title'>My Leagues</div>"
         f"<div class='pf-summary-sub'>Signed in as <strong>{_who}</strong>"
         f" · <a class='pf-reset-user' href='/reset-user'>Not me?</a></div>"
         f"</div>"
-        f"<button type='button' class='pf-notif-btn' onclick='if(window.openNotifPrefs)window.openNotifPrefs()' title='Notification settings'>"
-        f"<img src='/static/bell.png' style='width:13px;height:13px;opacity:.7;' alt=''>Alerts</button>"
-        f"</div>"
-        f"<div class='{_bar_cls}'>"
+        f"<div class='pf-stat-bar'>"
         f"<div class='pf-stat'><div class='pf-stat-val' data-portfolio-league-count>{num_leagues}</div><div class='pf-stat-label'>Leagues</div></div>"
-        f"<div class='pf-stat'><div class='pf-stat-val {rec_cls}' data-portfolio-agg-record data-wins='{total_wins}' data-losses='{total_losses}' data-ties='{total_ties}'>{rec_str}</div><div class='pf-stat-label'>Record</div></div>"
-        f"{_lw_cell}"
+        f"<div class='pf-stat'><div class='pf-stat-val {rec_cls}'>{rec_str}</div><div class='pf-stat-label'>Record</div></div>"
         f"<div class='pf-stat'><div class='pf-stat-val'>{season}</div><div class='pf-stat-label'>Season</div></div>"
         f"</div>"
         f"</div>"
@@ -34057,7 +30829,7 @@ def build_portfolio_body(
         ".filter(function(el){return el.style.display!=='none';})"
         ".map(function(el){return el.dataset.summaryCard;}).filter(Boolean);"
         "if(!keys.length){"
-        "const liveLeagues=[...document.querySelectorAll('.pf-lg-card[data-platform][data-league-id][data-season]')]"
+        "const liveLeagues=[...document.querySelectorAll('.pf-lg-card [data-lg-live]')]"
         ".map(function(el){return {league_id:el.dataset.leagueId,platform:el.dataset.platform,season:el.dataset.season};})"
         ".filter(function(lg){return lg.league_id;});"
         "if(!liveLeagues.length){return {handled:false};}"
@@ -34190,6 +30962,7 @@ def build_portfolio_body(
                 f"<div class='pf-lg-stats' data-summary-stats><span class='pf-lg-stat'><span class='pf-lg-v'>-</span><span class='pf-lg-l'>Record loading</span></span>"
                 f"<span class='pf-lg-stat'><span class='pf-lg-v'>-</span><span class='pf-lg-l'>Standing loading</span></span>"
                 f"<span class='pf-lg-stat'><span class='pf-lg-v' data-summary-streak>...</span><span class='pf-lg-l'>Streak loading</span></span></div>"
+                f"<div class='pf-pos-chips' data-summary-positions>QB ... &nbsp; RB ... &nbsp; WR ... &nbsp; TE ...</div>"
                 f"<div class='pf-lg-foot'><span class='pf-lg-l' data-summary-updated>Updated {_updated}</span>"
                 f"<button type='button' data-summary-retry hidden>Retry</button><a href='{href}' class='pf-lg-open'>Open &rarr;</a></div></div>"
             )
@@ -34283,15 +31056,10 @@ def build_portfolio_body(
 
         wins = lg.get("wins") or 0
         losses = lg.get("losses") or 0
-        ties = lg.get("ties") or 0
         rank = lg.get("rank") or "?"
         total = lg.get("total_teams") or "?"
         rec = lg.get("record") or f"{wins}-{losses}"
         rec_cls2 = "color-win" if wins > losses else ("color-loss" if losses > wins else "")
-        # Last-week result hook for the client-side "Last Week" aggregate
-        # recompute as cold cards hydrate (mirrors data-wins/losses/ties).
-        _lw_r = (lg.get("last_week_result") or "").strip().upper()
-        _lw_attr = f" data-lw-result='{_lw_r}'" if _lw_r in ("W", "L", "T") else ""
 
         # Standing as an ordinal place ("10th / 10") with a red flag for a
         # bottom-third finish -- a place reads more clearly than the old "10/10",
@@ -34369,9 +31137,7 @@ def build_portfolio_body(
         # Live matchup slot: hydrated client-side (see pfLiveScores below) only
         # in-season during game weeks. Starts as a content-shaped skeleton so the
         # band doesn't pop in empty; hides after fetch when scores aren't live.
-        # Kept out of the offseason cards. Score/result only: no My Matchup /
-        # League Scores tabs and no ScoreZone Moments (those live on the matchup
-        # page / Weekly Hub).
+        # Kept out of the offseason cards.
         _lg_season_live = lg.get("season") or season
         live_skel = (
             "<div class='pf-live-skel' aria-hidden='true'>"
@@ -34401,7 +31167,7 @@ def build_portfolio_body(
         )
 
         league_rows += (
-            f"<div class='pf-lg-card' data-summary-card data-lg-key='{plat}:{lid}' data-favorite='{'true' if lg.get('is_favorite') else 'false'}' data-platform='{html.escape(str(plat), quote=True)}' data-league-id='{html.escape(str(lid), quote=True)}' data-season='{card_season}' data-wins='{wins}' data-losses='{losses}' data-ties='{ties}'{_lw_attr}>"
+            f"<div class='pf-lg-card' data-summary-card data-lg-key='{plat}:{lid}' data-favorite='{'true' if lg.get('is_favorite') else 'false'}' data-platform='{html.escape(str(plat), quote=True)}' data-league-id='{html.escape(str(lid), quote=True)}' data-season='{card_season}'>"
             f"<div class='pf-lg-top'>"
             f"<span class='pf-lg-crest' style='background:{_crest_hue};'>{_ini}</span>"
             f"{_lg_id(name_link, plat, off_note, '', lg.get('team_name') or '')}"
@@ -34571,9 +31337,6 @@ def build_portfolio_body(
         ".pf-live-wp-opp{color:var(--loss);}"
         ".pf-live-result{font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;"
         "text-align:center;color:var(--text);margin-top:4px;}"
-        ".pf-live-unavailable{font-size:11px;color:var(--text-muted);}"
-        ".pf-live-unavailable button{font:inherit;font-size:11px;font-weight:700;cursor:pointer;"
-        "background:none;border:none;color:var(--accent);padding:0;}"
         "@media(max-width:640px){"
         ".pf-lg-grid{grid-template-columns:minmax(0,1fr);gap:7px;}"
         ".pf-lg-card{padding:9px 10px;gap:6px;}"
@@ -34630,13 +31393,8 @@ def build_portfolio_body(
         "body:JSON.stringify({platform:parts.shift(),league_id:parts.join(':'),favorite:on})})"
         ".then(function(r){if(!r.ok)throw new Error('favorite save failed');return r.json();}).then(function(d){if(window.brGetMyLeagues)window.brGetMyLeagues({force:true});return d;})"
         ".catch(function(){c.setAttribute('data-favorite',on?'false':'true');render();});}});"
-        "if(prev)prev.addEventListener('click',function(){if(page>0){page--;render();queueVisible();}});"
-        "if(next)next.addEventListener('click',function(){page++;render();queueVisible();});"
-        "function queueVisible(){if(!window.__pfQueueCard)return;var ord=ordered();"
-        "ord.forEach(function(c,i){if(i>=page*PAGE&&i<(page+1)*PAGE){"
-        "var slot=c.querySelector('[data-lg-live]');"
-        "var hydrated=c.dataset.summaryGood==='true'&&(!slot||slot.dataset.matchupGood==='true');"
-        "if(!hydrated)window.__pfQueueCard(c);}});}"
+        "if(prev)prev.addEventListener('click',function(){if(page>0){page--;render();}});"
+        "if(next)next.addEventListener('click',function(){page++;render();});"
         "render();})();</script>"
         # One page-scoped owner manages hydration, refresh, polling and cleanup.
         "<script>/* Portfolio cards are started by initPageRoot after deferred helpers load. */</script>"
@@ -34892,88 +31650,6 @@ def _warm_league_players_board() -> None:
         _board_league_players_response(overlay, overlay_key=overlay_key, is_sf=is_sf)
 
 
-def _warm_player_modal_caches() -> None:
-    """Warm the league-independent caches /api/player-details pays for cold.
-
-    A cold profile of the modal (2026-09-30) put the league-scoped open at
-    ~14s local / >30s in prod against a 12s client timeout, almost none of it
-    the handler's own work: the full Sleeper players feed (~1.3s, read just
-    for injury status), the current week's conditions (odds + weather,
-    ~2.7s), the daily ADP feed (~1s), the current week's projections (~0.6s)
-    and the on-demand Sleeper week-stat backfill (~0.9s) each fill lazily on
-    first use. All are keyed by season/week only, never by league, so one
-    background pass per worker makes later modal opens skip them entirely.
-    Every step is individually best-effort; never raises.
-    """
-    try:
-        get_players_global()
-    except Exception:
-        logger.debug("warm: players feed failed", exc_info=True)
-    try:
-        from dashboard_services.api import get_nfl_state as _warm_state
-        _state = _warm_state() or {}
-        _season = int(_state.get("season") or 0)
-        _week = int(_state.get("week") or 0)
-        if not _season:
-            return
-    except Exception:
-        logger.debug("warm: nfl state failed", exc_info=True)
-        return
-    try:
-        _ensure_sleeper_week_files(_season)
-    except Exception:
-        logger.debug("warm: sleeper week files failed", exc_info=True)
-    try:
-        from dashboard_services.adp_service import fetch_sleeper_adp as _warm_adp
-        _warm_adp(_season)
-    except Exception:
-        logger.debug("warm: sleeper adp failed", exc_info=True)
-    if not _week:
-        return
-    try:
-        from utils.utils import load_week_projection as _warm_wp
-        _warm_wp(_season, _week)
-    except Exception:
-        logger.debug("warm: week projections failed", exc_info=True)
-    try:
-        from utils.game_conditions import build_week_conditions as _warm_cond
-        from utils.utils import load_week_sched as _warm_sched
-        _games = []
-        for _g in (_warm_sched(_season, _week) or []):
-            _h = str(_g.get("home") or "").upper()
-            _a = str(_g.get("away") or "").upper()
-            if _h and _a:
-                _games.append((_h, _a, str(_g.get("gameDate") or "")))
-        if _games:
-            _warm_cond(_season, _week, _games)
-    except Exception:
-        logger.debug("warm: week conditions failed", exc_info=True)
-
-
-_MODAL_WARM_LOCK = threading.Lock()
-_MODAL_WARM_STARTED = False
-
-
-def _kick_player_modal_warm() -> None:
-    """Start the player-modal cache warm once per process, off the request
-    path. Kicked lazily from the first player-details request so the warm
-    happens even when WARM_CACHES_ON_START is unset; the startup warmer also
-    runs the same pass when the flag is set. Never raises."""
-    global _MODAL_WARM_STARTED
-    try:
-        if app.testing:
-            return
-        with _MODAL_WARM_LOCK:
-            if _MODAL_WARM_STARTED:
-                return
-            _MODAL_WARM_STARTED = True
-        threading.Thread(
-            target=_warm_player_modal_caches, daemon=True, name="modal-warm",
-        ).start()
-    except Exception:
-        logger.debug("modal warm kick failed", exc_info=True)
-
-
 def _warm_global_caches() -> None:
     """Best-effort warm of the league-independent caches (model value table +
     players index + the enriched league-players payload) so the first user
@@ -34993,7 +31669,6 @@ def _warm_global_caches() -> None:
         t0 = time.perf_counter()
         for name, fn in (("model value table", get_model_value_table_cached),
                          ("players index", get_players_index_global),
-                         ("player modal caches", _warm_player_modal_caches),
                          ("league-players board", _warm_league_players_board)):
             try:
                 fn()
@@ -36158,313 +32833,6 @@ def trade_card_og_image(share_id: str):
         render_url, 1200, 630,
         wait_selector=".card",
         cache_key=f"trade:{share_id}",
-    )
-    if not png:
-        return redirect(f"{request.host_url.rstrip('/')}/static/BR_Logo.png?v=6c0c4828")
-    return Response(png, mimetype="image/png",
-                    headers={"Cache-Control": "public, max-age=3600"})
-
-
-# ── Shareable trade-outcome links (/o/<share_id>) ─────────────────────────────
-# Mirrors the /t/<id> + /trade-card/<id> pattern: the client shares a frozen
-# outcome payload (verdict + per-asset then/now values), the public card shows
-# "who won the trade", and og.png renders the social preview. Payloads are
-# capped and pruned after 5 days like the trade-card shares.
-
-from dashboard_services.trade_outcome_shares import (  # noqa: E402
-    create_outcome_share,
-    get_outcome_share,
-    sanitize_outcome_params,
-)
-
-
-@app.route("/api/save-trade-outcome", methods=["POST"])
-@limiter.limit("60 per minute")
-def api_save_trade_outcome():
-    """Mint a public share link for a trade-outcome verdict."""
-    data = request.get_json(force=True) or {}
-    params = sanitize_outcome_params(data)
-    if not params["a_rows"] and not params["b_rows"]:
-        return jsonify({"error": "No assets to share"}), 400
-    try:
-        share_id = create_outcome_share(params)
-    except Exception as exc:
-        logger.warning("[save-trade-outcome] DB error: %s", exc)
-        return jsonify({"error": "Could not save outcome"}), 500
-    return jsonify({"ok": True, "share_id": share_id})
-
-
-@app.route("/o/<share_id>")
-def shared_outcome_page(share_id: str):
-    """Short outcome share URL -- redirects to the standalone outcome card."""
-    if get_outcome_share(share_id) is None:
-        from app import render_page
-        body = """
-        <div style="max-width:520px;margin:60px auto;text-align:center;padding:0 16px;">
-          <div style="font-size:48px;margin-bottom:16px;">🏈</div>
-          <h2 style="font-size:22px;font-weight:700;margin:0 0 24px;">Trade outcome not found</h2>
-          <p style="color:var(--text-muted);margin:0 0 24px;">This link may have expired or the outcome was never shared.</p>
-          <a href="/trade" style="display:inline-block;padding:10px 24px;background:var(--accent,#3b82f6);color:#fff;border-radius:8px;text-decoration:none;font-weight:600;">Open Trade Calculator</a>
-        </div>"""
-        return render_page(
-            "Trade Outcome Not Found | BR Fantasy", None, "trade", body,
-            noindex=True, ad_eligible=False,
-        ), 404
-    from flask import redirect as _redirect
-    return _redirect(f"/trade-outcome-card/{share_id}", 302)
-
-
-@app.route("/trade-outcome-card/<share_id>")
-def page_trade_outcome_card(share_id: str):
-    """Standalone "who won the trade" card for a shared trade outcome."""
-    share = get_outcome_share(share_id)
-    if not share:
-        return ("<style>" + _BRAND_FACES_MINI + "</style>"
-                '<meta name="robots" content="noindex">'
-                "<h2 style='font-family:\"Archivo\",sans-serif;padding:40px'>Trade outcome not found.</h2>"), 404
-    import html as _html
-    p = share["params"] or {}
-    created_at = share.get("created_at")
-
-    t1 = _html.escape(str(p.get("team_a") or "Team A"))
-    t2 = _html.escape(str(p.get("team_b") or "Team B"))
-
-    # Trade date shown as M/D/YY like the trade card.
-    trade_date = ""
-    try:
-        td = str(p.get("trade_date") or "")
-        if td:
-            from datetime import date as _d
-            _td = _d.fromisoformat(td[:10])
-            trade_date = f"{_td.month}/{_td.day}/{_td.strftime('%y')}"
-    except Exception:
-        trade_date = ""
-
-    try:
-        from datetime import timezone as _tz
-        _dt = created_at
-        if hasattr(_dt, "astimezone"):
-            _dt = _dt.astimezone(_tz.utc)
-        shared_date = (f"{_dt.month}/{_dt.day}/{_dt.strftime('%y')}" if _dt else "")
-    except Exception:
-        shared_date = ""
-
-    verdict = str(p.get("verdict") or "EVEN")
-    net = float(p.get("net_delta_now") or 0)
-    net_str = f"{net:+.1f}"
-    if verdict == "WIN":
-        verdict_text = f"{t1} won the trade"
-        verdict_color = "#4ade80"
-    elif verdict == "LOSS":
-        verdict_text = f"{t2} won the trade"
-        verdict_color = "#f97316"
-    else:
-        verdict_text = "Dead even"
-        verdict_color = "#94a3b8"
-
-    total_a = float(p.get("total_a_now") or 0)
-    total_b = float(p.get("total_b_now") or 0)
-
-    def _asset_html(rows):
-        out = []
-        for r in rows or []:
-            name = _html.escape(str(r.get("name") or ""))
-            is_pick = bool(r.get("is_pick"))
-            pos_tag = ('<span class="oc-pos" style="background:rgba(139,92,246,.2);color:#a78bfa">PICK</span>'
-                       if is_pick else "")
-            then = r.get("value_then")
-            now = float(r.get("value_now") or 0)
-            delta = r.get("delta")
-            if then is not None and delta is not None:
-                d = float(delta)
-                dcls = "oc-plus" if d >= 0 else "oc-minus"
-                dstr = f" ({d:+.1f})"
-                sub = (f'<div class="oc-sub">Then {float(then):,.1f}'
-                       f' <span class="{dcls}">{now:,.1f}{dstr}</span></div>')
-            else:
-                sub = f'<div class="oc-sub">Now {now:,.1f}</div>' if now else ""
-            out.append(
-                f'<div class="oc-row">{pos_tag}<div class="oc-name">{name}{sub}</div></div>'
-            )
-        return "".join(out) or '<div class="oc-empty">No assets</div>'
-
-    side_a_html = _asset_html(p.get("a_rows"))
-    side_b_html = _asset_html(p.get("b_rows"))
-
-    then_note = ('<div class="oc-est">Trade-time values are approximate (nearest board).</div>'
-                 if p.get("then_estimated") else "")
-
-    og_title = f"{t1} vs {t2} | BR Fantasy Trade Outcome"
-    og_desc = f"{verdict_text} ({net_str} value)"
-
-    is_embed = request.args.get("embed") == "1"
-    is_og = request.args.get("og") == "1"
-    if is_og:
-        is_embed = True
-    copy_link_style = "display:none" if is_embed else ""
-    body_pad = "0" if is_embed else "16px"
-    share_url = request.url.split("?")[0]
-    _og_image_url = f"{request.host_url.rstrip('/')}/trade-outcome-card/{share_id}/og.png"
-
-    card_html = f"""<!doctype html>
-<html lang="en" id="ocRoot" data-theme="dark">
-<head>
-  <meta charset="utf-8">
-  <title>Trade Outcome | BR Fantasy</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="robots" content="noindex">
-  <meta property="og:title" content="{og_title}">
-  <meta property="og:description" content="{og_desc}">
-  <meta property="og:image" content="{_og_image_url}">
-  <meta property="og:image:width" content="1200">
-  <meta property="og:image:height" content="630">
-  <meta property="og:type" content="website">
-  <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="{og_title}">
-  <meta name="twitter:description" content="{og_desc}">
-  <meta name="twitter:image" content="{_og_image_url}">
-  <link rel="icon" href="/static/BR_Mark.png?v=6c0c4828" type="image/png">
-  <script>
-    (function(){{{"document.documentElement.setAttribute('data-theme','light');" if is_og else "var t=localStorage.getItem('sc-card-theme')||(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t);"}}})();
-  </script>
-  <style>
-    :root{{--oc-bg:#0b1120;--oc-card:#0f1d36;--oc-hdr:#0b1628;--oc-border:rgba(255,255,255,.1);--oc-border-sub:rgba(255,255,255,.07);--oc-text:#e2e8f0;--oc-text2:#f1f5f9;--oc-muted:#94a3b8;--oc-dim:#64748b;--oc-dimmer:#475569;}}
-    [data-theme="light"]{{--oc-bg:#f1f5f9;--oc-card:#ffffff;--oc-hdr:#f8fafc;--oc-border:rgba(0,0,0,.1);--oc-border-sub:rgba(0,0,0,.06);--oc-text:#1e293b;--oc-text2:#0f172a;--oc-muted:#475569;--oc-dim:#64748b;--oc-dimmer:#94a3b8;}}
-    *{{box-sizing:border-box;margin:0;padding:0}}
-    {_BRAND_FACES}
-    body{{background:var(--oc-bg);{'min-height:100vh;justify-content:center;' if not is_embed else ''}display:flex;flex-direction:column;align-items:center;padding:{body_pad};font-family:"Archivo",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}}
-    .wrap{{max-width:520px;width:100%;position:relative}}
-    .card{{background:var(--oc-card);border:1px solid var(--oc-border);border-radius:20px;overflow:hidden}}
-    .card-header{{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--oc-border-sub);background:var(--oc-hdr)}}
-    .brand{{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:var(--oc-muted)}}
-    .badge{{font-size:11px;font-weight:700;padding:3px 10px;border-radius:8px;background:rgba(59,130,246,.15);color:#60a5fa;border:1px solid rgba(59,130,246,.25)}}
-    .badge .oc-date{{color:var(--oc-dim);font-weight:600;margin-left:6px}}
-    .verdict-banner{{text-align:center;padding:22px 18px 6px}}
-    .verdict-banner .vt{{font-size:24px;font-weight:900;color:{verdict_color};letter-spacing:.01em}}
-    .verdict-banner .vd{{font-size:13px;font-weight:600;color:var(--oc-muted);margin-top:6px}}
-    .sides{{display:grid;grid-template-columns:1fr 1fr;gap:0;margin-top:10px}}
-    .side{{padding:14px 16px}}
-    .side+.side{{border-left:1px solid var(--oc-border-sub)}}
-    .side-title{{font-size:9px;font-weight:700;letter-spacing:.08em;color:var(--oc-dim);text-transform:uppercase;margin-bottom:4px}}
-    .side-total{{font-size:22px;font-weight:900;color:var(--oc-text2);margin-bottom:10px}}
-    .side-total .oc-nowlbl{{font-size:10px;font-weight:600;color:var(--oc-dimmer);margin-left:6px}}
-    .oc-row{{display:flex;align-items:flex-start;gap:6px;padding:6px 0;border-bottom:1px solid var(--oc-border-sub)}}
-    .oc-row:last-child{{border-bottom:none}}
-    .oc-name{{flex:1;font-size:13px;font-weight:600;color:var(--oc-text);min-width:0;word-break:break-word}}
-    .oc-sub{{font-size:11px;font-weight:500;color:var(--oc-muted);margin-top:2px}}
-    .oc-pos{{font-size:9px;font-weight:700;padding:2px 5px;border-radius:4px;flex-shrink:0;margin-top:2px}}
-    .oc-plus{{color:#4ade80;font-weight:700}}
-    .oc-minus{{color:#f87171;font-weight:700}}
-    .oc-empty{{font-size:13px;color:var(--oc-dim);padding:8px 0}}
-    .oc-est{{margin:10px 16px 0;padding:7px 10px;border-radius:8px;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.25);font-size:11px;color:#fbbf24}}
-    .divider{{border-top:1px solid var(--oc-border-sub);margin-top:12px}}
-    .footer{{padding:14px 18px;display:flex;gap:8px;justify-content:flex-end;background:var(--oc-hdr);border-top:1px solid var(--oc-border-sub)}}
-    .btn{{font-size:12px;font-weight:700;padding:8px 16px;border-radius:8px;border:none;cursor:pointer;text-decoration:none;display:inline-block}}
-    .btn-outline{{background:transparent;color:var(--oc-muted);border:1px solid var(--oc-border)}}
-    .btn-primary{{background:#3b82f6;color:#fff}}
-    .oc-toggle{{position:absolute;top:-36px;right:0;background:var(--oc-card);border:1px solid var(--oc-border);
-      color:var(--oc-muted);border-radius:8px;padding:5px 10px;font-size:14px;cursor:pointer;}}
-    @media(max-width:400px){{
-      .card-header{{padding:10px 12px}}
-      .side{{padding:10px 8px}}
-      .side-total{{font-size:16px;margin-bottom:8px}}
-      .oc-name{{font-size:12px}}
-      .verdict-banner .vt{{font-size:20px}}
-      .footer{{padding:10px 12px}}
-      .btn{{padding:7px 12px;font-size:11px}}
-    }}
-    {('''
-    /* og=1 render mode: fixed 1200x630 light canvas with the card centered and
-       scaled up to fill the landscape social-preview frame. */
-    html[data-theme]{{background:#eef2f7;}}
-    body{{width:1200px !important;height:630px !important;padding:0 !important;
-      justify-content:center !important;align-items:center !important;overflow:hidden;
-      background:radial-gradient(circle at 50% 0%, #ffffff 0%, #e2e8f0 75%) !important;}}
-    .wrap{{transform:scale(1.42);transform-origin:center center;}}
-    .card{{box-shadow:0 24px 60px rgba(15,23,42,.18);}}
-    ''') if is_og else ''}
-  </style>
-</head>
-<body{' class="og-mode"' if is_og else ''}>
-  <div class="wrap">
-    <button class="oc-toggle" id="ocToggle" style="{'display:none' if is_embed else ''}" title="Toggle dark/light">&#9728;</button>
-    <div class="card">
-      <div class="card-header">
-        <div class="brand">
-          <img src="/static/BR_Mark_dark.png?v=6c0c4828" id="ocLogo" alt="BR Fantasy" style="height:18px;opacity:.9">
-          BR Fantasy
-        </div>
-        <div style="display:flex;align-items:center;gap:8px">
-          <span class="badge">Trade Outcome{f'<span class="oc-date">{trade_date}</span>' if trade_date else ''}</span>
-        </div>
-      </div>
-
-      <div class="verdict-banner">
-        <div class="vt">{verdict_text}</div>
-        <div class="vd">{t1}: {net_str} value since the trade</div>
-      </div>
-
-      <div class="sides">
-        <div class="side">
-          <div class="side-title">{t1} received</div>
-          <div class="side-total">{total_a:,.1f}<span class="oc-nowlbl">now</span></div>
-          {side_a_html}
-        </div>
-        <div class="side">
-          <div class="side-title">{t2} received</div>
-          <div class="side-total">{total_b:,.1f}<span class="oc-nowlbl">now</span></div>
-          {side_b_html}
-        </div>
-      </div>
-
-      {then_note}
-
-      <div class="footer">
-        <button class="btn btn-outline" onclick="navigator.clipboard.writeText('{share_url}').then(()=>this.textContent='Copied!')" style="{copy_link_style}">Copy link</button>
-      </div>
-    </div>
-    <div style="text-align:center;margin-top:12px;font-size:11px;color:var(--oc-dimmer);{'display:none' if is_embed else ''}">
-      <a href="/" style="color:var(--oc-dimmer);text-decoration:none">brfantasyfootball.com</a>
-      {f'<span style="margin:0 6px;opacity:.4">·</span><span>Shared {shared_date}</span>' if shared_date else ''}
-    </div>
-  </div>
-  <script>
-  (function(){{
-    var root = document.getElementById('ocRoot');
-    function applyTheme(t){{
-      root.setAttribute('data-theme', t);
-      var logo = document.getElementById('ocLogo');
-      if (logo) logo.src = t === 'dark' ? '/static/BR_Mark_dark.png?v=6c0c4828' : '/static/BR_Mark.png?v=6c0c4828';
-      var btn = document.getElementById('ocToggle');
-      if (btn) btn.innerHTML = t === 'dark' ? '&#9728;' : '&#9790;';
-    }}
-    applyTheme({"'light'" if is_og else "localStorage.getItem('sc-card-theme') || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')"});
-    var toggleBtn = document.getElementById('ocToggle');
-    if (toggleBtn) {{
-      toggleBtn.addEventListener('click', function(){{
-        var t = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-        localStorage.setItem('sc-card-theme', t);
-        applyTheme(t);
-      }});
-    }}
-  }})();
-  </script>
-</body>
-</html>"""
-    return card_html, 200, {"Content-Type": "text/html; charset=utf-8"}
-
-
-@app.route("/trade-outcome-card/<share_id>/og.png")
-def trade_outcome_card_og_image(share_id: str):
-    """Social-share preview image for a shared trade outcome -- a screenshot of
-    the outcome card's og=1 render mode. Falls back to the static logo if
-    headless rendering is unavailable so share links never break."""
-    from dashboard_services.og_render import render_url_to_png
-    render_url = f"{request.host_url.rstrip('/')}/trade-outcome-card/{share_id}?og=1"
-    png = render_url_to_png(
-        render_url, 1200, 630,
-        wait_selector=".card",
-        cache_key=f"outcome:{share_id}",
     )
     if not png:
         return redirect(f"{request.host_url.rstrip('/')}/static/BR_Logo.png?v=6c0c4828")

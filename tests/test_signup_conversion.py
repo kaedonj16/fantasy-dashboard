@@ -25,16 +25,9 @@ QUOTE = "THATS ACTUALLY SO SICK BRO"
 
 
 def _hero() -> str:
-    # AdSense Tier 2 moved the connect card (.home-hero-right) after the
-    # editorial sections in DOM order; CSS grid/flex placement keeps it
-    # visually co-located with the hero. The funnel assertions cover the hero
-    # section plus the relocated card, which together hold exactly the content
-    # the old in-hero card held.
-    hero_start = APP_PY.index('<section class="home-hero">')
-    hero_end = APP_PY.index("</section>", hero_start) + len("</section>")
-    card_start = APP_PY.index('<div class="home-hero-right">', hero_end)
-    card_end = APP_PY.index('<section class="indie">', card_start)
-    return APP_PY[hero_start:hero_end] + APP_PY[card_start:card_end]
+    start = APP_PY.index('<section class="home-hero">')
+    end = APP_PY.index("</section>", start)
+    return APP_PY[start:end]
 
 
 # ── Hero funnel order: free path (Get started) before the PRO CTA ────────────
@@ -89,7 +82,7 @@ def test_no_invented_user_counts_in_new_proof():
 def test_no_em_dashes_in_new_copy():
     for snippet in (
         "THATS ACTUALLY SO SICK BRO",
-        "From $10 a year.",
+        "From $5 a year.",
         "Only the AI storyline is PRO",
         "Claim your team",
         "Sign in with Google",
@@ -128,11 +121,7 @@ def test_oauth_state_nonce_pkce_untouched():
 # ── Post-signup claim-your-team fast path ─────────────────────────────────────
 
 def test_zero_league_signin_drops_into_claim_flow():
-    # Anchor on the claim-flow copy, not the bare `if (!leagues.length) {`
-    # (the push-settings backfill added another one earlier in the file).
-    anchor = 'signedInLeagueList.textContent = "Connect your first fantasy league below."'
-    at = APP_JS.index(anchor)
-    branch = APP_JS[at - 200:at + 400]
+    branch = APP_JS[APP_JS.index("if (!leagues.length) {"):APP_JS.index("if (!leagues.length) {") + 600]
     assert 'setHomeCardState("connect")' in branch
     assert "Connect your first league" in branch
 
@@ -142,7 +131,7 @@ def test_zero_league_signin_drops_into_claim_flow():
 def test_pricing_copy_matches_pricing_page():
     home = APP_PY[APP_PY.index('FORM_BODY = """'):]
     assert "Less than $1 a month" not in home
-    assert "From $10 a year." in home
+    assert "From $5 a year." in home
 
 
 def test_weekly_recap_copy_scopes_pro_to_storyline():

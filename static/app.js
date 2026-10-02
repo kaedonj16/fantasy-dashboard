@@ -38,32 +38,6 @@ function escapeHtml(s) {
   });
 }
 
-// ── Guest league view recorder ──────────────────────────────────────────────
-// When a guest (not signed in) views a league dashboard, remember which league
-// it was in localStorage. If they later sign in with zero saved leagues, the
-// home page offers to attach that league to their account (see
-// maybeShowGuestClaimLeague). One record only; overwritten on each guest view.
-(function recordGuestLeagueView() {
-  try {
-    if (window._isSignedIn) return;
-    const ctx = window.__brctx;
-    if (!ctx || !ctx.leagueId || !ctx.platform) return;
-    let username = "";
-    try {
-      const savedViewer = JSON.parse(localStorage.getItem("saved_viewer") || "null");
-      if (savedViewer && savedViewer.username) username = String(savedViewer.username);
-    } catch (_) {}
-    localStorage.setItem("br-guest-league", JSON.stringify({
-      platform: String(ctx.platform).toLowerCase(),
-      league_id: String(ctx.leagueId),
-      season: ctx.season || new Date().getFullYear(),
-      name: ctx.leagueName || "",
-      username: username,
-      ts: Date.now(),
-    }));
-  } catch (_) {}
-})();
-
 /**
  * Allowlist sanitizer for AI HTML before innerHTML assignment.
  * Strips script/iframe/object/embed, on* handlers, and javascript: URLs.
@@ -203,35 +177,6 @@ function _advFetch(url, ms, init) {
     .finally(function() { if (t) clearTimeout(t); });
 }
 
-// ── Shared /api/league-players fetch ──────────────────────────────────────────
-// The nav player-search idle-preloads the full player list and the trade
-// calculator needs the same payload on the same page. Without sharing, both
-// fire independent ~1MB fetches. One page-level promise serves both callers:
-// in-flight requests are shared and completed results are reused for 60s
-// (matching the endpoint's own max-age=60). Defined above the bundle split
-// marker so the trade calculator code in the public bundle can use it.
-var __brLeaguePlayersPromise = null;
-var __brLeaguePlayersAt = 0;
-function brGetLeaguePlayersData() {
-  var now = Date.now();
-  if (__brLeaguePlayersPromise && (now - __brLeaguePlayersAt) < 60000) {
-    return __brLeaguePlayersPromise;
-  }
-  __brLeaguePlayersAt = now;
-  __brLeaguePlayersPromise = fetch('/api/league-players', { cache: 'no-store' })
-    .then(function (res) {
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      return res.json();
-    })
-    .catch(function (err) {
-      // Clear so the next caller retries instead of sharing the rejection.
-      __brLeaguePlayersPromise = null;
-      __brLeaguePlayersAt = 0;
-      throw err;
-    });
-  return __brLeaguePlayersPromise;
-}
-
 // ── Canonical position palette ────────────────────────────────────────────────
 // Single source of truth for position → color across the app (rankings, trade
 // calculator, playoff table, etc.). Previously this map was copy-pasted a dozen
@@ -317,17 +262,12 @@ if (window.__FEATURES_JS || window.__PLAYER_MODAL_JS) {
 // Reopening the installed app resumes a frozen page from the last session, and
 // on a slow network the service worker paints the last cached copy - both show
 // stale data. Reload when the page comes back to the foreground after sitting
-// hidden for STALE_MS or longer, and listen for the service worker's "a fresh
-// copy just landed" signal right after a cached-shell launch. The clock runs
-// on hidden time only: the stamp is taken when the page goes away, so time
-// spent actively using the page never counts, and a few minutes away never
-// yanks the page (and the view state on it) out from under the user. Live
-// surfaces (draft room, ScoreZone) manage their own freshness and are never
-// yanked out from under the user.
+// idle, and listen for the service worker's "a fresh copy just landed" signal
+// right after a cached-shell launch. Live surfaces (draft room, Redzone) manage
+// their own freshness and are never yanked out from under the user.
 (function () {
-  var STALE_MS = 10 * 60 * 1000;   // hidden at least this long -> reload on return
+  var STALE_MS = 10 * 60 * 1000;   // resume older than this -> reload
   var loadedAt = Date.now();
-  var hiddenSince = 0;
   var reloading = false;
   function liveSurface() {
     return !!document.getElementById('drSideTabs') || !!document.getElementById('rz-root');
@@ -343,19 +283,11 @@ if (window.__FEATURES_JS || window.__PLAYER_MODAL_JS) {
     location.reload();
   }
   function maybeResumeReload() {
-    // No hidden stamp -> the page never went away; never reload.
-    if (!hiddenSince) return;
-    var hiddenFor = Date.now() - hiddenSince;
-    hiddenSince = 0;
-    if (hiddenFor >= STALE_MS) reloadOnce();
+    if (Date.now() - loadedAt >= STALE_MS) reloadOnce();
   }
   document.addEventListener('visibilitychange', function () {
-    if (document.visibilityState === 'hidden') { hiddenSince = Date.now(); return; }
     if (document.visibilityState === 'visible') maybeResumeReload();
   });
-  // pagehide covers freezes that skip the hidden transition (bfcache entry,
-  // app discard); the stamp is what a later pageshow evaluates.
-  window.addEventListener('pagehide', function () { hiddenSince = Date.now(); });
   // bfcache restore (back/forward or PWA resume on some platforms).
   window.addEventListener('pageshow', function (e) {
     if (e.persisted) maybeResumeReload();
@@ -571,10 +503,7 @@ document.body.scrollTop = 0;
       var opt=sel.options[sel.selectedIndex]; valueEl.textContent=opt?opt.textContent.trim():'';
       trigger.disabled=!!sel.disabled; trigger.setAttribute('aria-disabled',sel.disabled?'true':'false');
       if(sel.required) trigger.setAttribute('aria-required','true'); else trigger.removeAttribute('aria-required');
-      // NOTE: use validity.valid, NOT checkValidity(). checkValidity() synchronously
-      // fires an 'invalid' event when the select is invalid, and the 'invalid'
-      // handler below calls sync() -> infinite recursion -> stack overflow.
-      var bad=!sel.disabled && !(sel.validity && sel.validity.valid); trigger.setAttribute('aria-invalid',bad?'true':'false'); wrap.classList.toggle('is-invalid',bad);
+      var bad=!sel.disabled && !sel.checkValidity(); trigger.setAttribute('aria-invalid',bad?'true':'false'); wrap.classList.toggle('is-invalid',bad);
       if(!bad){error.hidden=true;error.textContent='';trigger.removeAttribute('aria-describedby');}
       var label=labelText(sel); trigger.setAttribute('aria-label',label+(valueEl.textContent?': '+valueEl.textContent:''));
       Array.from(list.querySelectorAll('[role=option]')).forEach(function(el){ var on=el.dataset.value===sel.value; el.classList.toggle('is-selected',on); el.setAttribute('aria-selected',on?'true':'false'); });
@@ -764,177 +693,26 @@ window.brHaptic = function (pattern) {
 };
 
 /**
- * Tap-to-update prompt. Detects when the server is serving a newer deploy than
- * the bundle this page is running (our ?v= hash vs /healthz/version), and when
- * a service worker update is waiting. Shows one dismissible toast per new
- * version; tapping it (not the X) swaps in the update with a cache-bypassing
- * reload. Never reloads on its own and never blocks the UI.
- *
- * Checks run on load, when the app returns to the foreground, when the browser
- * comes back online, and every 30 minutes while visible. The service worker
- * skipWaiting()s, so a new worker takes control on its own; the version check
- * is what notices our HTML/JS is stale, which controllerchange alone misses
- * (e.g. the worker updated before this page loaded).
+ * PWA update prompt. The service worker skipWaiting()s, so a new version takes
+ * control on its own; this just tells a long-lived session so the user can
+ * reload for the latest instead of running stale assets until they happen to
+ * relaunch. Keyed off controllerchange, guarded so the first-load claim (when
+ * there was no controller yet) doesn't fire a spurious prompt.
  */
-(function initUpdatePrompt() {
+(function initSwUpdatePrompt() {
   if (!('serviceWorker' in navigator)) return;
-
-  var VERSION_URL = '/healthz/version';
-  var CHECK_INTERVAL_MS = 30 * 60 * 1000;
-  var MIN_RECHECK_MS = 5 * 60 * 1000;
-
-  var lastCheck = 0;
-  var promptedFor = '';    // server version we've already shown the prompt for
-  var dismissedFor = '';   // server version the user dismissed
-  var waitingSw = null;    // worker waiting for our tap to activate
   var hadController = !!navigator.serviceWorker.controller;
-  var timer = null;
-
-  // The ?v= hash on our own <script> URL identifies the running bundle.
-  function myBundleHash() {
-    try {
-      var src = (document.currentScript && document.currentScript.src) || '';
-      var m = src.match(/[?&]v=([A-Za-z0-9]+)/);
-      return m ? m[1] : '';
-    } catch (_) { return ''; }
-  }
-
-  function showPrompt(serverVersion) {
-    if (!serverVersion || promptedFor === serverVersion || dismissedFor === serverVersion) return;
-    if (document.querySelector('.br-update-banner')) return;
-    promptedFor = serverVersion;
-
-    var wrap = document.createElement('div');
-    wrap.className = 'br-update-banner';
-    wrap.setAttribute('role', 'status');
-
-    var main = document.createElement('button');
-    main.type = 'button';
-    main.className = 'br-update-main';
-    main.innerHTML = '<span>New version available</span><span class="br-update-cta">Tap to update</span>';
-    main.addEventListener('click', applyUpdate);
-
-    var dismiss = document.createElement('button');
-    dismiss.type = 'button';
-    dismiss.className = 'br-update-dismiss';
-    dismiss.setAttribute('aria-label', 'Dismiss update notification');
-    dismiss.textContent = '\u00d7';
-    dismiss.addEventListener('click', function (e) {
-      e.stopPropagation();
-      dismissedFor = promptedFor;
-      if (wrap.parentNode) wrap.parentNode.removeChild(wrap);
-    });
-
-    wrap.appendChild(main);
-    wrap.appendChild(dismiss);
-    document.body.appendChild(wrap);
-  }
-
-  function applyUpdate() {
-    // A worker is waiting for our tap: let it activate, then the
-    // controllerchange handler below reloads. Otherwise bypass the HTTP cache
-    // so the reload fetches the new HTML instead of the stale shell.
-    if (waitingSw) {
-      try { waitingSw.postMessage({ type: 'SKIP_WAITING' }); return; }
-      catch (_) {}
-    }
-    bypassReload();
-  }
-
-  function bypassReload() {
-    try {
-      if (navigator.serviceWorker.controller) {
-        var channel = new MessageChannel();
-        var answered = false;
-        channel.port1.onmessage = function () {
-          if (answered) return;
-          answered = true;
-          location.reload();
-        };
-        navigator.serviceWorker.controller.postMessage(
-          { type: 'bypass-cache', url: location.href }, [channel.port2]);
-        setTimeout(function () {
-          if (!answered) { answered = true; location.reload(); }
-        }, 800);
-        return;
-      }
-    } catch (_) {}
-    location.reload();
-  }
-
-  function checkVersion() {
-    var now = Date.now();
-    if (now - lastCheck < MIN_RECHECK_MS) return;
-    lastCheck = now;
-    var mine = myBundleHash();
-    if (!mine) return;
-    fetch(VERSION_URL, { cache: 'no-store', credentials: 'omit' })
-      .then(function (r) { return (r && r.ok) ? r.json() : null; })
-      .then(function (data) {
-        if (!data || !data.app_js) return;
-        if (data.app_js !== mine) showPrompt(data.git_sha || data.app_js);
-      })
-      .catch(function () {});
-  }
-
-  function trackWorker(worker) {
-    if (!worker) return;
-    if (worker.state === 'installed') { waitingSw = worker; checkVersion(); return; }
-    worker.addEventListener('statechange', function () {
-      if (worker.state === 'installed') { waitingSw = worker; checkVersion(); }
-    });
-  }
-
+  var shown = false;
   navigator.serviceWorker.addEventListener('controllerchange', function () {
-    if (waitingSw) {
-      // We tapped "update" and the worker just took over: load the new page.
-      waitingSw = null;
-      bypassReload();
-      return;
-    }
-    if (!hadController) { hadController = true; return; }  // first claim, not an update
-    checkVersion();
+    if (!hadController || shown) return;   // initial claim, not an update
+    shown = true;
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'br-update-banner';
+    b.innerHTML = '<span>New version ready</span><span class="br-update-cta">Tap to refresh</span>';
+    b.addEventListener('click', function () { window.location.reload(); });
+    document.body.appendChild(b);
   });
-
-  function armRegistration(reg) {
-    if (!reg) return;
-    if (reg.waiting) { waitingSw = reg.waiting; }
-    reg.addEventListener('updatefound', function () { trackWorker(reg.installing); });
-    // Proactively ask for worker updates; the browser also checks on navigation.
-    try { reg.update(); } catch (_) {}
-    checkVersion();
-  }
-
-  if (navigator.serviceWorker.getRegistration) {
-    navigator.serviceWorker.getRegistration().then(armRegistration).catch(function () {});
-  }
-  // Also cover the race where getRegistration resolves before a waiting worker
-  // is set; ready resolves once there's an active worker.
-  if (navigator.serviceWorker.ready) {
-    navigator.serviceWorker.ready.then(armRegistration).catch(function () {});
-  }
-
-  function recheckSoon() {
-    // Foreground / reconnect: re-check, throttled by checkVersion itself.
-    checkVersion();
-    if (navigator.serviceWorker.getRegistration) {
-      navigator.serviceWorker.getRegistration().then(function (reg) {
-        if (reg) { try { reg.update(); } catch (_) {} }
-      }).catch(function () {});
-    }
-  }
-
-  document.addEventListener('visibilitychange', function () {
-    if (document.visibilityState === 'visible') recheckSoon();
-  });
-  window.addEventListener('online', recheckSoon);
-  window.addEventListener('focus', recheckSoon);
-
-  timer = setInterval(function () {
-    if (document.visibilityState === 'visible') recheckSoon();
-  }, CHECK_INTERVAL_MS);
-  // Don't keep the process alive for this in non-browser runtimes.
-  if (timer && typeof timer.unref === 'function') { try { timer.unref(); } catch (_) {} }
 })();
 
 /**
@@ -952,15 +730,12 @@ window.brHaptic = function (pattern) {
     if (node && !node._brHome) node._brHome = { parent: node.parentNode, next: node.nextSibling };
   }
   // Relocate the shared widgets (search box, settings menu, changelog) into the
-  // sheet / search screen / top bar on mobile, or back to the top nav on
-  // desktop. The changelog opens directly from the mobile top-bar bell as a
-  // floating panel, so it lives in the top nav on mobile instead of the More
-  // sheet. Queried fresh so it still works after a soft-nav swaps in a
-  // brand-new dock + sheet.
+  // sheet / search screen on mobile, or back to the top nav on desktop. Queried
+  // fresh so it still works after a soft-nav swaps in a brand-new dock + sheet.
   function relocate() {
     var searchMount = document.getElementById('brSearchMount');
     var acctMount   = document.getElementById('brSheetAccount');
-    var topNav      = document.querySelector('.top-nav.br-mnav');
+    var newsMount   = document.getElementById('brSheetChangelog');
     var search      = document.getElementById('navSearchWrapper');
     var settings    = document.getElementById('settingsDropdown');
     var changelog   = document.getElementById('changelogDropdown');
@@ -968,7 +743,7 @@ window.brHaptic = function (pattern) {
     if (mq.matches) {
       if (search && searchMount && search.parentNode !== searchMount) searchMount.appendChild(search);
       if (settings && acctMount && settings.parentNode !== acctMount) acctMount.appendChild(settings);
-      if (changelog && topNav && changelog.parentNode !== topNav) topNav.appendChild(changelog);
+      if (changelog && newsMount && changelog.parentNode !== newsMount) newsMount.appendChild(changelog);
     } else {
       [search, settings, changelog].forEach(function (n) {
         if (n && n._brHome && n.parentNode !== n._brHome.parent) n._brHome.parent.insertBefore(n, n._brHome.next);
@@ -1111,8 +886,6 @@ window.brHaptic = function (pattern) {
     ss.classList.add('open'); ss.setAttribute('aria-hidden', 'false');
     setTimeout(function () { var i = document.getElementById('navPlayerSearch'); if (i) i.focus(); }, 260);
   }
-  // Public open for the mobile top-bar search button.
-  window.brOpenSearch = openSearch;
   function closeSearch() {
     var ss = document.getElementById('brSearchScreen'); if (!ss) return;
     ss.classList.remove('open'); ss.setAttribute('aria-hidden', 'true');
@@ -1282,7 +1055,7 @@ window.brHaptic = function (pattern) {
  * documents) - the same swap-and-initPageRoot mechanism the Refresh button uses.
  *
  * It only ever soft-navigates pages it can handle: if the target page pulls in
- * its own <script src> (Draft Room, Rankings, Graphs, ScoreZone, Trade), or
+ * its own <script src> (Draft Room, Rankings, Graphs, Redzone, Trade), or
  * anything unexpected happens, it falls back to a normal full navigation. So it
  * can never leave a page half-initialized - worst case is today's behavior.
  * Mobile only; desktop keeps normal navigation.
@@ -1297,21 +1070,9 @@ window.brHaptic = function (pattern) {
   // External page scripts that are written to be safe to re-run on a swap (they
   // rebind to fresh page elements and guard any document-level listeners). Any
   // page whose page-root pulls in a script NOT on this list is full-navigated.
-  // Matching compares normalized basenames: served srcs are minified
-  // (/static/rankings.min.js?v=...), so the query/hash and a trailing ".min"
-  // are stripped before comparing -- a plain substring match on the list
-  // entries would never match a minified src and silently full-navigate.
-  var SOFT_OK_SCRIPTS = ['teams.js', 'rankings.js', 'scorezone.js', 'keeper.js',
-    'cheat_sheet.js', 'custom_selects.js', 'draft_room.js',
-    'draft_board_core.js', 'draft_grade_team.js', 'pick_score.js'];
-  function softScriptBase(src) {
-    var base = String(src || '').split(/[?#]/)[0].split('/').pop() || '';
-    return base.replace(/\.min(\.js)$/i, '$1');
-  }
+  var SOFT_OK_SCRIPTS = ['teams.js', 'rankings.js'];
   function scriptReRunnable(src) {
-    if (!src) return true;
-    var base = softScriptBase(src);
-    return SOFT_OK_SCRIPTS.indexOf(base) !== -1;
+    return SOFT_OK_SCRIPTS.some(function (n) { return src.indexOf('/' + n) !== -1; });
   }
   // DOMParser/innerHTML never runs <script>; re-create each one (inline and the
   // allow-listed external ones) so page data bootstraps and page modules execute
@@ -1319,40 +1080,12 @@ window.brHaptic = function (pattern) {
   // Inline page scripts must be re-runnable: no top-level let/const (a second
   // execution throws "already declared" and leaves the swapped DOM hydrateless).
   // Use var or function-scoped declarations for page-level state instead.
-  // DOMContentLoaded (and window load) already fired for this document, so a
-  // swapped-in script that registers for them would wait forever; capture those
-  // registrations while the new scripts run and invoke them right after, in
-  // order -- the swapped page's "loaded" moment. Registrations for any other
-  // event type pass straight through to the real addEventListener.
   function reexecScripts(container) {
-    var deferred = [];
-    var docAdd = document.addEventListener;
-    var winAdd = window.addEventListener;
-    function capture(target, orig) {
-      return function (type, fn, opts) {
-        if (typeof fn === 'function' &&
-            (type === 'DOMContentLoaded' || (target === window && type === 'load'))) {
-          deferred.push([type, fn]);
-          return;
-        }
-        return orig.call(target, type, fn, opts);
-      };
-    }
-    document.addEventListener = capture(document, docAdd);
-    window.addEventListener = capture(window, winAdd);
-    try {
-      container.querySelectorAll('script').forEach(function (old) {
-        var s = document.createElement('script');
-        for (var i = 0; i < old.attributes.length; i++) s.setAttribute(old.attributes[i].name, old.attributes[i].value);
-        if (!old.src) s.textContent = old.textContent;
-        old.parentNode.replaceChild(s, old);
-      });
-    } finally {
-      document.addEventListener = docAdd;
-      window.addEventListener = winAdd;
-    }
-    deferred.forEach(function (pair) {
-      try { pair[1].call(document, new Event(pair[0])); } catch (e) {}
+    container.querySelectorAll('script').forEach(function (old) {
+      var s = document.createElement('script');
+      for (var i = 0; i < old.attributes.length; i++) s.setAttribute(old.attributes[i].name, old.attributes[i].value);
+      if (!old.src) s.textContent = old.textContent;
+      old.parentNode.replaceChild(s, old);
     });
   }
 
@@ -1644,7 +1377,6 @@ window.brHaptic = function (pattern) {
     if (incomingAds && !currentAds) throw new Error('ad eligibility requires full navigation');
     if (!incomingAds) {
       document.querySelectorAll('.ad-container').forEach(function (el) { el.remove(); });
-      document.querySelectorAll('ins.adsbygoogle').forEach(function (el) { el.remove(); });
     }
     var sameSnapshot = ['platform', 'season', 'leagueId'].every(function (key) {
       return String(curRoot.dataset[key] || '') === String(newRoot.dataset[key] || '');
@@ -1695,41 +1427,35 @@ window.brHaptic = function (pattern) {
     }
   };
 
-  // Pages that can be swapped in place. A page qualifies when its inline
-  // scripts are re-runnable (var/function-scoped state, init via the
-  // readyState guard or the reexec DOMContentLoaded/load bridge) and every
-  // external script it pulls in is on the SOFT_OK_SCRIPTS allow-list. Any
-  // page that fails those checks at runtime still falls back to a full
-  // navigation -- the whitelist is an optimisation, never a trap.
-  // The landing page ('/') is deliberately NOT here: its league-form and
-  // saved-league wiring binds once at document load across the bundle, so
-  // the logo keeps a native load.
+  // Pages that can be swapped in place (script-free, or their page script is on
+  // the re-runnable allow-list). Everything else -- Draft, Keeper, Redzone,
+  // Prospects, Trade, Compare, Metrics -- loads its own scripts, so we let the
+  // browser navigate to it natively (a single load) rather than fetch it here
+  // only to bail to a full load anyway.
+  // Pages whose inline scripts initialise on DOMContentLoaded (waivers,
+  // graphs) or run a self-contained bootstrap (schedule) don't survive an
+  // in-place swap -- DOMContentLoaded has already fired, so their data never
+  // loads and the page "struggles to load". Like Draft/Keeper/etc. they load
+  // their own scripts, so let the browser navigate to them natively.
   var SOFT_NAV_PAGES = {
     dashboard: 1, standings: 1, teams: 1, activity: 1, weekly: 1,
     recap: 1, awards: 1, history: 1, commissioner: 1, league_health: 1,
-    players: 1, breakouts: 1, waivers: 1, schedule: 1, graphs: 1,
-    metrics: 1, 'nfl-teams': 1, scorezone: 1, keeper: 1, compare: 1,
-    trade: 1, 'trade-database': 1, prospects: 1, draft: 1,
-    'cheat-sheet': 1, watchlist: 1, portfolio: 1, 'top-movers': 1,
-    'oline-rankings': 1, 'dynasty-trade-value-chart': 1, dynasty: 1,
-    'share-card': 1, about: 1, glossary: 1, guides: 1, faq: 1,
-    pricing: 1, privacy: 1, terms: 1, support: 1, contact: 1,
+    players: 1, breakouts: 1,
   };
   function softNavigable(href) {
     var path;
     try { path = new URL(href, location.href).pathname; } catch (e) { return false; }
-    if (path.indexOf('/guides/') !== -1) return true;   // /guides/<slug>: the slug is the last segment
+    if (path.indexOf('/draft') !== -1) return false;   // draft + draft history load their own scripts
     var seg = path.replace(/\/+$/, '').split('/').pop();
     return SOFT_NAV_PAGES[seg] === 1;
   }
 
   function softNavTargetFromEvent(e) {
     // Mobile navigates from the dock + sheet; desktop from the top nav pills,
-    // dropdown items and the logo. The site footer persists outside
-    // #page-root, so its page links opt in on both layouts too.
+    // dropdown items and the logo.
     return mq.matches
-      ? e.target.closest('a.br-tabbar-item, .br-sheet a.br-sheet-link, .site-footer a')
-      : e.target.closest('.top-nav a.nav-pill, .top-nav a.nav-pill-dropdown-item, .top-nav .nav-left > a, .site-footer a');
+      ? e.target.closest('a.br-tabbar-item, .br-sheet a.br-sheet-link')
+      : e.target.closest('.top-nav a.nav-pill, .top-nav a.nav-pill-dropdown-item, .top-nav .nav-left > a');
   }
 
   // Lineup sub-navigation owns only its live region. It intentionally does not
@@ -2151,122 +1877,6 @@ window.emptyState = emptyState;
     });
   };
 
-  // Tween a .m-win-bar from one win probability to another. `toLp` is the new
-  // left-team percent (0-100); opts.fromLp overrides the parsed start value.
-  // The gradient hard stop, both pct labels, their leader colors, and the
-  // aria-label all follow the tween (~1.2s easeInOut). Reduced motion snaps
-  // to the target. A generation token cancels a tween superseded by a newer
-  // one on the same bar. Display-only: no probability math happens here.
-  window.brTweenWinBar = function (bar, toLp, opts) {
-    if (!bar) return;
-    opts = opts || {};
-    toLp = Math.max(0, Math.min(100, Number(toLp)));
-    if (isNaN(toLp)) return;
-    var pcts = bar.querySelectorAll('.m-wp-pct');
-    var track = bar.querySelector('.m-wp-track');
-    if (pcts.length < 2 || !track) return;
-    var fromLp = opts.fromLp != null ? Number(opts.fromLp) : parseFloat(pcts[0].textContent);
-    if (isNaN(fromLp)) fromLp = toLp;
-    fromLp = Math.max(0, Math.min(100, fromLp));
-    var WIN = '#22c55e', FADE = 'rgba(148,163,184,0.35)', MUTED = 'var(--text-muted)';
-    function render(lp) {
-      var lead = lp >= 50;
-      var lBar = lead ? WIN : FADE, rBar = lead ? FADE : WIN;
-      track.style.background = 'linear-gradient(to right,' + lBar + ' ' + lp + '%,' + rBar + ' ' + lp + '%)';
-      pcts[0].textContent = Math.round(lp) + '%';
-      pcts[1].textContent = Math.round(100 - lp) + '%';
-      pcts[0].style.color = lead ? WIN : MUTED;
-      pcts[1].style.color = lead ? MUTED : WIN;
-    }
-    function label(lp) {
-      var cur = bar.getAttribute('aria-label') || '';
-      var i = 0;
-      return cur.replace(/\d+(?= percent)/g, function () {
-        i += 1;
-        return String(Math.round(i === 1 ? lp : 100 - lp));
-      });
-    }
-    if (reduce || fromLp === toLp) {
-      render(toLp);
-      bar.setAttribute('aria-label', label(toLp));
-      return;
-    }
-    var run = (bar._brWpRun || 0) + 1;
-    bar._brWpRun = run;
-    var dur = opts.dur || 1200, st = null;
-    (function tick(now) {
-      if (bar._brWpRun !== run) return;
-      if (st === null) st = now;
-      var p = Math.min(1, (now - st) / dur);
-      var e = p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2; // easeInOutCubic
-      render(fromLp + (toLp - fromLp) * e);
-      if (p < 1) {
-        requestAnimationFrame(tick);
-        return;
-      }
-      render(toLp);
-      bar.setAttribute('aria-label', label(toLp));
-    })(performance.now());
-  };
-
-  // Animate a matchup-container refresh (weekly hub game-day poll, league
-  // scores tab): snapshot the current win bars and scores from `container`,
-  // run `applyFn` (which swaps in `newHtml`), then tween each .m-win-bar from
-  // its old pct to the new one and count up each score instead of jumping.
-  // Elements are matched by position, so `newHtml` must keep the same order
-  // (true for refreshes of the same matchups). `scoreSel` defaults to
-  // '.m-score-val'. Reduced motion: plain swap, no tween.
-  window.brAnimateMatchupRefresh = function (container, newHtml, applyFn, scoreSel) {
-    if (!container) {
-      if (applyFn) applyFn();
-      return;
-    }
-    var sel = scoreSel || '.m-score-val';
-    var tmp = document.createElement('div');
-    tmp.innerHTML = newHtml;
-    function pctOf(bar) {
-      var p = bar && bar.querySelector('.m-wp-pct');
-      return p ? parseFloat(p.textContent) : NaN;
-    }
-    var oldBars = container.querySelectorAll('.m-win-bar');
-    var newBars = tmp.querySelectorAll('.m-win-bar');
-    var targets = [];
-    for (var i = 0; i < newBars.length; i++) {
-      targets.push({ from: oldBars[i] ? pctOf(oldBars[i]) : NaN, to: pctOf(newBars[i]) });
-    }
-    var oldScores = container.querySelectorAll(sel);
-    var newScores = tmp.querySelectorAll(sel);
-    // .m-score-val carries nested markup in live mode (actual + projection +
-    // trend arrow), so count the inner .num node up and leave the rest alone.
-    // Plain score nodes (e.g. .ls-team-score) count up directly.
-    function numNode(el) {
-      return (el && el.querySelector && el.querySelector('.num')) || el;
-    }
-    var scoreTargets = [];
-    for (var j = 0; j < newScores.length; j++) {
-      scoreTargets.push({
-        from: oldScores[j] ? parseFloat(numNode(oldScores[j]).textContent) : NaN,
-        to: parseFloat(numNode(newScores[j]).textContent)
-      });
-    }
-    if (applyFn) applyFn();
-    if (reduce) return;
-    var liveBars = container.querySelectorAll('.m-win-bar');
-    for (var k = 0; k < liveBars.length && k < targets.length; k++) {
-      var t = targets[k];
-      if (!isNaN(t.from) && !isNaN(t.to) && t.from !== t.to) {
-        window.brTweenWinBar(liveBars[k], t.to, { fromLp: t.from });
-      }
-    }
-    var liveScores = container.querySelectorAll(sel);
-    for (var m = 0; m < liveScores.length && m < scoreTargets.length; m++) {
-      var s = scoreTargets[m];
-      if (!isNaN(s.from) && !isNaN(s.to) && s.from !== s.to) {
-        window.brCountUp(numNode(liveScores[m]), { from: s.from, to: s.to, dp: 1, dur: 1200 });
-      }
-    }
-  };
-
   // Count a number up from 0 (or `from`) to its target. `el` may carry
   // data-countup="728.2" (target) and data-countup-dp="1" (decimal places);
   // opts can override { to, from, dp, dur, suffix, prefix }.
@@ -2539,50 +2149,6 @@ window.emptyState = emptyState;
     });
   };
 
-  // Sort transition for REAL <table>s: CSS transforms don't animate <tr>/<td>,
-  // so a FLIP glide is impossible without restructuring the table into divs.
-  // Instead: snapshot the old row order by key, swap the markup, then tint
-  // climbers/fallers (rk-up / rk-down use background + opacity, which DO work
-  // on <tr>) and fade brand-new rows in. Reduced motion: plain swap.
-  window.brTableSortSwap = function (container, newHTML, keyAttr) {
-    if (!container) return;
-    keyAttr = keyAttr || 'data-rk-key';
-    var sel = 'tbody tr[' + keyAttr + ']';
-    var first = {};
-    container.querySelectorAll(sel).forEach(function (r) {
-      first[r.getAttribute(keyAttr)] = Array.prototype.indexOf.call(r.parentNode.children, r);
-    });
-    var hadRows = Object.keys(first).length > 0;
-    container.innerHTML = newHTML;
-    if (reduce || !hadRows) return;
-    container.querySelectorAll(sel).forEach(function (r) {
-      var key = r.getAttribute(keyAttr);
-      if (!(key in first)) {                    // brand-new row: fade in
-        r.style.animation = 'brRkEnter .45s ease both';
-        r.addEventListener('animationend', function () { r.style.animation = ''; }, { once: true });
-        return;
-      }
-      var ni = Array.prototype.indexOf.call(r.parentNode.children, r);
-      var d = first[key] - ni;
-      if (d === 0) return;                      // held station
-      r.classList.add(d > 0 ? 'rk-up' : 'rk-down');
-      setTimeout(function () { r.classList.remove('rk-up', 'rk-down'); }, 950);
-    });
-  };
-
-  // Tab panel entrance: the incoming panel slides in from the side it was
-  // reached from (dir > 0 = forward, dir < 0 = backward). Call right after the
-  // panel becomes visible. Reduced motion: no-op, panel just appears.
-  window.brAnimateTabPanel = function (panel, dir) {
-    if (!panel || reduce) return;
-    panel.classList.remove('br-tab-in-l', 'br-tab-in-r');
-    void panel.offsetWidth;                     // restart the animation
-    panel.classList.add(dir < 0 ? 'br-tab-in-l' : 'br-tab-in-r');
-    panel.addEventListener('animationend', function () {
-      panel.classList.remove('br-tab-in-l', 'br-tab-in-r');
-    }, { once: true });
-  };
-
   // Reveal AI-generated prose as if it's being composed: the block elements
   // (paragraphs, list items, headings) fade and sharpen up in a quick cascade.
   // Called after the Front Office Report, Season Recap, and Trade Analyst text
@@ -2796,39 +2362,21 @@ window._brPromoEligible = function () {
     return out;
   }
 
-  // Gather every league the signed-in user belongs to (default: subscribe to
-  // all of them), each with its platform. Falls back to just the current-page
-  // league if lookup fails.
-  async function _collectUserLeagues(currentLeague, currentPlatform) {
-    var out = [];
+  // Gather every league_id the signed-in user belongs to (default: subscribe to
+  // all of them). Falls back to just the current-page league if lookup fails.
+  async function _collectUserLeagueIds(currentLeague) {
+    var ids = [];
     try {
-      var r = await fetch('/api/my-leagues', { cache: 'no-store' });
+      var r = await fetch('/api/sleeper-user-leagues', { cache: 'no-store' });
       if (r.ok) {
         var j = await r.json();
-        if (j && j.ok && Array.isArray(j.leagues) && j.leagues.length) {
-          out = j.leagues.map(function (l) {
-            return { id: String(l.league_id || ''), platform: (l.platform || 'sleeper').toLowerCase() };
-          }).filter(function (x) { return x.id; });
+        if (j && j.ok && Array.isArray(j.leagues)) {
+          ids = j.leagues.map(function (l) { return String(l.league_id || ''); }).filter(Boolean);
         }
       }
     } catch (_) {}
-    if (!out.length) {
-      try {
-        var r2 = await fetch('/api/sleeper-user-leagues', { cache: 'no-store' });
-        if (r2.ok) {
-          var j2 = await r2.json();
-          if (j2 && j2.ok && Array.isArray(j2.leagues)) {
-            out = j2.leagues.map(function (l) {
-              return { id: String(l.league_id || ''), platform: 'sleeper' };
-            }).filter(function (x) { return x.id; });
-          }
-        }
-      } catch (_) {}
-    }
-    if (currentLeague && !out.some(function (x) { return x.id === currentLeague; })) {
-      out.push({ id: currentLeague, platform: (currentPlatform || 'sleeper').toLowerCase() });
-    }
-    return out;
+    if (currentLeague && ids.indexOf(currentLeague) === -1) ids.push(currentLeague);
+    return ids;
   }
 
   // Register a subscription for the device across every league the user is in.
@@ -2838,25 +2386,18 @@ window._brPromoEligible = function () {
     var _parts    = window.location.pathname.split('/').filter(Boolean);
     var _platform = (_parts[0] || 'sleeper').toLowerCase();
     var _league   = _parts.length >= 3 ? _parts[2] : '';
-    if (['sleeper', 'espn', 'yahoo', 'mfl', 'fleaflicker'].indexOf(_platform) === -1) { _platform = 'sleeper'; _league = ''; }
-    var userLeagues = await _collectUserLeagues(_league, _platform);
-    // The subscribe endpoint takes one platform per call, so group by platform.
-    var byPlatform = {};
-    userLeagues.forEach(function (x) {
-      (byPlatform[x.platform] = byPlatform[x.platform] || []).push(x.id);
+    if (!['sleeper', 'espn'].includes(_platform)) { _platform = 'sleeper'; _league = ''; }
+    var leagueIds = await _collectUserLeagueIds(_league);
+    await fetch('/api/push/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        endpoint:   s.endpoint,
+        keys:       s.keys,
+        league_ids: leagueIds,
+        platform:   _platform || 'sleeper',
+      }),
     });
-    for (var plat in byPlatform) {
-      await fetch('/api/push/subscribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          endpoint:   s.endpoint,
-          keys:       s.keys,
-          league_ids: byPlatform[plat],
-          platform:   plat,
-        }),
-      });
-    }
     window._pushEndpoint = s.endpoint;
   }
 
@@ -2866,7 +2407,7 @@ window._brPromoEligible = function () {
     if (!resp.ok) return false;
     var { publicKey } = await resp.json();
     // Reuse an existing PushSubscription for this device before creating a new
-    // one, so re-enabling from ScoreZone doesn't churn the subscription/endpoint.
+    // one, so re-enabling from RedZone doesn't churn the subscription/endpoint.
     var sub = await reg.pushManager.getSubscription();
     if (!sub) {
       sub = await reg.pushManager.subscribe({
@@ -2878,7 +2419,7 @@ window._brPromoEligible = function () {
     return true;
   }
 
-  // Shared "enable real device push" entry point for any feature (ScoreZone score
+  // Shared "enable real device push" entry point for any feature (RedZone score
   // alerts, etc.). Runs the FULL Web Push flow -- permission → service worker →
   // PushSubscription (create or reuse) → persist to push_subscriptions -- and
   // returns a status the caller can render. Notification permission alone is not
@@ -2894,7 +2435,6 @@ window._brPromoEligible = function () {
     if (perm !== 'granted') return perm === 'denied' ? 'denied' : 'default';
     try {
       var ok = await subscribePush();  // creates/reuses + persists the subscription
-      if (ok && window.openPushPicker) { try { window.openPushPicker(); } catch (_) {} }
       return ok ? 'granted' : 'error';
     } catch (_) {
       return 'error';
@@ -2920,7 +2460,7 @@ window._brPromoEligible = function () {
 
   var _NOTIF_TYPES = [
     { category: 'Your Team' },
-    { key: 'redzone_scores',    label: 'ScoreZone Score Alerts' },
+    { key: 'redzone_scores',    label: 'RedZone Score Alerts' },
     { key: 'lineup_lock',       label: 'Lineup Lock Reminders' },
     { key: 'injury',            label: 'Starter Injury Alerts' },
     { key: 'close_game',        label: 'Close Game Alerts' },
@@ -2935,159 +2475,9 @@ window._brPromoEligible = function () {
     { key: 'watchlist',         label: 'Watchlist Alerts' },
     { key: 'value_drops',       label: 'Value Drop Alerts' },
     { key: 'breakout_roster',   label: 'Breakout Player Alerts' },
-    { key: 'breakout_weekly',   label: 'New Breakout Board' },
     { key: 'playoff_odds',      label: 'Playoff Odds Updates' },
     { key: 'top_movers',        label: 'Weekly Top Movers' },
   ];
-
-  // Fallback mirror of the server's PUSH_TYPE_BUCKETS (utils/push_notifications.py),
-  // used by the subscribe-time picker when /api/push/catalog is unreachable.
-  // The picker prefers the live catalog; keep this in sync with the server list.
-  var _NOTIF_BUCKETS = [
-    { id: 'lineup', label: 'Lineup and injuries', blurb: 'Lineup lock reminders, starter injury news, live TD alerts',
-      types: [
-        { key: 'lineup_lock', label: 'Lineup lock reminders' },
-        { key: 'injury', label: 'Starter injury alerts' },
-        { key: 'redzone_scores', label: 'ScoreZone score alerts' },
-      ] },
-    { id: 'matchups', label: 'Matchups live', blurb: 'Close games, matchup previews, standings moves',
-      types: [
-        { key: 'close_game', label: 'Close game alerts' },
-        { key: 'matchup_preview', label: 'Matchup previews' },
-        { key: 'standings_update', label: 'Standings updates' },
-      ] },
-    { id: 'waivers', label: 'Waivers and trends', blurb: 'Waiver targets, big drops, weekly top movers',
-      types: [
-        { key: 'waiver_candidates', label: 'Waiver wire updates' },
-        { key: 'transaction', label: 'Big drop alerts' },
-        { key: 'top_movers', label: 'Weekly top movers' },
-      ] },
-    { id: 'trades', label: 'Trades and value', blurb: 'Rival trades, dynasty value, breakouts, playoff odds',
-      types: [
-        { key: 'rival_trades', label: 'Rival trade alerts' },
-        { key: 'value_drops', label: 'Value drop alerts' },
-        { key: 'breakout_roster', label: 'Breakout player alerts' },
-        { key: 'breakout_weekly', label: 'New breakout board' },
-        { key: 'playoff_odds', label: 'Playoff odds updates' },
-      ] },
-    { id: 'recaps', label: 'Recaps and watchlist', blurb: 'Weekly recaps and alerts on your starred players',
-      types: [
-        { key: 'recap_ready', label: 'Weekly recap available' },
-        { key: 'watchlist', label: 'Watchlist alerts' },
-      ] },
-  ];
-
-  // Shared toggle-switch row + HTML escaper for the notification modals.
-  function _toggleHtml(attr, val, label, on) {
-    return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);">'
-      + '<span style="font-size:13px;font-weight:600;color:var(--text);">' + label + '</span>'
-      + '<label style="position:relative;display:inline-block;width:36px;height:20px;flex-shrink:0;">'
-      + '<input type="checkbox" ' + attr + '="' + val + '"' + (on ? ' checked' : '') + ' style="opacity:0;width:0;height:0;">'
-      + '<span style="position:absolute;inset:0;background:' + (on ? 'var(--accent,#3b82f6)' : 'var(--border)') + ';border-radius:20px;cursor:pointer;transition:background .15s;" class="np-track"></span>'
-      + '<span style="position:absolute;top:2px;left:' + (on ? '18px' : '2px') + ';width:16px;height:16px;background:#fff;border-radius:50%;transition:left .15s;pointer-events:none;" class="np-thumb"></span>'
-      + '</label>'
-      + '</div>';
-  }
-  function _npEsc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); }
-  function _npPaintToggle(cb) {
-    var on = cb.checked;
-    var track = cb.parentElement.querySelector('.np-track');
-    var thumb = cb.parentElement.querySelector('.np-thumb');
-    if (track) track.style.background = on ? 'var(--accent,#3b82f6)' : 'var(--border)';
-    if (thumb) thumb.style.left = on ? '18px' : '2px';
-  }
-  function _npPutPrefs(endpoint, prefs) {
-    return fetch('/api/push/preferences', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ endpoint: endpoint, prefs: prefs }),
-    }).catch(function () {});
-  }
-
-  // "Tell me about" preference picker, shown right after a fresh subscribe.
-  // Buckets render from /api/push/catalog (server canonical list) with the
-  // baked-in mirror as fallback. Every bucket defaults ON, matching today's
-  // default-all-on subscribe behavior; Done persists the choices.
-  window.openPushPicker = async function(endpoint) {
-    endpoint = endpoint || window._pushEndpoint || null;
-    var buckets = null;
-    try {
-      var _cr = await fetch('/api/push/catalog', { cache: 'no-store' });
-      if (_cr.ok) {
-        var _cj = await _cr.json();
-        if (_cj && Array.isArray(_cj.buckets) && _cj.buckets.length) buckets = _cj.buckets;
-      }
-    } catch (_) {}
-    if (!buckets) buckets = _NOTIF_BUCKETS;
-    var prefs = {};
-    if (endpoint) {
-      try {
-        var _pr = await fetch('/api/push/preferences?endpoint=' + encodeURIComponent(endpoint));
-        if (_pr.ok) prefs = (await _pr.json()).prefs || {};
-      } catch (_) {}
-    }
-    function _bucketOn(b) {
-      return (b.types || []).every(function (t) { return prefs[t.key] !== false; });
-    }
-    var overlay = document.createElement('div');
-    overlay.id = 'pushPickerOverlay';
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:10000;display:flex;align-items:flex-start;justify-content:center;padding:72px 16px 24px;';
-    var modal = document.createElement('div');
-    modal.style.cssText = 'background:var(--card,#fff);border:1px solid var(--border);border-radius:16px;padding:20px;width:100%;max-width:360px;max-height:calc(100vh - 96px);overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.2);';
-    var bucketRows = buckets.map(function (b) {
-      var on = _bucketOn(b);
-      return '<div style="padding:10px 0;border-bottom:1px solid var(--border);">'
-        + '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">'
-        + '<span style="font-size:13px;font-weight:700;color:var(--text);">' + _npEsc(b.label) + '</span>'
-        + '<label style="position:relative;display:inline-block;width:36px;height:20px;flex-shrink:0;">'
-        + '<input type="checkbox" data-bucket="' + _npEsc(b.id) + '"' + (on ? ' checked' : '') + ' style="opacity:0;width:0;height:0;">'
-        + '<span style="position:absolute;inset:0;background:' + (on ? 'var(--accent,#3b82f6)' : 'var(--border)') + ';border-radius:20px;cursor:pointer;transition:background .15s;" class="np-track"></span>'
-        + '<span style="position:absolute;top:2px;left:' + (on ? '18px' : '2px') + ';width:16px;height:16px;background:#fff;border-radius:50%;transition:left .15s;pointer-events:none;" class="np-thumb"></span>'
-        + '</label></div>'
-        + '<div style="font-size:11px;color:var(--text-muted);margin-top:3px;">' + _npEsc(b.blurb) + '</div>'
-        + '</div>';
-    }).join('');
-    var digestOn = prefs.digest === true;
-    modal.innerHTML = '<div style="font-size:15px;font-weight:800;color:var(--text);margin-bottom:2px;">Tell me about</div>'
-      + '<p style="font-size:12px;color:var(--text-muted);margin:0 0 6px;">Pick which alerts you want. You can change this anytime in Notification Settings.</p>'
-      + bucketRows
-      + '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 0 4px;">'
-      + '<span><span style="display:block;font-size:13px;font-weight:700;color:var(--text);">Hourly digest</span>'
-      + '<span style="display:block;font-size:11px;color:var(--text-muted);margin-top:2px;">Combine alerts across your leagues into one notification per hour.</span></span>'
-      + '<label style="position:relative;display:inline-block;width:36px;height:20px;flex-shrink:0;">'
-      + '<input type="checkbox" data-picker-digest="1"' + (digestOn ? ' checked' : '') + ' style="opacity:0;width:0;height:0;">'
-      + '<span style="position:absolute;inset:0;background:' + (digestOn ? 'var(--accent,#3b82f6)' : 'var(--border)') + ';border-radius:20px;cursor:pointer;transition:background .15s;" class="np-track"></span>'
-      + '<span style="position:absolute;top:2px;left:' + (digestOn ? '18px' : '2px') + ';width:16px;height:16px;background:#fff;border-radius:50%;transition:left .15s;pointer-events:none;" class="np-thumb"></span>'
-      + '</label></div>'
-      + '<div style="display:flex;gap:10px;margin-top:14px;">'
-      + '<button id="ppDone" style="flex:1;background:var(--accent,#3b82f6);color:#fff;border:none;border-radius:10px;padding:10px;font-size:13px;font-weight:700;cursor:pointer;">Done</button>'
-      + '<button id="ppSkip" style="flex:1;background:transparent;color:var(--text-muted);border:1px solid var(--border);border-radius:10px;padding:10px;font-size:13px;font-weight:700;cursor:pointer;">Skip for now</button>'
-      + '</div>';
-    overlay.appendChild(modal);
-    document.body.appendChild(overlay);
-    overlay.addEventListener('click', function (e) { if (e.target === overlay) overlay.remove(); });
-    var bucketById = {};
-    buckets.forEach(function (b) { bucketById[b.id] = b; });
-    modal.querySelectorAll('input[data-bucket]').forEach(function (cb) {
-      cb.addEventListener('change', function () {
-        _npPaintToggle(cb);
-        var b = bucketById[cb.getAttribute('data-bucket')];
-        if (!b) return;
-        (b.types || []).forEach(function (t) { prefs[t.key] = cb.checked; });
-      });
-    });
-    var digestCb = modal.querySelector('input[data-picker-digest]');
-    if (digestCb) digestCb.addEventListener('change', function () { _npPaintToggle(digestCb); });
-    function _close(save) {
-      if (save && endpoint) {
-        if (digestCb) prefs.digest = digestCb.checked;
-        _npPutPrefs(endpoint, prefs);
-      }
-      overlay.remove();
-    }
-    modal.querySelector('#ppDone').addEventListener('click', function () { _close(true); });
-    modal.querySelector('#ppSkip').addEventListener('click', function () { _close(false); });
-  };
 
   window.openNotifPrefs = async function() {
     var endpoint = window._pushEndpoint;
@@ -3127,7 +2517,6 @@ window._brPromoEligible = function () {
               await subscribePush();
               localStorage.setItem('push-notif-v1', 'subscribed');
               if (typeof showToast === 'function') showToast('Notifications enabled!', 'success');
-              if (window.openPushPicker) { try { window.openPushPicker(); } catch (_) {} }
             }
           } catch (_) {}
         }
@@ -3146,17 +2535,9 @@ window._brPromoEligible = function () {
     // subscription keys (needed to re-register a league toggled back on).
     var leagues = [], enabledLeagues = [], subKeys = null;
     try {
-      // /api/my-leagues covers every platform (Sleeper, ESPN, Yahoo, MFL,
-      // Fleaflicker); the Sleeper-only endpoint is the signed-out fallback.
-      var lr = await fetch('/api/my-leagues', { cache: 'no-store' });
-      if (lr.ok) { var lj = await lr.json(); if (lj && lj.ok && Array.isArray(lj.leagues) && lj.leagues.length) leagues = lj.leagues; }
+      var lr = await fetch('/api/sleeper-user-leagues', { cache: 'no-store' });
+      if (lr.ok) { var lj = await lr.json(); if (lj && lj.ok && Array.isArray(lj.leagues)) leagues = lj.leagues; }
     } catch (_) {}
-    if (!leagues.length) {
-      try {
-        var lr2 = await fetch('/api/sleeper-user-leagues', { cache: 'no-store' });
-        if (lr2.ok) { var lj2 = await lr2.json(); if (lj2 && lj2.ok && Array.isArray(lj2.leagues)) leagues = lj2.leagues; }
-      } catch (_) {}
-    }
     try {
       var er = await fetch('/api/push/leagues?endpoint=' + encodeURIComponent(endpoint));
       if (er.ok) enabledLeagues = (await er.json()).league_ids || [];
@@ -3167,7 +2548,19 @@ window._brPromoEligible = function () {
       if (_sub) subKeys = _sub.toJSON().keys;
     } catch (_) {}
 
-    // Build modal (toggle rows via the hoisted _toggleHtml helper)
+    function _toggleHtml(attr, val, label, on) {
+      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);">'
+        + '<span style="font-size:13px;font-weight:600;color:var(--text);">' + label + '</span>'
+        + '<label style="position:relative;display:inline-block;width:36px;height:20px;flex-shrink:0;">'
+        + '<input type="checkbox" ' + attr + '="' + val + '"' + (on ? ' checked' : '') + ' style="opacity:0;width:0;height:0;">'
+        + '<span style="position:absolute;inset:0;background:' + (on ? 'var(--accent,#3b82f6)' : 'var(--border)') + ';border-radius:20px;cursor:pointer;transition:background .15s;" class="np-track"></span>'
+        + '<span style="position:absolute;top:2px;left:' + (on ? '18px' : '2px') + ';width:16px;height:16px;background:#fff;border-radius:50%;transition:left .15s;pointer-events:none;" class="np-thumb"></span>'
+        + '</label>'
+        + '</div>';
+    }
+    function _esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); }
+
+    // Build modal
     var overlay = document.createElement('div');
     overlay.id = 'notifPrefsOverlay';
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:72px 16px 24px;';
@@ -3179,25 +2572,13 @@ window._brPromoEligible = function () {
       }
       return _toggleHtml('data-key', t.key, t.label, prefs[t.key] !== false);
     }).join('');
-    // Digest mode: one combined push per hour across leagues (device-level pref).
-    var _digestOn = prefs.digest === true;
-    var digestRow = '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin:2px 0;">Delivery</div>'
-      + '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);">'
-      + '<span><span style="display:block;font-size:13px;font-weight:600;color:var(--text);">Hourly digest</span>'
-      + '<span style="display:block;font-size:11px;color:var(--text-muted);margin-top:2px;">Combine alerts across your leagues into one notification per hour.</span></span>'
-      + '<label style="position:relative;display:inline-block;width:36px;height:20px;flex-shrink:0;">'
-      + '<input type="checkbox" data-digest="1"' + (_digestOn ? ' checked' : '') + ' style="opacity:0;width:0;height:0;">'
-      + '<span style="position:absolute;inset:0;background:' + (_digestOn ? 'var(--accent,#3b82f6)' : 'var(--border)') + ';border-radius:20px;cursor:pointer;transition:background .15s;" class="np-track"></span>'
-      + '<span style="position:absolute;top:2px;left:' + (_digestOn ? '18px' : '2px') + ';width:16px;height:16px;background:#fff;border-radius:50%;transition:left .15s;pointer-events:none;" class="np-thumb"></span>'
-      + '</label>'
-      + '</div>';
     // Per-league toggles (only when the user has more than one league)
     var leagueRows = '';
     if (leagues.length > 1) {
       leagueRows = '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);margin:16px 0 2px;">Leagues</div>'
         + leagues.map(function(lg) {
             var lid = String(lg.league_id || '');
-            return _toggleHtml('data-league', lid, _npEsc(lg.name || 'League'), enabledLeagues.indexOf(lid) !== -1);
+            return _toggleHtml('data-league', lid, _esc(lg.name || 'League'), enabledLeagues.indexOf(lid) !== -1);
           }).join('');
     }
     modal.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">'
@@ -3208,7 +2589,6 @@ window._brPromoEligible = function () {
       + '<p style="font-size:12px;color:var(--text-muted);margin:0;">Choose which alerts you want to receive.</p>'
       + '<button id="np-toggle-all" style="background:none;border:none;font-size:11px;font-weight:700;color:var(--accent,#3b82f6);cursor:pointer;padding:0;white-space:nowrap;margin-left:8px;"></button>'
       + '</div>'
-      + digestRow
       + rows
       + leagueRows;
     overlay.appendChild(modal);
@@ -3256,23 +2636,15 @@ window._brPromoEligible = function () {
         if (track) track.style.background = on ? 'var(--accent,#3b82f6)' : 'var(--border)';
         if (thumb) thumb.style.left = on ? '18px' : '2px';
         try {
-          if (cb.dataset.digest !== undefined) {
-            // Digest toggle (device-level): batch alerts into one hourly push.
-            prefs.digest = on;
-            await _npPutPrefs(endpoint, prefs);
-          } else if (cb.dataset.league !== undefined) {
+          if (cb.dataset.league !== undefined) {
             // League toggle: add (subscribe) or remove (unsubscribe) this league row
             if (on) {
-              var _lg = null;
-              for (var _li = 0; _li < leagues.length; _li++) {
-                if (String(leagues[_li].league_id) === cb.dataset.league) { _lg = leagues[_li]; break; }
-              }
               await fetch('/api/push/subscribe', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   endpoint: endpoint, keys: subKeys, league_id: cb.dataset.league,
-                  platform: ((_lg && _lg.platform) || 'sleeper').toLowerCase(), owner_id: (window._viewerUid || null),
+                  platform: 'sleeper', owner_id: (window._viewerUid || null),
                 }),
               });
             } else {
@@ -3299,12 +2671,9 @@ window._brPromoEligible = function () {
 
   function showNotifBanner() {
     if (document.getElementById('push-notif-banner')) return;
-    // The user may have subscribed (or been re-prompted) since page load.
-    try { if (localStorage.getItem(NOTIF_KEY) === 'subscribed') return; } catch (_) {}
-    // Don't stack two asks: if the install banner or the push re-prompt is
-    // still on screen, wait and retry rather than popping a second promo over
-    // it in the same moment.
-    if (document.getElementById('pwa-install-banner') || document.getElementById('push-reprompt-banner')) {
+    // Don't stack two asks: if the install banner is still on screen, wait and
+    // retry rather than popping a second promo over it in the same moment.
+    if (document.getElementById('pwa-install-banner')) {
       setTimeout(showNotifBanner, 20000);
       return;
     }
@@ -3333,10 +2702,8 @@ window._brPromoEligible = function () {
         var permission = await Notification.requestPermission();
         if (permission === 'granted') {
           await subscribePush();
+          if (typeof showToast === 'function') showToast('Notifications enabled. Open Settings to customize.', 'success', 5000);
           localStorage.setItem(NOTIF_KEY, 'subscribed');
-          // Onboarding: let them pick alert buckets right away.
-          if (window.openPushPicker) { try { window.openPushPicker(); } catch (_) {} }
-          else if (typeof showToast === 'function') showToast('Notifications enabled. Open Settings to customize.', 'success', 5000);
         } else {
           localStorage.setItem(NOTIF_KEY, 'denied');
         }
@@ -3357,174 +2724,6 @@ window._brPromoEligible = function () {
     b.classList.remove('pwa-banner-visible');
     b.addEventListener('transitionend', function () { b.remove(); }, { once: true });
   }
-
-  // ── Push re-prompt for users without notifications enabled ──────────────
-  // Shown at high-value moments (ScoreZone, or the weekly hub / matchup board on
-  // game days), never on every page load. Caps: max once per day, max 4 total
-  // shows before auto-quieting. "Don't show again" persists permanently:
-  // localStorage for guests, /api/ui-prefs for signed-in users. Never shown
-  // when push is enabled, unsupported, or the browser hard-denied permission.
-  var RP_DISMISSED_KEY = 'push-reprompt-dismissed';
-  var RP_COUNT_KEY = 'push-reprompt-count';
-  var RP_LAST_KEY = 'push-reprompt-last';
-  var RP_MAX_SHOWS = 4;
-
-  function _rpGet(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }
-  function _rpSet(k, v) { try { localStorage.setItem(k, v); } catch (_) {} }
-  function _rpToday() {
-    var d = new Date();
-    return d.getUTCFullYear() + '-' + ('0' + (d.getUTCMonth() + 1)).slice(-2) + '-' + ('0' + d.getUTCDate()).slice(-2);
-  }
-  // Mirror re-prompt state to the server for signed-in users (persists across devices).
-  function _rpSyncServer(patch) {
-    if (!window._isSignedIn) return;
-    try {
-      fetch('/api/ui-prefs', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prefs: patch }),
-      }).catch(function () {});
-    } catch (_) {}
-  }
-  // Seed local state from the server copy (server wins when present).
-  function _rpSeedFromServer() {
-    if (!window._isSignedIn) return;
-    fetch('/api/ui-prefs', { cache: 'no-store' }).then(function (r) {
-      return r.ok ? r.json() : null;
-    }).then(function (j) {
-      if (!j || !j.prefs) return;
-      var p = j.prefs;
-      if (p.push_reprompt_dismissed === true) _rpSet(RP_DISMISSED_KEY, '1');
-      var sc = parseInt(p.push_reprompt_count, 10);
-      var lc = parseInt(_rpGet(RP_COUNT_KEY) || '0', 10) || 0;
-      if (!isNaN(sc) && sc > lc) _rpSet(RP_COUNT_KEY, String(sc));
-      var sl = p.push_reprompt_last, ll = _rpGet(RP_LAST_KEY);
-      if (sl && (!ll || sl > ll)) _rpSet(RP_LAST_KEY, sl);
-    }).catch(function () {});
-  }
-
-  function _repromptEligible() {
-    if (_rpGet(RP_DISMISSED_KEY) === '1') return false;
-    // A "No thanks" on the legacy banner is also a permanent opt-out of push
-    // asks; never nag those users with the re-prompt either.
-    var legacy = null;
-    try { legacy = localStorage.getItem(NOTIF_KEY); } catch (_) {}
-    if (legacy === 'dismissed' || legacy === 'subscribed') return false;
-    if (!('Notification' in window)) return false;
-    if (Notification.permission === 'denied' || Notification.permission === 'granted') return false;
-    var count = parseInt(_rpGet(RP_COUNT_KEY) || '0', 10) || 0;
-    if (count >= RP_MAX_SHOWS) return false;              // auto-quiet after N total
-    if (_rpGet(RP_LAST_KEY) === _rpToday()) return false; // max once per day
-    // High-value moments only: ScoreZone (live games) or the weekly hub, which
-    // carries the matchup board, on NFL game days.
-    var shell = document.querySelector('.page-shell');
-    if (!shell) return false;
-    var page = shell.getAttribute('data-page');
-    if (page === 'scorezone') return true;
-    if (page === 'weekly') {
-      var wd = new Date().getUTCDay(); // 0 = Sunday
-      return wd === 0 || wd === 3 || wd === 4 || wd === 5 || wd === 6;
-    }
-    return false;
-  }
-
-  function _hideReprompt() {
-    var b = document.getElementById('push-reprompt-banner');
-    if (!b) return;
-    b.classList.remove('pwa-banner-visible');
-    b.addEventListener('transitionend', function () { b.remove(); }, { once: true });
-  }
-
-  async function _maybeShowReprompt() {
-    if (document.getElementById('push-reprompt-banner')) return;
-    // Don't stack asks: wait if the install or legacy push banner is up.
-    if (document.getElementById('pwa-install-banner') || document.getElementById('push-notif-banner')) {
-      setTimeout(_maybeShowReprompt, 20000);
-      return;
-    }
-    if (!_repromptEligible()) return;
-    try {
-      var reg = await navigator.serviceWorker.ready;
-      var sub = await reg.pushManager.getSubscription();
-      if (sub) {
-        // Push is actually enabled (e.g. subscribed in another tab) -- record it
-        // and never prompt.
-        try { localStorage.setItem(NOTIF_KEY, 'subscribed'); } catch (_) {}
-        window._pushEndpoint = sub.endpoint;
-        return;
-      }
-    } catch (_) {}
-    if (!_repromptEligible()) return; // re-check after the async gap
-    // Record the show before rendering so caps hold even if the tab closes.
-    var count = (parseInt(_rpGet(RP_COUNT_KEY) || '0', 10) || 0) + 1;
-    _rpSet(RP_COUNT_KEY, String(count));
-    _rpSet(RP_LAST_KEY, _rpToday());
-    _rpSyncServer({ push_reprompt_count: count, push_reprompt_last: _rpToday() });
-
-    var banner = document.createElement('div');
-    banner.id = 'push-reprompt-banner';
-    banner.innerHTML =
-      '<div class="pwa-banner-left">' +
-        '<i class="fa-solid fa-bell push-bell-icon" aria-hidden="true"></i>' +
-        '<div>' +
-          '<div class="pwa-banner-title">Never miss a lineup alert</div>' +
-          '<div class="pwa-banner-sub">Get injury news and lineup reminders before kickoff.</div>' +
-        '</div>' +
-      '</div>' +
-      '<div class="pwa-banner-actions">' +
-        '<button id="push-reprompt-allow" class="pwa-btn pwa-btn-install">Enable alerts</button>' +
-        '<button id="push-reprompt-no" class="pwa-btn pwa-btn-dismiss">Don\'t show again</button>' +
-      '</div>';
-    document.body.appendChild(banner);
-    requestAnimationFrame(function () {
-      requestAnimationFrame(function () { banner.classList.add('pwa-banner-visible'); });
-    });
-
-    document.getElementById('push-reprompt-allow').addEventListener('click', async function () {
-      _hideReprompt();
-      try {
-        var permission = await Notification.requestPermission();
-        if (permission === 'granted') {
-          await subscribePush();
-          try { localStorage.setItem(NOTIF_KEY, 'subscribed'); } catch (_) {}
-          if (typeof showToast === 'function') showToast('Notifications enabled!', 'success');
-          // Same onboarding as every other subscribe path: the picker.
-          if (window.openPushPicker) { try { window.openPushPicker(); } catch (_) {} }
-        } else {
-          try { localStorage.setItem(NOTIF_KEY, 'denied'); } catch (_) {}
-        }
-      } catch (err) {
-        console.warn('[push]', err);
-      }
-    });
-
-    document.getElementById('push-reprompt-no').addEventListener('click', function () {
-      _hideReprompt();
-      _rpSet(RP_DISMISSED_KEY, '1');
-      try { localStorage.setItem(NOTIF_KEY, 'dismissed'); } catch (_) {}
-      _rpSyncServer({ push_reprompt_dismissed: true });
-    });
-  }
-
-  // Seed server state, then evaluate once after the page has settled. Guests
-  // (no sign-in) run on localStorage alone.
-  _rpSeedFromServer();
-  setTimeout(_maybeShowReprompt, 20000);
-
-  // Re-evaluate after soft-nav page swaps (e.g. dashboard -> weekly hub), which
-  // don't reload app.js. ScoreZone always does a full load, so it needs no hook.
-  try {
-    if (typeof window.brSwapPageRoot === 'function' && !window.brSwapPageRoot._pushRepromptWrapped) {
-      (function (_origSwap) {
-        window.brSwapPageRoot = function (html) {
-          var ok = _origSwap(html);
-          if (ok) setTimeout(_maybeShowReprompt, 15000);
-          return ok;
-        };
-        window.brSwapPageRoot._pushRepromptWrapped = true;
-      })(window.brSwapPageRoot);
-    }
-  } catch (_) {}
 
   var asked = localStorage.getItem(NOTIF_KEY);
 
@@ -4363,7 +3562,7 @@ function showLoginGate(target, opts) {
   // When you land on a league page, it paints instantly from the cached snapshot
   // (the 12h server context) and then silently rebuilds from source and swaps the
   // fresh content in place -- no full-screen overlay, no reload, no manual
-  // "Refresh data" tap. This mirrors what the live surfaces (ScoreZone) and the
+  // "Refresh data" tap. This mirrors what the live surfaces (Redzone) and the
   // portfolio cards already do for themselves; it fills the gap for the plain
   // server-rendered league pages (standings, teams, weekly, dashboard, ...).
   //
@@ -4393,17 +3592,6 @@ function showLoginGate(target, opts) {
     return true;
   }
 
-  // Pages whose whole UI lives in page state must never be silently swapped:
-  // the swap re-runs the page bootstrap and resets everything the user has
-  // done since landing. Advanced Metrics is the known case: its selected
-  // metric, compare columns, filters and open pickers are all in-memory, and
-  // its script is inline so canSwapInPlace() cannot see it as swap-unsafe.
-  // The background pass still expires and warms the league cache for these
-  // pages; only the in-place swap is skipped, so the next load is fresh.
-  function autoSwapBlocked() {
-    return !!document.getElementById('amCmdBar');
-  }
-
   async function autoRevalidate() {
     if (!autoRevalidateEligible()) return;
     doRefresh._busy = true;
@@ -4419,7 +3607,7 @@ function showLoginGate(target, opts) {
       // Swap in place when the page allows it; otherwise leave the cache warmed
       // so the next load is fresh. A silent pass must never yank the page out
       // from under the reader with a full reload the way an explicit Refresh may.
-      if (!autoSwapBlocked() && canSwapInPlace() && window.brSwapPageRoot(fresh.html)) {
+      if (canSwapInPlace() && window.brSwapPageRoot(fresh.html)) {
         updateLabels();
       }
     } catch (e) {
@@ -4628,57 +3816,49 @@ function bindOnce(el, key, type, handler, options) {
 
   function updatePlotlyChartsTheme() {
     if (typeof Plotly === 'undefined') return;
-
-    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'plotly_dark' : 'plotly_white';
+    
+    // Update team modal charts if they exist
+    const weeklyChart = document.getElementById('teamWeeklyChart');
+    const radarChart = document.getElementById('teamRadarChart');
+    
     const _bt = window.brandPlotlyTheme ? window.brandPlotlyTheme() : {};
-    const textColor = _bt.text || '#7c8798';
-    const hoverBg = _bt.hoverBg || (isDark ? '#0f172a' : '#ffffff');
-    const hoverBorder = _bt.hoverBorder || (isDark ? '#334155' : '#e5e7eb');
-    const gridColor = _bt.grid || (isDark ? 'rgba(148,163,184,0.14)' : 'rgba(15,23,42,0.08)');
-    const lineColor = isDark ? '#64748b' : '#94a3b8';
+    if (weeklyChart) {
+      const textColor = _bt.text || '#7c8798';
+      const bgColor = _bt.hoverBg || '#ffffff';
+      const borderColor = _bt.hoverBorder || '#e5e7eb';
 
-    // Base theme: transparent plot/paper, themed hover labels, readable font.
-    // Shared by every Plotly chart so a mid-session toggle never strands
-    // a chart in the old theme.
-    const baseRelayout = {
-      'paper_bgcolor': 'rgba(0,0,0,0)',
-      'plot_bgcolor': 'rgba(0,0,0,0)',
-      'hoverlabel.bgcolor': hoverBg,
-      'hoverlabel.bordercolor': hoverBorder,
-      'hoverlabel.font.color': textColor,
-      'font.color': textColor
-    };
+      Plotly.relayout(weeklyChart, {
+        template: theme,
+        'paper_bgcolor': 'rgba(0,0,0,0)',
+        'plot_bgcolor': 'rgba(0,0,0,0)',
+        'hoverlabel.bgcolor': bgColor,
+        'hoverlabel.bordercolor': borderColor,
+        'hoverlabel.font.color': textColor
+      });
+    }
 
-    // Cartesian chrome shared by weekly/bar/scatter-style charts.
-    const axisRelayout = {
-      'xaxis.tickfont.color': textColor,
-      'xaxis.gridcolor': gridColor,
-      'xaxis.linecolor': lineColor,
-      'xaxis.zerolinecolor': lineColor,
-      'yaxis.tickfont.color': textColor,
-      'yaxis.gridcolor': gridColor,
-      'yaxis.linecolor': lineColor,
-      'yaxis.zerolinecolor': lineColor
-    };
-
-    // Radar/polar chrome (team modal radar chart).
-    const polarRelayout = {
-      'polar.bgcolor': 'rgba(0,0,0,0)',
-      'polar.radialaxis.tickcolor': textColor,
-      'polar.radialaxis.gridcolor': gridColor,
-      'polar.radialaxis.linecolor': lineColor,
-      'polar.angularaxis.tickcolor': textColor,
-      'polar.angularaxis.gridcolor': gridColor,
-      'polar.angularaxis.linecolor': lineColor
-    };
-
-    // Restyle every Plotly chart on the page, not just the team-modal pair.
-    document.querySelectorAll('.js-plotly-plot').forEach((gd) => {
-      try {
-        const relayout = Object.assign({}, baseRelayout, axisRelayout, polarRelayout);
-        Plotly.relayout(gd, relayout);
-      } catch (e) { /* leave a chart that cannot be restyled untouched */ }
-    });
+    if (radarChart) {
+      const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      const textColor = _bt.text || '#7c8798';
+      const gridColor = _bt.grid || (isDark ? 'rgba(148,163,184,0.14)' : 'rgba(15,23,42,0.08)');
+      const lineColor = isDark ? '#64748b' : '#94a3b8';
+      
+      Plotly.relayout(radarChart, {
+        template: theme,
+        'paper_bgcolor': 'rgba(0,0,0,0)',
+        'plot_bgcolor': 'rgba(0,0,0,0)',
+        'polar.radialaxis.tickcolor': textColor,
+        'polar.radialaxis.gridcolor': gridColor,
+        'polar.radialaxis.linecolor': lineColor,
+        'polar.angularaxis.tickcolor': textColor,
+        'polar.angularaxis.gridcolor': gridColor,
+        'polar.angularaxis.linecolor': lineColor,
+        'polar.bgcolor': 'rgba(0,0,0,0)',
+        'font.color': textColor
+      });
+    }
   }
 
   function updateThemeIcons() {
@@ -4821,26 +4001,8 @@ function initCardTabs(root = document) {
     tabs.forEach(tab => {
       bindOnce(tab, "cardTabClick", "click", () => {
         const target = tab.dataset.tab;
-        const oldIdx = tabs.findIndex(t => t.classList.contains("active"));
-        const newIdx = tabs.indexOf(tab);
         tabs.forEach(t => t.classList.toggle("active", t === tab));
-        panels.forEach(p => {
-          const on = p.dataset.tab === target;
-          p.classList.toggle("active", on);
-          if (on && window.brAnimateTabPanel) window.brAnimateTabPanel(p, newIdx - oldIdx);
-        });
-        // Persist the weekly-hub left tab in the URL so a reload (stale-page
-        // visibility refresh, service-worker nav-fresh, bfcache restore) lands
-        // back on it via the existing ?tab= activation. history.replaceState
-        // never navigates or reloads. Scoped to the weekly hub so other
-        // .card-tabs on the site are unaffected.
-        if (card.id === "weeklyLeftTabs" && target) {
-          try {
-            const _hubUrl = new URL(location.href);
-            _hubUrl.searchParams.set("tab", target);
-            history.replaceState(null, "", _hubUrl.toString());
-          } catch (e) { /* URL/history unavailable: tab simply won't persist */ }
-        }
+        panels.forEach(p => p.classList.toggle("active", p.dataset.tab === target));
       });
     });
   });
@@ -5091,74 +4253,7 @@ function initTeamTabs(root = document) {
   });
 }
 
-function standingsShareSortValue(row, key) {
-  if (key === "team") return (row.getAttribute("data-share-team") || "").toLowerCase();
-  const attr = key === "rank" ? "data-share-rank"
-    : key === "value" ? "data-share-value" : "data-share-production";
-  const n = parseFloat(row.getAttribute(attr) || "");
-  return Number.isFinite(n) ? n : -Infinity;
-}
-
-function compareStandingsShareRows(a, b, key, dir) {
-  const A = standingsShareSortValue(a, key);
-  const B = standingsShareSortValue(b, key);
-  let cmp = 0;
-  if (typeof A === "string" && typeof B === "string") cmp = A.localeCompare(B);
-  else if (A < B) cmp = -1;
-  else if (A > B) cmp = 1;
-  if (cmp) return cmp * dir;
-  // Keep equal rows in their original value-rank order, whichever column or
-  // direction the user picked, so re-sorting never shuffles ties.
-  const ar = parseFloat(a.getAttribute("data-share-rank") || "0");
-  const br = parseFloat(b.getAttribute("data-share-rank") || "0");
-  return (Number.isFinite(ar) ? ar : 0) - (Number.isFinite(br) ? br : 0);
-}
-
-function initStandingsSharesSort(root = document) {
-  const scope = root && typeof root.querySelectorAll === "function" ? root : document;
-  const tables = Array.from(scope.querySelectorAll(".standings-shares-table"));
-  if (scope.classList?.contains("standings-shares-table")) tables.unshift(scope);
-
-  tables.forEach(tbl => {
-    if (!tbl.tHead || !tbl.tBodies?.length || tbl.__sharesSortInited) return;
-    tbl.__sharesSortInited = true;
-
-    bindOnce(tbl.tHead, "standingsSharesHeadClick", "click", e => {
-      const btn = e.target?.closest?.("[data-share-sort]");
-      if (!btn || !tbl.contains(btn)) return;
-      const key = btn.getAttribute("data-share-sort");
-      if (!key) return;
-
-      const curKey = tbl.getAttribute("data-sort-key") || "value";
-      const curDir = tbl.getAttribute("data-sort-dir") === "asc" ? 1 : -1;
-      const dir = key === curKey
-        ? curDir * -1
-        : (key === "value" || key === "production" ? -1 : 1);
-
-      const tbody = tbl.tBodies[0];
-      const rows = Array.from(tbody.querySelectorAll("tr"));
-      rows.sort((a, b) => compareStandingsShareRows(a, b, key, dir));
-      tbody.replaceChildren(...rows);
-      rows.forEach((row, idx) => {
-        const rk = row.querySelector(".standings-shares-rk");
-        if (rk) rk.textContent = String(idx + 1);
-      });
-
-      tbl.setAttribute("data-sort-key", key);
-      tbl.setAttribute("data-sort-dir", dir === 1 ? "asc" : "desc");
-      tbl.querySelectorAll("thead th").forEach(th => {
-        const thBtn = th.querySelector("[data-share-sort]");
-        const active = thBtn && thBtn.getAttribute("data-share-sort") === key;
-        th.classList.toggle("sorted-asc", !!active && dir === 1);
-        th.classList.toggle("sorted-desc", !!active && dir === -1);
-        th.setAttribute("aria-sort", active ? (dir === 1 ? "ascending" : "descending") : "none");
-      });
-    });
-  });
-}
-
 function initStandingsSort(root = document) {
-  initStandingsSharesSort(root);
   const marker = root.querySelector('[data-page="standings"]');
   if (!marker) return;
 
@@ -5472,10 +4567,6 @@ window.initTradePage = function initTradePage(root = document) {
   // Generation counter - incremented on every recomputeTrade() call so that
   // a stale in-flight fetch response never overwrites a more recent reset.
   let _tradeGeneration = 0;
-  // Aborts the previous generation's intel fetches (trade intel, similar
-  // trades, playoff impact) when a newer recompute starts, so rapid edits
-  // don't pile up overlapping server work.
-  let _tradeIntelAbort = null;
 
   // ── Roster filter (logged-in only) ──────────────────────────────────────────
   // Restrict each side's player search to a team's roster. Side A locks to the
@@ -5824,21 +4915,9 @@ window.initTradePage = function initTradePage(root = document) {
 
       if (aIds.length === 0 && bIds.length === 0) return false;
 
-      // Player data failed to load (e.g. /api/league-players errored): the
-      // URL names a trade but there is nothing to match against. Report
-      // "pending" so the caller retries the fetch instead of rendering an
-      // empty trade and claiming success.
-      if (allPlayers.length === 0) return "pending";
-
       // Load players from allPlayers
       state.sideAPlayers = aIds.map(id => allPlayers.find(p => p.id === id)).filter(Boolean);
       state.sideBPlayers = bIds.map(id => allPlayers.find(p => p.id === id)).filter(Boolean);
-
-      const unmatched = aIds.length + bIds.length
-        - state.sideAPlayers.length - state.sideBPlayers.length;
-      if (unmatched > 0) {
-        console.warn("[Trade Calc] URL trade ids did not match any loaded player:", unmatched);
-      }
 
       // Load picks
       state.sideAPicks = apIds.map(id => ({ id, display: formatPickId(id) }));
@@ -6344,7 +5423,6 @@ window.initTradePage = function initTradePage(root = document) {
           compact: true,
           cta: { label: 'Upgrade', onClick: function () { if (typeof showPaywall === 'function') showPaywall('breakout-candidates'); } }
         });
-        if (typeof window.brTrackPaywall === 'function') window.brTrackPaywall('breakout_nudge');
         if (moversPanel) moversPanel.classList.remove("otc-movers-loading");
         return;
       }
@@ -6556,10 +5634,9 @@ window.initTradePage = function initTradePage(root = document) {
     for (let attempt = 0; attempt < 3; attempt++) {
       if (attempt > 0) await new Promise(r => setTimeout(r, attempt * 1000));
       try {
-        // Shared page-level fetch: the nav search idle-preloads this same
-        // payload, so this usually reuses its in-flight/completed request
-        // instead of downloading the ~1MB list a second time.
-        const data = await brGetLeaguePlayersData();
+        const res = await fetch("/api/league-players", { cache: "no-store" });
+        if (!res.ok) throw new Error("Failed to load players (" + res.status + ").");
+        const data = await res.json();
         const rawData = Array.isArray(data) ? data : (Array.isArray(data.players) ? data.players : []);
         if (!Array.isArray(data) && data.tier_thresholds) _tierThresholds = data.tier_thresholds;
 
@@ -7211,9 +6288,7 @@ window.initTradePage = function initTradePage(root = document) {
       if (balBox) { balBox.innerHTML = ""; balBox.style.display = "none"; }
       // Reset the Playoff Impact card back to its default state instead of
       // leaving the last trade's simulated numbers on screen.
-      if (_tradeIntelAbort) _tradeIntelAbort.abort();
-      _tradeIntelAbort = null;
-      fetchPlayoffImpact(gen, null);
+      fetchPlayoffImpact();
       return;
     }
 
@@ -7319,17 +6394,7 @@ window.initTradePage = function initTradePage(root = document) {
       _applyTierBadges(data);
       renderTradeBalancer(data);
 
-      // A newer recompute aborts the previous generation's intel fetches so
-      // rapid edits don't pile up overlapping server work.
-      if (_tradeIntelAbort) _tradeIntelAbort.abort();
-      _tradeIntelAbort = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-      const _intelGen = gen;
-      const _intelSignal = _tradeIntelAbort ? _tradeIntelAbort.signal : null;
-      Promise.all([
-        fetchTradeIntel(_intelGen, _intelSignal),
-        fetchSimilarTrades(_intelGen, _intelSignal),
-        fetchPlayoffImpact(_intelGen, _intelSignal),
-      ]).catch(() => {});
+      Promise.all([fetchTradeIntel(), fetchSimilarTrades(), fetchPlayoffImpact()]).catch(() => {});
     } catch (err) {
       console.error("[trade] error in recomputeTrade:", err);
       if (errorBox) {
@@ -7342,7 +6407,7 @@ window.initTradePage = function initTradePage(root = document) {
   // ------------------------------------------------------------
   // fetchSimilarTrades - real trades from the DB involving these players
   // ------------------------------------------------------------
-  async function fetchSimilarTrades(gen, signal) {
+  async function fetchSimilarTrades() {
     const section = root.querySelector("#similarTradesSection");
     if (!section) return;
 
@@ -7376,11 +6441,9 @@ window.initTradePage = function initTradePage(root = document) {
           : "Sleeper dynasty comps -- real trades where these players moved to opposite sides. A teaser of the full Trade Intel feed.";
       }
 
-      const res = await fetch("/api/trade-intel/similar-trades?" + params, signal ? { signal } : undefined);
+      const res = await fetch("/api/trade-intel/similar-trades?" + params);
       if (!res.ok) throw new Error("fetch failed");
       const data = await res.json();
-      // A newer recompute started while this fetch was in flight - discard.
-      if (gen !== undefined && gen !== _tradeGeneration) return;
       const trades = data.trades || [];
 
       if (!listEl) return;
@@ -7426,8 +6489,6 @@ window.initTradePage = function initTradePage(root = document) {
       }).join('');
 
     } catch (e) {
-      // Aborted by a newer recompute, or superseded: stay quiet.
-      if ((signal && signal.aborted) || (gen !== undefined && gen !== _tradeGeneration)) return;
       if (listEl) window.brErrorState(listEl, 'Trade data unavailable.', null, { compact: true, title: 'Couldn’t load' });
     }
   }
@@ -7453,7 +6514,7 @@ window.initTradePage = function initTradePage(root = document) {
     return `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
   }
 
-  async function fetchPlayoffImpact(gen, signal) {
+  async function fetchPlayoffImpact() {
     const section = root.querySelector("#playoffImpactSection");
     const body    = root.querySelector("#playoffImpactBody");
     if (!section || !body) return;
@@ -7543,10 +6604,7 @@ window.initTradePage = function initTradePage(root = document) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ league_id: leagueId, platform, season, roster_id: rosterId, give_ids: giveIds, get_ids: getIds }),
-        ...(signal ? { signal } : {}),
       });
-      // A newer recompute started while this fetch was in flight - discard.
-      if (gen !== undefined && gen !== _tradeGeneration) return;
       if (res.status === 403) {
         body.innerHTML = _piMessage(
           "fa-lock",
@@ -7721,8 +6779,6 @@ window.initTradePage = function initTradePage(root = document) {
         ${outlookGrid}
         ${missingWarn}`;
     } catch (e) {
-      // Aborted by a newer recompute, or superseded: stay quiet.
-      if ((signal && signal.aborted) || (gen !== undefined && gen !== _tradeGeneration)) return;
       body.innerHTML = _piMessage(
         "fa-triangle-exclamation",
         "Couldn't simulate",
@@ -7734,7 +6790,7 @@ window.initTradePage = function initTradePage(root = document) {
   // ------------------------------------------------------------
   // fetchTradeIntel - loads real market data for players in the trade
   // ------------------------------------------------------------
-  async function fetchTradeIntel(gen, signal) {
+  async function fetchTradeIntel() {
     const intelPanel = root.querySelector("#tradeIntelPanel");
     const intelBody = root.querySelector("#tradeIntelBody");
     if (!intelPanel || !intelBody) return;
@@ -7760,16 +6816,13 @@ window.initTradePage = function initTradePage(root = document) {
     const results = await Promise.all(
       playerIds.map(p =>
         Promise.race([
-          fetch(`/api/trade-intel/player/${p.id}?season=${season}&league_type=${leagueType}`, signal ? { signal } : undefined)
+          fetch(`/api/trade-intel/player/${p.id}?season=${season}&league_type=${leagueType}`)
             .then(r => r.ok ? r.json() : null)
             .then(d => d ? { ...d, name: p.name, side: p.side } : null),
           _timeout(8000),
         ]).catch(() => null)
       )
     );
-
-    // Aborted by a newer recompute, or superseded: leave the panel alone.
-    if ((signal && signal.aborted) || (gen !== undefined && gen !== _tradeGeneration)) return;
 
     const valid = results.filter(r => r && r.trade_count_all > 0);
     if (valid.length === 0) {
@@ -8001,9 +7054,6 @@ window.initTradePage = function initTradePage(root = document) {
     const tabs = root.querySelectorAll(".otc-main-tab");
 
     let suggTargetsLoaded = false;
-    let suggTargetsLoading = false;  // dedupes overlapping initial loads
-    let _lastTopChips = [];  // last top-chips payload, for untouchable re-render
-    let _topChipsCollapsed = false;  // strip hides once a player is picked
     let suggCurrentPlayerId = null;
     let _fetchAbortCtrl = null;  // cancels in-flight fetchPackages requests
     let _untouchableIds   = new Set(JSON.parse(localStorage.getItem('ti-untouchable') || '[]'));
@@ -8051,217 +7101,6 @@ window.initTradePage = function initTradePage(root = document) {
     }
     applySuggGating();
 
-    // ── Trade Hub: shared "Why this" component ───────────────────────────────
-    // The explanation text is always generated server-side (dashboard_services/
-    // trade_hub.py); this renders the same component on every hub tab.
-    window.brWhyLine = function (text, stacked) {
-      if (!text) return "";
-      return `<div class="th-why${stacked ? " th-why-stacked" : ""}"><span class="th-why-lbl">Why this</span><span>${escapeHtml(String(text))}</span></div>`;
-    };
-
-    // ── Trade Hub: saved packages (league-scoped localStorage) ──────────────
-    function _hubStorageKey() {
-      const plat = (root.querySelector("#platformInput")?.value || "").trim().toLowerCase() || "sleeper";
-      const lg = (root.querySelector("#leagueIdInput")?.value || "").trim() || "guest";
-      const vr = (root.querySelector("#viewerRosterIdInput")?.value || "").trim() || "guest";
-      return `trade-hub-saved:${plat}:${lg}:${vr}`;
-    }
-    function _hubSavedList() {
-      try {
-        const raw = localStorage.getItem(_hubStorageKey());
-        const arr = raw ? JSON.parse(raw) : [];
-        return Array.isArray(arr) ? arr : [];
-      } catch { return []; }
-    }
-    function _hubSaveList(list) {
-      try { localStorage.setItem(_hubStorageKey(), JSON.stringify(list.slice(0, 100))); } catch {}
-    }
-    window.brHubPkgId = function (pkg) {
-      const ids = []
-        .concat(pkg.give || []).concat(pkg.get || [])
-        .map(a => String(a.id || a.player_id || a.name)).sort().join("|");
-      let h = 0;
-      for (let i = 0; i < ids.length; i++) h = ((h * 31) + ids.charCodeAt(i)) >>> 0;
-      return "hub:" + h.toString(36);
-    };
-    window.brHubIsSaved = function (pkg) {
-      const id = window.brHubPkgId(pkg);
-      return _hubSavedList().some(p => p.id === id);
-    };
-    window.brHubToggleSave = function (pkg, btn) {
-      const id = window.brHubPkgId(pkg);
-      let list = _hubSavedList();
-      const ix = list.findIndex(p => p.id === id);
-      if (ix >= 0) {
-        list.splice(ix, 1);
-        if (btn) { btn.classList.remove("is-saved"); btn.querySelector("span:last-child").textContent = "Save"; }
-      } else {
-        list.unshift({
-          id,
-          saved_at: Date.now(),
-          get: (pkg.get || []).map(a => ({ id: a.id || a.player_id || null, name: a.name, position: a.position })),
-          give: (pkg.give || []).map(a => ({ id: a.id || a.player_id || null, name: a.name, position: a.position })),
-          why_line: pkg.why_line || "",
-          label: pkg.label || "",
-        });
-        if (btn) { btn.classList.add("is-saved"); btn.querySelector("span:last-child").textContent = "Saved"; }
-      }
-      _hubSaveList(list);
-      renderSavedHub();
-      return ix < 0;
-    };
-    window.brHubRemove = function (id) {
-      _hubSaveList(_hubSavedList().filter(p => p.id !== id));
-      renderSavedHub();
-    };
-    window.brHubSaveBtn = function (pkg) {
-      const saved = window.brHubIsSaved(pkg);
-      const data = encodeURIComponent(JSON.stringify({
-        get: pkg.get || [], give: pkg.give || [],
-        why_line: pkg.why_line || "", label: pkg.label || "",
-      }));
-      return `<button class="th-save-btn${saved ? " is-saved" : ""}" data-hub-save="${data}">`
-        + `<span>☆</span><span>${saved ? "Saved" : "Save"}</span></button>`;
-    };
-
-    function _hubAssetHtml(a) {
-      const col = typeof posColor === "function" ? posColor(a.position || "WR") : "#888";
-      return `<span style="display:inline-block;margin:0 4px 4px 0;padding:2px 8px;border-radius:6px;"
-        title="${escapeHtml(String(a.name || ""))}">
-        <b style="color:${col};">${escapeHtml(String(a.position || ""))}</b>
-        ${escapeHtml(String(a.name || ""))}</span>`;
-    }
-
-    window.renderSavedHub = function renderSavedHub() {
-      const body = root.querySelector("#otcSavedBody");
-      if (!body) return;
-      const list = _hubSavedList();
-      const shop = root.querySelector("#otcShopResults");
-      if (!list.length) {
-        body.innerHTML = `<div style="text-align:center;color:var(--text-muted);padding:36px 12px;font-size:13px;">
-          Nothing saved yet. Tap <b>Save</b> on any suggestion, target package, or search result
-          to keep it here for this league.</div>`;
-        return;
-      }
-      body.innerHTML = list.map(p => {
-        const data = encodeURIComponent(JSON.stringify(p));
-        return `<div class="th-saved-row">
-          <div class="th-saved-title">${escapeHtml(p.label || "Trade package")}</div>
-          <div style="margin-top:6px;">
-            <div style="font-size:11px;color:var(--text-muted);">YOU GET</div>
-            <div>${(p.get || []).map(_hubAssetHtml).join("")}</div>
-            <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">YOU GIVE</div>
-            <div>${(p.give || []).map(_hubAssetHtml).join("")}</div>
-          </div>
-          ${window.brWhyLine(p.why_line)}
-          <div class="th-saved-actions">
-            <button class="th-chip-btn" data-hub-analyze="${data}">Analyze</button>
-            <button class="th-chip-btn" data-hub-shop="${data}">Shop to all teams</button>
-            <button class="th-chip-btn" data-hub-remove="${p.id}">Delete</button>
-          </div>
-        </div>`;
-      }).join("");
-    };
-
-    // Saved-tab clicks + hub save buttons (delegated, survives re-renders)
-    root.addEventListener("click", (e) => {
-      const saveBtn = e.target.closest("[data-hub-save]");
-      if (saveBtn) {
-        try {
-          const pkg = JSON.parse(decodeURIComponent(saveBtn.dataset.hubSave));
-          window.brHubToggleSave(pkg, saveBtn);
-        } catch {}
-        return;
-      }
-      const rmBtn = e.target.closest("[data-hub-remove]");
-      if (rmBtn) { window.brHubRemove(rmBtn.dataset.hubRemove); return; }
-      const anBtn = e.target.closest("[data-hub-analyze]");
-      if (anBtn) {
-        try {
-          const p = JSON.parse(decodeURIComponent(anBtn.dataset.hubAnalyze));
-          _hubLoadIntoCalculator(p);
-        } catch {}
-        return;
-      }
-      const shopBtn = e.target.closest("[data-hub-shop]");
-      if (shopBtn) {
-        try {
-          const p = JSON.parse(decodeURIComponent(shopBtn.dataset.hubShop));
-          _hubShopPackage(p);
-        } catch {}
-        return;
-      }
-      const shopCardBtn = e.target.closest("[data-hub-shop-card]");
-      if (shopCardBtn) {
-        try {
-          const p = JSON.parse(decodeURIComponent(shopCardBtn.dataset.hubShopCard));
-          _setSuggSubtab("saved");
-          setTimeout(() => _hubShopPackage(p), 30);
-        } catch {}
-      }
-    });
-
-    async function _hubLoadIntoCalculator(p) {
-      // Load the saved package into the calculator: side A = you receive, side B = you give.
-      await ensurePlayersLoaded();
-      const byId = (a) => allPlayers.find(x => String(x.id) === String(a.id || a.player_id))
-        || (a.name && allPlayers.find(x => x.name && x.name.toLowerCase() === String(a.name).toLowerCase()));
-      state.sideAPlayers.length = 0; state.sideBPlayers.length = 0;
-      state.sideAPicks.length = 0; state.sideBPicks.length = 0;
-      (p.get || []).forEach(a => {
-        const o = byId(a); if (!o) return;
-        if (o.position === "PICK") state.sideAPicks.push({ id: o.id, display: o.name });
-        else state.sideAPlayers.push(o);
-      });
-      (p.give || []).forEach(a => {
-        const o = byId(a); if (!o) return;
-        if (o.position === "PICK") state.sideBPicks.push({ id: o.id, display: o.name });
-        else if (!state.sideBPlayers.some(x => String(x.id) === String(o.id))) state.sideBPlayers.push(o);
-      });
-      saveState(); renderChips("A"); renderChips("B"); syncEmptyState("A"); syncEmptyState("B");
-      forceViewerSideA(); analyzeTrade(); switchTab("calculator");
-      const shell = root.querySelector(".otc-shell");
-      if (shell) shell.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-
-    async function _hubShopPackage(p) {
-      const panel = root.querySelector("#otcShopResults");
-      if (!panel) return;
-      panel.style.display = "";
-      panel.innerHTML = `<div style="color:var(--text-muted);font-size:13px;padding:12px 0;">Shopping this package against every roster…</div>`;
-      const ids = (p.give || []).map(a => a.id || a.player_id).filter(Boolean);
-      const leagueId = (root.querySelector("#leagueIdInput")?.value || "").trim();
-      const platform = (root.querySelector("#platformInput")?.value || "sleeper").trim();
-      const season = (root.querySelector("#seasonInput")?.value || "").trim();
-      const viewerRosterId = (root.querySelector("#viewerRosterIdInput")?.value || "").trim();
-      try {
-        const resp = await fetch("/api/trade-hub/shop-package", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ league_id: leagueId, platform, season, viewer_roster_id: viewerRosterId, give_asset_ids: ids }),
-        });
-        const data = await resp.json();
-        if (!data.ok) {
-          panel.innerHTML = `<div style="color:var(--text-muted);font-size:13px;">Shop unavailable: ${escapeHtml(data.error || "unknown error")}</div>`;
-          return;
-        }
-        const rows = (data.teams || []).map(r => `
-          <div class="th-shop-row">
-            <div class="th-shop-team">${escapeHtml(r.team || "Team")}</div>
-            <div class="th-shop-meta">${escapeHtml((r.suggested_get || []).map(a => a.name).join(", ") || "No fair match")}
-              ${r.fairness != null ? ` · ${Math.round(r.fairness * 100)}% fair` : ""}</div>
-            ${window.brWhyLine(r.why_line)}
-          </div>`).join("");
-        const sendNames = (data.send || []).map(a => a.name).join(", ");
-        panel.innerHTML = `<div class="otc-sugg-section-head" style="margin:6px 0 10px;">
-            <span class="otc-sugg-section-title">Shop results</span>
-            <span style="font-size:11px;color:var(--text-muted);">Shopping: ${escapeHtml(sendNames)}</span>
-          </div>` + (rows || `<div style="color:var(--text-muted);font-size:13px;">No value-matched returns found.</div>`);
-      } catch (err) {
-        panel.innerHTML = `<div style="color:var(--text-muted);font-size:13px;">Shop failed. Please try again.</div>`;
-      }
-    }
-
     function switchTab(name) {
       const hasPremium = applySuggGating();
       if (name === "suggestions" && !hasPremium) {
@@ -8284,9 +7123,9 @@ window.initTradePage = function initTradePage(root = document) {
       // always-on desktop sidebar across a resize.
       const otcLayout = root.querySelector(".otc-layout");
       if (otcLayout) otcLayout.classList.toggle("otc-show-insights", name === "insights");
-      // NOTE: sub-tab data loads are driven by _setSuggSubtab (page-load
-      // restore, sub-tab clicks, context changes) - no eager fetch here.
-      // Firing a second concurrent heavy request is what made the hub slow.
+      if (name === "suggestions" && !suggTargetsLoaded) {
+        loadSuggTargets();
+      }
       // Sync URL so refreshing/sharing lands on the same tab
       const url = new URL(window.location.href);
       if (name === "suggestions") {
@@ -8299,9 +7138,8 @@ window.initTradePage = function initTradePage(root = document) {
 
     tabs.forEach(t => t.addEventListener("click", () => switchTab(t.dataset.tab)));
 
-    // Auto-open the Trade Hub when arriving via ?tab=suggestions or ?tab=hub link
-    const _hubTabParam = new URLSearchParams(window.location.search).get("tab");
-    if (_hubTabParam === "suggestions" || _hubTabParam === "hub") {
+    // Auto-open suggestions tab when arriving via ?tab=suggestions link
+    if (new URLSearchParams(window.location.search).get("tab") === "suggestions") {
       switchTab("suggestions");
     }
 
@@ -8413,10 +7251,18 @@ window.initTradePage = function initTradePage(root = document) {
       playerDropdown.style.display = "block";
     }
 
-    playerInput.addEventListener("input", () => {
+    playerInput.addEventListener("input", async () => {
       const q = playerInput.value.trim().toLowerCase();
-      if (!q.length) _setTopChipsCollapsed(false);  // cleared: bring the chips back
       if (q.length < 2) { playerDropdown.style.display = "none"; return; }
+      // If player data hasn't loaded yet (transient fetch failure), retry
+      // before giving up -- otherwise the dropdown silently shows nothing.
+      if (!allPlayers.length) {
+        playerDropdown.innerHTML = '<div style="padding:10px 12px;font-size:12px;color:var(--text-muted);">Loading players…</div>';
+        playerDropdown.style.display = "block";
+        try { await ensurePlayersLoaded(); } catch (_) {}
+        // User may have cleared the input while we were loading
+        if (playerInput.value.trim().toLowerCase() !== q) return;
+      }
       const matches = allPlayers.filter(p =>
         (["QB","RB","WR","TE"].includes(p.position) || p.position === "PICK") &&
         (p.name || "").toLowerCase().includes(q)
@@ -8429,21 +7275,7 @@ window.initTradePage = function initTradePage(root = document) {
       if (!item) return;
       playerInput.value = item.querySelector(".otc-sugg-dropdown-name").textContent;
       playerDropdown.style.display = "none";
-      _setTopChipsCollapsed(true);
       runSearchForCurrent(item.dataset.id, item.dataset.name);
-    });
-
-    // Top trade chips behave exactly like picking the player from the search
-    // dropdown: fill the input, then run the current Build around / Find
-    // returns search for them.
-    const topChipsBox = root.querySelector("#otcTopChips");
-    if (topChipsBox) topChipsBox.addEventListener("click", e => {
-      const chip = e.target.closest(".otc-top-chip");
-      if (!chip) return;
-      playerInput.value = chip.dataset.name;
-      playerDropdown.style.display = "none";
-      _setTopChipsCollapsed(true);
-      runSearchForCurrent(chip.dataset.id, chip.dataset.name);
     });
 
     document.addEventListener("click", e => {
@@ -8466,7 +7298,6 @@ window.initTradePage = function initTradePage(root = document) {
       }
       _saveUntouchable();
       _renderUntouchableBar();
-      _renderTopChips(_lastTopChips);
       window._refetchTradeIntel();
     };
     localStorage.removeItem('ti-untouchable-names'); // migrated to ti-untouchable-info
@@ -8520,12 +7351,15 @@ window.initTradePage = function initTradePage(root = document) {
       const leagueType     = getLeagueType();
 
       try {
+        // 30s timeout so a hung request doesn't spin forever on mobile;
+        // combined with the search-abort signal so a new search still cancels.
+        const combinedSignal = AbortSignal.any([signal, AbortSignal.timeout(30000)]);
         const res = await fetch(
           `/api/trade-intel/player-packages/${encodeURIComponent(playerId)}` +
           `?season=${season}&league_type=${leagueType}&league_id=${encodeURIComponent(leagueId)}` +
           `&platform=${encodeURIComponent(platform)}&viewer_roster_id=${encodeURIComponent(viewerRosterId)}` +
           `&untouchable_ids=${encodeURIComponent([..._untouchableIds].join(','))}`,
-          { signal }
+          { signal: combinedSignal }
         );
 
         // A newer search was started - discard this response silently
@@ -8568,10 +7402,21 @@ window.initTradePage = function initTradePage(root = document) {
 
       } catch (err) {
         if (err.name === "AbortError") return;  // superseded by a newer search
+        const isTimeout = err.name === "TimeoutError";
         resultsList.innerHTML = `<div class="otc-sugg-empty">
-          <div class="otc-sugg-empty-sub">Failed to load packages.</div></div>`;
+          <div class="otc-sugg-empty-title">${isTimeout ? "Request timed out" : "Failed to load packages"}</div>
+          <div class="otc-sugg-empty-sub">${isTimeout
+            ? "The server took too long. Try again."
+            : "Check your connection and try again."}</div>
+          <button class="am-add-stat-btn" style="margin-top:8px;" onclick="window._retryLastPackageSearch()">Try again</button>
+        </div>`;
       }
     }
+
+    // Retry the last package search (used by the error state retry button)
+    window._retryLastPackageSearch = () => {
+      if (suggCurrentPlayerId) runSearchForCurrent(suggCurrentPlayerId, _pkgPlayerName || playerInput.value);
+    };
 
     // ── Send-away packages: what you can GET by trading a player AWAY ──────────
     // Inverse of fetchPackages. Lists value-matched return packages from rival
@@ -8617,11 +7462,12 @@ window.initTradePage = function initTradePage(root = document) {
       }
 
       try {
+        const combinedSignal = AbortSignal.any([signal, AbortSignal.timeout(30000)]);
         const res = await fetch(
           `/api/trade-intel/player-send-packages/${encodeURIComponent(playerId)}` +
           `?season=${season}&league_type=${leagueType}&league_id=${encodeURIComponent(leagueId)}` +
           `&platform=${encodeURIComponent(platform)}&viewer_roster_id=${encodeURIComponent(viewerRosterId)}`,
-          { signal }
+          { signal: combinedSignal }
         );
         if (signal.aborted || suggCurrentPlayerId !== playerId) return;
         if (res.status === 403) {
@@ -8682,7 +7528,6 @@ window.initTradePage = function initTradePage(root = document) {
               data-receive='${esc(JSON.stringify(opt.receive)).replace(/'/g, "&#39;")}'>
               Analyze
             </button>
-            ${window.brHubSaveBtn({ get: opt.receive || [], give: [{ id: playerId, name: playerName, position: focusPos }], why_line: "", label: playerName + " trade" })}
           </div>`;
 
         const bindSendLoadBtns = () => {
@@ -8772,8 +7617,14 @@ window.initTradePage = function initTradePage(root = document) {
 
       } catch (err) {
         if (err.name === "AbortError") return;
+        const isTimeout = err.name === "TimeoutError";
         resultsList.innerHTML = `<div class="otc-sugg-empty">
-          <div class="otc-sugg-empty-sub">Failed to load send options.</div></div>`;
+          <div class="otc-sugg-empty-title">${isTimeout ? "Request timed out" : "Failed to load send options"}</div>
+          <div class="otc-sugg-empty-sub">${isTimeout
+            ? "The server took too long. Try again."
+            : "Check your connection and try again."}</div>
+          <button class="am-add-stat-btn" style="margin-top:8px;" onclick="window._retryLastPackageSearch()">Try again</button>
+        </div>`;
       }
     }
 
@@ -8916,15 +7767,12 @@ window.initTradePage = function initTradePage(root = document) {
           </div>
           ${patternSigHtml}
           ${throwInHtml}
-          <div style="display:flex;gap:6px;align-items:center;margin-top:8px;">
-          ${window.brHubSaveBtn({ get: [{ id: playerId, name: playerName, position: focusPos }].concat(extra ? [extra] : []), give: pkg.assets || [], why_line: "", label: playerName + " package" })}
           <button class="otc-sugg-pkg-load-btn"
             data-focus-id="${playerId}"
             data-assets="${encodeURIComponent(JSON.stringify(pkg.assets))}"
             ${extra ? `data-extra-receive="${encodeURIComponent(JSON.stringify(extra))}"` : ''}>
             Analyze
           </button>
-          </div>
         </div>`;
       }).join("");
 
@@ -9286,49 +8134,9 @@ window.initTradePage = function initTradePage(root = document) {
     }
 
     // ── Suggestions-tab Trade Targets (different from sidebar) ───
-    // Show or hide the chips strip. Expanding is a no-op when there is
-    // nothing to show (no data yet, or every chip is untouchable).
-    function _setTopChipsCollapsed(collapsed) {
-      _topChipsCollapsed = collapsed;
-      const wrap = root.querySelector("#otcTopChipsWrap");
-      if (!wrap) return;
-      if (collapsed) { wrap.style.display = "none"; return; }
-      const visible = _lastTopChips.filter(c => !_untouchableIds.has(String(c.player_id)));
-      wrap.style.display = visible.length ? "" : "none";
-    }
-
-    // ── Top trade chips (Targets tab, under the search bar) ───────────────────
-    // The viewer's most valuable players, one tap to build around them.
-    // Untouchable players are filtered out so the chips agree with the
-    // excluded-from-suggestions bar. The strip collapses once a player is
-    // picked and comes back when the search box is cleared.
-    function _renderTopChips(chips) {
-      _lastTopChips = Array.isArray(chips) ? chips : [];
-      const wrap = root.querySelector("#otcTopChipsWrap");
-      const box  = root.querySelector("#otcTopChips");
-      if (!wrap || !box) return;
-      const visible = _lastTopChips.filter(c => !_untouchableIds.has(String(c.player_id)));
-      if (!visible.length || _topChipsCollapsed) { wrap.style.display = "none"; return; }
-      wrap.style.display = "";
-      const esc = s => (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
-      box.innerHTML = visible.map(c => {
-        const col = (POS_COLORS || {})[c.position] || "var(--accent)";
-        const posLabel = c.pos_rank_label || c.position;
-        const tint = col.charCodeAt(0) === 35 ? col + "1A" : "transparent";
-        return `<button class="otc-top-chip" data-id="${esc(String(c.player_id))}" data-name="${esc(c.name)}" title="Build around ${esc(c.name)}">` +
-          `<span class="otc-top-chip-pos" style="color:${col};background:${tint}">${esc(posLabel)}</span>` +
-          `<span class="otc-top-chip-name">${esc(c.name)}</span>` +
-          `<span class="otc-top-chip-team">${esc(c.team)}</span></button>`;
-      }).join("");
-    }
-
     async function loadSuggTargets() {
-      // Skip if Suggestions sub-tab is active - strategy loader handles that.
-      // Reads localStorage (not _activeSubtab) because this can run during
-      // init before the in-memory value is declared.
-      if (_hubStoredSubtab() === "suggestions") return;
-
-      if (suggTargetsLoading) return;
+      // Skip if Strategy sub-tab is active - strategy loader handles that
+      if ((localStorage.getItem("sugg-subtab") || "build") === "strategy") return;
 
       const container = root.querySelector("#otcSuggTargetsBody");
       if (!container) return;
@@ -9376,7 +8184,6 @@ window.initTradePage = function initTradePage(root = document) {
 
       window.brLoadingState(container, { rows: 3, compact: true, message: 'Loading targets' });
 
-      suggTargetsLoading = true;
       try {
         const res = await fetch(
           `/api/trade-targets?platform=${encodeURIComponent(platform)}&league_id=${encodeURIComponent(leagueId)}` +
@@ -9393,8 +8200,6 @@ window.initTradePage = function initTradePage(root = document) {
         if (!res.ok) throw new Error("Failed");
         const data = await res.json();
         suggTargetsLoaded = true;  // only mark done after a successful response
-        _topChipsCollapsed = false;  // fresh targets load: show the strip again
-        _renderTopChips(data.top_chips || []);
 
         const grouped     = data.by_position || {};
         const allGrouped  = data.all_positions || {};
@@ -9409,22 +8214,20 @@ window.initTradePage = function initTradePage(root = document) {
           const col      = posColor2[pos] || "var(--accent)";
           const safeName = escapeHtml(t.name);
           const safePid  = escapeHtml(t.player_id);
-          // Shared hub component; the server computes why_line. Fall back to
-          // the legacy owner/why join until cached responses roll over.
-          // Stacked full-width under the name row so the text has room.
-          const whyText = t.why_line
-            || [t.owner_team, t.why].filter(Boolean).join(" · ");
-          const why = window.brWhyLine(whyText, true);
+          const whyBits  = [t.owner_team, t.why].filter(Boolean);
+          const why      = whyBits.length
+            ? `<span class="otc-sugg-target-why">${escapeHtml(whyBits.join(" · "))}</span>`
+            : "";
           return `<div class="otc-sugg-target-row">
-            <div class="otc-sugg-target-head">
-              <span class="otc-sugg-target-pos" style="background:${col}20;color:${col};">${pos}</span>
+            <span class="otc-sugg-target-pos" style="background:${col}20;color:${col};">${pos}</span>
+            <span class="otc-sugg-target-meta">
               <span class="otc-sugg-target-name">${safeName}</span>
-              <button class="sugg-target-get-btn otc-sugg-target-btn"
-                data-pid="${safePid}" data-name="${safeName}">
-                Find packages
-              </button>
-            </div>
-            ${why}
+              ${why}
+            </span>
+            <button class="sugg-target-get-btn otc-sugg-target-btn"
+              data-pid="${safePid}" data-name="${safeName}">
+              Find packages
+            </button>
           </div>`;
         }
 
@@ -9458,8 +8261,6 @@ window.initTradePage = function initTradePage(root = document) {
         // Click handling is delegated once via bindSuggTargetsClick() below.
       } catch (e) {
         window.brErrorState(container, 'Could not load targets.', () => { suggTargetsLoaded = false; loadSuggTargets(); }, { compact: true });
-      } finally {
-        suggTargetsLoading = false;
       }
     }
 
@@ -9533,7 +8334,7 @@ window.initTradePage = function initTradePage(root = document) {
         if (!pid || !name) return;
 
         // Strategy cards switching to Build Around so results are visible
-        if (fromStrategy) _setSuggSubtab("targets");
+        if (fromStrategy) _setSuggSubtab("build");
 
         if (playerInput) {
           playerInput.value = name;
@@ -9559,26 +8360,18 @@ window.initTradePage = function initTradePage(root = document) {
     }
     bindSuggTargetsClick();
 
-    // ── Trade Hub sub-tabs: Suggestions | Targets | Market Intel | Saved ────────
-    const hubSubBtns       = Array.from(root.querySelectorAll(".otc-sugg-subtab[data-hubtab]"));
-    const targetsPanel     = root.querySelector("#otcBuildAroundPanel");
-    const suggPanel        = root.querySelector("#otcStrategyPanel");
-    const marketPanel      = root.querySelector("#otcMarketIntelPanel");
-    const savedPanel       = root.querySelector("#otcSavedPanel");
+    // ── Sub-tabs: "Build Around" | "Strategy" ────────────────────────────────
+    const btnSubBuild      = root.querySelector("#otcSubtabBuildAround");
+    const btnSubStrategy   = root.querySelector("#otcSubtabStrategy");
+    const buildAroundPanel = root.querySelector("#otcBuildAroundPanel");
+    const strategyPanel    = root.querySelector("#otcStrategyPanel");
     const strategyChips    = root.querySelector("#otcStrategyChips");
     const strategyImpact   = root.querySelector("#otcStrategyImpact");
     const strategyCards    = root.querySelector("#otcStrategyCards");
     const strategyCardsHead = root.querySelector("#otcStrategyCardsHead");
     const strategyClearBtn  = root.querySelector("#otcStrategyClearFilter");
 
-    // Back-compat: older keys "build" -> "targets", "strategy" -> "suggestions".
-    function _hubStoredSubtab() {
-      const v = localStorage.getItem("sugg-subtab") || "suggestions";
-      if (v === "build") return "targets";
-      if (v === "strategy") return "suggestions";
-      return ["suggestions", "targets", "market", "saved"].includes(v) ? v : "suggestions";
-    }
-    let _activeSubtab    = _hubStoredSubtab();
+    let _activeSubtab    = localStorage.getItem("sugg-subtab")    || "build";
     let _activeArchetype = localStorage.getItem("sugg-archetype") || "";
     let _strategyData    = [];
     let _strategyFilter  = null;
@@ -9592,41 +8385,23 @@ window.initTradePage = function initTradePage(root = document) {
     // only the newest response for the still-selected archetype is allowed to render.
     let _strategyReqSeq   = 0;
     let _strategyAbortCtrl = null;
-    // Per-archetype memory cache: revisiting a chip (or the tab) re-renders
-    // instantly instead of re-running the server pipeline. Keyed by the full
-    // request context, so a league/season/team/untouchable change always
-    // misses and refetches. Cleared on context change below.
-    let _strategyCache   = {};
-    let _strategyInflight = {};
-    // Progressive loading state: after the analytical slate paints, each
-    // player group resolves its Monte Carlo numbers via its own request.
-    // _strategySimGroups maps group_key -> {state: pending|retrying|done|error,
-    // rows}; _strategySimJob stashes the live load's request context so a
-    // failed group can be retried in place.
-    let _strategySimGroups = {};
-    let _strategySimJob    = null;
-    const _STRATEGY_SIM_CONCURRENCY = 3;
 
     function _setSuggSubtab(tab) {
       _activeSubtab = tab;
       localStorage.setItem("sugg-subtab", tab);
-      const panels = { suggestions: suggPanel, targets: targetsPanel, market: marketPanel, saved: savedPanel };
-      Object.keys(panels).forEach(k => {
-        const el = panels[k];
-        if (el) el.style.display = k === tab ? "" : "none";
-      });
-      hubSubBtns.forEach(b => b.classList.toggle("is-active", b.dataset.hubtab === tab));
-      if (tab === "suggestions") {
+      const isBuild = tab === "build";
+      if (buildAroundPanel)  buildAroundPanel.style.display  = isBuild ? "" : "none";
+      if (strategyPanel)     strategyPanel.style.display     = isBuild ? "none" : "";
+      if (btnSubBuild)    btnSubBuild.classList.toggle("is-active", isBuild);
+      if (btnSubStrategy) btnSubStrategy.classList.toggle("is-active", !isBuild);
+      if (!isBuild) {
         let arch = _activeArchetype || "contending";
         if (getScoringType() === "redraft" && arch === "rebuilding") arch = "contending";
         _setStrategyChip(arch);
         loadStrategyView(arch);
-      } else if (tab === "targets") {
+      } else {
         loadSuggTargets();
-      } else if (tab === "saved") {
-        renderSavedHub();
       }
-      // "market" self-loads: the embedded Trade Intelligence script fetches on first open.
     }
 
     function _archDesc() {
@@ -9668,7 +8443,8 @@ window.initTradePage = function initTradePage(root = document) {
       }
     }
 
-    hubSubBtns.forEach(b => b.addEventListener("click", () => _setSuggSubtab(b.dataset.hubtab)));
+    if (btnSubBuild)    btnSubBuild.addEventListener("click",    () => _setSuggSubtab("build"));
+    if (btnSubStrategy) btnSubStrategy.addEventListener("click", () => _setSuggSubtab("strategy"));
 
     if (strategyChips) {
       strategyChips.addEventListener("click", e => {
@@ -9691,14 +8467,10 @@ window.initTradePage = function initTradePage(root = document) {
     // Re-wire context change on league/season switch
     function _onContextChangePatch() {
       suggTargetsLoaded = false;
-      _strategyCache = {};
-      _strategyInflight = {};
       if (suggTab.style.display !== "none") {
-        if (_activeSubtab === "suggestions" && _activeArchetype) {
+        if (_activeSubtab !== "build" && _activeArchetype) {
           loadStrategyView(_activeArchetype);
-        } else if (_activeSubtab === "saved") {
-          renderSavedHub();
-        } else if (_activeSubtab !== "market") {
+        } else {
           loadSuggTargets();
         }
       }
@@ -9709,17 +8481,11 @@ window.initTradePage = function initTradePage(root = document) {
     if (seasonInputEl2) seasonInputEl2.addEventListener("change", _onContextChangePatch);
 
     // Restore sub-tab on load
-    setTimeout(() => { _setSuggSubtab(_hubStoredSubtab()); }, 0);
+    setTimeout(() => { if (_activeSubtab === "strategy") _setSuggSubtab("strategy"); }, 0);
 
     // ── Strategy view loader ──────────────────────────────────────────────────
     async function loadStrategyView(archetype) {
       if (!strategyImpact || !strategyCards) return;
-
-      // Declared up top: the cache-hit branch below hides the spinner too, and
-      // referencing these consts before their declaration line executes is a
-      // TDZ ReferenceError (that is what stranded the view on skeletons).
-      const strategySpinner = root.querySelector("#otcStrategySpinner");
-      const impactHint      = root.querySelector("#otcStrategyImpactHint");
 
       // Newest-request-wins: bump the token and cancel any in-flight load so a
       // stale response can never render under a different (or the re-selected) chip.
@@ -9728,9 +8494,6 @@ window.initTradePage = function initTradePage(root = document) {
       const _ctrl = new AbortController();
       _strategyAbortCtrl = _ctrl;
       const _isStale = () => _mySeq !== _strategyReqSeq || _activeArchetype !== archetype;
-      // Any progressive sim state belongs to the load just superseded.
-      _strategySimGroups = {};
-      _strategySimJob    = null;
 
       const hasPremium = (root.querySelector("#otcHasPremium")?.value || "false") === "true";
       if (!hasPremium) {
@@ -9764,27 +8527,10 @@ window.initTradePage = function initTradePage(root = document) {
       const platform   = pathParts[0] || "sleeper";
       const leagueType = getLeagueType();
       const leagueSize = getLeagueSize();
-      const _untouchableStr = [..._untouchableIds].filter(Boolean).join(",");
-
-      // Serve repeat views from memory: same archetype + same context renders
-      // instantly with no fetch and no shimmer flash.
-      const _sCacheKey = [archetype, platform, leagueId, season, viewerRosterId, leagueType, leagueSize, _untouchableStr].join("|");
-      const _sCached = _strategyCache[_sCacheKey];
-      if (_sCached) {
-        ++_strategyReqSeq;
-        if (_strategyAbortCtrl) { try { _strategyAbortCtrl.abort(); } catch (_) {} }
-        _strategyAbortCtrl = null;
-        if (strategySpinner) strategySpinner.style.display = "none";
-        _renderStrategyResult(_sCached.data, _sCached.playoffPct, archetype);
-        return;
-      }
-      // A flag still set at this point can only belong to the request this
-      // call just superseded (and aborted) above: its owner will never
-      // render, so deferring to it would strand the skeletons on screen
-      // forever. Clear the stale flag and fetch fresh.
-      if (_strategyInflight[_sCacheKey]) delete _strategyInflight[_sCacheKey];
 
       // Loading skeleton + spinner
+      const strategySpinner = root.querySelector("#otcStrategySpinner");
+      const impactHint      = root.querySelector("#otcStrategyImpactHint");
       if (strategySpinner) strategySpinner.style.display = "";
       // Shimmering placeholder rows (shared .sk-shimmer system). The old markup
       // referenced a non-existent `skeleton-pulse` keyframe, so nothing animated.
@@ -9803,19 +8549,10 @@ window.initTradePage = function initTradePage(root = document) {
         </div>`).join("");
       if (strategyCardsHead) strategyCardsHead.style.display = "none";
 
-      // The in-flight flag records WHICH request owns this key, and every exit
-      // below clears it only if it is still ours. The old bare `true` flag
-      // leaked on the stale / 403 early returns (the key then early-returned
-      // forever, stranding the skeletons), and an unguarded delete could
-      // clear a newer request's flag instead. Declared before the try so the
-      // catch block can use it too.
-      _strategyInflight[_sCacheKey] = _mySeq;
-      const _clearInflight = () => {
-        if (_strategyInflight[_sCacheKey] === _mySeq) delete _strategyInflight[_sCacheKey];
-      };
-
       try {
-        const qs =
+        const _untouchableStr = [..._untouchableIds].filter(Boolean).join(",");
+        const url =
+          `/api/trade-intel/archetype-suggestions` +
           `?archetype=${encodeURIComponent(archetype)}` +
           `&platform=${encodeURIComponent(platform)}` +
           `&league_id=${encodeURIComponent(leagueId)}` +
@@ -9825,14 +8562,10 @@ window.initTradePage = function initTradePage(root = document) {
           `&league_size=${encodeURIComponent(leagueSize)}` +
           (_untouchableStr ? `&untouchable_ids=${encodeURIComponent(_untouchableStr)}` : "");
 
-        // Progressive loading: fetch the analytical slate first (no Monte
-        // Carlo, so it returns fast), paint it immediately, then resolve
-        // each player's sim numbers with its own request (_strategySimFanout).
-        const res = await fetch(`/api/trade-intel/archetype-suggestions${qs}&phase=slate`, { cache: "no-store", signal: _ctrl.signal });
-        if (_isStale()) { _clearInflight(); return; }  // a newer selection superseded this one
+        const res = await fetch(url, { cache: "no-store", signal: _ctrl.signal });
+        if (_isStale()) return;  // a newer selection superseded this one
         if (strategySpinner) strategySpinner.style.display = "none";
         if (res.status === 403) {
-          _clearInflight();
           window.brEmptyState(strategyImpact, {
             icon: 'lock',
             title: 'PRO trade tools',
@@ -9845,29 +8578,48 @@ window.initTradePage = function initTradePage(root = document) {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
         const raw  = await res.json();
-        if (_isStale()) { _clearInflight(); return; }  // response came back after the user moved on
-        _clearInflight();
+        if (_isStale()) return;  // response came back after the user moved on
         const data = raw.suggestions ?? (Array.isArray(raw) ? raw : []);
-        if (!data.length) {
-          // Nothing matched (and nothing to simulate). Render the empty
-          // state and leave the key uncached so the next visit retries.
-          _renderStrategyResult([], null, archetype);
+        _currentPlayoffPct = raw.current_playoff_pct ?? null;
+        _strategyData   = data;
+        _strategyFilter = null;
+        _strategyPage   = 0;
+        if (strategyClearBtn) strategyClearBtn.style.display = "none";
+
+        // Show / update current playoff odds inline badge
+        const poBadge = root.querySelector("#otcCurrentPOBadge");
+        if (poBadge) {
+          if (_currentPlayoffPct !== null) {
+            poBadge.textContent = "PO " + _currentPlayoffPct.toFixed(1) + "%";
+            poBadge.style.display = "";
+          } else {
+            poBadge.style.display = "none";
+          }
+        }
+
+        // Update impact-table hint to match archetype direction
+        if (impactHint) {
+          const isSell = archetype === "distribute" || archetype === "rebuilding";
+          impactHint.textContent = isSell ? "Win % cost if traded away" : "Win % if acquired";
+          impactHint.title = "wk is typical remaining-week win chance. po is simulated playoff-make odds. They can move in opposite directions: playoffs depend on the rest of the season, schedule, and ceiling -- not just average weekly scoring.";
+        }
+
+        if (!_strategyData.length) {
+          window.brEmptyState(strategyImpact, {
+            icon: 'search',
+            title: 'No suggestions',
+            message: 'No packages matched this strategy for your roster.',
+            compact: true
+          });
+          strategyCards.innerHTML  = "";
           return;
         }
-        // Paint the slate now; sim numbers fill in per player from here.
-        // The completed result joins the memory cache only once every
-        // group settles (see _strategySimFinalize).
-        const _groups = Array.isArray(raw.groups) ? raw.groups.map(String) : [];
-        _groups.forEach(gk => { _strategySimGroups[gk] = { state: "pending", rows: null }; });
-        _renderStrategyResult(data, null, archetype);
-        _strategySimJob = {
-          archetype: archetype, qs: qs, cacheKey: _sCacheKey,
-          isStale: _isStale, ctrl: _ctrl, groups: _groups,
-        };
-        _strategySimFanout(_strategySimJob);
+
+        _renderImpactTable(_strategyData);
+        _renderStrategyCards(_strategyData, null);
+        if (strategyCardsHead) strategyCardsHead.style.display = "";
 
       } catch (err) {
-        _clearInflight();
         // A superseded request was aborted on purpose - ignore it and leave the
         // newer load to own the view.
         if (err && err.name === "AbortError") return;
@@ -9876,164 +8628,6 @@ window.initTradePage = function initTradePage(root = document) {
         window.brErrorState(strategyImpact, 'Could not load strategy.', () => loadStrategyView(archetype), { compact: true });
         console.error("[strategy]", err);
       }
-    }
-
-    // ── Strategy: progressive sim fill-in ───────────────────────────────────
-    // The slate paints with its sim fields pending; one request per player
-    // group then resolves that group's Monte Carlo numbers. Each completion
-    // merges its rows in place and repaints, so cards fill in one player at
-    // a time. When every group settles, rows take their final server-ranked
-    // order and the completed result joins the memory cache. A failed group
-    // blocks that final step: its cards keep an explicit retry instead of
-    // caching partial numbers as if they were final.
-    function _strategyGroupState(gk) {
-      const g = _strategySimGroups[gk];
-      return g ? g.state : null;
-    }
-
-    async function _strategySimFanout(job) {
-      const pending = job.groups.filter(gk =>
-        _strategyData.some(r => r.group_key === gk && r.sim_pending));
-      job.groups.forEach(gk => {
-        if (!pending.includes(gk)) _strategySimGroups[gk] = { state: "done", rows: [] };
-      });
-      let idx = 0;
-      const worker = async () => {
-        while (idx < pending.length) {
-          if (job.isStale()) return;
-          const gk = pending[idx++];
-          await _strategySimLoadGroup(gk, job);
-        }
-      };
-      const workers = [];
-      const n = Math.min(_STRATEGY_SIM_CONCURRENCY, pending.length);
-      for (let i = 0; i < n; i++) workers.push(worker());
-      await Promise.all(workers);
-      if (!job.isStale()) _strategySimFinalize(job);
-    }
-
-    async function _strategySimLoadGroup(gk, job) {
-      const g = _strategySimGroups[gk] || (_strategySimGroups[gk] = { state: "pending", rows: null });
-      g.state = (g.state === "error") ? "retrying" : "pending";
-      try {
-        const res = await fetch(
-          `/api/trade-intel/archetype-suggestion-sim${job.qs}&group_key=${encodeURIComponent(gk)}`,
-          { cache: "no-store", signal: job.ctrl.signal });
-        if (job.isStale()) return;
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const raw = await res.json();
-        if (job.isStale()) return;
-        const rows = raw.suggestions || [];
-        g.state = "done";
-        g.rows = rows;
-        if (raw.current_playoff_pct != null && _currentPlayoffPct === null) {
-          _currentPlayoffPct = raw.current_playoff_pct;
-          const poBadge = root.querySelector("#otcCurrentPOBadge");
-          if (poBadge) {
-            poBadge.textContent = "PO " + _currentPlayoffPct.toFixed(1) + "%";
-            poBadge.style.display = "";
-          }
-        }
-        // Merge this group's simmed rows over its slate rows, in place. A
-        // group the sim filtered out entirely loses its rows here.
-        const firstIdx = _strategyData.findIndex(r => r.group_key === gk);
-        _strategyData = _strategyData.filter(r => r.group_key !== gk);
-        if (rows.length && firstIdx >= 0) {
-          _strategyData.splice(Math.min(firstIdx, _strategyData.length), 0, ...rows);
-        }
-        _renderImpactTable(_strategyData);
-        _renderStrategyCards(_strategyData, _strategyFilter);
-      } catch (err) {
-        if (err && err.name === "AbortError") return;
-        if (job.isStale()) return;
-        g.state = "error";
-        _renderImpactTable(_strategyData);
-        _renderStrategyCards(_strategyData, _strategyFilter);
-      }
-    }
-
-    function _retryStrategyGroup(gk) {
-      const job = _strategySimJob;
-      if (!job || job.isStale()) return;
-      const g = _strategySimGroups[gk];
-      if (!g || g.state !== "error") return;
-      g.state = "retrying";
-      _renderImpactTable(_strategyData);
-      _renderStrategyCards(_strategyData, _strategyFilter);
-      _strategySimLoadGroup(gk, job).then(() => {
-        if (!job.isStale()) _strategySimFinalize(job);
-      });
-    }
-
-    function _strategySimFinalize(job) {
-      const states = Object.values(_strategySimGroups).map(g => g.state);
-      if (states.some(s => s === "pending" || s === "retrying")) return;
-      if (states.some(s => s === "error")) return;  // partial numbers never cache as final
-      if (!_strategyData.length) {
-        // Every slate row was filtered out by its sim: show the empty state.
-        window.brEmptyState(strategyImpact, {
-          icon: 'search',
-          title: 'No suggestions',
-          message: 'No packages matched this strategy for your roster.',
-          compact: true
-        });
-        strategyCards.innerHTML = "";
-        if (strategyCardsHead) strategyCardsHead.style.display = "none";
-        return;
-      }
-      // Every remaining row now carries its final server rank: settle order.
-      const ranked = _strategyData.filter(r => r.rank != null);
-      const unranked = _strategyData.filter(r => r.rank == null);
-      ranked.sort((a, b) => b.rank - a.rank);
-      _strategyData = ranked.concat(unranked);
-      _strategyPage = 0;
-      _renderImpactTable(_strategyData);
-      _renderStrategyCards(_strategyData, _strategyFilter);
-      _strategyCache[job.cacheKey] = { data: _strategyData, playoffPct: _currentPlayoffPct };
-    }
-
-    // Render a strategy result (fresh fetch or memory cache) into the impact
-    // table + cards. Shared so cache hits paint identically to fetches.
-    function _renderStrategyResult(data, playoffPct, archetype) {
-      _currentPlayoffPct = playoffPct;
-      _strategyData   = data;
-      _strategyFilter = null;
-      _strategyPage   = 0;
-      if (strategyClearBtn) strategyClearBtn.style.display = "none";
-
-      // Show / update current playoff odds inline badge
-      const poBadge = root.querySelector("#otcCurrentPOBadge");
-      if (poBadge) {
-        if (_currentPlayoffPct !== null) {
-          poBadge.textContent = "PO " + _currentPlayoffPct.toFixed(1) + "%";
-          poBadge.style.display = "";
-        } else {
-          poBadge.style.display = "none";
-        }
-      }
-
-      // Update impact-table hint to match archetype direction
-      const _riHint = root.querySelector("#otcStrategyImpactHint");
-      if (_riHint) {
-        const isSell = archetype === "distribute" || archetype === "rebuilding";
-        _riHint.textContent = isSell ? "Win % cost if traded away" : "Win % if acquired";
-        _riHint.title = "wk is typical remaining-week win chance. po is simulated playoff-make odds. They can move in opposite directions: playoffs depend on the rest of the season, schedule, and ceiling -- not just average weekly scoring.";
-      }
-
-      if (!_strategyData.length) {
-        window.brEmptyState(strategyImpact, {
-          icon: 'search',
-          title: 'No suggestions',
-          message: 'No packages matched this strategy for your roster.',
-          compact: true
-        });
-        strategyCards.innerHTML  = "";
-        return;
-      }
-
-      _renderImpactTable(_strategyData);
-      _renderStrategyCards(_strategyData, null);
-      if (strategyCardsHead) strategyCardsHead.style.display = "";
     }
 
     // ── Strategy: player impact table ─────────────────────────────────────────
@@ -10077,24 +8671,12 @@ window.initTradePage = function initTradePage(root = document) {
           ? t.suggested_send[0].player_id
           : (t.player_id || "")).replace(/"/g, "");
 
-        const wpdBadge = `<span class="otc-strategy-impact-badge" title="${wpdTitle}" style="background:${wpdBg};color:${wpdCol};">${wpdStr}</span>`;
-        const podBadge = `<span class="otc-strategy-impact-badge" title="${podTitle}" style="background:${podBg};color:${podCol};">${podStr}</span>`;
-        // Progressive sim state for this row's group: while it simulates, the
-        // badges show a shimmer pill; a failed sim shows an explicit retry.
-        // Never a fake 0.0% rendered from the pending nulls.
-        const gState = _strategyGroupState(t.group_key || pid);
-        let badgesHtml = wpdBadge + podBadge;
-        if (gState === "pending" || gState === "retrying") {
-          badgesHtml = `<span class="otc-strategy-impact-badge sk-shimmer" title="Simulating this player's trades." style="min-width:58px;">&nbsp;</span>`;
-        } else if (gState === "error") {
-          badgesHtml = `<button class="otc-strategy-impact-badge" data-sim-retry="${pid}" title="The simulation for this player failed." style="background:#ef44441f;color:#ef4444;border:1px solid #ef444455;cursor:pointer;font:inherit;">Sim failed. Retry</button>`;
-        }
-
         return `<div class="otc-strategy-impact-row" data-pid="${pid}">
           <span style="font-size:9px;font-weight:700;padding:2px 5px;border-radius:3px;background:${col}20;color:${col};flex-shrink:0;">${displayAsset.position || t.position}</span>
           <span class="otc-strategy-impact-name">${esc(displayAsset.name || t.name)}</span>
           <div class="otc-strategy-impact-stats">
-            ${badgesHtml}
+            <span class="otc-strategy-impact-badge" title="${wpdTitle}" style="background:${wpdBg};color:${wpdCol};">${wpdStr}</span>
+            <span class="otc-strategy-impact-badge" title="${podTitle}" style="background:${podBg};color:${podCol};">${podStr}</span>
           </div>
         </div>`;
       }).join("");
@@ -10103,8 +8685,6 @@ window.initTradePage = function initTradePage(root = document) {
       if (!strategyImpact._filterBound) {
         strategyImpact._filterBound = true;
         strategyImpact.addEventListener("click", e => {
-          const retryBtn = e.target.closest("[data-sim-retry]");
-          if (retryBtn) { _retryStrategyGroup(retryBtn.dataset.simRetry); return; }
           const row = e.target.closest(".otc-strategy-impact-row");
           if (!row) return;
           const pid = row.dataset.pid;
@@ -10126,14 +8706,6 @@ window.initTradePage = function initTradePage(root = document) {
     // ── Strategy: compact trade cards ─────────────────────────────────────────
     function _renderStrategyCards(data, filterPid) {
       if (!strategyCards) return;
-      // Delegated sim-retry clicks (bound once; cards re-render constantly).
-      if (!strategyCards._simRetryBound) {
-        strategyCards._simRetryBound = true;
-        strategyCards.addEventListener("click", e => {
-          const btn = e.target.closest("[data-sim-retry]");
-          if (btn) _retryStrategyGroup(btn.dataset.simRetry);
-        });
-      }
       const esc      = s => (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
       const posColor = POS_COLORS;
       const archColor = { contending: "#10b981", rebuilding: "#3b82f6", consolidate: "#f59e0b", distribute: "#8b5cf6" };
@@ -10202,7 +8774,7 @@ window.initTradePage = function initTradePage(root = document) {
           }).join("");
         }
 
-        // Value grade badge (with acceptance % folded in: one pill, not two)
+        // Value grade badge
         const giveVal = giveAssets.reduce((s, a) => s + (a.value || 0), 0);
         const getVal  = getAssets.reduce((s, a) => s + (a.value || 0), 0) || (t.value || 0);
         const ratio   = giveVal > 0 ? getVal / giveVal : 0;
@@ -10220,35 +8792,36 @@ window.initTradePage = function initTradePage(root = document) {
             ? { label: "Fair value",    color: "#6366f1" }
             : { label: "Slight overpay",color: "#f59e0b" };
         }
-        const acpt = t.acceptance_pct != null ? Math.round(t.acceptance_pct) : null;
-        const gradeHtml = `<span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:10px;background:${gradeInfo.color}15;border:1px solid ${gradeInfo.color}30;color:${gradeInfo.color};white-space:nowrap;">${gradeInfo.label}${acpt != null ? `&nbsp;&middot;&nbsp;${acpt}% accept` : ""}</span>`;
+        const gradeHtml = `<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:${gradeInfo.color}15;border:1px solid ${gradeInfo.color}30;color:${gradeInfo.color};white-space:nowrap;">${gradeInfo.label}</span>`;
+
+        // Acceptance badge
+        const acpt = t.acceptance_pct != null ? t.acceptance_pct : null;
+        const acptColor = acpt >= 70 ? "#10b981" : acpt >= 50 ? "#6366f1" : "#f59e0b";
+        const acptHtml = acpt != null
+          ? `<span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:${acptColor}15;border:1px solid ${acptColor}30;color:${acptColor};white-space:nowrap;">
+               <span style="width:5px;height:5px;border-radius:50%;background:${acptColor};flex-shrink:0;"></span>${acpt}% accept
+             </span>`
+          : "";
 
         // Win % + playoff odds - always prefer net_* fields (full trade swap effect)
         const wpd = (t.net_win_prob_delta ?? t.win_prob_delta) || 0;
         const pod = (t.net_playoff_odds_delta ?? t.playoff_odds_delta) || 0;
-        const wpdCol = wpd >= 0 ? "#16a34a" : "#ef4444";
+        const wpdCol = wpd >= 0 ? "var(--win)" : "#ef4444";
         const podCol = pod >= 0 ? "#6366f1" : "#ef4444";
-        const wpdHtml = `<span title="Change in typical remaining-week win chance for this full trade (what you send and receive)." style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:10px;background:${wpdCol}15;border:1px solid ${wpdCol}30;color:${wpdCol};white-space:nowrap;">${(wpd >= 0 ? "+" : "") + (wpd * 100).toFixed(1)}% wk</span>`;
-        const podHtml = `<span title="Change in simulated playoff-make odds for this full trade. Playoffs can rise even when weekly win % dips because they depend on the rest of the season, schedule, and ceiling." style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:10px;background:${podCol}15;border:1px solid ${podCol}30;color:${podCol};white-space:nowrap;">${(pod >= 0 ? "+" : "") + (pod * 100).toFixed(1)}% po</span>`;
-
-        // Progressive sim state for this card's group: while it simulates,
-        // the delta badges show a shimmer pill instead of a fake 0.0%;
-        // a failed sim shows an explicit retry.
-        const gState = _strategyGroupState(t.group_key || "");
-        let wpdOut = wpdHtml, podOut = podHtml;
-        if (gState === "pending" || gState === "retrying") {
-          wpdOut = `<span class="sk-shimmer" title="Simulating this trade." style="display:inline-block;width:64px;height:18px;border-radius:10px;">&nbsp;</span>`;
-          podOut = "";
-        } else if (gState === "error") {
-          wpdOut = `<button data-sim-retry="${(t.group_key || "").replace(/"/g, "")}" title="The simulation for this player failed." style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:10px;background:#ef444415;border:1px solid #ef444455;color:#ef4444;white-space:nowrap;cursor:pointer;">Sim failed. Retry</button>`;
-          podOut = "";
-        }
+        const wpdHtml = `<span title="Change in typical remaining-week win chance for this full trade (what you send and receive)." style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:10px;background:${wpdCol}15;border:1px solid ${wpdCol}30;color:${wpdCol};white-space:nowrap;">${(wpd >= 0 ? "+" : "") + (wpd * 100).toFixed(1)}% wk</span>`;
+        const podHtml = `<span title="Change in simulated playoff-make odds for this full trade. Playoffs can rise even when weekly win % dips because they depend on the rest of the season, schedule, and ceiling." style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:10px;background:${podCol}15;border:1px solid ${podCol}30;color:${podCol};white-space:nowrap;">${(pod >= 0 ? "+" : "") + (pod * 100).toFixed(1)}% po</span>`;
 
         // Partner
         const pAColor = archColor[t.partner_arch || ""] || "var(--text-muted)";
         const pName   = esc(t.partner_team || "");
         const partnerHtml = pName
           ? `<span class="otc-strategy-partner"><span class="dot" style="background:${pAColor};"></span>${pName}</span>`
+          : "";
+
+        // Partner-fit chip: why this package suits the other side's roster.
+        const fitNote = t.fit_note ? esc(t.fit_note) : "";
+        const fitHtml = fitNote
+          ? `<span class="otc-strategy-fit"><i class="fa-solid fa-bullseye"></i>${fitNote}</span>`
           : "";
 
         // Analyze button data
@@ -10267,20 +8840,16 @@ window.initTradePage = function initTradePage(root = document) {
               ${renderAssetHtml(giveAssets)}
             </div>
           </div>
-          ${window.brWhyLine(t.why_line)}
+          ${fitHtml ? `<div class="otc-rt-fit">${fitHtml}</div>` : ""}
           <div class="otc-rt-footer">
             <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;min-width:0;">
-              ${gradeHtml}${wpdOut}${podOut}
+              ${gradeHtml}${acptHtml}${wpdHtml}${podHtml}
               ${partnerHtml}
             </div>
-            <div style="display:flex;gap:6px;align-items:center;">
-              ${window.brHubSaveBtn({ get: getAssets, give: giveAssets, why_line: t.why_line || "", label: (t.name || "Trade") + " trade" })}
-              <button class="th-chip-btn" data-hub-shop-card="${encodeURIComponent(JSON.stringify({ get: getAssets, give: giveAssets, why_line: t.why_line || "", label: (t.name || "Trade") + " trade" }))}">Shop</button>
-              <button class="sugg-target-get-btn otc-sugg-pkg-load-btn"
-                data-direction="analyze"
-                data-receive="${receiveEnc}"
-                data-send="${sendEnc}">Analyze</button>
-            </div>
+            <button class="sugg-target-get-btn otc-sugg-pkg-load-btn"
+              data-direction="analyze"
+              data-receive="${receiveEnc}"
+              data-send="${sendEnc}">Analyze</button>
           </div>
         </div>`;
       }).join("");
@@ -10900,6 +9469,12 @@ window.initTradePage = function initTradePage(root = document) {
     return cachedTradeCountLabel || "150,000+";
   }
 
+  function setTradeCountLabel(label) {
+    if (label) cachedTradeCountLabel = label;
+    const el = root.querySelector("#tradeCount");
+    if (el) el.textContent = cachedTradeCountLabel;
+  }
+
   function syncScoringTypeUi() {
     const redraft = getScoringType() === "redraft";
     const sizeCtrl = root.querySelector("#leagueSizeSelect");
@@ -11416,9 +9991,22 @@ window.initTradePage = function initTradePage(root = document) {
       }
     });
 
-    // The trade-count label is server-rendered into #tradeCount at page load,
-    // so no client fetch is needed; tradeCountLabel() preserves it across
-    // tooltip rewrites.
+    // Fetch trade count from database
+    fetch('/api/trade-count')
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+      })
+      .then(data => {
+        if (data.count !== undefined) {
+          setTradeCountLabel(data.count.toLocaleString());
+        }
+      })
+      .catch(() => {
+        setTradeCountLabel(cachedTradeCountLabel || "150,000+");
+      });
   }
 
   root.querySelectorAll(".pos-filter").forEach(btn => {
@@ -11481,36 +10069,16 @@ window.initTradePage = function initTradePage(root = document) {
       } catch (_) {}
     })();
 
-    // Try to load trade from URL first, otherwise load from localStorage.
-    // A "pending" result means the URL names a trade but player data failed
-    // to load: retry the fetch once before giving up, so a transient
-    // /api/league-players error does not leave both sides silently empty.
-    const applyInitialTrade = () => {
-      const loadedFromURL = loadTradeFromURL();
-      if (loadedFromURL === "pending") return false;
-      if (!loadedFromURL) {
-        loadState();
-      }
-      updateAnalyzeButtonState();
-      syncEmptyState("A");
-      syncEmptyState("B");
-      recomputeTrade();
-      return true;
-    };
-
-    if (!applyInitialTrade()) {
-      ensurePlayersLoaded().then(() => {
-        if (!applyInitialTrade()) {
-          // Player data still unavailable: fall back to saved state; the
-          // fetch error is already surfaced in the error box.
-          loadState();
-          updateAnalyzeButtonState();
-          syncEmptyState("A");
-          syncEmptyState("B");
-          recomputeTrade();
-        }
-      });
+    // Try to load trade from URL first, otherwise load from localStorage
+    const loadedFromURL = loadTradeFromURL();
+    if (!loadedFromURL) {
+      loadState();
     }
+
+    updateAnalyzeButtonState();
+    syncEmptyState("A");
+    syncEmptyState("B");
+    recomputeTrade();
 
     // Targets tab loads lazily when opened - no eager fetch needed
   });
@@ -11833,13 +10401,6 @@ window.initPageRoot = function initPageRoot(root = document) {
   }
   if (tradePageExists(root)) {
     window.initTradePage?.(root);
-  }
-  // Compare's full-load init runs via _deferInit at document load, which a
-  // swap never re-fires -- run it here on swaps only (root !== document) so
-  // a full load doesn't double-bind.
-  if (root !== document && typeof initComparePage === 'function' &&
-      root.querySelector('[data-page="compare"]')) {
-    initComparePage();
   }
   if (recapPageExists(root)) {
     initRecapPage(root);
@@ -12447,96 +11008,11 @@ if (!platformBtns.length) return;
   }
   window.setHomeCardState = setHomeCardState;
 
-  // ── Guest league claim ────────────────────────────────────────────────
-  // If the user signed in with zero saved leagues but previously viewed a
-  // league as a guest on this browser, offer to attach it to their account
-  // with one tap. Dismissal is remembered per browser; the prompt never nags.
-  function maybeShowGuestClaimLeague() {
-    if (document.getElementById("guestClaimCard")) return;
-    let guest = null;
-    try {
-      if (localStorage.getItem("br-guest-claim-dismissed") === "1") return;
-      guest = JSON.parse(localStorage.getItem("br-guest-league") || "null");
-    } catch (_) { return; }
-    if (!guest || !guest.platform || !guest.league_id) return;
-
-    const card = document.createElement("div");
-    card.id = "guestClaimCard";
-    card.className = "guest-claim-card";
-    const leagueLabel = guest.name || "your league";
-    card.innerHTML =
-      '<div class="guest-claim-text"><strong>You were viewing ' + safeHomeText(leagueLabel) +
-      ' as a guest.</strong><span>Save it to your account so it is here on every device.</span></div>' +
-      '<div class="guest-claim-actions"><button type="button" class="guest-claim-save">Save to my account</button>' +
-      '<button type="button" class="guest-claim-dismiss">Not now</button></div>' +
-      '<p class="guest-claim-error" role="alert" style="display:none;"></p>';
-
-    const errEl = card.querySelector(".guest-claim-error");
-    const saveBtn = card.querySelector(".guest-claim-save");
-    const dismissBtn = card.querySelector(".guest-claim-dismiss");
-    const dismiss = () => {
-      try { localStorage.setItem("br-guest-claim-dismissed", "1"); } catch (_) {}
-      card.remove();
-    };
-    if (dismissBtn) dismissBtn.addEventListener("click", dismiss);
-    if (saveBtn) saveBtn.addEventListener("click", async () => {
-      saveBtn.disabled = true;
-      saveBtn.textContent = "Saving…";
-      if (errEl) errEl.style.display = "none";
-      try {
-        const res = await fetch("/api/link/add", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            platform: guest.platform,
-            league_id: guest.league_id,
-            season: guest.season,
-            name: guest.name || undefined,
-            username: guest.username || undefined,
-          }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok || !data.ok) {
-          throw new Error(data.error || "Could not save that league.");
-        }
-        try {
-          localStorage.removeItem("br-guest-league");
-          localStorage.setItem("br-guest-claim-dismissed", "1");
-        } catch (_) {}
-        window.location.href =
-          "/" + encodeURIComponent(guest.platform) +
-          "/" + encodeURIComponent(guest.season || new Date().getFullYear()) +
-          "/" + encodeURIComponent(guest.league_id) + "/dashboard";
-      } catch (err) {
-        saveBtn.disabled = false;
-        saveBtn.textContent = "Save to my account";
-        if (errEl) {
-          errEl.textContent = err.message || "Could not save that league.";
-          errEl.style.display = "block";
-        }
-      }
-    });
-
-    const anchor = document.getElementById("signedInHome");
-    if (anchor && anchor.parentNode) {
-      anchor.parentNode.insertBefore(card, anchor.nextSibling);
-    } else if (signedInLeagueList && signedInLeagueList.parentNode) {
-      signedInLeagueList.parentNode.insertBefore(card, signedInLeagueList.nextSibling);
-    }
-  }
-
   if (signedInHome && signedInLeagueList) {
     const loadSignedInLeagues = (options) => window.brGetMyLeagues(options).then((data) => {
       const leagues = data.leagues || [];
       if (!leagues.length) {
-        // Fresh sign-in with nothing saved yet: drop straight into the claim
-        // flow instead of parking behind a "connect another league" button.
         signedInLeagueList.textContent = "Connect your first fantasy league below.";
-        const addLeagueBtn = document.getElementById("signedInAddLeague");
-        if (addLeagueBtn) addLeagueBtn.textContent = "Connect your first league";
-        setHomeCardState("connect");
-        // If they were viewing a league as a guest, offer to save it.
-        maybeShowGuestClaimLeague();
         return;
       }
       const pageSize = 3;
@@ -12744,106 +11220,6 @@ if (!platformBtns.length) return;
       if (espnS2Input) espnS2Input.value = "";
     }
   }
-
-  // ── Paste-your-league-URL ─────────────────────────────────────────────
-  // Each platform flow has a "Fastest: paste your league link" input. Parse
-  // the league ID out of a pasted URL and feed it into the existing manual
-  // inputs, so pasting is exactly equivalent to typing the ID by hand.
-  function parseLeagueUrl(platform, rawUrl) {
-    const u = String(rawUrl || "").trim();
-    if (!u) return null;
-    let m;
-    switch (String(platform || "").toLowerCase()) {
-      case "sleeper":
-        m = u.match(/sleeper\.app\/leagues\/(\d+)/i);
-        return m ? { league_id: m[1] } : null;
-      case "espn":
-        m = u.match(/[?&]leagueId=(\d+)/i);
-        return m ? { league_id: m[1] } : null;
-      case "yahoo":
-        m = u.match(/football\.fantasysports\.yahoo\.com\/(?:f1|nfl)\/(\d+)/i);
-        return m ? { league_id: m[1] } : null;
-      case "mfl":
-        m = u.match(/myfantasyleague\.com\/(\d{4})\/home\/(\d+)/i);
-        return m ? { league_id: m[2], season: m[1] } : null;
-      case "fleaflicker":
-        m = u.match(/fleaflicker\.com\/nfl\/leagues\/(\d+)/i);
-        return m ? { league_id: m[1] } : null;
-      default:
-        return null;
-    }
-  }
-  // Exposed for tests.
-  window.brParseLeagueUrl = parseLeagueUrl;
-
-  const LEAGUE_URL_PLATFORM_LABELS = {
-    sleeper: "Sleeper", espn: "ESPN", yahoo: "Yahoo",
-    mfl: "MFL", fleaflicker: "Fleaflicker",
-  };
-
-  function bindLeagueUrlInput(platform, urlInputId, onParsed) {
-    const urlInput = document.getElementById(urlInputId);
-    if (!urlInput) return;
-    const errEl = document.getElementById(urlInputId.replace(/UrlInput$/, "UrlError"));
-    const showError = (msg) => {
-      if (errEl) { errEl.textContent = msg; errEl.style.display = "block"; }
-      urlInput.classList.add("url-paste-invalid");
-      urlInput.classList.remove("url-paste-valid");
-    };
-    const clearError = () => {
-      if (errEl) errEl.style.display = "none";
-      urlInput.classList.remove("url-paste-invalid");
-    };
-    urlInput.addEventListener("input", () => {
-      const raw = urlInput.value;
-      if (!raw.trim()) {
-        clearError();
-        urlInput.classList.remove("url-paste-valid");
-        return;
-      }
-      const parsed = parseLeagueUrl(platform, raw);
-      if (!parsed) {
-        urlInput.classList.remove("url-paste-valid");
-        showError(
-          "That doesn't look like a " +
-          (LEAGUE_URL_PLATFORM_LABELS[platform] || platform) +
-          " league URL. Check the link and try again."
-        );
-        return;
-      }
-      clearError();
-      urlInput.classList.add("url-paste-valid");
-      onParsed(parsed);
-    });
-  }
-
-  bindLeagueUrlInput("sleeper", "sleeperUrlInput", (parsed) => {
-    // Sleeper's flow is username-based; drop the pasted league straight into
-    // the league picker so the user can continue with or without an account.
-    if (!leagueSelect) return;
-    leagueSelect.innerHTML = "";
-    const option = document.createElement("option");
-    option.value = parsed.league_id;
-    option.textContent = "League " + parsed.league_id;
-    leagueSelect.appendChild(option);
-    if (leagueSelectWrap) leagueSelectWrap.style.display = "block";
-    if (generateWrap) generateWrap.style.display = "block";
-    if (errorBox) errorBox.style.display = "none";
-    syncHomeContinueState();
-  });
-  bindLeagueUrlInput("espn", "espnUrlInput", (parsed) => {
-    if (espnLeagueIdInput) espnLeagueIdInput.value = parsed.league_id;
-  });
-  bindLeagueUrlInput("yahoo", "yahooUrlInput", (parsed) => {
-    if (yahooLeagueIdInput) yahooLeagueIdInput.value = parsed.league_id;
-  });
-  bindLeagueUrlInput("mfl", "mflUrlInput", (parsed) => {
-    if (mflLeagueIdInput) mflLeagueIdInput.value = parsed.league_id;
-    if (parsed.season && mflSeasonInput) mflSeasonInput.value = parsed.season;
-  });
-  bindLeagueUrlInput("fleaflicker", "fleaUrlInput", (parsed) => {
-    if (fleaLeagueIdInput) fleaLeagueIdInput.value = parsed.league_id;
-  });
 
   function setHomeYahooChoice() {
     if (yahooAccountChoice) yahooAccountChoice.style.display = !window._hasAccount ? "flex" : "none";
@@ -13966,10 +12342,6 @@ function setChangelogDot(hasNew, showSettingsDot = false) {
     acctDot.hidden = !show;
     acctDot.setAttribute("aria-hidden", show ? "false" : "true");
   }
-
-  // Mobile top-bar bell dot.
-  const topNotifDot = document.getElementById("brTopNotifDot");
-  if (topNotifDot) topNotifDot.hidden = !hasNew;
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -14141,25 +12513,14 @@ document.addEventListener("DOMContentLoaded", () => {
     toggleDropdown();
   });
 
-  // Mobile top-bar bell: opens Recent Updates directly as a floating panel
-  // under the top bar (no More-sheet detour). Exposed as a global and wired
-  // via inline onclick, the same pattern as the working mobile search button,
-  // so the tap works regardless of bind timing. The document-level closer
-  // below already treats .br-top-notif taps as inside, so the panel stays open.
-  window.brToggleChangelog = function (e) {
-    if (e && e.stopPropagation) e.stopPropagation();
-    toggleDropdown();
-  };
-
   // Close on click outside. On mobile the dropdown is relocated out of
-  // .changelog-bell-wrapper into the top nav, so also treat the panel itself
-  // and the top-bar bell as inside.
+  // .changelog-bell-wrapper into #brSheetAccount, so also treat the panel itself
+  // and the Notifications row as inside.
   document.addEventListener("click", (e) => {
     if (!isDropdownOpen) return;
     if (dropdown.contains(e.target)) return;
     if (bellWrapper && bellWrapper.contains(e.target)) return;
     if (e.target.closest && e.target.closest("#settingsChangelogBtn")) return;
-    if (e.target.closest && e.target.closest(".br-top-notif")) return;
     closeDropdown();
   });
 
@@ -15348,7 +13709,7 @@ function pmSlugify(name) {
 // ── DEF / player image helpers ───────────────────────────────────────────────
 // NFL defenses are keyed by team abbr (no Sleeper headshot). Prefer the locally
 // cached crest under /static/images/team_logos/, then ESPN CDN (WAS → wsh).
-// Shared by ScoreZone, Draft Room, and any page that paints player avatars.
+// Shared by Redzone, Draft Room, and any page that paints player avatars.
 window.brCanonNflTeam = function (t) {
   t = String(t || '').trim().toUpperCase();
   if (t === 'WSH') return 'WAS';
@@ -15407,29 +13768,6 @@ window.brDefImgOnError = function (img, hideFn) {
   else if (img.parentNode) img.parentNode.classList.add('img-err');
   else img.style.visibility = 'hidden';
 };
-
-// Give a click-only trigger the semantics/affordances a keyboard and screen
-// reader need: focusable, announced as a button, and labeled. Idempotent.
-// Defined before the @public-js:core-end marker so the generated public.js
-// bundle picks it up too (initPageRoot and other public-bundle code call it).
-function _makeKeyboardActionable(el, label) {
-  if (!el || el.tagName === 'A' || el.tagName === 'BUTTON') return;
-  if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '0');
-  if (!el.hasAttribute('role')) el.setAttribute('role', 'button');
-  if (label && !el.hasAttribute('aria-label')) el.setAttribute('aria-label', label);
-}
-
-// Normalize every click-only modal trigger in a freshly rendered root so
-// soft-navigated pages (innerHTML swaps) stay keyboard-accessible. Cheap,
-// idempotent, and safe to re-run on each page swap.
-function normalizeClickableAccessibility(root = document) {
-  (root.querySelectorAll ? root : document).querySelectorAll(
-    '.player-clickable, .team-clickable'
-  ).forEach(function (el) {
-    const nm = el.dataset ? (el.dataset.playerName || el.dataset.teamName) : '';
-    _makeKeyboardActionable(el, nm ? ('Open ' + nm) : null);
-  });
-}
 
 // @public-js:core-end  (everything below is app/feature code; excluded from public.js)
 
@@ -15971,28 +14309,15 @@ async function initSinceLastVisit() {
   const rid = String((typeof window !== 'undefined' && window._viewerRid) || '');
 
   try {
-    // The league activity section now builds lazily (deferred out of the
-    // first league-context build). While it fills in the background the API
-    // answers activity_pending WITHOUT consuming the visit, so retry with
-    // the same baseline a few times; if it never lands, stay hidden rather
-    // than rendering a fake "nothing happened" digest.
-    let d = null;
-    for (let attempt = 0; attempt < 4; attempt++) {
-      if (attempt > 0) await new Promise(function (r) { setTimeout(r, 2000); });
-      const url = '/api/since-last-visit?platform=' + encodeURIComponent(ctx.platform) +
-        '&season=' + encodeURIComponent(ctx.season) +
-        '&league_id=' + encodeURIComponent(ctx.leagueId) +
-        '&since=' + encodeURIComponent(since) +
-        '&roster_id=' + encodeURIComponent(rid) +
-        '&' + _wlLeagueParams();
-      const res = await fetch(url, { cache: 'no-store' });
-      if (!res.ok) return;
-      const payload = await res.json();
-      if (payload && payload.activity_pending) continue;
-      d = payload;
-      break;
-    }
-    if (!d) return;
+    const url = '/api/since-last-visit?platform=' + encodeURIComponent(ctx.platform) +
+      '&season=' + encodeURIComponent(ctx.season) +
+      '&league_id=' + encodeURIComponent(ctx.leagueId) +
+      '&since=' + encodeURIComponent(since) +
+      '&roster_id=' + encodeURIComponent(rid) +
+      '&' + _wlLeagueParams();
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) return;
+    const d = await res.json();
 
     const items = (d && d.items) || [];
     const diff = _slvRosterDiff(
@@ -17726,25 +16051,28 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
       'completion_pct', 'yards_per_attempt', 'td_rate', 'int_rate', 'nfl_passer_rating',
       'epa_per_play', 'passing_epa', 'cpoe', 'success_rate', 'sack_rate', 'scramble_rate',
       'adjusted_completion_rate', 'snap_share',
-      'ngs_avg_time_to_throw', 'ngs_aggressiveness', 'qb_hit_rate',
-      'explosive_pass_rate', 'play_action_rate', 'epa_vs_blitz',
+      'ngs_avg_time_to_throw', 'ngs_aggressiveness', 'ngs_cpoe', 'qb_hit_rate',
+      'explosive_pass_rate', 'play_action_rate', 'epa_vs_blitz', 'pacr',
+      'total_pass_tds', 'total_rush_tds', 'total_tds',
     ];
     const rbMetrics = [
       'yards_per_carry', 'yards_per_touch', 'rush_td_rate', 'snap_share',
-      'opportunity_share', 'rz_opp_share',
+      'opportunity_share', 'red_zone_usage', 'explosive_runs_10_plus',
       'breakaway_percentage', 'catch_rate', 'yards_after_catch', 'yards_after_catch_per_reception',
       'rushing_epa', 'ngs_rush_yards_over_expected_per_att', 'receiving_epa', 'epa_per_play',
       'rushing_success_rate', 'rushing_epa_per_att',
-      'ngs_percent_attempts_gte_eight_defenders', 'epa_vs_stacked_box',
+      'ngs_avg_time_to_los', 'ngs_percent_attempts_gte_eight_defenders', 'epa_vs_stacked_box',
+      'total_carries', 'total_touches', 'total_targets', 'total_rush_tds', 'total_rec_tds', 'total_tds',
     ];
     const wrTeMetrics = [
       'yards_per_target', 'catch_rate', 'yards_per_reception', 'target_quality_score',
-      'snap_share', 'opportunity_share', 'rz_target_share',
+      'snap_share', 'opportunity_share', 'red_zone_usage',
       'yards_after_catch', 'yards_after_catch_per_reception', 'avg_depth_of_target',
-      'contested_catch_rate', 'drop_rate', 'uncatchable_tgt_rate',
+      'contested_catch_rate', 'drop_rate',
       'ngs_avg_separation', 'ngs_avg_cushion', 'ngs_avg_yac_above_expectation',
       'ngs_created_separation', 'receiving_epa',
-      'receiving_success_rate', 'receiving_epa_per_target',
+      'receiving_success_rate', 'receiving_epa_per_target', 'racr',
+      'total_targets', 'total_receptions', 'total_rec_tds', 'total_tds',
     ];
     let rel = [];
     if (pos1 === 'QB' || pos2 === 'QB') rel.push(...qbMetrics);
@@ -17764,42 +16092,40 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
     yards_per_reception:'Yards/Rec', target_quality_score:'Target Quality',
     yards_after_catch:'YAC', yards_after_catch_per_reception:'YAC/Rec',
     avg_depth_of_target:'aDOT', contested_catch_rate:'Contested Catch %',
-    drop_rate:'Drop Rate', uncatchable_tgt_rate:'Uncatchable Tgt %', slot_rate:'Slot Rate', wide_rate:'Wide Rate',
+    drop_rate:'Drop Rate', slot_rate:'Slot Rate', wide_rate:'Wide Rate',
     inline_rate:'Inline Rate',     ngs_avg_separation:'Separation',
     ngs_avg_cushion:'Cushion', ngs_avg_yac_above_expectation:'YAC Over Exp',
     ngs_created_separation:'Created Sep',
     ngs_avg_time_to_throw:'Time to Throw', ngs_aggressiveness:'Aggressiveness',
-    ngs_avg_completed_air_yards:'Completed Air Yds',
+    ngs_cpoe:'NGS CPOE', ngs_avg_completed_air_yards:'Completed Air Yds',
+    ngs_avg_air_yards_differential:'AY Differential',
     ngs_avg_air_yards_to_sticks:'Air Yds to Sticks',
+    ngs_max_completed_air_distance:'Max Air Distance',
+    ngs_avg_time_to_los:'Time to LOS',
     ngs_percent_attempts_gte_eight_defenders:'8+ Box Rate',
     qb_hit_rate:'QB Hit Rate', explosive_pass_rate:'Explosive Pass %',
     play_action_rate:'Play-Action %', play_action_epa:'PA EPA / Play',
-    blitz_rate_faced:'Blitz Rate Faced',
+    out_of_pocket_rate:'Out of Pocket %', blitz_rate_faced:'Blitz Rate Faced',
     epa_vs_blitz:'EPA vs Blitz', epa_vs_stacked_box:'EPA vs 8+ Box',
     rushing_success_rate:'Rush Success %', receiving_success_rate:'Rec Success %',
     rushing_epa_per_att:'Rush EPA / Att', receiving_epa_per_target:'Rec EPA / Tgt',
+    pacr:'PACR', racr:'RACR',
     epa_per_play:'EPA/Play', passing_epa:'Passing EPA', rushing_epa:'Rushing EPA',
     receiving_epa:'Receiving EPA', ngs_rush_yards_over_expected_per_att:'RYOE/Att',
     cpoe:'CPOE', sack_rate:'Sack Rate', scramble_rate:'Scramble Rate',
     success_rate:'Success Rate', yards_per_carry:'Yards/Carry',
     yards_per_touch:'Yards/Touch', rush_td_rate:'Rush TD Rate',
-    breakaway_percentage:'Breakaway %',
+    explosive_runs_10_plus:'10+ Yd Runs', breakaway_percentage:'Breakaway %',
     elusive_rating:'Elusive Rating', completion_pct:'Completion %',
     yards_per_attempt:'Yards/Attempt', td_rate:'TD Rate', int_rate:'INT Rate',
     nfl_passer_rating:'Passer Rating', adjusted_completion_rate:'Adj Comp %',
     snap_share:'Snap Share', opportunity_share:'Opportunity Share',
-    role_score:'Role Score',
-    expected_tds:'Expected TDs', xtd_per_game:'xTD/G', td_over_expected:'TD vs xTD',
-    rec_first_down_rate:'Rec 1st Down %', rush_first_down_rate:'Rush 1st Down %',
-    first_downs_per_game:'First Downs/G',
-    qb_rating_when_targeted:'QB Rating vs Tgt', pressure_rate_faced:'Pressure Rate Faced',
-    goal_line_opp_share:'Goal-Line Opp Share', end_zone_target_rate:'End Zone Tgt %',
-    deep_target_rate:'Deep Tgt %', stuffed_rate:'Stuffed %',
-    third_down_conv_rate:'3rd Down Conv %',
-    turnover_worthy_rate:'Turnover-Worthy %', contested_target_rate:'Contested Tgt %',
-    screen_target_rate:'Screen Tgt %', rec_broken_tackles_per_reception:'Brk Tackles/Catch',
+    red_zone_usage:'Red Zone Usage', role_score:'Role Score',
     grades_offense:'PFF Off Grade', grades_pass_block:'PFF Block Grade',
-    pass_block_rate:'Block Rate',
+    avoided_tackles:'Avoided Tackles', pass_block_rate:'Block Rate',
+    total_carries:'Carries', total_targets:'Targets', total_receptions:'Receptions',
+    total_touches:'Touches', total_rush_tds:'Rush TDs', total_rec_tds:'Rec TDs',
+    total_pass_tds:'Pass TDs', total_tds:'Total TDs',
     vorp:'VORP', war:'WAR',
   };
 
@@ -17823,22 +16149,16 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
 
       // Percentage-stored rates (0-100)
       'completion_pct': 85, 'adjusted_completion_rate': 90,
-      'contested_catch_rate': 65, 'drop_rate': 20, 'uncatchable_tgt_rate': 50,
+      'contested_catch_rate': 65, 'drop_rate': 20,
       'slot_rate': 100, 'wide_rate': 100, 'inline_rate': 100,
       'pass_block_rate': 100, 'breakaway_percentage': 40,
-      'opportunity_share': 25,
+      'opportunity_share': 25, 'red_zone_usage': 3,
 
       // Raw rate metrics
       'td_rate': 0.06, 'int_rate': 0.04,
 
       // Counting / volume
-      'expected_tds': 15, 'xtd_per_game': 1.2, 'td_over_expected': 8,
-      'rec_first_down_rate': 60, 'rush_first_down_rate': 40, 'first_downs_per_game': 12,
-      'qb_rating_when_targeted': 158.3, 'pressure_rate_faced': 50,
-      'goal_line_opp_share': 60, 'end_zone_target_rate': 30, 'deep_target_rate': 40,
-      'stuffed_rate': 30, 'third_down_conv_rate': 60,
-      'turnover_worthy_rate': 6, 'contested_target_rate': 40, 'screen_target_rate': 30,
-      'rec_broken_tackles_per_reception': 0.6,
+      'avoided_tackles': 30, 'explosive_runs_10_plus': 25,
 
       // Yardage metrics
       'yards_per_target': 12, 'yards_per_reception': 16, 'yards_per_carry': 7,
@@ -17851,15 +16171,17 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
       'ngs_avg_separation': 5, 'ngs_avg_cushion': 9, 'ngs_avg_yac_above_expectation': 4,
       'ngs_created_separation': 3,
       'ngs_avg_time_to_throw': 3.5, 'ngs_aggressiveness': 25,
-      'ngs_avg_completed_air_yards': 12,
-      'ngs_avg_air_yards_to_sticks': 4,
+      'ngs_avg_completed_air_yards': 12, 'ngs_avg_air_yards_differential': 4,
+      'ngs_avg_air_yards_to_sticks': 4, 'ngs_cpoe': 10,
+      'ngs_max_completed_air_distance': 60, 'ngs_avg_time_to_los': 3,
       'ngs_percent_attempts_gte_eight_defenders': 50,
       'qb_hit_rate': 25, 'explosive_pass_rate': 20,
       'play_action_rate': 40, 'play_action_epa': 0.4,
-      'blitz_rate_faced': 40,
+      'out_of_pocket_rate': 25, 'blitz_rate_faced': 40,
       'epa_vs_blitz': 0.4, 'epa_vs_stacked_box': 0.3,
       'rushing_success_rate': 55, 'receiving_success_rate': 55,
       'rushing_epa_per_att': 0.3, 'receiving_epa_per_target': 0.6,
+      'pacr': 1.2, 'racr': 1.2,
 
       // EPA family (pbp-derived)
       'epa_per_play': 0.3, 'passing_epa': 150, 'rushing_epa': 40, 'receiving_epa': 60,
@@ -17881,6 +16203,9 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
       'elusive_rating': 200, 'role_score': 100,
 
       // Volume counts
+      'total_carries': 300, 'total_targets': 180, 'total_receptions': 130,
+      'total_touches': 350, 'total_rush_tds': 18, 'total_rec_tds': 14,
+      'total_pass_tds': 40, 'total_tds': 45,
 
       // Opportunity / per-game rates -- these previously fell through to the
       // default range of 100, rendering near-empty bars. (Rank-percentile is
@@ -17888,14 +16213,15 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
       'wopr': 0.65, 'air_yards_share': 38, 'air_yards_per_game': 110,
       'targets_per_game': 11, 'receptions_per_game': 8,
       'carries_per_game': 18, 'touches_per_game': 20,
-      'rz_target_share': 0.4, 'rz_opp_share': 0.4,
+      'rz_carries_pg': 3, 'rz_targets_pg': 2.5,
       'rec_yards_per_game': 100, 'rush_yards_per_game': 110,
+      'total_rec_yards': 1500, 'total_rush_yards': 1600,
       'ppr_pts': 350, 'ppr_pts_per_game': 24,
       'yprr': 3, 'route_participation': 100, 'total_routes': 650, 'routes_per_game': 40,
       'pass_tds_per_game': 2.5, 'rush_tds_per_game': 1, 'rec_tds_per_game': 1,
       'total_tds_per_game': 1.5,
       'fpts_per_carry': 1.5, 'fpts_per_target': 3,
-      'explosive_run_rate': 0.25, 'avoided_tackles_pg': 2.5,
+      'explosive_runs_pg': 2, 'avoided_tackles_pg': 2.5,
     };
     
     const range = metricRanges[key] || 100; // Default to 100 if not specified
@@ -17907,7 +16233,7 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
     const _SCORE_CEIL = { role_score: 100, grades_offense: 100, pff_passing_grade: 100,
       pff_rushing_grade: 100, nfl_passer_rating: 158.3, vorp: 150, war: 6 };
     const _MINMAX = new Set(['passing_epa', 'rushing_epa', 'receiving_epa']);
-    const _RATE = new Set(['avoided_tackles_pg', 'explosive_run_rate']);
+    const _RATE = new Set(['avoided_tackles_pg', 'explosive_runs_pg']);
     const _rankPct = (r, n) => {
       if (!r || !n || n < 2) return null;
       return 8 + Math.max(0, Math.min(1, (n - r) / (n - 1))) * 92;
@@ -17930,7 +16256,7 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
     const pct2 = fill2 != null ? Math.round(fill2)
       : (v2 != null ? Math.min(100, Math.round((v2 / range) * 100)) : 0);
 
-    const isInverse = spec ? spec.lower_better : ['int_rate', 'drop_rate', 'uncatchable_tgt_rate', 'fumble_rate', 'pressure_to_sack_rate', 'sack_rate', 'pressure_rate_faced', 'stuffed_rate', 'turnover_worthy_rate'].includes(key);
+    const isInverse = spec ? spec.lower_better : ['int_rate', 'drop_rate', 'fumble_rate', 'pressure_to_sack_rate', 'sack_rate'].includes(key);
 
     // barColor: when the bar is bounds-driven (isRankFill), the fill already
     // encodes "good = high" regardless of lower_better, so use the normal
@@ -17961,11 +16287,13 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
       const decimalPctMetrics = ['catch_rate', 'snap_share', 'rush_td_rate', 'td_rate', 'int_rate'];
       const rawPctMetrics = [
         'completion_pct', 'adjusted_completion_rate', 'big_time_throw_rate',
-        'pressure_to_sack_rate', 'drop_rate', 'uncatchable_tgt_rate', 'contested_catch_rate',
+        'pressure_to_sack_rate', 'drop_rate', 'contested_catch_rate',
         'slot_rate', 'wide_rate', 'inline_rate', 'pass_block_rate',
         'breakaway_percentage', 'opportunity_share',
       ];
-      const intMetrics = ['yards_after_catch'];
+      const intMetrics = ['yards_after_catch', 'explosive_runs_10_plus', 'avoided_tackles',
+        'total_carries', 'total_targets', 'total_receptions', 'total_touches',
+        'total_rush_tds', 'total_rec_tds', 'total_pass_tds', 'total_tds'];
       if (decimalPctMetrics.includes(key)) return (v * 100).toFixed(1) + '%';
       if (rawPctMetrics.includes(key))     return v.toFixed(1) + '%';
       if (intMetrics.includes(key))        return Math.round(v).toString();
@@ -18139,42 +16467,40 @@ function _cmpAggregateWeeks(weeks, wkStart, wkEnd) {
     catch_rate: div(rec, tgt),
     yards_per_carry: div(rushYds, car),
     yards_per_touch: div(recYds + rushYds, tch),
+    total_targets: tgt, total_receptions: rec, total_carries: car, total_touches: tch,
   };
 
   // New NGS/FTN/EPA metrics: totals summed, rates volume-weighted -- parity with
   // the server-side weekly aggregation in advanced_metrics.py so a week range
   // matches the leaderboard's range numbers.
   const ADV_TOTALS = ['passing_epa', 'rushing_epa', 'receiving_epa',
-    'yards_after_catch', 'ngs_rush_yards_over_expected',
-    'expected_tds', 'td_over_expected', 'first_downs'];
+    'yards_after_catch', 'explosive_runs_10_plus', 'ngs_rush_yards_over_expected'];
   const ADV_WEIGHTED = {
     epa_per_play: 'w_dropbacks', cpoe: 'w_dropbacks', success_rate: 'w_dropbacks',
     sack_rate: 'w_dropbacks', scramble_rate: 'w_dropbacks', nfl_passer_rating: 'w_dropbacks',
     adjusted_completion_rate: 'w_pass_att',
     qb_hit_rate: 'w_dropbacks', explosive_pass_rate: 'w_pass_att',
     play_action_rate: 'w_dropbacks', play_action_epa: 'w_dropbacks',
-    blitz_rate_faced: 'w_dropbacks',
+    out_of_pocket_rate: 'w_dropbacks', blitz_rate_faced: 'w_dropbacks',
     epa_vs_blitz: 'w_dropbacks',
     ngs_avg_time_to_throw: 'w_pass_att', ngs_aggressiveness: 'w_pass_att',
     ngs_avg_completed_air_yards: 'w_pass_att',
-    ngs_avg_air_yards_to_sticks: 'w_pass_att',
+    ngs_avg_air_yards_differential: 'w_pass_att',
+    ngs_avg_air_yards_to_sticks: 'w_pass_att', ngs_cpoe: 'w_pass_att',
+    ngs_max_completed_air_distance: 'w_pass_att',
+    pacr: 'w_pass_air_yards',
     ngs_rush_yards_over_expected_per_att: 'w_carries', ngs_rush_efficiency: 'w_carries',
     breakaway_percentage: 'w_carries',
     rushing_success_rate: 'w_carries', rushing_epa_per_att: 'w_carries',
+    ngs_avg_time_to_los: 'w_carries',
     ngs_percent_attempts_gte_eight_defenders: 'w_carries',
     epa_vs_stacked_box: 'w_carries',
     ngs_avg_separation: 'w_targets', ngs_avg_cushion: 'w_targets',
     ngs_avg_intended_air_yards: 'w_targets', avg_depth_of_target: 'w_targets',
-    ngs_catch_pct: 'w_targets', drop_rate: 'w_targets', uncatchable_tgt_rate: 'w_targets', contested_catch_rate: 'w_targets',
-    qb_rating_when_targeted: 'w_targets', pressure_rate_faced: 'w_pressure_opps',
-    end_zone_target_rate: 'w_targets', deep_target_rate: 'w_targets',
-    goal_line_opp_share: 'w_team_gl_opps', third_down_conv_rate: 'w_third_down_dropbacks',
-    stuffed_rate: 'w_carries', turnover_worthy_rate: 'w_dropbacks',
-    contested_target_rate: 'w_targets', screen_target_rate: 'w_targets',
-    rec_broken_tackles_per_reception: 'w_receptions',
-    rec_first_down_rate: 'w_targets', rush_first_down_rate: 'w_carries',
+    ngs_catch_pct: 'w_targets', drop_rate: 'w_targets', contested_catch_rate: 'w_targets',
     ngs_created_separation: 'w_targets',
     receiving_success_rate: 'w_targets', receiving_epa_per_target: 'w_targets',
+    racr: 'w_rec_air_yards',
     yards_after_catch_per_reception: 'w_receptions', ngs_avg_yac: 'w_receptions',
     ngs_avg_expected_yac: 'w_receptions', ngs_avg_yac_above_expectation: 'w_receptions',
   };
@@ -18542,7 +16868,7 @@ function _cmpLoadGameLogs(pid, position, containerId) {
         window.brEmptyState(el, { icon: 'search', title: 'No game logs', message: 'No game-by-game data is available for this player yet.', compact: true });
         return;
       }
-      el.innerHTML = _buildStatsHTML(logsByYear, true, position || '', data.season_teams || {});
+      el.innerHTML = _buildStatsHTML(logsByYear, true, position || '');
     })
     .catch(() => {
       if (el.isConnected) window.brErrorState(el, 'Could not load game logs.', null, { compact: true });
@@ -18650,52 +16976,6 @@ function _ssTableRow(label, cells, dir) {
   return '<tr><th class="ss-rowlbl">' + label + '</th>' + tds + '</tr>';
 }
 
-// Demotion chip labels, mirroring WV_DEMOTION_LABELS on the waivers page.
-// 'out' and 'questionable' are covered by the injury badge, so they render no
-// chip here. A weather demotion names the specific condition ("22 mph wind")
-// when the row carries a weather label.
-var _SS_DEMOTION_LABELS = {
-  low_total: 'Low team total',
-  weather: 'Bad weather',
-  oline: 'Weak O-line',
-  low_play_volume: 'Slow pace',
-  volatile_role: 'Volatile role'
-};
-function _ssDemoteChip(p) {
-  const st = (p && p.stats) || {};
-  const dem = st.start_score_demotion;
-  if (!dem || !_SS_DEMOTION_LABELS[dem]) return '';
-  const ssx = st.start_sit || {};
-  const lbl = (dem === 'weather' && ssx.weather && ssx.weather.label)
-    ? ssx.weather.label : _SS_DEMOTION_LABELS[dem];
-  return '<div class="ss-th-demote"><span class="ss-demote">' + _ssEsc(lbl) + '</span></div>';
-}
-// Compact per-player WHY line: the score factors that moved this player most,
-// as +/- percentages. Mirrors wvSsWhyLine on the waivers page; 'proj' is the
-// raw projection, not a multiplier, so it is excluded like there.
-function _ssWhyLine(p) {
-  const f = (p && p.stats && p.stats.start_score_factors) || {};
-  const labels = {floor: 'Floor', form: 'Form', usage: 'Usage', vegas: 'Vegas', weather: 'Weather', avail: 'Availability', oline: 'O-line', expected_plays: 'Pace', role: 'Role'};
-  const rows = [];
-  for (const key of Object.keys(labels)) {
-    const m = Number(f[key]);
-    if (!isFinite(m)) continue;
-    const pct = (m - 1) * 100;
-    if (Math.abs(m - 1) < 0.01) continue;
-    rows.push({imp: Math.abs(m - 1), txt: labels[key] + ' ' + (pct >= 0 ? '+' : '-') + Math.abs(pct).toFixed(0) + '%'});
-  }
-  rows.sort((a, b) => b.imp - a.imp);
-  return rows.slice(0, 4).map(r => r.txt).join(' · ');
-}
-// HTML for one absence list ('teammates' | 'opponents'): each entry escaped
-// individually and stacked on its own line via <br>, not one '; ' wall.
-function _ssAbsText(p, key) {
-  const x = (p && p.stats && p.stats.start_sit) || {};
-  const a = ((x.absences || {})[key]) || [];
-  const t = a.map(e => e && e.text).filter(Boolean).map(txt => _ssEsc(txt));
-  return t.length ? t.join('<br>') : null;
-}
-
 // Full Start/Sit tab body for N players (2 for compare/modal, 3 for the page).
 function _buildStartSitTabHTML(players) {
   players = (players || []).filter(Boolean);
@@ -18722,8 +17002,7 @@ function _buildStartSitTabHTML(players) {
 
   // Column header per player: name, then the start/sit score at the top of the
   // column (the 0-100 position-relative index, or the raw score when the index
-  // could not be built), replacing the separate hero cards. Demotion chips
-  // (e.g. the specific weather condition) sit under the score.
+  // could not be built), replacing the separate hero cards.
   const heads = players.map(function (p) {
     const st = s(p);
     const nm = _ssEsc(p.name || p.full_name || 'Player');
@@ -18737,7 +17016,7 @@ function _buildStartSitTabHTML(players) {
       const cap = hasPct ? 'index (0 to 100)' : 'score';
       scoreHtml = '<div class="ss-th-score">' + big + '</div><div class="ss-th-cap">' + cap + '</div>';
     }
-    return '<th class="ss-th"><div class="ss-th-name">' + nm + '</div>' + scoreHtml + _ssDemoteChip(p) + '</th>';
+    return '<th class="ss-th"><div class="ss-th-name">' + nm + '</div>' + scoreHtml + '</th>';
   }).join('');
 
   // Rows split into two groups: signals that actually feed the start/sit score,
@@ -18748,9 +17027,6 @@ function _buildStartSitTabHTML(players) {
   const section = (label) => '<tr class="ss-section"><td class="ss-section-cell" colspan="' + nCols + '">' + label + '</td></tr>';
 
   const rProj = _ssTableRow('Proj PPG', players.map(p => { const n = _ssNum(ss(p).proj_pts); return { num: n, html: n != null ? n : dash }; }), 'max');
-  // Compact WHY: the factors that moved each player's score most. Display
-  // only, drawn from the same score_factors the verdict uses.
-  const rWhy = _ssTableRow('WHY', players.map(p => { const w = _ssWhyLine(p); return { num: null, html: w ? '<span class="ss-why">' + _ssEsc(w) + '</span>' : dash }; }), null);
   const rL4 = _ssTableRow('L4 PPG', players.map(p => { const n = _ssNum(ss(p).recent_ppg) != null ? _ssNum(ss(p).recent_ppg) : _ssNum(s(p).ppg); return { num: n, html: n != null ? n : dash }; }), 'max');
   const rFloor = _ssTableRow('Floor&ndash;Ceil', players.map(p => { const c = cons(p); return { num: c ? _ssNum(c.floor) : null, html: c ? (c.floor + '&ndash;' + c.ceiling) : dash }; }), 'max');
   const rProfile = _ssTableRow('Profile', players.map(p => { const c = cons(p); return { num: null, html: _ssProfileChip(c) || dash }; }), null);
@@ -18762,31 +17038,16 @@ function _buildStartSitTabHTML(players) {
     return { num: _ssNum(ol.primary_value), html: Math.round(ol.primary_value) + ' ' + lbl + rk };
   }), 'max');
   const rVegas = _ssTableRow('Vegas total', players.map(p => { const n = _ssNum(ss(p).implied_total); return { num: n, html: n != null ? (n + ' implied') : dash }; }), 'max');
-  // Venue: home/away plus the specific weather (or the static dome/cold tag
-  // when there is no live weather signal). Display only.
-  const rVenue = _ssTableRow('Venue', players.map(p => {
-    const x = ss(p);
-    if (x.on_bye) return { num: null, html: 'BYE' };
-    const ha = x.is_home === true ? 'Home' : (x.is_home === false ? 'Away' : '');
-    const chip = _ssVenueChip(x);
-    const bits = [];
-    if (ha) bits.push(_ssEsc(ha));
-    if (chip) bits.push(chip);
-    return { num: null, html: bits.length ? bits.join(' · ') : dash };
-  }), null);
+  const rVenue = _ssTableRow('Venue', players.map(p => { const c = _ssVenueChip(ss(p)); return { num: null, html: c || dash }; }), null);
   const rValue = _ssTableRow('Value', players.map(p => { const n = _ssNum(isSf ? s(p).sf_value : s(p).value); return { num: n, html: n != null ? Math.round(n) : dash }; }), 'max');
-  const rOpp = _ssTableRow('Opponent', players.map(p => { const o = ss(p).opponent_label || ss(p).opponent; return { num: null, html: o ? _ssEsc(o) : (ss(p).on_bye ? 'BYE' : dash) }; }), null);
+  const rOpp = _ssTableRow('Opponent', players.map(p => { const o = ss(p).opponent; return { num: null, html: o ? _ssEsc(o) : (ss(p).on_bye ? 'BYE' : dash) }; }), null);
   const rDef = _ssTableRow('Def vs pos', players.map(p => { const f = _ssNum(ss(p).fpts_against); return { num: null, cls: _ssMuClass(ss(p).def_rank, ss(p).def_total), html: f != null ? (f + ' pts') : (ss(p).on_bye ? 'BYE' : dash) }; }), null);
   const rMatchup = _ssTableRow('Matchup', players.map(p => { const c = _ssMuChip(ss(p).def_rank, ss(p).def_total); return { num: null, html: c || dash }; }), null);
-  // Notable absences around each player's game. Display only; rows drop out
-  // entirely when neither player has anything notable.
-  const rTmAbs = _ssTableRow('Teammates out', players.map(p => { const t = _ssAbsText(p, 'teammates'); return { num: null, html: t || dash }; }), null);
-  const rOppAbs = _ssTableRow('Opp defense out', players.map(p => { const t = _ssAbsText(p, 'opponents'); return { num: null, html: t || dash }; }), null);
 
   // Empty rows return '' from _ssTableRow; drop them and skip a section header
   // whose whole group hid out, so a missing signal leaves no trace.
-  const scoreRows = [rWhy, rProj, rL4, rFloor, rProfile, rBoom, rOline, rVegas, rVenue].filter(Boolean);
-  const ctxRows = [rValue, rOpp, rDef, rMatchup, rTmAbs, rOppAbs].filter(Boolean);
+  const scoreRows = [rProj, rL4, rFloor, rProfile, rBoom, rOline, rVegas, rVenue].filter(Boolean);
+  const ctxRows = [rValue, rOpp, rDef, rMatchup].filter(Boolean);
   const rows = [
     scoreRows.length ? section('What drives the score') : '',
     scoreRows.join(''),
@@ -18826,15 +17087,12 @@ const _SS_TAB_CSS =
   + '.ss-th-cap{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700;margin-top:3px;}'
   + '.ss-section-cell{text-align:left;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:16px 10px 3px;border-top:none;}'
   + '.ss-rowlbl{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700;padding:9px 10px;white-space:nowrap;}'
-  + '.ss-tbl th.ss-rowlbl{position:sticky;left:0;z-index:2;background:var(--card);border-right:1px solid var(--border);}'
-  + '.ss-tbl thead th.ss-rowlbl{z-index:3;}'
   + '.ss-cell{text-align:center;padding:9px 8px;font-weight:700;font-size:14px;font-variant-numeric:tabular-nums;border-top:1px solid var(--border);color:var(--text);}'
   + '.ss-best{color:var(--win,#16a34a);background:color-mix(in srgb,var(--win,#16a34a) 12%,transparent);}'
   + '.ss-worst{color:var(--loss,#dc2626);}'
   + '.ss-mu,.ss-env,.ss-cons{font-size:11px;font-weight:700;padding:2px 7px;border-radius:6px;display:inline-block;}'
   + '.ss-mu-easy{background:color-mix(in srgb,var(--win,#16a34a) 16%,transparent);color:var(--win,#16a34a);}'
-  + '.ss-mu-ok{background:color-mix(in srgb,#84cc16 13%,transparent);color:#4a770e;}'
-  + ':root[data-theme="dark"] .ss-mu-ok{color:#84cc16;}'
+  + '.ss-mu-ok{background:color-mix(in srgb,#84cc16 13%,transparent);color:#65a30d;}'
   + '.ss-mu-avg{background:color-mix(in srgb,var(--warning,#f59e0b) 16%,transparent);color:var(--warning,#b45309);}'
   + '.ss-mu-hard{background:color-mix(in srgb,var(--loss,#dc2626) 15%,transparent);color:var(--loss,#dc2626);}'
   + '.ss-cons-steady{background:color-mix(in srgb,var(--win,#16a34a) 16%,transparent);color:var(--win,#16a34a);}'
@@ -18845,9 +17103,6 @@ const _SS_TAB_CSS =
   + '.ss-env-cold{background:rgba(56,189,248,.16);color:#0369a1;}'
   + '.ss-env-wind{background:rgba(148,163,184,.20);color:#475569;}'
   + '.ss-env-precip,.ss-env-weather{background:rgba(59,130,246,.14);color:#1d4ed8;}'
-  + '.ss-th-demote{margin-top:6px;}'
-  + '.ss-demote{font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px;display:inline-block;background:rgba(220,38,38,.12);color:var(--loss,#dc2626);}'
-  + '.ss-why{font-size:11px;font-weight:600;color:var(--muted);}'
   + '</style>';
 
 // Comparison body markup, shared by the player-modal compare view and the
@@ -18926,18 +17181,13 @@ function _compareBodyHTML(p1, p2, opts) {
 // Switch compare tabs (shared by the modal and the standalone page). Resizes the
 // value-history chart when Overview becomes visible so Plotly picks up its width.
 function cmpSwitchTab(tab) {
-  const cmpBtns = Array.from(document.querySelectorAll('.compare-tab-bar [data-cmptab]'));
-  const oldIdx = cmpBtns.findIndex(b => b.classList.contains('active'));
-  const newIdx = cmpBtns.findIndex(b => b.dataset.cmptab === tab);
   document.querySelectorAll('.compare-tab-bar [data-cmptab]').forEach(function (b) {
     const on = b.dataset.cmptab === tab;
     b.classList.toggle('active', on);
     b.setAttribute('aria-selected', on ? 'true' : 'false');
   });
   document.querySelectorAll('.compare-tab-panel').forEach(function (p) {
-    const on = p.dataset.cmppanel === tab;
-    p.hidden = !on;
-    if (on && window.brAnimateTabPanel) window.brAnimateTabPanel(p, newIdx - oldIdx);
+    p.hidden = (p.dataset.cmppanel !== tab);
   });
   if (window._cmpSlideTabs) window._cmpSlideTabs.sync(true);
   // Lazy-load each tab's data on first open (see _compareWireView). Stats =
@@ -19197,12 +17447,10 @@ function renderCompareTriple(d1, d2, d3, hostEl) {
     + '.cmp3-hs{width:52px;height:52px;border-radius:50%;object-fit:cover;background:var(--surface2,rgba(127,127,127,.12));}'
     + '.cmp3-hs-blank{display:inline-block;}'
     + '.cmp3-name{font-weight:800;font-size:14px;color:var(--text);line-height:1.15;text-align:center;}'
-    + '.cmp3-head:hover .cmp3-name{opacity:.72;}'
+    + '.cmp3-head:hover .cmp3-name{text-decoration:underline;}'
     + '.cmp3-accent{width:26px;height:3px;border-radius:2px;}'
     + '.cmp3-meta{font-size:11px;color:var(--muted);text-align:center;}'
     + '.cmp3-rowlbl{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700;padding:10px;white-space:nowrap;}'
-    + '.cmp3-table th.cmp3-rowlbl{position:sticky;left:0;z-index:2;background:var(--card);border-right:1px solid var(--border);}'
-    + '.cmp3-table thead th.cmp3-rowlbl{z-index:3;}'
     + '.cmp3-cell{text-align:center;padding:10px 8px;font-weight:700;font-size:15px;font-variant-numeric:tabular-nums;border-top:1px solid var(--border);color:var(--text);}'
     + '.cmp3-best{color:var(--win);background:color-mix(in srgb,var(--win) 12%,transparent);}'
     + '.cmp3-colhead{display:flex;flex-direction:column;align-items:center;gap:5px;}'
@@ -19243,18 +17491,13 @@ function renderCompareTriple(d1, d2, d3, hostEl) {
 // Tab switching for the 3-way compare. Lazy-loads each tab's per-player content
 // on first open (mirrors the two-player cmpSwitchTab).
 function cmp3SwitchTab(tab) {
-  const cmp3Btns = Array.from(document.querySelectorAll('.cmp3-tabs [data-cmp3tab]'));
-  const oldIdx = cmp3Btns.findIndex(b => b.classList.contains('active'));
-  const newIdx = cmp3Btns.findIndex(b => b.getAttribute('data-cmp3tab') === tab);
   document.querySelectorAll('.cmp3-tabs [data-cmp3tab]').forEach(function (b) {
     const on = b.getAttribute('data-cmp3tab') === tab;
     b.classList.toggle('active', on);
     b.setAttribute('aria-selected', on ? 'true' : 'false');
   });
   document.querySelectorAll('[data-cmp3panel]').forEach(function (p) {
-    const on = p.getAttribute('data-cmp3panel') === tab;
-    p.hidden = !on;
-    if (on && window.brAnimateTabPanel) window.brAnimateTabPanel(p, newIdx - oldIdx);
+    p.hidden = (p.getAttribute('data-cmp3panel') !== tab);
   });
   if (tab === 'logs') cmp3EnsureStats();
   else if (tab === 'metrics') cmp3EnsureMetrics();
@@ -19325,8 +17568,10 @@ function _cmp3MetricTable(players, datas, cfg) {
   const positions = players.map(function (p) { return String(p.position || '').toUpperCase(); }).filter(Boolean);
   const _FALLBACK = {
     vorp: 'VORP', war: 'WAR', role_score: 'Role Score', snap_share: 'Snap Share',
-    opportunity_share: 'Opportunity Share',
-    catch_rate: 'Catch Rate', yards_per_carry: 'Yards/Carry',
+    opportunity_share: 'Opportunity Share', red_zone_usage: 'Red Zone Usage',
+    total_tds: 'Total TDs', total_rush_tds: 'Rush TDs', total_rec_tds: 'Rec TDs',
+    total_carries: 'Carries', total_targets: 'Targets', total_receptions: 'Receptions',
+    total_touches: 'Touches', catch_rate: 'Catch Rate', yards_per_carry: 'Yards/Carry',
     yards_per_touch: 'Yards/Touch', yards_per_target: 'Yards/Target',
   };
   const cfgLabel = {};
@@ -19686,6 +17931,27 @@ function initGlobalPlayerModals() {
   });
 }
 
+// Give a click-only trigger the semantics/affordances a keyboard and screen
+// reader need: focusable, announced as a button, and labeled. Idempotent.
+function _makeKeyboardActionable(el, label) {
+  if (!el || el.tagName === 'A' || el.tagName === 'BUTTON') return;
+  if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '0');
+  if (!el.hasAttribute('role')) el.setAttribute('role', 'button');
+  if (label && !el.hasAttribute('aria-label')) el.setAttribute('aria-label', label);
+}
+
+// Normalize every click-only modal trigger in a freshly rendered root so
+// soft-navigated pages (innerHTML swaps) stay keyboard-accessible. Cheap,
+// idempotent, and safe to re-run on each page swap.
+function normalizeClickableAccessibility(root = document) {
+  (root.querySelectorAll ? root : document).querySelectorAll(
+    '.player-clickable, .team-clickable'
+  ).forEach(function (el) {
+    const nm = el.dataset ? (el.dataset.playerName || el.dataset.teamName) : '';
+    _makeKeyboardActionable(el, nm ? ('Open ' + nm) : null);
+  });
+}
+
 // Helper function to make any element open player modal
 function makePlayerClickable(element, playerId, playerName) {
   element.dataset.playerId = playerId;
@@ -19909,11 +18175,7 @@ function _tmBuildEffChart(weeks) {
     `<div class="tm-eff-legend"><span><i class="tm-eff-dot tm-eff-actual"></i>Actual</span>` +
     `<span><i class="tm-eff-dot tm-eff-optimal"></i>Optimal</span>` +
     `<span class="tm-eff-season">Season efficiency ${effPct}%</span></div>` +
-    // No fixed height: with width 100% and height auto the viewBox scales
-    // the drawing to the full container width (a fixed height + the
-    // default preserveAspectRatio="meet" letterboxed the 340-unit drawing
-    // instead of stretching it).
-    `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;height:auto;" role="img" aria-label="Weekly actual versus optimal points">` +
+    `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="Weekly actual versus optimal points">` +
     grid +
     `<polyline points="${pts('optimal')}" fill="none" stroke="var(--text-subtle)" stroke-width="2" stroke-dasharray="4 3"/>` +
     `<polyline points="${pts('actual')}" fill="none" stroke="var(--brand-blue)" stroke-width="2.5"/>` +
@@ -19951,17 +18213,11 @@ function tmInjectRosterTradeCta() {
 }
 
 function tmSwitchTab(tab) {
-  const tabBtns = Array.from(document.querySelectorAll('.tm-tab'));
-  const oldIdx = tabBtns.findIndex(t => t.classList.contains('active'));
-  const newIdx = tabBtns.findIndex(t => t.dataset.tab === tab);
   document.querySelectorAll('.tm-panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.tm-tab').forEach(t => t.classList.remove('active'));
   const panel = document.getElementById('tm-panel-' + tab);
   const btn = document.querySelector('.tm-tab[data-tab="' + tab + '"]');
-  if (panel) {
-    panel.classList.add('active');
-    if (window.brAnimateTabPanel) window.brAnimateTabPanel(panel, newIdx - oldIdx);
-  }
+  if (panel) panel.classList.add('active');
   if (btn) btn.classList.add('active');
   if (window._tmSlideTabs) window._tmSlideTabs.sync(true);
 
@@ -19978,7 +18234,7 @@ function tmSwitchTab(tab) {
   if (tab === 'charts' && window.ensurePlotly) {
     window.ensurePlotly().then(function () {
       requestAnimationFrame(() => {
-        ['teamWeeklyChart', 'teamRadarChart'].forEach(id => {
+        ['teamWeeklyChart', 'teamRadarChart', 'teamSeedChart', 'teamVsOppChart'].forEach(id => {
           const el = document.getElementById(id);
           if (el) { try { Plotly.Plots.resize(el); } catch (_) {} }
         });
@@ -20061,10 +18317,7 @@ async function tmLoadTrades(rosterId) {
 }
 
 async function checkTradeOutcome(btn) {
-  // .trade-card covers the team-modal trades tab; .act-trade covers the
-  // activity feed (the old '.trade-card'-only lookup left the feed's button
-  // silently dead).
-  const card = btn.closest('.trade-card, .act-trade');
+  const card = btn.closest('.trade-card');
   if (!card) return;
   const resultEl = card.querySelector('.trade-outcome-result');
   if (!resultEl) return;
@@ -20149,22 +18402,7 @@ async function checkTradeOutcome(btn) {
           ${thenSection}
           <div class="outcome-section-label outcome-section-label--current">Current Value</div>
           <div class="outcome-rows">${nowRows}</div>
-          <div class="outcome-share"><button type="button" class="outcome-share-btn" onclick="shareTradeOutcome(this)">Share</button></div>
         </div>`;
-      // Stash the frozen payload for shareTradeOutcome (verdict + per-asset
-      // then/now values + the two team names for the card).
-      resultEl._outcomeSharePayload = {
-        team_a: firstTeam.team_name || 'Team A',
-        team_b: (teamsData[1] && teamsData[1].team_name) || 'Opponent',
-        trade_date: tradeDate,
-        verdict: data.verdict,
-        net_delta_now: data.net_delta_now,
-        total_received_now: data.total_received_now,
-        total_sent_now: data.total_sent_now,
-        then_estimated: !!data.then_estimated,
-        received: data.received,
-        sent: data.sent,
-      };
     }
 
     resultEl.style.display = 'block';
@@ -20175,39 +18413,6 @@ async function checkTradeOutcome(btn) {
     btn.textContent = 'Check Outcome';
   } finally {
     btn.disabled = false;
-  }
-}
-
-// Mint a shareable /o/<id> link for a rendered trade outcome. The frozen
-// payload was stashed on the result element by checkTradeOutcome.
-async function shareTradeOutcome(btn) {
-  const resultEl = btn.closest('.trade-outcome-result');
-  const payload = resultEl && resultEl._outcomeSharePayload;
-  const shareBox = resultEl && resultEl.querySelector('.outcome-share');
-  if (!payload || !shareBox) return;
-  btn.disabled = true;
-  btn.textContent = 'Saving…';
-  try {
-    const res = await fetch('/api/save-trade-outcome', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(payload),
-    });
-    const data = await res.json().catch(function () { return {}; });
-    if (!res.ok || !data.share_id) throw new Error('save failed');
-    const url = window.location.origin + '/o/' + data.share_id;
-    shareBox.innerHTML =
-      '<a class="outcome-share-link" href="' + url + '" target="_blank" rel="noopener">' + url + '</a>' +
-      '<button type="button" class="outcome-share-btn" data-url="' + url + '" ' +
-      'onclick="navigator.clipboard.writeText(this.dataset.url).then(()=>{this.textContent=\'Copied!\';})">Copy link</button>';
-  } catch (e) {
-    btn.disabled = false;
-    btn.textContent = 'Share';
-    const err = document.createElement('span');
-    err.className = 'outcome-share-err';
-    err.textContent = ' Could not save. Try again.';
-    shareBox.appendChild(err);
-    setTimeout(function () { err.remove(); }, 4000);
   }
 }
 
@@ -20835,12 +19040,7 @@ function renderTeamDetails(data) {
         const _tip = [injRaw, player.injury_body_part].filter(Boolean).join(' · ');
         badges += `<span class="player-badge ${_icls}" title="${_tip.replace(/"/g, '&quot;')}"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> ${_code}</span>`;
         const plan = player.return_plan;
-        // A "Monitor" verdict is implied by a Q/D tag, so rendering both
-        // pills is redundant. Other verdicts still show: they give roster
-        // guidance the status pill does not.
-        const _planRedundant = plan && plan.verdict === 'Monitor'
-          && ['QUESTIONABLE', 'Q', 'DOUBTFUL', 'D'].includes(_u);
-        if (plan && plan.verdict && !_planRedundant) {
+        if (plan && plan.verdict) {
           const wk = plan.weeks_label || '';
           const tip = String(plan.reason || 'Approximate return guidance, not medical advice.')
             .replace(/"/g, '&quot;');
@@ -20967,6 +19167,12 @@ function renderTeamDetails(data) {
     if (data.graphs.radar && data.graphs.radar.z_scores) {
       graphsHTML += '<div class="team-modal-section tm-chart-radar"><h3>Team Breakdown</h3><div class="team-chart-container" id="teamRadarChart"></div></div>';
     }
+    if (data.graphs.seed_movement && data.graphs.seed_movement.length > 1) {
+      graphsHTML += '<div class="team-modal-section tm-chart-seed"><h3>Seed Movement</h3><div class="team-chart-container" id="teamSeedChart"></div></div>';
+    }
+    if (data.graphs.vs_opponent && data.graphs.vs_opponent.length > 0) {
+      graphsHTML += '<div class="team-modal-section tm-chart-vsopp"><h3>Score vs Opponent</h3><div class="team-chart-container" id="teamVsOppChart"></div></div>';
+    }
   }
   // League-wide SVG scatters (this team highlighted), injected as-is.
   if (data.graphs && data.graphs.luck_svg) {
@@ -21070,17 +19276,14 @@ function renderTeamDetails(data) {
         plot_bgcolor: theme.plot,
         font: { family: window.brandPlotlyFont, size: 12.5, color: theme.textColor },
         xaxis: {
-          // Whole-week ticks (W1, W2, ...) instead of Plotly's fractional
-          // auto ticks (1, 1.5, 2, ...). Axis titles are redundant with the
-          // section header and tick labels, so they are dropped.
-          tickmode: 'array',
-          tickvals: weeks,
-          ticktext: weeks.map(function (w) { return 'W' + w; }),
+          title: 'Week',
+          standoff: 12,
           color: theme.textColor,
           showgrid: false,
           zeroline: false
         },
         yaxis: {
+          title: 'Points',
           color: theme.textColor,
           gridcolor: theme.gridColor,
           zeroline: false
@@ -21091,16 +19294,12 @@ function renderTeamDetails(data) {
           bordercolor: theme.hoverBorder,
           font: { color: theme.textColor }
         },
-        margin: { l: 44, r: 20, t: 48, b: 36 },
+        margin: { l: 50, r: 20, t: 20, b: 50 },
         showlegend: true,
-        // Legend floats above the plot, anchored top-left, so it never
-        // overlaps the data area.
-        legend: {
+        legend: { 
+          x: 0, 
+          y: 1.1, 
           orientation: 'h',
-          x: 0,
-          xanchor: 'left',
-          y: 1.02,
-          yanchor: 'bottom',
           font: { color: theme.textColor }
         },
         paper_bgcolor: 'rgba(0,0,0,0)',
@@ -21108,6 +19307,75 @@ function renderTeamDetails(data) {
       };
 
       window.ensurePlotly().then(function () { Plotly.newPlot('teamWeeklyChart', traces, weeklyLayout, { responsive: true, displayModeBar: false }); }).catch(function () {});
+    }
+
+    // Render seed movement chart (weekly standings rank, 1 at top)
+    if (data.graphs.seed_movement && data.graphs.seed_movement.length > 1) {
+      const theme = getPlotlyTheme();
+      const sm = data.graphs.seed_movement;
+      const seedTrace = {
+        x: sm.map(d => d.week),
+        y: sm.map(d => d.seed),
+        type: 'scatter',
+        mode: 'lines+markers',
+        name: data.team_name,
+        line: { color: (window.brandPlotlyColorway || ['#3b82f6'])[0], width: 2.5, shape: 'spline', smoothing: 0.5 },
+        marker: { size: 7 },
+        hovertemplate: `<b>${data.team_name}</b><br>Week %{x}: %{y} seed<extra></extra>`
+      };
+      const seedLayout = {
+        template: theme.template,
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        font: { family: window.brandPlotlyFont, size: 12.5, color: theme.textColor },
+        xaxis: { title: 'Week', standoff: 12, dtick: 1, color: theme.textColor, showgrid: false, zeroline: false },
+        yaxis: { title: 'Seed', color: theme.textColor, gridcolor: theme.gridColor, zeroline: false, autorange: 'reversed', dtick: 1 },
+        hovermode: 'x unified',
+        hoverlabel: { bgcolor: theme.hoverBg, bordercolor: theme.hoverBorder, font: { color: theme.textColor } },
+        margin: { l: 50, r: 20, t: 20, b: 50 },
+        showlegend: false
+      };
+      window.ensurePlotly().then(function () { Plotly.newPlot('teamSeedChart', [seedTrace], seedLayout, { responsive: true, displayModeBar: false }); }).catch(function () {});
+    }
+
+    // Render score vs opponent chart (grouped bars, colored by result)
+    if (data.graphs.vs_opponent && data.graphs.vs_opponent.length > 0) {
+      const theme = getPlotlyTheme();
+      const vo = data.graphs.vs_opponent;
+      const oppColors = vo.map(d => (d.win != null && d.win < 0.5) ? '#ef4444' : '#22c55e');
+      const vsOppTraces = [
+        {
+          x: vo.map(d => 'W' + d.week),
+          y: vo.map(d => d.points),
+          type: 'bar',
+          name: data.team_name,
+          marker: { color: (window.brandPlotlyColorway || ['#3b82f6'])[0] },
+          hovertemplate: `<b>${data.team_name}</b><br>Week %{x}: %{y:.1f}<extra></extra>`
+        },
+        {
+          x: vo.map(d => 'W' + d.week),
+          y: vo.map(d => d.opp_points),
+          type: 'bar',
+          name: 'Opponent',
+          marker: { color: oppColors },
+          hovertemplate: `<b>Opponent</b><br>Week %{x}: %{y:.1f}<extra></extra>`
+        }
+      ];
+      const vsOppLayout = {
+        template: theme.template,
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        font: { family: window.brandPlotlyFont, size: 12.5, color: theme.textColor },
+        barmode: 'group',
+        xaxis: { title: 'Week', color: theme.textColor, showgrid: false, zeroline: false },
+        yaxis: { title: 'Points', color: theme.textColor, gridcolor: theme.gridColor, zeroline: false },
+        hovermode: 'x unified',
+        hoverlabel: { bgcolor: theme.hoverBg, bordercolor: theme.hoverBorder, font: { color: theme.textColor } },
+        margin: { l: 50, r: 20, t: 20, b: 50 },
+        showlegend: true,
+        legend: { x: 0, y: 1.1, orientation: 'h', font: { color: theme.textColor } }
+      };
+      window.ensurePlotly().then(function () { Plotly.newPlot('teamVsOppChart', vsOppTraces, vsOppLayout, { responsive: true, displayModeBar: false }); }).catch(function () {});
     }
 
     // Render radar chart
@@ -21527,8 +19795,8 @@ window.showSubWelcome = function (opts) {
     personal: {
       eyebrow: 'PRO',
       title: 'Welcome to PRO',
-      lead: 'Start with the Trade Hub -- archetype packages with playoff-odds impact -- or take a short PRO tour.',
-      primaryLabel: 'Open Trade Hub →',
+      lead: 'Start with Trade Suggestions -- archetype packages with playoff-odds impact -- or take a short PRO tour.',
+      primaryLabel: 'Open Trade Suggestions →',
       primaryHref: base + '/trade?tab=suggestions',
       primaryCta: 'trade-suggestions',
     },
@@ -21536,24 +19804,25 @@ window.showSubWelcome = function (opts) {
       eyebrow: 'League PRO',
       title: 'PRO is on for your league',
       lead: 'Managers can join from the invite you just got. Here are the tools worth opening first.',
-      primaryLabel: 'Open Trade Hub →',
+      primaryLabel: 'Open Trade Suggestions →',
       primaryHref: base + '/trade?tab=suggestions',
       primaryCta: 'trade-suggestions',
     },
     claim: {
       eyebrow: 'League PRO',
       title: 'League PRO unlocked',
-      lead: 'A league mate shared PRO with you. Start with the Trade Hub, or take a short PRO tour.',
-      primaryLabel: 'Open Trade Hub →',
+      lead: 'A league mate shared PRO with you. Start with Trade Suggestions, or take a short PRO tour.',
+      primaryLabel: 'Open Trade Suggestions →',
       primaryHref: base + '/trade?tab=suggestions',
       primaryCta: 'trade-suggestions',
     },
   }[variant];
 
   var features = [
-    { label: 'Trade Hub', desc: 'Archetype packages with playoff-odds impact', href: base + '/trade?tab=suggestions' },
+    { label: 'Trade Suggestions', desc: 'Archetype packages with playoff-odds impact', href: base + '/trade?tab=suggestions' },
     { label: 'Playoff Impact', desc: 'Simulate how a deal shifts your odds before you send it', href: base + '/trade' },
     { label: 'Front Office Report', desc: 'AI roster briefing personalized to your team', href: base + '/dashboard' },
+    { label: 'Trade Intel', desc: 'Market values, momentum, and real trade frequency', href: base + '/trade-intel' },
     { label: 'Breakout Engine', desc: 'Opportunity projections and breakout candidates', href: base + '/breakouts' },
   ];
 
@@ -21810,10 +20079,10 @@ window.showSubWelcome = function (opts) {
       interactive: true,
     }, _navDropStep('tradesNavDropdown')),
     {
-      page: 'trade', selector: '.card, .page-shell, main',
-      title: 'Market Intel',
-      body: 'Live market values, momentum, and real trade frequency now live in the Trade Hub under the Market Intel tab.',
-      navigate: 'trade',
+      page: 'trade-intel', selector: '.card, .page-shell, .ti-root, main',
+      title: 'Trade Intel',
+      body: 'Live market values, momentum, and real trade frequency for your roster.',
+      navigate: 'trade-intel',
     },
     {
       page: 'breakouts', selector: '.card, .page-shell, .breakouts-root, main',
@@ -21843,14 +20112,14 @@ window.showSubWelcome = function (opts) {
     {
       page: 'dashboard', selector: '#brMoreTab',
       title: 'More → PRO tools',
-      body: 'Open More for Breakouts, Front Office, and the rest of PRO.',
+      body: 'Open More for Trade Intel, Breakouts, Front Office, and the rest of PRO.',
       interactive: true,
     },
     {
-      page: 'trade', selector: '.card, .page-shell, main',
-      title: 'Market Intel',
-      body: 'Market values and real trade frequency for players on your roster, now a tab in the Trade Hub.',
-      navigate: 'trade',
+      page: 'trade-intel', selector: '.card, .page-shell, .ti-root, main',
+      title: 'Trade Intel',
+      body: 'Market values and real trade frequency for players on your roster.',
+      navigate: 'trade-intel',
     },
     {
       page: 'dashboard', selector: null,
@@ -22474,7 +20743,7 @@ function setupFunAwardsGrid() {
     { label: 'Standings', keywords: ['standings', 'standing', 'record'], path: '/standings', icon: 'fa-list-ol', group: 'page' },
     { label: 'Weekly Recap', keywords: ['recap', 'weekly', 'week'], path: '/recap', icon: 'fa-newspaper', group: 'page' },
     { label: 'Schedule Assistant', keywords: ['schedule', 'assistant', 'sos'], path: '/schedule', icon: 'fa-calendar-days', group: 'page' },
-    { label: 'ScoreZone', keywords: ['scorezone', 'red zone'], path: '/scorezone', icon: 'fa-bullseye', group: 'page' },
+    { label: 'Redzone', keywords: ['redzone', 'red zone'], path: '/redzone', icon: 'fa-bullseye', group: 'page' },
     { label: 'Activity', keywords: ['activity', 'transactions', 'moves'], path: '/activity', icon: 'fa-clock-rotate-left', group: 'page' },
     { label: 'League Health', keywords: ['league', 'health'], path: '/league_health', icon: 'fa-heart-pulse', group: 'page' },
     { label: 'Awards', keywords: ['awards', 'award', 'trophy'], path: '/awards', icon: 'fa-trophy', group: 'page' },
@@ -22485,7 +20754,7 @@ function setupFunAwardsGrid() {
     // ── Tools ────────────────────────────────────────────────────────────────
     { label: 'Trade Calculator', keywords: ['trade', 'calculator', 'otc'], path: '/trade', icon: 'fa-right-left' },
     { label: 'Trade Database', keywords: ['trade', 'database', 'trades'], path: '/trade-database', icon: 'fa-database' },
-    { label: 'Trade Hub', keywords: ['trade', 'targets', 'suggestions', 'hub'], path: '/trade', suffix: '?tab=suggestions', icon: 'fa-bullseye' },
+    { label: 'Trade Targets', keywords: ['trade', 'targets', 'suggestions'], path: '/trade', suffix: '?tab=suggestions', icon: 'fa-bullseye' },
     { label: 'Trade Intel', keywords: ['trade', 'intel', 'intelligence'], path: '/trade-intel', icon: 'fa-chart-line' },
     { label: 'Waivers', keywords: ['waiver', 'waivers', 'pickup', 'faab'], path: '/waivers', icon: 'fa-inbox' },
     { label: 'Start/Sit', keywords: ['start', 'sit', 'lineup'], path: '/waivers', suffix: '?tab=startsit', icon: 'fa-clipboard-list' },
@@ -22522,9 +20791,9 @@ function setupFunAwardsGrid() {
     _loading = true;
     _loadFailed = false;
     try {
-      // Shared page-level fetch: the trade calculator needs this same payload,
-      // so reuse its in-flight/completed request instead of a second download.
-      const data = await brGetLeaguePlayersData();
+      const res = await fetch('/api/league-players', { cache: 'default' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
       const raw = Array.isArray(data) ? data : (Array.isArray(data.players) ? data.players : []);
       _players = raw
         .filter(p => p && p.id && p.name && p.position !== 'PICK' && !String(p.id).startsWith('pick_'))
@@ -22960,7 +21229,7 @@ function setupFunAwardsGrid() {
 })();
 
 
-// Kicker FG scoring, distance- and per-yard-aware (mirrors scorezone.js _fgPts).
+// Kicker FG scoring, distance- and per-yard-aware (mirrors redzone.js _fgPts).
 // A flat `fgm` rate is only one of several Sleeper FG schemes: leagues also
 // score by distance bucket (fgm_0_19..fgm_50p) or per yard (fgm_yds). Scoring
 // FGs at a flat `fgm` rate alone drops every point in those leagues.
@@ -22995,8 +21264,8 @@ function _rzFgPts(sl, s) {
   return pts;
 }
 
-// ── ScoreZone live player HTML (shared between ScoreZone page and player modal) ───
-// Shared NFL game board (ScoreZone page + site-wide player modal).
+// ── Redzone live player HTML (shared between Redzone page and player modal) ───
+// Shared NFL game board (Redzone page + site-wide player modal).
 window._rzNormalizeTeam = function(team) {
   var t = String(team || '').trim().toUpperCase();
   return ({ JAC:'JAX', WSH:'WAS', OAK:'LV', SD:'LAC', STL:'LAR' })[t] || t;
@@ -23084,7 +21353,7 @@ window._rzRenderGameBoard = function(game, options) {
 
 // Build a player's modal log from canonical grouped plays. A feed card has one
 // headline actor, but every participant keeps an independently scored
-// contribution. This is intentionally exported so scorezone.js can pass its
+// contribution. This is intentionally exported so redzone.js can pass its
 // uncapped, latest-revision play-group history rather than its display feed.
 window._rzPlayerLogEvents = function(pid, events) {
   var wanted = String(pid == null ? '' : pid), latest = {};
@@ -23270,7 +21539,7 @@ window._rzBuildLiveHtml = function(pid, state, feed) {
   var parts = window.location.pathname.split('/');
   var hasCtx = parts[1] && parts[2] && parts[3];
   var rzLink = (!document.getElementById('rz-root') && hasCtx)
-    ? '<div class="rz-pm-rzlink-row"><a href="/' + parts[1] + '/' + parts[2] + '/' + parts[3] + '/scorezone" class="rz-pm-rzlink">Open ScoreZone →</a></div>'
+    ? '<div class="rz-pm-rzlink-row"><a href="/' + parts[1] + '/' + parts[2] + '/' + parts[3] + '/redzone" class="rz-pm-rzlink">Open Redzone →</a></div>'
     : '';
   return '<div class="rz-pm-live" data-gs="' + gsType + '">' + rzLink + gameHdr + statBlock + logHtml + '</div>';
 };
@@ -23282,13 +21551,13 @@ window._rzSyncTabLive = function(panel) {
   if (btn) btn.classList.toggle('pm-rz-is-live', !!isLive);
 };
 
-// ── Off-ScoreZone-page player game log ─────────────────────────────────────────
-// The ScoreZone page feeds the modal a rich, grouped event history via
+// ── Off-Redzone-page player game log ─────────────────────────────────────────
+// The Redzone page feeds the modal a rich, grouped event history via
 // _modalPlayHistory(). Everywhere else the modal used to pass an empty feed, so
-// the ScoreZone tab's game log was ALWAYS "No plays recorded yet" even when the
-// player clearly had plays (e.g. a RB with carries). The scorezone-data payload
+// the Redzone tab's game log was ALWAYS "No plays recorded yet" even when the
+// player clearly had plays (e.g. a RB with carries). The redzone-data payload
 // the stub already fetches carries the raw pbp_by_game, so build a per-player
-// event list from it here. Player-id resolution mirrors scorezone.js
+// event list from it here. Player-id resolution mirrors redzone.js
 // _pidFromPlayName; per-play scoring mirrors the modal's stat block.
 window._rzScoringForPid = function(pid, state) {
   var sbl = state && state.scoring_by_league;
@@ -23355,8 +21624,8 @@ window._rzStubPbpEvents = function(pid, state) {
   return events;
 };
 
-// Default stub for non-ScoreZone pages: one-shot fetch, 30 s cache.
-// Overridden by the ScoreZone IIFE when #rz-root is present.
+// Default stub for non-Redzone pages: one-shot fetch, 30 s cache.
+// Overridden by the Redzone IIFE when #rz-root is present.
 (function() {
   var _cache = null, _cacheTs = 0, _fetching = false, _pending = [], _timer = null, _generation = 0;
   window.__rzGetPlayerLive = function(pid) {
@@ -23385,7 +21654,7 @@ window._rzStubPbpEvents = function(pid, state) {
       _fetching = true;
       var requestGeneration = ++_generation;
       var parts = window.location.pathname.split('/');
-      var url = '/api/' + parts[1] + '/' + parts[2] + '/' + parts[3] + '/scorezone-data?scope=league&_cb=' + Date.now();
+      var url = '/api/' + parts[1] + '/' + parts[2] + '/' + parts[3] + '/redzone-data?scope=league&_cb=' + Date.now();
       fetch(url)
         .then(function(r) { return r.ok ? r.json() : null; })
         .then(function(data) {
@@ -23403,15 +21672,15 @@ window._rzStubPbpEvents = function(pid, state) {
   };
 }());
 
-// ── BR ScoreZone ──────────────────────────────────────────────────────────────
-// Extracted to static/scorezone.js (loaded only on the ScoreZone page). The
+// ── BR Redzone ──────────────────────────────────────────────────────────────
+// Extracted to static/redzone.js (loaded only on the Redzone page). The
 // shared live helpers used by the player modal remain above this point.
 
 // ── Matchup board live widgets (drive bar + moments) ─────────────────────────
 // Fills the .mb-fld drive-bar mounts (and, when the payload carries a scoring
 // feed, the .mb-moments strip) emitted by render_matchup_slide. Reuses the
-// ScoreZone field-position helper so there is one field renderer, not two. Live
-// data comes from the same league-scope scorezone-data payload the player modal
+// Redzone field-position helper so there is one field renderer, not two. Live
+// data comes from the same league-scope redzone-data payload the player modal
 // already fetches; only the visible carousel slide is ever painted.
 (function () {
   var TEAM_COLORS = {ARI:'#97233F',ATL:'#A71930',BAL:'#241773',BUF:'#00338D',CAR:'#0085CA',CHI:'#0B162A',CIN:'#FB4F14',CLE:'#311D00',DAL:'#003594',DEN:'#FB4F14',DET:'#0076B6',GB:'#203731',HOU:'#03202F',IND:'#002C5F',JAX:'#006778',KC:'#E31837',LV:'#000000',LAC:'#0080C6',LAR:'#003594',MIA:'#008E97',MIN:'#4F2683',NE:'#002244',NO:'#D3BC8D',NYG:'#0B2265',NYJ:'#125740',PHI:'#004C54',PIT:'#FFB612',SF:'#AA0000',SEA:'#002244',TB:'#D50A0A',TEN:'#0C2340',WAS:'#5A1414'};
@@ -23428,7 +21697,7 @@ window._rzStubPbpEvents = function(pid, state) {
       _fetching = true;
       var parts = window.location.pathname.split('/');
       if (parts.length < 4) { _fetching = false; return _cache; }
-      var url = '/api/' + parts[1] + '/' + parts[2] + '/' + parts[3] + '/scorezone-data?scope=league&_cb=' + Date.now();
+      var url = '/api/' + parts[1] + '/' + parts[2] + '/' + parts[3] + '/redzone-data?scope=league&_cb=' + Date.now();
       fetch(url).then(function (r) { return r.ok ? r.json() : null; }).then(function (data) {
         _fetching = false;
         if (data) { _cache = data; _ts = Date.now(); }
@@ -23569,184 +21838,6 @@ window._rzStubPbpEvents = function(pid, state) {
   }, 20000);
 }());
 
-/* ── Shared ScoreZone Moments (portfolio cards + weekly hub) ───────────────────
-   The moments modal machinery is shared so the weekly hub (matchup page) can
-   offer the same moments without depending on portfolio markup. fetchMoments
-   caches per league; openModal/closeModal drive the modal; the document
-   handlers wire [data-rzm-hub-open] (weekly-hub launcher), the modal
-   filters, play deep-links, and Escape. */
-window.brRzm = (function () {
-  'use strict';
-  var _cache = {};
-  // Successful bodies are cached briefly: long enough to dedupe callers,
-  // short enough that live moments still surface on the next watch tick.
-  // The old cache kept the FIRST body for the whole session, so an empty
-  // (or error) first response froze the moments row even as plays landed;
-  // error and "pending" (league ctx still warming) bodies are never cached.
-  var CACHE_TTL_MS = 45000;
-  function fetchMoments(platform, leagueId, season, week) {
-    var key = platform + '|' + leagueId + '|' + season + '|' + (week || '');
-    var hit = _cache[key];
-    if (hit && (Date.now() - hit.ts) < CACHE_TTL_MS) return Promise.resolve(hit.body);
-    var url = '/api/scorezone/moments?platform=' + encodeURIComponent(platform)
-      + '&league_id=' + encodeURIComponent(leagueId)
-      + '&season=' + encodeURIComponent(season || '')
-      + (week ? '&week=' + encodeURIComponent(week) : '');
-    var fetcher = window.brFetchWithTimeout || window.fetch;
-    return fetcher(url, { cache: 'no-store', credentials: 'same-origin' }, 15000)
-      .then(function (r) {
-        return r.json().catch(function () { return {}; }).then(function (body) {
-          if (!r.ok) {
-            var err = new Error('Moments request failed (' + r.status + ')');
-            err.status = r.status;
-            throw err;
-          }
-          return body || {};
-        });
-      })
-      .then(function (body) {
-        if (!body.pending) _cache[key] = { body: body, ts: Date.now() };
-        return body;
-      });
-  }
-  function kindLabel(kind) {
-    if (kind === 'td') return 'TD';
-    if (kind === 'big_gain') return 'BIG PLAY';
-    return 'TURNOVER';
-  }
-  function initials(name) {
-    var parts = String(name || '').trim().split(/\s+/).filter(Boolean);
-    if (!parts.length) return '?';
-    return (parts[0].charAt(0) + (parts.length > 1 ? parts[parts.length - 1].charAt(0) : '')).toUpperCase();
-  }
-  function headshotUrl(play) {
-    var pid = play.pid != null ? String(play.pid) : '';
-    if (!pid) return '';
-    if (window.brPlayerThumbUrl) {
-      // Handles DEF/DST (team crest) and normal players via the shared helper.
-      return window.brPlayerThumbUrl({ pos: play.pos, pid: pid, team: play.team }) || '';
-    }
-    return 'https://sleepercdn.com/content/nfl/players/thumb/' + encodeURIComponent(pid) + '.jpg';
-  }
-  function playHtml(play) {
-    var kindCls = play.kind === 'td' ? 'is-td' : (play.kind === 'turnover' ? 'is-to' : 'is-big');
-    var meta = [];
-    if (play.quarter) meta.push('Q' + play.quarter);
-    if (play.clock) meta.push(play.clock);
-    if (play.down) meta.push(play.down + (play.distance ? ' & ' + play.distance : ''));
-    if (play.yard_line) meta.push(play.yard_line);
-    var yds = play.yards ? play.yards + ' yds' : '';
-    var hsUrl = headshotUrl(play);
-    var avatarHtml = '<span class="rzm-play-avatar" data-init="' + escapeHtml(initials(play.name)) + '">'
-      + (hsUrl ? '<img class="rzm-play-headshot" src="' + escapeHtml(hsUrl) + '" alt="" loading="lazy" decoding="async" onerror="this.parentNode.classList.add(\'img-err\')">' : '')
-      + '</span>';
-    var side = play.side === 'you' ? 'YOU' : 'OPP';
-    var sideCls = play.side === 'you' ? 'is-you' : 'is-opp';
-    return '<button type="button" class="rzm-play ' + kindCls + '" data-rzm-play data-game-id="' + escapeHtml(play.game_id || '') + '" data-play-id="' + escapeHtml(play.play_id || '') + '">'
-      + '<span class="rzm-play-accent"></span>'
-      + avatarHtml
-      + '<span class="rzm-play-main">'
-      + '<span class="rzm-play-head"><span class="rzm-play-name">' + escapeHtml(play.name || 'Unknown') + (play.pos ? ' <span class="rzm-play-pos">' + escapeHtml(play.pos) + '</span>' : '') + '</span>'
-      + '<span class="rzm-play-tags"><span class="rzm-play-kind">' + kindLabel(play.kind) + '</span><span class="rzm-play-side ' + sideCls + '">' + side + '</span></span></span>'
-      + '<span class="rzm-play-text">' + escapeHtml(play.play_text || '') + '</span>'
-      + '<span class="rzm-play-meta">' + escapeHtml(meta.join(' · ')) + (yds ? (meta.length ? ' · ' : '') + escapeHtml(yds) : '') + '</span></span>'
-      + '</button>';
-  }
-  function openModal(payload, ctx) {
-    if (!payload || !(payload.plays || []).length) return;
-    closeModal();
-    var teams = payload.teams || {};
-    var overlay = document.createElement('div');
-    overlay.className = 'rzm-modal-overlay';
-    overlay.id = 'rzmModalOverlay';
-    var playsHtml = payload.plays.map(playHtml).join('');
-    overlay.innerHTML =
-      '<div class="rzm-modal" role="dialog" aria-modal="true" aria-label="ScoreZone Moments">'
-      + '<div class="rzm-modal-head"><span class="rzm-modal-accent"></span><div class="rzm-modal-title">ScoreZone Moments</div>'
-      + '<button type="button" class="rzm-modal-close" data-rzm-close aria-label="Close">✕</button></div>'
-      + '<div class="rzm-filters" role="tablist">'
-      + '<button type="button" class="rzm-filter is-active" data-rzm-filter="all">All</button>'
-      + '<button type="button" class="rzm-filter" data-rzm-filter="you">' + escapeHtml(teams.you || 'You') + '</button>'
-      + '<button type="button" class="rzm-filter" data-rzm-filter="opp">' + escapeHtml(teams.opp || 'Opp') + '</button>'
-      + '</div>'
-      + '<div class="rzm-modal-body" data-rzm-list>' + playsHtml + '</div>'
-      + '</div>';
-    overlay._rzmPlays = payload.plays;
-    overlay._rzmCtx = ctx || {};
-    document.body.appendChild(overlay);
-    document.body.style.overflow = 'hidden';
-  }
-  function closeModal() {
-    var el = document.getElementById('rzmModalOverlay');
-    if (el) el.remove();
-    if (!document.querySelector('.for-modal-overlay')) document.body.style.overflow = '';
-  }
-  function applyFilter(overlay, filter) {
-    var list = overlay.querySelector('[data-rzm-list]');
-    if (!list) return;
-    var plays = (overlay._rzmPlays || []).filter(function (p) {
-      return filter === 'all' || p.side === filter;
-    });
-    list.innerHTML = plays.length ? plays.map(playHtml).join('') : '<div class="rzm-empty">No moments for this filter.</div>';
-    var btns = overlay.querySelectorAll('[data-rzm-filter]');
-    for (var i = 0; i < btns.length; i++) {
-      btns[i].classList.toggle('is-active', btns[i].getAttribute('data-rzm-filter') === filter);
-    }
-  }
-  document.addEventListener('click', function (ev) {
-    var hubBtn = ev.target.closest('[data-rzm-hub-open]');
-    if (hubBtn) {
-      var launcher = hubBtn.closest('[data-rzm-hub]');
-      if (launcher && launcher._rzmPayload) {
-        openModal(launcher._rzmPayload, {
-          platform: launcher.getAttribute('data-platform') || '',
-          leagueId: launcher.getAttribute('data-league-id') || '',
-          season: launcher.getAttribute('data-season') || ''
-        });
-      }
-      return;
-    }
-    var overlay = document.getElementById('rzmModalOverlay');
-    if (!overlay) return;
-    if (ev.target.closest('[data-rzm-close]') || ev.target === overlay) {
-      closeModal();
-      return;
-    }
-    var filterBtn = ev.target.closest('[data-rzm-filter]');
-    if (filterBtn) {
-      applyFilter(overlay, filterBtn.getAttribute('data-rzm-filter'));
-      return;
-    }
-    var playBtn = ev.target.closest('[data-rzm-play]');
-    if (playBtn) {
-      var gid = playBtn.getAttribute('data-game-id') || '';
-      var playId = playBtn.getAttribute('data-play-id') || '';
-      var ctx = overlay._rzmCtx || {};
-      closeModal();
-      // Jump to the play in the ScoreZone feed (league-scoped URL).
-      var url = '/scorezone';
-      if (ctx.platform && ctx.leagueId) {
-        url = '/' + ctx.platform + '/' + (ctx.season || '') + '/' + ctx.leagueId + '/scorezone';
-      }
-      var qs = [];
-      if (gid) qs.push('game=' + encodeURIComponent(gid));
-      if (playId) qs.push('play=' + encodeURIComponent(playId));
-      if (qs.length) url += '?' + qs.join('&');
-      window.location.href = url;
-    }
-  });
-  document.addEventListener('keydown', function (ev) {
-    if (ev.key === 'Escape') closeModal();
-  });
-  return {
-    fetchMoments: fetchMoments,
-    openModal: openModal,
-    closeModal: closeModal
-  };
-})();
-// Back-compat alias for the weekly-hub launcher.
-window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(payload, ctx); };
-
 /* Portfolio cards: one generation owns requests, retries, polling and listeners. */
 (function () {
   'use strict';
@@ -23772,13 +21863,8 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
   function stateNote(slot, text, kind) {
     var note = slot.querySelector('[data-matchup-state]');
     if (!note) { note = document.createElement('div'); note.setAttribute('data-matchup-state', ''); slot.appendChild(note); }
-    // Stamp when this text first appeared so a transient note can't get stuck:
-    // the pending branch below drops "Updating matchup…" if the backend stays
-    // cold far longer than any warm should take.
-    if (note.textContent !== text || !note.dataset.noteSince) note.dataset.noteSince = String(Date.now());
     note.className = 'pf-live-unavailable pf-live-state-' + kind;
     note.textContent = text;
-    return note;
   }
   function posTier(rank, total) {
     var r = Number(rank), n = Number(total);
@@ -23787,18 +21873,6 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     if (frac <= 1 / 3 + 1e-9) return 'good';
     if (frac >= 2 / 3 - 1e-9) return 'weak';
     return 'mid';
-  }
-  // Write innerHTML only when the markup actually changed. Portfolio refresh
-  // re-renders every card, and unconditional writes force a full repaint of
-  // each card even when the data is identical. The last-written string is
-  // cached on the element because reading innerHTML back is normalized by
-  // the parser and won't match the source string.
-  function setHtmlIfChanged(el, html) {
-    if (!el) return false;
-    if (el._pfHtml === html) return false;
-    el._pfHtml = html;
-    el.innerHTML = html;
-    return true;
   }
   function renderStrength(card, data, totalN) {
     var stats = card.querySelector('[data-summary-stats]');
@@ -23817,13 +21891,10 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
         '<span class="pc-rank">' + pr + '<sup>' + ord + '</sup></span></div>';
     }).join('');
     var existing = card.querySelector('.pf-lg-strength');
-    if (!chips) { if (existing) existing.remove(); card._pfStrengthHtml = null; return; }
+    if (!chips) { if (existing) existing.remove(); return; }
     var html = '<div class="pf-lg-strength"><div class="pf-lg-strength-head">' +
       '<span class="pf-lg-l">Position strength</span><span class="pf-lg-l pf-lg-l--muted">rank in league</span></div>' +
       '<div class="pf-strbar">' + chips + '</div></div>';
-    // outerHTML replaces the node, so the change cache lives on the card.
-    if (card._pfStrengthHtml === html) return;
-    card._pfStrengthHtml = html;
     if (existing) { existing.outerHTML = html; } else { stats.insertAdjacentHTML('afterend', html); }
   }
   function renderSummary(card, data) {
@@ -23832,10 +21903,7 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     if (!stats) return false;
     var retry = card.querySelector('[data-summary-retry]');
     var updated = card.querySelector('[data-summary-updated]');
-    // A partial summary with no record is not a success: the record section
-    // failed transiently and should be retried, not rendered as '-'.
-    var _recordMissing = data.record == null && data.state !== 'ready';
-    if ((data.state === 'ready' || data.state === 'partial' || data.record != null) && !_recordMissing) {
+    if (data.state === 'ready' || data.state === 'partial' || data.record != null) {
       var rank = data.rank == null ? '-' : data.rank;
       var teams = data.total_teams == null ? '-' : data.total_teams;
       var wins = Number(data.wins), losses = Number(data.losses);
@@ -23853,31 +21921,24 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
             return '<span class="pf-s-pill ' + cls + '">' + (r === 'W' ? 'W' : 'L') + '</span>';
           }).join('') + '</span>'
         : '<span class="pf-streak-empty">-</span>';
-      var statsHtml = '<span class="pf-lg-stat"><span class="pf-lg-v ' + recCls + '">' + escapeHtml(data.record == null ? '-' : data.record) + '</span><span class="pf-lg-l">Record</span></span>' +
+      stats.innerHTML = '<span class="pf-lg-stat"><span class="pf-lg-v ' + recCls + '">' + escapeHtml(data.record == null ? '-' : data.record) + '</span><span class="pf-lg-l">Record</span></span>' +
         '<span class="pf-lg-stat" title="Regular-season standings: wins, then points for"><span class="pf-lg-v' + weakCls + '">' + escapeHtml(rank) + ' <small>/ ' + escapeHtml(teams) + '</small></span><span class="pf-lg-l">Standing</span></span>' +
         '<span class="pf-lg-stat pf-lg-stat--streak">' + streakHtml + '<span class="pf-lg-l">Streak</span></span>';
-      setHtmlIfChanged(stats, statsHtml);
       renderStrength(card, data, totalN);
       var stamp = data.last_successful_sync_at || data.refreshed_at;
-      if (updated && stamp) {
-        var stampTxt = (data.stale ? 'Last good data · ' : 'Updated ') + new Date(stamp).toLocaleString();
-        if (updated._pfStamp !== stampTxt) { updated._pfStamp = stampTxt; updated.textContent = stampTxt; }
-      }
+      if (updated && stamp) updated.textContent = (data.stale ? 'Last good data · ' : 'Updated ') + new Date(stamp).toLocaleString();
       if (retry) retry.hidden = true;
       card.dataset.summaryGood = 'true';
       // Stamp per-league record for aggregate recomputation, then refresh the
-      // summary bar totals (server values only covered warm leagues).
+      // summary bar total (server value only covered warm leagues).
       if (Number.isFinite(wins)) card.dataset.wins = String(wins);
       if (Number.isFinite(losses)) card.dataset.losses = String(losses);
       var ties = Number(data.ties);
       if (Number.isFinite(ties)) card.dataset.ties = String(ties);
-      var lwRes = String(data.last_week_result || '').toUpperCase();
-      if (lwRes === 'W' || lwRes === 'L' || lwRes === 'T') card.dataset.lwResult = lwRes;
       updateAggregateRecord();
-      updateLastWeekRecord();
       return true;
     }
-    if (card.dataset.summaryGood !== 'true') setHtmlIfChanged(stats, '<span class="pf-lg-l">' + escapeHtml(data.message || 'Summary unavailable. Retry.') + '</span>');
+    if (card.dataset.summaryGood !== 'true') stats.innerHTML = '<span class="pf-lg-l">' + escapeHtml(data.message || 'Summary unavailable. Retry.') + '</span>';
     if (retry) retry.hidden = false;
     return false;
   }
@@ -23899,10 +21960,6 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
       wins += w; losses += l; ties += t;
     }
     var recStr = wins + '-' + losses + (ties ? '-' + ties : '');
-    // The bar is recomputed on every card hydration and every refresh: skip
-    // the DOM write when the total didn't change so the header never repaints.
-    if (agg._pfRec === recStr) return;
-    agg._pfRec = recStr;
     agg.textContent = recStr;
     agg.dataset.wins = String(wins);
     agg.dataset.losses = String(losses);
@@ -23911,35 +21968,6 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     if (wins > losses) agg.classList.add('color-win');
     else if (losses > wins) agg.classList.add('color-loss');
   }
-  // Recompute the "Last Week" W-L-T in the portfolio summary bar as cards
-  // hydrate. Mirrors updateAggregateRecord: the server-rendered total only
-  // covers warm leagues, so cold cards contribute their data-lw-result once
-  // their summaries arrive. No-op when the server omitted the cell (week 1).
-  function updateLastWeekRecord() {
-    var agg = document.querySelector('[data-portfolio-lw-record]');
-    if (!agg) return;
-    var w = 0, l = 0, t = 0;
-    var cards = document.querySelectorAll('.pf-lg-card[data-summary-card]');
-    for (var i = 0; i < cards.length; i++) {
-      var r = (cards[i].dataset.lwResult || '').toUpperCase();
-      if (r === 'W') w++;
-      else if (r === 'L') l++;
-      else if (r === 'T') t++;
-    }
-    if (!w && !l && !t) return;
-    var lwStr = w + '-' + l + (t ? '-' + t : '');
-    if (agg._pfLw === lwStr) return;
-    agg._pfLw = lwStr;
-    agg.textContent = lwStr;
-    agg.classList.remove('color-win', 'color-loss');
-    if (w > l) agg.classList.add('color-win');
-    else if (l > w) agg.classList.add('color-loss');
-  }
-
-  // Score/result band only: status line, your score vs opponent (with
-  // projected finals while the week is open), the win-probability bar, and
-  // the WON/LOST BY result once final. No My Matchup / League Scores tabs
-  // and no ScoreZone Moments here -- those live on the matchup page.
   function matchupHtml(data) {
     var you = data.you, opp = data.opp, status = data.status || 'pre';
     var label = status === 'in' ? 'Live · Wk ' + escapeHtml(data.week) : (status === 'final' ? 'Final · Wk ' + escapeHtml(data.week) : 'Wk ' + escapeHtml(data.week));
@@ -23952,7 +21980,7 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
       extra = '<div class="pf-live-result">' + escapeHtml(result === 'W' ? 'WON BY ' + margin : (result === 'L' ? 'LOST BY ' + margin : 'TIED')) + '</div>';
     } else if (opp && data.win_prob != null) {
       var chance = Math.max(0, Math.min(100, Math.round(Number(data.win_prob))));
-      extra = '<div class="pf-live-wp" title="Win probability"><div class="pf-live-wp-track"><div class="pf-live-wp-fill" style="width:' + chance + '%"></div></div><div class="pf-live-wp-lbls"><span class="pf-live-wp-you">' + chance + '% to win</span><span class="pf-live-wp-opp">' + (100 - chance) + '%</span></div></div>';
+      extra = '<div class="pf-live-wp" title="Win probability"><div class="pf-live-wp-track"><div class="pf-live-wp-fill" style="width:' + chance + '%"></div></div><div class="pf-live-wp-lbls"><span>' + chance + '% to win</span><span>' + (100 - chance) + '%</span></div></div>';
     }
     return '<div class="pf-live-status' + (status === 'in' ? ' is-live' : '') + '"><span class="pf-live-dot"></span>' + label + '</div><div class="pf-live-grid">' + side(you, 'You', false) + side(opp, opp ? (opp.name || 'Opp') : 'Bye', true) + '</div>' + extra;
   }
@@ -23960,14 +21988,7 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     if (!slot || !data) return false;
     if (data.pending) {
       slot.hidden = false; slot.setAttribute('aria-busy', 'true');
-      if (slot.dataset.matchupGood === 'true') {
-        var note = stateNote(slot, 'Updating matchup…', 'stale');
-        // The retry loop re-renders on every poll, so a healthy refresh clears
-        // this via the success path below. If the backend stays cold (cache
-        // churn after worker recycles), the note would sit next to populated
-        // scores forever; drop it after ~90s and let last good stand alone.
-        if (Date.now() - Number(note.dataset.noteSince || 0) > 90000) note.remove();
-      }
+      if (slot.dataset.matchupGood === 'true') stateNote(slot, 'Updating matchup…', 'stale');
       return false;
     }
     if (data.failed || data.state === 'error' || data.state === 'unavailable' && data.applicable !== false) {
@@ -24038,27 +22059,12 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
       if (!owner.alive()) return;
       var result = applyCard(owner, card, body);
       if (item.tracker) item.tracker(result);
-      // Retry on pending OR on a failed summary (e.g. partial with missing
-      // record). A failed summary is transient and should not be treated as
-      // a successful hydration.
-      // Note: pending-due-to-warming does not consume the retry budget;
-      // warming is expected on game day, not a failure. Use the server's
-      // suggested retry delay.
       if (result.pending) {
-        schedule(owner, card, Math.max(body.retry_after_ms || 0, 3000));
-      } else if (!result.summary) {
         card._pfAttempts = (card._pfAttempts || 0) + 1;
-        if (card._pfAttempts <= RETRY_DELAYS.length) schedule(owner, card, RETRY_DELAYS[card._pfAttempts - 1]);
+        if (card._pfAttempts <= RETRY_DELAYS.length) schedule(owner, card, Math.max(body.retry_after_ms || 0, RETRY_DELAYS[card._pfAttempts - 1]));
       } else card._pfAttempts = 0;
     }).catch(function (error) {
-      if (!owner.alive()) return;
-      // A timeout (AbortError) is transient, especially on game day. Schedule
-      // a retry instead of silently giving up.
-      if (error && error.name === 'AbortError') {
-        card._pfAttempts = (card._pfAttempts || 0) + 1;
-        if (card._pfAttempts <= RETRY_DELAYS.length) schedule(owner, card, RETRY_DELAYS[card._pfAttempts - 1]);
-        return;
-      }
+      if (!owner.alive() || error && error.name === 'AbortError') return;
       var payload = error.payload || { state: 'error', message: error.message };
       if (payload.state === 'unavailable' && /sign in/i.test(payload.message || '')) payload.message = 'Session expired. Sign in again.';
       applyCard(owner, card, { summary: payload, matchup: { failed: true, message: payload.message } });
@@ -24094,17 +22100,7 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     if (owner.pollTimer) clearInterval(owner.pollTimer);
     owner.pollTimer = setInterval(function () {
       if (!owner.alive() || document.hidden) return;
-      owner.cards(true).forEach(function (card) {
-        var slot = card.querySelector('[data-lg-live]');
-        if (slot && slot._isLive) { schedule(owner, card); return; }
-        // Also pick up visible cards that never hydrated (e.g. page-2 cards
-        // whose retries exhausted while contexts were warming). A slot whose
-        // matchup came back not-applicable (matchupGood 'false') is terminal,
-        // not a hydration failure, so it doesn't requeue forever.
-        var summaryGood = card.dataset.summaryGood === 'true';
-        var matchupGood = !slot || slot.dataset.matchupGood === 'true' || slot.dataset.matchupGood === 'false';
-        if (!summaryGood || !matchupGood) schedule(owner, card);
-      });
+      owner.cards(true).forEach(function (card) { var slot = card.querySelector('[data-lg-live]'); if (slot && slot._isLive) schedule(owner, card); });
     }, 45000);
   }
   function replaceGeneration(oldOwner) {
@@ -24179,304 +22175,4 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     owner.cards(false).forEach(function (card) { schedule(owner, card); });
   };
   window.__brPortfolioCardsTest = { renderSummary: renderSummary, renderMatchup: renderMatchup, identity: identity };
-})();
-
-/* Weekly hub: League Scores tab (My Matchup | League Scores).
-   Toggles between the viewer's matchup carousel and a Sleeper-style list of
-   all league matchups for the week. Fetches /api/matchup/league-scores with a
-   60s cache. The viewer's matchup is highlighted and sorted first by the API.
-   Tab clicks use document-level delegation so soft-nav page swaps (which
-   replace #page-root without firing DOMContentLoaded) never orphan the
-   handler. */
-(function () {
-  'use strict';
-  var _lsCache = {};
-  var _lsWired = false;
-  // Content-shaped loading placeholder for the league scores list: three
-  // shimmer rows that crossfade to the real cards (replaces the bare
-  // "Loading league scores..." text).
-  var LS_SKELETON = '<div class="sk-list br-fade-swap" aria-hidden="true">'
-    + '<div class="sk-card-row"><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line w-60"></div><div class="skeleton skeleton-line w-40"></div></div><div class="skeleton sk-chip"></div></div>'
-    + '<div class="sk-card-row"><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line w-60"></div><div class="skeleton skeleton-line w-40"></div></div><div class="skeleton sk-chip"></div></div>'
-    + '<div class="sk-card-row"><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line w-60"></div><div class="skeleton skeleton-line w-40"></div></div><div class="skeleton sk-chip"></div></div>'
-    + '</div>';
-  function _lsRenderList(view, matchups, week) {
-    if (!matchups || !matchups.length) {
-      view.innerHTML = '<div class="ls-empty">No matchups found for Week ' + escapeHtml(String(week)) + '.'
-        + ' <button type="button" data-ls-retry>Retry</button></div>';
-      return;
-    }
-    var html = '<div class="ls-list">';
-    matchups.forEach(function (m) {
-      var left = m.left || {}, right = m.right;
-      var statusLabel = m.status === 'in' ? 'Live' : (m.status === 'final' ? 'Final' : 'Wk ' + escapeHtml(String(week)));
-      var wp = m.win_prob != null ? Math.max(0, Math.min(100, Math.round(Number(m.win_prob)))) : null;
-      html += '<div class="ls-card' + (m.is_you ? ' is-you' : '') + '">';
-      html += '<div class="ls-card-head"><span class="ls-status' + (m.status === 'in' ? ' is-live' : '') + '">' + escapeHtml(statusLabel) + '</span>' + (m.is_you ? '<span class="ls-you-badge">Your matchup</span>' : '') + '</div>';
-      html += '<div class="ls-teams">';
-      html += '<div class="ls-team"><span class="ls-team-name">' + escapeHtml(left.name || 'TBD') + '</span><span class="ls-team-score">' + Number(left.score || 0).toFixed(1) + '</span><span class="ls-team-proj">proj ' + Number(left.proj || 0).toFixed(1) + '</span></div>';
-      if (right) {
-        html += '<div class="ls-team"><span class="ls-team-name">' + escapeHtml(right.name || 'TBD') + '</span><span class="ls-team-score">' + Number(right.score || 0).toFixed(1) + '</span><span class="ls-team-proj">proj ' + Number(right.proj || 0).toFixed(1) + '</span></div>';
-      } else {
-        html += '<div class="ls-team"><span class="ls-team-name">Bye</span></div>';
-      }
-      html += '</div>';
-      if (wp != null && right) {
-        var lp = wp, rp = 100 - wp;
-        var lLeading = lp >= rp;
-        var winGreen = '#22c55e', loseFade = 'rgba(148,163,184,0.35)';
-        var lBar = lLeading ? winGreen : loseFade;
-        var rBar = lLeading ? loseFade : winGreen;
-        var trackBg = 'linear-gradient(to right,' + lBar + ' ' + lp + '%,' + rBar + ' ' + lp + '%)';
-        var lCol = lLeading ? winGreen : 'var(--text-muted)';
-        var rCol = lLeading ? 'var(--text-muted)' : winGreen;
-        var lName = String(left.name || 'left team').replace(/"/g, '');
-        var rName = String(right.name || 'right team').replace(/"/g, '');
-        html += '<div class="m-win-bar" role="img" aria-label="Win probability: ' + escapeHtml(lName) + ' ' + lp + ' percent, ' + escapeHtml(rName) + ' ' + rp + ' percent">'
-          + '<span class="m-wp-pct" style="color:' + lCol + ';">' + lp + '%</span>'
-          + '<div class="m-wp-track" style="background:' + trackBg + ';"></div>'
-          + '<span class="m-wp-pct" style="color:' + rCol + ';text-align:right;">' + rp + '%</span></div>';
-      }
-      html += '</div>';
-    });
-    html += '</div>';
-    // Swap the list in: tween any win bars and count up scores from the
-    // previous render instead of jumping (plain swap under reduced motion).
-    if (window.brAnimateMatchupRefresh) {
-      window.brAnimateMatchupRefresh(view, html, function () { view.innerHTML = html; }, '.ls-team-score');
-    } else {
-      view.innerHTML = html;
-    }
-    view.dataset.lsLoaded = 'true';
-  }
-  function _lsShellOf(node) {
-    return node ? node.closest('.matchups-shell') : null;
-  }
-  function _lsViews(tabs) {
-    var shell = _lsShellOf(tabs);
-    return {
-      matchupView: shell ? shell.querySelector('#weeklyMatchupsContainer') : null,
-      leagueView: shell ? shell.querySelector('[data-ls-view="league"]') : null
-    };
-  }
-  function _lsLoad(tabs) {
-    var views = _lsViews(tabs);
-    var view = views.leagueView;
-    if (!view || view.dataset.lsLoaded === 'true' || tabs._lsLoading) return;
-    var platform = tabs.getAttribute('data-platform') || '';
-    var leagueId = tabs.getAttribute('data-league-id') || '';
-    var season = tabs.getAttribute('data-season') || '';
-    var week = tabs.getAttribute('data-week') || '';
-    if (!platform || !leagueId) return;
-    var key = platform + ':' + leagueId + ':' + season + ':' + week;
-    tabs._lsLoading = true;
-    function done(d) {
-      tabs._lsLoading = false;
-      if (!view.isConnected) return;
-      // Cold server cache: the API is still building league context.
-      // Keep the loading state and retry instead of showing "no matchups".
-      if (d && d.pending) {
-        view.innerHTML = LS_SKELETON;
-        setTimeout(function () { delete tabs._lsLoading; _lsLoad(tabs); }, 3000);
-        return;
-      }
-      if (d && d.state === 'error') {
-        view.innerHTML = '<div class="ls-empty">' + escapeHtml(d.message || 'League scores temporarily unavailable.')
-          + ' <button type="button" data-ls-retry>Retry</button></div>';
-        return;
-      }
-      var matchups = (d && d.matchups) || [];
-      // Only lock in the loaded state (and cache) when we got real data;
-      // empty/error responses stay retryable.
-      if (matchups.length) {
-        _lsCache[key] = { t: Date.now(), d: d };
-      }
-      _lsRenderList(view, matchups, (d && d.week) || week);
-    }
-    function fail(status) {
-      tabs._lsLoading = false;
-      if (!view.isConnected) return;
-      var msg = status === 401
-        ? 'Sign in to see league scores.'
-        : 'League scores unavailable.';
-      view.innerHTML = '<div class="ls-empty">' + escapeHtml(msg) + ' <button type="button" data-ls-retry>Retry</button></div>';
-    }
-    // The carousel already computed these numbers: use the embedded payload
-    // when available instead of a separate (slow) API fetch.
-    function embeddedData() {
-      try {
-        // Week-change API stashes its payload here.
-        var byWeek = window._lsEmbeddedByWeek || {};
-        if (week && byWeek[String(week)] && byWeek[String(week)].matchups) {
-          return byWeek[String(week)];
-        }
-        // Initial page render embeds the default week's payload.
-        var el = document.getElementById('ls-embedded-data');
-        if (el && !el._lsConsumed) {
-          var parsed = JSON.parse(el.textContent || '{}');
-          if (parsed && parsed.matchups && String(parsed.week || '') === String(week || '')) {
-            return parsed;
-          }
-        }
-      } catch (e) { /* fall through to fetch */ }
-      return null;
-    }
-    var embedded = embeddedData();
-    if (embedded) {
-      done(embedded);
-      return;
-    }
-    if (_lsCache[key] && (Date.now() - _lsCache[key].t) < 60000) {
-      done(_lsCache[key].d);
-      return;
-    }
-    var url = '/api/matchup/league-scores?platform=' + encodeURIComponent(platform) + '&league_id=' + encodeURIComponent(leagueId) + '&season=' + encodeURIComponent(season) + (week ? '&week=' + encodeURIComponent(week) : '');
-    fetch(url, { credentials: 'same-origin' })
-      .then(function (r) {
-        if (r.status === 401) { fail(401); return null; }
-        return r.json();
-      })
-      .then(function (d) { if (d) done(d); })
-      .catch(function () { fail(0); });
-  }
-  function _lsWire() {
-    if (_lsWired) return;
-    _lsWired = true;
-    // Document-level delegation: the [data-ls-tabs] node is replaced on
-    // soft-nav page swaps, but document persists.
-    document.addEventListener('click', function (e) {
-      var tab = e.target && e.target.closest ? e.target.closest('[data-ls-tab]') : null;
-      if (tab) {
-        var tabs = tab.closest('[data-ls-tabs]');
-        if (!tabs) return;
-        e.preventDefault();
-        var which = tab.getAttribute('data-ls-tab');
-        var all = tabs.querySelectorAll('[data-ls-tab]');
-        var lsOldIdx = -1, lsNewIdx = -1;
-        for (var i = 0; i < all.length; i++) {
-          if (all[i].classList.contains('is-active')) lsOldIdx = i;
-          if (all[i] === tab) lsNewIdx = i;
-          all[i].classList.toggle('is-active', all[i] === tab);
-        }
-        var views = _lsViews(tabs);
-        var lsIncoming = which === 'matchup' ? views.matchupView : views.leagueView;
-        if (views.matchupView) views.matchupView.hidden = which !== 'matchup';
-        if (views.leagueView) views.leagueView.hidden = which !== 'league';
-        if (lsIncoming && window.brAnimateTabPanel) window.brAnimateTabPanel(lsIncoming, lsNewIdx - lsOldIdx);
-        if (which === 'league') _lsLoad(tabs);
-        return;
-      }
-      var retry = e.target && e.target.closest ? e.target.closest('[data-ls-retry]') : null;
-      if (retry) {
-        var shell = _lsShellOf(retry);
-        var tabsEl = shell ? shell.querySelector('[data-ls-tabs]') : null;
-        var view = shell ? shell.querySelector('[data-ls-view="league"]') : null;
-        if (view) {
-          delete view.dataset.lsLoaded;
-          view.innerHTML = LS_SKELETON;
-        }
-        if (tabsEl) { delete tabsEl._lsLoading; _lsLoad(tabsEl); }
-      }
-    });
-  }
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', _lsWire);
-  } else {
-    _lsWire();
-  }
-  window.brInitLeagueScores = _lsWire;
-})();
-
-/* Weekly hub: ScoreZone Moments launcher (the matchup page's moments row).
-   Fetches /api/scorezone/moments for the page's league via the shared
-   window.brRzm namespace and reveals the row when the viewer's matchup has
-   moments. The modal open/close/filter handlers live in window.brRzm. */
-(function () {
-  'use strict';
-  // Same backoff ladder as the portfolio cards: quick retries ride out a
-  // cold league ctx and store lag right after load, then a steady poll
-  // keeps watch while the matchup's games are live. A single fetch was not
-  // enough: the first response is often empty (ctx still warming, poller
-  // has not stored the play yet) and moments would never appear.
-  var RETRY_DELAYS = [3000, 6000, 10000, 15000, 25000];
-  var POLL_MS = 45000;
-  var WATCH_MS = 4 * 60 * 60 * 1000; // give up watching 4h after page load
-  function initOneLauncher(launcher) {
-    if (!launcher || launcher._rzmInit) return;
-    launcher._rzmInit = true;
-    var platform = launcher.getAttribute('data-platform') || '';
-    var leagueId = launcher.getAttribute('data-league-id') || '';
-    var season = launcher.getAttribute('data-season') || '';
-    var week = launcher.getAttribute('data-week') || '';
-    if (!platform || !leagueId || !window.brRzm) return;
-    var attempts = 0;
-    var timer = null;
-    var deadline = Date.now() + WATCH_MS;
-    function schedule(delay) {
-      if (!launcher.isConnected || Date.now() > deadline) return;
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(function () { timer = null; attempt(); }, delay);
-    }
-    function nextDelay() {
-      attempts += 1;
-      return attempts <= RETRY_DELAYS.length ? RETRY_DELAYS[attempts - 1] : POLL_MS;
-    }
-    function reveal(body) {
-      launcher._rzmPayload = body;
-      var countEl = launcher.querySelector('[data-rzm-hub-count]');
-      var tdCount = (body && body.td_count) || 0;
-      if (countEl) countEl.textContent = tdCount + (tdCount === 1 ? ' touchdown' : ' touchdowns');
-      launcher.hidden = false;
-    }
-    function attempt() {
-      if (!launcher.isConnected) return;
-      if (document.hidden) { schedule(POLL_MS); return; }
-      window.brRzm.fetchMoments(platform, leagueId, season, week).then(function (body) {
-        if (!launcher.isConnected) return;
-        var plays = (body && body.plays) || [];
-        if (plays.length) reveal(body);
-        // live === false (all starters' games final): no new moments can
-        // arrive, so only the quick ladder runs out (final plays can still
-        // be landing in the store) and then watching stops. A body without
-        // liveness (pending / early error shape) is treated as live.
-        if (body && body.live === false && attempts >= RETRY_DELAYS.length) return;
-        schedule(nextDelay());
-      }).catch(function (err) {
-        if (!launcher.isConnected) return;
-        // Auth failures never heal by retrying.
-        if (err && (err.status === 401 || err.status === 403)) return;
-        schedule(nextDelay());
-      });
-    }
-    attempt();
-  }
-  function initHubRzm(root) {
-    if (typeof document.querySelector !== 'function') return;
-    (root || document).querySelectorAll('[data-rzm-hub]').forEach(initOneLauncher);
-  }
-  function start() {
-    initHubRzm(document);
-    // The hub repaints the matchup area after load (responsive layout moves,
-    // tab switches). If the launcher node is replaced, the fresh copy starts
-    // hidden; pick it up and reveal it again.
-    if ('MutationObserver' in window && document.body) {
-      new MutationObserver(function (mutations) {
-        for (var i = 0; i < mutations.length; i++) {
-          var added = mutations[i].addedNodes;
-          for (var j = 0; j < added.length; j++) {
-            var node = added[j];
-            if (node.nodeType !== 1) continue;
-            if (node.hasAttribute && node.hasAttribute('data-rzm-hub')) initOneLauncher(node);
-            if (node.querySelectorAll) initHubRzm(node);
-          }
-        }
-      }).observe(document.body, { childList: true, subtree: true });
-    }
-  }
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', start);
-  } else {
-    start();
-  }
-  window.brInitHubRzm = function () { initHubRzm(document); };
 })();

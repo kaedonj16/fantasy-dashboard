@@ -278,8 +278,8 @@
     --z-gate-nested: 100002; /* identify / league picker stacked on paywall */
     --z-progress: 999999; /* #page-load-bar (top progress bar) */
 
-    /* Space the fixed mobile bottom dock (.br-mnav / .br-tabbar, 60px +
-       safe-area + the float gap) owns. 0 on desktop where there is no dock; the phone value is
+    /* Space the fixed mobile bottom dock (.br-mnav / .br-tabbar, 56px +
+       safe-area) owns. 0 on desktop where there is no dock; the phone value is
        set in the media query below. Any bottom-fixed element that must clear the
        dock should anchor to calc(var(--dock-safe-bottom) + <gap>) instead of
        re-deriving the 56px+safe-area math, so the next one can't forget it. */
@@ -288,8 +288,7 @@
 
 @media (max-width: 768px) {
     :root {
-        /* 60px bar + 10px float gap (+2px breathing room) + safe-area. */
-        --dock-safe-bottom: calc(60px + env(safe-area-inset-bottom) + 12px);
+        --dock-safe-bottom: calc(56px + env(safe-area-inset-bottom));
     }
 }
 
@@ -656,23 +655,7 @@ table, .standings-table, .mini-value, .mini-stat, .sr-stat-value,
     #brSheetAccount .settings-desktop-tools,
     #brSheetAccount .settings-tour-replays { display: none !important; }
     #brSheetAccount .settings-menu-heading { display: block; }
-    /* Recent Updates opens directly from the mobile top-bar bell as a floating
-       panel under the top nav (it no longer lives in the More sheet).
-       position:absolute + transform:none are load-bearing: the <=640px rule
-       below restyles .changelog-dropdown as position:fixed with a centering
-       transform, and under fixed positioning top:calc(100% + 8px) resolves
-       against the viewport height, parking the open panel just below the
-       bottom of the screen (the "bell does nothing" bug). Absolute anchors
-       100% to the nav height instead. */
-    .top-nav.br-mnav .changelog-dropdown {
-        position: absolute;
-        transform: none;
-        top: calc(100% + 8px);
-        right: 12px;
-        left: 12px;
-        width: auto;
-        max-width: none;
-    }
+    .br-sheet-changelog-mount .changelog-dropdown { position: fixed; }
 }
 
 /* Honor reduced-motion preferences globally. */
@@ -1951,204 +1934,6 @@ html[data-theme="dark"] img[src*="discord-brands-solid.png"] {
     }
 }
 
-/* Breakout page sidebar rail: track record, forecast outlook, biggest
-   graded hits and misses. Sits beside the board on wide screens and
-   stacks below it on narrow ones. */
-.bo-layout {
-    display: flex;
-    gap: 20px;
-    align-items: flex-start;
-}
-
-.bo-main {
-    flex: 1 1 auto;
-    min-width: 0;
-}
-
-.bo-rail {
-    flex: 0 0 300px;
-    width: 300px;
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-}
-
-.bo-rail-section {
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 12px 14px;
-    background: var(--card);
-}
-
-.bo-rail-title {
-    font-size: 13px;
-    font-weight: 800;
-    color: var(--text);
-    margin-bottom: 8px;
-}
-
-.bo-rail-sub {
-    font-size: 10.5px;
-    color: var(--text-muted);
-    line-height: 1.45;
-    margin-top: 8px;
-    opacity: 0.85;
-}
-
-.bo-rail-group {
-    font-size: 11.5px;
-    font-weight: 700;
-    color: var(--text);
-}
-
-.bo-rail-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    gap: 10px;
-    padding: 5px 0;
-    border-top: 1px solid var(--border);
-}
-
-.bo-rail-row:first-of-type {
-    border-top: none;
-}
-
-.bo-rail-name {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text);
-    min-width: 0;
-}
-
-.bo-rail-meta {
-    font-size: 11px;
-    color: var(--text-muted);
-}
-
-.bo-rail-value {
-    font-size: 13px;
-    font-weight: 800;
-    white-space: nowrap;
-}
-
-.bo-rail-pending {
-    font-size: 12px;
-    color: var(--text-muted);
-    line-height: 1.45;
-    padding: 8px 10px;
-    border: 1px dashed var(--border);
-    border-radius: 8px;
-}
-
-.bo-rail-pending-line {
-    font-size: 11.5px;
-    color: var(--text-muted);
-    line-height: 1.45;
-    padding: 2px 0;
-}
-
-.bo-rail-row-main {
-    flex: 1 1 auto;
-    min-width: 0;
-}
-
-.bo-rail-bar {
-    height: 5px;
-    border-radius: 3px;
-    background: var(--border);
-    margin: 4px 0 3px;
-    overflow: hidden;
-}
-
-.bo-rail-bar span {
-    display: block;
-    height: 100%;
-    border-radius: 3px;
-    background: #10b981;
-}
-
-.bo-rail-rate {
-    font-size: 17px;
-}
-
-.bo-rail-rate-word {
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--text-muted);
-}
-
-.bo-band-pill {
-    display: inline-block;
-    font-size: 11px;
-    font-weight: 700;
-    padding: 3px 8px;
-    border-radius: 8px;
-    border: 1px solid;
-    white-space: nowrap;
-}
-
-.bo-band-hit {
-    color: #047857;
-    border-color: rgba(16, 185, 129, 0.45);
-    background: rgba(16, 185, 129, 0.1);
-}
-
-.bo-band-borderline {
-    color: #b45309;
-    border-color: rgba(245, 158, 11, 0.5);
-    background: rgba(245, 158, 11, 0.12);
-}
-
-.bo-band-miss {
-    color: #b91c1c;
-    border-color: rgba(239, 68, 68, 0.45);
-    background: rgba(239, 68, 68, 0.1);
-}
-
-.bo-grade-chip {
-    display: inline-block;
-    font-size: 10px;
-    font-weight: 700;
-    padding: 1px 6px;
-    border-radius: 6px;
-    border: 1px solid var(--border);
-    color: var(--text-muted);
-    vertical-align: 1px;
-    white-space: nowrap;
-}
-
-.bo-grade-chip-bt {
-    color: #1d4ed8;
-    border-color: rgba(59, 130, 246, 0.45);
-    background: rgba(59, 130, 246, 0.08);
-}
-
-.bo-delta {
-    font-size: 14px;
-}
-
-.bo-fc-chip {
-    display: inline-block;
-    font-size: 11px;
-    font-weight: 700;
-    padding: 2px 7px;
-    border-radius: 8px;
-    border: 1px dashed var(--text-muted);
-    color: var(--text-muted);
-}
-
-@media (max-width: 1000px) {
-    .bo-layout {
-        flex-direction: column;
-    }
-
-    .bo-rail {
-        flex: none;
-        width: 100%;
-    }
-}
-
 .changelog-entry-top {
     display: flex;
     align-items: center;
@@ -2348,27 +2133,6 @@ html[data-theme="dark"] img[src*="discord-brands-solid.png"] {
     font-weight: 800;
     letter-spacing: 0.02em;
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent);
-}
-
-/* Honesty chip shown on the nav week label when get_nfl_state() fell back to
-   last-good after a failed fetch. Mirrors the ScoreZone .rz-stale-badge. */
-.br-ctx-stale {
-    display: inline-block;
-    margin-left: 6px;
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: .04em;
-    color: #d97706;
-    background: rgba(245, 158, 11, .12);
-    border: 1px solid rgba(245, 158, 11, .3);
-    padding: 1px 6px;
-    border-radius: 12px;
-    vertical-align: 1px;
-}
-
-:root[data-theme="dark"] .br-ctx-stale {
-    background: rgba(245, 158, 11, .15);
-    border-color: rgba(245, 158, 11, .35);
 }
 
 .br-ctx-menu {
@@ -3948,13 +3712,6 @@ button:hover {
     padding: 5px;
 }
 
-.pos-rank-note {
-    font-size: 12px;
-    color: var(--text-muted);
-    margin-top: 10px;
-    line-height: 1.45;
-}
-
 .standings-table {
     width: 100%;
     border-collapse: collapse;
@@ -4048,14 +3805,6 @@ button:hover {
     left: 56px;
     /* Subtle divider marks where the frozen pane ends and scrolling begins. */
     border-right: 1px solid var(--border);
-}
-
-/* Standings mobile sub-line ("3-0 (1-0) · ▲ 3W" under the team name):
-   hidden on desktop and in Detailed mode, revealed inside the 640px
-   breakpoint below for the ordinary table. Scoped so the compact rail is
-   untouched. */
-.st-tblscroll .standings-table[data-page="standings"] .st-team-sub {
-    display: none;
 }
 .standings-table[data-page="standings"] thead tr:not(.st-div-row):not(.pp-scnrow):not(.pp-cutrow) th:nth-child(1),
 .standings-table[data-page="standings"] thead tr:not(.st-div-row):not(.pp-scnrow):not(.pp-cutrow) th:nth-child(2) {
@@ -4224,64 +3973,6 @@ button:hover {
     font-weight: 600;
 }
 
-/* Frozen Rank + Team pane for the dynasty value standings: same pattern
-   as the standings page freeze, scoped so no other .standings-table is
-   affected. Row tints are translucent color-mix overlays on the card, so
-   the frozen cells get opaque equivalents mixed over var(--card). */
-.standings-table.dynasty-table thead th:nth-child(1),
-.standings-table.dynasty-table thead th:nth-child(2),
-.standings-table.dynasty-table tbody td:nth-child(1),
-.standings-table.dynasty-table tbody td:nth-child(2) {
-    position: sticky;
-    background: var(--card);
-    z-index: 2;
-}
-.standings-table.dynasty-table thead th:nth-child(1),
-.standings-table.dynasty-table tbody td:nth-child(1) {
-    left: 0;
-    width: 52px;
-    min-width: 52px;
-}
-.standings-table.dynasty-table thead th:nth-child(2),
-.standings-table.dynasty-table tbody td:nth-child(2) {
-    left: 52px;
-    border-right: 1px solid var(--border);
-}
-.standings-table.dynasty-table thead th:nth-child(-n+2) {
-    z-index: 3;
-}
-.standings-table.dynasty-table tbody tr.is-top3 td:nth-child(-n+2) {
-    background: color-mix(in srgb, var(--accent) 4%, var(--card));
-}
-.standings-table.dynasty-table tbody tr:hover td:nth-child(-n+2) {
-    background: color-mix(in srgb, var(--accent) 7%, var(--card));
-}
-
-/* Frozen Pos + Player pane for the portfolio holdings table (a
-   .standings-table variant keyed by #pfTable). */
-#pfTable thead th:nth-child(1),
-#pfTable thead th:nth-child(2),
-#pfTable tbody td:nth-child(1),
-#pfTable tbody td:nth-child(2) {
-    position: sticky;
-    background: var(--card);
-    z-index: 2;
-}
-#pfTable thead th:nth-child(1),
-#pfTable tbody td:nth-child(1) {
-    left: 0;
-    width: 46px;
-    min-width: 46px;
-}
-#pfTable thead th:nth-child(2),
-#pfTable tbody td:nth-child(2) {
-    left: 46px;
-    border-right: 1px solid var(--border);
-}
-#pfTable thead th:nth-child(-n+2) {
-    z-index: 3;
-}
-
 /* Narrow screens: keep the emphasis but add zero width vs the original table
    so all five columns still fit -- drop the bar, keep 20px avatars, and render
    the top-3 rank as a coloured number instead of a filled badge box. */
@@ -4334,91 +4025,15 @@ button:hover {
         width: 45%;
     }
 
-    /* Mobile standings: Sleeper-style readability. The team name wraps to two
-       lines instead of truncating, with a "3-0 (1-0) · ▲ 3W" sub-line under it
-       (record + streak move out of their own columns, so cols 3 and 7 hide
-       here). Data columns get bigger type and breathing room; everything stays
-       reachable via horizontal scroll with Seed/Team frozen. The Team cell
-       keeps its 50vw max-width clamp: Blink ignores max-width:0 on table cells
-       in auto layout, which let long names blow the table out (~715px); 50vw
-       IS honored and only caps the blowout. (table-layout:fixed collapses Team
-       to ~13px when the division/clinch colspan rows are present, so auto
-       layout stays.) Scoped to .st-tblscroll so the compact rail is untouched,
-       and skipped when .show-detail is on (the toggle keeps its wide layout
-       with all columns and no sub-line). */
-    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) th:nth-child(3),
-    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) td:nth-child(3),
-    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) th:nth-child(7),
-    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) td:nth-child(7) {
+    /* Mobile main standings: drop the Trend sparkline (col 6) and everything from
+       Luck onward (col 8+), keeping Seed/Team/Record/PF/PA/Streak. The
+       .st-detail-col exclusion lets the Detailed toggle reveal just the extra
+       stat columns (with horizontal scroll) without un-hiding Luck/Exp. Seed. */
+    .standings-table[data-page="standings"] th:nth-child(6),
+    .standings-table[data-page="standings"] td:nth-child(6),
+    .standings-table[data-page="standings"] th:nth-child(n+8):not(.st-detail-col),
+    .standings-table[data-page="standings"] td:nth-child(n+8):not(.st-detail-col) {
         display: none;
-    }
-    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) td.team {
-        max-width: 0;
-        max-width: 50vw;
-    }
-    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) td.team .team-clickable {
-        white-space: normal;
-        display: -webkit-box;
-        -webkit-line-clamp: 2;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-        font-size: 14px;
-        font-weight: 700;
-        line-height: 1.25;
-    }
-    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail) .st-team-sub {
-        display: block;
-        margin: 2px 0 0 30px;
-        font-size: 11.5px;
-        font-weight: 600;
-        color: var(--text-muted);
-        white-space: nowrap;
-        font-variant-numeric: tabular-nums;
-    }
-    .st-tblscroll .standings-table[data-page="standings"] .st-streak-dir.up {
-        color: var(--win);
-    }
-    .st-tblscroll .standings-table[data-page="standings"] .st-streak-dir.down {
-        color: var(--loss);
-    }
-    /* Bigger, breathable data cells and small-caps headers on mobile. */
-    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) tbody td:not(.team) {
-        font-size: 13.5px;
-        padding: 12px 10px;
-        font-variant-numeric: tabular-nums;
-    }
-    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) thead th {
-        font-size: 10.5px;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        color: var(--text-muted);
-        padding: 10px;
-    }
-
-    /* Mobile division headers: clean Sleeper-style section header instead of
-       the gradient card. Bigger label, no "N teams" pill. */
-    .st-tblscroll .standings-table[data-page="standings"]:not(.standings-compact) .st-div-row td {
-        padding: 0;
-    }
-    .st-tblscroll .standings-table[data-page="standings"]:not(.standings-compact) .st-div-head {
-        background: none;
-        border: none;
-        box-shadow: none;
-        border-radius: 0;
-        padding: 16px 4px 8px;
-        gap: 8px;
-    }
-    .st-tblscroll .standings-table[data-page="standings"]:not(.standings-compact) .st-div-label {
-        font-size: 17px;
-        font-weight: 800;
-        text-transform: none;
-        letter-spacing: 0;
-    }
-    .st-tblscroll .standings-table[data-page="standings"]:not(.standings-compact) .st-div-meta {
-        display: none;
-    }
-    .st-tblscroll .standings-table[data-page="standings"]:not(.standings-compact) .st-div-mark {
-        height: 20px;
     }
 
     /* Playoff odds: hide Proj W-L on mobile */
@@ -5900,22 +5515,23 @@ strong + .player-badge,
 
 .otc-breakout-row .otc-player-name {
     cursor: pointer;
-    transition: opacity 0.2s ease;
+    transition: color 0.2s ease;
 }
 
 .otc-breakout-row .otc-player-name:hover {
-    opacity: 0.72;
+    color: var(--brand-blue);
+    text-decoration: underline;
 }
 
-/* Global player clickable styling: inline player names just dim slightly
-   on hover, like team names (no blue, no underline). */
+/* Global player clickable styling */
 .player-clickable {
     cursor: pointer;
-    transition: opacity 0.2s ease;
+    transition: color 0.2s ease;
 }
 
 .player-clickable:hover {
-    opacity: 0.72;
+    color: var(--brand-blue);
+    text-decoration: underline;
 }
 
 /* Breakout player names specific styling */
@@ -5926,8 +5542,9 @@ strong + .player-badge,
 }
 
 .breakout-player-name.player-clickable:hover {
-    opacity: 0.72;
-    transform: none;
+    color: var(--brand-blue);
+    text-decoration: underline;
+    transform: translateY(-1px);
 }
 
 /* View All link styling */
@@ -6951,12 +6568,7 @@ strong + .player-badge,
     color: var(--text);
     overflow: hidden;
     text-overflow: ellipsis;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    line-height: 1.3;
-    min-width: 0;
-    flex: 1;
+    white-space: nowrap;
 }
 
 .otc-rt-footer {
@@ -6967,29 +6579,6 @@ strong + .player-badge,
     padding: 8px 14px;
     border-top: 1px solid var(--border);
     background: var(--row);
-}
-
-.th-why {
-    padding: 10px 14px;
-    border-top: 1px dashed var(--border);
-    font-size: 12px;
-    line-height: 1.5;
-    color: var(--text-muted);
-}
-
-.th-why-lbl {
-    display: block;
-    font-size: 9px;
-    font-weight: 800;
-    letter-spacing: .08em;
-    text-transform: uppercase;
-    color: var(--text);
-    margin-bottom: 4px;
-}
-
-.th-why-stacked {
-    padding: 8px 0;
-    border-top: none;
 }
 
 .otc-rt-count {
@@ -7085,18 +6674,10 @@ strong + .player-badge,
         gap: 6px;
     }
 
-    .otc-rt-footer > div:last-child {
-        display: flex;
-        gap: 6px;
+    .otc-rt-footer .otc-sugg-pkg-load-btn {
         width: 100%;
-    }
-
-    .otc-rt-footer .otc-sugg-pkg-load-btn,
-    .otc-rt-footer .th-chip-btn {
-        flex: 1;
         text-align: center;
-        padding: 8px 0;
-        font-size: 13px;
+        padding: 7px 0;
     }
 
     /* Strategy chips: 4 across is too tight at 600px - keep 4 but shrink */
@@ -7381,22 +6962,11 @@ strong + .player-badge,
 /* Target rows inside suggestions tab */
 .otc-sugg-target-row {
     display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    padding: 10px 14px;
-    border-bottom: 1px solid var(--border);
-    transition: background 0.1s;
-}
-
-.otc-sugg-target-head {
-    display: flex;
     align-items: center;
     gap: 8px;
-}
-
-.otc-sugg-target-head .otc-sugg-target-name {
-    flex: 1;
-    min-width: 0;
+    padding: 6px 14px;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.1s;
 }
 
 .otc-sugg-target-row:last-child {
@@ -7417,6 +6987,14 @@ strong + .player-badge,
     text-align: center;
 }
 
+.otc-sugg-target-meta {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
 .otc-sugg-target-name {
     font-size: 12px;
     font-weight: 600;
@@ -7431,6 +7009,14 @@ strong + .player-badge,
     color: var(--text-muted);
     padding: 4px 14px 8px;
     line-height: 1.35;
+}
+
+.otc-sugg-target-why {
+    font-size: 10px;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .otc-sugg-target-btn {
@@ -7935,7 +7521,7 @@ a.otc-value-name {
 }
 
 a.otc-value-name:hover {
-    opacity: 0.72;
+    text-decoration: underline;
 }
 
 .otc-value-rank {
@@ -8287,14 +7873,6 @@ select:focus {
     display: block;
     width: 100%;
     margin-top: 8px;
-}
-
-/* Sign-in modal selects (paywall checkout/identify modals, player-page
-   league picker) are width:100% rows too, but sit flush under their labels. */
-.signin-modal-box .csd-wrap,
-#ppLeagueWrap .csd-wrap {
-    display: block;
-    width: 100%;
 }
 
 .csd-trigger {
@@ -10107,21 +9685,8 @@ select:focus {
 /* ============================================
    STANDINGS & RANKINGS
    ============================================ */
-.award-value {
-    font-size: 15px;
-    font-weight: 800;
-    color: var(--text);
-}
-
-.award-value-unit {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--muted);
-}
-
-.award-context {
-    font-size: 12px;
-    color: var(--muted);
+.award-body {
+    font-size: 14px;
 }
 
 .award-desc {
@@ -10136,80 +9701,59 @@ select:focus {
 }
 
 .award-item {
-    border: 1px solid var(--os-border, rgba(148, 163, 184, 0.18));
-    border-radius: 12px;
-    padding: 12px;
+    color: var(--accent);
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    border-radius: 14px;
+    padding: 16px;
     display: flex;
     flex-direction: column;
-    gap: 2px;
-    background: color-mix(in srgb, var(--text) 3%, transparent);
+    align-items: center;
+    justify-content: space-between;
+    text-align: center;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    background: var(--card);
 }
 
-/* Honor vs shame reads as a soft whole-tile tint plus the colored value;
-   no side accent bar (it bled over the rounded corners). */
-.award-item.award-honor {
-    background: color-mix(in srgb, var(--win) 6%, transparent);
-}
-
-.award-item.award-shame {
-    background: color-mix(in srgb, var(--loss) 6%, transparent);
+.award-item:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 6px 16px rgba(250, 204, 21, 0.25);
 }
 
 .award-name {
-    font-size: 11px;
     font-weight: 700;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--muted);
+    font-size: 16px;
+    color: var(--accent);
+    margin-bottom: 6px;
 }
 
 .award-winner {
+    margin-top: 10px;
+    font-weight: 800;
+    color: #38bdf8;
     font-size: 14px;
-    font-weight: 700;
-    color: var(--text);
-    overflow-wrap: break-word;
 }
 
-.award-item.award-honor .award-value {
-    color: var(--win);
-}
-
-.award-item.award-shame .award-value {
-    color: var(--loss);
+.awards-card {
+    border-radius: 18px;
+    color: #f1f5f9;
+    position: relative;
 }
 
 .awards-grid {
     display: grid;
-    grid-template-columns: 1fr;
-    gap: 10px;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 18px;
+    justify-content: center;
     align-items: stretch;
 }
 
-@media (min-width: 1181px) {
-    .awards-grid {
-        grid-template-columns: repeat(2, 1fr);
-    }
-
-    /* A lone final tile spans the row and flips horizontal (label and
-       winner left, value and context right) instead of leaving an
-       empty cell beside it. */
-    .awards-grid > .award-item:last-child:nth-child(odd) {
-        grid-column: 1 / -1;
-        display: grid;
-        grid-template-columns: 1fr auto;
-        column-gap: 16px;
-    }
-
-    .awards-grid > .award-item:last-child:nth-child(odd) .award-name,
-    .awards-grid > .award-item:last-child:nth-child(odd) .award-winner {
-        grid-column: 1;
-    }
-
-    .awards-grid > .award-item:last-child:nth-child(odd) .award-value,
-    .awards-grid > .award-item:last-child:nth-child(odd) .award-context {
-        grid-column: 2;
-        text-align: right;
-    }
+.awards-title {
+    font-size: 30px;
+    font-weight: 900;
+    text-align: center;
+    margin-bottom: 22px;
+    color: #facc15;
+    letter-spacing: 0.5px;
 }
 
 .rank {
@@ -11444,16 +10988,6 @@ select:focus {
     animation: matchups-spin 0.8s linear infinite;
 }
 
-/* Week-change loading pill now shows shimmering skeleton bars (shaped like
-   the matchup content) instead of a bare spinner. */
-.matchups-loading-skel {
-    width: min(300px, 78vw);
-}
-
-.matchups-loading-skel .skeleton-line {
-    margin: 7px 0;
-}
-
 .round-1 .bracket-body, .round-2 .bracket-body {
     display: flex;
     flex-direction: column;
@@ -11629,53 +11163,6 @@ select:focus {
 .home-card .error-message {
     margin-top: 8px;
     font-size: 13px;
-    color: #fecaca;
-}
-
-/* ── Paste-your-league-URL ─────────────────────────────────────────── */
-.url-paste-row {
-    margin-bottom: 6px;
-}
-.url-paste-row label {
-    display: block;
-    font-size: 13px;
-    font-weight: 700;
-    color: var(--text);
-    margin-bottom: 6px;
-}
-.url-paste-row input[type="text"] {
-    width: 100%;
-    box-sizing: border-box;
-    min-height: 44px;
-    padding: 10px 12px;
-    font-size: 15px;
-    line-height: 1.4;
-    color: var(--text);
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    outline: none;
-    transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
-}
-.url-paste-row input[type="text"]::placeholder {
-    color: var(--text-muted);
-    opacity: 0.65;
-}
-.url-paste-row input[type="text"]:focus {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.22);
-    background: rgba(255, 255, 255, 0.09);
-}
-.url-paste-row input[type="text"].url-paste-valid {
-    border-color: var(--win);
-}
-.url-paste-row input[type="text"].url-paste-invalid {
-    border-color: #f87171;
-}
-.url-paste-error {
-    margin: 6px 0 0;
-    font-size: 13px;
-    line-height: 1.45;
     color: #fecaca;
 }
 
@@ -11942,7 +11429,7 @@ select:focus {
 }
 
 .whl-name:hover {
-    opacity: 0.72;
+    color: var(--accent);
 }
 
 .whl-pts {
@@ -12023,8 +11510,23 @@ select:focus {
     pointer-events: none;
 }
 
-/* Sign-in on the home card is a secondary outline Google button for returning
-   users; the connect-a-league flow stays the primary task. */
+/* Demoted sign-in: a quiet link instead of a full Google button competing with
+   the connect-a-league task (returning users only). */
+.home-signin-link {
+    display: inline-block;
+    margin-top: 8px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #9fb0c6;
+    text-decoration: none;
+}
+.home-signin-link strong {
+    color: #8fb6ff;
+    font-weight: 800;
+}
+.home-signin-link:hover strong {
+    text-decoration: underline;
+}
 
 /* Onboarding card is always dark -- nested controls must not pull light-page tokens. */
 .home-card .home-steps-hint {
@@ -12462,83 +11964,6 @@ select:focus {
     display: flex;
     flex-direction: column;
     gap: 8px
-}
-
-/* ── Guest league claim card ───────────────────────────────────────── */
-.guest-claim-card {
-    margin: 12px 0;
-    padding: 14px 16px;
-    background: rgba(56, 189, 248, 0.08);
-    border: 1px solid rgba(56, 189, 248, 0.35);
-    border-radius: 12px;
-    animation: guestClaimIn 0.25s ease both;
-}
-@keyframes guestClaimIn {
-    from { opacity: 0; transform: translateY(-6px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-.guest-claim-text {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    margin-bottom: 12px;
-}
-.guest-claim-text strong {
-    font-size: 14px;
-    font-weight: 700;
-    color: var(--text);
-}
-.guest-claim-text span {
-    font-size: 13px;
-    line-height: 1.45;
-    color: var(--text-muted);
-}
-.guest-claim-actions {
-    display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
-}
-.guest-claim-save {
-    flex: 1;
-    min-width: 160px;
-    min-height: 44px;
-    padding: 10px 16px;
-    font-size: 14px;
-    font-weight: 700;
-    color: var(--on-accent);
-    background: var(--accent);
-    border: none;
-    border-radius: 10px;
-    cursor: pointer;
-    transition: opacity 0.15s ease;
-}
-.guest-claim-save:hover:not(:disabled) {
-    opacity: 0.9;
-}
-.guest-claim-save:disabled {
-    opacity: 0.6;
-    cursor: wait;
-}
-.guest-claim-dismiss {
-    min-height: 44px;
-    padding: 10px 16px;
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--text-muted);
-    background: transparent;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    cursor: pointer;
-    transition: color 0.15s ease, border-color 0.15s ease;
-}
-.guest-claim-dismiss:hover {
-    color: var(--text);
-    border-color: var(--text-muted);
-}
-.guest-claim-error {
-    margin: 10px 0 0;
-    font-size: 13px;
-    color: #fecaca;
 }
 
 .signed-home-league {
@@ -13066,17 +12491,11 @@ a.signed-home-league:hover {
 
 .home-hero {
     display: grid;
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
     gap: 40px;
     align-items: center;
     position: relative;
     z-index: 1;
-    /* AdSense Tier 2: the connect card (.home-hero-right) now sits after the
-       editorial sections in DOM order; grid placement keeps the hero pair
-       visually side by side on desktop. */
-    grid-column: 1;
-    grid-row: 1;
-    align-self: center;
 }
 
 .home-hero-left {
@@ -13088,54 +12507,8 @@ a.signed-home-league:hover {
 
 .home-hero-right {
     display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 0;
+    justify-content: flex-end;
     animation: homeCardIn var(--dur-slow) var(--ease-out) .08s both;
-    /* AdSense Tier 2: DOM position is after the editorial sections; this
-       places it back beside the hero intro on desktop. */
-    grid-column: 2;
-    grid-row: 1;
-    align-self: center;
-}
-
-/* The Get started card stays first; the testimonial and PRO CTA stack under
-   it so the free path comes before PRO on mobile and desktop. */
-.home-hero-right .home-hero-proof,
-.home-hero-right .home-pro-hero-cta {
-    width: 100%;
-    max-width: 380px;
-}
-
-.home-hero-proof {
-    margin: 12px 0 0;
-    padding: 12px 14px;
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    box-shadow: 0 10px 28px rgba(2,6,23,0.14);
-}
-
-.home-hero-proof blockquote {
-    margin: 0 0 6px;
-    font-size: 13.5px;
-    font-weight: 700;
-    line-height: 1.4;
-    letter-spacing: -0.1px;
-}
-
-.home-hero-proof figcaption {
-    font-size: 12px;
-    color: var(--text-muted);
-}
-
-.home-hero-proof figcaption strong {
-    font-weight: 700;
-    margin-right: 4px;
-}
-
-.home-hero-right .home-pro-hero-cta {
-    margin: 14px 0 0;
 }
 
 .home-hero-editorial {
@@ -13305,17 +12678,9 @@ a.signed-home-league:hover {
     max-width: 1120px;
     margin: 0 auto;
     padding: 36px 24px 88px;
-    /* AdSense Tier 2: grid lets the hero intro (col 1) and the connect card
-       (col 2, placed after editorial sections in DOM order) share the top row
-       while every other section spans the full width below. */
-    display: grid;
-    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
-    column-gap: 40px;
-    row-gap: 36px;
-}
-
-.home-page > :not(.home-hero):not(.home-hero-right) {
-    grid-column: 1 / -1;
+    display: flex;
+    flex-direction: column;
+    gap: 36px;
 }
 
 .home-brand {
@@ -14131,7 +13496,7 @@ a.signed-home-league:hover {
 }
 
 .inj-pname:hover {
-    opacity: 0.72;
+    text-decoration: underline;
 }
 
 .inj-meta {
@@ -14520,84 +13885,6 @@ a.signed-home-league:hover {
     padding: 0 12px 10px;
 }
 
-/* Sunday drama: lead-change moment banner (live weeks) and archived turning
-   points (completed weeks), rendered between the win bar and the body. */
-.m-drama-flip {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin: 0 12px 10px;
-    padding: 8px 12px;
-    border-radius: 10px;
-    background: rgba(34, 197, 94, 0.12);
-    border: 1px solid rgba(34, 197, 94, 0.35);
-    font-size: 12px;
-}
-
-.m-drama-flip-tag {
-    font-size: 10px;
-    font-weight: 800;
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
-    color: #16a34a;
-    white-space: nowrap;
-}
-
-.m-drama-flip-time {
-    font-weight: 800;
-    color: var(--text-muted);
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-}
-
-.m-drama-flip-text {
-    font-weight: 700;
-    color: var(--text);
-}
-
-.m-drama-history {
-    margin: 0 12px 10px;
-    padding: 10px 12px;
-    border-radius: 10px;
-    background: var(--surface, rgba(148, 163, 184, 0.08));
-    border: 1px solid var(--border);
-}
-
-.m-drama-history-title {
-    font-size: 10px;
-    font-weight: 800;
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
-    color: var(--text-muted);
-    margin-bottom: 6px;
-}
-
-.m-drama-tp-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-    font-size: 12px;
-    color: var(--text);
-}
-
-.m-drama-tp-time {
-    font-weight: 800;
-    color: var(--text-muted);
-    font-variant-numeric: tabular-nums;
-}
-
-.m-drama-tp-wp {
-    color: var(--text-muted);
-}
-
-.m-drama-tp-score {
-    color: var(--text-muted);
-    font-variant-numeric: tabular-nums;
-}
-
 .m-slide--compact .m-head {
     margin-bottom: 0;
 }
@@ -14905,37 +14192,6 @@ a.signed-home-league:hover {
 
 .standings-shares-table th:last-child {
     padding-right: 0;
-}
-
-.standings-shares-table .sorted-asc::after {
-    content: " ▲";
-}
-
-.standings-shares-table .sorted-desc::after {
-    content: " ▼";
-}
-
-.standings-shares-sort-btn {
-    appearance: none;
-    background: none;
-    border: 0;
-    padding: 0;
-    margin: 0;
-    color: inherit;
-    font: inherit;
-    letter-spacing: inherit;
-    text-transform: inherit;
-    cursor: pointer;
-}
-
-.standings-shares-sort-btn:hover {
-    color: var(--text);
-}
-
-.standings-shares-sort-btn:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
-    border-radius: 4px;
 }
 
 .standings-shares-table tbody {
@@ -15864,16 +15120,6 @@ html[data-theme="dark"] .contact-social-pill img {
     color: var(--text);
 }
 
-/* AdSense Tier 2: guide bodies now use real h2 subheadings; normalize the
-   browser default heading margins so section rhythm is consistent. */
-h2.static-section-title {
-    margin: 22px 0 8px;
-}
-
-h2.static-section-title:first-child {
-    margin-top: 0;
-}
-
 .subtle-label {
     font-size: 12px;
     opacity: .75;
@@ -16798,29 +16044,6 @@ img, svg, canvas {
         justify-content: flex-start;
     }
 
-    /* AdSense Tier 2: on stacked layouts the page returns to a flex column and
-       the connect card is ordered back directly beneath the hero intro, so the
-       visual order matches the pre-reorder design on phones and tablets. The
-       margin preserves the old 40px stacked-hero gap (page gap is 36px). */
-    .home-page {
-        display: flex;
-        flex-direction: column;
-        gap: 36px;
-    }
-
-    .home-page > * {
-        order: 3;
-    }
-
-    .home-page > .home-hero {
-        order: 1;
-    }
-
-    .home-page > .home-hero-right {
-        order: 2;
-        margin-top: 4px;
-    }
-
     .home-pro-benefits {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
@@ -16852,12 +16075,6 @@ img, svg, canvas {
         justify-content: stretch;
     }
 
-    /* AdSense Tier 2: keep the pre-reorder 24px stacked-hero rhythm
-       (28px page gap minus 4px). */
-    .home-page > .home-hero-right {
-        margin-top: -4px;
-    }
-
     .home-title {
         font-size: clamp(28px, 8vw, 34px);
     }
@@ -16884,11 +16101,6 @@ img, svg, canvas {
         min-width: 0;
         max-width: none;
         padding: 18px 16px 16px;
-    }
-
-    .home-hero-right .home-hero-proof,
-    .home-hero-right .home-pro-hero-cta {
-        max-width: none;
     }
 
     .home-card .platform-btn {
@@ -17214,15 +16426,6 @@ img, svg, canvas {
     .utility-icon-btn {
         width: 32px;
         height: 32px;
-        /* Keep the 32px visual but expand the touch target to 44px with an
-           invisible hit area. Full 44px boxes would crowd the mobile header
-           grid (logo 180px + 3 buttons) on 320-360px phones. */
-        position: relative;
-    }
-    .utility-icon-btn::before {
-        content: "";
-        position: absolute;
-        inset: -6px; /* 32px + 12px = 44px touch target; neighbors are 12px apart so hit areas just meet */
     }
 }
 
@@ -17632,14 +16835,6 @@ img, svg, canvas {
     }
     .top-nav.br-mnav .nav-pill-dropdown-wrapper {
         width: 100%;
-        /* The base wrapper is a ROW inline-flex (pill + menu side by side for
-           the desktop hover dropdown). In the collapsed menu it must stack
-           like the <=768px block does, or the static submenu renders as a
-           flex item BESIDE its pill: the pill gets squeezed and the menu
-           hangs off the right edge of the panel as a floating card. */
-        display: flex;
-        flex-direction: column;
-        align-items: stretch;
     }
     .top-nav.br-mnav .nav-pill-dropdown-wrapper .nav-pill {
         width: 100%;
@@ -17658,9 +16853,6 @@ img, svg, canvas {
         border-radius: 10px;
         margin-top: 4px;
         border: 1px solid var(--border);
-        /* Full-width inline panel under its pill, not a content-width card. */
-        width: 100%;
-        box-sizing: border-box;
     }
     .top-nav.br-mnav .nav-pills-bottom {
         display: flex !important;
@@ -19386,14 +18578,14 @@ img, svg, canvas {
 .usage-movers-card .usage-movers-list {
     list-style: none;
     margin: 0;
-    padding: 6px 0 8px;
+    padding: 4px 0 2px;
 }
 
 .usage-mover {
     display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 10px 16px;
+    align-items: baseline;
+    gap: 10px;
+    padding: 8px 16px;
     border-top: 1px solid var(--os-border, rgba(148, 163, 184, 0.18));
 }
 
@@ -19401,94 +18593,29 @@ img, svg, canvas {
     border-top: none;
 }
 
-/* Clickable rows open the player modal (global .player-clickable
-   delegate). Keep the affordance on the name, not the whole row. */
-.usage-mover.player-clickable {
-    cursor: pointer;
-}
-
-.usage-mover.player-clickable:hover {
-    color: inherit;
-    text-decoration: none;
-    opacity: 1;
-}
-
-.usage-mover.player-clickable:hover .um-name {
-    opacity: 0.72;
-}
-
-.usage-mover .um-main {
-    flex: 1 1 auto;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-}
-
 .usage-mover .um-name {
     font-weight: 600;
+    flex: 1 1 auto;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-}
-
-.usage-mover .um-sub {
-    font-size: 11px;
-    color: var(--muted);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.usage-mover .um-trend {
-    flex: 0 1 148px;
-    min-width: 84px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
 }
 
 .usage-mover .um-detail {
     font-size: 12px;
     color: var(--muted);
     white-space: nowrap;
-    text-align: right;
-}
-
-.usage-mover .um-bars {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-}
-
-.usage-mover .um-bar {
-    display: block;
-    height: 4px;
-    border-radius: 2px;
-}
-
-.usage-mover .um-bar-season {
-    background: color-mix(in srgb, var(--text) 28%, transparent);
-}
-
-.usage-mover .um-bar-recent {
-    background: var(--win);
 }
 
 .usage-mover .um-delta {
-    flex: 0 0 auto;
-    display: inline-flex;
-    align-items: center;
     font-size: 12px;
     font-weight: 700;
     white-space: nowrap;
-    padding: 3px 8px;
-    border-radius: 6px;
 }
 
 .usage-mover .um-delta.up {
     color: var(--win);
-    background: color-mix(in srgb, var(--win) 15%, transparent);
 }
 
 /* Playoff-odds hero tile fades in once the sim resolves */
@@ -20633,254 +19760,6 @@ img, svg, canvas {
     background-color: var(--row);
 }
 
-/* Frozen Date + Opp pane at every width. Below 768px the media block adds
-   Pts as a third frozen column with its own divider; here the pane ends
-   after Opp. The two header rows are targeted separately: tr.grp's first
-   cell spans both frozen columns, tr.cols carries the Date/Opp headers.
-   Fixed widths give the second column a known left offset. Every row
-   state that paints a td background gets an opaque twin here so scrolled
-   cells never show through the pane. */
-.game-log-table thead tr.grp th:first-child,
-.game-log-table thead tr.cols th:nth-child(1),
-.game-log-table thead tr.cols th:nth-child(2),
-.game-log-table tbody td:nth-child(1),
-.game-log-table tbody td:nth-child(2),
-.game-log-table tfoot td:nth-child(1),
-.game-log-table tfoot td:nth-child(2) {
-    position: sticky;
-}
-.game-log-table thead tr.grp th:first-child,
-.game-log-table thead tr.cols th:nth-child(1),
-.game-log-table tbody td:nth-child(1),
-.game-log-table tfoot td:nth-child(1) {
-    left: 0;
-    width: 48px;
-}
-.game-log-table thead tr.cols th:nth-child(2),
-.game-log-table tbody td:nth-child(2),
-.game-log-table tfoot td:nth-child(2) {
-    left: 48px;
-    width: 46px;
-}
-.game-log-table thead tr.grp th:first-child,
-.game-log-table thead tr.cols th:nth-child(-n+2) {
-    background: var(--bg-alt);
-    z-index: 3;
-}
-.game-log-table tbody td:nth-child(-n+2),
-.game-log-table tfoot td:nth-child(-n+2) {
-    background: var(--card);
-    z-index: 2;
-}
-.game-log-table tbody tr:nth-child(even) td:nth-child(-n+2) {
-    background: var(--row);
-}
-.game-log-table tbody tr.game-log-no-stats td:nth-child(-n+2),
-.game-log-table tbody tr.game-log-bye td:nth-child(-n+2) {
-    background: var(--row);
-}
-.game-log-table tbody tr:hover td:nth-child(-n+2),
-.game-log-table tfoot td:nth-child(-n+2) {
-    background: var(--bg-alt);
-}
-@media (min-width: 769px) {
-    /* Pane-edge divider on desktop; on mobile the divider sits on the
-       third (Pts) column instead, per the frozen-pane media block. */
-    .game-log-table thead tr.cols th:nth-child(2),
-    .game-log-table tbody td:nth-child(2),
-    .game-log-table tfoot td:nth-child(2) {
-        border-right: 1px solid var(--border);
-    }
-}
-
-/* ── Game log season cards + advanced sectioned table ───────────────────── */
-/* The Averages/Totals segmented control in the Game Logs header. */
-.seg-light {
-    display: inline-flex;
-    background: var(--bg-alt);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-pill);
-    padding: 2px;
-    gap: 2px;
-}
-.seg-light span {
-    font-size: 11px;
-    font-weight: 600;
-    padding: 4px 12px;
-    border-radius: var(--radius-pill);
-    color: var(--text-muted);
-    cursor: pointer;
-    user-select: none;
-    white-space: nowrap;
-}
-.seg-light span.on {
-    background: var(--card);
-    color: var(--text);
-    box-shadow: var(--shadow-sm);
-}
-
-.season-list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-/* A season-card reuses .game-log-year-section's frame; the header row now
-   carries the mini-stat strip, so it wraps instead of squeezing. */
-.season-card {
-    margin-bottom: 0;
-}
-.game-log-year-header.season-row {
-    flex-wrap: wrap;
-    row-gap: 8px;
-    column-gap: 12px;
-}
-.season-left {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-}
-.season-team {
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--text-muted);
-    background: var(--bg-alt);
-    border: 1px solid var(--border);
-    padding: 1px 7px;
-    border-radius: 6px;
-    letter-spacing: 0.02em;
-}
-
-/* Closed-season mini stat strip: label over value, tier-tinted like the table. */
-.mini-stats {
-    display: flex;
-    gap: 4px 12px;
-    flex-wrap: wrap;
-    align-items: center;
-}
-.ms {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    min-width: 36px;
-    line-height: 1.25;
-}
-.ms i {
-    font-style: normal;
-    font-size: 9px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--text-muted);
-}
-.ms b {
-    font-size: 12.5px;
-    font-weight: 700;
-    color: var(--text);
-    font-variant-numeric: tabular-nums;
-}
-
-/* Tier tints, shared by the mini strips and the advanced table. */
-.t-g { color: #22c55e; }
-.t-o { color: #f59e0b; }
-.t-r { color: #ef4444; }
-td.t-g, td.t-o, td.t-r { font-weight: 700; }
-/* The Pts cell's accent color is !important, so the tier override must be too. */
-.gl-adv td.game-log-table-pts.t-g { color: #22c55e !important; }
-.gl-adv td.game-log-table-pts.t-o { color: #f59e0b !important; }
-.gl-adv td.game-log-table-pts.t-r { color: #ef4444 !important; }
-
-/* Sectioned advanced table: group header row + column row, dividers between
-   sections, sticky date column for horizontal scrolling. */
-.table-wrap {
-    overflow-x: auto;
-    position: relative;
-}
-.gl-adv {
-    min-width: 640px;
-}
-.gl-adv thead tr.grp th {
-    padding: 8px 4px 2px;
-    border-bottom: none;
-}
-.gl-adv thead th.grp-h {
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.07em;
-    color: var(--text-muted);
-    text-align: center;
-    border-bottom: 1px solid var(--border);
-}
-.gl-adv thead tr.cols th {
-    padding: 3px 6px 8px;
-}
-.gl-adv td.sec-start,
-.gl-adv th.sec-start {
-    border-left: 1px solid var(--border);
-}
-.gl-adv th.sticky,
-.gl-adv td.sticky {
-    position: sticky;
-    left: 0;
-    z-index: 2;
-}
-.gl-adv thead th.sticky {
-    background: var(--bg-alt);
-}
-.gl-adv tbody td.sticky,
-.gl-adv tfoot td.sticky {
-    background: var(--card);
-}
-.gl-adv tbody tr:hover td.sticky {
-    background: var(--bg-alt);
-}
-.gl-adv td.dash {
-    color: var(--text-muted);
-    opacity: 0.55;
-}
-.gl-dnp {
-    color: #9ca3af;
-    font-size: 11px;
-    font-weight: 600;
-}
-.gl-tfoot-note {
-    text-align: left;
-    font-size: 11px;
-    color: var(--text-muted);
-    padding-left: 8px;
-}
-.scroll-hint {
-    position: sticky;
-    float: right;
-    margin: -28px 10px 8px 0;
-    color: var(--text-muted);
-    opacity: 0.5;
-    font-size: 14px;
-    pointer-events: none;
-    line-height: 1;
-}
-
-/* Mobile: season rows stack the strip below the title instead of squeezing. */
-@media (max-width: 600px) {
-    .game-log-year-header.season-row {
-        flex-direction: column;
-        align-items: stretch;
-    }
-    .mini-stats {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 8px 4px;
-        width: 100%;
-    }
-    .ms {
-        min-width: 0;
-    }
-    .gl-adv {
-        min-width: 600px;
-    }
-}
-
 .game-log-proj-badge {
     font-size: 10px;
     font-weight: 700;
@@ -21723,17 +20602,6 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
     border-bottom: 1px solid var(--border);
 }
 
-.pm-news-warn {
-    padding: 6px 10px;
-    margin-bottom: 6px;
-    font-size: 11px;
-    font-weight: 600;
-    color: #b45309;
-    background: rgba(245, 158, 11, .12);
-    border: 1px solid rgba(245, 158, 11, .35);
-    border-radius: 6px;
-}
-
 .pm-news-item:last-child {
     border-bottom: none;
 }
@@ -22015,17 +20883,6 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
     margin-top: 6px; background: var(--card-soft); border: 1px solid var(--border);
     border-radius: var(--radius-xs); padding: 6px 8px; }
 .pm-wl-note-star { color: var(--gold); flex: none; }
-.pm-wl-note-text { flex: 1; min-width: 0; word-break: break-word; }
-.pm-wl-note-edit, .pm-wl-note-add {
-    flex: none; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 600;
-    border: 1px solid var(--border); background: var(--card); color: var(--text); cursor: pointer;
-}
-.pm-wl-note-add { color: var(--text-muted); border-style: dashed; }
-.pm-wl-note-edit:hover, .pm-wl-note-add:hover { background: var(--row); color: var(--text); }
-.pm-wl-note-input {
-    flex: 1; min-width: 0; font-size: 12px; padding: 4px 8px; border-radius: 6px;
-    border: 1px solid var(--accent, #3b82f6); background: var(--card); color: var(--text);
-}
 .pr-wl-star { color: var(--gold); font-size: 11px; margin-left: 5px; vertical-align: 1px; }
 .wl-inline-star { color: var(--gold); font-size: 11px; margin-left: 5px; vertical-align: 1px; }
 
@@ -22053,20 +20910,6 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
     line-height: 20px; text-align: center; }
 
 /* Player modal "In this league" acquisition/ownership timeline. */
-/* Player modal Start/Sit strip: one line, verdict + slot chip + reason. */
-.pm-ss-strip { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; padding: 9px 14px; margin: 0 0 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--card); font-size: 13px; }
-.pm-ss-strip[hidden] { display: none; }
-.pm-ss-strip.pm-ss-start { background: color-mix(in srgb, var(--win) 10%, var(--card)); border-color: color-mix(in srgb, var(--win) 35%, var(--card)); }
-.pm-ss-strip.pm-ss-bench { background: color-mix(in srgb, var(--warning) 12%, var(--card)); border-color: color-mix(in srgb, var(--warning) 38%, var(--card)); }
-.pm-ss-verdict { font-size: 14.5px; font-weight: 800; color: var(--text); }
-.pm-ss-start .pm-ss-verdict { color: var(--win); }
-.pm-ss-bench .pm-ss-verdict { color: color-mix(in srgb, var(--warning) 72%, var(--text)); }
-.pm-ss-slot { padding: 2px 8px; border-radius: 8px; background: var(--card); border: 1px solid var(--border); font-size: 11.5px; font-weight: 700; color: var(--text); white-space: nowrap; }
-.pm-ss-why { color: var(--muted, var(--text-muted)); }
-.pm-ss-why b { color: var(--text); font-weight: 700; }
-.pm-ss-text { color: var(--muted, var(--text-muted)); }
-.pm-ss-link { margin-left: auto; color: var(--accent); font-weight: 600; font-size: 12.5px; text-decoration: none; white-space: nowrap; }
-.pm-ss-link:hover { text-decoration: underline; }
 .pm-inleague-list { display: flex; flex-direction: column; gap: 2px; }
 .pm-inleague-row { display: flex; align-items: baseline; gap: 9px; font-size: 13px; padding: 5px 0; }
 .pm-inleague-text { color: var(--text); }
@@ -22261,7 +21104,8 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
     display: flex;
 }
 
-/* Charts panel: weekly + radar on row 1, the SVG scatters wrap to row 2 */
+/* Charts panel: weekly + radar on row 1, seed movement + score-vs-opponent on
+   row 2, the SVG scatters wrap below. */
 #tm-panel-charts {
     display: none;
 }
@@ -22287,6 +21131,19 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
 .tm-chart-radar {
     flex: 0 0 calc(34% - 24px);
     min-width: 0;
+}
+
+/* Seed movement + score-vs-opponent: half-width pair on their own row below
+   the weekly/radar row. */
+.tm-chart-seed,
+.tm-chart-vsopp {
+    flex: 1 1 calc(50% - 12px);
+    min-width: 260px;
+}
+
+/* Actual-vs-optimal efficiency chart: full row above the chart grid. */
+.tm-chart-eff {
+    flex: 1 1 100%;
 }
 
 /* League scatters: two per row on desktop, full width when the modal is narrow.
@@ -23159,7 +22016,7 @@ img.tm-sched-avatar {
 .tm-mu-hname.player-clickable,
 .tm-team-link { cursor: pointer; }
 .tm-mu-hname.player-clickable:hover,
-.tm-team-link:hover { opacity: 0.72; }
+.tm-team-link:hover { color: var(--accent); text-decoration: underline; }
 
 .tm-mu-h-slot {
     font-size: 9px;
@@ -23271,7 +22128,6 @@ tr.team-clickable {
 
     .team-modal-header {
         padding: 16px;
-        position: relative;
     }
 
     /* No room for tiles beside the title on a phone: wrap the header so the
@@ -23282,18 +22138,8 @@ tr.team-clickable {
         gap: 12px;
     }
 
-    /* Pin the close button to the header's top-right corner. Left in the
-       flex flow it wrapped onto its own line between the meta rows and the
-       stat tiles on narrow screens. */
     .team-modal-close {
-        position: absolute;
-        top: 10px;
-        right: 10px;
-    }
-
-    /* Keep the actions menu clear of the pinned close button. */
-    .tm-menu-wrap {
-        margin-right: 44px;
+        order: 1;
     }
 
     .team-modal-statbar {
@@ -23347,7 +22193,10 @@ tr.team-clickable {
 
     .tm-chart-weekly,
     .tm-chart-radar,
-    .tm-chart-svg {
+    .tm-chart-svg,
+    .tm-chart-seed,
+    .tm-chart-vsopp,
+    .tm-chart-eff {
         flex: 1 1 100%;
         max-width: 100%;
         min-width: 0;
@@ -27162,47 +26011,6 @@ tr.team-clickable {
     margin-top: 8px;
 }
 
-/* Share row under a rendered trade outcome. */
-.outcome-share {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-top: 6px;
-    flex-wrap: wrap;
-}
-
-.outcome-share-btn {
-    padding: 4px 12px;
-    border-radius: 6px;
-    border: 1px solid var(--border);
-    background: var(--card);
-    color: var(--text);
-    font-size: 11px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: background 0.15s;
-}
-
-.outcome-share-btn:hover {
-    background: var(--row);
-}
-
-.outcome-share-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-}
-
-.outcome-share-link {
-    font-size: 12px;
-    color: var(--accent, #3b82f6);
-    word-break: break-all;
-}
-
-.outcome-share-err {
-    font-size: 12px;
-    color: var(--loss);
-}
-
 /* ── Watchlist nav panel ─────────────────────────────────────────────────── */
 .watchlist-nav-wrapper {
     position: relative;
@@ -28699,7 +27507,7 @@ tr.team-clickable {
 }
 
 .compare-chip:hover .compare-chip-name {
-    opacity: 0.72;
+    color: var(--accent);
 }
 
 .compare-chip-vs {
@@ -30484,34 +29292,6 @@ button:disabled {
     transform: translateX(-50%) translateY(0);
 }
 
-/* Push re-prompt banner (high-value moments for users without push enabled).
-   Mirrors #push-notif-banner; the two never show together (mutual exclusion
-   in app.js), so they share the same slot above the PWA install banner. */
-#push-reprompt-banner {
-    position: fixed;
-    bottom: 88px; /* sits above the PWA install banner if both show */
-    left: 50%;
-    transform: translateX(-50%) translateY(20px);
-    z-index: var(--z-banner-push);
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    box-shadow: 0 12px 40px rgba(0, 0, 0, .3);
-    padding: 14px 16px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    width: clamp(280px, 90vw, 400px);
-    opacity: 0;
-    transition: opacity .3s ease, transform .3s ease;
-}
-
-#push-reprompt-banner.pwa-banner-visible {
-    opacity: 1;
-    transform: translateX(-50%) translateY(0);
-}
-
 /* On phones the fixed bottom dock (.br-mnav, 56px + safe-area) owns the bottom
    edge, so lift both promo banners above it instead of letting the dock cover
    them. The push banner stacks above the install banner just like on desktop. */
@@ -30520,9 +29300,6 @@ button:disabled {
         bottom: calc(var(--dock-safe-bottom) + 14px);
     }
     #push-notif-banner {
-        bottom: calc(var(--dock-safe-bottom) + 14px + 64px);
-    }
-    #push-reprompt-banner {
         bottom: calc(var(--dock-safe-bottom) + 14px + 64px);
     }
 }
@@ -30796,14 +29573,14 @@ button:disabled {
 .opt-incomplete { display:flex; flex-direction:column; gap:3px; }
 .opt-incomplete strong,.opt-group-note strong { color:var(--text); }
 .opt-section-title { margin:16px 0 10px; font-size:15px; }
-.opt-comparison { container-type:inline-size; overflow:hidden; border:1px solid var(--border); border-radius:var(--card-radius, 12px); background:var(--surface); }
+.opt-comparison { overflow:hidden; border:1px solid var(--border); border-radius:var(--card-radius, 12px); background:var(--surface); }
 .opt-lineup-row { display:grid; grid-template-columns:76px minmax(0,1fr) 24px minmax(0,1fr) 58px; gap:8px; align-items:center; padding:10px 12px; border-bottom:1px solid var(--border); }
 .opt-lineup-row.is-changed { background:color-mix(in srgb, var(--accent) 7%, var(--surface)); box-shadow:inset 3px 0 var(--accent); }
 .opt-slot { color:var(--text-muted, var(--muted)); font-size:11px; font-weight:800; }
 .opt-side-label { display:none; color:var(--text-muted, var(--muted)); font-size:10px; text-transform:uppercase; }
 .opt-player { display:flex; align-items:center; gap:7px; min-width:0; }
-.opt-player-name { padding:0; border:0; background:none; color:var(--text); font:inherit; font-weight:600; text-align:left; cursor:pointer; overflow-wrap:break-word; }
-.opt-player-name:hover { opacity:.72; }
+.opt-player-name { padding:0; border:0; background:none; color:var(--text); font:inherit; font-weight:600; text-align:left; cursor:pointer; overflow-wrap:anywhere; }
+.opt-player-name:hover { color:var(--accent); text-decoration:underline; }
 .opt-player-name:focus-visible,.opt-tab:focus-visible,.opt-week-select:focus-visible,details.opt-week summary:focus-visible,details.opt-team summary:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 .opt-score,.opt-gain { margin-left:auto; font-variant-numeric:tabular-nums; text-align:right; }
 .opt-gain { color:var(--accent); font-size:12px; font-weight:800; }
@@ -30823,68 +29600,41 @@ button:disabled {
 .opt-leaderboard-head { margin:10px 0; color:var(--text-muted, var(--muted)); font-size:12px; }
 .opt-leaderboard-columns { display:none; }
 .opt-team { min-width:0; margin-bottom:8px; }.opt-team.is-viewer { border-color:var(--accent); }
-.opt-team>summary { display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:10px 12px; align-items:start; padding:12px; font-variant-numeric:tabular-nums; }
+.opt-team>summary { display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:6px 10px; align-items:start; padding:10px 12px; font-variant-numeric:tabular-nums; }
 .opt-team>summary::marker { color:var(--text-muted, var(--muted)); }
-.opt-rank { grid-column:1; grid-row:1; justify-self:start; margin-top:1px; padding:3px 8px; border-radius:6px; background:var(--surface2); color:var(--text-muted, var(--muted)); font-size:11px; font-weight:800; white-space:nowrap; }
-.opt-rank-1 { background:#fef3c7; color:#92400e; }
-.opt-rank-2 { background:#f1f5f9; color:#475569; }
-.opt-rank-3 { background:#ffedd5; color:#9a3412; }
-.opt-team-identity { grid-column:2; grid-row:1; min-width:0; }
-.opt-team-name { display:block; min-width:0; overflow-wrap:anywhere; line-height:1.3; color:var(--text); }
-.opt-team-sub { display:block; margin-top:2px; color:var(--text-muted, var(--muted)); font-size:11px; font-weight:500; }
-.opt-team-hero { grid-column:3; grid-row:1; min-width:84px; text-align:right; }
-.opt-team-effnum { display:block; margin-top:1px; color:var(--text); font-size:19px; font-weight:800; line-height:1.1; }
-.opt-team-bar { display:block; height:4px; margin-top:6px; border-radius:2px; background:var(--surface2); overflow:hidden; }
-.opt-team-bar>span { display:block; height:100%; border-radius:2px; background:linear-gradient(90deg,#16a34a,#22c55e); }
-.opt-team-hero.is-warn .opt-team-bar>span { background:linear-gradient(90deg,#d97706,#f59e0b); }
-.opt-team-stats { grid-column:1 / -1; grid-row:2; display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; padding-top:10px; border-top:1px solid var(--border); }
+.opt-rank { grid-column:1; grid-row:1; white-space:nowrap; }
+.opt-team-name { grid-column:2; grid-row:1; min-width:0; overflow-wrap:anywhere; line-height:1.3; }
 .opt-team-stat { min-width:0; text-align:center; }
-.opt-team-weeks { grid-column:1 / -1; grid-row:3; margin-top:-4px; color:var(--text-muted, var(--muted)); font-size:10px; font-weight:500; text-align:right; }
-.opt-team-weeks .opt-team-label { display:inline; margin:0 4px 0 0; font-size:10px; }
-.opt-team-weeks .opt-team-value { font-weight:600; }
-.opt-team-label { display:block; margin-bottom:3px; color:var(--text-muted, var(--muted)); font-size:9px; font-weight:700; letter-spacing:.035em; line-height:1.2; text-transform:uppercase; }
+.opt-team-eff { grid-column:3; grid-row:1; text-align:right; }
+.opt-team-actual { grid-column:1; grid-row:2; }
+.opt-team-optimal { grid-column:2; grid-row:2; }
+.opt-team-missed { grid-column:3; grid-row:2; }
+.opt-team-weeks { grid-column:1 / -1; grid-row:3; color:var(--text-muted, var(--muted)); font-size:10px; text-align:right; }
+.opt-team-label { display:block; margin-bottom:2px; color:var(--text-muted, var(--muted)); font-size:9px; font-weight:700; letter-spacing:.035em; line-height:1.2; text-transform:uppercase; }
 .opt-team-value { color:var(--text); font-weight:700; white-space:nowrap; }
-.opt-team-value.is-missed { color:var(--accent); }
+.opt-team>summary span { color:var(--text-muted, var(--muted)); }
+.opt-team>summary .opt-team-value { color:var(--text); }
 .opt-team[open] { padding:0 12px 12px; }.opt-team[open]>summary { margin:0 -12px 8px; }
 @container (min-width:650px) {
-  .opt-leaderboard-columns,.opt-team>summary { grid-template-columns:44px minmax(0,1fr) repeat(4,minmax(64px,84px)); column-gap:10px; }
+  .opt-leaderboard-columns,.opt-team>summary { grid-template-columns:42px minmax(0,1fr) repeat(4,minmax(68px,82px)); column-gap:10px; }
   .opt-leaderboard-columns { display:grid; padding:0 12px 7px; color:var(--text-muted, var(--muted)); font-size:10px; font-weight:700; letter-spacing:.035em; text-transform:uppercase; }
   .opt-leaderboard-columns span:nth-child(n+3) { text-align:right; }
-  .opt-team>summary { align-items:center; padding-block:10px; }
-  .opt-rank { grid-column:1; grid-row:1; margin-top:0; }
-  .opt-team-identity { grid-column:2; grid-row:1; }
-  .opt-team-hero { grid-column:3; grid-row:1; }
-  .opt-team-stats { display:contents; }
-  .opt-team-stat { grid-row:1; text-align:right; }
-  .opt-team-stats .opt-team-stat:nth-child(1) { grid-column:4; }
-  .opt-team-stats .opt-team-stat:nth-child(2) { grid-column:5; }
-  .opt-team-stats .opt-team-stat:nth-child(3) { grid-column:6; }
+  .opt-team>summary { align-items:center; padding-block:9px; }
+  .opt-rank,.opt-team-name,.opt-team-stat { grid-row:1; }
+  .opt-rank { grid-column:1; }.opt-team-name { grid-column:2; }
+  .opt-team-eff { grid-column:3; }.opt-team-actual { grid-column:4; }.opt-team-optimal { grid-column:5; }.opt-team-missed { grid-column:6; }
+  .opt-team-stat { text-align:right; }
   .opt-team-label { display:none; }
-  .opt-team-weeks { grid-column:2 / -1; grid-row:2; margin-top:-4px; text-align:left; }
-  .opt-team-weeks .opt-team-label { display:none; }
+  .opt-team-weeks { grid-column:2 / -1; grid-row:2; margin-top:-2px; text-align:left; }
 }
 .opt-empty-state { padding:30px; text-align:center; color:var(--text-muted, var(--muted)); }
-/* Stack the comparison when the PANEL is narrow (phone, hub column, split
-   view). Keyed to .opt-comparison's own width via a container query, not the
-   viewport: the single-row grid above divides whatever width is left between
-   the two sides, and .opt-player-name was the only element that could shrink
-   (its min-content was one character), so in a narrow panel the names were
-   crushed to a sliver and wrapped letter-per-line. Stacked, each side gets
-   the full content width and the actual score column stays clear of the
-   gain figure. */
-@container (max-width:649px) {
-  .opt-lineup-row { grid-template-columns:54px minmax(0,1fr) 48px; align-items:start; }
-  .opt-slot + .opt-side { grid-column:2; grid-row:1; }
-  .opt-arrow + .opt-side { grid-column:2 / 4; grid-row:2; }
-  .opt-side-label { display:block; margin-bottom:3px; }
-  .opt-arrow { grid-column:1; grid-row:2; justify-self:center; transform:rotate(90deg); }
-  .opt-gain { grid-column:3; grid-row:1; }
-  .opt-player { align-items:flex-start; }
-  .opt-score { flex:none; }
-}
 @media (max-width:720px) {
   .opt-summary { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .opt-nav { gap:7px; margin-bottom:16px; }.opt-tab { padding:7px 11px; }
+  .opt-lineup-row { grid-template-columns:54px minmax(0,1fr) 48px; align-items:start; }
+  .opt-side { grid-column:2 / 4; }.opt-side-label { display:block; margin-bottom:3px; }
+  .opt-arrow { display:none; }.opt-gain { grid-column:3; grid-row:1; }
+  .opt-player { align-items:flex-start; }.opt-score { flex:none; }
   .opt-week>summary { display:grid; gap:4px; }
 }
 
@@ -31296,7 +30046,7 @@ button:disabled {
 }
 
 .sched-pname:hover {
-    opacity: 0.72;
+    color: var(--accent);
 }
 
 /* Rankings view is filtered to a single position, so the per-row position badge
@@ -32871,7 +31621,8 @@ button:disabled {
 }
 
 .dvt-player-link:hover {
-    opacity: 0.72;
+    color: #38bdf8;
+    text-decoration: underline;
 }
 
 .dvt-pos-badge {
@@ -33148,7 +31899,8 @@ button:disabled {
 }
 
 .rf-name:hover {
-    opacity: 0.72;
+    color: var(--accent);
+    text-decoration: underline;
 }
 
 .rf-team {
@@ -33355,7 +32107,8 @@ button:disabled {
 }
 
 .rnk-player-link:hover {
-    opacity: 0.72;
+    color: #38bdf8;
+    text-decoration: underline;
 }
 
 .rnk-pos-badge {
@@ -33520,11 +32273,11 @@ button:disabled {
 }
 
 /* ============================================
-   BR SCOREZONE
+   BR REDZONE
    ============================================ */
 
 /* Nav pill */
-.nav-pill-scorezone {
+.nav-pill-redzone {
     background: linear-gradient(135deg, #dc2626, #b91c1c) !important;
     color: #fff !important;
     font-weight: 700 !important;
@@ -33534,12 +32287,12 @@ button:disabled {
     gap: 5px;
 }
 
-.nav-pill-scorezone:hover {
+.nav-pill-redzone:hover {
     background: linear-gradient(135deg, #ef4444, #dc2626) !important;
     color: #fff !important;
 }
 
-.nav-pill-scorezone.active {
+.nav-pill-redzone.active {
     background: linear-gradient(135deg, #ef4444, #b91c1c) !important;
     box-shadow: 0 0 0 2px rgba(239, 68, 68, .4);
 }
@@ -33564,7 +32317,7 @@ button:disabled {
     }
 }
 
-/* ScoreZone item inside the Weekly dropdown: red dot on light menu bg */
+/* Redzone item inside the Weekly dropdown: red dot on light menu bg */
 .nav-pill-dropdown-item .rz-nav-dot {
     background: #dc2626;
     margin-right: 6px;
@@ -33572,7 +32325,7 @@ button:disabled {
     vertical-align: middle;
 }
 
-/* Live ScoreZone dropdown item (NFL game days): pulses red with a live dot */
+/* Live Redzone dropdown item (NFL game days): pulses red with a live dot */
 .nav-pill-dropdown-item .rz-nav-live {
     display: inline-flex;
     align-items: center;
@@ -33590,12 +32343,12 @@ button:disabled {
 }
 
 /* Weekly button pulses red on NFL game days (live games available) */
-.nav-pill.nav-pill-scorezone-live {
+.nav-pill.nav-pill-redzone-live {
     position: relative;
-    animation: nav-scorezone-glow 2s ease-in-out infinite;
+    animation: nav-redzone-glow 2s ease-in-out infinite;
 }
 
-@keyframes nav-scorezone-glow {
+@keyframes nav-redzone-glow {
     0%, 100% {
         box-shadow: 0 0 0 0 rgba(220, 38, 38, 0);
     }
@@ -33604,14 +32357,9 @@ button:disabled {
     }
 }
 
-/* ── BR ScoreZone page ────────────────────────────────────────────────────────── */
+/* ── BR Redzone page ────────────────────────────────────────────────────────── */
 /* Built on the site's design tokens so it reads as part of the app. Red is the
-   only ScoreZone-specific accent; everything else inherits the site theme. */
-/* ScoreZone design tokens live on :root (not just .rz-page) because ScoreZone
-   surfaces like the player-modal box-score sheet are appended to
-   document.body, outside the page root. They alias the global theme vars so
-   both themes keep working. */
-:root,
+   only RedZone-specific accent; everything else inherits the site theme. */
 .rz-page {
     --rz-red: #dc2626;
     --rz-red-soft: rgba(220, 38, 38, .10);
@@ -33626,8 +32374,6 @@ button:disabled {
     --rz-muted: var(--text-muted);
     --rz-hover: var(--accent-soft);
     --rz-content-gutter: 14px;
-}
-.rz-page {
     background: var(--rz-bg);
     min-height: calc(100vh - 56px);
     padding: 0 0 80px;
@@ -33639,13 +32385,13 @@ button:disabled {
     width: calc(100% + 20px);
 }
 
-/* ScoreZone is a full-bleed live page: drop the top ad banner and zero the
+/* Redzone is a full-bleed live page: drop the top ad banner and zero the
    layout's top margin so the sticky header sits flush beneath the nav. */
-#app-scale:has(.page-shell[data-page="scorezone"]) .ad-top-banner {
+#app-scale:has(.page-shell[data-page="redzone"]) .ad-top-banner {
     display: none;
 }
 
-#app-scale:has(.page-shell[data-page="scorezone"]) #page-root {
+#app-scale:has(.page-shell[data-page="redzone"]) #page-root {
     margin-top: 0;
     padding-top: 0;
 }
@@ -33656,7 +32402,7 @@ button:disabled {
     margin: 0 auto;
 }
 
-:root[data-theme="dark"] {
+:root[data-theme="dark"] .rz-page {
     --rz-red: #f04545;
     --rz-red-soft: rgba(240, 69, 69, .14);
 }
@@ -34794,8 +33540,8 @@ button:disabled {
 }
 
 /* Position hues mirror the site-wide .pos-badge palette (QB blue, RB green,
-   WR amber, TE purple, K pink, DEF slate) so ScoreZone shares one palette with
-   the rest of the app -- rendered here as ScoreZone's soft tinted chips. */
+   WR amber, TE purple, K pink, DEF slate) so Redzone shares one palette with
+   the rest of the app -- rendered here as Redzone's soft tinted chips. */
 .rz-pos-QB {
     background: rgba(59, 130, 246, .14);
     color: var(--brand-blue);
@@ -35997,7 +34743,7 @@ button:disabled {
 }
 
 /* The viewer's own touchdown gets a bigger green-and-gold burst (plus confetti
-   fired from scorezone.js). */
+   fired from redzone.js). */
 .rz-td-new.rz-td-mine {
     animation: rz-live-enter 250ms cubic-bezier(.22, .68, 0, 1) both,
     rz-td-mine-flash 1.9s .1s ease forwards;
@@ -36226,7 +34972,7 @@ a.rz-demo-link:hover {
     padding: 16px 20px;
 }
 
-/* ── Weekly: ScoreZone CTA banner ──────── */
+/* ── Weekly: Redzone CTA banner ──────── */
 .weekly-rz-cta {
     display: flex;
     align-items: center;
@@ -36296,7 +35042,7 @@ a.rz-demo-link:hover {
     color: #fbbf24;
 }
 
-/* ── Weekly Hub: ScoreZone entry button (by the week selector) ─────────────
+/* ── Weekly Hub: Redzone entry button (by the week selector) ─────────────
    Replaces the old CTA banner on this page. Deliberately static (no pulse):
    the dashboard carries the animated live/pregame CTA. */
 .weekly-hub .week-selector {
@@ -36660,7 +35406,7 @@ a.rz-demo-link:hover {
     white-space: nowrap;
 }
 
-/* ── Player modal ScoreZone tab ───────────── */
+/* ── Player modal Redzone tab ───────────── */
 .pm-tab-live {
     position: relative;
 }
@@ -37065,7 +35811,7 @@ a.rz-demo-link:hover {
 }
 /* Field-position row: a yard field with a seamless single-color bar that ends in
    an arrow point overhanging the ball, plus a yard-line flag, red-zone tint,
-   yard ticks/labels, and a first-down line. Shared by the ScoreZone board and the
+   yard ticks/labels, and a first-down line. Shared by the RedZone board and the
    player modal via _rzRenderGameBoard, so tokens carry site-wide fallbacks. */
 .rz-field { margin-top: 10px; }
 .rz-field-track {
@@ -37289,9 +36035,9 @@ a.rz-demo-link:hover {
     outline-offset: 2px;
 }
 .rz-game-pill.is-selected {
-    border-color: var(--rz-red);
-    background: var(--rz-red-soft);
-    box-shadow: 0 0 0 1px var(--rz-red);
+    border-color: var(--rz-accent, #6366f1);
+    background: color-mix(in srgb, var(--rz-accent, #6366f1) 8%, var(--rz-card));
+    box-shadow: 0 0 0 1px var(--rz-accent, #6366f1);
 }
 .rz-game-pill-all {
     min-width: 52px;
@@ -37304,7 +36050,7 @@ a.rz-demo-link:hover {
     letter-spacing: .08em;
     color: var(--rz-muted);
 }
-.rz-game-pill-all.is-selected .rz-gp-all { color: var(--rz-red); }
+.rz-game-pill-all.is-selected .rz-gp-all { color: var(--rz-accent, #6366f1); }
 .rz-gp-team {
     display: flex;
     align-items: center;
@@ -37382,42 +36128,10 @@ a.rz-demo-link:hover {
     outline-offset: 2px;
 }
 .rz-boxscore-ico { font-size: 14px; color: var(--rz-muted); }
-
-/* Visit-sync progress bar: thin indeterminate bar pinned to the viewport top while
-   the visit reconcile re-syncs with the live API. ScoreZone-scoped so it never
-   fights the global navigation progress bar. */
-.rz-sync-bar {
-    position: fixed;
-    top: 0;
-    left: 0;
-    height: 3px;
-    width: 0;
-    z-index: var(--z-modal);
-    background: linear-gradient(90deg, var(--rz-red), var(--rz-amber));
-    border-radius: 0 2px 2px 0;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity .2s ease;
-}
-.rz-sync-bar.on {
-    opacity: 1;
-    animation: rz-sync-creep 1.1s ease-in-out infinite;
-}
-@keyframes rz-sync-creep {
-    0% { width: 6%; }
-    55% { width: 74%; }
-    100% { width: 6%; }
-}
-@media (prefers-reduced-motion: reduce) {
-    .rz-sync-bar.on { animation: none; width: 40%; }
-}
-
 .rz-bs-backdrop {
     position: fixed;
     inset: 0;
-    /* Above the mobile dock (.br-tabbar at --z-chrome) so the scrim dims it;
-       one step below the sheet. Same approach as .rz-hist-overlay. */
-    z-index: calc(var(--z-modal) - 1);
+    z-index: 90;
     background: rgba(0, 0, 0, .6);
     opacity: 0;
     transition: opacity .25s ease;
@@ -37428,11 +36142,7 @@ a.rz-demo-link:hover {
     left: 0;
     right: 0;
     bottom: 0;
-    /* Modal level: clears the mobile bottom dock instead of sliding under it
-       (the old z-index 91 left the sheet's lower rows unreachable behind the
-       dock). The player modal opens later in DOM order, so a player tap from a
-       box-score row still paints above this sheet at the same level. */
-    z-index: var(--z-modal);
+    z-index: 91;
     max-width: 480px;
     margin: 0 auto;
     max-height: 88vh;
@@ -37481,12 +36191,8 @@ a.rz-demo-link:hover {
     line-height: 1;
 }
 .rz-bs-body {
-    /* flex child of the max-height column sheet: min-height 0 lets it shrink
-       and actually scroll on iOS Safari instead of overflowing the sheet. */
-    flex: 1 1 auto;
-    min-height: 0;
     overflow-y: auto;
-    padding: 12px 16px calc(28px + env(safe-area-inset-bottom));
+    padding: 12px 16px 28px;
     -webkit-overflow-scrolling: touch;
 }
 .rz-bs-sec {
@@ -37691,7 +36397,7 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     color: var(--brand-blue);
 }
 
-/* ── ScoreZone: narrow-phone (≤430px) pass ──────────────────────────────────────
+/* ── Redzone: narrow-phone (≤430px) pass ──────────────────────────────────────
    The sticky app bar packs the brand, week pill, live chip, refresh timer and
    (in demo) the demo pill + exit into one non-wrapping row. Below ~430px that
    overflowed the viewport. Tighten the paddings/gaps, let the brand truncate
@@ -37952,22 +36658,6 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
 
 .br-page-enter {
     animation: brRiseIn .5s var(--ease-out) both;
-}
-
-/* -- Skeleton-to-content crossfade: applied to the wrapper that swaps from a
-   skeleton placeholder to real content, so the arrival reads as a soft fade
-   instead of a hard cut. ----------------------------------------------- */
-@keyframes brFadeSwap {
-    from {
-        opacity: 0;
-    }
-    to {
-        opacity: 1;
-    }
-}
-
-.br-fade-swap {
-    animation: brFadeSwap .35s ease both;
 }
 
 .br-stagger > * {
@@ -38267,7 +36957,7 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .br-page-enter, .br-fade-swap, .br-stagger > *, .analytics-bar-fill, .sos-fill, .compare-bar-fill,
+    .br-page-enter, .br-stagger > *, .analytics-bar-fill, .sos-fill, .compare-bar-fill,
     .dr-gbar-fill, .dr-proj-bar-fill, .pos-bar-inner, .rivalry-bar-fill,
     .br-bar-grow, .rank-mark, .br-pop, .live-dot::after, .br-chip-pop > *,
     .br-flash-up, .br-flash-down, .br-shake, .br-draw path, .dr-cell-reveal {
@@ -38276,19 +36966,6 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
 
     .br-lift, .br-flip, .br-slide-ind {
         transition: none !important;
-    }
-
-    .br-tab-in-l, .br-tab-in-r {
-        animation: none !important;
-    }
-
-    /* Infinite live pulses: hold the resting frame under reduced motion. */
-    .rz-nav-dot, .rz-brand-dot.is-live, .rz-live-dot-sm, .rz-fh-dot,
-    .weekly-rz-cta-dot, .weekly-live-badge::before, .pm-live-dot,
-    .rz-psb-live-dot, .rz-mnav-dot,
-    .rz-mc-state.live::before, .rz-mt-live::before, .rz-lb-live::before,
-    .br-sheet-link.rz-mnav-live {
-        animation: none !important;
     }
 }
 
@@ -38756,22 +37433,6 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     }
 }
 
-/* Sunday drama lead change: the banner pops in with a green flash, reusing the
-   generic brMoPop reveal so the base (unplayed) state stays visible for
-   no-JS and reduced-motion users. */
-.br-mo-play[data-br-moment="leadchange"] {
-    animation: brMoPop .5s var(--ease-spring) .05s both, brLeadFlash 1.4s ease .05s both;
-}
-
-@keyframes brLeadFlash {
-    0%, 100% {
-        box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
-    }
-    30% {
-        box-shadow: 0 0 22px 2px rgba(34, 197, 94, .45);
-    }
-}
-
 /* Breakout ignite: an elite candidate's card catches fire -- the border warms to
    ember, a flame glow pulses once, and the score badge pops in. */
 .br-brk {
@@ -39001,57 +37662,6 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
         opacity: 1;
         transform: none;
     }
-}
-
-/* -- Tab panel transitions: the incoming panel slides in from the direction
-   it was reached from (brAnimateTabPanel picks the side). Applied by the
-   shared tab switchers in app.js; the animation class is removed on
-   animationend so re-clicking a tab replays it. -- */
-@keyframes brTabInR {
-    from {
-        opacity: 0;
-        transform: translateX(26px);
-    }
-    to {
-        opacity: 1;
-        transform: none;
-    }
-}
-
-@keyframes brTabInL {
-    from {
-        opacity: 0;
-        transform: translateX(-26px);
-    }
-    to {
-        opacity: 1;
-        transform: none;
-    }
-}
-
-.br-tab-in-r {
-    animation: brTabInR .32s var(--ease-out) both;
-}
-
-.br-tab-in-l {
-    animation: brTabInL .32s var(--ease-out) both;
-}
-
-/* -- Breathing dot on the text-only LIVE badges (game-center matchup cards,
-   matchup tiles, leaderboard). currentColor keeps it theme-aware; the pulse
-   reuses the existing rz-pulse keyframes. -- */
-.rz-mc-state.live::before,
-.rz-mt-live::before,
-.rz-lb-live::before {
-    content: "";
-    display: inline-block;
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: currentColor;
-    margin-right: 5px;
-    vertical-align: 1px;
-    animation: rz-pulse 1.6s ease-in-out infinite;
 }
 
 /* AI text reveal (brRevealText): each block sharpens up as the report "writes". */
@@ -40172,62 +38782,6 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     color: rgba(255, 255, 255, .5);
 }
 
-/* PRO finale slide (client-side, free users only): end-of-deck upsell. The
-   tap zones sit above slides, so hide them while the PRO slide is active and
-   let the slide's own buttons (and a tap-anywhere-to-close) take over. */
-.wrapped-overlay:has(.wrapped-slide[data-kind="pro-cta"].active) .wrapped-tap {
-    display: none;
-}
-
-.wrapped-pro-title {
-    font-family: "InterVariable", "Archivo", sans-serif;
-    font-weight: 900;
-    font-size: 40px;
-    line-height: 1.1;
-    letter-spacing: -.025em;
-    color: #fff;
-    max-width: 16ch;
-}
-
-.wrapped-pro-ctas {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    margin-top: 20px;
-}
-
-.wrapped-pro-go {
-    border: 0;
-    border-radius: 12px;
-    padding: 13px 22px;
-    font-size: 15px;
-    font-weight: 800;
-    color: #fff;
-    cursor: pointer;
-    background: linear-gradient(135deg, #122d4b, #2563eb);
-    box-shadow: 0 8px 24px rgba(37, 99, 235, .35);
-}
-
-.wrapped-pro-dismiss {
-    border: 1px solid rgba(255, 255, 255, .25);
-    border-radius: 12px;
-    padding: 13px 18px;
-    font-size: 14px;
-    font-weight: 700;
-    color: rgba(255, 255, 255, .85);
-    cursor: pointer;
-    background: transparent;
-}
-
-.wrapped-slide.active .wrapped-pro-title,
-.wrapped-slide.active .wrapped-pro-ctas {
-    animation: wrapUp .5s var(--ease-out) .3s both;
-}
-
-@media (max-width: 600px) {
-    .wrapped-pro-title { font-size: 32px; }
-}
-
 @media (prefers-reduced-motion: reduce) {
     .wrapped-overlay, .wrapped-slide.active::before,
     .wrapped-slide.active .wrapped-kicker, .wrapped-slide.active .wrapped-league,
@@ -40307,30 +38861,18 @@ a, button, [role="button"], [role="tab"], summary, label,
     z-index: var(--z-toast);
     display: inline-flex;
     align-items: center;
-    gap: 2px;
+    gap: 10px;
+    font: inherit;
     font-size: 13px;
     font-weight: 700;
     color: var(--on-accent);
     background: var(--accent);
     border: 0;
     border-radius: 12px;
-    padding: 6px 6px 6px 16px;
+    padding: 11px 18px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, .28);
-    animation: brUpdateIn .28s ease both;
-}
-
-.br-update-main {
-    display: inline-flex;
-    align-items: center;
-    gap: 10px;
-    font: inherit;
-    font-weight: inherit;
-    color: inherit;
-    background: none;
-    border: 0;
-    padding: 5px 10px 5px 0;
     cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
+    animation: brUpdateIn .28s ease both;
 }
 
 .br-update-banner .br-update-cta {
@@ -40338,29 +38880,6 @@ a, button, [role="button"], [role="tab"], summary, label,
     opacity: .82;
     border-left: 1px solid rgba(255, 255, 255, .35);
     padding-left: 10px;
-}
-
-.br-update-dismiss {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    font-size: 17px;
-    line-height: 1;
-    font-weight: 400;
-    color: inherit;
-    opacity: .65;
-    background: none;
-    border: 0;
-    border-radius: 8px;
-    padding: 0;
-    cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
-}
-
-.br-update-dismiss:hover {
-    opacity: 1;
 }
 
 @keyframes brUpdateIn {
@@ -40392,18 +38911,6 @@ a, button, [role="button"], [role="tab"], summary, label,
    A thumb-reachable dock to the five core league sections. Hidden on desktop
    (the top nav covers it) and only present on league pages. */
 .br-tabbar {
-    display: none;
-}
-
-/* Mobile top-bar search shortcut: hidden on desktop (the full search input
-   lives in the utility bar there). */
-.br-top-search {
-    display: none;
-}
-
-/* Mobile top-bar notifications shortcut: hidden on desktop (the changelog bell
-   lives in the utility bar there). */
-.br-top-notif {
     display: none;
 }
 
@@ -40463,16 +38970,17 @@ a, button, [role="button"], [role="tab"], summary, label,
     .br-tabbar {
         display: flex;
         position: fixed;
-        /* Float like a pill instead of hugging the screen edges: less
-           conspicuous, Facebook-style. Icons and labels are unchanged. */
-        left: max(12px, env(safe-area-inset-left));
-        right: max(12px, env(safe-area-inset-right));
-        bottom: calc(env(safe-area-inset-bottom) + 10px);
+        left: 0;
+        right: 0;
+        bottom: 0;
         z-index: var(--z-chrome);
         background: var(--bg);
-        border: 1px solid var(--border);
-        border-radius: 24px;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, .14);
+        border-top: 1px solid var(--border);
+        /* Clear the home indicator: the row is a fixed height, the inset is extra. */
+        padding-bottom: env(safe-area-inset-bottom);
+        padding-left: env(safe-area-inset-left);
+        padding-right: env(safe-area-inset-right);
+        box-shadow: 0 -1px 0 rgba(0, 0, 0, .04);
     }
 
     .br-tabbar-item {
@@ -40486,12 +38994,12 @@ a, button, [role="button"], [role="tab"], summary, label,
         align-items: center;
         justify-content: center;
         gap: 3px;
-        height: 60px;
+        height: 56px;
         text-decoration: none;
         color: var(--text-muted);
-        font-size: 10px;
+        font-size: 10.5px;
         font-weight: 600;
-        letter-spacing: .03em;
+        letter-spacing: .01em;
         -webkit-tap-highlight-color: transparent;
         transition: color .12s ease, transform .08s ease;
     }
@@ -40507,9 +39015,7 @@ a, button, [role="button"], [role="tab"], summary, label,
     }
 
     .br-tabbar-item.active {
-        /* The gliding pill is the active signal; the icon/label stay a strong
-       neutral instead of recoloring (one signal, not two). */
-        color: var(--text);
+        color: var(--accent);
     }
 
     .br-tabbar-item.active .br-tabbar-lbl {
@@ -40537,9 +39043,10 @@ a, button, [role="button"], [role="tab"], summary, label,
         position: absolute;
         left: 0;
         z-index: 0;
-        /* Span the full floating pill. */
+        /* Span only the tab row, not the safe-area padding below it, so the pill
+       hugs the icon and label instead of stretching to the very bottom. */
         top: 0;
-        bottom: 0;
+        bottom: env(safe-area-inset-bottom);
         width: calc(100% / var(--n, 5));
         transform: translateX(calc(var(--i, 0) * 100%));
         transition: transform .28s var(--ease-glide);
@@ -40602,7 +39109,7 @@ a, button, [role="button"], [role="tab"], summary, label,
     }
 
     .br-more-tab.active {
-        color: var(--text);
+        color: var(--accent);
     }
 
     /* Top bar yields to the dock. Pills and utilities hide; logo + league/week
@@ -40610,63 +39117,6 @@ a, button, [role="button"], [role="tab"], summary, label,
     .top-nav.br-mnav .nav-center,
     .top-nav.br-mnav .nav-right {
         display: none;
-    }
-
-    /* Mobile top-bar shortcuts: plain icon buttons pinned top-right (the
-       desktop search input and changelog bell hide with .nav-right).
-       No circle chrome, just the glyph; the 38px box keeps a comfortable
-       tap target. Absolutely positioned so they never disturb the
-       single-column grid; nav-left keeps clear of them. Search sits
-       rightmost, bell to its left. */
-    .top-nav.br-mnav .br-top-search,
-    .top-nav.br-mnav .br-top-notif {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        position: absolute;
-        top: 50%;
-        transform: translateY(-50%);
-        width: 38px;
-        height: 38px;
-        border: 0;
-        border-radius: 0;
-        background: transparent;
-        color: var(--text);
-        cursor: pointer;
-        -webkit-tap-highlight-color: transparent;
-    }
-
-    .top-nav.br-mnav .br-top-search {
-        right: 12px;
-    }
-
-    .top-nav.br-mnav .br-top-notif {
-        right: 58px;
-    }
-
-    .top-nav.br-mnav .br-top-search:active,
-    .top-nav.br-mnav .br-top-notif:active {
-        transform: translateY(-50%) scale(.94);
-    }
-
-    .top-nav.br-mnav .br-top-notif-dot {
-        position: absolute;
-        top: 7px;
-        right: 7px;
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        background: #E24B4A;
-        border: 1.5px solid var(--card);
-        pointer-events: none;
-    }
-
-    .top-nav.br-mnav .br-top-notif-dot[hidden] {
-        display: none;
-    }
-
-    .top-nav.br-mnav .nav-left {
-        padding-right: 100px;
     }
 
     .top-nav.br-mnav {
@@ -40891,8 +39341,8 @@ a, button, [role="button"], [role="tab"], summary, label,
         color: var(--accent);
     }
 
-    /* ScoreZone live: the mobile port of the desktop nav glow. The always-visible
-       More tab shows a pulsing red dot and the ScoreZone sheet row pulses red --
+    /* Redzone live: the mobile port of the desktop nav glow. The always-visible
+       More tab shows a pulsing red dot and the Redzone sheet row pulses red --
        only while games are live or kicking off within the hour (server adds
        .rz-mnav-live / .br-more-live). Reuses the desktop keyframes. */
     .br-sheet-link.rz-mnav-live {
@@ -41372,8 +39822,6 @@ a, button, [role="button"], [role="tab"], summary, label,
 .pm-team-name { font-size: 20px; font-weight: 800; line-height: 1; color: var(--text); }
 .pm-team-meta { font-size: 11.5px; color: var(--text-muted); margin-top: 3px; font-weight: 600; }
 .pm-team-next { margin-top: 7px; color: var(--text); font-size: 12px; font-weight: 700; }
-.pm-team-dvp { margin-top: 4px; color: var(--text-muted); font-size: 11.5px; font-weight: 600; }
-.pm-team-dvp b { color: var(--text); }
 .pm-team-context-warning { margin-top:8px; color:var(--text-muted); font-size:10px; line-height:1.4; }
 .pm-team-herostats { display: flex; gap: 9px; margin-top: 14px; }
 .pm-team-herostats .pm-hero-stat {
@@ -41441,13 +39889,10 @@ a, button, [role="button"], [role="tab"], summary, label,
 /* focus-position room table (container keeps the .pm-team-usage class) */
 .pm-team-usage { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 11px; overflow: hidden; }
 .pm-troom-row { display: grid; grid-template-columns: 20px 1fr 92px 46px 42px; align-items: center; gap: 9px; padding: 8px 11px; font-size: 12px; }
-/* Fixed tracks, never content-sized: every row is its own grid, so auto
-   tracks resolve per row and the header labels (wide) drift from the data
-   values (narrow). Widths fit the 9px header labels (TARGET SHARE etc.). */
-.pm-room-rb .pm-troom-row { grid-template-columns: 20px minmax(120px,1fr) 92px 82px 76px 78px 54px; }
+.pm-room-rb .pm-troom-row { grid-template-columns: 20px minmax(120px,1fr) repeat(5, minmax(58px, auto)); }
 .pm-room-qb .pm-troom-row,
 .pm-room-wr .pm-troom-row,
-.pm-room-te .pm-troom-row { grid-template-columns: 20px minmax(120px,1fr) 76px 70px 58px; }
+.pm-room-te .pm-troom-row { grid-template-columns: 20px minmax(120px,1fr) 76px 52px 58px; }
 .pm-troom-row + .pm-troom-row { border-top: 1px solid var(--grid); }
 .pm-troom-head { background: var(--card-soft); font-size: 9px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); }
 .pm-troom-head span:nth-child(n+3) { text-align: right; }
@@ -42072,6 +40517,8 @@ a, button, [role="button"], [role="tab"], summary, label,
 .pwr-bar > div { height: 100%; border-radius: 4px; background: var(--accent); }
 .pwr-right { text-align: right; }
 .pwr-score { font-family: "Archivo", system-ui, sans-serif; font-weight: 800; font-size: 15px; color: var(--text); font-variant-numeric: tabular-nums; }
+.pwr-row.streak-hot .pwr-pos { color: var(--loss); }
+.pwr-row.streak-cold .pwr-pos { color: var(--accent); }
 
 /* ---- Insight strip --------------------------------------- */
 .standings-insights-wrap { margin-top: 16px; }
@@ -42417,8 +40864,8 @@ a, button, [role="button"], [role="tab"], summary, label,
 /* player rows -- clickable cards that sit on the drawer */
 .team-strength-card .pos-detail-inner .player-activity { padding: 7px 10px; border-radius: 9px; background: var(--card); border: 1px solid var(--border); transition: border-color .15s ease, box-shadow .15s ease; }
 .team-strength-card .pos-detail-inner .player-activity:hover { border-color: color-mix(in srgb, var(--brand-blue) 45%, var(--border)); box-shadow: 0 2px 8px -4px color-mix(in srgb, var(--brand-blue) 55%, transparent); }
-.team-strength-card .pos-detail-inner .player-clickable { font-size: 13px; font-weight: 600; transition: opacity .15s ease; }
-.team-strength-card .pos-detail-inner .player-clickable:hover { opacity: 0.72; }
+.team-strength-card .pos-detail-inner .player-clickable { font-size: 13px; font-weight: 600; transition: color .15s ease; }
+.team-strength-card .pos-detail-inner .player-clickable:hover { color: var(--brand-blue); }
 .team-strength-card .pos-detail-inner .player-trade-value { font-weight: 800; font-variant-numeric: tabular-nums; }
 /* draft-capital pick list */
 .team-strength-card .pos-detail-inner .dc-pick-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
@@ -42596,34 +41043,6 @@ a, button, [role="button"], [role="tab"], summary, label,
 .standings-table tr.st-div-leader td:first-child {
     box-shadow: inset 3px 0 0 var(--accent);
 }
-/* Streak edge signal: colored left edge on team rows, intensity scales with
-   streak length. Wins green, losses red. W1/L1 are a whisper, W4+/L4+ cap the
-   scale. Placed after the division-leader rule so the streak edge wins when a
-   leader is also streaking (the leader keeps its row tint). */
-.standings-table tr.streak-w1 td:first-child {
-    box-shadow: inset 2px 0 0 color-mix(in srgb, var(--win) 40%, transparent);
-}
-.standings-table tr.streak-w2 td:first-child {
-    box-shadow: inset 3px 0 0 color-mix(in srgb, var(--win) 70%, transparent);
-}
-.standings-table tr.streak-w3 td:first-child {
-    box-shadow: inset 4px 0 0 var(--win);
-}
-.standings-table tr.streak-w4plus td:first-child {
-    box-shadow: inset 5px 0 0 var(--win);
-}
-.standings-table tr.streak-l1 td:first-child {
-    box-shadow: inset 2px 0 0 color-mix(in srgb, var(--loss) 40%, transparent);
-}
-.standings-table tr.streak-l2 td:first-child {
-    box-shadow: inset 3px 0 0 color-mix(in srgb, var(--loss) 70%, transparent);
-}
-.standings-table tr.streak-l3 td:first-child {
-    box-shadow: inset 4px 0 0 var(--loss);
-}
-.standings-table tr.streak-l4plus td:first-child {
-    box-shadow: inset 5px 0 0 var(--loss);
-}
 .standings-compact .st-div-head {
     padding: 8px 11px;
     border-radius: 10px;
@@ -42663,7 +41082,7 @@ a, button, [role="button"], [role="tab"], summary, label,
     min-width: 150px;
 }
 
-/* UX reliability: explicit ScoreZone recovery and a single unread-feed affordance. */
+/* UX reliability: explicit Redzone recovery and a single unread-feed affordance. */
 .rz-load-error { margin:12px 16px; padding:18px; border:1px solid color-mix(in srgb,var(--loss) 38%,var(--border)); border-radius:var(--radius,12px); background:var(--card); display:flex; flex-direction:column; gap:8px; color:var(--text); }
 .rz-load-error > span { color:var(--text-muted); font-size:13px; }
 .rz-load-error > div { display:flex; flex-wrap:wrap; gap:8px; }
@@ -42926,89 +41345,40 @@ a, button, [role="button"], [role="tab"], summary, label,
 .for-modal-body { overflow-y: auto; padding: 20px; -webkit-overflow-scrolling: touch; }
 
 .for-report { color: var(--text); font-size: 14px; line-height: 1.55; }
-.for-muted { color: var(--text-muted); }
-
-/* Hero: verdict stamp + team name + stat chips */
-.for-hero {
-  display: flex; gap: 14px; align-items: center;
-  background: color-mix(in srgb, var(--accent) 7%, var(--card-soft));
-  border: 1px solid var(--border); border-radius: 16px;
-  padding: 14px 16px; margin-bottom: 4px;
+.for-report-head { display: flex; gap: 14px; align-items: center; margin-bottom: 6px; }
+.for-report-team { font-size: 18px; font-weight: 800; letter-spacing: -0.2px; }
+.for-report-meta { font-size: 12.5px; color: var(--text-muted); margin-top: 2px; }
+.for-headline { font-size: 19px; font-weight: 800; letter-spacing: -0.3px; line-height: 1.3; margin: 14px 0 8px; }
+.for-posture { margin: 0 0 4px; color: var(--text); }
+.for-sec { margin-top: 20px; }
+.for-sec-title {
+  font-size: 11px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase;
+  color: var(--text-muted); margin-bottom: 10px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--border);
 }
-.for-hero-main { min-width: 0; }
-.for-hero-team { font-size: 20px; font-weight: 800; letter-spacing: -0.3px; }
-.for-hero-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.for-chip {
-  font-size: 11.5px; font-weight: 700; color: var(--text);
-  background: var(--card); border: 1px solid var(--border);
-  border-radius: 8px; padding: 4px 10px; white-space: nowrap;
-}
-.for-chip-hot {
-  color: var(--accent);
-  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
-}
-.for-headline { font-size: 18px; font-weight: 800; letter-spacing: -0.3px; line-height: 1.35; margin: 16px 0 6px; }
-.for-posture { margin: 0; color: var(--text-muted); font-size: 13.5px; }
-
-/* Sections */
-.for-sec { margin-top: 24px; }
-.for-sec-title { font-size: 15px; font-weight: 800; letter-spacing: -0.1px; color: var(--text); margin-bottom: 10px; }
-.for-sec-note { font-size: 12px; color: var(--text-muted); margin-top: 8px; }
 .for-sub { font-size: 13px; font-weight: 800; margin-bottom: 6px; color: var(--text); }
+.for-list { margin: 0; padding-left: 18px; }
+.for-list li { margin-bottom: 6px; }
+.for-note { color: var(--text-muted); }
 .for-two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 @media (max-width: 600px) { .for-two-col { grid-template-columns: 1fr; } }
 
-/* Since last week: score row + move rows */
-.for-score-row {
-  display: flex; align-items: center; gap: 10px;
-  background: var(--card-soft); border: 1px solid var(--border);
-  border-radius: 12px; padding: 10px 14px; margin-bottom: 6px; font-size: 13.5px;
-}
-.for-score-w, .for-score-l {
-  flex-shrink: 0; width: 26px; height: 26px; border-radius: 8px;
-  display: inline-flex; align-items: center; justify-content: center;
-  font-size: 13px; font-weight: 900;
-}
-.for-score-w { background: #1a7f4b1f; color: #1a7f4b; }
-.for-score-l { background: #a333331f; color: #a33333; }
-[data-theme="dark"] .for-score-w { color: #34d399; }
-[data-theme="dark"] .for-score-l { color: #f87171; }
-.for-moves { margin: 0; padding: 0; list-style: none; }
-.for-moves-cols { margin-top: 4px; }
-.for-moves-col-title {
-  font-size: 11.5px; font-weight: 800; letter-spacing: 0.07em; text-transform: uppercase;
-  margin: 8px 0 2px;
-}
-.for-move { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); }
-.for-move:last-child { border-bottom: none; }
-.for-move-delta { flex-shrink: 0; min-width: 54px; font-weight: 800; font-size: 13.5px; font-variant-numeric: tabular-nums; }
-.for-move-body { min-width: 0; font-size: 13.5px; }
-.for-up { color: #1a7f4b; }
-.for-down { color: #a33333; }
-[data-theme="dark"] .for-up { color: #34d399; }
-[data-theme="dark"] .for-down { color: #f87171; }
-
-/* Positional grades */
 .for-grades { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
 @media (max-width: 600px) { .for-grades { grid-template-columns: repeat(2, 1fr); } }
-.for-grade-a { --for-grade: #1a7f4b; --for-grade-hi: #34d399; }
-.for-grade-b { --for-grade: #4d9e2f; --for-grade-hi: #a3e635; }
-.for-grade-c { --for-grade: #b98a1d; --for-grade-hi: #fbbf24; }
-.for-grade-d { --for-grade: #b3541e; --for-grade-hi: #fb923c; }
-.for-grade-f { --for-grade: #a33333; --for-grade-hi: #f87171; }
 .for-grade-card {
-  border: 1px solid color-mix(in srgb, var(--for-grade) 30%, transparent);
-  background: color-mix(in srgb, var(--for-grade) 9%, transparent);
-  border-radius: 14px; padding: 12px 10px; text-align: center;
+  border: 1px solid var(--border); border-radius: 12px; padding: 10px;
+  text-align: center; background: var(--card-soft);
 }
 .for-grade-pos { font-size: 11px; font-weight: 800; letter-spacing: 1px; color: var(--text-muted); }
-.for-grade-letter { font-size: 32px; font-weight: 900; line-height: 1.25; color: var(--for-grade); }
-.for-grade-rank { font-size: 11.5px; color: var(--text-muted); margin: 2px 0 8px; }
+.for-grade-letter { font-size: 30px; font-weight: 900; line-height: 1.2; }
+.for-grade-a { color: #1a7f4b; }
+.for-grade-b { color: #4d9e2f; }
+.for-grade-c { color: #b98a1d; }
+.for-grade-d { color: #b3541e; }
+.for-grade-f { color: #a33333; }
+.for-grade-rank { font-size: 11.5px; color: var(--text-muted); margin: 2px 0 6px; }
 .for-grade-bar { height: 5px; border-radius: 4px; background: var(--border); overflow: hidden; }
-.for-grade-bar span { display: block; height: 100%; background: var(--for-grade); border-radius: 4px; }
-[data-theme="dark"] .for-grade-letter { color: var(--for-grade-hi); }
-[data-theme="dark"] .for-grade-bar span { background: var(--for-grade-hi); }
+.for-grade-bar span { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
 
 .for-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--border); border-radius: 12px; }
 .for-table { width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 560px; }
@@ -43025,18 +41395,6 @@ a, button, [role="button"], [role="tab"], summary, label,
   font-size: 10px; font-weight: 800; color: #b3541e; border: 1px solid #b3541e55;
   border-radius: 6px; padding: 1px 5px; margin-left: 6px; white-space: nowrap;
 }
-.for-inj-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.for-inj-row {
-  display: flex; justify-content: space-between; align-items: center; gap: 8px 12px; flex-wrap: wrap;
-  border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; background: var(--card-soft);
-}
-.for-inj-name { font-weight: 700; }
-.for-inj-meta { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
-.for-inj-action { font-size: 12px; font-weight: 800; flex-shrink: 0; }
-.for-card-inj { display: flex; flex-direction: column; gap: 6px; }
-.for-card-inj ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-.for-card-inj li { font-size: 13px; }
-.for-opp-inj { font-size: 13px; margin-top: 10px; }
 .for-role { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px; }
 .for-role-starter { background: #1a7f4b18; color: #1a7f4b; }
 .for-role-depth { background: #64748b18; color: #64748b; }
@@ -43044,60 +41402,20 @@ a, button, [role="button"], [role="tab"], summary, label,
 .for-trend-down { color: #a33333; font-weight: 700; }
 
 .for-targets { display: flex; flex-direction: column; gap: 10px; }
-.for-target-card { border: 1px solid var(--border); border-radius: 14px; padding: 14px; background: var(--card-soft); }
-.for-target-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px 10px; flex-wrap: wrap; }
+.for-target-card { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; background: var(--card-soft); }
 .for-target-head { font-size: 14.5px; }
-.for-target-from {
-  flex-shrink: 0; font-size: 11.5px; font-weight: 700; color: var(--text-muted);
-  background: var(--card); border: 1px solid var(--border); border-radius: 8px;
-  padding: 4px 8px; white-space: nowrap;
-}
-.for-target-give { font-size: 13px; margin-top: 8px; }
-.for-target-why { font-size: 13px; margin-top: 6px; color: var(--text); }
-.for-target-urgent { font-size: 13px; margin-top: 6px; font-weight: 700; color: var(--accent); }
-.for-target-alt { font-size: 13px; margin-top: 6px; color: var(--text-muted); }
-.for-lbl-inline { font-size: 10.5px; font-weight: 800; letter-spacing: 0.8px; text-transform: uppercase; color: var(--text-muted); margin-right: 4px; }
-.for-target-note { font-size: 13px; margin-top: 8px; color: var(--text); background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; }
+.for-target-meta { font-size: 12.5px; color: var(--text-muted); margin-top: 2px; }
+.for-target-give { font-size: 13px; margin-top: 6px; }
+.for-target-note { font-size: 13px; margin-top: 6px; color: var(--text); }
 .for-analyze {
-  display: inline-block; margin-top: 10px; font-size: 13px; font-weight: 700;
+  display: inline-block; margin-top: 8px; font-size: 13px; font-weight: 700;
   color: var(--accent); text-decoration: none;
   border: 1px solid var(--border); border-radius: 10px; padding: 7px 12px; background: var(--card);
 }
 .for-analyze:hover { border-color: var(--accent); }
-
-/* Waivers and cuts: picklist rows */
-.for-picklist { margin: 0; padding: 0; list-style: none; }
-.for-pick { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid var(--border); }
-.for-pick:last-child { border-bottom: none; }
-.for-pick-badge {
-  flex-shrink: 0; width: 24px; height: 24px; border-radius: 8px; margin-top: 1px;
-  display: inline-flex; align-items: center; justify-content: center;
-  font-weight: 900; font-size: 14px; line-height: 1;
-}
-.for-add { background: #1a7f4b1f; color: #1a7f4b; }
-.for-cut { background: #a333331f; color: #a33333; }
-[data-theme="dark"] .for-add { color: #34d399; }
-[data-theme="dark"] .for-cut { color: #f87171; }
-.for-pick-body { min-width: 0; font-size: 13.5px; }
-.for-pick-note { font-size: 12.5px; color: var(--text-muted); margin-top: 2px; }
-
 .for-alert {
   border-left: 3px solid #b3541e; background: var(--card-soft);
   border-radius: 0 12px 12px 0; padding: 10px 14px; margin: 0; font-weight: 600;
-}
-
-/* Quieter AI-unavailable notice inside the report modal (other surfaces unchanged) */
-.for-modal-body .ai-error-notice {
-  background: transparent; border: none; border-radius: 0;
-  padding: 0; margin-bottom: 12px;
-  font-size: 12px; color: var(--text-muted);
-}
-.for-modal-body .ai-error-notice .ai-error-icon { font-size: 12px; }
-
-@media (max-width: 600px) {
-  .for-table th, .for-table td { padding: 7px 8px; }
-  .for-td-name { min-width: 110px; }
-  .for-hero { padding: 12px 14px; }
 }
 
 /* ── Compact Start/Sit + waiver sections ─────────────────────────────────────
@@ -43125,20 +41443,6 @@ a, button, [role="button"], [role="tab"], summary, label,
 }
 .wv-cx-row-wrap + .wv-cx-row-wrap { border-top: 1px solid var(--grid); }
 .wv-cx-row-wrap.wv-cx-expanded { background: var(--bg-alt); }
-/* Quick-compare: once the first player is picked, each Start/Sit card shows a
-   compare button right on the row, so the second pick needs no expanding. */
-.wv-cx-rowline { display: flex; align-items: center; }
-.wv-cx-rowline > .wv-cx-row { flex: 1 1 auto; width: auto; min-width: 0; }
-.wv-cx-quickcmp {
-  flex: 0 0 auto; align-self: center;
-  margin: 0 10px 0 2px; padding: 9px 13px;
-  border-radius: 12px; border: 1.5px solid var(--accent);
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
-  color: var(--accent); font-size: 13px; font-weight: 700; line-height: 1;
-  display: flex; align-items: center; justify-content: center; cursor: pointer;
-  white-space: nowrap; -webkit-tap-highlight-color: transparent;
-}
-.wv-cx-quickcmp.is-picked { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .wv-cx-badge {
   flex-shrink: 0; font-size: 10.5px; font-weight: 800; letter-spacing: 0.6px;
   padding: 5px 9px; border-radius: 8px; white-space: nowrap;
@@ -43187,10 +41491,6 @@ a, button, [role="button"], [role="tab"], summary, label,
 .wv-cx-ev .k { display: block; font-size: 9.5px; font-weight: 700; letter-spacing: 0.8px; color: var(--text-subtle); margin-bottom: 2px; }
 .wv-cx-ev .v { font-weight: 700; font-variant-numeric: tabular-nums; }
 .wv-cx-ev .s { display: block; font-weight: 400; color: var(--text-muted); font-size: 11px; }
-.wv-cx-ev .v .wv-abs { display: block; font-weight: 600; }
-.wv-cx-ev .v .wv-abs + .wv-abs { margin-top: 3px; }
-.wv-cx-ev .v .wv-abs b { font-weight: 800; }
-.wv-abs-st { color: var(--text-muted); font-size: 11px; font-weight: 600; }
 .wv-cx-evidence-list { padding: 4px 14px 8px 14px; display: flex; flex-direction: column; gap: 7px; }
 .wv-cx-evl { font-size: 12.5px; color: var(--text); }
 .wv-cx-evl .k { display: inline-block; font-size: 10px; font-weight: 800; letter-spacing: 0.8px; color: var(--text-subtle); min-width: 74px; }
@@ -43277,6 +41577,7 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 .home-hero-editorial a { color: var(--accent); }
 .home-platform-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
 .home-platform-chip { font-size: 12.5px; font-weight: 700; border: 1px solid var(--border); background: var(--card); border-radius: 8px; padding: 6px 12px; color: var(--text-muted); }
+.home-card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 22px; box-shadow: 0 18px 44px rgba(2,6,23,0.20); }
 .home-card-title { font-size: 20px; font-weight: 800; margin: 0 0 6px; }
 .home-account-lead { font-size: 13.5px; color: var(--text-muted); display: block; margin-bottom: 14px; }
 @media (max-width: 768px) { .home-hero { grid-template-columns: 1fr; padding-top: 44px; } }
@@ -43329,14 +41630,14 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 .pos-badge.RB { background: #22c55e; }
 .pos-badge.WR { background: #f59e0b; }
 .mb-pos .pos-badge { width: 34px; height: 20px; font-size: 10px; padding: 1px 4px; }
-/* ScoreZone: .rz-* from static/scorezone.js (_renderGameStrip, _playerRowHtml) */
+/* Redzone: .rz-* from static/redzone.js (_renderGameStrip, _playerRowHtml) */
 .hp-rz { background: var(--card); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; box-shadow: 0 18px 44px rgba(2, 6, 23, 0.16); --rz-card: var(--card); --rz-text: var(--text); --rz-muted: var(--text-muted); --rz-border: var(--border); --rz-red: #dc2626; }
 :root[data-theme="dark"] .hp-rz { --rz-red: #f04545; }
 .rz-game-strip { margin: 0 0 6px; }
 .rz-game-strip-scroll { display: flex; gap: 8px; overflow-x: auto; padding: 12px 12px 6px; scrollbar-width: none; }
 .rz-game-strip-scroll::-webkit-scrollbar { display: none; }
 .rz-game-pill { flex: 0 0 auto; min-width: 108px; max-width: 150px; min-height: 46px; display: flex; flex-direction: column; align-items: stretch; justify-content: center; gap: 2px; padding: 7px 10px; background: var(--rz-card); border: 1px solid var(--rz-border); border-radius: 14px; cursor: pointer; font: inherit; color: var(--rz-text); text-align: left; }
-.rz-game-pill.is-selected { border-color: var(--rz-red); background: var(--rz-red-soft); box-shadow: 0 0 0 1px var(--rz-red); }
+.rz-game-pill.is-selected { border-color: #6366f1; background: rgba(99, 102, 241, 0.08); box-shadow: 0 0 0 1px #6366f1; }
 .rz-gp-team { display: flex; align-items: center; gap: 5px; min-width: 0; }
 .rz-gp-logo-txt { font-size: 9px; font-weight: 800; color: var(--rz-muted); }
 .rz-gp-abv { font-size: 11px; font-weight: 800; letter-spacing: .02em; color: var(--rz-text); }
@@ -43374,11 +41675,6 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 .wv-cx-why { display: block; margin-top: 3px; font-size: 12.5px; color: var(--text-muted); }
 .wv-cx-chip { display: inline-block; font-size: 11px; font-weight: 700; color: var(--win); background: rgba(34, 197, 94, 0.14); border-radius: 20px; padding: 2px 8px; margin-left: 4px; white-space: nowrap; }
 .wv-cx-chip.bad { color: var(--loss); background: rgba(239, 68, 68, 0.14); }
-/* Matchup chip: four tiers on the sched_rank_color ease scale (#1 = easiest). */
-.wv-cx-chip.mt1 { color: #22c55e; background: #22c55e18; }
-.wv-cx-chip.mt2 { color: #84cc16; background: #84cc1618; }
-.wv-cx-chip.mt3 { color: #f59e0b; background: #f59e0b18; }
-.wv-cx-chip.mt4 { color: #ef4444; background: #ef444418; }
 .wv-cx-proj { text-align: right; flex-shrink: 0; }
 .wv-cx-proj-num { display: block; font-size: 24px; font-weight: 800; letter-spacing: -0.5px; font-variant-numeric: tabular-nums; color: var(--text); }
 .wv-cx-proj-lbl { display: block; font-size: 9.5px; font-weight: 700; letter-spacing: 1.2px; color: var(--text-subtle); }
@@ -43386,7 +41682,7 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 .wv-cx-benchline { display: flex; align-items: center; gap: 10px; padding: 2px 14px; color: var(--text-subtle); font-size: 10.5px; font-weight: 700; letter-spacing: 1.5px; }
 .wv-cx-benchline::before, .wv-cx-benchline::after { content: ""; flex: 1; border-top: 1.5px dashed var(--border); }
 /* Wrapped: .wrapped-* slides from dashboard_services/pages/history_page.py */
-.wrapped-deck { --wa: #a78bfa; background: radial-gradient(110% 60% at 18% 30%, rgba(124, 58, 237, .32) 0%, transparent 65%), linear-gradient(168deg, #221247 0%, #120b26 55%, #07060c 100%); border: none; border-radius: 18px; overflow: hidden; min-height: 260px; }
+.wrapped-deck { --wa: #a78bfa; background: radial-gradient(110% 60% at 18% 30%, rgba(124, 58, 237, .32) 0%, transparent 65%), linear-gradient(168deg, #221247 0%, #120b26 55%, #07060c 100%); border: none; overflow: hidden; min-height: 260px; }
 .wrapped-kicker { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
 .wrapped-kicker-rule { width: 26px; height: 3px; border-radius: 2px; background: var(--wa); }
 .wrapped-kicker-txt { font-size: 13px; font-weight: 800; letter-spacing: .22em; text-transform: uppercase; color: var(--wa); }
@@ -43442,18 +41738,6 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 .faq-item { border-bottom: 1px solid var(--border); padding: 18px 4px; }
 .faq-item h4 { margin: 0 0 8px; font-size: 16px; }
 .faq-item p { margin: 0; font-size: 14.5px; color: var(--text-muted); line-height: 1.6; }
-/* Home FAQ cards (scoped: other pages reuse unscoped .faq-item) */
-.faq .faq-item { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 20px 22px; margin: 0 0 12px; }
-.faq .faq-item:last-of-type { margin-bottom: 0; }
-.faq .faq-item:hover { border-color: var(--text-muted); }
-.faq .faq-item[open] { border-color: var(--accent); }
-.faq .faq-item summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; cursor: pointer; list-style: none; }
-.faq .faq-item summary::-webkit-details-marker { display: none; }
-.faq .faq-item summary h4 { margin: 0; font-size: 16px; font-weight: 700; }
-.faq .faq-item .faq-plus { flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--card-soft); border: 1px solid var(--border); font-size: 18px; line-height: 1; transition: transform .2s ease; }
-.faq .faq-item[open] .faq-plus { transform: rotate(45deg); }
-.faq .faq-item p { margin: 0; font-size: 15px; color: var(--text-muted); line-height: 1.6; }
-.faq .faq-item[open] p { padding-top: 10px; }
 /* Final CTA */
 .final-cta { max-width: 1060px; margin: 0 auto 80px; padding: 0 20px; }
 .final-cta-inner { background: var(--accent-soft); border: 1px solid var(--border); border-radius: 20px; padding: 48px 32px; text-align: center; }
@@ -43480,10 +41764,6 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 .quote-card blockquote::before { content: "\201C"; display: block; font-size: 34px; line-height: 1; color: var(--accent); margin-bottom: 8px; }
 .quote-card figcaption { font-size: 13px; color: var(--text-muted); }
 .quote-card figcaption strong { color: var(--text); display: block; font-size: 13.5px; }
-/* Single-quote layout: one centered card instead of a sparse grid */
-.quotes-single { justify-content: center; overflow: visible; margin-left: 0; margin-right: 0; padding-left: 0; padding-right: 0; }
-.quotes-single .quote-card { flex: 0 1 560px; max-width: 560px; text-align: center; }
-.quotes-single .quote-card blockquote::before { margin-left: auto; margin-right: auto; }
 /* Wrapped auto-play deck */
 .hm-deck { position: relative; min-height: 220px; }
 .hm-slide { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; opacity: 0; transform: translateY(8px); transition: opacity 0.5s ease, transform 0.5s ease; pointer-events: none; }
@@ -43503,662 +41783,3 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 .tour-cta-btn:hover { filter: brightness(1.06); }
 
 .home-pro-lead strong { color: var(--text); }
-
-/* ═══════════════════════════════════════════════════════════════════
-   Sticky identifying team/player columns (site-wide).
-   Each table's leading Team/Player column sticks at left:0 during
-   horizontal scroll; rank/pick utility columns scroll underneath.
-   ═══════════════════════════════════════════════════════════════════ */
-/* Sticky identifying Player column for the dynasty tables.
-   Only the Player column sticks at left:0; the rank (#) column scrolls
-   underneath it. Rows are transparent on the page background, so the
-   sticky cells use var(--bg) (theme-aware: #ffffff light / #020617 dark)
-   and replicate the translucent row-hover overlay. */
-#dvtTable th.dvt-player,
-#dvtTable td.dvt-name-cell,
-.rnk-table th.rnk-player,
-.rnk-table td.rnk-name-cell {
-    position: sticky;
-    left: 0;
-    z-index: 2;
-    background: var(--bg);
-    border-right: 1px solid var(--border);
-}
-#dvtTable th.dvt-player,
-.rnk-table th.rnk-player {
-    z-index: 3;
-}
-#dvtTable tr:hover td.dvt-name-cell,
-.rnk-table tr:hover td.rnk-name-cell {
-    background-color: var(--bg);
-    background-image: linear-gradient(rgba(255, 255, 255, .03), rgba(255, 255, 255, .03));
-}
-/* Sticky identifying Team column for the history standings table.
-   Only the Team column sticks at left:0; the Rank column scrolls
-   underneath it. Backgrounds replicate each existing row state:
-   body cells sit on var(--card), the header row is transparent over the
-   card (var(--card-soft)), and hover is #f8fbff. */
-.history-table th.hist-team,
-.history-table td.hist-team {
-    position: sticky;
-    left: 0;
-    z-index: 2;
-    background: var(--card);
-    border-right: 1px solid var(--border);
-}
-.history-table thead th.hist-team {
-    z-index: 3;
-    background: var(--card-soft);
-}
-.history-table tbody tr:hover td.hist-team {
-    background: #f8fbff;
-}
-/* Sticky leading Player column for the Front Office Report roster table
-   (table.for-table, built by dashboard_services/ai/front_office_report.py).
-   The full report renders in .for-modal (var(--card); dark theme #1a2535),
-   and thead th already carries background: var(--card-soft) from the base
-   rule below. This file is a drop-in for static/dashboard.css: append it
-   near the other .for-table rules (~line 41415) before the PR. Kept out of
-   dashboard.css during the sticky-columns branch to avoid edit collisions. */
-
-.for-table thead th:first-child,
-.for-table td.for-td-name {
-  position: sticky;
-  left: 0;
-  z-index: 2;
-  border-right: 1px solid var(--border);
-}
-.for-table thead th:first-child {
-  z-index: 3;
-  /* background comes from the existing .for-table th rule (var(--card-soft)) */
-}
-.for-table td.for-td-name {
-  background: var(--card);
-}
-[data-theme="dark"] .for-table td.for-td-name {
-  background: #1a2535; /* matches .for-modal dark background */
-}
-/* ── Playoff odds: sticky Team column ──────────────────────────────────────────
-   Staging file. The parent merges this block into static/dashboard.css
-   (appended after the existing playoff-odds section, ~line 9991) so the
-   rules win specificity ties. Do not edit static/dashboard.css directly
-   from parallel agents. */
-
-/* Desktop scroll container. The mobile media query already gives .po-wrap
-   overflow-x:auto; on desktop this is a no-op unless the table overflows. */
-.po-wrap {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-}
-
-table.po-table th.po-team,
-table.po-table td.po-team {
-    position: sticky;
-    left: 0;
-    z-index: 2;
-    background: var(--card);
-    border-right: 1px solid var(--border);
-}
-
-table.po-table thead th.po-team {
-    z-index: 3;
-}
-
-/* Clickable-row hover paints the whole row via tr.team-clickable:hover td;
-   keep the sticky Team cell in sync (accent-soft is solid in both themes). */
-table.po-table tr.team-clickable:hover td.po-team {
-    background: var(--accent-soft);
-}
-/* ── ScoreZone box-score sheet: sticky Player column ─────────────────────────────
-   Staging file. The parent merges this block into static/dashboard.css
-   (appended after the existing box-score section, ~line 36303) so the
-   rules win specificity ties. Do not edit static/dashboard.css directly
-   from parallel agents.
-
-   The sheet's tables are transparent-rowed with no zebra/hover states, so
-   the sticky cells only need the sheet background. --rz-card resolves to
-   var(--card). */
-
-/* Header cell: the Player th carries no class, so target first-child. */
-table.rz-bs-table thead th:first-child,
-table.rz-bs-table td.rz-bs-pname {
-    position: sticky;
-    left: 0;
-    z-index: 2;
-    background: var(--rz-card);
-    border-right: 1px solid var(--rz-border);
-}
-
-table.rz-bs-table thead th:first-child {
-    z-index: 3;
-}
-
-/* ── Trade Hub: top trade chips (Targets tab, under the search bar) ───────── */
-.otc-top-chips-head {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 8px;
-    margin: 10px 0 6px;
-}
-.otc-top-chips-label {
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--text-muted);
-    letter-spacing: .05em;
-    text-transform: uppercase;
-}
-.otc-top-chips-hint {
-    font-size: 11px;
-    font-weight: 500;
-    color: var(--text-subtle);
-    white-space: nowrap;
-}
-.otc-top-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-}
-.otc-top-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    padding: 4px 10px 4px 4px;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    background: var(--row);
-    color: var(--text);
-    font-size: 13px;
-    cursor: pointer;
-    transition: border-color .15s, transform .1s;
-}
-.otc-top-chip:hover {
-    border-color: var(--accent);
-}
-.otc-top-chip:active {
-    transform: scale(.97);
-}
-.otc-top-chip-pos {
-    font-size: 10.5px;
-    font-weight: 800;
-    letter-spacing: .02em;
-    padding: 3px 7px;
-    border-radius: 6px;
-    white-space: nowrap;
-}
-.otc-top-chip-name {
-    font-weight: 600;
-}
-.otc-top-chip-team {
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--text-muted);
-}
-
-/* ── ScoreZone Moments (matchup page) ─────────────────────────────────────────
-   Compact row under the win probability bar; opens a ScoreZone-styled modal. */
-.rzm-row { margin-top: 10px; }
-/* ── League Scores tab ─────────────────────────────────────────────────── */
-.ls-tabs { display: flex; gap: 4px; margin-bottom: 10px; background: var(--card-soft); border-radius: 8px; padding: 3px; }
-.ls-tab { flex: 1; border: 0; background: transparent; color: var(--text-muted); font-size: 13px; font-weight: 600; padding: 7px 10px; border-radius: 6px; cursor: pointer; }
-.ls-tab.is-active { background: var(--card); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.25); }
-.ls-view[hidden] { display: none; }
-.ls-loading, .ls-empty { text-align: center; color: var(--text-subtle); font-size: 13px; padding: 18px 8px; }
-.ls-list { display: flex; flex-direction: column; gap: 8px; }
-.ls-card { background: var(--card-soft); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
-.ls-card.is-you { border-color: var(--accent); }
-.ls-card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-.ls-status { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-subtle); }
-.ls-status.is-live { color: var(--loss); }
-.ls-you-badge { font-size: 11px; font-weight: 700; color: var(--accent); background: var(--accent-soft); border-radius: 4px; padding: 2px 6px; }
-.ls-teams { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
-.ls-team { display: flex; align-items: baseline; gap: 8px; }
-.ls-team-name { flex: 1; font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ls-team-score { font-size: 16px; font-weight: 700; color: var(--text); }
-.ls-team-proj { font-size: 11px; color: var(--text-subtle); }
-/* Win-prob bar inside League Scores cards: reuse the matchup .m-win-bar
-   pattern but fit the card's tighter padding (no double inset). */
-.ls-card .m-win-bar { padding: 2px 0 4px; }
-
-.rzm-row-btn {
-  display: flex; align-items: center; gap: 10px; width: 100%;
-  background: var(--card); border: 1px solid var(--border); border-radius: 10px;
-  padding: 10px 14px 10px 0; cursor: pointer; text-align: left;
-  color: var(--text); font: inherit; position: relative; overflow: hidden;
-}
-.rzm-row-btn:hover { background: var(--rz-red-soft); }
-.rzm-row-accent { align-self: stretch; width: 4px; background: var(--rz-red); border-radius: 0 2px 2px 0; flex: none; }
-.rzm-row-title { font-weight: 700; font-size: 14px; color: var(--rz-red); }
-.rzm-row-count { font-size: 13px; color: var(--text-muted); }
-.rzm-row-chevron { margin-left: auto; color: var(--rz-red); font-size: 20px; font-weight: 700; line-height: 1; }
-
-/* Modal */
-.rzm-modal-overlay {
-  position: fixed; inset: 0; z-index: var(--z-modal);
-  background: rgba(2, 6, 23, 0.88);
-  display: flex; align-items: flex-end; justify-content: center;
-}
-@media (min-width: 640px) {
-  .rzm-modal-overlay { align-items: center; padding: 24px; }
-}
-.rzm-modal {
-  background: var(--rz-card); border: 1px solid var(--rz-border);
-  border-radius: 16px 16px 0 0; width: 100%; max-width: 640px;
-  max-height: 88vh; display: flex; flex-direction: column; overflow: hidden;
-}
-@media (min-width: 640px) { .rzm-modal { border-radius: 16px; } }
-.rzm-modal-head {
-  display: flex; align-items: center; gap: 10px;
-  padding: 14px 16px 14px 0; border-bottom: 1px solid var(--rz-border);
-  position: relative; overflow: hidden; flex: none;
-}
-.rzm-modal-accent { align-self: stretch; width: 4px; background: var(--rz-red); border-radius: 0 2px 2px 0; flex: none; }
-.rzm-modal-title { font-size: 17px; font-weight: 800; color: var(--rz-red); }
-.rzm-modal-close {
-  margin-left: auto; background: none; border: none; cursor: pointer;
-  color: var(--text-muted); font-size: 18px; padding: 6px 10px; border-radius: 8px;
-}
-.rzm-modal-close:hover { background: var(--rz-hover); color: var(--text); }
-.rzm-filters { display: flex; gap: 8px; padding: 12px 16px; flex: none; border-bottom: 1px solid var(--rz-border); }
-.rzm-filter {
-  border: 1px solid var(--rz-border); background: var(--rz-surface);
-  color: var(--rz-muted); font: inherit; font-size: 13px; font-weight: 600;
-  padding: 7px 16px; border-radius: 20px; cursor: pointer;
-}
-.rzm-filter:hover { border-color: var(--rz-red); color: var(--rz-text); }
-.rzm-filter.is-active { background: var(--rz-red); border-color: var(--rz-red); color: #fff; }
-.rzm-modal-body { overflow-y: auto; padding: 12px 16px 20px; -webkit-overflow-scrolling: touch; }
-.rzm-empty { text-align: center; color: var(--rz-muted); padding: 32px 16px; font-size: 14px; }
-
-/* Play cards (ScoreZone feed style) */
-.rzm-play {
-  display: flex; align-items: flex-start; gap: 12px; width: 100%;
-  background: var(--rz-row); border: 1px solid var(--rz-border); border-radius: 12px;
-  padding: 12px 14px 12px 0; margin-bottom: 10px; cursor: pointer; text-align: left;
-  color: var(--rz-text); font: inherit; position: relative; overflow: hidden;
-}
-.rzm-play:hover { border-color: var(--rz-red); }
-.rzm-play-accent { width: 4px; flex: none; align-self: stretch; border-radius: 0 2px 2px 0; background: var(--rz-border); }
-.rzm-play.is-td .rzm-play-accent { background: var(--rz-red); }
-.rzm-play.is-big .rzm-play-accent { background: var(--accent); }
-.rzm-play.is-to .rzm-play-accent { background: var(--warning); }
-/* Headshot avatar with initials fallback (mirrors .rz-event-avatar) */
-.rzm-play-avatar {
-  width: 48px; height: 48px; border-radius: 12px; overflow: hidden; flex: none;
-  background: var(--rz-surface); position: relative; margin-top: 1px;
-  box-shadow: inset 0 0 0 1px var(--rz-border);
-}
-.rzm-play-headshot { width: 100%; height: 100%; object-fit: cover; object-position: top center; display: block; }
-.rzm-play-avatar.img-err .rzm-play-headshot { opacity: 0; position: absolute; }
-.rzm-play-avatar.img-err::after {
-  content: attr(data-init); position: absolute; inset: 0;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 15px; font-weight: 900; letter-spacing: .02em; color: var(--rz-muted);
-}
-.rzm-play-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.rzm-play-head { display: flex; align-items: center; gap: 8px; }
-.rzm-play-name { flex: 1; min-width: 0; font-weight: 700; font-size: 14px; color: var(--rz-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rzm-play-pos { font-weight: 600; font-size: 11px; color: var(--rz-muted); }
-.rzm-play-tags { flex: none; display: flex; align-items: center; gap: 6px; }
-.rzm-play-kind {
-  font-size: 10px; font-weight: 800; letter-spacing: 0.06em;
-  padding: 3px 8px; border-radius: 6px;
-  background: var(--rz-surface); color: var(--rz-muted);
-}
-.rzm-play.is-td .rzm-play-kind { background: var(--rz-red); color: #fff; }
-.rzm-play.is-big .rzm-play-kind { background: var(--accent); color: #fff; }
-.rzm-play.is-to .rzm-play-kind { background: var(--warning); color: #000; }
-.rzm-play-side {
-  font-size: 10px; font-weight: 800; letter-spacing: 0.04em;
-  padding: 3px 8px; border-radius: 6px;
-  background: var(--rz-surface); color: var(--rz-muted);
-}
-.rzm-play-side.is-you { background: var(--accent-soft); color: var(--accent); }
-.rzm-play-text { font-size: 13px; color: var(--rz-muted); line-height: 1.45; }
-.rzm-play-meta { font-size: 11px; color: var(--text-subtle); }
-
-/* ============================================================================
-   DARK MODE AUDIT FIXES (2026-09-30)
-   Dark variants for components that shipped with hardcoded light colors.
-   Pattern follows the existing house style: translucent tint backgrounds
-   (rgba) keep working on the dark ground; text colors move to the
-   brightened 400-scale (matching --win #4ade80 / --loss #f87171).
-   ============================================================================ */
-
-/* ---- 1. Systemic: native dark scrollbars and form controls ---- */
-:root {
-    color-scheme: light;
-}
-
-:root[data-theme="dark"] {
-    color-scheme: dark;
-}
-
-[data-theme="dark"] .scroll-box {
-    scrollbar-color: #334155 #0b1220;
-}
-
-[data-theme="dark"] .scroll-box::-webkit-scrollbar-track {
-    background: #0b1220;
-}
-
-[data-theme="dark"] .scroll-box::-webkit-scrollbar-thumb {
-    background-color: #334155;
-}
-
-[data-theme="dark"] .scroll-box::-webkit-scrollbar-thumb:hover {
-    background-color: #475569;
-}
-
-/* ---- 2. Trade Calculator (.otc-*) ---- */
-[data-theme="dark"] .otc-team-selector {
-    background: rgba(148, 163, 184, .07);
-    border-color: var(--border);
-}
-
-[data-theme="dark"] .otc-team-pill {
-    background: rgba(148, 163, 184, .14);
-    color: #cbd5e1;
-}
-
-[data-theme="dark"] .otc-team-pill:hover {
-    background: rgba(148, 163, 184, .2);
-}
-
-[data-theme="dark"] .otc-page-badge {
-    background: rgba(96, 165, 250, .14);
-    color: #93c5fd;
-}
-
-[data-theme="dark"] .otc-dropdown-rank-inline {
-    background: rgba(148, 163, 184, .14);
-    color: #94a3b8;
-}
-
-[data-theme="dark"] .otc-dropdown-item[data-position="PICK"] {
-    background: linear-gradient(135deg, rgba(74, 144, 226, .16) 0%, rgba(74, 144, 226, .07) 100%);
-    border-left-color: #4a90e2;
-}
-
-[data-theme="dark"] .otc-dropdown-item[data-position="PICK"]:hover {
-    background: linear-gradient(135deg, rgba(74, 144, 226, .22) 0%, rgba(74, 144, 226, .12) 100%);
-}
-
-[data-theme="dark"] .otc-mini-tab {
-    color: #94a3b8;
-}
-
-[data-theme="dark"] .otc-mini-tab:hover {
-    color: var(--text);
-    background: rgba(148, 163, 184, .16);
-}
-
-[data-theme="dark"] #teamsAnalyticsTabs .tab-btn:hover {
-    background: rgba(148, 163, 184, .16);
-}
-
-[data-theme="dark"] .otc-slot-empty,
-[data-theme="dark"] .otc-slot-empty-sub {
-    color: #94a3b8;
-}
-
-[data-theme="dark"] .otc-team-label,
-[data-theme="dark"] .otc-value-sub,
-[data-theme="dark"] .otc-summary-sub,
-[data-theme="dark"] .otc-chip-meta,
-[data-theme="dark"] .otc-chip-remove,
-[data-theme="dark"] .otc-mini-sub,
-[data-theme="dark"] .otc-dropdown-sub,
-[data-theme="dark"] .otc-balance-labels,
-[data-theme="dark"] .otc-team-owner-tag-muted,
-[data-theme="dark"] .dvt-tier-depth,
-[data-theme="dark"] .viewer-toggle,
-[data-theme="dark"] .os-section-subtitle,
-[data-theme="dark"] .os-waiver-sub,
-[data-theme="dark"] .pick-via {
-    color: #94a3b8;
-}
-
-[data-theme="dark"] .otc-guest-link {
-    color: #94a3b8 !important;
-}
-
-[data-theme="dark"] .otc-guest-link:hover {
-    color: #cbd5e1 !important;
-}
-
-[data-theme="dark"] .otc-view-all-link:hover {
-    color: #60a5fa !important;
-}
-
-[data-theme="dark"] .otc-balance-fair-label {
-    color: #93c5fd;
-}
-
-[data-theme="dark"] .otc-team-owner-tag {
-    color: #93c5fd;
-}
-
-[data-theme="dark"] .otc-inline-player {
-    background: rgba(148, 163, 184, .14);
-    color: #94a3b8;
-}
-
-[data-theme="dark"] .otc-sugg-pkg-value.fair,
-[data-theme="dark"] .otc-mini-row.up .otc-mini-delta,
-[data-theme="dark"] .otc-chip-delta-positive,
-[data-theme="dark"] .otc-share-btn-success {
-    color: #4ade80;
-}
-
-[data-theme="dark"] .otc-sugg-pkg-value.overpay,
-[data-theme="dark"] .otc-mini-row.down .otc-mini-delta,
-[data-theme="dark"] .otc-chip-delta-negative {
-    color: #f87171;
-}
-
-[data-theme="dark"] .otc-sugg-pkg-value.great {
-    color: #60a5fa;
-}
-
-[data-theme="dark"] .otc-delta.po {
-    color: #a5b4fc;
-}
-
-/* ---- 3. Pastel status chips ---- */
-[data-theme="dark"] .chip.diff-pos {
-    background: rgba(74, 222, 128, .14);
-    border-color: rgba(74, 222, 128, .35);
-    color: #86efac;
-}
-
-[data-theme="dark"] .chip.diff-neg {
-    background: rgba(248, 113, 113, .15);
-    border-color: rgba(248, 113, 113, .35);
-    color: #fca5a5;
-}
-
-[data-theme="dark"] .outcome-win,
-[data-theme="dark"] .outcome-got,
-[data-theme="dark"] .io.add {
-    background: rgba(74, 222, 128, .14);
-    color: #86efac;
-}
-
-[data-theme="dark"] .outcome-loss,
-[data-theme="dark"] .outcome-gave,
-[data-theme="dark"] .io.drop {
-    background: rgba(248, 113, 113, .15);
-    color: #fca5a5;
-}
-
-[data-theme="dark"] .outcome-even {
-    background: rgba(148, 163, 184, .14);
-    color: #cbd5e1;
-}
-
-[data-theme="dark"] .urgency-high {
-    background: rgba(248, 113, 113, .15);
-    color: #fca5a5;
-}
-
-[data-theme="dark"] .urgency-medium {
-    background: rgba(251, 191, 36, .14);
-    color: #fcd34d;
-}
-
-[data-theme="dark"] .urgency-low {
-    background: rgba(74, 222, 128, .14);
-    color: #86efac;
-}
-
-[data-theme="dark"] .suggestion-asset.give {
-    background: rgba(248, 113, 113, .15);
-    color: #fca5a5;
-}
-
-[data-theme="dark"] .suggestion-asset.get {
-    background: rgba(74, 222, 128, .14);
-    color: #86efac;
-}
-
-[data-theme="dark"] .depth-danger {
-    background: rgba(248, 113, 113, .1);
-}
-
-[data-theme="dark"] .depth-danger .scarcity-tier {
-    color: #fca5a5;
-}
-
-[data-theme="dark"] .depth-caution {
-    background: rgba(251, 191, 36, .1);
-}
-
-[data-theme="dark"] .depth-caution .scarcity-tier {
-    color: #fcd34d;
-}
-
-[data-theme="dark"] .streak-cold .chip-streak {
-    background: rgba(96, 165, 250, .14);
-    color: #93c5fd;
-}
-
-[data-theme="dark"] .streak-hot .chip-streak {
-    background: rgba(248, 113, 113, .14);
-    color: #fca5a5;
-}
-
-/* ---- 4. Front Office grades / trends / roles ---- */
-[data-theme="dark"] .for-grade-a,
-[data-theme="dark"] .for-role-starter,
-[data-theme="dark"] .for-trend-up {
-    color: #4ade80;
-}
-
-[data-theme="dark"] .for-grade-b {
-    color: #a3e635;
-}
-
-[data-theme="dark"] .for-grade-c {
-    color: #facc15;
-}
-
-[data-theme="dark"] .for-grade-d,
-[data-theme="dark"] .for-inj {
-    color: #fb923c;
-}
-
-[data-theme="dark"] .for-grade-f,
-[data-theme="dark"] .for-trend-down {
-    color: #f87171;
-}
-
-[data-theme="dark"] .for-role-depth {
-    color: #94a3b8;
-}
-
-/* ---- 5. Small utility chips and badges ---- */
-[data-theme="dark"] .badge {
-    background: rgba(129, 140, 248, .16);
-    color: #a5b4fc;
-}
-
-[data-theme="dark"] .highlight-box {
-    background: rgba(148, 163, 184, .1);
-}
-
-[data-theme="dark"] .link-pill {
-    background: rgba(148, 163, 184, .12);
-}
-
-[data-theme="dark"] .link-pill:hover {
-    background: rgba(148, 163, 184, .2);
-}
-
-[data-theme="dark"] .changelog-tag-fix {
-    background: rgba(251, 191, 36, .14);
-    color: #fcd34d;
-}
-
-[data-theme="dark"] .luck-chip.luck-neu {
-    background: rgba(148, 163, 184, .14);
-}
-
-[data-theme="dark"] .game-log-proj-badge {
-    color: #a5b4fc;
-}
-
-/* ---- 6. Saturated text colors that wash out on the dark ground ---- */
-[data-theme="dark"] .opt-pos-qb { color: #60a5fa; }
-[data-theme="dark"] .opt-pos-rb { color: #4ade80; }
-[data-theme="dark"] .opt-pos-wr { color: #fbbf24; }
-[data-theme="dark"] .opt-pos-te { color: #a78bfa; }
-
-[data-theme="dark"] .wt-contend .grade-window-label,
-[data-theme="dark"] .wt-contender .grade-window-label { color: #4ade80; }
-[data-theme="dark"] .wt-bubble .grade-window-label,
-[data-theme="dark"] .wt-win-now .grade-window-label { color: #fbbf24; }
-[data-theme="dark"] .wt-long-shot .grade-window-label,
-[data-theme="dark"] .wt-holding .grade-window-label { color: #94a3b8; }
-[data-theme="dark"] .wt-aging-contender .grade-window-label { color: #a3e635; }
-[data-theme="dark"] .wt-contender-window .grade-window-label { color: #60a5fa; }
-[data-theme="dark"] .wt-2yr .grade-window-label { color: #818cf8; }
-[data-theme="dark"] .wt-rising .grade-window-label { color: #a78bfa; }
-[data-theme="dark"] .wt-retooling .grade-window-label { color: #fb923c; }
-[data-theme="dark"] .wt-rebuilding .grade-window-label { color: #f87171; }
-[data-theme="dark"] .wt-full-rebuild .grade-window-label { color: #ef4444; }
-
-[data-theme="dark"] .rz-game-pill.is-live .rz-gp-status { color: #4ade80; }
-
-[data-theme="dark"] .team-strength-card .tc-index-num.dn,
-[data-theme="dark"] .team-strength-card .tc-flag.w { color: #f87171; }
-
-[data-theme="dark"] .settings-menu-logout { color: #f87171; }
-
-[data-theme="dark"] .analytics-bar-val.analytics-bar-neg { color: #f87171; }
-
-[data-theme="dark"] .watchlist-clear-btn:hover,
-[data-theme="dark"] .wl-page-remove:hover,
-[data-theme="dark"] .sched-remove:hover { color: #f87171; }
-
-[data-theme="dark"] .game-log-matchup.mt4 { color: #f87171; }
-[data-theme="dark"] .game-log-table-total td:nth-child(2) { color: #94a3b8; }
-
-[data-theme="dark"] .podium .slot.second .podium-header h3 { color: #94a3b8; }
-[data-theme="dark"] .podium .slot.third .podium-header h3 { color: #fb923c; }
-
-[data-theme="dark"] .rank-third { color: #fbbf24; }
-[data-theme="dark"] .rivalry-chip-streak { color: #fbbf24; }
-[data-theme="dark"] .rivalry-chip-blowout { color: #a5b4fc; }
-
-/* ---- 7. Muted text that sinks below the dark ground ---- */
-[data-theme="dark"] .card-collapse-toggle { color: #94a3b8; }
-[data-theme="dark"] .card-collapse-toggle:hover { color: #e5e7eb; }
-
-[data-theme="dark"] .legend-label,
-[data-theme="dark"] .home-bullets { color: var(--text); }
-
-[data-theme="dark"] .history-table thead th {
-    border-bottom-color: var(--border);
-    color: var(--text-subtle);
-}

@@ -406,22 +406,17 @@ def test_page_builder_adv_metrics_shell():
 
 
 def test_page_source_adv_metrics_table_markup():
-    # Rank badges and bar-left/value-right cells. The abbr chip was removed;
-    # the team column is sticky instead.
+    # Rank badges, team-color abbr chips, and bar-left/value-right cells.
     assert "nt-rbadge" in PAGE_SRC
-    assert "nt-abbr" not in PAGE_SRC
+    assert "nt-abbr" in PAGE_SRC
     assert "nt-mfill" in PAGE_SRC
     assert "nt-mtrack" in PAGE_SRC
     assert "nt-val" in PAGE_SRC
     # Rank column renders before the team column.
-    assert 'class=\"nt-rankcol\"' in PAGE_SRC
-    # Team column sticks on horizontal scroll.
-    assert "th.nt-teamcol{{position:sticky" in PAGE_SRC
-    assert "td.nt-teamcol{{position:sticky" in PAGE_SRC
-    # Depth/box-score player column sticks too.
-    assert "table.nt-depth>tbody>tr>td:first-child{{position:sticky" in PAGE_SRC
-    # Team-color helpers.
+    assert 'class="nt-rankcol"' in PAGE_SRC
+    # Team-color helpers and readable chip text.
     assert "function teamColor" in PAGE_SRC
+    assert "function fgFor" in PAGE_SRC
     assert "function rankBadge" in PAGE_SRC
     # Adv-metrics arrow direction (down for descending).
     assert "&#8595;" in PAGE_SRC
@@ -430,13 +425,6 @@ def test_page_source_adv_metrics_table_markup():
     assert "visibleCols" in PAGE_SRC
     # Profile environment bars use the team color.
     assert "background:'+esc(tcolor)+'" in PAGE_SRC
-    # Team detail hero: record badge, team-color accent, opponent logos in
-    # the schedule, tiered env rank badges.
-    assert "nt-record" in PAGE_SRC
-    assert "nt-herohead" in PAGE_SRC
-    assert "nt-opp-logo" in PAGE_SRC
-    assert "function ntEnvRank" in PAGE_SRC
-    assert "nt-tier-g" in PAGE_SRC
     # Mobile hides the in-cell bars like Advanced Metrics does.
     assert "@media(max-width:600px)" in PAGE_SRC
 
@@ -493,165 +481,3 @@ def test_page_source_defense_view_wiring():
     # Team drill-in gains a Defense vs position section.
     assert "function defenseSection" in PAGE_SRC
     assert "Defense vs position" in PAGE_SRC
-
-
-# ── Rendered inline-script syntax ────────────────────────────────────────────
-
-def _inline_scripts(html):
-    import re
-    return [s for s in re.findall(r"<script>(.*?)</script>", html, re.S)
-            if s.strip()]
-
-
-def test_rendered_inline_scripts_parse_as_javascript():
-    # Regression: the page template is an f-string, so a JS string escape like
-    # "\n" (CSV download) was rendered as a raw newline, producing
-    # `lines.join("<newline>")` -- a SyntaxError that killed the whole inline
-    # script and left the page stuck on "Loading team data." Source-level
-    # checks cannot catch this; the rendered HTML must be syntax-checked.
-    import shutil
-    import subprocess
-    import tempfile
-    from pathlib import Path as _P
-
-    from dashboard_services.pages.nfl_teams_page import build_nfl_teams_body
-
-    node = shutil.which("node")
-    if node is None:
-        pytest.skip("node not available for JS syntax check")
-
-    for view in ("overview", "defense"):
-        html = build_nfl_teams_body(2026, team="", view=view,
-                                   available_seasons=[2026, 2025])
-        scripts = _inline_scripts(html)
-        assert scripts, f"no inline scripts rendered for view={view}"
-        for idx, src in enumerate(scripts):
-            with tempfile.NamedTemporaryFile("w", suffix=".js",
-                                             delete=False,
-                                             encoding="utf-8") as fh:
-                fh.write(src)
-                tmp = _P(fh.name)
-            try:
-                proc = subprocess.run([node, "--check", str(tmp)],
-                                      capture_output=True, text=True,
-                                      timeout=30)
-            finally:
-                tmp.unlink(missing_ok=True)
-            assert proc.returncode == 0, (
-                f"view={view} inline script {idx} has a JS syntax error:\n"
-                f"{proc.stderr.strip()}"
-            )
-
-
-def test_rendered_csv_download_keeps_js_newline_escape():
-    # The exact line that broke: the served JS must contain lines.join("\n")
-    # with a real JS escape, never a raw newline inside the string literal.
-    from dashboard_services.pages.nfl_teams_page import build_nfl_teams_body
-
-    html = build_nfl_teams_body(2026, team="", view="overview",
-                               available_seasons=[2026, 2025])
-    assert 'lines.join("\\n")' in html
-    assert 'lines.join("\n")' not in html.replace('lines.join("\\n")', "")
-
-
-# ── Team profile charts ───────────────────────────────────────────────────────
-
-
-def test_profile_charts_sections_and_builders_present():
-    from dashboard_services.pages.nfl_teams_page import build_nfl_teams_body
-
-    html = build_nfl_teams_body(2026, team="KC", view="overview",
-                               available_seasons=[2026, 2025])
-    # The three charts Kaedon picked: home/away splits, fingerprint radar,
-    # and pass-block vs run-block 2D scatter.
-    assert "<h3>Home vs away</h3>" in html
-    assert "<h3>Team fingerprint</h3>" in html
-    assert "<h3>Pass block vs run block</h3>" in html
-    assert "splitsSVG" in html
-    assert "fingerprintSVG" in html
-    assert "olineScatterSVG" in html
-    assert ".nt-chart" in html
-    # Extra scatter plots, all with quadrant labels.
-    assert "<h3>Pressure vs sacks</h3>" in html
-    assert "<h3>Pass vs run identity</h3>" in html
-    assert "<h3>Defensive soft spots</h3>" in html
-    assert "pressureScatterSVG" in html
-    assert "identityScatterSVG" in html
-    assert "softSpotsSVG" in html
-    assert "scatterSVG" in html
-    for label in ["Under siege", "Clean pocket", "Balanced",
-                  "One-dimensional", "Air funnel", "Lockdown"]:
-        assert label in html, label
-    # Copy honesty: no em dashes, percentiles labeled as by-rank.
-    assert "League percentile by rank" in html
-    assert "latest available" in html
-    # Fingerprint compare mode: picker + overlay builder + legend styles.
-    assert 'id="ntCmpSel"' in html
-    assert ">Compare</label>" in html or ">Compare<" in html
-    assert "fingerprintSection" in html
-    assert ".nt-cmp-legend" in html
-
-
-def test_profile_charts_use_existing_payloads():
-    # All three charts build from already-fetched data: the details schedule
-    # (home/away) and the rankings payload (ranks + league oline table).
-    # No new API surface was added for them.
-    assert "d.schedule" in PAGE_SRC
-    assert "t.ranks" in PAGE_SRC
-    assert "DATA.teams" in PAGE_SRC
-    assert "x.oline" in PAGE_SRC or ".oline" in PAGE_SRC
-
-
-# ── Profile section order: graphs below depth chart, collapsible ──────────────
-
-def test_profile_graphs_section_below_depth_chart_and_collapsible():
-    # Graphs move out of the top grid into one collapsible section below the
-    # depth chart; the schedule is collapsible too.
-    depth_i = PAGE_SRC.index("<h3>Depth chart / competition</h3>")
-    graphs_i = PAGE_SRC.index("<h3>Graphs</h3>")
-    sched_i = PAGE_SRC.index("<h3>Schedule</h3>")
-    assert depth_i < graphs_i < sched_i
-    # Both sections render as native details/summary (no JS wiring needed).
-    assert '<details class=\"nt-psec nt-collapse\" open><summary><h3>Graphs</h3>' in PAGE_SRC
-    assert '<details class=\"nt-psec nt-collapse\" open><summary><h3>Schedule</h3>' in PAGE_SRC
-    assert "details.nt-collapse" in PAGE_SRC
-    # All six charts moved into the Graphs section: home/away, fingerprint,
-    # and the four league scatter plots.
-    graphs_block = PAGE_SRC[graphs_i:sched_i]
-    for marker in ["splitsSVG(d,t)", "fingerprintSection(t)", "olineScatterSVG(t)",
-                   "pressureScatterSVG(t)", "identityScatterSVG(t)", "softSpotsSVG(t)"]:
-        assert marker in graphs_block, marker
-
-
-def test_defense_vs_position_cells_are_separate_cards():
-    # Each position reads as its own card, not a continuous column of numbers.
-    assert ".nt-def4cell{{text-align:center;min-width:0;background:var(--card-soft);" in PAGE_SRC
-
-
-def test_graphs_section_uses_two_column_grid():
-    # Two charts per row on desktop, one per row on phones (700px breakpoint,
-    # same convention as .nt-psec grids elsewhere on the page).
-    assert '<div class="nt-graphs-grid">' in PAGE_SRC
-    assert ".nt-graphs-grid{{display:grid;grid-template-columns:1fr 1fr;" in PAGE_SRC
-    assert "@media(max-width:700px){{.nt-graphs-grid{{grid-template-columns:1fr}}}}" in PAGE_SRC
-    # Grid children must not keep their stacked margin, or rows double-space.
-    assert ".nt-graphs-grid>.nt-psec{{margin-bottom:0}}" in PAGE_SRC
-
-
-def test_scatter_plots_render_team_logos_with_emphasis():
-    # All four league scatter plots draw team logos as marks; the selected
-    # team is larger and full-color while the rest are greyed out, and it is
-    # drawn last (on top). No ring around the selected team.
-    assert ''''<image href="'+esc(p.logo)+'"''' in PAGE_SRC
-    assert "var sz=me?26:18" in PAGE_SRC
-    assert 'stroke-width="2.5"' not in PAGE_SRC
-    assert "if(p.abbr!==t.team) dot(p);" in PAGE_SRC
-    assert "if(p.abbr===t.team) dot(p);" in PAGE_SRC
-    # Every scatter point builder passes its team logo through.
-    assert "logo:x.logo" in PAGE_SRC
-    assert "logo:logoByAbbr[ab]" in PAGE_SRC
-    # Dots remain as the fallback when a logo URL is missing.
-    assert "fallback when a logo URL is missing" in PAGE_SRC
-    # Non-selected logos are greyed out via CSS so the selected team pops.
-    assert ".nt-mark-dim{{filter:grayscale(1);opacity:.55}}" in PAGE_SRC
-    assert '''class="nt-mark-dim"''' in PAGE_SRC
