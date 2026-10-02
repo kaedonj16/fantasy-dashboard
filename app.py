@@ -152,6 +152,7 @@ from utils.utils import (
     load_week_projection,
     load_week_schedule,
     streak_class,
+    streak_edge_class,
     canon_team,
     canonicalize_schedule,
     team_abbr_keys,
@@ -8988,6 +8989,10 @@ def render_standings(team_stats, length, all_play: dict = None,
 
         _p = pic_by_name.get(owner)
         _trcls = "st-div-leader" if _is_div_lead else ""
+        # Streak edge signal: colored left edge, intensity scales with length.
+        _streak_edge = streak_edge_class(streak)
+        if _streak_edge:
+            _trcls = (_trcls + " " + _streak_edge).strip()
         _tdcls = "team"
         _mo_attr = ""
         _div_lead_tag = (
@@ -9862,6 +9867,7 @@ def render_power_and_playoffs(
         bracket_override=None,
         seed_map_override=None,
         power_rankings=None,
+        prev_power_ranks=None,
 ) -> str:
     """
     Single card that shows:
@@ -9873,6 +9879,9 @@ def render_power_and_playoffs(
         ({"team_name", "power_score", "rank"}). When provided, the podium's
         order and PowerScore are taken from here so this card matches the
         Standings Power Rankings source exactly.
+    prev_power_ranks: {team_name: rank} from last week's power ranking. Drives
+        the constant week-over-week movement arrows (green up / red down /
+        grey dash when unchanged or unknown).
     """
     if team_stats is None or team_stats.empty:
         return ""
@@ -9916,22 +9925,35 @@ def render_power_and_playoffs(
 
     top3 = pr_sorted.head(3)
 
-    # ---- Movement arrows: day-over-day change in power-ranking position ----
-    # Daily (date-keyed) so a trade that reshuffles the ranking shows a ▲/▼ the
-    # next day, in the offseason too -- not just week-over-week during the season.
-    _pr_order_rids = [_o2r.get(str(row.get("owner", "")))
-                      for _, row in pr_sorted.iterrows()]
-    movement: Dict[str, Optional[int]] = _ranking_movement(
-        league_id, season, "power", _pr_order_rids)
+    # ---- Movement arrows: week-over-week change in power-ranking position ----
+    # Constant (always rendered): green up / red down with magnitude, grey dash
+    # when unchanged or when there is no last-week baseline yet. The previous
+    # week's ranking is reconstructed deterministically from the week-capped
+    # ctx by the caller (see build_standings_body), so this needs no snapshot
+    # table and stays exact even if the page wasn't visited last week.
+    _prev_ranks = {
+        str(k): int(v) for k, v in (prev_power_ranks or {}).items()
+        if v is not None
+    }
+    _cur_rank_by_owner = {}
+    for _pos, _r in enumerate(pr_sorted.itertuples()):
+        _cur_rank_by_owner[str(getattr(_r, "owner", ""))] = _pos + 1
 
     def move_arrow(owner_name) -> str:
-        rid = _o2r.get(str(owner_name))
-        delta = movement.get(str(rid)) if rid is not None else None
-        if not delta:
-            return ""  # no prior snapshot yet, or no change
+        cur = _cur_rank_by_owner.get(str(owner_name))
+        prev = _prev_ranks.get(str(owner_name))
+        if cur is None or prev is None:
+            return ("<span class='pr-move pr-move-flat' title='No last-week ranking'>"
+                    "&ndash;</span>")
+        delta = prev - cur
         if delta > 0:
-            return f"<span class='pr-move pr-move-up' title='Up {delta} since yesterday'>&#9650;{delta}</span>"
-        return f"<span class='pr-move pr-move-down' title='Down {abs(delta)} since yesterday'>&#9660;{abs(delta)}</span>"
+            return (f"<span class='pr-move pr-move-up' title='Up {delta} since last week'>"
+                    f"&#9650;{delta}</span>")
+        if delta < 0:
+            return (f"<span class='pr-move pr-move-down' title='Down {abs(delta)} since last week'>"
+                    f"&#9660;{abs(delta)}</span>")
+        return ("<span class='pr-move pr-move-flat' title='Unchanged since last week'>"
+                "&ndash;</span>")
 
     # width scaling based on PowerScore range
     if has_power:
@@ -10915,14 +10937,17 @@ def _standings_playoff_params(ctx: dict, team_stats):
     return _pp_spots, _pp_weeks
 
 
-def _standings_panels(ctx: dict, power_rankings=None) -> dict:
+def _standings_panels(ctx: dict, power_rankings=None, prev_power_ranks=None) -> dict:
     """Render the swappable standings surfaces from ctx. Shared by the
     standings page and the week-selector endpoint, so a "through week N" view is
     just this called with a week-capped ctx (see build_standings_as_of_week).
 
     power_rankings: value-blended list from build_power_rankings_context to match
     the Teams page (current view); None ranks by the performance PowerScore in
-    team_stats, which is what a historical week can reconstruct faithfully."""
+    team_stats, which is what a historical week can reconstruct faithfully.
+    prev_power_ranks: {team_name: rank} from last week's power ranking, for the
+    week-over-week movement arrows in the power card. None/{} renders constant
+    grey dashes."""
     team_stats = ctx["team_stats"]
     roster_map = ctx["roster_map"]
     df_weekly = ctx["df_weekly"]
@@ -10978,6 +11003,7 @@ def _standings_panels(ctx: dict, power_rankings=None) -> dict:
         ctx["platform"],
         ctx["season"],
         power_rankings=power_rankings,
+        prev_power_ranks=prev_power_ranks,
     )
     sidebar_html = render_standings_insights(
         team_stats, all_play=_all_play, weekly_points=_weekly_pts, owner_to_rid=_o2r)

@@ -42538,6 +42538,34 @@ a, button, [role="button"], [role="tab"], summary, label,
 .standings-table tr.st-div-leader td:first-child {
     box-shadow: inset 3px 0 0 var(--accent);
 }
+/* Streak edge signal: colored left edge on team rows, intensity scales with
+   streak length. Wins green, losses red. W1/L1 are a whisper, W4+/L4+ cap the
+   scale. Placed after the division-leader rule so the streak edge wins when a
+   leader is also streaking (the leader keeps its row tint). */
+.standings-table tr.streak-w1 td:first-child {
+    box-shadow: inset 2px 0 0 color-mix(in srgb, var(--win) 40%, transparent);
+}
+.standings-table tr.streak-w2 td:first-child {
+    box-shadow: inset 3px 0 0 color-mix(in srgb, var(--win) 70%, transparent);
+}
+.standings-table tr.streak-w3 td:first-child {
+    box-shadow: inset 4px 0 0 var(--win);
+}
+.standings-table tr.streak-w4plus td:first-child {
+    box-shadow: inset 5px 0 0 var(--win);
+}
+.standings-table tr.streak-l1 td:first-child {
+    box-shadow: inset 2px 0 0 color-mix(in srgb, var(--loss) 40%, transparent);
+}
+.standings-table tr.streak-l2 td:first-child {
+    box-shadow: inset 3px 0 0 color-mix(in srgb, var(--loss) 70%, transparent);
+}
+.standings-table tr.streak-l3 td:first-child {
+    box-shadow: inset 4px 0 0 var(--loss);
+}
+.standings-table tr.streak-l4plus td:first-child {
+    box-shadow: inset 5px 0 0 var(--loss);
+}
 .standings-compact .st-div-head {
     padding: 8px 11px;
     border-radius: 10px;

@@ -8,6 +8,7 @@ from __future__ import annotations
 def build_standings_body(ctx: dict) -> str:
     from app import (  # noqa: E402  (lazy: avoids a circular import at module load)
         _standings_available_weeks, _standings_panels, _standings_week_selector,
+        build_standings_as_of_week,
     )
 
     # Live Standings Power Rankings card (in-season: all-play, PPG tie-break).
@@ -19,7 +20,28 @@ def build_standings_body(ctx: dict) -> str:
     except Exception:
         _pr_teams = []
 
-    panels = _standings_panels(ctx, power_rankings=_pr_teams)
+    # Week-over-week power movement: recompute last week's ranking from the
+    # week-capped ctx and diff ranks by team name. Deterministic from weekly
+    # scores, so it works even if nobody visited last week. Empty until 2+
+    # finalized weeks exist; the card then shows constant grey dashes.
+    _prev_power_ranks = {}
+    try:
+        _weeks = _standings_available_weeks(ctx)
+        if len(_weeks) >= 2:
+            _capped = build_standings_as_of_week(ctx, _weeks[-2])
+            _prev_teams = (
+                build_power_rankings_context(_capped) or {}
+            ).get("teams") or []
+            _prev_power_ranks = {
+                str(t.get("team_name")): int(t.get("rank") or (i + 1))
+                for i, t in enumerate(_prev_teams)
+                if t.get("team_name") is not None
+            }
+    except Exception:
+        _prev_power_ranks = {}
+
+    panels = _standings_panels(
+        ctx, power_rankings=_pr_teams, prev_power_ranks=_prev_power_ranks)
     week_bar = _standings_week_selector(ctx, _standings_available_weeks(ctx))
 
     body = f"""
