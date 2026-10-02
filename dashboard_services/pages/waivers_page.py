@@ -2956,11 +2956,17 @@ function wvRenderCompare() {{
   const wVeg  = wvWinPair(da.vegasNum, db.vegasNum, true);
   const wOline = wvWinPair(da.olineNum, db.olineNum, true);
   // Position-relative 0-100 Start/Sit index (same one the player modal / Compare
-  // page show), so a QB and a WR are comparable here too. Null when the week's
-  // position pool was unavailable to build the anchor.
+  // page show). Null when the week's position pool was unavailable to build
+  // the anchor. NOTE: the index is percentile-within-position, while the
+  // verdict uses the raw start_score -- so across positions they can disagree
+  // (a 73rd-pct WR can have a lower raw score than a 71st-pct RB). The label
+  // names the positions when they differ so the bar never reads as head-to-head.
   const idxA = (a.start_score_pct == null ? null : Math.round(a.start_score_pct));
   const idxB = (b.start_score_pct == null ? null : Math.round(b.start_score_pct));
   const wIdx = wvWinPair(idxA, idxB, true);
+  const _idxLabel = (a.position && b.position && a.position !== b.position)
+    ? 'START/SIT INDEX · ' + a.position + ' vs ' + b.position + ' pct'
+    : 'START/SIT INDEX';
 
   const sub = (p) => [p.team, p.position, p.opponent || (p.on_bye ? 'BYE' : '')].filter(Boolean).join(' · ');
 
@@ -2982,7 +2988,7 @@ function wvRenderCompare() {{
       '</div>';
     // Deciding factors as bars: the top reasons with numeric pairs, led by
     // the unified Start/Sit index itself.
-    const bars = [wvCmpBar('START/SIT INDEX', idxA, idxB)];
+    const bars = [wvCmpBar(_idxLabel, idxA, idxB)];
     (v.reasons || []).slice(0, 2).forEach(r => {{
       const rb = wvCmpReasonBar(r, da, db);
       if (rb) bars.push(wvCmpBar('WHY ' + wName + ' WINS · ' + rb[0], rb[1], rb[2]));
@@ -2995,7 +3001,7 @@ function wvRenderCompare() {{
         '<span class="wv-cmp2-pill">TOSS-UP</span>' +
         '<span><span class="wv-cmp2-why">Nearly identical outlook - go with your gut.</span></span>' +
       '</div>';
-    const idxBar = wvCmpBar('START/SIT INDEX', idxA, idxB);
+    const idxBar = wvCmpBar(_idxLabel, idxA, idxB);
     if (idxBar) factorBars = `<div class="wv-cmp2-factors">${{idxBar}}</div>`;
   }}
 
