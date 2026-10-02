@@ -567,7 +567,7 @@ def build_advanced_metrics_body(
                 <option value="50">Top 50 by X</option>
                 <option value="75">Top 75 by X</option>
               </select></div>
-              <div class="am-gctrl"><label for="amGraphLabels">Labels</label><select id="amGraphLabels" onchange="amRenderGraph()">
+              <div class="am-gctrl am-gctrl-sm"><label for="amGraphLabels">Labels</label><select id="amGraphLabels" onchange="amRenderGraph()">
                 <option value="8">8</option>
                 <option value="12" selected>12</option>
                 <option value="18">18</option>
@@ -575,16 +575,24 @@ def build_advanced_metrics_body(
                 <option value="9999">All</option>
                 <option value="0">Off</option>
               </select></div>
-              <div class="am-gctrl" id="amGraphVolCtrl" style="display:none;">
+              <div class="am-gctrl am-gctrl-sm" id="amGraphVolCtrl" style="display:none;">
                 <label id="amGraphVolLabel">Min</label>
                 <select id="amGraphMinVolSel"></select>
               </div>
+              <div class="am-gctrl am-graph-pos-ctrl"><label>Position</label>
+                <div class="otc-day-filters am-graph-pos-bar" id="amGraphPosBar">
+                  <button class="otc-day-filter am-pos active" data-gpos="">All</button>
+                  <button class="otc-day-filter am-pos" data-gpos="QB">QB</button>
+                  <button class="otc-day-filter am-pos" data-gpos="RB">RB</button>
+                  <button class="otc-day-filter am-pos" data-gpos="WR">WR</button>
+                  <button class="otc-day-filter am-pos" data-gpos="TE">TE</button>
+                </div>
               <div class="am-gctrl am-graph-actions">
                 <label>&nbsp;</label>
                 <div style="display:flex;gap:6px;">
                   <button type="button" id="amGraphThemeBtn" class="am-add-stat-btn" onclick="amToggleGraphTheme()" title="Toggle light / dark"></button>
                   <button type="button" id="amGraphLabelAxisBtn" class="am-add-stat-btn" onclick="amToggleGraphLabelAxis()" title="Flip star labels between X and Y values">X vals</button>
-                  <button type="button" id="amGraphQuadrantsBtn" class="am-add-stat-btn" onclick="amToggleGraphQuadrants()" title="Show quadrant dividers and labels">Quadrants</button>
+                  <button type="button" id="amGraphQuadrantsBtn" class="am-add-stat-btn am-active" onclick="amToggleGraphQuadrants()" title="Show quadrant dividers and labels">Quadrants</button>
                   <button type="button" id="amGraphDownloadBtn" class="am-add-stat-btn" onclick="amDownloadGraph()" title="Download image">
                     <svg width="13" height="13" viewBox="0 0 16 16" fill="none" style="vertical-align:-1px"><path d="M8 1.5v8M8 9.5 5.5 7M8 9.5 10.5 7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 11v3.5h10V11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                     Download
@@ -595,14 +603,6 @@ def build_advanced_metrics_body(
                   </button>
                 </div>
               </div>
-              <div class="am-gctrl am-graph-pos-ctrl"><label>Position</label>
-                <div class="otc-day-filters am-graph-pos-bar" id="amGraphPosBar">
-                  <button class="otc-day-filter am-pos active" data-gpos="">All</button>
-                  <button class="otc-day-filter am-pos" data-gpos="QB">QB</button>
-                  <button class="otc-day-filter am-pos" data-gpos="RB">RB</button>
-                  <button class="otc-day-filter am-pos" data-gpos="WR">WR</button>
-                  <button class="otc-day-filter am-pos" data-gpos="TE">TE</button>
-                </div>
               </div>
             </div>
             <div class="am-graph-plot-wrap">
@@ -1268,8 +1268,10 @@ def build_advanced_metrics_body(
       .am-graph-pos-bar {
         display:flex; gap:6px; flex-wrap:wrap;
       }
-      .am-graph-pos-ctrl { justify-content:flex-start; }
-      .am-graph-pos-ctrl .am-graph-pos-bar { padding-top:7px; }
+      .am-graph-pos-ctrl { flex-direction:row; align-items:center; gap:10px; flex:1 1 auto; }
+      .am-graph-pos-ctrl label { margin:0; white-space:nowrap; }
+      .am-graph-pos-ctrl .am-graph-pos-bar { flex-wrap:nowrap; padding-top:0; }
+      .am-gctrl-sm { flex:0 1 90px; min-width:80px; }
       /* Plot area flexes and scrolls inside the 82vh card so controls never clip. */
       .am-graph-plot-wrap { position:relative; padding:14px 16px 16px; overflow:auto; flex:1 1 auto; min-height:0; -webkit-overflow-scrolling:touch; }
       /* Hover/tap card: player headshot + the selected stats. Uses site-theme
@@ -4110,7 +4112,7 @@ _AM_JS = r"""
   let _amGraphLabelAxis = 'x';
   // Whether quadrant dividers + labels are shown. Toggled via the quadrants
   // button in the graph controls.
-  let _amGraphQuadrants = false;
+  let _amGraphQuadrants = true;
   // Populate/show the min-vol control for a given X metric key, or hide it.
   function _amUpdateGraphVolCtrl(xk) {
     const ctrl = document.getElementById('amGraphVolCtrl');
