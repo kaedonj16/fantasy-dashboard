@@ -1012,6 +1012,25 @@ def streak_class(row) -> str:
     return ""
 
 
+def streak_edge_class(streak) -> str:
+    """Granular edge-signal class for a streak string like 'W3' / 'L2'.
+
+    Returns ``streak-w1`` / ``streak-w2`` / ``streak-w3`` / ``streak-w4plus``
+    (or the ``streak-l*`` equivalents); ``''`` when the streak is empty or
+    unparseable. W1/L1 are intentionally included so the caller can render
+    them as a whisper; 4+ caps the intensity scale.
+    """
+    m = re.match(r"^([WLwl])\s*(\d+)\s*$", str(streak or "").strip())
+    if not m:
+        return ""
+    n = int(m.group(2))
+    if n <= 0:
+        return ""
+    side = "w" if m.group(1).upper() == "W" else "l"
+    band = "1" if n == 1 else "2" if n == 2 else "3" if n == 3 else "4plus"
+    return f"streak-{side}{band}"
+
+
 def fetch_week_from_tank01(season: int, week: int, raw_scoring_settings: dict = None) -> dict:
     """Compatibility shim: paid weekly projections are unavailable.
 
