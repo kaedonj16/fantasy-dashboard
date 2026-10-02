@@ -532,13 +532,48 @@ def build_advanced_metrics_body(
               <span id="amGraphCtrlChev">&#9660;</span>
             </button>
             <div class="am-graph-controls">
-              <div class="am-gctrl"><label for="amGraphX">X axis</label><select id="amGraphX" onchange="amRenderGraph()"></select></div>
-              <div class="am-gctrl"><label for="amGraphY">Y axis</label><select id="amGraphY" onchange="amRenderGraph()"></select></div>
-              <div class="am-gctrl"><label for="amGraphZ">Bubble size</label><select id="amGraphZ" onchange="amRenderGraph()"></select></div>
+              <div class="am-gctrl"><label id="amGraphXLabel">X axis</label>
+                <div class="am-metric-picker am-graph-picker" id="amGraphXWrap">
+                  <button type="button" class="am-select am-metric-btn" id="amGraphXBtn" aria-haspopup="listbox" aria-expanded="false" aria-label="X axis metric">
+                    <span id="amGraphXBtnLabel"></span>
+                    <i class="fa-solid fa-chevron-down am-metric-chevron"></i>
+                  </button>
+                  <div class="am-stat-picker am-metric-dropdown" id="amGraphXDropdown" role="listbox" style="display:none;right:auto;left:0;"></div>
+                </div>
+                <select id="amGraphX" onchange="amRenderGraph()" style="display:none;"></select>
+              </div>
+              <div class="am-gctrl"><label id="amGraphYLabel">Y axis</label>
+                <div class="am-metric-picker am-graph-picker" id="amGraphYWrap">
+                  <button type="button" class="am-select am-metric-btn" id="amGraphYBtn" aria-haspopup="listbox" aria-expanded="false" aria-label="Y axis metric">
+                    <span id="amGraphYBtnLabel"></span>
+                    <i class="fa-solid fa-chevron-down am-metric-chevron"></i>
+                  </button>
+                  <div class="am-stat-picker am-metric-dropdown" id="amGraphYDropdown" role="listbox" style="display:none;right:auto;left:0;"></div>
+                </div>
+                <select id="amGraphY" onchange="amRenderGraph()" style="display:none;"></select>
+              </div>
+              <div class="am-gctrl"><label id="amGraphZLabel">Bubble size</label>
+                <div class="am-metric-picker am-graph-picker" id="amGraphZWrap">
+                  <button type="button" class="am-select am-metric-btn" id="amGraphZBtn" aria-haspopup="listbox" aria-expanded="false" aria-label="Bubble size metric">
+                    <span id="amGraphZBtnLabel"></span>
+                    <i class="fa-solid fa-chevron-down am-metric-chevron"></i>
+                  </button>
+                  <div class="am-stat-picker am-metric-dropdown" id="amGraphZDropdown" role="listbox" style="display:none;right:auto;left:0;"></div>
+                </div>
+                <select id="amGraphZ" onchange="amRenderGraph()" style="display:none;"></select>
+              </div>
               <div class="am-gctrl"><label for="amGraphTopN">Show</label><select id="amGraphTopN" onchange="amRenderGraph()">
                 <option value="25">Top 25 by X</option>
                 <option value="50">Top 50 by X</option>
                 <option value="75">Top 75 by X</option>
+              </select></div>
+              <div class="am-gctrl"><label for="amGraphLabels">Labels</label><select id="amGraphLabels" onchange="amRenderGraph()">
+                <option value="8">8</option>
+                <option value="12" selected>12</option>
+                <option value="18">18</option>
+                <option value="25">25</option>
+                <option value="9999">All</option>
+                <option value="0">Off</option>
               </select></div>
               <div class="am-gctrl" id="amGraphVolCtrl" style="display:none;">
                 <label id="amGraphVolLabel">Min</label>
@@ -548,6 +583,8 @@ def build_advanced_metrics_body(
                 <label>&nbsp;</label>
                 <div style="display:flex;gap:6px;">
                   <button type="button" id="amGraphThemeBtn" class="am-add-stat-btn" onclick="amToggleGraphTheme()" title="Toggle light / dark"></button>
+                  <button type="button" id="amGraphLabelAxisBtn" class="am-add-stat-btn" onclick="amToggleGraphLabelAxis()" title="Flip star labels between X and Y values">X vals</button>
+                  <button type="button" id="amGraphQuadrantsBtn" class="am-add-stat-btn" onclick="amToggleGraphQuadrants()" title="Show quadrant dividers and labels">Quadrants</button>
                   <button type="button" id="amGraphDownloadBtn" class="am-add-stat-btn" onclick="amDownloadGraph()" title="Download image">
                     <svg width="13" height="13" viewBox="0 0 16 16" fill="none" style="vertical-align:-1px"><path d="M8 1.5v8M8 9.5 5.5 7M8 9.5 10.5 7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 11v3.5h10V11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                     Download
@@ -1450,6 +1487,9 @@ def build_advanced_metrics_body(
         /* 4. Command bar: title left, actions right; metric picker full width. */
         .am-cmdbar { margin:0 -4px; padding:2px 4px 0; }
         #amMetricBtn { width:100%; min-width:0; }
+        /* Graph modal metric pickers: same search-picker UI, full width of the control. */
+        .am-graph-picker { width:100%; }
+        .am-graph-picker .am-metric-btn { width:100%; min-width:0; justify-content:space-between; }
         /* 5. Sheet buttons stay solid; the redundant "Custom" echo hides. */
         #amActiveSet { display:none; }
         #amAddStatBtn, #amAddFilterBtn, #amSaveSetBtn, #amDeleteSetBtn {
@@ -4017,6 +4057,18 @@ _AM_JS = r"""
     _amSyncGraphThemeBtn();
     window.amRenderGraph();
   };
+  window.amToggleGraphLabelAxis = function() {
+    _amGraphLabelAxis = (_amGraphLabelAxis === 'y') ? 'x' : 'y';
+    const btn = document.getElementById('amGraphLabelAxisBtn');
+    if (btn) btn.textContent = (_amGraphLabelAxis === 'y') ? 'Y vals' : 'X vals';
+    window.amRenderGraph();
+  };
+  window.amToggleGraphQuadrants = function() {
+    _amGraphQuadrants = !_amGraphQuadrants;
+    const btn = document.getElementById('amGraphQuadrantsBtn');
+    if (btn) btn.classList.toggle('am-active', _amGraphQuadrants);
+    window.amRenderGraph();
+  };
   // Position filter local to the graph modal (null = all). Initialized from
   // state.position each time the modal opens; can be changed without leaving the modal.
   let _amGraphPos = null;
@@ -4050,6 +4102,12 @@ _AM_JS = r"""
   // each time X changes; user can override via the #amGraphMinVolSel control.
   let _amGraphMinVol = '';
   let _amGraphLastXk = '';
+  // Which axis value star labels show: 'x' or 'y'. Toggled via the label-axis
+  // button in the graph controls.
+  let _amGraphLabelAxis = 'x';
+  // Whether quadrant dividers + labels are shown. Toggled via the quadrants
+  // button in the graph controls.
+  let _amGraphQuadrants = false;
   // Populate/show the min-vol control for a given X metric key, or hide it.
   function _amUpdateGraphVolCtrl(xk) {
     const ctrl = document.getElementById('amGraphVolCtrl');
@@ -4182,6 +4240,15 @@ _AM_JS = r"""
     ySel.innerHTML = _amGraphMetricOptions(curY);
     zSel.innerHTML = '<option value="">None</option>' + _amGraphMetricOptions('');
     xSel.value = curX; ySel.value = curY; zSel.value = curZ;
+    // Reset the label-axis toggle to X and sync its button.
+    _amGraphLabelAxis = 'x';
+    const _lblBtn = document.getElementById('amGraphLabelAxisBtn');
+    if (_lblBtn) _lblBtn.textContent = 'X vals';
+    // Init the search pickers (first open) and sync their labels.
+    amInitGraphPickers();
+    [xSel, ySel, zSel].forEach(function(s) {
+      s.dispatchEvent(new Event('change'));
+    });
     // Initialise the min-vol control for the chosen X metric.
     _amGraphLastXk = curX;
     _amGraphMinVol = defaultVol(curX);
@@ -4418,6 +4485,171 @@ _AM_JS = r"""
     s += txt(((padL + W - padR) / 2).toFixed(1), (H - padB + 36), _amEsc(cfg.metrics[xk].label).toUpperCase(), L.fAxis, TH.text, 800, 'middle', null, 1.8);
     s += txt(0, 0, _amEsc(cfg.metrics[yk].label).toUpperCase(), L.fAxis, TH.text, 800, 'middle',
       'translate(13,' + ((padT + H - padB) / 2).toFixed(1) + ') rotate(-90)', 1.8);
+    // Quadrant dividers + labels (toggle). Split at the medians; each corner
+    // names which side of each axis it sits on.
+    if (_amGraphQuadrants && ptsAll.length >= 4) {
+      // Plain-speak descriptors for high/low values, keyed by metric.
+      // Falls back to "High/Low {label}" when a metric has no entry.
+      const _qd = {;
+        'adjusted_completion_rate': ['Accurate', 'Inaccurate'],
+        'air_yards_per_game': ['Downfield volume', 'No downfield'],
+        'air_yards_share': ['Commands air yards', 'Few air yards'],
+        'avg_depth_of_target': ['Deep threat', 'Short-area'],
+        'avoided_tackles_pg': ['Forces missed tackles', 'No one misses'],
+        'big_time_throw_rate': ['Big-time throws', 'No big throws'],
+        'blitz_rate_faced': ['Blitzed often', 'Rarely blitzed'],
+        'boom_rate': ['Boom weeks', 'No ceiling'],
+        'breakaway_percentage': ['Home-run hitter', 'Grinder'],
+        'breakout_trend_score': ['Breakout trending', 'Fading'],
+        'bust_rate': ['Bust risk', 'Safe floor'],
+        'carries_per_game': ['Carry volume', 'No carries'],
+        'catch_rate': ['Sure hands', 'Inconsistent hands'],
+        'catchable_pass_pct': ['Catchable balls', 'Uncatchable'],
+        'completion_pct': ['Completes passes', 'Misses throws'],
+        'contested_catch_rate': ['Wins contested', 'Loses 50/50s'],
+        'contested_target_rate': ['Contested looks', 'Open looks'],
+        'cpoe': ['Above expected', 'Below expected'],
+        'deep_target_rate': ['Deep looks', 'No deep looks'],
+        'drop_rate': ['Drop issues', 'Reliable hands'],
+        'elusive_rating': ['Elusive', 'Easy to tackle'],
+        'end_zone_target_rate': ['End zone looks', 'No end zone looks'],
+        'epa_per_play': ['Efficient passer', 'Inefficient'],
+        'epa_vs_blitz': ['Beats the blitz', 'Folds vs blitz'],
+        'epa_vs_stacked_box': ['Beats stacked boxes', 'Stuffed vs stacked'],
+        'expected_half_ppr_per_game': ['High expected scoring', 'Low expected scoring'],
+        'expected_ppr_per_game': ['High expected scoring', 'Low expected scoring'],
+        'expected_standard_per_game': ['High expected scoring', 'Low expected scoring'],
+        'expected_tds': ['TDs coming', 'No TDs expected'],
+        'explosive_pass_rate': ['Explosive passes', 'Dink and dunk'],
+        'explosive_run_rate': ['Explosive runs', 'No explosives'],
+        'first_downs_per_game': ['Chain mover', 'No first downs'],
+        'fp_cv': ['Volatile', 'Consistent'],
+        'fpts_per_carry': ['Scores per carry', 'Empty carries'],
+        'fpts_per_target': ['Scores per target', 'Empty targets'],
+        'goal_line_opp_share': ['Goal-line role', 'No goal-line work'],
+        'grades_offense': ['PFF loves him', 'PFF down on him'],
+        'half_ppr_over_expected_per_game': ['Outscoring expectation', 'Underperforming'],
+        'inline_rate': ['Inline TE', 'Split out'],
+        'int_rate': ['INT problem', 'Protects the ball'],
+        'intended_air_yards_per_game': ['Intended deep volume', 'No deep intent'],
+        'intended_air_yards_share': ['Intended air share', 'No air share'],
+        'nfl_passer_rating': ['Elite rating', 'Poor rating'],
+        'ngs_aggressiveness': ['Aggressive', 'Checkdown Charlie'],
+        'ngs_avg_air_yards_to_sticks': ['Past the sticks', 'Short of sticks'],
+        'ngs_avg_completed_air_yards': ['Deep completions', 'Short completions'],
+        'ngs_avg_cushion': ['Given cushion', 'Pressed tight'],
+        'ngs_avg_separation': ['Gets open', 'No separation'],
+        'ngs_avg_time_to_throw': ['Holds the ball', 'Quick release'],
+        'ngs_avg_yac_above_expectation': ['YAC over expected', 'YAC below expected'],
+        'ngs_created_separation': ['Creates separation', 'Blanketed'],
+        'ngs_percent_attempts_gte_eight_defenders': ['Faces stacked boxes', 'Light boxes'],
+        'ngs_rush_yards_over_expected_per_att': ['Creates yards', 'Leaves yards'],
+        'opportunity_share': ['Workhorse', 'Limited role'],
+        'opportunity_trend': ['Role growing', 'Role shrinking'],
+        'pass_block_rate': ['Blocks often', 'Never blocks'],
+        'pass_tds_per_game': ['TD passer', 'No pass TDs'],
+        'passing_epa': ['Adds value', 'Hurts offense'],
+        'pff_passing_grade': ['PFF elite', 'PFF poor'],
+        'pff_rushing_grade': ['PFF elite runner', 'PFF poor runner'],
+        'play_action_epa': ['PA efficient', 'PA hurts'],
+        'play_action_rate': ['Heavy play-action', 'No play-action'],
+        'ppr_over_expected_per_game': ['Outscoring expectation', 'Underperforming'],
+        'ppr_pts': ['Scoring', 'Not scoring'],
+        'ppr_pts_per_game': ['High scorer', 'Low scorer'],
+        'pressure_rate_faced': ['Under siege', 'Clean pocket'],
+        'pressure_to_sack_rate': ['Takes sacks', 'Escapes pressure'],
+        'qb_hit_rate': ['Gets hit', 'Stays clean'],
+        'qb_rating_when_targeted': ['QB cooks', 'QB struggles'],
+        'rec_broken_tackles_per_reception': ['Breaks tackles', 'Goes down easy'],
+        'rec_first_down_rate': ['Moves the chains', 'No first downs'],
+        'rec_tds_per_game': ['Scores', 'No TDs'],
+        'rec_yards_per_game': ['Receiving yards', 'No receiving yards'],
+        'receiving_epa': ['Adds value', 'Hurts offense'],
+        'receiving_epa_per_target': ['EPA per target', 'Negative EPA'],
+        'receiving_success_rate': ['Successful catches', 'Empty catches'],
+        'receptions_per_game': ['Catch volume', 'Few catches'],
+        'route_participation': ['Always running routes', 'Not on routes'],
+        'routes_per_game': ['Route volume', 'No routes'],
+        'rush_first_down_rate': ['Moves chains', 'No first downs'],
+        'rush_td_rate': ['TD runner', 'No rush TDs'],
+        'rush_tds_per_game': ['Ground scores', 'No ground TDs'],
+        'rush_yards_per_game': ['Rush yards', 'No rush yards'],
+        'rushing_epa': ['Adds value', 'Hurts offense'],
+        'rushing_epa_per_att': ['EPA per carry', 'Negative EPA'],
+        'rushing_success_rate': ['Successful runs', 'Failed runs'],
+        'rz_opp_share': ['Goal-line role', 'No goal-line role'],
+        'rz_target_share': ['Red zone weapon', 'Not a RZ factor'],
+        'sack_rate': ['Sack-prone', 'Avoids sacks'],
+        'schedule_ease': ['Soft schedule', 'Brutal schedule'],
+        'scramble_rate': ['Scrambler', 'Statue'],
+        'screen_target_rate': ['Screen game', 'No screens'],
+        'slot_rate': ['Slot WR', 'Outside WR'],
+        'snap_share': ['Every-down player', 'Rotational'],
+        'standard_over_expected_per_game': ['Outscoring expectation', 'Underperforming'],
+        'stuffed_rate': ['Gets stuffed', 'Never stuffed'],
+        'success_rate': ['Stays on schedule', 'Behind the chains'],
+        'target_share': ['Target hog', 'Few targets'],
+        'targets_per_game': ['Target volume', 'No targets'],
+        'targets_per_snap': ['Targeted often', 'Ignored'],
+        'td_over_expected': ['Finishing drives', 'Leaving TDs'],
+        'td_rate': ['TD thrower', 'No TDs'],
+        'td_rate_per_opp': ['Scores on touches', 'Empty touches'],
+        'td_share': ['Team TD hog', 'No TD share'],
+        'third_down_conv_rate': ['Money on 3rd', '3rd-down liability'],
+        'total_pass_yards': ['Pass yards', 'No pass yards'],
+        'total_routes': ['Route runner', 'No routes run'],
+        'total_tds_per_game': ['Finding paint', 'No TDs'],
+        'total_yards': ['Yardage machine', 'No yards'],
+        'touches_per_game': ['Heavy usage', 'Light usage'],
+        'touches_per_snap': ['Touch magnet', 'Decoy'],
+        'turnover_worthy_rate': ['Reckless', 'Safe with ball'],
+        'uncatchable_tgt_rate': ['Uncatchable targets', 'Catchable targets'],
+        'unrealized_air_yards': ['Wasted air yards', 'No wasted yards'],
+        'unrealized_air_yards_per_game': ['Wasted deep looks', 'Efficient deep looks'],
+        'vorp': ['Above replacement', 'Below replacement'],
+        'war': ['Wins added', 'Wins lost'],
+        'wide_rate': ['Wide alignment', 'Tight splits'],
+        'wopr': ['Weighted opportunity', 'No opportunity'],
+        'xfp_trend': ['Usage rising', 'Usage falling'],
+        'xtd_per_game': ['TD chances', 'No TD chances'],
+        'yac_per_carry': ['YAC machine', 'Goes down on contact'],
+        'yards_after_catch': ['YAC monster', 'Goes down easy'],
+        'yards_after_catch_per_reception': ['YAC per catch', 'No YAC'],
+        'yards_per_attempt': ['Pushes downfield', 'Dinks and dunks'],
+        'yards_per_carry': ['Efficient runner', 'Stuffed often'],
+        'yards_per_reception': ['Big-play threat', 'Possession type'],
+        'yards_per_target': ['Efficient target', 'Inefficient target'],
+        'yards_per_touch': ['Per-touch weapon', 'Needs volume'],
+        'ybc_per_carry': ['Hits holes fast', 'Met at the line'],
+        'yprr': ['Open and productive', 'Invisible on routes'],
+      };
+      const _qdHi = function(k) { return (_qd[k] && _qd[k][0]) || ('High ' + cfg.metrics[k].label); };
+      const _qdLo = function(k) { return (_qd[k] && _qd[k][1]) || ('Low ' + cfg.metrics[k].label); };
+      const _qx = ptsAll.map(function(p) { return p.x; }).sort(function(a, b) { return a - b; });
+      const _qy = ptsAll.map(function(p) { return p.y; }).sort(function(a, b) { return a - b; });
+      const _xmed = _qx[Math.floor(_qx.length / 2)], _ymed = _qy[Math.floor(_qy.length / 2)];
+      const _qxPx = px(_xmed), _qyPx = py(_ymed);
+      const _qCol = TH.dark ? 'rgba(148,163,184,.45)' : '#9aa6b5';
+      s += '<line x1="' + _qxPx.toFixed(1) + '" y1="' + padT + '" x2="' + _qxPx.toFixed(1) + '" y2="' + (H - padB)
+        + '" stroke="' + _qCol + '" stroke-width="1.2" stroke-dasharray="5,4"/>';
+      s += '<line x1="' + padL + '" y1="' + _qyPx.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + _qyPx.toFixed(1)
+        + '" stroke="' + _qCol + '" stroke-width="1.2" stroke-dasharray="5,4"/>';
+      const _xl = cfg.metrics[xk].label, _yl = cfg.metrics[yk].label;
+      const _qfs = L.fTick, _qc = TH.dark ? 'rgba(148,163,184,.75)' : '#8a95a5';
+      const _qw = function(a, b) { return ((a + b) / 2).toFixed(1); };
+      // top-right: high X, high Y
+      s += txt(_qw(_qxPx, W - padR), padT + 16, _amEsc(_qdHi(xk)), _qfs, _qc, 600, 'middle');
+      s += txt(_qw(_qxPx, W - padR), padT + 16 + _qfs + 3, _amEsc(_qdHi(yk)), _qfs, _qc, 600, 'middle');
+      // top-left: low X, high Y
+      s += txt(_qw(padL, _qxPx), padT + 16, _amEsc(_qdLo(xk)), _qfs, _qc, 600, 'middle');
+      s += txt(_qw(padL, _qxPx), padT + 16 + _qfs + 3, _amEsc(_qdHi(yk)), _qfs, _qc, 600, 'middle');
+      // bottom-right: high X, low Y
+      s += txt(_qw(_qxPx, W - padR), (H - padB - 8 - _qfs).toFixed(1), _amEsc(_qdHi(xk)), _qfs, _qc, 600, 'middle');
+      s += txt(_qw(_qxPx, W - padR), (H - padB - 8).toFixed(1), _amEsc(_qdLo(yk)), _qfs, _qc, 600, 'middle');
+      // bottom-left: low X, low Y
+      s += txt(_qw(padL, _qxPx), (H - padB - 8 - _qfs).toFixed(1), _amEsc(_qdLo(xk)), _qfs, _qc, 600, 'middle');
+      s += txt(_qw(padL, _qxPx), (H - padB - 8).toFixed(1), _amEsc(_qdLo(yk)), _qfs, _qc, 600, 'middle');
+    }
     const avgCol = TH.dark ? 'rgba(148,163,184,.55)' : '#aab4c2';
     const chip = function(x, y, t, anchor) {
       const w = t.length * (L.fLeg - 3.2) * 0.62 + 16;
@@ -4461,8 +4693,12 @@ _AM_JS = r"""
     // tighter there -- a crammed stack of overlapping names reads as noise. Every
     // dot stays tappable for its full detail card, so fewer printed labels loses
     // no information, it just keeps the ones that print legible.
-    const starCut = Math.min(isNarrow ? 6 : 8, Math.max(4, Math.round(pts.length * 0.3)));
-    const showCut = Math.min(pts.length, starCut + (isNarrow ? 3 : (pts.length > 50 ? 14 : 10)));
+    // User picks the label count via #amGraphLabels; stars are the top ~40%.
+    const _lblSel = document.getElementById('amGraphLabels');
+    const _lblCount = _lblSel ? (parseInt(_lblSel.value, 10) || 0) : 12;
+    const showCut = Math.min(pts.length, _lblCount);
+    const starCut = showCut === 0 ? 0
+      : Math.min(showCut, isNarrow ? 6 : 8, Math.max(4, Math.round(showCut * 0.4)));
     const lblSize = L.fLbl;
     const ptData = pts.map(function(p, idx) {
       const cx = px(p.x), cy = py(p.y), r = rOf(p), col = posColor(p.position);
@@ -4501,7 +4737,7 @@ _AM_JS = r"""
       if (d.idx >= showCut) return;
       const isStar = d.star;
       const nm = _amLastName(d.p.name);
-      const valTxt = isStar ? ' ' + fmtX(d.p.x) : '';
+      const valTxt = isStar ? ' ' + (_amGraphLabelAxis === 'y' ? fmtY(d.p.y) : fmtX(d.p.x)) : '';
       const fs = isStar ? L.fStar : lblSize;
       const tw = (nm.length + valTxt.length) * fs * 0.56;
       const gap = d.r + 4, vy = d.cy + 3.5;
@@ -4678,6 +4914,10 @@ _AM_JS = r"""
         if (xSel) { xSel.innerHTML = _amGraphMetricOptions(curX); xSel.value = curX; }
         if (ySel) { ySel.innerHTML = _amGraphMetricOptions(curY); ySel.value = curY; }
         if (zSel) { zSel.innerHTML = '<option value="">None</option>' + _amGraphMetricOptions(curZ); zSel.value = curZ; }
+        // Sync the search-picker labels with the rebuilt options.
+        [xSel, ySel, zSel].forEach(function(s) {
+          if (s) s.dispatchEvent(new Event('change'));
+        });
         // Update context note
         const note = document.getElementById('amGraphCtxNote');
         if (note) {
@@ -5799,20 +6039,28 @@ _AM_JS = r"""
   }
 
   // ── Custom metric picker (search + category flyout) ──────────────────────
-  (function() {
-    const wrap   = document.getElementById('amMetricPickerWrap');
-    const btn    = document.getElementById('amMetricBtn');
-    const label  = document.getElementById('amMetricBtnLabel');
-    const panel  = document.getElementById('amMetricDropdown');
-    if (!wrap || !btn || !panel) return;
+  // Reusable: pass {wrap, btn, label, panel, select, onChange, showWeekly}.
+  // select is the hidden native <select> backing store; onChange fires after
+  // a pick (defaults to dispatching 'change' on the select).
+  function amInitSearchPicker(o) {
+    const wrap   = o.wrap;
+    const btn    = o.btn;
+    const label  = o.label;
+    const panel  = o.panel;
+    const selEl  = o.select;
+    if (!wrap || !btn || !panel || !selEl) return;
+    const onChange = o.onChange || function() {
+      selEl.dispatchEvent(new Event('change'));
+    };
+    const showWeekly = o.showWeekly !== false;
 
     let _mdActiveCat = '';
     let _mdGroups = [];
 
     function syncLabel() {
-      const opt = metricSel.options[metricSel.selectedIndex];
+      const opt = selEl.options[selEl.selectedIndex];
       const txt = opt ? opt.textContent : '';
-      const isWeekly = opt && new Set(cfg.weeklyMetrics || []).has(opt.value);
+      const isWeekly = showWeekly && opt && new Set(cfg.weeklyMetrics || []).has(opt.value);
       label.innerHTML = txt + (isWeekly
         ? ' <span class="am-sp-weekly-badge" title="Supports week-range filtering">W</span>'
         : '');
@@ -5822,7 +6070,7 @@ _AM_JS = r"""
     function readGroups() {
       const weeklySet = new Set(cfg.weeklyMetrics || []);
       const groups = [];
-      for (const og of metricSel.querySelectorAll('optgroup')) {
+      for (const og of selEl.querySelectorAll('optgroup')) {
         const options = [];
         for (const o of og.querySelectorAll('option')) {
           options.push({
@@ -5855,8 +6103,8 @@ _AM_JS = r"""
     }
 
     function metricItemHtml(o) {
-      const isSel = o.value === metricSel.value;
-      const badge = o.weekly
+      const isSel = o.value === selEl.value;
+      const badge = (showWeekly && o.weekly)
         ? '<span class="am-sp-weekly-badge" title="Supports week-range filtering">W</span>'
         : '';
       return '<div class="am-sp-item' + (isSel ? ' am-sp-active' : '') + '" data-val="'
@@ -5886,10 +6134,10 @@ _AM_JS = r"""
       pane.innerHTML = items.map(metricItemHtml).join('');
       pane.querySelectorAll('.am-sp-item').forEach(function(el) {
         el.addEventListener('click', function() {
-          metricSel.value = el.dataset.val;
+          selEl.value = el.dataset.val;
           syncLabel();
           closePanel();
-          metricSel.dispatchEvent(new Event('change'));
+          onChange();
         });
       });
       const sel = pane.querySelector('.am-sp-item.am-sp-active');
@@ -5936,7 +6184,7 @@ _AM_JS = r"""
 
     function buildPanel() {
       _mdGroups = readGroups();
-      _mdActiveCat = catForValue(metricSel.value);
+      _mdActiveCat = catForValue(selEl.value);
       panel.innerHTML =
         '<div class="am-md-search-wrap">'
         + '<input type="text" id="amMdSearch" class="am-sp-search" placeholder="Search metrics…" autocomplete="off" aria-label="Search metrics">'
@@ -6030,6 +6278,52 @@ _AM_JS = r"""
       closePanel();
     }, true);
 
-    metricSel.addEventListener('change', syncLabel);
-  })();
+    selEl.addEventListener('change', syncLabel);
+  }
+
+  // Primary metric picker.
+  amInitSearchPicker({
+    wrap: document.getElementById('amMetricPickerWrap'),
+    btn: document.getElementById('amMetricBtn'),
+    label: document.getElementById('amMetricBtnLabel'),
+    panel: document.getElementById('amMetricDropdown'),
+    select: document.getElementById('amMetric'),
+    showWeekly: true,
+  });
+
+  // Graph X / Y / Bubble pickers: same search + category UI over the
+  // hidden native selects. Initialized lazily on first modal open because
+  // the options depend on the position filter.
+  var _amGraphPickersInit = false;
+  function amInitGraphPickers() {
+    if (_amGraphPickersInit) return;
+    _amGraphPickersInit = true;
+    amInitSearchPicker({
+      wrap: document.getElementById('amGraphXWrap'),
+      btn: document.getElementById('amGraphXBtn'),
+      label: document.getElementById('amGraphXBtnLabel'),
+      panel: document.getElementById('amGraphXDropdown'),
+      select: document.getElementById('amGraphX'),
+      showWeekly: false,
+      onChange: function() { amRenderGraph(); },
+    });
+    amInitSearchPicker({
+      wrap: document.getElementById('amGraphYWrap'),
+      btn: document.getElementById('amGraphYBtn'),
+      label: document.getElementById('amGraphYBtnLabel'),
+      panel: document.getElementById('amGraphYDropdown'),
+      select: document.getElementById('amGraphY'),
+      showWeekly: false,
+      onChange: function() { amRenderGraph(); },
+    });
+    amInitSearchPicker({
+      wrap: document.getElementById('amGraphZWrap'),
+      btn: document.getElementById('amGraphZBtn'),
+      label: document.getElementById('amGraphZBtnLabel'),
+      panel: document.getElementById('amGraphZDropdown'),
+      select: document.getElementById('amGraphZ'),
+      showWeekly: false,
+      onChange: function() { amRenderGraph(); },
+    });
+  }
 """
