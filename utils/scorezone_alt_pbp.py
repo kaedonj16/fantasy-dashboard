@@ -1007,6 +1007,13 @@ def extract_espn_pbp_plays(
     full_idx, abbrev_idx = build_name_indexes(name_to_pid)
     out: list[dict] = []
     seq = 0
+    # ESPN's gamepackage lists the in-progress drive under BOTH
+    # drives.previous (as its last element) and drives.current, so the
+    # current drive's plays arrive twice with identical ids. Emitting both
+    # copies doubles every cumulative stat on those plays (rush TDs showing
+    # as 2, fantasy totals inflated). Skip repeat play ids; the first
+    # occurrence keeps chronological order.
+    seen_play_ids: set[str] = set()
     for drive in drives:
         if not isinstance(drive, dict):
             continue
@@ -1037,6 +1044,9 @@ def extract_espn_pbp_plays(
             if provider_seq is None:
                 provider_seq = play.get("id")
             play_id = _s(play.get("id") or provider_seq) or f"{game_id}:espn:{seq}"
+            if play_id in seen_play_ids:
+                continue
+            seen_play_ids.add(play_id)
             is_td = bool(play.get("scoringPlay")) and (
                 "touchdown" in _s((play.get("type") or {}).get("text")).lower()
                 or "touchdown" in text.lower()

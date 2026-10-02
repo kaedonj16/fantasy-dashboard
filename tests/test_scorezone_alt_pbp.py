@@ -888,3 +888,45 @@ def test_parse_pbp_five_catches_twelve_targets_cumulative():
         rec += sl.get("rec", 0)
         targets += sl.get("targets", 0)
     assert (rec, targets) == (5, 12)
+
+
+def test_espn_extract_dedupes_current_drive_repeated_in_previous():
+    """ESPN lists the in-progress drive under BOTH drives.previous (as its
+    last element) and drives.current. The extractor must emit those plays
+    once: the duplicate doubled every cumulative stat on the card (a 1-TD
+    game rendering as 2 TDs with an inflated fantasy total)."""
+    drive_b = {
+        "team": {"abbreviation": "CLE"},
+        "plays": [
+            {
+                "id": "p-td", "sequenceNumber": "200",
+                "text": "Q.Judkins rushed up the middle for 2 yards, TOUCHDOWN.",
+                "scoringPlay": True,
+                "period": {"number": 2}, "clock": {"displayValue": "8:28"},
+                "start": {"down": 1, "distance": 2},
+                "type": {"text": "Rush"},
+            },
+        ],
+    }
+    payload = {"gamepackageJSON": {"drives": {
+        "previous": [
+            {"team": {"abbreviation": "CLE"}, "plays": [
+                {
+                    "id": "p-run", "sequenceNumber": "100",
+                    "text": "Q.Judkins rushed up the middle for 3 yards.",
+                    "period": {"number": 2}, "clock": {"displayValue": "14:11"},
+                    "start": {"down": 1, "distance": 10},
+                    "type": {"text": "Rush"},
+                },
+            ]},
+            drive_b,
+        ],
+        "current": drive_b,
+    }}}
+    plays = extract_espn_pbp_plays(
+        payload, "20261001_PIT@CLE",
+        name_to_pid={"quinshon judkins": "judkins1"},
+    )
+    judkins = [p for p in plays if p["pid"] == "judkins1"]
+    assert [p["play_id"] for p in judkins] == ["p-run", "p-td"]
+    assert judkins[-1]["cume"] == {"rush_yds": 5, "carries": 2, "rush_td": 1}
