@@ -595,13 +595,15 @@ def build_advanced_metrics_body(
                   </button>
                 </div>
               </div>
-            </div>
-            <div class="otc-day-filters am-graph-pos-bar" id="amGraphPosBar">
-              <button class="otc-day-filter am-pos active" data-gpos="">All</button>
-              <button class="otc-day-filter am-pos" data-gpos="QB">QB</button>
-              <button class="otc-day-filter am-pos" data-gpos="RB">RB</button>
-              <button class="otc-day-filter am-pos" data-gpos="WR">WR</button>
-              <button class="otc-day-filter am-pos" data-gpos="TE">TE</button>
+              <div class="am-gctrl am-graph-pos-ctrl"><label>Position</label>
+                <div class="otc-day-filters am-graph-pos-bar" id="amGraphPosBar">
+                  <button class="otc-day-filter am-pos active" data-gpos="">All</button>
+                  <button class="otc-day-filter am-pos" data-gpos="QB">QB</button>
+                  <button class="otc-day-filter am-pos" data-gpos="RB">RB</button>
+                  <button class="otc-day-filter am-pos" data-gpos="WR">WR</button>
+                  <button class="otc-day-filter am-pos" data-gpos="TE">TE</button>
+                </div>
+              </div>
             </div>
             <div class="am-graph-plot-wrap">
               <div id="amGraphPlot"><div class="am-graph-empty">Pick two metrics to plot.</div></div>
@@ -1264,9 +1266,10 @@ def build_advanced_metrics_body(
       .am-graph-actions .am-add-stat-btn { display:inline-flex; align-items:center; gap:5px; white-space:nowrap; }
       /* Position filter bar inside the graph modal */
       .am-graph-pos-bar {
-        display:flex; gap:6px; padding:8px 18px;
-        border-bottom:1px solid var(--border); flex-wrap:wrap;
+        display:flex; gap:6px; flex-wrap:wrap;
       }
+      .am-graph-pos-ctrl { justify-content:flex-start; }
+      .am-graph-pos-ctrl .am-graph-pos-bar { padding-top:7px; }
       /* Plot area flexes and scrolls inside the 82vh card so controls never clip. */
       .am-graph-plot-wrap { position:relative; padding:14px 16px 16px; overflow:auto; flex:1 1 auto; min-height:0; -webkit-overflow-scrolling:touch; }
       /* Hover/tap card: player headshot + the selected stats. Uses site-theme
@@ -4487,7 +4490,7 @@ _AM_JS = r"""
       'translate(13,' + ((padT + H - padB) / 2).toFixed(1) + ') rotate(-90)', 1.8);
     // Quadrant dividers + labels (toggle). Split at the medians; each corner
     // names which side of each axis it sits on.
-    if (_amGraphQuadrants && ptsAll.length >= 4) {
+    if (_amGraphQuadrants && pts.length >= 4) {
       // Plain-speak descriptors for high/low values, keyed by metric.
       // Falls back to "High/Low {label}" when a metric has no entry.
       const _qd = {
@@ -4625,8 +4628,8 @@ _AM_JS = r"""
       };
       const _qdHi = function(k) { return (_qd[k] && _qd[k][0]) || ('High ' + cfg.metrics[k].label); };
       const _qdLo = function(k) { return (_qd[k] && _qd[k][1]) || ('Low ' + cfg.metrics[k].label); };
-      const _qx = ptsAll.map(function(p) { return p.x; }).sort(function(a, b) { return a - b; });
-      const _qy = ptsAll.map(function(p) { return p.y; }).sort(function(a, b) { return a - b; });
+      const _qx = pts.map(function(p) { return p.x; }).sort(function(a, b) { return a - b; });
+      const _qy = pts.map(function(p) { return p.y; }).sort(function(a, b) { return a - b; });
       const _xmed = _qx[Math.floor(_qx.length / 2)], _ymed = _qy[Math.floor(_qy.length / 2)];
       const _qxPx = px(_xmed), _qyPx = py(_ymed);
       const _qCol = TH.dark ? 'rgba(148,163,184,.45)' : '#9aa6b5';
