@@ -8413,10 +8413,19 @@ window.initTradePage = function initTradePage(root = document) {
       playerDropdown.style.display = "block";
     }
 
-    playerInput.addEventListener("input", () => {
+    playerInput.addEventListener("input", async () => {
       const q = playerInput.value.trim().toLowerCase();
       if (!q.length) _setTopChipsCollapsed(false);  // cleared: bring the chips back
       if (q.length < 2) { playerDropdown.style.display = "none"; return; }
+      // If player data hasn't loaded yet (transient fetch failure), retry
+      // before giving up -- otherwise the dropdown silently shows nothing.
+      if (!allPlayers.length) {
+        playerDropdown.innerHTML = '<div style="padding:10px 12px;font-size:12px;color:var(--text-muted);">Loading players…</div>';
+        playerDropdown.style.display = "block";
+        try { await ensurePlayersLoaded(); } catch (_) {}
+        // User may have cleared the input while we were loading
+        if (playerInput.value.trim().toLowerCase() !== q) return;
+      }
       const matches = allPlayers.filter(p =>
         (["QB","RB","WR","TE"].includes(p.position) || p.position === "PICK") &&
         (p.name || "").toLowerCase().includes(q)
@@ -8520,12 +8529,15 @@ window.initTradePage = function initTradePage(root = document) {
       const leagueType     = getLeagueType();
 
       try {
+        // 30s timeout so a hung request doesn't spin forever on mobile;
+        // combined with the search-abort signal so a new search still cancels.
+        const combinedSignal = AbortSignal.any([signal, AbortSignal.timeout(30000)]);
         const res = await fetch(
           `/api/trade-intel/player-packages/${encodeURIComponent(playerId)}` +
           `?season=${season}&league_type=${leagueType}&league_id=${encodeURIComponent(leagueId)}` +
           `&platform=${encodeURIComponent(platform)}&viewer_roster_id=${encodeURIComponent(viewerRosterId)}` +
           `&untouchable_ids=${encodeURIComponent([..._untouchableIds].join(','))}`,
-          { signal }
+          { signal: combinedSignal }
         );
 
         // A newer search was started - discard this response silently
@@ -8568,10 +8580,21 @@ window.initTradePage = function initTradePage(root = document) {
 
       } catch (err) {
         if (err.name === "AbortError") return;  // superseded by a newer search
+        const isTimeout = err.name === "TimeoutError";
         resultsList.innerHTML = `<div class="otc-sugg-empty">
-          <div class="otc-sugg-empty-sub">Failed to load packages.</div></div>`;
+          <div class="otc-sugg-empty-title">${isTimeout ? "Request timed out" : "Failed to load packages"}</div>
+          <div class="otc-sugg-empty-sub">${isTimeout
+            ? "The server took too long. Try again."
+            : "Check your connection and try again."}</div>
+          <button class="am-add-stat-btn" style="margin-top:8px;" onclick="window._retryLastPackageSearch()">Try again</button>
+        </div>`;
       }
     }
+
+    // Retry the last package search (used by the error state retry button)
+    window._retryLastPackageSearch = () => {
+      if (suggCurrentPlayerId) runSearchForCurrent(suggCurrentPlayerId, _pkgPlayerName || playerInput.value);
+    };
 
     // ── Send-away packages: what you can GET by trading a player AWAY ──────────
     // Inverse of fetchPackages. Lists value-matched return packages from rival
@@ -8617,11 +8640,12 @@ window.initTradePage = function initTradePage(root = document) {
       }
 
       try {
+        const combinedSignal = AbortSignal.any([signal, AbortSignal.timeout(30000)]);
         const res = await fetch(
           `/api/trade-intel/player-send-packages/${encodeURIComponent(playerId)}` +
           `?season=${season}&league_type=${leagueType}&league_id=${encodeURIComponent(leagueId)}` +
           `&platform=${encodeURIComponent(platform)}&viewer_roster_id=${encodeURIComponent(viewerRosterId)}`,
-          { signal }
+          { signal: combinedSignal }
         );
         if (signal.aborted || suggCurrentPlayerId !== playerId) return;
         if (res.status === 403) {
@@ -8772,8 +8796,14 @@ window.initTradePage = function initTradePage(root = document) {
 
       } catch (err) {
         if (err.name === "AbortError") return;
+        const isTimeout = err.name === "TimeoutError";
         resultsList.innerHTML = `<div class="otc-sugg-empty">
-          <div class="otc-sugg-empty-sub">Failed to load send options.</div></div>`;
+          <div class="otc-sugg-empty-title">${isTimeout ? "Request timed out" : "Failed to load send options"}</div>
+          <div class="otc-sugg-empty-sub">${isTimeout
+            ? "The server took too long. Try again."
+            : "Check your connection and try again."}</div>
+          <button class="am-add-stat-btn" style="margin-top:8px;" onclick="window._retryLastPackageSearch()">Try again</button>
+        </div>`;
       }
     }
 
