@@ -36,170 +36,6 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
   .wv-section { display: none; }
   .wv-section.wv-tab-active { display: block; }
 }
-/* Lineup Lab (Start/Sit tab) */
-.wv-ss-mode { display: inline-flex; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin: 0 0 12px; background: var(--card); }
-.wv-ss-mode button { border: none; background: none; color: var(--text-muted); font-size: 13px; font-weight: 700; padding: 8px 18px; cursor: pointer; }
-.wv-ss-mode button.on { background: var(--accent); color: #fff; }
-.wv-guest-bar { margin: 0 0 12px; }
-.wv-guest-search { position: relative; max-width: 420px; }
-.wv-guest-input { width: 100%; box-sizing: border-box; padding: 8px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--card); color: var(--text); font-size: 13px; }
-.wv-guest-results { position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 40; background: var(--card); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 10px 28px rgba(0,0,0,.18); overflow: hidden; }
-.wv-guest-result { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 12px; border: none; background: none; color: var(--text); font-size: 13px; text-align: left; cursor: pointer; }
-.wv-guest-result:hover { background: var(--input-bg, rgba(127,127,127,.08)); }
-.wv-guest-rpos { font-weight: 800; font-size: 11px; color: var(--text-muted); min-width: 30px; }
-.wv-guest-rteam { margin-left: auto; font-size: 11.5px; color: var(--text-muted); }
-.wv-guest-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.wv-guest-chips:empty { margin-top: 0; }
-.wv-guest-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); font-size: 12px; font-weight: 600; color: var(--text); }
-.wv-guest-chip .wv-guest-owner { font-weight: 500; color: var(--text-muted); }
-.wv-guest-chip button { border: none; background: none; color: var(--text-muted); font-size: 14px; line-height: 1; padding: 2px 4px; cursor: pointer; }
-.wv-cx-guest { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 6px; background: var(--accent); color: #fff; font-size: 9.5px; font-weight: 800; letter-spacing: .04em; vertical-align: 2px; }
-.wv-ss-guest-note { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
-.wv-lab-guest-chip { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 6px; background: var(--accent); color: #fff; font-size: 9.5px; font-weight: 800; letter-spacing: .04em; vertical-align: 2px; }
-.wv-lab-guests { margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--card); }
-.wv-lab-guests-title { font-size: 12px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px; }
-.wv-lab-guest-row { display: flex; align-items: baseline; gap: 8px; font-size: 13px; padding: 3px 0; }
-.wv-lab-guest-row .wv-lab-guest-note { margin-left: auto; font-size: 12px; color: var(--text-muted); text-align: right; }
-.wv-lab-hero { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin-bottom: 12px; }
-.wv-lab-hero .lbl { font-size: 11px; font-weight: 800; letter-spacing: .06em; color: var(--text-muted); text-transform: uppercase; margin-bottom: 10px; }
-.wv-lab-winbar { display: flex; height: 34px; border-radius: 8px; overflow: hidden; font-weight: 800; font-size: 14px; }
-.wv-lab-winbar .you { background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; transition: width .3s; }
-.wv-lab-winbar .opp { background: #e5e7eb; color: #374151; display: flex; align-items: center; justify-content: center; transition: width .3s; }
-.wv-lab-dist { margin-top: 12px; }
-.wv-lab-trow { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-.wv-lab-trow .who { width: 34px; font-size: 12px; font-weight: 700; color: var(--text-muted); }
-.wv-lab-trow .track { position: relative; flex: 1; height: 10px; background: #eef0f3; border-radius: 5px; }
-.wv-lab-trow .fill { position: absolute; top: 0; bottom: 0; border-radius: 5px; background: var(--accent); opacity: .55; }
-.wv-lab-trow .fill.o { background: #9ca3af; }
-.wv-lab-trow .tick { position: absolute; top: -2px; bottom: -2px; width: 2px; background: #111827; }
-.wv-lab-trow .nums { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
-.wv-lab-trow .nums b { color: var(--text); }
-.wv-lab-scale { display: flex; justify-content: space-between; font-size: 10px; color: var(--text-muted); margin: 2px 0 0 42px; }
-.wv-lab-modes { display: flex; gap: 8px; margin-top: 12px; }
-.wv-lab-btn { flex: 1; border: 1px solid var(--border); background: var(--card); color: var(--text); border-radius: 10px; padding: 10px 0; font-size: 13px; font-weight: 700; cursor: pointer; }
-.wv-lab-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-.wv-lab-btn.on { outline: 2px solid var(--accent); outline-offset: -2px; }
-.wv-lab-btn:disabled { opacity: .5; cursor: default; }
-.wv-lab-slot { border-bottom: 1px solid var(--border); }
-.wv-lab-row { display: flex; align-items: center; gap: 10px; width: 100%; border: none; background: none; padding: 12px 4px; cursor: pointer; text-align: left; color: var(--text); }
-.wv-lab-pos { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 800; }
-/* Pos chip hues match the site-wide .pos-badge palette (matchups page):
-   QB brand blue, RB green, WR amber, TE purple, FLEX teal, K pink, DEF slate. */
-.wv-lab-pos.qb { background: var(--brand-blue); color: #fff; }
-.wv-lab-pos.rb { background: #22c55e; color: #fff; }
-.wv-lab-pos.wr { background: #f59e0b; color: #fff; }
-.wv-lab-pos.te { background: #8b5cf6; color: #fff; }
-.wv-lab-pos.flex { background: #14b8a6; color: #fff; }
-.wv-lab-pos.k { background: #c92c68; color: #fff; }
-.wv-lab-pos.def { background: #475569; color: #fff; }
-.wv-lab-main { flex: 1; min-width: 0; }
-.wv-lab-name { font-size: 14px; font-weight: 700; }
-.wv-lab-line1 { display: block; }
-.wv-lab-line2 { display: flex; align-items: center; gap: 6px; margin-top: 4px; min-width: 0; }
-.wv-lab-meta { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); flex-wrap: nowrap; flex: 0 1 auto; min-width: 0; overflow: hidden; }
-.wv-lab-meta > span { white-space: nowrap; }
-.wv-lab-rangeline { display: flex; align-items: center; gap: 8px; margin-top: 5px; }
-.wv-lab-line2 .wv-lab-rangeline { flex: 1 1 auto; min-width: 36px; margin-top: 0; }
-.wv-lab-rangeline .wv-lab-range { flex: 1; min-width: 0; }
-.wv-lab-range { display: block; position: relative; height: 8px; background: #eef0f3; border-radius: 4px; }
-.wv-lab-range .fill { position: absolute; top: 0; bottom: 0; background: var(--accent); opacity: .5; border-radius: 4px; }
-.wv-lab-range .dot { position: absolute; top: -2px; width: 3px; height: 12px; background: #111827; border-radius: 2px; }
-.wv-lab-end { font-size: 10px; color: var(--text-muted); white-space: nowrap; }
-.wv-lab-end em { font-style: normal; font-weight: 800; font-size: 9px; letter-spacing: .05em; margin-right: 3px; }
-.wv-lab-end .v { color: var(--text); font-weight: 700; }
-.wv-lab-tag { font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 20px; background: transparent; border: 1px solid currentColor; color: #4f46e5; }
-.wv-lab-tag.td { color: #b45309; }
-.wv-lab-tag.q { color: #b91c1c; }
-.wv-lab-tag.boost, .wv-lab-tag.qb { color: #047857; }
-.wv-lab-proj { flex: 0 0 auto; text-align: right; line-height: 1; }
-.wv-lab-proj .n { display: block; font-size: 23px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
-.wv-lab-proj .l { display: block; font-size: 9px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: var(--text-subtle); margin-top: 3px; }
-.wv-lab-chev { color: var(--text-muted); font-size: 18px; }
-.wv-lab-sheet { display: none; padding: 0 4px 12px 54px; }
-.wv-lab-slot.open .wv-lab-sheet { display: block; }
-.wv-lab-slot.open .wv-lab-chev { transform: rotate(90deg); display: inline-block; }
-.wv-lab-cap { font-size: 11px; color: var(--text-muted); font-weight: 700; margin-bottom: 6px; }
-.wv-lab-opt { display: block; width: 100%; text-align: left; border: 1px solid var(--border); background: var(--card); border-radius: 10px; padding: 10px 12px; margin-bottom: 6px; cursor: pointer; color: var(--text); }
-.wv-lab-opt.best { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-.wv-lab-opt .l1 { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 13px; }
-.wv-lab-opt .dl { margin-left: auto; font-weight: 800; }
-.wv-lab-opt .dl.up { color: #059669; }
-.wv-lab-opt .dl.dn { color: #dc2626; }
-.wv-lab-opt .l2 { display: block; margin-top: 6px; font-size: 12px; color: var(--text-muted); }
-.wv-lab-fine { font-size: 12px; color: var(--text-muted); margin-top: 10px; }
-/* Placeholder-only style (loading text, error/retry states). Never put this
-   class on #wvLabBody itself: the rendered Lab replaces that container's
-   innerHTML, so the 24px padding would survive into the loaded hero and
-   lineup rows and stack on the page gutters. */
-.wv-lab-skel { padding: 24px; text-align: center; color: var(--text-muted); font-size: 13px; }
-/* Lab loading state: a structured skeleton mirroring the loaded layout (hero +
-   lineup rows) with a shimmer sweep, so the section animates while it loads and
-   the page does not jump when results arrive. */
-.wv-lab-loadmsg { text-align: center; color: var(--text-muted); font-size: 13px; margin: 2px 0 14px; }
-.wv-lab-dots span { display: inline-block; animation: wv-lab-blink 1.2s infinite; }
-.wv-lab-dots span:nth-child(2) { animation-delay: .2s; }
-.wv-lab-dots span:nth-child(3) { animation-delay: .4s; }
-@keyframes wv-lab-blink { 0%, 60%, 100% { opacity: .25; } 30% { opacity: 1; } }
-.wv-lab-sk-hero { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin-bottom: 12px; }
-.wv-lab-sk-winbar { display: flex; height: 34px; border-radius: 8px; overflow: hidden; gap: 2px; }
-.wv-lab-sk-winbar .skeleton { flex: 1; border-radius: 0; }
-.wv-lab-sk-trow { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
-.wv-lab-sk-modes { display: flex; gap: 8px; margin-top: 12px; }
-.wv-lab-sk-modes .skeleton { flex: 1; height: 38px; border-radius: 10px; }
-.wv-lab-sk-slot { display: flex; align-items: center; gap: 10px; padding: 12px 4px; border-bottom: 1px solid var(--border); }
-.wv-lab-sk-main { flex: 1; min-width: 0; }
-@media (prefers-reduced-motion: reduce) {
-  .wv-lab-dots span { animation: none; }
-  .wv-lab-loading .skeleton::after { animation: none; }
-  .wv-lab-slot.wv-lab-changed > .wv-lab-row { animation: none; }
-}
-/* Change flash: rows touched by Optimize or a manual swap fade from an
-   accent tint back to transparent. */
-@keyframes wv-lab-changed-flash {
-  0% { background: var(--accent-soft); }
-  100% { background: transparent; }
-}
-.wv-lab-slot.wv-lab-changed > .wv-lab-row { animation: wv-lab-changed-flash 1.6s ease-out; }
-/* Summary line listing the swaps (or a one-off note) from the last action. */
-.wv-lab-changes {
-  font-size: 12px; color: var(--text-muted); background: var(--accent-soft);
-  border-radius: 8px; padding: 8px 10px; margin: 0 0 8px;
-}
-/* Best moves card: the top single swaps that raise win probability. */
-.wv-lab-moves { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; }
-.wv-lab-move { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; background: none; border: 1px solid var(--border); border-radius: 10px; padding: 9px 11px; margin-top: 6px; cursor: pointer; color: var(--text); font-size: 13px; }
-.wv-lab-move .mv-names { font-weight: 700; }
-.wv-lab-move .mv-win { margin-left: auto; color: var(--text-muted); font-weight: 700; white-space: nowrap; }
-.wv-lab-move .dl.up { color: #059669; font-weight: 800; }
-.wv-lab-moves-none { font-size: 13px; color: var(--text-muted); }
-/* Why panel: sits under the tapped starter row, opened by tapping the range
-   line. Only ever shows fields the payload actually carries. */
-.wv-lab-why { display: none; padding: 10px 12px 12px; border-top: 1px dashed var(--border); }
-.wv-lab-slot.why-open .wv-lab-why { display: block; }
-.wv-lab-why .wl { font-size: 12.5px; margin-top: 4px; }
-.wv-lab-why .wl b { color: var(--text-muted); font-weight: 700; text-transform: uppercase; font-size: 10.5px; letter-spacing: .05em; margin-right: 6px; }
-.wv-lab-rangeline.tap { cursor: pointer; }
-/* Live mode: final scores lock into the sim; in-progress players get a chip. */
-.wv-lab-locked { font-size: 12px; font-weight: 800; color: #059669; }
-.wv-lab-live-badge { background: #dc2626; color: #fff; border-radius: 6px; padding: 1px 6px; font-size: 10px; font-weight: 800; letter-spacing: .05em; margin-right: 6px; }
-.wv-lab-live-chip { background: #dc2626; color: #fff; border-radius: 6px; padding: 1px 6px; font-size: 10px; font-weight: 800; letter-spacing: .05em; margin-left: 6px; vertical-align: 2px; }
-.wv-lab-live-chip.final { background: #059669; }
-/* Mobile: the Lab goes full width with tight gutters. Page padding drops to
-   12px and the bench sheet loses its 54px desktop indent. */
-@media (max-width: 768px) {
-  .wv-page { padding: 12px; }
-  .wv-lab-sheet { padding: 0 0 12px 12px; }
-  .wv-lab-row { padding: 12px 0; }
-}
-/* Phones: usage, matchup, tags and the range cannot share one line without
-   crushing the bar into a sliver. The meta takes its own full-width line and
-   the MIN, bar, MAX line goes full width under it, so the bar stays a real
-   gauge. Nothing is hidden or clipped. */
-@media (max-width: 560px) {
-  .wv-lab-line2 { flex-wrap: wrap; row-gap: 5px; }
-  .wv-lab-line2 .wv-lab-meta { flex: 1 1 100%; flex-wrap: wrap; row-gap: 3px; overflow: visible; }
-  .wv-lab-line2 .wv-lab-rangeline { flex: 1 1 100%; min-width: 0; }
-}
 
 .wv-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 /* Grid items default to min-width:auto, so a wide flex child (the horizontally
@@ -362,28 +198,29 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 }
 .wv-trend-sub { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
 
-/* Link-your-team banner: shown when the roster isn't identified, so generic
-   (non-personalized) ranks never masquerade as personalized. Dismissible;
-   the dismissal is remembered per league in localStorage. */
-.wv-link-banner {
-  display: flex; align-items: center; gap: 10px; justify-content: space-between;
-  border-radius: 10px; padding: 11px 12px; margin-bottom: 12px;
-  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--border));
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
+/* Streaming this week: matchup-ranked D/ST and K, shown under the waiver list
+   only in season. Implied-total chip is green for a good spot, red for a dud
+   (meaning is inverted for defenses, where a low opponent total is good). */
+.wv-stream-head { margin-top: 22px; }
+.wv-stream-group { margin-bottom: 10px; }
+.wv-stream-sub {
+  font-size: 10px; font-weight: 700; color: var(--text-subtle, var(--text-muted));
+  text-transform: uppercase; letter-spacing: .05em; margin: 4px 2px 6px;
 }
-.wv-link-banner[hidden] { display: none; }
-.wv-link-banner-main { display: flex; align-items: center; gap: 9px; font-size: 13px; color: var(--text); min-width: 0; }
-.wv-link-banner-main i { color: var(--accent); flex-shrink: 0; }
-.wv-link-banner-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-.wv-link-banner-cta {
-  font-size: 12.5px; font-weight: 700; color: #fff; background: var(--accent);
-  border: none; border-radius: 8px; padding: 7px 13px; cursor: pointer; white-space: nowrap;
+.wv-stream-row {
+  display: flex; align-items: center; gap: 8px; padding: 8px 12px; margin-bottom: 6px;
+  border-radius: 8px; background: var(--card); border: 1px solid var(--border); cursor: pointer;
 }
-.wv-link-banner-x {
-  font-size: 16px; line-height: 1; color: var(--text-muted); background: none;
-  border: none; cursor: pointer; padding: 4px 6px; border-radius: 6px;
+.wv-stream-row:hover { border-color: var(--accent); }
+.wv-stream-name { font-weight: 700; font-size: 13px; color: var(--text); }
+.wv-stream-matchup { font-size: 12px; color: var(--text-muted); flex: 1; }
+.wv-stream-imp {
+  font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: var(--radius-pill, 8px);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
 }
-.wv-link-banner-x:hover { color: var(--text); background: rgba(148,163,184,.15); }
+.wv-stream-imp-good { background: color-mix(in srgb, var(--win) 16%, transparent); color: var(--win); }
+.wv-stream-imp-bad  { background: color-mix(in srgb, var(--loss) 14%, transparent); color: var(--loss); }
+.wv-stream-imp-mid  { background: rgba(148,163,184,.16); color: var(--text-muted); }
 
 /* Lineup advice banner -- points left on the bench + suggested swaps */
 .wv-ss-advice { border-radius: 10px; padding: 12px 14px; margin-bottom: 16px; border: 1px solid var(--border); }
@@ -696,42 +533,21 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
         <button type="button" class="wv-horizon-btn" data-h="four_week" onclick="wvSetHorizon('four_week')">Next 4 weeks</button>
         <button type="button" class="wv-horizon-btn" data-h="stash" onclick="wvSetHorizon('stash')">Long-term stash</button>
       </div>
-      <!-- Link-your-team banner: only when the roster isn't identified, so the
-           generic ranks below are never mistaken for personalized ones. -->
-      <div id="wvLinkBanner" class="wv-link-banner" hidden>
-        <div class="wv-link-banner-main">
-          <i class="fa-solid fa-user-plus" aria-hidden="true"></i>
-          <span>Link your team for personalized ranks, drop suggestions, and lineup-gain projections.</span>
-        </div>
-        <div class="wv-link-banner-actions">
-          <button type="button" class="wv-link-banner-cta" onclick="wvLinkTeam()">Link my team</button>
-          <button type="button" class="wv-link-banner-x" onclick="wvDismissLinkBanner()" aria-label="Dismiss">×</button>
-        </div>
-      </div>
       <div id="wvWaiverList">
         {wv_skel}
+      </div>
+      <div id="wvStreamWrap" hidden>
+        <div class="wv-section-title wv-stream-head">Streaming this week</div>
+        <div id="wvStreamDef" class="wv-stream-group"></div>
+        <div id="wvStreamK" class="wv-stream-group"></div>
       </div>
     </div>
 
     <!-- Right: Start/Sit -->
     <div class="wv-section" id="wvSectionStartSit"{startsit_section_hidden}>
       <div class="wv-section-title">Start/Sit Advisor</div>
-      <div class="wv-ss-mode" role="tablist" aria-label="Start/Sit mode">
-        <button type="button" id="wvSsModeAdvise" class="on" onclick="wvSetSsMode('advise')">Advise</button>
-        <button type="button" id="wvSsModeLab" onclick="wvSetSsMode('lab')">Lab</button>
-      </div>
-      <div class="wv-guest-bar" id="wvGuestBar">
-        <div class="wv-guest-search">
-          <input type="text" id="wvGuestInput" class="wv-guest-input" placeholder="Add any player (free agent or another team)" autocomplete="off" aria-label="Add a guest player">
-          <div id="wvGuestResults" class="wv-guest-results" hidden></div>
-        </div>
-        <div id="wvGuestChips" class="wv-guest-chips"></div>
-      </div>
       <!-- Compare panel (hidden until 2 players selected) -->
       <div id="wvComparePanel" style="display:none;scroll-margin-top:16px;"></div>
-      <div id="wvLab" hidden>
-        <div id="wvLabBody"><div class="wv-lab-skel">Loading the Lab...</div></div>
-      </div>
       <div id="wvStartSit">
         {wv_skel}
       </div>
@@ -742,1158 +558,26 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 
     script = f"""
 <script>
-var WV_PLATFORM = '{platform}';
-var WV_SEASON = {season};
-var WV_LEAGUE_ID = '{league_id}';
-var wvCurrentPos = 'ALL';
-var wvWaiverData = [];
-var wvHorizon = 'this_week';  // #2: default in-season to personalized immediate help
-var wvShowFaab = false;  // FAAB hidden by default; the toggle opts it in
-var wvFaabPreferenceSet = false;
-var wvCandidateRequestSeq = 0;
-var wvCandidateController = null;
-var wvTrendingData = [];
-var wvBigGamesData = [];
-var wvStartSitData = {{}};
-var wvCompare = [null, null]; // [playerA, playerB]
-var wvUsesK = false;   // league starts kickers (start-sit data or waiver-candidates)
-var wvUsesDef = false; // league starts team defenses (same two sources)
-
-// ── Lineup Lab (Start/Sit tab) ────────────────────────────────────────────
-// Client-side 2,000-sim Monte Carlo around the server's projections.
-// Common random numbers: one set of base draws per Lab load, so every swap
-// delta is signal, not noise. No API round-trip per swap.
-// Start/Sit guests: non-roster players (free agents or another team's)
-// added for evaluation only. View state lives here and in the URL's
-// ?guest= params; guests are never written into roster data.
-var wvGuests = []; // {{player_id, name, pos, team, owner_label}}
-var WV_GUEST_CAP = 5;
-var wvGuestSearchTimer = null;
-function wvGuestParam() {{
-  return wvGuests.map(function(g) {{ return g.player_id; }}).join(',');
-}}
-var wvLabMode = 'advise';
-var wvLabData = null;
-var wvLabLineup = null;   // working lineup: array of starter entries
-var wvLabBase = null;     // pid -> {{u0, u1, dud}} Float64Arrays (common random numbers)
-var wvLabOppDraws = null; // opponent team totals per sim
-var wvLabOppStats = null; // {{median, p10, p90}}
-var wvLabResult = null;   // last evaluate() output
-var wvLabLoading = false;
-var wvLabPrefetch = null;  // {{key, promise}}: background Lab payload fetch
-var wvLabOpenSlots = {{}};   // slot index -> true while its bench sheet is expanded
-var wvLabLastChanges = []; // change records (slot idx, out name, in name) from the last action
-var wvLabLastAction = '';  // 'swap' | 'optimize' | 'upside': labels the change summary
-var wvLabLastNote = '';    // one-off note line (e.g. no-gain upside), cleared by the next action
-var wvLabNoGain = {{optimize: false, upside: false}};  // sticky no-gain state: disables
-                                                     // the matching button until the lineup changes
-var WV_LAB_SIMS = 2000;
-// Shared-sample engine state (Feature: shared-sample sims). Every player's
-// per-sim points are simulated ONCE per payload load, correlated through a
-// single Cholesky of the full player pool, so evaluating any lineup is just
-// summing the right players' samples. Swap deltas reprice only the swapped
-// slot against the cached totals of the current lineup.
-var wvLabSamples = null;     // pid -> {{own, raw}} Float64Arrays of per-sim points
-var wvLabSamplesBase = null; // the wvLabBase object wvLabSamples was built from
-var wvLabProfiles = {{}};      // pid -> profile (registered from payload entries)
-var wvLabEffCache = {{}};      // pid|replPid|onset -> effective per-sim array (injury model applied)
-var wvLabCurTotals = null;   // per-sim totals of wvLabLineup as last evaluated
-var wvLabCurEffs = null;     // per-slot effective arrays behind wvLabCurTotals
-var wvLabBusy = false;       // chunked-async Optimize/Chase in flight (buttons park)
-var wvLabWhySlot = -1;       // slot whose "why" panel is open (-1 = none)
-
-// In-game injury model for the Lab (single game). Per-position onset rates
-// are read from the payload (wvLabData.injury_onset), which comes from the
-// same research-backed table as the season engine
-// (data_building/injury_rates.py); the fallback below mirrors those values.
-// On injury the player leaves the game and the fantasy team starts its best
-// eligible bench player instead — a waiver-wire replacement at
-// WV_LAB_INJURY_REPLACEMENT of the starter's output when the bench is empty.
-// Never a zero: taking a zero for an in-game injury would understate every
-// lineup's floor. The injury draws live in the shared base (see
-// wvLabBuildBase) so swap comparisons keep their common random numbers.
-var wvLabInjuryOnset = null;   // pos -> per-game new-injury probability
-var WV_LAB_INJURY_ONSET_FALLBACK = {{QB: 0.0455, RB: 0.0568, WR: 0.0504, TE: 0.0605, K: 0.0038, DEF: 0}};
-var WV_LAB_INJURY_REPLACEMENT = 0.45;
-
-function wvLabInjuryOnsetFor(pos) {{
-  var t = wvLabInjuryOnset || WV_LAB_INJURY_ONSET_FALLBACK;
-  var r = t[String(pos || '').toUpperCase()];
-  return (r == null || !(r >= 0)) ? 0 : r;
-}}
-
-function wvSetSsMode(mode) {{
-  wvLabMode = mode;
-  var adv = document.getElementById('wvSsModeAdvise');
-  var lab = document.getElementById('wvSsModeLab');
-  if (adv) adv.classList.toggle('on', mode === 'advise');
-  if (lab) lab.classList.toggle('on', mode === 'lab');
-  var ss = document.getElementById('wvStartSit');
-  if (ss) ss.hidden = (mode === 'lab');
-  var labEl = document.getElementById('wvLab');
-  if (labEl) labEl.hidden = (mode === 'advise');
-  if (mode === 'lab') {{
-    if (!wvLabData && !wvLabLoading) wvLoadLab();
-    else if (wvLabData) wvRenderLab();
-  }}
-}}
-
-// Seeded PRNG so a Lab session is reproducible while it is open.
-function wvLabRng(seed) {{
-  var a = seed >>> 0;
-  return function() {{
-    a |= 0; a = (a + 0x6D2B79F5) | 0;
-    var t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  }};
-}}
-
-function wvLabSkewParams(mean, std, alpha) {{
-  var delta = alpha / Math.sqrt(1 + alpha * alpha);
-  var omega = std / Math.sqrt(Math.max(1e-6, 1 - 2 * delta * delta / Math.PI));
-  var xi = mean - omega * delta * Math.sqrt(2 / Math.PI);
-  return {{ delta: delta, omega: omega, xi: xi, w2: Math.sqrt(Math.max(0, 1 - delta * delta)) }};
-}}
-
-function wvLabBuildBase(pids, nSims, seed) {{
-  var rand = wvLabRng(seed);
-  var base = {{}};
-  for (var k = 0; k < pids.length; k++) {{
-    var u0 = new Float64Array(nSims), u1 = new Float64Array(nSims), dud = new Float64Array(nSims), inj = new Float64Array(nSims);
-    for (var s = 0; s < nSims; s++) {{
-      var a = rand() + 1e-12, b = rand(), e = rand(), g = rand();
-      var r = Math.sqrt(-2 * Math.log(a));
-      var ang = 2 * Math.PI * b;
-      u0[s] = r * Math.cos(ang);
-      u1[s] = r * Math.sin(ang);
-      dud[s] = e;
-      inj[s] = g;
-    }}
-    base[pids[k]] = {{ u0: u0, u1: u1, dud: dud, inj: inj }};
-  }}
-  return base;
-}}
-
-// One player's scoring draw for one sim: skew-normal margin, or the dud
-// mixture (a lost week) when the dud uniform falls under the player's
-// dud_risk. Pure function of the shared uniforms — used for starters and
-// for injury replacements alike.
-function wvLabDrawPlayer(sp, dud, dudU, c0, c1) {{
-  var x;
-  if (dudU < dud) {{
-    x = sp.xi * 0.25 + sp.omega * 0.3 * c1;  // dud mixture: lost week
-  }} else {{
-    x = sp.xi + sp.omega * (sp.delta * Math.abs(c0) + sp.w2 * c1);
-  }}
-  return Math.max(0, x);
-}}
-
-function wvLabCholesky(mat) {{
-  var n = mat.length, L = [], i, j, k;
-  for (i = 0; i < n; i++) L.push(new Float64Array(n));
-  for (i = 0; i < n; i++) {{
-    for (j = 0; j <= i; j++) {{
-      var s = mat[i][j];
-      for (k = 0; k < j; k++) s -= L[i][k] * L[j][k];
-      if (i === j) L[i][j] = Math.sqrt(Math.max(s, 1e-9));
-      else L[i][j] = s / Math.max(L[j][j], 1e-9);
-    }}
-  }}
-  return L;
-}}
-
-// Best eligible bench player for an in-game injury replacement: the highest
-// projected option in the slot's bench list (the payload builds bench lists
-// per-slot, so every entry is eligible for the slot it sits under). Returns
-// null when the bench is empty, in which case the evaluate loop falls back
-// to a waiver-wire replacement draw.
-function wvLabBestRepl(entry) {{
-  var bench = (entry && entry.bench) || [], best = null, bi;
-  for (bi = 0; bi < bench.length; bi++) {{
-    var b = bench[bi];
-    if (!b || !b.player_id || !wvLabBase || !wvLabBase[b.player_id]) continue;
-    var pm = (b.profile && b.profile.mean) || 0;
-    if (!best || pm > best.mean) best = {{ pid: b.player_id, mean: pm, pf: b.profile || {{}} }};
-  }}
-  if (!best) return null;
-  var pf = best.pf;
-  return {{
-    pid: best.pid,
-    pf: pf,
-    sp: wvLabSkewParams(pf.mean || 0, pf.std || 8, pf.skew_alpha == null ? 2 : pf.skew_alpha),
-    dud: pf.dud_risk || 0
-  }};
-}}
-
-// ── Shared-sample engine ────────────────────────────────────────────────
-// Each player's per-sim points are simulated ONCE per payload (correlated
-// through one Cholesky of the FULL player pool), so evaluating any lineup
-// is just summing the right players' samples. Because a subset of a
-// multivariate normal keeps the matching submatrix covariance, lineups
-// evaluated off the shared samples have the same distribution as lineups
-// simulated on their own (Monte Carlo tolerance), and swap deltas compare
-// identical sim streams, so they stay signal, not noise.
-// Two draws are kept per player: "own" (correlated with the pool) and
-// "raw" (the player's own uniforms, used for injury replacements exactly
-// as the old per-call evaluator drew them).
-function wvLabRegisterProfiles(lineup) {{
-  var i, j;
-  var list = lineup || [];
-  for (i = 0; i < list.length; i++) {{
-    var e = list[i];
-    if (!e || !e.player_id) continue;
-    if (e.profile && !wvLabProfiles[e.player_id]) wvLabProfiles[e.player_id] = e.profile;
-    var bench = e.bench || [];
-    for (j = 0; j < bench.length; j++) {{
-      var b = bench[j];
-      if (b && b.player_id && b.profile && !wvLabProfiles[b.player_id]) wvLabProfiles[b.player_id] = b.profile;
-    }}
-  }}
-}}
-
-function wvLabBuildSamples() {{
-  var pids = Object.keys(wvLabBase || {{}});
-  var n = WV_LAB_SIMS, i, j, s;
-  var corr = (wvLabData && wvLabData.corr) || {{}};
-  var mat = [];
-  for (i = 0; i < pids.length; i++) {{
-    var row = [];
-    for (j = 0; j < pids.length; j++) {{
-      if (i === j) {{ row.push(1); continue; }}
-      var a = pids[i], b = pids[j];
-      var key = a < b ? a + ':' + b : b + ':' + a;
-      row.push(corr[key] || 0);
-    }}
-    mat.push(row);
-  }}
-  var L = wvLabCholesky(mat);
-  var samples = {{}};
-  for (i = 0; i < pids.length; i++) {{
-    var pf = wvLabProfiles[pids[i]];
-    if (!pf) continue;
-    var sp = wvLabSkewParams(pf.mean || 0, pf.std || 8, pf.skew_alpha == null ? 2 : pf.skew_alpha);
-    var dud = pf.dud_risk || 0;
-    var bu = wvLabBase[pids[i]];
-    var own = new Float64Array(n), raw = new Float64Array(n);
-    for (s = 0; s < n; s++) {{
-      var c0 = 0, c1 = 0;
-      for (j = 0; j <= i; j++) {{
-        c0 += L[i][j] * wvLabBase[pids[j]].u0[s];
-        c1 += L[i][j] * wvLabBase[pids[j]].u1[s];
-      }}
-      own[s] = wvLabDrawPlayer(sp, dud, bu.dud[s], c0, c1);
-      raw[s] = wvLabDrawPlayer(sp, dud, bu.dud[s], bu.u0[s], bu.u1[s]);
-    }}
-    samples[pids[i]] = {{ own: own, raw: raw }};
-  }}
-  wvLabSamples = samples;
-  wvLabSamplesBase = wvLabBase;
-  wvLabEffCache = {{}};
-  wvLabCurTotals = null;
-  wvLabCurEffs = null;
-}}
-
-function wvLabEnsureSamples(lineup) {{
-  wvLabRegisterProfiles(lineup);
-  if (!wvLabSamples || wvLabSamplesBase !== wvLabBase) {{ wvLabBuildSamples(); return; }}
-  // A player whose profile arrived after the build (e.g. a swap candidate
-  // first seen as a trial entry) triggers one rebuild; the pool order is
-  // fixed, so existing players keep their exact sample values.
-  for (var pid in wvLabProfiles) {{
-    if (wvLabBase[pid] && !wvLabSamples[pid]) {{ wvLabBuildSamples(); return; }}
-  }}
-}}
-
-// Effective per-sim points for one entry: the injury model and live
-// locking applied to the player's shared samples.
-// - A final live player is locked at their actual points (constant array).
-// - With injury onset, sims where the player leaves early score the best
-//   bench replacement's raw draw instead, or the player's own draw at
-//   WV_LAB_INJURY_REPLACEMENT when the bench is empty. Never a zero.
-// - Otherwise the player's own (correlated) samples, returned directly.
-function wvLabEntryEff(entry) {{
-  var pid = entry.player_id, s;
-  var live = entry.live;
-  if (live && live.status === 'final' && live.points != null) {{
-    var lk = wvLabEffCache[pid + '|LOCK'];
-    if (!lk) {{
-      lk = new Float64Array(WV_LAB_SIMS);
-      for (s = 0; s < WV_LAB_SIMS; s++) lk[s] = live.points;
-      wvLabEffCache[pid + '|LOCK'] = lk;
-    }}
-    return lk;
-  }}
-  var smp = wvLabSamples && wvLabSamples[pid];
-  if (!smp) return null;
-  var onset = wvLabInjuryOnsetFor(entry.pos);
-  if (!(onset > 0)) return smp.own;
-  var repl = wvLabBestRepl(entry);
-  if (repl && !wvLabSamples[repl.pid]) {{
-    if (repl.pf) wvLabProfiles[repl.pid] = wvLabProfiles[repl.pid] || repl.pf;
-    wvLabBuildSamples();
-    smp = wvLabSamples[pid];
-    if (!smp) return null;
-  }}
-  var key = pid + '|' + (repl ? repl.pid : '') + '|' + onset;
-  var eff = wvLabEffCache[key];
-  if (eff) return eff;
-  eff = new Float64Array(WV_LAB_SIMS);
-  var inj = wvLabBase[pid].inj, own = smp.own;
-  var raw = repl ? wvLabSamples[repl.pid].raw : null;
-  for (s = 0; s < WV_LAB_SIMS; s++) {{
-    eff[s] = inj[s] < onset ? (raw ? raw[s] : own[s] * WV_LAB_INJURY_REPLACEMENT) : own[s];
-  }}
-  wvLabEffCache[key] = eff;
-  return eff;
-}}
-
-function wvLabTotalsFor(lineup) {{
-  wvLabEnsureSamples(lineup);
-  var totals = new Float64Array(WV_LAB_SIMS), effs = [], i, s;
-  for (i = 0; i < lineup.length; i++) {{
-    var eff = wvLabEntryEff(lineup[i]);
-    effs.push(eff);
-    for (s = 0; s < WV_LAB_SIMS; s++) totals[s] += eff[s];
-  }}
-  return {{ totals: totals, effs: effs }};
-}}
-
-// Win probability only (no percentile sort): used by swap deltas.
-function wvLabWinPct(lineup) {{
-  if (!lineup.length || !wvLabOppDraws) return 0.5;
-  var t = wvLabTotalsFor(lineup).totals, wins = 0, s;
-  for (s = 0; s < WV_LAB_SIMS; s++) if (t[s] > wvLabOppDraws[s]) wins++;
-  return wins / WV_LAB_SIMS;
-}}
-
-// Evaluate one lineup on the shared samples. Returns
-// {{winPct, median, p10, p90}}. Evaluating the working lineup also caches
-// its per-sim totals, which is what makes swap deltas O(1) slots.
-function wvLabEvaluate(lineup) {{
-  var n = WV_LAB_SIMS, s;
-  if (!lineup.length || !wvLabOppDraws) return {{ winPct: 0.5, median: 0, p10: 0, p90: 0 }};
-  var built = wvLabTotalsFor(lineup);
-  var totals = built.totals;
-  if (lineup === wvLabLineup) {{ wvLabCurTotals = totals; wvLabCurEffs = built.effs; }}
-  var wins = 0;
-  for (s = 0; s < n; s++) if (totals[s] > wvLabOppDraws[s]) wins++;
-  var sorted = Array.prototype.slice.call(totals).sort(function(a, b) {{ return a - b; }});
-  return {{
-    winPct: wins / n,
-    median: sorted[Math.floor(n / 2)],
-    p10: sorted[Math.floor(n * 0.1)],
-    p90: sorted[Math.floor(n * 0.9)]
-  }};
-}}
-
-// Win% delta of swapping bench option b into slot si (common random
-// numbers). Fast path: reprice only slot si against the cached totals of
-// the current lineup; a one-slot trial differs from the current lineup in
-// exactly that slot's effective samples, so the result is identical to a
-// full evaluate of the trial. Falls back to a full evaluate whenever the
-// cache is cold or stale.
-function wvLabSwapDelta(si, b) {{
-  if (wvLabLineup && wvLabResult && wvLabOppDraws) {{
-    wvLabEnsureSamples([b]);
-    // Read the cache AFTER ensuring samples: a rebuild (first sight of a
-    // new profile) invalidates the cached totals, and then the full
-    // evaluate below is the correct path.
-    var effIn = wvLabEntryEff(b);
-    var curTotals = wvLabCurTotals, curEffs = wvLabCurEffs;
-    if (effIn && curTotals && curEffs && curEffs[si]) {{
-      var wins = 0, s;
-      for (s = 0; s < WV_LAB_SIMS; s++) {{
-        if (curTotals[s] - curEffs[si][s] + effIn[s] > wvLabOppDraws[s]) wins++;
-      }}
-      return wins / WV_LAB_SIMS - wvLabResult.winPct;
-    }}
-  }}
-  var trial = wvLabLineup.slice();
-  trial[si] = b;
-  return wvLabWinPct(trial) - wvLabResult.winPct;
-}}
-
-// One URL builder for the Lab payload: the background prefetch and the
-// toggle load must request the exact same thing.
-function wvLabUrl() {{
-  var week = (wvStartSitData && wvStartSitData.current_week) || '';
-  return '/api/lineup-lab?platform=' + encodeURIComponent(WV_PLATFORM)
-    + '&league_id=' + encodeURIComponent(WV_LEAGUE_ID)
-    + '&season=' + encodeURIComponent(WV_SEASON)
-    + (week ? '&week=' + encodeURIComponent(week) : '')
-    + (wvGuestParam() ? '&guests=' + encodeURIComponent(wvGuestParam()) : '');
-}}
-
-function wvLabKey() {{
-  var week = (wvStartSitData && wvStartSitData.current_week) || '';
-  return WV_LEAGUE_ID + '|' + WV_SEASON + '|' + week
-    + (wvGuestParam() ? '|g=' + wvGuestParam() : '');
-}}
-
-// Warm the Lab in the background once Start/Sit data lands, so the payload
-// (and the server-side cache behind it) is ready when the Lab toggle is
-// tapped. Failures are silent: the stash is dropped and the real load keeps
-// its normal loading/error behavior.
-function wvPrefetchLab() {{
-  var key = wvLabKey();
-  if (wvLabPrefetch && wvLabPrefetch.key === key) return;
-  var p = fetch(wvLabUrl()).then(function(r) {{ return r.json(); }});
-  wvLabPrefetch = {{ key: key, promise: p }};
-  p.catch(function() {{
-    if (wvLabPrefetch && wvLabPrefetch.key === key) wvLabPrefetch = null;
-  }});
-}}
-
-// Structured loading skeleton for the Lab: mirrors the loaded layout (hero +
-// lineup rows) so the section animates while it loads and the page does not
-// repaint when results arrive.
-function wvLabSkeleton() {{
-  var i, rows = '';
-  for (i = 0; i < 9; i++) {{
-    rows += '<div class="wv-lab-sk-slot">'
-      + '<div class="skeleton" style="width:44px;height:12px;flex:none"></div>'
-      + '<div class="wv-lab-sk-main">'
-      + '<div class="skeleton skeleton-line w-40" style="margin:0 0 8px"></div>'
-      + '<div class="skeleton skeleton-line w-80" style="margin:0"></div>'
-      + '</div>'
-      + '<div class="skeleton" style="width:40px;height:32px;flex:none"></div>'
-      + '</div>';
-  }}
-  function trow() {{
-    return '<div class="wv-lab-sk-trow">'
-      + '<div class="skeleton" style="width:34px;height:12px;flex:none"></div>'
-      + '<div class="skeleton" style="flex:1;height:10px"></div>'
-      + '<div class="skeleton" style="width:64px;height:12px;flex:none"></div>'
-      + '</div>';
-  }}
-  return '<div class="wv-lab-loading">'
-    + '<div class="wv-lab-loadmsg">Simulating 2,000 lineups<span class="wv-lab-dots" aria-hidden="true"><span>.</span><span>.</span><span>.</span></span></div>'
-    + '<div class="wv-lab-sk-hero">'
-    + '<div class="skeleton skeleton-line w-60" style="margin:0 0 10px"></div>'
-    + '<div class="wv-lab-sk-winbar"><div class="skeleton"></div><div class="skeleton"></div></div>'
-    + trow() + trow()
-    + '<div class="wv-lab-sk-modes"><div class="skeleton"></div><div class="skeleton"></div></div>'
-    + '</div>'
-    + '<div class="wv-section-title" style="margin-top:4px">Your lineup</div>'
-    + '<div style="font-size:12px;color:var(--text-muted);margin:-6px 0 8px">tap a starter to swap</div>'
-    + rows
-    + '</div>';
-}}
-
-function wvLoadLab() {{
-  wvLabLoading = true;
-  var body = document.getElementById('wvLabBody');
-  if (body) body.innerHTML = wvLabSkeleton();
-  // Consume the background prefetch when it is for this league/season/week;
-  // a different week (or no prefetch) fetches fresh, exactly as before.
-  var req;
-  if (wvLabPrefetch && wvLabPrefetch.key === wvLabKey()) {{
-    req = wvLabPrefetch.promise;
-    wvLabPrefetch = null;
-  }} else {{
-    var url = wvLabUrl();
-    req = fetch(url).then(function(r) {{ return r.json(); }});
-  }}
-  req.then(function(data) {{
-    wvLabLoading = false;
-    if (!data || data.state !== 'loaded' || !data.you || !data.you.lineup) {{
-      if (body) body.innerHTML = '<div class="wv-lab-skel">'
-        + ((data && data.message) || 'The Lab is unavailable right now.')
-        + ' <button type="button" class="wv-lab-btn" onclick="wvLabData=null;wvLoadLab()">Try again</button></div>';
-      return;
-    }}
-    // Opponent failed to load: never render the degenerate 50/50. Say so and
-    // let the user retry instead of showing a placeholder that looks real.
-    if (data.opponent && data.opponent.missing) {{
-      if (body) body.innerHTML = '<div class="wv-lab-skel">'
-        + 'The opposing lineup could not be loaded, so there is no matchup to simulate yet.'
-        + ' <button type="button" class="wv-lab-btn" onclick="wvLabData=null;wvLoadLab()">Try again</button></div>';
-      return;
-    }}
-    wvLabData = data;
-    // Per-position injury onset rates ship in the payload (single table in
-    // data_building/injury_rates.py); the JS fallback covers re-executed
-    // scripts that never went through wvLoadLab (e.g. node harnesses).
-    wvLabInjuryOnset = (data && data.injury_onset) || null;
-    // Deep copy: the working lineup mutates on swaps, the payload stays pristine.
-    // Fresh data invalidates open sheets and change summaries from the old one.
-    wvLabOpenSlots = {{}};
-    wvLabLastChanges = [];
-    wvLabLastAction = '';
-    wvLabLastNote = '';
-    wvLabNoGain = {{optimize: false, upside: false}};
-    wvLabSamples = null;
-    wvLabSamplesBase = null;
-    wvLabProfiles = {{}};
-    wvLabEffCache = {{}};
-    wvLabCurTotals = null;
-    wvLabCurEffs = null;
-    wvLabWhySlot = -1;
-    wvLabBusy = false;
-    wvLabLineup = JSON.parse(JSON.stringify(data.you.lineup));
-    // Guests join the bench pool of every slot they are eligible for, so
-    // swaps, Best Moves, and the shared-sample sim treat them like any
-    // other bench option -- marked guest, never written anywhere.
-    // Unavailable guests stay out; the Guests block shows their reason.
-    (data.guests || []).forEach(function(g) {{
-      if (!g || g.available === false) return;
-      wvLabLineup.forEach(function(e) {{
-        if (!wvLabSlotEligible(e, g.pos)) return;
-        if (!e.bench) e.bench = [];
-        if (wvLabBenchHas(e.bench, g.player_id)) return;
-        if (e.player_id === g.player_id) return;
-        wvLabBenchInsert(e.bench, JSON.parse(JSON.stringify(g)));
-      }});
-    }});
-    var pids = [];
-    wvLabLineup.forEach(function(e) {{
-      pids.push(e.player_id);
-      (e.bench || []).forEach(function(b) {{ if (pids.indexOf(b.player_id) < 0) pids.push(b.player_id); }});
-    }});
-    var seed = (Date.now() % 100000) | 0;
-    wvLabBase = wvLabBuildBase(pids, WV_LAB_SIMS, seed);
-    var opp = data.opponent || {{}};
-    if (opp.live_points != null) {{
-      // Live mode: every opposing starter is final, so the opponent total
-      // is a known constant, not a distribution.
-      wvLabOppDraws = new Float64Array(WV_LAB_SIMS);
-      for (var ls = 0; ls < WV_LAB_SIMS; ls++) wvLabOppDraws[ls] = opp.live_points;
-      wvLabOppStats = {{ median: opp.live_points, p10: opp.live_points, p90: opp.live_points }};
-    }} else if (opp.mean > 0) {{
-      var rand = wvLabRng(seed + 7);
-      var sp = wvLabSkewParams(opp.mean, opp.std || 15, 2.0);
-      wvLabOppDraws = new Float64Array(WV_LAB_SIMS);
-      var arr = [];
-      for (var s = 0; s < WV_LAB_SIMS; s++) {{
-        var a = rand() + 1e-12, b = rand();
-        var r = Math.sqrt(-2 * Math.log(a)), ang = 2 * Math.PI * b;
-        var x = Math.max(0, sp.xi + sp.omega * (sp.delta * Math.abs(r * Math.cos(ang)) + sp.w2 * r * Math.sin(ang)));
-        wvLabOppDraws[s] = x; arr.push(x);
-      }}
-      arr.sort(function(x, y) {{ return x - y; }});
-      wvLabOppStats = {{ median: arr[WV_LAB_SIMS >> 1], p10: arr[(WV_LAB_SIMS * 0.1) | 0], p90: arr[(WV_LAB_SIMS * 0.9) | 0] }};
-    }} else {{
-      wvLabOppDraws = null; wvLabOppStats = null;
-    }}
-    wvLabResult = wvLabEvaluate(wvLabLineup);
-    wvRenderLab();
-  }}).catch(function() {{
-    wvLabLoading = false;
-    if (body) body.innerHTML = '<div class="wv-lab-skel">The Lab is unavailable right now. '
-      + '<button type="button" class="wv-lab-btn" onclick="wvLabData=null;wvLoadLab()">Try again</button></div>';
-  }});
-}}
-
-function wvLabEsc(s) {{ return String(s == null ? '' : s).replace(/'/g, "\\'").replace(/</g, '&lt;'); }}
-
-function wvLabRangeBar(e, si) {{
-  // Live mode: a finished game locks the score; there is no range left.
-  if (e.live && e.live.status === 'final' && e.live.points != null) {{
-    return '<span class="wv-lab-locked">Final · ' + e.live.points + ' pts</span>';
-  }}
-  var PMAX = 34;
-  function pct(x) {{ return Math.max(0, Math.min(100, x / PMAX * 100)); }}
-  var l = pct(e.floor || 0), r = pct(e.ceiling || 0), d = pct(e.proj || 0);
-  // Starter rows (si given) open the why panel on tap; bench option rows
-  // stay plain (their tap already means "swap").
-  var tap = (si != null);
-  return '<span class="wv-lab-rangeline' + (tap ? ' tap' : '') + '"'
-    + (tap ? ' onclick="event.stopPropagation();wvLabToggleWhy(' + si + ')" title="Why this range?"' : '')
-    + '><span class="wv-lab-end"><em>MIN</em><span class="v">' + (e.floor || 0) + '</span></span>'
-    + '<span class="wv-lab-range"><span class="fill" style="left:' + l + '%;width:' + Math.max(0, r - l) + '%"></span>'
-    + '<span class="dot" style="left:' + d + '%"></span></span>'
-    + '<span class="wv-lab-end"><em>MAX</em><span class="v">' + (e.ceiling || 0) + '</span></span></span>';
-}}
-
-// Meta-line usage stat: the season average of the position's key usage stat
-// (QB snap %, RB touches, WR/TE targets), the same convention as the
-// Start/Sit cards. Empty when the payload has no usage data for the player.
-function wvLabUsageLabel(e) {{
-  var avg = e.usage_avg;
-  if (avg == null || !(avg > 0)) return '';
-  if (e.usage_stat === 'snap_pct') return Math.round(avg) + '% snaps';
-  if (e.usage_stat === 'touches') return avg.toFixed(1) + ' touches/g';
-  if (e.usage_stat === 'targets') return avg.toFixed(1) + ' targets/g';
-  return '';
-}}
-
-function wvLabPosCls(slot) {{
-  var p = String(slot || '').toLowerCase();
-  return (p === 'qb' || p === 'rb' || p === 'wr' || p === 'te' || p === 'flex' || p === 'k' || p === 'def') ? ' ' + p : '';
-}}
-
-function wvLabTags(e) {{
-  return (e.tags || []).map(function(t) {{
-    return '<span class="wv-lab-tag ' + wvLabEsc(t.kind) + '">' + wvLabEsc(t.label) + '</span>';
-  }}).join('');
-}}
-
-// ── Best moves card ─────────────────────────────────────────────────────
-// The top single swaps that raise win probability by at least a full
-// point, best first (at most 3). Rendered only in the fresh state: once an
-// action has run, the changes summary line takes over the same spot.
-function wvLabBestMoves() {{
-  var moves = [], si, bi;
-  if (!wvLabLineup || !wvLabResult) return moves;
-  for (si = 0; si < wvLabLineup.length; si++) {{
-    var bench = wvLabLineup[si].bench || [];
-    for (bi = 0; bi < bench.length; bi++) {{
-      var d = wvLabSwapDelta(si, bench[bi]);
-      if (Math.round(d * 100) >= 1) {{
-        moves.push({{ si: si, bi: bi, out: wvLabLineup[si].name, inn: bench[bi].name, delta: d }});
-      }}
-    }}
-  }}
-  moves.sort(function(a, b) {{ return b.delta - a.delta; }});
-  return moves.slice(0, 3);
-}}
-
-function wvLabRenderBestMoves() {{
-  if (wvLabLastChanges.length || wvLabLastNote) return '';
-  var moves = wvLabBestMoves();
-  var head = '<div class="wv-lab-moves"><div class="wv-lab-cap">Best moves</div>';
-  if (!moves.length) {{
-    return head + '<div class="wv-lab-moves-none">Your lineup is already the best single-swap option. No bench swap improves your win probability.</div></div>';
-  }}
-  var before = Math.round(wvLabResult.winPct * 100);
-  var rows = moves.map(function(m) {{
-    var after = Math.round((wvLabResult.winPct + m.delta) * 100);
-    return '<button type="button" class="wv-lab-move" onclick="wvLabSwap(' + m.si + ',' + m.bi + ')">'
-      + '<span class="mv-names">' + wvLabEsc(m.inn) + ' in for ' + wvLabEsc(m.out) + '</span>'
-      + '<span class="mv-win">Win ' + before + '% → ' + after + '%</span>'
-      + '<span class="dl up">+' + Math.round(m.delta * 100) + '%</span></button>';
-  }}).join('');
-  return head + rows + '</div>';
-}}
-
-// ── Why panel ───────────────────────────────────────────────────────────
-// Tapping a starter's range line opens a panel under the row explaining
-// the range from fields the payload actually carries: matchup string,
-// usage (season average), game-log spread, and correlation partners.
-// Lines with no data behind them are omitted, never invented.
-function wvLabPlayerName(pid) {{
-  var i, j;
-  var list = wvLabLineup || [];
-  for (i = 0; i < list.length; i++) {{
-    if (list[i].player_id === pid) return list[i].name;
-    var bench = list[i].bench || [];
-    for (j = 0; j < bench.length; j++) if (bench[j].player_id === pid) return bench[j].name;
-  }}
-  return null;
-}}
-
-function wvLabWhyHtml(e) {{
-  var lines = [];
-  if (e.matchup) lines.push('<div class="wl"><b>Matchup</b>' + wvLabEsc(e.matchup) + '</div>');
-  var usage = wvLabUsageLabel(e);
-  if (usage) lines.push('<div class="wl"><b>Usage</b>' + wvLabEsc(usage) + ' (season average)</div>');
-  var pf = e.profile || {{}};
-  if (pf.std != null) {{
-    var spread = 'Std ' + pf.std;
-    if (pf.dud_risk) spread += ' · dud risk ' + Math.round(pf.dud_risk * 100) + '%';
-    lines.push('<div class="wl"><b>Spread</b>' + spread + '</div>');
-  }}
-  var corr = (wvLabData && wvLabData.corr) || {{}}, partners = [], key;
-  for (key in corr) {{
-    var parts = key.split(':');
-    if (parts.length !== 2) continue;
-    var other = parts[0] === e.player_id ? parts[1] : (parts[1] === e.player_id ? parts[0] : null);
-    if (other) partners.push({{ pid: other, rho: corr[key] }});
-  }}
-  partners.sort(function(a, b) {{ return Math.abs(b.rho) - Math.abs(a.rho); }});
-  if (partners.length) {{
-    var names = [];
-    for (var i = 0; i < Math.min(3, partners.length); i++) {{
-      var nm = wvLabPlayerName(partners[i].pid);
-      if (nm) names.push(wvLabEsc(nm) + ' (' + (partners[i].rho >= 0 ? '+' : '') + partners[i].rho.toFixed(2) + ')');
-    }}
-    if (names.length) lines.push('<div class="wl"><b>Correlation</b>' + names.join(', ') + '</div>');
-  }}
-  if (e.live && e.live.status === 'final') {{
-    lines.push('<div class="wl"><b>Live</b>Final: scored ' + e.live.points + ' pts. Locked in the sim.</div>');
-  }} else if (e.live && e.live.status === 'live') {{
-    lines.push('<div class="wl"><b>Live</b>In progress' + (e.live.points != null ? ': ' + e.live.points + ' pts so far' : '') + '. Still simulated.</div>');
-  }}
-  if (!lines.length) lines.push('<div class="wl">No extra detail for this player this week.</div>');
-  return lines.join('');
-}}
-
-// Pure class toggle (like wvLabToggleSlot): opening one panel closes any
-// other, and nothing re-renders.
-function wvLabToggleWhy(si) {{
-  var el = document.querySelector('.wv-lab-slot[data-si="' + si + '"]');
-  if (wvLabWhySlot === si) {{
-    if (el && el.classList.contains('why-open')) el.classList.toggle('why-open');
-    wvLabWhySlot = -1;
-    return;
-  }}
-  if (wvLabWhySlot >= 0) {{
-    var prev = document.querySelector('.wv-lab-slot[data-si="' + wvLabWhySlot + '"]');
-    if (prev && prev.classList.contains('why-open')) prev.classList.toggle('why-open');
-  }}
-  wvLabWhySlot = si;
-  if (el && !el.classList.contains('why-open')) el.classList.toggle('why-open');
-}}
-
-function wvLabRenderHero() {{
-  var opp = wvLabData.opponent || {{}};
-  var r = wvLabResult;
-  var winPct = Math.round(r.winPct * 100);
-  var oppName = wvLabEsc(opp.name || 'Opponent');
-  var lbl = 'Win probability · ' + WV_LAB_SIMS.toLocaleString() + ' sims · vs ' + oppName;
-  if (wvLabData.live) lbl = '<span class="wv-lab-live-badge">LIVE</span>' + lbl + ' · final scores locked';
-  var tmin = Math.min(r.p10, wvLabOppStats ? wvLabOppStats.p10 : r.p10);
-  var tmax = Math.max(r.p90, wvLabOppStats ? wvLabOppStats.p90 : r.p90);
-  var pad = (tmax - tmin) * 0.08 || 10;
-  tmin -= pad; tmax += pad;
-  function band(p10, p90, med) {{
-    function pct(x) {{ return Math.max(0, Math.min(100, (x - tmin) / (tmax - tmin) * 100)); }}
-    return {{ l: pct(p10), w: Math.max(1, pct(p90) - pct(p10)), tick: pct(med) }};
-  }}
-  var yb = band(r.p10, r.p90, r.median);
-  var ob = wvLabOppStats ? band(wvLabOppStats.p10, wvLabOppStats.p90, wvLabOppStats.median) : null;
-  function ticks() {{
-    var out = [], n = 4, i;
-    for (i = 0; i <= n; i++) out.push('<span>' + Math.round(tmin + (tmax - tmin) * i / n) + '</span>');
-    return out.join('');
-  }}
-  return '<div class="wv-lab-hero">'
-    + '<div class="lbl">' + lbl + '</div>'
-    + '<div class="wv-lab-winbar"><div class="you" style="width:' + winPct + '%">' + winPct + '%</div>'
-    + '<div class="opp" style="width:' + (100 - winPct) + '%">' + (100 - winPct) + '%</div></div>'
-    + '<div class="wv-lab-dist">'
-    + '<div class="wv-lab-trow"><span class="who">You</span><div class="track">'
-    + '<div class="fill" style="left:' + yb.l + '%;width:' + yb.w + '%"></div>'
-    + '<div class="tick" style="left:calc(' + yb.tick + '% - 1px)"></div></div>'
-    + '<span class="nums"><b>' + r.median.toFixed(1) + '</b> · ' + Math.round(r.p10) + '-' + Math.round(r.p90) + '</span></div>'
-    + (ob ? '<div class="wv-lab-trow"><span class="who">Opp</span><div class="track">'
-      + '<div class="fill o" style="left:' + ob.l + '%;width:' + ob.w + '%"></div>'
-      + '<div class="tick" style="left:calc(' + ob.tick + '% - 1px)"></div></div>'
-      + '<span class="nums"><b>' + wvLabOppStats.median.toFixed(1) + '</b> · ' + Math.round(wvLabOppStats.p10) + '-' + Math.round(wvLabOppStats.p90) + '</span></div>' : '')
-    + '</div><div class="wv-lab-scale">' + ticks() + '</div>'
-    + '<div class="wv-lab-modes">'
-    + wvLabActionButtons()
-    + '</div></div>';
-}}
-
-// Optimize / Chase upside buttons. When an action proves the lineup already
-// optimal (no improving swap / no ceiling gain), its button stays disabled
-// until the next lineup change, so a repeat tap is not a dead click.
-function wvLabActionButtons() {{
-  if (wvLabBusy) {{
-    return '<button type="button" class="wv-lab-btn" disabled>Chase upside</button>'
-      + '<button type="button" class="wv-lab-btn primary" disabled>Optimizing...</button>';
-  }}
-  var chaseDis = wvLabNoGain.upside ? ' disabled title="Already your highest-ceiling lineup"' : '';
-  var optDis = wvLabNoGain.optimize ? ' disabled title="Already optimized"' : '';
-  var optLbl = wvLabNoGain.optimize ? 'Lineup optimized' : 'Optimize lineup';
-  return '<button type="button" class="wv-lab-btn" onclick="wvLabChaseUpsideAsync()"' + chaseDis + '>Chase upside</button>'
-    + '<button type="button" class="wv-lab-btn primary" onclick="wvLabOptimizeAsync()"' + optDis + '>' + optLbl + '</button>';
-}}
-
-function wvLabRenderSlots() {{
-  var i;
-  var changed = {{}};
-  for (i = 0; i < (wvLabLastChanges || []).length; i++) changed[wvLabLastChanges[i].si] = true;
-  return wvLabLineup.map(function(e, si) {{
-    var usage = wvLabUsageLabel(e);
-    var bench = (e.bench || []).slice();
-    bench.forEach(function(b) {{ b._d = wvLabSwapDelta(si, b); }});
-    bench.sort(function(a, b) {{ return b._d - a._d; }});
-    var best = null;
-    for (i = 0; i < bench.length; i++) {{
-      if (bench[i]._d > 0 && (best === null || bench[i]._d > best)) best = bench[i]._d;
-    }}
-    var sheet = '';
-    if (bench.length) {{
-      var cap = 'bench · win% change';
-      sheet = '<div class="wv-lab-sheet"><div class="wv-lab-cap">' + cap + '</div>' + bench.map(function(b, bi) {{
-        var inner;
-        var d = Math.round(b._d * 100);
-        inner = '<span class="dl ' + (d >= 0 ? 'up' : 'dn') + '">' + (d >= 0 ? '+' : '') + d + '%</span>';
-        var isBest = best !== null && b._d === best;
-        return '<button type="button" class="wv-lab-opt' + (isBest ? ' best' : '') + '"'
-          + ' onclick="event.stopPropagation();wvLabSwap(' + si + ',' + wvLabLineup[si].bench.indexOf(b) + ')">'
-          + '<span class="l1"><span>' + wvLabEsc(b.name) + '</span>' + (b.guest ? '<span class="wv-lab-guest-chip">GUEST</span>' : '') + inner + '</span>'
-          + '<span class="l2"><span>' + (b.proj || 0).toFixed(1) + ' proj' + (b.matchup ? ' · ' + wvLabEsc(b.matchup) : '') + '</span>'
-          + wvLabRangeBar(b) + '</span></button>';
-      }}).join('') + '</div>';
-    }}
-    var slotCls = 'wv-lab-slot' + (wvLabOpenSlots[si] ? ' open' : '')
-      + (changed[si] ? ' wv-lab-changed' : '')
-      + (wvLabWhySlot === si ? ' why-open' : '');
-    var isFinal = e.live && e.live.status === 'final' && e.live.points != null;
-    var isLive = e.live && e.live.status === 'live';
-    var liveChip = isFinal ? '<span class="wv-lab-live-chip final">FINAL</span>'
-      : (isLive ? '<span class="wv-lab-live-chip">LIVE</span>' : '');
-    var projHtml = isFinal
-      ? '<span class="wv-lab-proj"><span class="n">' + e.live.points + '</span><span class="l">FINAL</span></span>'
-      : '<span class="wv-lab-proj"><span class="n">' + (e.proj || 0).toFixed(1) + '</span><span class="l">PROJ</span></span>';
-    return '<div class="' + slotCls + '" data-si="' + si + '">'
-      + '<button type="button" class="wv-lab-row" onclick="wvLabToggleSlot(' + si + ')">'
-      + '<span class="wv-lab-pos' + wvLabPosCls(e.slot || e.pos) + '">' + wvLabEsc(e.slot || e.pos) + '</span>'
-      + '<span class="wv-lab-main">'
-      + '<span class="wv-lab-line1"><span class="wv-lab-name">' + wvLabEsc(e.name) + '</span>' + (e.guest ? '<span class="wv-lab-guest-chip">GUEST · ' + wvLabEsc(e.owner_label || 'Free Agent') + '</span>' : '') + liveChip + '</span>'
-      + '<span class="wv-lab-line2"><span class="wv-lab-meta">'
-      + (usage ? '<span>' + usage + '</span>' : '')
-      + (e.matchup ? '<span>' + wvLabEsc(e.matchup) + '</span>' : '')
-      + wvLabTags(e) + '</span>'
-      + wvLabRangeBar(e, si)
-      + '</span></span>'
-      + projHtml
-      + (bench.length ? '<span class="wv-lab-chev">›</span>' : '<span class="wv-lab-chev" style="visibility:hidden">›</span>')
-      + '</button>' + sheet
-      + '<div class="wv-lab-why">' + wvLabWhyHtml(e) + '</div></div>';
-  }}).join('');
-}}
-
-// Guests summary above the lineup: who was added, whose he is, and either
-// that he is live in the bench pools or the explicit reason he is not.
-function wvLabRenderGuests() {{
-  var guests = (wvLabData && wvLabData.guests) || [];
-  if (!guests.length) return '';
-  var rows = guests.map(function(g) {{
-    var note = g.available === false
-      ? wvLabEsc(g.unavailable_reason || 'Unavailable')
-      : (g.proj || 0).toFixed(1) + ' proj · in the bench pools below';
-    return '<div class="wv-lab-guest-row"><span><b>' + wvLabEsc(g.name) + '</b>'
-      + ' <span style="color:var(--text-muted)">' + wvLabEsc(g.pos || '') + '</span></span>'
-      + '<span class="wv-lab-guest-owner" style="color:var(--text-muted);font-size:12px">' + wvLabEsc(g.owner_label || 'Free Agent') + '</span>'
-      + '<span class="wv-lab-guest-note">' + note + '</span></div>';
-  }}).join('');
-  return '<div class="wv-lab-guests"><div class="wv-lab-guests-title">Guests (hypothetical)</div>' + rows + '</div>';
-}}
-
-function wvRenderLab() {{
-  var body = document.getElementById('wvLabBody');
-  if (!body || !wvLabData) return;
-  // Preserve scroll and expanded sheets across re-renders: a swap, optimize,
-  // or chase-upside action must never visibly repaint the section or collapse
-  // what the user had open.
-  var sy = 0;
-  try {{ sy = window.pageYOffset || (document.documentElement && document.documentElement.scrollTop) || 0; }} catch (_) {{}}
-  var html = wvLabRenderHero()
-    + wvLabRenderBestMoves()
-    + wvLabRenderGuests()
-    + '<div class="wv-section-title" style="margin-top:4px">Your lineup</div>'
-    + '<div style="font-size:12px;color:var(--text-muted);margin:-6px 0 8px">tap a starter to swap · tap the range for the why</div>'
-    + wvLabChangesLine()
-    + wvLabRenderSlots()
-    + '<p class="wv-lab-fine">' + WV_LAB_SIMS.toLocaleString()
-    + ' simulations per lineup. Ranges centered on start/sit projections, spread from season game logs.</p>';
-  body.innerHTML = html;
-  try {{ if (window.scrollTo) window.scrollTo(0, sy); }} catch (_) {{}}
-}}
-
-// One-line summary of the last action above the lineup: the swaps it made,
-// or a one-off note (e.g. Chase upside finding nothing to change).
-function wvLabChangesLine() {{
-  if (wvLabLastNote) {{
-    return '<div class="wv-lab-changes">' + wvLabEsc(wvLabLastNote) + '</div>';
-  }}
-  if (!wvLabLastChanges || !wvLabLastChanges.length) return '';
-  var n = wvLabLastChanges.length, parts = [], i;
-  for (i = 0; i < n; i++) {{
-    parts.push(wvLabEsc(wvLabLastChanges[i].inn) + ' in for ' + wvLabEsc(wvLabLastChanges[i].out));
-  }}
-  var prefix = wvLabLastAction === 'upside' ? 'Chased upside: ' : '';
-  return '<div class="wv-lab-changes">' + prefix + n + (n === 1 ? ' swap: ' : ' swaps: ')
-    + parts.join(', ') + '</div>';
-}}
-
-function wvLabToggleSlot(si) {{
-  var el = document.querySelector('.wv-lab-slot[data-si="' + si + '"]');
-  if (el) {{
-    // Pure class toggle: no re-render, so nothing repaints or jumps.
-    var open = el.classList.toggle('open');
-    if (open) wvLabOpenSlots[si] = true; else delete wvLabOpenSlots[si];
-  }}
-}}
-
-// Bench-shaped copy of a starter entry: what a demoted starter becomes.
-function wvLabBenchEntry(e) {{
-  return {{ player_id: e.player_id, name: e.name, pos: e.pos, slot: 'BN',
-    proj: e.proj, floor: e.floor, ceiling: e.ceiling,
-    matchup: e.matchup, tags: e.tags, profile: e.profile,
-    usage_stat: e.usage_stat, usage_avg: e.usage_avg, live: e.live,
-    guest: e.guest || undefined, owner_label: e.owner_label || undefined }};
-}}
-
-// True when a player of the given position may sit on the slot's bench.
-// A missing eligibility list means unrestricted (legacy payloads); an
-// explicitly empty list means nothing qualifies, so a starter the builder
-// could not seat never suggests illegal swaps (matches the payload builder).
-function wvLabSlotEligible(slotEntry, pos) {{
-  var el = slotEntry.eligible;
-  if (!el) return true;
-  return el.indexOf(pos) >= 0;
-}}
-
-function wvLabBenchHas(bench, pid) {{
-  for (var i = 0; i < bench.length; i++) if (bench[i].player_id === pid) return true;
-  return false;
-}}
-
-// Insert keeping the payload's projection-desc bench order.
-function wvLabBenchInsert(bench, entry) {{
-  var i = 0;
-  while (i < bench.length && (bench[i].proj || 0) >= (entry.proj || 0)) i++;
-  bench.splice(i, 0, entry);
-}}
-
-// Promote bench[bi] of slot si into the starting lineup. One player, one
-// start: the promoted player is pulled from every other slot's bench (the
-// same bench arm can no longer start twice), and the demoted starter takes
-// a bench seat in each slot they are eligible for. Returns the change
-// record {{si, out, inn}}; callers re-render once.
-function wvLabApplySwap(si, bi) {{
-  var slot = wvLabLineup[si];
-  var b = (slot.bench || [])[bi];
-  var outName = slot.name, inName = b.name, pid = b.player_id;
-  var i, k;
-  for (i = 0; i < wvLabLineup.length; i++) {{
-    if (i === si) continue;
-    var ob = wvLabLineup[i].bench || [];
-    var kept = [];
-    for (k = 0; k < ob.length; k++) if (ob[k].player_id !== pid) kept.push(ob[k]);
-    var demoted = wvLabBenchEntry(slot);
-    if (wvLabSlotEligible(wvLabLineup[i], demoted.pos) && !wvLabBenchHas(kept, demoted.player_id)) {{
-      wvLabBenchInsert(kept, demoted);
-    }}
-    wvLabLineup[i].bench = kept;
-  }}
-  var sb = (slot.bench || []).slice();
-  sb[bi] = wvLabBenchEntry(slot);
-  var nb = {{ player_id: b.player_id, name: b.name, pos: b.pos, slot: slot.slot,
-    proj: b.proj, floor: b.floor, ceiling: b.ceiling,
-    matchup: b.matchup, tags: b.tags, profile: b.profile,
-    usage_stat: b.usage_stat, usage_avg: b.usage_avg, live: b.live,
-    guest: b.guest || undefined, owner_label: b.owner_label || undefined,
-    eligible: slot.eligible, bench: sb }};
-  wvLabLineup[si] = nb;
-  return {{si: si, out: outName, inn: inName}};
-}}
-
-// A lineup change clears both sticky no-gain states.
-function wvLabClearNoGain() {{
-  wvLabNoGain.optimize = false;
-  wvLabNoGain.upside = false;
-}}
-
-// Ease the first changed row into view. An instant jump is disorienting
-// right after the section deliberately preserves scroll across re-renders;
-// smooth motion (or none under prefers-reduced-motion) keeps the user's
-// place while still revealing the change.
-function wvLabScrollChangedIntoView(si) {{
-  var first = document.querySelector('.wv-lab-slot[data-si="' + si + '"]');
-  if (!first || !first.scrollIntoView) return;
-  var smooth = true;
-  try {{ smooth = !window.matchMedia('(prefers-reduced-motion: reduce)').matches; }} catch (_) {{}}
-  try {{ first.scrollIntoView({{block: 'nearest', behavior: smooth ? 'smooth' : 'auto'}}); }} catch (_) {{}}
-}}
-
-function wvLabSwap(si, bi) {{
-  var change = wvLabApplySwap(si, bi);
-  wvLabResult = wvLabEvaluate(wvLabLineup);
-  wvLabLastAction = 'swap';
-  wvLabLastNote = '';
-  wvLabClearNoGain();
-  wvLabLastChanges = [change];
-  wvLabOpenSlots[si] = true;  // keep the swapped slot expanded through the render
-  wvRenderLab();
-}}
-
-// Collapse repeated swaps of one slot into a single record: the player who
-// started there originally out, the final starter in. A slot that ends where
-// it began drops out entirely, so a summary never names an intermediate
-// player as a starter or the same player as starting twice.
-function wvLabCoalesceChanges(changes) {{
-  var bySi = {{}}, order = [], i, out = [];
-  for (i = 0; i < changes.length; i++) {{
-    var c = changes[i];
-    if (!bySi[c.si]) {{ bySi[c.si] = {{si: c.si, out: c.out, inn: c.inn}}; order.push(c.si); }}
-    else bySi[c.si].inn = c.inn;
-  }}
-  for (i = 0; i < order.length; i++) {{
-    var r = bySi[order[i]];
-    if (r.inn !== r.out) out.push(r);
-  }}
-  out.sort(function(a, b) {{ return a.si - b.si; }});
-  return out;
-}}
-
-// Chase upside: greedily apply the largest ceiling gain until no bench
-// option beats its slot's starter by more than 0.05. Every swap re-seats
-// the demoted starter on the other slots' benches, so gains are re-scanned
-// after each swap; a bench player can only be promoted once because
-// wvLabApplySwap pulls them from every other bench. Total starter ceiling
-// strictly rises with each swap, so the loop terminates; one wvLabEvaluate
-// at the end refreshes the hero.
-function wvLabChaseUpside() {{
-  var changes = [], guard = 0, si, bi;
-  var best = null;
-  while (guard++ < 64) {{
-    best = null;
-    for (si = 0; si < wvLabLineup.length; si++) {{
-      var bench = wvLabLineup[si].bench || [];
-      for (bi = 0; bi < bench.length; bi++) {{
-        var gain = (bench[bi].ceiling || 0) - (wvLabLineup[si].ceiling || 0);
-        if (gain > 0.05 && (!best || gain > best.gain)) best = {{ si: si, bi: bi, gain: gain }};
-      }}
-    }}
-    if (!best) break;
-    changes.push(wvLabApplySwap(best.si, best.bi));
-  }}
-  wvLabLastAction = 'upside';
-  wvLabLastNote = '';
-  if (!changes.length) {{
-    // No ceiling gains anywhere: say so and park the button until the lineup
-    // changes, instead of a dead-feeling second click.
-    wvLabLastNote = 'Already your highest-ceiling lineup.';
-    wvLabNoGain.upside = true;
-    wvLabLastChanges = [];
-    wvRenderLab();
-    return;
-  }}
-  wvLabClearNoGain();
-  if (best === null) wvLabNoGain.upside = true;  // loop ended: no gains remain
-  wvLabResult = wvLabEvaluate(wvLabLineup);
-  wvLabLastChanges = wvLabCoalesceChanges(changes);
-  for (var ci = 0; ci < wvLabLastChanges.length; ci++) wvLabOpenSlots[wvLabLastChanges[ci].si] = true;
-  wvRenderLab();
-  // Ease the first changed row into view so the result is unmistakable.
-  if (wvLabLastChanges.length) wvLabScrollChangedIntoView(wvLabLastChanges[0].si);
-}}
-
-// One greedy Optimize round: the single best improving swap against the
-// current baseline, or null when no swap improves win probability.
-function wvLabOptimizeScan() {{
-  var best = null, si, bi;
-  for (si = 0; si < wvLabLineup.length; si++) {{
-    var bench = wvLabLineup[si].bench || [];
-    for (bi = 0; bi < bench.length; bi++) {{
-      var d = wvLabSwapDelta(si, bench[bi]);
-      if (d > 0.001 && (!best || d > best.d)) best = {{ si: si, bi: bi, d: d }};
-    }}
-  }}
-  return best;
-}}
-
-// Shared Optimize bookkeeping once the greedy rounds are done: noMore is
-// true when the last scan found nothing (the lineup is optimal).
-function wvLabFinishOptimize(changes, noMore) {{
-  var ci;
-  wvLabLastAction = 'optimize';
-  wvLabLastNote = '';
-  if (!changes.length) {{
-    // Already optimal: say so and park the button until the lineup changes,
-    // instead of a dead-feeling second click.
-    wvLabLastNote = 'Already optimized. No swaps improve your win probability.';
-    wvLabNoGain.optimize = true;
-    wvLabLastChanges = [];
-    wvRenderLab();
-    return;
-  }}
-  wvLabClearNoGain();
-  if (noMore) wvLabNoGain.optimize = true;  // loop ended: lineup is optimal
-  wvLabLastChanges = wvLabCoalesceChanges(changes);
-  for (ci = 0; ci < wvLabLastChanges.length; ci++) wvLabOpenSlots[wvLabLastChanges[ci].si] = true;
-  wvRenderLab();
-  // Ease the first changed row into view so the result of Optimize is
-  // unmistakable.
-  if (wvLabLastChanges.length) wvLabScrollChangedIntoView(wvLabLastChanges[0].si);
-}}
-
-function wvLabOptimize() {{
-  var state = {{ changes: [], rounds: 0, lastNull: false }};
-  while (state.rounds++ < 12) {{
-    var best = wvLabOptimizeScan();
-    if (!best) {{ state.lastNull = true; break; }}
-    // apply without re-render until the end
-    state.changes.push(wvLabApplySwap(best.si, best.bi));
-    wvLabResult = wvLabEvaluate(wvLabLineup);  // re-baseline for the next pick
-  }}
-  wvLabFinishOptimize(state.changes, state.lastNull);
-}}
-
-// Chunked-async Optimize: one greedy round per tick so the page stays
-// responsive and the busy button state paints between rounds. Same scan,
-// same bookkeeping, same result as wvLabOptimize.
-function wvLabOptimizeAsync() {{
-  if (wvLabBusy) return;
-  wvLabBusy = true;
-  wvRenderLab();
-  var state = {{ changes: [], rounds: 0, lastNull: false }};
-  function step() {{
-    if (state.rounds++ < 12) {{
-      var best = wvLabOptimizeScan();
-      if (best) {{
-        state.changes.push(wvLabApplySwap(best.si, best.bi));
-        wvLabResult = wvLabEvaluate(wvLabLineup);
-        setTimeout(step, 0);
-        return;
-      }}
-      state.lastNull = true;
-    }}
-    wvLabBusy = false;
-    wvLabFinishOptimize(state.changes, state.lastNull);
-  }}
-  setTimeout(step, 0);
-}}
-
-// Chase upside scans only ceiling numbers (no sims), so it stays
-// synchronous; the async wrapper just lets the busy state paint first.
-function wvLabChaseUpsideAsync() {{
-  if (wvLabBusy) return;
-  wvLabBusy = true;
-  wvRenderLab();
-  setTimeout(function() {{
-    wvLabBusy = false;
-    wvLabChaseUpside();
-  }}, 0);
-}}
-
+const WV_PLATFORM = '{platform}';
+const WV_SEASON = {season};
+const WV_LEAGUE_ID = '{league_id}';
+let wvCurrentPos = 'ALL';
+let wvWaiverData = [];
+let wvHorizon = 'this_week';  // #2: default in-season to personalized immediate help
+let wvShowFaab = false;  // FAAB hidden by default; the toggle opts it in
+let wvFaabPreferenceSet = false;
+let wvCandidateRequestSeq = 0;
+let wvCandidateController = null;
+let wvTrendingData = [];
+let wvBigGamesData = [];
+let wvStartSitData = {{}};
+let wvCompare = [null, null]; // [playerA, playerB]
 
 if (!window.__brctx) window.__brctx = {{}};
 if (!window.__brctx.leagueId) window.__brctx.leagueId = WV_LEAGUE_ID;
 
 function wvLeaguePath(suffix) {{
   return '/' + WV_PLATFORM + '/' + WV_SEASON + '/' + WV_LEAGUE_ID + suffix;
-}}
-
-// ── Link-your-team banner ───────────────────────────────────────────────────
-// Shown whenever ?rid= didn't resolve to a roster (missing or stale), so the
-// generic ranks below are never mistaken for personalized ones. Dismissal is
-// remembered per league; linking your team hides it for good.
-function wvLinkBannerDismissed() {{
-  try {{ return localStorage.getItem('wv_link_banner_dismissed:' + WV_LEAGUE_ID) === '1'; }} catch (_) {{ return false; }}
-}}
-function wvRenderLinkBanner(personalized) {{
-  const el = document.getElementById('wvLinkBanner');
-  if (!el) return;
-  el.hidden = personalized === true || wvLinkBannerDismissed();
-}}
-function wvDismissLinkBanner() {{
-  try {{ localStorage.setItem('wv_link_banner_dismissed:' + WV_LEAGUE_ID, '1'); }} catch (_) {{}}
-  const el = document.getElementById('wvLinkBanner');
-  if (el) el.hidden = true;
-}}
-function wvLinkTeam() {{
-  // Same identify flow the dashboard's "Link my team" uses (the link modal's
-  // team picker / username lookup); it reloads the page on success, which
-  // re-runs wvLoad with the new _viewerRid.
-  if (window.linkMyTeam) {{ window.linkMyTeam(WV_PLATFORM, WV_LEAGUE_ID, WV_SEASON); }}
-  else if (window.openLinkModal) {{ window.openLinkModal(); }}
-  else {{ window.location.href = wvLeaguePath('/teams'); }}
-}}
-
-// K / D/ST pills are only meaningful when the league starts those positions.
-// Either source (start-sit requirements, waiver-candidates league flags) can
-// reveal them; nothing re-hides a pill the other source showed.
-function wvSyncKdPills() {{
-  document.querySelectorAll('.wv-pos-btn[data-pos="K"]').forEach(b => {{ b.hidden = !wvUsesK; }});
-  document.querySelectorAll('.wv-pos-btn[data-pos="DEF"]').forEach(b => {{ b.hidden = !wvUsesDef; }});
 }}
 
 function wvSetTab(tab) {{
@@ -1907,18 +591,12 @@ function wvSetTab(tab) {{
 }}
 
 function wvSetPos(pos) {{
-  const prev = wvCurrentPos;
   wvCurrentPos = pos;
   document.querySelectorAll('.wv-pos-btn').forEach(b => {{
     const key = b.getAttribute('data-pos') || b.textContent;
     b.classList.toggle('active', key === pos);
   }});
-  // K / D/ST tabs are a separate server-side ranked list (streaming rankers),
-  // so switching to or from one refetches; skill-position filters re-render
-  // the already-fetched list.
-  const kd = p => p === 'K' || p === 'DEF';
-  if (kd(pos) || kd(prev)) wvLoadCandidates();
-  else wvRenderWaivers();
+  wvRenderWaivers();
   wvRenderStartSit();
   wvRenderTrending(wvTrendingData);
   wvRenderBigGames(wvBigGamesData);
@@ -2123,38 +801,25 @@ function wvStatsRow(p) {{
 function wvLoadCandidates() {{
   const requestSeq = ++wvCandidateRequestSeq;
   const requestedHorizon = wvHorizon;
-  const requestedPos = wvCurrentPos;
   const requestedContext = `${{WV_PLATFORM}}:${{WV_SEASON}}:${{WV_LEAGUE_ID}}`;
   if (wvCandidateController) wvCandidateController.abort();
   wvCandidateController = typeof AbortController !== 'undefined' ? new AbortController() : null;
   const _wvRid = window._viewerRid ? ('&rid=' + encodeURIComponent(window._viewerRid)) : '';
   const _h = '&horizon=' + encodeURIComponent(requestedHorizon);
-  // K / D/ST tabs are scored server-side by the streaming rankers, so they get
-  // their own position-filtered request; skill positions keep the shared fetch.
-  const _pos = (requestedPos === 'K' || requestedPos === 'DEF')
-    ? ('&position=' + encodeURIComponent(requestedPos)) : '';
   // Without an identified roster we can't claim personalized improvement (#1).
   const bm = document.getElementById('wvBestMovesTitle');
   if (bm) bm.textContent = window._viewerRid ? 'Best moves for your team' : 'Top available players';
   window.brLoadingState('wvWaiverList', {{ rows: 4, compact: true, message: 'Loading ' + requestedHorizon.replace('_', ' ') + ' recommendations' }});
-  fetch(`/api/waiver-candidates?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}${{_wvRid}}${{_h}}${{_pos}}`,
+  fetch(`/api/waiver-candidates?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}${{_wvRid}}${{_h}}`,
         wvCandidateController ? {{ signal: wvCandidateController.signal }} : {{}})
     .then(r => r.json().then(d => ({{ ok: r.ok, d }})))
     .then(({{ ok, d }}) => {{
-      if (requestSeq !== wvCandidateRequestSeq || requestedHorizon !== wvHorizon || requestedPos !== wvCurrentPos || requestedContext !== `${{WV_PLATFORM}}:${{WV_SEASON}}:${{WV_LEAGUE_ID}}`) return;
+      if (requestSeq !== wvCandidateRequestSeq || requestedHorizon !== wvHorizon || requestedContext !== `${{WV_PLATFORM}}:${{WV_SEASON}}:${{WV_LEAGUE_ID}}`) return;
       if (!ok || d.error) {{
         window.brErrorState('wvWaiverList', (d && d.error) || 'Unable to load waiver data.', wvLoadCandidates);
         return;
       }}
       wvWaiverData = d.candidates || [];
-      // League K/DST usage flags also reveal the position pills (independent of
-      // the start-sit data path in wvSyncPosPills).
-      wvUsesK = wvUsesK || d.league_uses_k === true;
-      wvUsesDef = wvUsesDef || d.league_uses_def === true;
-      wvSyncKdPills();
-      // Explicit personalization state: ?rid= missing or unresolvable means
-      // generic ranks, and the banner says so instead of staying silent.
-      wvRenderLinkBanner(d.personalized === true);
       window.wvFaabEnabled = d.faab_enabled === true;
       const toggle = document.getElementById('wvFaabToggle');
       if (toggle) toggle.hidden = !window.wvFaabEnabled;
@@ -2173,166 +838,7 @@ function wvLoadCandidates() {{
     }});
 }}
 
-// ── Start/Sit guests ─────────────────────────────────────────────────────
-// Guests ride along in the URL (?guest=<pid>, repeatable or comma-joined)
-// so a modal "Compare in Start/Sit" deep link, a soft-nav swap, and a full
-// reload all land on the same evaluation. League changes rebuild the page
-// server-side, so stale guests never survive into another league.
-// (wvGuests / wvGuestParam are declared with the Lab state above.)
-function wvSyncGuestUrl() {{
-  try {{
-    var u = new URL(window.location.href);
-    u.searchParams.delete('guest');
-    wvGuests.forEach(function(g) {{ u.searchParams.append('guest', g.player_id); }});
-    window.history.replaceState(null, '', u.toString());
-  }} catch (e) {{}}
-}}
-
-function wvGuestById(pid) {{
-  for (var i = 0; i < wvGuests.length; i++) {{
-    if (String(wvGuests[i].player_id) === String(pid)) return wvGuests[i];
-  }}
-  return null;
-}}
-
-function wvRenderGuestChips() {{
-  var box = document.getElementById('wvGuestChips');
-  if (!box) return;
-  if (!wvGuests.length) {{ box.innerHTML = ''; return; }}
-  box.innerHTML = wvGuests.map(function(g) {{
-    var label = g.name ? (g.name + (g.pos ? ' · ' + g.pos : '')) : ('Player ' + g.player_id);
-    var owner = g.no_slot ? 'No slot in this league'
-      : (g.owner_label ? g.owner_label : 'Loading...');
-    return '<span class="wv-guest-chip">' + wvEsc(label)
-      + ' <span class="wv-guest-owner">' + wvEsc(owner) + '</span>'
-      + '<button type="button" aria-label="Remove guest" onclick="wvRemoveGuest(\\'' + wvEsc(g.player_id) + '\\')">&times;</button></span>';
-  }}).join('');
-}}
-
-// Server payloads are the source of truth for who a guest is and who owns
-// him; search-result labels are only a stopgap until the fetch lands.
-function wvSyncGuestsFromPayload(d) {{
-  var list = (d && d.guests) || [];
-  var changed = false;
-  list.forEach(function(sg) {{
-    var g = wvGuestById(sg.player_id);
-    if (!g) return;
-    if (g.name !== sg.name || g.pos !== sg.pos
-        || g.owner_label !== sg.owner_label || !!g.no_slot !== !!sg.no_slot) {{
-      g.name = sg.name; g.pos = sg.pos;
-      g.owner_label = sg.owner_label; g.no_slot = !!sg.no_slot;
-      changed = true;
-    }}
-  }});
-  if (changed) wvRenderGuestChips();
-}}
-
-function wvAddGuest(p) {{
-  if (!p || !p.player_id) return;
-  if (wvGuestById(p.player_id)) return;
-  if (wvGuests.length >= WV_GUEST_CAP) return;
-  // Already rostered: the roster rows already carry his verdict.
-  var positions = (wvStartSitData && wvStartSitData.positions) || {{}};
-  for (var pos in positions) {{
-    var rows = positions[pos] || [];
-    for (var i = 0; i < rows.length; i++) {{
-      if (!rows[i].guest && String(rows[i].player_id) === String(p.player_id)) return;
-    }}
-  }}
-  wvGuests.push({{ player_id: String(p.player_id), name: p.name || '',
-    pos: p.position || p.pos || '', team: p.team || '', owner_label: '' }});
-  wvSyncGuestUrl();
-  wvRenderGuestChips();
-  wvRefreshGuests();
-}}
-
-function wvRemoveGuest(pid) {{
-  wvGuests = wvGuests.filter(function(g) {{ return String(g.player_id) !== String(pid); }});
-  wvSyncGuestUrl();
-  wvRenderGuestChips();
-  wvRefreshGuests();
-}}
-
-// Any guest change re-runs both surfaces: advice refetches with the new
-// guest set; the Lab payload is keyed by guests, so drop the cached one.
-function wvRefreshGuests() {{
-  wvLoadStartSit();
-  wvLabData = null;
-  wvLabPrefetch = null;
-  var lab = document.getElementById('wvLab');
-  if (lab && !lab.hidden) wvLoadLab();
-}}
-
-function wvInitGuestsFromUrl() {{
-  try {{
-    var params = new URLSearchParams(window.location.search);
-    var raw = [];
-    params.getAll('guest').forEach(function(v) {{
-      String(v).split(',').forEach(function(p) {{ if (p.trim()) raw.push(p.trim()); }});
-    }});
-    var seen = {{}};
-    wvGuests = [];
-    raw.forEach(function(pid) {{
-      if (seen[pid] || wvGuests.length >= WV_GUEST_CAP) return;
-      seen[pid] = true;
-      wvGuests.push({{ player_id: pid, name: '', pos: '', team: '', owner_label: '' }});
-    }});
-  }} catch (e) {{ wvGuests = []; }}
-  wvRenderGuestChips();
-  var input = document.getElementById('wvGuestInput');
-  if (input && !input._wvGuestWired) {{
-    input._wvGuestWired = true;
-    input.addEventListener('input', function() {{
-      if (wvGuestSearchTimer) clearTimeout(wvGuestSearchTimer);
-      wvGuestSearchTimer = setTimeout(function() {{ wvGuestSearch(input.value); }}, 220);
-    }});
-    input.addEventListener('blur', function() {{
-      setTimeout(function() {{
-        var box = document.getElementById('wvGuestResults');
-        if (box) box.hidden = true;
-      }}, 180);
-    }});
-  }}
-}}
-
-function wvGuestSearch(q) {{
-  var box = document.getElementById('wvGuestResults');
-  if (!box) return;
-  q = String(q || '').trim();
-  if (q.length < 2) {{ box.hidden = true; box.innerHTML = ''; return; }}
-  fetch('/api/players?q=' + encodeURIComponent(q) + '&limit=8')
-    .then(function(r) {{ return r.json(); }})
-    .then(function(d) {{
-      var players = (d && d.players) || [];
-      if (!players.length) {{
-        box.innerHTML = '<div class="wv-guest-result" style="cursor:default">No players found</div>';
-        box.hidden = false;
-        return;
-      }}
-      box.innerHTML = players.map(function(p) {{
-        return '<button type="button" class="wv-guest-result" onmousedown="wvGuestPick(this)"'
-          + ' data-pid="' + wvEsc(p.player_id) + '" data-name="' + wvEsc(p.name || '') + '"'
-          + ' data-pos="' + wvEsc(p.position || '') + '" data-team="' + wvEsc(p.team || '') + '">'
-          + '<span class="wv-guest-rpos">' + wvEsc(p.position || '') + '</span>'
-          + '<span>' + wvEsc(p.name || '') + '</span>'
-          + '<span class="wv-guest-rteam">' + wvEsc(p.team || '') + '</span></button>';
-      }}).join('');
-      box.hidden = false;
-    }})
-    .catch(function() {{ box.hidden = true; }});
-}}
-
-function wvGuestPick(el) {{
-  var input = document.getElementById('wvGuestInput');
-  var box = document.getElementById('wvGuestResults');
-  wvAddGuest({{ player_id: el.getAttribute('data-pid'), name: el.getAttribute('data-name') || '',
-    position: el.getAttribute('data-pos') || '', team: el.getAttribute('data-team') || '' }});
-  if (input) input.value = '';
-  if (box) {{ box.hidden = true; box.innerHTML = ''; }}
-}}
-
 function wvLoad() {{
-  wvInitGuestsFromUrl();
   wvLoadCandidates();
 
   // Unexpected performances available in your league (#6/#7). Best-effort strip;
@@ -2342,6 +848,11 @@ function wvLoad() {{
   fetch(`/api/trending-adds?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}`)
     .then(r => r.json())
     .then(d => {{ wvTrendingData = d.trending || []; wvRenderTrending(wvTrendingData); }})
+    .catch(() => {{}});
+
+  fetch(`/api/streaming-options?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}`)
+    .then(r => r.json())
+    .then(d => wvRenderStreaming(d))
     .catch(() => {{}});
 
   wvLoadStartSit();
@@ -2391,15 +902,7 @@ function wvLoadBigGames() {{
     }});
 }}
 
-// Attempts for the current Start/Sit load. Reset by wvLoadStartSit; the
-// manual "Try again" button re-enters through wvLoadStartSit.
-var wvStartSitAttempts = 0;
 function wvLoadStartSit() {{
-  wvStartSitAttempts = 0;
-  wvFetchStartSit();
-}}
-function wvFetchStartSit() {{
-  wvStartSitAttempts++;
   window.brLoadingState('wvStartSit', {{ rows: 3, compact: true, message: 'Loading lineup' }});
   // Abort if the backend hangs (e.g. slow league-context fetch) so the panel
   // falls through to the error state with a retry instead of skeletons forever.
@@ -2423,7 +926,7 @@ function wvFetchStartSit() {{
     var el = document.getElementById('wvStartSit');
     if (el && el.querySelector('.skeleton')) ssShowError();
   }}, 25000);
-  fetch(`/api/start-sit-options?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}${{wvGuestParam() ? '&guests=' + encodeURIComponent(wvGuestParam()) : ''}}`,
+  fetch(`/api/start-sit-options?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}`,
         ssController ? {{ signal: ssController.signal }} : undefined)
     .then(r => r.json().then(d => ({{ ok: r.ok, d }})))
     .then(({{ok, d}}) => {{
@@ -2445,15 +948,6 @@ function wvFetchStartSit() {{
         return;
       }}
       if (!ok || state === 'temporarily_unavailable') {{
-        // Transient: the league-context build was still in flight (slow cold
-        // start, e.g. Fleaflicker) or the provider blinked. The backend marks
-        // this retryable, so retry quietly a couple of times before surfacing
-        // the error card. Skeletons stay up between attempts.
-        var retryable = (state === 'temporarily_unavailable') || d.retryable === true;
-        if (retryable && wvStartSitAttempts < 3) {{
-          setTimeout(wvFetchStartSit, 4000);
-          return;
-        }}
         window.brErrorState('wvStartSit', d.message || 'Unable to load lineup data.', wvLoadStartSit);
         return;
       }}
@@ -2462,9 +956,7 @@ function wvFetchStartSit() {{
         return;
       }}
       wvStartSitData = d;
-      wvSyncGuestsFromPayload(d);
       wvStartSitData._lineup_requirements = d.lineup_requirements || {{}};
-      wvPrefetchLab();
       wvSyncPosPills();
       wvRenderStartSit();
     }})
@@ -2474,12 +966,12 @@ function wvFetchStartSit() {{
 }}
 
 // ── Unexpected performances available (big-game detector) ──────────────────────
-var WV_BG_CATEGORY = {{
+const WV_BG_CATEGORY = {{
   priority: {{ label: 'Priority pickup', cls: 'chip--accent' }},
   speculative: {{ label: 'Speculative add', cls: 'chip--neutral' }},
   watchlist: {{ label: 'Watchlist', cls: 'chip--muted' }},
 }};
-var WV_BG_CAUTION = {{
+const WV_BG_CAUTION = {{
   td_dependent: 'leaned on TDs',
   one_big_play: 'one long play',
   hot_efficiency: 'unsustainable efficiency',
@@ -2511,7 +1003,6 @@ function wvRenderBigGames(items) {{
     // Evidence-based copy generated from the actual factors (no generic filler).
     const facts = (d.factors || []).slice(0, 2).join(' · ');
     const cautions = (d.cautions || []).map(c => WV_BG_CAUTION[c]).filter(Boolean);
-    if (d.injury_note) {{ cautions.push(String(d.injury_note)); }}
     const sub = [d.team, d.position].filter(Boolean).join(' · ');
     const wkPts = d.actual_points != null ? d.actual_points
       : (d.week_points != null ? d.week_points : null);
@@ -2532,7 +1023,7 @@ function wvRenderBigGames(items) {{
           onclick="wvToggleSsRow(this)">
         ${{badge}}
         <span class="wv-cx-main">
-          <span class="wv-cx-name" data-wl-star-pid="${{pid}}">${{d.name || ('Player ' + pid)}}${{wvInjBadge(d.injury_status)}}</span>
+          <span class="wv-cx-name" data-wl-star-pid="${{pid}}">${{d.name || ('Player ' + pid)}}</span>
           ${{sub ? `<span class="wv-cx-sub">${{sub}}</span>` : ''}}
           ${{facts ? `<span class="wv-cx-why"><span class="wv-cx-k">WHAT CHANGED</span>${{facts}}</span>` : ''}}
           ${{live}}
@@ -2630,10 +1121,6 @@ function wvRenderWaivers() {{
       const statLbl = p.usage_stat === 'snap_pct' ? 'snap%' : (p.usage_stat === 'touches' ? 'touches' : 'targets');
       usageChip = `<span class="wv-cx-chip">&#9650; +${{p.usage_delta}} ${{statLbl}}</span>`;
     }}
-    // Injury flag: a hurt player must never read as a clean add. Compact pill
-    // by the name; the full note (designation + return timeline) rides in the
-    // tap-to-expand evidence below.
-    const injBadge = wvInjBadge(p.injury_status);
     // Big-game flag from last week rides along as a chip, not a row.
     let bgChip = '';
     if (p.big_game && p.big_game.category) {{
@@ -2650,10 +1137,6 @@ function wvRenderWaivers() {{
 
     // Evidence behind the tap: drop, schedule, usage, claim.
     const ev = [];
-    if (p.injury_note) {{
-      const injTxt = String(p.injury_note).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      ev.push(`<div class="wv-cx-evl caution"><span class="k">INJURY</span>${{injTxt}}</div>`);
-    }}
     if (p.drop && p.drop.name) {{
       ev.push(`<div class="wv-cx-evl"><span class="k">DROP</span>${{p.drop.name}}${{p.drop.position ? ' (' + p.drop.position + ')' : ''}} · Weakest spare below this target's value</div>`);
     }}
@@ -2686,7 +1169,7 @@ function wvRenderWaivers() {{
           onclick="wvToggleSsRow(this)">
         ${{badge}}
         <span class="wv-cx-main">
-          <span class="wv-cx-name" data-wl-star-pid="${{p.player_id}}">${{p.name}}${{injBadge}}</span>
+          <span class="wv-cx-name" data-wl-star-pid="${{p.player_id}}">${{p.name}}</span>
           ${{sub ? `<span class="wv-cx-sub">${{sub}}${{usageChip}}</span>` : ''}}
           ${{gainTxt ? `<span class="wv-cx-why"><span class="wv-cx-k">${{gainLbl}}</span>${{gainTxt}}</span>` : ''}}
           ${{bgChip}}
@@ -2735,7 +1218,7 @@ function wvRenderTrending(items) {{
       <button type="button" class="wv-trend-chip" onclick="openPlayerModal('${{p.player_id}}', '${{nm}}')"
               title="${{tipName}} · ${{tipAdds}}">
         <span class="wv-trend-adds"><i class="fa-solid fa-fire" aria-hidden="true"></i> ${{wvFmtAdds(p.adds)}}</span>
-        <span class="wv-trend-name">${{p.name || ''}}${{wvInjBadge(p.injury_status)}}</span>
+        <span class="wv-trend-name">${{p.name || ''}}</span>
         <span class="wv-trend-sub">${{sub}}</span>
       </button>`;
   }}).join('');
@@ -2743,6 +1226,45 @@ function wvRenderTrending(items) {{
 }}
 
 // ── Streaming this week (matchup-based D/ST + K) ───────────────────────────────
+function wvStreamRow(p, implied, isDef) {{
+  const nm = (p.name || '').replace(/'/g, "\\\\'");
+  const impNum = implied != null ? +implied : null;
+  let impCls = 'mid';
+  if (impNum != null) impCls = impNum >= 26 ? 'high' : (impNum <= 18 ? 'low' : 'mid');
+  // For a defense a LOW opponent total is good, so invert the color meaning.
+  const good = isDef ? (impNum != null && impNum <= 18) : (impNum != null && impNum >= 26);
+  const bad  = isDef ? (impNum != null && impNum >= 26) : (impNum != null && impNum <= 18);
+  const impCls2 = good ? 'good' : (bad ? 'bad' : 'mid');
+  const impLabel = impNum != null
+    ? (isDef ? (impNum.toFixed(0) + ' opp') : (impNum.toFixed(0) + ' impl'))
+    : '';
+  const impChip = impLabel
+    ? `<span class="wv-stream-imp wv-stream-imp-${{impCls2}}" title="Vegas implied team total">${{impLabel}}</span>`
+    : '';
+  return `
+    <div class="wv-stream-row" onclick="openPlayerModal('${{p.player_id}}', '${{nm}}')">
+      <span class="wv-stream-name">${{p.name || ''}}</span>
+      <span class="wv-stream-matchup">${{p.matchup || ''}}</span>
+      ${{impChip}}
+      ${{p.adds_48h ? '<span class="wv-stream-imp wv-stream-imp-mid" title="Sleeper adds last 48h">+' + wvFmtAdds(p.adds_48h) + ' adds</span>' : ''}}
+    </div>`;
+}}
+function wvRenderStreaming(d) {{
+  const wrap = document.getElementById('wvStreamWrap');
+  const defEl = document.getElementById('wvStreamDef');
+  const kEl = document.getElementById('wvStreamK');
+  if (!wrap || !d || !d.in_season) {{ if (wrap) wrap.hidden = true; return; }}
+  const defs = d.defense || [], ks = d.kicker || [];
+  if (!defs.length && !ks.length) {{ wrap.hidden = true; return; }}
+  defEl.innerHTML = defs.length
+    ? '<div class="wv-stream-sub">Defense</div>' + defs.slice(0, 5).map(p => wvStreamRow(p, p.opp_implied, true)).join('')
+    : '';
+  kEl.innerHTML = ks.length
+    ? '<div class="wv-stream-sub">Kicker</div>' + ks.slice(0, 5).map(p => wvStreamRow(p, p.own_implied, false)).join('')
+    : '';
+  wrap.hidden = false;
+}}
+
 // ── Compare slot management ───────────────────────────────────────────────────
 function wvToggleCompare(p) {{
   const id = p.player_id;
@@ -2780,16 +1302,6 @@ function wvCmpDerive(p) {{
     : c.label === 'Volatile' ? 'volatile'
     : c.label === 'Boom or bust' ? 'boombust' : 'balanced');
   const env = p.weather || p.game_env;
-  const olNum = p.oline && p.oline.primary_value != null ? Number(p.oline.primary_value) : null;
-  let olTxt = '–';
-  if (olNum != null) {{
-    const olLbl = p.oline.primary === 'pass_block' ? 'pass blk'
-      : p.oline.primary === 'run_block' ? 'run blk'
-      : (p.position === 'RB' ? 'run blk'
-        : (p.position === 'QB' || p.position === 'WR' || p.position === 'TE') ? 'pass blk' : 'o-line');
-    const olRk = p.oline.primary_rank ? ' (#' + p.oline.primary_rank + ')' : '';
-    olTxt = Math.round(olNum) + ' ' + olLbl + olRk;
-  }}
   return {{
     proj:     p.proj_pts > 0 ? p.proj_pts : null,
     l4:       p.recent_ppg > 0 ? p.recent_ppg : (p.season_ppg > 0 ? p.season_ppg : null),
@@ -2806,8 +1318,6 @@ function wvCmpDerive(p) {{
     playsL4:    (p.play_volume && p.play_volume.plays_faced_l4_pg != null) ? p.play_volume.plays_faced_l4_pg : null,
     vegasNum: p.implied_total != null ? p.implied_total : null,
     vegas:    p.implied_total != null ? (p.implied_total + ' implied') : '–',
-    olineNum: olNum,
-    oline:    olTxt,
     venue:    env ? `<span class="wv-ss-env wv-ss-env-${{env.kind}}">${{env.label}}</span>` : (p.on_bye ? 'BYE' : '–'),
     value:    p.value > 0 ? Math.round(p.value) : null,
     rank:     p.pos_rank_label || '–',
@@ -2829,7 +1339,7 @@ function wvWinPair(av, bv, higher) {{
 }}
 
 // Position-tinted rank chip (QB38, WR12…) for the compare header.
-var WV_POS_COL = {{ QB: '#3b82f6', RB: '#22c55e', WR: '#f59e0b', TE: '#8b5cf6', K: '#14b8a6', DEF: '#64748b' }};
+const WV_POS_COL = {{ QB: '#3b82f6', RB: '#22c55e', WR: '#f59e0b', TE: '#8b5cf6', K: '#14b8a6', DEF: '#64748b' }};
 function wvPosChip(p) {{
   const lbl = p.pos_rank_label || p.position || '';
   if (!lbl) return '';
@@ -2857,7 +1367,6 @@ function wvVerdictReasons(a, b, wi) {{
     ['vegas',   'a higher team total'],
     ['weather', 'a cleaner forecast'],
     ['avail',   'fewer injury concerns'],
-    ['oline',   'a stronger offensive line'],
   ];
   mult.forEach(f => {{
     let mw = fw[f[0]] != null ? fw[f[0]] : 1, ml = fl[f[0]] != null ? fl[f[0]] : 1;
@@ -2911,7 +1420,6 @@ function wvCmpReasonBar(reasonTxt, da, db) {{
   if (t === 'a safer floor') return ['FLOOR', da.floorNum, db.floorNum];
   if (t === 'better recent form') return ['RECENT FORM (L4 PPG)', da.l4, db.l4];
   if (t === 'a higher team total') return ['VEGAS TOTAL', da.vegasNum, db.vegasNum];
-  if (t === 'a stronger offensive line') return ['O-LINE', da.olineNum, db.olineNum];
   return null;
 }}
 
@@ -2954,7 +1462,6 @@ function wvRenderCompare() {{
   const wVal  = wvWinPair(da.value, db.value, true);
   const wFl   = wvWinPair(da.floorNum, db.floorNum, true);
   const wVeg  = wvWinPair(da.vegasNum, db.vegasNum, true);
-  const wOline = wvWinPair(da.olineNum, db.olineNum, true);
   // Position-relative 0-100 Start/Sit index (same one the player modal / Compare
   // page show), so a QB and a WR are comparable here too. Null when the week's
   // position pool was unavailable to build the anchor.
@@ -3023,7 +1530,6 @@ function wvRenderCompare() {{
     row('vs. NFL average', wvFmtVsAvg(da.playsVsAvg), wvFmtVsAvg(db.playsVsAvg)) +
     row('Last 4 games', dash(da.playsL4), dash(db.playsL4)) +
     row('Vegas total', da.vegas, db.vegas, wVeg[0], wVeg[1]) +
-    row('O-Line', da.oline, db.oline, wOline[0], wOline[1]) +
     row('Venue', da.venue, db.venue);
   const fullCount = (fullRows.match(/wv-cmp-row/g) || []).length;
 
@@ -3057,9 +1563,10 @@ function wvClearCompare() {{
 function wvSyncPosPills() {{
   const req = wvStartSitData._lineup_requirements || {{}};
   const pos = wvStartSitData.positions || {{}};
-  wvUsesK = wvUsesK || (req.K > 0) || ((pos.K || []).length > 0);
-  wvUsesDef = wvUsesDef || (req.DEF > 0) || ((pos.DEF || []).length > 0);
-  wvSyncKdPills();
+  const showK = (req.K > 0) || ((pos.K || []).length > 0);
+  const showDef = (req.DEF > 0) || ((pos.DEF || []).length > 0);
+  document.querySelectorAll('.wv-pos-btn[data-pos="K"]').forEach(b => {{ b.hidden = !showK; }});
+  document.querySelectorAll('.wv-pos-btn[data-pos="DEF"]').forEach(b => {{ b.hidden = !showDef; }});
 }}
 
 function wvStartSitPositions() {{
@@ -3099,88 +1606,21 @@ function wvSsGroupVerdict(players) {{
     const names = flexStarts.map(p => '<b>' + wvLastName(p.name) + '</b>').join(' and ');
     bits.push('Flex ' + names + (benchFlex ? ' over ' + wvLastName(benchFlex.name) : '') + '.');
   }}
-  players.filter(p => p.guest && p.would_start).forEach(function(g) {{
-    bits.push('Guest <b>' + wvLastName(g.name) + '</b> starts over your ' + (g.guest_slot || '') + '.');
-  }});
   return bits.length ? `<div class="wv-cx-verdict">${{bits.join(' ')}}</div>` : '';
 }}
 
 function wvSsMatchupChip(rank, total) {{
   if (!rank || !total) return '';
   const pct = rank / total;
-  // Four tiers on the sched_rank_color ease scale (#1 = easiest).
-  const tier = pct <= 0.25 ? 1 : pct <= 0.5 ? 2 : pct <= 0.75 ? 3 : 4;
-  const lbl = tier === 1 ? 'easiest' : tier === 2 ? 'favorable' : tier === 3 ? 'tough' : 'hardest';
-  return `<span class="wv-cx-chip mt${{tier}}">#${{rank}} ${{lbl}}</span>`;
+  const lbl = pct <= 0.25 ? 'easiest' : pct <= 0.5 ? 'favorable' : pct <= 0.75 ? 'tough' : 'hardest';
+  const cls = pct <= 0.5 ? '' : ' bad';
+  return `<span class="wv-cx-chip${{cls}}">#${{rank}} ${{lbl}}</span>`;
 }}
 
-// Demotion reasons the start/sit score can dock a player for. The row only
-// ever chipped "low_total"; the rest were computed but never shown.
-var WV_DEMOTION_LABELS = {{
-  low_total: 'Low team total',
-  weather: 'Bad weather',
-  oline: 'Weak O-line',
-  low_play_volume: 'Slow pace',
-  volatile_role: 'Volatile role',
-}};
-
-// Short display labels for the multipliers behind one player's start/sit
-// score. Same factor set wvVerdictReasons names on the compare card, plus
-// the three it omits (oline, expected_plays, role).
-var WV_SS_FACTOR_LABELS = {{
-  floor: 'Floor',
-  form: 'Form',
-  usage: 'Usage',
-  vegas: 'Vegas',
-  weather: 'Weather',
-  avail: 'Availability',
-  oline: 'O-line',
-  expected_plays: 'Pace',
-  role: 'Role',
-}};
-
-// "WHY" line for the tap-to-expand evidence: the score factors that moved
-// this player most, as +/- percentages. Only meaningful moves (>=1%),
-// sorted by absolute impact, top 4.
-function wvSsWhyLine(p) {{
-  const f = p.score_factors || {{}};
-  const rows = [];
-  for (const key of Object.keys(WV_SS_FACTOR_LABELS)) {{
-    const m = Number(f[key]);
-    if (!isFinite(m)) continue;
-    const pct = (m - 1) * 100;
-    if (Math.abs(m - 1) < 0.01) continue;
-    rows.push({{
-      imp: Math.abs(m - 1),
-      txt: WV_SS_FACTOR_LABELS[key] + ' ' + (pct >= 0 ? '+' : '-') + Math.abs(pct).toFixed(0) + '%',
-    }});
-  }}
-  rows.sort((a, b) => b.imp - a.imp);
-  return rows.slice(0, 4).map(r => r.txt).join(' · ');
-}};
-
-// "Home · 22 mph wind" style venue line: home/away decoded from the matchup
-// label ("vs X" = home, "@ X" = away), then the specific weather label when
-// the game has notable weather, else the static dome/cold venue tag.
-function wvSsVenueText(p) {{
-  if (!p || p.on_bye) return '';
-  const opp = p.opponent || '';
-  const ha = opp.indexOf('vs ') === 0 ? 'Home' : (opp.indexOf('@ ') === 0 ? 'Away' : '');
-  const wx = (p.weather && p.weather.label) || (p.game_env && p.game_env.label) || '';
-  const parts = [];
-  if (ha) parts.push(ha);
-  if (wx) parts.push(wx);
-  return parts.join(' · ');
-}}
-
-// Evidence grid for one player: floor/ceiling, L4 PPG, Vegas, venue, opp plays
-// faced, profile, injury, notable absences. Only rows with data render.
+// Evidence grid for one player: floor/ceiling, L4 PPG, Vegas, opp plays
+// faced, profile, injury. Only rows with data render.
 function wvSsEvidence(p) {{
   const ev = [];
-  const why = wvSsWhyLine(p);
-  if (why) {{
-    ev.push(`<div class="wv-cx-ev"><span class="k">WHY</span><span class="v">${{why}}</span></div>`);
-  }}
   const c = p.consistency;
   if (c && !c.small_sample && c.floor != null && c.ceiling != null) {{
     ev.push(`<div class="wv-cx-ev"><span class="k">FLOOR - CEIL</span><span class="v">${{c.floor}} - ${{c.ceiling}}</span></div>`);
@@ -3190,33 +1630,6 @@ function wvSsEvidence(p) {{
   }}
   if (p.implied_total != null) {{
     ev.push(`<div class="wv-cx-ev"><span class="k">VEGAS</span><span class="v">${{p.implied_total}} implied</span></div>`);
-  }}
-  // Venue: home/away from the matchup label plus specific weather when there
-  // is any ("vs X" = home, "@ X" = away). Display only.
-  const venueTxt = wvSsVenueText(p);
-  if (venueTxt) {{
-    ev.push(`<div class="wv-cx-ev"><span class="k">VENUE</span><span class="v">${{venueTxt}}</span></div>`);
-  }}
-  // Notable absences around this player's game. Display only: the score never
-  // sees these (Sleeper's projections already price teammate injuries in).
-  // Each absence gets its own stacked line: bold name, muted status, instead
-  // of one semicolon-joined wall of text. Entry text is "Name (IR, Knee)".
-  const wvAbsLine = (txt) => {{
-    const i = txt.indexOf(' (');
-    if (i < 0) return `<span class="wv-abs"><b>${{txt}}</b></span>`;
-    const nm = txt.slice(0, i);
-    let st = txt.slice(i + 2);
-    if (st.endsWith(')')) st = st.slice(0, -1);
-    st = st.replace(', ', ' · ');
-    return `<span class="wv-abs"><b>${{nm}}</b> <span class="wv-abs-st">${{st}}</span></span>`;
-  }};
-  const absT = ((p.absences && p.absences.teammates) || []).map(a => a.text).filter(Boolean).map(wvAbsLine);
-  const absO = ((p.absences && p.absences.opponents) || []).map(a => a.text).filter(Boolean).map(wvAbsLine);
-  if (absT.length) {{
-    ev.push(`<div class="wv-cx-ev"><span class="k">TEAMMATES OUT</span><span class="v">${{absT.join('')}}</span></div>`);
-  }}
-  if (absO.length) {{
-    ev.push(`<div class="wv-cx-ev"><span class="k">OPP DEFENSE OUT</span><span class="v">${{absO.join('')}}</span></div>`);
   }}
   const pv = p.play_volume;
   if (pv && pv.plays_faced_pg != null) {{
@@ -3257,12 +1670,8 @@ function wvRenderStartSit() {{
     const players = (wvStartSitData.positions || {{}})[pos] || [];
     if (!players.length) return '';
 
-    // Guests always show (they were added on purpose); the top-8 cap
-    // applies to roster rows only.
-    let _rosterShown = 0;
-    const shown = players.filter(p => p.guest || (++_rosterShown <= 8));
     let benchLineDone = false;
-    const rows = shown.map(p => {{
+    const rows = players.slice(0, 8).map(p => {{
       const isStart     = p.start === true;
       const isFlexStart = p.flex_start === true;
       const isFlex      = p.flex_eligible === true && !isStart;
@@ -3273,7 +1682,7 @@ function wvRenderStartSit() {{
       let sep = '';
       if (!isStarter && !isBye && !benchLineDone) {{
         // Only draw it when there was at least one starter above.
-        const hadStarter = shown.some(q => q.start === true || q.flex_start === true);
+        const hadStarter = players.slice(0, 8).some(q => q.start === true || q.flex_start === true);
         if (hadStarter) sep = '<div class="wv-cx-benchline">BENCH LINE</div>';
         benchLineDone = true;
       }}
@@ -3293,13 +1702,8 @@ function wvRenderStartSit() {{
       const escName = (p.name || '').replace(/'/g, "\\'");
       const matchup = p.opponent
         ? `${{p.opponent}} ${{wvSsMatchupChip(p.def_rank, p.def_total)}}` : '';
-      // Weather demotions name the specific condition ("22 mph wind") instead
-      // of the generic "Bad weather" chip when the row carries a label.
-      const demoteLbl = (p.demotion === 'weather' && p.weather && p.weather.label)
-        ? p.weather.label
-        : WV_DEMOTION_LABELS[p.demotion];
-      const demoteChip = demoteLbl
-        ? '<span class="wv-cx-chip bad">' + demoteLbl + '</span>' : '';
+      const demoteChip = (p.demotion === 'low_total')
+        ? '<span class="wv-cx-chip bad">Low team total</span>' : '';
       // Head-to-head win probability on the marginal call (server-flagged).
       const h2h = (isStart && p.close_call && p.close_call.win_prob != null)
         ? `<span class="wv-cx-h2h"><span class="bar"><i style="width:${{Math.round(p.close_call.win_prob * 100)}}%"></i></span><b>${{Math.round(p.close_call.win_prob * 100)}}%</b> to outscore ${{p.close_call.vs_name}}</span>`
@@ -3310,36 +1714,20 @@ function wvRenderStartSit() {{
       const evidence = wvSsEvidence(p);
       const schedUrl = `${{wvLeaguePath('/schedule')}}?add=${{encodeURIComponent(p.player_id)}}`;
 
-      // Quick-compare: once the first player is picked, every card shows a
-      // compare button right on the row, so picking the second needs no
-      // expanding. The already-picked card shows a filled check (tap removes).
-      const qcPicked = wvIsSelected(p.player_id);
-      const qcArmed = !!(wvCompare[0] && !wvCompare[1] && !qcPicked);
-      const qcShow = qcPicked || qcArmed;
-      const qcJson = JSON.stringify(p).replace(/"/g, '&quot;');
-      const qcName = String(p.name || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
-      const qcBtn = qcShow
-        ? `<button type="button" class="wv-cx-quickcmp${{qcPicked ? ' is-picked' : ''}}" aria-label="${{qcPicked ? 'Remove from comparison' : 'Compare'}} ${{qcName}}" onclick="wvToggleCompare(${{qcJson}})"><span aria-hidden="true">${{qcPicked ? '✓ Picked' : '+ Compare'}}</span></button>`
-        : '';
-
       return sep + `
         <div class="wv-cx-row-wrap">
-          <div class="wv-cx-rowline">
           <button type="button" class="wv-cx-row" aria-expanded="false"
               onclick="wvToggleSsRow(this)">
             ${{badge}}
             <span class="wv-cx-main">
-              <span class="wv-cx-name">${{p.name}}${{p.guest ? `<span class="wv-cx-guest">GUEST · ${{wvEsc(p.owner_label || 'Free Agent')}}</span>` : ''}}${{injBadge}}${{qbChip}}</span>
+              <span class="wv-cx-name">${{p.name}}${{injBadge}}${{qbChip}}</span>
               ${{matchup || demoteChip ? `<span class="wv-cx-why">${{matchup}}${{demoteChip}}</span>` : ''}}
-              ${{p.guest && p.guest_note ? `<span class="wv-ss-guest-note">${{wvEsc(p.guest_note)}}</span>` : ''}}
               ${{p.flex_safeguard ? `<span class="wv-cx-why"><span class="wv-cx-k">Flex safeguard</span>Q tag: moved to FLEX so a late scratch can be covered by any RB/WR/TE.</span>` : ''}}
               ${{h2h}}
             </span>
             ${{projBlock}}
-            ${{qcShow ? '' : '<span class="wv-cx-chev" aria-hidden="true">›</span>'}}
+            <span class="wv-cx-chev" aria-hidden="true">›</span>
           </button>
-          ${{qcBtn}}
-          </div>
           <div class="wv-cx-detail">
             ${{evidence}}
             <div class="wv-cx-actions" onclick="event.stopPropagation()">
@@ -3353,7 +1741,7 @@ function wvRenderStartSit() {{
     }}).join('');
 
     const slotCount = reqs[pos] || 1;
-    const verdict = wvSsGroupVerdict(shown);
+    const verdict = wvSsGroupVerdict(players.slice(0, 8));
     return `<div class="wv-cx-group"><div class="wv-cx-group-head">` +
       `<div class="wv-cx-group-title">${{pos}} <span>(${{slotCount}} starter${{slotCount > 1 ? 's' : ''}})</span></div>` +
       verdict + `</div><div class="wv-cx-card">${{rows}}</div></div>`;
@@ -3411,36 +1799,21 @@ function wvLineupAdvice() {{
   </div>`;
 }}
 
+document.addEventListener('DOMContentLoaded', wvLoad);
+
 // Deep link: ?tab=startsit opens the Start/Sit Advisor (switches the mobile
-// tab and scrolls the section into view on desktop). ?tab=lab does the same
-// and also flips Start/Sit into Lab mode, which loads the Lab through the
-// normal path (prefetch stash included).
-function wvDeepLink() {{
+// tab and scrolls the section into view on desktop).
+document.addEventListener('DOMContentLoaded', function() {{
   try {{
     const params = new URLSearchParams(window.location.search);
-    let tab = (params.get('tab') || '').toLowerCase();
-    // A guest deep link without a tab still means Start/Sit.
-    if (!tab && params.get('guest')) tab = 'startsit';
-    if (tab === 'startsit' || tab === 'lab') {{
+    if ((params.get('tab') || '').toLowerCase() === 'startsit') {{
       if (!document.getElementById('wvTabStartSit')) return;
       wvSetTab('startsit');
-      if (tab === 'lab') wvSetSsMode('lab');
       const sec = document.getElementById('wvSectionStartSit');
       if (sec) sec.scrollIntoView({{ behavior: 'smooth', block: 'start' }});
     }}
   }} catch (e) {{}}
-}}
-
-// This script re-executes after an in-place page swap (auto-revalidate /
-// refresh), when DOMContentLoaded has already fired: init immediately instead
-// of waiting for an event that will never come again.
-if (document.readyState === 'loading') {{
-  document.addEventListener('DOMContentLoaded', wvLoad);
-  document.addEventListener('DOMContentLoaded', wvDeepLink);
-}} else {{
-  wvLoad();
-  wvDeepLink();
-}}
+}});
 </script>
 """
 
