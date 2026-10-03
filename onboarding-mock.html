@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Feature Onboarding Coach Marks - Mock</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: #f1f5f9;
+    color: #1e293b;
+    padding: 32px 16px 64px;
+  }
+  .page-head { max-width: 1280px; margin: 0 auto 8px; }
+  .page-head h1 { font-size: 22px; font-weight: 800; margin-bottom: 4px; }
+  .page-head p { font-size: 13px; color: #64748b; }
+  .feature-section { max-width: 1280px; margin: 36px auto 0; }
+  .feature-section > h2 { font-size: 17px; font-weight: 800; margin-bottom: 4px; }
+  .feature-section > p { font-size: 13px; color: #64748b; margin-bottom: 16px; }
+  .phones { display: flex; gap: 24px; flex-wrap: wrap; }
+  .phone-wrap { display: flex; flex-direction: column; gap: 8px; }
+  .phone-label { font-size: 12px; font-weight: 700; color: #475569; }
+
+  /* Phone frame */
+  .phone {
+    width: 390px; height: 760px;
+    background: #fff;
+    border: 10px solid #0f172a;
+    border-radius: 44px;
+    overflow: hidden;
+    position: relative;
+    flex-shrink: 0;
+    box-shadow: 0 12px 32px rgba(2,6,23,.18);
+  }
+  .screen { position: absolute; inset: 0; overflow: hidden; background: #f8fafc; }
+
+  /* App chrome (simplified) */
+  .app-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 14px 10px; background: #fff; border-bottom: 1px solid #e2e8f0;
+  }
+  .app-logo { font-size: 15px; font-weight: 900; letter-spacing: -.02em; color: #1e3a5f; }
+  .app-logo span { color: #3b82f6; }
+  .league-pill {
+    font-size: 12px; font-weight: 600; color: #334155;
+    background: #f1f5f9; border-radius: 8px; padding: 6px 10px;
+  }
+  .seg {
+    display: flex; background: #f1f5f9; border-radius: 10px; padding: 3px; margin: 10px 12px 0;
+  }
+  .seg button {
+    flex: 1; border: 0; background: transparent; font-size: 12px; font-weight: 600;
+    color: #64748b; padding: 8px 4px; border-radius: 8px; cursor: pointer;
+  }
+  .seg button.on { background: #fff; color: #1e293b; box-shadow: 0 1px 3px rgba(2,6,23,.12); }
+  .seg button .pro {
+    font-size: 9px; font-weight: 800; background: #1d4ed8; color: #fff;
+    border-radius: 4px; padding: 1px 4px; margin-left: 3px; vertical-align: 1px;
+  }
+  .subtabs { display: flex; gap: 4px; padding: 10px 12px 0; }
+  .subtabs button {
+    border: 1px solid #e2e8f0; background: #fff; font-size: 12px; font-weight: 600;
+    color: #64748b; padding: 8px 12px; border-radius: 8px; cursor: pointer;
+  }
+  .subtabs button.on { background: #1e293b; border-color: #1e293b; color: #fff; }
+
+  /* Trade card */
+  .trade-card {
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 14px;
+    margin: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(2,6,23,.08);
+  }
+  .trade-sides { display: flex; padding: 14px; gap: 8px; }
+  .trade-side { flex: 1; }
+  .trade-side h4 { font-size: 10px; font-weight: 700; letter-spacing: .06em; color: #94a3b8; margin-bottom: 6px; }
+  .pos-badge {
+    display: inline-block; font-size: 10px; font-weight: 800; border-radius: 6px;
+    padding: 2px 6px; margin-right: 5px; vertical-align: 1px;
+  }
+  .pos-wr { background: #fef3c7; color: #b45309; }
+  .pos-rb { background: #d1fae5; color: #047857; }
+  .pos-qb { background: #dbeafe; color: #1d4ed8; }
+  .pos-te { background: #ede9fe; color: #6d28d9; }
+  .player-name { font-size: 14px; font-weight: 700; }
+  .trade-meta { display: flex; gap: 6px; padding: 0 14px 10px; flex-wrap: wrap; }
+  .pill {
+    font-size: 11px; font-weight: 600; border-radius: 6px; padding: 4px 8px;
+    background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0;
+  }
+  .pill.accept { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+  .analyze-btn {
+    display: block; width: calc(100% - 28px); margin: 0 14px 14px; padding: 12px;
+    background: #1e293b; color: #fff; border: 0; border-radius: 10px;
+    font-size: 14px; font-weight: 700; cursor: pointer;
+  }
+
+  /* Metrics graph */
+  .graph-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; margin: 12px; padding: 12px; }
+  .graph-title { font-size: 13px; font-weight: 800; margin-bottom: 2px; }
+  .graph-sub { font-size: 11px; color: #64748b; margin-bottom: 8px; }
+  .graph { position: relative; height: 220px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; overflow: hidden; }
+  .quad-v { position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: #cbd5e1; }
+  .quad-h { position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: #cbd5e1; }
+  .dot { position: absolute; width: 10px; height: 10px; border-radius: 50%; }
+  .posfilter { display: flex; gap: 6px; padding: 10px 12px 0; }
+  .posfilter button {
+    border: 1px solid #e2e8f0; background: #fff; font-size: 12px; font-weight: 700;
+    padding: 6px 12px; border-radius: 8px; cursor: pointer; color: #475569;
+  }
+  .posfilter button.on { background: #1e293b; color: #fff; border-color: #1e293b; }
+
+  /* Start/sit rows */
+  .ss-row {
+    display: flex; align-items: center; gap: 10px; background: #fff;
+    border: 1px solid #e2e8f0; border-radius: 12px; margin: 10px 12px 0; padding: 12px;
+  }
+  .verdict {
+    font-size: 11px; font-weight: 800; border-radius: 6px; padding: 5px 8px; white-space: nowrap;
+  }
+  .verdict.start { background: #d1fae5; color: #047857; }
+  .verdict.sit { background: #fee2e2; color: #b91c1c; }
+  .conf { font-size: 11px; color: #64748b; font-weight: 600; }
+  .ss-compare-bar {
+    display: flex; gap: 8px; margin: 12px;
+  }
+  .ss-compare-bar .slot {
+    flex: 1; border: 2px dashed #cbd5e1; border-radius: 10px; padding: 14px 8px;
+    text-align: center; font-size: 12px; color: #64748b; font-weight: 600;
+  }
+
+  /* Coach mark overlay */
+  .coach-overlay { position: absolute; inset: 0; z-index: 50; pointer-events: none; }
+  .spotlight {
+    position: absolute;
+    box-shadow: 0 0 0 9999px rgba(2,6,23,.62);
+    border: 2px solid #fff;
+    border-radius: 12px;
+  }
+  .tooltip {
+    position: absolute; left: 20px; right: 20px;
+    background: #fff; border-radius: 12px; padding: 14px;
+    box-shadow: 0 8px 28px rgba(2,6,23,.3);
+    pointer-events: auto;
+  }
+  .tooltip .step { font-size: 11px; font-weight: 700; color: #3b82f6; margin-bottom: 4px; }
+  .tooltip .msg { font-size: 14px; font-weight: 600; line-height: 1.4; margin-bottom: 12px; }
+  .tooltip .row { display: flex; justify-content: space-between; align-items: center; }
+  .tooltip .skip {
+    border: 0; background: transparent; color: #64748b; font-size: 13px;
+    font-weight: 600; cursor: pointer; padding: 8px 4px;
+  }
+  .tooltip .next {
+    border: 0; background: #1e293b; color: #fff; font-size: 13px; font-weight: 700;
+    border-radius: 8px; padding: 8px 20px; cursor: pointer;
+  }
+  .tooltip .dots { display: flex; gap: 5px; }
+  .tooltip .dots i { width: 6px; height: 6px; border-radius: 50%; background: #cbd5e1; }
+  .tooltip .dots i.on { background: #3b82f6; }
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <h1>Feature Onboarding Coach Marks</h1>
+  <p>Lightweight 2-3 step tooltips on first visit. Mocks only, no app code.</p>
+</div>
+
+<!-- ============ TRADE HUB ============ -->
+<div class="feature-section">
+  <h2>Trade Hub onboarding (3 steps)</h2>
+  <p>Trigger: first time opening the Trade Hub.</p>
+  <div class="phones">
+
+    <!-- TH Step 1 -->
+    <div class="phone-wrap">
+      <div class="phone-label">Step 1: Sub-tabs</div>
+      <div class="phone"><div class="screen">
+        <div class="app-header">
+          <div class="app-logo">BR <span>FANTASY</span></div>
+          <div class="league-pill">blackedraw</div>
+        </div>
+        <div class="seg">
+          <button>Calculator</button>
+          <button class="on">Trade Hub <span class="pro">PRO</span></button>
+          <button>Insights</button>
+        </div>
+        <div class="subtabs">
+          <button class="on">Suggestions</button>
+          <button>Targets</button>
+          <button>Market Intel</button>
+          <button>Saved</button>
+        </div>
+        <div class="trade-card">
+          <div class="trade-sides">
+            <div class="trade-side"><h4>YOU GET</h4><span class="pos-badge pos-wr">WR</span><span class="player-name">Zay Flowers</span></div>
+            <div class="trade-side"><h4>YOU GIVE</h4><span class="pos-badge pos-wr">WR</span><span class="player-name">Nico Collins</span></div>
+          </div>
+          <div class="trade-meta"><span class="pill">Fair deal</span><span class="pill accept">63% accept</span></div>
+          <button class="analyze-btn">Analyze</button>
+        </div>
+        <div class="coach-overlay">
+          <div class="spotlight" style="top: 118px; left: 12px; width: 342px; height: 44px;"></div>
+          <div class="tooltip" style="top: 220px;">
+            <div class="step">1 of 3</div>
+            <div class="msg">Start here: Suggestions finds trades for your team.</div>
+            <div class="row">
+              <button class="skip">Skip</button>
+              <div class="dots"><i class="on"></i><i></i><i></i></div>
+              <button class="next">Next</button>
+            </div>
+          </div>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- TH Step 2 -->
+    <div class="phone-wrap">
+      <div class="phone-label">Step 2: Trade card</div>
+      <div class="phone"><div class="screen">
+        <div class="app-header">
+          <div class="app-logo">BR <span>FANTASY</span></div>
+          <div class="league-pill">blackedraw</div>
+        </div>
+        <div class="seg">
+          <button>Calculator</button>
+          <button class="on">Trade Hub <span class="pro">PRO</span></button>
+          <button>Insights</button>
+        </div>
+        <div class="subtabs">
+          <button class="on">Suggestions</button>
+          <button>Targets</button>
+          <button>Market Intel</button>
+          <button>Saved</button>
+        </div>
+        <div class="trade-card">
+          <div class="trade-sides">
+            <div class="trade-side"><h4>YOU GET</h4><span class="pos-badge pos-wr">WR</span><span class="player-name">Zay Flowers</span></div>
+            <div class="trade-side"><h4>YOU GIVE</h4><span class="pos-badge pos-wr">WR</span><span class="player-name">Nico Collins</span></div>
+          </div>
+          <div class="trade-meta"><span class="pill">Fair deal</span><span class="pill accept">63% accept</span></div>
+          <button class="analyze-btn">Analyze</button>
+        </div>
+        <div class="coach-overlay">
+          <div class="spotlight" style="top: 176px; left: 12px; width: 342px; height: 218px;"></div>
+          <div class="tooltip" style="top: 440px;">
+            <div class="step">2 of 3</div>
+            <div class="msg">Tap Analyze to see the full breakdown.</div>
+            <div class="row">
+              <button class="skip">Skip</button>
+              <div class="dots"><i></i><i class="on"></i><i></i></div>
+              <button class="next">Next</button>
+            </div>
+          </div>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- TH Step 3 -->
+    <div class="phone-wrap">
+      <div class="phone-label">Step 3: Calculator tab</div>
+      <div class="phone"><div class="screen">
+        <div class="app-header">
+          <div class="app-logo">BR <span>FANTASY</span></div>
+          <div class="league-pill">blackedraw</div>
+        </div>
+        <div class="seg">
+          <button>Calculator</button>
+          <button class="on">Trade Hub <span class="pro">PRO</span></button>
+          <button>Insights</button>
+        </div>
+        <div class="subtabs">
+          <button class="on">Suggestions</button>
+          <button>Targets</button>
+          <button>Market Intel</button>
+          <button>Saved</button>
+        </div>
+        <div class="trade-card">
+          <div class="trade-sides">
+            <div class="trade-side"><h4>YOU GET</h4><span class="pos-badge pos-rb">RB</span><span class="player-name">J. Love</span></div>
+            <div class="trade-side"><h4>YOU GIVE</h4><span class="pos-badge pos-te">TE</span><span class="player-name">T. McBride</span></div>
+          </div>
+          <div class="trade-meta"><span class="pill">Fair deal</span><span class="pill accept">58% accept</span></div>
+          <button class="analyze-btn">Analyze</button>
+        </div>
+        <div class="coach-overlay">
+          <div class="spotlight" style="top: 66px; left: 15px; width: 108px; height: 34px;"></div>
+          <div class="tooltip" style="top: 160px;">
+            <div class="step">3 of 3</div>
+            <div class="msg">Or build your own trade from scratch.</div>
+            <div class="row">
+              <button class="skip">Skip</button>
+              <div class="dots"><i></i><i></i><i class="on"></i></div>
+              <button class="next">Done</button>
+            </div>
+          </div>
+        </div>
+      </div></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ============ ADVANCED METRICS ============ -->
+<div class="feature-section">
+  <h2>Advanced Metrics onboarding (3 steps)</h2>
+  <p>Trigger: first time opening Advanced Metrics.</p>
+  <div class="phones">
+
+    <!-- AM Step 1 -->
+    <div class="phone-wrap">
+      <div class="phone-label">Step 1: The graph</div>
+      <div class="phone"><div class="screen">
+        <div class="app-header">
+          <div class="app-logo">BR <span>FANTASY</span></div>
+          <div class="league-pill">blackedraw</div>
+        </div>
+        <div class="posfilter">
+          <button class="on">All</button><button>QB</button><button>RB</button><button>WR</button><button>TE</button>
+        </div>
+        <div class="graph-card">
+          <div class="graph-title">YAC / Carry vs Broken Tackles</div>
+          <div class="graph-sub">Running backs, min 20 carries</div>
+          <div class="graph">
+            <div class="quad-v"></div><div class="quad-h"></div>
+            <div class="dot" style="left: 22%; top: 30%; background: #10b981;"></div>
+            <div class="dot" style="left: 68%; top: 22%; background: #3b82f6;"></div>
+            <div class="dot" style="left: 40%; top: 62%; background: #f59e0b;"></div>
+            <div class="dot" style="left: 78%; top: 68%; background: #ef4444;"></div>
+            <div class="dot" style="left: 55%; top: 45%; background: #8b5cf6;"></div>
+            <div class="dot" style="left: 30%; top: 75%; background: #64748b;"></div>
+          </div>
+        </div>
+        <div class="coach-overlay">
+          <div class="spotlight" style="top: 210px; left: 12px; width: 342px; height: 288px;"></div>
+          <div class="tooltip" style="top: 530px;">
+            <div class="step">1 of 3</div>
+            <div class="msg">Every dot is a player. Quadrants show elite vs bust.</div>
+            <div class="row">
+              <button class="skip">Skip</button>
+              <div class="dots"><i class="on"></i><i></i><i></i></div>
+              <button class="next">Next</button>
+            </div>
+          </div>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- AM Step 2 -->
+    <div class="phone-wrap">
+      <div class="phone-label">Step 2: Position filter</div>
+      <div class="phone"><div class="screen">
+        <div class="app-header">
+          <div class="app-logo">BR <span>FANTASY</span></div>
+          <div class="league-pill">blackedraw</div>
+        </div>
+        <div class="posfilter">
+          <button class="on">All</button><button>QB</button><button>RB</button><button>WR</button><button>TE</button>
+        </div>
+        <div class="graph-card">
+          <div class="graph-title">YAC / Carry vs Broken Tackles</div>
+          <div class="graph-sub">Running backs, min 20 carries</div>
+          <div class="graph">
+            <div class="quad-v"></div><div class="quad-h"></div>
+            <div class="dot" style="left: 22%; top: 30%; background: #10b981;"></div>
+            <div class="dot" style="left: 68%; top: 22%; background: #3b82f6;"></div>
+            <div class="dot" style="left: 40%; top: 62%; background: #f59e0b;"></div>
+            <div class="dot" style="left: 78%; top: 68%; background: #ef4444;"></div>
+          </div>
+        </div>
+        <div class="coach-overlay">
+          <div class="spotlight" style="top: 66px; left: 12px; width: 220px; height: 40px;"></div>
+          <div class="tooltip" style="top: 160px;">
+            <div class="step">2 of 3</div>
+            <div class="msg">Filter by position to compare apples to apples.</div>
+            <div class="row">
+              <button class="skip">Skip</button>
+              <div class="dots"><i></i><i class="on"></i><i></i></div>
+              <button class="next">Next</button>
+            </div>
+          </div>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- AM Step 3 -->
+    <div class="phone-wrap">
+      <div class="phone-label">Step 3: Player dot</div>
+      <div class="phone"><div class="screen">
+        <div class="app-header">
+          <div class="app-logo">BR <span>FANTASY</span></div>
+          <div class="league-pill">blackedraw</div>
+        </div>
+        <div class="posfilter">
+          <button>All</button><button>QB</button><button class="on">RB</button><button>WR</button><button>TE</button>
+        </div>
+        <div class="graph-card">
+          <div class="graph-title">YAC / Carry vs Broken Tackles</div>
+          <div class="graph-sub">Running backs, min 20 carries</div>
+          <div class="graph">
+            <div class="quad-v"></div><div class="quad-h"></div>
+            <div class="dot" style="left: 22%; top: 30%; background: #10b981;"></div>
+            <div class="dot" style="left: 68%; top: 22%; background: #3b82f6; width: 16px; height: 16px; box-shadow: 0 0 0 4px rgba(59,130,246,.25);"></div>
+            <div class="dot" style="left: 40%; top: 62%; background: #f59e0b;"></div>
+            <div class="dot" style="left: 78%; top: 68%; background: #ef4444;"></div>
+          </div>
+        </div>
+        <div class="coach-overlay">
+          <div class="spotlight" style="top: 288px; left: 218px; width: 40px; height: 40px; border-radius: 50%;"></div>
+          <div class="tooltip" style="top: 380px;">
+            <div class="step">3 of 3</div>
+            <div class="msg">Tap any dot for the full player card.</div>
+            <div class="row">
+              <button class="skip">Skip</button>
+              <div class="dots"><i></i><i></i><i class="on"></i></div>
+              <button class="next">Done</button>
+            </div>
+          </div>
+        </div>
+      </div></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ============ START/SIT ============ -->
+<div class="feature-section">
+  <h2>Start/Sit onboarding (2 steps)</h2>
+  <p>Trigger: first time opening Start/Sit.</p>
+  <div class="phones">
+
+    <!-- SS Step 1 -->
+    <div class="phone-wrap">
+      <div class="phone-label">Step 1: Verdict badge</div>
+      <div class="phone"><div class="screen">
+        <div class="app-header">
+          <div class="app-logo">BR <span>FANTASY</span></div>
+          <div class="league-pill">blackedraw</div>
+        </div>
+        <div class="ss-row">
+          <span class="verdict start">START 82</span>
+          <div><div class="player-name"><span class="pos-badge pos-wr">WR</span>Zay Flowers</div><div class="conf">vs PIT, projected 14.2</div></div>
+        </div>
+        <div class="ss-row">
+          <span class="verdict sit">SIT 34</span>
+          <div><div class="player-name"><span class="pos-badge pos-wr">WR</span>Jayden Higgins</div><div class="conf">vs KC, projected 8.1</div></div>
+        </div>
+        <div class="ss-row">
+          <span class="verdict start">START 76</span>
+          <div><div class="player-name"><span class="pos-badge pos-rb">RB</span>Kenneth Walker III</div><div class="conf">vs ARI, projected 13.8</div></div>
+        </div>
+        <div class="coach-overlay">
+          <div class="spotlight" style="top: 76px; left: 12px; width: 110px; height: 46px;"></div>
+          <div class="tooltip" style="top: 180px;">
+            <div class="step">1 of 2</div>
+            <div class="msg">Green means start, red means sit. The number is confidence.</div>
+            <div class="row">
+              <button class="skip">Skip</button>
+              <div class="dots"><i class="on"></i><i></i></div>
+              <button class="next">Next</button>
+            </div>
+          </div>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- SS Step 2 -->
+    <div class="phone-wrap">
+      <div class="phone-label">Step 2: Compare view</div>
+      <div class="phone"><div class="screen">
+        <div class="app-header">
+          <div class="app-logo">BR <span>FANTASY</span></div>
+          <div class="league-pill">blackedraw</div>
+        </div>
+        <div class="ss-row">
+          <span class="verdict start">START 82</span>
+          <div><div class="player-name"><span class="pos-badge pos-wr">WR</span>Zay Flowers</div><div class="conf">vs PIT, projected 14.2</div></div>
+        </div>
+        <div class="ss-row">
+          <span class="verdict sit">SIT 34</span>
+          <div><div class="player-name"><span class="pos-badge pos-wr">WR</span>Jayden Higgins</div><div class="conf">vs KC, projected 8.1</div></div>
+        </div>
+        <div class="ss-compare-bar">
+          <div class="slot">Tap a player</div>
+          <div class="slot">Tap another</div>
+        </div>
+        <div style="text-align:center; font-size:12px; color:#64748b; font-weight:600;">Compare two players head-to-head</div>
+        <div class="coach-overlay">
+          <div class="spotlight" style="top: 330px; left: 12px; width: 342px; height: 96px;"></div>
+          <div class="tooltip" style="top: 470px;">
+            <div class="step">2 of 2</div>
+            <div class="msg">Tap two players to compare them head-to-head.</div>
+            <div class="row">
+              <button class="skip">Skip</button>
+              <div class="dots"><i></i><i class="on"></i></div>
+              <button class="next">Done</button>
+            </div>
+          </div>
+        </div>
+      </div></div>
+    </div>
+
+  </div>
+</div>
+
+<div style="max-width:1280px; margin:48px auto 0; font-size:13px; color:#64748b;">
+  <p><strong style="color:#334155;">Implementation notes:</strong> Spotlight uses a box-shadow cutout over a dimmed overlay. Tooltips are bottom-anchored cards with step dots, Skip, and Next/Done. Persist dismissal in localStorage per feature key (e.g. <code>onboarded_trade_hub</code>). Advance on Next tap; any tap outside the tooltip counts as Skip.</p>
+</div>
+
+</body>
+</html>

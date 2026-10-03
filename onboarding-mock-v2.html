@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Feature Onboarding Coach Marks v2 - Real UI</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --text: #1e293b; --text-muted: #64748b; --border: #e2e8f0;
+    --card: #ffffff; --accent: #1d4ed8; --win: #16a34a;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: #f1f5f9; color: var(--text);
+    padding: 32px 16px 64px;
+  }
+  .page-head { max-width: 1280px; margin: 0 auto 8px; }
+  .page-head h1 { font-size: 22px; font-weight: 800; margin-bottom: 4px; }
+  .page-head p { font-size: 13px; color: var(--text-muted); }
+  .feature-section { max-width: 1280px; margin: 36px auto 0; }
+  .feature-section > h2 { font-size: 17px; font-weight: 800; margin-bottom: 4px; }
+  .feature-section > p { font-size: 13px; color: var(--text-muted); margin-bottom: 16px; }
+  .phones { display: flex; gap: 24px; flex-wrap: wrap; }
+  .phone-wrap { display: flex; flex-direction: column; gap: 8px; }
+  .phone-label { font-size: 12px; font-weight: 700; color: #475569; }
+
+  .phone {
+    width: 390px; height: 780px;
+    background: #fff; border: 10px solid #0f172a; border-radius: 44px;
+    overflow: hidden; position: relative; flex-shrink: 0;
+    box-shadow: 0 12px 32px rgba(2,6,23,.18);
+  }
+  .screen { position: absolute; inset: 0; overflow: hidden; background: #f8fafc; }
+
+  /* ===== Real Trade Hub chrome ===== */
+  .otc-shell { padding: 0; }
+  .otc-main-tabs {
+    display: flex; background: #f1f5f9; border-radius: 12px; padding: 4px;
+    margin: 12px 12px 0; position: relative;
+  }
+  .otc-main-tab {
+    flex: 1; border: 0; background: transparent; font-size: 14px; font-weight: 700;
+    color: var(--text-muted); padding: 10px 4px; border-radius: 9px; cursor: pointer;
+  }
+  .otc-main-tab.is-active { background: #fff; color: var(--text); box-shadow: 0 1px 4px rgba(2,6,23,.12); }
+  .nav-pro-badge {
+    font-size: 9px; font-weight: 800; background: #1d4ed8; color: #fff;
+    border-radius: 4px; padding: 2px 5px; margin-left: 4px; vertical-align: 2px;
+  }
+  .otc-sugg-subtab-bar { padding: 10px 12px 0; }
+  .otc-sugg-subtab-toggle {
+    display: flex; background: #fff; border: 1px solid var(--border);
+    border-radius: 10px; padding: 3px; position: relative;
+  }
+  .otc-sugg-subtab {
+    flex: 1; border: 0; background: transparent; font-size: 12px; font-weight: 600;
+    color: var(--text-muted); padding: 8px 2px; border-radius: 8px; cursor: pointer;
+    white-space: nowrap;
+  }
+  .otc-sugg-subtab.is-active { background: #1e293b; color: #fff; }
+
+  /* Real suggestion package card */
+  .otc-sugg-package {
+    background: #fff; border: 1px solid var(--border); border-radius: 14px;
+    margin: 12px; padding: 12px; box-shadow: 0 2px 8px rgba(2,6,23,.08);
+  }
+  .otc-sugg-pkg-meta { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; }
+  .otc-sugg-pkg-value { font-size: 12px; font-weight: 800; color: var(--win); }
+  .otc-sugg-pkg-freq { font-size: 11px; color: var(--text-muted); }
+  .otc-sugg-pkg-side-label {
+    font-size: 10px; font-weight: 700; letter-spacing: .06em; color: #94a3b8; margin-bottom: 4px;
+  }
+  .otc-sugg-pkg-asset {
+    display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; margin-bottom: 3px;
+  }
+  .otc-sugg-pkg-asset-pos {
+    font-size: 10px; font-weight: 800; border-radius: 6px; padding: 2px 6px;
+  }
+  .otc-sugg-pkg-load-btn {
+    background: #1e293b; color: #fff; border: 0; border-radius: 10px;
+    font-size: 14px; font-weight: 700; padding: 12px; width: 100%; cursor: pointer; margin-top: 8px;
+  }
+  .pkg-grid { display: grid; grid-template-columns: 1fr auto 1fr; gap: 6px; align-items: start; }
+
+  /* ===== Real Advanced Metrics chrome ===== */
+  .am-cmdbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 12px; background: #fff; border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 5;
+  }
+  .am-cmd-title { font-size: 15px; font-weight: 800; }
+  .am-cmd-actions { display: flex; gap: 4px; }
+  .am-cmd-btn {
+    width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid var(--border); border-radius: 8px; background: #fff;
+    color: #475569; cursor: pointer; font-size: 14px; font-weight: 700;
+  }
+  .am-table { width: 100%; border-collapse: collapse; font-size: 12px; background: #fff; }
+  .am-table th {
+    text-align: left; font-size: 10px; font-weight: 700; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: .04em; padding: 8px 6px;
+    border-bottom: 1px solid var(--border); white-space: nowrap;
+  }
+  .am-table th.am-sortable { cursor: pointer; }
+  .am-table td { padding: 9px 6px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+  .am-rank { color: var(--text-muted); font-weight: 700; width: 26px; }
+  .am-player { font-weight: 700; font-size: 13px; white-space: nowrap; }
+  .am-games { color: var(--text-muted); text-align: center; width: 30px; }
+  .am-barcell { min-width: 90px; }
+  .am-bar-track { height: 8px; background: #eef2f7; border-radius: 4px; overflow: hidden; margin-bottom: 3px; }
+  .am-bar { height: 100%; background: #3b82f6; border-radius: 4px; }
+  .am-bar-val { font-size: 11px; font-weight: 700; }
+  .am-graph-modal-card {
+    background: #fff; border-radius: 14px; margin: 20px 12px; padding: 0;
+    max-height: 78%; overflow: hidden; position: relative;
+  }
+  .am-legend-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 14px; border-bottom: 1px solid var(--border);
+    font-size: 14px; font-weight: 800;
+  }
+  .am-legend-close {
+    border: none; background: none; font-size: 22px; color: var(--text-muted);
+    cursor: pointer; line-height: 1; padding: 0 4px;
+  }
+  .am-graph-controls { display: flex; gap: 8px; padding: 10px 14px; flex-wrap: wrap; }
+  .am-gctrl label { display: block; font-size: 10px; font-weight: 700; color: var(--text-muted); margin-bottom: 3px; text-transform: uppercase; letter-spacing: .04em; }
+  .am-mini-select {
+    border: 1px solid var(--border); border-radius: 8px; font-size: 11px; font-weight: 600;
+    padding: 6px 6px; background: #fff; color: var(--text); max-width: 120px;
+  }
+  .am-graph-canvas {
+    position: relative; height: 200px; background: #f8fafc;
+    border-top: 1px solid var(--border); overflow: hidden; margin: 0 14px 14px;
+    border-left: 1px solid var(--border); border-right: 1px solid var(--border); border-bottom: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .quad-v { position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: #cbd5e1; }
+  .quad-h { position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: #cbd5e1; }
+  .quad-lbl { position: absolute; font-size: 9px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: .05em; }
+  .gdot { position: absolute; width: 11px; height: 11px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 1px 3px rgba(2,6,23,.25); }
+
+  /* ===== Real Start/Sit chrome ===== */
+  .ss-verdict {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 10px 12px; border-radius: 10px; margin: 12px 12px 0;
+    background: rgba(22,163,74,.1);
+  }
+  .ss-verdict-pill {
+    font-size: 11px; font-weight: 800; letter-spacing: .04em; padding: 3px 10px;
+    border-radius: 6px; background: var(--win); color: #fff;
+  }
+  .ss-verdict-name { font-size: 15px; font-weight: 800; }
+  .ss-verdict-why { font-size: 12px; color: var(--text-muted); width: 100%; }
+  .ss-player-row {
+    display: flex; align-items: center; gap: 10px; background: #fff;
+    border: 1px solid var(--border); border-radius: 12px; margin: 8px 12px 0; padding: 12px;
+  }
+  .ss-rank { font-size: 11px; font-weight: 800; color: var(--text-muted); width: 28px; }
+  .ss-name { font-size: 14px; font-weight: 700; flex: 1; }
+  .ss-proj { font-size: 13px; font-weight: 700; color: var(--text); }
+  .ss-compare-hint {
+    margin: 12px; padding: 12px; border: 2px dashed #cbd5e1; border-radius: 10px;
+    text-align: center; font-size: 12px; color: var(--text-muted); font-weight: 600;
+  }
+
+  /* Bottom nav (real app) */
+  .bottom-nav {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    display: flex; background: #fff; border-top: 1px solid var(--border);
+    padding: 8px 4px calc(8px + env(safe-area-inset-bottom));
+  }
+  .bottom-nav div { flex: 1; text-align: center; font-size: 10px; font-weight: 600; color: var(--text-muted); }
+  .bottom-nav div.on { color: var(--text); }
+
+  /* Coach mark overlay */
+  .coach-overlay { position: absolute; inset: 0; z-index: 50; pointer-events: none; }
+  .spotlight {
+    position: absolute; box-shadow: 0 0 0 9999px rgba(2,6,23,.62);
+    border: 2px solid #fff; border-radius: 12px;
+  }
+  .spotlight.round { border-radius: 50%; }
+  .tooltip {
+    position: absolute; left: 20px; right: 20px;
+    background: #fff; border-radius: 12px; padding: 14px;
+    box-shadow: 0 8px 28px rgba(2,6,23,.3); pointer-events: auto;
+  }
+  .tooltip .step { font-size: 11px; font-weight: 700; color: #3b82f6; margin-bottom: 4px; }
+  .tooltip .msg { font-size: 14px; font-weight: 600; line-height: 1.4; margin-bottom: 12px; }
+  .tooltip .row { display: flex; justify-content: space-between; align-items: center; }
+  .tooltip .skip { border: 0; background: transparent; color: #64748b; font-size: 13px; font-weight: 600; cursor: pointer; padding: 8px 4px; }
+  .tooltip .next { border: 0; background: #1e293b; color: #fff; font-size: 13px; font-weight: 700; border-radius: 8px; padding: 8px 20px; cursor: pointer; }
+  .tooltip .dots { display: flex; gap: 5px; }
+  .tooltip .dots i { width: 6px; height: 6px; border-radius: 50%; background: #cbd5e1; }
+  .tooltip .dots i.on { background: #3b82f6; }
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <h1>Feature Onboarding Coach Marks v2</h1>
+  <p>Rebuilt with real app UI structure. Mocks only, no app code.</p>
+</div>
+
+<!-- ============ TRADE HUB ============ -->
+<div class="feature-section">
+  <h2>Trade Hub onboarding (3 steps)</h2>
+  <p>Trigger: first time opening the Trade Hub.</p>
+  <div class="phones">
+
+    <!-- TH Step 1: real sub-tabs -->
+    <div class="phone-wrap">
+      <div class="phone-label">Step 1: Sub-tabs</div>
+      <div class="phone"><div class="screen">
+        <div class="otc-shell">
+          <div class="otc-main-tabs">
+            <button class="otc-main-tab">Calculator</button>
+            <button class="otc-main-tab is-active">Trade Hub <span class="nav-pro-badge">PRO</span></button>
+            <button class="otc-main-tab">Insights</button>
+          </div>
+          <div class="otc-sugg-subtab-bar">
+            <div class="otc-sugg-subtab-toggle">
+              <button class="otc-sugg-subtab is-active">Suggestions</button>
+              <button class="otc-sugg-subtab">Targets</button>
+              <button class="otc-sugg-subtab">Market Intel</button>
+              <button class="otc-sugg-subtab">Saved</button>
+            </div>
+          </div>
+          <div style="padding:14px 12px;font-size:13px;color:#94a3b8;">Suggestion cards appear here...</div>
+        </div>
+        <div class="bottom-nav"><div>Home</div><div>Matchups</div><div class="on">Trades</div><div>Teams</div><div>More</div></div>
+        <div class="coach-overlay">
+          <div class="spotlight" style="top:96px;left:12px;right:12px;height:40px;"></div>
+          <div class="tooltip" style="bottom:90px;">
+            <div class="step">1 of 3</div>
+            <div class="msg">Start here: Suggestions finds trades for your team.</div>
+            <div class="row">
+              <button class="skip">Skip</button>
+              <div class="dots"><i class="on"></i><i></i><i></i></div>
+              <button class="next">Next</button>
+            </div>
+          </div>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- TH Step 2: real suggestion card -->
+    <div class="phone-wrap">
+      <div class="phone-label">Step 2: Suggestion card</div>
+      <div class="phone"><div class="screen">
+        <div class="otc-shell">
+          <div class="otc-main-tabs">
+            <button class="otc-main-tab">Calculator</button>
+            <button class="otc-main-tab is-active">Trade Hub <span class="nav-pro-badge">PRO</span></button>
+            <button class="otc-main-tab">Insights</button>
+          </div>
+          <div class="otc-sugg-package">
+            <div class="otc-sugg-pkg-meta">
+              <span class="otc-sugg-pkg-value">Fair deal</span>
+              <span class="otc-sugg-pkg-freq">12x traded</span>
+            </div>
+            <div class="pkg-grid">
+              <div>
+                <div class="otc-sugg-pkg-side-label">YOU GET</div>
+                <div class="otc-sugg-pkg-asset">
+                  <span class="otc-sugg-pkg-asset-pos" style="background:#fef3c720;color:#b45309;">WR</span>
+                  <span>Zay Flowers</span>
+                </div>
+              </div>
+              <div style="padding-top:18px;color:#94a3b8;">&#8592;</div>
+              <div>
+                <div class="otc-sugg-pkg-side-label">YOU GIVE</div>
+                <div class="otc-sugg-pkg-asset">
+                  <span class="otc-sugg-pkg-asset-pos" style="background:#fef3c720;color:#b45309;">WR</span>
+                  <span>Nico Collins</span>
+                </div>
+              </div>
+            </div>
+            <button class="otc-sugg-pkg-load-btn">Analyze</button>
+          </div>
+        </div>
+        <div class="bottom-nav"><div>Home</div><div>Matchups</div><div class="on">Trades</div><div>Teams</div><div>More</div></div>
+        <div class="coach-overlay">
+          <div class="spotlight" style="top:150px;left:12px;right:12px;height:190px;"></div>
+          <div class="tooltip" style="bottom:90px;">
+            <div class="step">2 of 3</div>
+            <div class="msg">Tap Analyze to see the full breakdown.</div>
+            <div class="row">
+              <button class="skip">Skip</button>
+              <div class="dots"><i></i><i class="on"></i><i></i></div>
+              <button class="next">Next</button>
+            </div>
+          </div>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- TH Step 3: Calculator tab -->
+    <div class="phone-wrap">
+      <div class="phone-label">Step 3: Calculator tab</div>
+      <div class="phone"><div class="screen">
+        <div class="otc-shell">
+          <div class="otc-main-tabs">
+            <button class="otc-main-tab is-active">Calculator</button>
+            <button class="otc-main-tab">Trade Hub <span class="nav-pro-badge">PRO</span></button>
+            <button class="otc-main-tab">Insights</button>
+          </div>
+          <div style="padding:16px 12px;">
+            <div style="font-size:15px;font-weight:800;margin-bottom:4px;">Trade Calculator</div>
+            <div style="font-size:12px;color:#64748b;margin-bottom:12px;">Add players to each side to check fairness.</div>
+            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:14px;margin-bottom:10px;">
+              <div style="font-size:11px;font-weight:700;color:#94a3b8;letter-spacing:.05em;margin-bottom:8px;">TEAM A</div>
+              <div style="font-size:13px;color:#94a3b8;">Tap to add players...</div>
+            </div>
+            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:14px;">
+              <div style="font-size:11px;font-weight:700;color:#94a3b8;letter-spacing:.05em;margin-bottom:8px;">TEAM B</div>
+              <div style="font-size:13px;color:#94a3b8;">Tap to add players...</div>
+            </div>
+          </div>
+        </div>
+        <div class="bottom-nav"><div>Home</div><div>Matchups</div><div class="on">Trades</div><div>Teams</div><div>More</div></div>
+        <div class="coach-overlay">
+          <div class="spotlight" style="top:12px;left:12px;width:110px;height:44px;"></div>
+          <div class="tooltip" style="bottom:90px;">
+            <div class="step">3 of 3</div>
+            <div class="msg">Or build your own trade from scratch.</div>
+            <div class="row">
+              <button class="skip">Skip</button>
+              <div class="dots"><i></i><i></i><i class="on"></i></div>
+              <button class="next">Done</button>
+            </div>
+          </div>
+        </div>
+      </div></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ============ ADVANCED METRICS ============ -->
+<div class="feature-section">
+  <h2>Advanced Metrics onboarding (3 steps)</h2>
+  <p>Trigger: first time opening Advanced Metrics.</p>
+  <div class="phones">
+
+    <!-- AM Step 1: the metrics table -->
+    <div class="phone-wrap">
+      <div class="phone-label">Step 1: Metrics table</div>
+      <div class="phone"><div class="screen">
+
+        <div class="am-cmdbar">
+          <div class="am-cmd-title">Advanced Metrics</div>
+          <div class="am-cmd-actions">
+            <button class="am-cmd-btn" aria-label="Search players">&#128269;</button>
+            <button class="am-cmd-btn" id="mockGraphBtn" aria-label="Graph Metrics" title="Graph Metrics">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 2v10h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="5" cy="9" r="1.3" fill="currentColor"/><circle cx="8" cy="5.5" r="1.3" fill="currentColor"/><circle cx="11" cy="7.5" r="1.3" fill="currentColor"/></svg>
+            </button>
+            <button class="am-cmd-btn" aria-label="Filters">&#9783;</button>
+            <button class="am-cmd-btn" aria-label="More actions">&#8226;&#8226;&#8226;</button>
+          </div>
+        </div>
+          <table class="am-table">
+            <thead><tr>
+              <th class="am-rank">#</th><th class="am-player am-sortable">Player &#8597;</th>
+              <th class="am-games">G</th><th class="am-sortable">YAC / Carry &#8597;</th>
+            </tr></thead>
+            <tbody>
+              <tr><td class="am-rank">1</td><td class="am-player">Jeremiyah Love</td><td class="am-games">4</td>
+                <td class="am-barcell"><div class="am-bar-track"><div class="am-bar" style="width:92%;background:#16a34a;"></div></div><div class="am-bar-val">4.8</div></td></tr>
+              <tr><td class="am-rank">2</td><td class="am-player">Ashton Jeanty</td><td class="am-games">4</td>
+                <td class="am-barcell"><div class="am-bar-track"><div class="am-bar" style="width:81%;background:#16a34a;"></div></div><div class="am-bar-val">4.2</div></td></tr>
+              <tr><td class="am-rank">3</td><td class="am-player">Kenneth Walker III</td><td class="am-games">3</td>
+                <td class="am-barcell"><div class="am-bar-track"><div class="am-bar" style="width:74%;"></div></div><div class="am-bar-val">3.9</div></td></tr>
+              <tr><td class="am-rank">4</td><td class="am-player">DeVon Achane</td><td class="am-games">4</td>
+                <td class="am-barcell"><div class="am-bar-track"><div class="am-bar" style="width:63%;"></div></div><div class="am-bar-val">3.3</div></td></tr>
+              <tr><td class="am-rank">5</td><td class="am-player">Bijan Robinson</td><td class="am-games">4</td>
+                <td class="am-barcell"><div class="am-bar-track"><div class="am-bar" style="width:55%;"></div></div><div class="am-bar-val">2.9</div></td></tr>
+            </tbody>
+          </table>
+        <div class="bottom-nav"><div>Home</div><div>Matchups</div><div>Trades</div><div>Teams</div><div class="on">More</div></div>
+        <div class="coach-overlay">
+          <div class="spotlight" style="top:52px;left:8px;right:8px;height:270px;"></div>
+          <div class="tooltip" style="bottom:90px;">
+            <div class="step">1 of 3</div>
+            <div class="msg">Every row is a metric. Tap a column to sort, search to filter.</div>
+            <div class="row">
+              <button class="skip">Skip</button>
+              <div class="dots"><i class="on"></i><i></i><i></i></div>
+              <button class="next">Next</button>
+            </div>
+          </div>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- AM Step 2: Graph Metrics button -->
+    <div class="phone-wrap">
+      <div class="phone-label">Step 2: Graph Metrics button</div>
+      <div class="phone"><div class="screen">
+
+        <div class="am-cmdbar">
+          <div class="am-cmd-title">Advanced Metrics</div>
+          <div class="am-cmd-actions">
+            <button class="am-cmd-btn" aria-label="Search players">&#128269;</button>
+            <button class="am-cmd-btn" id="mockGraphBtn" aria-label="Graph Metrics" title="Graph Metrics">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 2v10h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="5" cy="9" r="1.3" fill="currentColor"/><circle cx="8" cy="5.5" r="1.3" fill="currentColor"/><circle cx="11" cy="7.5" r="1.3" fill="currentColor"/></svg>
+            </button>
+            <button class="am-cmd-btn" aria-label="Filters">&#9783;</button>
+            <button class="am-cmd-btn" aria-label="More actions">&#8226;&#8226;&#8226;</button>
+          </div>
+        </div>
+          <table class="am-table">
+            <thead><tr>
+              <th class="am-rank">#</th><th class="am-player am-sortable">Player &#8597;</th>
+              <th class="am-games">G</th><th class="am-sortable">YAC / Carry &#8597;</th>
+            </tr></thead>
+            <tbody>
+              <tr><td class="am-rank">1</td><td class="am-player">Jeremiyah Love</td><td class="am-games">4</td>
+                <td class="am-barcell"><div class="am-bar-track"><div class="am-bar" style="width:92%;background:#16a34a;"></div></div><div class="am-bar-val">4.8</div></td></tr>
+              <tr><td class="am-rank">2</td><td class="am-player">Ashton Jeanty</td><td class="am-games">4</td>
+                <td class="am-barcell"><div class="am-bar-track"><div class="am-bar" style="width:81%;background:#16a34a;"></div></div><div class="am-bar-val">4.2</div></td></tr>
+              <tr><td class="am-rank">3</td><td class="am-player">Kenneth Walker III</td><td class="am-games">3</td>
+                <td class="am-barcell"><div class="am-bar-track"><div class="am-bar" style="width:74%;"></div></div><div class="am-bar-val">3.9</div></td></tr>
+              <tr><td class="am-rank">4</td><td class="am-player">DeVon Achane</td><td class="am-games">4</td>
+                <td class="am-barcell"><div class="am-bar-track"><div class="am-bar" style="width:63%;"></div></div><div class="am-bar-val">3.3</div></td></tr>
+              <tr><td class="am-rank">5</td><td class="am-player">Bijan Robinson</td><td class="am-games">4</td>
+                <td class="am-barcell"><div class="am-bar-track"><div class="am-bar" style="width:55%;"></div></div><div class="am-bar-val">2.9</div></td></tr>
+            </tbody>
+          </table>
+        <div class="bottom-nav"><div>Home</div><div>Matchups</div><div>Trades</div><div>Teams</div><div class="on">More</div></div>
+        <div class="coach-overlay">
+          <div class="spotlight round" style="top:56px;right:86px;width:44px;height:44px;"></div>
+          <div class="tooltip" style="bottom:90px;">
+            <div class="step">2 of 3</div>
+            <div class="msg">Tap Graph Metrics to visualize any two metrics as a scatter plot.</div>
+            <div class="row">
+              <button class="skip">Skip</button>
+              <div class="dots"><i></i><i class="on"></i><i></i></div>
+              <button class="next">Next</button>
+            </div>
+          </div>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- AM Step 3: inside the graph modal -->
+    <div class="phone-wrap">
+      <div class="phone-label">Step 3: Graph modal</div>
+      <div class="phone"><div class="screen">
+        <div style="position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(2,6,23,.45);"></div>
+        <div class="am-graph-modal-card" style="position:absolute;top:0;left:0;right:0;">
+          <div class="am-legend-head">
+            <span>Graph Metrics</span>
+            <button class="am-legend-close" aria-label="Close">&times;</button>
+          </div>
+          <div class="am-graph-controls">
+            <div class="am-gctrl">
+              <label>X axis</label>
+              <select class="am-mini-select"><option>YAC / Carry</option></select>
+            </div>
+            <div class="am-gctrl">
+              <label>Y axis</label>
+              <select class="am-mini-select"><option>Broken Tackles / Carry</option></select>
+            </div>
+          </div>
+          <div class="am-graph-canvas">
+            <div class="quad-v"></div>
+            <div class="quad-h"></div>
+            <div class="quad-lbl" style="top:6px;left:8px;">Elite</div>
+            <div class="quad-lbl" style="top:6px;right:8px;">Boom/bust</div>
+            <div class="quad-lbl" style="bottom:6px;left:8px;">Avoid</div>
+            <div class="quad-lbl" style="bottom:6px;right:8px;">Steady</div>
+            <div class="gdot" style="top:28%;left:64%;background:#16a34a;width:15px;height:15px;border-width:3px;"></div>
+            <div class="gdot" style="top:55%;left:40%;background:#3b82f6;"></div>
+            <div class="gdot" style="top:70%;left:60%;background:#f59e0b;"></div>
+            <div class="gdot" style="top:40%;left:25%;background:#8b5cf6;"></div>
+          </div>
+        </div>
+        <div class="bottom-nav"><div>Home</div><div>Matchups</div><div>Trades</div><div>Teams</div><div class="on">More</div></div>
+        <div class="coach-overlay">
+          <div class="spotlight round" style="top:206px;left:224px;width:34px;height:34px;"></div>
+          <div class="tooltip" style="bottom:90px;">
+            <div class="step">3 of 3</div>
+            <div class="msg">Tap any dot for the player card. Quadrants show elite vs bust.</div>
+            <div class="row">
+              <button class="skip">Skip</button>
+              <div class="dots"><i></i><i></i><i class="on"></i></div>
+              <button class="next">Done</button>
+            </div>
+          </div>
+        </div>
+      </div></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ============ START/SIT ============ -->
+<div class="feature-section">
+  <h2>Start/Sit onboarding (2 steps)</h2>
+  <p>Trigger: first time opening Start/Sit.</p>
+  <div class="phones">
+
+    <!-- SS Step 1: verdict -->
+    <div class="phone-wrap">
+      <div class="phone-label">Step 1: Verdict badge</div>
+      <div class="phone"><div class="screen">
+        <div class="ss-verdict">
+          <span class="ss-verdict-pill">START</span>
+          <span class="ss-verdict-name">Zay Flowers</span>
+          <span class="ss-verdict-why">Top-12 WR projection vs a bottom-5 pass defense. 87 confidence.</span>
+        </div>
+        <div class="ss-player-row">
+          <div class="ss-rank">WR14</div>
+          <div class="ss-name">Nico Collins</div>
+          <div class="ss-proj">14.2 pts</div>
+        </div>
+        <div class="ss-player-row">
+          <div class="ss-rank">WR22</div>
+          <div class="ss-name">Jayden Higgins</div>
+          <div class="ss-proj">11.8 pts</div>
+        </div>
+        <div class="bottom-nav"><div>Home</div><div class="on">Matchups</div><div>Trades</div><div>Teams</div><div>More</div></div>
+        <div class="coach-overlay">
+          <div class="spotlight" style="top:12px;left:12px;right:12px;height:86px;"></div>
+          <div class="tooltip" style="bottom:90px;">
+            <div class="step">1 of 2</div>
+            <div class="msg">Green means start, red means sit. The number is confidence.</div>
+            <div class="row">
+              <button class="skip">Skip</button>
+              <div class="dots"><i class="on"></i><i></i></div>
+              <button class="next">Next</button>
+            </div>
+          </div>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- SS Step 2: compare -->
+    <div class="phone-wrap">
+      <div class="phone-label">Step 2: Compare</div>
+      <div class="phone"><div class="screen">
+        <div class="ss-player-row">
+          <div class="ss-rank">WR14</div>
+          <div class="ss-name">Nico Collins</div>
+          <div class="ss-proj">14.2 pts</div>
+        </div>
+        <div class="ss-player-row" style="border-color:#1d4ed8;border-width:2px;">
+          <div class="ss-rank">WR22</div>
+          <div class="ss-name">Jayden Higgins</div>
+          <div class="ss-proj">11.8 pts</div>
+        </div>
+        <div class="ss-compare-hint">Tap two players to compare them head-to-head</div>
+        <div class="bottom-nav"><div>Home</div><div class="on">Matchups</div><div>Trades</div><div>Teams</div><div>More</div></div>
+        <div class="coach-overlay">
+          <div class="spotlight" style="top:150px;left:12px;right:12px;height:56px;"></div>
+          <div class="tooltip" style="bottom:90px;">
+            <div class="step">2 of 2</div>
+            <div class="msg">Tap two players to compare them head-to-head.</div>
+            <div class="row">
+              <button class="skip">Skip</button>
+              <div class="dots"><i></i><i class="on"></i></div>
+              <button class="next">Done</button>
+            </div>
+          </div>
+        </div>
+      </div></div>
+    </div>
+
+  </div>
+</div>
+
+<div style="max-width:1280px;margin:40px auto 0;font-size:13px;color:#64748b;">
+  <strong>Implementation notes:</strong> persist dismissal in localStorage per feature key
+  (e.g. <code>onboarded-trade-hub</code>). Advance on Next, treat outside-tap as Skip.
+  Spotlight positions above are tuned to the mock layout; real implementation should
+  measure the target element with getBoundingClientRect().
+</div>
+
+</body>
+</html>
