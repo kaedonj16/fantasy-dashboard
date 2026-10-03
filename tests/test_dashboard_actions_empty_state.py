@@ -21,8 +21,9 @@ def test_action_queue_has_nonblank_fallback():
     # The queue body is driven by a computed inner block, not four raw cards.
     assert "_action_inner" in src
     assert 'id="os-jump-actions">{_action_inner}' in src
-    # Guard is "any card has content", covering the clean-roster case too.
-    assert "any((c or " in src
+    # Guard is "any card has content" (filtered + sorted by urgency),
+    # covering the clean-roster case too.
+    assert 'if (h or "").strip()' in src or "if _action_cards:" in src
 
 
 def test_unlinked_viewer_gets_link_prompt():

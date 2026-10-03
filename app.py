@@ -9437,10 +9437,13 @@ def _viewer_lineup_alert_html(ctx: dict, viewer_roster_id) -> str:
             f"<li>{html.escape(i['detail'])}</li>" for i in issues[:6]
         )
         return f"""
-        <section class="os-card lineup-alert-card">
+        <section class="os-card lineup-alert-card" data-action-card="lineup">
           <div class="lineup-alert-head">
             <span class="lineup-alert-title"><svg class="lineup-alert-ico" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M12 3 22 20H2L12 3Zm-1 6h2v5h-2V9Zm0 7h2v2h-2v-2Z"/></svg>{title} for Week {current_week}</span>
-            <a class="os-section-link" href="{fix_url}">Fix your lineup &rarr;</a>
+            <span class="os-card-actions">
+              <a class="recap-generate-btn os-action-cta" href="{fix_url}">Fix lineup</a>
+              <button type="button" class="os-action-dismiss" data-dismiss-card="lineup" aria-label="Dismiss">&times;</button>
+            </span>
           </div>
           <ul class="lineup-alert-list">{items}</ul>
         </section>"""
@@ -9513,10 +9516,20 @@ def _roster_moves_alert_html(ctx: dict, viewer_roster_id) -> str:
         items = "".join(
             f"<li>{html.escape(i['detail'])}</li>" for i in issues[:5]
         )
+        platform = ctx.get("platform", "sleeper")
+        season = ctx.get("current_season") or 0
+        league_id = ctx.get("league_id", "")
+        _roster_url = url_for(
+            "page_teams", platform=platform, season=season, league_id=league_id,
+        )
         return f"""
-        <section class="os-card lineup-alert-card roster-moves-card">
+        <section class="os-card lineup-alert-card roster-moves-card" data-action-card="roster">
           <div class="lineup-alert-head">
             <span class="lineup-alert-title">{title}</span>
+            <span class="os-card-actions">
+              <a class="recap-generate-btn os-action-cta" href="{html.escape(_roster_url)}">Review roster</a>
+              <button type="button" class="os-action-dismiss" data-dismiss-card="roster" aria-label="Dismiss">&times;</button>
+            </span>
           </div>
           <ul class="lineup-alert-list">{items}</ul>
         </section>"""
@@ -9686,10 +9699,13 @@ def _trade_window_card_html(ctx: dict, viewer_roster_id) -> str:
         items = "".join(f"<li>{line}</li>" for line in lines)
         urgent_cls = " tw-urgent" if vw["urgent"] and verdict != "hold" else ""
         return f"""
-        <section class="os-card trade-window-card tw-{verdict}{urgent_cls}">
+        <section class="os-card trade-window-card tw-{verdict}{urgent_cls}" data-action-card="trade">
           <div class="lineup-alert-head">
             <span class="lineup-alert-title">{section_label}: {titles[verdict]}</span>
-            <a class="os-section-link" href="{html.escape(_trade_url)}">Find trade targets &rarr;</a>
+            <span class="os-card-actions">
+              <a class="recap-generate-btn os-action-cta" href="{html.escape(_trade_url)}">View trades</a>
+              <button type="button" class="os-action-dismiss" data-dismiss-card="trade" aria-label="Dismiss">&times;</button>
+            </span>
           </div>
           <ul class="lineup-alert-list">{items}</ul>
         </section>"""
@@ -11498,28 +11514,31 @@ def _render_do_next_waiver_card(
           </div>"""
 
     waiver_list_html = ""
-    waivers_link = ""
+    waivers_cta = ""
     if not undrafted:
         waiver_body = full_rows or '<p class="os-do-next-empty">No waiver values available yet.</p>'
         waiver_list_html = f"""
           <div class="os-waiver-list" id="do-next-waiver-body">
             {waiver_body}
           </div>"""
-        waivers_link = (
-            f'<a class="os-section-link" href="{html.escape(_wv_url)}">'
-            f"View waivers &rarr;</a>"
+        waivers_cta = (
+            f'<a class="recap-generate-btn os-action-cta" href="{html.escape(_wv_url)}">'
+            f"Claim players</a>"
         )
 
     return f"""
-        <section class="os-card os-action-card os-do-next-card{collapsed_cls}">
+        <section class="os-card os-action-card os-do-next-card{collapsed_cls}" data-action-card="waiver">
           <div class="os-section-head">
             <div class="os-section-head-content">
               <h2 class="os-section-title">Next steps</h2>
               <div class="os-section-subtitle">{subtitle}</div>
             </div>
             <div class="os-section-head-actions">
-              {waivers_link}
-              {expand_btn}
+              <span class="os-card-actions">
+                {waivers_cta}
+                {expand_btn}
+                <button type="button" class="os-action-dismiss" data-dismiss-card="waiver" aria-label="Dismiss">&times;</button>
+              </span>
             </div>
           </div>
           {waiver_list_html}
