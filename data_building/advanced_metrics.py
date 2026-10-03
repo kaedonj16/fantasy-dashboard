@@ -59,8 +59,8 @@ def premium_metrics_exposed() -> bool:
 # shows them to everyone. schedule_ease stays free: the Schedule Assistant
 # already ranks schedule ease for everyone. Gating any of these here would
 # be incoherent.
-# PRO is the proprietary "answers" layer: the full FPOE family (per-game),
-# WOPR, usage/xFP trends, consistency/volatility answers
+# PRO is the proprietary "answers" layer: the full FPOE family (season totals
+# and per-game), WOPR, usage/xFP trends, consistency/volatility answers
 # (fp_cv), proprietary composites (role_score,
 # target_quality_score), and proprietary value (vorp, war).
 # Enforced server-side in routes/advanced_metrics_bp.py (leaderboard +
@@ -71,6 +71,11 @@ PRO_METRICS = frozenset({
     "half_ppr_over_expected_per_game", "standard_over_expected_per_game",
     "wopr", "opportunity_trend", "xfp_trend", "breakout_trend_score",
     "fp_cv",
+    # Season-total FPOE family: the "answers" the per-game rates are built on.
+    # expected_ppr_per_game stays free (it anchors the Key Metrics / Start-Sit
+    # views), but the season-total expected/over-expected answers are PRO.
+    "expected_ppr", "expected_half_ppr", "expected_standard",
+    "ppr_over_expected", "half_ppr_over_expected", "standard_over_expected",
     "role_score", "target_quality_score",
     "vorp", "war",
 })
@@ -2778,7 +2783,7 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "yac_per_carry":        {"label": "YAC / Carry",         "category": "Rushing", "positions": ["RB", "QB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "Yards after contact per carry: what the runner created himself after first contact (PFR via nflverse). Higher means more tackle-breaking. Pairs with YBC / Carry."},
     "epa_vs_stacked_box":   {"label": "EPA vs 8+ Box",       "category": "Rushing", "positions": ["RB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "Expected Points Added per rush against 8 or more defenders in the box (FTN + nflverse)."},
     "elusive_rating":       {"label": "Elusive Rating",      "category": "Rushing", "positions": ["RB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "PFF metric for yards created after contact and missed tackles forced, independent of blocking."},
-    "avoided_tackles_pg":   {"label": "Broken Tackles/Carry", "category": "Rushing", "positions": ["RB"], "min_vol": _V_CARRIES, "desc": "Broken tackles per carry on rush attempts (PFR charting via nflverse).", "computed_sql": "m.avoided_tackles::float / NULLIF(v.vol, 0)", "computed_null": "m.avoided_tackles IS NOT NULL"},
+    "avoided_tackles_per_carry":   {"label": "Broken Tackles/Carry", "category": "Rushing", "positions": ["RB"], "min_vol": _V_CARRIES, "desc": "Broken tackles per carry on rush attempts (PFR charting via nflverse).", "computed_sql": "m.avoided_tackles::float / NULLIF(v.vol, 0)", "computed_null": "m.avoided_tackles IS NOT NULL"},
     "rz_opp_share":         {"label": "RZ Opp Share",        "category": "Rushing", "positions": ["RB"], "pct": True, "pct_frac": True, "min_vol": _V_GAMES, "desc": "Share of the team's red-zone opportunities (carries + targets inside the 20) that went to this player; the goal-line role in one number."},
     # Touchdown group: rate, season total, and per-game kept adjacent.
     "rush_td_rate":         {"label": "Rush TD Rate",        "category": "Rushing", "subcategory": "Rushing",   "positions": ["RB", "QB"], "efficiency": True, "pct": True, "pct_frac": True, "min_vol": _V_CARRIES, "desc": "Percent of carries that result in a touchdown."},
@@ -5011,7 +5016,7 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                 "route_participation": ("games", 4),
                 "total_routes":       ("games", 4),
                 "routes_per_game":    ("games", 4),
-                "avoided_tackles_pg": ("total_carries", 20),
+                "avoided_tackles_per_carry": ("total_carries", 20),
                 "fpts_per_carry":     ("total_carries", 20),
                 "fpts_per_target":    ("total_targets", 15),
                 "ngs_avg_time_to_throw": ("total_pass_att", 50),
@@ -5105,7 +5110,7 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                 if _games > 0 and _row.get("total_routes") is not None:
                     _row["routes_per_game"] = _safe(_row.get("total_routes")) / _games
                 if _carries > 0 and _row.get("avoided_tackles") is not None:
-                    _row["avoided_tackles_pg"] = _safe(_row.get("avoided_tackles")) / _carries
+                    _row["avoided_tackles_per_carry"] = _safe(_row.get("avoided_tackles")) / _carries
                 _touches = _safe(_row.get("total_touches"))
                 _snaps = _safe(_row.get("total_snaps"))
                 if _carries > 0 and _row.get("explosive_runs_10_plus") is not None:

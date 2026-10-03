@@ -103,6 +103,8 @@ def _pro_row(**extra):
         vorp=42.0,
         war=1.8,
         target_quality_score=12.5,
+        expected_ppr=180.5,
+        ppr_over_expected=12.3,
     )
     row.update(extra)
     return row
@@ -123,7 +125,8 @@ def test_modal_strips_pro_metrics_for_non_pro(offline_client, monkeypatch):
     assert resp.status_code == 200, resp.get_data(as_text=True)
     metrics = resp.get_json()["metrics"]
     for key in ("ppr_over_expected_per_game", "wopr", "fp_cv", "vorp", "war",
-                "target_quality_score", "role_score", "player_evaluation_score"):
+                "target_quality_score", "role_score", "player_evaluation_score",
+                "expected_ppr", "ppr_over_expected"):
         assert key not in metrics, key
     # Free metrics still ship.
     assert metrics["yards_per_target"] == 8.5
@@ -147,6 +150,9 @@ def test_modal_keeps_pro_metrics_for_pro(offline_client, monkeypatch):
     assert metrics["ppr_over_expected_per_game"] == 2.5
     assert metrics["wopr"] == 0.55
     assert metrics["vorp"] == 42.0
+    # Season-total FPOE family is PRO too: kept for PRO users.
+    assert metrics["expected_ppr"] == 180.5
+    assert metrics["ppr_over_expected"] == 12.3
     # Blended eval score lands for PRO (role + PFF grade): 82*0.65 + 90.4*0.35.
     assert metrics["player_evaluation_score"] == 84.9
 
@@ -168,8 +174,9 @@ def test_strip_pro_metrics_helper():
 
 
 def test_pro_metrics_set_covers_full_answers_layer():
-    """The 12-metric PRO set: FPOE family, WOPR, trends, the breakout
-    composite, consistency, composites, value. Free-anchoring metrics stay out."""
+    """The 18-metric PRO set: FPOE family (season totals + per-game), WOPR,
+    trends, the breakout composite, consistency, composites, value.
+    Free-anchoring metrics stay out."""
     from data_building.advanced_metrics import PRO_METRICS
 
     assert PRO_METRICS == frozenset({
@@ -177,6 +184,8 @@ def test_pro_metrics_set_covers_full_answers_layer():
         "half_ppr_over_expected_per_game", "standard_over_expected_per_game",
         "wopr", "opportunity_trend", "xfp_trend", "breakout_trend_score",
         "fp_cv",
+        "expected_ppr", "expected_half_ppr", "expected_standard",
+        "ppr_over_expected", "half_ppr_over_expected", "standard_over_expected",
         "role_score", "target_quality_score",
         "vorp", "war",
     })
