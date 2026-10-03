@@ -22062,6 +22062,7 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
 .pm-ss-start .pm-ss-verdict { color: var(--win); }
 .pm-ss-bench .pm-ss-verdict { color: color-mix(in srgb, var(--warning) 72%, var(--text)); }
 .pm-ss-slot { padding: 2px 8px; border-radius: 8px; background: var(--card); border: 1px solid var(--border); font-size: 11.5px; font-weight: 700; color: var(--text); white-space: nowrap; }
+.pm-ss-grade { padding: 2px 8px; border-radius: 8px; background: var(--card); border: 1px solid var(--border); font-size: 11.5px; font-weight: 700; color: var(--text); white-space: nowrap; }
 .pm-ss-why { color: var(--muted, var(--text-muted)); }
 .pm-ss-why b { color: var(--text); font-weight: 700; }
 .pm-ss-text { color: var(--muted, var(--text-muted)); }
@@ -42727,9 +42728,12 @@ a, button, [role="button"], [role="tab"], summary, label,
 .mb-info--bye { opacity: .45; }
 
 .mb-nameline { display: flex; align-items: baseline; gap: 5px; min-width: 0; line-height: 1.2; }
-/* Both sides read name-first ("C.J. Stroud HOU • QB"); the right column's
-   block is right-aligned by .mb-cell-r .mb-info. */
+/* Right side reads TEAM • POS first ("HOU • QB C.J. Stroud"), flipped vs the
+   left's name-first order; the block itself is right-aligned by
+   .mb-cell-r .mb-info. (Phones reset this below to keep the name-first
+   two-line stack.) */
 .mb-cell-r .mb-nameline { flex-direction: row; justify-content: flex-end; }
+.mb-cell-r .mb-nameline .mb-team { order: -1; }
 /* Full text, no ellipsis: names, game line and box score wrap rather than clip. */
 .mb-nameline { flex-wrap: wrap; }
 .mb-nameline .pname { font-size: 13px; font-weight: 700; color: var(--accent); white-space: normal; overflow-wrap: anywhere; min-width: 0; }
@@ -42846,6 +42850,8 @@ a, button, [role="button"], [role="tab"], summary, label,
     }
     .mb-cell-r .mb-nameline .mb-team {
         align-self: flex-end;
+        /* Phones keep the name-first stack: name on top, TEAM • POS beneath. */
+        order: 0;
     }
     /* The game line ("Sun 1:00 pm @ IND") and stat line ("(#3 / 18.0)") are
        siblings of the name block, not inside it, so the sub-line fix above
@@ -43297,32 +43303,33 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 .hp-mb-team { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-muted); }
 .hp-mb-score { font-size: 26px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .hp-mb-head .is-right { text-align: right; }
-.hp-mb .m-win-bar { display: flex; align-items: center; gap: 8px; padding: 0 14px 12px; }
-.hp-mb .m-wp-pct { font-size: 11px; font-weight: 800; min-width: 30px; }
-.hp-mb .m-wp-track { flex: 1; height: 8px; border-radius: 4px; }
-.hp-mb .mb-row { display: grid; grid-template-columns: minmax(0, 1fr) 40px minmax(0, 1fr); align-items: center; border-bottom: 1px solid var(--border); }
-.hp-mb .mb-row:last-child { border-bottom: none; }
-.hp-mb .mb-cell { min-width: 0; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; justify-content: center; }
-.hp-mb .mb-cell-row { display: flex; gap: 7px; min-width: 0; align-items: center; }
-.hp-mb .mb-cell-r .mb-cell-row { flex-direction: row-reverse; text-align: right; }
-.hp-mb .mb-info { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 1px; }
-.hp-mb .mb-cell-r .mb-info { align-items: flex-end; }
-.hp-mb .mb-nameline { display: flex; align-items: baseline; gap: 5px; min-width: 0; line-height: 1.2; flex-wrap: wrap; }
-.hp-mb .mb-cell-r .mb-nameline { flex-direction: row; justify-content: flex-end; }
-.hp-mb .mb-nameline .pname { font-size: 13px; font-weight: 700; color: var(--accent); white-space: normal; overflow-wrap: anywhere; min-width: 0; }
-.hp-mb .mb-team { font-size: 10px; font-weight: 700; color: var(--text-subtle); text-transform: uppercase; flex: 0 0 auto; }
-.hp-mb .mb-game { font-size: 10.5px; color: var(--text-muted); white-space: normal; overflow-wrap: anywhere; max-width: 100%; line-height: 1.3; }
-.hp-mb .mb-score { flex: 0 0 auto; align-self: center; text-align: right; font-variant-numeric: tabular-nums; line-height: 1.1; }
-.hp-mb .mb-cell-r .mb-score { text-align: left; }
-.hp-mb .mb-a { display: block; font-size: 16px; font-weight: 800; color: var(--accent); }
-.hp-mb .mb-a.mb-win { color: var(--win); }
-.hp-mb .mb-pj { display: block; font-size: 10px; font-weight: 600; color: var(--text-muted); }
-.hp-mb .mb-pos { display: flex; align-items: center; justify-content: center; }
-.hp-mb .pos-badge { height: 25px; width: 36px; padding: 1px 6px; text-align: center; border-radius: 6px; font-size: 12px; font-weight: 700; color: #ffffff; align-content: center; }
-.hp-mb .pos-badge.QB { background: var(--brand-blue); }
-.hp-mb .pos-badge.RB { background: #22c55e; }
-.hp-mb .pos-badge.WR { background: #f59e0b; }
-.hp-mb .mb-pos .pos-badge { width: 34px; height: 20px; font-size: 10px; padding: 1px 4px; }
+.m-win-bar { display: flex; align-items: center; gap: 8px; padding: 0 14px 12px; }
+.m-wp-pct { font-size: 11px; font-weight: 800; min-width: 30px; }
+.m-wp-track { flex: 1; height: 8px; border-radius: 4px; }
+.mb-row { display: grid; grid-template-columns: minmax(0, 1fr) 40px minmax(0, 1fr); align-items: center; border-bottom: 1px solid var(--border); }
+.mb-row:last-child { border-bottom: none; }
+.mb-cell { min-width: 0; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; justify-content: center; }
+.mb-cell-row { display: flex; gap: 7px; min-width: 0; align-items: center; }
+.mb-cell-r .mb-cell-row { flex-direction: row-reverse; text-align: right; }
+.mb-info { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 1px; }
+.mb-cell-r .mb-info { align-items: flex-end; }
+.mb-nameline { display: flex; align-items: baseline; gap: 5px; min-width: 0; line-height: 1.2; flex-wrap: wrap; }
+.mb-cell-r .mb-nameline { flex-direction: row; justify-content: flex-end; }
+.mb-cell-r .mb-nameline .mb-team { order: -1; }
+.mb-nameline .pname { font-size: 13px; font-weight: 700; color: var(--accent); white-space: normal; overflow-wrap: anywhere; min-width: 0; }
+.mb-team { font-size: 10px; font-weight: 700; color: var(--text-subtle); text-transform: uppercase; flex: 0 0 auto; }
+.mb-game { font-size: 10.5px; color: var(--text-muted); white-space: normal; overflow-wrap: anywhere; max-width: 100%; line-height: 1.3; }
+.mb-score { flex: 0 0 auto; align-self: center; text-align: right; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.mb-cell-r .mb-score { text-align: left; }
+.mb-a { display: block; font-size: 16px; font-weight: 800; color: var(--accent); }
+.mb-a.mb-win { color: var(--win); }
+.mb-pj { display: block; font-size: 10px; font-weight: 600; color: var(--text-muted); }
+.mb-pos { display: flex; align-items: center; justify-content: center; }
+.pos-badge { height: 25px; width: 36px; padding: 1px 6px; text-align: center; border-radius: 6px; font-size: 12px; font-weight: 700; color: #ffffff; align-content: center; }
+.pos-badge.QB { background: var(--brand-blue); }
+.pos-badge.RB { background: #22c55e; }
+.pos-badge.WR { background: #f59e0b; }
+.mb-pos .pos-badge { width: 34px; height: 20px; font-size: 10px; padding: 1px 4px; }
 /* ScoreZone: .rz-* from static/scorezone.js (_renderGameStrip, _playerRowHtml) */
 .hp-rz { background: var(--card); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; box-shadow: 0 18px 44px rgba(2, 6, 23, 0.16); --rz-card: var(--card); --rz-text: var(--text); --rz-muted: var(--text-muted); --rz-border: var(--border); --rz-red: #dc2626; }
 :root[data-theme="dark"] .hp-rz { --rz-red: #f04545; }

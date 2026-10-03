@@ -14366,11 +14366,13 @@ def api_player_startsit_strip():
                 out = {"state": "ok", "week": week, "compare": True,
                        "tone": "start", "verdict": "Would start for you",
                        "slot": row.get("guest_slot") or "",
+                       "grade": row.get("start_score_pct"),
                        "reason": _reason}
             else:
                 out = {"state": "ok", "week": week, "compare": True,
                        "tone": "bench", "verdict": "Bench for you",
                        "slot": row.get("guest_slot") or "",
+                       "grade": row.get("start_score_pct"),
                        "reason": f"Projects {proj} · {row.get('guest_note') or ''}"}
         else:
             _rank = next((i + 1 for i, p in enumerate(_roster_rows)
@@ -14395,7 +14397,8 @@ def api_player_startsit_strip():
                     _parts.append(_note)
                 out = {"state": "ok", "week": week, "compare": True,
                        "tone": "start", "verdict": "Start",
-                       "slot": _slot, "reason": " · ".join(_parts)}
+                       "slot": _slot, "grade": row.get("start_score_pct"),
+                       "reason": " · ".join(_parts)}
             else:
                 _parts = [f"Projects {proj}"]
                 _starters = [p for p in _roster_rows if p.get("start")]
@@ -14408,6 +14411,7 @@ def api_player_startsit_strip():
                 out = {"state": "ok", "week": week, "compare": True,
                        "tone": "bench", "verdict": "Bench",
                        "slot": f"{row_pos}{_rank}" if _rank else row_pos,
+                       "grade": row.get("start_score_pct"),
                        "reason": " · ".join(_parts)}
 
     if len(_SS_STRIP_CACHE) > 512:
