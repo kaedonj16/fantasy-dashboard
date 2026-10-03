@@ -18572,7 +18572,11 @@ function _cmpLoadGameLogs(pid, position, containerId) {
         window.brEmptyState(el, { icon: 'search', title: 'No game logs', message: 'No game-by-game data is available for this player yet.', compact: true });
         return;
       }
-      el.innerHTML = _buildStatsHTML(logsByYear, true, position || '', data.season_teams || {});
+      el.innerHTML = _buildStatsHTML(logsByYear, true, position || '', data.season_teams || {}, {
+        // The compare modal's Stats tab shows the season summary strip only;
+        // the standalone /compare page keeps the full game-by-game logs.
+        summaryOnly: !!document.querySelector('#playerModal.compare-mode') && !document.querySelector('[data-page="compare"]'),
+      });
     })
     .catch(() => {
       if (el.isConnected) window.brErrorState(el, 'Could not load game logs.', null, { compact: true });
@@ -18970,6 +18974,12 @@ function cmpSwitchTab(tab) {
     if (on && window.brAnimateTabPanel) window.brAnimateTabPanel(p, newIdx - oldIdx);
   });
   if (window._cmpSlideTabs) window._cmpSlideTabs.sync(true);
+  // On narrow screens the tab bar scrolls horizontally; keep the newly-active
+  // tab visible instead of leaving it clipped off-screen.
+  const _onTab = newIdx >= 0 ? cmpBtns[newIdx] : null;
+  if (_onTab && _onTab.scrollIntoView) {
+    try { _onTab.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (_) {}
+  }
   // Lazy-load each tab's data on first open (see _compareWireView). Stats =
   // game logs; both Advanced Metrics and Usage are populated by the same
   // per-side metrics load.

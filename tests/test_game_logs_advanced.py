@@ -178,4 +178,4 @@ def test_gamelog_js_toggle_wired_in_both_modals():
     pm = (ROOT / "static" / "player_modal.js").read_text()
     assert "data.season_teams || {}" in pm
     app = (ROOT / "static" / "app.js").read_text()
-    assert "_buildStatsHTML(logsByYear, true, position || '', data.season_teams || {})" in app
+    assert "_buildStatsHTML(logsByYear, true, position || '', data.season_teams || {}" in app
