@@ -20431,6 +20431,7 @@ img, svg, canvas {
     transition: transform 0.2s ease;
     width: 12px;
     display: inline-block;
+    flex-shrink: 0; /* never let the chevron squeeze into the title */
 }
 
 /* Collapsed = arrow points right. Rotating the original unicode glyph keeps a
@@ -20444,6 +20445,7 @@ img, svg, canvas {
     font-size: 14px;
     font-weight: 600;
     color: var(--text);
+    white-space: nowrap; /* "2026 Season" stays on one line, clear of the chevron */
 }
 
 .game-log-year-summary {
@@ -25185,6 +25187,24 @@ tr.team-clickable {
 
     .compare-search-picker {
         width: 100%;
+    }
+
+    /* STATS / Usage tabs: stack the two player columns on phones so each
+       game-log table gets the full modal width instead of being clipped. */
+    .player-modal.compare-mode .compare-gamelogs-section,
+    .player-modal.compare-mode .compare-weekly-section {
+        grid-template-columns: 1fr;
+    }
+
+    /* Compare tabs: keep the bar swipeable on phones and never squish a tab
+       below its readable width. */
+    .player-modal.compare-mode .compare-tab-bar {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .player-modal.compare-mode .compare-tab-bar .pm-tab {
+        flex-shrink: 0;
     }
 }
 

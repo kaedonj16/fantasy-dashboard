@@ -18970,6 +18970,12 @@ function cmpSwitchTab(tab) {
     if (on && window.brAnimateTabPanel) window.brAnimateTabPanel(p, newIdx - oldIdx);
   });
   if (window._cmpSlideTabs) window._cmpSlideTabs.sync(true);
+  // On narrow screens the tab bar scrolls horizontally; keep the newly-active
+  // tab visible instead of leaving it clipped off-screen.
+  const _onTab = newIdx >= 0 ? cmpBtns[newIdx] : null;
+  if (_onTab && _onTab.scrollIntoView) {
+    try { _onTab.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (_) {}
+  }
   // Lazy-load each tab's data on first open (see _compareWireView). Stats =
   // game logs; both Advanced Metrics and Usage are populated by the same
   // per-side metrics load.
