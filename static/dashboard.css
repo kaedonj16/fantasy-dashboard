@@ -6647,6 +6647,7 @@ strong + .player-badge,
     display: flex;
     flex-direction: column;
     gap: 14px;
+    overflow-x: clip;
 }
 
 .otc-sugg-build-head {
@@ -6654,6 +6655,17 @@ strong + .player-badge,
     align-items: center;
     gap: 10px;
     flex-wrap: wrap;
+}
+
+@media (max-width: 640px) {
+    .otc-sugg-build-head {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .otc-sugg-search-wrap {
+        max-width: none;
+        min-width: 0;
+    }
 }
 
 .otc-sugg-build-label {
@@ -43690,8 +43702,7 @@ table.rz-bs-table thead th:first-child {
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
     gap: 6px;
-    margin: 0 -14px;
-    padding: 2px 14px 8px;
+    padding: 2px 0 8px;
 }
 .otc-top-chips::-webkit-scrollbar {
     display: none;
@@ -43799,8 +43810,7 @@ table.rz-bs-table thead th:first-child {
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
     gap: 6px;
-    margin: 0 -14px;
-    padding: 2px 14px 8px;
+    padding: 2px 0 8px;
 }
 .otc-empty-trending-row::-webkit-scrollbar {
     display: none;
