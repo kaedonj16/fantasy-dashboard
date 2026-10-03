@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trade Pitch Button Mock</title>
+<style>
+  :root {
+    --card: #ffffff;
+    --border: #e5e9f0;
+    --text: #0f1f38;
+    --text-muted: #6b7690;
+    --row: #f6f8fc;
+    --navy: #16233f;
+    --accent: #6366f1;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #eef1f6;
+    color: var(--text);
+    padding: 16px 0 40px;
+  }
+  .phone {
+    width: 390px;
+    max-width: 100%;
+    margin: 0 auto;
+    padding: 0 14px;
+  }
+  .section-title {
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin: 28px 0 10px;
+  }
+  .section-sub {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: -6px 0 12px;
+  }
+
+  /* ── Trade card (matches .otc-real-trade-card) ── */
+  .trade-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+    margin-bottom: 6px;
+    box-shadow: 0 2px 8px rgba(2, 6, 23, 0.08);
+  }
+  .card-body {
+    display: grid;
+    grid-template-columns: 1fr 1px 1fr;
+  }
+  .card-side { padding: 12px 14px; min-width: 0; }
+  .card-divider { background: var(--border); align-self: stretch; }
+  .side-label {
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+  }
+  .asset {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+    min-width: 0;
+  }
+  .pos {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 5px;
+    border-radius: 6px;
+    flex-shrink: 0;
+    min-width: 26px;
+    text-align: center;
+  }
+  .pos-wr { background: rgba(245,158,11,.14); color: #b45309; }
+  .pos-rb { background: rgba(16,185,129,.14); color: #047857; }
+  .pos-qb { background: rgba(59,130,246,.14); color: #1d4ed8; }
+  .pos-te { background: rgba(139,92,246,.14); color: #6d28d9; }
+  .pos-pick { background: rgba(99,102,241,.12); color: #6366f1; }
+  .pname {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .card-meta {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    padding: 10px 14px;
+    border-top: 1px solid var(--border);
+  }
+  .pill {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 8px;
+    background: rgba(99,102,241,.1);
+    border: 1px solid rgba(99,102,241,.2);
+    color: #6366f1;
+  }
+  .pill-warn {
+    background: rgba(245,158,11,.12);
+    border-color: rgba(245,158,11,.25);
+    color: #b45309;
+  }
+  .card-actions {
+    display: flex;
+    gap: 8px;
+    padding: 0 14px 14px;
+  }
+  .btn {
+    flex: 1;
+    font-size: 14px;
+    font-weight: 700;
+    padding: 11px 0;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--navy);
+    cursor: pointer;
+    text-align: center;
+  }
+  .btn:active { transform: scale(.98); }
+  .btn-pitch {
+    background: var(--navy);
+    border-color: var(--navy);
+    color: #fff;
+  }
+  .btn .ico { margin-right: 5px; }
+
+  /* ── Pitch modal ── */
+  .modal-scrim {
+    background: rgba(15,23,42,.45);
+    border-radius: 14px;
+    padding: 24px 14px;
+    margin-top: 4px;
+  }
+  .pitch-modal {
+    background: var(--card);
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 12px 32px rgba(2,6,23,.18);
+  }
+  .pitch-head {
+    padding: 14px 16px 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .pitch-title {
+    font-size: 15px;
+    font-weight: 800;
+    color: var(--text);
+  }
+  .pitch-sub {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+  .pitch-body {
+    padding: 14px 16px;
+  }
+  .pitch-text {
+    font-size: 14px;
+    line-height: 1.55;
+    color: var(--text);
+    background: var(--row);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+  }
+  .pitch-text .hl {
+    font-weight: 700;
+    color: var(--navy);
+  }
+  .pitch-foot {
+    display: flex;
+    gap: 8px;
+    padding: 0 16px 16px;
+  }
+  .btn-copy {
+    flex: 1;
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  .btn-copied {
+    background: #10b981;
+    border-color: #10b981;
+    color: #fff;
+  }
+  .tone-tabs {
+    display: flex;
+    gap: 6px;
+    padding: 12px 16px 0;
+  }
+  .tone-tab {
+    font-size: 12px;
+    font-weight: 700;
+    padding: 6px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+  .tone-tab.active {
+    background: var(--navy);
+    border-color: var(--navy);
+    color: #fff;
+  }
+  .note {
+    font-size: 12px;
+    color: var(--text-muted);
+    background: #fff8e6;
+    border: 1px solid rgba(245,158,11,.3);
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin-top: 12px;
+    line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+<div class="phone">
+
+  <!-- ═══════════ 1. BUTTON PLACEMENT ═══════════ -->
+  <div class="section-title">1. Button placement</div>
+  <p class="section-sub">New "Copy pitch" button sits next to Analyze on the suggestion card.</p>
+
+  <div class="trade-card">
+    <div class="card-body">
+      <div class="card-side">
+        <div class="side-label">You get</div>
+        <div class="asset"><span class="pos pos-wr">WR</span><span class="pname">Zay Flowers</span></div>
+      </div>
+      <div class="card-divider"></div>
+      <div class="card-side">
+        <div class="side-label">You give</div>
+        <div class="asset"><span class="pos pos-wr">WR</span><span class="pname">Nico Collins</span></div>
+      </div>
+    </div>
+    <div class="card-meta">
+      <span class="pill">2 trades</span>
+      <span class="pill pill-warn">Slight overpay</span>
+      <span class="pill">63% accept</span>
+    </div>
+    <div class="card-actions">
+      <button class="btn">Analyze</button>
+      <button class="btn btn-pitch"><span class="ico">&#9998;</span>Copy pitch</button>
+    </div>
+  </div>
+
+  <div class="note">Tapping "Copy pitch" opens the preview below. The message is pre-written using the trade details, fairness, and the other manager's record and needs.</div>
+
+  <!-- ═══════════ 2. PITCH PREVIEW MODAL ═══════════ -->
+  <div class="section-title">2. Pitch preview</div>
+  <p class="section-sub">Modal that appears on tap. Shows the generated message with a Copy button.</p>
+
+  <div class="modal-scrim">
+    <div class="pitch-modal">
+      <div class="pitch-head">
+        <div class="pitch-title">Trade pitch</div>
+        <div class="pitch-sub">Zay Flowers for Nico Collins &middot; vs Rivals (2-5)</div>
+      </div>
+      <div class="tone-tabs">
+        <button class="tone-tab active">Casual</button>
+        <button class="tone-tab">Straightforward</button>
+        <button class="tone-tab">Detailed</button>
+      </div>
+      <div class="pitch-body">
+        <div class="pitch-text">
+          Hey! Saw you're 2-5 and thin at WR. Would you do <span class="hl">Nico Collins</span> for <span class="hl">Zay Flowers</span>? Collins gives you a locked-in WR1 this week and I'm betting on Flowers' upside rest of season. Pretty even on value. Lmk what you think!
+        </div>
+      </div>
+      <div class="pitch-foot">
+        <button class="btn">Edit</button>
+        <button class="btn btn-copy">Copy</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="note">After tapping Copy, the button flips to a green "Copied!" state for 2 seconds, then the modal dismisses. Paste it straight into Sleeper chat.</div>
+
+  <!-- ═══════════ 3a. COPIED STATE ═══════════ -->
+  <div class="section-title">2b. Copied confirmation</div>
+
+  <div class="modal-scrim">
+    <div class="pitch-modal">
+      <div class="pitch-head">
+        <div class="pitch-title">Trade pitch</div>
+        <div class="pitch-sub">Zay Flowers for Nico Collins &middot; vs Rivals (2-5)</div>
+      </div>
+      <div class="pitch-body">
+        <div class="pitch-text">
+          Hey! Saw you're 2-5 and thin at WR. Would you do <span class="hl">Nico Collins</span> for <span class="hl">Zay Flowers</span>? Collins gives you a locked-in WR1 this week and I'm betting on Flowers' upside rest of season. Pretty even on value. Lmk what you think!
+        </div>
+      </div>
+      <div class="pitch-foot">
+        <button class="btn">Edit</button>
+        <button class="btn btn-copied">&#10003; Copied!</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ 3. TONE VARIATIONS ═══════════ -->
+  <div class="section-title">3. Tone variations</div>
+  <p class="section-sub">Three pre-written tones. Kaedon picks one as the default.</p>
+
+  <div class="section-title" style="margin-top:18px;">A. Casual (default)</div>
+  <div class="pitch-modal">
+    <div class="pitch-body">
+      <div class="pitch-text">
+        Hey! Saw you're 2-5 and thin at WR. Would you do <span class="hl">Nico Collins</span> for <span class="hl">Zay Flowers</span>? Collins gives you a locked-in WR1 this week and I'm betting on Flowers' upside rest of season. Pretty even on value. Lmk what you think!
+      </div>
+    </div>
+  </div>
+
+  <div class="section-title" style="margin-top:18px;">B. Straightforward</div>
+  <div class="pitch-modal">
+    <div class="pitch-body">
+      <div class="pitch-text">
+        Interested in <span class="hl">Zay Flowers</span>? I'd send <span class="hl">Nico Collins</span>. You're 2-5 and need WR help now, Collins starts for you immediately. Values line up about even. Let me know.
+      </div>
+    </div>
+  </div>
+
+  <div class="section-title" style="margin-top:18px;">C. Detailed</div>
+  <div class="pitch-modal">
+    <div class="pitch-body">
+      <div class="pitch-text">
+        Hey, looking at your roster (2-5, rebuilding, thin at WR) I think there's a deal here: my <span class="hl">Nico Collins</span> for your <span class="hl">Zay Flowers</span>. Collins is the steadier weekly starter which helps you now, Flowers has the bigger ceiling which fits my window. Trade database has this shape getting accepted 63% of the time and our values are within 5%. Open to a counter if you're close.
+      </div>
+    </div>
+  </div>
+
+  <div class="note" style="margin-bottom: 24px;">Each pitch pulls from the card data: player names, fairness label, accept rate, partner record, partner needs, partner direction. The "why it helps them" line is the key part the site knows and the user usually fumbles.</div>
+
+</div>
+</body>
+</html>
