@@ -12075,6 +12075,68 @@ def build_historical_pick_slot_map(
     if cached is not None:
         return cached
 
+    # Fast path: the current season's rookie draft already encodes last
+    # season's final order in its draft_order. One API call instead of the
+    # full prev-season league context build (6+ calls) below.
+    # source_season=2025 -> the 2026 draft (in the current league) has the order.
+    try:
+        from dashboard_services.platform_api import get_drafts as _get_drafts
+        _drafts = _get_drafts(platform, root_league_id, current_season) or []
+        # Prefer the rookie/linear draft for the current season; fall back to
+        # the most recent draft with a draft_order.
+        _draft = None
+        for _d in _drafts:
+            _do = (_d or {}).get("draft_order")
+            if _do and str((_d or {}).get("season", "")) == str(current_season):
+                _draft = _d
+                break
+        if _draft is None:
+            for _d in _drafts:
+                if (_d or {}).get("draft_order"):
+                    _draft = _d
+                    break
+        if _draft:
+            _order = _draft.get("draft_order") or {}
+            # draft_order: {user_id: slot}. Map user_id -> roster_id via the
+            # draft's slot_to_roster_id if present, else via rosters lookup.
+            _slot_to_roster = _draft.get("slot_to_roster_id") or {}
+            _roster_to_slot: Dict[int, int] = {}
+            if _slot_to_roster:
+                for _slot, _rid in _slot_to_roster.items():
+                    try:
+                        _roster_to_slot[int(_rid)] = int(_slot)
+                    except (TypeError, ValueError):
+                        continue
+            else:
+                # Fall back: user_id -> roster_id needs rosters; use the
+                # draft's metadata picks if available.
+                try:
+                    from dashboard_services.platform_api import get_rosters as _get_rosters
+                    _rosters = _get_rosters(platform, root_league_id, current_season) or []
+                    _user_to_roster = {}
+                    for _r in _rosters:
+                        _uid = str((_r or {}).get("owner_id") or "")
+                        _rid = (_r or {}).get("roster_id")
+                        if _uid and _rid is not None:
+                            try:
+                                _user_to_roster[_uid] = int(_rid)
+                            except (TypeError, ValueError):
+                                continue
+                    for _uid, _slot in _order.items():
+                        _rid = _user_to_roster.get(str(_uid))
+                        if _rid is not None:
+                            try:
+                                _roster_to_slot[_rid] = int(_slot)
+                            except (TypeError, ValueError):
+                                continue
+                except Exception:
+                    logger.debug("suppressed exception", exc_info=True)
+            if _roster_to_slot:
+                HISTORICAL_PICK_SLOT_CACHE[cache_key] = _roster_to_slot
+                return _roster_to_slot
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
+
     resolved_league_id = resolve_league_id_for_season(
         platform=platform,
         league_id=root_league_id,
@@ -31945,6 +32007,8 @@ def api_trade_intel_player_packages(player_id: str):
                     except Exception:
                         logger.debug("suppressed exception", exc_info=True)
                     # Slot map for current season: {original_roster_id -> slot_number}
+                    # Slot map for pretty pick names ("2026 1.02" vs "2026 1st
+                    # (Mid)"). Uses the draft-based fast path when available.
                     _slot_map: dict = {}
                     try:
                         _slot_map = build_historical_pick_slot_map(
