@@ -25186,6 +25186,18 @@ tr.team-clickable {
     .compare-search-picker {
         width: 100%;
     }
+
+    /* Compare modal tab bar: keep it swipeable on phones and never squish a
+       tab below its readable width (Stats tab now shows the season strip
+       only, so the columns no longer need stacking). */
+    .player-modal.compare-mode .compare-tab-bar {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .player-modal.compare-mode .compare-tab-bar .pm-tab {
+        flex-shrink: 0;
+    }
 }
 
 /* ── Mobile: small phones ─────────────────────────────────────────────────── */

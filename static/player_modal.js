@@ -3709,8 +3709,12 @@ function _buildBkTabHTML(data, scoreColor) {
 // toggle and re-renders stay in sync across modal opens.
 window._glAvgTot = window._glAvgTot || 'avg';
 
-function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint, seasonTeams) {
+function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint, seasonTeams, opts) {
   seasonTeams = seasonTeams || {};
+  // summaryOnly: render the season summary strip only, no game-by-game table.
+  // Used by the compare modal's Stats tab; the player modal and the standalone
+  // /compare page keep the full logs.
+  const _summaryOnly = !!(opts && opts.summaryOnly);
   const POS = (positionHint || '').toUpperCase();
   const _num = (v) => (v == null || v === '' || isNaN(+v) ? null : +v);
   const _r0 = (v) => String(Math.round(v));
@@ -4012,8 +4016,10 @@ function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint, seasonTeam
         <div class="season-list">
     `;
 
-    // Sort years in descending order (most recent first)
-    const years = Object.keys(game_logs_by_year).sort((a, b) => b - a);
+    // Sort years in descending order (most recent first). The summary-only
+    // compare view keeps just the latest season's strip.
+    const _allYears = Object.keys(game_logs_by_year).sort((a, b) => b - a);
+    const years = _summaryOnly ? _allYears.slice(0, 1) : _allYears;
 
     years.forEach((year, index) => {
       const gameLogs = game_logs_by_year[year];
@@ -4128,17 +4134,23 @@ function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint, seasonTeam
           </tfoot>`;
       }
 
+      // Summary-only (compare modal): static header, no collapse toggle and no
+      // game-by-game table below the strip.
+      const _hdrCls = 'game-log-year-header season-row' + ((isFirstYear || _summaryOnly) ? '' : ' closed');
+      const _hdrClick = _summaryOnly ? '' : ' onclick="toggleGameLogYear(this)"';
+      const _chevron = _summaryOnly ? ''
+        : `<span class="game-log-year-toggle${isFirstYear ? '' : ' collapsed'}" id="toggle-${year}">▼</span>`;
       statsHTML += `
         <div class="game-log-year-section season-card">
-          <div class="game-log-year-header season-row${isFirstYear ? '' : ' closed'}" onclick="toggleGameLogYear(this)">
+          <div class="${_hdrCls}"${_hdrClick}>
             <div class="season-left">
-              <span class="game-log-year-toggle${isFirstYear ? '' : ' collapsed'}" id="toggle-${year}">▼</span>
+              ${_chevron}
               <span class="game-log-year-title">${year} Season</span>
               ${team ? `<span class="season-team">${team}</span>` : ''}
               ${isProjection ? '<span class="game-log-proj-badge">Projected</span>' : ''}
             </div>
             <div class="mini-stats">${_stripHTML(stripItems, stripN)}</div>
-          </div>
+          </div>${_summaryOnly ? '' : `
           <div class="game-log-year-content${isFirstYear ? ' expanded' : ''}" id="year-${year}">
             <div class="table-wrap">
               <table class="game-log-table gl-adv">
@@ -4162,7 +4174,7 @@ function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint, seasonTeam
               </table>
               <div class="scroll-hint" aria-hidden="true">&#10095;&#10095;</div>
             </div>
-          </div>
+          </div>`}
         </div>
       `;
     });
