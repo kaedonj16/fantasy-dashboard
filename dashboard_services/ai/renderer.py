@@ -782,7 +782,40 @@ def render_roster_grade_badge(grade_data: dict, scoring_type: str = "") -> str:
 # Power Rankings
 # ──────────────────────────────────────────────────────────────────────────────
 
+def _power_rankings_cheap_key(ctx: dict) -> str | None:
+    """Build a cache key for power rankings WITHOUT building the full context.
+
+    build_power_rankings_context() computes blended team scores, playoff odds,
+    momentum, SoS across the league. On a cache hit we skip it entirely. The
+    precise key uses week/season/team IDs, all cheaply available from ctx.
+    """
+    try:
+        rosters = ctx.get("rosters") or []
+        team_ids = sorted(str(r.get("roster_id")) for r in rosters if r.get("roster_id") is not None)
+        if not team_ids:
+            return None
+        return build_ai_cache_key(
+            "power_rankings",
+            {
+                "week": ctx.get("week") or ctx.get("current_week"),
+                "season": ctx.get("season"),
+                "teams": team_ids,
+            },
+            "v6",
+        )
+    except Exception:
+        return None
+
+
 def get_power_rankings_html(ctx: dict) -> str:
+    # Fast path: check cache with a cheap key before building the expensive
+    # full rankings context (blended scores, playoff odds, momentum, SoS).
+    _cheap_key = _power_rankings_cheap_key(ctx)
+    if _cheap_key:
+        _cached = load_cached_ai_text(_cheap_key)
+        if _cached:
+            return _emit_ai_html(_cached)
+
     rankings_ctx = build_power_rankings_context(_ctx_with_playoff_odds(ctx))
     teams = rankings_ctx.get("teams") or []
     if not teams:
@@ -807,6 +840,8 @@ def get_power_rankings_html(ctx: dict) -> str:
     if not ai_available():
         html_out = _render_power_rankings_html_from_data(teams, fallback_narratives)
         save_cached_ai_text(cache_key, html_out)
+        if _cheap_key and _cheap_key != cache_key:
+            save_cached_ai_text(_cheap_key, html_out)
         return _emit_ai_html(html_out)
 
     try:
@@ -855,6 +890,8 @@ def get_power_rankings_html(ctx: dict) -> str:
         html_out = _render_power_rankings_html_from_data(teams, fallback_narratives)
 
     save_cached_ai_text(cache_key, html_out)
+    if _cheap_key and _cheap_key != cache_key:
+        save_cached_ai_text(_cheap_key, html_out)
     return _emit_ai_html(html_out)
 
 
@@ -915,7 +952,53 @@ def _render_power_rankings_html_from_data(
 # Trade Suggestions
 # ──────────────────────────────────────────────────────────────────────────────
 
+def _trade_suggestions_cheap_key(ctx: dict, viewer_roster_id: str) -> str | None:
+    """Build a cache key for trade suggestions WITHOUT building the full context.
+
+    The full build_trade_suggestions_context() is expensive (model value lookup,
+    per-roster positional totals across the league, partner analysis). On a cache
+    hit we can skip it entirely. The cheap key covers the inputs that determine
+    the output: roster composition + week/season. Needs/surplus/direction are
+    deterministic functions of these, so a cheap-key hit implies the precise key
+    would also hit.
+    """
+    try:
+        rosters = ctx.get("rosters") or []
+        roster = next(
+            (r for r in rosters if str(r.get("roster_id")) == str(viewer_roster_id)),
+            None,
+        )
+        if not roster:
+            return None
+        pids = sorted(str(pid) for pid in (roster.get("players") or []))
+        roster_hash = hashlib.md5(",".join(pids).encode()).hexdigest()[:12]
+        week = ctx.get("week") or ctx.get("current_week")
+        season = ctx.get("season")
+        return build_ai_cache_key(
+            "trade_suggestions",
+            {
+                "roster_id": str(viewer_roster_id),
+                "roster_hash": roster_hash,
+                "week": week,
+                "season": season,
+            },
+            "v14",
+        )
+    except Exception:
+        return None
+
+
 def get_trade_suggestions_html(ctx: dict, viewer_roster_id: str) -> str:
+    # Fast path: check cache with a cheap key before building the expensive
+    # full context. build_trade_suggestions_context() does a model value lookup
+    # plus per-roster positional totals across the league; skipping it on a
+    # cache hit saves significant CPU and memory per request.
+    _cheap_key = _trade_suggestions_cheap_key(ctx, viewer_roster_id)
+    if _cheap_key:
+        _cached = load_cached_ai_text(_cheap_key)
+        if _cached:
+            return _emit_ai_html(_cached)
+
     suggestions_ctx = build_trade_suggestions_context(
         _ctx_with_playoff_odds(ctx), viewer_roster_id,
     )
@@ -946,6 +1029,8 @@ def get_trade_suggestions_html(ctx: dict, viewer_roster_id: str) -> str:
     if not ai_available() or (not suggestions_ctx.get("top_partners") and not suggestions_ctx.get("pick_trade_partners")):
         html_out = _render_trade_suggestions_fallback(suggestions_ctx)
         save_cached_ai_text(cache_key, html_out)
+        if _cheap_key and _cheap_key != cache_key:
+            save_cached_ai_text(_cheap_key, html_out)
         return _emit_ai_html(html_out)
 
     try:
@@ -963,6 +1048,8 @@ def get_trade_suggestions_html(ctx: dict, viewer_roster_id: str) -> str:
         html_out = _render_trade_suggestions_fallback(suggestions_ctx)
 
     save_cached_ai_text(cache_key, html_out)
+    if _cheap_key and _cheap_key != cache_key:
+        save_cached_ai_text(_cheap_key, html_out)
     return _emit_ai_html(html_out)
 
 
