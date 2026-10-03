@@ -13,6 +13,7 @@ import pytest
 # test runs in the full-dependency shard.
 pytest.importorskip("pandas")
 pytest.importorskip("flask")
+pytest.importorskip("openai")  # app.py pulls openai via dashboard_services.ai.client
 
 from app import _game_log_proj_from_week  # noqa: E402
 

@@ -296,6 +296,8 @@ def _wrapped_slides():
 
 def test_wrapped_overlay_marks_pro_cta_only_when_asked():
     pytest.importorskip("numpy")
+    pytest.importorskip("openai")  # history_page pulls openai via dashboard_services.ai.client
+    pytest.importorskip("openai")  # history_page pulls openai via dashboard_services.ai.client
     from dashboard_services.pages import history_page as H
     with_cta = H._wrapped_overlay_markup(_wrapped_slides(), None, ns="wrapped",
                                          show_pro_cta=True)
@@ -309,6 +311,7 @@ def test_wrapped_overlay_marks_pro_cta_only_when_asked():
 
 def test_wrapped_bootstrap_appends_pro_finale_client_side():
     pytest.importorskip("numpy")
+    pytest.importorskip("openai")  # history_page pulls openai via dashboard_services.ai.client
     from dashboard_services.pages import history_page as H
     js = H._wrapped_bootstrap_js("wrapped")
     assert "_maybeAppendProSlide" in js
@@ -329,6 +332,7 @@ def test_wrapped_bootstrap_appends_pro_finale_client_side():
 
 def test_wrapped_public_bootstrap_still_valid():
     pytest.importorskip("numpy")
+    pytest.importorskip("openai")  # history_page pulls openai via dashboard_services.ai.client
     from dashboard_services.pages import history_page as H
     # Runs the internal preamble/launch-handler assertions; raises if they drift.
     js = H._wrapped_public_bootstrap_js("wrapped")

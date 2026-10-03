@@ -13,6 +13,7 @@ import pytest
 
 pytest.importorskip("flask")
 pytest.importorskip("pandas")
+pytest.importorskip("openai")  # app.py pulls openai via dashboard_services.ai.client
 
 import dashboard_services.wrapped_shares as WS
 from dashboard_services.pages import history_page as H

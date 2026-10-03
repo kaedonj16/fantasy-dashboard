@@ -22,6 +22,7 @@ import pytest
 # here raises at COLLECTION and aborts the whole run.
 pytest.importorskip("pandas")
 pytest.importorskip("flask")
+pytest.importorskip("openai")  # app.py pulls openai via dashboard_services.ai.client
 
 import pandas as pd  # noqa: E402
 

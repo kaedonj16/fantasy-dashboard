@@ -56,7 +56,7 @@ def test_navigation_fallback_chain():
     body = _handle_navigate()
     # Cache is the last resort (may be null); ScoreZone skips the immediate
     # stale paint but still falls back to it before home/offline.
-    assert "navigationFallback(cache, cached)" in body
+    assert "navigationFallback(cache, cached, request.url)" in body
     assert "if (cached && !rzNav) {" in body
     assert "if (networkError) return networkError;" in body
     assert "notifyNavFresh(request, networkFetch)" in body
@@ -195,4 +195,4 @@ def test_scorezone_nav_skips_stale_shell_on_timeout():
     # Stale shell is skipped on timeout for ScoreZone navigations...
     assert "if (cached && !rzNav)" in body
     # ...but the cache remains the last resort before home/offline shells.
-    assert "return navigationFallback(cache, cached);" in body
+    assert "navigationFallback(cache, cached, request.url)" in body
