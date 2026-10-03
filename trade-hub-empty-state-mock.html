@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trade Hub mock: Targets tab empty state options</title>
+<style>
+  :root {
+    --bg: #f1f5f9;
+    --card: #ffffff;
+    --row: #f8fafc;
+    --border: #e2e8f0;
+    --text: #0f172a;
+    --text-muted: #64748b;
+    --text-subtle: #94a3b8;
+    --navy: #1e3a5f;
+    --accent: #3b82f6;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: #0b1526;
+    color: var(--text);
+    padding: 16px 8px 60px;
+    display: flex;
+    justify-content: center;
+  }
+  .page { width: 400px; max-width: 100%; display: flex; flex-direction: column; gap: 32px; }
+  .page-title { color: #e2e8f0; font-size: 16px; font-weight: 800; text-align: center; margin-bottom: -16px; }
+  .page-sub { color: #94a3b8; font-size: 12px; text-align: center; margin-bottom: -20px; }
+  .phone {
+    width: 390px;
+    max-width: 100%;
+    background: var(--bg);
+    border-radius: 28px;
+    overflow: hidden;
+    box-shadow: 0 24px 60px rgba(0,0,0,.45);
+  }
+  .option-label {
+    color: #e2e8f0; font-size: 14px; font-weight: 800; margin-bottom: 8px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .option-label .badge {
+    background: #3b82f6; color: #fff; font-size: 11px; font-weight: 800;
+    padding: 3px 10px; border-radius: 8px;
+  }
+  .option-label .desc { font-weight: 500; color: #94a3b8; font-size: 12px; }
+  .screen { padding: 14px 14px 24px; min-height: 560px; }
+
+  /* ── Trade Hub chrome ── */
+  .hub-tabs {
+    display: flex; gap: 4px; background: var(--row);
+    border: 1px solid var(--border); border-radius: 14px; padding: 4px; margin-bottom: 10px;
+  }
+  .hub-tabs span { flex: 1; text-align: center; font-size: 13px; font-weight: 700; color: var(--text-muted); padding: 8px 4px; }
+  .hub-tabs .on { background: #fff; color: var(--text); border-radius: 10px; box-shadow: 0 1px 4px rgba(2,6,23,.10); }
+  .hub-tabs .pro { display: inline-block; font-size: 9px; font-weight: 800; background: #2563eb; color: #fff; border-radius: 5px; padding: 1px 5px; margin-left: 4px; vertical-align: 2px; }
+  .sub-tabs {
+    display: flex; gap: 2px; background: var(--row);
+    border: 1px solid var(--border); border-radius: 12px; padding: 3px; margin-bottom: 10px;
+  }
+  .sub-tabs span { flex: 1; text-align: center; font-size: 12px; font-weight: 600; color: var(--text-muted); padding: 7px 2px; white-space: nowrap; }
+  .sub-tabs .on { background: var(--navy); color: #fff; border-radius: 9px; }
+  .mode-toggle {
+    display: flex; gap: 2px; background: var(--row);
+    border: 1px solid var(--border); border-radius: 12px; padding: 3px; margin-bottom: 10px;
+  }
+  .mode-toggle span { flex: 1; text-align: center; font-size: 13px; font-weight: 700; padding: 8px 4px; color: var(--text-muted); }
+  .mode-toggle .on { background: var(--navy); color: #fff; border-radius: 9px; }
+  .search-box {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 11px 14px; font-size: 14px; font-weight: 500; color: var(--text-subtle); margin-bottom: 12px;
+  }
+
+  /* ── Section headers ── */
+  .sec-head { margin: 14px 0 8px; }
+  .sec-head:first-of-type { margin-top: 4px; }
+  .sec-label { font-size: 11px; font-weight: 700; color: var(--text-muted); letter-spacing: .05em; text-transform: uppercase; }
+  .sec-sub { font-size: 12px; color: var(--text-subtle); margin-top: 2px; }
+
+  /* ── Player chips ── */
+  .pos-WR  { color: #b45309; background: rgba(245,158,11,.14); }
+  .pos-RB  { color: #047857; background: rgba(16,185,129,.14); }
+  .pos-TE  { color: #7c3aed; background: rgba(139,92,246,.14); }
+  .pos-QB  { color: #1d4ed8; background: rgba(59,130,246,.14); }
+  .tier { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 6px; white-space: nowrap; }
+
+  .chip-row {
+    display: flex; gap: 6px; flex-wrap: nowrap; overflow-x: auto;
+    -webkit-overflow-scrolling: touch; scrollbar-width: none;
+    margin: 0 -14px; padding: 2px 14px 8px;
+  }
+  .chip-row::-webkit-scrollbar { display: none; }
+  .p-chip {
+    flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px;
+    border: 1px solid var(--border); border-radius: 10px; background: var(--card);
+    color: var(--text); font-size: 12px; padding: 3px 10px 3px 3px;
+    cursor: pointer; white-space: nowrap; font-weight: 600;
+  }
+  .p-chip .pos { font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 6px; }
+
+  /* ── Option B: need rows ── */
+  .need-row {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 10px 12px; margin-bottom: 8px; display: flex; align-items: center; gap: 10px;
+  }
+  .need-pos {
+    font-size: 13px; font-weight: 800; padding: 5px 10px; border-radius: 8px;
+    flex-shrink: 0;
+  }
+  .need-players { display: flex; gap: 6px; flex-wrap: wrap; min-width: 0; }
+  .need-note { font-size: 10px; color: var(--text-subtle); margin-top: 4px; }
+
+  /* ── Option B alt: rows with reason line ── */
+  .need-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 10px 12px; margin-bottom: 8px;
+  }
+  .need-card-top { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .need-card-top .pos { font-size: 12px; font-weight: 800; padding: 3px 8px; border-radius: 6px; }
+  .need-card-top .why { font-size: 11px; color: var(--text-muted); }
+  .need-card-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+
+  /* ── Footer note per phone ── */
+  .opt-note {
+    font-size: 11px; color: var(--text-muted); line-height: 1.5;
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 12px; margin-top: 14px;
+  }
+  .opt-note b { color: var(--text); }
+  .swipe-hint { font-size: 10px; color: var(--text-subtle); margin: 2px 0 0; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="page-title">Trade Hub: Targets tab empty state</div>
+  <div class="page-sub">No player searched yet. Three options for what shows below the search box.</div>
+
+  <!-- ═══════════════ OPTION A ═══════════════ -->
+  <div>
+    <div class="option-label"><span class="badge">A</span> Trending targets <span class="desc">simplest, uses existing trade data</span></div>
+    <div class="phone">
+      <div class="screen">
+        <div class="hub-tabs">
+          <span>Calculator</span>
+          <span class="on">Trade Hub<span class="pro">PRO</span></span>
+          <span>Insights</span>
+        </div>
+        <div class="sub-tabs">
+          <span>Suggestions</span>
+          <span class="on">Targets</span>
+          <span>Market Intel</span>
+          <span>Saved</span>
+        </div>
+        <div class="mode-toggle">
+          <span class="on">Build around</span>
+          <span>Find returns</span>
+        </div>
+        <div class="search-box">Search a player...</div>
+
+        <div class="sec-head">
+          <div class="sec-label">Trending this week</div>
+          <div class="sec-sub">Most searched trade targets</div>
+        </div>
+        <div class="chip-row">
+          <button class="p-chip"><span class="pos pos-WR">WR</span>Zay Flowers</button>
+          <button class="p-chip"><span class="pos pos-RB">RB</span>Quinshon Judkins</button>
+          <button class="p-chip"><span class="pos pos-WR">WR</span>Jayden Higgins</button>
+          <button class="p-chip"><span class="pos pos-TE">TE</span>Trey McBride</button>
+          <button class="p-chip"><span class="pos pos-RB">RB</span>Kenneth Walker III</button>
+          <button class="p-chip"><span class="pos pos-WR">WR</span>Drake London</button>
+          <button class="p-chip"><span class="pos pos-QB">QB</span>Jayden Daniels</button>
+        </div>
+        <div class="swipe-hint">Swipe sideways to see more</div>
+
+        <div class="opt-note"><b>Option A.</b> One tap to a popular target. No personalization, but dead simple and always has content. Data already exists in the trade database.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ OPTION B ═══════════════ -->
+  <div>
+    <div class="option-label"><span class="badge">B</span> Your needs first <span class="desc">personalized, uses roster needs detection</span></div>
+    <div class="phone">
+      <div class="screen">
+        <div class="hub-tabs">
+          <span>Calculator</span>
+          <span class="on">Trade Hub<span class="pro">PRO</span></span>
+          <span>Insights</span>
+        </div>
+        <div class="sub-tabs">
+          <span>Suggestions</span>
+          <span class="on">Targets</span>
+          <span>Market Intel</span>
+          <span>Saved</span>
+        </div>
+        <div class="mode-toggle">
+          <span class="on">Build around</span>
+          <span>Find returns</span>
+        </div>
+        <div class="search-box">Search a player...</div>
+
+        <div class="sec-head">
+          <div class="sec-label">Your team needs</div>
+          <div class="sec-sub">Based on your roster</div>
+        </div>
+
+        <div class="need-card">
+          <div class="need-card-top">
+            <span class="pos pos-RB">RB</span>
+            <span class="why">Only 2 startable backs, thin behind them</span>
+          </div>
+          <div class="need-card-chips">
+            <button class="p-chip"><span class="pos pos-RB">RB</span>Quinshon Judkins</button>
+            <button class="p-chip"><span class="pos pos-RB">RB</span>Kenneth Walker III</button>
+          </div>
+        </div>
+
+        <div class="need-card">
+          <div class="need-card-top">
+            <span class="pos pos-WR">WR</span>
+            <span class="why">WR3 spot is a weekly coin flip</span>
+          </div>
+          <div class="need-card-chips">
+            <button class="p-chip"><span class="pos pos-WR">WR</span>Zay Flowers</button>
+            <button class="p-chip"><span class="pos pos-WR">WR</span>Jayden Higgins</button>
+          </div>
+        </div>
+
+        <div class="opt-note"><b>Option B.</b> Leads with why it matters to her team, then gives tappable names. Uses the needs detection already in the context builder. Most personalized, slightly more build.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ OPTION C ═══════════════ -->
+  <div>
+    <div class="option-label"><span class="badge">C</span> Both stacked <span class="desc">needs first, trending below</span></div>
+    <div class="phone">
+      <div class="screen">
+        <div class="hub-tabs">
+          <span>Calculator</span>
+          <span class="on">Trade Hub<span class="pro">PRO</span></span>
+          <span>Insights</span>
+        </div>
+        <div class="sub-tabs">
+          <span>Suggestions</span>
+          <span class="on">Targets</span>
+          <span>Market Intel</span>
+          <span>Saved</span>
+        </div>
+        <div class="mode-toggle">
+          <span class="on">Build around</span>
+          <span>Find returns</span>
+        </div>
+        <div class="search-box">Search a player...</div>
+
+        <div class="sec-head">
+          <div class="sec-label">Your team needs</div>
+          <div class="sec-sub">Based on your roster</div>
+        </div>
+
+        <div class="need-row">
+          <span class="need-pos pos-RB">RB</span>
+          <div>
+            <div class="need-players">
+              <button class="p-chip"><span class="pos pos-RB">RB</span>Quinshon Judkins</button>
+              <button class="p-chip"><span class="pos pos-RB">RB</span>Kenneth Walker III</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="need-row">
+          <span class="need-pos pos-WR">WR</span>
+          <div>
+            <div class="need-players">
+              <button class="p-chip"><span class="pos pos-WR">WR</span>Zay Flowers</button>
+              <button class="p-chip"><span class="pos pos-WR">WR</span>Jayden Higgins</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="sec-head">
+          <div class="sec-label">Trending this week</div>
+          <div class="sec-sub">Most searched trade targets</div>
+        </div>
+        <div class="chip-row">
+          <button class="p-chip"><span class="pos pos-WR">WR</span>Zay Flowers</button>
+          <button class="p-chip"><span class="pos pos-TE">TE</span>Trey McBride</button>
+          <button class="p-chip"><span class="pos pos-RB">RB</span>Quinshon Judkins</button>
+          <button class="p-chip"><span class="pos pos-WR">WR</span>Drake London</button>
+          <button class="p-chip"><span class="pos pos-QB">QB</span>Jayden Daniels</button>
+        </div>
+        <div class="swipe-hint">Swipe sideways to see more</div>
+
+        <div class="opt-note"><b>Option C.</b> Needs rows are compact (position badge + chips, no reason line) so both sections fit. Personalized on top, discovery below. Most content, most build.</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

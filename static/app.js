@@ -8003,6 +8003,7 @@ window.initTradePage = function initTradePage(root = document) {
     let suggTargetsLoaded = false;
     let suggTargetsLoading = false;  // dedupes overlapping initial loads
     let _lastTopChips = [];  // last top-chips payload, for untouchable re-render
+    let _lastTargetsData = null;  // last trade-targets payload, for empty-state re-render
     let _topChipsCollapsed = false;  // strip hides once a player is picked
     let suggCurrentPlayerId = null;
     let _fetchAbortCtrl = null;  // cancels in-flight fetchPackages requests
@@ -8351,9 +8352,23 @@ window.initTradePage = function initTradePage(root = document) {
     // ── Player search ────────────────────────────────────────────
     const playerInput    = root.querySelector("#suggPlayerInput");
     const playerDropdown = root.querySelector("#suggPlayerDropdown");
+    const playerClear    = root.querySelector("#suggPlayerClear");
     const resultsMeta    = root.querySelector("#suggResultsMeta");
     const resultsList    = root.querySelector("#suggResultsList");
     if (!playerInput) return;
+
+    // ── Clear (X) button: visible only when the input has text ──
+    function _updateClearBtn() {
+      if (!playerClear) return;
+      playerClear.style.display = playerInput.value ? "" : "none";
+    }
+    if (playerClear) playerClear.addEventListener("click", () => {
+      playerInput.value = "";
+      playerDropdown.style.display = "none";
+      playerInput.dispatchEvent(new Event("input"));
+      playerInput.focus();
+      _updateClearBtn();
+    });
 
     // ── Search mode: "get" = build around (acquire) | "send" = find returns ──
     let _searchMode = localStorage.getItem("sugg-search-mode") || "get";
@@ -8363,6 +8378,7 @@ window.initTradePage = function initTradePage(root = document) {
     // Run the chosen player through whichever search mode is active.
     function runSearchForCurrent(pid, name) {
       if (!pid) return;
+      _hideEmptyState();
       if (_searchMode === "send") fetchSendPackages(pid, name);
       else                        fetchPackages(pid, name);
     }
@@ -8393,6 +8409,7 @@ window.initTradePage = function initTradePage(root = document) {
     const _lastPlayer = (() => { try { return JSON.parse(localStorage.getItem('ti-last-player') || 'null'); } catch(_) { return null; } })();
     if (applySuggGating() && _lastPlayer && _lastPlayer.id) {
       playerInput.value = _lastPlayer.name || '';
+      _updateClearBtn();
       runSearchForCurrent(_lastPlayer.id, _lastPlayer.name || '');
     }
 
@@ -8414,8 +8431,14 @@ window.initTradePage = function initTradePage(root = document) {
     }
 
     playerInput.addEventListener("input", async () => {
+      _updateClearBtn();
       const q = playerInput.value.trim().toLowerCase();
-      if (!q.length) _setTopChipsCollapsed(false);  // cleared: bring the chips back
+      if (!q.length) {
+        _setTopChipsCollapsed(false);  // cleared: bring the chips back
+        suggCurrentPlayerId = null;
+        _pkgPlayerId = null;
+        if (_lastTargetsData) _renderEmptyState(_lastTargetsData);
+      }
       if (q.length < 2) { playerDropdown.style.display = "none"; return; }
       // If player data hasn't loaded yet (transient fetch failure), retry
       // before giving up -- otherwise the dropdown silently shows nothing.
@@ -8439,6 +8462,7 @@ window.initTradePage = function initTradePage(root = document) {
       playerInput.value = item.querySelector(".otc-sugg-dropdown-name").textContent;
       playerDropdown.style.display = "none";
       _setTopChipsCollapsed(true);
+      _updateClearBtn();
       runSearchForCurrent(item.dataset.id, item.dataset.name);
     });
 
@@ -8452,6 +8476,7 @@ window.initTradePage = function initTradePage(root = document) {
       playerInput.value = chip.dataset.name;
       playerDropdown.style.display = "none";
       _setTopChipsCollapsed(true);
+      _updateClearBtn();
       runSearchForCurrent(chip.dataset.id, chip.dataset.name);
     });
 
@@ -9352,6 +9377,108 @@ window.initTradePage = function initTradePage(root = document) {
       }).join("");
     }
 
+    // ── Targets tab empty state (Option C: needs + trending) ─────────────────
+    // Shown when no player has been searched yet. Replaces the top-chips strip
+    // with actionable content: positional needs first, then trending targets.
+    function _renderEmptyState(data) {
+      const emptyBox = root.querySelector("#otcEmptyState");
+      const chipsWrap = root.querySelector("#otcTopChipsWrap");
+      if (!emptyBox) return;
+      // Only show when no player is actively searched
+      if (suggCurrentPlayerId || _pkgPlayerId) {
+        emptyBox.style.display = "none";
+        emptyBox.innerHTML = "";
+        return;
+      }
+      const needed = Array.isArray(data.needed_positions) ? data.needed_positions.slice(0, 2) : [];
+      const byPos = data.by_position || {};
+      const allTargets = Array.isArray(data.targets) ? data.targets : [];
+      const posRanks = data.position_ranks || {};
+      const esc = s => (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+      const posColor = pos => (POS_COLORS || {})[pos] || "var(--accent)";
+
+      let html = "";
+      // ── Your team needs ──
+      if (needed.length) {
+        const needCards = needed.map(pos => {
+          const col = posColor(pos);
+          const tint = col.charCodeAt(0) === 35 ? col + "1A" : "transparent";
+          const players = (byPos[pos] || []).slice(0, 2);
+          if (!players.length) return "";
+          const rank = posRanks[pos];
+          const reason = rank ? `Ranked #${rank} in league` : `Upgrade available`;
+          const chips = players.map(t => {
+            const pLabel = t.pos_rank_label || t.position || pos;
+            return `<button class="otc-top-chip" data-id="${esc(String(t.player_id))}" data-name="${esc(t.name)}" title="Search ${esc(t.name)}">` +
+              `<span class="otc-top-chip-pos" style="color:${col};background:${tint}">${esc(pLabel)}</span>` +
+              `<span class="otc-top-chip-name">${esc(t.name)}</span></button>`;
+          }).join("");
+          return `<div class="otc-empty-need-card">` +
+            `<div class="otc-empty-need-head">` +
+            `<span class="otc-empty-need-pos" style="color:${col};background:${tint}">${esc(pos)}</span>` +
+            `<span class="otc-empty-need-reason">${esc(reason)}</span>` +
+            `</div><div class="otc-empty-need-chips">${chips}</div></div>`;
+        }).filter(Boolean).join("");
+        if (needCards) {
+          html += `<div class="otc-empty-needs">` +
+            `<div class="otc-empty-section-label">Your team needs</div>` +
+            `<div class="otc-empty-section-sub">Based on your roster</div>` +
+            `<div class="otc-empty-needs-grid">${needCards}</div></div>`;
+        }
+      }
+      // ── Trending this week ──
+      const trending = allTargets.slice(0, 10);
+      if (trending.length) {
+        const chips = trending.map(t => {
+          const pos = t.position || "";
+          const col = posColor(pos);
+          const pLabel = t.pos_rank_label || pos;
+          const tint = col.charCodeAt(0) === 35 ? col + "1A" : "transparent";
+          return `<button class="otc-top-chip" data-id="${esc(String(t.player_id))}" data-name="${esc(t.name)}" title="Search ${esc(t.name)}">` +
+            `<span class="otc-top-chip-pos" style="color:${col};background:${tint}">${esc(pLabel)}</span>` +
+            `<span class="otc-top-chip-name">${esc(t.name)}</span></button>`;
+        }).join("");
+        html += `<div class="otc-empty-trending">` +
+          `<div class="otc-empty-section-label">Trending this week</div>` +
+          `<div class="otc-empty-section-sub">Most sought-after trade targets</div>` +
+          `<div class="otc-empty-trending-row">${chips}</div></div>`;
+      }
+      if (!html) {
+        emptyBox.style.display = "none";
+        emptyBox.innerHTML = "";
+        if (chipsWrap) chipsWrap.style.display = "";
+        return;
+      }
+      emptyBox.innerHTML = html;
+      emptyBox.style.display = "";
+      // Hide the top-chips strip while the empty state is showing
+      if (chipsWrap) chipsWrap.style.display = "none";
+      // Wire chip taps to run the search (same as top chips)
+      emptyBox.querySelectorAll(".otc-top-chip").forEach(chip => {
+        chip.addEventListener("click", () => {
+          const pid = chip.dataset.id;
+          const name = chip.dataset.name;
+          if (!pid) return;
+          const pi = root.querySelector("#suggPlayerInput");
+          const pd = root.querySelector("#suggPlayerDropdown");
+          if (pi) pi.value = name;
+          if (pd) pd.style.display = "none";
+          emptyBox.style.display = "none";
+          emptyBox.innerHTML = "";
+          _updateClearBtn();
+          runSearchForCurrent(pid, name);
+        });
+      });
+    }
+
+    function _hideEmptyState() {
+      const emptyBox = root.querySelector("#otcEmptyState");
+      if (emptyBox) {
+        emptyBox.style.display = "none";
+        emptyBox.innerHTML = "";
+      }
+    }
+
     async function loadSuggTargets() {
       // Skip if Suggestions sub-tab is active - strategy loader handles that.
       // Reads localStorage (not _activeSubtab) because this can run during
@@ -9424,7 +9551,9 @@ window.initTradePage = function initTradePage(root = document) {
         const data = await res.json();
         suggTargetsLoaded = true;  // only mark done after a successful response
         _topChipsCollapsed = false;  // fresh targets load: show the strip again
+        _lastTargetsData = data;
         _renderTopChips(data.top_chips || []);
+        _renderEmptyState(data);
 
         const grouped     = data.by_position || {};
         const allGrouped  = data.all_positions || {};
@@ -9568,6 +9697,7 @@ window.initTradePage = function initTradePage(root = document) {
         if (playerInput) {
           playerInput.value = name;
           playerDropdown.style.display = "none";
+          if (typeof _updateClearBtn === "function") _updateClearBtn();
         }
         if (direction === "distribute") {
           _applySearchModeUI("send");

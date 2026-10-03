@@ -366,7 +366,10 @@ def test_targets_tab_has_top_chips_strip():
     assert "_untouchableIds.has(String(c.player_id))" in APP_JS
     assert 'runSearchForCurrent(chip.dataset.id, chip.dataset.name)' in APP_JS
     assert "_setTopChipsCollapsed(true)" in APP_JS
-    assert 'if (!q.length) _setTopChipsCollapsed(false);' in APP_JS
+    assert "_setTopChipsCollapsed(false)" in APP_JS
+    # Empty state (Option C) renders when no player is searched
+    assert "function _renderEmptyState(data)" in APP_JS
+    assert 'id="otcEmptyState"' in TRADE_PAGE
 
 
 def test_strategy_cards_are_decluttered():
