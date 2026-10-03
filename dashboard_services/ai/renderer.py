@@ -1,33 +1,39 @@
 from __future__ import annotations
 
+import hashlib
 import html
+import logging
 import os
 
-from dashboard_services.ai.cache import build_ai_cache_key, load_cached_ai_text, save_cached_ai_text
+from dashboard_services.ai.cache import (
+    build_ai_cache_key,
+    load_cached_ai_text,
+    save_cached_ai_text,
+)
+from dashboard_services.ai.client import AIRateLimitError, AIUnavailableError
 from dashboard_services.ai.context_builders import (
-    build_team_gm_context,
+    _ctx_is_sf,
+    build_model_value_lookup,
     build_power_rankings_context,
+    build_team_gm_context,
     build_trade_suggestions_context,
     calculate_roster_grade,
-    summarize_roster_players,
-    build_model_value_lookup,
-    detect_team_direction,
     ctx_scoring_type,
     redraft_window_label,
-    _ctx_is_sf,
+    summarize_roster_players,
 )
+from dashboard_services.ai.html_sanitize import sanitize_ai_html
 from dashboard_services.ai.prompts import (
-    generate_trade_ai_result,
-    generate_team_ai_result,
     generate_power_rankings_result,
+    generate_team_ai_result,
+    generate_trade_ai_result,
     generate_trade_suggestions_result,
     normalize_trade_scoring_type,
 )
-import logging
-
-from dashboard_services.ai.client import AIRateLimitError, AIUnavailableError
-from dashboard_services.ai.html_sanitize import sanitize_ai_html
-from dashboard_services.ai.prose import scrub_ai_prose_field_names, scrub_ai_result_strings
+from dashboard_services.ai.prose import (
+    scrub_ai_prose_field_names,
+    scrub_ai_result_strings,
+)
 from dashboard_services.providers.espn_api import safe_float
 from dashboard_services.rank_medals import rank_mark
 
@@ -421,7 +427,11 @@ def get_trade_ai_analysis(
     ]
 
     # Pick-to-prospect mapping using rookie ADP
-    from utils.lineup_slots import canonicalize_slots, count_lineup_slots, is_superflex_lineup
+    from utils.lineup_slots import (
+        canonicalize_slots,
+        count_lineup_slots,
+        is_superflex_lineup,
+    )
     current_season = ctx.get("current_season") or ctx.get("season") or 2026
     num_teams = len(ctx.get("rosters") or []) or 12
     _roster_positions = canonicalize_slots(ctx.get("roster_positions") or [])
@@ -468,7 +478,10 @@ def get_trade_ai_analysis(
     pick_prospects: dict = {}
     if (not is_redraft) and all_pick_ids:
         try:
-            from dashboard_services.adp_service import fetch_league_adp_from_db, build_model_adp_fallback
+            from dashboard_services.adp_service import (
+                build_model_adp_fallback,
+                fetch_league_adp_from_db,
+            )
             adp_raw = fetch_league_adp_from_db(is_sf=is_sf, season=current_season, draft_type="rookie") or {}
             if not adp_raw:
                 adp_raw = build_model_adp_fallback(is_sf=is_sf, season=current_season) or {}
@@ -909,16 +922,22 @@ def get_trade_suggestions_html(ctx: dict, viewer_roster_id: str) -> str:
     if not suggestions_ctx:
         return _emit_ai_html("<p>Could not build trade suggestions context.</p>")
 
+    # Roster hash: needs/surplus/direction alone can't see a same-position
+    # swap (trading WR2 for a different WR2), so hash the actual roster or
+    # the cache serves a stale card after a trade.
+    _rids = ",".join(suggestions_ctx.get("viewer_roster_ids") or [])
+    _roster_hash = hashlib.md5(_rids.encode()).hexdigest()[:12]
     cache_key = build_ai_cache_key(
         "trade_suggestions",
         {
             "roster_id": viewer_roster_id,
+            "roster_hash": _roster_hash,
             "needs": suggestions_ctx.get("viewer_needs"),
             "surplus": suggestions_ctx.get("viewer_surplus"),
             "ceiling_needs": suggestions_ctx.get("viewer_ceiling_needs"),
             "direction": suggestions_ctx.get("viewer_direction"),
         },
-        "v12",
+        "v13",
     )
     cached = load_cached_ai_text(cache_key)
     if cached:
@@ -931,7 +950,10 @@ def get_trade_suggestions_html(ctx: dict, viewer_roster_id: str) -> str:
 
     try:
         result = generate_trade_suggestions_result(suggestions_ctx)
-        html_out = _render_trade_suggestions_from_data(result.get("suggestions") or [])
+        html_out = _render_trade_suggestions_from_data(
+            result.get("suggestions") or [],
+            suggestions_ctx.get("top_partners") or [],
+        )
     except (AIRateLimitError, AIUnavailableError) as e:
         reason = "rate limited" if isinstance(e, AIRateLimitError) else "service unavailable"
         logger.warning("[trade-suggestions-ai] %s: %s", reason, e)
@@ -954,6 +976,67 @@ def _fmt_pick_label(pk: dict) -> str:
     return f"{season} {rnd}{suffix} (Mid)"
 
 
+def _fairness_label(fairness, value_you_get=None, value_you_give=None) -> str:
+    """Plain-language fairness: a 0.82 means nothing to a user, so translate
+    the 0-1 score into words, with direction when it's close but not even."""
+    try:
+        f = float(fairness)
+    except (TypeError, ValueError):
+        return ""
+    if f >= 0.85:
+        return "Fair deal"
+    if f >= 0.70:
+        try:
+            if float(value_you_get) >= float(value_you_give):
+                return "Slight edge to you"
+            return "Slight edge to them"
+        except (TypeError, ValueError):
+            return "Roughly fair"
+    return "Lopsided"
+
+
+def _tier_label(tier: str) -> str:
+    return {"elite": "Elite target", "buy_low": "Buy-low", "realistic": "Realistic"}.get(
+        str(tier or "").lower(), ""
+    )
+
+
+def _partner_motivation(p: dict) -> str:
+    """Two-sided reasoning: why the PARTNER says yes. Built from their
+    record, direction, and needs plus what the viewer sends back."""
+    rec = str(p.get("partner_record") or "").strip()
+    direction = str(p.get("partner_direction") or "").strip()
+    needs = [str(n) for n in (p.get("partner_needs") or []) if n]
+    sends = p.get("targets_viewer_sends") or []
+    send_names = ", ".join(t.get("name") for t in sends[:2] if t.get("name"))
+    if rec and direction:
+        head = f"They're {rec} ({direction})"
+    elif rec:
+        head = f"They're {rec}"
+    elif direction:
+        head = f"They're in {direction} mode"
+    else:
+        head = "They"
+    if needs and send_names:
+        return f"{head}. They need {', '.join(needs)}, and your {send_names} fill that hole."
+    if needs:
+        return f"{head}. They need {', '.join(needs)}."
+    if send_names:
+        return f"{head} could use your {send_names}."
+    return f"{head} are open to deals."
+
+
+def _acceptance_line(p: dict) -> str:
+    rate = p.get("acceptance_rate")
+    try:
+        r = int(rate)
+    except (TypeError, ValueError):
+        return ""
+    if r <= 0:
+        return ""
+    return f"~{r}% chance they accept"
+
+
 def _render_trade_suggestions_fallback(ctx: dict) -> str:
     needs = ctx.get("viewer_needs") or []
     surplus = ctx.get("viewer_surplus") or []
@@ -972,13 +1055,23 @@ def _render_trade_suggestions_fallback(ctx: dict) -> str:
         is_pkg = p.get("is_package_trade", False)
         target_names = html.escape(", ".join(t["name"] for t in targets[:2]) or "players at your needed positions")
         send_names = html.escape(", ".join(t["name"] for t in sends[:2]))
+        # Surface target tiers (elite / buy-low) next to names; realistic stays plain.
+        disp_names = []
+        for t in targets[:2]:
+            tl = _tier_label(t.get("tier"))
+            nm = t.get("name") or ""
+            disp_names.append(f"{nm} ({tl.lower()})" if tl and tl != "Realistic" else nm)
+        target_line = html.escape(", ".join(disp_names) or "players at your needed positions")
         if is_pkg and len(sends) >= 2:
             title = f"Package Deal: {pname}"
-            reasoning = f"Package {send_names} to acquire {target_names} - converts surplus depth into an elite upgrade."
+            reasoning = f"Package {send_names} to acquire {target_line} - converts surplus depth into an elite upgrade."
         else:
             title = f"Target: {pname}"
             send_part = f" - offer {send_names}" if send_names else ""
-            reasoning = f"They have depth at {html.escape(', '.join(p.get('partner_surplus') or []))} - target {target_names}{send_part}."
+            reasoning = f"They have depth at {html.escape(', '.join(p.get('partner_surplus') or []))} - target {target_line}{send_part}."
+
+        # Two-sided: why the partner says yes, not just why you want it.
+        reasoning += " " + _partner_motivation(p)
 
         # Higher positional fit + a fairer deal = a more actionable suggestion.
         fairness = p.get("fairness") or 0
@@ -987,11 +1080,19 @@ def _render_trade_suggestions_fallback(ctx: dict) -> str:
             urgency_cls, urgency_txt = ("urgency-high", "strong fit")
         elif p.get("match_score", 0) >= 2 and fairness >= 0.72:
             urgency_cls, urgency_txt = ("urgency-medium", "good fit")
+        fair_txt = _fairness_label(fairness, p.get("value_you_get"), p.get("value_you_give"))
+        acpt_txt = _acceptance_line(p)
+        meta_bits = [b for b in [fair_txt, acpt_txt] if b]
+        meta_html = (
+            f"<div class=\"suggestion-meta-line\">{html.escape(' · '.join(meta_bits))}</div>"
+            if meta_bits else ""
+        )
         partner_rows += f"""
         <div class="suggestion-card">
           <div class="suggestion-title">{html.escape(title)}</div>
           <div class="suggestion-reasoning">{html.escape(reasoning)}</div>
           <div class="suggestion-urgency {urgency_cls}">{urgency_txt}</div>
+          {meta_html}
         </div>
         """
 
@@ -1026,9 +1127,13 @@ def _render_trade_suggestions_fallback(ctx: dict) -> str:
     """
 
 
-def _render_trade_suggestions_from_data(suggestions: list[dict]) -> str:
+def _render_trade_suggestions_from_data(suggestions: list[dict], partners: list[dict] | None = None) -> str:
     if not suggestions:
         return "<p>No specific trade suggestions generated.</p>"
+
+    # Enrich AI cards with computed context: match each suggestion back to its
+    # partner by team name for fairness, acceptance, record/direction, tiers.
+    _pmap = {str(p.get("team_name") or ""): p for p in (partners or [])}
 
     cards = ""
     for s in suggestions:
@@ -1036,14 +1141,31 @@ def _render_trade_suggestions_from_data(suggestions: list[dict]) -> str:
         partner = html.escape(str(s.get("partner_team") or ""))
         reasoning = html.escape(str(s.get("reasoning") or ""))
         urgency = (s.get("urgency") or "medium").lower()
-        you_give = [html.escape(str(x)) for x in (s.get("you_give") or [])]
-        you_get = [html.escape(str(x)) for x in (s.get("you_get") or [])]
+        you_give_raw = [str(x) for x in (s.get("you_give") or [])]
+        you_get_raw = [str(x) for x in (s.get("you_get") or [])]
 
-        if not you_give or not you_get:
+        if not you_give_raw or not you_get_raw:
             continue  # skip incomplete suggestions (no named players on one side)
 
-        give_html = "".join(f"<span class='suggestion-asset give'>{x}</span>" for x in you_give)
-        get_html = "".join(f"<span class='suggestion-asset get'>{x}</span>" for x in you_get)
+        _p = _pmap.get(str(s.get("partner_team") or ""))
+        _tier_by_name = {}
+        if _p:
+            for t in (_p.get("targets_they_have") or []):
+                _tier_by_name[str(t.get("name") or "").lower()] = _tier_label(t.get("tier"))
+
+        def _asset_span(raw: str, side: str) -> str:
+            x = html.escape(raw)
+            tl = _tier_by_name.get(raw.lower(), "") if side == "get" else ""
+            badge = (
+                f" <span class=\"suggestion-tier\" style=\"font-size:9px;font-weight:700;"
+                f"padding:1px 5px;border-radius:3px;background:#f1f5f9;color:#475569;\">"
+                f"{html.escape(tl.lower())}</span>"
+                if tl and tl != "Realistic" else ""
+            )
+            return f"<span class='suggestion-asset {side}'>{x}{badge}</span>"
+
+        give_html = "".join(_asset_span(x, "give") for x in you_give_raw)
+        get_html = "".join(_asset_span(x, "get") for x in you_get_raw)
 
         trade_type = (s.get("trade_type") or "swap").lower()
         _type_labels = {
@@ -1058,19 +1180,46 @@ def _render_trade_suggestions_from_data(suggestions: list[dict]) -> str:
             f"{html.escape(type_label)}</span>"
         )
 
+        # Partner context line: record + direction so the "why they'd say yes"
+        # is visible even when the AI reasoning stays one-sided.
+        _pline = f"<div class=\"suggestion-partner\">Partner: {partner}</div>"
+        _meta_bits: list = []
+        if _p:
+            _rec = str(_p.get("partner_record") or "").strip()
+            _dir = str(_p.get("partner_direction") or "").strip()
+            _rd = " ".join(x for x in [_rec, f"({_dir})" if _dir else ""] if x).strip()
+            if _rd:
+                _pline = (
+                    f"<div class=\"suggestion-partner\">Partner: {partner} "
+                    f"<span style=\"color:var(--text-muted);font-size:11px;\">"
+                    f"{html.escape(_rd)}</span></div>"
+                )
+            _fair = _fairness_label(_p.get("fairness"), _p.get("value_you_get"), _p.get("value_you_give"))
+            if _fair:
+                _meta_bits.append(_fair)
+            _acpt = _acceptance_line(_p)
+            if _acpt:
+                _meta_bits.append(_acpt)
+        _meta_html = (
+            f"<div class=\"suggestion-meta-line\" style=\"font-size:11px;color:var(--text-muted);"
+            f"margin-top:6px;\">{html.escape(' · '.join(_meta_bits))}</div>"
+            if _meta_bits else ""
+        )
+
         cards += f"""
         <div class="suggestion-card">
           <div class="suggestion-header">
             <div class="suggestion-title">{title}</div>
             <div style="display:flex;gap:5px;align-items:center;">{type_badge}<div class="suggestion-urgency urgency-{urgency}">{urgency}</div></div>
           </div>
-          <div class="suggestion-partner">Partner: {partner}</div>
+          {_pline}
           <div class="suggestion-assets">
             <div class="suggestion-side"><div class="suggestion-side-label">You give</div>{give_html}</div>
             <div class="suggestion-arrow">⇄</div>
             <div class="suggestion-side"><div class="suggestion-side-label">You get</div>{get_html}</div>
           </div>
           <div class="suggestion-reasoning">{reasoning}</div>
+          {_meta_html}
         </div>
         """
 

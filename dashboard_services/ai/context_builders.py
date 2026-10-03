@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from typing import Any, Union
-from utils.coerce import safe_float as _safe_float, safe_int as _safe_int
+from typing import Any
+
 from utils.all_play import all_play_analysis
+from utils.coerce import safe_float as _safe_float
+from utils.coerce import safe_int as _safe_int
 
 # Core fantasy positions used for scarcity analysis
 _SCARCITY_POSITIONS = {"QB", "RB", "WR", "TE"}
@@ -316,8 +318,10 @@ def league_format_value_lookup(ctx: dict, _cache: dict | None = None) -> dict[st
     from utils.lineup_slots import is_superflex_lineup
     from utils.trade_value import player_trade_value
     from utils.value_helpers import (
-        format_rank_label_key, row_format_rank_label,
-        scoring_format_from_settings, te_premium_from_settings,
+        format_rank_label_key,
+        row_format_rank_label,
+        scoring_format_from_settings,
+        te_premium_from_settings,
     )
 
     model_vals = ctx.get("model_value_table") or []
@@ -503,7 +507,7 @@ def team_value_age_rows(ctx: dict) -> list[dict]:
     return rows
 
 
-def build_team_gm_context(ctx: dict, viewer_roster_id: str) -> Union[dict, None]:
+def build_team_gm_context(ctx: dict, viewer_roster_id: str) -> dict | None:
     rosters = ctx.get("rosters") or []
     roster = next((r for r in rosters if str(r.get("roster_id")) == str(viewer_roster_id)), None)
     if not roster:
@@ -1082,12 +1086,15 @@ def calculate_roster_grade(
 # Starter-caliber thresholds now live in utils.roster_strength (shared with the
 # consolidate/distribute engine so they can't drift). Aliased here to keep the
 # existing private names below unchanged.
-from utils.roster_strength import (  # noqa: E402
+from utils.roster_strength import (
     STARTER_THRESHOLD as _STARTER_THRESHOLD,
-    derive_league_thresholds as _derive_league_thresholds,
+)
+from utils.roster_strength import (
     dedicated_starter_counts as _dedicated_starter_counts,
 )
-
+from utils.roster_strength import (
+    derive_league_thresholds as _derive_league_thresholds,
+)
 
 # Fraction of the starter threshold at which a player's "starter weight" ramps
 # from 0 up to 1. 0.80 => a player at 80% of the bar counts as nothing, at 100%
@@ -1457,7 +1464,9 @@ def build_trade_suggestions_context(
     # positional value *totals*, which flex depth inflates - a team with three
     # flex WRs and no starter now correctly reads as a WR need, not a surplus.
     from utils.player_tiers import (
-        roster_position_counts, starter_gap_needs, startable_surplus,
+        roster_position_counts,
+        startable_surplus,
+        starter_gap_needs,
     )
     _ng_starter_thr, _ng_depth_floor = _derive_league_thresholds(ctx.get("roster_positions") or [], n_teams)
 
@@ -1508,7 +1517,10 @@ def build_trade_suggestions_context(
     # suggestion surfaces steer a flex-only team to a pure starter (never an
     # unrealistic elite reach) and a starter-rich team to an elite.
     from utils.player_tiers import (
-        ceiling_needs, consolidate_target_allowed, pos_category, positional_ranks,
+        ceiling_needs,
+        consolidate_target_allowed,
+        pos_category,
+        positional_ranks,
     )
     _pt_ranks = positional_ranks(model_value_lookup)
     _pt_starter_thr = _ng_starter_thr  # same thresholds as the need model
@@ -1535,8 +1547,101 @@ def build_trade_suggestions_context(
         _bcat = pos_category(_tpos, _best[0], _best[1], _pt_starter_thr) if _best else "depth"
         return consolidate_target_allowed(_tcat, _bcat)
 
+    def _cheap_partner_direction(pr: dict, prid: str) -> str:
+        """Partner's competitive direction without a full GM-context build.
+        Reuses the already-built model value lookup so this stays cheap inside
+        the per-partner loop."""
+        try:
+            _pp = summarize_roster_players(
+                roster=pr,
+                players_index=ctx.get("players_index") or {},
+                players_map=ctx.get("players_map") or {},
+                model_value_lookup=model_value_lookup,
+            )
+            _ppicks = (picks_by_roster or {}).get(prid, [])
+            return detect_team_direction(_pp, _ppicks, scoring_type=scoring_type)
+        except Exception:
+            return "balanced"
+
+    def _gettability_score(t: dict, partner_roster: dict, pos: str, partner_direction: str) -> float:
+        """0-1 score for how likely the partner is to move this player.
+        Depth pieces move; cornerstones don't. Rebuilding teams move veterans;
+        contenders hold win-now pieces and discount raw youth coming back."""
+        _ordered = _roster_top_players(partner_roster, pos)
+        _rank = next(
+            (i + 1 for i, pl in enumerate(_ordered) if str(pl.get("id")) == str(t.get("id"))),
+            len(_ordered) + 1,
+        )
+        score = min(1.0, 0.2 + (_rank - 1) * 0.267)  # 1st=0.2 … 4th+=1.0
+        _age = t.get("age")
+        try:
+            _age_f = float(_age) if _age not in (None, "") else None
+        except (TypeError, ValueError):
+            _age_f = None
+        _d = (partner_direction or "").lower()
+        _rebuilding = any(k in _d for k in ("rebuild", "retool", "sell"))
+        _contending = any(k in _d for k in ("contend", "win", "buy"))
+        if _age_f is not None:
+            if _rebuilding and _age_f >= 28:
+                score += 0.3
+            elif _contending and _age_f <= 24:
+                score -= 0.2
+        return max(0.0, min(1.0, score))
+
+    def _partner_sole_starter(partner_roster: dict, target: dict, send_positions: set) -> bool:
+        """True when the target is the partner's only startable player at his
+        position and the viewer isn't sending a startable at that spot back.
+        QB-for-QB swaps pass; stripping their lone QB for a WR3 does not."""
+        _tpos = str(target.get("position") or "").upper()
+        if _tpos in send_positions:
+            return False
+        _bar = _ng_starter_thr.get(_tpos, 350)
+        _n = sum(
+            1 for pl in _roster_top_players(partner_roster, _tpos)
+            if _safe_float(pl.get("value")) >= _bar
+        )
+        return _n <= 1
+
+    def _assign_target_tier(t: dict, partner_roster: dict) -> str:
+        """elite = their best at the position; buy_low = falling in the
+        rankings (7d rank change); realistic = everything else."""
+        _tpos = str(t.get("position") or "").upper()
+        _ordered = _roster_top_players(partner_roster, _tpos)
+        if _ordered and str(_ordered[0].get("id")) == str(t.get("id")):
+            return "elite"
+        _mv = model_value_lookup.get(str(t.get("id"))) or {}
+        try:
+            _rc = _mv.get("rank_change_7d")
+            if _rc is not None and float(_rc) < -2:
+                return "buy_low"
+        except (TypeError, ValueError):
+            pass
+        return "realistic"
+
+    def _score_candidates(pool6: list, partner_roster: dict, pos: str, partner_direction: str) -> list:
+        """Expand the target pool (top 6 by value) and rank by gettability:
+        60% how movable the player is, 40% normalized value. Returns
+        [(score, player)] sorted best-first."""
+        _pmax = max([_safe_float(t.get("value")) for t in pool6], default=0.0)
+        _scored: list = []
+        for t in pool6:
+            _g = _gettability_score(t, partner_roster, pos, partner_direction)
+            _nv = (_safe_float(t.get("value")) / _pmax) if _pmax > 0 else 0.0
+            _scored.append((0.6 * _g + 0.4 * _nv, t))
+        _scored.sort(key=lambda x: x[0], reverse=True)
+        return _scored
+
+    # Deferred import: archetype_engine imports context_builders at module
+    # level, so this must stay function-local to avoid a circular import.
+    from dashboard_services.archetype_engine import (
+        _acceptance_fit,
+        _estimate_acceptance,
+    )
+
     # Find best trade partners
     partners = []
+    _direction_by_rid: dict = {}
+    _record_by_rid: dict = {}
     for r in rosters:
         rid = str(r.get("roster_id") or "")
         if rid == viewer_rid:
@@ -1599,26 +1704,30 @@ def build_trade_suggestions_context(
         deal = None  # (fairness, target, package)
 
         # Path 1: fill a real starter-gap need. Most urgent need first; at each,
-        # take the cheapest partner starter that a fair bench package can buy.
-        # Never default to their best player when a cheaper one solves it.
+        # rank the partner's top-6 by gettability (how movable the player is)
+        # blended with value, and take the first one a fair bench package can
+        # buy. Never default to their best player when a gettable one solves it.
+        partner_direction = _cheap_partner_direction(r, rid)
+        _direction_by_rid[rid] = partner_direction
+        _prec, _, _ = _record_pf_pa_for_roster(ctx, rid, r)
+        _record_by_rid[rid] = _prec
         need_pool = _bench_pool([p for p in viewer_surplus if p in partner_needs])
         if need_pool:
             for pos in viewer_needs:
                 if pos not in partner_surplus:
                     continue
-                cands = sorted(
-                    (
-                        t
-                        for t in _startable(
-                            _roster_top_players(r, pos, exclude_ids=viewer_player_ids), pos
-                        )
-                        if _target_tier_ok(t)
-                    ),
-                    key=lambda t: t["value"],
-                )
-                for cand in cands:
+                _pool6 = _roster_top_players(r, pos, exclude_ids=viewer_player_ids)[:6]
+                _bar = _ng_starter_thr.get(pos, 350)
+                _cands = [
+                    t for t in _pool6
+                    if _safe_float(t.get("value")) >= _bar and _target_tier_ok(t)
+                ]
+                for _, cand in _score_candidates(_cands, r, pos, partner_direction)[:3]:
                     package, fair = _fairest_package(need_pool, cand["value"])
                     if fair >= 0.80:
+                        _pkg_pos = {str(p.get("position") or "").upper() for p in package}
+                        if _partner_sole_starter(r, cand, _pkg_pos):
+                            continue
                         deal = (fair, cand, package)
                         break
                 if deal is not None:
@@ -1641,18 +1750,20 @@ def build_trade_suggestions_context(
                 for pos in weaker_positions:
                     vbest = _pt_viewer_best.get(pos)
                     viewer_best_val = vbest[1] if vbest else 0.0
-                    ups = [
-                        t
-                        for t in _roster_top_players(r, pos, exclude_ids=viewer_player_ids)
+                    _pool6 = _roster_top_players(r, pos, exclude_ids=viewer_player_ids)[:6]
+                    _ok = [
+                        t for t in _pool6
                         if t.get("value", 0) >= 350
                         and _target_tier_ok(t)
                         and t["value"] > viewer_best_val
                     ]
-                    if ups:
-                        upgrade_cands.append(min(ups, key=lambda t: t["value"]))
-                for cand in sorted(upgrade_cands, key=lambda t: t["value"]):
+                    upgrade_cands.extend(_score_candidates(_ok, r, pos, partner_direction)[:3])
+                for _, cand in sorted(upgrade_cands, key=lambda x: x[0], reverse=True):
                     package, fair = _fairest_package(pool, cand["value"])
                     if fair >= 0.80:
+                        _pkg_pos = {str(p.get("position") or "").upper() for p in package}
+                        if _partner_sole_starter(r, cand, _pkg_pos):
+                            continue
                         deal = (fair, cand, package)
                         is_package_trade = True
                         break
@@ -1664,6 +1775,10 @@ def build_trade_suggestions_context(
         _deal_fair, _deal_target, _deal_package = deal
         targets_they_have = [_deal_target]
         targets_viewer_sends = _deal_package
+
+        # Tier each acquisition target: elite / buy_low / realistic.
+        for _t in targets_they_have:
+            _t["tier"] = _assign_target_tier(_t, r)
 
         # Only include partners where both sides have named players (avoids TBD suggestions)
         if not targets_they_have or not targets_viewer_sends:
@@ -1692,6 +1807,19 @@ def build_trade_suggestions_context(
         if fairness < 0.80:
             continue
 
+        # Acceptance estimate from the partner's perspective: value ratio run
+        # through the archetype engine's logistic curve, nudged by whether the
+        # send package fills a position they're thin at.
+        try:
+            _afit = _acceptance_fit(
+                targets_viewer_sends, set(partner_needs), set(partner_surplus)
+            )
+            acceptance_rate = _estimate_acceptance(
+                value_you_give, value_you_get, is_preferred=False, fit=_afit
+            )
+        except Exception:
+            acceptance_rate = None
+
         # Composite ranking: positional fit still matters most, but a fair,
         # mutually beneficial deal now outranks a lopsided same-fit one, a deal
         # where the viewer isn't overpaying gets a small nudge, and the age
@@ -1710,8 +1838,11 @@ def build_trade_suggestions_context(
             "match_score": match_score,
             "suggestion_score": suggestion_score,
             "fairness": fairness,
+            "acceptance_rate": acceptance_rate,
             "partner_needs": partner_needs,
             "partner_surplus": partner_surplus,
+            "partner_direction": partner_direction,
+            "partner_record": _record_by_rid.get(rid) or "",
             "targets_they_have": targets_they_have[:3],
             "targets_viewer_sends": targets_viewer_sends[:3],
             "value_you_get": value_you_get,
@@ -1747,9 +1878,17 @@ def build_trade_suggestions_context(
                     targets.extend(p for p in top if p.get("value", 0) >= 250)
                 if not targets:
                     continue
+                for t in targets:
+                    t["tier"] = _assign_target_tier(t, r)
+                if rid not in _direction_by_rid:
+                    _direction_by_rid[rid] = _cheap_partner_direction(r, rid)
+                    _pr, _, _ = _record_pf_pa_for_roster(ctx, rid, r)
+                    _record_by_rid[rid] = _pr
                 pick_trade_partners.append({
                     "roster_id":         rid,
                     "team_name":         roster_map.get(rid) or f"Team {rid}",
+                    "partner_direction": _direction_by_rid.get(rid) or "",
+                    "partner_record":    _record_by_rid.get(rid) or "",
                     "targets_they_have": targets[:2],
                     "picks_you_offer":   all_picks_as_offers[:2],
                 })
@@ -1776,6 +1915,11 @@ def build_trade_suggestions_context(
         "top_partners": partners[:5],
         "projected_picks": [] if is_redraft else _projected_picks,
         "pick_trade_partners": [] if is_redraft else pick_trade_partners,
+        # Viewer roster player IDs (sorted) so the renderer can hash the
+        # actual roster into the suggestion cache key: trading a player for a
+        # different player at the same position changes names but not
+        # needs/surplus, and the cache must not serve the stale card.
+        "viewer_roster_ids": sorted(str(pid) for pid in (roster.get("players") or [])),
     }
 
 
