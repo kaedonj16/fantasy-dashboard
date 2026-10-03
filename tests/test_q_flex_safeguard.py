@@ -10,6 +10,7 @@ badges move.
 import pytest
 
 pytest.importorskip("pandas")
+pytest.importorskip("openai")  # app.py pulls openai via dashboard_services.ai.client
 
 from app import _apply_q_flex_safeguard
 

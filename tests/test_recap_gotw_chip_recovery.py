@@ -14,6 +14,7 @@ import pytest
 
 # weekly_recap imports pandas at module load (full-stack shard convention).
 pytest.importorskip("pandas")
+pytest.importorskip("openai")  # app.py pulls openai via dashboard_services.ai.client
 
 import pandas as pd
 

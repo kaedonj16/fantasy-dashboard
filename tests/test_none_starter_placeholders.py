@@ -10,6 +10,7 @@ team_live_totals) the first time a real lineup carried an empty slot.
 import pytest
 
 pd = pytest.importorskip("pandas")  # dashboard_services.ai.weekly_recap imports it at module top
+pytest.importorskip("openai")  # app.py pulls openai via dashboard_services.ai.client
 
 import dashboard_services.matchups as matchups
 from dashboard_services import recap_calculations as rc

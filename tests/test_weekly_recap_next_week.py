@@ -11,6 +11,7 @@ the base suite when pandas isn't installed.
 import pytest
 
 pd = pytest.importorskip("pandas")
+pytest.importorskip("openai")  # app.py pulls openai via dashboard_services.ai.client
 
 from dashboard_services.ai.weekly_recap import (  # noqa: E402
     _all_play_strength,

@@ -11,6 +11,7 @@ import pytest
 
 pytest.importorskip("pandas")
 pytest.importorskip("flask")
+pytest.importorskip("openai")  # app.py pulls openai via dashboard_services.ai.client
 
 from app import _render_usage_movers  # noqa: E402
 
