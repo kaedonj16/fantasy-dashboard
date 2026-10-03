@@ -195,10 +195,18 @@ function notifyNavFresh(request, networkFetch) {
   });
 }
 
-async function navigationFallback(cache, cached) {
+async function navigationFallback(cache, cached, requestUrl) {
   if (cached) return cached;
-  const home = await cache.match('/');
-  if (home) return home;
+  // Only serve the cached home shell when the user actually asked for home
+  // (PWA cold launch). Serving / for a different URL (e.g. /trades) paints
+  // the wrong page -- the user taps Trades, sees Home content, then gets
+  // "repainted" when the network finally lands. For non-home URLs, fall
+  // through to the offline page instead.
+  const pathname = (() => { try { return new URL(requestUrl).pathname; } catch (_) { return '/'; } })();
+  if (pathname === '/' || pathname === '') {
+    const home = await cache.match('/');
+    if (home) return home;
+  }
   const offline = await cache.match(OFFLINE_URL);
   return offline || Response.error();
 }
@@ -273,7 +281,7 @@ async function handleNavigate(request) {
   if (late) return late;
   if (networkError) return networkError;
   notifyNavFresh(request, networkFetch);
-  return navigationFallback(cache, cached);
+  return navigationFallback(cache, cached, request.url);
 }
 
 // ── Push notifications ─────────────────────────────────────────────────────────
