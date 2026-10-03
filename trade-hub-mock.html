@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trade Hub mock: compact chips + lighter card shadows</title>
+<style>
+  :root {
+    --bg: #f1f5f9;
+    --card: #ffffff;
+    --row: #f8fafc;
+    --border: #e2e8f0;
+    --text: #0f172a;
+    --text-muted: #64748b;
+    --text-subtle: #94a3b8;
+    --navy: #1e3a5f;
+    --accent: #3b82f6;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: #0b1526;
+    color: var(--text);
+    padding: 16px 8px 40px;
+    display: flex;
+    justify-content: center;
+  }
+  .phone {
+    width: 390px;
+    max-width: 100%;
+    background: var(--bg);
+    border-radius: 28px;
+    overflow: hidden;
+    box-shadow: 0 24px 60px rgba(0,0,0,.45);
+  }
+  .screen { padding: 14px 14px 20px; }
+
+  /* ── Mock toolbar ── */
+  .mock-bar {
+    background: #111c30;
+    color: #e2e8f0;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .mock-bar .t { font-size: 13px; font-weight: 700; line-height: 1.3; }
+  .mock-bar .s { font-size: 11px; color: #94a3b8; font-weight: 500; }
+  .mock-toggle { display: flex; background: #1e2a44; border-radius: 10px; padding: 3px; gap: 2px; flex-shrink: 0; }
+  .mock-toggle button {
+    border: 0; background: transparent; color: #94a3b8;
+    font-size: 12px; font-weight: 700; padding: 7px 12px; border-radius: 8px; cursor: pointer;
+  }
+  .mock-toggle button.on { background: #3b82f6; color: #fff; }
+
+  /* ── Trade Hub chrome ── */
+  .hub-tabs {
+    display: flex; gap: 4px; background: var(--row);
+    border: 1px solid var(--border); border-radius: 14px; padding: 4px; margin-bottom: 10px;
+  }
+  .hub-tabs span { flex: 1; text-align: center; font-size: 13px; font-weight: 700; color: var(--text-muted); padding: 8px 4px; }
+  .hub-tabs .on { background: #fff; color: var(--text); border-radius: 10px; box-shadow: 0 1px 4px rgba(2,6,23,.10); }
+  .hub-tabs .pro { display: inline-block; font-size: 9px; font-weight: 800; background: #2563eb; color: #fff; border-radius: 5px; padding: 1px 5px; margin-left: 4px; vertical-align: 2px; }
+  .sub-tabs {
+    display: flex; gap: 2px; background: var(--row);
+    border: 1px solid var(--border); border-radius: 12px; padding: 3px; margin-bottom: 10px;
+  }
+  .sub-tabs span { flex: 1; text-align: center; font-size: 12px; font-weight: 600; color: var(--text-muted); padding: 7px 2px; white-space: nowrap; }
+  .sub-tabs .on { background: var(--navy); color: #fff; border-radius: 9px; }
+  .mode-toggle {
+    display: flex; gap: 2px; background: var(--row);
+    border: 1px solid var(--border); border-radius: 12px; padding: 3px; margin-bottom: 10px;
+  }
+  .mode-toggle span { flex: 1; text-align: center; font-size: 13px; font-weight: 700; padding: 8px 4px; color: var(--text-muted); }
+  .mode-toggle .on { background: var(--navy); color: #fff; border-radius: 9px; }
+  .search-box {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 11px 14px; font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 4px;
+  }
+
+  /* ── Top trade chips ── */
+  .otc-top-chips-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .otc-top-chips-label { font-size: 11px; font-weight: 700; color: var(--text-muted); letter-spacing: .05em; text-transform: uppercase; }
+  .otc-top-chips-hint { font-size: 11px; font-weight: 500; color: var(--text-subtle); white-space: nowrap; }
+  .otc-top-chips { display: flex; gap: 6px; }
+  .otc-top-chip {
+    display: inline-flex; align-items: center; gap: 7px;
+    border: 1px solid var(--border); border-radius: 10px; background: var(--row);
+    color: var(--text); font-size: 13px; cursor: pointer; white-space: nowrap;
+  }
+  .otc-top-chip-pos { font-size: 10.5px; font-weight: 800; letter-spacing: .02em; padding: 3px 7px; border-radius: 6px; }
+  .otc-top-chip-name { font-weight: 600; }
+  .otc-top-chip-team { font-size: 11px; font-weight: 600; color: var(--text-muted); }
+
+  .pos-WR  { color: #b45309; background: rgba(245,158,11,.14); }
+  .pos-RB  { color: #047857; background: rgba(16,185,129,.14); }
+  .pos-TE  { color: #7c3aed; background: rgba(139,92,246,.14); }
+  .pos-QB  { color: #1d4ed8; background: rgba(59,130,246,.14); }
+  .pos-PICK{ color: #7c3aed; background: rgba(139,92,246,.14); }
+
+  /* CURRENT: wrapped grid of big chips (existing behavior) */
+  body.mock-current .otc-top-chips-head { margin: 10px 0 6px; }
+  body.mock-current .otc-top-chips { flex-wrap: wrap; }
+  body.mock-current .otc-top-chip { padding: 4px 10px 4px 4px; }
+
+  /* PROPOSED: one horizontal scrolling row, smaller chips */
+  body.mock-proposed .otc-top-chips-head { margin: 8px 0 4px; }
+  body.mock-proposed .otc-top-chips-hint { display: none; }
+  body.mock-proposed .otc-top-chips {
+    flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch;
+    scrollbar-width: none; margin: 0 -14px; padding: 2px 14px 8px;
+  }
+  body.mock-proposed .otc-top-chips::-webkit-scrollbar { display: none; }
+  body.mock-proposed .otc-top-chip { flex: 0 0 auto; padding: 3px 8px 3px 3px; font-size: 12px; gap: 6px; }
+  body.mock-proposed .otc-top-chip-pos { font-size: 10px; padding: 2px 6px; }
+  body.mock-proposed .otc-top-chip-team { display: none; }
+
+  /* ── Real trades section ── */
+  .rt-section { border-top: 2px solid var(--border); }
+  body.mock-current .rt-section { margin-top: 14px; padding-top: 12px; }
+  body.mock-proposed .rt-section { margin-top: 10px; padding-top: 8px; }
+  .rt-head { font-size: 15px; font-weight: 800; color: var(--text); margin-bottom: 3px; }
+  .rt-sub { font-size: 11px; color: var(--text-muted); }
+  body.mock-current .rt-sub { margin-bottom: 10px; }
+  body.mock-proposed .rt-sub { margin-bottom: 8px; }
+
+  .arch-panel { border-radius: 8px; border: 1px solid var(--border); overflow: hidden; background: var(--card); }
+  body.mock-current .arch-panel { margin-bottom: 12px; }
+  body.mock-proposed .arch-panel { margin-bottom: 8px; }
+  .arch-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 6px 10px; background: rgba(0,0,0,.04); border-bottom: 1px solid var(--border); gap: 6px;
+  }
+  .arch-head .lbl { font-size: 10px; font-weight: 700; color: var(--text-muted); letter-spacing: .05em; text-transform: uppercase; }
+  .arch-tabs { display: flex; gap: 2px; background: var(--row); border-radius: 8px; padding: 2px; }
+  .arch-tabs span { font-size: 11px; font-weight: 700; padding: 4px 10px; color: var(--text-muted); }
+  .arch-tabs .on { background: #fff; color: var(--text); border-radius: 6px; box-shadow: 0 1px 3px rgba(2,6,23,.08); }
+  .arch-grid { display: grid; grid-template-columns: 1fr 1fr; }
+  .arch-cell { padding: 7px 10px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 6px; }
+  .arch-cell:nth-child(odd) { border-right: 1px solid var(--border); }
+  .arch-cell .pct { margin-left: auto; font-size: 11px; font-weight: 700; color: #a78bfa; flex-shrink: 0; }
+  .tier { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 6px; white-space: nowrap; }
+  .plus { color: var(--text-muted); font-size: 11px; margin: 0 1px; }
+
+  .rt-list-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .rt-list-head .h { font-size: 12px; font-weight: 800; color: var(--text); }
+  .rt-list-head .s { font-size: 11px; color: var(--text-muted); }
+  .group-div { display: flex; align-items: center; gap: 8px; margin: 14px 0 6px; }
+  .group-div .line { flex: 1; height: 1px; background: var(--border); }
+  .group-div .pill { border: 1px solid var(--border); background: var(--card); border-radius: 8px; padding: 4px 10px; display: flex; gap: 4px; align-items: center; }
+
+  /* ── Suggestion cards ── */
+  .otc-real-trade-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; margin-bottom: 8px; }
+  body.mock-current .otc-real-trade-card { box-shadow: 0 18px 44px rgba(2, 6, 23, 0.16); }
+  body.mock-proposed .otc-real-trade-card { box-shadow: 0 2px 8px rgba(2, 6, 23, 0.08); }
+  .otc-rt-body { display: grid; grid-template-columns: 1fr 1px 1fr; }
+  .otc-rt-side { padding: 12px 14px; min-width: 0; }
+  .otc-rt-divider { background: var(--border); }
+  .otc-rt-label { font-size: 9px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px; }
+  .otc-rt-asset { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; min-width: 0; }
+  .otc-rt-name { font-size: 13px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .otc-rt-footer { display: flex; align-items: center; gap: 6px; padding: 8px 14px; border-top: 1px solid var(--border); background: var(--row); flex-wrap: wrap; }
+  .pill { font-size: 10px; font-weight: 700; padding: 3px 9px; border-radius: 10px; white-space: nowrap; border: 1px solid var(--border); background: var(--card); color: var(--text-muted); }
+  .pill.trades { color: #a78bfa; border-color: rgba(167,139,250,.35); background: rgba(167,139,250,.08); }
+  .pill.overpay { color: #b45309; border-color: rgba(245,158,11,.35); background: rgba(245,158,11,.08); }
+  .pill.fair { color: #047857; border-color: rgba(16,185,129,.35); background: rgba(16,185,129,.08); }
+  .pill.accept { color: #7c3aed; border-color: rgba(139,92,246,.35); background: rgba(139,92,246,.08); }
+  .analyze-btn {
+    width: 100%; border: 1px solid var(--border); background: var(--card); color: var(--text);
+    font-size: 14px; font-weight: 700; border-radius: 10px; padding: 10px; margin-top: 8px; cursor: pointer;
+  }
+
+  .note {
+    font-size: 11px; color: var(--text-muted); line-height: 1.5;
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 12px; margin: 12px 0 0;
+  }
+  .note b { color: var(--text); }
+  .swipe-hint { font-size: 10px; color: var(--text-subtle); margin-top: 2px; }
+</style>
+</head>
+<body class="mock-proposed">
+<div class="phone">
+  <div class="mock-bar">
+    <div>
+      <div class="t">Trade Hub mock</div>
+      <div class="s" id="mockDesc">Proposed: compact chips row + lighter card shadows</div>
+    </div>
+    <div class="mock-toggle">
+      <button id="btnProposed" class="on" onclick="setMock('proposed')">Proposed</button>
+      <button id="btnCurrent" onclick="setMock('current')">Current</button>
+    </div>
+  </div>
+  <div class="screen">
+
+    <div class="hub-tabs">
+      <span>Calculator</span>
+      <span class="on">Trade Hub<span class="pro">PRO</span></span>
+      <span>Insights</span>
+    </div>
+    <div class="sub-tabs">
+      <span>Suggestions</span>
+      <span class="on">Targets</span>
+      <span>Market Intel</span>
+      <span>Saved</span>
+    </div>
+    <div class="mode-toggle">
+      <span class="on">Build around</span>
+      <span>Find returns</span>
+    </div>
+    <div class="search-box">Zay Flowers</div>
+
+    <div class="otc-top-chips-head">
+      <span class="otc-top-chips-label">Your top trade chips</span>
+      <span class="otc-top-chips-hint">Tap to search this player</span>
+    </div>
+    <div class="otc-top-chips">
+      <button class="otc-top-chip"><span class="otc-top-chip-pos pos-WR">WR5</span><span class="otc-top-chip-name">CeeDee Lamb</span><span class="otc-top-chip-team">DAL</span></button>
+      <button class="otc-top-chip"><span class="otc-top-chip-pos pos-RB">RB3</span><span class="otc-top-chip-name">Jeremiyah Love</span><span class="otc-top-chip-team">ARI</span></button>
+      <button class="otc-top-chip"><span class="otc-top-chip-pos pos-WR">WR7</span><span class="otc-top-chip-name">Drake London</span><span class="otc-top-chip-team">ATL</span></button>
+      <button class="otc-top-chip"><span class="otc-top-chip-pos pos-RB">RB7</span><span class="otc-top-chip-name">Kenneth Walker III</span><span class="otc-top-chip-team">KC</span></button>
+      <button class="otc-top-chip"><span class="otc-top-chip-pos pos-TE">TE2</span><span class="otc-top-chip-name">Trey McBride</span><span class="otc-top-chip-team">ARI</span></button>
+      <button class="otc-top-chip"><span class="otc-top-chip-pos pos-WR">WR11</span><span class="otc-top-chip-name">Nico Collins</span><span class="otc-top-chip-team">HOU</span></button>
+    </div>
+    <div class="swipe-hint" id="swipeHint" style="display:none;">Swipe sideways to see all chips</div>
+
+    <div class="rt-section">
+      <div class="rt-head">How people acquire Zay Flowers</div>
+      <div class="rt-sub">199 real trades in similar leagues</div>
+
+      <div class="arch-panel">
+        <div class="arch-head">
+          <span class="lbl">What teams typically send</span>
+          <div class="arch-tabs">
+            <span class="on">Top patterns</span>
+            <span>Your team</span>
+          </div>
+        </div>
+        <div class="arch-grid">
+          <div class="arch-cell"><span class="tier pos-WR">WR T5</span><span class="plus">+</span><span class="tier pos-WR">WR T7</span><span class="pct">1%</span></div>
+          <div class="arch-cell"><span class="tier pos-RB">RB T7</span><span class="plus">+</span><span class="tier pos-WR">WR T5</span><span class="pct">1%</span></div>
+          <div class="arch-cell"><span class="tier pos-QB">QB T7</span><span class="plus">+</span><span class="tier pos-TE">TE T7</span><span class="plus">+</span><span class="tier pos-WR">WR T6</span><span class="pct">1%</span></div>
+          <div class="arch-cell"><span class="tier pos-WR">WR T4</span><span class="pct">2%</span></div>
+        </div>
+      </div>
+
+      <div class="rt-list-head">
+        <span class="h">Real trades</span>
+        <span class="s">adapted to your roster</span>
+      </div>
+
+      <div class="group-div">
+        <div class="line"></div>
+        <div class="pill"><span class="tier pos-WR">WR T4</span></div>
+        <div class="line"></div>
+      </div>
+
+      <div class="otc-real-trade-card">
+        <div class="otc-rt-body">
+          <div class="otc-rt-side">
+            <div class="otc-rt-label">You get</div>
+            <div class="otc-rt-asset"><span class="tier pos-WR">WR</span><span class="otc-rt-name">Zay Flowers</span></div>
+          </div>
+          <div class="otc-rt-divider"></div>
+          <div class="otc-rt-side">
+            <div class="otc-rt-label">You give</div>
+            <div class="otc-rt-asset"><span class="tier pos-WR">WR</span><span class="otc-rt-name">Nico Collins</span></div>
+          </div>
+        </div>
+        <div class="otc-rt-footer">
+          <span class="pill trades">2 trades</span>
+          <span class="pill overpay">Slight overpay</span>
+          <span class="pill accept">63% accept</span>
+          <button class="analyze-btn">Analyze</button>
+        </div>
+      </div>
+
+      <div class="group-div">
+        <div class="line"></div>
+        <div class="pill"><span class="tier pos-RB">RB T5</span><span class="plus">+</span><span class="tier pos-PICK">PICK R2</span></div>
+        <div class="line"></div>
+      </div>
+
+      <div class="otc-real-trade-card">
+        <div class="otc-rt-body">
+          <div class="otc-rt-side">
+            <div class="otc-rt-label">You get</div>
+            <div class="otc-rt-asset"><span class="tier pos-WR">WR</span><span class="otc-rt-name">Zay Flowers</span></div>
+          </div>
+          <div class="otc-rt-divider"></div>
+          <div class="otc-rt-side">
+            <div class="otc-rt-label">You give</div>
+            <div class="otc-rt-asset"><span class="tier pos-RB">RB</span><span class="otc-rt-name">Quinshon Judkins</span></div>
+            <div class="otc-rt-asset"><span class="tier pos-PICK">PICK</span><span class="otc-rt-name">2027 2nd (Mid)</span></div>
+          </div>
+        </div>
+        <div class="otc-rt-footer">
+          <span class="pill trades">73 trades</span>
+          <span class="pill fair">Fair value</span>
+          <span class="pill accept">63% accept</span>
+          <button class="analyze-btn">Analyze</button>
+        </div>
+      </div>
+
+      <div class="note" id="changeNote">
+        <b>Proposed changes.</b> Chips: single horizontal scroll row (team abbrev hidden, hint hidden, smaller padding), saves about 4 rows of height. Headers: tighter margins above "How people acquire" and the patterns panel. Cards: shadow reduced from 0 18px 44px rgba(2,6,23,.16) to 0 2px 8px rgba(2,6,23,.08).
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+  function setMock(which) {
+    document.body.className = which === 'proposed' ? 'mock-proposed' : 'mock-current';
+    document.getElementById('btnProposed').classList.toggle('on', which === 'proposed');
+    document.getElementById('btnCurrent').classList.toggle('on', which === 'current');
+    document.getElementById('mockDesc').textContent = which === 'proposed'
+      ? 'Proposed: compact chips row + lighter card shadows'
+      : 'Current: wrapped chips + heavy card shadows';
+    document.getElementById('swipeHint').style.display = which === 'proposed' ? '' : 'none';
+    document.getElementById('changeNote').innerHTML = which === 'proposed'
+      ? '<b>Proposed changes.</b> Chips: single horizontal scroll row (team abbrev hidden, hint hidden, smaller padding), saves about 4 rows of height. Headers: tighter margins above "How people acquire" and the patterns panel. Cards: shadow reduced from 0 18px 44px rgba(2,6,23,.16) to 0 2px 8px rgba(2,6,23,.08).'
+      : '<b>Current look.</b> Chips wrap into multiple rows and the hint line takes a full row. Cards use the heavy 0 18px 44px shadow.';
+  }
+</script>
+</body>
+</html>

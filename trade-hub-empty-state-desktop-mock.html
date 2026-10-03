@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trade Hub mock: Targets tab empty state, desktop (Option C)</title>
+<style>
+  :root {
+    --bg: #f1f5f9;
+    --card: #ffffff;
+    --row: #f8fafc;
+    --border: #e2e8f0;
+    --text: #0f172a;
+    --text-muted: #64748b;
+    --text-subtle: #94a3b8;
+    --navy: #1e3a5f;
+    --accent: #3b82f6;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: #0b1526;
+    color: var(--text);
+    padding: 32px 24px 80px;
+    display: flex;
+    justify-content: center;
+  }
+  .page { width: 1240px; max-width: 100%; display: flex; flex-direction: column; gap: 24px; }
+  .page-title { color: #e2e8f0; font-size: 20px; font-weight: 800; text-align: center; margin-bottom: -12px; }
+  .page-sub { color: #94a3b8; font-size: 13px; text-align: center; margin-bottom: -8px; }
+
+  .desktop {
+    width: 1200px;
+    max-width: 100%;
+    background: var(--bg);
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 24px 60px rgba(0,0,0,.45);
+    margin: 0 auto;
+  }
+  .screen { padding: 28px 40px 48px; min-height: 640px; }
+  .screen-inner { max-width: 900px; margin: 0 auto; }
+
+  /* ── Trade Hub chrome (desktop: wider, tabs inline) ── */
+  .hub-tabs {
+    display: inline-flex; gap: 4px; background: var(--row);
+    border: 1px solid var(--border); border-radius: 14px; padding: 4px; margin-bottom: 16px;
+  }
+  .hub-tabs span { text-align: center; font-size: 14px; font-weight: 700; color: var(--text-muted); padding: 9px 22px; }
+  .hub-tabs .on { background: #fff; color: var(--text); border-radius: 10px; box-shadow: 0 1px 4px rgba(2,6,23,.10); }
+  .hub-tabs .pro { display: inline-block; font-size: 9px; font-weight: 800; background: #2563eb; color: #fff; border-radius: 5px; padding: 1px 5px; margin-left: 6px; vertical-align: 2px; }
+  .sub-tabs {
+    display: inline-flex; gap: 2px; background: var(--row);
+    border: 1px solid var(--border); border-radius: 12px; padding: 3px; margin-bottom: 16px;
+  }
+  .sub-tabs span { text-align: center; font-size: 13px; font-weight: 600; color: var(--text-muted); padding: 8px 18px; white-space: nowrap; }
+  .sub-tabs .on { background: var(--navy); color: #fff; border-radius: 9px; }
+  .chrome-row { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+  .mode-toggle {
+    display: inline-flex; gap: 2px; background: var(--row);
+    border: 1px solid var(--border); border-radius: 12px; padding: 3px; margin-bottom: 16px;
+  }
+  .mode-toggle span { text-align: center; font-size: 14px; font-weight: 700; padding: 9px 22px; color: var(--text-muted); }
+  .mode-toggle .on { background: var(--navy); color: #fff; border-radius: 9px; }
+  .search-box {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 13px 18px; font-size: 15px; font-weight: 500; color: var(--text-subtle); margin-bottom: 20px;
+    max-width: 560px;
+  }
+
+  /* ── Section headers ── */
+  .sec-head { margin: 24px 0 12px; }
+  .sec-head:first-of-type { margin-top: 8px; }
+  .sec-label { font-size: 12px; font-weight: 700; color: var(--text-muted); letter-spacing: .05em; text-transform: uppercase; }
+  .sec-sub { font-size: 13px; color: var(--text-subtle); margin-top: 3px; }
+
+  /* ── Player chips ── */
+  .pos-WR  { color: #b45309; background: rgba(245,158,11,.14); }
+  .pos-RB  { color: #047857; background: rgba(16,185,129,.14); }
+  .pos-TE  { color: #7c3aed; background: rgba(139,92,246,.14); }
+  .pos-QB  { color: #1d4ed8; background: rgba(59,130,246,.14); }
+
+  .p-chip {
+    flex: 0 0 auto; display: inline-flex; align-items: center; gap: 8px;
+    border: 1px solid var(--border); border-radius: 10px; background: var(--card);
+    color: var(--text); font-size: 14px; padding: 5px 14px 5px 5px;
+    cursor: pointer; white-space: nowrap; font-weight: 600;
+  }
+  .p-chip .pos { font-size: 11px; font-weight: 800; padding: 3px 8px; border-radius: 6px; }
+  .p-chip:hover { border-color: var(--accent); }
+
+  /* ── Option C desktop: needs in two columns ── */
+  .needs-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  }
+  .need-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+    padding: 16px 18px;
+  }
+  .need-card-top { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .need-card-top .pos { font-size: 13px; font-weight: 800; padding: 4px 10px; border-radius: 8px; }
+  .need-card-top .why { font-size: 13px; color: var(--text-muted); }
+  .need-card-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  /* ── Trending: full grid at desktop width ── */
+  .trend-grid {
+    display: flex; gap: 8px; flex-wrap: wrap;
+  }
+
+  /* ── Footer note ── */
+  .opt-note {
+    font-size: 12px; color: var(--text-muted); line-height: 1.6;
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 16px; margin-top: 28px; max-width: 900px; margin-left: auto; margin-right: auto;
+  }
+  .opt-note b { color: var(--text); }
+  .opt-note .badge {
+    background: #3b82f6; color: #fff; font-size: 11px; font-weight: 800;
+    padding: 3px 10px; border-radius: 8px; margin-right: 6px;
+  }
+  /* ── Mobile view toggle + fit-to-screen scaling ── */
+  #view-toggle {
+    position: fixed; top: 10px; right: 10px; z-index: 9999;
+    display: flex; gap: 4px; background: #0b1526;
+    border: 1px solid #334155; border-radius: 10px; padding: 4px;
+    box-shadow: 0 4px 12px rgba(0,0,0,.4);
+  }
+  #view-toggle button {
+    font-family: inherit; font-size: 12px; font-weight: 700;
+    padding: 7px 12px; border: 0; border-radius: 7px;
+    background: transparent; color: #94a3b8; cursor: pointer;
+  }
+  #view-toggle button.on { background: #2563eb; color: #fff; }
+  #scale-wrap { width: 100%; }
+  #scale-inner { width: 1240px; margin: 0 auto; transform-origin: top center; }
+  body.fit #scale-wrap { overflow: hidden; }
+  body.full #scale-wrap { overflow-x: auto; }
+</style>
+</head>
+<body>
+<div id="view-toggle">
+  <button id="fit-btn">Fit to screen</button>
+  <button id="full-btn">Full size</button>
+</div>
+<div id="scale-wrap">
+<div id="scale-inner">
+<div class="page">
+  <div class="page-title">Trade Hub: Targets tab empty state, desktop</div>
+  <div class="page-sub">Option C (needs + trending stacked), 1200px. No player searched yet.</div>
+
+  <div class="desktop">
+    <div class="screen">
+      <div class="screen-inner">
+        <div class="chrome-row">
+          <div class="hub-tabs">
+            <span>Calculator</span>
+            <span class="on">Trade Hub<span class="pro">PRO</span></span>
+            <span>Insights</span>
+          </div>
+        </div>
+        <div class="chrome-row">
+          <div class="sub-tabs">
+            <span>Suggestions</span>
+            <span class="on">Targets</span>
+            <span>Market Intel</span>
+            <span>Saved</span>
+          </div>
+        </div>
+        <div class="chrome-row">
+          <div class="mode-toggle">
+            <span class="on">Build around</span>
+            <span>Find returns</span>
+          </div>
+        </div>
+        <div class="search-box">Search a player...</div>
+
+        <div class="sec-head">
+          <div class="sec-label">Your team needs</div>
+          <div class="sec-sub">Based on your roster</div>
+        </div>
+
+        <div class="needs-grid">
+          <div class="need-card">
+            <div class="need-card-top">
+              <span class="pos pos-RB">RB</span>
+              <span class="why">Only 2 startable backs, thin behind them</span>
+            </div>
+            <div class="need-card-chips">
+              <button class="p-chip"><span class="pos pos-RB">RB</span>Quinshon Judkins</button>
+              <button class="p-chip"><span class="pos pos-RB">RB</span>Kenneth Walker III</button>
+            </div>
+          </div>
+
+          <div class="need-card">
+            <div class="need-card-top">
+              <span class="pos pos-WR">WR</span>
+              <span class="why">WR3 spot is a weekly coin flip</span>
+            </div>
+            <div class="need-card-chips">
+              <button class="p-chip"><span class="pos pos-WR">WR</span>Zay Flowers</button>
+              <button class="p-chip"><span class="pos pos-WR">WR</span>Jayden Higgins</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="sec-head">
+          <div class="sec-label">Trending this week</div>
+          <div class="sec-sub">Most searched trade targets</div>
+        </div>
+        <div class="trend-grid">
+          <button class="p-chip"><span class="pos pos-WR">WR</span>Zay Flowers</button>
+          <button class="p-chip"><span class="pos pos-RB">RB</span>Quinshon Judkins</button>
+          <button class="p-chip"><span class="pos pos-WR">WR</span>Jayden Higgins</button>
+          <button class="p-chip"><span class="pos pos-TE">TE</span>Trey McBride</button>
+          <button class="p-chip"><span class="pos pos-RB">RB</span>Kenneth Walker III</button>
+          <button class="p-chip"><span class="pos pos-WR">WR</span>Drake London</button>
+          <button class="p-chip"><span class="pos pos-QB">QB</span>Jayden Daniels</button>
+          <button class="p-chip"><span class="pos pos-WR">WR</span>CeeDee Lamb</button>
+          <button class="p-chip"><span class="pos pos-TE">TE</span>Brock Bowers</button>
+          <button class="p-chip"><span class="pos pos-RB">RB</span>Jeremiyah Love</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="opt-note"><span class="badge">C</span><b>Desktop adaptations vs mobile:</b> needs cards sit side by side in two columns with their reason lines kept (room to spare); trending shows 10 chips in a wrapping grid instead of a horizontal scroll; search box capped at 560px; content column centered at 900px inside the 1200px shell. All chips remain tappable buttons.</div>
+
+</div>
+</div>
+</div>
+<script>
+(function () {
+  var DESIGN_W = 1240;
+  var inner = document.getElementById('scale-inner');
+  var wrap = document.getElementById('scale-wrap');
+  var fitBtn = document.getElementById('fit-btn');
+  var fullBtn = document.getElementById('full-btn');
+
+  function applyFit() {
+    var s = Math.min(1, window.innerWidth / DESIGN_W);
+    inner.style.transform = '';
+    var h = inner.offsetHeight;
+    inner.style.transform = 'scale(' + s + ')';
+    wrap.style.height = (h * s) + 'px';
+  }
+
+  function setMode(mode) {
+    document.body.classList.toggle('fit', mode === 'fit');
+    document.body.classList.toggle('full', mode === 'full');
+    fitBtn.classList.toggle('on', mode === 'fit');
+    fullBtn.classList.toggle('on', mode === 'full');
+    if (mode === 'fit') { applyFit(); }
+    else { inner.style.transform = ''; wrap.style.height = ''; }
+  }
+
+  fitBtn.addEventListener('click', function () { setMode('fit'); });
+  fullBtn.addEventListener('click', function () { setMode('full'); });
+  window.addEventListener('resize', function () {
+    if (document.body.classList.contains('fit')) applyFit();
+  });
+
+  setMode(window.innerWidth < DESIGN_W ? 'fit' : 'full');
+})();
+</script>
+</body>
+</html>

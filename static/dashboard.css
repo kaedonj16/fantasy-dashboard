@@ -6672,7 +6672,7 @@ strong + .player-badge,
 
 .otc-sugg-player-input {
     width: 100%;
-    padding: 8px 12px;
+    padding: 8px 30px 8px 12px;
     border: 1px solid var(--border);
     border-radius: 10px;
     background: var(--row);
@@ -6682,6 +6682,31 @@ strong + .player-badge,
     outline: none;
     transition: border-color 0.15s;
     box-sizing: border-box;
+}
+
+.otc-sugg-clear {
+    position: absolute;
+    right: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 22px;
+    height: 22px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: 50%;
+    background: var(--border);
+    color: var(--text-muted);
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+}
+
+.otc-sugg-clear:hover {
+    background: var(--text-muted);
+    color: var(--row);
 }
 
 .otc-sugg-player-input:focus {
@@ -43403,7 +43428,7 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 .wrapped-name { font-size: 20px; font-weight: 800; line-height: 1.22; margin-top: 12px; letter-spacing: -.01em; color: #ffffff; }
 .wrapped-sub { font-size: 13.5px; line-height: 1.55; font-weight: 500; color: rgba(255, 255, 255, .6); margin-top: 6px; }
 /* Trade Strategy: .otc-real-trade-card from static/app.js (_renderStrategyCards) */
-.otc-real-trade-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; box-shadow: 0 18px 44px rgba(2, 6, 23, 0.16); }
+.otc-real-trade-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; box-shadow: 0 2px 8px rgba(2, 6, 23, 0.08); }
 .otc-rt-body { display: grid; grid-template-columns: 1fr 1px 1fr; gap: 0; }
 .otc-rt-side { padding: 12px 14px; min-width: 0; }
 .otc-rt-divider { background: var(--border); align-self: stretch; }
@@ -43646,7 +43671,7 @@ table.rz-bs-table thead th:first-child {
     align-items: baseline;
     justify-content: space-between;
     gap: 8px;
-    margin: 10px 0 6px;
+    margin: 8px 0 4px;
 }
 .otc-top-chips-label {
     font-size: 11px;
@@ -43656,26 +43681,33 @@ table.rz-bs-table thead th:first-child {
     text-transform: uppercase;
 }
 .otc-top-chips-hint {
-    font-size: 11px;
-    font-weight: 500;
-    color: var(--text-subtle);
-    white-space: nowrap;
+    display: none;
 }
 .otc-top-chips {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
     gap: 6px;
+    margin: 0 -14px;
+    padding: 2px 14px 8px;
+}
+.otc-top-chips::-webkit-scrollbar {
+    display: none;
 }
 .otc-top-chip {
     display: inline-flex;
     align-items: center;
-    gap: 7px;
-    padding: 4px 10px 4px 4px;
+    flex: 0 0 auto;
+    gap: 6px;
+    padding: 3px 8px 3px 3px;
     border: 1px solid var(--border);
     border-radius: 10px;
     background: var(--row);
     color: var(--text);
-    font-size: 13px;
+    font-size: 12px;
+    white-space: nowrap;
     cursor: pointer;
     transition: border-color .15s, transform .1s;
 }
@@ -43686,10 +43718,10 @@ table.rz-bs-table thead th:first-child {
     transform: scale(.97);
 }
 .otc-top-chip-pos {
-    font-size: 10.5px;
+    font-size: 10px;
     font-weight: 800;
     letter-spacing: .02em;
-    padding: 3px 7px;
+    padding: 2px 6px;
     border-radius: 6px;
     white-space: nowrap;
 }
@@ -43697,9 +43729,89 @@ table.rz-bs-table thead th:first-child {
     font-weight: 600;
 }
 .otc-top-chip-team {
+    display: none;
+}
+
+/* ── Trade Hub Targets empty state (Option C: needs + trending) ─────────────── */
+.otc-empty-needs {
+    margin: 10px 0 4px;
+}
+.otc-empty-section-label {
     font-size: 11px;
-    font-weight: 600;
+    font-weight: 700;
     color: var(--text-muted);
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    margin-bottom: 2px;
+}
+.otc-empty-section-sub {
+    font-size: 11px;
+    color: var(--text-subtle);
+    margin-bottom: 8px;
+}
+.otc-empty-needs-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+@media (min-width: 768px) {
+    .otc-empty-needs-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+    }
+}
+.otc-empty-need-card {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--row);
+    padding: 8px 10px;
+}
+.otc-empty-need-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+.otc-empty-need-pos {
+    font-size: 10px;
+    font-weight: 800;
+    padding: 2px 6px;
+    border-radius: 6px;
+    white-space: nowrap;
+}
+.otc-empty-need-reason {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 500;
+}
+.otc-empty-need-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.otc-empty-trending {
+    margin: 12px 0 4px;
+}
+.otc-empty-trending-row {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    gap: 6px;
+    margin: 0 -14px;
+    padding: 2px 14px 8px;
+}
+.otc-empty-trending-row::-webkit-scrollbar {
+    display: none;
+}
+@media (min-width: 768px) {
+    .otc-empty-trending-row {
+        flex-wrap: wrap;
+        overflow-x: visible;
+        margin: 0;
+        padding: 2px 0 8px;
+    }
 }
 
 /* ── ScoreZone Moments (matchup page) ─────────────────────────────────────────

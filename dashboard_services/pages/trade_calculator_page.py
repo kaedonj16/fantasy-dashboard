@@ -1090,6 +1090,8 @@ def build_trade_calculator_body(
                       <input id="suggPlayerInput" class="otc-sugg-player-input"
                         type="text" autocomplete="off"
                         placeholder="Search any player…" />
+                      <button id="suggPlayerClear" class="otc-sugg-clear" type="button"
+                        aria-label="Clear search" style="display:none;">&#215;</button>
                       <div id="suggPlayerDropdown" class="otc-sugg-player-dropdown" style="display:none;"></div>
                     </div>
                   </div>
@@ -1100,6 +1102,7 @@ def build_trade_calculator_body(
                     </div>
                     <div id="otcTopChips" class="otc-top-chips"></div>
                   </div>
+                  <div id="otcEmptyState" style="display:none;"></div>
                   <div id="suggResultsMeta" class="otc-sugg-meta" style="display:none;"></div>
                   <div id="suggResultsList" class="otc-sugg-list"></div>
                 </div>
