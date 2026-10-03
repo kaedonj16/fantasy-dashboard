@@ -1107,7 +1107,7 @@ def build_trade_calculator_body(
                 <!-- Gaps trade targets (always Gaps in Build Around) -->
                 <div class="otc-sugg-targets-section">
                   <div class="otc-sugg-section-head">
-                    <span class="otc-sugg-section-title">Trade Targets</span>
+                    <span class="otc-sugg-section-title">Build-Around Targets</span>
                   </div>
                   <div id="otcSuggTargetsBody">
                     <div class="empty-state is-compact">

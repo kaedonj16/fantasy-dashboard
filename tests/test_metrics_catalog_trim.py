@@ -74,7 +74,7 @@ KEEPERS = (
     "total_tds_per_game",
     "rec_yards_per_game",
     "rush_yards_per_game",
-    "avoided_tackles_pg",
+    "avoided_tackles_per_carry",
     "rz_target_share",
     "rz_opp_share",
 )

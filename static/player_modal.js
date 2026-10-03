@@ -5144,7 +5144,7 @@ const _ADV_METRIC_DESCS = {
   explosive_run_rate: "Percent of carries gaining 10+ yards; big-play rate on the ground (nflverse).",
   elusive_rating: "PFF metric for yards created after contact and missed tackles forced, independent of blocking.",
   pff_rushing_grade: "PFF's rushing grade (0-100).",
-  avoided_tackles_pg: "Broken tackles per carry on rush attempts (PFR charting via nflverse).",
+  avoided_tackles_per_carry: "Broken tackles per carry on rush attempts (PFR charting via nflverse).",
   route_participation: "Percent of the team's pass-play snaps on which the WR/TE ran a route.",
   target_share: "Percent of the team's total targets directed at this player.",
   air_yards_per_game: "Receiving air yards per game; a measure of downfield target volume.",
@@ -5338,7 +5338,7 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
     yprr: 3, route_participation: 100, routes_per_game: 40,
     pass_tds_per_game: 2.5, rush_tds_per_game: 1, rec_tds_per_game: 1,
     total_tds_per_game: 1.5, fpts_per_carry: 1.5, fpts_per_target: 3,
-    explosive_run_rate: 0.25, avoided_tackles_pg: 2.5,
+    explosive_run_rate: 0.25, avoided_tackles_per_carry: 2.5,
     ngs_created_separation: 3, ngs_avg_time_to_throw: 3.5,
     ngs_aggressiveness: 25, ngs_avg_completed_air_yards: 12,
     ngs_avg_air_yards_to_sticks: 4,
@@ -5464,7 +5464,7 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
     }
     if (metrics.avoided_tackles != null && metrics.avoided_tackles > 0 && metrics.total_carries > 0) {
       const v = metrics.avoided_tackles / metrics.total_carries;
-      defs.push({ label: 'Broken Tackles/Carry', fill: Math.min(v / 2.5 * 100, 100), display: v.toFixed(2), key: 'avoided_tackles_pg', sub: _rankSub('avoided_tackles_pg'), cat: 'Rushing' });
+      defs.push({ label: 'Broken Tackles/Carry', fill: Math.min(v / 2.5 * 100, 100), display: v.toFixed(2), key: 'avoided_tackles_per_carry', sub: _rankSub('avoided_tackles_per_carry'), cat: 'Rushing' });
     }
     if (metrics.yards_per_carry != null) {
       const v = metrics.yards_per_carry;
@@ -5698,7 +5698,7 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
       'yards_per_carry','rush_td_rate',
       'pff_rushing_grade','breakaway_percentage','explosive_run_rate',
       'rushing_epa','ngs_rush_yards_over_expected_per_att','elusive_rating',
-      'avoided_tackles_pg','catch_rate',
+      'avoided_tackles_per_carry','catch_rate',
       'yprr','drop_rate','yards_per_target','yards_per_reception',
       'yards_after_catch_per_reception','yards_after_catch',
       'avg_depth_of_target','contested_catch_rate',
@@ -5758,7 +5758,7 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
   const _SCORE_CEIL = { role_score: 100, grades_offense: 100, pff_passing_grade: 100,
     pff_rushing_grade: 100, nfl_passer_rating: 158.3 };
   const _MINMAX_KEYS = new Set(['passing_epa', 'rushing_epa', 'receiving_epa']);
-  const _RATE_KEYS = new Set(['avoided_tackles_pg', 'explosive_run_rate']);  // per-carry rates → rank
+  const _RATE_KEYS = new Set(['avoided_tackles_per_carry', 'explosive_run_rate']);  // per-carry rates → rank
   function _rankFill(key) {
     const r = ranks && ranks[key];
     const n = counts && counts[key];

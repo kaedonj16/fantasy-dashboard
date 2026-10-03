@@ -331,7 +331,16 @@ def test_movers_endpoint_shape():
 def test_pro_metrics_are_valid_leaderboard_keys():
     from data_building.advanced_metrics import PRO_METRICS
     assert isinstance(PRO_METRICS, frozenset) and len(PRO_METRICS) >= 4
-    assert all(key in LEADERBOARD_METRICS for key in PRO_METRICS)
+    # Season-total FPOE answers are PRO-gated at the payload level (modal /
+    # trend / compare strip); they are stored columns, not leaderboard keys.
+    _stored_fpoe = {
+        "expected_ppr", "expected_half_ppr", "expected_standard",
+        "ppr_over_expected", "half_ppr_over_expected", "standard_over_expected",
+    }
+    assert all(
+        key in LEADERBOARD_METRICS or key in _stored_fpoe
+        for key in PRO_METRICS
+    )
 
 
 def test_pro_presets_are_the_advanced_three():

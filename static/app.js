@@ -17925,7 +17925,7 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
       'pass_tds_per_game': 2.5, 'rush_tds_per_game': 1, 'rec_tds_per_game': 1,
       'total_tds_per_game': 1.5,
       'fpts_per_carry': 1.5, 'fpts_per_target': 3,
-      'explosive_run_rate': 0.25, 'avoided_tackles_pg': 2.5,
+      'explosive_run_rate': 0.25, 'avoided_tackles_per_carry': 2.5,
     };
     
     const range = metricRanges[key] || 100; // Default to 100 if not specified
@@ -17937,7 +17937,7 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
     const _SCORE_CEIL = { role_score: 100, grades_offense: 100, pff_passing_grade: 100,
       pff_rushing_grade: 100, nfl_passer_rating: 158.3, vorp: 150, war: 6 };
     const _MINMAX = new Set(['passing_epa', 'rushing_epa', 'receiving_epa']);
-    const _RATE = new Set(['avoided_tackles_pg', 'explosive_run_rate']);
+    const _RATE = new Set(['avoided_tackles_per_carry', 'explosive_run_rate']);
     const _rankPct = (r, n) => {
       if (!r || !n || n < 2) return null;
       return 8 + Math.max(0, Math.min(1, (n - r) / (n - 1))) * 92;

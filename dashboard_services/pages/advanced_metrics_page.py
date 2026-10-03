@@ -2865,7 +2865,7 @@ _AM_JS = r"""
   const _AM_SCORE_CEIL = { role_score: 100, grades_offense: 100, pff_passing_grade: 100,
     pff_rushing_grade: 100, nfl_passer_rating: 158.3, vorp: 150, war: 6 };
   const _AM_MINMAX = ['passing_epa', 'rushing_epa', 'receiving_epa'];
-  const _AM_RATE = ['avoided_tackles_pg'];
+  const _AM_RATE = ['avoided_tackles_per_carry'];
   function _amBarFill(key, v, pos, mode, rk, stats, barMax) {
     const m = cfg.metrics[key] || {};
     const valFb = Math.min(100, Math.max(3, Math.round(Math.abs(v) / barMax * 100)));
@@ -4500,7 +4500,7 @@ _AM_JS = r"""
         'air_yards_per_game': ['Downfield volume', 'No downfield'],
         'air_yards_share': ['Commands air yards', 'Few air yards'],
         'avg_depth_of_target': ['Deep threat', 'Short-area'],
-        'avoided_tackles_pg': ['Forces missed tackles', 'No one misses'],
+        'avoided_tackles_per_carry': ['Forces missed tackles', 'No one misses'],
         'big_time_throw_rate': ['Big-time throws', 'No big throws'],
         'blitz_rate_faced': ['Blitzed often', 'Rarely blitzed'],
         'boom_rate': ['Boom weeks', 'No ceiling'],
