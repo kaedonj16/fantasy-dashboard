@@ -255,51 +255,57 @@ def test_weekly_tabs_container_does_not_bleed_outside_hub():
     ), "negative margin-inline would clip the matchup heading at the hub edge"
 
 
-def _css_without_media_queries() -> str:
-    """Base CSS with every @media block removed (the desktop rules)."""
+def test_right_column_reads_name_before_team_pos():
+    """Both columns read name-first ("C.J. Stroud HOU \u2022 QB") on every
+    viewport: no rule may flip the right column's TEAM \u2022 POS before the
+    player name with `order` (the flip was removed; the DOM already emits
+    name first, team second)."""
     css = _CSS.read_text(encoding="utf-8")
-    out = []
-    i, n = 0, len(css)
-    while i < n:
-        m = re.search(r"@media[^{]*\{", css[i:])
-        if not m:
-            out.append(css[i:])
-            break
-        out.append(css[i:i + m.start()])
-        depth, j = 1, i + m.end()
-        while j < n and depth:
-            if css[j] == "{":
-                depth += 1
-            elif css[j] == "}":
-                depth -= 1
-            j += 1
-        i = j
-    return "".join(out)
+    for m in re.finditer(
+        r"([^{}]+)\.mb-cell-r\s+\.mb-nameline\s+\.mb-team\s*\{([^}]*)\}", css
+    ):
+        selector = m.group(1)
+        if ".hp-mb" in selector:
+            continue  # tour mockups are scoped and can't leak
+        assert "order:" not in m.group(2), (
+            "right-column header must stay name-first, found order flip in: "
+            + selector.strip()
+        )
 
-
-def test_right_column_flips_team_pos_before_player_name():
-    """Desktop: the right column's inline header reads TEAM • POS before the
-    player name ("HOU • QB C.J. Stroud") -- flipped vs the left column's
-    name-first order. Phones keep the name-first two-line stack (name on top,
-    TEAM • POS beneath)."""
-    desktop = _css_without_media_queries()
-    assert re.search(
-        r"\.mb-cell-r\s+\.mb-nameline\s+\.mb-team\s*\{[^}]*order:\s*-1",
-        desktop,
-    ), "desktop right-column TEAM • POS should render before the player name"
-
-    phone = _media_640_block_with(".mb-nameline")
-    m = re.search(
-        r"\.mb-cell-r\s+\.mb-nameline\s+\.mb-team\s*\{([^}]*)\}", phone
-    )
-    assert m, "phone right-column sub-line rule missing"
-    assert re.search(r"order:\s*0", m.group(1)), \
-        "phones should keep the name-first stack, not flip TEAM • POS on top"
-
-    # The left column keeps name-first everywhere: no order flip on its
+    # The left column keeps name-first everywhere too: no order flip on its
     # sub-line rule.
-    for m in re.finditer(r"([^{}]+)\.mb-team\s*\{([^}]*)\}", _CSS.read_text(encoding="utf-8")):
+    for m in re.finditer(r"([^{}]+)\.mb-team\s*\{([^}]*)}\}", css):
         selector, body = m.group(1), m.group(2)
+        if ".hp-mb" in selector:
+            continue
         if ".mb-cell-r" not in selector and ".mb-nameline" in selector:
             assert "order:" not in body, \
                 "left-column header should keep the name-first order"
+
+
+def test_tour_matchup_styles_are_scoped_to_hp_mb():
+    """The guest-home tour duplicates the .mb-* / .m-win-bar / .pos-badge
+    rules for its static mockups. Those duplicates once sat unscoped AFTER
+    the phone @media block and (equal specificity, later source order)
+    stomped the real board's phone rules -- e.g. re-asserting the removed
+    `order: -1` flip so phones showed TEAM \u2022 POS on top. Every tour
+    duplicate must live under .hp-mb so it can never leak onto the live
+    board again."""
+    css = _CSS.read_text(encoding="utf-8")
+    tour_start = css.find("Tour visuals:")
+    assert tour_start != -1, "tour visuals section missing"
+    tour = css[tour_start:]
+    # End of the matchup-mockup section: the ScoreZone mockups start next.
+    tour_mb = tour[: tour.find("ScoreZone: .rz-*")]
+    tour_mb = re.sub(r"/\*.*?\*/", "", tour_mb, flags=re.S)
+    for m in re.finditer(r"^([^{}]+)\{", tour_mb, re.M):
+        selector = m.group(1).strip()
+        if not selector:
+            continue
+        # Only the matchup-mockup classes matter here.
+        if not re.search(r"\.(mb-|m-win-bar|m-wp-|pos-badge)", selector):
+            continue
+        assert selector.startswith(".hp-mb"), (
+            "tour duplicate escapes its scope and can stomp the live board: "
+            + selector
+        )
