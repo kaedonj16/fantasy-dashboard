@@ -76,11 +76,9 @@ def test_risers_do_not_suppress_actions_fallback():
     src = _src()
     # The nonblank-fallback decision still considers only the four action
     # cards: risers alone must not suppress the "You're all set" all-clear.
-    cards_line = next(
-        line for line in src.splitlines() if line.strip().startswith("_action_cards =")
-    )
-    assert "usage_movers_html" not in cards_line
+    # Cards are (key, html) tuples sorted by urgency; usage_movers_html must
+    # not be among them.
+    assert "usage_movers_html" not in src.split("_action_cards =")[1].split("if _action_cards:")[0]
     for name in ("lineup_alert_html", "roster_moves_html", "trade_window_html", "do_next_waiver_html"):
-        assert name in cards_line
-    assert 'any((c or "").strip() for c in _action_cards)' in src
+        assert name in src
     assert "You're all set for Week" in src

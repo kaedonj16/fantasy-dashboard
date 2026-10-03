@@ -19567,6 +19567,39 @@ img, svg, canvas {
     gap: 16px;
 }
 
+/* ── Actions queue: CTA + dismiss ─────────────────────────────────────────── */
+.os-card-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+.os-action-cta {
+    padding: 8px 14px;
+    font-size: 12px;
+    text-decoration: none;
+}
+.os-action-dismiss {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    font-size: 18px;
+    line-height: 1;
+    color: var(--text-muted);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: color .15s, background .15s;
+}
+.os-action-dismiss:hover {
+    color: var(--text);
+    background: var(--row-hover, rgba(0,0,0,.05));
+}
+
 .lineup-alert-title {
     min-width: 0;
     font-weight: 700;

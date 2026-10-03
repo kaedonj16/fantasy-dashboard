@@ -398,13 +398,86 @@ def build_dashboard_body(ctx: dict) -> str:
     # or when the roster is clean this week; without a fallback the landing tab
     # looked empty/broken. Show a "link your team" prompt when unidentified, or an
     # all-clear card when identified but there is nothing to do.
-    _action_cards = [lineup_alert_html, roster_moves_html, trade_window_html, do_next_waiver_html]
-    if any((c or "").strip() for c in _action_cards):
-        _action_inner = f"""
-          {lineup_alert_html}
-          {roster_moves_html}
-          {trade_window_html}
-          {do_next_waiver_html}"""
+    # Urgency ordering: sort cards by deadline pressure so the most time-sensitive
+    # action is on top. Lineup locks at kickoff (highest), waivers process
+    # mid-week, trade window is urgent only near the deadline, roster moves have
+    # no hard deadline (lowest).
+    def _card_urgency(key, card_html):
+        if not (card_html or "").strip():
+            return 0
+        if key == "lineup":
+            return 100
+        if key == "waiver":
+            return 70
+        if key == "trade":
+            return 90 if "tw-urgent" in card_html else 50
+        if key == "roster":
+            return 40
+        return 0
+
+    _action_cards = [
+        ("lineup", lineup_alert_html),
+        ("waiver", do_next_waiver_html),
+        ("trade", trade_window_html),
+        ("roster", roster_moves_html),
+    ]
+    _action_cards = sorted(
+        [(k, h) for k, h in _action_cards if (h or "").strip()],
+        key=lambda kh: -_card_urgency(kh[0], kh[1]),
+    )
+    if _action_cards:
+        _action_inner = "".join(h for _, h in _action_cards)
+        # Dismissal: client-side only, persisted per card type + week in
+        # localStorage so dismissed cards stay hidden until next week.
+        _dismiss_script = f"""
+          <script>
+          (function() {{
+            var SEASON = {int(season or 0)};
+            var WEEK = {int(current_week or 0)};
+            var LS_KEY = "br-actions-dismissed";
+            function dismissedMap() {{
+              try {{ return JSON.parse(localStorage.getItem(LS_KEY) || "{{}}"); }}
+              catch (e) {{ return {{}}; }}
+            }}
+            function cardKey(type) {{ return type + "-" + SEASON + "-" + WEEK; }}
+            function hideDismissed() {{
+              var map = dismissedMap();
+              var cards = document.querySelectorAll("[data-action-card]");
+              for (var i = 0; i < cards.length; i++) {{
+                var t = cards[i].getAttribute("data-action-card");
+                if (t && map[cardKey(t)]) {{
+                  cards[i].style.display = "none";
+                }}
+              }}
+            }}
+            function bindDismiss() {{
+              var btns = document.querySelectorAll("[data-dismiss-card]");
+              for (var i = 0; i < btns.length; i++) {{
+                (function(btn) {{
+                  btn.addEventListener("click", function() {{
+                    var t = btn.getAttribute("data-dismiss-card");
+                    var card = btn.closest("[data-action-card]");
+                    if (!t) return;
+                    var map = dismissedMap();
+                    map[cardKey(t)] = true;
+                    try {{ localStorage.setItem(LS_KEY, JSON.stringify(map)); }} catch (e) {{}}
+                    if (card) {{
+                      card.style.transition = "opacity .25s";
+                      card.style.opacity = "0";
+                      setTimeout(function() {{ card.style.display = "none"; }}, 260);
+                    }}
+                  }});
+                }})(btns[i]);
+              }}
+            }}
+            if (document.readyState === "loading") {{
+              document.addEventListener("DOMContentLoaded", function() {{ hideDismissed(); bindDismiss(); }});
+            }} else {{
+              hideDismissed(); bindDismiss();
+            }}
+          }})();
+          </script>"""
+        _action_inner += _dismiss_script
     elif not viewer_roster_id:
         _lm_args = (
             f"'{html.escape(str(platform), quote=True)}', "
