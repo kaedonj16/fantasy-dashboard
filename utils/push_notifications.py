@@ -530,6 +530,38 @@ def _app_state_claim(conn, key, value="1"):
 
 # ── ScoreZone live scoring push (owner-targeted, canonical-play deduped) ─────────
 
+def _short_td_desc(play):
+    """Shorten a TD play description for push: '12-yd pass to M. Harrison'.
+
+    Drops everything from TOUCHDOWN onward (extra point, center/holder names)
+    and extracts the core: yards, play type, and target. Falls back to a
+    truncated first sentence when the format is unrecognized.
+    """
+    import re as _re
+    text = (play.get("play_text") or "").strip()
+    if not text:
+        return ""
+    head = text.split("TOUCHDOWN")[0].strip().rstrip(",. ")
+    if not head:
+        return ""
+    low = head.lower()
+    yards_m = _re.search(r"for (\d+)\s*yards?", low)
+    yards = yards_m.group(1) if yards_m else ""
+    recv_m = _re.search(r"\bto ([A-Z]\.[A-Za-z'\-]+)", head)
+    recv = recv_m.group(1) if recv_m else ""
+    is_pass = "pass" in low
+    is_rush = "rush" in low
+    if is_pass and recv and yards:
+        return f"{yards}-yd pass to {recv}"
+    if is_pass and recv:
+        return f"Pass to {recv} for TD"
+    if is_rush and yards:
+        return f"{yards}-yd rush TD"
+    if is_rush:
+        return "Rush TD"
+    first = head.split(".")[0].strip()
+    return first[:60] if first else ""
+
 def _scorezone_roster_owner(pid, rosters):
     """Canonical player id → (owner_id, roster_id, is_starter) in this league.
 
@@ -640,16 +672,16 @@ def notify_scorezone_scores(league_id, platform, pbp_by_game, player_info,
                     pts = float(week_stats_line_points(play.get("stat_line") or {}, scoring or {}, pos) or 0)
                 except Exception:
                     pts = 0.0
-                body = play.get("play_text") or "Touchdown!"
-                if pts:
-                    body = f"{body}  +{round(pts, 1)} pts"
-                if league_name:
-                    body = f"{body} in {league_name}"
+                pts_str = f" (+{round(pts, 1)})" if pts else ""
+                title = f"TD: {name}{pts_str}"
+                body = _short_td_desc(play) or "Touchdown!"
+                if league_name and body == "Touchdown!":
+                    body = f"Touchdown in {league_name}!"
                 url = (f"/{platform}/{season}/{league_id}/scorezone" if season
                        else f"/{platform}/{league_id}/scorezone")
                 n = _broadcast_owner(
                     league_id, owner_id,
-                    title=("TD: " + name + (f" · {pos}" if pos else "")),
+                    title=title,
                     body=body,
                     url=url,
                     tag=f"rz-td-{gid}-{play_key}",
