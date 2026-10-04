@@ -19657,6 +19657,109 @@ img, svg, canvas {
     color: var(--text-muted);
 }
 
+/* Next steps unified action queue */
+.ns-card .ns-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.ns-card.ns-collapsed .ns-hidden {
+    display: none;
+}
+.ns-card:not(.ns-collapsed) .ns-hidden {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 8px;
+}
+.ns-item {
+    display: flex;
+    gap: 12px;
+    padding: 12px;
+    border-radius: 12px;
+    background: var(--row, #f8fafc);
+    align-items: flex-start;
+}
+.ns-priority {
+    width: 8px;
+    min-width: 8px;
+    border-radius: 4px;
+    align-self: stretch;
+}
+.ns-priority.high { background: #ef4444; }
+.ns-priority.med { background: #f59e0b; }
+.ns-priority.low { background: #22c55e; }
+.ns-body { flex: 1; min-width: 0; }
+.ns-action {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 2px;
+}
+.ns-why {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+    line-height: 1.4;
+}
+.ns-impact {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    color: #166534;
+    background: #dcfce7;
+    padding: 2px 8px;
+    border-radius: 6px;
+    margin-bottom: 8px;
+}
+.ns-cta {
+    display: inline-block;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--on-accent);
+    background: var(--accent);
+    padding: 8px 14px;
+    border-radius: 10px;
+    text-decoration: none;
+}
+.ns-tag {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    background: var(--border);
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-bottom: 6px;
+}
+.ns-count {
+    font-size: 12px;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+.ns-expand-toggle {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px 8px;
+}
+.ns-empty {
+    text-align: center;
+    padding: 24px 16px;
+    color: var(--text-muted);
+    font-size: 14px;
+    line-height: 1.5;
+}
+.ns-empty-big {
+    font-size: 32px;
+    margin-bottom: 8px;
+    color: #22c55e;
+}
+
 /* Losing-streak trade target rows */
 .os-trade-target-row {
     padding: 10px 12px;

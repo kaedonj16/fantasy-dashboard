@@ -33,7 +33,7 @@ def test_dashboard_action_first_hierarchy():
     assert left.index("{gm_card_html}") < left.index('id="os-jump-standings"')
     assert "{matchup_html}" not in left
     assert "Waiver Wire Targets" not in DASH
-    assert "_render_do_next_waiver_card" in DASH
+    assert "_render_next_steps_queue" in DASH
     assert "bench-ok" in APP_PY
     assert "bench-miss" in APP_PY
 
@@ -123,13 +123,10 @@ def test_analytics_terminology_module():
 def test_do_next_waiver_card_helper():
     app_src = (ROOT / "app.py").read_text(encoding="utf-8")
     assert "def _render_do_next_waiver_card" in app_src
+    assert "def _render_next_steps_queue" in app_src
     assert "Next steps" in app_src
     assert "Do this next" not in app_src
-    assert "os-do-next-collapsed" in app_src
-    assert "os-do-next-draft" in app_src
-    assert "Draft prep" in app_src
-    assert "startup_draft_pending" in app_src
-    assert "Get ready for your draft" in app_src
+    assert "Ranked by expected impact" in app_src
 
 
 def test_hub_column_height_sync_helper():
