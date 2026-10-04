@@ -17,6 +17,7 @@ deterministic mock (``ESPN_OTP_BROKER=mock``).
 """
 from __future__ import annotations
 
+import json
 import os
 import secrets
 import threading
@@ -81,8 +82,10 @@ _START_WINDOW = 900        # ...within this many seconds
 class _Store:
     """In-memory, TTL'd login sessions + per-email request throttle.
 
-    NOTE: process-local. Fine for the mock and single-worker runs; a multi-worker
-    deployment needs a shared store (e.g. Redis) before the real broker ships.
+    NOTE: process-local. It remains the per-email throttle and the session
+    fallback for single-worker/dev runs; in multi-worker deployments the
+    broker prefers the shared Redis session store below, because start and
+    verify routinely land on different workers.
     """
 
     def __init__(self) -> None:
@@ -122,6 +125,88 @@ class _Store:
         with self._lock:
             self._sessions.pop(login_id, None)
 
+    def put(self, login_id: str, session: dict) -> None:
+        # In-memory get() hands out the live dict, so mutations are already
+        # visible; this exists so the broker can write back uniformly for the
+        # Redis store, where get() returns a deserialized copy.
+        with self._lock:
+            self._sessions[login_id] = session
+
+
+def _redis_client():
+    """Shared Redis client for OTP sessions, or None when unavailable.
+
+    Lazy import so this module stays importable without the redis package.
+    A ping at broker creation decides once per worker whether the shared
+    store is usable; per-call failures after that surface as errors (the
+    endpoints already degrade those to the cookie fallback).
+    """
+    url = (os.getenv("REDIS_URL") or "").strip()
+    if not url:
+        return None
+    try:
+        import redis  # type: ignore
+        client = redis.from_url(url, socket_timeout=2.0, socket_connect_timeout=1.0)
+        client.ping()
+        return client
+    except Exception:
+        return None
+
+
+_REDIS_KEY_PREFIX = "espn_otp:session:"
+
+
+class _RedisSessionStore:
+    """Redis-backed login sessions, shared across gunicorn workers.
+
+    Same session interface as _Store. Expiry is enforced by Redis (EX), with
+    the created_at check kept as a backstop. Rate limiting stays in the
+    in-memory _Store (best-effort per worker); only session lookup must be
+    exact, because start and verify routinely land on different workers and
+    the in-memory store made every cross-worker verify fail as "expired".
+    """
+
+    def __init__(self, client) -> None:
+        self._r = client
+
+    def _key(self, login_id: str) -> str:
+        return _REDIS_KEY_PREFIX + login_id
+
+    def create(self, email: str, now: float, extra: Optional[dict] = None) -> str:
+        login_id = secrets.token_urlsafe(24)
+        payload = {"email": email, "created_at": now, "attempts": 0, **(extra or {})}
+        self._r.set(self._key(login_id), json.dumps(payload), ex=_SESSION_TTL)
+        return login_id
+
+    def get(self, login_id: str, now: float) -> Optional[dict]:
+        raw = self._r.get(self._key(login_id))
+        if not raw:
+            return None
+        try:
+            s = json.loads(raw if isinstance(raw, str) else raw.decode("utf-8"))
+        except Exception:
+            return None
+        if not isinstance(s, dict):
+            return None
+        try:
+            age = now - float(s.get("created_at", 0))
+        except (TypeError, ValueError):
+            return None
+        if age > _SESSION_TTL:
+            return None
+        return s
+
+    def put(self, login_id: str, session: dict) -> None:
+        # Preserve the original expiry window instead of refreshing it.
+        try:
+            remaining = int(_SESSION_TTL - (time.time() - float(session.get("created_at", 0))))
+        except (TypeError, ValueError):
+            remaining = _SESSION_TTL
+        self._r.set(self._key(login_id), json.dumps(session), ex=max(1, remaining))
+
+    def drop(self, login_id: str) -> None:
+        self._r.delete(self._key(login_id))
+
 
 class EspnLoginBroker:
     """Broker contract: start → (email arrives) → verify. Subclasses implement the
@@ -129,7 +214,13 @@ class EspnLoginBroker:
     attempt cap so every implementation behaves the same."""
 
     def __init__(self) -> None:
-        self._store = _Store()
+        # Sessions must survive worker hops: start and verify routinely land
+        # on different gunicorn workers, so prefer the shared Redis store and
+        # fall back to process-local memory (single-worker/dev) when Redis is
+        # unavailable. The per-email throttle stays in memory either way.
+        self._throttle = _Store()
+        redis_client = _redis_client()
+        self._store = _RedisSessionStore(redis_client) if redis_client is not None else _Store()
 
     def available(self) -> bool:
         """Whether this broker can actually run (config present)."""
@@ -140,7 +231,7 @@ class EspnLoginBroker:
         if not email or "@" not in email:
             raise EspnLoginError("A valid email is required.")
         now = time.time()
-        if not self._store.rate_ok(email, now):
+        if not self._throttle.rate_ok(email, now):
             raise EspnLoginRateLimited("Too many code requests. Wait a few minutes and try again.")
         extra = self._begin(email)
         return self._store.create(email, now, extra)
@@ -157,6 +248,9 @@ class EspnLoginBroker:
         if s["attempts"] > _MAX_VERIFY_ATTEMPTS:
             self._store.drop(login_id)
             raise EspnLoginTooManyAttempts("Too many tries. Start the sign-in again.")
+        # Persist the attempt count: the Redis store hands out a deserialized
+        # copy, so without this a wrong code would never burn the session.
+        self._store.put(login_id, s)
         creds = self._submit(s, code)  # returns {"swid","espn_s2"} or raises
         self._store.drop(login_id)
         return creds
@@ -166,6 +260,9 @@ class EspnLoginBroker:
         if not s:
             raise EspnLoginExpired("This sign-in expired. Request a new code.")
         self._resend(s)
+        # _resend may rotate provider session state; write it back for the
+        # Redis store, where get() returned a copy.
+        self._store.put(login_id, s)
 
     # subclass hooks ----------------------------------------------------------
     def _begin(self, email: str) -> dict:
