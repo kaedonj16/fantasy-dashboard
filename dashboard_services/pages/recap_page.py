@@ -433,6 +433,9 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     # else. It handles provider team art, owner art, then a generated crest.
     from dashboard_services.api import team_avatar
     roster_by_rid = {str(r.get("roster_id")): r for r in (ctx.get("rosters") or [])}
+    # Division map for the "Div" badge on division-game scoreboard rows.
+    from utils.standings_divisions import is_division_game, roster_division_map
+    _recap_div_by_rid = roster_division_map(ctx.get("rosters"))
     # username by roster_id for the @manager line (df_weekly "owner" is the
     # team name, not the username).
     username_by_rid = _usernames_by_roster_id(users, ctx.get("rosters") or [])
@@ -938,9 +941,13 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
         view_mu = (f'<a class="recap-view-matchup" '
                    f'href="/{_platform}/{_season}/{_league_id}/weekly?week={selected_week}">'
                    f'View matchup <span aria-hidden="true">&rsaquo;</span></a>')
+        _div_badge = ('<span class="div-badge">Div</span>'
+                      if is_division_game(m.get("w_rid"), m.get("l_rid"), _recap_div_by_rid)
+                      else "")
+        _badges_html = ''.join('<span class="recap-badge-gotw">' + label + '</span>' if label == "GOTW" else f'<span>{label}</span>' for label in badge_map.get(matchup_index, []))
         return f"""
 <article class="recap-matchup-row">
-  <div class="recap-matchup-badges">{''.join('<span class="recap-badge-gotw">' + label + '</span>' if label == "GOTW" else f'<span>{label}</span>' for label in badge_map.get(matchup_index, []))}</div>
+  <div class="recap-matchup-badges">{_badges_html}{_div_badge}</div>
   <div class="recap-matchup-main">
     {team_block(m['winner'], m['w_rid'], w_team, m['w_pts'], 'left', winner=not tied)}
     <div class="recap-matchup-score"><div class="recap-matchup-scoreline">{scoreline}</div>

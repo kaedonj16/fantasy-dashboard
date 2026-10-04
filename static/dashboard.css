@@ -44550,3 +44550,24 @@ table.rz-bs-table thead th:first-child {
         min-width: 0;
     }
 }
+
+/* Division game badge: shown on matchup slides and recap scoreboard rows
+   when both teams are in the same division. Hidden for leagues without
+   divisions (the badge HTML is never emitted). */
+.div-badge {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #1e40af;
+    background: #dbeafe;
+    padding: 2px 8px;
+    border-radius: 6px;
+    vertical-align: middle;
+    white-space: nowrap;
+}
+:root[data-theme="dark"] .div-badge {
+    color: #bfdbfe;
+    background: #1e3a8a;
+}

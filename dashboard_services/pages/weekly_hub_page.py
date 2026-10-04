@@ -214,8 +214,9 @@ def build_weekly_hub_body(ctx: dict) -> str:
         season,
         scoring=_scoring_format_from_settings(ctx.get("scoring_settings")),
     )
-    from utils.standings_divisions import division_records_for_ctx
+    from utils.standings_divisions import division_records_for_ctx, roster_division_map
     _hub_div_records = division_records_for_ctx(ctx)
+    _hub_div_by_rid = roster_division_map(ctx.get("rosters"))
     # ScoreZone Moments launcher: rendered under the win-probability bar of the
     # viewer's own matchup slide (not at the top of the tab). The client
     # fetches /api/scorezone/moments and reveals it when moments exist.
@@ -250,6 +251,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
             div_records=_hub_div_records,
             league_id=_gotw_lid,
             rzm_hub_html=_rzm_html_for_matchup(m),
+            div_by_rid=_hub_div_by_rid,
         )
         for m, is_gotw in zip(default_matchups, _gotw_flags)
     ]
