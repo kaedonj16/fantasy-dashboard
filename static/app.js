@@ -24650,3 +24650,231 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
   }
   window.brInitHubRzm = function () { initHubRzm(document); };
 })();
+
+// ── Feature onboarding coach marks ──────────────────────────────────────────
+// Lightweight per-feature coach marks. No dependencies. One-time per feature,
+// persisted in localStorage. Triggered on first visit to each feature page.
+// Inline page scripts must avoid top-level let/const/class, so this uses var.
+(function () {
+  var LS_KEYS = {
+    'trade-hub': 'onboarded-trade-hub',
+    'advanced-metrics': 'onboarded-advanced-metrics',
+    'start-sit': 'onboarded-start-sit'
+  };
+
+  // Step: { selector, text, round (bool, circular spotlight), waitVisible (bool) }
+  var TOUR_DEFS = {
+    'trade-hub': [
+      { selector: '.otc-sugg-subtab-toggle',
+        text: 'Start here: Suggestions finds trades for your team.' },
+      { selector: '.otc-sugg-package',
+        text: 'Tap Analyze to see the full breakdown.' },
+      { selector: '.otc-main-tabs .otc-main-tab:first-child',
+        text: 'Or build your own trade from scratch.' }
+    ],
+    'advanced-metrics': [
+      { selector: '.am-table, #amTable',
+        text: 'Every row is a metric. Tap a column to sort, search to filter.' },
+      { selector: '#amGraphBtn',
+        text: 'Tap Graph Metrics to visualize any two metrics as a scatter plot.',
+        round: true },
+      { selector: '#amGraphModal .gdot, #amGraphModal circle.dot',
+        text: 'Tap any dot for the player card. Quadrants show elite vs bust.',
+        round: true, waitVisible: '#amGraphModal', autoOpen: '#amGraphBtn' }
+    ],
+    'start-sit': [
+      { selector: '.ss-verdict',
+        text: 'Green means start, red means sit. The number is confidence.' },
+      { selector: '.ss-compare-hint, [data-ss-compare]',
+        text: 'Tap two players to compare them head-to-head.' }
+    ]
+  };
+
+  var activeTour = null;
+
+  function lsGet(k) {
+    try { return window.localStorage.getItem(k); } catch (e) { return null; }
+  }
+  function lsSet(k, v) {
+    try { window.localStorage.setItem(k, v); } catch (e) {}
+  }
+
+  function isVisible(el) {
+    if (!el) return false;
+    var r = el.getBoundingClientRect();
+    if (r.width < 4 || r.height < 4) return false;
+    var cs = window.getComputedStyle(el);
+    return cs.display !== 'none' && cs.visibility !== 'hidden' && cs.opacity !== '0';
+  }
+
+  function findTarget(step) {
+    // If the step needs a container visible first (e.g. graph modal), check it.
+    // If autoOpen is set, click it once to open the container.
+    if (step.waitVisible) {
+      var container = document.querySelector(step.waitVisible);
+      if (!isVisible(container)) {
+        if (step.autoOpen && !step._autoOpened) {
+          step._autoOpened = true;
+          var opener = document.querySelector(step.autoOpen);
+          if (opener) {
+            try { opener.click(); } catch (e) {}
+          }
+        }
+        return null;
+      }
+    }
+    var els = document.querySelectorAll(step.selector);
+    for (var i = 0; i < els.length; i++) {
+      if (isVisible(els[i])) return els[i];
+    }
+    return null;
+  }
+
+  function buildDom() {
+    var overlay = document.createElement('div');
+    overlay.className = 'fob-overlay';
+    overlay.innerHTML =
+      '<div class="fob-spotlight"></div>' +
+      '<div class="fob-tooltip">' +
+        '<div class="fob-step"></div>' +
+        '<div class="fob-msg"></div>' +
+        '<div class="fob-row">' +
+          '<button type="button" class="fob-skip">Skip</button>' +
+          '<div class="fob-dots"></div>' +
+          '<button type="button" class="fob-next">Next</button>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(overlay);
+    overlay.querySelector('.fob-skip').addEventListener('click', function () { endTour(true); });
+    overlay.querySelector('.fob-next').addEventListener('click', function () { nextStep(); });
+    // Tapping outside the tooltip dismisses (treat as Skip).
+    overlay.addEventListener('click', function (e) {
+      if (e.target === overlay) endTour(true);
+    });
+    return overlay;
+  }
+
+  function positionSpotlight(overlay, target, round) {
+    var sp = overlay.querySelector('.fob-spotlight');
+    var r = target.getBoundingClientRect();
+    var pad = 6;
+    sp.style.top = (r.top + window.scrollY - pad) + 'px';
+    sp.style.left = (r.left + window.scrollX - pad) + 'px';
+    sp.style.width = (r.width + pad * 2) + 'px';
+    sp.style.height = (r.height + pad * 2) + 'px';
+    if (round) {
+      sp.classList.add('round');
+    } else {
+      sp.classList.remove('round');
+    }
+    // Keep the target visible above the overlay cutout.
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  function renderStep() {
+    var tour = activeTour;
+    if (!tour) return;
+    var step = tour.steps[tour.idx];
+    var target = findTarget(step);
+    if (!target) {
+      // Target not ready yet; retry a few times, then skip the step.
+      tour.retries = (tour.retries || 0) + 1;
+      if (tour.retries < 20) {
+        setTimeout(renderStep, 300);
+        return;
+      }
+      nextStep();
+      return;
+    }
+    tour.retries = 0;
+    positionSpotlight(tour.overlay, target, !!step.round);
+    var total = tour.steps.length;
+    tour.overlay.querySelector('.fob-step').textContent = (tour.idx + 1) + ' of ' + total;
+    tour.overlay.querySelector('.fob-msg').textContent = step.text;
+    tour.overlay.querySelector('.fob-next').textContent = tour.idx === total - 1 ? 'Done' : 'Next';
+    var dots = tour.overlay.querySelector('.fob-dots');
+    dots.innerHTML = '';
+    for (var i = 0; i < total; i++) {
+      var d = document.createElement('i');
+      if (i === tour.idx) d.className = 'on';
+      dots.appendChild(d);
+    }
+    tour.overlay.style.display = 'block';
+  }
+
+  function nextStep() {
+    var tour = activeTour;
+    if (!tour) return;
+    tour.idx++;
+    if (tour.idx >= tour.steps.length) {
+      endTour(false);
+      return;
+    }
+    renderStep();
+  }
+
+  function endTour(skipped) {
+    var tour = activeTour;
+    activeTour = null;
+    if (tour) {
+      if (tour.overlay && tour.overlay.parentNode) {
+        tour.overlay.parentNode.removeChild(tour.overlay);
+      }
+      lsSet(LS_KEYS[tour.feature], '1');
+    }
+  }
+
+  function startTour(feature) {
+    if (activeTour) return;
+    if (lsGet(LS_KEYS[feature])) return;
+    var steps = TOUR_DEFS[feature];
+    if (!steps || !steps.length) return;
+    activeTour = { feature: feature, steps: steps, idx: 0, overlay: buildDom() };
+    // Small delay so the page finishes its initial render.
+    setTimeout(renderStep, 600);
+  }
+
+  function detectFeature() {
+    // Trade Hub: the .otc-layout host from initTradePage.
+    if (document.querySelector('.otc-layout .otc-sugg-subtab-toggle, .otc-sugg-subtab-toggle')) {
+      return 'trade-hub';
+    }
+    // Advanced Metrics: command bar or metrics section.
+    if (document.querySelector('#advancedMetricsSection, .am-cmdbar')) {
+      return 'advanced-metrics';
+    }
+    // Start/Sit: waivers page with the startsit tab active.
+    var params = new URLSearchParams(window.location.search);
+    if (params.get('tab') === 'startsit' && document.querySelector('.ss-verdict, #wvSectionStartSit')) {
+      return 'start-sit';
+    }
+    return null;
+  }
+
+  function init() {
+    var feature = detectFeature();
+    if (!feature) return;
+    // Don't fight other overlays (site tour, modals already open except AM graph).
+    if (document.querySelector('.tour-overlay-piece')) return;
+    startTour(feature);
+  }
+
+  // Public API for manual triggers (e.g. a "replay tour" affordance later).
+  window.FeatureOnboarding = {
+    start: startTour,
+    reset: function (feature) {
+      try { window.localStorage.removeItem(LS_KEYS[feature]); } catch (e) {}
+    },
+    resetAll: function () {
+      Object.keys(LS_KEYS).forEach(function (f) {
+        try { window.localStorage.removeItem(LS_KEYS[f]); } catch (e) {}
+      });
+    }
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function () { setTimeout(init, 400); });
+  } else {
+    setTimeout(init, 400);
+  }
+})();
