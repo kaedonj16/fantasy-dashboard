@@ -290,3 +290,79 @@ def derive_twp_rate_proxy(stats: Dict[str, Any]) -> Optional[float]:
         return None
 
     return round((interceptions / pass_att) * 100.0, 3)
+
+
+def derive_nfl_passer_rating(stats: Dict[str, Any]) -> Optional[float]:
+    """
+    Compute NFL passer rating from college box-score stats.
+
+    Standard NFL formula (max 158.3):
+      a = ((comp/att) - 0.30) * 5
+      b = ((yards/att) - 3) * 0.25
+      c = (td/att) * 20
+      d = 2.375 - ((int/att) * 25)
+      Each of a/b/c/d clamped to [0, 2.375].
+      rating = ((a + b + c + d) / 6) * 100
+
+    This replaces the PFF-provided nfl_passer_rating column. All inputs come
+    from Sportradar/CFBD box-score data already in the pipeline.
+    Requires: pass_attempts >= 50.
+    Confidence: 0.95 - exact formula on measured stats.
+    """
+    comp = _get_num(stats, "completions")
+    att = _get_num(stats, "pass_attempts")
+    yards = _get_num(stats, "pass_yards")
+    tds = _get_num(stats, "pass_tds")
+    ints = _get_num(stats, "interceptions")
+    if comp is None or att is None or yards is None or tds is None or ints is None:
+        return None
+    if att < 50:
+        return None
+
+    def _clamp(v: float) -> float:
+        return max(0.0, min(2.375, v))
+
+    a = _clamp(((comp / att) - 0.30) * 5.0)
+    b = _clamp(((yards / att) - 3.0) * 0.25)
+    c = _clamp((tds / att) * 20.0)
+    d = _clamp(2.375 - ((ints / att) * 25.0))
+    return round(((a + b + c + d) / 6.0) * 100.0, 2)
+
+
+def derive_avg_depth_of_target_proxy(stats: Dict[str, Any]) -> Optional[float]:
+    """
+    Proxy for average depth of target (aDOT) from yards per reception.
+
+    YPR correlates ~0.7 with aDOT in college data. We use a simple linear
+    mapping: adot ~= ypr * 0.75. This is directional only, not a precise
+    measurement. Replaces the PFF-provided avg_depth_of_target column.
+
+    Requires: receiving_yards, receptions >= 10.
+    Confidence: 0.50 - correlation-based proxy.
+    """
+    rec_yards = _get_num(stats, "receiving_yards")
+    receptions = _get_num(stats, "receptions")
+    if rec_yards is None or receptions is None or receptions < 10:
+        return None
+    ypr = rec_yards / receptions
+    return round(ypr * 0.75, 2)
+
+
+def derive_yac_per_reception_proxy(stats: Dict[str, Any]) -> Optional[float]:
+    """
+    Proxy for yards after catch per reception (WR/TE only).
+
+    Without charting data we estimate YAC share from YPR: deeper targets
+    (higher YPR) tend to have lower YAC share, shorter targets higher.
+    Formula: yac/rec ~= max(0.5, ypr * 0.35), capped at 8.0.
+    This is a weak directional proxy. Replaces PFF yards_after_catch_per_reception.
+
+    Requires: receiving_yards, receptions >= 10.
+    Confidence: 0.35 - weak proxy, directional only.
+    """
+    rec_yards = _get_num(stats, "receiving_yards")
+    receptions = _get_num(stats, "receptions")
+    if rec_yards is None or receptions is None or receptions < 10:
+        return None
+    ypr = rec_yards / receptions
+    return round(max(0.5, min(8.0, ypr * 0.35)), 2)

@@ -263,17 +263,12 @@ def _build_features_from_db(
                         sd.completion_pct, sd.td_int_ratio,
                         -- Team context
                         sd.conference, sd.team_pass_rate,
-                        -- Advanced metrics (migration 014)
+                        -- Advanced metrics (PFF columns removed; retained for historical rows)
                         sd.yards_after_catch_per_reception,
                         sd.avg_depth_of_target,
                         sd.contested_catch_rate,
-                        sd.drop_rate,
-                        sd.grades_offense,
                         sd.breakaway_percentage,
-                        sd.elusive_rating,
-                        sd.pff_passing_grade,
-                        sd.big_time_throw_rate,
-                        sd.adjusted_completion_rate
+                        sd.pff_passing_grade
                     FROM rookie_prospects rp
                     JOIN rookie_prospect_source_data sd ON sd.player_id = rp.player_id
                     WHERE rp.draft_class_year = ANY(%s)
@@ -351,18 +346,16 @@ def _build_features_from_db(
         if latest.get("team_pass_rate") is not None:
             feat["team_pass_rate"] = _safe_float(latest["team_pass_rate"])
 
-        # Advanced metrics (migration 014 - may be NULL for older classes)
+        # Advanced metrics - PFF-only features removed (drop_rate, grades_offense,
+        # elusive_rating, big_time_throw_rate, adjusted_completion_rate).
+        # pff_passing_grade is now sourced from CFBD PPA for new classes;
+        # historical DB rows retain their PFF values.
         for k, fk in [
             ("yards_after_catch_per_reception", "yac_per_rec"),
             ("avg_depth_of_target",             "avg_depth_of_target"),
             ("contested_catch_rate",             "contested_catch_rate"),
-            ("drop_rate",                        "drop_rate"),
-            ("grades_offense",                   "pff_grade"),
             ("breakaway_percentage",             "breakaway_pct"),
-            ("elusive_rating",                   "elusive_rating"),
             ("pff_passing_grade",                "pff_passing_grade"),
-            ("big_time_throw_rate",              "big_time_throw_rate"),
-            ("adjusted_completion_rate",         "adjusted_completion_pct"),
         ]:
             v = latest.get(k)
             if v is not None:
@@ -686,10 +679,8 @@ _FEATURE_TO_COMPONENT = {
     "yac_per_rec":                  "efficiency",
     "avg_depth_of_target":          "efficiency",
     "contested_catch_rate":         "efficiency",
-    "drop_rate":                    "efficiency",
-    "pff_grade":                    "efficiency",
-    "adjusted_completion_pct":      "efficiency",
-    "big_time_throw_rate":          "efficiency",
+    # drop_rate, pff_grade, adjusted_completion_pct, big_time_throw_rate removed:
+    # were PFF-only, no free replacement.
     # Utilization
     "receptions_pg":                "utilization",
     "targets_pg":                   "utilization",
@@ -703,7 +694,7 @@ _FEATURE_TO_COMPONENT = {
     "ras_score":                    "athleticism",
     "forty_yard":                   "athleticism",
     "breakaway_pct":                "athleticism",
-    "elusive_rating":               "athleticism",
+    # elusive_rating removed: was PFF-only, no free replacement.
     # Competition / environment
     "conf_quality":                 "competition",
     "team_pass_rate":               "environment",
