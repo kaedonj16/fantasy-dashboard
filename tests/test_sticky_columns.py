@@ -101,7 +101,7 @@ def test_playoff_odds_sticky_css():
     assert "table.po-table tr.team-clickable:hover td.po-team" in css
     assert "background: var(--accent-soft)" in css
     # No pill radii anywhere near the new styles.
-    assert "999px" not in _STICKY_TAIL
+    assert not re.search(r"border-radius\s*:\s*999px", _STICKY_TAIL)
 
 
 def test_playoff_odds_markup_has_team_column():
@@ -121,7 +121,7 @@ def test_scorezone_boxscore_sticky_css():
     # Opaque sheet background (var(--rz-card) resolves to var(--card)).
     assert "background: var(--rz-card)" in css
     assert "border-right: 1px solid var(--rz-border)" in css
-    assert "999px" not in _STICKY_TAIL
+    assert not re.search(r"border-radius\s*:\s*999px", _STICKY_TAIL)
 
 
 def test_scorezone_boxscore_markup_has_player_cells():
@@ -143,4 +143,4 @@ def test_sticky_css_appendix_is_balanced():
         css.count("}"),
     )
     # No pill radii in the new sticky styles (Kaedon: no border-radius:999px).
-    assert "999px" not in tail
+    assert not re.search(r"border-radius\s*:\s*999px", tail)

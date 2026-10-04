@@ -9058,7 +9058,6 @@ select:focus {
     font-size: 13px;
     font-weight: 600;
     color: var(--on-accent);
-    background: var(--accent);
     border: none;
     border-radius: 10px;
     cursor: pointer;
@@ -19566,39 +19565,6 @@ img, svg, canvas {
     align-items: center;
     justify-content: space-between;
     gap: 16px;
-}
-
-/* ── Actions queue: CTA + dismiss ─────────────────────────────────────────── */
-.os-card-actions {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    flex-shrink: 0;
-}
-.os-action-cta {
-    padding: 8px 14px;
-    font-size: 12px;
-    text-decoration: none;
-}
-.os-action-dismiss {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 26px;
-    height: 26px;
-    padding: 0;
-    font-size: 18px;
-    line-height: 1;
-    color: var(--text-muted);
-    background: transparent;
-    border: 1px solid transparent;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: color .15s, background .15s;
-}
-.os-action-dismiss:hover {
-    color: var(--text);
-    background: var(--row-hover, rgba(0,0,0,.05));
 }
 
 .lineup-alert-title {
@@ -44325,3 +44291,39 @@ table.rz-bs-table thead th:first-child {
     border-bottom-color: var(--border);
     color: var(--text-subtle);
 }
+
+/* ── Feature onboarding coach marks ──────────────────────────────────────────
+   Lightweight per-feature tours. Overlay dims the page; the spotlight uses a
+   box-shadow cutout so the target stays visible. Tooltip is bottom-anchored. */
+.fob-overlay {
+  position: fixed; inset: 0; z-index: 9990; display: none;
+  pointer-events: auto;
+}
+.fob-spotlight {
+  position: absolute;
+  box-shadow: 0 0 0 9999px rgba(2, 6, 23, 0.62);
+  border: 2px solid #fff; border-radius: 12px;
+  pointer-events: none;
+  transition: top .25s ease, left .25s ease, width .25s ease, height .25s ease;
+}
+.fob-spotlight.round { border-radius: 50%; }
+.fob-tooltip {
+  position: fixed; left: 20px; right: 20px; bottom: calc(24px + env(safe-area-inset-bottom));
+  max-width: 480px; margin: 0 auto;
+  background: #fff; border-radius: 12px; padding: 14px;
+  box-shadow: 0 8px 28px rgba(2, 6, 23, 0.3);
+}
+.fob-step { font-size: 11px; font-weight: 700; color: #3b82f6; margin-bottom: 4px; }
+.fob-msg { font-size: 14px; font-weight: 600; line-height: 1.4; color: var(--text, #1e293b); margin-bottom: 12px; }
+.fob-row { display: flex; justify-content: space-between; align-items: center; }
+.fob-skip {
+  border: 0; background: transparent; color: #64748b;
+  font-size: 13px; font-weight: 600; cursor: pointer; padding: 8px 4px;
+}
+.fob-next {
+  border: 0; background: #1e293b; color: #fff;
+  font-size: 13px; font-weight: 700; border-radius: 8px; padding: 8px 20px; cursor: pointer;
+}
+.fob-dots { display: flex; gap: 5px; }
+.fob-dots i { width: 6px; height: 6px; border-radius: 50%; background: #cbd5e1; }
+.fob-dots i.on { background: #3b82f6; }
