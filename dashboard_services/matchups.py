@@ -1787,6 +1787,7 @@ def render_matchup_slide(
         div_records: dict = None,
         league_id: Optional[str] = None,
         rzm_hub_html: str = "",
+        div_by_rid: Optional[dict] = None,
 ) -> str:
     """One slide with rows like:
        [Left Name] [Left Pts/Proj] [Right Pts/Proj] [Right Name]
@@ -2607,6 +2608,17 @@ def render_matchup_slide(
             f"{_info_html}</div>{_mobile_line}"
         )
 
+    # Division game badge: shown when both teams are in the same division.
+    div_badge_html = ""
+    try:
+        from utils.standings_divisions import is_division_game as _is_div_game
+        _div_l = (m.get("left") or {}).get("roster_id")
+        _div_r = (m.get("right") or {}).get("roster_id")
+        if _is_div_game(_div_l, _div_r, div_by_rid):
+            div_badge_html = "<span class='div-badge'>Div</span>"
+    except Exception:
+        div_badge_html = ""
+
     # Matchup Moments: the client (brInitMatchupMoments) filters the shared live
     # play feed to this slide's starters and paints a big-play strip. Starter
     # pids are emitted so an arbitrary (Prev/Next) matchup can be filtered, and
@@ -2628,7 +2640,7 @@ def render_matchup_slide(
     return f"""
     <div class="{slide_cls}"{win_attr}{moments_attrs}>
       <div class="m-head">
-        {gotw_badge_html}
+        {gotw_badge_html}{div_badge_html}
         <div class="m-head-row">
           {_team_col(m['left'], 'left')}
           <div class="m-scoreboard{proj_class}">

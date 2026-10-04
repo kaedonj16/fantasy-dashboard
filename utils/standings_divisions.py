@@ -323,3 +323,20 @@ def division_records_for_ctx(ctx: Mapping[str, Any]) -> Optional[Dict[int, Tuple
     if not by_rid:
         return None
     return division_records(ctx.get("df_weekly"), by_rid)
+
+
+def is_division_game(rid_a: Any, rid_b: Any,
+                     div_by_rid: Optional[Mapping[Any, Any]] = None) -> bool:
+    """True when both roster ids are in the same nonzero division.
+
+    Returns False when the league has no divisions (empty/None map), when
+    either team is unassigned, or when the ids are missing/unparseable.
+    """
+    if not div_by_rid:
+        return False
+    try:
+        da = int((div_by_rid.get(int(rid_a)) if rid_a is not None else None) or 0)
+        db = int((div_by_rid.get(int(rid_b)) if rid_b is not None else None) or 0)
+    except (TypeError, ValueError):
+        return False
+    return bool(da) and da == db

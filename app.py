@@ -20825,6 +20825,8 @@ def api_weekly_week():
     _api_gotw_flags = matchup_gotw_flags(matchups, _api_gotw_key)
     if not any(_api_gotw_flags):
         _api_gotw = None
+    from utils.standings_divisions import roster_division_map as _rdm
+    _api_div_by_rid = _rdm(ctx.get("rosters"))
 
     # Attach H2H records for this week's matchups
     for _m in matchups:
@@ -20867,6 +20869,7 @@ def api_weekly_week():
             gotw_selection=_api_gotw,
             league_id=ctx.get("resolved_league_id") or league_id,
             rzm_hub_html=_api_rzm_for_matchup(m),
+            div_by_rid=_api_div_by_rid,
         )
         for m, is_gotw in zip(matchups, _api_gotw_flags)
     ]
