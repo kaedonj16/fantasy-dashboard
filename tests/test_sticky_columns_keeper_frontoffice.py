@@ -72,10 +72,11 @@ def test_front_office_sticky_css_dropin():
     assert "left: 0" in css
     assert "border-right: 1px solid var(--border)" in css
     # Opaque backgrounds: light theme matches .for-modal (var(--card)),
-    # dark theme matches the explicit #1a2535 modal background.
+    # dark theme matches the modal background (var(--card) since the dark-mode
+    # refresh unified modal surfaces under the card token).
     assert "background: var(--card)" in css
     assert '[data-theme="dark"] .for-table td.for-td-name' in css
-    assert "#1a2535" in css
+    assert '[data-theme="dark"] .player-modal' in css
     # The header cell keeps its existing var(--card-soft) background from the
     # base .for-table th rule; only stacking/separation are added here.
     assert "var(--card-soft)" in css
