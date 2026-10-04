@@ -7688,9 +7688,9 @@ def _espn_league_route_ids():
 
 
 def _espn_reconnect_home_url(season=None, league_id=None) -> str:
-    """Deep-link home into the ESPN private reconnect cookie form."""
+    """Deep-link to the dedicated ESPN reconnect page with the cookie form."""
     from urllib.parse import urlencode
-    params = {"espn_reconnect": "1"}
+    params = {}
     if league_id and str(league_id).isdigit():
         params["league_id"] = str(league_id)
     if season is not None:
@@ -7698,7 +7698,121 @@ def _espn_reconnect_home_url(season=None, league_id=None) -> str:
             params["season"] = str(int(season))
         except (TypeError, ValueError):
             pass
-    return "/?" + urlencode(params)
+    return "/espn/reconnect" + ("?" + urlencode(params) if params else "")
+
+
+@app.route("/espn/reconnect", methods=["GET"])
+def espn_reconnect_page():
+    """Dedicated ESPN reconnect page with the cookie form.
+
+    Unlike the old ?espn_reconnect=1 home-page deep link, this page renders
+    the form server-side so it works regardless of home page JS state. If the
+    user is not signed in, they are prompted to sign in first (with a next
+    param back to this page); the reconnect API requires an account.
+    """
+    from urllib.parse import urlencode
+    league_id = (request.args.get("league_id") or "").strip()
+    season_raw = (request.args.get("season") or "").strip()
+    try:
+        season = int(season_raw) if season_raw else None
+    except (TypeError, ValueError):
+        season = None
+    if not league_id.isdigit():
+        league_id = ""
+    account_id = session.get("account_id")
+    safe_league = html.escape(league_id)
+    safe_season = html.escape(str(season) if season else "")
+    qs = urlencode({k: v for k, v in (("league_id", league_id), ("season", str(season) if season else "")) if v})
+    login_next = "/espn/reconnect" + ("?" + qs if qs else "")
+    login_href = "/auth/google?next=" + html.escape(login_next, quote=True)
+
+    if not account_id:
+        body = (
+            "<div class='logo'>BR Fantasy</div>"
+            "<h2>Reconnect ESPN</h2>"
+            "<p>Sign in first, then paste fresh SWID and espn_s2 cookies "
+            "from an ESPN account in this league.</p>"
+            "<div class='actions'>"
+            f"<a class='primary' href='{login_href}'>Sign in with Google</a>"
+            "<a class='secondary' href='/'>Back to home</a>"
+            "</div>"
+        )
+        return _reconnect_page_shell("Reconnect ESPN", body), 200
+
+    league_line = (
+        f"<p class='league-line'>League <strong>{safe_league}</strong>"
+        + (f" &middot; {safe_season} season" if safe_season else "")
+        + "</p>"
+        if safe_league else ""
+    )
+    body = (
+        "<div class='logo'>BR Fantasy</div>"
+        "<h2>Reconnect ESPN</h2>"
+        f"{league_line}"
+        "<p>Paste fresh SWID and espn_s2 cookies from an ESPN account "
+        "that belongs to this league.</p>"
+        "<label class='fld' for='rcEspnBlob'>Paste your ESPN cookies</label>"
+        "<textarea id='rcEspnBlob' rows='3' autocomplete='off' spellcheck='false' "
+        "placeholder='Paste the whole cookie string, e.g. SWID=...; espn_s2=AEB...'></textarea>"
+        "<details class='help'><summary>How to copy your ESPN cookies</summary>"
+        "<ol><li>In another tab, sign in at <strong>espn.com</strong> and open your league.</li>"
+        "<li>Right-click the page, choose <strong>Inspect</strong>, then open "
+        "<strong>Application &rarr; Cookies &rarr; https://www.espn.com</strong>.</li>"
+        "<li>Copy the <code>SWID</code> and <code>espn_s2</code> values and paste them above.</li></ol>"
+        "<strong>Treat these like a password.</strong> They are stored encrypted and only used to read your league.</details>"
+        "<p class='err' id='rcEspnErr' role='alert' style='display:none;'></p>"
+        "<div class='actions'>"
+        "<button type='button' class='primary' id='rcEspnGo'>Reconnect</button>"
+        "<a class='secondary' href='/'>Back to home</a>"
+        "</div>"
+        f"<script>"
+        f"var RC_LEAGUE_ID={league_id!r};var RC_SEASON={int(season) if season else 0};"
+        "document.getElementById('rcEspnGo').addEventListener('click',async function(){"
+        "var btn=this,err=document.getElementById('rcEspnErr');"
+        "err.style.display='none';btn.disabled=true;btn.textContent='Reconnecting...';"
+        "try{"
+        "var res=await fetch('/api/link/espn/reconnect',{method:'POST',"
+        "headers:{'Content-Type':'application/json'},"
+        "body:JSON.stringify({league_id:RC_LEAGUE_ID,season:RC_SEASON,"
+        "swid:document.getElementById('rcEspnBlob').value,espn_s2:''})});"
+        "var data=await res.json().catch(function(){return{}});"
+        "if(!res.ok||!data.ok)throw new Error(data.error||'Reconnect failed.');"
+        "window.location.href=data.redirect_url||'/';"
+        "}catch(e){err.textContent=e.message||'Reconnect failed.';err.style.display='block';"
+        "btn.disabled=false;btn.textContent='Reconnect';}"
+        "});"
+        "</script>"
+    )
+    return _reconnect_page_shell("Reconnect ESPN", body), 200
+
+
+def _reconnect_page_shell(title, body_html):
+    """Branded shell for the standalone reconnect page (no app JS needed)."""
+    safe_title = html.escape(title)
+    return (
+        "<!doctype html><html lang='en'><head><title>" + safe_title + " - BR Fantasy</title>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<style>" + _BRAND_FACES_MINI + "body{font-family:'Archivo',sans-serif;background:#0f1623;color:#e2e8f0;"
+        "display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;}"
+        ".box{text-align:center;padding:40px 24px;max-width:440px;width:100%;box-sizing:border-box;}"
+        ".logo{font-size:13px;font-weight:700;color:#38bdf8;letter-spacing:.04em;margin-bottom:24px;}"
+        "h2{margin:0 0 8px;font-size:22px;}"
+        "p{color:#94a3b8;margin:0 0 16px;font-size:14px;line-height:1.5;}"
+        ".league-line{color:#e2e8f0;}"
+        ".actions{display:flex;flex-direction:column;align-items:center;gap:12px;margin-top:8px;}"
+        "a.primary,button.primary{display:inline-block;padding:10px 20px;background:#3b82f6;color:#fff;"
+        "border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;border:0;cursor:pointer;}"
+        "button.primary:disabled{opacity:.6;cursor:wait;}"
+        "a.secondary{color:#94a3b8;font-size:13px;text-decoration:underline;}"
+        ".fld{display:block;text-align:left;font-size:13px;font-weight:600;color:#cbd5e1;margin:0 0 6px;}"
+        "textarea{width:100%;box-sizing:border-box;background:#1a2535;border:1px solid #334155;color:#e2e8f0;"
+        "border-radius:8px;padding:10px;font-size:13px;resize:vertical;}"
+        ".help{margin:12px 0;text-align:left;font-size:13px;color:#94a3b8;}"
+        ".help summary{cursor:pointer;color:#cbd5e1;}"
+        ".help ol{margin:8px 0;padding-left:20px;}"
+        ".err{color:#f87171;font-size:13px;}"
+        "</style></head><body><div class='box'>" + body_html + "</div></body></html>"
+    )
 
 
 def _wants_api_json() -> bool:
