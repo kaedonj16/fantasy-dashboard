@@ -433,8 +433,8 @@ def build_dashboard_body(ctx: dict) -> str:
     )
     if _action_cards:
         _action_inner = "".join(h for _, h in _action_cards)
-        # Dismissal: client-side only, persisted per card type + week in
-        # localStorage so dismissed cards stay hidden until next week.
+        # Dismissal: client-side only, persisted per card type + day in
+        # localStorage so dismissed cards stay hidden until tomorrow.
         _dismiss_script = f"""
           <script>
           (function() {{
@@ -445,7 +445,11 @@ def build_dashboard_body(ctx: dict) -> str:
               try {{ return JSON.parse(localStorage.getItem(LS_KEY) || "{{}}"); }}
               catch (e) {{ return {{}}; }}
             }}
-            function cardKey(type) {{ return type + "-" + SEASON + "-" + WEEK; }}
+            function cardKey(type) {{
+              var d = new Date();
+              var day = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+              return type + "-" + SEASON + "-" + WEEK + "-" + day;
+            }}
             function hideDismissed() {{
               var map = dismissedMap();
               var cards = document.querySelectorAll("[data-action-card]");
