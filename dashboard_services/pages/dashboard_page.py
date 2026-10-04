@@ -8,7 +8,7 @@ from __future__ import annotations
 def build_dashboard_body(ctx: dict) -> str:
     from app import (  # noqa: E402  (lazy: avoids a circular import at module load)
         _scorezone_cta_state,
-        _render_do_next_waiver_card,
+        _render_next_steps_queue,
         _compute_fpts_against,
         _scoring_format_from_settings,
         _owner_to_rid_map,
@@ -93,19 +93,20 @@ def build_dashboard_body(ctx: dict) -> str:
 
     bench_check_html = _render_bench_check(ctx, viewer_roster_id, last_final_week)
 
-    # Merged waiver card (preview + show all) lives in the Actions queue only.
+    # Unified Next steps queue: one ranked action list across lineup,
+    # waivers, and trades. Replaces the old waiver-only card.
     do_next_waiver_html = ""
     try:
         _wv_table = list(get_model_value_table_cached() or []) or (ctx.get("model_value_table") or [])
-        do_next_waiver_html = _render_do_next_waiver_card(
+        do_next_waiver_html = _render_next_steps_queue(
             ctx,
+            viewer_roster_id,
             _wv_table,
-            platform=platform,
             season=season,
-            league_id=league_id,
+            current_week=current_week,
         )
     except Exception:
-        logger.debug("dashboard waiver card failed", exc_info=True)
+        logger.debug("dashboard next-steps queue failed", exc_info=True)
 
     _fpts_against_dash = _compute_fpts_against(
         season,
@@ -409,8 +410,8 @@ def build_dashboard_body(ctx: dict) -> str:
             return 0
         if key == "lineup":
             return 100
-        if key == "waiver":
-            return 70
+        if key == "nextsteps":
+            return 75  # unified action queue: ranked by impact internally
         if key == "trade":
             return 90 if "tw-urgent" in card_html else 50
         if key == "trade-losing":
@@ -421,7 +422,7 @@ def build_dashboard_body(ctx: dict) -> str:
 
     _action_cards = [
         ("lineup", lineup_alert_html),
-        ("waiver", do_next_waiver_html),
+        ("nextsteps", do_next_waiver_html),
         ("trade-losing", losing_trade_html),
         ("trade", trade_window_html),
         ("roster", roster_moves_html),

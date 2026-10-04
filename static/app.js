@@ -15147,6 +15147,16 @@ document.addEventListener('DOMContentLoaded', function() {
     expandBtn.textContent = expanded ? 'Show less' : 'Show all';
   });
 
+  document.addEventListener('click', function(event) {
+    const nsBtn = event.target.closest('.ns-expand-toggle');
+    if (!nsBtn) return;
+    const card = nsBtn.closest('.ns-card');
+    if (!card) return;
+    const expanded = card.classList.toggle('ns-collapsed');
+    nsBtn.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+    nsBtn.textContent = expanded ? 'Show all' : 'Show less';
+  });
+
   // GM Memo generation functionality
   // The dashboard body can be replaced after a cold-cache background build.
   // Delegate this click from document instead of binding only to the button

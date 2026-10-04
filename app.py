@@ -11725,6 +11725,448 @@ def _render_do_next_waiver_card(
         </section>"""
 
 
+def _next_steps_lineup_actions(ctx: dict, viewer_roster_id) -> list:
+    """Collect lineup actions for the unified Next steps queue.
+
+    Returns list of action dicts with priority, tag, action text, why,
+    impact, CTA label/URL, and sort score. Empty list when nothing to do.
+    """
+    actions = []
+    if not viewer_roster_id:
+        return actions
+    try:
+        from utils.lineup_issues import find_lineup_issues, projection_upgrades
+
+        rosters = ctx.get("rosters") or []
+        roster = next(
+            (r for r in rosters if str(r.get("roster_id")) == str(viewer_roster_id)),
+            None,
+        )
+        if not roster:
+            return actions
+        starters = [str(p) for p in (roster.get("starters") or [])]
+        if not starters:
+            return actions
+
+        season = int(ctx.get("current_season") or 0)
+        current_week = int(ctx.get("current_week") or 0)
+        players_map = ctx.get("players_map") or {}
+        try:
+            full_players = get_players_global() or {}
+        except Exception:
+            full_players = {}
+
+        platform = ctx.get("platform", "sleeper")
+        league_id = ctx.get("league_id", "")
+        fix_url = url_for(
+            "league_pages.page_waivers", platform=platform, season=season, league_id=league_id
+        ) + "?tab=startsit"
+
+        # Projection-based swaps: the highest-impact lineup actions.
+        try:
+            proj_map = {
+                str(k): v
+                for k, v in (
+                    ((ctx.get("proj_by_week") or {}).get(current_week) or {}).get("projections") or {}
+                ).items()
+            }
+            reserve_set = {str(p) for p in (roster.get("reserve") or [])}
+            taxi_set = {str(p) for p in (roster.get("taxi") or [])}
+            eligible = [
+                str(p) for p in (roster.get("players") or [])
+                if str(p) not in reserve_set and str(p) not in taxi_set
+            ]
+            pos_map = {
+                pid: str((players_map.get(pid) or {}).get("pos")
+                         or (full_players.get(pid) or {}).get("position") or "")
+                for pid in eligible
+            }
+            roster_positions = ctx.get("roster_positions")
+            if roster_positions is not None and hasattr(roster_positions, "tolist"):
+                roster_positions = roster_positions.tolist()
+            injury_status = {
+                pid: str((full_players.get(pid) or {}).get("injury_status") or "")
+                for pid in eligible
+            }
+            swaps = projection_upgrades(
+                starters, eligible, proj_map, pos_map, roster_positions or [],
+                injury_status=injury_status,
+            )
+            for s in swaps[:2]:
+                _in_name = (players_map.get(s["in"]) or {}).get("name") or f"Player {s['in']}"
+                _out_name = (players_map.get(s["out"]) or {}).get("name") or f"Player {s['out']}"
+                _in_proj = float(proj_map.get(s["in"]) or 0)
+                _out_proj = float(proj_map.get(s["out"]) or 0)
+                _gain = float(s.get("gain") or (_in_proj - _out_proj))
+                # Matchup context if available.
+                _in_team = str((players_map.get(s["in"]) or {}).get("team") or "").upper()
+                _why = (
+                    f"{_in_name} projects {_in_proj:.1f} vs {_out_name}'s {_out_proj:.1f}."
+                )
+                _priority = "high" if _gain >= 3.0 else "med"
+                _score = 100 + _gain if _gain >= 3.0 else 60 + _gain
+                actions.append({
+                    "priority": _priority,
+                    "tag": "Lineup",
+                    "action": f"Start {_in_name} over {_out_name}",
+                    "why": _why,
+                    "impact": f"+{_gain:.1f} projected points",
+                    "cta_label": "Fix lineup",
+                    "cta_url": fix_url,
+                    "score": _score,
+                })
+        except Exception:
+            logger.debug("next-steps lineup swaps failed", exc_info=True)
+
+        # Other issues: injuries, byes, empty slots (high priority, time-sensitive).
+        try:
+            player_info = {}
+            for pid in starters:
+                base = players_map.get(pid) or {}
+                full = full_players.get(pid) or {}
+                player_info[pid] = {
+                    "name": base.get("name") or full.get("full_name") or "",
+                    "team": base.get("team") or full.get("team") or "",
+                    "injury_status": full.get("injury_status") or "",
+                }
+            teams_playing = set()
+            try:
+                for g in (load_week_schedule(season, current_week) or []):
+                    for side in ("home", "away"):
+                        t = str(g.get(side) or "").upper()
+                        if t:
+                            teams_playing.add(t)
+            except Exception:
+                teams_playing = set()
+            issues = find_lineup_issues(starters, player_info, teams_playing)
+            for i in issues[:3]:
+                if i.get("kind") == "projection":
+                    continue  # already covered above
+                _detail = i.get("detail") or ""
+                _name = i.get("name") or ""
+                actions.append({
+                    "priority": "high",
+                    "tag": "Lineup",
+                    "action": f"Address: {_name}" if _name else "Fix lineup issue",
+                    "why": _detail,
+                    "impact": None,
+                    "cta_label": "Fix lineup",
+                    "cta_url": fix_url,
+                    "score": 95,
+                })
+        except Exception:
+            logger.debug("next-steps lineup issues failed", exc_info=True)
+    except Exception:
+        logger.debug("next-steps lineup actions failed", exc_info=True)
+    return actions
+
+
+def _next_steps_waiver_actions(ctx: dict, viewer_roster_id, model_value_table: list) -> list:
+    """Collect waiver actions for the unified Next steps queue.
+
+    Reuses _build_waiver_targets_rows data via a lightweight parse: takes the
+    top candidates and rebuilds action dicts with the same why-line logic.
+    """
+    actions = []
+    if not viewer_roster_id:
+        return actions
+    try:
+        from utils.league_payload import startup_draft_pending
+        if startup_draft_pending(ctx.get("league"), ctx.get("latest_draft"), ctx.get("rosters")):
+            return actions
+
+        platform = ctx.get("platform", "sleeper")
+        season = ctx.get("current_season") or ctx.get("season")
+        league_id = ctx.get("league_id", "")
+        _wv_url = url_for(
+            "league_pages.page_waivers", platform=platform, season=season, league_id=league_id,
+        )
+
+        # Reuse the candidate ranking from the shared builder by parsing its
+        # HTML rows. Simpler and keeps ranking identical to the waiver page.
+        rows_html = _build_waiver_targets_rows(ctx, model_value_table, limit=3)
+        if not rows_html:
+            return actions
+
+        import re as _re
+        # Each row: name, subline, why-line, signal chip, value.
+        _row_pat = _re.compile(
+            r'data-player-id=\'([^\']+)\'[^>]*>([^<]+)</span>.*?'
+            r'<div class="os-waiver-sub"[^>]*>([^<]*)</div>\s*'
+            r'(?:<div class="os-waiver-why">([^<]*)</div>)?',
+            _re.DOTALL,
+        )
+        for m in _row_pat.finditer(rows_html):
+            _pid, _name, _sub, _why = m.groups()
+            _name = html.unescape(_name or "").strip()
+            _why = html.unescape(_why or "").strip()
+            if not _name:
+                continue
+            # Priority: breakout/role signals rank higher.
+            _priority = "med"
+            _score = 55
+            _impact = None
+            if _why:
+                _wl = _why.lower()
+                if "breakout" in _wl:
+                    _priority = "high"
+                    _score = 80
+                    _impact = _why.split("\u00b7")[0].strip().title() if "\u00b7" in _why else None
+                    # Extract "breakout score 78" style impact.
+                    _bm = _re.search(r"breakout score (\d+)", _wl)
+                    if _bm:
+                        _impact = f"Breakout score {_bm.group(1)}"
+                elif "injury" in _wl or "starting role" in _wl:
+                    _priority = "high"
+                    _score = 78
+                elif "up " in _wl and "spots" in _wl:
+                    _score = 62
+            actions.append({
+                "priority": _priority,
+                "tag": "Waivers",
+                "action": f"Claim {_name}",
+                "why": _why or _sub,
+                "impact": _impact,
+                "cta_label": "Claim now",
+                "cta_url": f"{_wv_url}?player={_pid}",
+                "score": _score,
+            })
+    except Exception:
+        logger.debug("next-steps waiver actions failed", exc_info=True)
+    return actions
+
+
+def _next_steps_trade_actions(ctx: dict, viewer_roster_id) -> list:
+    """Collect trade actions for the unified Next steps queue.
+
+    Uses the trade suggestions engine to build concrete packages: names the
+    specific player to send from the user's expendable depth, explains roster
+    fit, and labels the opportunity type.
+    """
+    actions = []
+    if not viewer_roster_id:
+        return actions
+    try:
+        from dashboard_services.ai.context_builders import build_trade_suggestions_context
+
+        sugg_ctx = build_trade_suggestions_context(ctx, str(viewer_roster_id))
+        if not sugg_ctx:
+            return actions
+        partners = sugg_ctx.get("top_partners") or []
+        if not partners:
+            return actions
+
+        # Viewer's positional needs and expendable depth for roster-fit copy.
+        _needs = sugg_ctx.get("viewer_needs") or []
+        _need_pos = {_need_pos_norm(n) for n in _needs if _need_pos_norm(n)}
+        _surplus = sugg_ctx.get("viewer_surplus") or []
+
+        platform = ctx.get("platform", "sleeper")
+        season = ctx.get("current_season") or ctx.get("season")
+        league_id = ctx.get("league_id", "")
+        _trade_url = url_for(
+            "trade.page_trade", platform=platform, season=season, league_id=league_id,
+        ) + "?tab=suggestions"
+
+        # Boost trade priority when the viewer is losing.
+        _losing_boost = 0
+        try:
+            rosters = ctx.get("rosters") or []
+            roster = next(
+                (r for r in rosters if str(r.get("roster_id")) == str(viewer_roster_id)), None,
+            )
+            if roster:
+                _s = roster.get("settings") or {}
+                _w = int(_s.get("wins") or 0)
+                _l = int(_s.get("losses") or 0)
+                if (_w + _l) >= 3 and (_w / (_w + _l)) < 0.4:
+                    _losing_boost = 25
+        except Exception:
+            pass
+
+        for p in partners[:2]:
+            targets = p.get("targets_they_have") or []
+            sends = p.get("targets_viewer_sends") or []
+            if not targets:
+                continue
+            t = targets[0]
+            t_name = t.get("name") or "Unknown"
+            t_pos = str(t.get("position") or "").upper()
+            team_name = p.get("team_name") or "Unknown team"
+            record = p.get("partner_record") or ""
+            direction = str(p.get("partner_direction") or "").lower()
+
+            # Opportunity type label.
+            _opp = "Trade"
+            if "rebuild" in direction or "seller" in direction:
+                _opp = "Buy low"
+            elif "contend" in direction or "buyer" in direction:
+                _opp = "Contender upgrade"
+            elif "stuck" in direction:
+                _opp = "Mutual upgrade"
+
+            # Concrete package: name the specific player to send.
+            _send = sends[0] if sends else None
+            _send_name = (_send.get("name") if _send else "") or ""
+            _send_pos = str((_send.get("position") if _send else "") or "").upper()
+
+            # Roster-fit reasoning.
+            _why_bits = []
+            if record and ("rebuild" in direction or "seller" in direction):
+                _why_bits.append(f"{team_name} is {record} and rebuilding")
+            elif record:
+                _why_bits.append(f"{team_name} ({record})")
+            else:
+                _why_bits.append(team_name)
+            if t_pos and t_pos in _need_pos:
+                _hole = {"QB": "QB", "RB": "RB", "WR": "WR", "TE": "TE"}.get(t_pos, t_pos)
+                _why_bits.append(f"fills your {_hole} hole")
+            if _send_name:
+                _why_bits.append(f"you send {_send_name}")
+            _why = ". ".join(_why_bits) + "." if _why_bits else ""
+
+            # Fairness + accept probability.
+            _acc = p.get("acceptance_rate")
+            _fair = p.get("fairness_label") or p.get("fairness") or ""
+            _impact_bits = []
+            if _fair:
+                _impact_bits.append(str(_fair).title() if isinstance(_fair, str) else _fair)
+            if _acc:
+                try:
+                    _impact_bits.append(f"{float(_acc):.0f}% accept")
+                except (TypeError, ValueError):
+                    pass
+            _impact = " \u00b7 ".join(_impact_bits) if _impact_bits else None
+
+            _action = f"Offer {_send_name} for {t_name}" if _send_name else f"Target {t_name}"
+            actions.append({
+                "priority": "low",
+                "tag": f"Trade \u00b7 {_opp}",
+                "action": _action,
+                "why": _why,
+                "impact": _impact,
+                "cta_label": "Propose trade",
+                "cta_url": _trade_url,
+                "score": 40 + _losing_boost,
+            })
+    except Exception:
+        logger.debug("next-steps trade actions failed", exc_info=True)
+    return actions
+
+
+def _need_pos_norm(n) -> str:
+    """Normalize a viewer-need entry to a position string."""
+    if isinstance(n, dict):
+        return str(n.get("position") or n.get("pos") or "").upper()
+    return str(n or "").upper()
+
+
+def _render_next_steps_queue(
+    ctx: dict,
+    viewer_roster_id,
+    model_value_table: list,
+    *,
+    season,
+    current_week,
+    preview_limit: int = 3,
+) -> str:
+    """Unified Next steps action queue: one ranked list across lineup, waivers,
+    and trades. Each item names a specific action, explains why, shows impact,
+    and deep-links to the move. Replaces the old waiver-only card.
+    """
+    if not viewer_roster_id:
+        return ""
+
+    actions = []
+    actions.extend(_next_steps_lineup_actions(ctx, viewer_roster_id))
+    actions.extend(_next_steps_waiver_actions(ctx, viewer_roster_id, model_value_table or []))
+    actions.extend(_next_steps_trade_actions(ctx, viewer_roster_id))
+
+    # Rank by score (expected impact), highest first.
+    actions.sort(key=lambda a: -(a.get("score") or 0))
+    if not actions:
+        return f"""
+        <section class="os-card os-action-card ns-card" data-action-card="nextsteps">
+          <div class="os-section-head">
+            <div class="os-section-head-content">
+              <h2 class="os-section-title">Next steps</h2>
+            </div>
+            <div class="os-section-head-actions">
+              <span class="os-card-actions">
+                <button type="button" class="os-action-dismiss" data-dismiss-card="nextsteps" aria-label="Dismiss">&times;</button>
+              </span>
+            </div>
+          </div>
+          <div class="ns-empty">
+            <div class="ns-empty-big">&#10003;</div>
+            <div>You are all set for Week {int(current_week or 0)}.<br>No urgent actions right now.</div>
+          </div>
+        </section>"""
+
+    _shown = actions[:preview_limit] if len(actions) > preview_limit else actions
+    _hidden = actions[preview_limit:] if len(actions) > preview_limit else []
+    show_expand = bool(_hidden)
+    collapsed_cls = " ns-collapsed" if show_expand else ""
+
+    def _item_html(a: dict) -> str:
+        _prio = a.get("priority") or "low"
+        _tag = html.escape(a.get("tag") or "")
+        _action = html.escape(a.get("action") or "")
+        _why = html.escape(a.get("why") or "")
+        _impact = a.get("impact")
+        _impact_html = (
+            f'<div class="ns-impact">{html.escape(_impact)}</div>' if _impact else ""
+        )
+        _cta = (
+            f'<a class="ns-cta" href="{html.escape(a.get("cta_url") or "#")}">'
+            f'{html.escape(a.get("cta_label") or "View")}</a>'
+        )
+        return (
+            f'<div class="ns-item">'
+            f'<div class="ns-priority {_prio}"></div>'
+            f'<div class="ns-body">'
+            f'<div class="ns-tag">{_tag}</div>'
+            f'<div class="ns-action">{_action}</div>'
+            + (f'<div class="ns-why">{_why}</div>' if _why else '')
+            + (_impact_html + "<br>" if _impact else "")
+            + _cta
+            + f'</div></div>'
+        )
+
+    _items_html = "".join(_item_html(a) for a in _shown)
+    _hidden_html = "".join(_item_html(a) for a in _hidden)
+
+    expand_btn = ""
+    if show_expand:
+        expand_btn = (
+            '<button type="button" class="ns-expand-toggle" '
+            'aria-expanded="false" aria-controls="ns-body">Show all</button>'
+        )
+
+    _n = len(actions)
+    return f"""
+        <section class="os-card os-action-card ns-card{collapsed_cls}" data-action-card="nextsteps">
+          <div class="os-section-head">
+            <div class="os-section-head-content">
+              <h2 class="os-section-title">Next steps</h2>
+              <div class="os-section-subtitle">Ranked by expected impact on your week</div>
+            </div>
+            <div class="os-section-head-actions">
+              <span class="os-card-actions">
+                <span class="ns-count">{_n} action{_n != 1 and "s" or ""}</span>
+                {expand_btn}
+                <button type="button" class="os-action-dismiss" data-dismiss-card="nextsteps" aria-label="Dismiss">&times;</button>
+              </span>
+            </div>
+          </div>
+          <div class="ns-list" id="ns-body">
+            {_items_html}
+          </div>""" + (
+            f'<div class="ns-list ns-hidden" id="ns-body-extra">{_hidden_html}</div>' if show_expand else ""
+        ) + f"""
+        </section>"""
+
+
 _WEEK1_KICKOFF_CACHE: dict = {}  # season -> (fetched_at, ts_ms | None)
 _WEEK1_KICKOFF_TTL = 6 * 3600  # 6h -- the schedule is static once published
 
