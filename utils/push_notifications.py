@@ -534,8 +534,8 @@ def _short_td_desc(play):
     """Shorten a TD play description for push: '12-yd pass to M. Harrison'.
 
     Drops everything from TOUCHDOWN onward (extra point, center/holder names)
-    and extracts the core: yards, play type, and target. Falls back to a
-    truncated first sentence when the format is unrecognized.
+    and extracts the core: yards, play type, and target. Returns "" when the
+    format is unrecognized so the caller falls back to "Touchdown!".
     """
     import re as _re
     text = (play.get("play_text") or "").strip()
@@ -550,7 +550,14 @@ def _short_td_desc(play):
     recv_m = _re.search(r"\bto ([A-Z]\.[A-Za-z'\-]+)", head)
     recv = recv_m.group(1) if recv_m else ""
     is_pass = "pass" in low
-    is_rush = "rush" in low
+    # "rush" covers rushes/rushed; "scrambl" covers scramble/scrambles/
+    # scrambled; standalone run/runs/ran for QB keepers and direct runs.
+    is_rush = (
+        "rush" in low
+        or "scrambl" in low
+        or _re.search(r"\bruns?\b", low) is not None
+        or _re.search(r"\bran\b", low) is not None
+    )
     if is_pass and recv and yards:
         return f"{yards}-yd pass to {recv}"
     if is_pass and recv:
@@ -559,8 +566,7 @@ def _short_td_desc(play):
         return f"{yards}-yd rush TD"
     if is_rush:
         return "Rush TD"
-    first = head.split(".")[0].strip()
-    return first[:60] if first else ""
+    return ""
 
 def _scorezone_roster_owner(pid, rosters):
     """Canonical player id → (owner_id, roster_id, is_starter) in this league.
