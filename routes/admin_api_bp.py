@@ -185,7 +185,11 @@ def api_refresh_league():
 
     key = _cache_key(platform, season, league_id)
     if key in DASHBOARD_CACHE:
-        DASHBOARD_CACHE[key]["ts"] = 0       # expire context cache
+        # Mark for forced rebuild WITHOUT zeroing ts: the stale-fallback in
+        # get_league_ctx_from_cache needs the old ts to serve last-known-good
+        # data if the rebuild fails. Zeroing ts made time.time() - 0 exceed
+        # the stale window, turning rebuild failures into HTTP 500s.
+        DASHBOARD_CACHE[key]["force_refresh"] = True
         DASHBOARD_CACHE[key]["page_html"] = {}  # clear rendered HTML so pages re-render fresh
     # Sibling gunicorn workers keep their own DASHBOARD_CACHE; bump a shared
     # marker so their next read rebuilds too (otherwise Refresh only expires

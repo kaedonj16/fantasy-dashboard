@@ -3062,10 +3062,15 @@ def _touch_league_bust(platform: str, season: int, league_id: str) -> None:
 def _league_ctx_cache_valid(entry, platform, season, league_id) -> bool:
     """True when this worker's in-memory league ctx is still the current one.
 
-    ``ts == 0`` is a local expire. A bust-file mtime newer than ``ts`` means a
-    sibling worker handled Refresh and this copy must rebuild too.
+    ``ts == 0`` is a local expire. A ``force_refresh`` marker (set by
+    /api/refresh-league) forces a rebuild while preserving the old ts, so the
+    stale-fallback can still serve last-known-good data if the rebuild fails.
+    A bust-file mtime newer than ``ts`` means a sibling worker handled Refresh
+    and this copy must rebuild too.
     """
     if not entry:
+        return False
+    if entry.get("force_refresh"):
         return False
     try:
         ts = float(entry.get("ts") or 0)
@@ -13478,6 +13483,16 @@ def get_league_ctx_from_cache(
                 }, separators=(",", ":")))
                 return ctx
             except Exception:
+                # One refresh attempt failed: drop the force marker so later
+                # requests fall back to normal cache rules instead of retrying
+                # the expensive rebuild on every hit. This request still gets
+                # the stale entry below.
+                try:
+                    _failed_ent = DASHBOARD_CACHE.get(key)
+                    if _failed_ent is not None:
+                        _failed_ent.pop("force_refresh", None)
+                except Exception:
+                    pass
                 old = (stale_entry or {}).get("ctx")
                 old_ts = float((stale_entry or {}).get("ts") or 0)
                 stale_window = _positive_env_int("LEAGUE_STALE_IF_ERROR_SECONDS", 21600)

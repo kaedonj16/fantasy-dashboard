@@ -257,7 +257,10 @@ def test_refresh_league_touches_cross_worker_bust():
     fn = ADMIN[ADMIN.index("def api_refresh_league"):]
     fn = fn[: fn.index("def api_flush_value_cache")]
     assert "_touch_league_bust" in fn
-    assert 'DASHBOARD_CACHE[key]["ts"] = 0' in fn
+    # Refresh marks the entry for a forced rebuild via force_refresh instead of
+    # zeroing ts, so the stale-fallback keeps the old ts if the rebuild fails.
+    assert 'DASHBOARD_CACHE[key]["force_refresh"] = True' in fn
+    assert 'DASHBOARD_CACHE[key]["ts"] = 0' not in fn
     assert "clear_league_provider_cache_for_league" in fn
 
 

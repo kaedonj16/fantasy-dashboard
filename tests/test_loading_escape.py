@@ -49,7 +49,7 @@ def test_do_refresh_uses_timed_fetch():
     block = APP_JS[start: APP_JS.index("window.addEventListener('beforeunload'", start)]
     assert "brFetchWithTimeout('/api/refresh-league'" in block
     assert "brFetchWithTimeout(location.href" in block
-    assert "30000" in block
+    assert "60000" in block
     assert "} finally {" in block
 
 
