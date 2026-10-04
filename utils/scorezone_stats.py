@@ -56,6 +56,20 @@ def rz_stat_line_from_ps(ps: dict) -> dict:
     )
     fg_long = nest_or_flat(kicking, "fgLng", "fg_long", "fgLong", "longestFieldGoal")
     fgm = nest_or_flat(kicking, "fgm", "fgMade", "fieldGoalsMade")
+    # Fumbles lost: Tank01 field naming is inconsistent, so check the common
+    # variants across the offensive groups (a sack-fumble lands on Passing,
+    # a run fumble on Rushing). Each lookup falls back to the flat keys.
+    fum_lost = max(
+        nest_or_flat(
+            passing, "fumblesLost", "fumLost", "fumbleLost", "fumbles", "fum"
+        ),
+        nest_or_flat(
+            rushing, "fumblesLost", "fumLost", "fumbles", "fum", "fumbleLost"
+        ),
+        nest_or_flat(
+            receiving, "fumblesLost", "fumLost", "fumbles", "fum", "fumbleLost"
+        ),
+    )
 
     return {
         "pass_yds": nest_or_flat(
@@ -74,6 +88,9 @@ def rz_stat_line_from_ps(ps: dict) -> dict:
         ),
         "rec_td":   nest_or_flat(receiving, "recTD", "rec_td", "receivingTD", "recTd"),
         "targets":  nest_or_flat(receiving, "targets", "receivingTargets"),
+        # Turnovers: fumbles lost score -2 in standard leagues. Sacks are
+        # intentionally unscored (QBs are not penalized for sack yardage).
+        "fum_lost": fum_lost,
         # Kicker fields
         "fgm":      fgm,
         "fg_yds":   fg_yds,
