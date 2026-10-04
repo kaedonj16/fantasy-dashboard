@@ -9377,6 +9377,7 @@ def _viewer_lineup_alert_html(ctx: dict, viewer_roster_id) -> str:
 
         # Projection-based upgrades: bench players out-projecting a starter at
         # the same position this week (legal like-for-like swaps only).
+        _swap_suggestions = []
         try:
             from utils.lineup_issues import projection_upgrades
 
@@ -9408,11 +9409,19 @@ def _viewer_lineup_alert_html(ctx: dict, viewer_roster_id) -> str:
                 starters, eligible, proj_map, pos_map, roster_positions or [],
                 injury_status=injury_status,
             )
-            for s in swaps:
+            for s in swaps[:2]:
                 _in_name = (players_map.get(s["in"]) or {}).get("name") or f"Player {s['in']}"
                 _out_name = (players_map.get(s["out"]) or {}).get("name") or f"Player {s['out']}"
                 _in_proj = float(proj_map.get(s["in"]) or 0)
                 _out_proj = float(proj_map.get(s["out"]) or 0)
+                _in_pos = str(pos_map.get(s["in"]) or "").upper()
+                _gain = float(s.get("gain") or (_in_proj - _out_proj))
+                _swap_suggestions.append({
+                    "in": s["in"], "out": s["out"],
+                    "in_name": _in_name, "out_name": _out_name,
+                    "in_proj": _in_proj, "out_proj": _out_proj,
+                    "pos": _in_pos, "gain": _gain,
+                })
                 issues.append({
                     "kind": "projection", "pid": s["in"], "name": _in_name,
                     "detail": (
@@ -9433,9 +9442,35 @@ def _viewer_lineup_alert_html(ctx: dict, viewer_roster_id) -> str:
         ) + "?tab=startsit"
         n = len(issues)
         title = f"{n} lineup issue" + ("s" if n > 1 else "")
+        # Prominent swap suggestions: "Start X over Y" with projection reasoning.
+        _swap_html = ""
+        if _swap_suggestions:
+            _swap_rows = []
+            for sw in _swap_suggestions:
+                _reason = (
+                    f"{sw['in_name']} projects {sw['in_proj']:.1f} vs "
+                    f"{sw['out_name']}'s {sw['out_proj']:.1f} "
+                    f"(+{sw['gain']:.1f})"
+                )
+                _swap_rows.append(
+                    f'<div class="os-swap-row">'
+                    f'<div class="os-swap-main">'
+                    f'<span class="os-swap-action">Start</span> '
+                    f'<span class="os-swap-in player-clickable" data-player-id="{html.escape(str(sw["in"]), quote=True)}" style="cursor:pointer;font-weight:700;">{html.escape(sw["in_name"])}</span>'
+                    f' <span class="os-swap-over">over</span> '
+                    f'<span class="os-swap-out player-clickable" data-player-id="{html.escape(str(sw["out"]), quote=True)}" style="cursor:pointer;">{html.escape(sw["out_name"])}</span>'
+                    + (f' <span class="os-swap-pos">{html.escape(sw["pos"])}</span>' if sw["pos"] else '')
+                    + f'</div>'
+                    f'<div class="os-swap-why">{html.escape(_reason)}</div>'
+                    f'</div>'
+                )
+            _swap_html = f'<div class="os-swap-list">{"".join(_swap_rows)}</div>'
+        # Exclude projection swaps from the generic list (they're shown above).
+        _other_issues = [i for i in issues if i.get("kind") != "projection"]
         items = "".join(
-            f"<li>{html.escape(i['detail'])}</li>" for i in issues[:6]
+            f"<li>{html.escape(i['detail'])}</li>" for i in _other_issues[:6]
         )
+        _issues_html = f'<ul class="lineup-alert-list">{items}</ul>' if items else ""
         return f"""
         <section class="os-card lineup-alert-card" data-action-card="lineup">
           <div class="lineup-alert-head">
@@ -9445,7 +9480,8 @@ def _viewer_lineup_alert_html(ctx: dict, viewer_roster_id) -> str:
               <button type="button" class="os-action-dismiss" data-dismiss-card="lineup" aria-label="Dismiss">&times;</button>
             </span>
           </div>
-          <ul class="lineup-alert-list">{items}</ul>
+          {_swap_html}
+          {_issues_html}
         </section>"""
     except Exception:
         logger.debug("lineup alert failed", exc_info=True)
@@ -9711,6 +9747,112 @@ def _trade_window_card_html(ctx: dict, viewer_roster_id) -> str:
         </section>"""
     except Exception:
         logger.debug("trade window card failed", exc_info=True)
+        return ""
+
+
+def _losing_streak_trade_html(ctx: dict, viewer_roster_id) -> str:
+    """Proactive trade suggestion card for losing teams.
+
+    When the viewer is losing badly (win pct below 40% with 3+ games played),
+    surface 1-2 specific trade targets from the trade suggestions engine
+    instead of the generic trade window card. Each suggestion names the
+    target, the partner team, and why the deal makes sense.
+    Empty string when the viewer is not losing or no suggestions exist.
+    """
+    if not viewer_roster_id:
+        return ""
+    try:
+        # Get viewer's record from roster settings.
+        rosters = ctx.get("rosters") or []
+        roster = next(
+            (r for r in rosters if str(r.get("roster_id")) == str(viewer_roster_id)),
+            None,
+        )
+        if not roster:
+            return ""
+        settings = roster.get("settings") or {}
+        try:
+            wins = int(settings.get("wins") or 0)
+            losses = int(settings.get("losses") or 0)
+        except (TypeError, ValueError):
+            return ""
+        games = wins + losses
+        if games < 3:
+            return ""
+        win_pct = wins / games if games else 0
+        if win_pct >= 0.4:
+            return ""  # not losing badly enough
+
+        # Build trade suggestions and take the top 2 partners.
+        from dashboard_services.ai.context_builders import build_trade_suggestions_context
+        sugg_ctx = build_trade_suggestions_context(ctx, str(viewer_roster_id))
+        if not sugg_ctx:
+            return ""
+        partners = sugg_ctx.get("top_partners") or []
+        if not partners:
+            return ""
+
+        platform = ctx.get("platform", "sleeper")
+        season = ctx.get("current_season") or ctx.get("season")
+        league_id = ctx.get("league_id", "")
+        _trade_url = url_for(
+            "trade.page_trade", platform=platform, season=season, league_id=league_id,
+        ) + "?tab=suggestions"
+
+        _rows = []
+        for p in partners[:2]:
+            targets = p.get("targets_they_have") or []
+            sends = p.get("targets_viewer_sends") or []
+            if not targets:
+                continue
+            t = targets[0]
+            t_name = t.get("name") or "Unknown"
+            t_pos = t.get("position") or ""
+            team_name = p.get("team_name") or "Unknown team"
+            record = p.get("partner_record") or ""
+            direction = p.get("partner_direction") or ""
+            # Why this deal: partner's direction + what you're sending.
+            _why_bits = []
+            if direction:
+                _why_bits.append(f"they're {direction}")
+            if record:
+                _why_bits.append(record)
+            if sends:
+                _send_names = ", ".join(s.get("name") or "" for s in sends[:2])
+                if _send_names:
+                    _why_bits.append(f"you send {_send_names}")
+            _why = " \u00b7 ".join(_why_bits)
+            _acc = p.get("acceptance_rate")
+            _acc_str = f" \u00b7 ~{_acc:.0f}% accept" if _acc else ""
+            _rows.append(
+                f'<div class="os-trade-target-row">'
+                f'<div class="os-trade-target-main">'
+                f'<span class="os-trade-target-name player-clickable" data-player-id="{html.escape(str(t.get("id") or ""), quote=True)}" style="cursor:pointer;font-weight:700;">{html.escape(t_name)}</span>'
+                + (f' <span class="os-swap-pos">{html.escape(t_pos)}</span>' if t_pos else '')
+                + f'<div class="os-trade-target-team">{html.escape(team_name)}'
+                + (f' ({html.escape(record)})' if record else '')
+                + f'</div>'
+                + (f'<div class="os-swap-why">{html.escape(_why)}{_acc_str}</div>' if _why or _acc_str else '')
+                + f'</div>'
+                f'</div>'
+            )
+        if not _rows:
+            return ""
+
+        _record_str = f"{wins}-{losses}"
+        return f"""
+        <section class="os-card lineup-alert-card os-losing-trade-card" data-action-card="trade-losing">
+          <div class="lineup-alert-head">
+            <span class="lineup-alert-title">Shake it up: {_record_str} trade targets</span>
+            <span class="os-card-actions">
+              <a class="recap-generate-btn os-action-cta" href="{html.escape(_trade_url)}">View trades</a>
+              <button type="button" class="os-action-dismiss" data-dismiss-card="trade-losing" aria-label="Dismiss">&times;</button>
+            </span>
+          </div>
+          <div class="os-swap-list">{"".join(_rows)}</div>
+        </section>"""
+    except Exception:
+        logger.debug("losing streak trade card failed", exc_info=True)
         return ""
 
 
@@ -11424,6 +11566,42 @@ def _build_waiver_targets_rows(ctx: dict, model_value_table: list, limit: int = 
             fast_thr=_wv_fast_thr, up_thr=_wv_up_thr,
         )
 
+        # Inline reasoning: one line explaining WHY this player is a target.
+        _why_bits = []
+        _rc7 = p.get("rank_change_7d")
+        try:
+            _rc7f = float(_rc7) if _rc7 is not None else 0.0
+        except (TypeError, ValueError):
+            _rc7f = 0.0
+        _bscore = 0.0
+        try:
+            _bscore = float((waiver_breakout or {}).get(p["player_id"]) or 0.0)
+        except (TypeError, ValueError):
+            _bscore = 0.0
+        if sig_label == "Next Man Up":
+            _why_bits.append("injury ahead opens a starting role")
+        elif sig_label == "Usage Spike":
+            _why_bits.append("surging snaps/targets")
+        elif sig_label == "Breakout":
+            _why_bits.append(f"breakout score {_bscore:.0f}")
+        elif sig_label in ("Rising Fast", "Trending Up") and _rc7f > 0:
+            _why_bits.append(f"up {_rc7f:.0f} spots this week")
+        elif sig_label == "Bumped Up":
+            _why_bits.append("depth chart moving in his favor")
+        elif sig_label == "Value Play":
+            _why_bits.append("young value at a discount")
+        if p.get("age"):
+            try:
+                if float(p["age"]) < 25:
+                    _why_bits.append(f"age {float(p['age']):.1f}")
+            except (TypeError, ValueError):
+                pass
+        _why_joined = " \u00b7 ".join(_why_bits)
+        _why_html = (
+            f'<div class="os-waiver-why">{html.escape(_why_joined)}</div>'
+            if _why_bits else ""
+        )
+
         waiver_html.append(
             f"""
             <div class="os-waiver-row">
@@ -11432,6 +11610,7 @@ def _build_waiver_targets_rows(ctx: dict, model_value_table: list, limit: int = 
                   <span class="os-waiver-name player-clickable" style="cursor:pointer;font-weight:600;" title="{html.escape(p['name'], quote=True)}" data-player-id='{p['player_id']}' data-player-name='{p['name']}'>{p['name']}</span>
                 </div>
                 <div class="os-waiver-sub" title="{html.escape(subline, quote=True)}">{subline}</div>
+                {_why_html}
               </div>
               <div class="os-waiver-right">
                 <span class="chip chip--sm {sig_cls}">{sig_label}</span>
