@@ -680,9 +680,11 @@ def notify_scorezone_scores(league_id, platform, pbp_by_game, player_info,
                     pts = 0.0
                 pts_str = f" (+{round(pts, 1)})" if pts else ""
                 title = f"TD: {name}{pts_str}"
-                body = _short_td_desc(play) or "Touchdown!"
-                if league_name and body == "Touchdown!":
-                    body = f"Touchdown in {league_name}!"
+                desc = _short_td_desc(play)
+                if league_name:
+                    body = f"{desc} · {league_name}" if desc else f"Touchdown! · {league_name}"
+                else:
+                    body = desc or "Touchdown!"
                 url = (f"/{platform}/{season}/{league_id}/scorezone" if season
                        else f"/{platform}/{league_id}/scorezone")
                 n = _broadcast_owner(
