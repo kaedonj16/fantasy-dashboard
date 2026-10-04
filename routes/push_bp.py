@@ -160,6 +160,47 @@ def api_push_vapid_public_key():
     return jsonify({"publicKey": keys["public"]})
 
 
+def _resolve_league_owner_id(conn, league_id, platform, *, session_yahoo_guid=None,
+                               team_id=None, fallback_owner_id=None):
+    """Resolve the platform-specific roster owner_id for a league.
+
+    The stored owner_id must match the roster's owner_id at broadcast time
+    (_broadcast_owner does an exact match on owner_id). Each platform uses a
+    different ID namespace:
+    - sleeper: Sleeper user_id (the session's viewer_user_id)
+    - yahoo: manager guid from _yahoo_owner_id (NOT the numeric team_id)
+    - espn: member ID from owners[0].id (NOT team_id; SWID brace variants
+      are handled by owner_id_variants at broadcast time)
+    - fleaflicker/mfl: team_id
+    """
+    platform = (platform or "sleeper").lower()
+    if platform == "sleeper":
+        return fallback_owner_id
+    if platform == "yahoo":
+        # Prefer the session's Yahoo guid (user just authenticated via Yahoo).
+        if session_yahoo_guid:
+            return str(session_yahoo_guid).strip() or team_id
+        # Fall back to the most recently seen guid for this league. The guid
+        # is recorded in yahoo_league_owners during the Yahoo OAuth flow.
+        try:
+            row = conn.execute(
+                "SELECT guid FROM yahoo_league_owners WHERE league_id = %s "
+                "ORDER BY updated_at DESC LIMIT 1",
+                (str(league_id),),
+            ).fetchone()
+            if row:
+                guid = row["guid"] if isinstance(row, dict) else row[0]
+                if guid:
+                    return str(guid)
+        except Exception:
+            pass
+        # Last resort: team_id won't match the roster guid, but it is better
+        # than a Sleeper user_id from another league's session.
+        return team_id
+    # espn, fleaflicker, mfl and others: the roster owner_id is the team_id.
+    return team_id or fallback_owner_id
+
+
 @push_bp.route("/api/push/subscribe", methods=["POST"])
 @limiter.limit("30 per minute")
 def api_push_subscribe():
@@ -232,10 +273,19 @@ def api_push_subscribe():
                             "DELETE FROM push_league_optouts WHERE endpoint = %s AND league_id = %s",
                             (endpoint, lid),
                         )
+            # The per-league platform is sent by the client (bulk subscribe groups
+            # league_ids by platform), so resolve each league's owner_id in its
+            # own namespace. For the single-league toggle path the client sends
+            # owner_id explicitly (window._viewerUid); keep that as fallback.
+            session_yahoo_guid = session.get("yahoo_guid") or ""
             for lid in leagues:
-                # Prefer the resolved team_id for non-Sleeper bulk subscribes;
-                # fall back to the session's viewer_user_id (single-league path).
-                lid_owner = team_ids.get(str(lid)) if is_bulk else None
+                lid_team_id = team_ids.get(str(lid)) if is_bulk else None
+                lid_owner = _resolve_league_owner_id(
+                    conn, lid, platform,
+                    session_yahoo_guid=session_yahoo_guid,
+                    team_id=lid_team_id,
+                    fallback_owner_id=owner_id,
+                )
                 conn.execute(
                     """
                     INSERT INTO push_subscriptions (endpoint, p256dh, auth, league_id, platform, owner_id, account_key)
