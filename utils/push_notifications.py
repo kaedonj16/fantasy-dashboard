@@ -972,17 +972,6 @@ def _lineup_lock_base():
     return games, season, week
 
 
-def _lineup_lock_epochs(games):
-    """Coerce gameTime_epoch values (seconds, may arrive as str) to floats."""
-    epochs = []
-    for g in games:
-        try:
-            epochs.append(float(g.get("gameTime_epoch")))
-        except (TypeError, ValueError):
-            continue
-    return epochs
-
-
 def _in_lineup_lock_window(kickoff_epoch):
     """True when kickoff is 40-100 min out, so an hourly check lands inside."""
     # gameTime_epoch is seconds (nfl_game_data._iso_epoch); every other
@@ -993,7 +982,7 @@ def _in_lineup_lock_window(kickoff_epoch):
     return 40 <= mins <= 100
 
 
-def _lineup_lock_send(games, season, week, *, dedupe_key, tag,
+def _lineup_lock_send(games, season, week, *, dedupe_key, dedupe_value, tag,
                       kickoff_line, soon_line, log_label):
     """Shared per-league send for the lineup-lock reminders.
 
@@ -1004,7 +993,7 @@ def _lineup_lock_send(games, season, week, *, dedupe_key, tag,
 
     try:
         with get_conn() as conn:
-            if _app_state_get(conn, dedupe_key) == f"{season}-{week}":
+            if _app_state_get(conn, dedupe_key) == dedupe_value:
                 return
 
         # Send per league so each subscriber gets a link into their own league's
@@ -1154,41 +1143,37 @@ def _lineup_lock_send(games, season, week, *, dedupe_key, tag,
         logger.info("[notify] lineup_lock %s week %s sent %d", log_label, week, sent)
 
         with get_conn() as conn:
-            _app_state_set(conn, dedupe_key, f"{season}-{week}")
+            _app_state_set(conn, dedupe_key, dedupe_value)
             conn.commit()
         return sent
     except Exception as exc:
         logger.warning("[notify] lineup_lock send failed: %s", exc)
 
 
-def notify_lineup_lock():
-    """Push to all subscribers 60 minutes before the first game of the week."""
-    try:
-        base = _lineup_lock_base()
-        if not base:
-            return
-        games, season, week = base
-        epochs = _lineup_lock_epochs(games)
-        if not epochs or not _in_lineup_lock_window(min(epochs)):
-            return
-        return _lineup_lock_send(
-            games, season, week,
-            dedupe_key="lineup_lock_week",
-            tag=f"lineup-lock-{season}-{week}",
-            kickoff_line=f"Week {week} kicks off in about an hour.",
-            soon_line=f"Week {week} kicks off soon.",
-            log_label="thu",
+def _lineup_lock_day_lines(weekday_name, week):
+    """Day-specific (kickoff_line, soon_line) for lineup-lock pushes."""
+    if weekday_name == "Thursday":
+        return (
+            "Thursday night players lock in about an hour.",
+            "Thursday night players lock soon.",
         )
-    except Exception as exc:
-        logger.warning("[notify] lineup_lock failed: %s", exc)
+    if weekday_name == "Monday":
+        return (
+            "Monday night players lock in about an hour.",
+            "Monday night players lock soon.",
+        )
+    return (
+        f"{weekday_name}'s Week {week} games kick off in about an hour.",
+        f"{weekday_name}'s Week {week} games kick off soon.",
+    )
 
 
-def notify_lineup_lock_sunday():
-    """Second lineup reminder ~60 min before the first Sunday kickoff.
+def notify_lineup_lock():
+    """Push per game day ~60 min before that day's first kickoff.
 
-    Thursday's alert covers the week's first game, but most lineups lock
-    Sunday, so this fires once per week ahead of the early Sunday window
-    (including 9:30 AM ET London games).
+    Groups the week's remaining games by Eastern date so Thursday, Sunday
+    (including 9:30 AM ET London games), Monday, etc. each get their own
+    reminder. Dedupes per day via lineup_lock_day = {season}-{week}-{date}.
     """
     try:
         from zoneinfo import ZoneInfo
@@ -1198,22 +1183,44 @@ def notify_lineup_lock_sunday():
             return
         games, season, week = base
         et = ZoneInfo("America/New_York")
-        epochs = [
-            ep for ep in _lineup_lock_epochs(games)
-            if datetime.fromtimestamp(ep, tz=et).weekday() == 6  # Sunday
-        ]
-        if not epochs or not _in_lineup_lock_window(min(epochs)):
+        now_ts = datetime.now(tz=timezone.utc).timestamp()
+        # Group future games by Eastern date. Past games are skipped: once a
+        # game kicks off it can no longer be the "next" lock, and including it
+        # would poison min() for the rest of the week.
+        by_day = {}
+        for g in games:
+            try:
+                ep = float(g.get("gameTime_epoch"))
+            except (TypeError, ValueError):
+                continue
+            if ep <= now_ts:
+                continue
+            day = datetime.fromtimestamp(ep, tz=et).date()
+            by_day.setdefault(day, []).append((ep, g))
+        if not by_day:
             return
-        return _lineup_lock_send(
-            games, season, week,
-            dedupe_key="lineup_lock_sunday",
-            tag=f"lineup-lock-sunday-{season}-{week}",
-            kickoff_line=f"Sunday's Week {week} games kick off in about an hour.",
-            soon_line=f"Sunday's Week {week} games kick off soon.",
-            log_label="sun",
-        )
+        total = 0
+        for day in sorted(by_day):
+            day_items = by_day[day]
+            first_kickoff = min(ep for ep, _ in day_items)
+            if not _in_lineup_lock_window(first_kickoff):
+                continue
+            day_games = [g for _, g in day_items]
+            date_str = day.isoformat()
+            weekday_name = day.strftime("%A")
+            kickoff_line, soon_line = _lineup_lock_day_lines(weekday_name, week)
+            total += _lineup_lock_send(
+                day_games, season, week,
+                dedupe_key="lineup_lock_day",
+                dedupe_value=f"{season}-{week}-{date_str}",
+                tag=f"lineup-lock-{season}-{week}-{date_str}",
+                kickoff_line=kickoff_line,
+                soon_line=soon_line,
+                log_label=day.strftime("%a").lower(),
+            ) or 0
+        return total
     except Exception as exc:
-        logger.warning("[notify] lineup_lock_sunday failed: %s", exc)
+        logger.warning("[notify] lineup_lock failed: %s", exc)
 
 
 # ── Notification 2: Value drops on rostered players ───────────────────────────
@@ -2448,7 +2455,6 @@ def run_hourly():
     """
     counts = {
         "lineup_lock": notify_lineup_lock() or 0,
-        "lineup_lock_sunday": notify_lineup_lock_sunday() or 0,
         "close_game": notify_close_game() or 0,
         "transaction_drops": notify_transaction_drops() or 0,
         "injury_alert": notify_injury_alert() or 0,

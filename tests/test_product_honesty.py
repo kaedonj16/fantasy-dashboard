@@ -308,7 +308,11 @@ def test_lineup_lock_push_has_no_em_dash():
     hint = (ROOT / "routes" / "league_meta_bp.py").read_text(encoding="utf-8")
     assert "kicks off soon —" not in push
     assert "kicks off soon —" not in hint
-    assert "kicks off soon." in push
+    assert "lock soon —" not in push
+    assert "lock soon —" not in hint
+    # Per-day lineup-lock copy (Thu/Sun/Mon).
+    assert "players lock soon." in push
+    assert "games kick off soon." in push
     assert "kicks off soon." in hint
 
 

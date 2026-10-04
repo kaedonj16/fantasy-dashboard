@@ -119,7 +119,6 @@ def test_run_hourly_returns_sent_counts(monkeypatch):
     import utils.push_notifications as pn
 
     monkeypatch.setattr(pn, "notify_lineup_lock", lambda: 3)
-    monkeypatch.setattr(pn, "notify_lineup_lock_sunday", lambda: 1)
     monkeypatch.setattr(pn, "notify_close_game", lambda: 0)
     monkeypatch.setattr(pn, "notify_transaction_drops", lambda: 2)
     monkeypatch.setattr(pn, "notify_injury_alert", lambda: None)
@@ -129,13 +128,12 @@ def test_run_hourly_returns_sent_counts(monkeypatch):
     counts = pn.run_hourly()
     assert counts == {
         "lineup_lock": 3,
-        "lineup_lock_sunday": 1,
         "close_game": 0,
         "transaction_drops": 2,
         "injury_alert": 0,
         "breakout_weekly": 5,
         "digest": 4,
-        "total": 15,
+        "total": 14,
     }
 
 
@@ -472,11 +470,12 @@ def test_lineup_lock_window_bounds():
     assert pn._in_lineup_lock_window(now - 10 * 60) is False
 
 
-def test_lineup_lock_sunday_uses_first_sunday_kickoff(monkeypatch):
+def test_lineup_lock_per_day_dedup(monkeypatch):
+    """Each game day gets its own dedupe key (season-week-date)."""
     import utils.push_notifications as pn
 
-    monday_ep = _next_weekday_ep(0)   # not Sunday in ET
-    sunday_ep = _next_weekday_ep(6)   # Sunday in ET
+    monday_ep = _next_weekday_ep(0)
+    sunday_ep = _next_weekday_ep(6)
     games = [
         {"gameTime_epoch": str(monday_ep), "home": "KC", "away": "BUF"},
         {"gameTime_epoch": str(sunday_ep), "home": "DAL", "away": "PHI"},
@@ -484,23 +483,32 @@ def test_lineup_lock_sunday_uses_first_sunday_kickoff(monkeypatch):
     monkeypatch.setattr(pn, "_lineup_lock_base",
                         lambda: (games, 2026, 4))
 
-    seen = {}
-    monkeypatch.setattr(pn, "_in_lineup_lock_window",
-                        lambda ep: seen.setdefault("ep", ep) or True)
-    monkeypatch.setattr(pn, "_lineup_lock_send",
-                        lambda games, season, week, **kw: seen.update(kw) or 5)
+    seen = []
+    monkeypatch.setattr(pn, "_in_lineup_lock_window", lambda ep: True)
+    def fake_send(games, season, week, **kw):
+        seen.append(dict(kw))
+        return 1
+    monkeypatch.setattr(pn, "_lineup_lock_send", fake_send)
 
-    assert pn.notify_lineup_lock_sunday() == 5
-    assert seen["ep"] == sunday_ep
-    assert seen["dedupe_key"] == "lineup_lock_sunday"
-    assert seen["tag"] == "lineup-lock-sunday-2026-4"
-    assert "Sunday" in seen["kickoff_line"]
+    assert pn.notify_lineup_lock() == 2
+    assert len(seen) == 2
+    keys = {s["dedupe_key"] for s in seen}
+    assert keys == {"lineup_lock_day"}
+    values = {s["dedupe_value"] for s in seen}
+    assert len(values) == 2  # different dates
+    assert all(v.startswith("2026-4-") for v in values)
+    # Day-specific messaging
+    lines = [s["kickoff_line"] for s in seen]
+    assert any("Monday night" in l for l in lines)
+    assert any("Sunday" in l for l in lines)
 
 
-def test_lineup_lock_sunday_skips_when_no_sunday_games(monkeypatch):
+def test_lineup_lock_skips_when_no_future_games(monkeypatch):
     import utils.push_notifications as pn
 
-    games = [{"gameTime_epoch": str(_next_weekday_ep(0)),
+    from datetime import datetime, timedelta, timezone
+    past_ep = (datetime.now(timezone.utc) - timedelta(days=1)).timestamp()
+    games = [{"gameTime_epoch": str(past_ep),
               "home": "KC", "away": "BUF"}]
     monkeypatch.setattr(pn, "_lineup_lock_base",
                         lambda: (games, 2026, 4))
@@ -508,45 +516,51 @@ def test_lineup_lock_sunday_skips_when_no_sunday_games(monkeypatch):
     monkeypatch.setattr(pn, "_lineup_lock_send",
                         lambda *a, **k: called.append(1))
 
-    assert pn.notify_lineup_lock_sunday() is None
+    assert pn.notify_lineup_lock() is None
     assert called == []
 
 
-def test_lineup_lock_thursday_uses_week_first_kickoff(monkeypatch):
+def test_lineup_lock_filters_past_games_per_day(monkeypatch):
+    """A past Thursday game must not block Sunday's notification."""
     import utils.push_notifications as pn
 
-    monday_ep = _next_weekday_ep(0)
-    sunday_ep = _next_weekday_ep(6)
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
+    thu_ep = (now - timedelta(days=2)).timestamp()
+    sun_ep = (now + timedelta(hours=1)).timestamp()
     games = [
-        {"gameTime_epoch": str(sunday_ep), "home": "DAL", "away": "PHI"},
-        {"gameTime_epoch": str(monday_ep), "home": "KC", "away": "BUF"},
+        {"gameTime_epoch": str(thu_ep), "home": "KC", "away": "BUF"},
+        {"gameTime_epoch": str(sun_ep), "home": "DAL", "away": "PHI"},
     ]
     monkeypatch.setattr(pn, "_lineup_lock_base",
                         lambda: (games, 2026, 4))
 
-    seen = {}
-    monkeypatch.setattr(pn, "_in_lineup_lock_window",
-                        lambda ep: seen.setdefault("ep", ep) or True)
-    monkeypatch.setattr(pn, "_lineup_lock_send",
-                        lambda games, season, week, **kw: seen.update(kw) or 3)
+    seen = []
+    monkeypatch.setattr(pn, "_in_lineup_lock_window", lambda ep: True)
+    def fake_send(games, season, week, **kw):
+        seen.append((games, kw))
+        return 1
+    monkeypatch.setattr(pn, "_lineup_lock_send", fake_send)
 
-    assert pn.notify_lineup_lock() == 3
-    assert seen["ep"] == min(monday_ep, sunday_ep)
-    assert seen["dedupe_key"] == "lineup_lock_week"
-    assert seen["tag"] == "lineup-lock-2026-4"
+    assert pn.notify_lineup_lock() == 1
+    assert len(seen) == 1
+    sent_games, kw = seen[0]
+    teams = {g["home"] for g in sent_games}
+    assert "KC" not in teams  # past Thursday game filtered
+    assert "DAL" in teams
 
 
-def test_run_hourly_includes_sunday_lineup_lock(monkeypatch):
+def test_run_hourly_lineup_lock_per_day(monkeypatch):
     import utils.push_notifications as pn
 
     monkeypatch.setattr(pn, "notify_lineup_lock", lambda: 3)
-    monkeypatch.setattr(pn, "notify_lineup_lock_sunday", lambda: 1)
     monkeypatch.setattr(pn, "notify_close_game", lambda: 0)
     monkeypatch.setattr(pn, "notify_transaction_drops", lambda: 2)
     monkeypatch.setattr(pn, "notify_injury_alert", lambda: None)
+    monkeypatch.setattr(pn, "notify_breakout_weekly", lambda: 5)
     monkeypatch.setattr(pn, "_flush_digest", lambda: 4)
 
     counts = pn.run_hourly()
     assert counts["lineup_lock"] == 3
-    assert counts["lineup_lock_sunday"] == 1
-    assert counts["total"] == 10
+    assert "lineup_lock_sunday" not in counts
+    assert counts["total"] == 14
