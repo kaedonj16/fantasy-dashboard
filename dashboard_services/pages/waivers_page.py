@@ -1723,22 +1723,26 @@ function wvLabCoalesceChanges(changes) {{
   return out;
 }}
 
-// Chase upside: greedily apply the largest ceiling gain until no bench
-// option beats its slot's starter by more than 0.05. Every swap re-seats
-// the demoted starter on the other slots' benches, so gains are re-scanned
-// after each swap; a bench player can only be promoted once because
-// wvLabApplySwap pulls them from every other bench. Total starter ceiling
-// strictly rises with each swap, so the loop terminates; one wvLabEvaluate
-// at the end refreshes the hero.
+// Chase upside: greedily apply the largest NET gain until none remains.
+// Net gain = ceiling gained minus projection given up: a swap must add
+// more upside than it costs in expected points, so a volatile dart-throw
+// can't displace a steadier, better-projected starter on ceiling alone.
+// Every swap re-seats the demoted starter on the other slots' benches,
+// so gains are re-scanned after each swap; a bench player can only be
+// promoted once because wvLabApplySwap pulls them from every other
+// bench. The net score strictly rises with each swap, so the loop
+// terminates; one wvLabEvaluate at the end refreshes the hero.
 function wvLabChaseUpside() {{
   var changes = [], guard = 0, si, bi;
   var best = null;
   while (guard++ < 64) {{
     best = null;
     for (si = 0; si < wvLabLineup.length; si++) {{
-      var bench = wvLabLineup[si].bench || [];
+      var starter = wvLabLineup[si];
+      var bench = starter.bench || [];
       for (bi = 0; bi < bench.length; bi++) {{
-        var gain = (bench[bi].ceiling || 0) - (wvLabLineup[si].ceiling || 0);
+        var projCost = Math.max(0, (starter.proj || 0) - (bench[bi].proj || 0));
+        var gain = ((bench[bi].ceiling || 0) - (starter.ceiling || 0)) - projCost;
         if (gain > 0.05 && (!best || gain > best.gain)) best = {{ si: si, bi: bi, gain: gain }};
       }}
     }}

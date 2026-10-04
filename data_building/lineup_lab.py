@@ -300,12 +300,26 @@ def _lab_tags(profile: dict) -> List[dict]:
     return tags
 
 
+def _lab_ceiling(mean: float, std: float, spike: float) -> float:
+    """Spike-aware ceiling for a lab entry.
+
+    The fitted 90th percentile (mean + 1.28 * std) can never see a
+    40-point tail, so a demonstrated explosion sets a floor on claimed
+    upside: 85% of the player's season best (needs 2+ played games).
+    """
+    ceiling = mean + 1.28 * std
+    if spike > 0:
+        ceiling = max(ceiling, 0.85 * spike)
+    return round(ceiling, 1)
+
+
 def _profile_payload(profile: dict) -> dict:
     return {
         "mean": round(_safe_float(profile.get("mean")), 1),
         "std": round(_safe_float(profile.get("std")), 2),
         "skew_alpha": round(_safe_float(profile.get("skew_alpha")), 2),
         "dud_risk": round(_safe_float(profile.get("dud_risk")), 3),
+        "spike": round(_safe_float(profile.get("spike")), 1) or None,
     }
 
 
@@ -653,6 +667,10 @@ def build_lineup_lab_payload(
         mean = _safe_float(prof.get("mean"))
         std = _safe_float(prof.get("std"))
         team = _player_team(players_index, pid)
+        # Spike-aware ceiling: a fitted 90th percentile can never see a
+        # 40-point tail, so a demonstrated explosion sets a floor on
+        # claimed upside (85% of the season best, needs 2+ games).
+        spike = _safe_float(prof.get("spike"), 0.0)
         entry = {
             "player_id": pid,
             "name": _player_name(players_index, pid),
@@ -660,7 +678,7 @@ def build_lineup_lab_payload(
             "slot": slot,
             "proj": round(mean, 1),
             "floor": round(max(0.0, mean - 1.28 * std), 1),
-            "ceiling": round(mean + 1.28 * std, 1),
+            "ceiling": _lab_ceiling(mean, std, spike),
             "matchup": matchup_labels.get(team, ""),
             "tags": _lab_tags(prof),
             "profile": _profile_payload(prof),

@@ -154,3 +154,27 @@ def test_std_bounded(hermetic):
     profs = pd.build_profiles([_req("p2", mean=60.0)], 2026, 4)
     assert 1.0 <= profs["p2"]["std"] <= 30.0
     assert math.isfinite(profs["p2"]["std"])
+
+
+def test_spike_is_season_best_game(hermetic):
+    # Fake rows add 1.0 pt per reception on top of the yardage score.
+    profs = pd.build_profiles([_req("p1"), _req("p2"), _req("p3")], 2026, 4)
+    assert profs["p1"]["spike"] == 16.0   # max of [10,12,8,15,9] + 1
+    assert profs["p2"]["spike"] == 31.0   # max of [4,25,3,30,2] + 1
+    assert profs["p3"]["spike"] == 17.0   # max of [14,16,15] + 1
+
+
+def test_spike_none_for_single_game(hermetic, monkeypatch):
+    # One played game is a fluke guard: no spike recorded.
+    monkeypatch.setattr(
+        pd, "_week_files",
+        lambda season: {"px": _rows([22])} if season == 2026 else {},
+    )
+    pd._PROFILE_CACHE.clear()
+    profs = pd.build_profiles([_req("px")], 2026, 4)
+    assert profs["px"]["spike"] is None
+
+
+def test_spike_none_for_kicker_baseline(hermetic):
+    profs = pd.build_profiles([_req("pk", pos="K", mean=8.0)], 2026, 4)
+    assert profs["pk"]["spike"] is None

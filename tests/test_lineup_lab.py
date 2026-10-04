@@ -250,3 +250,12 @@ def test_matchups_fetched_exactly_once(lab_mocks, monkeypatch):
     monkeypatch.setattr(api_mod, "get_matchups", _counting)
     _build(_ctx())
     assert len(calls) == 1
+
+
+def test_lab_ceiling_spike_floor():
+    # Lamb-like: modest modeled ceiling, proven 41-point explosion.
+    assert lab_mod._lab_ceiling(16.5, 4.0, 41.0) == round(0.85 * 41.0, 1)
+    # Steady player: modeled ceiling already above the spike floor.
+    assert lab_mod._lab_ceiling(16.0, 4.0, 20.0) == round(16.0 + 1.28 * 4.0, 1)
+    # No spike data: pure modeled ceiling.
+    assert lab_mod._lab_ceiling(16.0, 4.0, 0.0) == round(16.0 + 1.28 * 4.0, 1)

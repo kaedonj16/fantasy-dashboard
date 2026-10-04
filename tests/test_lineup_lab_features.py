@@ -288,3 +288,54 @@ if (res2.p90 - res2.p10 < 5) throw new Error('in-progress range collapsed: ' + J
 console.log('LIVE_LOCK_OK');
 """)
     assert "LIVE_LOCK_OK" in out
+
+
+def test_chase_upside_net_gain_rule(lab_js):
+    # Net gain = ceiling gained minus projection given up. A volatile
+    # dart-throw must not displace a steadier, better-projected starter
+    # on ceiling alone; a swap that costs no projection still goes.
+    out = _run_node(lab_js, _FAKE_DOM + r"""
+wvLabEvaluate = function(lineup) { return {}; };
+wvLabRenderLab = function() {};
+wvLabScrollChangedIntoView = function(si) {};
+function mk(name, proj, ceiling, bench) {
+  return { player_id: name, name: name, pos: 'WR', slot: 'WR',
+           proj: proj, floor: 0, ceiling: ceiling,
+           matchup: '', tags: [], profile: {}, eligible: ['WR'],
+           usage_stat: null, usage_avg: null, bench: bench || [] };
+}
+function reset(lineup) {
+  wvLabLineup = lineup;
+  wvLabOpenSlots = {};
+  wvLabNoGain = {optimize: false, upside: false};
+  wvLabLastChanges = [];
+  wvLabLastNote = '';
+}
+// Case 1: Jamo-type bench (proj 9, ceiling 24) vs steady starter
+// (proj 16, ceiling 19). Old rule swaps (+5 ceiling); net rule blocks
+// (+5 ceiling, -7 projection = -2 net).
+reset([mk('Steady', 16, 19, [mk('Jamo', 9, 24)])]);
+wvLabChaseUpside();
+if (wvLabLastChanges.length !== 0)
+  throw new Error('dart-throw swap should be blocked, got ' + JSON.stringify(wvLabLastChanges));
+if (wvLabLastNote !== 'Already your highest-ceiling lineup.')
+  throw new Error('expected no-gain note, got ' + wvLabLastNote);
+// Case 2: close projections (bench proj 15, ceiling 24): +5 ceiling,
+// -1 projection = +4 net, so the swap still happens.
+reset([mk('Steady', 16, 19, [mk('Wr2', 15, 24)])]);
+wvLabChaseUpside();
+if (wvLabLastChanges.length !== 1)
+  throw new Error('expected 1 swap, got ' + wvLabLastChanges.length);
+if (wvLabLastChanges[0].out !== 'Steady' || wvLabLastChanges[0].inn !== 'Wr2')
+  throw new Error('wrong swap: ' + JSON.stringify(wvLabLastChanges[0]));
+if (wvLabLineup[0].name !== 'Wr2')
+  throw new Error('lineup not updated: ' + wvLabLineup[0].name);
+// Case 3: bench beats the starter on projection too (proj 16 vs 14):
+// no projection cost, pure ceiling gain swaps.
+reset([mk('Steady', 14, 18, [mk('Stud', 16, 22)])]);
+wvLabChaseUpside();
+if (wvLabLastChanges.length !== 1 || wvLabLastChanges[0].inn !== 'Stud')
+  throw new Error('projection-upgrade swap blocked: ' + JSON.stringify(wvLabLastChanges));
+console.log('CHASE_UPSIDE_NET_GAIN_OK');
+""")
+    assert "CHASE_UPSIDE_NET_GAIN_OK" in out

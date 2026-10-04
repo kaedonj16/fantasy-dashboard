@@ -4,7 +4,7 @@ One engine, two consumers: the Lineup Lab (Start/Sit tab) and the playoff odds
 sim. Every player gets a weekly scoring *profile*::
 
     {"player_id", "pos", "mean", "std", "skew_alpha", "dud_risk",
-     "n_games", "factors"}
+     "n_games", "spike", "factors"}
 
 The contract, and the thing that keeps this honest:
 
@@ -47,7 +47,7 @@ from utils.paths import CACHE_DIR
 logger = logging.getLogger(__name__)
 
 # Bump when the math changes so downstream cache keys invalidate.
-MODEL_VERSION = 1
+MODEL_VERSION = 2
 
 # ---------------------------------------------------------------------------
 # Fixed scoring map for SHAPE computation only. Never used for means; the
@@ -353,6 +353,7 @@ def _fallback_profile(pid: str, pos: str, mean: float, reason: str) -> dict:
         "skew_alpha": _BASE_SKEW_ALPHA,
         "dud_risk": 0.0,
         "n_games": 0.0,
+        "spike": None,
         "factors": {"fallback": reason},
     }
 
@@ -543,6 +544,12 @@ def _build_one(
 
     std = min(max(std, 1.0), 30.0)
 
+    # Spike: the player's best single game this season. Demonstrated
+    # explosions set a floor on claimed upside elsewhere (Chase Upside):
+    # a 90th-percentile fit can never see a 40-point tail. Needs >= 2
+    # played games so one fluke doesn't define a player.
+    spike = max(cur_pts) if len(cur_pts) >= 2 else None
+
     return {
         "player_id": pid,
         "pos": pos,
@@ -551,6 +558,7 @@ def _build_one(
         "skew_alpha": round(skew, 2),
         "dud_risk": round(dud_risk, 3),
         "n_games": round(n_eff, 1),
+        "spike": round(spike, 1) if spike is not None else None,
         "factors": factors,
     }
 
