@@ -424,13 +424,13 @@
     --card-soft: #111827;
     --row: #0b1220;
     --text: #e5e7eb;
-    --text-muted: #cbd5e1;
-    --text-subtle: #94a3b8;
+    --text-muted: #94a3b8;
+    --text-subtle: #64748b;
     --border: #1f2937;
     --grid: #1f2937;
-    --accent: #38bdf8;
-    --accent-color: #38bdf8;
-    /* Dark accent (sky) is light, so it wants dark ink on top. */
+    --accent: #60a5fa;
+    --accent-color: #60a5fa;
+    /* Dark accent (steel blue) is light, so it wants dark ink on top. */
     --on-accent: #0f172a;
     --accent-soft: #162032;
     --accent-soft-2: #152235;
@@ -451,11 +451,11 @@
     --wk-bar-tick-in: rgba(255, 255, 255, 0.88);
     --wk-bar-sel-fill: rgba(59, 130, 246, 0.14);
     --wk-bar-grip-dot: rgba(96, 165, 250, 0.9);
-    /* Season Hub hero -- brand blue on the dark ground; a stronger sky glow gives
+    /* Season Hub hero -- brand blue on the dark ground; a steel-blue glow gives
        the banner depth against the near-black chrome. */
     --hero-from: #0d1626;
     --hero-to: #070e1d;
-    --hero-glow: rgba(56, 189, 248, 0.16);
+    --hero-glow: rgba(96, 165, 250, 0.16);
 }
 
 /* ============================================
@@ -1493,6 +1493,10 @@ ul {
     overflow-y: auto;
 }
 
+[data-theme="dark"] .changelog-dropdown {
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
 .changelog-dropdown-header {
     padding: 12px 14px;
     font-size: 13px;
@@ -1634,6 +1638,10 @@ ul {
     z-index: 200;
     display: none;
     overflow: visible; /* allow the CSD league-switcher list to escape the panel */
+}
+
+[data-theme="dark"] .settings-dropdown {
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
 
 .settings-menu-item {
@@ -20257,7 +20265,7 @@ img, svg, canvas {
 }
 
 [data-theme="dark"] .player-modal {
-    background: #1a2535;
+    background: var(--card);
     box-shadow: 0 32px 80px rgba(0, 0, 0, 0.8);
 }
 
@@ -20425,7 +20433,7 @@ img, svg, canvas {
 }
 
 [data-theme="dark"] .player-modal-stat-card {
-    background: #111e2e;
+    background: var(--card-soft);
 }
 
 .player-modal-stat-label {
@@ -20545,7 +20553,7 @@ img, svg, canvas {
     background: var(--bg-alt);
 }
 [data-theme="dark"] .pm-vh-ext {
-    background: #111e2e;
+    background: var(--card-soft);
 }
 .pm-vh-ext-k {
     display: block;
@@ -20596,7 +20604,7 @@ img, svg, canvas {
 }
 
 [data-theme="dark"] .player-modal-game-log-row {
-    background: #111e2e;
+    background: var(--card-soft);
 }
 
 .player-modal-game-log-row:hover {
@@ -29760,7 +29768,7 @@ button:disabled {
 }
 
 [data-theme="dark"] .pm-tab-bar {
-    background: #111e2e;
+    background: var(--card-soft);
 }
 
 .pm-tab-bar::-webkit-scrollbar {
@@ -43172,7 +43180,7 @@ a, button, [role="button"], [role="tab"], summary, label,
   display: flex; flex-direction: column;
   animation: scaleIn 0.25s ease forwards;
 }
-[data-theme="dark"] .for-modal { background: #1a2535; box-shadow: 0 32px 80px rgba(0, 0, 0, 0.8); }
+[data-theme="dark"] .for-modal { background: var(--card); box-shadow: 0 32px 80px rgba(0, 0, 0, 0.8); }
 .for-modal-head {
   display: flex; align-items: center; justify-content: space-between;
   padding: 16px 20px; border-bottom: 1px solid var(--border); flex-shrink: 0;
@@ -43813,7 +43821,7 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 }
 /* Sticky leading Player column for the Front Office Report roster table
    (table.for-table, built by dashboard_services/ai/front_office_report.py).
-   The full report renders in .for-modal (var(--card); dark theme #1a2535),
+   The full report renders in .for-modal (var(--card) in both themes),
    and thead th already carries background: var(--card-soft) from the base
    rule below. This file is a drop-in for static/dashboard.css: append it
    near the other .for-table rules (~line 41415) before the PR. Kept out of
@@ -43834,7 +43842,7 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
   background: var(--card);
 }
 [data-theme="dark"] .for-table td.for-td-name {
-  background: #1a2535; /* matches .for-modal dark background */
+  background: var(--card); /* matches .for-modal dark background */
 }
 /* ── Playoff odds: sticky Team column ──────────────────────────────────────────
    Staging file. The parent merges this block into static/dashboard.css
