@@ -244,6 +244,103 @@ def _decrypt_provider_credentials(encrypted: str) -> Optional[dict]:
         return None
 
 
+def normalize_espn_swid(swid: str) -> str:
+    """Normalize an ESPN SWID for comparison: strip braces, uppercase.
+
+    The SWID identifies the ESPN account, so two credential sets with the same
+    normalized SWID belong to the same ESPN login.
+    """
+    s = str(swid or "").strip()
+    if len(s) >= 2 and s.startswith("{") and s.endswith("}"):
+        s = s[1:-1]
+    return s.strip("{}").upper()
+
+
+def espn_swid_fingerprint(swid: str) -> str:
+    """Short SHA256 fingerprint of a normalized SWID. Safe for logging."""
+    return hashlib.sha256(normalize_espn_swid(swid).encode("utf-8")).hexdigest()[:16]
+
+
+def list_espn_credential_sets(account_id: int) -> list:
+    """List all ESPN private credential sets stored for this account.
+
+    Each entry has connection_id, swid_fingerprint, updated_at, and the
+    decrypted credentials dict. Sorted by most recently updated first.
+    Returns [] when there are none or decryption is unavailable.
+    """
+    if not account_id:
+        return []
+    init_accounts_tables()
+    from dashboard_services.db import get_conn
+    try:
+        with get_conn() as conn:
+            rows = conn.execute(
+                """SELECT id, encrypted_credentials, updated_at
+                   FROM fantasy_provider_connections
+                   WHERE account_id = %s AND provider = 'espn'
+                     AND connection_method = 'private'
+                     AND encrypted_credentials IS NOT NULL
+                   ORDER BY updated_at DESC NULLS LAST""",
+                (int(account_id),),
+            ).fetchall()
+    except Exception:
+        logger.warning("list_espn_credential_sets query failed", exc_info=True)
+        return []
+    sets = []
+    for row in rows:
+        creds = _decrypt_provider_credentials(row["encrypted_credentials"])
+        if not creds:
+            continue
+        sets.append({
+            "connection_id": row["id"],
+            "swid_fingerprint": espn_swid_fingerprint(creds.get("swid")),
+            "credentials": creds,
+            "updated_at": row["updated_at"],
+        })
+    return sets
+
+
+def espn_swid_used_by_other_league(
+    account_id: int, swid: str, exclude_league_id: Optional[str] = None,
+) -> bool:
+    """True when this SWID is stored for another connected ESPN league.
+
+    Used to distinguish "these cookies are valid but this league is under a
+    different ESPN login" from "the session has expired". Only counts leagues
+    whose connection status is 'connected'.
+    """
+    if not account_id or not swid:
+        return False
+    fingerprint = espn_swid_fingerprint(swid)
+    if not normalize_espn_swid(swid):
+        return False
+    init_accounts_tables()
+    from dashboard_services.db import get_conn
+    try:
+        with get_conn() as conn:
+            rows = conn.execute(
+                """SELECT c.encrypted_credentials, l.league_id
+                   FROM user_leagues l
+                   JOIN fantasy_provider_connections c ON c.id = l.provider_connection_id
+                   WHERE l.account_id = %s AND l.platform = 'espn'
+                     AND c.status = 'connected'
+                     AND c.encrypted_credentials IS NOT NULL""",
+                (int(account_id),),
+            ).fetchall()
+    except Exception:
+        logger.warning("espn_swid_used_by_other_league query failed", exc_info=True)
+        return False
+    for row in rows:
+        if exclude_league_id and str(row["league_id"]) == str(exclude_league_id):
+            continue
+        creds = _decrypt_provider_credentials(row["encrypted_credentials"])
+        if not creds:
+            continue
+        if espn_swid_fingerprint(creds.get("swid")) == fingerprint:
+            return True
+    return False
+
+
 def get_provider_league_credentials(
     account_id: int, provider: str, league_id: str, season: int,
 ) -> Optional[dict]:
@@ -458,22 +555,40 @@ def add_provider_league_connection(
                 ).fetchone()["id"]
             else:
                 # ESPN historically shared one private cookie row per account.
-                # Reuse that shared row when present so existing leagues keep working.
+                # Reuse that shared row only when the submitted SWID belongs to
+                # the same ESPN login; a different SWID means a different ESPN
+                # account, which needs its own credential row so the other
+                # leagues keep working.
                 if provider == "espn":
-                    shared = conn.execute(
-                        """SELECT id FROM fantasy_provider_connections
-                           WHERE account_id=%s AND provider='espn' AND connection_method='private'
-                           LIMIT 1""",
+                    submitted_fp = espn_swid_fingerprint(
+                        (safe.get("swid") if isinstance(safe, dict) else None)
+                    )
+                    shared_rows = conn.execute(
+                        """SELECT id, encrypted_credentials FROM fantasy_provider_connections
+                           WHERE account_id=%s AND provider='espn' AND connection_method='private'""",
                         (account_id,),
-                    ).fetchone()
-                    if shared:
-                        connection_id = conn.execute(
-                            """UPDATE fantasy_provider_connections SET encrypted_credentials=%s,
-                                   status='connected', last_authenticated_at=now(), updated_at=now(),
-                                   last_error_code=NULL
-                               WHERE id=%s RETURNING id""",
-                            (encrypted, shared["id"]),
-                        ).fetchone()["id"]
+                    ).fetchall()
+                    for shared in shared_rows:
+                        existing_creds = (
+                            _decrypt_provider_credentials(shared["encrypted_credentials"])
+                            if shared["encrypted_credentials"] else None
+                        )
+                        if existing_creds and espn_swid_fingerprint(
+                            existing_creds.get("swid")
+                        ) == submitted_fp:
+                            connection_id = conn.execute(
+                                """UPDATE fantasy_provider_connections SET encrypted_credentials=%s,
+                                       status='connected', last_authenticated_at=now(), updated_at=now(),
+                                       last_error_code=NULL
+                                   WHERE id=%s RETURNING id""",
+                                (encrypted, shared["id"]),
+                            ).fetchone()["id"]
+                            break
+                    if connection_id is not None:
+                        logger.info(
+                            "[accounts] reused ESPN credential row id=%s (swid_fp=%s)",
+                            connection_id, submitted_fp,
+                        )
                 if connection_id is None:
                     connection_id = conn.execute(
                         """INSERT INTO fantasy_provider_connections
@@ -554,6 +669,54 @@ def add_espn_league_connection(
             normalized = "{" + normalized.strip("{}") + "}"
         if normalized:
             link_platform_identity(account_id, "espn", normalized)
+
+
+def link_espn_league_to_connection(
+    account_id: int, league_id: str, season: int, name: str, connection_id: int,
+) -> None:
+    """Point an ESPN league at an existing saved credential row.
+
+    Used by the one-click switch flow: the credentials were already validated
+    against this league, so this just creates/updates the user_leagues row to
+    reference the working connection. The connection must belong to this
+    account and be an ESPN private connection.
+    """
+    init_accounts_tables()
+    from dashboard_services.db import get_conn
+    with get_conn() as conn:
+        row = conn.execute(
+            """SELECT id, encrypted_credentials FROM fantasy_provider_connections
+               WHERE id = %s AND account_id = %s AND provider = 'espn'
+                 AND connection_method = 'private'""",
+            (int(connection_id), int(account_id)),
+        ).fetchone()
+        if not row:
+            raise ValueError("Saved ESPN login not found for this account.")
+        creds = _decrypt_provider_credentials(row["encrypted_credentials"]) if row["encrypted_credentials"] else None
+        if not creds or not creds.get("swid"):
+            raise ValueError("Saved ESPN login has no usable credentials.")
+        conn.execute(
+            """UPDATE fantasy_provider_connections
+               SET status='connected', last_authenticated_at=now(), updated_at=now(),
+                   last_error_code=NULL
+               WHERE id=%s""",
+            (int(connection_id),),
+        )
+        conn.execute(
+            """INSERT INTO user_leagues
+                   (account_id, platform, league_id, season, name, provider_connection_id)
+               VALUES (%s, 'espn', %s, %s, %s, %s)
+               ON CONFLICT (account_id, platform, league_id, season) DO UPDATE SET
+                   name = EXCLUDED.name,
+                   provider_connection_id = EXCLUDED.provider_connection_id""",
+            (int(account_id), str(league_id), int(season), name, int(connection_id)),
+        )
+        conn.commit()
+    braced = str(creds["swid"]).strip()
+    if not (braced.startswith("{") and braced.endswith("}")):
+        braced = "{" + braced.strip("{}") + "}"
+    link_platform_identity(account_id, "espn", braced)
+
 
 def consume_league_visit(
     account_id: int,

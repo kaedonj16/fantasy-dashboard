@@ -87,8 +87,13 @@ def link_onboarding_progress():
     return jsonify({"ok": True})
 
 
-def _espn_error(exc: Exception, method: str):
-    """Map ESPN failures without reflecting upstream bodies or credentials."""
+def _espn_error(exc: Exception, method: str, context: Optional[dict] = None):
+    """Map ESPN failures without reflecting upstream bodies or credentials.
+
+    ``context`` may carry account_id, swid, and league_id for the private
+    connect flow, enabling a smarter 401/403 message that distinguishes
+    "wrong ESPN login for this league" from "session has expired".
+    """
     name = type(exc).__name__
     msg = str(exc).lower()
     reference = getattr(exc, "debug_reference", None) or uuid.uuid4().hex[:12]
@@ -108,6 +113,25 @@ def _espn_error(exc: Exception, method: str):
         if method == "public":
             return with_reference("This ESPN league could not be accessed publicly. If it is a private "
                                   "league, connect using the Private League option."), 403
+        # Smarter private message: if these exact cookies (same ESPN login)
+        # already work for another league on this account, the session is
+        # fine and this league simply lives under a different ESPN login.
+        if context:
+            try:
+                from dashboard_services.accounts import espn_swid_used_by_other_league
+                account_id = context.get("account_id")
+                swid = context.get("swid")
+                league_id = context.get("league_id")
+                if account_id and swid and espn_swid_used_by_other_league(
+                    account_id, swid, exclude_league_id=league_id,
+                ):
+                    return with_reference(
+                        "These ESPN credentials work for your other leagues, but this ESPN "
+                        f"account does not have access to league {league_id}. If you use a "
+                        "different ESPN login for this league, paste those cookies instead."
+                    ), 403
+            except Exception:
+                logger.warning("[link/espn] smart 403 message check failed", exc_info=True)
         return with_reference("ESPN rejected these credentials or the session has expired."), 403
     if name == "ESPNMalformedResponse":
         # ESPN commonly answers with an HTML login/challenge page and HTTP 200
@@ -128,6 +152,51 @@ def _espn_error(exc: Exception, method: str):
     if "timeout" in msg or "500" in msg or "502" in msg or "503" in msg:
         return with_reference("ESPN is temporarily unavailable. Please try again later."), 503
     return with_reference("ESPN returned an unexpected response. Please verify the details and try again."), 422
+
+
+def _is_espn_auth_denied(exc: Exception) -> bool:
+    """True when the exception is an ESPN 401/403 access denial."""
+    name = type(exc).__name__
+    msg = str(exc).lower()
+    return name == "ESPNAccessDenied" or "401" in msg or "403" in msg
+
+
+def _find_working_espn_credentials(
+    account_id: int, season: int, league_id: str,
+    tried_swid: Optional[str], tried_espn_s2: Optional[str],
+) -> Optional[dict]:
+    """Try the account's other saved ESPN logins against this league.
+
+    Returns the credential set dict (with connection_id) for the first saved
+    login that successfully connects, or None. Never logs credential values.
+    Skips the just-tried SWID so we don't retry the same login.
+    """
+    try:
+        from dashboard_services.accounts import (
+            list_espn_credential_sets, normalize_espn_swid,
+        )
+        from dashboard_services.providers.espn_api import connect_league
+    except Exception:
+        logger.warning("[link/espn] credential auto-detect unavailable", exc_info=True)
+        return None
+    tried_fp = normalize_espn_swid(tried_swid)
+    for cred_set in list_espn_credential_sets(account_id):
+        creds = cred_set.get("credentials") or {}
+        if normalize_espn_swid(creds.get("swid")) == tried_fp:
+            continue
+        try:
+            connect_league(
+                season, league_id,
+                swid=creds.get("swid"), espn_s2=creds.get("espn_s2"),
+            )
+        except Exception:
+            continue
+        logger.info(
+            "[link/espn] auto-detect found working saved login for league %s",
+            league_id,
+        )
+        return cred_set
+    return None
 
 
 def _connect_espn(method: str):
@@ -167,8 +236,24 @@ def _connect_espn(method: str):
         # Never log the submitted payload or exception text: third-party client
         # exceptions can contain cookie-bearing request details.
         logger.warning("[link/espn/%s] connection failed (%s)", method, type(exc).__name__)
-        error, status = _espn_error(exc, method)
-        return jsonify({"ok": False, "error": error}), status
+        # Part 3: on 401/403 with private creds, try the account's other saved
+        # ESPN logins server-side. If one works, offer a one-click switch.
+        suggested = None
+        if method == "private" and _is_espn_auth_denied(exc):
+            suggested = _find_working_espn_credentials(
+                account_id, season, league_id, swid, espn_s2,
+            )
+        error, status = _espn_error(exc, method, context={
+            "account_id": account_id, "swid": swid, "league_id": league_id,
+        })
+        payload = {"ok": False, "error": error}
+        if suggested:
+            payload["suggested_switch"] = True
+            payload["suggested_connection_id"] = suggested["connection_id"]
+            payload["suggested_note"] = (
+                "Your other saved ESPN login has access to this league."
+            )
+        return jsonify(payload), status
     return jsonify({
         "ok": True, "platform": "espn", "connection_method": method,
         "league_id": league_id, "season": season, "name": info.get("name"),
@@ -290,6 +375,64 @@ def link_espn_private_saved():
         "league_id": league_id,
         "season": season,
         "name": info.get("name"),
+        "redirect_url": f"/espn/{season}/{league_id}/dashboard",
+    })
+
+
+@link_bp.post("/api/link/espn/use-saved")
+def link_espn_use_saved():
+    """One-click switch: link a league to another saved ESPN login.
+
+    The client offers this after a 401/403 when the server auto-detected that
+    a different saved ESPN login has access to the league (suggested_switch).
+    The credentials are re-validated before linking.
+    """
+    account_id = session.get("account_id")
+    if not account_id:
+        return jsonify({"ok": False, "error": "Sign in with Google first."}), 401
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"ok": False, "error": "A JSON request body is required."}), 400
+    allowed = {"league_id", "season", "connection_id"}
+    unexpected = set(data) - allowed
+    if unexpected:
+        return jsonify({"ok": False, "error": "Unexpected fields."}), 400
+    league_id = str(data.get("league_id") or "").strip()
+    if not league_id.isdigit():
+        return jsonify({"ok": False, "error": "League ID must contain numbers only."}), 400
+    try:
+        season = int(data.get("season") or _default_season())
+        connection_id = int(data.get("connection_id"))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "Season and connection_id must be valid."}), 400
+    from dashboard_services.accounts import list_espn_credential_sets
+    cred_set = next(
+        (s for s in list_espn_credential_sets(account_id)
+         if s["connection_id"] == connection_id),
+        None,
+    )
+    if not cred_set:
+        return jsonify({"ok": False, "error": "Saved ESPN login not found."}), 404
+    creds = cred_set["credentials"]
+    try:
+        from dashboard_services.providers.espn_api import connect_league
+        info = connect_league(
+            season, league_id, swid=creds.get("swid"), espn_s2=creds.get("espn_s2"),
+        )
+        from dashboard_services.accounts import link_espn_league_to_connection
+        link_espn_league_to_connection(
+            account_id, league_id, season,
+            info.get("name") or f"ESPN League {league_id}", connection_id,
+        )
+    except Exception as exc:
+        logger.warning("[link/espn/use-saved] failed (%s)", type(exc).__name__)
+        error, status = _espn_error(exc, "private", context={
+            "account_id": account_id, "swid": creds.get("swid"), "league_id": league_id,
+        })
+        return jsonify({"ok": False, "error": error}), status
+    return jsonify({
+        "ok": True, "platform": "espn", "connection_method": "private",
+        "league_id": league_id, "season": season, "name": info.get("name"),
         "redirect_url": f"/espn/{season}/{league_id}/dashboard",
     })
 
