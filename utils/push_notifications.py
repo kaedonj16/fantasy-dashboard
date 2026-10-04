@@ -2427,17 +2427,22 @@ def notify_watchlist_alerts():
 # ── Batch runners ──────────────────────────────────────────────────────────────
 
 def run_all_daily():
-    """Run all daily notification checks. Call from cron after value/breakout updates."""
-    notify_value_drops()
-    notify_waiver_candidates()
-    notify_rival_trades()
-    notify_playoff_odds()
-    notify_breakout_roster()
-    notify_top_movers()
-    notify_recap_ready()
-    notify_matchup_preview()
-    notify_standings_update()
-    notify_watchlist_alerts()
+    """Run all daily notification checks. Call from cron after value/breakout updates.
+
+    Returns a dict of push counts per check plus the digest flush and total.
+    """
+    counts = {
+        "value_drops": notify_value_drops() or 0,
+        "waiver_candidates": notify_waiver_candidates() or 0,
+        "rival_trades": notify_rival_trades() or 0,
+        "playoff_odds": notify_playoff_odds() or 0,
+        "breakout_roster": notify_breakout_roster() or 0,
+        "top_movers": notify_top_movers() or 0,
+        "recap_ready": notify_recap_ready() or 0,
+        "matchup_preview": notify_matchup_preview() or 0,
+        "standings_update": notify_standings_update() or 0,
+        "watchlist_alerts": notify_watchlist_alerts() or 0,
+    }
     # Daily ranking snapshots (value / power / playoff-odds movement arrows).
     try:
         from dashboard_services.ranking_seed import snapshot_all_rankings
@@ -2445,7 +2450,11 @@ def run_all_daily():
     except Exception:
         logger.warning("[ranking-seed] daily snapshot failed", exc_info=True)
     # One combined push per digest opt-in device for everything buffered above.
-    _flush_digest()
+    counts["digest"] = _flush_digest() or 0
+    counts["total"] = sum(counts.values())
+    logger.info("[notify] daily: sent=%d (%s)", counts["total"],
+                ", ".join(f"{k}={v}" for k, v in counts.items() if k != "total"))
+    return counts
 
 
 def run_hourly():
@@ -2466,4 +2475,6 @@ def run_hourly():
     # One combined push per digest opt-in device for everything buffered above.
     counts["digest"] = _flush_digest() or 0
     counts["total"] = sum(counts.values())
+    logger.info("[notify] hourly: sent=%d (%s)", counts["total"],
+                ", ".join(f"{k}={v}" for k, v in counts.items() if k != "total"))
     return counts
