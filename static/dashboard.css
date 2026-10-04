@@ -44564,6 +44564,7 @@ table.rz-bs-table thead th:first-child {
    divisions (the badge HTML is never emitted). */
 .div-badge {
     display: inline-block;
+    align-self: flex-start;
     font-size: 10px;
     font-weight: 700;
     text-transform: uppercase;
