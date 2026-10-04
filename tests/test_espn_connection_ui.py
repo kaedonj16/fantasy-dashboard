@@ -254,10 +254,23 @@ def test_espn_403_page_offers_reconnect_deep_link():
     script = Path("static/app.js").read_text()
     assert "def _espn_reconnect_home_url(" in source
     assert 'primary_label="Reconnect ESPN"' in source
-    assert 'params = {"espn_reconnect": "1"}' in source
+    assert '"/espn/reconnect"' in source
     assert "window.openHomeEspnReconnect" in script
     assert 'reconnectParams.get("espn_reconnect") === "1"' in script
     assert 'data-season="${safeHomeText(league.season || "")}"' in script
+
+
+def test_espn_reconnect_page_renders():
+    # The dedicated /espn/reconnect page renders the cookie form server-side
+    # (no home-page JS dependency). Logged-out users get a sign-in prompt.
+    source = Path("app.py").read_text()
+    assert '@app.route("/espn/reconnect"' in source
+    assert "def espn_reconnect_page():" in source
+    assert "def _reconnect_page_shell(" in source
+    assert "rcEspnBlob" in source
+    assert "/api/link/espn/reconnect" in source
+    assert "/auth/google?next=" in source
+    assert "Sign in with Google" in source
 
 
 def test_espn_access_denied_html_includes_reconnect_cta():
@@ -273,7 +286,7 @@ def test_espn_access_denied_html_includes_reconnect_cta():
         )
     assert status == 403
     assert "Reconnect ESPN" in body
-    assert "espn_reconnect=1" in body
+    assert "/espn/reconnect" in body
     assert "league_id=424242" in body
     assert "season=2026" in body
     assert "Back to home" in body
