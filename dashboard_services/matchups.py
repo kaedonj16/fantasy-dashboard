@@ -2099,7 +2099,7 @@ def render_matchup_slide(
             period = line_score.get("period", "")
             clock = game.get("gameClock", "")
             prefix = "@ " + opp if not is_home else "vs " + opp
-            live_clock = " ".join(x for x in [period, clock] if x).strip()
+            live_clock = " ".join(str(x) for x in [period, clock] if x).strip()
             rest = " ".join(x for x in [score_str, prefix] if x).strip()
 
             if not allow_live:
