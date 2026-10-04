@@ -6264,6 +6264,36 @@ def _pro_trial_banner() -> str:
 """
 
 
+def _connection_status_banner(platform: str, league_id: str, season: int) -> str:
+    """Per-league provider connection banner.
+
+    Shows when this league's provider connection is marked reauth_required
+    (e.g. expired ESPN cookies, revoked Yahoo token), with a Reconnect button
+    that routes to the platform-appropriate flow. Only for platforms that use
+    provider connections (Sleeper is connectionless and never flagged).
+    """
+    if not (platform and league_id and season):
+        return ""
+    if str(platform).lower() == "sleeper":
+        return ""
+    from flask import session as _session
+    account_id = _session.get("account_id")
+    if not account_id:
+        return ""
+    try:
+        from dashboard_services.accounts import league_connection_status
+        from dashboard_services.connection_banner import connection_banner_html
+        conn = league_connection_status(
+            int(account_id), str(platform), str(league_id), int(season),
+        )
+        return connection_banner_html(
+            str(platform), str(league_id), int(season), conn.get("status"),
+        )
+    except Exception:
+        logger.warning("[conn-banner] status lookup failed", exc_info=True)
+        return ""
+
+
 def _dunning_banner() -> str:
     """Failed-renewal banner for signed-in users with an unresolved episode.
 
@@ -6659,6 +6689,9 @@ def render_page(
         banner_html += _recap_ready_banner(league_id or "", platform or "", season or 0)
         banner_html += _draft_imminent_banner(
             _nav_lid or "", _nav_platform or "", _nav_season or 0, active,
+        )
+        banner_html += _connection_status_banner(
+            platform or "", league_id or "", season or 0,
         )
 
     wrapped_body = f"<div class='page-shell' data-page='{active}'>{body_html}</div>"

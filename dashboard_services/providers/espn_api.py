@@ -596,10 +596,20 @@ def _authenticated_league_cached(
                 _mark_authenticated_denied(auth_key)
                 try:
                     from flask import has_request_context, session
-                    if has_request_context() and session.get("account_id"):
+                    _acct = session.get("account_id") if has_request_context() else None
+                    if not _acct:
+                        # No session (cron/background thread): resolve the
+                        # owning account(s) from the league itself so the
+                        # connection is still flagged for the banner.
+                        from dashboard_services.accounts import account_ids_for_league
+                        _ids = account_ids_for_league(
+                            "espn", str(league_id), int(season),
+                        )
+                        _acct = _ids[0] if _ids else None
+                    if _acct:
                         from dashboard_services.accounts import mark_espn_connection_status
                         mark_espn_connection_status(
-                            int(session["account_id"]), str(league_id), int(season),
+                            int(_acct), str(league_id), int(season),
                             "reauth_required", "espn_auth_rejected",
                         )
                 except Exception:
@@ -1515,6 +1525,27 @@ def _espn_draft_meta(season: int, league_id: str) -> Tuple[Optional[int], Option
         data = lg.espn_request.league_get(params={"view": "mSettings"})
     except Exception as e:
         print(f"[espn] draft meta fetch failed: {e}")
+        # Auth denials must still flag the connection even though this helper
+        # swallows the error (the banner on league pages reads the flag).
+        if _is_espn_access_denied(e):
+            try:
+                from flask import has_request_context, session
+                _acct = session.get("account_id") if has_request_context() else None
+                _accts = [int(_acct)] if _acct else []
+                if not _accts:
+                    from dashboard_services.accounts import account_ids_for_league
+                    _accts = account_ids_for_league(
+                        "espn", str(league_id), int(season),
+                    )
+                if _accts:
+                    from dashboard_services.accounts import mark_espn_connection_status
+                    for _aid in _accts:
+                        mark_espn_connection_status(
+                            int(_aid), str(league_id), int(season),
+                            "reauth_required", "espn_auth_rejected",
+                        )
+            except Exception:
+                pass
         return None, None, None
     date_ms: Optional[int] = None
     drafted: Optional[bool] = None

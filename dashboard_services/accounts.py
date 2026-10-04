@@ -1349,6 +1349,58 @@ def get_post_login_destination(account_id: int) -> Optional[str]:
     return "/portfolio"
 
 
+def league_connection_status(
+    account_id: int, platform: str, league_id: str, season: int,
+) -> dict:
+    """Return the provider connection status for a single league.
+
+    Used by the per-league connection banner on league pages. Returns
+    {"status": ..., "error_code": ...}; defaults to "connected" when the
+    league has no provider connection row.
+    """
+    init_accounts_tables()
+    from dashboard_services.db import get_conn
+    try:
+        with get_conn() as conn:
+            row = conn.execute(
+                """SELECT c.status, c.last_error_code
+                   FROM user_leagues l LEFT JOIN fantasy_provider_connections c
+                     ON c.id = l.provider_connection_id
+                   WHERE l.account_id = %s AND l.platform = %s
+                     AND l.league_id = %s AND l.season = %s""",
+                (int(account_id), str(platform).lower(), str(league_id), int(season)),
+            ).fetchone()
+    except Exception:
+        return {"status": "connected", "error_code": None}
+    if not row:
+        return {"status": "connected", "error_code": None}
+    return {
+        "status": row["status"] or "connected",
+        "error_code": row["last_error_code"],
+    }
+
+
+def account_ids_for_league(platform: str, league_id: str, season: int) -> list:
+    """Return account IDs that have this league linked.
+
+    For background/cron use where there is no Flask session to read the
+    account_id from (e.g. marking a provider connection reauth_required
+    when a scheduled poll hits an auth denial).
+    """
+    init_accounts_tables()
+    from dashboard_services.db import get_conn
+    try:
+        with get_conn() as conn:
+            rows = conn.execute(
+                """SELECT DISTINCT account_id FROM user_leagues
+                   WHERE platform = %s AND league_id = %s AND season = %s""",
+                (str(platform).lower(), str(league_id), int(season)),
+            ).fetchall()
+    except Exception:
+        return []
+    return [int(r["account_id"]) for r in rows if r["account_id"]]
+
+
 def mark_provider_connection_status(
     account_id: int, provider: str, league_id: str, season: int, status: str,
     error_code: Optional[str] = None,

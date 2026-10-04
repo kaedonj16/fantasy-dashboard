@@ -12641,6 +12641,73 @@ a.signed-home-league:hover {
     flex: 0 0 auto
 }
 
+/* Per-league provider connection banner (reauth_required). Rendered at the
+   top of league pages via render_page(); dismissed client-side per view. */
+.conn-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    margin: 0 0 12px;
+    background: #fef3c7;
+    border: 1px solid #f59e0b;
+    border-radius: 10px;
+    font-size: 14px;
+    color: #92400e
+}
+.conn-banner-dot {
+    flex: 0 0 auto;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #f59e0b
+}
+.conn-banner-text {
+    flex: 1 1 auto;
+    font-weight: 600
+}
+.conn-banner-reconnect {
+    flex: 0 0 auto;
+    font-size: 13px;
+    font-weight: 700;
+    color: #fff;
+    background: #d97706;
+    border: none;
+    border-radius: 8px;
+    padding: 6px 14px;
+    cursor: pointer
+}
+.conn-banner-reconnect:hover {
+    background: #b45309
+}
+.conn-banner-dismiss {
+    flex: 0 0 auto;
+    font-size: 18px;
+    line-height: 1;
+    color: #92400e;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 2px 6px
+}
+:root[data-theme="dark"] .conn-banner {
+    background: #451a03;
+    border-color: #b45309;
+    color: #fcd34d
+}
+:root[data-theme="dark"] .conn-banner-dot {
+    background: #f59e0b
+}
+:root[data-theme="dark"] .conn-banner-reconnect {
+    background: #d97706
+}
+:root[data-theme="dark"] .conn-banner-reconnect:hover {
+    background: #f59e0b
+}
+:root[data-theme="dark"] .conn-banner-dismiss {
+    color: #fcd34d
+}
+
 #signedInAddLeague {
     margin-top: 2px;
     background: transparent;
