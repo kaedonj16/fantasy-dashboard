@@ -20,6 +20,14 @@ const NAV_REFRESH_TIMEOUT_MS = 20000;
 // and the cache is only the last resort before the home/offline shells.
 const NAV_RZ_TIMEOUT_MS = 8000;
 const NAV_RZ_GRACE_MS = 7000;
+// League pages (/<platform>/<season>/<league_id>/...) can take 30-60s for a
+// cold league-context rebuild during live NFL games (the ctx cache busts every
+// 2 minutes in live windows). The normal 3.5s / 20s navigation timeouts always
+// win that race, so the worker paints the stale cached page. Give league
+// navigations a longer head start; the offline fallback still applies when
+// the network truly fails.
+const NAV_LEAGUE_TIMEOUT_MS = 60000;
+const LEAGUE_PLATFORMS = ['sleeper', 'yahoo', 'espn', 'fleaflicker', 'mfl'];
 // When there is nothing cached to paint after NAV_TIMEOUT_MS, keep waiting for
 // the in-flight fetch up to this ceiling before showing the offline shell.
 // Serving "You're offline" at 3.5s while the user is online (Render cold start,
@@ -222,6 +230,17 @@ async function handleNavigate(request) {
   try {
     rzNav = new URL(request.url).pathname.includes('/scorezone');
   } catch (_) {}
+  // League pages (/<platform>/<season>/<league_id>/...) can cold-rebuild for
+  // up to ~60s during live games; give the network a longer head start before
+  // painting the stale cached page. API routes are excluded earlier in the
+  // fetch handler, so everything left under a platform segment is a league page.
+  let leagueNav = false;
+  try {
+    const parts = new URL(request.url).pathname.split('/').filter(Boolean);
+    leagueNav = parts.length >= 3
+      && LEAGUE_PLATFORMS.indexOf(parts[0].toLowerCase()) !== -1
+      && /^\d{4}$/.test(parts[1]);
+  } catch (_) {}
 
   // Kick off the network request. Normalize redirects and only treat OK
   // responses as usable wins -- a fast 502 must not beat a good cached shell.
@@ -247,7 +266,11 @@ async function handleNavigate(request) {
   // cold launches stuck on a blank white screen when the origin was slow,
   // sleeping, or the fetch never settled (common on mobile / iOS standalone).
   // ScoreZone gets a longer head start: its cached shell holds stale plays.
-  const waitMs = skipStaleShell ? NAV_REFRESH_TIMEOUT_MS
+  // League pages get the longest head start: a cold rebuild during live
+  // games can take 30-60s, and painting the stale shell would show
+  // yesterday's data.
+  const waitMs = leagueNav ? NAV_LEAGUE_TIMEOUT_MS
+    : skipStaleShell ? NAV_REFRESH_TIMEOUT_MS
     : rzNav ? NAV_RZ_TIMEOUT_MS : NAV_TIMEOUT_MS;
   const timeout = new Promise(resolve => setTimeout(() => resolve(null), waitMs));
   const winner = await Promise.race([networkFetch, timeout]);
