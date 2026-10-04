@@ -247,16 +247,24 @@ def test_chase_upside_threshold(lab_js):
     vals = _run_node(lab_js, _LAB_SETUP + r"""
 wvLabSwapDelta = function(si, b) { return 0.02; };
 wvLabEvaluate = function(lineup) { return { winPct: 0.62, median: 120, p10: 100, p90: 140 }; };
-// Starter A ceiling is 28. A 0.04 gain must not swap; a 0.06 gain must.
-wvLabLineup[0].bench = [__mkEntry('p9', 'Edge', 'QB', 17, 5, 28.04, [])];
+// Starter A: proj 18, ceiling 28. Net gain = ceiling gain minus projection
+// given up. A 0.04 net gain must not swap; a 0.06 net gain must.
+wvLabLineup[0].bench = [__mkEntry('p9', 'Edge', 'QB', 18, 5, 28.04, [])];
 wvLabChaseUpside();
 console.log('TIE=' + wvLabLineup[0].name);
+// A higher ceiling that costs a full point of projection must not swap:
+// 0.06 ceiling gain minus 1.0 projection given up is a net loss.
 wvLabLineup[0].bench = [__mkEntry('p9', 'Edge', 'QB', 17, 5, 28.06, [])];
+wvLabChaseUpside();
+console.log('COST=' + wvLabLineup[0].name);
+// Same projection: the 0.06 ceiling gain is all net, so it swaps.
+wvLabLineup[0].bench = [__mkEntry('p9', 'Edge', 'QB', 18, 5, 28.06, [])];
 wvLabChaseUpside();
 console.log('GAIN=' + wvLabLineup[0].name);
 """)
-    assert vals["TIE"] == "Starter A", "a 0.04 ceiling gain must not swap"
-    assert vals["GAIN"] == "Edge", "a 0.06 ceiling gain must swap"
+    assert vals["TIE"] == "Starter A", "a 0.04 net gain must not swap"
+    assert vals["COST"] == "Starter A", "a ceiling gain smaller than the projection cost must not swap"
+    assert vals["GAIN"] == "Edge", "a 0.06 net gain must swap"
 
 
 def test_manual_swap_highlights_and_stays_open(lab_js):
