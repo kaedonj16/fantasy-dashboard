@@ -206,3 +206,48 @@ def test_endpoint_404_when_flag_off(client, monkeypatch):
     r = test_client.post("/api/link/espn/otp/start",
                          json={"email": "t@example.com", "league_id": "123", "season": 2026})
     assert r.status_code == 404
+
+
+def test_endpoint_verify_reconnect_replaces_credentials(client, monkeypatch):
+    # reconnect:true on OTP verify must run the reconnect path: ownership
+    # check, credential replace (not a fresh add), straight to the dashboard
+    # with no team-picker step.
+    import dashboard_services.accounts as accounts
+    test_client, seen = client
+    replaced = {}
+
+    def fake_replace(account_id, league_id, season, swid, espn_s2):
+        replaced.update(account_id=account_id, league_id=league_id,
+                        season=season, swid=swid, espn_s2=espn_s2)
+        return True
+
+    monkeypatch.setattr(accounts, "owns_user_league", lambda *a, **k: True)
+    monkeypatch.setattr(accounts, "replace_espn_credentials", fake_replace)
+    login_id = test_client.post(
+        "/api/link/espn/otp/start",
+        json={"email": "t@example.com", "league_id": "123", "season": 2026}).json["login_id"]
+    done = test_client.post(
+        "/api/link/espn/otp/verify",
+        json={"login_id": login_id, "code": "123456", "league_id": "123",
+              "season": 2026, "reconnect": True})
+    assert done.status_code == 200
+    assert done.json["redirect_url"] == "/espn/2026/123/dashboard"
+    assert "connection_method" not in done.json
+    assert "teams" not in done.json
+    assert replaced == {"account_id": 7, "league_id": "123", "season": 2026,
+                        "swid": "{MOCK-SWID-0000-0000}", "espn_s2": "MOCK_ESPN_S2_VALUE"}
+
+
+def test_endpoint_verify_reconnect_rejects_unowned_league(client, monkeypatch):
+    import dashboard_services.accounts as accounts
+    test_client, _ = client
+    monkeypatch.setattr(accounts, "owns_user_league", lambda *a, **k: False)
+    login_id = test_client.post(
+        "/api/link/espn/otp/start",
+        json={"email": "t@example.com", "league_id": "999", "season": 2026}).json["login_id"]
+    done = test_client.post(
+        "/api/link/espn/otp/verify",
+        json={"login_id": login_id, "code": "123456", "league_id": "999",
+              "season": 2026, "reconnect": True})
+    assert done.status_code == 404
+    assert "Saved league not found" in done.json["error"]
