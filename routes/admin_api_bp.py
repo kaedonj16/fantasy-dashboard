@@ -151,7 +151,7 @@ def _refresh_league_authorized(
 
 
 @admin_api_bp.route("/api/refresh-league", methods=["POST"])
-@limiter.limit("4 per minute")
+@limiter.limit("10 per minute")
 def api_refresh_league():
     """Force-expire a league context so the next request rebuilds it from source.
 

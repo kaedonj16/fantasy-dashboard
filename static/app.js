@@ -4123,13 +4123,14 @@ function showLoginGate(target, opts) {
   }
   window.brUpdateFreshness = updateLabels;
 
-  function setRefreshFailure() {
+  function setRefreshFailure(msg) {
     updateLabels();
+    var failLabel = msg || 'Failed';
     var t = document.getElementById('brSheetRefreshTime');
-    if (t) t.textContent = 'Failed · ' + (t.textContent || '—');
+    if (t) t.textContent = failLabel + ' · ' + (t.textContent || '—');
     var chip = document.getElementById('cache-freshness');
     var el = chip && chip.querySelector('.fp-pill-time');
-    if (el) el.textContent = 'Failed · ' + (el.textContent || '—');
+    if (el) el.textContent = failLabel + ' · ' + (el.textContent || '—');
     if (chip) chip.style.opacity = '';
     var btn = document.getElementById('brSheetRefresh');
     var label = btn && btn.querySelector && btn.querySelector('span:not(.br-sheet-time)');
@@ -4345,7 +4346,8 @@ function showLoginGate(target, opts) {
     } catch (err) {
       if (runId === doRefresh._run && !(err && err.name === 'AbortError')) {
         console.error('Refresh failed:', err);
-        setRefreshFailure();
+        var isRateLimit = err && err.message && err.message.indexOf('429') !== -1;
+        setRefreshFailure(isRateLimit ? 'Wait a moment' : undefined);
       }
     } finally {
       if (runId === doRefresh._run && !reloadStarted) {

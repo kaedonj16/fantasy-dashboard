@@ -34,7 +34,10 @@ def _handle_navigate() -> str:
 
 
 def test_cache_name_bumped_for_blank_screen_fix():
-    assert "br-fantasy-v31" in SW
+    # Cache name is bumped so poisoned entries from older SWs are purged.
+    # v31 was the blank-screen fix version; v32 adds the live-game 60s
+    # timeout for league pages. Assert the current version, not a stale pin.
+    assert "br-fantasy-v32" in SW
 
 
 def test_nav_timeout_always_races_even_without_cache():
