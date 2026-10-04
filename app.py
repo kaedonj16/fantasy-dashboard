@@ -590,6 +590,11 @@ _TIER_THRESH_CACHE: dict = {}
 # How long a league context is considered fresh
 CACHE_TTL = 60 * 60 * 12  # 12 hours
 
+# Short TTL for the league context while NFL games are live, so scores stay
+# fresh on the matchup page during game windows. The 12-hour CACHE_TTL still
+# applies outside live windows.
+_LIVE_SCORE_CACHE_TTL = 120  # 2 minutes
+
 # How long value-table cache entries live
 VALUE_CACHE_TTL = 60 * 60 * 6  # 6 hours
 
@@ -3006,6 +3011,35 @@ def _league_bust_path(platform: str, season: int, league_id: str) -> str:
     return os.path.join(tempfile.gettempdir(), f"br_league_bust_{safe}")
 
 
+def _is_nfl_live_window(now=None) -> bool:
+    """True when NFL games are likely live (cheap wall-clock check, no API).
+
+    Windows are in America/New_York:
+      - Thursday 8:00 PM - 11:30 PM ET (TNF)
+      - Sunday 1:00 PM - 11:30 PM ET (early/late/SNF)
+      - Monday 8:00 PM - 11:30 PM ET (MNF)
+
+    ``now`` is an optional aware datetime for tests; defaults to current time.
+    """
+    et = ZoneInfo("America/New_York")
+    dt = now.astimezone(et) if now is not None else datetime.now(tz=et)
+    wd = dt.weekday()  # Monday=0 ... Sunday=6
+    mins = dt.hour * 60 + dt.minute
+    end = 23 * 60 + 30
+    if wd == 3:  # Thursday
+        return 20 * 60 <= mins < end
+    if wd == 6:  # Sunday
+        return 13 * 60 <= mins < end
+    if wd == 0:  # Monday
+        return 20 * 60 <= mins < end
+    return False
+
+
+def _league_ctx_effective_ttl() -> int:
+    """TTL for the cached league context: short during live NFL windows."""
+    return _LIVE_SCORE_CACHE_TTL if _is_nfl_live_window() else CACHE_TTL
+
+
 def _league_bust_mtime(platform: str, season: int, league_id: str) -> float:
     try:
         return os.stat(_league_bust_path(platform, season, league_id)).st_mtime
@@ -3037,7 +3071,7 @@ def _league_ctx_cache_valid(entry, platform, season, league_id) -> bool:
         ts = float(entry.get("ts") or 0)
     except (TypeError, ValueError):
         return False
-    if ts <= 0 or (time.time() - ts) > CACHE_TTL:
+    if ts <= 0 or (time.time() - ts) > _league_ctx_effective_ttl():
         return False
     return ts >= _league_bust_mtime(platform, season, league_id)
 
@@ -13220,7 +13254,8 @@ def _league_ctx_redis_load(platform, league_id, season):
     """Hydrate a serve-ready ctx from Redis, or None to fall through to a build.
 
     Validation mirrors the local path (_league_ctx_cache_valid): the payload
-    must be within CACHE_TTL of its build, at or after the shared bust marker
+    must be within the effective TTL of its build (short during live NFL
+    windows, CACHE_TTL otherwise), at or after the shared bust marker
     (a Refresh or a roster-change expiry on any worker bumps it), and at the
     current build generation -- a payload from before the latest successful
     build must never be resurrected.
@@ -13235,7 +13270,7 @@ def _league_ctx_redis_load(platform, league_id, season):
         if not envelope:
             return None
         built_at = float(envelope.get("built_at") or 0)
-        if built_at <= 0 or (time.time() - built_at) > CACHE_TTL:
+        if built_at <= 0 or (time.time() - built_at) > _league_ctx_effective_ttl():
             return None
         if built_at < _league_bust_mtime(platform, season, league_id):
             return None
