@@ -57,10 +57,13 @@ def test_navigation_fallback_chain():
     assert "cache.match(OFFLINE_URL)" in SW
     assert "cache.match('/')" in SW
     body = _handle_navigate()
-    # Cache is the last resort (may be null); ScoreZone skips the immediate
-    # stale paint but still falls back to it before home/offline.
+    # Cache is the last resort (may be null); every page -- ScoreZone
+    # included -- paints its cached shell on timeout, then swaps in the live
+    # copy via nav-fresh. (ScoreZone's shell live-polls the API on boot, so it
+    # self-corrects within seconds; a 13-60s white screen is worse.)
     assert "navigationFallback(cache, cached, request.url)" in body
-    assert "if (cached && !rzNav) {" in body
+    assert "if (cached) {" in body
+    assert "if (cached && !rzNav)" not in body
     assert "if (networkError) return networkError;" in body
     assert "notifyNavFresh(request, networkFetch)" in body
     # Uncached timeout must wait for grace / in-flight fetch before offline.
@@ -187,15 +190,22 @@ async function handleNavigate({ networkFetch, cached, offline }) {
     assert res.returncode == 0, res.stderr or res.stdout
 
 
-def test_scorezone_nav_skips_stale_shell_on_timeout():
-    """ScoreZone embeds live plays in the HTML; its cached shell must not win
-    on a mere 3.5s timeout. It gets a longer network head start, a short
-    grace, and only then falls back to cache as a last resort."""
+def test_scorezone_nav_paints_cached_shell_on_timeout():
+    """A TD push tap opens /scorezone, whose HTML rebuild can take 13-60s on
+    game days. Holding out for the network meant a blank white screen; the
+    cached shell must paint on timeout instead. The page live-polls
+    /api/.../scorezone-data on boot, so the shell self-corrects to fresh
+    plays within seconds, and nav-fresh still swaps in the live HTML."""
     body = _handle_navigate()
     assert "NAV_RZ_TIMEOUT_MS" in SW
     assert "NAV_RZ_GRACE_MS" in SW
     assert "rzNav" in body
-    # Stale shell is skipped on timeout for ScoreZone navigations...
-    assert "if (cached && !rzNav)" in body
+    # Cached shell paints on timeout for ScoreZone too...
+    assert "if (cached) {" in body
+    assert "if (cached && !rzNav)" not in body
+    # ...and the 60s league head start applies only when there is no cached
+    # page to paint (otherwise a notification tap white-screens for up to
+    # 60s while the server rebuilds the HTML).
+    assert "(leagueNav && !cached) ? NAV_LEAGUE_TIMEOUT_MS" in body
     # ...but the cache remains the last resort before home/offline shells.
     assert "navigationFallback(cache, cached, request.url)" in body

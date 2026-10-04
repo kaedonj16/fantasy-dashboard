@@ -199,10 +199,11 @@ process.exit(0);
 def test_sw_late_network_notifies_after_explicit_refresh_fallback():
     block = SW[SW.index("async function handleNavigate") : SW.index("// ── Push notifications")]
     assert "notifyNavFresh(request, networkFetch)" in block
-    # ScoreZone skips the immediate stale paint but still falls back to cache
-    # as a last resort, with the late-network nudge after it.
-    assert "if (cached && !rzNav)" in block
-    assert block.index("notifyNavFresh(request, networkFetch)") > block.index("if (cached && !rzNav)")
+    # Every page paints its cached shell on timeout (ScoreZone included: its
+    # shell live-polls the API on boot), with the late-network nudge after it.
+    assert "if (cached) {" in block
+    assert "if (cached && !rzNav)" not in block
+    assert block.index("notifyNavFresh(request, networkFetch)") > block.index("if (cached) {")
 
 
 def test_splash_stays_up_during_user_refresh():
