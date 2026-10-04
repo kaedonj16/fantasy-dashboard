@@ -14327,6 +14327,43 @@ document.addEventListener("DOMContentLoaded", () => {
   initChangelog();
 });
 
+// Per-league provider connection banner (reauth_required). The Reconnect
+// button routes to the platform-appropriate flow; dismiss removes the banner
+// for this view only (a reload re-renders it while the status persists).
+document.addEventListener("click", (e) => {
+  const reconnectBtn = e.target && e.target.closest
+    ? e.target.closest("[data-conn-reconnect]")
+    : null;
+  if (reconnectBtn) {
+    const banner = reconnectBtn.closest("[data-conn-banner]");
+    const platform = (banner && banner.dataset.platform) || "";
+    const leagueId = (banner && banner.dataset.leagueId) || "";
+    const season = (banner && banner.dataset.season) || "";
+    if (platform === "espn") {
+      // Reuse the home-page ESPN cookie reconnect form via deep link.
+      window.location.href = "/?espn_reconnect=1"
+        + "&league_id=" + encodeURIComponent(leagueId)
+        + "&season=" + encodeURIComponent(season);
+    } else if (platform === "yahoo") {
+      // Yahoo OAuth re-link with account chooser forced.
+      window.location.href = "/auth/yahoo?reauth=1"
+        + "&league_id=" + encodeURIComponent(leagueId)
+        + "&next=" + encodeURIComponent(window.location.pathname);
+    } else {
+      // Other platforms: portfolio manages provider connections.
+      window.location.href = "/portfolio";
+    }
+    return;
+  }
+  const dismissBtn = e.target && e.target.closest
+    ? e.target.closest("[data-conn-dismiss]")
+    : null;
+  if (dismissBtn) {
+    const banner = dismissBtn.closest("[data-conn-banner]");
+    if (banner) banner.remove();
+  }
+});
+
 // Settings Gear Dropdown
 document.addEventListener("DOMContentLoaded", () => {
   const gearWrapper = document.querySelector(".settings-gear-wrapper");
