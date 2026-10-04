@@ -180,7 +180,8 @@ class ESPNFantasyClient:
             name = (t.get("name")
                     or " ".join(part for part in (t.get("location"), t.get("nickname")) if part).strip()
                     or f"Team {tid}")
-            teams.append({"id": str(tid), "name": str(name).strip()})
+            teams.append({"id": str(tid), "name": str(name).strip(),
+                          "owners": [str(o) for o in (t.get("owners") or []) if o]})
         return {
             "league_id": str(payload.get("id") or league_id),
             "season": int(payload.get("seasonId") or season),
@@ -715,6 +716,59 @@ def connect_league(
 ) -> Dict[str, Any]:
     """Validate and normalize a public or explicitly authenticated league."""
     return ESPNFantasyClient(swid=swid, espn_s2=espn_s2).get_league(league_id, season)
+
+
+def espn_swid_owns_team(info: dict, swid: str) -> Optional[bool]:
+    """Whether the SWID owns a team in the league, from a connect_league result.
+
+    Returns None when the payload carries no owner data at all (fail-open:
+    never block a reconnect on a missing field). Returns False only when
+    owners are present and the SWID matches none of them -- i.e. this ESPN
+    account is authenticated but is not a member of the league.
+    """
+    want = _normalize_swid(swid or "").lower()
+    if not want:
+        return None
+    seen_any = False
+    for t in (info or {}).get("teams") or []:
+        owners = (t or {}).get("owners") or []
+        if owners:
+            seen_any = True
+        for o in owners:
+            if _normalize_swid(str(o)).lower() == want:
+                return True
+    return False if seen_any else None
+
+
+def espn_member_views_ok(season: int, league_id: str, swid: str, espn_s2: str) -> Optional[bool]:
+    """Whether ESPN grants the member-only views to these cookies.
+
+    The light connect probe (mSettings+mTeam) can succeed for sessions ESPN
+    will not grant the private views to (a non-member account, or a limited
+    OneID guest session): same cookies, 200 on settings, 401 on rosters.
+    Probing mRoster+mMatchup directly catches that before a reconnect
+    redirects to a dashboard that is doomed to 403.
+
+    Returns None on network errors (fail-open: the dashboard remains the
+    backstop); True/False only on ESPN's definitive verdict.
+    """
+    swid = _normalize_swid(swid or "")
+    espn_s2 = _clean_secret(espn_s2 or "")
+    if not (swid and espn_s2):
+        return None
+    try:
+        response = requests.get(
+            ESPN_FFL_LEAGUE_URL.format(season=int(season), league_id=int(league_id)),
+            params=(("view", "mRoster"), ("view", "mMatchup")),
+            cookies={"SWID": swid, "espn_s2": espn_s2},
+            headers=_ESPN_BROWSER_HEADERS,
+            timeout=ESPN_REQUEST_TIMEOUT,
+        )
+    except requests.RequestException:
+        return None
+    if response.status_code in (401, 403):
+        return False
+    return True
 
 
 @lru_cache(maxsize=1)

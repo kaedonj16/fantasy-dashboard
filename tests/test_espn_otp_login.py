@@ -167,6 +167,9 @@ def client(monkeypatch):
         return {"name": "Test League"}
 
     monkeypatch.setattr(espn, "connect_league", fake_connect)
+    # The reconnect access gate probes member-only views; keep it green by
+    # default so existing tests don't touch the network.
+    monkeypatch.setattr(espn, "espn_member_views_ok", lambda *a, **k: True)
     monkeypatch.setattr(accounts, "add_espn_league_connection", lambda *a, **k: None)
     app = flask.Flask(__name__)
     app.secret_key = "test"
@@ -328,3 +331,68 @@ def test_redis_store_falls_back_without_redis_url(monkeypatch):
     assert L._redis_client() is None
     broker = L.MockEspnLoginBroker()
     assert isinstance(broker._store, L._Store)
+
+
+def _start_login(test_client, league_id="123"):
+    return test_client.post(
+        "/api/link/espn/otp/start",
+        json={"email": "t@example.com", "league_id": league_id, "season": 2026}).json["login_id"]
+
+
+def test_endpoint_verify_reconnect_blocks_non_member(client, monkeypatch):
+    # The light connect probe can succeed for an ESPN account that is not on
+    # any team in the league. Fail fast instead of redirecting to a 403.
+    import dashboard_services.providers.espn_api as espn
+    import dashboard_services.accounts as accounts
+    test_client, _ = client
+    monkeypatch.setattr(accounts, "owns_user_league", lambda *a, **k: True)
+    monkeypatch.setattr(
+        espn, "connect_league",
+        lambda season, league_id, swid=None, espn_s2=None: {
+            "name": "Test League",
+            "teams": [{"id": "1", "name": "Team 1", "owners": ["{SOMEONE-ELSE}"]}],
+        })
+    login_id = _start_login(test_client)
+    done = test_client.post(
+        "/api/link/espn/otp/verify",
+        json={"login_id": login_id, "code": "123456", "league_id": "123",
+              "season": 2026, "reconnect": True})
+    assert done.status_code == 403
+    assert "isn't on any team" in done.json["error"]
+
+
+def test_endpoint_verify_reconnect_blocks_limited_session(client, monkeypatch):
+    # Same cookies, 200 on settings but 401 on rosters (limited OneID guest
+    # session): fail fast with a pointer to the cookie option.
+    import dashboard_services.providers.espn_api as espn
+    import dashboard_services.accounts as accounts
+    test_client, _ = client
+    monkeypatch.setattr(accounts, "owns_user_league", lambda *a, **k: True)
+    monkeypatch.setattr(
+        espn, "connect_league",
+        lambda season, league_id, swid=None, espn_s2=None: {
+            "name": "Test League",
+            "teams": [{"id": "1", "name": "Team 1",
+                       "owners": ["{MOCK-SWID-0000-0000}"]}],
+        })
+    monkeypatch.setattr(espn, "espn_member_views_ok", lambda *a, **k: False)
+    login_id = _start_login(test_client)
+    done = test_client.post(
+        "/api/link/espn/otp/verify",
+        json={"login_id": login_id, "code": "123456", "league_id": "123",
+              "season": 2026, "reconnect": True})
+    assert done.status_code == 403
+    assert "cookie option" in done.json["error"]
+
+
+def test_espn_swid_owns_team_matching():
+    from dashboard_services.providers.espn_api import espn_swid_owns_team
+    info = {"teams": [{"id": "1", "owners": ["{ABC-123}"]},
+                      {"id": "2", "owners": ["{DEF-456}", "{GHI-789}"]}]}
+    assert espn_swid_owns_team(info, "{abc-123}") is True
+    assert espn_swid_owns_team(info, "ABC-123") is True  # unbraced still matches
+    assert espn_swid_owns_team(info, "{ZZZ-000}") is False
+    # No owner data at all: fail open, never block on a missing field.
+    assert espn_swid_owns_team({"teams": [{"id": "1"}]}, "{ABC-123}") is None
+    assert espn_swid_owns_team({}, "{ABC-123}") is None
+    assert espn_swid_owns_team(info, "") is None

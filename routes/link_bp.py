@@ -163,6 +163,27 @@ def _is_espn_auth_denied(exc: Exception) -> bool:
     return name == "ESPNAccessDenied" or "401" in msg or "403" in msg
 
 
+def _espn_reconnect_access_error(info, season, league_id, swid, espn_s2, *, otp: bool):
+    """Fail-fast gate for ESPN reconnects; returns an error message or None.
+
+    connect_league's light probe (mSettings+mTeam) can succeed for sessions
+    ESPN will not grant the member-only views to: an ESPN account that is not
+    on any team in the league, or a limited OneID guest session. Without this
+    gate the reconnect "succeeds" and the dashboard 403s right after it.
+    """
+    from dashboard_services.providers.espn_api import espn_swid_owns_team, espn_member_views_ok
+    if espn_swid_owns_team(info, swid) is False:
+        return ("This ESPN account isn't on any team in this league. "
+                "Reconnect with the ESPN account that belongs to the league.")
+    if espn_member_views_ok(season, league_id, swid, espn_s2) is False:
+        if otp:
+            return ("ESPN accepted the sign-in but won't share this league's full data "
+                    "with that session. Use the cookie option instead.")
+        return ("ESPN accepted these cookies but won't share this league's full data. "
+                "Paste fresh cookies from an ESPN account in the league.")
+    return None
+
+
 def _find_working_espn_credentials(
     account_id: int, season: int, league_id: str,
     tried_swid: Optional[str], tried_espn_s2: Optional[str],
@@ -462,7 +483,11 @@ def link_espn_reconnect():
         return jsonify({"ok": False, "error": "Saved league not found."}), 404
     try:
         from dashboard_services.providers.espn_api import connect_league
-        connect_league(season, league_id, swid=swid, espn_s2=espn_s2)
+        info = connect_league(season, league_id, swid=swid, espn_s2=espn_s2)
+        access_error = _espn_reconnect_access_error(
+            info, season, league_id, swid, espn_s2, otp=False)
+        if access_error:
+            return jsonify({"ok": False, "error": access_error}), 403
         from dashboard_services.accounts import replace_espn_credentials
         if not replace_espn_credentials(account_id, league_id, season, swid, espn_s2):
             return jsonify({"ok": False, "error": "Saved league not found."}), 404
@@ -555,7 +580,11 @@ def link_espn_otp_verify():
             return jsonify({"ok": False, "error": "Saved league not found."}), 404
         try:
             from dashboard_services.providers.espn_api import connect_league
-            connect_league(season, league_id, swid=swid, espn_s2=espn_s2)
+            info = connect_league(season, league_id, swid=swid, espn_s2=espn_s2)
+            access_error = _espn_reconnect_access_error(
+                info, season, league_id, swid, espn_s2, otp=True)
+            if access_error:
+                return jsonify({"ok": False, "error": access_error}), 403
             if not replace_espn_credentials(account_id, league_id, season, swid, espn_s2):
                 return jsonify({"ok": False, "error": "Saved league not found."}), 404
         except Exception as exc:

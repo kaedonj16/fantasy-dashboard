@@ -15,6 +15,9 @@ def client(monkeypatch):
     import dashboard_services.providers.espn_api as espn
     import dashboard_services.accounts as accounts
     monkeypatch.setattr(espn, "connect_league", lambda *a, **k: {"name": "Test League"})
+    # The reconnect access gate probes member-only views; keep it green so no
+    # test touches the network.
+    monkeypatch.setattr(espn, "espn_member_views_ok", lambda *a, **k: True)
     monkeypatch.setattr(accounts, "add_espn_league_connection", lambda *a, **k: None)
     with app.test_client() as test_client:
         with test_client.session_transaction() as sess:
@@ -186,3 +189,20 @@ def test_staged_private_connection_can_continue_without_account(monkeypatch):
         })
     assert response.status_code == 200
     assert response.json["redirect_url"] == "/espn/2026/123/dashboard"
+
+
+def test_cookie_reconnect_blocks_account_not_in_league(client, monkeypatch):
+    # Same fail-fast gate as the email path: the light probe can succeed for
+    # an ESPN account that is not on any team in the league.
+    import dashboard_services.accounts as accounts
+    import dashboard_services.providers.espn_api as espn
+    monkeypatch.setattr(accounts, "owns_user_league", lambda *a: True)
+    monkeypatch.setattr(
+        espn, "connect_league",
+        lambda *a, **k: {"name": "Test League",
+                         "teams": [{"id": "1", "owners": ["{SOMEONE-ELSE}"]}]})
+    response = client.post("/api/link/espn/reconnect", json={
+        "league_id": "123", "season": 2026, "swid": "{owner}", "espn_s2": "secret",
+    })
+    assert response.status_code == 403
+    assert "isn't on any team" in response.json["error"]
