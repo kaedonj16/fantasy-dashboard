@@ -976,6 +976,25 @@ print(f"[cron] Scoring: {{len(result.get('prospects', []))}} prospects")
         record_pipeline_health("build_weekly_rookie_data", "skipped")
 
     # ------------------------------------------------------------------ #
+    # Step 6b: Prospect accuracy report (annually in February)           #
+    # Compares past prospect grades vs actual NFL outcomes. Separate     #
+    # from the rookie pipeline schedule (which is paused during the      #
+    # CFB season) - this runs after the NFL season ends.                 #
+    # ------------------------------------------------------------------ #
+    today_month = date.today().month
+    if today_month == 2:
+        _run_step("""
+from dotenv import load_dotenv; load_dotenv()
+from scripts.prospect_accuracy_report import run_accuracy_report
+stats = run_accuracy_report()
+print(f"[cron] Prospect accuracy: {stats}")
+""", "prospect_accuracy_report")
+        record_pipeline_health("prospect_accuracy_report", "ok")
+    else:
+        print(f"[cron] Prospect accuracy report skipped - month={today_month} (runs in February)")
+        record_pipeline_health("prospect_accuracy_report", "skipped")
+
+    # ------------------------------------------------------------------ #
     # Step 7: Trade intel discovery + crawl + analytics                  #
     # Split into three subprocesses so each step's memory is fully       #
     # released before the next one starts.                                #
