@@ -22,10 +22,12 @@ const NAV_RZ_TIMEOUT_MS = 8000;
 const NAV_RZ_GRACE_MS = 7000;
 // League pages (/<platform>/<season>/<league_id>/...) can take 30-60s for a
 // cold league-context rebuild during live NFL games (the ctx cache busts every
-// 2 minutes in live windows). The normal 3.5s / 20s navigation timeouts always
-// win that race, so the worker paints the stale cached page. Give league
-// navigations a longer head start; the offline fallback still applies when
-// the network truly fails.
+// 2 minutes in live windows). When there is NO cached page the normal 3.5s /
+// 20s navigation timeouts would win that race and leave a blank white screen,
+// so uncached league navigations get a longer head start; the offline fallback
+// still applies when the network truly fails. When a cached page exists it
+// paints at the normal timeout and the live copy swaps in via nav-fresh when
+// it lands.
 const NAV_LEAGUE_TIMEOUT_MS = 60000;
 const LEAGUE_PLATFORMS = ['sleeper', 'yahoo', 'espn', 'fleaflicker', 'mfl'];
 // When there is nothing cached to paint after NAV_TIMEOUT_MS, keep waiting for
@@ -266,10 +268,14 @@ async function handleNavigate(request) {
   // cold launches stuck on a blank white screen when the origin was slow,
   // sleeping, or the fetch never settled (common on mobile / iOS standalone).
   // ScoreZone gets a longer head start: its cached shell holds stale plays.
-  // League pages get the longest head start: a cold rebuild during live
-  // games can take 30-60s, and painting the stale shell would show
-  // yesterday's data.
-  const waitMs = leagueNav ? NAV_LEAGUE_TIMEOUT_MS
+  // League pages get the longest head start, but ONLY when there is no cached
+  // page to paint: a cold rebuild during live games can take 30-60s, and with
+  // nothing cached the alternative to waiting is a blank white screen for the
+  // full wait (this is what a tap on a TD push notification hit). When a
+  // cached page exists it paints at the normal timeout and the in-flight
+  // fetch updates the cache + nudges the client (nav-fresh) when the live
+  // copy lands.
+  const waitMs = (leagueNav && !cached) ? NAV_LEAGUE_TIMEOUT_MS
     : skipStaleShell ? NAV_REFRESH_TIMEOUT_MS
     : rzNav ? NAV_RZ_TIMEOUT_MS : NAV_TIMEOUT_MS;
   const timeout = new Promise(resolve => setTimeout(() => resolve(null), waitMs));
@@ -285,10 +291,11 @@ async function handleNavigate(request) {
   // route isn't painted as "You're offline"), then wait for the in-flight
   // fetch (uncached grace) before the home / offline shells. Keep the
   // fetch alive so a late success can nudge a reload when we did paint
-  // a cached shell. ScoreZone skips the immediate cached paint on a mere
-  // timeout -- stale plays are worse than a short wait -- but keeps the
-  // cache as the last resort before the home / offline shells.
-  if (cached && !rzNav) {
+  // a cached shell. ScoreZone paints its cached shell too: the page
+  // live-polls /api/.../scorezone-data on boot, so the shell self-corrects
+  // to fresh plays within seconds -- a 13-60s blank white screen while the
+  // server rebuilds the HTML is worse than a briefly stale shell.
+  if (cached) {
     notifyNavFresh(request, networkFetch);
     return cached;
   }
