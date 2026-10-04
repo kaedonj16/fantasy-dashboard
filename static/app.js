@@ -12745,8 +12745,13 @@ if (!platformBtns.length) return;
   window.openHomeEspnReconnect = function openHomeEspnReconnect(leagueId, season) {
     setHomeCardState("connect");
     document.getElementById("signedInAddLeague")?.setAttribute("aria-expanded", "true");
-    document.querySelector('.platform-btn[data-platform="espn"]')?.click();
-    document.querySelector('.espn-home-method[data-espn-method="private"]')?.click();
+    // Call the handlers directly instead of .click(): this runs during
+    // DOMContentLoaded before the button listeners are bound, so .click()
+    // would silently do nothing and leave the user on the home page.
+    if (typeof switchPlatform === "function") switchPlatform("espn");
+    else document.querySelector('.platform-btn[data-platform="espn"]')?.click();
+    if (typeof setHomeEspnMethod === "function") setHomeEspnMethod("private");
+    else document.querySelector('.espn-home-method[data-espn-method="private"]')?.click();
     if (espnLeagueIdInput) espnLeagueIdInput.value = String(leagueId || "").trim();
     const seasonInput = document.querySelector('#leagueSelectForm input[name="season"]');
     if (seasonInput && String(season || "").trim()) seasonInput.value = String(season).trim();
