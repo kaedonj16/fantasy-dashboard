@@ -291,3 +291,44 @@ def test_espn_access_denied_html_includes_reconnect_cta():
     assert "season=2026" in body
     assert "Back to home" in body
     assert "SWID" in body and "espn_s2" in body
+
+
+def test_espn_reconnect_page_email_is_default_when_otp_enabled(monkeypatch):
+    # Kaedon's call: email sign-in is the DEFAULT on the reconnect page (the
+    # feature is on in prod). Cookie paste stays as the fallback behind a
+    # "Paste cookies instead" toggle.
+    import app as appmod
+    from flask import session as fsession
+    monkeypatch.setattr(appmod, "_espn_otp_ui_enabled", lambda: True)
+    with appmod.app.test_request_context("/espn/reconnect?league_id=1848268449&season=2026"):
+        fsession["account_id"] = 7
+        body, status = appmod.espn_reconnect_page()
+    assert status == 200
+    assert "rcCookieToggle" in body
+    assert "Paste cookies instead" in body
+    assert "rcEmailToggle" not in body
+    # Email block renders visible and BEFORE the (hidden) cookie block.
+    assert "id='rcEmailBlock'" in body
+    assert "id='rcCookieBlock' style='display:none;'" in body
+    assert body.index("rcEmailBlock") < body.index("rcCookieBlock")
+    assert "/api/link/espn/otp/start" in body
+    assert "/api/link/espn/otp/verify" in body
+    assert "reconnect:true" in body
+    # The cookie path stays as the fallback.
+    assert "rcEspnBlob" in body
+    assert "/api/link/espn/reconnect" in body
+
+
+def test_espn_reconnect_page_cookie_only_when_otp_disabled(monkeypatch):
+    import app as appmod
+    from flask import session as fsession
+    monkeypatch.setattr(appmod, "_espn_otp_ui_enabled", lambda: False)
+    with appmod.app.test_request_context("/espn/reconnect?league_id=1848268449&season=2026"):
+        fsession["account_id"] = 7
+        body, status = appmod.espn_reconnect_page()
+    assert status == 200
+    assert "rcCookieToggle" not in body
+    assert "otp/start" not in body
+    assert "id='rcCookieBlock'" in body
+    assert "id='rcCookieBlock' style='display:none;'" not in body
+    assert "rcEspnBlob" in body

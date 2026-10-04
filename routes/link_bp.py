@@ -525,7 +525,7 @@ def link_espn_otp_verify():
     if not otp_login_enabled():
         return jsonify({"ok": False, "error": "ESPN email sign-in isn't available."}), 404
     data = request.get_json(silent=True) or {}
-    if not isinstance(data, dict) or set(data) - {"login_id", "code", "league_id", "season"}:
+    if not isinstance(data, dict) or set(data) - {"login_id", "code", "league_id", "season", "reconnect"}:
         return jsonify({"ok": False, "error": "Invalid request."}), 400
     login_id = str(data.get("login_id") or "").strip()
     code = str(data.get("code") or "").strip()
@@ -543,6 +543,26 @@ def link_espn_otp_verify():
         error, status = _otp_error(exc)
         return jsonify({"ok": False, "error": error}), status
     swid, espn_s2 = creds.get("swid"), creds.get("espn_s2")
+    if data.get("reconnect"):
+        # Reconnect an already-saved league: same validate-then-replace path
+        # as /api/link/espn/reconnect (ownership check, credential replace, no
+        # team picker since the viewer is already established).
+        account_id = session.get("account_id")
+        if not account_id:
+            return jsonify({"ok": False, "error": "Sign in with Google first."}), 401
+        from dashboard_services.accounts import owns_user_league, replace_espn_credentials
+        if not owns_user_league(account_id, "espn", league_id, season):
+            return jsonify({"ok": False, "error": "Saved league not found."}), 404
+        try:
+            from dashboard_services.providers.espn_api import connect_league
+            connect_league(season, league_id, swid=swid, espn_s2=espn_s2)
+            if not replace_espn_credentials(account_id, league_id, season, swid, espn_s2):
+                return jsonify({"ok": False, "error": "Saved league not found."}), 404
+        except Exception as exc:
+            logger.warning("[link/espn/otp/verify] reconnect failed (%s)", type(exc).__name__)
+            error, status = _espn_error(exc, "private")
+            return jsonify({"ok": False, "error": error}), status
+        return jsonify({"ok": True, "redirect_url": f"/espn/{season}/{league_id}/dashboard"})
     # Same validate-then-persist path as cookie paste, tagged connection_method="otp".
     try:
         from dashboard_services.providers.espn_api import connect_league
