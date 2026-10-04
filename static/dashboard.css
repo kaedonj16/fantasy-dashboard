@@ -44505,3 +44505,48 @@ table.rz-bs-table thead th:first-child {
     border-bottom-color: var(--border);
     color: var(--text-subtle);
 }
+
+/* ── Trade Hub package analysis mobile overflow fix ──────────────────────────
+   The package analysis view ("How people acquire X") was pushing past the
+   viewport on phones: the archetype header tabs, tier chips, and real-trade
+   cards all extended past the right edge, which also broke the top-chips
+   horizontal scroll (a scroll child wider than the viewport has nothing to
+   scroll). These rules constrain everything to the viewport on small screens. */
+@media (max-width: 640px) {
+    /* Safety net: the trade calculator main column may never exceed viewport */
+    .otc-main {
+        overflow-x: clip;
+        max-width: 100%;
+    }
+
+    /* Top chips row: constrain to viewport so internal horizontal scroll works */
+    .otc-top-chips {
+        max-width: 100%;
+    }
+
+    /* Archetype header: let label and tabs shrink instead of overflowing */
+    .otc-arch-header > * {
+        min-width: 0;
+    }
+    .otc-main-tabs.compact {
+        max-width: 100%;
+        min-width: 0;
+        flex-shrink: 1;
+    }
+
+    /* Archetype cells: force long chip rows to wrap inside the cell */
+    .otc-arch-cell,
+    .otc-arch-cell > div {
+        min-width: 0;
+        overflow-wrap: anywhere;
+    }
+
+    /* Real-trade cards: never wider than viewport */
+    .otc-real-trade-card {
+        max-width: 100%;
+        box-sizing: border-box;
+    }
+    .otc-rt-body {
+        min-width: 0;
+    }
+}
