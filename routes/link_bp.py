@@ -132,7 +132,9 @@ def _espn_error(exc: Exception, method: str, context: Optional[dict] = None):
                     ), 403
             except Exception:
                 logger.warning("[link/espn] smart 403 message check failed", exc_info=True)
-        return with_reference("ESPN rejected these credentials or the session has expired."), 403
+        return with_reference("ESPN rejected these credentials or the session has expired. "
+                              "If your cookies are fresh, ESPN may be blocking the connection. "
+                              "Try again in a few minutes."), 403
     if name == "ESPNMalformedResponse":
         # ESPN commonly answers with an HTML login/challenge page and HTTP 200
         # when private-league cookies are expired or otherwise unusable. Treat

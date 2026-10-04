@@ -56,6 +56,18 @@ ESPN_FFL_LEAGUE_URL = (
     "seasons/{season}/segments/0/leagues/{league_id}"
 )
 ESPN_REQUEST_TIMEOUT = 12
+# Browser headers for direct ESPN API requests. ESPN's bot protection flags
+# bare python-requests traffic (default User-Agent, no Accept/Referer),
+# especially from datacenter IPs with no request history. Sending a real
+# browser fingerprint keeps first-time connections from being challenged.
+_ESPN_BROWSER_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/json",
+    "Referer": "https://fantasy.espn.com/",
+}
 logger = logging.getLogger(__name__)
 
 
@@ -103,6 +115,7 @@ class ESPNFantasyClient:
                 ESPN_FFL_LEAGUE_URL.format(season=int(season), league_id=int(league_id)),
                 params=(("view", "mSettings"), ("view", "mTeam")),
                 cookies=cookies,
+                headers=_ESPN_BROWSER_HEADERS,
                 timeout=ESPN_REQUEST_TIMEOUT,
             )
         except requests.RequestException as exc:
@@ -578,6 +591,7 @@ def _authenticated_league_cached(
                     params=(("view", "mTeam"), ("view", "mRoster"), ("view", "mMatchup"),
                             ("view", "mSettings"), ("view", "mStandings")),
                     cookies={"SWID": swid, "espn_s2": espn_s2},
+                    headers=_ESPN_BROWSER_HEADERS,
                     timeout=ESPN_REQUEST_TIMEOUT,
                 )
                 logger.warning(
