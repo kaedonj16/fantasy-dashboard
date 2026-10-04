@@ -251,3 +251,80 @@ def test_endpoint_verify_reconnect_rejects_unowned_league(client, monkeypatch):
               "season": 2026, "reconnect": True})
     assert done.status_code == 404
     assert "Saved league not found" in done.json["error"]
+
+
+class _FakeRedis:
+    """Minimal redis-py double honoring SET EX / GET / DELETE / PING."""
+
+    def __init__(self):
+        self._data = {}
+
+    def ping(self):
+        return True
+
+    def set(self, name, value, ex=None):
+        self._data[name] = (value, time.time() + ex if ex else None)
+
+    def get(self, name):
+        item = self._data.get(name)
+        if not item:
+            return None
+        value, exp = item
+        if exp is not None and time.time() > exp:
+            del self._data[name]
+            return None
+        return value
+
+    def delete(self, name):
+        self._data.pop(name, None)
+
+
+def _redis_broker(monkeypatch, fake, cls=None):
+    monkeypatch.setattr(L, "_redis_client", lambda: fake)
+    return (cls or L.MockEspnLoginBroker)()
+
+
+def test_redis_store_shares_sessions_across_workers(monkeypatch):
+    # Regression: start on worker A, verify on worker B. The in-memory store
+    # made every cross-worker verify fail as "expired" (Kaedon's first-try
+    # failure on the reconnect page).
+    fake = _FakeRedis()
+    worker_a = _redis_broker(monkeypatch, fake)
+    worker_b = _redis_broker(monkeypatch, fake)
+    login_id = worker_a.start("t@example.com")
+    creds = worker_b.verify(login_id, "123456")
+    assert creds == {"swid": "{MOCK-SWID-0000-0000}", "espn_s2": "MOCK_ESPN_S2_VALUE"}
+
+
+def test_redis_store_persists_attempts_across_workers(monkeypatch):
+    fake = _FakeRedis()
+    worker_a = _redis_broker(monkeypatch, fake)
+    worker_b = _redis_broker(monkeypatch, fake)
+    login_id = worker_a.start("t@example.com")
+    with pytest.raises(L.EspnLoginInvalidCode):
+        worker_b.verify(login_id, "000000")
+    seen = worker_a._store.get(login_id, time.time())
+    assert seen["attempts"] == 1
+
+
+def test_redis_store_resend_writeback(monkeypatch):
+    # _resend may rotate provider session state; the mutation must survive
+    # the worker hop instead of being lost with a deserialized copy.
+    class RotatingMock(L.MockEspnLoginBroker):
+        def _resend(self, session):
+            session["session_id"] = "rotated"
+
+    fake = _FakeRedis()
+    worker_a = _redis_broker(monkeypatch, fake, RotatingMock)
+    worker_b = _redis_broker(monkeypatch, fake, RotatingMock)
+    login_id = worker_a.start("t@example.com")
+    worker_b.resend(login_id)
+    seen = worker_a._store.get(login_id, time.time())
+    assert seen["session_id"] == "rotated"
+
+
+def test_redis_store_falls_back_without_redis_url(monkeypatch):
+    monkeypatch.delenv("REDIS_URL", raising=False)
+    assert L._redis_client() is None
+    broker = L.MockEspnLoginBroker()
+    assert isinstance(broker._store, L._Store)
