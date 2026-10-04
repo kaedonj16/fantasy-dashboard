@@ -665,7 +665,8 @@
     s = s || _state.scoring || {};
     var pts = _n(L.pass_yds) * _n(s.pass_yd) + _n(L.pass_td) * _n(s.pass_td) + _n(L.int) * _n(s.pass_int)
       + _n(L.rush_yds) * _n(s.rush_yd) + _n(L.rush_td) * _n(s.rush_td)
-      + _n(L.rec) * _n(s.rec) + _n(L.rec_yds) * _n(s.rec_yd) + _n(L.rec_td) * _n(s.rec_td);
+      + _n(L.rec) * _n(s.rec) + _n(L.rec_yds) * _n(s.rec_yd) + _n(L.rec_td) * _n(s.rec_td)
+      + _n(L.fum_lost) * _n(s.fum_lost);
     // Two-point conversions (passing / rushing / receiving) resolve through the
     // same league scoring dictionary as every other stat -- never a hard-coded 2.
     // A league that omits or customizes these keys is respected exactly.

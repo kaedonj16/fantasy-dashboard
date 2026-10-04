@@ -468,6 +468,28 @@ def _play_text(play: dict) -> str:
     )
 
 
+def _fumble_lost_fumbler(text: str, team: str) -> str:
+    """Return the fumbler's booth name if ``text`` describes a fumble LOST by ``team``.
+
+    Tank01 per-play playerStats often omit the fumble, but the booth line
+    spells it out ("D.Maye sacked at BUF 30 for -7 yards (E.Oliver).
+    FUMBLES (E.Oliver) [E.Oliver], RECOVERED by BUF-G.Gaines at BUF 30.").
+    A fumble is LOST only when the other team recovers it, so an own-team
+    recovery or a ball out of bounds returns "". The fumbler is the ball
+    carrier: the first named actor in the booth line.
+    """
+    import re
+    text = text or ""
+    team = (team or "").upper()
+    if not text or not team or "fumble" not in text.lower():
+        return ""
+    m = re.search(r"RECOVERED BY ([A-Z]{2,3})-", text, re.IGNORECASE)
+    if not m or m.group(1).upper() == team:
+        return ""
+    names = re.findall(r"\b([A-Za-z]\.[A-Za-z][A-Za-z'.\-]*)\b", text)
+    return names[0] if names else ""
+
+
 def _stat_line_nonzero(line: dict) -> bool:
     return any(float(v or 0) for v in (line or {}).values())
 
@@ -743,7 +765,20 @@ def extract_pbp_plays(
             team = _s(_first(ps, "teamAbv", "team", "teamAbbreviation"))
             if team and not offense_team:
                 offense_team = team
-            
+
+            # Fumble-lost fallback: Tank01 per-play playerStats often omit the
+            # fumble, but the booth line spells it out ("D.Maye sacked ...
+            # FUMBLES ..., RECOVERED by BUF-G.Gaines"). Credit the fumbler
+            # when the ball went to the opponent. Sacks stay unscored:
+            # standard rules do not penalize QBs for sack yardage.
+            if not line.get("fum_lost"):
+                fumbler = _fumble_lost_fumbler(text, team)
+                if fumbler and long_name and (
+                    _extract_first_initial_last(long_name)
+                    == _extract_first_initial_last(fumbler)
+                ):
+                    line["fum_lost"] = 1.0
+
             role = ("passer" if line.get("pass_yds") or line.get("pass_td") or line.get("int")
                     else "receiver" if line.get("rec") or line.get("rec_yds")
                     else "target" if line.get("targets")
