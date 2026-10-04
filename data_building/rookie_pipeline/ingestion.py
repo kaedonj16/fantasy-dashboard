@@ -754,6 +754,69 @@ CFBD_NAME_MAPPINGS = {
 }
 
 
+def fetch_cfbd_player_ppa(draft_year: int) -> Dict[str, Dict[int, Dict[str, float]]]:
+    """
+    Fetch per-player Predicted Points Added (PPA) from CFBD for the 3 seasons
+    before `draft_year`. PPA is the best free proxy for PFF's 0-100 film grades.
+
+    Endpoint: GET /ppa/players/season?year=X&seasonType=regular
+    Returns per-player averagePPA broken down by play type.
+
+    Returns:
+        {player_name_lower: {year: {"passing_ppa": float, "rushing_ppa": float,
+                                     "receiving_ppa": float, "overall_ppa": float}}}
+    Returns {} silently if CFBD_API_KEY is not set or the fetch fails.
+    Fail-soft: missing PPA data must never break the pipeline.
+    """
+    if not CFBD_KEY:
+        print("[cfbd_ppa] No CFBD_API_KEY - skipping PPA fetch")
+        return {}
+
+    years = [draft_year - 1, draft_year - 2, draft_year - 3]
+    result: Dict[str, Dict[int, Dict[str, float]]] = {}
+
+    for yr in years:
+        try:
+            data = _cfbd_get(
+                "/ppa/players/season",
+                {"year": yr, "seasonType": "regular"},
+                retries=2,
+            ) or []
+        except Exception as exc:
+            print(f"[cfbd_ppa] Year {yr} error: {exc}")
+            continue
+
+        count = 0
+        for row in data:
+            try:
+                name = (row.get("player") or "").strip().lower()
+                if not name:
+                    continue
+                # averagePPA is a dict like {"passing": 0.25, "rushing": 0.12, ...}
+                # or a flat number depending on API version; handle both
+                avg_ppa = row.get("averagePPA") or {}
+                if isinstance(avg_ppa, dict):
+                    passing = float(avg_ppa.get("passing") or 0.0)
+                    rushing = float(avg_ppa.get("rushing") or 0.0)
+                    receiving = float(avg_ppa.get("receiving") or 0.0)
+                else:
+                    # Flat number: treat as overall
+                    passing = rushing = receiving = 0.0
+                overall = float(row.get("averagePPA") or 0.0) if not isinstance(avg_ppa, dict) else (passing + rushing + receiving)
+                result.setdefault(name, {})[yr] = {
+                    "passing_ppa": round(passing, 4),
+                    "rushing_ppa": round(rushing, 4),
+                    "receiving_ppa": round(receiving, 4),
+                    "overall_ppa": round(overall, 4),
+                }
+                count += 1
+            except (TypeError, ValueError, AttributeError):
+                continue
+        print(f"[cfbd_ppa] Loaded PPA for {yr}: {count} players")
+
+    return result
+
+
 def fetch_cfbd_college_stats(
     draft_year: int,
     fetch_games_played: bool = False,
@@ -855,6 +918,15 @@ def fetch_cfbd_college_stats(
             print(f"[cfbd] WARNING: depth rank computation failed ({exc}), skipping")
             depth_ranks = {}
 
+        # Fetch per-player PPA (replaces PFF film grades with a free objective metric)
+        print("[cfbd] Fetching player PPA")
+        try:
+            ppa_map = fetch_cfbd_player_ppa(draft_year)
+            print(f"[cfbd] PPA loaded for {len(ppa_map)} players")
+        except Exception as exc:
+            print(f"[cfbd] WARNING: PPA fetch failed ({exc}), continuing without PPA")
+            ppa_map = {}
+
         # Collapse into per-player season lists keyed by lowercase name
         print("[cfbd] Building player season summaries")
         all_names: set = set()
@@ -876,6 +948,13 @@ def fetch_cfbd_college_stats(
                         dr_info = depth_ranks.get((name, yr), {})
                         season_dict["depth_rank"] = dr_info.get("depth_rank")
                         season_dict["position_group_size"] = dr_info.get("position_group_size")
+                        # Merge PPA data (free replacement for PFF film grades)
+                        ppa_info = (ppa_map.get(name) or {}).get(yr, {})
+                        if ppa_info:
+                            season_dict["cfbd_passing_ppa"] = ppa_info.get("passing_ppa")
+                            season_dict["cfbd_rushing_ppa"] = ppa_info.get("rushing_ppa")
+                            season_dict["cfbd_receiving_ppa"] = ppa_info.get("receiving_ppa")
+                            season_dict["cfbd_overall_ppa"] = ppa_info.get("overall_ppa")
                         seasons.append(season_dict)
                     except Exception as exc:
                         print(f"[cfbd] ERROR building season for '{name}' year {yr} - {type(exc).__name__}: {exc}")

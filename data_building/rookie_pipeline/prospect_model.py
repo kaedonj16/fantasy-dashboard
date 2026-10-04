@@ -517,6 +517,13 @@ def calc_production_score(
     # Position-specific advanced metric bonuses from rookie source data.
     if eval_metrics and pos in ("WR", "TE"):
         ccr = _eval_metric_percent(eval_metrics, "contested_catch_rate", min_confidence=0.45)
+        if ccr is None:
+            # Fallback to Reception Perception when PFF contested_catch_rate is absent.
+            # RP uses a 38-70 scale vs PFF's 0-100; map RP onto the PFF scale.
+            ccr_rp = _eval_metric_value(eval_metrics, "contested_catch_rate_rp", min_confidence=0.65)
+            if ccr_rp is not None:
+                # Linear map: RP 38 -> PFF 30, RP 70 -> PFF 85
+                ccr = 30.0 + (float(ccr_rp) - 38.0) * (55.0 / 32.0)
         if ccr is not None:
             prod = _clip(prod + _clip((ccr - 45.0) * 0.10, -4.0, 4.0))
 
@@ -530,13 +537,7 @@ def calc_production_score(
             prod = _clip(prod + adot_bonus)
 
     elif eval_metrics and pos == "RB":
-        elusive = _eval_metric_value(eval_metrics, "elusive_rating", min_confidence=0.45)
-        if elusive is not None:
-            # Scale-based and symmetric: 0 at elusive=90 (roughly average), up to
-            # +3 at 130 (elite), down to -2.4 at 55 (poor). Cap reduced so elite stats
-            # that already produce a high base score can't push the total over 100.
-            elusive_delta = _clip((float(elusive) - 90.0) / 40.0, -0.8, 1.0)
-            prod = _clip(prod + (elusive_delta * 3.0))
+        # elusive_rating dropped: was PFF-only, no free replacement.
 
         breakaway = _eval_metric_percent(eval_metrics, "explosive_run_rate", min_confidence=0.40)
         if breakaway is not None:
@@ -545,15 +546,13 @@ def calc_production_score(
             prod = _clip(prod + (breakaway_delta * 2.0))
 
     elif eval_metrics and pos == "QB":
+        # pff_passing_grade is now sourced from CFBD PPA (free replacement for PFF).
+        # See rookie_sources.py for the PPA-to-grade mapping.
         pff_pass = _eval_metric_value(eval_metrics, "pff_passing_grade", min_confidence=0.45)
         if pff_pass is not None:
             prod = _clip(prod + _clip((float(pff_pass) - 70.0) * 0.20, -4.0, 7.0))
 
-        btt = _eval_metric_percent(eval_metrics, "big_time_throw_rate", min_confidence=0.45)
-        if btt is None:
-            btt = _eval_metric_percent(eval_metrics, "btt_rate", min_confidence=0.45)
-        if btt is not None:
-            prod = _clip(prod + _clip((btt - 4.0) * 0.9, -3.0, 5.0))
+        # big_time_throw_rate dropped: was PFF-only, no free replacement.
 
     # Scheme-inflation discount: high-volume spread systems inflate skill-position
     # production stats.  Applied to both WR and TE - air-raid volume pumps TE
@@ -579,7 +578,7 @@ def calc_efficiency_score(
     across seasons is more predictive than a single-year peak.
 
     eval_metrics (optional): When available and confidence is sufficient:
-    - QB: adjusted_comp_pct replaces raw completion_pct; twp_rate supplements td_int
+    - QB: nfl_passer_rating (computed from box score) supplements efficiency
     - WR/TE: tprr proxy supplements yds_per_reception via a soft blend
     """
     if not seasons:
@@ -599,11 +598,7 @@ def calc_efficiency_score(
             yprr_score = _scale(float(yprr), 1.2, 2.8)
             eff = _clip(eff + (yprr_score - 50.0) * 0.16)
 
-        # PFF route running grade - strong predictor of NFL separation ability
-        route_grade = _eval_metric_value(eval_metrics, "grades_pass_route", min_confidence=0.75)
-        if route_grade is not None:
-            route_score = _scale(float(route_grade), 58.0, 90.0)
-            eff = _clip(eff + (route_score - 50.0) * 0.10)
+        # grades_pass_route dropped: was PFF-only, no free replacement.
 
         # Success rate vs. press coverage
         press_sr = _eval_metric_value(eval_metrics, "success_rate_vs_press", min_confidence=0.70)
@@ -658,33 +653,17 @@ def calc_efficiency_score(
             _scale(ms,   0.10, 0.45) * 0.15 +
             _scale(ypr,  5.0, 12.0)  * 0.25   # increased: receiving efficiency matters for dynasty RBs
         )
-        # PFF pass route grade - predicts pass-game role and long-term dynasty value
-        route_grade = _eval_metric_value(eval_metrics, "grades_pass_route", min_confidence=0.70)
-        if route_grade is not None:
-            route_score = _scale(float(route_grade), 55.0, 85.0)
-            eff = _clip(eff + (route_score - 50.0) * 0.08)
+        # grades_pass_route dropped: was PFF-only, no free replacement.
 
     elif pos == "QB":
         ypa   = _safe(ls.get("yds_per_attempt"), 7.0)
         td_int= _safe(ls.get("td_int_ratio"),     2.0)
 
-        # Use adjusted_comp_pct from eval pipeline when available and confident;
-        # otherwise fall back to raw completion_pct from college stats.
-        adj_cpct = _eval_metric_percent(eval_metrics, "adjusted_comp_pct", min_confidence=0.55)
-        if adj_cpct is not None:
-            cpct = _safe(adj_cpct, 62.0)
-        else:
-            cpct = _safe(ls.get("completion_pct"), 62.0)
+        # adjusted_comp_pct dropped (was PFF-only). Use raw completion_pct.
+        cpct = _safe(ls.get("completion_pct"), 62.0)
 
-        # twp_rate proxy (interception rate) can supplement td_int signal.
-        # Lower twp_rate → better decision-making → slightly boost td_int weight.
-        twp = _eval_metric_value(eval_metrics, "twp_rate", min_confidence=0.55)
-        if twp is not None:
-            # twp_rate in [0, 5]; lower is better.  Treat as mild modifier on td_int score.
-            twp_penalty = _clip(float(twp) / 5.0, 0.0, 1.0)  # 0 = great, 1 = bad
-            td_int_mod = td_int * (1.0 + 0.15 * (1.0 - twp_penalty))
-        else:
-            td_int_mod = td_int
+        # twp_rate dropped: was PFF-only, no free replacement.
+        td_int_mod = td_int
 
         eff   = (
             _scale(ypa,      6.5, 10.5) * 0.45 +
@@ -715,11 +694,7 @@ def calc_efficiency_score(
             tprr_conf  = (eval_metrics.get("tprr") or {}).get("confidence", 0.35)
             eff = eff * (1.0 - 0.08 * tprr_conf) + tprr_score * (0.08 * tprr_conf)
 
-        # PFF route running grade - separates receiving specialists from blocking TEs
-        route_grade = _eval_metric_value(eval_metrics, "grades_pass_route", min_confidence=0.70)
-        if route_grade is not None:
-            route_score = _scale(float(route_grade), 55.0, 85.0)
-            eff = _clip(eff + (route_score - 50.0) * 0.08)
+        # grades_pass_route dropped: was PFF-only, no free replacement.
 
     else:
         return 52.0
@@ -741,33 +716,26 @@ def calc_efficiency_score(
 
     # Advanced efficiency adjustments from evaluation metrics.
     if eval_metrics and pos in ("WR", "TE"):
-        drop_rate = _eval_metric_percent(eval_metrics, "drop_rate", min_confidence=0.45)
-        if drop_rate is not None:
-            # Lower drop rate is better.
-            eff = _clip(eff + _clip((7.0 - drop_rate) * 1.1, -6.0, 6.0))
+        # drop_rate dropped: was PFF-only, no free replacement.
 
         yac_rec = _eval_metric_value(eval_metrics, "yac_per_att", min_confidence=0.45)
         if yac_rec is not None:
             eff = _clip(eff + _clip((float(yac_rec) - 5.0) * 1.6, -4.0, 6.0))
 
     elif eval_metrics and pos == "RB":
+        # pff_rushing_grade is now sourced from CFBD PPA (free replacement for PFF).
         pff_rush = _eval_metric_value(eval_metrics, "pff_rushing_grade", min_confidence=0.45)
         if pff_rush is not None:
             eff = _clip(eff + _clip((float(pff_rush) - 68.0) * 0.22, -5.0, 7.0))
 
     elif eval_metrics and pos == "QB":
-        adj_cpct = _eval_metric_percent(eval_metrics, "adjusted_comp_pct", min_confidence=0.45)
-        if adj_cpct is not None:
-            eff = _clip(eff + _clip((adj_cpct - 65.0) * 0.35, -5.0, 7.0))
-
+        # adjusted_comp_pct dropped: was PFF-only, no free replacement.
+        # nfl_passer_rating is now computed from box-score data (free replacement).
         psr = _eval_metric_value(eval_metrics, "nfl_passer_rating", min_confidence=0.45)
         if psr is not None:
             eff = _clip(eff + _clip((float(psr) - 85.0) * 0.18, -4.0, 6.0))
 
-        p2s = _eval_metric_percent(eval_metrics, "pressure_to_sack_rate", min_confidence=0.45)
-        if p2s is not None:
-            # Lower pressure-to-sack conversion is better QB pocket behavior.
-            eff = _clip(eff + _clip((20.0 - p2s) * 0.35, -5.0, 5.0))
+        # pressure_to_sack_rate dropped: was PFF-only, no free replacement.
 
     # Scheme-inflation discount: high-volume spread systems inflate efficiency
     # metrics (yds/rec, yds/target) for WRs and TEs alike.
@@ -1679,7 +1647,6 @@ def calc_translation_adjustment(
     projected_pick = _safe((draft_capital or {}).get("projected_pick"), 300.0)
 
     if position == "WR":
-        drop_rate = _safe(latest.get("drop_rate"), 0.0)
         contested = _safe(latest.get("contested_catch_rate"), 0.0)
         yac = _safe(latest.get("yards_after_catch_per_reception"), 0.0)
         yprr = _safe(latest.get("yards_per_route_run"), 0.0)
@@ -1689,8 +1656,7 @@ def calc_translation_adjustment(
         rec_tds_pg = _safe(latest.get("rec_tds_pg"), _safe(latest.get("receiving_tds"), 0.0) / gp)
 
         # Penalize classic WR false-positive profiles (high volume, poor translation traits)
-        if drop_rate >= 10.0:
-            adj -= 2.0
+        # drop_rate check removed: was PFF-only, no free replacement.
         if contested > 0 and contested < 45.0:
             adj -= 1.5
         if yac > 0 and yac < 2.8:
@@ -2208,13 +2174,7 @@ def _build_reasons(
             elif pct < 40:
                 adv.append(f"{pct:.0f}% contested catch rate - struggles in jump-ball situations")
 
-        dr = ls.get("drop_rate")
-        if dr is not None:
-            dpct = float(dr)
-            if dpct <= 3.0:
-                adv.append(f"{dpct:.1f}% drop rate - elite ball security")
-            elif dpct >= 10.0:
-                adv.append(f"{dpct:.0f}% drop rate - ball security concern")
+        # drop_rate bullets removed: was PFF-only, no free replacement.
 
         yac = ls.get("yards_after_catch_per_reception")
         if yac is not None:
@@ -2234,13 +2194,7 @@ def _build_reasons(
             elif adot <= 6.0:
                 adv.append(f"{adot:.1f}-yd aDOT - short-area route specialist")
 
-        pff_off = ls.get("grades_offense")
-        if pff_off is not None:
-            pff_off = float(pff_off)
-            if pff_off >= 85.0:
-                adv.append(f"PFF offensive grade {pff_off:.1f} - elite overall grade")
-            elif pff_off >= 75.0:
-                adv.append(f"PFF offensive grade {pff_off:.1f} - above-average")
+        # grades_offense bullets removed: was PFF-only, no free replacement.
 
         if pos == "WR":
             sr = ls.get("slot_rate")
@@ -2261,21 +2215,8 @@ def _build_reasons(
     elif pos == "RB":
         adv = []
 
-        pff_off = ls.get("grades_offense")
-        if pff_off is not None:
-            pff_off = float(pff_off)
-            if pff_off >= 80.0:
-                adv.append(f"PFF offensive grade {pff_off:.1f} - elite overall grade")
-            elif pff_off >= 70.0:
-                adv.append(f"PFF offensive grade {pff_off:.1f} - above-average")
-
-        elusive = ls.get("elusive_rating")
-        if elusive is not None:
-            elusive = float(elusive)
-            if elusive >= 90.0:
-                adv.append(f"Elusive rating {elusive:.1f} - exceptional open-field threat")
-            elif elusive >= 70.0:
-                adv.append(f"Elusive rating {elusive:.1f} - above-average evasion ability")
+        # grades_offense bullets removed: was PFF-only, no free replacement.
+        # elusive_rating bullets removed: was PFF-only, no free replacement.
 
         bp = ls.get("breakaway_percentage")
         if bp is not None:
@@ -2290,29 +2231,17 @@ def _build_reasons(
     elif pos == "QB":
         adv = []
 
+        # pff_passing_grade is now sourced from CFBD PPA; reword bullet accordingly.
         pff_pass = ls.get("pff_passing_grade")
         if pff_pass is not None:
             pff_pass = float(pff_pass)
             if pff_pass >= 85.0:
-                adv.append(f"PFF passing grade {pff_pass:.1f} - elite passer grade")
+                adv.append(f"Passing efficiency grade {pff_pass:.1f} - elite passer grade")
             elif pff_pass >= 75.0:
-                adv.append(f"PFF passing grade {pff_pass:.1f} - above-average")
+                adv.append(f"Passing efficiency grade {pff_pass:.1f} - above-average")
 
-        acr = ls.get("adjusted_completion_rate")
-        if acr is not None:
-            apct = float(acr)
-            if apct >= 75.0:
-                adv.append(f"{apct:.0f}% adjusted completion rate - highly accurate")
-            elif apct <= 58.0:
-                adv.append(f"{apct:.0f}% adjusted completion rate - accuracy concern")
-
-        btt = ls.get("big_time_throw_rate")
-        if btt is not None:
-            bpct = float(btt)
-            if bpct >= 8.0:
-                adv.append(f"{bpct:.1f}% big-time throw rate - attacks deep coverage effectively")
-            elif bpct >= 5.0:
-                adv.append(f"{bpct:.1f}% big-time throw rate - willing to push ball downfield")
+        # adjusted_completion_rate bullets removed: was PFF-only, no free replacement.
+        # big_time_throw_rate bullets removed: was PFF-only, no free replacement.
 
         adot = ls.get("avg_depth_of_target")
         if adot is not None:

@@ -4,16 +4,17 @@ from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from data_building.rookie_pipeline.rookie_metric_derivations import (
-    derive_adjusted_comp_pct_proxy,
+    derive_avg_depth_of_target_proxy,
     derive_explosive_run_rate,
     derive_mtf_per_att_proxy,
+    derive_nfl_passer_rating,
     derive_performance_vs_top_defenses,
     derive_player_level_sos,
     derive_routes_run_proxy,
     derive_tprr_proxy,
     derive_true_early_declare,
-    derive_twp_rate_proxy,
     derive_yac_per_att_proxy,
+    derive_yac_per_reception_proxy,
     derive_yprr_proxy,
 )
 from data_building.rookie_pipeline.rookie_storage import utc_now_iso
@@ -108,20 +109,27 @@ class ProspectSeasonStatsSource(RookieSource):
             ),
             0.65,
         ),
-        "pressure_to_sack_rate": ("pressure_to_sack_rate", 0.82),
-        "adjusted_comp_pct": ("adjusted_completion_rate", 0.86),
-        "btt_rate": ("big_time_throw_rate", 0.86),
-        "big_time_throw_rate": ("big_time_throw_rate", 0.86),
+        # PFF-only metrics dropped (no free replacement): pressure_to_sack_rate,
+        # adjusted_comp_pct, btt_rate, big_time_throw_rate, drop_rate
         "avg_depth_of_target": ("avg_depth_of_target", 0.84),
-        "drop_rate": ("drop_rate", 0.84),
-        "grades_offense": ("grades_offense", 0.90),
-        "grades_pass_block": ("grades_pass_block", 0.90),
-        "grades_pass_route": ("grades_pass_route", 0.90),
+        # PFF-only metrics dropped (no free replacement): grades_offense,
+        # grades_pass_block, grades_pass_route, elusive_rating
         "yprr": ("yprr", 0.88),
-        "elusive_rating": ("elusive_rating", 0.90),
-        "pff_rushing_grade": ("pff_rushing_grade", 0.90),
-        "pff_passing_grade": ("pff_passing_grade", 0.90),
-        "nfl_passer_rating": ("nfl_passer_rating", 0.88),
+        # PFF film grades replaced by CFBD PPA (free, objective, automated).
+        # PPA mapped onto the PFF 0-100 grade scale: 70 = average (PPA 0.0),
+        # 85 = elite (PPA ~0.43), 50 = poor (PPA ~-0.57).
+        "pff_rushing_grade": (
+            lambda sr: round(max(50.0, min(99.0, 70.0 + float(sr.get("cfbd_rushing_ppa") or 0.0) * 35.0)), 1)
+            if sr.get("cfbd_rushing_ppa") is not None else None,
+            0.82,
+        ),
+        "pff_passing_grade": (
+            lambda sr: round(max(50.0, min(99.0, 70.0 + float(sr.get("cfbd_passing_ppa") or 0.0) * 35.0)), 1)
+            if sr.get("cfbd_passing_ppa") is not None else None,
+            0.82,
+        ),
+        # nfl_passer_rating now computed via derivation (see DerivedRookieMetricsSource);
+        # the PFF column mapping is removed since the import is deleted.
         "success_rate_vs_press": ("success_rate_vs_press", 0.85),
         "success_rate_vs_man":   ("success_rate_vs_man",   0.85),
         "success_rate_vs_zone":  ("success_rate_vs_zone",  0.85),
@@ -131,56 +139,32 @@ class ProspectSeasonStatsSource(RookieSource):
     }
 
     # QB-only metrics - skipped automatically for non-QB positions in fetch_player_season_metrics
-    _QB_ONLY_METRICS = frozenset({"adjusted_comp_pct", "twp_rate"})
+    # (adjusted_comp_pct and twp_rate were removed when PFF was dropped)
+    _QB_ONLY_METRICS = frozenset()
 
     # Inline calculations where we need more than one field
     # key → callable(season_record) → Optional[float]
-    _INLINE: Dict[str, Any] = {
-        # adjusted_comp_pct: raw completion_pct direct proxy (QB only, pass_attempts >= 50)
-        "adjusted_comp_pct": lambda sr: (
-            sr.get("completion_pct")
-            if sr.get("completion_pct") is not None
-            and sr.get("pass_attempts") is not None
-            and float(sr.get("pass_attempts", 0)) >= 50
-            else None
-        ),
-        # twp_rate proxy: INT / pass_attempts * 100 (QB only, pass_attempts >= 50)
-        "twp_rate": lambda sr: (
-            round((float(sr["interceptions"]) / float(sr["pass_attempts"])) * 100.0, 3)
-            if sr.get("interceptions") is not None
-            and sr.get("pass_attempts") is not None
-            and float(sr.get("pass_attempts", 0)) >= 50
-            else None
-        ),
-    }
-    _INLINE_CONFIDENCE: Dict[str, float] = {
-        "adjusted_comp_pct": 0.65,
-        "twp_rate": 0.55,
-    }
+    # (adjusted_comp_pct and twp_rate inlines removed: were PFF-only, no free replacement)
+    _INLINE: Dict[str, Any] = {}
+    _INLINE_CONFIDENCE: Dict[str, float] = {}
 
-    # These new vendor metrics are currently populated for the latest season only
-    # (2025 in the current dataset). Restricting to the player's latest season
-    # avoids polluting older-season metric timelines with guaranteed NULL lookups.
+    # These vendor metrics are currently populated for the latest season only.
+    # Restricting to the player's latest season avoids polluting older-season
+    # metric timelines with guaranteed NULL lookups.
+    # PFF-only metrics (drop_rate, pressure_to_sack_rate, adjusted_comp_pct,
+    # btt_rate, big_time_throw_rate, grades_offense, grades_pass_block,
+    # grades_pass_route, elusive_rating) were removed when PFF was dropped.
     _LATEST_SEASON_ONLY_METRICS = frozenset({
         "alignment_slot_pct",
         "alignment_wide_pct",
         "alignment_inline_pct",
         "contested_catch_rate",
         "avg_depth_of_target",
-        "drop_rate",
         "yac_per_att",
         "mtf_per_att",
         "explosive_run_rate",
         "pass_block_snaps",
-        "pressure_to_sack_rate",
-        "adjusted_comp_pct",
-        "btt_rate",
-        "big_time_throw_rate",
-        "grades_offense",
-        "grades_pass_block",
-        "grades_pass_route",
         "yprr",
-        "elusive_rating",
         "pff_rushing_grade",
         "pff_passing_grade",
         "nfl_passer_rating",
@@ -319,10 +303,20 @@ class DerivedRookieMetricsSource(RookieSource):
             "routes_run": lambda: derive_routes_run_proxy(season_record, position),
             "yprr": lambda: derive_yprr_proxy(season_record, position),
             "tprr": lambda: derive_tprr_proxy(season_record, position),
-            "yac_per_att": lambda: derive_yac_per_att_proxy(season_record),
+            # yac_per_att is position-specific: RBs use yards-after-contact proxy,
+            # WR/TE use yards-after-catch-per-reception proxy (PFF replacement)
+            "yac_per_att": lambda: (
+                derive_yac_per_att_proxy(season_record) if position == "RB"
+                else derive_yac_per_reception_proxy(season_record) if position in ("WR", "TE")
+                else None
+            ),
             "mtf_per_att": lambda: derive_mtf_per_att_proxy(season_record),
-            "adjusted_comp_pct": lambda: derive_adjusted_comp_pct_proxy(season_record) if position == "QB" else None,
-            "twp_rate": lambda: derive_twp_rate_proxy(season_record) if position == "QB" else None,
+            # adjusted_comp_pct and twp_rate DROPPED: were PFF-only, no free replacement.
+            # Their derivation proxies are retained in rookie_metric_derivations.py
+            # for potential future use but are not wired into the pipeline.
+            # PFF replacements: computed from box-score data, no PFF subscription needed
+            "nfl_passer_rating": lambda: derive_nfl_passer_rating(season_record) if position == "QB" else None,
+            "avg_depth_of_target": lambda: derive_avg_depth_of_target_proxy(season_record) if position in ("WR", "TE") else None,
         }
         confidences = {
             "explosive_run_rate": 0.45,
@@ -334,10 +328,11 @@ class DerivedRookieMetricsSource(RookieSource):
             "routes_run": 0.30,
             "yprr": 0.28,
             "tprr": 0.28,
-            "yac_per_att": 0.40,
+            "yac_per_att": 0.35,  # 0.40 for RB contact proxy, 0.35 for WR/TE reception proxy; use lower
             "mtf_per_att": 0.30,
-            "adjusted_comp_pct": 0.60,
-            "twp_rate": 0.65,
+            # PFF replacements
+            "nfl_passer_rating": 0.95,
+            "avg_depth_of_target": 0.50,
         }
 
         player_key = player.get("player_id") or player.get("name") or "unknown"
