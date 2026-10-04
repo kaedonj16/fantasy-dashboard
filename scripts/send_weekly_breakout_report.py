@@ -161,6 +161,7 @@ def main(argv=None) -> int:
         print()
         print("email not configured, report printed only: no recipient "
               "(set BREAKOUT_REPORT_EMAIL).")
+        print("[email] breakout-report: sent=0 (no recipient configured)")
         return 0
 
     from utils.email_delivery import is_configured
@@ -168,15 +169,18 @@ def main(argv=None) -> int:
         print()
         print("email not configured, report printed only: no Brevo API "
               "key and no SMTP credentials are set.")
+        print("[email] breakout-report: sent=0 (email not configured)")
         return 0
 
     result = deliver(subject, body, recipient)
     print()
     if result.ok:
         print(f"Report emailed to {recipient} via {result.provider}.")
+        print(f"[email] breakout-report: sent=1 (recipient={recipient})")
     else:
         print(f"Email send failed ({result.provider}: "
               f"{result.error or 'unknown error'}); report printed only.")
+        print(f"[email] breakout-report: sent=0 (error={result.error or 'unknown'})")
     return 0
 
 

@@ -530,12 +530,16 @@ def _run_cron_notifications(kind, account_id=None, email=None, force=False):
         if kind == "daily":
             run_all_daily()
         elif kind == "scorezone":
-            run_scorezone_td_poll()
+            res = run_scorezone_td_poll() or {}
+            logger.info("[cron/notifications] scorezone: sent=%s (games=%s, leagues=%s)",
+                        res.get("sent", 0), res.get("games", 0), res.get("leagues", 0))
         elif kind == "weekly":
             # Weekly email digest. Safe to call more often -- it de-dupes per
             # account per ISO week.
             from utils.weekly_email import send_weekly_digests
-            send_weekly_digests(account_id=account_id, email=email, force=force)
+            res = send_weekly_digests(account_id=account_id, email=email, force=force) or {}
+            logger.info("[cron/notifications] weekly digest: sent=%s (eligible=%s, failed=%s)",
+                        res.get("sent", 0), res.get("eligible", 0), res.get("failed", 0))
         else:
             run_hourly()
     except Exception as exc:
