@@ -18,6 +18,7 @@ def build_dashboard_body(ctx: dict) -> str:
         _render_season_review_card,
         _render_usage_movers,
         _roster_moves_alert_html,
+        _losing_streak_trade_html,
         _section_title_link,
         _standings_movement,
         _trade_window_card_html,
@@ -71,6 +72,7 @@ def build_dashboard_body(ctx: dict) -> str:
     lineup_alert_html = _viewer_lineup_alert_html(ctx, viewer_roster_id)
     roster_moves_html = _roster_moves_alert_html(ctx, viewer_roster_id)
     trade_window_html = _trade_window_card_html(ctx, viewer_roster_id)
+    losing_trade_html = _losing_streak_trade_html(ctx, viewer_roster_id)
     season_review_html = _render_season_review_card(ctx, viewer_roster_id, df_weekly, team_stats)
 
     # Tour / empty leagues can hand over a columnless or empty frame. Bind
@@ -411,6 +413,8 @@ def build_dashboard_body(ctx: dict) -> str:
             return 70
         if key == "trade":
             return 90 if "tw-urgent" in card_html else 50
+        if key == "trade-losing":
+            return 85  # losing teams need action now, just below urgent trades
         if key == "roster":
             return 40
         return 0
@@ -418,6 +422,7 @@ def build_dashboard_body(ctx: dict) -> str:
     _action_cards = [
         ("lineup", lineup_alert_html),
         ("waiver", do_next_waiver_html),
+        ("trade-losing", losing_trade_html),
         ("trade", trade_window_html),
         ("roster", roster_moves_html),
     ]

@@ -48,6 +48,7 @@ def test_recap_ai_is_premium_and_preview_is_labeled():
 
 def _preview():
     pytest.importorskip("pandas")
+    pytest.importorskip("openai")  # weekly_recap pulls openai via ai.client
     from dashboard_services.ai.weekly_recap import get_weekly_ai_recap_preview
     return get_weekly_ai_recap_preview()
 
