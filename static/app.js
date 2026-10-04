@@ -4276,7 +4276,7 @@ function showLoginGate(target, opts) {
       headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache', 'X-BR-Refresh': '1' }
     };
     var request = typeof window.brFetchWithTimeout === 'function'
-      ? window.brFetchWithTimeout(location.href, opts, 30000)
+      ? window.brFetchWithTimeout(location.href, opts, 60000)
       : fetch(location.href, opts);
     return request.then(function (res) {
       if (!res.ok) throw new Error('page ' + res.status);
