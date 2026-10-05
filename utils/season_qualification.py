@@ -177,6 +177,103 @@ def player_completed_weeks(
     return completed
 
 
+def bulk_player_completed_weeks(
+    player_ids: Iterable[str],
+    season: int,
+) -> dict[str, list[int]]:
+    """{player_id: completed weeks} for many players, efficiently.
+
+    Same per-player finality semantics as :func:`player_completed_weeks`
+    (a week counts when THAT player's team game is final; byes never count;
+    chronological break on first non-final scheduled game), but hoists the
+    shared work: one get_nfl_state() call, one schedule load per week, and
+    one team-map load. Use for bulk consumers like the rankings page where
+    calling player_completed_weeks() per player would repeat that work
+    thousands of times. Never raises; players with no team data map to [].
+    """
+    season = int(season)
+    pids = [str(p) for p in (player_ids or [])]
+    result: dict[str, list[int]] = {pid: [] for pid in pids}
+    if not pids:
+        return result
+
+    # Bound the scan (mirrors player_completed_weeks).
+    try:
+        from dashboard_services.api import get_nfl_state
+        current = get_nfl_state() or {}
+        cur_season = int(current.get("season") or 0)
+        cur_week = int(current.get("week") or 0)
+    except Exception:
+        cur_season, cur_week = 0, 0
+    if cur_season and season > cur_season:
+        return result
+    if cur_season and season == cur_season and cur_week:
+        max_week = min(18, cur_week)
+    else:
+        max_week = 18
+
+    # Team per player per week (handles mid-season trades).
+    try:
+        from data_building.external_data.player_team_history import (
+            load_weekly_team_map,
+            season_team_map,
+        )
+        weekly_map = load_weekly_team_map(season) or {}
+        season_map = season_team_map(season) or {}
+    except Exception:
+        weekly_map, season_map = {}, {}
+
+    # Finality per (team, week), loaded once.
+    try:
+        from utils.utils import load_week_schedule
+    except Exception:
+        return result
+    final_by_team_week: dict[tuple[str, int], bool] = {}
+    has_game_by_team_week: dict[tuple[str, int], bool] = {}
+    postponed_by_team_week: dict[tuple[str, int], bool] = {}
+    for week in range(1, max_week + 1):
+        try:
+            games = [g for g in (load_week_schedule(season, week) or [])
+                      if isinstance(g, dict)]
+        except Exception:
+            continue
+        for g in games:
+            for side in ("away", "home"):
+                team = str(g.get(side) or "").strip().upper()
+                if not team:
+                    continue
+                key = (team, week)
+                has_game_by_team_week[key] = True
+                if _is_final(g):
+                    final_by_team_week[key] = True
+                status = str(g.get("gameStatus") or g.get("status") or "").lower()
+                if any(w in status for w in ("postpon", "cancel", "suspend")):
+                    postponed_by_team_week[key] = True
+
+    for pid in pids:
+        completed: list[int] = []
+        for week in range(1, max_week + 1):
+            team = (weekly_map.get(pid) or {}).get(week)
+            if not team:
+                team = season_map.get(pid)
+            team = str(team or "").strip().upper()
+            if not team:
+                continue  # bye week or no team data; never counts against them
+            key = (team, week)
+            if not has_game_by_team_week.get(key):
+                continue
+            if final_by_team_week.get(key):
+                completed.append(week)
+                continue
+            if postponed_by_team_week.get(key):
+                continue  # odd scheduling; keep scanning later weeks
+            # Weeks are chronological: a non-final game means later weeks
+            # have not been played yet.
+            break
+        result[pid] = completed
+    return result
+
+
 def player_sample_note(player_id: str, season: int) -> Optional[str]:
     """Per-player small-sample note, e.g. "Small sample · 3 games".
 

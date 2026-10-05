@@ -38,8 +38,14 @@ def _patch_season(monkeypatch, weekly, weeks=(1, 2), games_min=2):
         _fake_policy(weeks, games_min),
     )
     monkeypatch.setattr(app, "_load_season_weekly_points",
-                        lambda season, scoring: weekly)
+                        lambda season, scoring, weeks=None: weekly)
     monkeypatch.setattr(app, "load_players_index", dict)
+    # Per-player completed weeks (PR #2288): return the full mocked weeks
+    # for every requested player so PPG is computed from the mocked data.
+    monkeypatch.setattr(
+        "utils.season_qualification.bulk_player_completed_weeks",
+        lambda pids, season: {str(_pid): tuple(weeks) for _pid in pids},
+    )
 
 
 def test_current_season_ppg_comes_from_completed_weeks(monkeypatch):
@@ -101,7 +107,7 @@ def test_weekly_loader_failure_returns_empty(monkeypatch):
         _fake_policy((1, 2), 1),
     )
 
-    def _boom(season, scoring):
+    def _boom(season, scoring, weeks=None):
         raise RuntimeError("weekly files unavailable")
 
     monkeypatch.setattr(app, "_load_season_weekly_points", _boom)
@@ -112,7 +118,7 @@ def test_weekly_loader_failure_returns_empty(monkeypatch):
 def test_current_season_ppg_is_scored_full_ppr(monkeypatch):
     seen = {}
 
-    def _loader(season, scoring):
+    def _loader(season, scoring, weeks=None):
         seen["season"] = season
         seen["scoring"] = scoring
         return {"100": [10.0]}
