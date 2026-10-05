@@ -376,6 +376,7 @@ def page_trade_database(platform: str, season: int, league_id: str):
               <button class="otc-day-filter tdb-lf{_tdb_all}" data-lf="all" onclick="tdbFormatFilter('all')">All</button>
               <button class="otc-day-filter tdb-lf{_tdb_dyn}" data-lf="dynasty" onclick="tdbFormatFilter('dynasty')">Dynasty</button>
               <button class="otc-day-filter tdb-lf{_tdb_rd}" data-lf="redraft" onclick="tdbFormatFilter('redraft')">Redraft</button>
+              <button class="otc-day-filter tdb-lf" data-lf="keeper" onclick="tdbFormatFilter('keeper')">Keeper</button>
             </div>
           </div>
         </div>

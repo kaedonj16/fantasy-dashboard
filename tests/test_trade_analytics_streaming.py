@@ -89,10 +89,11 @@ class _FakeConn:
 
 
 def _row(tid, txn, created, num_teams, side, atype, pid,
-         pick_season=None, pick_round=None, pick_order=None):
+         pick_season=None, pick_round=None, pick_order=None, league_type=2):
     return {
         "id": tid, "transaction_id": txn, "created_at": created,
-        "num_teams": num_teams, "side": side, "asset_type": atype,
+        "num_teams": num_teams, "league_type": league_type,
+        "side": side, "asset_type": atype,
         "player_id": pid, "pick_season": pick_season,
         "pick_round": pick_round, "pick_order": pick_order,
     }
@@ -111,9 +112,10 @@ def _sample_rows():
         _row(1, "txn1", c1, 12, "b", "pick", None, 2026, 1, "early"),
         # trade 2: a trade row with NO assets (LEFT JOIN -> side is None)
         _row(2, "txn2", c2, 10, None, None, None),
-        # trade 3: single player each way
-        _row(3, "txn3", c3, 14, "a", "player", "p300"),
-        _row(3, "txn3", c3, 14, "b", "player", "p301"),
+        # trade 3: single player each way, in a KEEPER league (exercises the
+        # new per-format bucket: keeper trades must not leak into dynasty rows)
+        _row(3, "txn3", c3, 14, "a", "player", "p300", league_type=1),
+        _row(3, "txn3", c3, 14, "b", "player", "p301", league_type=1),
     ]
 
 
@@ -150,6 +152,9 @@ def test_compute_passes_run_against_stream(monkeypatch, analytics):
     pkgs = analytics._compute_packages(make_trades, 2025)
 
     assert isinstance(pstats, list) and isinstance(kstats, list) and isinstance(pkgs, list)
+    # Keeper trades bucket separately from dynasty ones (no cross-format leak).
+    formats = {r["league_format"] for r in pstats}
+    assert "keeper" in formats and "dynasty" in formats
     # Feeding the identical trades as a plain list yields identical player rows
     # (proves the loop-source swap is behavior-preserving).
     trades_list = list(analytics._iter_trades(2025))

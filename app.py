@@ -31031,6 +31031,7 @@ def api_trade_intel_trending():
                 SELECT COUNT(*) as total
                 FROM trade_intel_player_stats s
                 WHERE s.season = %s AND s.trade_count > 0
+                  AND s.league_format = 'all'
                 """
             _q = f"""
                 SELECT s.player_id, s.trade_count_7d, s.trade_count_30d, s.trade_count,
@@ -31046,6 +31047,7 @@ def api_trade_intel_trending():
                 LEFT JOIN rookie_rankings rk ON rk.player_id = rp.player_id
                                             AND rk.draft_class_year = rp.draft_class_year
                 WHERE s.season = %s AND s.trade_count > 0
+                  AND s.league_format = 'all'
                 ORDER BY COALESCE(s.trade_count_7d, 0) DESC, s.trade_count DESC
                 LIMIT %s OFFSET %s
                 """
@@ -31058,7 +31060,7 @@ def api_trade_intel_trending():
             # Fall back to most recent season that has data
             if not rows:
                 fallback_season = conn.execute(
-                    "SELECT season FROM trade_intel_player_stats WHERE trade_count > 0 ORDER BY season DESC LIMIT 1"
+                    "SELECT season FROM trade_intel_player_stats WHERE trade_count > 0 AND league_format = 'all' ORDER BY season DESC LIMIT 1"
                 ).fetchone()
                 if fallback_season:
                     # Recalculate count for fallback season
@@ -31188,6 +31190,7 @@ def api_trade_intel_player(player_id: str):
                 LEFT JOIN rookie_rankings rk ON rk.player_id = rp.player_id
                                             AND rk.draft_class_year = rp.draft_class_year
                 WHERE s.player_id = %s AND s.season = %s
+                  AND s.league_format = 'all'
                 """,
                 (_rk_year_p, player_id, season)
             ).fetchone()
@@ -31313,7 +31316,7 @@ def api_trade_database():
             sf_param = False
         sf_clause = "AND l.is_superflex = %s " if sf_param is not None else ""
 
-        # Build dynasty/redraft filter (league_type column: 0=redraft, 2=dynasty)
+        # Build dynasty/redraft/keeper filter (league_type column: 0=redraft, 1=keeper, 2=dynasty)
         from data_building.trade_intel.league_types import league_format_sql_param
         lf_param = league_format_sql_param(league_format)
         lf_clause = "AND l.league_type = %s " if lf_param is not None else ""
@@ -31831,7 +31834,7 @@ def api_trade_intel_similar_trades():
                 _lt_i = int(_lt) if _lt is not None else None
             except (TypeError, ValueError):
                 _lt_i = None
-            _fmt = "dynasty" if _lt_i == 2 else ("redraft" if _lt_i == 0 else None)
+            _fmt = "dynasty" if _lt_i == 2 else ("redraft" if _lt_i == 0 else ("keeper" if _lt_i == 1 else None))
             result.append({
                 "trade_id": r["transaction_id"],
                 "date": trade_date,
@@ -34315,7 +34318,7 @@ def api_trade_ideas_for_target():
                 _trend_col = "market_trend_sf" if league_type == "sf" else "market_trend_1qb"
                 _mkt_rows = _conn.execute(
                     f"SELECT player_id, buy_sell_ratio, {_trend_col} AS market_trend "
-                    "FROM trade_intel_player_stats WHERE trade_count > 0"
+                    "FROM trade_intel_player_stats WHERE trade_count > 0 AND league_format = 'all'"
                 ).fetchall()
             for _r in _mkt_rows:
                 _pid = str(_r["player_id"])

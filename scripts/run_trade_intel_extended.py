@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import time
 from datetime import datetime, timedelta
 
@@ -53,8 +54,10 @@ def main():
                         help="Skip discovery step.")
     parser.add_argument("--analytics",       action="store_true",
                         help="Run analytics + WLS after all crawl batches complete.")
-    parser.add_argument("--workers",         type=int, default=8,
-                        help="Concurrent workers for crawling. Default 8.")
+    parser.add_argument("--workers",         type=int,
+                        default=int(os.environ.get("TRADE_INTEL_CRAWL_WORKERS", 8)),
+                        help="Concurrent workers for crawling. "
+                             "Default 8 (env TRADE_INTEL_CRAWL_WORKERS).")
     parser.add_argument("--crawl-mode",       choices=["new", "existing", "both"], default="new",
                         help="Crawl mode: 'new' (uncrawled leagues), 'existing' (re-crawl), 'both' (mixed). Default: new.")
     parser.add_argument("--recrawl-days",    type=int, default=7,

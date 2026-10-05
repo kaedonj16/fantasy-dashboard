@@ -48,11 +48,20 @@ logger = logging.getLogger(__name__)
 def _run_discovery(target: int) -> int:
     from dotenv import load_dotenv
     load_dotenv()
-    from data_building.trade_intel.league_discovery import run_discovery
+    from data_building.trade_intel.league_discovery import (
+        run_discovery,
+        seed_from_stored_users,
+        walk_history_chains,
+    )
 
+    logger.info("Discovery: seeding from stored users...")
+    seed_from_stored_users(batch_size=200)
     logger.info("Discovery: targeting %d new leagues...", target)
     discovered = run_discovery(target=target)
     logger.info("Discovery: %d new leagues added.", discovered)
+    logger.info("Discovery: walking previous_league_id history chains...")
+    ancestors = walk_history_chains()
+    logger.info("Discovery: %d ancestor leagues added from history chains.", ancestors)
     return 0
 
 
@@ -110,9 +119,11 @@ def main() -> int:
                         help="Skip discovery entirely (crawl only).")
     parser.add_argument("--batch-size",      type=int, default=1000,
                         help="Leagues to crawl this run. Default 1000.")
-    parser.add_argument("--workers",         type=int, default=4,
+    parser.add_argument("--workers",         type=int,
+                        default=int(os.environ.get("TRADE_INTEL_CRAWL_WORKERS", 4)),
                         help="Concurrent crawl workers. Kept moderate to avoid DB "
-                             "connection drops (8 caused drops in manual runs). Default 4.")
+                             "connection drops (8 caused drops in manual runs). "
+                             "Default 4 (env TRADE_INTEL_CRAWL_WORKERS).")
     parser.add_argument("--crawl-mode",      choices=["new", "existing", "both"], default="both",
                         help="'new' (uncrawled), 'existing' (re-crawl), 'both' (mixed). Default both.")
     parser.add_argument("--recrawl-days",    type=int, default=2,

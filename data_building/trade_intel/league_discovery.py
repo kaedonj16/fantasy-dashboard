@@ -6,12 +6,13 @@ Strategy (no Sleeper search API exists):
    league_ids that recently touched the player.
 2. From each discovered league, pull rosters -> owner user_ids -> fetch their
    leagues -> expand the frontier.
-3. Retain true-redraft (0) and dynasty (2) leagues; exclude keeper (1).
+3. Retain true-redraft (0), keeper (1), and dynasty (2) leagues.
 4. Persist discovered leagues to trade_intel_leagues for the crawler.
 """
 from __future__ import annotations
 
 import logging
+import os
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed, wait, FIRST_COMPLETED
@@ -63,10 +64,12 @@ _MAX_LEAGUES = 5_000   # target ceiling per crawl run
 # full /user/.../leagues payload (not just ids) — that peak blew the 512Mi cap
 # before crawl even started. Bound workers, in-flight futures, and seed count
 # so we only expand enough to fill a frontier for `target`.
-_DISCOVERY_WORKERS = 2
-_DISCOVERY_IN_FLIGHT = 4
-_MAX_SEEDS_PER_RUN = 80
-_FRONTIER_CAP = 1500
+# Caps are env-overridable so a bigger Render box (or a smaller one) can tune
+# the 512Mi defaults without a code change.
+_DISCOVERY_WORKERS = int(os.environ.get("TRADE_INTEL_DISCOVERY_WORKERS", 2))
+_DISCOVERY_IN_FLIGHT = int(os.environ.get("TRADE_INTEL_DISCOVERY_IN_FLIGHT", 4))
+_MAX_SEEDS_PER_RUN = int(os.environ.get("TRADE_INTEL_MAX_SEEDS", 80))
+_FRONTIER_CAP = int(os.environ.get("TRADE_INTEL_FRONTIER_CAP", 1500))
 _MAX_LEAGUES_PER_USER = 60
 _MAX_OWNERS_PER_LEAGUE = 32
 # Abort scanning a user-leagues / rosters body after this many raw bytes so a
@@ -101,7 +104,7 @@ def _seed_limit_for_target(target: int) -> int:
 def _frontier_cap_for_target(target: int) -> int:
     """Max unseen league ids to hold while filtering keepers / fetching meta.
 
-    3x target covers attrition (keeper leagues, fetch failures) without
+    3x target covers attrition (filtered league types, fetch failures) without
     retaining an unbounded BFS frontier in the 512Mi process.
     """
     return min(_FRONTIER_CAP, max(int(target) * 3, 64))
@@ -231,7 +234,7 @@ def _seed_league_ids(season: int, limit: int = _MAX_SEEDS_PER_RUN) -> List[str]:
     from whatever leagues are already stored (populated by manual inserts or
     previous discovery runs).  On a completely fresh DB the frontier will be
     empty; the user must insert at least one league_id manually to bootstrap.
-    Includes both dynasty (2) and true-redraft (0) leagues as BFS seeds.
+    Includes dynasty (2), keeper (1), and true-redraft (0) leagues as BFS seeds.
 
     Returns a list (SQL order: least-recently crawled first) capped at `limit`.
     Expanding the whole pool is neither necessary to hit `target` nor safe on
@@ -242,7 +245,7 @@ def _seed_league_ids(season: int, limit: int = _MAX_SEEDS_PER_RUN) -> List[str]:
             """
             SELECT league_id FROM trade_intel_leagues
             WHERE season IN (%s, %s)
-              AND league_type IN (0, 2)
+              AND league_type IN (0, 1, 2)
             ORDER BY last_crawled_at ASC NULLS FIRST
             LIMIT %s
             """,
@@ -376,6 +379,7 @@ def _save_leagues(leagues: list[dict]) -> int:
             lg.get("scoring_type"),
             lg.get("league_type"),
             lg.get("is_superflex", False),
+            lg.get("previous_league_id"),
             True
         )
         for lg in leagues
@@ -397,12 +401,13 @@ def _save_leagues(leagues: list[dict]) -> int:
                         """
                         INSERT INTO trade_intel_leagues
                             (league_id, season, num_teams, scoring_type, league_type,
-                             is_superflex, crawl_enabled)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                             is_superflex, previous_league_id, crawl_enabled)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (league_id) DO UPDATE SET
                             crawl_enabled = TRUE,
                             is_superflex  = EXCLUDED.is_superflex,
-                            league_type   = EXCLUDED.league_type
+                            league_type   = EXCLUDED.league_type,
+                            previous_league_id = EXCLUDED.previous_league_id
                         """,
                         batch
                     )
@@ -453,7 +458,8 @@ def bootstrap_from_usernames(usernames: List[str], season: Optional[int] = None)
     Seed the DB from one or more Sleeper usernames.
 
     For each username: look up the user, fetch their leagues for the current
-    (and next) season, filter to dynasty (type==2), and insert them into
+    (and next) season, filter to redraft/keeper/dynasty (type in 0, 1, 2), and
+    insert them into
     trade_intel_leagues so that subsequent BFS discovery has a non-empty frontier.
 
     Returns the number of new leagues inserted.
@@ -483,7 +489,7 @@ def bootstrap_from_usernames(usernames: List[str], season: Optional[int] = None)
             if not meta:
                 continue
             league_type = meta.get("settings", {}).get("type")
-            if league_type not in (0, 2):
+            if league_type not in (0, 1, 2):
                 continue
             lg_season = int(meta.get("season") or season)
             to_save.append({
@@ -493,9 +499,10 @@ def bootstrap_from_usernames(usernames: List[str], season: Optional[int] = None)
                 "scoring_type": _classify_scoring(meta),
                 "league_type":  league_type,
                 "is_superflex": _is_superflex(meta),
+                "previous_league_id": meta.get("previous_league_id"),
             })
             known.add(lid)
-            mode = "dynasty" if league_type == 2 else "redraft"
+            mode = {2: "dynasty", 1: "keeper", 0: "redraft"}.get(league_type, "unknown")
             logger.info("[bootstrap] Seeded %s league %s (%d teams) from user '%s'",
                         mode, lid, meta.get("total_rosters", 0), username)
 
@@ -506,11 +513,12 @@ def bootstrap_from_usernames(usernames: List[str], season: Optional[int] = None)
 
 def seed_user(user_id: str, username: Optional[str] = None, season: Optional[int] = None) -> int:
     """
-    Seed dynasty leagues for a single Sleeper user_id into trade_intel_leagues,
+    Seed redraft/keeper/dynasty leagues for a single Sleeper user_id into
+    trade_intel_leagues,
     and record the user in trade_intel_users.  Safe to call on every login -
     ON CONFLICT DO NOTHING means repeat visits are a no-op.
 
-    Returns the number of new dynasty leagues inserted.
+    Returns the number of new leagues inserted.
     """
     if season is None:
         season = _current_season()
@@ -529,7 +537,7 @@ def seed_user(user_id: str, username: Optional[str] = None, season: Optional[int
         if not meta:
             continue
         league_type = meta.get("settings", {}).get("type")
-        if league_type not in (0, 2):
+        if league_type not in (0, 1, 2):
             continue
         lg_season = int(meta.get("season") or season)
         to_save.append({
@@ -539,6 +547,7 @@ def seed_user(user_id: str, username: Optional[str] = None, season: Optional[int
             "scoring_type": _classify_scoring(meta),
             "league_type":  league_type,
             "is_superflex": _is_superflex(meta),
+                "previous_league_id": meta.get("previous_league_id"),
         })
 
     n = _save_leagues(to_save)
@@ -556,7 +565,7 @@ def seed_user(user_id: str, username: Optional[str] = None, season: Optional[int
 def seed_from_stored_users(batch_size: int = 200, season: Optional[int] = None) -> int:
     """
     Pull users from trade_intel_users that haven't been seeded recently,
-    fetch their Sleeper leagues, and insert any new dynasty leagues.
+    fetch their Sleeper leagues, and insert any new redraft/keeper/dynasty leagues.
 
     Prioritises users that have never been seeded (last_seeded_at IS NULL).
     Returns total new leagues inserted.
@@ -592,7 +601,7 @@ def seed_from_stored_users(batch_size: int = 200, season: Optional[int] = None) 
             if not meta:
                 continue
             league_type = meta.get("settings", {}).get("type")
-            if league_type not in (0, 2):
+            if league_type not in (0, 1, 2):
                 continue
             lg_season = int(meta.get("season") or season)
             to_save.append({
@@ -602,6 +611,7 @@ def seed_from_stored_users(batch_size: int = 200, season: Optional[int] = None) 
                 "scoring_type": _classify_scoring(meta),
                 "league_type":  league_type,
                 "is_superflex": _is_superflex(meta),
+                "previous_league_id": meta.get("previous_league_id"),
             })
             known.add(lid)
 
@@ -612,7 +622,75 @@ def seed_from_stored_users(batch_size: int = 200, season: Optional[int] = None) 
             )
 
     n = _save_leagues(to_save)
-    logger.info("[seed_from_stored_users] %d users → %d new dynasty leagues", len(rows), n)
+    logger.info("[seed_from_stored_users] %d users → %d new leagues", len(rows), n)
+    return n
+
+
+def walk_history_chains(max_depth: int = 3, season: Optional[int] = None) -> int:
+    """
+    Walk previous_league_id chains to recover ancestor leagues the crawler
+    never saw.
+
+    Sleeper issues a new league_id each season and links it backwards via
+    previous_league_id. For every stored league whose previous_league_id is
+    not already in the DB, fetch that ancestor's meta and keep walking
+    backwards up to `max_depth` (cycles guarded by a visited set). Ancestor
+    rows are inserted with the season from their own meta (falling back to the
+    current season) so the crawler picks them up as new leagues.
+
+    Returns the number of ancestor leagues inserted.
+    """
+    if season is None:
+        season = _current_season()
+
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT league_id, previous_league_id FROM trade_intel_leagues"
+        ).fetchall()
+
+    known: Set[str] = set()
+    starts: List[str] = []
+    for r in rows:
+        lid = str(r["league_id"])
+        known.add(lid)
+        prev = r["previous_league_id"]
+        if prev and str(prev) not in known and str(prev) not in starts:
+            starts.append(str(prev))
+
+    if not starts:
+        logger.info("[walk_history_chains] No unvisited previous_league_id chains.")
+        return 0
+
+    visited: Set[str] = set()
+    to_save: List[Dict] = []
+
+    for start_id in starts:
+        current: Optional[str] = start_id
+        depth = 0
+        while current and depth < max_depth and current not in known and current not in visited:
+            visited.add(current)
+            time.sleep(_REQUEST_DELAY)
+            meta = _league_meta(current)
+            if not meta:
+                break
+            lg_season = int(meta.get("season") or season)
+            to_save.append({
+                "league_id":         current,
+                "season":            lg_season,
+                "num_teams":         meta.get("total_rosters", 0),
+                "scoring_type":      _classify_scoring(meta),
+                "league_type":       meta.get("settings", {}).get("type"),
+                "is_superflex":      _is_superflex(meta),
+                "previous_league_id": meta.get("previous_league_id"),
+            })
+            known.add(current)
+            depth += 1
+            prev = meta.get("previous_league_id")
+            current = str(prev) if prev else None
+
+    n = _save_leagues(to_save)
+    logger.info("[walk_history_chains] %d ancestor leagues added (%d chains walked).",
+                n, len(starts))
     return n
 
 
@@ -695,7 +773,7 @@ def _expand_seeds_into_frontier(
 
 def run_discovery(target: int = _MAX_LEAGUES, season: Optional[int] = None) -> int:
     """
-    Discover up to `target` dynasty Sleeper leagues and store them.
+    Discover up to `target` Sleeper leagues (redraft, keeper, dynasty) and store them.
     Returns total count of newly inserted leagues.
     """
     if season is None:
@@ -711,6 +789,7 @@ def run_discovery(target: int = _MAX_LEAGUES, season: Optional[int] = None) -> i
     total_new = 0
     dynasty_count = 0
     redraft_count = 0
+    keeper_count = 0
 
     print(
         f"[discovery] Starting. Known={len(known)}, Seeds={len(seeds)}, "
@@ -751,7 +830,7 @@ def run_discovery(target: int = _MAX_LEAGUES, season: Optional[int] = None) -> i
                 return None, [], []
 
             league_type = meta.get("settings", {}).get("type")
-            if league_type not in (0, 2):
+            if league_type not in (0, 1, 2):
                 return None, [], []
 
             lg_season = int(meta.get("season") or season)
@@ -766,6 +845,7 @@ def run_discovery(target: int = _MAX_LEAGUES, season: Optional[int] = None) -> i
                 "scoring_type": scoring_type,
                 "league_type": league_type,
                 "is_superflex": is_sf,
+                "previous_league_id": meta.get("previous_league_id"),
             }
 
             new_frontier_leagues: List[str] = []
@@ -830,8 +910,10 @@ def run_discovery(target: int = _MAX_LEAGUES, season: Optional[int] = None) -> i
 
         batch_dynasty = sum(1 for lg in batch_to_save if lg["league_type"] == LeagueType.DYNASTY)
         batch_redraft = sum(1 for lg in batch_to_save if lg["league_type"] == LeagueType.REDRAFT)
+        batch_keeper = sum(1 for lg in batch_to_save if lg["league_type"] == LeagueType.KEEPER)
         dynasty_count += batch_dynasty
         redraft_count += batch_redraft
+        keeper_count += batch_keeper
 
         to_save.extend(batch_to_save)
         if expand_owners:
@@ -848,7 +930,7 @@ def run_discovery(target: int = _MAX_LEAGUES, season: Optional[int] = None) -> i
         total_new += _save_leagues(to_save)
 
     _log_rss("done")
-    print(f"[discovery] Done. {total_new} new leagues: {dynasty_count} dynasty, {redraft_count} redraft")
+    print(f"[discovery] Done. {total_new} new leagues: {dynasty_count} dynasty, {keeper_count} keeper, {redraft_count} redraft")
     return total_new
 
 
