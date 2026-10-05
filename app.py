@@ -22808,6 +22808,8 @@ def api_trade_eval():
 
     analysis_html = ""
     depth_warnings = {}
+    partner_depth_warnings = {}
+    bye_warnings = []
     viewer_roster_id = payload.get("viewer_roster_id")
     viewer_team_name = payload.get("viewer_team_name")
     _user_id = session.get("viewer_username")
@@ -22850,6 +22852,78 @@ def api_trade_eval():
                     num_teams=len(rosters) or 12,
                     is_sf=_ctx_is_sf(ctx),
                 )
+                # Bye-week warnings: flag NEW crunch weeks the trade creates
+                # (trading away your only bye cover, or acquiring two starters
+                # who share a bye).
+                try:
+                    from utils.bye_outlook import trade_bye_coverage_warnings as _tbw
+                    _bye_map = _team_bye_map(int(season))
+                    if _bye_map:
+                        _send_ids = {
+                            str(a.get("player_id") or a.get("id") or "")
+                            for a in sending
+                        }
+                        _recv_ids = {
+                            str(a.get("player_id") or a.get("id") or "")
+                            for a in receiving
+                        }
+
+                        def _bye_player(pid: str) -> dict | None:
+                            info = model_value_lookup.get(str(pid)) or {}
+                            pos = str(info.get("position") or "").upper()
+                            team = str(info.get("team") or "").upper()
+                            if pos not in ("QB", "RB", "WR", "TE") or not team:
+                                return None
+                            return {"position": pos, "team": team}
+
+                        _pre_ids = [
+                            str(pid) for pid in (viewer_roster.get("players") or [])
+                        ]
+                        _pre_roster = [
+                            p for p in (_bye_player(pid) for pid in _pre_ids)
+                            if p
+                        ]
+                        _post_ids = [
+                            pid for pid in _pre_ids
+                            if pid not in _send_ids
+                        ] + [pid for pid in _recv_ids]
+                        _post_roster = [
+                            p for p in (_bye_player(pid) for pid in _post_ids)
+                            if p
+                        ]
+
+                        _rp = ctx.get("roster_positions") or []
+                        _lineup_reqs: dict = {}
+                        for _slot in _rp:
+                            _s = str(_slot).upper()
+                            if _s in ("QB", "RB", "WR", "TE", "FLEX", "WRRB_FLEX", "SUPER_FLEX"):
+                                _lineup_reqs[_s] = _lineup_reqs.get(_s, 0) + 1
+                        _from_week = int(ctx.get("current_week") or 1)
+                        bye_warnings = _tbw(
+                            _bye_map, _pre_roster, _post_roster,
+                            _lineup_reqs, _from_week,
+                        )
+                except Exception:
+                    logger.warning("[trade-eval] bye warning failed", exc_info=True)
+                # Partner side: they give what the viewer gets and vice versa.
+                # Their post-trade depth predicts rejection ("they'd be left
+                # with one startable RB").
+                _opp_rid = str(payload.get("opponent_roster_id") or "").strip()
+                if _opp_rid and _opp_rid != str(viewer_roster_id):
+                    partner_roster = next(
+                        (r for r in rosters if str(r.get("roster_id")) == _opp_rid), None
+                    )
+                    if partner_roster:
+                        try:
+                            partner_depth_warnings = calculate_roster_depth_warning(
+                                partner_roster, model_value_lookup,
+                                receiving, sending,
+                                roster_positions=ctx.get("roster_positions") or [],
+                                num_teams=len(rosters) or 12,
+                                is_sf=_ctx_is_sf(ctx),
+                            )
+                        except Exception:
+                            logger.warning("[trade-eval] partner depth warning failed", exc_info=True)
         except Exception as e:
             logger.info(f"[trade-ai] skipped: {e}")
             analysis_html = ""
@@ -22880,6 +22954,8 @@ def api_trade_eval():
         "analysis_html": analysis_html,
         "analysis_error": analysis_error,
         "depth_warnings": depth_warnings,
+        "partner_depth_warnings": partner_depth_warnings,
+        "bye_warnings": bye_warnings,
         "tier_thresholds": [round(t, 1) for t in tier_thresholds],
     })
 
@@ -22906,6 +22982,7 @@ def api_trade_eval_playoff_impact():
     roster_id = payload.get("roster_id")
     give_ids = [str(p) for p in (payload.get("give_ids") or [])]
     get_ids = [str(p) for p in (payload.get("get_ids") or [])]
+    opponent_roster_id = payload.get("opponent_roster_id")
 
     if not has_premium_for_viewer(
         session.get("viewer_username"), session.get("viewer_user_id"),
@@ -22945,6 +23022,21 @@ def api_trade_eval_playoff_impact():
             is_sf = _is_superflex_lineup(ctx.get("roster_positions") or [])
             current_pids = sim_state.get("roster_pid_map", {}).get(roster_id, [])
             result["outlook"] = _trade_future_outlook(give_ids, get_ids, is_sf, current_pids)
+
+        # Partner side: flip give/get so the negotiation framing shows both
+        # teams' odds movement ("your odds +12%, theirs -8%").
+        try:
+            opp_rid = int(opponent_roster_id) if opponent_roster_id is not None else None
+        except (TypeError, ValueError):
+            opp_rid = None
+        if opp_rid and opp_rid != roster_id:
+            try:
+                partner_result = _simulate_swap_impact(sim_state, opp_rid, get_ids, give_ids)
+                partner_result = _shape_pi(partner_result, is_redraft)
+                result["partner"] = partner_result
+                result["partner_roster_id"] = opp_rid
+            except Exception:
+                logger.warning("[trade-eval/playoff-impact] partner sim failed", exc_info=True)
 
         return jsonify(result)
 
@@ -34004,6 +34096,8 @@ def api_trade_intel_player_send_packages(player_id: str):
     league_id = str(request.args.get("league_id") or "").strip()
     platform = str(request.args.get("platform") or "sleeper").strip()
     viewer_roster_id = str(request.args.get("viewer_roster_id") or "").strip()
+    _untouchable_raw = str(request.args.get("untouchable_ids") or "").strip()
+    untouchable_ids = set(x.strip() for x in _untouchable_raw.split(",") if x.strip())
 
     user_id = session.get("viewer_username")
     if not has_premium_for_viewer(user_id, session.get("viewer_user_id"), league_id, platform, season):
@@ -34011,6 +34105,10 @@ def api_trade_intel_player_send_packages(player_id: str):
 
     if not league_id or not viewer_roster_id:
         return jsonify({"error": "League context required"}), 400
+
+    # Flag when the user shops a player they marked untouchable, so the UI
+    # can warn instead of silently suggesting deals for a keeper.
+    _focus_is_untouchable = str(player_id) in untouchable_ids
 
     try:
         # ── Value table ────────────────────────────────────────────────────
@@ -34154,6 +34252,93 @@ def api_trade_intel_player_send_packages(player_id: str):
                         score += (age - 27) * focus_value * 0.02
             return score
 
+        def _send_acceptance_prob(rival_roster: dict, label_cls: str) -> int:
+            """Estimate acceptance probability (0-100) that the rival team
+            accepts giving up this return package for the focus player.
+
+            Factors:
+              1. Value balance from the rival's POV (they overpay = likely)
+              2. Rival's positional need for the focus player's position
+              3. Win/rebuild window (dynasty only)
+            """
+            # 1. Value base: label_cls is from the VIEWER's perspective.
+            # A "great" return for the viewer means the rival overpays.
+            base = {"great": 70, "fair": 48, "light": 24}.get(label_cls, 48)
+
+            need_adj = 0
+            window_adj = 0
+
+            # 2. Rival's positional need for the focus player
+            if not focus_is_pick and focus_pos in ("QB", "RB", "WR", "TE"):
+                rival_vals = sorted(
+                    (
+                        values_by_id[str(pid)]["value"]
+                        for pid in (rival_roster.get("players") or [])
+                        if str(pid) in values_by_id
+                        and values_by_id[str(pid)]["position"] == focus_pos
+                    ),
+                    reverse=True,
+                )
+                if not rival_vals:
+                    need_adj = 12  # hole at this position
+                elif rival_vals[0] < 200:
+                    need_adj = 9  # barely-rostered starter
+                elif rival_vals[0] < 400:
+                    need_adj = 5  # mediocre starter
+                    if focus_value > rival_vals[0] * 1.1:
+                        need_adj += 3  # upgrade on their best
+                elif len(rival_vals) < 2 or rival_vals[1] < 150:
+                    need_adj = 2  # strong starter, thin depth
+                else:
+                    need_adj = -3  # stacked at this position, harder sell
+                need_adj = max(-10, min(need_adj, 18))
+
+            # 3. Win/rebuild window (dynasty only)
+            if not is_redraft:
+                try:
+                    from dashboard_services.ai.context_builders import (
+                        calculate_roster_grade as _crg,
+                    )
+                    flat = []
+                    for pid in (rival_roster.get("players") or []):
+                        info = values_by_id.get(str(pid))
+                        if info and info.get("position") in ("QB", "RB", "WR", "TE"):
+                            flat.append({
+                                "position": info["position"],
+                                "value": float(info.get("value") or 0),
+                                "age": info.get("age"),
+                            })
+                    flat.sort(key=lambda x: x["value"], reverse=True)
+                    grade = _crg(flat, [], scoring_type="dynasty")
+                    win_window = grade.get("win_window", "")
+                    if win_window in ("Full Rebuild", "Retooling"):
+                        window = "rebuild"
+                    elif win_window in ("Win-Now Window", "Aging Contender", "Contender Window"):
+                        window = "win_now"
+                    else:
+                        window = "competitive"
+
+                    focus_age = float(target_info.get("age") or 25)
+                    if window == "rebuild":
+                        if focus_is_pick:
+                            window_adj = 8
+                        elif focus_age < 24:
+                            window_adj = 6
+                        elif focus_age > 28:
+                            window_adj = -8
+                    elif window == "win_now":
+                        if focus_is_pick:
+                            window_adj = -6
+                        elif focus_age >= 27:
+                            window_adj = 5
+                        elif focus_age < 23:
+                            window_adj = -4
+                except Exception:
+                    pass
+
+            prob = base + need_adj + window_adj
+            return min(93, max(8, round(prob)))
+
         options: list = []
         seen_shapes: set = set()
 
@@ -34230,6 +34415,24 @@ def api_trade_intel_player_send_packages(player_id: str):
                     if p1["position"] == "QB" and p2["position"] == "QB":
                         continue
                     _add([p1, p2])
+            # 3 players - capped to the top 8 assets for performance.
+            # Covers the common dynasty 3-for-1 without combinatorial blowup.
+            _top3 = team_players[:8]
+            for i, p1 in enumerate(_top3):
+                if p1["value"] >= hi:
+                    continue
+                for j in range(i + 1, len(_top3)):
+                    p2 = _top3[j]
+                    if p1["value"] + p2["value"] >= hi:
+                        continue
+                    if p1["position"] == "QB" and p2["position"] == "QB":
+                        continue
+                    for k in range(j + 1, len(_top3)):
+                        p3 = _top3[k]
+                        n_qb = sum(1 for p in (p1, p2, p3) if p["position"] == "QB")
+                        if n_qb >= 2:
+                            continue
+                        _add([p1, p2, p3])
             # 2 picks
             for i, pk1 in enumerate(team_picks):
                 for pk2 in team_picks[i + 1:]:
@@ -34247,6 +34450,8 @@ def api_trade_intel_player_send_packages(player_id: str):
             # slot for a multi-asset package when one exists in-band, so rival
             # teams surface package deals alongside straight swaps.
             team_opts.sort(key=lambda x: x["qual"])
+            for _opt in team_opts:
+                _opt["acceptance_prob"] = _send_acceptance_prob(r, _opt["value_class"])
             _picked = team_opts[:3]
             if len(_picked) == 3 and not any(len(o["receive"]) > 1 for o in _picked):
                 _multi = next((o for o in team_opts[3:] if len(o["receive"]) > 1), None)
@@ -34279,6 +34484,7 @@ def api_trade_intel_player_send_packages(player_id: str):
             "player_name": player_name,
             "focus_value": focus_value,
             "focus_position": focus_pos,
+            "focus_is_untouchable": _focus_is_untouchable,
             "options": options,
         })
 

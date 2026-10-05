@@ -6802,6 +6802,20 @@ strong + .player-badge,
     gap: 6px;
 }
 
+.otc-sugg-focus-warn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #b45309;
+    background: rgba(245, 158, 11, 0.10);
+    border: 1px solid rgba(245, 158, 11, 0.30);
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin-bottom: 8px;
+}
+
 .otc-sugg-package {
     border: 1px solid var(--border);
     border-radius: 14px;

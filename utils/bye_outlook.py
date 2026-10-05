@@ -113,3 +113,92 @@ def summarize_bye_outlook(outlook: List[dict], max_weeks: int = 2) -> str:
     return "; ".join(
         f"Week {w['week']}: {_fmt_pos_counts(w['by_pos'])} on bye" for w in picks
     )
+
+
+def trade_bye_coverage_warnings(
+    bye_by_team: Dict[str, int],
+    pre_roster: List[dict],
+    post_roster: List[dict],
+    lineup_reqs: Dict[str, int],
+    from_week: int = 1,
+    to_week: int = 18,
+) -> List[dict]:
+    """Bye-week coverage warnings created by a proposed trade.
+
+    For each future week, counts AVAILABLE (not on bye) players per position.
+    Flags weeks where the post-trade roster has fewer available players than
+    starting slots at a position, but the pre-trade roster did not. This
+    catches both classic mistakes: trading away your only bye-week cover,
+    and acquiring two starters who share the same bye.
+
+    Args:
+        bye_by_team: {TEAM_ABBR: bye_week}.
+        pre_roster: roster before the trade, dicts with position and team.
+        post_roster: roster after the trade, same shape.
+        lineup_reqs: starting slots per position, e.g. {"QB":1,"RB":2,...}.
+        from_week: ignore weeks before this (already played).
+        to_week: last week to check.
+
+    Returns:
+        List of {"week", "positions", "message"} for new coverage gaps,
+        sorted by week ascending.
+    """
+    if not bye_by_team:
+        return []
+
+    reqs = {str(k).upper(): int(v) for k, v in (lineup_reqs or {}).items()
+            if str(k).upper() in ("QB", "RB", "WR", "TE")}
+    if not reqs:
+        return []
+
+    def _available(roster: List[dict], week: int) -> Dict[str, int]:
+        counts: Dict[str, int] = {}
+        for p in roster or []:
+            if not isinstance(p, dict):
+                continue
+            pos = str(p.get("position") or p.get("pos") or "").upper()
+            if pos not in reqs:
+                continue
+            team = str(p.get("team") or p.get("nfl") or "").upper()
+            bye = bye_by_team.get(team)
+            if bye and int(bye) == week:
+                continue  # on bye this week
+            counts[pos] = counts.get(pos, 0) + 1
+        return counts
+
+    def _gaps(roster: List[dict]) -> Dict[int, List[str]]:
+        gaps: Dict[int, List[str]] = {}
+        for wk in range(max(from_week, 1), to_week + 1):
+            avail = _available(roster, wk)
+            short = sorted(
+                pos for pos, need in reqs.items()
+                if avail.get(pos, 0) < need
+            )
+            if short:
+                gaps[wk] = short
+        return gaps
+
+    pre_gaps = _gaps(pre_roster)
+    post_gaps = _gaps(post_roster)
+
+    warnings = []
+    for wk in sorted(post_gaps):
+        new_shorts = [p for p in post_gaps[wk] if p not in pre_gaps.get(wk, [])]
+        if not new_shorts:
+            continue
+        if len(new_shorts) == 1:
+            msg = (
+                f"After this trade you would have no startable "
+                f"{new_shorts[0]} in Week {wk}"
+            )
+        else:
+            msg = (
+                f"After this trade you would be short at "
+                f"{', '.join(new_shorts)} in Week {wk}"
+            )
+        warnings.append({
+            "week": wk,
+            "positions": new_shorts,
+            "message": msg,
+        })
+    return warnings

@@ -303,6 +303,18 @@ def value_matched_acquire_packages(
             continue
         for p2 in players_a[i + 1:]:
             _consider([p1, p2])
+    # 3 players - capped to the top 10 assets for performance. Covers the
+    # common dynasty 3-for-1 without combinatorial blowup.
+    _top3 = players_a[:10]
+    for i, p1 in enumerate(_top3):
+        if p1["value"] >= hi:
+            continue
+        for j in range(i + 1, len(_top3)):
+            p2 = _top3[j]
+            if p1["value"] + p2["value"] >= hi:
+                continue
+            for k in range(j + 1, len(_top3)):
+                _consider([p1, p2, _top3[k]])
     for i, k1 in enumerate(picks_a):
         for k2 in picks_a[i + 1:]:
             _consider([k1, k2])
