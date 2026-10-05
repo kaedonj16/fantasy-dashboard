@@ -1107,7 +1107,7 @@ def build_advanced_metrics_body(
       .am-lock-ico { display:inline-block; vertical-align:-2px; color:var(--gold, #ca8a04); }
       @media (max-width:600px) { .am-trendcell { min-width:80px; } .am-spark { width:44px; height:14px; } }
       /* Pinned-player comparison modal -- width grows with player count */
-      .am-cmp-card { max-width:min(95vw,1100px); }
+      .am-cmp-card { max-width:min(95vw,1400px); }
       .am-legend-body { overflow-x:auto; }
       .am-cmp-table { min-width:520px; }
       .am-cmp-table { width:100%; border-collapse:separate; border-spacing:0; font-size:13px; margin-top:4px; }
@@ -2995,10 +2995,10 @@ _AM_JS = r"""
     if (!modal || !body) return;
     const players = pinnedRows();
     if (players.length < 2) return;
-    // Size card to content: each player column needs ~180px, metric label ~140px.
+    // Size card to content: each player column needs ~250px, metric label ~140px.
     const card = modal.querySelector('.am-cmp-card');
     if (card) {
-      const ideal = 140 + players.length * 180;
+      const ideal = 140 + players.length * 250;
       card.style.maxWidth = Math.min(Math.max(560, ideal), window.innerWidth * 0.95) + 'px';
     }
     let metricsList = [state.metric, ...state.extraMetrics];
