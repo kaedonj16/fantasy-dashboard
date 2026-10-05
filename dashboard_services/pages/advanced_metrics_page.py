@@ -1353,16 +1353,32 @@ def build_advanced_metrics_body(
       .am-graph-svg .am-graph-lbl { animation:amFadeUp .45s ease-out backwards; }
       .am-graph-svg .am-graph-trend, .am-graph-svg .am-graph-quad { animation:amFadeIn .6s ease-out backwards; animation-delay:.55s; }
       .am-graph-svg .am-graph-headline { animation:amFadeUp .5s ease-out backwards; animation-delay:.12s; }
+      /* Scoped re-animation: a toggle rebuilds the whole SVG, but only the
+         layer that changed replays its entrance. */
+      .am-graph-svg.am-anim-quadrants .am-graph-dot, .am-graph-svg.am-anim-quadrants .am-graph-lbl,
+      .am-graph-svg.am-anim-quadrants .am-graph-trend, .am-graph-svg.am-anim-quadrants .am-graph-headline { animation:none !important; }
+      .am-graph-svg.am-anim-labels .am-graph-dot, .am-graph-svg.am-anim-labels .am-graph-trend,
+      .am-graph-svg.am-anim-labels .am-graph-quad, .am-graph-svg.am-anim-labels .am-graph-headline { animation:none !important; }
+      .am-graph-svg.am-anim-mode .am-graph-trend, .am-graph-svg.am-anim-mode .am-graph-headline { animation:none !important; }
+      .am-graph-svg.am-anim-none .am-graph-dot, .am-graph-svg.am-anim-none .am-graph-lbl,
+      .am-graph-svg.am-anim-none .am-graph-trend, .am-graph-svg.am-anim-none .am-graph-quad,
+      .am-graph-svg.am-anim-none .am-graph-headline { animation:none !important; }
       @media (prefers-reduced-motion: reduce) {
         .am-graph-svg .am-graph-dot, .am-graph-svg .am-graph-lbl,
         .am-graph-svg .am-graph-trend, .am-graph-svg .am-graph-quad,
-        .am-graph-svg .am-graph-headline { animation:none !important; }
+        .am-graph-svg .am-graph-headline,
+        .am-graph-svg[class*=am-anim-] .am-graph-dot, .am-graph-svg[class*=am-anim-] .am-graph-lbl,
+        .am-graph-svg[class*=am-anim-] .am-graph-trend, .am-graph-svg[class*=am-anim-] .am-graph-quad,
+        .am-graph-svg[class*=am-anim-] .am-graph-headline { animation:none !important; }
       }
       /* og=1 social-preview screenshots must capture the finished frame, never
          a mid-animation one. */
       html.og-render .am-graph-svg .am-graph-dot, html.og-render .am-graph-svg .am-graph-lbl,
       html.og-render .am-graph-svg .am-graph-trend, html.og-render .am-graph-svg .am-graph-quad,
-      html.og-render .am-graph-svg .am-graph-headline { animation:none !important; }
+      html.og-render .am-graph-svg .am-graph-headline,
+      html.og-render .am-graph-svg[class*=am-anim-] .am-graph-dot, html.og-render .am-graph-svg[class*=am-anim-] .am-graph-lbl,
+      html.og-render .am-graph-svg[class*=am-anim-] .am-graph-trend, html.og-render .am-graph-svg[class*=am-anim-] .am-graph-quad,
+      html.og-render .am-graph-svg[class*=am-anim-] .am-graph-headline { animation:none !important; }
 
       /* ── Simple / Detailed mode segmented control ─────────────────── */
       .am-graph-mode { display:flex; border:1px solid var(--border); border-radius:9px; overflow:hidden; }
@@ -4095,18 +4111,21 @@ _AM_JS = r"""
   window.amToggleGraphTheme = function() {
     _amGraphTheme = (_amGraphTheme === 'dark') ? 'light' : 'dark';
     _amSyncGraphThemeBtn();
+    _amAnimPending = 'none';
     window.amRenderGraph();
   };
   window.amToggleGraphLabelAxis = function() {
     _amGraphLabelAxis = (_amGraphLabelAxis === 'y') ? 'x' : 'y';
     const btn = document.getElementById('amGraphLabelAxisBtn');
     if (btn) btn.textContent = (_amGraphLabelAxis === 'y') ? 'Y vals' : 'X vals';
+    _amAnimPending = 'labels';
     window.amRenderGraph();
   };
   window.amToggleGraphQuadrants = function() {
     _amGraphQuadrants = !_amGraphQuadrants;
     const btn = document.getElementById('amGraphQuadrantsBtn');
     if (btn) btn.classList.toggle('am-active', _amGraphQuadrants);
+    _amAnimPending = 'quadrants';
     window.amRenderGraph();
   };
   // Position filter local to the graph modal (null = all). Initialized from
@@ -4154,6 +4173,10 @@ _AM_JS = r"""
   // toggles so everything stays consistent.
   let _amGraphSimple = true;
   try { if (localStorage.getItem('amGraphMode') === 'detailed') _amGraphSimple = false; } catch (e) {}
+  // Animation scope for the next render: which layer changed, so only that
+  // layer replays its entrance ('quadrants', 'labels', 'mode', 'none', or null
+  // for a full entrance on data/initial renders). Consumed by amRenderGraph.
+  let _amAnimPending = null;
   // Apply the current mode to the controls (no re-render; callers render after).
   function _amSyncGraphModeCtrls() {
     _amGraphQuadrants = !_amGraphSimple;
@@ -4170,6 +4193,7 @@ _AM_JS = r"""
     _amGraphSimple = (mode !== 'detailed');
     try { localStorage.setItem('amGraphMode', _amGraphSimple ? 'simple' : 'detailed'); } catch (e) {}
     _amSyncGraphModeCtrls();
+    _amAnimPending = 'mode';
     window.amRenderGraph();
   };
   // Populate/show the min-vol control for a given X metric key, or hide it.
@@ -4437,7 +4461,9 @@ _AM_JS = r"""
       _amPinnedDot = null; _amHideHoverForce();
       _amLoadLogo(_amGraphTheme).then(function(logo) {
         if (token !== _amGraphToken) return;
-        plot.innerHTML = _amBuildScatter(pts, xk, yk, zk, logo, trend);
+        const _scope = _amAnimPending || 'all';
+        _amAnimPending = null;
+        plot.innerHTML = _amBuildScatter(pts, xk, yk, zk, logo, trend, _scope);
         const tipEl = document.getElementById('amGraphTip');
         if (tipEl) tipEl.innerHTML = '<span style="opacity:.6">Hover or tap a point for player details</span>';
         // Signal the social-preview renderer that the graph is fully drawn.
@@ -4454,7 +4480,7 @@ _AM_JS = r"""
   // rasterized to a shareable PNG. `logo` is a data: URI (may be empty).
   // `trend` is a least-squares fit {m, b, r2} over the full population, so the
   // line reflects the whole position group, not just the visible TopN.
-  function _amBuildScatter(pts, xk, yk, zk, logo, trend) {
+  function _amBuildScatter(pts, xk, yk, zk, logo, trend, animScope) {
     const TH = _amGraphPalette();
     const FONT = "'Archivo',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
     // Responsive layout: a portrait viewBox with larger relative fonts on phones
@@ -4524,6 +4550,12 @@ _AM_JS = r"""
     const accent = posColor((pts[0] && pts[0].position) || 'WR');
     const chipBg = TH.dark ? '#1b2740' : '#f2f5f9';
     const chipBorder = TH.dark ? 'rgba(148,163,184,.32)' : '#dbe2ea';
+    // Animation scope for this render: 'all' (default) replays every layer's
+    // entrance; a toggle passes its layer ('quadrants', 'labels', 'mode') or
+    // 'none' so only what changed animates. Surfaced as am-anim-<scope> on the
+    // svg; CSS suppresses the other layers.
+    const _asc = animScope || 'all';
+    const _animCls = _asc === 'all' ? '' : ' am-anim-' + _asc;
     // Plain-speak descriptors for high/low values, keyed by metric, shared by
     // the quadrant labels and the headline takeaway. Falls back to
     // High/Low {label} when a metric has no entry.
@@ -4702,7 +4734,7 @@ _AM_JS = r"""
       if (_hlLines.length > 2) { _hlLines = _hlLines.slice(0, 2); _hlLines[1] += '…'; }
     })();
     padT += _hlLines.length ? _hlLines.length * _hlLH + 6 : 0;
-    let s = '<svg class="am-graph-svg" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"'
+    let s = '<svg class="am-graph-svg' + _animCls + '" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"'
       + ' viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" style="font-family:' + FONT + ';">';
     // Themed panel background.
     s += '<rect x="0.5" y="0.5" width="' + (W - 1) + '" height="' + (H - 1) + '" rx="14" fill="' + TH.bg + '" stroke="' + TH.border + '"/>';
