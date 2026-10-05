@@ -67,7 +67,7 @@ def build_team_schedule(*, platform: str, league_id: str, season: int, roster_id
                         get_week: Callable[[int], list[dict]], details: bool = False,
                         only_week: int | None = None) -> dict:
     from dashboard_services.api import team_avatar
-    from utils.utils import load_players_index
+    from utils.data_cache import load_players_index
 
     roster_by_id = {str(r.get("roster_id")): r for r in rosters}
     if str(roster_id) not in roster_by_id:

@@ -1,19 +1,16 @@
-"""Make payloads JSON-safe by replacing non-finite floats with None.
+"""Compatibility shim: utils.json_sanitize now lives in utils.core.
 
-json.dumps happily emits NaN/Infinity literals, which are invalid JSON and
-make the browser's fetch().json() throw. Consolidates app.py's two former
-near-duplicates (_sanitize_for_json handled NaN and infinities;
-clean_nan_for_json handled only NaN) into one function that handles both.
+Re-exports every public name so existing imports keep working.
+New code should import from utils.core directly.
 """
-import math
+from utils.core import (  # noqa: F401,F403
+    sanitize_for_json,
+)
+
+__all__ = ['sanitize_for_json']
 
 
-def sanitize_for_json(obj):
-    """Recursively replace NaN/inf/-inf floats with None in dicts/lists."""
-    if isinstance(obj, dict):
-        return {k: sanitize_for_json(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [sanitize_for_json(v) for v in obj]
-    if isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
-        return None
-    return obj
+# --- monkeypatch propagation (see utils/_shim.py) ---
+from utils._shim import propagate_sets_to as _propagate_sets_to
+import importlib as _importlib
+_propagate_sets_to(__name__, _importlib.import_module("utils.core"))

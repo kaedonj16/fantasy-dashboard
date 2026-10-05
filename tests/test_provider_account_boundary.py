@@ -4,8 +4,6 @@ flask = pytest.importorskip("flask")
 
 from routes.auth_bp import auth_bp
 from routes.link_bp import link_bp
-from routes.yahoo_auth_bp import yahoo_auth_bp
-from routes.google_auth_bp import google_auth_bp
 
 
 def test_sleeper_identify_sets_provider_session_but_never_google_account(monkeypatch):
@@ -91,7 +89,7 @@ def test_yahoo_oauth_only_attaches_league_when_google_is_already_active(
     _mock_yahoo(monkeypatch, attached)
     app = flask.Flask(__name__)
     app.secret_key = "test"
-    app.register_blueprint(yahoo_auth_bp)
+    app.register_blueprint(auth_bp)
 
     with app.test_client() as client:
         with client.session_transaction() as session:
@@ -229,7 +227,7 @@ def test_google_callback_checkout_plan_lands_on_pricing(monkeypatch):
     _stub_google_callback(monkeypatch, attached)
     app = flask.Flask(__name__)
     app.secret_key = "test"
-    app.register_blueprint(google_auth_bp)
+    app.register_blueprint(auth_bp)
 
     with app.test_client() as client:
         with client.session_transaction() as session:
@@ -256,7 +254,7 @@ def test_google_callback_drops_legacy_checkout_plan(monkeypatch):
     _stub_google_callback(monkeypatch, attached)
     app = flask.Flask(__name__)
     app.secret_key = "test"
-    app.register_blueprint(google_auth_bp)
+    app.register_blueprint(auth_bp)
 
     with app.test_client() as client:
         with client.session_transaction() as session:
@@ -304,7 +302,7 @@ def test_explicit_unlink_requires_google_and_removes_only_requested_membership(m
 
 
 def test_google_callback_persists_verified_sleeper_team_immediately():
-    source = open("routes/google_auth_bp.py", encoding="utf-8").read()
+    source = open("routes/auth_bp.py", encoding="utf-8").read()
     viewer_block = source[source.index("if viewer:"):source.index("if vuid:")]
     assert "add_user_league(" in viewer_block
     assert 'team_id=viewer.get("viewer_roster_id")' in viewer_block
@@ -353,7 +351,7 @@ def test_google_callback_sends_pending_yahoo_to_yahoo_oauth(monkeypatch):
     _stub_google_callback(monkeypatch, attached)
     app = flask.Flask(__name__)
     app.secret_key = "test"
-    app.register_blueprint(google_auth_bp)
+    app.register_blueprint(auth_bp)
 
     with app.test_client() as client:
         with client.session_transaction() as session:
@@ -385,7 +383,7 @@ def test_google_callback_attaches_pending_yahoo_when_yahoo_is_already_authorized
     _stub_google_callback(monkeypatch, attached)
     app = flask.Flask(__name__)
     app.secret_key = "test"
-    app.register_blueprint(google_auth_bp)
+    app.register_blueprint(auth_bp)
 
     with app.test_client() as client:
         with client.session_transaction() as session:

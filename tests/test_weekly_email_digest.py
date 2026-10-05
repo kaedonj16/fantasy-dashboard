@@ -20,8 +20,8 @@ def _digest_mocks(rosters, league, standing=(2, 3, 1)):
         mock.patch("dashboard_services.platform_api.get_league", return_value=league), \
         mock.patch("dashboard_services.platform_api.get_users", return_value=[]), \
         mock.patch.object(we, "_canonical_standing", return_value=standing), \
-        mock.patch("utils.digest_actions.gather_digest_action_items", return_value=[]), \
-        mock.patch("utils.digest_context.DigestRunCache.load_shared", lambda self: None)
+        mock.patch("utils.digest.gather_digest_action_items", return_value=[]), \
+        mock.patch("utils.digest.DigestRunCache.load_shared", lambda self: None)
 
 
 def test_build_digest_links_mover_rows(monkeypatch):
@@ -41,9 +41,9 @@ def test_build_digest_links_mover_rows(monkeypatch):
          mock.patch("dashboard_services.platform_api.get_league", return_value=league), \
          mock.patch("dashboard_services.platform_api.get_users", return_value=[]), \
          mock.patch.object(we, "_canonical_standing", return_value=(2, 3, 1)), \
-         mock.patch("utils.digest_actions.gather_digest_action_items", return_value=[]), \
-         mock.patch("utils.digest_context.DigestRunCache.load_shared", lambda self: None), \
-         mock.patch("utils.digest_context.DigestRunCache.league_bundle", return_value=None):
+         mock.patch("utils.digest.gather_digest_action_items", return_value=[]), \
+         mock.patch("utils.digest.DigestRunCache.load_shared", lambda self: None), \
+         mock.patch("utils.digest.DigestRunCache.league_bundle", return_value=None):
         out = we.build_digest(
             "sleeper", "L1", 2026, "7",
             first_name="Sam", movers=movers, pidx=pidx,
@@ -74,9 +74,9 @@ def test_build_digest_subject_fallback_without_risers(monkeypatch):
          mock.patch("dashboard_services.platform_api.get_league", return_value=league), \
          mock.patch("dashboard_services.platform_api.get_users", return_value=[]), \
          mock.patch.object(we, "_canonical_standing", return_value=(5, 1, 2)), \
-         mock.patch("utils.digest_actions.gather_digest_action_items", return_value=[]), \
-         mock.patch("utils.digest_context.DigestRunCache.load_shared", lambda self: None), \
-         mock.patch("utils.digest_context.DigestRunCache.league_bundle", return_value=None):
+         mock.patch("utils.digest.gather_digest_action_items", return_value=[]), \
+         mock.patch("utils.digest.DigestRunCache.load_shared", lambda self: None), \
+         mock.patch("utils.digest.DigestRunCache.league_bundle", return_value=None):
         out = we.build_digest(
             "sleeper", "L1", 2026, "7", movers=movers, pidx=pidx,
         )
@@ -104,9 +104,9 @@ def test_build_digest_appends_action_sections(monkeypatch):
                     return_value={"name": "L", "settings": {"type": 2}}), \
          mock.patch("dashboard_services.platform_api.get_users", return_value=[]), \
          mock.patch.object(we, "_canonical_standing", return_value=(None, 0, 0)), \
-         mock.patch("utils.digest_actions.gather_digest_action_items", return_value=[section]), \
-         mock.patch("utils.digest_context.DigestRunCache.load_shared", lambda self: None), \
-         mock.patch("utils.digest_context.DigestRunCache.league_bundle", return_value=None):
+         mock.patch("utils.digest.gather_digest_action_items", return_value=[section]), \
+         mock.patch("utils.digest.DigestRunCache.load_shared", lambda self: None), \
+         mock.patch("utils.digest.DigestRunCache.league_bundle", return_value=None):
         out = we.build_digest("sleeper", "L1", 2026, "999", movers=movers, pidx=pidx)
 
     assert out is not None
@@ -141,10 +141,10 @@ def test_redraft_digest_leads_with_matchup_not_dynasty_movers(monkeypatch):
          mock.patch("dashboard_services.platform_api.get_league", return_value=league), \
          mock.patch("dashboard_services.platform_api.get_users", return_value=[]), \
          mock.patch.object(we, "_canonical_standing", return_value=(1, 4, 1)), \
-         mock.patch("utils.digest_actions.gather_digest_action_items", return_value=[]), \
+         mock.patch("utils.digest.gather_digest_action_items", return_value=[]), \
          mock.patch.object(type(cache), "load_shared", lambda self: None), \
          mock.patch.object(type(cache), "league_bundle", return_value=None), \
-         mock.patch("utils.digest_context.matchup_for_roster", return_value=matchup):
+         mock.patch("utils.digest.matchup_for_roster", return_value=matchup):
         out = we.build_digest(
             "sleeper", "L1", 2026, "7", movers=movers, pidx=pidx, run_cache=cache,
         )
@@ -173,11 +173,11 @@ def test_dynasty_digest_keeps_movers_and_omits_empty_matchup(monkeypatch):
          mock.patch("dashboard_services.platform_api.get_league", return_value=league), \
          mock.patch("dashboard_services.platform_api.get_users", return_value=[]), \
          mock.patch.object(we, "_canonical_standing", return_value=(2, 3, 1)), \
-         mock.patch("utils.digest_actions.gather_digest_action_items", return_value=[]), \
-         mock.patch("utils.digest_context.DigestRunCache.load_shared", lambda self: None), \
-         mock.patch("utils.digest_context.DigestRunCache.league_bundle", return_value=None), \
-         mock.patch("utils.digest_context.in_season", return_value=False), \
-         mock.patch("utils.digest_context.matchup_for_roster", return_value=None):
+         mock.patch("utils.digest.gather_digest_action_items", return_value=[]), \
+         mock.patch("utils.digest.DigestRunCache.load_shared", lambda self: None), \
+         mock.patch("utils.digest.DigestRunCache.league_bundle", return_value=None), \
+         mock.patch("utils.digest.in_season", return_value=False), \
+         mock.patch("utils.digest.matchup_for_roster", return_value=None):
         out = we.build_digest("sleeper", "L1", 2026, "7", movers=movers, pidx=pidx)
 
     assert out is not None
@@ -196,10 +196,10 @@ def test_no_data_omits_digest(monkeypatch):
                     return_value={"name": "Empty", "settings": {"type": 2}}), \
          mock.patch("dashboard_services.platform_api.get_users", return_value=[]), \
          mock.patch.object(we, "_canonical_standing", return_value=(None, 0, 0)), \
-         mock.patch("utils.digest_actions.gather_digest_action_items", return_value=[]), \
-         mock.patch("utils.digest_context.DigestRunCache.load_shared", lambda self: None), \
-         mock.patch("utils.digest_context.DigestRunCache.league_bundle", return_value=None), \
-         mock.patch("utils.digest_context.in_season", return_value=False):
+         mock.patch("utils.digest.gather_digest_action_items", return_value=[]), \
+         mock.patch("utils.digest.DigestRunCache.load_shared", lambda self: None), \
+         mock.patch("utils.digest.DigestRunCache.league_bundle", return_value=None), \
+         mock.patch("utils.digest.in_season", return_value=False):
         out = we.build_digest("sleeper", "L1", 2026, "7", movers={"risers": [], "fallers": []}, pidx={})
     assert out is None
 
@@ -221,10 +221,10 @@ def test_keeper_digest_includes_value_movers_not_zero_record(monkeypatch):
          mock.patch("dashboard_services.platform_api.get_league", return_value=league), \
          mock.patch("dashboard_services.platform_api.get_users", return_value=[]), \
          mock.patch.object(we, "_canonical_standing", return_value=(6, 0, 0)), \
-         mock.patch("utils.digest_actions.gather_digest_action_items", return_value=[waivers]), \
-         mock.patch("utils.digest_context.DigestRunCache.load_shared", lambda self: None), \
-         mock.patch("utils.digest_context.DigestRunCache.league_bundle", return_value=None), \
-         mock.patch("utils.digest_context.in_season", return_value=False):
+         mock.patch("utils.digest.gather_digest_action_items", return_value=[waivers]), \
+         mock.patch("utils.digest.DigestRunCache.load_shared", lambda self: None), \
+         mock.patch("utils.digest.DigestRunCache.league_bundle", return_value=None), \
+         mock.patch("utils.digest.in_season", return_value=False):
         out = we.build_digest("sleeper", "L1", 2026, "7", first_name="Kaedon", movers=movers, pidx=pidx)
 
     assert out is not None
@@ -290,9 +290,9 @@ def test_preview_digest_writes_html(tmp_path, monkeypatch):
          mock.patch("dashboard_services.platform_api.get_league", return_value=league), \
          mock.patch("dashboard_services.platform_api.get_users", return_value=[]), \
          mock.patch.object(we, "_canonical_standing", return_value=(3, 1, 0)), \
-         mock.patch("utils.digest_actions.gather_digest_action_items", return_value=[]), \
-         mock.patch("utils.digest_context.DigestRunCache.load_shared", lambda self: None), \
-         mock.patch("utils.digest_context.DigestRunCache.league_bundle", return_value=None):
+         mock.patch("utils.digest.gather_digest_action_items", return_value=[]), \
+         mock.patch("utils.digest.DigestRunCache.load_shared", lambda self: None), \
+         mock.patch("utils.digest.DigestRunCache.league_bundle", return_value=None):
         out = we.preview_digest(
             platform="sleeper", league_id="L1", season=2026, roster_id="1",
             first_name="Sam", out_path=str(dest),

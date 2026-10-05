@@ -13,10 +13,10 @@ CRON = (ROOT / "cron_daily.py").read_text(encoding="utf-8")
 INGEST = (ROOT / "data_building" / "rookie_pipeline" / "ingestion.py").read_text(encoding="utf-8")
 GRAPHS = (ROOT / "dashboard_services" / "pages" / "graphs_page.py").read_text(encoding="utf-8")
 WAIVERS = (ROOT / "dashboard_services" / "pages" / "waivers_page.py").read_text(encoding="utf-8")
-WAIVER_BP = (ROOT / "routes" / "waiver_api_bp.py").read_text(encoding="utf-8")
+WAIVER_BP = (ROOT / "routes" / "waiver_bp.py").read_text(encoding="utf-8")
 BILLING = (ROOT / "routes" / "billing_bp.py").read_text(encoding="utf-8")
 RANKINGS = (ROOT / "dashboard_services" / "pages" / "dynasty_pages.py").read_text(encoding="utf-8")
-BREAKOUT_BP2 = (ROOT / "routes" / "breakout_api_bp2.py").read_text(encoding="utf-8")
+BREAKOUT_BP2 = (ROOT / "routes" / "advanced_metrics_bp.py").read_text(encoding="utf-8")
 EXT = (ROOT / "extensions.py").read_text(encoding="utf-8")
 KEEPER = (ROOT / "dashboard_services" / "pages" / "keeper_page.py").read_text(encoding="utf-8")
 ARCHETYPE = (ROOT / "dashboard_services" / "archetype_engine.py").read_text(encoding="utf-8")
@@ -254,9 +254,9 @@ def test_pipeline_health_is_recorded_per_cron_step():
     health_bp = (ROOT / "routes" / "health_bp.py").read_text(encoding="utf-8")
     assert '/api/health/pipeline' in health_bp
     assert "pipeline_health.json" in health_bp
-    # last_success bookkeeping lives in utils/pipeline_health.write_step_health
+    # last_success bookkeeping lives in utils/data_cache.write_step_health
     # (cron_daily delegates there); pin it at its real home.
-    pipeline_health_src = (ROOT / "utils" / "pipeline_health.py").read_text(encoding="utf-8")
+    pipeline_health_src = (ROOT / "utils" / "data_cache.py").read_text(encoding="utf-8")
     assert "last_success" in pipeline_health_src
 
 

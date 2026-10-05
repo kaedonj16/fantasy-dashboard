@@ -1,29 +1,19 @@
-"""Decision-specific evaluation metrics shared by model backtests."""
-from __future__ import annotations
+"""Compatibility shim: utils.evaluation_metrics now lives in utils.projections.
 
-import math
+Re-exports every public name so existing imports keep working.
+New code should import from utils.projections directly.
+"""
+from utils.projections import (  # noqa: F401,F403
+    brier_score,
+    log_loss,
+    precision_at_k,
+    decision_regret,
+)
 
-
-def brier_score(predictions, outcomes) -> float:
-    pairs = list(zip(predictions, outcomes))
-    return sum((float(p) - float(y)) ** 2 for p, y in pairs) / len(pairs) if pairs else 0.0
-
-
-def log_loss(predictions, outcomes) -> float:
-    pairs, eps = list(zip(predictions, outcomes)), 1e-6
-    if not pairs:
-        return 0.0
-    return -sum(float(y) * math.log(min(1-eps, max(eps, float(p))))
-                + (1-float(y)) * math.log(min(1-eps, max(eps, 1-float(p))))
-                for p, y in pairs) / len(pairs)
+__all__ = ['brier_score', 'log_loss', 'precision_at_k', 'decision_regret']
 
 
-def precision_at_k(scores, outcomes, k: int) -> float:
-    pairs = list(zip(scores, outcomes))
-    chosen = sorted(pairs, key=lambda pair: pair[0], reverse=True)[:max(0, k)]
-    return sum(bool(y) for _, y in chosen) / len(chosen) if chosen else 0.0
-
-
-def decision_regret(recommended_value: float, optimal_value: float) -> float:
-    """Lost realized utility versus the best legal hindsight decision."""
-    return max(0.0, float(optimal_value) - float(recommended_value))
+# --- monkeypatch propagation (see utils/_shim.py) ---
+from utils._shim import propagate_sets_to as _propagate_sets_to
+import importlib as _importlib
+_propagate_sets_to(__name__, _importlib.import_module("utils.projections"))

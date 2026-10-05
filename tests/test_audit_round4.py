@@ -11,8 +11,8 @@ APP_JS = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
 MODAL_JS = (ROOT / "static" / "player_modal.js").read_text(encoding="utf-8")
 CRON = (ROOT / "cron_daily.py").read_text(encoding="utf-8")
 CRAWLER = (ROOT / "data_building" / "trade_intel" / "trade_crawler.py").read_text(encoding="utf-8")
-BREAKOUT_BP2 = (ROOT / "routes" / "breakout_api_bp2.py").read_text(encoding="utf-8")
-WAIVER_BP = (ROOT / "routes" / "waiver_api_bp.py").read_text(encoding="utf-8")
+BREAKOUT_BP2 = (ROOT / "routes" / "advanced_metrics_bp.py").read_text(encoding="utf-8")
+WAIVER_BP = (ROOT / "routes" / "waiver_bp.py").read_text(encoding="utf-8")
 
 
 ESPN_FIXTURE = {
@@ -62,11 +62,11 @@ def test_cron_backfills_trade_time_values_and_espn_returns():
 
 
 def test_waiver_blueprint_overlays_espn_weeks_out():
-    assert "@waiver_api_bp.route(\"/api/waiver-candidates\")" in WAIVER_BP
+    assert "@waiver_bp.route(\"/api/waiver-candidates\")" in WAIVER_BP
     assert "weeks_out_for_player" in WAIVER_BP
     assert "_v[\"weeks_out\"] = _espn_weeks" in WAIVER_BP
     assert '_v["return_source"] = "espn"' in WAIVER_BP
-    assert "app.register_blueprint(waiver_api_bp)" in APP_PY
+    assert "app.register_blueprint(waiver_bp)" in APP_PY
     # Season PPG must be scoped to injured players ahead of candidates — resolving
     # the full NFL feed under custom ESPN scoring timed waivers out.
     assert "_injured_for_ppg" in WAIVER_BP

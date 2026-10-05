@@ -228,7 +228,7 @@ class _LeaderboardFakeConn:
 
 @pytest.fixture(autouse=True)
 def _no_player_index(monkeypatch):
-    monkeypatch.setattr("utils.utils.load_players_index", lambda: {})
+    monkeypatch.setattr("utils.data_cache.load_players_index", lambda: {})
     cache = getattr(am, "_METRIC_LEADERBOARD_CACHE", None)
     if cache is not None:
         cache.clear()

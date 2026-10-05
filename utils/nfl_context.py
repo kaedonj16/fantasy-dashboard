@@ -1,104 +1,23 @@
-"""Authoritative NFL season/week context and cache dimensions.
+"""Compatibility shim: utils.nfl_context now lives in utils.nfl.
 
-The provider state is authoritative.  Calendar inference exists only as an
-observable availability fallback; importantly, January and February still
-belong to the season which began in the previous calendar year.
+Re-exports every public name so existing imports keep working.
+New code should import from utils.nfl directly.
 """
-from __future__ import annotations
+from utils.nfl import (  # noqa: F401,F403
+    VALID_PHASES,
+    calendar_nfl_season,
+    _calendar_phase,
+    normalize_nfl_state,
+    nfl_state_is_stale,
+    nfl_state_last_good_at,
+    season_cache_key,
+    current_sample_weight,
+)
 
-from datetime import date, datetime, timezone
-from typing import Any, Mapping, Optional
-
-
-VALID_PHASES = frozenset({"off", "pre", "reg", "post"})
-
-
-def calendar_nfl_season(on_date: Optional[date] = None) -> int:
-    """Return the NFL season containing *on_date* when provider state is absent."""
-    day = on_date or datetime.now(timezone.utc).date()
-    return day.year - 1 if day.month <= 2 else day.year
-
-
-def _calendar_phase(day: date) -> str:
-    if day.month <= 2:
-        return "post"
-    if day.month <= 7:
-        return "off"
-    if day.month == 8:
-        return "pre"
-    return "reg"
+__all__ = ['VALID_PHASES', 'calendar_nfl_season', '_calendar_phase', 'normalize_nfl_state', 'nfl_state_is_stale', 'nfl_state_last_good_at', 'season_cache_key', 'current_sample_weight']
 
 
-def normalize_nfl_state(
-    state: Optional[Mapping[str, Any]], *, on_date: Optional[date] = None,
-    provider: str = "sleeper",
-) -> dict:
-    """Normalize provider state and attach lightweight freshness provenance."""
-    raw = dict(state or {})
-    day = on_date or datetime.now(timezone.utc).date()
-    try:
-        season = int(raw.get("season") or 0)
-    except (TypeError, ValueError):
-        season = 0
-    fallback_reason = None
-    if season < 2000:
-        season = calendar_nfl_season(day)
-        fallback_reason = "provider season unavailable"
-    try:
-        week = max(0, int(raw.get("week") or raw.get("display_week") or 0))
-    except (TypeError, ValueError):
-        week = 0
-    phase = str(raw.get("season_type") or "").strip().lower()
-    if phase not in VALID_PHASES:
-        phase = _calendar_phase(day)
-        fallback_reason = fallback_reason or "provider phase unavailable"
-    raw.update({"season": season, "week": week, "season_type": phase})
-    raw["freshness"] = {
-        "source_season": season,
-        "source_week": week,
-        "provider": provider,
-        "classification": "live" if fallback_reason is None else "fallback",
-        "fallback_reason": fallback_reason,
-        "resolved_at": datetime.now(timezone.utc).isoformat(),
-    }
-    return raw
-
-
-def nfl_state_is_stale(state: Optional[Mapping[str, Any]]) -> bool:
-    """True when get_nfl_state() served a last-good fallback after a failed fetch.
-
-    Fresh successful fetches never set the flag; only the stale-fallback path
-    in dashboard_services.api does. Consumers (nav chrome, API payloads) can
-    branch on this instead of trusting the week blindly.
-    """
-    fresh = (state or {}).get("freshness")
-    return bool(isinstance(fresh, dict) and fresh.get("stale"))
-
-
-def nfl_state_last_good_at(state: Optional[Mapping[str, Any]]) -> Optional[str]:
-    """ISO timestamp of the last successful NFL state fetch, if the state is stale."""
-    fresh = (state or {}).get("freshness")
-    if isinstance(fresh, dict):
-        return fresh.get("last_good_at")
-    return None
-
-
-def season_cache_key(namespace: str, *, season: int, week: Optional[int] = None,
-                     league_id: Optional[str] = None, scoring: Optional[str] = None,
-                     provider: Optional[str] = None) -> str:
-    """Build a stable key which cannot accidentally cross season boundaries."""
-    parts = [namespace, f"s{int(season)}"]
-    if week is not None:
-        parts.append(f"w{int(week)}")
-    if provider:
-        parts.append(f"p:{provider}")
-    if league_id:
-        parts.append(f"l:{league_id}")
-    if scoring:
-        parts.append(f"sc:{scoring}")
-    return "|".join(parts)
-
-
-def current_sample_weight(games: int, *, full_weight_at: int = 6) -> float:
-    """Intentional early-season blend weight for observed current-year data."""
-    return min(1.0, max(0.0, float(games) / max(1, int(full_weight_at))))
+# --- monkeypatch propagation (see utils/_shim.py) ---
+from utils._shim import propagate_sets_to as _propagate_sets_to
+import importlib as _importlib
+_propagate_sets_to(__name__, _importlib.import_module("utils.nfl"))

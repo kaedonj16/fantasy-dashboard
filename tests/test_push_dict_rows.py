@@ -101,7 +101,7 @@ def test_lineup_lock_sends_bench_points_push():
 
     with mock.patch("dashboard_services.api.get_nfl_state",
                     return_value={"season": 2025, "week": 9, "season_type": "reg"}), \
-         mock.patch("utils.utils.load_week_schedule",
+         mock.patch("utils.data_cache.load_week_schedule",
                     return_value=[{"gameTime_epoch": kickoff_sec, "home": "KC", "away": "BUF"}]), \
          mock.patch("dashboard_services.db.get_conn", return_value=FakeConn()), \
          mock.patch.object(pn, "_get_subscribed_leagues", return_value=[("L1", "sleeper")]), \
@@ -189,7 +189,7 @@ def test_lineup_lock_appends_swap_when_starter_is_out():
 
     with mock.patch("dashboard_services.api.get_nfl_state",
                     return_value={"season": 2025, "week": 9, "season_type": "reg"}), \
-         mock.patch("utils.utils.load_week_schedule",
+         mock.patch("utils.data_cache.load_week_schedule",
                     return_value=[{"gameTime_epoch": kickoff_sec, "home": "KC", "away": "BUF"}]), \
          mock.patch("dashboard_services.db.get_conn", return_value=FakeConn()), \
          mock.patch.object(pn, "_get_subscribed_leagues", return_value=[("L1", "sleeper")]), \

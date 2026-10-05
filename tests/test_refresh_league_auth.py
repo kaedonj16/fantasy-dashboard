@@ -17,7 +17,7 @@ import pytest
 
 
 def _load(monkeypatch):
-    """Import routes.admin_api_bp with heavy deps stubbed; return helper + stubs."""
+    """Import routes.internal_bp with heavy deps stubbed; return helper + stubs."""
     app_stub = types.ModuleType("app")
     app_stub.DASHBOARD_CACHE = {}
     app_stub.CACHE_TTL = 43200
@@ -45,8 +45,8 @@ def _load(monkeypatch):
     accts_stub.list_user_leagues = lambda account_id: []
     monkeypatch.setitem(sys.modules, "dashboard_services.accounts", accts_stub)
 
-    sys.modules.pop("routes.admin_api_bp", None)
-    import routes.admin_api_bp as bp
+    sys.modules.pop("routes.internal_bp", None)
+    import routes.internal_bp as bp
 
     return bp._refresh_league_authorized, subs_stub, accts_stub
 

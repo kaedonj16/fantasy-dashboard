@@ -650,7 +650,7 @@ def winback_coupon_id() -> str:
 
 def run_daily_scan() -> dict:
     """One pass of churn touches. Returns counts; never raises."""
-    from utils import churn_email
+    from utils.email import send_dunning_touch, send_trial_reminder, send_winback
 
     summary = {"dunning_touch_2": 0, "dunning_resolved": 0,
                "trial_reminders": 0, "winback": 0}
@@ -666,7 +666,7 @@ def run_daily_scan() -> dict:
             continue  # Stripe unreachable; try again tomorrow, stay quiet
         if bump_dunning_touch(sub_id):
             acct = _account_row(row.get("account_id"), row.get("email"))
-            if acct and churn_email.send_dunning_touch(
+            if acct and send_dunning_touch(
                 account_id=acct.get("id"),
                 email=acct.get("email") or row.get("email") or "",
                 first_name=acct.get("first_name"),
@@ -690,7 +690,7 @@ def run_daily_scan() -> dict:
         if has_event(f"trial_reminder_{want}d", account_id=aid):
             continue
         acct = _account_row(aid, "")
-        if acct and churn_email.send_trial_reminder(
+        if acct and send_trial_reminder(
             account_id=acct.get("id"),
             email=acct.get("email") or "",
             first_name=acct.get("first_name"),
@@ -704,7 +704,7 @@ def run_daily_scan() -> dict:
         for acct in find_winback_candidates():
             aid = acct.get("id")
             token = make_winback_token(int(aid))
-            if churn_email.send_winback(
+            if send_winback(
                 account_id=aid,
                 email=acct.get("email") or "",
                 first_name=acct.get("first_name"),

@@ -161,7 +161,9 @@ class TestBucketForSlot:
         assert bucket_for_slot(12, 12) == "late"
 
     def test_degenerate_league_size(self):
-        assert bucket_for_slot(1, 0) == "mid"
+        # Unified on the utils.py tuned version: degenerate num_teams falls
+        # through to the generic thirds fallback (third=max(1, 0//3)=1).
+        assert bucket_for_slot(1, 0) == "early"
 
 
 class TestPickValueFromTable:

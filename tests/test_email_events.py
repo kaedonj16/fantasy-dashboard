@@ -28,7 +28,7 @@ def test_hard_bounce_suppresses_email():
     ctx = mock.MagicMock()
     ctx.__enter__.return_value = conn
     ctx.__exit__.return_value = False
-    with mock.patch("utils.email_events.ensure_schema"), \
+    with mock.patch("utils.email.ensure_email_events_schema"), \
          mock.patch("dashboard_services.db.get_conn", return_value=ctx):
         out = apply_webhook_payload({
             "event": "hardBounce",
@@ -46,7 +46,7 @@ def test_soft_bounce_does_not_suppress():
     ctx = mock.MagicMock()
     ctx.__enter__.return_value = conn
     ctx.__exit__.return_value = False
-    with mock.patch("utils.email_events.ensure_schema"), \
+    with mock.patch("utils.email.ensure_email_events_schema"), \
          mock.patch("dashboard_services.db.get_conn", return_value=ctx):
         apply_webhook_payload({
             "event": "softBounce",
@@ -63,7 +63,7 @@ def test_delivered_updates_timestamp():
     ctx = mock.MagicMock()
     ctx.__enter__.return_value = conn
     ctx.__exit__.return_value = False
-    with mock.patch("utils.email_events.ensure_schema"), \
+    with mock.patch("utils.email.ensure_email_events_schema"), \
          mock.patch("dashboard_services.db.get_conn", return_value=ctx):
         apply_webhook_payload({
             "event": "delivered",

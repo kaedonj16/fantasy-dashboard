@@ -40,14 +40,20 @@ def _ctx(**over):
 @pytest.fixture
 def vegas(monkeypatch):
     """Stub the cached schedule + Vegas loaders the ranker reads."""
-    utils_stub = types.ModuleType("utils.utils")
-    utils_stub.load_week_sched = lambda season, week: list(SCHEDULE)
-    conds_stub = types.ModuleType("utils.game_conditions")
+    cache_stub = types.ModuleType("utils.data_cache")
+    cache_stub.load_week_sched = lambda season, week: list(SCHEDULE)
+    conds_stub = types.ModuleType("utils.start_sit")
     conds_stub.build_week_conditions = lambda season, week, games: {
         t: {"implied_total": v} for t, v in IMPLIED.items()
     }
-    monkeypatch.setitem(sys.modules, "utils.utils", utils_stub)
-    monkeypatch.setitem(sys.modules, "utils.game_conditions", conds_stub)
+    monkeypatch.setitem(sys.modules, "utils.data_cache", cache_stub)
+    monkeypatch.setitem(sys.modules, "utils.start_sit", conds_stub)
+    # streaming_targets does lazy `from X import Y` inside the function, so
+    # also patch the already-imported real modules.
+    import utils.data_cache as dc
+    import utils.start_sit as ss
+    monkeypatch.setattr(dc, "load_week_sched", cache_stub.load_week_sched)
+    monkeypatch.setattr(ss, "build_week_conditions", conds_stub.build_week_conditions)
 
 
 def test_stream_score_scale():
@@ -112,13 +118,13 @@ def test_offseason_returns_empty():
 
 def test_never_raises_on_missing_data(monkeypatch):
     """Schedule/Vegas failures degrade to empty lists, never exceptions."""
-    utils_stub = types.ModuleType("utils.utils")
-    utils_stub.load_week_sched = lambda season, week: (_ for _ in ()).throw(
-        RuntimeError("sleeper down"))
-    conds_stub = types.ModuleType("utils.game_conditions")
-    conds_stub.build_week_conditions = lambda *a: (_ for _ in ()).throw(
-        RuntimeError("odds down"))
-    monkeypatch.setitem(sys.modules, "utils.utils", utils_stub)
-    monkeypatch.setitem(sys.modules, "utils.game_conditions", conds_stub)
+    import utils.data_cache as dc
+    import utils.start_sit as ss
+    monkeypatch.setattr(dc, "load_week_sched",
+                        lambda season, week: (_ for _ in ()).throw(
+                            RuntimeError("sleeper down")))
+    monkeypatch.setattr(ss, "build_week_conditions",
+                        lambda *a: (_ for _ in ()).throw(
+                            RuntimeError("odds down")))
     res = streaming_targets(_ctx(), 2026)
     assert res["defense"] == [] and res["kicker"] == []

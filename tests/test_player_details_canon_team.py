@@ -75,7 +75,7 @@ def test_api_player_details_def_fallback_still_canonicalizes(monkeypatch):
         lambda: {"WAS": {"teamId": "32"}},
     )
     monkeypatch.setattr(
-        "utils.utils.def_team_logo_urls",
+        "utils.nfl.def_team_logo_urls",
         lambda team: (f"/static/{team}.png", f"https://espn/{team}.png"),
     )
     monkeypatch.setattr("app.get_model_value_table_cached", lambda: [])

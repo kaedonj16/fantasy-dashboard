@@ -69,7 +69,7 @@ def test_jeremiyah_love_player_details_returns_all_explicit_flags(monkeypatch):
 
     pid = "13287"
     monkeypatch.setattr(
-        "utils.utils.load_relevant_index",
+        "utils.data_cache.load_relevant_index",
         lambda: {pid: {"name": "Jeremiyah Love", "pos": "RB", "team": "ARI"}},
     )
     monkeypatch.setattr(app, "get_model_value_table_cached", lambda: [])

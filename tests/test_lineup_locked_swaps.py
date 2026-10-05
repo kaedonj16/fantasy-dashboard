@@ -88,11 +88,15 @@ def test_locked_teams_for_week_fail_open(monkeypatch):
     import sys
     import types
 
-    stub = types.ModuleType("utils.utils")
+    stub = types.ModuleType("utils.data_cache")
 
     def _boom(season, week):
         raise RuntimeError("schedule unavailable")
 
     stub.load_week_schedule = _boom
-    monkeypatch.setitem(sys.modules, "utils.utils", stub)
+    monkeypatch.setitem(sys.modules, "utils.data_cache", stub)
+    # locked_teams_for_week does a lazy `from utils.data_cache import ...`;
+    # make sure the already-imported real module also sees the stub.
+    import utils.data_cache as dc
+    monkeypatch.setattr(dc, "load_week_schedule", _boom)
     assert locked_teams_for_week(2026, 4) == set()

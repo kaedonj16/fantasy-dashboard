@@ -33,8 +33,6 @@ def app(monkeypatch):
     monkeypatch.setitem(sys.modules, "dashboard_services.api", api_stub)
 
     import routes.auth_bp as auth_mod
-    import routes.google_auth_bp as google_mod
-    import routes.yahoo_auth_bp as yahoo_mod
     from extensions import limiter
 
     test_app = flask.Flask(__name__)
@@ -42,8 +40,6 @@ def app(monkeypatch):
     test_app.secret_key = "test-secret"
     limiter.init_app(test_app)
     test_app.register_blueprint(auth_mod.auth_bp)
-    test_app.register_blueprint(google_mod.google_auth_bp)
-    test_app.register_blueprint(yahoo_mod.yahoo_auth_bp)
     return test_app
 
 

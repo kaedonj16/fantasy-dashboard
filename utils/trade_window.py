@@ -1,123 +1,23 @@
-"""Buy/sell trade-window classification.
+"""Compatibility shim: utils.trade_window now lives in utils.trade.
 
-Pure logic for the Season Hub advisor: given a team's playoff odds, roster-age
-standing, and the weeks remaining before the league trade deadline, decide
-whether the team should be buying (contender consolidating), selling
-(rebuilder cashing vets), or holding, and pick the trade partners on the
-opposite side of the market.
+Re-exports every public name so existing imports keep working.
+New code should import from utils.trade directly.
 """
-from typing import List, Optional
+from utils.trade import (  # noqa: F401,F403
+    BUY_THRESHOLD,
+    SELL_THRESHOLD,
+    URGENT_WEEKS,
+    REDRAFT_DEADLINE_WINDOW,
+    redraft_deadline_card_visible,
+    deadline_line_visible,
+    trade_window_verdict,
+    trade_partners,
+)
 
-# Playoff-odds thresholds for the verdict. Between them is a genuine coin
-# flip where pushing someone to buy or sell would be false confidence.
-BUY_THRESHOLD = 65.0
-SELL_THRESHOLD = 35.0
-
-# A deadline this close makes the verdict urgent.
-URGENT_WEEKS = 3
-
-# Redraft Season Hub cards are labeled "Trade deadline: …". Only show them
-# once the deadline is known and within this many weeks — otherwise Week 1
-# leagues (especially ESPN, which historically lacked trade_deadline) get a
-# misleading mid-season notif.
-REDRAFT_DEADLINE_WINDOW = 4
+__all__ = ['BUY_THRESHOLD', 'SELL_THRESHOLD', 'URGENT_WEEKS', 'REDRAFT_DEADLINE_WINDOW', 'redraft_deadline_card_visible', 'deadline_line_visible', 'trade_window_verdict', 'trade_partners']
 
 
-def redraft_deadline_card_visible(weeks_to_deadline: Optional[int]) -> bool:
-    """True when a redraft league should paint the trade-deadline action card."""
-    if weeks_to_deadline is None:
-        return False
-    try:
-        weeks = int(weeks_to_deadline)
-    except (TypeError, ValueError):
-        return False
-    return 0 <= weeks <= REDRAFT_DEADLINE_WINDOW
-
-
-def deadline_line_visible(weeks_to_deadline: Optional[int]) -> bool:
-    """True when the "deadline in N weeks" context line is worth showing.
-
-    Dynasty paints the trade-window advisor year-round, so far-off deadlines
-    would make a standing buy/sell card read like a countdown alert. Gate the
-    deadline line to the same near-deadline window redraft uses for its card.
-    """
-    return redraft_deadline_card_visible(weeks_to_deadline)
-
-
-def trade_window_verdict(
-    playoff_pct: float,
-    weeks_to_deadline: Optional[int] = None,
-    age_rank: Optional[int] = None,
-    n_teams: Optional[int] = None,
-) -> dict:
-    """Classify a team's trade posture.
-
-    Args:
-        playoff_pct: 0-100 playoff probability.
-        weeks_to_deadline: whole weeks until the trade deadline; None when the
-            league has no usable deadline.
-        age_rank: 1 = oldest core in the league (optional flavor signal).
-        n_teams: league size, required for age_rank to mean anything.
-
-    Returns {"verdict": "buy"|"sell"|"hold", "urgent": bool, "modifier": str}.
-    modifier is "" or a refinement: "all_in" (buying with an old core, the
-    window is now), "youth" (selling with a young core, rebuild is on
-    schedule), "aging_bubble" (holding with an old core on the playoff bubble,
-    the riskiest place to sit).
-    """
-    pct = float(playoff_pct or 0.0)
-    if pct >= BUY_THRESHOLD:
-        verdict = "buy"
-    elif pct <= SELL_THRESHOLD:
-        verdict = "sell"
-    else:
-        verdict = "hold"
-
-    urgent = weeks_to_deadline is not None and 0 <= int(weeks_to_deadline) <= URGENT_WEEKS
-
-    modifier = ""
-    if age_rank and n_teams and n_teams >= 4:
-        old_third = age_rank <= max(1, round(n_teams / 3))
-        young_third = age_rank > n_teams - max(1, round(n_teams / 3))
-        if verdict == "buy" and old_third:
-            modifier = "all_in"
-        elif verdict == "sell" and young_third:
-            modifier = "youth"
-        elif verdict == "hold" and old_third:
-            modifier = "aging_bubble"
-
-    return {"verdict": verdict, "urgent": urgent, "modifier": modifier}
-
-
-def trade_partners(teams: List[dict], verdict: str, limit: int = 3) -> List[str]:
-    """Names of the best trade partners on the opposite side of the market.
-
-    teams: [{"name", "playoff_pct", "is_viewer"}]. Buyers should call the
-    clearest sellers (lowest playoff odds) and vice versa; holders get no
-    partner list. The viewer is always excluded (by flag and by name, so a
-    mis-tagged roster_id cannot list your own team as a seller to call).
-    """
-    if verdict not in ("buy", "sell"):
-        return []
-    viewer_names = {
-        str(t.get("name") or "").strip().lower()
-        for t in (teams or [])
-        if t.get("is_viewer") and t.get("name")
-    }
-    pool = []
-    for t in teams or []:
-        if t.get("is_viewer"):
-            continue
-        name = t.get("name")
-        if not name:
-            continue
-        if str(name).strip().lower() in viewer_names:
-            continue
-        pool.append(t)
-    if verdict == "buy":
-        pool = [t for t in pool if float(t.get("playoff_pct") or 0) <= SELL_THRESHOLD]
-        pool.sort(key=lambda t: float(t.get("playoff_pct") or 0))
-    else:
-        pool = [t for t in pool if float(t.get("playoff_pct") or 0) >= BUY_THRESHOLD]
-        pool.sort(key=lambda t: -float(t.get("playoff_pct") or 0))
-    return [str(t["name"]) for t in pool[: max(0, int(limit))]]
+# --- monkeypatch propagation (see utils/_shim.py) ---
+from utils._shim import propagate_sets_to as _propagate_sets_to
+import importlib as _importlib
+_propagate_sets_to(__name__, _importlib.import_module("utils.trade"))

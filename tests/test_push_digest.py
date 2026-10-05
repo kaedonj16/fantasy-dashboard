@@ -253,7 +253,7 @@ def test_digest_summary_single_item_single_league(fake_season):
 # ── Re-prompt persistence sanitization ────────────────────────────────────────
 
 def test_reprompt_ui_prefs_sanitized():
-    from routes.ui_prefs_bp import _sanitize_prefs, _ALLOWED_PREF_KEYS
+    from routes.user_pages_bp import _sanitize_prefs, _ALLOWED_PREF_KEYS
 
     assert "push_reprompt_dismissed" in _ALLOWED_PREF_KEYS
     assert "push_reprompt_count" in _ALLOWED_PREF_KEYS

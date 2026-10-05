@@ -1,53 +1,17 @@
-"""Pure input-validation / coercion helpers.
+"""Compatibility shim: utils.validation now lives in utils.core.
 
-Extracted from app.py so they can be unit-tested without the pandas/DB stack.
+Re-exports every public name so existing imports keep working.
+New code should import from utils.core directly.
 """
-from __future__ import annotations
+from utils.core import (  # noqa: F401,F403
+    safe_int_or_none as safe_int,
+    validate_league_id,
+)
 
-from typing import Optional
-
-
-def safe_int(value, default=None):
-    """Coerce ``value`` to int, returning ``default`` on failure."""
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
+__all__ = ['safe_int', 'validate_league_id']
 
 
-def validate_league_id(platform: str, league_id: str) -> "tuple[bool, Optional[str]]":
-    """Validate a league id for a given platform.
-
-    Returns ``(ok, error_message)``. ``error_message`` is None when valid.
-    """
-    if not league_id:
-        return False, "League ID is required."
-
-    platform = (platform or "").lower().strip()
-
-    if platform == "sleeper":
-        if not league_id.isdigit():
-            return False, "Invalid Sleeper league ID. Please check it and try again."
-        return True, None
-
-    if platform == "espn":
-        if not league_id.isdigit():
-            return False, "Invalid ESPN league ID. It should be a number."
-        return True, None
-
-    if platform == "yahoo":
-        if not league_id.isdigit():
-            return False, "Invalid Yahoo league ID. It should be a number."
-        return True, None
-
-    if platform == "mfl":
-        if not league_id.isdigit():
-            return False, "Invalid MFL league ID. It should be a number."
-        return True, None
-
-    if platform == "fleaflicker":
-        if not league_id.isdigit():
-            return False, "Invalid Fleaflicker league ID. It should be a number."
-        return True, None
-
-    return False, f"Unsupported platform: {platform}"
+# --- monkeypatch propagation (see utils/_shim.py) ---
+from utils._shim import propagate_sets_to as _propagate_sets_to
+import importlib as _importlib
+_propagate_sets_to(__name__, _importlib.import_module("utils.core"))

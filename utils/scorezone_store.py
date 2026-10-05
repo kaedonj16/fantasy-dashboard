@@ -426,7 +426,7 @@ def discover_live_games(current_week: int | None = None) -> list[dict]:
     game is tagged with the week it was discovered under, so the collector
     stamps the correct week even when backfilling an older game.
     """
-    from utils.scorezone_alt_pbp import (
+    from utils.scorezone import (
         _ESPN_SCOREBOARD,
         _UA,
         extract_espn_scoreboard_lookup,
@@ -487,8 +487,8 @@ def discover_live_games(current_week: int | None = None) -> list[dict]:
 
 def _build_name_maps(nfl_players: dict, teams: set[str]):
     """pid-resolution maps for one game's teams (mirrors _scorezone_collect)."""
-    from utils.scorezone_pbp import _normalize_name, _extract_first_initial_last
-    from utils.utils import canon_team
+    from utils.scorezone import _normalize_name, _extract_first_initial_last
+    from utils.nfl import canon_team
 
     wanted = {str(t).upper() for t in teams if t}
     name_to_pid: dict[str, str] = {}
@@ -560,7 +560,7 @@ def _in_nfl_game_window(now=None) -> bool:
 def poll_once() -> dict:
     """One store iteration: discover games, fetch PBP, upsert. Returns stats."""
     from dashboard_services.api import get_nfl_players, get_nfl_state
-    from utils.scorezone_alt_pbp import fetch_alt_pbp_plays, parse_tank_game_id
+    from utils.scorezone import fetch_alt_pbp_plays, parse_tank_game_id
 
     stats = {"games": 0, "plays": 0}
     try:

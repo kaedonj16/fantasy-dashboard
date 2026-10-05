@@ -1,14 +1,20 @@
-from pathlib import Path
+"""Compatibility shim: utils.paths now lives in utils.data_cache.
 
-ROOT_DIR = Path(__file__).resolve().parents[1]
-DATA_DIR = ROOT_DIR / "data"
-DATA_DIR.mkdir(parents=True, exist_ok=True)
+Re-exports every public name so existing imports keep working.
+New code should import from utils.data_cache directly.
+"""
+from utils.data_cache import (  # noqa: F401,F403
+    ROOT_DIR,
+    DATA_DIR,
+    CACHE_DIR,
+    PLAYER_HISTORY_DIR,
+    PLAYER_INVESTMENT_DIR,
+)
 
-CACHE_DIR = ROOT_DIR / "cache"
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
+__all__ = ['ROOT_DIR', 'DATA_DIR', 'CACHE_DIR', 'PLAYER_HISTORY_DIR', 'PLAYER_INVESTMENT_DIR']
 
-PLAYER_HISTORY_DIR = CACHE_DIR / "player_history"
-PLAYER_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
 
-PLAYER_INVESTMENT_DIR = CACHE_DIR / "player_investment"
-PLAYER_INVESTMENT_DIR.mkdir(parents=True, exist_ok=True)
+# --- monkeypatch propagation (see utils/_shim.py) ---
+from utils._shim import propagate_sets_to as _propagate_sets_to
+import importlib as _importlib
+_propagate_sets_to(__name__, _importlib.import_module("utils.data_cache"))

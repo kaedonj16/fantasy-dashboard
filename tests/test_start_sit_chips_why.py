@@ -19,7 +19,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 WAIVERS = ROOT / "dashboard_services" / "pages" / "waivers_page.py"
-SCORE = ROOT / "utils" / "start_sit_score.py"
+SCORE = ROOT / "utils" / "start_sit.py"
 MODAL = ROOT / "static" / "player_modal.js"
 
 EXPECTED_DEMOTION_LABELS = {

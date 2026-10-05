@@ -73,7 +73,7 @@ def test_variant_week_points_matches_live_scorers(tmp_path, monkeypatch):
                         lambda s: [str(tmp_path / f"sleeper_stats_s{s}_w{w}.json")
                                    for w in (1, 2, 3)])
     monkeypatch.setattr(
-        "utils.season_qualification.qualification_policy",
+        "utils.projections.qualification_policy",
         lambda s: type("Q", (), {"completed_weeks": (1, 2, 3)})())
 
     scoring = dict(ssb.VARIANT_SCORING["half_ppr"])

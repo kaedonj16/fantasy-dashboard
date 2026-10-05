@@ -28,7 +28,13 @@ from dashboard_services.db import get_conn
 from dashboard_services.api import get_nfl_state
 from data_building.advanced_metrics import init_advanced_metrics_db, _normalize_position
 from utils.utils import load_players_index, normalize_name
-from scripts.fix_advanced_metrics_ids import _build_index_maps, _resolve
+import importlib as _importlib
+
+# NOTE: "ops-once" contains a hyphen so it cannot be imported with `from ... import`
+# syntax; the module path is identical, loaded here via importlib.
+_fix_ids = _importlib.import_module("scripts.archive.ops-once.fix_advanced_metrics_ids")
+_build_index_maps = _fix_ids._build_index_maps
+_resolve = _fix_ids._resolve
 
 OUTPUT_DIR = "data"
 PFF_BASE = "https://premium.pff.com"

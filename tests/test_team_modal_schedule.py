@@ -24,7 +24,7 @@ def fixture(details=False, rows=None, season=2026, current_week=2):
 
 
 def test_schedule_uses_ids_authoritative_totals_and_states(monkeypatch):
-    monkeypatch.setattr("utils.utils.load_players_index", lambda: {"p-old": {"name": "Traded Player", "pos": "RB"}, "p2": {"name": "Defense", "pos": "DEF"}})
+    monkeypatch.setattr("utils.data_cache.load_players_index", lambda: {"p-old": {"name": "Traded Player", "pos": "RB"}, "p2": {"name": "Defense", "pos": "DEF"}})
     data = fixture(details=True)
     week = data["weeks"][0]
     assert week["opponent"]["roster_id"] == "20"

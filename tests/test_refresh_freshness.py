@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[1]
 APP_JS = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
 SW = (ROOT / "static" / "sw.js").read_text(encoding="utf-8")
 APP_PY = (ROOT / "app.py").read_text(encoding="utf-8")
-ADMIN = (ROOT / "routes" / "admin_api_bp.py").read_text(encoding="utf-8")
+ADMIN = (ROOT / "routes" / "internal_bp.py").read_text(encoding="utf-8")
 
 
 def _freshness_iife() -> str:
@@ -213,8 +213,11 @@ def test_refresh_league_touches_cross_worker_bust():
     assert "_touch_league_bust" in fn
     # Refresh marks the entry for a forced rebuild via force_refresh instead of
     # zeroing ts, so the stale-fallback keeps the old ts if the rebuild fails.
-    assert 'DASHBOARD_CACHE[key]["force_refresh"] = True' in fn
-    assert 'DASHBOARD_CACHE[key]["ts"] = 0' not in fn
+    # (internal_bp uses the lazy _dashboard_cache() accessor to avoid the
+    # app circular import, so the cache var may be _dc rather than
+    # DASHBOARD_CACHE.)
+    assert '["force_refresh"] = True' in fn
+    assert '["ts"] = 0' not in fn
     assert "clear_league_provider_cache_for_league" in fn
 
 

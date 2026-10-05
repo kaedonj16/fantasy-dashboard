@@ -15,18 +15,18 @@ from utils.scorezone_alt_pbp import (
 def test_alternate_pbp_defaults_to_espn_first(monkeypatch):
     calls = []
     monkeypatch.setattr(
-        "utils.scorezone_alt_pbp.fetch_espn_event_id",
+        "utils.scorezone.fetch_espn_event_id",
         lambda **kwargs: calls.append("espn") or "event-1",
     )
     monkeypatch.setattr(
-        "utils.scorezone_alt_pbp.fetch_espn_pbp", lambda *args, **kwargs: {"ok": 1}
+        "utils.scorezone.fetch_espn_pbp", lambda *args, **kwargs: {"ok": 1}
     )
     monkeypatch.setattr(
-        "utils.scorezone_alt_pbp.extract_espn_pbp_plays",
+        "utils.scorezone.extract_espn_pbp_plays",
         lambda *args, **kwargs: [{"play_id": "espn-1"}],
     )
     monkeypatch.setattr(
-        "utils.scorezone_alt_pbp.sleeper_game_id_for_matchup",
+        "utils.scorezone.sleeper_game_id_for_matchup",
         lambda **kwargs: calls.append("sleeper") or "sleeper-1",
     )
 
@@ -42,7 +42,7 @@ def test_fetch_espn_pbp_prefers_summary_over_cdn(monkeypatch):
     """The web API summary is the freshest source; the CDN gamepackage (which
     can trail live play by minutes) is only touched when summary yields no
     plays."""
-    import utils.scorezone_alt_pbp as alt
+    import utils.scorezone as alt
 
     summary = {"drives": {"current": {"plays": [{"id": "s1", "text": "x"}]}}}
     calls = []
@@ -56,7 +56,7 @@ def test_fetch_espn_pbp_prefers_summary_over_cdn(monkeypatch):
 
 
 def test_fetch_espn_pbp_falls_back_to_cdn_when_summary_empty(monkeypatch):
-    import utils.scorezone_alt_pbp as alt
+    import utils.scorezone as alt
 
     cdn = {"gamepackageJSON": {"drives": {"current": {"plays": [{"id": "c1"}]}}}}
     calls = []
@@ -98,7 +98,7 @@ def test_final_game_force_refreshes_espn_until_completed(monkeypatch):
     """A game our status calls final must keep pulling fresh ESPN PBP (ttl=0)
     until ESPN reports the game completed -- otherwise the last live snapshot,
     a few plays short, freezes under the long final TTL."""
-    import utils.scorezone_alt_pbp as alt
+    import utils.scorezone as alt
     alt._ESPN_PBP_FINAL_DONE.discard("event-1")
 
     ttls = []

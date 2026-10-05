@@ -124,7 +124,7 @@ def _fake_urlopen(body: bytes):
 
 
 def test_download_helpers_share_cached_logic(monkeypatch, tmp_path):
-    monkeypatch.setattr("utils.paths.CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr("utils.data_cache.CACHE_DIR", str(tmp_path))
     fake = _fake_urlopen(b"pfr_player_id,week\np1,1\n")
     monkeypatch.setattr("urllib.request.urlopen", fake)
     pass_path = nm.download_pfr_advstats_pass_csv(2026)
@@ -146,7 +146,7 @@ def test_download_helpers_share_cached_logic(monkeypatch, tmp_path):
 
 
 def test_download_helpers_fail_closed(monkeypatch, tmp_path):
-    monkeypatch.setattr("utils.paths.CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr("utils.data_cache.CACHE_DIR", str(tmp_path))
 
     def _down(*a, **k):
         raise OSError("network down")

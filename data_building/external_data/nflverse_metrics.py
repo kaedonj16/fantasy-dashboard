@@ -170,7 +170,7 @@ def _download_pfr_advstats_csv(kind: str, url: str, season: int,
     import urllib.request
     from pathlib import Path
 
-    from utils.paths import CACHE_DIR
+    from utils.data_cache import CACHE_DIR
 
     dest = Path(CACHE_DIR) / f"pfr_advstats_week_{kind}_{season}.csv"
     try:

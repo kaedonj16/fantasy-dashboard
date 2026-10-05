@@ -35,7 +35,7 @@ def _mock_handler_deps(monkeypatch, ctx_result, ctx_calls):
         pytest.skip(f"app not importable ({type(exc).__name__})")
 
     monkeypatch.setattr(
-        "utils.utils.load_relevant_index",
+        "utils.data_cache.load_relevant_index",
         lambda: {PID: {"name": "Patrick Mahomes", "pos": "QB", "team": "KC"}},
     )
     # Foreground Sleeper sync the handler performs for scoring settings.

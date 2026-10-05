@@ -47,9 +47,9 @@ def _stub_build_dependencies(appmod, monkeypatch, calls):
     monkeypatch.setattr(appmod, "get_viewer_session_for_league", lambda *a, **k: {})
     monkeypatch.setattr(appmod, "_load_rookie_rankings_for_ctx", lambda: [])
     monkeypatch.setattr(
-        "utils.draft_capital.provider_exposes_draft_capital", lambda *a, **k: False)
+        "utils.league.provider_exposes_draft_capital", lambda *a, **k: False)
     monkeypatch.setattr(
-        "utils.draft_capital.has_future_draft_capital", lambda *a, **k: False)
+        "utils.league.has_future_draft_capital", lambda *a, **k: False)
 
     def _activity(*a, **k):
         calls.append("activity")

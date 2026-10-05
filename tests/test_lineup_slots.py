@@ -47,7 +47,7 @@ def test_canonicalize_provider_aliases(raw, canon):
 
 def test_count_roster_positions_delegates_to_canonical_counts():
     from pathlib import Path
-    src = (Path(__file__).resolve().parents[1] / "utils" / "utils.py").read_text(encoding="utf-8")
+    src = (Path(__file__).resolve().parents[1] / "utils" / "live_stats.py").read_text(encoding="utf-8")
     assert "count_lineup_slots(positions)" in src
 
 

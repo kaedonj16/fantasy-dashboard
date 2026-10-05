@@ -1,49 +1,17 @@
-"""Projection-variant selection.
+"""Compatibility shim: utils.proj_variant now lives in utils.projections.
 
-Extracted from utils/utils.py so this pure logic can be unit-tested without
-importing that module's heavier dependencies (requests / bs4 / dashboard_services).
-Given a league's raw Sleeper scoring settings, returns the key of the projection
-set that matches its scoring — reception points, TE premium, and passing-TD value.
+Re-exports every public name so existing imports keep working.
+New code should import from utils.projections directly.
 """
-from __future__ import annotations
+from utils.projections import (  # noqa: F401,F403
+    pick_proj_variant,
+    pick_proj_variant_from_draft_scoring,
+)
+
+__all__ = ['pick_proj_variant', 'pick_proj_variant_from_draft_scoring']
 
 
-def pick_proj_variant(raw_sleeper_settings: dict) -> str:
-    """
-    Return the projection variant key that matches a league's scoring settings.
-    Keys: ppr | half_ppr | std | tep | 6pt_ppr | 6pt_half | 6pt_tep
-    """
-    s = raw_sleeper_settings or {}
-    rec      = float(s.get("rec", 1.0))
-    te_bonus = float(s.get("bonus_rec_te", 0.0))
-    pass_td  = float(s.get("pass_td", 4.0))
-
-    tep   = te_bonus >= 0.25
-    six   = pass_td >= 5.5
-
-    if rec >= 1.0:
-        base = "ppr"
-    elif rec >= 0.4:
-        base = "half_ppr"
-    else:
-        base = "std"
-
-    if six and tep and base == "ppr":
-        return "6pt_tep"
-    if six and base == "ppr":
-        return "6pt_ppr"
-    if six and base == "half_ppr":
-        return "6pt_half"
-    if tep and base == "ppr":
-        return "tep"
-    return base
-
-
-def pick_proj_variant_from_draft_scoring(scoring: dict | None) -> str:
-    """Map draft-room scoring ``{ppr, tep, passTd}`` onto pick_proj_variant keys."""
-    s = scoring or {}
-    return pick_proj_variant({
-        "rec": s.get("ppr", s.get("rec", 1.0)),
-        "bonus_rec_te": s.get("tep", s.get("bonus_rec_te", 0.0)),
-        "pass_td": s.get("passTd", s.get("pass_td", 4.0)),
-    })
+# --- monkeypatch propagation (see utils/_shim.py) ---
+from utils._shim import propagate_sets_to as _propagate_sets_to
+import importlib as _importlib
+_propagate_sets_to(__name__, _importlib.import_module("utils.projections"))

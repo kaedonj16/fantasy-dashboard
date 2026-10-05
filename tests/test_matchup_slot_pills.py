@@ -28,7 +28,7 @@ def _render(mmod, matchup, roster_positions=None):
          mock.patch.object(mmod, "load_week_schedule", return_value=[]), \
          mock.patch.object(mmod, "build_team_schedule_lookup", return_value={}), \
          mock.patch.object(mmod, "_allow_live_game_indicators", return_value=False), \
-         mock.patch("utils.utils.load_week_projection", return_value={}):
+         mock.patch("utils.data_cache.load_week_projection", return_value={}):
         return mmod.render_matchup_slide(
             "2026", matchup, 3, 2,
             status_by_pid={},

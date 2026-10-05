@@ -1,309 +1,36 @@
-"""Pure helpers over Sleeper/ESPN league payload dicts.
+"""Compatibility shim: utils.league_payload now lives in utils.league.
 
-Extracted from app.py so these transforms can be unit-tested without the
-pandas/DB stack. All pure — dict in, dict/value out.
+Re-exports every public name so existing imports keep working.
+New code should import from utils.league directly.
 """
-from __future__ import annotations
+from utils.league import (  # noqa: F401,F403
+    format_sleeper_league_option,
+    get_most_recent_valid_draft_for_season,
+    build_roster_map,
+    _FILLED_ROSTER_MIN_PLAYERS,
+    _LIVE_DRAFT_STATUSES,
+    _INCOMPLETE_DRAFT_STATUSES,
+    _RAW_INCOMPLETE_DRAFT_STATUSES,
+    _REDRAFT_KEEPER_TYPES,
+    _REDRAFT_KEEPER_LABELS,
+    _norm_status,
+    _as_epoch_ms,
+    _is_known_redraft_or_keeper,
+    _looks_dynasty,
+    _explicit_startup_incomplete,
+    rosters_look_undrafted,
+    draft_start_ms,
+    startup_draft_phase,
+    startup_draft_pending,
+    show_matchup_preview,
+    draft_countdown_copy,
+    top_board_preview,
+)
 
-from typing import Optional
-import time
-from datetime import datetime, timezone
-
-from utils.validation import safe_int
-
-
-def format_sleeper_league_option(league: dict) -> dict:
-    """Shape a raw Sleeper league dict into the option payload the picker uses."""
-    settings = league.get("settings") or {}
-
-    return {
-        "league_id": str(league.get("league_id", "")),
-        "name": league.get("name") or "Unnamed League",
-        "season": str(league.get("season") or ""),
-        "total_rosters": league.get("total_rosters") or settings.get("num_teams") or "",
-        "avatar": league.get("avatar") or "",
-        "label": (
-            f"{league.get('name') or 'Unnamed League'} "
-            f"({league.get('season') or ''}) • "
-            f"{league.get('total_rosters') or settings.get('num_teams') or '?'} teams"
-        ),
-    }
-
-
-def get_most_recent_valid_draft_for_season(drafts: list, season: int) -> Optional[dict]:
-    """
-    Pick the most recent draft from the provided list, using the best available
-    timestamp field. Return it only if it belongs to the viewed season.
-
-    If the newest draft is from an older season, return None so the caller
-    can keep TBD logic.
-    """
-    if not isinstance(drafts, list) or not drafts:
-        return None
-
-    def draft_sort_ts(d: dict) -> int:
-        if not isinstance(d, dict):
-            return -1
-        return max(
-            safe_int(d.get("start_time"), -1),
-            safe_int(d.get("created"), -1),
-            safe_int(d.get("last_picked"), -1),
-            safe_int(d.get("last_message_time"), -1),
-        )
-
-    valid_drafts = [d for d in drafts if isinstance(d, dict)]
-    if not valid_drafts:
-        return None
-
-    most_recent = max(valid_drafts, key=draft_sort_ts)
-    most_recent_season = safe_int(most_recent.get("season"))
-
-    if most_recent_season != int(season):
-        return None
-
-    return most_recent
+__all__ = ['format_sleeper_league_option', 'get_most_recent_valid_draft_for_season', 'build_roster_map', '_FILLED_ROSTER_MIN_PLAYERS', '_LIVE_DRAFT_STATUSES', '_INCOMPLETE_DRAFT_STATUSES', '_RAW_INCOMPLETE_DRAFT_STATUSES', '_REDRAFT_KEEPER_TYPES', '_REDRAFT_KEEPER_LABELS', '_norm_status', '_as_epoch_ms', '_is_known_redraft_or_keeper', '_looks_dynasty', '_explicit_startup_incomplete', 'rosters_look_undrafted', 'draft_start_ms', 'startup_draft_phase', 'startup_draft_pending', 'show_matchup_preview', 'draft_countdown_copy', 'top_board_preview']
 
 
-def build_roster_map(users: list, rosters: list) -> dict:
-    """Map roster_id -> display name, using metadata.team_name with user fallback."""
-    user_fallback = {
-        u["user_id"]: (
-                (u.get("metadata") or {}).get("team_name")
-                or u.get("display_name")
-                or u.get("username")
-                or str(u["user_id"])
-        )
-        for u in users
-    }
-    roster_map = {}
-    for r in rosters:
-        rid = str(r["roster_id"])
-        owner_id = r.get("owner_id")
-        roster_map[rid] = (r.get("metadata") or {}).get("team_name") or user_fallback.get(
-            owner_id, f"Roster {rid}"
-        )
-    return roster_map
-
-
-# A completed startup/redraft leaves every team with a full lineup (~9+). Empty
-# pre-draft shells are 0; keeper stubs are a handful. Dynasty rosters waiting on
-# a rookie draft still hold last year's 15–25 players, so they do not look
-# undrafted. Keeper/redraft platforms (especially Fleaflicker) can also still
-# hold last year's full roster before the new draft — those are caught via an
-# explicit pre-draft status, not this count. Fewer than half the teams
-# clearing this bar means the draft has not filled the league.
-_FILLED_ROSTER_MIN_PLAYERS = 5
-_LIVE_DRAFT_STATUSES = {"drafting"}
-_INCOMPLETE_DRAFT_STATUSES = {"pre_draft", "drafting"}
-_RAW_INCOMPLETE_DRAFT_STATUSES = {"NOT_YET_DRAFTED", "DRAFT_IN_PROGRESS"}
-_REDRAFT_KEEPER_TYPES = {0, 1}
-_REDRAFT_KEEPER_LABELS = {"redraft", "keeper", "re-draft", "redraft_keeper"}
-
-
-def _norm_status(value) -> str:
-    return str(value or "").strip().lower()
-
-
-def _as_epoch_ms(value) -> Optional[int]:
-    ts = safe_int(value, None)
-    if not ts or ts <= 0:
-        return None
-    # Seconds vs milliseconds: current epoch seconds are ~1.7e9.
-    if ts < 100_000_000_000:
-        ts *= 1000
-    return ts
-
-
-def _is_known_redraft_or_keeper(league: Optional[dict]) -> bool:
-    """True when settings explicitly mark redraft or keeper (not dynasty)."""
-    settings = (league or {}).get("settings") or {}
-    try:
-        t = settings.get("type")
-        if t is not None:
-            return int(t) in _REDRAFT_KEEPER_TYPES
-    except (TypeError, ValueError):
-        pass
-    lt = str(settings.get("league_type") or "").strip().lower()
-    return lt in _REDRAFT_KEEPER_LABELS
-
-
-def _looks_dynasty(league: Optional[dict]) -> bool:
-    """True when settings explicitly mark dynasty."""
-    settings = (league or {}).get("settings") or {}
-    try:
-        t = settings.get("type")
-        if t is not None:
-            return int(t) == 2
-    except (TypeError, ValueError):
-        pass
-    return "dynasty" in str(settings.get("league_type") or "").strip().lower()
-
-
-def _explicit_startup_incomplete(
-    league: Optional[dict],
-    latest_draft: Optional[dict],
-) -> bool:
-    """True when the provider says the startup/redraft draft has not finished.
-
-    Uses the draft record (and Fleaflicker's raw ``draft_status``), not
-    ``league.status``. Sleeper often leaves league status at ``pre_draft``
-    after a completed summer draft; roster fill already covers that case.
-    """
-    d_status = _norm_status(
-        (latest_draft or {}).get("status") if isinstance(latest_draft, dict) else ""
-    )
-    if d_status in _INCOMPLETE_DRAFT_STATUSES:
-        return True
-    settings = (league or {}).get("settings") or {}
-    raw = str(
-        settings.get("draft_status") or (league or {}).get("draft_status") or ""
-    ).strip().upper()
-    return raw in _RAW_INCOMPLETE_DRAFT_STATUSES
-
-
-def rosters_look_undrafted(rosters: list, min_players: int = _FILLED_ROSTER_MIN_PLAYERS) -> bool:
-    """True when fewer than half the teams have a real roster."""
-    counts = [len(r.get("players") or []) for r in (rosters or [])]
-    if not counts:
-        return True
-    filled = sum(1 for c in counts if c >= min_players)
-    return filled * 2 < len(counts)
-
-
-def draft_start_ms(league: Optional[dict], latest_draft: Optional[dict]) -> Optional[int]:
-    """Scheduled draft start in epoch ms, or None if unset."""
-    for src in (latest_draft, league):
-        if not isinstance(src, dict):
-            continue
-        for key in ("start_time", "draft_day"):
-            ts = _as_epoch_ms(src.get(key))
-            if ts:
-                return ts
-    return None
-
-
-def startup_draft_phase(
-    league: Optional[dict],
-    latest_draft: Optional[dict],
-    rosters: Optional[list],
-) -> str:
-    """Classify the league's startup/redraft: ``drafting``, ``predraft``, or ``drafted``.
-
-    Thin rosters beat a stale ``complete`` flag (Yahoo/MFL/Flea and the ESPN
-    no-date fallback all report complete before anyone has been picked). Full
-    rosters stay ``drafted`` even when league status is still ``pre_draft``, so
-    dynasty teams waiting on a rookie draft keep their real positional ranks.
-
-    Exception: a known redraft/keeper league with an explicit pre-draft (or
-    live-draft) status is still pending. Fleaflicker keeper leagues often
-    retain last year's full roster until the new draft runs.
-    """
-    thin = rosters_look_undrafted(rosters)
-    if not thin:
-        if (
-            _is_known_redraft_or_keeper(league)
-            and _explicit_startup_incomplete(league, latest_draft)
-        ):
-            d_status = _norm_status(
-                (latest_draft or {}).get("status") if isinstance(latest_draft, dict) else ""
-            )
-            raw = str(
-                ((league or {}).get("settings") or {}).get("draft_status") or ""
-            ).strip().upper()
-            if d_status in _LIVE_DRAFT_STATUSES or raw == "DRAFT_IN_PROGRESS":
-                return "drafting"
-            return "predraft"
-        return "drafted"
-    lg_status = _norm_status((league or {}).get("status"))
-    d_status = _norm_status(
-        (latest_draft or {}).get("status") if isinstance(latest_draft, dict) else ""
-    )
-    if lg_status in _LIVE_DRAFT_STATUSES or d_status in _LIVE_DRAFT_STATUSES:
-        return "drafting"
-    return "predraft"
-
-
-def startup_draft_pending(
-    league: Optional[dict],
-    latest_draft: Optional[dict],
-    rosters: Optional[list],
-) -> bool:
-    return startup_draft_phase(league, latest_draft, rosters) != "drafted"
-
-
-def show_matchup_preview(
-    league: Optional[dict],
-    latest_draft: Optional[dict],
-    rosters: Optional[list],
-    *,
-    is_dynasty: Optional[bool] = None,
-) -> bool:
-    """Whether the dashboard / weekly hub should render Matchup Preview.
-
-    Dynasty leagues keep real rosters through a rookie draft, so they always
-    show. Redraft and keeper wait until the startup draft is done.
-    """
-    if is_dynasty is None:
-        is_dynasty = _looks_dynasty(league)
-    if is_dynasty:
-        return True
-    return not startup_draft_pending(league, latest_draft, rosters)
-
-
-def draft_countdown_copy(
-    start_ms: Optional[int],
-    *,
-    now_ms: Optional[int] = None,
-    phase: str = "predraft",
-) -> dict:
-    """Label/value/subtext for a My Leagues draft-countdown tile."""
-    if phase == "drafting":
-        return {"label": "Draft", "value": "Live now", "sub": "Picks are in progress"}
-    if not start_ms:
-        return {"label": "Draft countdown", "value": "TBD", "sub": "Date not set"}
-    now = int(now_ms if now_ms is not None else time.time() * 1000)
-    remaining = int(start_ms) - now
-    if remaining <= 0:
-        return {"label": "Draft countdown", "value": "Soon", "sub": "Waiting to start"}
-    seconds = remaining // 1000
-    days = seconds // 86400
-    hours = (seconds % 86400) // 3600
-    minutes = (seconds % 3600) // 60
-    secs = seconds % 60
-    if days > 0:
-        value = f"{days}d {hours:02d}:{minutes:02d}:{secs:02d}"
-    else:
-        value = f"{hours:02d}:{minutes:02d}:{secs:02d}"
-    when = datetime.fromtimestamp(int(start_ms) / 1000, tz=timezone.utc).strftime("%b %d, %Y")
-    return {"label": "Draft countdown", "value": value, "sub": when}
-
-
-def top_board_preview(
-    value_table: Optional[list],
-    *,
-    is_sf: bool = False,
-    limit: int = 10,
-) -> list:
-    """Top skill-position names from the model table, for a pre-draft sidebar."""
-    field = "sf_value" if is_sf else "value"
-    ranked = []
-    for row in value_table or []:
-        if not isinstance(row, dict):
-            continue
-        pos = str(row.get("position") or row.get("pos") or "").upper()
-        if pos not in ("QB", "RB", "WR", "TE"):
-            continue
-        try:
-            val = float(row.get(field) or row.get("value") or 0)
-        except (TypeError, ValueError):
-            val = 0.0
-        if val <= 0:
-            continue
-        ranked.append({
-            "id": str(row.get("id") or ""),
-            "name": row.get("name") or "Player",
-            "pos": pos,
-            "value": val,
-        })
-    ranked.sort(key=lambda r: -r["value"])
-    return ranked[: max(0, int(limit))]
+# --- monkeypatch propagation (see utils/_shim.py) ---
+from utils._shim import propagate_sets_to as _propagate_sets_to
+import importlib as _importlib
+_propagate_sets_to(__name__, _importlib.import_module("utils.league"))

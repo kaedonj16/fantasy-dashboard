@@ -23,6 +23,7 @@ import re
 from datetime import datetime, timezone
 from html import escape
 from zoneinfo import ZoneInfo
+from utils.digest import player_deep_link, _player_name  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -128,12 +129,12 @@ def _ensure_columns(conn) -> None:
         "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS email_opt_out BOOLEAN DEFAULT FALSE"
     )
     try:
-        from utils.email_preferences import ensure_schema as _pref_schema
+        from utils.email import ensure_schema as _pref_schema
         _pref_schema(conn)
     except Exception:
         logger.debug("[weekly-email] preference schema skipped", exc_info=True)
     try:
-        from utils.email_events import ensure_schema as _evt_schema
+        from utils.email import ensure_schema as _evt_schema
         _evt_schema(conn)
     except Exception:
         logger.debug("[weekly-email] delivery-event schema skipped", exc_info=True)
@@ -142,7 +143,7 @@ def _ensure_columns(conn) -> None:
 def unsubscribe(account_id: int, notification_type: str = "weekly_digest") -> bool:
     """Opt out of one email category. Defaults to weekly digest."""
     try:
-        from utils.email_preferences import unsubscribe_type
+        from utils.email import unsubscribe_type
         return unsubscribe_type(int(account_id), notification_type or "weekly_digest")
     except Exception as exc:
         logger.warning("[weekly-email] unsubscribe failed: %s", exc)
@@ -196,17 +197,6 @@ def _recipients() -> list[dict]:
 
 # ── Digest content ────────────────────────────────────────────────────────────
 
-def player_deep_link(
-    base: str,
-    platform: str,
-    season: int,
-    league_id: str,
-    pid: str,
-    name: str = "",
-) -> str:
-    """Dashboard URL that opens the player modal via ``?player=`` (R12.1)."""
-    from utils.digest_actions import player_deep_link as _pdl
-    return _pdl(base, platform, season, league_id, pid, name)
 
 
 def cross_league_digest_html(
@@ -224,8 +214,8 @@ def cross_league_digest_html(
         return ""
     try:
         from utils.cross_league_actions import rank_cross_league_actions
-        from utils.digest_actions import section_card
-        from utils.digest_sections import heading
+        from utils.digest import section_card
+        from utils.digest import heading
     except Exception:
         return ""
     ranked = rank_cross_league_actions(list(actions), limit=max(0, int(limit or 0)))
@@ -332,7 +322,7 @@ def compact_league_blurb(
     elif bundle:
         chip = ""
         try:
-            from utils.digest_sections import format_chip
+            from utils.digest import format_chip
             chip = format_chip(bundle.get("format") or {})
         except Exception:
             chip = ""
@@ -475,7 +465,7 @@ def multi_league_sections_html(
     )
     parts: list[str] = []
     if others:
-        from utils.digest_sections import heading, leagues_snapshot_table_html
+        from utils.digest import heading, leagues_snapshot_table_html
         entries: list[dict] = []
         blurbs: list[str] = []
         base = (base_url or _base_url()).rstrip("/")
@@ -580,17 +570,12 @@ def _load_movers_and_index() -> tuple[dict, dict]:
     """The 7-day movers board and the players index are recipient-independent."""
     try:
         from dashboard_services.player_value_history import get_top_movers
-        from utils.utils import load_players_index
+        from utils.data_cache import load_players_index
         return (get_top_movers(days=7, limit=2000) or {}), (load_players_index() or {})
     except Exception:
         return {}, {}
 
 
-def _player_name(pid: str, pidx: dict) -> str:
-    meta = pidx.get(str(pid)) or {}
-    return (meta.get("full_name") or meta.get("name")
-            or ((meta.get("first_name") or "") + " " + (meta.get("last_name") or "")).strip()
-            or "")
 
 
 def choose_subject(
@@ -693,7 +678,7 @@ def thursday_night_starters(
     if games is None:
         try:
             from dashboard_services.api import get_nfl_games_for_week_raw
-            from utils.utils import get_week_schedule_cached
+            from utils.data_cache import get_week_schedule_cached
             games = get_week_schedule_cached(
                 season=sn, week=wk, fetch_fn=get_nfl_games_for_week_raw,
             )
@@ -968,13 +953,13 @@ def _collect_league_digest(
     league_name_hint: str = "",
 ) -> dict | None:
     """Load one league's digest snapshot. None when the league cannot be loaded."""
-    from utils.digest_context import (
+    from utils.digest import (
         DigestRunCache, DYNASTY_MOVE_MIN, LEAGUEWIDE_MOVE_MIN,
         breakout_for_roster, filter_movers, in_season, matchup_for_roster,
         mover_notes, roster_core, trade_insight_for_roster, uses_long_term_value,
     )
-    from utils.digest_actions import gather_digest_action_items, unique_waiver_targets
-    from utils.digest_sections import format_chip
+    from utils.digest import gather_digest_action_items, unique_waiver_targets
+    from utils.digest import format_chip
     from utils.league_format import classify_league_roster_format
 
     cache = run_cache if run_cache is not None else DigestRunCache()
@@ -1197,7 +1182,7 @@ def _collect_league_digest(
 
 
 def _snapshot_entry_from_snapshot(snap: dict) -> dict:
-    from utils.digest_sections import league_focus_line
+    from utils.digest import league_focus_line
 
     riser_name = ""
     riser_delta = None
@@ -1305,13 +1290,13 @@ def build_digest(platform: str, league_id: str, season: int, roster_id: str,
                  *,
                  run_cache=None) -> dict | None:
     """Assemble one recipient's single-league digest. Returns {subject, html, ...} or None."""
-    from utils.digest_sections import (
+    from utils.digest import (
         breakout_html, email_shell, greeting_html, injury_html,
         league_activity_html, league_summary_html, matchup_html,
         player_movement_html, roster_core_html, start_sit_html,
         thursday_alert_html, trade_insight_html, waiver_html,
     )
-    from utils.digest_actions import player_deep_link as _pdl
+    from utils.digest import player_deep_link as _pdl
 
     snap = _collect_league_digest(
         platform, league_id, season, roster_id,
@@ -1431,8 +1416,8 @@ def build_multi_league_digest(
     actions: list | None = None,
 ) -> dict | None:
     """Overview digest covering every connected league equally."""
-    from utils.digest_context import DigestRunCache
-    from utils.digest_sections import email_shell, greeting_html, heading, leagues_snapshot_table_html
+    from utils.digest import DigestRunCache
+    from utils.digest import email_shell, greeting_html, heading, leagues_snapshot_table_html
 
     if not leagues:
         return None
@@ -1504,7 +1489,7 @@ def build_multi_league_digest(
         moves = ""
     thursday_line = ""
     try:
-        from utils.digest_sections import thursday_alert_html
+        from utils.digest import thursday_alert_html
         titems: list[dict] = []
         for s in snapshots:
             lg = str(s.get("league_name") or "")
@@ -1560,7 +1545,7 @@ def _best_effort_lineup_actions(leagues: list[dict], run_cache=None) -> list:
         return out
     try:
         from utils.cross_league_actions import lineup_actions_from_issues, make_action
-        from utils.digest_context import LEAGUEWIDE_MOVE_MIN, filter_movers, matchup_for_roster
+        from utils.digest import LEAGUEWIDE_MOVE_MIN, filter_movers, matchup_for_roster
         from utils.lineup_issues import find_lineup_issues
     except Exception:
         return out
@@ -1645,7 +1630,7 @@ def _best_effort_lineup_actions(leagues: list[dict], run_cache=None) -> list:
 
 def in_season_safe(cache) -> bool:
     try:
-        from utils.digest_context import in_season
+        from utils.digest import in_season
         return in_season(cache)
     except Exception:
         return False
@@ -1666,8 +1651,8 @@ def send_weekly_digests(
     ``email`` restricts the run to one account. ``force`` bypasses weekly
     dedupe for that scoped send (still never sends during dry_run).
     """
-    from utils.email_delivery import is_configured, send_email, sleep_briefly
-    from utils.digest_context import DigestRunCache
+    from utils.email import is_configured, send_email, sleep_briefly
+    from utils.digest import DigestRunCache
 
     email_s = (email or "").strip().lower()
     if email_s and account_id is None:
@@ -1711,8 +1696,8 @@ def send_weekly_digests(
     consecutive_429 = 0
 
     from dashboard_services.db import get_conn
-    from utils.email_preferences import is_enabled, WEEKLY_DIGEST
-    from utils.email_events import is_suppressed, record_send
+    from utils.email import is_enabled, WEEKLY_DIGEST
+    from utils.email import is_suppressed, record_send
 
     last_preview_html = None
     last_preview_subject = None
@@ -1976,7 +1961,7 @@ def preview_digest(
     out_path: str | None = None,
 ) -> dict | None:
     """Generate one digest without sending. Writes HTML when ``out_path`` is set."""
-    from utils.digest_context import DigestRunCache
+    from utils.digest import DigestRunCache
     cache = DigestRunCache()
     cache.load_shared()
     plat = platform or "sleeper"

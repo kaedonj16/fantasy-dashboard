@@ -27,7 +27,7 @@ import pytest
 _ROOT = Path(__file__).resolve().parents[1]
 _APP_JS = _ROOT / "static" / "app.js"
 _TEAMS_JS = _ROOT / "static" / "teams.js"
-_ADMIN = (_ROOT / "routes" / "admin_api_bp.py").read_text(encoding="utf-8")
+_ADMIN = (_ROOT / "routes" / "internal_bp.py").read_text(encoding="utf-8")
 
 _NAV_RE = re.compile(
     r"function navigateToLeague\(leagueId, platform, season\) \{.*?"

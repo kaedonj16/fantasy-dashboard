@@ -1,224 +1,25 @@
-"""Pure fantasy-points scoring from a Sleeper stats line.
+"""Compatibility shim: utils.fantasy_scoring now lives in utils.projections.
 
-Extracted from app.py so the points calculation can be unit-tested without the
-pandas/DB stack. Uses Sleeper's stat/scoring key names; every scoring value
-falls back to a standard PPR-ish default when the league omits it.
+Re-exports every public name so existing imports keep working.
+New code should import from utils.projections directly.
 """
-from __future__ import annotations
+from utils.projections import (  # noqa: F401,F403
+    _DEFAULT_RATES,
+    completed_points_summary,
+    _rate,
+    score_stats,
+    _WEEK_STATS_TO_SLEEPER,
+    week_stats_line_points,
+    _sleeper_standard_points,
+    projection_points,
+    week_stat_points,
+    weekly_projection_points,
+)
+
+__all__ = ['_DEFAULT_RATES', 'completed_points_summary', '_rate', 'score_stats', '_WEEK_STATS_TO_SLEEPER', 'week_stats_line_points', '_sleeper_standard_points', 'projection_points', 'week_stat_points', 'weekly_projection_points']
 
 
-_DEFAULT_RATES = {
-    "pass_yd": 0.04, "pass_td": 4.0, "pass_int": -2.0,
-    "rush_yd": 0.1, "rush_td": 6.0, "rec": 0.0,
-    "rec_yd": 0.1, "rec_td": 6.0, "fum_lost": -2.0,
-}
-
-
-def completed_points_summary(points: list[float] | tuple[float, ...]) -> dict | None:
-    """Aggregate actual appearances without rounding drift.
-
-    An empty sequence means no appearance (missing/N/A), while ``[0.0]`` is a
-    genuine score and remains distinguishable from missing data.
-    """
-    if not points:
-        return None
-    total = sum(float(p) for p in points)
-    return {"games": len(points), "total": total, "ppg": total / len(points)}
-
-
-def _rate(settings: dict, key: str) -> float:
-    """Respect explicit zero scoring; only use defaults when a key is absent."""
-    value = settings[key] if key in settings else _DEFAULT_RATES.get(key, 0.0)
-    try:
-        return float(value or 0)
-    except (TypeError, ValueError):
-        return 0.0
-
-
-def score_stats(s: dict, ss: dict, pos: str = "") -> float:
-    """Compute points from a projected Sleeper stat line and league settings.
-
-    In addition to the common defaults, every projected stat with an exact
-    scoring-settings key is included (first downs, two-point conversions,
-    returns, completions, sacks, etc.). Milestone bonuses are applied once.
-    """
-    s = s or {}
-    ss = ss or {}
-    p = 0.0
-    handled = set(_DEFAULT_RATES)
-    for key in handled:
-        p += float(s.get(key) or 0) * _rate(ss, key)
-    # Sleeper uses matching names for most custom stat/rate pairs.
-    for key, value in s.items():
-        if key in handled or key.startswith("bonus_") or key not in ss:
-            continue
-        try:
-            p += float(value or 0) * float(ss.get(key) or 0)
-        except (TypeError, ValueError):
-            continue
-    if str(pos).upper() == "TE":
-        p += float(s.get("rec") or 0) * _rate(ss, "bonus_rec_te")
-    py = s.get("pass_yd") or 0
-    ry = s.get("rush_yd") or 0
-    ey = s.get("rec_yd") or 0
-    rr = ry + ey
-    if py >= 400: p += (ss.get("bonus_pass_yd_400") or 0)
-    elif py >= 300: p += (ss.get("bonus_pass_yd_300") or 0)
-    if ry >= 200: p += (ss.get("bonus_rush_yd_200") or 0)
-    elif ry >= 100: p += (ss.get("bonus_rush_yd_100") or 0)
-    if ey >= 200: p += (ss.get("bonus_rec_yd_200") or 0)
-    elif ey >= 100: p += (ss.get("bonus_rec_yd_100") or 0)
-    if rr >= 200: p += (ss.get("bonus_rush_rec_yd_200") or 0)
-    elif rr >= 100: p += (ss.get("bonus_rush_rec_yd_100") or 0)
-    return p
-
-
-# week_stats box-score lines use plural yardage keys and ``int`` for
-# interceptions; score_stats speaks Sleeper's names. Remap before scoring so the
-# league's own rates, bonuses, and TE premium stay consistent.
-_WEEK_STATS_TO_SLEEPER = {
-    "pass_yds": "pass_yd",
-    "rush_yds": "rush_yd",
-    "rec_yds": "rec_yd",
-    "int": "pass_int",
-}
-
-
-def week_stats_line_points(entry: dict, ss: dict, pos: str = "") -> float | None:
-    """Fantasy points implied by a ``week_stats`` box-score line.
-
-    The matchup slide shows two numbers from two feeds: the authoritative live
-    points (Sleeper ``players_points``) and a human-readable box-score line
-    (Footballguys, Tank01-overlaid). When Footballguys is still republishing a
-    prior week/season, the box-score line can contradict the points. Scoring the
-    line lets callers detect that contradiction and hide the stale line.
-
-    Returns None when the entry has no numeric stats to score.
-    """
-    if not isinstance(entry, dict):
-        return None
-    remapped: dict = {}
-    for key, value in entry.items():
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
-            continue
-        remapped[_WEEK_STATS_TO_SLEEPER.get(key, key)] = value
-    if not remapped:
-        return None
-    return score_stats(remapped, ss or {}, pos)
-
-
-def _sleeper_standard_points(raw: dict, ss: dict):
-    """Sleeper's own projected total for a *standard* PPR/half/std league.
-
-    Sleeper's projections payload carries its own computed totals
-    (``pts_ppr`` / ``pts_half_ppr`` / ``pts_std``) alongside the raw stat line,
-    so for a plain-scoring league we display those verbatim and match the
-    Sleeper app exactly instead of recomputing (which can drift on interception
-    rates, rounding, and category coverage).
-
-    Returns None — so the caller recomputes — whenever the league's scoring has
-    anything Sleeper's standard totals don't reflect: a non-standard reception
-    value, a passing-TD value other than 4, a TE premium, or any yardage-
-    milestone / first-down bonus. Those leagues are genuinely custom and must be
-    scored from the raw line.
-    """
-    ss = ss or {}
-    if "rec" not in ss:
-        return None
-    try:
-        rec = float(ss.get("rec"))
-    except (TypeError, ValueError):
-        return None
-    pts_key = {1.0: "pts_ppr", 0.5: "pts_half_ppr", 0.0: "pts_std"}.get(rec)
-    if pts_key is None:
-        return None  # custom reception value (e.g. 0.75) → recompute
-    try:
-        if float(ss.get("pass_td", 4.0) or 0) != 4.0:
-            return None  # 6pt (or other) passing TD → recompute
-    except (TypeError, ValueError):
-        return None
-    # Compare league rates on settings, not just stats present on this player.
-    # Yahoo/Flea/MFL extras used to keep pts_ppr whenever the WR line omitted
-    # the custom category (INT, fumbles, 6-pt TDs already handled above).
-    for stat_key, standard_rate in _DEFAULT_RATES.items():
-        if stat_key == "rec" or stat_key not in ss:
-            continue
-        try:
-            if float(ss.get(stat_key) or 0) != float(standard_rate):
-                return None
-        except (TypeError, ValueError):
-            return None
-    # Any active yardage-milestone / first-down / TE-premium bonus makes
-    # Sleeper's standard total wrong for this league.
-    for k, v in ss.items():
-        if not (k.startswith("bonus_") or k in ("pass_fd", "rush_fd", "rec_fd")):
-            continue
-        try:
-            if float(v or 0) != 0:
-                return None
-        except (TypeError, ValueError):
-            continue
-    val = raw.get(pts_key)
-    if val is None:
-        return None  # payload lacks the precomputed total → recompute
-    try:
-        return float(val)
-    except (TypeError, ValueError):
-        return None
-
-
-def projection_points(entry: dict, scoring_settings: dict, pos: str = "") -> float:
-    """Select exact league scoring from a cached multi-variant projection."""
-    if isinstance(entry, (int, float)):
-        return float(entry)
-    if not isinstance(entry, dict):
-        return 0.0
-    raw = entry.get("raw_stats")
-    if isinstance(raw, dict):
-        # Standard PPR/half/std leagues: show Sleeper's own projected total so the
-        # number matches the Sleeper app exactly. Custom scoring falls through.
-        sleeper_pts = _sleeper_standard_points(raw, scoring_settings or {})
-        if sleeper_pts is not None:
-            return round(sleeper_pts, 2)
-        if scoring_settings:
-            return round(score_stats(raw, scoring_settings, pos), 2)
-    from utils.proj_variant import pick_proj_variant
-    variant = pick_proj_variant(scoring_settings or {})
-    return float(entry.get(variant) or entry.get("ppr") or 0.0)
-
-
-def week_stat_points(stats, scoring_settings=None, pos: str = "") -> float:
-    """Fantasy points for a played (or projected) stat line under league settings.
-
-    Start/Sit L4 / season PPG used to read ``pts_ppr`` for every league, so an
-    ESPN standard or half-PPR roster showed PPR form next to league-scored
-    projections. Reuse the same selection as ``projection_points``.
-    """
-    if not isinstance(stats, dict):
-        return 0.0
-    try:
-        return float(projection_points({"raw_stats": stats}, scoring_settings or {}, pos) or 0)
-    except (TypeError, ValueError):
-        return 0.0
-
-
-def weekly_projection_points(week_map, pid, scoring_settings=None, pos: str = ""):
-    """Points for one player from a cached weekly projection map.
-
-    Honors Sleeper's own published totals for plain PPR/half/std leagues and
-    recomputes from the raw stat line for custom scoring (see projection_points).
-    Returns None when the player is absent from the map, so callers can tell
-    "no projection" apart from a real zero (bye / inactive).
-    """
-    if not isinstance(week_map, dict):
-        return None
-    entry = week_map.get(str(pid))
-    if entry is None:
-        entry = week_map.get(pid)
-    if entry is None:
-        return None
-    if isinstance(entry, (int, float)):
-        return float(entry)
-    if isinstance(entry, dict):
-        return projection_points(entry, scoring_settings or {}, pos)
-    return None
+# --- monkeypatch propagation (see utils/_shim.py) ---
+from utils._shim import propagate_sets_to as _propagate_sets_to
+import importlib as _importlib
+_propagate_sets_to(__name__, _importlib.import_module("utils.projections"))

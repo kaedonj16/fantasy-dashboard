@@ -20,7 +20,7 @@ def test_onboarding_defaults_on_without_row():
                     return None
             return R()
 
-    with mock.patch("utils.email_preferences.ensure_schema"), \
+    with mock.patch("utils.email.ensure_email_preferences_schema"), \
          mock.patch("dashboard_services.db.get_conn") as gc:
         ctx = mock.MagicMock()
         ctx.__enter__.return_value = _Conn()
@@ -31,7 +31,7 @@ def test_onboarding_defaults_on_without_row():
 
 
 def test_unsubscribe_onboarding_sets_preference_false():
-    with mock.patch("utils.email_preferences.set_enabled", return_value=True) as se:
+    with mock.patch("utils.email.set_enabled", return_value=True) as se:
         assert unsubscribe_onboarding(9) is True
         se.assert_called_once_with(9, False, ONBOARDING)
 
@@ -102,8 +102,8 @@ def test_pro_welcome_html_covers_toolkit(monkeypatch):
 def test_send_signup_respects_opt_out(monkeypatch):
     monkeypatch.setenv("FLASK_SECRET_KEY", "unit-test-secret")
     monkeypatch.setenv("SITE_BASE_URL", "https://brfantasyfootball.com")
-    with mock.patch("utils.welcome_email._should_send", return_value=(False, "opted_out")), \
-         mock.patch("utils.welcome_email._claim_once") as claim:
+    with mock.patch("utils.email._should_send_welcome", return_value=(False, "opted_out")), \
+         mock.patch("utils.email._claim_once") as claim:
         assert we.send_signup_welcome(3, email="a@b.com", first_name="A") is False
         claim.assert_not_called()
 
@@ -111,20 +111,20 @@ def test_send_signup_respects_opt_out(monkeypatch):
 def test_send_pro_dedupes_via_claim(monkeypatch):
     monkeypatch.setenv("FLASK_SECRET_KEY", "unit-test-secret")
     monkeypatch.setenv("SITE_BASE_URL", "https://brfantasyfootball.com")
-    with mock.patch("utils.welcome_email._account_email_row", return_value={
+    with mock.patch("utils.email._account_email_row", return_value={
              "id": 5, "email": "pro@ex.com", "first_name": "Pro",
          }), \
-         mock.patch("utils.welcome_email._should_send", return_value=(True, "ok")), \
-         mock.patch("utils.welcome_email._claim_once", return_value=False) as claim, \
-         mock.patch("utils.welcome_email._deliver") as deliver:
+         mock.patch("utils.email._should_send_welcome", return_value=(True, "ok")), \
+         mock.patch("utils.email._claim_once", return_value=False) as claim, \
+         mock.patch("utils.email._deliver_welcome_email") as deliver:
         assert we.send_pro_welcome(5, plan="user") is False
         claim.assert_called_once()
         deliver.assert_not_called()
 
 
 def test_weekly_digest_still_defaults_on():
-    with mock.patch("utils.email_preferences.ensure_schema"), \
-         mock.patch("utils.email_preferences._legacy_opt_out", return_value=False), \
+    with mock.patch("utils.email.ensure_email_preferences_schema"), \
+         mock.patch("utils.email._legacy_opt_out", return_value=False), \
          mock.patch("dashboard_services.db.get_conn") as gc:
         gc.side_effect = RuntimeError("no db")
         assert is_enabled(1, WEEKLY_DIGEST, email_opt_out=False) is True

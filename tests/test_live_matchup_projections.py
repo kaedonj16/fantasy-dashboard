@@ -180,7 +180,7 @@ def _render_live_slide(monkeypatch, *, status, actual, proj, game):
     monkeypatch.setattr(m, "load_teams_index", lambda: {})
     monkeypatch.setattr(m, "build_offense_rankings", lambda *a: {})
     monkeypatch.setattr(m, "get_nfl_scores_for_date", lambda *a: None)
-    monkeypatch.setattr("utils.utils.load_week_projection", lambda *a, **k: {})
+    monkeypatch.setattr("utils.data_cache.load_week_projection", lambda *a, **k: {})
 
     matchup = {
         "left": {
