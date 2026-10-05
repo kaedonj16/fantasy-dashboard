@@ -165,4 +165,4 @@ def test_modal_renders_opportunity_share_once_for_all_skill_positions():
     # Exactly one explicit tile definition; the generic renderer recognizes the
     # key via _shownKeys rather than emitting another copy.
     assert fn.count("label: 'Opp Share'") == 1
-    assert "'role_score','snap_share','route_participation','opportunity_share'" in fn
+    assert "'role_score','snap_share','opportunity_share'" in fn
