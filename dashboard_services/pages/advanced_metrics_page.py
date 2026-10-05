@@ -4423,13 +4423,13 @@ _AM_JS = r"""
     }
     const dx = niceDomain(Math.min.apply(null, xs), Math.max.apply(null, xs), L.ntX);
     const dy = niceDomain(Math.min.apply(null, ys), Math.max.apply(null, ys), L.ntY);
-    // Zoom the view out a touch beyond the nice tick domain so the data cloud
-    // never hugs the frame -- the crammed upper-right cluster (and its stacked
-    // labels) was the readability problem. Pad the *positioning* domain by a
+    // Zoom the view out beyond the nice tick domain so the data cloud never
+    // hugs the frame -- breathing room around the cluster (and its stacked
+    // labels) is the readability win. Pad the *positioning* domain by a
     // fraction of the data span; ticks stay on the same nice values, they just
     // sit inside a roomier frame. min()/max() guarantee we only ever zoom out
     // relative to the old snapped domain, never in.
-    const _gpad = 0.15;
+    const _gpad = 0.35;
     const _xlo = Math.min.apply(null, xs), _xhi = Math.max.apply(null, xs);
     const _ylo = Math.min.apply(null, ys), _yhi = Math.max.apply(null, ys);
     const _xp = ((_xhi - _xlo) || dx.step) * _gpad;
