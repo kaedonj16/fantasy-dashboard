@@ -23738,26 +23738,49 @@ def _ppg_map_with_ranks(entries: dict) -> dict:
 
 
 def _current_season_ppg_map(season: int, positions: dict) -> dict:
-    """PPG / total points from the CURRENT season's completed Sleeper weeks.
+    """PPG / total points from the CURRENT season's completed weeks, per player.
 
-    Same source the player modal uses: weekly stat files scored full-PPR via
-    _load_season_weekly_points (which backfills missing week files on demand).
-    The prebuilt usage_rows_<season>.json only exists for finished seasons, so
-    pointing the rankings payload at the newest usage file silently served
-    last season's numbers once the new season kicked off. Returns {} when no
+    Each player's PPG uses their OWN completed weeks (via
+    bulk_player_completed_weeks) instead of league-wide completed weeks, so a
+    finished Sunday game counts for that player even before the rest of the
+    slate (e.g. tonight's MNF) is final. Same source the player modal hero
+    uses: weekly stat files scored full-PPR via _load_season_weekly_points
+    (which backfills missing week files on demand). The prebuilt
+    usage_rows_<season>.json only exists for finished seasons, so pointing
+    the rankings payload at the newest usage file silently served last
+    season's numbers once the new season kicked off. Returns {} when no
     round is complete yet (preseason) or the weekly files are unavailable;
     the caller then leaves the PPG cells blank rather than substituting
     another season. Any completed appearance qualifies (no games gate),
-    matching the modal and _season_rank_rows: the same player shows the same
-    PPG everywhere on the site. Never raises.
+    matching the modal: the same player shows the same PPG everywhere on
+    the site. Never raises.
     """
     try:
-        from utils.season_qualification import qualification_policy
+        from utils.season_qualification import (
+            bulk_player_completed_weeks,
+            qualification_policy,
+        )
         _policy = qualification_policy(int(season))
         if not _policy.completed_weeks:
             return {}
-        _weekly = _load_season_weekly_points(int(season), {"rec": 1.0}) or {}
-        if not _weekly:
+        # Player IDs with any weekly stat lines (league-wide weeks just to
+        # get the candidate set; per-player filtering happens below).
+        _weekly_all = _load_season_weekly_points(int(season), {"rec": 1.0}) or {}
+        if not _weekly_all:
+            return {}
+        # Per-player completed weeks, computed in bulk (hoisted schedule
+        # loads). Group players by their weeks tuple so the
+        # _load_season_weekly_points cache is shared per distinct tuple
+        # (in practice just a handful: e.g. (1,2,3,4) vs (1,2,3)).
+        _weeks_by_pid = bulk_player_completed_weeks(
+            [str(_pid) for _pid in _weekly_all.keys()], int(season))
+        _by_weeks: dict = {}
+        for _pid in _weekly_all.keys():
+            _w = tuple(_weeks_by_pid.get(str(_pid)) or ())
+            if not _w:
+                continue  # no finished game yet (e.g. MNF player pre-game)
+            _by_weeks.setdefault(_w, []).append(str(_pid))
+        if not _by_weeks:
             return {}
         from utils.fantasy_scoring import completed_points_summary
         try:
@@ -23766,18 +23789,21 @@ def _current_season_ppg_map(season: int, positions: dict) -> dict:
         except Exception:
             _index_pos = {}
         _entries = {}
-        for _pid, _pts in _weekly.items():
-            _summary = completed_points_summary(_pts)
-            if not _summary:
-                continue
-            _pid = str(_pid)
-            _entries[_pid] = {
-                "ppg": round(float(_summary["ppg"]), 1),
-                "total_pts": round(float(_summary["total"]), 1),
-                "games": int(_summary["games"]),
-                "season": int(season),
-                "position": str(positions.get(_pid) or _index_pos.get(_pid) or ""),
-            }
+        for _w, _pids in _by_weeks.items():
+            _weekly = _load_season_weekly_points(
+                int(season), {"rec": 1.0}, weeks=_w) or {}
+            for _pid in _pids:
+                _pts = _weekly.get(_pid)
+                _summary = completed_points_summary(_pts) if _pts else None
+                if not _summary:
+                    continue
+                _entries[_pid] = {
+                    "ppg": round(float(_summary["ppg"]), 1),
+                    "total_pts": round(float(_summary["total"]), 1),
+                    "games": int(_summary["games"]),
+                    "season": int(season),
+                    "position": str(positions.get(_pid) or _index_pos.get(_pid) or ""),
+                }
         return _ppg_map_with_ranks(_entries)
     except Exception:
         logger.debug("[league-players] current-season PPG map failed", exc_info=True)
