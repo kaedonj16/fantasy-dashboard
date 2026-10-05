@@ -28,9 +28,12 @@ def test_banner_copy_exact_and_no_em_dash():
 def test_banner_dismissible_per_league():
     html = _html()
     # Dismissal is remembered per league in localStorage; the X wires to it.
+    # The key is built once into lsKey and reused by dismiss + undo.
     assert "wv_link_banner_dismissed:" in html
     assert "wvDismissLinkBanner()" in html
-    assert "localStorage.setItem('wv_link_banner_dismissed:'" in html
+    assert "const lsKey = 'wv_link_banner_dismissed:' + WV_LEAGUE_ID" in html
+    assert "localStorage.setItem(lsKey, '1')" in html
+    assert "localStorage.removeItem(lsKey)" in html
 
 
 def test_banner_cta_uses_team_link_flow():

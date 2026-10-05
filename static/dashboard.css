@@ -19856,7 +19856,15 @@ img, svg, canvas {
 .ns-card .ns-list {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 6px;
+}
+@media (min-width: 900px) {
+    .ns-card .ns-list {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+        align-items: start;
+    }
 }
 .ns-card.ns-collapsed .ns-hidden {
     display: none;
@@ -19869,8 +19877,8 @@ img, svg, canvas {
 }
 .ns-item {
     display: flex;
-    gap: 12px;
-    padding: 12px;
+    gap: 10px;
+    padding: 10px;
     border-radius: 12px;
     background: var(--row, #f8fafc);
     align-items: flex-start;
@@ -19893,7 +19901,7 @@ img, svg, canvas {
 .ns-why {
     font-size: 12px;
     color: var(--text-muted);
-    margin-bottom: 8px;
+    margin-bottom: 6px;
     line-height: 1.4;
 }
 .ns-impact {
@@ -19953,6 +19961,49 @@ img, svg, canvas {
     font-size: 32px;
     margin-bottom: 8px;
     color: #22c55e;
+}
+
+/* Undo toast for dismissed action cards (shared via window.brUndoToast).
+   The .ns-undo-* aliases are kept for backwards compatibility. */
+.br-undo-toast,
+.ns-undo-toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(16px);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--toast-bg, #1e293b);
+    color: #fff;
+    font-size: 14px;
+    padding: 12px 16px;
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+    opacity: 0;
+    transition: opacity 0.25s, transform 0.25s;
+    z-index: 99999;
+    pointer-events: none;
+}
+.br-undo-toast.br-undo-visible,
+.ns-undo-toast.ns-undo-visible {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+    pointer-events: auto;
+}
+.br-undo-btn,
+.ns-undo-btn {
+    background: none;
+    border: none;
+    color: #93c5fd;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    padding: 4px 8px;
+}
+.br-undo-btn:hover,
+.ns-undo-btn:hover {
+    text-decoration: underline;
 }
 
 /* Losing-streak trade target rows */

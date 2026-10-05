@@ -487,7 +487,7 @@ function openPlayerModal(playerId, playerName, opts) {
       const nameEl = document.querySelector('.player-modal-name');
       if (!nameEl) return;
       nameEl.style.cssText = 'display:flex;align-items:center;gap:8px;flex-wrap:wrap;';
-      nameEl.innerHTML = `<span>${escapeHtml(playerName || 'Unknown Player')}</span>${badges}`;
+      nameEl.innerHTML = `<span>${escapeHtml(playerName || data.name || 'Unknown Player')}</span>${badges}`;
 
       // Meta with dots separator
       const metaParts = [];

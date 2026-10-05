@@ -471,12 +471,28 @@ def build_dashboard_body(ctx: dict) -> str:
                     var card = btn.closest("[data-action-card]");
                     if (!t) return;
                     var map = dismissedMap();
-                    map[cardKey(t)] = true;
+                    var key = cardKey(t);
+                    map[key] = true;
                     try {{ localStorage.setItem(LS_KEY, JSON.stringify(map)); }} catch (e) {{}}
                     if (card) {{
                       card.style.transition = "opacity .25s";
                       card.style.opacity = "0";
                       setTimeout(function() {{ card.style.display = "none"; }}, 260);
+                    }}
+                    if (window.brUndoToast) {{
+                      window.brUndoToast("Card dismissed.", function() {{
+                        try {{
+                          var m = dismissedMap();
+                          delete m[key];
+                          localStorage.setItem(LS_KEY, JSON.stringify(m));
+                        }} catch (e) {{}}
+                        if (card) {{
+                          card.style.display = "";
+                          requestAnimationFrame(function() {{
+                            card.style.opacity = "1";
+                          }});
+                        }}
+                      }});
                     }}
                   }});
                 }})(btns[i]);

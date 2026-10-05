@@ -5892,6 +5892,12 @@ def _recap_ready_banner(league_id: str, platform: str, season: int) -> str:
     localStorage.setItem(key, '1');
     var dot = document.getElementById('recapNavDot');
     if (dot) dot.remove();
+    if (typeof window.brUndoToast === 'function') {{
+      window.brUndoToast('Banner dismissed.', function() {{
+        localStorage.removeItem(key);
+        el.style.display = '';
+      }});
+    }}
   }}
 
   function addNavDot() {{
@@ -5998,8 +6004,15 @@ _DRAFT_IMMINENT_BANNER_HTML = r"""
       + '</div>';
     el.style.display = '';
     el.querySelector('.drgb-x').addEventListener('click', function(){
-      localStorage.setItem(dkey(cur.id, cur.state), '1');
+      var dk = dkey(cur.id, cur.state);
+      localStorage.setItem(dk, '1');
       el.style.display = 'none';
+      if (typeof window.brUndoToast === 'function') {
+        window.brUndoToast('Banner dismissed.', function(){
+          localStorage.removeItem(dk);
+          el.style.display = '';
+        });
+      }
     });
   }
   function tick(){
@@ -6154,6 +6167,15 @@ def _google_link_pro_banner() -> str:
       if (hard) {{ sessionStorage.setItem(sessKey, '1'); }}
       else {{ localStorage.setItem(key, '1'); }}
     }} catch (e) {{}}
+    if (typeof window.brUndoToast === 'function') {{
+      window.brUndoToast('Banner dismissed.', function() {{
+        try {{
+          if (hard) {{ sessionStorage.removeItem(sessKey); }}
+          else {{ localStorage.removeItem(key); }}
+        }} catch (e) {{}}
+        el.style.display = 'flex';
+      }});
+    }}
   }});
 }})();
 </script>
@@ -6255,6 +6277,12 @@ def _pro_trial_banner() -> str:
   document.getElementById('proTrialBannerClose').addEventListener('click', function() {{
     el.style.display = 'none';
     try {{ store.setItem(key, '1'); }} catch (e) {{}}
+    if (typeof window.brUndoToast === 'function') {{
+      window.brUndoToast('Banner dismissed.', function() {{
+        try {{ store.removeItem(key); }} catch (e) {{}}
+        el.style.display = 'flex';
+      }});
+    }}
   }});
 }})();
 </script>
@@ -12232,6 +12260,7 @@ def _next_steps_waiver_actions(ctx: dict, viewer_roster_id, model_value_table: l
                     _score = 78
                 elif "up " in _wl and "spots" in _wl:
                     _score = 62
+            from urllib.parse import quote as _qp
             actions.append({
                 "priority": _priority,
                 "tag": "Waivers",
@@ -12239,7 +12268,7 @@ def _next_steps_waiver_actions(ctx: dict, viewer_roster_id, model_value_table: l
                 "why": _why or _sub,
                 "impact": _impact,
                 "cta_label": "Claim now",
-                "cta_url": f"{_wv_url}?player={_pid}",
+                "cta_url": f"{_wv_url}?player={_pid}&player_name={_qp(_name)}",
                 "score": _score,
             })
     except Exception:
