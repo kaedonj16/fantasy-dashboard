@@ -21669,9 +21669,14 @@ window.brUiPrefs = (function () {
   var SUB_KEY = 'br_sub_tour_done';
   var TOUR_PREFIX = 'tour_done_';
   var LATER_PREFIX = 'tour_later_';
+  // Global (not per-league) dismissal keys. Dismissing the tour on one league
+  // dismisses it everywhere; per-league keys below are legacy only.
+  var TOUR_GLOBAL_KEY = 'br_site_tour_done';
+  var LATER_GLOBAL_KEY = 'br_site_tour_later';
   var LATER_MS = 3 * 24 * 60 * 60 * 1000;
   var cache = null;
   var syncing = false;
+  var _migratedLegacyTourKeys = false;
 
   function lsGet(k) {
     try { return localStorage.getItem(k); } catch (_) { return null; }
@@ -21684,33 +21689,70 @@ window.brUiPrefs = (function () {
   }
 
   function isTourDone(leagueId) {
-    if (lsGet(TOUR_PREFIX + leagueId) === '1') return true;
+    migrateLegacyTourKeys();
+    if (lsGet(TOUR_GLOBAL_KEY) === '1') return true;
+    if (leagueId && lsGet(TOUR_PREFIX + leagueId) === '1') {
+      // Legacy per-league dismissal: promote to the global key.
+      lsSet(TOUR_GLOBAL_KEY, '1');
+      return true;
+    }
     if (cache && cache.site_tour_done) return true;
     return false;
   }
 
-  function isTourDeferred(leagueId) {
-    var raw = lsGet(LATER_PREFIX + leagueId);
-    if (!raw) return false;
+  // One-time migration: a per-league dismissal from before the global key
+  // existed counts as a global dismissal.
+  function migrateLegacyTourKeys() {
+    if (_migratedLegacyTourKeys) return;
+    _migratedLegacyTourKeys = true;
+    try {
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (k && k.indexOf(TOUR_PREFIX) === 0 && localStorage.getItem(k) === '1') {
+          lsSet(TOUR_GLOBAL_KEY, '1');
+          break;
+        }
+      }
+    } catch (_) {}
+  }
+
+  function laterTs(raw) {
+    if (!raw) return 0;
     var ts = parseInt(raw, 10);
-    if (!ts || isNaN(ts)) return false;
-    return (Date.now() - ts) < LATER_MS;
+    if (!ts || isNaN(ts)) return 0;
+    return ts;
+  }
+
+  function isTourDeferred(leagueId) {
+    var ts = laterTs(lsGet(LATER_GLOBAL_KEY)) ||
+      laterTs(leagueId ? lsGet(LATER_PREFIX + leagueId) : null);
+    if (!ts && cache && cache.site_tour_later) ts = laterTs(cache.site_tour_later);
+    return ts > 0 && (Date.now() - ts) < LATER_MS;
   }
 
   function markTourDone(leagueId) {
-    lsSet(TOUR_PREFIX + leagueId, '1');
-    lsDel(LATER_PREFIX + leagueId);
+    lsSet(TOUR_GLOBAL_KEY, '1');
+    if (leagueId) lsSet(TOUR_PREFIX + leagueId, '1');
+    lsDel(LATER_GLOBAL_KEY);
+    if (leagueId) lsDel(LATER_PREFIX + leagueId);
     persist({ site_tour_done: true });
   }
 
   function markTourLater(leagueId) {
-    lsSet(LATER_PREFIX + leagueId, String(Date.now()));
+    var now = String(Date.now());
+    lsSet(LATER_GLOBAL_KEY, now);
+    if (leagueId) lsSet(LATER_PREFIX + leagueId, now);
+    persist({ site_tour_later: now });
   }
 
   function clearTourDone(leagueId) {
-    lsDel(TOUR_PREFIX + leagueId);
-    lsDel(LATER_PREFIX + leagueId);
-    // Do not clear account-level flag on manual replay -- only this league's local key.
+    lsDel(TOUR_GLOBAL_KEY);
+    if (leagueId) {
+      lsDel(TOUR_PREFIX + leagueId);
+      lsDel(LATER_PREFIX + leagueId);
+    }
+    lsDel(LATER_GLOBAL_KEY);
+    // Do not clear account-level flag on manual replay.
   }
 
   function isSubWelcomeDone() {
@@ -21753,13 +21795,8 @@ window.brUiPrefs = (function () {
       .then(function (d) {
         cache = (d && d.prefs) || {};
         if (cache.site_tour_done) {
-          // Mirror onto current league local key so auto-start stays quiet offline.
-          try {
-            var parts = window.location.pathname.split('/').filter(Boolean);
-            if (parts.length >= 3 && !isNaN(parts[1])) {
-              lsSet(TOUR_PREFIX + parts[2], '1');
-            }
-          } catch (_) {}
+          // Mirror onto the global local key so auto-start stays quiet offline.
+          lsSet(TOUR_GLOBAL_KEY, '1');
         }
         if (cache.sub_welcome_done) lsSet(SUB_KEY, '1');
         if (typeof done === 'function') done(cache);
@@ -22160,6 +22197,20 @@ window.showSubWelcome = function (opts) {
   var _tourDir = 1;
   var holeShield = null;
 
+  // Tracks whether a tour is actively in progress in this tab. Survives
+  // cross-page step navigation (sessionStorage); cleared when the tour ends.
+  // Lets the ?tour_step= resume path tell a legitimate mid-tour navigation
+  // apart from a bare link that should honor dismissal.
+  function tourSessionActive() {
+    try { return sessionStorage.getItem('br_tour_session') === '1'; } catch (e) { return false; }
+  }
+  function setTourSession(on) {
+    try {
+      if (on) sessionStorage.setItem('br_tour_session', '1');
+      else sessionStorage.removeItem('br_tour_session');
+    } catch (e) {}
+  }
+
   function initTour() {
     var params = new URLSearchParams(window.location.search);
     var resumeAt = params.get('tour_step');
@@ -22171,6 +22222,22 @@ window.showSubWelcome = function (opts) {
         try {
           if (sessionStorage.getItem('br_tour_mode') === 'pro') tourMode = 'pro';
         } catch (e) {}
+        // A bare ?tour_step= link (no tour in progress in this tab) still
+        // honors dismissal and deferral. Mid-tour cross-page navigation keeps
+        // the session flag set, so it resumes normally.
+        if (!tourSessionActive()) {
+          var proceedIfAllowed = function () {
+            if (window.brUiPrefs.isTourDone(leagueId)) return;
+            if (window.brUiPrefs.isTourDeferred(leagueId)) return;
+            startTour(idx);
+          };
+          if (window._hasAccount) {
+            window.brUiPrefs.hydrate(function () { proceedIfAllowed(); });
+          } else {
+            proceedIfAllowed();
+          }
+          return;
+        }
         startTour(idx);
         return;
       }
@@ -22198,6 +22265,7 @@ window.showSubWelcome = function (opts) {
   function startTour(fromStep) {
     var steps = tourSteps();
     tourActive = true;
+    setTourSession(true);
     currentStep = Math.max(0, Math.min(fromStep || 0, steps.length - 1));
     _tourDir = 1;
     createOverlayDOM();
@@ -22332,7 +22400,10 @@ window.showSubWelcome = function (opts) {
       return;
     }
 
-    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    // Instant scroll: smooth scrolling is async, so a synchronous
+    // getBoundingClientRect() right after would read the pre-scroll position
+    // and strand the tooltip far off-screen.
+    target.scrollIntoView({ behavior: 'auto', block: 'center' });
     var r = target.getBoundingClientRect();
     var x1 = Math.max(0, r.left - PAD);
     var y1 = Math.max(0, r.top - PAD);
@@ -22493,6 +22564,7 @@ window.showSubWelcome = function (opts) {
     }
     removeTourDOM();
     tourActive = false;
+    setTourSession(false);
     document.removeEventListener('keydown', _tourKeydown);
   }
 
@@ -22530,6 +22602,9 @@ window.showSubWelcome = function (opts) {
     }
     // Always restart from dashboard for a clean shortened path.
     if (currentPage !== 'dashboard') {
+      // Mark the session so the ?tour_step= landing page knows this is a
+      // legitimate replay, not a bare link (which honors dismissal).
+      setTourSession(true);
       window.location.href = buildLeagueUrl('dashboard') + '?tour_step=0';
       return;
     }

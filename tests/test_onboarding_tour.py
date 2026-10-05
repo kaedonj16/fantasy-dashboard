@@ -94,3 +94,36 @@ def test_home_onboarding_account_nudge_and_espn_guidance():
     assert "Success = your league dashboard loads" in APP_PY
     assert "home_league_selected" in APP_JS
     assert "home-google-ready" in APP_JS
+
+
+def test_tour_dismissal_is_global_not_per_league():
+    # "Don't show again" must dismiss the tour for all leagues, not just the
+    # current one (Kaedon has multiple leagues and kept getting re-toured).
+    assert "br_site_tour_done" in APP_JS
+    assert "br_site_tour_later" in APP_JS
+    # Global key is checked first in isTourDone.
+    assert "lsGet(TOUR_GLOBAL_KEY) === '1'" in APP_JS
+    # Legacy per-league keys migrate to the global key.
+    assert "migrateLegacyTourKeys" in APP_JS
+    # "Remind me later" syncs account-level.
+    assert "site_tour_later: now" in APP_JS
+    assert '"site_tour_later"' in UI_PREFS or "'site_tour_later'" in UI_PREFS or "site_tour_later" in UI_PREFS
+
+
+def test_tour_positioning_uses_instant_scroll():
+    # positionOverlays must not smooth-scroll then synchronously read the rect
+    # (that strands the tooltip thousands of px off-screen).
+    assert "behavior: 'auto', block: 'center'" in APP_JS
+    # The site tour's positionOverlays specifically must use instant scroll.
+    pos_fn = APP_JS.split("function positionOverlays(target, interactive)")[1].split("function renderTooltip")[0]
+    assert "behavior: 'smooth'" not in pos_fn
+
+
+def test_tour_step_param_honors_dismissal():
+    # ?tour_step= must not bypass dismissal; only an actively-in-progress tour
+    # (session flag, set on cross-page step navigation and manual replay)
+    # resumes without the dismissal check.
+    assert "br_tour_session" in APP_JS
+    assert "tourSessionActive()" in APP_JS
+    assert "setTourSession(true)" in APP_JS
+    assert "setTourSession(false)" in APP_JS
