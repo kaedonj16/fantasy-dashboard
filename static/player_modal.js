@@ -1267,10 +1267,29 @@ function openPlayerModal(playerId, playerName, opts) {
       };
       if (!contextBreakoutCandidate) {
         if (breakoutStatus) { breakoutStatus.style.display = ''; breakoutStatus.textContent = 'Checking breakout…'; }
-        _initialBreakoutPromise.then(result => {
-          if (result.error) applyBreakoutEligibility(null, true);
-          else applyBreakoutEligibility(result.payload, false);
-        });
+        // A first-attempt failure on the initial load is usually a cold-backend
+        // timeout, not a genuine outage. Keep the subtle loading state and
+        // retry once silently in the background instead of flashing the retry
+        // chip. The chip only appears if the silent retry also fails.
+        let _breakoutInitialRetried = false;
+        const _settleInitialBreakout = (result) => {
+          if (!result.error) { applyBreakoutEligibility(result.payload, false); return; }
+          if (!_breakoutInitialRetried) {
+            _breakoutInitialRetried = true;
+            setTimeout(() => {
+              if (!overlay.isConnected || overlay.dataset.closed === '1'
+                  || document.querySelector('.player-modal-overlay') !== overlay
+                  || overlay.dataset.playerId !== String(playerId)) return;
+              _loadBreakoutEligibility().then(
+                payload => applyBreakoutEligibility(payload, false),
+                () => applyBreakoutEligibility(null, true)
+              );
+            }, 4000);
+            return;
+          }
+          applyBreakoutEligibility(null, true);
+        };
+        _initialBreakoutPromise.then(_settleInitialBreakout);
       } else {
         applyBreakoutEligibility(resolvedBreakoutData, false);
       }
