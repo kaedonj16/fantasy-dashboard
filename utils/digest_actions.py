@@ -353,12 +353,14 @@ def start_sit_swap_note(
     proj_map: dict,
     roster_positions: list,
     min_gain: float = 2.0,
+    season: Optional[int] = None,
+    week: Optional[int] = None,
 ) -> Optional[dict[str, str]]:
     """Reuse ``projection_upgrades`` — do not invent a second start/sit model."""
     if not starters or not proj_map or not roster_positions:
         return None
     try:
-        from utils.lineup_issues import projection_upgrades
+        from utils.lineup_issues import locked_teams_for_week, projection_upgrades
     except Exception:
         return None
     reserve = {str(p) for p in (roster.get("reserve") or [])}
@@ -372,6 +374,20 @@ def start_sit_swap_note(
         pl = nfl_players.get(pid) or pidx.get(pid) or {}
         pos_map[pid] = str(pl.get("position") or pl.get("pos") or "")
     try:
+        # Locked players (game already kicked off) cannot be moved, so keep
+        # them out of both sides of the suggestion. Fail-open when the
+        # schedule is unavailable.
+        locked_pids: set = set()
+        if season and week:
+            try:
+                _locked_teams = locked_teams_for_week(int(season), int(week))
+            except Exception:
+                _locked_teams = set()
+            if _locked_teams:
+                locked_pids = {
+                    pid for pid in eligible
+                    if str((nfl_players.get(pid) or {}).get("team") or "").upper() in _locked_teams
+                }
         swaps = projection_upgrades(
             [str(p) for p in starters], eligible, proj_map, pos_map,
             list(roster_positions or []), min_gain=min_gain, max_swaps=1,
@@ -379,6 +395,7 @@ def start_sit_swap_note(
                 pid: str((nfl_players.get(pid) or {}).get("injury_status") or "")
                 for pid in eligible
             },
+            locked_pids=locked_pids,
         )
     except Exception:
         logger.debug("[digest-actions] projection_upgrades failed", exc_info=True)
@@ -534,7 +551,7 @@ def gather_digest_action_items(
                 note = start_sit_swap_note(
                     starters=starters, roster=roster, pidx=pidx,
                     nfl_players=players_feed, proj_map=proj_map or {},
-                    roster_positions=positions,
+                    roster_positions=positions, season=season, week=week,
                 )
             if note:
                 html = action_section_html(

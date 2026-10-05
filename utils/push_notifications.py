@@ -1042,7 +1042,7 @@ def _lineup_lock_send(games, season, week, *, dedupe_key, dedupe_value, tag,
         # instead of the generic reminder.
         from utils.lineup_issues import (
             find_lineup_issues, summarize_issues, projection_upgrades,
-            format_lineup_lock_swaps,
+            format_lineup_lock_swaps, locked_teams_from_games,
         )
 
         teams_playing = set()
@@ -1051,6 +1051,10 @@ def _lineup_lock_send(games, season, week, *, dedupe_key, dedupe_value, tag,
                 t = str(g.get(side) or "").upper()
                 if t:
                     teams_playing.add(t)
+
+        # Players whose NFL game already kicked off are locked and cannot be
+        # moved, so swap suggestions must not involve them on either side.
+        locked_teams = locked_teams_from_games(games)
 
         # This week's projections (once, league-agnostic) so owners with a legal
         # lineup can still be told they're leaving points on the bench. Best
@@ -1115,10 +1119,15 @@ def _lineup_lock_send(games, season, week, *, dedupe_key, dedupe_value, tag,
                                        for pid in eligible}
                             injury_status = {pid: str((nfl_players.get(pid) or {}).get("injury_status") or "")
                                              for pid in eligible}
+                            locked_pids = {
+                                pid for pid in eligible
+                                if str((nfl_players.get(pid) or {}).get("team") or "").upper() in locked_teams
+                            }
                             swaps = projection_upgrades(
                                 starters, eligible, proj_map_wk, pos_map,
                                 roster_positions, min_gain=2.0, max_swaps=2,
                                 injury_status=injury_status,
+                                locked_pids=locked_pids,
                             )
                             if swaps:
                                 _names = {}
