@@ -406,15 +406,22 @@ def test_discover_live_games_skips_previous_week_one(monkeypatch):
 def test_poll_once_backfills_recent_unseen_finals(monkeypatch):
     import sys
     import types
+    from datetime import datetime, timedelta, timezone
+
+    # Use dates relative to today so the 7-day backfill window doesn't age out.
+    today = datetime.now(timezone.utc)
+    recent = (today - timedelta(days=2)).strftime("%Y%m%d")
+    old = (today - timedelta(days=10)).strftime("%Y%m%d")
+    live_date = today.strftime("%Y%m%d")
 
     # Tank01 game ids carry the date: backfill window is 7 days.
     monkeypatch.setattr(rs, "discover_live_games", lambda current_week=None: [
-        {"game_id": "20260928_KC@BUF", "live": True, "final": False, "week": 4},
-        {"game_id": "20260927_NE@MIA", "live": False, "final": True, "week": 3},
-        {"game_id": "20260927_SF@ARI", "live": False, "final": True, "week": 3},
-        {"game_id": "20260920_DAL@PHI", "live": False, "final": True, "week": 3},
+        {"game_id": f"{live_date}_KC@BUF", "live": True, "final": False, "week": 4},
+        {"game_id": f"{recent}_NE@MIA", "live": False, "final": True, "week": 3},
+        {"game_id": f"{recent}_SF@ARI", "live": False, "final": True, "week": 3},
+        {"game_id": f"{old}_DAL@PHI", "live": False, "final": True, "week": 3},
     ])
-    monkeypatch.setattr(rs, "get_plays", lambda season, gids: {"20260927_NE@MIA": []})
+    monkeypatch.setattr(rs, "get_plays", lambda season, gids: {f"{recent}_NE@MIA": []})
 
     fetched = []
 
@@ -446,11 +453,11 @@ def test_poll_once_backfills_recent_unseen_finals(monkeypatch):
     assert stats["games"] == 3
     # the collector stamps each game's own week (falling back to nfl state)
     assert sorted((gid, w) for gid, w in upserted) == [
-        ("20260927_NE@MIA", 3),
-        ("20260927_SF@ARI", 3),
-        ("20260928_KC@BUF", 4),
+        (f"{recent}_NE@MIA", 3),
+        (f"{recent}_SF@ARI", 3),
+        (f"{live_date}_KC@BUF", 4),
     ]
-    assert [f[0] for f in fetched] == ["20260928_KC@BUF", "20260927_NE@MIA", "20260927_SF@ARI"]
+    assert [f[0] for f in fetched] == [f"{live_date}_KC@BUF", f"{recent}_NE@MIA", f"{recent}_SF@ARI"]
 
 
 def test_ensure_table_runs_once_per_process():
