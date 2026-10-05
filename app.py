@@ -34128,15 +34128,16 @@ def api_trade_intel_player_send_packages(player_id: str):
 
         def _option_quality(assets: list, total: float) -> float:
             """Lower is better. Ranks returns the way a savvy manager would:
-            close to fair value, consolidated (fewer pieces), anchored by a real
-            player rather than two scrubs, filling needs, and - when sending a
-            future asset like a pick - skewing younger."""
+            close to fair value, mildly preferring consolidation but letting
+            good package deals compete, anchored by real players rather than
+            scrubs, filling needs, and - when sending a future asset like a
+            pick - skewing younger."""
             score = abs(total - focus_value)  # value distance
-            score += (len(assets) - 1) * focus_value * 0.07  # prefer consolidation
+            score += (len(assets) - 1) * focus_value * 0.02  # light consolidation lean
             best_piece = max((float(a["value"]) for a in assets), default=0.0)
             anchor_ratio = (best_piece / focus_value) if focus_value else 0.0
-            if anchor_ratio < 0.60:  # avoid death-by-paper-cuts
-                score += (0.60 - anchor_ratio) * focus_value * 0.6
+            if anchor_ratio < 0.40:  # avoid death-by-paper-cuts
+                score += (0.40 - anchor_ratio) * focus_value * 0.6
             score -= _need_bonus(assets) * focus_value * 0.03  # reward filling weak spots
             if focus_is_pick:  # picks are future assets → youth
                 for a in assets:
@@ -34239,15 +34240,37 @@ def api_trade_intel_player_send_packages(player_id: str):
                     best = min(pool, key=lambda a: abs(float(a["value"]) - focus_value))
                     _add([best], require_band=False)
 
-            # Keep this team's 3 best-quality options (consolidation + need-aware)
+            # Keep this team's 3 best-quality options, but always reserve one
+            # slot for a multi-asset package when one exists in-band, so rival
+            # teams surface package deals alongside straight swaps.
             team_opts.sort(key=lambda x: x["qual"])
-            options.extend(team_opts[:3])
+            _picked = team_opts[:3]
+            if len(_picked) == 3 and not any(len(o["receive"]) > 1 for o in _picked):
+                _multi = next((o for o in team_opts[3:] if len(o["receive"]) > 1), None)
+                if _multi is not None:
+                    _picked[2] = _multi
+            options.extend(_picked)
 
-        # Best quality across all teams first; cap the list
+        # Best quality across all teams first, but guarantee package-deal
+        # visibility: at least 4 of the final 12 are multi-asset when enough
+        # exist, so "find returns" shows a mix of swaps and packages.
         options.sort(key=lambda x: x["qual"])
-        for o in options:
+        _multis = [o for o in options if len(o["receive"]) > 1]
+        _final = options[:12]
+        _multi_in_final = sum(1 for o in _final if len(o["receive"]) > 1)
+        if _multi_in_final < 4 and _multis:
+            _final_ids = {id(o) for o in _final}
+            _spare_multis = [o for o in _multis if id(o) not in _final_ids]
+            _need = 4 - _multi_in_final
+            for _m in _spare_multis[:_need]:
+                # Swap out the worst-ranked single-asset option in the final list
+                for _i in range(len(_final) - 1, -1, -1):
+                    if len(_final[_i]["receive"]) == 1:
+                        _final[_i] = _m
+                        break
+        for o in _final:
             o.pop("qual", None)
-        options = options[:12]
+        options = _final
 
         return jsonify({
             "player_name": player_name,
