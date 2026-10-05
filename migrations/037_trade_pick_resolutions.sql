@@ -19,26 +19,27 @@ CREATE INDEX IF NOT EXISTS idx_tia_resolved_player
 -- twice in a transaction). Keep the resolved row when one exists, else the
 -- latest row. The NOT NULL filters mirror the unique index exactly: rows
 -- with a NULL key column can never conflict, so they are left alone.
+-- Window-function form (single scan + sort): the earlier NOT IN +
+-- DISTINCT ON subquery timed out on large tables (statement timeout),
+-- blocking every later migration.
 DELETE FROM trade_intel_assets a
-WHERE a.asset_type = 'pick'
-  AND a.pick_roster_id IS NOT NULL
-  AND a.provider IS NOT NULL
-  AND a.pick_season IS NOT NULL
-  AND a.pick_round IS NOT NULL
-  AND a.id NOT IN (
-      SELECT DISTINCT ON (b.provider, b.trade_id, b.pick_season,
-                          b.pick_round, b.pick_roster_id) b.id
-      FROM trade_intel_assets b
-      WHERE b.asset_type = 'pick'
-        AND b.pick_roster_id IS NOT NULL
-        AND b.provider IS NOT NULL
-        AND b.pick_season IS NOT NULL
-        AND b.pick_round IS NOT NULL
-      ORDER BY b.provider, b.trade_id, b.pick_season, b.pick_round,
-               b.pick_roster_id,
-               (b.resolved_player_id IS NOT NULL) DESC,
-               b.id DESC
-  );
+USING (
+    SELECT id,
+           ROW_NUMBER() OVER (
+               PARTITION BY provider, trade_id, pick_season,
+                            pick_round, pick_roster_id
+               ORDER BY (resolved_player_id IS NOT NULL) DESC,
+                        id DESC
+           ) AS rn
+    FROM trade_intel_assets
+    WHERE asset_type = 'pick'
+      AND pick_roster_id IS NOT NULL
+      AND provider IS NOT NULL
+      AND pick_season IS NOT NULL
+      AND pick_round IS NOT NULL
+) ranked
+WHERE a.id = ranked.id
+  AND ranked.rn > 1;
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_tia_verified_pick_resolution
     ON trade_intel_assets
