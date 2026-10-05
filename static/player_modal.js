@@ -2457,9 +2457,9 @@ function _pmFetchTradesInto(panel, playerId, season, ctx) {
 }
 
 // Lazy tabs (Stats / Trades / Adv Metrics) load on demand via pmSwitchTab;
-// there is deliberately no background prefetch (pmPrefetchTabs is a no-op),
-// so opening a modal never fires the league history-chain scans behind the
-// Trades endpoints until the user actually asks for them.
+// only the Team tab is prefetched in the background (pmPrefetchTabs warms its
+// localStorage cache), so opening a modal never fires the league history-chain
+// scans behind the Trades endpoints until the user actually asks for them.
 // ── Team tab (player modal) ───────────────────────────────────────────────────
 let _pmTeamAdvOpen = false;
 let _pmTeamSchedOpen = false;
@@ -3352,8 +3352,37 @@ function _pmWireTeamPanel(panel, playerId) {
   if(wrap && _pmTeamNavHistory.length){ const prev=_pmTeamNavHistory[_pmTeamNavHistory.length-1]; wrap.insertAdjacentHTML('afterbegin', `<button type="button" class="pm-team-back" aria-label="Back to ${_pmEsc(prev.playerName)}">&#8592; Back to ${_pmEsc(prev.playerName)}</button>`); }
 }
 function pmPrefetchTabs() {
-  // Secondary endpoints are loaded on demand by pmSwitchTab. Deliberately do
-  // not switch visible tabs in the background.
+  // Warm the Team tab in the background so tapping it is instant. The fetch
+  // populates the same localStorage entry _pmLoadTeamPanel reads, so the tab
+  // renders from cache on open. Runs idle/low-priority so it never competes
+  // with the visible Overview render. Does not switch tabs.
+  try {
+    const pmTabBar = document.getElementById('pmTabBar');
+    if (!pmTabBar || !pmTabBar.dataset.pmHasTeam) return;
+    const playerId = pmTabBar.dataset.pmPlayerId;
+    const season = pmTabBar.dataset.pmSeason || String(new Date().getFullYear());
+    if (!playerId) return;
+    const teamUrl = '/api/player-team/' + encodeURIComponent(playerId) + '?season=' + encodeURIComponent(season);
+    const teamKey = 'pm_team_v3_' + teamUrl;
+    const teamTTL = 10 * 60 * 1000;
+    try {
+      const cached = JSON.parse(localStorage.getItem(teamKey) || 'null');
+      if (cached && Date.now() - cached.ts < teamTTL) return; // already warm
+    } catch (_) {}
+    const doFetch = function () {
+      fetch(teamUrl)
+        .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        .then(data => {
+          try { localStorage.setItem(teamKey, JSON.stringify({ ts: Date.now(), data })); } catch (_) {}
+        })
+        .catch(() => {});
+    };
+    if (typeof requestIdleCallback === 'function') {
+      requestIdleCallback(doFetch, { timeout: 3000 });
+    } else {
+      setTimeout(doFetch, 1200);
+    }
+  } catch (_) {}
 }
 
 // ── Weekly (in-season) breakout tab builder ──────────────────────────────────
@@ -4409,7 +4438,9 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
           ? combinedYears
           : ((!isCareer && activeSeason) ? [Number(activeSeason)] : []);
         const lidPick = leagueId ? `'${leagueId}'` : 'null';
-        let pillsHTML = '<div class="adv-metrics-season-pills">';
+        let pillsHTML = '<div class="adv-time-ctl">';
+        pillsHTML += '<div class="adv-time-group"><div class="adv-time-label">Season</div>';
+        pillsHTML += '<div class="adv-metrics-season-pills">';
         pillsHTML += `<button type="button" class="adv-season-pill${isCareer ? ' active' : ''}" data-year="career" onclick="advPickSeason('${playerId}', ${lidPick}, 'career')">Career</button>`;
         availableSeasons.forEach(yr => {
           const activeClass = (!isCareer && activeYears.indexOf(Number(yr)) >= 0) ? ' active' : '';
@@ -4419,19 +4450,18 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
         if (availableSeasons.length >= 2) {
           pillsHTML += '<div class="adv-season-hint">Tap more years to combine · only seasons with data are listed</div>';
         }
-        // Week-bar: only show when the player has per-week data for this season.
+        pillsHTML += '</div>';
+        // Week chips: only show when the player has per-week data for this season.
         if (!isCareer && !isMultiSeason && activeSeason && availableWeeks.length > 0) {
           const wkMin = Math.min(...availableWeeks);
           const wkMax = Math.max(...availableWeeks);
           const barWS = activeWS != null ? activeWS : (weekStart != null ? weekStart : null);
           const barWE = activeWE != null ? activeWE : (weekEnd != null ? weekEnd : null);
-          const isFullRange = (barWS == null);
-          const lidExpr2 = leagueId ? ("'" + String(leagueId) + "'") : 'null';
-          pillsHTML += '<div class="adv-week-bar-row">'
-            + '<button class="adv-week-full-btn' + (isFullRange ? ' active' : '') + '" onclick="loadAdvancedMetrics(\'' + playerId + '\',' + lidExpr2 + ',' + activeSeason + ')">Season</button>'
-            + _wkBarBuild('advWkBar', wkMin, wkMax, barWS, barWE)
+          pillsHTML += '<div class="adv-time-group"><div class="adv-time-label">Weeks</div>'
+            + _wkBarBuild('advWkBar', wkMin, wkMax, barWS, barWE, availableWeeks)
             + '</div>';
         }
+        pillsHTML += '</div>';
         pillsEl.innerHTML = pillsHTML;
         if (!isCareer && activeSeason && availableWeeks.length > 0) {
           const _wkPid = playerId, _wkLid = leagueId, _wkSeas = activeSeason;

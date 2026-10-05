@@ -88,6 +88,133 @@ def scaled_minimum(full_minimum: int, completed_rounds: int) -> int:
                             // FULL_GAMES_MIN))
 
 
+def player_completed_weeks(
+    player_id: str,
+    season: int,
+    *,
+    load_week: Optional[Callable[[int, int], Iterable[dict]]] = None,
+) -> list[int]:
+    """Weeks where the player's own team game is final.
+
+    Unlike :func:`completed_regular_season_rounds` (which needs the whole NFL
+    slate final), a week counts here as soon as THAT PLAYER's team has
+    finished playing.  The modal's sample note therefore updates the moment
+    their game goes final, even mid-week.  Bye weeks never count against the
+    player.  Mid-season trades are handled via the per-week team map.
+    """
+    if load_week is None:
+        from utils.utils import load_week_schedule
+        load_week = load_week_schedule
+    season = int(season)
+
+    # Player's team per week (handles mid-season trades).
+    try:
+        from data_building.external_data.player_team_history import (
+            teams_in_season,
+        )
+        stints = teams_in_season(str(player_id), season) or []
+    except Exception:
+        stints = []
+    if not stints:
+        return []
+    week_team: dict[int, str] = {}
+    for stint in stints:
+        team = str(stint.get("team") or "").strip().upper()
+        if not team:
+            continue
+        weeks = stint.get("weeks") or []
+        if weeks:
+            for w in weeks:
+                week_team.setdefault(int(w), team)
+        else:
+            # Season-granularity fallback: team unknown per week.
+            for w in range(1, 19):
+                week_team.setdefault(w, team)
+
+    # Bound the scan: the current season stops at the current NFL week; past
+    # seasons scan the full schedule (the date fallback marks old games final).
+    try:
+        from dashboard_services.api import get_nfl_state
+        current = get_nfl_state() or {}
+        cur_season = int(current.get("season") or 0)
+        cur_week = int(current.get("week") or 0)
+    except Exception:
+        cur_season, cur_week = 0, 0
+    if cur_season and season == cur_season and cur_week:
+        max_week = min(18, cur_week)
+    elif cur_season and season > cur_season:
+        return []
+    else:
+        max_week = 18
+
+    completed = []
+    for week in range(1, max_week + 1):
+        team = week_team.get(week)
+        if not team:
+            continue  # bye week or no team data; never counts against them
+        try:
+            games = [g for g in (load_week(season, week) or [])
+                     if isinstance(g, dict)]
+        except Exception:
+            continue
+        game = next(
+            (g for g in games
+             if str(g.get("away") or "").upper() == team
+             or str(g.get("home") or "").upper() == team),
+            None,
+        )
+        if game is None:
+            continue
+        if _is_final(game):
+            completed.append(week)
+            continue
+        status = str(game.get("gameStatus") or game.get("status") or "").lower()
+        if any(word in status for word in ("postpon", "cancel", "suspend")):
+            continue  # odd scheduling; keep scanning later weeks
+        # Weeks are chronological: a non-final game means later weeks have
+        # not been played yet.
+        break
+    return completed
+
+
+def player_sample_note(player_id: str, season: int) -> Optional[str]:
+    """Per-player small-sample note, e.g. "Small sample · 3 games".
+
+    Counts weeks where the player's own team game is final, so the note
+    updates as soon as their game finishes.  Returns None once the sample is
+    no longer small (4+ completed games) or the player has no team data.
+    """
+    n = len(player_completed_weeks(player_id, season))
+    if 0 < n < FULL_GAMES_MIN:
+        return f"Small sample · {n} game{'s' if n != 1 else ''}"
+    return None
+
+
+def player_qualification_note(
+    player_id: str,
+    season: int,
+    *,
+    fallback_note: Optional[str] = None,
+    fallback_provisional: bool = False,
+) -> tuple[Optional[str], bool]:
+    """Per-player (note, provisional), falling back to league-wide values.
+
+    The note counts weeks where the player's own team game is final, so it
+    updates the moment their game finishes, even mid-week.  When per-player
+    team data is unavailable (or no games played yet), returns the provided
+    fallbacks (typically the league-wide policy's note/provisional).
+    """
+    try:
+        n = len(player_completed_weeks(player_id, season))
+    except Exception:
+        n = 0
+    if n == 0:
+        return fallback_note, fallback_provisional
+    if n < FULL_GAMES_MIN:
+        return f"Small sample · {n} game{'s' if n != 1 else ''}", True
+    return None, False
+
+
 @dataclass(frozen=True)
 class QualificationPolicy:
     season: int
@@ -106,7 +233,10 @@ class QualificationPolicy:
         if not self.provisional:
             return None
         n = len(self.completed_weeks)
-        return f"Small sample · {n} game{'s' if n != 1 else ''}"
+        # Counts fully completed NFL rounds, not the player's games. Word it
+        # as weeks so it can't be misread as a games-played total (the stats
+        # tab may show an in-progress week the rankings don't count yet).
+        return f"Small sample · {n} week{'s' if n != 1 else ''} final"
 
 
 def qualification_policy(season: int, *, week_start: Optional[int] = None,

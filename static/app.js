@@ -18716,7 +18716,7 @@ function _cmpInitWkBars() {
     if (side.season === null) return; // career -- no bar rendered
     const maxWk = (side.rangeMeta && side.rangeMeta.maxWk) ? side.rangeMeta.maxWk : 18;
     _wkBarInit('cmpWkBar' + which, function(ws, we) {
-      if (ws <= 1 && we >= maxWk) {
+      if (ws == null || we == null || (ws <= 1 && we >= maxWk)) {
         side.range = 'full'; side.wkStart = null; side.wkEnd = null;
       } else {
         side.range = 'custom'; side.wkStart = ws; side.wkEnd = we;
