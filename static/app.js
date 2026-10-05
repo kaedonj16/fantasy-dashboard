@@ -2220,7 +2220,7 @@ window.emptyState = emptyState;
     var newScores = tmp.querySelectorAll(sel);
     // .m-score-val carries nested markup in live mode (actual + projection +
     // trend arrow), so count the inner .num node up and leave the rest alone.
-    // Plain score nodes (e.g. .ls-score-num) count up directly.
+    // Plain score nodes (e.g. .ls-team-score) count up directly.
     function numNode(el) {
       return (el && el.querySelector && el.querySelector('.num')) || el;
     }
@@ -4883,6 +4883,7 @@ function initPlayoffOdds(root = document) {
             return;
           }
           panel.innerHTML = _renderPlayoffOdds(data);
+          initGenericTableSort(panel);
           normalizeClickableAccessibility(panel);
           fadeInCard(panel);
           // Layer the exact clinch/elimination outlook over the odds table when
@@ -5015,7 +5016,7 @@ function _renderPlayoffOdds(data) {
 
   return `<div class="po-wrap">
     <p class="po-subtitle">${subtitle}</p>
-    <table class="po-table">
+    <table class="po-table" data-sortable>
       <thead><tr>
         <th class="po-team">Team</th>
         <th class="po-rec">Record</th>
@@ -5188,9 +5189,11 @@ function initStandingsSort(root = document) {
 
   const applySort = () => {
     const tbody = tbl.tBodies[0];
-    const rows = Array.from(tbody.querySelectorAll("tr"));
+    const allRows = Array.from(tbody.querySelectorAll("tr"));
+    const isDivider = (tr) => tr.classList.contains("st-div-row") ||
+      (tr.children[0] && tr.children[0].hasAttribute("colspan"));
 
-    rows.sort((a, b) => {
+    const cmp = (a, b) => {
       for (const { col, dir } of sortSpec) {
         const A = getVal(a.children[col], col);
         const B = getVal(b.children[col], col);
@@ -5198,9 +5201,23 @@ function initStandingsSort(root = document) {
         if (A > B) return 1 * dir;
       }
       return 0;
-    });
+    };
 
-    tbody.replaceChildren(...rows);
+    // Sort within each contiguous block of data rows so division header
+    // rows stay pinned and teams never cross divisions.
+    const frag = document.createDocumentFragment();
+    let block = [];
+    const flush = () => {
+      block.sort(cmp);
+      block.forEach(tr => frag.appendChild(tr));
+      block = [];
+    };
+    allRows.forEach(tr => {
+      if (isDivider(tr)) { flush(); frag.appendChild(tr); }
+      else block.push(tr);
+    });
+    flush();
+    tbody.replaceChildren(frag);
 
     tbl.querySelectorAll("th").forEach(th =>
       th.classList.remove("sorted-asc", "sorted-desc", "sorted-secondary")
@@ -5249,6 +5266,133 @@ function initStandingsSort(root = document) {
   });
 
   applySort();
+}
+
+// ------------------------------------------------------------
+// Generic table sorter: add data-sortable to any <table> to get
+// clickable column headers with asc/desc toggle. Opt out per
+// column with data-sort-disabled on the <th>. Use data-sort-type
+// ("number"|"text"|"date") to override auto-detection, and
+// data-sort-value on <td> for a custom sort key (e.g. raw numbers
+// behind formatted text like "1,234" or "Top 5%").
+// ------------------------------------------------------------
+function initGenericTableSort(root = document) {
+  const tables = root.querySelectorAll
+    ? root.querySelectorAll('table[data-sortable]')
+    : [];
+  tables.forEach(tbl => {
+    if (!tbl.tHead || !tbl.tBodies || !tbl.tBodies.length) return;
+    if (tbl.__genericSortInited) return;
+    tbl.__genericSortInited = true;
+
+    const headerRow = tbl.tHead.rows[tbl.tHead.rows.length - 1];
+    const ths = Array.from(headerRow.children);
+
+    const detectType = (colIdx) => {
+      const th = ths[colIdx];
+      const forced = th.getAttribute("data-sort-type");
+      if (forced) return forced;
+      const tbody = tbl.tBodies[0];
+      for (const tr of tbody.rows) {
+        const td = tr.children[colIdx];
+        if (!td) continue;
+        const raw = td.getAttribute("data-sort-value") || (td.textContent || "").trim();
+        if (!raw || raw === "-" || raw === "N/A") continue;
+        const n = parseFloat(raw.replace(/[$,%]/g, "").replace(/,/g, ""));
+        if (Number.isFinite(n) && /^[$\d,.\-+%() ]+$/.test(raw)) return "number";
+        return "text";
+      }
+      return "text";
+    };
+
+    const colTypesCache = { types: null };
+    const getColType = (colIdx) => {
+      // Detect lazily at first sort, not at init: tables rendered by JS after
+      // page init (keeper, playoff odds, schedule grid, box scores) have no
+      // rows yet when the initializer runs, which would mislabel every
+      // numeric column as text.
+      if (!colTypesCache.types) colTypesCache.types = ths.map((_, i) => detectType(i));
+      return colTypesCache.types[colIdx];
+    };
+
+    const getVal = (tr, colIdx) => {
+      const td = tr.children[colIdx];
+      if (!td) return null;
+      const override = td.getAttribute("data-sort-value");
+      const t = (override != null ? override : (td.textContent || "")).trim();
+      if (!t || t === "-" || t === "N/A") return null;
+      const type = getColType(colIdx);
+      if (type === "number") {
+        const n = parseFloat(t.replace(/[$,%]/g, "").replace(/,/g, ""));
+        return Number.isFinite(n) ? n : null;
+      }
+      if (type === "date") {
+        const d = Date.parse(t);
+        return Number.isFinite(d) ? d : null;
+      }
+      return t.toLowerCase();
+    };
+
+    let sortCol = -1;
+    let sortDir = 1;
+
+    const applySort = () => {
+      const tbody = tbl.tBodies[0];
+      const allRows = Array.from(tbody.rows);
+      const isDivider = (tr) => {
+        const first = tr.children[0];
+        return !first || first.hasAttribute("colspan") || tr.classList.contains("st-div-row");
+      };
+      const cmp = (a, b) => {
+        const A = getVal(a, sortCol);
+        const B = getVal(b, sortCol);
+        if (A == null && B == null) return 0;
+        if (A == null) return 1;
+        if (B == null) return -1;
+        if (A < B) return -1 * sortDir;
+        if (A > B) return 1 * sortDir;
+        return 0;
+      };
+      // Sort within each contiguous block of data rows so section/divider
+      // rows (e.g. division headers) stay pinned and teams never cross them.
+      const frag = document.createDocumentFragment();
+      let block = [];
+      const flush = () => {
+        block.sort(cmp);
+        block.forEach(tr => frag.appendChild(tr));
+        block = [];
+      };
+      allRows.forEach(tr => {
+        if (isDivider(tr)) { flush(); frag.appendChild(tr); }
+        else block.push(tr);
+      });
+      flush();
+      tbody.replaceChildren(frag);
+      ths.forEach((th, i) => {
+        th.classList.remove("sorted-asc", "sorted-desc");
+        th.removeAttribute("aria-sort");
+        if (i === sortCol) {
+          th.classList.add(sortDir === 1 ? "sorted-asc" : "sorted-desc");
+          th.setAttribute("aria-sort", sortDir === 1 ? "ascending" : "descending");
+        }
+      });
+    };
+
+    ths.forEach((th, i) => {
+      if (th.hasAttribute("data-sort-disabled")) return;
+      th.style.cursor = "pointer";
+      th.setAttribute("role", "columnheader");
+      th.addEventListener("click", () => {
+        if (sortCol === i) {
+          sortDir = -sortDir;
+        } else {
+          sortCol = i;
+          sortDir = getColType(i) === "number" ? -1 : 1;
+        }
+        applySort();
+      });
+    });
+  });
 }
 
 // ------------------------------------------------------------
@@ -12070,6 +12214,7 @@ window.initPageRoot = function initPageRoot(root = document) {
   initPlayoffOdds(root);
   initTeamTabs(root);
   initStandingsSort(root);
+  initGenericTableSort(root);
   normalizeClickableAccessibility(root);
   // The Portfolio markup is parsed before this deferred bundle on a full load;
   // starting here also gives soft navigation/back-forward exactly one owner.
@@ -24595,68 +24740,50 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     + '<div class="sk-card-row"><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line w-60"></div><div class="skeleton skeleton-line w-40"></div></div><div class="skeleton sk-chip"></div></div>'
     + '<div class="sk-card-row"><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line w-60"></div><div class="skeleton skeleton-line w-40"></div></div><div class="skeleton sk-chip"></div></div>'
     + '</div>';
-  // Initials for the avatar fallback circle (Sleeper avatar URL may be absent
-  // or fail to load; the layered markup below reveals these instead).
-  function _lsInitials(name) {
-    var parts = String(name || '').trim().split(/\s+/).filter(Boolean).slice(0, 2);
-    var s = parts.map(function (w) { return w.charAt(0); }).join('');
-    return (s || '?').toUpperCase();
-  }
-  function _lsAvatarHtml(team) {
-    var inner = '<span class="ls-ava-init">' + escapeHtml(_lsInitials(team.name)) + '</span>';
-    if (team.avatar) {
-      inner += '<img class="ls-ava-img" src="' + escapeHtml(team.avatar) + '" alt="" loading="lazy" onerror="this.remove()">';
-    }
-    return '<span class="ls-ava">' + inner + '</span>';
-  }
-  function _lsTeamRow(team, pct, pctCls) {
-    var score = Number(team.score || 0).toFixed(1);
-    var proj = Number(team.proj || 0).toFixed(1);
-    var meta = pct != null
-      ? '<em class="' + pctCls + '">' + pct + '%</em> · proj ' + proj
-      : 'proj ' + proj;
-    return '<div class="ls-team">' + _lsAvatarHtml(team)
-      + '<span class="ls-name">' + escapeHtml(team.name || 'TBD') + '</span>'
-      + '<span class="ls-score"><b class="ls-score-num">' + score + '</b>'
-      + '<small>' + meta + '</small></span></div>';
-  }
   function _lsRenderList(view, matchups, week) {
     if (!matchups || !matchups.length) {
       view.innerHTML = '<div class="ls-empty">No matchups found for Week ' + escapeHtml(String(week)) + '.'
         + ' <button type="button" data-ls-retry>Retry</button></div>';
       return;
     }
-    var html = '<div class="ls-board">';
+    var html = '<div class="ls-list">';
     matchups.forEach(function (m) {
       var left = m.left || {}, right = m.right;
-      var isLive = m.status === 'in';
-      var statusLabel = isLive ? 'Live' : (m.status === 'final' ? 'Final' : 'Wk ' + escapeHtml(String(week)));
+      var statusLabel = m.status === 'in' ? 'Live' : (m.status === 'final' ? 'Final' : 'Wk ' + escapeHtml(String(week)));
       var wp = m.win_prob != null ? Math.max(0, Math.min(100, Math.round(Number(m.win_prob)))) : null;
-      html += '<section class="ls-mu' + (m.is_you ? ' is-you' : '') + '">';
-      html += '<div class="ls-hd"><span class="ls-status' + (isLive ? ' is-live' : '') + '">'
-        + (isLive ? '<i></i>' : '') + escapeHtml(statusLabel) + '</span>'
-        + (m.is_you ? '<span class="ls-you">YOU</span>' : '') + '</div>';
-      html += _lsTeamRow(left, wp, 'ls-p1');
+      html += '<div class="ls-card' + (m.is_you ? ' is-you' : '') + '">';
+      html += '<div class="ls-card-head"><span class="ls-status' + (m.status === 'in' ? ' is-live' : '') + '">' + escapeHtml(statusLabel) + '</span>' + (m.is_you ? '<span class="ls-you-badge">Your matchup</span>' : '') + '</div>';
+      html += '<div class="ls-teams">';
+      html += '<div class="ls-team"><span class="ls-team-name">' + escapeHtml(left.name || 'TBD') + '</span><span class="ls-team-score">' + Number(left.score || 0).toFixed(1) + '</span><span class="ls-team-proj">proj ' + Number(left.proj || 0).toFixed(1) + '</span></div>';
       if (right) {
-        html += _lsTeamRow(right, wp != null ? 100 - wp : null, 'ls-p2');
-        if (wp != null) {
-          var lName = String(left.name || 'left team').replace(/"/g, '');
-          var rName = String(right.name || 'right team').replace(/"/g, '');
-          html += '<div class="ls-split" role="img" aria-label="Win probability: '
-            + escapeHtml(lName) + ' ' + wp + ' percent, ' + escapeHtml(rName) + ' ' + (100 - wp) + ' percent">'
-            + '<i class="ls-s1" style="width:' + wp + '%"></i>'
-            + '<i class="ls-s2" style="width:' + (100 - wp) + '%"></i></div>';
-        }
+        html += '<div class="ls-team"><span class="ls-team-name">' + escapeHtml(right.name || 'TBD') + '</span><span class="ls-team-score">' + Number(right.score || 0).toFixed(1) + '</span><span class="ls-team-proj">proj ' + Number(right.proj || 0).toFixed(1) + '</span></div>';
       } else {
-        html += '<div class="ls-team"><span class="ls-name">Bye</span></div>';
+        html += '<div class="ls-team"><span class="ls-team-name">Bye</span></div>';
       }
-      html += '</section>';
+      html += '</div>';
+      if (wp != null && right) {
+        var lp = wp, rp = 100 - wp;
+        var lLeading = lp >= rp;
+        var winGreen = '#22c55e', loseFade = 'rgba(148,163,184,0.35)';
+        var lBar = lLeading ? winGreen : loseFade;
+        var rBar = lLeading ? loseFade : winGreen;
+        var trackBg = 'linear-gradient(to right,' + lBar + ' ' + lp + '%,' + rBar + ' ' + lp + '%)';
+        var lCol = lLeading ? winGreen : 'var(--text-muted)';
+        var rCol = lLeading ? 'var(--text-muted)' : winGreen;
+        var lName = String(left.name || 'left team').replace(/"/g, '');
+        var rName = String(right.name || 'right team').replace(/"/g, '');
+        html += '<div class="m-win-bar" role="img" aria-label="Win probability: ' + escapeHtml(lName) + ' ' + lp + ' percent, ' + escapeHtml(rName) + ' ' + rp + ' percent">'
+          + '<span class="m-wp-pct" style="color:' + lCol + ';">' + lp + '%</span>'
+          + '<div class="m-wp-track" style="background:' + trackBg + ';"></div>'
+          + '<span class="m-wp-pct" style="color:' + rCol + ';text-align:right;">' + rp + '%</span></div>';
+      }
+      html += '</div>';
     });
     html += '</div>';
-    // Swap the board in, counting scores up from the previous render instead
-    // of jumping (plain swap under reduced motion).
+    // Swap the list in: tween any win bars and count up scores from the
+    // previous render instead of jumping (plain swap under reduced motion).
     if (window.brAnimateMatchupRefresh) {
-      window.brAnimateMatchupRefresh(view, html, function () { view.innerHTML = html; }, '.ls-score-num');
+      window.brAnimateMatchupRefresh(view, html, function () { view.innerHTML = html; }, '.ls-team-score');
     } else {
       view.innerHTML = html;
     }

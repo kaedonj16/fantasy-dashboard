@@ -87,7 +87,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
         </div>
         <div class="filter-sort">
           <label class="filter-label">Sort by</label>
-          <select id="rkSort" onchange="rkCurrentPage=1;rkRender()"
+          <select id="rkSort" onchange="rkSetSortKey(this.value)"
             style="padding:7px 10px;border-radius:8px;border:1px solid var(--border);
                    background:var(--card-bg);color:var(--text);font-size:12px;
                    cursor:pointer;outline:none;min-height:34px;width:140px;">
@@ -96,6 +96,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
             <option value="score">Prospect Score</option>
             <option value="age">Age</option>
             <option value="adp">ADP</option>
+            <option value="name">Name (A-Z)</option>
           </select>
         </div>
       </div>
@@ -106,13 +107,13 @@ def build_prospects_body(is_admin: bool = False) -> str:
 
     <!-- Table header -->
     <div id="rkHeader" class="rk-grid-row rk-header" style="display:none;">
-      <span>#</span>
-      <span>Prospect</span>
+      <span data-rk-sort-col="rank" role="button" tabindex="0" title="Sort by overall rank">#</span>
+      <span data-rk-sort-col="name" role="button" tabindex="0" title="Sort by prospect name">Prospect</span>
       <span style="text-align:center;">Pos</span>
-      <span style="text-align:center;">Age</span>
-      <span id="rkSortHeader" style="text-align:center;">ADP</span>
-      <span style="text-align:right;">Score</span>
-      <span style="text-align:right;">Value</span>
+      <span data-rk-sort-col="age" role="button" tabindex="0" title="Sort by age" style="text-align:center;">Age</span>
+      <span id="rkSortHeader" data-rk-sort-col="sort" role="button" tabindex="0" title="Sort direction: click to flip" style="text-align:center;">ADP</span>
+      <span data-rk-sort-col="score" role="button" tabindex="0" title="Sort by prospect score" style="text-align:right;">Score</span>
+      <span data-rk-sort-col="value" role="button" tabindex="0" title="Sort by dynasty value" style="text-align:right;">Value</span>
     </div>
 
     <!-- Loading -->
@@ -384,6 +385,17 @@ def build_prospects_body(is_admin: bool = False) -> str:
     letter-spacing: 0.04em;
     text-transform: uppercase;
   }
+  /* Clickable sort headers (AM-table pattern): pointer + arrow on active */
+  #rkHeader [data-rk-sort-col] {
+    cursor: pointer;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #rkHeader [data-rk-sort-col]:hover { color: var(--text); }
+  #rkHeader [data-rk-sort-col]:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
   .rk-row {
     padding: 10px 12px;
     cursor: pointer;
@@ -608,6 +620,48 @@ def build_prospects_body(is_admin: bool = False) -> str:
   var rkDraftComplete = false;
   var rkCurrentPage = 1;
   var RK_PER_PAGE = 50;
+  var rkSortKey = 'rank';  // active sort key (mirrors the #rkSort dropdown)
+  var rkSortDir = 'asc';   // 'asc' | 'desc' -- flipped by clicking a column header
+  // Default direction when a sort key is first chosen (AM-table convention).
+  var RK_SORT_DIRS = { rank: 'asc', value: 'desc', score: 'desc', age: 'asc', adp: 'asc', name: 'asc' };
+  // Sort dropdown: choosing a key resets to that key's default direction.
+  function rkSetSortKey(key) {
+    rkSortKey = key;
+    rkSortDir = RK_SORT_DIRS[key] || 'desc';
+    rkCurrentPage = 1;
+    rkRender();
+  }
+  // Clickable column headers (AM-table pattern): clicking the active key flips
+  // direction, clicking a new key takes its default direction. The dropdown is
+  // kept in sync so both controls always agree.
+  function rkHeaderSort(key) {
+    if (rkSortKey === key) rkSortDir = (rkSortDir === 'desc' ? 'asc' : 'desc');
+    else { rkSortKey = key; rkSortDir = RK_SORT_DIRS[key] || 'desc'; }
+    var sel = document.getElementById('rkSort');
+    if (sel) sel.value = rkSortKey;
+    rkCurrentPage = 1;
+    rkRender();
+  }
+  // Arrow on the active sort header (AM-table pattern). On mobile the Age and
+  // Score columns are hidden, so their arrows move onto the sort column.
+  function rkUpdateSortHeaders() {
+    var header = document.getElementById('rkHeader');
+    if (!header) return;
+    var isMobile = window.innerWidth <= 768;
+    var col = 'sort';
+    if (rkSortKey === 'name') col = 'name';
+    else if (rkSortKey === 'rank') col = 'rank';
+    else if (rkSortKey === 'age' && !isMobile) col = 'age';
+    else if (rkSortKey === 'score' && !isMobile) col = 'score';
+    else if (rkSortKey === 'value' && !isMobile) col = 'value';
+    header.querySelectorAll('[data-rk-sort-col]').forEach(function(el) {
+      var on = el.getAttribute('data-rk-sort-col') === col;
+      el.classList.toggle('sorted-asc', on && rkSortDir === 'asc');
+      el.classList.toggle('sorted-desc', on && rkSortDir === 'desc');
+      if (on) el.setAttribute('aria-sort', rkSortDir === 'asc' ? 'ascending' : 'descending');
+      else el.removeAttribute('aria-sort');
+    });
+  }
 
   function rkGetValue(r) {
     // Prefer values from the main player_values DB (overlaid by server when sleeper_id
@@ -751,11 +805,23 @@ def build_prospects_body(is_admin: bool = False) -> str:
     score: { label: 'Score', cell: function(r) { var s = parseFloat(r.prospect_score||0); return s > 0 ? s.toFixed(2) : '-'; } },
     age:   { label: 'Age',   cell: function(r) { return r.age != null ? parseFloat(r.age).toFixed(1) : '-'; } },
     adp:   { label: 'ADP',   cell: function(r) { return rkAdpField(r); } },
+    name:  { label: 'Name',  cell: function(r) { return rkAdpField(r); } },
   };
 
+  // Missing sort values always sort last, in either direction.
+  function rkSortIsNull(r, sortBy) {
+    switch (sortBy) {
+      case 'value': return !(rkGetValue(r) > 0);
+      case 'score': return !(parseFloat(r.prospect_score||0) > 0);
+      case 'age':   return r.age == null;
+      case 'adp':   return (rkLeague === 'sf' ? r.sf_avg_pick : r.avg_pick) == null;
+      case 'name':  return false;
+      default:      return !(r.overall_rank > 0); // 'rank'
+    }
+  }
   function rkRender() {
     if (!rkLoaded) return;
-    var sortBy = document.getElementById('rkSort').value;
+    var sortBy = rkSortKey;
 
     // On mobile (≤768px) age and score are hidden, so switch the sort column
     // to show whatever is being sorted. On desktop all columns are visible.
@@ -763,6 +829,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
     var rkSortMeta = isMobile ? (RK_SORT_META[sortBy] || RK_SORT_META.adp) : RK_SORT_META.adp;
     var rkSortHdr = document.getElementById('rkSortHeader');
     if (rkSortHdr) rkSortHdr.textContent = rkSortMeta.label;
+    rkUpdateSortHeaders();
 
     // 1. Start with full list
     var players = rkAllPlayers.slice();
@@ -783,14 +850,22 @@ def build_prospects_body(is_admin: bool = False) -> str:
         .sort(function(a,b) { return b.s - a.s || rkGetValue(b.r) - rkGetValue(a.r); })
         .map(function(x) { return x.r; });
     } else {
-      // 4. Sort (only when not searching)
+      // 4. Sort (only when not searching). Direction-aware: the ascending-base
+      //    comparator is flipped when the header toggle is on 'desc'. Missing
+      //    values always sort last, in either direction.
+      var rkDirMult = rkSortDir === 'asc' ? 1 : -1;
       players.sort(function(a, b) {
+        var an = rkSortIsNull(a, sortBy), bn = rkSortIsNull(b, sortBy);
+        if (an && bn) return 0;
+        if (an) return 1;
+        if (bn) return -1;
         switch (sortBy) {
-          case 'value': return rkGetValue(b) - rkGetValue(a);
-          case 'score': return parseFloat(b.prospect_score||0) - parseFloat(a.prospect_score||0);
-          case 'age':   return parseFloat(a.age||99) - parseFloat(b.age||99);
-          case 'adp':   return rkAdpSort(a, b);
-          default:      return (a.overall_rank||999) - (b.overall_rank||999);
+          case 'value': return (rkGetValue(a) - rkGetValue(b)) * rkDirMult;
+          case 'score': return (parseFloat(a.prospect_score||0) - parseFloat(b.prospect_score||0)) * rkDirMult;
+          case 'age':   return (parseFloat(a.age||99) - parseFloat(b.age||99)) * rkDirMult;
+          case 'adp':   return rkAdpSort(a, b) * rkDirMult;
+          case 'name':  return String(a.name||'').localeCompare(String(b.name||'')) * rkDirMult;
+          default:      return ((a.overall_rank||999) - (b.overall_rank||999)) * rkDirMult;
         }
       });
     }
@@ -1088,6 +1163,39 @@ def build_prospects_body(is_admin: bool = False) -> str:
     }
   });
 
+  // Clickable sort headers (AM-table pattern): click a column to sort by it,
+  // click again to flip direction. Bound once; targets resolve at event time
+  // so soft-nav re-renders keep working.
+  if (!window.__rkSortBound) {
+    window.__rkSortBound = true;
+    (function() {
+      function rkHeaderCell(e) {
+        var cell = e.target && e.target.closest ? e.target.closest('#rkHeader [data-rk-sort-col]') : null;
+        return cell || null;
+      }
+      function rkHeaderKey(cell) {
+        var col = cell.getAttribute('data-rk-sort-col');
+        if (col === 'name') return 'name';
+        if (col === 'rank') return 'rank';
+        if (col === 'age') return 'age';
+        if (col === 'score') return 'score';
+        if (col === 'value') return 'value';
+        return rkSortKey; // 'sort' column: flip the current key's direction
+      }
+      document.addEventListener('click', function(e) {
+        var cell = rkHeaderCell(e);
+        if (cell) rkHeaderSort(rkHeaderKey(cell));
+      });
+      document.addEventListener('keydown', function(e) {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        var cell = rkHeaderCell(e);
+        if (!cell) return;
+        e.preventDefault();
+        rkHeaderSort(rkHeaderKey(cell));
+      });
+    })();
+  }
+
   fetch('/api/prospects/active-class')
     .then(function(r){ return r.json(); })
     .then(function(d) {
@@ -1103,7 +1211,11 @@ def build_prospects_body(is_admin: bool = False) -> str:
       // 1 week after the draft, default sort switches to ADP
       if (rkDraftComplete && (status.days_since_draft || 0) >= 7) {
         var sortEl = document.getElementById('rkSort');
-        if (sortEl && sortEl.value === 'rank') sortEl.value = 'adp';
+        if (sortEl && sortEl.value === 'rank') {
+          sortEl.value = 'adp';
+          rkSortKey = 'adp';
+          rkSortDir = RK_SORT_DIRS.adp;
+        }
       }
       return fetch('/api/prospects/rankings?year=' + rkDraftYear);
     })

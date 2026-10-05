@@ -403,7 +403,7 @@ def render_keeper_html(seed: dict) -> str:
     </div>
 
     <div class="kpr-tbl-scroll" id="kpr-table" hidden>
-      <table class="kpr-tbl">
+      <table class="kpr-tbl" data-sortable>
         <thead><tr>
           <th>Player</th><th class="r">Keeper cost</th>
           {auction_th}

@@ -645,11 +645,11 @@ def build_commissioner_body(ctx):
                           "padding:2px 5px;border-radius:4px;'>INACTIVE</span>") if r["inactive"] else ""
         roster_rows += f"""
 <tr style="border-bottom:1px solid var(--border);">
-  <td style="padding:10px 14px;">
+  <td style="padding:10px 14px;" data-sort-value="{html.escape(r['name'], quote=True)}">
     <div style="font-weight:600;">{html.escape(r['name'])}{inactive_badge}</div>
     <div style="font-size:11px;color:var(--muted);">{html.escape(r['owner'])}</div>
   </td>
-  <td style="padding:10px 14px;text-align:center;">{r['wins']}-{r['losses']}</td>
+  <td style="padding:10px 14px;text-align:center;" data-sort-value="{r['wins'] - r['losses']}">{r['wins']}-{r['losses']}</td>
   <td style="padding:10px 14px;min-width:140px;">
     <div style="display:flex;align-items:center;gap:8px;">
       {_val_bar(r['value_pct'])}
@@ -692,7 +692,7 @@ def build_commissioner_body(ctx):
 <div class="card" style="overflow:auto;margin-bottom:20px;">
   <div class="card-header"><h3>Team Overview</h3></div>
   {parity_html}
-  <table class="comm-team-table" style="width:100%;border-collapse:collapse;">
+  <table class="comm-team-table" style="width:100%;border-collapse:collapse;" data-sortable>
     <thead><tr style="border-bottom:2px solid var(--border);">
       <th style="padding:10px 14px;text-align:left;font-size:12px;color:var(--muted);">TEAM</th>
       <th style="padding:10px;text-align:center;font-size:12px;color:var(--muted);">RECORD</th>

@@ -6,6 +6,7 @@ must stay pinned at left:0 with an opaque, theme-correct background that
 mirrors every row state (normal, hover) so scrolled cells slide under cleanly.
 """
 from pathlib import Path
+import re
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -50,10 +51,15 @@ def test_keeper_sticky_cell_mirrors_row_hover():
 def test_keeper_player_cell_is_first_column():
     # keeper.js renders the player cell (badge + name + round/years controls)
     # as the first <td> of each row; the sticky selectors depend on that.
+    # The <td> carries a data-sort-value attribute for the generic table sort.
     js = (ROOT / "static/keeper.js").read_text(encoding="utf-8")
-    assert "'<td><div class=\"kpr-nm-line\">" in js
+    assert re.search(r"'<td[^>]*><div class=\"kpr-nm-line\">", js)
     # And it immediately follows the opening <tr> of the row template.
-    assert "'<tr data-pid=\"' + esc(row.p.id) + '\">' +\n        '<td><div class=\"kpr-nm-line\">" in js
+    tr_idx = js.find("'<tr data-pid=\"' + esc(row.p.id) + '\">' +")
+    assert tr_idx != -1
+    after_tr = js[tr_idx:].split("\n", 1)[1]
+    first_td = after_tr.lstrip()[:3]
+    assert first_td == "'<t" and "kpr-nm-line" in after_tr.split("\n")[0]
 
 
 def test_front_office_player_cell_has_name_class():

@@ -1008,36 +1008,6 @@ def _matchup_status_label(status_by_pid: dict, pids: list) -> str:
     return "pre"
 
 
-def _ls_team_has_remaining(team: dict, status_by_pid: dict) -> bool:
-    """True if any starter on the team still has a game left to play.
-
-    Used by the League Scores endpoint to make decided matchups explicit:
-    when neither team has anyone remaining, the result is deterministic and
-    the API reports 100/0 (or 50/50 on a tie) instead of the win-probability
-    model's 99/1 clamp (which exists to keep live matchups from reading as
-    final). A missing status entry is treated as remaining (conservative).
-    """
-    from dashboard_services.matchups import STATUS_FINAL
-
-    for p in (team.get("starters") or []):
-        if not p:
-            continue
-        pid = p.get("pid")
-        st = status_by_pid.get(pid, status_by_pid.get(str(pid)))
-        if st != STATUS_FINAL:
-            return True
-    return False
-
-
-def _ls_decided_win_prob(left_score: float, right_score: float) -> float:
-    """Win probability for a decided matchup: 100/0, or 50/50 on a tie."""
-    if left_score > right_score:
-        return 100.0
-    if right_score > left_score:
-        return 0.0
-    return 50.0
-
-
 def _finalized_fantasy_week(ctx: dict, roster_id: str, requested_week: int):
     """Return the applicable finalized fantasy week, if the provider has one.
 
@@ -1734,13 +1704,6 @@ def api_matchup_league_scores():
                 ) * 100.0, 1)
             except Exception:
                 logger.debug("[league-scores] win prob failed", exc_info=True)
-            # Explicit determinism: when neither team has a starter left to
-            # play, the result is decided. Report 100/0 (or 50/50 on a tie)
-            # instead of the model's 99/1 clamp.
-            if (win_prob is not None
-                    and not _ls_team_has_remaining(left, status_by_pid)
-                    and not _ls_team_has_remaining(right, status_by_pid)):
-                win_prob = _ls_decided_win_prob(left_side["score"], right_side["score"])
         pids = [p.get("pid") for p in (left.get("starters") or []) if p]
         if right_side:
             pids += [p.get("pid") for p in (right.get("starters") or []) if p]

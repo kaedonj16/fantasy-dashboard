@@ -9467,7 +9467,7 @@ def render_standings(team_stats, length, all_play: dict = None,
     return f"""
         {ctx_line}
         <div class="st-tblscroll">
-        <table class="standings-table" data-page="standings"{' data-divisions="1"' if _use_div else ''}>
+        <table id="stats" class="standings-table" data-page="standings"{' data-divisions="1"' if _use_div else ''}>
           <thead>
             <tr>
               <th scope="col">Seed</th>
@@ -31463,6 +31463,8 @@ def api_trade_database():
     """
     Paginated, searchable real-trade log.
     ?q=<player name>  &page=<int>  &limit=<int>  &league_type=<all|1qb|sf>
+    &league_format=<all|dynasty|redraft|keeper>
+    &sort=<date_desc|date_asc|value_desc|value_asc>
     """
     try:
         q = (request.args.get("q") or "").strip().lower()
@@ -31471,6 +31473,9 @@ def api_trade_database():
         league_type = (request.args.get("league_type") or "all").strip().lower()
         league_format = (request.args.get("league_format") or "all").strip().lower()
         season = int(request.args.get("season") or datetime.now().year)
+        sort = (request.args.get("sort") or "date_desc").strip().lower()
+        if sort not in ("date_desc", "date_asc", "value_desc", "value_asc"):
+            sort = "date_desc"
 
         # ID-based filters (comma-separated player IDs)
         _pa_raw = (request.args.get("player_a") or "").strip()
@@ -31517,6 +31522,10 @@ def api_trade_database():
         filter_clauses: list = []
         filter_params: list = []
         join_clauses: list = []
+        # Params for the JOIN-clause placeholders. These come textually BEFORE
+        # the WHERE placeholders in both queries, so they must lead the param
+        # lists (psycopg binds positionally).
+        join_params: list = []
 
         if player_a_ids and player_b_ids:
             # Both sides specified: enforce that A and B land on opposite sides
@@ -31531,7 +31540,7 @@ def api_trade_database():
                 " AND _jb.asset_type = 'player' AND _jb.player_id = ANY(%s)"
                 " AND _jb.side <> _ja.side"
             )
-            filter_params.extend([player_a_ids, player_b_ids])
+            join_params.extend([player_a_ids, player_b_ids])
         elif player_a_ids:
             # Only one side specified: match on either DB side
             filter_clauses.append(
@@ -31560,7 +31569,9 @@ def api_trade_database():
         lf_p = [lf_param] if lf_param is not None else []
 
         with get_conn() as conn:
-            count_params = [season] + sf_p + lf_p + filter_params
+            # JOIN placeholders come textually before WHERE placeholders, so
+            # join_params leads.
+            count_params = join_params + [season] + sf_p + lf_p + filter_params
             # Cache the total: the COUNT(DISTINCT) scans all matching trades
             # (~500k unfiltered) and dominates response time. Key on the filter
             # fingerprint; bounded to avoid unbounded growth from ad-hoc searches.
@@ -31591,15 +31602,49 @@ def api_trade_database():
                     for _k in list(_TRADE_DB_COUNT_CACHE)[:50]:
                         del _TRADE_DB_COUNT_CACHE[_k]
 
-            row_params = [season] + sf_p + lf_p + filter_params + [limit + 1, page * limit]
+            # Sort control. Value sorts rank trades by the total market value of
+            # the player assets involved (SF-aware weighted market value for
+            # the trade's season; draft picks carry no market value here).
+            # The aggregate is a season-restricted hash join, not a per-row
+            # correlated probe, so unfiltered value sorts stay interactive.
+            _value_sort = sort in ("value_desc", "value_asc")
+            _mv_col = "weighted_market_value_sf" if league_type == "sf" else "weighted_market_value_1qb"
+            _value_select = ""
+            _value_join = ""
+            _value_params: list = []
+            if _value_sort:
+                _value_select = ",\n                       COALESCE(tv.trade_value, 0) AS trade_value"
+                _value_join = (
+                    "LEFT JOIN ("
+                    f"SELECT _va.trade_id AS tid, SUM(COALESCE(s.{_mv_col}, 0)) AS trade_value "
+                    "FROM trade_intel_assets _va "
+                    "JOIN trade_intel_trades _vt ON _vt.id = _va.trade_id AND _vt.season = %s "
+                    "LEFT JOIN trade_intel_player_stats s ON s.player_id = _va.player_id AND s.season = _vt.season "
+                    "WHERE _va.asset_type = 'player' "
+                    "GROUP BY _va.trade_id"
+                    ") tv ON tv.tid = t.id\n                "
+                )
+                _value_params = [season]
+            if sort == "date_asc":
+                _order_by = "ORDER BY t.created_at ASC NULLS LAST, t.id ASC"
+            elif sort == "value_desc":
+                _order_by = "ORDER BY trade_value DESC, t.id DESC"
+            elif sort == "value_asc":
+                _order_by = "ORDER BY trade_value ASC, t.id ASC"
+            else:
+                _order_by = "ORDER BY t.created_at DESC NULLS LAST, t.id DESC"
+
+            # The value-join placeholder sits textually between the JOIN
+            # placeholders and the WHERE placeholders.
+            row_params = join_params + _value_params + [season] + sf_p + lf_p + filter_params + [limit + 1, page * limit]
             trade_rows = conn.execute(
                 f"""
                 SELECT DISTINCT t.id, t.transaction_id, t.season, t.week, t.created_at,
-                       l.scoring_type, l.is_superflex, l.num_teams
+                       l.scoring_type, l.is_superflex, l.num_teams{_value_select}
                 FROM trade_intel_trades t
                 LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id{join_sql}
-                WHERE t.season = %s {sf_clause}{lf_clause}{filter_sql}
-                ORDER BY t.created_at DESC NULLS LAST
+                {_value_join}WHERE t.season = %s {sf_clause}{lf_clause}{filter_sql}
+                {_order_by}
                 LIMIT %s OFFSET %s
                 """,
                 row_params,

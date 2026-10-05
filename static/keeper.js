@@ -304,6 +304,11 @@
     var vlabel = { keep: "KEEP", toss: "TOSS-UP", pass: "PASS" }[row.verdict];
     return '<span class="kpr-verdict ' + row.verdict + '"><span class="d"></span>' + vlabel + "</span>";
   }
+  // Numeric sort rank for the verdict column: KEEP sorts above TOSS-UP above
+  // PASS on the first (descending) click.
+  function verdictRank(v) {
+    return v === "keep" ? 2 : v === "toss" ? 1 : 0;
+  }
 
   function renderTable(rows) {
     var mx = maxAbs(rows);
@@ -323,13 +328,13 @@
           esc(row.p.id) + '" placeholder="$" value="' + esc(ac) + '" aria-label="Auction dollars paid"></td>';
       }
       return '<tr data-pid="' + esc(row.p.id) + '">' +
-        '<td><div class="kpr-nm-line"><span class="kpr-pos ' + esc(pos) + '">' + (esc(pos) || "-") + "</span>" +
+        '<td data-sort-value="' + esc(row.p.name) + '"><div class="kpr-nm-line"><span class="kpr-pos ' + esc(pos) + '">' + (esc(pos) || "-") + "</span>" +
         '<span class="kpr-nm">' + esc(row.p.name) + '</span></div><div class="kpr-sub">' + draftedTxt + "</div></td>" +
-        '<td class="r kpr-c-cost">Round ' + row.cost + "</td>" +
+        '<td class="r kpr-c-cost" data-sort-value="' + row.cost + '">Round ' + row.cost + "</td>" +
         auctionTd +
-        '<td class="r kpr-c-mkt">' + mktCell(row) + "</td>" +
-        '<td class="r kpr-c-surp">' + surpCell(row, mx) + "</td>" +
-        '<td class="r kpr-c-verd">' + verdictCell(row) + "</td>" +
+        '<td class="r kpr-c-mkt" data-sort-value="' + (row.mkt == null ? "" : row.mkt) + '">' + mktCell(row) + "</td>" +
+        '<td class="r kpr-c-surp" data-sort-value="' + (row.surplus == null ? "" : row.surplus) + '">' + surpCell(row, mx) + "</td>" +
+        '<td class="r kpr-c-verd" data-sort-value="' + verdictRank(row.verdict) + '">' + verdictCell(row) + "</td>" +
         "</tr>";
     }).join("");
     bindInlineInput(".kpr-drnd", function (pl, v) { var n = parseInt(v, 10); pl.draftedRound = (n > 0 ? n : null); });
@@ -353,10 +358,10 @@
     rows.forEach(function (row) {
       var tr = byPid[String(row.p.id)];
       if (!tr) return;
-      var c = tr.querySelector(".kpr-c-cost"); if (c) c.textContent = "Round " + row.cost;
-      var m = tr.querySelector(".kpr-c-mkt"); if (m) m.innerHTML = mktCell(row);
-      var s = tr.querySelector(".kpr-c-surp"); if (s) s.innerHTML = surpCell(row, mx);
-      var v = tr.querySelector(".kpr-c-verd"); if (v) v.innerHTML = verdictCell(row);
+      var c = tr.querySelector(".kpr-c-cost"); if (c) { c.textContent = "Round " + row.cost; c.setAttribute("data-sort-value", row.cost); }
+      var m = tr.querySelector(".kpr-c-mkt"); if (m) { m.innerHTML = mktCell(row); m.setAttribute("data-sort-value", row.mkt == null ? "" : row.mkt); }
+      var s = tr.querySelector(".kpr-c-surp"); if (s) { s.innerHTML = surpCell(row, mx); s.setAttribute("data-sort-value", row.surplus == null ? "" : row.surplus); }
+      var v = tr.querySelector(".kpr-c-verd"); if (v) { v.innerHTML = verdictCell(row); v.setAttribute("data-sort-value", verdictRank(row.verdict)); }
     });
   }
 
