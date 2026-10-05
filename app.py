@@ -9681,7 +9681,7 @@ def _viewer_lineup_alert_html(ctx: dict, viewer_roster_id) -> str:
         # the same position this week (legal like-for-like swaps only).
         _swap_suggestions = []
         try:
-            from utils.lineup_issues import projection_upgrades
+            from utils.lineup_issues import locked_teams_for_week, projection_upgrades
 
             proj_map = {
                 str(k): v
@@ -9707,9 +9707,21 @@ def _viewer_lineup_alert_html(ctx: dict, viewer_roster_id) -> str:
                 pid: str((full_players.get(pid) or {}).get("injury_status") or "")
                 for pid in eligible
             }
+            # Players whose NFL game already kicked off are locked: suggesting
+            # them as a swap-in (or suggesting a locked starter be benched) is
+            # an unactionable nudge.
+            _locked_teams = locked_teams_for_week(season, current_week)
+            _team_of = {
+                pid: str((players_map.get(pid) or {}).get("team")
+                         or (full_players.get(pid) or {}).get("team") or "").upper()
+                for pid in eligible
+            }
+            _locked_pids = {
+                pid for pid, tm in _team_of.items() if tm and tm in _locked_teams
+            }
             swaps = projection_upgrades(
                 starters, eligible, proj_map, pos_map, roster_positions or [],
-                injury_status=injury_status,
+                injury_status=injury_status, locked_pids=_locked_pids,
             )
             for s in swaps[:2]:
                 _in_name = (players_map.get(s["in"]) or {}).get("name") or f"Player {s['in']}"

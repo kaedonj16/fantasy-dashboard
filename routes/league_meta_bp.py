@@ -453,6 +453,7 @@ def api_lineup_lock_hint():
         from utils.lineup_issues import (
             find_lineup_issues,
             format_lineup_lock_swaps,
+            locked_teams_from_games,
             projection_upgrades,
             summarize_issues,
         )
@@ -517,10 +518,17 @@ def api_lineup_lock_hint():
                 pid: str((nfl_players.get(pid) or {}).get("injury_status") or "")
                 for pid in eligible
             }
+            # Locked players (game already kicked off) cannot be moved, so
+            # keep them out of both sides of any swap suggestion.
+            _locked_teams = locked_teams_from_games(games)
+            _locked_pids = {
+                pid for pid in eligible
+                if str((nfl_players.get(pid) or {}).get("team") or "").upper() in _locked_teams
+            }
             swaps = projection_upgrades(
                 starters, eligible, proj_map_wk, pos_map,
                 roster_positions, min_gain=2.0, max_swaps=2,
-                injury_status=injury_status,
+                injury_status=injury_status, locked_pids=_locked_pids,
             )
             if swaps:
                 names = {}

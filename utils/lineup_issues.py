@@ -23,6 +23,46 @@ SWAP_EXCLUDED_STATUSES = SERIOUS_INJURY_STATUSES | {"QUESTIONABLE"}
 EMPTY_SLOT_IDS = {"0", "", "None"}
 
 
+def locked_teams_from_games(games, now_ts=None) -> Set[str]:
+    """NFL team abbreviations whose week game has already kicked off.
+
+    A fantasy roster slot locks at kickoff, so neither side of a swap
+    suggestion may involve these teams' players. Pure function over schedule
+    game dicts (``home``/``away`` plus ``gameTime_epoch`` in seconds);
+    unparseable entries are ignored.
+    """
+    if now_ts is None:
+        import time as _time
+        now_ts = _time.time()
+    locked: Set[str] = set()
+    for g in games or []:
+        g = g or {}
+        try:
+            kickoff = float(g.get("gameTime_epoch"))
+        except (TypeError, ValueError):
+            continue
+        if kickoff <= now_ts:
+            for side in ("home", "away"):
+                t = str(g.get(side) or "").strip().upper()
+                if t:
+                    locked.add(t)
+    return locked
+
+
+def locked_teams_for_week(season, week, now_ts=None) -> Set[str]:
+    """Teams locked for (season, week): their game already kicked off.
+
+    Fail-open: any schedule problem returns an empty set, so swap suggestions
+    keep their previous behavior instead of vanishing.
+    """
+    try:
+        from utils.utils import load_week_schedule
+        games = load_week_schedule(int(season), int(week)) or []
+    except Exception:
+        return set()
+    return locked_teams_from_games(games, now_ts=now_ts)
+
+
 def find_lineup_issues(
     starters: List[str],
     player_info: Dict[str, dict],
@@ -86,6 +126,7 @@ def projection_upgrades(
     min_gain: float = 2.0,
     max_swaps: int = 2,
     injury_status: Optional[Dict[str, str]] = None,
+    locked_pids: Optional[Set[str]] = None,
 ) -> List[dict]:
     """Same-position bench-for-starter swaps that raise projected points.
 
@@ -112,13 +153,25 @@ def projection_upgrades(
         max_swaps: cap on suggestions, best first.
         injury_status: optional {pid: injury designation}; pids in
             SWAP_EXCLUDED_STATUSES are excluded from the "in" side.
+        locked_pids: optional pids whose NFL game already kicked off. A locked
+            player can be neither started nor benched, so locked pids are
+            excluded from BOTH sides of every suggestion. Without this, a
+            Sunday-morning scan can recommend starting a player who already
+            played Thursday (an unactionable swap).
 
     Returns [{"in": pid, "out": pid, "gain": float}], best gain first.
     """
     from utils.optimal_lineup import compute_optimal_lineup
 
-    starter_set = {str(p) for p in starters or [] if str(p) not in EMPTY_SLOT_IDS}
-    pids = [str(p) for p in eligible_players or [] if str(p) not in EMPTY_SLOT_IDS]
+    locked = {str(p) for p in (locked_pids or set())}
+    starter_set = {
+        str(p) for p in starters or []
+        if str(p) not in EMPTY_SLOT_IDS and str(p) not in locked
+    }
+    pids = [
+        str(p) for p in eligible_players or []
+        if str(p) not in EMPTY_SLOT_IDS and str(p) not in locked
+    ]
     if injury_status:
         excluded = {
             p for p in pids
