@@ -217,7 +217,7 @@ def test_ls_tab_fetches_and_renders():
     assert out["matchupTabActive"] is False
     assert out["lsLoaded"] == "true"
     html = out["leagueHtml"]
-    assert "Your matchup" in html
+    assert ">YOU<" in html
     assert "is-you" in html
     assert "100.5" in html
     assert "Live" in html
@@ -234,10 +234,10 @@ def test_ls_tab_empty_state():
     assert "data-ls-retry" in out["leagueHtml"]
 
 
-def test_ls_win_prob_uses_styled_win_bar():
-    # Regression: the win-probability row must use the styled m-win-bar
-    # pattern (shared with My Matchup), not the unstyled pf-live-wp markup
-    # that rendered as bare "100%0%" text.
+def test_ls_win_prob_uses_split_bar():
+    # Redesign: the win-probability row is a split bar (brand-blue end for
+    # the top team, accent end for the bottom team) with color-matched pct
+    # labels next to each score, not the old gradient m-win-bar.
     out = _run_harness({
         "platform": "sleeper", "leagueId": "123", "season": "2026",
         "apiBody": {
@@ -251,10 +251,12 @@ def test_ls_win_prob_uses_styled_win_bar():
     })
     html = out["leagueHtml"]
     assert "pf-live-wp" not in html
-    assert "m-win-bar" in html
-    assert "m-wp-pct" in html
-    assert "m-wp-track" in html
-    assert "linear-gradient" in html
+    assert "m-win-bar" not in html
+    assert "ls-board" in html
+    assert "ls-split" in html
+    assert "ls-s1" in html
+    assert "ls-s2" in html
+    assert "Win probability:" in html  # accessible bar label
     assert "66%" in html  # rounded left win prob
     assert "34%" in html  # right win prob
 
@@ -313,9 +315,9 @@ def test_ls_uses_embedded_data_without_fetch():
     })
     assert out["fetchCalls"] == []
     html = out["leagueHtml"]
-    assert "Your matchup" in html
+    assert ">YOU<" in html
     assert "100.5" in html
-    assert "m-win-bar" in html
+    assert "ls-split" in html
     assert out.get("lsLoaded") == "true"
 
 
