@@ -279,6 +279,31 @@ services:
         sync: false
 
   - type: cron
+    name: injury-flip-check
+    runtime: python
+    # Every 15 min so a starter/bench player flipping to Out/Doubtful/IR close
+    # to kickoff alerts immediately. The check itself day-gates on the NFL
+    # schedule (America/New_York): on non-game days it exits after a schedule
+    # read, so running it around the clock is cheap. Separate overlap guard
+    # from the per-minute scorezone poller (see push_bp) so a slow flip run
+    # can never delay TD alerts.
+    schedule: "*/15 * * * *"
+    plan: starter
+    buildCommand: python -c "print('injury-flip-check - no Python deps')"
+    startCommand: python scripts/trigger_notifications.py injury
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: TZ
+        value: America/New_York
+      - key: PYTHON_ENV
+        value: production
+      - key: APP_URL
+        sync: false
+      - key: CRON_SECRET
+        sync: false
+
+  - type: cron
     name: weekly-email
     runtime: python
     # Tuesday ~9am Eastern. Render cron expressions are UTC (TZ env does not

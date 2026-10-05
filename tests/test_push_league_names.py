@@ -11,11 +11,12 @@ import utils.push_notifications as pn
 
 
 class _FakeDateTime(datetime):
-    """Always a Friday, so the game-day guard in notify_injury_alert passes."""
+    """Always a Friday (8:00 AM ET), so the game-day gate passes."""
 
     @classmethod
     def now(cls, tz=None):
-        return datetime(2026, 9, 25, 12, 0, tzinfo=timezone.utc)
+        base = datetime(2026, 9, 25, 12, 0, tzinfo=timezone.utc)
+        return base.astimezone(tz) if tz else base
 
 
 class _FakeConn:
@@ -101,61 +102,104 @@ def test_league_display_name_falls_back_to_blank(monkeypatch):
     assert pn._league_display_name("sleeper", "L9", "2026") == ""
 
 
-def test_injury_alert_names_the_league(monkeypatch, fake_db):
-    _patch_api(monkeypatch)
+def _injury_flip_fixtures(monkeypatch, fake_db, league_name="Blackedraw"):
+    """Fixture stack for notify_injury_flip: Friday game day, Gibbs flips to Out."""
+    import json as _json
+    from datetime import datetime as _dt
+    from datetime import timezone as _tz
+
+    import dashboard_services.api as api
+    import dashboard_services.db as db
+    import dashboard_services.injury_return as ir
+    import dashboard_services.platform_api as papi
+    from utils import utils as utils_mod
+
+    kickoff = int(_dt(2026, 9, 26, 0, 15, tzinfo=_tz.utc).timestamp())  # Fri 8:15 PM ET
+    store = {"injury_last_seen_2026_4": _json.dumps({"L1:p1": "Questionable"})}
+
+    def _get(conn, key):
+        return store.get(key)
+
+    def _set(conn, key, value):
+        store[key] = value
+
+    monkeypatch.setattr(pn, "_app_state_get", _get)
+    monkeypatch.setattr(pn, "_app_state_set", _set)
     monkeypatch.setattr(pn, "datetime", _FakeDateTime)
+    monkeypatch.setattr(
+        api, "get_nfl_state",
+        lambda: {"season": 2026, "week": 4, "season_type": "reg"},
+    )
+    monkeypatch.setattr(
+        ir, "refresh_espn_return_dates",
+        lambda force=False: {"p1": {"status": "Out", "team": "DET",
+                                   "name": "Jahmyr Gibbs"}},
+    )
+    monkeypatch.setattr(
+        utils_mod, "load_week_schedule",
+        lambda s, w: [{"home": "DET", "away": "KC", "gameTime_epoch": kickoff}],
+    )
+    monkeypatch.setattr(
+        papi, "get_rosters",
+        lambda platform, league_id, season: [{"owner_id": "o1", "roster_id": 1,
+                                             "starters": ["p1"], "players": ["p1"]}],
+    )
+    monkeypatch.setattr(
+        papi, "get_league",
+        lambda platform, league_id, season: {"name": league_name},
+    )
     monkeypatch.setattr(pn, "_get_subscribed_leagues", lambda: [("L1", "sleeper")])
     pn._league_name_cache.clear()
 
-    sent = []
-    monkeypatch.setattr(
-        pn, "_broadcast_owner",
-        lambda league_id, owner_id, title, body, url, tag, notif_type=None:
-            sent.append({"title": title, "body": body}),
-    )
+    class _Conn:
+        def __enter__(self):
+            return self
 
-    pn.notify_injury_alert()
+        def __exit__(self, *a):
+            return False
+
+        def execute(self, *a, **k):
+            class _R:
+                def fetchall(inner):
+                    return [{"endpoint": "ep1", "p256dh": "k", "auth": "a",
+                             "prefs": {}, "owner_id": "o1", "account_key": "x"}]
+
+            return _R()
+
+        def commit(self):
+            pass
+
+    monkeypatch.setattr(db, "get_conn", lambda: _Conn())
+
+    sent = []
+
+    def _capture(rows, title, body, url="/", tag="update", notif_type=None,
+                 league_id=None, platform=None):
+        sent.append({"title": title, "body": body})
+
+    monkeypatch.setattr(pn, "_send_with_digest", _capture)
+    return sent
+
+
+def test_injury_alert_names_the_league(monkeypatch, fake_db):
+    sent = _injury_flip_fixtures(monkeypatch, fake_db)
+
+    pn.notify_injury_flip()
 
     assert len(sent) == 1
     assert sent[0]["title"] == "Starter injury alert"
     assert sent[0]["body"] == (
-        "Jahmyr Gibbs (RB) is listed as Out. Check your lineup in Blackedraw."
+        "Jahmyr Gibbs is now listed Out. Check your lineup in Blackedraw."
     )
 
 
 def test_injury_alert_falls_back_without_league_name(monkeypatch, fake_db):
-    import dashboard_services.api as api
-    import dashboard_services.platform_api as papi
+    sent = _injury_flip_fixtures(monkeypatch, fake_db, league_name="")
 
-    monkeypatch.setattr(
-        api, "get_nfl_state",
-        lambda: {"season": "2026", "week": 4, "season_type": "reg"},
-    )
-    monkeypatch.setattr(
-        api, "get_nfl_players",
-        lambda: {"p1": {"full_name": "Jahmyr Gibbs", "position": "RB",
-                        "injury_status": "Out"}},
-    )
-    monkeypatch.setattr(
-        api, "get_rosters",
-        lambda league_id: [{"owner_id": "o1", "starters": ["p1"]}],
-    )
-    monkeypatch.setattr(papi, "get_league", lambda *a: {})
-    monkeypatch.setattr(pn, "datetime", _FakeDateTime)
-    monkeypatch.setattr(pn, "_get_subscribed_leagues", lambda: [("L1", "sleeper")])
-    pn._league_name_cache.clear()
-
-    sent = []
-    monkeypatch.setattr(
-        pn, "_broadcast_owner",
-        lambda league_id, owner_id, title, body, url, tag, notif_type=None:
-            sent.append({"title": title, "body": body}),
-    )
-
-    pn.notify_injury_alert()
+    pn.notify_injury_flip()
 
     assert len(sent) == 1
-    assert sent[0]["body"] == "Jahmyr Gibbs (RB) is listed as Out. Check your lineup."
+    assert sent[0]["body"] == "Jahmyr Gibbs is now listed Out. Check your lineup."
 
 
 def test_drop_alert_title_names_the_league(monkeypatch, fake_db):

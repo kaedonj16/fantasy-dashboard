@@ -39,6 +39,19 @@ _FETCH_LOCK = threading.Lock()
 _FETCH_BLOCKED_UNTIL = 0.0
 _LAST_FETCH_WARN = 0.0
 
+# ESPN's injuries endpoint groups by numeric team id (no abbreviation in the
+# payload). These ids are stable across seasons; verified against the live
+# endpoint 2026-10-04. WAS is used for Washington (matches the repo's
+# convention; scorezone aliases WSH -> WAS).
+_ESPN_TEAM_ABBR = {
+    "1": "ATL", "2": "BUF", "3": "CHI", "4": "CIN", "5": "CLE", "6": "DAL",
+    "7": "DEN", "8": "DET", "9": "GB", "10": "TEN", "11": "IND", "12": "KC",
+    "13": "LV", "14": "LAR", "15": "MIA", "16": "MIN", "17": "NE", "18": "NO",
+    "19": "NYG", "20": "NYJ", "21": "PHI", "22": "ARI", "23": "PIT",
+    "24": "LAC", "25": "SF", "26": "SEA", "27": "TB", "28": "WAS",
+    "29": "CAR", "30": "JAX", "33": "BAL", "34": "HOU",
+}
+
 
 def _as_date(value) -> Optional[date]:
     if value is None:
@@ -84,6 +97,7 @@ def parse_espn_injuries_payload(payload: dict, espn_to_canon: Optional[dict] = N
     for group in groups or []:
         if not isinstance(group, dict):
             continue
+        team_abbr = _ESPN_TEAM_ABBR.get(str(group.get("id") or "").strip(), "")
         entries = group.get("injuries") or group.get("items") or []
         if isinstance(group.get("athlete"), dict) and not entries:
             entries = [group]
@@ -117,6 +131,7 @@ def parse_espn_injuries_payload(payload: dict, espn_to_canon: Optional[dict] = N
                 "player_id": pid,
                 "name": athlete.get("displayName") or athlete.get("fullName") or "",
                 "status": status,
+                "team": team_abbr,
                 "return_date": str(return_raw)[:10] if return_raw else None,
                 "type": _injury_type_label(details.get("type") or entry.get("type")),
             }
