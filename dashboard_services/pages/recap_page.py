@@ -434,8 +434,8 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     from dashboard_services.api import team_avatar
     roster_by_rid = {str(r.get("roster_id")): r for r in (ctx.get("rosters") or [])}
     # Division map for the "Div" badge on division-game scoreboard rows.
-    from utils.standings_divisions import is_division_game, roster_division_map
-    _recap_div_by_rid = roster_division_map(ctx.get("rosters"))
+    from utils.standings_divisions import is_division_game, div_map_for_ctx
+    _recap_div_by_rid = div_map_for_ctx(ctx)
     # username by roster_id for the @manager line (df_weekly "owner" is the
     # team name, not the username).
     username_by_rid = _usernames_by_roster_id(users, ctx.get("rosters") or [])

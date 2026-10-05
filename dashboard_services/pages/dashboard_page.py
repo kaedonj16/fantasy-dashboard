@@ -132,9 +132,9 @@ def build_dashboard_body(ctx: dict) -> str:
                                                        str((m.get("right") or {}).get("roster_id", ""))) else 1,
     ) if _show_matchup_preview else []
     if _show_matchup_preview:
-        from utils.standings_divisions import division_records_for_ctx, roster_division_map
+        from utils.standings_divisions import division_records_for_ctx, div_map_for_ctx
         _dash_div_records = division_records_for_ctx(ctx)
-        _dash_div_by_rid = roster_division_map(ctx.get("rosters"))
+        _dash_div_by_rid = div_map_for_ctx(ctx)
         slides = [
             render_matchup_slide(
                 season,

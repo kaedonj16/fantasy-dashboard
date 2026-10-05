@@ -6,11 +6,54 @@ cards by record — matching Sleeper / playoff-scenario behavior.
 """
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
+logger = logging.getLogger(__name__)
 
-def roster_division_map(rosters: Optional[Iterable[Mapping[str, Any]]]) -> Dict[int, int]:
-    """``roster_id -> division_id`` for teams with a positive division setting."""
+# Last known-good ``roster_id -> division_id`` maps, keyed by
+# ``"<platform>:<league_id>"``. Guards the Div badge (and division-aware
+# standings) against transient provider responses that omit per-roster
+# division assignments: with the short live-game cache TTL the league ctx
+# rebuilds every couple of minutes, and one bad roster payload would
+# otherwise wipe the badges until the next good rebuild.
+_LAST_GOOD_DIV_MAP: Dict[str, Dict[int, int]] = {}
+
+
+def _divisions_configured(settings: Optional[Mapping[str, Any]]) -> Optional[bool]:
+    """True/False when league settings explicitly say divisions on/off.
+
+    Returns None when the settings carry no division count, in which case the
+    roster assignments alone decide.
+    """
+    try:
+        raw = (settings or {}).get("divisions")
+    except Exception:
+        return None
+    if raw in (None, ""):
+        return None
+    try:
+        return int(raw) >= 2
+    except (TypeError, ValueError):
+        return None
+
+
+def roster_division_map(
+    rosters: Optional[Iterable[Mapping[str, Any]]],
+    *,
+    league_key: Optional[str] = None,
+    settings: Optional[Mapping[str, Any]] = None,
+) -> Dict[int, int]:
+    """``roster_id -> division_id`` for teams with a positive division setting.
+
+    When ``league_key`` is given, a non-empty result is remembered per league.
+    If a later call builds an empty map for a league whose settings still show
+    divisions configured, the last good map is returned instead, so a
+    transient provider hiccup does not silently drop Div badges. Leagues
+    without divisions are unaffected: their map stays empty because no good
+    map was ever cached, and an explicit ``divisions < 2`` setting clears any
+    stale entry.
+    """
     out: Dict[int, int] = {}
     for r in rosters or []:
         rid = r.get("roster_id")
@@ -25,7 +68,35 @@ def roster_division_map(rosters: Optional[Iterable[Mapping[str, Any]]]) -> Dict[
                 out[int(rid)] = div
             except (TypeError, ValueError):
                 continue
+    if league_key:
+        key = str(league_key)
+        if out:
+            _LAST_GOOD_DIV_MAP[key] = dict(out)
+        else:
+            configured = _divisions_configured(settings)
+            if configured is False:
+                # League explicitly runs without divisions: drop any stale map
+                # rather than resurrecting one.
+                _LAST_GOOD_DIV_MAP.pop(key, None)
+            else:
+                cached = _LAST_GOOD_DIV_MAP.get(key)
+                if cached:
+                    logger.warning(
+                        "[divisions] roster data missing divisions for league %s, "
+                        "using cached map",
+                        key,
+                    )
+                    return dict(cached)
     return out
+
+
+def div_map_for_ctx(ctx: Mapping[str, Any]) -> Dict[int, int]:
+    """``roster_division_map`` with league-keyed fallback, derived from a ctx."""
+    settings = ctx.get("league_settings") or (ctx.get("league") or {}).get("settings") or {}
+    platform = ctx.get("platform") or "sleeper"
+    league_id = ctx.get("league_id") or ctx.get("resolved_league_id")
+    league_key = f"{platform}:{league_id}" if league_id else None
+    return roster_division_map(ctx.get("rosters"), league_key=league_key, settings=settings)
 
 
 def division_name_map(
@@ -68,19 +139,23 @@ def division_name_map(
 def active_divisions(
     settings: Optional[Mapping[str, Any]],
     rosters: Optional[Iterable[Mapping[str, Any]]],
+    *,
+    league_key: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """Return division info when the league should split standings, else None.
 
     Active when at least two distinct per-team division ids are present. If
     ``settings.divisions`` is explicitly 0/1 we stay flat (host says no
     divisions); a missing count still splits when roster assignments exist.
+    ``league_key`` enables the last-good-map fallback inside
+    :func:`roster_division_map` for transient provider hiccups.
     """
     try:
         raw = (settings or {}).get("divisions")
         n_settings = int(raw) if raw not in (None, "") else None
     except (TypeError, ValueError):
         n_settings = None
-    by_rid = roster_division_map(rosters)
+    by_rid = roster_division_map(rosters, league_key=league_key, settings=settings)
     unique = sorted({d for d in by_rid.values() if d})
     if len(unique) < 2:
         return None
@@ -95,10 +170,17 @@ def active_divisions(
 
 
 def resolve_divisions(ctx: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
-    """Pull active division info from a league ctx (settings + rosters + metadata)."""
+    """Pull active division info from a league ctx (settings + rosters + metadata).
+
+    Derives the league key from the ctx so the last-good-map fallback applies
+    here too (division records, standings grouping).
+    """
     settings = ctx.get("league_settings") or (ctx.get("league") or {}).get("settings") or {}
     rosters = ctx.get("rosters")
-    info = active_divisions(settings, rosters)
+    platform = ctx.get("platform") or "sleeper"
+    league_id = ctx.get("league_id") or ctx.get("resolved_league_id")
+    league_key = f"{platform}:{league_id}" if league_id else None
+    info = active_divisions(settings, rosters, league_key=league_key)
     if not info:
         return None
     league = ctx.get("league") if isinstance(ctx.get("league"), Mapping) else {}

@@ -7197,7 +7197,11 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
 
     if team_stats is not None and not team_stats.empty and {"Wins", "PF"}.issubset(team_stats.columns):
         from utils.standings_divisions import division_records, roster_division_map
-        _by_rid = roster_division_map(rosters)
+        _by_rid = roster_division_map(
+            rosters,
+            league_key=f"{platform}:{resolved_league_id}",
+            settings=league_settings,
+        )
         standings_map = build_standings_map(
             team_stats, roster_map,
             division_by_rid=_by_rid,
@@ -8473,7 +8477,11 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
 
             if team_stats is not None and not team_stats.empty and {"Wins", "PF"}.issubset(team_stats.columns):
                 from utils.standings_divisions import division_records, roster_division_map
-                _by_rid = roster_division_map(rosters)
+                _by_rid = roster_division_map(
+                    rosters,
+                    league_key=f"{platform}:{resolved_league_id}",
+                    settings=ctx.get("league_settings"),
+                )
                 ctx["standings_map"] = build_standings_map(
                     team_stats, roster_map,
                     division_by_rid=_by_rid,
@@ -21131,7 +21139,11 @@ def api_weekly_week():
     if not any(_api_gotw_flags):
         _api_gotw = None
     from utils.standings_divisions import roster_division_map as _rdm
-    _api_div_by_rid = _rdm(ctx.get("rosters"))
+    _api_div_by_rid = _rdm(
+        ctx.get("rosters"),
+        league_key=f"{platform}:{resolved_league_id}",
+        settings=ctx.get("league_settings") or (ctx.get("league") or {}).get("settings"),
+    )
 
     # Attach H2H records for this week's matchups
     for _m in matchups:
