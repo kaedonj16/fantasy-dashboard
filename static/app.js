@@ -3004,6 +3004,27 @@ window._brPromoEligible = function () {
     }).catch(function () {});
   }
 
+  // Resolve the service-worker registration, but never hang: a wedged worker
+  // (e.g. stuck mid-update after a deploy) leaves navigator.serviceWorker.ready
+  // pending forever, which used to silently break the notification settings
+  // modal (tap -> nothing happens, no error). On timeout the caller degrades
+  // to its no-registration path instead.
+  function _swReadyOrTimeout(ms) {
+    ms = ms || 4000;
+    var ready;
+    try {
+      ready = navigator.serviceWorker.ready;
+    } catch (_) {
+      return Promise.reject(new Error('sw-unavailable'));
+    }
+    return Promise.race([
+      ready,
+      new Promise(function (_, reject) {
+        setTimeout(function () { reject(new Error('sw-timeout')); }, ms);
+      }),
+    ]);
+  }
+
   // "Tell me about" preference picker, shown right after a fresh subscribe.
   // Buckets render from /api/push/catalog (server canonical list) with the
   // baked-in mirror as fallback. Every bucket defaults ON, matching today's
@@ -3094,7 +3115,7 @@ window._brPromoEligible = function () {
     if (!endpoint) {
       // Try to get from active subscription
       try {
-        var reg = await navigator.serviceWorker.ready;
+        var reg = await _swReadyOrTimeout();
         var sub = await reg.pushManager.getSubscription();
         if (sub) { endpoint = sub.endpoint; window._pushEndpoint = endpoint; }
       } catch (_) {}
@@ -3162,7 +3183,7 @@ window._brPromoEligible = function () {
       if (er.ok) enabledLeagues = (await er.json()).league_ids || [];
     } catch (_) {}
     try {
-      var _reg = await navigator.serviceWorker.ready;
+      var _reg = await _swReadyOrTimeout();
       var _sub = await _reg.pushManager.getSubscription();
       if (_sub) subKeys = _sub.toJSON().keys;
     } catch (_) {}
@@ -3444,7 +3465,7 @@ window._brPromoEligible = function () {
     }
     if (!_repromptEligible()) return;
     try {
-      var reg = await navigator.serviceWorker.ready;
+      var reg = await _swReadyOrTimeout();
       var sub = await reg.pushManager.getSubscription();
       if (sub) {
         // Push is actually enabled (e.g. subscribed in another tab) -- record it
