@@ -57,6 +57,85 @@ var prLoaded = false;
 var _prLoadGen = 0;  // ignore stale fetch results if prLoadData re-enters
 var prPage = 1;
 var prPageSize = 50;
+var prSortKey = 'value';   // active sort key (mirrors the #prSort dropdown)
+var prSortDir = 'desc';    // 'asc' | 'desc' -- flipped by clicking a column header
+// Default direction when a sort key is first chosen (AM-table convention:
+// names, ages, ADPs and ranks ascend; values and point totals descend).
+var PR_SORT_DIRS = { value: 'desc', adp: 'asc', age: 'asc', pos_rank: 'asc', ppg: 'desc', total_pts: 'desc', name: 'asc' };
+// Sort dropdown: choosing a key resets to that key's default direction.
+function prSetSortKey(key) {
+  prSortKey = key;
+  prSortDir = PR_SORT_DIRS[key] || 'desc';
+  prPage = 1;
+  prFlipRender();
+}
+// Clickable column headers (AM-table pattern): clicking the active key flips
+// direction, clicking a new key takes its default direction. The dropdown is
+// kept in sync so both controls always agree.
+function prHeaderSort(key) {
+  if (prSortKey === key) prSortDir = (prSortDir === 'desc' ? 'asc' : 'desc');
+  else { prSortKey = key; prSortDir = PR_SORT_DIRS[key] || 'desc'; }
+  var sel = document.getElementById('prSort');
+  if (sel) sel.value = prSortKey;
+  prPage = 1;
+  prFlipRender();
+}
+// Ascending-base comparator for the active sort key. Multiplied by the sort
+// direction so headers can flip asc/desc. Matches the old one-direction
+// comparators when prSortDir is the key's default.
+function prSortBase(a, b, sortBy) {
+  if (sortBy === 'name') return String(a.name || '').localeCompare(String(b.name || ''));
+  if (sortBy === 'age')  return (a.age != null ? a.age : 99) - (b.age != null ? b.age : 99);
+  if (sortBy === 'adp') {
+    var aA = prGetAdpSortVal(a), bA = prGetAdpSortVal(b);
+    return (aA != null ? aA : 99999) - (bA != null ? bA : 99999);
+  }
+  if (sortBy === 'pos_rank') {
+    var rA = prPosRankMap[String(a.id)] || 9999, rB = prPosRankMap[String(b.id)] || 9999;
+    return rA - rB;
+  }
+  if (sortBy === 'ppg')       return (a.ppg != null ? a.ppg : -1) - (b.ppg != null ? b.ppg : -1);
+  if (sortBy === 'total_pts') return (a.total_pts != null ? a.total_pts : -1) - (b.total_pts != null ? b.total_pts : -1);
+  return prGetValue(a) - prGetValue(b);
+}
+function prSortCmp(a, b, sortBy) {
+  // Missing values always sort last, in either direction (so a descending
+  // age sort doesn't surface unknown-age players on top).
+  var an = prSortIsNull(a, sortBy), bn = prSortIsNull(b, sortBy);
+  if (an && bn) return 0;
+  if (an) return 1;
+  if (bn) return -1;
+  return prSortBase(a, b, sortBy) * (prSortDir === 'asc' ? 1 : -1);
+}
+function prSortIsNull(p, sortBy) {
+  if (sortBy === 'age')       return p.age == null;
+  if (sortBy === 'adp')       return prGetAdpSortVal(p) == null;
+  if (sortBy === 'pos_rank')  return !prPosRankMap[String(p.id)];
+  if (sortBy === 'ppg')       return p.ppg == null;
+  if (sortBy === 'total_pts') return p.total_pts == null;
+  if (sortBy === 'value' || sortBy === 'rank') return !(prGetValue(p) > 0);
+  return false; // 'name'
+}
+// Arrow on the active sort header (AM-table pattern). The ADP-source view
+// replaces the header with its own sortable columns, so this no-ops there.
+function prUpdateSortHeaders() {
+  var header = document.getElementById('prTableHeader');
+  if (!header || header.dataset.adpMode === '1') return;
+  var isMobile = window.innerWidth <= 768;
+  // On mobile the Age column is hidden (its metric moves into the trailing
+  // sort column), so the arrow follows it there.
+  var col = 'sort';
+  if (prSortKey === 'name') col = 'player';
+  else if (prSortKey === 'age' && !isMobile) col = 'age';
+  else if (prSortKey === 'ppg') col = 'ppg';
+  header.querySelectorAll('[data-pr-sort-col]').forEach(function(el) {
+    var on = el.getAttribute('data-pr-sort-col') === col;
+    el.classList.toggle('sorted-asc', on && prSortDir === 'asc');
+    el.classList.toggle('sorted-desc', on && prSortDir === 'desc');
+    if (on) el.setAttribute('aria-sort', prSortDir === 'asc' ? 'ascending' : 'descending');
+    else el.removeAttribute('aria-sort');
+  });
+}
 var prAdpSourceOptions = {};    // {startup|rookie|redraft: [{value,label}]} from payload
 var prAdpSources = {};          // {startup|rookie|redraft: 'Sleeper'|...} label the server used
 var prAdpSource = 'auto';       // currently selected ADP source ('auto' = server default)
@@ -629,8 +708,7 @@ var PR_SORT_META = {
 // when the helper is unavailable or the user prefers reduced motion.
 function prFlipRender() {
   var list = document.getElementById('prList');
-  var sortEl = document.getElementById('prSort');
-  var sortBy = sortEl ? sortEl.value : '';
+  var sortBy = prSortKey;
   // The ADP-source view rebuilds each row's grid (and often the overflow
   // scroller). FLIP-ing that layout change leaves rows translated inside the
   // clip -- the reorder that "gets stuck". Skip motion there; same-layout
@@ -643,7 +721,7 @@ function prFlipRender() {
 // Sort and filter players, then render rows into the main table
 function prRender() {
   if (!prLoaded) return;
-  const sortBy = document.getElementById('prSort').value;
+  const sortBy = prSortKey;
   prSyncAdpSourceUI(sortBy);
 
   // "Sort by ADP" with per-source columns is a distinct view: the right-side
@@ -688,6 +766,8 @@ function prRender() {
     const ageColEls = document.querySelectorAll('.pr-age');
     if (isMobile) ageColEls.forEach(el => el.style.visibility = sortBy === 'age' ? 'hidden' : '');
     else ageColEls.forEach(el => el.style.visibility = '');
+    // Arrow on the active sortable column header.
+    prUpdateSortHeaders();
   }
   const _alwaysShowSort = sortBy === 'ppg' || sortBy === 'total_pts' || sortBy === 'adp';
   const sortMeta = (isMobile || _alwaysShowSort) ? (PR_SORT_META[sortBy] || PR_SORT_META.rank) : PR_SORT_META.rank;
@@ -736,14 +816,7 @@ function prRender() {
   // position keeps each player on their overall rank (e.g. TE McBride shows his
   // overall #, not #1) -- which is what the overall movement arrow beside the #
   // measures, so the two line up -- and #s stay stable under search too.
-  const _rankSort = (a, b) => {
-    if (sortBy === 'age')       return (a.age != null ? a.age : 99) - (b.age != null ? b.age : 99);
-    if (sortBy === 'adp')       { const aA = prGetAdpSortVal(a); const bA = prGetAdpSortVal(b); return (aA != null ? aA : 99999) - (bA != null ? bA : 99999); }
-    if (sortBy === 'pos_rank')  { const rA = prPosRankMap[String(a.id)] || 9999; const rB = prPosRankMap[String(b.id)] || 9999; return rA - rB; }
-    if (sortBy === 'ppg')       return (b.ppg != null ? b.ppg : -1) - (a.ppg != null ? a.ppg : -1);
-    if (sortBy === 'total_pts') return (b.total_pts != null ? b.total_pts : -1) - (a.total_pts != null ? a.total_pts : -1);
-    return prGetValue(b) - prGetValue(a);
-  };
+  const _rankSort = (a, b) => prSortCmp(a, b, sortBy);
   const _rankMap = new Map();
   {
     let _rankIdx = 0;
@@ -775,26 +848,7 @@ function prRender() {
     players = scored.map(x => x.p);
   } else {
     // Normal sort when no search query
-    players.sort((a, b) => {
-      if (sortBy === 'value') {
-        return prGetValue(b) - prGetValue(a);
-      } else if (sortBy === 'adp') {
-        const aA = prGetAdpSortVal(a); const bA = prGetAdpSortVal(b);
-        return (aA != null ? aA : 99999) - (bA != null ? bA : 99999);
-      } else if (sortBy === 'age') {
-        return (a.age != null ? a.age : 99) - (b.age != null ? b.age : 99);
-      } else if (sortBy === 'pos_rank') {
-        const rA = prPosRankMap[String(a.id)] || 9999;
-        const rB = prPosRankMap[String(b.id)] || 9999;
-        return rA - rB;
-      } else if (sortBy === 'ppg') {
-        return (b.ppg != null ? b.ppg : -1) - (a.ppg != null ? a.ppg : -1);
-      } else if (sortBy === 'total_pts') {
-        return (b.total_pts != null ? b.total_pts : -1) - (a.total_pts != null ? a.total_pts : -1);
-      } else {
-        return prGetValue(b) - prGetValue(a);
-      }
-    });
+    players.sort((a, b) => prSortCmp(a, b, sortBy));
   }
 
   const list   = document.getElementById('prList');
@@ -1160,6 +1214,34 @@ if (!window.__prDocBound) {
         btn.classList.remove('active');
       }
     }
+  });
+
+  // Clickable sort headers (AM-table pattern): click a column to sort by it,
+  // click again to flip direction. The ADP-source view swaps the header for
+  // its own sortable columns, so clicks there are ignored. Bound once; the
+  // header markup is rebuilt on soft-nav, so targets resolve at event time.
+  function _prHeaderCellFromEvent(e) {
+    var cell = e.target && e.target.closest ? e.target.closest('#prTableHeader [data-pr-sort-col]') : null;
+    if (!cell) return null;
+    var header = document.getElementById('prTableHeader');
+    if (header && header.dataset.adpMode === '1') return null;
+    return cell;
+  }
+  function _prHeaderSortKey(cell) {
+    var col = cell.getAttribute('data-pr-sort-col');
+    return col === 'player' ? 'name' : col === 'sort' ? prSortKey : col;
+  }
+  document.addEventListener('click', function(e) {
+    var cell = _prHeaderCellFromEvent(e);
+    if (cell) prHeaderSort(_prHeaderSortKey(cell));
+  });
+  document.addEventListener('keydown', function(e) {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    var cell = (e.target && e.target.closest && e.target.closest('#prTableHeader [data-pr-sort-col]'))
+      ? _prHeaderCellFromEvent(e) : null;
+    if (!cell) return;
+    e.preventDefault();
+    prHeaderSort(_prHeaderSortKey(cell));
   });
 }
 

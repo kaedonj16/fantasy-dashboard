@@ -117,13 +117,14 @@ def build_players_shell() -> str:
               </div>
               <div class="filter-sort">
                 <label class="filter-label" for="prSort">Sort by</label>
-                <select id="prSort" onchange="prPage=1;prFlipRender()">
+                <select id="prSort" onchange="prSetSortKey(this.value)">
                   <option value="value">Value</option>
                   <option value="adp">ADP</option>
                   <option value="age">Age</option>
                   <option value="pos_rank">Pos Rank</option>
                   <option value="ppg">PPG</option>
                   <option value="total_pts">Total Points</option>
+                  <option value="name">Name (A-Z)</option>
                 </select>
               </div>
             </div>
@@ -157,12 +158,12 @@ def build_players_shell() -> str:
              text-transform:uppercase;" class="pr-grid-row">
           <span>#</span>
           <span style="text-align:center;"></span>
-          <span>Player</span>
+          <span data-pr-sort-col="player" role="button" tabindex="0" title="Sort by player name">Player</span>
           <span style="text-align:center;">Pos</span>
-          <span id="prAgeHeader" style="text-align:center;">Age</span>
+          <span id="prAgeHeader" data-pr-sort-col="age" role="button" tabindex="0" title="Sort by age" style="text-align:center;">Age</span>
           <span style="text-align:right;">Team</span>
-          <span id="prPpgHeader" style="text-align:right;">PPG</span>
-          <span id="prSortHeader" style="text-align:right;">Value</span>
+          <span id="prPpgHeader" data-pr-sort-col="ppg" role="button" tabindex="0" title="Sort by fantasy points per game" style="text-align:right;">PPG</span>
+          <span id="prSortHeader" data-pr-sort-col="sort" role="button" tabindex="0" title="Sort direction: click to flip" style="text-align:right;">Value</span>
         </div>
 
         <!-- Player rows -->
@@ -331,6 +332,17 @@ def build_players_shell() -> str:
         z-index: 5;
         border-radius: 6px;
         margin-bottom: 2px;
+      }
+      /* Clickable sort headers (AM-table pattern): pointer + arrow on active */
+      #prTableHeader [data-pr-sort-col] {
+        cursor: pointer;
+        user-select: none;
+        -webkit-tap-highlight-color: transparent;
+      }
+      #prTableHeader [data-pr-sort-col]:hover { color: var(--text); }
+      #prTableHeader [data-pr-sort-col]:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
       }
 
       /* Filter Controls */

@@ -5015,7 +5015,7 @@
       }).join('');
       if (!rows) return '';
       return '<div class="rz-bs-ptitle">' + _esc(_BOX_SKILL_POS[gr.pos] || gr.pos) + '</div>'
-        + '<div class="rz-bs-tscroll"><table class="rz-bs-table"><thead>' + head
+        + '<div class="rz-bs-tscroll"><table class="rz-bs-table" data-sortable><thead>' + head
         + '</thead><tbody>' + rows + '</tbody></table></div>';
     }).join('');
     if (!tables) {
@@ -5044,6 +5044,8 @@
     _boxSheetEls.title.textContent = title;
     _boxSheetEls.sub.textContent = sub;
     _boxSheetEls.body.innerHTML = _boxSheetBodyHtml();
+    // Tables rebuild on every render (team toggle), so wire sorting each time.
+    if (typeof initGenericTableSort === 'function') initGenericTableSort(_boxSheetEls.body);
   }
 
   function _closeBoxScore() {

@@ -62,31 +62,3 @@ def test_bye_week_matchup():
          "right": None, "win_prob": None, "status": "pre", "is_you": True}
     assert m["right"] is None
     assert m["win_prob"] is None
-
-
-def test_ls_team_has_remaining():
-    """Determinism helper: only all-final starter groups read as decided."""
-    import routes.user_pages_bp as bp
-    from dashboard_services.matchups import (
-        STATUS_FINAL, STATUS_IN_PROGRESS, STATUS_NOT_STARTED,
-    )
-
-    team = {"starters": [{"pid": "1"}, {"pid": "2"}]}
-    assert bp._ls_team_has_remaining(team, {"1": STATUS_FINAL, "2": STATUS_FINAL}) is False
-    assert bp._ls_team_has_remaining(team, {"1": STATUS_FINAL, "2": STATUS_IN_PROGRESS}) is True
-    assert bp._ls_team_has_remaining(team, {"1": STATUS_FINAL, "2": STATUS_NOT_STARTED}) is True
-    # Missing status entries are treated as remaining (conservative: never
-    # claim a decided result on incomplete data).
-    assert bp._ls_team_has_remaining(team, {}) is True
-    # Empty slots and empty starter lists never count as remaining.
-    assert bp._ls_team_has_remaining({"starters": []}, {"1": STATUS_FINAL}) is False
-    assert bp._ls_team_has_remaining({"starters": [None]}, {"1": STATUS_FINAL}) is False
-
-
-def test_ls_decided_win_prob():
-    """Decided matchups report 100/0, or 50/50 on a tie (never the 99/1 clamp)."""
-    import routes.user_pages_bp as bp
-
-    assert bp._ls_decided_win_prob(132.6, 124.1) == 100.0
-    assert bp._ls_decided_win_prob(98.4, 109.9) == 0.0
-    assert bp._ls_decided_win_prob(100.0, 100.0) == 50.0

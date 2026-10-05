@@ -378,6 +378,15 @@ def page_trade_database(platform: str, season: int, league_id: str):
               <button class="otc-day-filter tdb-lf{_tdb_rd}" data-lf="redraft" onclick="tdbFormatFilter('redraft')">Redraft</button>
               <button class="otc-day-filter tdb-lf" data-lf="keeper" onclick="tdbFormatFilter('keeper')">Keeper</button>
             </div>
+            <div class="tdb-sort-wrap">
+              <label class="tdb-sort-label" for="tdbSort">Sort</label>
+              <select id="tdbSort" class="tdb-sort" onchange="tdbSortChange(this.value)">
+                <option value="date_desc">Newest first</option>
+                <option value="date_asc">Oldest first</option>
+                <option value="value_desc">Value: high to low</option>
+                <option value="value_asc">Value: low to high</option>
+              </select>
+            </div>
           </div>
         </div>
 
@@ -469,6 +478,14 @@ def page_trade_database(platform: str, season: int, league_id: str):
       .tdb-chip-x:hover {{ opacity: 1; }}
         .tdb-filter-col {{ display: flex; flex-direction: column; gap: 6px; align-self: flex-end; padding-bottom: 1px; }}
         .tdb-lt-filters, .tdb-lf-filters {{ display: flex; gap: 6px; }}
+      .tdb-sort-wrap {{ display: flex; align-items: center; gap: 8px; }}
+      .tdb-sort-label {{ font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); }}
+      .tdb-sort {{
+        padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border);
+        background: var(--card); color: var(--text); font-size: 12px; font-weight: 600;
+        cursor: pointer; outline: none; min-height: 34px;
+      }}
+      .tdb-sort:hover {{ border-color: var(--accent, #3b82f6); }}
       .tdb-status {{ font-size: 12px; color: var(--text-muted); margin-bottom: 14px; min-height: 16px; }}
       .tdb-list {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }}
       @media(max-width: 600px) {{ .tdb-list {{ grid-template-columns: 1fr; }} }}
@@ -515,6 +532,8 @@ def page_trade_database(platform: str, season: int, league_id: str):
         .tdb-chip-area {{ flex-wrap: wrap; gap: 6px; min-height: 0; }}
         .tdb-side-sep {{ align-self: flex-start; padding-top: 0; font-size: 12px; }}
         .tdb-filter-col {{ width: 100%; }}
+        .tdb-sort-wrap {{ width: 100%; }}
+        .tdb-sort {{ flex: 1; min-width: 0; }}
         .tdb-lt-filters, .tdb-lf-filters {{ width: 100%; display: flex; }}
         .tdb-lt, .tdb-lf {{ flex: 1; text-align: center; }}
       }}
@@ -554,6 +573,7 @@ def page_trade_database(platform: str, season: int, league_id: str):
       let paginationData = null;
       let leagueType = 'all';
       let leagueFormat = '{_tdb_fmt}';
+      let tdbSort = 'date_desc'; // date_desc | date_asc | value_desc | value_asc
       let loading = false;
       let selectedA = []; // [{{ id, name }}, ...]
       let selectedB = [];
@@ -680,7 +700,7 @@ def page_trade_database(platform: str, season: int, league_id: str):
         listEl.style.display = 'none';
         document.getElementById('tdbLoading').style.display = '';
         document.getElementById('tdbPagination').style.display = 'none';
-        const params = new URLSearchParams({{ page: page - 1, limit: 20, league_type: leagueType, season: TDB_SEASON, league_format: leagueFormat }});
+        const params = new URLSearchParams({{ page: page - 1, limit: 20, league_type: leagueType, season: TDB_SEASON, league_format: leagueFormat, sort: tdbSort }});
         if (selectedA.length) params.set('player_a', selectedA.map(p => p.id).join(','));
         if (selectedB.length) params.set('player_b', selectedB.map(p => p.id).join(','));
         fetch('/api/trade-database?' + params)
@@ -779,6 +799,11 @@ def page_trade_database(platform: str, season: int, league_id: str):
       window.tdbFormatFilter = function(lf) {{
         leagueFormat = lf;
         document.querySelectorAll('.tdb-lf').forEach(b => b.classList.toggle('active', b.dataset.lf === lf));
+        loadTDBPage(1);
+      }};
+
+      window.tdbSortChange = function(v) {{
+        tdbSort = v;
         loadTDBPage(1);
       }};
 

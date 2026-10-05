@@ -129,6 +129,12 @@ def build_dynasty_value_chart_body(value_table: list[dict], as_of_date: str | No
         change = row.get("rank_change_7d")
         slug   = slugify(name)
 
+        # Numeric sort key for the "Pos Rank" label (e.g. "QB12" -> "QB0012")
+        # so the generic table sorter orders ranks numerically, not
+        # lexicographically ("QB10" before "QB2").
+        _pm = re.search(r"(\d+)", plabel or "")
+        _psort = f"{pos}{int(_pm.group(1)):04d}" if _pm else ""
+
         tier = _tier_label(val)
         if tier != last_tier:
             table_rows += (
@@ -145,7 +151,7 @@ def build_dynasty_value_chart_body(value_table: list[dict], as_of_date: str | No
         table_rows += (
             f'<tr data-pos="{html.escape(pos)}" class="dvt-row">'
             f'<td class="dvt-rank">{rank}</td>'
-            f'<td class="dvt-name-cell" style="--pos-color:{pos_border};">'
+            f'<td class="dvt-name-cell" style="--pos-color:{pos_border};" data-sort-value="{html.escape(name, quote=True)}">'
             f'<div class="dvt-name-inner">'
             f'<span class="dvt-pos-badge" style="background:{pos_border};">{html.escape(pos)}</span>'
             f'<a class="dvt-player-link" href="/player/{slug}/trade-value">{html.escape(name)}</a>'
@@ -154,9 +160,9 @@ def build_dynasty_value_chart_body(value_table: list[dict], as_of_date: str | No
             f'</td>'
             f'<td class="dvt-val" style="color:{val_color};">{val:.0f}</td>'
             f'<td class="dvt-val dvt-sf" style="color:{sf_color};">{sf_val:.0f}</td>'
-            f'<td class="dvt-pos-rank">{html.escape(plabel)}</td>'
+            f'<td class="dvt-pos-rank" data-sort-value="{_psort}">{html.escape(plabel)}</td>'
             f'<td class="dvt-age">{age or "-"}</td>'
-            f'<td>{_rank_arrow(change)}</td>'
+            f'<td data-sort-value="{int(change) if change else 0}">{_rank_arrow(change)}</td>'
             f'</tr>'
         )
 
@@ -183,7 +189,7 @@ def build_dynasty_value_chart_body(value_table: list[dict], as_of_date: str | No
   </div>
 
   <div class="dvt-table-wrap">
-    <table class="dvt-table" id="dvtTable">
+    <table class="dvt-table" id="dvtTable" data-sortable>
       <thead>
         <tr>
           <th class="dvt-rank">#</th>
@@ -600,7 +606,7 @@ def build_rankings_hub_body(
         table_rows += (
             f'<tr>'
             f'<td class="rnk-rank">{rank}</td>'
-            f'<td class="rnk-name-cell">'
+            f'<td class="rnk-name-cell" data-sort-value="{html.escape(name, quote=True)}">'
             f'{pos_badge}'
             f'<a class="rnk-player-link" href="/player/{slug}/trade-value">{html.escape(name)}</a>'
             f'<span class="rnk-team">{html.escape(team)}</span>'
@@ -608,7 +614,7 @@ def build_rankings_hub_body(
             f'<td class="rnk-val{" rnk-val-primary" if fmt=="1qb" else ""}" style="color:{_val_color(val)};">{val:.0f}</td>'
             f'<td class="rnk-val{" rnk-val-primary" if fmt=="sf" else ""}" style="color:{_val_color(sf_val)};">{sf_val:.0f}</td>'
             f'<td class="rnk-age">{age or "-"}</td>'
-            f'<td>{_rank_arrow(change)}</td>'
+            f'<td data-sort-value="{int(change) if change else 0}">{_rank_arrow(change)}</td>'
             f'</tr>'
         )
 
@@ -625,7 +631,7 @@ def build_rankings_hub_body(
   {_position_analysis_html(pos_filter)}
 
   <div class="rnk-table-wrap">
-    <table class="rnk-table">
+    <table class="rnk-table" data-sortable>
       <thead>
         <tr>
           <th class="rnk-rank">#</th>

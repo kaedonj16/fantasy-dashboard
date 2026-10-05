@@ -634,7 +634,7 @@ def _standings_table(team_stats: pd.DataFrame) -> str:
             <tr>
               <td>{_safe_int(row.get('Rank'))}</td>
               <td class="hist-team">{row.get('owner', '-')}</td>
-              <td>{_record_str(row)}</td>
+              <td data-sort-value="{_safe_int(row.get('Wins'), 0) - _safe_int(row.get('Losses'), 0)}">{_record_str(row)}</td>
               <td>{_safe_float(row.get('PF')):.1f}</td>
               <td>{_safe_float(row.get('PA')):.1f}</td>
               <td>{_safe_float(row.get('AVG')):.1f}</td>
@@ -646,7 +646,7 @@ def _standings_table(team_stats: pd.DataFrame) -> str:
     return f"""
     <div class="history-section-card">
       <div class="history-table-wrap">
-        <table class="history-table">
+        <table class="history-table" data-sortable>
           <thead>
             <tr>
               <th>Rank</th>

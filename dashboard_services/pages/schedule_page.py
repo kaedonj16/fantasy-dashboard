@@ -237,9 +237,9 @@ def build_schedule_body(ctx):
             gridEl.innerHTML = '<div class="sched-empty"><strong style="color:var(--text);display:block;margin-bottom:4px;">No matchup data</strong>Nothing to show for this selection.</div>';
             return;
           }
-          var head = '<th class="sched-th sched-th-player">Player</th>' +
-                     '<th class="sched-th sched-th-sos">SOS <button type="button" class="sched-info" aria-label="About strength of schedule" title="Ease ranks the selected schedule using opponent-adjusted defensive performance. #1 is easiest. Bye weeks are excluded."><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button></th>';
-          for (var i = 0; i < weeks.length; i++) head += '<th class="sched-th">WK ' + weeks[i] + '</th>';
+          var head = '<th class="sched-th sched-th-player" data-sort-disabled>Player</th>' +
+                     '<th class="sched-th sched-th-sos" data-sort-type="number">SOS <button type="button" class="sched-info" aria-label="About strength of schedule" title="Ease ranks the selected schedule using opponent-adjusted defensive performance. #1 is easiest. Bye weeks are excluded."><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button></th>';
+          for (var i = 0; i < weeks.length; i++) head += '<th class="sched-th" data-sort-disabled>WK ' + weeks[i] + '</th>';
           var rows = '';
           players.forEach(function(p) {
             var cells = '';
@@ -258,7 +258,7 @@ def build_schedule_body(ctx):
             if (p.sos_rank) {
               var sosFrac = p.sos_rank / (p.sos_total || 32);
               var sc = sosFrac <= 0.25 ? '#22c55e' : sosFrac <= 0.50 ? '#84cc16' : sosFrac <= 0.75 ? '#f59e0b' : '#ef4444';
-              sosCell = '<td class="sched-td sched-sos-td" style="color:' + sc + ';">#' + p.sos_rank +
+              sosCell = '<td class="sched-td sched-sos-td" data-sort-value="' + p.sos_rank + '" style="color:' + sc + ';">#' + p.sos_rank +
                         '<span class="sched-sos-total">/' + (p.sos_total || 32) + '</span></td>';
             } else {
               sosCell = '<td class="sched-td sched-sos-td">–</td>';
@@ -272,7 +272,12 @@ def build_schedule_body(ctx):
               '</td>' + sosCell + cells + '</tr>';
           });
           gridEl.innerHTML =
-            '<table class="sched-table"><thead><tr>' + head + '</tr></thead><tbody>' + rows + '</tbody></table>';
+            '<table class="sched-table" data-sortable><thead><tr>' + head + '</tr></thead><tbody>' + rows + '</tbody></table>';
+          if (typeof initGenericTableSort === 'function') initGenericTableSort(gridEl);
+          // The SOS info button lives inside the sortable header: keep its
+          // click from also toggling the sort.
+          var sosInfo = gridEl.querySelector('.sched-info');
+          if (sosInfo) sosInfo.addEventListener('click', function(e) { e.stopPropagation(); });
         }).catch(function() {
           gridEl.innerHTML = '<div class="sched-empty" style="color:var(--loss);"><strong style="display:block;margin-bottom:4px;">Couldn’t load schedule</strong>Refresh and try again.</div>';
         });

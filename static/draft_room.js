@@ -7791,6 +7791,8 @@
     document.getElementById('drDdCloseBtn').addEventListener('click', closeDeepDive);
     if (me) ddDrawTimeline(picks);
     if (me) ddWireLedger(picks);
+    ddWireLeague(field, odds);
+    if (me) ddWireHist(picks);
   }
   function closeDeepDive(){
     var o = document.getElementById('drDeepDive'); if (o) o.style.display = 'none';
@@ -8136,11 +8138,9 @@
   }
 
   // ── League board: grades + playoff odds for every team ───────────────────────
-  function ddLeagueHtml(field, odds, n){
-    if (!field.length) return '';
-    var showOdds = recapShowsPlayoffOdds();
-    var pending = showOdds && playoffOddsPending(field);
-    var rows = field.map(function(t, i){
+  // Rank numbers are grade ranks (stable while re-sorting). Click a header to sort.
+  function ddLeagueRows(field, odds, showOdds, pending, rankOf){
+    return field.map(function(t){
       var col = ddGradeCol(t.grade.score);
       var od = (showOdds && !pending && odds && odds[t.slot] != null) ? odds[t.slot] : null;
       var odBar = !showOdds ? ''
@@ -8150,7 +8150,7 @@
             ? '<div class="dd-odds"><div class="dd-odds-track"><i style="width:' + Math.max(2, od) + '%;background:' + (od >= 60 ? '#22c55e' : od >= 35 ? '#38bdf8' : '#f59e0b') + '"></i></div><span class="num">' + _poFmt(od) + '%</span></div>'
             : '<span style="color:var(--text-subtle,var(--text-muted));font-size:12px">--</span>'));
       return '<tr class="' + (t.isMe ? 'dd-me' : '') + '">'
-        + '<td class="num" style="color:var(--text-muted)">' + (i + 1) + '</td>'
+        + '<td class="num" style="color:var(--text-muted)">' + (rankOf[t.slot] || '') + '</td>'
         + '<td class="dd-plname">' + esc(t.name) + (t.isMe ? ' <span class="dd-youtag">YOU</span>' : '') + '</td>'
         + '<td class="r"><span class="dd-gletter" style="color:' + col + '">' + gradeLetter(t.grade.score)
         + (t.grade.provisional ? '<span class="dr-grade-early-inline"> Early</span>' : '') + '</span></td>'
@@ -8158,6 +8158,20 @@
         + (showOdds ? '<td>' + odBar + '</td>' : '')
         + '</tr>';
     }).join('');
+  }
+  function ddLeagueKey(t, k, odds, rankOf){
+    if (k === 'name') return t.name;
+    if (k === 'rank') return rankOf[t.slot];
+    if (k === 'odds') return (odds && odds[t.slot] != null) ? odds[t.slot] : null;
+    return t.grade.score; // 'grade' and 'score' both sort by the numeric grade
+  }
+  function ddLeagueHtml(field, odds, n){
+    if (!field.length) return '';
+    var showOdds = recapShowsPlayoffOdds();
+    var pending = showOdds && playoffOddsPending(field);
+    var rankOf = {};
+    field.forEach(function(t, i){ rankOf[t.slot] = i + 1; });
+    var rows = ddLeagueRows(field, odds, showOdds, pending, rankOf);
     var note;
     if (!showOdds){
       note = 'Grades for this rookie class. Playoff odds stay on live connected leagues, where they use existing rosters plus this class.';
@@ -8173,11 +8187,36 @@
       note = 'Playoff odds for this mock -- these drafted teams, this mock’s scoring and lineup.';
     }
     return '<div class="dd-card">'
-      + '<div class="dd-sec"><h4>' + (showOdds ? 'League board &amp; playoff odds' : 'League board') + '</h4><p>' + note + '</p></div>'
-      + '<div class="dd-tablescroll"><table class="dd-ledger dd-league">'
-      + '<thead><tr><th>#</th><th>Team</th><th class="r">Grade</th><th class="r">Score</th>'
-      + (showOdds ? '<th>Playoff odds</th>' : '') + '</tr></thead>'
-      + '<tbody>' + rows + '</tbody></table></div></div>';
+      + '<div class="dd-sec"><h4>' + (showOdds ? 'League board &amp; playoff odds' : 'League board') + '</h4><p>' + note + ' Click a header to sort.</p></div>'
+      + '<div class="dd-tablescroll"><table class="dd-ledger dd-league" id="drDdLeague">'
+      + '<thead><tr><th data-k="rank" data-t="n">#</th><th data-k="name" data-t="s">Team</th>'
+      + '<th data-k="grade" data-t="n" class="r">Grade</th><th data-k="score" data-t="n" class="r dd-sorted">Score</th>'
+      + (showOdds ? '<th data-k="odds" data-t="n">Playoff odds</th>' : '') + '</tr></thead>'
+      + '<tbody id="drDdLeagueBody">' + rows + '</tbody></table></div></div>';
+  }
+  function ddWireLeague(field, odds){
+    var body = document.getElementById('drDdLeagueBody'); if (!body) return;
+    var showOdds = recapShowsPlayoffOdds();
+    var pending = showOdds && playoffOddsPending(field);
+    var rankOf = {};
+    field.forEach(function(t, i){ rankOf[t.slot] = i + 1; });
+    // Initial order is the grade-sorted field (score desc), matching ddLeagueHtml.
+    var st = { k: 'score', dir: -1 };
+    var ths = document.querySelectorAll('#drDdLeague thead th');
+    ths.forEach(function(th){
+      th.addEventListener('click', function(){
+        var k = th.getAttribute('data-k'), t = th.getAttribute('data-t');
+        st.dir = (st.k === k) ? -st.dir : (t === 'n' ? -1 : 1); st.k = k;
+        var list = field.slice().sort(function(a, b){
+          var av = ddLeagueKey(a, k, odds, rankOf), bv = ddLeagueKey(b, k, odds, rankOf);
+          if (t === 's') return st.dir * String(av).localeCompare(String(bv));
+          av = (av == null) ? -1 : av; bv = (bv == null) ? -1 : bv;
+          return st.dir * (av - bv);
+        });
+        body.innerHTML = ddLeagueRows(list, odds, showOdds, pending, rankOf);
+        ths.forEach(function(o){ o.classList.toggle('dd-sorted', o === th); });
+      });
+    });
   }
 
   // ── Construction: draft capital by position + starters vs league ─────────────
@@ -8311,6 +8350,31 @@
     return '';
   }
 
+  function ddHistKey(p, k){
+    if (k === 'name') return p.pl.name;
+    if (k === 'pos') return p.pos;
+    if (k === 'hist') return ddHistPct(p);
+    if (k === 'mkt') return ddHistMkt(p);
+    if (k === 'vs') return ddHistVsPts(p);
+    return p.pn; // 'pn'
+  }
+  function ddHistRows(list){
+    return list.map(function(p){
+      var pct = ddHistPct(p);
+      var mkt = ddHistMkt(p);
+      var vs = ddHistVsCopy(p);
+      var vsCls = ddHistVsClass(p);
+      return '<tr>'
+        + '<td class="num dd-hist-pick">' + roundPickStr(p.pn) + '</td>'
+        + '<td class="dd-plname">' + esc(p.pl.name) + '</td>'
+        + '<td><span class="dd-posbadge" style="background:' + posColor(p.pos) + '">' + p.pos + '</span></td>'
+        + '<td class="r"><span class="dd-hist-pct' + (ddHist(p).h_vs_m === 'history_higher' ? ' is-strong' : '') + '">'
+        + (pct != null ? pct + '%' : '--') + '</span></td>'
+        + '<td class="r"><span class="dd-hist-mkt">' + (mkt != null ? mkt + '%' : '--') + '</span></td>'
+        + '<td class="r"><span class="dd-hist-vs' + (vsCls ? ' ' + vsCls : '') + '">' + (vs || '--') + '</span></td>'
+        + '</tr>';
+    }).join('');
+  }
   function ddHistHtml(picks){
     if (!state || state.type !== 'redraft' || !historicalAvailable) return '';
     var rows = (picks || []).filter(function(p){ return ddHistPct(p) != null; });
@@ -8373,34 +8437,41 @@
         'Early ADP is a high bar, not a miss. Two groups, not a ranking.'));
     }
     if (parts.length) callouts = '<div class="dd-hist-callouts">' + parts.join('') + '</div>';
-    var tableRows = ranked.map(function(p){
-      var pct = ddHistPct(p);
-      var mkt = ddHistMkt(p);
-      var vs = ddHistVsCopy(p);
-      var vsCls = ddHistVsClass(p);
-      return '<tr>'
-        + '<td class="num dd-hist-pick">' + roundPickStr(p.pn) + '</td>'
-        + '<td class="dd-plname">' + esc(p.pl.name) + '</td>'
-        + '<td><span class="dd-posbadge" style="background:' + posColor(p.pos) + '">' + p.pos + '</span></td>'
-        + '<td class="r"><span class="dd-hist-pct' + (ddHist(p).h_vs_m === 'history_higher' ? ' is-strong' : '') + '">'
-        + (pct != null ? pct + '%' : '--') + '</span></td>'
-        + '<td class="r"><span class="dd-hist-mkt">' + (mkt != null ? mkt + '%' : '--') + '</span></td>'
-        + '<td class="r"><span class="dd-hist-vs' + (vsCls ? ' ' + vsCls : '') + '">' + (vs || '--') + '</span></td>'
-        + '</tr>';
-    }).join('');
+    var tableRows = ddHistRows(ranked);
     return '<div class="dd-card dd-hist">'
       + '<div class="dd-sec"><h4>Historical trends</h4>'
-      + '<p>Two groups per pick: players like this, and anyone taken in that ADP round. Early ADP is a high bar, not a miss.</p></div>'
+      + '<p>Two groups per pick: players like this, and anyone taken in that ADP round. Early ADP is a high bar, not a miss. Click a header to sort.</p></div>'
       + '<div class="dd-hist-stats">' + tiles + '</div>'
       + callouts
-      + '<div class="dd-tablescroll dd-hist-tablewrap"><table class="dd-ledger dd-hist-table">'
+      + '<div class="dd-tablescroll dd-hist-tablewrap"><table class="dd-ledger dd-hist-table" id="drDdHist">'
       + '<thead><tr>'
-      + '<th>Pick</th><th>Player</th><th>Pos</th>'
-      + '<th class="r" title="Historical top-12 chance for this career and situation">Hist</th>'
-      + '<th class="r" title="Historical top-12 rate for anyone taken in that ADP round">ADP round</th>'
-      + '<th class="r" title="Gap between the two groups">Groups</th>'
+      + '<th data-k="pn" data-t="n">Pick</th><th data-k="name" data-t="s">Player</th><th data-k="pos" data-t="s">Pos</th>'
+      + '<th data-k="hist" data-t="n" class="r" title="Historical top-12 chance for this career and situation">Hist</th>'
+      + '<th data-k="mkt" data-t="n" class="r" title="Historical top-12 rate for anyone taken in that ADP round">ADP round</th>'
+      + '<th data-k="vs" data-t="n" class="r dd-sorted" title="Gap between the two groups">Groups</th>'
       + '</tr></thead>'
-      + '<tbody>' + tableRows + '</tbody></table></div></div>';
+      + '<tbody id="drDdHistBody">' + tableRows + '</tbody></table></div></div>';
+  }
+  function ddWireHist(picks){
+    var body = document.getElementById('drDdHistBody'); if (!body) return;
+    var rows = (picks || []).filter(function(p){ return ddHistPct(p) != null; });
+    // Initial order matches ddHistHtml: gap (Groups) desc, nulls last.
+    var st = { k: 'vs', dir: -1 };
+    var ths = document.querySelectorAll('#drDdHist thead th');
+    ths.forEach(function(th){
+      th.addEventListener('click', function(){
+        var k = th.getAttribute('data-k'), t = th.getAttribute('data-t');
+        st.dir = (st.k === k) ? -st.dir : (t === 'n' ? -1 : 1); st.k = k;
+        var list = rows.slice().sort(function(a, b){
+          var av = ddHistKey(a, k), bv = ddHistKey(b, k);
+          if (t === 's') return st.dir * String(av).localeCompare(String(bv));
+          av = (av == null) ? -999 : av; bv = (bv == null) ? -999 : bv;
+          return st.dir * (av - bv);
+        });
+        body.innerHTML = ddHistRows(list);
+        ths.forEach(function(o){ o.classList.toggle('dd-sorted', o === th); });
+      });
+    });
   }
 
   // ── Edges & risks ────────────────────────────────────────────────────────────
