@@ -280,9 +280,14 @@ _RECAP_INJURIES_CSS = """<style>
 </style>"""
 
 _RECAP_ACTIVITY_CSS = """<style>
-  .rc-act-card { padding:6px 12px; }
-  .rc-act-item { padding:9px 0; }
-  .rc-act-item + .rc-act-item { border-top:1px solid var(--border); }
+  .rc-act-card { padding:6px 12px; display:grid;
+                 grid-template-columns:repeat(2, minmax(0,1fr)); column-gap:20px; }
+  .rc-act-item { padding:9px 0; min-width:0; }
+  .rc-act-item:nth-child(n+3) { border-top:1px solid var(--border); }
+  @media (max-width:640px) {
+    .rc-act-card { grid-template-columns:minmax(0,1fr); }
+    .rc-act-item:nth-child(2) { border-top:1px solid var(--border); }
+  }
   .rc-act-head { display:flex; align-items:center; gap:8px; margin-bottom:5px; }
   .rc-act-kind { font-size:10px; font-weight:800; letter-spacing:.06em; text-transform:uppercase;
                  padding:3px 7px; border-radius:999px; }
