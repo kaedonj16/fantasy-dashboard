@@ -4532,13 +4532,16 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
             const bounds = (ranksData && ranksData.bounds) ? ranksData.bounds : null;
             contentEl.innerHTML = buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, bounds, ranksData && ranksData.qualification);
             _pmMaybeProFooter(contentEl);
+            _pmKickTrending(playerId, metricsData, activeSeason, isCareer, isMultiSeason);
           }).catch(function() {
             contentEl.innerHTML = buildAdvancedMetricsHTML(metricsData, null, cfg, weekActive, null, null);
             _pmMaybeProFooter(contentEl);
+            _pmKickTrending(playerId, metricsData, activeSeason, isCareer, isMultiSeason);
           });
         } else {
           contentEl.innerHTML = buildAdvancedMetricsHTML(metricsData, null, cfg, weekActive, null, null);
           _pmMaybeProFooter(contentEl);
+          _pmKickTrending(playerId, metricsData, activeSeason, isCareer, isMultiSeason);
         }
       });
 
@@ -4554,6 +4557,8 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
           // Season changed -- reset panel so it refetches.
           wtWrap.dataset.season = s;
           wtWrap.dataset.loaded = '';
+          wtWrap._weeklyData = null;
+          wtWrap._weeklyDataSeason = '';
           const wtBody = document.getElementById('pmWeeklyTrendsBody');
           if (wtBody) { wtBody.style.display = 'none'; wtBody.innerHTML = ''; }
           const wtBtn = document.getElementById('pmWeeklyTrendsBtn');
@@ -4961,6 +4966,184 @@ function buildWeeklyTrendRows(weeks, position) {
     + ' &middot; &#9650;&#9660; = 3-wk trend vs avg</div>';
 }
 
+// ── Player modal: TRENDING hot/cold section ───────────────────────────────
+// Surfaces only metrics with a significant recent trend at the top of the
+// Advanced tab. Reuses the weekly series from /api/player-weekly-metrics and
+// the pmSparkline renderer. Position-aware; quiet metrics stay as plain bars.
+var _PM_TREND_MIN_WEEKS = 4;
+var _PM_TREND_PCT = 0.15; // |3-wk avg vs season avg| >= 15% counts as moving
+
+function _pmTrendSeries(weeks, key, fn) {
+  var s = weeks.map(function(w) {
+    return fn ? fn(w) : Number(w[key] || 0);
+  });
+  return s;
+}
+
+function _pmTrendCallout(key, hot, recentAvg, suffix) {
+  var r = Math.round(recentAvg * 10) / 10;
+  var rs = r + (suffix || '');
+  switch (key) {
+    case 'targets': return hot ? ('Seeing more looks · ' + rs + '/g last 3') : ('Targets drying up · ' + rs + '/g last 3');
+    case 'target_share': return hot ? ('Target hog · ' + rs + ' share last 3') : ('Losing target share · ' + rs + ' last 3');
+    case 'touches': return hot ? ('Workhorse role · ' + rs + ' touches/g') : ('Touches fading · ' + rs + '/g last 3');
+    case 'snap_pct': return hot ? ('Every-down role · ' + rs + ' snaps') : ('Losing snaps · ' + rs + ' last 3');
+    case 'rz_touches': return hot ? 'Red-zone role surging · TDs coming' : 'Fading near the goal line';
+    case 'carries': return hot ? ('Ground role growing · ' + rs + '/g') : ('Carries slipping · ' + rs + '/g last 3');
+    case 'carry_share': return hot ? ('Backfield takeover · ' + rs + ' share') : ('Losing backfield share');
+    case 'receptions': return hot ? ('Piling up catches · ' + rs + '/g') : ('Catches down · ' + rs + '/g last 3');
+    case 'rec_yards': return hot ? ('Yardage surging · ' + rs + '/g') : ('Yardage dipping');
+    case 'rush_yards': return hot ? ('Rushing yardage surging') : ('Rushing yardage dipping');
+    case 'yds_per_target': return hot ? 'Explosive when targeted' : 'Efficiency slipping per target';
+    case 'catch_pct': return hot ? 'Hands heating up' : 'Drops creeping in';
+    case 'ppr_pts': return hot ? ('Scoring surge · ' + rs + ' pts/g') : ('Production dipping · ' + rs + ' pts/g');
+    case 'pass_att': return hot ? ('Airing it out · ' + rs + ' att/g') : ('Pass volume down');
+    default: return hot ? 'Trending up lately' : 'Trending down lately';
+  }
+}
+
+// Metric sets per position: [weeklyKey|fn, label, color, suffix, calloutKey]
+function _pmTrendMetricSets(pos) {
+  var p = (pos || '').toUpperCase();
+  var common = [
+    ['snap_pct', 'Snap Share', '#3b82f6', '%'],
+    ['ppr_pts', 'PPR Pts/G', '#8b5cf6', ''],
+  ];
+  if (p === 'RB') {
+    return [
+      ['touches', 'Touches/G', '#22c55e', ''],
+      ['carries', 'Carries/G', '#f97316', ''],
+      ['carry_share', 'Carry Share', '#fdba74', '%'],
+      ['rush_yards', 'Rush Yds/G', '#fb923c', ''],
+      ['targets', 'Targets/G', '#f59e0b', ''],
+      ['receptions', 'Receptions/G', '#10b981', ''],
+      ['rz_touches', 'RZ Touches/G', '#ef4444', '', function(w) { return Number(w.rz_targets || 0) + Number(w.rz_carries || 0); }],
+      ['yds_per_touch', 'Yds/Touch', '#ec4899', '', function(w) {
+        var t = Number(w.touches || 0);
+        return t > 0 ? (Number(w.rush_yards || 0) + Number(w.rec_yards || 0)) / t : 0;
+      }],
+    ].concat(common);
+  }
+  if (p === 'WR' || p === 'TE') {
+    return [
+      ['targets', 'Targets/G', '#f59e0b', ''],
+      ['target_share', 'Target Share', '#fbbf24', '%'],
+      ['receptions', 'Receptions/G', '#10b981', ''],
+      ['rec_yards', 'Rec Yds/G', '#34d399', ''],
+      ['touches', 'Touches/G', '#22c55e', ''],
+      ['rz_touches', 'RZ Touches/G', '#ef4444', '', function(w) { return Number(w.rz_targets || 0) + Number(w.rz_carries || 0); }],
+      ['yds_per_target', 'Yds/Target', '#f97316', '', function(w) {
+        var t = Number(w.targets || 0);
+        return t > 0 ? Number(w.rec_yards || 0) / t : 0;
+      }],
+      ['catch_pct', 'Catch %', '#14b8a6', '%', function(w) {
+        var t = Number(w.targets || 0);
+        return t > 0 ? Number(w.receptions || 0) / t * 100 : 0;
+      }],
+    ].concat(common);
+  }
+  if (p === 'QB') {
+    return [
+      ['pass_att', 'Pass Att/G', '#3b82f6', ''],
+      ['ppr_pts', 'PPR Pts/G', '#8b5cf6', ''],
+    ];
+  }
+  return common;
+}
+
+function pmComputeTrending(weeks, position) {
+  if (!weeks || weeks.length < _PM_TREND_MIN_WEEKS) return [];
+  var sets = _pmTrendMetricSets(position);
+  var out = [];
+  sets.forEach(function(spec) {
+    var key = spec[0], label = spec[1], fn = spec[4];
+    var series = _pmTrendSeries(weeks, key, (typeof fn === 'function') ? fn : null);
+    if (!series.some(function(v) { return v > 0; })) return;
+    var n = series.length;
+    // Recent = last 3 weeks; baseline = all prior weeks. Comparing against
+    // prior weeks (not the season avg, which includes the recent weeks) keeps
+    // the signal sharp on small early-season samples.
+    var r3 = series.slice(-3);
+    var prior = series.slice(0, n - 3);
+    if (!prior.length) return;
+    var baseline = prior.reduce(function(s, v) { return s + v; }, 0) / prior.length;
+    if (!(baseline > 0)) return;
+    var recentAvg = r3.reduce(function(s, v) { return s + v; }, 0) / r3.length;
+    var pct = (recentAvg - baseline) / baseline;
+    if (Math.abs(pct) < _PM_TREND_PCT) return;
+    var hot = pct > 0;
+    out.push({
+      key: key, label: label, color: spec[2], suffix: spec[3] || '',
+      series: series, pct: pct, hot: hot, recentAvg: recentAvg,
+      callout: _pmTrendCallout(key, hot, recentAvg, spec[3] || ''),
+    });
+  });
+  out.sort(function(a, b) { return Math.abs(b.pct) - Math.abs(a.pct); });
+  return out.slice(0, 4);
+}
+
+// Fire-and-forget kick for the TRENDING section. Only single-season views get
+// one (weekly series are per-season); career/multi-season leave the placeholder
+// empty.
+function _pmKickTrending(playerId, metricsData, activeSeason, isCareer, isMultiSeason) {
+  if (isCareer || isMultiSeason || !activeSeason) return;
+  try {
+    pmRenderTrendingSection(playerId, activeSeason, metricsData && metricsData.position);
+  } catch (e) { /* trending is best-effort; never break the tab */ }
+}
+
+function pmRenderTrendingSection(playerId, season, position) {
+  var host = document.getElementById('pmTrendingSection');
+  if (!host) return;
+  var wrap = document.getElementById('pmWeeklyTrendsWrap');
+  var seasonParam = season ? ('?season=' + encodeURIComponent(season)) : '';
+  var useCached = wrap && wrap._weeklyData && wrap._weeklyData.length >= _PM_TREND_MIN_WEEKS
+    && String(wrap.dataset.season || '') === String(season || '');
+  var p = useCached
+    ? Promise.resolve({ weeks: wrap._weeklyData })
+    : fetch('/api/player-weekly-metrics/' + encodeURIComponent(playerId) + seasonParam)
+        .then(function(r) { return r.json(); })
+        .catch(function() { return { weeks: [] }; });
+  p.then(function(d) {
+    // Share the series with the collapsed Trends panel so opening it later
+    // does not refetch.
+    if (wrap && d && d.weeks && d.weeks.length) {
+      wrap._weeklyData = d.weeks;
+      wrap._weeklyDataSeason = String(season || '');
+      wrap.dataset.season = String(season || '');
+    }
+    var trending = pmComputeTrending((d && d.weeks) || [], position);
+    if (!trending.length) { host.innerHTML = ''; return; }
+    var html = '<div class="pm-trending"><div class="pm-trending-head">'
+      + '<span class="pm-trending-dot"></span><span>TRENDING</span></div>'
+      + '<div class="pm-trending-grid">';
+    trending.forEach(function(t) {
+      var cls = t.hot ? 'hot' : 'cold';
+      var badge = t.hot ? '&#9650; HEATING UP' : '&#9660; COOLING OFF';
+      var pctTxt = (t.pct >= 0 ? '+' : '') + Math.round(t.pct * 100) + '%';
+      var valTxt = (Math.round(t.recentAvg * 10) / 10) + t.suffix;
+      var tips = t.series.map(function(val, i) {
+        var w = ((d && d.weeks) || [])[i] || {};
+        var num = Math.round(val * 10) / 10;
+        var vTxt = t.suffix === '%' ? (num + '%') : ('' + num);
+        return w.opponent ? (vTxt + ' vs ' + w.opponent)
+                          : ('Wk ' + (w.week != null ? w.week : (i + 1)) + ' · ' + vTxt);
+      });
+      html += '<div class="pm-trend-row ' + cls + '">'
+        + '<div class="pm-trend-spark">' + pmSparkline(t.series, t.hot ? '#16a34a' : '#dc2626', tips) + '</div>'
+        + '<div class="pm-trend-info"><span class="pm-trend-badge ' + cls + '">' + badge + '</span>'
+        + '<div class="pm-trend-metric">' + t.label + '</div>'
+        + '<div class="pm-trend-call">' + t.callout + '</div></div>'
+        + '<div class="pm-trend-right"><div class="pm-trend-val">' + valTxt + '</div>'
+        + '<div class="pm-trend-delta ' + cls + '">' + pctTxt + '</div></div>'
+        + '</div>';
+    });
+    html += '</div></div>';
+    // Only render if the host is still in the DOM (modal may have closed).
+    if (document.getElementById('pmTrendingSection') === host) host.innerHTML = html;
+  });
+}
+
 // Collapse/expand a section in the player compare view.
 // ── Advanced Metrics: tap-to-show definition tooltip (mobile-friendly) ──────
 function _advGetTip() {
@@ -5117,10 +5300,19 @@ function pmToggleWeeklyTrends(playerId) {
   body.innerHTML = '<div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Loading trends…</div>';
   var seasonParam = wrap.dataset.season ? ('?season=' + wrap.dataset.season) : '';
   var wrapPosition = wrap.dataset.position || '';
-  fetch('/api/player-weekly-metrics/' + encodeURIComponent(playerId) + seasonParam)
-    .then(function(r) { return r.json(); })
+  // Reuse the weekly series prefetched for the TRENDING section when it is for
+  // the same season (avoids a second fetch on open).
+  var _cachedWeeks = (wrap._weeklyData && wrap._weeklyData.length
+    && String(wrap._weeklyDataSeason || '') === String(wrap.dataset.season || ''))
+    ? wrap._weeklyData : null;
+  var _weeksPromise = _cachedWeeks
+    ? Promise.resolve({ weeks: _cachedWeeks })
+    : fetch('/api/player-weekly-metrics/' + encodeURIComponent(playerId) + seasonParam)
+        .then(function(r) { return r.json(); });
+  _weeksPromise
     .then(function(d) {
       wrap._weeklyData = d.weeks || [];
+      wrap._weeklyDataSeason = String(wrap.dataset.season || '');
       // Weekly ↔ Season mode toggle. Season is only offered when the player has
       // 2+ seasons of data (set by loadAdvancedMetrics on the wrap).
       var hasSeason = wrap.dataset.multiseason === '1';
@@ -5886,7 +6078,9 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
     }
   }
 
-  let html = rankNote;
+  // TRENDING placeholder: filled async by pmRenderTrendingSection once the
+  // weekly series loads. Stays empty (no section) when there is no signal.
+  let html = '<div id="pmTrendingSection"></div>' + rankNote;
   if (cfg && Object.keys(cfg).length) {
     // Group defs by category using cfg (best-effort -- unlabeled defs go to 'Other')
     const _CAT_ORDER = ['Value', 'General', 'Passing', 'Rushing', 'Receiving', 'Volume'];

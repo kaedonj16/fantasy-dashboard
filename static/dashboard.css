@@ -10652,6 +10652,105 @@ select:focus {
     margin-top: 14px;
 }
 
+/* ── Player modal: TRENDING hot/cold section ───────────────────────────── */
+.pm-trending {
+    margin: 12px 0 4px;
+}
+.pm-trending-head {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 8px;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    color: var(--text);
+}
+.pm-trending-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #16a34a;
+    flex: none;
+}
+.pm-trending-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.pm-trend-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    border: 1px solid var(--border);
+    border-left: 4px solid transparent;
+    border-radius: 12px;
+    padding: 10px 12px;
+    background: var(--card);
+}
+.pm-trend-row.hot { border-left-color: #16a34a; }
+.pm-trend-row.cold { border-left-color: #dc2626; }
+.pm-trend-spark {
+    flex: none;
+    width: 84px;
+}
+.pm-trend-info {
+    flex: 1;
+    min-width: 0;
+}
+.pm-trend-badge {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    border-radius: 6px;
+    padding: 2px 6px;
+    margin-bottom: 3px;
+}
+.pm-trend-badge.hot {
+    background: #e9f7ef;
+    color: #15803d;
+}
+.pm-trend-badge.cold {
+    background: #fdeaea;
+    color: #dc2626;
+}
+.pm-trend-metric {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text);
+}
+.pm-trend-call {
+    font-size: 11px;
+    margin-top: 2px;
+    line-height: 1.35;
+}
+.pm-trend-row.hot .pm-trend-call { color: #15803d; }
+.pm-trend-row.cold .pm-trend-call { color: #dc2626; }
+.pm-trend-right {
+    text-align: right;
+    flex: none;
+}
+.pm-trend-val {
+    font-size: 15px;
+    font-weight: 800;
+    color: var(--text);
+}
+.pm-trend-delta {
+    font-size: 10px;
+    font-weight: 800;
+    margin-top: 2px;
+}
+.pm-trend-delta.hot { color: #15803d; }
+.pm-trend-delta.cold { color: #dc2626; }
+/* Desktop: 2x2 grid */
+@media (min-width: 700px) {
+    .pm-trending-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
 .pm-weekly-toggle {
     width: 100%;
     padding: 8px 12px;
