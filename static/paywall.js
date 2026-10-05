@@ -202,7 +202,16 @@ window.brProPreview = function brProPreview(container, opts) {
       });
       root.querySelector('.br-upsell-nudge-x').addEventListener('click', function () {
         window.brUpsell.dismiss(key);
-        if (root.parentNode) root.parentNode.removeChild(root);
+        var parent = root.parentNode;
+        if (parent) parent.removeChild(root);
+        if (typeof window.brUndoToast === 'function') {
+          window.brUndoToast('Nudge dismissed.', function () {
+            var store = _readStore();
+            delete store[key];
+            _writeStore(store);
+            window.brUpsell.nudge(container, opts);
+          });
+        }
       });
       var _nudgeSurface = window.brPaywallNudgeSurface(key);
       if (_nudgeSurface && typeof window.brTrackPaywall === 'function') {
@@ -829,6 +838,12 @@ window.refreshLeagueProInviteCta = async function refreshLeagueProInviteCta() {
     if (dismiss) dismiss.addEventListener('click', function () {
       el.remove();
       try { localStorage.setItem(key, '1'); } catch (e) {}
+      if (typeof window.brUndoToast === 'function') {
+        window.brUndoToast('Banner dismissed.', function () {
+          try { localStorage.removeItem(key); } catch (e) {}
+          document.body.appendChild(el);
+        });
+      }
     });
     const copy = el.querySelector('[data-copy]');
     if (copy) copy.addEventListener('click', function () {

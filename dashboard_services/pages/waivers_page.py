@@ -1879,9 +1879,17 @@ function wvRenderLinkBanner(personalized) {{
   el.hidden = personalized === true || wvLinkBannerDismissed();
 }}
 function wvDismissLinkBanner() {{
-  try {{ localStorage.setItem('wv_link_banner_dismissed:' + WV_LEAGUE_ID, '1'); }} catch (_) {{}}
+  const lsKey = 'wv_link_banner_dismissed:' + WV_LEAGUE_ID;
+  try {{ localStorage.setItem(lsKey, '1'); }} catch (_) {{}}
   const el = document.getElementById('wvLinkBanner');
   if (el) el.hidden = true;
+  if (typeof window.brUndoToast === 'function') {{
+    window.brUndoToast('Banner dismissed.', function() {{
+      try {{ localStorage.removeItem(lsKey); }} catch (_) {{}}
+      const b = document.getElementById('wvLinkBanner');
+      if (b) b.hidden = false;
+    }});
+  }}
 }}
 function wvLinkTeam() {{
   // Same identify flow the dashboard's "Link my team" uses (the link modal's

@@ -622,6 +622,41 @@ window.showToast = (function () {
 })();
 
 /**
+ * Shared undo toast for dismissible UI elements.
+ * Usage: brUndoToast('Card dismissed.', function() { restore(); });
+ * Shows a toast with an Undo button for 5s. Clicking Undo runs onUndo and
+ * removes the toast. Used by dashboard action cards, upsell nudges, banners.
+ */
+window.brUndoToast = function (message, onUndo, duration) {
+  var old = document.getElementById('br-undo-toast');
+  if (old) old.remove();
+  var toast = document.createElement('div');
+  toast.id = 'br-undo-toast';
+  toast.className = 'br-undo-toast';
+  toast.setAttribute('role', 'status');
+  var label = document.createElement('span');
+  label.textContent = message || 'Dismissed.';
+  var btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'br-undo-btn';
+  btn.textContent = 'Undo';
+  btn.addEventListener('click', function () {
+    try { if (typeof onUndo === 'function') onUndo(); } catch (_) {}
+    toast.remove();
+  });
+  toast.appendChild(label);
+  toast.appendChild(btn);
+  document.body.appendChild(toast);
+  requestAnimationFrame(function () {
+    requestAnimationFrame(function () { toast.classList.add('br-undo-visible'); });
+  });
+  setTimeout(function () {
+    toast.classList.remove('br-undo-visible');
+    setTimeout(function () { toast.remove(); }, 300);
+  }, (typeof duration === 'number') ? duration : 5000);
+};
+
+/**
  * Sign-in modal: dialog semantics, overlay dismiss, Escape, and a focus trap.
  * The markup lives in the page shell; these helpers are the only supported
  * open/close path so display:flex/none and aria-hidden stay in sync.
