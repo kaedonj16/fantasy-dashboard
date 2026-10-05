@@ -63,6 +63,24 @@ def test_entrance_animations_with_safety_guards():
     assert "animation-delay" in js
 
 
+def test_toggle_renders_animate_only_the_changed_layer():
+    html = _html()
+    js = _js(html)
+    # Each toggle declares which layer changed; the render consumes it.
+    assert "let _amAnimPending = null" in js
+    for scope in ("quadrants", "labels", "mode", "none"):
+        assert f"_amAnimPending = '{scope}'" in js, f"no '{scope}' scope"
+    assert "_amBuildScatter(pts, xk, yk, zk, logo, trend, _scope)" in js
+    assert "am-anim-" in js
+    # Untouched layers are suppressed per scope; guards still win.
+    css = _style(html)
+    assert ".am-graph-svg.am-anim-quadrants .am-graph-dot" in css
+    assert ".am-graph-svg.am-anim-labels .am-graph-quad" in css
+    assert ".am-graph-svg.am-anim-mode .am-graph-trend" in css
+    assert ".am-graph-svg.am-anim-none .am-graph-headline" in css
+    assert ".am-graph-svg[class*=am-anim-] .am-graph-dot" in css
+
+
 def test_simple_mode_simplifies_and_detailed_restores():
     js = _js(html := _html())
     # Bigger dots + tighter label cap in simple mode.
