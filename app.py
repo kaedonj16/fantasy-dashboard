@@ -2681,9 +2681,7 @@ BASE_HTML = """
         // navigation within the same session (e.g. tapping the mobile dock)
         // remove it immediately so pages don't flash a white loading screen.
         // Keep it up for an explicit Refresh so we don't paint the cached shell
-        // while the league rebuilds. __brWarmLaunch also tells app.js not to
-        // auto-reload a warm navigation (that stale-shell reload is only wanted
-        // on the cold launch, or when the user just tapped Refresh).
+        // while the league rebuilds.
         var _warm = false;
         var _userRefresh = false;
         try {{
@@ -2696,7 +2694,6 @@ BASE_HTML = """
             sessionStorage.setItem('br_warm','1');
           }}
         }} catch(e){{}}
-        window.__brWarmLaunch = _warm && !_userRefresh;
         if(!s) return;
         // Reveal the (already server-rendered) content as soon as the DOM is
         // parsed -- waiting for window 'load' gated LCP behind every image and

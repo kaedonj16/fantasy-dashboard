@@ -313,80 +313,27 @@ if (window.__FEATURES_JS || window.__PLAYER_MODAL_JS) {
 }
 
 
-// ── Stale-page auto-refresh (PWA resume + cached-shell launch) ───────────────
-// Reopening the installed app resumes a frozen page from the last session, and
-// on a slow network the service worker paints the last cached copy - both show
-// stale data. Reload when the page comes back to the foreground after sitting
-// hidden for STALE_MS or longer, and listen for the service worker's "a fresh
-// copy just landed" signal right after a cached-shell launch. The clock runs
-// on hidden time only: the stamp is taken when the page goes away, so time
-// spent actively using the page never counts, and a few minutes away never
-// yanks the page (and the view state on it) out from under the user. Live
-// surfaces (draft room, ScoreZone) manage their own freshness and are never
-// yanked out from under the user.
-(function () {
-  var STALE_MS = 10 * 60 * 1000;   // hidden at least this long -> reload on return
-  var loadedAt = Date.now();
-  var hiddenSince = 0;
-  var reloading = false;
-  function liveSurface() {
-    return !!document.getElementById('drSideTabs') || !!document.getElementById('rz-root');
-  }
-  function reloadOnce() {
-    if (reloading || liveSurface()) return;
-    // Loop guard: at most one automatic reload per minute per tab.
-    var last = 0;
-    try { last = parseInt(sessionStorage.getItem('brAutoRefreshTs') || '0', 10); } catch (e) {}
-    if (Date.now() - last < 60000) return;
-    try { sessionStorage.setItem('brAutoRefreshTs', String(Date.now())); } catch (e) {}
-    reloading = true;
+// ── Service-worker nav-fresh: explicit-refresh swap-in ───────────────────────
+// An explicit Refresh (doRefresh/hardReload) asks the SW to wait for the
+// network; on iOS the SW may still paint the cached shell first (location.reload
+// cache mode is often ignored), then the SW posts nav-fresh when the fresh
+// copy lands. Swap it in, but only for the explicit-refresh case: the
+// stale-page auto-reload was removed because dashboard data updates on cron
+// schedules (daily/weekly), not minute by minute, and a background reload
+// wiped view state (graph settings, scroll position) for no benefit.
+if (navigator.serviceWorker) {
+  navigator.serviceWorker.addEventListener('message', function (e) {
+    var d = e.data || {};
+    if (d.type !== 'nav-fresh') return;
+    if (d.url && d.url !== location.href) return;
+    if (document.visibilityState !== 'visible') return;
+    var userRefresh = false;
+    try { userRefresh = sessionStorage.getItem('brUserRefresh') === '1'; } catch (e) {}
+    if (!userRefresh) return;
+    try { sessionStorage.removeItem('brUserRefresh'); } catch (e) {}
     location.reload();
-  }
-  function maybeResumeReload() {
-    // No hidden stamp -> the page never went away; never reload.
-    if (!hiddenSince) return;
-    var hiddenFor = Date.now() - hiddenSince;
-    hiddenSince = 0;
-    if (hiddenFor >= STALE_MS) reloadOnce();
-  }
-  document.addEventListener('visibilitychange', function () {
-    if (document.visibilityState === 'hidden') { hiddenSince = Date.now(); return; }
-    if (document.visibilityState === 'visible') maybeResumeReload();
   });
-  // pagehide covers freezes that skip the hidden transition (bfcache entry,
-  // app discard); the stamp is what a later pageshow evaluates.
-  window.addEventListener('pagehide', function () { hiddenSince = Date.now(); });
-  // bfcache restore (back/forward or PWA resume on some platforms).
-  window.addEventListener('pageshow', function (e) {
-    if (e.persisted) maybeResumeReload();
-  });
-  // Service worker says a fresh copy of this page just replaced the cached
-  // shell we're looking at. Only auto-reload right after launch (the user has
-  // barely seen the stale paint); once they're reading/scrolling, let it be.
-  if (navigator.serviceWorker) {
-    navigator.serviceWorker.addEventListener('message', function (e) {
-      var d = e.data || {};
-      if (d.type !== 'nav-fresh') return;
-      if (d.url && d.url !== location.href) return;
-      if (document.visibilityState !== 'visible') return;
-      // An explicit Refresh asked the SW to wait for the network; if it still
-      // painted the cached shell (iOS often ignores location.reload's cache
-      // mode), swap it for the fresh copy even on a warm in-app launch.
-      var userRefresh = false;
-      try { userRefresh = sessionStorage.getItem('brUserRefresh') === '1'; } catch (e) {}
-      if (!userRefresh && Date.now() - loadedAt > 20000) return;
-      if (window.__brWarmLaunch && !userRefresh) return;
-      if (userRefresh) {
-        if (reloading) return;
-        reloading = true;
-        try { sessionStorage.removeItem('brUserRefresh'); } catch (e) {}
-        location.reload();
-        return;
-      }
-      reloadOnce();
-    });
-  }
-})();
+}
 
 // ── Auto-restore expired session ─────────────────────────────────────────────
 // If the server session expired but we still have saved_viewer in localStorage,
@@ -4852,8 +4799,8 @@ function initCardTabs(root = document) {
           p.classList.toggle("active", on);
           if (on && window.brAnimateTabPanel) window.brAnimateTabPanel(p, newIdx - oldIdx);
         });
-        // Persist the weekly-hub left tab in the URL so a reload (stale-page
-        // visibility refresh, service-worker nav-fresh, bfcache restore) lands
+        // Persist the weekly-hub left tab in the URL so a reload (explicit
+        // refresh, service-worker nav-fresh swap, bfcache restore) lands
         // back on it via the existing ?tab= activation. history.replaceState
         // never navigates or reloads. Scoped to the weekly hub so other
         // .card-tabs on the site are unaffected.
