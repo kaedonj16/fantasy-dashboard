@@ -21315,6 +21315,11 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
     margin-bottom: 12px;
 }
 
+/* Inside the side-by-side time controls the grid container handles spacing. */
+.adv-time-group .adv-week-bar-row {
+    margin-bottom: 0;
+}
+
 .adv-week-full-btn {
     flex: 0 0 auto;
     padding: 4px 12px;
@@ -21463,12 +21468,18 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
     max-width: 520px;
 }
 
-/* ── Redesigned season/week time controls (chips, not sliders) ─────────── */
+/* ── Season/week time controls (labeled groups, side by side) ─────────────── */
 .adv-time-ctl {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
+    display: grid;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    gap: 14px;
+    align-items: start;
     margin-bottom: 14px;
+}
+
+/* When only the Season group is present (Career / multi-season), span full width. */
+.adv-time-ctl > .adv-time-group:only-child {
+    grid-column: 1 / -1;
 }
 
 .adv-time-group {
@@ -21487,63 +21498,26 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
 
 .adv-time-group .adv-metrics-season-pills {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 6px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+}
+
+.adv-time-group .adv-metrics-season-pills::-webkit-scrollbar {
+    display: none;
+}
+
+.adv-time-group .adv-season-pill {
+    flex: 0 0 auto;
 }
 
 .adv-time-group .adv-season-hint {
     margin: 0;
     font-size: 11px;
     color: var(--text-muted);
-}
-
-.wk-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    align-items: center;
-}
-
-.wk-chip {
-    min-width: 34px;
-    padding: 6px 10px;
-    border-radius: var(--radius-sm, 8px);
-    font-size: 12px;
-    font-weight: 700;
-    cursor: pointer;
-    border: 1px solid var(--border-color);
-    background: var(--surface-1, transparent);
-    color: var(--text-muted);
-    transition: border-color 0.15s, color 0.15s, background 0.15s;
-    line-height: 1.4;
-    text-align: center;
-}
-
-.wk-chip:hover:not(:disabled) {
-    border-color: var(--brand-blue);
-    color: var(--brand-blue);
-}
-
-.wk-chip.active {
-    background: var(--brand-blue);
-    border-color: var(--brand-blue);
-    color: #fff;
-}
-
-.wk-chip-full {
-    padding: 6px 14px;
-    font-weight: 800;
-}
-
-.wk-chip-unavailable,
-.wk-chip:disabled {
-    opacity: 0.35;
-    cursor: not-allowed;
-}
-
-.wk-chip:focus-visible {
-    outline: 2px solid #93c5fd;
-    outline-offset: 2px;
 }
 
 .cmp-week-bar-wrap {

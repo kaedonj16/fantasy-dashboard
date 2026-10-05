@@ -4470,15 +4470,19 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
           pillsHTML += '<div class="adv-season-hint">Tap more years to combine · only seasons with data are listed</div>';
         }
         pillsHTML += '</div>';
-        // Week chips: only show when the player has per-week data for this season.
+        // Week-bar: only show when the player has per-week data for this season.
         if (!isCareer && !isMultiSeason && activeSeason && availableWeeks.length > 0) {
           const wkMin = Math.min(...availableWeeks);
           const wkMax = Math.max(...availableWeeks);
           const barWS = activeWS != null ? activeWS : (weekStart != null ? weekStart : null);
           const barWE = activeWE != null ? activeWE : (weekEnd != null ? weekEnd : null);
+          const isFullRange = (barWS == null);
+          const lidExpr2 = leagueId ? ("'" + String(leagueId) + "'") : 'null';
           pillsHTML += '<div class="adv-time-group"><div class="adv-time-label">Weeks</div>'
+            + '<div class="adv-week-bar-row">'
+            + '<button class="adv-week-full-btn' + (isFullRange ? ' active' : '') + '" onclick="loadAdvancedMetrics(\'' + playerId + '\',' + lidExpr2 + ',' + activeSeason + ')">Season</button>'
             + _wkBarBuild('advWkBar', wkMin, wkMax, barWS, barWE, availableWeeks)
-            + '</div>';
+            + '</div></div>';
         }
         pillsHTML += '</div>';
         pillsEl.innerHTML = pillsHTML;
