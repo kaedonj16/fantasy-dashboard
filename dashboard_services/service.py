@@ -878,6 +878,12 @@ def build_week_activity(
         for t in txs:
             ttype = t.get("type")
 
+            # Skip failed transactions (e.g. outbid waiver claims). Sleeper
+            # marks unsuccessful waiver claims with status "failed"; only
+            # "complete" (or absent status) means the add actually happened.
+            if str(t.get("status") or "").lower() == "failed":
+                continue
+
             # Compute timestamp once, cheaply
             ts_raw = t.get("status_updated") or t.get("created")
             if ts_raw:
