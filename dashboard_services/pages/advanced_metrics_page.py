@@ -1119,19 +1119,22 @@ def build_advanced_metrics_body(
       .am-cmp-player-head { position:relative; min-width:170px; vertical-align:top; }
       .am-cmp-phead-top { display:flex; align-items:center; gap:10px; }
       .am-cmp-hs { position:relative; width:46px; height:46px; border-radius:50%; overflow:hidden; flex-shrink:0;
-        display:inline-flex; align-items:center; justify-content:center;
-        background:transparent; color:var(--text-muted); font-size:14px; font-weight:800; }
+        display:inline-block; background:transparent; }
+      /* Initials fallback: only rendered when there is no photo (or it 404s).
+         Rendered via ::after so a letter can never show through a photo. */
+      .am-cmp-hs-fb { display:inline-flex; align-items:center; justify-content:center; }
+      .am-cmp-hs-fb::after { content:attr(data-init); font-size:14px; font-weight:800; color:var(--text-muted); }
       .am-cmp-hs img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; object-position:top; }
       .am-cmp-phead-id { min-width:0; }
       .am-cmp-phead-name { font-size:15px; font-weight:800; color:var(--text);
         white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
       .am-cmp-range { display:inline-flex; align-items:center; gap:5px; margin-top:7px; cursor:pointer;
         font-size:11.5px; font-weight:700; white-space:nowrap;
-        color:var(--accent,#2563eb);
-        background:color-mix(in srgb, var(--accent,#2563eb) 8%, transparent);
-        border:1px solid color-mix(in srgb, var(--accent,#2563eb) 35%, transparent);
+        color:var(--brand-blue,#3b82f6);
+        background:color-mix(in srgb, var(--brand-blue,#3b82f6) 12%, transparent);
+        border:1px solid color-mix(in srgb, var(--brand-blue,#3b82f6) 25%, transparent);
         border-radius:8px; padding:4px 10px; }
-      .am-cmp-range:hover { background:color-mix(in srgb, var(--accent,#2563eb) 15%, transparent); }
+      .am-cmp-range:hover { background:color-mix(in srgb, var(--brand-blue,#3b82f6) 20%, transparent); }
       /* Week-range popover (season select + draggable slider) */
       .am-cmp-rangepop { position:absolute; top:calc(100% - 6px); left:8px; z-index:30; width:280px; max-width:80vw;
         background:var(--card); border:1px solid var(--border); border-radius:12px;
@@ -1197,6 +1200,7 @@ def build_advanced_metrics_body(
         .am-cmp-player-head { min-width:0; }
         .am-cmp-phead-top { flex-direction:column; gap:5px; text-align:center; }
         .am-cmp-hs { width:60px; height:60px; }
+        .am-cmp-hs-fb::after { font-size:13px; }
         .am-cmp-phead-name { font-size:11px; white-space:normal; line-height:1.3; }
         .am-cmp-range { margin-top:2px; font-size:10px; padding:3px 7px; }
         .am-cmp-metric { font-size:10.5px; white-space:normal; line-height:1.35; }
@@ -3128,8 +3132,8 @@ _AM_JS = r"""
       const popRight = (idx === players.length - 1) ? ' am-cmp-rangepop-right' : '';
       html += '<th class="am-cmp-player-head">'
         + '<div class="am-cmp-phead-top">'
-        + '<span class="am-cmp-hs"><span>' + _amInitials(p.name) + '</span>'
-        + (p.headshot ? '<img src="' + p.headshot + '" alt="" loading="lazy" onerror="this.remove()">' : '')
+        + '<span class="am-cmp-hs' + (p.headshot ? '' : ' am-cmp-hs-fb') + '" data-init="' + _amInitials(p.name) + '">'
+        + (p.headshot ? '<img src="' + _hiResHeadshot(p.headshot, 180) + '" data-raw="' + p.headshot + '" alt="" loading="lazy" onerror="if(this.dataset.raw&&this.src!==this.dataset.raw){this.src=this.dataset.raw;}else{this.parentNode.classList.add(\'am-cmp-hs-fb\');this.remove();}">' : '')
         + '</span>'
         + '<div class="am-cmp-phead-id">'
         + '<div class="am-cmp-phead-name">' + (p.name || '') + '</div>'
