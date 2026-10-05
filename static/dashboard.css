@@ -6870,6 +6870,13 @@ strong + .player-badge,
     font-weight: 500;
 }
 
+.otc-sugg-rival-need {
+    font-size: 10px;
+    font-weight: 600;
+    color: #059669;
+    margin: 2px 0 0;
+}
+
 /* Center sides row */
 .otc-sugg-pkg-sides {
     display: flex;

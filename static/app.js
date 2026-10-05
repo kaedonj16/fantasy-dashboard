@@ -8798,6 +8798,7 @@ window.initTradePage = function initTradePage(root = document) {
               <span class="otc-sugg-pkg-freq">from ${esc(opt.team_name)}</span>
               ${_acceptHtml}
             </div>
+            ${opt.rival_need_label ? `<div class="otc-sugg-rival-need">${esc(opt.rival_need_label)}</div>` : ""}
             <div class="otc-sugg-pkg-sides">
               <div class="otc-sugg-pkg-side">
                 <div class="otc-sugg-pkg-side-label">YOU GIVE</div>

@@ -22943,6 +22943,10 @@ def api_trade_eval():
         props={"platform": platform, "league_id": league_id, "scoring_type": scoring_type},
     )
 
+    # Veto risk: lopsided deals (30%+ gap or 150+ raw) get vetoed in real leagues.
+    _veto_baseline = max(side_a.get("total_value", 0), side_b.get("total_value", 0))
+    veto_risk = abs_diff > max(_veto_baseline * 0.30, 150) if _veto_baseline else False
+
     return jsonify({
         "side_a": side_a,
         "side_b": side_b,
@@ -22951,6 +22955,7 @@ def api_trade_eval():
         "fair_threshold": fair_band,
         "fair_pct": FAIR_PCT,
         "verdict": verdict,
+        "veto_risk": veto_risk,
         "analysis_html": analysis_html,
         "analysis_error": analysis_error,
         "depth_warnings": depth_warnings,
@@ -34202,19 +34207,44 @@ def api_trade_intel_player_send_packages(player_id: str):
         # ── Per-team value-matched return packages ──────────────────────────
         lo, hi = focus_value * 0.90, focus_value * 1.25
 
-        # Viewer's position depth so we can prefer combos filling their weak spots
+        # Viewer's position depth so we can prefer combos filling their weak spots.
+        # Depth targets are league-aware: derived from the actual roster
+        # settings (starter slots + typical bench depth), not hardcoded.
         viewer_roster_obj = next(
             (r for r in rosters if str(r.get("roster_id")) == viewer_roster_id), None
         )
         viewer_pos_counts: dict = {}
+        viewer_pos_vals: dict = {}
         if viewer_roster_obj:
             for pid in (viewer_roster_obj.get("players") or []):
-                pos = values_by_id.get(str(pid), {}).get("position", "")
+                info = values_by_id.get(str(pid), {})
+                pos = info.get("position", "")
                 if pos and str(pid) != str(player_id):
                     viewer_pos_counts[pos] = viewer_pos_counts.get(pos, 0) + 1
-        depth_targets = {"QB": 2, "RB": 4, "WR": 5, "TE": 2}
+                    viewer_pos_vals.setdefault(pos, []).append(float(info.get("value") or 0))
+        for _p in viewer_pos_vals:
+            viewer_pos_vals[_p].sort(reverse=True)
+        _slot_counts = count_roster_positions(_rp_list)
+        # Bench depth: roughly 1.5x starters, minimum 1 extra per position
+        depth_targets = {}
+        for _p in ("QB", "RB", "WR", "TE"):
+            _starters = int(_slot_counts.get(_p, 0) or 0)
+            if _p == "QB" and int(_slot_counts.get("SF", 0) or 0) > 0:
+                _starters += 1
+            depth_targets[_p] = max(_starters + 1, 2) if _p in ("QB", "TE") else max(int(_starters * 1.5) + 1, 3)
         viewer_weak = {pos for pos, tgt in depth_targets.items()
                        if viewer_pos_counts.get(pos, 0) < tgt}
+
+        # Is the focus player a starter for the viewer? Real managers demand
+        # at least fair value (usually a premium) to move a starter.
+        # Starter = top-2 at position by value (top-1 for QB/TE in 1QB).
+        _focus_rank = 99
+        _focus_pos_vals = viewer_pos_vals.get(focus_pos, [])
+        if target_info and not focus_is_pick:
+            _fv = float(target_info.get("value") or 0)
+            _focus_rank = sum(1 for _v in _focus_pos_vals if _v > _fv) + 1
+        _starter_line = 1 if (focus_pos in ("QB", "TE") and not is_sf) else 2
+        focus_is_starter = _focus_rank <= _starter_line
 
         def _value_label(total: float) -> tuple:
             ratio = total / focus_value if focus_value else 0
@@ -34227,12 +34257,37 @@ def api_trade_intel_player_send_packages(player_id: str):
         def _need_bonus(assets: list) -> int:
             return sum(1 for a in assets if a.get("position") in viewer_weak)
 
-        def _option_quality(assets: list, total: float) -> float:
+        def _rival_need_tier(rival_pos_vals: dict, pos: str, fval: float) -> tuple:
+            """How badly does the rival need the focus player's position?
+
+            Returns (tier, label). Tiers: desperate / need / neutral / stacked.
+            Offering a player to a team stacked at his position is unrealistic
+            no matter what the values say.
+            """
+            existing = rival_pos_vals.get(pos, [])
+            best = existing[0] if existing else 0
+            second = existing[1] if len(existing) > 1 else 0
+            if not existing or best < 200:
+                return "desperate", f"Fills their {pos} hole"
+            if best < 400 or fval > best * 1.15:
+                return "need", f"Upgrade for them at {pos}"
+            if best >= fval or (best >= 400 and second >= 350):
+                return "stacked", f"They're set at {pos}"
+            return "neutral", ""
+
+        def _option_quality(assets: list, total: float, rival_need: str = "neutral") -> float:
             """Lower is better. Ranks returns the way a savvy manager would:
             close to fair value, mildly preferring consolidation but letting
             good package deals compete, anchored by real players rather than
             scrubs, filling needs, and - when sending a future asset like a
-            pick - skewing younger."""
+            pick - skewing younger.
+
+            Realism adjustments:
+            - Rival need: offering to a team stacked at the focus position is
+              heavily penalized (they would not want him).
+            - Starter premium: moving a starter at a discount is unrealistic;
+              returns below 1.0x for a starter eat a penalty.
+            """
             score = abs(total - focus_value)  # value distance
             score += (len(assets) - 1) * focus_value * 0.02  # light consolidation lean
             best_piece = max((float(a["value"]) for a in assets), default=0.0)
@@ -34240,6 +34295,14 @@ def api_trade_intel_player_send_packages(player_id: str):
             if anchor_ratio < 0.40:  # avoid death-by-paper-cuts
                 score += (0.40 - anchor_ratio) * focus_value * 0.6
             score -= _need_bonus(assets) * focus_value * 0.03  # reward filling weak spots
+            # Rival need: stacked teams would not trade for this position
+            if rival_need == "stacked":
+                score += focus_value * 0.25
+            elif rival_need == "desperate":
+                score -= focus_value * 0.05
+            # Starter premium: nobody moves a starter at a discount
+            if focus_is_starter and total < focus_value:
+                score += (focus_value - total) * 1.5
             if focus_is_pick:  # picks are future assets → youth
                 for a in assets:
                     if a.get("is_pick"):
@@ -34252,87 +34315,89 @@ def api_trade_intel_player_send_packages(player_id: str):
                         score += (age - 27) * focus_value * 0.02
             return score
 
-        def _send_acceptance_prob(rival_roster: dict, label_cls: str) -> int:
-            """Estimate acceptance probability (0-100) that the rival team
-            accepts giving up this return package for the focus player.
+        def _send_acceptance_prob(
+            total: float,
+            rival_need: str,
+            rival_roster: dict,
+            sent_assets: list,
+        ) -> int:
+            """Estimate (0-100) that the rival accepts, from THEIR perspective.
 
-            Factors:
-              1. Value balance from the rival's POV (they overpay = likely)
-              2. Rival's positional need for the focus player's position
-              3. Win/rebuild window (dynasty only)
+            They receive the focus player (value F) and send the package (P).
+              - Value: F/P >= 1.10 they win -> high; < 0.95 they overpay -> low
+              - Need: do they actually need the focus position?
+              - Window (dynasty): rebuilders do not want aging vets, hoard
+                youth/picks, but love incoming picks; contenders want
+                win-now pieces, not picks or raw youth.
             """
-            # 1. Value base: label_cls is from the VIEWER's perspective.
-            # A "great" return for the viewer means the rival overpays.
-            base = {"great": 70, "fair": 48, "light": 24}.get(label_cls, 48)
+            ratio = (focus_value / total) if total > 0 else 0
+            if ratio >= 1.10:
+                base = 70
+            elif ratio >= 0.97:
+                base = 52
+            elif ratio >= 0.90:
+                base = 34
+            else:
+                base = 16
 
-            need_adj = 0
+            need_adj = {"desperate": 14, "need": 8, "neutral": 0, "stacked": -14}.get(rival_need, 0)
+
             window_adj = 0
-
-            # 2. Rival's positional need for the focus player
-            if not focus_is_pick and focus_pos in ("QB", "RB", "WR", "TE"):
-                rival_vals = sorted(
-                    (
-                        values_by_id[str(pid)]["value"]
-                        for pid in (rival_roster.get("players") or [])
-                        if str(pid) in values_by_id
-                        and values_by_id[str(pid)]["position"] == focus_pos
-                    ),
-                    reverse=True,
-                )
-                if not rival_vals:
-                    need_adj = 12  # hole at this position
-                elif rival_vals[0] < 200:
-                    need_adj = 9  # barely-rostered starter
-                elif rival_vals[0] < 400:
-                    need_adj = 5  # mediocre starter
-                    if focus_value > rival_vals[0] * 1.1:
-                        need_adj += 3  # upgrade on their best
-                elif len(rival_vals) < 2 or rival_vals[1] < 150:
-                    need_adj = 2  # strong starter, thin depth
-                else:
-                    need_adj = -3  # stacked at this position, harder sell
-                need_adj = max(-10, min(need_adj, 18))
-
-            # 3. Win/rebuild window (dynasty only)
-            if not is_redraft:
+            if not is_redraft and rival_roster:
                 try:
-                    from dashboard_services.ai.context_builders import (
-                        calculate_roster_grade as _crg,
-                    )
-                    flat = []
+                    from dashboard_services.ai.context_builders import calculate_roster_grade as _crg
+                    _flat = []
                     for pid in (rival_roster.get("players") or []):
                         info = values_by_id.get(str(pid))
                         if info and info.get("position") in ("QB", "RB", "WR", "TE"):
-                            flat.append({
+                            _flat.append({
                                 "position": info["position"],
                                 "value": float(info.get("value") or 0),
                                 "age": info.get("age"),
                             })
-                    flat.sort(key=lambda x: x["value"], reverse=True)
-                    grade = _crg(flat, [], scoring_type="dynasty")
-                    win_window = grade.get("win_window", "")
-                    if win_window in ("Full Rebuild", "Retooling"):
-                        window = "rebuild"
-                    elif win_window in ("Win-Now Window", "Aging Contender", "Contender Window"):
-                        window = "win_now"
+                    _flat.sort(key=lambda x: x["value"], reverse=True)
+                    _grade = _crg(_flat, [], scoring_type="dynasty")
+                    _ww = _grade.get("win_window", "")
+                    if _ww in ("Full Rebuild", "Retooling", "Rebuilding"):
+                        _window = "rebuild"
+                    elif _ww in ("Win-Now", "Aging Contender", "Contender"):
+                        _window = "win_now"
                     else:
-                        window = "competitive"
-
-                    focus_age = float(target_info.get("age") or 25)
-                    if window == "rebuild":
+                        _window = "competitive"
+                    try:
+                        _focus_age = float(target_info.get("age") or 25)
+                    except (TypeError, ValueError):
+                        _focus_age = 25
+                    _sends_picks = any(a.get("is_pick") for a in sent_assets)
+                    _sends_youth = False
+                    for a in sent_assets:
+                        if a.get("is_pick"):
+                            continue
+                        try:
+                            _a = float(values_by_id.get(str(a.get("player_id") or ""), {}).get("age") or 25)
+                        except (TypeError, ValueError):
+                            _a = 25
+                        if _a < 25:
+                            _sends_youth = True
+                            break
+                    if _window == "rebuild":
                         if focus_is_pick:
-                            window_adj = 8
-                        elif focus_age < 24:
-                            window_adj = 6
-                        elif focus_age > 28:
-                            window_adj = -8
-                    elif window == "win_now":
+                            window_adj += 8  # rebuilders love incoming picks
+                        elif _focus_age >= 28:
+                            window_adj -= 12  # rebuilders do not buy aging vets
+                        elif _focus_age < 24:
+                            window_adj += 6  # rebuilders buy youth
+                        if _sends_picks or _sends_youth:
+                            window_adj -= 8  # rebuilders hoard youth and picks
+                    elif _window == "win_now":
                         if focus_is_pick:
-                            window_adj = -6
-                        elif focus_age >= 27:
-                            window_adj = 5
-                        elif focus_age < 23:
-                            window_adj = -4
+                            window_adj -= 6  # contenders want players, not picks
+                        elif 24 <= _focus_age <= 29:
+                            window_adj += 6  # prime contributor helps now
+                        elif _focus_age >= 31:
+                            window_adj -= 4  # even contenders hesitate on old vets
+                        elif _focus_age < 23:
+                            window_adj -= 4  # raw youth does not help now
                 except Exception:
                     pass
 
@@ -34377,6 +34442,21 @@ def api_trade_intel_player_send_packages(player_id: str):
             )
             team_picks = sorted(_rival_picks(rid), key=lambda x: -x["value"])
 
+            # Rival positional need for the focus position: offering a player
+            # to a team stacked at his position is unrealistic.
+            rival_pos_vals: dict = {}
+            for pid in (r.get("players") or []):
+                _info = values_by_id.get(str(pid))
+                if _info and _info.get("position") in ("QB", "RB", "WR", "TE"):
+                    rival_pos_vals.setdefault(_info["position"], []).append(
+                        float(_info.get("value") or 0)
+                    )
+            for _p in rival_pos_vals:
+                rival_pos_vals[_p].sort(reverse=True)
+            rival_need, rival_need_label = _rival_need_tier(
+                rival_pos_vals, focus_pos, focus_value
+            ) if not focus_is_pick else ("neutral", "")
+
             team_opts: list = []
 
             def _add(assets: list, require_band: bool = True):
@@ -34397,7 +34477,11 @@ def api_trade_intel_player_send_packages(player_id: str):
                     "receive_value": total,
                     "value_label": label,
                     "value_class": cls,
-                    "qual": _option_quality(assets, total),
+                    "rival_need": rival_need,
+                    "rival_need_label": rival_need_label,
+                    "acceptance_prob": _send_acceptance_prob(total, rival_need, r, assets),
+                    "focus_is_starter": focus_is_starter,
+                    "qual": _option_quality(assets, total, rival_need),
                 })
 
             # 1 player
@@ -34450,8 +34534,6 @@ def api_trade_intel_player_send_packages(player_id: str):
             # slot for a multi-asset package when one exists in-band, so rival
             # teams surface package deals alongside straight swaps.
             team_opts.sort(key=lambda x: x["qual"])
-            for _opt in team_opts:
-                _opt["acceptance_prob"] = _send_acceptance_prob(r, _opt["value_class"])
             _picked = team_opts[:3]
             if len(_picked) == 3 and not any(len(o["receive"]) > 1 for o in _picked):
                 _multi = next((o for o in team_opts[3:] if len(o["receive"]) > 1), None)
