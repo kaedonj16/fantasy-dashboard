@@ -1107,49 +1107,68 @@ def build_advanced_metrics_body(
       .am-lock-ico { display:inline-block; vertical-align:-2px; color:var(--gold, #ca8a04); }
       @media (max-width:600px) { .am-trendcell { min-width:80px; } .am-spark { width:44px; height:14px; } }
       /* Pinned-player comparison modal -- width grows with player count */
-      .am-cmp-card { max-width:min(95vw,1100px); }
+      .am-cmp-card { max-width:min(95vw,1400px); }
       .am-legend-body { overflow-x:auto; }
-      .am-cmp-table { min-width:520px; }
       .am-cmp-table { width:100%; border-collapse:separate; border-spacing:0; font-size:13px; margin-top:4px; }
-      .am-cmp-table th, .am-cmp-table td { padding:10px 12px; border-bottom:1px solid var(--border); text-align:left; vertical-align:middle; }
-      .am-cmp-table thead th { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted); border-bottom:2px solid var(--border); }
+      .am-cmp-table th, .am-cmp-table td { padding:10px 12px; border-bottom:1px solid var(--border); text-align:left; vertical-align:top; }
+      .am-cmp-table thead th { border-bottom:2px solid var(--border); }
       .am-cmp-table tbody tr:hover td { background:rgba(128,128,128,.04); }
-      .am-cmp-table th:first-child, .am-cmp-table td:first-child { padding-left:2px; }
-      .am-cmp-table thead th:first-child, .am-cmp-table td.am-cmp-metric { position:sticky; left:0; background:var(--card); border-right:1px solid var(--border); }
-      .am-cmp-table thead th:first-child { z-index:3; }
-      .am-cmp-table td.am-cmp-metric { z-index:2; }
-      .am-cmp-table tbody tr:hover td.am-cmp-metric { background-color:var(--card); background-image:linear-gradient(rgba(128,128,128,.04), rgba(128,128,128,.04)); }
-      /* Player header cell */
-      .am-cmp-player-head { vertical-align:top; min-width:150px; text-transform:none !important; letter-spacing:0 !important; color:var(--text) !important; }
-      .am-cmp-head-name { display:flex; align-items:center; gap:6px; font-size:14px; font-weight:800; color:var(--text); }
-      .am-cmp-head-pos { font-size:10px; font-weight:800; padding:1px 6px; border-radius:6px; color:#fff; letter-spacing:.02em; flex-shrink:0; }
-      .am-cmp-player-meta { font-size:11px; font-weight:600; color:var(--text-muted); margin-left:5px; }
-      /* Sizing feeds the custom dropdown (CSD copies font-weight/radius/padding/
-         min-width from the original select onto its .csd-trigger). */
-      .am-cmp-season-sel { font-weight:600; border-radius:8px; padding:4px 10px; min-width:92px; font-size:12px; margin-top:8px; }
+      .am-cmp-table thead th:first-child { text-align:right; font-size:10px; font-weight:800;
+        letter-spacing:.06em; color:var(--text-muted); }
+      /* Player header cell: headshot + name + week-range pill */
+      .am-cmp-player-head { position:relative; min-width:170px; vertical-align:top; }
+      .am-cmp-phead-top { display:flex; align-items:center; gap:10px; }
+      .am-cmp-hs { position:relative; width:46px; height:46px; border-radius:50%; overflow:hidden; flex-shrink:0;
+        display:inline-flex; align-items:center; justify-content:center;
+        background:transparent; color:var(--text-muted); font-size:14px; font-weight:800; }
+      .am-cmp-hs img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; object-position:top; }
+      .am-cmp-phead-id { min-width:0; }
+      .am-cmp-phead-name { font-size:15px; font-weight:800; color:var(--text);
+        white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .am-cmp-range { display:inline-flex; align-items:center; gap:5px; margin-top:7px; cursor:pointer;
+        font-size:11.5px; font-weight:700; white-space:nowrap;
+        color:var(--accent,#2563eb);
+        background:color-mix(in srgb, var(--accent,#2563eb) 8%, transparent);
+        border:1px solid color-mix(in srgb, var(--accent,#2563eb) 35%, transparent);
+        border-radius:8px; padding:4px 10px; }
+      .am-cmp-range:hover { background:color-mix(in srgb, var(--accent,#2563eb) 15%, transparent); }
+      /* Week-range popover (season select + draggable slider) */
+      .am-cmp-rangepop { position:absolute; top:calc(100% - 6px); left:8px; z-index:30; width:280px; max-width:80vw;
+        background:var(--card); border:1px solid var(--border); border-radius:12px;
+        box-shadow:0 12px 36px rgba(0,0,0,.20); padding:14px; }
+      .am-cmp-rangepop-title { font-size:12px; font-weight:800; color:var(--text); margin-bottom:10px; }
+      .am-cmp-rangepop-right { left:auto; right:8px; }
+      .am-cmp-baseline-note { display:block; margin-top:7px; font-size:11px; font-weight:600; color:var(--text-muted); }
+      .am-cmp-season-sel { font-weight:600; border-radius:8px; padding:5px 10px; font-size:12px;
+        border:1px solid var(--border); background:var(--card); color:var(--text); width:100%; }
       .am-cmp-player-head .csd-wrap { margin-top:8px; }
-      /* Per-player week-range bar (reuses the page's draggable wk-bar). Ticks are
-         hidden in this compact column; the selected weeks show in the note below. */
-      .am-cmp-wkbar-wrap { margin-top:11px; }
-      .am-cmp-wkbar-wrap .wk-bar { flex:unset; display:block; width:100%; }
-      /* Compact column can't fit every week label; show every other week
-         starting at W1 (W1, W3, W5 …) as a scale. Exact selected weeks show
-         in the note below. */
-      .am-cmp-wkbar-wrap .wk-bar-ticks { display:flex; margin-top:3px; }
-      .am-cmp-wkbar-wrap .wk-tick { font-size:0; }
-      .am-cmp-wkbar-wrap .wk-tick:nth-child(odd) { font-size:9px; }
-      .am-cmp-wknote { margin-top:6px; font-size:10px; font-weight:700; color:var(--text-muted); }
+      .am-cmp-rangepop .am-cmp-wkbar-wrap { margin-top:12px; }
+      .am-cmp-rangepop .wk-bar { flex:unset; display:block; width:100%; }
+      .am-cmp-rangepop .wk-bar-ticks { display:flex; justify-content:space-between; margin-top:4px; }
+      .am-cmp-rangepop .wk-tick { font-size:8px; font-weight:700; color:var(--text-muted); }
+      .am-cmp-rangepop .wk-tick:nth-child(even) { font-size:0; }
+      .am-cmp-wknote { margin-top:8px; font-size:11px; font-weight:700; color:var(--text-muted); text-align:center; }
       .am-cmp-wknote-warn { color:var(--warning); }
       .am-cmp-wknote-muted { font-weight:600; opacity:.55; }
       /* Metric rows */
-      .am-cmp-metric { font-weight:700; color:var(--text-muted); white-space:nowrap; font-size:12px; }
-      .am-cmp-val { font-weight:800; font-variant-numeric:tabular-nums; font-size:14px; }
+      .am-cmp-metric { font-weight:700; color:var(--text-muted); font-size:12px; text-align:right; white-space:nowrap; }
+      .am-cmp-val { font-weight:800; font-variant-numeric:tabular-nums; font-size:14px; color:var(--text); }
       .am-cmp-best { color:var(--win); }
-      .am-cmp-rank { font-size:10px; color:var(--text-muted); margin-left:6px; font-weight:700; }
-      .am-cmp-bar { height:6px; border-radius:4px; background:rgba(128,128,128,.16); margin-top:6px; overflow:hidden; max-width:160px; }
-      .am-cmp-bar > div { height:100%; border-radius:4px; transition:width .2s ease; }
+      .am-cmp-rank { font-size:10px; font-weight:800; color:var(--text-muted); white-space:nowrap;
+        background:rgba(128,128,128,.13); border-radius:20px; padding:2px 8px; margin-left:8px; }
+      .am-cmp-bar { height:6px; border-radius:4px; background:rgba(128,128,128,.16); margin-top:7px; overflow:hidden; max-width:160px; }
+      .am-cmp-bar > div { height:100%; border-radius:4px; background:#f59e0b; transition:width .2s ease; }
+      .am-cmp-bar > div.am-cmp-best { background:var(--win); }
+      .am-cmp-gap { margin-top:4px; font-size:11px; font-weight:700; color:var(--text-muted); opacity:.8;
+        font-variant-numeric:tabular-nums; min-height:15px; }
+      .am-cmp-meta { display:none; }
       .am-cmp-cat-row td { font-size:10px !important; font-weight:800; text-transform:uppercase; letter-spacing:.05em;
         color:var(--text-muted); background:rgba(128,128,128,.05); padding:5px 12px !important; }
+      /* Keep the metric column pinned when the table scrolls horizontally
+         (many players on a narrow viewport). */
+      .am-cmp-table thead th:first-child, .am-cmp-table td.am-cmp-metric { position:sticky; left:0; background:var(--card); z-index:2; border-right:1px solid var(--border); }
+      .am-cmp-table thead th:first-child { z-index:3; }
+      .am-cmp-table tbody tr:hover td.am-cmp-metric { background-color:var(--card); background-image:linear-gradient(rgba(128,128,128,.04), rgba(128,128,128,.04)); }
       /* YoY trend arrows - inline beside the value */
       .am-val-row { display:flex; align-items:center; gap:3px; }
       .am-trend-up   { font-size:11px; font-weight:700; color:var(--win); line-height:1; flex-shrink:0; }
@@ -1167,23 +1186,28 @@ def build_advanced_metrics_body(
       .am-row.am-pinned:hover { background:color-mix(in srgb, var(--accent) 10%, transparent); }
       .am-row.am-pinned.am-owned { background:color-mix(in srgb, var(--accent) 10%, transparent); }
       .am-pin-divider td { border-bottom:2px dashed var(--accent,#2563eb) !important; padding:0 !important; height:2px !important; }
-      /* Mobile: pack the compare table so two players fit on screen without the
-         right column getting clipped. Drop the 520px min-width, shrink padding /
-         fonts, let the metric-label column wrap so player columns get the room. */
+      /* Mobile: fixed layout so every pinned player fits without sideways
+         scrolling. Metric labels get a fixed column; player columns share the
+         rest. Rank pill + gap collapse into one meta line under the bar. The
+         range popover becomes a centered sheet so it can't clip. */
       @media (max-width:600px) {
-        .am-cmp-table { min-width:0; font-size:12px; }
-        .am-cmp-table th, .am-cmp-table td { padding:7px 5px; }
-        .am-cmp-table th:first-child, .am-cmp-table td:first-child { padding-left:2px; }
+        .am-cmp-table { table-layout:fixed; font-size:12px; }
+        .am-cmp-table col.am-cmp-mcol { width:82px; }
+        .am-cmp-table th, .am-cmp-table td { padding:8px 4px; }
         .am-cmp-player-head { min-width:0; }
-        .am-cmp-head-name { font-size:12px; gap:4px; }
-        .am-cmp-head-pos { font-size:9px; padding:1px 4px; }
-        .am-cmp-metric { font-size:10px; white-space:normal; line-height:1.2; }
-        .am-cmp-val { font-size:12px; }
-        .am-cmp-rank { font-size:9px; margin-left:3px; }
+        .am-cmp-phead-top { flex-direction:column; gap:5px; text-align:center; }
+        .am-cmp-hs { width:60px; height:60px; }
+        .am-cmp-phead-name { font-size:11px; white-space:normal; line-height:1.3; }
+        .am-cmp-range { margin-top:2px; font-size:10px; padding:3px 7px; }
+        .am-cmp-metric { font-size:10.5px; white-space:normal; line-height:1.35; }
+        .am-cmp-val { font-size:13px; }
+        .am-cmp-rank { display:none; }
+        .am-cmp-gap { display:none; }
+        .am-cmp-meta { display:block; margin-top:3px; font-size:9.5px; font-weight:700;
+          color:var(--text-muted); opacity:.8; font-variant-numeric:tabular-nums; white-space:nowrap; }
         .am-cmp-bar { max-width:none; }
-        .am-cmp-season-sel { min-width:0; width:100%; padding:3px 6px; font-size:11px; margin-top:6px; }
-        .am-cmp-wkbar-wrap { margin-top:8px; }
-        .am-cmp-wknote { font-size:9px; }
+        .am-cmp-rangepop { position:fixed; left:50%; top:50%; transform:translate(-50%,-50%);
+          width:min(320px,88vw); max-width:88vw; z-index:1200; }
       }
       /* ── Filter bar ──────────────────────────────────────────────────────── */
       .am-filter-bar {
@@ -2018,6 +2042,7 @@ _AM_JS = r"""
   const _amCmpWeekly = {};  // `${pid}_${season}` -> weekly series (Compare modal week ranges)
   const _amCmpSeason = {};   // `${pid}_${season}` -> season-level metrics (non-page seasons)
   let _amCmpToken = 0;       // guards against overlapping/stale re-renders while dragging
+  let _amCmpRangePop = null; // player_id whose week-range popover is open in the Compare modal
 
   // Fetch JSON with a hard timeout so a slow/overloaded endpoint can't leave the
   // Compare modal stuck on "Loading…" forever; on timeout/failure resolve null.
@@ -2888,67 +2913,55 @@ _AM_JS = r"""
     });
     return { ranks: ranks, bounds: bounds, counts: counts, avgs: avgs };
   }
-  // Bar fill (8–100%) by RANK within position -- so a mid-ranked player in a
-  // bunched-top metric (role score, snap share, yards/touch…) doesn't show a
-  // near-full bar. #1 → 100, last → 8.
-  function _amRankFill(rank, count) {
-    if (!rank || !count || count < 2) return null;
-    const t = (count - rank) / (count - 1);
-    return 8 + Math.max(0, Math.min(1, t)) * 92;
-  }
-  // Bar fill (8–100%) by where `val` sits in its position's [min,max] range --
-  // the same magnitude-preserving, position-aware scaling the player modal uses.
-  function _amBoundsFill(key, val, bnds) {
-    if (val == null || !bnds) return null;
-    const lo = bnds[0], hi = bnds[1];
-    if (!(hi > lo)) return null;  // degenerate (single player / all equal)
-    let t = (val - lo) / (hi - lo);
-    if (cfg.metrics[key] && cfg.metrics[key].lowerBetter) t = 1 - t;
-    t = Math.max(0, Math.min(1, t));
-    return 8 + t * 92;  // 8% floor so the worst still shows a sliver
-  }
-  // Unified bar fill (%) for the Compare modal -- same four-shape model as the
-  // player modal:
-  //  • SCORE  (grades, ratings, VORP/WAR) → value ÷ ceiling.
-  //  • MINMAX (EPA totals) → position [min,max], so big leads & negatives show.
-  //  • RANK   (efficiency rates) → percentile within position (page columns).
-  //  • LEADER (volume) → value ÷ position leader.
-  const _AM_SCORE_CEIL = { role_score: 100, grades_offense: 100, pff_passing_grade: 100,
-    pff_rushing_grade: 100, nfl_passer_rating: 158.3, vorp: 150, war: 6 };
-  const _AM_MINMAX = ['passing_epa', 'rushing_epa', 'receiving_epa'];
-  const _AM_RATE = ['avoided_tackles_per_carry'];
-  function _amBarFill(key, v, pos, mode, rk, stats, barMax) {
-    const m = cfg.metrics[key] || {};
-    const valFb = Math.min(100, Math.max(3, Math.round(Math.abs(v) / barMax * 100)));
-    const ceil = _AM_SCORE_CEIL[key];
-    if (ceil) return Math.max(4, Math.min(100, (v / ceil) * 100));
-    const b = (stats && stats.bounds[pos]) || null;
-    const rankF = (mode === 'page' && stats && rk) ? _amRankFill(rk, stats.counts[pos]) : null;
-    const mmF = b ? _amBoundsFill(key, v, b) : null;
-    if (_AM_MINMAX.indexOf(key) >= 0) return mmF != null ? mmF : (rankF != null ? rankF : valFb);
-    const isEff = m.efficiency || m.pct || m.pctFrac || _AM_RATE.indexOf(key) >= 0;
-    if (isEff) return rankF != null ? rankF : (mmF != null ? mmF : valFb);
-    if (b && b[1] > 0) return Math.max(4, Math.min(100, (v / b[1]) * 100));  // volume → leader
-    return rankF != null ? rankF : valFb;
-  }
   // Change a single player's season in the Compare modal and re-render.
   window.amSetCmpSeason = function(pid, season) {
     state.cmpSeasons[String(pid)] = season;
     state.cmpRanges[String(pid)] = '';  // week ranges are season-specific
     window.amShowCompare();
   };
-  // Per-player draggable week-range bar + games label for the modal header.
+  // Toggle the week-range popover for one player in the Compare modal header.
+  window.amCmpToggleRange = function(pid, ev) {
+    if (ev && ev.stopPropagation) ev.stopPropagation();
+    pid = String(pid);
+    _amCmpRangePop = (_amCmpRangePop === pid) ? null : pid;
+    window.amShowCompare();
+  };
+  // Clicking anywhere outside an open range popover closes it.
+  document.addEventListener('click', function(e) {
+    if (!_amCmpRangePop) return;
+    const t = (e.target && e.target.closest) ? e.target.closest('.am-cmp-rangepop,.am-cmp-range') : null;
+    if (t) return;
+    _amCmpRangePop = null;
+    window.amShowCompare();
+  });
+  // Initials for the headshot fallback, e.g. "Chris Olave" -> "CO".
+  function _amInitials(nm) {
+    const parts = String(nm || '').trim().split(/\s+/).filter(Boolean);
+    if (!parts.length) return '';
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
+  }
+  // Pill label for a player's range, e.g. "W1&ndash;W4", "Full season".
+  // Prefixed with the season when it differs from the page season.
+  function _amCmpRangeLabel(p, meta, s, pageSeason) {
+    const r = state.cmpRanges[String(p.player_id)] || '';
+    let lbl = (r && meta) ? ('W' + meta.lo + '&ndash;W' + meta.hi) : 'Full season';
+    if (String(s) !== String(pageSeason)) lbl = '&rsquo;' + String(s).slice(2) + ' &middot; ' + lbl;
+    return lbl;
+  }
+  // Week-range popover: season select + draggable week bar + games note.
   // Reuses the page-level wk-bar component (_wkBarBuild/_wkBarInit) so the
-  // compare splits use the same control as the main leaderboard.
-  function cmpRangeControls(p, meta) {
+  // compare splits use the same control as the main leaderboard. Dragging
+  // applies live on release (same as before); the popover stays open for
+  // further tweaks until dismissed.
+  function cmpRangePop(p, meta, s, seasonsList, rightCls) {
     if (typeof _wkBarBuild !== 'function') return '';
     const pid = String(p.player_id);
     const r = state.cmpRanges[pid] || '';
-    const s = String(state.cmpSeasons[pid] || state.season || (cfg.seasons && cfg.seasons[0]) || '');
     const latest = String((cfg.seasons && cfg.seasons[0]) || '');
     // Before weekly data loads we don't know the player's true last week, so
     // default to the current NFL week for the latest season, else a full 18.
-    const defMax = (s === latest) ? (cfg.currentWeek || 18) : 18;
+    const defMax = (String(s) === latest) ? (cfg.currentWeek || 18) : 18;
     const maxWk = (meta && meta.maxWk) ? meta.maxWk : defMax;
     let ws = 1, we = maxWk;
     if (r === 'custom') {
@@ -2956,6 +2969,9 @@ _AM_JS = r"""
       ws = Math.min(maxWk, Math.max(1, wk.start || 1));
       we = Math.min(maxWk, Math.max(ws, wk.end || maxWk));
     }
+    const opts = (seasonsList || []).map(yr =>
+      '<option value="' + yr + '"' + (String(yr) === String(s) ? ' selected' : '') + '>' + yr + '</option>'
+    ).join('');
     let note;
     if (r && meta) {
       note = meta.games > 0
@@ -2964,8 +2980,13 @@ _AM_JS = r"""
     } else {
       note = '<span class="am-cmp-wknote-muted">Full season &middot; drag to filter</span>';
     }
-    return '<div class="am-cmp-wkbar-wrap">' + _wkBarBuild('amCmpWk_' + pid, 1, maxWk, ws, we)
-      + '<div class="am-cmp-wknote">' + note + '</div></div>';
+    return '<div class="am-cmp-rangepop' + (rightCls || '') + '" onclick="if(event.stopPropagation)event.stopPropagation();">'
+      + '<div class="am-cmp-rangepop-title">' + (p.name || '') + ' &mdash; weeks</div>'
+      + ((seasonsList && seasonsList.length)
+          ? '<select class="am-cmp-season-sel" onchange="amSetCmpSeason(\'' + pid + '\', this.value)">' + opts + '</select>'
+          : '')
+      + '<div class="am-cmp-wkbar-wrap">' + _wkBarBuild('amCmpWk_' + pid, 1, maxWk, ws, we)
+      + '<div class="am-cmp-wknote">' + note + '</div></div></div>';
   }
 
   // Wire drag interaction on every per-player week bar after a modal re-render.
@@ -2995,10 +3016,10 @@ _AM_JS = r"""
     if (!modal || !body) return;
     const players = pinnedRows();
     if (players.length < 2) return;
-    // Size card to content: each player column needs ~180px, metric label ~140px.
+    // Size card to content: each player column needs ~250px, metric label ~140px.
     const card = modal.querySelector('.am-cmp-card');
     if (card) {
-      const ideal = 140 + players.length * 180;
+      const ideal = 140 + players.length * 250;
       card.style.maxWidth = Math.min(Math.max(560, ideal), window.innerWidth * 0.95) + 'px';
     }
     let metricsList = [state.metric, ...state.extraMetrics];
@@ -3098,27 +3119,32 @@ _AM_JS = r"""
         String(p.position || '').toUpperCase() === String(players[0].position || '').toUpperCase()
       )) ? String(players[0].position || '').toUpperCase() : null;
 
-    let html = '<table class="am-cmp-table"><thead><tr><th>Metric</th>';
-    players.forEach((p) => {
+    let html = '<table class="am-cmp-table"><colgroup><col class="am-cmp-mcol">'
+      + players.map(() => '<col>').join('') + (_cmpBasePos ? '<col>' : '') + '</colgroup>'
+      + '<thead><tr><th>Metric</th>';
+    players.forEach((p, idx) => {
       const pid = String(p.player_id);
       const s = seasonFor(p);
-      const opts = seasonsList.map(yr =>
-        '<option value="' + yr + '"' + (String(yr) === s ? ' selected' : '') + '>' + yr + '</option>'
-      ).join('');
+      const popRight = (idx === players.length - 1) ? ' am-cmp-rangepop-right' : '';
       html += '<th class="am-cmp-player-head">'
-        + '<div class="am-cmp-head-name">' + (p.name || '')
-        + (p.position ? '<span class="am-cmp-head-pos" style="background:' + posColor(p.position) + '">' + p.position + '</span>' : '')
-        + '</div>'
-        + (seasonsList.length
-            ? '<select class="am-cmp-season-sel" onchange="amSetCmpSeason(\'' + pid + '\', this.value)">' + opts + '</select>' + cmpRangeControls(p, rangeMeta[pid])
-            : '<span class="am-cmp-player-meta">' + (p.team || '') + '</span>')
+        + '<div class="am-cmp-phead-top">'
+        + '<span class="am-cmp-hs"><span>' + _amInitials(p.name) + '</span>'
+        + (p.headshot ? '<img src="' + p.headshot + '" alt="" loading="lazy" onerror="this.remove()">' : '')
+        + '</span>'
+        + '<div class="am-cmp-phead-id">'
+        + '<div class="am-cmp-phead-name">' + (p.name || '') + '</div>'
+        + '<button type="button" class="am-cmp-range" onclick="amCmpToggleRange(\'' + pid + '\',event)">'
+        + _amCmpRangeLabel(p, rangeMeta[pid], s, pageSeason) + ' &#9662;</button>'
+        + '</div></div>'
+        + (_amCmpRangePop === pid ? cmpRangePop(p, rangeMeta[pid], s, seasonsList, popRight) : '')
         + '</th>';
     });
     if (_cmpBasePos) {
       html += '<th class="am-cmp-player-head am-cmp-baseline-head">'
-        + '<div class="am-cmp-head-name">' + _cmpBasePos + ' avg</div>'
-        + '<span class="am-cmp-player-meta">page season</span>'
-        + '</th>';
+        + '<div class="am-cmp-phead-top"><div class="am-cmp-phead-id">'
+        + '<div class="am-cmp-phead-name">' + _cmpBasePos + ' avg</div>'
+        + '<span class="am-cmp-baseline-note">page season</span>'
+        + '</div></div></th>';
     }
     html += '</tr></thead><tbody>';
 
@@ -3131,24 +3157,35 @@ _AM_JS = r"""
       const best = present.length
         ? (lower ? Math.min(...present) : Math.max(...present))
         : null;
-      // Fallback scale (only used when a player's position has no bounds, e.g.
-      // a different-season column): relative to the largest pinned value.
-      const barMax = present.length ? Math.max(...present.map(v => Math.abs(v))) || 1 : 1;
 
       html += '<tr><td class="am-cmp-metric">' + lbl + '</td>';
       players.forEach((p, i) => {
         const v = vals[i];
         if (v == null) { html += '<td><span style="opacity:.4">–</span></td>'; return; }
-        const pos = String(p.position || '').toUpperCase();
         const isBest = best != null && v === best && present.length > 1;
         // Rank only for page-season columns (positional, matching the leaderboard).
         const rk = (perPlayer[i].mode === 'page' && stats) ? stats.ranks[String(p.player_id)] : null;
-        // Bar: role score uses 0–100; efficiency uses rank; volume scales to the
-        // position leader (so half the leader's volume ≈ half a bar).
-        const w = Math.round(_amBarFill(key, v, pos, perPlayer[i].mode, rk, stats, barMax));
+        // Bar scales to the best pinned value in the row (best = full bar).
+        let w;
+        if (isBest) w = 100;
+        else if (lower) w = (v !== 0 && best !== 0) ? (best / v) * 100 : 0;
+        else w = best ? (v / best) * 100 : 0;
+        if (!isFinite(w)) w = 0;
+        w = Math.max(3, Math.min(100, Math.round(w)));
+        // Gap to the leader, e.g. "&minus;2.3".
+        let gap = '';
+        if (!isBest && best != null) {
+          gap = fmtVal(v - best, key).replace('%', '')
+            .replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
+          if (gap.charAt(0) === '-') gap = '&minus;' + gap.slice(1);
+        }
+        const metaLine = (rk ? '#' + rk : '') + (gap ? (rk ? ' &middot; ' : '') + gap : '');
         html += '<td><span class="am-cmp-val' + (isBest ? ' am-cmp-best' : '') + '">' + fmtVal(v, key) + '</span>'
           + (rk ? '<span class="am-cmp-rank">#' + rk + '</span>' : '')
-          + '<div class="am-cmp-bar"><div style="width:' + w + '%;background:' + posColor(p.position) + '"></div></div></td>';
+          + '<div class="am-cmp-bar"><div class="' + (isBest ? 'am-cmp-best' : '') + '" style="width:' + w + '%"></div></div>'
+          + '<div class="am-cmp-gap">' + gap + '</div>'
+          + (metaLine ? '<div class="am-cmp-meta">' + metaLine + '</div>' : '')
+          + '</td>';
       });
       if (_cmpBasePos) {
         const av = (stats && stats.avgs) ? stats.avgs[_cmpBasePos] : null;
@@ -3161,8 +3198,8 @@ _AM_JS = r"""
     html += '</tbody></table>';
     html += '<div style="font-size:11px;color:var(--text-muted);margin-top:10px;">'
       + (anyRange
-          ? 'Week ranges are aggregated from weekly usage data (matching the week-range leaderboard); season-level metrics like PFF grades and role score show “–” for a range, and ranks apply only to full page-season columns.'
-          : 'Pick a season or week range per player to compare across splits. Showing the primary metric plus any added metrics. Ranks and bars are within position, using the current page filters, matching the leaderboard.')
+          ? 'Week ranges are aggregated from weekly usage data (matching the week-range leaderboard); season-level metrics like PFF grades and role score show “–” for a range. Ranks apply only to full page-season columns.'
+          : 'Each player can use a different week range. Tap a range pill to change it. Ranks and bars are within position, using the current page filters, matching the leaderboard.')
       + '</div>';
     body.innerHTML = html;
     body.dataset.cmpReady = '1';
