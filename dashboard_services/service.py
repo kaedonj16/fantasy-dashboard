@@ -811,6 +811,83 @@ def _activity_sweep_weeks(season) -> list[int]:
     return full
 
 
+# Serious injury designations worth showing in the activity feed.
+# Mirrors utils.lineup_issues.SERIOUS_INJURY_STATUSES (kept local to avoid
+# a heavy import in this module).
+_INJURY_FEED_STATUSES = {"OUT", "DOUBTFUL", "IR", "PUP", "SUS", "SUSP", "NA", "NFI"}
+
+
+def _append_injury_rows(rows: list, injury_df, roster_name: dict, season) -> None:
+    """Append 'injury' rows to the activity list from a build_injury_report
+    DataFrame. Only players with serious designations are included. Each row
+    is dated by the report's Last Updated timestamp and assigned to the
+    current NFL week (the report is a live snapshot)."""
+    try:
+        records = injury_df.to_dict("records")
+    except Exception:
+        return
+    if not records:
+        return
+
+    # Current NFL week for week assignment (snapshot reads as this week's news)
+    try:
+        state = get_nfl_state() or {}
+        cur_week = int(state.get("week") or 0)
+        cur_season = int(state.get("season") or 0)
+    except Exception:
+        cur_week, cur_season = 0, 0
+    try:
+        season_int = int(season)
+    except Exception:
+        season_int = 0
+    if not cur_week or (cur_season and season_int and cur_season != season_int):
+        return
+
+    for rec in records:
+        if not isinstance(rec, dict):
+            continue
+        rid = str(rec.get("RosterID") or "")
+        if not rid:
+            continue  # free agents are not league news here
+        status = str(rec.get("Injury") or rec.get("Status") or "").strip().upper()
+        if status not in _INJURY_FEED_STATUSES:
+            continue
+
+        # Timestamp from Last Updated (may be datetime or NaT)
+        ts = rec.get("Last Updated")
+        try:
+            ts_dt = pd.to_datetime(ts, utc=True)
+            if pd.isna(ts_dt):
+                continue
+            ts_dt = ts_dt.to_pydatetime()
+        except Exception:
+            continue
+
+        def _clean(v) -> str:
+            s = str(v or "").strip()
+            return "" if s.lower() == "nan" else s
+
+        pid = str(rec.get("PlayerID") or "")
+        rows.append(
+            {
+                "kind": "injury",
+                "week": cur_week,
+                "ts": ts_dt,
+                "data": {
+                    "player": {
+                        "name": _clean(rec.get("Player")) or "Unknown player",
+                        "pos": _clean(rec.get("Pos")),
+                        "team": _clean(rec.get("NFL")),
+                        "pid": pid,
+                    },
+                    "status": status,
+                    "body": _clean(rec.get("Body")),
+                    "team_name": roster_name.get(rid, f"Roster {rid}"),
+                },
+            }
+        )
+
+
 def build_week_activity(
         league_id: str,
         platform,
@@ -818,14 +895,21 @@ def build_week_activity(
         players_map: Optional[Dict[str, Dict[str, str]]] = None,
         users: Optional[list[dict]] = None,
         rosters: Optional[list[dict]] = None,
+        injury_df=None,
 ) -> pd.DataFrame:
     """
     Builds a season-long activity table with:
-        kind: 'trade' | 'waiver'
+        kind: 'trade' | 'waiver' | 'injury'
         week: int
         ts: datetime (UTC)
         data: structured payload for HTML
     Optimized to minimize repeated lookups and work.
+
+    injury_df (optional): DataFrame from build_injury_report. When provided,
+    players with serious injury designations (Out/Doubtful/IR/etc.) are added
+    as 'injury' rows dated by their Last Updated timestamp, assigned to the
+    current NFL week (the report is a live snapshot, so injuries only read
+    as news for the current week).
     """
 
     # Sweep only weeks that can contain transactions (see _activity_sweep_weeks).
@@ -982,6 +1066,16 @@ def build_week_activity(
                         },
                     }
                 )
+
+    # ---------- INJURIES ----------
+    # Append serious injury designations from the live injury report.
+    # The report is a current snapshot, so injuries are assigned to the
+    # current NFL week and only read as news there.
+    if injury_df is not None:
+        try:
+            _append_injury_rows(rows, injury_df, roster_name, season)
+        except Exception as e:
+            logger.warning("[build_week_activity] injury rows failed: %s", e)
 
     if not rows:
         return pd.DataFrame(columns=["kind", "week", "ts", "data"])

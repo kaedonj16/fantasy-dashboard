@@ -293,6 +293,7 @@ _RECAP_ACTIVITY_CSS = """<style>
                  padding:3px 7px; border-radius:999px; }
   .rc-act-kind--trade { color:var(--accent); background:color-mix(in srgb, var(--accent) 14%, transparent); }
   .rc-act-kind--waiver { color:var(--win); background:color-mix(in srgb, var(--win) 14%, transparent); }
+  .rc-act-kind--injury { color:var(--loss); background:color-mix(in srgb, var(--loss) 14%, transparent); }
   .rc-act-ts { font-size:11px; color:var(--muted); font-weight:600; }
   .rc-act-sides { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:6px 16px; }
   .rc-act-team { font-size:13px; font-weight:700; }
@@ -1289,6 +1290,21 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
                         f'<div class="rc-act-line"><span class="rc-act-team-inline">'
                         f'{html.escape(str(data.get("name") or ""))}</span> added '
                         f'{", ".join(adds)}</div></div>')
+            elif row["kind"] == "injury":
+                pl = data.get("player") or {}
+                pname = str(pl.get("name") or "Unknown player")
+                pmeta = " ".join(x for x in (pl.get("pos"), pl.get("team")) if x)
+                pmeta_html = f' <span class="rc-act-meta">{html.escape(pmeta)}</span>' if pmeta else ""
+                status = str(data.get("status") or "").strip()
+                body = str(data.get("body") or "").strip()
+                detail = f" ({html.escape(body)})" if body else ""
+                act_items.append(
+                    f'<div class="rc-act-item"><div class="rc-act-head">'
+                    f'<span class="rc-act-kind rc-act-kind--injury">Injury</span>{ts_html}</div>'
+                    f'<div class="rc-act-line"><span class="rc-act-team-inline">'
+                    f'{html.escape(str(data.get("team_name") or ""))}</span> '
+                    f'{html.escape(pname)}{pmeta_html} listed '
+                    f'<strong>{html.escape(status)}</strong>{detail}</div></div>')
         if act_items:
             activity_html = (
                 f'<section class="recap-section recap-activity"><div class="recap-section-heading">'

@@ -106,7 +106,8 @@ def test_ensure_activity_bits_fills_once_from_ctx(monkeypatch):
     }])
     injury_frame = pd.DataFrame([{"PlayerID": "p1", "Injury": "Questionable"}])
 
-    def _activity(league_id, platform, season, players_map, users=None, rosters=None):
+    def _activity(league_id, platform, season, players_map, users=None, rosters=None,
+                  injury_df=None):
         calls.append(("activity", league_id, platform, season))
         return activity_frame
 

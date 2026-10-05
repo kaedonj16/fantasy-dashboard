@@ -8326,6 +8326,7 @@ def ensure_activity_bits(ctx: dict) -> None:
             ctx.get("players_map"),
             users=ctx.get("users"),
             rosters=ctx.get("rosters"),
+            injury_df=ctx.get("injury_df"),
         )
     except Exception as e:
         logger.warning("[ensure_activity_bits] week activity failed: %s", e)
@@ -8516,8 +8517,19 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
                 ctx["standings_map"] = {}
 
     # ---------- Activity / injuries ----------
+    _injury_df = None
     if full or page in ("activity", "dashboard"):
         clear_activity_cache_for_league(resolved_league_id)
+
+        # Build injury report first so activity can include injury rows
+        _injury_df = build_injury_report(
+            resolved_league_id,
+            players,
+            roster_map,
+            rosters,
+            "America/New_York",
+            False,
+        )
 
         try:
             ctx["activity_df"] = build_week_activity(
@@ -8527,6 +8539,7 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
                 players_map,
                 users=ctx.get("users"),
                 rosters=ctx.get("rosters"),
+                injury_df=_injury_df,
             )
         except Exception as e:
             logger.warning("[refresh_league_ctx_section] week activity failed: %s", e)
@@ -8550,7 +8563,7 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
 
         ctx["statuses"] = statuses
 
-        ctx["injury_df"] = build_injury_report(
+        ctx["injury_df"] = _injury_df if _injury_df is not None else build_injury_report(
             resolved_league_id,
             players,
             roster_map,
