@@ -7565,7 +7565,7 @@ window.initTradePage = function initTradePage(root = document) {
       const res = await fetch("/api/trade-eval/playoff-impact", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ league_id: leagueId, platform, season, roster_id: rosterId, give_ids: giveIds, get_ids: getIds }),
+        body: JSON.stringify({ league_id: leagueId, platform, season, roster_id: rosterId, give_ids: giveIds, get_ids: getIds, opponent_roster_id: (typeof rosterFilter !== "undefined" && rosterFilter.sideBRid) || null }),
         ...(signal ? { signal } : {}),
       });
       // A newer recompute started while this fetch was in flight - discard.
@@ -7734,6 +7734,17 @@ window.initTradePage = function initTradePage(root = document) {
           ${pickStat}${ageStat}${primeStat}
         </div>` : "";
 
+      // Partner playoff impact, when the opponent roster was bound (their
+      // deltas mirror the viewer's: the trade is zero-sum between the teams).
+      const _pp = data.partner;
+      const partnerGrid = (_pp && _pp.before && _pp.after && _pp.delta && _pp.before.playoff_pct != null) ? `
+        <div class="pi-section-label">Their Team</div>
+        <div class="pi-grid">
+          ${stat("Playoff Odds", _pp.before.playoff_pct,    _pp.after.playoff_pct,    _pp.delta.playoff_pct,    "%")}
+          ${stat("Proj. Wins",    _pp.before.avg_final_wins, _pp.after.avg_final_wins, _pp.delta.avg_final_wins, "")}
+          ${stat("Proj. PPG",     _pp.before.avg_ppg,        _pp.after.avg_ppg,        _pp.delta.avg_ppg,        "")}
+        </div>` : "";
+
       body.innerHTML = `
         ${verdict}
         <div class="pi-grid">
@@ -7741,6 +7752,7 @@ window.initTradePage = function initTradePage(root = document) {
           ${stat("Proj. Wins",    data.before.avg_final_wins, data.after.avg_final_wins, data.delta.avg_final_wins, "")}
           ${stat("Proj. PPG",     data.before.avg_ppg,        data.after.avg_ppg,        data.delta.avg_ppg,        "")}
         </div>
+        ${partnerGrid}
         ${outlookGrid}
         ${missingWarn}`;
     } catch (e) {
@@ -8030,10 +8042,11 @@ window.initTradePage = function initTradePage(root = document) {
     let _topChipsCollapsed = false;  // strip hides once a player is picked
     let suggCurrentPlayerId = null;
     let _fetchAbortCtrl = null;  // cancels in-flight fetchPackages requests
-    let _untouchableIds   = new Set(JSON.parse(localStorage.getItem('ti-untouchable') || '[]'));
+    let _untouchableIds   = new Set(JSON.parse(localStorage.getItem('br_untouchable_players') || localStorage.getItem('ti-untouchable') || '[]'));
     let _untouchableInfo  = JSON.parse(localStorage.getItem('ti-untouchable-info') || '{}');
     function _saveUntouchable() {
-      localStorage.setItem('ti-untouchable',      JSON.stringify([..._untouchableIds]));
+      localStorage.setItem('br_untouchable_players', JSON.stringify([..._untouchableIds]));
+      localStorage.removeItem('ti-untouchable'); // migrated to br_untouchable_players
       localStorage.setItem('ti-untouchable-info', JSON.stringify(_untouchableInfo));
     }
     function _renderUntouchableBar() {
@@ -8380,6 +8393,18 @@ window.initTradePage = function initTradePage(root = document) {
     const resultsList    = root.querySelector("#suggResultsList");
     if (!playerInput) return;
 
+    // Untouchable lock toggles (build-around and find-returns cards share this
+    // list). Bound once here: per-render binding would stack and toggle twice
+    // (net no-op) after pagination.
+    if (resultsList && !resultsList._lockBtnBound) {
+      resultsList.addEventListener("click", e => {
+        const btn = e.target.closest(".otc-rt-lock-btn");
+        if (!btn) return;
+        window._toggleUntouchable(btn.dataset.pid, btn.dataset.name, btn.dataset.pos);
+      });
+      resultsList._lockBtnBound = true;
+    }
+
     // ── Clear (X) button: visible only when the input has text ──
     function _updateClearBtn() {
       if (!playerClear) return;
@@ -8511,9 +8536,15 @@ window.initTradePage = function initTradePage(root = document) {
     // ── Fetch packages from API ──────────────────────────────────
     // Exposed so inline lock-icon handlers can trigger a re-fetch after toggling untouchable
     window._refetchTradeIntel = () => {
-      if (suggCurrentPlayerId) runSearchForCurrent(suggCurrentPlayerId, _pkgPlayerName);
+      if (!suggCurrentPlayerId) return;
+      // Route back to whichever search mode produced the current results so an
+      // untouchable toggle in find-returns re-fetches send packages.
+      if (_searchMode === "send") fetchSendPackages(suggCurrentPlayerId, _sendPlayerName);
+      else runSearchForCurrent(suggCurrentPlayerId, _pkgPlayerName);
     };
     window._toggleUntouchable = (pid, name, pos) => {
+      pid = String(pid || "");
+      if (!pid) return;
       if (_untouchableIds.has(pid)) {
         _untouchableIds.delete(pid);
         delete _untouchableInfo[pid];
@@ -8526,6 +8557,20 @@ window.initTradePage = function initTradePage(root = document) {
       _renderTopChips(_lastTopChips);
       window._refetchTradeIntel();
     };
+    // Shared untouchable lock button for suggestion card player rows.
+    // Filled lock + higher opacity = untouchable. Clicks are handled by the
+    // delegated .otc-rt-lock-btn listener on the results list.
+    function _lockBtnHtml(pid, name, pos, escFn) {
+      pid = String(pid || "");
+      if (!pid) return "";
+      const locked = _untouchableIds.has(pid);
+      const title = locked ? `Allow ${escFn(name)} in suggestions` : `Exclude ${escFn(name)} from suggestions`;
+      return `<button class="otc-rt-lock-btn" data-pid="${escFn(pid)}" data-name="${escFn(name)}" data-pos="${escFn(pos || "")}" title="${title}"
+        style="border:none;background:none;cursor:pointer;padding:0 0 0 5px;line-height:1;display:inline-flex;align-items:center;opacity:${locked?0.75:0.2};transition:opacity .15s;"
+        onmouseenter="this.style.opacity=1" onmouseleave="this.style.opacity='${locked?0.75:0.2}'">
+        <span class="fa-solid ${locked?'fa-lock':'fa-lock-open'}" style="width:11px;height:11px;"></span>
+      </button>`;
+    }
     localStorage.removeItem('ti-untouchable-names'); // migrated to ti-untouchable-info
     _renderUntouchableBar();
 
@@ -8641,7 +8686,9 @@ window.initTradePage = function initTradePage(root = document) {
 
     // Retry the last package search (used by the error state retry button)
     window._retryLastPackageSearch = () => {
-      if (suggCurrentPlayerId) runSearchForCurrent(suggCurrentPlayerId, _pkgPlayerName || playerInput.value);
+      if (!suggCurrentPlayerId) return;
+      if (_searchMode === "send") fetchSendPackages(suggCurrentPlayerId, _sendPlayerName || playerInput.value);
+      else runSearchForCurrent(suggCurrentPlayerId, _pkgPlayerName || playerInput.value);
     };
 
     // ── Send-away packages: what you can GET by trading a player AWAY ──────────
@@ -8655,6 +8702,7 @@ window.initTradePage = function initTradePage(root = document) {
       _fetchAbortCtrl = new AbortController();
       const signal = _fetchAbortCtrl.signal;
       suggCurrentPlayerId = playerId;
+      _sendPlayerName = playerName;
 
       resultsMeta.style.display = "none";
       resultsList.innerHTML = `<div class="otc-sugg-loading">${[1,2,3,4].map((_, i) => `
@@ -8692,7 +8740,8 @@ window.initTradePage = function initTradePage(root = document) {
         const res = await fetch(
           `/api/trade-intel/player-send-packages/${encodeURIComponent(playerId)}` +
           `?season=${season}&league_type=${leagueType}&league_id=${encodeURIComponent(leagueId)}` +
-          `&platform=${encodeURIComponent(platform)}&viewer_roster_id=${encodeURIComponent(viewerRosterId)}`,
+          `&platform=${encodeURIComponent(platform)}&viewer_roster_id=${encodeURIComponent(viewerRosterId)}` +
+          `&untouchable_ids=${encodeURIComponent([..._untouchableIds].join(','))}`,
           { signal: combinedSignal }
         );
         if (signal.aborted || suggCurrentPlayerId !== playerId) return;
@@ -8719,27 +8768,43 @@ window.initTradePage = function initTradePage(root = document) {
         const focusCol = posColor(focusPos);
         const vc       = cls => cls === "great" ? "great" : cls === "light" ? "overpay" : "fair";
 
+        // Untouchable lock toggle for player rows (shared renderer; clicks handled
+        // by the delegated .otc-rt-lock-btn listener on the results list).
+        const lockBtnFor = (pid, name, pos) => _lockBtnHtml(pid, name, pos, esc);
+
         const assetHtml = a => {
           if (a.is_pick) {
             return `<div class="otc-sugg-pkg-asset"><span class="otc-sugg-pkg-asset-pos" style="background:rgba(99,102,241,.12);color:#6366f1;">PICK</span>${esc(a.name)}</div>`;
           }
           const col = posColor(a.position);
-          return `<div class="otc-sugg-pkg-asset"><span class="otc-sugg-pkg-asset-pos" style="background:${col}20;color:${col};">${a.position}</span><span>${esc(a.name)}</span></div>`;
+          return `<div class="otc-sugg-pkg-asset"><span class="otc-sugg-pkg-asset-pos" style="background:${col}20;color:${col};">${a.position}</span><span>${esc(a.name)}</span>${lockBtnFor(a.player_id, a.name, a.position)}</div>`;
         };
 
-        const cardHtml = opt => `
+        const cardHtml = opt => {
+          // Acceptance probability pill, mirroring the acquire-side cards
+          const _ap = opt.acceptance_prob ?? null;
+          const _ac = _ap >= 70 ? '#10b981' : _ap >= 50 ? '#6366f1' : '#f59e0b';
+          const _acceptHtml = _ap != null
+            ? `<span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:${_ac}15;border:1px solid ${_ac}30;color:${_ac};white-space:nowrap;">
+                 <span style="width:5px;height:5px;border-radius:50%;background:${_ac};flex-shrink:0;"></span>
+                 ${_ap}% accept
+               </span>`
+            : '';
+          const _focusLocked = focusPos !== "PICK" && _untouchableIds.has(String(playerId));
+          return `
           <div class="otc-sugg-package">
             <div class="otc-sugg-pkg-meta">
               <span class="otc-sugg-pkg-value ${vc(opt.value_class)}">${esc(opt.value_label)}</span>
               <span class="otc-sugg-pkg-freq">from ${esc(opt.team_name)}</span>
+              ${_acceptHtml}
             </div>
             <div class="otc-sugg-pkg-sides">
               <div class="otc-sugg-pkg-side">
                 <div class="otc-sugg-pkg-side-label">YOU GIVE</div>
                 <div class="otc-sugg-pkg-assets">
-                  <div class="otc-sugg-pkg-asset">
+                  <div class="otc-sugg-pkg-asset" style="${_focusLocked ? "opacity:.55;" : ""}">
                     <span class="otc-sugg-pkg-asset-pos" style="background:${focusCol}20;color:${focusCol};">${focusPos}</span>
-                    <span>${esc(playerName)}</span>
+                    <span>${esc(playerName)}</span>${focusPos !== "PICK" ? lockBtnFor(playerId, playerName, focusPos) : ""}
                   </div>
                 </div>
               </div>
@@ -8751,11 +8816,13 @@ window.initTradePage = function initTradePage(root = document) {
             <button class="otc-sugg-send-load-btn otc-sugg-pkg-load-btn"
               data-focus-id="${String(playerId).replace(/"/g, "")}"
               data-focus-name="${esc(playerName)}"
+              data-team-roster-id="${esc(String(opt.team_roster_id || ""))}"
               data-receive='${esc(JSON.stringify(opt.receive)).replace(/'/g, "&#39;")}'>
               Analyze
             </button>
             ${window.brHubSaveBtn({ get: opt.receive || [], give: [{ id: playerId, name: playerName, position: focusPos }], why_line: "", label: playerName + " trade" })}
           </div>`;
+        };
 
         const bindSendLoadBtns = () => {
           resultsList.querySelectorAll(".otc-sugg-send-load-btn").forEach(btn => {
@@ -8804,6 +8871,18 @@ window.initTradePage = function initTradePage(root = document) {
                 syncEmptyState("A");
                 syncEmptyState("B");
                 forceViewerSideA();
+                // Bind Side B to the return package's source team so partner-aware
+                // AI analysis, partner depth warnings, and partner playoff sims fire.
+                const teamRid = btn.dataset.teamRosterId || "";
+                if (rosterFilter.loaded && teamRid && teamRid !== rosterFilter.viewerRid) {
+                  rosterFilter.sideBRid = teamRid;
+                  rosterFilter.sideBAuto = false; // explicit, not auto-bound
+                  const sideBSel = root.querySelector("#sideBTeamSelect");
+                  if (sideBSel) {
+                    sideBSel.value = teamRid;
+                    sideBSel.dispatchEvent(new Event('change', { bubbles: true })); // syncs CSD display
+                  }
+                }
                 analyzeTrade();
                 switchToCalc();
                 const shell = root.querySelector(".otc-shell");
@@ -8830,7 +8909,12 @@ window.initTradePage = function initTradePage(root = document) {
               <span class="pagination-label">${sendPage + 1} / ${totalSendPages}</span>
               <button class="pagination-btn" data-send-dir="1" ${sendPage >= totalSendPages - 1 ? "disabled" : ""}>Next <i class="fa-solid fa-chevron-right"></i></button>
             </div>` : "";
-          resultsList.innerHTML = slice.map(cardHtml).join("") + pagination;
+          const focusWarn = data.focus_is_untouchable ? `
+            <div class="otc-sugg-focus-warn">
+              <i class="fa-solid fa-lock" aria-hidden="true"></i>
+              <span>Heads up: you marked ${esc(playerName)} as untouchable.</span>
+            </div>` : "";
+          resultsList.innerHTML = focusWarn + slice.map(cardHtml).join("") + pagination;
           bindSendLoadBtns();
           resultsList.querySelectorAll("[data-send-dir]").forEach(b => {
             b.addEventListener("click", () => {
@@ -8861,6 +8945,7 @@ window.initTradePage = function initTradePage(root = document) {
     let _pkgAll  = [];
     let _pkgPlayerId       = null;
     let _pkgPlayerName     = null;
+    let _sendPlayerName    = null;  // last find-returns focus name, for untouchable re-fetch
     let _pkgRealPkgs       = [];
     let _pkgRealTotal      = 0;
     let _pkgComboPkgs      = [];
@@ -8930,7 +9015,7 @@ window.initTradePage = function initTradePage(root = document) {
           : '';
         return `<div class="otc-sugg-pkg-asset" style="flex-wrap:wrap;gap:4px;">
           <span class="otc-sugg-pkg-asset-pos" style="background:${col}20;color:${col};">${esc(a.position)}</span>
-          <span>${esc(a.name)}</span>${profBadge}
+          <span>${esc(a.name)}</span>${profBadge}${_lockBtnHtml(a.player_id || a.id, a.name, a.position, esc)}
         </div>`;
       }
 
@@ -8960,7 +9045,7 @@ window.initTradePage = function initTradePage(root = document) {
         const extraAssetHtml = extra
           ? `<div class="otc-sugg-pkg-asset" style="flex-wrap:wrap;gap:4px;">
                <span class="otc-sugg-pkg-asset-pos" style="background:${extraCol}20;color:${extraCol};">${esc(extra.position)}</span>
-               <span>${esc(extra.name)}</span>${extraBadge}
+               <span>${esc(extra.name)}</span>${extraBadge}${_lockBtnHtml(extra.player_id || extra.id, extra.name, extra.position, esc)}
              </div>`
           : '';
 
@@ -9196,15 +9281,7 @@ window.initTradePage = function initTradePage(root = document) {
                 </div>`;
               }
               const pid = a.player_id || a.id || '';
-              const locked = pid && _untouchableIds.has(pid);
-              const lockTitle = locked ? `Allow ${esc(a.name)} in suggestions` : `Exclude ${esc(a.name)} from suggestions`;
-              const lockBtn = pid
-                ? `<button class="otc-rt-lock-btn" data-pid="${esc(pid)}" data-name="${esc(a.name)}" data-pos="${esc(a.position)}" title="${lockTitle}"
-                     style="border:none;background:none;cursor:pointer;padding:0 0 0 5px;line-height:1;display:inline-flex;align-items:center;opacity:${locked?0.75:0.2};transition:opacity .15s;"
-                     onmouseenter="this.style.opacity=1" onmouseleave="this.style.opacity='${locked?0.75:0.2}'">
-                     <span class="fa-solid ${locked?'fa-lock':'fa-lock-open'}" style="width:11px;height:11px;"></span>
-                   </button>`
-                : '';
+              const lockBtn = _lockBtnHtml(pid, a.name, a.position, esc);
               const col = posColor(a.position);
               return `<div class="otc-rt-asset" style="display:flex;align-items:center;">
                 ${prefix}<span class="otc-rt-pos" style="background:${col}18;color:${col};">${esc(a.position)}</span>
@@ -9268,11 +9345,8 @@ window.initTradePage = function initTradePage(root = document) {
 
       resultsList.innerHTML = cardsHtml + paginationHtml + realTradeHtml;
 
-      resultsList.addEventListener("click", e => {
-        const btn = e.target.closest(".otc-rt-lock-btn");
-        if (!btn) return;
-        window._toggleUntouchable(btn.dataset.pid, btn.dataset.name, btn.dataset.pos);
-      });
+      // Lock toggles are handled by the single delegated listener bound near
+      // the resultsList definition (bind-once, so pagination can't stack it).
 
       resultsList.querySelectorAll(".pagination-btn").forEach(btn => {
         btn.addEventListener("click", () => {
@@ -10639,20 +10713,38 @@ window.initTradePage = function initTradePage(root = document) {
         }
       }
 
-      // Roster depth warnings for the viewer's post-trade roster
+      // Roster depth warnings for the viewer's post-trade roster, the partner's
+      // depth warnings when an opponent is bound, and bye-week warnings.
       const scarcityEl = document.getElementById('tradeScarcityNotes');
       if (scarcityEl) {
-        const warnings = data.depth_warnings || {};
-        const entries = Object.entries(warnings).filter(([, w]) => w.warning);
+        const depthRow = ([pos, w]) => {
+          const cls = w.severity === 'danger' ? 'depth-danger' : 'depth-caution';
+          const icon = w.severity === 'danger' ? '<i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>' : '<i class="fa-solid fa-bolt" aria-hidden="true"></i>';
+          return `<div class="scarcity-note-row ${cls}"><span class="scarcity-pos pos-${pos.toLowerCase()}">${pos}</span><span class="scarcity-tier">${icon} ${w.warning}</span></div>`;
+        };
+        const entries = Object.entries(data.depth_warnings || {}).filter(([, w]) => w.warning);
+        const partnerEntries = Object.entries(data.partner_depth_warnings || {}).filter(([, w]) => w.warning);
+        const byeWarnings = data.bye_warnings || [];
+        let scarcityHtml = '';
         if (entries.length > 0) {
-          let html = '<div class="scarcity-notes-wrap"><div class="scarcity-notes-title">Roster Depth</div><div class="scarcity-notes-list">';
-          entries.forEach(([pos, w]) => {
-            const cls = w.severity === 'danger' ? 'depth-danger' : 'depth-caution';
-            const icon = w.severity === 'danger' ? '<i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>' : '<i class="fa-solid fa-bolt" aria-hidden="true"></i>';
-            html += `<div class="scarcity-note-row ${cls}"><span class="scarcity-pos pos-${pos.toLowerCase()}">${pos}</span><span class="scarcity-tier">${icon} ${w.warning}</span></div>`;
+          scarcityHtml += '<div class="scarcity-notes-wrap"><div class="scarcity-notes-title">Roster Depth</div><div class="scarcity-notes-list">';
+          entries.forEach(e => { scarcityHtml += depthRow(e); });
+          scarcityHtml += '</div></div>';
+        }
+        if (partnerEntries.length > 0) {
+          scarcityHtml += '<div class="scarcity-notes-wrap"><div class="scarcity-notes-title">Their Team: Roster Depth</div><div class="scarcity-notes-list">';
+          partnerEntries.forEach(e => { scarcityHtml += depthRow(e); });
+          scarcityHtml += '</div></div>';
+        }
+        if (byeWarnings.length > 0) {
+          scarcityHtml += '<div class="scarcity-notes-wrap"><div class="scarcity-notes-title">Bye Weeks</div><div class="scarcity-notes-list">';
+          byeWarnings.forEach(bw => {
+            scarcityHtml += `<div class="scarcity-note-row depth-caution"><span class="scarcity-pos"><i class="fa-solid fa-calendar-days" aria-hidden="true"></i></span><span class="scarcity-tier">${bw.message}</span></div>`;
           });
-          html += '</div></div>';
-          scarcityEl.innerHTML = html;
+          scarcityHtml += '</div></div>';
+        }
+        if (scarcityHtml) {
+          scarcityEl.innerHTML = scarcityHtml;
           scarcityEl.style.display = 'block';
         } else {
           scarcityEl.style.display = 'none';
