@@ -2798,7 +2798,6 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     # Rec yards is derived (yards/reception x receptions) so it needs no stored column.
     "rec_yards_per_game":   {"label": "Rec Yds/G",           "category": "Receiving", "positions": ["WR", "RB", "TE"], "min_vol": _V_GAMES, "desc": "Receiving yards per game.", "computed_sql": "m.yards_per_reception * m.total_receptions / NULLIF(m.games, 0)", "computed_null": "m.yards_per_reception IS NOT NULL AND m.total_receptions IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
     "total_routes":         {"label": "Routes",              "category": "Receiving", "positions": ["WR", "TE", "RB"], "integer": True, "desc": "Estimated total routes run (= season receiving yards ÷ yprr). Requires both yprr and receptions data."},
-    "routes_per_game":      {"label": "Routes/G",            "category": "Receiving", "positions": ["WR", "TE", "RB"], "min_vol": _V_GAMES, "desc": "Routes run per game.", "computed_sql": "m.total_routes::float / NULLIF(v.vol, 0)", "computed_null": "m.total_routes IS NOT NULL"},
     "target_share":         {"label": "Target Share",        "category": "Receiving", "positions": ["WR", "TE", "RB"], "pct": True, "min_vol": _V_GAMES, "desc": "Percent of the team's total targets directed at this player."},
     "route_participation":  {"label": "Route Partic %",      "category": "Receiving", "positions": ["WR", "TE"], "pct": True, "pct_frac": True, "min_vol": _V_GAMES, "desc": "Percent of the team's pass-play snaps on which the WR/TE ran a route. High route participation means the player is a consistent full-time route runner."},
     "air_yards_per_game":   {"label": "Air Yards / Game",    "category": "Receiving", "positions": ["WR", "TE"], "min_vol": _V_GAMES, "desc": "Receiving air yards (distance thrown in the air to the player) per game; a measure of downfield target volume."},
@@ -5015,7 +5014,6 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                 "pass_block_rate":    ("games", 4),
                 "route_participation": ("games", 4),
                 "total_routes":       ("games", 4),
-                "routes_per_game":    ("games", 4),
                 "avoided_tackles_per_carry": ("total_carries", 20),
                 "fpts_per_carry":     ("total_carries", 20),
                 "fpts_per_target":    ("total_targets", 15),
@@ -5107,8 +5105,6 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                     _row["fpts_per_target"] = (
                         _recs + (_ypr * _recs * 0.1) + (_rec_tds * 6.0)
                     ) / _targets
-                if _games > 0 and _row.get("total_routes") is not None:
-                    _row["routes_per_game"] = _safe(_row.get("total_routes")) / _games
                 if _carries > 0 and _row.get("avoided_tackles") is not None:
                     _row["avoided_tackles_per_carry"] = _safe(_row.get("avoided_tackles")) / _carries
                 _touches = _safe(_row.get("total_touches"))

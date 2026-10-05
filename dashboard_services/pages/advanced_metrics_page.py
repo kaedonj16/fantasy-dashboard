@@ -4675,7 +4675,6 @@ _AM_JS = r"""
       'receiving_success_rate': ['Successful catches', 'Empty catches'],
       'receptions_per_game': ['Catch volume', 'Few catches'],
       'route_participation': ['Always running routes', 'Not on routes'],
-      'routes_per_game': ['Route volume', 'No routes'],
       'rush_first_down_rate': ['Moves chains', 'No first downs'],
       'rush_td_rate': ['TD runner', 'No rush TDs'],
       'rush_tds_per_game': ['Ground scores', 'No ground TDs'],
@@ -5545,7 +5544,7 @@ _AM_JS = r"""
         // Combined
         'touches_per_game',
         // Routes / usage rates
-        'total_routes', 'routes_per_game', 'route_participation',
+        'total_routes', 'route_participation',
         'snap_share', 'target_share', 'air_yards_share',
         // Red zone
         'rz_target_share', 'rz_opp_share',
