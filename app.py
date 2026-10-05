@@ -13876,20 +13876,32 @@ _WEEKLY_PTS_CACHE: dict = {}
 _WEEKLY_PTS_TTL = 900  # 15 min; weekly stat files change at most once a week
 
 
-def _load_season_weekly_points(season: int, scoring_settings: dict) -> dict:
+def _load_season_weekly_points(season: int, scoring_settings: dict,
+                              weeks: "tuple | list | None" = None) -> dict:
     """{player_id: [weekly fantasy points]} for a season's played games.
 
     Reads the cached Sleeper weekly stat files and scores each with the league's
     settings. Only weeks a player has a stat line count as games played (byes /
     inactives are absent). Cached by (season, scoring signature). Never raises.
+
+    ``weeks`` optionally overrides which week files are read. When omitted, the
+    league-wide completed weeks from qualification_policy are used (the whole
+    NFL slate must be final). Pass a player's per-player completed weeks (see
+    utils.season_qualification.player_completed_weeks) so a finished Sunday
+    game counts for that player even before the rest of the slate (e.g.
+    tonight's MNF) is final. Start/sit and the rank caches intentionally keep
+    the league-wide default.
     """
     import hashlib
     sig = hashlib.md5(
         json.dumps(scoring_settings or {}, sort_keys=True, default=str).encode()
     ).hexdigest()[:10]
     from utils.season_qualification import qualification_policy
-    completed_weeks = tuple(qualification_policy(int(season)).completed_weeks)
-    key = (int(season), sig, completed_weeks)
+    if weeks is None:
+        effective_weeks = tuple(qualification_policy(int(season)).completed_weeks)
+    else:
+        effective_weeks = tuple(int(w) for w in weeks)
+    key = (int(season), sig, effective_weeks)
     hit = _WEEKLY_PTS_CACHE.get(key)
     # The live season's week files are runtime-fetched and Render wipes
     # cache/ on every deploy: backfill completed weeks on demand so PPG
@@ -13913,7 +13925,7 @@ def _load_season_weekly_points(season: int, scoring_settings: dict) -> dict:
         # Absolute cache path: a relative "cache" glob silently yields nothing
         # when the server's working directory isn't the repo root.
         for wf in sorted(files, key=_sleeper_stats_week_num):
-            if _sleeper_stats_week_num(wf) not in completed_weeks:
+            if _sleeper_stats_week_num(wf) not in effective_weeks:
                 continue
             try:
                 with open(wf) as f:
@@ -26197,9 +26209,20 @@ def api_player_details(player_id: str):
         _total_pts = _total_pts_rank = _total_pts_ovr_rank = None
         _scoring_data_status = "missing"
         try:
-            from utils.season_qualification import qualification_policy
+            from utils.season_qualification import (
+                qualification_policy, player_completed_weeks,
+            )
             _score_policy = qualification_policy(season)
-            _weekly_points = _load_season_weekly_points(season, scoring_settings)
+            # Per-player completed weeks: a finished Sunday game counts for
+            # the hero's games/PPG even when the rest of the NFL slate (e.g.
+            # tonight's MNF) isn't final yet. Falls back to the league-wide
+            # weeks when per-player team data is unavailable.
+            try:
+                _hero_weeks = tuple(player_completed_weeks(str(player_id), season))
+            except Exception:
+                _hero_weeks = ()
+            _weekly_points = _load_season_weekly_points(
+                season, scoring_settings, weeks=_hero_weeks or None)
             _completed = tuple(_score_policy.completed_weeks)
             if not _completed:
                 _scoring_data_status = "no_completed_rounds"
