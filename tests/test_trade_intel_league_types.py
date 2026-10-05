@@ -167,11 +167,13 @@ def test_trade_summary_keeps_legacy_count_and_exposes_total():
 
 
 @pytest.mark.parametrize("crawl_mode", ["new", "existing", "both"])
-def test_crawler_selects_redraft_and_dynasty_but_not_keeper(crawl_mode):
+def test_crawler_selects_redraft_keeper_and_dynasty(crawl_mode):
+    """Keeper leagues are crawled as their own bucket (still excluded from
+    value calibration downstream; see test_keeper_cannot_be_calibrated_as_redraft)."""
     leagues_to_crawl = _import_crawler()
     conn = _FakeConn()
     with patch("data_building.trade_intel.trade_crawler.get_conn", return_value=conn):
         assert leagues_to_crawl(50, crawl_mode, 7) == []
     compact = " ".join(conn.query.split())
-    assert "league_type IN (0, 2)" in compact
-    assert "league_type IN (1, 2)" not in compact
+    assert "league_type IN (0, 1, 2)" in compact
+    assert "league_type IN (0, 2)" not in compact

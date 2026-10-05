@@ -1,14 +1,15 @@
 """
 Trade crawler for Trade Intelligence Engine.
 
-For each known dynasty or true-redraft league, fetches transactions of type 'trade'
-across every week of the season and stores raw asset data in Postgres.
+For each known redraft, keeper, or dynasty league, fetches transactions of type
+'trade' across every week of the season and stores raw asset data in Postgres.
 
 Idempotent: UNIQUE constraint on transaction_id prevents duplicates.
 Tracks last_crawled_week so incremental runs only fetch new weeks.
 """
 from __future__ import annotations
 
+import json
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed, wait, FIRST_COMPLETED
@@ -118,8 +119,8 @@ def _fetch_draft_slot_map(league_id: str) -> dict[tuple, int]:
     return slot_map
 
 
-def _extract_assets(txn: dict, slot_map: dict[tuple, int] | None = None) -> list[dict]:
-    assets: list[dict] = []
+def _side_map_for_txn(txn: dict) -> dict[str, str]:
+    """Map roster_id -> 'a'/'b' for the two parties in a trade transaction."""
     adds: dict[str, Any] = txn.get("adds") or {}
     drops: dict[str, Any] = txn.get("drops") or {}
     draft_picks: list[dict] = txn.get("draft_picks") or []
@@ -132,8 +133,49 @@ def _extract_assets(txn: dict, slot_map: dict[tuple, int] | None = None) -> list
     side_map: dict[str, str] = {}
     for i, rid in enumerate(all_roster_ids[:2]):
         side_map[str(rid)] = "a" if i == 0 else "b"
+    return side_map
 
-    for player_id, receiver_roster_id in adds.items():
+
+def _trade_context_for_txn(txn: dict, roster_map: dict[str, dict]) -> dict[str, dict]:
+    """Per-side records at trade time: {"a": {...}, "b": {...}}.
+
+    Sides whose roster is missing from roster_map are omitted from the dict.
+    """
+    context: dict[str, dict] = {}
+    for roster_id, side in _side_map_for_txn(txn).items():
+        record = roster_map.get(roster_id)
+        if record:
+            context[side] = record
+    return context
+
+
+def _fetch_roster_map(league_id: str) -> dict[str, dict]:
+    """Fetch /league/{league_id}/rosters once; map roster_id -> record snapshot.
+
+    Fail-open: returns {} when the roster endpoint errors.
+    """
+    roster_map: dict[str, dict] = {}
+    rosters = _get(f"/league/{league_id}/rosters")
+    if not rosters or not isinstance(rosters, list):
+        return roster_map
+    for r in rosters:
+        settings = r.get("settings") or {}
+        roster_map[str(r.get("roster_id"))] = {
+            "wins":   int(settings.get("wins", 0) or 0),
+            "losses": int(settings.get("losses", 0) or 0),
+            "ties":   int(settings.get("ties", 0) or 0),
+            "fpts":   float(settings.get("fpts", 0) or 0),
+        }
+    return roster_map
+
+
+def _extract_assets(txn: dict, slot_map: dict[tuple, int] | None = None) -> list[dict]:
+    assets: list[dict] = []
+    draft_picks: list[dict] = txn.get("draft_picks") or []
+
+    side_map = _side_map_for_txn(txn)
+
+    for player_id, receiver_roster_id in (txn.get("adds") or {}).items():
         side = side_map.get(str(receiver_roster_id), "a")
         assets.append({
             "side": side,
@@ -236,6 +278,9 @@ def crawl_league(
 
     # Build slot map once per league so every pick gets its exact draft position
     slot_map = _fetch_draft_slot_map(league_id)
+    # One extra API call per league: roster records at crawl time, snapshotted
+    # onto each new trade as trade_context (per-side wins/losses/ties/fpts).
+    roster_map = _fetch_roster_map(league_id)
 
     # Write everything in one DB connection. Snapshot player values AFTER the
     # connection is released — trade_time_values opens its own conn and would
@@ -258,12 +303,13 @@ def crawl_league(
                 result = conn.execute(
                     """
                     INSERT INTO trade_intel_trades
-                        (league_id, transaction_id, season, week, status, created_at)
-                    VALUES (%s, %s, %s, %s, %s, %s)
+                        (league_id, transaction_id, season, week, status, created_at, trade_context)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb)
                     ON CONFLICT (transaction_id) DO NOTHING
                     RETURNING id
                     """,
-                    (league_id, txn_id, season, week, txn.get("status", "complete"), created_at)
+                    (league_id, txn_id, season, week, txn.get("status", "complete"),
+                     created_at, json.dumps(_trade_context_for_txn(txn, roster_map)))
                 ).fetchone()
 
                 if not result:
@@ -340,44 +386,53 @@ def _leagues_to_crawl(batch_size: int = 500, crawl_mode: str = "new", recrawl_da
     """Return leagues based on crawl mode."""
     with get_conn() as conn:
         if crawl_mode == "new":
-            # Uncrawled true-redraft and dynasty leagues.
+            # Uncrawled redraft, keeper, and dynasty leagues. Keeper is crawled
+            # as its own bucket; it stays excluded from value calibration
+            # downstream (see league_types.calibration_mode).
             query = """
                 SELECT league_id, season, last_crawled_week, league_type
                 FROM trade_intel_leagues
                 WHERE crawl_enabled = TRUE
                   AND last_crawled_week IS NULL
-                  AND league_type IN (0, 2)  -- true redraft and dynasty; keeper excluded
+                  AND league_type IN (0, 1, 2)
                 ORDER BY discovered_at DESC
                 LIMIT %s
             """
             params = (batch_size,)
         elif crawl_mode == "existing":
-            # Previously crawled true-redraft and dynasty leagues, but not recently.
+            # Previously crawled redraft, keeper, and dynasty leagues, not recently.
+            # Velocity prioritization: most recently active leagues first. Dead
+            # leagues (total_trades = 0, fully crawled) re-crawl at most every
+            # 14 days instead of every recrawl_days.
             query = """
                 SELECT league_id, season, last_crawled_week, league_type
                 FROM trade_intel_leagues
                 WHERE crawl_enabled = TRUE
                   AND last_crawled_week IS NOT NULL
                   AND (last_crawled_at IS NULL OR last_crawled_at < NOW() - INTERVAL '%s days')
-                  AND league_type IN (0, 2)  -- true redraft and dynasty; keeper excluded
-                ORDER BY last_crawled_at DESC NULLS LAST
+                  AND (total_trades > 0 OR last_crawled_at IS NULL OR last_crawled_at < NOW() - INTERVAL '14 days')
+                  AND league_type IN (0, 1, 2)
+                ORDER BY last_trade_at DESC NULLS LAST,
+                         last_crawled_at ASC NULLS FIRST
                 LIMIT %s
             """
             params = (recrawl_days, batch_size)
         else:  # both
-            # Mix new and existing leagues across both supported markets. The old
+            # Mix new and existing leagues across all three markets. The old
             # query selected only type 2 here, silently starving redraft collection.
+            # Velocity prioritization: most recently active leagues first.
             query = """
                 SELECT league_id, season, last_crawled_week, league_type
                 FROM trade_intel_leagues
                 WHERE crawl_enabled = TRUE
-                  AND league_type IN (0, 2)
+                  AND league_type IN (0, 1, 2)
                   AND (
                     last_crawled_week IS NULL
                     OR last_crawled_at IS NULL
                     OR last_crawled_at < NOW() - make_interval(days => %s)
                   )
-                ORDER BY (last_crawled_week IS NULL) DESC,
+                ORDER BY last_trade_at DESC NULLS LAST,
+                         (last_crawled_week IS NULL) DESC,
                          last_crawled_at ASC NULLS FIRST,
                          league_type ASC,
                          discovered_at DESC
@@ -388,8 +443,12 @@ def _leagues_to_crawl(batch_size: int = 500, crawl_mode: str = "new", recrawl_da
         return conn.execute(query, params).fetchall()
 
 
-def _mark_crawled_batch(updates: list[tuple[int, str]]) -> None:
-    """Batch-update last_crawled_at/week for multiple leagues in one query."""
+def _mark_crawled_batch(updates: list[tuple[int, str, int]]) -> None:
+    """Batch-update last_crawled_at/week plus velocity counters for multiple leagues.
+
+    Each update is (week, league_id, new_trades): total_trades accumulates,
+    last_trade_at advances only when new trades were found.
+    """
     if not updates:
         return
     with get_conn() as conn:
@@ -397,11 +456,13 @@ def _mark_crawled_batch(updates: list[tuple[int, str]]) -> None:
             """
             UPDATE trade_intel_leagues AS t
             SET last_crawled_at = NOW(),
-                last_crawled_week = v.week
-            FROM (VALUES """ + ",".join(["(%s::int, %s::text)"] * len(updates)) + """) AS v(week, league_id)
+                last_crawled_week = v.week,
+                total_trades = t.total_trades + v.new_trades,
+                last_trade_at = CASE WHEN v.new_trades > 0 THEN NOW() ELSE t.last_trade_at END
+            FROM (VALUES """ + ",".join(["(%s::int, %s::text, %s::int)"] * len(updates)) + """) AS v(week, league_id, new_trades)
             WHERE t.league_id = v.league_id
             """,
-            [val for week, lid in updates for val in (week, lid)]
+            [val for week, lid, n in updates for val in (week, lid, n)]
         )
 
 
@@ -438,9 +499,11 @@ def run_crawl(batch_size: int = 500, workers: int = 10, crawl_mode: str = "new",
     leagues = _leagues_to_crawl(batch_size, crawl_mode, recrawl_days)
     dynasty_trades = 0
     redraft_trades = 0
+    keeper_trades = 0
     dynasty_leagues = 0
     redraft_leagues = 0
-    mark_batch: list[tuple[int, str]] = []
+    keeper_leagues = 0
+    mark_batch: list[tuple[int, str, int]] = []
 
     # For existing-mode re-crawls, always start from week 1 so we pick up the
     # full season - including any weeks whose start_week would otherwise exceed
@@ -471,7 +534,7 @@ def run_crawl(batch_size: int = 500, workers: int = 10, crawl_mode: str = "new",
                 futures.pop(future, None)
                 completed_count += 1
                 league_id, n, league_type = future.result()
-                mark_batch.append((current_week, league_id))
+                mark_batch.append((current_week, league_id, n))
 
                 if n > 0:
                     if league_type == LeagueType.DYNASTY:
@@ -480,6 +543,9 @@ def run_crawl(batch_size: int = 500, workers: int = 10, crawl_mode: str = "new",
                     elif league_type == LeagueType.REDRAFT:
                         redraft_trades += n
                         redraft_leagues += 1
+                    elif league_type == LeagueType.KEEPER:
+                        keeper_trades += n
+                        keeper_leagues += 1
 
                 # Flush mark batch every 50 to avoid holding too many updates
                 if len(mark_batch) >= 50:
@@ -495,16 +561,19 @@ def run_crawl(batch_size: int = 500, workers: int = 10, crawl_mode: str = "new",
         _mark_crawled_batch(mark_batch)
 
     # Print summary by league type
-    total_trades  = dynasty_trades + redraft_trades
-    total_leagues = dynasty_leagues + redraft_leagues
+    total_trades  = dynasty_trades + redraft_trades + keeper_trades
+    total_leagues = dynasty_leagues + redraft_leagues + keeper_leagues
     print(f"[crawler] Dynasty: {dynasty_trades} trades from {dynasty_leagues} leagues")
     print(f"[crawler] Redraft: {redraft_trades} trades from {redraft_leagues} leagues")
+    print(f"[crawler] Keeper: {keeper_trades} trades from {keeper_leagues} leagues")
     print(f"[crawler] Done. {total_trades} new trades across {total_leagues} leagues.")
     return {
         "dynasty_trades":  dynasty_trades,
         "redraft_trades":  redraft_trades,
+        "keeper_trades":   keeper_trades,
         "dynasty_leagues": dynasty_leagues,
         "redraft_leagues": redraft_leagues,
+        "keeper_leagues":  keeper_leagues,
         # Aliases expected by run_trade_intel_extended.py
         "new_trades":      total_trades,
         "leagues_crawled": total_leagues,

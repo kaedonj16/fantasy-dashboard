@@ -30,6 +30,7 @@ from typing import Any
 
 from dashboard_services.db import get_conn
 from data_building.trade_intel._helpers import _decay_weight, _size_bucket
+from data_building.trade_intel.league_types import format_name
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +104,7 @@ def _load_trades(season: int) -> list[dict]:
                 """
                 SELECT t.id, t.transaction_id, t.created_at,
                        COALESCE(l.num_teams, 10) AS num_teams,
+                       l.league_type AS league_type,
                        a.side, a.asset_type, a.player_id,
                        a.pick_season, a.pick_round, a.pick_order
                 FROM trade_intel_trades t
@@ -123,6 +125,7 @@ def _load_trades(season: int) -> list[dict]:
                         "transaction_id": r["transaction_id"],
                         "created_at":     r["created_at"],
                         "num_teams":      int(r["num_teams"] or 10),
+                        "league_type":    r["league_type"],
                         "assets":         [],
                     }
                 if r["side"] is not None:
@@ -155,6 +158,7 @@ def _iter_trades(season: int):
                 """
                 SELECT t.id, t.transaction_id, t.created_at,
                        COALESCE(l.num_teams, 10) AS num_teams,
+                       l.league_type AS league_type,
                        a.side, a.asset_type, a.player_id,
                        a.pick_season, a.pick_round, a.pick_order
                 FROM trade_intel_trades t
@@ -177,6 +181,7 @@ def _iter_trades(season: int):
                         "transaction_id": r["transaction_id"],
                         "created_at":     r["created_at"],
                         "num_teams":      int(r["num_teams"] or 10),
+                        "league_type":    r["league_type"],
                         "assets":         [],
                     }
                 if r["side"] is not None:
@@ -256,6 +261,58 @@ def _side_value(assets: list[dict], side: str, values: dict[str, dict], fmt: str
 _SIZE_BUCKETS = ("8", "10", "12", "14")
 
 
+def _accumulate_player_stat(
+    s: dict[str, Any], pid: str, values: dict[str, dict],
+    recv_1qb: float, recv_sf: float, pkg_1qb: float,
+    decay: float, bucket: str, created,
+    cut_7d, cut_14d, cut_30d, cut_90d,
+) -> None:
+    """Fold one player's received-value observations into a stats accumulator.
+
+    Called once per (player, league_format) bucket, so per-format buckets
+    and the all-formats aggregate share identical accumulation logic.
+    """
+    s["trade_count"] += 1
+    s["pkg_all_1qb"].append(pkg_1qb)
+
+    # Demand premium: did the other side pay ≥ this player's model value?
+    player_model = values.get(pid, {}).get("value_1qb", 0)
+    if player_model > 0 and recv_1qb >= player_model:
+        s["above_model_count"] += 1
+    s["recv_all_1qb"].append(recv_1qb)
+    s["recv_all_sf"].append(recv_sf)
+
+    # Only include trades where the other side has known value.
+    # Trades against fringe/unvalued players (recv=0) pollute the
+    # weighted median and drag it toward zero.
+    if recv_1qb > 0:
+        s["recv_weighted_1qb"].append((recv_1qb, decay))
+        s[f"recv_weighted_1qb_{bucket}"].append((recv_1qb, decay))
+    if recv_sf > 0:
+        s["recv_weighted_sf"].append((recv_sf, decay))
+        s[f"recv_weighted_sf_{bucket}"].append((recv_sf, decay))
+
+    if created and created >= cut_7d:
+        s["trade_count_7d"] += 1
+    if created and created >= cut_14d:
+        s["trade_count_14d"] += 1
+        if recv_1qb > 0:
+            s["recv_14d_1qb"].append(recv_1qb)
+        if recv_sf > 0:
+            s["recv_14d_sf"].append(recv_sf)
+    if created and created >= cut_30d:
+        s["trade_count_30d"] += 1
+        if recv_1qb > 0:
+            s["recv_30d_1qb"].append(recv_1qb)
+        if recv_sf > 0:
+            s["recv_30d_sf"].append(recv_sf)
+    if created and created >= cut_90d:
+        if recv_1qb > 0:
+            s["recv_90d_1qb"].append(recv_1qb)
+        if recv_sf > 0:
+            s["recv_90d_sf"].append(recv_sf)
+
+
 def _compute_player_stats(make_trades, values: dict[str, dict], season: int) -> list[dict]:
     # `make_trades` is a zero-arg factory returning a fresh iterator of trade
     # dicts, so the full trade set is streamed (never materialized as a list).
@@ -295,7 +352,9 @@ def _compute_player_stats(make_trades, values: dict[str, dict], season: int) -> 
             acc[f"recv_weighted_sf_{sz}"]  = []
         return acc
 
-    stats: dict[str, AccType] = defaultdict(_empty_acc)
+    # Keyed by (player_id, league_format): one bucket per format plus
+    # the "all" aggregate bucket (preserves current behavior).
+    stats: dict[tuple[str, str], AccType] = defaultdict(_empty_acc)
 
     for trade in make_trades():
         assets  = trade["assets"]
@@ -306,6 +365,11 @@ def _compute_player_stats(make_trades, values: dict[str, dict], season: int) -> 
         days_ago = (now - created).total_seconds() / 86400 if created else 999
         decay    = _decay_weight(days_ago)
         bucket   = _size_bucket(trade.get("num_teams", 10))
+
+        # Per-format bucket + the "all" aggregate (current behavior). Unknown
+        # league types fold into "all" via format_name, so they accumulate once.
+        fmt         = format_name(trade.get("league_type"))
+        fmt_buckets = (fmt,) if fmt == "all" else (fmt, "all")
 
         player_assets = [a for a in assets if a["asset_type"] == "player" and a["player_id"]]
 
@@ -338,53 +402,21 @@ def _compute_player_stats(make_trades, values: dict[str, dict], season: int) -> 
             if pkg_sf > 0 and player_val_sf > 0:
                 recv_sf = recv_sf * (player_val_sf / pkg_sf)
 
-            s = stats[pid]
-            s["trade_count"] += 1
-            s["pkg_all_1qb"].append(pkg_1qb)
+            for _b in fmt_buckets:
+                _accumulate_player_stat(
+                    stats[(pid, _b)], pid, values,
+                    recv_1qb, recv_sf, pkg_1qb,
+                    decay, bucket, created,
+                    cut_7d, cut_14d, cut_30d, cut_90d,
+                )
 
-            # Demand premium: did the other side pay ≥ this player's model value?
-            player_model = values.get(pid, {}).get("value_1qb", 0)
-            if player_model > 0 and recv_1qb >= player_model:
-                s["above_model_count"] += 1
-            s["recv_all_1qb"].append(recv_1qb)
-            s["recv_all_sf"].append(recv_sf)
-
-            # Only include trades where the other side has known value.
-            # Trades against fringe/unvalued players (recv=0) pollute the
-            # weighted median and drag it toward zero.
-            if recv_1qb > 0:
-                s["recv_weighted_1qb"].append((recv_1qb, decay))
-                s[f"recv_weighted_1qb_{bucket}"].append((recv_1qb, decay))
-            if recv_sf > 0:
-                s["recv_weighted_sf"].append((recv_sf, decay))
-                s[f"recv_weighted_sf_{bucket}"].append((recv_sf, decay))
-
-            if created and created >= cut_7d:
-                s["trade_count_7d"] += 1
-            if created and created >= cut_14d:
-                s["trade_count_14d"] += 1
-                if recv_1qb > 0:
-                    s["recv_14d_1qb"].append(recv_1qb)
-                if recv_sf > 0:
-                    s["recv_14d_sf"].append(recv_sf)
-            if created and created >= cut_30d:
-                s["trade_count_30d"] += 1
-                if recv_1qb > 0:
-                    s["recv_30d_1qb"].append(recv_1qb)
-                if recv_sf > 0:
-                    s["recv_30d_sf"].append(recv_sf)
-            if created and created >= cut_90d:
-                if recv_1qb > 0:
-                    s["recv_90d_1qb"].append(recv_1qb)
-                if recv_sf > 0:
-                    s["recv_90d_sf"].append(recv_sf)
 
     results = []
-    for player_id, s in stats.items():
+    for (player_id, league_format), s in stats.items():
         def _avg(lst):
             return round(sum(lst) / len(lst), 2) if lst else None
 
-        # All-leagues primary market value - decay-weighted median
+        # Per-bucket primary market value - decay-weighted median
         wm_1qb = _weighted_median(s["recv_weighted_1qb"])
         wm_sf  = _weighted_median(s["recv_weighted_sf"])
 
@@ -415,6 +447,7 @@ def _compute_player_stats(make_trades, values: dict[str, dict], season: int) -> 
         row = {
             "player_id":               player_id,
             "season":                  season,
+            "league_format":           league_format,
             "trade_count":             s["trade_count"],
             "trade_count_7d":          s["trade_count_7d"],
             "trade_count_14d":         s["trade_count_14d"],
@@ -540,7 +573,7 @@ def _upsert_player_stats(stats: list[dict]) -> int:
 
     sql = f"""
                 INSERT INTO trade_intel_player_stats (
-                    player_id, season,
+                    player_id, season, league_format,
                     trade_count, trade_count_7d, trade_count_14d, trade_count_30d,
                     avg_package_value, avg_received_value, avg_sent_value,
                     market_value_1qb, market_value_sf,
@@ -552,7 +585,7 @@ def _upsert_player_stats(stats: list[dict]) -> int:
                     buy_count, sell_count, buy_sell_ratio, updated_at,
                     {sz_insert_cols}
                 ) VALUES (
-                    %(player_id)s, %(season)s,
+                    %(player_id)s, %(season)s, %(league_format)s,
                     %(trade_count)s, %(trade_count_7d)s, %(trade_count_14d)s, %(trade_count_30d)s,
                     %(avg_package_value)s, %(avg_received_value)s, %(avg_sent_value)s,
                     %(market_value_1qb)s, %(market_value_sf)s,
@@ -564,7 +597,7 @@ def _upsert_player_stats(stats: list[dict]) -> int:
                     %(buy_count)s, %(sell_count)s, %(buy_sell_ratio)s, NOW(),
                     {sz_insert_vals}
                 )
-                ON CONFLICT (player_id, season) DO UPDATE SET
+                ON CONFLICT (player_id, season, league_format) DO UPDATE SET
                     trade_count               = EXCLUDED.trade_count,
                     trade_count_7d            = EXCLUDED.trade_count_7d,
                     trade_count_14d           = EXCLUDED.trade_count_14d,

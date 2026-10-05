@@ -12,17 +12,42 @@ class LeagueType(IntEnum):
 
 CALIBRATABLE_LEAGUE_TYPES = (LeagueType.REDRAFT, LeagueType.DYNASTY)
 
+# league_type int -> per-format bucket name on trade_intel_player_stats.league_format.
+FORMAT_NAMES = {
+    int(LeagueType.REDRAFT): "redraft",
+    int(LeagueType.KEEPER): "keeper",
+    int(LeagueType.DYNASTY): "dynasty",
+}
+
+
+def format_name(league_type: int | None) -> str:
+    """Map a Sleeper league_type int to a stats-bucket name.
+
+    0 -> "redraft", 1 -> "keeper", 2 -> "dynasty"; anything unknown (missing
+    league row, NULL, future values) folds into the "all" aggregate bucket.
+    """
+    if league_type is None:
+        return "all"
+    try:
+        return FORMAT_NAMES[int(league_type)]
+    except (KeyError, TypeError, ValueError):
+        return "all"
+
 
 def league_format_sql_param(league_format: str) -> int | None:
-    """Map a UI ``dynasty``/``redraft``/``all`` filter onto ``trade_intel_leagues.league_type``.
+    """Map a UI ``dynasty``/``redraft``/``keeper``/``all`` filter onto ``trade_intel_leagues.league_type``.
 
-    Crawler contract is Sleeper's: 0 = redraft, 1 = keeper (not stored), 2 = dynasty.
+    Crawler contract is Sleeper's: 0 = redraft, 1 = keeper, 2 = dynasty.
+    Keeper is stored (crawler/discovery include it) but still excluded from
+    value calibration; see ``calibration_mode``.
     """
     lf = str(league_format or "all").strip().lower()
     if lf == "dynasty":
         return int(LeagueType.DYNASTY)
     if lf == "redraft":
         return int(LeagueType.REDRAFT)
+    if lf == "keeper":
+        return int(LeagueType.KEEPER)
     return None
 
 

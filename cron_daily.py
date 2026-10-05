@@ -1004,7 +1004,9 @@ print(f"[cron] Prospect accuracy: {stats}")
     else:
         _run_step(f"""
 from dotenv import load_dotenv; load_dotenv()
-from data_building.trade_intel.league_discovery import run_discovery, backfill_superflex
+from data_building.trade_intel.league_discovery import run_discovery, backfill_superflex, seed_from_stored_users
+seeded = seed_from_stored_users(batch_size=200)
+print(f"[cron] Trade intel: seeded {{seeded}} new leagues from stored users")
 backfilled = backfill_superflex(batch_size=500)
 if backfilled:
     print(f"[cron] Backfilled is_superflex for {{backfilled}} leagues")
