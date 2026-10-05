@@ -2220,7 +2220,7 @@ window.emptyState = emptyState;
     var newScores = tmp.querySelectorAll(sel);
     // .m-score-val carries nested markup in live mode (actual + projection +
     // trend arrow), so count the inner .num node up and leave the rest alone.
-    // Plain score nodes (e.g. .ls-team-score) count up directly.
+    // Plain score nodes (e.g. .ls-score-num) count up directly.
     function numNode(el) {
       return (el && el.querySelector && el.querySelector('.num')) || el;
     }
@@ -24595,50 +24595,68 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     + '<div class="sk-card-row"><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line w-60"></div><div class="skeleton skeleton-line w-40"></div></div><div class="skeleton sk-chip"></div></div>'
     + '<div class="sk-card-row"><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line w-60"></div><div class="skeleton skeleton-line w-40"></div></div><div class="skeleton sk-chip"></div></div>'
     + '</div>';
+  // Initials for the avatar fallback circle (Sleeper avatar URL may be absent
+  // or fail to load; the layered markup below reveals these instead).
+  function _lsInitials(name) {
+    var parts = String(name || '').trim().split(/\s+/).filter(Boolean).slice(0, 2);
+    var s = parts.map(function (w) { return w.charAt(0); }).join('');
+    return (s || '?').toUpperCase();
+  }
+  function _lsAvatarHtml(team) {
+    var inner = '<span class="ls-ava-init">' + escapeHtml(_lsInitials(team.name)) + '</span>';
+    if (team.avatar) {
+      inner += '<img class="ls-ava-img" src="' + escapeHtml(team.avatar) + '" alt="" loading="lazy" onerror="this.remove()">';
+    }
+    return '<span class="ls-ava">' + inner + '</span>';
+  }
+  function _lsTeamRow(team, pct, pctCls) {
+    var score = Number(team.score || 0).toFixed(1);
+    var proj = Number(team.proj || 0).toFixed(1);
+    var meta = pct != null
+      ? '<em class="' + pctCls + '">' + pct + '%</em> · proj ' + proj
+      : 'proj ' + proj;
+    return '<div class="ls-team">' + _lsAvatarHtml(team)
+      + '<span class="ls-name">' + escapeHtml(team.name || 'TBD') + '</span>'
+      + '<span class="ls-score"><b class="ls-score-num">' + score + '</b>'
+      + '<small>' + meta + '</small></span></div>';
+  }
   function _lsRenderList(view, matchups, week) {
     if (!matchups || !matchups.length) {
       view.innerHTML = '<div class="ls-empty">No matchups found for Week ' + escapeHtml(String(week)) + '.'
         + ' <button type="button" data-ls-retry>Retry</button></div>';
       return;
     }
-    var html = '<div class="ls-list">';
+    var html = '<div class="ls-board">';
     matchups.forEach(function (m) {
       var left = m.left || {}, right = m.right;
-      var statusLabel = m.status === 'in' ? 'Live' : (m.status === 'final' ? 'Final' : 'Wk ' + escapeHtml(String(week)));
+      var isLive = m.status === 'in';
+      var statusLabel = isLive ? 'Live' : (m.status === 'final' ? 'Final' : 'Wk ' + escapeHtml(String(week)));
       var wp = m.win_prob != null ? Math.max(0, Math.min(100, Math.round(Number(m.win_prob)))) : null;
-      html += '<div class="ls-card' + (m.is_you ? ' is-you' : '') + '">';
-      html += '<div class="ls-card-head"><span class="ls-status' + (m.status === 'in' ? ' is-live' : '') + '">' + escapeHtml(statusLabel) + '</span>' + (m.is_you ? '<span class="ls-you-badge">Your matchup</span>' : '') + '</div>';
-      html += '<div class="ls-teams">';
-      html += '<div class="ls-team"><span class="ls-team-name">' + escapeHtml(left.name || 'TBD') + '</span><span class="ls-team-score">' + Number(left.score || 0).toFixed(1) + '</span><span class="ls-team-proj">proj ' + Number(left.proj || 0).toFixed(1) + '</span></div>';
+      html += '<section class="ls-mu' + (m.is_you ? ' is-you' : '') + '">';
+      html += '<div class="ls-hd"><span class="ls-status' + (isLive ? ' is-live' : '') + '">'
+        + (isLive ? '<i></i>' : '') + escapeHtml(statusLabel) + '</span>'
+        + (m.is_you ? '<span class="ls-you">YOU</span>' : '') + '</div>';
+      html += _lsTeamRow(left, wp, 'ls-p1');
       if (right) {
-        html += '<div class="ls-team"><span class="ls-team-name">' + escapeHtml(right.name || 'TBD') + '</span><span class="ls-team-score">' + Number(right.score || 0).toFixed(1) + '</span><span class="ls-team-proj">proj ' + Number(right.proj || 0).toFixed(1) + '</span></div>';
+        html += _lsTeamRow(right, wp != null ? 100 - wp : null, 'ls-p2');
+        if (wp != null) {
+          var lName = String(left.name || 'left team').replace(/"/g, '');
+          var rName = String(right.name || 'right team').replace(/"/g, '');
+          html += '<div class="ls-split" role="img" aria-label="Win probability: '
+            + escapeHtml(lName) + ' ' + wp + ' percent, ' + escapeHtml(rName) + ' ' + (100 - wp) + ' percent">'
+            + '<i class="ls-s1" style="width:' + wp + '%"></i>'
+            + '<i class="ls-s2" style="width:' + (100 - wp) + '%"></i></div>';
+        }
       } else {
-        html += '<div class="ls-team"><span class="ls-team-name">Bye</span></div>';
+        html += '<div class="ls-team"><span class="ls-name">Bye</span></div>';
       }
-      html += '</div>';
-      if (wp != null && right) {
-        var lp = wp, rp = 100 - wp;
-        var lLeading = lp >= rp;
-        var winGreen = '#22c55e', loseFade = 'rgba(148,163,184,0.35)';
-        var lBar = lLeading ? winGreen : loseFade;
-        var rBar = lLeading ? loseFade : winGreen;
-        var trackBg = 'linear-gradient(to right,' + lBar + ' ' + lp + '%,' + rBar + ' ' + lp + '%)';
-        var lCol = lLeading ? winGreen : 'var(--text-muted)';
-        var rCol = lLeading ? 'var(--text-muted)' : winGreen;
-        var lName = String(left.name || 'left team').replace(/"/g, '');
-        var rName = String(right.name || 'right team').replace(/"/g, '');
-        html += '<div class="m-win-bar" role="img" aria-label="Win probability: ' + escapeHtml(lName) + ' ' + lp + ' percent, ' + escapeHtml(rName) + ' ' + rp + ' percent">'
-          + '<span class="m-wp-pct" style="color:' + lCol + ';">' + lp + '%</span>'
-          + '<div class="m-wp-track" style="background:' + trackBg + ';"></div>'
-          + '<span class="m-wp-pct" style="color:' + rCol + ';text-align:right;">' + rp + '%</span></div>';
-      }
-      html += '</div>';
+      html += '</section>';
     });
     html += '</div>';
-    // Swap the list in: tween any win bars and count up scores from the
-    // previous render instead of jumping (plain swap under reduced motion).
+    // Swap the board in, counting scores up from the previous render instead
+    // of jumping (plain swap under reduced motion).
     if (window.brAnimateMatchupRefresh) {
-      window.brAnimateMatchupRefresh(view, html, function () { view.innerHTML = html; }, '.ls-team-score');
+      window.brAnimateMatchupRefresh(view, html, function () { view.innerHTML = html; }, '.ls-score-num');
     } else {
       view.innerHTML = html;
     }
