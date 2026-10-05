@@ -216,7 +216,7 @@ PUSH_TYPE_BUCKETS = [
 # is never league-duplicated.
 
 _DIGEST_ELIGIBLE_TYPES = frozenset({
-    "lineup_lock", "injury", "transaction", "close_game",
+    "lineup_lock", "transaction", "close_game",
     "waiver_candidates", "breakout_roster", "value_drops", "watchlist",
     "rival_trades", "playoff_odds", "standings_update",
     "recap_ready", "matchup_preview",
@@ -1077,6 +1077,7 @@ def _lineup_lock_send(games, season, week, *, dedupe_key, dedupe_value, tag,
 
             issue_summary_by_owner: dict = {}
             bench_summary_by_owner: dict = {}
+            _owner_alias: dict = {}
             try:
                 from dashboard_services.api import get_nfl_players
                 from dashboard_services.platform_api import get_rosters, get_league
@@ -1090,7 +1091,9 @@ def _lineup_lock_send(games, season, week, *, dedupe_key, dedupe_value, tag,
                     roster_positions = [str(s) for s in (league.get("roster_positions") or [])]
                 except Exception:
                     roster_positions = []
-                for roster in (get_rosters(platform, str(league_id), int(season)) or []):
+                _ll_rosters = get_rosters(platform, str(league_id), int(season)) or []
+                _owner_alias = _owner_alias_for_rosters(_ll_rosters)
+                for roster in _ll_rosters:
                     owner_id = roster.get("owner_id") or ""
                     starters = [str(p) for p in (roster.get("starters") or [])]
                     if not owner_id or not starters:
@@ -1163,7 +1166,7 @@ def _lineup_lock_send(games, season, week, *, dedupe_key, dedupe_value, tag,
             flagged_by_owner: dict = {}
             bench_by_owner: dict = {}
             for r in rows:
-                oid = str(r["owner_id"] or "")
+                oid = _owner_alias.get(str(r["owner_id"] or ""), str(r["owner_id"] or ""))
                 if oid in issue_summary_by_owner:
                     flagged_by_owner.setdefault(oid, []).append(r)
                 elif oid in bench_summary_by_owner:
@@ -1270,6 +1273,204 @@ def notify_lineup_lock():
         return total
     except Exception as exc:
         logger.warning("[notify] lineup_lock failed: %s", exc)
+
+
+def _owner_alias_for_rosters(rosters):
+    """Map alternate owner spellings to the canonical roster owner id.
+
+    The bulk subscribe path can persist a numeric team_id as owner_id
+    (notably Yahoo) while roster scans key by the platform owner id
+    (Yahoo: manager guid); without this, per-owner pushes to those
+    subscriptions silently miss. Keys are unique within a league.
+    """
+    alias = {}
+    for r in rosters or []:
+        if not isinstance(r, dict):
+            continue
+        gid = str(r.get("owner_id") or "")
+        tid = str(r.get("roster_id") or "")
+        if gid and tid and tid != gid:
+            alias[tid] = gid
+    return alias
+
+
+def _games_today_et(games, now_et):
+    """Week-schedule games kicking off today (America/New_York)."""
+    today = now_et.date()
+    out = []
+    for g in games or []:
+        try:
+            ep = float((g or {}).get("gameTime_epoch"))
+        except (TypeError, ValueError):
+            continue
+        if datetime.fromtimestamp(ep, tz=timezone.utc).astimezone(now_et.tzinfo).date() == today:
+            out.append(g)
+    return out
+
+
+# ── Notification: injury flips close to kickoff ─────────────────────────────
+
+_INJURY_FLIP_STATE_CAP = 5000
+
+
+def notify_injury_flip():
+    """Alert owners when a rostered player's status flips to a serious injury
+    designation while his game hasn't kicked off yet. All platforms.
+
+    Transition-based: the live status (ESPN intraday feed) is compared against
+    the last-seen status in app_state, so a player who was already Out does not
+    re-alert. Only runs on NFL game days (America/New_York); flips for teams
+    already kicked off or on bye are suppressed because the slot is locked.
+    Questionable flips never alert. Delivered immediately, never digest-
+    buffered: a pre-kickoff alert an hour late is useless.
+    """
+    import json as _json
+    from zoneinfo import ZoneInfo
+    try:
+        from dashboard_services.api import get_nfl_state
+        from dashboard_services.db import get_conn
+        from dashboard_services.platform_api import get_rosters
+        from dashboard_services.injury_return import refresh_espn_return_dates
+        from utils.lineup_issues import SERIOUS_INJURY_STATUSES
+        from utils.utils import load_week_schedule
+
+        state = get_nfl_state() or {}
+        season = state.get("season")
+        week = state.get("week")
+        if not season or not week or state.get("season_type") not in ("reg", "post"):
+            return 0
+        season, week = int(season), int(week)
+
+        et = ZoneInfo("America/New_York")
+        now_et = datetime.now(tz=et)
+        now_ts = now_et.timestamp()
+
+        games = load_week_schedule(season, week) or []
+        if not _games_today_et(games, now_et):
+            return 0  # not an NFL game day; cheap exit before any fetches
+
+        kickoff_by_team = {}
+        for g in games:
+            try:
+                ep = float((g or {}).get("gameTime_epoch"))
+            except (TypeError, ValueError):
+                continue
+            for side in ("home", "away"):
+                t = str((g or {}).get(side) or "").strip().upper()
+                if t:
+                    kickoff_by_team[t] = ep
+
+        # Live statuses, canonical pid -> {status, team, name}. force=True
+        # bypasses the 6h TTL: inactives land ~90 min before kickoff. On fetch
+        # failure the module returns stale disk data; empty means no usable
+        # feed, in which case we must NOT touch last-seen (a blank feed would
+        # fake "recovered" and then false-alert when the feed returns).
+        try:
+            by_pid = refresh_espn_return_dates(force=True) or {}
+        except Exception as exc:
+            logger.warning("[notify] injury_flip ESPN fetch failed: %s", exc)
+            return 0
+        if not by_pid:
+            logger.warning("[notify] injury_flip: empty injury feed, skipping")
+            return 0
+
+        state_key = f"injury_last_seen_{season}_{week}"
+        with get_conn() as conn:
+            raw = _app_state_get(conn, state_key) or ""
+        try:
+            last_seen = _json.loads(raw) if raw else {}
+        except Exception:
+            last_seen = {}
+        if not isinstance(last_seen, dict):
+            last_seen = {}
+        first_run = not last_seen
+
+        leagues = _get_subscribed_leagues()
+        if not leagues:
+            return 0
+
+        sent = 0
+        new_seen = dict(last_seen)
+        for league_id, platform in leagues:
+            league_name = _league_display_name(platform, league_id, season)
+            try:
+                rosters = get_rosters(platform, str(league_id), season) or []
+            except Exception as le:
+                logger.warning("[notify] injury_flip rosters %s: %s", league_id, le)
+                continue
+            alias = _owner_alias_for_rosters(rosters)
+            try:
+                with get_conn() as conn:
+                    rows = conn.execute(
+                        "SELECT endpoint, p256dh, auth, prefs, owner_id, account_key "
+                        "FROM push_subscriptions WHERE league_id = %s",
+                        (str(league_id),),
+                    ).fetchall()
+            except Exception:
+                rows = []
+            if not rows:
+                continue
+            for roster in rosters:
+                if not isinstance(roster, dict):
+                    continue
+                owner_id = str(roster.get("owner_id") or "")
+                if not owner_id:
+                    continue
+                starters = {str(p) for p in (roster.get("starters") or [])}
+                players = [
+                    str(p) for p in (roster.get("players") or [])
+                    if str(p) not in ("0", "", "None")
+                ]
+                for pid in players:
+                    key = f"{league_id}:{pid}"
+                    row = by_pid.get(pid) or {}
+                    curr = str(row.get("status") or "")
+                    new_seen[key] = curr
+                    if first_run or last_seen.get(key) is None:
+                        continue  # seed silently; never alert on first sight
+                    if str(last_seen.get(key) or "").upper() in SERIOUS_INJURY_STATUSES:
+                        continue  # already serious; no re-alert
+                    if curr.upper() not in SERIOUS_INJURY_STATUSES:
+                        continue  # not a serious flip
+                    # Serious flip: actionable only before kickoff.
+                    team = str(row.get("team") or "").strip().upper()
+                    kickoff = kickoff_by_team.get(team)
+                    if not kickoff or kickoff <= now_ts:
+                        continue
+                    name = row.get("name") or "A player on your roster"
+                    is_starter = pid in starters
+                    title = "Starter injury alert" if is_starter else "Bench injury alert"
+                    body = f"{name} is now listed {curr}. Check your lineup"
+                    if league_name:
+                        body = f"{body} in {league_name}"
+                    body = f"{body}."
+                    url = f"/{platform}/{season}/{league_id}/waivers?tab=startsit"
+                    orows = [
+                        r for r in rows
+                        if alias.get(str(r["owner_id"] or ""), str(r["owner_id"] or "")) == owner_id
+                    ]
+                    if not orows:
+                        continue
+                    sent += _send_with_digest(
+                        orows, title, body, url,
+                        f"injury-flip-{league_id}-{pid}-{week}",
+                        notif_type="injury", league_id=str(league_id),
+                        platform=platform,
+                    )
+        if len(new_seen) > _INJURY_FLIP_STATE_CAP:
+            for k in list(new_seen)[:len(new_seen) - _INJURY_FLIP_STATE_CAP]:
+                del new_seen[k]
+        try:
+            with get_conn() as conn:
+                _app_state_set(conn, state_key, _json.dumps(new_seen))
+                conn.commit()
+        except Exception as exc:
+            logger.warning("[notify] injury_flip state save failed: %s", exc)
+        logger.info("[notify] injury_flip week %s sent %d", week, sent)
+        return sent
+    except Exception as exc:
+        logger.warning("[notify] injury_flip failed: %s", exc)
+        return 0
 
 
 # ── Notification 2: Value drops on rostered players ───────────────────────────
@@ -2206,84 +2407,6 @@ def notify_transaction_drops():
 
 # ── Notification 13: Starter injury alert (hourly, game days) ────────────────
 
-def notify_injury_alert():
-    """Alert owners when a starter on their roster receives an injury designation."""
-    try:
-        from dashboard_services.api import get_nfl_state, get_nfl_players, get_rosters
-        from dashboard_services.db import get_conn
-
-        state  = get_nfl_state() or {}
-        season = state.get("season")
-        week   = state.get("week", 1)
-        if not season or state.get("season_type") not in ("reg", "post"):
-            return
-
-        # Only on NFL game days: Thu=3, Fri=4, Sat=5, Sun=6, Mon=0
-        if datetime.now(tz=timezone.utc).weekday() not in (0, 3, 4, 5, 6):
-            return
-
-        from utils.lineup_issues import SERIOUS_INJURY_STATUSES
-
-        state_key = f"injury_notified_{season}_{week}"
-        with get_conn() as conn:
-            raw = _app_state_get(conn, state_key) or ""
-        already = set(raw.split(",")) if raw else set()
-        new_notified = set()
-
-        nfl_players = get_nfl_players() or {}
-
-        leagues = _get_subscribed_leagues()
-        if not leagues:
-            return
-
-        sent = 0
-        for league_id, platform in leagues:
-            if platform != "sleeper":
-                continue
-            league_name = _league_display_name(platform, league_id, season)
-            try:
-                rosters = get_rosters(league_id) or []
-                for roster in rosters:
-                    if not isinstance(roster, dict):
-                        continue  # skip empty/None roster slots (unclaimed teams)
-                    owner_id = roster.get("owner_id") or ""
-                    starters = roster.get("starters") or []
-                    for pid in starters:
-                        if pid == "0":
-                            continue
-                        key = f"{league_id}:{pid}"
-                        if key in already:
-                            continue
-                        player = nfl_players.get(pid, {})
-                        inj    = player.get("injury_status") or ""
-                        if str(inj).upper() not in SERIOUS_INJURY_STATUSES:
-                            continue
-                        name = player.get("full_name") or player.get("last_name") or "A starter"
-                        pos  = player.get("position") or ""
-                        sent += _broadcast_owner(
-                            league_id, owner_id,
-                            title="Starter injury alert",
-                            body=(
-                                f"{name} ({pos}) is listed as {inj}. "
-                                f"Check your lineup{' in ' + league_name if league_name else ''}."
-                            ),
-                            url=f"/{platform}/{season}/{league_id}/weekly",
-                            tag=f"injury-{league_id}-{pid}",
-                            notif_type="injury",
-                        )
-                        new_notified.add(key)
-            except Exception as le:
-                logger.warning("[notify] injury_alert league %s: %s", league_id, le)
-
-        if new_notified:
-            already.update(new_notified)
-            with get_conn() as conn:
-                _app_state_set(conn, state_key, ",".join(list(already)[-1000:]))
-                conn.commit()
-        return sent
-    except Exception as exc:
-        logger.warning("[notify] injury_alert failed: %s", exc)
-
 
 # ── Notification: Watchlist alerts (value swing / injury on a watched player) ──
 
@@ -2515,7 +2638,6 @@ def run_hourly():
         "lineup_lock": notify_lineup_lock() or 0,
         "close_game": notify_close_game() or 0,
         "transaction_drops": notify_transaction_drops() or 0,
-        "injury_alert": notify_injury_alert() or 0,
         # Tuesday ~12pm ET: "new breakout board is live" announcement. The
         # function itself gates on the weekday/hour and once-per-week dedup,
         # so the hourly call is a cheap no-op the rest of the time.

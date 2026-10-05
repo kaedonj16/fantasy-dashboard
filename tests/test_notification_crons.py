@@ -121,7 +121,6 @@ def test_run_hourly_returns_sent_counts(monkeypatch):
     monkeypatch.setattr(pn, "notify_lineup_lock", lambda: 3)
     monkeypatch.setattr(pn, "notify_close_game", lambda: 0)
     monkeypatch.setattr(pn, "notify_transaction_drops", lambda: 2)
-    monkeypatch.setattr(pn, "notify_injury_alert", lambda: None)
     monkeypatch.setattr(pn, "notify_breakout_weekly", lambda: 5)
     monkeypatch.setattr(pn, "_flush_digest", lambda: 4)
 
@@ -130,7 +129,6 @@ def test_run_hourly_returns_sent_counts(monkeypatch):
         "lineup_lock": 3,
         "close_game": 0,
         "transaction_drops": 2,
-        "injury_alert": 0,
         "breakout_weekly": 5,
         "digest": 4,
         "total": 14,
@@ -556,7 +554,6 @@ def test_run_hourly_lineup_lock_per_day(monkeypatch):
     monkeypatch.setattr(pn, "notify_lineup_lock", lambda: 3)
     monkeypatch.setattr(pn, "notify_close_game", lambda: 0)
     monkeypatch.setattr(pn, "notify_transaction_drops", lambda: 2)
-    monkeypatch.setattr(pn, "notify_injury_alert", lambda: None)
     monkeypatch.setattr(pn, "notify_breakout_weekly", lambda: 5)
     monkeypatch.setattr(pn, "_flush_digest", lambda: 4)
 

@@ -9,6 +9,7 @@ Usage:
     python scripts/trigger_notifications.py hourly
     python scripts/trigger_notifications.py weekly
     python scripts/trigger_notifications.py scorezone
+    python scripts/trigger_notifications.py injury
 """
 from __future__ import annotations
 
@@ -19,8 +20,9 @@ import time
 import urllib.error
 import urllib.request
 
-ALLOWED = {"hourly", "daily", "weekly", "scorezone"}
-DEFAULT_TIMEOUT = {"hourly": 120, "daily": 180, "weekly": 900, "scorezone": 120}
+ALLOWED = {"hourly", "daily", "weekly", "scorezone", "injury"}
+DEFAULT_TIMEOUT = {"hourly": 120, "daily": 180, "weekly": 900, "scorezone": 120,
+                   "injury": 180}
 
 # A 524 means Cloudflare gave up waiting on the app (usually saturated request
 # threads, not a slow endpoint: /api/cron/notifications answers 202 at once).

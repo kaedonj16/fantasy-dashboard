@@ -8,7 +8,7 @@ Routes:
     /api/push/leagues
     /api/push/preferences      (GET, PUT)
     /api/push/broadcast        (POST, admin)
-    /api/cron/notifications    (POST, admin; type=hourly|daily|weekly)
+    /api/cron/notifications    (POST, admin; type=hourly|daily|weekly|scorezone|injury)
                                weekly = weekly email digest (utils.weekly_email)
 
 Extracted from app.py. Depends on extensions.limiter + dashboard_services/utils
@@ -521,8 +521,10 @@ def _notifications_cron_authorized(data: dict) -> bool:
 def api_cron_notifications():
     """Cron hook for push notifications and the weekly email digest.
 
-    Pass type='hourly' (lineup lock / close games / drops / injuries),
-    type='daily', type='scorezone' (server-side TD poll), or type='weekly'.
+    Pass type='hourly' (lineup lock / close games / drops),
+    type='daily', type='scorezone' (server-side TD poll),
+    type='injury' (starter/bench injury flips, every 15 min on game days),
+    or type='weekly'.
     Auth is X-Admin-Secret or CRON_SECRET
     (header X-Cron-Secret or JSON ``secret``, same as /api/flush-value-cache).
 
@@ -548,6 +550,15 @@ def api_cron_notifications():
     email = str(data.get("email") or request.args.get("email") or "").strip() or None
     force_raw = data.get("force") if "force" in data else request.args.get("force")
     force = str(force_raw or "").strip().lower() in ("1", "true", "yes", "on")
+    if kind == "injury":
+        # Injury flips run every 15 min on game days; they must never contend
+        # with the per-minute scorezone poller for the shared overlap guard
+        # (a slow flip run would delay TD alerts), so they get their own lock.
+        if not _cron_injury_lock.acquire(blocking=False):
+            logger.info("[cron/notifications] injury skipped, previous run still in progress")
+            return jsonify({"ok": True, "skipped": "already_running"}), 202
+        threading.Thread(target=_run_injury_notifications, daemon=True).start()
+        return jsonify({"ok": True, "queued": True}), 202
     if not _cron_notifications_lock.acquire(blocking=False):
         logger.info("[cron/notifications] skipped, previous run still in progress")
         return jsonify({"ok": True, "skipped": "already_running"}), 202
@@ -564,6 +575,26 @@ def api_cron_notifications():
 # under gunicorn --preload the unlocked state forks cleanly into each worker,
 # so every worker guards its own runs. Never create threads at import time.
 _cron_notifications_lock = threading.Lock()
+
+# Separate guard for the injury-flip kind (see above): it must never block or
+# be blocked by the per-minute scorezone poller on the shared guard.
+_cron_injury_lock = threading.Lock()
+
+
+def _run_injury_notifications():
+    """Background worker for the injury-flip cron kind. Never raises.
+
+    Runs notify_injury_flip(), then releases the injury overlap guard.
+    All exceptions are caught and logged.
+    """
+    try:
+        from utils.push_notifications import notify_injury_flip
+        sent = notify_injury_flip() or 0
+        logger.info("[cron/notifications] injury-flip: sent=%d", sent)
+    except Exception as exc:
+        logger.warning("[cron/notifications] injury-flip failed: %s", exc)
+    finally:
+        _cron_injury_lock.release()
 
 
 def _run_cron_notifications(kind, account_id=None, email=None, force=False):
