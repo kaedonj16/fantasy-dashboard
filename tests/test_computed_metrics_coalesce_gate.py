@@ -41,7 +41,7 @@ _ALL_COLS = [
     "total_receptions", "total_carries", "explosive_runs_10_plus",
     "ngs_avg_intended_air_yards", "yards_per_reception", "completion_pct",
     "total_tds", "total_snaps", "total_rush_tds", "total_rec_tds",
-    "total_pass_tds", "total_touches", "total_routes",
+    "total_pass_tds", "total_touches",
 ]
 
 
@@ -314,11 +314,11 @@ def test_efficiency_gate_reads_coalesced_snap_share(monkeypatch):
 
 
 def test_plain_non_efficiency_metric_gets_no_coalesce_join(monkeypatch):
-    rows = [_row("r9", "RB", "2026-09-29", games=4, total_routes=210)]
-    sql, _ = _captured_main_sql(monkeypatch, rows, "total_routes")
+    rows = [_row("r9", "RB", "2026-09-29", games=4, opportunity_share=0.5)]
+    sql, _ = _captured_main_sql(monkeypatch, rows, "opportunity_share")
     assert "ARRAY_AGG" not in sql
     assert "snap_share >= %s" not in sql
-    assert "m.total_routes AS value" in sql
+    assert "m.opportunity_share AS value" in sql
 
 
 # --------------------------------------------------------------------------- #
