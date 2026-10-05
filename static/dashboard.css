@@ -21463,6 +21463,89 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
     max-width: 520px;
 }
 
+/* ── Redesigned season/week time controls (chips, not sliders) ─────────── */
+.adv-time-ctl {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 14px;
+}
+
+.adv-time-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.adv-time-label {
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+}
+
+.adv-time-group .adv-metrics-season-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.adv-time-group .adv-season-hint {
+    margin: 0;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.wk-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+}
+
+.wk-chip {
+    min-width: 34px;
+    padding: 6px 10px;
+    border-radius: var(--radius-sm, 8px);
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    border: 1px solid var(--border-color);
+    background: var(--surface-1, transparent);
+    color: var(--text-muted);
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
+    line-height: 1.4;
+    text-align: center;
+}
+
+.wk-chip:hover:not(:disabled) {
+    border-color: var(--brand-blue);
+    color: var(--brand-blue);
+}
+
+.wk-chip.active {
+    background: var(--brand-blue);
+    border-color: var(--brand-blue);
+    color: #fff;
+}
+
+.wk-chip-full {
+    padding: 6px 14px;
+    font-weight: 800;
+}
+
+.wk-chip-unavailable,
+.wk-chip:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.wk-chip:focus-visible {
+    outline: 2px solid #93c5fd;
+    outline-offset: 2px;
+}
+
 .cmp-week-bar-wrap {
     margin-top: 6px;
     width: 100%;

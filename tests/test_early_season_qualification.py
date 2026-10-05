@@ -27,7 +27,7 @@ def test_one_complete_round_uses_one_game_and_scaled_volume_minimums():
     assert policy.games_min == 1
     assert policy.minimum("total_pass_att", 50) == 13
     assert policy.minimum("total_carries", 20) == 5
-    assert policy.note() == "Small sample · 1 game"
+    assert policy.note() == "Small sample · 1 week final"
 
 
 def test_staggered_completion_and_byes_do_not_advance_round():
@@ -104,3 +104,101 @@ def test_non_league_modal_keeps_selected_season():
     assert "if (ctx.leagueId)" in source
     assert "ppgVal != null ? Number(ppgVal).toFixed(1) : 'N/A'" in source
     assert "totalPts != null ? fmtPts(totalPts) : 'N/A'" in source
+
+
+# ── Per-player game-finality counting ─────────────────────────────────────────
+
+def _player_schedule(team_games):
+    """load_week stub: {week: [(team, is_final), ...]}."""
+    def load(_season, week):
+        out = []
+        for team, final in team_games.get(week, []):
+            out.append({
+                "seasonType": "Regular",
+                "away": team,
+                "home": "OPP",
+                "gameStatus": "Final" if final else "Scheduled",
+                "gameStatusCode": "2" if final else "0",
+            })
+        return out
+    return load
+
+
+def _patch_player_team(monkeypatch, stints):
+    import data_building.external_data.player_team_history as pth
+    monkeypatch.setattr(pth, "teams_in_season",
+                        lambda pid, season: stints)
+    import dashboard_services.api as api
+    monkeypatch.setattr(api, "get_nfl_state",
+                        lambda: {"season": 2026, "week": 4,
+                                 "season_type": "reg"})
+
+
+def test_player_weeks_count_own_final_games_not_league_rounds(monkeypatch):
+    """DAL's week 4 game is final; the rest of the league is not."""
+    from utils.season_qualification import player_completed_weeks
+    _patch_player_team(monkeypatch, [{"team": "DAL", "weeks": [1, 2, 3, 4]}])
+    load = _player_schedule({
+        1: [("DAL", True)], 2: [("DAL", True)],
+        3: [("DAL", True)], 4: [("DAL", True)],
+    })
+    assert player_completed_weeks("pid1", 2026, load_week=load) == [1, 2, 3, 4]
+
+
+def test_player_weeks_stop_at_unfinished_game(monkeypatch):
+    """Week 4 not final yet: count stays at 3, then updates when final."""
+    from utils.season_qualification import player_completed_weeks
+    _patch_player_team(monkeypatch, [{"team": "DAL", "weeks": [1, 2, 3, 4]}])
+    load = _player_schedule({
+        1: [("DAL", True)], 2: [("DAL", True)],
+        3: [("DAL", True)], 4: [("DAL", False)],
+    })
+    assert player_completed_weeks("pid1", 2026, load_week=load) == [1, 2, 3]
+
+
+def test_player_bye_week_never_counts(monkeypatch):
+    """No game in week 2 (bye): skipped, weeks 1/3/4 still count."""
+    from utils.season_qualification import player_completed_weeks
+    _patch_player_team(monkeypatch, [{"team": "DAL", "weeks": [1, 2, 3, 4]}])
+    load = _player_schedule({
+        1: [("DAL", True)], 3: [("DAL", True)], 4: [("DAL", True)],
+    })
+    assert player_completed_weeks("pid1", 2026, load_week=load) == [1, 3, 4]
+
+
+def test_player_note_updates_when_game_finishes(monkeypatch):
+    from utils.season_qualification import player_qualification_note
+    import utils.season_qualification as sq
+    # 3 completed games: small-sample note shows the player's count.
+    monkeypatch.setattr(sq, "player_completed_weeks",
+                        lambda pid, season, load_week=None: [1, 2, 3])
+    note, prov = player_qualification_note("pid1", 2026)
+    assert note == "Small sample · 3 games"
+    assert prov is True
+    # 4th game goes final: note clears.
+    monkeypatch.setattr(sq, "player_completed_weeks",
+                        lambda pid, season, load_week=None: [1, 2, 3, 4])
+    note, prov = player_qualification_note("pid1", 2026)
+    assert note is None
+    assert prov is False
+
+
+def test_player_note_falls_back_without_team_data(monkeypatch):
+    from utils.season_qualification import player_qualification_note
+    _patch_player_team(monkeypatch, [])
+    note, prov = player_qualification_note(
+        "pid1", 2026, fallback_note="Small sample · 2 weeks final",
+        fallback_provisional=True)
+    assert note == "Small sample · 2 weeks final"
+    assert prov is True
+
+
+def test_player_note_none_after_four_games(monkeypatch):
+    from utils.season_qualification import player_qualification_note
+    _patch_player_team(monkeypatch, [{"team": "DAL", "weeks": [1, 2, 3, 4]}])
+    import utils.season_qualification as sq
+    monkeypatch.setattr(sq, "player_completed_weeks",
+                        lambda pid, season, load_week=None: [1, 2, 3, 4])
+    note, prov = player_qualification_note("pid1", 2026)
+    assert note is None
+    assert prov is False

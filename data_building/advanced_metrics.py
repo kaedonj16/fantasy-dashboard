@@ -4751,13 +4751,18 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                       _games_min, _pass_min, _carry_min, _target_min, _rec_min)
         _cached_all = _POSITION_RANKS_CACHE.get(_cache_key)
         if _cached_all is not None:
+            from utils.season_qualification import player_qualification_note
+            _pnote, _pprov = player_qualification_note(
+                str(player_id), int(season),
+                fallback_note=_policy.note(),
+                fallback_provisional=_policy.provisional)
             return {"position": position, "season": season,
                     "ranks": _cached_all.get(str(player_id), {}),
                     "counts": _rank_counts(_cached_all),
                     "bounds": _POSITION_BOUNDS_CACHE.get(_cache_key, {}),
                     "qualification": {"games_min": _games_min,
                         "completed_rounds": len(_policy.completed_weeks),
-                        "provisional": _policy.provisional, "note": _policy.note()}}
+                        "provisional": _pprov, "note": _pnote}}
 
         try:
             result = conn.execute(f"""
@@ -5162,12 +5167,17 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
         for _k in [k for k in _POSITION_BOUNDS_CACHE if k[0] != _today]:
             _POSITION_BOUNDS_CACHE.pop(_k, None)
 
+        from utils.season_qualification import player_qualification_note
+        _pnote, _pprov = player_qualification_note(
+            str(player_id), int(season),
+            fallback_note=_policy.note(),
+            fallback_provisional=_policy.provisional)
         return {"position": position, "season": season,
                 "ranks": all_ranks.get(str(player_id), {}),
                 "counts": _rank_counts(all_ranks),
                 "bounds": bounds, "qualification": {
                     "games_min": _games_min, "completed_rounds": len(_policy.completed_weeks),
-                    "provisional": _policy.provisional, "note": _policy.note()}}
+                    "provisional": _pprov, "note": _pnote}}
 
 
 def get_player_weekly_metric_ranks(
@@ -5324,12 +5334,17 @@ def get_player_weekly_metric_ranks(
             vs = list(vals.values())
             bounds[metric] = [min(vs), max(vs)]
 
+    from utils.season_qualification import player_qualification_note
+    _pnote, _pprov = player_qualification_note(
+        str(player_id), int(season),
+        fallback_note=_policy.note(),
+        fallback_provisional=_policy.provisional)
     return {"position": position, "season": season,
             "week_start": lo, "week_end": hi, "ranks": ranks, "counts": counts,
             "bounds": bounds, "qualification": {
                 "games_min": _policy.games_min,
                 "completed_rounds": len(_policy.completed_weeks),
-                "provisional": _policy.provisional, "note": _policy.note()}}
+                "provisional": _pprov, "note": _pnote}}
 
 
 def get_top_role_players(position: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
