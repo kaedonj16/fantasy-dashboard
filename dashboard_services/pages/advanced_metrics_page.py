@@ -593,6 +593,10 @@ def build_advanced_metrics_body(
                   <button type="button" id="amGraphThemeBtn" class="am-add-stat-btn" onclick="amToggleGraphTheme()" title="Toggle light / dark"></button>
                   <button type="button" id="amGraphLabelAxisBtn" class="am-add-stat-btn" onclick="amToggleGraphLabelAxis()" title="Flip star labels between X and Y values">X vals</button>
                   <button type="button" id="amGraphQuadrantsBtn" class="am-add-stat-btn am-active" onclick="amToggleGraphQuadrants()" title="Show quadrant dividers and labels">Quadrants</button>
+                  <span class="am-graph-mode" role="group" aria-label="Graph detail level">
+                    <button type="button" id="amGraphModeSimple" class="am-add-stat-btn am-active" onclick="amSetGraphMode('simple')" title="Consumer-friendly: bigger dots, fewer labels, no clutter">Simple</button>
+                    <button type="button" id="amGraphModeDetailed" class="am-add-stat-btn" onclick="amSetGraphMode('detailed')" title="Full analyst view: quadrants, trend strength, more labels">Detailed</button>
+                  </span>
                   <button type="button" id="amGraphDownloadBtn" class="am-add-stat-btn" onclick="amDownloadGraph()" title="Download image">
                     <svg width="13" height="13" viewBox="0 0 16 16" fill="none" style="vertical-align:-1px"><path d="M8 1.5v8M8 9.5 5.5 7M8 9.5 10.5 7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 11v3.5h10V11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                     Download
@@ -1334,6 +1338,37 @@ def build_advanced_metrics_body(
       .am-graph-ptlbl { fill:var(--text-muted); font-size:9px; pointer-events:none; }
       .am-graph-dot { cursor:pointer; transition:fill-opacity .12s; }
       .am-graph-dot:hover { fill-opacity:1 !important; }
+
+      /* ── Graph entrance animations ──────────────────────────────────
+         Dots pop in staggered (best-ranked first), labels rise after them,
+         trend + quadrants + headline fade in. Replays on every re-render so
+         swapping metrics feels alive. */
+      @keyframes amDotIn { from { opacity:0; transform:scale(.25); } to { opacity:1; transform:scale(1); } }
+      @keyframes amFadeUp { from { opacity:0; transform:translateY(5px); } to { opacity:1; transform:none; } }
+      @keyframes amFadeIn { from { opacity:0; } to { opacity:1; } }
+      .am-graph-svg .am-graph-dot {
+        transform-box:fill-box; transform-origin:center;
+        animation:amDotIn .5s cubic-bezier(.2,.75,.3,1.15) backwards;
+      }
+      .am-graph-svg .am-graph-lbl { animation:amFadeUp .45s ease-out backwards; }
+      .am-graph-svg .am-graph-trend, .am-graph-svg .am-graph-quad { animation:amFadeIn .6s ease-out backwards; animation-delay:.55s; }
+      .am-graph-svg .am-graph-headline { animation:amFadeUp .5s ease-out backwards; animation-delay:.12s; }
+      @media (prefers-reduced-motion: reduce) {
+        .am-graph-svg .am-graph-dot, .am-graph-svg .am-graph-lbl,
+        .am-graph-svg .am-graph-trend, .am-graph-svg .am-graph-quad,
+        .am-graph-svg .am-graph-headline { animation:none !important; }
+      }
+      /* og=1 social-preview screenshots must capture the finished frame, never
+         a mid-animation one. */
+      html.og-render .am-graph-svg .am-graph-dot, html.og-render .am-graph-svg .am-graph-lbl,
+      html.og-render .am-graph-svg .am-graph-trend, html.og-render .am-graph-svg .am-graph-quad,
+      html.og-render .am-graph-svg .am-graph-headline { animation:none !important; }
+
+      /* ── Simple / Detailed mode segmented control ─────────────────── */
+      .am-graph-mode { display:flex; border:1px solid var(--border); border-radius:9px; overflow:hidden; }
+      .am-graph-mode .am-add-stat-btn { border:none !important; border-radius:0 !important; }
+      .am-graph-mode .am-add-stat-btn + .am-add-stat-btn { border-left:1px solid var(--border) !important; }
+      .am-graph-mode .am-add-stat-btn.am-active { background:var(--accent); border-color:var(--accent); color:#fff; }
 
       /* og=1 social-preview render mode: turn the graph modal into a clean,
          full-bleed 1200x630 dark canvas with the scatter centered. Rather than
@@ -4113,6 +4148,30 @@ _AM_JS = r"""
   // Whether quadrant dividers + labels are shown. Toggled via the quadrants
   // button in the graph controls.
   let _amGraphQuadrants = true;
+  // Simple (consumer) vs Detailed (analyst) graph mode. Simple is the default:
+  // bigger dots, fewer labels, no quadrant dividers, no R^2 chip. Sticky per
+  // browser via localStorage; the segmented control presets the underlying
+  // toggles so everything stays consistent.
+  let _amGraphSimple = true;
+  try { if (localStorage.getItem('amGraphMode') === 'detailed') _amGraphSimple = false; } catch (e) {}
+  // Apply the current mode to the controls (no re-render; callers render after).
+  function _amSyncGraphModeCtrls() {
+    _amGraphQuadrants = !_amGraphSimple;
+    const q = document.getElementById('amGraphQuadrantsBtn');
+    if (q) q.classList.toggle('am-active', _amGraphQuadrants);
+    const ls = document.getElementById('amGraphLabels');
+    if (ls) ls.value = _amGraphSimple ? '8' : '12';
+    const ms = document.getElementById('amGraphModeSimple');
+    if (ms) ms.classList.toggle('am-active', _amGraphSimple);
+    const md = document.getElementById('amGraphModeDetailed');
+    if (md) md.classList.toggle('am-active', !_amGraphSimple);
+  }
+  window.amSetGraphMode = function(mode) {
+    _amGraphSimple = (mode !== 'detailed');
+    try { localStorage.setItem('amGraphMode', _amGraphSimple ? 'simple' : 'detailed'); } catch (e) {}
+    _amSyncGraphModeCtrls();
+    window.amRenderGraph();
+  };
   // Populate/show the min-vol control for a given X metric key, or hide it.
   function _amUpdateGraphVolCtrl(xk) {
     const ctrl = document.getElementById('amGraphVolCtrl');
@@ -4261,6 +4320,8 @@ _AM_JS = r"""
     // Default graph theme to the site theme each open; preload both logos.
     _amGraphTheme = (document.documentElement.getAttribute('data-theme') === 'dark') ? 'dark' : 'light';
     _amSyncGraphThemeBtn();
+    // Apply the sticky Simple/Detailed mode to the controls before first render.
+    _amSyncGraphModeCtrls();
     _amLoadLogo('light'); _amLoadLogo('dark');
     if (note) {
       const bits = [];
@@ -4402,7 +4463,8 @@ _AM_JS = r"""
     const L = isNarrow
       ? { W: 392, H: 540, padL: 46, padR: 16, padT: 92, padB: 96, fTitle: 16, fSub: 10.5, fTick: 11, fAxis: 10, fLeg: 10.5, ntX: 4, ntY: 5, dotMin: 5.5, dotMax: 13, fStar: 11.5, fLbl: 10 }
       : { W: 720, H: 600, padL: 60, padR: 24, padT: 100, padB: 96, fTitle: 19, fSub: 11.5, fTick: 10.5, fAxis: 10.5, fLeg: 10.5, ntX: 5, ntY: 6, dotMin: 4, dotMax: 15, fStar: 11, fLbl: 9 };
-    const W = L.W, H = L.H, padL = L.padL, padR = L.padR, padT = L.padT, padB = L.padB;
+    const W = L.W, H = L.H, padL = L.padL, padR = L.padR, padB = L.padB;
+    let padT = L.padT;   // grows below if the headline takeaway needs room
     const xs = pts.map(function(p) { return p.x; });
     const ys = pts.map(function(p) { return p.y; });
     // Round tick domains: snap the axis to a nice step so ticks read "9, 12, 15"
@@ -4462,6 +4524,184 @@ _AM_JS = r"""
     const accent = posColor((pts[0] && pts[0].position) || 'WR');
     const chipBg = TH.dark ? '#1b2740' : '#f2f5f9';
     const chipBorder = TH.dark ? 'rgba(148,163,184,.32)' : '#dbe2ea';
+    // Plain-speak descriptors for high/low values, keyed by metric, shared by
+    // the quadrant labels and the headline takeaway. Falls back to
+    // High/Low {label} when a metric has no entry.
+    const _qd = {
+      'adjusted_completion_rate': ['Accurate', 'Inaccurate'],
+      'air_yards_per_game': ['Downfield volume', 'No downfield'],
+      'air_yards_share': ['Commands air yards', 'Few air yards'],
+      'avg_depth_of_target': ['Deep threat', 'Short-area'],
+      'avoided_tackles_per_carry': ['Forces missed tackles', 'No one misses'],
+      'big_time_throw_rate': ['Big-time throws', 'No big throws'],
+      'blitz_rate_faced': ['Blitzed often', 'Rarely blitzed'],
+      'boom_rate': ['Boom weeks', 'No ceiling'],
+      'breakaway_percentage': ['Home-run hitter', 'Grinder'],
+      'breakout_trend_score': ['Breakout trending', 'Fading'],
+      'bust_rate': ['Bust risk', 'Safe floor'],
+      'carries_per_game': ['Carry volume', 'No carries'],
+      'catch_rate': ['Sure hands', 'Inconsistent hands'],
+      'catchable_pass_pct': ['Catchable balls', 'Uncatchable'],
+      'completion_pct': ['Completes passes', 'Misses throws'],
+      'contested_catch_rate': ['Wins contested', 'Loses 50/50s'],
+      'contested_target_rate': ['Contested looks', 'Open looks'],
+      'cpoe': ['Above expected', 'Below expected'],
+      'deep_target_rate': ['Deep looks', 'No deep looks'],
+      'drop_rate': ['Drop issues', 'Reliable hands'],
+      'elusive_rating': ['Elusive', 'Easy to tackle'],
+      'end_zone_target_rate': ['End zone looks', 'No end zone looks'],
+      'epa_per_play': ['Efficient passer', 'Inefficient'],
+      'epa_vs_blitz': ['Beats the blitz', 'Folds vs blitz'],
+      'epa_vs_stacked_box': ['Beats stacked boxes', 'Stuffed vs stacked'],
+      'expected_half_ppr_per_game': ['High expected scoring', 'Low expected scoring'],
+      'expected_ppr_per_game': ['High expected scoring', 'Low expected scoring'],
+      'expected_standard_per_game': ['High expected scoring', 'Low expected scoring'],
+      'expected_tds': ['TDs coming', 'No TDs expected'],
+      'explosive_pass_rate': ['Explosive passes', 'Dink and dunk'],
+      'explosive_run_rate': ['Explosive runs', 'No explosives'],
+      'first_downs_per_game': ['Chain mover', 'No first downs'],
+      'fp_cv': ['Volatile', 'Consistent'],
+      'fpts_per_carry': ['Scores per carry', 'Empty carries'],
+      'fpts_per_target': ['Scores per target', 'Empty targets'],
+      'goal_line_opp_share': ['Goal-line role', 'No goal-line work'],
+      'grades_offense': ['PFF loves him', 'PFF down on him'],
+      'half_ppr_over_expected_per_game': ['Outscoring expectation', 'Underperforming'],
+      'inline_rate': ['Inline TE', 'Split out'],
+      'int_rate': ['INT problem', 'Protects the ball'],
+      'intended_air_yards_per_game': ['Intended deep volume', 'No deep intent'],
+      'intended_air_yards_share': ['Intended air share', 'No air share'],
+      'nfl_passer_rating': ['Elite rating', 'Poor rating'],
+      'ngs_aggressiveness': ['Aggressive', 'Checkdown Charlie'],
+      'ngs_avg_air_yards_to_sticks': ['Past the sticks', 'Short of sticks'],
+      'ngs_avg_completed_air_yards': ['Deep completions', 'Short completions'],
+      'ngs_avg_cushion': ['Given cushion', 'Pressed tight'],
+      'ngs_avg_separation': ['Gets open', 'No separation'],
+      'ngs_avg_time_to_throw': ['Holds the ball', 'Quick release'],
+      'ngs_avg_yac_above_expectation': ['YAC over expected', 'YAC below expected'],
+      'ngs_created_separation': ['Creates separation', 'Blanketed'],
+      'ngs_percent_attempts_gte_eight_defenders': ['Faces stacked boxes', 'Light boxes'],
+      'ngs_rush_yards_over_expected_per_att': ['Creates yards', 'Leaves yards'],
+      'opportunity_share': ['Workhorse', 'Limited role'],
+      'opportunity_trend': ['Role growing', 'Role shrinking'],
+      'pass_block_rate': ['Blocks often', 'Never blocks'],
+      'pass_tds_per_game': ['TD passer', 'No pass TDs'],
+      'passing_epa': ['Adds value', 'Hurts offense'],
+      'pff_passing_grade': ['PFF elite', 'PFF poor'],
+      'pff_rushing_grade': ['PFF elite runner', 'PFF poor runner'],
+      'play_action_epa': ['PA efficient', 'PA hurts'],
+      'play_action_rate': ['Heavy play-action', 'No play-action'],
+      'ppr_over_expected_per_game': ['Outscoring expectation', 'Underperforming'],
+      'ppr_pts': ['Scoring', 'Not scoring'],
+      'ppr_pts_per_game': ['High scorer', 'Low scorer'],
+      'pressure_rate_faced': ['Under siege', 'Clean pocket'],
+      'pressure_to_sack_rate': ['Takes sacks', 'Escapes pressure'],
+      'qb_hit_rate': ['Gets hit', 'Stays clean'],
+      'qb_rating_when_targeted': ['QB cooks', 'QB struggles'],
+      'rec_broken_tackles_per_reception': ['Breaks tackles', 'Goes down easy'],
+      'rec_first_down_rate': ['Moves the chains', 'No first downs'],
+      'rec_tds_per_game': ['Scores', 'No TDs'],
+      'rec_yards_per_game': ['Receiving yards', 'No receiving yards'],
+      'receiving_epa': ['Adds value', 'Hurts offense'],
+      'receiving_epa_per_target': ['EPA per target', 'Negative EPA'],
+      'receiving_success_rate': ['Successful catches', 'Empty catches'],
+      'receptions_per_game': ['Catch volume', 'Few catches'],
+      'route_participation': ['Always running routes', 'Not on routes'],
+      'routes_per_game': ['Route volume', 'No routes'],
+      'rush_first_down_rate': ['Moves chains', 'No first downs'],
+      'rush_td_rate': ['TD runner', 'No rush TDs'],
+      'rush_tds_per_game': ['Ground scores', 'No ground TDs'],
+      'rush_yards_per_game': ['Rush yards', 'No rush yards'],
+      'rushing_epa': ['Adds value', 'Hurts offense'],
+      'rushing_epa_per_att': ['EPA per carry', 'Negative EPA'],
+      'rushing_success_rate': ['Successful runs', 'Failed runs'],
+      'rz_opp_share': ['Goal-line role', 'No goal-line role'],
+      'rz_target_share': ['Red zone weapon', 'Not a RZ factor'],
+      'sack_rate': ['Sack-prone', 'Avoids sacks'],
+      'schedule_ease': ['Soft schedule', 'Brutal schedule'],
+      'scramble_rate': ['Scrambler', 'Statue'],
+      'screen_target_rate': ['Screen game', 'No screens'],
+      'slot_rate': ['Slot WR', 'Outside WR'],
+      'snap_share': ['Every-down player', 'Rotational'],
+      'standard_over_expected_per_game': ['Outscoring expectation', 'Underperforming'],
+      'stuffed_rate': ['Gets stuffed', 'Never stuffed'],
+      'success_rate': ['Stays on schedule', 'Behind the chains'],
+      'target_share': ['Target hog', 'Few targets'],
+      'targets_per_game': ['Target volume', 'No targets'],
+      'targets_per_snap': ['Targeted often', 'Ignored'],
+      'td_over_expected': ['Finishing drives', 'Leaving TDs'],
+      'td_rate': ['TD thrower', 'No TDs'],
+      'td_rate_per_opp': ['Scores on touches', 'Empty touches'],
+      'td_share': ['Team TD hog', 'No TD share'],
+      'third_down_conv_rate': ['Money on 3rd', '3rd-down liability'],
+      'total_pass_yards': ['Pass yards', 'No pass yards'],
+      'total_routes': ['Route runner', 'No routes run'],
+      'total_tds_per_game': ['Finding paint', 'No TDs'],
+      'total_yards': ['Yardage machine', 'No yards'],
+      'touches_per_game': ['Heavy usage', 'Light usage'],
+      'touches_per_snap': ['Touch magnet', 'Decoy'],
+      'turnover_worthy_rate': ['Reckless', 'Safe with ball'],
+      'uncatchable_tgt_rate': ['Uncatchable targets', 'Catchable targets'],
+      'unrealized_air_yards': ['Wasted air yards', 'No wasted yards'],
+      'unrealized_air_yards_per_game': ['Wasted deep looks', 'Efficient deep looks'],
+      'vorp': ['Above replacement', 'Below replacement'],
+      'war': ['Wins added', 'Wins lost'],
+      'wide_rate': ['Wide alignment', 'Tight splits'],
+      'wopr': ['Weighted opportunity', 'No opportunity'],
+      'xfp_trend': ['Usage rising', 'Usage falling'],
+      'xtd_per_game': ['TD chances', 'No TD chances'],
+      'yac_per_carry': ['YAC machine', 'Goes down on contact'],
+      'yards_after_catch': ['YAC monster', 'Goes down easy'],
+      'yards_after_catch_per_reception': ['YAC per catch', 'No YAC'],
+      'yards_per_attempt': ['Pushes downfield', 'Dinks and dunks'],
+      'yards_per_carry': ['Efficient runner', 'Stuffed often'],
+      'yards_per_reception': ['Big-play threat', 'Possession type'],
+      'yards_per_target': ['Efficient target', 'Inefficient target'],
+      'yards_per_touch': ['Per-touch weapon', 'Needs volume'],
+      'ybc_per_carry': ['Hits holes fast', 'Met at the line'],
+      'yprr': ['Open and productive', 'Invisible on routes'],
+    };
+    const _qdHi = function(k) { return (_qd[k] && _qd[k][0]) || ('High ' + cfg.metrics[k].label); };
+    const _qdLo = function(k) { return (_qd[k] && _qd[k][1]) || ('Low ' + cfg.metrics[k].label); };
+    // Headline takeaway: name the top-right standout in plain words so a casual
+    // reader gets the point without decoding the scatter. Skipped when the field
+    // is small or nobody owns the top-right quadrant. Wrapped to max 2 lines;
+    // padT grows so the plot never collides with it.
+    const _hlFs = isNarrow ? 11.5 : 12.5, _hlLH = _hlFs + 6;
+    let _hlLines = [];
+    (function() {
+      if (pts.length < 4) return;
+      const n = pts.length;
+      let mx = 0, my = 0;
+      pts.forEach(function(p) { mx += p.x; my += p.y; });
+      mx /= n; my /= n;
+      let vx = 0, vy = 0;
+      pts.forEach(function(p) { vx += (p.x - mx) * (p.x - mx); vy += (p.y - my) * (p.y - my); });
+      const sx = Math.sqrt(vx / n) || 1, sy = Math.sqrt(vy / n) || 1;
+      const qx = pts.map(function(p) { return p.x; }).sort(function(a, b) { return a - b; });
+      const qy = pts.map(function(p) { return p.y; }).sort(function(a, b) { return a - b; });
+      const xmed = qx[Math.floor(n / 2)], ymed = qy[Math.floor(n / 2)];
+      let best = null, bestScore = -Infinity;
+      pts.forEach(function(p) {
+        if (p.x <= xmed || p.y <= ymed) return;
+        const sc = (p.x - mx) / sx + (p.y - my) / sy;
+        if (sc > bestScore) { bestScore = sc; best = p; }
+      });
+      if (!best) return;
+      const nm = String(best.name || '').split(' · ')[0];
+      if (!nm) return;
+      const full = nm + ': ' + _qdHi(yk) + ' (' + fmtY(best.y) + ') and ' + _qdHi(xk) + ' (' + fmtX(best.x) + ')';
+      const maxW = W - padL - padR, cw = _hlFs * 0.52;
+      const words = full.split(' ');
+      let cur = '';
+      words.forEach(function(w) {
+        const t = cur ? cur + ' ' + w : w;
+        if (t.length * cw > maxW && cur) { _hlLines.push(cur); cur = w; }
+        else cur = t;
+      });
+      if (cur) _hlLines.push(cur);
+      if (_hlLines.length > 2) { _hlLines = _hlLines.slice(0, 2); _hlLines[1] += '…'; }
+    })();
+    padT += _hlLines.length ? _hlLines.length * _hlLH + 6 : 0;
     let s = '<svg class="am-graph-svg" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"'
       + ' viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" style="font-family:' + FONT + ';">';
     // Themed panel background.
@@ -4474,6 +4714,11 @@ _AM_JS = r"""
     const ctx = noteEl ? noteEl.textContent : '';
     const sub = [ctx, (zk ? 'bubble = ' + cfg.metrics[zk].label : '')].filter(Boolean).join(' · ');
     if (sub) s += txt(padL, 76, _amEsc(sub), L.fSub, TH.muted, 500, 'start');
+    _hlLines.forEach(function(ln, i) {
+      s += '<text x="' + padL + '" y="' + (76 + (i + 1) * _hlLH).toFixed(1) + '"'
+        + ' font-size="' + _hlFs + '" font-weight="600" fill="' + TH.text + '"'
+        + ' class="am-graph-headline">' + _amEsc(ln) + '</text>';
+    });
     // Grid: hairlines at round ticks; a single baseline instead of a hard frame.
     for (let xv = Math.ceil(xmin / dx.step - 1e-9) * dx.step; xv <= xmax + 1e-9; xv += dx.step) {
       const xx = px(xv);
@@ -4493,143 +4738,8 @@ _AM_JS = r"""
     // Quadrant dividers + labels (toggle). Split at the medians; each corner
     // names which side of each axis it sits on.
     if (_amGraphQuadrants && pts.length >= 4) {
-      // Plain-speak descriptors for high/low values, keyed by metric.
-      // Falls back to "High/Low {label}" when a metric has no entry.
-      const _qd = {
-        'adjusted_completion_rate': ['Accurate', 'Inaccurate'],
-        'air_yards_per_game': ['Downfield volume', 'No downfield'],
-        'air_yards_share': ['Commands air yards', 'Few air yards'],
-        'avg_depth_of_target': ['Deep threat', 'Short-area'],
-        'avoided_tackles_per_carry': ['Forces missed tackles', 'No one misses'],
-        'big_time_throw_rate': ['Big-time throws', 'No big throws'],
-        'blitz_rate_faced': ['Blitzed often', 'Rarely blitzed'],
-        'boom_rate': ['Boom weeks', 'No ceiling'],
-        'breakaway_percentage': ['Home-run hitter', 'Grinder'],
-        'breakout_trend_score': ['Breakout trending', 'Fading'],
-        'bust_rate': ['Bust risk', 'Safe floor'],
-        'carries_per_game': ['Carry volume', 'No carries'],
-        'catch_rate': ['Sure hands', 'Inconsistent hands'],
-        'catchable_pass_pct': ['Catchable balls', 'Uncatchable'],
-        'completion_pct': ['Completes passes', 'Misses throws'],
-        'contested_catch_rate': ['Wins contested', 'Loses 50/50s'],
-        'contested_target_rate': ['Contested looks', 'Open looks'],
-        'cpoe': ['Above expected', 'Below expected'],
-        'deep_target_rate': ['Deep looks', 'No deep looks'],
-        'drop_rate': ['Drop issues', 'Reliable hands'],
-        'elusive_rating': ['Elusive', 'Easy to tackle'],
-        'end_zone_target_rate': ['End zone looks', 'No end zone looks'],
-        'epa_per_play': ['Efficient passer', 'Inefficient'],
-        'epa_vs_blitz': ['Beats the blitz', 'Folds vs blitz'],
-        'epa_vs_stacked_box': ['Beats stacked boxes', 'Stuffed vs stacked'],
-        'expected_half_ppr_per_game': ['High expected scoring', 'Low expected scoring'],
-        'expected_ppr_per_game': ['High expected scoring', 'Low expected scoring'],
-        'expected_standard_per_game': ['High expected scoring', 'Low expected scoring'],
-        'expected_tds': ['TDs coming', 'No TDs expected'],
-        'explosive_pass_rate': ['Explosive passes', 'Dink and dunk'],
-        'explosive_run_rate': ['Explosive runs', 'No explosives'],
-        'first_downs_per_game': ['Chain mover', 'No first downs'],
-        'fp_cv': ['Volatile', 'Consistent'],
-        'fpts_per_carry': ['Scores per carry', 'Empty carries'],
-        'fpts_per_target': ['Scores per target', 'Empty targets'],
-        'goal_line_opp_share': ['Goal-line role', 'No goal-line work'],
-        'grades_offense': ['PFF loves him', 'PFF down on him'],
-        'half_ppr_over_expected_per_game': ['Outscoring expectation', 'Underperforming'],
-        'inline_rate': ['Inline TE', 'Split out'],
-        'int_rate': ['INT problem', 'Protects the ball'],
-        'intended_air_yards_per_game': ['Intended deep volume', 'No deep intent'],
-        'intended_air_yards_share': ['Intended air share', 'No air share'],
-        'nfl_passer_rating': ['Elite rating', 'Poor rating'],
-        'ngs_aggressiveness': ['Aggressive', 'Checkdown Charlie'],
-        'ngs_avg_air_yards_to_sticks': ['Past the sticks', 'Short of sticks'],
-        'ngs_avg_completed_air_yards': ['Deep completions', 'Short completions'],
-        'ngs_avg_cushion': ['Given cushion', 'Pressed tight'],
-        'ngs_avg_separation': ['Gets open', 'No separation'],
-        'ngs_avg_time_to_throw': ['Holds the ball', 'Quick release'],
-        'ngs_avg_yac_above_expectation': ['YAC over expected', 'YAC below expected'],
-        'ngs_created_separation': ['Creates separation', 'Blanketed'],
-        'ngs_percent_attempts_gte_eight_defenders': ['Faces stacked boxes', 'Light boxes'],
-        'ngs_rush_yards_over_expected_per_att': ['Creates yards', 'Leaves yards'],
-        'opportunity_share': ['Workhorse', 'Limited role'],
-        'opportunity_trend': ['Role growing', 'Role shrinking'],
-        'pass_block_rate': ['Blocks often', 'Never blocks'],
-        'pass_tds_per_game': ['TD passer', 'No pass TDs'],
-        'passing_epa': ['Adds value', 'Hurts offense'],
-        'pff_passing_grade': ['PFF elite', 'PFF poor'],
-        'pff_rushing_grade': ['PFF elite runner', 'PFF poor runner'],
-        'play_action_epa': ['PA efficient', 'PA hurts'],
-        'play_action_rate': ['Heavy play-action', 'No play-action'],
-        'ppr_over_expected_per_game': ['Outscoring expectation', 'Underperforming'],
-        'ppr_pts': ['Scoring', 'Not scoring'],
-        'ppr_pts_per_game': ['High scorer', 'Low scorer'],
-        'pressure_rate_faced': ['Under siege', 'Clean pocket'],
-        'pressure_to_sack_rate': ['Takes sacks', 'Escapes pressure'],
-        'qb_hit_rate': ['Gets hit', 'Stays clean'],
-        'qb_rating_when_targeted': ['QB cooks', 'QB struggles'],
-        'rec_broken_tackles_per_reception': ['Breaks tackles', 'Goes down easy'],
-        'rec_first_down_rate': ['Moves the chains', 'No first downs'],
-        'rec_tds_per_game': ['Scores', 'No TDs'],
-        'rec_yards_per_game': ['Receiving yards', 'No receiving yards'],
-        'receiving_epa': ['Adds value', 'Hurts offense'],
-        'receiving_epa_per_target': ['EPA per target', 'Negative EPA'],
-        'receiving_success_rate': ['Successful catches', 'Empty catches'],
-        'receptions_per_game': ['Catch volume', 'Few catches'],
-        'route_participation': ['Always running routes', 'Not on routes'],
-        'routes_per_game': ['Route volume', 'No routes'],
-        'rush_first_down_rate': ['Moves chains', 'No first downs'],
-        'rush_td_rate': ['TD runner', 'No rush TDs'],
-        'rush_tds_per_game': ['Ground scores', 'No ground TDs'],
-        'rush_yards_per_game': ['Rush yards', 'No rush yards'],
-        'rushing_epa': ['Adds value', 'Hurts offense'],
-        'rushing_epa_per_att': ['EPA per carry', 'Negative EPA'],
-        'rushing_success_rate': ['Successful runs', 'Failed runs'],
-        'rz_opp_share': ['Goal-line role', 'No goal-line role'],
-        'rz_target_share': ['Red zone weapon', 'Not a RZ factor'],
-        'sack_rate': ['Sack-prone', 'Avoids sacks'],
-        'schedule_ease': ['Soft schedule', 'Brutal schedule'],
-        'scramble_rate': ['Scrambler', 'Statue'],
-        'screen_target_rate': ['Screen game', 'No screens'],
-        'slot_rate': ['Slot WR', 'Outside WR'],
-        'snap_share': ['Every-down player', 'Rotational'],
-        'standard_over_expected_per_game': ['Outscoring expectation', 'Underperforming'],
-        'stuffed_rate': ['Gets stuffed', 'Never stuffed'],
-        'success_rate': ['Stays on schedule', 'Behind the chains'],
-        'target_share': ['Target hog', 'Few targets'],
-        'targets_per_game': ['Target volume', 'No targets'],
-        'targets_per_snap': ['Targeted often', 'Ignored'],
-        'td_over_expected': ['Finishing drives', 'Leaving TDs'],
-        'td_rate': ['TD thrower', 'No TDs'],
-        'td_rate_per_opp': ['Scores on touches', 'Empty touches'],
-        'td_share': ['Team TD hog', 'No TD share'],
-        'third_down_conv_rate': ['Money on 3rd', '3rd-down liability'],
-        'total_pass_yards': ['Pass yards', 'No pass yards'],
-        'total_routes': ['Route runner', 'No routes run'],
-        'total_tds_per_game': ['Finding paint', 'No TDs'],
-        'total_yards': ['Yardage machine', 'No yards'],
-        'touches_per_game': ['Heavy usage', 'Light usage'],
-        'touches_per_snap': ['Touch magnet', 'Decoy'],
-        'turnover_worthy_rate': ['Reckless', 'Safe with ball'],
-        'uncatchable_tgt_rate': ['Uncatchable targets', 'Catchable targets'],
-        'unrealized_air_yards': ['Wasted air yards', 'No wasted yards'],
-        'unrealized_air_yards_per_game': ['Wasted deep looks', 'Efficient deep looks'],
-        'vorp': ['Above replacement', 'Below replacement'],
-        'war': ['Wins added', 'Wins lost'],
-        'wide_rate': ['Wide alignment', 'Tight splits'],
-        'wopr': ['Weighted opportunity', 'No opportunity'],
-        'xfp_trend': ['Usage rising', 'Usage falling'],
-        'xtd_per_game': ['TD chances', 'No TD chances'],
-        'yac_per_carry': ['YAC machine', 'Goes down on contact'],
-        'yards_after_catch': ['YAC monster', 'Goes down easy'],
-        'yards_after_catch_per_reception': ['YAC per catch', 'No YAC'],
-        'yards_per_attempt': ['Pushes downfield', 'Dinks and dunks'],
-        'yards_per_carry': ['Efficient runner', 'Stuffed often'],
-        'yards_per_reception': ['Big-play threat', 'Possession type'],
-        'yards_per_target': ['Efficient target', 'Inefficient target'],
-        'yards_per_touch': ['Per-touch weapon', 'Needs volume'],
-        'ybc_per_carry': ['Hits holes fast', 'Met at the line'],
-        'yprr': ['Open and productive', 'Invisible on routes'],
-      };
-      const _qdHi = function(k) { return (_qd[k] && _qd[k][0]) || ('High ' + cfg.metrics[k].label); };
-      const _qdLo = function(k) { return (_qd[k] && _qd[k][1]) || ('Low ' + cfg.metrics[k].label); };
+      s += '<g class="am-graph-quad">';
+
       const _qx = pts.map(function(p) { return p.x; }).sort(function(a, b) { return a - b; });
       const _qy = pts.map(function(p) { return p.y; }).sort(function(a, b) { return a - b; });
       const _xmed = _qx[Math.floor(_qx.length / 2)], _ymed = _qy[Math.floor(_qy.length / 2)];
@@ -4654,6 +4764,7 @@ _AM_JS = r"""
       // bottom-left: low X, low Y
       s += txt(_qw(padL, _qxPx), (H - padB - 8 - _qfs).toFixed(1), _amEsc(_qdLo(xk)), _qfs, _qc, 600, 'middle');
       s += txt(_qw(padL, _qxPx), (H - padB - 8).toFixed(1), _amEsc(_qdLo(yk)), _qfs, _qc, 600, 'middle');
+      s += '</g>';
     }
     const avgCol = TH.dark ? 'rgba(148,163,184,.55)' : '#aab4c2';
     const chip = function(x, y, t, anchor) {
@@ -4679,16 +4790,21 @@ _AM_JS = r"""
         x2 = x1 - 1;   // flat line outside the view: skip
       }
       if (x2 > x1) {
+        s += '<g class="am-graph-trend">';
         const tx1 = px(x1), ty1 = py(yAt(x1)), tx2 = px(x2), ty2 = py(yAt(x2));
         s += '<line x1="' + tx1.toFixed(1) + '" y1="' + ty1.toFixed(1) + '" x2="' + tx2.toFixed(1) + '" y2="' + ty2.toFixed(1)
           + '" stroke="' + accent + '" stroke-width="1.6" stroke-dasharray="7 5" opacity="0.55" stroke-linecap="round"/>';
         // Chip near the line's right end, nudged clear of the plot edge.
-        const chipTxt = 'TREND · R² ' + (Math.round(trend.r2 * 100) / 100).toFixed(2);
-        const cy2 = Math.min(Math.max(ty2 + (ty2 < (padT + H - padB) / 2 ? 22 : -16), padT + 14), H - padB - 10);
-        const cx2 = Math.min(tx2, W - padR - 4);
-        s += chip(cx2, cy2, chipTxt, 'end');
-        const cw = chipW(chipTxt);
-        placed.push({ x1: cx2 - cw - 2, y1: cy2 - 12, x2: cx2 + 2, y2: cy2 + 6 });
+        // Simple mode tucks the R^2 chip away: the line stays, the jargon goes.
+        if (!_amGraphSimple) {
+          const chipTxt = 'TREND · R² ' + (Math.round(trend.r2 * 100) / 100).toFixed(2);
+          const cy2 = Math.min(Math.max(ty2 + (ty2 < (padT + H - padB) / 2 ? 22 : -16), padT + 14), H - padB - 10);
+          const cx2 = Math.min(tx2, W - padR - 4);
+          s += chip(cx2, cy2, chipTxt, 'end');
+          const cw = chipW(chipTxt);
+          placed.push({ x1: cx2 - cw - 2, y1: cy2 - 12, x2: cx2 + 2, y2: cy2 + 6 });
+        }
+        s += '</g>';
       }
     }
     // Emphasis: the top-ranked players carry the story -- full-strength dots and
@@ -4701,12 +4817,14 @@ _AM_JS = r"""
     // User picks the label count via #amGraphLabels; stars are the top ~40%.
     const _lblSel = document.getElementById('amGraphLabels');
     const _lblCount = _lblSel ? (parseInt(_lblSel.value, 10) || 0) : 12;
-    const showCut = Math.min(pts.length, _lblCount);
+    const showCut = Math.min(pts.length, _amGraphSimple ? Math.min(_lblCount, 8) : _lblCount);
     const starCut = showCut === 0 ? 0
       : Math.min(showCut, isNarrow ? 6 : 8, Math.max(4, Math.round(showCut * 0.4)));
     const lblSize = L.fLbl;
+    // Simple mode gets roomier dots for a calmer consumer default.
+    const _dotBoost = _amGraphSimple ? 1.28 : 1;
     const ptData = pts.map(function(p, idx) {
-      const cx = px(p.x), cy = py(p.y), r = rOf(p), col = posColor(p.position);
+      const cx = px(p.x), cy = py(p.y), r = rOf(p) * _dotBoost, col = posColor(p.position);
       const stats = [[cfg.metrics[xk].label, fmtX(p.x)], [cfg.metrics[yk].label, fmtY(p.y)]];
       if (zk) stats.push([cfg.metrics[zk].label, p.z != null ? fmtVal(p.z, zk) : '–']);
       const info = { nm: p.name, pos: p.position || '', hs: p.headshot || '', stats: stats };
@@ -4720,11 +4838,13 @@ _AM_JS = r"""
     ptData.filter(function(d) { return !d.star; }).sort(function(a, b) { return b.r - a.r; }).forEach(function(d) {
       s += '<circle class="am-graph-dot" cx="' + d.cx.toFixed(1) + '" cy="' + d.cy.toFixed(1) + '" r="' + d.r.toFixed(1)
         + '" fill="' + d.col + '" fill-opacity="' + fieldOp + '" stroke="' + TH.bg + '" stroke-width="1.4"'
+        + ' style="animation-delay:' + Math.min(d.idx * 14, 480) + 'ms"'
         + ' data-info="' + _amEsc(JSON.stringify(d.info)) + '"></circle>';
     });
     ptData.filter(function(d) { return d.star; }).sort(function(a, b) { return b.r - a.r; }).forEach(function(d) {
       s += '<circle class="am-graph-dot" cx="' + d.cx.toFixed(1) + '" cy="' + d.cy.toFixed(1) + '" r="' + d.r.toFixed(1)
         + '" fill="' + d.col + '" stroke="' + TH.bg + '" stroke-width="2"'
+        + ' style="animation-delay:' + Math.min(d.idx * 14, 480) + 'ms"'
         + ' data-info="' + _amEsc(JSON.stringify(d.info)) + '"></circle>';
     });
     // Pass 2 -- labels with collision avoidance; higher-ranked names claim space
@@ -4738,8 +4858,10 @@ _AM_JS = r"""
       const iy = Math.min(a.y2, b.y2) - Math.max(a.y1, b.y1);
       return (ix > 0 && iy > 0) ? ix * iy : 0;
     };
+    let _li = 0;   // label entrance stagger index
     ptData.forEach(function(d) {
       if (d.idx >= showCut) return;
+      const _ld = 380 + Math.min(_li * 24, 420); _li++;
       const isStar = d.star;
       const nm = _amLastName(d.p.name);
       const valTxt = isStar ? ' ' + (_amGraphLabelAxis === 'y' ? fmtY(d.p.y) : fmtX(d.p.x)) : '';
@@ -4800,6 +4922,7 @@ _AM_JS = r"""
       }
       s += '<text x="' + chosen.x.toFixed(1) + '" y="' + chosen.y.toFixed(1) + '"'
         + (chosen.anchor === 'end' ? ' text-anchor="end"' : '')
+        + ' class="am-graph-lbl" style="animation-delay:' + _ld + 'ms"'
         + ' font-size="' + fs + '" font-weight="' + (isStar ? 800 : 500) + '"'
         + ' fill="' + lblFill + '"'
         + ' stroke="' + TH.bg + '" stroke-width="3" stroke-linejoin="round" paint-order="stroke fill"'
