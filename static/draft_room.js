@@ -62,6 +62,9 @@
       ? window.brIsDefPos(p && p.position)
       : ['DEF','DST','D/ST'].indexOf(String((p && p.position) || '').toUpperCase()) >= 0;
     var team = (p && (p.team || p.id)) || '';
+    if (isDef && window.brTeamBadge) {
+      return window.brTeamBadge(team, 'xs');
+    }
     if (isDef) {
       return '<img class="'+cls+'" src="'+playerImgUrl(p)+'" alt="" data-team="'+esc(String(team))+'" onerror="_defImgErr(this)">';
     }

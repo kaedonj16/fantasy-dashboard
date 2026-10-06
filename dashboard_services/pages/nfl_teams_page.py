@@ -393,8 +393,9 @@ function fmtVal(col,v){{
 }}
 function defaultDir(col){{return col.hb===false?"asc":"desc";}}
 function logoHTML(t,lg){{
+  var size = lg ? "lg" : "sm";
+  if(window.brTeamBadge){{return window.brTeamBadge(t.team, size);}}
   var cls="nt-logo"+(lg?" nt-lg":"");
-  if(t.logo){{return '<span class="'+cls+'"><img src="'+esc(t.logo)+'" alt="" loading="lazy" onerror="this.remove()"></span>';}}
   return '<span class="'+cls+'">'+esc(t.team.slice(0,2))+'</span>';
 }}
 
@@ -727,19 +728,18 @@ function scatterSVG(t,cfg){{
     if(!qq.t)return;
     s+='<text x="'+qq.x.toFixed(1)+'" y="'+qq.y.toFixed(1)+'" font-size="10" text-anchor="middle" fill="var(--text-muted)" opacity="0.85" letter-spacing="1">'+esc(qq.t)+'</text>';
   }});
-  /* Team logos as plot marks. The selected team is larger and full-color
+  /* Team badges as plot marks. The selected team is larger and full-color
      while the rest are greyed out, and it is drawn after everyone else so
-     it stays on top. Dots remain as the fallback when a logo URL is missing. */
+     it stays on top. Dots remain as the fallback. */
   function dot(p){{
     var x=X(p.x),y=Y(p.y),me=p.abbr===t.team;
     var tip=esc(cfg.tip?cfg.tip(p):p.abbr);
-    if(p.logo){{
-      var sz=me?26:18,hx=x-sz/2,hy=y-sz/2;
-      s+='<image href="'+esc(p.logo)+'" x="'+hx.toFixed(1)+'" y="'+hy.toFixed(1)+'" width="'+sz+'" height="'+sz+'"'+(me?'':' class="nt-mark-dim"')+'><title>'+tip+'</title></image>';
-    }} else {{
-      s+='<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="'+(me?7:4.5)+'" fill="'+(me?tcolor:"var(--text-muted)")+'" '+
-        (me?'stroke="#fff" stroke-width="1.5" ':'')+'fill-opacity="'+(me?1:0.55)+'"><title>'+tip+'</title></circle>';
-    }}
+    var bc=(window.BR_TEAM_COLORS&&window.BR_TEAM_COLORS[p.abbr])||["#334155","#64748b"];
+    var sz=me?26:18,hx=x-sz/2,hy=y-sz/2;
+    s+='<g'+(me?'':' class="nt-mark-dim"')+'><title>'+tip+'</title>'+
+      '<rect x="'+hx.toFixed(1)+'" y="'+hy.toFixed(1)+'" width="'+sz+'" height="'+sz+'" rx="5" fill="'+bc[0]+'"/>'+
+      '<rect x="'+hx.toFixed(1)+'" y="'+hy.toFixed(1)+'" width="4" height="'+sz+'" fill="'+bc[1]+'"/>'+
+      '<text x="'+x.toFixed(1)+'" y="'+(y+3.5).toFixed(1)+'" text-anchor="middle" font-size="'+(me?9:7)+'" font-weight="800" fill="#fff">'+esc(p.abbr)+'</text></g>';
     if(me){{
       var lx=x+17>W-30?x-42:x+17;
       s+='<text x="'+lx.toFixed(1)+'" y="'+(y+4).toFixed(1)+'" font-size="12" font-weight="800" fill="'+tcolor+'">'+esc(p.abbr)+'</text>';
