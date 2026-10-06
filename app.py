@@ -18082,7 +18082,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
           hidden.forEach(function (w) {{
             html += _boWeekBar(w.week, w.graded || w.calls || 0, w.hit_rate, '#16a34a', 'hits');
           }});
-          html += '</div><div class="bo-show-all" onclick="document.getElementById(\'boHiddenWeeks\').style.display=\'block\';this.style.display=\'none\';">Show all weeks</div>';
+          html += '</div><div class="bo-show-all" onclick="document.getElementById(\\'boHiddenWeeks\\').style.display=\\'block\\';this.style.display=\\'none\\';">Show all weeks</div>';
         }}
 
         // Biggest hits
