@@ -40585,6 +40585,19 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     color: #FFD700;
 }
 
+/* Top scorer row: gold accent bar + label (option C treatment). */
+.wrapped-row.wrapped-row-top {
+    border-left: 3px solid #FFD700;
+    padding-left: 12px;
+}
+
+.wrapped-row-top-label {
+    font-size: 12px;
+    font-weight: 700;
+    color: #FFD700;
+    margin-top: 6px;
+}
+
 .wrapped-record {
     display: flex;
     align-items: center;

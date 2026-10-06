@@ -1332,17 +1332,23 @@ def _build_wrapped_slides(history_ctx: dict, summary: dict, league_name: str, se
     return slides
 
 
-def _wrapped_row_html(k, n, v, deco="") -> str:
+def _wrapped_row_html(k, n, v, deco="", is_top=False) -> str:
     """One wrapped rows-slide row: kicker, name, value, plus optional raw
-    deco HTML (e.g. the crown on the week's top scorer)."""
-    _n_cls = "wrapped-row-n wrapped-crowned" if deco else "wrapped-row-n"
+    deco HTML (e.g. the crown on the week's top scorer). When is_top is set,
+    the row gets the gold accent-bar treatment with a top-scorer label
+    instead of the deco."""
+    _row_cls = "wrapped-row wrapped-row-top" if is_top else "wrapped-row"
+    _n_cls = "wrapped-row-n wrapped-crowned" if (deco and not is_top) else "wrapped-row-n"
+    _deco = "" if is_top else deco
+    _label = ("<div class='wrapped-row-top-label'>&#9733; Highest scorer of the week</div>"
+              if is_top else "")
     return (
-        "<div class='wrapped-row'>"
+        f"<div class='{_row_cls}'>"
         f"<div class='wrapped-row-k'>{_esc(str(k))}</div>"
         "<div class='wrapped-row-m'>"
-        f"<span class='{_n_cls}'>{_esc(str(n))}{deco}</span>"
+        f"<span class='{_n_cls}'>{_esc(str(n))}{_deco}</span>"
         + (f"<span class='wrapped-row-v'>{_esc(str(v))}</span>" if v not in (None, "") else "")
-        + "</div></div>"
+        + "</div>" + _label + "</div>"
     )
 
 
@@ -1860,8 +1866,8 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
             p,
             by_pos[p]["name"],
             f"{by_pos[p]['pts']:.1f}",
-            ("<i class='fa-solid fa-crown wrapped-row-crown' aria-hidden='true'></i>"
-             if p == _top_pos else ""),
+            "",
+            p == _top_pos,
         ) for p in _poses]
         if len(pos_rows) >= 3:
             slides.append({"kind": "posleaders", "eyebrow": "TOP AT EACH POSITION",
@@ -2030,7 +2036,7 @@ def _wrapped_weekly_share_data(slides: list, league_name: str, season, week) -> 
     pl = by_kind.get("posleaders")
     if pl:
         _crowned = next((_r for _r in (pl.get("rows") or [])
-                         if len(_r) > 3 and _r[3]), None)
+                         if len(_r) > 4 and _r[4]), None)
         if _crowned:
             highlights.append(_hi("TOP PLAYER", _crowned[1], _crowned[2]))
     gw = by_kind.get("gotw")

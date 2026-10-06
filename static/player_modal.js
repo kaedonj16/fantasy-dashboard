@@ -1763,20 +1763,21 @@ function _pmRenderInLeague(el, events) {
     return '<div class="pm-inleague-row"><span class="tl-mark ' + e.cls + '"></span>' +
       '<span class="pm-inleague-text">' + e.text + '</span></div>';
   };
-  // Keep the current-ownership line always visible as a pinned footer; collapse
-  // only older history beyond the first three.
+  // Keep the current-ownership line always visible as a pinned footer; show the
+  // most recent history by default, collapsing older entries behind the toggle.
   const nowEvent = (events[events.length - 1] && events[events.length - 1].cls === 'now')
     ? events[events.length - 1] : null;
   const history = nowEvent ? events.slice(0, -1) : events.slice();
-  const top = history.slice(0, 3).map(row).join('');
-  const rest = history.slice(3).map(row).join('');
+  const recent = history.slice(-3).map(row).join('');
+  const older = history.slice(0, -3).map(row).join('');
   el.hidden = false;
   el.innerHTML =
     '<hr class="pm-section-divider">' +
     '<div class="pm-section-header"><span class="pm-section-label">In this league</span></div>' +
-    '<div class="pm-inleague-list">' + top +
-    (rest ? '<div class="pm-inleague-rest" hidden>' + rest + '</div>' +
+    '<div class="pm-inleague-list">' +
+    (older ? '<div class="pm-inleague-rest" hidden>' + older + '</div>' +
       '<button type="button" class="pm-inleague-more" onclick="var r=this.previousElementSibling; r.hidden=!r.hidden; this.textContent=r.hidden?\'View full history\':\'Show less\';">View full history</button>' : '') +
+    recent +
     (nowEvent ? row(nowEvent) : '') +
     '</div>';
 }
@@ -1850,20 +1851,31 @@ function _pmLoadInLeague(playerId, data, leagueId, platform, season) {
     const events = [];
 
     // Draft + waiver/FAAB add events (chronological base).
+    // Date formatter: "Oct 15" from epoch ms timestamp.
+    const fmtDate = function (ts) {
+      if (!ts) return '';
+      try {
+        const d = new Date(Number(ts));
+        if (isNaN(d.getTime())) return '';
+        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      } catch (err) { return ''; }
+    };
     (acqData.events || []).forEach(function (e) {
       const wkNum = (e.week != null) ? Number(e.week) : 0;
       const sortKey = Number(e.season || 0) * 100 + (e.kind === 'draft' ? 0 : wkNum);
+      const dt = fmtDate(e.ts);
+      const dtHtml = dt ? ' &middot; ' + escapeHtml(dt) : '';
       if (e.kind === 'draft') {
         let pickLbl = '';
         if (e.round && e.slot) pickLbl = e.round + '.' + (e.slot < 10 ? '0' + e.slot : e.slot);
         else if (e.pick_no) pickLbl = 'pick ' + e.pick_no;
         const by = e.team ? ' by ' + escapeHtml(e.team) : '';
-        events.push({ cls: 'draft', sort: sortKey, text: 'Drafted' + (pickLbl ? ' ' + pickLbl : '') + by });
+        events.push({ cls: 'draft', sort: sortKey, text: 'Drafted' + (pickLbl ? ' ' + pickLbl : '') + by + dtHtml });
       } else {
         const wk = e.week ? ' &middot; Week ' + e.week : '';
         const faab = (e.faab != null && e.faab !== '') ? ' &middot; ' + e.faab + ' FAAB' : '';
         const by = e.team ? ' by ' + escapeHtml(e.team) : '';
-        events.push({ cls: 'add', sort: sortKey, text: 'Added' + by + wk + faab });
+        events.push({ cls: 'add', sort: sortKey, text: 'Added' + by + wk + dtHtml + faab });
       }
     });
 
