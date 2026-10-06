@@ -295,14 +295,25 @@ def test_weekly_track_record_biggest_hits_and_misses(monkeypatch):
 
 def test_top_grade_rows_orders_and_converts_decimals():
     rows = [
-        _grade_row("a", "watchlist", "miss", Decimal("-2.0"), opp_delta=Decimal("1.0")),
-        _grade_row("b", "watchlist", "miss", Decimal("-2.0"), opp_delta=Decimal("-3.0")),
-        _grade_row("c", "watchlist", "miss", None, opp_delta=Decimal("-9.0")),
+        _grade_row("a", "emerging_breakout", "miss", Decimal("-2.0"), opp_delta=Decimal("1.0")),
+        _grade_row("b", "emerging_breakout", "miss", Decimal("-2.0"), opp_delta=Decimal("-3.0")),
+        _grade_row("c", "emerging_breakout", "miss", None, opp_delta=Decimal("-9.0")),
     ]
     misses = forecasts.top_grade_rows(rows, "miss")
     # ppg tie broken by the worse opportunity delta; missing ppg goes last.
     assert [m["player_id"] for m in misses] == ["b", "a", "c"]
     assert isinstance(misses[0]["ppg_delta"], float)
+
+
+def test_top_grade_rows_excludes_watchlist():
+    rows = [
+        _grade_row("a", "watchlist", "hit", 6.0),
+        _grade_row("b", "monitored", "hit", 5.0),
+        _grade_row("c", "emerging_breakout", "hit", 4.0),
+        _grade_row("d", "early_watch", "hit", 3.0),
+    ]
+    hits = forecasts.top_grade_rows(rows, "hit")
+    assert [h["player_id"] for h in hits] == ["c", "d"]
 
 
 # ---------------------------------------------------------------------------

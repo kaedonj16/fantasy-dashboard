@@ -528,7 +528,9 @@ def top_grade_rows(
     recon = reconstructed_weeks or set()
     picked = [
         _grade_row_view(r, reconstructed=r.get("as_of_week") in recon)
-        for r in rows if r.get("grade") == grade
+        for r in rows
+        if r.get("grade") == grade
+        and str(r.get("classification") or "") not in ("watchlist", "monitored")
     ]
     if grade == wg.GRADE_HIT:
         picked.sort(key=lambda v: (v["ppg_delta"] is None,
