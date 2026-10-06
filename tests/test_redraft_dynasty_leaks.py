@@ -59,17 +59,22 @@ def test_share_card_uses_redraft_labels_not_espn_only():
 
 def test_trade_window_card_skips_age_for_redraft():
     src = (ROOT / "app.py").read_text(encoding="utf-8")
-    start = src.find("def _trade_window_card_html")
-    end = src.find("def _render_season_review_card")
+    # Data function holds the redraft guards (deadline visibility, age skip).
+    start = src.find("def _trade_window_data")
+    end = src.find("\ndef ", start + 1)
     body = src[start:end]
     assert "is_redraft = _league_is_redraft(ctx)" in body
-    assert 'titles = {"buy": "Playoff push"' in body
-    assert "if not is_redraft:" in body
-    assert "stacking picks" in body  # dynasty copy still exists
     assert "if not is_redraft:" in body
     # Week 1 ESPN was painting "Trade deadline: Playoff push" with no deadline.
     assert "redraft_deadline_card_visible(weeks_to)" in body
     assert "trade_deadline_ts" in body
+    # Action function holds the redraft titles.
+    start = src.find("def _next_steps_trade_window_action")
+    end = src.find("\ndef ", start + 1)
+    action_body = src[start:end]
+    assert 'titles = {"buy": "Playoff push"' in action_body
+    assert "if not is_redraft:" in action_body
+    assert "stacking picks" in action_body  # dynasty copy still exists
 
 
 def test_trade_calc_hides_rebuilding_chip_for_redraft():

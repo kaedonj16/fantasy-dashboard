@@ -21,7 +21,6 @@ def build_dashboard_body(ctx: dict) -> str:
         _losing_streak_trade_html,
         _section_title_link,
         _standings_movement,
-        _trade_window_card_html,
         _league_is_redraft,
         build_teams_overview,
         compute_awards_season,
@@ -69,7 +68,6 @@ def build_dashboard_body(ctx: dict) -> str:
     )
     usage_movers_html = _render_usage_movers(ctx, viewer_roster_id)
     roster_moves_html = _roster_moves_alert_html(ctx, viewer_roster_id)
-    trade_window_html = _trade_window_card_html(ctx, viewer_roster_id)
     losing_trade_html = _losing_streak_trade_html(ctx, viewer_roster_id)
     season_review_html = _render_season_review_card(ctx, viewer_roster_id, df_weekly, team_stats)
 
@@ -410,8 +408,6 @@ def build_dashboard_body(ctx: dict) -> str:
             return 0
         if key == "nextsteps":
             return 75  # unified action queue: ranked by impact internally
-        if key == "trade":
-            return 90 if "tw-urgent" in card_html else 50
         if key == "trade-losing":
             return 85  # losing teams need action now, just below urgent trades
         if key == "roster":
@@ -421,7 +417,6 @@ def build_dashboard_body(ctx: dict) -> str:
     _action_cards = [
         ("nextsteps", do_next_waiver_html),
         ("trade-losing", losing_trade_html),
-        ("trade", trade_window_html),
         ("roster", roster_moves_html),
     ]
     _action_cards = sorted(

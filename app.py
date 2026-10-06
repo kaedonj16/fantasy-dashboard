@@ -9675,16 +9675,15 @@ def _roster_moves_alert_html(ctx: dict, viewer_roster_id) -> str:
         return ""
 
 
-def _trade_window_card_html(ctx: dict, viewer_roster_id) -> str:
-    """Buy/sell trade-window advisor for the Season Hub: playoff odds plus
-    roster-age standing plus the trade deadline, with partners on the opposite
-    side of the market. Empty string when it has nothing confident to say."""
+def _trade_window_data(ctx: dict, viewer_roster_id) -> dict | None:
+    """Buy/sell trade-window advisor data: playoff odds plus roster-age
+    standing plus the trade deadline, with partners on the opposite side of
+    the market. Returns None when it has nothing confident to say."""
     if not viewer_roster_id:
-        return ""
+        return None
     try:
         import time as _time
         from utils.trade_window import (
-            deadline_line_visible,
             redraft_deadline_card_visible,
             trade_partners,
             trade_window_verdict,
@@ -9694,13 +9693,13 @@ def _trade_window_card_html(ctx: dict, viewer_roster_id) -> str:
         # Warm-cache only: a cold sim must never block the dashboard paint.
         odds = _playoff_sim_cached(ctx, platform, block=False)
         if not odds:
-            return ""
+            return None
         me = next(
             (r for r in odds if str(r.get("roster_id")) == str(viewer_roster_id)),
             None,
         )
         if not me or me.get("is_complete"):
-            return ""
+            return None
         pct = float(me.get("playoff_pct") or 0)
 
         # Sleeper keeps trade_deadline on league.settings; ESPN maps
@@ -9716,7 +9715,7 @@ def _trade_window_card_html(ctx: dict, viewer_roster_id) -> str:
         weeks_to = None
         if 0 < deadline < 30:
             if current_week > deadline:
-                return ""  # deadline passed; the window is closed
+                return None  # deadline passed; the window is closed
             weeks_to = deadline - current_week
         else:
             try:
@@ -9726,7 +9725,7 @@ def _trade_window_card_html(ctx: dict, viewer_roster_id) -> str:
             if deadline_ts > 0:
                 remaining = deadline_ts - _time.time()
                 if remaining < 0:
-                    return ""
+                    return None
                 weeks_to = int(remaining // (7 * 86400))
                 # Display label only -- approximate week from now + remaining.
                 deadline = max(1, current_week + weeks_to)
@@ -9735,7 +9734,7 @@ def _trade_window_card_html(ctx: dict, viewer_roster_id) -> str:
         # Redraft copy is explicitly "Trade deadline: …". Hide it in Week 1 /
         # early season when the deadline is unknown or still far away.
         if is_redraft and not redraft_deadline_card_visible(weeks_to):
-            return ""
+            return None
 
         # Roster-age standing is a dynasty window signal. Redraft ignores it.
         age_rank = None
@@ -9790,42 +9789,75 @@ def _trade_window_card_html(ctx: dict, viewer_roster_id) -> str:
             vw["verdict"],
         )
 
-        verdict = vw["verdict"]
+        return {
+            "verdict": vw["verdict"],
+            "urgent": vw["urgent"],
+            "modifier": vw["modifier"],
+            "pct": pct,
+            "age_rank": age_rank,
+            "n_teams": n_teams,
+            "partners": partners,
+            "weeks_to": weeks_to,
+            "deadline": deadline,
+            "is_redraft": is_redraft,
+        }
+    except Exception:
+        logger.debug("trade window data failed", exc_info=True)
+        return None
+
+
+def _next_steps_trade_window_action(ctx: dict, viewer_roster_id) -> list:
+    """Trade-window advisor as a Next steps queue action.
+
+    Converts the buy/sell window verdict (playoff odds, core age, deadline,
+    opposite-side partners) into a single ranked action. Empty list when the
+    window has nothing confident to say.
+    """
+    data = _trade_window_data(ctx, viewer_roster_id)
+    if not data:
+        return []
+    try:
+        verdict = data["verdict"]
+        pct = data["pct"]
+        age_rank = data["age_rank"]
+        n_teams = data["n_teams"]
+        partners = data["partners"] or []
+        weeks_to = data["weeks_to"]
+        deadline = data["deadline"]
+        is_redraft = data["is_redraft"]
+        modifier = data["modifier"]
+        urgent = data["urgent"]
+
         if is_redraft:
             titles = {"buy": "Playoff push", "sell": "Out of it", "hold": "On the bubble"}
-            section_label = "Trade deadline"
         else:
             titles = {"buy": "Buy window", "sell": "Sell window", "hold": "Hold"}
-            section_label = "Trade window"
-        lines = []
-        # Only lead with the deadline when it's close enough to be actionable;
-        # otherwise a year-round dynasty advisor reads like a countdown alert.
-        if deadline_line_visible(weeks_to):
-            when = "this week" if weeks_to == 0 else (
-                "next week" if weeks_to == 1 else f"{weeks_to} weeks away")
-            lines.append(
-                f'Week {deadline} trade deadline, <span class="la-em">{when}</span>.'
-            )
-        _odds_line = f'You\'re at <span class="la-em">{_fmt_playoff_pct_display(pct)}%</span> playoff odds'
+        title = titles.get(verdict, "Trade window")
+
+        # Why line: playoff odds + core age + modifier.
+        _why_bits = [f"You are at {_fmt_playoff_pct_display(pct)}% playoff odds"]
         if (not is_redraft) and age_rank and n_teams:
             _sfx = "th" if 10 <= age_rank % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(age_rank % 10, "th")
-            _odds_line += f" with the {age_rank}{_sfx}-oldest core of {n_teams}"
-        lines.append(_odds_line + ".")
+            _why_bits.append(f"with the {age_rank}{_sfx}-oldest core of {n_teams}")
         if not is_redraft:
             mod_lines = {
-                "all_in": "Your core is old and you're contending. The window is now.",
+                "all_in": "Your core is old and you are contending. The window is now.",
                 "youth": "Your core is young. Stay patient and keep stacking picks.",
                 "aging_bubble": "Aging core on the playoff bubble. Pick a direction before the deadline.",
             }
-            if vw["modifier"] in mod_lines:
-                lines.append(mod_lines[vw["modifier"]])
+            if modifier in mod_lines:
+                _why_bits.append(mod_lines[modifier])
+        _why = " ".join(_why_bits) + "."
+
+        # Impact line: deadline proximity + partners to call.
+        _impact_bits = []
+        if weeks_to is not None and weeks_to <= 2:
+            _when = "this week" if weeks_to == 0 else "next week" if weeks_to == 1 else f"in {weeks_to} weeks"
+            _impact_bits.append(f"Trade deadline {deadline} {_when}")
         if partners:
-            who = "Sellers to call" if verdict == "buy" else "Buyers to call"
-            _names = ", ".join(html.escape(p) for p in partners)
-            lines.append(
-                f'<span class="la-label">{who}</span>'
-                f'<span class="la-em">{_names}</span>'
-            )
+            _who = "Sellers to call" if verdict == "buy" else "Buyers to call"
+            _impact_bits.append(f"{_who}: " + ", ".join(partners[:3]))
+        _impact = " | ".join(_impact_bits) if _impact_bits else None
 
         platform = ctx.get("platform", "sleeper")
         season = ctx.get("current_season") or ctx.get("season")
@@ -9833,24 +9865,37 @@ def _trade_window_card_html(ctx: dict, viewer_roster_id) -> str:
         _trade_url = url_for(
             "trade.page_trade", platform=platform, season=season, league_id=league_id,
         ) + "?tab=suggestions"
-        items = "".join(f"<li>{line}</li>" for line in lines)
-        urgent_cls = " tw-urgent" if vw["urgent"] and verdict != "hold" else ""
-        return f"""
-        <section class="os-card trade-window-card tw-{verdict}{urgent_cls}" data-action-card="trade">
-          <div class="lineup-alert-head">
-            <span class="lineup-alert-title">{section_label}: {titles[verdict]}</span>
-            <span class="os-card-actions">
-              <a class="recap-generate-btn os-action-cta" href="{html.escape(_trade_url)}">View trades</a>
-              <button type="button" class="os-action-dismiss" data-dismiss-card="trade" aria-label="Dismiss">&times;</button>
-            </span>
-          </div>
-          <ul class="lineup-alert-list">{items}</ul>
-        </section>"""
+
+        # Score: urgent windows rank high; hold ranks low.
+        _score = 50
+        _priority = "low"
+        if verdict == "buy":
+            _score = 75
+            _priority = "med"
+        elif verdict == "sell":
+            _score = 70
+            _priority = "med"
+        if urgent and verdict != "hold":
+            _score += 15
+            _priority = "high"
+
+        return [{
+            "priority": _priority,
+            "tag": f"Trade | {title}",
+            "action": f"{title}: " + (
+                "go get your guys" if verdict == "buy"
+                else "shop your veterans" if verdict == "sell"
+                else "stay the course"
+            ),
+            "why": _why,
+            "impact": _impact,
+            "cta_label": "View trades",
+            "cta_url": _trade_url,
+            "score": _score,
+        }]
     except Exception:
-        logger.debug("trade window card failed", exc_info=True)
-        return ""
-
-
+        logger.debug("next-steps trade window action failed", exc_info=True)
+        return []
 def _losing_streak_trade_html(ctx: dict, viewer_roster_id) -> str:
     """Proactive trade suggestion card for losing teams.
 
@@ -11893,7 +11938,12 @@ def _next_steps_lineup_actions(ctx: dict, viewer_roster_id) -> list:
                 starters, eligible, proj_map, pos_map, roster_positions or [],
                 injury_status=injury_status,
             )
+            # Track players already covered by a swap suggestion so the
+            # generic "Address:" alerts below don't duplicate them.
+            _swap_covered_pids = set()
             for s in swaps[:2]:
+                _swap_covered_pids.add(str(s.get("in") or ""))
+                _swap_covered_pids.add(str(s.get("out") or ""))
                 _in_name = (players_map.get(s["in"]) or {}).get("name") or f"Player {s['in']}"
                 _out_name = (players_map.get(s["out"]) or {}).get("name") or f"Player {s['out']}"
                 _in_proj = float(proj_map.get(s["in"]) or 0)
@@ -11943,6 +11993,11 @@ def _next_steps_lineup_actions(ctx: dict, viewer_roster_id) -> list:
             for i in issues[:3]:
                 if i.get("kind") == "projection":
                     continue  # already covered above
+                # Skip if a swap suggestion already covers this player
+                # (e.g. "Start X over Y" for a bye-week player makes the
+                # generic "Address: Y" alert redundant).
+                if str(i.get("pid") or "") in _swap_covered_pids:
+                    continue
                 _detail = i.get("detail") or ""
                 _name = i.get("name") or ""
                 actions.append({
@@ -12183,6 +12238,7 @@ def _render_next_steps_queue(
     actions.extend(_next_steps_lineup_actions(ctx, viewer_roster_id))
     actions.extend(_next_steps_waiver_actions(ctx, viewer_roster_id, model_value_table or []))
     actions.extend(_next_steps_trade_actions(ctx, viewer_roster_id))
+    actions.extend(_next_steps_trade_window_action(ctx, viewer_roster_id))
 
     # Rank by score (expected impact), highest first.
     actions.sort(key=lambda a: -(a.get("score") or 0))
