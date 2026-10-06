@@ -66,3 +66,35 @@ def test_wrapped_player_leaders_sum_full_season_not_just_regular(offline_client)
     assert abs(rb["pts"] - 416.5) < 0.1, rb["pts"]   # 17 * 24.5, not 14 * 24.5
     assert abs(rb["ppg"] - 24.5) < 0.1
     assert leaders["mvp"]["name"] == "Christian McCaffrey"  # highest full-season total
+
+
+def test_weekly_wrapped_standings_slide_sits_before_gotw(monkeypatch):
+    import pandas as pd
+    from dashboard_services.pages import history_page as H
+
+    rows = [
+        # week, roster_id, points, points_against, finalized
+        (1, 1, 120.0, 100.0, True), (1, 2, 100.0, 120.0, True),
+        (1, 3, 110.0, 90.0, True), (1, 4, 90.0, 110.0, True),
+        (2, 1, 130.0, 105.0, True), (2, 2, 105.0, 130.0, True),
+        (2, 3, 95.0, 115.0, True), (2, 4, 115.0, 95.0, True),
+    ]
+    df = pd.DataFrame(rows, columns=["week", "roster_id", "points",
+                                     "points_against", "finalized"])
+    ctx = {"df_weekly": df,
+           "roster_map": {1: "Alpha", 2: "Bravo", 3: "Charlie", 4: "Delta"}}
+    monkeypatch.setattr(H, "_next_week_gotw_game", lambda *a, **k: {
+        "team_a": "Alpha", "team_b": "Bravo", "target_week": 3,
+        "rank_a": 1, "rank_b": 2, "record_a": "2-0", "record_b": "1-1",
+        "roster_id_a": "1", "roster_id_b": "2", "matchup_id": "x"})
+
+    slides = H._build_weekly_wrapped_slides(ctx, "Test League", 2026, 2)
+    kinds = [s.get("kind") for s in slides]
+    assert "standings" in kinds and "gotw" in kinds
+    # Standings is the recap beat; GOTW stays the preview closer.
+    assert kinds.index("standings") < kinds.index("gotw")
+    assert kinds.index("gotw") == len(kinds) - 1
+    st = next(s for s in slides if s.get("kind") == "standings")
+    assert st["eyebrow"] == "LEAGUE STANDINGS"
+    assert st["rows"][0] == ("#1", "Alpha", "2-0 · top scorer")
+    assert st["rows"][1][2] == "1-1"  # Bravo and Charlie both 1-1; PF breaks it

@@ -1331,6 +1331,6 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
                         f'<a href="{history_url}">Open season history and recap</a>.</div></section>')
 
     return ('<main class="weekly-recap">' + week_selector + preview_banner + history_banner
-            + scoreboard_html + efficiency_html + cards_html + injuries_html + story_html
-            + lineup_html + standings_html + activity_html
+            + scoreboard_html + story_html + cards_html + efficiency_html
+            + lineup_html + standings_html + activity_html + injuries_html
             + up_next_html + '</main>')
