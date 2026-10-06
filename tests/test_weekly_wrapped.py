@@ -101,17 +101,18 @@ def test_weekly_top_player_pos_leaders_and_dud():
 
     by_kind = {s["kind"]: s for s in slides}
 
-    top = by_kind["topplayer"]
-    assert top["label"] == "Star QB"
-    assert abs(float(top["big"]) - 32.5) < 0.01
-    assert "KC" in top["sub"]
+    # No standalone top-player slide; the week's top scorer wears the crown
+    # on the position-leaders slide instead.
+    assert "topplayer" not in by_kind
 
     leaders = by_kind["posleaders"]
-    rows = dict((k, (n, v)) for k, n, v in leaders["rows"])
+    rows = {k: (n, v, d) for k, n, v, d in leaders["rows"]}
     assert rows["QB"][0] == "Star QB"
     assert rows["RB"][0] == "Star RB"
     assert rows["WR"][0] == "Star WR"
     assert rows["TE"][0] == "Star TE"
+    crowned = [k for k, (n, v, d) in rows.items() if d]
+    assert crowned == ["QB"]  # Star QB 32.5 is the week's top scorer
 
     # Dud = lowest-scoring starter above zero (Cold K at 1.2), not a benched 0.
     dud = by_kind["dud"]
@@ -129,7 +130,7 @@ def test_weekly_pos_leaders_include_kicker_and_defense():
         slides = H._build_weekly_wrapped_slides(ctx, "Test League", 2026, 3)
 
     by_kind = {s["kind"]: s for s in slides}
-    rows = dict((k, (n, v)) for k, n, v in by_kind["posleaders"]["rows"])
+    rows = {k: (n, v, d) for k, n, v, d in by_kind["posleaders"]["rows"]}
     assert rows["K"][0] == "Cold K"
     assert abs(float(rows["K"][1]) - 1.2) < 0.01
     assert rows["DEF"][0] == "Top D"

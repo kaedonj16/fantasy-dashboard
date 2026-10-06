@@ -40454,6 +40454,23 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     filter: drop-shadow(0 6px 22px color-mix(in srgb, var(--wa) 70%, transparent));
 }
 
+/* MVP treatment: the week's top player (and season League MVP) get the crown
+   treatment plus a gold number. */
+.wrapped-slide.wrapped-mvp .wrapped-big {
+    color: var(--wa);
+}
+
+.wrapped-slide.wrapped-mvp .wrapped-kicker-rule {
+    background: var(--wa);
+}
+
+/* Crown on the top scorer's row in the position-leaders slide. */
+.wrapped-row-crown {
+    color: var(--wa);
+    font-size: 11px;
+    margin-left: 6px;
+}
+
 .wrapped-record {
     display: flex;
     align-items: center;
