@@ -4094,6 +4094,10 @@
       + '<div class="rz-panel' + (_activeTab === 'top'    ? ' active' : '') + '" id="rz-panel-top">'    + _renderTopPerformers()  + '</div>';
 
     var exitBtn  = _isDemo ? '<button class="rz-demo-exit" id="rz-demo-exit">Exit Demo</button>' : '';
+    // The demo used to live in the nav; now it is linked from the idle header
+    // so it stays discoverable without occupying a permanent nav slot.
+    var demoLink = (idle && !_isDemo)
+      ? '<a class="rz-demo-link" href="' + location.pathname + '?demo=1">Try the demo</a>' : '';
     var staleChip = _lastPollFailed ? '<span class="rz-stale-badge">Stale' + (_lastDataAt ? ' · updated ' + new Date(_lastDataAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '') + '</span>' : '';
     // ESPN scoreboard degradation surfaced by the server (scoreboard_status:
     // "stale"/"failed"). Some games may be missing live scores; say so in the
@@ -4124,7 +4128,7 @@
       notifCta
       + '<div class="rz-header">'
       + '<div class="rz-brand"><div class="rz-brand-dot' + (live ? ' is-live' : '') + '"></div><span class="rz-brand-name">BR ScoreZone</span><span class="rz-brand-week">Wk ' + (_state.week || '') + '</span>' + demoPill + '</div>'
-      + '<div class="rz-header-right">' + exitBtn + staleChip + sbChip + liveChip + '<button class="rz-refresh-timer" id="rz-timer" aria-label="Refresh ScoreZone data">' + timerLabel + '</button></div>'
+      + '<div class="rz-header-right">' + exitBtn + demoLink + staleChip + sbChip + liveChip + '<button class="rz-refresh-timer" id="rz-timer" aria-label="Refresh ScoreZone data">' + timerLabel + '</button></div>'
       + '</div>'
       + '<div class="rz-content">'
       + _renderScopeToggle()

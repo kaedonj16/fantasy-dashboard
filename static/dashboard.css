@@ -34267,6 +34267,23 @@ button:disabled {
     background: rgba(220, 38, 38, .08);
 }
 
+.rz-demo-link {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--rz-red);
+    text-decoration: none;
+    border: 1px solid rgba(220, 38, 38, .4);
+    padding: 4px 10px;
+    border-radius: 6px;
+    opacity: .85;
+    white-space: nowrap;
+}
+
+.rz-demo-link:hover {
+    opacity: 1;
+    background: rgba(220, 38, 38, .08);
+}
+
 /* Header -- a clean app bar with a thin red identity line */
 .rz-header {
     background: var(--rz-card);
