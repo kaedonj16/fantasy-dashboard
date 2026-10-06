@@ -19863,7 +19863,7 @@ img, svg, canvas {
         display: grid;
         grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 8px;
-        align-items: start;
+        align-items: stretch;
     }
 }
 .ns-card.ns-collapsed .ns-hidden {
@@ -19892,7 +19892,8 @@ img, svg, canvas {
 .ns-priority.high { background: #ef4444; }
 .ns-priority.med { background: #f59e0b; }
 .ns-priority.low { background: #22c55e; }
-.ns-body { flex: 1; min-width: 0; }
+.ns-body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ns-cta { margin-top: auto; align-self: flex-start; }
 .ns-action {
     font-size: 14px;
     font-weight: 600;
@@ -43185,34 +43186,25 @@ a, button, [role="button"], [role="tab"], summary, label,
 .standings-table tr.st-div-leader td:first-child {
     box-shadow: inset 3px 0 0 var(--accent);
 }
-/* Streak edge signal: colored left edge on team rows, intensity scales with
-   streak length. Wins green, losses red. W1/L1 are a whisper, W4+/L4+ cap the
-   scale. Placed after the division-leader rule so the streak edge wins when a
-   leader is also streaking (the leader keeps its row tint). */
-.standings-table tr.streak-w1 td:first-child {
-    box-shadow: inset 2px 0 0 color-mix(in srgb, var(--win) 40%, transparent);
+/* Streak form bars: last-N game results as mini bars in the Form column
+   (green = win, red = loss, short gray = tie), oldest to newest. Replaces
+   the old left-edge streak bars. */
+.st-formbars {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    height: 24px;
 }
-.standings-table tr.streak-w2 td:first-child {
-    box-shadow: inset 3px 0 0 color-mix(in srgb, var(--win) 70%, transparent);
+
+.st-fbar {
+    width: 9px;
+    height: 22px;
+    border-radius: 2px;
 }
-.standings-table tr.streak-w3 td:first-child {
-    box-shadow: inset 4px 0 0 var(--win);
-}
-.standings-table tr.streak-w4plus td:first-child {
-    box-shadow: inset 5px 0 0 var(--win);
-}
-.standings-table tr.streak-l1 td:first-child {
-    box-shadow: inset 2px 0 0 color-mix(in srgb, var(--loss) 40%, transparent);
-}
-.standings-table tr.streak-l2 td:first-child {
-    box-shadow: inset 3px 0 0 color-mix(in srgb, var(--loss) 70%, transparent);
-}
-.standings-table tr.streak-l3 td:first-child {
-    box-shadow: inset 4px 0 0 var(--loss);
-}
-.standings-table tr.streak-l4plus td:first-child {
-    box-shadow: inset 5px 0 0 var(--loss);
-}
+
+.st-fbar.w { background: var(--win); }
+.st-fbar.l { background: var(--loss); }
+.st-fbar.t { background: var(--text-subtle); height: 10px; }
 .standings-compact .st-div-head {
     padding: 8px 11px;
     border-radius: 10px;

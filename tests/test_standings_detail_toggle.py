@@ -75,7 +75,7 @@ def test_standings_row_order_and_format_unchanged():
     thead = html.split("<thead>")[1].split("</thead>")[0]
     headers = [h.split(">")[-1] for h in thead.split("</th>")[:-1]]
     assert headers[:9] == ["Seed", "Team", "Record", "PF", "PA", "Trend",
-                           "Streak", "Luck", "Exp. Seed"]
+                           "Form", "Luck", "Exp. Seed"]
     # All-Play is the first detail column, right after Exp. Seed.
     assert headers[9] == "All-Play"
     assert len(headers) == 18
