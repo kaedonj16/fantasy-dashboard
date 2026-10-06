@@ -86,6 +86,7 @@ table.nt-rank tbody tr.nt-sel td{{background:var(--accent-soft)}}
 .nt-logo img{{width:100%;height:100%;object-fit:cover}}
 .nt-logo.nt-lg{{width:44px;height:44px;font-size:13px}}
 .nt-tid .nt-tn{{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
+.nt-tabbr{{display:none;font-weight:700;white-space:nowrap}}
 .nt-tright{{display:flex;align-items:center;gap:8px;flex:none}}
 .nt-gp{{font-size:11px;color:var(--text-muted);white-space:nowrap}}
 table.nt-rank thead th.nt-teamcol{{position:sticky;left:0;z-index:3;background:var(--bg)}}
@@ -102,7 +103,7 @@ table.nt-rank tbody tr.nt-sel td.nt-teamcol{{background:var(--accent-soft)}}
 .nt-vwrap{{display:flex;flex-direction:column;align-items:flex-end;line-height:1.25}}
 .nt-eff{{font-size:10px;color:var(--text-muted);white-space:nowrap;font-variant-numeric:tabular-nums}}
 .nt-tnote{{margin:0;padding:10px 14px;font-size:12px;color:var(--text-muted);border-top:1px solid var(--border)}}
-@media(max-width:600px){{.nt-mbar{{display:none}}.nt-metric{{gap:0}}.nt-val{{min-width:40px;font-size:12px}}table.nt-rank{{min-width:520px}}}}
+@media(max-width:600px){{.nt-mbar{{display:none}}.nt-metric{{gap:0}}.nt-val{{min-width:40px;font-size:12px}}table.nt-rank{{min-width:0}}table.nt-rank thead th{{padding:8px 7px}}table.nt-rank td{{padding:8px 7px}}.nt-tn{{display:none}}.nt-tabbr{{display:inline;font-size:14px}}.nt-logo{{width:24px;height:24px}}.nt-tleft{{gap:8px}}.nt-gp{{font-size:10px}}}}
 .nt-pcard{{background:var(--card);border:1px solid var(--border);border-radius:12px;margin-bottom:16px;overflow:hidden}}
 .nt-pcard.nt-empty{{padding:28px 20px;text-align:center;color:var(--text-muted)}}
 .nt-pcard.nt-empty h2{{color:var(--text);margin:0 0 6px;font-size:17px}}
@@ -464,7 +465,7 @@ function renderTable(){{
     }}
     h+='<tr data-abbr="'+t.team+'" class="'+(state.team===t.team?"nt-sel":"")+'">'+
       '<td class="nt-rankcol">'+badge+'</td>'+
-      '<td class="nt-teamcol"><span class="nt-tid"><span class="nt-tleft">'+logoHTML(t)+'<span class="nt-tn">'+esc(t.city)+' '+esc(t.name)+'</span></span>'+
+      '<td class="nt-teamcol"><span class="nt-tid"><span class="nt-tleft">'+logoHTML(t)+'<span class="nt-tn">'+esc(t.city)+' '+esc(t.name)+'</span><span class="nt-tabbr">'+esc(t.team)+'</span></span>'+
       '<span class="nt-tright">'+
       '<span class="nt-gp">'+(t.games==null?"":t.games+" GP")+'</span></span></span></td>';
     cols.forEach(function(c){{
