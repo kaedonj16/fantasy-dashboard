@@ -17795,6 +17795,10 @@ def page_breakouts(platform: str, season: int, league_id: str):
         {_bo_last_updated}
       </div>
       <div class="card-body">
+       <div class="bo-view-tabs" role="tablist" aria-label="Breakout views">
+        <button type="button" class="otc-day-filter bo-view-tab active" data-view="candidates" onclick="boSwitchView('candidates')" role="tab" aria-selected="true">Candidates</button>
+        <button type="button" class="otc-day-filter bo-view-tab" data-view="track" onclick="boSwitchView('track')" role="tab" aria-selected="false">Track Record</button>
+       </div>
        <div class="bo-layout">
         <div class="bo-main">
         <!-- Position Filter + Week Selector -->
@@ -17978,6 +17982,18 @@ def page_breakouts(platform: str, season: int, league_id: str):
         if (boTrackData) renderBoTrackRecord(boTrackData);
       }}
 
+      function boSwitchView(view) {{
+        var layout = document.querySelector('.bo-layout');
+        if (!layout) return;
+        var showTrack = (view === 'track');
+        layout.classList.toggle('bo-view-track', showTrack);
+        document.querySelectorAll('.bo-view-tab').forEach(function(btn) {{
+          var active = btn.getAttribute('data-view') === view;
+          btn.classList.toggle('active', active);
+          btn.setAttribute('aria-selected', active ? 'true' : 'false');
+        }});
+      }}
+
       function boGoWeek(week) {{
         var sel = document.getElementById('breakoutWeekSelect');
         if (sel) {{
@@ -17997,9 +18013,17 @@ def page_breakouts(platform: str, season: int, league_id: str):
           + '<div class="bo-rail-bar"><span style="width:' + (pct != null ? Math.round(pct * 100) : 0) + '%;background:' + barColor + ';"></span></div></div>';
       }}
 
+      var _boPlayerNames = {{}};
+      function boOpenPlayerModal(pid) {{
+        var nm = _boPlayerNames[pid] || 'Unknown';
+        openPlayerModal(pid, nm, {{tab: 'breakout'}});
+      }}
       function _boPlayerLink(name, playerId) {{
         if (playerId) {{
-          return '<a class="bo-plink" onclick="event.stopPropagation();openPlayerModal(\'' + playerId + '\', \'' + (name || '').replace(/\\/g, '\\\\').replace(/\'/g, "\\'") + '\', {{tab: \'breakout\'}});return false;">' + (name || 'Unknown') + '</a>';
+          var pid = String(playerId);
+          _boPlayerNames[pid] = name || 'Unknown';
+          var safePid = pid.replace(/"/g, '&quot;');
+          return '<a class="bo-plink" data-bopid="' + safePid + '" onclick="event.stopPropagation();boOpenPlayerModal(this.getAttribute(\\\'data-bopid\\\'));">' + (name || 'Unknown') + '</a>';
         }}
         return name || 'Unknown';
       }}
