@@ -50,8 +50,10 @@ def test_presets_have_valid_ordered_metrics_primary_position_and_sort():
         assert preset["position"] == position
         assert preset["sort"] == "desc"
         assert preset.get("kind") != "decision"
-        assert len(preset["metrics"]) == 7
-        assert len(set(preset["metrics"])) == 7
+        # rb preset has 12 metrics (7 base + 5 situational usage shares)
+        expected_count = 12 if preset_id == "rb" else 7
+        assert len(preset["metrics"]) == expected_count
+        assert len(set(preset["metrics"])) == expected_count
         assert all(key in LEADERBOARD_METRICS for key in preset["metrics"])
 
 

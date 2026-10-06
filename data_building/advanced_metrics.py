@@ -2660,6 +2660,11 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "role_score":           {"label": "Role Score",          "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "hidden": True, "desc": "Internal opportunity signal (feeds breakout detection); not shown on the front end. Share of team targets/carries, red-zone usage, and (QB) passing + rushing workload."},
     "snap_share":           {"label": "Snap Share",          "category": "General", "positions": ["QB", "RB", "WR", "TE"], "pct": True, "pct_frac": True, "min_vol": _V_GAMES, "desc": "Percent of the team's offensive snaps the player was on the field for."},
     "opportunity_share":    {"label": "Opportunity Share",   "category": "General", "positions": ["RB", "WR", "TE"], "pct": True, "min_vol": _V_GAMES, "desc": "Share of the team's targets plus carries that went to this player."},
+    "goalline_share":       {"label": "Goalline Share",      "category": "General", "positions": ["RB"], "pct": True, "min_vol": _V_GAMES, "situational_metric": True, "desc": "Share of the team's RB touches (rush attempts plus receptions) inside the 10-yard line that went to this player. High goalline share means TD opportunity."},
+    "short_yardage_share":  {"label": "Short Yardage Share", "category": "General", "positions": ["RB"], "pct": True, "min_vol": _V_GAMES, "situational_metric": True, "desc": "Share of the team's RB touches on 3rd or 4th down with 2 or fewer yards to go that went to this player. Identifies the trusted short-yardage back."},
+    "third_down_share":     {"label": "Third Down Share",    "category": "General", "positions": ["RB"], "pct": True, "min_vol": _V_GAMES, "situational_metric": True, "desc": "Share of the team's RB touches on 3rd down that went to this player. High third-down share usually means passing-down work."},
+    "early_down_share":     {"label": "Early Down Share",    "category": "General", "positions": ["RB"], "pct": True, "min_vol": _V_GAMES, "situational_metric": True, "desc": "Share of the team's RB touches on 1st and 2nd down that went to this player. The every-down role indicator."},
+    "two_minute_share":     {"label": "Two Minute Share",    "category": "General", "positions": ["RB"], "pct": True, "min_vol": _V_GAMES, "situational_metric": True, "desc": "Share of the team's RB touches in the last 2 minutes of either half that went to this player. Hurry-up and comeback-game work."},
     "td_rate_per_opp":      {"label": "TD Rate / Opp",       "category": "General", "positions": ["RB", "WR", "TE"], "efficiency": True, "pct": True, "pct_frac": True, "min_vol": _V_TOUCHES, "desc": "Percent of opportunities (carries + targets) that result in a touchdown; scoring efficiency on volume.", "computed_sql": "m.total_tds::float / NULLIF(m.total_touches, 0)", "computed_null": "m.total_tds IS NOT NULL AND m.total_touches IS NOT NULL AND m.total_touches > 0"},
     "boom_rate":            {"label": "Boom Rate",           "category": "General", "positions": ["QB", "RB", "WR", "TE"], "pct": True, "pct_frac": True, "min_vol": _V_GAMES, "desc": "Share of games at/above the position boom threshold (QB 25 / RB-WR 20 / TE 15 PPR); how often the player wins you a week."},
     "bust_rate":            {"label": "Bust Rate",           "category": "General", "positions": ["QB", "RB", "WR", "TE"], "pct": True, "pct_frac": True, "lower_better": True, "min_vol": _V_GAMES, "desc": "Share of games below the position bust threshold (QB 15 / RB-WR 8 / TE 5 PPR). Lower is better; high bust rate means frequent lineup-killing weeks."},
@@ -3843,6 +3848,14 @@ def get_available_seasons() -> List[int]:
 # per league. Keyed names match LEADERBOARD_METRICS entries flagged value_metric.
 VALUE_METRICS = ("vorp", "war")
 
+# ── Situational usage metrics (RB goalline / short-yardage / etc. shares) ────
+# Computed in Python from nflverse play-by-play via utils.rb_usage rather than
+# read from a DB column. Keyed names match LEADERBOARD_METRICS entries flagged
+# situational_metric.
+SITUATIONAL_METRICS = ("goalline_share", "short_yardage_share",
+                       "third_down_share", "early_down_share",
+                       "two_minute_share")
+
 # Metrics whose data lives only in player_weekly_metrics (no column on
 # player_advanced_metrics). In season mode these must be aggregated from the
 # weekly table rather than read as a column.
@@ -4075,6 +4088,84 @@ def get_player_value_metrics(
     }
 
 
+# ── Situational usage metrics (RB goalline / short-yardage / etc. shares) ────
+# Computed in Python from nflverse play-by-play via utils.rb_usage, not from a
+# DB column. Uses the latest completed week for the season.
+
+def get_situational_leaderboard(
+    metric: str,
+    position: Optional[str] = None,
+    limit: int = 500,
+    season: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    """Players ranked by a situational RB usage share metric.
+
+    Output shape matches get_metric_leaderboard:
+    [{player_id, name, team, position, value, games}].
+    """
+    if metric not in SITUATIONAL_METRICS:
+        return []
+    try:
+        from utils.rb_usage import get_all_player_situational_shares
+        from data_building.external_data.nflverse_metrics import _gsis_to_sleeper
+        from utils.utils import load_players_index
+    except Exception:
+        return []
+
+    if season is None:
+        from datetime import date as _date
+        season = _date.today().year
+
+    # Determine the latest week with play-by-play data for this season.
+    try:
+        import nfl_data_py as nfl
+        schedules = nfl.import_schedules([season])
+        completed = schedules[
+            (schedules["game_type"] == "REG") & schedules["away_score"].notna()
+        ]
+        week = int(completed["week"].max()) if not completed.empty else 1
+    except Exception:
+        week = 1
+
+    shares = get_all_player_situational_shares(season, week)
+    if not shares:
+        return []
+
+    xwalk = _gsis_to_sleeper()
+    try:
+        idx_meta = load_players_index() or {}
+    except Exception:
+        idx_meta = {}
+
+    pos_filter = (position or "").upper().strip() or None
+    out: List[Dict[str, Any]] = []
+    for gsis_id, data in shares.items():
+        value = data.get(metric)
+        if value is None:
+            continue
+        sleeper_id = xwalk.get(str(gsis_id))
+        if not sleeper_id:
+            continue
+        meta = idx_meta.get(str(sleeper_id)) or {}
+        pos = str(meta.get("position") or "").upper()
+        if pos_filter and pos != pos_filter:
+            continue
+        # Only RBs have meaningful situational shares; skip others.
+        if pos and pos != "RB":
+            continue
+        out.append({
+            "player_id": str(sleeper_id),
+            "name": meta.get("name") or data.get("name") or "Unknown",
+            "team": meta.get("team") or data.get("team") or "",
+            "position": pos or "RB",
+            "value": float(value),
+            "games": meta.get("games"),
+        })
+
+    out.sort(key=lambda x: x["value"], reverse=True)
+    return out[:limit] if limit else out
+
+
 # ── Breakout Score (composite of the three PRO breakout signals) ────────────
 # Blends xFP Trend (opportunity quality), Usage Trend (role growth), and
 # FPOE/G (production vs expectation) behind the "Is This Breakout Real?"
@@ -4198,6 +4289,14 @@ def get_metric_leaderboard(
     if metric in VALUE_METRICS:
         return _stamp_season(
             get_value_leaderboard(metric, position=position, limit=limit, season=season),
+            season,
+        )
+    # Situational usage metrics (RB goalline / short-yardage / etc. shares)
+    # are computed in Python from nflverse play-by-play, not from a DB column.
+    if metric in SITUATIONAL_METRICS:
+        return _stamp_season(
+            get_situational_leaderboard(
+                metric, position=position, limit=limit, season=season),
             season,
         )
     # Breakout Score is a Python composite of three component leaderboards.
