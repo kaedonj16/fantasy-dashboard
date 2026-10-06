@@ -1335,11 +1335,12 @@ def _build_wrapped_slides(history_ctx: dict, summary: dict, league_name: str, se
 def _wrapped_row_html(k, n, v, deco="") -> str:
     """One wrapped rows-slide row: kicker, name, value, plus optional raw
     deco HTML (e.g. the crown on the week's top scorer)."""
+    _n_cls = "wrapped-row-n wrapped-crowned" if deco else "wrapped-row-n"
     return (
         "<div class='wrapped-row'>"
         f"<div class='wrapped-row-k'>{_esc(str(k))}</div>"
         "<div class='wrapped-row-m'>"
-        f"<span class='wrapped-row-n'>{_esc(str(n))}{deco}</span>"
+        f"<span class='{_n_cls}'>{_esc(str(n))}{deco}</span>"
         + (f"<span class='wrapped-row-v'>{_esc(str(v))}</span>" if v not in (None, "") else "")
         + "</div></div>"
     )
