@@ -56,3 +56,12 @@ def test_no_em_dashes_in_next_steps():
     end = src.find("def _nfl_regular_season_kickoff_ms", start)
     body = src[start:end]
     assert "\u2014" not in body, "em dash found in next-steps code"
+
+
+def test_no_lineup_banner_on_dashboard():
+    """The lineup-issues banner is removed; Next steps is the main surface."""
+    src = (ROOT / "app.py").read_text(encoding="utf-8")
+    assert "def _viewer_lineup_alert_html" not in src
+    dash = (ROOT / "dashboard_services" / "pages" / "dashboard_page.py").read_text(encoding="utf-8")
+    assert "_viewer_lineup_alert_html" not in dash
+    assert "lineup_alert_html" not in dash

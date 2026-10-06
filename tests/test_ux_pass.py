@@ -20,7 +20,6 @@ APP_PY = (ROOT / "app.py").read_text(encoding="utf-8")
 def test_dashboard_action_first_hierarchy():
     assert "os-action-queue" in DASH
     assert 'data-jump="os-jump-actions"' in DASH
-    assert "lineup_alert_html" in DASH
     assert "matchup_html" in DASH
     assert 'data-jump="os-jump-matchup"' in DASH
     # Center column stays action-first: digest, then next steps, then matchup.
