@@ -47,34 +47,34 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-guest-result { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 12px; border: none; background: none; color: var(--text); font-size: 13px; text-align: left; cursor: pointer; }
 .wv-guest-result:hover { background: var(--input-bg, rgba(127,127,127,.08)); }
 .wv-guest-rpos { font-weight: 800; font-size: 11px; color: var(--text-muted); min-width: 30px; }
-.wv-guest-rteam { margin-left: auto; font-size: 11.5px; color: var(--text-muted); }
+.wv-guest-rteam { margin-left: auto; font-size: 11px; color: var(--text-muted); }
 .wv-guest-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .wv-guest-chips:empty { margin-top: 0; }
-.wv-guest-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); font-size: 12px; font-weight: 600; color: var(--text); }
+.wv-guest-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); font-size: 13px; font-weight: 600; color: var(--text); }
 .wv-guest-chip .wv-guest-owner { font-weight: 500; color: var(--text-muted); }
-.wv-guest-chip button { border: none; background: none; color: var(--text-muted); font-size: 14px; line-height: 1; padding: 2px 4px; cursor: pointer; }
-.wv-cx-guest { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 6px; background: var(--accent); color: #fff; font-size: 9.5px; font-weight: 800; letter-spacing: .04em; vertical-align: 2px; }
-.wv-ss-guest-note { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
-.wv-lab-guest-chip { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 6px; background: var(--accent); color: #fff; font-size: 9.5px; font-weight: 800; letter-spacing: .04em; vertical-align: 2px; }
+.wv-guest-chip button { border: none; background: none; color: var(--text-muted); font-size: 15px; line-height: 1; padding: 2px 4px; cursor: pointer; }
+.wv-cx-guest { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 6px; background: var(--accent); color: #fff; font-size: 11px; font-weight: 800; letter-spacing: .04em; vertical-align: 2px; }
+.wv-ss-guest-note { font-size: 13px; color: var(--text-muted); margin-top: 3px; }
+.wv-lab-guest-chip { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 6px; background: var(--accent); color: #fff; font-size: 11px; font-weight: 800; letter-spacing: .04em; vertical-align: 2px; }
 .wv-lab-guests { margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--card); }
-.wv-lab-guests-title { font-size: 12px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px; }
+.wv-lab-guests-title { font-size: 13px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px; }
 .wv-lab-guest-row { display: flex; align-items: baseline; gap: 8px; font-size: 13px; padding: 3px 0; }
-.wv-lab-guest-row .wv-lab-guest-note { margin-left: auto; font-size: 12px; color: var(--text-muted); text-align: right; }
+.wv-lab-guest-row .wv-lab-guest-note { margin-left: auto; font-size: 13px; color: var(--text-muted); text-align: right; }
 .wv-lab-hero { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin-bottom: 12px; }
 .wv-lab-hero .lbl { font-size: 11px; font-weight: 800; letter-spacing: .06em; color: var(--text-muted); text-transform: uppercase; margin-bottom: 10px; }
-.wv-lab-winbar { display: flex; height: 34px; border-radius: 8px; overflow: hidden; font-weight: 800; font-size: 14px; }
+.wv-lab-winbar { display: flex; height: 34px; border-radius: 8px; overflow: hidden; font-weight: 800; font-size: 15px; }
 .wv-lab-winbar .you { background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; transition: width .3s; }
 .wv-lab-winbar .opp { background: #e5e7eb; color: #374151; display: flex; align-items: center; justify-content: center; transition: width .3s; }
 .wv-lab-dist { margin-top: 12px; }
 .wv-lab-trow { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-.wv-lab-trow .who { width: 34px; font-size: 12px; font-weight: 700; color: var(--text-muted); }
+.wv-lab-trow .who { width: 34px; font-size: 13px; font-weight: 700; color: var(--text-muted); }
 .wv-lab-trow .track { position: relative; flex: 1; height: 10px; background: #eef0f3; border-radius: 5px; }
 .wv-lab-trow .fill { position: absolute; top: 0; bottom: 0; border-radius: 5px; background: var(--accent); opacity: .55; }
 .wv-lab-trow .fill.o { background: #9ca3af; }
 .wv-lab-trow .tick { position: absolute; top: -2px; bottom: -2px; width: 2px; background: #111827; }
-.wv-lab-trow .nums { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+.wv-lab-trow .nums { font-size: 13px; color: var(--text-muted); white-space: nowrap; }
 .wv-lab-trow .nums b { color: var(--text); }
-.wv-lab-scale { display: flex; justify-content: space-between; font-size: 10px; color: var(--text-muted); margin: 2px 0 0 42px; }
+.wv-lab-scale { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted); margin: 2px 0 0 42px; }
 .wv-lab-modes { display: flex; gap: 8px; margin-top: 12px; }
 .wv-lab-btn { flex: 1; border: 1px solid var(--border); background: var(--card); color: var(--text); border-radius: 10px; padding: 10px 0; font-size: 13px; font-weight: 700; cursor: pointer; }
 .wv-lab-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
@@ -93,7 +93,7 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-lab-pos.k { background: #c92c68; color: #fff; }
 .wv-lab-pos.def { background: #475569; color: #fff; }
 .wv-lab-main { flex: 1; min-width: 0; }
-.wv-lab-name { font-size: 14px; font-weight: 700; }
+.wv-lab-name { font-size: 15px; font-weight: 700; }
 .wv-lab-line1 { display: block; }
 .wv-lab-line2 { display: flex; align-items: center; gap: 6px; margin-top: 4px; min-width: 0; }
 .wv-lab-meta { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); flex-wrap: nowrap; flex: 0 1 auto; min-width: 0; overflow: hidden; }
@@ -104,16 +104,16 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-lab-range { display: block; position: relative; height: 8px; background: #eef0f3; border-radius: 4px; }
 .wv-lab-range .fill { position: absolute; top: 0; bottom: 0; background: var(--accent); opacity: .5; border-radius: 4px; }
 .wv-lab-range .dot { position: absolute; top: -2px; width: 3px; height: 12px; background: #111827; border-radius: 2px; }
-.wv-lab-end { font-size: 10px; color: var(--text-muted); white-space: nowrap; }
-.wv-lab-end em { font-style: normal; font-weight: 800; font-size: 9px; letter-spacing: .05em; margin-right: 3px; }
+.wv-lab-end { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+.wv-lab-end em { font-style: normal; font-weight: 800; font-size: 11px; letter-spacing: .05em; margin-right: 3px; }
 .wv-lab-end .v { color: var(--text); font-weight: 700; }
-.wv-lab-tag { font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 20px; background: transparent; border: 1px solid currentColor; color: #4f46e5; }
+.wv-lab-tag { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 20px; background: transparent; border: 1px solid currentColor; color: #4f46e5; }
 .wv-lab-tag.td { color: #b45309; }
 .wv-lab-tag.q { color: #b91c1c; }
 .wv-lab-tag.boost, .wv-lab-tag.qb { color: #047857; }
 .wv-lab-proj { flex: 0 0 auto; text-align: right; line-height: 1; }
-.wv-lab-proj .n { display: block; font-size: 23px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
-.wv-lab-proj .l { display: block; font-size: 9px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: var(--text-subtle); margin-top: 3px; }
+.wv-lab-proj .n { display: block; font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.wv-lab-proj .l { display: block; font-size: 11px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: var(--text-subtle); margin-top: 3px; }
 .wv-lab-chev { color: var(--text-muted); font-size: 18px; }
 .wv-lab-sheet { display: none; padding: 0 4px 12px 54px; }
 .wv-lab-slot.open .wv-lab-sheet { display: block; }
@@ -125,8 +125,8 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-lab-opt .dl { margin-left: auto; font-weight: 800; }
 .wv-lab-opt .dl.up { color: #059669; }
 .wv-lab-opt .dl.dn { color: #dc2626; }
-.wv-lab-opt .l2 { display: block; margin-top: 6px; font-size: 12px; color: var(--text-muted); }
-.wv-lab-fine { font-size: 12px; color: var(--text-muted); margin-top: 10px; }
+.wv-lab-opt .l2 { display: block; margin-top: 6px; font-size: 13px; color: var(--text-muted); }
+.wv-lab-fine { font-size: 13px; color: var(--text-muted); margin-top: 10px; }
 /* Placeholder-only style (loading text, error/retry states). Never put this
    class on #wvLabBody itself: the rendered Lab replaces that container's
    innerHTML, so the 24px padding would survive into the loaded hero and
@@ -162,7 +162,7 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-lab-slot.wv-lab-changed > .wv-lab-row { animation: wv-lab-changed-flash 1.6s ease-out; }
 /* Summary line listing the swaps (or a one-off note) from the last action. */
 .wv-lab-changes {
-  font-size: 12px; color: var(--text-muted); background: var(--accent-soft);
+  font-size: 13px; color: var(--text-muted); background: var(--accent-soft);
   border-radius: 8px; padding: 8px 10px; margin: 0 0 8px;
 }
 /* Best moves card: the top single swaps that raise win probability. */
@@ -176,13 +176,13 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
    line. Only ever shows fields the payload actually carries. */
 .wv-lab-why { display: none; padding: 10px 12px 12px; border-top: 1px dashed var(--border); }
 .wv-lab-slot.why-open .wv-lab-why { display: block; }
-.wv-lab-why .wl { font-size: 12.5px; margin-top: 4px; }
-.wv-lab-why .wl b { color: var(--text-muted); font-weight: 700; text-transform: uppercase; font-size: 10.5px; letter-spacing: .05em; margin-right: 6px; }
+.wv-lab-why .wl { font-size: 13px; margin-top: 4px; }
+.wv-lab-why .wl b { color: var(--text-muted); font-weight: 700; text-transform: uppercase; font-size: 11px; letter-spacing: .05em; margin-right: 6px; }
 .wv-lab-rangeline.tap { cursor: pointer; }
 /* Live mode: final scores lock into the sim; in-progress players get a chip. */
-.wv-lab-locked { font-size: 12px; font-weight: 800; color: #059669; }
-.wv-lab-live-badge { background: #dc2626; color: #fff; border-radius: 6px; padding: 1px 6px; font-size: 10px; font-weight: 800; letter-spacing: .05em; margin-right: 6px; }
-.wv-lab-live-chip { background: #dc2626; color: #fff; border-radius: 6px; padding: 1px 6px; font-size: 10px; font-weight: 800; letter-spacing: .05em; margin-left: 6px; vertical-align: 2px; }
+.wv-lab-locked { font-size: 13px; font-weight: 800; color: #059669; }
+.wv-lab-live-badge { background: #dc2626; color: #fff; border-radius: 6px; padding: 1px 6px; font-size: 11px; font-weight: 800; letter-spacing: .05em; margin-right: 6px; }
+.wv-lab-live-chip { background: #dc2626; color: #fff; border-radius: 6px; padding: 1px 6px; font-size: 11px; font-weight: 800; letter-spacing: .05em; margin-left: 6px; vertical-align: 2px; }
 .wv-lab-live-chip.final { background: #059669; }
 /* Mobile: the Lab goes full width with tight gutters. Page padding drops to
    12px and the bench sheet loses its 54px desktop indent. */
@@ -208,7 +208,7 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
    the column stay at its 1fr track and the strip scroll inside it. */
 .wv-section { min-width: 0; }
 @media(min-width: 769px) { .wv-section { display: block !important; } }
-.wv-section-title { font-size: 14px; font-weight: 700; margin-bottom: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
+.wv-section-title { font-size: 15px; font-weight: 700; margin-bottom: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
 .wv-loading { display: flex; justify-content: center; padding: 40px; }
 /* Content-shaped loading placeholder -- mirrors the real rows so the layout
    doesn't jump when data arrives (replaces a bare centered spinner). */
@@ -230,13 +230,13 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 }
 .wv-player-row + .wv-player-row { border-top: 1px solid var(--border); }
 .wv-player-row:hover { background: var(--row); }
-.wv-player-name { font-weight: 600; font-size: 14px; color: var(--text); }
+.wv-player-name { font-weight: 600; font-size: 15px; color: var(--text); }
 .wv-player-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 /* Right cluster -- still used by the big-game strip (single metric + live tag). */
 .wv-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: flex-end; }
 .wv-advice-metric { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0; }
 .wv-advice-label {
-  font-size: 9px; line-height: 1; font-weight: 800; letter-spacing: .05em;
+  font-size: 11px; line-height: 1; font-weight: 800; letter-spacing: .05em;
   text-transform: uppercase; color: var(--text-subtle); white-space: nowrap;
 }
 .wv-value { font-size: 13px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
@@ -244,25 +244,25 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 /* Best-moves grid: Player | Recommendation | Proj | Value. */
 .wv-bm-head, .wv-bm-row { display: grid; grid-template-columns: minmax(180px,.8fr) minmax(220px,1.2fr) auto; gap: 16px; }
 .wv-bm-head { padding: 9px 16px; border-bottom: 1px solid var(--border); background: var(--row); }
-.wv-bm-head span { font-size: 9px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: var(--text-subtle); }
+.wv-bm-head span { font-size: 11px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: var(--text-subtle); }
 .wv-bm-row { align-items: start; padding: 13px 16px; cursor: pointer; transition: background .12s; }
 .wv-bm-row + .wv-bm-row { border-top: 1px solid var(--border); }
 .wv-bm-row:hover { background: var(--row); }
 .wv-bm-action { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; min-width: 0; }
 .wv-bm-chips { display: flex; flex-wrap: wrap; gap: 5px; min-width: 0; }
-.wv-bm-claim { font-size: 10.5px; font-weight: 700; color: var(--text-subtle); line-height: 1.3; max-width: 100%; overflow-wrap: anywhere; }
+.wv-bm-claim { font-size: 11px; font-weight: 700; color: var(--text-subtle); line-height: 1.3; max-width: 100%; overflow-wrap: anywhere; }
 .wv-bm-claim.hi { color: var(--warning); }
 .wv-bm-main { min-width: 0; }
-.wv-bm-name { font-weight: 700; font-size: 14px; color: var(--text); line-height: 1.2; overflow-wrap: anywhere; }
+.wv-bm-name { font-weight: 700; font-size: 15px; color: var(--text); line-height: 1.2; overflow-wrap: anywhere; }
 .wv-bm-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 /* Proj / Value grouped into one right-hand cell so the columns line up and can
    collapse together on small screens. */
 .wv-bm-nums, .wv-bm-h-nums { display: flex; gap: 18px; }
 .wv-bm-num, .wv-bm-h-nums span { min-width: 46px; text-align: right; }
 .wv-bm-num { line-height: 1.05; }
-.wv-bm-num b { font-weight: 800; font-size: 16px; color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.wv-bm-num b { font-weight: 800; font-size: 15px; color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
 .wv-bm-num.empty b { color: var(--text-subtle); font-weight: 700; }
-.wv-bm-num i { display: block; font-style: normal; font-size: 9px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--text-subtle); margin-top: 3px; }
+.wv-bm-num i { display: block; font-style: normal; font-size: 11px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--text-subtle); margin-top: 3px; }
 .wv-ctx-links { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; min-width: 0; }
 .wv-bm-links { grid-column: 1; margin-top: -8px; }
 .wv-ctx-link { font-size: 11px; font-weight: 600; color: var(--accent); text-decoration: none; padding: 3px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); }
@@ -302,7 +302,7 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
    colour alias (all defined once in dashboard.css). Nothing chip-related is
    overridden here. */
 .wv-usage-chip {
-  display: inline-block; font-size: 10px; font-weight: 700; color: var(--win);
+  display: inline-block; font-size: 11px; font-weight: 700; color: var(--win);
   margin-left: 6px; white-space: nowrap;
 }
 /* Add/drop pairing: the suggested cut to make room for this target. Muted so it
@@ -312,7 +312,7 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
   display: flex; align-items: center; gap: 5px;
 }
 .wv-drop-lbl {
-  font-size: 9px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
+  font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
   color: var(--loss); background: color-mix(in srgb, var(--loss) 13%, transparent);
   padding: 1px 5px; border-radius: 4px;
 }
@@ -376,11 +376,11 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-link-banner-main i { color: var(--accent); flex-shrink: 0; }
 .wv-link-banner-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .wv-link-banner-cta {
-  font-size: 12.5px; font-weight: 700; color: #fff; background: var(--accent);
+  font-size: 13px; font-weight: 700; color: #fff; background: var(--accent);
   border: none; border-radius: 8px; padding: 7px 13px; cursor: pointer; white-space: nowrap;
 }
 .wv-link-banner-x {
-  font-size: 16px; line-height: 1; color: var(--text-muted); background: none;
+  font-size: 15px; line-height: 1; color: var(--text-muted); background: none;
   border: none; cursor: pointer; padding: 4px 6px; border-radius: 6px;
 }
 .wv-link-banner-x:hover { color: var(--text); background: rgba(148,163,184,.15); }
@@ -390,7 +390,7 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-ss-advice-ok { background: color-mix(in srgb, var(--win) 8%, transparent); border-color: color-mix(in srgb, var(--win) 30%, var(--border)); color: var(--text); font-size: 13px; font-weight: 600; }
 .wv-ss-advice-ok i { color: var(--win); margin-right: 6px; }
 .wv-ss-advice-warn { background: color-mix(in srgb, var(--accent) 7%, transparent); border-color: color-mix(in srgb, var(--accent) 30%, var(--border)); }
-.wv-ss-advice-head { font-size: 14px; font-weight: 700; color: var(--text); }
+.wv-ss-advice-head { font-size: 15px; font-weight: 700; color: var(--text); }
 .wv-ss-advice-head i { color: var(--accent); margin-right: 6px; }
 .wv-ss-advice-head strong { color: var(--accent); }
 .wv-ss-advice-sub { font-size: 11px; color: var(--text-muted); margin: 3px 0 10px; }
@@ -398,19 +398,19 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-ss-swap-in { font-weight: 700; color: var(--win); }
 .wv-ss-swap-arrow { font-size: 11px; color: var(--text-muted); }
 .wv-ss-swap-out { font-weight: 600; color: var(--text-muted); text-decoration: line-through; }
-.wv-ss-swap-pos { font-size: 10px; font-weight: 700; color: var(--text-muted); letter-spacing: .04em; }
-.wv-ss-swap-slot { font-size: 9px; font-weight: 700; letter-spacing: .04em; color: var(--text-muted); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; flex-shrink: 0; }
-.wv-ss-swap-gain { margin-left: auto; font-weight: 800; font-size: 12px; color: var(--win); font-variant-numeric: tabular-nums; }
+.wv-ss-swap-pos { font-size: 11px; font-weight: 700; color: var(--text-muted); letter-spacing: .04em; }
+.wv-ss-swap-slot { font-size: 11px; font-weight: 700; letter-spacing: .04em; color: var(--text-muted); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; flex-shrink: 0; }
+.wv-ss-swap-gain { margin-left: auto; font-weight: 800; font-size: 13px; color: var(--win); font-variant-numeric: tabular-nums; }
 .wv-ss-swap-gain.wv-ss-swap-gain-neg { color: var(--loss); }
 .wv-ss-winprob { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
 .wv-ss-winprob strong { color: var(--win); font-variant-numeric: tabular-nums; }
-.wv-ss-demote { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 5px; background: color-mix(in srgb, var(--loss) 12%, transparent); color: var(--loss); margin-left: 6px; }
+.wv-ss-demote { font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 5px; background: color-mix(in srgb, var(--loss) 12%, transparent); color: var(--loss); margin-left: 6px; }
 
 /* Start/Sit player cards -- one bordered container per position, players as
    hairline-separated rows (no card-in-card borders); each row leads with its
    verdict badge and pulls the projection out as a hero number. */
 .wv-ss-pos-group { margin-bottom: 16px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
-.wv-ss-pos-label { font-size: 12px; font-weight: 800; color: var(--text); text-transform: uppercase; letter-spacing: .05em; margin: 0; padding: 12px 15px 11px; border-bottom: 1px solid var(--border); background: var(--row); }
+.wv-ss-pos-label { font-size: 13px; font-weight: 800; color: var(--text); text-transform: uppercase; letter-spacing: .05em; margin: 0; padding: 12px 15px 11px; border-bottom: 1px solid var(--border); background: var(--row); }
 .wv-ss-player {
   padding: 13px 15px; border-radius: 0; background: transparent;
   border: 0; margin: 0;
@@ -426,8 +426,8 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-ss-body { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-top: 9px; padding-top: 9px; border-top: 1px dashed var(--border); }
 .wv-ss-body .wv-ss-stats { margin-top: 0; flex: 1 1 auto; min-width: 0; }
 .wv-ss-proj { flex: 0 0 auto; text-align: right; line-height: 1; }
-.wv-ss-proj-num { font-size: 23px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
-.wv-ss-proj-lbl { font-size: 9px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: var(--text-subtle); margin-top: 3px; }
+.wv-ss-proj-num { font-size: 22px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.wv-ss-proj-lbl { font-size: 11px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: var(--text-subtle); margin-top: 3px; }
 
 /* Top row: name + badge */
 .wv-ss-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -449,7 +449,7 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-ss-stats { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 6px; align-items: stretch; }
 .wv-ss-div { width: 1px; align-self: stretch; background: var(--border); margin: 1px 0; flex: 0 0 auto; }
 .wv-ss-stat { display: flex; flex-direction: column; gap: 1px; }
-.wv-ss-stat-lbl { font-size: 10px; color: var(--text-subtle); text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
+.wv-ss-stat-lbl { font-size: 11px; color: var(--text-subtle); text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
 .wv-ss-stat-val { font-size: 13px; font-weight: 700; color: var(--text); }
 .wv-ss-stat-val.muted { color: var(--text-muted); }
 .wv-ss-env, .wv-ss-total, .wv-ss-cons, .wv-ss-qb { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 6px; align-self: flex-start; }
@@ -495,7 +495,7 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-ss-plays-btn { cursor: pointer; border-bottom: 1px dashed var(--border); }
 .wv-ss-plays-btn:hover { border-bottom-color: var(--accent); }
 .wv-ss-plays-caret { font-size: .7em; margin-left: 3px; color: var(--text-muted); }
-.wv-ss-plays-sub { font-size: 10px; color: var(--text-muted); margin-top: 1px; }
+.wv-ss-plays-sub { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
 .wv-ss-plays-detail {
   flex-basis: 100%; display: none; margin-top: 6px; padding: 8px 10px;
   border-radius: 6px; background: var(--surface); border: 1px solid var(--border);
@@ -509,14 +509,14 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-ss-plays-detail-val { font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
 
 /* Badges */
-.wv-ss-start-badge      { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: color-mix(in srgb, var(--win) 15%, transparent); color: var(--win); flex-shrink: 0; }
-.wv-ss-flex-start-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: color-mix(in srgb, var(--win) 15%, transparent); color: var(--win); border: 1px solid color-mix(in srgb, var(--win) 30%, transparent); flex-shrink: 0; }
-.wv-ss-flex-badge       { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); flex-shrink: 0; }
-.wv-ss-sit-badge        { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: var(--row); color: var(--text-muted); flex-shrink: 0; }
-.wv-ss-bye-badge        { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: color-mix(in srgb, var(--warning) 15%, transparent); color: var(--warning); flex-shrink: 0; }
-.wv-inj-out { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: color-mix(in srgb, var(--loss) 16%, transparent); color: var(--loss); }
-.wv-inj-q   { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: color-mix(in srgb, var(--inj-q) 18%, transparent); color: var(--inj-q); }
-.wv-inj-d   { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: color-mix(in srgb, var(--orange) 16%, transparent); color: var(--orange); }
+.wv-ss-start-badge      { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: color-mix(in srgb, var(--win) 15%, transparent); color: var(--win); flex-shrink: 0; }
+.wv-ss-flex-start-badge { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: color-mix(in srgb, var(--win) 15%, transparent); color: var(--win); border: 1px solid color-mix(in srgb, var(--win) 30%, transparent); flex-shrink: 0; }
+.wv-ss-flex-badge       { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); flex-shrink: 0; }
+.wv-ss-sit-badge        { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: var(--row); color: var(--text-muted); flex-shrink: 0; }
+.wv-ss-bye-badge        { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: color-mix(in srgb, var(--warning) 15%, transparent); color: var(--warning); flex-shrink: 0; }
+.wv-inj-out { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: color-mix(in srgb, var(--loss) 16%, transparent); color: var(--loss); }
+.wv-inj-q   { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: color-mix(in srgb, var(--inj-q) 18%, transparent); color: var(--inj-q); }
+.wv-inj-d   { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: color-mix(in srgb, var(--orange) 16%, transparent); color: var(--orange); }
 
 /* Compare button */
 .wv-cmp-btn {
@@ -535,7 +535,7 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-compare-header {
   display: flex; align-items: center; justify-content: space-between;
   padding: 10px 14px; border-bottom: 1px solid var(--border);
-  font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+  font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
   color: var(--text-muted);
 }
 .wv-compare-grid {
@@ -544,13 +544,13 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-compare-col { padding: 14px; }
 .wv-compare-col:first-child { border-right: 1px solid var(--border); }
 .wv-compare-player-name { font-size: 15px; font-weight: 700; margin-bottom: 2px; }
-.wv-compare-player-sub  { font-size: 12px; color: var(--text-muted); margin-bottom: 12px; }
+.wv-compare-player-sub  { font-size: 13px; color: var(--text-muted); margin-bottom: 12px; }
 .wv-compare-row {
   display: flex; align-items: center; justify-content: space-between;
   padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px;
 }
 .wv-compare-row:last-child { border-bottom: none; }
-.wv-compare-lbl { color: var(--text-muted); font-size: 12px; }
+.wv-compare-lbl { color: var(--text-muted); font-size: 13px; }
 .wv-compare-val { font-weight: 700; }
 .wv-compare-win { color: var(--win); }
 .wv-compare-lose { color: var(--loss); }
@@ -569,7 +569,7 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-cmp-a { text-align: right; font-weight: 700; font-size: 13px; color: var(--text-muted); }
 .wv-cmp-b { text-align: left;  font-weight: 700; font-size: 13px; color: var(--text-muted); }
 .wv-cmp-lbl {
-  text-align: center; color: var(--text-subtle); font-size: 10.5px;
+  text-align: center; color: var(--text-subtle); font-size: 11px;
   text-transform: uppercase; letter-spacing: .04em; font-weight: 700;
 }
 /* Winner gets a soft green pill; the loser just stays neutral (no red -- a
@@ -588,11 +588,11 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-cmp-headmeta { display: flex; align-items: center; gap: 6px; margin-top: 5px; flex-wrap: wrap; }
 .wv-cmp-hcol:first-child .wv-cmp-headmeta { justify-content: flex-end; }
 .wv-cmp-poschip {
-  font-size: 10px; font-weight: 800; letter-spacing: .02em;
+  font-size: 11px; font-weight: 800; letter-spacing: .02em;
   padding: 1px 7px; border-radius: var(--radius-pill, 8px); white-space: nowrap;
 }
 .wv-cmp-vs {
-  align-self: center; justify-self: center; font-size: 10px; font-weight: 800;
+  align-self: center; justify-self: center; font-size: 11px; font-weight: 800;
   color: var(--text-subtle); letter-spacing: .06em;
   border: 1px solid var(--border); border-radius: var(--radius-pill, 8px); padding: 3px 7px;
 }
@@ -604,12 +604,12 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 }
 .wv-cmp-verdict.toss { background: rgba(148,163,184,.10); }
 .wv-cmp-verdict-pill {
-  font-size: 10px; font-weight: 800; letter-spacing: .07em;
+  font-size: 11px; font-weight: 800; letter-spacing: .07em;
   padding: 3px 9px; border-radius: 6px; background: var(--win); color: #fff; flex-shrink: 0;
 }
 .wv-cmp-verdict.toss .wv-cmp-verdict-pill { background: var(--text-muted); }
-.wv-cmp-verdict-name { font-size: 14px; font-weight: 800; color: var(--text); }
-.wv-cmp-verdict-why  { font-size: 12px; color: var(--text-muted); }
+.wv-cmp-verdict-name { font-size: 15px; font-weight: 800; color: var(--text); }
+.wv-cmp-verdict-why  { font-size: 13px; color: var(--text-muted); }
 </style>
 """
 
@@ -675,7 +675,7 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
       <div id="wvTrendingWrap" hidden>
         <div class="wv-section-title wv-trending-title">
           <i class="fa-solid fa-fire" aria-hidden="true"></i> Trending across leagues
-          <span class="wv-trending-window" style="font-weight:400;font-size:12px;color:var(--muted);">last 48h</span>
+          <span class="wv-trending-window" style="font-weight:400;font-size:13px;color:var(--muted);">last 48h</span>
         </div>
         <div id="wvTrendingStrip" class="wv-trending-strip"></div>
       </div>
@@ -1176,7 +1176,7 @@ function wvLabSkeleton() {{
     + '<div class="wv-lab-sk-modes"><div class="skeleton"></div><div class="skeleton"></div></div>'
     + '</div>'
     + '<div class="wv-section-title" style="margin-top:4px">Your lineup</div>'
-    + '<div style="font-size:12px;color:var(--text-muted);margin:-6px 0 8px">tap a starter to swap</div>'
+    + '<div style="font-size:13px;color:var(--text-muted);margin:-6px 0 8px">tap a starter to swap</div>'
     + rows
     + '</div>';
 }}
@@ -1559,7 +1559,7 @@ function wvLabRenderGuests() {{
       : (g.proj || 0).toFixed(1) + ' proj · in the bench pools below';
     return '<div class="wv-lab-guest-row"><span><b>' + wvLabEsc(g.name) + '</b>'
       + ' <span style="color:var(--text-muted)">' + wvLabEsc(g.pos || '') + '</span></span>'
-      + '<span class="wv-lab-guest-owner" style="color:var(--text-muted);font-size:12px">' + wvLabEsc(g.owner_label || 'Free Agent') + '</span>'
+      + '<span class="wv-lab-guest-owner" style="color:var(--text-muted);font-size:13px">' + wvLabEsc(g.owner_label || 'Free Agent') + '</span>'
       + '<span class="wv-lab-guest-note">' + note + '</span></div>';
   }}).join('');
   return '<div class="wv-lab-guests"><div class="wv-lab-guests-title">Guests (hypothetical)</div>' + rows + '</div>';
@@ -1577,7 +1577,7 @@ function wvRenderLab() {{
     + wvLabRenderBestMoves()
     + wvLabRenderGuests()
     + '<div class="wv-section-title" style="margin-top:4px">Your lineup</div>'
-    + '<div style="font-size:12px;color:var(--text-muted);margin:-6px 0 8px">tap a starter to swap · tap the range for the why</div>'
+    + '<div style="font-size:13px;color:var(--text-muted);margin:-6px 0 8px">tap a starter to swap · tap the range for the why</div>'
     + wvLabChangesLine()
     + wvLabRenderSlots()
     + '<p class="wv-lab-fine">' + WV_LAB_SIMS.toLocaleString()

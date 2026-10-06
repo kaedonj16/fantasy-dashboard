@@ -370,7 +370,7 @@ def build_advanced_metrics_body(
               </div>
               <div class="am-vol-ctrl" id="amGamesCtrl" style="display:none;">
                 <span class="am-filter-label" id="amVolLabel">Min</span>
-                <select id="amMinGames" class="am-select am-season-select" style="font-size:12px;padding:4px 8px;"></select>
+                <select id="amMinGames" class="am-select am-season-select" style="font-size:13px;padding:4px 8px;"></select>
               </div>
               <div class="am-age-wrap" id="amAgeWrap" style="display:none;">
                 <span class="am-filter-label">Age</span>
@@ -394,8 +394,8 @@ def build_advanced_metrics_body(
               <button id="amAddFilterBtn" type="button" class="am-add-stat-btn">&#43; Filter</button>
               <div class="am-filter-chips" id="amFilterChips"></div>
               <div id="amFilterForm" class="am-filter-form" style="display:none;">
-                <select id="amFilterKey" class="am-select am-season-select" style="min-width:110px;font-size:12px;padding:5px 8px;"></select>
-                <select id="amFilterOp" class="am-select am-season-select" style="min-width:52px;font-size:12px;padding:5px 8px;">
+                <select id="amFilterKey" class="am-select am-season-select" style="min-width:110px;font-size:13px;padding:5px 8px;"></select>
+                <select id="amFilterOp" class="am-select am-season-select" style="min-width:52px;font-size:13px;padding:5px 8px;">
                   <option value="gte">&ge;</option>
                   <option value="lte">&le;</option>
                 </select>
@@ -675,7 +675,7 @@ def build_advanced_metrics_body(
       .am-legend-btn {
         flex-shrink:0; display:flex; align-items:center; gap:6px;
         padding:5px 10px; border:1px solid var(--border); border-radius:8px;
-        background:var(--card); color:var(--text-muted); font-size:12px;
+        background:var(--card); color:var(--text-muted); font-size:13px;
         cursor:pointer; white-space:nowrap; text-align:left; transition:background .14s;
       }
       .am-legend-btn:hover { background:var(--row); }
@@ -694,7 +694,7 @@ def build_advanced_metrics_body(
         font-size:15px; font-weight:800; color:var(--text);
       }
       .am-legend-close {
-        border:none; background:none; color:var(--text-muted); font-size:24px;
+        border:none; background:none; color:var(--text-muted); font-size:22px;
         line-height:1; cursor:pointer; padding:0 4px;
       }
       .am-legend-close:hover { color:var(--text); }
@@ -708,7 +708,7 @@ def build_advanced_metrics_body(
       .am-legend-row { padding:7px 0; border-bottom:1px solid var(--border); }
       .am-legend-row:last-child { border-bottom:none; }
       .am-legend-name { font-size:13px; font-weight:700; color:var(--text); }
-      .am-legend-desc { font-size:12px; color:var(--text-muted); margin-top:2px; line-height:1.4; }
+      .am-legend-desc { font-size:13px; color:var(--text-muted); margin-top:2px; line-height:1.4; }
       @media (max-width:600px) {
         .am-legend-btn { padding:6px 10px; font-size:11px; }
       }
@@ -725,7 +725,7 @@ def build_advanced_metrics_body(
       .am-pill.active { background:var(--accent); border-color:var(--accent); color:#fff; }
       .am-pill-all { border-style:dashed; color:var(--text-muted); }
       .am-pill-locked { opacity:.65; border-style:dashed; }
-      .am-preset-tagline { font-size:12.5px; color:var(--text-muted); font-style:italic; margin:2px 0 6px; min-height:0; }
+      .am-preset-tagline { font-size:13px; color:var(--text-muted); font-style:italic; margin:2px 0 6px; min-height:0; }
       .am-preset-tagline:empty { display:none; }
       /* What-changed movers strip */
       .am-movers { margin:8px 0 4px; padding:10px 12px; border:1px solid var(--border); border-radius:12px; background:var(--card); }
@@ -735,7 +735,7 @@ def build_advanced_metrics_body(
       .am-movers.collapsed .am-movers-chev { transform:rotate(-90deg); }
       .am-movers.collapsed .am-movers-groups { display:none; }
       .am-movers.collapsed .am-movers-head { margin-bottom:0; }
-      .am-movers-sub { font-size:11.5px; color:var(--text-muted); }
+      .am-movers-sub { font-size:11px; color:var(--text-muted); }
       .am-movers-groups { display:flex; gap:14px; overflow-x:auto; padding-bottom:2px; }
       .am-movers-group { min-width:200px; flex:1; }
       .am-movers-ghead { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; margin-bottom:6px; display:flex; align-items:center; gap:6px; }
@@ -750,7 +750,7 @@ def build_advanced_metrics_body(
       .am-mover-chip {
         display:flex; align-items:center; gap:8px; width:100%; text-align:left;
         padding:5px 8px; border:none; border-radius:8px; background:none;
-        cursor:pointer; font-size:12.5px; color:var(--text);
+        cursor:pointer; font-size:13px; color:var(--text);
       }
       .am-mover-chip:hover { background:var(--row); }
       .am-mover-name { font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -761,7 +761,7 @@ def build_advanced_metrics_body(
       @media (max-width:600px) {
         .am-movers-groups { gap:10px; }
         .am-movers-group { min-width:170px; }
-        .am-pill { padding:6px 11px; font-size:12px; }
+        .am-pill { padding:6px 11px; font-size:13px; }
       }
       .am-controls { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin:0 0 8px; }
       .am-ctrl { display:flex; flex-direction:column; gap:4px; }
@@ -779,7 +779,7 @@ def build_advanced_metrics_body(
       /* Custom metric picker */
       .am-metric-picker { position:relative; }
       .am-metric-btn { min-width:180px; display:flex; align-items:center; justify-content:space-between; gap:8px; text-align:left; }
-      .am-metric-chevron { font-size:10px; opacity:.55; flex-shrink:0; transition:transform .15s; }
+      .am-metric-chevron { font-size:11px; opacity:.55; flex-shrink:0; transition:transform .15s; }
       .am-metric-picker.open .am-metric-chevron { transform:rotate(180deg); }
       .am-stat-picker.am-metric-dropdown {
         display:none; overflow:hidden; padding:0;
@@ -808,17 +808,17 @@ def build_advanced_metrics_body(
         color:var(--accent,#2563eb);
       }
       .am-md-cat.am-md-cat-dim { opacity:.38; }
-      .am-md-cat-chevron { font-size:12px; opacity:.45; flex-shrink:0; font-weight:400; }
+      .am-md-cat-chevron { font-size:13px; opacity:.45; flex-shrink:0; font-weight:400; }
       .am-md-metrics { flex:1 1 auto; min-width:0; overflow-y:auto; overscroll-behavior:contain; padding:4px 0; }
       .am-md-item-label { flex:1; min-width:0; }
       .am-md-item-cat {
         margin-left:auto; flex-shrink:0;
-        font-size:10px; font-weight:600; color:var(--text-muted); letter-spacing:.02em;
+        font-size:11px; font-weight:600; color:var(--text-muted); letter-spacing:.02em;
       }
-      .am-md-empty { padding:18px 14px; font-size:12px; color:var(--text-muted); }
+      .am-md-empty { padding:18px 14px; font-size:13px; color:var(--text-muted); }
       @media (max-width:600px) {
         .am-md-cats { width:120px; flex-basis:120px; }
-        .am-md-cat { padding:9px 8px 9px 10px; font-size:12px; }
+        .am-md-cat { padding:9px 8px 9px 10px; font-size:13px; }
       }
       .am-season-select { min-width:90px; }
       .am-season-multi { position:relative; }
@@ -837,7 +837,7 @@ def build_advanced_metrics_body(
       .am-season-opt:hover { background:var(--row,rgba(0,0,0,.04)); }
       .am-season-opt input { margin:0; accent-color:var(--accent,#2563eb); cursor:pointer; }
       .am-season-opt-hint { padding:6px 12px 4px; font-size:11px; color:var(--text-muted); }
-      .am-season-col { width:48px; text-align:center; color:var(--text-muted); font-size:12px; white-space:nowrap; }
+      .am-season-col { width:48px; text-align:center; color:var(--text-muted); font-size:13px; white-space:nowrap; }
       .am-table th.am-season-col, td.am-season-col { border-left:1px solid var(--border); }
       .am-search { width:100%; box-sizing:border-box; }
       .am-sort-btn { cursor:pointer; font-weight:600; white-space:nowrap; }
@@ -866,7 +866,7 @@ def build_advanced_metrics_body(
       .am-pos {
         padding:6px 14px; border-radius:8px; border:1px solid var(--border);
         background:var(--card); color:var(--text-muted); cursor:pointer;
-        font-size:12px; font-weight:600; transition:all .15s; white-space:nowrap;
+        font-size:13px; font-weight:600; transition:all .15s; white-space:nowrap;
       }
       .am-pos.active { background:var(--text); color:var(--card); border-color:var(--text); }
       /* Dark: --text is near-white, so the inverted fill glares. Raised
@@ -879,7 +879,7 @@ def build_advanced_metrics_body(
       .am-roster-toggle {
         display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:8px;
         border:1px solid var(--border); background:var(--card); color:var(--text); cursor:pointer;
-        font-size:12px; font-weight:600; white-space:nowrap;
+        font-size:13px; font-weight:600; white-space:nowrap;
       }
       .am-roster-toggle input { width:14px; height:14px; margin:0; accent-color:var(--accent,#2563eb); cursor:pointer; }
       .am-table { width:100%; border-collapse:collapse; }
@@ -892,7 +892,7 @@ def build_advanced_metrics_body(
       .am-table th[data-def]:hover { color:var(--text); text-decoration:underline dotted; text-underline-offset:2px; }
       .am-table th.am-sort-desc::after { content:' ↓'; }
       .am-table th.am-sort-asc::after { content:' ↑'; }
-      .am-table td { padding:9px 10px; border-bottom:1px solid var(--border); font-size:14px; }
+      .am-table td { padding:9px 10px; border-bottom:1px solid var(--border); font-size:15px; }
       /* Column dividers */
       .am-games, .am-weeks, .am-barcell,
       .am-table th.am-games, .am-table th.am-weeks, .am-table th.am-barcell {
@@ -902,13 +902,13 @@ def build_advanced_metrics_body(
       .am-row.am-owned { background:color-mix(in srgb, var(--accent) 8%, transparent); }
       .am-row.am-owned:hover { background:color-mix(in srgb, var(--accent) 14%, transparent); }
       .am-owned-badge {
-        font-size:9px; font-weight:800; letter-spacing:.04em; flex-shrink:0;
+        font-size:11px; font-weight:800; letter-spacing:.04em; flex-shrink:0;
         color:var(--accent,#2563eb); border:1px solid var(--accent,#2563eb); border-radius:4px;
         padding:1px 4px; white-space:nowrap;
       }
-      .am-rank { width:52px; color:var(--text-muted); font-size:12px; }
-      .am-games { width:40px; text-align:center; color:var(--text-muted); font-size:12px; white-space:nowrap; }
-      .am-weeks { width:36px; text-align:center; color:var(--text-muted); font-size:12px; white-space:nowrap; }
+      .am-rank { width:52px; color:var(--text-muted); font-size:13px; }
+      .am-games { width:40px; text-align:center; color:var(--text-muted); font-size:13px; white-space:nowrap; }
+      .am-weeks { width:36px; text-align:center; color:var(--text-muted); font-size:13px; white-space:nowrap; }
       .am-player { width:220px; max-width:220px; }
       .am-barcell { width:auto; min-width:120px; }
       .am-table-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
@@ -942,7 +942,7 @@ def build_advanced_metrics_body(
       .am-bar-avg { position:absolute; top:-3px; bottom:-3px; width:2px; background:var(--text-muted); opacity:.55; border-radius:1px; }
       .am-bar-avg-lbl {
         position:absolute; bottom:calc(100% + 1px); left:50%; transform:translateX(-50%);
-        font-size:8px; font-weight:800; letter-spacing:.06em; color:var(--text-muted);
+        font-size:11px; font-weight:800; letter-spacing:.06em; color:var(--text-muted);
         opacity:1; white-space:nowrap;
       }
       .am-avg-note { font-size:11px; color:var(--text-muted); margin:0 0 10px; }
@@ -956,7 +956,7 @@ def build_advanced_metrics_body(
         .am-weeks, .am-table th.am-weeks { display:none !important; }
         .am-metric-bar { display:none; }
         .am-metric-cell { gap:0; }
-        .am-val { min-width:38px; font-size:12px; text-align:center; }
+        .am-val { min-width:38px; font-size:13px; text-align:center; }
         .am-controls { gap:10px; }
         .am-ctrl:first-child { flex:1 0 100%; }
         .am-ctrl-search { flex:1 0 100%; }
@@ -986,7 +986,7 @@ def build_advanced_metrics_body(
         display:inline-flex; align-items:center; gap:5px;
         padding:3px 10px; border-radius:14px;
         border:1px solid var(--border); background:var(--bg-alt);
-        font-size:12px; font-weight:600; color:var(--text-muted); white-space:nowrap;
+        font-size:13px; font-weight:600; color:var(--text-muted); white-space:nowrap;
       }
       .am-chip.am-chip-primary {
         background:var(--text); color:var(--card); border-color:var(--text);
@@ -1003,7 +1003,7 @@ def build_advanced_metrics_body(
         display:inline-flex; align-items:center; gap:4px;
         padding:3px 11px; border-radius:14px;
         border:1px dashed var(--border); background:transparent;
-        color:var(--text-muted); font-size:12px; font-weight:600; cursor:pointer;
+        color:var(--text-muted); font-size:13px; font-weight:600; cursor:pointer;
         transition:border-color .15s, color .15s; white-space:nowrap;
       }
       .am-add-stat-btn:hover { border-color:var(--accent,#2563eb); color:var(--accent,#2563eb); }
@@ -1022,11 +1022,11 @@ def build_advanced_metrics_body(
       .am-sp-group { border-bottom:1px solid var(--border); padding:4px 0; }
       .am-sp-group:last-child { border-bottom:none; }
       .am-sp-head {
-        font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.05em;
+        font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em;
         color:var(--text-muted); padding:4px 14px 2px;
       }
       .am-sp-cat-head {
-        font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.05em;
+        font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em;
         color:var(--accent,#2563eb); padding:8px 14px 4px;
         border-bottom:1px solid var(--border);
       }
@@ -1042,12 +1042,12 @@ def build_advanced_metrics_body(
       .am-sp-item.am-sp-active { color:var(--accent,#2563eb); font-weight:600; }
       .am-sp-weekly-badge {
         margin-left:auto; flex-shrink:0;
-        font-size:9px; font-weight:800; letter-spacing:.04em;
+        font-size:11px; font-weight:800; letter-spacing:.04em;
         padding:1px 4px; border-radius:4px;
         background:color-mix(in srgb, var(--win) 12%, transparent); color:var(--win);
         border:1px solid color-mix(in srgb, var(--win) 30%, transparent);
       }
-      .am-sp-check { width:14px; text-align:center; flex-shrink:0; font-size:12px; }
+      .am-sp-check { width:14px; text-align:center; flex-shrink:0; font-size:13px; }
       /* Multi-stat stacked bar rows in table cell */
       .am-multi { vertical-align:middle; }
       .am-mrow {
@@ -1055,7 +1055,7 @@ def build_advanced_metrics_body(
         padding:2px 0;
       }
       .am-mlabel {
-        font-size:10px; font-weight:600; color:var(--text-muted);
+        font-size:11px; font-weight:600; color:var(--text-muted);
         width:72px; flex-shrink:0;
         overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
       }
@@ -1083,18 +1083,18 @@ def build_advanced_metrics_body(
       @media (max-width:600px) { .am-skel-bar { display:none; } }
       /* Percentile badge */
       .am-val-wrap { display:flex; flex-direction:column; align-items:flex-end; flex-shrink:0; width:78px; }
-      .am-pct-badge { font-size:9px; font-weight:700; letter-spacing:.02em; line-height:1.3; white-space:nowrap; opacity:.85; }
+      .am-pct-badge { font-size:11px; font-weight:700; letter-spacing:.02em; line-height:1.3; white-space:nowrap; opacity:.85; }
       @media (max-width:600px) { .am-pct-badge { display:none; } }
       /* Weekly usage trend column */
       .am-trendcell { white-space:nowrap; min-width:110px; }
       th.am-trendcell { font-size:11px; }
       .am-trend-inner { display:flex; align-items:center; gap:7px; }
       .am-spark { display:block; opacity:.85; }
-      .am-trend-delta { font-size:10px; font-weight:700; white-space:nowrap; }
+      .am-trend-delta { font-size:11px; font-weight:700; white-space:nowrap; }
       .am-trend-delta-up   { color:var(--win); }
       .am-trend-delta-down { color:var(--loss); }
       .am-trend-delta-flat { color:var(--text-muted); opacity:.6; }
-      .am-trend-nums { font-size:10px; color:var(--text-muted); margin-top:2px; white-space:nowrap; }
+      .am-trend-nums { font-size:11px; color:var(--text-muted); margin-top:2px; white-space:nowrap; }
       /* PRO-locked column: blocked like a paywalled column. Blurred
          placeholder bars read as hidden data; the lock badge and the
          tinted column are one tap target that opens the paywall. */
@@ -1113,7 +1113,7 @@ def build_advanced_metrics_body(
       .am-cmp-table th, .am-cmp-table td { padding:10px 12px; border-bottom:1px solid var(--border); text-align:left; vertical-align:top; }
       .am-cmp-table thead th { border-bottom:2px solid var(--border); }
       .am-cmp-table tbody tr:hover td { background:rgba(128,128,128,.04); }
-      .am-cmp-table thead th:first-child { text-align:right; font-size:10px; font-weight:800;
+      .am-cmp-table thead th:first-child { text-align:right; font-size:11px; font-weight:800;
         letter-spacing:.06em; color:var(--text-muted); }
       /* Player header cell: headshot + name + week-range pill */
       .am-cmp-player-head { position:relative; min-width:170px; vertical-align:top; }
@@ -1123,13 +1123,13 @@ def build_advanced_metrics_body(
       /* Initials fallback: only rendered when there is no photo (or it 404s).
          Rendered via ::after so a letter can never show through a photo. */
       .am-cmp-hs-fb { display:inline-flex; align-items:center; justify-content:center; }
-      .am-cmp-hs-fb::after { content:attr(data-init); font-size:14px; font-weight:800; color:var(--text-muted); }
+      .am-cmp-hs-fb::after { content:attr(data-init); font-size:15px; font-weight:800; color:var(--text-muted); }
       .am-cmp-hs img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; object-position:top; }
       .am-cmp-phead-id { min-width:0; }
       .am-cmp-phead-name { font-size:15px; font-weight:800; color:var(--text);
         white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
       .am-cmp-range { display:inline-flex; align-items:center; gap:5px; margin-top:7px; cursor:pointer;
-        font-size:11.5px; font-weight:700; white-space:nowrap;
+        font-size:11px; font-weight:700; white-space:nowrap;
         color:var(--brand-blue,#3b82f6);
         background:color-mix(in srgb, var(--brand-blue,#3b82f6) 12%, transparent);
         border:1px solid color-mix(in srgb, var(--brand-blue,#3b82f6) 25%, transparent);
@@ -1139,25 +1139,25 @@ def build_advanced_metrics_body(
       .am-cmp-rangepop { position:absolute; top:calc(100% - 6px); left:8px; z-index:30; width:280px; max-width:80vw;
         background:var(--card); border:1px solid var(--border); border-radius:12px;
         box-shadow:0 12px 36px rgba(0,0,0,.20); padding:14px; }
-      .am-cmp-rangepop-title { font-size:12px; font-weight:800; color:var(--text); margin-bottom:10px; }
+      .am-cmp-rangepop-title { font-size:13px; font-weight:800; color:var(--text); margin-bottom:10px; }
       .am-cmp-rangepop-right { left:auto; right:8px; }
       .am-cmp-baseline-note { display:block; margin-top:7px; font-size:11px; font-weight:600; color:var(--text-muted); }
-      .am-cmp-season-sel { font-weight:600; border-radius:8px; padding:5px 10px; font-size:12px;
+      .am-cmp-season-sel { font-weight:600; border-radius:8px; padding:5px 10px; font-size:13px;
         border:1px solid var(--border); background:var(--card); color:var(--text); width:100%; }
       .am-cmp-player-head .csd-wrap { margin-top:8px; }
       .am-cmp-rangepop .am-cmp-wkbar-wrap { margin-top:12px; }
       .am-cmp-rangepop .wk-bar { flex:unset; display:block; width:100%; }
       .am-cmp-rangepop .wk-bar-ticks { display:flex; justify-content:space-between; margin-top:4px; }
-      .am-cmp-rangepop .wk-tick { font-size:8px; font-weight:700; color:var(--text-muted); }
+      .am-cmp-rangepop .wk-tick { font-size:11px; font-weight:700; color:var(--text-muted); }
       .am-cmp-rangepop .wk-tick:nth-child(even) { font-size:0; }
       .am-cmp-wknote { margin-top:8px; font-size:11px; font-weight:700; color:var(--text-muted); text-align:center; }
       .am-cmp-wknote-warn { color:var(--warning); }
       .am-cmp-wknote-muted { font-weight:600; opacity:.55; }
       /* Metric rows */
-      .am-cmp-metric { font-weight:700; color:var(--text-muted); font-size:12px; text-align:right; white-space:nowrap; }
-      .am-cmp-val { font-weight:800; font-variant-numeric:tabular-nums; font-size:14px; color:var(--text); }
+      .am-cmp-metric { font-weight:700; color:var(--text-muted); font-size:13px; text-align:right; white-space:nowrap; }
+      .am-cmp-val { font-weight:800; font-variant-numeric:tabular-nums; font-size:15px; color:var(--text); }
       .am-cmp-best { color:var(--win); }
-      .am-cmp-rank { font-size:10px; font-weight:800; color:var(--text-muted); white-space:nowrap;
+      .am-cmp-rank { font-size:11px; font-weight:800; color:var(--text-muted); white-space:nowrap;
         background:rgba(128,128,128,.13); border-radius:20px; padding:2px 8px; margin-left:8px; }
       .am-cmp-bar { height:6px; border-radius:4px; background:rgba(128,128,128,.16); margin-top:7px; overflow:hidden; max-width:160px; }
       .am-cmp-bar > div { height:100%; border-radius:4px; background:#f59e0b; transition:width .2s ease; }
@@ -1165,7 +1165,7 @@ def build_advanced_metrics_body(
       .am-cmp-gap { margin-top:4px; font-size:11px; font-weight:700; color:var(--text-muted); opacity:.8;
         font-variant-numeric:tabular-nums; min-height:15px; }
       .am-cmp-meta { display:none; }
-      .am-cmp-cat-row td { font-size:10px !important; font-weight:800; text-transform:uppercase; letter-spacing:.05em;
+      .am-cmp-cat-row td { font-size:11px !important; font-weight:800; text-transform:uppercase; letter-spacing:.05em;
         color:var(--text-muted); background:rgba(128,128,128,.05); padding:5px 12px !important; }
       /* Keep the metric column pinned when the table scrolls horizontally
          (many players on a narrow viewport). */
@@ -1194,7 +1194,7 @@ def build_advanced_metrics_body(
          rest. Rank pill + gap collapse into one meta line under the bar. The
          range popover becomes a centered sheet so it can't clip. */
       @media (max-width:600px) {
-        .am-cmp-table { table-layout:fixed; font-size:12px; }
+        .am-cmp-table { table-layout:fixed; font-size:13px; }
         .am-cmp-table col.am-cmp-mcol { width:82px; }
         .am-cmp-table th, .am-cmp-table td { padding:8px 4px; }
         .am-cmp-player-head { min-width:0; }
@@ -1202,12 +1202,12 @@ def build_advanced_metrics_body(
         .am-cmp-hs { width:60px; height:60px; }
         .am-cmp-hs-fb::after { font-size:13px; }
         .am-cmp-phead-name { font-size:11px; white-space:normal; line-height:1.3; }
-        .am-cmp-range { margin-top:2px; font-size:10px; padding:3px 7px; }
-        .am-cmp-metric { font-size:10.5px; white-space:normal; line-height:1.35; }
+        .am-cmp-range { margin-top:2px; font-size:11px; padding:3px 7px; }
+        .am-cmp-metric { font-size:11px; white-space:normal; line-height:1.35; }
         .am-cmp-val { font-size:13px; }
         .am-cmp-rank { display:none; }
         .am-cmp-gap { display:none; }
-        .am-cmp-meta { display:block; margin-top:3px; font-size:9.5px; font-weight:700;
+        .am-cmp-meta { display:block; margin-top:3px; font-size:11px; font-weight:700;
           color:var(--text-muted); opacity:.8; font-variant-numeric:tabular-nums; white-space:nowrap; }
         .am-cmp-bar { max-width:none; }
         .am-cmp-rangepop { position:fixed; left:50%; top:50%; transform:translate(-50%,-50%);
@@ -1220,7 +1220,7 @@ def build_advanced_metrics_body(
       }
       .am-filter-ctrl { display:flex; align-items:center; gap:6px; flex-shrink:0; }
       .am-filter-ctrl .am-select, .am-filter-ctrl .am-sort-btn {
-        padding:5px 10px; font-size:12px;
+        padding:5px 10px; font-size:13px;
       }
       .am-filter-chips { display:flex; flex-wrap:wrap; gap:5px; flex:1; min-width:0; }
       @media (max-width:600px) {
@@ -1230,15 +1230,15 @@ def build_advanced_metrics_body(
         display:inline-flex; align-items:center; gap:4px;
         padding:3px 9px; border-radius:8px;
         border:1px solid var(--accent,#2563eb); background:color-mix(in srgb, var(--accent) 8%, transparent);
-        font-size:12px; font-weight:600; color:var(--accent,#2563eb); white-space:nowrap;
+        font-size:13px; font-weight:600; color:var(--accent,#2563eb); white-space:nowrap;
       }
       .am-filter-label { font-size:11px; font-weight:700; color:var(--text-muted); white-space:nowrap; }
-      .am-filter-sep { font-size:12px; color:var(--text-muted); }
+      .am-filter-sep { font-size:13px; color:var(--text-muted); }
       .am-age-wrap { display:flex; align-items:center; gap:4px; flex-shrink:0; }
       .am-vol-ctrl { display:flex; align-items:center; gap:6px; flex-shrink:0; }
       .am-age-input {
         padding:5px 8px; border:1px solid var(--border); border-radius:8px;
-        background:var(--card); color:var(--text); font-size:12px; width:58px;
+        background:var(--card); color:var(--text); font-size:13px; width:58px;
         outline:none; box-sizing:border-box;
       }
       .am-age-input:focus { border-color:var(--accent,#2563eb); }
@@ -1250,24 +1250,24 @@ def build_advanced_metrics_body(
       .am-filter-apply-btn {
         padding:5px 12px; border-radius:8px; border:none;
         background:var(--accent,#2563eb); color:#fff;
-        font-size:12px; font-weight:700; cursor:pointer;
+        font-size:13px; font-weight:700; cursor:pointer;
       }
       .am-filter-apply-btn:hover { opacity:.88; }
       .am-filter-cancel-btn {
         padding:5px 10px; border-radius:8px; border:1px solid var(--border);
         background:var(--card); color:var(--text-muted);
-        font-size:12px; font-weight:600; cursor:pointer;
+        font-size:13px; font-weight:600; cursor:pointer;
       }
       .am-filter-cancel-btn:hover { background:var(--row,rgba(0,0,0,.04)); }
       /* Preset load button in stat picker */
       .am-sp-search-wrap { padding:8px 10px 6px; border-bottom:1px solid var(--border); }
-      .am-sp-search { width:100%; padding:5px 8px; font-size:12px; border:1px solid var(--border); border-radius:6px; background:var(--bg-alt,#f1f5f9); color:var(--text); outline:none; box-sizing:border-box; }
+      .am-sp-search { width:100%; padding:5px 8px; font-size:13px; border:1px solid var(--border); border-radius:6px; background:var(--bg-alt,#f1f5f9); color:var(--text); outline:none; box-sizing:border-box; }
       .am-sp-search:focus { border-color:var(--accent,#2563eb); }
       .am-sp-preset-wrap { padding:6px 10px; border-bottom:1px solid var(--border); }
       .am-sp-preset-btn {
         width:100%; padding:7px 10px; border:1px solid var(--accent,#2563eb); border-radius:8px;
         background:color-mix(in srgb, var(--accent) 7%, transparent); color:var(--accent,#2563eb);
-        font-size:12px; font-weight:700; cursor:pointer; text-align:center;
+        font-size:13px; font-weight:700; cursor:pointer; text-align:center;
       }
       .am-sp-preset-btn:hover { background:color-mix(in srgb, var(--accent) 14%, transparent); }
       /* Filter column headers inserted before primary metric column */
@@ -1275,7 +1275,7 @@ def build_advanced_metrics_body(
       /* Week range note */
       .am-week-note {
         display:flex; align-items:center; gap:6px;
-        font-size:12px; font-weight:600; color:var(--text-muted);
+        font-size:13px; font-weight:600; color:var(--text-muted);
         background:color-mix(in srgb, var(--warning) 8%, transparent); border:1px solid color-mix(in srgb, var(--warning) 25%, transparent);
         border-radius:8px; padding:6px 12px; margin-bottom:10px;
       }
@@ -1287,11 +1287,11 @@ def build_advanced_metrics_body(
       }
       .am-graph-controls .am-gctrl { display:flex; flex-direction:column; gap:3px; flex:1 1 130px; min-width:120px; }
       .am-graph-controls label {
-        font-size:10px; text-transform:uppercase; letter-spacing:.04em;
+        font-size:11px; text-transform:uppercase; letter-spacing:.04em;
         color:var(--text-muted); font-weight:700;
       }
       .am-graph-controls select {
-        font-size:12px; padding:6px 8px; border:1px solid var(--border);
+        font-size:13px; padding:6px 8px; border:1px solid var(--border);
         border-radius:7px; background:var(--card); color:var(--text); cursor:pointer; width:100%;
       }
       .am-graph-actions { flex:0 0 auto !important; min-width:0 !important; justify-content:flex-end; margin-left:auto; }
@@ -1325,12 +1325,12 @@ def build_advanced_metrics_body(
       }
       .am-graph-hover-nm { font-size:13px; font-weight:800; color:var(--text); line-height:1.15; }
       .am-graph-hover-pos { font-size:11px; color:var(--text-muted); font-weight:600; margin-top:1px; }
-      .am-graph-hover-stats { margin-top:7px; display:flex; flex-direction:column; gap:3px; font-size:12px; color:var(--text); }
+      .am-graph-hover-stats { margin-top:7px; display:flex; flex-direction:column; gap:3px; font-size:13px; color:var(--text); }
       .am-graph-hover-stats .k { color:var(--text-muted); }
       /* Tap-to-inspect line (touch has no hover for the <title> tooltips). */
       .am-graph-tip {
         margin-top:8px; min-height:18px; text-align:center;
-        font-size:12px; color:var(--text-muted); line-height:1.4;
+        font-size:13px; color:var(--text-muted); line-height:1.4;
       }
       .am-graph-tip b { color:var(--text); }
       /* Mobile controls toggle button (hidden on desktop) */
@@ -1361,9 +1361,9 @@ def build_advanced_metrics_body(
       .am-graph-svg { width:100%; height:auto; display:block; touch-action:none; }
       .am-graph-empty { text-align:center; color:var(--text-muted); font-size:13px; padding:48px 0; }
       .am-graph-axis { stroke:var(--border); }
-      .am-graph-tick { fill:var(--text-muted); font-size:10px; }
+      .am-graph-tick { fill:var(--text-muted); font-size:11px; }
       .am-graph-axislbl { fill:var(--text); font-size:11px; font-weight:700; }
-      .am-graph-ptlbl { fill:var(--text-muted); font-size:9px; pointer-events:none; }
+      .am-graph-ptlbl { fill:var(--text-muted); font-size:11px; pointer-events:none; }
       .am-graph-dot { cursor:pointer; transition:fill-opacity .12s; }
       .am-graph-dot:hover { fill-opacity:1 !important; }
 
@@ -1453,17 +1453,17 @@ def build_advanced_metrics_body(
       @media (max-width:600px) {
         /* 1. Command strip: compact title, icon actions, labeled menu rows. */
         .am-cmdbar { margin:0 -4px; padding:2px 4px 0; }
-        .am-cmd-title { font-size:16px; }
+        .am-cmd-title { font-size:15px; }
         .am-more-menu .am-legend-btn { padding:10px 12px; }
         .am-more-menu .am-legend-btn svg { width:16px; height:16px; }
         /* 2. Search row (toggled from the strip) spans full width. */
         #amSearchRow { margin:8px 0 0; }
-        #amSearchRow .am-search { font-size:14px; }
+        #amSearchRow .am-search { font-size:15px; }
         /* 3. + Metric: solid outlined button matching the position pills,
            not the near-invisible dashed ghost. 8px radius per --radius-pill. */
         #amAddStatBtn {
           border:1px solid var(--border); border-radius:8px; background:var(--card);
-          color:var(--text); padding:6px 14px; font-size:12px; font-weight:600;
+          color:var(--text); padding:6px 14px; font-size:13px; font-weight:600;
         }
         #amAddStatBtn:hover { border-color:var(--accent,#2563eb); color:var(--accent,#2563eb); }
         /* 4. Decide presets: edge fade so the rail reads as swipeable.
@@ -1504,7 +1504,7 @@ def build_advanced_metrics_body(
         .am-avg-full { display:none; }
         .am-avg-note.am-avg-open .am-avg-grid {
           display:grid; grid-template-columns:1fr 1fr; gap:6px 14px;
-          padding:2px 2px 10px; font-size:12.5px; color:var(--text-muted);
+          padding:2px 2px 10px; font-size:13px; color:var(--text-muted);
         }
         .am-avg-cell b, .am-avg-cell strong { color:var(--text); font-weight:600; }
         /* 7. Results table: edge fade on horizontal scroll. */
@@ -1550,7 +1550,7 @@ def build_advanced_metrics_body(
         width:14px; height:14px; flex-shrink:0;
         border:1.5px solid color-mix(in srgb, var(--text-muted) 55%, transparent);
         border-radius:4px; display:inline-flex; align-items:center; justify-content:center;
-        font-size:10px; line-height:1; color:transparent; background:transparent;
+        font-size:11px; line-height:1; color:transparent; background:transparent;
         transition:background .12s, border-color .12s, color .12s;
       }
       .am-toggle-chip .am-toggle-input:checked + .am-toggle-box {
@@ -1579,7 +1579,7 @@ def build_advanced_metrics_body(
         #amAddStatBtn, #amAddFilterBtn, #amSaveSetBtn, #amDeleteSetBtn {
           border:1px solid var(--border); border-radius:var(--radius-pill,8px);
           background:var(--card); color:var(--text);
-          padding:6px 14px; font-size:12px; font-weight:600;
+          padding:6px 14px; font-size:13px; font-weight:600;
         }
         #amAddStatBtn:hover, #amAddFilterBtn:hover, #amSaveSetBtn:hover {
           border-color:var(--accent,#2563eb); color:var(--accent,#2563eb);
@@ -1616,7 +1616,7 @@ def build_advanced_metrics_body(
         .am-avg-full { display:none; }
         .am-avg-note.am-avg-open .am-avg-grid {
           display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr));
-          gap:6px 18px; padding:2px 2px 10px; font-size:12.5px; color:var(--text-muted);
+          gap:6px 18px; padding:2px 2px 10px; font-size:13px; color:var(--text-muted);
         }
         .am-avg-cell b { color:var(--text); font-weight:600; }
       }
@@ -1634,7 +1634,7 @@ def build_advanced_metrics_body(
       }
       .am-cmd-title {
         flex:1 1 auto; min-width:0;
-        font-size:17px; font-weight:800; letter-spacing:-.3px; color:var(--text);
+        font-size:18px; font-weight:800; letter-spacing:-.3px; color:var(--text);
         white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
       }
       .am-cmd-actions { display:flex; align-items:center; gap:4px; flex-shrink:0; }
@@ -1656,7 +1656,7 @@ def build_advanced_metrics_body(
         min-width:18px; height:18px; padding:0 5px; box-sizing:border-box;
         display:inline-flex; align-items:center; justify-content:center;
         background:var(--accent,#2563eb); color:#fff;
-        font-size:10px; font-weight:800; line-height:1; border-radius:10px;
+        font-size:11px; font-weight:800; line-height:1; border-radius:10px;
       }
       .am-filter-badge[hidden] { display:none; }
       .am-more-menu {
@@ -1710,14 +1710,14 @@ def build_advanced_metrics_body(
         display:flex; align-items:center; justify-content:space-between; gap:8px;
         width:100%; margin:0 0 8px; padding:7px 10px;
         border:1px solid var(--border); border-radius:10px; background:var(--card);
-        color:var(--text-muted); font-size:12.5px; font-weight:600; cursor:pointer;
+        color:var(--text-muted); font-size:13px; font-weight:600; cursor:pointer;
       }
       .am-context-line:hover { border-color:var(--accent,#2563eb); color:var(--text); }
       #amContextLineText { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
       .am-context-chev { flex-shrink:0; }
       /* Movers slim banner: collapsed shows the summary counts only. */
       .am-movers-bolt { display:inline-flex; color:var(--accent,#2563eb); }
-      .am-movers-summary { font-size:11.5px; color:var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .am-movers-summary { font-size:11px; color:var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
       .am-movers.collapsed .am-movers-sub { display:none; }
       .am-movers:not(.collapsed) .am-movers-summary { display:none; }
       /* Filter sheet */
@@ -1746,7 +1746,7 @@ def build_advanced_metrics_body(
       .am-sheet-sec .am-ctrl-weekbar { margin:0; }
       .am-sheet-sec .am-filter-ctrl { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
       .am-sheet-sec .am-filter-ctrl:last-child { margin-bottom:0; }
-      .am-sheet-sec .am-filter-label { min-width:34px; font-size:12px; font-weight:600; color:var(--text-muted); }
+      .am-sheet-sec .am-filter-label { min-width:34px; font-size:13px; font-weight:600; color:var(--text-muted); }
       .am-sheet-sec .am-vol-ctrl { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
       .am-sheet-sec .am-age-wrap { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
       .am-sheet-sec .am-roster-toggle { margin:0 8px 8px 0; }
@@ -2345,7 +2345,7 @@ _AM_JS = r"""
           key: 'am-movers',
           feature: 'advanced-metrics-movers',
           message: 'PRO tracks who is heating up and cooling off across every metric.',
-          ctaLabel: 'Unlock'
+          ctaLabel: 'Get PRO'
         });
         if (_shown) {
           host.style.display = '';
@@ -2559,7 +2559,7 @@ _AM_JS = r"""
         html += '<div class="am-sp-item' + (on ? ' am-sp-active' : '') + '" onclick="amPickerClick(\'' + key + '\')">'
           + '<span class="am-sp-check">' + (on ? '&#10003;' : '') + '</span>'
           + spec.label + wBadge
-          + (isPrimary ? ' <span style="font-size:10px;opacity:.6">(primary)</span>' : '')
+          + (isPrimary ? ' <span style="font-size:11px;opacity:.6">(primary)</span>' : '')
           + '</div>';
       }
     }

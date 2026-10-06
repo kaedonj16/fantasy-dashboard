@@ -260,7 +260,7 @@ def build_player_page_body(
     _pp_v = static_hash(_pp_js)
     return f"""
     <div class="page-shell-narrow" style="max-width:760px;margin:0 auto;">
-      <nav class="pp-breadcrumb" aria-label="Breadcrumb" style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">
+      <nav class="pp-breadcrumb" aria-label="Breadcrumb" style="font-size:13px;color:var(--text-muted);margin-bottom:12px;">
         <a href="/players" style="color:var(--text-muted);">Player Rankings</a>
         <span style="margin:0 6px;">/</span>
         <span>{esc_name} Trade Value</span>
@@ -281,7 +281,7 @@ def build_player_page_body(
         </div>
 
         <div class="player-modal-body">
-          <h2 style="font-size:16px;margin:0 0 14px;">{esc_name} {trade_value_label} ({season})</h2>
+          <h2 style="font-size:15px;margin:0 0 14px;">{esc_name} {trade_value_label} ({season})</h2>
 
           <div class="pm-hero-row" style="grid-template-columns:repeat({hero_count},1fr);">
             <div class="pm-hero-stat pm-hero-primary">
@@ -297,7 +297,7 @@ def build_player_page_body(
             {ppg_card}
           </div>
 
-          <p class="pp-summary" style="margin:18px 0 0;line-height:1.6;color:var(--text-muted);font-size:14px;">
+          <p class="pp-summary" style="margin:18px 0 0;line-height:1.6;color:var(--text-muted);font-size:15px;">
             {summary_html}
           </p>
 

@@ -23,7 +23,7 @@ def test_dock_floats_with_side_margins():
 
 
 def test_dock_is_a_rounded_pill_with_shadow():
-    assert "border-radius: 24px" in CSS
+    assert "border-radius: var(--radius)" in CSS
     assert "box-shadow: 0 8px 24px" in CSS
 
 
@@ -33,7 +33,7 @@ def test_dock_reserve_space_accounts_for_float_gap():
 
 def test_dock_proportions():
     assert "height: 60px;" in CSS
-    assert "font-size: 10px;" in CSS
+    assert "font-size: 11px;" in CSS
     assert "letter-spacing: .03em;" in CSS
     # Dock icons render at 24px in both the league and guest docks.
     assert APP_PY.count("_nav_icon(icon, size=24)") == 2

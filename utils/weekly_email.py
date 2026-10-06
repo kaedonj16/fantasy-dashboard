@@ -329,9 +329,9 @@ def compact_league_blurb(
         detail = chip
     return (
         f'<tr><td class="em-rowb" style="padding:10px 0;border-bottom:1px solid #eef2f7;">'
-        f'<a class="em-t" href="{escape(href)}" style="font-size:14px;font-weight:600;color:#0f172a;'
+        f'<a class="em-t" href="{escape(href)}" style="font-size:15px;font-weight:600;color:#0f172a;'
         f'text-decoration:none;">{escape(name)}</a>'
-        + (f'<div class="em-t3" style="font-size:12px;color:#64748b;margin-top:2px;">{escape(detail)}</div>' if detail else "")
+        + (f'<div class="em-t3" style="font-size:13px;color:#64748b;margin-top:2px;">{escape(detail)}</div>' if detail else "")
         + "</td></tr>"
     )
 
@@ -1479,7 +1479,7 @@ def build_multi_league_digest(
     else:
         intro_txt = f"Snapshot across {n} connected leagues."
     intro = (
-        f'<p class="em-t2" style="margin:0 0 4px;font-size:14px;color:#475569;line-height:1.5;">'
+        f'<p class="em-t2" style="margin:0 0 4px;font-size:15px;color:#475569;line-height:1.5;">'
         f"{escape(intro_txt, quote=False)}</p>"
     )
     moves = ""

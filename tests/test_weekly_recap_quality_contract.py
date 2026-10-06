@@ -162,7 +162,7 @@ def test_weekly_story_and_lineup_review_layout_contract():
     assert ".weekly-recap .recap-story [data-br-reveal-text] > *" in css
     assert ".weekly-recap .recap-lineup-cols { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:start; }" in css
     assert ".weekly-recap .rlc-section:nth-child(3) { grid-column:1 / -1; }" in css
-    assert "@media (max-width:900px)" in css
+    assert "@media (max-width: 1024px)" in css
     assert ".weekly-recap .recap-lineup-cols { display:block; }" in css
     assert ".rlc-section + .rlc-section { border-top:1px solid var(--border); }" in css
     assert "grid-template-columns:repeat(3,minmax(0,1fr))" not in css

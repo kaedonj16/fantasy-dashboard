@@ -250,10 +250,10 @@ function openPlayerModal(playerId, playerName, opts) {
     <div class="pm-tab-bar" id="pmTabBar" role="tablist" aria-label="Player details" style="display:none">
       <button type="button" class="pm-tab active" role="tab" aria-selected="true" data-tab="overview" onclick="pmSwitchTab('overview', event)">Overview</button>
       <button type="button" class="pm-tab" role="tab" aria-selected="false" data-tab="stats" onclick="pmSwitchTab('stats', event)">Stats</button>
-      <button type="button" class="pm-tab" role="tab" aria-selected="false" id="pmTabTeam" data-tab="team" onclick="pmSwitchTab('team', event)" style="display:none">Team</button>
-      <button type="button" class="pm-tab" role="tab" aria-selected="false" id="pmTabMetrics" data-tab="metrics" onclick="pmSwitchTab('metrics', event)" style="display:none">Advanced</button>
-      <button type="button" class="pm-tab" role="tab" aria-selected="false" id="pmTabProspect" data-tab="prospect" onclick="pmSwitchTab('prospect', event)" style="display:none">Prospect</button>
-      <button type="button" class="pm-tab" role="tab" aria-selected="false" id="pmTabBreakout" data-tab="breakout" onclick="pmSwitchTab('breakout', event)" style="display:none">Breakout</button>
+      <button type="button" class="pm-tab" role="tab" aria-selected="false" id="pmTabTeam" data-tab="team" onclick="pmSwitchTab('team', event)">Team</button>
+      <button type="button" class="pm-tab" role="tab" aria-selected="false" id="pmTabMetrics" data-tab="metrics" onclick="pmSwitchTab('metrics', event)">Advanced</button>
+      <button type="button" class="pm-tab" role="tab" aria-selected="false" id="pmTabProspect" data-tab="prospect" onclick="pmSwitchTab('prospect', event)">Prospect</button>
+      <button type="button" class="pm-tab" role="tab" aria-selected="false" id="pmTabBreakout" data-tab="breakout" onclick="pmSwitchTab('breakout', event)">Breakout</button>
       <button type="button" id="pmBreakoutStatus" class="pm-tab" style="display:none" aria-live="polite"></button>
       <button type="button" class="pm-tab" role="tab" aria-selected="false" data-tab="trades" onclick="pmSwitchTab('trades', event)">Trades</button>
     </div>
@@ -1234,24 +1234,40 @@ function openPlayerModal(playerId, playerName, opts) {
       const _teamPanel = document.getElementById('pm-panel-team');
       if (_teamPanel && opts.teamSeason) _teamPanel.dataset.pmTeamSeason = String(opts.teamSeason);
 
-      // Show/hide conditional tabs
+      // Configure conditional tabs: disabled with tooltip instead of hidden
       const tabMetrics = document.getElementById('pmTabMetrics');
-      if (tabMetrics) tabMetrics.style.display = hasMetrics ? '' : 'none';
+      if (tabMetrics) {
+        tabMetrics.disabled = !hasMetrics;
+        tabMetrics.title = hasMetrics ? '' : 'No advanced metrics available for this player';
+        tabMetrics.classList.toggle('pm-tab-disabled', !hasMetrics);
+      }
       const tabTeam = document.getElementById('pmTabTeam');
       const _teamPos = String(data.position || '').toUpperCase();
       const _showTeamTab = !!(data.team && ['QB', 'RB', 'WR', 'TE'].includes(_teamPos));
-      if (tabTeam) tabTeam.style.display = _showTeamTab ? '' : 'none';
+      if (tabTeam) {
+        tabTeam.disabled = !_showTeamTab;
+        tabTeam.title = _showTeamTab ? '' : 'Team data only available for QB/RB/WR/TE';
+        tabTeam.classList.toggle('pm-tab-disabled', !_showTeamTab);
+      }
       if (pmTabBar) pmTabBar.dataset.pmHasTeam = _showTeamTab ? '1' : '';
       const tabProspect = document.getElementById('pmTabProspect');
       // Prospect tab: only for players with no NFL game logs drafted in the current season
       const _currentNFLYear = new Date().getFullYear();
       const _isCurrentYearProspect = hasProspectData && !hasGameLogs
         && String(pd.draft_class_year) === String(_currentNFLYear);
-      if (tabProspect) tabProspect.style.display = _isCurrentYearProspect ? '' : 'none';
+      if (tabProspect) {
+        tabProspect.disabled = !_isCurrentYearProspect;
+        tabProspect.title = _isCurrentYearProspect ? '' : 'Prospect data only for current-year rookies';
+        tabProspect.classList.toggle('pm-tab-disabled', !_isCurrentYearProspect);
+      }
       // Breakout tab: the server compares this normalized player ID with the
       // exact, unfiltered top-N board for the resolved page season.
       const tabBreakout = document.getElementById('pmTabBreakout');
-      if (tabBreakout) tabBreakout.style.display = boardEligible ? '' : 'none';
+      if (tabBreakout) {
+        tabBreakout.disabled = !boardEligible;
+        tabBreakout.title = boardEligible ? '' : 'Not on the current breakout board';
+        tabBreakout.classList.toggle('pm-tab-disabled', !boardEligible);
+      }
       const breakoutPanel = document.getElementById('pm-panel-breakout');
       if (breakoutPanel) breakoutPanel._breakoutData = resolvedBreakoutData;
 
@@ -2123,6 +2139,9 @@ function pmSwitchTab(tab, clickEvent) {
   // tab click inside the existing dialog so it cannot bubble into one of those
   // handlers and invoke openPlayerModal a second time.
   if (clickEvent && typeof clickEvent.stopPropagation === 'function') clickEvent.stopPropagation();
+  // Don't switch to disabled tabs
+  const targetBtn = document.querySelector('.pm-tab[data-tab="' + tab + '"]');
+  if (targetBtn && (targetBtn.disabled || targetBtn.classList.contains('pm-tab-disabled'))) return;
   const pmBtns = Array.from(document.querySelectorAll('.pm-tab[data-tab]'));
   const pmOldIdx = pmBtns.findIndex(t => t.classList.contains('active'));
   const pmNewIdx = pmBtns.findIndex(t => t.getAttribute('data-tab') === tab);
@@ -3515,15 +3534,8 @@ function _buildWeeklyBkTabHTML(data) {
   const weeksStale  = parseInt(data.weeks_stale || 0, 10) || 0;
   const asOfWeek    = data.as_of_week;
 
-  // ── Call badge: which breakout call this player was part of ───────────────
-  let html = '';
-  const callWeek = data.call_week != null ? data.call_week : data.as_of_week;
-  const callBadge = data.weekly === false || data.kind === 'preseason'
-    ? 'PRESEASON BREAKOUT CALL'
-    : (callWeek != null ? 'WEEK ' + callWeek + ' BREAKOUT CALL' : 'BREAKOUT CALL');
-  html += `<div style="display:inline-block;font-size:11px;font-weight:700;background:rgba(59,130,246,.15);color:#60a5fa;padding:4px 12px;border-radius:6px;margin-bottom:12px;">${callBadge}</div>`;
-
   // ── Hero: Classification | Score | Confidence (three separate reads) ───────
+  let html = '';
   html += `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;align-items:center;">`;
   html += `<span style="display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:999px;
              background:${clsColor}1a;color:${clsColor};border:1px solid ${clsColor}44;font-size:12px;font-weight:800;
@@ -3549,22 +3561,6 @@ function _buildWeeklyBkTabHTML(data) {
       <div style="font-size:11px;color:var(--text-muted);margin-top:1px;">evidence strength</div>
     </div>`;
   html += `</div>`;
-
-  // ── Tracking to hit progress ──────────────────────────────────────────────
-  const fc = data.forecast || null;
-  if (fc && fc.band) {
-    const bandLabel = {tracking_to_hit: 'Tracking to hit', borderline: 'Borderline', tracking_to_miss: 'Tracking to miss'}[fc.band] || fc.band;
-    const bandColor = fc.band === 'tracking_to_hit' ? '#10b981' : fc.band === 'borderline' ? '#d97706' : '#ef4444';
-    const trackPct = fc.tracking_pct != null ? Math.round(fc.tracking_pct * 100) : null;
-    html += `<div style="margin:12px 0;">`;
-    html += `<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;">`;
-    html += `<span style="color:var(--text-muted);">Progress</span>`;
-    html += `<span style="color:${bandColor};font-weight:700;">${trackPct != null ? trackPct + '%' : bandLabel}</span></div>`;
-    html += `<div style="height:8px;background:var(--surface-2,rgba(255,255,255,0.1));border-radius:4px;overflow:hidden;">`;
-    html += `<div style="height:100%;width:${trackPct != null ? trackPct : 0}%;background:${bandColor};border-radius:4px;"></div></div>`;
-    if (fc.basis) html += `<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">${_pmEsc(fc.basis)}</div>`;
-    html += `</div>`;
-  }
 
   // ── Why (concise reasons) ──────────────────────────────────────────────────
   const reasons = Array.isArray(data.reasons) ? data.reasons.filter(Boolean).slice(0, 3)

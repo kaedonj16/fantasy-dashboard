@@ -26,8 +26,8 @@ def _page_sources() -> str:
 
 
 def _mobile_block(css: str) -> str:
-    """Return the first max-width:1180px block that hides .os-tab-panel."""
-    parts = re.split(r"@media\s*\(\s*max-width:\s*1180px\s*\)\s*\{", css)
+    """Return the first max-width:1280px block that hides .os-tab-panel."""
+    parts = re.split(r"@media\s*\(\s*max-width:\s*1280px\s*\)\s*\{", css)
     for chunk in parts[1:]:
         depth = 1
         body = []
@@ -43,7 +43,7 @@ def _mobile_block(css: str) -> str:
         text = "".join(body)
         if ".os-tab-panel" in text and "display: none" in text:
             return text
-    raise AssertionError("expected a mobile @media (max-width: 1180px) os-tab-panel block")
+    raise AssertionError("expected a mobile @media (max-width: 1280px) os-tab-panel block")
 
 
 def test_os_layout_side_columns_capped_to_center_height():

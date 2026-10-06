@@ -333,7 +333,7 @@ def build_activity_body(ctx: dict) -> str:
                     f"{'+' if io_class == 'add' else '−'}</span>"
                     "<div>"
                     f"  <div{clickable_attrs}>{name}</div>"
-                    f"  <div style='color:var(--text-muted);font-size:12px'>{pos_rank_label} • {p.get('team', '')}</div>"
+                    f"  <div style='color:var(--text-muted);font-size:13px'>{pos_rank_label} • {p.get('team', '')}</div>"
                     "</div></div>"
                     f"{val_html}</div>"
                 )
@@ -380,7 +380,7 @@ def build_activity_body(ctx: dict) -> str:
                     f"{'+' if io_class == 'add' else '−'}</span>"
                     "<div>"
                     f"  <div style='font-weight:600'>{pick_label}</div>"
-                    f"  <div style='color:var(--text-muted);font-size:12px'>{subline}</div>"
+                    f"  <div style='color:var(--text-muted);font-size:13px'>{subline}</div>"
                     "</div></div>"
                     f"{val_html}</div>"
                 )
@@ -891,7 +891,7 @@ def build_activity_body(ctx: dict) -> str:
         }}
         .act-mtab {{
           flex: 1; border: 0; background: transparent; color: var(--text-muted);
-          font-weight: 700; font-size: 13.5px; padding: 9px 8px; border-radius: 9px; cursor: pointer;
+          font-weight: 700; font-size: 13px; padding: 9px 8px; border-radius: 9px; cursor: pointer;
           -webkit-tap-highlight-color: transparent;
           transition: background .15s, color .15s, box-shadow .15s;
         }}
@@ -922,7 +922,7 @@ def build_activity_body(ctx: dict) -> str:
         border-radius: 12px; margin-bottom: 14px;
       }}
       .act-tb-label {{
-        font-size: 10px; font-weight: 800; letter-spacing: .11em; text-transform: uppercase;
+        font-size: 11px; font-weight: 800; letter-spacing: .11em; text-transform: uppercase;
         color: var(--text-subtle, var(--text-muted));
       }}
       .act-tb-div {{ width: 1px; align-self: stretch; background: var(--border); margin: 2px 0; }}
@@ -944,14 +944,14 @@ def build_activity_body(ctx: dict) -> str:
       /* Injuries: connected segmented control */
       .act-segctrl {{ display: inline-flex; background: var(--accent-soft); border: 1px solid var(--border); border-radius: 11px; padding: 3px; gap: 2px; }}
       .act-segctrl button {{
-        border: 0; background: transparent; color: var(--text-muted); font-weight: 700; font-size: 12.5px;
+        border: 0; background: transparent; color: var(--text-muted); font-weight: 700; font-size: 13px;
         padding: 6px 11px; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
         transition: background .15s, color .15s, box-shadow .15s;
       }}
       .act-segctrl button:hover {{ color: var(--text); }}
       .act-segctrl button.active {{ background: var(--card); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.10); }}
       .act-segctrl .act-sdot {{ width: 8px; height: 8px; border-radius: 50%; }}
-      .act-tb-count {{ margin-left: auto; font-size: 12px; color: var(--text-subtle, var(--text-muted)); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }}
+      .act-tb-count {{ margin-left: auto; font-size: 13px; color: var(--text-subtle, var(--text-muted)); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }}
       .act-pulse .act-daygroup + .act-daygroup {{ margin-top: 2px; }}
       .act-pulse .act-dayhdr {{
         font-size: 11px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase;
@@ -971,9 +971,9 @@ def build_activity_body(ctx: dict) -> str:
         border-radius: 10px; padding: 9px 11px; display: flex; flex-direction: column;
       }}
       .act-snap-n {{ font-size: 22px; font-weight: 800; line-height: 1; color: var(--text); font-variant-numeric: tabular-nums; }}
-      .act-snap-l {{ font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--text-muted); margin-top: 4px; }}
+      .act-snap-l {{ font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--text-muted); margin-top: 4px; }}
       .act-snap-line {{
-        display: flex; justify-content: space-between; gap: 12px; font-size: 12px;
+        display: flex; justify-content: space-between; gap: 12px; font-size: 13px;
         padding: 8px 14px; border-top: 1px solid var(--border);
       }}
       .act-snap-line span {{ color: var(--text-muted); flex: 0 0 auto; }}
@@ -987,20 +987,20 @@ def build_activity_body(ctx: dict) -> str:
       .act-pulse .act-av img {{ width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }}
       .act-pulse .act-av-ph {{ color: #fff; background: hsl(var(--h, 210), 42%, 46%); }}
       .act-pulse .act-rmain {{ min-width: 0; }}
-      .act-pulse .act-rtop {{ display: flex; align-items: center; gap: 7px; flex-wrap: wrap; font-size: 12.5px; }}
+      .act-pulse .act-rtop {{ display: flex; align-items: center; gap: 7px; flex-wrap: wrap; font-size: 13px; }}
       .act-pulse .act-tm {{ font-weight: 700; color: var(--text); }}
       .act-pulse .act-tm.team-clickable:hover {{ color: var(--accent); text-decoration: underline; }}
       .act-pulse .act-verb {{ color: var(--text-muted); font-weight: 600; }}
       .act-pulse .act-verb.trade {{ color: var(--accent); }}
-      .act-pulse .act-kindtag {{ font-size: 9.5px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; padding: 2px 6px; border-radius: 5px; }}
+      .act-pulse .act-kindtag {{ font-size: 11px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; padding: 2px 6px; border-radius: 5px; }}
       .act-pulse .act-kindtag.waiver {{ color: var(--accent); background: var(--accent-soft); }}
       .act-pulse .act-kindtag.trade {{ color: var(--orange, #b45309); background: color-mix(in srgb, var(--orange, #f59e0b) 15%, transparent); }}
       .act-pulse .act-chips {{ display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }}
-      .act-pulse .act-chip {{ display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; padding: 3px 8px; border-radius: 7px; background: var(--card-soft, var(--bg-alt)); border: 1px solid var(--border); color: var(--text); white-space: nowrap; max-width: 100%; }}
+      .act-pulse .act-chip {{ display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 7px; background: var(--card-soft, var(--bg-alt)); border: 1px solid var(--border); color: var(--text); white-space: nowrap; max-width: 100%; }}
       .act-pulse .act-chip-drop {{ opacity: .72; }}
       .act-pulse .act-sign {{ font-weight: 800; color: var(--win, #15803d); }}
       .act-pulse .act-chip-drop .act-sign {{ color: var(--loss, #b91c1c); }}
-      .act-pulse .act-pos {{ font-size: 9px; font-weight: 800; letter-spacing: .03em; padding: 1px 4px; border-radius: 4px; color: #fff; }}
+      .act-pulse .act-pos {{ font-size: 11px; font-weight: 800; letter-spacing: .03em; padding: 1px 4px; border-radius: 4px; color: #fff; }}
       .act-pulse .act-pos.qb {{ background: #3b82f6; }}
       .act-pulse .act-pos.rb {{ background: #22c55e; }}
       .act-pulse .act-pos.wr {{ background: #f59e0b; }}
@@ -1008,7 +1008,7 @@ def build_activity_body(ctx: dict) -> str:
       .act-pulse .act-pos.pk {{ background: #64748b; }}
       .act-pulse .act-arrow {{ color: var(--text-subtle, var(--text-muted)); font-weight: 700; padding: 0 1px; }}
       .act-pulse .act-rend {{ display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }}
-      .act-pulse .act-val {{ font-size: 12.5px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }}
+      .act-pulse .act-val {{ font-size: 13px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }}
       .act-pulse .act-swing {{ font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 12px; color: var(--win, #15803d); background: color-mix(in srgb, var(--win, #16a34a) 14%, transparent); font-variant-numeric: tabular-nums; }}
       /* Trade rows expand to the full breakdown via native <details> */
       .act-pulse details.act-trade {{ display: block; padding: 0; }}
@@ -1025,7 +1025,7 @@ def build_activity_body(ctx: dict) -> str:
       .act-injrow {{ display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; padding: 8px; }}
       .act-injrow + .act-injrow {{ border-top: 1px solid var(--border); }}
       .act-injrow-l {{ min-width: 0; }}
-      .act-injteam {{ font-size: 12.5px; font-weight: 700; color: var(--text); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+      .act-injteam {{ font-size: 13px; font-weight: 700; color: var(--text); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
       .act-injmeter {{ height: 5px; border-radius: 3px; background: var(--border); overflow: hidden; margin-top: 6px; }}
       .act-injmeter i {{ display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--orange, #f59e0b), var(--loss, #b91c1c)); }}
       .act-injrow-r {{ display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }}
@@ -1037,7 +1037,7 @@ def build_activity_body(ctx: dict) -> str:
       .act-injdot.out {{ background: var(--loss, #ef4444); }}
       .act-injdot.dbt {{ background: var(--orange, #ea580c); }}
       .act-injdot.q {{ background: var(--inj-q, #ca8a04); }}
-      .act-injcount {{ font-size: 12px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; min-width: 16px; text-align: right; }}
+      .act-injcount {{ font-size: 13px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; min-width: 16px; text-align: right; }}
     </style>
     <div class="page-layout activity-page act-pulse" data-mtab="feed">
       <div class="act-mtabs" role="tablist" aria-label="Activity sections">
@@ -1049,7 +1049,7 @@ def build_activity_body(ctx: dict) -> str:
         <div class="card small" id="nflNewsCard">
           <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
             <h3>Fantasy News</h3>
-            <span style="font-size:10px;color:var(--text-muted);font-weight:500;">via ESPN &amp; more</span>
+            <span style="font-size:11px;color:var(--text-muted);font-weight:500;">via ESPN &amp; more</span>
           </div>
           <div id="nflNewsList" class="card-body" style="padding:0;">
             <div style="padding:16px 14px;display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-muted);"><div class="loading-spinner" style="width:14px;height:14px;margin:0;flex-shrink:0;"></div>Loading…</div>
@@ -1144,11 +1144,11 @@ def build_activity_body(ctx: dict) -> str:
         border-bottom: 1px solid var(--border);
       }}
       .act-news-item:last-child {{ border-bottom: none; }}
-      .act-news-headline {{ font-size: 12px; font-weight: 600; color: var(--text); line-height: 1.4; margin-bottom: 3px; }}
+      .act-news-headline {{ font-size: 13px; font-weight: 600; color: var(--text); line-height: 1.4; margin-bottom: 3px; }}
       .act-news-link {{ color: var(--text); text-decoration: none; }}
       .act-news-link:hover {{ text-decoration: underline; color: #3b82f6; }}
       .act-news-desc {{ font-size: 11px; color: var(--text-muted); line-height: 1.35; margin-bottom: 3px; }}
-      .act-news-meta {{ font-size: 10px; color: var(--text-muted); opacity: .7; }}
+      .act-news-meta {{ font-size: 11px; color: var(--text-muted); opacity: .7; }}
       .act-news-warn {{
         padding: 8px 14px;
         font-size: 11px;
@@ -1183,14 +1183,14 @@ def build_activity_body(ctx: dict) -> str:
       }}
 
       .bract-summary-value {{
-        font-size: 24px;
+        font-size: 22px;
         line-height: 1.1;
         font-weight: 800;
         color: var(--text);
       }}
 
       .bract-summary-text {{
-        font-size: 12px;
+        font-size: 13px;
         line-height: 1.3;
       }}
 
@@ -1203,7 +1203,7 @@ def build_activity_body(ctx: dict) -> str:
       }}
 
       .bract-spotlight-title {{
-        font-size: 12px;
+        font-size: 13px;
         font-weight: 800;
         letter-spacing: 0.08em;
         text-transform: uppercase;
@@ -1212,7 +1212,7 @@ def build_activity_body(ctx: dict) -> str:
       }}
 
       .bract-spotlight-copy {{
-        font-size: 14px;
+        font-size: 15px;
         color: var(--text);
       }}
 
@@ -1225,7 +1225,7 @@ def build_activity_body(ctx: dict) -> str:
         align-items: center;
         justify-content: space-between;
         gap: 8px;
-        font-size: 14px;
+        font-size: 15px;
         font-weight: 700;
         color: var(--text);
       }}
@@ -1248,7 +1248,7 @@ def build_activity_body(ctx: dict) -> str:
         margin-top: 8px;
         padding: 4px 8px;
         border-radius: 12px;
-        font-size: 12px;
+        font-size: 13px;
         font-weight: 700;
       }}
 

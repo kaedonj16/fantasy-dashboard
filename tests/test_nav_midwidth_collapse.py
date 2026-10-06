@@ -1,4 +1,4 @@
-"""Top nav: mid-width (<=1400px) pill collapse behind the hamburger.
+"""Top nav: mid-width (<=1280px) pill collapse behind the hamburger.
 
 Regression test: the 8 league pills need ~1370px to sit on one row. Between
 the phone dock (<=768px) and a wide desktop they used to flex-wrap into
@@ -33,9 +33,9 @@ def _media_blocks(max_width_px: int) -> list[str]:
 
 
 def _nav_block() -> str:
-    """The 1400px block that carries the mid-width nav collapse rules."""
-    cands = [b for b in _media_blocks(1400) if ".top-nav.br-mnav .nav-hamburger" in b]
-    assert cands, "expected a 1400px media block with the mid-width nav rules"
+    """The 1280px block that carries the mid-width nav collapse rules."""
+    cands = [b for b in _media_blocks(1280) if ".top-nav.br-mnav .nav-hamburger" in b]
+    assert cands, "expected a 1280px media block with the mid-width nav rules"
     return cands[0]
 
 
@@ -44,7 +44,7 @@ def test_hamburger_shows_at_mid_widths():
     assert re.search(
         r"\.top-nav\.br-mnav\s+\.nav-hamburger\s*\{[^}]*display:\s*flex",
         block,
-    ), "hamburger must become visible at <=1400px"
+    ), "hamburger must become visible at <=1280px"
 
 
 def test_pills_collapse_into_dropdown_at_mid_widths():
@@ -52,7 +52,7 @@ def test_pills_collapse_into_dropdown_at_mid_widths():
     m = re.search(
         r"\.top-nav\.br-mnav\s+\.nav-pills-container\s*\{([^}]*)\}", block
     )
-    assert m, "pills container must be restyled at <=1400px"
+    assert m, "pills container must be restyled at <=1280px"
     body = m.group(1)
     assert "position: absolute" in body, "collapsed menu must drop below the bar"
     assert "flex-direction: column" in body, "collapsed menu must stack pills"

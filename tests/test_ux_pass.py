@@ -116,7 +116,7 @@ def test_do_next_waiver_card_helper():
     assert "def _render_next_steps_queue" in app_src
     assert "Next steps" in app_src
     assert "Do this next" not in app_src
-    assert "Ranked by expected impact" in app_src
+    assert "Most important first." in app_src
 
 
 def test_hub_column_height_sync_helper():

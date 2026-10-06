@@ -56,9 +56,9 @@ def build_nfl_teams_body(
 .nt-chead h1,.nt-chead h2{{font-size:18px;margin:0}}
 .nt-sub{{color:var(--text-muted);margin:4px 0 0;font-size:13px}}
 .nt-controls{{display:flex;gap:8px;align-items:center;flex-wrap:wrap}}
-.nt-hbtn{{flex-shrink:0;display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text-muted);font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;font-family:inherit}}
+.nt-hbtn{{flex-shrink:0;display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text-muted);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;font-family:inherit}}
 .nt-hbtn:hover{{background:var(--row)}}
-.nt-seaslab{{font-size:12px;color:var(--text-muted)}}
+.nt-seaslab{{font-size:13px;color:var(--text-muted)}}
 .nt-csel select{{appearance:none;background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px 30px 8px 12px;font-size:13px;min-height:38px;cursor:pointer;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23888' fill='none' stroke-width='1.5'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center}}
 .nt-tabs{{display:flex;gap:8px;margin:12px 0 2px;flex-wrap:wrap}}
 .nt-tabs button{{padding:7px 14px;border:1px solid var(--border);border-radius:999px;background:var(--card);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;transition:background .14s,border-color .14s;min-height:36px;font-family:inherit}}
@@ -72,7 +72,7 @@ table.nt-rank thead th.nt-teamcol,table.nt-rank thead th.nt-rankcol{{text-align:
 table.nt-rank th .nt-thbtn{{background:none;border:0;color:inherit;font:inherit;padding:0;cursor:pointer;white-space:nowrap}}
 table.nt-rank th .nt-thbtn:hover{{color:var(--text)}}
 table.nt-rank th .nt-arr{{color:var(--text-muted);margin-left:4px}}
-table.nt-rank td{{border-top:1px solid var(--border);padding:9px 10px;vertical-align:middle;font-size:14px}}
+table.nt-rank td{{border-top:1px solid var(--border);padding:9px 10px;vertical-align:middle;font-size:15px}}
 table.nt-rank tbody tr{{cursor:pointer}}
 table.nt-rank tbody tr:hover td{{background:var(--row)}}
 table.nt-rank tbody tr.nt-sel td{{background:var(--accent-soft)}}
@@ -82,7 +82,7 @@ table.nt-rank tbody tr.nt-sel td{{background:var(--accent-soft)}}
 .nt-rbadge.nt-tier-b{{background:color-mix(in srgb,var(--loss) 15%,transparent);color:var(--loss)}}
 .nt-tid{{display:flex;align-items:center;justify-content:space-between;gap:8px}}
 .nt-tleft{{display:flex;align-items:center;gap:10px;min-width:0}}
-.nt-logo{{width:28px;height:28px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:#fff;flex:none;overflow:hidden;background:var(--card-soft)}}
+.nt-logo{{width:28px;height:28px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#fff;flex:none;overflow:hidden;background:var(--card-soft)}}
 .nt-logo img{{width:100%;height:100%;object-fit:cover}}
 .nt-logo.nt-lg{{width:44px;height:44px;font-size:13px}}
 .nt-tid .nt-tn{{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
@@ -101,21 +101,21 @@ table.nt-rank tbody tr.nt-sel td.nt-teamcol{{background:var(--accent-soft)}}
 .nt-val{{font-weight:700;font-size:13px;white-space:nowrap;min-width:48px;text-align:right;font-variant-numeric:tabular-nums}}
 .nt-val.nt-na{{color:var(--text-muted);font-weight:500}}
 .nt-vwrap{{display:flex;flex-direction:column;align-items:flex-end;line-height:1.25}}
-.nt-eff{{font-size:10px;color:var(--text-muted);white-space:nowrap;font-variant-numeric:tabular-nums}}
-.nt-tnote{{margin:0;padding:10px 14px;font-size:12px;color:var(--text-muted);border-top:1px solid var(--border);display:none}}
-@media(max-width:600px){{.nt-page{{padding:12px 8px 24px}}.nt-cbody{{padding:0 8px 12px}}.nt-mbar{{display:none}}.nt-metric{{gap:0}}.nt-val{{min-width:40px;font-size:12px}}table.nt-rank{{min-width:0}}table.nt-rank thead th{{padding:8px 7px}}table.nt-rank td{{padding:8px 7px}}.nt-tn{{display:none}}.nt-tabbr{{display:inline;font-size:14px}}.nt-logo{{width:24px;height:24px}}.nt-tleft{{gap:8px}}.nt-gp{{font-size:10px}}}}
+.nt-eff{{font-size:11px;color:var(--text-muted);white-space:nowrap;font-variant-numeric:tabular-nums}}
+.nt-tnote{{margin:0;padding:10px 14px;font-size:13px;color:var(--text-muted);border-top:1px solid var(--border);display:none}}
+@media(max-width:600px){{.nt-page{{padding:12px 8px 24px}}.nt-cbody{{padding:0 8px 12px}}.nt-mbar{{display:none}}.nt-metric{{gap:0}}.nt-val{{min-width:40px;font-size:13px}}table.nt-rank{{min-width:0}}table.nt-rank thead th{{padding:8px 7px}}table.nt-rank td{{padding:8px 7px}}.nt-tn{{display:none}}.nt-tabbr{{display:inline;font-size:15px}}.nt-logo{{width:24px;height:24px}}.nt-tleft{{gap:8px}}.nt-gp{{font-size:11px}}}}
 .nt-pcard{{background:var(--card);border:1px solid var(--border);border-radius:12px;margin-bottom:16px;overflow:hidden}}
 .nt-pcard.nt-empty{{padding:28px 20px;text-align:center;color:var(--text-muted)}}
-.nt-pcard.nt-empty h2{{color:var(--text);margin:0 0 6px;font-size:17px}}
+.nt-pcard.nt-empty h2{{color:var(--text);margin:0 0 6px;font-size:18px}}
 .nt-backrow{{margin:0 0 12px}}
-.nt-back{{background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:999px;padding:10px 18px;font-size:14px;font-weight:700;cursor:pointer;min-height:44px;font-family:inherit}}
+.nt-back{{background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:999px;padding:10px 18px;font-size:15px;font-weight:700;cursor:pointer;min-height:44px;font-family:inherit}}
 .nt-back:active{{transform:scale(.98)}}
 .nt-phead2{{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--border)}}
 .nt-pid{{display:flex;align-items:center;gap:12px}}
 .nt-pid h2{{margin:0;font-size:18px}}
-.nt-pid .nt-meta{{margin:2px 0 0;font-size:12px;color:var(--text-muted)}}
+.nt-pid .nt-meta{{margin:2px 0 0;font-size:13px;color:var(--text-muted)}}
 .nt-herohead{{border-radius:12px 12px 0 0}}
-.nt-record{{display:inline-block;font-size:12px;font-weight:800;background:var(--card-soft);border:1px solid var(--border);border-radius:6px;padding:2px 8px;margin-left:8px;vertical-align:2px;letter-spacing:.03em;white-space:nowrap}}
+.nt-record{{display:inline-block;font-size:13px;font-weight:800;background:var(--card-soft);border:1px solid var(--border);border-radius:6px;padding:2px 8px;margin-left:8px;vertical-align:2px;letter-spacing:.03em;white-space:nowrap}}
 .nt-pbody{{padding:16px}}
 .nt-pgrid{{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}}
 @media(max-width:700px){{.nt-pgrid{{grid-template-columns:1fr}}}}
@@ -126,27 +126,27 @@ table.nt-rank tbody tr.nt-sel td.nt-teamcol{{background:var(--accent-soft)}}
 .nt-graphs-grid>.nt-psec{{margin-bottom:0}}
 @media(max-width:700px){{.nt-graphs-grid{{grid-template-columns:1fr}}}}
 .nt-psec{{margin-bottom:16px}}
-.nt-psec h3{{font-size:14px;margin:0 0 10px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)}}
+.nt-psec h3{{font-size:15px;margin:0 0 10px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)}}
 .nt-erow{{display:grid;grid-template-columns:150px 1fr 44px;gap:10px;align-items:center;padding:7px 0;border-top:1px solid var(--border)}}
 .nt-erow:first-of-type{{border-top:0}}
 .nt-elab{{font-size:13px}}
 .nt-eval{{display:block;font-size:11px;color:var(--text-muted)}}
 .nt-bar{{height:8px;background:rgba(128,128,128,.18);border-radius:4px;overflow:hidden}}
 .nt-bar i{{display:block;height:100%;background:var(--accent);border-radius:4px}}
-.nt-erk{{font-size:12px;font-weight:700;text-align:right}}
-.nt-fine{{font-size:12px;color:var(--text-muted);margin:10px 0 0}}
+.nt-erk{{font-size:13px;font-weight:700;text-align:right}}
+.nt-fine{{font-size:13px;color:var(--text-muted);margin:10px 0 0}}
 .nt-chart{{width:100%;height:auto;display:block}}
 .nt-chart text{{font-family:inherit}}
-.nt-cmp{{display:flex;align-items:center;gap:8px;margin:0 0 8px;font-size:12px;color:var(--text-muted)}}
+.nt-cmp{{display:flex;align-items:center;gap:8px;margin:0 0 8px;font-size:13px;color:var(--text-muted)}}
 .nt-cmp select{{font:inherit;color:var(--text);background:var(--card-soft);border:1px solid var(--border);border-radius:8px;padding:8px 10px;min-height:40px;max-width:100%}}
-.nt-cmp-legend{{display:flex;gap:14px;margin:8px 0 0;font-size:12px;color:var(--text-muted)}}
+.nt-cmp-legend{{display:flex;gap:14px;margin:8px 0 0;font-size:13px;color:var(--text-muted)}}
 .nt-cmp-legend i{{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px}}
 /* Non-selected scatter marks: greyed out so the selected team pops. */
 .nt-mark-dim{{filter:grayscale(1);opacity:.55}}
 .nt-chips{{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px}}
 .nt-chip{{background:var(--card-soft);border-radius:10px;padding:12px;text-align:center}}
 .nt-chip .nt-clab{{font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em}}
-.nt-chip .nt-cval{{font-size:26px;font-weight:800;margin:2px 0}}
+.nt-chip .nt-cval{{font-size:28px;font-weight:800;margin:2px 0}}
 .nt-chip .nt-crk{{font-size:11px;color:var(--text-muted)}}
 details.nt-method{{border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:13px}}
 details.nt-method summary{{cursor:pointer;font-weight:700;min-height:32px}}
@@ -156,7 +156,7 @@ details.nt-method summary{{cursor:pointer;font-weight:700;min-height:32px}}
    as separate blocks instead of two continuous columns of numbers. */
 .nt-def4cell{{text-align:center;min-width:0;background:var(--card-soft);border:1px solid var(--border);border-radius:12px;padding:12px 8px 10px}}
 .nt-def4pos{{font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px;white-space:nowrap}}
-.nt-def4val{{font-size:17px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.2}}
+.nt-def4val{{font-size:18px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.2}}
 .nt-def4cell .nt-rbadge{{margin-top:4px}}
 @media(max-width:420px){{.nt-def4{{grid-template-columns:repeat(2,1fr)}}}}
 /* Collapsible page sections (Graphs, Schedule): native details/summary so no
@@ -178,15 +178,15 @@ table.nt-depth>thead>tr>th:first-child,table.nt-depth>tbody>tr>td:first-child{{p
 table.nt-depth>thead>tr>th:first-child{{z-index:2}}
 .nt-pname{{background:none;border:0;color:var(--accent);font:inherit;font-weight:600;cursor:pointer;padding:0;text-align:left;min-height:32px}}
 .nt-dno{{display:inline-flex;width:22px;height:22px;border-radius:50%;background:var(--card-soft);align-items:center;justify-content:center;font-size:11px;font-weight:700;margin-right:8px;color:var(--text-muted)}}
-.nt-inj{{display:inline-block;background:#8a5a00;color:#fff;font-size:10px;font-weight:800;border-radius:4px;padding:1px 5px;margin-left:6px}}
+.nt-inj{{display:inline-block;background:#8a5a00;color:#fff;font-size:11px;font-weight:800;border-radius:4px;padding:1px 5px;margin-left:6px}}
 .nt-sched{{border:1px solid var(--border);border-radius:10px;overflow:hidden}}
 .nt-wrow{{display:flex;align-items:center;gap:10px;width:100%;background:none;border:0;border-top:1px solid var(--border);color:var(--text);font:inherit;padding:11px 12px;cursor:pointer;text-align:left;min-height:48px}}
 .nt-wrow:first-child{{border-top:0}}
-.nt-wrow .nt-wk{{width:44px;color:var(--text-muted);font-size:12px;flex:none}}
+.nt-wrow .nt-wk{{width:44px;color:var(--text-muted);font-size:13px;flex:none}}
 .nt-wrow .nt-opp{{flex:1;display:flex;align-items:center;gap:8px;font-weight:600}}
 .nt-wrow .nt-res{{font-size:13px;color:var(--text-muted)}}
-.nt-wrow .nt-res.nt-w{{color:var(--win);font-weight:700;background:color-mix(in srgb,var(--win) 14%,transparent);border-radius:6px;padding:3px 8px;font-size:12px;white-space:nowrap}}
-.nt-wrow .nt-res.nt-l{{color:var(--loss);font-weight:700;background:color-mix(in srgb,var(--loss) 14%,transparent);border-radius:6px;padding:3px 8px;font-size:12px;white-space:nowrap}}
+.nt-wrow .nt-res.nt-w{{color:var(--win);font-weight:700;background:color-mix(in srgb,var(--win) 14%,transparent);border-radius:6px;padding:3px 8px;font-size:13px;white-space:nowrap}}
+.nt-wrow .nt-res.nt-l{{color:var(--loss);font-weight:700;background:color-mix(in srgb,var(--loss) 14%,transparent);border-radius:6px;padding:3px 8px;font-size:13px;white-space:nowrap}}
 .nt-opp-logo{{width:22px;height:22px;border-radius:50%;flex:none;background:var(--card-soft)}}
 .nt-wrow.nt-bye{{cursor:default;color:var(--text-muted)}}
 .nt-box{{padding:4px 12px 12px;font-size:13px}}
@@ -202,27 +202,27 @@ table.nt-depth>thead>tr>th:first-child{{z-index:2}}
 .nt-boxscore-team>b{{display:block;font-size:13px;margin-bottom:4px}}
 .nt-boxscore-team table.nt-depth th[colspan]{{background:var(--card-soft);font-size:11px;padding:5px 6px}}
 .nt-boxscore table.nt-depth{{border-collapse:collapse}}
-.nt-boxscore table.nt-depth th{{font-size:10px;padding:5px 6px;white-space:nowrap}}
+.nt-boxscore table.nt-depth th{{font-size:11px;padding:5px 6px;white-space:nowrap}}
 .nt-boxscore table.nt-depth th.nt-stat{{width:1%;text-align:right}}
-.nt-boxscore table.nt-depth td{{padding:5px 6px;font-size:12px;white-space:nowrap}}
+.nt-boxscore table.nt-depth td{{padding:5px 6px;font-size:13px;white-space:nowrap}}
 .nt-boxscore table.nt-depth td.nt-stat{{text-align:right;font-variant-numeric:tabular-nums}}
 .nt-boxscore table.nt-depth td.nt-pcell{{max-width:220px;overflow:hidden;text-overflow:ellipsis}}
-.nt-boxscore .nt-pname{{font-size:12px}}
+.nt-boxscore .nt-pname{{font-size:13px}}
 .nt-sheet-backdrop{{position:fixed;inset:0;z-index:calc(var(--z-modal) - 1);background:rgba(0,0,0,.6);opacity:0;transition:opacity .25s ease}}
 .nt-sheet-backdrop.open{{opacity:1}}
 .nt-sheet{{position:fixed;left:0;right:0;bottom:0;z-index:var(--z-modal);max-width:480px;margin:0 auto;max-height:88vh;max-height:88dvh;display:flex;flex-direction:column;background:var(--card);border:1px solid var(--border);border-bottom:none;border-radius:18px 18px 0 0;transform:translateY(102%);transition:transform .3s cubic-bezier(.32,.72,.28,1);color:var(--text)}}
 .nt-sheet.open{{transform:translateY(0)}}
 .nt-sheet-handle{{width:40px;height:4px;border-radius:2px;background:var(--border);margin:10px auto 2px;flex:0 0 auto}}
 .nt-sheet-head{{display:flex;align-items:center;gap:10px;padding:8px 16px 10px;border-bottom:1px solid var(--border);flex:0 0 auto}}
-.nt-sheet-title{{font-size:16px;font-weight:800}}
-.nt-sheet-sub{{font-size:11.5px;color:var(--text-muted);font-weight:600;margin-top:1px;font-variant-numeric:tabular-nums}}
+.nt-sheet-title{{font-size:15px;font-weight:800}}
+.nt-sheet-sub{{font-size:11px;color:var(--text-muted);font-weight:600;margin-top:1px;font-variant-numeric:tabular-nums}}
 .nt-sheet-x{{margin-left:auto;appearance:none;cursor:pointer;width:32px;height:32px;border-radius:10px;border:1px solid var(--border);background:var(--card-soft);color:var(--text-muted);font-size:15px;font-weight:700;line-height:1;flex:none}}
 .nt-sheet-body{{flex:1 1 auto;min-height:0;overflow-y:auto;padding:12px 16px calc(28px + env(safe-area-inset-bottom));-webkit-overflow-scrolling:touch}}
 .nt-sheet-teams{{display:flex;gap:6px;margin-bottom:6px;background:var(--card-soft);border:1px solid var(--border);border-radius:12px;padding:4px}}
 .nt-sheet-team{{flex:1;appearance:none;cursor:pointer;border:none;background:transparent;color:var(--text-muted);font:inherit;font-size:13px;font-weight:800;padding:9px 6px;border-radius:9px;min-height:40px}}
 .nt-sheet-team.is-on{{background:var(--bg);color:var(--text);box-shadow:inset 0 0 0 1px var(--border)}}
 .nt-sheet .nt-boxscore-teams{{grid-template-columns:1fr}}
-.nt-sheet .nt-boxscore-team>b{{font-size:14px}}
+.nt-sheet .nt-boxscore-team>b{{font-size:15px}}
 @media(prefers-reduced-motion:reduce){{.nt-sheet-backdrop,.nt-sheet{{transition:none}}}}
 .nt-err{{padding:24px 16px;text-align:center;color:var(--text-muted)}}
 .nt-err button{{margin-top:10px}}

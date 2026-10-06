@@ -363,7 +363,7 @@ def build_teams_body(ctx: dict) -> str:
     def render_pos_players(rid: int, pos_code: str) -> str:
         plist = roster_pos_players.get(rid, {}).get(pos_code, [])
         if not plist:
-            return "<div style='color:#64748b;font-size:12px;'>No players at this position.</div>"
+            return "<div style='color:#64748b;font-size:13px;'>No players at this position.</div>"
 
         rows_html = []
         for p in plist:
@@ -398,7 +398,7 @@ def build_teams_body(ctx: dict) -> str:
                 "  <div style='display:flex;align-items:center;justify-content:space-between;width:100%'>"
                 "    <div style='display: inline-flex;gap: 5px;align-items: center;'>"
                 f"      <div style='font-weight:600;cursor:pointer;' class='player-clickable' data-player-id='{player_id}' data-player-name='{name}' data-position='{position}' data-years-exp='{years_exp}' data-value='{val}' data-breakout-check='true'>{name}</div>"
-                f"      <div style='color:#64748b;font-size:12px'>"
+                f"      <div style='color:#64748b;font-size:13px'>"
                 f"        {meta_str}"
                 "      </div>"
                 "    </div>"
@@ -997,7 +997,7 @@ def build_teams_body(ctx: dict) -> str:
       <main class="page-main">
         <div class="teams-topbar">
           <div class="teams-sort-bar">
-            <span style="font-size:12px;color:var(--text-muted);margin-right:8px;">Sort by:</span>
+            <span style="font-size:13px;color:var(--text-muted);margin-right:8px;">Sort by:</span>
             <div class="otc-main-tabs br-slide-tabs teams-sort-tabs" data-br-slide-tabs>
               <button class="teams-sort-btn otc-main-tab" data-sort="posindex">Positional Index</button>
               <button class="teams-sort-btn otc-main-tab" data-sort="grade">Team Grade</button>

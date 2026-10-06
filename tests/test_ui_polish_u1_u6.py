@@ -45,7 +45,7 @@ def test_u2_empty_activity_cards_reduce_min_height_on_mobile():
 
 
 def test_u3_body_font_at_least_14px_on_narrow():
-    assert _any_media_has(CSS, 480, r"\bbody\s*\{[^}]*font-size:\s*14px")
+    assert _any_media_has(CSS, 640, r"\bbody\s*\{[^}]*font-size:\s*15px")
 
 
 def test_u4_footer_links_have_44px_tap_targets():

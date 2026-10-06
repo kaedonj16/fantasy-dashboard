@@ -65,7 +65,7 @@ def build_schedule_body(ctx):
       <div class="card-header" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;">
         <div>
           <h2>Schedule Assistant</h2>
-          <div style="font-size:14px;color:var(--text-muted);margin-top:4px;">
+          <div style="font-size:15px;color:var(--text-muted);margin-top:4px;">
             Matchup difficulty by week. Ratings rebuild on Wednesdays in-season. Add or remove players and pick a single week or a range.
           </div>
         </div>
@@ -104,7 +104,7 @@ def build_schedule_body(ctx):
           <button id="schedAddClear" type="button"
             style="display:none;position:absolute;right:8px;top:50%;transform:translateY(-50%);
                    background:none;border:none;cursor:pointer;color:var(--text-muted);
-                   font-size:16px;line-height:1;padding:2px;" aria-label="Clear search">&#x2715;</button>
+                   font-size:15px;line-height:1;padding:2px;" aria-label="Clear search">&#x2715;</button>
           <div id="schedAddResults" class="sched-add-results" style="display:none;"></div>
         </div>
 

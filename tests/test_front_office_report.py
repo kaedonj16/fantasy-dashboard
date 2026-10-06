@@ -75,7 +75,7 @@ def test_gm_memo_does_not_block_http_on_cold_playoff_sim():
 
     assert "grid-template-columns: repeat(4, minmax(0, 1fr));" in hero_rule
 
-    responsive_source = source[source.index("@media (max-width: 1180px)", source.index(".os-hero-stats {")):]
+    responsive_source = source[source.index("@media (max-width: 1280px)", source.index(".os-hero-stats {")):]
     responsive_rule = responsive_source[responsive_source.index(".os-hero-stats {"):]
     responsive_rule = responsive_rule[:responsive_rule.index("}")]
     assert "grid-template-columns: 1fr 1fr;" in responsive_rule

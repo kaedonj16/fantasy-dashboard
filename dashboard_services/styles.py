@@ -15,7 +15,7 @@ css = """
       .sorted-asc::after{ content:" \\25B2"; color:var(--accent); }
       .sorted-desc::after{ content:" \\25BC"; color:var(--accent); }
       .badge{ background:#eef2ff; color:#3730a3; font-weight:600; padding:2px 8px; border-radius:8px; }
-      .footer{ margin-top:10px; color:#6b7280; font-size:12px; }
+      .footer{ margin-top:10px; color:#6b7280; font-size:13px; }
       .sorted-secondary { color: #122d4b; opacity: 0.6; }
     </style>
 """
@@ -105,8 +105,8 @@ awardsCss = """
       background:var(--card); border:1px solid var(--grid);
       border-radius:16px; padding:12px;
     }
-    .award-card h3{ margin:0 0 6px; font-weight:800; font-size:16px }
-    .award-body{ font-size:14px }
+    .award-card h3{ margin:0 0 6px; font-weight:800; font-size:15px }
+    .award-body{ font-size:15px }
     
       .awards-card {
         border-radius: 18px;
@@ -116,7 +116,7 @@ awardsCss = """
       }
     
       .awards-title {
-        font-size: 30px;
+        font-size: 28px;
         font-weight: 900;
         text-align: center;
         margin-bottom: 22px;
@@ -151,14 +151,14 @@ awardsCss = """
       }
     
       .award-icon {
-        font-size: 36px;
+        font-size: 28px;
         margin-bottom: 8px;
         text-shadow: 0 0 8px rgba(250,204,21,0.3);
       }
     
       .award-name {
         font-weight: 700;
-        font-size: 16px;
+        font-size: 15px;
         color: #122d4b;
         margin-bottom: 6px;
       }
@@ -172,7 +172,7 @@ awardsCss = """
         margin-top: 10px;
         font-weight: 800;
         color: #38bdf8;
-        font-size: 14px;
+        font-size: 15px;
       }
     
       @media (max-width: 700px) {
@@ -195,7 +195,7 @@ tickerCss = """
       display:flex;
     }
     .tick-head{
-      font-weight:900; font-size:12px; letter-spacing:.02em; color: #FFFFFF;
+      font-weight:900; font-size:13px; letter-spacing:.02em; color: #FFFFFF;
       padding:4px 8px; border:1px solid var(--grid); border-radius:8px; white-space:nowrap;
       background:#122d4b;
     }
@@ -213,7 +213,7 @@ tickerCss = """
       color: #122d4b;
     }
     .tick-label{
-      color:var(--muted); font-size:12px; font-weight:700; text-transform:uppercase;
+      color:var(--muted); font-size:13px; font-weight:700; text-transform:uppercase;
     }
     .tick-val{
       font-weight:800; font-variant-numeric:tabular-nums;
@@ -243,7 +243,7 @@ recap_css = """
       .recap-grid{display:grid;gap:16px}
       .sidebar{display:grid;gap:12px;align-content:start}
       .side-card{background:var(--card);border:1px solid var(--grid);border-radius:16px;padding:12px}
-      .side-card h3{margin:0 0 6px;font-size:16px;font-weight:800}
+      .side-card h3{margin:0 0 6px;font-size:15px;font-weight:800}
       .side-row{display:grid;grid-template-columns:28px 1fr 60px;align-items:center;gap:8px;padding:6px 0;border-top:1px dashed #243043}
       .side-row:first-of-type{border-top:none}
       .sidebar-grid {
@@ -257,7 +257,7 @@ recap_css = """
       .rank-second{background:#e5e7eb; color:#374151}
       .rank-third{background:#CD7F32; color:#7c2d12}
       .who .name{font-weight:700; color: #122d4b}
-      .who .sub{color:var(--muted);font-size:12px; color: #122d4b}
+      .who .sub{color:var(--muted);font-size:13px; color: #122d4b}
       .pts{justify-self:end;font-variant-numeric:tabular-nums;font-weight:800; color:#122d4b}
       @media(max-width:1100px){.recap-grid{grid-template-columns:1fr}.sidebar{grid-template-columns:repeat(2,1fr)}}
       @media(max-width:700px){.sidebar{grid-template-columns:1fr}}
@@ -268,7 +268,7 @@ recap_css = """
         margin-bottom:10px;
       }
       .mu-head .title{font-weight:800; letter-spacing:.2px}
-      .mu-head .muted{color:var(--muted,#94a3b8); font-size:12px}
+      .mu-head .muted{color:var(--muted,#94a3b8); font-size:13px}
     
       /* the 1v1 row */
       .mu-row{
@@ -292,11 +292,11 @@ recap_css = """
         max-width:70%;
         color: #122d4b;
       }
-      .mu-sub{ color:var(--muted,#94a3b8); font-size:12px; margin-top:2px }
+      .mu-sub{ color:var(--muted,#94a3b8); font-size:13px; margin-top:2px }
     
       .mu-score{
         font-variant-numeric: tabular-nums;
-        font-size:20px; font-weight:800;
+        font-size:22px; font-weight:800;
       }
     
       /* win/loss color accents */
@@ -331,7 +331,7 @@ recap_css = """
       .mu-chip{
         display:inline-grid; place-items:center;
         padding:2px 8px; border-radius:8px;
-        font-size:12px; font-weight:700;
+        font-size:13px; font-weight:700;
         background:#0b1220; border:1px solid var(--grid,#1f2937);
         color:#93c5fd;
       }
@@ -386,7 +386,7 @@ logoCss = """
         /* Title */
         h1 {
           text-align: center;
-          font-size: 40px;
+          font-size: 28px;
           font-weight: 900;
           margin: 20px 0 30px 0;
           letter-spacing: -0.5px;
@@ -478,13 +478,13 @@ logoCss = """
           display: flex; gap: 10px; align-items: center;
           padding: 8px 0; border-bottom: 1px solid #e5e7eb;
         }
-        .activity-list .time { color: #64748b; font-size: 12px; min-width: 120px; }
+        .activity-list .time { color: #64748b; font-size: 13px; min-width: 120px; }
         .activity-list .pill {
           font-size: 11px; padding: 2px 8px;
           border-radius: 8px; border: 1px solid #e5e7eb;
           background: #f8fafc; color: #475569;
         }
-        .activity-empty { color: #6b7280; font-size: 14px; }
+        .activity-empty { color: #6b7280; font-size: 15px; }
         
         .scroll-box {
           max-height: 400px;      /* adjust height as needed */
@@ -525,7 +525,7 @@ logoCss = """
         .chip {
           background: #f8fafc; border: 1px solid #e5e7eb;
           padding: 2px 8px; border-radius: 12px;
-          font-size: 12px; color: #475569; white-space: nowrap;
+          font-size: 13px; color: #475569; white-space: nowrap;
         }
         .chip.diff-pos { background: #dcfce7; border-color: #86efac; color: #166534; }
         .chip.diff-neg { background: #fee2e2; border-color: #fca5a5; color: #991b1b; }
@@ -564,11 +564,11 @@ logoCss = """
           background: #ffffffaa; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden;
         }
         .podium .bar > div { height: 100%; background: #122d4b; border-radius: 12px; }
-        .podium .score { margin-top: 6px; font-size: 12px; color: #334155; font-variant-numeric: tabular-nums; }
+        .podium .score { margin-top: 6px; font-size: 13px; color: #334155; font-variant-numeric: tabular-nums; }
         .podium .podium-header {
           display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 6px;
         }
-        .podium .podium-header h3 { font-size: 32px; margin: 0; font-weight: 900; }
+        .podium .podium-header h3 { font-size: 28px; margin: 0; font-weight: 900; }
         .podium .podium-header .avatar {
           width: 42px; height: 42px; border-radius: 50%; object-fit: cover;
           box-shadow: 0 0 0 2px #fff, 0 1px 6px rgba(0,0,0,.15);
@@ -600,7 +600,7 @@ logoCss = """
         .rank-item .chips { display: grid; grid-template-columns: 1.5fr 1.5fr .5fr .5fr; gap: 6px; font-size: 11px; color: #475569; flex-shrink: 0; padding-left: 5px; }
         
         /* Footer */
-        .footer { margin-top: 12px; color: #6b7280; font-size: 12px; }
+        .footer { margin-top: 12px; color: #6b7280; font-size: 13px; }
         .table-stats{min-height: 695.5px;}
         .ai {
           display:flex;
@@ -619,7 +619,7 @@ logoCss = """
         .ai-player {font-weight:700;}
         .ai-team {color:#64748b;}
         .ai-right {display:flex;gap:8px;align-items:center;}
-        .muted {color:#64748b;font-size:12px;}
+        .muted {color:#64748b;font-size:13px;}
         
         .matchup-card{border:1px solid #e5e7eb;border-radius:12px;padding:12px;background:#fff;width: 822px; height: 480px;}
         .matchup-card h2{margin:0 0 10px;font-size:18px}
@@ -660,7 +660,7 @@ logoCss = """
         .p{display:flex;align-items:center;gap:8px;padding:6px 0;}
         .p:last-child{border-bottom:none}
         .p .slot{font-weight:700;color:#122d4b;min-width:28px;text-align:center}
-        .p .meta{color:#64748b;font-size:12px}
+        .p .meta{color:#64748b;font-size:13px}
         .badge{background:#eef2ff;color:#3730a3;border:1px solid #e5e7eb;border-radius:8px;padding:2px 8px;font-size:11px}
         @media (min-width: 1400px) {
           .matchup-card {
@@ -681,7 +681,7 @@ logoCss = """
 
         .m-team{ display:flex; align-items:center; gap:10px; justify-content:space-between; }
         .m-team .name{ font-weight:800; }
-        .m-team .badge{ margin-left:8px; font-size:12px; background:#eef2ff; border:1px solid #e5e7eb; padding:2px 8px; border-radius:8px; }
+        .m-team .badge{ margin-left:8px; font-size:13px; background:#eef2ff; border:1px solid #e5e7eb; padding:2px 8px; border-radius:8px; }
         .m-team .num{
           letter-spacing: 1px;
           font-size: 2rem;
@@ -737,7 +737,7 @@ logoCss = """
         .p.left{ text-align:right; }
         .p.right{ text-align:left; }
         .p .pname{ font-weight:600; color: #122d4b; }
-        .p .meta{ color:#64748b; font-size:12px; }
+        .p .meta{ color:#64748b; font-size:13px; }
         
         .num{ text-align:center; font-variant-numeric: tabular-nums; white-space:nowrap; }
         .num.mid{   
@@ -873,11 +873,11 @@ logoCss = """
         white-space:nowrap;
         max-width:70%;
       }
-      .mu-sub{ color:var(--muted,#94a3b8); font-size:12px; margin-top:2px }
+      .mu-sub{ color:var(--muted,#94a3b8); font-size:13px; margin-top:2px }
     
       .mu-score{
         font-variant-numeric: tabular-nums;
-        font-size:20px; font-weight:800;
+        font-size:22px; font-weight:800;
       }
     
       /* win/loss color accents */
@@ -903,7 +903,7 @@ logoCss = """
       .mu-chip{
         display:inline-grid; place-items:center;
         padding:2px 8px; border-radius:8px;
-        font-size:12px; font-weight:700;
+        font-size:13px; font-weight:700;
         background:#0b1220; border:1px solid var(--grid,#1f2937);
         color:#93c5fd;
       }
@@ -934,7 +934,7 @@ logoCss = """
           display:inline-block;
           padding:1px 6px;
           border-radius:6px;
-          font-size:10px;
+          font-size:11px;
           font-weight:700;
           color:#fff;
         }
@@ -1209,7 +1209,7 @@ activity_css = """
       .activity-card h2{margin:0 0 10px}
       .feed{display:flex;flex-direction:column;gap:12px}
       .tx{border:1px solid #e5e7eb;border-radius:12px;background:#f8fafc;padding:10px}
-      .tx .meta{color:#64748b;font-size:12px;margin-bottom:8px}
+      .tx .meta{color:#64748b;font-size:13px;margin-bottom:8px}
       .trade-card .teams{display:grid;grid-template-columns:1fr 1fr;gap:10px}
       .team-col{background:#122d4b0a;border:1px solid #e5e7eb;border-radius:10px;padding:10px; color: #122d4b}
       .team-col header{display:flex;align-items:center;gap:10px;margin-bottom:8px}
@@ -1218,7 +1218,7 @@ activity_css = """
       .plist{display:flex;flex-direction:column;gap:6px}
       .player{display:flex;align-items:center;gap:8px;padding:6px 8px;background:#fff;border:1px solid #e5e7eb;border-radius:10px}
       .badge{font-size:11px;border:1px solid #e5e7eb;border-radius:8px;padding:2px 8px;background:#f1f5f9;color:#475569}
-      .io{width:18px;height:18px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:700}
+      .io{width:18px;height:18px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:700}
       .io.add{background:#dcfce7;color:#166534;border:1px solid #86efac}
       .io.drop{background:#fee2e2;color:#991b1b;border:1px solid #fca5a5}
       /* Activity card layout */
@@ -1262,7 +1262,7 @@ activity_css = """
         /* Subtle time + tag styling */
         .activity-list .time {
           color: #64748b;
-          font-size: 12px;
+          font-size: 13px;
           min-width: 100px;
         }
 
@@ -1330,7 +1330,7 @@ activity_css = """
         }
         .card.activity-card .activity-list li:last-child { border-bottom: none; }
 
-        .card.activity-card .time { color: #64748b; font-size: 12px; min-width: 100px; }
+        .card.activity-card .time { color: #64748b; font-size: 13px; min-width: 100px; }
         .card.activity-card .pill { font-size: 11px; padding: 2px 8px; border-radius: 8px; border: 1px solid #e5e7eb; background: #f8fafc; color: #475569; }
 
         /* Nice scrollbar */
@@ -1409,7 +1409,7 @@ activity_css = """
         .inj-row:first-child { border-top: 0; }
         
         .inj-row .pname { font-weight: 600; }
-        .inj-row .sub { color: #64748b; font-size: 12px; margin-top: 2px; }
+        .inj-row .sub { color: #64748b; font-size: 13px; margin-top: 2px; }
         
         .inj-row .right {
           display: flex;
@@ -1423,10 +1423,10 @@ activity_css = """
           border: 1px solid #e5e7eb;
           padding: 2px 8px;
           border-radius: 12px;
-          font-size: 12px;
+          font-size: 13px;
           color: #475569;
         }
-        .inj-row .muted { color: #94a3b8; font-size: 12px; }
+        .inj-row .muted { color: #94a3b8; font-size: 13px; }
         
         .bracket-match .match-id {
           font-size: 11px;
@@ -1517,7 +1517,7 @@ activity_css = """
         .bracket-round .round-title {
           padding-right: 30px;
           text-align: center;
-          font-size: 20px;
+          font-size: 22px;
           font-weight: 600;
           color: #9ca3af;
         }
@@ -1616,7 +1616,7 @@ activity_css = """
         .standings-table {
           width: 100%;
           border-collapse: collapse;
-          font-size: 14px;
+          font-size: 15px;
         }
         
         .standings-table th {
@@ -1629,7 +1629,7 @@ activity_css = """
         .standings-table td {
           color: #122d4b;
           font-weight: 500;
-          font-size: 16px;
+          font-size: 15px;
           text-align: center;
           padding: 6px 4px;
           border-top: 1px solid #e2e8f0;

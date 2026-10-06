@@ -756,7 +756,7 @@ _LOGIN_STYLE = """
   .wrap { max-width: 420px; margin: 60px auto; }
   .card { background: #fff; border: 1px solid #e3e6ec; border-radius: 12px;
           padding: 24px; }
-  h1 { font-size: 20px; margin: 0 0 6px; }
+  h1 { font-size: 22px; margin: 0 0 6px; }
   .sub { color: #5b6478; font-size: 13px; margin: 0 0 18px; }
   label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
   input[type=password] { width: 100%; box-sizing: border-box; font-size: 15px;
@@ -1251,8 +1251,8 @@ _ANX_CSS = """
 .anx-chart-wrap { position: relative; }
 .anx-chart-wrap svg.chart { width: 100%; height: auto; display: block; }
 .anx-chart-wrap .chart text.vallab { font-size: 11px; fill: var(--text-muted); font-weight: 600; }
-.anx-chart-wrap .chart text.axis { font-size: 10px; fill: var(--text-subtle); }
-.anx-chart-wrap .chart text.ytick { font-size: 10px; fill: var(--text-subtle); }
+.anx-chart-wrap .chart text.axis { font-size: 11px; fill: var(--text-subtle); }
+.anx-chart-wrap .chart text.ytick { font-size: 11px; fill: var(--text-subtle); }
 .anx-chart-wrap .chart line.grid { stroke: var(--grid); stroke-width: 1; }
 .anx-chart-wrap .chart line.grid.base { stroke: var(--border); }
 .anx-chart-wrap .chart .anx-zone { cursor: crosshair; }
@@ -1266,7 +1266,7 @@ _ANX_CSS = """
 .anx-sortbtn { all: unset; cursor: pointer; font-weight: 700; font-size: inherit; color: inherit; display: inline-flex; align-items: center; gap: 4px; }
 .anx-sortbtn:hover { color: var(--brand-blue); }
 .anx-sortbtn:focus-visible { outline: 2px solid var(--brand-blue); outline-offset: 2px; border-radius: 4px; }
-.anx-sort-arrow { font-size: 10px; color: var(--text-subtle); min-width: 12px; display: inline-block; }
+.anx-sort-arrow { font-size: 11px; color: var(--text-subtle); min-width: 12px; display: inline-block; }
 th[aria-sort="ascending"] .anx-sort-arrow::after { content: "\\25B2"; }
 th[aria-sort="descending"] .anx-sort-arrow::after { content: "\\25BC"; }
 /* Funnel viz */
@@ -1754,7 +1754,7 @@ def _hub_body() -> str:
         ".ui-audit-hero{margin:0 0 1rem;color:var(--text-muted);font-size:15px;line-height:1.5}"
         ".ui-audit-links{list-style:none;margin:0;padding:0;display:grid;gap:10px}"
         ".ui-audit-links a{font-weight:600}"
-        ".ui-audit-path{display:block;font-size:12px;color:var(--text-muted);font-family:monospace}"
+        ".ui-audit-path{display:block;font-size:13px;color:var(--text-muted);font-family:monospace}"
         ".ui-audit-actions{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 1.25rem}"
         ".ui-audit-actions .btn{min-height:44px}"
         "</style>"

@@ -54,10 +54,12 @@ def test_guest_only_gating_wraps_new_sections():
 
 
 def test_pro_section_moved_after_quotes_with_reworked_copy():
-    quotes_start = APP_PY.index('<section class="quotes">')
+    # The duplicate quotes section was removed; PRO now follows the tour directly.
+    assert '<section class="quotes">' not in APP_PY
+    tour_end = APP_PY.index('<div class="tour-cta">')
     pro_start = APP_PY.index('<section class="home-pro"')
     freeband_start = APP_PY.index('<section class="freeband">')
-    assert quotes_start < pro_start < freeband_start
+    assert tour_end < pro_start < freeband_start
     pro = _pro_section()
     assert "From $10 a year." in pro
     assert "$10/year. Cancel anytime." in pro
@@ -80,7 +82,8 @@ def test_real_testimonials_present():
     assert "Jayden Waddell" in region
     assert "Name coming soon" not in region
     assert "Blackedraw manager" not in region
-    assert "quotes-single" in region
+    # Testimonial appears once (hero proof); the duplicate quotes section was removed.
+    assert region.count("THATS ACTUALLY SO SICK BRO") == 1
 
 
 def test_free_tools_band_links_real_public_pages():

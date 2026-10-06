@@ -40,8 +40,8 @@ def render_dynasty_notice_html(draft_url: str = "", show_anyway_url: str = "") -
 <style>
   .kpr-wrap{{max-width:760px;margin:0 auto;width:100%;box-sizing:border-box;}}
   .kpr-dyn{{padding:34px 22px;text-align:center;}}
-  .kpr-dyn h2{{margin:0 0 8px;font-size:20px;}}
-  .kpr-dyn p{{color:var(--text-muted);font-size:14px;line-height:1.65;max-width:56ch;margin:0 auto 12px;}}
+  .kpr-dyn h2{{margin:0 0 8px;font-size:22px;}}
+  .kpr-dyn p{{color:var(--text-muted);font-size:15px;line-height:1.65;max-width:56ch;margin:0 auto 12px;}}
   .kpr-dyn-tag{{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;
     letter-spacing:.03em;color:var(--accent);background:var(--accent-soft);
     padding:5px 11px;border-radius:8px;margin-bottom:14px;}}
@@ -181,7 +181,7 @@ def render_keeper_html(seed: dict) -> str:
     padding:6px 11px;border-radius:8px;white-space:nowrap;}}
   .kpr-auto-off{{color:var(--text-muted);background:color-mix(in srgb,var(--text-muted) 14%,transparent);}}
   .kpr-rule{{display:flex;flex-direction:column;gap:4px;min-width:0;}}
-  .kpr-rule label{{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);
+  .kpr-rule label{{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);
     font-weight:700;white-space:nowrap;}}
   .kpr-rule select,.kpr-rule input{{font:inherit;font-size:13px;font-weight:600;color:var(--text);
     background:var(--card-bg,var(--card));border:1px solid var(--border);border-radius:8px;
@@ -197,7 +197,7 @@ def render_keeper_html(seed: dict) -> str:
     box-shadow:0 0 0 3px var(--accent-soft);}}
   /* Checkbox rule: a normal-case label with the box inline, not the boxed control. */
   .kpr-rule-check{{justify-content:flex-end;}}
-  .kpr-rule-check label{{display:flex;align-items:center;gap:7px;font-size:12px;
+  .kpr-rule-check label{{display:flex;align-items:center;gap:7px;font-size:13px;
     letter-spacing:normal;text-transform:none;font-weight:600;color:var(--text);
     cursor:pointer;min-height:36px;}}
   .kpr-rule-check input{{width:16px;height:16px;min-height:0;padding:0;margin:0;
@@ -212,16 +212,16 @@ def render_keeper_html(seed: dict) -> str:
   .kpr-head-actions{{display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex-shrink:0;}}
   .kpr-views{{display:inline-flex;background:var(--bg-alt,var(--card-soft));border:1px solid var(--border);
     border-radius:10px;padding:3px;gap:2px;flex-shrink:0;}}
-  .kpr-views button{{font:inherit;font-size:12.5px;font-weight:600;color:var(--text-muted);background:transparent;
+  .kpr-views button{{font:inherit;font-size:13px;font-weight:600;color:var(--text-muted);background:transparent;
     border:0;border-radius:7px;padding:6px 12px;cursor:pointer;}}
   .kpr-views button[aria-selected="true"]{{background:var(--card);color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,.08);}}
 
   .kpr-opt{{padding:16px;}}
   .kpr-opt-head{{display:flex;align-items:center;gap:16px 22px;flex-wrap:wrap;margin-bottom:14px;}}
   .kpr-limit{{display:flex;align-items:center;gap:12px;}}
-  .kpr-limit label{{font-size:12px;color:var(--text-muted);font-weight:600;}}
+  .kpr-limit label{{font-size:13px;color:var(--text-muted);font-weight:600;}}
   .kpr-limit .kpr-pill{{display:inline-flex;align-items:center;justify-content:center;background:var(--accent);
-    color:#fff;font-weight:800;font-size:14px;border-radius:8px;padding:5px 13px;min-width:52px;}}
+    color:#fff;font-weight:800;font-size:15px;border-radius:8px;padding:5px 13px;min-width:52px;}}
   .kpr-limit input[type=range]{{-webkit-appearance:none;appearance:none;width:150px;height:6px;border-radius:5px;
     background:var(--border);outline:none;}}
   .kpr-limit input[type=range]::-webkit-slider-thumb{{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;
@@ -229,8 +229,8 @@ def render_keeper_html(seed: dict) -> str:
   .kpr-limit input[type=range]::-moz-range-thumb{{width:18px;height:18px;border-radius:50%;background:var(--card);
     border:2px solid var(--accent);cursor:pointer;}}
   .kpr-total{{margin-left:auto;text-align:right;}}
-  .kpr-total .l{{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-muted);}}
-  .kpr-total .n{{font-size:20px;font-weight:800;color:var(--win,#15803d);font-variant-numeric:tabular-nums;}}
+  .kpr-total .l{{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-muted);}}
+  .kpr-total .n{{font-size:22px;font-weight:800;color:var(--win,#15803d);font-variant-numeric:tabular-nums;}}
 
   .kpr-list{{display:flex;flex-direction:column;gap:8px;}}
   .kpr-row{{display:grid;grid-template-columns:24px 1fr auto auto;gap:12px;align-items:center;
@@ -239,11 +239,11 @@ def render_keeper_html(seed: dict) -> str:
     border-color:color-mix(in srgb,var(--win,#15803d) 40%,var(--border));}}
   .kpr-row.cut{{opacity:.6;}}
   .kpr-chk{{width:20px;height:20px;border-radius:6px;border:2px solid var(--border);display:grid;place-items:center;
-    color:transparent;font-size:12px;}}
+    color:transparent;font-size:13px;}}
   .kpr-row.keep .kpr-chk{{background:var(--win,#15803d);border-color:var(--win,#15803d);color:#fff;}}
   .kpr-nm{{font-weight:650;color:var(--text);}}
-  .kpr-sub{{font-size:11.5px;color:var(--text-muted);}}
-  .kpr-mid{{font-size:12px;color:var(--text-muted);white-space:nowrap;}}
+  .kpr-sub{{font-size:11px;color:var(--text-muted);}}
+  .kpr-mid{{font-size:13px;color:var(--text-muted);white-space:nowrap;}}
   .kpr-val{{font-weight:800;text-align:right;min-width:52px;font-variant-numeric:tabular-nums;}}
   .kpr-val.keep{{color:var(--win,#15803d);}} .kpr-val.toss{{color:var(--inj-q,#ca8a04);}} .kpr-val.pass{{color:var(--text-muted);}}
 
@@ -252,7 +252,7 @@ def render_keeper_html(seed: dict) -> str:
   .kpr-tbl-scroll{{overflow-x:auto;padding:4px 2px 8px;max-width:100%;}}
   .kpr-wrap{{width:100%;box-sizing:border-box;}}
   table.kpr-tbl{{width:100%;border-collapse:collapse;min-width:620px;}}
-  .kpr-tbl thead th{{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);
+  .kpr-tbl thead th{{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);
     text-align:left;font-weight:700;padding:9px 14px;border-bottom:1px solid var(--border);white-space:nowrap;}}
   .kpr-tbl th.r,.kpr-tbl td.r{{text-align:right;}}
   .kpr-tbl tbody td{{padding:10px 14px;border-bottom:1px solid color-mix(in srgb,var(--border) 55%,transparent);
@@ -274,7 +274,7 @@ def render_keeper_html(seed: dict) -> str:
   /* Column rhythm: keep the numeric columns from being squeezed by the name. */
   .kpr-tbl th:nth-child(2),.kpr-tbl td:nth-child(2),
   .kpr-tbl th:nth-child(3),.kpr-tbl td:nth-child(3){{width:1%;}}
-  .kpr-pos{{font-size:10px;font-weight:800;color:#fff;border-radius:5px;padding:2px 5px;margin-right:8px;}}
+  .kpr-pos{{font-size:11px;font-weight:800;color:#fff;border-radius:5px;padding:2px 5px;margin-right:8px;}}
   .kpr-pos.QB{{background:#c026d3;}} .kpr-pos.RB{{background:#0d9488;}} .kpr-pos.WR{{background:#2563eb;}}
   .kpr-pos.TE{{background:#ea580c;}} .kpr-pos.K,.kpr-pos.DEF{{background:#64748b;}}
   .kpr-verdict{{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:750;
@@ -289,8 +289,8 @@ def render_keeper_html(seed: dict) -> str:
   .kpr-bar i{{display:block;height:100%;border-radius:5px;}}
   .kpr-tbl td .kpr-bar + b{{display:inline-block;min-width:52px;text-align:right;}}
   .kpr-empty{{padding:34px 16px;text-align:center;color:var(--text-muted);}}
-  .kpr-note{{padding:12px 16px;border-top:1px solid var(--border);font-size:12px;color:var(--text-muted);}}
-  .kpr-drnd,.kpr-yrs,.kpr-acost{{font:inherit;font-size:11.5px;font-weight:600;color:var(--text);
+  .kpr-note{{padding:12px 16px;border-top:1px solid var(--border);font-size:13px;color:var(--text-muted);}}
+  .kpr-drnd,.kpr-yrs,.kpr-acost{{font:inherit;font-size:11px;font-weight:600;color:var(--text);
     background:var(--card);border:1px solid var(--border);border-radius:7px;padding:3px 5px;
     text-align:center;vertical-align:middle;}}
   .kpr-drnd{{width:52px;}}
@@ -301,7 +301,7 @@ def render_keeper_html(seed: dict) -> str:
   .kpr-c-auction{{min-width:72px;}}
   .kpr-dot{{opacity:.55;}}
   .kpr-drafted{{white-space:nowrap;}}
-  .kpr-warn{{font-size:12.5px;color:var(--inj-q,#b45309);background:color-mix(in srgb,var(--inj-q,#b45309) 12%,transparent);
+  .kpr-warn{{font-size:13px;color:var(--inj-q,#b45309);background:color-mix(in srgb,var(--inj-q,#b45309) 12%,transparent);
     border:1px solid color-mix(in srgb,var(--inj-q,#b45309) 32%,transparent);border-radius:9px;
     padding:8px 12px;margin-bottom:8px;}}
   /* Mobile: the optimizer is the primary view. Drop the redundant middle label,
@@ -319,7 +319,7 @@ def render_keeper_html(seed: dict) -> str:
     .kpr-opt{{padding:12px;}}
     .kpr-row{{grid-template-columns:20px 1fr auto;gap:9px;padding:10px 11px;}}
     .kpr-mid{{display:none;}}
-    .kpr-nm{{font-size:14px;}}
+    .kpr-nm{{font-size:15px;}}
     .kpr-draft-btn{{width:100%;justify-content:center;}}
     table.kpr-tbl{{min-width:500px;}}
     .kpr-tbl thead th,.kpr-tbl tbody td{{padding:9px 9px;}}
@@ -338,7 +338,7 @@ def render_keeper_html(seed: dict) -> str:
   <div class="card-header" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
     <div class="kpr-head-text">
       <h2>Keeper Assistant</h2>
-      <div style="font-size:14px;color:var(--text-muted);margin-top:4px;">
+      <div style="font-size:15px;color:var(--text-muted);margin-top:4px;">
         {_subtitle}
       </div>
     </div>

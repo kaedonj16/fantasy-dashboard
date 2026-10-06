@@ -76,7 +76,7 @@ def test_trending_css_desktop_grid():
     css = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
     assert ".pm-trending-grid" in css
     # Desktop gets a 2x2 grid.
-    assert "@media (min-width: 700px)" in css
+    assert "@media (min-width: 641px)" in css
     assert "grid-template-columns: 1fr 1fr;" in css
 
 

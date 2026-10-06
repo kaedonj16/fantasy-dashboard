@@ -28,7 +28,7 @@ def test_home_proof_is_replaced_by_pro_signup():
     assert 'class="home-proof"' not in home
     assert 'id="homeProSignup"' in home
     assert 'data-home-pro-open' in home
-    assert "Unlock PRO" in home
+    assert "Get PRO" in home
     assert "Trade Intelligence" in home
     assert "Breakout Engine" in home
     assert "Playoff Impact" in home
@@ -192,7 +192,7 @@ def test_guest_home_renders_pro_signup(offline_client):
     html = offline_client.get("/").get_data(as_text=True)
     assert "homeProSignup" in html
     assert "home-proof" not in html
-    assert "Unlock PRO" in html
+    assert "Get PRO" in html
     assert "data-home-pro-open" in html
     assert "Continue with Google" in html
     assert "A Google account is required to subscribe" in html

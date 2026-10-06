@@ -170,7 +170,7 @@ def test_gamelog_css_responsive_classes():
     for cls in (".season-card", ".mini-stats", ".gl-adv", ".seg-light",
                 ".scroll-hint", ".season-team", ".t-g", ".sec-start"):
         assert cls in css
-    assert "@media (max-width: 600px)" in css
+    assert "@media (max-width: 640px)" in css
     assert "grid-template-columns: repeat(4, 1fr)" in css
 
 

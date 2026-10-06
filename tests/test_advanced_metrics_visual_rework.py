@@ -86,7 +86,7 @@ def test_search_and_season_share_one_mobile_row():
     assert 'id="amSearchToggle"' in body
     css = _rework_css(html)
     assert "#amSearchRow { margin:8px 0 0; }" in css
-    assert "#amSearchRow .am-search { font-size:14px; }" in css
+    assert "#amSearchRow .am-search { font-size:15px; }" in css
     # Season controls live in the sheet, not the top row.
     assert body.index('id="amSeasonMulti"') > body.index('id="amFilterSheet"')
 

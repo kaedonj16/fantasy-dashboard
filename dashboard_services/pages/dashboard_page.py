@@ -606,6 +606,8 @@ def build_dashboard_body(ctx: dict) -> str:
           </div>
         </section>
 
+        {_action_queue_html}
+
         {_rz_cta_html}
 
         {_bb_outlook_html}
@@ -619,8 +621,6 @@ def build_dashboard_body(ctx: dict) -> str:
           <button type="button" data-jump="os-jump-standings">Standings</button>
           <button type="button" data-jump="os-jump-teams">{teams_tab_label}</button>
         </nav>
-
-        {_action_queue_html}
 
         <div id="os-jump-matchup" class="os-tab-panel"{'' if _show_matchup_preview else ' hidden'}>
           {matchup_html}
