@@ -136,3 +136,34 @@ class TestTaxiStash:
 def test_clean_roster_no_issues():
     assert _issues(players=["1", "5"], starters=["1"],
                    reserve_slots=2, taxi_slots=2) == []
+
+
+class TestTaxiDeadline:
+    def test_taxi_stash_suggested_before_deadline(self):
+        issues = _issues(
+            players=["1", "4"], starters=["1"],
+            taxi_slots=2, taxi_deadline_week=10, current_week=5,
+        )
+        assert any(i["kind"] == "taxi_stash" for i in issues)
+
+    def test_taxi_stash_suppressed_after_deadline(self):
+        issues = _issues(
+            players=["1", "4"], starters=["1"],
+            taxi_slots=2, taxi_deadline_week=4, current_week=5,
+        )
+        assert all(i["kind"] != "taxi_stash" for i in issues)
+
+    def test_taxi_stash_suppressed_when_no_deadline_and_season_started(self):
+        # Default taxi deadline is the beginning of Week 1.
+        issues = _issues(
+            players=["1", "4"], starters=["1"],
+            taxi_slots=2, taxi_deadline_week=0, current_week=5,
+        )
+        assert all(i["kind"] != "taxi_stash" for i in issues)
+
+    def test_taxi_stash_allowed_before_week_1_when_no_deadline(self):
+        issues = _issues(
+            players=["1", "4"], starters=["1"],
+            taxi_slots=2, taxi_deadline_week=0, current_week=0,
+        )
+        assert any(i["kind"] == "taxi_stash" for i in issues)

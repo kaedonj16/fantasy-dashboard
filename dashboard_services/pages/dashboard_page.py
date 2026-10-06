@@ -17,7 +17,6 @@ def build_dashboard_body(ctx: dict) -> str:
         _render_bench_check,
         _render_season_review_card,
         _render_usage_movers,
-        _roster_moves_alert_html,
         _losing_streak_trade_html,
         _section_title_link,
         _standings_movement,
@@ -67,7 +66,6 @@ def build_dashboard_body(ctx: dict) -> str:
         div_records=division_records(df_weekly, (_div_info or {}).get("by_rid") or {}),
     )
     usage_movers_html = _render_usage_movers(ctx, viewer_roster_id)
-    roster_moves_html = _roster_moves_alert_html(ctx, viewer_roster_id)
     losing_trade_html = _losing_streak_trade_html(ctx, viewer_roster_id)
     season_review_html = _render_season_review_card(ctx, viewer_roster_id, df_weekly, team_stats)
 
@@ -417,7 +415,6 @@ def build_dashboard_body(ctx: dict) -> str:
     _action_cards = [
         ("nextsteps", do_next_waiver_html),
         ("trade-losing", losing_trade_html),
-        ("roster", roster_moves_html),
     ]
     _action_cards = sorted(
         [(k, h) for k, h in _action_cards if (h or "").strip()],
