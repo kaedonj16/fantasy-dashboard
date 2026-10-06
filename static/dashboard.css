@@ -2152,6 +2152,25 @@ html[data-theme="dark"] img[src*="discord-brands-solid.png"] {
         flex: none;
         width: 100%;
     }
+
+    /* Mobile tab switcher: Candidates | Track Record */
+    .bo-view-tabs {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 16px;
+    }
+
+    .bo-layout.bo-view-track .bo-main {
+        display: none;
+    }
+
+    .bo-layout:not(.bo-view-track) .bo-rail {
+        display: none;
+    }
+}
+
+.bo-view-tabs {
+    display: none;
 }
 
 .changelog-entry-top {
@@ -19861,8 +19880,8 @@ img, svg, canvas {
 
 /* Next steps unified action queue */
 .ns-card .ns-list {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-auto-rows: 1fr;
     gap: 6px;
 }
 @media (min-width: 1025px) {
@@ -19888,7 +19907,7 @@ img, svg, canvas {
     padding: 10px;
     border-radius: var(--radius);
     background: var(--row, #f8fafc);
-    align-items: flex-start;
+    align-items: stretch;
 }
 .ns-priority {
     width: 8px;
@@ -19899,7 +19918,7 @@ img, svg, canvas {
 .ns-priority.high { background: #ef4444; }
 .ns-priority.med { background: #f59e0b; }
 .ns-priority.low { background: #22c55e; }
-.ns-body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ns-body { flex: 1; min-width: 0; display: flex; flex-direction: column; height: 100%; }
 .ns-cta { margin-top: auto; align-self: flex-start; }
 .ns-action {
     font-size: 15px;
@@ -19934,6 +19953,7 @@ img, svg, canvas {
 }
 .ns-tag {
     display: inline-block;
+    align-self: flex-start;
     font-size: 11px;
     font-weight: 700;
     text-transform: uppercase;
