@@ -2184,11 +2184,27 @@ def lineup_actions_from_issues(
     else:
         title = "Lineup needs attention"
         sev = 0.5
-    detail = "; ".join(
+    details = [
         str(i.get("detail") or i.get("name") or "").strip()
         for i in issues[:3]
         if (i.get("detail") or i.get("name"))
-    )
+    ]
+    if len(issues) == 1:
+        _only = issues[0]
+        _nm = str(_only.get("name") or "").strip()
+        _det = details[0] if details else ""
+        # Don't say the same thing twice: the headline already names the
+        # player and the situation ("X is out", "X on bye"), so a detail
+        # that only restates it is dropped. Multi-issue details name the
+        # other players, so they stay.
+        if (_nm and _nm.lower() in _det.lower()) or (
+            _det and _det.strip().lower() == title.strip().lower()
+        ):
+            detail = ""
+        else:
+            detail = _det
+    else:
+        detail = "; ".join(details)
     return [make_action(
         kind="lineup",
         platform=platform,

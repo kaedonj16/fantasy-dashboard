@@ -330,3 +330,33 @@ def test_select_waiver_add_skips_owned_injured_and_free_agents():
     )
     assert hit is None
 
+
+
+def test_lineup_action_detail_does_not_repeat_headline():
+    kw = dict(platform="sleeper", season=2025, league_id="lg1", league_name="L")
+    # Single named issue: the headline says it all, detail is dropped.
+    one = lineup_actions_from_issues(
+        [{"kind": "injury", "pid": "1", "name": "A", "detail": "A is listed Out"}], **kw
+    )
+    assert one[0]["title"] == "A is out"
+    assert one[0]["detail"] == ""
+    one_bye = lineup_actions_from_issues(
+        [{"kind": "bye", "pid": "2", "name": "B", "detail": "B is on bye"}], **kw
+    )
+    assert one_bye[0]["title"] == "B on bye"
+    assert one_bye[0]["detail"] == ""
+    # Empty slot: headline and detail are identical text.
+    empty = lineup_actions_from_issues(
+        [{"kind": "empty", "pid": "0", "name": "", "detail": "Empty starting slot"}], **kw
+    )
+    assert empty[0]["detail"] == ""
+    # Multiple issues: the detail names the other players, so it stays.
+    multi = lineup_actions_from_issues(
+        [
+            {"kind": "injury", "pid": "1", "name": "A", "detail": "A is listed Out"},
+            {"kind": "injury", "pid": "2", "name": "C", "detail": "C is listed Doubtful"},
+        ],
+        **kw,
+    )
+    assert multi[0]["title"] == "A is out (+1 more)"
+    assert "C is listed Doubtful" in multi[0]["detail"]
