@@ -916,12 +916,13 @@ def get_weekly_breakout_candidates(season: int, min_score: float = 0.0,
     # a single misclassified veteran appear to be the entire candidate set.
     candidates = groups["breakouts"] + groups["early_watch"]
     # Surfaced board: every player at or above the surfaced floor (30), no
-    # cap. Historical snapshots serve verbatim; only the current board
-    # applies the floor and the no-repeat exclusion.
+    # cap. The floor applies to historical snapshots too, so the Week N view
+    # shows exactly the calls the track record counts for that week.
+    # Only the no-repeat exclusion is current-board-only.
+    candidates = [c for c in candidates
+                  if float(c.get("breakout_score") or 0) >= BREAKOUT_SURFACED_MIN_SCORE]
     is_current_board = as_of_week is None
     if is_current_board:
-        candidates = [c for c in candidates
-                      if float(c.get("breakout_score") or 0) >= BREAKOUT_SURFACED_MIN_SCORE]
         # No repeats: exclude players surfaced in the last grading window.
         # Their earlier call is still being graded; surfacing them again
         # would double-count one call in the track record.
@@ -980,6 +981,29 @@ def get_weekly_breakout_candidates(season: int, min_score: float = 0.0,
                     _served[_pid]["forecast"] = _forecast
         except Exception:
             logger.warning("weekly breakout: forecast attach failed", exc_info=True)
+
+    # Attach grades for historical weeks so the UI can show HIT/MISS badges.
+    # Only for explicit week views; the current board has no finished grades.
+    if candidates and as_of_week is not None:
+        try:
+            from data_building.breakout_engine import forecasts as _bo_forecasts
+            from data_building.breakout_engine import weekly_grading as _wg
+            _grade_rows = _bo_forecasts.load_weekly_grade_rows(season)
+            _grades = {}
+            for _gr in _grade_rows:
+                try:
+                    if int(_gr.get("as_of_week") or 0) == int(as_of_week):
+                        _g = str(_gr.get("grade") or "")
+                        if _g in (_wg.GRADE_HIT, _wg.GRADE_MISS):
+                            _grades[str(_gr.get("player_id"))] = _g
+                except (TypeError, ValueError):
+                    continue
+            for _c in candidates:
+                _g = _grades.get(str(_c.get("player_id")))
+                if _g:
+                    _c["grade"] = _g
+        except Exception:
+            logger.warning("weekly breakout: grade attach failed", exc_info=True)
 
     return {
         "season": season,

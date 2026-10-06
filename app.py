@@ -18088,7 +18088,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
         // Biggest hits
         var hits = data.hits || [];
         if (hits.length) {{
-          html += '<div class="bo-tr-hits-h hits">Biggest Hits</div>';
+          html += '<div class="bo-tr-hits-h hits">Biggest Hits</div><div style="font-size:11px;color:var(--text-muted);margin:-6px 0 8px;">PPG vs projection</div>';
           hits.slice(0, 3).forEach(function (r) {{
             var delta = r.ppg_delta != null ? (r.ppg_delta >= 0 ? '+' : '') + Number(r.ppg_delta).toFixed(1) : 'n/a';
             html += '<div class="bo-rail-row"><div><div class="bo-rail-name">' + _boPlayerLink(r.player_name, r.player_id)
@@ -18100,7 +18100,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
         // Biggest misses
         var misses = data.misses || [];
         if (misses.length) {{
-          html += '<div class="bo-tr-hits-h misses">Biggest Misses</div>';
+          html += '<div class="bo-tr-hits-h misses">Biggest Misses</div><div style="font-size:11px;color:var(--text-muted);margin:-6px 0 8px;">PPG vs projection</div>';
           misses.slice(0, 3).forEach(function (r) {{
             var delta = r.ppg_delta != null ? (r.ppg_delta >= 0 ? '+' : '') + Number(r.ppg_delta).toFixed(1) : 'n/a';
             html += '<div class="bo-rail-row"><div><div class="bo-rail-name">' + _boPlayerLink(r.player_name, r.player_id)
@@ -18143,14 +18143,20 @@ def page_breakouts(platform: str, season: int, league_id: str):
             + '<div class="bo-rail-bar"><span style="width:' + (hitRate || 0) + '%;background:#7c3aed;"></span></div></div>';
         }}
 
-        // Preseason still tracking from outlook
+        // Preseason still tracking from outlook, with tracking-to-hit bar
         var outlook = (data.outlook || {{}}).preseason || {{}};
         var openCalls = outlook.open_calls || 0;
         if (openCalls > 0) {{
+          var _counts = outlook.counts || {{}};
+          var _toHit = _counts.tracking_to_hit || 0;
+          var _hitRate = openCalls > 0 ? _toHit / openCalls : null;
+          var _pctTxt = _hitRate != null ? Math.round(_hitRate * 100) + '% to hit' : 'n/a';
           html += '<div class="bo-tr-hits-h pending">Still Tracking</div>';
           html += '<div style="margin-bottom:8px;"><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px;">'
-            + '<span>Preseason &middot; ' + openCalls + ' calls</span></div>'
-            + '<div class="bo-rail-meta">Season ongoing</div></div>';
+            + '<span>Preseason &middot; ' + openCalls + ' calls</span>'
+            + '<span style="font-weight:700;color:#d97706;">' + _pctTxt + '</span></div>'
+            + '<div class="bo-rail-bar"><span style="width:' + (_hitRate != null ? Math.round(_hitRate * 100) : 0) + '%;background:#d97706;"></span></div>'
+            + '<div class="bo-rail-meta" style="margin-top:4px;">Season ongoing</div></div>';
         }}
 
         return html;
@@ -18481,6 +18487,8 @@ def page_breakouts(platform: str, season: int, league_id: str):
                 <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
                   <div class="breakout-score-badge" style="background:${{scoreColor}};color:#fff;font-size:13px;font-weight:700;padding:3px 9px;border-radius:6px;">${{score}}</div>
                   ${{hitHtml}}
+                  ${{(currentWeek !== 'latest' && candidate.grade === 'hit') ? '<div style="font-size:11px;font-weight:800;color:#fff;background:#16a34a;padding:3px 10px;border-radius:6px;letter-spacing:0.05em;">HIT</div>' : ''}}
+                  ${{(currentWeek !== 'latest' && candidate.grade === 'miss') ? '<div style="font-size:11px;font-weight:800;color:#fff;background:#dc2626;padding:3px 10px;border-radius:6px;letter-spacing:0.05em;">MISS</div>' : ''}}
                 </div>
               </div>
               <div style="margin-bottom:12px;">${{ppgHtml}}</div>

@@ -2143,6 +2143,10 @@ html[data-theme="dark"] img[src*="discord-brands-solid.png"] {
     color: var(--text-muted);
 }
 
+.bo-view-tabs {
+    display: none;
+}
+
 @media (max-width: 1024px) {
     .bo-layout {
         flex-direction: column;
@@ -2152,10 +2156,6 @@ html[data-theme="dark"] img[src*="discord-brands-solid.png"] {
         flex: none;
         width: 100%;
     }
-
-    .bo-view-tabs {
-    display: none;
-}
 
 /* Mobile tab switcher: Candidates | Track Record */
     .bo-view-tabs {
@@ -13318,7 +13318,6 @@ a.signed-home-league:hover {
 
 .home-hero {
     display: grid;
-    grid-template-columns: minmax(0, 1fr);
     gap: 40px;
     align-items: center;
     position: relative;
