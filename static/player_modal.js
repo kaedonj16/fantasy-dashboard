@@ -1171,13 +1171,14 @@ function openPlayerModal(playerId, playerName, opts) {
       // Sleeper + market render together (rather than Sleeper appearing first).
       (function _loadMarketAdp() {
         let _done = false;
-        const _reveal = (extra) => {
-          if (_done) return;
-          _done = true;
+        // Renders the ADP grid for the currently shown player. Returns false
+        // when the modal moved on (closed or a different player), so late
+        // responses never paint a stale player.
+        const _render = (extra) => {
           const block = document.getElementById('pmAdpBlock');
           const grid = document.getElementById('pmAdpGrid');
           // Bail if the modal was closed or a different player is now shown.
-          if (!block || !grid || block.dataset.pid !== String(playerId)) return;
+          if (!block || !grid || block.dataset.pid !== String(playerId)) return false;
           const inner = _adpGridHTML(_adpSources.concat(extra || []));
           if (inner) {
             grid.innerHTML = inner;
@@ -1185,13 +1186,25 @@ function openPlayerModal(playerId, playerName, opts) {
             _wireAdpTabs(grid);
             block.style.display = '';
           } else { block.style.display = 'none'; }   // no ADP anywhere → drop it
+          return true;
+        };
+        const _reveal = (extra) => {
+          if (_done) return;
+          _done = true;
+          _render(extra);
         };
         // Safety net: if the request hangs, reveal what we have so the skeleton
-        // never sticks.
+        // never sticks. A late success still merges in below (the skeleton
+        // reveal is not a permanent gate), so a slow first load self-heals
+        // instead of needing a close/reopen.
         const _t = setTimeout(() => _reveal([]), 8000);
         _pmSmallFetch('adp:' + playerId + ':' + season,
           `/api/player-adp/${encodeURIComponent(playerId)}?season=${encodeURIComponent(season)}`)
-          .then(j => { clearTimeout(_t); _reveal(j && Array.isArray(j.sources) ? j.sources : []); })
+          .then(j => {
+            clearTimeout(_t);
+            const srcs = (j && Array.isArray(j.sources)) ? j.sources : [];
+            if (_done) { _render(srcs); } else { _reveal(srcs); }
+          })
           .catch(() => { clearTimeout(_t); _reveal([]); });
       })();
 

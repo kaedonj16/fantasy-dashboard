@@ -197,3 +197,74 @@ def test_yahoo_overlay_rebuilds_consensus_from_all_displayed_columns(monkeypatch
     # (1.0 + 2.0 + 4.0) / 3 = 2.3, not yahoo-only 4.0 and not leftover 3.1.
     assert cons["redraft_avg_pick"] == 2.3
     assert players[0]["adp_by_source"]["yahoo"]["redraft_avg_pick"] == 4.0
+
+
+def test_api_player_adp_late_response_merges_after_safety_net():
+    # Regression: the 8s skeleton safety net must not permanently discard a
+    # late /api/player-adp response. The success path re-renders the grid
+    # when the modal is still open on the same player.
+    js = (ROOT / "static" / "player_modal.js").read_text(encoding="utf-8")
+    assert "if (_done) { _render(srcs); } else { _reveal(srcs); }" in js
+
+
+def test_api_player_adp_caches_resolved_maps_across_requests(monkeypatch):
+    try:
+        from app import app as flask_app
+    except Exception as exc:
+        pytest.skip(f"app not importable ({type(exc).__name__})")
+    import app as appmod
+
+    pid = "4046"
+    calls = {"n": 0}
+
+    def fake_resolve(season, is_sf, scoring_type="redraft", source="consensus",
+                     as_rank=False, fallback=True, **kwargs):
+        calls["n"] += 1
+        return {pid: 7.7}
+
+    monkeypatch.setattr(
+        "dashboard_services.adp_service.resolve_market_adp", fake_resolve,
+    )
+    appmod._PLAYER_ADP_MAP_CACHE.clear()
+    try:
+        flask_app.config.update(TESTING=True)
+        with flask_app.test_client() as client:
+            assert client.get(f"/api/player-adp/{pid}?season=2026").status_code == 200
+            first_calls = calls["n"]
+            assert first_calls > 0
+            assert client.get(f"/api/player-adp/{pid}?season=2026").status_code == 200
+        # Second request served the resolved maps from the process cache.
+        assert calls["n"] == first_calls
+    finally:
+        appmod._PLAYER_ADP_MAP_CACHE.clear()
+
+
+def test_api_player_adp_does_not_cache_empty_maps(monkeypatch):
+    # A transient failure must retry on the next request, not stick for the TTL.
+    try:
+        from app import app as flask_app
+    except Exception as exc:
+        pytest.skip(f"app not importable ({type(exc).__name__})")
+    import app as appmod
+
+    pid = "4046"
+    calls = {"n": 0}
+
+    def fake_resolve(season, is_sf, scoring_type="redraft", source="consensus",
+                     as_rank=False, fallback=True, **kwargs):
+        calls["n"] += 1
+        return {}
+
+    monkeypatch.setattr(
+        "dashboard_services.adp_service.resolve_market_adp", fake_resolve,
+    )
+    appmod._PLAYER_ADP_MAP_CACHE.clear()
+    try:
+        flask_app.config.update(TESTING=True)
+        with flask_app.test_client() as client:
+            client.get(f"/api/player-adp/{pid}?season=2026")
+            client.get(f"/api/player-adp/{pid}?season=2026")
+        assert calls["n"] > 0
+        assert not appmod._PLAYER_ADP_MAP_CACHE
+    finally:
+        appmod._PLAYER_ADP_MAP_CACHE.clear()
