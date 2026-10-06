@@ -33355,6 +33355,8 @@ def api_trade_intel_player_packages(player_id: str):
                 "real_packages": [],
                 "total_real_trades": 0,
                 "archetype_patterns": [],
+                "trade_velocity": {},
+                "buyer_split": {},
                 "package_source": "value_match",
                 "model_stale_days": None,
                 "query_window_days": 0,
@@ -33794,6 +33796,8 @@ def api_trade_intel_player_packages(player_id: str):
             "real_packages": primary_pkgs,
             "total_real_trades": real_result["total_real_trades"],
             "archetype_patterns": archetype_patterns,
+            "trade_velocity": real_result.get("velocity") or {},
+            "buyer_split": real_result.get("buyer_split") or {},
             "package_source": package_source,
             "model_stale_days": _model_stale_days,
             "query_window_days": 730,
@@ -33878,7 +33882,9 @@ def _real_trade_packages_for_target(
             rows = conn.execute(
                 """
                 WITH acquisitions AS (
-                    SELECT DISTINCT t.id AS trade_id, a_in.side AS recv_side
+                    SELECT DISTINCT t.id AS trade_id, a_in.side AS recv_side,
+                           t.trade_context AS tctx, t.week AS tweek,
+                           t.created_at AS tcreated
                     FROM trade_intel_trades t
                     JOIN trade_intel_leagues l ON l.league_id = t.league_id
                     JOIN trade_intel_assets a_in
@@ -33897,6 +33903,10 @@ def _real_trade_packages_for_target(
                 )
                 SELECT
                     acq.trade_id,
+                    acq.recv_side,
+                    acq.tctx,
+                    acq.tweek,
+                    acq.tcreated,
                     a.asset_type,
                     a.player_id  AS sent_player_id,
                     a.pick_round,
@@ -33911,22 +33921,37 @@ def _real_trade_packages_for_target(
                 (target_player_id, is_sf, num_teams - 4, num_teams + 4),
             ).fetchall()
     except Exception:
-        return {"packages": [], "total_real_trades": 0, "sig_counts": {}}
+        return {"packages": [], "total_real_trades": 0, "sig_counts": {},
+                "velocity": {"recent_90d": 0, "prior_90d": 0, "trend": None},
+                "buyer_split": {}}
 
-    # Group assets by trade_id → list of asset dicts
+    # Group assets by trade_id → list of asset dicts. Also capture per-trade
+    # intel (buyer side + trade-time context snapshot) for the context sample,
+    # buyer split, and velocity computations below.
     trade_pkgs: dict = defaultdict(list)
+    trade_meta: dict = {}
     for row in rows:
-        trade_pkgs[row["trade_id"]].append({
+        tid = row["trade_id"]
+        trade_pkgs[tid].append({
             "asset_type": row["asset_type"],
             "sent_player_id": row["sent_player_id"],
             "pick_round": row["pick_round"],
             "pick_season": row["pick_season"],
             "pick_order": row["pick_order"],
         })
+        if tid not in trade_meta:
+            trade_meta[tid] = {
+                "recv_side": row.get("recv_side"),
+                "ctx": row.get("tctx"),
+                "week": row.get("tweek"),
+                "created_at": row.get("tcreated"),
+            }
 
     total_real_trades = len(trade_pkgs)
     if not total_real_trades:
-        return {"packages": [], "total_real_trades": 0, "sig_counts": {}}
+        return {"packages": [], "total_real_trades": 0, "sig_counts": {},
+                "velocity": {"recent_90d": 0, "prior_90d": 0, "trend": None},
+                "buyer_split": {}}
 
     # Build precise signature: P:{pos}:T{tier}:{bracket}  K:{round}:{slot_bucket}
     def _pick_slot_bucket(order) -> str:
@@ -34160,11 +34185,205 @@ def _real_trade_packages_for_target(
             pool, key=lambda p: (_ref_fit(p), -p.get("trades_like_this", 0))
         )[:max_packages]
 
+    # ── Trade-intel surfacing ─────────────────────────────────────────────
+    # trade_context snapshots (per-side record at trade time) are collected by
+    # the crawler but were never read. Classify each side, attach the most
+    # recent usable sample per package signature, aggregate the top package
+    # shape per buyer class, and count 90d vs prior-90d velocity.
+    # Best-effort: any failure here must not break the packages themselves.
+    velocity = {"recent_90d": 0, "prior_90d": 0, "trend": None}
+    buyer_split = {}
+    try:
+        velocity, buyer_split = _trade_intel_extras(
+            trade_meta=trade_meta,
+            trade_pkgs=trade_pkgs,
+            sig_counts=sig_counts,
+            result_packages=result_packages,
+            values_by_id=values_by_id,
+            target_player_id=target_player_id,
+            is_sf=is_sf,
+            num_teams=num_teams,
+        )
+    except Exception:
+        logger.debug("trade-intel surfacing failed", exc_info=True)
+
     return {
         "packages": result_packages,
         "total_real_trades": total_real_trades,
         "sig_counts": {str(k): len(v) for k, v in sig_counts.items()},
+        "velocity": velocity,
+        "buyer_split": buyer_split,
     }
+
+
+def _trade_intel_extras(trade_meta, trade_pkgs, sig_counts, result_packages,
+                        values_by_id, target_player_id, is_sf, num_teams):
+    """Enrich real-trade packages with buyer/seller context intel.
+
+    Attaches ``trade_context_sample`` (most recent usable per-side record
+    snapshot per package signature) to result packages in place, and returns
+    ``(velocity, buyer_split)``. Best-effort by contract: callers wrap it in
+    try/except and the endpoint works without it.
+    """
+    from dashboard_services.db import get_conn as _gc
+
+    def _classify_side(rec):
+        try:
+            w = int(rec.get("wins", 0) or 0)
+            l = int(rec.get("losses", 0) or 0)
+            t = int(rec.get("ties", 0) or 0)
+        except (TypeError, ValueError, AttributeError):
+            return None
+        g = w + l + t
+        if g <= 0:
+            return None
+        label = f"{w}-{l}" + (f"-{t}" if t else "")
+        pct = w / g
+        cls = "contender" if pct >= 0.6 else ("rebuilder" if pct <= 0.4 else "mid-pack")
+        return {"record": label, "class": cls}
+
+    def _trade_sample(tid):
+        meta = trade_meta.get(tid) or {}
+        ctx = meta.get("ctx") or {}
+        if isinstance(ctx, str):
+            try:
+                ctx = json.loads(ctx)
+            except Exception:
+                ctx = {}
+        recv = meta.get("recv_side")
+        if not recv or not isinstance(ctx, dict):
+            return None
+        buyer = _classify_side(ctx.get(recv))
+        other = "b" if recv == "a" else "a"
+        seller = _classify_side(ctx.get(other))
+        if not buyer or not seller:
+            return None
+        sample = {
+            "buyer_record": buyer["record"],
+            "buyer_class": buyer["class"],
+            "seller_record": seller["record"],
+            "seller_class": seller["class"],
+        }
+        try:
+            wk = int(meta.get("week"))
+            if 1 <= wk <= 18:
+                sample["week"] = wk
+        except (TypeError, ValueError):
+            pass
+        return sample
+
+    def _trade_label(tid):
+        counts: dict = {}
+        for a in trade_pkgs.get(tid, []):
+            if a["asset_type"] == "player" and a["sent_player_id"]:
+                info = values_by_id.get(str(a["sent_player_id"]))
+                if not info:
+                    continue
+                tier = _asset_tier(float(info.get("value") or 0))
+                part = f"{info['position']}{tier}"
+            elif a["asset_type"] == "pick" and a["pick_round"]:
+                try:
+                    rnd = int(a["pick_round"])
+                except (TypeError, ValueError):
+                    continue
+                sfx = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
+                season = str(a.get("pick_season") or "").strip()
+                part = f"{season} {rnd}{sfx}".strip()
+            else:
+                continue
+            counts[part] = counts.get(part, 0) + 1
+        if not counts:
+            return None
+        return " + ".join(
+            f"{n}× {p}" if n > 1 else p for p, n in sorted(counts.items())
+        )
+
+    _samples = {tid: _trade_sample(tid) for tid in trade_pkgs}
+    _created = {tid: (trade_meta.get(tid) or {}).get("created_at") for tid in trade_pkgs}
+
+    def _best_sample(tids):
+        best, best_ts = None, None
+        for tid in tids:
+            s = _samples.get(tid)
+            if not s:
+                continue
+            ts = _created.get(tid)
+            if best is None or (ts is not None and (best_ts is None or ts > best_ts)):
+                best, best_ts = s, ts
+        return best
+
+    for pkg in result_packages:
+        _raw_sig = pkg.get("sig")
+        _sig_key = tuple(_raw_sig) if isinstance(_raw_sig, (list, tuple)) else None
+        _tids = sig_counts.get(_sig_key) if _sig_key else []
+        _sample = _best_sample(_tids or [])
+        if _sample:
+            pkg["trade_context_sample"] = _sample
+
+    # Buyer split: top package shape per buyer class across sampled trades.
+    _split_buckets: dict = {}
+    for tid, s in _samples.items():
+        if not s or s["buyer_class"] not in ("contender", "rebuilder"):
+            continue
+        label = _trade_label(tid)
+        if not label:
+            continue
+        bucket = _split_buckets.setdefault(s["buyer_class"], {})
+        bucket[label] = bucket.get(label, 0) + 1
+    buyer_split = {}
+    for cls, bucket in _split_buckets.items():
+        if not bucket:
+            continue
+        top_label, top_count = max(bucket.items(), key=lambda kv: kv[1])
+        buyer_split[cls] = {
+            "label": top_label,
+            "count": top_count,
+            "total": sum(bucket.values()),
+        }
+
+    # Velocity: same league filters, distinct-trade counts for 90d vs prior 90d.
+    velocity = {"recent_90d": 0, "prior_90d": 0, "trend": None}
+    try:
+        with _gc() as _vconn:
+            vrow = _vconn.execute(
+                """
+                SELECT
+                  COUNT(DISTINCT t.id) FILTER (WHERE t.created_at > NOW() - INTERVAL '90 days') AS recent,
+                  COUNT(DISTINCT t.id) FILTER (WHERE t.created_at <= NOW() - INTERVAL '90 days'
+                                                  AND t.created_at > NOW() - INTERVAL '180 days') AS prior
+                FROM trade_intel_trades t
+                JOIN trade_intel_leagues l ON l.league_id = t.league_id
+                JOIN trade_intel_assets a_in ON a_in.trade_id = t.id
+                     AND a_in.asset_type = 'player'
+                     AND a_in.player_id = %s
+                WHERE l.league_type = 2
+                  AND COALESCE(l.is_superflex, FALSE) = %s
+                  AND COALESCE(l.num_teams, 12) BETWEEN %s AND %s
+                  AND t.created_at > NOW() - INTERVAL '180 days'
+                """,
+                (target_player_id, is_sf, num_teams - 4, num_teams + 4),
+            ).fetchone()
+        if vrow:
+            recent = int(vrow["recent"] or 0)
+            prior = int(vrow["prior"] or 0)
+            trend = None
+            if recent + prior >= 4:
+                if recent == 0:
+                    trend = "cooling_off"
+                elif prior == 0:
+                    trend = "heating_up"
+                elif recent >= prior * 1.5:
+                    trend = "heating_up"
+                elif prior >= recent * 1.5:
+                    trend = "cooling_off"
+                else:
+                    trend = "steady"
+            velocity = {"recent_90d": recent, "prior_90d": prior, "trend": trend}
+    except Exception:
+        logger.debug("trade-intel velocity lookup failed", exc_info=True)
+
+    return velocity, buyer_split
+
 
 
 @app.route("/api/trade-intel/player-send-packages/<player_id>")

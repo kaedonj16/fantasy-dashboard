@@ -8792,7 +8792,9 @@ window.initTradePage = function initTradePage(root = document) {
           data.player_name, playerId, data.focus_value,
           data.real_packages, data.total_real_trades,
           data.archetype_patterns,
-          data.receiver_win_window || ''
+          data.receiver_win_window || '',
+          data.trade_velocity || {},
+          data.buyer_split || {}
         );
 
         localStorage.setItem('ti-last-player', JSON.stringify({ id: playerId, name: playerName }));
@@ -9092,7 +9094,7 @@ window.initTradePage = function initTradePage(root = document) {
       teamBtn.classList.toggle('is-active', !showAll);
     };
 
-    function renderPackages(packages, playerName, playerId, focusValue, realPkgs, realTotal, archetypes, receiverWindow) {
+    function renderPackages(packages, playerName, playerId, focusValue, realPkgs, realTotal, archetypes, receiverWindow, velocity, buyerSplit) {
       _pkgAll            = packages;
       _pkgPage           = 0;
       _pkgPlayerId       = playerId;
@@ -9102,6 +9104,8 @@ window.initTradePage = function initTradePage(root = document) {
       _pkgComboPkgs      = [];
       _pkgArchetypes     = archetypes || [];
       _pkgReceiverWindow = receiverWindow || '';
+      _pkgVelocity       = velocity   || {};
+      _pkgBuyerSplit     = buyerSplit || {};
       renderPackagePage();
     }
 
@@ -9311,6 +9315,52 @@ window.initTradePage = function initTradePage(root = document) {
             <div style="font-size:11px;color:var(--text-muted);">${_pkgRealTotal} real trades in similar leagues</div>
           </div>`;
 
+        // ── Market heat: 90d trade velocity ───────────────────────────────
+        const _vel = _pkgVelocity || {};
+        const _vr = _vel.recent_90d || 0;
+        if (_vr > 0) {
+          const _filled = Math.min(5, Math.max(1, Math.round(_vr / 3)));
+          let _dots = '';
+          for (let i = 0; i < 5; i++) {
+            _dots += `<i style="display:inline-block;width:7px;height:14px;border-radius:3px;background:${i < _filled ? '#f59e0b' : 'var(--border)'};"></i>`;
+          }
+          const _trendColor = _vel.trend === 'heating_up' ? '#16a34a' : '#6b7280';
+          const _trendLabel = _vel.trend === 'heating_up' ? '↗ Heating up'
+            : _vel.trend === 'cooling_off' ? '↘ Cooling off'
+            : _vel.trend === 'steady' ? '→ Steady' : '';
+          const _trendHtml = _trendLabel
+            ? `<span style="font-size:11px;font-weight:800;color:${_trendColor};white-space:nowrap;">${_trendLabel}</span>` : '';
+          realTradeHtml += `<div style="display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:10px;background:var(--card);padding:8px 10px;margin-bottom:10px;">
+            <span style="display:flex;gap:3px;">${_dots}</span>
+            <span style="font-size:12px;font-weight:700;">Traded ${_vr}× in the last 90 days</span>
+            <span style="margin-left:auto;">${_trendHtml}</span>
+          </div>`;
+        }
+
+        // ── Who pays what: contender vs rebuilder top package ─────────────
+        const _split = _pkgBuyerSplit || {};
+        const _splitRow = (cls, dotColor, name) => {
+          const s = _split[cls];
+          if (!s || !s.total) return '';
+          return `<div style="display:flex;align-items:center;gap:8px;padding:9px 10px;">
+            <span style="width:9px;height:9px;border-radius:50%;background:${dotColor};flex-shrink:0;"></span>
+            <span style="font-size:12px;font-weight:800;white-space:nowrap;">${name}</span>
+            <span style="font-size:12px;color:var(--text-muted);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(s.label)}</span>
+            <span style="font-size:11px;font-weight:700;color:var(--text-muted);white-space:nowrap;">${s.count} trade${s.count === 1 ? '' : 's'}</span>
+          </div>`;
+        };
+        const _splitRows = [
+          _splitRow('contender', '#16a34a', 'Contenders'),
+          _splitRow('rebuilder', '#f59e0b', 'Rebuilders'),
+        ].filter(Boolean);
+        if (_splitRows.length) {
+          realTradeHtml += `<div style="border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:12px;background:var(--card);">
+            <div style="padding:8px 10px;border-bottom:1px solid var(--border);font-size:10px;font-weight:700;color:var(--text-muted);letter-spacing:.05em;text-transform:uppercase;">Who pays what</div>
+            ${_splitRows.join('<div style="height:1px;background:var(--border);"></div>')}
+            <div style="padding:7px 10px;font-size:10px;color:var(--text-muted);border-top:1px solid var(--border);">From each side's record at trade time.</div>
+          </div>`;
+        }
+
         // ── Common archetype patterns ─────────────────────────────
         if (_pkgArchetypes.length) {
           const archUid = String(playerId || Date.now());
@@ -9438,6 +9488,19 @@ window.initTradePage = function initTradePage(root = document) {
                  </span>`
               : '';
 
+            // Trade-time context: buyer/seller records from the most recent
+            // real trade behind this pattern. Only rule-based packages carry
+            // it; model-generated ones show no line rather than a guess.
+            const _cs = pkg.trade_context_sample || null;
+            const _ctxColor = _cls => _cls === 'contender' ? '#16a34a' : _cls === 'rebuilder' ? '#b45309' : '#6b7280';
+            const _ctxTag = (rec, cls, verb) => `<span style="font-size:9px;font-weight:800;padding:2px 6px;border-radius:999px;white-space:nowrap;background:${_ctxColor(cls)}18;color:${_ctxColor(cls)};">${esc(rec)} ${cls} ${verb}</span>`;
+            const _ctxHtml = _cs ? `<div style="display:flex;align-items:center;gap:6px;padding:8px 14px 0;border-top:1px dashed var(--border);font-size:10px;color:var(--text-muted);">
+              ${_ctxTag(_cs.buyer_record, _cs.buyer_class, 'bought')}
+              <span>from</span>
+              ${_ctxTag(_cs.seller_record, _cs.seller_class, 'sold')}
+              ${_cs.week ? `<span style="margin-left:auto;white-space:nowrap;">Week ${_cs.week}</span>` : ''}
+            </div>` : '';
+
             realTradeHtml += `<div class="otc-real-trade-card">
               <div class="otc-rt-body">
                 <div class="otc-rt-side">
@@ -9453,6 +9516,7 @@ window.initTradePage = function initTradePage(root = document) {
                   ${giveHtml}
                 </div>
               </div>
+              ${_ctxHtml}
               <div class="otc-rt-footer">
                 <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;min-width:0;">
                   <span class="otc-rt-count">${count} ${count === 1 ? 'trade' : 'trades'}</span>
