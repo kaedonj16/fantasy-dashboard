@@ -322,11 +322,11 @@ def test_build_multi_league_digest_covers_every_connected_league(monkeypatch):
     cache.nfl_state = {"season_type": "reg", "week": 4, "season": 2026}
     cache.league_bundle = lambda plat, season, lid: bundles.get(str(lid))
 
-    monkeypatch.setattr("utils.digest_context.DigestRunCache.load_shared", lambda self: None)
+    monkeypatch.setattr("utils.digest.DigestRunCache.load_shared", lambda self: None)
     monkeypatch.setattr("utils.weekly_email._canonical_standing", _standing)
-    monkeypatch.setattr("utils.digest_actions.gather_digest_action_items", _actions)
+    monkeypatch.setattr("utils.digest.gather_digest_action_items", _actions)
     monkeypatch.setattr(
-        "utils.digest_context.matchup_for_roster",
+        "utils.digest.matchup_for_roster",
         lambda bundle, rid, cache: (
             {"opponent_name": "Rival", "user_proj": 118.0, "opp_proj": 109.0, "win_prob": 0.61}
             if (bundle.get("league") or {}).get("name") == "The Gridiron" else None

@@ -19,7 +19,7 @@ DASH_CSS = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
 LITE_CSS = (ROOT / "static" / "landing_lite.css").read_text(encoding="utf-8")
 APP_JS = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
 BILLING_PY = (ROOT / "routes" / "billing_bp.py").read_text(encoding="utf-8")
-GOOGLE_AUTH_PY = (ROOT / "routes" / "google_auth_bp.py").read_text(encoding="utf-8")
+GOOGLE_AUTH_PY = (ROOT / "routes" / "auth_bp.py").read_text(encoding="utf-8")
 
 QUOTE = "THATS ACTUALLY SO SICK BRO"
 

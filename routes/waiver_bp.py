@@ -11,7 +11,12 @@ import os
 import time
 from datetime import datetime
 
-from flask import Blueprint, jsonify, request
+from flask import (
+    Blueprint,
+    jsonify,
+    request,
+    session,
+)
 
 from dashboard_services.api import get_nfl_state
 from dashboard_services.service import age_from_bday
@@ -44,9 +49,11 @@ from utils.waiver_score import (
 )
 from utils.streaming_targets import streaming_targets as _streaming_targets
 
+import json
+
 logger = logging.getLogger(__name__)
 
-waiver_api_bp = Blueprint("waiver_api", __name__)
+waiver_bp = Blueprint("waiver_bp", __name__)
 
 # Only the strongest candidates by value can realistically reach the shown
 # top-30, so the expensive per-candidate enrichment (depth-chart analysis and
@@ -102,11 +109,6 @@ def get_viewer_session_for_league(*args, **kwargs):
 
 def _matchup_rank_table(*args, **kwargs):
     from app import _matchup_rank_table as _fn
-    return _fn(*args, **kwargs)
-
-
-def _load_do_not_drop(*args, **kwargs):
-    from routes.waiver_prefs_bp import load_do_not_drop as _fn
     return _fn(*args, **kwargs)
 
 
@@ -169,7 +171,7 @@ def _waiver_uses_k_def(roster_positions):
     }
 
 
-@waiver_api_bp.route("/api/waiver-candidates")
+@waiver_bp.route("/api/waiver-candidates")
 def api_waiver_candidates():
     """
     Returns scored waiver wire candidates for a league.
@@ -820,7 +822,7 @@ def api_waiver_candidates():
     _protected: set[str] = set()
     try:
         from flask import session as _sess_wv
-        _protected |= _load_do_not_drop(_sess_wv.get("account_id"), platform, league_id)
+        _protected |= load_do_not_drop(_sess_wv.get("account_id"), platform, league_id)
     except Exception:
         logger.debug("suppressed exception", exc_info=True)
 
@@ -1413,7 +1415,7 @@ def _api_waiver_candidates_kdef(position, platform, league_id, season, ctx):
                     "league_uses_def": kd_flags["def"]})
 
 
-@waiver_api_bp.route("/api/waiver-big-games")
+@waiver_bp.route("/api/waiver-big-games")
 def api_waiver_big_games():
     """"Unexpected performances available in your league" (#6/#7).
 
@@ -1574,7 +1576,7 @@ def _sleeper_trending_adds(limit: int = 25, lookback_hours: int = 48) -> list:
     return result[:limit]
 
 
-@waiver_api_bp.route("/api/trending-adds")
+@waiver_bp.route("/api/trending-adds")
 def api_trending_adds():
     """Trending waiver adds across all Sleeper leagues, filtered to players the
     viewer's league can still add (not already rostered), with our value + pos
@@ -1658,3 +1660,130 @@ def api_trending_adds():
         if len(out) >= 12:
             break
     return jsonify({"trending": out})
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Merged from routes/waiver_prefs_bp.py: Per-user, per-league waiver preferences — currently the "Do not drop" list.
+# ────────────────────────────────────────────────────────────────────────────
+
+_TABLE_READY = False
+
+
+def _init_table():
+    global _TABLE_READY
+    if _TABLE_READY:
+        return
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS waiver_do_not_drop (
+                    scope_key   TEXT PRIMARY KEY,
+                    pids        JSONB NOT NULL DEFAULT '[]'::jsonb,
+                    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+            conn.commit()
+        _TABLE_READY = True
+    except Exception as exc:
+        logger.warning("[waiver-prefs] table init failed: %s", exc)
+
+
+def _scope_key(account_id, platform: str, league_id: str) -> "str | None":
+    if account_id in (None, ""):
+        return None
+    return f"acct:{str(account_id).strip()}:{platform}:{league_id}"
+
+
+def _load(scope_key: str) -> list:
+    from dashboard_services.db import get_conn
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT pids FROM waiver_do_not_drop WHERE scope_key = %s",
+            (scope_key,),
+        ).fetchone()
+    if not row:
+        return []
+    pids = row["pids"] if isinstance(row, dict) else row[0]
+    if isinstance(pids, str):
+        try:
+            pids = json.loads(pids)
+        except Exception:
+            return []
+    return [str(p) for p in pids] if isinstance(pids, list) else []
+
+
+def _save(scope_key: str, pids: list) -> list:
+    from dashboard_services.db import get_conn
+    # De-dupe, keep insertion order, cap so a runaway client can't bloat the row.
+    seen, clean = set(), []
+    for p in pids:
+        p = str(p)
+        if p and p not in seen:
+            seen.add(p)
+            clean.append(p)
+        if len(clean) >= 200:
+            break
+    payload = json.dumps(clean)
+    with get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO waiver_do_not_drop (scope_key, pids, updated_at)
+            VALUES (%s, %s::jsonb, NOW())
+            ON CONFLICT (scope_key) DO UPDATE
+              SET pids = EXCLUDED.pids, updated_at = NOW()
+            """,
+            (scope_key, payload),
+        )
+        conn.commit()
+    return clean
+
+
+def load_do_not_drop(account_id, platform: str, league_id: str) -> set:
+    """Set of protected player ids for this account + league. Best-effort: any
+    failure (guest, no table yet, DB down) returns an empty set so the caller
+    degrades to unprotected rather than erroring."""
+    try:
+        key = _scope_key(account_id, str(platform or "sleeper"), str(league_id or ""))
+        if not key:
+            return set()
+        _init_table()
+        return set(_load(key))
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
+        return set()
+
+
+@waiver_bp.route("/api/waiver-do-not-drop", methods=["GET", "POST"])
+def api_waiver_do_not_drop():
+    platform = (request.args.get("platform") or "sleeper").strip().lower()
+    league_id = (request.args.get("league_id") or "").strip()
+    account_id = session.get("account_id")
+    key = _scope_key(account_id, platform, league_id)
+    if not key:
+        # Guests keep the list client-side; server no-ops cleanly.
+        return jsonify({"ok": True, "synced": False, "pids": []})
+
+    _init_table()
+    try:
+        if request.method == "GET":
+            return jsonify({"ok": True, "synced": True, "pids": _load(key)})
+
+        body = request.get_json(silent=True) or {}
+        pid = str(body.get("player_id") or "").strip()
+        action = str(body.get("action") or "add").strip().lower()
+        if not pid:
+            return jsonify({"ok": False, "error": "player_id required"}), 400
+        pids = _load(key)
+        if action == "remove":
+            pids = [p for p in pids if p != pid]
+        else:
+            if pid not in pids:
+                pids.append(pid)
+        saved = _save(key, pids)
+        return jsonify({"ok": True, "synced": True, "pids": saved})
+    except Exception as exc:
+        logger.warning("[waiver-prefs] error: %s", exc)
+        return jsonify({"ok": False, "synced": False, "pids": []}), 500

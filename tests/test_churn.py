@@ -158,7 +158,7 @@ def _webhook_app(monkeypatch, event):
     monkeypatch.setattr(billing, "_stripe", lambda: fake)
     monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_test")
     monkeypatch.setattr(
-        "utils.welcome_email._account_email_row",
+        "utils.email._account_email_row",
         lambda aid: {"id": 42, "email": "al@example.com", "first_name": "Al"},
     )
     monkeypatch.setattr(
@@ -366,7 +366,7 @@ def test_daily_scan_escalates_dunning(monkeypatch):
                         lambda aid, em="": {"id": 42, "email": "al@example.com",
                                             "first_name": "Al"})
     sent = []
-    monkeypatch.setattr("utils.churn_email.send_dunning_touch",
+    monkeypatch.setattr("utils.email.send_dunning_touch",
                         lambda **kw: sent.append(kw) or True)
     monkeypatch.setattr(churn, "record_event", lambda *a, **k: True)
     monkeypatch.setattr(churn, "find_trials_due", lambda: [])

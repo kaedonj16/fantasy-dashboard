@@ -57,10 +57,10 @@ FWD = {"k1": 5.0, "k2": 9.0, "k3": 4.0, "qb1": 20.0, "rb1": 12.0,
 
 def _client(monkeypatch, ctx=None):
     from flask import Flask
-    import routes.waiver_api_bp as waiver
+    import routes.waiver_bp as waiver
 
     app = Flask(__name__)
-    app.register_blueprint(waiver.waiver_api_bp)
+    app.register_blueprint(waiver.waiver_bp)
     monkeypatch.setattr(waiver, "get_nfl_state", lambda: {"season": 2026, "week": 4})
     monkeypatch.setattr(waiver, "get_league_ctx_from_cache", lambda *a: ctx or CTX)
     monkeypatch.setattr(

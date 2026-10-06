@@ -10,20 +10,20 @@ ROOT = Path(__file__).resolve().parents[1]
 
 APP_PY = (ROOT / "app.py").read_text(encoding="utf-8")
 BILLING = (ROOT / "routes" / "billing_bp.py").read_text(encoding="utf-8")
-GOOGLE = (ROOT / "routes" / "google_auth_bp.py").read_text(encoding="utf-8")
-YAHOO = (ROOT / "routes" / "yahoo_auth_bp.py").read_text(encoding="utf-8")
-ADMIN = (ROOT / "routes" / "admin_api_bp.py").read_text(encoding="utf-8")
+GOOGLE = (ROOT / "routes" / "auth_bp.py").read_text(encoding="utf-8")
+YAHOO = (ROOT / "routes" / "auth_bp.py").read_text(encoding="utf-8")
+ADMIN = (ROOT / "routes" / "internal_bp.py").read_text(encoding="utf-8")
 HEALTH = (ROOT / "routes" / "health_bp.py").read_text(encoding="utf-8")
 PUSH = (ROOT / "routes" / "push_bp.py").read_text(encoding="utf-8")
 PUBLIC = (ROOT / "routes" / "public_bp.py").read_text(encoding="utf-8")
 SEO = (ROOT / "routes" / "seo_pages_bp.py").read_text(encoding="utf-8")
-BREAKOUT2 = (ROOT / "routes" / "breakout_api_bp2.py").read_text(encoding="utf-8")
+BREAKOUT2 = (ROOT / "routes" / "advanced_metrics_bp.py").read_text(encoding="utf-8")
 PLAYERS = (ROOT / "dashboard_services" / "pages" / "players_page.py").read_text(encoding="utf-8")
 RANKINGS = (ROOT / "static" / "rankings.js").read_text(encoding="utf-8")
 CSS = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
 SW = (ROOT / "static" / "sw.js").read_text(encoding="utf-8")
 REQS = (ROOT / "requirements.txt").read_text(encoding="utf-8")
-SAFE_URL = (ROOT / "utils" / "safe_url.py").read_text(encoding="utf-8")
+SAFE_URL = (ROOT / "utils" / "core.py").read_text(encoding="utf-8")
 
 
 def test_safe_local_url_helper_rejects_offsite():
@@ -132,8 +132,8 @@ def test_api_exception_handlers_do_not_leak_str_e():
     """Site-audit #23 follow-up: billing/breakout/admin return generic Internal error."""
     for src, label in (
         (BILLING, "billing_bp"),
-        (BREAKOUT2, "breakout_api_bp2"),
-        (ADMIN, "admin_api_bp"),
+        (BREAKOUT2, "advanced_metrics_bp"),
+        (ADMIN, "internal_bp"),
     ):
         assert '"error": str(e)' not in src, label
         assert "'error': str(e)" not in src, label
@@ -386,7 +386,7 @@ def test_checkout_google_uses_link_modal_platforms():
     paywall = (ROOT / "static" / "paywall.js").read_text(encoding="utf-8")
     app_py = (ROOT / "app.py").read_text(encoding="utf-8")
     link_bp = (ROOT / "routes" / "link_bp.py").read_text(encoding="utf-8")
-    google = (ROOT / "routes" / "google_auth_bp.py").read_text(encoding="utf-8")
+    google = (ROOT / "routes" / "auth_bp.py").read_text(encoding="utf-8")
     assert "function _openCheckoutLeaguePicker" in paywall
     assert "window.__brCheckoutPlan" in paywall
     assert "function withCheckout(payload)" in app_py

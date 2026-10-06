@@ -2,7 +2,7 @@ from pathlib import Path
 
 
 def test_google_oidc_uses_pkce_nonce_and_verified_id_token():
-    source = Path("routes/google_auth_bp.py").read_text()
+    source = Path("routes/auth_bp.py").read_text()
     assert '"code_challenge_method": "S256"' in source
     assert '"nonce": nonce' in source
     assert "verify_oauth2_token" in source
@@ -51,4 +51,4 @@ def test_pending_private_credentials_are_encrypted_server_side():
     assert "_encrypt_provider_credentials" in accounts
     assert "expires_at" in migration
     assert 'fetch("/api/link/espn/private/pending"' in script
-    assert "pending_provider_connection_token" in Path("routes/google_auth_bp.py").read_text()
+    assert "pending_provider_connection_token" in Path("routes/auth_bp.py").read_text()

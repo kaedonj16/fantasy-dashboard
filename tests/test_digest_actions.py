@@ -110,7 +110,7 @@ def test_start_sit_swap_note_reuses_projection_upgrades():
     pidx = {"a": {"full_name": "Austin Ekeler", "position": "RB"},
             "b": {"full_name": "Kyren Williams", "position": "RB"}}
     with mock.patch(
-        "utils.lineup_issues.projection_upgrades",
+        "utils.lineups.projection_upgrades",
         return_value=[{"in": "b", "out": "a", "gain": 6.0}],
     ):
         note = start_sit_swap_note(

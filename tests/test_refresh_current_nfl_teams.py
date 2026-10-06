@@ -160,7 +160,7 @@ def test_load_players_index_wires_team_overlay():
     (utils pulls requests/Flask — not in the slim unit-CI image)."""
     from pathlib import Path
 
-    source = Path("utils/utils.py").read_text(encoding="utf-8")
+    source = Path("utils/data_cache.py").read_text(encoding="utf-8")
     assert "def load_players_index()" in source
     assert "def _overlay_players_index(" in source
     assert "apply_team_overlay" in source

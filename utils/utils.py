@@ -1,2858 +1,489 @@
-from __future__ import annotations
+"""Compatibility shim: utils.utils is now split into domain modules.
 
-import glob
-import json
-import os
-import re
-import threading as _threading
-import requests
-import time
-import traceback
-import uuid
-from contextlib import contextmanager as _contextmanager
-from bs4 import BeautifulSoup
-from collections import OrderedDict as _OrderedDict, defaultdict
-from datetime import date, datetime, timezone
-from pathlib import Path
-from typing import Dict, Optional, Any, Callable, List, Iterable, TYPE_CHECKING
+All names that used to live here are re-exported from their new homes,
+so existing `from utils.utils import X` imports keep working unchanged.
+New code should import from the domain module directly (e.g. utils.data_cache).
+"""
 
-if TYPE_CHECKING:
-    import pandas as pd
+import requests  # noqa: F401  (re-exported: original utils.utils did `import requests`)
 
-from dashboard_services.api import (
-    _fetch_league,
-    get_nfl_games_for_week_raw,
-    get_transactions,
-    get_rosters,
-    get_users,
-    get_traded_picks,
-    get_nfl_state,
-    get_nfl_players, fetch_team_game_logs_html, fetch_tank_boxscore, get_matchups,
+from utils.data_cache import (  # noqa: F401,F403
+    CACHE_DIR,
+    DATA_DIR,
+    HEALTH_FILENAME,
+    PLAYER_HISTORY_DIR,
+    PLAYER_INVESTMENT_DIR,
+    ROOT_DIR,
+    STATUS_FINAL,
+    STATUS_IN_PROGRESS,
+    STATUS_NOT_STARTED,
+    _JSON_CACHE,
+    _JSON_CACHE_LOCK,
+    _JSON_CACHE_MAX,
+    _PLAYERS_INDEX_MERGED,
+    _RELEVANT_INDEX_MERGED,
+    _VALID_STATUSES,
+    _WEEK_PROJ_BUILD_LOCK_TIMEOUT,
+    _WEEK_PROJ_EMPTY_MAX_BYTES,
+    _WEEK_PROJ_EMPTY_TTL_SEC,
+    _WEEK_PROJ_FAIL_LOCK,
+    _WEEK_PROJ_FAIL_UNTIL,
+    _WEEK_PROJ_LOCKS,
+    _WEEK_PROJ_LOCKS_GUARD,
+    _WEEK_PROJ_MEMO,
+    _WEEK_PROJ_MEMO_LOCK,
+    _WEEK_PROJ_MEMO_MAX,
+    _WEEK_PROJ_TTL_HOURS,
+    _bye_lookup_for_overlay,
+    _clear_func_cache_for_league,
+    _overlay_players_index,
+    _read_week_projection_file,
+    _remove_empty_week_proj,
+    _restore_week_proj_from_redis,
+    _week_proj_cross_lock,
+    _week_proj_file_is_empty,
+    _week_proj_is_stale,
+    _week_proj_lock,
+    _week_proj_memo_max_from_env,
+    clear_activity_cache_for_league,
+    clear_league_provider_cache_for_league,
+    clear_teams_cache_for_league,
+    clear_weekly_cache_for_league,
+    get_or_refresh_schedule_path,
+    get_players_index_cached,
+    get_week_projections_cached,
+    get_week_schedule_cached,
+    health_path,
+    load_idp_index,
+    load_model_value_table,
+    load_players_index,
+    load_relevant_index,
+    load_teams_index,
+    load_usage_table,
+    load_week_projection,
+    load_week_sched,
+    load_week_schedule,
+    load_week_stats,
+    path_dynastyprocess_values,
+    path_engine_table,
+    path_fantasycalc_sf_values,
+    path_fantasycalc_values,
+    path_idp_index,
+    path_model_value_table,
+    path_players_index,
+    path_relevant_index,
+    path_teams_index,
+    path_usage_table,
+    path_week_proj,
+    path_week_schedule,
+    path_week_stats,
+    read_health,
+    read_json,
+    read_json_cached,
+    save_week_projections,
+    save_week_schedule,
+    write_json,
+    write_step_health,
 )
-from dashboard_services.display_names import team_label_from_user, username_from_user
-# ------------------------------------------------
-# Player info utilities
-# ------------------------------------------------
 
-def from_players_map(pid: str, players_map: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
-    """Get player info from the provided players_map."""
-    info = players_map.get(pid) if players_map else None
-    if info:
-        # support both processed maps (name) and raw Sleeper data (full_name)
-        name = info.get("name") or info.get("full_name") or pid
-        if name == pid:
-            first = info.get("first_name") or ""
-            last  = info.get("last_name") or ""
-            if first or last:
-                name = " ".join(x for x in (first, last) if x)
-        nfl = info.get("team") or "FA"
-        if nfl and nfl != "FA":
-            nfl = canon_team(nfl) or nfl
-        pos = info.get("pos") or info.get("position") or (
-            info.get("fantasy_positions", [""])[0]
-            if info.get("fantasy_positions")
-            else ""
-        )
-        return {"name": name, "nfl": nfl, "pos": pos}
-
-    # DEF fallback is deliberately limited to canonical NFL franchises. An
-    # arbitrary unknown alphabetic player/provider ID must remain unknown.
-    team = canon_team(pid) if pid else None
-    if team in NFL_TEAMS:
-        return {"name": f"{team} D/ST", "nfl": team, "pos": "DEF"}
-
-    return {"name": pid, "nfl": "FA", "pos": ""}
-
-# ------------------------------------------------
-# Core paths / constants
-# ------------------------------------------------
-
-# Project root (adjust if your structure is different)
-ROOT_DIR = Path(__file__).resolve().parents[1]
-
-# Shared data directory
-DATA_DIR = ROOT_DIR / "data"
-DATA_DIR.mkdir(parents=True, exist_ok=True)
-
-# Cache directory
-CACHE_DIR = ROOT_DIR / "cache"
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
-
-BETTER_OUTWARD_METRICS = ["PF", "PA", "MAX", "MIN", "AVG", "STD"]
-# Plain list (not np.array) so importing this module doesn't pull in numpy/pandas.
-# z_better_outward() converts it to an ndarray lazily when actually called.
-BETTER_OUTWARD_SIGNS = [1.0, -1.0, 1.0, 1.0, 1.0, -1.0]
-SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v"}
-PUNCT_RE = re.compile(r"[^a-z0-9 ]+")
-WS_RE = re.compile(r"\s+")
-STATUS_NOT_STARTED = "not_started"
-STATUS_IN_PROGRESS = "in_progress"
-STATUS_FINAL = "final"
-
-TEAM_ALIASES = {
-    "jax": "JAX", "jac": "JAX", "jacksonville": "JAX", "gb": "GB", "gnb": "GB", "nwe": "NE", "ne": "NE",
-    "sfo": "SF", "sf": "SF", "kan": "KC", "kc": "KC", "tam": "TB", "tb": "TB",
-    "was": "WAS", "was football team": "WAS", "wsh": "WAS",
-    "lv": "LV", "oak": "LV", "sd": "LAC", "lac": "LAC", "la chargers": "LAC",
-    "stl": "LAR", "lar": "LAR", "la": "LAR", "la rams": "LAR", "no": "NO", "nor": "NO",
-    "bal": "BAL", "cin": "CIN", "pit": "PIT", "cle": "CLE", "buf": "BUF", "mia": "MIA",
-    "nyj": "NYJ", "nyg": "NYG", "phi": "PHI", "dal": "DAL", "wasdc": "WAS",
-    "min": "MIN", "chi": "CHI", "det": "DET", "atl": "ATL", "car": "CAR", "norleans": "NO",
-    "sea": "SEA", "den": "DEN", "ari": "ARI", "hou": "HOU", "ten": "TEN", "ind": "IND",
-    "philadelphia": "PHI", "philadelphia eagles": "PHI", "eagles": "PHI",
-}
-
-# Bidirectional abbreviation pairs for lookups. The site canonical form is
-# WAS / JAX / LAR; Tank01 and some other feeds still send WSH / JAC / LA.
-TEAM_ABBR_ALIASES = {
-    "WAS": "WSH",
-    "WSH": "WAS",
-    "JAC": "JAX",
-    "JAX": "JAC",
-    "LA": "LAR",
-    "LAR": "LA",
-}
-
-
-def team_abbr_keys(team: str) -> tuple[str, ...]:
-    """Return the team code plus its schedule/index alias, if any."""
-    t = (team or "").strip().upper()
-    if not t:
-        return ()
-    alt = TEAM_ABBR_ALIASES.get(t)
-    return (t, alt) if alt else (t,)
-
-
-def lookup_team_map(mapping: Optional[dict], team: str):
-    """Lookup ``mapping[team]``, trying WAS/WSH (and other abbr aliases)."""
-    if not mapping or not team:
-        return None
-    for key in team_abbr_keys(team):
-        if key in mapping:
-            return mapping[key]
-    return None
-
-
-def canonical_teams_index(teams_index: Optional[dict]) -> dict:
-    """Merge alias keys (WSH into WAS) so each franchise appears once.
-
-    Incoming feeds still use WSH; the site stores and displays WAS. When both
-    keys exist, non-null fields from either copy are kept under WAS.
-    """
-    out: dict = {}
-    for abv, meta in (teams_index or {}).items():
-        if not isinstance(meta, dict):
-            continue
-        canon = canon_team(abv) or str(abv or "").strip().upper()
-        if not canon:
-            continue
-        cur = out.get(canon)
-        if cur is None:
-            out[canon] = dict(meta)
-            continue
-        for k, v in meta.items():
-            if cur.get(k) is None and v is not None:
-                cur[k] = v
-    return out
-
-
-def canonicalize_game_teams(game: Optional[dict]) -> dict:
-    """Rewrite a schedule game's home/away codes to site canonical form (WAS)."""
-    if not isinstance(game, dict):
-        return {}
-    out = dict(game)
-    for field in ("home", "away"):
-        val = out.get(field)
-        if not val:
-            continue
-        canon = canon_team(val)
-        if canon:
-            out[field] = canon
-    return out
-
-
-def canonicalize_schedule(data):
-    """Normalize home/away on a week schedule list (or pass other shapes through)."""
-    if isinstance(data, list):
-        return [
-            canonicalize_game_teams(g) if isinstance(g, dict) else g
-            for g in data
-        ]
-    return data
-
-DST_CANON = {
-    "49ers": "SF",
-    "Patriots": "NE",
-    "Giants": "NYG",
-    "Jets": "NYJ",
-    "Commanders": "WAS",
-    "Chargers": "LAC",
-    "Rams": "LAR",
-    "Raiders": "LV",
-    "Saints": "NO",
-    # ... extend as needed
-}
-
-# Provider payloads use city, full-franchise, and nickname strings in addition
-# to abbreviations.  Keep this shared rather than teaching individual features
-# (notably ScoreZone) one-off franchise exceptions.
-_NFL_FRANCHISES = {
-    "ARI": ("Arizona", "Arizona Cardinals", "Cardinals"), "ATL": ("Atlanta", "Atlanta Falcons", "Falcons"),
-    "BAL": ("Baltimore", "Baltimore Ravens", "Ravens"), "BUF": ("Buffalo", "Buffalo Bills", "Bills"),
-    "CAR": ("Carolina", "Carolina Panthers", "Panthers"), "CHI": ("Chicago", "Chicago Bears", "Bears"),
-    "CIN": ("Cincinnati", "Cincinnati Bengals", "Bengals"), "CLE": ("Cleveland", "Cleveland Browns", "Browns"),
-    "DAL": ("Dallas", "Dallas Cowboys", "Cowboys"), "DEN": ("Denver", "Denver Broncos", "Broncos"),
-    "DET": ("Detroit", "Detroit Lions", "Lions"), "GB": ("Green Bay", "Green Bay Packers", "Packers"),
-    "HOU": ("Houston", "Houston Texans", "Texans"), "IND": ("Indianapolis", "Indianapolis Colts", "Colts"),
-    "JAX": ("Jacksonville", "Jacksonville Jaguars", "Jaguars"), "KC": ("Kansas City", "Kansas City Chiefs", "Chiefs"),
-    "LV": ("Las Vegas", "Las Vegas Raiders", "Raiders"), "LAC": ("Los Angeles Chargers", "Chargers"),
-    "LAR": ("Los Angeles Rams", "Rams"), "MIA": ("Miami", "Miami Dolphins", "Dolphins"),
-    "MIN": ("Minnesota", "Minnesota Vikings", "Vikings"), "NE": ("New England", "New England Patriots", "Patriots"),
-    "NO": ("New Orleans", "New Orleans Saints", "Saints"), "NYG": ("New York Giants", "Giants"),
-    "NYJ": ("New York Jets", "Jets"), "PHI": ("Philadelphia", "Philadelphia Eagles", "Eagles"),
-    "PIT": ("Pittsburgh", "Pittsburgh Steelers", "Steelers"), "SEA": ("Seattle", "Seattle Seahawks", "Seahawks"),
-    "SF": ("San Francisco", "San Francisco 49ers", "49ers"), "TB": ("Tampa Bay", "Tampa Bay Buccaneers", "Buccaneers"),
-    "TEN": ("Tennessee", "Tennessee Titans", "Titans"), "WAS": ("Washington", "Washington Commanders", "Commanders"),
-}
-for _abbr, _names in _NFL_FRANCHISES.items():
-    for _name in _names:
-        TEAM_ALIASES.setdefault(_name.lower(), _abbr)
-
-TANK01_HOST = "disabled.invalid"
-BASE = f"https://{TANK01_HOST}"
-SCHEDULE_CACHE: dict[tuple[int, int], dict] = {}
-SCHEDULE_TTL = 60 * 10  # seconds
-
-TANK01_API_HOST = "disabled.invalid"
-TANK01_API_KEY = os.environ.get("TANK01_API_KEY", "")  # RapidAPI key — set via env
-
-NFL_TEAMS = [
-    "ARI", "ATL", "BAL", "BUF", "CAR", "CHI", "CIN", "CLE", "DAL", "DEN", "DET", "GB",
-    "HOU", "IND", "JAX", "KC", "LAC", "LAR", "LV", "MIA", "MIN", "NE", "NO", "NYG", "NYJ",
-    "PHI", "PIT", "SEA", "SF", "TB", "TEN", "WAS",
-]
-
-
-# ------------------------------------------------
-# Small helpers
-# ------------------------------------------------
-
-def _headers(api_key: str) -> dict:
-    return {
-        "x-rapidapi-host": TANK01_HOST,
-        "x-rapidapi-key": api_key,
-    }
-
-
-def z_better_outward(team_stats: "pd.DataFrame",
-                     metrics=BETTER_OUTWARD_METRICS,
-                     signs=BETTER_OUTWARD_SIGNS) -> "pd.DataFrame":
-    import numpy as np
-    signs = np.asarray(signs, dtype=float)
-    Z = (team_stats[metrics] - team_stats[metrics].mean()) / team_stats[metrics].std(ddof=0)
-    return Z * signs
-
-
-def safe_owner_name(roster_map: dict, rid) -> str:
-    return roster_map.get(str(rid), f"Roster {rid}")
-
-
-# ------------------------------------------------
-# Paths
-# ------------------------------------------------
-
-def path_week_schedule(season: int, week: int) -> str:
-    return os.path.join(CACHE_DIR, f"schedule/schedule_s{season}_w{week}.json")
-
-
-def path_players_index() -> str:
-    return os.path.join(CACHE_DIR, "players_index.json")
-
-
-def path_relevant_index() -> str:
-    return os.path.join(CACHE_DIR, "players_index_relevant.json")
-
-
-def path_usage_table() -> str:
-    return os.path.join(DATA_DIR, "usage_table.json")
-
-
-def path_engine_table() -> str:
-    return os.path.join(DATA_DIR, "engine_values.csv")
-
-
-def path_model_value_table() -> str:
-    return str(DATA_DIR / "model_values.json")
-
-
-def path_teams_index() -> str:
-    return os.path.join(CACHE_DIR, "teams_index.json")
-
-
-def path_idp_index() -> str:
-    return os.path.join(CACHE_DIR, "idp_players_index.json")
-
-
-def path_week_proj(season: int, week: int) -> str:
-    return os.path.join(CACHE_DIR, f"projections/projections_s{season}_w{week}.json")
-
-
-def path_week_stats(season: int, week: int) -> str:
-    return os.path.join(CACHE_DIR, f"stats/week_stats_s{season}_w{week}.json")
-
-
-def path_fantasycalc_values() -> str:
-    return os.path.join(DATA_DIR, "fantasycalc_api_values.csv")
-
-
-def path_fantasycalc_sf_values() -> str:
-    return os.path.join(DATA_DIR, "fantasycalc_sf_api_values.csv")
-
-
-def path_dynastyprocess_values() -> str:
-    return os.path.join(DATA_DIR, "dynastyprocess_values.csv")
-
-
-# ------------------------------------------------
-# JSON / table IO
-# ------------------------------------------------
-
-def read_json(path: str) -> Optional[dict]:
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return None
-
-
-# mtime+size-guarded in-memory cache for large, frequently-read JSON files
-# (e.g. the 1.1 MB players_index, weekly projections, usage_rows). Avoids re-parsing
-# the same file dozens of times per request. The cached object is SHARED — treat
-# it as read-only.
-try:
-    _JSON_CACHE_MAX = max(1, int(os.getenv("JSON_CACHE_MAX", "16")))
-except (TypeError, ValueError):
-    _JSON_CACHE_MAX = 16
-_JSON_CACHE: Dict[str, tuple] = _OrderedDict()
-_JSON_CACHE_LOCK = _threading.Lock()
-
-
-def read_json_cached(path: str) -> Optional[dict]:
-    try:
-        st = os.stat(path)
-    except OSError:
-        return None
-    sig = (st.st_mtime_ns, st.st_size)
-    with _JSON_CACHE_LOCK:
-        hit = _JSON_CACHE.get(path)
-        if hit is not None and hit[0] == sig:
-            _JSON_CACHE.move_to_end(path)
-            return hit[1]
-        if hit is not None:
-            _JSON_CACHE.pop(path, None)
-    data = read_json(path)
-    if data is not None:
-        with _JSON_CACHE_LOCK:
-            _JSON_CACHE[path] = (sig, data)
-            _JSON_CACHE.move_to_end(path)
-            while len(_JSON_CACHE) > _JSON_CACHE_MAX:
-                _JSON_CACHE.popitem(last=False)
-    return data
-
-
-def write_json(path, data):
-    """
-    Safely writes a JSON object to disk.
-    Works with both string and Path objects.
-    """
-    p = Path(path)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    # Unique tmp per writer: a shared tmp name made concurrent writers for
-    # the same path collide -- the first replace won and the second raised
-    # Errno 2, discarding the work and forcing a refetch.
-    tmp = p.parent / (p.name + f".tmp-{os.getpid()}-{uuid.uuid4().hex}")
-    try:
-        with tmp.open("w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        tmp.replace(p)
-    except Exception:
-        try:
-            tmp.unlink()
-        except OSError:
-            pass
-        raise
-
-
-# Overlay cache for DB-backed current NFL teams on top of the JSON index.
-# Keyed by (base object id, overlay version) so a file reload or DB refresh
-# rebuilds the merged view without mutating the shared JSON parse.
-_PLAYERS_INDEX_MERGED: Dict[str, object] = {"sig": None, "data": None}
-_RELEVANT_INDEX_MERGED: Dict[str, object] = {"sig": None, "data": None}
-
-
-def _bye_lookup_for_overlay() -> Dict[str, int]:
-    """Best-effort team -> byeWeek map for overlay (avoids circular import cost)."""
-    try:
-        teams = read_json_cached(path_teams_index()) or {}
-    except Exception:
-        return {}
-    out: Dict[str, int] = {}
-    for abv, meta in teams.items():
-        if not isinstance(meta, dict):
-            continue
-        bye = meta.get("byeWeek")
-        if bye is None:
-            continue
-        try:
-            out[str(abv).strip().upper()] = int(bye)
-        except (TypeError, ValueError):
-            continue
-    # Alias variants used by some feeds.
-    if "WAS" in out and "WSH" not in out:
-        out["WSH"] = out["WAS"]
-    if "LAR" in out and "LA" not in out:
-        out["LA"] = out["LAR"]
-    if "JAX" in out and "JAC" not in out:
-        out["JAC"] = out["JAX"]
-    return out
-
-
-def _overlay_players_index(base: Optional[Dict], cache_slot: Dict[str, object]) -> Optional[Dict]:
-    """Apply player_current_team DB overlay onto a players index dict."""
-    if not isinstance(base, dict):
-        return base
-    try:
-        from data_building.external_data.player_current_team import (
-            apply_team_overlay,
-            load_current_team_overlay,
-        )
-    except Exception:
-        return base
-
-    overlay = load_current_team_overlay()
-    if not overlay:
-        return base
-
-    # Version the overlay by size + a few sample values so TTL expiry rebuilds.
-    overlay_ver = (len(overlay), sum(hash(f"{k}:{v}") & 0xFFFF for k, v in list(overlay.items())[:32]))
-    sig = (id(base), overlay_ver)
-    if cache_slot.get("sig") == sig and isinstance(cache_slot.get("data"), dict):
-        return cache_slot["data"]  # type: ignore[return-value]
-
-    merged = apply_team_overlay(base, overlay, bye_by_team=_bye_lookup_for_overlay())
-    cache_slot["sig"] = sig
-    cache_slot["data"] = merged
-    return merged
-
-
-def load_players_index() -> Optional[Dict]:
-    """Returns the cached player index (Sleeper ↔ Tank01/name/team) or None.
-
-    Uses an mtime-guarded in-memory cache: this 1.1 MB file is read dozens of
-    times per request, so re-parsing it each time is pure CPU waste. The
-    returned dict is shared — callers must treat it as read-only.
-
-    Current NFL team is overlaid from the shared ``player_current_team`` table
-    when available, so the web service picks up daily trade/FA updates written
-    by cron (cron and web do not share a filesystem).
-    """
-    base = read_json_cached(path_players_index())
-    return _overlay_players_index(base, _PLAYERS_INDEX_MERGED)
-
-
-def load_relevant_index() -> Optional[Dict]:
-    """Returns the cached relevant-players index or None.
-
-    Uses the same mtime-guarded in-memory cache as load_players_index: the
-    player modal fires several endpoints per open and each one was re-reading
-    and re-parsing this ~586KB file from disk. The returned dict is shared --
-    callers must treat it as read-only.
-    """
-    base = read_json_cached(path_relevant_index())
-    return _overlay_players_index(base, _RELEVANT_INDEX_MERGED)
-
-def load_usage_table() -> Optional[Dict]:
-    # Try today's file first, then fall back to most recent existing file
-    today = read_json(path_usage_table())
-    if today is not None:
-        return today
-    candidates = sorted(DATA_DIR.glob("usage_table_*.json"), reverse=True)
-    for c in candidates:
-        data = read_json(str(c))
-        if data is not None:
-            return data
-    return None
-
-
-def load_model_value_table(apply_calibration: bool = True):
-    # Return ONLY the parsed JSON data, not the path object
-    result = read_json(path_model_value_table())
-
-    # Fallback to database if JSON file doesn't exist.
-    # Prefer player_values (current, one-row-per-player) over player_value_history.
-    if result is None:
-        try:
-            from dashboard_services.player_value_history import load_current_values_from_db
-            result = load_current_values_from_db()
-            if result:
-                print(f"[load_model_value_table] Loaded {len(result)} players from player_values table")
-        except Exception as e:
-            print(f"[load_model_value_table] Failed to load from player_values: {e}")
-
-    if result is None:
-        try:
-            from dashboard_services.player_value_history import load_latest_value_snapshot
-            result = load_latest_value_snapshot()
-            if result:
-                print(f"[load_model_value_table] Loaded {len(result)} players from player_value_history (fallback)")
-        except Exception as e:
-            print(f"[load_model_value_table] Failed to load from player_value_history: {e}")
-
-    # Overlay trade-data calibrated values where available.
-    # Only applies when called from the web layer (apply_calibration=True).
-    # The model-update pipeline passes apply_calibration=False to preserve
-    # the raw model prior in player_values.value_1qb.
-    if result and apply_calibration:
-        try:
-            from dashboard_services.player_value_history import load_calibration_overrides
-            overrides = load_calibration_overrides()
-            if overrides:
-                for _p in result:
-                    _pid = str(_p.get("id") or "")
-                    if _pid in overrides:
-                        _cal = overrides[_pid]
-                        _p["value"]    = _cal["value"]
-                        _p["sf_value"] = _cal["sf_value"]
-                        # Overlay size-specific calibrated values when available
-                        for _sz in (8, 12, 14):
-                            if f"value_{_sz}" in _cal:
-                                _p[f"value_{_sz}"]    = _cal[f"value_{_sz}"]
-                            if f"sf_value_{_sz}" in _cal:
-                                _p[f"sf_value_{_sz}"] = _cal[f"sf_value_{_sz}"]
-
-                # Recompute pos_rank / pos_rank_label after calibration changes values.
-                # The JSON ranks are based on raw model values; calibration can reorder
-                # players within a position so the labels must be rebuilt.
-                from collections import defaultdict as _dd
-                _pos_idx: dict = _dd(list)
-                for _i, _p in enumerate(result):
-                    _pos = str(_p.get("position") or "").upper()
-                    if _pos and _pos != "PICK":
-                        _pos_idx[_pos].append(_i)
-                for _pos, _idxs in _pos_idx.items():
-                    _idxs.sort(key=lambda _i: float(result[_i].get("value") or 0), reverse=True)
-                    for _rank, _i in enumerate(_idxs, 1):
-                        result[_i]["pos_rank"]       = _rank
-                        result[_i]["pos_rank_label"] = f"{_pos}{_rank}"
-                _sf_pos_idx: dict = _dd(list)
-                for _i, _p in enumerate(result):
-                    _pos = str(_p.get("position") or "").upper()
-                    if _pos and _pos != "PICK":
-                        _sf_pos_idx[_pos].append(_i)
-                for _pos, _idxs in _sf_pos_idx.items():
-                    _idxs.sort(key=lambda _i: float(result[_i].get("sf_value") or 0), reverse=True)
-                    for _rank, _i in enumerate(_idxs, 1):
-                        result[_i]["sf_pos_rank"]       = _rank
-                        result[_i]["sf_pos_rank_label"] = f"{_pos}{_rank}"
-        except Exception as _e:
-            print(f"[load_model_value_table] Calibration overlay skipped: {_e}")
-
-    return result
-
-
-def load_teams_index() -> Optional[Dict]:
-    """Returns the cached teams index or None.
-
-    Alias keys such as WSH are merged into WAS so Washington appears once.
-    """
-    raw = read_json(path_teams_index())
-    if not raw:
-        return raw
-    return canonical_teams_index(raw)
-
-
-def load_idp_index() -> Optional[Dict]:
-    """Returns the cached teams index or None."""
-    return read_json(path_idp_index())
-
-
-def load_week_stats(season: int, week: int) -> Optional[Dict]:
-    """Returns cached weekly stats or None."""
-    return read_json(path_week_stats(season, week))
-
-
-def load_week_sched(season: int, week: int) -> Optional[Dict]:
-    """Returns cached weekly schedule or None."""
-    return canonicalize_schedule(read_json(path_week_schedule(season, week)))
-
-
-def load_week_schedule(season: int, w: int):
-    """
-    Load schedule for (season, week), fetching and caching if needed.
-    """
-    week_path = Path(path_week_schedule(season, w))
-    if not week_path.exists():
-        # FIX: use keyword args so order is correct
-        get_week_schedule_cached(season=season, week=w, fetch_fn=get_nfl_games_for_week_raw)
-
-    with open(week_path, "r", encoding="utf-8") as f:
-        schedule = json.load(f)
-
-    return canonicalize_schedule(schedule)
-
-
-def _week_proj_memo_max_from_env() -> int:
-    try:
-        return max(1, int(os.getenv("WEEK_PROJ_MEMO_MAX", "24")))
-    except (TypeError, ValueError):
-        return 24
-
-
-_WEEK_PROJ_MEMO_MAX = _week_proj_memo_max_from_env()
-_WEEK_PROJ_MEMO: _OrderedDict = _OrderedDict()
-_WEEK_PROJ_MEMO_LOCK = _threading.Lock()
-
-
-def _read_week_projection_file(season: int, w: int, use_memo: bool = True) -> Dict:
-    """Parse the on-disk cache for (season, week) through the bounded LRU memo.
-
-    Never fetches: returns {} when the file is missing or unreadable.  The
-    memo is an LRU keyed by (season, week, mtime); inserting past
-    ``_WEEK_PROJ_MEMO_MAX`` evicts only the oldest entries (the previous
-    clear-all behavior dropped every week's parsed copy at once and forced
-    a re-parse storm on the next requests).
-    """
-    proj_path = Path(path_week_proj(season, w))
-    if not proj_path.exists():
-        return {}
-
-    try:
-        mtime = proj_path.stat().st_mtime
-    except OSError:
-        mtime = None
-    memo_key = (int(season), int(w), mtime)
-    if use_memo:
-        with _WEEK_PROJ_MEMO_LOCK:
-            cached = _WEEK_PROJ_MEMO.get(memo_key)
-            if cached is not None:
-                _WEEK_PROJ_MEMO.move_to_end(memo_key)
-                return cached
-
-    try:
-        with open(proj_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        data = data if isinstance(data, dict) else {}
-    except Exception as e:
-        print(f"[projections] load failed for {season} w{w}: {e}")
-        return {}
-    with _WEEK_PROJ_MEMO_LOCK:
-        _WEEK_PROJ_MEMO[memo_key] = data
-        _WEEK_PROJ_MEMO.move_to_end(memo_key)
-        while len(_WEEK_PROJ_MEMO) > _WEEK_PROJ_MEMO_MAX:
-            _WEEK_PROJ_MEMO.popitem(last=False)
-    return data
-
-
-def load_week_projection(season: int, w: int, force_refresh: bool = False) -> Optional[Dict]:
-    """
-    Load projections cache for (season, week). Returns multi-variant dict or {}.
-    """
-    proj_path = Path(path_week_proj(season, w))
-    if (not proj_path.exists() or force_refresh
-            or _week_proj_is_stale(season, w, str(proj_path))):
-        try:
-            get_week_projections_cached(season, w, fetch_week_projections, force_refresh=force_refresh)
-        except Exception as e:
-            print(f"[projections] fetch failed for {season} w{w}: {e}")
-
-    return _read_week_projection_file(season, w, use_memo=not force_refresh)
-
-
-def save_week_projections(season: int, week: int, proj_map: dict) -> None:
-    write_json(path_week_proj(season, week), proj_map)
-    # Persist to Redis (fail-soft) so a fresh instance with an empty disk
-    # cache can restore this week instead of refetching it from Sleeper.
-    try:
-        from dashboard_services import proj_store
-
-        proj_store.save(season, week, proj_map)
-    except Exception:
-        pass
-
-
-def save_week_schedule(season: int, week: int, data: List[Dict]) -> None:
-    write_json(path_week_schedule(season, week), canonicalize_schedule(data))
-
-
-# ------------------------------------------------
-# Tank01 – indexes & projections
-# ------------------------------------------------
-
-_WEEK_PROJ_TTL_HOURS = 1   # re-fetch the live week's projections at most hourly
-_WEEK_PROJ_EMPTY_TTL_SEC = 15 * 60
-_WEEK_PROJ_EMPTY_MAX_BYTES = 16
-# Failed / empty Sleeper fetches must not poison disk (deployed ``{}``
-# placeholders + "fresh today" cron skips caused "Projections unavailable").
-# Back off in-process instead of writing empty cache files.
-_WEEK_PROJ_FAIL_UNTIL: Dict[tuple, float] = {}
-_WEEK_PROJ_FAIL_LOCK = _threading.Lock()
-
-
-def _week_proj_file_is_empty(cache_path: str) -> bool:
-    """True for a missing file or a failed-fetch ``{}`` placeholder."""
-    try:
-        return os.path.getsize(cache_path) < _WEEK_PROJ_EMPTY_MAX_BYTES
-    except OSError:
-        return True
-
-
-def _remove_empty_week_proj(cache_path: str) -> None:
-    """Delete a ``{}`` placeholder so it cannot look like a real cache hit."""
-    if not _week_proj_file_is_empty(cache_path):
-        return
-    try:
-        os.remove(cache_path)
-    except OSError:
-        pass
-
-
-def _week_proj_is_stale(season: int, week: int, cache_path: str) -> bool:
-    """True when the cache should be re-fetched.
-
-    Completed weeks (and past seasons) never change, so a *populated* cache
-    is permanent. An empty ``{}`` file is never a real projection set — treat
-    it as missing so the next request refetches (failed-fetch backoff lives
-    in memory, not on disk).
-    """
-    if _week_proj_file_is_empty(cache_path):
-        return True
-    try:
-        age = time.time() - os.path.getmtime(cache_path)
-    except OSError:
-        return True
-    try:
-        state = get_nfl_state() or {}
-        cur_season = int(state.get("season") or 0)
-        cur_week   = int(state.get("week") or state.get("leg") or 0)
-    except Exception:
-        return False
-    if cur_season == 0 or season < cur_season:
-        return False                      # past season → immutable
-    if season == cur_season and week < cur_week:
-        return False                      # already-completed week → immutable
-    return age > _WEEK_PROJ_TTL_HOURS * 3600
-
-
-# ------------------------------------------------
-# Week-projection singleflight (in-process + cross-process)
-# ------------------------------------------------
-
-_WEEK_PROJ_BUILD_LOCK_TIMEOUT = 20.0
-_WEEK_PROJ_LOCKS: Dict[tuple, _threading.RLock] = {}
-_WEEK_PROJ_LOCKS_GUARD = _threading.Lock()
-
-
-def _week_proj_lock(season: int, week: int) -> _threading.RLock:
-    """Per-(season, week) in-process lock from a small guarded registry.
-
-    An RLock because load_week_projection can re-enter
-    get_week_projections_cached for the same week on the same thread.
-    Distinct (season, week) pairs are bounded in practice (18 weeks per
-    season), so the registry needs no eviction.
-    """
-    key = (int(season), int(week))
-    with _WEEK_PROJ_LOCKS_GUARD:
-        lock = _WEEK_PROJ_LOCKS.get(key)
-        if lock is None:
-            lock = _threading.RLock()
-            _WEEK_PROJ_LOCKS[key] = lock
-        return lock
-
-
-@_contextmanager
-def _week_proj_cross_lock(season: int, week: int):
-    """Yield True when the caller may fetch, False when another process owns it.
-
-    Wraps the cross-process resource_build_lock (Postgres advisory lock, flock
-    fallback).  Fail-open by design: if the lock machinery itself errors
-    (import failure, no database and no fcntl, ...), the caller proceeds
-    under the in-process lock alone rather than losing projections entirely.
-    """
-    try:
-        from dashboard_services.league_singleflight import (
-            LeagueBuildBusy,
-            resource_build_lock,
-        )
-    except Exception:
-        yield True
-        return
-    cm = resource_build_lock(
-        f"projections:{int(season)}:{int(week)}",
-        timeout=_WEEK_PROJ_BUILD_LOCK_TIMEOUT,
-    )
-    try:
-        cm.__enter__()
-    except LeagueBuildBusy:
-        yield False
-        return
-    except Exception:
-        yield True
-        return
-    try:
-        yield True
-    finally:
-        try:
-            cm.__exit__(None, None, None)
-        except Exception:
-            pass
-
-
-def _restore_week_proj_from_redis(season: int, week: int, cache_path: str) -> Optional[Dict]:
-    """Restore a missing week-projection file from Redis, or None.
-
-    Writes the file only (never re-saves to Redis, so restores cannot loop)
-    and stamps its mtime with the stored ``saved_at`` so the existing
-    staleness logic judges the restored copy exactly like a fetched one.
-    Returns the data when the restored file is usable and not stale; None
-    sends the caller down the normal Sleeper fetch path.
-    """
-    try:
-        from dashboard_services import proj_store
-
-        hit = proj_store.load(season, week)
-    except Exception:
-        return None
-    if not hit:
-        return None
-    saved_at, data = hit
-    if not isinstance(data, dict) or not data:
-        return None
-    stamp = saved_at if saved_at and saved_at > 0 else time.time()
-    try:
-        write_json(cache_path, data)
-        os.utime(cache_path, (stamp, stamp))
-    except Exception:
-        return None
-    if _week_proj_is_stale(season, week, cache_path):
-        return None
-    return _read_week_projection_file(season, week) or data
-
-
-def get_week_projections_cached(
-        season: int,
-        week: int,
-        fetch_fn: Callable[[int, int], Dict],
-        force_refresh: bool = False,
-) -> Dict:
-    """
-    fetch_fn returns { sleeper_id: {ppr, half_ppr, std, tep, ...} }.
-
-    Concurrency contract: projections are league-independent, so at most one
-    thread/process fetches a (season, week) at a time.  Waiters re-check the
-    disk cache after acquiring the locks and serve the winner's file.
-    ``force_refresh`` is debounced: it refetches only when the file is
-    missing, empty, or stale, so per-league live-week refresh calls cannot
-    each trigger a Sleeper fetch inside the TTL window.
-    """
-    cache_path = path_week_proj(season, week)
-    memo_key = (int(season), int(week))
-
-    if os.path.exists(cache_path):
-        # Serve from disk unless this is the live week and its cache has aged
-        # out.  This now applies to force_refresh too (the debounce above).
-        # Empty ``{}`` placeholders are always stale and are removed below.
-        if not _week_proj_is_stale(season, week, cache_path):
-            return load_week_projection(season, week) or {}
-        _remove_empty_week_proj(cache_path)
-
-    if not force_refresh:
-        with _WEEK_PROJ_FAIL_LOCK:
-            fail_until = _WEEK_PROJ_FAIL_UNTIL.get(memo_key, 0.0)
-        if fail_until and time.time() < fail_until:
-            return {}
-
-    with _week_proj_lock(season, week):
-        # Re-check after acquiring: another thread may have just fetched.
-        if os.path.exists(cache_path):
-            if not _week_proj_is_stale(season, week, cache_path):
-                return _read_week_projection_file(season, week)
-            _remove_empty_week_proj(cache_path)
-
-        if not force_refresh:
-            with _WEEK_PROJ_FAIL_LOCK:
-                fail_until = _WEEK_PROJ_FAIL_UNTIL.get(memo_key, 0.0)
-            if fail_until and time.time() < fail_until:
-                return {}
-
-        with _week_proj_cross_lock(season, week) as may_fetch:
-            if not may_fetch:
-                # Another process is fetching; serve whatever is on disk
-                # (possibly {}) instead of duplicating the fetch.
-                return _read_week_projection_file(season, week)
-
-            # Re-check again: the previous lock owner may have written the
-            # file while this caller waited on the cross-process lock.
-            if os.path.exists(cache_path):
-                if not _week_proj_is_stale(season, week, cache_path):
-                    return _read_week_projection_file(season, week)
-                _remove_empty_week_proj(cache_path)
-
-            if not os.path.exists(cache_path):
-                restored = _restore_week_proj_from_redis(season, week, cache_path)
-                if restored is not None:
-                    return restored
-
-            data = fetch_fn(season, week) or {}
-            if data:
-                with _WEEK_PROJ_FAIL_LOCK:
-                    _WEEK_PROJ_FAIL_UNTIL.pop(memo_key, None)
-                save_week_projections(season, week, proj_map=data)
-                return data
-
-            # Do not persist ``{}`` — it masquerades as a populated cache
-            # after deploys and cron "fresh today" checks. Back off briefly
-            # in this process instead.
-            with _WEEK_PROJ_FAIL_LOCK:
-                _WEEK_PROJ_FAIL_UNTIL[memo_key] = time.time() + _WEEK_PROJ_EMPTY_TTL_SEC
-            _remove_empty_week_proj(cache_path)
-            return {}
-
-
-def get_or_refresh_schedule_path(season: int, week: int) -> Optional[str]:
-    path = path_week_schedule(season, week)
-    return path if os.path.exists(path) else None
-
-
-def get_week_schedule_cached(
-        season: int,
-        week: int,
-        fetch_fn: Callable[[int, int, str], List[Dict]],
-        season_type: str = "reg",
-) -> List[Dict]:
-    """
-    fetch_fn should call Tank01 /getNFLSchedule (or your schedule endpoint)
-    and return a list[dict] of games.
-    """
-    cache_path = get_or_refresh_schedule_path(season, week)
-
-    if cache_path is not None:
-        # Just load via your schedule loader
-        return load_week_schedule(season, week)
-
-    # no cache for today → fetch and save
-    data = fetch_fn(week, season, season_type)
-    save_week_schedule(season, week, data)
-    return data
-
-
-def get_players_index_cached(rapidapi_key: str = "") -> Dict[str, Dict[str, Any]]:
-    """Load the preserved legacy identity crosswalk without network I/O.
-
-    Sleeper/ESPN metadata owns future refreshes.  The unused argument remains
-    for source compatibility with maintenance callers.
-    """
-    cache_path = CACHE_DIR / "tank01-players_index.json"
-    if cache_path.exists():
-        with cache_path.open("r", encoding="utf-8") as f:
-            return json.load(f)
-    return {}
-
-def canon_team(t: Optional[str]) -> Optional[str]:
-    if not t:
-        return None
-    t0 = str(t).strip().replace("_", " ")
-    t0 = re.sub(r"\s+NFL$", "", t0, flags=re.IGNORECASE).strip()
-    t0 = re.sub(r"\s+DEFENSE$", "", t0, flags=re.IGNORECASE).strip()
-    # e.g., "49ers D/ST" => "49ers"
-    if "D/ST" in t0 or "DST" in t0:
-        t0 = t0.replace("D/ST", "").replace("DST", "").strip()
-    up = TEAM_ALIASES.get(t0.lower(), t0.upper())
-    # If still not a 2–3 letter code but a nickname like "49ers", map to code
-    return DST_CANON.get(up, up)
-
-
-def norm_name(s: str) -> str:
-    """
-    Lowercase, remove punctuation, collapse spaces, strip suffixes like Jr., III.
-    Also converts 'Lastname, Firstname' -> 'firstname lastname'.
-    """
-    s = s.strip()
-    if "," in s and s.count(",") == 1:
-        last, first = [x.strip() for x in s.split(",", 1)]
-        s = f"{first} {last}"
-    s = s.replace("’", "'").replace("`", "'")
-    s = PUNCT_RE.sub(" ", s.lower())
-    s = WS_RE.sub(" ", s).strip()
-    # remove suffix tokens at the end
-    parts = s.split()
-    while parts and parts[-1] in SUFFIXES:
-        parts.pop()
-    return " ".join(parts)
-
-
-def get_league_rostered_player_ids(league_id: str) -> Dict[str, List[str]]:
-    """Return {str(roster_id): [player_id,...]} for all roster + IR slots."""
-    rosters = get_rosters(league_id) or []
-    by_roster: Dict[str, List[str]] = {}
-    for r in rosters:
-        rid = str(r.get("roster_id"))
-        main = r.get("players") or []
-        reserve = r.get("reserve") or []
-        by_roster[rid] = [str(p) for p in (list(main) + list(reserve)) if p]
-    return by_roster
-
-
-def streak_class(row) -> str:
-    typ = (row.get("StreakType") or "").upper()
-    ln = int(row.get("StreakLen") or 0)
-    if typ == "W" and ln >= 2:
-        return "streak-hot"
-    if typ == "L" and ln >= 2:
-        return "streak-cold"
-    return ""
-
-
-def streak_edge_class(streak) -> str:
-    """Granular edge-signal class for a streak string like 'W3' / 'L2'.
-
-    Returns ``streak-w1`` / ``streak-w2`` / ``streak-w3`` / ``streak-w4plus``
-    (or the ``streak-l*`` equivalents); ``''`` when the streak is empty or
-    unparseable. W1/L1 are intentionally included so the caller can render
-    them as a whisper; 4+ caps the intensity scale.
-    """
-    m = re.match(r"^([WLwl])\s*(\d+)\s*$", str(streak or "").strip())
-    if not m:
-        return ""
-    n = int(m.group(2))
-    if n <= 0:
-        return ""
-    side = "w" if m.group(1).upper() == "W" else "l"
-    band = "1" if n == 1 else "2" if n == 2 else "3" if n == 3 else "4plus"
-    return f"streak-{side}{band}"
-
-
-def fetch_week_from_tank01(season: int, week: int, raw_scoring_settings: dict = None) -> dict:
-    """Compatibility shim: paid weekly projections are unavailable.
-
-    Callers continue through their existing non-paid projection hierarchy; no
-    season totals or play-by-play estimates are substituted.
-    """
-    return {}
-
-def _sleeper_stats_to_variants(st: dict, pos: str, raw_scoring_settings: dict = None) -> Optional[dict]:
-    """
-    Compute all scoring variants from a Sleeper raw-stats dict.
-
-    Sleeper's projections endpoint returns projected stat lines
-    (pass_yd, pass_td, rec, rec_yd, ...) — not pre-computed pts_ppr.
-    When raw_scoring_settings is supplied the league-specific values are
-    used, otherwise standard defaults apply. All seven variants are
-    computed so pick_proj_variant() can select the right one later.
-    """
-    ss = raw_scoring_settings or {}
-    TEP_BONUS = 0.5
-
-    pass_yd  = float(st.get("pass_yd")  or 0)
-    pass_td  = float(st.get("pass_td")  or 0)
-    pass_int = float(st.get("pass_int") or 0)
-    rush_yd  = float(st.get("rush_yd")  or 0)
-    rush_td  = float(st.get("rush_td")  or 0)
-    rec      = float(st.get("rec")      or 0)
-    rec_yd   = float(st.get("rec_yd")   or 0)
-    rec_td   = float(st.get("rec_td")   or 0)
-    fum_lost = float(st.get("fum_lost") or 0)
-
-    # Do not discard kickers, defenses, returners, or IDP projections merely
-    # because they have no offensive yardage. Keep any numeric projected stat
-    # that the league can score. ADP-only rows (``adp_*`` / ``pos_adp_*``)
-    # are not projections — Sleeper pads the feed with those before weekly
-    # lines publish, and treating them as 0.0 projections hid real misses.
-    def _is_proj_stat(key: str, value: Any) -> bool:
-        if not isinstance(value, (int, float)) or value == 0:
-            return False
-        k = str(key).lower()
-        if k.startswith("adp") or k.startswith("pos_adp"):
-            return False
-        return True
-
-    if not any(_is_proj_stat(k, v) for k, v in st.items()):
-        return None
-
-    # League-specific scoring rates (with standard defaults)
-    pass_yd_rate  = float(ss.get("pass_yd",        ss.get("passYards",         0.04)))
-    pass_td_rate  = float(ss.get("pass_td",        ss.get("passTD",            4.0)))
-    pass_int_rate = float(ss.get("pass_int",       ss.get("passInterceptions", -2.0)))
-    rush_yd_rate  = float(ss.get("rush_yd",        ss.get("rushYards",         0.1)))
-    rush_td_rate  = float(ss.get("rush_td",        ss.get("rushTD",            6.0)))
-    rec_yd_rate   = float(ss.get("rec_yd",         ss.get("receivingYards",    0.1)))
-    rec_td_rate   = float(ss.get("rec_td",         ss.get("receivingTD",       6.0)))
-    fum_rate      = float(ss.get("fum_lost",       ss.get("fumbles",           -2.0)))
-    te_bonus_rate = float(ss.get("bonus_rec_te",   0.0))
-
-    base = (
-        pass_yd  * pass_yd_rate
-        + pass_td  * pass_td_rate
-        + pass_int * pass_int_rate
-        + rush_yd  * rush_yd_rate
-        + rush_td  * rush_td_rate
-        + rec_yd   * rec_yd_rate
-        + rec_td   * rec_td_rate
-        + fum_lost * fum_rate
-    )
-
-    ppr  = base + rec * 1.0
-    half = base + rec * 0.5
-    std  = base
-
-    # TE premium: use league's bonus_rec_te if set, else standard 0.5
-    tep_rate = te_bonus_rate if te_bonus_rate > 0 else TEP_BONUS
-    tep = ppr + (rec * tep_rate if pos == "TE" else 0.0)
-
-    # 6pt passing TD: difference vs the league's actual pass_td rate
-    td6 = pass_td * max(0.0, 6.0 - pass_td_rate)
-
-    return {
-        # Preserve the source stat line in the shared cache. Each league can then
-        # apply its complete scoring settings at read time without cache pollution
-        # from whichever league happened to fetch this week first.
-        "raw_stats": dict(st),
-        "ppr":      round(ppr, 2),
-        "half_ppr": round(half, 2),
-        "std":      round(std, 2),
-        "tep":      round(tep, 2),
-        "6pt_ppr":  round(ppr  + td6, 2),
-        "6pt_half": round(half + td6, 2),
-        "6pt_tep":  round(tep  + td6, 2),
-    }
-
-
-def fetch_week_from_sleeper(season: int, week: int, raw_scoring_settings: dict = None) -> dict:
-    """
-    Fetch Sleeper's own weekly projections, keyed by Sleeper player_id.
-    The API returns projected stat lines; fantasy points are computed here
-    from those raw stats. The raw line is cached so each league applies its
-    complete scoring settings at read time.
-    Returns {} on any failure so the caller can fall back to Tank01.
-    """
-    url = f"https://api.sleeper.app/v1/projections/nfl/regular/{season}/{week}"
-    try:
-        print(f"📡 Fetching Sleeper projections for {season} Week {week}...")
-        resp = requests.get(url, timeout=20)
-        if resp.status_code != 200:
-            print(f"⚠️ Sleeper projections error {resp.status_code}: {resp.text[:160]}")
-            return {}
-        data = resp.json()
-    except Exception as e:
-        print(f"⚠️ Sleeper projections fetch failed: {e}")
-        return {}
-
-    # Response is {player_id: {stats: {...}}} or {player_id: {...flat stats...}}
-    rows = []
-    if isinstance(data, dict):
-        for pid, entry in data.items():
-            if isinstance(entry, dict):
-                rows.append((str(pid), entry))
-    elif isinstance(data, list):
-        for entry in data:
-            if isinstance(entry, dict):
-                pid = str(entry.get("player_id") or "")
-                if pid:
-                    rows.append((pid, entry))
-
-    players_index = load_players_index() or {}
-    out: dict = {}
-    for pid, entry in rows:
-        if isinstance(entry.get("stats"), dict):
-            st = dict(entry["stats"])
-            # Depending on the projection feed/version, Sleeper's displayed
-            # totals live beside ``stats`` rather than inside it.  Keep them
-            # with the cached raw line so projection_points() can use the exact
-            # number shown by Sleeper instead of reconstructing it.
-            for key in ("pts_ppr", "pts_half_ppr", "pts_std"):
-                if key in entry and key not in st:
-                    st[key] = entry[key]
-        else:
-            st = entry
-        pos = players_index.get(pid, {}).get("pos", "")
-        variants = _sleeper_stats_to_variants(st, pos, raw_scoring_settings)
-        if variants:
-            out[pid] = variants
-
-    print(f"✅ Retrieved {len(out)} Sleeper projections for Week {week}")
-    return out
-
-
-def fetch_week_projections(season: int, week: int, raw_scoring_settings: dict = None) -> dict:
-    """Fetch weekly projections from Sleeper (sole source for all projection data)."""
-    return fetch_week_from_sleeper(season, week, raw_scoring_settings)
-
-
-def map_weekly_projections_to_sleeper(
-        weekly_rows: List[dict],
-        idx_sleeper: Dict[str, dict],
-) -> dict:
-    """
-    Convert Tank01 rows -> multi-variant projection dict.
-    { sleeper_id: {"ppr": X, "half_ppr": Y, "std": Z,
-                   "tep": A, "6pt_ppr": B, "6pt_half": C, "6pt_tep": D} }
-
-    Variants:
-      ppr       — 1pt/rec, 4pt passing TD
-      half_ppr  — 0.5pt/rec, 4pt passing TD
-      std       — 0pt/rec, 4pt passing TD
-      tep       — PPR + 0.5pt/rec bonus for TEs, 4pt passing TD
-      6pt_ppr   — PPR, 6pt passing TD
-      6pt_half  — half-PPR, 6pt passing TD
-      6pt_tep   — PPR + TEP, 6pt passing TD
-    """
-    out: dict = {}
-
-    teams_index = load_teams_index() or {}
-    players_index = load_players_index() or {}
-
-    TEP_BONUS = 0.5  # standard TE premium per reception
-
-    for group in weekly_rows:
-        if not isinstance(group, list):
-            continue
-        for row in group:
-            if not isinstance(row, dict):
-                continue
-
-            team_id_raw = row.get("teamID")
-            tank_id = row.get("playerID")
-
-            if team_id_raw and not tank_id:
-                # DEF / team row — same value for all variants
-                proj = row.get("fantasyPointsDefault")
-                if proj is None:
-                    continue
-                team_key = next(
-                    (k for k, v in teams_index.items() if v.get("teamId") == str(team_id_raw)),
-                    None,
-                )
-                if team_key:
-                    v = float(proj)
-                    out[str(team_key)] = {
-                        "ppr": v, "half_ppr": v, "std": v,
-                        "tep": v, "6pt_ppr": v, "6pt_half": v, "6pt_tep": v,
-                    }
-
-            elif tank_id:
-                fp = row.get("fantasyPointsDefault") or {}
-                if isinstance(fp, dict):
-                    ppr  = float(fp.get("PPR")     or fp.get("ppr")     or 0)
-                    half = float(fp.get("halfPPR")  or fp.get("half")    or 0)
-                    std  = float(fp.get("standard") or fp.get("std")     or 0)
-                else:
-                    ppr = half = std = float(fp or 0)
-
-                if ppr == 0 and half == 0 and std == 0:
-                    continue
-
-                pid = next(
-                    (k for k, v in players_index.items() if v.get("tankId") == str(tank_id)),
-                    None,
-                )
-                if not pid:
-                    continue
-
-                pos = players_index.get(pid, {}).get("pos", "")
-
-                # Projected passing TDs (for 6pt TD adjustment: +2 per pass TD vs 4pt base)
-                passing = row.get("passing") or {}
-                proj_pass_td = float(passing.get("passTD") or passing.get("passIng_td") or 0)
-                td_bonus = proj_pass_td * 2  # difference between 6pt and 4pt TD
-
-                # TEP: extra 0.5/rec for TEs only
-                tep_bonus = 0.0
-                if pos == "TE":
-                    rec_stats = row.get("receiving") or row.get("stats") or {}
-                    proj_rec = float(rec_stats.get("rec") or rec_stats.get("receptions") or 0)
-                    tep_bonus = proj_rec * TEP_BONUS
-
-                out[str(pid)] = {
-                    "ppr":      round(ppr, 2),
-                    "half_ppr": round(half, 2),
-                    "std":      round(std, 2),
-                    "tep":      round(ppr + tep_bonus, 2),
-                    "6pt_ppr":  round(ppr + td_bonus, 2),
-                    "6pt_half": round(half + td_bonus, 2),
-                    "6pt_tep":  round(ppr + tep_bonus + td_bonus, 2),
-                }
-
-    return out
-
-
-# Pure logic lives in utils/proj_variant.py so it's unit-testable without this
-# module's heavier deps. Re-exported here since callers import it from utils.utils.
-from utils.proj_variant import pick_proj_variant
-
-
-# ------------------------------------------------
-# NFL team metadata / byes
-# ------------------------------------------------
-
-def _espn_logo_slug(team_abv: str) -> str:
-    """ESPN CDN team-logo slug (WAS → wsh; site-canonical otherwise)."""
-    t = (canon_team(team_abv) or str(team_abv or "")).strip().upper()
-    if t == "WAS":
-        return "wsh"
-    return t.lower()
-
-
-def _espn_logo_url(team_abv: str) -> str:
-    # ESPN logo fallback (500px). Prefer teams_index.Logo when available.
-    return f"https://a.espncdn.com/i/teamlogos/nfl/500/{_espn_logo_slug(team_abv)}.png"
-
-
-def def_team_logo_urls(team_abv: str) -> tuple[str, str]:
-    """Local team-logo path + ESPN CDN URL for a DEF/DST (WAS-canonical).
-
-    Local files live at ``/static/images/team_logos/{ABBR}.png`` (WAS, not WSH).
-    ESPN uses ``wsh.png`` for Washington — prefer ``teams_index[team]["Logo"]``
-    when present so the CDN slug stays correct.
-    """
-    team = (canon_team(team_abv) or str(team_abv or "")).strip().upper()
-    if not team:
-        return ("", "")
-    local = f"/static/images/team_logos/{team}.png"
-    ti = (load_teams_index() or {}).get(team) or {}
-    espn = str(ti.get("Logo") or "").strip() or _espn_logo_url(team)
-    return (local, espn)
-
-
-def _safe_get(d: dict, *keys, default=None):
-    cur = d
-    for k in keys:
-        if not isinstance(cur, dict) or k not in cur:
-            return default
-        cur = cur[k]
-    return cur
-
-
-def get_bye_week(team: dict, season: int) -> Optional[int]:
-    """
-    team: one object from payload['body']
-    season: e.g., 2025
-    returns: bye week as int, or None if missing
-    """
-    bye_map = team.get("byeWeeks") or {}
-    # keys may be strings ("2025") and values may be ["8"] (strings)
-    weeks = bye_map.get(str(season)) or bye_map.get(season)
-    if not weeks:
-        return None
-    # Some seasons can list multiple byes; take the first valid int
-    for w in weeks:
-        try:
-            return int(w)
-        except (TypeError, ValueError):
-            continue
-    return None
-
-
-def byes_for_season(payload: dict, season: int) -> dict[str, Optional[int]]:
-    """
-    payload: the full response with a 'body' list
-    returns: { teamAbv: bye_week_or_None }
-    """
-    out = {}
-    for team in payload.get("body", []):
-        abv = canon_team(team.get("teamAbv")) or team.get("teamAbv")
-        out[abv] = get_bye_week(team, season)
-    return out
-
-
-# ------------------------------------------------
-# Game / player status for a given week
-# ------------------------------------------------
-
-BEFORE_WINDOW = 5 * 60  # 5 minutes
-IN_WINDOW = 3 * 60 * 60
-
-
-def normalize_game_status_from_tank01(game: dict, now: datetime | None = None) -> str:
-    """
-    Returns: "pre", "in", or "post" using:
-      * kickoff time
-      * a 5-minute early window
-      * a 3-hour game window
-      * Tank01 status fallback
-    """
-
-    if now is None:
-        now = datetime.now(timezone.utc)
-
-    # Parse kickoff time
-    kickoff = None
-    try:
-        raw = game.get("gameTime_epoch")
-        if raw not in (None, ""):
-            kickoff_ts = float(raw)
-            kickoff = datetime.fromtimestamp(kickoff_ts, tz=timezone.utc)
-    except Exception:
-        kickoff = None
-
-    if kickoff is not None:
-        delta = (now - kickoff).total_seconds()
-
-        # --- PRE-GAME ---
-        # More than 5 minutes before kickoff
-        if delta < -BEFORE_WINDOW:
-            return "pre"
-
-        # --- IN-GAME ---
-        # From 5 minutes before kickoff to up to 3 hours after kickoff
-        if -BEFORE_WINDOW <= delta <= IN_WINDOW:
-            return "in"
-
-        # --- POST-GAME ---
-        if delta > IN_WINDOW:
-            return "post"
-
-    # --- FALLBACK: Use Tank01’s status fields ---
-
-    status = (game.get("gameStatus") or "").lower().strip()
-    code = str(game.get("gameStatusCode") or "").strip()
-
-    # Completed / final → post
-    if code == "2" or "final" in status or "completed" in status:
-        return "post"
-
-    # In progress / live → in
-    if code == "1" or "in progress" in status or "live" in status:
-        return "in"
-
-    # Scheduled → pre
-    if code == "0" or "scheduled" in status:
-        return "pre"
-
-    # Default
-    return "pre"
-
-
-def game_has_started(game: Optional[dict], now: datetime | None = None) -> bool:
-    """True when a Tank01/schedule game is live or final.
-
-    Explicit ``gameStatusCode`` 0 (scheduled) normally wins even if a stale
-    ``gameTime_epoch`` would otherwise look like the game already ended —
-    that is what painted last year's box scores on the Week 1 preview.
-
-    Exception: when ``gameDate`` is a calendar day before today, treat the
-    game as started/final even if Tank01 still reports code 0. Matchup rows
-    already date-correct the game line to "Final"; without this exception the
-    box-score line stays blank after Thursday night while the schedule lags.
-    """
-    if not game or not isinstance(game, dict):
-        return False
-    if now is None:
-        now = datetime.now(timezone.utc)
-    code = str(game.get("gameStatusCode") or "").strip()
-    if code in ("1", "2"):
-        return True
-    if code == "0":
-        game_date = str(game.get("gameDate") or "")[:8]
-        if len(game_date) == 8 and game_date.isdigit():
-            # Local calendar day — same basis as format_team_game_line's today_str.
-            today_str = (
-                now.astimezone().strftime("%Y%m%d")
-                if getattr(now, "tzinfo", None)
-                else now.strftime("%Y%m%d")
-            )
-            if game_date < today_str:
-                return True
-        return False
-    return normalize_game_status_from_tank01(game, now=now) in ("in", "post")
-
-
-def finished_game_ids_for_week(season: int, week: int) -> list[str]:
-    """IDs of the week's games that are final (Tank01/schedule status ``post``).
-
-    Used by the live advanced-metrics refresh to tell "a new game just finished"
-    from "nothing changed", so a rebuild happens the moment a slate goes final
-    rather than at the next daily cron. Any load/parse failure yields ``[]``.
-    """
-    try:
-        sched = load_week_schedule(int(season), int(week)) or []
-    except Exception:
-        return []
-    out: list[str] = []
-    for g in sched:
-        if not isinstance(g, dict):
-            continue
-        if normalize_game_status_from_tank01(g) == "post":
-            gid = g.get("gameID") or g.get("gameId") or g.get("id")
-            if gid:
-                out.append(str(gid))
-    return sorted(set(out))
-
-
-def week_has_final_game(season: int, week: int) -> bool:
-    """True when at least one of the week's games has gone final."""
-    if not week or int(week) < 1:
-        return False
-    return bool(finished_game_ids_for_week(season, week))
-
-
-def resolve_adv_metrics_completed_week(season: int, current_week: int) -> int:
-    """Highest week whose finished games should feed the metrics snapshot.
-
-    Returns ``current_week`` once that in-progress week has at least one final
-    game (so a just-completed slate is included immediately), otherwise
-    ``current_week - 1`` (the last fully-finished week). Never below 0. Both the
-    live refresh and the daily cron call this so they agree on which week the
-    day's snapshot row covers and neither regresses the other's write.
-    """
-    cw = max(0, int(current_week or 0))
-    if cw >= 1 and week_has_final_game(season, cw):
-        return cw
-    return max(0, cw - 1)
-
-
-def build_games_by_team(games: list[dict]) -> dict[str, dict]:
-    """
-    games -> { team_abbr: { 'status': 'pre' | 'in' | 'post', 'game': game_obj } }
-    """
-    games_by_team: dict[str, dict] = {}
-    for g in games:
-        home = g.get("home")  # e.g. "NE"
-        away = g.get("away")  # e.g. "NYJ"
-        norm_status = normalize_game_status_from_tank01(g)  # 'pre' | 'in' | 'post'
-        entry = {"status": norm_status, "game": g}
-
-        for raw in (home, away):
-            if not raw:
-                continue
-            for key in team_abbr_keys(raw):
-                games_by_team[key] = entry
-
-    return games_by_team
-
-
-def build_status_by_pid(
-        players_info: dict[str, dict],
-        games_by_team: dict[str, dict],
-        teams_index: dict[str, dict],
-        current_week: int,
-        idp_players_info: Optional[dict[str, dict]] = None,
-) -> dict[str, str]:
-    """
-    players_info:     { pid: { 'team': 'NYJ', ... }, ... }  # offensive / regular players
-    idp_players_info: { pid: { 'team': 'NYJ', ... }, ... }  # IDP players
-    teams_index:      { 'BUF': { 'teamId': '4', 'byeWeek': 7, ... }, ... }
-    games_by_team:    { 'NYJ': { 'status': 'pre'|'in'|'post', ... }, ... }
-    """
-    status_by_pid: dict[str, str] = {}
-
-    # Merge offensive + IDP indexes into a single view
-    combined_players: dict[str, dict] = {}
-    combined_players.update(players_info or {})
-    if idp_players_info:
-        combined_players.update(idp_players_info)
-
-    # 1) All player pids (offense + IDP)
-    for pid, info in combined_players.items():
-        team = info.get("team")
-
-        if not team:
-            status_by_pid[pid] = STATUS_FINAL
-            continue
-
-        game = lookup_team_map(games_by_team, team)
-        if not game:
-            if not games_by_team:
-                # Schedule data missing entirely — assume games haven't started
-                # so projections are shown instead of wall-to-wall 0.0 actuals.
-                status_by_pid[pid] = STATUS_NOT_STARTED
-            else:
-                status_by_pid[pid] = STATUS_FINAL
-            continue
-
-        t_status = game.get("status")  # 'pre' | 'in' | 'post'
-
-        if t_status == "pre":
-            status_by_pid[pid] = STATUS_NOT_STARTED
-        elif t_status == "in":
-            status_by_pid[pid] = STATUS_IN_PROGRESS
-        elif t_status == "post":
-            status_by_pid[pid] = STATUS_FINAL
-        else:
-            status_by_pid[pid] = STATUS_NOT_STARTED
-
-    # 2) Defenses (teams_index)
-    for team_code, team_info in teams_index.items():
-        pid = team_code  # DEF pid matches team code
-
-        # Don't overwrite if already assigned (very defensive, just in case)
-        if pid in status_by_pid:
-            continue
-
-        game = lookup_team_map(games_by_team, team_code)
-
-        if not game:
-            if not games_by_team:
-                status_by_pid[pid] = STATUS_NOT_STARTED
-            else:
-                bye_week = team_info.get("byeWeek")
-                if bye_week == current_week:
-                    status_by_pid[pid] = "BYE"
-                else:
-                    status_by_pid[pid] = STATUS_FINAL
-            continue
-
-        t_status = game.get("status")
-
-        if t_status == "pre":
-            status_by_pid[pid] = STATUS_NOT_STARTED
-        elif t_status == "in":
-            status_by_pid[pid] = STATUS_IN_PROGRESS
-        elif t_status == "post":
-            status_by_pid[pid] = STATUS_FINAL
-        else:
-            status_by_pid[pid] = STATUS_NOT_STARTED
-
-    return status_by_pid
-
-
-def build_status_for_week(
-        season: int,
-        week: int,
-        players_index: dict[str, dict],
-        teams_index: dict[str, dict],
-        idp_player_index: dict[str, dict] = None,
-) -> dict[str, str]:
-    games = get_nfl_games_for_week(week, season)
-    games_by_team = build_games_by_team(games)
-    return build_status_by_pid(players_index, games_by_team, teams_index, week,
-                               idp_player_index if idp_player_index else None)
-
-
-def decorate_player_display(player: dict) -> dict:
-    status = player["status"]
-    proj = player.get("projection")
-    actual = player.get("actual")
-
-    if proj is None:
-        proj = 0.0
-    if actual is None:
-        actual = 0.0
-
-    display = {
-        "projection_value": None,
-        "actual_value": None,
-        "projection_muted": False,
-    }
-
-    # 1) not started: projection (muted) + 0.0 actual
-    if status == STATUS_NOT_STARTED:
-        display["projection_value"] = proj
-        display["actual_value"] = 0.0
-        display["projection_muted"] = True
-
-    # 2) in progress: only actual
-    elif status == STATUS_IN_PROGRESS:
-        display["projection_value"] = None
-        display["actual_value"] = actual
-
-    # 3) final (including 0): only actual
-    elif status == STATUS_FINAL:
-        display["projection_value"] = None
-        display["actual_value"] = actual
-
-    # Leave BYE and any other status as "actual only"
-    return {**player, **display}
-
-
-def get_nfl_games_for_week(
-        week: int,
-        season: int,
-        season_type: str = "reg",
-) -> list[dict]:
-    return get_week_schedule_cached(
-        season=season,
-        week=week,
-        fetch_fn=get_nfl_games_for_week_raw,
-        season_type=season_type,
-    )
-
-
-def pinfo_for_pid(
-        pid: str,
-        players_index: dict[str, dict],
-        teams_index: dict[str, dict],
-        players: dict[str, dict],
-) -> dict:
-    """
-    Build a display object for a player or DEF using:
-      - players_index: {pid: {name, team, tankId}}
-      - teams_index:   { 'BUF': { teamId, byeWeek, Logo }, ... } for DEF
-      - players:       Sleeper players map {pid: {...}} with 'pos'
-    """
-    info = players_index.get(pid, {})
-    team_info = teams_index.get(pid, {})
-
-    # name from your players_index, fallback to pid
-    name = info.get("name") or pid
-
-    # nfl team code (BAL, DET, BUF, etc.) — WAS, never WSH
-    nfl = info.get("team") or team_info.get("team") or (pid if pid in teams_index else None)
-    if nfl:
-        nfl = canon_team(nfl) or nfl
-
-    # position (string)
-    pos = ""
-    if players and pid in players:
-        player_obj = players[pid]  # full Sleeper dict
-        pos = player_obj.get("pos") or player_obj.get("position") or ""
-    elif pid in teams_index:
-        pos = "DEF"
-
-    out = {
-        "pid": pid,
-        "name": name,
-        "pos": pos,
-        "nfl": nfl,
-    }
-    # DEF/DST: surface the NFL team logo so callers can render a crest instead
-    # of a missing Sleeper headshot (DEF ids are team abbreviations).
-    if str(pos or "").upper() in ("DEF", "DST", "D/ST") and nfl:
-        _local, _espn = def_team_logo_urls(nfl)
-        if _espn:
-            out["logo"] = _espn
-            out["logo_local"] = _local
-    elif team_info.get("Logo"):
-        # Team-abbr pid looked up purely from teams_index.
-        out["logo"] = team_info.get("Logo")
-        out["logo_local"] = f"/static/images/team_logos/{(nfl or pid)}.png"
-    return out
-
-
-
-
-def build_teams_overview(
-        rosters: List[dict],
-        users_list: List[dict],
-        picks_by_roster: Dict[str, List[dict]],
-        players: Dict[str, dict],
-        players_index: Dict[str, dict],
-        teams_index: Dict[str, dict],
-        platform: str,
-) -> List[dict]:
-    teams_ctx: List[dict] = []
-    users_by_id = {str(u["user_id"]): u for u in users_list}
-    users_by_rid = {str(u.get("roster_id")): u for u in users_list if u.get("roster_id") is not None}
-
-    def normalize_pos(pos: str) -> str:
-        p = (pos or "").strip().upper()
-        if p == "PK":
-            return "K"
-        if p in ("D/ST", "DST", "DEF"):
-            return "DEF"
-        return p
-
-    # Traditional ESPN-ish ordering target
-    SLOT_ORDER = ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "K", "DEF"]
-    ORDER_RANK = {"QB": 0, "RB": 1, "WR": 2, "TE": 3, "FLEX": 4, "K": 5, "DEF": 6}
-
-    def sort_starters_espn(starter_pids: List[str]) -> List[str]:
-        """
-        Reorders the given starter player IDs into:
-        QB, RB, RB, WR, WR, TE, FLEX, K, DEF (best-effort).
-        Extras get appended in a stable order.
-        """
-        # Build (pid, pos) list
-        enriched = []
-        for pid in starter_pids:
-            p = pinfo_for_pid(pid, players_index, teams_index, players) or {}
-            pos = normalize_pos(p.get("pos") or p.get("position") or "")
-            enriched.append((pid, pos))
-
-        # Buckets
-        buckets = {"QB": [], "RB": [], "WR": [], "TE": [], "K": [], "DEF": [], "OTHER": []}
-        for pid, pos in enriched:
-            if pos in buckets:
-                buckets[pos].append(pid)
-            else:
-                buckets["OTHER"].append(pid)
-
-        ordered: List[str] = []
-
-        # Fill fixed slots in the classic order
-        used = set()
-
-        def take(bucket_key: str) -> str | None:
-            arr = buckets.get(bucket_key, [])
-            while arr:
-                pid = arr.pop(0)
-                if pid not in used:
-                    used.add(pid)
-                    return pid
-            return None
-
-        def take_flex() -> str | None:
-            # Prefer RB/WR/TE in that order for FLEX (you can swap priority if you want)
-            for k in ("RB", "WR", "TE"):
-                pid = take(k)
-                if pid:
-                    return pid
-            return None
-
-        for slot in SLOT_ORDER:
-            if slot == "FLEX":
-                pid = take_flex()
-            else:
-                pid = take(slot)
-            if pid:
-                ordered.append(pid)
-
-        # Append any remaining starters (superflex, extra flex, IDP, etc.)
-        leftovers: List[str] = []
-        # remaining known buckets (in a sensible rank order)
-        for key in ("QB", "RB", "WR", "TE", "K", "DEF"):
-            for pid in buckets[key]:
-                if pid not in used:
-                    leftovers.append(pid)
-                    used.add(pid)
-        # others last
-        for pid in buckets["OTHER"]:
-            if pid not in used:
-                leftovers.append(pid)
-                used.add(pid)
-
-        # Keep stable relative ordering for anything we didn't consume
-        return ordered + leftovers
-
-    _DISPLAY_POSITIONS = {"QB", "RB", "WR", "TE", "K", "DEF"}
-
-    def enrich_list(pids: List[str]) -> List[dict]:
-        result = []
-        for pid in pids:
-            p = pinfo_for_pid(pid, players_index, teams_index, players)
-            pos = normalize_pos(p.get("pos") or p.get("position") or "")
-            if not pos or pos in _DISPLAY_POSITIONS:
-                result.append(p)
-        return result
-
-    for r in rosters:
-        rid = str(r["roster_id"])
-        owner_id = str(r.get("owner_id") or "")
-        user = users_by_rid.get(rid) or users_by_id.get(owner_id, {})
-
-        settings = r.get("settings", {}) or {}
-        wins = int(settings.get("wins", 0))
-        losses = int(settings.get("losses", 0))
-        ties = int(settings.get("ties", 0))
-        record = f"{wins}-{losses}"
-        if ties:
-            record += f"-{ties}"
-
-        starters_pids = r.get("starters", []) or []
-        players_pids = r.get("players", []) or []
-        ir_pids = r.get("reserve", []) or []
-        taxi_pids = r.get("taxi", []) or []
-
-        # ESPN: re-sort starters into traditional layout
-        if (platform or "").lower().strip() == "espn":
-            starters_pids = sort_starters_espn(list(starters_pids))
-
-        starter_set = set(starters_pids)
-        ir_set = set(ir_pids)
-        taxi_set = set(taxi_pids)
-
-        bench_pids = [
-            pid for pid in players_pids
-            if pid not in starter_set and pid not in ir_set and pid not in taxi_set
-        ]
-
-        teams_ctx.append({
-            "roster_id": rid,
-            "name": team_label_from_user(user, r, fallback=f"Team {rid}"),
-            "username": username_from_user(user),
-            "avatar": user.get("avatar_url") or user.get("avatar"),
-            "record": record,
-            "starters": enrich_list(starters_pids),
-            "bench": enrich_list(bench_pids),
-            "ir": enrich_list(ir_pids),
-            "taxi": enrich_list(taxi_pids),
-            "picks": picks_by_roster.get(rid, []),
-        })
-
-    teams_ctx.sort(key=lambda t: t["name"].lower())
-    return teams_ctx
-
-
-def bucket_for_slot(slot: int, num_teams: int = 10) -> str:
-    """
-    Map a pick number within the round (1..N) into 'early'/'mid'/'late'.
-    Tuned for 10-team by default.
-    """
-    if slot <= 0:
-        return "late"
-
-    if num_teams == 10:
-        if 1 <= slot <= 3:
-            return "early"
-        elif 4 <= slot <= 6:
-            return "mid"
-        else:
-            return "late"
-
-    # Generic fallback: split into thirds
-    third = max(1, num_teams // 3)
-    if slot <= third:
-        return "early"
-    elif slot <= 2 * third:
-        return "mid"
-    else:
-        return "late"
-
-
-# ------------------------------------------------
-# Cache clearing helpers
-# ------------------------------------------------
-
-
-def _clear_func_cache_for_league(func: Any, expected_name: str, league_id: str) -> None:
-    """
-    Remove cache entries for a given league_id from a ttl_cache-decorated function.
-
-    Assumes keys are of the form:
-        (func_name, frozen_args, frozen_kwargs)
-
-    and that league_id is passed as the first positional argument.
-    """
-    if not hasattr(func, "_cache"):
-        return
-
-    cache = func._cache
-    cache_lock = getattr(func, "_cache_lock", _threading.Lock())
-    league_id = str(league_id)
-
-    keys_to_del = []
-
-    with cache_lock:
-        cache_keys = list(cache.keys())
-    for key in cache_keys:
-        # Defensive unpack, in case something else ever gets put in the cache
-        try:
-            func_name, args, kwargs = key
-        except ValueError:
-            continue
-
-        if func_name != expected_name:
-            continue
-
-        # Our decorator stores frozen_args, so args is a tuple-like of the original args
-        if not args:
-            continue
-
-        # We call these functions with league_id as the first positional arg
-        if str(args[0]) == league_id:
-            keys_to_del.append(key)
-
-    with cache_lock:
-        for k in keys_to_del:
-            cache.pop(k, None)
-
-
-def clear_activity_cache_for_league(league_id: str) -> None:
-    """
-    Clear only the caches relevant to the Activity page for a given league:
-      - transactions
-      - traded picks
-      - users/rosters
-    """
-
-    # 1) Clear transactions for all weeks in this league
-    _clear_func_cache_for_league(get_transactions, "get_transactions", league_id)
-
-    # 2) Clear traded picks for this league
-    _clear_func_cache_for_league(get_traded_picks, "get_traded_picks", league_id)
-
-    # 3) Clear users/rosters for this league (more aggressive: wipe entire cache)
-    _clear_func_cache_for_league(get_users, "get_users", league_id)
-
-    _clear_func_cache_for_league(get_rosters, "get_rosters", league_id)
-
-
-def clear_league_provider_cache_for_league(league_id: str) -> None:
-    """Evict only cached Sleeper payloads that feed a league-context rebuild."""
-    for func, name in (
-        (_fetch_league, "_fetch_league"),
-        (get_users, "get_users"),
-        (get_rosters, "get_rosters"),
-        (get_matchups, "get_matchups"),
-        (get_transactions, "get_transactions"),
-        (get_traded_picks, "get_traded_picks"),
-    ):
-        _clear_func_cache_for_league(func, name, league_id)
-
-
-def clear_teams_cache_for_league(league_id: str) -> None:
-    try:
-        _clear_func_cache_for_league(get_users, "get_users", league_id)
-        _clear_func_cache_for_league(get_rosters, "get_rosters", league_id)
-    except Exception as e:
-        print("clear_weekly_cache_for_league RAISED EXCEPTION:", repr(e))
-        traceback.print_exc()
-
-
-def clear_weekly_cache_for_league(league_id: str) -> None:
-    # Weekly page touches NFL state, players, users, rosters.
-    # If you later make them per-league, you can reuse _clear_func_cache_for_league.
-    try:
-        # get_nfl_state / get_nfl_players take no league arg, so the per-league
-        # clearer can never match their (empty-args) cache key — it's a no-op.
-        # Use the decorator's clear_cache() to actually evict the global entry.
-        get_nfl_state.clear_cache()
-        get_nfl_players.clear_cache()
-        _clear_func_cache_for_league(get_users, "get_users", league_id)
-        _clear_func_cache_for_league(get_rosters, "get_rosters", league_id)
-        _clear_func_cache_for_league(get_matchups, "get_matchups", league_id)
-    except Exception as e:
-        print("clear_weekly_cache_for_league RAISED EXCEPTION:", repr(e))
-        traceback.print_exc()
-
-
-def _safe_int(val: Any) -> int:
-    if val is None:
-        return 0
-    if isinstance(val, (int, float)):
-        return int(val)
-    s = str(val).strip()
-    if not s:
-        return 0
-    try:
-        return int(float(s))
-    except ValueError:
-        return 0
-
-
-def build_tank_player_index(players_index: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
-    out: Dict[str, Dict[str, Any]] = {}
-    for sleeper_id, meta in players_index.items():
-        tank_id = meta.get("tankId")
-        if not tank_id:
-            continue
-        out[str(tank_id)] = {
-            "name": meta.get("name", ""),
-            "team": meta.get("team", ""),
-            "pos": meta.get("pos", ""),
-        }
-    return out
-
-
-def _normalize_qb_stats(ps: Dict[str, Any]) -> Dict[str, int]:
-    passing = ps.get("Passing") or {}
-    rushing = ps.get("Rushing") or {}
-    return {
-        "pass_yds": _safe_int(passing.get("passYds")),
-        "pass_td": _safe_int(passing.get("passTD")),
-        "int": _safe_int(passing.get("int")),
-        "rush_att": _safe_int(rushing.get("carries")),
-        "rush_yds": _safe_int(rushing.get("rushYds")),
-        "rush_td": _safe_int(rushing.get("rushTD")),
-    }
-
-
-def _normalize_skill_stats(ps: Dict[str, Any]) -> Dict[str, int]:
-    rushing = ps.get("Rushing") or {}
-    receiving = ps.get("Receiving") or {}
-    return {
-        "rush_att": _safe_int(rushing.get("carries")),
-        "rush_yds": _safe_int(rushing.get("rushYds")),
-        "rush_td": _safe_int(rushing.get("rushTD")),
-        "rec": _safe_int(receiving.get("receptions")),
-        "rec_yds": _safe_int(receiving.get("recYds")),
-        "rec_td": _safe_int(receiving.get("recTD")),
-    }
-
-
-def _normalize_dst_stats(team_block: Dict[str, Any]) -> Dict[str, int]:
-    """
-    Normalize team DST block into DEF stats.
-    Example fields from Tank01:
-      {
-        "teamAbv": "WSH",
-        "defTD": "0",
-        "defensiveInterceptions": "0",
-        "sacks": "4",
-        "ydsAllowed": "313",
-        "fumblesRecovered": "0",
-        "ptsAllowed": "31",
-        "safeties": "0"
-      }
-    """
-    return {
-        "def_td": _safe_int(team_block.get("defTD")),
-        "def_int": _safe_int(team_block.get("defensiveInterceptions")),
-        "sacks": _safe_int(team_block.get("sacks")),
-        "yds_allowed": _safe_int(team_block.get("ydsAllowed")),
-        "fumbles_recovered": _safe_int(team_block.get("fumblesRecovered")),
-        "pts_allowed": _safe_int(team_block.get("ptsAllowed")),
-        "safeties": _safe_int(team_block.get("safeties")),
-    }
-
-
-def build_live_stats_for_game_from_tank(
-        boxscore: dict,
-        players_index: dict,
-) -> dict:
-    """
-    Returns:
-      {
-        "MIN": {
-          "QB": {...},
-          "RB": {...},
-          "WR": {...},
-          "TE": {...},
-          "DEF": { "team": {...} }
-        },
-        "WSH": { ... }
-      }
-    """
-
-    tank_idx = build_tank_player_index(players_index)
-
-    # Note DEF is included here
-    out: dict[str, dict[str, dict[str, dict]]] = defaultdict(
-        lambda: {"QB": {}, "RB": {}, "WR": {}, "TE": {}, "DEF": {}}
-    )
-
-    # --- Player-level offense stats ---
-    player_stats = boxscore.get("playerStats") or {}
-    if isinstance(player_stats, dict):
-        for tank_id, ps in player_stats.items():
-            meta = tank_idx.get(str(tank_id))
-            if not meta:
-                continue
-
-            team = meta.get("team") or ps.get("teamAbv") or ps.get("team")
-            pos = meta.get("pos")
-            name_key = (meta.get("name") or ps.get("longName") or "").lower()
-
-            if not team or not pos or not name_key:
-                continue
-
-            if pos == "QB":
-                stats = _normalize_qb_stats(ps)
-                out[team]["QB"][name_key] = stats
-            elif pos in ("RB", "WR", "TE"):
-                stats = _normalize_skill_stats(ps)
-                out[team][pos][name_key] = stats
-            else:
-                # still ignoring K/IDP; handled via team DST for DEF
-                continue
-
-    # --- Team DST → DEF (named as "DEF") ---
-    dst_block = boxscore.get("DST") or {}
-    if isinstance(dst_block, dict):
-        for side in ("home", "away"):
-            team_block = dst_block.get(side)
-            if not isinstance(team_block, dict):
-                continue
-            team_abv = team_block.get("teamAbv") or team_block.get("team")
-            if not team_abv:
-                continue
-
-            def_stats = _normalize_dst_stats(team_block)
-            # Put under DEF, with a "team" key
-            out[team_abv]["DEF"]["team"] = def_stats
-
-    return out
-
-
-def merge_live_stats_into_league_week_stats(
-        league_week_stats: dict,
-        live_stats: dict,
-) -> None:
-    """
-    Mutates league_week_stats in-place, overwriting or adding stats
-    for any players that appear in live_stats.
-    Shape of both dicts:
-
-      league_week_stats[team][pos][player_name] = {stat_dict}
-
-    Marks each merged player line with ``_src: "tank"`` so matchup rows can
-    tell Tank01 box scores apart from Footballguys prior-season leftovers.
-    """
-    for team, pos_map in live_stats.items():
-        team_bucket = league_week_stats.setdefault(team, {})
-        for pos, players in pos_map.items():
-            pos_bucket = team_bucket.setdefault(pos, {})
-            for name_key, stat_dict in players.items():
-                if isinstance(stat_dict, dict):
-                    merged = dict(stat_dict)
-                    merged["_src"] = "tank"
-                    pos_bucket[name_key] = merged
-                else:
-                    pos_bucket[name_key] = stat_dict
-
-
-def get_live_game_ids_for_today(
-        schedule: Iterable[Dict[str, Any]],
-        today: date | None = None,
-) -> List[str]:
-    """
-    Return Tank01 gameIDs for games:
-      - with gameDate = today's date
-      - AND whose epoch time indicates the game is currently within
-        the live window (kickoff to +3 hours)
-    """
-    if today is None:
-        today = date.today()
-
-    today_str = today.strftime("%Y%m%d")
-    live_ids: List[str] = []
-
-    now = time.time()
-    three_hours = 4 * 60 * 60  # 10800 seconds
-
-    for game in schedule:
-        if not isinstance(game, dict):
-            continue
-
-        # Must match today's date
-        if str(game.get("gameDate") or "") != today_str:
-            continue
-
-        # Must have an epoch value
-        raw_epoch = game.get("gameTime_epoch")
-        if raw_epoch is None:
-            continue
-
-        try:
-            game_epoch = float(raw_epoch)
-        except (ValueError, TypeError):
-            continue
-
-        if game_epoch <= now <= (game_epoch + three_hours):
-            gid = game.get("gameID")
-            if gid:
-                live_ids.append(str(gid))
-
-    return live_ids if live_ids else []
-
-
-def get_started_game_ids_for_week(
-        schedule: Iterable[Dict[str, Any]],
-        now: datetime | None = None,
-) -> List[str]:
-    """Tank01 gameIDs for games that have kicked off (live or final).
-
-    Includes calendar-past rows even when ``gameStatusCode`` is still ``0``,
-    so Thursday finals keep getting boxscore overlays after the live window.
-    """
-    ids: List[str] = []
-    seen: set[str] = set()
-    for game in schedule or []:
-        if not isinstance(game, dict):
-            continue
-        if not game_has_started(game, now=now):
-            continue
-        gid = game.get("gameID")
-        if not gid:
-            continue
-        key = str(gid)
-        if key in seen:
-            continue
-        seen.add(key)
-        ids.append(key)
-    return ids
-
-
-def tank01_status_confirms_started(game: Optional[dict]) -> bool:
-    """True when Tank01 itself reports live/final (not merely a past calendar day)."""
-    if not game or not isinstance(game, dict):
-        return False
-    return str(game.get("gameStatusCode") or "").strip() in ("1", "2")
-
-
-def player_week_stat_entry(
-        teams_stats: Optional[Dict[str, Any]],
-        team: str,
-        pos: str,
-        player: str,
-) -> Optional[Dict[str, Any]]:
-    """Raw week_stats dict for one player (includes optional ``_src``)."""
-    if not teams_stats or not team or not player:
-        return None
-    pos_norm = (pos or "").strip().upper()
-    if pos_norm == "PK":
-        lookup_pos = "K"
-    elif pos_norm in ("DEF", "DST", "D/ST"):
-        lookup_pos = "DEF"
-    else:
-        defensive_positions = {
-            "DL", "DE", "DT", "EDGE", "LB", "ILB", "OLB",
-            "DB", "CB", "S", "FS", "SS", "IDP",
-        }
-        lookup_pos = "IDP" if pos_norm in defensive_positions else pos_norm
-    team_data = lookup_team_map(teams_stats, team) or {}
-    if lookup_pos == "DEF":
-        return None
-    pos_data = team_data.get(lookup_pos) or {}
-    if not isinstance(pos_data, dict):
-        return None
-    wanted = normalize_name(player)
-
-    def find_in(bucket):
-        if not isinstance(bucket, dict):
-            return None
-        direct = bucket.get(wanted)
-        if isinstance(direct, dict):
-            return direct
-        # Feeds disagree on common given-name forms (Kenneth/Ken) while the
-        # canonical surname and first stem remain stable. Only accept a unique
-        # candidate so namesakes can never acquire one another's box score.
-        parts = wanted.split()
-        if len(parts) >= 2:
-            matches = []
-            for raw_name, value in bucket.items():
-                candidate = normalize_name(raw_name).split()
-                if (isinstance(value, dict) and len(candidate) >= 2
-                        and candidate[-1] == parts[-1]
-                        and candidate[0][:3] == parts[0][:3]):
-                    matches.append(value)
-            if len(matches) == 1:
-                return matches[0]
-        return None
-
-    entry = find_in(pos_data)
-    if entry is not None:
-        return entry
-
-    # Historical stats belong to the team the player represented that week,
-    # not necessarily the current team in the player index. Search other team
-    # buckets only when the identity match is unique across the weekly snapshot.
-    matches = []
-    for other_team in (teams_stats or {}).values():
-        if not isinstance(other_team, dict):
-            continue
-        found = find_in(other_team.get(lookup_pos) or {})
-        if found is not None and all(found is not existing for existing in matches):
-            matches.append(found)
-    return matches[0] if len(matches) == 1 else None
-
-
-def box_score_line_is_trusted(
-        game: Optional[dict],
-        player_stats: Optional[dict],
-) -> bool:
-    """Whether a week_stats line is safe to show on matchup rows.
-
-    Footballguys republishes last year's Wk N under the new season until their
-    logs flip. Calendar-past + Tank code ``0`` used to unlock those leftovers.
-    Trust Tank-overlaid lines (``_src=tank``) or an explicit Tank live/final code.
-    """
-    if player_stats and player_stats.get("_src") == "tank":
-        return True
-    return tank01_status_confirms_started(game)
-
-
-# expects these exist in your project (same pattern as IDP)
-# from dashboard_services.utils import load_idp_index, load_players_index
-# from dashboard_services.paths import CACHE_DIR
-
-def sleeper_week_stats_path(season: int, week: int) -> Optional[str]:
-    """Path to the Sleeper per-player stats file for one NFL week, or None.
-
-    Both the live in-season fetcher and the history backfill write the
-    non-dated ``sleeper_stats_s{Y}_w{W}.json`` into cache/sleeper_stats/; some
-    backfills also leave a dated ``..._w{W}_{date}.json``. Prefer the freshest.
-    """
-    stats_dir = CACHE_DIR / "sleeper_stats"
-    candidates = list(glob.glob(str(stats_dir / f"sleeper_stats_s{int(season)}_w{int(week)}_*.json")))
-    non_dated = stats_dir / f"sleeper_stats_s{int(season)}_w{int(week)}.json"
-    if non_dated.exists():
-        candidates.append(str(non_dated))
-    if not candidates:
-        legacy = CACHE_DIR / f"sleeper_stats_s{int(season)}_w{int(week)}.json"
-        return str(legacy) if legacy.exists() else None
-    return max(candidates, key=os.path.getmtime)
-
-
-def load_sleeper_week_stats(season: int, week: int) -> Dict[str, Any]:
-    """Per-player-id Sleeper stat lines for one NFL week (cached, read-only).
-
-    This is the same cache family the player-modal game log reads, so it has a
-    line for every player who played -- unlike the Footballguys team scrape,
-    which can miss rookies and mid-week adds. Returns ``{}`` when absent.
-    """
-    path = sleeper_week_stats_path(season, week)
-    if not path:
-        return {}
-    data = read_json_cached(path)
-    return data if isinstance(data, dict) else {}
-
-
-def overlay_idp_and_k_stats_from_sleeper(
-        league_week_stats: Dict[str, Dict[str, Dict[str, Dict[str, float]]]],
-        season: int,
-        week: int,
-        teams_index: Dict[str, Dict[str, Any]],
-) -> None:
-    """
-    Mutates league_week_stats in place by adding:
-      - IDP stats under:  league_week_stats[TEAM]["IDP"][name_lower] = {...}
-      - K stats under:    league_week_stats[TEAM]["K"][name_lower]   = {...}
-
-    Normalizes team abbreviations (e.g., WSH -> WAS) so keys match teams_index.
-    """
-
-    # ----- Load IDP index -----
-    idp_index = load_idp_index()
-    if not isinstance(idp_index, dict):
-        print("[week_stats][IDP/K] idp_players_index.json is not a dict, skipping.")
-        return
-
-    # ----- Load main player index for kickers -----
-    players_index = load_players_index()
-    if not isinstance(players_index, dict):
-        players_index = {}
-        print("[week_stats][IDP/K] players_index not available; kicker overlay may be skipped.")
-
-    # ----- Find the Sleeper stats file for this season/week -----
-    # The overlay runs at build time and lazily at render time for legacy weekly
-    # snapshots, so use the shared, mtime-cached loader (it matches both the
-    # non-dated live file and any dated backfill).
-    sleeper_stats_path = sleeper_week_stats_path(season, week)
-    if not sleeper_stats_path:
-        print(
-            f"[week_stats][IDP/K] No sleeper stats file for season={season} week={week}"
-        )
-        return
-    print(f"[week_stats][IDP/K] Using Sleeper stats file: {os.path.basename(sleeper_stats_path)}")
-
-    sleeper_stats = read_json_cached(sleeper_stats_path)
-    if not isinstance(sleeper_stats, dict):
-        print("[week_stats][IDP/K] Sleeper stats JSON missing or not a dict, skipping.")
-        return
-
-    valid_teams = set((teams_index or {}).keys())
-
-    # --- Team normalization (WSH -> WAS, etc.) ---
-    TEAM_ALIASES = {
-        "WSH": "WAS",
-        # add more if you find them later
-        # "JAX": "JAC",
-        # "LA": "LAR",
-    }
-
-    def normalize_team_abv(abv: str) -> str:
-        abv = (abv or "").strip().upper()
-        abv = TEAM_ALIASES.get(abv, abv)
-
-        # If teams_index uses the opposite code (rare), still land on a valid key
-        if abv and abv not in valid_teams:
-            for k, v in TEAM_ALIASES.items():
-                if v == abv and k in valid_teams:
-                    return k
-        return abv
-
-    def clean_numeric_stats(raw_stats: Any) -> Dict[str, float]:
-        if not isinstance(raw_stats, dict):
-            return {}
-        out: Dict[str, float] = {}
-        for k, v in raw_stats.items():
-            if isinstance(v, (int, float)):
-                out[k] = float(v)
-        return out
-
-    IDP_BUCKET = "IDP"
-    K_BUCKET = "K"
-
-    idp_added = 0
-    k_added = 0
-
-    for sleeper_id, raw_stats in sleeper_stats.items():
-        stats_clean = clean_numeric_stats(raw_stats)
-        if not stats_clean:
-            continue
-
-        sid = str(sleeper_id)
-
-        # --------------------
-        # IDP overlay
-        # --------------------
-        meta_idp = idp_index.get(sid)
-        if meta_idp:
-            name = (meta_idp.get("name") or "").strip()
-            team_abv = normalize_team_abv(meta_idp.get("team") or "")
-            pos = (meta_idp.get("pos") or "").strip().upper()  # DB/DL/LB
-
-            if not name or not team_abv:
-                continue
-            if valid_teams and team_abv not in valid_teams:
-                continue
-
-            name_key = name.lower()
-            stats_clean_idp = dict(stats_clean)
-            stats_clean_idp.setdefault("pos", pos)
-
-            team_bucket = league_week_stats.setdefault(team_abv, {})
-            idp_bucket = team_bucket.setdefault(IDP_BUCKET, {})
-
-            existing = idp_bucket.get(name_key, {})
-            if isinstance(existing, dict):
-                existing.update(stats_clean_idp)
-                idp_bucket[name_key] = existing
-            else:
-                idp_bucket[name_key] = stats_clean_idp
-
-            idp_added += 1
-
-            # IMPORTANT: if it’s IDP, don’t also treat as kicker
-            continue
-
-        # --------------------
-        # K overlay (from players_index)
-        # --------------------
-        meta_p = players_index.get(sid)
-        if not meta_p:
-            continue
-
-        pos = (meta_p.get("pos") or "").strip().upper()
-        if pos != "PK":
-            continue
-
-        name = (meta_p.get("name") or "").strip()
-        team_abv = normalize_team_abv(meta_p.get("team") or "")
-
-        if not name or not team_abv:
-            continue
-        if valid_teams and team_abv not in valid_teams:
-            continue
-
-        name_key = name.lower()
-        stats_clean_k = dict(stats_clean)
-        stats_clean_k.setdefault("pos", "PK")
-
-        team_bucket = league_week_stats.setdefault(team_abv, {})
-        k_bucket = team_bucket.setdefault(K_BUCKET, {})
-
-        existing = k_bucket.get(name_key, {})
-        if isinstance(existing, dict):
-            existing.update(stats_clean_k)
-            k_bucket[name_key] = existing
-        else:
-            k_bucket[name_key] = stats_clean_k
-
-        k_added += 1
-
-    # Optional cleanup: if something else already created WSH, merge into WAS and delete WSH
-    if "WSH" in league_week_stats and "WAS" in league_week_stats:
-        try:
-            for bucket, players in (league_week_stats.get("WSH") or {}).items():
-                dest_bucket = league_week_stats["WAS"].setdefault(bucket, {})
-                if isinstance(players, dict):
-                    for name_key, stat_blob in players.items():
-                        if isinstance(stat_blob, dict):
-                            dest_bucket.setdefault(name_key, {}).update(stat_blob)
-                        else:
-                            dest_bucket[name_key] = stat_blob
-            del league_week_stats["WSH"]
-        except Exception:
-            # don’t break the pipeline for a cleanup step
-            pass
-
-    print(f"[week_stats][IDP/K] Added/updated {idp_added} IDP stat lines.")
-    print(f"[week_stats][IDP/K] Added/updated {k_added} K stat lines.")
-
-
-def build_and_save_week_stats_for_league(
-        teams_index: Dict[str, Dict[str, Any]],
-        season: int,
-        week: int,
-        live_game_ids: Optional[Iterable[str]] = None,
-) -> Path:
-    """
-    1) Build baseline week stats from your existing HTML pipeline.
-    2) Optionally overlay live Tank01 stats for any provided gameIDs.
-    3) Overlay IDP stats from Sleeper using idp_players_index + sleeper_stats file.
-    """
-    league_week_stats: Dict[str, Dict[str, Dict[str, Dict[str, float]]]] = {}
-
-    # Footballguys "Wk N" still holds last season's box scores until this
-    # week's games are actually played. Scraping that into week_stats_s{year}
-    # makes the Weekly Hub look like players already suited up after a draft.
-    schedule: List[Dict[str, Any]] = []
-    try:
-        raw_sched = load_week_schedule(season, week)
-        if isinstance(raw_sched, list):
-            schedule = raw_sched
-        elif isinstance(raw_sched, dict):
-            maybe = raw_sched.get("body") or raw_sched.get("games") or []
-            if isinstance(maybe, list):
-                schedule = maybe
-    except Exception:
-        schedule = []
-
-    # Calendar-past + Tank code 0 means the game is over but Footballguys may
-    # still be republishing last year. Only scrape FG once Tank itself reports
-    # live/final (or we already have explicit live IDs). Always Tank-overlay
-    # every started game so Thursday finals don't fall back to FG leftovers.
-    tank_confirmed = any(
-        tank01_status_confirms_started(g) for g in schedule if isinstance(g, dict)
-    )
-    started_ids = get_started_game_ids_for_week(schedule)
-    overlay_ids: List[str] = []
-    seen_ids: set[str] = set()
-    for gid in list(live_game_ids or []) + started_ids:
-        key = str(gid)
-        if not key or key in seen_ids:
-            continue
-        seen_ids.add(key)
-        overlay_ids.append(key)
-
-    allow_fg_scrape = tank_confirmed or bool(live_game_ids)
-    if not allow_fg_scrape and not overlay_ids:
-        out_path = path_week_stats(season, week)
-        if schedule:
-            write_json(out_path, {})
-            print(f"[week_stats] no games started yet (season={season}, week={week}); wrote empty")
-        else:
-            print(f"[week_stats] skip scrape; no schedule and no live games (season={season}, week={week})")
-        return out_path
-
-    print(f"[week_stats] building stats for the week (season={season}, week={week})")
-    if allow_fg_scrape:
-        for team_abv in teams_index.keys():
-            orig_team_abv = team_abv
-            if team_abv == "WSH":
-                team_abv = "WAS"
-            try:
-                html = fetch_team_game_logs_html(team_abv, season)
-                pos_player_stats = parse_team_week_pos_player_stats(html, week)
-                league_week_stats[team_abv] = pos_player_stats
-            except Exception as e:
-                print(f"[week_stats] Error for {orig_team_abv} week {week}: {e}")
-                league_week_stats[team_abv] = {}
-    else:
-        # Preserve any prior Tank-backed lines while we refresh overlays.
-        prior = load_week_stats(season, week)
-        if isinstance(prior, dict):
-            league_week_stats = prior
-
-    # ---------- Overlay Tank01 stats for started / live games ----------
-    if overlay_ids:
-        # Load players_index once, reuse
-        players_index = load_players_index()
-
-        session = requests.Session()
-
-        print(f"[week_stats] fetching Tank01 box scores for {len(overlay_ids)} game(s)")
-        for game_id in overlay_ids:
-            try:
-                boxscore = fetch_tank_boxscore(game_id, session=session)
-                if not boxscore:
-                    continue
-                live_stats = build_live_stats_for_game_from_tank(boxscore, players_index)
-                merge_live_stats_into_league_week_stats(league_week_stats, live_stats)
-            except Exception as e:
-                print(f"[week_stats] Tank01 error for {game_id}: {e}")
-
-    # ---------- Overlay IDP stats from Sleeper ----------
-    overlay_idp_and_k_stats_from_sleeper(
-        league_week_stats=league_week_stats,
-        season=season,
-        week=week,
-        teams_index=teams_index,
-    )
-
-    out_path = path_week_stats(season, week)
-    write_json(out_path, league_week_stats)
-    print(f"[week_stats] Wrote → {out_path}")
-    return out_path
-
-
-def normalize_name(name: str) -> str:
-    suffixes = {"jr", "jr.", "sr", "sr.", "ii", "iii", "iv", "v"}
-
-    if not name:
-        return ""
-    s = name.lower()
-
-    # remove periods from initials (K.C. -> KC, K. C. -> K C)
-    s = re.sub(r'\.', '', s)
-    # Provider feeds disagree on apostrophes and hyphens (Ka'imi/Kaimi,
-    # Amon-Ra/Amon Ra). Normalize punctuation before identity comparison.
-    s = re.sub(r"['’`]", "", s)
-    s = re.sub(r"[-‐‑‒–—]", " ", s)
-    
-    # collapse whitespace
-    s = re.sub(r"\s+", " ", s).strip()
-
-    # drop suffix tokens like jr, sr, ii, iii, etc.
-    parts = s.split(" ")
-    parts = [p for p in parts if p not in suffixes]
-
-    return " ".join(parts)
-
-
-def parse_team_week_pos_player_stats(
-        html: str,
-        target_week: int,
-) -> Dict[str, Dict[str, Dict[str, Any]]]:
-    soup = BeautifulSoup(html, "html.parser")
-
-    heading_to_pos = {
-        "Quarterbacks": "QB",
-        "Running Backs": "RB",
-        "Wide Receivers": "WR",
-        "Tight Ends": "TE",
-    }
-
-    result: Dict[str, Dict[str, Dict[str, Any]]] = {}
-
-    for h2 in soup.find_all("h2"):
-        heading = h2.get_text(strip=True)
-        pos_code = heading_to_pos.get(heading)
-        if not pos_code:
-            continue
-
-        table = h2.find_next("table")
-        if not table:
-            continue
-
-        pos_players = parse_position_table_for_week(table, pos_code, target_week)
-        result[pos_code] = pos_players
-
-    return result
-
-
-def parse_position_table_for_week(
-        table,
-        pos_code: str,
-        target_week: int,
-) -> Dict[str, Dict[str, Any]]:
-    thead = table.find("thead")
-    tbody = table.find("tbody")
-    if not thead or not tbody:
-        return {}
-
-    head_rows = thead.find_all("tr")
-    if not head_rows:
-        return {}
-
-    week_hdr_cells = head_rows[0].find_all("th")
-    week_col_idx = None
-    target_label = f"Wk {target_week}".lower()
-
-    for i, th in enumerate(week_hdr_cells):
-        txt = th.get_text(strip=True).lower()
-        if txt == target_label:
-            week_col_idx = i
-            break
-
-    if week_col_idx is None:
-        return {}
-
-    pos_players: Dict[str, Dict[str, Any]] = {}
-
-    for tr in tbody.find_all("tr"):
-        cells = tr.find_all("td")
-        if len(cells) <= week_col_idx:
-            continue
-
-        name_cell = cells[0]
-        link = name_cell.find("a")
-        player_name = (
-            link.get_text(strip=True) if link is not None else name_cell.get_text(strip=True)
-        )
-        if not player_name:
-            continue
-        player_name = normalize_name(player_name)
-
-        stat_cell = cells[week_col_idx]
-        plain_text = stat_cell.get_text(strip=True)
-        if plain_text == "" or plain_text == "0":
-            continue
-
-        lines = list(stat_cell.stripped_strings)
-        stats = parse_stat_lines_for_pos(lines, pos_code)
-        if stats:
-            pos_players[player_name] = stats
-
-    return pos_players
-
-
-def parse_stat_lines_for_pos(lines, pos_code: str) -> Dict[str, Any]:
-    """
-    lines: list of text lines from the cell for that week, e.g.
-      QB: ["320-2-1", "3-19-0"]
-      RB: ["8-69-0", "1-6-0"]
-    """
-
-    def _parse_nums(line: str) -> list[int]:
-        line = line.strip()
-        if not line:
-            return []
-
-        parts = line.split("-")
-        nums: list[int] = []
-        i = 0
-        while i < len(parts):
-            part = parts[i].strip()
-            if part == "":
-                if i + 1 < len(parts) and parts[i + 1].strip():
-                    nums.append(-int(parts[i + 1].strip()))
-                    i += 2
-                else:
-                    i += 1
-            else:
-                nums.append(int(part))
-                i += 1
-            if len(nums) >= 3:
-                break
-        return nums
-
-    nums_by_line: list[list[int]] = []
-    for line in lines:
-        nums = _parse_nums(line)
-        if nums:
-            nums_by_line.append(nums)
-
-    stats: Dict[str, Any] = {}
-
-    if pos_code == "QB":
-        if len(nums_by_line) >= 1 and len(nums_by_line[0]) >= 3:
-            py, ptd, ints = nums_by_line[0][:3]
-            stats.update({"pass_yds": py, "pass_td": ptd, "int": ints})
-        if len(nums_by_line) >= 2 and len(nums_by_line[1]) >= 3:
-            ra, ry, rtd = nums_by_line[1][:3]
-            stats.update({"rush_att": ra, "rush_yds": ry, "rush_td": rtd})
-
-    elif pos_code in {"RB", "WR"}:
-        if len(nums_by_line) >= 1 and len(nums_by_line[0]) >= 3:
-            ra, ry, rtd = nums_by_line[0][:3]
-            stats.update({"rush_att": ra, "rush_yds": ry, "rush_td": rtd})
-        if len(nums_by_line) >= 2 and len(nums_by_line[1]) >= 3:
-            rec, r_yards, rtd2 = nums_by_line[1][:3]
-            stats.update({"rec": rec, "rec_yds": r_yards, "rec_td": rtd2})
-
-    elif pos_code == "TE":
-        if len(nums_by_line) >= 1 and len(nums_by_line[0]) >= 3:
-            rec, r_yards, rtd = nums_by_line[0][:3]
-            stats.update({"rec": rec, "rec_yds": r_yards, "rec_td": rtd})
-
-    else:
-        if len(nums_by_line) >= 1 and len(nums_by_line[0]) >= 3:
-            a, b, c = nums_by_line[0][:3]
-            stats.update({"stat1": a, "stat2": b, "stat3": c})
-
-    return stats
-
-
-def count_roster_positions(positions: list[str]) -> dict[str, int]:
-    """
-    Takes a Sleeper roster_positions array and returns a count of each slot type.
-    Example:
-      ['QB','RB','RB','WR','WR','TE','FLEX',...] → {'QB':1,'RB':2,'WR':2,...}
-
-    Provider aliases (OP, RB/WR/TE, WRRB_FLEX, D/ST, …) collapse to the canonical name.
-    Restricted flex (WR/RB only, WR/TE, RB/TE) stays distinct from standard FLEX.
-    so Fleaflicker/Yahoo/ESPN slot lists count the same as Sleeper.
-    """
-    from utils.lineup_slots import count_lineup_slots
-    return count_lineup_slots(positions)
+from utils.nfl import (  # noqa: F401,F403
+    ALIASES,
+    BASELINE_WEIGHTS,
+    DST_CANON,
+    EARLY_SEASON_CURRENT_WEIGHTS,
+    EFF_LABELS,
+    MIN_PARTICIPATION,
+    POSITIONS,
+    PROJECTION_DIVISOR,
+    RANK_METRICS,
+    REG_WEEKS,
+    SCHED_TEAM_ALIAS,
+    STADIUMS,
+    STAT_KEYS,
+    TEAM_ABBR_ALIASES,
+    TEAM_ALIASES,
+    TEAM_FULL_NAMES,
+    VALID_PHASES,
+    WINSOR_MULTIPLIER,
+    _COLD_WEEK_START,
+    _FULL_NAMES,
+    _NFL_FRANCHISES,
+    _NICKNAMES,
+    _STAT_KEY_ALIASES,
+    _as_float,
+    _blank_pos_totals,
+    _calendar_phase,
+    _competition_ranks,
+    _efficiency,
+    _espn_logo_slug,
+    _espn_logo_url,
+    _per_game,
+    _row_scores,
+    _row_season_week,
+    _safe_get,
+    _stat_value,
+    aggregate_completed_games,
+    aggregate_defense_games,
+    aggregate_defense_stats,
+    aggregate_sleeper_team_weeks,
+    aggregate_sleeper_team_weeks_for_teams,
+    blend_value,
+    build_defense_vs_position,
+    build_offense_table,
+    byes_for_season,
+    calendar_nfl_season,
+    canon_team,
+    canonical_teams_index,
+    canonicalize_game_teams,
+    canonicalize_schedule,
+    competition_ranks,
+    completed_defense_games,
+    compute_team_offense,
+    current_sample_weight,
+    def_team_logo_urls,
+    fully_completed_weeks,
+    game_adjustment,
+    game_environment,
+    get_bye_week,
+    get_team_full_name,
+    lookup_team_map,
+    matchup_cell_ease,
+    meaningful_participation,
+    nfl_state_is_stale,
+    nfl_state_last_good_at,
+    norm_sched_team,
+    normalize_nfl_state,
+    normalize_nfl_team,
+    normalize_schedule,
+    normalize_team,
+    pregame_baseline,
+    rank_offense_table,
+    rank_team_schedules,
+    rank_values,
+    ranked_metric,
+    rating_cache_key,
+    read_csv_team_totals,
+    sched_rank_color,
+    scoring_profile_hash,
+    season_cache_key,
+    season_weights,
+    stadium_coords,
+    table_fingerprint,
+    team_abbr_keys,
+)
+
+from utils.projections import (  # noqa: F401,F403
+    BASE,
+    FULL_GAMES_MIN,
+    FULL_VOLUME_MINS,
+    NFL_TEAMS,
+    POINTS,
+    POINTS_PER_GAME,
+    PROJECTION_CACHE_VERSION,
+    ProjectionResult,
+    QualificationPolicy,
+    SCHEDULE_CACHE,
+    SCHEDULE_TTL,
+    SEASON_AVERAGE,
+    TANK01_API_HOST,
+    TANK01_API_KEY,
+    TANK01_HOST,
+    WEEKLY,
+    _DEFAULT_MAX_PLAUSIBLE_PPG,
+    _DEFAULT_RATES,
+    _LOG,
+    _MAX_PLAUSIBLE_PPG,
+    _WEEK_STATS_TO_SLEEPER,
+    _headers,
+    _is_final,
+    _is_regular,
+    _positive,
+    _rate,
+    _season_total_projection,
+    _sleeper_standard_points,
+    _sleeper_stats_to_variants,
+    _sleeper_week_value,
+    _valid_ppg,
+    brier_score,
+    completed_points_summary,
+    completed_regular_season_rounds,
+    confidence_from_inputs,
+    decision_regret,
+    fetch_week_from_sleeper,
+    fetch_week_from_tank01,
+    fetch_week_projections,
+    log_loss,
+    map_weekly_projections_to_sleeper,
+    pick_proj_variant,
+    pick_proj_variant_from_draft_scoring,
+    player_completed_weeks,
+    player_qualification_note,
+    player_sample_note,
+    precision_at_k,
+    projection_cache_key,
+    projection_points,
+    qualification_policy,
+    rank_interval,
+    resolve_projected_ppg,
+    resolve_projected_ppg_many,
+    scaled_minimum,
+    score_stats,
+    scoring_fingerprint,
+    week_proj_map_from_bundles,
+    week_stat_points,
+    week_stats_line_points,
+    weekly_projection_points,
+)
+
+from utils.game_status import (  # noqa: F401,F403
+    BEFORE_WINDOW,
+    IN_WINDOW,
+    build_games_by_team,
+    build_status_by_pid,
+    build_status_for_week,
+    build_teams_overview,
+    decorate_player_display,
+    finished_game_ids_for_week,
+    game_has_started,
+    get_league_rostered_player_ids,
+    get_nfl_games_for_week,
+    normalize_game_status_from_tank01,
+    pinfo_for_pid,
+    resolve_adv_metrics_completed_week,
+    streak_class,
+    streak_edge_class,
+    week_has_final_game,
+)
+
+from utils.players import (  # noqa: F401,F403
+    BLEND_FULL_SEASON,
+    PUNCT_RE,
+    PlayerIdentityResolver,
+    SUFFIXES,
+    WS_RE,
+    _BOX_PAYLOAD_CACHE,
+    _BOX_PAYLOAD_TTL_FINAL,
+    _BOX_PAYLOAD_TTL_LIVE,
+    _BOX_PAYLOAD_TTL_SCHEDULED,
+    _DEFAULT_THRESHOLDS,
+    _ID_FIELDS,
+    _MIN_GAMES,
+    _POST_WEEK_LABELS,
+    _POS_ORDER,
+    _POS_THRESHOLDS,
+    _ROLE_POSITIONS,
+    _TEAM_ABBR_ALIASES,
+    _TEAM_CANON,
+    _TEAM_SCHEDULE_CACHE,
+    _TEAM_SCHEDULE_TTL,
+    _VERIFIED_GIVEN_ALIASES,
+    _block_num,
+    _bye_row,
+    _canon,
+    _cell_value,
+    _enrich_from_scores,
+    _fmt_date_label,
+    _fmt_kickoff,
+    _group_columns,
+    _has_any,
+    _label_for,
+    _logo_for,
+    _lookup_team_map,
+    _percentile,
+    _player_identity,
+    _result_for_team,
+    _row_from_game,
+    _safe_float,
+    _stat_bundle,
+    _status_from_game,
+    _team_keys,
+    _teams_match,
+    blended_consistency_profile,
+    build_team_schedule,
+    consistency_profile,
+    from_players_map,
+    get_shaped_boxscore,
+    logger,
+    norm_name,
+    normalize_name,
+    normalize_player_name,
+    resolve_player_identity,
+    resolve_team_for_season,
+    safe_owner_name,
+    shape_boxscore_payload,
+    tank_boxscore_game_id,
+)
+
+from utils.live_stats import (  # noqa: F401,F403
+    _normalize_dst_stats,
+    _normalize_qb_stats,
+    _normalize_skill_stats,
+    _safe_int,
+    box_score_line_is_trusted,
+    build_and_save_week_stats_for_league,
+    build_live_stats_for_game_from_tank,
+    build_tank_player_index,
+    count_roster_positions,
+    get_live_game_ids_for_today,
+    get_started_game_ids_for_week,
+    load_sleeper_week_stats,
+    merge_live_stats_into_league_week_stats,
+    overlay_idp_and_k_stats_from_sleeper,
+    parse_position_table_for_week,
+    parse_stat_lines_for_pos,
+    parse_team_week_pos_player_stats,
+    player_week_stat_entry,
+    sleeper_week_stats_path,
+    tank01_status_confirms_started,
+)
+
+from utils.draft import (  # noqa: F401,F403
+    DR_CONSTRUCTION_REDRAFT,
+    DR_CONSTRUCTION_STARTUP,
+    DR_SPLIT_REDRAFT,
+    DR_SPLIT_STARTUP,
+    KEEP,
+    KeeperCandidate,
+    KeeperRules,
+    PASS,
+    PS_AGE_PEAKS,
+    PS_WEIGHTS,
+    TOSS,
+    _FLEX_COVERS,
+    _has_flex_for,
+    _optimize_unique_rounds,
+    _sort_key,
+    adjust_adp_for_keepers,
+    analyze,
+    avg_pick_value_for_round,
+    bucket_for_slot,
+    clamp01,
+    compute_pick_score,
+    compute_pick_slots,
+    cost_collisions,
+    dr_apply_field_curve,
+    dr_avg_top_n,
+    dr_construction_mix,
+    dr_grade_letter,
+    dr_grade_split,
+    dr_league_lineup_avg,
+    dr_letter_to_score,
+    dr_lineup_score,
+    dr_optimal_lineup,
+    dr_peer_starter_avg,
+    dr_peer_value_ps,
+    dr_resolve_strength_baseline,
+    dr_rookie_team_score,
+    dr_slot_eligible,
+    dr_starter_metric_avg,
+    dr_team_grade_score,
+    dr_weighted_pick_score,
+    empirical_slot_allocation,
+    evaluate,
+    is_pick_asset_id,
+    keeper_cost_round,
+    keeper_surplus_value,
+    market_round,
+    parse_pick_asset,
+    pick_label,
+    pick_value,
+    pick_value_from_table,
+    placements_from_bracket,
+    project_league_keepers,
+    ps_tier_of,
+    resolve_cost_collisions,
+    slots_from_regular_season,
+    starter_counts,
+    total_surplus,
+    verdict,
+)
+
+from utils.core import (  # noqa: F401,F403
+    BETTER_OUTWARD_METRICS,
+    BETTER_OUTWARD_SIGNS,
+    EASTERN,
+    _COMMENT_RE,
+    _LITERAL_BLOCK_RE,
+    _MISSING,
+    api_int,
+    api_str,
+    ord_suffix,
+    ordinal,
+    rel_time,
+    safe_float,
+    safe_int,
+    safe_int_or_none,
+    safe_local_url,
+    sanitize_for_json,
+    strip_html_comments,
+    validate_league_id,
+    z_better_outward,
+)
+
+from bs4 import (  # noqa: F401,F403
+    BeautifulSoup,
+)
+
+
+from collections import (  # noqa: F401,F403
+    OrderedDict as _OrderedDict,
+    defaultdict,
+)
+
+
+from contextlib import (  # noqa: F401,F403
+    contextmanager as _contextmanager,
+)
+
+
+from dashboard_services.api import (  # noqa: F401,F403
+    _fetch_league,
+    fetch_tank_boxscore,
+    fetch_team_game_logs_html,
+    get_matchups,
+    get_nfl_games_for_week_raw,
+    get_nfl_players,
+    get_nfl_state,
+    get_rosters,
+    get_traded_picks,
+    get_transactions,
+    get_users,
+)
+
+
+from dashboard_services.display_names import (  # noqa: F401,F403
+    team_label_from_user,
+    username_from_user,
+)
+
+
+from datetime import (  # noqa: F401,F403
+    date,
+    datetime,
+    timezone,
+)
+
+
+from pathlib import (  # noqa: F401,F403
+    Path,
+)
+
+
+from typing import (  # noqa: F401,F403
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Optional,
+    TYPE_CHECKING,
+)
+
+
+__all__ = ['ALIASES', 'Any', 'BASE', 'BASELINE_WEIGHTS', 'BEFORE_WINDOW', 'BETTER_OUTWARD_METRICS', 'BETTER_OUTWARD_SIGNS', 'BLEND_FULL_SEASON', 'BeautifulSoup', 'CACHE_DIR', 'Callable', 'DATA_DIR', 'DR_CONSTRUCTION_REDRAFT', 'DR_CONSTRUCTION_STARTUP', 'DR_SPLIT_REDRAFT', 'DR_SPLIT_STARTUP', 'DST_CANON', 'Dict', 'EARLY_SEASON_CURRENT_WEIGHTS', 'EASTERN', 'EFF_LABELS', 'FULL_GAMES_MIN', 'FULL_VOLUME_MINS', 'HEALTH_FILENAME', 'IN_WINDOW', 'Iterable', 'KEEP', 'KeeperCandidate', 'KeeperRules', 'List', 'MIN_PARTICIPATION', 'NFL_TEAMS', 'Optional', 'PASS', 'PLAYER_HISTORY_DIR', 'PLAYER_INVESTMENT_DIR', 'POINTS', 'POINTS_PER_GAME', 'POSITIONS', 'PROJECTION_CACHE_VERSION', 'PROJECTION_DIVISOR', 'PS_AGE_PEAKS', 'PS_WEIGHTS', 'PUNCT_RE', 'Path', 'PlayerIdentityResolver', 'ProjectionResult', 'QualificationPolicy', 'RANK_METRICS', 'REG_WEEKS', 'ROOT_DIR', 'SCHEDULE_CACHE', 'SCHEDULE_TTL', 'SCHED_TEAM_ALIAS', 'SEASON_AVERAGE', 'STADIUMS', 'STATUS_FINAL', 'STATUS_IN_PROGRESS', 'STATUS_NOT_STARTED', 'STAT_KEYS', 'SUFFIXES', 'TANK01_API_HOST', 'TANK01_API_KEY', 'TANK01_HOST', 'TEAM_ABBR_ALIASES', 'TEAM_ALIASES', 'TEAM_FULL_NAMES', 'TOSS', 'TYPE_CHECKING', 'VALID_PHASES', 'WEEKLY', 'WINSOR_MULTIPLIER', 'WS_RE', '_BOX_PAYLOAD_CACHE', '_BOX_PAYLOAD_TTL_FINAL', '_BOX_PAYLOAD_TTL_LIVE', '_BOX_PAYLOAD_TTL_SCHEDULED', '_COLD_WEEK_START', '_COMMENT_RE', '_DEFAULT_MAX_PLAUSIBLE_PPG', '_DEFAULT_RATES', '_DEFAULT_THRESHOLDS', '_FLEX_COVERS', '_FULL_NAMES', '_ID_FIELDS', '_JSON_CACHE', '_JSON_CACHE_LOCK', '_JSON_CACHE_MAX', '_LITERAL_BLOCK_RE', '_LOG', '_MAX_PLAUSIBLE_PPG', '_MIN_GAMES', '_MISSING', '_NFL_FRANCHISES', '_NICKNAMES', '_OrderedDict', '_PLAYERS_INDEX_MERGED', '_POST_WEEK_LABELS', '_POS_ORDER', '_POS_THRESHOLDS', '_RELEVANT_INDEX_MERGED', '_ROLE_POSITIONS', '_STAT_KEY_ALIASES', '_TEAM_ABBR_ALIASES', '_TEAM_CANON', '_TEAM_SCHEDULE_CACHE', '_TEAM_SCHEDULE_TTL', '_VALID_STATUSES', '_VERIFIED_GIVEN_ALIASES', '_WEEK_PROJ_BUILD_LOCK_TIMEOUT', '_WEEK_PROJ_EMPTY_MAX_BYTES', '_WEEK_PROJ_EMPTY_TTL_SEC', '_WEEK_PROJ_FAIL_LOCK', '_WEEK_PROJ_FAIL_UNTIL', '_WEEK_PROJ_LOCKS', '_WEEK_PROJ_LOCKS_GUARD', '_WEEK_PROJ_MEMO', '_WEEK_PROJ_MEMO_LOCK', '_WEEK_PROJ_MEMO_MAX', '_WEEK_PROJ_TTL_HOURS', '_WEEK_STATS_TO_SLEEPER', '_as_float', '_blank_pos_totals', '_block_num', '_bye_lookup_for_overlay', '_bye_row', '_calendar_phase', '_canon', '_cell_value', '_clear_func_cache_for_league', '_competition_ranks', '_contextmanager', '_efficiency', '_enrich_from_scores', '_espn_logo_slug', '_espn_logo_url', '_fetch_league', '_fmt_date_label', '_fmt_kickoff', '_group_columns', '_has_any', '_has_flex_for', '_headers', '_is_final', '_is_regular', '_label_for', '_logo_for', '_lookup_team_map', '_normalize_dst_stats', '_normalize_qb_stats', '_normalize_skill_stats', '_optimize_unique_rounds', '_overlay_players_index', '_per_game', '_percentile', '_player_identity', '_positive', '_rate', '_read_week_projection_file', '_remove_empty_week_proj', '_restore_week_proj_from_redis', '_result_for_team', '_row_from_game', '_row_scores', '_row_season_week', '_safe_float', '_safe_get', '_safe_int', '_season_total_projection', '_sleeper_standard_points', '_sleeper_stats_to_variants', '_sleeper_week_value', '_sort_key', '_stat_bundle', '_stat_value', '_status_from_game', '_team_keys', '_teams_match', '_valid_ppg', '_week_proj_cross_lock', '_week_proj_file_is_empty', '_week_proj_is_stale', '_week_proj_lock', '_week_proj_memo_max_from_env', 'adjust_adp_for_keepers', 'aggregate_completed_games', 'aggregate_defense_games', 'aggregate_defense_stats', 'aggregate_sleeper_team_weeks', 'aggregate_sleeper_team_weeks_for_teams', 'analyze', 'api_int', 'api_str', 'avg_pick_value_for_round', 'blend_value', 'blended_consistency_profile', 'box_score_line_is_trusted', 'brier_score', 'bucket_for_slot', 'build_and_save_week_stats_for_league', 'build_defense_vs_position', 'build_games_by_team', 'build_live_stats_for_game_from_tank', 'build_offense_table', 'build_status_by_pid', 'build_status_for_week', 'build_tank_player_index', 'build_team_schedule', 'build_teams_overview', 'byes_for_season', 'calendar_nfl_season', 'canon_team', 'canonical_teams_index', 'canonicalize_game_teams', 'canonicalize_schedule', 'clamp01', 'clear_activity_cache_for_league', 'clear_league_provider_cache_for_league', 'clear_teams_cache_for_league', 'clear_weekly_cache_for_league', 'competition_ranks', 'completed_defense_games', 'completed_points_summary', 'completed_regular_season_rounds', 'compute_pick_score', 'compute_pick_slots', 'compute_team_offense', 'confidence_from_inputs', 'consistency_profile', 'cost_collisions', 'count_roster_positions', 'current_sample_weight', 'date', 'datetime', 'decision_regret', 'decorate_player_display', 'def_team_logo_urls', 'defaultdict', 'dr_apply_field_curve', 'dr_avg_top_n', 'dr_construction_mix', 'dr_grade_letter', 'dr_grade_split', 'dr_league_lineup_avg', 'dr_letter_to_score', 'dr_lineup_score', 'dr_optimal_lineup', 'dr_peer_starter_avg', 'dr_peer_value_ps', 'dr_resolve_strength_baseline', 'dr_rookie_team_score', 'dr_slot_eligible', 'dr_starter_metric_avg', 'dr_team_grade_score', 'dr_weighted_pick_score', 'empirical_slot_allocation', 'evaluate', 'fetch_tank_boxscore', 'fetch_team_game_logs_html', 'fetch_week_from_sleeper', 'fetch_week_from_tank01', 'fetch_week_projections', 'finished_game_ids_for_week', 'from_players_map', 'fully_completed_weeks', 'game_adjustment', 'game_environment', 'game_has_started', 'get_bye_week', 'get_league_rostered_player_ids', 'get_live_game_ids_for_today', 'get_matchups', 'get_nfl_games_for_week', 'get_nfl_games_for_week_raw', 'get_nfl_players', 'get_nfl_state', 'get_or_refresh_schedule_path', 'get_players_index_cached', 'get_rosters', 'get_shaped_boxscore', 'get_started_game_ids_for_week', 'get_team_full_name', 'get_traded_picks', 'get_transactions', 'get_users', 'get_week_projections_cached', 'get_week_schedule_cached', 'health_path', 'is_pick_asset_id', 'keeper_cost_round', 'keeper_surplus_value', 'load_idp_index', 'load_model_value_table', 'load_players_index', 'load_relevant_index', 'load_sleeper_week_stats', 'load_teams_index', 'load_usage_table', 'load_week_projection', 'load_week_sched', 'load_week_schedule', 'load_week_stats', 'log_loss', 'logger', 'lookup_team_map', 'map_weekly_projections_to_sleeper', 'market_round', 'matchup_cell_ease', 'meaningful_participation', 'merge_live_stats_into_league_week_stats', 'nfl_state_is_stale', 'nfl_state_last_good_at', 'norm_name', 'norm_sched_team', 'normalize_game_status_from_tank01', 'normalize_name', 'normalize_nfl_state', 'normalize_nfl_team', 'normalize_player_name', 'normalize_schedule', 'normalize_team', 'ord_suffix', 'ordinal', 'overlay_idp_and_k_stats_from_sleeper', 'parse_pick_asset', 'parse_position_table_for_week', 'parse_stat_lines_for_pos', 'parse_team_week_pos_player_stats', 'path_dynastyprocess_values', 'path_engine_table', 'path_fantasycalc_sf_values', 'path_fantasycalc_values', 'path_idp_index', 'path_model_value_table', 'path_players_index', 'path_relevant_index', 'path_teams_index', 'path_usage_table', 'path_week_proj', 'path_week_schedule', 'path_week_stats', 'pick_label', 'pick_proj_variant', 'pick_proj_variant_from_draft_scoring', 'pick_value', 'pick_value_from_table', 'pinfo_for_pid', 'placements_from_bracket', 'player_completed_weeks', 'player_qualification_note', 'player_sample_note', 'player_week_stat_entry', 'precision_at_k', 'pregame_baseline', 'project_league_keepers', 'projection_cache_key', 'projection_points', 'ps_tier_of', 'qualification_policy', 'rank_interval', 'rank_offense_table', 'rank_team_schedules', 'rank_values', 'ranked_metric', 'rating_cache_key', 'read_csv_team_totals', 'read_health', 'read_json', 'read_json_cached', 'rel_time', 'requests', 'resolve_adv_metrics_completed_week', 'resolve_cost_collisions', 'resolve_player_identity', 'resolve_projected_ppg', 'resolve_projected_ppg_many', 'resolve_team_for_season', 'safe_float', 'safe_int', 'safe_int_or_none', 'safe_local_url', 'safe_owner_name', 'sanitize_for_json', 'save_week_projections', 'save_week_schedule', 'scaled_minimum', 'sched_rank_color', 'score_stats', 'scoring_fingerprint', 'scoring_profile_hash', 'season_cache_key', 'season_weights', 'shape_boxscore_payload', 'sleeper_week_stats_path', 'slots_from_regular_season', 'stadium_coords', 'starter_counts', 'streak_class', 'streak_edge_class', 'strip_html_comments', 'table_fingerprint', 'tank01_status_confirms_started', 'tank_boxscore_game_id', 'team_abbr_keys', 'team_label_from_user', 'timezone', 'total_surplus', 'username_from_user', 'validate_league_id', 'verdict', 'week_has_final_game', 'week_proj_map_from_bundles', 'week_stat_points', 'week_stats_line_points', 'weekly_projection_points', 'write_json', 'write_step_health', 'z_better_outward']
+
+
+# --- monkeypatch propagation (see utils/_shim.py) ---
+from utils._shim import propagate_sets_to as _propagate_sets_to
+import importlib as _importlib
+_propagate_sets_to(__name__, _importlib.import_module("utils.data_cache"), _importlib.import_module("utils.nfl"), _importlib.import_module("utils.projections"), _importlib.import_module("utils.game_status"), _importlib.import_module("utils.players"), _importlib.import_module("utils.live_stats"), _importlib.import_module("utils.draft"), _importlib.import_module("utils.core"))

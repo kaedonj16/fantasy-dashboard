@@ -83,10 +83,10 @@ def test_stale_fallback_arithmetic_with_zeroed_ts():
 
 
 def test_refresh_endpoint_sets_marker_not_zero_ts():
-    src = _read("routes/admin_api_bp.py")
+    src = _read("routes/internal_bp.py")
     # Find the api_refresh_league function body.
     start = src.index("def api_refresh_league")
-    end = src.index("@admin_api_bp.route", start)
+    end = src.index("@internal_bp.route", start)
     body = src[start:end]
     assert '["force_refresh"] = True' in body
     assert '["ts"] = 0' not in body

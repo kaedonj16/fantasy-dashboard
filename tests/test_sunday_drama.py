@@ -287,7 +287,7 @@ def _live_fixtures(monkeypatch, m):
     monkeypatch.setattr(m, "load_teams_index", lambda: {})
     monkeypatch.setattr(m, "build_offense_rankings", lambda *a: {})
     monkeypatch.setattr(m, "get_nfl_scores_for_date", lambda *a: None)
-    monkeypatch.setattr("utils.utils.load_week_projection", lambda *a, **k: {})
+    monkeypatch.setattr("utils.data_cache.load_week_projection", lambda *a, **k: {})
 
 
 def _drama_matchup():

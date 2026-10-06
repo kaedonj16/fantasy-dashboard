@@ -999,7 +999,7 @@ def _league_display_name(platform, league_id, season):
 def _lineup_lock_base():
     """Return (games, season, week) or None when there is nothing to do."""
     from dashboard_services.api import get_nfl_state
-    from utils.utils import load_week_schedule
+    from utils.data_cache import load_week_schedule
 
     state = get_nfl_state() or {}
     season = state.get("season")
@@ -1332,7 +1332,7 @@ def notify_injury_flip():
         from dashboard_services.platform_api import get_rosters
         from dashboard_services.injury_return import refresh_espn_return_dates
         from utils.lineup_issues import SERIOUS_INJURY_STATUSES
-        from utils.utils import load_week_schedule
+        from utils.data_cache import load_week_schedule
 
         state = get_nfl_state() or {}
         season = state.get("season")
@@ -1557,7 +1557,7 @@ def notify_waiver_candidates():
         from dashboard_services.db import get_conn
         from dashboard_services.api import get_nfl_state
         from dashboard_services.platform_api import get_rosters
-        from utils.utils import load_model_value_table
+        from utils.data_cache import load_model_value_table
         from utils.waiver_score import pick_waiver_push_candidate, waiver_push_copy
 
         state  = get_nfl_state() or {}
@@ -1628,7 +1628,7 @@ def notify_rival_trades():
         from dashboard_services.db import get_conn
         from dashboard_services.api import get_nfl_state
         from dashboard_services.platform_api import get_transactions
-        from utils.utils import load_model_value_table
+        from utils.data_cache import load_model_value_table
 
         state  = get_nfl_state() or {}
         season = state.get("season")
@@ -2335,7 +2335,7 @@ def notify_transaction_drops():
         from dashboard_services.api import get_nfl_state
         from dashboard_services.platform_api import get_transactions
         from dashboard_services.db import get_conn
-        from utils.utils import load_model_value_table
+        from utils.data_cache import load_model_value_table
 
         state  = get_nfl_state() or {}
         season = state.get("season")
@@ -2467,7 +2467,6 @@ def notify_watchlist_alerts():
         from dashboard_services.db import get_conn
         from dashboard_services.player_value_history import get_top_movers
         from dashboard_services.api import get_nfl_players
-        from utils.watchlist_alerts import is_value_alert
     except Exception:
         return 0
 
@@ -2649,3 +2648,33 @@ def run_hourly():
     logger.info("[notify] hourly: sent=%d (%s)", counts["total"],
                 ", ".join(f"{k}={v}" for k, v in counts.items() if k != "total"))
     return counts
+
+
+# ======================================================================
+# From utils/watchlist_alerts.py (absorbed)
+# ======================================================================
+
+
+_VALUE_ALERT_PCT = 0.10
+_VALUE_ALERT_FLOOR = 50.0
+
+
+def value_alert_threshold(value) -> float:
+    """The 7-day value move (absolute points) required to alert on a player of
+    this current value."""
+    try:
+        v = float(value or 0)
+    except (TypeError, ValueError):
+        v = 0.0
+    return max(_VALUE_ALERT_FLOOR, _VALUE_ALERT_PCT * v)
+
+
+def is_value_alert(delta, value) -> bool:
+    """True when a 7-day ``delta`` clears the value-aware threshold for a player
+    currently worth ``value``."""
+    if delta is None:
+        return False
+    try:
+        return abs(float(delta)) >= value_alert_threshold(value)
+    except (TypeError, ValueError):
+        return False

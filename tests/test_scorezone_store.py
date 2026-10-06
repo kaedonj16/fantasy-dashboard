@@ -352,7 +352,7 @@ def test_discover_live_games_covers_previous_week(monkeypatch):
 
     monkeypatch.setitem(sys.modules, "requests", _Requests)
 
-    fake_alt = types.ModuleType("utils.scorezone_alt_pbp")
+    fake_alt = types.ModuleType("utils.scorezone")
     fake_alt._ESPN_SCOREBOARD = "https://example.invalid/scoreboard"
     fake_alt._UA = "test"
 
@@ -363,7 +363,7 @@ def test_discover_live_games_covers_previous_week(monkeypatch):
         return {f"t{wk}": {"gameID": gid, "gameStatusCode": "1"}}
 
     fake_alt.extract_espn_scoreboard_lookup = fake_lookup
-    monkeypatch.setitem(sys.modules, "utils.scorezone_alt_pbp", fake_alt)
+    monkeypatch.setitem(sys.modules, "utils.scorezone", fake_alt)
 
     games = rs.discover_live_games(current_week=4)
     assert requested_weeks == ["4", "3"]
@@ -393,11 +393,11 @@ def test_discover_live_games_skips_previous_week_one(monkeypatch):
             return _Resp()
 
     monkeypatch.setitem(sys.modules, "requests", _Requests)
-    fake_alt = types.ModuleType("utils.scorezone_alt_pbp")
+    fake_alt = types.ModuleType("utils.scorezone")
     fake_alt._ESPN_SCOREBOARD = "https://example.invalid/scoreboard"
     fake_alt._UA = "test"
     fake_alt.extract_espn_scoreboard_lookup = lambda payload: {}
-    monkeypatch.setitem(sys.modules, "utils.scorezone_alt_pbp", fake_alt)
+    monkeypatch.setitem(sys.modules, "utils.scorezone", fake_alt)
 
     assert rs.discover_live_games(current_week=1) == []
     assert requested_weeks == ["1"]
@@ -433,10 +433,10 @@ def test_poll_once_backfills_recent_unseen_finals(monkeypatch):
         date_part = gid.split("_", 1)[0] if "_" in gid else ""
         return (date_part, "KC", "BUF")
 
-    fake_alt = types.ModuleType("utils.scorezone_alt_pbp")
+    fake_alt = types.ModuleType("utils.scorezone")
     fake_alt.fetch_alt_pbp_plays = fake_pbp
     fake_alt.parse_tank_game_id = fake_parse
-    monkeypatch.setitem(sys.modules, "utils.scorezone_alt_pbp", fake_alt)
+    monkeypatch.setitem(sys.modules, "utils.scorezone", fake_alt)
 
     fake_api = types.ModuleType("dashboard_services.api")
     fake_api.get_nfl_state = lambda: {"season": 2026, "week": 4}

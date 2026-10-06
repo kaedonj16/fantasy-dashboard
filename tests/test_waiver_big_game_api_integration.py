@@ -15,10 +15,10 @@ def _big_game_client(monkeypatch, roster_context):
     import sys
     import types
     from flask import Flask
-    import routes.waiver_api_bp as waiver
+    import routes.waiver_bp as waiver
 
     app = Flask(__name__)
-    app.register_blueprint(waiver.waiver_api_bp)
+    app.register_blueprint(waiver.waiver_bp)
     monkeypatch.setattr(waiver, "get_nfl_state", lambda: {"season": 2026, "week": 4})
     monkeypatch.setattr(waiver, "get_league_ctx_from_cache", lambda *a: roster_context)
     monkeypatch.setattr(waiver, "get_model_value_table_cached", lambda: [
@@ -39,7 +39,7 @@ def _big_game_client(monkeypatch, roster_context):
 
 
 def test_failed_roster_loading_cannot_confirm_unrostered(monkeypatch):
-    import routes.waiver_api_bp as waiver
+    import routes.waiver_bp as waiver
     client = _big_game_client(monkeypatch, {})
     monkeypatch.setattr(waiver, "get_league_ctx_from_cache", lambda *a: (_ for _ in ()).throw(TimeoutError()))
     response = client.get("/api/waiver-big-games?league_id=L&season=2026&week=3")

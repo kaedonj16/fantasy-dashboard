@@ -1258,30 +1258,6 @@ except Exception as e:
     logger.warning("[players-bp] skipped: %s", e)
 
 try:
-    from routes.historical_api_bp import historical_api_bp
-
-    app.register_blueprint(historical_api_bp)
-    logger.info("[historical-api-bp] registered")
-except Exception as e:
-    logger.warning("[historical-api-bp] skipped: %s", e)
-
-try:
-    from routes.yahoo_auth_bp import yahoo_auth_bp
-
-    app.register_blueprint(yahoo_auth_bp)
-    logger.info("[yahoo-auth-bp] registered")
-except Exception as e:
-    logger.warning("[yahoo-auth-bp] skipped: %s", e)
-
-try:
-    from routes.google_auth_bp import google_auth_bp
-
-    app.register_blueprint(google_auth_bp)
-    logger.info("[google-auth-bp] registered")
-except Exception as e:
-    logger.warning("[google-auth-bp] skipped: %s", e)
-
-try:
     from routes.link_bp import link_bp
 
     app.register_blueprint(link_bp)
@@ -1300,15 +1276,10 @@ try:
     app.register_blueprint(draft_api_bp)
     logger.info("[draft-api-bp] registered")
 
-    from routes.waiver_api_bp import waiver_api_bp
+    from routes.waiver_bp import waiver_bp
 
-    app.register_blueprint(waiver_api_bp)
-    logger.info("[waiver-api-bp] registered")
-
-    from routes.waiver_prefs_bp import waiver_prefs_bp
-
-    app.register_blueprint(waiver_prefs_bp)
-    logger.info("[waiver-prefs-bp] registered")
+    app.register_blueprint(waiver_bp)
+    logger.info("[waiver-bp] registered")
 
     from routes.advanced_metrics_bp import advanced_metrics_bp
 
@@ -1325,20 +1296,10 @@ try:
     app.register_blueprint(league_meta_bp)
     logger.info("[league-meta-bp] registered")
 
-    from routes.admin_api_bp import admin_api_bp
+    from routes.internal_bp import internal_bp
 
-    app.register_blueprint(admin_api_bp)
-    logger.info("[admin-api-bp] registered")
-
-    from routes.analytics_bp import analytics_bp
-
-    app.register_blueprint(analytics_bp)
-    logger.info("[analytics-bp] registered")
-
-    from routes.breakout_api_bp2 import breakout_api_bp2
-
-    app.register_blueprint(breakout_api_bp2)
-    logger.info("[breakout-api-bp] registered")
+    app.register_blueprint(internal_bp)
+    logger.info("[internal-bp] registered")
 except Exception as e:
     logger.warning("[misc-api-bp] skipped: %s", e)
 
@@ -1349,14 +1310,6 @@ try:
     logger.info("[health-bp] registered")
 except Exception as e:
     logger.warning("[health-bp] skipped: %s", e)
-
-try:
-    from routes.draft_board_bp import draft_board_bp
-
-    app.register_blueprint(draft_board_bp)
-    logger.info("[draft-board-bp] registered")
-except Exception as e:
-    logger.warning("[draft-board-bp] skipped: %s", e)
 
 try:
     from routes.push_bp import push_bp
@@ -1375,36 +1328,12 @@ except Exception as e:
     logger.warning("[watchlist-bp] skipped: %s", e)
 
 try:
-    from routes.ui_prefs_bp import ui_prefs_bp
-
-    app.register_blueprint(ui_prefs_bp)
-    logger.info("[ui-prefs-bp] registered")
-except Exception as e:
-    logger.warning("[ui-prefs-bp] skipped: %s", e)
-
-try:
     from routes.history_bp import history_bp
 
     app.register_blueprint(history_bp)
     logger.info("[history-bp] registered")
 except Exception as e:
     logger.warning("[history-bp] skipped: %s", e)
-
-try:
-    from routes.weekly_bp import weekly_bp
-
-    app.register_blueprint(weekly_bp)
-    logger.info("[weekly-bp] registered")
-except Exception as e:
-    logger.warning("[weekly-bp] skipped: %s", e)
-
-try:
-    from routes.wrapped_share_bp import wrapped_share_bp
-
-    app.register_blueprint(wrapped_share_bp)
-    logger.info("[wrapped-share-bp] registered")
-except Exception as e:
-    logger.warning("[wrapped-share-bp] skipped: %s", e)
 
 try:
     from routes.seo_pages_bp import seo_pages_bp
@@ -1442,10 +1371,7 @@ try:
     from utils.ui_audit_fixture import install_ui_audit_hooks
 
     install_ui_audit_hooks()
-    from routes.ui_audit_bp import ui_audit_bp
-
-    app.register_blueprint(ui_audit_bp)
-    logger.info("[ui-audit] hub at /ui-audit (active when UI_AUDIT=1)")
+    logger.info("[ui-audit] hub at /ui-audit served by internal_bp (active when UI_AUDIT=1)")
 except Exception as e:
     logger.warning("[ui-audit] skipped: %s", e)
 
@@ -13858,11 +13784,11 @@ def page_dashboard(platform: str, season: int, league_id: str):
 # /portfolio and /watchlist are served by routes/user_pages_bp.py.
 
 
-# ── Waiver APIs live in routes/waiver_api_bp.py ──────────────────────────────
+# ── Waiver APIs live in routes/waiver_bp.py ───────────────────────────────────
 # /api/waiver-candidates and /api/trending-adds (plus _sleeper_trending_adds).
 
 def _sleeper_trending_adds(*args, **kwargs):
-    from routes.waiver_api_bp import _sleeper_trending_adds as _fn
+    from routes.waiver_bp import _sleeper_trending_adds as _fn
     return _fn(*args, **kwargs)
 
 @app.route("/api/streaming-options")

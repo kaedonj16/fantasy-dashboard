@@ -1,6 +1,6 @@
 """Auth gate on /api/debug-values (CRON_SECRET, fail-closed).
 
-Functional tests against the real blueprint. routes.admin_api_bp imports the
+Functional tests against the real blueprint. routes.internal_bp imports the
 app.py monolith and dashboard_services.db at module/request time, neither of
 which is importable in this env, so both are stubbed -- scoped to each test via
 a monkeypatch fixture (per AGENTS.md: never leave stub modules in sys.modules
@@ -40,7 +40,7 @@ def _fake_get_conn():
 
 @pytest.fixture()
 def client(monkeypatch):
-    """Flask test client with the real admin_api_bp and stubbed heavy imports."""
+    """Flask test client with the real internal_bp and stubbed heavy imports."""
     app_stub = types.ModuleType("app")
     app_stub.DASHBOARD_CACHE = {}
     app_stub.CACHE_TTL = 300
@@ -54,14 +54,14 @@ def client(monkeypatch):
     monkeypatch.setitem(sys.modules, "dashboard_services.db", db_stub)
 
     # Import only after the stubs are in place. No other test module imports
-    # routes.admin_api_bp, so this is the first (cached) import.
-    import routes.admin_api_bp as admin_mod
+    # routes.internal_bp, so this is the first (cached) import.
+    import routes.internal_bp as admin_mod
     from extensions import limiter
 
     test_app = flask.Flask(__name__)
     test_app.config["TESTING"] = True
     limiter.init_app(test_app)
-    test_app.register_blueprint(admin_mod.admin_api_bp)
+    test_app.register_blueprint(admin_mod.internal_bp)
     return test_app.test_client()
 
 

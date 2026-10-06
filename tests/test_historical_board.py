@@ -382,7 +382,7 @@ def test_board_modules_stay_pure():
         assert "from utils.projection_resolver" not in text
         assert "build_player_history_features" not in text
         assert "static/pick_score" not in text
-    bp = (ROOT / "routes" / "historical_api_bp.py").read_text(encoding="utf-8")
+    bp = (ROOT / "routes" / "history_bp.py").read_text(encoding="utf-8")
     assert "/api/historical-player/" in bp
     assert "/api/historical-trends" in bp
     assert "/api/historical-cohort" in bp
@@ -397,17 +397,17 @@ def test_board_modules_stay_pure():
     app_py = (ROOT / "app.py").read_text(encoding="utf-8")
     assert "def _league_players_response" in app_py
     assert "stamp_historical_on_payload" in app_py
-    assert "historical_api_bp" in app_py
+    assert "from routes.history_bp import history_bp" in app_py
     assert "return _league_players_response" in app_py
 
 
 def test_deep_panel_route_serves_json_leaves():
     pytest.importorskip("flask")
     from flask import Flask
-    from routes.historical_api_bp import historical_api_bp
+    from routes.history_bp import history_bp
 
     app = Flask(__name__)
-    app.register_blueprint(historical_api_bp)
+    app.register_blueprint(history_bp)
     aggs = None
     from dashboard_services.historical.aggregates_store import load_profile_aggregates
     aggs = load_profile_aggregates()
@@ -1101,12 +1101,12 @@ def test_historical_trends_route_serves_json_leaves():
     pytest.importorskip("flask")
     from flask import Flask
     from dashboard_services.historical.aggregates_store import load_profile_aggregates
-    from routes.historical_api_bp import historical_api_bp
+    from routes.history_bp import history_bp
 
     if not load_profile_aggregates():
         pytest.skip("profile JSON missing")
     app = Flask(__name__)
-    app.register_blueprint(historical_api_bp)
+    app.register_blueprint(history_bp)
     with app.test_client() as client:
         resp = client.get("/api/historical-trends")
     assert resp.status_code == 200
@@ -1122,7 +1122,7 @@ def test_historical_cohort_route_counts_matched_rows():
     pytest.importorskip("flask")
     from flask import Flask
     from dashboard_services.historical.aggregates_store import load_profile_aggregates
-    from routes.historical_api_bp import historical_api_bp
+    from routes.history_bp import history_bp
 
     aggs = load_profile_aggregates()
     if not aggs:
@@ -1130,7 +1130,7 @@ def test_historical_cohort_route_counts_matched_rows():
     if not ((aggs.get("cohort_index") or {}).get("observations")):
         pytest.skip("cohort index missing")
     app = Flask(__name__)
-    app.register_blueprint(historical_api_bp)
+    app.register_blueprint(history_bp)
     with app.test_client() as client:
         resp = client.post(
             "/api/historical-cohort",

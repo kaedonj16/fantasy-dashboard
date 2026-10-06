@@ -12,8 +12,8 @@ import routes.billing_bp as billing
 ROOT = Path(__file__).resolve().parents[1]
 APP_PY = (ROOT / "app.py").read_text(encoding="utf-8")
 PAYWALL_JS = (ROOT / "static" / "paywall.js").read_text(encoding="utf-8")
-GOOGLE = (ROOT / "routes" / "google_auth_bp.py").read_text(encoding="utf-8")
-YAHOO = (ROOT / "routes" / "yahoo_auth_bp.py").read_text(encoding="utf-8")
+GOOGLE = (ROOT / "routes" / "auth_bp.py").read_text(encoding="utf-8")
+YAHOO = (ROOT / "routes" / "auth_bp.py").read_text(encoding="utf-8")
 BILLING = (ROOT / "routes" / "billing_bp.py").read_text(encoding="utf-8")
 DASH_CSS = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
 LANDING_CSS = (ROOT / "static" / "landing_lite.css").read_text(encoding="utf-8")
@@ -208,7 +208,7 @@ class _JsonResp:
 
 def test_google_callback_resumes_home_pro_checkout(monkeypatch):
     import flask
-    from routes.google_auth_bp import google_auth_bp
+    from routes.auth_bp import auth_bp
 
     monkeypatch.setenv("GOOGLE_CLIENT_ID", "cid")
     monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "csecret")
@@ -233,7 +233,7 @@ def test_google_callback_resumes_home_pro_checkout(monkeypatch):
 
     app = flask.Flask(__name__)
     app.secret_key = "test"
-    app.register_blueprint(google_auth_bp)
+    app.register_blueprint(auth_bp)
 
     with app.test_client() as client:
         with client.session_transaction() as sess:

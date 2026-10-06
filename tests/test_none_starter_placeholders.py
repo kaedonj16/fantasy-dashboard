@@ -88,7 +88,7 @@ def test_render_matchup_slide_proj_mode_with_blank_slot(monkeypatch):
     monkeypatch.setattr(matchups, "load_week_schedule", lambda *_a, **_k: {})
     monkeypatch.setattr(matchups, "build_team_schedule_lookup", lambda *_a, **_k: {})
     monkeypatch.setattr(matchups, "_allow_live_game_indicators", lambda *_a, **_k: False)
-    monkeypatch.setattr("utils.utils.load_week_projection", lambda *_a, **_k: {})
+    monkeypatch.setattr("utils.data_cache.load_week_projection", lambda *_a, **_k: {})
     m = {"left": _blank_slot_team("1"), "right": _blank_slot_team("2")}
     # w > proj_week turns proj mode on: _score_html -> team_live_totals,
     # compute_win_prob, _matchup_games_in_progress, pid lists all run.

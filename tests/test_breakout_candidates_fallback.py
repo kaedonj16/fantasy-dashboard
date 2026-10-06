@@ -5,7 +5,7 @@ import pytest
 
 
 def test_route_source_does_not_fallback_to_value_movers():
-    src = (Path(__file__).parents[1] / "routes" / "breakout_api_bp2.py").read_text()
+    src = (Path(__file__).parents[1] / "routes" / "advanced_metrics_bp.py").read_text()
     assert "Fallback to value movers" not in src
     assert "get_top_movers" not in src
     assert '"breakout_score": delta' not in src
@@ -13,7 +13,7 @@ def test_route_source_does_not_fallback_to_value_movers():
 
 
 def test_detection_failure_returns_empty_not_movers():
-    mod = pytest.importorskip("routes.breakout_api_bp2")
+    mod = pytest.importorskip("routes.advanced_metrics_bp")
 
     def _boom(**kwargs):
         raise RuntimeError("engine down")
@@ -25,7 +25,7 @@ def test_detection_failure_returns_empty_not_movers():
 
 
 def test_engine_rows_map_to_candidates_without_using_delta_as_score():
-    mod = pytest.importorskip("routes.breakout_api_bp2")
+    mod = pytest.importorskip("routes.advanced_metrics_bp")
 
     def _detect(**kwargs):
         return [{"player_id": "99", "score": 67.3}]

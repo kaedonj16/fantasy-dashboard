@@ -685,7 +685,7 @@ def test_cohort_modules_stay_pure_and_off_ranking():
     assert "/api/historical-cohort" not in core
     assert "p_hit_pct" not in grade
     assert "historical-cohort" not in grade
-    bp = (ROOT / "routes" / "historical_api_bp.py").read_text(encoding="utf-8")
+    bp = (ROOT / "routes" / "history_bp.py").read_text(encoding="utf-8")
     assert "/api/historical-cohort" in bp
     assert "evaluate_cohort" in bp
     assert "scout_matching_players" in bp

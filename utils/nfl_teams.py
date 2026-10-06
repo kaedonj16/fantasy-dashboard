@@ -1,54 +1,17 @@
-"""NFL team abbreviation helpers.
+"""Compatibility shim: utils.nfl_teams now lives in utils.nfl.
 
-Extracted from app.py. The abbreviation->name map is hoisted to module level so
-it is built once at import instead of on every call, and the mapping can be
-unit-tested without the pandas/DB stack.
+Re-exports every public name so existing imports keep working.
+New code should import from utils.nfl directly.
 """
-from __future__ import annotations
+from utils.nfl import (  # noqa: F401,F403
+    TEAM_FULL_NAMES,
+    get_team_full_name,
+)
 
-# Abbreviation -> full team name. WSH is a lookup alias only; the site
-# displays and stores Washington as WAS.
-TEAM_FULL_NAMES = {
-    "ARI": "Arizona Cardinals",
-    "ATL": "Atlanta Falcons",
-    "BAL": "Baltimore Ravens",
-    "BUF": "Buffalo Bills",
-    "CAR": "Carolina Panthers",
-    "CHI": "Chicago Bears",
-    "CIN": "Cincinnati Bengals",
-    "CLE": "Cleveland Browns",
-    "DAL": "Dallas Cowboys",
-    "DEN": "Denver Broncos",
-    "DET": "Detroit Lions",
-    "GB": "Green Bay Packers",
-    "HOU": "Houston Texans",
-    "IND": "Indianapolis Colts",
-    "JAX": "Jacksonville Jaguars",
-    "KC": "Kansas City Chiefs",
-    "LV": "Las Vegas Raiders",
-    "LAC": "Los Angeles Chargers",
-    "LAR": "Los Angeles Rams",
-    "MIA": "Miami Dolphins",
-    "MIN": "Minnesota Vikings",
-    "NE": "New England Patriots",
-    "NO": "New Orleans Saints",
-    "NYG": "New York Giants",
-    "NYJ": "New York Jets",
-    "PHI": "Philadelphia Eagles",
-    "PIT": "Pittsburgh Steelers",
-    "SF": "San Francisco 49ers",
-    "SEA": "Seattle Seahawks",
-    "TB": "Tampa Bay Buccaneers",
-    "TEN": "Tennessee Titans",
-    "WAS": "Washington Commanders",
-    "WSH": "Washington Commanders",
-}
+__all__ = ['TEAM_FULL_NAMES', 'get_team_full_name']
 
 
-def get_team_full_name(abbreviation: str) -> str:
-    """Map a team abbreviation to its full team name.
-
-    Case-insensitive. Unknown abbreviations pass through unchanged.
-    WSH resolves to the Commanders the same as WAS.
-    """
-    return TEAM_FULL_NAMES.get(str(abbreviation).upper(), abbreviation)
+# --- monkeypatch propagation (see utils/_shim.py) ---
+from utils._shim import propagate_sets_to as _propagate_sets_to
+import importlib as _importlib
+_propagate_sets_to(__name__, _importlib.import_module("utils.nfl"))

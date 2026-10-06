@@ -38,10 +38,10 @@ def _parse_table(text: str, start_marker: str) -> dict:
 
 def test_scoring_mults_match():
     js = _parse_table((REPO / "static" / "app.js").read_text(), "SCORING_MULTS = {")
-    py = _parse_table((REPO / "utils" / "trade_value.py").read_text(), "SCORING_MULTS = {")
+    py = _parse_table((REPO / "utils" / "trade.py").read_text(), "SCORING_MULTS = {")
 
     assert js, "failed to parse SCORING_MULTS from app.js"
-    assert py, "failed to parse SCORING_MULTS from utils/trade_value.py"
+    assert py, "failed to parse SCORING_MULTS from utils/trade.py"
     assert set(js) == set(py), f"scoring formats differ: js={set(js)} py={set(py)}"
     for fmt in js:
         assert js[fmt] == py[fmt], (

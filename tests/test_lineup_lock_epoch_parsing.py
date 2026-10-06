@@ -18,13 +18,11 @@ import utils.push_notifications as pn
 
 
 def _stub_schedule_module(monkeypatch, games):
-    """utils.utils pulls in bs4 at import; stub just the schedule loader."""
-    import sys
-    import types
+    """Stub the schedule loader at its real home (utils.data_cache)."""
+    import utils.data_cache
 
-    stub = types.ModuleType("utils.utils")
-    stub.load_week_schedule = lambda season, w: games
-    monkeypatch.setitem(sys.modules, "utils.utils", stub)
+    monkeypatch.setattr(utils.data_cache, "load_week_schedule",
+                        lambda season, w: games)
 
 
 def _games_with_string_epochs(kickoff: datetime):

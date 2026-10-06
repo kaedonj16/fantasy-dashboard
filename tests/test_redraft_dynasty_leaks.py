@@ -183,7 +183,7 @@ def test_brctx_and_compare_flip_scoring_type():
 def test_waiver_and_start_sit_use_format_value_and_rank():
     """Redraft leagues must not show dynasty value / WR12 labels on waivers or start/sit."""
     app = (ROOT / "app.py").read_text(encoding="utf-8")
-    waiver = (ROOT / "routes" / "waiver_api_bp.py").read_text(encoding="utf-8")
+    waiver = (ROOT / "routes" / "waiver_bp.py").read_text(encoding="utf-8")
     assert "def _waiver_rank_label_key" in app
     assert "apply_redraft_display_fields" in app
     assert "_waiver_rank_label_key(ctx)" in waiver

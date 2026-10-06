@@ -1,34 +1,17 @@
-"""Human-relative timestamp formatting ("Just now", "2d ago", "May 12").
+"""Compatibility shim: utils.relative_time now lives in utils.core.
 
-Extracted from app.py; ``now`` is injectable so the boundaries are testable.
+Re-exports every public name so existing imports keep working.
+New code should import from utils.core directly.
 """
-from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
+from utils.core import (  # noqa: F401,F403
+    EASTERN,
+    rel_time,
+)
 
-EASTERN = ZoneInfo("America/New_York")
+__all__ = ['EASTERN', 'rel_time']
 
 
-def rel_time(dt, now: datetime = None) -> str:
-    """Human-relative timestamp: 'Just now', '5m ago', 'Today 3:42 PM',
-    'Yesterday', '3d ago', '2w ago', then 'May 12' beyond a month."""
-    now = (now or datetime.now(EASTERN)).astimezone(EASTERN)
-    dt_et = dt.astimezone(EASTERN)
-    diff = now - dt_et
-    secs = diff.total_seconds()
-    if secs < 60:
-        return "Just now"
-    if secs < 3600:
-        mins = int(secs // 60)
-        return f"{mins}m ago"
-    today = now.date()
-    if dt_et.date() == today:
-        hour = dt_et.strftime("%I").lstrip("0") or "12"
-        return f"Today {hour}:{dt_et.strftime('%M %p')}"
-    if dt_et.date() == (now - timedelta(days=1)).date():
-        return "Yesterday"
-    days = (today - dt_et.date()).days
-    if days < 7:
-        return f"{days}d ago"
-    if days < 30:
-        return f"{days // 7}w ago"
-    return dt_et.strftime("%b %d")
+# --- monkeypatch propagation (see utils/_shim.py) ---
+from utils._shim import propagate_sets_to as _propagate_sets_to
+import importlib as _importlib
+_propagate_sets_to(__name__, _importlib.import_module("utils.core"))

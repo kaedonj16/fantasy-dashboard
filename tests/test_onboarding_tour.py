@@ -6,7 +6,7 @@ APP_JS = (ROOT / "static" / "app.js").read_text()
 APP_PY = (ROOT / "app.py").read_text()
 CSS = (ROOT / "static" / "dashboard.css").read_text()
 LEAGUE_PAGES = (ROOT / "routes" / "league_pages_bp.py").read_text()
-UI_PREFS = (ROOT / "routes" / "ui_prefs_bp.py").read_text()
+UI_PREFS = (ROOT / "routes" / "user_pages_bp.py").read_text()
 
 
 def test_tour_resume_uses_tour_step_not_mock_param():
@@ -54,7 +54,7 @@ def test_welcome_is_plan_aware_and_names_pro():
     assert "PRO_DESKTOP_STEPS" in APP_JS
     assert "mode: 'pro'" in APP_JS
     assert "br_skip_league_pro_banner" in APP_JS
-    invite = (Path(__file__).resolve().parents[1] / "utils" / "league_invite.py").read_text()
+    invite = (Path(__file__).resolve().parents[1] / "utils" / "league.py").read_text()
     assert "welcome=claim" in invite
     paywall = (Path(__file__).resolve().parents[1] / "static" / "paywall.js").read_text()
     assert "welcome=${_welcome}" in paywall or "welcome=" in paywall
@@ -72,7 +72,7 @@ def test_ui_prefs_and_events_endpoints_exist():
     assert '/api/events' in UI_PREFS
     assert "site_tour_done" in UI_PREFS
     assert "sub_welcome_done" in UI_PREFS
-    assert "register_blueprint(ui_prefs_bp)" in APP_PY
+    assert "register_blueprint(user_pages_bp)" in APP_PY
     assert "window.brTrack" in APP_JS
     assert "window.brUiPrefs" in APP_JS
 

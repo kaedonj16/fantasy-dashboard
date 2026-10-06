@@ -455,7 +455,7 @@ def test_events_table_ready(monkeypatch):
 
 def _make_admin_client(monkeypatch, admin=True):
     flask = pytest.importorskip("flask")
-    from routes import analytics_bp as _bp_mod
+    from routes import internal_bp as _bp_mod
 
     monkeypatch.setattr(_bp_mod, "is_admin", lambda: admin)
     monkeypatch.setattr(
@@ -549,7 +549,7 @@ def _make_admin_client(monkeypatch, admin=True):
     )
     app = flask.Flask(__name__)
     app.secret_key = "test-secret"
-    app.register_blueprint(_bp_mod.analytics_bp)
+    app.register_blueprint(_bp_mod.internal_bp)
     return app.test_client()
 
 
@@ -628,7 +628,7 @@ def test_admin_page_404_for_non_admin(monkeypatch):
 
 def test_admin_page_empty_state(monkeypatch):
     flask = pytest.importorskip("flask")
-    from routes import analytics_bp as _bp_mod
+    from routes import internal_bp as _bp_mod
 
     monkeypatch.setattr(_bp_mod, "is_admin", lambda: True)
     monkeypatch.setattr("dashboard_services.analytics.dau_last_30_days", lambda: [])
@@ -646,7 +646,7 @@ def test_admin_page_empty_state(monkeypatch):
     monkeypatch.setattr("dashboard_services.analytics.one_and_done_top_paths", lambda limit=5: [])
     app = flask.Flask(__name__)
     app.secret_key = "test-secret"
-    app.register_blueprint(_bp_mod.analytics_bp)
+    app.register_blueprint(_bp_mod.internal_bp)
     resp = app.test_client().get("/admin/analytics")
     assert resp.status_code == 200
     assert "No data yet" in resp.get_data(as_text=True)
@@ -878,7 +878,7 @@ def test_bars_svg_caps_single_bar_width():
     import re
 
     pytest.importorskip("flask")
-    from routes import analytics_bp as abp
+    from routes import internal_bp as abp
 
     svg = abp._bars_svg([("09-29", 12)])
     widths = [float(w) for w in re.findall(r'<rect[^>]*width="([\d.]+)"', svg)]
@@ -887,7 +887,7 @@ def test_bars_svg_caps_single_bar_width():
 
 def test_bars_svg_value_labels_skip_zeros():
     pytest.importorskip("flask")
-    from routes import analytics_bp as abp
+    from routes import internal_bp as abp
 
     svg = abp._bars_svg([("09-28", 0), ("09-29", 12)])
     assert 'class="vallab">12<' in svg
@@ -898,7 +898,7 @@ def test_bars_svg_dense_series_labels_every_day_and_yticks():
     import datetime
 
     pytest.importorskip("flask")
-    from routes import analytics_bp as abp
+    from routes import internal_bp as abp
 
     rows = [{"date": "2026-09-29", "users": 3}]
     pairs = analytics.fill_daily_gaps(rows, "date", "users", 30, today=datetime.date(2026, 9, 29))
@@ -912,7 +912,7 @@ def test_bars_svg_dense_series_labels_every_day_and_yticks():
 
 def test_analytics_page_shows_exclusion_status(monkeypatch):
     flask = pytest.importorskip("flask")
-    from routes import analytics_bp as abp
+    from routes import internal_bp as abp
 
     monkeypatch.setenv("ADMIN_KEY", "k")
     monkeypatch.setenv("ANALYTICS_EXCLUDE_ACCOUNT_IDS", "42")
@@ -933,7 +933,7 @@ def test_analytics_page_shows_exclusion_status(monkeypatch):
 
     app = flask.Flask(__name__)
     app.secret_key = "test-secret"
-    app.register_blueprint(abp.analytics_bp)
+    app.register_blueprint(abp.internal_bp)
     client = app.test_client()
     with client.session_transaction() as sess:
         sess[abp.ADMIN_SESSION_KEY] = True
@@ -946,7 +946,7 @@ def test_analytics_page_shows_exclusion_status(monkeypatch):
 
 def test_analytics_page_hides_exclusion_status_when_unset(monkeypatch):
     flask = pytest.importorskip("flask")
-    from routes import analytics_bp as abp
+    from routes import internal_bp as abp
 
     monkeypatch.setenv("ADMIN_KEY", "k")
     monkeypatch.delenv("ANALYTICS_EXCLUDE_ACCOUNT_IDS", raising=False)
@@ -967,7 +967,7 @@ def test_analytics_page_hides_exclusion_status_when_unset(monkeypatch):
 
     app = flask.Flask(__name__)
     app.secret_key = "test-secret"
-    app.register_blueprint(abp.analytics_bp)
+    app.register_blueprint(abp.internal_bp)
     client = app.test_client()
     with client.session_transaction() as sess:
         sess[abp.ADMIN_SESSION_KEY] = True
@@ -1257,11 +1257,11 @@ def test_revenue_summary_survives_missing_tables(monkeypatch):
 def _make_beacon_client(monkeypatch):
     flask = pytest.importorskip("flask")
     from extensions import limiter
-    from routes import analytics_bp as _bp_mod
+    from routes import internal_bp as _bp_mod
 
     client_app = flask.Flask(__name__)
     client_app.secret_key = "test-secret"
-    client_app.register_blueprint(_bp_mod.analytics_bp)
+    client_app.register_blueprint(_bp_mod.internal_bp)
     limiter.init_app(client_app)
 
     calls = []

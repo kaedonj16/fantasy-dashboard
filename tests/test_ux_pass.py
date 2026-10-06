@@ -110,15 +110,6 @@ def test_pro_preview_does_not_expose_gated_details():
     assert "brProPreview" in APP_JS
 
 
-def test_analytics_terminology_module():
-    from utils.analytics_terminology import LABELS, tooltip, label, title_attr
-
-    assert label("vor") == "VOR"
-    assert "Dynasty trade value" in tooltip("br_value")
-    assert "VALUE:" in title_attr("br_value")
-    assert LABELS["market_vs_adp"]["category"] == "MARKET"
-    assert LABELS["historical_hit_rate"]["category"] == "HISTORY"
-
 
 def test_do_next_waiver_card_helper():
     app_src = (ROOT / "app.py").read_text(encoding="utf-8")

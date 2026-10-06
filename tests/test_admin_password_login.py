@@ -9,7 +9,7 @@ from flask import Flask, session
 from dashboard_services import admin_auth
 from dashboard_services import analytics as analytics_svc
 from extensions import limiter
-from routes.analytics_bp import analytics_bp
+from routes.internal_bp import internal_bp
 
 
 def _stub_analytics_data(monkeypatch):
@@ -37,7 +37,7 @@ def app(monkeypatch):
     _stub_analytics_data(monkeypatch)
     flask_app = Flask(__name__)
     flask_app.secret_key = "test-secret"
-    flask_app.register_blueprint(analytics_bp)
+    flask_app.register_blueprint(internal_bp)
     limiter.init_app(flask_app)
     return flask_app
 
