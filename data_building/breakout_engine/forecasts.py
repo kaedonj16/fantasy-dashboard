@@ -528,7 +528,9 @@ def top_grade_rows(
     recon = reconstructed_weeks or set()
     picked = [
         _grade_row_view(r, reconstructed=r.get("as_of_week") in recon)
-        for r in rows if r.get("grade") == grade
+        for r in rows
+        if r.get("grade") == grade
+        and str(r.get("classification") or "") not in ("watchlist", "monitored")
     ]
     if grade == wg.GRADE_HIT:
         picked.sort(key=lambda v: (v["ppg_delta"] is None,
@@ -589,11 +591,38 @@ def weekly_track_record(season: int) -> Dict[str, Any]:
         ],
         "score_bands": score_bands,
         "confidence_bands": confidence_bands,
+        "by_week": _weekly_rates_by_week(rows),
         "hits": top_grade_rows(rows, wg.GRADE_HIT,
                                reconstructed_weeks=recon_weeks),
         "misses": top_grade_rows(rows, wg.GRADE_MISS,
                                  reconstructed_weeks=recon_weeks),
     }
+
+
+def _weekly_rates_by_week(rows: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Hit rates grouped by call week, newest week first.
+
+    Each entry carries the week number, call counts, and the graded hit
+    rate (None until the 10-graded floor is met). Watchlist/monitored
+    rows are excluded, matching the hits/misses filter: only actual
+    breakout calls appear in the track record. Pure.
+    """
+    by_week: Dict[int, List[Dict[str, Any]]] = {}
+    for row in rows:
+        if str(row.get("classification") or "") in ("watchlist", "monitored"):
+            continue
+        try:
+            wk = int(row.get("as_of_week") or 0)
+        except (TypeError, ValueError):
+            continue
+        if wk <= 0:
+            continue
+        by_week.setdefault(wk, []).append(row)
+    out = []
+    for wk in sorted(by_week, reverse=True):
+        bucket = wg._rate_bucket(by_week[wk], wg.MIN_SUMMARY_SAMPLE)
+        out.append({"week": wk, **bucket})
+    return out
 
 
 def _band_view(entry: Dict[str, Any]) -> Dict[str, Any]:

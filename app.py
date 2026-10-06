@@ -17841,23 +17841,11 @@ def page_breakouts(platform: str, season: int, league_id: str):
         </div>
         </div><!-- /bo-main -->
 
-        <!-- Sidebar: track record, forecast outlook, biggest graded hits/misses -->
-        <aside class="bo-rail" id="boRail" aria-label="Breakout track record and forecast outlook">
+        <!-- Sidebar: tabbed track record (Weekly / Preseason) -->
+        <aside class="bo-rail" id="boRail" aria-label="Breakout track record">
           <div class="bo-rail-section" id="boRailTrackRecord">
             <div class="bo-rail-title">Track Record</div>
             <div class="bo-rail-pending">Loading track record...</div>
-          </div>
-          <div class="bo-rail-section" id="boRailOutlook">
-            <div class="bo-rail-title">Forecast Outlook</div>
-            <div class="bo-rail-pending">Loading forecast outlook...</div>
-          </div>
-          <div class="bo-rail-section" id="boRailHits">
-            <div class="bo-rail-title">Biggest Hits</div>
-            <div class="bo-rail-pending">Loading biggest hits...</div>
-          </div>
-          <div class="bo-rail-section" id="boRailMisses">
-            <div class="bo-rail-title">Biggest Misses</div>
-            <div class="bo-rail-pending">Loading biggest misses...</div>
           </div>
         </aside>
        </div><!-- /bo-layout -->
@@ -17992,34 +17980,152 @@ def page_breakouts(platform: str, season: int, league_id: str):
         return html;
       }}
 
+      var boTrackTab = 'weekly';
+      var boTrackData = null;
+
+      function boSwitchTrackTab(tab) {{
+        boTrackTab = tab;
+        if (boTrackData) renderBoTrackRecord(boTrackData);
+      }}
+
+      function boGoWeek(week) {{
+        var sel = document.getElementById('breakoutWeekSelect');
+        if (sel) {{
+          sel.value = String(week);
+          loadBreakouts(String(week));
+          document.getElementById('breakoutsContainer').scrollIntoView({{ behavior: 'smooth', block: 'start' }});
+        }}
+      }}
+
+      function _boWeekBar(week, calls, pct, color, label) {{
+        var pctTxt = pct != null ? Math.round(pct * 100) + '% ' + (label || 'hits') : 'n/a';
+        var barColor = color || '#16a34a';
+        return '<div class="bo-wk-link" onclick="boGoWeek(' + week + ')">'
+          + '<div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px;">'
+          + '<span>Week ' + week + ' &middot; ' + calls + ' calls</span>'
+          + '<span style="font-weight:700;color:' + barColor + ';">' + pctTxt + '</span></div>'
+          + '<div class="bo-rail-bar"><span style="width:' + (pct != null ? Math.round(pct * 100) : 0) + '%;background:' + barColor + ';"></span></div></div>';
+      }}
+
+      function _boPlayerLink(name, playerId) {{
+        if (playerId) {{
+          return '<a class="bo-plink" onclick="event.stopPropagation();openPlayerModal(\'' + playerId + '\', \'' + (name || '').replace(/\\/g, '\\\\').replace(/\'/g, "\\'") + '\', {{tab: \'breakout\'}});return false;">' + (name || 'Unknown') + '</a>';
+        }}
+        return name || 'Unknown';
+      }}
+
       function renderBoTrackRecord(data) {{
-        var weekly = data.weekly || {{}};
-        var seasonEng = data.season_engine || {{}};
-        var pendingText = data.pending_text || 'Still grading, not enough finished calls yet';
+        boTrackData = data;
         var html = '<div class="bo-rail-title">Track Record</div>';
-        html += '<div class="bo-rail-group">Weekly calls' + (weekly.scoring_version ? ' (' + weekly.scoring_version + ')' : '') + '</div>';
-        html += _boTrackRows(weekly.groups, pendingText);
-        if (weekly.score_bands && weekly.score_bands.length) {{
-          html += '<div class="bo-rail-group" style="margin-top:10px;">By score</div>';
-          html += _boTrackRows(weekly.score_bands, pendingText);
-        }}
-        if (weekly.confidence_bands && weekly.confidence_bands.length) {{
-          html += '<div class="bo-rail-group" style="margin-top:10px;">By confidence</div>';
-          html += _boTrackRows(weekly.confidence_bands, pendingText);
-        }}
-        html += '<div class="bo-rail-group" style="margin-top:10px;">Season calls by phase</div>';
-        if (seasonEng.available) {{
-          html += _boTrackRows(seasonEng.groups, pendingText);
+        html += '<div class="bo-tr-tabs">'
+          + '<button class="bo-tr-tab' + (boTrackTab === 'weekly' ? ' active' : '') + '" onclick="boSwitchTrackTab(\'weekly\')">Weekly</button>'
+          + '<button class="bo-tr-tab' + (boTrackTab === 'preseason' ? ' active' : '') + '" onclick="boSwitchTrackTab(\'preseason\')">Preseason</button></div>';
+
+        if (boTrackTab === 'weekly') {{
+          html += _boWeeklyTrackHTML(data);
         }} else {{
-          html += '<div class="bo-rail-pending-line">' + pendingText + '</div>';
-        }}
-        var defs = [];
-        if (weekly.definition) defs.push(weekly.definition);
-        if (seasonEng.definition) defs.push(seasonEng.definition);
-        if (defs.length) {{
-          html += '<div class="bo-rail-sub">' + defs.join(' ') + '</div>';
+          html += _boPreseasonTrackHTML(data);
         }}
         _boRailSet('boRailTrackRecord', html);
+      }}
+
+      function _boWeeklyTrackHTML(data) {{
+        var weekly = data.weekly || {{}};
+        var overall = weekly.overall || {{}};
+        var html = '';
+
+        // Hero: forecast to hit across all surfaced calls
+        var hitRate = overall.hit_rate != null ? Math.round(overall.hit_rate * 100) : null;
+        var graded = overall.graded || 0;
+        var hits = overall.hits || 0;
+        html += '<div class="bo-tr-hero"><div class="bo-tr-hero-lbl">Forecast to hit</div>'
+          + '<div class="bo-tr-hero-big">' + (hitRate != null ? hitRate + '%' : '--') + '</div>'
+          + '<div class="bo-tr-hero-detail">' + hits + ' of ' + graded + ' surfaced calls were hits</div></div>';
+
+        // Per-week bars (newest first, collapse after 3)
+        var byWeek = data.by_week || [];
+        var visible = byWeek.slice(0, 3);
+        var hidden = byWeek.slice(3);
+        visible.forEach(function (w) {{
+          html += _boWeekBar(w.week, w.graded || w.calls || 0, w.hit_rate, '#16a34a', 'hits');
+        }});
+        if (hidden.length) {{
+          html += '<div id="boHiddenWeeks" style="display:none;">';
+          hidden.forEach(function (w) {{
+            html += _boWeekBar(w.week, w.graded || w.calls || 0, w.hit_rate, '#16a34a', 'hits');
+          }});
+          html += '</div><div class="bo-show-all" onclick="document.getElementById(\'boHiddenWeeks\').style.display=\'block\';this.style.display=\'none\';">Show all weeks</div>';
+        }}
+
+        // Biggest hits
+        var hits = data.hits || [];
+        if (hits.length) {{
+          html += '<div class="bo-tr-hits-h hits">Biggest Hits</div>';
+          hits.slice(0, 3).forEach(function (r) {{
+            var delta = r.ppg_delta != null ? (r.ppg_delta >= 0 ? '+' : '') + Number(r.ppg_delta).toFixed(1) : 'n/a';
+            html += '<div class="bo-rail-row"><div><div class="bo-rail-name">' + _boPlayerLink(r.player_name, r.player_id)
+              + '</div><div class="bo-rail-meta">Week ' + (r.call_week != null ? r.call_week : '?') + ' call</div></div>'
+              + '<div class="bo-rail-value" style="color:#16a34a;font-weight:800;">' + delta + '</div></div>';
+          }});
+        }}
+
+        // Biggest misses
+        var misses = data.misses || [];
+        if (misses.length) {{
+          html += '<div class="bo-tr-hits-h misses">Biggest Misses</div>';
+          misses.slice(0, 3).forEach(function (r) {{
+            var delta = r.ppg_delta != null ? (r.ppg_delta >= 0 ? '+' : '') + Number(r.ppg_delta).toFixed(1) : 'n/a';
+            html += '<div class="bo-rail-row"><div><div class="bo-rail-name">' + _boPlayerLink(r.player_name, r.player_id)
+              + '</div><div class="bo-rail-meta">Week ' + (r.call_week != null ? r.call_week : '?') + ' call</div></div>'
+              + '<div class="bo-rail-value" style="color:#dc2626;font-weight:800;">' + delta + '</div></div>';
+          }});
+        }}
+
+        // Still tracking: week-level bars, no player names
+        var tracking = data.still_tracking || [];
+        if (tracking.length) {{
+          html += '<div class="bo-tr-hits-h pending">Still Tracking</div>';
+          tracking.forEach(function (t) {{
+            html += _boWeekBar(t.week, t.calls || 0, t.tracking_to_hit_rate, '#d97706', 'to hit');
+          }});
+        }}
+
+        return html;
+      }}
+
+      function _boPreseasonTrackHTML(data) {{
+        var seasonEng = data.season_engine || {{}};
+        var overall = seasonEng.overall || {{}};
+        var html = '';
+
+        var hitRate = overall.hit_rate != null ? Math.round(overall.hit_rate * 100) : null;
+        var graded = overall.graded || 0;
+        var hits = overall.hits || 0;
+        html += '<div class="bo-tr-hero pre"><div class="bo-tr-hero-lbl">Forecast to hit</div>'
+          + '<div class="bo-tr-hero-big">' + (hitRate != null ? hitRate + '%' : '--') + '</div>'
+          + '<div class="bo-tr-hero-detail">' + hits + ' of ' + graded + ' preseason calls were hits</div></div>';
+
+        // Single preseason row (no phase breakdown per Kaedon)
+        var groups = seasonEng.groups || [];
+        var totalCalls = groups.reduce(function (s, g) {{ return s + (g.graded || 0); }}, 0);
+        if (totalCalls > 0 || hitRate != null) {{
+          html += '<div style="margin-bottom:8px;"><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px;">'
+            + '<span>Preseason &middot; ' + totalCalls + ' calls</span>'
+            + '<span style="font-weight:700;color:#7c3aed;">' + (hitRate != null ? hitRate + '% hits' : '') + '</span></div>'
+            + '<div class="bo-rail-bar"><span style="width:' + (hitRate || 0) + '%;background:#7c3aed;"></span></div></div>';
+        }}
+
+        // Preseason still tracking from outlook
+        var outlook = (data.outlook || {{}}).preseason || {{}};
+        var openCalls = outlook.open_calls || 0;
+        if (openCalls > 0) {{
+          html += '<div class="bo-tr-hits-h pending">Still Tracking</div>';
+          html += '<div style="margin-bottom:8px;"><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px;">'
+            + '<span>Preseason &middot; ' + openCalls + ' calls</span></div>'
+            + '<div class="bo-rail-meta">Season ongoing</div></div>';
+        }}
+
+        return html;
       }}
 
       function _boOutlookBlock(title, block) {{
@@ -18050,15 +18156,6 @@ def page_breakouts(platform: str, season: int, league_id: str):
         return html;
       }}
 
-      function renderBoOutlook(data) {{
-        var outlook = data.outlook || {{}};
-        var html = '<div class="bo-rail-title">Forecast Outlook</div>';
-        html += _boOutlookBlock('Weekly calls', outlook.weekly);
-        html += '<div style="margin-top:10px;">' + _boOutlookBlock('Preseason calls', outlook.preseason) + '</div>';
-        html += '<div class="bo-rail-sub">Forecasts are live projections from games played so far. They are not grades and never count toward the track record hit rates.</div>';
-        _boRailSet('boRailOutlook', html);
-      }}
-
       function _boGradeRows(rows, emptyText, color) {{
         if (!rows || !rows.length) {{
           return '<div class="bo-rail-pending">' + emptyText + '</div>';
@@ -18078,26 +18175,16 @@ def page_breakouts(platform: str, season: int, league_id: str):
         return html;
       }}
 
-      function renderBoHitsMisses(data) {{
-        _boRailSet('boRailHits', '<div class="bo-rail-title">Biggest Hits</div>' + _boGradeRows(data.hits, 'No graded hits yet. Hits appear here once a call finishes its 3 week window and grades as a hit.', '#10b981'));
-        _boRailSet('boRailMisses', '<div class="bo-rail-title">Biggest Misses</div>' + _boGradeRows(data.misses, 'No graded misses yet. Misses appear here once a call finishes its 3 week window and grades as a miss.', '#ef4444'));
-      }}
-
       function loadBreakoutSidebar() {{
         fetch('/api/breakout/track-record?season={bo_season}')
           .then(res => res.json())
           .then(function (data) {{
             renderBoTrackRecord(data || {{}});
-            renderBoOutlook(data || {{}});
-            renderBoHitsMisses(data || {{}});
           }})
           .catch(function (err) {{
             console.error('Error loading breakout sidebar:', err);
             var msg = '<div class="bo-rail-pending">Could not load. Refresh the page to try again.</div>';
             _boRailSet('boRailTrackRecord', '<div class="bo-rail-title">Track Record</div>' + msg);
-            _boRailSet('boRailOutlook', '<div class="bo-rail-title">Forecast Outlook</div>' + msg);
-            _boRailSet('boRailHits', '<div class="bo-rail-title">Biggest Hits</div>' + msg);
-            _boRailSet('boRailMisses', '<div class="bo-rail-title">Biggest Misses</div>' + msg);
           }});
       }}
       loadBreakoutSidebar();

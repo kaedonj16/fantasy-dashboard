@@ -295,14 +295,25 @@ def test_weekly_track_record_biggest_hits_and_misses(monkeypatch):
 
 def test_top_grade_rows_orders_and_converts_decimals():
     rows = [
-        _grade_row("a", "watchlist", "miss", Decimal("-2.0"), opp_delta=Decimal("1.0")),
-        _grade_row("b", "watchlist", "miss", Decimal("-2.0"), opp_delta=Decimal("-3.0")),
-        _grade_row("c", "watchlist", "miss", None, opp_delta=Decimal("-9.0")),
+        _grade_row("a", "emerging_breakout", "miss", Decimal("-2.0"), opp_delta=Decimal("1.0")),
+        _grade_row("b", "emerging_breakout", "miss", Decimal("-2.0"), opp_delta=Decimal("-3.0")),
+        _grade_row("c", "emerging_breakout", "miss", None, opp_delta=Decimal("-9.0")),
     ]
     misses = forecasts.top_grade_rows(rows, "miss")
     # ppg tie broken by the worse opportunity delta; missing ppg goes last.
     assert [m["player_id"] for m in misses] == ["b", "a", "c"]
     assert isinstance(misses[0]["ppg_delta"], float)
+
+
+def test_top_grade_rows_excludes_watchlist():
+    rows = [
+        _grade_row("a", "watchlist", "hit", 6.0),
+        _grade_row("b", "monitored", "hit", 5.0),
+        _grade_row("c", "emerging_breakout", "hit", 4.0),
+        _grade_row("d", "early_watch", "hit", 3.0),
+    ]
+    hits = forecasts.top_grade_rows(rows, "hit")
+    assert [h["player_id"] for h in hits] == ["c", "d"]
 
 
 # ---------------------------------------------------------------------------
@@ -1206,9 +1217,8 @@ console.log(JSON.stringify(out));
 
 def test_breakout_page_has_sidebar_and_forecast_chip():
     src = (ROOT / "app.py").read_text(encoding="utf-8")
-    for section_id in ("boRailTrackRecord", "boRailOutlook",
-                       "boRailHits", "boRailMisses"):
-        assert section_id in src
+    # Single tabbed track record section (Weekly/Preseason tabs)
+    assert "boRailTrackRecord" in src
     assert "/api/breakout/track-record?season=" in src
     assert "loadBreakoutSidebar()" in src
     assert "bo-layout" in src and "bo-main" in src and "bo-rail" in src
@@ -1374,12 +1384,8 @@ def test_track_record_payload_carries_bands(monkeypatch):
 
 def test_breakout_page_renders_calibration_band_rows():
     src = (ROOT / "app.py").read_text(encoding="utf-8")
-    # The weekly record renders band rows under muted subheads, from the
-    # payload's band lists, through the same row renderer as the
-    # classification groups.
-    assert "By score" in src
-    assert "By confidence" in src
-    assert "weekly.score_bands" in src
-    assert "weekly.confidence_bands" in src
-    assert "_boTrackRows(weekly.score_bands, pendingText)" in src
-    assert "_boTrackRows(weekly.confidence_bands, pendingText)" in src
+    # The redesigned weekly record renders per-week progress bars (newest
+    # first) instead of the old classification/score/confidence band rows.
+    assert "by_week" in src
+    assert "_boWeekBar" in src
+    assert "Show all weeks" in src
