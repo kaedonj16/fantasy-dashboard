@@ -22,7 +22,6 @@ def build_dashboard_body(ctx: dict) -> str:
         _section_title_link,
         _standings_movement,
         _trade_window_card_html,
-        _viewer_lineup_alert_html,
         _league_is_redraft,
         build_teams_overview,
         compute_awards_season,
@@ -69,7 +68,6 @@ def build_dashboard_body(ctx: dict) -> str:
         div_records=division_records(df_weekly, (_div_info or {}).get("by_rid") or {}),
     )
     usage_movers_html = _render_usage_movers(ctx, viewer_roster_id)
-    lineup_alert_html = _viewer_lineup_alert_html(ctx, viewer_roster_id)
     roster_moves_html = _roster_moves_alert_html(ctx, viewer_roster_id)
     trade_window_html = _trade_window_card_html(ctx, viewer_roster_id)
     losing_trade_html = _losing_streak_trade_html(ctx, viewer_roster_id)
@@ -410,8 +408,6 @@ def build_dashboard_body(ctx: dict) -> str:
     def _card_urgency(key, card_html):
         if not (card_html or "").strip():
             return 0
-        if key == "lineup":
-            return 100
         if key == "nextsteps":
             return 75  # unified action queue: ranked by impact internally
         if key == "trade":
@@ -423,7 +419,6 @@ def build_dashboard_body(ctx: dict) -> str:
         return 0
 
     _action_cards = [
-        ("lineup", lineup_alert_html),
         ("nextsteps", do_next_waiver_html),
         ("trade-losing", losing_trade_html),
         ("trade", trade_window_html),

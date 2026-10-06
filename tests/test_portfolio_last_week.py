@@ -165,11 +165,15 @@ def test_last_week_cell_hidden_in_week_1_and_preseason():
         assert "Last Week" not in html
 
 
-def test_last_week_cell_hidden_when_no_results():
+def test_last_week_cell_shown_with_placeholder_when_no_results():
     leagues = [_league("1", "Alpha", 3, 1), _league("2", "Beta", 2, 2)]
     html = _render(leagues, current_week=3)
-    assert "data-portfolio-lw-record" not in html
-    assert "class='pf-stat-bar pf-stat-bar--4'" not in html
+    # Cell renders from week 2 so cold cards can hydrate it client-side;
+    # shows a placeholder until results arrive.
+    assert "data-portfolio-lw-record" in html
+    assert "class='pf-stat-bar pf-stat-bar--4'" in html
+    m = re.search(r"data-portfolio-lw-record[^>]*>([^<]*)<", html)
+    assert m and m.group(1) == "-"
 
 
 def test_last_week_aggregate_with_tie():
