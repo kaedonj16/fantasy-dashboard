@@ -42018,9 +42018,13 @@ a, button, [role="button"], [role="tab"], summary, label,
 .nt-receiving-bars .pm-usage-bars { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; }
 .nt-backfield-bars .pm-usage-row,
 .nt-receiving-bars .pm-usage-row { margin-bottom: 0; }
+/* Player modal: usage bars in a 2-column grid, 1 column on mobile */
+.pm-usage-bars-wrap .pm-usage-bars { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; }
+.pm-usage-bars-wrap .pm-usage-row { margin-bottom: 0; }
 @media (max-width: 600px) {
   .nt-backfield-bars .pm-usage-bars,
-  .nt-receiving-bars .pm-usage-bars { grid-template-columns: 1fr; }
+  .nt-receiving-bars .pm-usage-bars,
+  .pm-usage-bars-wrap .pm-usage-bars { grid-template-columns: 1fr; }
 }
 
 /* focus-position room table (container keeps the .pm-team-usage class) */
