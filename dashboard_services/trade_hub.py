@@ -114,15 +114,9 @@ def why_line_for_market(p: Dict[str, Any]) -> str:
             pass
     delta = p.get("value_delta")
     model = p.get("model_value")
-    if delta is not None and model:
-        try:
-            d = float(delta)
-            if d <= -5:
-                bits.append("Priced below the BR model. Buy-low window.")
-            elif d >= 5:
-                bits.append("Priced above the BR model. Sell-high window.")
-        except (TypeError, ValueError):
-            pass
+    # NOTE: intentionally no BR-model sentence here. The trade intel cards are
+    # framed around real-market signal (volume, trend, buyer/seller pressure),
+    # not market-minus-model.
     bsr = p.get("buy_sell_ratio")
     if bsr is not None:
         try:

@@ -61,8 +61,8 @@ def build_trade_intel_body(
         <div class="ti-controls">
           <div class="ti-tabs">
             <button class="ti-tab active" data-tab="trending" onclick="switchTITab('trending')"><i class="fa-solid fa-fire"></i> Trending</button>
-            <button class="ti-tab" data-tab="buylows"  onclick="switchTITab('buylows')"><i class="fa-solid fa-arrow-trend-down"></i> Buy Low</button>
-            <button class="ti-tab" data-tab="sellhigh" onclick="switchTITab('sellhigh')"><i class="fa-solid fa-arrow-trend-up"></i> Sell High</button>
+            <button class="ti-tab" data-tab="heating"  onclick="switchTITab('heating')"><i class="fa-solid fa-arrow-trend-up"></i> Heating up</button>
+            <button class="ti-tab" data-tab="cooling" onclick="switchTITab('cooling')"><i class="fa-solid fa-arrow-trend-down"></i> Cooling off</button>
           </div>
           <div class="tdb-search-outer" style="flex:1;min-width:140px;max-width:240px;">
             <input id="tiSearchInput" type="text" autocomplete="off" placeholder="Search player…" class="tdb-search">
@@ -86,12 +86,16 @@ def build_trade_intel_body(
             <span><span class="ti-key-label">Market</span> Real Trade-weighted Median Value</span>
           </div>
           <div class="ti-key-item">
-            <span class="ti-key-swatch" style="background:#8b5cf6;opacity:.7;border-radius:3px;"></span>
-            <span><span class="ti-key-label">BR Model</span> BR Production Model Value</span>
+            <span style="display:inline-flex;gap:3px;align-items:center;">
+              <i style="width:6px;height:13px;border-radius:3px;background:#f59e0b;display:inline-block;"></i>
+              <i style="width:6px;height:13px;border-radius:3px;background:#f59e0b;display:inline-block;"></i>
+              <i style="width:6px;height:13px;border-radius:3px;background:var(--border);display:inline-block;"></i>
+            </span>
+            <span><span class="ti-key-label">Heat</span> Trades in the last 90 days, with Heating up / Cooling off / Steady trend</span>
           </div>
           <div class="ti-key-item">
-            <span class="ti-key-swatch ti-key-delta"></span>
-            <span><span class="ti-key-label">Delta</span> Market minus BR Model</span>
+            <span class="ti-key-swatch" style="background:#16a34a;opacity:.7;border-radius:50%;width:9px;height:9px;"></span>
+            <span><span class="ti-key-label">Who pays what</span> Top package shape paid by contender vs rebuilder buyers, from each side's record at trade time</span>
           </div>
           <div class="ti-key-item">
             <span style="display:inline-flex;align-items:center;vertical-align:middle;">
@@ -220,6 +224,38 @@ def build_trade_intel_body(
       .ti-delta-pos {{ color:#10b981; }}
       .ti-delta-neg {{ color:#ef4444; }}
       .ti-momentum {{ font-size:11px; font-weight:600; margin-top:6px; display:flex; align-items:center; gap:4px; }}
+      /* Market heat strip (90d trade velocity) */
+      .ti-heat {{
+        display:flex; align-items:center; gap:8px;
+        border:1px solid var(--border); border-radius:10px;
+        padding:8px 10px; margin-top:8px;
+      }}
+      .ti-heat-dots {{ display:flex; gap:3px; flex-shrink:0; }}
+      .ti-heat-dots i {{ width:6px; height:13px; border-radius:3px; background:var(--border); }}
+      .ti-heat-dots i.on {{ background:#f59e0b; }}
+      .ti-heat-text {{ font-size:11px; font-weight:700; line-height:1.3; }}
+      .ti-heat-trend {{ margin-left:auto; font-size:10px; font-weight:800; white-space:nowrap; }}
+      /* Who pays what (contender vs rebuilder buyer split) */
+      .ti-split {{ border:1px solid var(--border); border-radius:10px; overflow:hidden; margin-top:8px; }}
+      .ti-split-head {{
+        padding:7px 10px; border-bottom:1px solid var(--border);
+        font-size:9px; font-weight:700; color:var(--text-muted);
+        letter-spacing:.05em; text-transform:uppercase;
+      }}
+      .ti-split-row {{ display:flex; align-items:center; gap:7px; padding:7px 10px; }}
+      .ti-split-row + .ti-split-row {{ border-top:1px solid var(--border); }}
+      .ti-split-dot {{ width:8px; height:8px; border-radius:50%; flex-shrink:0; }}
+      .ti-split-who {{ font-size:11px; font-weight:800; white-space:nowrap; }}
+      .ti-split-paid {{
+        font-size:11px; color:var(--text-muted); flex:1; min-width:0;
+        overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+      }}
+      .ti-split-n {{ font-size:10px; font-weight:700; color:var(--text-muted); white-space:nowrap; }}
+      .ti-split-foot {{
+        padding:6px 10px; font-size:10px; color:var(--text-muted);
+        border-top:1px solid var(--border); background:rgba(0,0,0,.015);
+      }}
+      .ti-split-empty {{ padding:8px 10px; font-size:11px; color:var(--text-muted); }}
       .ti-key {{
         display: grid;
         grid-template-columns: 1fr 1fr;
@@ -525,16 +561,62 @@ def build_trade_intel_body(
           .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
       }}
 
+      // Market heat strip: 90d trade velocity with Heating up / Cooling off /
+      // Steady trend. Same dot rule as the Trade Hub (1 dot per ~3 trades).
+      function tiHeatHtml(p) {{
+        const v = p.velocity || {{}};
+        const n = v.recent_90d || 0;
+        if (!n) return '';
+        const filled = Math.min(5, Math.max(1, Math.round(n / 3)));
+        let dots = '';
+        for (let i = 0; i < 5; i++) dots += `<i class="${{i < filled ? 'on' : ''}}"></i>`;
+        const trend = v.trend === 'heating_up'
+          ? `<span class="ti-heat-trend" style="color:#16a34a;">&#8599; Heating up</span>`
+          : v.trend === 'cooling_off'
+            ? `<span class="ti-heat-trend" style="color:#6b7280;">&#8600; Cooling off</span>`
+            : v.trend === 'steady'
+              ? `<span class="ti-heat-trend" style="color:#6b7280;">&rarr; Steady</span>` : '';
+        return `<div class="ti-heat"><span class="ti-heat-dots">${{dots}}</span>`
+          + `<span class="ti-heat-text">Traded ${{n}}&times; in the last 90 days</span>${{trend}}</div>`;
+      }}
+
+      // Who pays what: top package shape per buyer class, from each side's
+      // record at trade time. Honest empty state when trades exist but none
+      // carry a usable context snapshot; silent when there are no 90d trades.
+      function tiSplitHtml(p) {{
+        const s = p.buyer_split || {{}};
+        const row = (cls, dot, name) => {{
+          const e = s[cls];
+          if (!e || !e.total) return '';
+          const n = e.count || 0;
+          return `<div class="ti-split-row"><span class="ti-split-dot" style="background:${{dot}};"></span>`
+            + `<span class="ti-split-who">${{name}}</span>`
+            + `<span class="ti-split-paid">${{tiEsc(e.label)}}</span>`
+            + `<span class="ti-split-n">${{n}} trade${{n === 1 ? '' : 's'}}</span></div>`;
+        }};
+        const rows = [row('contender', '#16a34a', 'Contenders'),
+                      row('rebuilder', '#f59e0b', 'Rebuilders')].filter(Boolean);
+        if (!rows.length) {{
+          const n = (p.velocity && p.velocity.recent_90d) || 0;
+          if (!n) return '';
+          return `<div class="ti-split"><div class="ti-split-head">Who pays what</div>`
+            + `<div class="ti-split-empty">Not enough recent trades to split by buyer type.</div></div>`;
+        }}
+        return `<div class="ti-split"><div class="ti-split-head">Who pays what</div>${{rows.join('')}}`
+          + `<div class="ti-split-foot">From each side's record at trade time.</div></div>`;
+      }}
+
       function renderTI(players = null) {{
         if (!players) {{ loadTIPage(currentPage); return; }}
         let filteredPlayers = currentPos === 'ALL' ? players : players.filter(p => p.position === currentPos);
-        if (currentTab !== 'trending') {{
-          const withDelta = filteredPlayers.filter(p => p.value_delta != null && p.model_value > 0);
-          if (currentTab === 'buylows') {{
-            filteredPlayers = withDelta.filter(p => p.value_delta < -5).sort((a, b) => a.value_delta - b.value_delta);
-          }} else if (currentTab === 'sellhigh') {{
-            filteredPlayers = withDelta.filter(p => p.value_delta > 5).sort((a, b) => b.value_delta - a.value_delta);
-          }}
+        if (currentTab === 'heating') {{
+          filteredPlayers = filteredPlayers
+            .filter(p => p.velocity && p.velocity.trend === 'heating_up')
+            .sort((a, b) => (b.velocity.recent_90d || 0) - (a.velocity.recent_90d || 0));
+        }} else if (currentTab === 'cooling') {{
+          filteredPlayers = filteredPlayers
+            .filter(p => p.velocity && p.velocity.trend === 'cooling_off')
+            .sort((a, b) => (b.velocity.recent_90d || 0) - (a.velocity.recent_90d || 0));
         }}
         const grid  = document.getElementById('tiGrid');
         const empty = document.getElementById('tiEmpty');
@@ -549,22 +631,8 @@ def build_trade_intel_body(
           const cnt30  = p.trade_count_30d || 0;
           const cntAll = p.trade_count_all || 0;
           const market = p.market_value != null ? p.market_value.toFixed(1) : '-';
-          const model  = p.model_value  != null ? p.model_value.toFixed(1)  : '-';
-          const delta  = p.value_delta;
           const trend  = p.market_trend;
-          let chipBg, chipColor, chipText;
-          if (currentTab === 'trending') {{
-            chipBg = '#3b82f620'; chipColor = '#3b82f6'; chipText = cntAll + ' trades';
-          }} else if (currentTab === 'buylows') {{
-            chipBg = '#10b98120'; chipColor = '#10b981';
-            chipText = delta != null ? (delta > 0 ? '+' : '') + Math.round(delta) : '-';
-          }} else {{
-            chipBg = '#f59e0b20'; chipColor = '#f59e0b';
-            chipText = delta != null ? (delta > 0 ? '+' : '') + Math.round(delta) : '-';
-          }}
-          const deltaHtml = delta != null
-            ? `<span class="${{delta >= 0 ? 'ti-delta-pos' : 'ti-delta-neg'}}">${{delta >= 0 ? '+' : ''}}${{Math.round(delta)}}</span>`
-            : '<span style="color:var(--text-muted)">-</span>';
+          const chipBg = '#3b82f620', chipColor = '#3b82f6', chipText = cntAll + ' trades';
           let momentumHtml = '';
           if (trend != null) {{
             if (trend >= 5) momentumHtml = '<span style="color:#10b981;">▲</span> Rising';
@@ -581,10 +649,10 @@ def build_trade_intel_body(
             </div>
             <div class="ti-divider"></div>
             <div class="ti-row"><span class="ti-row-label">Market</span><span class="ti-row-val">${{market}}</span></div>
-            <div class="ti-row"><span class="ti-row-label">BR Model</span><span class="ti-row-val">${{model}}</span></div>
-            <div class="ti-row"><span class="ti-row-label">Delta</span><span class="ti-row-val">${{deltaHtml}}</span></div>
             <div class="ti-row"><span class="ti-row-label">Trades 7d/30d</span><span class="ti-row-val">${{cnt7}} / ${{cnt30}}</span></div>
             ${{momentumHtml ? `<div class="ti-momentum">${{momentumHtml}}</div>` : ''}}
+            ${{tiHeatHtml(p)}}
+            ${{tiSplitHtml(p)}}
             ${{p.why_line ? `<div class="th-why"><span class="th-why-lbl">Why this</span><span>${{tiEsc(p.why_line)}}</span></div>` : ''}}
           </div>`;
         }}).join('');
@@ -729,11 +797,6 @@ def build_trade_intel_body(
 
         function buildCard(p, r) {{
           const market = r.market_value != null ? r.market_value.toFixed(1) : '-';
-          const model  = r.model_value  != null ? r.model_value.toFixed(1)  : '-';
-          const delta  = r.value_delta;
-          const deltaHtml = delta != null
-            ? `<span class="${{delta >= 0 ? 'ti-delta-pos' : 'ti-delta-neg'}}">${{delta >= 0 ? '+' : ''}}${{Math.round(delta)}}</span>`
-            : '<span style="color:var(--text-muted)">-</span>';
           const cnt7   = r.trade_count_7d  || 0;
           const cnt30  = r.trade_count_30d || 0;
           const cntAll = r.trade_count_all || 0;
@@ -755,10 +818,10 @@ def build_trade_intel_body(
             </div>
             <div class="ti-divider"></div>
             <div class="ti-row"><span class="ti-row-label">Market</span><span class="ti-row-val">${{market}}</span></div>
-            <div class="ti-row"><span class="ti-row-label">BR Model</span><span class="ti-row-val">${{model}}</span></div>
-            <div class="ti-row"><span class="ti-row-label">Delta</span><span class="ti-row-val">${{deltaHtml}}</span></div>
             <div class="ti-row"><span class="ti-row-label">Trades 7d/30d</span><span class="ti-row-val">${{cnt7}} / ${{cnt30}}</span></div>
             ${{momentumHtml}}
+            ${{tiHeatHtml(r)}}
+            ${{tiSplitHtml(r)}}
           </div>`;
         }}
 
