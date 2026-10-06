@@ -3167,6 +3167,12 @@ def build_history_body(
         </div>
       </div>
 
+      <nav class="history-anchor-nav" aria-label="Jump to section" style="position:sticky;top:0;z-index:10;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:8px 16px;margin-bottom:16px;display:flex;gap:16px;flex-wrap:wrap;">
+        <a href="#historyAwardsContent" style="font-size:13px;font-weight:600;color:var(--accent);text-decoration:none;">Awards</a>
+        <a href="#historyStandingsContent" style="font-size:13px;font-weight:600;color:var(--accent);text-decoration:none;">Standings</a>
+        <a href="#historyChartContent" style="font-size:13px;font-weight:600;color:var(--accent);text-decoration:none;">Charts</a>
+      </nav>
+
       <div class="history-top-grid">
         <div class="card history-awards-panel">
           <div class="card-header"><h2>Season Awards</h2></div>

@@ -307,6 +307,10 @@ def build_compare_page_body(popular_html: str = "") -> str:
             </div>
           </div>
           <div id="comparePageResult" class="compare-page-result"></div>
+          <div class="static-section" style="max-width:860px;margin:24px auto 0;text-align:center;">
+            <a href="/auth/login" style="display:inline-block;padding:12px 28px;border-radius:8px;background:var(--accent);color:#fff;font-size:15px;font-weight:700;text-decoration:none;">Connect your league to compare your players</a>
+            <p style="font-size:12px;color:var(--text-muted);margin-top:8px;">Free for your first league</p>
+          </div>
         </div>
       </main>
     </div>

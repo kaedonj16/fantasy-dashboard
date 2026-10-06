@@ -747,6 +747,58 @@ def _pricing_features_grid(items: list[tuple[str, str]], *, free: bool = False) 
     return f'<div class="pricing-features-grid">{cells}</div>'
 
 
+# Plan coverage FAQ. One source builds both the on-page accordion and the
+# FAQPage structured data, so they can't drift. Answers are plain text.
+_PRICING_FAQ = [
+    ("Does Starter cover my league mates?",
+     "No. It gives only you PRO in one league you choose."),
+    ("What does All-Pro cover?",
+     "PRO for you in up to 5 leagues you choose. Your league mates are not upgraded."),
+    ("Does Hall of Fame cover everyone everywhere?",
+     "No. It gives you PRO in every league you play. Your league mates stay on the free tier."),
+    ("How do Starter and All-Pro league slots work?",
+     "After checkout you pick which leagues get PRO: 1 league on Starter, up to 5 on All-Pro. "
+     "You can change your picks anytime from your PRO settings, and PRO applies only to you in those leagues."),
+    ("How does monthly billing work?",
+     "Choose Monthly above any plan. You are billed each month instead of once a year, and you can "
+     "switch intervals or cancel from the manage-subscription link after checkout. "
+     "Interval changes use Stripe's default proration."),
+    ("Is the whole Weekly Recap premium?",
+     "No. The AI-written storyline is premium; the recap's other available sections remain free."),
+    ("How does PRO billing work?",
+     "PRO is billed monthly or annually, depending on the interval you choose at checkout. "
+     "Your subscription renews automatically at the then-current price until you cancel."),
+    ("How do I cancel?",
+     "Cancel anytime through the subscription management link in your account. "
+     "Your PRO access continues until the end of the current term."),
+    ("Can I get a refund?",
+     "Charges are non-refundable except as required by law. "
+     "Canceling stops future renewals but does not refund the current term."),
+]
+
+
+def _pricing_faq_ld_json() -> str:
+    """FAQPage structured data for the pricing page, built via json.dumps.
+
+    Assembled with string concatenation (not an inline <script> literal) so the
+    inline-JS syntax guardrail doesn't try to node-check JSON as JavaScript.
+    """
+    faq_ld = {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+            {"@type": "Question", "name": q,
+             "acceptedAnswer": {"@type": "Answer", "text": a}}
+            for q, a in _PRICING_FAQ
+        ],
+    }
+    return (
+        '<script type="application/ld+json">'
+        + json.dumps(faq_ld, separators=(",", ":")).replace("<", "\\u003c")
+        + "</script>"
+    )
+
+
 _PRO_FEATURES = [
     ("fa-handshake", "Roster-based trade suggestions"),
     ("fa-chart-line", "Trade Intel feed &amp; history"),
@@ -1592,6 +1644,7 @@ def _pricing_body(league_id: str | None = None, platform: str = "sleeper") -> st
         <details><summary>How do I cancel?</summary><p>Cancel anytime through the subscription management link in your account. Your PRO access continues until the end of the current term.</p></details>
         <details><summary>Can I get a refund?</summary><p>Charges are non-refundable except as required by law. Canceling stops future renewals but does not refund the current term.</p></details>
       </section>
+      {_pricing_faq_ld_json()}
     </main>
     """
 

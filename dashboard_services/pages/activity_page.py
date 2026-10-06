@@ -813,7 +813,7 @@ def build_activity_body(ctx: dict) -> str:
             "<div class='card activity-card' data-section='activity'>"
             "  <div class='card-header-row'>"
             "    <div>"
-            "      <h2>League activity</h2>"
+            "      <h1 style=\"font-size:22px;font-weight:800;margin:0;\">League activity</h1>"
             "    </div>"
             "  </div>"
             "  <div class='scroll-box'>"

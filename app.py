@@ -8046,13 +8046,21 @@ def handle_500(e):
                                             ".box{text-align:center;padding:40px 24px;max-width:400px;}"
                                             ".logo{font-size:13px;font-weight:700;color:#38bdf8;letter-spacing:.04em;margin-bottom:24px;}"
                                             "h2{margin:0 0 8px;font-size:22px;}p{color:#94a3b8;margin:0 0 24px;font-size:15px;}"
-                                            "a{display:inline-block;padding:10px 20px;background:#3b82f6;color:#fff;"
+                                            ".links{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;}"
+                                            "a.primary{display:inline-block;padding:10px 20px;background:#3b82f6;color:#fff;"
+                                            "border-radius:8px;text-decoration:none;font-weight:600;font-size:15px;}"
+                                            "a.secondary{display:inline-block;padding:10px 20px;background:transparent;"
+                                            "border:1px solid #334155;color:#94a3b8;"
                                             "border-radius:8px;text-decoration:none;font-weight:600;font-size:15px;}</style>"
                                             "</head><body><div class='box'>"
                                             "<div class='logo'>BR Fantasy</div>"
                                             "<h2>Something went wrong</h2>"
                                             "<p>The server hit an unexpected error. This usually fixes itself - please try again in a moment.</p>"
-                                            "<a href='/'>&#8592; Back to home</a>"
+                                            "<div class='links'>"
+                                            "  <a class='primary' href='/'>&#8592; Back to home</a>"
+                                            "  <a class='secondary' href='/trade'>Trade Calculator</a>"
+                                            "  <a class='secondary' href='/rankings/dynasty'>Player Rankings</a>"
+                                            "</div>"
                                             "</div></body></html>"
     ), 500
 
@@ -17610,8 +17618,14 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
     # AdSense/search weight human-readable framing around a data tool, and it
     # gives the page unique on-page copy beyond the numbers themselves.
     if not platform:
-        _intro = """
+        _h1 = ""
+        if _canonical == "/dynasty-trade-value-chart":
+            _h1 = """
+      <h1 style="font-size:22px;font-weight:800;margin:0 0 8px;color:var(--text);">Dynasty Trade Value Chart</h1>
+"""
+        _intro = f"""
     <div class="static-section" style="max-width:860px;margin:0 auto 10px;">
+      {_h1}
       <p style="color:var(--text-muted);font-size:15px;line-height:1.7;margin:0;">
         These are <strong>dynasty fantasy football trade values</strong> for every relevant
         player, refreshed daily from real league-to-league market data and our value model.
@@ -21221,7 +21235,7 @@ def api_weekly_week():
         for m, is_gotw in zip(matchups, _api_gotw_flags)
     ]
 
-    slides_html = "".join(slides) if slides else "<div class='m-empty'>No matchups</div>"
+    slides_html = "".join(slides) if slides else "<div class='m-empty'>No games - check back Sunday.</div>"
     slides_by_week = {week: slides_html}
 
     matchups_html = render_matchup_carousel_weeks(

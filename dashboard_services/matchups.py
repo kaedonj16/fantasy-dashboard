@@ -918,6 +918,16 @@ def matchup_matches_gotw(matchup: dict, selection: Optional[dict]) -> bool:
     return bool(gotw_key and matchup_key and gotw_key == matchup_key)
 
 
+def _no_matchups_html(active_week: Optional[int] = None) -> str:
+    """Empty state for the matchup carousel with context."""
+    week_txt = f" for Week {int(active_week)}" if active_week else ""
+    return (
+        "<div class='m-empty'>"
+        f"No games{week_txt} - check back Sunday."
+        "</div>"
+    )
+
+
 def render_matchup_carousel_weeks(
         slides_by_week: dict[int, str],
         dashboard: bool,
@@ -935,12 +945,12 @@ def render_matchup_carousel_weeks(
     from html import escape as html_escape
 
     if not slides_by_week:
-        slides_html = "<div class='m-empty'>No matchups</div>"
+        slides_html = _no_matchups_html(active_week)
     else:
         # pick active week if given, else first key
         if active_week is None:
             active_week = sorted(slides_by_week.keys())[0]
-        slides_html = slides_by_week.get(active_week) or "<div class='m-empty'>No matchups</div>"
+        slides_html = slides_by_week.get(active_week) or _no_matchups_html(active_week)
 
     central = "central" if dashboard else ""
     compact_cls = " matchup-carousel--compact" if dashboard else ""

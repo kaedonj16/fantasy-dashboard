@@ -9,6 +9,8 @@ from __future__ import annotations
 import html as _html
 import logging
 
+from dashboard_services.matchups import _no_matchups_html
+
 logger = logging.getLogger(__name__)
 
 
@@ -255,7 +257,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
         )
         for m, is_gotw in zip(default_matchups, _gotw_flags)
     ]
-    slides_html = "".join(slides) if slides else "<div class='m-empty'>No matchups</div>"
+    slides_html = "".join(slides) if slides else _no_matchups_html()
     slides_by_week = {default_week: slides_html}
 
     matchup_html = (

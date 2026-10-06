@@ -16,7 +16,9 @@ def test_waivers_page_hides_startsit_for_best_ball():
     source = (ROOT / "dashboard_services" / "pages" / "waivers_page.py").read_text(encoding="utf-8")
     assert "is_best_ball(" in source
     assert "startsit_tab_html" in source
-    assert "Best Ball league" in source
+    # The Start/Sit tab itself is hidden for Best Ball, so the dead-end
+    # explainer note was removed (audit P2 #11) rather than shown.
+    assert "Best Ball league: weekly Start/Sit is hidden" not in source
 
 
 def test_dashboard_best_ball_badge():
