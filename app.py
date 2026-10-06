@@ -18009,9 +18009,18 @@ def page_breakouts(platform: str, season: int, league_id: str):
 
       function _boPlayerLink(name, playerId) {{
         if (playerId) {{
-          return '<a class="bo-plink" onclick="event.stopPropagation();openPlayerModal(\'' + playerId + '\', \'' + (name || '').replace(/\\/g, '\\\\').replace(/\'/g, "\\'") + '\', {{tab: \'breakout\'}});return false;">' + (name || 'Unknown') + '</a>';
+          var pid = String(playerId);
+          _boPlayerNames[pid] = name || 'Unknown';
+          var safePid = pid.replace(/"/g, '&quot;');
+          return '<a class="bo-plink" data-bopid="' + safePid + '" onclick="event.stopPropagation();boOpenPlayerModal(this.getAttribute(\\\'data-bopid\\\'));">' + (name || 'Unknown') + '</a>';
         }}
         return name || 'Unknown';
+      }}
+
+      var _boPlayerNames = {{}};
+      function boOpenPlayerModal(pid) {{
+        var nm = _boPlayerNames[pid] || 'Unknown';
+        openPlayerModal(pid, nm, {{tab: 'breakout'}});
       }}
 
       function renderBoTrackRecord(data) {{
