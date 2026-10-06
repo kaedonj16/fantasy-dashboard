@@ -547,6 +547,14 @@ def _make_admin_client(monkeypatch, admin=True):
             "new_pro_subscriptions": 5,
         },
     )
+    monkeypatch.setattr(
+        "dashboard_services.analytics.cohort_heatmap",
+        lambda weeks=8, active_weeks=6: [
+            {"cohort_week": "2026-09-21", "size": 4,
+             "w0": 100.0, "w1": 50.0, "w2": 25.0, "w3": 0.0,
+             "w4": None, "w5": None},
+        ],
+    )
     app = flask.Flask(__name__)
     app.secret_key = "test-secret"
     app.register_blueprint(_bp_mod.internal_bp)
@@ -1373,6 +1381,10 @@ def test_admin_page_renders_owner_metric_sections(monkeypatch):
     assert "sleeper" in body
     # Revenue strip.
     assert "Currently active PRO subscriptions" in body
+    # Cohort heatmap section renders with raw percentages in cells.
+    assert "Signup cohort retention" in body
+    assert "100.0%" in body
+    assert "4 signups" in body
 
 
 def test_admin_page_owner_section_failure_still_renders(monkeypatch):
@@ -1421,3 +1433,110 @@ def test_paywall_display_hooks_in_pages():
     assert "brTrackPaywall('breakout_nudge')" in app_js
     history_py = (root / "dashboard_services" / "pages" / "history_page.py").read_text()
     assert "brTrackPaywall('wrapped_finale')" in history_py
+
+
+# ── Cohort heatmap (signup-week retention) ────────────────────────────────────
+
+def _cohort_row(cohort_week, size, counts):
+    row = {"cohort_week": cohort_week, "size": size}
+    for o, n in enumerate(counts):
+        row["w%d" % o] = n
+    return row
+
+
+def test_cohort_heatmap_shape_and_pcts(monkeypatch):
+    import datetime
+
+    # Freeze "today" on a Monday so the expected week grid is deterministic.
+    monday = datetime.date(2026, 9, 28)
+    assert monday.weekday() == 0
+    monkeypatch.setattr(analytics, "ny_today", lambda: monday)
+    _patch_fetchall(
+        monkeypatch,
+        [
+            _cohort_row(datetime.date(2026, 9, 28), 10, [9, 4, 0, 0, 0, 0]),
+            _cohort_row(datetime.date(2026, 9, 7), 4, [4, 2, 1, 0, 0, 0]),
+        ],
+    )
+    out = analytics.cohort_heatmap(weeks=4)
+    assert len(out) == 4
+    # Oldest cohort first.
+    older, newer = out[0], out[3]
+    assert older["cohort_week"] == "2026-09-07"
+    assert older["size"] == 4
+    assert older["w0"] == 100.0
+    assert older["w1"] == 50.0
+    assert older["w2"] == 25.0
+    assert older["w3"] == 0.0
+    # w4/w5 target weeks have not happened yet for this cohort either.
+    assert older["w4"] is None
+    assert newer["cohort_week"] == "2026-09-28"
+    assert newer["size"] == 10
+    assert newer["w0"] == 90.0
+    # The current week's cohort has no future weeks yet.
+    assert newer["w1"] is None
+    assert newer["w5"] is None
+
+
+def test_cohort_heatmap_empty_cohorts(monkeypatch):
+    import datetime
+
+    monday = datetime.date(2026, 9, 28)
+    monkeypatch.setattr(analytics, "ny_today", lambda: monday)
+    _patch_fetchall(monkeypatch, [])
+    out = analytics.cohort_heatmap(weeks=3)
+    assert len(out) == 3
+    assert [r["cohort_week"] for r in out] == [
+        "2026-09-14", "2026-09-21", "2026-09-28",
+    ]
+    for r in out:
+        assert r["size"] == 0
+        assert all(r["w%d" % o] is None for o in range(6))
+
+
+def test_cohort_heatmap_sql(monkeypatch, reset_tables_ready):
+    conn = _FakeConn(fetchall_result=[])
+    _patch_conn(monkeypatch, conn)
+    analytics.cohort_heatmap()
+    sql = _select_sql(conn)
+    # Cohort comes from the accounts table on a New York signup week.
+    assert "FROM accounts" in sql
+    assert "date_trunc('week', created_at AT TIME ZONE 'America/New_York')::date" in sql
+    # Activity is signed-in pageviews only.
+    assert "event = 'pageview'" in sql
+    assert "account_id IS NOT NULL" in sql
+    # One count column per offset week (default 6).
+    for o in range(6):
+        assert ("AS w%d" % o) in sql
+    assert "make_interval(weeks => %s)" in sql
+    selects = [w for w in conn.writes if "SELECT" in w[0]]
+    assert selects[0][1] == (7,)
+
+
+def test_cohort_heatmap_sql_excludes_account_ids(monkeypatch, reset_tables_ready, excluded_ids):
+    conn = _FakeConn(fetchall_result=[])
+    _patch_conn(monkeypatch, conn)
+    analytics.cohort_heatmap()
+    sql = _select_sql(conn)
+    # Exclusion applies to both the accounts cohort and the pageview activity.
+    assert sql.count("COALESCE(account_id, -1) NOT IN (7, 9, 12)") == 1
+    assert sql.count("COALESCE(id, -1) NOT IN (7, 9, 12)") == 1
+
+
+def test_cohort_heatmap_future_weeks_are_none_not_zero(monkeypatch):
+    import datetime
+
+    monday = datetime.date(2026, 9, 28)
+    monkeypatch.setattr(analytics, "ny_today", lambda: monday)
+    _patch_fetchall(
+        monkeypatch,
+        [_cohort_row(datetime.date(2026, 9, 14), 2, [2, 2, 1, 0, 0, 0])],
+    )
+    out = analytics.cohort_heatmap(weeks=3)
+    # 2026-09-14 cohort: w0..w2 are real (0.0 where nobody returned),
+    # w3..w5 have not happened yet.
+    row = out[0]
+    assert row["w0"] == 100.0
+    assert row["w2"] == 50.0
+    assert row["w3"] is None
+    assert row["w5"] is None

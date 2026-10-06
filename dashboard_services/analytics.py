@@ -1127,6 +1127,83 @@ def account_retention() -> List[Dict[str, Any]]:
     return out
 
 
+def cohort_heatmap(weeks: int = 8, active_weeks: int = 6) -> List[Dict[str, Any]]:
+    """Signup-week cohort retention heatmap.
+
+    For each signup week (last `weeks` Monday-anchored New York weeks): the
+    share of that week's signup cohort (signed-in accounts only, exclusion
+    list applied) with >= 1 pageview in week 0..`active_weeks`-1 after
+    their signup week. Always returns `weeks` rows, oldest cohort first;
+    weeks with no signups have size 0 and all-None pcts, and offsets whose
+    target week has not happened yet for that cohort read as None.
+    """
+    try:
+        weeks = max(1, int(weeks))
+    except (TypeError, ValueError):
+        weeks = 8
+    try:
+        active_weeks = max(1, min(12, int(active_weeks)))
+    except (TypeError, ValueError):
+        active_weeks = 6
+
+    # One LEFT JOIN per offset week: explicit and test-friendly. Offsets are
+    # ints validated above, so interpolating them is safe.
+    joins = " ".join(
+        "LEFT JOIN activity a%(o)d ON a%(o)d.account_id = c.id"
+        " AND a%(o)d.active_w = c.cohort_w + %(d)d" % {"o": o, "d": o * 7}
+        for o in range(active_weeks)
+    )
+    counts = ", ".join(
+        "COUNT(a%d.account_id) AS w%d" % (o, o) for o in range(active_weeks)
+    )
+    rows = _fetchall(
+        f"""
+        WITH cohorts AS (
+            SELECT id,
+                   date_trunc('week', created_at AT TIME ZONE 'America/New_York')::date AS cohort_w
+            FROM accounts
+            WHERE (created_at AT TIME ZONE 'America/New_York')::date
+                  >= date_trunc('week', now() AT TIME ZONE 'America/New_York')::date
+                     - make_interval(weeks => %s)
+            {_exclusion_clause("id")}
+        ),
+        activity AS (
+            SELECT account_id,
+                   date_trunc('week', created_at AT TIME ZONE 'America/New_York')::date AS active_w
+            FROM analytics_events
+            WHERE event = 'pageview' AND account_id IS NOT NULL
+            {_exclusion_clause()}
+            GROUP BY 1, 2
+        )
+        SELECT c.cohort_w AS cohort_week, COUNT(*) AS size, {counts}
+        FROM cohorts c
+        {joins}
+        GROUP BY 1 ORDER BY 1
+        """,
+        (weeks - 1,),
+    )
+    by_week = {str(r["cohort_week"]): r for r in rows}
+    today = ny_today()
+    monday = today - _dt.timedelta(days=today.weekday())
+    out: List[Dict[str, Any]] = []
+    for i in range(weeks - 1, -1, -1):
+        cw = monday - _dt.timedelta(weeks=i)
+        iso = cw.isoformat()
+        r = by_week.get(iso)
+        size = int(r["size"]) if r else 0
+        entry: Dict[str, Any] = {"cohort_week": iso, "size": size}
+        for o in range(active_weeks):
+            key = "w%d" % o
+            if cw + _dt.timedelta(weeks=o) > monday:
+                entry[key] = None  # that week has not happened yet
+            elif r and size:
+                entry[key] = round(100.0 * int(r[key]) / size, 1)
+            else:
+                entry[key] = None
+        out.append(entry)
+    return out
+
+
 def feature_usage_ranking(days: int = 30) -> List[Dict[str, Any]]:
     """Non-pageview events ranked by use over the last `days`.
 
