@@ -18027,8 +18027,8 @@ def page_breakouts(platform: str, season: int, league_id: str):
         boTrackData = data;
         var html = '<div class="bo-rail-title">Track Record</div>';
         html += '<div class="bo-tr-tabs">'
-          + '<button class="bo-tr-tab' + (boTrackTab === 'weekly' ? ' active' : '') + '" onclick="boSwitchTrackTab(\'weekly\')">Weekly</button>'
-          + '<button class="bo-tr-tab' + (boTrackTab === 'preseason' ? ' active' : '') + '" onclick="boSwitchTrackTab(\'preseason\')">Preseason</button></div>';
+          + '<button class="bo-tr-tab' + (boTrackTab === 'weekly' ? ' active' : '') + '" onclick="boSwitchTrackTab(\\'weekly\\')">Weekly</button>'
+          + '<button class="bo-tr-tab' + (boTrackTab === 'preseason' ? ' active' : '') + '" onclick="boSwitchTrackTab(\\'preseason\\')">Preseason</button></div>';
 
         if (boTrackTab === 'weekly') {{
           html += _boWeeklyTrackHTML(data);
@@ -28956,23 +28956,14 @@ def _team_achievements(ctx, roster_id, owner_uid, platform, season, league_id):
                 and {"week", "roster_id", "points"}.issubset(df.columns):
             fin = df[df["finalized"] == True] if "finalized" in df.columns else df
             high_weeks = 0
-            high_week_nums = []
             for _wk, grp in fin.groupby("week"):
                 if grp.empty:
                     continue
                 top_rid = str(grp.loc[grp["points"].idxmax(), "roster_id"])
                 if top_rid == rid:
                     high_weeks += 1
-                    try:
-                        high_week_nums.append(int(_wk))
-                    except (TypeError, ValueError):
-                        pass
             if high_weeks >= 1:
-                weeks_str = ", ".join(str(w) for w in sorted(high_week_nums))
-                noun = "week" if high_weeks == 1 else "weeks"
-                detail = f"Weekly high scorer: {noun} {weeks_str}" if weeks_str else ""
-                out.append({"label": f"{high_weeks}× Weekly High", "kind": "gold",
-                            "detail": detail})
+                out.append({"label": f"{high_weeks}× Weekly High", "kind": "gold"})
             if "points_against" in fin.columns:
                 streaks = {}
                 for _rid, grp in fin.sort_values("week").groupby("roster_id"):
