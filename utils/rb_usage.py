@@ -16,9 +16,12 @@ so we never fetch per-request).
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 # In-memory cache: season -> (load_time, pbp DataFrame)
 _PBP_CACHE: Dict[int, tuple] = {}
@@ -112,12 +115,70 @@ _POS_GSIS_CACHE: Dict[tuple, set] = {}
 _POS_GSIS_LOCK = threading.Lock()
 
 
-def _get_position_gsis_ids(team: str, positions: List[str]) -> set:
-    """Get GSIS IDs of players at given positions on a team.
+# Cache for roster-based position GSIS IDs: (season, team, positions_key) -> set of gsis_id
+_ROSTER_POS_CACHE: Dict[tuple, set] = {}
+_ROSTER_POS_LOCK = threading.Lock()
 
-    Uses the GSIS-to-Sleeper crosswalk and players table for position lookup.
-    Uses lazy imports to avoid circular dependencies. Returns empty set
-    if the crosswalk or players index is unavailable (fail-open: no filtering).
+
+def _get_position_gsis_ids_from_rosters(season: int, team: str, positions: List[str]) -> set:
+    """Get GSIS IDs of players at given positions from nflverse roster data.
+
+    Uses nfl_data_py seasonal rosters (weekly as fallback). This is the most
+    reliable source: same data provider as the play-by-play, no DB or crosswalk
+    needed, keyed directly by GSIS ID. Returns empty set if unavailable.
+    """
+    team = str(team or "").upper().strip()
+    pos_set = {str(p).upper().strip() for p in positions}
+    key = (season, team, tuple(sorted(pos_set)))
+    with _ROSTER_POS_LOCK:
+        if key in _ROSTER_POS_CACHE:
+            return _ROSTER_POS_CACHE[key]
+
+    result: set = set()
+    try:
+        import nfl_data_py as nfl  # optional dependency
+        df = None
+        for fn in ("import_seasonal_rosters", "import_weekly_rosters", "import_rosters"):
+            f = getattr(nfl, fn, None)
+            if f is None:
+                continue
+            try:
+                df = f([season])
+            except Exception:
+                df = None
+            if df is not None and not df.empty:
+                break
+        if df is not None and not df.empty:
+            # Weekly rosters carry a week column; keep the latest per player so
+            # a mid-season move resolves to the team they finished on.
+            if "week" in df.columns:
+                df = df.sort_values("week").groupby("player_id", as_index=False).last()
+            for _, row in df.iterrows():
+                gsis = row.get("player_id")
+                if gsis is None:
+                    gsis = row.get("gsis_id")
+                pos = row.get("position")
+                tm = row.get("team")
+                if gsis is None or pos is None or tm is None:
+                    continue
+                if str(tm).upper().strip() == team and str(pos).upper().strip() in pos_set:
+                    gsis = str(gsis).strip()
+                    if gsis and gsis.lower() != "nan":
+                        result.add(gsis)
+    except Exception as e:
+        logger.warning("[rb_usage] roster position lookup failed for %s %s: %s", team, positions, e)
+
+    with _ROSTER_POS_LOCK:
+        _ROSTER_POS_CACHE[key] = result
+    return result
+
+
+def _get_position_gsis_ids_from_db(team: str, positions: List[str]) -> set:
+    """Get GSIS IDs of players at given positions via GSIS-to-Sleeper crosswalk + DB.
+
+    Fallback when nflverse roster data is unavailable. Uses lazy imports to
+    avoid circular dependencies. Returns empty set if the crosswalk or players
+    table is unavailable.
     """
     team = str(team or "").upper().strip()
     key = (team, tuple(sorted(positions)))
@@ -163,6 +224,35 @@ def _get_position_gsis_ids(team: str, positions: List[str]) -> set:
     with _POS_GSIS_LOCK:
         _POS_GSIS_CACHE[key] = pos_ids
     return pos_ids
+
+
+def _get_position_gsis_ids(team: str, positions: List[str], season: Optional[int] = None) -> set:
+    """Get GSIS IDs of players at given positions on a team.
+
+    Tries sources in order of reliability:
+    1. nflverse roster data (same provider as play-by-play, no DB needed)
+    2. GSIS-to-Sleeper crosswalk + players table (DB fallback)
+
+    Only returns empty (no filtering) if both sources fail; logs a warning
+    so silent fail-open is visible in production logs.
+    """
+    if season:
+        ids = _get_position_gsis_ids_from_rosters(season, team, positions)
+        if ids:
+            return ids
+        logger.warning(
+            "[rb_usage] roster lookup empty for %s %s season %s; trying DB fallback",
+            team, positions, season,
+        )
+    ids = _get_position_gsis_ids_from_db(team, positions)
+    if ids:
+        return ids
+    logger.warning(
+        "[rb_usage] position lookup failed for %s %s (no roster or DB data); "
+        "showing unfiltered",
+        team, positions,
+    )
+    return set()
 
 
 def _load_pbp(season: int):
@@ -382,7 +472,7 @@ def get_team_rb_usage(team: str, season: int, week: Optional[int] = None) -> Dic
 
     # Filter to RBs only (exclude WRs, TEs, QBs who may have touches).
     # Fail-open: if we can't determine positions, show all.
-    rb_ids = _get_position_gsis_ids(team, ["RB"])
+    rb_ids = _get_position_gsis_ids(team, ["RB"], season=season)
     if rb_ids:
         for key in buckets:
             buckets[key] = {
@@ -525,7 +615,7 @@ def get_team_receiving_usage(team: str, season: int, week: Optional[int] = None)
         return {"team": team, "season": season, "week": week, "situations": []}
 
     # Filter to WR/TE only (exclude RBs, QBs). Fail-open: no filtering if unavailable.
-    wr_te_ids = _get_position_gsis_ids(team, ["WR", "TE"])
+    wr_te_ids = _get_position_gsis_ids(team, ["WR", "TE"], season=season)
     if wr_te_ids:
         for key in buckets:
             buckets[key] = {
