@@ -167,9 +167,8 @@ def test_playoff_week_uses_the_round_label_as_the_why():
 
 
 def test_render_shows_matchup_availability_and_blurb():
-    # The card is a banner header + matchup + AI blurb + availability chips.
-    # (The standalone WHY badge was removed in the #695 polish pass; the reason
-    # now lives in the blurb, so this asserts the surviving structure.)
+    # The card is a centered title + matchup + AI blurb + notable outs section
+    # (one column per side).
     df = pd.DataFrame([_fin_row(1, 1, "1", 100, 90), _fin_row(1, 1, "2", 90, 100)])
     storylines = {"1": _storyline(1, "Alpha", 1), "2": _storyline(2, "Bravo", 2)}
     b = [_starter("b1", "Bijan", nfl="ATL")]
@@ -179,11 +178,70 @@ def test_render_shows_matchup_availability_and_blurb():
         df, storylines, selected_week=6, playoff_start=14, playoff_teams=6, num_teams=10, nctx=nctx,
     )
     out = _render_next_week_html(preview, "Top two teams in the league, going at it.")
-    assert "Game of the Week" in out                      # banner title
+    assert "Game of the Week" in out                      # title
     assert "Alpha" in out and "Bravo" in out              # the matchup sides
-    assert "Bijan (OUT)" in out                           # availability chip
-    assert "availability as of Tue Nov 04" in out         # freshness stamp
+    assert "Bravo outs" in out                           # outs column for team b
+    assert "Bijan" in out                                # notable out player
+    assert "Out" in out                                  # status badge
     assert "Top two teams in the league, going at it." in out   # AI blurb
+
+
+def test_render_centered_matchup_structure():
+    # Centered layout: hero projections, two-color win bar, no kicker.
+    preview = {
+        "next_week": 5,
+        "game_of_the_week": {
+            "team_a": "Alpha", "team_b": "Bravo",
+            "record_a": "4-0", "record_b": "2-2",
+            "rank_a": 1, "rank_b": 4,
+            "proj_a": 144.4, "proj_b": 150.8,
+            "win_prob_a": 41,
+            "out_a": [], "maybe_a": [], "bye_a": [],
+            "out_b": [], "maybe_b": [], "bye_b": [],
+        },
+    }
+    out = _render_next_week_html(preview, "Blurb.")
+    assert "NEXT WEEK" not in out                         # no duplicate kicker
+    assert "br-gotw-proj-hero" in out                     # hero projection numbers
+    assert "144.4" in out and "150.8" in out
+    assert "br-gotw-winbar" in out                        # two-color win-prob bar
+    assert "41%" in out and "59%" in out
+    assert "br-gotw-blurb" in out                         # centered blurb
+    assert "br-gotw-outs-grid" not in out                # no outs section when empty
+
+
+def test_render_outs_columns_are_per_side():
+    # Outs are split: each side's column only names that side's team.
+    df = pd.DataFrame([_fin_row(1, 1, "1", 100, 90), _fin_row(1, 1, "2", 90, 100)])
+    storylines = {"1": _storyline(1, "Alpha", 1), "2": _storyline(2, "Bravo", 2)}
+    a = [_starter("a1", "Adams", nfl="GB")]
+    b = [_starter("b1", "Bijan", nfl="ATL")]
+    nctx = _nctx([_matchup("1", "2", starters_a=a, starters_b=b)],
+                 player_index={"a1": {"injury_status": "OUT"}, "b1": {"injury_status": "OUT"}},
+                 proj_by_pid={"a1": 18.0, "b1": 20.0}, playing_teams={"ATL", "GB"})
+    preview = _build_next_week_preview(
+        df, storylines, selected_week=6, playoff_start=14, playoff_teams=6, num_teams=10, nctx=nctx,
+    )
+    out = _render_next_week_html(preview, "Blurb.")
+    assert "Alpha outs" in out and "Bravo outs" in out
+    assert "Adams" in out and "Bijan" in out
+    # Two per-side columns, not one merged list.
+    assert out.count("br-gotw-outs-col") >= 2
+
+
+def test_render_hides_outs_section_when_no_notable_outs():
+    # Scrub-level outs (low projection) do not earn a section.
+    df = pd.DataFrame([_fin_row(1, 1, "1", 100, 90), _fin_row(1, 1, "2", 90, 100)])
+    storylines = {"1": _storyline(1, "Alpha", 1), "2": _storyline(2, "Bravo", 2)}
+    b = [_starter("b1", "Scrub", nfl="ATL")]
+    nctx = _nctx([_matchup("1", "2", starters_b=b)], player_index={"b1": {"injury_status": "OUT"}},
+                 proj_by_pid={"b1": 2.0}, playing_teams={"ATL"})
+    preview = _build_next_week_preview(
+        df, storylines, selected_week=6, playoff_start=14, playoff_teams=6, num_teams=10, nctx=nctx,
+    )
+    out = _render_next_week_html(preview, "Blurb.")
+    assert "Notable outs" not in out
+    assert "Scrub" not in out
 
 
 def test_no_matchups_yields_no_preview():
