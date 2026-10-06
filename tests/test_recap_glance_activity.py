@@ -173,4 +173,5 @@ def test_recap_source_contracts_for_new_sections():
     assert "<h2>League Activity</h2>" in page
     ret = page.split("return ('<main class=\"weekly-recap\">'", 1)[1]
     assert ret.index("standings_html") < ret.index("activity_html") < ret.index("up_next_html")
-    assert ret.index("cards_html") < ret.index("injuries_html") < ret.index("story_html")
+    # Injury report sits just above Up Next.
+    assert ret.index("activity_html") < ret.index("injuries_html") < ret.index("up_next_html")

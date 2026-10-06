@@ -36,8 +36,9 @@ def test_recap_sections_follow_editorial_order_and_end_with_up_next():
     """The recap moves from the completed week to its forward-looking ending."""
     source = (ROOT / "dashboard_services/pages/recap_page.py").read_text()
     returned = source.split("    return ('<main class=\"weekly-recap\">'", 1)[1]
-    expected = ["week_selector", "scoreboard_html", "efficiency_html", "cards_html",
-                "story_html", "lineup_html", "standings_html", "up_next_html"]
+    expected = ["week_selector", "scoreboard_html", "story_html", "cards_html",
+                "efficiency_html", "lineup_html",
+                "standings_html", "up_next_html"]
     positions = [returned.index(item) for item in expected]
     assert positions == sorted(positions)
     assert returned.index("up_next_html") < returned.index(")\n", returned.index("up_next_html"))
@@ -112,8 +113,8 @@ def test_lineup_efficiency_section_and_share_contract():
     js = (ROOT / "static/app.js").read_text()
     returned = page.split("    return ('<main class=\"weekly-recap\">'", 1)[1]
 
-    assert returned.index("scoreboard_html") < returned.index("efficiency_html")
-    assert returned.index("efficiency_html") < returned.index("cards_html")
+    assert returned.index("scoreboard_html") < returned.index("cards_html")
+    assert returned.index("cards_html") < returned.index("efficiency_html")
     assert '"best_lineup"' in page and '"most_left"' in page
     assert "compute_league_season_efficiency(" in page
     assert page.count("compute_league_season_efficiency(") == 1

@@ -1933,6 +1933,49 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
                            "sub": "Efficiency, busts & the week's worst start/sit calls",
                            "sections": _coach_sections, "bgword": "COACH"})
 
+    # ── Standings: where the league stands after this week ─────────────────
+    # Recap beat before the preview closer: top 5 by record, then points for.
+    if include_players:
+        try:
+            _sdf = ctx.get("df_weekly")
+            _srows = []
+            if (_sdf is not None and not getattr(_sdf, "empty", True)
+                    and "points" in _sdf.columns
+                    and "points_against" in _sdf.columns):
+                _sdf = _sdf.copy()
+                _sdf = _sdf[pd.to_numeric(_sdf["week"], errors="coerce") <= week]
+                if "finalized" in _sdf.columns:
+                    _sdf = _sdf[_sdf["finalized"] == True]
+                _pts = pd.to_numeric(_sdf["points"], errors="coerce")
+                _opp = pd.to_numeric(_sdf["points_against"], errors="coerce")
+                _sdf = _sdf[_pts.notna() & _opp.notna() & (_pts > 0)]
+                if not _sdf.empty:
+                    _sdf = _sdf.assign(_w=(_pts.loc[_sdf.index] > _opp.loc[_sdf.index]).astype(int),
+                                       _l=(_pts.loc[_sdf.index] < _opp.loc[_sdf.index]).astype(int),
+                                       _t=(_pts.loc[_sdf.index] == _opp.loc[_sdf.index]).astype(int),
+                                       _pf=_pts.loc[_sdf.index])
+                    _agg = (_sdf.groupby("roster_id")
+                            .agg(w=("_w", "sum"), l=("_l", "sum"),
+                                 t=("_t", "sum"), pf=("_pf", "sum"))
+                            .sort_values(["w", "t", "pf"], ascending=[False, False, False]))
+                    _rmap = ctx.get("roster_map") or {}
+                    _pf_leader = _agg["pf"].idxmax() if not _agg.empty else None
+                    for _i, (_rid, _r) in enumerate(_agg.head(5).iterrows()):
+                        _nm = _rmap.get(_rid, _rmap.get(str(_rid), f"Team {_rid}"))
+                        _rec = f"{int(_r['w'])}-{int(_r['l'])}"
+                        if int(_r["t"]):
+                            _rec += f"-{int(_r['t'])}"
+                        if _pf_leader is not None and _rid == _pf_leader:
+                            _rec += " · top scorer"
+                        _srows.append((f"#{_i + 1}", str(_nm), _rec))
+            if len(_srows) >= 3:
+                slides.append({"kind": "standings", "eyebrow": "LEAGUE STANDINGS",
+                               "num": False, "big": "", "dp": 0, "suffix": "", "label": "",
+                               "sub": f"Through Week {week}",
+                               "rows": _srows, "bgword": "TOP"})
+        except Exception:
+            pass  # standings slide is best-effort; the deck renders without it
+
     # ── Game of the week: a look AHEAD at next week's featured matchup ─────
     # The GOTW is a preview concept -- there is no winner yet. Closing teaser
     # of the deck, built from the same deterministic pick the hub badge and
