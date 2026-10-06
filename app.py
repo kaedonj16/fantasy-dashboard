@@ -33889,6 +33889,10 @@ def _real_trade_packages_for_target(
                       AND COALESCE(l.is_superflex, FALSE) = %s
                       AND COALESCE(l.num_teams, 12) BETWEEN %s AND %s
                       AND t.created_at > NOW() - INTERVAL '730 days'
+                    -- Most-recent-first: without ORDER BY, LIMIT 500 returns an
+                    -- arbitrary 500 trades and the accept % / archetype
+                    -- frequencies reflect stale market instead of recent one.
+                    ORDER BY t.created_at DESC
                     LIMIT 500
                 )
                 SELECT
