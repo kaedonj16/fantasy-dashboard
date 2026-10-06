@@ -167,6 +167,86 @@ def _situation_keys(row) -> List[str]:
     return keys
 
 
+def _compute_team_buckets(pbp, team: str, week: int) -> Dict[str, Dict[str, Dict[str, Any]]]:
+    """Accumulate touches per situation per player for one team/week.
+
+    Returns: situation_key -> {gsis_id: {"name": str, "touches": int}}
+    """
+    # Filter to this team's offensive plays in the given week (regular season)
+    df = pbp[
+        (pbp["posteam"] == team)
+        & (pbp["week"] == week)
+        & (pbp["season_type"] == "REG")
+    ]
+    buckets: Dict[str, Dict[str, Dict[str, Any]]] = {k: {} for k, _ in SITUATIONS}
+    if df.empty:
+        return buckets
+
+    for _, row in df.iterrows():
+        pid = _is_rb_touch(row)
+        if not pid:
+            continue
+        # Get player name from rusher or receiver name
+        name = row.get("rusher_player_name") or row.get("receiver_player_name") or pid
+        name = str(name).strip()
+        for key in _situation_keys(row):
+            b = buckets[key]
+            if pid not in b:
+                b[pid] = {"name": name, "touches": 0}
+            b[pid]["touches"] += 1
+    return buckets
+
+
+def get_all_player_situational_shares(
+    season: int, week: int,
+) -> Dict[str, Dict[str, float]]:
+    """Compute per-player situational touch shares for all teams.
+
+    Returns: {gsis_id: {"name": str, "team": str,
+                        "goalline_share": float, "short_yardage_share": float,
+                        "third_down_share": float, "early_down_share": float,
+                        "two_minute_share": float}}
+    Shares are 0-100 percentages of the player's team RB touches in that
+    situation. Used by Advanced Metrics leaderboards.
+    """
+    pbp = _load_pbp(season)
+    if pbp is None:
+        return {}
+
+    # Map situation keys to output metric keys (skip "all")
+    key_map = {
+        "goalline": "goalline_share",
+        "short": "short_yardage_share",
+        "third": "third_down_share",
+        "early": "early_down_share",
+        "two_min": "two_minute_share",
+    }
+
+    result: Dict[str, Dict[str, float]] = {}
+    teams = pbp["posteam"].dropna().unique()
+    for team in teams:
+        team = str(team).strip()
+        if not team:
+            continue
+        buckets = _compute_team_buckets(pbp, team, week)
+        # For each situation, compute each player's share of team touches
+        for sit_key, metric_key in key_map.items():
+            b = buckets[sit_key]
+            total = sum(p["touches"] for p in b.values())
+            if total == 0:
+                continue
+            for pid, p in b.items():
+                if pid not in result:
+                    result[pid] = {"name": p["name"], "team": team}
+                result[pid][metric_key] = round(100.0 * p["touches"] / total, 1)
+
+    # Fill missing situations with 0.0
+    for pid in result:
+        for metric_key in key_map.values():
+            result[pid].setdefault(metric_key, 0.0)
+    return result
+
+
 def get_team_rb_usage(team: str, season: int, week: int) -> Dict[str, Any]:
     """Compute RB touch distribution by situation for a team/week.
 
@@ -198,31 +278,9 @@ def get_team_rb_usage(team: str, season: int, week: int) -> Dict[str, Any]:
         return {"team": team, "season": season, "week": week,
                 "situations": [], "error": "play-by-play unavailable"}
 
-    # Filter to this team's offensive plays in the given week (regular season)
-    df = pbp[
-        (pbp["posteam"] == team)
-        & (pbp["week"] == week)
-        & (pbp["season_type"] == "REG")
-    ]
-    if df.empty:
+    buckets = _compute_team_buckets(pbp, team, week)
+    if not any(buckets[k] for k, _ in SITUATIONS):
         return {"team": team, "season": season, "week": week, "situations": []}
-
-    # Accumulate touches per situation per player
-    # situation_key -> {gsis_id: {"name": str, "touches": int}}
-    buckets: Dict[str, Dict[str, Dict[str, Any]]] = {k: {} for k, _ in SITUATIONS}
-
-    for _, row in df.iterrows():
-        pid = _is_rb_touch(row)
-        if not pid:
-            continue
-        # Get player name from rusher or receiver name
-        name = row.get("rusher_player_name") or row.get("receiver_player_name") or pid
-        name = str(name).strip()
-        for key in _situation_keys(row):
-            b = buckets[key]
-            if pid not in b:
-                b[pid] = {"name": name, "touches": 0}
-            b[pid]["touches"] += 1
 
     # Get team colors
     colors = TEAM_COLORS.get(team, ["#3B82F6", "#1E40AF", "#93C5F6"])
