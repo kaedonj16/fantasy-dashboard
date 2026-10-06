@@ -124,3 +124,14 @@ def test_nav_endpoints_all_resolve():
         "nav references endpoints that no route defines (a moved/renamed route "
         f"whose nav entry wasn't updated, e.g. missing a blueprint prefix): {missing}"
     )
+
+
+def test_nav_labels_disambiguate_teams_and_history():
+    # "Teams" (fantasy league) vs "NFL Teams" (real NFL) collided in adjacent
+    # dropdowns; the NFL page is now labeled "NFL Team Rankings" (its own H1)
+    # in both the global and league navs. "History" is now "League History" to
+    # disambiguate from "Draft History".
+    src = open(os.path.join(_ROOT, "app.py"), encoding="utf-8").read()
+    assert src.count('"NFL Team Rankings"') >= 2  # global + league nav
+    assert '("NFL Teams"' not in src
+    assert '("League History", "league_pages.page_history"' in src

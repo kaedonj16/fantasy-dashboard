@@ -102,7 +102,7 @@ table.nt-rank tbody tr.nt-sel td.nt-teamcol{{background:var(--accent-soft)}}
 .nt-val.nt-na{{color:var(--text-muted);font-weight:500}}
 .nt-vwrap{{display:flex;flex-direction:column;align-items:flex-end;line-height:1.25}}
 .nt-eff{{font-size:10px;color:var(--text-muted);white-space:nowrap;font-variant-numeric:tabular-nums}}
-.nt-tnote{{margin:0;padding:10px 14px;font-size:12px;color:var(--text-muted);border-top:1px solid var(--border)}}
+.nt-tnote{{margin:0;padding:10px 14px;font-size:12px;color:var(--text-muted);border-top:1px solid var(--border);display:none}}
 @media(max-width:600px){{.nt-page{{padding:12px 8px 24px}}.nt-cbody{{padding:0 8px 12px}}.nt-mbar{{display:none}}.nt-metric{{gap:0}}.nt-val{{min-width:40px;font-size:12px}}table.nt-rank{{min-width:0}}table.nt-rank thead th{{padding:8px 7px}}table.nt-rank td{{padding:8px 7px}}.nt-tn{{display:none}}.nt-tabbr{{display:inline;font-size:14px}}.nt-logo{{width:24px;height:24px}}.nt-tleft{{gap:8px}}.nt-gp{{font-size:10px}}}}
 .nt-pcard{{background:var(--card);border:1px solid var(--border);border-radius:12px;margin-bottom:16px;overflow:hidden}}
 .nt-pcard.nt-empty{{padding:28px 20px;text-align:center;color:var(--text-muted)}}
@@ -233,7 +233,7 @@ table.nt-depth>thead>tr>th:first-child{{z-index:2}}
   <div class="card-header nt-chead">
     <div><h1>NFL Team Rankings</h1><p class="nt-sub" id="ntSeasonSub">Loading team data.</p></div>
     <div class="nt-controls">
-      <button type="button" class="nt-hbtn" id="ntHowBtn">How ranks work</button>
+      <button type="button" class="nt-hbtn" id="ntHowBtn" aria-expanded="false" aria-controls="ntTableNote">How ranks work</button>
       <button type="button" class="nt-hbtn" id="ntCsvBtn">CSV</button>
       <label class="nt-seaslab" for="ntSeasonSel">Season</label>
       <span class="nt-csel"><select id="ntSeasonSel" aria-label="Season">{season_opts}</select></span>
@@ -1293,7 +1293,12 @@ function init(){{
   var how=$("#ntHowBtn");
   if(how){{how.addEventListener("click",function(){{
     var n=$("#ntTableNote");
-    if(n)n.style.display=(n.style.display==="none")?"":"none";
+    if(!n)return;
+    // The note is hidden by stylesheet default, so read the computed style:
+    // the inline style alone cannot tell hidden from shown on first click.
+    var hidden=n.style.display==="none"||(n.style.display===""&&window.getComputedStyle(n).display==="none");
+    n.style.display=hidden?"":"none";
+    how.setAttribute("aria-expanded",hidden?"true":"false");
   }});}}
   var csv=$("#ntCsvBtn");
   if(csv){{csv.addEventListener("click",downloadCsv);}}

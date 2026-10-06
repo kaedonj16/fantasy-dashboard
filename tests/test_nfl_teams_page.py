@@ -95,11 +95,14 @@ def test_apis_registered_and_use_shared_honest_service():
 
 def test_nav_entries_in_all_sheets_and_dropdowns():
     assert '"nfl-teams": "players"' in APP_SRC  # guest active parent
-    assert '"nfl-teams": "Teams"' in APP_SRC  # short label
-    assert '_sl("nfl-teams", "NFL Teams")' in APP_SRC  # mobile league sheet
-    assert '_gl("/nfl-teams", "NFL Teams", "nfl-teams")' in APP_SRC  # mobile guest
-    assert '("NFL Teams", "/nfl-teams", "nfl-teams")' in APP_SRC  # guest desktop
-    assert '("NFL Teams", "league_pages.page_nfl_teams", "nfl-teams", False)' in APP_SRC
+    assert '"nfl-teams": "NFL Teams"' in APP_SRC  # dock short label
+    assert '_sl("nfl-teams", "NFL Team Rankings")' in APP_SRC  # mobile league sheet
+    assert '_gl("/nfl-teams", "NFL Team Rankings", "nfl-teams")' in APP_SRC  # mobile guest
+    assert '("NFL Team Rankings", "/nfl-teams", "nfl-teams")' in APP_SRC  # guest desktop
+    assert '("NFL Team Rankings", "league_pages.page_nfl_teams", "nfl-teams", False)' in APP_SRC
+    assert '"history": "Seasons"' in APP_SRC  # dock short label
+    assert '_sl("history", "League History")' in APP_SRC  # mobile league sheet
+    assert '("League History", "league_pages.page_history", "history", False)' in APP_SRC
     for grp in (
         '"Players": {"players", "compare", "top-movers", "advanced-metrics", "nfl-teams"',
     ):
@@ -653,3 +656,15 @@ def test_scatter_plots_render_team_logos_with_emphasis():
     # Non-selected badges are greyed out via CSS so the selected team pops.
     assert ".nt-mark-dim{{filter:grayscale(1);opacity:.55}}" in PAGE_SRC
     assert '''class="nt-mark-dim"''' in PAGE_SRC
+
+
+def test_how_ranks_button_reveals_hidden_note():
+    # The explainer note is hidden by default; "How ranks work" reveals it on
+    # first click. Regression: the old toggle read only the inline style, so
+    # with the note visible-by-default the first click hid it (inverted).
+    src = Path("dashboard_services/pages/nfl_teams_page.py").read_text()
+    assert ".nt-tnote{{margin:0;padding:10px 14px;font-size:12px;color:var(--text-muted);border-top:1px solid var(--border);display:none}}" in src
+    # The toggle consults the computed style, not just the inline style, so
+    # the first click reveals the stylesheet-hidden note.
+    assert "window.getComputedStyle(n).display" in src
+    assert 'aria-expanded' in src

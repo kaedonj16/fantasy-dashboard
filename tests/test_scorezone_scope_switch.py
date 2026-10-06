@@ -526,7 +526,12 @@ def test_app_wires_pbp_into_collect_and_demo():
     assert "extract_pbp_plays as _rz_extract_pbp_plays" in app
     assert 'play_by_play=(want_pbp and not store_hit)' in app
     assert '"pbp_by_game": pbp_by_game' in app
-    assert "Try ScoreZone Demo" in app
+    # The demo is no longer a nav item; it is linked from the ScoreZone page
+    # itself (idle header) so it stays discoverable without a nav slot.
+    assert "Try ScoreZone Demo" not in app
+    sz_js = (_ROOT / "static" / "scorezone.js").read_text(encoding="utf-8")
+    assert "rz-demo-link" in sz_js
+    assert "?demo=1" in sz_js
     api = (_ROOT / "dashboard_services" / "api.py").read_text(encoding="utf-8")
     # Compatibility name remains, but the implementation delegates to the
     # shared ESPN event service and contains no paid request parameters.

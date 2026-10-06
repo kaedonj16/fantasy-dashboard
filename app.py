@@ -3686,9 +3686,9 @@ _DOCK_LABELS = {
     "scorezone": "ScoreZone", "waivers": "Waivers", "lineup-lab": "Lab", "schedule": "Schedule", "trade": "Trades",
     "trade-suggestions": "Trades", "trade-database": "Trades",
     "compare": "Compare", "top-movers": "Movers", "advanced-metrics": "Metrics",
-    "nfl-teams": "Teams", "breakouts": "Breakouts", "prospects": "Prospects", "draft-history": "History",
+    "nfl-teams": "NFL Teams", "breakouts": "Breakouts", "prospects": "Prospects", "draft-history": "History",
     "draft-cheat-sheet": "Cheat",
-    "awards": "Awards", "graphs": "Graphs", "history": "History",
+    "awards": "Awards", "graphs": "Graphs", "history": "Seasons",
 }
 
 
@@ -3948,7 +3948,7 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     players_html = _sec("Players", [
         _sl("players", "Player Rankings"), _sl("compare", "Compare Players"),
         _sl("top-movers", "Top Movers"), _sl("advanced-metrics", "Advanced Metrics"),
-        _sl("nfl-teams", "NFL Teams"),
+        _sl("nfl-teams", "NFL Team Rankings"),
         _sl("breakouts", "Breakout Engine", pro=True), _sl("prospects", "Prospect Rankings"),
     ])
 
@@ -3959,7 +3959,7 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
     draft_html = _sec("Draft", _draft_rows)
 
     stats_html = _sec("Stats", [
-        _sl("awards", "Awards"), _sl("graphs", "Graphs"), _sl("history", "History"),
+        _sl("awards", "Awards"), _sl("graphs", "Graphs"), _sl("history", "League History"),
     ])
 
     portfolio_link = ""
@@ -4177,7 +4177,7 @@ def _mobile_nav_guest(active: str) -> str:
         _gl("/compare", "Compare Players", "compare"),
         _gl("/top-movers", "Top Movers", "top-movers"),
         _gl("/metrics", "Advanced Metrics", "advanced-metrics"),
-        _gl("/nfl-teams", "NFL Teams", "nfl-teams"),
+        _gl("/nfl-teams", "NFL Team Rankings", "nfl-teams"),
         _gl("/breakouts", "Breakout Engine", "breakouts", pro=True),
         _gl("/prospects", "Prospect Rankings", "prospects"),
     ])
@@ -5149,7 +5149,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
                 ("Compare Players", "/compare", "compare"),
                 ("Top Movers", "/top-movers", "top-movers"),
                 ("Advanced Metrics", "/metrics", "advanced-metrics"),
-                ("NFL Teams", "/nfl-teams", "nfl-teams"),
+                ("NFL Team Rankings", "/nfl-teams", "nfl-teams"),
                 (f"Breakout Engine <span class='nav-pro-badge'>PRO</span>{_bo_new_badge}", "/breakouts", "breakouts"),
                 ("Prospects", "/prospects", "prospects"),
             ], ["players", "prospects", "breakouts", "top-movers", "compare", "advanced-metrics", "nfl-teams"], "playersNavDropdown"),
@@ -5329,8 +5329,9 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             # Player IDs are canonicalized onto the Tank01 boxscore feed, so
             # ScoreZone works on Sleeper, ESPN, Yahoo, and MFL.
             _weekly_items.append((_rz_label, "page_scorezone", "scorezone", False))
-            # Demo stays discoverable without a header Demo pill.
-            _weekly_items.append(("Try ScoreZone Demo", "page_scorezone", "scorezone", False, "?demo=1"))
+            # The demo is linked from the ScoreZone page itself (idle header),
+            # not from the nav, so the Weekly dropdown stays focused on
+            # in-season tools.
             if _rz_live:
                 _rz_pulse = "nav-pill-scorezone-live"
         nav_pills.append(nav_pill_dropdown(
@@ -5349,7 +5350,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Compare Players", "seo_pages.page_compare", "compare", False),
         ("Top Movers", "seo_pages.top_movers_page", "top-movers", False),
         ("Advanced Metrics", "league_pages.page_advanced_metrics", "advanced-metrics", False),
-        ("NFL Teams", "league_pages.page_nfl_teams", "nfl-teams", False),
+        ("NFL Team Rankings", "league_pages.page_nfl_teams", "nfl-teams", False),
         (f"Breakout Engine <span class='nav-pro-badge'>PRO</span>{_bo_new_badge}", "page_breakouts", "breakouts", False),
         ("Prospect Rankings", "page_prospects", "prospects", False),
     ], ["players", "prospects", "breakouts", "top-movers", "compare", "advanced-metrics", "nfl-teams"], "playersNavDropdown"))
@@ -5367,7 +5368,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     nav_pills.append(nav_pill_dropdown("Stats", [
         ("Awards", "page_awards", "awards", False),
         ("Graphs", "league_pages.page_graphs", "graphs", False),
-        ("History", "league_pages.page_history", "history", False),
+        ("League History", "league_pages.page_history", "history", False),
     ], ["awards", "graphs", "history"], "statsNavDropdown"))
     if session.get("viewer_username") or session.get("account_id"):
         _portfolio_cls = "nav-pill active" if active == "portfolio" else "nav-pill"
