@@ -46,6 +46,13 @@ breakout_bp = Blueprint('breakout', __name__, url_prefix='/api/breakout')
 BREAKOUT_BOARD_MIN_SCORE = 0.0
 BREAKOUT_BOARD_LIMIT = 15
 
+# Surfaced board floor: every player at or above this score is surfaced as a
+# breakout candidate. No cap; the board shows all qualifiers. Once surfaced,
+# a player is excluded until their 3-week grading window completes (see
+# _recently_surfaced_player_ids).
+BREAKOUT_SURFACED_MIN_SCORE = 30.0
+BREAKOUT_GRADING_WINDOW_WEEKS = 3
+
 
 # =============================================================================
 # BREAKOUT TYPE CLASSIFICATION
@@ -819,6 +826,39 @@ def _weekly_row_to_candidate(row: Dict) -> Dict:
     }
 
 
+def _recently_surfaced_player_ids(season: int, current_week: int,
+                                  window_weeks: int = BREAKOUT_GRADING_WINDOW_WEEKS) -> set:
+    """Player IDs surfaced on the board in the recent grading window.
+
+    A player surfaced in week W is excluded from the board until their
+    3-week grading window completes (weeks W+1 through W+3). This prevents
+    the same player appearing back-to-back while their earlier call is
+    still being graded. Fails soft to an empty set.
+    """
+    try:
+        from data_building.breakout_engine.weekly_store import (
+            WEEKLY_SCORES_TABLE, WEEKLY_RUNS_TABLE)
+        from data_building.breakout_engine.weekly_breakout import SCORING_VERSION
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT DISTINCT s.player_id FROM {WEEKLY_SCORES_TABLE} s "
+                    f"JOIN {WEEKLY_RUNS_TABLE} r ON r.id = s.run_id "
+                    f"WHERE s.season = %s AND s.as_of_week > %s "
+                    f"AND s.as_of_week < %s AND s.scoring_version = %s "
+                    f"AND s.breakout_score >= %s "
+                    f"AND r.status = 'completed'",
+                    (int(season), int(current_week) - int(window_weeks) - 1,
+                     int(current_week), SCORING_VERSION,
+                     float(BREAKOUT_SURFACED_MIN_SCORE)),
+                )
+                return {str(r["player_id"]) for r in cur.fetchall()
+                        if r.get("player_id")}
+    except Exception:
+        logger.warning("breakout: recently-surfaced lookup failed", exc_info=True)
+        return set()
+
+
 def get_weekly_breakout_candidates(season: int, min_score: float = 0.0,
                                    limit: Optional[int] = None,
                                    as_of_week: Optional[int] = None) -> Dict:
@@ -875,11 +915,28 @@ def get_weekly_breakout_candidates(season: int, min_score: float = 0.0,
     # belong on the served board with an explicit label; hiding this cohort made
     # a single misclassified veteran appear to be the entire candidate set.
     candidates = groups["breakouts"] + groups["early_watch"]
+    # Surfaced board: every player at or above the surfaced floor (30), no
+    # cap. Historical snapshots serve verbatim; only the current board
+    # applies the floor and the no-repeat exclusion.
+    is_current_board = as_of_week is None
+    if is_current_board:
+        candidates = [c for c in candidates
+                      if float(c.get("breakout_score") or 0) >= BREAKOUT_SURFACED_MIN_SCORE]
+        # No repeats: exclude players surfaced in the last grading window.
+        # Their earlier call is still being graded; surfacing them again
+        # would double-count one call in the track record.
+        served_week = payload.get("as_of_week")
+        if served_week is not None:
+            _excluded = _recently_surfaced_player_ids(season, int(served_week))
+            if _excluded:
+                candidates = [c for c in candidates
+                              if str(c.get("player_id") or "") not in _excluded]
     candidates.sort(key=lambda c: (c.get("ranking_score") if c.get("ranking_score") is not None
                                    else c.get("breakout_score") or 0,
                                    c.get("breakout_score") or 0), reverse=True)
-    if limit and limit > 0:
-        candidates = candidates[:limit]
+    # No cap on the surfaced board: every qualifier shows. The limit param
+    # is retained for other consumers (previews, outlook) but never
+    # truncates the board itself.
 
     pipeline_telemetry = dict(payload.get("pipeline_telemetry") or {})
     player_trace = dict(pipeline_telemetry.get("player_trace") or {})
@@ -1886,6 +1943,49 @@ def _forecast_outlook(board: Dict) -> Dict:
     return outlook
 
 
+def _still_tracking_by_week(board: Dict) -> List[Dict]:
+    """Open (ungraded) calls grouped by call week, newest first.
+
+    Only actual breakout calls appear here: watchlist/monitored
+    classifications are excluded, matching the hits/misses filter. Each
+    week carries its call count and the share of its calls currently
+    tracking to hit (None when no call in the week has a band yet).
+    """
+    from data_building.breakout_engine import forecasts as _forecasts
+
+    by_week: Dict[int, List[Dict]] = {}
+    for candidate in (board or {}).get("candidates", []):
+        classification = str(candidate.get("classification") or "")
+        if classification in ("watchlist", "monitored"):
+            continue
+        forecast = candidate.get("forecast")
+        if not isinstance(forecast, dict):
+            continue
+        try:
+            wk = int(forecast.get("call_week") or candidate.get("call_week") or 0)
+        except (TypeError, ValueError):
+            continue
+        if wk <= 0:
+            continue
+        by_week.setdefault(wk, []).append(forecast)
+
+    out = []
+    for wk in sorted(by_week, reverse=True):
+        forecasts = by_week[wk]
+        banded = [f for f in forecasts if f.get("band")]
+        tracking_hit = sum(
+            1 for f in banded if f.get("band") == _forecasts.BAND_TRACKING_HIT)
+        out.append({
+            "week": wk,
+            "calls": len(forecasts),
+            "banded_calls": len(banded),
+            "tracking_to_hit": tracking_hit,
+            "tracking_to_hit_rate": (
+                round(tracking_hit / len(banded), 4) if banded else None),
+        })
+    return out
+
+
 def _merged_board_candidates(*boards: Dict) -> Dict:
     """One candidate list across boards, deduped per (player, forecast
     kind); the first board to carry a key wins it. The default board IS
@@ -1988,6 +2088,8 @@ def get_breakout_track_record(requested_season: Optional[int] = None) -> Dict:
         "outlook": _forecast_outlook({}),
         "hits": [],
         "misses": [],
+        "by_week": [],
+        "still_tracking": [],
     }
     if not season:
         return payload
@@ -2012,6 +2114,7 @@ def get_breakout_track_record(requested_season: Optional[int] = None) -> Dict:
     }
     payload["hits"] = [_with_class_label(h) for h in weekly_tr["hits"]]
     payload["misses"] = [_with_class_label(m) for m in weekly_tr["misses"]]
+    payload["by_week"] = weekly_tr.get("by_week") or []
 
     season_tr = _forecasts.season_track_record(season)
     payload["season_engine"] = {
@@ -2050,9 +2153,13 @@ def get_breakout_track_record(requested_season: Optional[int] = None) -> Dict:
     # first-wins dedupe the live board's call for the same player always
     # beats the reconstruction. The pooled set is the live board's top 15
     # plus each reconstructed week's top 15; it is not re-capped whole.
-    payload["outlook"] = _forecast_outlook(_merged_board_candidates(
+    _merged = _merged_board_candidates(
         board, preseason_board,
-        {"candidates": _reconstructed_outlook_candidates(season)}))
+        {"candidates": _reconstructed_outlook_candidates(season)})
+    payload["outlook"] = _forecast_outlook(_merged)
+    # Still tracking: open calls by week, watchlist/monitored excluded,
+    # matching the hits/misses filter. Only actual breakout calls appear.
+    payload["still_tracking"] = _still_tracking_by_week(_merged)
     return payload
 
 

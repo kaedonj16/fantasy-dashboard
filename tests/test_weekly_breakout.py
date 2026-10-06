@@ -526,7 +526,9 @@ def test_meaningful_rookie_early_watch_is_separate_from_default_board(monkeypatc
         "candidates": [row], "as_of_week": 1, "as_of_date": "2026-09-15",
         "data_status": "ok", "scoring_version": wb.SCORING_VERSION})
     payload = api.get_weekly_breakout_candidates(2026)
-    assert [candidate["player_id"] for candidate in payload["candidates"]] == [WR["player_id"]]
+    # The surfaced board has a 30-score floor; this rookie (23.8) stays out
+    # of candidates but remains visible in the separate early_watch group.
+    assert [candidate["player_id"] for candidate in payload["candidates"]] == []
     assert [candidate["player_id"] for candidate in payload["early_watch"]] == [WR["player_id"]]
 
 

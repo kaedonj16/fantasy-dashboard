@@ -3515,8 +3515,15 @@ function _buildWeeklyBkTabHTML(data) {
   const weeksStale  = parseInt(data.weeks_stale || 0, 10) || 0;
   const asOfWeek    = data.as_of_week;
 
-  // ── Hero: Classification | Score | Confidence (three separate reads) ───────
+  // ── Call badge: which breakout call this player was part of ───────────────
   let html = '';
+  const callWeek = data.call_week != null ? data.call_week : data.as_of_week;
+  const callBadge = data.weekly === false || data.kind === 'preseason'
+    ? 'PRESEASON BREAKOUT CALL'
+    : (callWeek != null ? 'WEEK ' + callWeek + ' BREAKOUT CALL' : 'BREAKOUT CALL');
+  html += `<div style="display:inline-block;font-size:11px;font-weight:700;background:rgba(59,130,246,.15);color:#60a5fa;padding:4px 12px;border-radius:6px;margin-bottom:12px;">${callBadge}</div>`;
+
+  // ── Hero: Classification | Score | Confidence (three separate reads) ───────
   html += `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;align-items:center;">`;
   html += `<span style="display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:999px;
              background:${clsColor}1a;color:${clsColor};border:1px solid ${clsColor}44;font-size:12px;font-weight:800;
@@ -3542,6 +3549,22 @@ function _buildWeeklyBkTabHTML(data) {
       <div style="font-size:11px;color:var(--text-muted);margin-top:1px;">evidence strength</div>
     </div>`;
   html += `</div>`;
+
+  // ── Tracking to hit progress ──────────────────────────────────────────────
+  const fc = data.forecast || null;
+  if (fc && fc.band) {
+    const bandLabel = {tracking_to_hit: 'Tracking to hit', borderline: 'Borderline', tracking_to_miss: 'Tracking to miss'}[fc.band] || fc.band;
+    const bandColor = fc.band === 'tracking_to_hit' ? '#10b981' : fc.band === 'borderline' ? '#d97706' : '#ef4444';
+    const trackPct = fc.tracking_pct != null ? Math.round(fc.tracking_pct * 100) : null;
+    html += `<div style="margin:12px 0;">`;
+    html += `<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;">`;
+    html += `<span style="color:var(--text-muted);">Progress</span>`;
+    html += `<span style="color:${bandColor};font-weight:700;">${trackPct != null ? trackPct + '%' : bandLabel}</span></div>`;
+    html += `<div style="height:8px;background:var(--surface-2,rgba(255,255,255,0.1));border-radius:4px;overflow:hidden;">`;
+    html += `<div style="height:100%;width:${trackPct != null ? trackPct : 0}%;background:${bandColor};border-radius:4px;"></div></div>`;
+    if (fc.basis) html += `<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">${_pmEsc(fc.basis)}</div>`;
+    html += `</div>`;
+  }
 
   // ── Why (concise reasons) ──────────────────────────────────────────────────
   const reasons = Array.isArray(data.reasons) ? data.reasons.filter(Boolean).slice(0, 3)

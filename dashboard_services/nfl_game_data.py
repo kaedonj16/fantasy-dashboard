@@ -6,6 +6,7 @@ state, cumulative NFL statistics, and play data only.
 """
 from __future__ import annotations
 
+import gzip
 import logging
 import threading
 import time
@@ -26,10 +27,12 @@ CDN_SUMMARY_URL = "https://cdn.espn.com/core/nfl/playbyplay"
 UA = "BRFantasy/1.0 (+https://brfantasyfootball.com)"
 TEAM_ALIASES = {"WSH": "WAS", "JAC": "JAX", "LA": "LAR"}
 # Fallback final-score source when ESPN blocks the scoreboard (403). nflverse
-# publishes one games.csv for all seasons; it carries home/away final scores
-# for completed games, so a finished week still renders "Final 24-31 @ LV"
-# even with ESPN down. Live games have blank scores and are skipped.
-_NFLVERSE_GAMES_URL = "https://github.com/nflverse/nflverse-data/releases/download/schedules/games.csv"
+# publishes one games.csv.gz for all seasons; it carries home/away final
+# scores for completed games, so a finished week still renders "Final 24-31 @ LV"
+# even with ESPN down. Live games have blank scores and are skipped. The plain
+# games.csv asset was removed from the nflverse schedules release, so we fetch
+# the gzipped copy and decompress it into the same on-disk CSV cache.
+_NFLVERSE_GAMES_URL = "https://github.com/nflverse/nflverse-data/releases/download/schedules/games.csv.gz"
 _NFLVERSE_GAMES_TTL = 6 * 3600.0
 _nflverse_games_lock = threading.Lock()
 
@@ -347,8 +350,13 @@ def _nflverse_games_rows() -> list[dict]:
                 try:
                     resp = _session.get(_NFLVERSE_GAMES_URL, timeout=(3.05, 20.0))
                     resp.raise_for_status()
+                    # The release asset is gzipped; the on-disk cache stays
+                    # plain CSV so downstream readers are unchanged.
+                    raw = resp.content
+                    if _NFLVERSE_GAMES_URL.endswith(".gz"):
+                        raw = gzip.decompress(raw)
                     tmp = path.with_name(path.name + ".tmp")
-                    tmp.write_bytes(resp.content)
+                    tmp.write_bytes(raw)
                     tmp.replace(path)
                 except Exception:
                     log.warning("nflverse games.csv download failed", exc_info=True)
