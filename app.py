@@ -28956,14 +28956,23 @@ def _team_achievements(ctx, roster_id, owner_uid, platform, season, league_id):
                 and {"week", "roster_id", "points"}.issubset(df.columns):
             fin = df[df["finalized"] == True] if "finalized" in df.columns else df
             high_weeks = 0
+            high_week_nums = []
             for _wk, grp in fin.groupby("week"):
                 if grp.empty:
                     continue
                 top_rid = str(grp.loc[grp["points"].idxmax(), "roster_id"])
                 if top_rid == rid:
                     high_weeks += 1
+                    try:
+                        high_week_nums.append(int(_wk))
+                    except (TypeError, ValueError):
+                        pass
             if high_weeks >= 1:
-                out.append({"label": f"{high_weeks}× Weekly High", "kind": "gold"})
+                weeks_str = ", ".join(str(w) for w in sorted(high_week_nums))
+                noun = "week" if high_weeks == 1 else "weeks"
+                detail = f"Weekly high scorer: {noun} {weeks_str}" if weeks_str else ""
+                out.append({"label": f"{high_weeks}× Weekly High", "kind": "gold",
+                            "detail": detail})
             if "points_against" in fin.columns:
                 streaks = {}
                 for _rid, grp in fin.sort_values("week").groupby("roster_id"):
