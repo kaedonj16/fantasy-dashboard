@@ -588,15 +588,39 @@ def get_player_acquisition_events(
                         faab = (txn.get("settings") or {}).get("waiver_bid")
                     except Exception:
                         faab = None
+                    # Timestamp for date display and dedup (ms epoch).
+                    try:
+                        ts = int(txn.get("status_updated") or txn.get("created") or 0)
+                    except (TypeError, ValueError):
+                        ts = 0
                     events.append({
                         "kind": "add",
                         "season": int(hist_season),
                         "week": int(week) if week is not None else None,
                         "faab": faab,
                         "team": names.get(rid) or (f"Team {rid}" if rid else None),
+                        "ts": ts,
+                        "tx_type": txn.get("type") or "",
                     })
     except Exception:
         logger.debug("[player-acquisition] add scan failed", exc_info=True)
+
+    # Deduplicate waiver claims: two managers cannot successfully claim the same
+    # player in the same week. If multiple waiver adds exist for the same
+    # (season, week), keep only the latest by timestamp (the successful claim).
+    # Free-agent adds are left alone (sequential add/drop/add is legitimate).
+    _seen_waiver = {}
+    _deduped = []
+    for e in events:
+        if e.get("kind") == "add" and (e.get("tx_type") or "") in ("waiver", "waiver_add"):
+            key = (e.get("season"), e.get("week"))
+            prev = _seen_waiver.get(key)
+            if prev is None or (e.get("ts") or 0) > (prev.get("ts") or 0):
+                _seen_waiver[key] = e
+        else:
+            _deduped.append(e)
+    _deduped.extend(_seen_waiver.values())
+    events = _deduped
 
     # Chronological: draft first, then adds by season/week.
     def _sort_key(e):

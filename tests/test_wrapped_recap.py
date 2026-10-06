@@ -124,14 +124,15 @@ def test_weekly_wrapped_pos_leaders_crowns_top_scorer(monkeypatch):
     # One slide for top scorers now; the standalone top-player slide is gone.
     assert "topplayer" not in kinds
     pl = next(s for s in slides if s.get("kind") == "posleaders")
-    crowned = [r for r in pl["rows"] if len(r) > 3 and r[3]]
+    crowned = [r for r in pl["rows"] if len(r) > 4 and r[4]]
     assert len(crowned) == 1
     assert crowned[0][1] == "R Bee"  # 38.5, the highest
-    assert "wrapped-row-crown" in crowned[0][3]
 
     html = H.render_weekly_wrapped_overlay(ctx, 1)
     before, _, after = html.partition("data-kind='posleaders'")
     sec = before.rsplit("<section", 1)[1] + "data-kind='posleaders'" + after.split("</section>", 1)[0]
-    assert sec.count("wrapped-row-crown") == 1
-    # The crown sits on the top scorer's row, next to their name.
-    assert "R Bee" in sec.split("wrapped-row-crown")[0].rsplit("wrapped-row-n", 1)[1]
+    assert sec.count("wrapped-row wrapped-row-top") == 1
+    assert "Highest scorer of the week" in sec
+    # The accent bar sits on the top scorer's row.
+    _top_idx = sec.find("wrapped-row wrapped-row-top")
+    assert "R Bee" in sec[_top_idx:_top_idx + 500]

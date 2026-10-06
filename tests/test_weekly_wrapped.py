@@ -106,12 +106,12 @@ def test_weekly_top_player_pos_leaders_and_dud():
     assert "topplayer" not in by_kind
 
     leaders = by_kind["posleaders"]
-    rows = {k: (n, v, d) for k, n, v, d in leaders["rows"]}
+    rows = {k: (n, v, d, t) for k, n, v, d, t in leaders["rows"]}
     assert rows["QB"][0] == "Star QB"
     assert rows["RB"][0] == "Star RB"
     assert rows["WR"][0] == "Star WR"
     assert rows["TE"][0] == "Star TE"
-    crowned = [k for k, (n, v, d) in rows.items() if d]
+    crowned = [k for k, (n, v, d, t) in rows.items() if t]
     assert crowned == ["QB"]  # Star QB 32.5 is the week's top scorer
 
     # Dud = lowest-scoring starter above zero (Cold K at 1.2), not a benched 0.
@@ -130,7 +130,7 @@ def test_weekly_pos_leaders_include_kicker_and_defense():
         slides = H._build_weekly_wrapped_slides(ctx, "Test League", 2026, 3)
 
     by_kind = {s["kind"]: s for s in slides}
-    rows = {k: (n, v, d) for k, n, v, d in by_kind["posleaders"]["rows"]}
+    rows = {k: (n, v, d, t) for k, n, v, d, t in by_kind["posleaders"]["rows"]}
     assert rows["K"][0] == "Cold K"
     assert abs(float(rows["K"][1]) - 1.2) < 0.01
     assert rows["DEF"][0] == "Top D"
