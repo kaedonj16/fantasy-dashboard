@@ -235,6 +235,7 @@ table.nt-depth>thead>tr>th:first-child{{z-index:2}}
     <div class="nt-controls">
       <button type="button" class="nt-hbtn" id="ntHowBtn" aria-expanded="false" aria-controls="ntTableNote">How ranks work</button>
       <button type="button" class="nt-hbtn" id="ntCsvBtn">CSV</button>
+      <a href="/oline-rankings" class="nt-hbtn" style="text-decoration:none;">O-Line Rankings</a>
       <label class="nt-seaslab" for="ntSeasonSel">Season</label>
       <span class="nt-csel"><select id="ntSeasonSel" aria-label="Season">{season_opts}</select></span>
     </div>

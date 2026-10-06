@@ -128,6 +128,19 @@ def build_trade_calculator_body(
         'Once both sides have assets, this panel can explain whether the trade fits your team build.'
     )
 
+    # Sample trade for guests: pre-load button so visitors see value before typing.
+    sample_trade_block = """
+                <div id="sampleTradeWrap" style="margin-top:10px;text-align:center;">
+                  <button type="button" id="sampleTradeBtn" onclick="window._loadSampleTrade && window._loadSampleTrade()"
+                    style="padding:8px 18px;border-radius:8px;border:1px solid var(--accent);
+                           background:var(--accent);color:#fff;font-size:13px;font-weight:700;cursor:pointer;">
+                    Try a sample trade
+                  </button>
+                  <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">
+                    Ja'Marr Chase for Ashton Jeanty + 2027 1st
+                  </div>
+                </div>""" if is_guest else ""
+
     is_guest_str = 'true' if is_guest else 'false'
     has_premium_str = 'true' if has_premium else 'false'
     # Non-PRO users only see the Trade Hub paywall CTA -- hide the hub tabs.
@@ -459,6 +472,7 @@ def build_trade_calculator_body(
                 <div id="tradeVerdict" class="otc-verdict">
                   Add players to both sides to see the trade balance.
                 </div>
+                {sample_trade_block}
                 <div id="tradeScarcityNotes" style="display:none;"></div>
                 <div id="errorBox" class="error" style="display:none;"></div>
               </div>

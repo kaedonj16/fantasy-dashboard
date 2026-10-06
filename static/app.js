@@ -8153,6 +8153,55 @@ window.initTradePage = function initTradePage(root = document) {
     if (calcEl) calcEl.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
+  // Sample trade for guests: pre-load Ja'Marr Chase for Ashton Jeanty + 2027 1st
+  // so visitors see the calculator's value before typing anything.
+  window._loadSampleTrade = function() {
+    if (!allPlayers || !allPlayers.length) return;
+    const norm = s => String(s || "").toLowerCase().replace(/[^a-z ]/g, "").trim();
+    const chase = allPlayers.find(p => norm(p.name) === "jamarr chase" || norm(p.full_name) === "jamarr chase");
+    const jeanty = allPlayers.find(p => norm(p.name) === "ashton jeanty" || norm(p.full_name) === "ashton jeanty");
+    if (!chase || !jeanty) return;
+    // Clear both sides first
+    state.sideAPlayers.length = 0;
+    state.sideBPlayers.length = 0;
+    state.sideAPicks.length = 0;
+    state.sideBPicks.length = 0;
+    // Side A gets Chase, Side B gets Jeanty + 2027 1st
+    state.sideAPlayers.push(chase);
+    state.sideBPlayers.push(jeanty);
+    const pick = allPlayers.find(p => String(p.id) === "2027_1_mid" || String(p.id) === "2027_1")
+      || { id: "2027_1_mid", display: "2027 1st" };
+    state.sideBPicks.push({ id: pick.id, display: pick.display || "2027 1st" });
+    saveState();
+    renderChips("A");
+    renderChips("B");
+    syncEmptyState("A");
+    syncEmptyState("B");
+    analyzeTrade();
+    // Swap the sample button for a "clear" link
+    const wrap = root.querySelector("#sampleTradeWrap");
+    if (wrap) {
+      wrap.innerHTML = '<button type="button" onclick="window._clearTrade && window._clearTrade()" '
+        + 'style="padding:6px 14px;border-radius:8px;border:1px solid var(--border);'
+        + 'background:var(--surface);color:var(--text);font-size:12px;font-weight:600;cursor:pointer;">'
+        + 'Clear and try your own</button>';
+    }
+  };
+
+  // Clear all sides (used by the sample-trade clear link)
+  window._clearTrade = function() {
+    state.sideAPlayers.length = 0;
+    state.sideBPlayers.length = 0;
+    state.sideAPicks.length = 0;
+    state.sideBPicks.length = 0;
+    saveState();
+    renderChips("A");
+    renderChips("B");
+    syncEmptyState("A");
+    syncEmptyState("B");
+    analyzeTrade();
+  };
+
   // ── Suggestions tab ─────────────────────────────────────────────────────
   (function initSuggestionsTab() {
     const calcTab  = root.querySelector("#otcCalcTab");

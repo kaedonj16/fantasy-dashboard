@@ -809,7 +809,7 @@ def build_commissioner_body(ctx):
     except Exception:
         invite_card = ""
 
-    return f'<div class="lh-wrap"><p class="lh-readonly" style="margin:0 0 12px;font-size:13px;color:var(--text-muted);">Read-only analytics for commissioners. Nothing here changes the league.</p>{invite_card}{health_html}{history_panel}{roster_table}{trade_card}</div>'
+    return f'<div class="lh-wrap"><h1 style="font-size:22px;font-weight:800;margin:0 0 8px;">League Health</h1><p class="lh-readonly" style="margin:0 0 12px;font-size:13px;color:var(--text-muted);">Read-only analytics for commissioners. Nothing here changes the league.</p>{invite_card}{health_html}{history_panel}{roster_table}{trade_card}</div>'
 
 
 # /<...>/league_health and /<...>/commissioner are served by routes/league_pages_bp.py.

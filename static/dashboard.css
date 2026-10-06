@@ -39665,9 +39665,9 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     flex-wrap: wrap;
     gap: 10px;
     margin: 0 0 14px;
-    padding: 10px 14px;
+    padding: 12px 16px;
     background: var(--card);
-    border: 1px solid var(--border-color);
+    border: 2px solid var(--accent);
     border-radius: var(--radius);
 }
 
@@ -39676,11 +39676,13 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     font-weight: 800;
     letter-spacing: .04em;
     text-transform: uppercase;
-    color: var(--text-muted);
+    color: var(--text);
 }
 
 .standings-week-select {
-    min-width: 130px;
+    min-width: 140px;
+    font-weight: 700;
+    border: 1px solid var(--accent);
 }
 
 .standings-week-hint {

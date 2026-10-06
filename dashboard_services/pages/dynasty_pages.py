@@ -429,6 +429,11 @@ def build_risers_fallers_body(movers: dict, as_of_date: str | None = None,
     reason. Use the <a href="/trade">BR Fantasy Trade Calculator</a> to turn this intel
     into winning trades in your dynasty league.</p>
   </div>
+
+  <div class="static-section" style="max-width:860px;margin:24px auto 0;text-align:center;">
+    <a href="/auth/login" style="display:inline-block;padding:12px 28px;border-radius:8px;background:var(--accent);color:#fff;font-size:15px;font-weight:700;text-decoration:none;">Connect your league to track movers on your roster</a>
+    <p style="font-size:12px;color:var(--text-muted);margin-top:8px;">Free for your first league</p>
+  </div>
 </div>
 """
 
@@ -608,6 +613,7 @@ def build_rankings_hub_body(
             f'<td class="rnk-rank">{rank}</td>'
             f'<td class="rnk-name-cell" data-sort-value="{html.escape(name, quote=True)}">'
             f'{pos_badge}'
+
             f'<a class="rnk-player-link" href="/player/{slug}/trade-value">{html.escape(name)}</a>'
             f'<span class="rnk-team">{html.escape(team)}</span>'
             f'</td>'
@@ -617,6 +623,23 @@ def build_rankings_hub_body(
             f'<td data-sort-value="{int(change) if change else 0}">{_rank_arrow(change)}</td>'
             f'</tr>'
         )
+
+    # ItemList JSON-LD for SEO: top 50 ranked players with positions
+    import json as _json
+    _items = []
+    for _rank, _row in enumerate(rows[:50], 1):
+        _items.append(
+            '{{"@type":"ListItem","position":{},"item":{{"@type":"Person","name":"{}","jobTitle":"{}"}}}}'.format(
+                _rank,
+                _json.dumps(str(_row.get("name") or "Unknown"))[1:-1].replace('"', '\\"'),
+                str(_row.get("position") or "").upper(),
+            )
+        )
+    json_ld = (
+        '{"@context":"https://schema.org","@type":"ItemList",'
+        '"name":"' + html.escape(title, quote=True).replace('"', '\\"') + '",'
+        '"itemListElement":[' + ",".join(_items) + "]}"
+    )
 
     return f"""
 <div class="rnk-page">
@@ -647,5 +670,12 @@ def build_rankings_hub_body(
       </tbody>
     </table>
   </div>
+  <div class="static-section" style="max-width:860px;margin:24px auto 0;text-align:center;">
+    <a href="/auth/login" style="display:inline-block;padding:12px 28px;border-radius:8px;background:var(--accent);color:#fff;font-size:15px;font-weight:700;text-decoration:none;">Connect your league to see rankings for your roster</a>
+    <p style="font-size:12px;color:var(--text-muted);margin-top:8px;">Free for your first league</p>
+  </div>
+  <script type="application/ld+json">
+  {json_ld}
+  </script>
 </div>
 """

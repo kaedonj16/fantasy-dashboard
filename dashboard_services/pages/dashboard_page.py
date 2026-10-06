@@ -493,6 +493,45 @@ def build_dashboard_body(ctx: dict) -> str:
           }})();
           </script>"""
         _action_inner += _dismiss_script
+        # One-time onboarding coachmark: points first-time users at Next steps.
+        _coachmark_script = """
+          <script>
+          (function() {
+            var KEY = "br-coachmark-nextsteps-seen";
+            try {
+              if (localStorage.getItem(KEY)) return;
+            } catch (e) { return; }
+            function show() {
+              var target = document.querySelector("[data-action-card='nextsteps']");
+              if (!target) return;
+              var tip = document.createElement("div");
+              tip.setAttribute("role", "status");
+              tip.style.cssText = "background:var(--accent);color:#fff;border-radius:12px;"
+                + "padding:12px 16px;font-size:13px;font-weight:600;margin-bottom:12px;"
+                + "display:flex;justify-content:space-between;align-items:center;gap:12px;";
+              tip.innerHTML = "<span>Start here - these are your top actions this week.</span>"
+                + "<button type='button' aria-label='Dismiss' style='background:none;border:none;color:#fff;"
+                + "font-size:16px;cursor:pointer;line-height:1;'>&times;</button>";
+              tip.querySelector("button").addEventListener("click", function() {
+                tip.remove();
+                try { localStorage.setItem(KEY, "1"); } catch (e) {}
+              });
+              target.parentNode.insertBefore(tip, target);
+              setTimeout(function() {
+                if (tip.parentNode) {
+                  tip.remove();
+                  try { localStorage.setItem(KEY, "1"); } catch (e) {}
+                }
+              }, 15000);
+            }
+            if (document.readyState === "loading") {
+              document.addEventListener("DOMContentLoaded", show);
+            } else {
+              show();
+            }
+          })();
+          </script>"""
+        _action_inner += _coachmark_script
     elif not viewer_roster_id:
         _lm_args = (
             f"'{html.escape(str(platform), quote=True)}', "

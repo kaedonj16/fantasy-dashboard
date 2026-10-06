@@ -638,11 +638,6 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
         '<button class="wv-tab-btn" id="wvTabStartSit" onclick="wvSetTab(\'startsit\')">Start/Sit</button>'
     )
     startsit_section_hidden = " hidden" if is_bb else ""
-    bb_note = (
-        '<div class="muted" style="font-size:13px;margin:0 0 12px;">'
-        'Best Ball league: weekly Start/Sit is hidden.</div>'
-        if is_bb else ""
-    )
 
     html_body = f"""
 <div class="wv-page">
@@ -661,7 +656,6 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
     </div>
   </div>
 
-  {bb_note}
   <!-- Mobile tab bar -->
   <div class="wv-tab-bar">
     <button class="wv-tab-btn active" id="wvTabWaivers" onclick="wvSetTab('waivers')">Waiver Wire</button>

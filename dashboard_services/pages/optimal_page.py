@@ -117,7 +117,8 @@ def build_optimal_body(ctx):
         wk = f'&week={selected}'
         return f'<a class="opt-tab{" active" if active else ""}" href="{base}&view={qview}&period={qperiod}{wk}">{label}</a>'
     options = "".join(f'<option value="{w}"{" selected" if w == selected else ""}>Week {w}</option>' for w in completed)
-    nav = (f'<nav class="opt-nav" aria-label="Lineup analysis controls"><div class="opt-tab-group">'
+    nav = (f'<h1 class="opt-page-title" style="font-size:22px;font-weight:800;margin:0 0 12px;">Lineup Lab</h1>'
+           f'<nav class="opt-nav" aria-label="Lineup analysis controls"><div class="opt-tab-group">'
            f'{tab("My Team", "view", "user", view == "user")}{tab("League", "view", "league", view == "league")}</div>'
            f'<div class="opt-tab-group">{tab("Weekly", "period", "weekly", period == "weekly")}'
            f'{tab("Season", "period", "season", period == "season")}</div>'
