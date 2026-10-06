@@ -7,6 +7,8 @@ from utils.rb_usage import (
     SITUATIONS,
     _situation_keys,
     _is_rb_touch,
+    _build_player_color_map,
+    _is_light_color,
 )
 
 
@@ -98,3 +100,29 @@ class TestIsRbTouch:
     def test_no_touch(self):
         row = {"rush_attempt": 0, "pass_attempt": 0}
         assert _is_rb_touch(row) is None
+
+
+class TestBuildPlayerColorMap:
+    def test_top_player_gets_primary_color(self):
+        cmap = _build_player_color_map("BUF", {"rb1": 50, "rb2": 30, "rb3": 10})
+        assert cmap["rb1"]["color"] == "#00338D"  # BUF primary
+        assert cmap["rb2"]["color"] == "#C60C30"  # BUF secondary
+        assert cmap["rb1"]["light"] is False
+
+    def test_white_flagged_as_light(self):
+        # BUF tertiary is white; third-ranked player gets it with light flag
+        cmap = _build_player_color_map("BUF", {"rb1": 50, "rb2": 30, "rb3": 10})
+        assert cmap["rb3"]["color"] == "#FFFFFF"
+        assert cmap["rb3"]["light"] is True
+
+    def test_colors_cycle_when_more_players_than_colors(self):
+        totals = {f"rb{i}": 50 - i for i in range(5)}
+        cmap = _build_player_color_map("BUF", totals)
+        # 4th player cycles back to primary
+        assert cmap["rb3"]["color"] == "#00338D"
+        assert cmap["rb4"]["color"] == "#C60C30"
+
+    def test_same_player_same_color_regardless_of_call_order(self):
+        cmap1 = _build_player_color_map("BUF", {"a": 10, "b": 20})
+        cmap2 = _build_player_color_map("BUF", {"b": 20, "a": 10})
+        assert cmap1 == cmap2

@@ -912,7 +912,12 @@ function renderProfile(){{
   // Backfield usage by situation (RB touch distribution from play-by-play)
   // Only shown when the RB room is selected.
   if(state.room==="RB"){{
-    h+='<section class="nt-psec nt-backfield-sec"><h3>Backfield usage</h3><div class="nt-backfield-bars" data-team="'+esc(state.team)+'" data-season="'+esc(String(state.season||""))+'"><div class="nt-loading">Loading usage...</div></div></section>';
+  h+='<section class="nt-psec nt-backfield-sec"><h3>Backfield usage <span class="nt-fine">'+esc(String(state.season||""))+' season</span></h3><div class="nt-backfield-bars" data-team="'+esc(state.team)+'" data-season="'+esc(String(state.season||""))+'"><div class="nt-loading">Loading usage...</div></div></section>';
+  }}
+  // Receiving usage by situation (WR/TE target distribution from play-by-play)
+  // Only shown when the WR room is selected.
+  if(state.room==="WR"){{
+  h+='<section class="nt-psec nt-receiving-sec"><h3>Receiving usage <span class="nt-fine">'+esc(String(state.season||""))+' season</span></h3><div class="nt-receiving-bars" data-team="'+esc(state.team)+'" data-season="'+esc(String(state.season||""))+'"><div class="nt-loading">Loading usage...</div></div></section>';
   }}
   h+='<details class="nt-psec nt-collapse" open><summary><h3>Graphs</h3><span class="nt-chev" aria-hidden="true"></span></summary><div class="nt-graphs-grid">';
   h+='<section class="nt-psec"><h3>Home vs away</h3>'+splitsSVG(d,t)+'</section>';
@@ -927,7 +932,7 @@ function renderProfile(){{
     if(g.bye){{h+='<div class="nt-wrow nt-bye"><span class="nt-wk">'+esc(g.week_label||"")+'</span><span class="nt-opp">Bye week</span></div>';return;}}
     var key=state.team+"-"+g.week+"-"+(g.season_type||"reg");
     var oppAbbr=g.opponent||"";
-    var oppLogo=g.opponent_logo?'<img class="nt-opp-logo" src="'+esc(g.opponent_logo)+'" alt="" loading="lazy" onerror="this.remove()">':"";
+    var oppLogo=(typeof window.brTeamBadge==="function"&&oppAbbr)?window.brTeamBadge(oppAbbr,'xs'):"";
     if(g.status==="final"&&g.game_id&&g.expandable!==false){{
       var won=g.result==="W";
       h+='<button type="button" class="nt-wrow" data-w="'+esc(key)+'"><span class="nt-wk">'+esc(g.week_label||"")+'</span><span class="nt-opp">'+oppLogo+(g.is_home?"vs ":"at ")+esc(oppAbbr)+'</span><span class="nt-res '+(won?"nt-w":"nt-l")+'">'+(won?"W":"L")+" "+g.team_pts+"-"+g.opp_pts+'</span></button>';
@@ -949,10 +954,7 @@ function renderProfile(){{
     if (bfEl) {{
       var bfTeam = bfEl.getAttribute('data-team') || '';
       var bfSeason = bfEl.getAttribute('data-season') || String(new Date().getFullYear());
-      var nowDt = new Date();
-      var seasonStart = new Date(2026, 8, 10);
-      var bfWeek = Math.max(1, Math.min(18, Math.floor((nowDt - seasonStart) / (7 * 24 * 3600 * 1000)) + 1));
-      api('/api/team-rb-usage?team=' + encodeURIComponent(bfTeam) + '&season=' + encodeURIComponent(bfSeason) + '&week=' + encodeURIComponent(bfWeek))
+      api('/api/team-rb-usage?team=' + encodeURIComponent(bfTeam) + '&season=' + encodeURIComponent(bfSeason))
         .then(function (ud) {{
           if (!bfEl.isConnected) return;
           if (!ud || !ud.situations || !ud.situations.length) {{
@@ -963,11 +965,10 @@ function renderProfile(){{
           var seen = {{}};
           ud.situations.forEach(function (sit) {{
             (sit.segments || []).forEach(function (s) {{
-              if (!seen[s.name] && s.name !== 'Others') {{
-                seen[s.name] = true;
-                var lc = s.color || '#9CA3AF';
-                bh += '<span class="pm-usage-legend-item"><i style="background:' + lc + '"></i>' + esc(s.name) + '</span>';
-              }}
+              if (s.unlabeled || !s.name || seen[s.name]) return;
+              seen[s.name] = true;
+              var sw = 'background:' + s.color + (s.light ? ';border:1px solid rgba(0,0,0,.4)' : '');
+              bh += '<span class="pm-usage-legend-item"><i style="' + sw + '"></i>' + esc(s.name) + '</span>';
             }});
           }});
           bh += '</div><div class="pm-usage-bars">';
@@ -975,9 +976,10 @@ function renderProfile(){{
             if (!sit.segments || !sit.segments.length) return;
             bh += '<div class="pm-usage-row"><div class="pm-usage-label">' + esc(sit.label) + '<span class="pm-usage-total">' + sit.total + '</span></div><div class="pm-tshare-bar pm-usage-bar">';
             sit.segments.forEach(function (s) {{
-              var tip = s.name + ': ' + s.touches + ' touches (' + s.pct + '%)';
-              var sc = s.color || '#9CA3AF';
-              bh += '<i style="width:' + s.pct + '%;background:' + sc + '" title="' + tip.replace(/"/g, '&quot;') + '">' + (s.touches >= 1 ? '<span>' + s.touches + '</span>' : '') + '</i>';
+              var tip = s.unlabeled ? ('Other players: ' + s.touches + ' touches (' + s.pct + '%)') : (s.name + ': ' + s.touches + ' touches (' + s.pct + '%)');
+              var st = 'width:' + s.pct + '%;background:' + s.color + (s.light ? ';border:1px solid rgba(0,0,0,.4)' : '');
+              var lbl = (!s.unlabeled && s.touches >= 1) ? '<span>' + s.touches + '</span>' : '';
+              bh += '<i style="' + st + '" title="' + tip.replace(/"/g, '&quot;') + '">' + lbl + '</i>';
             }});
             bh += '</div></div>';
           }});
@@ -986,6 +988,49 @@ function renderProfile(){{
         }})
         .catch(function () {{
           if (bfEl.isConnected) bfEl.innerHTML = '<div class="nt-fine">Could not load usage.</div>';
+        }});
+    }}
+  }} catch (_) {{}}
+  // Load receiving usage bars (async, non-blocking)
+  try {{
+    var rcEl = el.querySelector('.nt-receiving-bars');
+    if (rcEl) {{
+      var rcTeam = rcEl.getAttribute('data-team') || '';
+      var rcSeason = rcEl.getAttribute('data-season') || String(new Date().getFullYear());
+      api('/api/team-receiving-usage?team=' + encodeURIComponent(rcTeam) + '&season=' + encodeURIComponent(rcSeason))
+        .then(function (ud) {{
+          if (!rcEl.isConnected) return;
+          if (!ud || !ud.situations || !ud.situations.length) {{
+            rcEl.innerHTML = '<div class="nt-fine">No usage data available.</div>';
+            return;
+          }}
+          var bh = '<div class="pm-usage-legend">';
+          var seen = {{}};
+          ud.situations.forEach(function (sit) {{
+            (sit.segments || []).forEach(function (s) {{
+              if (s.unlabeled || !s.name || seen[s.name]) return;
+              seen[s.name] = true;
+              var sw = 'background:' + (s.color || '#9CA3AF') + (s.light ? ';border:1px solid rgba(0,0,0,.4)' : '');
+              bh += '<span class="pm-usage-legend-item"><i style="' + sw + '"></i>' + esc(s.name) + '</span>';
+            }});
+          }});
+          bh += '</div><div class="pm-usage-bars">';
+          ud.situations.forEach(function (sit) {{
+            if (!sit.segments || !sit.segments.length) return;
+            bh += '<div class="pm-usage-row"><div class="pm-usage-label">' + esc(sit.label) + '<span class="pm-usage-total">' + sit.total + '</span></div><div class="pm-tshare-bar pm-usage-bar">';
+            sit.segments.forEach(function (s) {{
+              var tip = s.unlabeled ? ('Other players: ' + s.targets + ' targets (' + s.pct + '%)') : (s.name + ': ' + s.targets + ' targets (' + s.pct + '%)');
+              var st = 'width:' + s.pct + '%;background:' + (s.color || '#9CA3AF') + (s.light ? ';border:1px solid rgba(0,0,0,.4)' : '');
+              var lbl = (!s.unlabeled && s.targets >= 1) ? '<span>' + s.targets + '</span>' : '';
+              bh += '<i style="' + st + '" title="' + tip.replace(/"/g, '&quot;') + '">' + lbl + '</i>';
+            }});
+            bh += '</div></div>';
+          }});
+          bh += '</div>';
+          rcEl.innerHTML = bh;
+        }})
+        .catch(function () {{
+          if (rcEl.isConnected) rcEl.innerHTML = '<div class="nt-fine">Could not load usage.</div>';
         }});
     }}
   }} catch (_) {{}}
@@ -1145,14 +1190,14 @@ function boxHTML(bx,abbr,wkRow,onlyAbbr){{
     var hWin=aPts!=null&&hPts!=null&&Number(hPts)>Number(aPts);
     var stTxt=bx.status==="live"?((bx.quarter?("Q"+bx.quarter+(bx.clock?" "+bx.clock:"")):"Live")):(bx.status==="final"?"Final":"Scheduled");
     h+='<div class="nt-box-head">'
-      +'<div class="nt-box-side">'+(away.logo?'<img class="nt-box-logo" src="'+esc(away.logo)+'" alt="" loading="lazy">':"")
+      +'<div class="nt-box-side">'+((typeof window.brTeamBadge==="function"&&away.team)?window.brTeamBadge(away.team,'xs'):"")
       +'<span class="nt-box-abbr" title="'+esc(away.name||"")+'">'+esc(away.team||"")+'</span>'
       +'<span class="nt-box-score'+(aWin?"":" dim")+'">'+esc(aPts==null?"":aPts)+'</span></div>'
       +'<span class="nt-box-status">'+esc(stTxt)+'</span>'
       +'<div class="nt-box-side">'
       +'<span class="nt-box-score'+(hWin?"":" dim")+'">'+esc(hPts==null?"":hPts)+'</span>'
       +'<span class="nt-box-abbr" title="'+esc(home.name||"")+'">'+esc(home.team||"")+'</span>'
-      +(home.logo?'<img class="nt-box-logo" src="'+esc(home.logo)+'" alt="" loading="lazy">':"")+'</div>'
+      +((typeof window.brTeamBadge==="function"&&home.team)?window.brTeamBadge(home.team,'xs'):"")+'</div>'
       +'</div>';
   }}
   h+='<div class="nt-boxscore-teams">';

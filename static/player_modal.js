@@ -2994,15 +2994,15 @@ function _pmTeamUsageBars(usageData, focusName) {
       }
     });
   });
-  return `<div class="pm-tshare-cap"><span>Backfield usage by situation</span><span>${usageData.week ? 'Week ' + usageData.week : ''}</span></div>
+  return `<div class="pm-tshare-cap"><span>Backfield usage by situation</span><span>${usageData.season ? usageData.season + ' season' : ''}</span></div>
     <div class="pm-usage-legend">${legend.join('')}</div>
     <div class="pm-usage-bars">${bars}</div>`;
 }
 
 // Async loader for RB usage bars in the player modal team tab.
-function _pmLoadUsageBars(container, team, season, week, focusName) {
+function _pmLoadUsageBars(container, team, season, focusName) {
   if (!container || !team) return;
-  const url = `/api/team-rb-usage?team=${encodeURIComponent(team)}&season=${encodeURIComponent(season)}&week=${encodeURIComponent(week)}`;
+  const url = `/api/team-rb-usage?team=${encodeURIComponent(team)}&season=${encodeURIComponent(season)}`;
   fetch(url)
     .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
     .then(data => {
@@ -3133,10 +3133,9 @@ function _pmBuildTeamHTML(data) {
   const team = data.team || '';
   const pos = String(data.position || '').toUpperCase();
   const crestAbbr = team.slice(0, 2);
-  const logoImg = data.logo
-    ? `<img class="pm-team-logo" src="${data.logo}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"><div class="pm-crest" style="display:none" aria-hidden="true">${crestAbbr}</div>`
+  const logoImg = (typeof window.brTeamBadge === 'function' && team)
+    ? window.brTeamBadge(team, 'md')
     : `<div class="pm-crest" aria-hidden="true">${crestAbbr}</div>`;
-  const wm = data.logo ? `<img class="pm-team-wm" src="${data.logo}" alt="" aria-hidden="true">` : '';
   const bye = data.bye_week != null ? `Bye ${data.bye_week}` : '';
   const summarySeason = Number(data.stats_season || data.season) || '';
   const summaryMode = data.data_mode === 'projection' ? 'Projected data' : 'Actual data';
@@ -3294,7 +3293,6 @@ function _pmBuildTeamHTML(data) {
 
   return `<div class="pm-team-wrap">
     <div class="pm-team-header">
-      ${wm}
       <div class="pm-team-headtop">
         ${logoImg}
         <div class="pm-team-header-text">
@@ -3365,12 +3363,8 @@ function _pmWireTeamPanel(panel, playerId) {
       const team = usageWrap.dataset.team || '';
       const season = usageWrap.dataset.season || String(new Date().getFullYear());
       const focus = usageWrap.dataset.focus || '';
-      // Use current NFL week (approximate: week 5 in early Oct 2026)
-      // The API will return empty if no data for the week.
-      const now = new Date();
-      const seasonStart = new Date(2026, 8, 10); // Sep 10, 2026 (Thu of week 1)
-      const weekNum = Math.max(1, Math.min(18, Math.floor((now - seasonStart) / (7 * 24 * 3600 * 1000)) + 1));
-      _pmLoadUsageBars(usageWrap, team, season, weekNum, focus);
+      // Season totals (no week param).
+      _pmLoadUsageBars(usageWrap, team, season, focus);
     }
   } catch (_) {}
 
