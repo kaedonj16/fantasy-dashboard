@@ -87,59 +87,69 @@ def _is_light_color(hex_color: str) -> bool:
         return False
 
 
-def _get_usable_team_colors(team: str) -> List[str]:
-    """Get team colors filtered to exclude near-white (invisible on light bg).
+def _build_player_color_map(team: str, player_totals: Dict[str, int]) -> Dict[str, Dict[str, Any]]:
+    """Assign a fixed team color to each player, ranked by total usage.
 
-    Falls back to the full palette if all colors are light.
+    Uses the full team palette (including white for more variety). Each
+    player keeps the same color in every situation. Light colors are flagged
+    so the frontend can render a visible border around the segment.
+
+    Returns: {gsis_id: {"color": str, "light": bool}}
     """
     colors = TEAM_COLORS.get(team, ["#3B82F6", "#1E40AF", "#93C5F6"])
-    usable = [c for c in colors if not _is_light_color(c)]
-    return usable if usable else colors
+    if not colors:
+        colors = ["#3B82F6"]
+    ranked_pids = sorted(player_totals.keys(), key=lambda pid: -player_totals[pid])
+    color_map: Dict[str, Dict[str, Any]] = {}
+    for i, pid in enumerate(ranked_pids):
+        color = colors[i % len(colors)]
+        color_map[pid] = {"color": color, "light": _is_light_color(color)}
+    return color_map
 
 
-# Cache for RB GSIS IDs: team -> set of gsis_id
-_RB_GSIS_CACHE: Dict[str, set] = {}
-_RB_GSIS_LOCK = threading.Lock()
+# Cache for position GSIS IDs: (team, positions_key) -> set of gsis_id
+_POS_GSIS_CACHE: Dict[tuple, set] = {}
+_POS_GSIS_LOCK = threading.Lock()
 
 
-def _get_rb_gsis_ids(team: str) -> set:
-    """Get GSIS IDs of RBs on a team via the crosswalk and players index.
+def _get_position_gsis_ids(team: str, positions: List[str]) -> set:
+    """Get GSIS IDs of players at given positions on a team.
 
+    Uses the GSIS-to-Sleeper crosswalk and players table for position lookup.
     Uses lazy imports to avoid circular dependencies. Returns empty set
     if the crosswalk or players index is unavailable (fail-open: no filtering).
     """
     team = str(team or "").upper().strip()
-    with _RB_GSIS_LOCK:
-        if team in _RB_GSIS_CACHE:
-            return _RB_GSIS_CACHE[team]
+    key = (team, tuple(sorted(positions)))
+    with _POS_GSIS_LOCK:
+        if key in _POS_GSIS_CACHE:
+            return _POS_GSIS_CACHE[key]
 
-    rb_ids: set = set()
+    pos_ids: set = set()
     try:
         from data_building.external_data.nflverse_metrics import _gsis_to_sleeper
         crosswalk = _gsis_to_sleeper()
         if not crosswalk:
-            return rb_ids
+            return pos_ids
 
-        # Get players index for position lookup
-        players = None
         try:
             from dashboard_services.db import get_conn
-            # Try to get positions from the database
             conn = get_conn()
             if conn:
                 try:
                     cur = conn.cursor()
+                    placeholders = ",".join(["%s"] * len(positions))
                     cur.execute(
-                        "SELECT sleeper_id, position FROM players WHERE team = %s AND position = 'RB'",
-                        (team,)
+                        f"SELECT sleeper_id, position FROM players WHERE team = %s AND position IN ({placeholders})",
+                        (team, *positions),
                     )
-                    rb_sleeper_ids = {str(row[0]) for row in cur.fetchall()}
+                    target_sleeper_ids = {str(row[0]) for row in cur.fetchall()}
                     # Invert crosswalk: sleeper_id -> gsis_id
                     sleeper_to_gsis = {v: k for k, v in crosswalk.items()}
-                    for sid in rb_sleeper_ids:
+                    for sid in target_sleeper_ids:
                         gsis = sleeper_to_gsis.get(sid)
                         if gsis:
-                            rb_ids.add(gsis)
+                            pos_ids.add(gsis)
                 finally:
                     try:
                         conn.close()
@@ -150,9 +160,9 @@ def _get_rb_gsis_ids(team: str) -> set:
     except Exception:
         pass
 
-    with _RB_GSIS_LOCK:
-        _RB_GSIS_CACHE[team] = rb_ids
-    return rb_ids
+    with _POS_GSIS_LOCK:
+        _POS_GSIS_CACHE[key] = pos_ids
+    return pos_ids
 
 
 def _load_pbp(season: int):
@@ -251,17 +261,19 @@ def _situation_keys(row) -> List[str]:
     return keys
 
 
-def _compute_team_buckets(pbp, team: str, week: int) -> Dict[str, Dict[str, Dict[str, Any]]]:
-    """Accumulate touches per situation per player for one team/week.
+def _compute_team_buckets(pbp, team: str, week: Optional[int] = None) -> Dict[str, Dict[str, Dict[str, Any]]]:
+    """Accumulate touches per situation per player for one team.
+
+    week=None aggregates the full season; otherwise filters to that week.
 
     Returns: situation_key -> {gsis_id: {"name": str, "touches": int}}
     """
-    # Filter to this team's offensive plays in the given week (regular season)
-    df = pbp[
-        (pbp["posteam"] == team)
-        & (pbp["week"] == week)
-        & (pbp["season_type"] == "REG")
-    ]
+    # Filter to this team's offensive plays (regular season; full season if
+    # week is None)
+    mask = (pbp["posteam"] == team) & (pbp["season_type"] == "REG")
+    if week is not None:
+        mask = mask & (pbp["week"] == week)
+    df = pbp[mask]
     buckets: Dict[str, Dict[str, Dict[str, Any]]] = {k: {} for k, _ in SITUATIONS}
     if df.empty:
         return buckets
@@ -331,8 +343,10 @@ def get_all_player_situational_shares(
     return result
 
 
-def get_team_rb_usage(team: str, season: int, week: int) -> Dict[str, Any]:
-    """Compute RB touch distribution by situation for a team/week.
+def get_team_rb_usage(team: str, season: int, week: Optional[int] = None) -> Dict[str, Any]:
+    """Compute RB touch distribution by situation for a team.
+
+    week=None aggregates the full season; otherwise filters to that week.
 
     Returns:
         {
@@ -368,7 +382,7 @@ def get_team_rb_usage(team: str, season: int, week: int) -> Dict[str, Any]:
 
     # Filter to RBs only (exclude WRs, TEs, QBs who may have touches).
     # Fail-open: if we can't determine positions, show all.
-    rb_ids = _get_rb_gsis_ids(team)
+    rb_ids = _get_position_gsis_ids(team, ["RB"])
     if rb_ids:
         for key in buckets:
             buckets[key] = {
@@ -377,8 +391,13 @@ def get_team_rb_usage(team: str, season: int, week: int) -> Dict[str, Any]:
         if not any(buckets[k] for k, _ in SITUATIONS):
             return {"team": team, "season": season, "week": week, "situations": []}
 
-    # Get team colors, excluding near-white (invisible on light backgrounds)
-    colors = _get_usable_team_colors(team)
+    # Get fixed per-player team colors, ranked by total usage across situations.
+    # Each player keeps the same color in every situation.
+    player_totals: Dict[str, int] = {}
+    for key, _ in SITUATIONS:
+        for pid, p in buckets[key].items():
+            player_totals[pid] = player_totals.get(pid, 0) + p["touches"]
+    color_map = _build_player_color_map(team, player_totals)
 
     situations = []
     for key, label in SITUATIONS:
@@ -389,24 +408,171 @@ def get_team_rb_usage(team: str, season: int, week: int) -> Dict[str, Any]:
                 "key": key, "label": label, "total": 0, "segments": [],
             })
             continue
-        # Sort by touches desc, take top 5, rest grouped
+        # Sort by touches desc, take top 5, rest grouped into unlabeled grey
         ranked = sorted(b.items(), key=lambda x: -x[1]["touches"])
         segments = []
-        for i, (pid, p) in enumerate(ranked[:5]):
+        for pid, p in ranked[:5]:
             pct = round(100 * p["touches"] / total)
+            cinfo = color_map.get(pid, {"color": "#9CA3AF", "light": False})
             segments.append({
                 "name": p["name"],
                 "touches": p["touches"],
                 "pct": pct,
-                "color": colors[i % len(colors)],
+                "color": cinfo["color"],
+                "light": cinfo["light"],
             })
         rest_touches = sum(p["touches"] for _, p in ranked[5:])
         if rest_touches > 0:
             segments.append({
-                "name": "Others",
+                "name": "",
                 "touches": rest_touches,
                 "pct": round(100 * rest_touches / total),
                 "color": "#9CA3AF",
+                "light": False,
+                "unlabeled": True,
+            })
+        situations.append({
+            "key": key, "label": label, "total": total, "segments": segments,
+        })
+
+    return {
+        "team": team,
+        "season": season,
+        "week": week,
+        "situations": situations,
+    }
+
+
+def _is_receiver_target(row) -> Optional[str]:
+    """Return the GSIS player id if this play is a pass target, else None.
+
+    Counts all pass attempts (targets), not just completions, since target
+    share is about opportunities.
+    """
+    if row.get("pass_attempt") == 1:
+        pid = row.get("receiver_player_id")
+        if pid and str(pid) != "nan":
+            return str(pid).strip()
+    return None
+
+
+def _compute_team_receiving_buckets(pbp, team: str, week: Optional[int] = None) -> Dict[str, Dict[str, Dict[str, Any]]]:
+    """Accumulate targets per situation per player for one team.
+
+    week=None aggregates the full season; otherwise filters to that week.
+
+    Returns: situation_key -> {gsis_id: {"name": str, "targets": int}}
+    """
+    # Filter to this team's offensive plays (regular season; full season if
+    # week is None)
+    mask = (pbp["posteam"] == team) & (pbp["season_type"] == "REG")
+    if week is not None:
+        mask = mask & (pbp["week"] == week)
+    df = pbp[mask]
+    buckets: Dict[str, Dict[str, Dict[str, Any]]] = {k: {} for k, _ in SITUATIONS}
+    if df.empty:
+        return buckets
+
+    for _, row in df.iterrows():
+        pid = _is_receiver_target(row)
+        if not pid:
+            continue
+        name = row.get("receiver_player_name") or pid
+        name = str(name).strip()
+        for key in _situation_keys(row):
+            b = buckets[key]
+            if pid not in b:
+                b[pid] = {"name": name, "targets": 0}
+            b[pid]["targets"] += 1
+    return buckets
+
+
+def get_team_receiving_usage(team: str, season: int, week: Optional[int] = None) -> Dict[str, Any]:
+    """Compute WR/TE target distribution by situation for a team.
+
+    week=None aggregates the full season; otherwise filters to that week.
+
+    Returns:
+        {
+            "team": "BUF",
+            "season": 2026,
+            "week": 4,
+            "situations": [
+                {
+                    "key": "all",
+                    "label": "All Plays",
+                    "total": 35,
+                    "segments": [
+                        {"name": "Khalil Shakir", "targets": 12, "pct": 34, "color": "#00338D"},
+                        ...
+                    ]
+                },
+                ...
+            ]
+        }
+    """
+    team = str(team or "").upper().strip()
+    if not team:
+        return {"team": team, "season": season, "week": week, "situations": []}
+
+    pbp = _load_pbp(season)
+    if pbp is None:
+        return {"team": team, "season": season, "week": week,
+                "situations": [], "error": "play-by-play unavailable"}
+
+    buckets = _compute_team_receiving_buckets(pbp, team, week)
+    if not any(buckets[k] for k, _ in SITUATIONS):
+        return {"team": team, "season": season, "week": week, "situations": []}
+
+    # Filter to WR/TE only (exclude RBs, QBs). Fail-open: no filtering if unavailable.
+    wr_te_ids = _get_position_gsis_ids(team, ["WR", "TE"])
+    if wr_te_ids:
+        for key in buckets:
+            buckets[key] = {
+                pid: p for pid, p in buckets[key].items() if pid in wr_te_ids
+            }
+        if not any(buckets[k] for k, _ in SITUATIONS):
+            return {"team": team, "season": season, "week": week, "situations": []}
+
+    # Get fixed per-player team colors, ranked by total targets across situations.
+    # Each player keeps the same color in every situation.
+    player_totals: Dict[str, int] = {}
+    for key, _ in SITUATIONS:
+        for pid, p in buckets[key].items():
+            player_totals[pid] = player_totals.get(pid, 0) + p["targets"]
+    color_map = _build_player_color_map(team, player_totals)
+
+    situations = []
+    for key, label in SITUATIONS:
+        b = buckets[key]
+        total = sum(p["targets"] for p in b.values())
+        if total == 0:
+            situations.append({
+                "key": key, "label": label, "total": 0, "segments": [],
+            })
+            continue
+        # Sort by targets desc, take top 5, rest grouped into unlabeled grey
+        ranked = sorted(b.items(), key=lambda x: -x[1]["targets"])
+        segments = []
+        for pid, p in ranked[:5]:
+            pct = round(100 * p["targets"] / total)
+            cinfo = color_map.get(pid, {"color": "#9CA3AF", "light": False})
+            segments.append({
+                "name": p["name"],
+                "targets": p["targets"],
+                "pct": pct,
+                "color": cinfo["color"],
+                "light": cinfo["light"],
+            })
+        rest_targets = sum(p["targets"] for _, p in ranked[5:])
+        if rest_targets > 0:
+            segments.append({
+                "name": "",
+                "targets": rest_targets,
+                "pct": round(100 * rest_targets / total),
+                "color": "#9CA3AF",
+                "light": False,
+                "unlabeled": True,
             })
         situations.append({
             "key": key, "label": label, "total": total, "segments": segments,

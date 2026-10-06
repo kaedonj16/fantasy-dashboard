@@ -28370,24 +28370,49 @@ def api_usage_table_status():
 
 @app.route("/api/team-rb-usage")
 def api_team_rb_usage():
-    """Public, league-free: RB situational touch distribution for a team/week.
+    """Public, league-free: RB situational touch distribution for a team.
 
-    Query: ?team=CHI&season=2026&week=4
-    Returns the six situation buckets with per-RB touch splits.
+    Query: ?team=CHI&season=2026[&week=4]
+    Omit week for full-season totals. Returns the six situation buckets
+    with per-RB touch splits.
     """
     try:
         from utils.rb_usage import get_team_rb_usage
         team = _canon_team_abbr(request.args.get("team") or "")
         season = int(request.args.get("season") or 0)
-        week = int(request.args.get("week") or 0)
+        week = int(request.args.get("week") or 0) or None
         if not team:
             return _api_err("Missing team", code=400)
-        if not season or not week:
-            return _api_err("Missing season or week", code=400)
+        if not season:
+            return _api_err("Missing season", code=400)
         data = get_team_rb_usage(team, season, week)
         return jsonify(clean_nan_for_json(data))
     except Exception as e:
         logger.exception("[api_team_rb_usage] error")
+        return _api_err("Request failed", e)
+
+
+@app.route("/api/team-receiving-usage")
+def api_team_receiving_usage():
+    """Public, league-free: WR/TE situational target distribution for a team.
+
+    Query: ?team=BUF&season=2026[&week=4]
+    Omit week for full-season totals. Returns the six situation buckets
+    with per-receiver target splits.
+    """
+    try:
+        from utils.rb_usage import get_team_receiving_usage
+        team = _canon_team_abbr(request.args.get("team") or "")
+        season = int(request.args.get("season") or 0)
+        week = int(request.args.get("week") or 0) or None
+        if not team:
+            return _api_err("Missing team", code=400)
+        if not season:
+            return _api_err("Missing season", code=400)
+        data = get_team_receiving_usage(team, season, week)
+        return jsonify(clean_nan_for_json(data))
+    except Exception as e:
+        logger.exception("[api_team_receiving_usage] error")
         return _api_err("Request failed", e)
 
 
