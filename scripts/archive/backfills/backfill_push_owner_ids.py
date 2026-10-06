@@ -29,6 +29,22 @@ import argparse
 import logging
 import sys
 
+# DEPRECATED -- DO NOT RUN. This script writes the "most recently seen guid"
+# from yahoo_league_owners onto every subscriber's Yahoo row, but that table
+# records EVERY Yahoo user who ever authorized while viewing a league, so the
+# guid is frequently another manager's. Running it reintroduces the bug where
+# devices get TD alerts for players on someone else's roster. Use
+# scripts/repair_yahoo_push_owner_ids.py instead, which resolves each row via
+# the subscriber's own linked account identity and never writes a foreign guid.
+if "--i-understand-this-is-deprecated" not in sys.argv:
+    print(
+        "REFUSING TO RUN: this backfill is deprecated because it assigns other "
+        "managers' Yahoo guids to subscribers' push rows. Use "
+        "scripts/repair_yahoo_push_owner_ids.py instead.",
+        file=sys.stderr,
+    )
+    sys.exit(2)
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
