@@ -57,12 +57,33 @@ def test_lineup_actions_injury_and_bye_titles():
         [{"kind": "injury", "pid": "1", "name": "A", "detail": "A is listed Out"}],
         platform="espn", season=2025, league_id="9", league_name="E",
     )
-    assert inj[0]["title"] == "Injured starter needs a swap"
+    assert inj[0]["title"] == "A is out"
+    assert inj[0]["urgency"] == "high"
     bye = lineup_actions_from_issues(
         [{"kind": "bye", "pid": "2", "name": "B", "detail": "B is on bye"}],
         platform="yahoo", season=2025, league_id="8", league_name="Y",
     )
-    assert bye[0]["title"] == "Starter on bye"
+    assert bye[0]["title"] == "B on bye"
+    assert bye[0]["urgency"] == "medium"
+
+
+def test_lineup_actions_multi_player_titles():
+    inj = lineup_actions_from_issues(
+        [
+            {"kind": "injury", "pid": "1", "name": "A", "detail": "A is listed Out"},
+            {"kind": "injury", "pid": "2", "name": "C", "detail": "C is listed Doubtful"},
+        ],
+        platform="espn", season=2025, league_id="9", league_name="E",
+    )
+    assert inj[0]["title"] == "A is out (+1 more)"
+    bye = lineup_actions_from_issues(
+        [
+            {"kind": "bye", "pid": "2", "name": "B", "detail": "B is on bye"},
+            {"kind": "bye", "pid": "3", "name": "D", "detail": "D is on bye"},
+        ],
+        platform="yahoo", season=2025, league_id="8", league_name="Y",
+    )
+    assert bye[0]["title"] == "B on bye (+1 more)"
 
 
 def test_injury_stash_action_filters_unknown_verdicts():

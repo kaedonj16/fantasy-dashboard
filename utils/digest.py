@@ -2110,6 +2110,11 @@ def make_action(
         if kind == "waiver"
         else f"/{plat}/{int(season)}/{lid}/dashboard"
     )
+    try:
+        sev = max(0.0, min(1.0, float(severity)))
+    except (TypeError, ValueError):
+        sev = 0.0
+    urgency = "high" if sev >= 0.8 else ("medium" if sev >= 0.5 else "low")
     return {
         "kind": kind,
         "platform": plat,
@@ -2120,6 +2125,7 @@ def make_action(
         "detail": detail,
         "href": path,
         "priority": action_priority(kind, severity=severity),
+        "urgency": urgency,
     }
 
 
@@ -2138,18 +2144,42 @@ def lineup_actions_from_issues(
     league_id: str,
     league_name: str = "",
 ) -> list[dict]:
-    """Turn ``find_lineup_issues`` rows into digest actions."""
+    """Turn ``find_lineup_issues`` rows into digest actions.
+
+    Headlines name the affected player so duplicate-type cards stay
+    distinguishable (e.g. two "injured starter" cards across leagues).
+    """
     if not issues:
         return []
     kinds = {str(i.get("kind") or "") for i in issues}
+
+    def _names(kind: str) -> list[str]:
+        return [
+            str(i.get("name") or "").strip()
+            for i in issues
+            if str(i.get("kind") or "") == kind and str(i.get("name") or "").strip()
+        ]
+
     if "empty" in kinds:
         title = "Empty starting slot"
         sev = 1.0
     elif "injury" in kinds:
-        title = "Injured starter needs a swap"
+        names = _names("injury")
+        if len(names) == 1:
+            title = f"{names[0]} is out"
+        elif names:
+            title = f"{names[0]} is out (+{len(names) - 1} more)"
+        else:
+            title = "Injured starter needs a swap"
         sev = 0.85
     elif "bye" in kinds:
-        title = "Starter on bye"
+        names = _names("bye")
+        if len(names) == 1:
+            title = f"{names[0]} on bye"
+        elif names:
+            title = f"{names[0]} on bye (+{len(names) - 1} more)"
+        else:
+            title = "Starter on bye"
         sev = 0.7
     else:
         title = "Lineup needs attention"
