@@ -2153,7 +2153,11 @@ html[data-theme="dark"] img[src*="discord-brands-solid.png"] {
         width: 100%;
     }
 
-    /* Mobile tab switcher: Candidates | Track Record */
+    .bo-view-tabs {
+    display: none;
+}
+
+/* Mobile tab switcher: Candidates | Track Record */
     .bo-view-tabs {
         display: flex;
         gap: 8px;
@@ -2169,9 +2173,7 @@ html[data-theme="dark"] img[src*="discord-brands-solid.png"] {
     }
 }
 
-.bo-view-tabs {
-    display: none;
-}
+
 
 .changelog-entry-top {
     display: flex;
