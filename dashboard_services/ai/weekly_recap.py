@@ -1032,8 +1032,14 @@ For "looking_ahead": if next_week_preview is null, return an empty string. Other
         logger = logging.getLogger(__name__)
         logger.error("[ai weekly_recap] Empty response from OpenAI API. Response object: %s", resp)
         raise ValueError("OpenAI API returned empty response for weekly_recap")
-    
-    return json.loads(raw)
+
+    data = json.loads(raw)
+    # Sanitize prose fields: the model sometimes leaks JSON structure
+    # (e.g. `next_week":"...`) or garbage tokens into string values.
+    data["headline"] = _sanitize_ai_prose(data.get("headline") or "")
+    data["paragraphs"] = [_sanitize_ai_prose(p) for p in (data.get("paragraphs") or [])]
+    data["looking_ahead"] = _sanitize_ai_prose(data.get("looking_ahead") or "")
+    return data
 
 
 _RECORD_COMMA_RE = re.compile(r"\b(\d{1,2}),\s+(\d{1,2})\b")
@@ -1044,12 +1050,43 @@ def _fix_record_commas(text: str) -> str:
     return _RECORD_COMMA_RE.sub(r"\1-\2", text)
 
 
+_JSON_KEY_PREFIX_RE = re.compile(r'^[\s"\{\[]*[A-Za-z_][\w]*"\s*:\s*"')
+_JSON_CLOSER_RUN_RE = re.compile(r'["\}\]]{2,}')
+# Keep ASCII printable, Latin accents, curly quotes, en/em dashes, ellipsis.
+# Anything else (CJK brackets, Tamil script, stray braces) is AI garbage.
+_PROSE_CHAR_RE = re.compile(r'[^\x20-\x7E\u00A0-\u024F\u2013\u2014\u2018\u2019\u201C\u201D\u2026]')
+
+
+def _sanitize_ai_prose(text: str) -> str:
+    """Strip JSON leakage and garbage tokens from AI-generated prose.
+
+    The model occasionally echoes JSON structure into string fields, e.g.
+    `next_week":"Caleb's ... are the game of the week..."}}]}]`, sometimes
+    followed by multilingual garbage tokens. This keeps only the
+    human-readable prose so raw JSON never reaches the page.
+    """
+    if not text:
+        return ""
+    t = str(text).strip()
+    # 1. Strip a leading JSON key fragment like `"next_week":"` or `next_week":"`
+    t = _JSON_KEY_PREFIX_RE.sub("", t).strip()
+    # 2. If a run of JSON closers appears, keep only the prose before it
+    m = _JSON_CLOSER_RUN_RE.search(t)
+    if m:
+        t = t[:m.start()].rstrip().rstrip('"').strip()
+    # 3. Drop non-prose characters (CJK brackets, non-Latin scripts, stray braces)
+    t = _PROSE_CHAR_RE.sub("", t)
+    # 4. Collapse whitespace
+    t = re.sub(r"\s+", " ", t).strip()
+    return t
+
+
 def _render_recap_html(result: dict) -> str:
-    headline = html.escape(_fix_record_commas(str(result.get("headline") or "Week Recap").replace("—", ",")))
+    headline = html.escape(_fix_record_commas(_sanitize_ai_prose(str(result.get("headline") or "Week Recap")).replace("—", ",")))
     paragraphs = result.get("paragraphs") or []
     paragraphs_html = "\n".join(
-        f"<p style='margin:0 0 10px 0;'>{html.escape(_fix_record_commas(str(p).replace('—', ',')))}</p>"
-        for p in paragraphs[:4] if str(p).strip()
+        f"<p style='margin:0 0 10px 0;'>{html.escape(_fix_record_commas(_sanitize_ai_prose(str(p)).replace('—', ',')))}</p>"
+        for p in paragraphs[:4] if _sanitize_ai_prose(str(p)).strip()
     )
 
     return f"""
@@ -1244,6 +1281,10 @@ def get_weekly_ai_recap(
     narrative_key = (_narrative_cache_key(platform, league_id, season, preview["next_week"], game)
                      if preview and game else "")
     looking_ahead = _load_recap_no_ttl(narrative_key) if narrative_key else ""
+    # Sanitize on load: a corrupt generation may already be cached (e.g. JSON
+    # leakage like `next_week":"...`). Clean it here so the page never renders
+    # raw JSON, and an emptied blurb falls back to the deterministic preview.
+    looking_ahead = _sanitize_ai_prose(looking_ahead)
     # One response can fill either independently-versioned artifact. Legacy
     # story-only entries therefore self-heal once, not on every request.
     if (not recap_html or (game and not looking_ahead)) and ai_available():

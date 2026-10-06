@@ -205,3 +205,56 @@ def test_recap_page_renders_weekly_wrapped_launcher():
     source = (ROOT / "dashboard_services/pages/recap_page.py").read_text()
     assert "weekly_wrapped_launcher_html" in source
     assert "{_weekly_wrapped_html}" in source
+
+
+def test_sanitize_ai_prose_strips_json_leakage():
+    """Raw JSON leaking into AI prose (e.g. `next_week":"...`) is stripped.
+
+    Regression: the Week 4 recap rendered `next_week":"...` followed by
+    `}}]}]` and multilingual garbage at the bottom of the story.
+    """
+    from dashboard_services.ai.weekly_recap import _sanitize_ai_prose
+
+    corrupt = (
+        'next_week":"Caleb\'s Casting Couch are the Week 5 game of the week. '
+        'It\'s hard to argue right now."}}]}】【。final ்ச்சி得ிင်ဳ　{'
+    )
+    clean = _sanitize_ai_prose(corrupt)
+    assert clean == (
+        "Caleb's Casting Couch are the Week 5 game of the week. "
+        "It's hard to argue right now."
+    )
+    assert "next_week" not in clean
+    assert "}}" not in clean
+
+
+def test_sanitize_ai_prose_strips_quoted_key_prefix():
+    from dashboard_services.ai.weekly_recap import _sanitize_ai_prose
+
+    assert _sanitize_ai_prose('"looking_ahead":"Hello world."}}') == "Hello world."
+
+
+def test_sanitize_ai_prose_preserves_clean_prose():
+    """Legit prose (records, percents, apostrophes) passes through untouched."""
+    from dashboard_services.ai.weekly_recap import _sanitize_ai_prose
+
+    prose = "Caleb's moved to 4-0 with a 199.4 outburst at 99.9% odds."
+    assert _sanitize_ai_prose(prose) == prose
+    assert _sanitize_ai_prose("") == ""
+    assert _sanitize_ai_prose(None) == ""
+
+
+def test_render_recap_html_sanitizes_paragraphs():
+    """_render_recap_html never emits JSON artifacts even from dirty input."""
+    from dashboard_services.ai.weekly_recap import _render_recap_html
+
+    html_out = _render_recap_html({
+        "headline": 'next_week":"Bad Headline"}}',
+        "paragraphs": ['paragraphs":"Leaked JSON here."}}]}]', "Clean paragraph."],
+    })
+    assert "next_week" not in html_out
+    assert "paragraphs" not in html_out
+    assert "}}" not in html_out
+    assert "Bad Headline" in html_out
+    assert "Leaked JSON here." in html_out
+    assert "Clean paragraph." in html_out
