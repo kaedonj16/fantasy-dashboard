@@ -22555,10 +22555,6 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
 .br-gotw-why-lead { font-size: 13px; font-weight: 600; color: var(--text); }
 .br-gotw-why-reasons { margin: 6px 0 0; padding-left: 16px; font-size: 12px;
     color: var(--text-muted); display: flex; flex-direction: column; gap: 3px; }
-.br-gotw-link { display: inline-flex; align-items: center; gap: 4px; margin-top: 4px;
-    font-size: 12px; font-weight: 700; color: var(--accent); text-decoration: none; }
-.br-gotw-link:hover { text-decoration: underline; }
-
 /* Dashboard Front Office repeated-bench efficiency warning. */
 .bench-check-warn { margin-top: 8px; font-size: 12px; font-weight: 600; color: var(--warning);
     background: color-mix(in srgb, var(--warning) 10%, transparent); border-radius: var(--radius-sm);
@@ -38917,19 +38913,10 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     box-shadow: 0 10px 30px color-mix(in srgb, var(--accent) 15%, transparent);
 }
 
-.br-gotw-head {
+.br-gotw-head-c {
     display: flex;
-    flex-direction: column;
-    gap: 4px;
-    margin-bottom: 14px;
-}
-
-.br-gotw-kicker {
-    font-size: 10.5px;
-    font-weight: 800;
-    letter-spacing: .16em;
-    text-transform: uppercase;
-    color: var(--muted);
+    justify-content: center;
+    margin-bottom: 20px;
 }
 
 .br-gotw-title {
@@ -38955,68 +38942,42 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     -webkit-text-fill-color: transparent;
 }
 
-/* Matchup: framed team crests charging at a central VS medallion. */
+/* Matchup: centered team stacks facing a central VS medallion. */
 .br-gotw-matchup {
     display: flex;
     align-items: center;
-    gap: 10px;
-    margin: 8px 0 14px;
+    justify-content: center;
+    gap: 32px;
+    margin: 8px 0 16px;
 }
 
 .br-gotw-side {
     flex: 1;
     min-width: 0;
+    max-width: 280px;
     display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: 9px;
-}
-
-/* Right team mirrors the left: crest on the outside, text aligned toward it. */
-.br-gotw-r {
-    flex-direction: row-reverse;
-}
-
-.br-gotw-r .br-gotw-side-txt {
-    text-align: right;
-}
-
-.br-gotw-side-txt {
-    flex: 1;
-    min-width: 0;
-}
-
-.br-gotw-proj {
-    font-size: 12px;
-    font-weight: 800;
-    color: var(--accent);
-    margin-top: 3px;
-    font-variant-numeric: tabular-nums;
-}
-
-.br-gotw-proj span {
-    font-weight: 700;
-    color: var(--muted);
-    font-size: 10.5px;
-    letter-spacing: .04em;
-    text-transform: uppercase;
+    text-align: center;
 }
 
 .br-gotw-av {
-    width: 40px;
-    height: 40px;
+    width: 72px;
+    height: 72px;
     border-radius: 50%;
     object-fit: cover;
     flex: 0 0 auto;
     border: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
     box-shadow: 0 3px 12px color-mix(in srgb, var(--accent) 28%, transparent);
     background: var(--card);
+    margin-bottom: 12px;
 }
 
 .br-gotw-av-ph {
     display: grid;
     place-items: center;
     font-weight: 900;
-    font-size: 17px;
+    font-size: 26px;
     color: #fff;
     background: linear-gradient(140deg, var(--accent), color-mix(in srgb, var(--accent) 45%, #000));
 }
@@ -39025,7 +38986,7 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
    even in the narrow mobile card. */
 .br-gotw-name {
     font-weight: 800;
-    font-size: 17px;
+    font-size: 19px;
     line-height: 1.15;
     overflow: hidden;
     word-break: break-word;
@@ -39035,25 +38996,41 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
 }
 
 .br-gotw-meta {
-    font-size: 12px;
+    font-size: 13px;
     color: var(--muted);
-    margin-top: 2px;
+    margin-top: 4px;
+}
+
+.br-gotw-proj-hero {
+    font-size: 40px;
+    font-weight: 800;
+    line-height: 1;
+    margin-top: 12px;
+    font-variant-numeric: tabular-nums;
+}
+
+.br-gotw-proj-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-top: 4px;
 }
 
 .br-gotw-vs {
     flex: 0 0 auto;
-    width: 36px;
-    height: 36px;
+    width: 56px;
+    height: 56px;
     border-radius: 50%;
     display: grid;
     place-items: center;
-    font-size: 11.5px;
+    font-size: 15px;
     font-weight: 900;
     letter-spacing: .03em;
-    color: var(--accent);
-    background: var(--card);
-    border: 2px solid color-mix(in srgb, var(--accent) 50%, transparent);
-    box-shadow: 0 3px 14px color-mix(in srgb, var(--accent) 25%, transparent);
+    color: var(--card);
+    background: var(--text);
+    box-shadow: 0 3px 14px rgba(0,0,0,.25);
 }
 
 .br-gotw-flash {
@@ -39063,6 +39040,138 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     opacity: 0;
     z-index: 2;
     background: radial-gradient(circle at 50% 32%, #fff, transparent 46%);
+}
+
+/* Win probability: two-color split bar with percentages below. */
+.br-gotw-winbar {
+    height: 10px;
+    border-radius: 5px;
+    overflow: hidden;
+    background: rgba(148,163,184,0.25);
+    margin-bottom: 6px;
+}
+
+.br-gotw-winbar-fill {
+    height: 100%;
+}
+
+.br-gotw-winbar-pcts {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 16px;
+}
+
+.br-gotw-blurb {
+    margin: 0 auto 18px;
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--text);
+    text-align: center;
+    max-width: 640px;
+}
+
+/* Notable outs: one column per side. */
+.br-gotw-outs-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+.br-gotw-outs-col {
+    border: 1px solid var(--border, rgba(148,163,184,0.2));
+    border-radius: 12px;
+    padding: 14px 16px;
+    background: color-mix(in srgb, var(--accent) 4%, transparent);
+}
+
+.br-gotw-outs-b {
+    text-align: right;
+}
+
+.br-gotw-outs-title {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 10px;
+}
+
+.br-gotw-out {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 7px 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--muted) 15%, transparent);
+    font-size: 13px;
+}
+
+.br-gotw-out:last-child {
+    border-bottom: none;
+}
+
+.br-gotw-outs-b .br-gotw-out {
+    flex-direction: row-reverse;
+}
+
+.br-gotw-out-name {
+    font-weight: 700;
+    color: var(--text);
+}
+
+.br-gotw-out-pos {
+    font-size: 10px;
+    font-weight: 800;
+    color: var(--muted);
+    margin-left: 4px;
+}
+
+.br-gotw-out-st {
+    font-size: 11px;
+    font-weight: 800;
+    padding: 3px 10px;
+    border-radius: 6px;
+    white-space: nowrap;
+}
+
+.br-gotw-out-st-out {
+    color: #fff;
+    background: #dc2626;
+}
+
+.br-gotw-out-st-q {
+    color: #92400e;
+    background: #fde68a;
+}
+
+.br-gotw-out-st-bye {
+    color: var(--muted);
+    background: rgba(148,163,184,0.2);
+}
+
+.br-gotw-also {
+    font-size: 12px;
+    color: var(--muted);
+    border-top: 1px solid var(--border, rgba(148,163,184,0.2));
+    padding-top: 12px;
+    text-align: center;
+}
+
+.br-gotw-link {
+    display: block;
+    text-align: center;
+    margin-top: 10px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--accent);
+}
+
+.br-gotw-link:hover {
+    text-decoration: underline;
 }
 
 .br-mo-play.br-gotw .br-gotw-l {
@@ -43310,12 +43419,14 @@ a, button, [role="button"], [role="tab"], summary, label,
 
 @media (max-width: 720px) {
     .br-gotw { overflow: visible; }
-    .br-gotw-matchup { display: grid; grid-template-columns: 1fr; gap: 10px; }
-    .br-gotw-side, .br-gotw-r { flex-direction: row; width: 100%; }
-    .br-gotw-r .br-gotw-side-txt { text-align: left; }
-    .br-gotw-proj { margin-left: auto; text-align: right; white-space: nowrap; }
-    .br-gotw-vs { display: none; }
-    .br-gotw-name { display: block; overflow: visible; word-break: normal; overflow-wrap: anywhere; -webkit-line-clamp: unset; }
+    .br-gotw-matchup { gap: 16px; }
+    .br-gotw-side { max-width: none; }
+    .br-gotw-av { width: 56px; height: 56px; }
+    .br-gotw-av-ph { font-size: 20px; }
+    .br-gotw-name { font-size: 15px; display: block; overflow: visible; word-break: normal; overflow-wrap: anywhere; -webkit-line-clamp: unset; }
+    .br-gotw-proj-hero { font-size: 30px; }
+    .br-gotw-vs { width: 44px; height: 44px; font-size: 12px; }
+    .br-gotw-outs-grid { grid-template-columns: 1fr; }
 }
 
 .weekly-recap .st-row.recap-viewer-team { background:color-mix(in srgb,var(--accent) 8%,var(--card)); box-shadow:inset 3px 0 var(--accent); }

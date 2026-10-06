@@ -1113,12 +1113,9 @@ def _render_next_week_html(preview: dict, looking_ahead: str,
     g = preview["game_of_the_week"]
     wk = preview.get("next_week")
     title_lead = preview.get("round_label") if preview.get("is_playoff") else "Game of the Week"
-    kicker = f"NEXT WEEK{f' · WEEK {wk}' if wk else ''}"
-    # A prominent banner header instead of a small eyebrow, so the section reads
-    # as the marquee matchup it is.
+    # Centered title only; the surrounding section header already carries the week.
     header_html = (
-        "<div class='br-gotw-head'>"
-        f"<span class='br-gotw-kicker'>{html.escape(kicker)}</span>"
+        "<div class='br-gotw-head br-gotw-head-c'>"
         f"<span class='br-gotw-title'><i class='fa-solid fa-fire' aria-hidden='true'></i>"
         f"<span>{html.escape(str(title_lead))}</span></span>"
         "</div>"
@@ -1137,17 +1134,18 @@ def _render_next_week_html(preview: dict, looking_ahead: str,
             initial = html.escape((str(team).strip()[:1] or "?").upper())
             av = f"<div class='br-gotw-av br-gotw-av-ph'>{initial}</div>"
         proj_html = (
-            f"<div class='br-gotw-proj'>{proj:.1f} <span>proj</span></div>"
+            f"<div class='br-gotw-proj-hero'>{proj:.1f}</div>"
+            "<div class='br-gotw-proj-label'>Projected</div>"
             if isinstance(proj, (int, float)) else ""
         )
-        txt = (
-            "<div class='br-gotw-side-txt'>"
+        return (
+            f"<div class='{cls} br-gotw-side'>"
+            f"{av}"
             f"<div class='br-gotw-name'>{html.escape(str(team))}</div>"
             f"<div class='br-gotw-meta'>{html.escape(meta)}</div>"
             f"{proj_html}"
             "</div>"
         )
-        return f"<div class='{cls} br-gotw-side'>{av}{txt}</div>"
 
     matchup_row = (
         "<div class='br-gotw-matchup'>"
@@ -1157,59 +1155,81 @@ def _render_next_week_html(preview: dict, looking_ahead: str,
         + "</div>"
     )
 
-    # Projected win-probability bar (only when projections were available).
+    # Projected win-probability bar (only when projections were available):
+    # a two-color split with the percentages below.
     wp = g.get("win_prob_a")
     winbar_html = ""
     if wp is not None:
         rp = 100 - wp
         winbar_html = (
-            "<div style='display:flex;align-items:center;gap:8px;margin-bottom:12px;'>"
-            f"<span style='font-size:11px;font-weight:800;color:var(--muted);flex:0 0 auto;'>{wp}%</span>"
-            "<div style='flex:1;height:6px;border-radius:3px;overflow:hidden;"
-            f"background:linear-gradient(to right,var(--accent) {wp}%,rgba(148,163,184,0.35) {wp}%);'></div>"
-            f"<span style='font-size:11px;font-weight:800;color:var(--muted);flex:0 0 auto;'>{rp}%</span>"
+            "<div class='br-gotw-winbar'>"
+            f"<div class='br-gotw-winbar-fill' style='background:linear-gradient(to right,"
+            f"var(--accent) {wp}%, #ea580c {wp}%);'></div>"
             "</div>"
+            f"<div class='br-gotw-winbar-pcts'><span>{wp}%</span><span>{rp}%</span></div>"
         )
 
     blurb_html = ""
     if looking_ahead and str(looking_ahead).strip():
         blurb_html = (
-            f"<p style='margin:0 0 12px 0;font-size:13px;line-height:1.55;color:var(--text);'>"
+            f"<p class='br-gotw-blurb'>"
             f"{html.escape(str(looking_ahead).replace('—', ','))}</p>"
         )
 
-    # Availability chips: out (red) / questionable (amber) / bye (muted), each
-    # with the player's projected points so "big" is visible.
-    def _chip(p, cls, icon):
-        proj = p.get("proj")
-        pts = f" · {proj:g} pts" if isinstance(proj, (int, float)) and proj else ""
-        label = f"{p.get('name')} ({p.get('status')}){pts}"
-        return (
-            f"<span class='player-badge {cls}' style='font-size:10px;'>"
-            f"<i class='fa-solid {icon}' aria-hidden='true'></i> {html.escape(label)}</span>"
-        )
+    # Notable outs: key players who are out, doubtful/questionable, or on bye
+    # for the two featured teams, split into one column per side. Only
+    # starter-quality players (by projection) are shown; the section is
+    # hidden entirely when neither team has notable outs.
+    def _notable_outs_cols():
+        cols = []
+        for side, team in (("a", g.get("team_a")), ("b", g.get("team_b"))):
+            rows = []
+            seen = set()
+            for key, badge_cls, label in (
+                ("out", "br-gotw-out-st-out", None),
+                ("maybe", "br-gotw-out-st-q", "Questionable"),
+                ("bye", "br-gotw-out-st-bye", "Bye"),
+            ):
+                for p in (g.get(f"{key}_{side}") or []):
+                    pid = str(p.get("name") or "")
+                    if pid in seen:
+                        continue
+                    seen.add(pid)
+                    proj = p.get("proj") or 0
+                    # Only starter-quality players count as "notable".
+                    if proj < 8.0:
+                        continue
+                    status = label or str(p.get("status") or "").title()
+                    rows.append({
+                        "name": p.get("name"), "pos": p.get("pos"),
+                        "status": status, "cls": badge_cls,
+                    })
+                    if len(rows) >= 3:
+                        break
+                if len(rows) >= 3:
+                    break
+            if rows:
+                cols.append({"team": team, "side": side, "rows": rows})
+        return cols
 
-    chips = []
-    for side in ("a", "b"):
-        for p in (g.get(f"out_{side}") or [])[:2]:
-            chips.append(_chip(p, "player-badge-inj-out", "fa-triangle-exclamation"))
-        # Icon classes must exist in the self-hosted Font Awesome subset
-        # (static/font-awesome.css) or they silently render as nothing.
-        for p in (g.get(f"maybe_{side}") or [])[:1]:
-            chips.append(_chip(p, "player-badge-inj-q", "fa-circle-info"))
-        for p in (g.get(f"bye_{side}") or [])[:1]:
-            chips.append(_chip(p, "player-badge-inj-note", "fa-calendar-days"))
-    avail_html = ""
-    if chips:
-        stamp = preview.get("as_of")
-        stamp_html = (
-            f"<span style='font-size:10px;color:var(--muted);margin-left:2px;'>availability as of {html.escape(str(stamp))}</span>"
-            if stamp else ""
+    outs_cols = _notable_outs_cols()
+    outs_html = ""
+    if outs_cols:
+        col_html = "".join(
+            f"<div class='br-gotw-outs-col br-gotw-outs-{c['side']}'>"
+            f"<div class='br-gotw-outs-title'>{html.escape(str(c['team']))} outs</div>"
+            + "".join(
+                "<div class='br-gotw-out'>"
+                f"<span class='br-gotw-out-name'>{html.escape(str(r['name']))}"
+                f"<span class='br-gotw-out-pos'>{html.escape(str(r['pos'] or ''))}</span></span>"
+                f"<span class='br-gotw-out-st {r['cls']}'>{html.escape(r['status'])}</span>"
+                "</div>"
+                for r in c["rows"]
+            )
+            + "</div>"
+            for c in outs_cols
         )
-        avail_html = (
-            "<div style='display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:10px;'>"
-            + "".join(chips) + stamp_html + "</div>"
-        )
+        outs_html = f"<div class='br-gotw-outs-grid'>{col_html}</div>"
 
     # Also-worth-watching, each with its own one-word why. A near-tied runner-up
     # is flagged as a co-headliner.
@@ -1223,8 +1243,7 @@ def _render_next_week_html(preview: dict, looking_ahead: str,
             for a in also
         )
         also_html = (
-            f"<div style='font-size:11px;color:var(--muted);border-top:1px solid var(--border,"
-            f"rgba(148,163,184,0.2));padding-top:10px;'>{label}: {items}</div>"
+            f"<div class='br-gotw-also'>{label}: {items}</div>"
         )
 
     # Deep link to the exact Matchups week so the whole card is actionable.
@@ -1242,7 +1261,7 @@ def _render_next_week_html(preview: dict, looking_ahead: str,
   {matchup_row}
   {winbar_html}
   {blurb_html}
-  {avail_html}
+  {outs_html}
   {also_html}
   {link_html}
 </div>
