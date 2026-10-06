@@ -18008,8 +18008,8 @@ def page_breakouts(platform: str, season: int, league_id: str):
         boTrackData = data;
         var html = '<div class="bo-rail-title">Track Record</div>';
         html += '<div class="bo-tr-tabs">'
-          + '<button class="bo-tr-tab' + (boTrackTab === 'weekly' ? ' active' : '') + '" onclick="boSwitchTrackTab(\'weekly\')">Weekly</button>'
-          + '<button class="bo-tr-tab' + (boTrackTab === 'preseason' ? ' active' : '') + '" onclick="boSwitchTrackTab(\'preseason\')">Preseason</button></div>';
+          + '<button class="bo-tr-tab' + (boTrackTab === 'weekly' ? ' active' : '') + '" onclick="boSwitchTrackTab(\\'weekly\\')">Weekly</button>'
+          + '<button class="bo-tr-tab' + (boTrackTab === 'preseason' ? ' active' : '') + '" onclick="boSwitchTrackTab(\\'preseason\\')">Preseason</button></div>';
 
         if (boTrackTab === 'weekly') {{
           html += _boWeeklyTrackHTML(data);
