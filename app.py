@@ -9588,183 +9588,6 @@ def _render_usage_movers(ctx: dict, viewer_roster_id) -> str:
         return ""
 
 
-def _viewer_lineup_alert_html(ctx: dict, viewer_roster_id) -> str:
-    """Warning strip for the Season Hub when the viewer's current starters have
-    problems: empty slots, serious injury designations, or byes. Empty string
-    when the lineup is clean or the viewer has no team."""
-    if not viewer_roster_id:
-        return ""
-    try:
-        from utils.lineup_issues import find_lineup_issues
-
-        rosters = ctx.get("rosters") or []
-        roster = next(
-            (r for r in rosters if str(r.get("roster_id")) == str(viewer_roster_id)),
-            None,
-        )
-        if not roster:
-            return ""
-        starters = [str(p) for p in (roster.get("starters") or [])]
-        if not starters:
-            return ""
-
-        season = int(ctx.get("current_season") or 0)
-        current_week = int(ctx.get("current_week") or 0)
-        players_map = ctx.get("players_map") or {}
-
-        # Injury designations live only on the full Sleeper players feed.
-        try:
-            full_players = get_players_global() or {}
-        except Exception:
-            full_players = {}
-
-        player_info = {}
-        for pid in starters:
-            base = players_map.get(pid) or {}
-            full = full_players.get(pid) or {}
-            player_info[pid] = {
-                "name": base.get("name") or full.get("full_name") or "",
-                "team": base.get("team") or full.get("team") or "",
-                "injury_status": full.get("injury_status") or "",
-            }
-
-        # Teams with a game this week; empty set skips bye detection.
-        teams_playing = set()
-        try:
-            for g in (load_week_schedule(season, current_week) or []):
-                for side in ("home", "away"):
-                    t = str(g.get(side) or "").upper()
-                    if t:
-                        teams_playing.add(t)
-        except Exception:
-            teams_playing = set()
-
-        issues = find_lineup_issues(starters, player_info, teams_playing)
-
-        # Projection-based upgrades: bench players out-projecting a starter at
-        # the same position this week (legal like-for-like swaps only).
-        _swap_suggestions = []
-        try:
-            from utils.lineup_issues import locked_teams_for_week, projection_upgrades
-
-            proj_map = {
-                str(k): v
-                for k, v in (
-                        ((ctx.get("proj_by_week") or {}).get(current_week) or {}).get("projections") or {}
-                ).items()
-            }
-            reserve_set = {str(p) for p in (roster.get("reserve") or [])}
-            taxi_set = {str(p) for p in (roster.get("taxi") or [])}
-            eligible = [
-                str(p) for p in (roster.get("players") or [])
-                if str(p) not in reserve_set and str(p) not in taxi_set
-            ]
-            pos_map = {
-                pid: str((players_map.get(pid) or {}).get("pos")
-                         or (full_players.get(pid) or {}).get("position") or "")
-                for pid in eligible
-            }
-            roster_positions = ctx.get("roster_positions")
-            if roster_positions is not None and hasattr(roster_positions, "tolist"):
-                roster_positions = roster_positions.tolist()
-            injury_status = {
-                pid: str((full_players.get(pid) or {}).get("injury_status") or "")
-                for pid in eligible
-            }
-            # Players whose NFL game already kicked off are locked: suggesting
-            # them as a swap-in (or suggesting a locked starter be benched) is
-            # an unactionable nudge.
-            _locked_teams = locked_teams_for_week(season, current_week)
-            _team_of = {
-                pid: str((players_map.get(pid) or {}).get("team")
-                         or (full_players.get(pid) or {}).get("team") or "").upper()
-                for pid in eligible
-            }
-            _locked_pids = {
-                pid for pid, tm in _team_of.items() if tm and tm in _locked_teams
-            }
-            swaps = projection_upgrades(
-                starters, eligible, proj_map, pos_map, roster_positions or [],
-                injury_status=injury_status, locked_pids=_locked_pids,
-            )
-            for s in swaps[:2]:
-                _in_name = (players_map.get(s["in"]) or {}).get("name") or f"Player {s['in']}"
-                _out_name = (players_map.get(s["out"]) or {}).get("name") or f"Player {s['out']}"
-                _in_proj = float(proj_map.get(s["in"]) or 0)
-                _out_proj = float(proj_map.get(s["out"]) or 0)
-                _in_pos = str(pos_map.get(s["in"]) or "").upper()
-                _gain = float(s.get("gain") or (_in_proj - _out_proj))
-                _swap_suggestions.append({
-                    "in": s["in"], "out": s["out"],
-                    "in_name": _in_name, "out_name": _out_name,
-                    "in_proj": _in_proj, "out_proj": _out_proj,
-                    "pos": _in_pos, "gain": _gain,
-                })
-                issues.append({
-                    "kind": "projection", "pid": s["in"], "name": _in_name,
-                    "detail": (
-                        f"{_in_name} projects {_in_proj:.1f} on your bench; "
-                        f"{_out_name} is starting at {_out_proj:.1f}"
-                    ),
-                })
-        except Exception:
-            logger.debug("projection upgrades failed", exc_info=True)
-
-        if not issues:
-            return ""
-
-        platform = ctx.get("platform", "sleeper")
-        league_id = ctx.get("league_id", "")
-        fix_url = url_for(
-            "league_pages.page_waivers", platform=platform, season=season, league_id=league_id
-        ) + "?tab=startsit"
-        n = len(issues)
-        title = f"{n} lineup issue" + ("s" if n > 1 else "")
-        # Prominent swap suggestions: "Start X over Y" with projection reasoning.
-        _swap_html = ""
-        if _swap_suggestions:
-            _swap_rows = []
-            for sw in _swap_suggestions:
-                _reason = (
-                    f"{sw['in_name']} projects {sw['in_proj']:.1f} vs "
-                    f"{sw['out_name']}'s {sw['out_proj']:.1f} "
-                    f"(+{sw['gain']:.1f})"
-                )
-                _swap_rows.append(
-                    f'<div class="os-swap-row">'
-                    f'<div class="os-swap-main">'
-                    f'<span class="os-swap-action">Start</span> '
-                    f'<span class="os-swap-in player-clickable" data-player-id="{html.escape(str(sw["in"]), quote=True)}" style="cursor:pointer;font-weight:700;">{html.escape(sw["in_name"])}</span>'
-                    f' <span class="os-swap-over">over</span> '
-                    f'<span class="os-swap-out player-clickable" data-player-id="{html.escape(str(sw["out"]), quote=True)}" style="cursor:pointer;">{html.escape(sw["out_name"])}</span>'
-                    + (f' <span class="os-swap-pos">{html.escape(sw["pos"])}</span>' if sw["pos"] else '')
-                    + f'</div>'
-                    f'<div class="os-swap-why">{html.escape(_reason)}</div>'
-                    f'</div>'
-                )
-            _swap_html = f'<div class="os-swap-list">{"".join(_swap_rows)}</div>'
-        # Exclude projection swaps from the generic list (they're shown above).
-        _other_issues = [i for i in issues if i.get("kind") != "projection"]
-        items = "".join(
-            f"<li>{html.escape(i['detail'])}</li>" for i in _other_issues[:6]
-        )
-        _issues_html = f'<ul class="lineup-alert-list">{items}</ul>' if items else ""
-        return f"""
-        <section class="os-card lineup-alert-card" data-action-card="lineup">
-          <div class="lineup-alert-head">
-            <span class="lineup-alert-title"><svg class="lineup-alert-ico" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M12 3 22 20H2L12 3Zm-1 6h2v5h-2V9Zm0 7h2v2h-2v-2Z"/></svg>{title} for Week {current_week}</span>
-            <span class="os-card-actions">
-              <a class="recap-generate-btn os-action-cta" href="{fix_url}">Fix lineup</a>
-              <button type="button" class="os-action-dismiss" data-dismiss-card="lineup" aria-label="Dismiss">&times;</button>
-            </span>
-          </div>
-          {_swap_html}
-          {_issues_html}
-        </section>"""
-    except Exception:
-        logger.debug("lineup alert failed", exc_info=True)
-        return ""
-
 
 def _roster_moves_alert_html(ctx: dict, viewer_roster_id) -> str:
     """Roster-efficiency card for the Season Hub: IR-eligible players wasting
@@ -35569,7 +35392,9 @@ def build_portfolio_body(
     rec_cls = "color-win" if total_wins > total_losses else ("color-loss" if total_losses > total_wins else "")
     # Last-week aggregate: W/L/T across leagues with a finalized result for the
     # most recent week. Only meaningful after week 1, so the cell is omitted
-    # entirely until then (never a dangling "0-0").
+    # entirely until then. The cell renders from week 2 on even before any
+    # league has a result, so cold cards can hydrate it client-side via
+    # updateLastWeekRecord() (which no-ops when the cell is absent).
     _lw_w = _lw_l = _lw_t = 0
     for _lg in valid_leagues or []:
         _r = (_lg.get("last_week_result") or "").strip().upper()
@@ -35579,8 +35404,9 @@ def build_portfolio_body(
             _lw_l += 1
         elif _r == "T":
             _lw_t += 1
-    _show_lw = bool(current_week and current_week > 1 and (_lw_w + _lw_l + _lw_t) > 0)
-    _lw_str = f"{_lw_w}-{_lw_l}" + (f"-{_lw_t}" if _lw_t else "")
+    _show_lw = bool(current_week and current_week > 1)
+    _has_lw_data = (_lw_w + _lw_l + _lw_t) > 0
+    _lw_str = (f"{_lw_w}-{_lw_l}" + (f"-{_lw_t}" if _lw_t else "")) if _has_lw_data else "-"
     _lw_cls = "color-win" if _lw_w > _lw_l else ("color-loss" if _lw_l > _lw_w else "")
     _lw_cell = (
         f"<div class='pf-stat'><div class='pf-stat-val {_lw_cls}' data-portfolio-lw-record>{_lw_str}</div>"

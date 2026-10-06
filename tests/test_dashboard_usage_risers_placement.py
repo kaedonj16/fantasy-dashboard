@@ -79,6 +79,6 @@ def test_risers_do_not_suppress_actions_fallback():
     # Cards are (key, html) tuples sorted by urgency; usage_movers_html must
     # not be among them.
     assert "usage_movers_html" not in src.split("_action_cards =")[1].split("if _action_cards:")[0]
-    for name in ("lineup_alert_html", "roster_moves_html", "trade_window_html", "do_next_waiver_html"):
+    for name in ("roster_moves_html", "trade_window_html", "do_next_waiver_html"):
         assert name in src
     assert "You're all set for Week" in src
