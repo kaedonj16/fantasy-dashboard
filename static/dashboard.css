@@ -40466,9 +40466,14 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
 
 /* Crown on the top scorer's row in the position-leaders slide. */
 .wrapped-row-crown {
-    color: var(--wa);
+    color: #FFD700;
     font-size: 11px;
-    margin-left: 6px;
+    margin-left: 8px;
+}
+
+/* The crowned player's name gets the gold treatment too. */
+.wrapped-row-n.wrapped-crowned {
+    color: #FFD700;
 }
 
 .wrapped-record {
