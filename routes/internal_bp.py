@@ -33,6 +33,7 @@ def _dashboard_cache():
 
 
 import html
+import json
 from dashboard_services.admin_auth import ADMIN_SESSION_KEY, _configured_password, is_admin, mark_admin_session, verify_admin_password
 
 logger = logging.getLogger(__name__)
@@ -684,26 +685,6 @@ def _section(title, body, note=""):
     )
 
 
-def _feature_table(rows):
-    """rows: [{week, event, count}] -> HTML table, weeks as rows, events as cols."""
-    if not rows:
-        return '<p class="muted">No data yet.</p>'
-    events = sorted({r["event"] for r in rows})
-    weeks = sorted({r["week"] for r in rows}, reverse=True)
-    lookup = {(r["week"], r["event"]): r["count"] for r in rows}
-    head = "".join("<th>%s</th>" % html.escape(e) for e in events)
-    body_rows = []
-    for w in weeks:
-        cells = "".join(
-            "<td>%d</td>" % lookup.get((w, e), 0) for e in events
-        )
-        body_rows.append("<tr><th scope='row'>%s</th>%s</tr>" % (html.escape(w), cells))
-    return (
-        '<div class="tablewrap"><table><thead><tr><th>Week</th>%s</tr></thead>'
-        "<tbody>%s</tbody></table></div>" % (head, "".join(body_rows))
-    )
-
-
 def _retention_table(rows):
     if not rows:
         return '<p class="muted">No data yet.</p>'
@@ -765,24 +746,6 @@ def _breakdown_html(breakdown, top_paths):
             '<p class="muted">Top one-and-done paths (New York day): %s</p>' % listed
         )
     return table + paths_html
-
-
-def _funnel_html(f):
-    stages = [
-        ("Visitors", f["visitors"], None),
-        ("Signups", f["signups"], f["visitors"]),
-        ("League linked", f["linked"], f["signups"]),
-        ("PRO", f["pro"], f["linked"]),
-    ]
-    cards = []
-    for name, count, base in stages:
-        conv = "" if base is None else '<div class="conv">%s of prior step</div>' % _pct(count, base)
-        cards.append(
-            '<div class="funnel-step"><div class="funnel-num">%d</div>'
-            '<div class="funnel-name">%s</div>%s</div>'
-            % (count, html.escape(name), conv)
-        )
-    return '<div class="funnel">%s</div>' % "".join(cards)
 
 
 # ── Admin password login ───────────────────────────────────────────────────
@@ -1000,11 +963,211 @@ def _feature_ranking_table(rankings) -> str:
     if rankings is None:
         return "<p class='muted'>Feature ranking unavailable.</p>"
     if rankings:
-        return _rank_table(
+        return _sortable_rank_table(
+            "anx-feat-rank",
             ["Feature", "Uses", "Unique users"],
             [(r["event"], r["uses"], r["users"]) for r in rankings],
         )
     return "<p class='muted'>No feature events yet.</p>"
+
+
+# ── Analytics v2: KPI header, interactive charts, funnel viz, heatmaps ───────
+
+def _kpi_cards(cards) -> str:
+    """cards: list of (value_str, label, sub_str). Six KPI cards in a row."""
+    parts = []
+    for value, label, sub in cards:
+        sub_html = (
+            '<div class="anx-kpi-sub">%s</div>' % html.escape(sub) if sub else ""
+        )
+        parts.append(
+            '<div class="anx-kpi"><div class="anx-kpi-num">%s</div>'
+            '<div class="anx-kpi-label">%s</div>%s</div>'
+            % (html.escape(value), html.escape(label), sub_html)
+        )
+    return '<div class="anx-kpis">%s</div>' % "".join(parts)
+
+
+def _chart_json(pairs) -> str:
+    """Serialize chart pairs for the embedded JSON payload (XSS-safe)."""
+    return json.dumps([[str(label), int(value)] for label, value in pairs]).replace(
+        "</", "<\\/"
+    )
+
+
+def _chart_card(chart_id, title, note, pairs, bar_color="#3b82f6",
+                ranges=(14, 30), range_suffix="d", allow_line=False,
+                unit="") -> str:
+    """Interactive chart card.
+
+    Server-renders the static SVG (initial paint and no-JS fallback; the
+    existing _bars_svg behavior Kaedon approved) plus the data as embedded
+    JSON. Client JS hydrates it: hover tooltips, range buttons, and an
+    optional bar/line toggle.
+    """
+    static = _bars_svg(pairs, bar_color=bar_color)
+    range_btns = "".join(
+        '<button type="button" data-range="%d"%s>%d%s</button>'
+        % (r, ' class="on"' if r == ranges[-1] else "", r, range_suffix)
+        for r in ranges
+    )
+    type_toggle = ""
+    if allow_line:
+        type_toggle = (
+            '<div class="anx-seg" role="group" aria-label="Chart type">'
+            '<button type="button" data-type="bar" class="on">Bars</button>'
+            '<button type="button" data-type="line">Line</button></div>'
+        )
+    controls = (
+        '<div class="anx-controls" data-chart-controls="%s">'
+        '<div class="anx-seg" role="group" aria-label="Range">%s</div>%s</div>'
+        % (chart_id, range_btns, type_toggle)
+    )
+    return (
+        '<section class="card anx-card"><div class="anx-card-head"><h2>%s</h2>%s</div>'
+        '<p class="muted">%s</p>'
+        '<div class="anx-chart-wrap" data-chart="%s" data-color="%s" data-unit="%s">%s'
+        '<script type="application/json" class="anx-chart-data">%s</script>'
+        '<div class="anx-tip" hidden></div></div></section>'
+        % (
+            html.escape(title), controls, html.escape(note),
+            html.escape(chart_id), html.escape(bar_color), html.escape(unit),
+            static, _chart_json(pairs),
+        )
+    )
+
+
+def _funnel_viz(f) -> str:
+    """Stepped horizontal funnel: bar widths proportional to stage size,
+    conversion % between steps, raw counts on every segment."""
+    stages = [
+        ("Visitors", f["visitors"]),
+        ("Signups", f["signups"]),
+        ("League linked", f["linked"]),
+        ("PRO", f["pro"]),
+    ]
+    peak = max((count for _, count in stages), default=0) or 1
+    parts = []
+    for i, (name, count) in enumerate(stages):
+        width = max(6.0, 100.0 * count / peak)
+        parts.append(
+            '<div class="anx-fstep">'
+            '<div class="anx-flabel">%s</div>'
+            '<div class="anx-ftrack"><div class="anx-fbar" style="width:%.1f%%">'
+            '<span class="anx-fcount">%s</span></div></div></div>'
+            % (html.escape(name), width, format(count, ","))
+        )
+        if i < len(stages) - 1:
+            nxt = stages[i + 1][1]
+            parts.append(
+                '<div class="anx-fconv"><span aria-hidden="true">↓</span> %s convert</div>'
+                % _pct(nxt, count)
+            )
+    return '<div class="anx-funnel">%s</div>' % "".join(parts)
+
+
+def _heat_cell(text, intensity, light_text_cutoff=0.5) -> str:
+    """One heatmap cell: raw text always visible, blue intensity background."""
+    if intensity is None:
+        return '<td class="anx-heat-na">n/a</td>'
+    alpha = round(min(0.85, max(0.04, intensity * 0.85)), 3)
+    color = "#fff" if alpha > light_text_cutoff else "var(--text)"
+    return (
+        '<td style="background:rgba(59,130,246,%s);color:%s">%s</td>'
+        % (alpha, color, html.escape(text))
+    )
+
+
+def _cohort_heatmap_html(rows) -> str:
+    """Signup-week cohort retention heatmap table.
+
+    rows: [{cohort_week, size, w0..w5 pct|None}] oldest first. Rendered
+    newest cohort on top; future weeks render as muted dashes, never 0%.
+    """
+    if rows is None:
+        return "<p class='muted'>Cohort heatmap unavailable.</p>"
+    rows = [r for r in rows if r.get("size")]
+    if not rows:
+        return "<p class='muted'>No data yet.</p>"
+    offsets = [k for k in rows[0] if k.startswith("w")]
+    head = "".join("<th scope='col'>W%d</th>" % int(k[1:]) for k in offsets)
+    body = []
+    for r in sorted(rows, key=lambda x: x["cohort_week"], reverse=True):
+        label = r["cohort_week"][5:]  # MM-DD
+        cells = "".join(
+            _heat_cell(
+                ("%.1f%%" % v) if v is not None else "",
+                (v / 100.0) if v is not None else None,
+            )
+            for k in offsets for v in [r.get(k)]
+        )
+        body.append(
+            "<tr><th scope='row'>%s<div class='anx-heat-size'>%s signups</div></th>%s</tr>"
+            % (html.escape(label), format(r["size"], ","), cells)
+        )
+    return (
+        '<div class="anx-tablewrap"><table class="anx-heat"><thead><tr>'
+        "<th scope='col'>Cohort</th>%s</tr></thead>"
+        "<tbody>%s</tbody></table></div>"
+        % (head, "".join(body))
+    )
+
+
+def _feature_heatmap_html(usage) -> str:
+    """Feature usage by week as a heatmap: events x weeks, intensity by
+    count, raw counts in every cell."""
+    if usage is None:
+        return "<p class='muted'>Feature heatmap unavailable.</p>"
+    if not usage:
+        return "<p class='muted'>No data yet.</p>"
+    weeks = sorted({r["week"] for r in usage}, reverse=True)
+    totals = {}
+    for r in usage:
+        totals[r["event"]] = totals.get(r["event"], 0) + r["count"]
+    events = sorted(totals, key=lambda e: totals[e], reverse=True)
+    lookup = {(r["week"], r["event"]): r["count"] for r in usage}
+    peak = max(lookup.values(), default=0) or 1
+    head = "".join(
+        "<th scope='col'>%s</th>" % html.escape(w[5:]) for w in weeks
+    )
+    body = []
+    for e in events:
+        cells = "".join(
+            _heat_cell(str(lookup.get((w, e), 0)), lookup.get((w, e), 0) / peak)
+            for w in weeks
+        )
+        body.append(
+            "<tr><th scope='row'>%s</th>%s</tr>" % (html.escape(e), cells)
+        )
+    return (
+        '<div class="anx-tablewrap"><table class="anx-heat"><thead><tr>'
+        "<th scope='col'>Feature</th>%s</tr></thead>"
+        "<tbody>%s</tbody></table></div>" % (head, "".join(body))
+    )
+
+
+def _sortable_rank_table(table_id, headers, rows) -> str:
+    """Rank table with click-to-sort column headers (client JS)."""
+    if not rows:
+        return '<p class="muted">No data yet.</p>'
+    ths = "".join(
+        '<th scope="col"><button type="button" class="anx-sortbtn" data-col="%d">'
+        "%s<span class=\"anx-sort-arrow\" aria-hidden=\"true\"></span></button></th>"
+        % (i, html.escape(str(h)))
+        for i, h in enumerate(headers)
+    )
+    trs = []
+    for r in rows:
+        cells = "<th scope='row'>%s</th>" % html.escape(str(r[0])) + "".join(
+            "<td>%s</td>" % format(v, ",")
+            for v in r[1:]
+        )
+        trs.append("<tr>%s</tr>" % cells)
+    return (
+        '<div class="anx-tablewrap"><table id="%s" data-anx-sortable>'
+        "<thead><tr>%s</tr></thead><tbody>%s</tbody></table></div>"
+        % (html.escape(table_id), ths, "".join(trs))
+    )
 
 
 @internal_bp.route("/api/analytics/paywall", methods=["POST"])
@@ -1049,6 +1212,265 @@ def api_paywall_viewed():
     except Exception:
         pass
     return "", 204
+
+
+# ── Analytics v2 page styles (dashboard.css design tokens) ───────────────────
+
+_ANX_CSS = """
+.anx-wrap { max-width: 1060px; margin: 0 auto; padding: var(--space-6) var(--space-4) var(--space-8); }
+.anx-head h1 { font-size: var(--text-xl); margin: 0 0 4px; letter-spacing: -0.01em; }
+.anx-sub { color: var(--text-muted); font-size: var(--text-sm); margin: 0 0 var(--space-4); }
+.anx-status { margin-bottom: var(--space-4); }
+.anx-notice { background: color-mix(in srgb, var(--gold) 12%, var(--card)); border: 1px solid color-mix(in srgb, var(--gold) 45%, transparent); border-radius: var(--radius-sm); padding: var(--space-3) var(--space-4); margin-bottom: var(--space-4); font-size: var(--text-base); }
+.anx .muted { color: var(--text-muted); font-size: var(--text-sm); }
+/* KPI header */
+.anx-kpis { display: grid; grid-template-columns: repeat(6, 1fr); gap: var(--space-3); margin-bottom: var(--space-4); }
+.anx-kpi { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-4); box-shadow: var(--shadow-sm); min-width: 0; }
+.anx-kpi-num { font-size: var(--text-xl); font-weight: 800; letter-spacing: -0.02em; }
+.anx-kpi-label { font-size: var(--text-sm); font-weight: 700; margin-top: 2px; }
+.anx-kpi-sub { font-size: var(--text-xs); color: var(--text-muted); margin-top: 4px; line-height: 1.4; }
+/* Sticky tab nav */
+.anx-tabs { position: sticky; top: var(--space-2); z-index: 60; display: flex; gap: var(--space-2); overflow-x: auto; background: var(--chrome-glass); -webkit-backdrop-filter: var(--chrome-blur); backdrop-filter: var(--chrome-blur); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-2); margin-bottom: var(--space-5); scrollbar-width: none; }
+.anx-tabs::-webkit-scrollbar { display: none; }
+.anx-tabs a { flex: 0 0 auto; text-decoration: none; color: var(--text-muted); font-size: var(--text-base); font-weight: 700; padding: var(--space-2) var(--space-4); border-radius: var(--radius-pill); transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out); }
+.anx-tabs a:hover { color: var(--text); background: var(--accent-soft); }
+.anx-tabs a.on { color: var(--on-accent); background: var(--accent); }
+.anx-tabpage { scroll-margin-top: 84px; margin-bottom: var(--space-6); }
+.anx-tabtitle { font-size: var(--text-lg); margin: 0 0 var(--space-3); }
+/* Cards */
+.anx-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-5); margin-bottom: var(--space-4); box-shadow: var(--shadow-sm); }
+.anx-card h2 { font-size: var(--text-md); margin: 0; }
+.anx-card h3.subhead { font-size: var(--text-base); margin: var(--space-4) 0 var(--space-2); }
+.anx-card-head { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); flex-wrap: wrap; margin-bottom: var(--space-2); }
+.anx-controls { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.anx-seg { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius-pill); overflow: hidden; background: var(--card); }
+.anx-seg button { border: 0; background: transparent; color: var(--text-muted); font-size: var(--text-sm); font-weight: 700; padding: 6px 12px; cursor: pointer; font-family: inherit; }
+.anx-seg button.on { background: var(--accent-soft); color: var(--text); }
+.anx-seg button:hover { color: var(--text); }
+/* Charts */
+.anx-chart-wrap { position: relative; }
+.anx-chart-wrap svg.chart { width: 100%; height: auto; display: block; }
+.anx-chart-wrap .chart text.vallab { font-size: 11px; fill: var(--text-muted); font-weight: 600; }
+.anx-chart-wrap .chart text.axis { font-size: 10px; fill: var(--text-subtle); }
+.anx-chart-wrap .chart text.ytick { font-size: 10px; fill: var(--text-subtle); }
+.anx-chart-wrap .chart line.grid { stroke: var(--grid); stroke-width: 1; }
+.anx-chart-wrap .chart line.grid.base { stroke: var(--border); }
+.anx-chart-wrap .chart .anx-zone { cursor: crosshair; }
+.anx-tip { position: absolute; pointer-events: none; background: var(--tooltip-bg); color: var(--tooltip-fg); border: 1px solid var(--tooltip-border); border-radius: var(--tooltip-radius); padding: var(--tooltip-pad); font-size: var(--tooltip-fs); line-height: var(--tooltip-lh); box-shadow: var(--tooltip-shadow); white-space: nowrap; z-index: 5; transform: translate(-50%, -115%); }
+/* Tables */
+.anx-tablewrap { overflow-x: auto; }
+.anx table { border-collapse: collapse; width: 100%; font-size: var(--text-base); }
+.anx th, .anx td { border: 1px solid var(--border); padding: 7px 10px; text-align: right; }
+.anx th[scope=row], .anx thead th { text-align: left; background: var(--card-soft); }
+.anx td { text-align: right; }
+.anx-sortbtn { all: unset; cursor: pointer; font-weight: 700; font-size: inherit; color: inherit; display: inline-flex; align-items: center; gap: 4px; }
+.anx-sortbtn:hover { color: var(--brand-blue); }
+.anx-sortbtn:focus-visible { outline: 2px solid var(--brand-blue); outline-offset: 2px; border-radius: 4px; }
+.anx-sort-arrow { font-size: 10px; color: var(--text-subtle); min-width: 12px; display: inline-block; }
+th[aria-sort="ascending"] .anx-sort-arrow::after { content: "\\25B2"; }
+th[aria-sort="descending"] .anx-sort-arrow::after { content: "\\25BC"; }
+/* Funnel viz */
+.anx-funnel { display: flex; flex-direction: column; gap: 6px; padding: var(--space-2) 0; }
+.anx-fstep { display: grid; grid-template-columns: 130px 1fr; align-items: center; gap: var(--space-3); }
+.anx-flabel { font-size: var(--text-base); font-weight: 700; text-align: right; }
+.anx-ftrack { background: var(--card-soft); border-radius: var(--radius-sm); overflow: hidden; }
+.anx-fbar { background: linear-gradient(90deg, var(--brand-blue), #60a5fa); border-radius: var(--radius-sm); padding: 10px 12px; color: #fff; font-weight: 800; font-size: var(--text-md); white-space: nowrap; transition: width var(--dur-med) var(--ease-out); }
+.anx-fconv { display: flex; align-items: center; gap: 6px; margin-left: 142px; color: var(--win); font-size: var(--text-sm); font-weight: 700; }
+/* Heatmaps */
+.anx-heat td, .anx-heat th { text-align: center; min-width: 52px; }
+.anx-heat th[scope=row] { text-align: left; }
+.anx-heat .anx-heat-size { font-size: var(--text-xs); color: var(--text-muted); font-weight: 400; }
+.anx-heat .anx-heat-na { color: var(--text-subtle); background: var(--card-soft); }
+.anx .funnel-line { font-size: var(--text-base); margin: 0 0 var(--space-2); }
+@media (max-width: 900px) { .anx-kpis { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 600px) {
+  .anx-kpis { grid-template-columns: repeat(2, 1fr); }
+  .anx-wrap { padding: var(--space-4) var(--space-3) var(--space-8); }
+  .anx-card { padding: var(--space-4); }
+  .anx-fstep { grid-template-columns: 1fr; gap: var(--space-1); }
+  .anx-flabel { text-align: left; }
+  .anx-fconv { margin-left: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .anx-fbar { transition: none; }
+  .anx-tabs a { transition: none; }
+}
+"""
+
+# ── Analytics v2 client JS (vanilla, no dependencies) ────────────────────────
+
+_ANX_JS = """
+(function () {
+  "use strict";
+  function fmt(n) { return Number(n).toLocaleString("en-US"); }
+
+  /* Sticky tab nav: highlight the section in view. */
+  var tabLinks = Array.prototype.slice.call(document.querySelectorAll("#anx-tabs a"));
+  var pages = ["anx-overview", "anx-growth", "anx-engagement", "anx-revenue"]
+    .map(function (id) { return document.getElementById(id); })
+    .filter(Boolean);
+  if ("IntersectionObserver" in window && tabLinks.length && pages.length) {
+    var obs = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (en.isIntersecting) {
+          tabLinks.forEach(function (t) {
+            t.classList.toggle("on", t.getAttribute("href") === "#" + en.target.id);
+          });
+        }
+      });
+    }, { rootMargin: "-30% 0px -60% 0px" });
+    pages.forEach(function (p) { obs.observe(p); });
+  }
+
+  /* Interactive charts: hover tooltips, range buttons, bar/line toggle. */
+  function renderChart(wrap, data, state) {
+    var color = wrap.getAttribute("data-color") || "#3b82f6";
+    var unit = wrap.getAttribute("data-unit") || "";
+    var n = data.length;
+    var W = 680, H = 190;
+    var padL = 40, padR = 10, padT = 26, padB = n > 15 ? 58 : 34;
+    var plotW = W - padL - padR, plotH = H - padT - padB;
+    var maxv = 1;
+    data.forEach(function (d) { if (d[1] > maxv) maxv = d[1]; });
+    var slot = plotW / n;
+    var s = '<svg viewBox="0 0 ' + W + " " + H + '" class="chart" role="img">';
+    [0, 0.5, 1].forEach(function (frac) {
+      var gy = padT + plotH * (1 - frac);
+      s += '<line x1="' + padL + '" y1="' + gy.toFixed(1) + '" x2="' + (W - padR) +
+        '" y2="' + gy.toFixed(1) + '" class="grid' + (frac === 0 ? " base" : "") + '"/>';
+      s += '<text x="' + (padL - 6) + '" y="' + (gy + 3.5).toFixed(1) +
+        '" text-anchor="end" class="ytick">' + Math.round(maxv * frac) + "</text>";
+    });
+    function cx(i) { return padL + i * slot + slot / 2; }
+    function cy(v) { return padT + plotH - (v / maxv) * plotH; }
+    if (state.type === "line") {
+      var pts = data.map(function (d, i) { return cx(i).toFixed(1) + "," + cy(d[1]).toFixed(1); });
+      s += '<polyline points="' + pts.join(" ") + '" fill="none" stroke="' + color +
+        '" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';
+      data.forEach(function (d, i) {
+        s += '<circle cx="' + cx(i).toFixed(1) + '" cy="' + cy(d[1]).toFixed(1) +
+          '" r="3.5" fill="' + color + '"/>';
+      });
+    } else {
+      var bw = Math.min(slot * 0.64, 48);
+      data.forEach(function (d, i) {
+        var v = d[1];
+        var bh = Math.max((v / maxv) * plotH, v ? 2 : 0);
+        var x = padL + i * slot + (slot - bw) / 2;
+        var y = padT + plotH - bh;
+        s += '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + bw.toFixed(1) +
+          '" height="' + bh.toFixed(1) + '" rx="3" fill="' + color + '"/>';
+        if (v) {
+          s += '<text x="' + (x + bw / 2).toFixed(1) + '" y="' + (y - 6).toFixed(1) +
+            '" text-anchor="middle" class="vallab">' + fmt(v) + "</text>";
+        }
+      });
+    }
+    var step = n > 15 ? 1 : Math.max(1, Math.floor(n / 12));
+    data.forEach(function (d, i) {
+      if (i % step !== 0 && i !== n - 1) return;
+      var label = d[0];
+      if (n > 15) {
+        s += '<text x="' + cx(i).toFixed(1) + '" y="' + (H - 8) + '" text-anchor="end" class="axis" ' +
+          'transform="rotate(-45 ' + cx(i).toFixed(1) + " " + (H - 8) + ')">' + label + "</text>";
+      } else {
+        s += '<text x="' + cx(i).toFixed(1) + '" y="' + (H - 14) + '" text-anchor="middle" class="axis">' +
+          label + "</text>";
+      }
+    });
+    data.forEach(function (d, i) {
+      s += '<rect class="anx-zone" x="' + (padL + i * slot).toFixed(1) + '" y="' + padT +
+        '" width="' + slot.toFixed(1) + '" height="' + plotH + '" fill="transparent" data-i="' + i + '"/>';
+    });
+    s += "</svg>";
+    var old = wrap.querySelector("svg.chart");
+    if (old) old.outerHTML = s;
+    wrap._anxData = data;
+    wrap._anxUnit = unit;
+  }
+
+  function initChart(wrap) {
+    var raw = wrap.querySelector(".anx-chart-data");
+    if (!raw) return;
+    var full;
+    try { full = JSON.parse(raw.textContent); } catch (e) { return; }
+    if (!full.length) return;
+    var chartId = wrap.getAttribute("data-chart");
+    var controls = document.querySelector('[data-chart-controls="' + chartId + '"]');
+    var state = { range: full.length, type: "bar" };
+    var tip = wrap.querySelector(".anx-tip");
+
+    function current() { return full.slice(-state.range); }
+    function draw() { renderChart(wrap, current(), state); }
+
+    if (controls) {
+      controls.addEventListener("click", function (e) {
+        var btn = e.target.closest("button");
+        if (!btn) return;
+        if (btn.hasAttribute("data-range")) {
+          state.range = Math.min(parseInt(btn.getAttribute("data-range"), 10) || full.length, full.length);
+          controls.querySelectorAll("[data-range]").forEach(function (b) {
+            b.classList.toggle("on", b === btn);
+          });
+          draw();
+        } else if (btn.hasAttribute("data-type")) {
+          state.type = btn.getAttribute("data-type");
+          controls.querySelectorAll("[data-type]").forEach(function (b) {
+            b.classList.toggle("on", b === btn);
+          });
+          draw();
+        }
+      });
+    }
+
+    wrap.addEventListener("mousemove", function (e) {
+      var zone = e.target.closest ? e.target.closest(".anx-zone") : null;
+      if (!zone || !tip) { if (tip) tip.hidden = true; return; }
+      var data = wrap._anxData || current();
+      var d = data[parseInt(zone.getAttribute("data-i"), 10)];
+      if (!d) { tip.hidden = true; return; }
+      tip.textContent = d[0] + ": " + fmt(d[1]) + (wrap._anxUnit ? " " + wrap._anxUnit : "");
+      var rect = wrap.getBoundingClientRect();
+      tip.style.left = (e.clientX - rect.left) + "px";
+      tip.style.top = (e.clientY - rect.top) + "px";
+      tip.hidden = false;
+    });
+    wrap.addEventListener("mouseleave", function () { if (tip) tip.hidden = true; });
+
+    draw();
+  }
+  document.querySelectorAll(".anx-chart-wrap").forEach(initChart);
+
+  /* Sortable tables: click a column header to sort asc/desc. */
+  document.querySelectorAll("table[data-anx-sortable]").forEach(function (tbl) {
+    var tbody = tbl.querySelector("tbody");
+    if (!tbody) return;
+    tbl.querySelectorAll("thead th").forEach(function (th, col) {
+      var btn = th.querySelector(".anx-sortbtn");
+      if (!btn) return;
+      btn.addEventListener("click", function () {
+        var dir = th.getAttribute("aria-sort") === "ascending" ? "descending" : "ascending";
+        tbl.querySelectorAll("thead th").forEach(function (h) { h.setAttribute("aria-sort", "none"); });
+        th.setAttribute("aria-sort", dir);
+        var rows = Array.prototype.slice.call(tbody.querySelectorAll("tr"));
+        rows.sort(function (a, b) {
+          var av = cellVal(a, col), bv = cellVal(b, col);
+          if (av.num !== null && bv.num !== null) return dir === "ascending" ? av.num - bv.num : bv.num - av.num;
+          var cmp = av.text.localeCompare(bv.text);
+          return dir === "ascending" ? cmp : -cmp;
+        });
+        rows.forEach(function (r) { tbody.appendChild(r); });
+      });
+    });
+    function cellVal(tr, col) {
+      var cell = tr.children[col];
+      var text = cell ? cell.textContent.trim() : "";
+      var num = parseFloat(text.replace(/[^0-9.\\-]/g, ""));
+      return { text: text, num: isNaN(num) ? null : num };
+    }
+  });
+})();
+"""
 
 
 @internal_bp.route("/admin/analytics")
@@ -1121,6 +1543,11 @@ def admin_analytics():
     except Exception:
         logger.exception("[analytics] revenue summary failed")
         revenue = None
+    try:
+        signup_heatmap = _a.cohort_heatmap()
+    except Exception:
+        logger.exception("[analytics] cohort heatmap failed")
+        signup_heatmap = None
 
     empty_note = (
         "Event collection just started, so these charts fill in over the coming days. "
@@ -1140,30 +1567,85 @@ def admin_analytics():
     if session.get(ADMIN_SESSION_KEY):
         status_bits.append("Admin session: your visits are not recorded.")
     status_html = (
-        '<p class="sub">%s</p>' % " ".join(html.escape(b) for b in status_bits)
+        '<p class="anx-sub anx-status">%s</p>' % " ".join(html.escape(b) for b in status_bits)
         if status_bits else ""
     )
 
-    body = "".join([
-        _section("Daily active users", _bars_svg(dau_pairs),
-                 "Signed-in accounts plus anonymous visitors with 2+ pages, "
-                 "New York day, last 30 days."),
+    # KPI header: every value comes from data already fetched above; a
+    # missing section degrades its card to "n/a", never invented data.
+    ny_break = (breakdown or {}).get("ny") or {}
+
+    def _kpi_num(v):
+        return "n/a" if v is None else format(v, ",")
+
+    paywall_pct = (paywall or {}).get("subscribed_pct")
+    act_pct = (cohort or {}).get("pct_7d")
+    kpi_cards = [
+        (_kpi_num(ny_break.get("realistic_preview")), "DAU today",
+         "NY day: signed-in + engaged"),
+        (_kpi_num(wau_pairs[-1][1]) if wau_pairs else "n/a", "WAU this week",
+         "this week, partial"),
+        (_kpi_num(sum(v for _, v in signup_pairs)), "Signups",
+         "last 30 days"),
+        (_kpi_num((revenue or {}).get("active_pro_subscriptions")), "Active PRO",
+         "subscriptions right now"),
+        (("%.1f%%" % paywall_pct) if paywall_pct is not None else "n/a",
+         "Paywall to PRO",
+         "%s viewers, last 30 days" % format((paywall or {}).get("viewers") or 0, ",")),
+        (("%.1f%%" % act_pct) if act_pct is not None else "n/a",
+         "Linked in 7 days",
+         "%s signups, last 30 days" % format((cohort or {}).get("signups") or 0, ",")),
+    ]
+
+    tab_overview = "".join([
+        _chart_card("dau", "Daily active users",
+                    "Signed-in accounts plus anonymous visitors with 2+ pages, "
+                    "New York day. Hover for values; switch range or chart type.",
+                    dau_pairs, bar_color="#3b82f6", ranges=(14, 30),
+                    allow_line=True, unit="users"),
         _section("DAU breakdown: today",
                  _breakdown_html(breakdown, breakdown_paths),
-                 "What today's DAU is made of. The chart above now uses the "
+                 "What today's DAU is made of. The chart above uses the "
                  "realistic definition on a New York day; the raw row is the "
                  "old definition for comparison."),
-        _section("Weekly active users", _bars_svg(wau_pairs, bar_color="#34c98e"),
-                 "Same definition per week (signed-in accounts plus engaged "
-                 "anonymous visitors), last 12 weeks."),
-        _section("Signups per day", _bars_svg(signup_pairs, bar_color="#f5a623"),
-                 "New accounts from the accounts table, last 30 days."),
+    ])
+    tab_growth = "".join([
+        _chart_card("signups", "Signups per day",
+                    "New accounts from the accounts table, last 30 days. "
+                    "Hover for values; switch range.",
+                    signup_pairs, bar_color="#f5a623", ranges=(14, 30),
+                    unit="signups"),
+        _section("Signup cohort retention",
+                 _cohort_heatmap_html(signup_heatmap),
+                 "Share of each signup week's cohort (signed-in accounts) with "
+                 "at least one pageview in week 0 to 5 after signup. Weeks that "
+                 "have not happened yet show as dashes, not 0%."),
+        _section("Activation: signup to league linked (cohort)",
+                 _activation_html(cohort),
+                 "Accounts created in the last 30 days and how quickly they "
+                 "linked a first league. Unlike the funnel above, every stage "
+                 "counts the same accounts. Caveat: league rows that predate "
+                 "the added_at backfill carry the migration date, so old links "
+                 "can read as linked on that date."),
+        _section("Traffic sources", _traffic_html(traffic, landings),
+                 "First pageview of each session in the last 30 days. "
+                 "Referrers are recorded host-only; sessions with no external "
+                 "referrer are direct. Engaged means 2+ pageviews and never "
+                 "signed in."),
+    ])
+    tab_engagement = "".join([
+        _chart_card("wau", "Weekly active users",
+                    "Same definition per week (signed-in accounts plus engaged "
+                    "anonymous visitors). Hover for values; switch range.",
+                    wau_pairs, bar_color="#34c98e", ranges=(6, 12),
+                    range_suffix="w", unit="users"),
         _section("Most used features (last 30 days)",
                  _feature_ranking_table(feature_ranking),
-                 "Non-pageview events ranked by uses. Unique users counts "
-                 "accounts when signed in, else sessions."),
-        _section("Feature usage by week", _feature_table(usage),
-                 "Explicit product events per week, last 8 weeks. Pageviews excluded."),
+                 "Non-pageview events ranked by uses. Click a column header to "
+                 "sort. Unique users counts accounts when signed in, else sessions."),
+        _section("Feature usage by week", _feature_heatmap_html(usage),
+                 "Explicit product events per week, last 8 weeks. Pageviews "
+                 "excluded. Raw counts in every cell."),
         _section("Week-over-week return", _retention_table(retention),
                  "Share of each week's active users who were also active the prior week."),
         _section("Signed-in retention",
@@ -1172,86 +1654,61 @@ def admin_analytics():
                  else '<p class="muted">Signed-in retention unavailable.</p>',
                  "Same return rate for signed-in accounts only (no anonymous "
                  "sessions), New York weeks, last 9 weeks."),
-        _section("Funnel: visitor to PRO", _funnel_html(funnel),
-                 "Period totals for the last 30 days. Not a strict cohort funnel."),
-        _section("Activation: signup to league linked (cohort)",
-                 _activation_html(cohort),
-                 "Accounts created in the last 30 days and how quickly they "
-                 "linked a first league. Unlike the funnel above, every stage "
-                 "counts the same accounts. Caveat: league rows that predate "
-                 "the added_at backfill carry the migration date, so old links "
-                 "can read as linked on that date."),
-        _section("Revenue", _revenue_html(revenue),
-                 "Last 30 days. Subscription counts come from the per-league "
-                 "subscription table. MRR is not shown: stored subscription "
-                 "rows carry no price; the amount charged lives in Stripe."),
+    ])
+    tab_revenue = "".join([
+        _section("Funnel: visitor to PRO", _funnel_viz(funnel),
+                 "Period totals for the last 30 days. Not a strict cohort funnel. "
+                 "Bar widths are proportional to stage size; raw counts on every step."),
         _section("Paywalls", _paywall_html(paywall),
                  "Last 30 days. One view is one plan-modal open or one inline "
                  "nudge render. Conversion counts a viewer whose checkout or "
                  "subscription came after their first view."),
-        _section("Traffic sources", _traffic_html(traffic, landings),
-                 "First pageview of each session in the last 30 days. "
-                 "Referrers are recorded host-only; sessions with no external "
-                 "referrer are direct. Engaged means 2+ pageviews and never "
-                 "signed in."),
+        _section("Revenue", _revenue_html(revenue),
+                 "Last 30 days. Subscription counts come from the per-league "
+                 "subscription table. MRR is not shown: stored subscription "
+                 "rows carry no price; the amount charged lives in Stripe."),
     ])
 
+    tabs_html = (
+        '<nav class="anx-tabs" id="anx-tabs" aria-label="Analytics sections">'
+        '<a href="#anx-overview" class="on">Overview</a>'
+        '<a href="#anx-growth">Growth</a>'
+        '<a href="#anx-engagement">Engagement</a>'
+        '<a href="#anx-revenue">Revenue</a></nav>'
+    )
+
+    def _tabpage(tab_id, title, inner):
+        return (
+            '<div class="anx-tabpage" id="%s"><h2 class="anx-tabtitle">%s</h2>%s</div>'
+            % (tab_id, html.escape(title), inner)
+        )
+
+    body = (
+        _kpi_cards(kpi_cards)
+        + tabs_html
+        + _tabpage("anx-overview", "Overview", tab_overview)
+        + _tabpage("anx-growth", "Growth", tab_growth)
+        + _tabpage("anx-engagement", "Engagement", tab_engagement)
+        + _tabpage("anx-revenue", "Revenue", tab_revenue)
+    )
+
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    page = """<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Product Analytics</title>
-<style>
-  :root { color-scheme: light; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-         margin: 0; padding: 24px; background: #f6f7f9; color: #1c2333; }
-  .wrap { max-width: 1060px; margin: 0 auto; }
-  h1 { font-size: 24px; margin: 0 0 4px; }
-  .sub { color: #5b6478; margin: 0 0 20px; font-size: 13px; }
-  .card { background: #fff; border: 1px solid #e3e6ec; border-radius: 12px;
-          padding: 18px 20px; margin-bottom: 18px; }
-  .card h2 { font-size: 16px; margin: 0 0 10px; }
-  .card h3.subhead { font-size: 13px; margin: 16px 0 6px; }
-  .funnel-line { font-size: 14px; margin: 0 0 8px; }
-  .muted { color: #7a8398; font-size: 12px; }
-  .chart { width: 100%%; height: auto; display: block; }
-  .chart rect { fill: #4f8ff7; }
-  .chart text.vallab { font-size: 11px; fill: #5b6478; font-weight: 600; }
-  .chart text.axis { font-size: 10px; fill: #7a8398; }
-  .chart text.ytick { font-size: 10px; fill: #a0a8bb; }
-  .chart line.grid { stroke: #edf0f5; stroke-width: 1; }
-  .chart line.grid.base { stroke: #dfe3ea; }
-  .tablewrap { overflow-x: auto; }
-  table { border-collapse: collapse; width: 100%%; font-size: 13px; }
-  th, td { border: 1px solid #e8ebf1; padding: 7px 10px; text-align: right; }
-  th[scope=row], thead th { text-align: left; background: #f2f4f8; }
-  td { text-align: right; }
-  .funnel { display: flex; gap: 12px; flex-wrap: wrap; }
-  .funnel-step { flex: 1 1 160px; background: #f2f4f8; border-radius: 10px;
-                padding: 14px; text-align: center; }
-  .funnel-num { font-size: 28px; font-weight: 700; }
-  .funnel-name { font-size: 13px; color: #5b6478; margin-top: 2px; }
-  .funnel .conv { font-size: 12px; color: #2f7d4f; margin-top: 6px; font-weight: 600; }
-  .notice { background: #fff8e6; border: 1px solid #f0d98c; border-radius: 10px;
-            padding: 12px 16px; margin-bottom: 18px; font-size: 13px; }
-</style>
-</head>
-<body>
-<div class="wrap">
-  <h1>Product Analytics</h1>
-  <p class="sub">First-party usage stats. Generated %s.</p>
-  %s
-  %s
-  %s
-</div>
-</body>
-</html>""" % (
-        html.escape(generated),
-        ('<div class="notice">%s</div>' % html.escape(empty_note)) if empty_note else "",
-        status_html,
-        body,
+    page = (
+        '<!DOCTYPE html><html lang="en"><head>'
+        '<meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        '<title>Product Analytics</title>'
+        '<script>(function(){try{if(localStorage.getItem("theme")==="dark")'
+        '{document.documentElement.setAttribute("data-theme","dark");}}catch(e){}})();</script>'
+        '<link rel="stylesheet" href="/static/dashboard.css">'
+        '<style>' + _ANX_CSS + '</style></head>'
+        '<body class="anx"><div class="anx-wrap">'
+        '<header class="anx-head"><h1>Product Analytics</h1>'
+        '<p class="anx-sub">First-party usage stats. Generated ' + html.escape(generated) + '.</p></header>'
+        + (('<div class="anx-notice">' + html.escape(empty_note) + '</div>') if empty_note else '')
+        + status_html
+        + body
+        + '</div><script>' + _ANX_JS + '</script></body></html>'
     )
     return Response(page, mimetype="text/html")
 
