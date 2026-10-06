@@ -71,6 +71,90 @@ SITUATIONS = [
 ]
 
 
+def _is_light_color(hex_color: str) -> bool:
+    """Check if a hex color is too light to use for bar segments.
+
+    White and near-white colors are invisible on light backgrounds.
+    """
+    try:
+        h = hex_color.lstrip("#")
+        if len(h) != 6:
+            return False
+        r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+        luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+        return luminance > 0.82
+    except (ValueError, TypeError):
+        return False
+
+
+def _get_usable_team_colors(team: str) -> List[str]:
+    """Get team colors filtered to exclude near-white (invisible on light bg).
+
+    Falls back to the full palette if all colors are light.
+    """
+    colors = TEAM_COLORS.get(team, ["#3B82F6", "#1E40AF", "#93C5F6"])
+    usable = [c for c in colors if not _is_light_color(c)]
+    return usable if usable else colors
+
+
+# Cache for RB GSIS IDs: team -> set of gsis_id
+_RB_GSIS_CACHE: Dict[str, set] = {}
+_RB_GSIS_LOCK = threading.Lock()
+
+
+def _get_rb_gsis_ids(team: str) -> set:
+    """Get GSIS IDs of RBs on a team via the crosswalk and players index.
+
+    Uses lazy imports to avoid circular dependencies. Returns empty set
+    if the crosswalk or players index is unavailable (fail-open: no filtering).
+    """
+    team = str(team or "").upper().strip()
+    with _RB_GSIS_LOCK:
+        if team in _RB_GSIS_CACHE:
+            return _RB_GSIS_CACHE[team]
+
+    rb_ids: set = set()
+    try:
+        from data_building.external_data.nflverse_metrics import _gsis_to_sleeper
+        crosswalk = _gsis_to_sleeper()
+        if not crosswalk:
+            return rb_ids
+
+        # Get players index for position lookup
+        players = None
+        try:
+            from dashboard_services.db import get_conn
+            # Try to get positions from the database
+            conn = get_conn()
+            if conn:
+                try:
+                    cur = conn.cursor()
+                    cur.execute(
+                        "SELECT sleeper_id, position FROM players WHERE team = %s AND position = 'RB'",
+                        (team,)
+                    )
+                    rb_sleeper_ids = {str(row[0]) for row in cur.fetchall()}
+                    # Invert crosswalk: sleeper_id -> gsis_id
+                    sleeper_to_gsis = {v: k for k, v in crosswalk.items()}
+                    for sid in rb_sleeper_ids:
+                        gsis = sleeper_to_gsis.get(sid)
+                        if gsis:
+                            rb_ids.add(gsis)
+                finally:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+    with _RB_GSIS_LOCK:
+        _RB_GSIS_CACHE[team] = rb_ids
+    return rb_ids
+
+
 def _load_pbp(season: int):
     """Load play-by-play DataFrame for a season, cached in memory."""
     now = time.time()
@@ -282,8 +366,19 @@ def get_team_rb_usage(team: str, season: int, week: int) -> Dict[str, Any]:
     if not any(buckets[k] for k, _ in SITUATIONS):
         return {"team": team, "season": season, "week": week, "situations": []}
 
-    # Get team colors
-    colors = TEAM_COLORS.get(team, ["#3B82F6", "#1E40AF", "#93C5F6"])
+    # Filter to RBs only (exclude WRs, TEs, QBs who may have touches).
+    # Fail-open: if we can't determine positions, show all.
+    rb_ids = _get_rb_gsis_ids(team)
+    if rb_ids:
+        for key in buckets:
+            buckets[key] = {
+                pid: p for pid, p in buckets[key].items() if pid in rb_ids
+            }
+        if not any(buckets[k] for k, _ in SITUATIONS):
+            return {"team": team, "season": season, "week": week, "situations": []}
+
+    # Get team colors, excluding near-white (invisible on light backgrounds)
+    colors = _get_usable_team_colors(team)
 
     situations = []
     for key, label in SITUATIONS:
@@ -311,7 +406,7 @@ def get_team_rb_usage(team: str, season: int, week: int) -> Dict[str, Any]:
                 "name": "Others",
                 "touches": rest_touches,
                 "pct": round(100 * rest_touches / total),
-                "color": "var(--border)",
+                "color": "#9CA3AF",
             })
         situations.append({
             "key": key, "label": label, "total": total, "segments": segments,

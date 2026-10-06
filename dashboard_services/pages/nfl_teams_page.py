@@ -567,6 +567,9 @@ function splitsSVG(d,t){{
   var W=360,bx=76,bw=W-bx-44,rowH=62,top=6;
   var H=top+groups.length*rowH+8;
   var tcolor=teamColor(t);
+  // Use the team's color pair: primary for Scored, secondary for Allowed.
+  var tcolors=(window.BR_TEAM_COLORS&&t&&window.BR_TEAM_COLORS[t.team])||[tcolor,"var(--text-muted)"];
+  var cScored=tcolors[0]||tcolor, cAllowed=tcolors[1]||"var(--text-muted)";
   function barW(v){{return Math.max(2,v/max*bw);}}
   var s='<svg class="nt-chart" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Points scored and allowed at home and away">';
   groups.forEach(function(gr,i){{
@@ -577,7 +580,7 @@ function splitsSVG(d,t){{
       s+='<text x="0" y="'+(y+36)+'" font-size="11" fill="var(--text-muted)">No games yet.</text>';
       return;
     }}
-    [{{lab:"Scored",v:g.sc,c:tcolor}},{{lab:"Allowed",v:g.al,c:"var(--text-muted)"}}].forEach(function(r,j){{
+    [{{lab:"Scored",v:g.sc,c:cScored}},{{lab:"Allowed",v:g.al,c:cAllowed}}].forEach(function(r,j){{
       var by=y+20+j*20,wpx=barW(r.v);
       s+='<text x="0" y="'+(by+10)+'" font-size="11" fill="var(--text-muted)">'+r.lab+'</text>';
       s+='<rect x="'+bx+'" y="'+by+'" width="'+wpx.toFixed(1)+'" height="12" rx="3" fill="'+r.c+'"/>';
@@ -907,7 +910,10 @@ function renderProfile(){{
   }});
   h+='</tbody></table></div><p class="nt-fine">'+esc(d.roster_note||"Current roster")+ (d.usage_note?(" "+esc(d.usage_note)):"") +' Tap a player to open their card.</p></section>';
   // Backfield usage by situation (RB touch distribution from play-by-play)
-  h+='<section class="nt-psec nt-backfield-sec"><h3>Backfield usage</h3><div class="nt-backfield-bars" data-team="'+esc(state.team)+'" data-season="'+esc(String(state.season||""))+'"><div class="nt-loading">Loading usage...</div></div></section>';
+  // Only shown when the RB room is selected.
+  if(state.room==="RB"){{
+    h+='<section class="nt-psec nt-backfield-sec"><h3>Backfield usage</h3><div class="nt-backfield-bars" data-team="'+esc(state.team)+'" data-season="'+esc(String(state.season||""))+'"><div class="nt-loading">Loading usage...</div></div></section>';
+  }}
   h+='<details class="nt-psec nt-collapse" open><summary><h3>Graphs</h3><span class="nt-chev" aria-hidden="true"></span></summary><div class="nt-graphs-grid">';
   h+='<section class="nt-psec"><h3>Home vs away</h3>'+splitsSVG(d,t)+'</section>';
   h+=fingerprintSection(t);
@@ -959,7 +965,8 @@ function renderProfile(){{
             (sit.segments || []).forEach(function (s) {{
               if (!seen[s.name] && s.name !== 'Others') {{
                 seen[s.name] = true;
-                bh += '<span class="pm-usage-legend-item"><i style="background:' + s.color + '"></i>' + esc(s.name) + '</span>';
+                var lc = s.color || '#9CA3AF';
+                bh += '<span class="pm-usage-legend-item"><i style="background:' + lc + '"></i>' + esc(s.name) + '</span>';
               }}
             }});
           }});
@@ -969,7 +976,8 @@ function renderProfile(){{
             bh += '<div class="pm-usage-row"><div class="pm-usage-label">' + esc(sit.label) + '<span class="pm-usage-total">' + sit.total + '</span></div><div class="pm-tshare-bar pm-usage-bar">';
             sit.segments.forEach(function (s) {{
               var tip = s.name + ': ' + s.touches + ' touches (' + s.pct + '%)';
-              bh += '<i style="width:' + s.pct + '%;background:' + s.color + '" title="' + tip.replace(/"/g, '&quot;') + '">' + (s.touches >= 1 ? '<span>' + s.touches + '</span>' : '') + '</i>';
+              var sc = s.color || '#9CA3AF';
+              bh += '<i style="width:' + s.pct + '%;background:' + sc + '" title="' + tip.replace(/"/g, '&quot;') + '">' + (s.touches >= 1 ? '<span>' + s.touches + '</span>' : '') + '</i>';
             }});
             bh += '</div></div>';
           }});
