@@ -9803,15 +9803,16 @@ def _next_steps_trade_window_action(ctx: dict, viewer_roster_id) -> list:
             if modifier in mod_lines:
                 _why_bits.append(mod_lines[modifier])
         _why = " ".join(_why_bits) + "."
+        # Partner count only; names live on the trade page behind the CTA.
+        if partners:
+            _who = "sellers" if verdict == "buy" else "buyers"
+            _why += f" {len(partners)} {_who} waiting."
 
-        # Impact line: deadline proximity + partners to call.
+        # Impact line: deadline proximity only.
         _impact_bits = []
         if weeks_to is not None and weeks_to <= 2:
             _when = "this week" if weeks_to == 0 else "next week" if weeks_to == 1 else f"in {weeks_to} weeks"
             _impact_bits.append(f"Trade deadline {deadline} {_when}")
-        if partners:
-            _who = "Sellers to call" if verdict == "buy" else "Buyers to call"
-            _impact_bits.append(f"{_who}: " + ", ".join(partners[:3]))
         _impact = " | ".join(_impact_bits) if _impact_bits else None
 
         platform = ctx.get("platform", "sleeper")
