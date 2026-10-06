@@ -39,8 +39,10 @@ def _write_week_files(cache_dir, season, weeks_stats):
 
 def _patch(monkeypatch, tmp_path, league_weeks=(1, 2, 3)):
     # League-wide: week 4 not final yet (tonight's MNF pending).
+    # _load_season_weekly_points imports qualification_policy from
+    # utils.season_qualification (not utils.projections).
     monkeypatch.setattr(
-        "utils.projections.qualification_policy",
+        "utils.season_qualification.qualification_policy",
         _fake_policy(league_weeks),
     )
     monkeypatch.setattr(app, "CACHE_DIR", str(tmp_path))
