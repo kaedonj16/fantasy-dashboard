@@ -12023,11 +12023,22 @@ def _next_steps_waiver_actions(ctx: dict, viewer_roster_id, model_value_table: l
                 if "breakout" in _wl:
                     _priority = "high"
                     _score = 80
-                    _impact = _why.split("\u00b7")[0].strip().title() if "\u00b7" in _why else None
-                    # Extract "breakout score 78" style impact.
+                    # Extract "breakout score 78" style impact for the badge,
+                    # then strip it from the why line so it doesn't show twice.
                     _bm = _re.search(r"breakout score (\d+)", _wl)
                     if _bm:
                         _impact = f"Breakout score {_bm.group(1)}"
+                        _why = _re.sub(
+                            r"\s*breakout score \d+\s*(?:\u00b7\s*)?",
+                            "", _why, flags=_re.IGNORECASE,
+                        ).strip(" \u00b7")
+                        _why = _re.sub(
+                            r"(?:\s*\u00b7\s*)?breakout score \d+\s*$",
+                            "", _why, flags=_re.IGNORECASE,
+                        ).strip(" \u00b7")
+                        _wl = _why.lower()
+                    else:
+                        _impact = _why.split("\u00b7")[0].strip().title() if "\u00b7" in _why else None
                 elif "injury" in _wl or "starting role" in _wl:
                     _priority = "high"
                     _score = 78
