@@ -639,19 +639,17 @@ def test_graphs_section_uses_two_column_grid():
 
 
 def test_scatter_plots_render_team_logos_with_emphasis():
-    # All four league scatter plots draw team logos as marks; the selected
+    # All four league scatter plots draw team badges as marks; the selected
     # team is larger and full-color while the rest are greyed out, and it is
     # drawn last (on top). No ring around the selected team.
-    assert ''''<image href="'+esc(p.logo)+'"''' in PAGE_SRC
+    assert "window.BR_TEAM_COLORS" in PAGE_SRC
     assert "var sz=me?26:18" in PAGE_SRC
     assert 'stroke-width="2.5"' not in PAGE_SRC
     assert "if(p.abbr!==t.team) dot(p);" in PAGE_SRC
     assert "if(p.abbr===t.team) dot(p);" in PAGE_SRC
-    # Every scatter point builder passes its team logo through.
-    assert "logo:x.logo" in PAGE_SRC
-    assert "logo:logoByAbbr[ab]" in PAGE_SRC
-    # Dots remain as the fallback when a logo URL is missing.
-    assert "fallback when a logo URL is missing" in PAGE_SRC
-    # Non-selected logos are greyed out via CSS so the selected team pops.
+    # Badges are drawn as rect+text SVG groups, not logo images.
+    # Badges are drawn as SVG groups with team colors, not logo images.
+    assert "BR_TEAM_COLORS[p.abbr]" in PAGE_SRC
+    # Non-selected badges are greyed out via CSS so the selected team pops.
     assert ".nt-mark-dim{{filter:grayscale(1);opacity:.55}}" in PAGE_SRC
     assert '''class="nt-mark-dim"''' in PAGE_SRC

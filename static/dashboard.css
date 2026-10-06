@@ -42006,12 +42006,12 @@ a, button, [role="button"], [role="tab"], summary, label,
 .pm-tshare-bar i span { position: absolute; inset: 0; display: grid; place-items: center; font-size: 10px; font-weight: 800; color: #fff; }
 /* RB situational usage bars */
 .pm-usage-bars-wrap { margin: 12px 0; }
-.pm-usage-legend { display: flex; flex-wrap: wrap; gap: 6px 10px; margin-bottom: 10px; }
-.pm-usage-legend-item { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-muted); font-weight: 600; white-space: nowrap; flex-shrink: 0; }
-.pm-usage-legend-item i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; flex-shrink: 0; }
-.pm-usage-row { margin-bottom: 10px; }
-.pm-usage-label { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 12px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
-.pm-usage-total { font-size: 11px; color: var(--text-muted); font-weight: 600; margin-left: auto; padding-left: 8px; }
+.pm-usage-legend { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.pm-usage-legend-item { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-muted); font-weight: 600; }
+.pm-usage-legend-item i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.pm-usage-row { margin-bottom: 8px; }
+.pm-usage-label { display: flex; justify-content: space-between; align-items: baseline; font-size: 11px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+.pm-usage-total { font-size: 10px; color: var(--text-muted); font-weight: 600; }
 .pm-usage-bar { margin-bottom: 0; }
 
 /* focus-position room table (container keeps the .pm-team-usage class) */
@@ -44883,4 +44883,54 @@ table.rz-bs-table thead th:first-child {
 :root[data-theme="dark"] .div-badge {
     color: #bfdbfe;
     background: #1e3a8a;
+}
+
+/* Team badges: logo-free NFL team identity. Rounded rect in primary color,
+   white bold abbreviation, left-edge stripe in secondary color. */
+.team-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  background: var(--badge-primary, #334155);
+  color: #fff;
+  font-weight: 800;
+  border-radius: 8px;
+  overflow: hidden;
+  flex: none;
+  letter-spacing: 0.02em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+.team-badge::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  background: var(--badge-secondary, #64748b);
+}
+.team-badge-sm {
+  width: 32px;
+  height: 32px;
+  font-size: 11px;
+}
+.team-badge-md {
+  width: 40px;
+  height: 40px;
+  font-size: 13px;
+}
+.team-badge-lg {
+  width: 52px;
+  height: 52px;
+  font-size: 15px;
+}
+.team-badge-xs {
+  width: 24px;
+  height: 24px;
+  font-size: 9px;
+  border-radius: 6px;
+}
+.team-badge-xs::before {
+  width: 3px;
 }

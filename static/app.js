@@ -15825,6 +15825,34 @@ window.brTeamLogoEspn = function (team) {
   var slug = (t === 'WAS') ? 'wsh' : t.toLowerCase();
   return 'https://a.espncdn.com/i/teamlogos/nfl/500/' + slug + '.png';
 };
+// ── Team badges (logo-free) ──────────────────────────────────────────────────
+// Custom abbreviation badges replace NFL trademarked logos. Primary color
+// field, white bold abbreviation, secondary color left-edge stripe.
+window.BR_TEAM_COLORS = {
+  "ARI": ["#97233F", "#000000"], "ATL": ["#A7194B", "#000000"],
+  "BAL": ["#241773", "#9E7C0C"], "BUF": ["#00338D", "#C60C30"],
+  "CAR": ["#0085CA", "#101820"], "CHI": ["#0B1628", "#C83803"],
+  "CIN": ["#FB4F14", "#000000"], "CLE": ["#311D00", "#FF3C00"],
+  "DAL": ["#003594", "#869397"], "DEN": ["#FB4F14", "#002244"],
+  "DET": ["#0076B6", "#B0B7BC"], "GB": ["#203731", "#FFB612"],
+  "HOU": ["#03202F", "#A7194B"], "IND": ["#002C5F", "#A2AAAD"],
+  "JAX": ["#006778", "#D7A22B"], "KC": ["#E31837", "#FFB81C"],
+  "LAC": ["#0080C6", "#FFC20E"], "LAR": ["#003594", "#FFA300"],
+  "LV": ["#000000", "#A5ACAF"], "MIA": ["#008E97", "#FC4C02"],
+  "MIN": ["#4F2683", "#FFC62F"], "NE": ["#002244", "#C60C30"],
+  "NO": ["#D3BC8D", "#101820"], "NYG": ["#0B2265", "#A7194B"],
+  "NYJ": ["#125740", "#FFFFFF"], "PHI": ["#004C54", "#A5ACAF"],
+  "PIT": ["#FFB612", "#101820"], "SEA": ["#002244", "#69BE28"],
+  "SF": ["#AA0000", "#B3995D"], "TB": ["#D50A0A", "#34302B"],
+  "TEN": ["#0C2340", "#4B92DB"], "WAS": ["#5A1414", "#FFB612"]
+};
+window.brTeamBadge = function (team, size) {
+  var t = window.brCanonNflTeam(team);
+  if (!t) return '';
+  var colors = window.BR_TEAM_COLORS[t] || ["#334155", "#64748b"];
+  var sz = size === 'lg' ? 'team-badge-lg' : size === 'md' ? 'team-badge-md' : size === 'xs' ? 'team-badge-xs' : 'team-badge-sm';
+  return '<span class="team-badge ' + sz + '" style="--badge-primary:' + colors[0] + ';--badge-secondary:' + colors[1] + '" aria-label="' + t + '">' + t + '</span>';
+};
 window.brPlayerImgUrl = function (p) {
   p = p || {};
   var pos = p.position || p.pos || '';
@@ -23586,7 +23614,7 @@ window._rzRenderGameBoard = function(game, options) {
   var live=status==='live', pre=status==='pregame'||status==='delayed'||status==='unknown';
   var poss=window._rzNormalizeTeam(game.possession), showScore=!pre;
   var colors={ARI:'#97233F',ATL:'#A71930',BAL:'#241773',BUF:'#00338D',CAR:'#0085CA',CHI:'#0B162A',CIN:'#FB4F14',CLE:'#311D00',DAL:'#003594',DEN:'#FB4F14',DET:'#0076B6',GB:'#203731',HOU:'#03202F',IND:'#002C5F',JAX:'#006778',KC:'#E31837',LV:'#000000',LAC:'#0080C6',LAR:'#003594',MIA:'#008E97',MIN:'#4F2683',NE:'#002244',NO:'#D3BC8D',NYG:'#0B2265',NYJ:'#125740',PHI:'#004C54',PIT:'#FFB612',SF:'#AA0000',SEA:'#002244',TB:'#D50A0A',TEN:'#0C2340',WAS:'#5A1414'};
-  var logo=function(t){var src=window.brTeamLogoLocal?window.brTeamLogoLocal(t):'/static/images/team_logos/'+t+'.png';return '<img class="rz-nfl-badge" src="'+esc(src)+'" alt="" onerror="this.style.visibility=\'hidden\'">';};
+  var logo=function(t){return window.brTeamBadge?window.brTeamBadge(t,'xs'):'<span class="rz-nfl-badge">'+esc(String(t||'').slice(0,3))+'</span>';};
   var team=function(t,pts,side){var ball=live&&poss===t;return '<div class="rz-nfl-team rz-nfl-'+side+(ball?' has-ball':'')+'">'+logo(t)+'<span class="rz-nfl-abv">'+esc(t)+'</span>'+(showScore?'<span class="rz-nfl-score">'+esc(pts==null||pts===''?0:pts)+'</span>':'')+(ball?'<span class="rz-nfl-poss" title="Has possession" aria-label="Has possession"></span>':'')+'</div>';};
   var fp=window._rzFieldPosition(Object.assign({},game,{status:status}));
   var sit='';

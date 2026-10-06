@@ -1446,6 +1446,25 @@ def def_team_logo_urls(team_abv: str) -> tuple[str, str]:
     espn = str(ti.get("Logo") or "").strip() or _espn_logo_url(team)
     return (local, espn)
 
+
+def team_badge_html(team_abv: str, size: str = "sm") -> str:
+    """Logo-free team badge HTML: abbreviation in team colors.
+
+    Replaces trademarked NFL logos. Primary color field, white bold
+    abbreviation, secondary color left-edge stripe. Sizes: xs, sm, md, lg.
+    """
+    from utils.rb_usage import TEAM_COLORS
+    team = (canon_team(team_abv) or str(team_abv or "")).strip().upper()
+    if not team:
+        return ""
+    colors = TEAM_COLORS.get(team, ["#334155", "#64748b", "#94a3b8"])
+    sz = size if size in ("xs", "sm", "md", "lg") else "sm"
+    return (
+        f'<span class="team-badge team-badge-{sz}" '
+        f'style="--badge-primary:{colors[0]};--badge-secondary:{colors[1]}" '
+        f'aria-label="{team}">{team}</span>'
+    )
+
 # --- utils/utils.py L1325 ---
 def _safe_get(d: dict, *keys, default=None):
     cur = d

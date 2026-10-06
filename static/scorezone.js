@@ -2522,6 +2522,7 @@
     var sit = _nflBoardSitLine(g, norm);
     var stateCls = ' is-' + norm;
     var logo = function(abv) {
+      if (window.brTeamBadge) return window.brTeamBadge(abv, 'xs');
       var src = _teamLogoSrc(abv);
       if (!src) return '<span class="rz-nfl-badge rz-nfl-badge-txt">' + abv + '</span>';
       return '<img class="rz-nfl-badge" src="' + src + '" alt="" data-team="' + abv + '"'
@@ -2593,6 +2594,7 @@
   }
 
   function _gamePillLogo(abv) {
+    if (window.brTeamBadge) return window.brTeamBadge(abv, 'xs');
     var src = _teamLogoSrc(abv);
     if (!src) return '<span class="rz-gp-logo rz-gp-logo-txt">' + abv + '</span>';
     return '<img class="rz-gp-logo" src="' + src + '" alt="" data-team="' + abv + '"'
@@ -3306,8 +3308,10 @@
       : '';
     var isDef = String(ev.pos || '').toUpperCase() === 'DEF';
     var defTeam = ev.nflTeam || (isDef ? ev.pid : '') || '';
-    var avSrc, avOnErr;
-    if (isDef && defTeam && window.brTeamLogoLocal) {
+    var avSrc, avOnErr, avBadgeHtml;
+    if (isDef && defTeam && window.brTeamBadge) {
+      avBadgeHtml = window.brTeamBadge(defTeam, 'xs');
+    } else if (isDef && defTeam && window.brTeamLogoLocal) {
       avSrc = window.brTeamLogoLocal(defTeam);
       avOnErr = 'brDefImgOnError(this)';
     } else if (isDef && defTeam) {
@@ -3319,12 +3323,15 @@
       avSrc = 'https://sleepercdn.com/content/nfl/players/thumb/' + ev.pid + '.jpg';
       avOnErr = "this.parentNode.classList.add('img-err')";
     }
+    var avInner = avBadgeHtml
+      ? avBadgeHtml
+      : '<img class="rz-headshot' + (isDef ? ' rz-team-logo' : '') + '" src="' + avSrc + '" alt=""'
+        + (isDef && defTeam ? ' data-team="' + String(defTeam).replace(/"/g, '') + '"' : '')
+        + ' onerror="' + avOnErr + '">';
     return (
       '<div class="rz-event ' + ev.kind + (ev.mine ? ' is-mine' : '') + (_isBigPlay(ev) ? ' is-big' : '') + (animate ? '' : ' rz-event-old') + '" data-pid="' + ev.pid + '">'
       + '<div class="rz-event-avatar rz-av-' + posKey + '" data-init="' + initials + '">'
-      + '<img class="rz-headshot' + (isDef ? ' rz-team-logo' : '') + '" src="' + avSrc + '" alt=""'
-      + (isDef && defTeam ? ' data-team="' + String(defTeam).replace(/"/g, '') + '"' : '')
-      + ' onerror="' + avOnErr + '">'
+      + avInner
       + '</div>'
       + '<div class="rz-event-body">'
       + situationHtml
