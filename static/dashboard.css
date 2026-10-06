@@ -45176,3 +45176,85 @@ table.rz-bs-table thead th:first-child {
 .team-badge-xs::before {
   width: 3px;
 }
+
+/* Breakout redesign: tabbed track record */
+.bo-tr-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 14px;
+}
+.bo-tr-tab {
+    font-size: 13px;
+    font-weight: 600;
+    padding: 8px 18px;
+    border-radius: 8px;
+    background: var(--surface-alt, #f1f5f9);
+    color: var(--text-muted);
+    cursor: pointer;
+    border: none;
+}
+.bo-tr-tab.active {
+    background: #1e3a5f;
+    color: #fff;
+}
+.bo-tr-hero {
+    background: linear-gradient(135deg, #1e3a5f, #2d5a8f);
+    border-radius: 12px;
+    padding: 16px;
+    color: #fff;
+    margin-bottom: 14px;
+}
+.bo-tr-hero.pre {
+    background: linear-gradient(135deg, #7c3aed, #a78bfa);
+}
+.bo-tr-hero .bo-tr-hero-lbl {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    opacity: 0.7;
+}
+.bo-tr-hero .bo-tr-hero-big {
+    font-size: 34px;
+    font-weight: 800;
+}
+.bo-tr-hero .bo-tr-hero-detail {
+    font-size: 12px;
+    opacity: 0.8;
+    margin-top: 4px;
+}
+.bo-wk-link {
+    cursor: pointer;
+    border-radius: 8px;
+    padding: 6px;
+    margin: 0 -6px 8px;
+}
+.bo-wk-link:hover {
+    background: var(--surface-alt, #f1f5f9);
+}
+.bo-show-all {
+    font-size: 12px;
+    color: #3b82f6;
+    font-weight: 600;
+    text-align: center;
+    padding: 8px;
+    cursor: pointer;
+}
+.bo-tr-hits-h {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin: 14px 0 6px;
+    font-weight: 700;
+}
+.bo-tr-hits-h.hits { color: #16a34a; }
+.bo-tr-hits-h.misses { color: #dc2626; }
+.bo-tr-hits-h.pending { color: #d97706; }
+.bo-plink {
+    color: inherit;
+    text-decoration: none;
+    cursor: pointer;
+}
+.bo-plink:hover {
+    color: #3b82f6;
+    text-decoration: underline;
+}
