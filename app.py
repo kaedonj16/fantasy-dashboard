@@ -9630,92 +9630,6 @@ def _render_usage_movers(ctx: dict, viewer_roster_id) -> str:
 
 
 
-def _roster_moves_alert_html(ctx: dict, viewer_roster_id) -> str:
-    """Roster-efficiency card for the Season Hub: IR-eligible players wasting
-    active spots, recovered players stuck in IR slots, and open taxi slots with
-    stashable rookies. Empty string when the roster is fully efficient."""
-    if not viewer_roster_id:
-        return ""
-    try:
-        from utils.roster_compliance import effective_taxi_slots, roster_compliance_issues
-
-        rosters = ctx.get("rosters") or []
-        roster = next(
-            (r for r in rosters if str(r.get("roster_id")) == str(viewer_roster_id)),
-            None,
-        )
-        if not roster:
-            return ""
-
-        league = ctx.get("league") or {}
-        settings = league.get("settings") or {}
-
-        reserve_slots = int(settings.get("reserve_slots") or 0)
-        # Taxi is dynasty-only; ignore leftover taxi_slots on keeper/redraft.
-        taxi_slots = effective_taxi_slots(
-            settings,
-            league=league,
-            platform=str(ctx.get("platform") or league.get("platform") or ""),
-        )
-        if reserve_slots <= 0 and taxi_slots <= 0:
-            return ""  # league has neither IR nor taxi slots
-
-        players_map = ctx.get("players_map") or {}
-        try:
-            full_players = get_players_global() or {}
-        except Exception:
-            full_players = {}
-
-        pids = [str(p) for p in (roster.get("players") or [])]
-        player_info = {}
-        for pid in pids:
-            base = players_map.get(pid) or {}
-            full = full_players.get(pid) or {}
-            player_info[pid] = {
-                "name": base.get("name") or full.get("full_name") or "",
-                "injury_status": full.get("injury_status") or "",
-                "years_exp": full.get("years_exp"),
-            }
-
-        issues = roster_compliance_issues(
-            players=pids,
-            starters=[str(p) for p in (roster.get("starters") or [])],
-            reserve=[str(p) for p in (roster.get("reserve") or [])],
-            taxi=[str(p) for p in (roster.get("taxi") or [])],
-            player_info=player_info,
-            reserve_slots=reserve_slots,
-            taxi_slots=taxi_slots,
-        )
-        if not issues:
-            return ""
-
-        n = len(issues)
-        title = f"{n} roster move" + ("s" if n > 1 else "") + " available"
-        items = "".join(
-            f"<li>{html.escape(i['detail'])}</li>" for i in issues[:5]
-        )
-        platform = ctx.get("platform", "sleeper")
-        season = ctx.get("current_season") or 0
-        league_id = ctx.get("league_id", "")
-        _roster_url = url_for(
-            "page_teams", platform=platform, season=season, league_id=league_id,
-        )
-        return f"""
-        <section class="os-card lineup-alert-card roster-moves-card" data-action-card="roster">
-          <div class="lineup-alert-head">
-            <span class="lineup-alert-title">{title}</span>
-            <span class="os-card-actions">
-              <a class="recap-generate-btn os-action-cta" href="{html.escape(_roster_url)}">Review roster</a>
-              <button type="button" class="os-action-dismiss" data-dismiss-card="roster" aria-label="Dismiss">&times;</button>
-            </span>
-          </div>
-          <ul class="lineup-alert-list">{items}</ul>
-        </section>"""
-    except Exception:
-        logger.debug("roster moves alert failed", exc_info=True)
-        return ""
-
-
 def _trade_window_data(ctx: dict, viewer_roster_id) -> dict | None:
     """Buy/sell trade-window advisor data: playoff odds plus roster-age
     standing plus the trade deadline, with partners on the opposite side of
@@ -12259,6 +12173,115 @@ def _need_pos_norm(n) -> str:
     return str(n or "").upper()
 
 
+def _next_steps_roster_actions(ctx: dict, viewer_roster_id) -> list:
+    """Collect roster-efficiency actions for the unified Next steps queue.
+
+    Covers IR-eligible players wasting active spots, recovered players stuck
+    in IR slots, and open taxi slots with stashable rookies. Each issue becomes
+    its own action card with the moves-remaining count folded in.
+    """
+    actions = []
+    if not viewer_roster_id:
+        return actions
+    try:
+        from utils.roster_compliance import effective_taxi_slots, roster_compliance_issues
+
+        rosters = ctx.get("rosters") or []
+        roster = next(
+            (r for r in rosters if str(r.get("roster_id")) == str(viewer_roster_id)),
+            None,
+        )
+        if not roster:
+            return actions
+
+        league = ctx.get("league") or {}
+        settings = league.get("settings") or {}
+
+        reserve_slots = int(settings.get("reserve_slots") or 0)
+        taxi_slots = effective_taxi_slots(
+            settings,
+            league=league,
+            platform=str(ctx.get("platform") or league.get("platform") or ""),
+        )
+        if reserve_slots <= 0 and taxi_slots <= 0:
+            return actions
+
+        # Taxi deadlines are usually the start of Week 1; Sleeper exposes no
+        # separate taxi_deadline setting, so roster_compliance_issues applies
+        # the week-1 default.
+        _cur_wk = int(ctx.get("current_week") or 0)
+
+        players_map = ctx.get("players_map") or {}
+        try:
+            full_players = get_players_global() or {}
+        except Exception:
+            full_players = {}
+
+        pids = [str(p) for p in (roster.get("players") or [])]
+        player_info = {}
+        for pid in pids:
+            base = players_map.get(pid) or {}
+            full = full_players.get(pid) or {}
+            player_info[pid] = {
+                "name": base.get("name") or full.get("full_name") or "",
+                "injury_status": full.get("injury_status") or "",
+                "years_exp": full.get("years_exp"),
+            }
+
+        issues = roster_compliance_issues(
+            players=pids,
+            starters=[str(p) for p in (roster.get("starters") or [])],
+            reserve=[str(p) for p in (roster.get("reserve") or [])],
+            taxi=[str(p) for p in (roster.get("taxi") or [])],
+            player_info=player_info,
+            reserve_slots=reserve_slots,
+            taxi_slots=taxi_slots,
+            current_week=_cur_wk,
+        )
+        if not issues:
+            return actions
+
+        platform = ctx.get("platform", "sleeper")
+        season = ctx.get("current_season") or 0
+        league_id = ctx.get("league_id", "")
+        _roster_url = url_for(
+            "page_teams", platform=platform, season=season, league_id=league_id,
+        )
+
+        # Moves remaining: waivers remaining for the week, if the league tracks it.
+        _moves_left = None
+        try:
+            _moves_left = int(settings.get("waiver_moves_remaining") or 0) or None
+        except (TypeError, ValueError):
+            pass
+
+        _kind_tag = {
+            "ir_stash": "Roster | IR",
+            "ir_activate": "Roster | IR",
+            "taxi_stash": "Roster | Taxi",
+        }
+        _kind_score = {"ir_stash": 0.8, "ir_activate": 0.7, "taxi_stash": 0.6}
+
+        for issue in issues[:3]:
+            _kind = str(issue.get("kind") or "")
+            _name = str(issue.get("name") or "")
+            _detail = str(issue.get("detail") or "")
+            _moves_txt = f" ({_moves_left} moves left)" if _moves_left else ""
+            actions.append({
+                "priority": "medium",
+                "tag": _kind_tag.get(_kind, "Roster"),
+                "action": _detail,
+                "why": f"Free up a roster spot{_moves_txt}",
+                "impact": None,
+                "cta_label": "Review roster",
+                "cta_url": _roster_url,
+                "score": _kind_score.get(_kind, 0.5),
+            })
+    except Exception:
+        logger.debug("next-steps roster actions failed", exc_info=True)
+    return actions
+
+
 def _render_next_steps_queue(
     ctx: dict,
     viewer_roster_id,
@@ -12280,6 +12303,7 @@ def _render_next_steps_queue(
     actions.extend(_next_steps_waiver_actions(ctx, viewer_roster_id, model_value_table or []))
     actions.extend(_next_steps_trade_actions(ctx, viewer_roster_id))
     actions.extend(_next_steps_trade_window_action(ctx, viewer_roster_id))
+    actions.extend(_next_steps_roster_actions(ctx, viewer_roster_id))
 
     # Rank by score (expected impact), highest first.
     actions.sort(key=lambda a: -(a.get("score") or 0))

@@ -951,6 +951,7 @@ def api_portfolio_actions():
                     player_info=r_info,
                     reserve_slots=reserve_slots,
                     taxi_slots=taxi_slots,
+                    current_week=week,
                 )
                 r_act = roster_slot_action(
                     r_issues, platform=plat, season=lg_season,

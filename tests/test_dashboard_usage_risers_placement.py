@@ -74,11 +74,12 @@ def test_awards_render_once_and_not_in_standings_panel():
 
 def test_risers_do_not_suppress_actions_fallback():
     src = _src()
-    # The nonblank-fallback decision still considers only the four action
-    # cards: risers alone must not suppress the "You're all set" all-clear.
+    # The nonblank-fallback decision still considers only the action cards:
+    # risers alone must not suppress the "You're all set" all-clear.
     # Cards are (key, html) tuples sorted by urgency; usage_movers_html must
-    # not be among them.
+    # not be among them. (roster_moves_html was folded into the Next steps
+    # queue, so it is no longer a standalone card.)
     assert "usage_movers_html" not in src.split("_action_cards =")[1].split("if _action_cards:")[0]
-    for name in ("roster_moves_html", "do_next_waiver_html"):
+    for name in ("do_next_waiver_html", "losing_trade_html"):
         assert name in src
     assert "You're all set for Week" in src

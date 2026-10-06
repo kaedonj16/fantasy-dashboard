@@ -998,6 +998,8 @@ def roster_compliance_issues(
     player_info: Dict[str, dict],
     reserve_slots: int = 0,
     taxi_slots: int = 0,
+    taxi_deadline_week: int = 0,
+    current_week: int = 0,
 ) -> List[dict]:
     """Return roster-efficiency issues, most actionable first.
 
@@ -1010,6 +1012,10 @@ def roster_compliance_issues(
             players are skipped.
         reserve_slots: league IR slot count (0 = league has no IR slots).
         taxi_slots: league taxi slot count.
+        taxi_deadline_week: explicit taxi deadline week when the league
+            defines one (0 = use the default). Defaults to the beginning of
+            Week 1, when taxi deadlines usually fall.
+        current_week: current fantasy week (0 = preseason/unknown).
 
     Issue kinds:
         ir_stash    - IR-eligible player on the active roster while an IR slot
@@ -1058,8 +1064,22 @@ def roster_compliance_issues(
             })
 
     # 3. Open taxi slots with a stashable rookie on the active bench.
+    # Taxi deadlines are usually the beginning of Week 1, so stash tips only
+    # apply before the season starts. An explicit taxi_deadline_week
+    # overrides the default week-1 rule.
+    _taxi_open = True
+    try:
+        _dl = int(taxi_deadline_week or 0)
+        _wk = int(current_week or 0)
+    except (TypeError, ValueError):
+        _dl, _wk = 0, 0
+    if _dl > 0:
+        if _wk > 0 and _wk > _dl:
+            _taxi_open = False
+    elif _wk >= 1:
+        _taxi_open = False
     free_taxi = max(0, int(taxi_slots or 0) - len(taxi_set))
-    if free_taxi > 0:
+    if free_taxi > 0 and _taxi_open:
         rookies = [
             p for p in active
             if p not in starter_set
