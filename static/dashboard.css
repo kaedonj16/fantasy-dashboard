@@ -42004,6 +42004,15 @@ a, button, [role="button"], [role="tab"], summary, label,
 .pm-tshare-bar i { display: block; height: 100%; border-radius: 4px; position: relative; min-width: 2px; }
 .pm-tshare-bar i.me { box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.35); }
 .pm-tshare-bar i span { position: absolute; inset: 0; display: grid; place-items: center; font-size: 10px; font-weight: 800; color: #fff; }
+/* RB situational usage bars */
+.pm-usage-bars-wrap { margin: 12px 0; }
+.pm-usage-legend { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.pm-usage-legend-item { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-muted); font-weight: 600; }
+.pm-usage-legend-item i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.pm-usage-row { margin-bottom: 8px; }
+.pm-usage-label { display: flex; justify-content: space-between; align-items: baseline; font-size: 11px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+.pm-usage-total { font-size: 10px; color: var(--text-muted); font-weight: 600; }
+.pm-usage-bar { margin-bottom: 0; }
 
 /* focus-position room table (container keeps the .pm-team-usage class) */
 .pm-team-usage { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 11px; overflow: hidden; }

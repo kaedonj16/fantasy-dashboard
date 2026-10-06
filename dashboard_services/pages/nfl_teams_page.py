@@ -905,6 +905,8 @@ function renderProfile(){{
     h+='</tr>';
   }});
   h+='</tbody></table></div><p class="nt-fine">'+esc(d.roster_note||"Current roster")+ (d.usage_note?(" "+esc(d.usage_note)):"") +' Tap a player to open their card.</p></section>';
+  // Backfield usage by situation (RB touch distribution from play-by-play)
+  h+='<section class="nt-psec nt-backfield-sec"><h3>Backfield usage</h3><div class="nt-backfield-bars" data-team="'+esc(state.team)+'" data-season="'+esc(String(state.season||""))+'"><div class="nt-loading">Loading usage...</div></div></section>';
   h+='<details class="nt-psec nt-collapse" open><summary><h3>Graphs</h3><span class="nt-chev" aria-hidden="true"></span></summary><div class="nt-graphs-grid">';
   h+='<section class="nt-psec"><h3>Home vs away</h3>'+splitsSVG(d,t)+'</section>';
   h+=fingerprintSection(t);
@@ -934,6 +936,50 @@ function renderProfile(){{
   h+='</div></div>';
   el.innerHTML=h;
   wireBack();
+  // Load backfield usage bars (async, non-blocking)
+  try {{
+    var bfEl = el.querySelector('.nt-backfield-bars');
+    if (bfEl) {{
+      var bfTeam = bfEl.getAttribute('data-team') || '';
+      var bfSeason = bfEl.getAttribute('data-season') || String(new Date().getFullYear());
+      var nowDt = new Date();
+      var seasonStart = new Date(2026, 8, 10);
+      var bfWeek = Math.max(1, Math.min(18, Math.floor((nowDt - seasonStart) / (7 * 24 * 3600 * 1000)) + 1));
+      api('/api/team-rb-usage?team=' + encodeURIComponent(bfTeam) + '&season=' + encodeURIComponent(bfSeason) + '&week=' + encodeURIComponent(bfWeek))
+        .then(function (ud) {{
+          if (!bfEl.isConnected) return;
+          if (!ud || !ud.situations || !ud.situations.length) {{
+            bfEl.innerHTML = '<div class="nt-fine">No usage data available.</div>';
+            return;
+          }}
+          var bh = '<div class="pm-usage-legend">';
+          var seen = {{}};
+          ud.situations.forEach(function (sit) {{
+            (sit.segments || []).forEach(function (s) {{
+              if (!seen[s.name] && s.name !== 'Others') {{
+                seen[s.name] = true;
+                bh += '<span class="pm-usage-legend-item"><i style="background:' + s.color + '"></i>' + esc(s.name) + '</span>';
+              }}
+            }});
+          }});
+          bh += '</div><div class="pm-usage-bars">';
+          ud.situations.forEach(function (sit) {{
+            if (!sit.segments || !sit.segments.length) return;
+            bh += '<div class="pm-usage-row"><div class="pm-usage-label">' + esc(sit.label) + '<span class="pm-usage-total">' + sit.total + '</span></div><div class="pm-tshare-bar pm-usage-bar">';
+            sit.segments.forEach(function (s) {{
+              var tip = s.name + ': ' + s.touches + ' touches (' + s.pct + '%)';
+              bh += '<i style="width:' + s.pct + '%;background:' + s.color + '" title="' + tip.replace(/"/g, '&quot;') + '">' + (s.touches >= 1 ? '<span>' + s.touches + '</span>' : '') + '</i>';
+            }});
+            bh += '</div></div>';
+          }});
+          bh += '</div>';
+          bfEl.innerHTML = bh;
+        }})
+        .catch(function () {{
+          if (bfEl.isConnected) bfEl.innerHTML = '<div class="nt-fine">Could not load usage.</div>';
+        }});
+    }}
+  }} catch (_) {{}}
   var cmpSel=el.querySelector("#ntCmpSel");
   if(cmpSel){{cmpSel.addEventListener("change",function(){{
     FPRINT_CMP={{team:state.team,abbr:cmpSel.value||null}};

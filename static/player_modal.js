@@ -2963,6 +2963,56 @@ function _pmTeamShareBar(data) {
     <div class="pm-tshare-bar">${bars}${restBar}</div>`;
 }
 
+// RB situational usage bars (RB only). Shows touch distribution across six
+// game situations. Data loads async from /api/team-rb-usage; this renders
+// the bars from the API response. Each RB keeps a fixed team color.
+function _pmTeamUsageBars(usageData, focusName) {
+  if (!usageData || !usageData.situations || !usageData.situations.length) return '';
+  const focus = String(focusName || '').toLowerCase();
+  const bars = usageData.situations.map(function (sit) {
+    if (!sit.segments || !sit.segments.length) return '';
+    const segs = sit.segments.map(function (s) {
+      const isMe = focus && String(s.name || '').toLowerCase() === focus;
+      const tip = `${s.name}: ${s.touches} touches (${s.pct}%)`;
+      const label = s.touches >= 1 ? `<span>${s.touches}</span>` : '';
+      return `<i class="${isMe ? 'me' : ''}" style="width:${s.pct}%;background:${s.color}" title="${tip.replace(/"/g, '&quot;')}">${label}</i>`;
+    }).join('');
+    return `<div class="pm-usage-row">
+      <div class="pm-usage-label">${sit.label}<span class="pm-usage-total">${sit.total}</span></div>
+      <div class="pm-tshare-bar pm-usage-bar">${segs}</div>
+    </div>`;
+  }).join('');
+  if (!bars) return '';
+  // Legend with fixed team colors
+  const seen = {};
+  const legend = [];
+  usageData.situations.forEach(function (sit) {
+    (sit.segments || []).forEach(function (s) {
+      if (!seen[s.name] && s.name !== 'Others') {
+        seen[s.name] = true;
+        legend.push(`<span class="pm-usage-legend-item"><i style="background:${s.color}"></i>${s.name}</span>`);
+      }
+    });
+  });
+  return `<div class="pm-tshare-cap"><span>Backfield usage by situation</span><span>${usageData.week ? 'Week ' + usageData.week : ''}</span></div>
+    <div class="pm-usage-legend">${legend.join('')}</div>
+    <div class="pm-usage-bars">${bars}</div>`;
+}
+
+// Async loader for RB usage bars in the player modal team tab.
+function _pmLoadUsageBars(container, team, season, week, focusName) {
+  if (!container || !team) return;
+  const url = `/api/team-rb-usage?team=${encodeURIComponent(team)}&season=${encodeURIComponent(season)}&week=${encodeURIComponent(week)}`;
+  fetch(url)
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(data => {
+      if (!container.isConnected) return;
+      const html = _pmTeamUsageBars(data, focusName);
+      if (html) container.innerHTML = html;
+    })
+    .catch(() => { /* silent: usage bars are enhancement, not critical */ });
+}
+
 function _pmTeamRoomColumns(pos, room) {
   room = room || [];
   const supported = key => room.some(row => row[key] != null);
@@ -3261,6 +3311,7 @@ function _pmBuildTeamHTML(data) {
     <div class="pm-team-sec pm-role-sec">
       <div class="pm-section-header"><span class="pm-section-label">Depth Chart / Competition</span><span class="pm-team-secnote">${pos} room</span></div>
       ${roleSummary}${shareBar}
+      ${pos === 'RB' ? `<div class="pm-usage-bars-wrap" data-team="${_pmEsc(team)}" data-season="${summarySeason}" data-focus="${_pmEsc(data.player_name || '')}"></div>` : ''}
       <div class="pm-team-usage pm-room-${pos.toLowerCase()}">
         <div class="pm-troom-row pm-troom-head"><span></span><span>${pos} Room</span>${roomCols.map(c => `<span class="pm-col-${c.key}">${c.label}</span>`).join('')}</div>
         ${roomRows}
@@ -3306,6 +3357,22 @@ function _pmSyncDisclosure(button, body, open) {
 function _pmWireTeamPanel(panel, playerId) {
   if (!panel) return;
   panel.dataset.pmPlayerId = String(playerId || '');
+
+  // Load RB situational usage bars (async, non-blocking)
+  try {
+    const usageWrap = panel.querySelector('.pm-usage-bars-wrap');
+    if (usageWrap) {
+      const team = usageWrap.dataset.team || '';
+      const season = usageWrap.dataset.season || String(new Date().getFullYear());
+      const focus = usageWrap.dataset.focus || '';
+      // Use current NFL week (approximate: week 5 in early Oct 2026)
+      // The API will return empty if no data for the week.
+      const now = new Date();
+      const seasonStart = new Date(2026, 8, 10); // Sep 10, 2026 (Thu of week 1)
+      const weekNum = Math.max(1, Math.min(18, Math.floor((now - seasonStart) / (7 * 24 * 3600 * 1000)) + 1));
+      _pmLoadUsageBars(usageWrap, team, season, weekNum, focus);
+    }
+  } catch (_) {}
 
   const openTeammate = function (row) {
     const pid = row && row.dataset.pid, pname = row && row.dataset.pname;
