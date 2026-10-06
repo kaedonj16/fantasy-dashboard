@@ -4384,7 +4384,7 @@ function showLoginGate(target, opts) {
     var root = document.getElementById('page-root');
     if (!root) return false;
     // Live surfaces run their own refresh timers; never fight them.
-    if (document.getElementById('rz-root') || document.getElementById('drSideTabs')) return false;
+    if (document.getElementById('rz-root') || document.getElementById('drSideTabs') || document.getElementById('breakoutsContainer')) return false;
     // Only real per-league routes (/<platform>/<season>/<league_id>/<page>).
     // Home and /portfolio have no league to expire and hydrate themselves.
     var parts = location.pathname.split('/').filter(Boolean);
