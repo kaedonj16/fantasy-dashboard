@@ -464,3 +464,40 @@ def test_recap_standings_rows_division_record_breaks_record_tie():
     flat = _recap_standings_rows(df, {}, False)
     assert [r["rid"] for r in flat] == ["3", "2", "1", "4"]
     assert all(r["div_record"] is None for r in flat)
+
+
+def test_render_standings_form_bars():
+    pytest.importorskip("flask")
+    pd = pytest.importorskip("pandas")
+    import app as appmod
+
+    rows = [
+        {"owner": "Alpha", "Wins": 4, "Losses": 0, "Ties": 0, "PF": 500, "PA": 300,
+         "Streak": "W4", "avatar": "", "past_sos": 100.0, "ros_sos": 100.0, "Win%": 1.0},
+        {"owner": "Bravo", "Wins": 0, "Losses": 4, "Ties": 0, "PF": 300, "PA": 500,
+         "Streak": "L4", "avatar": "", "past_sos": 100.0, "ros_sos": 100.0, "Win%": 0.0},
+    ]
+    df = pd.DataFrame(rows)
+    o2r = {"Alpha": "1", "Bravo": "2"}
+    weekly = []
+    for wk in (1, 2, 3, 4):
+        weekly.append({"week": wk, "matchup_id": 1, "roster_id": 1, "owner": "Alpha",
+                       "points": 120.0, "finalized": True})
+        weekly.append({"week": wk, "matchup_id": 1, "roster_id": 2, "owner": "Bravo",
+                       "points": 100.0, "finalized": True})
+    detailed = pd.DataFrame(weekly)
+
+    html = appmod.render_standings(df, length=2, owner_to_rid=o2r, detailed_df=detailed)
+    assert "st-formbars" in html
+    assert html.count("st-fbar w") == 4  # Alpha's four wins
+    assert html.count("st-fbar l") == 4  # Bravo's four losses
+    assert "W4" in html  # tooltip keeps the exact streak label
+    assert ">Form<" in html  # header renamed from Streak
+    # No left-edge bars: neither playoff status nor streak edges.
+    assert "streak-w4plus" not in html and "streak-l4plus" not in html
+    assert "pp-in" not in html and "pp-out" not in html
+
+    # No weekly data -> dash fallback, no crash.
+    flat = appmod.render_standings(df, length=2, owner_to_rid=o2r)
+    assert "st-formbars" not in flat
+    assert "&ndash;" in flat

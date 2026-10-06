@@ -152,7 +152,6 @@ from utils.utils import (
     load_week_projection,
     load_week_schedule,
     streak_class,
-    streak_edge_class,
     canon_team,
     canonicalize_schedule,
     team_abbr_keys,
@@ -9079,6 +9078,34 @@ def render_standings(team_stats, length, all_play: dict = None,
     from utils.standings_divisions import division_records, format_record_html, format_record
     _div_records = division_records(detailed_df, _div_by_rid) if _use_div else {}
 
+    # Recent form: last 5 game results per owner (oldest -> newest) for the
+    # form-bar column. Same matchup-pairing logic as compute_streaks().
+    _form: dict = {}
+    try:
+        if detailed_df is not None and not detailed_df.empty:
+            _fr_rows = []
+            for (_, _mid), _g in detailed_df.groupby(["week", "matchup_id"]):
+                _g = _g.sort_values("roster_id")
+                if len(_g) != 2:
+                    continue
+                _a, _b = _g.iloc[0], _g.iloc[1]
+                _pa = float(_a.get("points", 0.0) or 0.0)
+                _pb = float(_b.get("points", 0.0) or 0.0)
+                if _pa > _pb:
+                    _fr_rows.append((_a["owner"], int(_a["week"]), "W"))
+                    _fr_rows.append((_b["owner"], int(_b["week"]), "L"))
+                elif _pb > _pa:
+                    _fr_rows.append((_b["owner"], int(_b["week"]), "W"))
+                    _fr_rows.append((_a["owner"], int(_a["week"]), "L"))
+                else:
+                    _fr_rows.append((_a["owner"], int(_a["week"]), "T"))
+                    _fr_rows.append((_b["owner"], int(_b["week"]), "T"))
+            _fr = pd.DataFrame(_fr_rows, columns=["owner", "week", "result"])
+            for _owner, _og in _fr.sort_values("week").groupby("owner"):
+                _form[str(_owner)] = _og["result"].tolist()[-5:]
+    except Exception:
+        logger.debug("[standings] recent form skipped", exc_info=True)
+
     def _row_div(owner) -> int:
         rid = (owner_to_rid or {}).get(str(owner))
         if rid is None:
@@ -9249,6 +9276,23 @@ def render_standings(team_stats, length, all_play: dict = None,
         streak = row.get("Streak", "")
         avatar = row.get("avatar", "")
 
+        # Form bars: last-N results as mini bars (oldest -> newest). Tooltip
+        # keeps the exact streak label + sequence for screen readers.
+        _seq = _form.get(str(row["owner"]), [])
+        if _seq:
+            _bars = "".join(
+                f"<span class='st-fbar {'w' if r == 'W' else 'l' if r == 'L' else 't'}'></span>"
+                for r in _seq
+            )
+            _tip = (f"{streak} · " if streak else "") + f"last {len(_seq)}: {' '.join(_seq)}"
+            _tip_esc = html.escape(_tip, quote=True)
+            form_cell = (
+                f"<span class='st-formbars' title='{_tip_esc}' "
+                f"aria-label='{_tip_esc}'>{_bars}</span>"
+            )
+        else:
+            form_cell = "<span class='muted'>&ndash;</span>"
+
         img = (
             f"<img class='avatar sm' src='{avatar}' alt='' loading='lazy' decoding='async' "
             "onerror=\"this.style.display='none'\">"
@@ -9285,10 +9329,6 @@ def render_standings(team_stats, length, all_play: dict = None,
 
         _p = pic_by_name.get(owner)
         _trcls = "st-div-leader" if _is_div_lead else ""
-        # Streak edge signal: colored left edge, intensity scales with length.
-        _streak_edge = streak_edge_class(streak)
-        if _streak_edge:
-            _trcls = (_trcls + " " + _streak_edge).strip()
         _tdcls = "team"
         _mo_attr = ""
         _div_lead_tag = (
@@ -9352,7 +9392,7 @@ def render_standings(team_stats, length, all_play: dict = None,
               <td>{row['PF']:.1f}</td>
               <td>{row['PA']:.1f}</td>
               <td class="st-trend-cell">{(sparklines or {}).get(owner) or ''}</td>
-              <td>{html.escape(str(streak or ""))}</td>
+              <td>{form_cell}</td>
               <td>{_luck_cell}</td>
               <td>{_seed_cell}</td>
               <td class="st-detail-col num">{_allplay}</td>
@@ -9402,7 +9442,7 @@ def render_standings(team_stats, length, all_play: dict = None,
               <th scope="col">PF</th>
               <th scope="col">PA</th>
               <th scope="col" class="st-trend-th" title="Points-for by week (most recent at the dot)">Trend</th>
-              <th scope="col">Streak</th>
+              <th scope="col">Form</th>
               <th scope="col" title="Actual wins minus expected wins (from all-play). + = luckier than your scoring earned.">Luck</th>
               <th scope="col" title="Where you'd be seeded by all-play record instead of actual wins.">Exp. Seed</th>
               <th scope="col" class="st-detail-col" title="All-play win rate: how this team fares against every other team each week. This is what the power rankings sort by.">All-Play</th>
