@@ -60,7 +60,9 @@ def test_why_line_market_mentions_volume_and_trend():
     })
     assert "31" in line
     assert "rising" in line
-    assert "Sell-high" in line
+    # Trade intel cards are framed around market reality, not the BR model.
+    assert "BR model" not in line
+    assert "Sell-high" not in line
     assert "\u2014" not in line
 
 

@@ -31238,6 +31238,18 @@ def api_trade_intel_trending():
                 "why_line": _why_line or None,
             })
 
+        # Market-intel extras: 90d heat + buyer split per card. Best-effort by
+        # contract: the cards render fine without them.
+        try:
+            _extras = trade_intel_card_extras([p["player_id"] for p in result])
+            for p in result:
+                _e = _extras.get(str(p["player_id"])) or {}
+                p["velocity"] = _e.get("velocity") or {
+                    "recent_90d": 0, "prior_90d": 0, "trend": None}
+                p["buyer_split"] = _e.get("buyer_split") or {}
+        except Exception:
+            logger.debug("trade-intel card extras failed", exc_info=True)
+
         # Calculate pagination info
         total_pages = (total_players + per_page - 1) // per_page
 
@@ -31368,6 +31380,8 @@ def api_trade_intel_player(player_id: str):
                 "season": season,
                 "trade_count": 0,
                 "common_packages": common_packages,
+                "velocity": {"recent_90d": 0, "prior_90d": 0, "trend": None},
+                "buyer_split": {},
             })
 
         model_val = float(stat_row["model_value"] or 0)
@@ -31375,6 +31389,18 @@ def api_trade_intel_player(player_id: str):
         calibrated_val = float(stat_row["calibrated_value"] or 0)
         # Delta is market vs raw model - shows how much the model diverges from real trades
         delta = round(market_val - model_val, 1) if model_val and market_val else None
+
+        # Market-intel extras for the card (90d heat + buyer split).
+        # Best-effort: the card renders fine without them.
+        _velocity = {"recent_90d": 0, "prior_90d": 0, "trend": None}
+        _buyer_split = {}
+        try:
+            _extras = trade_intel_card_extras([player_id])
+            _e = _extras.get(str(player_id)) or {}
+            _velocity = _e.get("velocity") or _velocity
+            _buyer_split = _e.get("buyer_split") or {}
+        except Exception:
+            logger.debug("trade-intel card extras failed", exc_info=True)
 
         return jsonify({
             "player_id": player_id,
@@ -31390,6 +31416,8 @@ def api_trade_intel_player(player_id: str):
             "buy_sell_ratio": float(stat_row["buy_sell_ratio"]) if stat_row["buy_sell_ratio"] else None,
             "avg_package_value": float(stat_row["avg_package_value"]) if stat_row["avg_package_value"] else None,
             "common_packages": common_packages,
+            "velocity": _velocity,
+            "buyer_split": _buyer_split,
         })
 
     except Exception:
@@ -34213,6 +34241,223 @@ def _real_trade_packages_for_target(
     }
 
 
+def _ti_classify_side(rec):
+    """Classify a trade-context side snapshot as contender/rebuilder/mid-pack.
+
+    Extracted from _trade_intel_extras so the trade intel cards can reuse the
+    same record-at-trade-time classification without the package machinery.
+    """
+    try:
+        w = int(rec.get("wins", 0) or 0)
+        l = int(rec.get("losses", 0) or 0)
+        t = int(rec.get("ties", 0) or 0)
+    except (TypeError, ValueError, AttributeError):
+        return None
+    g = w + l + t
+    if g <= 0:
+        return None
+    label = f"{w}-{l}" + (f"-{t}" if t else "")
+    pct = w / g
+    cls = "contender" if pct >= 0.6 else ("rebuilder" if pct <= 0.4 else "mid-pack")
+    return {"record": label, "class": cls}
+
+
+def _ti_package_label(assets, values_by_id):
+    """Compact '2026 1st + WR2' label for assets sent one way in a trade."""
+    counts: dict = {}
+    for a in assets or []:
+        if a.get("asset_type") == "player" and a.get("sent_player_id"):
+            info = (values_by_id or {}).get(str(a["sent_player_id"]))
+            if not info:
+                continue
+            tier = _asset_tier(float(info.get("value") or 0))
+            part = f"{info['position']}{tier}"
+        elif a.get("asset_type") == "pick" and a.get("pick_round"):
+            try:
+                rnd = int(a["pick_round"])
+            except (TypeError, ValueError):
+                continue
+            sfx = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
+            season = str(a.get("pick_season") or "").strip()
+            part = f"{season} {rnd}{sfx}".strip()
+        else:
+            continue
+        counts[part] = counts.get(part, 0) + 1
+    if not counts:
+        return None
+    return " + ".join(
+        f"{n}× {p}" if n > 1 else p for p, n in sorted(counts.items())
+    )
+
+
+def _ti_velocity_trend(recent, prior):
+    """Heating up / cooling off / steady from 90d vs prior-90d trade counts."""
+    try:
+        recent = int(recent or 0)
+        prior = int(prior or 0)
+    except (TypeError, ValueError):
+        return None
+    if recent + prior < 4:
+        return None
+    if recent == 0:
+        return "cooling_off"
+    if prior == 0:
+        return "heating_up"
+    if recent >= prior * 1.5:
+        return "heating_up"
+    if prior >= recent * 1.5:
+        return "cooling_off"
+    return "steady"
+
+
+# TTL cache for the card-extras tier map. load_model_value_table re-reads and
+# recalibrates on every call, so the trending feed (20 players/page) must not
+# call it per request. Values feed tier labels only ("WR2"), never a number
+# shown to the user, so a 10-minute staleness is harmless.
+_TI_CARD_VALUES_CACHE: dict = {"at": 0.0, "by_id": {}}
+_TI_CARD_VALUES_TTL = 600
+
+
+def _ti_card_values_by_id():
+    import time
+    now = time.time()
+    if now - _TI_CARD_VALUES_CACHE["at"] < _TI_CARD_VALUES_TTL \
+            and _TI_CARD_VALUES_CACHE["by_id"]:
+        return _TI_CARD_VALUES_CACHE["by_id"]
+    by_id: dict = {}
+    try:
+        from utils.data_cache import load_model_value_table
+        for _p in load_model_value_table() or []:
+            _pid = str(_p.get("id") or "")
+            if _pid:
+                by_id[_pid] = {
+                    "position": str(_p.get("position") or "").upper(),
+                    "value": float(_p.get("value") or 0),
+                }
+    except Exception:
+        logger.debug("trade-intel card extras value table failed", exc_info=True)
+    _TI_CARD_VALUES_CACHE["at"] = now
+    _TI_CARD_VALUES_CACHE["by_id"] = by_id
+    return by_id
+
+
+def trade_intel_card_extras(player_ids):
+    """Batched 90d heat + buyer-split intel for trade intel cards.
+
+    One query covers every player on the page: distinct trades in the last
+    180 days (all leagues, matching the market stats scope) involving each
+    player, with per-trade context snapshots and the assets sent the other
+    way. Returns {player_id: {"velocity": {"recent_90d", "prior_90d",
+    "trend"}, "buyer_split": {"contender": {"label", "count", "total"},
+    "rebuilder": {...}}}}. Best-effort by contract: returns {} on any failure
+    so the cards still render.
+    """
+    out: dict = {}
+    pids = [str(p) for p in (player_ids or []) if p]
+    if not pids:
+        return out
+    try:
+        from dashboard_services.db import get_conn as _gc
+        with _gc() as conn:
+            rows = conn.execute(
+                """
+                SELECT a_in.player_id AS focus_pid, t.id AS trade_id,
+                       t.trade_context AS tctx, a_in.side AS recv_side,
+                       t.created_at AS tcreated,
+                       a.asset_type, a.player_id AS sent_pid,
+                       a.pick_round, a.pick_season
+                FROM trade_intel_trades t
+                JOIN trade_intel_assets a_in
+                  ON a_in.trade_id = t.id
+                 AND a_in.asset_type = 'player'
+                 AND a_in.player_id = ANY(%s)
+                JOIN trade_intel_assets a
+                  ON a.trade_id = t.id
+                 AND a.side != a_in.side
+                WHERE t.created_at > NOW() - INTERVAL '180 days'
+                """,
+                (pids,),
+            ).fetchall()
+    except Exception:
+        logger.debug("trade-intel card extras lookup failed", exc_info=True)
+        return out
+
+    values_by_id: dict = _ti_card_values_by_id()
+
+    from datetime import datetime, timedelta, timezone
+    _cutoff = datetime.now(timezone.utc) - timedelta(days=90)
+
+    def _is_recent(ts):
+        if ts is None:
+            return False
+        try:
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            return ts > _cutoff
+        except Exception:
+            return False
+
+    per_pid: dict = {}
+    for r in rows:
+        pid = str(r["focus_pid"])
+        d = per_pid.setdefault(pid, {})
+        tid = r["trade_id"]
+        t = d.setdefault(tid, {
+            "created": r["tcreated"],
+            "recv_side": r["recv_side"],
+            "ctx": r["tctx"],
+            "assets": [],
+        })
+        t["assets"].append({
+            "asset_type": r["asset_type"],
+            "sent_player_id": r["sent_pid"],
+            "pick_round": r["pick_round"],
+            "pick_season": r["pick_season"],
+        })
+
+    for pid, trades in per_pid.items():
+        tids = list(trades)
+        recent = sum(1 for tid in tids if _is_recent(trades[tid]["created"]))
+        prior = len(tids) - recent
+        velocity = {
+            "recent_90d": recent,
+            "prior_90d": prior,
+            "trend": _ti_velocity_trend(recent, prior),
+        }
+        buckets: dict = {}
+        for tid in tids:
+            t = trades[tid]
+            ctx = t["ctx"]
+            if isinstance(ctx, str):
+                try:
+                    ctx = json.loads(ctx)
+                except Exception:
+                    ctx = {}
+            recv = t["recv_side"]
+            if not recv or not isinstance(ctx, dict):
+                continue
+            buyer = _ti_classify_side(ctx.get(recv))
+            if not buyer or buyer["class"] not in ("contender", "rebuilder"):
+                continue
+            label = _ti_package_label(t["assets"], values_by_id)
+            if not label:
+                continue
+            bucket = buckets.setdefault(buyer["class"], {})
+            bucket[label] = bucket.get(label, 0) + 1
+        buyer_split = {}
+        for cls, bucket in buckets.items():
+            if not bucket:
+                continue
+            top_label, top_count = max(bucket.items(), key=lambda kv: kv[1])
+            buyer_split[cls] = {
+                "label": top_label,
+                "count": top_count,
+                "total": sum(bucket.values()),
+            }
+        out[pid] = {"velocity": velocity, "buyer_split": buyer_split}
+    return out
+
+
 def _trade_intel_extras(trade_meta, trade_pkgs, sig_counts, result_packages,
                         values_by_id, target_player_id, is_sf, num_teams):
     """Enrich real-trade packages with buyer/seller context intel.
@@ -34223,21 +34468,6 @@ def _trade_intel_extras(trade_meta, trade_pkgs, sig_counts, result_packages,
     try/except and the endpoint works without it.
     """
     from dashboard_services.db import get_conn as _gc
-
-    def _classify_side(rec):
-        try:
-            w = int(rec.get("wins", 0) or 0)
-            l = int(rec.get("losses", 0) or 0)
-            t = int(rec.get("ties", 0) or 0)
-        except (TypeError, ValueError, AttributeError):
-            return None
-        g = w + l + t
-        if g <= 0:
-            return None
-        label = f"{w}-{l}" + (f"-{t}" if t else "")
-        pct = w / g
-        cls = "contender" if pct >= 0.6 else ("rebuilder" if pct <= 0.4 else "mid-pack")
-        return {"record": label, "class": cls}
 
     def _trade_sample(tid):
         meta = trade_meta.get(tid) or {}
@@ -34250,9 +34480,9 @@ def _trade_intel_extras(trade_meta, trade_pkgs, sig_counts, result_packages,
         recv = meta.get("recv_side")
         if not recv or not isinstance(ctx, dict):
             return None
-        buyer = _classify_side(ctx.get(recv))
+        buyer = _ti_classify_side(ctx.get(recv))
         other = "b" if recv == "a" else "a"
-        seller = _classify_side(ctx.get(other))
+        seller = _ti_classify_side(ctx.get(other))
         if not buyer or not seller:
             return None
         sample = {
@@ -34270,30 +34500,7 @@ def _trade_intel_extras(trade_meta, trade_pkgs, sig_counts, result_packages,
         return sample
 
     def _trade_label(tid):
-        counts: dict = {}
-        for a in trade_pkgs.get(tid, []):
-            if a["asset_type"] == "player" and a["sent_player_id"]:
-                info = values_by_id.get(str(a["sent_player_id"]))
-                if not info:
-                    continue
-                tier = _asset_tier(float(info.get("value") or 0))
-                part = f"{info['position']}{tier}"
-            elif a["asset_type"] == "pick" and a["pick_round"]:
-                try:
-                    rnd = int(a["pick_round"])
-                except (TypeError, ValueError):
-                    continue
-                sfx = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
-                season = str(a.get("pick_season") or "").strip()
-                part = f"{season} {rnd}{sfx}".strip()
-            else:
-                continue
-            counts[part] = counts.get(part, 0) + 1
-        if not counts:
-            return None
-        return " + ".join(
-            f"{n}× {p}" if n > 1 else p for p, n in sorted(counts.items())
-        )
+        return _ti_package_label(trade_pkgs.get(tid, []), values_by_id)
 
     _samples = {tid: _trade_sample(tid) for tid in trade_pkgs}
     _created = {tid: (trade_meta.get(tid) or {}).get("created_at") for tid in trade_pkgs}
