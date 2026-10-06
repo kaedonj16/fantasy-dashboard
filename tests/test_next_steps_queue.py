@@ -56,3 +56,19 @@ def test_no_em_dashes_in_next_steps():
     end = src.find("def _nfl_regular_season_kickoff_ms", start)
     body = src[start:end]
     assert "\u2014" not in body, "em dash found in next-steps code"
+
+
+def test_lineup_dedupe_excludes_banner_swaps():
+    """Swaps already shown in the lineup-issues banner are omitted from Next steps."""
+    src = (ROOT / "app.py").read_text(encoding="utf-8")
+    # _next_steps_lineup_actions accepts exclude_swap_pids
+    assert "exclude_swap_pids" in src
+    # The filter checks (in_pid, out_pid) tuples
+    assert '(str(s["in"]), str(s["out"])) in exclude_swap_pids' in src
+    # _render_next_steps_queue threads it through
+    assert "exclude_swap_pids=exclude_swap_pids" in src
+    # Banner stashes its swap pids in ctx for the queue to consume
+    assert 'ctx["_banner_swap_pids"]' in src
+    # dashboard_page.py passes banner pids to the queue
+    dash = (ROOT / "dashboard_services" / "pages" / "dashboard_page.py").read_text(encoding="utf-8")
+    assert 'ctx.get("_banner_swap_pids")' in dash

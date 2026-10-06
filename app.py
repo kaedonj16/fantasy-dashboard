@@ -9710,6 +9710,16 @@ def _viewer_lineup_alert_html(ctx: dict, viewer_roster_id) -> str:
         except Exception:
             logger.debug("projection upgrades failed", exc_info=True)
 
+        # Stash the displayed swap pids so the Next steps queue can dedupe
+        # against the banner (avoid showing "Start X over Y" twice).
+        try:
+            ctx["_banner_swap_pids"] = {
+                (str(sw.get("in")), str(sw.get("out")))
+                for sw in (_swap_suggestions or [])
+            }
+        except Exception:
+            pass
+
         if not issues:
             return ""
 
@@ -12003,11 +12013,14 @@ def _render_do_next_waiver_card(
         </section>"""
 
 
-def _next_steps_lineup_actions(ctx: dict, viewer_roster_id) -> list:
+def _next_steps_lineup_actions(ctx: dict, viewer_roster_id, exclude_swap_pids=None) -> list:
     """Collect lineup actions for the unified Next steps queue.
 
     Returns list of action dicts with priority, tag, action text, why,
     impact, CTA label/URL, and sort score. Empty list when nothing to do.
+
+    exclude_swap_pids: set of (in_pid, out_pid) tuples already surfaced in
+    the lineup-issues banner; matching swaps are skipped to avoid duplicates.
     """
     actions = []
     if not viewer_roster_id:
@@ -12071,6 +12084,9 @@ def _next_steps_lineup_actions(ctx: dict, viewer_roster_id) -> list:
                 injury_status=injury_status,
             )
             for s in swaps[:2]:
+                # Skip swaps already surfaced in the lineup-issues banner.
+                if exclude_swap_pids and (str(s["in"]), str(s["out"])) in exclude_swap_pids:
+                    continue
                 _in_name = (players_map.get(s["in"]) or {}).get("name") or f"Player {s['in']}"
                 _out_name = (players_map.get(s["out"]) or {}).get("name") or f"Player {s['out']}"
                 _in_proj = float(proj_map.get(s["in"]) or 0)
@@ -12348,16 +12364,20 @@ def _render_next_steps_queue(
     season,
     current_week,
     preview_limit: int = 3,
+    exclude_swap_pids=None,
 ) -> str:
     """Unified Next steps action queue: one ranked list across lineup, waivers,
     and trades. Each item names a specific action, explains why, shows impact,
     and deep-links to the move. Replaces the old waiver-only card.
+
+    exclude_swap_pids: (in_pid, out_pid) tuples already shown in the
+    lineup-issues banner; matching lineup swaps are omitted to avoid dupes.
     """
     if not viewer_roster_id:
         return ""
 
     actions = []
-    actions.extend(_next_steps_lineup_actions(ctx, viewer_roster_id))
+    actions.extend(_next_steps_lineup_actions(ctx, viewer_roster_id, exclude_swap_pids=exclude_swap_pids))
     actions.extend(_next_steps_waiver_actions(ctx, viewer_roster_id, model_value_table or []))
     actions.extend(_next_steps_trade_actions(ctx, viewer_roster_id))
 
@@ -35569,7 +35589,9 @@ def build_portfolio_body(
     rec_cls = "color-win" if total_wins > total_losses else ("color-loss" if total_losses > total_wins else "")
     # Last-week aggregate: W/L/T across leagues with a finalized result for the
     # most recent week. Only meaningful after week 1, so the cell is omitted
-    # entirely until then (never a dangling "0-0").
+    # entirely until then. The cell renders from week 2 on even before any
+    # league has a result, so cold cards can hydrate it client-side via
+    # updateLastWeekRecord() (which no-ops when the cell is absent).
     _lw_w = _lw_l = _lw_t = 0
     for _lg in valid_leagues or []:
         _r = (_lg.get("last_week_result") or "").strip().upper()
@@ -35579,8 +35601,9 @@ def build_portfolio_body(
             _lw_l += 1
         elif _r == "T":
             _lw_t += 1
-    _show_lw = bool(current_week and current_week > 1 and (_lw_w + _lw_l + _lw_t) > 0)
-    _lw_str = f"{_lw_w}-{_lw_l}" + (f"-{_lw_t}" if _lw_t else "")
+    _show_lw = bool(current_week and current_week > 1)
+    _has_lw_data = (_lw_w + _lw_l + _lw_t) > 0
+    _lw_str = (f"{_lw_w}-{_lw_l}" + (f"-{_lw_t}" if _lw_t else "")) if _has_lw_data else "-"
     _lw_cls = "color-win" if _lw_w > _lw_l else ("color-loss" if _lw_l > _lw_w else "")
     _lw_cell = (
         f"<div class='pf-stat'><div class='pf-stat-val {_lw_cls}' data-portfolio-lw-record>{_lw_str}</div>"

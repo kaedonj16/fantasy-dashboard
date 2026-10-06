@@ -104,6 +104,7 @@ def build_dashboard_body(ctx: dict) -> str:
             _wv_table,
             season=season,
             current_week=current_week,
+            exclude_swap_pids=ctx.get("_banner_swap_pids"),
         )
     except Exception:
         logger.debug("dashboard next-steps queue failed", exc_info=True)
