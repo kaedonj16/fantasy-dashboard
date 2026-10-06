@@ -126,3 +126,97 @@ class TestBuildPlayerColorMap:
         cmap1 = _build_player_color_map("BUF", {"a": 10, "b": 20})
         cmap2 = _build_player_color_map("BUF", {"b": 20, "a": 10})
         assert cmap1 == cmap2
+
+
+class TestPositionFiltering:
+    """Position filtering must not silently fail open on production."""
+
+    def _clear_caches(self):
+        from utils import rb_usage
+        rb_usage._ROSTER_POS_CACHE.clear()
+        rb_usage._POS_GSIS_CACHE.clear()
+
+    def test_roster_lookup_returns_rb_gsis_ids(self, monkeypatch):
+        """Primary source: nflverse rosters give positions by GSIS ID."""
+        pd = pytest.importorskip("pandas")
+        from utils import rb_usage
+        self._clear_caches()
+
+        fake_rosters = pd.DataFrame([
+            {"player_id": "gsis-rb1", "position": "RB", "team": "BUF"},
+            {"player_id": "gsis-rb2", "position": "RB", "team": "BUF"},
+            {"player_id": "gsis-wr1", "position": "WR", "team": "BUF"},
+            {"player_id": "gsis-qb1", "position": "QB", "team": "BUF"},
+            {"player_id": "gsis-rb-other", "position": "RB", "team": "KC"},
+        ])
+        fake_nfl = type("FakeNfl", (), {
+            "import_seasonal_rosters": staticmethod(lambda seasons: fake_rosters),
+        })()
+        monkeypatch.setitem(__import__("sys").modules, "nfl_data_py", fake_nfl)
+
+        ids = rb_usage._get_position_gsis_ids_from_rosters(2026, "BUF", ["RB"])
+        assert ids == {"gsis-rb1", "gsis-rb2"}
+
+    def test_roster_lookup_filters_wr_te(self, monkeypatch):
+        pd = pytest.importorskip("pandas")
+        from utils import rb_usage
+        self._clear_caches()
+
+        fake_rosters = pd.DataFrame([
+            {"player_id": "gsis-rb1", "position": "RB", "team": "BUF"},
+            {"player_id": "gsis-wr1", "position": "WR", "team": "BUF"},
+            {"player_id": "gsis-te1", "position": "TE", "team": "BUF"},
+        ])
+        fake_nfl = type("FakeNfl", (), {
+            "import_seasonal_rosters": staticmethod(lambda seasons: fake_rosters),
+        })()
+        monkeypatch.setitem(__import__("sys").modules, "nfl_data_py", fake_nfl)
+
+        ids = rb_usage._get_position_gsis_ids("BUF", ["WR", "TE"], season=2026)
+        assert ids == {"gsis-wr1", "gsis-te1"}
+
+    def test_falls_back_to_db_when_rosters_unavailable(self, monkeypatch):
+        """If nflverse rosters fail, try the crosswalk + DB path."""
+        from utils import rb_usage
+        self._clear_caches()
+
+        # Rosters raise -> primary source unavailable
+        def _boom(seasons):
+            raise RuntimeError("no network")
+        fake_nfl = type("FakeNfl", (), {
+            "import_seasonal_rosters": staticmethod(_boom),
+            "import_weekly_rosters": staticmethod(_boom),
+            "import_rosters": staticmethod(_boom),
+        })()
+        monkeypatch.setitem(__import__("sys").modules, "nfl_data_py", fake_nfl)
+
+        # DB fallback returns RBs
+        monkeypatch.setattr(
+            rb_usage, "_get_position_gsis_ids_from_db",
+            lambda team, positions: {"gsis-rb1"},
+        )
+        ids = rb_usage._get_position_gsis_ids("BUF", ["RB"], season=2026)
+        assert ids == {"gsis-rb1"}
+
+    def test_logs_warning_when_both_sources_fail(self, monkeypatch, caplog):
+        """Last resort: empty set + warning, never silent."""
+        import logging
+        from utils import rb_usage
+        self._clear_caches()
+
+        def _boom(seasons):
+            raise RuntimeError("no network")
+        fake_nfl = type("FakeNfl", (), {
+            "import_seasonal_rosters": staticmethod(_boom),
+            "import_weekly_rosters": staticmethod(_boom),
+            "import_rosters": staticmethod(_boom),
+        })()
+        monkeypatch.setitem(__import__("sys").modules, "nfl_data_py", fake_nfl)
+        monkeypatch.setattr(
+            rb_usage, "_get_position_gsis_ids_from_db",
+            lambda team, positions: set(),
+        )
+        with caplog.at_level(logging.WARNING, logger="utils.rb_usage"):
+            ids = rb_usage._get_position_gsis_ids("BUF", ["RB"], season=2026)
+        assert ids == set()
+        assert any("position lookup failed" in r.message for r in caplog.records)
