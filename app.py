@@ -15206,8 +15206,9 @@ def api_player_startsit_strip():
 
     States: "hidden" (no strip: no league context, signed out, no linked
     team, or the player's position is not started in this league),
-    "unavailable" (show the text, never a fabricated verdict: bye week, no
-    projection, or the read failed), "ok" (verdict + slot + reason).
+    "unavailable" (show the text, never a fabricated verdict: bye week, ruled
+    out with injury, no projection, or the read failed), "ok" (verdict + slot
+    + reason).
     """
     platform = (request.args.get("platform") or "sleeper").strip().lower()
     league_id = (request.args.get("league_id") or "").strip()
@@ -15268,6 +15269,13 @@ def api_player_startsit_strip():
     if row.get("on_bye"):
         out = {"state": "unavailable", "week": week, "compare": True,
                "text": f"On bye in Week {week}"}
+    elif str(row.get("injury_status") or "").strip().lower() in {
+            "out", "ir", "pup", "suspended"}:
+        # Ruled out: a start/sit verdict ("Bench for you") is misleading for a
+        # player who is not playing at all. Questionable/Doubtful keep the
+        # normal verdict since they may still suit up.
+        out = {"state": "unavailable", "week": week, "compare": True,
+               "text": f"Ruled out for Week {week}"}
     elif not (row.get("proj_pts") or 0):
         out = {"state": "unavailable", "week": week, "compare": True,
                "text": f"No projection for Week {week}"}
@@ -26674,6 +26682,17 @@ def api_player_details(player_id: str):
         return _api_err("Request failed", e)
 
 
+# Process-level cache of resolved market ADP maps for /api/player-adp. The
+# maps are global (identical for every player: season x source x axis), so
+# resolving them once per worker per TTL turns repeat modal opens into dict
+# lookups instead of repeat crawler-DB queries and re-ranks. Only non-empty
+# maps are cached so a transient failure retries on the next request. ADP
+# moves slowly; a 10-minute TTL keeps values near-fresh.
+_PLAYER_ADP_MAP_CACHE: Dict[tuple, tuple] = {}  # key -> (monotonic ts, map)
+_PLAYER_ADP_MAP_TTL = 600.0
+_PLAYER_ADP_MAP_MAX = 128  # entries; clear when exceeded
+
+
 @app.route("/api/player-adp/<player_id>")
 def api_player_adp(player_id: str):
     """Market-source ADP (BR Fantasy, ESPN, Yahoo, MFL, Consensus) for one player.
@@ -26692,24 +26711,33 @@ def api_player_adp(player_id: str):
         _mkt_cache: dict = {}
 
         def _market_pick(_source, _scoring, _is_sf):
-            _key = (_source, _scoring, _is_sf)
+            _key = (int(season), _source, _scoring, _is_sf)
             if _key not in _mkt_cache:
-                try:
-                    # Match the rankings page: re-rank BR Fantasy (ordered by its
-                    # raw avg_pick) to a clean 1..N board so it tops out at 1
-                    # instead of the ~3 mean-pick floor. The modal range then
-                    # averages those plotted values (rank + other source ADPs)
-                    # for Cons, so (BR 2.0 + Sleeper 4.3) → Cons 3.2.
-                    # fallback=False so an off-axis source shows nothing rather
-                    # than borrowing Sleeper's numbers -- ESPN/Yahoo/MFL are
-                    # redraft-only, so their dynasty cells must stay empty (not
-                    # silently become Sleeper's ADP).
-                    _mkt_cache[_key] = resolve_market_adp(
-                        int(season), _is_sf, _scoring, source=_source,
-                        as_rank=(_source in ("brfantasy", "brfantasy_live")),
-                        fallback=False) or {}
-                except Exception:
-                    _mkt_cache[_key] = {}
+                _now = time.monotonic()
+                _hit = _PLAYER_ADP_MAP_CACHE.get(_key)
+                if _hit and _now - _hit[0] < _PLAYER_ADP_MAP_TTL:
+                    _mkt_cache[_key] = _hit[1]
+                else:
+                    try:
+                        # Match the rankings page: re-rank BR Fantasy (ordered by its
+                        # raw avg_pick) to a clean 1..N board so it tops out at 1
+                        # instead of the ~3 mean-pick floor. The modal range then
+                        # averages those plotted values (rank + other source ADPs)
+                        # for Cons, so (BR 2.0 + Sleeper 4.3) → Cons 3.2.
+                        # fallback=False so an off-axis source shows nothing rather
+                        # than borrowing Sleeper's numbers -- ESPN/Yahoo/MFL are
+                        # redraft-only, so their dynasty cells must stay empty (not
+                        # silently become Sleeper's ADP).
+                        _mkt_cache[_key] = resolve_market_adp(
+                            int(season), _is_sf, _scoring, source=_source,
+                            as_rank=(_source in ("brfantasy", "brfantasy_live")),
+                            fallback=False) or {}
+                    except Exception:
+                        _mkt_cache[_key] = {}
+                    if _mkt_cache[_key]:
+                        if len(_PLAYER_ADP_MAP_CACHE) >= _PLAYER_ADP_MAP_MAX:
+                            _PLAYER_ADP_MAP_CACHE.clear()
+                        _PLAYER_ADP_MAP_CACHE[_key] = (_now, _mkt_cache[_key])
             _v = _mkt_cache[_key].get(str(player_id))
             try:
                 return round(float(_v), 1) if _v is not None else None

@@ -263,6 +263,47 @@ def test_strip_hidden_without_viewer_team(ss_client, monkeypatch):
     assert ss_client.get(BASE).status_code == 409
 
 
+def _ss_ctx_with_injury(pid, status):
+    ctx = _ss_ctx()
+    ctx["players_index"][pid]["injury_status"] = status
+    return ctx
+
+
+def test_strip_guest_ruled_out_gets_injury_state(ss_client, monkeypatch):
+    # A guest who is OUT must not get a start/sit "Bench for you" verdict.
+    import app as appmod
+    monkeypatch.setattr(appmod, "get_league_ctx_from_cache",
+                        lambda *a, **k: _ss_ctx_with_injury("rbR", "Out"))
+    appmod._SS_STRIP_CACHE.clear()
+    d = ss_client.get(STRIP + "rbR").get_json()
+    assert d["state"] == "unavailable"
+    assert d["text"] == "Ruled out for Week 5"
+    assert "verdict" not in d
+    assert d["compare"] is True
+
+
+def test_strip_rostered_ruled_out_gets_injury_state(ss_client, monkeypatch):
+    import app as appmod
+    monkeypatch.setattr(appmod, "get_league_ctx_from_cache",
+                        lambda *a, **k: _ss_ctx_with_injury("rb4", "IR"))
+    appmod._SS_STRIP_CACHE.clear()
+    d = ss_client.get(STRIP + "rb4").get_json()
+    assert d["state"] == "unavailable"
+    assert d["text"] == "Ruled out for Week 5"
+    assert "verdict" not in d
+
+
+def test_strip_questionable_keeps_startsit_verdict(ss_client, monkeypatch):
+    # Questionable/Doubtful may still play, so the verdict stays.
+    import app as appmod
+    monkeypatch.setattr(appmod, "get_league_ctx_from_cache",
+                        lambda *a, **k: _ss_ctx_with_injury("rbF", "Questionable"))
+    appmod._SS_STRIP_CACHE.clear()
+    d = ss_client.get(STRIP + "rbF").get_json()
+    assert d["state"] == "ok"
+    assert d["verdict"] == "Bench for you"
+
+
 def test_strip_hidden_when_signed_out(ss_client, monkeypatch):
     import app as appmod
     monkeypatch.setattr(appmod, "_session_signed_in", lambda: False)
