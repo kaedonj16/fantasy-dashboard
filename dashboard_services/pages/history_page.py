@@ -1242,7 +1242,8 @@ def _build_wrapped_slides(history_ctx: dict, summary: dict, league_name: str, se
             slides.append({**_num("mvp", "LEAGUE MVP", float(mvp["pts"]), 1, " PTS",
                                   mvp["name"],
                                   f"{_meta} · {mvp.get('ppg', 0):.1f} per game, the season's top fantasy producer"),
-                           "bgword": str(int(float(mvp["pts"])))})
+                           "bgword": str(int(float(mvp["pts"]))),
+                           "mvp": True})
 
         by_pos = (leaders or {}).get("by_pos") or {}
         pos_rows = [(p, by_pos[p]["name"], f"{by_pos[p]['pts']:.1f}")
@@ -1331,13 +1332,14 @@ def _build_wrapped_slides(history_ctx: dict, summary: dict, league_name: str, se
     return slides
 
 
-def _wrapped_row_html(k, n, v) -> str:
-    """One wrapped rows-slide row: kicker, name, value."""
+def _wrapped_row_html(k, n, v, deco="") -> str:
+    """One wrapped rows-slide row: kicker, name, value, plus optional raw
+    deco HTML (e.g. the crown on the week's top scorer)."""
     return (
         "<div class='wrapped-row'>"
         f"<div class='wrapped-row-k'>{_esc(str(k))}</div>"
         "<div class='wrapped-row-m'>"
-        f"<span class='wrapped-row-n'>{_esc(str(n))}</span>"
+        f"<span class='wrapped-row-n'>{_esc(str(n))}{deco}</span>"
         + (f"<span class='wrapped-row-v'>{_esc(str(v))}</span>" if v not in (None, "") else "")
         + "</div></div>"
     )
@@ -1436,10 +1438,10 @@ def _wrapped_overlay_markup(slides: list, share_data: dict | None = None,
                 for _sec in s["sections"]:
                     parts.append(
                         f"<div class='wrapped-row-sec'>{_esc(str(_sec.get('title', '')))}</div>")
-                    parts.extend(_wrapped_row_html(k, n, v)
-                                 for k, n, v in (_sec.get("rows") or []))
+                    parts.extend(_wrapped_row_html(*_r)
+                                 for _r in (_sec.get("rows") or []))
             else:
-                parts.extend(_wrapped_row_html(k, n, v) for k, n, v in s["rows"])
+                parts.extend(_wrapped_row_html(*_r) for _r in s["rows"])
             body = kicker + f"<div class='wrapped-rows'>{''.join(parts)}</div>" + sub
         elif s.get("preview_teams"):
             # Next week's Game of the Week (a preview: no winner yet). Neutral
@@ -1484,8 +1486,12 @@ def _wrapped_overlay_markup(slides: list, share_data: dict | None = None,
                               f"<span class='wrapped-score-w'>{_esc(_w.strip())}</span>"
                               "<span class='wrapped-score-x'>VS</span>"
                               f"<span class='wrapped-score-l'>{_esc(_l.strip())}</span></div>")
+            _mvp_deco = ("<div class='wrapped-rays' aria-hidden='true'></div>"
+                         "<i class='fa-solid fa-crown wrapped-crown' aria-hidden='true'></i>"
+                         if s.get("mvp") else "")
             body = (
                 kicker
+                + _mvp_deco
                 + "<div class='wrapped-num'>"
                   f"<span class='wrapped-big' data-w-count='{s['big']}' data-w-dp='{s['dp']}'>0</span>"
                 + (f"<span class='wrapped-unit'>{_esc(unit)}</span>" if unit else "")
@@ -1503,7 +1509,7 @@ def _wrapped_overlay_markup(slides: list, share_data: dict | None = None,
             )
 
         slide_html.append(
-            f"<section class='wrapped-slide' data-kind='{kind}'>{bgword}{body}{foot}</section>"
+            f"<section class='wrapped-slide{' wrapped-mvp' if s.get('mvp') else ''}' data-kind='{kind}'>{bgword}{body}{foot}</section>"
         )
 
     share_json = json.dumps(share_data or {}).replace("</", "<\\/")
@@ -1837,24 +1843,25 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
         _c["scoreline"] = f"{nb['winner_pts']:.1f}-{nb['loser_pts']:.1f}"
         slides.append(_c)
 
-    # ── Player awards: top scorer, best at each position, dud of the week ─────
+    # ── Player awards: best at each position (the highest scorer gets a crown),
+    # dud of the week ──
     # The only slides that need a boxscore fetch, so the cheap availability
     # check skips them (and the next-week GOTW preview below, which fetches
     # next week's matchup previews + projections).
     if include_players:
         leaders = _wrapped_weekly_player_leaders(ctx, week)
-        top = (leaders or {}).get("top")
-        if top and top.get("pts"):
-            _meta = " · ".join(x for x in [top.get("pos"), top.get("nfl")] if x)
-            slides.append({**_num("topplayer", "TOP PLAYER OF THE WEEK",
-                                  float(top["pts"]), 1, " PTS", top["name"],
-                                  f"{_meta}, the week's top fantasy producer" if _meta
-                                  else "The week's top fantasy producer"),
-                           "bgword": str(int(float(top["pts"])))})
 
         by_pos = (leaders or {}).get("by_pos") or {}
-        pos_rows = [(p, by_pos[p]["name"], f"{by_pos[p]['pts']:.1f}")
-                    for p in ("QB", "RB", "WR", "TE", "K", "DEF") if by_pos.get(p)]
+        _poses = [p for p in ("QB", "RB", "WR", "TE", "K", "DEF") if by_pos.get(p)]
+        _top_pos = max(_poses, key=lambda p: float(by_pos[p]["pts"]),
+                       default=None) if _poses else None
+        pos_rows = [(
+            p,
+            by_pos[p]["name"],
+            f"{by_pos[p]['pts']:.1f}",
+            ("<i class='fa-solid fa-crown wrapped-row-crown' aria-hidden='true'></i>"
+             if p == _top_pos else ""),
+        ) for p in _poses]
         if len(pos_rows) >= 3:
             slides.append({"kind": "posleaders", "eyebrow": "TOP AT EACH POSITION",
                            "num": False, "big": "", "dp": 0, "suffix": "", "label": "",
@@ -1959,14 +1966,11 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
                                  t=("_t", "sum"), pf=("_pf", "sum"))
                             .sort_values(["w", "t", "pf"], ascending=[False, False, False]))
                     _rmap = ctx.get("roster_map") or {}
-                    _pf_leader = _agg["pf"].idxmax() if not _agg.empty else None
                     for _i, (_rid, _r) in enumerate(_agg.head(5).iterrows()):
                         _nm = _rmap.get(_rid, _rmap.get(str(_rid), f"Team {_rid}"))
                         _rec = f"{int(_r['w'])}-{int(_r['l'])}"
                         if int(_r["t"]):
                             _rec += f"-{int(_r['t'])}"
-                        if _pf_leader is not None and _rid == _pf_leader:
-                            _rec += " · top scorer"
                         _srows.append((f"#{_i + 1}", str(_nm), _rec))
             if len(_srows) >= 3:
                 slides.append({"kind": "standings", "eyebrow": "LEAGUE STANDINGS",
@@ -2022,9 +2026,12 @@ def _wrapped_weekly_share_data(slides: list, league_name: str, season, week) -> 
         return {"k": str(k), "n": str(n), "v": str(v)}
 
     highlights: list = []
-    tp = by_kind.get("topplayer")
-    if tp and tp.get("label"):
-        highlights.append(_hi("TOP PLAYER", tp["label"], tp["big"]))
+    pl = by_kind.get("posleaders")
+    if pl:
+        _crowned = next((_r for _r in (pl.get("rows") or [])
+                         if len(_r) > 3 and _r[3]), None)
+        if _crowned:
+            highlights.append(_hi("TOP PLAYER", _crowned[1], _crowned[2]))
     gw = by_kind.get("gotw")
     if gw and gw.get("big"):
         highlights.append(_hi("GAME OF THE WEEK", gw["big"],

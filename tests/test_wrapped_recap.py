@@ -96,5 +96,42 @@ def test_weekly_wrapped_standings_slide_sits_before_gotw(monkeypatch):
     assert kinds.index("gotw") == len(kinds) - 1
     st = next(s for s in slides if s.get("kind") == "standings")
     assert st["eyebrow"] == "LEAGUE STANDINGS"
-    assert st["rows"][0] == ("#1", "Alpha", "2-0 · top scorer")
+    assert st["rows"][0] == ("#1", "Alpha", "2-0")
     assert st["rows"][1][2] == "1-1"  # Bravo and Charlie both 1-1; PF breaks it
+
+
+def test_weekly_wrapped_pos_leaders_crowns_top_scorer(monkeypatch):
+    import pandas as pd
+    from dashboard_services.pages import history_page as H
+
+    rows = [(1, 1, 120.0, 100.0, True), (1, 2, 100.0, 120.0, True)]
+    df = pd.DataFrame(rows, columns=["week", "roster_id", "points",
+                                     "points_against", "finalized"])
+    ctx = {"df_weekly": df, "roster_map": {1: "Alpha", 2: "Bravo"},
+           "league": {"name": "Test League"}, "season": 2026}
+    monkeypatch.setattr(H, "_wrapped_weekly_player_leaders", lambda *a, **k: {
+        "top": {"name": "Ja'Marr Chase", "pos": "WR", "nfl": "CIN", "pts": 38.5},
+        "by_pos": {
+            "QB": {"name": "Q Bee", "pts": 28.0},
+            "RB": {"name": "R Bee", "pts": 38.5},
+            "WR": {"name": "W Bee", "pts": 22.0},
+        },
+        "dud": None})
+    monkeypatch.setattr(H, "_next_week_gotw_game", lambda *a, **k: None)
+
+    slides = H._build_weekly_wrapped_slides(ctx, "Test League", 2026, 1)
+    kinds = [s.get("kind") for s in slides]
+    # One slide for top scorers now; the standalone top-player slide is gone.
+    assert "topplayer" not in kinds
+    pl = next(s for s in slides if s.get("kind") == "posleaders")
+    crowned = [r for r in pl["rows"] if len(r) > 3 and r[3]]
+    assert len(crowned) == 1
+    assert crowned[0][1] == "R Bee"  # 38.5, the highest
+    assert "wrapped-row-crown" in crowned[0][3]
+
+    html = H.render_weekly_wrapped_overlay(ctx, 1)
+    before, _, after = html.partition("data-kind='posleaders'")
+    sec = before.rsplit("<section", 1)[1] + "data-kind='posleaders'" + after.split("</section>", 1)[0]
+    assert sec.count("wrapped-row-crown") == 1
+    # The crown sits on the top scorer's row, next to their name.
+    assert "R Bee" in sec.split("wrapped-row-crown")[0].rsplit("wrapped-row-n", 1)[1]
