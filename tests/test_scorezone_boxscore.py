@@ -134,7 +134,7 @@ def test_boxscore_css_exists_without_pill_radii():
     end = DASHBOARD_CSS.index("/* ── On-deck strip (games kicking off soon) ── */")
     block = DASHBOARD_CSS[start:end]
     assert "999px" not in block
-    assert "border-radius: 12px" in block  # button radius, not a pill
+    assert "border-radius: var(--radius)" in block  # button radius, not a pill
 
 
 # ── Behavioral harness (real shipped JS, extracted by source) ────────────

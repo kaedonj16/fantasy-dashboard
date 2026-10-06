@@ -2661,11 +2661,11 @@ _WRAPPED_BOOTSTRAP_JS = r"""
         '<div class="wrapped-bgword" aria-hidden="true">PRO</div>' +
         '<div class="wrapped-kicker"><span class="wrapped-kicker-rule"></span>' +
         '<span class="wrapped-kicker-txt">GO FURTHER</span></div>' +
-        '<div class="wrapped-pro-title">Unlock the full story with PRO</div>' +
+        '<div class="wrapped-pro-title">Get the full story with PRO</div>' +
         '<div class="wrapped-divider"></div>' +
         '<div class="wrapped-sub">Front Office Report, Breakout Engine, and AI trade analysis for your league.</div>' +
         '<div class="wrapped-pro-ctas">' +
-          '<button type="button" class="wrapped-pro-go">Unlock PRO</button>' +
+          '<button type="button" class="wrapped-pro-go">Get PRO</button>' +
           '<button type="button" class="wrapped-pro-dismiss">Not now</button>' +
         '</div>';
       stage.appendChild(sec);

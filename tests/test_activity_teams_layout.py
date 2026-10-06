@@ -25,7 +25,7 @@ def test_activity_trade_teams_use_two_columns_on_desktop():
 def test_activity_trade_teams_stack_on_mobile():
     selector = ".activity-page .act-trade-body > .teams"
     selector_pos = CSS.rfind(selector)
-    media_pos = CSS.rfind("@media (max-width: 900px)", 0, selector_pos)
+    media_pos = CSS.rfind("@media (max-width: 1024px)", 0, selector_pos)
     assert media_pos >= 0
     assert re.search(
         r"\.activity-page \.act-trade-body > \.teams\s*\{[^}]*"

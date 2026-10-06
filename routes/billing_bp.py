@@ -758,7 +758,7 @@ _PRO_FEATURES = [
     ("fa-layer-group", "Cross-league This week’s moves"),
     ("fa-clipboard-list", "Custom Draft Board"),
     ("fa-arrow-trend-up", "Trend Scout"),
-    ("fa-magnifying-glass-chart", "Draft Deep Dive"),
+    ("fa-magnifying-glass-chart", "Draft Grades"),
 ]
 
 _FREE_FEATURES = [
@@ -873,7 +873,7 @@ def _pricing_manage_card() -> str:
         </div>""")
 
     reason_radios = "".join(
-        f"""<label style="display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--border);border-radius:10px;cursor:pointer;font-size:14px;">
+        f"""<label style="display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--border);border-radius:10px;cursor:pointer;font-size:15px;">
           <input type="radio" name="br-cancel-reason" value="{key}" style="margin-top:3px;"/>
           <span>{label}</span></label>"""
         for key, label in _CANCEL_REASON_LABELS
@@ -883,11 +883,11 @@ def _pricing_manage_card() -> str:
     <section class="pricing-section" id="pro-billing" aria-label="Manage your PRO">
       <div class="card" style="max-width:760px;margin:0 auto;">
         <div class="card-body" style="padding:26px 28px;">
-          <h2 style="margin:0 0 4px;font-size:20px;">Your PRO</h2>
-          <p style="margin:0 0 6px;font-size:14px;color:var(--text-muted);">Update your card, pause, or cancel. No phone calls, no dark patterns.</p>
+          <h2 style="margin:0 0 4px;font-size:22px;">Your PRO</h2>
+          <p style="margin:0 0 6px;font-size:15px;color:var(--text-muted);">Update your card, pause, or cancel. No phone calls, no dark patterns.</p>
           {''.join(rows)}
           {''.join(slot_blocks)}
-          <div id="brBillingMsg" style="display:none;margin-top:12px;font-size:14px;"></div>
+          <div id="brBillingMsg" style="display:none;margin-top:12px;font-size:15px;"></div>
         </div>
       </div>
     </section>
@@ -896,19 +896,19 @@ def _pricing_manage_card() -> str:
       <div role="dialog" aria-modal="true" aria-labelledby="brCancelTitle"
            style="background:var(--card);border:1px solid var(--border);border-radius:16px;max-width:480px;width:100%;padding:28px;box-shadow:0 24px 60px rgba(0,0,0,.3);">
         <div id="brCancelStep1">
-          <h3 id="brCancelTitle" style="margin:0 0 6px;font-size:19px;">Sorry to see you go</h3>
-          <p style="margin:0 0 16px;font-size:14px;color:var(--text-muted);">Mind telling us why? Optional. It helps us build better.</p>
+          <h3 id="brCancelTitle" style="margin:0 0 6px;font-size:18px;">Sorry to see you go</h3>
+          <p style="margin:0 0 16px;font-size:15px;color:var(--text-muted);">Mind telling us why? Optional. It helps us build better.</p>
           <div style="display:flex;flex-direction:column;gap:8px;">{reason_radios}</div>
           <textarea id="brCancelDetail" rows="2" placeholder="Anything else? (optional)"
-                    style="width:100%;box-sizing:border-box;margin-top:10px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;font-size:14px;background:var(--card);color:var(--text);"></textarea>
+                    style="width:100%;box-sizing:border-box;margin-top:10px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;font-size:15px;background:var(--card);color:var(--text);"></textarea>
           <div style="display:flex;gap:10px;margin-top:18px;justify-content:flex-end;">
             <button type="button" class="btn btn-secondary" onclick="brCancelReason('skipped')">Skip</button>
             <button type="button" class="btn btn-primary" onclick="brCancelReason('chosen')">Continue</button>
           </div>
         </div>
         <div id="brCancelStep2" hidden>
-          <h3 style="margin:0 0 6px;font-size:19px;">Wait: pause instead?</h3>
-          <p style="margin:0 0 16px;font-size:14px;color:var(--text-muted);line-height:1.55;">
+          <h3 style="margin:0 0 6px;font-size:18px;">Wait: pause instead?</h3>
+          <p style="margin:0 0 16px;font-size:15px;color:var(--text-muted);line-height:1.55;">
             Keep every PRO tool free for 2 months. Billing pauses now and resumes automatically.
             No need to cancel and resubscribe later.</p>
           <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;">
@@ -917,8 +917,8 @@ def _pricing_manage_card() -> str:
           </div>
         </div>
         <div id="brCancelStep3" hidden>
-          <h3 style="margin:0 0 6px;font-size:19px;">Cancel PRO?</h3>
-          <p style="margin:0 0 18px;font-size:14px;color:var(--text-muted);line-height:1.55;">
+          <h3 style="margin:0 0 6px;font-size:18px;">Cancel PRO?</h3>
+          <p style="margin:0 0 18px;font-size:15px;color:var(--text-muted);line-height:1.55;">
             You will keep PRO until <strong id="brCancelUntil"></strong>, then it turns off.
             This cannot be undone automatically.</p>
           <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;">
@@ -928,8 +928,8 @@ def _pricing_manage_card() -> str:
           </div>
         </div>
         <div id="brCancelDone" hidden>
-          <h3 style="margin:0 0 6px;font-size:19px;" id="brCancelDoneTitle">Done</h3>
-          <p style="margin:0 0 18px;font-size:14px;color:var(--text-muted);line-height:1.55;" id="brCancelDoneMsg"></p>
+          <h3 style="margin:0 0 6px;font-size:18px;" id="brCancelDoneTitle">Done</h3>
+          <p style="margin:0 0 18px;font-size:15px;color:var(--text-muted);line-height:1.55;" id="brCancelDoneMsg"></p>
           <div style="display:flex;justify-content:flex-end;">
             <button type="button" class="btn btn-primary" onclick="brCloseCancelModal()">Close</button>
           </div>
@@ -1106,7 +1106,7 @@ def _pricing_manage_card() -> str:
             seen[id] = 1;
             rows++;
             var label = document.createElement('label');
-            label.style.cssText = 'display:flex;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--border);border-radius:10px;cursor:pointer;font-size:14px;';
+            label.style.cssText = 'display:flex;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--border);border-radius:10px;cursor:pointer;font-size:15px;';
             var cb = document.createElement('input');
             cb.type = 'checkbox';
             cb.className = 'br-slot-check';
@@ -1187,26 +1187,26 @@ def _pricing_body(league_id: str | None = None, platform: str = "sleeper") -> st
         <div id="sub-icon" style="font-size:56px;margin-bottom:20px;">
           <i class="fa-solid fa-circle-check" style="color:#22c55e;"></i>
         </div>
-        <h2 id="sub-heading" style="margin:0 0 10px;font-size:24px;">Payment confirmed!</h2>
+        <h2 id="sub-heading" style="margin:0 0 10px;font-size:22px;">Payment confirmed!</h2>
         <p id="sub-msg" style="color:var(--text-muted);margin:0 0 28px;">
           Activating your premium access&hellip;
         </p>
         <p id="sub-billing" style="display:none;color:var(--text);font-weight:700;margin:-18px 0 28px;font-size:15px;"></p>
         <div id="sub-spinner" style="margin:0 auto 16px;width:32px;height:32px;border:3px solid #e5e7eb;border-top-color:#2563eb;border-radius:50%;animation:paywall-spin .8s linear infinite;"></div>
         <div id="sub-invite" style="display:none;text-align:left;margin:0 0 20px;padding:16px;border:1px solid var(--border);border-radius:12px;background:var(--bg-alt, #f8fafc);">
-          <div style="font-size:14px;font-weight:700;margin-bottom:6px;">PRO is on for your league</div>
+          <div style="font-size:15px;font-weight:700;margin-bottom:6px;">PRO is on for your league</div>
           <p style="margin:0 0 12px;font-size:13px;color:var(--text-muted);line-height:1.5;">
             Share this link so every manager can sign in and unlock the same tools.
           </p>
           <div style="display:flex;gap:8px;align-items:stretch;">
             <input id="sub-invite-url" type="text" readonly
-              style="flex:1;min-width:0;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--card);font-size:12px;color:var(--text);"/>
+              style="flex:1;min-width:0;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--card);font-size:13px;color:var(--text);"/>
             <button type="button" id="sub-invite-copy"
               style="flex-shrink:0;padding:10px 14px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-weight:700;font-size:13px;cursor:pointer;">
               Copy invite
             </button>
           </div>
-          <p id="sub-invite-copied" style="display:none;margin:8px 0 0;font-size:12px;color:#16a34a;">Invite link copied.</p>
+          <p id="sub-invite-copied" style="display:none;margin:8px 0 0;font-size:13px;color:#16a34a;">Invite link copied.</p>
         </div>
         <a id="sub-return" href="{safe_return or '/pricing'}" style="display:none;margin-top:8px;padding:12px 28px;border-radius:9px;background:linear-gradient(135deg,#122d4b,#2563eb);color:white;font-weight:700;text-decoration:none;font-size:15px;">Continue to dashboard</a>
         <button type="button" id="sub-portal" style="display:none;margin-top:8px;padding:12px 28px;border-radius:9px;border:1px solid var(--border);background:var(--card);color:var(--text);font-weight:700;font-size:15px;cursor:pointer;">Manage subscription</button>
@@ -1511,7 +1511,7 @@ def _pricing_body(league_id: str | None = None, platform: str = "sleeper") -> st
       {_pricing_manage_card()} (feat(churn): dunning, cancel save flow, trial reminders, win-back)
       <header class="pricing-hero">
         <span class="pricing-eyebrow">BR Fantasy PRO</span>
-        <h1>Make the next move with confidence.</h1>
+        <h1>PRO: roster-aware fantasy tools for $10/year.</h1>
         <p>Turn your roster, market activity, and league outlook into clearer trade, waiver, weekly, and draft decisions.</p>
       </header>
       {trial_section}
@@ -1561,7 +1561,7 @@ def _pricing_body(league_id: str | None = None, platform: str = "sleeper") -> st
           <article><i class="fa-solid fa-handshake" aria-hidden="true"></i><h3>Trade decisions</h3><p>Roster-based suggestions, Trade Intel, AI trade analysis and counters, and playoff-impact simulations.</p></article>
           <article><i class="fa-solid fa-fire" aria-hidden="true"></i><h3>Player discovery</h3><p>Breakout Engine opportunity signals, historical peers, and confidence-adjusted projections.</p></article>
           <article><i class="fa-solid fa-calendar-week" aria-hidden="true"></i><h3>Weekly guidance</h3><p>Front Office Report, the premium AI weekly recap storyline, and cross-league “This week’s moves.” The cross-league digest requires All-Pro or Hall of Fame coverage across your leagues.</p></article>
-          <article><i class="fa-solid fa-clipboard-list" aria-hidden="true"></i><h3>Draft tools</h3><p>Custom Draft Board, Trend Scout, and Draft Deep Dive.</p></article>
+          <article><i class="fa-solid fa-clipboard-list" aria-hidden="true"></i><h3>Draft tools</h3><p>Custom Draft Board, Trend Scout, and Draft Grades.</p></article>
         </div>
       </section>
 
@@ -1660,14 +1660,14 @@ def page_league_pro_invite(platform: str, season: int, league_id: str):
     body = f"""
     <div class="card central" style="max-width:520px;text-align:center;">
       <div class="card-body" style="padding:40px 28px;">
-        <div style="font-size:40px;margin-bottom:14px;"><i class="fa-solid fa-unlock" style="color:#2563eb;"></i></div>
+        <div style="font-size:28px;margin-bottom:14px;"><i class="fa-solid fa-unlock" style="color:#2563eb;"></i></div>
         <h1 style="margin:0 0 10px;font-size:22px;">Your league unlocked PRO</h1>
-        <p style="margin:0 0 22px;color:var(--text-muted);font-size:14px;line-height:1.55;">
+        <p style="margin:0 0 22px;color:var(--text-muted);font-size:15px;line-height:1.55;">
           A league mate already paid for shared premium. Sign in as a manager in this
           league to use Trade Intel, Breakouts, Front Office, and the rest of PRO.
         </p>
         <a href="{html.escape(primary_href, quote=True)}"
-           style="display:inline-block;padding:12px 22px;border-radius:9px;background:linear-gradient(135deg,#122d4b,#2563eb);color:#fff;font-weight:700;text-decoration:none;font-size:14px;">
+           style="display:inline-block;padding:12px 22px;border-radius:9px;background:linear-gradient(135deg,#122d4b,#2563eb);color:#fff;font-weight:700;text-decoration:none;font-size:15px;">
           {html.escape(primary_label)}
         </a>
         {secondary}

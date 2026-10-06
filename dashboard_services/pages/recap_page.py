@@ -269,13 +269,13 @@ _RECAP_INJURIES_CSS = """<style>
     .rc-inj-card { grid-template-columns:minmax(0,1fr); }
     .rc-inj-row:nth-child(2) { border-top:1px solid var(--border); }
   }
-  .rc-inj-status { font-size:10px; font-weight:800; letter-spacing:.05em; padding:3px 7px;
+  .rc-inj-status { font-size:11px; font-weight:800; letter-spacing:.05em; padding:3px 7px;
                    border-radius:999px; color:var(--rc-inj); flex-shrink:0;
                    background:color-mix(in srgb, var(--rc-inj) 14%, transparent); }
   .rc-inj-main { flex:1; min-width:0; }
-  .rc-inj-name { font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .rc-inj-name { font-size:15px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .rc-inj-sub { font-size:11px; color:var(--muted); }
-  .rc-inj-team { font-size:12px; font-weight:600; color:var(--muted); text-align:right;
+  .rc-inj-team { font-size:13px; font-weight:600; color:var(--muted); text-align:right;
                  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:40%; }
 </style>"""
 
@@ -289,7 +289,7 @@ _RECAP_ACTIVITY_CSS = """<style>
     .rc-act-item:nth-child(2) { border-top:1px solid var(--border); }
   }
   .rc-act-head { display:flex; align-items:center; gap:8px; margin-bottom:5px; }
-  .rc-act-kind { font-size:10px; font-weight:800; letter-spacing:.06em; text-transform:uppercase;
+  .rc-act-kind { font-size:11px; font-weight:800; letter-spacing:.06em; text-transform:uppercase;
                  padding:3px 7px; border-radius:999px; }
   .rc-act-kind--trade { color:var(--accent); background:color-mix(in srgb, var(--accent) 14%, transparent); }
   .rc-act-kind--waiver { color:var(--win); background:color-mix(in srgb, var(--win) 14%, transparent); }
@@ -297,7 +297,7 @@ _RECAP_ACTIVITY_CSS = """<style>
   .rc-act-ts { font-size:11px; color:var(--muted); font-weight:600; }
   .rc-act-sides { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:6px 16px; }
   .rc-act-team { font-size:13px; font-weight:700; }
-  .rc-act-gets { font-size:12px; color:var(--muted); margin-top:2px; }
+  .rc-act-gets { font-size:13px; color:var(--muted); margin-top:2px; }
   .rc-act-line { font-size:13px; }
   .rc-act-team-inline { font-weight:700; }
   .rc-act-asset { color:var(--text); font-weight:600; }
@@ -638,7 +638,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     week_selector = f"""
 <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap;">
   <div style="flex:1;min-width:160px;">
-    <h2 style="margin:0;font-size:20px;">Week {selected_week} Recap</h2>
+    <h2 style="margin:0;font-size:22px;">Week {selected_week} Recap</h2>
   </div>
   <select onchange="window.location.search='?week='+this.value"
           style="padding:5px 10px;border-radius:6px;border:1px solid var(--border);
@@ -690,17 +690,17 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     <div style="display:flex;align-items:center;gap:10px;">
       {ava_img(name, rid, 34)}
       <div style="flex:1;min-width:0;">
-        <div style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{team_link(name, rid)}</div>
+        <div style="font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{team_link(name, rid)}</div>
       </div>
-      <div style="font-size:23px;font-weight:800;color:{accent};flex-shrink:0;letter-spacing:-.5px;font-variant-numeric:tabular-nums;">{pts:.2f}</div>
+      <div style="font-size:22px;font-weight:800;color:{accent};flex-shrink:0;letter-spacing:-.5px;font-variant-numeric:tabular-nums;">{pts:.2f}</div>
     </div>
     <div style="height:1px;background:var(--border);"></div>
     <div style="display:flex;align-items:center;gap:10px;opacity:0.5;">
       {ava_img(opp["owner"], opp["rid"], 34)}
       <div style="flex:1;min-width:0;">
-        <div style="font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{team_name(opp["owner"], opp["rid"])}</div>
+        <div style="font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{team_name(opp["owner"], opp["rid"])}</div>
       </div>
-      <div style="font-size:23px;font-weight:800;flex-shrink:0;letter-spacing:-.5px;font-variant-numeric:tabular-nums;">{opp["pts"]:.2f}</div>
+      <div style="font-size:22px;font-weight:800;flex-shrink:0;letter-spacing:-.5px;font-variant-numeric:tabular-nums;">{opp["pts"]:.2f}</div>
     </div>
   </div>
   <div class="rc-award-foot"><span style="color:{accent};">{html.escape(sub)}</span> &middot; {result}</div>"""
@@ -711,11 +711,11 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
       {ava_img(name, rid, 42)}
       <div style="min-width:0;">
         <div style="font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{team_link(name, rid)}</div>
-        <div style="font-size:12px;color:var(--muted);">@{html.escape(name)}</div>
+        <div style="font-size:13px;color:var(--muted);">@{html.escape(name)}</div>
       </div>
     </div>
     <div style="text-align:right;flex-shrink:0;">
-      <div style="font-size:30px;font-weight:800;color:{accent};letter-spacing:-.5px;line-height:1;font-variant-numeric:tabular-nums;">{pts:.2f}</div>
+      <div style="font-size:28px;font-weight:800;color:{accent};letter-spacing:-.5px;line-height:1;font-variant-numeric:tabular-nums;">{pts:.2f}</div>
       <div style="font-size:11px;color:{accent};font-weight:600;margin-top:4px;">{html.escape(sub)}</div>
     </div>
   </div>"""
@@ -736,17 +736,17 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     <div style="display:flex;align-items:center;gap:10px;">
       {ava_img(m["winner"], m["w_rid"], 34)}
       <div style="flex:1;min-width:0;">
-        <div style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{w_team}</div>
+        <div style="font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{w_team}</div>
       </div>
-      <div style="font-size:23px;font-weight:800;color:{accent};flex-shrink:0;letter-spacing:-.5px;">{m['w_pts']:.1f}</div>
+      <div style="font-size:22px;font-weight:800;color:{accent};flex-shrink:0;letter-spacing:-.5px;">{m['w_pts']:.1f}</div>
     </div>
     <div style="height:1px;background:var(--border);"></div>
     <div style="display:flex;align-items:center;gap:10px;opacity:0.5;">
       {ava_img(m["loser"], m["l_rid"], 34)}
       <div style="flex:1;min-width:0;">
-        <div style="font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{l_team}</div>
+        <div style="font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{l_team}</div>
       </div>
-      <div style="font-size:23px;font-weight:800;flex-shrink:0;letter-spacing:-.5px;">{m['l_pts']:.1f}</div>
+      <div style="font-size:22px;font-weight:800;flex-shrink:0;letter-spacing:-.5px;">{m['l_pts']:.1f}</div>
     </div>
   </div>
   <div class="rc-award-foot">margin {m['margin']:.1f} &middot; <a class="recap-view-matchup" href="/{_platform}/{_season}/{_league_id}/weekly?week={selected_week}">View matchup <span aria-hidden="true">&rsaquo;</span></a></div>
@@ -793,11 +793,11 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
   .rc-award::before {{ content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--rc-accent); }}
   .rc-award-h {{ display:flex; align-items:center; gap:8px; }}
   .rc-award-chip {{ width:24px; height:24px; border-radius:7px; display:grid; place-items:center;
-                    flex:0 0 auto; font-size:12px; color:var(--rc-accent);
+                    flex:0 0 auto; font-size:13px; color:var(--rc-accent);
                     background:color-mix(in srgb, var(--rc-accent) 16%, transparent); }}
-  .rc-award-lbl {{ font-size:10px; font-weight:800; letter-spacing:.07em; text-transform:uppercase; color:var(--muted); }}
+  .rc-award-lbl {{ font-size:11px; font-weight:800; letter-spacing:.07em; text-transform:uppercase; color:var(--muted); }}
   .rc-award-foot {{ font-size:11px; font-weight:600; color:var(--muted); }}
-  .recap-view-matchup {{ display:inline-flex; align-items:center; gap:3px; font-size:12px;
+  .recap-view-matchup {{ display:inline-flex; align-items:center; gap:3px; font-size:13px;
                          font-weight:700; color:var(--accent); text-decoration:none; white-space:nowrap; }}
   .recap-view-matchup:hover {{ text-decoration:underline; }}
   .recap-matchup-score .recap-view-matchup {{ margin-top:6px; }}
@@ -805,7 +805,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
   .recap-team-name .team-clickable:hover {{ text-decoration:underline; }}
   .st-name .team-clickable:hover {{ text-decoration:underline; }}
   .rc-pos-wrap {{ margin-top:14px; }}
-  .rc-pos-label {{ font-size:10px; font-weight:800; letter-spacing:.07em; text-transform:uppercase; color:var(--muted); margin-bottom:8px; }}
+  .rc-pos-label {{ font-size:11px; font-weight:800; letter-spacing:.07em; text-transform:uppercase; color:var(--muted); margin-bottom:8px; }}
   .rc-pos-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(165px,1fr)); gap:10px; }}
   .rc-pos-col {{ border:1px solid var(--border); border-radius:10px; padding:9px 10px; display:flex; flex-direction:column; gap:6px; min-width:0; }}
   .rc-pos-head {{ display:flex; align-items:center; gap:7px; }}
@@ -815,7 +815,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
   .rc-pos-main {{ flex:1; min-width:0; }}
   .rc-pos-name {{ font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
   .rc-pos-team {{ font-size:11px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
-  .rc-pos-pts {{ font-size:14px; font-weight:800; font-variant-numeric:tabular-nums; flex-shrink:0; }}
+  .rc-pos-pts {{ font-size:15px; font-weight:800; font-variant-numeric:tabular-nums; flex-shrink:0; }}
 </style>
 <section class="recap-section"><div class="recap-section-heading"><h2>Week at a Glance</h2></div>
 <div class="rc-awards">
@@ -1073,7 +1073,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
 <div class="card" style="overflow:hidden;">
   <div class="card-header">
     <h3>Standings</h3>
-    <a href="/{_platform}/{_season}/{_league_id}/standings?week={selected_week}" style="font-size:12px;color:var(--accent);">View full standings</a>
+    <a href="/{_platform}/{_season}/{_league_id}/standings?week={selected_week}" style="font-size:13px;color:var(--accent);">View full standings</a>
   </div>
   {standing_rows_html}
 </div>"""
@@ -1098,7 +1098,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
                           f'{ava_img(team_by_rid.get(rid, ""), rid, 28)}<div class="st-main"><div class="st-name">'
                           f'{team_link(team_by_rid.get(rid, ""), rid)}</div></div><div class="st-rec"><div class="wl">{score_text}</div></div>{move}</div>')
     power_html = f'<div class="card" style="overflow:hidden"><div class="card-header"><h3>Power Rankings</h3>' \
-                 f'<a href="/{_platform}/{_season}/{_league_id}/teams" style="font-size:12px;color:var(--accent)">View power rankings</a></div>{"".join(power_rows)}</div>'
+                 f'<a href="/{_platform}/{_season}/{_league_id}/teams" style="font-size:13px;color:var(--accent)">View power rankings</a></div>{"".join(power_rows)}</div>'
     standings_html = f'<section class="recap-section recap-changes"><div class="recap-section-heading"><h2>Standings &amp; Power Rankings</h2><small>Through Week {selected_week}</small></div><div class="recap-rank-grid">{standings_html}{power_html}</div></section>'
 
     power_by_rid = {str(p.get("roster_id")): p for p in power_teams}
@@ -1180,7 +1180,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
   </div>
   <div aria-hidden="true" style="pointer-events:none;position:absolute;inset:0;overflow:hidden;border-radius:8px;">
     <div style="position:absolute;top:50%;left:-10%;right:-10%;transform:rotate(-12deg);
-                text-align:center;font-size:42px;font-weight:800;letter-spacing:.18em;
+                text-align:center;font-size:28px;font-weight:800;letter-spacing:.18em;
                 color:rgba(99,102,241,0.18);text-transform:uppercase;">SAMPLE</div>
   </div>
 </div>"""

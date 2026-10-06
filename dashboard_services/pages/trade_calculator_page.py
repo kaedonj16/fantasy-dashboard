@@ -546,7 +546,7 @@ def build_trade_calculator_body(
             }}
             .otc-pi-head {{ margin-bottom:14px;display:flex;align-items:flex-start;justify-content:space-between; }}
             .otc-pi-title {{ font-size:15px;font-weight:700;margin:0 0 2px; }}
-            .otc-pi-sub   {{ font-size:12px;color:var(--text-muted); }}
+            .otc-pi-sub   {{ font-size:13px;color:var(--text-muted); }}
             .pi-info-wrap {{ position:relative;flex-shrink:0;margin-top:2px; }}
             .pi-info-btn  {{
               font-size:15px;color:var(--text-muted);opacity:.55;line-height:1;
@@ -567,11 +567,11 @@ def build_trade_calculator_body(
             }}
             .pi-info-wrap:hover .pi-tooltip {{ display:block; }}
             .pi-tooltip-title {{
-              font-size:10px;font-weight:800;text-transform:uppercase;
+              font-size:11px;font-weight:800;text-transform:uppercase;
               letter-spacing:.06em;color:var(--text-muted);margin-bottom:8px;
             }}
             .pi-tooltip-row {{
-              font-size:11.5px;color:var(--text);line-height:1.45;
+              font-size:11px;color:var(--text);line-height:1.45;
               padding:5px 0;border-top:1px solid var(--border-color);
             }}
             .pi-tooltip-row:first-of-type {{ border-top:none; }}
@@ -588,7 +588,7 @@ def build_trade_calculator_body(
               min-width:0;
             }}
             .pi-stat-label {{
-              font-size:9px;font-weight:700;text-transform:uppercase;
+              font-size:11px;font-weight:700;text-transform:uppercase;
               letter-spacing:.05em;color:var(--text-muted);margin-bottom:5px;
               white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
               display:block;
@@ -601,7 +601,7 @@ def build_trade_calculator_body(
               overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
             }}
             .pi-stat-arrow  {{ font-size:13px;opacity:.55;flex-shrink:0;align-self:center; }}
-            .pi-stat-after  {{ font-size:17px;font-weight:800;line-height:1;flex-shrink:0;white-space:nowrap; }}
+            .pi-stat-after  {{ font-size:18px;font-weight:800;line-height:1;flex-shrink:0;white-space:nowrap; }}
             /* Size the numbers off the CARD's own width (not the viewport) so
                they fit whether the card is full-width on mobile or a narrow
                sub-column on desktop. The viewport can't tell us the card width
@@ -610,9 +610,9 @@ def build_trade_calculator_body(
               .pi-grid {{ gap:5px; }}
               .pi-stat {{ padding:7px 6px; }}
               .pi-stat-label {{ letter-spacing:.02em; }}
-              .pi-stat-before {{ font-size:9.5px; }}
-              .pi-stat-after {{ font-size:14px; }}
-              .pi-stat-arrow {{ font-size:10px; }}
+              .pi-stat-before {{ font-size:11px; }}
+              .pi-stat-after {{ font-size:15px; }}
+              .pi-stat-arrow {{ font-size:11px; }}
               .pi-stat-values {{ gap:3px; }}
             }}
             /* Extremely narrow cards: drop the secondary "before" value and
@@ -629,8 +629,8 @@ def build_trade_calculator_body(
               background:var(--bg-alt,rgba(0,0,0,.02));
             }}
             .pi-locked-icon {{ font-size:22px;color:var(--text-muted);opacity:.5;margin-bottom:8px; }}
-            .pi-locked-title {{ font-size:14px;font-weight:700;margin-bottom:4px; }}
-            .pi-locked-sub   {{ font-size:12px;color:var(--text-muted);max-width:260px;line-height:1.5;margin-bottom:12px; }}
+            .pi-locked-title {{ font-size:15px;font-weight:700;margin-bottom:4px; }}
+            .pi-locked-sub   {{ font-size:13px;color:var(--text-muted);max-width:260px;line-height:1.5;margin-bottom:12px; }}
             .pi-locked-btn {{
               padding:7px 18px;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-weight:600;
               background:linear-gradient(135deg,#122d4b,#2563eb);color:#fff;
@@ -641,9 +641,9 @@ def build_trade_calculator_body(
               display:flex;flex-direction:column;align-items:center;text-align:center;
               padding:24px 16px;gap:6px;
             }}
-            .pi-message-icon  {{ font-size:20px;color:var(--text-muted);opacity:.55;margin-bottom:2px; }}
+            .pi-message-icon  {{ font-size:22px;color:var(--text-muted);opacity:.55;margin-bottom:2px; }}
             .pi-message-title {{ font-size:13px;font-weight:700; }}
-            .pi-message-sub   {{ font-size:12px;color:var(--text-muted);max-width:240px;line-height:1.5; }}
+            .pi-message-sub   {{ font-size:13px;color:var(--text-muted);max-width:240px;line-height:1.5; }}
             .pi-roster-warn {{
               display:flex;align-items:flex-start;gap:6px;margin-top:8px;
               padding:7px 9px;border-radius:8px;font-size:11px;line-height:1.5;
@@ -658,9 +658,9 @@ def build_trade_calculator_body(
             }}
             .pi-verdict-icon {{
               flex-shrink:0;width:28px;height:28px;border-radius:8px;color:#fff;
-              display:flex;align-items:center;justify-content:center;font-size:12px;
+              display:flex;align-items:center;justify-content:center;font-size:13px;
             }}
-            .pi-verdict-title {{ font-size:12.5px;font-weight:800;line-height:1.1;margin-bottom:1px; }}
+            .pi-verdict-title {{ font-size:13px;font-weight:800;line-height:1.1;margin-bottom:1px; }}
             .pi-verdict-sub   {{ font-size:11px;color:var(--text-muted);line-height:1.35; }}
 
             /* ── Future Outlook inline row ───────────────────────── */
@@ -674,16 +674,16 @@ def build_trade_calculator_body(
               display:flex;flex-direction:column;gap:2px;
             }}
             .pi-outlook-label {{
-              font-size:9px;font-weight:700;text-transform:uppercase;
+              font-size:11px;font-weight:700;text-transform:uppercase;
               letter-spacing:.05em;color:var(--text-muted);
             }}
             .pi-outlook-vals {{
               display:flex;align-items:center;gap:4px;
             }}
             .pi-outlook-before {{ font-size:11px;color:var(--text-muted); }}
-            .pi-outlook-after  {{ font-size:14px;font-weight:800; }}
+            .pi-outlook-after  {{ font-size:15px;font-weight:800; }}
             .pi-section-label {{
-              font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
+              font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
               color:var(--text-muted);margin:10px 0 5px;
               display:flex;align-items:center;gap:7px;
             }}
@@ -693,12 +693,12 @@ def build_trade_calculator_body(
             .pi-chip-row {{ display:flex;flex-wrap:wrap;gap:5px;margin-top:7px; }}
             .pi-chip {{
               display:inline-flex;align-items:center;gap:4px;
-              padding:3px 8px;border-radius:8px;font-size:10.5px;font-weight:700;
+              padding:3px 8px;border-radius:8px;font-size:11px;font-weight:700;
             }}
-            .pi-chip i {{ font-size:9.5px; }}
+            .pi-chip i {{ font-size:11px; }}
 
             .stl-title {{ font-size:15px;font-weight:700;color:var(--text-color);margin:0 0 3px; }}
-            .stl-sub   {{ font-size:12px;color:var(--text-muted); }}
+            .stl-sub   {{ font-size:13px;color:var(--text-muted); }}
             .stl-list  {{ display:grid;grid-template-columns:repeat(2,1fr);gap:10px; }}
             @media(max-width:600px) {{ .stl-list {{ grid-template-columns:1fr; }} }}
             .stl-loading, .stl-empty {{ font-size:13px;color:var(--text-muted);padding:12px 0;grid-column:1/-1; }}
@@ -720,7 +720,7 @@ def build_trade_calculator_body(
             .stl-date {{ font-size:11px;color:var(--text-muted);font-weight:500; }}
             .stl-badges {{ display:flex;gap:4px;flex-wrap:wrap; }}
             .stl-badge {{
-              font-size:10px;font-weight:700;
+              font-size:11px;font-weight:700;
               padding:2px 7px;border-radius:6px;
               background:var(--row,#1e293b);
               color:var(--text);
@@ -736,16 +736,16 @@ def build_trade_calculator_body(
             .stl-col-divider {{ background:var(--border-color); }}
 
             .stl-asset {{
-              font-size:14px;
+              font-size:15px;
               color:var(--text);
               font-weight:500;
               display:flex;align-items:center;gap:5px;flex-wrap:wrap;
             }}
             .stl-asset.stl-key  {{ font-weight:800;color:var(--accent-color,#3b82f6); }}
-            .stl-asset.stl-pick {{ color:var(--text-muted);font-size:14px; }}
+            .stl-asset.stl-pick {{ color:var(--text-muted);font-size:15px; }}
             .stl-asset.stl-muted {{ color:var(--text-muted); }}
             .stl-pos {{
-              font-size:10px;font-weight:700;
+              font-size:11px;font-weight:700;
               padding:1px 5px;border-radius:6px;
               background:var(--row,#1e293b);
               color:var(--text);flex-shrink:0;
@@ -760,7 +760,7 @@ def build_trade_calculator_body(
               background:var(--row);border:1px solid var(--border);
             }}
             .otc-mode-btn {{
-              padding:5px 14px;font-size:12px;font-weight:700;
+              padding:5px 14px;font-size:13px;font-weight:700;
               border:none;border-radius:7px;background:transparent;
               color:var(--text-muted);cursor:pointer;transition:all .15s;
             }}
@@ -780,7 +780,7 @@ def build_trade_calculator_body(
               display:none;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px;
             }}
             .otc-arch-chip {{
-              padding:6px 16px;font-size:12px;font-weight:600;
+              padding:6px 16px;font-size:13px;font-weight:600;
               border-radius:20px;border:1px solid var(--border);
               background:var(--card);color:var(--text-muted);
               cursor:pointer;transition:all .15s;
@@ -802,30 +802,30 @@ def build_trade_calculator_body(
             .otc-arch-head {{ display:flex;align-items:center;gap:8px;min-width:0; }}
             .otc-arch-away-row {{ margin-bottom:2px; }}
             .otc-arch-away {{
-              display:inline-block;font-size:8px;font-weight:700;text-transform:uppercase;
+              display:inline-block;font-size:11px;font-weight:700;text-transform:uppercase;
               letter-spacing:.06em;color:var(--warning);
               background:color-mix(in srgb, var(--warning) 12%, transparent);padding:2px 6px;border-radius:6px;
             }}
             .otc-arch-pos {{
-              font-size:9px;font-weight:700;padding:2px 5px;border-radius:6px;
+              font-size:11px;font-weight:700;padding:2px 5px;border-radius:6px;
               flex-shrink:0;min-width:24px;text-align:center;
             }}
             .otc-arch-name {{
               font-size:13px;font-weight:700;color:var(--text);
               flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
             }}
-            .otc-arch-why {{ font-size:11.5px;color:var(--text-muted);line-height:1.45; }}
+            .otc-arch-why {{ font-size:11px;color:var(--text-muted);line-height:1.45; }}
             .otc-arch-deal {{ font-size:11px;color:var(--text-muted); }}
             .otc-arch-deal-label {{
               font-weight:700;text-transform:uppercase;letter-spacing:.04em;
-              font-size:9px;color:var(--text-muted);margin-right:4px;
+              font-size:11px;color:var(--text-muted);margin-right:4px;
             }}
             .otc-arch-deal-assets {{ color:var(--text);font-weight:600; }}
             .otc-arch-deal-assets .v {{ color:var(--text-muted);font-weight:400; }}
             .otc-arch-foot {{
-              display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:10.5px;
+              display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11px;
             }}
-            .otc-arch-wp {{ font-weight:700;padding:2px 8px;border-radius:6px;font-size:10px; }}
+            .otc-arch-wp {{ font-weight:700;padding:2px 8px;border-radius:6px;font-size:11px; }}
             .otc-arch-wp.pos {{ background:color-mix(in srgb, var(--win) 14%, transparent);color:var(--win); }}
             .otc-arch-wp.neg {{ background:color-mix(in srgb, var(--loss) 14%, transparent);color:var(--loss); }}
             .otc-arch-partner {{
@@ -834,7 +834,7 @@ def build_trade_calculator_body(
             }}
             .otc-arch-partner .dot {{ width:6px;height:6px;border-radius:50%;flex-shrink:0; }}
             .otc-arch-vmatch {{
-              padding:2px 6px;border-radius:6px;font-size:10px;font-weight:700;
+              padding:2px 6px;border-radius:6px;font-size:11px;font-weight:700;
             }}
             .otc-arch-vmatch-great {{ background:color-mix(in srgb, var(--win) 14%, transparent);color:var(--win); }}
             .otc-arch-vmatch-fair  {{ background:var(--border);color:var(--text-muted); }}
@@ -849,7 +849,7 @@ def build_trade_calculator_body(
               background:var(--row);border:1px solid var(--border);
             }}
             .otc-sugg-subtab {{
-              padding:6px 18px;font-size:12px;font-weight:700;
+              padding:6px 18px;font-size:13px;font-weight:700;
               border:none;border-radius:7px;background:transparent;
               color:var(--text-muted);cursor:pointer;transition:all .15s;
               white-space:nowrap;
@@ -880,10 +880,10 @@ def build_trade_calculator_body(
               display:flex;flex-direction:column;gap:2px;align-items:stretch;
               margin-top:8px;padding-top:8px;
               border-top:1px dashed var(--border);
-              font-size:11.5px;line-height:1.45;color:var(--text-muted);
+              font-size:11px;line-height:1.45;color:var(--text-muted);
             }}
             .th-why-lbl {{
-              font-weight:700;font-size:10px;letter-spacing:.04em;
+              font-weight:700;font-size:11px;letter-spacing:.04em;
               text-transform:uppercase;color:var(--accent,#2563eb);
             }}
             /* Stacked variant: label above full-width text (trade targets list). */
@@ -918,7 +918,7 @@ def build_trade_calculator_body(
               background:var(--card);margin-bottom:10px;
             }}
             .th-shop-team {{ font-weight:700;font-size:13px; }}
-            .th-shop-meta {{ font-size:11.5px;color:var(--text-muted);margin-top:2px; }}
+            .th-shop-meta {{ font-size:11px;color:var(--text-muted);margin-top:2px; }}
             /* ── Strategy panel ── */
             .otc-strategy-chips {{
               display:flex;overflow-x:auto;gap:6px;
@@ -931,10 +931,10 @@ def build_trade_calculator_body(
               padding:8px 14px 4px;
             }}
             .otc-strategy-section-hint {{
-              font-size:10px;color:var(--text-muted);font-weight:500;
+              font-size:11px;color:var(--text-muted);font-weight:500;
             }}
             .otc-strategy-clear-filter {{
-              font-size:10px;font-weight:700;color:var(--accent);
+              font-size:11px;font-weight:700;color:var(--accent);
               background:none;border:none;cursor:pointer;padding:2px 6px;
               border-radius:6px;
             }}
@@ -963,7 +963,7 @@ def build_trade_calculator_body(
               display:flex;align-items:center;gap:6px;flex-shrink:0;
             }}
             .otc-strategy-impact-badge {{
-              padding:2px 7px;border-radius:6px;font-size:10px;font-weight:700;
+              padding:2px 7px;border-radius:6px;font-size:11px;font-weight:700;
             }}
             /* ── Strategy cards container ── */
             #otcStrategyCards {{
@@ -981,7 +981,7 @@ def build_trade_calculator_body(
             /* partner line inside otc-rt-footer */
             .otc-strategy-partner {{
               display:inline-flex;align-items:center;gap:4px;
-              font-size:10px;font-weight:600;color:var(--text-muted);
+              font-size:11px;font-weight:600;color:var(--text-muted);
             }}
             .otc-strategy-partner .dot {{
               width:6px;height:6px;border-radius:50%;flex-shrink:0;
@@ -999,7 +999,7 @@ def build_trade_calculator_body(
               }}
               #otcStrategyImpact > .otc-strategy-impact-row:nth-child(odd) {{ border-right:none; }}
               .otc-strategy-impact-badge {{
-                font-size:9px;
+                font-size:11px;
                 padding:2px 5px;
               }}
               .otc-sugg-subtab {{
@@ -1028,11 +1028,11 @@ def build_trade_calculator_body(
                 gap:4px;
               }}
               .otc-strategy-impact-badge {{
-                font-size:9px;
+                font-size:11px;
                 padding:2px 4px;
               }}
               .otc-strategy-impact-name {{
-                font-size:12px;
+                font-size:13px;
               }}
               .otc-strategy-section-head {{
                 padding:6px 10px 2px;
@@ -1053,7 +1053,7 @@ def build_trade_calculator_body(
             <!-- Upgrade CTA shown when user doesn't have PRO (hidden by JS when premium) -->
             <div id="otcSuggPaywall" style="{sugg_paywall_display}text-align:center;padding:56px 16px 40px;">
               <i class="fa-solid fa-lock" style="font-size:28px;color:var(--text-muted);opacity:.5;"></i>
-              <div style="font-weight:700;font-size:17px;margin-top:14px;">Trade Suggestions is a PRO feature</div>
+              <div style="font-weight:700;font-size:18px;margin-top:14px;">Trade Suggestions is a PRO feature</div>
               <div style="font-size:13px;color:var(--text-muted);margin:6px 0 20px;max-width:340px;margin-left:auto;margin-right:auto;">
                 Get personalized trade ideas based on your roster's needs, scoring format, and positional scarcity.
               </div>
@@ -1121,7 +1121,7 @@ def build_trade_calculator_body(
                   </div>
                   <!-- Excluded players bar -->
                   <div id="otcExcludedBar" style="display:none;border-top:1px solid var(--border);">
-                    <div style="padding:8px 14px 4px;font-size:10px;font-weight:700;color:var(--text-muted);letter-spacing:.05em;text-transform:uppercase;">Excluded from suggestions</div>
+                    <div style="padding:8px 14px 4px;font-size:11px;font-weight:700;color:var(--text-muted);letter-spacing:.05em;text-transform:uppercase;">Excluded from suggestions</div>
                     <div id="otcExcludedChips"></div>
                   </div>
                 </div>
@@ -1141,13 +1141,13 @@ def build_trade_calculator_body(
               </div>
 
               <!-- One-line explanation of the selected strategy -->
-              <div id="otcStrategyDesc" class="otc-strategy-desc" style="display:none;font-size:12px;line-height:1.45;color:var(--text-muted);margin:8px 2px 4px;"></div>
+              <div id="otcStrategyDesc" class="otc-strategy-desc" style="display:none;font-size:13px;line-height:1.45;color:var(--text-muted);margin:8px 2px 4px;"></div>
 
               <!-- Impact table (current PO badge is inline on the right) -->
               <div class="otc-strategy-section-head">
-                <span class="otc-sugg-section-title">Impact <span id="otcStrategySpinner" style="display:none;font-size:10px;font-weight:500;color:var(--text-muted);"><i class="fa-solid fa-circle-notch" style="animation:spin .9s linear infinite;margin-right:2px;"></i>Simulating…</span></span>
+                <span class="otc-sugg-section-title">Impact <span id="otcStrategySpinner" style="display:none;font-size:11px;font-weight:500;color:var(--text-muted);"><i class="fa-solid fa-circle-notch" style="animation:spin .9s linear infinite;margin-right:2px;"></i>Simulating…</span></span>
                 <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
-                  <span id="otcCurrentPOBadge" style="display:none;font-size:10px;font-weight:700;padding:2px 7px;border-radius:6px;background:color-mix(in srgb, var(--accent) 13%, transparent);color:var(--accent);"></span>
+                  <span id="otcCurrentPOBadge" style="display:none;font-size:11px;font-weight:700;padding:2px 7px;border-radius:6px;background:color-mix(in srgb, var(--accent) 13%, transparent);color:var(--accent);"></span>
                   <span class="otc-strategy-section-hint" id="otcStrategyImpactHint" title="wk is typical remaining-week win chance. po is simulated playoff-make odds. They can move in opposite directions: playoffs depend on the rest of the season, schedule, and ceiling -- not just average weekly scoring.">Win % if acquired</span>
                 </div>
               </div>

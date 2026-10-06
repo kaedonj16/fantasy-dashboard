@@ -72,12 +72,12 @@ def test_pricing_page_has_testimonial_near_plan_ctas():
 
 
 def test_social_proof_uses_the_existing_verbatim_quote():
-    # The quote must match the one already published in the quotes section,
-    # character for character: no paraphrase, no invented attribution.
-    quotes_section = APP_PY[APP_PY.index('<section class="quotes">'):]
-    assert quotes_section.count(QUOTE) >= 1
+    # The quote must match the one in the hero proof, character for character:
+    # no paraphrase, no invented attribution. (The duplicate quotes section was removed.)
+    assert '<section class="quotes">' not in APP_PY
     hero = _hero()
     assert hero.count(QUOTE) == 1
+    assert "Jayden Waddell" in hero
 
 
 def test_no_invented_user_counts_in_new_proof():

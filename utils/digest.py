@@ -79,7 +79,7 @@ def section_card(
     return (
         f'<div class="em-sect" style="{chrome}">'
         f'<div class="em-k" style="{_EMAIL_KICKER}">{title_s}</div>'
-        f'<div class="em-t" style="margin-top:8px;font-size:14px;color:#0f172a;line-height:1.5;">{inner}</div>'
+        f'<div class="em-t" style="margin-top:8px;font-size:15px;color:#0f172a;line-height:1.5;">{inner}</div>'
         f"{link}</div>"
     )
 
@@ -1415,7 +1415,7 @@ def email_shell(
     <div class="em-head" style="background:{header_bg};padding:22px 24px 18px;">
       {logo_block}
       {kicker_html}
-      <div class="em-sub" style="color:{subtitle_color};font-size:20px;font-weight:800;margin-top:6px;line-height:1.25;">{sub}</div>
+      <div class="em-sub" style="color:{subtitle_color};font-size:22px;font-weight:800;margin-top:6px;line-height:1.25;">{sub}</div>
     </div>
     <div style="height:4px;background:{divider};line-height:4px;font-size:0;">&nbsp;</div>
     <div class="em-cbody" style="padding:22px 20px 24px;background:{body_bg};">
@@ -1436,7 +1436,7 @@ def email_shell(
 def greeting_html(first_name: Optional[str]) -> str:
     hi = escape(first_name.strip(), quote=False) if first_name and first_name.strip() else "there"
     return (
-        f'<p class="em-greet" style="margin:0 0 12px;font-size:16px;color:#0f172a;font-weight:600;">'
+        f'<p class="em-greet" style="margin:0 0 12px;font-size:15px;color:#0f172a;font-weight:600;">'
         f"Hey {hi},</p>"
     )
 
@@ -1591,7 +1591,7 @@ def leagues_snapshot_table_html(entries: list) -> str:
             if focus else ""
         )
         meta_html = (
-            f'<div class="em-t3" style="font-size:12px;color:#64748b;margin-top:2px;">{meta}</div>'
+            f'<div class="em-t3" style="font-size:13px;color:#64748b;margin-top:2px;">{meta}</div>'
             if meta else ""
         )
         body += (
@@ -1700,7 +1700,7 @@ def thursday_alert_html(items: Optional[list], *, compact: bool = False) -> str:
         '<div class="em-alert-k" style="font-size:11px;font-weight:800;color:#92400e;'
         'text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;">'
         "Thursday night</div>"
-        f'<div class="em-alert-t" style="font-size:14px;color:#78350f;line-height:1.5;">{body}</div>'
+        f'<div class="em-alert-t" style="font-size:15px;color:#78350f;line-height:1.5;">{body}</div>'
         "</div>"
     )
 
@@ -1711,7 +1711,7 @@ def league_activity_html(bullets: Optional[list], *, href: str = "") -> str:
     if not clean:
         return ""
     items = "".join(
-        f'<li class="em-t" style="margin:0 0 6px;font-size:14px;color:#0f172a;line-height:1.5;">'
+        f'<li class="em-t" style="margin:0 0 6px;font-size:15px;color:#0f172a;line-height:1.5;">'
         f"{escape(b, quote=False)}</li>"
         for b in clean[:4]
     )
@@ -1739,7 +1739,7 @@ def league_summary_html(
         size = "16px"
     else:
         headline = (
-            f'<strong style="font-size:20px;letter-spacing:-0.02em;">{lg}</strong>'
+            f'<strong style="font-size:22px;letter-spacing:-0.02em;">{lg}</strong>'
         )
         size = "16px"
     chip = format_chip_html(format_label)
@@ -1830,7 +1830,7 @@ def waiver_html(
         rowb = "em-rowb" if shown else ""
         rows += (
             f'<tr><td class="{rowb} em-t" style="padding:8px 0;{border}font-size:15px;color:#0f172a;">{label}'
-            f'<div class="em-t3" style="font-size:12px;color:#64748b;margin-top:2px;">{escape(meta, quote=False)}</div>'
+            f'<div class="em-t3" style="font-size:13px;color:#64748b;margin-top:2px;">{escape(meta, quote=False)}</div>'
             f"</td></tr>"
         )
         shown += 1
@@ -1876,9 +1876,9 @@ def roster_core_html(
             )
         pos_s = escape(pos, quote=False)
         rows += (
-            f'<tr><td class="em-t" style="padding:6px 0;font-size:14px;">{label}'
-            f'<div class="em-t3" style="font-size:12px;color:#64748b;">{pos_s}</div></td>'
-            f'<td class="em-t" style="padding:6px 0;font-size:14px;font-weight:700;color:#0f172a;'
+            f'<tr><td class="em-t" style="padding:6px 0;font-size:15px;">{label}'
+            f'<div class="em-t3" style="font-size:13px;color:#64748b;">{pos_s}</div></td>'
+            f'<td class="em-t" style="padding:6px 0;font-size:15px;font-weight:700;color:#0f172a;'
             f'text-align:right;white-space:nowrap;">{val:.0f}</td></tr>'
         )
     if not rows:
@@ -1938,14 +1938,14 @@ def _mover_rows(
         nm = escape(raw_name, quote=False)
         href = escape(player_deep_link(base, platform, season, league_id, pid, raw_name), quote=True)
         note_html = (
-            f'<div class="em-t3" style="font-size:12px;color:#64748b;font-weight:400;">{escape(str(note), quote=False)}</div>'
+            f'<div class="em-t3" style="font-size:13px;color:#64748b;font-weight:400;">{escape(str(note), quote=False)}</div>'
             if note else ""
         )
         cells += (
-            f'<tr><td class="em-t" style="padding:6px 0;font-size:14px;">'
+            f'<tr><td class="em-t" style="padding:6px 0;font-size:15px;">'
             f'<a class="em-link" href="{href}" style="color:#0f172a;text-decoration:none;font-weight:600;">'
             f"{nm}</a>{note_html}</td>"
-            f'<td class="{dcls}" style="padding:6px 0;font-size:14px;font-weight:700;color:{color};'
+            f'<td class="{dcls}" style="padding:6px 0;font-size:15px;font-weight:700;color:{color};'
             f'text-align:right;white-space:nowrap;">{arrow} {abs(delta):.0f}</td></tr>'
         )
     if not cells:

@@ -340,7 +340,7 @@ def test_cheat_sheet_proj_pick_uses_custom_select_dropdown():
     assert "window.initCustomSelects" in csd
     assert "if (window.initCustomSelects) window.initCustomSelects" in sheet
     assert ".cs-filterbar .cs-src, .cs-filterbar .csd-wrap { flex: 0 0 auto; min-width: 168px; }" in body
-    assert ".cs-wrap .csd-trigger { font-size: 12px; font-weight: 700;" in body
+    assert ".cs-wrap .csd-trigger { font-size: 13px; font-weight: 700;" in body
     assert "sel.parentNode.querySelector('.csd-value')" in sheet
 
 

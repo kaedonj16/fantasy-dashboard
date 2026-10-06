@@ -54,7 +54,7 @@ def test_paywall_and_pricing_explain_pro_and_plan_coverage():
         "Premium AI weekly recap storyline",
         "Custom Draft Board",
         "Trend Scout",
-        "Draft Deep Dive",
+        "Draft Grades",
     ]
     for name in locked:
         assert name in billing

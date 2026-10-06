@@ -13,13 +13,13 @@ def build_players_shell() -> str:
       <div class="card-header" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
         <div>
           <h2>Player Rankings</h2>
-          <div style="font-size: 14px; color: var(--text-muted); margin-top: 4px;">
+          <div style="font-size: 15px; color: var(--text-muted); margin-top: 4px;">
             <span id="prSubtitle">All players ranked by dynasty value.</span>
           </div>
         </div>
         <button type="button" onclick="prExportCSV()" title="Download current list as CSV"
           style="margin-top:4px;padding:7px 14px;border-radius:8px;border:1px solid var(--border);
-                 background:var(--surface);color:var(--text);font-size:12px;font-weight:600;
+                 background:var(--surface);color:var(--text);font-size:13px;font-weight:600;
                  cursor:pointer;display:flex;align-items:center;gap:6px;white-space:nowrap;">
           <img src="/static/images/download-solid.png" style="width:13px;height:13px;vertical-align:middle;opacity:0.8;" alt="" aria-hidden="true"> Export CSV
         </button>
@@ -43,7 +43,7 @@ def build_players_shell() -> str:
                 aria-label="Clear search"
                 style="display:none;position:absolute;right:8px;top:50%;transform:translateY(-50%);
                        background:none;border:none;cursor:pointer;color:var(--text-muted);
-                       font-size:16px;line-height:1;padding:2px;">&#x2715;</button>
+                       font-size:15px;line-height:1;padding:2px;">&#x2715;</button>
             </div>
 
             <!-- Position filters -->
@@ -146,7 +146,7 @@ def build_players_shell() -> str:
         </div>
 
         <!-- Player count -->
-        <div id="prCount" style="font-size:12px;color:var(--text-muted);margin-bottom:8px;display:none;"></div>
+        <div id="prCount" style="font-size:13px;color:var(--text-muted);margin-bottom:8px;display:none;"></div>
 
         <div id="prTableScroll">
         <!-- Table header -->
@@ -195,7 +195,7 @@ def build_players_shell() -> str:
         transition: background 0.12s ease;
       }
       .pr-player-row:hover { background: var(--accent-soft); }
-      .pr-ppg { text-align: right; font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+      .pr-ppg { text-align: right; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
       .pr-player-row + .pr-player-row { border-top: 1px solid var(--border); }
       #prTableScroll.pr-adp-scroll {
         overflow-x: auto;
@@ -221,7 +221,7 @@ def build_players_shell() -> str:
         position: static;
       }
       .pr-rank {
-        font-size: 12px;
+        font-size: 13px;
         font-weight: 700;
         color: var(--text-muted);
         display: flex;
@@ -230,7 +230,7 @@ def build_players_shell() -> str:
         justify-content: flex-start;
       }
       .pr-rank-arrow {
-        font-size: 16px;
+        font-size: 15px;
         font-weight: 700;
         line-height: 1;
       }
@@ -249,7 +249,7 @@ def build_players_shell() -> str:
         display: flex;
         justify-content: center;
         align-items: center;
-        font-size: 10px;
+        font-size: 11px;
       }
       .pr-name {
         font-size: 13px;
@@ -269,7 +269,7 @@ def build_players_shell() -> str:
       }
       .pr-age {
         text-align: center;
-        font-size: 12px;
+        font-size: 13px;
         color: var(--text-muted);
       }
       .pr-team {
@@ -294,7 +294,7 @@ def build_players_shell() -> str:
       }
       .pr-adp-head:hover { color: var(--text); }
       .pr-adp-head-active { color: var(--accent); }
-      .pr-adp-sort-caret { font-size: 9px; }
+      .pr-adp-sort-caret { font-size: 11px; }
       .pr-adp-cell {
         text-align: center;
         font-size: 13px;
@@ -308,13 +308,13 @@ def build_players_shell() -> str:
       .pr-adp-num { position: relative; display: inline-block; }
       /* Comparison arrow vs the sorted ADP source: green ▲ when this source ranks
          the player higher (earlier pick), red ▼ when lower (later pick). */
-      .pr-adp-arrow { position: absolute; left: 100%; top: 50%; transform: translateY(-50%); margin-left: 3px; font-size: 8px; line-height: 1; }
+      .pr-adp-arrow { position: absolute; left: 100%; top: 50%; transform: translateY(-50%); margin-left: 3px; font-size: 11px; line-height: 1; }
       .pr-adp-arrow.up   { color: var(--win); }
       .pr-adp-arrow.down { color: var(--loss); }
       /* Compact Pos/Age/Team columns kept in the ADP view on desktop */
       .pr-adp-meta-h {
         text-align: center;
-        font-size: 10px;
+        font-size: 11px;
         opacity: 0.85;
       }
       .pr-adp-meta {
@@ -394,7 +394,7 @@ def build_players_shell() -> str:
         border: 1px solid var(--border);
         background: var(--card-bg);
         color: var(--text);
-        font-size: 12px;
+        font-size: 13px;
         font-weight: 600;
         cursor: pointer;
         display: flex;
@@ -447,7 +447,7 @@ def build_players_shell() -> str:
         border: 1px solid var(--border);
         background: var(--card-bg);
         color: var(--text-muted);
-        font-size: 12px;
+        font-size: 13px;
         font-weight: 600;
         cursor: pointer;
         transition: all 0.12s;
@@ -488,7 +488,7 @@ def build_players_shell() -> str:
         border: 1px solid var(--border);
         background: var(--card-bg);
         color: var(--text);
-        font-size: 12px;
+        font-size: 13px;
         font-weight: 600;
         cursor: pointer;
         outline: none;
@@ -552,7 +552,7 @@ def build_players_shell() -> str:
         opacity: 0.5;
       }
       .pr-tier-divider-label {
-        font-size: 10px;
+        font-size: 11px;
         font-weight: 700;
         letter-spacing: 0.06em;
         opacity: 0.75;
@@ -602,7 +602,7 @@ def build_players_shell() -> str:
           gap: 5px;
         }
         .filter-sort .filter-label {
-          font-size: 10px;
+          font-size: 11px;
         }
         .filter-sort select {
           width: 100%;
@@ -676,12 +676,12 @@ def build_players_shell() -> str:
         /* ADP-source view on phones: compact header labels so "Sleeper" /
            "BR Fantasy" / "Consensus" read clearly in the scrollable pane. */
         #prTableHeader.pr-adp-mode .pr-adp-head {
-          font-size: 9px;
+          font-size: 11px;
           letter-spacing: 0;
           padding: 0 1px;
         }
-        #prTableHeader.pr-adp-mode .pr-adp-sort-caret { font-size: 7px; }
-        .pr-adp-mode .pr-adp-cell { font-size: 12px; }
+        #prTableHeader.pr-adp-mode .pr-adp-sort-caret { font-size: 11px; }
+        .pr-adp-mode .pr-adp-cell { font-size: 13px; }
       }
 
       /* Sticky column header -- keep the # / Player / Value labels visible while

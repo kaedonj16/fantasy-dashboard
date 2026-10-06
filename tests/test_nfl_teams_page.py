@@ -663,7 +663,7 @@ def test_how_ranks_button_reveals_hidden_note():
     # first click. Regression: the old toggle read only the inline style, so
     # with the note visible-by-default the first click hid it (inverted).
     src = Path("dashboard_services/pages/nfl_teams_page.py").read_text()
-    assert ".nt-tnote{{margin:0;padding:10px 14px;font-size:12px;color:var(--text-muted);border-top:1px solid var(--border);display:none}}" in src
+    assert ".nt-tnote{{margin:0;padding:10px 14px;font-size:13px;color:var(--text-muted);border-top:1px solid var(--border);display:none}}" in src
     # The toggle consults the computed style, not just the inline style, so
     # the first click reveals the stylesheet-hidden note.
     assert "window.getComputedStyle(n).display" in src

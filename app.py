@@ -1430,7 +1430,8 @@ FORM_BODY = """
   <section class="home-hero">
     <div class="home-hero-left">
       <p class="home-brand">BR Fantasy</p>
-      <h1 class="home-title">Your dynasty league,<br><span class="home-rot" aria-label="upgraded"><span class="home-rot-track"><span>upgraded.</span><span>decoded.</span><span>dominated.</span><span>upgraded.</span></span></span></h1>
+      <h1 class="home-title">Free fantasy football trade calculator and dynasty tools.</h1>
+      <p class="home-punch"><span class="home-punch-words">Upgraded. Decoded. Dominated.</span> Built for managers who take winning personally.</p>
       <p class="home-subtitle">
         Trade values, AI analysis, and league tools for Sleeper, ESPN, Yahoo, MFL, and Fleaflicker.
       </p>
@@ -1464,12 +1465,13 @@ FORM_BODY = """
 <section class="home-previews">
   <div class="home-previews-inner">
     <header class="home-previews-head">
-      <span class="home-previews-eyebrow">Take the tour</span>
+      <span class="home-previews-eyebrow">See a live demo</span>
       <h2 class="home-previews-title">This is what Sundays look like here</h2>
       <p class="home-previews-lead">A peek at the tools your league gets. Connect a league to see them loaded with your teams and players.</p>
     </header>
 
-    <div class="home-preview-block">
+    <div class="home-bento">
+      <div class="home-bento-hero">
       <div class="home-preview-copy">
         <span class="home-preview-eyebrow">Matchup Board</span>
         <h3 class="home-preview-title">Your matchup, rebuilt for your phone</h3>
@@ -1539,9 +1541,9 @@ FORM_BODY = """
           </div>
         </div>
       </div>
-    </div>
+      </div>
 
-    <div class="home-preview-block is-flip">
+      <div class="home-bento-cell">
       <div class="home-preview-copy">
         <span class="home-preview-eyebrow">ScoreZone</span>
         <h3 class="home-preview-title">Every snap, one screen</h3>
@@ -1585,7 +1587,7 @@ FORM_BODY = """
       </div>
     </div>
 
-    <div class="home-preview-block">
+      <div class="home-bento-cell">
       <div class="home-preview-copy">
         <span class="home-preview-eyebrow">Start/Sit</span>
         <h3 class="home-preview-title">Set your lineup with confidence</h3>
@@ -1637,7 +1639,7 @@ FORM_BODY = """
       </div>
     </div>
 
-    <div class="home-preview-block is-flip">
+      <div class="home-bento-cell">
       <div class="home-preview-copy">
         <span class="home-preview-eyebrow">Wrapped</span>
         <h3 class="home-preview-title">Your season, wrapped</h3>
@@ -1667,6 +1669,7 @@ FORM_BODY = """
         <div class="hm-dots" id="tourDots">
           <span class="hm-dot is-active"></span><span class="hm-dot"></span><span class="hm-dot"></span>
         </div>
+      </div>
       </div>
     </div>
 
@@ -1709,20 +1712,6 @@ FORM_BODY = """
   </div>
 </section>
 
-<section class="quotes">
-  <div style="text-align:center">
-    <span class="section-kicker">League love</span>
-    <h2 class="section-title">Managers talk</h2>
-    <p class="section-lead">From the Blackedraw group chat.</p>
-  </div>
-  <div class="quotes-grid quotes-single">
-    <figure class="quote-card">
-      <blockquote>THATS ACTUALLY SO SICK BRO</blockquote>
-      <figcaption><strong>Jayden Waddell</strong>Pittsburgh Pilots, on the weekly recap</figcaption>
-    </figure>
-  </div>
-</section>
-
   <script>
   (function() {
     var deck = document.getElementById('tourDeck');
@@ -1745,7 +1734,7 @@ FORM_BODY = """
   <section class="home-pro" id="homeProSignup" aria-labelledby="homeProTitle">
     <div class="home-pro-inner">
       <header class="home-pro-head">
-        <span class="home-pro-eyebrow">Unlock PRO</span>
+        <span class="home-pro-eyebrow">Get PRO</span>
         <h2 class="home-pro-title" id="homeProTitle">The tools that decide trades, waivers, and playoffs</h2>
         <p class="home-pro-lead"><strong>From $10 a year.</strong> PRO unlocks roster-aware analysis built for your league, not generic advice. Pick a plan, connect your league, done.</p>
       </header>
@@ -1787,12 +1776,12 @@ FORM_BODY = """
         </li>
         <li>
           <span class="home-pro-benefit-icon" aria-hidden="true"><i class="fa-solid fa-magnifying-glass-chart"></i></span>
-          <strong>Draft Deep Dive</strong>
+          <strong>Draft Grades</strong>
           <span>Grade every pick and see how the class actually landed</span>
         </li>
       </ul>
       <div class="home-pro-cta-row">
-        <button type="button" class="home-pro-open-btn" data-home-pro-open>Unlock PRO</button>
+        <button type="button" class="home-pro-open-btn" data-home-pro-open>Get PRO</button>
         <span class="home-pro-cta-note">$10/year. Cancel anytime. A Google account is required to subscribe.</span>
       </div>
     </div>
@@ -1856,7 +1845,7 @@ FORM_BODY = """
 <section class="faq">
   <div style="text-align:center; margin-bottom: 12px;">
     <span class="section-kicker">FAQ</span>
-    <h2 class="section-title">Good questions</h2>
+    <h2 class="section-title">Common questions</h2>
   </div>
   <details class="faq-item">
     <summary><h4>Is it really free?</h4><span class="faq-plus">+</span></summary>
@@ -1887,6 +1876,7 @@ FORM_BODY = """
         <div class="home-account-entry home-account-top">
           <span class="home-account-lead">Connect your league below. No account needed to look around.</span>
           <a class="google-continue-btn" href="/auth/google?intent=login&amp;next=/"><span class="google-button-title">Sign in with Google</span></a>
+          <p class="home-hero-trust">Free for your first league · 2-minute setup</p>
         </div>
         {% else %}
         <div id="signedInHome" class="signed-in-home">
@@ -2190,13 +2180,13 @@ FORM_BODY = """
             <button type="button" id="googleContinueBtn" class="google-continue-btn">
               <span class="google-button-title">Continue with Google</span>
               <span style="font-size:11px;font-weight:500;color:#5f6368;">Save your leagues &amp; settings, synced across devices</span>
-              <span style="font-size:10px;font-weight:600;color:#80868b;">Free &middot; no password</span>
+              <span style="font-size:11px;font-weight:600;color:#80868b;">Free &middot; no password</span>
             </button>
-            <div style="display:flex;align-items:center;gap:10px;margin:14px 0;color:rgba(255,255,255,.5);font-size:10.5px;font-weight:800;letter-spacing:.1em;">
+            <div style="display:flex;align-items:center;gap:10px;margin:14px 0;color:rgba(255,255,255,.5);font-size:11px;font-weight:800;letter-spacing:.1em;">
               <span style="flex:1;height:1px;background:rgba(255,255,255,.18);"></span>OR<span style="flex:1;height:1px;background:rgba(255,255,255,.18);"></span>
             </div>
             <button type="submit" class="continue-without-account-btn">
-              <span style="font-size:13.5px;font-weight:700;color:#fff;">Continue without account</span>
+              <span style="font-size:13px;font-weight:700;color:#fff;">Continue without account</span>
               <span style="font-size:11px;font-weight:500;color:rgba(255,255,255,.62);">Quick view on this device &middot; nothing saved</span>
             </button>
           </div>
@@ -2218,7 +2208,7 @@ FORM_BODY = """
         <figcaption><strong>Jayden Waddell</strong><span>Pittsburgh Pilots, on the weekly recap</span></figcaption>
       </figure>
       <p class="home-pro-hero-cta">
-        <button type="button" class="home-pro-open-btn" data-home-pro-open>Unlock PRO</button>
+        <button type="button" class="home-pro-open-btn" data-home-pro-open>Get PRO</button>
         <span>See what PRO includes. A Google account is required to subscribe.</span>
       </p>
     </div>
@@ -4318,31 +4308,31 @@ def _espn_otp_modal_html() -> str:
 <style>
 .otp-ov{position:fixed;inset:0;z-index:var(--z-modal,10000);background:rgba(4,8,17,.5);display:flex;align-items:center;justify-content:center;padding:16px}
 .otp-card{background:var(--card);border:1px solid var(--border);border-radius:16px;width:100%;max-width:420px;padding:16px 18px;box-shadow:0 24px 60px -20px rgba(0,0,0,.5);color:var(--text)}
-.otp-head{display:flex;justify-content:space-between;align-items:center;font-size:16px;font-weight:800;margin-bottom:12px}
-.otp-x{border:0;background:none;font-size:24px;line-height:1;color:var(--text-muted);cursor:pointer;padding:0 4px}
-.otp-chip{display:inline-flex;align-items:center;gap:7px;background:var(--accent-soft);border:1px solid var(--border);border-radius:10px;padding:7px 11px;font-size:12.5px;font-weight:700;margin-bottom:14px}
-.otp-chip-dot{width:16px;height:16px;border-radius:5px;background:#cc0000;color:#fff;font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center}
+.otp-head{display:flex;justify-content:space-between;align-items:center;font-size:15px;font-weight:800;margin-bottom:12px}
+.otp-x{border:0;background:none;font-size:22px;line-height:1;color:var(--text-muted);cursor:pointer;padding:0 4px}
+.otp-chip{display:inline-flex;align-items:center;gap:7px;background:var(--accent-soft);border:1px solid var(--border);border-radius:10px;padding:7px 11px;font-size:13px;font-weight:700;margin-bottom:14px}
+.otp-chip-dot{width:16px;height:16px;border-radius:5px;background:#cc0000;color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center}
 .otp-lb{display:block;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--text-muted);margin-bottom:6px}
-.otp-inp{width:100%;border:1px solid var(--border);background:var(--bg-alt);color:var(--text);border-radius:9px;padding:10px 11px;font-size:14px;box-sizing:border-box}
+.otp-inp{width:100%;border:1px solid var(--border);background:var(--bg-alt);color:var(--text);border-radius:9px;padding:10px 11px;font-size:15px;box-sizing:border-box}
 .otp-inp:focus{outline:none;border-color:#8eb2e3;box-shadow:0 0 0 4px rgba(56,132,255,.1)}
 .otp-code{letter-spacing:.4em;text-align:center;font-size:22px;font-weight:800;font-variant-numeric:tabular-nums;padding:12px}
 .otp-btn{width:100%;border:0;background:var(--accent);color:#fff;font-weight:700;font-size:13px;padding:11px 14px;border-radius:9px;cursor:pointer;margin-top:14px}
 .otp-btn:disabled{opacity:.6;cursor:default}
-.otp-help{font-size:12px;color:var(--text-muted);margin-top:10px;line-height:1.5}
-.otp-sub{font-size:12.5px;color:var(--text-muted);margin:0 0 14px;line-height:1.5}
+.otp-help{font-size:13px;color:var(--text-muted);margin-top:10px;line-height:1.5}
+.otp-sub{font-size:13px;color:var(--text-muted);margin:0 0 14px;line-height:1.5}
 .otp-sub b{color:var(--text)}
 .otp-resend{display:flex;justify-content:space-between;margin-top:14px}
-.otp-link{border:0;background:none;color:var(--accent);font-weight:700;font-size:12px;cursor:pointer;padding:0}
+.otp-link{border:0;background:none;color:var(--accent);font-weight:700;font-size:13px;cursor:pointer;padding:0}
 .otp-link:disabled{color:var(--text-subtle);cursor:default}
 .otp-verifying{text-align:center;padding:24px 0 8px}
 .otp-spin{width:34px;height:34px;margin:0 auto 14px;border-radius:50%;border:3px solid var(--border);border-top-color:var(--accent);animation:otpspin .8s linear infinite}
 @keyframes otpspin{to{transform:rotate(360deg)}}
 .otp-verify-t{font-size:15px;font-weight:800;margin:0}
-.otp-loading-sub{font-size:12.5px;color:var(--text-muted);line-height:1.5;margin:7px auto 0;max-width:280px}
-.otp-msg{margin-top:12px;font-size:12.5px;font-weight:600;min-height:16px}
+.otp-loading-sub{font-size:13px;color:var(--text-muted);line-height:1.5;margin:7px auto 0;max-width:280px}
+.otp-msg{margin-top:12px;font-size:13px;font-weight:600;min-height:16px}
 .otp-msg.err{color:var(--loss)}
 .otp-msg.ok{color:var(--win)}
-.espn-otp-launch{width:100%;background:var(--rookie);color:var(--on-accent);border:1px solid var(--rookie);border-radius:10px;font-size:14px;font-weight:700;padding:10px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.28)}
+.espn-otp-launch{width:100%;background:var(--rookie);color:var(--on-accent);border:1px solid var(--rookie);border-radius:10px;font-size:15px;font-weight:700;padding:10px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.28)}
 .espn-otp-launch:hover{filter:brightness(1.08)}
 .espn-otp-paste-toggle{color:#93c5fd;font-weight:700;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
 .espn-otp-paste-toggle:hover{color:#bfdbfe}
@@ -4481,8 +4471,8 @@ def _link_modal_html() -> str:
         display:flex;align-items:center;justify-content:center;padding:16px;}
       .link-card{background:var(--card);border:1px solid var(--border);border-radius:16px;
         width:100%;max-width:420px;max-height:88vh;overflow-y:auto;padding:16px 18px;box-shadow:0 24px 60px -20px rgba(0,0,0,.5);}
-      .link-head{display:flex;justify-content:space-between;align-items:center;font-size:16px;font-weight:800;margin-bottom:12px;}
-      .link-x{border:0;background:none;font-size:24px;line-height:1;cursor:pointer;color:var(--text-muted);padding:0 4px;}
+      .link-head{display:flex;justify-content:space-between;align-items:center;font-size:15px;font-weight:800;margin-bottom:12px;}
+      .link-x{border:0;background:none;font-size:22px;line-height:1;cursor:pointer;color:var(--text-muted);padding:0 4px;}
       .link-go{display:inline-block;background:var(--accent);color:#fff;text-decoration:none;font-weight:700;
         font-size:13px;padding:9px 18px;border-radius:10px;}
       .link-tabs{display:flex;gap:4px;padding:4px;background:var(--accent-soft);border:1px solid var(--border);
@@ -4494,26 +4484,26 @@ def _link_modal_html() -> str:
         color:var(--text-muted);margin-bottom:6px;}
       .link-row{display:flex;gap:8px;}
       .link-inp{flex:1;min-width:0;border:1px solid var(--border);background:var(--bg-alt);color:var(--text);
-        border-radius:9px;padding:9px 11px;font-size:14px;}
+        border-radius:9px;padding:9px 11px;font-size:15px;}
       .link-inp.link-sm{max-width:88px;flex:0 0 auto;}
       .link-full{display:block;width:100%;box-sizing:border-box}.link-field{margin-top:12px}
       .espn-methods{display:flex;gap:4px;padding:4px;background:var(--accent-soft);border:1px solid var(--border);border-radius:11px}
       .espn-method,.mfl-method,.flea-method{flex:1;border:0;background:none;color:var(--text-muted);font-weight:700;padding:8px;border-radius:8px;cursor:pointer}
       .espn-method.active,.mfl-method.active,.flea-method.active{background:var(--card);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.12)}
-      .link-help{font-size:12px;color:var(--text-muted);margin:8px 0 14px}.link-connect{width:100%;margin-top:14px}
-      .espn-credential-help{font-size:12px;color:var(--text-muted);margin-top:12px}.espn-credential-help summary{cursor:pointer;font-weight:700;color:var(--accent)}
+      .link-help{font-size:13px;color:var(--text-muted);margin:8px 0 14px}.link-connect{width:100%;margin-top:14px}
+      .espn-credential-help{font-size:13px;color:var(--text-muted);margin-top:12px}.espn-credential-help summary{cursor:pointer;font-weight:700;color:var(--accent)}
       .espn-credential-help ol{padding-left:20px;line-height:1.5}
       .link-btn{border:0;background:var(--accent);color:#fff;font-weight:700;font-size:13px;padding:9px 14px;
         border-radius:9px;cursor:pointer;flex:0 0 auto;}
       .link-list{margin-top:10px;display:flex;flex-direction:column;gap:6px;}
       .link-item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 11px;
         border:1px solid var(--border);border-radius:10px;font-size:13px;}
-      .link-add{border:0;background:var(--accent-soft);color:var(--accent);font-weight:800;font-size:12px;
+      .link-add{border:0;background:var(--accent-soft);color:var(--accent);font-weight:800;font-size:13px;
         padding:6px 12px;border-radius:8px;cursor:pointer;}
       .link-add[disabled]{opacity:.6;cursor:default;}
       .link-sel{width:100%;border:1px solid var(--border);background:var(--bg-alt);color:var(--text);
-        border-radius:9px;padding:9px 11px;font-size:14px;margin-top:8px;}
-      .link-msg{margin-top:12px;font-size:12.5px;font-weight:600;min-height:16px;}
+        border-radius:9px;padding:9px 11px;font-size:15px;margin-top:8px;}
+      .link-msg{margin-top:12px;font-size:13px;font-weight:600;min-height:16px;}
       .link-msg.ok{color:var(--win);} .link-msg.err{color:var(--loss);}
     </style>
     <script>
@@ -4790,7 +4780,7 @@ def _link_modal_html() -> str:
             if(window._hasAccount && !url.searchParams.get('league_id')) url.searchParams.set('league_id', id);
             var href=url.pathname+url.search;
             box.innerHTML='<a class="link-go" href="'+esc(href)+'">Connect Yahoo</a>'+
-              '<div style="font-size:11.5px;color:var(--text-muted);margin-top:8px;">'+esc(hint)+'</div>';
+              '<div style="font-size:11px;color:var(--text-muted);margin-top:8px;">'+esc(hint)+'</div>';
             linkSetMsg('',''); return;
           }
           if(!d.ok){ linkSetMsg(d.error||'Could not load that league.','err'); return; }
@@ -5251,7 +5241,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             if disabled:
                 item_html += (
                     f"<span class='nav-pill-dropdown-item disabled'>"
-                    f"{item_label} <span style='font-size:10px;margin-left:4px;'>Soon</span>"
+                    f"{item_label} <span style='font-size:11px;margin-left:4px;'>Soon</span>"
                     f"</span>"
                 )
             else:
@@ -5790,7 +5780,7 @@ def _recap_ready_banner(league_id: str, platform: str, season: int) -> str:
   <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
     <div style="display:flex;align-items:center;gap:8px;">
       <i class="fa-solid fa-newspaper" style="font-size:15px;color:var(--accent);margin-top:1px;"></i>
-      <span style="font-size:14px;font-weight:700;color:var(--text);">Recap is ready</span>
+      <span style="font-size:15px;font-weight:700;color:var(--text);">Recap is ready</span>
     </div>
     <button id="recapReadyClose"
             style="background:none;border:none;color:var(--muted);font-size:18px;line-height:1;
@@ -5862,7 +5852,7 @@ _DRAFT_IMMINENT_BANNER_HTML = r"""
 .drgb.is-live::before { background: linear-gradient(#38bdf8, #0ea5e9); }
 .drgb-inner { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 16px 44px 16px 18px; }
 .drgb-ic { flex-shrink: 0; width: 42px; height: 42px; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center;
-  font-size: 19px; color: var(--accent,#38bdf8); background: rgba(56,189,248,.16); box-shadow: inset 0 0 0 1px rgba(56,189,248,.28); }
+  font-size: 18px; color: var(--accent,#38bdf8); background: rgba(56,189,248,.16); box-shadow: inset 0 0 0 1px rgba(56,189,248,.28); }
 .drgb-ic-live { color: var(--accent,#38bdf8); background: rgba(56,189,248,.18); box-shadow: inset 0 0 0 1px rgba(56,189,248,.32);
   animation: drgbPulse 1.9s ease-out infinite; }
 @keyframes drgbPulse { 0% { box-shadow: inset 0 0 0 1px rgba(56,189,248,.32), 0 0 0 0 rgba(56,189,248,.5); }
@@ -5871,7 +5861,7 @@ _DRAFT_IMMINENT_BANNER_HTML = r"""
 @media (prefers-reduced-motion: reduce) { .drgb-ic-live { animation: none; } }
 .drgb-txt { display: flex; flex-direction: column; gap: 2px; line-height: 1.3; min-width: 0; flex: 1 1 140px; }
 .drgb-txt b { font-size: 15px; font-weight: 800; color: var(--text); letter-spacing: -.01em; }
-.drgb-txt span { font-size: 12.5px; color: var(--text-muted); }
+.drgb-txt span { font-size: 13px; color: var(--text-muted); }
 .drgb-cd { font-variant-numeric: tabular-nums; }
 .drgb-join { flex: 1 1 100%; justify-content: center; display: inline-flex; align-items: center; gap: 8px; white-space: nowrap;
   background: linear-gradient(180deg, #38bdf8, #0ea5e9); color: #fff; font-weight: 700; font-size: 13px; text-decoration: none;
@@ -6059,7 +6049,7 @@ def _google_link_pro_banner() -> str:
      padding:18px 20px;width:320px;
      flex-direction:column;gap:12px;">
   <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
-    <span style="font-size:14px;font-weight:700;color:var(--text);">{title}</span>
+    <span style="font-size:15px;font-weight:700;color:var(--text);">{title}</span>
     {dismiss}
   </div>
   <p style="margin:0;font-size:13px;color:var(--muted);line-height:1.45;">{body}</p>
@@ -6177,7 +6167,7 @@ def _pro_trial_banner() -> str:
      padding:18px 20px;width:320px;
      flex-direction:column;gap:12px;">
   <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
-    <span style="font-size:14px;font-weight:700;color:var(--text);">{title}</span>
+    <span style="font-size:15px;font-weight:700;color:var(--text);">{title}</span>
     <button type="button" id="proTrialBannerClose"
             style="background:none;border:none;color:var(--muted);font-size:18px;line-height:1;
                    cursor:pointer;padding:0;flex-shrink:0;"
@@ -6270,7 +6260,7 @@ def _dunning_banner() -> str:
      box-shadow:0 12px 40px rgba(0,0,0,.22);
      padding:18px 20px;width:330px;display:flex;flex-direction:column;gap:12px;">
   <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
-    <span style="font-size:14px;font-weight:700;color:var(--text);">Your PRO payment failed</span>
+    <span style="font-size:15px;font-weight:700;color:var(--text);">Your PRO payment failed</span>
     <button type="button" id="brDunningClose" aria-label="Dismiss"
             style="background:none;border:none;color:var(--muted);font-size:18px;line-height:1;cursor:pointer;padding:4px 8px;flex-shrink:0;min-width:44px;min-height:44px;">&times;</button>
   </div>
@@ -6344,7 +6334,7 @@ def _discord_banner() -> str:
     <div style="display:flex;align-items:center;gap:8px;">
       <img src="/static/images/discord-brands-solid.png" alt="Discord"
            style="width:16px;height:16px;opacity:.9;filter:brightness(0) saturate(100%) invert(40%) sepia(80%) saturate(600%) hue-rotate(210deg) brightness(110%);">
-      <span style="font-size:14px;font-weight:700;color:var(--text);">Join the Discord</span>
+      <span style="font-size:15px;font-weight:700;color:var(--text);">Join the Discord</span>
     </div>
     <button id="discordBannerClose"
             style="background:none;border:none;color:var(--muted);font-size:18px;line-height:1;
@@ -7722,15 +7712,15 @@ def espn_reconnect_page():
     if otp_on:
         email_block = (
             "<style>"
-            ".or-row{display:flex;align-items:center;gap:10px;margin:18px 0 6px;color:#64748b;font-size:12px;}"
+            ".or-row{display:flex;align-items:center;gap:10px;margin:18px 0 6px;color:#64748b;font-size:13px;}"
             ".or-row:before,.or-row:after{content:'';flex:1;height:1px;background:#334155;}"
-            ".email-toggle{background:none;border:0;color:#93c5fd;font-weight:700;font-size:14px;cursor:pointer;"
+            ".email-toggle{background:none;border:0;color:#93c5fd;font-weight:700;font-size:15px;cursor:pointer;"
             "text-decoration:underline;text-underline-offset:3px;padding:6px;}"
             ".email-toggle:hover{color:#bfdbfe;}"
             "input.rc-inp{width:100%;box-sizing:border-box;background:#1a2535;border:1px solid #334155;color:#e2e8f0;"
-            "border-radius:8px;padding:10px;font-size:14px;margin:0 0 4px;}"
+            "border-radius:8px;padding:10px;font-size:15px;margin:0 0 4px;}"
             "input.rc-inp:focus{outline:none;border-color:#3b82f6;}"
-            ".rc-code{text-align:center;letter-spacing:.4em;font-size:20px;font-weight:800;}"
+            ".rc-code{text-align:center;letter-spacing:.4em;font-size:22px;font-weight:800;}"
             ".row-links{display:flex;justify-content:space-between;margin-top:12px;}"
             ".linklike{background:none;border:0;color:#93c5fd;font-weight:700;font-size:13px;cursor:pointer;padding:4px;}"
             ".linklike:hover{color:#bfdbfe;}"
@@ -7860,11 +7850,11 @@ def _reconnect_page_shell(title, body_html):
         ".box{text-align:center;padding:40px 24px;max-width:440px;width:100%;box-sizing:border-box;}"
         ".logo{font-size:13px;font-weight:700;color:#38bdf8;letter-spacing:.04em;margin-bottom:24px;}"
         "h2{margin:0 0 8px;font-size:22px;}"
-        "p{color:#94a3b8;margin:0 0 16px;font-size:14px;line-height:1.5;}"
+        "p{color:#94a3b8;margin:0 0 16px;font-size:15px;line-height:1.5;}"
         ".league-line{color:#e2e8f0;}"
         ".actions{display:flex;flex-direction:column;align-items:center;gap:12px;margin-top:8px;}"
         "a.primary,button.primary{display:inline-block;padding:10px 20px;background:#3b82f6;color:#fff;"
-        "border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;border:0;cursor:pointer;}"
+        "border-radius:8px;text-decoration:none;font-weight:600;font-size:15px;border:0;cursor:pointer;}"
         "button.primary:disabled{opacity:.6;cursor:wait;}"
         "a.secondary{color:#94a3b8;font-size:13px;text-decoration:underline;}"
         ".fld{display:block;text-align:left;font-size:13px;font-weight:600;color:#cbd5e1;margin:0 0 6px;}"
@@ -7938,10 +7928,10 @@ def _branded_status_page(
                                             "display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;}"
                                             ".box{text-align:center;padding:40px 24px;max-width:400px;}"
                                             ".logo{font-size:13px;font-weight:700;color:#38bdf8;letter-spacing:.04em;margin-bottom:24px;}"
-                                            "h2{margin:0 0 8px;font-size:22px;}p{color:#94a3b8;margin:0 0 24px;font-size:14px;}"
+                                            "h2{margin:0 0 8px;font-size:22px;}p{color:#94a3b8;margin:0 0 24px;font-size:15px;}"
                                             ".actions{display:flex;flex-direction:column;align-items:center;gap:12px;}"
                                             "a.primary{display:inline-block;padding:10px 20px;background:#3b82f6;color:#fff;"
-                                            "border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;}"
+                                            "border-radius:8px;text-decoration:none;font-weight:600;font-size:15px;}"
                                             "a.secondary{color:#94a3b8;font-size:13px;text-decoration:underline;}</style>"
                                             "</head><body><div class='box'>"
                                             "<div class='logo'>BR Fantasy</div>"
@@ -8055,9 +8045,9 @@ def handle_500(e):
                                             "display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;}"
                                             ".box{text-align:center;padding:40px 24px;max-width:400px;}"
                                             ".logo{font-size:13px;font-weight:700;color:#38bdf8;letter-spacing:.04em;margin-bottom:24px;}"
-                                            "h2{margin:0 0 8px;font-size:22px;}p{color:#94a3b8;margin:0 0 24px;font-size:14px;}"
+                                            "h2{margin:0 0 8px;font-size:22px;}p{color:#94a3b8;margin:0 0 24px;font-size:15px;}"
                                             "a{display:inline-block;padding:10px 20px;background:#3b82f6;color:#fff;"
-                                            "border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;}</style>"
+                                            "border-radius:8px;text-decoration:none;font-weight:600;font-size:15px;}</style>"
                                             "</head><body><div class='box'>"
                                             "<div class='logo'>BR Fantasy</div>"
                                             "<h2>Something went wrong</h2>"
@@ -8083,13 +8073,13 @@ def handle_404(e):
                                             ".box{text-align:center;padding:40px 24px;max-width:420px;}"
                                             ".logo{font-size:13px;font-weight:700;color:#38bdf8;letter-spacing:.04em;margin-bottom:8px;}"
                                             ".code{font-size:72px;font-weight:800;color:#1e3a5f;line-height:1;margin:0 0 16px;}"
-                                            "h2{margin:0 0 8px;font-size:20px;}p{color:#94a3b8;margin:0 0 24px;font-size:14px;}"
+                                            "h2{margin:0 0 8px;font-size:22px;}p{color:#94a3b8;margin:0 0 24px;font-size:15px;}"
                                             ".links{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;}"
                                             "a.primary{display:inline-block;padding:10px 20px;background:#3b82f6;color:#fff;"
-                                            "border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;}"
+                                            "border-radius:8px;text-decoration:none;font-weight:600;font-size:15px;}"
                                             "a.secondary{display:inline-block;padding:10px 20px;background:transparent;"
                                             "border:1px solid #334155;color:#94a3b8;"
-                                            "border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;}</style>"
+                                            "border-radius:8px;text-decoration:none;font-weight:600;font-size:15px;}</style>"
                                             "</head><body><div class='box'>"
                                             "<div class='logo'>BR Fantasy</div>"
                                             "<div class='code'>404</div>"
@@ -12384,7 +12374,7 @@ def _render_next_steps_queue(
           <div class="os-section-head">
             <div class="os-section-head-content">
               <h2 class="os-section-title">Next steps</h2>
-              <div class="os-section-subtitle">Ranked by expected impact on your week</div>
+              <div class="os-section-subtitle">Most important first.</div>
             </div>
             <div class="os-section-head-actions">
               <span class="os-card-actions">
@@ -13161,7 +13151,7 @@ def _activity_your_players_block(roster_pids: dict) -> str:
             "<style>"
             ".inj-yours{background:color-mix(in srgb,var(--accent) 8%,transparent);"
             "box-shadow:inset 3px 0 0 var(--accent);}"
-            ".inj-yours-badge{display:inline-block;margin-left:6px;font-size:9px;font-weight:800;"
+            ".inj-yours-badge{display:inline-block;margin-left:6px;font-size:11px;font-weight:800;"
             "letter-spacing:.04em;padding:1px 5px;border-radius:4px;background:var(--accent);"
             "color:#fff;vertical-align:middle;}"
             "</style>"
@@ -17550,7 +17540,7 @@ def _rankings_methodology_faq() -> str:
     return (
             '<div class="static-section" style="max-width:860px;margin:22px auto 0;">'
             '<div class="static-section-title">How these dynasty values are built</div>'
-            '<p style="color:var(--text-muted);font-size:14px;line-height:1.75;">'
+            '<p style="color:var(--text-muted);font-size:15px;line-height:1.75;">'
             "Every number here estimates one thing: <strong>what the rest of your league would "
             "actually give up to acquire a player</strong> -- not how many points he'll score this "
             "week. That's what separates a dynasty value from a redraft ranking, and it's why the "
@@ -17560,7 +17550,7 @@ def _rankings_methodology_faq() -> str:
             "quarterbacks hold value longer), and each player's <strong>situation</strong> -- target share, "
             "depth-chart competition, and offensive context.</p>"
             '<div class="static-section-title">How to use the chart</div>'
-            '<ul style="color:var(--text-muted);font-size:14px;line-height:1.8;margin-left:20px;">'
+            '<ul style="color:var(--text-muted);font-size:15px;line-height:1.8;margin-left:20px;">'
             "<li><strong>Start from the number, then adjust</strong> for your roster's timeline and needs -- "
             "a value is a market estimate, not a law.</li>"
             "<li><strong>Match the format toggle to your league.</strong> Superflex makes quarterbacks far "
@@ -17568,7 +17558,7 @@ def _rankings_methodology_faq() -> str:
             "<li><strong>Compare across positions, not just within one</strong> -- the single scale is what "
             'makes "two mid-WRs for one stud RB" a question you can actually answer.</li>'
             "</ul>"
-            '<p style="color:var(--text-muted);font-size:14px;line-height:1.75;">New to dynasty values? Start '
+            '<p style="color:var(--text-muted);font-size:15px;line-height:1.75;">New to dynasty values? Start '
             'with <a href="/guides/dynasty-trade-value">How Dynasty Trade Value Works</a>, keep the '
             '<a href="/glossary">glossary</a> handy, then bring a deal to the free '
             '<a href="/trade">Trade Calculator</a>.</p>'
@@ -17610,8 +17600,8 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
             '<div id="prTableHeader" style="display:grid;',
         )
         body_html = body_html.replace(
-            '<div id="prCount" style="font-size:12px;color:var(--text-muted);margin-bottom:8px;display:none;"></div>',
-            '<div id="prCount" style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">'
+            '<div id="prCount" style="font-size:13px;color:var(--text-muted);margin-bottom:8px;display:none;"></div>',
+            '<div id="prCount" style="font-size:13px;color:var(--text-muted);margin-bottom:8px;">'
             'Top dynasty players by trade value</div>',
         )
         body_html += "\n" + _ssr_jsonld
@@ -17622,7 +17612,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
     if not platform:
         _intro = """
     <div class="static-section" style="max-width:860px;margin:0 auto 10px;">
-      <p style="color:var(--text-muted);font-size:14px;line-height:1.7;margin:0;">
+      <p style="color:var(--text-muted);font-size:15px;line-height:1.7;margin:0;">
         These are <strong>dynasty fantasy football trade values</strong> for every relevant
         player, refreshed daily from real league-to-league market data and our value model.
         Each number estimates what the rest of your league would give up to acquire a player,
@@ -17788,7 +17778,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
                 _bo_ts = (_bcur2.fetchone() or {}).get("m")
                 if _bo_ts:
                     _bo_last_updated = (
-                        f'<div style="font-size: 12px; color: var(--text-muted); '
+                        f'<div style="font-size: 13px; color: var(--text-muted); '
                         f'margin-top: 4px;">Last Updated: '
                         f'{_bo_ts.strftime("%b %d, %Y")}</div>'
                     )
@@ -17799,7 +17789,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
     <div class="card central">
       <div class="card-header">
         <h2>Breakout Engine</h2>
-        <div style="font-size: 14px; color: var(--text-muted); margin-top: 4px;">
+        <div style="font-size: 15px; color: var(--text-muted); margin-top: 4px;">
           Players positioned for breakouts based on opportunity, efficiency, and roster changes
         </div>
         {_bo_last_updated}
@@ -18009,18 +17999,9 @@ def page_breakouts(platform: str, season: int, league_id: str):
 
       function _boPlayerLink(name, playerId) {{
         if (playerId) {{
-          var pid = String(playerId);
-          _boPlayerNames[pid] = name || 'Unknown';
-          var safePid = pid.replace(/"/g, '&quot;');
-          return '<a class="bo-plink" data-bopid="' + safePid + '" onclick="event.stopPropagation();boOpenPlayerModal(this.getAttribute(\\\'data-bopid\\\'));">' + (name || 'Unknown') + '</a>';
+          return '<a class="bo-plink" onclick="event.stopPropagation();openPlayerModal(\'' + playerId + '\', \'' + (name || '').replace(/\\/g, '\\\\').replace(/\'/g, "\\'") + '\', {{tab: \'breakout\'}});return false;">' + (name || 'Unknown') + '</a>';
         }}
         return name || 'Unknown';
-      }}
-
-      var _boPlayerNames = {{}};
-      function boOpenPlayerModal(pid) {{
-        var nm = _boPlayerNames[pid] || 'Unknown';
-        openPlayerModal(pid, nm, {{tab: 'breakout'}});
       }}
 
       function renderBoTrackRecord(data) {{
@@ -18301,7 +18282,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
                 key: 'bo-locked',
                 feature: 'breakout-candidates',
                 message: lockedCount + ' more breakout candidates are locked. PRO unlocks the full list with full details.',
-                ctaLabel: 'Unlock'
+                ctaLabel: 'Get PRO'
               }});
             }};
             if (window.brUpsell || document.readyState !== 'loading') _boNudge();
@@ -18399,7 +18380,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
             ? `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
                  <span style="font-size:13px;font-weight:800;color:var(--text);">${{candidate.classification_label || 'Weekly Watchlist'}}</span>
                  <span style="font-size:11px;padding:2px 7px;border-radius:8px;background:var(--surface-alt);color:var(--text-muted);">${{Math.round(parseFloat(candidate.confidence || 0))}}% confidence</span>
-                 ${{candidate.provisional ? '<span style="font-size:10px;font-weight:800;color:#f59e0b;">PROVISIONAL</span>' : ''}}
+                 ${{candidate.provisional ? '<span style="font-size:11px;font-weight:800;color:#f59e0b;">PROVISIONAL</span>' : ''}}
                </div>
                <div style="font-size:11px;color:var(--text-muted);margin-top:5px;">${{candidate.score_basis === 'initial_role' ? 'Initial Role Score · No prior NFL baseline' : 'Role Change Score'}} · ${{candidate.sample && candidate.sample.recent_games ? candidate.sample.recent_games + ' recent game' + (candidate.sample.recent_games === 1 ? '' : 's') : 'Through Week ' + (candidate.as_of_week || '?')}}${{candidate.lifecycle_state ? ' · ' + candidate.lifecycle_state.replace('_', ' ') : ''}}</div>`
             : range
@@ -18456,7 +18437,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
                   <div class="breakout-headshot">${{(name[0] || '?').toUpperCase()}}<img src="https://sleepercdn.com/content/nfl/players/` + pid + `.jpg" alt="" loading="lazy" decoding="async" onerror="this.remove()"></div>
                   <div>
                     <div class="breakout-player-name">` + name + `</div>
-                    <div class="breakout-player-meta" style="font-size:12px;color:var(--text-muted);margin-top:2px;">${{age}} yr • ${{team}} • ${{pos}}</div>
+                    <div class="breakout-player-meta" style="font-size:13px;color:var(--text-muted);margin-top:2px;">${{age}} yr • ${{team}} • ${{pos}}</div>
                   </div>
                 </div>
                 <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
@@ -18655,7 +18636,7 @@ def _build_teams_skeleton(platform: str, season: int, league_id: str, num_teams:
       <main class="page-main">
         <div class="teams-topbar">
           <div class="teams-sort-bar">
-            <span style="font-size:12px;color:var(--text-muted);margin-right:8px;">Sort by:</span>
+            <span style="font-size:13px;color:var(--text-muted);margin-right:8px;">Sort by:</span>
             <button class="teams-sort-btn active" disabled>Positional Index</button>
             <button class="teams-sort-btn" disabled>Team Grade</button>
             <button class="teams-sort-btn" disabled>Archetype</button>
@@ -28956,23 +28937,14 @@ def _team_achievements(ctx, roster_id, owner_uid, platform, season, league_id):
                 and {"week", "roster_id", "points"}.issubset(df.columns):
             fin = df[df["finalized"] == True] if "finalized" in df.columns else df
             high_weeks = 0
-            high_week_nums = []
             for _wk, grp in fin.groupby("week"):
                 if grp.empty:
                     continue
                 top_rid = str(grp.loc[grp["points"].idxmax(), "roster_id"])
                 if top_rid == rid:
                     high_weeks += 1
-                    try:
-                        high_week_nums.append(int(_wk))
-                    except (TypeError, ValueError):
-                        pass
             if high_weeks >= 1:
-                weeks_str = ", ".join(str(w) for w in sorted(high_week_nums))
-                noun = "week" if high_weeks == 1 else "weeks"
-                detail = f"Weekly high scorer: {noun} {weeks_str}" if weeks_str else ""
-                out.append({"label": f"{high_weeks}× Weekly High", "kind": "gold",
-                            "detail": detail})
+                out.append({"label": f"{high_weeks}× Weekly High", "kind": "gold"})
             if "points_against" in fin.columns:
                 streaks = {}
                 for _rid, grp in fin.sort_values("week").groupby("roster_id"):
@@ -35659,18 +35631,18 @@ def _portfolio_movers_card(holdings: list, pos_colors: dict) -> str:
         ".pfm-row.player-clickable:hover .pfm-name{opacity:.72;}"
         ".pfm-pos{font-weight:800;font-size:11px;min-width:26px;}"
         ".pfm-name{flex:1;min-width:0;font-weight:600;font-size:13px;line-height:1.25;overflow-wrap:anywhere;}"
-        ".pfm-sh{font-size:10px;font-weight:700;color:var(--text-subtle);"
+        ".pfm-sh{font-size:11px;font-weight:700;color:var(--text-subtle);"
         "background:var(--row,rgba(127,127,127,.1));padding:1px 5px;border-radius:5px;}"
-        ".pfm-val{font-size:12px;font-weight:700;color:var(--text-muted);font-variant-numeric:tabular-nums;min-width:34px;text-align:right;}"
-        ".pfm-delta{font-size:12px;font-weight:800;font-variant-numeric:tabular-nums;min-width:40px;text-align:right;}"
-        ".pfm-empty{font-size:12px;color:var(--text-subtle);padding:12px 0;}"
+        ".pfm-val{font-size:13px;font-weight:700;color:var(--text-muted);font-variant-numeric:tabular-nums;min-width:34px;text-align:right;}"
+        ".pfm-delta{font-size:13px;font-weight:800;font-variant-numeric:tabular-nums;min-width:40px;text-align:right;}"
+        ".pfm-empty{font-size:13px;color:var(--text-subtle);padding:12px 0;}"
         "</style>"
         # No bottom margin: this card sits in the .pf-grid-2 grid, whose gap handles
         # spacing. A stray margin would make it shorter than its stretched row-mate.
         "<div class='card'>"
         "<div class='card-header' style='display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;'>"
         "<h3>Portfolio Movers</h3>"
-        "<span style='font-size:12px;color:var(--text-muted);'>Value-rank swings across your leagues &middot; last 7 days</span>"
+        "<span style='font-size:13px;color:var(--text-muted);'>Value-rank swings across your leagues &middot; last 7 days</span>"
         "</div>"
         f"<div class='pfm-grid'>{risers_html}{fallers_html}</div>"
         "</div>"
@@ -35728,13 +35700,13 @@ def build_portfolio_body(
         "@media(max-width:700px){.pf-grid-2{grid-template-columns:1fr;}}"
         # Summary header: title + a cohesive 3-up stat bar (Leagues/Record/Season)
         ".pf-summary{display:flex;flex-direction:column;gap:14px;}"
-        ".pf-summary-title{font-size:21px;font-weight:800;letter-spacing:-.01em;color:var(--text);line-height:1.1;}"
+        ".pf-summary-title{font-size:22px;font-weight:800;letter-spacing:-.01em;color:var(--text);line-height:1.1;}"
         ".pf-summary-sub{font-size:13px;color:var(--text-muted);margin-top:3px;}"
-        ".pf-reset-user{color:var(--text-muted);font-size:12px;font-weight:700;"
+        ".pf-reset-user{color:var(--text-muted);font-size:13px;font-weight:700;"
         "text-decoration:underline;text-underline-offset:2px;}"
         ".pf-reset-user:hover{color:var(--accent);}"
         # Notification settings entry point on My Leagues (first-class surface).
-        ".pf-notif-btn{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;"
+        ".pf-notif-btn{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:700;"
         "color:var(--text-muted);background:var(--row);border:1px solid var(--grid);border-radius:10px;"
         "padding:7px 12px;cursor:pointer;white-space:nowrap;}"
         ".pf-notif-btn:hover{color:var(--accent);border-color:var(--accent);}"
@@ -35743,7 +35715,7 @@ def build_portfolio_body(
         ".pf-stat-bar--4{grid-template-columns:repeat(4,1fr);}"
         ".pf-stat{padding:12px 10px;text-align:center;min-width:0;}"
         ".pf-stat+.pf-stat{border-left:1px solid var(--grid);}"
-        ".pf-stat-val{font-size:24px;font-weight:800;color:var(--text);line-height:1.15;"
+        ".pf-stat-val{font-size:22px;font-weight:800;color:var(--text);line-height:1.15;"
         "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}"
         ".pf-stat-label{font-size:11px;font-weight:600;color:var(--text-subtle);"
         "text-transform:uppercase;letter-spacing:.06em;margin-top:5px;}"
@@ -35788,12 +35760,12 @@ def build_portfolio_body(
         ".pf-leagues-table th:nth-child(5){width:96px;}"
         ".pf-league-row td{border-top:1px solid var(--grid);padding:10px 6px;}"
         ".pf-leagues-table td.pf-league-name-cell{text-align:left;}"
-        ".pf-league-link{text-decoration:none;color:inherit;font-weight:700;font-size:14px;}"
+        ".pf-league-link{text-decoration:none;color:inherit;font-weight:700;font-size:15px;}"
         ".pf-league-link:hover{color:var(--accent);}"
         ".pf-pos-chips{display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-top:6px;}"
         ".pf-pos-chips>span{display:inline-flex;align-items:center;gap:3px;font-size:11px;"
         "color:var(--text-muted);white-space:nowrap;}"
-        ".pf-league-stat{text-align:center;font-size:14px;font-weight:600;white-space:nowrap;}"
+        ".pf-league-stat{text-align:center;font-size:15px;font-weight:600;white-space:nowrap;}"
         ".pf-league-type{text-align:right;padding-right:8px;white-space:nowrap;}"
         ".pf-streak{justify-content:center;}"
         # Mobile: the 5-column table is too cramped, so each league becomes a
@@ -35829,12 +35801,12 @@ def build_portfolio_body(
         "#pfTable tr.pf-row td:nth-child(1){flex:0 0 auto;}"
         "#pfTable tr.pf-row td.team{flex:1 1 auto;min-width:0;max-width:none;text-align:left;}"
         "#pfTable tr.pf-row td.team>div:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}"
-        "#pfTable tr.pf-row td:nth-child(5){flex:0 0 auto;margin-left:auto;font-size:17px;}"
+        "#pfTable tr.pf-row td:nth-child(5){flex:0 0 auto;margin-left:auto;font-size:18px;}"
         "}"
         # Cross-league moves digest (PRO)
         ".pf-moves-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;}"
         ".pf-moves-head h2{margin:0;}"
-        ".pf-moves-sub{display:block;font-size:12px;color:var(--text-muted);font-weight:500;margin-top:4px;}"
+        ".pf-moves-sub{display:block;font-size:13px;color:var(--text-muted);font-weight:500;margin-top:4px;}"
         ".pf-moves-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;}"
         ".pf-move-row{display:flex;align-items:stretch;gap:0;text-decoration:none;color:inherit;"
         "border:1px solid var(--grid);border-radius:12px;background:var(--row);overflow:hidden;"
@@ -35851,15 +35823,15 @@ def build_portfolio_body(
         ".pf-move-row--trade .pf-move-accent{background:#8b5cf6;}"
         ".pf-move-body{flex:1;min-width:0;padding:12px 10px 12px 12px;}"
         ".pf-move-meta{display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap;}"
-        ".pf-move-league-tag{font-size:10px;font-weight:700;color:var(--text-muted);letter-spacing:.03em;"
+        ".pf-move-league-tag{font-size:11px;font-weight:700;color:var(--text-muted);letter-spacing:.03em;"
         "text-transform:uppercase;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:18ch;"
         "padding:3px 8px;border:1px solid var(--grid);border-radius:6px;line-height:1.2;}"
-        ".pf-move-urgency{flex-shrink:0;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;"
+        ".pf-move-urgency{flex-shrink:0;font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;"
         "padding:3px 8px;border-radius:6px;line-height:1.2;}"
         ".pf-move-urgency--high{color:#b91c1c;background:color-mix(in srgb,#ef4444 14%,transparent);}"
         ".pf-move-urgency--medium{color:#b45309;background:color-mix(in srgb,#f59e0b 16%,transparent);}"
         ".pf-move-urgency--low{color:var(--text-muted);background:color-mix(in srgb,var(--text-muted) 12%,transparent);}"
-        ".pf-move-kind{flex-shrink:0;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;"
+        ".pf-move-kind{flex-shrink:0;font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;"
         "padding:3px 8px;border-radius:999px;line-height:1.2;}"
         ".pf-move-row--lineup .pf-move-kind{color:#b91c1c;background:color-mix(in srgb,#ef4444 14%,transparent);}"
         ".pf-move-row--injury .pf-move-kind{color:#b45309;background:color-mix(in srgb,#f59e0b 16%,transparent);}"
@@ -35867,10 +35839,10 @@ def build_portfolio_body(
         ".pf-move-row--waiver .pf-move-kind{color:#1d4ed8;background:color-mix(in srgb,#3b82f6 14%,transparent);}"
         ".pf-move-row--calendar .pf-move-kind{color:#0f766e;background:color-mix(in srgb,#14b8a6 16%,transparent);}"
         ".pf-move-row--trade .pf-move-kind{color:#6d28d9;background:color-mix(in srgb,#8b5cf6 14%,transparent);}"
-        ".pf-move-title{display:block;font-size:14px;font-weight:800;color:var(--text);line-height:1.35;letter-spacing:-.01em;}"
-        ".pf-move-detail{display:block;font-size:12px;color:var(--text-muted);margin-top:4px;line-height:1.45;}"
+        ".pf-move-title{display:block;font-size:15px;font-weight:800;color:var(--text);line-height:1.35;letter-spacing:-.01em;}"
+        ".pf-move-detail{display:block;font-size:13px;color:var(--text-muted);margin-top:4px;line-height:1.45;}"
         ".pf-move-chevron{flex-shrink:0;display:flex;align-items:center;padding:0 12px 0 4px;"
-        "font-size:20px;font-weight:300;color:var(--text-subtle);opacity:.55;transition:opacity .15s,transform .15s;}"
+        "font-size:22px;font-weight:300;color:var(--text-subtle);opacity:.55;transition:opacity .15s,transform .15s;}"
         ".pf-move-row:hover .pf-move-chevron{opacity:1;color:var(--accent);transform:translateX(2px);}"
         ".pf-moves-loading{font-size:13px;color:var(--text-muted);padding:6px 2px;}"
         ".pf-moves-empty{font-size:13px;color:var(--text-muted);line-height:1.5;padding:14px 4px;}"
@@ -35964,7 +35936,7 @@ def build_portfolio_body(
         "+'<div class=\"pf-moves-paywall-copy\">'+esc(msg)+'</div>'"
         "+'<button type=\"button\" class=\"pf-moves-paywall-btn\" "
         "onclick=\"if(typeof showPaywall===\\'function\\')showPaywall(\\'gm-memo\\')\">'"
-        "+esc(btn||'Unlock with PRO')+'</button></div>';"
+        "+esc(btn||'Get PRO')+'</button></div>';"
         "}"
         "var card=document.getElementById('pfMovesCard');"
         "var body=document.getElementById('pfMovesBody');"
@@ -36422,15 +36394,15 @@ def build_portfolio_body(
         "color:#fff;font-weight:800;font-size:11px;}"
         ".pf-lg-id{flex:1;min-width:0;overflow:hidden;display:flex;flex-direction:column;align-items:flex-start;gap:2px;}"
         ".pf-lg-title{min-width:0;max-width:100%;display:flex;align-items:baseline;gap:5px;}"
-        ".pf-lg-name{font-weight:800;font-size:13.5px;line-height:1.2;text-decoration:none;color:var(--text);"
+        ".pf-lg-name{font-weight:800;font-size:13px;line-height:1.2;text-decoration:none;color:var(--text);"
         "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;min-width:0;flex:1 1 auto;}"
         ".pf-lg-name:hover{color:var(--accent);}"
-        ".pf-lg-off{font-size:10px;color:var(--text-subtle);flex:0 0 auto;white-space:nowrap;}"
+        ".pf-lg-off{font-size:11px;color:var(--text-subtle);flex:0 0 auto;white-space:nowrap;}"
         ".pf-lg-meta{display:flex;align-items:center;gap:6px;min-width:0;max-width:100%;}"
         ".pf-lg-team{font-size:11px;color:var(--text-muted);line-height:1.2;"
         "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}"
         ".pf-lg-plat+.pf-lg-team::before{content:'·';margin-right:6px;color:var(--text-subtle);}"
-        ".pf-lg-plat{font-size:9px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;line-height:1.2;"
+        ".pf-lg-plat{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;line-height:1.2;"
         "flex:0 0 auto;}"
         ".pf-lg-plat-sleeper{color:#6C4BF0;}"
         ".pf-lg-plat-espn{color:#D33A46;}"
@@ -36446,7 +36418,7 @@ def build_portfolio_body(
         ".pf-lg-v{font-size:13px;font-weight:800;line-height:1.1;}"
         ".pf-draft-cd{font-variant-numeric:tabular-nums;}"
         ".pf-draft-when{font-size:11px;color:var(--text-muted);margin-top:2px;}"
-        ".pf-lg-l{font-size:9px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;"
+        ".pf-lg-l{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;"
         "color:var(--text-subtle);margin:0;line-height:1;}"
         ".pf-lg-card .pf-dot{width:6px;height:6px;}"
         # Stats row: three equal, divided columns (Record / Standing / Streak),
@@ -36460,7 +36432,7 @@ def build_portfolio_body(
         ".pf-lg-v--weak{color:var(--loss);}"
         # Streak as W/L pills (reuses the base .pf-streak flex row).
         ".pf-s-pill{width:15px;height:15px;border-radius:5px;display:grid;place-items:center;"
-        "font-size:9px;font-weight:800;color:#fff;line-height:1;}"
+        "font-size:11px;font-weight:800;color:#fff;line-height:1;}"
         ".pf-s-w{background:var(--win);}.pf-s-l{background:var(--loss);}"
         ".pf-streak-empty{font-size:13px;font-weight:800;color:var(--text-subtle);line-height:1.1;}"
         # Position-strength strip: a full-bleed band inside the card.
@@ -36473,9 +36445,9 @@ def build_portfolio_body(
         ".pf-pos-chip{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;"
         "gap:3px;padding:5px 2px 4px;border-radius:8px;border:1px solid var(--q-line,var(--grid));"
         "background:var(--q-fill,transparent);}"
-        ".pf-pos-chip .pos-badge{font-size:8px;padding:0 4px;height:14px;line-height:14px;"
+        ".pf-pos-chip .pos-badge{font-size:11px;padding:0 4px;height:14px;line-height:14px;"
         "border-radius:4px;letter-spacing:.02em;}"
-        ".pf-pos-chip .pc-rank{font-size:14px;font-weight:800;line-height:1;"
+        ".pf-pos-chip .pc-rank{font-size:15px;font-weight:800;line-height:1;"
         "color:var(--q-ink,var(--text));font-variant-numeric:tabular-nums;}"
         ".pf-pos-chip .pc-rank sup{font-size:.55em;font-weight:700;}"
         ".q-good{--q-fill:color-mix(in srgb,var(--win) 12%,transparent);"
@@ -36487,15 +36459,15 @@ def build_portfolio_body(
         ".pf-lg-foot{display:flex;align-items:center;gap:8px;border-top:1px solid var(--grid);"
         "padding-top:6px;flex-wrap:nowrap;min-width:0;}"
         ".pf-lg-foot .pf-arch{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;"
-        "font-size:10px;padding:2px 8px;}"
+        "font-size:11px;padding:2px 8px;}"
         ".pf-lg-foot .pf-pos-chips{margin-top:0;flex:1 1 auto;min-width:0;gap:6px 8px;"
         "overflow:hidden;}"
-        ".pf-lg-open{margin-left:auto;font-weight:800;font-size:12px;color:var(--accent);text-decoration:none;white-space:nowrap;flex-shrink:0;}"
+        ".pf-lg-open{margin-left:auto;font-weight:800;font-size:13px;color:var(--accent);text-decoration:none;white-space:nowrap;flex-shrink:0;}"
         ".pf-lg-pending-row{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;"
         "border-top:1px solid var(--grid);padding-top:6px;margin-top:0;}"
-        ".pf-lg-err{font-size:12px;color:var(--text-subtle);}"
+        ".pf-lg-err{font-size:13px;color:var(--text-subtle);}"
         ".pf-lg-fav{flex:0 0 auto;width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;"
-        "background:none;border:0;cursor:pointer;font-size:16px;line-height:1;margin:0;padding:0;"
+        "background:none;border:0;cursor:pointer;font-size:15px;line-height:1;margin:0;padding:0;"
         "color:var(--text-subtle);opacity:.5;transition:opacity .12s,color .12s;}"
         ".pf-lg-fav:hover{opacity:1;color:var(--gold,#ca8a04);}"
         ".pf-lg-fav.on{opacity:1;color:var(--gold,#ca8a04);}"
@@ -36508,7 +36480,7 @@ def build_portfolio_body(
         ".pf-lg-pager button{border:1px solid var(--grid);background:var(--card);color:var(--text);"
         "border-radius:8px;padding:5px 12px;font-size:13px;font-weight:700;cursor:pointer;}"
         ".pf-lg-pager button:disabled{opacity:.4;cursor:default;}"
-        ".pf-lg-pager-lbl{font-size:12.5px;color:var(--text-muted);font-weight:600;min-width:96px;text-align:center;}"
+        ".pf-lg-pager-lbl{font-size:13px;color:var(--text-muted);font-weight:600;min-width:96px;text-align:center;}"
         # Live matchup band: your total vs opponent as a head-to-head, each side's
         # projected final, and a win-probability bar (your share green, the
         # opponent's the remainder). Hydrated client-side (pfLiveScores); starts
@@ -36530,7 +36502,7 @@ def build_portfolio_body(
         ".pf-live-skel-score{height:20px;width:52px;border-radius:4px;margin-top:2px;}"
         ".pf-live-skel-proj{height:7px;width:40px;border-radius:4px;}"
         ".pf-live-skel-wp{height:6px;width:100%;border-radius:999px;margin-top:2px;}"
-        ".pf-live-status{font-size:9px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;"
+        ".pf-live-status{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;"
         "color:var(--text-subtle);display:flex;align-items:center;gap:5px;}"
         ".pf-live-dot{width:6px;height:6px;border-radius:50%;background:var(--text-subtle);flex:0 0 auto;}"
         ".pf-live-status.is-live{color:var(--win);}"
@@ -36541,12 +36513,12 @@ def build_portfolio_body(
         ".pf-live-grid{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;}"
         ".pf-live-side{min-width:0;display:flex;flex-direction:column;gap:1px;}"
         ".pf-live-side.opp{align-items:flex-end;text-align:right;}"
-        ".pf-live-lbl{font-size:10px;font-weight:700;color:var(--text-muted);max-width:100%;"
+        ".pf-live-lbl{font-size:11px;font-weight:700;color:var(--text-muted);max-width:100%;"
         "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}"
-        ".pf-live-score{font-size:20px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums;"
+        ".pf-live-score{font-size:22px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums;"
         "color:var(--text-subtle);}"
         ".pf-live-side.win .pf-live-score{color:var(--text);}"
-        ".pf-live-proj{font-size:9.5px;color:var(--text-subtle);font-variant-numeric:tabular-nums;}"
+        ".pf-live-proj{font-size:11px;color:var(--text-subtle);font-variant-numeric:tabular-nums;}"
         # Win-probability bar: your chance filled from the left in win-green over a
         # loss-red remainder (the opponent's chance). Reads as a tug-of-war.
         ".pf-live-wp{display:flex;flex-direction:column;gap:3px;}"
@@ -36554,11 +36526,11 @@ def build_portfolio_body(
         "background:color-mix(in srgb,var(--loss) 24%,transparent);}"
         ".pf-live-wp-fill{position:absolute;left:0;top:0;bottom:0;border-radius:999px;"
         "background:var(--win);transition:width .5s ease;}"
-        ".pf-live-wp-lbls{display:flex;justify-content:space-between;font-size:9px;font-weight:800;"
+        ".pf-live-wp-lbls{display:flex;justify-content:space-between;font-size:11px;font-weight:800;"
         "font-variant-numeric:tabular-nums;letter-spacing:.02em;}"
         ".pf-live-wp-you{color:var(--win);}"
         ".pf-live-wp-opp{color:var(--loss);}"
-        ".pf-live-result{font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;"
+        ".pf-live-result{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;"
         "text-align:center;color:var(--text);margin-top:4px;}"
         ".pf-live-unavailable{font-size:11px;color:var(--text-muted);}"
         ".pf-live-unavailable button{font:inherit;font-size:11px;font-weight:700;cursor:pointer;"
@@ -36572,7 +36544,7 @@ def build_portfolio_body(
         ".pf-lg-strength{margin:0 -10px;padding:7px 10px 8px;}"
         ".pf-lg-foot{gap:6px;padding-top:5px;}"
         ".pf-lg-foot .pf-pos-chips{gap:4px 7px;}"
-        ".pf-lg-foot .pf-arch{font-size:9.5px;padding:1px 6px;}"
+        ".pf-lg-foot .pf-arch{font-size:11px;padding:1px 6px;}"
         "}"
         "</style>"
         f"<div class='card'>"
@@ -36696,8 +36668,8 @@ def build_portfolio_body(
                     f"<tr>"
                     f"<td><span class='pos-badge {pl_pc}' style='font-size:0.7em;height:18px;width:28px;'>{pl_pos}</span></td>"
                     f"<td class='team'><span class='player-clickable' data-player-id='{pl_pid}' data-player-name='{pl_name}' style='cursor:pointer;font-weight:500;'>{pl_name}</span></td>"
-                    f"<td style='color:var(--text-muted);font-size:12px;'>{pl_pr}</td>"
-                    f"<td style='color:var(--text-muted);font-size:12px;white-space:nowrap;'>{pl_lg}</td>"
+                    f"<td style='color:var(--text-muted);font-size:13px;'>{pl_pr}</td>"
+                    f"<td style='color:var(--text-muted);font-size:13px;white-space:nowrap;'>{pl_lg}</td>"
                     f"<td style='font-weight:700;color:var(--accent);text-align:right;'>{pl_val:.0f}</td>"
                     f"</tr>"
                 )
@@ -36761,7 +36733,7 @@ def build_portfolio_body(
             f"<button class='pf-pill' data-pos='WR'>WR</button>"
             f"<button class='pf-pill' data-pos='TE'>TE</button>"
             f"<input class='pf-fsearch' type='text' placeholder='Search player…' id='pfSearch' style='margin-left:4px;'>"
-            f"<span style='font-size:12px;color:var(--text-subtle);margin-left:auto;' id='pfCount'></span>"
+            f"<span style='font-size:13px;color:var(--text-subtle);margin-left:auto;' id='pfCount'></span>"
             f"</div>"
             f"<div style='overflow-x:auto;'>"
             f"<table class='standings-table' id='pfTable'>"
@@ -36816,7 +36788,7 @@ def build_portfolio_body(
     insight_top = (f"<div class='pf-grid-2'>{pos_card}{movers_html}</div>"
                    if (pos_card and movers_html) else (pos_card + movers_html))
     insights_label = (
-        "<div style='font-size:11.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;"
+        "<div style='font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;"
         "color:var(--text-subtle);margin:22px 2px 12px;'>Portfolio insights</div>"
         if (pos_card or movers_html or nfl_html or holdings_html) else ""
     )
@@ -37966,51 +37938,51 @@ def page_trade_card(share_id: str):
     .sides{{display:grid;grid-template-columns:1fr 1fr;gap:0}}
     .side{{padding:14px 16px}}
     .side+.side{{border-left:1px solid var(--tc-border-sub)}}
-    .side-title{{font-size:9px;font-weight:700;letter-spacing:.08em;color:var(--tc-dim);text-transform:uppercase;margin-bottom:4px}}
+    .side-title{{font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--tc-dim);text-transform:uppercase;margin-bottom:4px}}
     .side-total{{font-size:22px;font-weight:900;color:var(--tc-text2);margin-bottom:10px}}
     .bar-wrap{{padding:0 16px 14px}}
     .bar-bg{{height:22px;background:var(--tc-bar);border-radius:12px;position:relative;overflow:hidden;border:1px solid var(--tc-border)}}
     .bar-fair-zone{{position:absolute;top:0;bottom:0;left:50%;transform:translateX(-50%);background:rgba(56,189,248,.12);border-left:1px solid rgba(56,189,248,.25);border-right:1px solid rgba(56,189,248,.25);pointer-events:none}}
     .bar-indicator{{position:absolute;top:-3px;width:12px;height:28px;border-radius:12px;background:#38bdf8;transform:translateX(-50%);box-shadow:0 0 8px rgba(56,189,248,.5)}}
-    .bar-labels{{display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:10px;color:var(--tc-dimmer);font-weight:600}}
-    .bar-fair-label{{font-size:10px;color:var(--tc-dim);font-weight:600}}
-    .pi-hdr-btn{{font-size:10px;font-weight:700;padding:3px 10px;border-radius:8px;border:1px solid rgba(74,222,128,.4);background:transparent;color:#4ade80;cursor:pointer;transition:background .15s}}
+    .bar-labels{{display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:11px;color:var(--tc-dimmer);font-weight:600}}
+    .bar-fair-label{{font-size:11px;color:var(--tc-dim);font-weight:600}}
+    .pi-hdr-btn{{font-size:11px;font-weight:700;padding:3px 10px;border-radius:8px;border:1px solid rgba(74,222,128,.4);background:transparent;color:#4ade80;cursor:pointer;transition:background .15s}}
     .pi-hdr-btn-on{{background:rgba(74,222,128,.15)}}
     .pi-section{{padding:12px 16px 4px}}
-    .pi-title{{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--tc-dim);margin-bottom:8px}}
+    .pi-title{{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--tc-dim);margin-bottom:8px}}
     .pi-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}}
     .pi-cell{{background:var(--tc-bar);border-radius:8px;padding:8px 6px;text-align:center}}
-    .pi-label{{font-size:9px;color:var(--tc-muted);font-weight:600;margin-bottom:3px}}
+    .pi-label{{font-size:11px;color:var(--tc-muted);font-weight:600;margin-bottom:3px}}
     .pi-val{{font-size:13px;font-weight:800}}
     .pi-pos{{color:#4ade80}}
     .pi-neg{{color:#f87171}}
     .verdict{{text-align:center;padding:10px 16px 14px;font-size:13px;font-weight:700}}
     .divider{{border-top:1px solid var(--tc-border-sub)}}
     .footer{{padding:14px 18px;display:flex;gap:8px;justify-content:flex-end;background:var(--tc-hdr);border-top:1px solid var(--tc-border-sub)}}
-    .btn{{font-size:12px;font-weight:700;padding:8px 16px;border-radius:8px;border:none;cursor:pointer;text-decoration:none;display:inline-block}}
+    .btn{{font-size:13px;font-weight:700;padding:8px 16px;border-radius:8px;border:none;cursor:pointer;text-decoration:none;display:inline-block}}
     .btn-outline{{background:transparent;color:var(--tc-muted);border:1px solid var(--tc-border)}}
     .btn-primary{{background:#3b82f6;color:#fff}}
     .tc-toggle{{position:absolute;top:-36px;right:0;background:var(--tc-card);border:1px solid var(--tc-border);
-      color:var(--tc-muted);border-radius:8px;padding:5px 10px;font-size:14px;cursor:pointer;}}
+      color:var(--tc-muted);border-radius:8px;padding:5px 10px;font-size:15px;cursor:pointer;}}
     .asset-row{{display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid var(--tc-border-sub)}}
     .asset-row:last-child{{border-bottom:none}}
     .asset-name{{flex:1;font-size:13px;font-weight:600;color:var(--tc-text);min-width:0;word-break:break-word}}
-    .asset-val{{font-size:12px;color:var(--tc-muted);flex-shrink:0}}
-    .asset-pos{{font-size:9px;font-weight:700;padding:2px 5px;border-radius:4px;flex-shrink:0}}
+    .asset-val{{font-size:13px;color:var(--tc-muted);flex-shrink:0}}
+    .asset-pos{{font-size:11px;font-weight:700;padding:2px 5px;border-radius:4px;flex-shrink:0}}
     .empty-side{{font-size:13px;color:var(--tc-dim);padding:8px 0}}
     @media(max-width:480px){{.side{{padding:12px}}.side-total{{font-size:18px}}}}
     @media(max-width:400px){{
       .card-header{{padding:10px 12px}}
       .side{{padding:10px 8px}}
-      .side-title{{font-size:8px}}
-      .side-total{{font-size:16px;margin-bottom:8px}}
+      .side-title{{font-size:11px}}
+      .side-total{{font-size:15px;margin-bottom:8px}}
       .asset-row{{gap:4px;padding:5px 0}}
-      .asset-name{{font-size:12px}}
+      .asset-name{{font-size:13px}}
       .asset-val{{font-size:11px}}
-      .asset-pos{{font-size:8px;padding:2px 4px}}
+      .asset-pos{{font-size:11px;padding:2px 4px}}
       .bar-wrap{{padding:0 10px 10px}}
-      .bar-labels{{font-size:9px}}
-      .verdict{{font-size:12px;padding:8px 12px 10px}}
+      .bar-labels{{font-size:11px}}
+      .verdict{{font-size:13px;padding:8px 12px 10px}}
       .footer{{padding:10px 12px;gap:6px}}
       .btn{{padding:7px 12px;font-size:11px}}
       .pi-grid{{grid-template-columns:repeat(2,1fr)}}
@@ -38329,36 +38301,36 @@ def page_trade_outcome_card(share_id: str):
     .badge{{font-size:11px;font-weight:700;padding:3px 10px;border-radius:8px;background:rgba(59,130,246,.15);color:#60a5fa;border:1px solid rgba(59,130,246,.25)}}
     .badge .oc-date{{color:var(--oc-dim);font-weight:600;margin-left:6px}}
     .verdict-banner{{text-align:center;padding:22px 18px 6px}}
-    .verdict-banner .vt{{font-size:24px;font-weight:900;color:{verdict_color};letter-spacing:.01em}}
+    .verdict-banner .vt{{font-size:22px;font-weight:900;color:{verdict_color};letter-spacing:.01em}}
     .verdict-banner .vd{{font-size:13px;font-weight:600;color:var(--oc-muted);margin-top:6px}}
     .sides{{display:grid;grid-template-columns:1fr 1fr;gap:0;margin-top:10px}}
     .side{{padding:14px 16px}}
     .side+.side{{border-left:1px solid var(--oc-border-sub)}}
-    .side-title{{font-size:9px;font-weight:700;letter-spacing:.08em;color:var(--oc-dim);text-transform:uppercase;margin-bottom:4px}}
+    .side-title{{font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--oc-dim);text-transform:uppercase;margin-bottom:4px}}
     .side-total{{font-size:22px;font-weight:900;color:var(--oc-text2);margin-bottom:10px}}
-    .side-total .oc-nowlbl{{font-size:10px;font-weight:600;color:var(--oc-dimmer);margin-left:6px}}
+    .side-total .oc-nowlbl{{font-size:11px;font-weight:600;color:var(--oc-dimmer);margin-left:6px}}
     .oc-row{{display:flex;align-items:flex-start;gap:6px;padding:6px 0;border-bottom:1px solid var(--oc-border-sub)}}
     .oc-row:last-child{{border-bottom:none}}
     .oc-name{{flex:1;font-size:13px;font-weight:600;color:var(--oc-text);min-width:0;word-break:break-word}}
     .oc-sub{{font-size:11px;font-weight:500;color:var(--oc-muted);margin-top:2px}}
-    .oc-pos{{font-size:9px;font-weight:700;padding:2px 5px;border-radius:4px;flex-shrink:0;margin-top:2px}}
+    .oc-pos{{font-size:11px;font-weight:700;padding:2px 5px;border-radius:4px;flex-shrink:0;margin-top:2px}}
     .oc-plus{{color:#4ade80;font-weight:700}}
     .oc-minus{{color:#f87171;font-weight:700}}
     .oc-empty{{font-size:13px;color:var(--oc-dim);padding:8px 0}}
     .oc-est{{margin:10px 16px 0;padding:7px 10px;border-radius:8px;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.25);font-size:11px;color:#fbbf24}}
     .divider{{border-top:1px solid var(--oc-border-sub);margin-top:12px}}
     .footer{{padding:14px 18px;display:flex;gap:8px;justify-content:flex-end;background:var(--oc-hdr);border-top:1px solid var(--oc-border-sub)}}
-    .btn{{font-size:12px;font-weight:700;padding:8px 16px;border-radius:8px;border:none;cursor:pointer;text-decoration:none;display:inline-block}}
+    .btn{{font-size:13px;font-weight:700;padding:8px 16px;border-radius:8px;border:none;cursor:pointer;text-decoration:none;display:inline-block}}
     .btn-outline{{background:transparent;color:var(--oc-muted);border:1px solid var(--oc-border)}}
     .btn-primary{{background:#3b82f6;color:#fff}}
     .oc-toggle{{position:absolute;top:-36px;right:0;background:var(--oc-card);border:1px solid var(--oc-border);
-      color:var(--oc-muted);border-radius:8px;padding:5px 10px;font-size:14px;cursor:pointer;}}
+      color:var(--oc-muted);border-radius:8px;padding:5px 10px;font-size:15px;cursor:pointer;}}
     @media(max-width:400px){{
       .card-header{{padding:10px 12px}}
       .side{{padding:10px 8px}}
-      .side-total{{font-size:16px;margin-bottom:8px}}
-      .oc-name{{font-size:12px}}
-      .verdict-banner .vt{{font-size:20px}}
+      .side-total{{font-size:15px;margin-bottom:8px}}
+      .oc-name{{font-size:13px}}
+      .verdict-banner .vt{{font-size:22px}}
       .footer{{padding:10px 12px}}
       .btn{{padding:7px 12px;font-size:11px}}
     }}

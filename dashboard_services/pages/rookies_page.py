@@ -15,7 +15,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
   <div class="card-header rk-card-header">
     <div>
       <h2 id="rookiesTitle">Rookie Prospects</h2>
-      <div style="font-size: 14px; color: var(--text-muted); margin-top: 4px;">
+      <div style="font-size: 15px; color: var(--text-muted); margin-top: 4px;">
         Dynasty prospect rankings - production, athleticism, and draft capital combined
       </div>
       <div id="rkPausedBanner" style="display:none;margin-top:10px;padding:8px 12px;border-radius:8px;
@@ -40,11 +40,11 @@ def build_prospects_body(is_admin: bool = False) -> str:
                    border:1px solid var(--border);background:var(--card-bg);
                    color:var(--text);font-size:13px;outline:none;box-sizing:border-box;">
           <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);
-                       color:var(--text-muted);font-size:14px;pointer-events:none;"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i></span>
+                       color:var(--text-muted);font-size:15px;pointer-events:none;"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i></span>
           <button id="rookieSearchClear" onclick="rkClearSearch()"
             style="display:none;position:absolute;right:8px;top:50%;transform:translateY(-50%);
                    background:none;border:none;cursor:pointer;color:var(--text-muted);
-                   font-size:16px;padding:2px;">&#x2715;</button>
+                   font-size:15px;padding:2px;">&#x2715;</button>
         </div>
         <div class="otc-day-filters filter-positions">
           <button class="otc-day-filter pos-pill active" data-pos="ALL" onclick="rkTogglePos('ALL')">All</button>
@@ -89,7 +89,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
           <label class="filter-label">Sort by</label>
           <select id="rkSort" onchange="rkSetSortKey(this.value)"
             style="padding:7px 10px;border-radius:8px;border:1px solid var(--border);
-                   background:var(--card-bg);color:var(--text);font-size:12px;
+                   background:var(--card-bg);color:var(--text);font-size:13px;
                    cursor:pointer;outline:none;min-height:34px;width:140px;">
             <option value="rank">Overall Rank</option>
             <option value="value">Value</option>
@@ -103,7 +103,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
     </div>
 
     <!-- Count -->
-    <div id="rkCount" style="font-size:12px;color:var(--text-muted);margin-bottom:8px;display:none;"></div>
+    <div id="rkCount" style="font-size:13px;color:var(--text-muted);margin-bottom:8px;display:none;"></div>
 
     <!-- Table header -->
     <div id="rkHeader" class="rk-grid-row rk-header" style="display:none;">
@@ -241,7 +241,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
     border: 1px solid var(--border);
     background: var(--card-bg);
     color: var(--text);
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 600;
     cursor: pointer;
     display: flex;
@@ -294,7 +294,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
     border: 1px solid var(--border);
     background: var(--card-bg);
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.12s;
@@ -405,21 +405,21 @@ def build_prospects_body(is_admin: bool = False) -> str:
   .rk-row:hover { background: var(--accent-soft); }
   .rk-row:first-child { border-top: none; }
 
-  .rk-rank { font-size: 12px; font-weight: 700; color: var(--text-muted); display: flex; flex-direction: column; align-items: center; gap: 1px; }
+  .rk-rank { font-size: 13px; font-weight: 700; color: var(--text-muted); display: flex; flex-direction: column; align-items: center; gap: 1px; }
   .rk-name-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .rk-name { font-size: 13px; font-weight: 600; color: var(--text); }
   .rk-name:hover { opacity: 0.72; }
   .rk-meta { font-size: 11px; color: var(--text-muted); }
   .rk-pos  { text-align: center; font-size: 11px; font-weight: 700; color: var(--text-muted); }
-  .rk-age  { text-align: center; font-size: 12px; color: var(--text-muted); }
+  .rk-age  { text-align: center; font-size: 13px; color: var(--text-muted); }
   .rk-draft { text-align: center; font-size: 11px; color: var(--text-muted); white-space: nowrap; }
-  .rk-score { text-align: right; font-size: 12px; font-weight: 600; }
+  .rk-score { text-align: right; font-size: 13px; font-weight: 600; }
   .rk-value { text-align: right; font-size: 13px; font-weight: 700; color: var(--accent); }
 
   /* Tier badge */
   .rk-tier {
     display: inline-block;
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 700;
     padding: 1px 6px;
     border-radius: 4px;
@@ -483,7 +483,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
     border-color: transparent;
   }
   .rk-hero-label {
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 700;
     color: var(--text-muted);
     text-transform: uppercase;
@@ -491,7 +491,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
     margin-bottom: 4px;
   }
   .rk-hero-val {
-    font-size: 26px;
+    font-size: 28px;
     font-weight: 700;
     color: var(--text);
     line-height: 1;
@@ -530,7 +530,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
     text-align: center;
   }
   .rk-meas-label {
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 700;
     color: var(--text-muted);
     text-transform: uppercase;
@@ -538,7 +538,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
     margin-bottom: 4px;
   }
   .rk-meas-val {
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 700;
     color: var(--text);
   }
@@ -563,7 +563,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
     gap: 10px;
   }
   .rk-comp-label {
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 600;
     color: var(--text-muted);
   }
@@ -578,7 +578,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
     border-radius: 3px;
   }
   .rk-comp-val {
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 700;
     text-align: right;
   }
@@ -923,7 +923,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
       if (r.position_rank) posRk += r.position_rank;
 
       var tierHtml = rkTierBadge(r.tier, r.tier_label);
-      var earlyTag = r.early_declare ? '<span style="font-size:10px;color:var(--text-muted);margin-left:4px;">Early</span>' : '';
+      var earlyTag = r.early_declare ? '<span style="font-size:11px;color:var(--text-muted);margin-left:4px;">Early</span>' : '';
       var scoreColor = rkScoreColor(score);
 
       row.innerHTML =
@@ -1113,12 +1113,12 @@ def build_prospects_body(is_admin: bool = False) -> str:
           return '<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);">' +
             '<div>' +
               '<span style="font-weight:600;color:var(--text);font-size:13px;">' + c.name + '</span>' +
-              '<span style="color:var(--text-muted);font-size:12px;margin-left:6px;">' + c.draft_class_year + pickStr + '</span>' +
-              (c.school ? '<span style="color:var(--text-muted);font-size:12px;"> · ' + c.school + '</span>' : '') +
+              '<span style="color:var(--text-muted);font-size:13px;margin-left:6px;">' + c.draft_class_year + pickStr + '</span>' +
+              (c.school ? '<span style="color:var(--text-muted);font-size:13px;"> · ' + c.school + '</span>' : '') +
             '</div>' +
             '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">' +
-              '<span style="font-size:12px;color:var(--text-muted);">' + parseFloat(c.prospect_score).toFixed(2) + '</span>' +
-              '<span style="padding:2px 7px;border-radius:5px;font-size:10px;font-weight:700;background:' + tc + '22;color:' + tc + ';border:1px solid ' + tc + '44;">T' + c.tier + '</span>' +
+              '<span style="font-size:13px;color:var(--text-muted);">' + parseFloat(c.prospect_score).toFixed(2) + '</span>' +
+              '<span style="padding:2px 7px;border-radius:5px;font-size:11px;font-weight:700;background:' + tc + '22;color:' + tc + ';border:1px solid ' + tc + '44;">T' + c.tier + '</span>' +
             '</div>' +
           '</div>';
         }).join('');
@@ -1245,14 +1245,14 @@ def build_prospects_body(is_admin: bool = False) -> str:
 
   function _buildLinkSleeperHtml(playerId, existingSleeperIdVal) {
     if (existingSleeperIdVal) {
-      return '<div style="font-size:12px;color:var(--text-muted);">Sleeper ID: <strong style="color:var(--text);">' + existingSleeperIdVal + '</strong> <span style="color:var(--win);">✓ linked</span></div>';
+      return '<div style="font-size:13px;color:var(--text-muted);">Sleeper ID: <strong style="color:var(--text);">' + existingSleeperIdVal + '</strong> <span style="color:var(--win);">✓ linked</span></div>';
     }
     // Linking writes to the database - only admins see the controls.
     if (!window.RK_IS_ADMIN) { return ''; }
     return '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
-      '<span style="font-size:12px;color:var(--text-muted);">Sleeper ID:</span>' +
-      '<input id="rkSleeperIdInput" type="text" placeholder="e.g. 10229" style="font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:6px;background:var(--card-bg);color:var(--text);width:110px;" />' +
-      '<button onclick="rkLinkSleeper(\\'' + playerId + '\\')" style="font-size:12px;padding:4px 10px;border-radius:6px;background:var(--accent);color:#fff;border:none;cursor:pointer;font-weight:600;">Link &amp; Promote</button>' +
+      '<span style="font-size:13px;color:var(--text-muted);">Sleeper ID:</span>' +
+      '<input id="rkSleeperIdInput" type="text" placeholder="e.g. 10229" style="font-size:13px;padding:4px 8px;border:1px solid var(--border);border-radius:6px;background:var(--card-bg);color:var(--text);width:110px;" />' +
+      '<button onclick="rkLinkSleeper(\\'' + playerId + '\\')" style="font-size:13px;padding:4px 10px;border-radius:6px;background:var(--accent);color:#fff;border:none;cursor:pointer;font-weight:600;">Link &amp; Promote</button>' +
     '</div>';
   }
 

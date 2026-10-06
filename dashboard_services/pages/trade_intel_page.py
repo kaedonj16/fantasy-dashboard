@@ -38,7 +38,7 @@ def build_trade_intel_body(
             '<div class="ti-embed">'
             '<div style="margin-bottom:14px;">'
             '<div style="font-size:15px;font-weight:700;">Market Intel</div>'
-            '<div style="font-size:12px;color:var(--text-muted);margin-top:2px;">'
+            '<div style="font-size:13px;color:var(--text-muted);margin-top:2px;">'
             f"{_TI_SOURCE_NOTE}</div>"
             "</div>"
         )
@@ -48,7 +48,7 @@ def build_trade_intel_body(
             '<div class="card central" style="max-width:960px;">'
             '<div class="card-header" style="border-bottom:1px solid var(--border);'
             'padding-bottom:16px;margin-bottom:0;">'
-            '<h2 style="margin:0 0 4px;font-size:20px;">Trade Intelligence</h2>'
+            '<h2 style="margin:0 0 4px;font-size:22px;">Trade Intelligence</h2>'
             '<div style="font-size:13px;color:var(--text-muted);">'
             f"Actionable insights from thousands of real dynasty trades. {_TI_SOURCE_NOTE}"
             "</div></div>"
@@ -211,14 +211,14 @@ def build_trade_intel_body(
       }}
       .ti-card:hover {{ transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,.12); }}
       .ti-card-top {{ display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px; }}
-      .ti-name {{ font-weight:700; font-size:14px; line-height:1.3; }}
+      .ti-name {{ font-weight:700; font-size:15px; line-height:1.3; }}
       .ti-meta {{ font-size:11px; color:var(--text-muted); margin-top:2px; }}
       .ti-chip {{
         font-size:11px; font-weight:700;
         padding:3px 9px; border-radius:10px; white-space:nowrap; flex-shrink:0;
       }}
       .ti-divider {{ height:1px; background:var(--border); margin:8px 0; }}
-      .ti-row {{ display:flex; justify-content:space-between; font-size:12px; margin-top:5px; }}
+      .ti-row {{ display:flex; justify-content:space-between; font-size:13px; margin-top:5px; }}
       .ti-row-label {{ color:var(--text-muted); }}
       .ti-row-val {{ font-weight:600; }}
       .ti-delta-pos {{ color:#10b981; }}
@@ -234,12 +234,12 @@ def build_trade_intel_body(
       .ti-heat-dots i {{ width:6px; height:13px; border-radius:3px; background:var(--border); }}
       .ti-heat-dots i.on {{ background:#f59e0b; }}
       .ti-heat-text {{ font-size:11px; font-weight:700; line-height:1.3; }}
-      .ti-heat-trend {{ margin-left:auto; font-size:10px; font-weight:800; white-space:nowrap; }}
+      .ti-heat-trend {{ margin-left:auto; font-size:11px; font-weight:800; white-space:nowrap; }}
       /* Who pays what (contender vs rebuilder buyer split) */
       .ti-split {{ border:1px solid var(--border); border-radius:10px; overflow:hidden; margin-top:8px; }}
       .ti-split-head {{
         padding:7px 10px; border-bottom:1px solid var(--border);
-        font-size:9px; font-weight:700; color:var(--text-muted);
+        font-size:11px; font-weight:700; color:var(--text-muted);
         letter-spacing:.05em; text-transform:uppercase;
       }}
       .ti-split-row {{ display:flex; align-items:center; gap:7px; padding:7px 10px; }}
@@ -250,9 +250,9 @@ def build_trade_intel_body(
         font-size:11px; color:var(--text-muted); flex:1; min-width:0;
         overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
       }}
-      .ti-split-n {{ font-size:10px; font-weight:700; color:var(--text-muted); white-space:nowrap; }}
+      .ti-split-n {{ font-size:11px; font-weight:700; color:var(--text-muted); white-space:nowrap; }}
       .ti-split-foot {{
-        padding:6px 10px; font-size:10px; color:var(--text-muted);
+        padding:6px 10px; font-size:11px; color:var(--text-muted);
         border-top:1px solid var(--border); background:rgba(0,0,0,.015);
       }}
       .ti-split-empty {{ padding:8px 10px; font-size:11px; color:var(--text-muted); }}
@@ -260,7 +260,7 @@ def build_trade_intel_body(
         display: grid;
         grid-template-columns: 1fr 1fr;
         gap: 6px 24px;
-        font-size: 12px; color: var(--text-muted);
+        font-size: 13px; color: var(--text-muted);
         background: var(--bg-alt, #f8fafc);
         border: 1px solid var(--border);
         border-radius: 10px; padding: 12px 16px;
@@ -305,7 +305,7 @@ def build_trade_intel_body(
         background: var(--card);
         color: var(--text);
         cursor: pointer;
-        font-size: 12px;
+        font-size: 13px;
         font-weight: 500;
         transition: all .15s;
         display: flex;
@@ -331,7 +331,7 @@ def build_trade_intel_body(
         background: var(--card);
         color: var(--text);
         cursor: pointer;
-        font-size: 12px;
+        font-size: 13px;
         font-weight: 500;
         min-width: 28px;
         text-align: center;
@@ -371,14 +371,14 @@ def build_trade_intel_body(
         margin-top: 8px;
         padding-top: 8px;
         border-top: 1px dashed var(--border);
-        font-size: 11.5px;
+        font-size: 11px;
         line-height: 1.45;
         color: var(--text-muted);
       }}
       .th-why-lbl {{
         flex-shrink: 0;
         font-weight: 700;
-        font-size: 10px;
+        font-size: 11px;
         letter-spacing: .04em;
         text-transform: uppercase;
         color: var(--accent, #2563eb);
@@ -406,12 +406,12 @@ def build_trade_intel_body(
       .ti-trades-name {{ font-size: 18px; font-weight: 700; }}
       .ti-trades-meta {{ font-size: 13px; color: var(--text-muted); margin-top: 3px; }}
       .ti-trades-close {{
-        background: none; border: none; font-size: 20px;
+        background: none; border: none; font-size: 22px;
         color: var(--text-muted); cursor: pointer; padding: 0 4px; line-height: 1;
       }}
       .ti-trades-close:hover {{ color: var(--text); }}
       .ti-profile-btn {{
-        padding: 5px 12px; border-radius: 8px; font-size: 12px; font-weight: 600;
+        padding: 5px 12px; border-radius: 8px; font-size: 13px; font-weight: 600;
         border: 1px solid var(--border); background: var(--bg-alt, #f1f5f9);
         color: var(--text); cursor: pointer; white-space: nowrap;
         transition: opacity .15s;
@@ -422,7 +422,7 @@ def build_trade_intel_body(
         border-bottom: 1px solid var(--border); flex-shrink: 0;
       }}
       .ti-trades-body {{ overflow-y: auto; flex: 1; padding: 0 20px; }}
-      .ti-trades-msg {{ text-align: center; padding: 40px 0; color: var(--text-muted); font-size: 14px; }}
+      .ti-trades-msg {{ text-align: center; padding: 40px 0; color: var(--text-muted); font-size: 15px; }}
       .ti-trade-item {{
         padding: 14px 0;
         border-bottom: 1px solid var(--border);
@@ -436,7 +436,7 @@ def build_trade_intel_body(
         display: grid; grid-template-columns: 1fr 28px 1fr; gap: 8px; align-items: start;
       }}
       .ti-trade-side-label {{
-        font-size: 10px; font-weight: 700; letter-spacing: .06em;
+        font-size: 11px; font-weight: 700; letter-spacing: .06em;
         color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase;
       }}
       .ti-trade-asset {{ font-size: 13px; padding: 2px 0; line-height: 1.4; }}
@@ -855,7 +855,7 @@ def build_trade_intel_body(
           grid.style.display = '';
           grid.innerHTML = matches.map(p =>
             `<div class="ti-card ti-card-loading" data-id="${{p.id}}" style="min-height:160px;display:flex;align-items:center;justify-content:center;">
-              <div style="color:var(--text-muted);font-size:12px;">${{p.name}}</div>
+              <div style="color:var(--text-muted);font-size:13px;">${{p.name}}</div>
             </div>`).join('');
 
           _searchTimer = setTimeout(async () => {{

@@ -1244,7 +1244,7 @@ def _render_trade_suggestions_from_data(suggestions: list[dict], partners: list[
             x = html.escape(raw)
             tl = _tier_by_name.get(raw.lower(), "") if side == "get" else ""
             badge = (
-                f" <span class=\"suggestion-tier\" style=\"font-size:9px;font-weight:700;"
+                f" <span class=\"suggestion-tier\" style=\"font-size:11px;font-weight:700;"
                 f"padding:1px 5px;border-radius:3px;background:#f1f5f9;color:#475569;\">"
                 f"{html.escape(tl.lower())}</span>"
                 if tl and tl != "Realistic" else ""
@@ -1262,7 +1262,7 @@ def _render_trade_suggestions_from_data(suggestions: list[dict], partners: list[
         }
         type_label, type_color = _type_labels.get(trade_type, ("Swap", "#0369a1"))
         type_badge = (
-            f"<span style='font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;"
+            f"<span style='font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px;"
             f"background:{type_color}18;color:{type_color};border:1px solid {type_color}40;'>"
             f"{html.escape(type_label)}</span>"
         )

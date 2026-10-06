@@ -391,8 +391,8 @@ def test_range_line_is_horizontal(page):
 def test_proj_is_start_sit_style_hero(page):
     m = re.search(r"(?m)^\.wv-lab-proj \.n \{([^}]*)\}", page)
     assert m, "missing .wv-lab-proj .n CSS rule"
-    assert "font-size: 23px" in m.group(1), (
-        "the Lab projection must be the Start/Sit hero number (23px), "
+    assert "font-size: 22px" in m.group(1), (
+        "the Lab projection must be the Start/Sit hero number (22px), "
         "pinned to the right of the row"
     )
     m2 = re.search(r"(?m)^\.wv-lab-line2 \{([^}]*)\}", page)

@@ -235,8 +235,8 @@ def _render_commissioner_history(layer, current_season, current_moves, current_t
 <style>
   .msh-card {{ padding:20px; margin-bottom:20px; }}
   .msh-head {{ display:flex; align-items:baseline; gap:8px; margin-bottom:18px; }}
-  .msh-head-title {{ font-size:12px; font-weight:800; letter-spacing:.06em; color:var(--text); text-transform:uppercase; }}
-  .msh-head-sub {{ font-size:12px; color:var(--muted); }}
+  .msh-head-title {{ font-size:13px; font-weight:800; letter-spacing:.06em; color:var(--text); text-transform:uppercase; }}
+  .msh-head-sub {{ font-size:13px; color:var(--muted); }}
   .msh-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:14px; margin-bottom:18px; }}
   .msh-stat {{ border:1px solid var(--border); border-radius:14px; padding:14px 16px; background:var(--row,rgba(127,127,127,.03)); }}
   .msh-stat-head {{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }}
@@ -244,13 +244,13 @@ def _render_commissioner_history(layer, current_season, current_moves, current_t
   .msh-trend {{ font-size:11px; font-weight:700; padding:3px 9px; border-radius:8px; white-space:nowrap; }}
   .msh-series {{ display:flex; align-items:center; flex-wrap:wrap; gap:2px; }}
   .msh-chip {{ display:inline-flex; flex-direction:column; align-items:center; gap:1px; padding:5px 11px; border-radius:10px; border:1px solid; line-height:1.1; }}
-  .msh-chip-yr {{ font-size:10px; font-weight:600; opacity:.75; }}
+  .msh-chip-yr {{ font-size:11px; font-weight:600; opacity:.75; }}
   .msh-chip-val {{ font-size:15px; font-weight:800; }}
-  .msh-arrow {{ color:var(--muted); font-size:16px; font-weight:700; padding:0 2px; opacity:.5; }}
+  .msh-arrow {{ color:var(--muted); font-size:15px; font-weight:700; padding:0 2px; opacity:.5; }}
   .msh-chronic-label {{ font-size:11px; font-weight:700; letter-spacing:.04em; color:var(--muted); text-transform:uppercase; margin-bottom:8px; }}
   .msh-chronic-row {{ display:flex; align-items:center; justify-content:space-between; padding:9px 12px; border-radius:10px; background:rgba(239,68,68,.06); border:1px solid rgba(239,68,68,.18); margin-bottom:6px; font-size:13px; }}
   .msh-chronic-name {{ font-weight:600; color:var(--text); }}
-  .msh-chronic-flag {{ color:#ef4444; font-weight:700; font-size:12px; }}
+  .msh-chronic-flag {{ color:#ef4444; font-weight:700; font-size:13px; }}
   .msh-chronic-ok {{ display:flex; align-items:center; gap:8px; padding:11px 14px; border-radius:10px; background:rgba(34,197,94,.07); border:1px solid rgba(34,197,94,.2); color:var(--text); font-size:13px; }}
   .msh-chronic-ok-icon {{ display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px; border-radius:50%; background:#22c55e; color:#fff; font-size:11px; font-weight:800; flex-shrink:0; }}
 </style>
@@ -591,9 +591,9 @@ def build_commissioner_body(ctx):
   .lh-ring {{ position:relative; width:128px; height:128px; flex-shrink:0; }}
   .lh-ring svg {{ transform:rotate(-90deg); }}
   .lh-ring-mid {{ position:absolute; inset:0; display:grid; place-content:center; text-align:center; }}
-  .lh-ring-num {{ font-size:40px; font-weight:800; line-height:1; }}
-  .lh-ring-cap {{ font-size:10px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin-top:3px; }}
-  .lh-pill {{ display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:800; letter-spacing:.03em; padding:4px 10px; border-radius:8px; text-transform:uppercase; }}
+  .lh-ring-num {{ font-size:28px; font-weight:800; line-height:1; }}
+  .lh-ring-cap {{ font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin-top:3px; }}
+  .lh-pill {{ display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:800; letter-spacing:.03em; padding:4px 10px; border-radius:8px; text-transform:uppercase; }}
   .lh-verdict {{ font-size:15px; color:var(--muted); margin-top:10px; max-width:48ch; }}
   .lh-verdict b {{ color:var(--text); }}
   .lh-wrap {{ max-width:1000px; margin:0 auto; }}
@@ -602,15 +602,15 @@ def build_commissioner_body(ctx):
   .lh-bar-row {{ display:flex; flex-direction:column; gap:7px; }}
   .lh-bar-top {{ display:flex; justify-content:space-between; align-items:baseline; }}
   .lh-bar-label {{ font-size:13px; font-weight:600; color:var(--text); }}
-  .lh-bar-val {{ font-size:16px; font-weight:800; line-height:1; }}
+  .lh-bar-val {{ font-size:15px; font-weight:800; line-height:1; }}
   .lh-bar-track {{ height:8px; border-radius:99px; background:var(--border); overflow:hidden; }}
   .lh-bar-fill {{ height:100%; border-radius:99px; min-width:2px; transition:width .3s ease; }}
   .lh-parity {{ position:relative; height:58px; margin:4px 4px 2px; }}
   .lh-parity-axis {{ position:absolute; left:0; right:0; top:33px; height:2px; background:var(--border); border-radius:2px; }}
   .lh-parity-fair {{ position:absolute; top:21px; bottom:6px; width:2px; background:var(--accent); opacity:.55; }}
-  .lh-parity-fair span {{ position:absolute; top:-15px; left:50%; transform:translateX(-50%); font-size:10px; font-weight:700; color:var(--muted); white-space:nowrap; }}
+  .lh-parity-fair span {{ position:absolute; top:-15px; left:50%; transform:translateX(-50%); font-size:11px; font-weight:700; color:var(--muted); white-space:nowrap; }}
   .lh-pdot {{ position:absolute; top:26px; width:14px; height:14px; border-radius:50%; transform:translateX(-50%); border:2px solid var(--card); box-shadow:0 1px 3px rgba(0,0,0,.28); }}
-  .lh-parity-scale {{ display:flex; justify-content:space-between; font-size:10.5px; color:var(--muted); margin:2px 4px 12px; }}
+  .lh-parity-scale {{ display:flex; justify-content:space-between; font-size:11px; color:var(--muted); margin:2px 4px 12px; }}
   .comm-team-table thead th:first-child, .comm-team-table tbody td:first-child {{
     position:sticky; left:0; z-index:2; background:var(--card);
     border-right:1px solid var(--border);
@@ -641,7 +641,7 @@ def build_commissioner_body(ctx):
     # ── Roster table with value bar ───────────────────────────────────────
     roster_rows = ""
     for r in roster_infos:
-        inactive_badge = (" <span style='background:#ef444420;color:#ef4444;font-size:10px;"
+        inactive_badge = (" <span style='background:#ef444420;color:#ef4444;font-size:11px;"
                           "padding:2px 5px;border-radius:4px;'>INACTIVE</span>") if r["inactive"] else ""
         roster_rows += f"""
 <tr style="border-bottom:1px solid var(--border);">
@@ -653,7 +653,7 @@ def build_commissioner_body(ctx):
   <td style="padding:10px 14px;min-width:140px;">
     <div style="display:flex;align-items:center;gap:8px;">
       {_val_bar(r['value_pct'])}
-      <span style="font-size:12px;font-weight:700;min-width:38px;text-align:right;">{r['value_pct']:.1f}%</span>
+      <span style="font-size:13px;font-weight:700;min-width:38px;text-align:right;">{r['value_pct']:.1f}%</span>
     </div>
   </td>
   <td style="padding:10px;text-align:center;">{r['txns']}</td>
@@ -694,11 +694,11 @@ def build_commissioner_body(ctx):
   {parity_html}
   <table class="comm-team-table" style="width:100%;border-collapse:collapse;" data-sortable>
     <thead><tr style="border-bottom:2px solid var(--border);">
-      <th style="padding:10px 14px;text-align:left;font-size:12px;color:var(--muted);">TEAM</th>
-      <th style="padding:10px;text-align:center;font-size:12px;color:var(--muted);">RECORD</th>
-      <th style="padding:10px 14px;text-align:left;font-size:12px;color:var(--muted);">ROSTER VALUE SHARE</th>
-      <th style="padding:10px;text-align:center;font-size:12px;color:var(--muted);">MOVES</th>
-      <th style="padding:10px;text-align:center;font-size:12px;color:var(--muted);">TRADES</th>
+      <th style="padding:10px 14px;text-align:left;font-size:13px;color:var(--muted);">TEAM</th>
+      <th style="padding:10px;text-align:center;font-size:13px;color:var(--muted);">RECORD</th>
+      <th style="padding:10px 14px;text-align:left;font-size:13px;color:var(--muted);">ROSTER VALUE SHARE</th>
+      <th style="padding:10px;text-align:center;font-size:13px;color:var(--muted);">MOVES</th>
+      <th style="padding:10px;text-align:center;font-size:13px;color:var(--muted);">TRADES</th>
     </tr></thead>
     <tbody>{roster_rows}</tbody>
   </table>
@@ -716,7 +716,7 @@ def build_commissioner_body(ctx):
             trade_items += f"""
 <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border);border-left:3px solid {diff_color};">
   <div style="flex:1;min-width:0;">
-    <div style="font-size:10px;color:var(--muted);font-weight:600;letter-spacing:.04em;margin-bottom:3px;">SIDE A</div>
+    <div style="font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.04em;margin-bottom:3px;">SIDE A</div>
     <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{html.escape(t['team_a'])}</div>
     <div style="font-size:22px;font-weight:800;color:var(--text);line-height:1.15;margin:2px 0;">{int(t['val_a']):,}</div>
     <div style="height:3px;background:var(--border);border-radius:2px;overflow:hidden;">
@@ -725,11 +725,11 @@ def build_commissioner_body(ctx):
   </div>
   <div style="text-align:center;flex-shrink:0;">
     <div style="font-size:15px;color:var(--muted);margin-bottom:5px;">&#8644;</div>
-    <div style="background:{diff_color}22;color:{diff_color};font-size:12px;font-weight:700;padding:3px 10px;border-radius:10px;white-space:nowrap;">&#177;{int(t['diff']):,}</div>
-    <div style="font-size:9px;color:{diff_color};margin-top:3px;font-weight:700;letter-spacing:.06em;">{diff_label}</div>
+    <div style="background:{diff_color}22;color:{diff_color};font-size:13px;font-weight:700;padding:3px 10px;border-radius:10px;white-space:nowrap;">&#177;{int(t['diff']):,}</div>
+    <div style="font-size:11px;color:{diff_color};margin-top:3px;font-weight:700;letter-spacing:.06em;">{diff_label}</div>
   </div>
   <div style="flex:1;min-width:0;text-align:right;">
-    <div style="font-size:10px;color:var(--muted);font-weight:600;letter-spacing:.04em;margin-bottom:3px;">SIDE B</div>
+    <div style="font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.04em;margin-bottom:3px;">SIDE B</div>
     <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{html.escape(t['team_b'])}</div>
     <div style="font-size:22px;font-weight:800;color:var(--text);line-height:1.15;margin:2px 0;">{int(t['val_b']):,}</div>
     <div style="height:3px;background:var(--border);border-radius:2px;overflow:hidden;display:flex;justify-content:flex-end;">
@@ -741,7 +741,7 @@ def build_commissioner_body(ctx):
 <div class="card" style="overflow:hidden;">
   <div class="card-header">
     <h3>Trade Fairness Log</h3>
-    <span style="font-size:12px;color:var(--muted);">Received value per side &middot; &#177;75 = lopsided</span>
+    <span style="font-size:13px;color:var(--muted);">Received value per side &middot; &#177;75 = lopsided</span>
   </div>
   {trade_items}
 </div>"""

@@ -360,12 +360,12 @@ def test_optimal_comparison_stacks_by_container_width():
 
 
 def test_optimal_viewport_media_block_no_longer_restacks_rows():
-    """The old @media (max-width:720px) row overrides (which hid the arrow and
+    """The old @media (max-width:768px) row overrides (which hid the arrow and
     overlapped the actual score with the gain) are superseded by the
     container query; the summary/nav rules in that block stay."""
     css = (ROOT / "static/dashboard.css").read_text(encoding="utf-8")
     anchor = css.index(".opt-nav { gap:7px")
-    start = css.rindex("@media (max-width:720px)", 0, anchor)
+    start = css.rindex("@media (max-width: 768px)", 0, anchor)
     block = css[start:css.index("\n}", anchor)]
     assert ".opt-summary" in block
     assert ".opt-lineup-row" not in block

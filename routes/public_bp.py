@@ -84,7 +84,7 @@ def email_unsubscribe():
 
     if account_id is None:
         msg = ("<h2 style='margin:0 0 8px;'>Link expired or invalid</h2>"
-               "<p style='color:var(--text-muted);font-size:14px;'>We couldn't verify "
+               "<p style='color:var(--text-muted);font-size:15px;'>We couldn't verify "
                "this unsubscribe link. You can manage email preferences from your "
                "account settings.</p>")
     elif unsubscribe(account_id, ntype):
@@ -100,10 +100,10 @@ def email_unsubscribe():
                 "re-enable them anytime from your account settings."
             )
         msg = ("<h2 style='margin:0 0 8px;'>You're unsubscribed</h2>"
-               f"<p style='color:var(--text-muted);font-size:14px;'>{detail}</p>")
+               f"<p style='color:var(--text-muted);font-size:15px;'>{detail}</p>")
     else:
         msg = ("<h2 style='margin:0 0 8px;'>Something went wrong</h2>"
-               "<p style='color:var(--text-muted);font-size:14px;'>We couldn't update "
+               "<p style='color:var(--text-muted);font-size:15px;'>We couldn't update "
                "your preferences right now. Please try again later.</p>")
     body = (
         "<div class='card central' style='max-width:520px;margin:40px auto;'>"
@@ -656,7 +656,7 @@ def contact_page(platform: Optional[str] = None, season: Optional[int] = None,
 
             <div class="static-section">
               <div class="static-section-title">What to include</div>
-              <ul style="margin-left:20px; font-size:14px;">
+              <ul style="margin-left:20px; font-size:15px;">
                 <li>Your Sleeper league ID</li>
                 <li>Which page you were on</li>
                 <li>What wasn't working or looked incorrect</li>
@@ -744,7 +744,7 @@ def about_page(platform: Optional[str] = None, season: Optional[int] = None,
 
             <div class="static-section">
               <div class="static-section-title">Features</div>
-              <ul style="margin-left:20px; font-size:14px; line-height:1.8;">
+              <ul style="margin-left:20px; font-size:15px; line-height:1.8;">
                 <li>Power rankings &amp; weekly performance scoring</li>
                 <li>Matchup previews with projected scores</li>
                 <li>Roster &amp; trade intelligence</li>
@@ -966,13 +966,13 @@ def oline_rankings_page(season: Optional[int] = None):
         opponent-adjusted pressure and sack rate (residualised for the QB's time to
         throw); run block uses opponent-adjusted Adjusted Line Yards. These are
         directional <em>unit</em> tiers, not per-lineman grades.
-        {"<br><span style='color:#9ca3af;font-size:12px;'>Season " + str(season) + " &middot; updated " + generated + "</span>" if generated else ""}</p>
+        {"<br><span style='color:#9ca3af;font-size:13px;'>Season " + str(season) + " &middot; updated " + generated + "</span>" if generated else ""}</p>
       </div>
       <div class="static-section">
         <div style="margin-bottom:10px;">{tabs}</div>
         <div style="overflow-x:auto;">
-        <table class="pub-oline-table" style="border-collapse:collapse;width:100%;font-size:14px;">
-          <thead><tr style="text-align:left;color:#6b7280;font-size:12px;text-transform:uppercase;">
+        <table class="pub-oline-table" style="border-collapse:collapse;width:100%;font-size:15px;">
+          <thead><tr style="text-align:left;color:#6b7280;font-size:13px;text-transform:uppercase;">
             <th style="padding:6px 10px;">#</th><th style="padding:6px 10px;">Team</th>
             <th style="padding:6px 10px;">Overall</th><th style="padding:6px 10px;">Pass</th>
             <th style="padding:6px 10px;">Run</th><th style="padding:6px 10px;">Pressure%</th>
@@ -1132,7 +1132,7 @@ def guides_index(platform: Optional[str] = None, season: Optional[int] = None,
                style="display:block;text-decoration:none;border:1px solid var(--border);
                       border-radius:12px;padding:16px 18px;margin-bottom:12px;">
               <div class="static-section-title" style="margin:0 0 4px;">{g['title']}</div>
-              <p style="margin:0;color:var(--muted);font-size:14px;">{g['summary']}</p>
+              <p style="margin:0;color:var(--muted);font-size:15px;">{g['summary']}</p>
             </a>
         """)
     body = f"""

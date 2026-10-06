@@ -1060,7 +1060,7 @@ def _section(title: str, body_html: str) -> str:
     return (
         f'<h3 class="em-h" style="margin:22px 0 10px;font-size:11px;font-weight:800;text-transform:uppercase;'
         f'letter-spacing:.06em;color:#0f2747;">{t}</h3>'
-        f'<div class="em-t" style="margin:0;font-size:14px;color:#122d4b;line-height:1.55;">{body_html}</div>'
+        f'<div class="em-t" style="margin:0;font-size:15px;color:#122d4b;line-height:1.55;">{body_html}</div>'
     )
 
 
@@ -1104,7 +1104,7 @@ def _feature(title: str, detail: str, href: str = "", first: bool = False) -> st
     return (
         f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0">'
         f'<tr><td style="padding:12px 0;{border}">'
-        f'<div style="font-size:14px;line-height:1.4;">{_link_label(title, href)}</div>'
+        f'<div style="font-size:15px;line-height:1.4;">{_link_label(title, href)}</div>'
         f'<div class="em-t3" style="margin-top:2px;font-size:13px;color:#6b7280;line-height:1.5;">'
         f"{escape(detail, quote=False)}</div>"
         f"</td></tr></table>"
@@ -1125,7 +1125,7 @@ def _hero_banner(logos: dict[str, str], eyebrow: str = "") -> str:
         f'style="margin:0 0 16px;background:#eef4fb;border:1px solid #e8eef4;'
         f'border-left:3px solid #122d4b;border-radius:10px;">'
         f'<tr><td style="padding:12px 16px;">'
-        f'<div style="font-size:12px;font-weight:800;letter-spacing:.08em;'
+        f'<div style="font-size:13px;font-weight:800;letter-spacing:.08em;'
         f'text-transform:uppercase;color:#0f2747;" class="em-h">{eye}</div>'
         f"</td></tr></table>"
     )
