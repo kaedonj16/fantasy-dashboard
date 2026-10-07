@@ -17786,12 +17786,13 @@ function initComparePage() {
         && ['QB', 'RB', 'WR', 'TE'].includes(pos);
       const tiers = eligible
         ? [1, 2].map(t => _cmpBaselineById['avg-' + pos + '-' + t]).filter(Boolean) : [];
-      if (!tiers.length) { el.innerHTML = ''; el.hidden = true; return; }
+      if (!tiers.length) { el.innerHTML = ''; el.hidden = true; el._simFor = null; return; }
       el.innerHTML = '<span class="compare-suggest-label">Benchmark ' + _wlEsc(other.name) + ' vs</span>'
         + tiers.map(b => '<button type="button" class="compare-suggest-chip pos-' + _wlEsc(pos)
             + '" data-bid="' + _wlEsc(b.player_id) + '">Avg '
             + _wlEsc((b.stats && b.stats.pos_rank_label) || b.name) + '</button>').join('')
-        + '<span class="compare-suggest-note">PPR &middot; 12-team</span>';
+        + '<span class="compare-suggest-note">PPR &middot; 12-team</span>'
+        + '<span class="compare-suggest-sim" id="cmpSim' + slot + '"></span>';
       el.querySelectorAll('.compare-suggest-chip').forEach(btn => {
         btn.addEventListener('click', () => {
           const b = _cmpBaselineById[btn.getAttribute('data-bid')];
@@ -17799,6 +17800,35 @@ function initComparePage() {
         });
       });
       el.hidden = false;
+      // Similar real players: same position, closest dynasty value. Cached per
+      // player so re-renders do not refetch.
+      if (el._simFor !== other.player_id) {
+        el._simFor = other.player_id;
+        const simWrap = el.querySelector('#cmpSim' + slot);
+        fetch('/api/compare/similar?player_id=' + encodeURIComponent(other.player_id) + '&limit=4')
+          .then(r => r.json())
+          .then(d => {
+            if (el._simFor !== other.player_id) return;
+            const list = (d && d.players) || [];
+            if (!list.length || !simWrap) return;
+            simWrap.innerHTML = '<span class="compare-suggest-label">Similar:</span>'
+              + list.map(p => '<button type="button" class="compare-suggest-chip pos-' + _wlEsc(pos)
+                + '" data-pid="' + _wlEsc(p.player_id) + '" data-pname="' + _wlEsc(p.name)
+                + '" data-ppos="' + _wlEsc(p.position) + '" data-pteam="' + _wlEsc(p.team || '')
+                + '">' + _wlEsc(p.name) + '</button>').join('');
+            simWrap.querySelectorAll('.compare-suggest-chip').forEach(btn => {
+              btn.addEventListener('click', () => {
+                _pickIntoSlot(slot, {
+                  player_id: btn.getAttribute('data-pid'),
+                  name: btn.getAttribute('data-pname'),
+                  position: btn.getAttribute('data-ppos'),
+                  team: btn.getAttribute('data-pteam'),
+                });
+              });
+            });
+          })
+          .catch(() => {});
+      }
     });
   }
 
@@ -17818,6 +17848,30 @@ function initComparePage() {
     }).join('');
     if (html) row.insertAdjacentHTML('afterbegin', html);
   });
+
+  // Trending players: most-traded in real deals over the last 7 days. A lone
+  // ?p1= deep link prefills slot 1, and the similar-player suggestions then
+  // kick in for slot 2.
+  (function _seedTrending() {
+    const row = document.getElementById('cmpPopularChips');
+    if (!row || row._trendSeeded) return;
+    row._trendSeeded = true;
+    fetch('/api/compare/trending?limit=6')
+      .then(r => r.json())
+      .then(d => {
+        const list = (d && d.players) || [];
+        if (!list.length) return;
+        const label = '<span class="compare-trend-label">Trending in real trades</span>';
+        const html = label + list.map(p =>
+          '<a class="compare-chip compare-chip-trend" href="/compare?p1=' + encodeURIComponent(p.player_id) + '">'
+          + '<span class="compare-chip-pos pos-' + _wlEsc(p.position) + '">' + _wlEsc(p.position) + '</span>'
+          + '<span class="compare-chip-name">' + _wlEsc(p.name) + '</span>'
+          + '<span class="compare-trend-n">' + _wlEsc(String(p.trade_count_7d)) + ' trades</span></a>'
+        ).join('');
+        row.insertAdjacentHTML('beforeend', html);
+      })
+      .catch(() => {});
+  })();
 
   // Focus the first empty picker on load so you can type immediately (skipped
   // when a ?p1=&p2= deep link is already populating both sides).

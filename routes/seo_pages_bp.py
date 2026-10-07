@@ -28,7 +28,7 @@ import html
 import logging
 from datetime import datetime
 
-from flask import Blueprint, redirect, request, session
+from flask import Blueprint, jsonify, redirect, request, session
 
 logger = logging.getLogger(__name__)
 
@@ -239,6 +239,112 @@ def _compare_popular_matchups(n_pairs: int = 5) -> str:
             break
         round_i += 1
     return "".join(chips)
+
+
+@seo_pages_bp.route("/api/compare/similar")
+def api_compare_similar():
+    """Same-position players closest in dynasty value to the given player.
+
+    Powers the "similar players" suggestion chips on the compare page: once
+    one player is picked, this returns the closest-valued real players at
+    the same position so the user gets a meaningful "X or Y?" choice.
+    """
+    pid = str(request.args.get("player_id", "")).strip()
+    try:
+        limit = max(1, min(8, int(request.args.get("limit", 4))))
+    except (TypeError, ValueError):
+        limit = 4
+    try:
+        table = get_model_value_table_cached() or []
+    except Exception:
+        table = []
+    me = next((r for r in table if str(r.get("id")) == pid), None)
+    if not me:
+        return jsonify({"players": []})
+    pos = str(me.get("position") or "").upper()
+    try:
+        my_val = float(me.get("value") or 0)
+    except (TypeError, ValueError):
+        my_val = 0
+    if pos not in ("QB", "RB", "WR", "TE") or my_val <= 0:
+        return jsonify({"players": []})
+    cands = []
+    for r in table:
+        if str(r.get("id")) == pid:
+            continue
+        if str(r.get("position") or "").upper() != pos:
+            continue
+        try:
+            v = float(r.get("value") or 0)
+        except (TypeError, ValueError):
+            continue
+        if v <= 0:
+            continue
+        cands.append((abs(v - my_val), r))
+    cands.sort(key=lambda t: t[0])
+    players = [
+        {
+            "player_id": str(r.get("id")),
+            "name": r.get("name", ""),
+            "position": str(r.get("position") or "").upper(),
+            "team": r.get("team", ""),
+            "value": r.get("value"),
+        }
+        for _, r in cands[:limit]
+    ]
+    return jsonify({"players": players})
+
+
+@seo_pages_bp.route("/api/compare/trending")
+def api_compare_trending():
+    """Players appearing in the most real trades over the last 7 days.
+
+    Backed by trade_intel_player_stats.trade_count_7d. Used for the
+    "Trending" chips on the compare page empty state.
+    """
+    try:
+        limit = max(1, min(12, int(request.args.get("limit", 6))))
+    except (TypeError, ValueError):
+        limit = 6
+    rows = []
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT player_id, trade_count_7d FROM trade_intel_player_stats "
+                "WHERE trade_count_7d > 0 ORDER BY trade_count_7d DESC LIMIT %s",
+                (limit * 3,),
+            )
+            rows = cur.fetchall()
+    except Exception:
+        rows = []
+    if not rows:
+        return jsonify({"players": []})
+    try:
+        table = get_model_value_table_cached() or []
+    except Exception:
+        table = []
+    by_id = {str(r.get("id")): r for r in table if r.get("id")}
+    players = []
+    for row in rows:
+        pid = str(row["player_id"] if isinstance(row, dict) else row[0])
+        n = row["trade_count_7d"] if isinstance(row, dict) else row[1]
+        r = by_id.get(pid)
+        if not r or not r.get("name"):
+            continue
+        if str(r.get("position") or "").upper() not in ("QB", "RB", "WR", "TE"):
+            continue
+        players.append({
+            "player_id": pid,
+            "name": r.get("name", ""),
+            "position": str(r.get("position") or "").upper(),
+            "team": r.get("team", ""),
+            "trade_count_7d": n,
+        })
+        if len(players) >= limit:
+            break
+    return jsonify({"players": players})
 
 
 def build_compare_page_body(popular_html: str = "") -> str:
