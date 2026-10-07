@@ -704,6 +704,33 @@ def _rate_bucket(rows: List[Dict[str, Any]], min_sample: int) -> Dict[str, Any]:
             return None
         return round(n / graded, 4)
 
+    # Forecast rate: blends finished grades with the live forecast of
+    # open calls, using the same band the player card shows. Graded calls
+    # count their actual outcome (hit=1, partial=0.5, miss=0); open
+    # (ungraded) calls count their current band (tracking_to_hit=1,
+    # borderline=0.5, tracking_to_miss=0), attached as ``forecast_value``
+    # by the forecasts module. Rows with no grade and no band (no games
+    # yet, no baseline, injured) contribute nothing.
+    values = []
+    for row in rows:
+        grade = str(row.get("grade") or "")
+        if grade == GRADE_HIT:
+            values.append(1.0)
+        elif grade == GRADE_PARTIAL:
+            values.append(0.5)
+        elif grade == GRADE_MISS:
+            values.append(0.0)
+        elif grade == GRADE_UNGRADED:
+            fv = row.get("forecast_value")
+            try:
+                fv = float(fv) if fv is not None else None
+            except (TypeError, ValueError):
+                fv = None
+            if fv is not None:
+                values.append(fv)
+    forecast_rate = (round(sum(values) / len(values), 4)
+                     if values else None)
+
     return {
         "calls": len(rows),
         "graded": graded,
@@ -715,6 +742,7 @@ def _rate_bucket(rows: List[Dict[str, Any]], min_sample: int) -> Dict[str, Any]:
         "hit_rate": _rate(counts[GRADE_HIT]),
         "partial_rate": _rate(counts[GRADE_PARTIAL]),
         "miss_rate": _rate(counts[GRADE_MISS]),
+        "forecast_rate": forecast_rate,
     }
 
 

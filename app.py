@@ -18069,13 +18069,28 @@ def page_breakouts(platform: str, season: int, league_id: str):
         var overall = weekly.overall || {{}};
         var html = '';
 
-        // Hero: forecast to hit across all surfaced calls
+        // Hero: forecast to hit across all surfaced calls.
+        // When there aren't enough graded calls for a real rate, show the
+        // live forecast instead of '--': graded calls count their actual
+        // outcome, open calls count their current forecast band.
         var hitRate = overall.hit_rate != null ? Math.round(overall.hit_rate * 100) : null;
+        var forecastRate = overall.forecast_rate != null ? Math.round(overall.forecast_rate * 100) : null;
         var graded = overall.graded || 0;
         var hits = overall.hits || 0;
+        var heroBig, heroDetail;
+        if (hitRate != null) {{
+          heroBig = hitRate + '%';
+          heroDetail = hits + ' of ' + graded + ' surfaced calls were hits';
+        }} else if (forecastRate != null) {{
+          heroBig = forecastRate + '%';
+          heroDetail = 'Forecasted hit rate across ' + (overall.calls || 0) + ' surfaced calls';
+        }} else {{
+          heroBig = '--';
+          heroDetail = hits + ' of ' + graded + ' surfaced calls were hits';
+        }}
         html += '<div class="bo-tr-hero"><div class="bo-tr-hero-lbl">Forecast to hit</div>'
-          + '<div class="bo-tr-hero-big">' + (hitRate != null ? hitRate + '%' : '--') + '</div>'
-          + '<div class="bo-tr-hero-detail">' + hits + ' of ' + graded + ' surfaced calls were hits</div></div>';
+          + '<div class="bo-tr-hero-big">' + heroBig + '</div>'
+          + '<div class="bo-tr-hero-detail">' + heroDetail + '</div></div>';
 
         // Per-week bars (newest first, collapse after 3)
         var byWeek = data.by_week || [];
@@ -18134,11 +18149,23 @@ def page_breakouts(platform: str, season: int, league_id: str):
         var html = '';
 
         var hitRate = overall.hit_rate != null ? Math.round(overall.hit_rate * 100) : null;
+        var forecastRate = overall.forecast_rate != null ? Math.round(overall.forecast_rate * 100) : null;
         var graded = overall.graded || 0;
         var hits = overall.hits || 0;
+        var heroBig, heroDetail;
+        if (hitRate != null) {{
+          heroBig = hitRate + '%';
+          heroDetail = hits + ' of ' + graded + ' preseason calls were hits';
+        }} else if (forecastRate != null) {{
+          heroBig = forecastRate + '%';
+          heroDetail = 'Forecasted hit rate across ' + (overall.calls || 0) + ' preseason calls';
+        }} else {{
+          heroBig = '--';
+          heroDetail = hits + ' of ' + graded + ' preseason calls were hits';
+        }}
         html += '<div class="bo-tr-hero pre"><div class="bo-tr-hero-lbl">Forecast to hit</div>'
-          + '<div class="bo-tr-hero-big">' + (hitRate != null ? hitRate + '%' : '--') + '</div>'
-          + '<div class="bo-tr-hero-detail">' + hits + ' of ' + graded + ' preseason calls were hits</div></div>';
+          + '<div class="bo-tr-hero-big">' + heroBig + '</div>'
+          + '<div class="bo-tr-hero-detail">' + heroDetail + '</div></div>';
 
         // Single preseason row (no phase breakdown per Kaedon)
         var groups = seasonEng.groups || [];
