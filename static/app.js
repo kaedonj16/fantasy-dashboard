@@ -20528,13 +20528,19 @@ function _tmBuildEffChart(weeks) {
   );
 }
 
-// Persistent achievement chips (max 3) for the team, shown above the roster.
+// Persistent achievement chips (max 3) for the team, shown as a full-width
+// strip across the top of the roster panel.
 function _tmAchievementsHtml(achievements) {
   if (!Array.isArray(achievements) || !achievements.length) return '';
   const cls = { gold: 'tm-achv-gold', indigo: 'tm-achv-indigo', win: 'tm-achv-win' };
+  const trophy = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"'
+    + ' stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+    + '<path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0V4z"/>'
+    + '<path d="M7 6H4a1 1 0 0 0-1 1c0 2.5 2 4 4 4M17 6h3a1 1 0 0 1 1 1c0 2.5-2 4-4 4"/></svg>';
   const chips = achievements.slice(0, 3).map(function (a) {
     const k = cls[a.kind] || '';
-    return `<span class="tm-achv-chip ${k}">${_tmEsc(a.label || '')}</span>`;
+    const title = a.detail ? ` title="${_tmEsc(a.detail)}"` : '';
+    return `<span class="tm-achv-chip ${k}"${title}>${trophy}${_tmEsc(a.label || '')}</span>`;
   }).join('');
   return `<div class="tm-achievements">${chips}</div>`;
 }
