@@ -760,6 +760,23 @@ def _score(v: Any) -> Optional[float]:
         return None
 
 
+def is_surfaced_row(row: Dict[str, Any]) -> bool:
+    """True when a grade row represents a call that was surfaced to the
+    board: not watchlist/monitored, and breakout score >= 30.
+
+    A missing/unparseable score passes (old rows and test fixtures
+    predate the threshold). This is the single shared definition of
+    "surfaced" used by the sidebar Track Record and the Wednesday
+    email report, so the two can never disagree on which calls count.
+    """
+    if display_classification(row.get("classification"),
+                             row.get("breakout_score")) in ("watchlist",
+                                                           "monitored"):
+        return False
+    s = _score(row.get("breakout_score"))
+    return s is None or s >= 30
+
+
 
 def summarize_grade_rows(
     rows: Sequence[Dict[str, Any]],
@@ -784,16 +801,7 @@ def summarize_grade_rows(
     # Overall counts surfaced calls only: exclude watchlist/monitored, which
     # were never surfaced to the board. by_classification keeps them grouped
     # separately for transparency.
-    def _is_surfaced(r: Dict[str, Any]) -> bool:
-        if display_classification(r.get("classification"),
-                                 r.get("breakout_score")) in ("watchlist", "monitored"):
-            return False
-        # Surfaced = breakout score >= 30. A missing score passes (old rows,
-        # test fixtures without scores predate the threshold).
-        s = _score(r.get("breakout_score"))
-        return s is None or s >= 30
-
-    surfaced_rows = [r for r in rows if _is_surfaced(r)]
+    surfaced_rows = [r for r in rows if is_surfaced_row(r)]
     return {
         "min_sample": int(min_sample),
         "overall": _rate_bucket(surfaced_rows, min_sample),
