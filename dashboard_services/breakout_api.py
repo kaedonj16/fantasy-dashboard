@@ -833,23 +833,24 @@ def _recently_surfaced_player_ids(season: int, current_week: int,
     A player surfaced in week W is excluded from the board until their
     3-week grading window completes (weeks W+1 through W+3). This prevents
     the same player appearing back-to-back while their earlier call is
-    still being graded. Fails soft to an empty set.
+    still being graded. The lookup is scoring-version agnostic: a player
+    surfaced under any version still blocks re-surfacing. Fails soft to
+    an empty set.
     """
     try:
         from data_building.breakout_engine.weekly_store import (
             WEEKLY_SCORES_TABLE, WEEKLY_RUNS_TABLE)
-        from data_building.breakout_engine.weekly_breakout import SCORING_VERSION
         with get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     f"SELECT DISTINCT s.player_id FROM {WEEKLY_SCORES_TABLE} s "
                     f"JOIN {WEEKLY_RUNS_TABLE} r ON r.id = s.run_id "
                     f"WHERE s.season = %s AND s.as_of_week > %s "
-                    f"AND s.as_of_week < %s AND s.scoring_version = %s "
+                    f"AND s.as_of_week < %s "
                     f"AND s.breakout_score >= %s "
                     f"AND r.status = 'completed'",
                     (int(season), int(current_week) - int(window_weeks) - 1,
-                     int(current_week), SCORING_VERSION,
+                     int(current_week),
                      float(BREAKOUT_SURFACED_MIN_SCORE)),
                 )
                 return {str(r["player_id"]) for r in cur.fetchall()
@@ -918,20 +919,19 @@ def get_weekly_breakout_candidates(season: int, min_score: float = 0.0,
     # Surfaced board: every player at or above the surfaced floor (30), no
     # cap. The floor applies to historical snapshots too, so the Week N view
     # shows exactly the calls the track record counts for that week.
-    # Only the no-repeat exclusion is current-board-only.
     candidates = [c for c in candidates
                   if float(c.get("breakout_score") or 0) >= BREAKOUT_SURFACED_MIN_SCORE]
-    is_current_board = as_of_week is None
-    if is_current_board:
-        # No repeats: exclude players surfaced in the last grading window.
-        # Their earlier call is still being graded; surfacing them again
-        # would double-count one call in the track record.
-        served_week = payload.get("as_of_week")
-        if served_week is not None:
-            _excluded = _recently_surfaced_player_ids(season, int(served_week))
-            if _excluded:
-                candidates = [c for c in candidates
-                              if str(c.get("player_id") or "") not in _excluded]
+    # No repeats: exclude players surfaced in the last grading window.
+    # Their earlier call is still being graded; surfacing them again
+    # would double-count one call in the track record. Applies to both
+    # the current board and historical week views, so a player surfaced
+    # in Week 1 cannot reappear in the Week 2 or Week 3 views.
+    served_week = payload.get("as_of_week")
+    if served_week is not None:
+        _excluded = _recently_surfaced_player_ids(season, int(served_week))
+        if _excluded:
+            candidates = [c for c in candidates
+                          if str(c.get("player_id") or "") not in _excluded]
     candidates.sort(key=lambda c: (c.get("ranking_score") if c.get("ranking_score") is not None
                                    else c.get("breakout_score") or 0,
                                    c.get("breakout_score") or 0), reverse=True)
