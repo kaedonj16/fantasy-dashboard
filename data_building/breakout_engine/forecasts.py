@@ -53,6 +53,15 @@ BAND_LABELS = {
     BAND_TRACKING_MISS: "Tracking to miss",
 }
 
+# Forecast band -> forecast value for the track-record forecast rate.
+# Mirrors the card's band semantics: a call tracking to hit counts like a
+# hit, borderline like a partial, tracking to miss like a miss.
+BAND_FORECAST_VALUE = {
+    BAND_TRACKING_HIT: 1.0,
+    BAND_BORDERLINE: 0.5,
+    BAND_TRACKING_MISS: 0.0,
+}
+
 # Season-engine phases that are genuine pre-season calls (the in-season
 # phase re-scores weekly and is not a preseason call). Mirrors the phase
 # keys in breakout_engine.config.PHASE_WEIGHTS minus "in_season".
@@ -347,6 +356,117 @@ def weekly_forecasts_for_calls(
     return out
 
 
+def attach_weekly_forecast_values(
+    season: int,
+    rows: Sequence[Dict[str, Any]],
+) -> None:
+    """Attach the card's live forecast value to each open grade row.
+
+    Mutates ``rows`` in place: any row whose outcome window is still open
+    gets ``forecast_value`` from the same ``weekly_forecast`` band the
+    player card shows (works with even one game played). Mature rows, rows
+    with no games yet, and rows with no baseline are left without the key.
+    Grade rows carry the baseline the grader actually used, so the band
+    agrees with the grader about what the finished numbers will mean.
+    Fails soft: any load error leaves rows untouched.
+    """
+    try:
+        through = wg.default_through_week(season)
+        if through is None:
+            return
+        open_rows = [r for r in rows
+                      if not wg.is_mature(int(r.get("as_of_week") or 0),
+                                          through)]
+        if not open_rows:
+            return
+        series = wg.load_season_series(season, through)
+    except Exception:
+        logger.warning("forecasts: weekly forecast value load failed",
+                       exc_info=True)
+        return
+    # Card-shaped pseudo-calls built from the grade rows.
+    pseudos = []
+    for r in open_rows:
+        pseudos.append({
+            "player_id": str(r.get("player_id") or ""),
+            "player_name": r.get("player_name"),
+            "season": int(r.get("season") or season),
+            "as_of_week": int(r.get("as_of_week") or 0),
+            "baseline_source": r.get("baseline_source"),
+            "position": None,
+            "evidence": {
+                "fantasy": {"baseline_ppg": r.get("baseline_ppg")},
+                "signals": {
+                    "snap_share": {"baseline": r.get("baseline_snap_pct")},
+                    "carry_opportunity_pg": {
+                        "baseline": r.get("baseline_opp_pg")},
+                },
+            },
+        })
+    # Positions come from the already-loaded series; they only matter for
+    # cohort-baseline calls.
+    positions: Dict[str, str] = {}
+    for pid, srows in series.items():
+        for s in srows:
+            pos = s.get("position")
+            if pos:
+                positions[str(pid)] = str(pos)
+                break
+    for p in pseudos:
+        p["position"] = positions.get(p["player_id"])
+    prior_series: Dict[str, List[Dict[str, Any]]] = {}
+    if any(wg.call_needs_prior_ppg(p) for p in pseudos):
+        try:
+            prior_series = wg.load_prior_season_series(season)
+        except Exception:
+            logger.warning("forecasts: prior series load failed",
+                           exc_info=True)
+    cohort: Dict[str, float] = {}
+    if any(wg.call_needs_cohort_baseline(p) for p in pseudos):
+        try:
+            cohort = wg.load_cohort_baselines(season)
+        except Exception:
+            logger.warning("forecasts: cohort load failed", exc_info=True)
+    for p, r in zip(pseudos, open_rows):
+        pid = p["player_id"]
+        try:
+            fc = weekly_forecast(
+                p, series.get(pid, []), through,
+                prior_series.get(pid),
+                cohort.get(str(p.get("position") or "")))
+        except Exception:
+            logger.warning("forecasts: band failed for %s", pid,
+                           exc_info=True)
+            continue
+        if fc and fc.get("band") in BAND_FORECAST_VALUE:
+            r["forecast_value"] = BAND_FORECAST_VALUE[fc["band"]]
+
+
+def attach_preseason_forecast_values(
+    season: int,
+    rows: Sequence[Dict[str, Any]],
+) -> None:
+    """Attach the live preseason forecast value to each season grade row.
+
+    Mutates ``rows`` in place: ``forecast_value`` comes from the same
+    ``preseason_forecast`` band the preseason cards show (banked PPG plus
+    rest-of-season projection vs the call's hit target). Rows whose player
+    has no preseason call are left without the key. Fails soft.
+    """
+    try:
+        forecasts = preseason_forecasts_for_season(season)
+    except Exception:
+        logger.warning("forecasts: preseason forecast load failed",
+                       exc_info=True)
+        return
+    if not forecasts:
+        return
+    for r in rows:
+        fc = forecasts.get(str(r.get("player_id") or ""))
+        if fc and fc.get("band") in BAND_FORECAST_VALUE:
+            r["forecast_value"] = BAND_FORECAST_VALUE[fc["band"]]
+
+
 def weekly_backtest_forecasts(
     season: int,
     limit: Optional[int] = None,
@@ -582,6 +702,9 @@ def weekly_track_record(season: int) -> Dict[str, Any]:
     except Exception:
         logger.warning("forecasts: weekly grade read failed", exc_info=True)
         rows = []
+    # Live forecast values for open calls (same band the cards show), so
+    # the track-record forecast rate reflects current state.
+    attach_weekly_forecast_values(season, rows)
     recon_weeks = load_reconstructed_weeks(season)
     summary = wg.summarize_grade_rows(rows)
     # Calibration bands over the same pooled rows, via the shared
@@ -711,6 +834,8 @@ def season_track_record(season: int) -> Dict[str, Any]:
         if key not in best or rank > best[key][0]:
             best[key] = (rank, row)
     deduped = [row for _rank, row in best.values()]
+    # Live preseason forecast values (same band the preseason cards show).
+    attach_preseason_forecast_values(season, deduped)
     by_phase: Dict[str, List[Dict[str, Any]]] = {}
     for row in deduped:
         by_phase.setdefault(str(row.get("phase") or "unknown"), []).append(row)

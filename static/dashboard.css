@@ -5718,6 +5718,7 @@ strong + .player-badge,
 
 .otc-day-filter,
 .otc-filter-chip,
+.bo-tr-tab,
 .breakout-filter-btn,
 .pos-pill,
 .wv-pos-btn,
@@ -5757,6 +5758,7 @@ strong + .player-badge,
 
 .otc-day-filter:hover,
 .otc-filter-chip:hover,
+.bo-tr-tab:hover,
 .breakout-filter-btn:hover,
 .pos-pill:hover,
 .wv-pos-btn:hover,
@@ -5782,6 +5784,7 @@ strong + .player-badge,
 .otc-day-filter.is-active,
 .otc-filter-chip.is-active,
 .otc-filter-chip.active,
+.bo-tr-tab.active,
 .breakout-filter-btn.active,
 .pos-pill.active,
 .wv-pos-btn.active,
@@ -45255,20 +45258,7 @@ table.rz-bs-table thead th:first-child {
     gap: 8px;
     margin-bottom: 14px;
 }
-.bo-tr-tab {
-    font-size: 13px;
-    font-weight: 600;
-    padding: 8px 18px;
-    border-radius: 8px;
-    background: var(--surface-alt, #f1f5f9);
-    color: var(--text-muted);
-    cursor: pointer;
-    border: none;
-}
-.bo-tr-tab.active {
-    background: #1e3a5f;
-    color: #fff;
-}
+/* .bo-tr-tab now uses the standard .otc-day-filter chip styles (aliased above) */
 .bo-tr-hero {
     background: linear-gradient(135deg, #1e3a5f, #2d5a8f);
     border-radius: 12px;
