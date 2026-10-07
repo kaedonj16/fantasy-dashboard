@@ -769,16 +769,18 @@ def build_teams_body(ctx: dict) -> str:
     """
 
     # ---------- Page shell ----------
-    # Desktop: two columns -- the team-grade cards (sort bar + legend + grid) fill
-    # the main column and stay visible, while League Analytics (Value / Roster
-    # Intel / Schedule) sits in a right-hand sidebar with its own tab strip.
-    # Mobile (<=1180px): the whole thing collapses into a single tabbed card
-    # (Teams / Value / Roster Intel / Schedule) -- the "Teams" tab shows the grid,
-    # the others show the analytics panels. See teams.js (default-tab wiring) and
-    # dashboard.css (.teams-page responsive rules).
+    # Full-page tabs (TEAMS | VALUE | SCHEDULE) -- no sidebar. The tab strip sits
+    # at the top; each section is a full-width view. Roster Intel lives in the
+    # team detail drawer, not as a page tab. See teams.js (tab wiring) and
+    # dashboard.css (.teams-ptabs / .teams-pview).
     return f"""
-    <div class="page-layout teams-page" id="teamsPageLayout" data-active-tab="teams">
-      <main class="page-main">
+    <div class="teams-page" id="teamsPageLayout" data-active-tab="teams">
+      <nav class="teams-ptabs" role="tablist" aria-label="Teams views">
+        <button class="on" data-ptab="teams" role="tab" aria-selected="true">TEAMS</button>
+        <button data-ptab="value" role="tab" aria-selected="false">VALUE</button>
+        <button data-ptab="sched" role="tab" aria-selected="false" id="schedPtabBtn" style="display:none">SCHEDULE</button>
+      </nav>
+      <section class="teams-pview on" id="v-teams" role="tabpanel">
         <div class="teams-topbar">
           <div class="teams-sort-bar">
             <span style="font-size:13px;color:var(--text-muted);margin-right:8px;">Sort by:</span>
@@ -794,25 +796,13 @@ def build_teams_body(ctx: dict) -> str:
         <div class="teams-grid" id="teamsGrid">
           {all_cards_html}
         </div>
-      </main>
-
-      <aside class="page-sidebar teams-sidebar">
-        <div class="card teams-analytics-card" id="teamsAnalyticsCard">
-          <div class="card-tabs">
-            <div class="tab-strip" id="teamsAnalyticsTabs">
-              <button class="tab-btn active teams-tab-mobile" data-tab="teams">Teams</button>
-              <button class="tab-btn" data-tab="btm">Value</button>
-              <button class="tab-btn" data-tab="roster-intel">Roster Intel</button>
-              <button class="tab-btn" data-tab="sos" id="sosTabBtn" style="display:none">Schedule</button>
-            </div>
-            <div class="tab-panels">
-              <div class="tab-panel" data-tab="btm" id="btmPanel">{_analytics_skeleton}</div>
-              <div class="tab-panel" data-tab="roster-intel" id="rosterIntelPanel">{_analytics_skeleton}</div>
-              <div class="tab-panel" data-tab="sos" id="sosPanel">{_analytics_skeleton}</div>
-            </div>
-          </div>
-        </div>
-      </aside>
+      </section>
+      <section class="teams-pview" id="v-value" role="tabpanel">
+        <div id="btmPanel">{_analytics_skeleton}</div>
+      </section>
+      <section class="teams-pview" id="v-sched" role="tabpanel">
+        <div id="sosPanel">{_analytics_skeleton}</div>
+      </section>
     </div>
     <div class="td-scrim" id="teamDrawerScrim"></div>
     <aside class="td-drawer" id="teamDrawer" role="dialog" aria-modal="true" aria-label="Team details">

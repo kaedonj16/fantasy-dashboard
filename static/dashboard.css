@@ -15379,7 +15379,7 @@ a.signed-home-league:hover {
     display: flex;
     flex-direction: column;
     position: sticky;
-    top: 95px;
+    top: 108px;
     height: fit-content;
 }
 
@@ -26782,12 +26782,12 @@ tr.team-clickable {
 
 /* Desktop only (the sticky-sidebar layout): cap the analytics panels to the
    viewport so a long list (Roster Intel, Value) scrolls inside the sidebar
-   instead of forcing you to scroll the whole teams page. 95px = sidebar sticky
+   instead of forcing you to scroll the whole teams page. 108px = sidebar sticky
    top; the rest covers the tab strip + card padding + a little breathing room.
    Mobile (<=1180px) is a full-width tab, so it scrolls with the page as normal. */
 @media (min-width: 1281px) {
     .teams-sidebar .teams-analytics-card .tab-panels {
-        max-height: calc(100vh - 170px);
+        max-height: calc(100vh - 183px);
         overflow-y: auto;
     }
 }
@@ -45660,7 +45660,7 @@ em.gneg { background: var(--loss); }
 .td-scrim.open { opacity: 1; pointer-events: auto; }
 .td-drawer {
     position: fixed;
-    top: 0;
+    top: 108px;
     right: 0;
     bottom: 0;
     width: 430px;
@@ -45795,3 +45795,49 @@ em.gneg { background: var(--loss); }
 }
 /* Drawer player names dim like everywhere else (no blue/underline). */
 .td-body .player-clickable:hover { opacity: 0.72; }
+
+/* Drawer positional player rows: roomier for scanning */
+.td-pdet .player-activity {
+    padding: 11px 12px;
+    margin-bottom: 6px;
+    line-height: 1.55;
+}
+.td-pdet .player-activity:last-child { margin-bottom: 2px; }
+
+/* Teams page: full-page tabs (TEAMS | VALUE | SCHEDULE), no sidebar */
+.teams-page { max-width: 1120px; margin: 0 auto; padding: 0 20px 40px; }
+.teams-ptabs {
+    display: inline-flex;
+    background: var(--accent-soft);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 3px;
+    margin: 18px 0;
+    gap: 2px;
+}
+.teams-ptabs button {
+    border: none;
+    background: transparent;
+    padding: 8px 22px;
+    border-radius: 8px;
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: .04em;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-family: inherit;
+}
+.teams-ptabs button.on {
+    background: var(--card);
+    color: var(--text);
+    box-shadow: 0 1px 3px rgba(0,0,0,.12);
+}
+.teams-pview { display: none; }
+.teams-pview.on { display: block; }
+/* Value/Schedule panels go full width now that the sidebar is gone */
+.teams-page #btmPanel,
+.teams-page #sosPanel { max-width: 760px; }
+@media (max-width: 640px) {
+    .teams-ptabs button { padding: 8px 14px; font-size: 12px; }
+}
+
