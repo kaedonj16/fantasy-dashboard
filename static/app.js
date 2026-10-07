@@ -17787,12 +17787,14 @@ function initComparePage() {
       const tiers = eligible
         ? [1, 2].map(t => _cmpBaselineById['avg-' + pos + '-' + t]).filter(Boolean) : [];
       if (!tiers.length) { el.innerHTML = ''; el.hidden = true; el._simFor = null; return; }
-      el.innerHTML = '<span class="compare-suggest-label">Benchmark ' + _wlEsc(other.name) + ' vs</span>'
+      el.innerHTML = '<div class="compare-suggest-row">'
+        + '<span class="compare-suggest-label">Benchmark ' + _wlEsc(other.name) + ' vs</span>'
         + tiers.map(b => '<button type="button" class="compare-suggest-chip pos-' + _wlEsc(pos)
             + '" data-bid="' + _wlEsc(b.player_id) + '">Avg '
             + _wlEsc((b.stats && b.stats.pos_rank_label) || b.name) + '</button>').join('')
         + '<span class="compare-suggest-note">PPR &middot; 12-team</span>'
-        + '<span class="compare-suggest-sim" id="cmpSim' + slot + '"></span>';
+        + '</div>'
+        + '<div class="compare-suggest-row compare-suggest-sim" id="cmpSim' + slot + '"></div>';
       el.querySelectorAll('.compare-suggest-chip').forEach(btn => {
         btn.addEventListener('click', () => {
           const b = _cmpBaselineById[btn.getAttribute('data-bid')];
@@ -19518,6 +19520,34 @@ function _compareBodyHTML(p1, p2, opts) {
         <button class="compare-back-btn" id="compareBackBtn">← Back to ${p1.name}</button>
         ${p2 && p2.is_baseline ? '' : `<button class="compare-profile-btn" id="compareP2ProfileBtn">${p2.name}'s Profile →</button>`}
       </div>` : '';
+  // The standalone /compare page keeps #2367's slim overview (dual header +
+  // verdict table) as the Overview tab's content instead of the hero cards,
+  // so the page has the same tab set as the modal.
+  const _anyHistory = [p1, p2].some(p => (p.value_history || []).length > 0);
+  const _chartBlock = _anyHistory
+    ? '<hr class="pm-section-divider">'
+      + '<div class="pm-section-header"><span class="pm-section-label">Value History</span></div>'
+      + '<div id="compareValueChart" class="player-modal-chart-container" style="min-height:220px;"></div>'
+    : '';
+  // The modal's hero overview always reserves the chart slot (tier averages
+  // draw as flat reference lines); only the both-baselines case drops it.
+  const _heroChartBlock = (p1 && p1.is_baseline && p2 && p2.is_baseline) ? ''
+    : '<hr class="pm-section-divider">'
+      + '<div class="pm-section-header"><span class="pm-section-label">Value History</span></div>'
+      + '<div id="compareValueChart" class="player-modal-chart-container" style="min-height:220px;"></div>';
+  const _overviewInner = opts.slimOverview
+    ? '<div class="compare-dual-header compare-inline-header">'
+      + _buildComparePlayerHeader(p1)
+      + '<div class="compare-vs-badge">VS</div>'
+      + _buildComparePlayerHeader(p2)
+      + '</div>'
+      + _buildCompareOverviewTable([p1, p2])
+      + _chartBlock
+    : `<div class="compare-hero-section">
+          <div class="compare-hero-player" id="compareHero1" data-name="${(p1.name || p1.full_name || '').replace(/"/g, '&quot;')}">${_buildCompareHeroHTML(p1, p2)}</div>
+          <div class="compare-hero-player" id="compareHero2" data-name="${(p2.name || p2.full_name || '').replace(/"/g, '&quot;')}">${_buildCompareHeroHTML(p2, p1)}</div>
+        </div>
+        ${(p1 && p1.is_baseline && p2 && p2.is_baseline) ? '' : _heroChartBlock}`;
   return `
     <div class="compare-body">
       <div class="pm-tab-bar compare-tab-bar" role="tablist">
@@ -19529,14 +19559,7 @@ function _compareBodyHTML(p1, p2, opts) {
       </div>
 
       <div class="compare-tab-panel" data-cmppanel="overview">
-        <div class="compare-hero-section">
-          <div class="compare-hero-player" id="compareHero1" data-name="${(p1.name || p1.full_name || '').replace(/"/g, '&quot;')}">${_buildCompareHeroHTML(p1, p2)}</div>
-          <div class="compare-hero-player" id="compareHero2" data-name="${(p2.name || p2.full_name || '').replace(/"/g, '&quot;')}">${_buildCompareHeroHTML(p2, p1)}</div>
-        </div>
-        ${(p1 && p1.is_baseline && p2 && p2.is_baseline) ? '' : `
-        <hr class="pm-section-divider">
-        <div class="pm-section-header"><span class="pm-section-label">Value History</span></div>
-        <div id="compareValueChart" class="player-modal-chart-container" style="min-height:220px;"></div>`}
+        ${_overviewInner}
       </div>
 
       <div class="compare-tab-panel" data-cmppanel="startsit" hidden>
@@ -19912,22 +19935,10 @@ document.addEventListener('click', function (e) {
 // Render the full comparison inline into a page container (the /compare page).
 function renderCompareInline(p1, p2, hostEl) {
   if (!hostEl) return;
-  const players = [p1, p2];
-  const esc = (typeof _wlEsc === 'function') ? _wlEsc : (s => String(s == null ? '' : s));
-  const anyHistory = players.some(p => (p.value_history || []).length > 0);
-  const chartBlock = anyHistory
-    ? '<hr class="pm-section-divider">'
-      + '<div class="pm-section-header"><span class="pm-section-label">Value History</span></div>'
-      + '<div id="compareValueChart" class="player-modal-chart-container" style="min-height:220px;"></div>'
-    : '';
-  hostEl.innerHTML =
-    '<div class="compare-dual-header compare-inline-header">' +
-      _buildComparePlayerHeader(p1) +
-      '<div class="compare-vs-badge">VS</div>' +
-      _buildComparePlayerHeader(p2) +
-    '</div>' +
-    _buildCompareOverviewTable(players) +
-    chartBlock;
+  // The full tab set (Overview / Start-Sit / Stats / Advanced Metrics / Usage),
+  // shared with the modal via _compareBodyHTML; the Overview tab carries the
+  // slim dual-header + verdict table instead of the hero cards.
+  hostEl.innerHTML = _compareBodyHTML(p1, p2, { nav: false, slimOverview: true });
   // Headshot clicks open the player modal.
   hostEl.querySelectorAll('.cmp3-head').forEach(b => {
     b.addEventListener('click', () => {
@@ -19975,38 +19986,7 @@ function renderCompareTriple(d1, d2, d3, hostEl) {
   window._cmp3 = { players: players, statsDone: false, metricsDone: false, usageDone: false };
 
   hostEl.innerHTML =
-    '<style>'
-    + '.cmp3-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}'
-    + '.cmp3-table{width:100%;border-collapse:collapse;min-width:360px;}'
-    + '.cmp3-col{text-align:center;padding:4px 8px 12px;vertical-align:bottom;width:26%;}'
-    + '.cmp3-head{display:flex;flex-direction:column;align-items:center;gap:5px;background:none;border:none;padding:0;width:100%;cursor:pointer;}'
-    + '.cmp3-hs{width:52px;height:52px;border-radius:50%;object-fit:cover;background:var(--surface2,rgba(127,127,127,.12));}'
-    + '.cmp3-hs-blank{display:inline-block;}'
-    + '.cmp3-name{font-weight:800;font-size:14px;color:var(--text);line-height:1.15;text-align:center;}'
-    + '.cmp3-head:hover .cmp3-name{opacity:.72;}'
-    + '.cmp3-accent{width:26px;height:3px;border-radius:2px;}'
-    + '.cmp3-meta{font-size:11px;color:var(--muted);text-align:center;}'
-    + '.cmp3-rowlbl{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700;padding:10px;white-space:nowrap;}'
-    + '.cmp3-table th.cmp3-rowlbl{position:sticky;left:0;z-index:2;background:var(--card);border-right:1px solid var(--border);}'
-    + '.cmp3-table thead th.cmp3-rowlbl{z-index:3;}'
-    + '.cmp3-cell{text-align:center;padding:10px 8px;font-weight:700;font-size:15px;font-variant-numeric:tabular-nums;border-top:1px solid var(--border);color:var(--text);}'
-    + '.cmp3-best{color:var(--win);background:color-mix(in srgb,var(--win) 12%,transparent);}'
-    + '.cmp3-colhead{display:flex;flex-direction:column;align-items:center;gap:5px;}'
-    + '.cmp3-cat td{font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);padding:14px 10px 4px;text-align:left;border-top:none;}'
-    + '.cmp3-sub{display:block;font-size:10px;color:var(--muted);font-weight:600;margin-top:2px;}'
-    + '.cmp3-trend{font-size:10px;font-weight:800;margin-left:5px;}'
-    + '.cmp3-tabs{margin-bottom:14px;}'
-    + '.cmp3-cols{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;}'
-    + '@media(max-width:720px){.cmp3-cols{grid-template-columns:1fr;}}'
-    + '.cmp3-colp{min-width:0;}'
-    + '.cmp3-colp-name{font-weight:800;font-size:13px;color:var(--text);text-align:center;padding:8px 0;border-bottom:1px solid var(--border);margin-bottom:10px;}'
-    + '.cmp3-colp-load{padding:16px 0;text-align:center;color:var(--muted);font-size:12px;}'
-    // The weekly-usage grid is 2-up by default and only collapses below a 600px
-    // *viewport*; inside a ~1/3-width compare column that never fires, so the two
-    // stat rows overlap. Force a single column within the 3-way columns.
-    + '.cmp3-colp .pm-wt-grid{grid-template-columns:1fr;}'
-    + '</style>'
-    + '<div class="pm-tab-bar compare-tab-bar cmp3-tabs" role="tablist">'
+    '<div class="pm-tab-bar compare-tab-bar cmp3-tabs" role="tablist">'
     + _tab('overview', 'Overview', true) + _tab('startsit', 'Start/Sit', false)
     + _tab('logs', 'Stats', false)
     + _tab('metrics', 'Advanced Metrics', false) + _tab('usage', 'Usage', false)
