@@ -7270,6 +7270,10 @@ window.initTradePage = function initTradePage(root = document) {
     if (!aHas || !bHas || gap <= ft || gap < 1) return hide();
 
     const lightSide = aEff < bEff ? "A" : "B";
+    const _rfActive = (typeof rosterFilterActive === "function") ? rosterFilterActive() : false;
+    // Roster filter is on but we can't identify her team: never suggest from the
+    // global pool for her side. Hide instead of showing other teams' players.
+    if (_rfActive && lightSide === "B" && !rosterFilter.viewerRid) return hide();
     let poolSet = (typeof _allowedSetForSide === "function")
       ? _allowedSetForSide(lightSide, rosterFilter.byRid) : null;
     const inTrade = new Set([...state.sideAPlayers, ...state.sideBPlayers].map(p => String(p.id)));
@@ -11099,7 +11103,9 @@ window.initTradePage = function initTradePage(root = document) {
         rosterFilter.username[rid] = t.username || "";
         set.forEach(pid => { rosterFilter.pidToRid[pid] = rid; });
       });
-      rosterFilter.viewerRid = String(getCurrentRosterId() || data.viewer_roster_id || "");
+      const _sessRid = String((typeof window !== "undefined" && window._viewerRid) || "");
+      rosterFilter.viewerRid = String(getCurrentRosterId() || data.viewer_roster_id ||
+        ((_sessRid && rosterFilter.byRid[_sessRid]) ? _sessRid : "") || "");
       rosterFilter.loaded = teams.length > 0;
       // Restore the saved Roster Filter preference (defaults to on / checked).
       const savedPref = (function () {
