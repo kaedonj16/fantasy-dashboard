@@ -166,6 +166,7 @@ function buildLoader() {
 var _strategyReqSeq = 0;
 var _strategyAbortCtrl = null;
 var _strategyCache = {};
+var _STRATEGY_CACHE_TTL_MS = 30 * 60 * 1000;
 var _strategyInflight = {};
 var _strategySimGroups = {};
 var _strategySimJob = null;

@@ -120,9 +120,10 @@ def test_consolidate_has_targets_and_is_ranked():
     out = _run("consolidate")
     sugg = out["suggestions"]
     assert sugg, "consolidate should surface at least one target for this league"
-    # Ranked by the composite key, best first.
+    # Top 3 pinned by rank (daily rotation); rest rotate from the wider pool.
     keys = [ae._suggestion_rank(s) for s in sugg]
-    assert keys == sorted(keys, reverse=True)
+    assert keys[:3] == sorted(keys[:3], reverse=True)
+    assert set(keys) == set(sorted(keys, reverse=True))  # same pool, rotated
     # Every consolidate package sends 2+ assets (never a 1-for-1 trade-up).
     for s in sugg:
         if s["suggested_send"]:

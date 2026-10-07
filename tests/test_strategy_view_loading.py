@@ -71,7 +71,7 @@ def test_spinner_declared_before_cache_hit_branch():
     before the branch in the function body (TDZ regression guard)."""
     body = _loader_body()
     decl = body.index("const strategySpinner")
-    cache_branch = body.index("if (_sCached)")
+    cache_branch = body.index("if (_sCached")
     assert decl < cache_branch, (
         "strategySpinner must be declared before the cache-hit branch uses it"
     )

@@ -10096,8 +10096,12 @@ window.initTradePage = function initTradePage(root = document) {
     // Per-archetype memory cache: revisiting a chip (or the tab) re-renders
     // instantly instead of re-running the server pipeline. Keyed by the full
     // request context, so a league/season/team/untouchable change always
-    // misses and refetches. Cleared on context change below.
+    // misses and refetches. Entries expire after _STRATEGY_CACHE_TTL_MS so
+    // the daily server-side rotation surfaces fresh suggestions on repeat
+    // visits instead of serving a stale list forever. Cleared on context
+    // change below.
     let _strategyCache   = {};
+    const _STRATEGY_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
     let _strategyInflight = {};
     // Progressive loading state: after the analytical slate paints, each
     // player group resolves its Monte Carlo numbers via its own request.
@@ -10271,7 +10275,7 @@ window.initTradePage = function initTradePage(root = document) {
       // instantly with no fetch and no shimmer flash.
       const _sCacheKey = [archetype, platform, leagueId, season, viewerRosterId, leagueType, leagueSize, _untouchableStr].join("|");
       const _sCached = _strategyCache[_sCacheKey];
-      if (_sCached) {
+      if (_sCached && (Date.now() - _sCached.ts) < _STRATEGY_CACHE_TTL_MS) {
         ++_strategyReqSeq;
         if (_strategyAbortCtrl) { try { _strategyAbortCtrl.abort(); } catch (_) {} }
         _strategyAbortCtrl = null;
@@ -10490,7 +10494,7 @@ window.initTradePage = function initTradePage(root = document) {
       _strategyPage = 0;
       _renderImpactTable(_strategyData);
       _renderStrategyCards(_strategyData, _strategyFilter);
-      _strategyCache[job.cacheKey] = { data: _strategyData, playoffPct: _currentPlayoffPct };
+      _strategyCache[job.cacheKey] = { data: _strategyData, playoffPct: _currentPlayoffPct, ts: Date.now() };
     }
 
     // Render a strategy result (fresh fetch or memory cache) into the impact
@@ -17479,39 +17483,15 @@ function initComparePage() {
     try { localStorage.setItem(_CMP_RECENT_KEY, JSON.stringify(list)); } catch (_) {}
   }
 
-  // Base path for compare deep links: keep the league prefix when on a league
-  // page (/sleeper/2026/<id>/compare) so recent/suggestion chips don't yank
-  // the user out into the no-league /compare page.
-  function _cmpCompareBase() {
-    const parts = (window.location.pathname || '').split('/').filter(Boolean);
-    const isLeaguePath = parts.length >= 3 && /^\d{4}$/.test(parts[1]);
-    return isLeaguePath ? '/' + parts.slice(0, 3).join('/') : '';
-  }
-
   function _renderRecent() {
     const wrap = document.getElementById('cmpRecent');
     const row = document.getElementById('cmpRecentChips');
     if (!wrap || !row) return;
     let list = [];
     try { list = JSON.parse(localStorage.getItem(_CMP_RECENT_KEY) || '[]'); } catch (_) {}
-    // Drop the chip for the comparison already on screen: its href equals the
-    // current URL, so clicking it can only reload the identical page (looks
-    // like a glitchy repaint). Match unordered, like the _recordRecent dedup.
-    try {
-      const _qp = new URLSearchParams(window.location.search);
-      const _c1 = _qp.get('p1') || _qp.get('a');
-      const _c2 = _qp.get('p2') || _qp.get('b');
-      if (_c1 && _c2) {
-        list = list.filter(x => {
-          const ids = [String(x.a.id), String(x.b.id)];
-          return !(ids.includes(String(_c1)) && ids.includes(String(_c2)));
-        });
-      }
-    } catch (_) {}
     if (!list.length) { wrap.hidden = true; return; }
-    const base = _cmpCompareBase();
     row.innerHTML = list.map(x =>
-      '<a class="compare-chip" href="' + base + '/compare?p1=' + encodeURIComponent(x.a.id) + '&p2=' + encodeURIComponent(x.b.id) + '">' +
+      '<a class="compare-chip" href="/compare?p1=' + encodeURIComponent(x.a.id) + '&p2=' + encodeURIComponent(x.b.id) + '">' +
       '<span class="compare-chip-name">' + _wlEsc(x.a.name) + '</span>' +
       '<span class="compare-chip-vs">vs</span>' +
       '<span class="compare-chip-name">' + _wlEsc(x.b.name) + '</span></a>'
@@ -17575,10 +17555,6 @@ function initComparePage() {
       u.searchParams.set('p2', chosen[2].player_id);
       if (triple) u.searchParams.set('p3', chosen[3].player_id); else u.searchParams.delete('p3');
       history.replaceState(null, '', u);
-      // Picker-driven changes rewrite the URL client-side; keep the document
-      // title in sync the way the server-rendered deep link does.
-      const _names = [chosen[1], chosen[2], chosen[3]].filter(Boolean).map(c => c.name).filter(Boolean);
-      if (_names.length >= 2) document.title = _names.join(' vs ') + ' Dynasty Comparison | BR Fantasy';
     } catch (_) {}
     const picks = triple ? [chosen[1], chosen[2], chosen[3]] : [chosen[1], chosen[2]];
     Promise.all(picks.map(c => _fetchDetails(c.player_id)))
@@ -17867,11 +17843,10 @@ function initComparePage() {
   _baselinesReady.then(function () {
     const row = document.getElementById('cmpPopularChips');
     if (!row || !_cmpBaselineList.length) return;
-    const _base = _cmpCompareBase();
     const html = ['WR', 'RB', 'QB', 'TE'].map(pos => {
       const t1 = _cmpBaselineById['avg-' + pos + '-1'], t2 = _cmpBaselineById['avg-' + pos + '-2'];
       if (!t1 || !t2) return '';
-      return '<a class="compare-chip compare-chip-tier" href="' + _base + '/compare?p1=' + t1.player_id + '&p2=' + t2.player_id + '">'
+      return '<a class="compare-chip compare-chip-tier" href="/compare?p1=' + t1.player_id + '&p2=' + t2.player_id + '">'
         + '<span class="compare-chip-pos pos-' + pos + '">' + pos + '</span>'
         + '<span class="compare-chip-name">' + _wlEsc(t1.name) + '</span>'
         + '<span class="compare-chip-vs">vs</span>'
@@ -17893,9 +17868,8 @@ function initComparePage() {
         const list = (d && d.players) || [];
         if (!list.length) return;
         const label = '<span class="compare-trend-label">Trending in real trades</span>';
-        const _base = _cmpCompareBase();
         const html = label + list.map(p =>
-          '<a class="compare-chip compare-chip-trend" href="' + _base + '/compare?p1=' + encodeURIComponent(p.player_id) + '">'
+          '<a class="compare-chip compare-chip-trend" href="/compare?p1=' + encodeURIComponent(p.player_id) + '">'
           + '<span class="compare-chip-pos pos-' + _wlEsc(p.position) + '">' + _wlEsc(p.position) + '</span>'
           + '<span class="compare-chip-name">' + _wlEsc(p.name) + '</span>'
           + '<span class="compare-trend-n">' + _wlEsc(String(p.trade_count_7d)) + ' trades</span></a>'
@@ -18611,27 +18585,12 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
     };
     const fill1 = _barFill(v1, ranks1, counts1, bounds1);
     const fill2 = _barFill(v2, ranks2, counts2, bounds2);
-    // Kaedon: percentage metrics (Boom Rate, Bust Rate, Catch Rate, ...) fill
-    // the bar to their actual percentage. The bar COLOR still uses the
-    // rank-based fill so green keeps meaning "good" relative to peers.
-    const _pctLen = v => {
-      if (v == null || !spec || !(spec.pct || spec.pct_frac)) return null;
-      const raw = spec.pct_frac ? v * 100 : v;
-      return Math.max(0, Math.min(100, Math.round(raw)));
-    };
-    const pctLen1 = _pctLen(v1), pctLen2 = _pctLen(v2);
-    const pct1 = pctLen1 != null ? pctLen1
-      : (fill1 != null ? Math.round(fill1)
-      : (v1 != null ? Math.min(100, Math.round((v1 / range) * 100)) : 0));
-    const pct2 = pctLen2 != null ? pctLen2
-      : (fill2 != null ? Math.round(fill2)
-      : (v2 != null ? Math.min(100, Math.round((v2 / range) * 100)) : 0));
-    // Color driver: rank-based goodness (unchanged), so pct bars keep
-    // meaningful colors even though their lengths are raw percentages.
-    const colPct1 = fill1 != null ? Math.round(fill1) : pct1;
-    const colPct2 = fill2 != null ? Math.round(fill2) : pct2;
+    const pct1 = fill1 != null ? Math.round(fill1)
+      : (v1 != null ? Math.min(100, Math.round((v1 / range) * 100)) : 0);
+    const pct2 = fill2 != null ? Math.round(fill2)
+      : (v2 != null ? Math.min(100, Math.round((v2 / range) * 100)) : 0);
 
-    const isInverse = spec ? spec.lower_better : ['int_rate', 'drop_rate', 'uncatchable_tgt_rate', 'fumble_rate', 'pressure_to_sack_rate', 'sack_rate', 'pressure_rate_faced', 'stuffed_rate', 'turnover_worthy_rate', 'bust_rate', 'fp_cv', 'fp_stddev'].includes(key);
+    const isInverse = spec ? spec.lower_better : ['int_rate', 'drop_rate', 'uncatchable_tgt_rate', 'fumble_rate', 'pressure_to_sack_rate', 'sack_rate', 'pressure_rate_faced', 'stuffed_rate', 'turnover_worthy_rate'].includes(key);
 
     // barColor: when the bar is bounds-driven (isRankFill), the fill already
     // encodes "good = high" regardless of lower_better, so use the normal
@@ -18692,20 +18651,15 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
     // sub-line beneath the value rather than an inline pill badge.
     const rankSub = r => (r != null) ? `<div class="pm-comp-sub rank-badge">(#${r})</div>` : '';
 
-    // Winner arrow next to the stat name, pointing toward the winning side.
-    const winArrow = win1
-      ? '<span class="cmp-win-arrow cmp-win-left" aria-hidden="true"></span>'
-      : (win2 ? '<span class="cmp-win-arrow cmp-win-right" aria-hidden="true"></span>' : '');
-
     return `
       <div class="compare-metric-row${alt ? ' cmp-row-alt' : ''}">
         <div class="compare-metric-p1-val${winCls1}">${fmt(v1)}${rankSub(r1)}</div>
         <div class="compare-bar-left">
-          <div class="compare-bar-fill" style="width:${pct1}%;background:${barColor(colPct1, v1, fill1 != null)};"></div>
+          <div class="compare-bar-fill" style="width:${pct1}%;background:${barColor(pct1, v1, fill1 != null)};"></div>
         </div>
-        <div class="compare-metric-label"${(spec?.desc || _ADV_METRIC_DESCS[key]) ? ` data-def="${(spec?.desc || _ADV_METRIC_DESCS[key]).replace(/"/g, '&quot;')}" onclick="advShowMetricDef(event)" onmouseenter="advEnterMetricDef(event)" onmouseleave="advLeaveMetricDef(event)"` : ''}>${win1 ? winArrow : ''}<span>${_label(key)}</span>${win2 ? winArrow : ''}</div>
+        <div class="compare-metric-label"${(spec?.desc || _ADV_METRIC_DESCS[key]) ? ` data-def="${(spec?.desc || _ADV_METRIC_DESCS[key]).replace(/"/g, '&quot;')}" onclick="advShowMetricDef(event)" onmouseenter="advEnterMetricDef(event)" onmouseleave="advLeaveMetricDef(event)"` : ''}>${_label(key)}</div>
         <div class="compare-bar-right">
-          <div class="compare-bar-fill" style="width:${pct2}%;background:${barColor(colPct2, v2, fill2 != null)};"></div>
+          <div class="compare-bar-fill" style="width:${pct2}%;background:${barColor(pct2, v2, fill2 != null)};"></div>
         </div>
         <div class="compare-metric-p2-val${winCls2}">${fmt(v2)}${rankSub(r2)}</div>
       </div>
@@ -18733,58 +18687,18 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
 
   let out = '';
   let visibleIdx = 0;  // running count of visible rows so zebra striping is continuous
-  // cfg.basic marks the headline metrics for the collapsed view. When the
-  // config carries no basic flags at all (stale cached config), everything
-  // stays basic so the table renders exactly as before.
-  const _hasBasicFlags = displayKeys.some(k => !!(cfg && cfg[k] && cfg[k].basic));
   for (const cat of orderedCats) {
-    const basicRows = [];
-    const detailRows = [];
+    const rows = [];
     for (const key of _groups[cat]) {
       const html = _rowHTML(key, visibleIdx % 2 === 1);
-      if (!html) continue;
-      visibleIdx++;
-      if (!_hasBasicFlags || (cfg && cfg[key] && cfg[key].basic)) basicRows.push(html);
-      else detailRows.push(html);
+      if (html) { rows.push(html); visibleIdx++; }
     }
-    if (!basicRows.length && !detailRows.length) continue;  // only show a category when it has a visible row
-    if (cat !== 'Other') out += `<div class="am-metrics-cat-head cmp-cat-head">${_wlEsc(cat)}</div>`;
-    out += basicRows.join('');
-    if (detailRows.length) {
-      // Headline metrics up front; the rest hide behind a per-category
-      // expander so the table stays scannable.
-      const startOpen = _cmpOpenCats.has(cat);
-      out += `<div class="cmp-cat-detail" data-cmp-detail="${_wlEsc(cat)}"${startOpen ? '' : ' hidden'}>` + detailRows.join('') + '</div>';
-      out += `<button type="button" class="cmp-cat-toggle" data-cmp-cat="${_wlEsc(cat)}" aria-expanded="${startOpen ? 'true' : 'false'}" onclick="cmpToggleCatDetails(this)">${startOpen ? 'Show fewer' : 'Show ' + detailRows.length + ' more'}</button>`;
-    }
+    if (!rows.length) continue;  // only show a category when it has a visible row
+    if (cat !== 'Other') out += `<div class="am-metrics-cat-head cmp-cat-head">${cat}</div>`;
+    out += rows.join('');
   }
   return out || '<div style="color:var(--text-muted);font-size:13px;padding:8px 0;">No shared metrics available</div>';
-}
-
-// Compare metrics basic/detailed view: expanded categories persist across
-// re-renders (season/week changes rebuild the rows).
-var _cmpOpenCats = new Set();
-
-// Per-category expander for the compare metrics tables. Detail rows carry
-// [data-cmp-detail="<cat>"] (hidden until opened); the button carries
-// data-cmp-cat="<cat>". Shared by the 2-player div rows and the 3-player
-// table rows.
-function cmpToggleCatDetails(btn) {
-  const cat = btn.getAttribute('data-cmp-cat');
-  const scope = btn.closest('#compareMetricsRows, .cmp3-wrap') || document;
-  let els = [];
-  try {
-    els = Array.from(scope.querySelectorAll('[data-cmp-detail="' + CSS.escape(cat) + '"]'));
-  } catch (_) { /* leave els empty */ }
-  if (!els.length) return;
-  const show = !!els[0].hidden;
-  els.forEach(el => { el.hidden = !show; });
-  if (show) _cmpOpenCats.add(cat); else _cmpOpenCats.delete(cat);
-  btn.setAttribute('aria-expanded', show ? 'true' : 'false');
-  btn.textContent = show ? 'Show fewer' : ('Show ' + els.length + ' more');
-}
-
-// ── Compare state: each side has a player, a season, and an optional week range
+}// ── Compare state: each side has a player, a season, and an optional week range
 var _comparePlayerNames = {};
 var _cmpSides = {
   1: { pid: null, position: '', season: null, range: 'full', wkStart: null, wkEnd: null, seasons: [] },
@@ -19887,16 +19801,7 @@ function _buildCompareOverviewTable(players) {
       const disp = fmt ? fmt(v) : (v == null || v === '' ? '&ndash;' : esc(v));
       return '<td class="cmp3-cell' + (isBest ? ' cmp3-best' : '') + '">' + disp + '</td>';
     }).join('');
-    // Winner arrow in the row label for 2-player compares: green triangle
-    // pointing toward the winning side (left player / right player).
-    // 3-player keeps just the green cell highlight (arrow is ambiguous there).
-    let arrow = '';
-    if (n === 2 && winner >= 0) {
-      arrow = winner === 0
-        ? ' <span class="cmp-win-arrow cmp-win-left" aria-hidden="true"></span>'
-        : ' <span class="cmp-win-arrow cmp-win-right" aria-hidden="true"></span>';
-    }
-    return { html: '<tr data-cmp-row="' + (key || '') + '"><th class="cmp3-rowlbl">' + esc(label) + arrow + '</th>' + cells + '</tr>', winner: winner };
+    return { html: '<tr data-cmp-row="' + (key || '') + '"><th class="cmp3-rowlbl">' + esc(label) + '</th>' + cells + '</tr>', winner: winner };
   }
 
   const isSf = (typeof _cmpIsSf === 'function') ? _cmpIsSf() : false;
@@ -20243,15 +20148,9 @@ function _cmp3MetricTable(players, datas, cfg) {
   }).join('');
 
   let body = '';
-  // Same basic/detailed split as the 2-player table: headline metrics up
-  // front, the rest behind a per-category expander.
-  const _hasBasic3 = Object.keys(groups).some(function (cat) {
-    return groups[cat].some(function (k) { return !!(cfg && cfg[k] && cfg[k].basic); });
-  });
   for (const cat of cats) {
     const keys = groups[cat];
-    const basicRows = [];
-    const detailRows = [];
+    const rowsHtml = [];
     for (const key of keys) {
       const spec = (cfg && cfg[key]) || null;
       const vals = metricsArr.map(function (m) { return m[key]; });
@@ -20266,22 +20165,11 @@ function _cmp3MetricTable(players, datas, cfg) {
         const sub = (rank != null) ? '<span class="cmp3-sub">#' + rank + '</span>' : '';
         return '<td class="cmp3-cell' + (isBest ? ' cmp3-best' : '') + '">' + fmt(v, spec) + sub + '</td>';
       }).join('');
-      const isBasic = !_hasBasic3 || (spec && spec.basic);
-      const rowInner = '<th class="cmp3-rowlbl">' + esc(label(key)) + '</th>' + cells;
-      (isBasic ? basicRows : detailRows).push(rowInner);
+      rowsHtml.push('<tr><th class="cmp3-rowlbl">' + esc(label(key)) + '</th>' + cells + '</tr>');
     }
-    if (!basicRows.length && !detailRows.length) continue;
+    if (!rowsHtml.length) continue;
     if (cat !== 'Other') body += '<tr class="cmp3-cat"><td colspan="' + (players.length + 1) + '">' + esc(cat) + '</td></tr>';
-    body += basicRows.map(function (inner) { return '<tr>' + inner + '</tr>'; }).join('');
-    if (detailRows.length) {
-      const startOpen = (typeof _cmpOpenCats !== 'undefined') && _cmpOpenCats.has(cat);
-      body += detailRows.map(function (inner) {
-        return '<tr class="cmp3-detail" data-cmp-detail="' + esc(cat) + '"' + (startOpen ? '' : ' hidden') + '>' + inner + '</tr>';
-      }).join('');
-      body += '<tr class="cmp3-more"><td colspan="' + (players.length + 1) + '">'
-        + '<button type="button" class="cmp-cat-toggle" data-cmp-cat="' + esc(cat) + '" aria-expanded="' + (startOpen ? 'true' : 'false') + '" onclick="cmpToggleCatDetails(this)">'
-        + (startOpen ? 'Show fewer' : 'Show ' + detailRows.length + ' more') + '</button></td></tr>';
-    }
+    body += rowsHtml.join('');
   }
   if (!body) return '<div class="compare-pick-empty">No shared metrics available.</div>';
   return '<div class="cmp3-wrap"><table class="cmp3-table"><thead><tr>'
