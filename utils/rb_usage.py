@@ -255,6 +255,65 @@ def _get_position_gsis_ids(team: str, positions: List[str], season: Optional[int
     return set()
 
 
+# Cache for league-wide RB GSIS IDs: season -> {team: set of gsis_id}
+_RB_BY_TEAM_CACHE: Dict[int, Dict[str, set]] = {}
+
+
+def _get_rb_gsis_ids_by_team(season: int) -> Dict[str, set]:
+    """Map team -> GSIS IDs of roster RBs for a season, with one roster fetch.
+
+    The league-wide situational leaderboard needs RB filtering for all 32
+    teams; fetching per team would repeat the same roster download 32 times.
+    Returns {} when rosters are unavailable (callers fail open to unfiltered).
+    """
+    with _ROSTER_POS_LOCK:
+        if season in _RB_BY_TEAM_CACHE:
+            return _RB_BY_TEAM_CACHE[season]
+
+    by_team: Dict[str, set] = {}
+    try:
+        import nfl_data_py as nfl  # optional dependency
+        df = None
+        for fn in ("import_seasonal_rosters", "import_weekly_rosters", "import_rosters"):
+            f = getattr(nfl, fn, None)
+            if f is None:
+                continue
+            try:
+                df = f([season])
+            except Exception:
+                df = None
+            if df is not None and not df.empty:
+                break
+        if df is not None and not df.empty:
+            # Weekly rosters carry a week column; keep the latest per player so
+            # a mid-season move resolves to the team they finished on.
+            if "week" in df.columns:
+                df = df.sort_values("week").groupby("player_id", as_index=False).last()
+            for _, row in df.iterrows():
+                gsis = row.get("player_id")
+                if gsis is None:
+                    gsis = row.get("gsis_id")
+                pos = row.get("position")
+                tm = row.get("team")
+                if gsis is None or pos is None or tm is None:
+                    continue
+                if str(pos).upper().strip() != "RB":
+                    continue
+                gsis = str(gsis).strip()
+                tm = str(tm).upper().strip()
+                if gsis and gsis.lower() != "nan" and tm:
+                    by_team.setdefault(tm, set()).add(gsis)
+    except Exception as e:
+        logger.warning(
+            "[rb_usage] league-wide RB roster lookup failed for season %s: %s",
+            season, e,
+        )
+
+    with _ROSTER_POS_LOCK:
+        _RB_BY_TEAM_CACHE[season] = by_team
+    return by_team
+
+
 def _load_pbp(season: int):
     """Load play-by-play DataFrame for a season, cached in memory."""
     now = time.time()
@@ -290,14 +349,19 @@ def _load_pbp(season: int):
     return pbp
 
 
-def _is_rb_touch(row) -> Optional[str]:
-    """Return the GSIS player id if this play is an RB touch, else None."""
+def _is_rb_touch(row, rush_only: bool = False) -> Optional[str]:
+    """Return the GSIS player id if this play is an RB touch, else None.
+
+    rush_only=True counts rushing attempts only, excluding receptions.
+    """
     # Rush attempt by anyone (we filter to RBs by name matching later,
     # but rusher_player_id is the key)
     if row.get("rush_attempt") == 1:
         pid = row.get("rusher_player_id")
         if pid and str(pid) != "nan":
             return str(pid).strip()
+    if rush_only:
+        return None
     # Completed pass to receiver
     if row.get("pass_attempt") == 1 and row.get("complete_pass") == 1:
         pid = row.get("receiver_player_id")
@@ -351,17 +415,24 @@ def _situation_keys(row) -> List[str]:
     return keys
 
 
-def _compute_team_buckets(pbp, team: str, week: Optional[int] = None) -> Dict[str, Dict[str, Dict[str, Any]]]:
+def _compute_team_buckets(pbp, team: str, week: Optional[int] = None,
+                          week_start: Optional[int] = None,
+                          week_end: Optional[int] = None,
+                          rush_only: bool = False) -> Dict[str, Dict[str, Dict[str, Any]]]:
     """Accumulate touches per situation per player for one team.
 
-    week=None aggregates the full season; otherwise filters to that week.
+    week=None aggregates the full season; a single week filters to it;
+    week_start/week_end restrict to that inclusive range. rush_only=True
+    counts rushing attempts only, excluding receptions.
 
     Returns: situation_key -> {gsis_id: {"name": str, "touches": int}}
     """
     # Filter to this team's offensive plays (regular season; full season if
     # week is None)
     mask = (pbp["posteam"] == team) & (pbp["season_type"] == "REG")
-    if week is not None:
+    if week_start is not None and week_end is not None:
+        mask = mask & (pbp["week"] >= week_start) & (pbp["week"] <= week_end)
+    elif week is not None:
         mask = mask & (pbp["week"] == week)
     df = pbp[mask]
     buckets: Dict[str, Dict[str, Dict[str, Any]]] = {k: {} for k, _ in SITUATIONS}
@@ -369,7 +440,7 @@ def _compute_team_buckets(pbp, team: str, week: Optional[int] = None) -> Dict[st
         return buckets
 
     for _, row in df.iterrows():
-        pid = _is_rb_touch(row)
+        pid = _is_rb_touch(row, rush_only=rush_only)
         if not pid:
             continue
         # Get player name from rusher or receiver name
@@ -384,9 +455,21 @@ def _compute_team_buckets(pbp, team: str, week: Optional[int] = None) -> Dict[st
 
 
 def get_all_player_situational_shares(
-    season: int, week: int,
+    season: int,
+    week: Optional[int] = None,
+    week_start: Optional[int] = None,
+    week_end: Optional[int] = None,
+    rush_only: bool = False,
 ) -> Dict[str, Dict[str, float]]:
     """Compute per-player situational touch shares for all teams.
+
+    week=None aggregates the full season; a single week filters to it;
+    week_start/week_end restrict to that inclusive range. rush_only=True
+    counts rushing attempts only, excluding receptions.
+
+    Only roster RBs are counted, so WR/TE/QB touches never enter the
+    shares (and no non-RB is ever labeled RB downstream). Fail-open to
+    unfiltered when roster data is unavailable.
 
     Returns: {gsis_id: {"name": str, "team": str,
                         "goalline_share": float, "short_yardage_share": float,
@@ -408,13 +491,24 @@ def get_all_player_situational_shares(
         "two_min": "two_minute_share",
     }
 
+    rb_by_team = _get_rb_gsis_ids_by_team(season)
+
     result: Dict[str, Dict[str, float]] = {}
     teams = pbp["posteam"].dropna().unique()
     for team in teams:
         team = str(team).strip()
         if not team:
             continue
-        buckets = _compute_team_buckets(pbp, team, week)
+        buckets = _compute_team_buckets(
+            pbp, team, week, week_start, week_end, rush_only=rush_only)
+        # RB-only: shares are of team RB touches, so exclude WR/TE/QB touches.
+        # Fail-open when roster data is unavailable.
+        rb_ids = rb_by_team.get(team)
+        if rb_ids:
+            for key in buckets:
+                buckets[key] = {
+                    pid: p for pid, p in buckets[key].items() if pid in rb_ids
+                }
         # For each situation, compute each player's share of team touches
         for sit_key, metric_key in key_map.items():
             b = buckets[sit_key]
