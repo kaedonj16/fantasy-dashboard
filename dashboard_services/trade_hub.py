@@ -74,6 +74,13 @@ def why_line_for_suggestion(s: Dict[str, Any]) -> str:
     parch = _safe_str(s.get("partner_arch"))
     if partner and parch:
         bits.append(f"Partner fits a {parch} build.")
+    heat = s.get("trade_heat") or 0
+    try:
+        heat = int(heat)
+    except (TypeError, ValueError):
+        heat = 0
+    if heat > 0:
+        bits.append(f"Trending in {heat} real trades this week.")
     return " ".join(bits)
 
 
