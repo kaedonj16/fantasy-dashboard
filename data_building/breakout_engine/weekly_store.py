@@ -289,6 +289,23 @@ def publish_weekly_snapshot(
                 f"INSERT INTO {WEEKLY_SCORES_TABLE} ({', '.join(cols)}) "
                 f"VALUES ({placeholders})", rows,
             )
+        # A live (non-reconstructed) snapshot replaces the calls for this
+        # week, so any grades written earlier (e.g. by a backtest run) are
+        # stale: their stored breakout scores no longer match the surfaced
+        # calls.  Delete them so the grader re-grades from the live calls.
+        # The grades table key (player_id, season, as_of_week,
+        # scoring_version) uses ON CONFLICT DO NOTHING, so without this the
+        # reconstructed grades would permanently shadow the live ones.
+        # Reconstructed runs never delete: they must not wipe live grades.
+        if not (detail or {}).get("reconstructed"):
+            from data_building.breakout_engine.weekly_grading import (
+                GRADES_TABLE,
+            )
+            conn.execute(
+                f"DELETE FROM {GRADES_TABLE} WHERE season=%s AND as_of_week=%s "
+                f"AND scoring_version=%s",
+                (int(season), int(as_of_week), scoring_version),
+            )
         inserted = conn.execute(
             f"SELECT COUNT(*) AS n FROM {WEEKLY_SCORES_TABLE} WHERE run_id=%s",
             (run_id,),
