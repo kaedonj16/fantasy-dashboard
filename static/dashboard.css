@@ -45661,7 +45661,7 @@ em.gneg { background: var(--loss); }
 .td-scrim.open { opacity: 1; pointer-events: auto; }
 .td-drawer {
     position: fixed;
-    top: 108px;
+    top: 99px;
     right: 0;
     bottom: 0;
     width: 430px;
@@ -45835,10 +45835,13 @@ em.gneg { background: var(--loss); }
 }
 .teams-pview { display: none; }
 .teams-pview.on { display: block; }
-/* Value/Schedule panels go full width now that the sidebar is gone */
+/* Value/Schedule panels use the full page width on desktop (match TEAMS tab);
+   narrower cap only on small screens for readability */
 .teams-page #btmPanel,
-.teams-page #sosPanel { max-width: 760px; }
+.teams-page #sosPanel { max-width: 1120px; }
 @media (max-width: 640px) {
     .teams-ptabs button { padding: 8px 14px; font-size: 12px; }
+    .teams-page #btmPanel,
+    .teams-page #sosPanel { max-width: 760px; }
 }
 
