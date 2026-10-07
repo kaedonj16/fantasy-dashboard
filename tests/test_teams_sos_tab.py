@@ -1,8 +1,9 @@
 """Guards for the Teams-page Schedule (SoS) tab markup and CSS.
 
-The old list used a 140px name column plus bars scaled to max opponent
-score, which made preseason rows look identical and all-red. These tests
-lock the rebuilt ranking UI and the relative min–max bar math.
+The tab renders Mock 4 ranked rows: rank badge, team name with a spread-based
+bar, a HARDEST/HARD/AVERAGE/EASY/EASIEST difficulty chip, and the vs-avg
+value. These tests lock the rebuilt ranking UI and the relative min-max
+bar math.
 """
 from __future__ import annotations
 
@@ -18,21 +19,25 @@ JS = (ROOT / "static" / "teams.js").read_text(encoding="utf-8")
 CSS = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
 
 _SOS_SELECTORS = (
-    ".sos-panel",
-    ".sos-header",
-    ".sos-title",
-    ".sos-meta",
+    ".rl-head",
+    ".rl-rows",
+    ".rl-row",
+    ".rl-mine",
+    ".rl-you",
+    ".rk",
+    ".nm",
+    ".vbar",
+    ".diff",
+    ".d-hardest",
+    ".d-hard",
+    ".d-avg",
+    ".d-easy",
+    ".d-easiest",
+    ".slegend",
     ".sos-note",
-    ".sos-legend",
-    ".sos-list",
-    ".sos-row",
-    ".sos-name-text",
-    ".sos-you",
-    ".sos-diff",
-    ".sos-track",
-    ".sos-fill",
-    ".sos-val",
-    ".sos-mine",
+    ".sos-vs",
+    ".pos-chg",
+    ".neg-chg",
 )
 
 
@@ -51,8 +56,7 @@ def test_sos_css_selectors_exist():
         assert sel in CSS, f"missing Schedule-tab CSS for {sel}"
     # Site-audit forbids stadium pills; chips/bars use the shared token.
     assert "border-radius: 999px" not in CSS
-    assert "border-radius: var(--radius-pill)" in _css_rule(".sos-diff")
-    assert "border-radius: var(--radius-pill)" in _css_rule(".sos-track")
+    assert "border-radius: var(--radius-pill)" in _css_rule(".diff")
 
 
 def _css_rule(sel: str) -> str:
@@ -63,8 +67,8 @@ def _css_rule(sel: str) -> str:
 
 def test_sos_name_ellipsis_lives_on_inner_text():
     """YOU pill must not eat the last pixels of a long team name."""
-    name = re.search(r"\.sos-name-text\s*\{([^}]+)\}", CSS)
-    assert name, "missing .sos-name-text rule"
+    name = re.search(r"\.rl-nm-text\s*\{([^}]+)\}", CSS)
+    assert name, "missing .rl-nm-text rule"
     body = name.group(1)
     assert "ellipsis" in body
     assert "overflow: hidden" in body
@@ -87,11 +91,24 @@ def test_sos_tiers_collapse_when_schedules_are_even():
     assert "Easiest" in tier
 
 
+def test_sos_diff_chips_cover_all_tiers():
+    diff = _fn_block("_sosDiffCls")
+    assert "'d-hardest'" in diff
+    assert "'d-hard'" in diff
+    assert "'d-avg'" in diff
+    assert "'d-easy'" in diff
+    assert "'d-easiest'" in diff
+    render = _fn_block("renderSos")
+    assert "tier.label.toUpperCase()" in render
+
+
 def test_sos_render_escapes_team_names_and_marks_viewer():
     render = _fn_block("renderSos")
     assert "_sosEsc(t.team_name)" in render
-    assert "sos-mine" in render
-    assert "sos-you" in render
+    assert "rl-mine" in render
+    assert "rl-you" in render
+    assert "rk " in render
+    assert "'t1'" in render and "'t2'" in render and "'t3'" in render
     assert "No games played yet" in render
     assert "remaining opponents ranked by projected starter scoring" in render
     assert "Early results are mixed with preseason projections" in render
@@ -108,6 +125,9 @@ def test_sos_render_escapes_team_names_and_marks_viewer():
     assert "Based on roster strength (no games played yet)" not in render
     assert "analytics-bar-list" not in render
     assert "analytics-empty" not in render
+    # Old sos-* row chrome is gone; the mock ranked-row classes are used.
+    assert "sos-row" not in render
+    assert "sos-diff-" not in render
 
 
 def test_load_sos_resyncs_then_renders():

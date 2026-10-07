@@ -273,33 +273,16 @@ def build_teams_body(ctx: dict) -> str:
             platform=platform, league_id=league_id, season=current_season,
         )
 
-    pick_series = list(team_pick_value.values())
-    _pick_mean = sum(pick_series) / len(pick_series) if pick_series else 0.0
-    _pick_var = sum((v - _pick_mean) ** 2 for v in pick_series) / len(pick_series) if pick_series else 0.0
-    _pick_std = math.sqrt(_pick_var)
-    team_pick_z: Dict[int, float] = {
-        rid: ((v - _pick_mean) / _pick_std if _pick_std > 0 else 0.0)
-        for rid, v in team_pick_value.items()
-    }
-    pick_z_min = min(team_pick_z.values()) if team_pick_z else 0.0
-    pick_z_max = max(team_pick_z.values()) if team_pick_z else 0.0
-
     # ----------------- Compute per-team positional strength + league baselines -----------------
-    # Rank + bars use weighted_pos_strength (same helper as My Leagues). The
-    # starter/depth/fragility profile stays in the expandable detail strip.
-    from utils.roster_strength import positional_strength_profile, rank_rosters_by_position
+    # Rank uses weighted_pos_strength (same helper as My Leagues); the
+    # per-position ranks feed the drawer payload below.
+    from utils.roster_strength import rank_rosters_by_position
     slot_counts = count_roster_positions(
         ctx.get("roster_positions") or get_roster_positions() or []
     )
     team_pos_strength, pos_rank = rank_rosters_by_position(
         team_pos_values, slot_counts, positions=POS_ORDER,
     )
-    team_pos_profiles: Dict[int, Dict[str, dict]] = defaultdict(dict)
-    for rid, pos_map in team_pos_values.items():
-        for pos, vals in pos_map.items():
-            team_pos_profiles[rid][pos] = positional_strength_profile(
-                vals, pos, slot_counts,
-            )
 
     league_pos_avg: Dict[str, float] = {}
     league_pos_std: Dict[str, float] = {}
@@ -317,7 +300,6 @@ def build_teams_body(ctx: dict) -> str:
         league_pos_std[pos] = std
 
     # ----------------- Z-scores & positional index -----------------
-    team_pos_z: Dict[int, Dict[str, float]] = defaultdict(dict)
     team_pos_index: Dict[int, float] = {}
 
     LINEUP_WEIGHTS = {
@@ -328,9 +310,6 @@ def build_teams_body(ctx: dict) -> str:
         "FLEX": slot_counts.get("FLEX") or 1,
     }
     weight_sum = sum(LINEUP_WEIGHTS[pos] for pos in POS_ORDER if LINEUP_WEIGHTS.get(pos, 0) > 0) or 1.0
-
-    pos_z_min: Dict[str, float] = {pos: float("inf") for pos in POS_ORDER}
-    pos_z_max: Dict[str, float] = {pos: float("-inf") for pos in POS_ORDER}
 
     for rid in team_meta.keys():
         idx_num = 0.0
@@ -343,21 +322,11 @@ def build_teams_body(ctx: dict) -> str:
                 z = (team_strength - mu) / sigma
             else:
                 z = 0.0
-            team_pos_z[rid][pos] = z
-
-            pos_z_min[pos] = min(pos_z_min[pos], z)
-            pos_z_max[pos] = max(pos_z_max[pos], z)
 
             w = LINEUP_WEIGHTS.get(pos, 0)
             idx_num += w * z
 
         team_pos_index[rid] = idx_num / weight_sum
-
-    for pos in POS_ORDER:
-        if pos_z_min[pos] == float("inf"):
-            pos_z_min[pos] = 0.0
-        if pos_z_max[pos] == float("-inf"):
-            pos_z_max[pos] = 0.0
 
     # ----------------- Helper: players under a position row -----------------
     def render_pos_players(rid: int, pos_code: str) -> str:
@@ -498,6 +467,7 @@ def build_teams_body(ctx: dict) -> str:
 
     # ----------------- Build HTML cards -----------------
     cards_html = []
+    _drawer_data = {}
 
     # Competitive-window accent colors (mirror the window legend below) and the
     # per-position chip colors used across the reworked cards.
@@ -518,210 +488,31 @@ def build_teams_body(ctx: dict) -> str:
             if avatar else ""
         )
 
-        z_map = team_pos_z[rid]
-        strongest_pos = max(POS_ORDER, key=lambda p: z_map.get(p, 0.0))
-        weakest_pos = min(POS_ORDER, key=lambda p: z_map.get(p, 0.0))
-
-        table_rows = []
+        # Positional detail for the team drawer: per-position aggregates plus the
+        # server-rendered player rows (render_pos_players). The expandable
+        # in-card position table was removed; the drawer is the detail surface.
+        _drawer_pos = []
         for pos in POS_ORDER:
             vals = team_pos_values[rid][pos]
             count = len(vals)
             total = sum(vals)
-            strength_score = team_pos_strength[rid][pos]
-            z = z_map[pos]
-
-            # bar width scaled within this position across league
-            z_min = pos_z_min[pos]
-            z_max = pos_z_max[pos]
-            if z_max > z_min:
-                pct = 10 + 80 * (z - z_min) / (z_max - z_min)  # 10–90%
-            else:
-                pct = 50.0
-
-            highlight_class = ""
-            if pos == strongest_pos:
-                highlight_class = " pos-strongest"
-            elif pos == weakest_pos:
-                highlight_class = " pos-weakest"
 
             rank = pos_rank[pos].get(rid, 0)
             _pos_age = team_pos_age.get(int(rid), {}).get(pos)
-            _age_txt = f"{_pos_age:.1f}" if _pos_age is not None else "–"
+            _age_txt = f"{_pos_age:.1f}" if _pos_age is not None else ""
 
-            # Diverging strength bar: centered on the league average (z = 0), it
-            # grows right (green) when the room beats the league and left (red)
-            # when it trails. |z| is capped at 2σ = a full half-track.
-            _chip_color = _POS_CHIP.get(pos, "#64748b")
-            _bar_w = min(abs(z) / 2.0, 1.0) * 50.0
-            _bar_dir = "up" if z >= 0 else "dn"
-            if pos == strongest_pos:
-                _flag = "<span class='tc-flag s' aria-label='Your strongest position group'>&#9650;</span>"
-            elif pos == weakest_pos:
-                _flag = "<span class='tc-flag w' aria-label='Your weakest position group'>&#9660;</span>"
-            else:
-                _flag = ""
+            _drawer_pos.append({
+                "pos": pos,
+                "chip": _POS_CHIP.get(pos, "#64748b"),
+                "total": round(total, 1),
+                "count": count,
+                "age": _age_txt,
+                "rank": rank,
+                "num_teams": _n_teams,
+                "strength": "STRONG" if rank and rank <= max(1, _n_teams // 3) else "",
+                "players_html": render_pos_players(rid, pos),
+            })
 
-            # main row (clickable). #, age, Score and z move into the detail row
-            # so the visible row stays scannable: chip · strength · value · rank.
-            main_row = (
-                "<tr class='pos-row{cls}' data-pos='{pos}'>"
-                "  <td class='pos-name'>"
-                "    <span class='pos-row-toggle'>&#9662;</span>"
-                "    <span class='tc-pos-chip' style='--p:{chip};'>{pos}</span>"
-                "  </td>"
-                "  <td class='pos-bar-cell'>"
-                "    <div class='tc-strength-track'>"
-                "      <span class='tc-strength-zero'></span>"
-                "      <span class='tc-strength-fill {dir}' style='width:{w:.0f}%;'></span>"
-                "    </div>"
-                "  </td>"
-                "  <td class='pos-total'>{total:.1f}</td>"
-                "  <td class='pos-rank' title='Starter-weighted rank: starters count full, depth counts partial. Not raw total value'>#{rank}{flag}</td>"
-                "</tr>".format(
-                    cls=highlight_class,
-                    rank=rank,
-                    pos=pos,
-                    total=total,
-                    chip=_chip_color,
-                    dir=_bar_dir,
-                    w=_bar_w,
-                    flag=_flag,
-                )
-            )
-
-            # detail row right under it (collapsed by default)
-            detail_html = render_pos_players(rid, pos)
-            _profile = team_pos_profiles[rid][pos]
-            _conf = _profile["confidence"]
-            _profile_html = (
-                "<div class='pos-profile-strip' style='display:flex;gap:8px;flex-wrap:wrap;margin:0 0 10px;'>"
-                f"<span class='mini-label'>Starters <b>{_profile['starter']:.0f}</b></span>"
-                f"<span class='mini-label'>Depth <b>{_profile['depth']:.0f}</b></span>"
-                f"<span class='mini-label'>Fragility <b>{_profile['fragility']*100:.0f}%</b></span>"
-                f"<span class='mini-label' title='Based on roster input completeness'>Confidence <b>{_conf['label']} · {_conf['score']}</b></span>"
-                "</div>"
-            )
-            # The numbers dropped from the visible row live here so nothing is lost.
-            _stats_strip = (
-                "<div class='tc-detail-stats'>"
-                f"<span>{count} player{'s' if count != 1 else ''}</span>"
-                f"<span>Age {_age_txt}</span>"
-                f"<span>Value {total:.1f}</span>"
-                f"<span>Score {strength_score:.1f}</span>"
-                f"<span>z {z:+.2f}</span>"
-                f"<span>Rank #{rank}</span>"
-                "</div>"
-            )
-            detail_row = (
-                f"<tr class='pos-detail-row' data-pos='{pos}' style='display:none;'>"
-                "  <td colspan='4'>"
-                "    <div class='pos-detail-inner'>"
-                f"      {_stats_strip}{_profile_html}{detail_html}"
-                "    </div>"
-                "  </td>"
-                "</tr>"
-            )
-
-            table_rows.append(main_row)
-            table_rows.append(detail_row)
-
-        # Draft Capital row: dynasty/keeper hosts that publish picks only.
-        # ESPN/Yahoo have no pick feed; do not show a zeroed CAP row as if
-        # every team simply owns nothing.
-        if not _is_redraft and ctx.get("draft_capital_available", True):
-            pick_val = team_pick_value.get(rid, 0.0)
-            pick_z = team_pick_z.get(rid, 0.0)
-            if pick_z_max > pick_z_min:
-                pick_pct = 10 + 80 * (pick_z - pick_z_min) / (pick_z_max - pick_z_min)
-            else:
-                pick_pct = 50.0
-            pick_count = len(picks_by_roster.get(str(rid), []))
-            _cap_w = min(abs(pick_z) / 2.0, 1.0) * 50.0
-            _cap_dir = "up" if pick_z >= 0 else "dn"
-            table_rows.append(
-                "<tr class='pos-row pos-picks-row' data-pos='PICKS'>"
-                "  <td class='pos-name'>"
-                "    <span class='pos-row-toggle'>&#9662;</span>"
-                "    <span class='tc-pos-chip tc-pos-chip-cap' style='--p:#c92c68;'>CAP</span>"
-                "  </td>"
-                "  <td class='pos-bar-cell'>"
-                "    <div class='tc-strength-track'>"
-                "      <span class='tc-strength-zero'></span>"
-                f"      <span class='tc-strength-fill {_cap_dir}' style='width:{_cap_w:.0f}%;'></span>"
-                "    </div>"
-                "  </td>"
-                f"  <td class='pos-total'>{pick_val:.1f}</td>"
-                "  <td class='pos-rank'></td>"
-                "</tr>"
-            )
-
-            # Expandable pick detail: each future pick with its projected slot
-            # ("2027 1.03" from the playoff-odds sim, tagged projected) and value.
-            _pk_rows = []
-            for _pk in picks_by_roster.get(str(rid), []):
-                try:
-                    _pk_yr = int(_pk.get("season") or 0)
-                    _pk_rnd = int(_pk.get("round") or 0)
-                except (TypeError, ValueError):
-                    continue
-                if not _pk_yr or not _pk_rnd:
-                    continue
-                _pk_orig = str(_pk.get("original_owner") or rid)
-                _pk_slot = None
-                _pk_is_proj = False
-                if _pk_yr == current_season:
-                    # Upcoming draft: order is final (last season is in the books).
-                    try:
-                        _pk_slot = _pk_final_slots.get(int(_pk_orig))
-                    except (TypeError, ValueError):
-                        _pk_slot = None
-                elif _pk_yr == _pk_proj_year:
-                    _pk_slot = _pk_slot_by_original.get(_pk_orig)
-                    _pk_is_proj = _pk_slot is not None
-                _pk_lbl = (
-                    _pk_pick_label(_pk_yr, _pk_rnd, _pk_slot)
-                    if _pk_slot is not None
-                    else (f"{_pk_yr} {_pk_rnd} · projected slot unavailable"
-                          if _pk_yr and _pk_rnd else "Projected slot unavailable")
-                )
-                _pk_val = _pk_pick_value_from_table(
-                    _pk_value_tbl, _pk_yr, _pk_rnd, _pk_slot, len(rosters) or 10
-                )
-                _pk_from = ""
-                if _pk_orig != str(rid):
-                    _pk_from_name = roster_map.get(_pk_orig) or f"Roster {_pk_orig}"
-                    _pk_from = f"<span class='dc-from'>from {html.escape(str(_pk_from_name))}</span>"
-                _pk_badge = "<span class='dc-proj'>projected</span>" if _pk_is_proj else ""
-                _pk_rows.append(
-                    f"<li class='dc-pick'>"
-                    f"<span class='dc-pick-label'>{html.escape(_pk_lbl)}</span>"
-                    f"{_pk_from}{_pk_badge}"
-                    f"<span class='dc-pick-val'>{_pk_val:,.0f}</span>"
-                    f"</li>"
-                )
-            _pk_note = (
-                f"<div class='dc-note'>{_pk_proj_year} slots are projected from current "
-                f"playoff odds; later years use round values.</div>"
-                if any("dc-proj" in r for r in _pk_rows) else ""
-            )
-            _pk_detail = (
-                f"<ul class='dc-pick-list'>{''.join(_pk_rows)}</ul>{_pk_note}"
-                if _pk_rows else "<div class='dc-none'>No future picks</div>"
-            )
-            _cap_stats = (
-                "<div class='tc-detail-stats'>"
-                f"<span>{pick_count} pick{'s' if pick_count != 1 else ''}</span>"
-                f"<span>Value {pick_val:.1f}</span>"
-                f"<span>z {pick_z:+.2f}</span>"
-                "</div>"
-            )
-            table_rows.append(
-                "<tr class='pos-detail-row' data-pos='PICKS' style='display:none;'>"
-                "  <td colspan='4'>"
-                f"    <div class='pos-detail-inner'>{_cap_stats}{_pk_detail}</div>"
-                "  </td>"
-                "</tr>"
-            )
 
         # ── Value-by-position mix bar (a compact stacked bar + legend that
         # replaces the per-card Plotly chart: same figures, a fraction of the
@@ -734,28 +525,28 @@ def build_teams_body(ctx: dict) -> str:
             round(sum(team_pos_values[rid].get("WR", [])), 1),
             round(sum(team_pos_values[rid].get("TE", [])), 1),
         ]
-        if not _is_redraft:
+        if not _is_redraft and ctx.get("draft_capital_available", True):
             _mix_labels.append("CAP")
             _mix_colors.append("#c92c68")
             _mix_values.append(round(team_pick_value.get(rid, 0.0), 1))
         _mix_total = sum(_mix_values)
         _mix_segs = "".join(
-            f"<div class='tc-mix-seg' style='flex:{v:.2f};background:{c};'></div>"
+            f"<div class='tsc-mix-seg' style='flex:{v:.2f};background:{c};'></div>"
             for v, c in zip(_mix_values, _mix_colors) if v and v > 0
         )
         _mix_legend = " ".join(
-            f"<span class='tc-mix-leg'><span class='tc-mix-dot' style='background:{c};'></span>"
-            f"<span class='tc-mix-k'>{lbl}</span> {v:,.0f}</span>"
+            f"<span class='tsc-mix-leg'><span class='tsc-mix-dot' style='background:{c};'></span>"
+            f"<span class='tsc-mix-k'>{lbl}</span> {v:,.0f}</span>"
             for lbl, v, c in zip(_mix_labels, _mix_values, _mix_colors)
         )
         _mix_html = (
-            "<div class='tc-mix'>"
-            "  <div class='tc-mix-head'>"
-            "    <span class='tc-mix-lbl'>Value by position</span>"
-            f"    <span class='tc-mix-total'>{_mix_total:,.1f}</span>"
+            "<div class='tsc-mix'>"
+            "  <div class='tsc-mix-head'>"
+            "    <span class='tsc-mix-lbl'>Value by position</span>"
+            f"    <span class='tsc-mix-total'>{_mix_total:,.1f}</span>"
             "  </div>"
-            f"  <div class='tc-mix-bar'>{_mix_segs}</div>"
-            f"  <div class='tc-mix-legend'>{_mix_legend}</div>"
+            f"  <div class='tsc-mix-bar'>{_mix_segs}</div>"
+            f"  <div class='tsc-mix-legend'>{_mix_legend}</div>"
             "</div>"
         )
 
@@ -763,7 +554,10 @@ def build_teams_body(ctx: dict) -> str:
         _grade = _gdata.get("grade", "?")
         _win_window = _gdata.get("win_window", "")
         _grade_cls = "grade-a" if _grade.startswith("A") else "grade-b" if _grade.startswith("B") else "grade-c" if _grade.startswith("C") else "grade-d"
-        _grade_badge = f"<span class='roster-grade-inline {_grade_cls}' title='{_win_window}'>{_grade}</span>"
+        _grade_chip = (
+            f"<span class='tsc-grade {_grade_cls}' title='{html.escape(_win_window)}'>{_grade}</span>"
+            if _grade and _grade != "?" else ""
+        )
 
         # Numeric sort keys for client-side sorting
         _grade_num = {"A+":12,"A":11,"A-":10,"B+":9,"B":8,"B-":7,"C+":6,"C":5,"C-":4,"D+":3,"D":2,"D-":1,"F":0}.get(_grade, 0)
@@ -798,91 +592,81 @@ def build_teams_body(ctx: dict) -> str:
             "Full Rebuild":     "wt-full-rebuild",
         }.get(_win_window, "wt-holding")
         _pos_idx = team_pos_index[rid]
-        _shape = roster_shape_label(team_pos_values[rid], _is_sf)
         _is_viewer = str(rid) == str(viewer_roster_id or "")
 
-        # ── Reworked card chrome ──────────────────────────────────────────────
+        # ── Compact card chrome (Mock 4) ──────────────────────────────────────
         _win_color = _WINDOW_COLORS.get(_win_window, "#94a3b8")
         _initials = ("".join(w[0] for w in str(name).split()[:2]).upper() or "?")[:2]
         if img_html:
             _avatar_html = (
-                "<span class='tc-avatar-wrap'>"
-                f"<img class='tc-avatar' src='{avatar}' alt='' loading='lazy' decoding='async' "
+                "<span class='tsc-avatar-wrap'>"
+                f"<img class='tsc-avatar' src='{avatar}' alt='' loading='lazy' decoding='async' "
                 "onerror=\"this.style.visibility='hidden'\">"
                 "</span>"
             )
         else:
             _avatar_html = (
-                f"<span class='tc-avatar-wrap tc-avatar-mono'>{html.escape(_initials)}</span>"
+                f"<span class='tsc-avatar-wrap tsc-avatar-mono'>{html.escape(_initials)}</span>"
             )
-        _you_pill = "<span class='tc-you'>YOU</span>" if _is_viewer else ""
-        _shape_txt = f" &middot; {html.escape(_shape)}" if _shape else ""
-        _window_pill = (
-            f"<span class='tc-window'><span class='tc-window-dot' style='background:{_win_color};'></span>"
-            f"<b>{html.escape(_win_window) if _win_window else 'Unranked'}</b>{_shape_txt}</span>"
-        )
+        _you_pill = "<span class='tsc-you'>YOU</span>" if _is_viewer else ""
+        _status_label = html.escape(_win_window) if _win_window else "Unranked"
 
-        # Understated Positional Index meter, diverging around the league average
-        # (z = 0). Capped at +/-2 sigma, which fills a full half-track.
+        # Positional Index: diverging bar around the league average (z = 0).
+        # Capped at +/-2 sigma, which fills a full half-track (Mock 4 style).
         _pi_dir = "up" if _pos_idx >= 0 else "dn"
         _pi_w = min(abs(_pos_idx) / 2.0, 1.0) * 50.0
-        _pi_mark = max(4.0, min(96.0, 50.0 + (_pos_idx / 2.0) * 50.0))
+        _pi_left = 50.0 if _pi_dir == "up" else 50.0 - _pi_w
         _index_html = (
-            "<div class='tc-index' title='Positional Index: how far this team&apos;s starting-lineup "
+            "<div class='tsc-pi' title='Positional Index: how far this team&apos;s starting-lineup "
             "strength sits above or below the league average, in standard deviations.'>"
-            "  <div class='tc-index-head'>"
-            "    <span class='tc-index-lbl'>Positional Index</span>"
-            f"    <span class='tc-index-num {_pi_dir}'>{_pos_idx:+.2f}</span>"
+            "  <div class='tsc-pi-head'>"
+            "    <span class='tsc-pi-lbl'>Positional Index</span>"
+            f"    <span class='tsc-pi-num {_pi_dir}'>{_pos_idx:+.2f}</span>"
             "  </div>"
-            "  <div class='tc-meter'>"
-            "    <div class='tc-meter-mid'></div>"
-            f"    <div class='tc-meter-fill {_pi_dir}' style='width:{_pi_w:.0f}%;'></div>"
-            f"    <div class='tc-meter-mark' style='left:{_pi_mark:.0f}%;'></div>"
+            "  <div class='tsc-pi-track'>"
+            "    <span class='tsc-pi-mid'></span>"
+            f"    <span class='tsc-pi-fill {_pi_dir}' style='left:{_pi_left:.0f}%;width:{_pi_w:.0f}%;'></span>"
             "  </div>"
-            "  <div class='tc-index-scale'><span>&minus;2&sigma;</span><span>league avg</span><span>+2&sigma;</span></div>"
             "</div>"
         )
 
         card_html = (
             f"<div class='card team-strength-card {_window_cls}' data-br-moment='draftgrade' data-sort-grade='{_grade_num}' data-sort-posindex='{_pos_idx:.4f}' data-sort-archetype='{_archetype_num}' data-roster-id='{rid}' data-original-index='{_card_idx}'" + (" data-viewer='1'" if _is_viewer else "") + ">"
-            "  <div class='card-header-row tc-head'>"
-            "    <div class='tc-id'>"
-            f"      {_avatar_html}"
-            "      <div class='tc-idtext'>"
-            f"        <h2 class='team-clickable tc-name' style='cursor:pointer;' data-roster-id='{rid}' data-team-name='{name}'><span class='tc-name-text'>{name}</span>{_you_pill}</h2>"
-            f"        {_window_pill}"
-            "      </div>"
+            "  <div class='tsc-head'>"
+            f"    {_avatar_html}"
+            "    <div class='tsc-idtext'>"
+            f"      <div class='tsc-namerow'><span class='tsc-name'>{html.escape(str(name))}</span>{_you_pill}</div>"
+            f"      <div class='tsc-status'><span class='tsc-dot' style='background:{_win_color};'></span>{_status_label}</div>"
             "    </div>"
-            "    <div class='tc-head-right'>"
-            f"      {_grade_badge}"
-            f"      <button class='share-report-btn' title='Share team report card' data-roster='{rid}' data-platform='{platform}' data-season='{current_season}' data-league='{league_id}'>"
-            "<svg class='share-report-icon' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><circle cx='18' cy='5' r='3'/><circle cx='6' cy='12' r='3'/><circle cx='18' cy='19' r='3'/><line x1='8.59' y1='13.51' x2='15.42' y2='17.49'/><line x1='15.41' y1='6.51' x2='8.59' y2='10.49'/></svg></button>"
-            "      <button class='team-card-toggle' aria-label='Expand card' aria-expanded='false'>"
-            "        <svg width='14' height='14' viewBox='0 0 14 14' fill='none'>"
-            "          <path d='M3 5l4 4 4-4' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/>"
-            "        </svg>"
-            "      </button>"
-            "    </div>"
+            f"    {_grade_chip}"
             "  </div>"
-            "  <div class='card-body'>"
-            f"    {_index_html}"
-            f"    {_mix_html}"
-            "    <div class='pos-table-wrap'>"
-            "    <table class='pos-strength-table'>"
-            "      <tbody>"
-            f"        {''.join(table_rows)}"
-            "      </tbody>"
-            "    </table>"
-            "    <div class='pos-rank-note'>Position ranks use starter-weighted value (starters full, depth partial). Not raw totals.</div>"
-            "    </div>"
-            "  </div>"
+            f"  {_index_html}"
+            f"  {_mix_html}"
+            f"  <button class='tsc-details' type='button' data-roster-id='{rid}'>View details <span aria-hidden='true'>&rarr;</span></button>"
             "</div>"
         )
 
         cards_html.append(card_html)
 
+        # Drawer payload: everything the team drawer renders without a fetch.
+        _drawer_data[str(rid)] = {
+            "name": str(name),
+            "avatar": avatar,
+            "initials": _initials,
+            "is_viewer": _is_viewer,
+            "grade": _grade,
+            "grade_cls": _grade_cls,
+            "window": _win_window,
+            "win_color": _win_color,
+            "pos_index": f"{_pos_idx:+.2f}",
+            "pos_index_dir": _pi_dir,
+            "positions": _drawer_pos,
+        }
+
     all_cards_html = "".join(
         cards_html) or "<div class='card'><div class='card-body'><p>No teams found.</p></div></div>"
+    # Drawer data for teams.js: per-team header + positional detail.
+    _drawer_json = json.dumps(_drawer_data).replace("</", "<\\/")
 
     # ---------- League analytics section (lazy-loaded) ----------
     platform_js = platform
@@ -1030,26 +814,16 @@ def build_teams_body(ctx: dict) -> str:
         </div>
       </aside>
     </div>
+    <div class="td-scrim" id="teamDrawerScrim"></div>
+    <aside class="td-drawer" id="teamDrawer" role="dialog" aria-modal="true" aria-label="Team details">
+      <div class="td-head" id="teamDrawerHead"></div>
+      <div class="td-body" id="teamDrawerBody"></div>
+    </aside>
+    <script id="teamsDrawerData" type="application/json">{_drawer_json}</script>
     {_teams_foot_scripts}
 
     <script>
     (function() {{
-      // Click a position row to toggle its detail row
-      document.addEventListener('click', function(e) {{
-        const row = e.target.closest('.pos-row');
-        if (!row) return;
-        const detail = row.nextElementSibling;
-        if (!detail || !detail.classList.contains('pos-detail-row')) return;
-
-        const isOpen = detail.style.display === '' || detail.style.display === 'table-row';
-        detail.style.display = isOpen ? 'none' : 'table-row';
-
-        // rotate the little arrow
-        const chevron = row.querySelector('.pos-row-toggle');
-        if (chevron) {{
-          chevron.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)';
-        }}
-      }});
 
       // Teams sort bar
       var _sortKey = '';
@@ -1149,17 +923,6 @@ def build_teams_body(ctx: dict) -> str:
           btn.setAttribute('aria-expanded', open ? 'true' : 'false');
         }});
       }})();
-
-      // Mobile collapsible team cards
-      document.querySelectorAll('.team-card-toggle').forEach(function(btn) {{
-        btn.addEventListener('click', function(e) {{
-          e.stopPropagation();
-          var card = btn.closest('.team-strength-card');
-          if (!card) return;
-          var expanded = card.classList.toggle('tc-expanded');
-          btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
-        }});
-      }});
 
     }})();
     </script>
