@@ -24160,6 +24160,13 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
                     continue
                 _jparts = _jid.split("_")
                 _jyear = _jparts[0] if _jparts else ""
+                # Skip picks from the current or past seasons (draft already
+                # happened). 2026 season is underway: 2026 picks are out.
+                try:
+                    if int(_jyear) <= _pick_cutoff_yr:
+                        continue
+                except (ValueError, TypeError):
+                    pass
                 _jis_bucket = (len(_jparts) >= 3 and
                                _jparts[2].lower() in _bucket_keywords)
                 _jis_generic = len(_jparts) == 2

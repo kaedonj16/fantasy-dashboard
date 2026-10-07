@@ -175,7 +175,7 @@ def test_rankings_grid_shows_value_and_ppg_side_by_side():
     assert 'id="prPpgHeader"' in page
     assert page.index('id="prPpgHeader"') < page.index('id="prSortHeader"')
     # Desktop grid has a track for the PPG column.
-    assert "54px 42px 1fr 52px 46px 46px 52px 60px" in page
+    assert "88px 42px 1fr 52px 46px 46px 52px 60px" in page
     # Hydrated rows render the PPG cell before the Value cell.
     assert js.index('class="pr-ppg"') < js.index('class="pr-value"')
     # Sorting by PPG or Total Points must not swap Value out of the
