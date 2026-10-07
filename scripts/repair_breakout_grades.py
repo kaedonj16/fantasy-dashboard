@@ -98,13 +98,21 @@ def _run_reconstructed(detail) -> bool:
 def analyze(season: int | None = None, week: int | None = None) -> list[dict]:
     """Return one report dict per (season, as_of_week, scoring_version) with grades."""
     with get_conn() as conn:
+        where = []
+        params: list = []
+        if season is not None:
+            where.append("season = %s")
+            params.append(int(season))
+        if week is not None:
+            where.append("as_of_week = %s")
+            params.append(int(week))
+        where_sql = ("WHERE " + " AND ".join(where)) if where else ""
         grade_keys = conn.execute(
             f"SELECT DISTINCT season, as_of_week, scoring_version "
             f"FROM {GRADES_TABLE} "
-            f"WHERE (%s IS NULL OR season = %s) "
-            f"  AND (%s IS NULL OR as_of_week = %s) "
+            f"{where_sql} "
             f"ORDER BY season, as_of_week, scoring_version",
-            (season, season, week, week),
+            tuple(params),
         ).fetchall()
 
         reports: list[dict] = []
