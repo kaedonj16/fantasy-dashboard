@@ -422,11 +422,12 @@ def test_summarize_groups_by_classification_and_version():
     summary = wg.summarize_grade_rows(rows, min_sample=10)
 
     overall = summary["overall"]
-    assert overall["calls"] == 18
-    assert overall["graded"] == 16
+    # Overall excludes watchlist (never surfaced): 14 calls, 12 graded
+    assert overall["calls"] == 14
+    assert overall["graded"] == 12
     assert overall["ungraded"] == 2
-    assert overall["hit_rate"] == 0.5       # 8 / 16 graded (ungraded excluded)
-    assert overall["miss_rate"] == 0.3125
+    assert overall["hit_rate"] == 0.5       # 6 / 12 graded (ungraded excluded)
+    assert overall["miss_rate"] == 0.25
 
     emerging = summary["by_classification"]["emerging_breakout"]
     assert emerging["graded"] == 12

@@ -1256,6 +1256,9 @@ function openPlayerModal(playerId, playerName, opts) {
       const _isCurrentYearProspect = hasProspectData && !hasGameLogs
         && String(pd.draft_class_year) === String(_currentNFLYear);
       if (tabProspect) {
+        // Hide entirely for non-prospects (dead UI for veterans); keep
+        // disabled+tooltip pattern only for plausibly-relevant tabs.
+        tabProspect.style.display = _isCurrentYearProspect ? '' : 'none';
         tabProspect.disabled = !_isCurrentYearProspect;
         tabProspect.title = _isCurrentYearProspect ? '' : 'Prospect data only for current-year rookies';
         tabProspect.classList.toggle('pm-tab-disabled', !_isCurrentYearProspect);

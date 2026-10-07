@@ -738,9 +738,16 @@ def summarize_grade_rows(
             display_classification(row.get("classification"),
                                    row.get("breakout_score")), []).append(row)
         by_version.setdefault(str(row.get("scoring_version") or "unknown"), []).append(row)
+    # Overall counts surfaced calls only: exclude watchlist/monitored, which
+    # were never surfaced to the board. by_classification keeps them grouped
+    # separately for transparency.
+    surfaced_rows = [
+        r for r in rows
+        if display_classification(r.get("classification"), r.get("breakout_score")) not in ("watchlist", "monitored")
+    ]
     return {
         "min_sample": int(min_sample),
-        "overall": _rate_bucket(rows, min_sample),
+        "overall": _rate_bucket(surfaced_rows, min_sample),
         "by_classification": {
             key: _rate_bucket(group, min_sample)
             for key, group in sorted(by_classification.items())
