@@ -849,6 +849,8 @@ function prRender() {
   } else {
     // Normal sort when no search query
     players.sort((a, b) => prSortCmp(a, b, sortBy));
+    // Cap the board at the top 500 players by value
+    if (players.length > 500) players.length = 500;
   }
 
   const list   = document.getElementById('prList');
