@@ -31,7 +31,8 @@ OLD = AS_OF - timedelta(days=20)
 EM_DASH = "—"
 
 
-def _row(grade="hit", score=50.0, conf=50.0, classification="watchlist",
+def _row(grade="hit", score=50.0, conf=50.0,
+         classification="emerging_breakout",
          version="weekly-v6", graded_at=RECENT, **extra):
     row = {
         "player_id": "p1", "player_name": "Player One", "season": 2026,
@@ -133,7 +134,7 @@ def test_notable_hits_and_misses_capped_at_five_and_sorted():
 
 def test_cumulative_tables_match_calibration_summarize_bands():
     current = (_rows("hit", 12, score=55.0, conf=80.0)
-               + _rows("miss", 11, score=25.0, conf=30.0))
+               + _rows("miss", 11, score=35.0, conf=30.0))
     old_version = _rows("hit", 7, version="weekly-v5")
     report, _ = _render(current + old_version)
     expected = cal.summarize_bands(current)
@@ -144,6 +145,41 @@ def test_cumulative_tables_match_calibration_summarize_bands():
     assert (report["cumulative"]["by_classification"]
             == expected["by_classification"])
     assert report["total_graded_all_versions"] == 30
+
+
+# ---------------------------------------------------------------------------
+# surfaced-only filtering
+# ---------------------------------------------------------------------------
+
+def test_non_surfaced_rows_are_excluded_from_every_section():
+    surfaced = _rows("hit", 3, score=50.0, classification="emerging_breakout",
+                     ppg_delta=4.0)
+    watchlist = _rows("hit", 5, score=50.0, classification="watchlist",
+                      ppg_delta=9.0)
+    monitored = _rows("hit", 4, score=10.0, classification="monitored")
+    sub_threshold = _rows("hit", 6, score=21.0,
+                          classification="early_watch", ppg_delta=8.0)
+    report, (_, body) = _render(surfaced + watchlist + monitored
+                                + sub_threshold)
+    # Only the 3 surfaced calls count: the watchlist, monitored, and
+    # sub-30 rows were never on the board.
+    assert report["newly_graded"]["bucket"]["graded"] == 3
+    assert report["cumulative"]["overall"]["graded"] == 3
+    assert report["total_graded_all_versions"] == 3
+    assert len(report["newly_graded"]["notable_hits"]) == 3
+    # The non-surfaced rows' bigger PPG deltas must not leak into the
+    # notable list.
+    assert [e["ppg_delta"] for e in
+            report["newly_graded"]["notable_hits"]] == [4.0, 4.0, 4.0]
+    assert "3 calls graded" in body
+
+
+def test_missing_score_passes_surfaced_filter():
+    # Old rows without a stored score predate the threshold and are
+    # kept, matching summarize_grade_rows' backward compatibility.
+    rows = [_row("hit", score=None, classification="emerging_breakout")]
+    report, _ = _render(rows)
+    assert report["cumulative"]["overall"]["graded"] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -202,7 +238,7 @@ def test_below_guard_produces_no_changes_with_counts():
 def _clean_rows():
     # Monotone bands, valid confidence, and the fitted crossing at 38,
     # within 5 points of the current threshold: nothing to change.
-    return (_rows("miss", 70, score=25.0, conf=30.0)
+    return (_rows("miss", 70, score=32.0, conf=30.0)
             + _rows("partial", 70, score=38.0, conf=50.0)
             + _rows("hit", 70, score=55.0, conf=80.0)
             + _rows("hit", 40, score=65.0, conf=80.0))

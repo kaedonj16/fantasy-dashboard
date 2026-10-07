@@ -1,12 +1,17 @@
 """Weekly breakout grading and calibration report (the Wednesday email).
 
 This module builds the weekly self-learning report for the breakout
-engine: how the calls that finished grading recently actually did, the
-season record so far (from :mod:`data_building.breakout_engine.calibration`,
-the same helpers the sidebar Track Record and the calibrate CLI use, so
-every surface agrees), and a concrete suggested-changes plan Kaedon can
-hand back to Muse to apply. It is pure analysis over grade-row dicts:
-it writes nothing and changes no scoring, threshold, weight, or version.
+engine: how the surfaced calls that finished grading recently actually
+did, the season record so far (from
+:mod:`data_building.breakout_engine.calibration`, the same helpers the
+sidebar Track Record and the calibrate CLI use, so every surface
+agrees), and a concrete suggested-changes plan Kaedon can hand back to
+Muse to apply. It is pure analysis over grade-row dicts: it writes
+nothing and changes no scoring, threshold, weight, or version. Only
+surfaced calls (breakout score >= 30, not watchlist/monitored, per
+:func:`data_building.breakout_engine.weekly_grading.is_surfaced_row`)
+are reported; anything never shown on the board is excluded from every
+section.
 
 Inputs are rows as loaded from ``weekly_breakout_grades`` (see
 ``scripts/calibrate_weekly_breakouts.load_graded_calls``): each row
@@ -45,6 +50,7 @@ from data_building.breakout_engine.weekly_breakout import (
     EMERGING_MIN_SCORE,
     SCORING_VERSION,
 )
+from data_building.breakout_engine.weekly_grading import is_surfaced_row
 
 WINDOW_DAYS = 7
 NOTABLE_LIMIT = 5
@@ -260,8 +266,14 @@ def build_weekly_report(rows: Sequence[Dict[str, Any]], season: int,
     ``latest_week`` is the season's most recent stored week when the
     caller knows it; it only feeds the honest reason line when nothing
     new graded.
+
+    Every section is surfaced-calls only (see
+    :func:`data_building.breakout_engine.weekly_grading.is_surfaced_row`):
+    watchlist/monitored rows and sub-30 scores were never on the board,
+    so they are excluded from the new grades, the season record, the
+    notable calls, and the calibration plan alike.
     """
-    rows = list(rows)
+    rows = [r for r in rows if is_surfaced_row(r)]
     as_of = as_of or datetime.now()
     current = [r for r in rows
                if str(r.get("scoring_version") or "") == SCORING_VERSION]
