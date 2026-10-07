@@ -25339,10 +25339,13 @@ def api_league_rosters():
         return jsonify({"teams": [], "viewer_roster_id": ""})
 
     # Return cached roster payload if still fresh (pick-slot resolution is expensive).
+    # NOTE: only the per-team data is cached. viewer_roster_id is per-user and is
+    # always resolved fresh below, never served from the shared cache.
     _roster_key = (platform, league_id, season)
     _cached = _ROSTER_API_CACHE.get(_roster_key)
+    _teams = None
     if _cached and time.time() - _cached["ts"] < _ROSTER_API_CACHE_TTL:
-        return jsonify(_cached["data"])
+        _teams = _cached["data"].get("teams")
 
     try:
         ctx = get_league_ctx_from_cache(platform=platform, league_id=league_id, season=season)
@@ -25350,8 +25353,9 @@ def api_league_rosters():
         rosters = ctx.get("rosters", []) or []
         picks_by_roster = ctx.get("picks_by_roster", {}) or {}
 
-        teams = []
-        for roster in rosters:
+        teams = _teams if _teams is not None else []
+        _build_rosters = rosters if _teams is None else []
+        for roster in _build_rosters:
             roster_id = str(roster.get("roster_id", ""))
             user_id = roster.get("owner_id")
             user = next((u for u in users if u.get("user_id") == user_id), None)
@@ -25404,7 +25408,10 @@ def api_league_rosters():
                 "pick_round_counts": pick_round_counts,
             })
 
-        teams.sort(key=lambda x: x["team_name"])
+        if _teams is None:
+            teams.sort(key=lambda x: x["team_name"])
+            _prune_ttl_cache(_ROSTER_API_CACHE, _ROSTER_API_CACHE_MAX)
+            _ROSTER_API_CACHE[_roster_key] = {"data": {"teams": teams}, "ts": time.time()}
         viewer = get_viewer_session_for_league(
             users, rosters, platform, league_id, season,
         ) or {}
@@ -25412,8 +25419,6 @@ def api_league_rosters():
             "teams": teams,
             "viewer_roster_id": str(viewer.get("viewer_roster_id") or ""),
         }
-        _prune_ttl_cache(_ROSTER_API_CACHE, _ROSTER_API_CACHE_MAX)
-        _ROSTER_API_CACHE[_roster_key] = {"data": payload, "ts": time.time()}
         return jsonify(payload)
     except Exception as e:
         logger.info(f"[api/league-rosters] error: {e}")
