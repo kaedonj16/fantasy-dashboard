@@ -23,8 +23,8 @@ def test_dashboard_action_first_hierarchy():
     assert "matchup_html" in DASH
     assert 'data-jump="os-jump-matchup"' in DASH
     # Center column stays action-first: digest, then next steps, then matchup.
-    assert DASH.index("sinceLastVisitCard") < DASH.index("os-jump-matchup")
-    assert DASH.index("os-jump-matchup") > DASH.index("do_next_waiver_html")
+    assert DASH.index("sinceLastVisitCard") < DASH.index('id="os-jump-matchup"')
+    assert DASH.index('id="os-jump-matchup"') > DASH.index("do_next_waiver_html")
     assert DASH.index("matchup_html") > DASH.index("do_next_waiver_html")
     # Front Office Report sits above Standings in the left rail.
     left = DASH[DASH.index("os-left-col"): DASH.index('class="os-main-col"')]
