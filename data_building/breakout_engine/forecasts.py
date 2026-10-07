@@ -851,9 +851,9 @@ def _weekly_rates_by_week(rows: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]
     """Hit rates grouped by call week, newest week first.
 
     Each entry carries the week number, call counts, and the graded hit
-    rate. Completed weeks (no ungraded calls left) show their real hit
-    rate regardless of the 10-call season floor; in-progress weeks keep
-    the floor. Watchlist/monitored rows are excluded, matching the
+    rate. Weekly rates never use the 10-call floor: a week shows its real
+    rate even with a single graded call. The floor applies to the overall
+    summary only. Watchlist/monitored rows are excluded, matching the
     hits/misses filter: only actual breakout calls appear in the track
     record. Pure.
     """
@@ -880,15 +880,11 @@ def _weekly_rates_by_week(rows: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]
     out = []
     for wk in sorted(by_week, reverse=True):
         week_rows = by_week[wk]
-        # Completed weeks (no ungraded calls left) show their real hit
-        # rate regardless of the 10-call season floor: with 3 calls and
-        # 2 hits, the week earned 67%, not n/a.
-        ungraded = sum(
-            1 for r in week_rows
-            if str(r.get("grade") or "") == wg.GRADE_UNGRADED
-        )
-        min_sample = 1 if ungraded == 0 else wg.MIN_SUMMARY_SAMPLE
-        bucket = wg._rate_bucket(week_rows, min_sample)
+        # Weekly rates never use the 10-call floor (product decision):
+        # a week shows its real rate even with a single graded call.
+        # The floor applies to the overall summary only. _rate_bucket
+        # still returns None when there are zero graded calls.
+        bucket = wg._rate_bucket(week_rows, 1)
         out.append({"week": wk, **bucket})
     return out
 
