@@ -611,6 +611,15 @@ def _weekly_rates_by_week(rows: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]
     for row in rows:
         if str(row.get("classification") or "") in ("watchlist", "monitored"):
             continue
+        # Surfaced = breakout score >= 30 (product decision). A missing
+        # score passes (old rows predate the threshold).
+        _bs = row.get("breakout_score")
+        if _bs is not None:
+            try:
+                if float(_bs) < 30:
+                    continue
+            except (TypeError, ValueError):
+                pass
         try:
             wk = int(row.get("as_of_week") or 0)
         except (TypeError, ValueError):

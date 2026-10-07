@@ -718,6 +718,21 @@ def _rate_bucket(rows: List[Dict[str, Any]], min_sample: int) -> Dict[str, Any]:
     }
 
 
+def _score(v: Any) -> Optional[float]:
+    """Safe float conversion for breakout scores, None on missing/unparseable.
+
+    A missing score means "no score to filter on" (old rows, test fixtures):
+    callers treat None as passing the surfaced threshold.
+    """
+    if v is None:
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+
 def summarize_grade_rows(
     rows: Sequence[Dict[str, Any]],
     min_sample: int = MIN_SUMMARY_SAMPLE,
@@ -741,10 +756,16 @@ def summarize_grade_rows(
     # Overall counts surfaced calls only: exclude watchlist/monitored, which
     # were never surfaced to the board. by_classification keeps them grouped
     # separately for transparency.
-    surfaced_rows = [
-        r for r in rows
-        if display_classification(r.get("classification"), r.get("breakout_score")) not in ("watchlist", "monitored")
-    ]
+    def _is_surfaced(r: Dict[str, Any]) -> bool:
+        if display_classification(r.get("classification"),
+                                 r.get("breakout_score")) in ("watchlist", "monitored"):
+            return False
+        # Surfaced = breakout score >= 30. A missing score passes (old rows,
+        # test fixtures without scores predate the threshold).
+        s = _score(r.get("breakout_score"))
+        return s is None or s >= 30
+
+    surfaced_rows = [r for r in rows if _is_surfaced(r)]
     return {
         "min_sample": int(min_sample),
         "overall": _rate_bucket(surfaced_rows, min_sample),
