@@ -25262,6 +25262,28 @@ tr.team-clickable {
     padding-top: 2px;
 }
 
+/* Compare metrics: per-category basic/detailed expander. */
+.cmp-cat-toggle {
+    background: none;
+    border: 0;
+    padding: 6px 0 12px;
+    margin: 0;
+    color: var(--link, #3b82f6);
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+}
+.cmp-cat-toggle:hover {
+    text-decoration: underline;
+}
+.cmp-cat-detail[hidden],
+tr.cmp3-detail[hidden] {
+    display: none !important;
+}
+tr.cmp3-more td {
+    padding: 2px 4px 10px;
+}
+
 .compare-metric-p1-val {
     font-size: 13px;
     font-weight: 700;
