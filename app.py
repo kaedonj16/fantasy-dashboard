@@ -30264,7 +30264,10 @@ def api_playoff_odds():
         if not ctx:
             return jsonify({"error": "league not found"}), 404
 
-        from data_building.simulate_playoff_odds import simulate_playoff_odds
+        from data_building.simulate_playoff_odds import (
+            remaining_regular_season_weeks,
+            simulate_playoff_odds,
+        )
         _sim_key2 = (platform, str(league_id), season, "v3")
         _sim_sig2 = _playoff_sim_sig(ctx, platform)
         _sim_cached2 = _PLAYOFF_SIM_CACHE.get(_sim_key2)
@@ -30282,6 +30285,10 @@ def api_playoff_odds():
         playoff_teams = int(settings.get("playoff_teams") or 6)
         current_week = int(ctx.get("current_week") or 0)
         is_complete = bool(odds and odds[0].get("is_complete"))
+        # Weeks remaining from finalized W/L records (same source as the sim),
+        # not from the provider's in-progress week. See remaining_regular_season_weeks.
+        weeks_remaining = remaining_regular_season_weeks(
+            odds, playoff_week_start, current_week=current_week)
 
         # Movement arrows: each team's playoff-probability change (in points) vs
         # the most recent earlier daily snapshot. Date-based, so it works in the
@@ -30311,6 +30318,7 @@ def api_playoff_odds():
             "movement": movement,
             "season": season,
             "current_week": current_week,
+            "weeks_remaining": weeks_remaining,
             "playoff_week_start": playoff_week_start,
             "playoff_teams": playoff_teams,
             "is_complete": is_complete,

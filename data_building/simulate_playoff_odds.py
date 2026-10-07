@@ -1514,6 +1514,23 @@ def _regular_season_progress(
     return completed, remaining
 
 
+def remaining_regular_season_weeks(
+    teams: list[dict], playoff_week_start: int, *, current_week: int = 0,
+) -> int:
+    """Count of regular-season weeks still to play, from finalized records.
+
+    Same source as the sim itself: ``_regular_season_progress`` derives the
+    completed count from each team's wins/losses/ties, NOT the provider's
+    in-progress ``current_week`` (Sleeper's week is the week being played, so
+    ``playoff_week_start - current_week - 1`` undercounts by one). The API
+    serves this so the header matches what the Monte Carlo run simulated.
+    """
+    _, remaining = _regular_season_progress(
+        teams, playoff_week_start, current_week=current_week
+    )
+    return len(remaining)
+
+
 def _log_schedule_progress(
     teams: list[dict], playoff_week_start: int,
     completed_weeks: list[int], remaining_weeks: list[int],
