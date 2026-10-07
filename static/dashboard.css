@@ -22650,13 +22650,21 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
 .pr-wl-star { color: var(--gold); font-size: 11px; margin-left: 5px; vertical-align: 1px; }
 .wl-inline-star { color: var(--gold); font-size: 11px; margin-left: 5px; vertical-align: 1px; }
 
-/* Team modal persistent achievement chips (above the roster). */
-.tm-achievements { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 0 12px; }
-.tm-achv-chip { display: inline-flex; align-items: center; font-size: 11px; font-weight: 700;
-    border-radius: var(--radius-pill); padding: 3px 9px; }
-.tm-achv-gold { color: var(--gold); background: color-mix(in srgb, var(--gold) 15%, transparent); }
-.tm-achv-indigo { color: var(--indigo); background: color-mix(in srgb, var(--indigo) 15%, transparent); }
-.tm-achv-win { color: var(--win); background: color-mix(in srgb, var(--win) 15%, transparent); }
+/* Team modal persistent achievement chips: a full-width strip across the top
+   of the roster panel (it is a direct child of the flex-row #tm-panel-roster,
+   so it must claim its own row instead of squeezing into a side column). */
+.tm-achievements { display: flex; flex-wrap: wrap; gap: 8px; padding: 2px 0 14px;
+    flex: 1 1 100%; }
+.tm-achv-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 800;
+    border-radius: var(--radius-pill); padding: 5px 12px; border: 1px solid transparent;
+    white-space: nowrap; }
+.tm-achv-chip svg { flex: 0 0 auto; }
+.tm-achv-gold { color: var(--gold); background: color-mix(in srgb, var(--gold) 16%, transparent);
+    border-color: color-mix(in srgb, var(--gold) 42%, transparent); }
+.tm-achv-indigo { color: var(--indigo); background: color-mix(in srgb, var(--indigo) 16%, transparent);
+    border-color: color-mix(in srgb, var(--indigo) 42%, transparent); }
+.tm-achv-win { color: var(--win); background: color-mix(in srgb, var(--win) 16%, transparent);
+    border-color: color-mix(in srgb, var(--win) 42%, transparent); }
 
 /* Team modal bye-conflict warnings (top of the Roster tab). */
 .tm-bye-warn { background: color-mix(in srgb, var(--warning) 10%, transparent);
@@ -22873,7 +22881,8 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
     gap: 16px;
 }
 
-/* Roster panel uses two-column layout */
+/* Roster panel uses two-column layout; the achievements strip wraps onto its
+   own full-width row above the columns. */
 #tm-panel-roster {
     display: none;
     gap: 24px;
@@ -22881,6 +22890,7 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
 
 #tm-panel-roster.active {
     display: flex;
+    flex-wrap: wrap;
 }
 
 /* Charts panel: weekly + radar on row 1, the SVG scatters wrap to row 2 */
@@ -23958,6 +23968,12 @@ tr.team-clickable {
 
     #tm-panel-roster {
         flex-direction: column;
+    }
+
+    /* In the stacked column layout the strip keeps a natural height. */
+    #tm-panel-roster > .tm-achievements {
+        flex: 0 0 auto;
+        width: 100%;
     }
 
     /* Charts: stack full width instead of squeezing weekly (66%) + radar (34%)
