@@ -323,15 +323,29 @@ def turning_points_html(points: List[Dict[str, Any]]) -> str:
         try:
             lp = float(p.get("left_pts") or 0.0)
             rp = float(p.get("right_pts") or 0.0)
-            score = f"{lp:.1f} to {rp:.1f}"
+            score = f"{lp:.1f} &rarr; {rp:.1f} final"
         except (TypeError, ValueError):
             score = ""
         score_html = f" <span class=\"m-drama-tp-score\">{html.escape(score)}</span>" if score else ""
+        # Visual swing bar: before% -> after% on a 0-100 track
+        lo = min(before, after)
+        hi = max(before, after)
+        swing_dir = "up" if after >= before else "down"
         items.append(
-            "<li>"
-            f"<span class=\"m-drama-tp-time\">{when}</span> "
-            f"<b>{name}</b> {verb} "
-            f"<span class=\"m-drama-tp-wp\">({before}% to {after}%)</span>"
+            "<li class=\"m-drama-tp-item\">"
+            f"<div class=\"m-drama-tp-head\">"
+            f"<span class=\"m-drama-tp-time\">{when}</span>"
+            " <span class=\"m-drama-tp-dot\">&middot;</span> "
+            f"<b>{name}</b> {verb}"
+            f"</div>"
+            f"<div class=\"m-drama-tp-swing\" data-dir=\"{swing_dir}\">"
+            f"<span class=\"m-drama-tp-wp from\">{before}% win odds</span>"
+            f"<span class=\"m-drama-tp-track\">"
+            f"<span class=\"m-drama-tp-fill\" style=\"left:{lo}%;width:{max(hi-lo,2)}%\"></span>"
+            f"<span class=\"m-drama-tp-marker\" style=\"left:{before}%\"></span>"
+            f"</span>"
+            f"<span class=\"m-drama-tp-wp to\">{after}% win odds</span>"
+            f"</div>"
             f"{score_html}"
             "</li>"
         )

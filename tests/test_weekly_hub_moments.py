@@ -250,7 +250,7 @@ def test_hub_launcher_shows_row_with_td_count():
         "apiBody": {"plays": [{"kind": "td"}], "td_count": 3, "teams": {"you": "A", "opp": "B"}},
     })
     assert out["launcherHidden"] is False
-    assert out["countText"] == "3 touchdowns"
+    assert out["countText"] == "3 touchdowns from your matchup"
     assert out["hasPayload"] is True
 
 
@@ -259,7 +259,7 @@ def test_hub_launcher_singular_touchdown():
         "platform": "sleeper", "leagueId": "12345", "season": "2026",
         "apiBody": {"plays": [{"kind": "td"}], "td_count": 1, "teams": {}},
     })
-    assert out["countText"] == "1 touchdown"
+    assert out["countText"] == "1 touchdown from your matchup"
 
 
 def test_hub_launcher_stays_hidden_without_plays():
@@ -304,7 +304,7 @@ def test_hub_launcher_retries_until_plays_arrive():
     })
     assert len(out["fetchCalls"]) == 3
     assert out["launcherHidden"] is False
-    assert out["countText"] == "2 touchdowns"
+    assert out["countText"] == "2 touchdowns from your matchup"
     assert out["hasPayload"] is True
 
 
@@ -434,7 +434,7 @@ function fireClick(targetClosest) {
   hubBtn.closest = (sel) => (sel === '[data-rzm-hub]' ? launcher : null);
   fireClick((sel) => (sel === '[data-rzm-hub-open]' ? hubBtn : null));
   out.modalOpened = !!modalOverlay;
-  out.modalHasPlays = modalOverlay ? modalOverlay.innerHTML.includes('rzm-play') : false;
+  out.modalHasPlays = modalOverlay ? modalOverlay.innerHTML.includes('rzm-tl-row') : false;
   out.modalCtx = modalOverlay ? modalOverlay._rzmCtx : null;
   out.modalTitle = modalOverlay ? modalOverlay.innerHTML.includes('ScoreZone Moments') : false;
   out.modalHtml = modalOverlay ? modalOverlay.innerHTML : '';
@@ -526,7 +526,7 @@ def test_shared_hub_click_opens_modal():
 
 def test_shared_modal_escapes_team_names():
     payload = _payload()
-    payload["teams"] = {"you": "<img src=x>", "opp": "B"}
+    payload["teams"] = {"you": "A", "opp": "<img src=x>"}
     out = _run_shared_harness({"payload": payload})
     assert out["modalOpened"] is True
     # The raw tag must not appear unescaped in the modal HTML.

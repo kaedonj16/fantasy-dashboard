@@ -29,8 +29,14 @@ def scorezone_moments_hub_html(platform: str, league_id: str, season, week=None)
         f' data-season="{_html.escape(str(season), quote=True)}"{week_attr} hidden>'
         '<button type="button" class="rzm-row-btn" data-rzm-hub-open>'
         '<span class="rzm-row-accent"></span>'
+        '<span class="rzm-play-icon" aria-hidden="true">'
+        '<svg width="12" height="12" viewBox="0 0 24 24" fill="none">'
+        '<path d="M8 5v14l11-7z" fill="currentColor"/>'
+        '</svg></span>'
+        '<span class="rzm-row-text">'
         '<span class="rzm-row-title">ScoreZone Moments</span>'
-        '<span class="rzm-row-count" data-rzm-hub-count></span>'
+        '<span class="rzm-row-sub" data-rzm-hub-count></span>'
+        '</span>'
         '<span class="rzm-row-chevron" aria-hidden="true">›</span>'
         "</button></div>"
     )

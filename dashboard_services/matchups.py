@@ -1852,7 +1852,19 @@ def render_matchup_slide(
     # Live game progress: lets in-progress starters project their finish (banked
     # points + remaining projection) instead of freezing at their current score,
     # so team totals and the win bar track the games as they play.
-    _frac_lookup = make_frac_lookup(team_game_lookup, team_schedule_lookup)
+    # For future-week previews, today's live scores are from a different week
+    # (e.g., viewing Week 5 on Tuesday shows Week 4 MNF finals). Ignore final
+    # games from the live lookup so player rows fall back to the upcoming
+    # matchup schedule. In-progress games are kept: they drive the live
+    # projected-finish blend.
+    if proj and team_game_lookup:
+        _slide_game_lookup = {
+            k: g for k, g in team_game_lookup.items()
+            if str((g or {}).get("gameStatusCode") or "").strip() != "2"
+        }
+    else:
+        _slide_game_lookup = team_game_lookup
+    _frac_lookup = make_frac_lookup(_slide_game_lookup, team_schedule_lookup)
 
     def _get_fpts_rank(team: str, pos: str):
         if not _fpts_data:
@@ -2178,7 +2190,7 @@ def render_matchup_slide(
 
         # Resolve this player's NFL game once, up front, so the live-projection
         # blend below and the game/stats lines further down share it.
-        game = resolve_team_game(nfl, team_game_lookup, team_schedule_lookup)
+        game = resolve_team_game(nfl, _slide_game_lookup, team_schedule_lookup)
 
         # decide what to show
         is_not_started = False
