@@ -3037,7 +3037,6 @@ input[type="search"] {
 
 .home-hero {
     display: grid;
-    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
     gap: 40px;
     align-items: center;
     position: relative;
