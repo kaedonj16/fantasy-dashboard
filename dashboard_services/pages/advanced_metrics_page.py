@@ -66,7 +66,7 @@ def build_advanced_metrics_body(
         get_available_seasons, get_available_weeks_by_season, _WEEKLY_METRICS,
         ADV_WEEKLY_METRIC_KEYS, adv_weekly_vol_spec,
         PREMIUM_METRICS, premium_metrics_exposed, PRO_METRICS,
-        LEADERBOARD_METRICS,
+        LEADERBOARD_METRICS, SITUATIONAL_METRICS,
     )
     _hide_premium = not premium_metrics_exposed()
     # Decision presets whose primary metric is PRO-gated (the four advanced
@@ -114,10 +114,12 @@ def build_advanced_metrics_body(
     # on PFF entitlement (otherwise a newly ingested season such as 2026 is
     # hidden from the selector for ordinary users).
     available_seasons: list = get_available_seasons()
-    # Week-filterable metrics: usage-derived (_WEEKLY_METRICS) plus the
-    # NGS/FTN/EPA metrics that have a per-week store (ADV_WEEKLY_METRIC_KEYS).
+    # Week-filterable metrics: usage-derived (_WEEKLY_METRICS), the
+    # NGS/FTN/EPA metrics that have a per-week store (ADV_WEEKLY_METRIC_KEYS),
+    # and the situational RB shares computed from play-by-play ranges.
     weekly_metric_keys: list = sorted(
-        set(_WEEKLY_METRICS.keys()) | set(ADV_WEEKLY_METRIC_KEYS))
+        set(_WEEKLY_METRICS.keys()) | set(ADV_WEEKLY_METRIC_KEYS)
+        | set(SITUATIONAL_METRICS))
     # weeklyVol: per-metric min filter spec for when week-range mode is active
     _weekly_vol_map: dict = {
         k: {"label": v["min_label"], "opts": v["min_opts"]}

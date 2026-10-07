@@ -65,6 +65,7 @@ def api_advanced_metrics_leaderboard():
     from data_building.advanced_metrics import (
         get_metric_leaderboard, get_weekly_range_leaderboard,
         get_adv_weekly_range_leaderboard, adv_weekly_metric_supported,
+        get_situational_leaderboard, SITUATIONAL_METRICS,
         get_value_leaderboard, VALUE_METRICS,
         LEADERBOARD_METRICS, _WEEKLY_METRICS,
         PREMIUM_METRICS, premium_metrics_exposed, PRO_METRICS,
@@ -110,10 +111,11 @@ def api_advanced_metrics_leaderboard():
             week_start, week_end = week_end, week_start
 
     # A metric is week-filterable if it has a usage-table aggregation
-    # (_WEEKLY_METRICS) or an NGS/FTN/EPA weekly aggregation. Week ranges are
-    # season-specific, so they are ignored when more than one year is selected.
+    # (_WEEKLY_METRICS), an NGS/FTN/EPA weekly aggregation, or a situational
+    # (play-by-play) range computation. Week ranges are season-specific, so
+    # they are ignored when more than one year is selected.
     adv_weekly       = adv_weekly_metric_supported(metric)
-    weekly_capable   = (metric in _WEEKLY_METRICS) or adv_weekly
+    weekly_capable   = (metric in _WEEKLY_METRICS) or adv_weekly or (metric in SITUATIONAL_METRICS)
     is_multi_season  = isinstance(season, list)
     is_week_filtered = week_start is not None and week_end is not None and weekly_capable and not is_multi_season
 
@@ -153,6 +155,11 @@ def api_advanced_metrics_leaderboard():
             players = get_adv_weekly_range_leaderboard(
                 metric, position=position, season=season,
                 week_start=week_start, week_end=week_end, min_vol=min_vol,
+            )
+        elif is_week_filtered and metric in SITUATIONAL_METRICS:
+            players = get_situational_leaderboard(
+                metric, position=position, season=season,
+                week_start=week_start, week_end=week_end, limit=500,
             )
         elif is_week_filtered:
             players = get_weekly_range_leaderboard(

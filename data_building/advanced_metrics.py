@@ -2660,11 +2660,11 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "role_score":           {"label": "Role Score",          "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "hidden": True, "desc": "Internal opportunity signal (feeds breakout detection); not shown on the front end. Share of team targets/carries, red-zone usage, and (QB) passing + rushing workload."},
     "snap_share":           {"label": "Snap Share",          "category": "General", "positions": ["QB", "RB", "WR", "TE"], "pct": True, "pct_frac": True, "min_vol": _V_GAMES, "desc": "Percent of the team's offensive snaps the player was on the field for."},
     "opportunity_share":    {"label": "Opportunity Share",   "category": "General", "positions": ["RB", "WR", "TE"], "pct": True, "min_vol": _V_GAMES, "desc": "Share of the team's targets plus carries that went to this player."},
-    "goalline_share":       {"label": "Goalline Share",      "category": "General", "positions": ["RB"], "pct": True, "min_vol": _V_GAMES, "situational_metric": True, "desc": "Share of the team's RB touches (rush attempts plus receptions) inside the 10-yard line that went to this player. High goalline share means TD opportunity."},
-    "short_yardage_share":  {"label": "Short Yardage Share", "category": "General", "positions": ["RB"], "pct": True, "min_vol": _V_GAMES, "situational_metric": True, "desc": "Share of the team's RB touches on 3rd or 4th down with 2 or fewer yards to go that went to this player. Identifies the trusted short-yardage back."},
-    "third_down_share":     {"label": "Third Down Share",    "category": "General", "positions": ["RB"], "pct": True, "min_vol": _V_GAMES, "situational_metric": True, "desc": "Share of the team's RB touches on 3rd down that went to this player. High third-down share usually means passing-down work."},
-    "early_down_share":     {"label": "Early Down Share",    "category": "General", "positions": ["RB"], "pct": True, "min_vol": _V_GAMES, "situational_metric": True, "desc": "Share of the team's RB touches on 1st and 2nd down that went to this player. The every-down role indicator."},
-    "two_minute_share":     {"label": "Two Minute Share",    "category": "General", "positions": ["RB"], "pct": True, "min_vol": _V_GAMES, "situational_metric": True, "desc": "Share of the team's RB touches in the last 2 minutes of either half that went to this player. Hurry-up and comeback-game work."},
+    "goalline_share":       {"label": "Goalline Share",      "category": "Rushing", "positions": ["RB"], "pct": True, "min_vol": _V_GAMES, "situational_metric": True, "desc": "Share of the team's RB rush attempts inside the 10-yard line that went to this player. High goalline share means TD opportunity."},
+    "short_yardage_share":  {"label": "Short Yardage Share", "category": "Rushing", "positions": ["RB"], "pct": True, "min_vol": _V_GAMES, "situational_metric": True, "desc": "Share of the team's RB rush attempts on 3rd or 4th down with 2 or fewer yards to go that went to this player. Identifies the trusted short-yardage back."},
+    "third_down_share":     {"label": "Third Down Share",    "category": "Rushing", "positions": ["RB"], "pct": True, "min_vol": _V_GAMES, "situational_metric": True, "desc": "Share of the team's RB rush attempts on 3rd down that went to this player."},
+    "early_down_share":     {"label": "Early Down Share",    "category": "Rushing", "positions": ["RB"], "pct": True, "min_vol": _V_GAMES, "situational_metric": True, "desc": "Share of the team's RB rush attempts on 1st and 2nd down that went to this player. The every-down role indicator."},
+    "two_minute_share":     {"label": "Two Minute Share",    "category": "Rushing", "positions": ["RB"], "pct": True, "min_vol": _V_GAMES, "situational_metric": True, "desc": "Share of the team's RB rush attempts in the last 2 minutes of either half that went to this player. Hurry-up and comeback-game work."},
     "td_rate_per_opp":      {"label": "TD Rate / Opp",       "category": "General", "positions": ["RB", "WR", "TE"], "efficiency": True, "pct": True, "pct_frac": True, "min_vol": _V_TOUCHES, "desc": "Percent of opportunities (carries + targets) that result in a touchdown; scoring efficiency on volume.", "computed_sql": "m.total_tds::float / NULLIF(m.total_touches, 0)", "computed_null": "m.total_tds IS NOT NULL AND m.total_touches IS NOT NULL AND m.total_touches > 0"},
     "boom_rate":            {"label": "Boom Rate",           "category": "General", "positions": ["QB", "RB", "WR", "TE"], "pct": True, "pct_frac": True, "min_vol": _V_GAMES, "desc": "Share of games at/above the position boom threshold (QB 25 / RB-WR 20 / TE 15 PPR); how often the player wins you a week."},
     "bust_rate":            {"label": "Bust Rate",           "category": "General", "positions": ["QB", "RB", "WR", "TE"], "pct": True, "pct_frac": True, "lower_better": True, "min_vol": _V_GAMES, "desc": "Share of games below the position bust threshold (QB 15 / RB-WR 8 / TE 5 PPR). Lower is better; high bust rate means frequent lineup-killing weeks."},
@@ -3902,6 +3902,7 @@ def clear_daily_caches() -> None:
     _POSITION_RANKS_CACHE.clear()
     _POSITION_BOUNDS_CACHE.clear()
     _METRIC_LEADERBOARD_CACHE.clear()
+    _SITUATIONAL_LEADERBOARD_CACHE.clear()
 
 
 def _value_table(
@@ -4090,15 +4091,28 @@ def get_player_value_metrics(
 
 # ── Situational usage metrics (RB goalline / short-yardage / etc. shares) ────
 # Computed in Python from nflverse play-by-play via utils.rb_usage, not from a
-# DB column. Uses the latest completed week for the season.
+# DB column. Aggregates the full season by default; week_start/week_end
+# restrict to that inclusive range (drives the page's week filter).
+
+# Daily cache for get_situational_leaderboard. Full-season play-by-play
+# aggregation is seconds of Python row iteration; cache per day + inputs so
+# the page's repeat fetches don't recompute. Only non-empty results are
+# cached so a transient empty state isn't locked in for the day.
+_SITUATIONAL_LEADERBOARD_CACHE: Dict[tuple, List[Dict[str, Any]]] = {}
+
 
 def get_situational_leaderboard(
     metric: str,
     position: Optional[str] = None,
     limit: int = 500,
     season: Optional[int] = None,
+    week_start: Optional[int] = None,
+    week_end: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """Players ranked by a situational RB usage share metric.
+
+    Aggregates the full season by default; week_start/week_end restrict to
+    that inclusive range.
 
     Output shape matches get_metric_leaderboard:
     [{player_id, name, team, position, value, games}].
@@ -4116,18 +4130,17 @@ def get_situational_leaderboard(
         from datetime import date as _date
         season = _date.today().year
 
-    # Determine the latest week with play-by-play data for this season.
-    try:
-        import nfl_data_py as nfl
-        schedules = nfl.import_schedules([season])
-        completed = schedules[
-            (schedules["game_type"] == "REG") & schedules["away_score"].notna()
-        ]
-        week = int(completed["week"].max()) if not completed.empty else 1
-    except Exception:
-        week = 1
+    from datetime import date as _date
+    _cache_key = (_date.today().isoformat(), metric,
+                  (position or "").upper().strip() or None,
+                  season, week_start, week_end, limit)
+    _hit = _SITUATIONAL_LEADERBOARD_CACHE.get(_cache_key)
+    if _hit is not None:
+        return _hit
 
-    shares = get_all_player_situational_shares(season, week)
+    # Rush-only: these are Rushing-category metrics, so receptions don't count.
+    shares = get_all_player_situational_shares(
+        season, week_start=week_start, week_end=week_end, rush_only=True)
     if not shares:
         return []
 
@@ -4163,7 +4176,10 @@ def get_situational_leaderboard(
         })
 
     out.sort(key=lambda x: x["value"], reverse=True)
-    return out[:limit] if limit else out
+    out = out[:limit] if limit else out
+    if out:
+        _SITUATIONAL_LEADERBOARD_CACHE[_cache_key] = out
+    return out
 
 
 # ── Breakout Score (composite of the three PRO breakout signals) ────────────
