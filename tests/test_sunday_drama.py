@@ -256,9 +256,9 @@ def test_turning_points_copy_verbs():
     assert "took the lead" in out
     assert "pulled away" in out
     assert "fell back" in out
-    assert "(41% to 63%)" in out
+    assert "41%" in out and "63%" in out  # swing bar renders before/after as separate spans
     assert "Sun 1:24 PM" in out  # ET rendering of 17:24 UTC
-    assert "88.2 to 104.6" in out
+    assert "88.2" in out and "104.6" in out and "final" in out  # score with arrow and final
     assert "\u2014" not in out
 
 

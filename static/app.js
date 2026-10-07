@@ -24309,50 +24309,87 @@ window.brRzm = (function () {
     }
     return 'https://sleepercdn.com/content/nfl/players/thumb/' + encodeURIComponent(pid) + '.jpg';
   }
+  function rzmPlayPts(play) {
+    // Standard PPR fantasy points for the modal pill (display only).
+    var sl = play.stat_line || {};
+    var pts = 0;
+    pts += 4 * (parseFloat(sl.pass_td) || 0);
+    pts += 6 * (parseFloat(sl.rush_td) || 0);
+    pts += 6 * (parseFloat(sl.rec_td) || 0);
+    pts += 0.04 * (parseFloat(sl.pass_yds) || 0);
+    pts += 0.1 * (parseFloat(sl.rush_yds) || 0);
+    pts += 0.1 * (parseFloat(sl.rec_yds) || 0);
+    pts += 1 * (parseFloat(sl.receptions) || parseFloat(sl.rec) || 0);
+    pts -= 2 * (parseFloat(sl.int) || 0);
+    pts -= 2 * (parseFloat(sl.fumble_lost) || parseFloat(sl.fumbles_lost) || 0);
+    return Math.round(pts * 10) / 10;
+  }
   function playHtml(play) {
-    var kindCls = play.kind === 'td' ? 'is-td' : (play.kind === 'turnover' ? 'is-to' : 'is-big');
-    var meta = [];
-    if (play.quarter) meta.push('Q' + play.quarter);
-    if (play.clock) meta.push(play.clock);
-    if (play.down) meta.push(play.down + (play.distance ? ' & ' + play.distance : ''));
-    if (play.yard_line) meta.push(play.yard_line);
-    var yds = play.yards ? play.yards + ' yds' : '';
-    var hsUrl = headshotUrl(play);
-    var avatarHtml = '<span class="rzm-play-avatar" data-init="' + escapeHtml(initials(play.name)) + '">'
-      + (hsUrl ? '<img class="rzm-play-headshot" src="' + escapeHtml(hsUrl) + '" alt="" loading="lazy" decoding="async" onerror="this.parentNode.classList.add(\'img-err\')">' : '')
-      + '</span>';
-    var side = play.side === 'you' ? 'YOU' : 'OPP';
-    var sideCls = play.side === 'you' ? 'is-you' : 'is-opp';
-    return '<button type="button" class="rzm-play ' + kindCls + '" data-rzm-play data-game-id="' + escapeHtml(play.game_id || '') + '" data-play-id="' + escapeHtml(play.play_id || '') + '">'
-      + '<span class="rzm-play-accent"></span>'
-      + avatarHtml
-      + '<span class="rzm-play-main">'
-      + '<span class="rzm-play-head"><span class="rzm-play-name">' + escapeHtml(play.name || 'Unknown') + (play.pos ? ' <span class="rzm-play-pos">' + escapeHtml(play.pos) + '</span>' : '') + '</span>'
-      + '<span class="rzm-play-tags"><span class="rzm-play-kind">' + kindLabel(play.kind) + '</span><span class="rzm-play-side ' + sideCls + '">' + side + '</span></span></span>'
-      + '<span class="rzm-play-text">' + escapeHtml(play.play_text || '') + '</span>'
-      + '<span class="rzm-play-meta">' + escapeHtml(meta.join(' · ')) + (yds ? (meta.length ? ' · ' : '') + escapeHtml(yds) : '') + '</span></span>'
+    var dotCls = play.side === 'you' ? 'home' : 'away';
+    var when = [];
+    if (play.quarter) when.push('Q' + play.quarter);
+    if (play.clock) when.push(play.clock);
+    var whenStr = when.join(' ');
+    var pts = rzmPlayPts(play);
+    var ptsHtml = pts > 0 ? '<span class="rzm-tl-pts">+' + pts + '</span>' : '';
+    var teamPos = [];
+    if (play.team) teamPos.push(play.team);
+    if (play.pos) teamPos.push(play.pos);
+    return '<button type="button" class="rzm-tl-row" data-rzm-play data-game-id="' + escapeHtml(play.game_id || '') + '" data-play-id="' + escapeHtml(play.play_id || '') + '">'
+      + '<span class="rzm-tl-dot ' + dotCls + '"></span>'
+      + '<span class="rzm-tl-body">'
+      + '<span class="rzm-tl-who">' + escapeHtml(play.name || 'Unknown')
+      + (teamPos.length ? ' <span class="rzm-tl-team">' + escapeHtml(teamPos.join(' \u00b7 ')) + '</span>' : '')
+      + '</span>'
+      + '<span class="rzm-tl-what">' + escapeHtml(play.play_text || '') + '</span>'
+      + '</span>'
+      + '<span class="rzm-tl-meta">' + escapeHtml(whenStr) + (ptsHtml ? '<br>' + ptsHtml : '') + '</span>'
       + '</button>';
   }
   function openModal(payload, ctx) {
     if (!payload || !(payload.plays || []).length) return;
     closeModal();
     var teams = payload.teams || {};
+    // Chronological: earliest play first (by observed_ts, fallback to seq).
+    var plays = (payload.plays || []).slice().sort(function(a, b) {
+      var ta = a.observed_ts || 0, tb = b.observed_ts || 0;
+      if (ta !== tb) return ta - tb;
+      return (a.seq || 0) - (b.seq || 0);
+    });
+    var tdCount = payload.td_count || plays.filter(function(p) { return p.kind === 'td'; }).length;
+    var youCount = plays.filter(function(p) { return p.side === 'you'; }).length;
+    var oppCount = plays.filter(function(p) { return p.side === 'opp'; }).length;
+    var youTds = plays.filter(function(p) { return p.side === 'you' && p.kind === 'td'; }).length;
+    var oppTds = plays.filter(function(p) { return p.side === 'opp' && p.kind === 'td'; }).length;
+    var totalTds = youTds + oppTds;
+    var youPct = totalTds ? Math.round(youTds / totalTds * 100) : 0;
+    var oppPct = totalTds ? Math.round(oppTds / totalTds * 100) : 0;
+    var subtext = tdCount + (tdCount === 1 ? ' touchdown' : ' touchdowns') + ' from your matchup';
+    var playsHtml = plays.map(playHtml).join('');
     var overlay = document.createElement('div');
     overlay.className = 'rzm-modal-overlay';
     overlay.id = 'rzmModalOverlay';
-    var playsHtml = payload.plays.map(playHtml).join('');
     overlay.innerHTML =
       '<div class="rzm-modal" role="dialog" aria-modal="true" aria-label="ScoreZone Moments">'
-      + '<div class="rzm-modal-head"><span class="rzm-modal-accent"></span><div class="rzm-modal-title">ScoreZone Moments</div>'
-      + '<button type="button" class="rzm-modal-close" data-rzm-close aria-label="Close">✕</button></div>'
+      + '<div class="rzm-modal-head">'
+      + '<span class="rzm-modal-play" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor"/></svg></span>'
+      + '<div class="rzm-modal-titles"><div class="rzm-modal-title">ScoreZone Moments</div>'
+      + '<div class="rzm-modal-sub">' + escapeHtml(subtext) + '</div></div>'
+      + '<button type="button" class="rzm-modal-close" data-rzm-close aria-label="Close">\u00d7</button></div>'
       + '<div class="rzm-filters" role="tablist">'
-      + '<button type="button" class="rzm-filter is-active" data-rzm-filter="all">All</button>'
-      + '<button type="button" class="rzm-filter" data-rzm-filter="you">' + escapeHtml(teams.you || 'You') + '</button>'
-      + '<button type="button" class="rzm-filter" data-rzm-filter="opp">' + escapeHtml(teams.opp || 'Opp') + '</button>'
+      + '<button type="button" class="rzm-filter is-active" data-rzm-filter="all">All ' + plays.length + '</button>'
+      + '<button type="button" class="rzm-filter" data-rzm-filter="you">My team ' + youCount + '</button>'
+      + '<button type="button" class="rzm-filter" data-rzm-filter="opp">' + escapeHtml(teams.opp || 'Opp') + ' ' + oppCount + '</button>'
       + '</div>'
-      + '<div class="rzm-modal-body" data-rzm-list>' + playsHtml + '</div>'
+      + '<div class="rzm-modal-body rzm-tl" data-rzm-list>' + playsHtml + '</div>'
+      + '<div class="rzm-modal-foot">'
+      + '<div class="rzm-foot-col"><div class="rzm-foot-label">Your TDs</div><div class="rzm-foot-num">' + youTds + '</div>'
+      + '<div class="rzm-foot-bar"><i style="width:' + youPct + '%;background:var(--win,#16a34a)"></i></div></div>'
+      + '<div class="rzm-foot-col"><div class="rzm-foot-label">' + escapeHtml(teams.opp || 'Opp') + ' TDs</div><div class="rzm-foot-num">' + oppTds + '</div>'
+      + '<div class="rzm-foot-bar"><i style="width:' + oppPct + '%;background:var(--accent,#3b82f6)"></i></div></div>'
+      + '</div>'
       + '</div>';
-    overlay._rzmPlays = payload.plays;
+    overlay._rzmPlays = plays;
     overlay._rzmCtx = ctx || {};
     document.body.appendChild(overlay);
     document.body.style.overflow = 'hidden';
@@ -25106,7 +25143,7 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
       launcher._rzmPayload = body;
       var countEl = launcher.querySelector('[data-rzm-hub-count]');
       var tdCount = (body && body.td_count) || 0;
-      if (countEl) countEl.textContent = tdCount + (tdCount === 1 ? ' touchdown' : ' touchdowns');
+      if (countEl) countEl.textContent = tdCount + (tdCount === 1 ? ' touchdown' : ' touchdowns') + ' from your matchup';
       launcher.hidden = false;
     }
     function attempt() {
