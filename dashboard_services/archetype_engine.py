@@ -590,11 +590,75 @@ def _availability(depth_rank: int, pos_count: int) -> float:
 def _suggestion_rank(r: Dict[str, Any]) -> float:
     """Composite ordering key for a finished suggestion: weight roster impact
     (net playoff-odds delta) most, then how likely the partner is to accept, so
-    the list leads with deals that are both worthwhile and realistic. Negative
-    impact is preserved (not floored) so ceiling-trimming deals sink."""
+    the list leads with deals that are both worthwhile and realistic. A small
+    "heating up" term nudges suggestions involving players who are trending
+    in real trades this week. Negative impact is preserved (not floored) so
+    ceiling-trimming deals sink."""
     impact = min(1.0, (r.get("net_playoff_odds_delta") or 0.0) / 0.15)
     accept = (r.get("acceptance_pct") or 0) / 100.0
-    return 0.6 * impact + 0.4 * accept
+    heat = min(1.0, (r.get("trade_heat") or 0) / 10.0)
+    return 0.55 * impact + 0.35 * accept + 0.10 * heat
+
+
+# ── Trade-intel "heating up" signal ───────────────────────────────────────────
+# Real-trade volume from the trade-intel crawler (trade_intel_player_stats).
+# Attached to suggestion rows before ranking so _suggestion_rank can nudge
+# deals involving players everyone is actually trading this week.
+_trade_heat_cache: Dict[int, Dict[str, int]] = {}
+
+
+def _get_trade_heat(player_ids: List[str], season: int) -> Dict[str, int]:
+    """trade_count_7d by player_id for one season. Fail-open: {} on any error."""
+    if not player_ids or not season:
+        return {}
+    season = int(season)
+    if season in _trade_heat_cache:
+        cached = _trade_heat_cache[season]
+        return {pid: cached.get(str(pid), 0) for pid in player_ids}
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT player_id, COALESCE(trade_count_7d, 0)
+                    FROM trade_intel_player_stats
+                    WHERE season = %s AND player_id = ANY(%s)
+                    """,
+                    (season, [str(p) for p in player_ids]),
+                )
+                rows = cur.fetchall()
+        heat = {str(r[0]): int(r[1] or 0) for r in (rows or [])}
+        _trade_heat_cache[season] = heat
+        return {pid: heat.get(str(pid), 0) for pid in player_ids}
+    except Exception as exc:
+        log.warning("[archetype] trade heat lookup failed: %s", exc)
+        return {}
+
+
+def _attach_trade_heat(results: List[Dict[str, Any]], season: int) -> None:
+    """Set r["trade_heat"] = max 7d real-trade count across the players in a
+    suggestion (target + send + receive). Mutates rows in place."""
+    if not results or not season:
+        return
+    pids: List[str] = []
+    for r in results:
+        for key in ("player_id",):
+            pid = r.get(key)
+            if pid and str(pid) not in pids:
+                pids.append(str(pid))
+        for pkg_key in ("suggested_send", "suggested_receive"):
+            for p in (r.get(pkg_key) or []):
+                pid = (p or {}).get("player_id")
+                if pid and str(pid) not in pids:
+                    pids.append(str(pid))
+    heat = _get_trade_heat(pids, season)
+    for r in results:
+        best = heat.get(str(r.get("player_id")), 0)
+        for pkg_key in ("suggested_send", "suggested_receive"):
+            for p in (r.get(pkg_key) or []):
+                best = max(best, heat.get(str((p or {}).get("player_id")), 0))
+        r["trade_heat"] = best
 
 
 # ── Viewer positional need (Teams-page ranks → a mild hole nudge) ─────────────
@@ -1462,6 +1526,7 @@ def _build_distribute(
     viewer_roster_id: Any = None,
     picks_by_owner: Optional[Dict[str, List[Dict]]] = None,
     group_key: Optional[str] = None,
+    season: int = 0,
 ) -> List[Dict[str, Any]]:
     """
     Viewer sends one concentrated stud and receives a package of several usable
@@ -1674,6 +1739,7 @@ def _build_distribute(
         if len(results) >= 15:
             break
 
+    _attach_trade_heat(results, season)
     results.sort(key=_suggestion_rank, reverse=True)
     return results
 
@@ -1701,6 +1767,7 @@ def _build_rebuilding(
     viewer_roster_id: Any = None,
     owner_meta: Optional[Dict[str, Dict]] = None,
     group_key: Optional[str] = None,
+    season: int = 0,
 ) -> List[Dict[str, Any]]:
     """
     Rebuild = sell win-now vets for younger assets of similar dynasty value.
@@ -1962,6 +2029,7 @@ def _build_rebuilding(
         if len(results) >= 15:
             break
 
+    _attach_trade_heat(results, season)
     results.sort(key=_suggestion_rank, reverse=True)
     return results
 
@@ -2510,6 +2578,7 @@ def _get_archetype_suggestions_impl(
             viewer_roster_id=viewer_roster_id,
             picks_by_owner=picks_by_owner,
             group_key=group_key,
+            season=season,
         )
         return {
             "suggestions": _sugg,
@@ -2543,6 +2612,7 @@ def _get_archetype_suggestions_impl(
             viewer_roster_id=viewer_roster_id,
             owner_meta=owner_meta,
             group_key=group_key,
+            season=season,
         )
         return {
             "suggestions": _sugg,
@@ -2967,6 +3037,7 @@ def _get_archetype_suggestions_impl(
     # (net playoff-odds impact) AND the partner would plausibly accept. Value
     # matching already happened per package; this orders across targets so a
     # fair-but-flat deal doesn't sit above a high-impact, high-acceptance one.
+    _attach_trade_heat(results, season)
     results.sort(key=_suggestion_rank, reverse=True)
 
     return {
