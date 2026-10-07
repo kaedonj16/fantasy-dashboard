@@ -437,7 +437,7 @@ def api_advanced_metrics_config():
 
     Strips large internal-only keys (min_vol, computed_sql, computed_null, etc.)
     and returns only what the frontend needs: label, category, positions,
-    lower_better, pct, pct_frac, efficiency, integer, weeklyCapable.
+    lower_better, pct, pct_frac, efficiency, integer, weeklyCapable, basic.
     Cached with a long TTL since the config only changes with deploys.
     """
     from data_building.advanced_metrics import LEADERBOARD_METRICS, ADV_WEEKLY_METRIC_KEYS
@@ -460,6 +460,7 @@ def api_advanced_metrics_config():
             "weeklyCapable": key in weekly_keys,
             "desc":        spec.get("desc", ""),
             "pro":         key in PRO_METRICS,
+            "basic":       bool(spec.get("basic")),
         }
     resp = jsonify({"metrics": out})
     resp.headers["Cache-Control"] = "public, max-age=3600"
