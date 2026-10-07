@@ -4919,7 +4919,7 @@ function _calcPlayoffByes(N) {
 }
 
 function _renderPlayoffOdds(data) {
-  const { odds, movement, is_complete, current_week, playoff_week_start, playoff_teams, playoff_byes } = data;
+  const { odds, movement, is_complete, current_week, playoff_week_start, playoff_teams, playoff_byes, weeks_remaining } = data;
   if (!odds || !odds.length) return '<p class="po-error">No data available.</p>';
   const mv = movement || {};
 
@@ -4928,9 +4928,13 @@ function _renderPlayoffOdds(data) {
   );
 
   const isProjected = !is_complete && odds[0] && odds[0].is_projected;
+  // Prefer the backend count (finalized W/L records, same source as the sim);
+  // fall back to the week arithmetic for older cached payloads.
   const weeksLeft = is_complete
     ? 0
-    : Math.max(0, playoff_week_start - current_week - 1);
+    : (weeks_remaining != null
+        ? Math.max(0, weeks_remaining)
+        : Math.max(0, playoff_week_start - current_week - 1));
   const nByes = playoff_byes != null ? playoff_byes : _calcPlayoffByes(playoff_teams || 6);
   const subtitle = is_complete
     ? `Final standings · ${playoff_teams} playoff teams`
