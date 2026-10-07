@@ -112,7 +112,7 @@ def test_weekly_recap_helpers_skip_none_placeholder():
     prob = wr._proj_win_prob(starters, [_p("qb2", pos="QB")], proj_by_pid)
     assert 0.0 <= prob <= 1.0
     out, maybe, byes, risk = wr._starter_flags(
-        _team(starters), {}, proj_by_pid, {}, set(),
+        wr._full_roster_pool(_team(starters)), {}, proj_by_pid, {}, set(),
     )
     assert isinstance(out, list) and isinstance(risk, float)
 
