@@ -18,7 +18,9 @@ from typing import Any, Dict, List, Optional, Tuple
 from dashboard_services.ai.context_builders import ctx_scoring_type
 from utils.lineup_slots import (
     RESTRICTED_FLEX_SLOTS,
+    SLOT_ELIGIBILITY,
     canonicalize_slot,
+    canonicalize_slots,
     count_lineup_slots,
     slot_eligible_positions,
 )
@@ -805,6 +807,118 @@ def _select_varied_slate(
     return top
 
 
+def _weakest_starters(
+    viewer_players: List[str],
+    values_by_id: Dict[str, Any],
+    roster_positions: Optional[List[str]],
+) -> Dict[str, Tuple[str, float, str]]:
+    """Per-position weakest STARTER for the viewer, resolved slot-aware.
+
+    Assigns the viewer's top-valued players at each of RB/WR/TE to that
+    position's positional slots (in canonicalized ``roster_positions``), then
+    fills FLEX-type slots (FLEX, RB_WR, WR_TE, RB_TE) with the best remaining
+    flex-eligible players. Returns, for each of RB/WR/TE that lands at least
+    one starter, the single weakest starter as
+    ``(player_id, value, slot_label)``, where slot_label is the positional slot
+    ("RB2", "WR3", ...) or "FLEX" when the weakest man holds a flex slot.
+
+    Drives the consolidate slot-upgrade boost: a target is a genuine lineup
+    upgrade only relative to the weakest starter it would displace, not by its
+    raw value alone.
+    """
+    slots = canonicalize_slots(roster_positions or [])
+
+    def _pval(pid: str) -> float:
+        return _f((values_by_id.get(pid) or {}).get("value"))
+
+    def _ppos(pid: str) -> str:
+        return str((values_by_id.get(pid) or {}).get("position") or "").upper()
+
+    pos_slots: Dict[str, int] = {"RB": 0, "WR": 0, "TE": 0}
+    flex_slots: List[str] = []
+    flex_elig: Dict[str, frozenset] = {}
+
+    def _elig(s: str) -> frozenset:
+        elig = SLOT_ELIGIBILITY.get(s)
+        if elig is None and s == "WRRB":
+            # Bare Sleeper-style name (the _FLEX suffixed form canonicalizes to
+            # RB_WR on its own).
+            elig = frozenset({"RB", "WR"})
+        return elig or frozenset()
+
+    for s in slots:
+        if s in pos_slots:
+            pos_slots[s] += 1
+            continue
+        elig = _elig(s)
+        # Flex-type slots for RB/WR/TE only; SUPER_FLEX (QB-eligible) and
+        # K/DEF/bench slots never feed the RB/WR/TE upgrade map.
+        if elig and "QB" not in elig and elig <= {"RB", "WR", "TE"}:
+            flex_slots.append(s)
+            flex_elig[s] = elig
+
+    assigned: set = set()
+    starters: Dict[str, Tuple[float, str]] = {}
+
+    for pos in ("RB", "WR", "TE"):
+        n = pos_slots[pos]
+        if n <= 0:
+            continue
+        cands = sorted(
+            (pid for pid in viewer_players
+             if _ppos(pid) == pos and _pval(pid) > 0 and pid not in assigned),
+            key=lambda pid: -_pval(pid),
+        )
+        for i, pid in enumerate(cands[:n]):
+            assigned.add(pid)
+            starters[pid] = (_pval(pid), f"{pos}{i + 1}")
+
+    for s in flex_slots:
+        elig = flex_elig[s]
+        best_pid: Optional[str] = None
+        best_val = 0.0
+        for pid in viewer_players:
+            if pid in assigned or _ppos(pid) not in elig:
+                continue
+            v = _pval(pid)
+            if v > best_val:
+                best_pid, best_val = pid, v
+        if best_pid is not None:
+            assigned.add(best_pid)
+            starters[best_pid] = (best_val, "FLEX")
+
+    weakest: Dict[str, Tuple[str, float, str]] = {}
+    for pos in ("RB", "WR", "TE"):
+        cands = [(pid, v, lab) for pid, (v, lab) in starters.items()
+                 if _ppos(pid) == pos]
+        if not cands:
+            continue
+        pid, v, lab = min(cands, key=lambda c: c[1])
+        weakest[pos] = (pid, v, lab)
+    return weakest
+
+
+def _slot_upgrade_multiplier(
+    tgt_cat: str,
+    val: float,
+    weakest: Optional[Tuple[str, float, str]],
+) -> float:
+    """Ranking multiplier for a consolidate target that upgrades a weak slot.
+
+    Returns 1.30 when the target is a "starter"-category player worth at least
+    1.15x the viewer's weakest starter at its position (a genuine slot upgrade,
+    e.g. a FLEX WR30 -> WR14 move); 1.0 otherwise. Elites are excluded by
+    construction: they already receive the affordable-stud availability boost
+    and this must not double-count.
+    """
+    if tgt_cat != "starter" or weakest is None:
+        return 1.0
+    _, ws_val, _ = weakest
+    if ws_val > 0 and val >= 1.15 * ws_val:
+        return 1.30
+    return 1.0
+
+
 def _depth_penalty(delta: int, sorted_vals: Optional[List[float]], league_size: int = 10) -> float:
     """Roster-depth penalty the side sending MORE assets absorbs in an unequal
     trade. Mirrors utils.tier_stack.apply_tier_stack_adjustment so the value we
@@ -1001,7 +1115,11 @@ def _build_why(
         if age_tag:
             parts.append(age_tag)
         tail = t.get("partner_phrase") or f"{partner} has concentrated value and can absorb depth pieces"
-        return f"Consolidating around {name} ({', '.join(parts[:2])}). {tail}."
+        text = f"Consolidating around {name} ({', '.join(parts[:2])}). {tail}."
+        su = t.get("slot_upgrade") or {}
+        if su.get("from_name"):
+            text += f" Upgrades your {su.get('slot')}: {su['from_name']} -> {name}."
+        return text
 
     if archetype == "distribute":
         return (
@@ -2828,6 +2946,16 @@ def _get_archetype_suggestions_impl(
     # definition), used by the consolidation ceiling below.
     _starter_thr, _ = derive_league_thresholds(ctx.get("roster_positions") or [], num_teams)
 
+    # Weakest starters (slot-aware) power the consolidate slot-upgrade boost:
+    # a mid-tier target that lifts a weak FLEX/RB2/WR3 slot deserves a real
+    # chance against raw-value studs instead of being buried by them.
+    _weakest_starter_by_pos: Dict[str, Tuple[str, float, str]] = {}
+    if archetype == "consolidate":
+        _weakest_starter_by_pos = _weakest_starters(
+            viewer_players, values_by_id,
+            roster_positions or ctx.get("roster_positions") or [],
+        )
+
     for t in all_targets:
         pid  = t["player_id"]
         val  = t["value"]
@@ -2924,6 +3052,23 @@ def _get_archetype_suggestions_impl(
         # Off-pattern targets sort below natural fits but stay in the slate.
         final *= stretch
         t["is_stretch"] = stretch < 1.0
+
+        if archetype == "consolidate" and _tgt_cat == "starter":
+            # Flex/spot-upgrade consolidation: a "starter"-category target that
+            # is clearly better than the viewer's weakest starter at its
+            # position is a genuine lineup upgrade, not just a raw-value add.
+            # Boost it like the engine boosts affordable rival studs (1.30) so
+            # a mid-tier slot upgrade can make the slate.
+            _ws = _weakest_starter_by_pos.get(pos)
+            _mult = _slot_upgrade_multiplier(_tgt_cat, val, _ws)
+            if _mult != 1.0 and _ws is not None:
+                final *= _mult
+                _ws_pid, _ws_slot = _ws[0], _ws[2]
+                t["slot_upgrade"] = {
+                    "slot": _ws_slot,
+                    "from_pid": _ws_pid,
+                    "from_name": (values_by_id.get(_ws_pid) or {}).get("name", ""),
+                }
 
         scored.append((final, t))
 
