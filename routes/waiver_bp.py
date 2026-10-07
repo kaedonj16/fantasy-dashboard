@@ -171,6 +171,21 @@ def _waiver_uses_k_def(roster_positions):
     }
 
 
+def _resolve_forward_ppg(vals, feed_live):
+    """Resolve a forward-projected PPG from per-week values.
+
+    ``None`` means the projection feed itself is unavailable for the window
+    (not yet published): unknown, not zero -- callers may fall back to
+    backward production. ``0.0`` means a live feed carries no projection for
+    the player (benched/cut: the provider no longer projects them): the
+    honest forward read is zero, and substituting backward production as a
+    "projection" would mislead (e.g. a benched QB flashing his old average).
+    """
+    if not feed_live:
+        return None
+    return (sum(vals) / len(vals)) if vals else 0.0
+
+
 @waiver_bp.route("/api/waiver-candidates")
 def api_waiver_candidates():
     """
@@ -532,20 +547,28 @@ def api_waiver_candidates():
 
     def _forward_ppg_wv(pid):
         """Mean of a player's own upcoming (non-bye) weekly projections -- a
-        forward-looking production estimate (#1), better than backward ppg."""
+        forward-looking production estimate (#1), better than backward ppg.
+
+        None only when the feed itself is unavailable for the window (unknown,
+        not zero). A player absent from a live feed is genuinely unprojected
+        (see _resolve_forward_ppg): 0.0, never a backward-production fallback.
+        """
         if not _future_week_projs_wv:
             return None
         _pm = _full_players_wv.get(str(pid)) or players_index.get(str(pid)) or {}
         _team = str(_pm.get("team") or "").upper()
         vals = []
+        _feed_live = False
         for _i, _wm in enumerate(_future_week_projs_wv):
+            if _wm:
+                _feed_live = True
             _tset = _future_week_teams_wv[_i] if _i < len(_future_week_teams_wv) else set()
             if _tset and _team and _team not in _tset:
                 continue  # bye
             _p = _week_pts_wv(_wm, pid)
             if _p is not None:
                 vals.append(max(0.0, _p))
-        return (sum(vals) / len(vals)) if vals else None
+        return _resolve_forward_ppg(vals, _feed_live)
 
     # Upcoming schedule ease per position (#3): a soft slate nudges a candidate up.
     _matchup_by_pos_wv: dict = {}
