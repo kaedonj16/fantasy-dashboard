@@ -17832,6 +17832,13 @@ def page_breakouts(platform: str, season: int, league_id: str):
           </label>
         </div>
 
+        <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; font-size: 11px; color: var(--text-muted);">
+          <span style="font-weight: 600;">Score:</span>
+          <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #10b981; display: inline-block;"></span>60+ elite</span>
+          <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #3b82f6; display: inline-block;"></span>45+ high</span>
+          <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #f59e0b; display: inline-block;"></span>30+ moderate</span>
+        </div>
+
         <!-- Loading State -->
         <div id="breakoutsLoading" class="player-modal-loading" style="padding: 40px;">
           <div class="loading-spinner"></div>
@@ -18424,7 +18431,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
             ? `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
                  <span style="font-size:13px;font-weight:800;color:var(--text);">${{candidate.classification_label || 'Weekly Watchlist'}}</span>
                  <span style="font-size:11px;padding:2px 7px;border-radius:8px;background:var(--surface-alt);color:var(--text-muted);">${{Math.round(parseFloat(candidate.confidence || 0))}}% confidence</span>
-                 ${{candidate.provisional ? '<span style="font-size:11px;font-weight:800;color:#f59e0b;">PROVISIONAL</span>' : ''}}
+                 ${{candidate.provisional ? '<span style="font-size:11px;font-weight:800;color:#f59e0b;" title="Provisional: based on limited early data, signal may strengthen as more games are played.">PROVISIONAL</span>' : ''}}
                </div>
                <div style="font-size:11px;color:var(--text-muted);margin-top:5px;">${{candidate.score_basis === 'initial_role' ? 'Initial Role Score · No prior NFL baseline' : 'Role Change Score'}} · ${{candidate.sample && candidate.sample.recent_games ? candidate.sample.recent_games + ' recent game' + (candidate.sample.recent_games === 1 ? '' : 's') : 'Through Week ' + (candidate.as_of_week || '?')}}${{candidate.lifecycle_state ? ' · ' + candidate.lifecycle_state.replace('_', ' ') : ''}}</div>`
             : range
