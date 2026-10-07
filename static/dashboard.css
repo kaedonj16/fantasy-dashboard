@@ -13563,6 +13563,10 @@ a.signed-home-league:hover {
        (col 2, placed after editorial sections in DOM order) share the top row
        while every other section spans the full width below. */
     display: grid;
+    /* Explicit columns are load-bearing: without them the grid falls back to
+       implicit auto tracks, which size to content and left-align, leaving the
+       sections narrow with a big empty gutter on the right. Do not remove. */
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
     column-gap: 40px;
     row-gap: 36px;
 }
@@ -44107,7 +44111,7 @@ a, button, [role="button"], [role="tab"], summary, label,
 body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; margin: 0; -webkit-font-smoothing: antialiased; }
 /* Mock banner */
 /* Hero (simplified faithful version) */
-.home-hero { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 40px; max-width: 1060px; margin: 0 auto; padding: 64px 20px 40px; align-items: center; }
+.home-hero { display: grid; gap: 40px; max-width: 1060px; margin: 0 auto; padding: 0 20px 40px; align-items: center; }
 .home-brand { font-size: 13px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; color: var(--accent); margin: 0 0 14px; }
 .home-title { font-size: clamp(34px, 5vw, 52px); font-weight: 800; letter-spacing: -1px; line-height: 1.05; margin: 0 0 16px; }
 .home-subtitle { font-size: 18px; color: var(--text-muted); line-height: 1.55; margin: 0 0 12px; }
