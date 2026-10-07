@@ -2414,6 +2414,57 @@ def waiver_add_clears_quality_bar(
     return True
 
 
+def waiver_drop_bar_value(roster_player_ids, value_by_pid, injured_by_pid, pidx) -> dict:
+    """Per-position drop bars for waiver nudges: ``{pos: min value}`` over the
+    healthy rostered skill-position players at each position.
+
+    A claim at position P must beat the worst player already rostered at P
+    (with margin) to be worth a nudge: "wouldn't start over those players
+    already rostered" is the test. Positions with no rostered players get no
+    bar; the starter-hole logic covers them. Empty dict when the roster has no
+    eligible players, so callers fail open.
+    """
+    vals_by_pos: dict[str, list] = {}
+    for pid in roster_player_ids or []:
+        pid = str(pid)
+        meta = (pidx or {}).get(pid) or {}
+        pos = str(meta.get("position") or meta.get("pos") or "").upper()
+        if pos not in _SKILL_POS:
+            continue
+        inj = str((injured_by_pid or {}).get(pid) or meta.get("injury_status") or "").upper()
+        if inj in _OUT_STATUS:
+            continue
+        try:
+            v = float((value_by_pid or {}).get(pid) or 0.0)
+        except (TypeError, ValueError):
+            v = 0.0
+        vals_by_pos.setdefault(pos, []).append(v)
+    return {pos: min(vals) for pos, vals in vals_by_pos.items() if vals}
+
+
+def waiver_claim_beats_roster(value, pos_bar, starter_gap) -> bool:
+    """True when a waiver claim would actually improve the team at its position.
+
+    Fails open when there is no bar for the position. A real starter hole
+    bypasses the margin check because the claim fills a need regardless.
+    Otherwise the claim must be a real upgrade over the worst rostered
+    player at that position, not a lateral move.
+    """
+    if pos_bar is None:
+        return True
+    try:
+        gap = float(starter_gap or 0)
+    except (TypeError, ValueError):
+        gap = 0.0
+    if gap > 0:
+        return True
+    try:
+        val = float(value or 0)
+    except (TypeError, ValueError):
+        val = 0.0
+    return val > pos_bar * 1.05
+
+
 def waiver_add_detail(
     *,
     pos_rank_label: str = "",
@@ -2512,6 +2563,25 @@ def select_waiver_add(
     inj_map = injured_status_by_pid or {}
     need_mults, gaps = _waiver_need_context(roster_players, roster_positions, pidx)
 
+    # Roster gate: only surface claims that beat the worst healthy rostered
+    # player at the candidate's own position (or fill a starter hole there).
+    # An empty bar dict fails open, so callers without roster_players keep
+    # old behavior.
+    value_by_pid: dict[str, float] = {}
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        _vpid = str(row.get("id") or row.get("player_id") or "").strip()
+        if not _vpid:
+            continue
+        try:
+            value_by_pid[_vpid] = float(
+                row.get(value_key) or row.get(fallback_key) or row.get("value") or 0.0)
+        except (TypeError, ValueError):
+            value_by_pid[_vpid] = 0.0
+    drop_bars = waiver_drop_bar_value(
+        [str(p) for p in (roster_players or [])], value_by_pid, inj_map, pidx)
+
     best: Optional[dict] = None
     best_score = -1.0
     for row in rows or []:
@@ -2546,6 +2616,8 @@ def select_waiver_add(
             is_sf=is_sf, n_teams=n_teams, age=age, starter_gap=gap,
             min_value=min_value,
         ):
+            continue
+        if not waiver_claim_beats_roster(val, drop_bars.get(pos), gap):
             continue
         name = (
             row.get("name") or row.get("full_name") or row.get("player")

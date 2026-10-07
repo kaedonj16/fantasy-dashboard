@@ -334,19 +334,36 @@ def _weekly_efficiency_rows(efficiency_data: dict, selected_week: int) -> list[d
     return sorted(rows, key=lambda row: (-row["eff"], -row["actual"], row["rid"]))
 
 
-def _recap_standings_rows(df_weekly, division_by_rid, has_divisions) -> list[dict]:
+def _recap_standings_rows(df_weekly, division_by_rid, has_divisions, *, median_match=False) -> list[dict]:
     """Standings snapshot rows for the recap card, grouped by division.
 
     Within a division: overall wins, then division win% (a 1-0 division
     team outranks a 0-1 team on the same overall record even with fewer
     PF), then PF. Each row carries the raw ``div_record`` tuple alongside
-    the formatted ``record`` string.
+    the formatted ``record`` string. With ``median_match`` the weekly game
+    against the league median is folded into wins/losses/ties; the division
+    record stays head-to-head only, matching Sleeper.
     """
     from utils.standings_divisions import division_records, division_win_pct, format_record
     frame = df_weekly.copy()
     frame["win"] = frame["points"] > frame["points_against"]
     frame["tie"] = frame["points"] == frame["points_against"]
     _div_recs = division_records(frame, division_by_rid) if has_divisions else {}
+    _median_recs = {}
+    if median_match:
+        from utils.standings import median_game_outcomes
+        for _mo in median_game_outcomes(frame):
+            try:
+                _mrid = str(_mo.get("roster_id"))
+            except Exception:
+                continue
+            _rec = _median_recs.setdefault(_mrid, [0, 0, 0])
+            if _mo.get("outcome") == "W":
+                _rec[0] += 1
+            elif _mo.get("outcome") == "L":
+                _rec[1] += 1
+            else:
+                _rec[2] += 1
     rows = []
     for rid, grp in frame.groupby("roster_id"):
         try:
@@ -356,9 +373,11 @@ def _recap_standings_rows(df_weekly, division_by_rid, has_divisions) -> list[dic
         _div_rec = None
         if _rid_i is not None and division_by_rid.get(_rid_i):
             _div_rec = _div_recs.get(_rid_i, (0, 0, 0))
-        _wins = int(grp["win"].sum())
-        _ties = int(grp["tie"].sum())
-        _losses = len(grp) - _wins - _ties
+        _hw = int(grp["win"].sum())
+        _ht = int(grp["tie"].sum())
+        _hl = len(grp) - _hw - _ht
+        _mw, _ml, _mt = _median_recs.get(str(rid), (0, 0, 0))
+        _wins, _losses, _ties = _hw + _mw, _hl + _ml, _ht + _mt
         rows.append({
             "rid": str(rid), "owner": grp["owner"].iloc[0],
             "wins": _wins,
@@ -875,12 +894,15 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     historical_ctx = build_standings_as_of_week(recap_ctx, selected_week)
     from dashboard_services.ai.context_builders import build_power_rankings_context
     from utils.standings_divisions import resolve_divisions
+    from utils.standings import median_match_enabled
     division_info = resolve_divisions(historical_ctx) or {}
     division_by_rid = division_info.get("by_rid") or {}
     division_names = division_info.get("names") or {}
+    _recap_median_match = median_match_enabled(settings)
     def _standings_rows(capped_ctx):
         return _recap_standings_rows(
-            capped_ctx["df_weekly"], division_by_rid, bool(division_info))
+            capped_ctx["df_weekly"], division_by_rid, bool(division_info),
+            median_match=_recap_median_match)
 
     standings_rows_data = _standings_rows(historical_ctx)
     _record_by_rid = {s["rid"]: s["record"] for s in standings_rows_data}

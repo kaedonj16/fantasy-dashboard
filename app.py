@@ -11320,6 +11320,7 @@ def build_standings_as_of_week(ctx: dict, week: int) -> dict:
     stood then. Values come straight from the weekly scores, so the record,
     PF/PA, streaks and performance PowerScore are all exact for that point."""
     from dashboard_services.service import finalize_team_stats, regular_season_length
+    from utils.standings import median_match_enabled
 
     df_weekly = ctx["df_weekly"]
     wk = pd.to_numeric(df_weekly["week"], errors="coerce")
@@ -11340,6 +11341,7 @@ def build_standings_as_of_week(ctx: dict, week: int) -> dict:
         ctx.get("users") or [],
         int(week),
         regular_season_weeks=regular_season_length(_settings),
+        median_match=median_match_enabled(_settings),
     )
 
     new_ctx = dict(ctx)
@@ -11527,14 +11529,65 @@ def _waiver_rank_label_key(ctx: dict) -> str:
     )
 
 
-def _build_waiver_targets_rows(ctx: dict, model_value_table: list, limit: int = 10) -> str:
+def _waiver_viewer_roster_gate(ctx: dict, model_value_table: list, te_premium, value_key, fallback_key):
+    """Per-position drop bars and starter gaps for the viewer's roster, or
+    ({}, {}) to fail open when the roster or values are missing. Roster
+    values get the same TE premium the candidates get so the comparison is
+    apples to apples; injury status comes from players_index.
+    """
+    from utils.digest import _waiver_need_context, waiver_drop_bar_value
+    players_index = ctx.get("players_index") or {}
+    viewer = ctx.get("viewer") or {}
+    vrid = str(viewer.get("viewer_roster_id") or ctx.get("viewer_roster_id") or "")
+    viewer_roster = next(
+        (r for r in (ctx.get("rosters") or []) if str(r.get("roster_id")) == vrid),
+        None,
+    )
+    roster_pids = [str(p) for p in ((viewer_roster or {}).get("players") or [])]
+    if not vrid or not roster_pids or not model_value_table:
+        return {}, {}
+    value_by_pid = {}
+    for row in model_value_table:
+        if not isinstance(row, dict):
+            continue
+        pid = str(row.get("id") or "")
+        if not pid:
+            continue
+        try:
+            v = float(row.get(value_key) or row.get(fallback_key) or 0.0)
+        except Exception:
+            v = 0.0
+        pos = str(row.get("position") or row.get("pos") or "").upper()
+        value_by_pid[pid] = apply_te_premium(v, pos, te_premium)
+    injured_by_pid = {
+        pid: str((players_index.get(pid) or {}).get("injury_status") or "")
+        for pid in roster_pids
+    }
+    bars = waiver_drop_bar_value(roster_pids, value_by_pid, injured_by_pid, players_index)
+    gaps = {}
+    roster_positions = ctx.get("roster_positions") or []
+    if roster_positions:
+        try:
+            _, gaps = _waiver_need_context(roster_pids, roster_positions, players_index)
+        except Exception:
+            gaps = {}
+    return bars, gaps
+
+
+def _build_waiver_targets_rows(ctx: dict, model_value_table: list, limit: int = 10) -> tuple:
     """Row markup for the Waiver Wire Targets card, shared by the offseason hub
     and the in-season Season Hub.
 
     Ranking + signal labels are shared with the /api/waiver-candidates surface
     (utils.waiver_score) so both order and badge players identically. This card
     has no weekly usage data, so the usage-spike term is simply a no-op here.
-    Returns '' when no candidates are available.
+    Candidates that would not actually improve the viewer's roster are
+    filtered out: a claim must beat the roster's worst healthy skill player
+    by 5% or fill a starter hole.
+
+    Returns (html, gate_emptied); gate_emptied is True when candidates existed
+    but the roster gate removed all of them. Returns ('', False) when no
+    candidates are available.
     """
     rosters = ctx.get("rosters") or []
     players_index = ctx.get("players_index") or {}
@@ -11621,6 +11674,25 @@ def _build_waiver_targets_rows(ctx: dict, model_value_table: list, limit: int = 
             "pos_rank_label": row.get(_rk_dash) or row.get("pos_rank_label") or "",
             "rank_change_7d": rank_change,
         })
+
+    # Roster gate: drop claims that would not actually improve the viewer's
+    # roster at the candidate's own position (must beat the worst healthy
+    # rostered player at that position by 5% or fill a starter hole there).
+    # Fail open when the roster or values are missing.
+    _gate_emptied = False
+    if waiver_candidates:
+        _drop_bars, _starter_gaps = _waiver_viewer_roster_gate(
+            ctx, model_value_table, _tep_dash, _vkey_dash, _vfb_dash)
+        if _drop_bars:
+            from utils.digest import waiver_claim_beats_roster
+            _pre = len(waiver_candidates)
+            waiver_candidates = [
+                c for c in waiver_candidates
+                if waiver_claim_beats_roster(
+                    c.get("value"), _drop_bars.get(c.get("position")),
+                    (_starter_gaps or {}).get(c.get("position"), 0.0))
+            ]
+            _gate_emptied = _pre > 0 and not waiver_candidates
 
     # Bulk-fetch breakout scores for waiver candidates from DB
     # Breakout scores that align with the Breakout Engine page (same season
@@ -11720,7 +11792,7 @@ def _build_waiver_targets_rows(ctx: dict, model_value_table: list, limit: int = 
             """
         )
 
-    return "".join(waiver_html)
+    return "".join(waiver_html), _gate_emptied
 
 
 def _render_do_next_waiver_card(
@@ -11745,12 +11817,14 @@ def _render_do_next_waiver_card(
         ctx.get("latest_draft"),
         ctx.get("rosters"),
     )
-    full_rows = (
-        ""
+    full_rows, gate_emptied = (
+        ("", False)
         if undrafted
         else _build_waiver_targets_rows(ctx, model_value_table, limit=10)
     )
-    if not full_rows and not draft_prep_hrefs:
+    # When no claim would actually improve the viewer's roster, hide the
+    # whole card instead of showing an empty waiver section.
+    if not full_rows and (not draft_prep_hrefs or gate_emptied):
         return ""
 
     _wv_url = url_for(
@@ -11994,7 +12068,7 @@ def _next_steps_waiver_actions(ctx: dict, viewer_roster_id, model_value_table: l
 
         # Reuse the candidate ranking from the shared builder by parsing its
         # HTML rows. Simpler and keeps ranking identical to the waiver page.
-        rows_html = _build_waiver_targets_rows(ctx, model_value_table, limit=3)
+        rows_html, _ = _build_waiver_targets_rows(ctx, model_value_table, limit=3)
         if not rows_html:
             return actions
 
