@@ -11,11 +11,13 @@ Two read-only views over the breakout engines' persisted calls:
   calls) over a complete outcome window.
 
 * **Track record** aggregates *finished* grades only: weekly hit rates per
-  classification for the current scoring version (via the grader's own
-  ``summarize_grade_rows``, so the 10-graded floor and rate math match the
-  grader exactly), plus calibration band rates by breakout score and by
-  confidence over the same pooled calls (via ``calibration``'s shared
-  helpers), plus the season engine's grades by phase once that table
+  classification pooled over each week's *serving* run (the same run the
+  board serves, via ``weekly_store.get_serving_run``, so weeks scored
+  under older scoring versions still agree with the cards), via the
+  grader's own ``summarize_grade_rows``, so the 10-graded floor and rate
+  math match the grader exactly, plus calibration band rates by breakout
+  score and by confidence over the same pooled calls (via ``calibration``'s
+  shared helpers), plus the season engine's grades by phase once that table
   exists. The season grades table is written by the season grading path;
   until it exists (or has rows) the season section reports an explicit
   pending state, never an error and never a fabricated rate.
@@ -34,6 +36,7 @@ by games.
 """
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -573,18 +576,100 @@ def preseason_forecasts_for_season(
 # track record (finished grades only; forecasts never enter these numbers)
 # =============================================================================
 
+def _run_detail_reconstructed(run: dict[str, Any] | None) -> bool:
+    """Whether a weekly run row is flagged as a reconstruction."""
+    detail = (run or {}).get("detail")
+    if isinstance(detail, str):
+        try:
+            detail = json.loads(detail)
+        except (ValueError, TypeError):
+            return False
+    if not isinstance(detail, dict):
+        return False
+    return str(detail.get("reconstructed", "false")).lower() == "true"
+
+
 def load_weekly_grade_rows(season: int) -> List[Dict[str, Any]]:
-    """Finished weekly grades for the season under the CURRENT scoring
-    version only (older-version calls are never blended into this rate)."""
-    from data_building.breakout_engine.weekly_breakout import SCORING_VERSION
+    """Finished weekly grades for the season, one scoring version per week.
+
+    Each week loads grades from its *serving* run (via
+    ``weekly_store.get_serving_run``: a live non-reconstructed run wins,
+    however old), the same run the board serves. The track record therefore
+    always agrees with the cards, even when weeks were scored under
+    different scoring versions. Weeks with no serving run are skipped.
+    """
+    from data_building.breakout_engine.weekly_store import get_serving_run
     wg.init_weekly_breakout_grades_db()
     with get_conn() as conn:
-        rows = conn.execute(
-            f"SELECT * FROM {wg.GRADES_TABLE} "
-            f"WHERE season = %s AND scoring_version = %s",
-            (int(season), SCORING_VERSION),
+        weeks = conn.execute(
+            f"SELECT DISTINCT as_of_week FROM {wg.GRADES_TABLE} "
+            f"WHERE season = %s ORDER BY as_of_week",
+            (int(season),),
         ).fetchall()
+        rows: list[dict[str, Any]] = []
+        for w in weeks:
+            week = w.get("as_of_week") if isinstance(w, dict) else None
+            if week is None:
+                continue
+            try:
+                week_int = int(week)
+            except (TypeError, ValueError):
+                continue
+            try:
+                run = get_serving_run(int(season), week_int)
+            except Exception:
+                logger.warning("forecasts: serving run lookup failed",
+                               exc_info=True)
+                continue
+            if not run:
+                continue
+            ver = run.get("scoring_version")
+            if not ver:
+                continue
+            rows.extend(
+                conn.execute(
+                    f"SELECT * FROM {wg.GRADES_TABLE} "
+                    f"WHERE season = %s AND as_of_week = %s AND scoring_version = %s",
+                    (int(season), week_int, str(ver)),
+                ).fetchall()
+            )
     return [dict(r) for r in rows]
+
+
+def load_serving_reconstructed_weeks(season: int) -> set:
+    """Weeks whose *serving* run is a reconstruction.
+
+    Mirrors the per-week scoring-version resolution in
+    :func:`load_weekly_grade_rows`: a week counts only when the run the
+    board actually serves is flagged ``detail.reconstructed``. Fails soft
+    to an empty set.
+    """
+    from data_building.breakout_engine.weekly_store import get_serving_run
+    try:
+        with get_conn() as conn:
+            weeks = conn.execute(
+                f"SELECT DISTINCT as_of_week FROM {wg.GRADES_TABLE} "
+                f"WHERE season = %s",
+                (int(season),),
+            ).fetchall()
+    except Exception:
+        logger.warning("forecasts: grade weeks read failed", exc_info=True)
+        return set()
+    out: set = set()
+    for w in weeks:
+        week = w.get("as_of_week") if isinstance(w, dict) else None
+        if week is None:
+            continue
+        try:
+            week_int = int(week)
+        except (TypeError, ValueError):
+            continue
+        try:
+            if _run_detail_reconstructed(get_serving_run(int(season), week_int)):
+                out.add(week_int)
+        except Exception:
+            logger.warning("forecasts: serving run read failed", exc_info=True)
+    return out
 
 
 def load_reconstructed_weeks(season: int) -> set:
@@ -683,7 +768,7 @@ def weekly_track_record(season: int) -> Dict[str, Any]:
     # Live forecast values for open calls (same band the cards show), so
     # the track-record forecast rate reflects current state.
     attach_weekly_forecast_values(season, rows)
-    recon_weeks = load_reconstructed_weeks(season)
+    recon_weeks = load_serving_reconstructed_weeks(season)
     summary = wg.summarize_grade_rows(rows)
     # Calibration bands over the same pooled rows, via the shared
     # calibration helpers so the rail and the calibration CLI can never
