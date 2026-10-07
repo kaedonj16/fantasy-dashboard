@@ -460,8 +460,8 @@ _SIGNAL_WEIGHTS = {
 # Projected points at risk (missing + half of questionable/bye) that saturate
 # the drama / star-watch signal.
 _DRAMA_FULL = 22.0
-# Rough dynasty-value → weekly-points proxy, used only when a live weekly
-# projection isn't available for an injured starter.
+# Rough dynasty-value → weekly-points proxy, used only when neither a live
+# weekly projection nor a typical-week average is available.
 _VALUE_TO_PPG = 300.0
 
 
@@ -533,33 +533,64 @@ def _team_proj_total(starters: list, proj_by_pid: dict) -> float:
     return sum(float(proj_by_pid.get(str(p.get("pid") or ""), 0.0) or 0.0) for p in (starters or []) if p)
 
 
+def _full_roster_pool(team_block: dict) -> list:
+    """The whole roster (starters + bench), deduped by player id.
+
+    Next week's lineups are not final mid-week and managers already bench
+    their bye-week players, so scanning only the slotted starters makes the
+    notable-outs section (and the drama signal) blind to exactly the players
+    a fan would ask about.
+    """
+    pool: list[dict] = []
+    seen: set[str] = set()
+    for p in (team_block.get("starters") or []) + (team_block.get("bench") or []):
+        if not p:
+            continue  # empty slot placeholder
+        pid = str(p.get("pid") or "")
+        if not pid or pid in seen:
+            continue
+        seen.add(pid)
+        pool.append(p)
+    return pool
+
+
 def _starter_flags(
-        team_block: dict,
+        players: list,
         player_index: dict,
         proj_by_pid: dict,
         value_by_pid: dict,
         playing_teams: set,
+        avg_proj_by_pid: dict | None = None,
 ) -> tuple[list, list, list, float]:
-    """Categorize a team's projected starters into out / questionable / on-bye,
-    each carrying its weekly projection (the real 'how much does losing them
-    hurt' measure) with dynasty value as a fallback. Returns
+    """Categorize a team's key players into out / questionable / on-bye,
+    each carrying its projected impact (the real 'how much does losing them
+    hurt' measure): the live weekly projection, else the player's typical
+    weekly projection this season (bye-week and ruled-out players carry no
+    live line), else dynasty value as a last resort. Returns
     (out, questionable, bye, points_at_risk)."""
     out: list[dict] = []
     maybe: list[dict] = []
     byes: list[dict] = []
     risk = 0.0
-    for p in (team_block.get("starters") or []):
+    for p in (players or []):
         if not p:
             continue  # empty slot placeholder
         pid = str(p.get("pid") or "")
         info = player_index.get(pid) or {}
         raw = str(info.get("injury_status") or info.get("status") or "").strip().upper()
         proj = float(proj_by_pid.get(pid, 0.0) or 0.0)
-        impact = proj if proj > 0 else (value_by_pid.get(pid, 0.0) or 0.0) / _VALUE_TO_PPG
+        avg = float((avg_proj_by_pid or {}).get(pid, 0.0) or 0.0)
+        if proj > 0:
+            impact = proj
+        elif avg > 0:
+            impact = avg
+        else:
+            impact = (value_by_pid.get(pid, 0.0) or 0.0) / _VALUE_TO_PPG
         nfl = str(p.get("nfl") or "").upper()
         entry = {
             "name": p.get("name"), "pos": p.get("pos"),
             "proj": round(proj, 1), "value": value_by_pid.get(pid, 0.0),
+            "impact": round(impact, 1),
         }
         if raw in _OUT_STATUSES:
             out.append({**entry, "status": raw})
@@ -675,6 +706,7 @@ def _build_next_week_preview(
     is_playoff = bool((nctx or {}).get("is_playoff"))
     weeks_left_after = max(0, playoff_start - 1 - next_week)
     proj_by_pid = (nctx or {}).get("proj_by_pid") or {}
+    avg_proj_by_pid = (nctx or {}).get("avg_proj_by_pid") or {}
     player_index = (nctx or {}).get("player_index") or {}
     value_by_pid = (nctx or {}).get("value_by_pid") or {}
     playing_teams = (nctx or {}).get("playing_teams") or set()
@@ -696,8 +728,12 @@ def _build_next_week_preview(
         rank_a = sa["rank_after"] or num_teams
         rank_b = sb["rank_after"] or num_teams
         meetings, a_wins, b_wins = _prior_series(df_weekly, rid_a, rid_b, selected_week)
-        out_a, maybe_a, bye_a, risk_a = _starter_flags(left, player_index, proj_by_pid, value_by_pid, playing_teams)
-        out_b, maybe_b, bye_b, risk_b = _starter_flags(right, player_index, proj_by_pid, value_by_pid, playing_teams)
+        out_a, maybe_a, bye_a, risk_a = _starter_flags(
+            _full_roster_pool(left), player_index, proj_by_pid, value_by_pid,
+            playing_teams, avg_proj_by_pid)
+        out_b, maybe_b, bye_b, risk_b = _starter_flags(
+            _full_roster_pool(right), player_index, proj_by_pid, value_by_pid,
+            playing_teams, avg_proj_by_pid)
 
         # ── Six signals, each normalized to [0, 1] ─────────────────────────────
         signals: dict[str, float] = {}
@@ -738,7 +774,8 @@ def _build_next_week_preview(
         top_factor = max(contrib, key=lambda k: contrib[k]) if score > 1e-9 else None
 
         all_stars = out_a + out_b + maybe_a + maybe_b
-        top_star = max(all_stars, key=lambda x: (x["proj"], x["value"] or 0.0)) if all_stars else None
+        top_star = max(all_stars, key=lambda x: (x.get("impact") or 0.0, x["proj"],
+                                                x["value"] or 0.0)) if all_stars else None
         headline = _reason_bits(
             top_factor, sa=sa, sb=sb, rank_a=rank_a, rank_b=rank_b, num_teams=num_teams,
             win_prob=win_prob, meetings=meetings, stakes_label=stakes_label,
@@ -1178,12 +1215,12 @@ def _render_next_week_html(preview: dict, looking_ahead: str,
 
     # Notable outs: key players who are out, doubtful/questionable, or on bye
     # for the two featured teams, split into one column per side. Only
-    # starter-quality players (by projection) are shown; the section is
-    # hidden entirely when neither team has notable outs.
+    # starter-quality players are shown; the section is hidden entirely when
+    # neither team has notable outs.
     def _notable_outs_cols():
         cols = []
         for side, team in (("a", g.get("team_a")), ("b", g.get("team_b"))):
-            rows = []
+            cands = []
             seen = set()
             for key, badge_cls, label in (
                 ("out", "br-gotw-out-st-out", None),
@@ -1191,23 +1228,29 @@ def _render_next_week_html(preview: dict, looking_ahead: str,
                 ("bye", "br-gotw-out-st-bye", "Bye"),
             ):
                 for p in (g.get(f"{key}_{side}") or []):
-                    pid = str(p.get("name") or "")
-                    if pid in seen:
+                    name = str(p.get("name") or "")
+                    if name in seen:
                         continue
-                    seen.add(pid)
+                    seen.add(name)
                     proj = p.get("proj") or 0
+                    value = p.get("value") or 0
+                    # Bye-week (and most OUT) players carry no weekly
+                    # projection, so judge notability by projected impact:
+                    # live projection, else typical-week average, else dynasty
+                    # value. Without this, bye players can never clear the bar.
+                    impact = p.get("impact")
+                    if impact is None:
+                        impact = proj if proj > 0 else value / _VALUE_TO_PPG
                     # Only starter-quality players count as "notable".
-                    if proj < 8.0:
+                    if impact < 8.0:
                         continue
                     status = label or str(p.get("status") or "").title()
-                    rows.append({
+                    cands.append({
                         "name": p.get("name"), "pos": p.get("pos"),
-                        "status": status, "cls": badge_cls,
+                        "status": status, "cls": badge_cls, "impact": impact,
                     })
-                    if len(rows) >= 3:
-                        break
-                if len(rows) >= 3:
-                    break
+            cands.sort(key=lambda r: -r["impact"])
+            rows = [{k: r[k] for k in ("name", "pos", "status", "cls")} for r in cands[:3]]
             if rows:
                 cols.append({"team": team, "side": side, "rows": rows})
         return cols

@@ -20686,7 +20686,32 @@ def _build_next_week_ctx(
         bundles = build_projections_by_week(int(season), next_week, ctx.get("raw_scoring_settings"))
         proj_by_pid = (bundles.get(next_week) or {}).get("projections") or {}
     except Exception:
+        bundles = {}
         proj_by_pid = {}
+
+    # Typical-week projection per player (mean of positive weekly projections
+    # before next week). This is only a notability measure for players with no
+    # live projection (bye week / ruled out) -- it never enters a points
+    # total, so the no-refill rule for weekly lines still holds. The bundles
+    # for the prior weeks are already loaded above, so this is just an average.
+    avg_proj_by_pid: dict = {}
+    try:
+        _totals: dict = {}
+        _counts: dict = {}
+        for _w in range(1, int(next_week)):
+            _wk = (bundles.get(_w) or {}).get("projections") or {}
+            for _pid, _pts in _wk.items():
+                if _pts is None:
+                    continue
+                _v = float(_pts)
+                if _v <= 0:
+                    continue  # bye/inactive weeks say nothing about typical output
+                _pid = str(_pid)
+                _totals[_pid] = _totals.get(_pid, 0.0) + _v
+                _counts[_pid] = _counts.get(_pid, 0) + 1
+        avg_proj_by_pid = {pid: _totals[pid] / _counts[pid] for pid in _totals}
+    except Exception:
+        avg_proj_by_pid = {}
 
     # NFL teams playing next week -- a starter whose team is absent is on bye.
     try:
@@ -20721,6 +20746,7 @@ def _build_next_week_ctx(
     return {
         "matchups": matchups,
         "proj_by_pid": proj_by_pid,
+        "avg_proj_by_pid": avg_proj_by_pid,
         "player_index": ctx.get("players_index") or {},
         "value_by_pid": value_by_pid,
         "playing_teams": playing_teams,

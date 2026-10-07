@@ -16,6 +16,7 @@ pytest.importorskip("openai")  # app.py pulls openai via dashboard_services.ai.c
 from dashboard_services.ai.weekly_recap import (  # noqa: E402
     _all_play_strength,
     _build_next_week_preview,
+    _full_roster_pool,
     _proj_win_prob,
     _prior_series,
     _regular_stakes,
@@ -38,10 +39,10 @@ def _starter(pid, name, pos="RB", nfl="KC"):
     return {"pid": pid, "name": name, "pos": pos, "nfl": nfl}
 
 
-def _matchup(rid_a, rid_b, starters_a=None, starters_b=None):
+def _matchup(rid_a, rid_b, starters_a=None, starters_b=None, bench_a=None, bench_b=None):
     return {
-        "left": {"roster_id": str(rid_a), "starters": starters_a or []},
-        "right": {"roster_id": str(rid_b), "starters": starters_b or []},
+        "left": {"roster_id": str(rid_a), "starters": starters_a or [], "bench": bench_a or []},
+        "right": {"roster_id": str(rid_b), "starters": starters_b or [], "bench": bench_b or []},
     }
 
 
@@ -95,7 +96,7 @@ def test_starter_flags_split_out_questionable_and_bye_with_impact():
     pidx = {"p1": {"injury_status": "OUT"}, "p2": {"injury_status": "QUESTIONABLE"}}
     proj = {"p1": 20.0, "p2": 10.0, "p3": 12.0, "p4": 18.0}
     out, maybe, byes, risk = _starter_flags(
-        {"starters": starters}, pidx, proj, {}, playing_teams={"KC"},
+        starters, pidx, proj, {}, playing_teams={"KC"},
     )
     assert [p["name"] for p in out] == ["Out Star"]
     assert [p["name"] for p in maybe] == ["Q Guy"]
@@ -248,3 +249,77 @@ def test_no_matchups_yields_no_preview():
     df = pd.DataFrame([_fin_row(1, 1, "1", 100, 90)])
     assert _build_next_week_preview(df, {}, 6, 14, 6, 10, _nctx([])) is None
     assert _render_next_week_html(None, "") == ""
+
+
+def test_full_roster_pool_dedupes_and_skips_empty_slots():
+    pool = _full_roster_pool({
+        "starters": [_starter("p1", "One"), None, _starter("p2", "Two")],
+        "bench": [_starter("p2", "Two"), _starter("p3", "Three"), None],
+    })
+    assert [p["pid"] for p in pool] == ["p1", "p2", "p3"]
+
+
+def test_preview_flags_benched_players_as_notable_outs():
+    # The reported gap: a benched Questionable player and a benched bye-week
+    # star never surfaced because only slotted starters were scanned.
+    df = pd.DataFrame([_fin_row(1, 1, "1", 100, 90), _fin_row(1, 1, "2", 90, 100)])
+    storylines = {"1": _storyline(1, "Alpha", 5), "2": _storyline(2, "Bravo", 6)}
+    a_starters = [_starter("a1", "Healthy", nfl="ATL")]
+    a_bench = [_starter("a2", "Q Back", nfl="ATL"), _starter("a3", "Bye Star", nfl="DET")]
+    nctx = _nctx(
+        [_matchup("1", "2", starters_a=a_starters, bench_a=a_bench)],
+        player_index={"a2": {"injury_status": "QUESTIONABLE"}},
+        proj_by_pid={"a1": 15.0, "a2": 12.0},  # a3 on bye: no live projection
+        avg_proj_by_pid={"a3": 17.5},          # typical week -> impact 17.5
+        playing_teams={"ATL"},
+    )
+    preview = _build_next_week_preview(
+        df, storylines, selected_week=6, playoff_start=14, playoff_teams=6, num_teams=10, nctx=nctx,
+    )
+    got = preview["game_of_the_week"]
+    assert [p["name"] for p in got["maybe_a"]] == ["Q Back"]
+    assert [p["name"] for p in got["bye_a"]] == ["Bye Star"]
+    out = _render_next_week_html(preview, "Blurb.")
+    assert "Alpha outs" in out
+    assert "Q Back" in out and "Questionable" in out
+    assert "Bye Star" in out and "Bye" in out
+
+
+def test_starter_flags_falls_back_to_typical_week_then_value():
+    # No live projection (bye): typical-week average wins over dynasty value;
+    # value is the last resort.
+    pool = [_starter("p1", "Bye Star", nfl="DET"), _starter("p2", "Deep Stash", nfl="DET")]
+    out, maybe, byes, risk = _starter_flags(
+        pool, {}, {}, {"p1": 6000.0, "p2": 6000.0}, playing_teams={"KC"},
+        avg_proj_by_pid={"p1": 17.5},
+    )
+    by_name = {p["name"]: p for p in byes}
+    assert by_name["Bye Star"]["impact"] == pytest.approx(17.5)
+    assert by_name["Deep Stash"]["impact"] == pytest.approx(20.0)  # 6000/300
+    # risk = (17.5 + 20.0) * 0.5 for byes
+    assert risk == pytest.approx(18.75)
+
+
+def test_render_bye_notability_uses_value_fallback():
+    # A bye-week star with no projection still clears the bar via dynasty
+    # value; a scrub on bye does not.
+    preview = {
+        "next_week": 5,
+        "game_of_the_week": {
+            "team_a": "Alpha", "team_b": "Bravo",
+            "record_a": "4-0", "record_b": "2-2",
+            "rank_a": 1, "rank_b": 4,
+            "out_a": [], "maybe_a": [],
+            "bye_a": [
+                {"name": "Star", "pos": "RB", "status": "BYE",
+                 "proj": 0.0, "value": 6000.0, "impact": 20.0},
+                {"name": "Scrub", "pos": "WR", "status": "BYE",
+                 "proj": 0.0, "value": 900.0, "impact": 3.0},
+            ],
+            "out_b": [], "maybe_b": [], "bye_b": [],
+        },
+    }
+    out = _render_next_week_html(preview, "Blurb.")
+    assert "Alpha outs" in out
+    assert "Star" in out
+    assert "Scrub" not in out
