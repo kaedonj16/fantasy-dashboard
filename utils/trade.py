@@ -1008,8 +1008,8 @@ FALLBACK_THRESHOLDS = [850.0, 700.0, 550.0, 420.0, 300.0, 200.0, 120.0, 60.0]
 # consolidate/distribute engine can't drift apart.
 ELITE_RANK_CUTOFFS = {"QB": 5, "RB": 6, "WR": 6, "TE": 5}
 
-# Tier display caps out here (T1 elite ... T6).
-MAX_DISPLAY_TIERS = 6
+# Tier display caps out here (T1 elite ... T9).
+MAX_DISPLAY_TIERS = 9
 
 
 def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: int = 10,
