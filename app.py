@@ -18481,6 +18481,8 @@ def page_breakouts(platform: str, season: int, league_id: str):
                 <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
                   <div class="breakout-score-badge" style="background:${{scoreColor}};color:#fff;font-size:13px;font-weight:700;padding:3px 9px;border-radius:6px;">${{score}}</div>
                   ${{hitHtml}}
+                  ${{(currentWeek !== 'latest' && candidate.grade === 'hit') ? '<div style="font-size:11px;font-weight:800;color:#fff;background:#16a34a;padding:3px 10px;border-radius:6px;letter-spacing:0.05em;">HIT</div>' : ''}}
+                  ${{(currentWeek !== 'latest' && candidate.grade === 'miss') ? '<div style="font-size:11px;font-weight:800;color:#fff;background:#dc2626;padding:3px 10px;border-radius:6px;letter-spacing:0.05em;">MISS</div>' : ''}}
                 </div>
               </div>
               <div style="margin-bottom:12px;">${{ppgHtml}}</div>
