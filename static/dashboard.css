@@ -13563,7 +13563,6 @@ a.signed-home-league:hover {
        (col 2, placed after editorial sections in DOM order) share the top row
        while every other section spans the full width below. */
     display: grid;
-    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
     column-gap: 40px;
     row-gap: 36px;
 }
