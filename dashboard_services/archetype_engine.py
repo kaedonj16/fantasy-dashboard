@@ -763,18 +763,32 @@ def _acquire_rank_score(
     return (0.35 * score + 0.65 * fit) * avail * need_mult
 
 
+_LIFT_SEATS_TOP = 5
+_LIFT_SEATS_OTHER = 5
+
+
 def _select_varied_slate(
     scored: List[Tuple[float, Dict]],
     max_targets: int = _MAX_TARGETS,
     max_per_pos: int = _MAX_PER_POS,
+    lift_first: bool = False,
 ) -> List[Dict]:
     """Pick a varied slate in score order.
 
     One player per (owner, position), at most ``max_per_pos`` per position.
-    No reserved seats -- a low-rise hole does not jump a high-rise add at a
-    strength. Falls back to filling remaining slots if the caps leave it thin.
+    With ``lift_first`` (the consolidate "others" bucket), slot-upgrade
+    targets sort first and bypass the per-position cap (the owner/position
+    dedup still applies), so FLEX/spot upgrades stay visible next to the
+    studs even when a position's seats are full of higher-scoring elites.
+    Falls back to filling remaining slots if the caps leave it thin.
     """
-    scored = sorted(scored, key=lambda x: x[0], reverse=True)
+    if lift_first:
+        scored = sorted(
+            scored,
+            key=lambda x: (not bool(x[1].get("slot_upgrade")), -x[0]),
+        )
+    else:
+        scored = sorted(scored, key=lambda x: x[0], reverse=True)
     seen_owner_pos: set = set()
     seen_players: set = set()
     pos_in_top: Dict[str, int] = {}
@@ -786,7 +800,8 @@ def _select_varied_slate(
         key = (t["owner_roster_id"], t["position"])
         if key in seen_owner_pos:
             return False
-        if pos_in_top.get(t["position"], 0) >= max_per_pos:
+        _lifted = lift_first and bool(t.get("slot_upgrade"))
+        if not _lifted and pos_in_top.get(t["position"], 0) >= max_per_pos:
             return False
         seen_owner_pos.add(key)
         seen_players.add(t["player_id"])
@@ -3073,7 +3088,18 @@ def _get_archetype_suggestions_impl(
         scored.append((final, t))
 
     scored.sort(key=lambda x: x[0], reverse=True)
-    top = _select_varied_slate(scored)
+    if archetype == "consolidate":
+        # Split slate: 5 top targets by score (the studs) plus 5 "others"
+        # with slot-upgrade targets first, so a FLEX/spot upgrade is always
+        # visible next to the top-top players. Contending keeps the pure
+        # score-order slate.
+        top = _select_varied_slate(scored, max_targets=_LIFT_SEATS_TOP)
+        _seated = {t["player_id"] for t in top}
+        _rest = [(f, t) for f, t in scored if t["player_id"] not in _seated]
+        top = top + _select_varied_slate(
+            _rest, max_targets=_LIFT_SEATS_OTHER, lift_first=True)
+    else:
+        top = _select_varied_slate(scored)
 
     # ── Build send packages & assemble response ───────────────────────────────
     send_candidates = _score_sends(viewer_players, values_by_id, archetype, untouchable_ids=untouchable_ids)

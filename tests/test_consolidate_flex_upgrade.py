@@ -229,10 +229,10 @@ def _run_consolidate(monkeypatch, league_id):
 
     _orig = ae._select_varied_slate
 
-    def _spy(scored, max_targets=8, max_per_pos=3):
+    def _spy(scored, max_targets=8, max_per_pos=3, lift_first=False):
         for final, t in scored:
             slate[t["name"]] = (final, bool(t.get("slot_upgrade")))
-        return _orig(scored, max_targets, max_per_pos)
+        return _orig(scored, max_targets, max_per_pos, lift_first=lift_first)
 
     monkeypatch.setattr(ae, "_select_varied_slate", _spy)
     out = ae.get_archetype_suggestions(
@@ -283,3 +283,89 @@ def test_slot_upgrade_sentence_only_on_lifted_targets(monkeypatch):
     assert stud_rows, "expected the elite target to surface"
     for s in stud_rows:
         assert "Upgrades your" not in s["why"]
+
+
+# ── split slate: 5 top + 5 others ─────────────────────────────────────────────
+
+def _t(pid, pos, owner, score, lifted=False):
+    t = {"player_id": pid, "name": pid, "position": pos,
+         "owner_roster_id": owner, "value": 500}
+    if lifted:
+        t["slot_upgrade"] = {"slot": "FLEX", "from_pid": "x", "from_name": "X"}
+    return (score, t)
+
+
+def test_lift_first_sorts_lifted_first_and_bypasses_pos_cap():
+    # Lifted targets sort first and bypass the per-position cap; non-lifted
+    # still respect it. Enough seats fill (>=4) that the thin-slate fallback
+    # does not kick in.
+    scored = [
+        _t("rb1", "RB", "o1", 1.9),
+        _t("rb2", "RB", "o2", 1.8),
+        _t("wr1", "WR", "o3", 1.7),
+        _t("wr2", "WR", "o7", 1.6),
+        _t("flex1", "WR", "o4", 1.0, True),
+        _t("flex2", "WR", "o5", 0.9, True),
+    ]
+    got = ae._select_varied_slate(
+        scored, max_targets=8, max_per_pos=3, lift_first=True)
+    pids = [t["player_id"] for t in got]
+    assert pids == ["flex1", "flex2", "rb1", "rb2", "wr1"]
+    assert "wr2" not in pids  # non-lifted 4th WR still capped
+
+
+def test_lift_first_keeps_owner_pos_dedup():
+    scored = [
+        _t("rb1", "RB", "o2", 1.8),
+        _t("rb2", "RB", "o3", 1.7),
+        _t("wr1", "WR", "o4", 1.6),
+        _t("flex1", "WR", "o1", 1.0, True),
+        _t("dup", "WR", "o1", 0.9, True),  # same owner+pos as flex1
+    ]
+    got = ae._select_varied_slate(
+        scored, max_targets=8, max_per_pos=3, lift_first=True)
+    pids = [t["player_id"] for t in got]
+    assert pids[0] == "flex1"
+    assert "dup" not in pids  # owner/pos dedup still applies to lifted
+
+
+def test_split_slate_five_top_five_others(monkeypatch):
+    """Consolidate slate = 5 top by score + 5 others with lifted first, no
+    target seated twice."""
+    calls = []
+    returned = []
+
+    _orig = ae._select_varied_slate
+
+    def _spy(scored, max_targets=8, max_per_pos=3, lift_first=False):
+        calls.append((max_targets, lift_first))
+        got = _orig(scored, max_targets, max_per_pos, lift_first=lift_first)
+        returned.extend(t["player_id"] for t in got)
+        return got
+
+    monkeypatch.setattr(ae, "_select_varied_slate", _spy)
+    ae.get_archetype_suggestions(
+        archetype="consolidate", platform="sleeper", league_id="flexsplit",
+        season=2026, viewer_roster_id="1", league_type="1qb", league_size=10,
+        ctx=_seed_ctx())
+    assert calls[0] == (5, False)  # top bucket: pure score order
+    assert calls[1] == (5, True)   # others bucket: lifted first
+    assert len(returned) == len(set(returned)), "target seated in both buckets"
+
+
+def test_contending_keeps_single_slate(monkeypatch):
+    """Non-consolidate archetypes still get one score-order slate."""
+    calls = []
+
+    _orig = ae._select_varied_slate
+
+    def _spy(scored, max_targets=8, max_per_pos=3, lift_first=False):
+        calls.append((max_targets, lift_first))
+        return _orig(scored, max_targets, max_per_pos, lift_first=lift_first)
+
+    monkeypatch.setattr(ae, "_select_varied_slate", _spy)
+    ae.get_archetype_suggestions(
+        archetype="contending", platform="sleeper", league_id="flexsplit2",
+        season=2026, viewer_roster_id="1", league_type="1qb", league_size=10,
+        ctx=_seed_ctx())
+    assert calls == [(8, False)]
