@@ -151,6 +151,19 @@ var PR_SPARK_W = 38, PR_SPARK_H = 26;  // logical (CSS) px
 // Set true for the one render pass right after sparkline data first loads, so
 // the lines draw on left-to-right; false for later sort/filter re-renders.
 var _prSparkAnimate = false;
+// Cached win/loss colors. getComputedStyle() forces a style recalc, so calling
+// it per-sparkline (50x per render) was a major slowdown. Compute once.
+var _prSparkColors = null;
+function _prSparkColor(up) {
+  if (!_prSparkColors) {
+    var cs = getComputedStyle(document.documentElement);
+    _prSparkColors = {
+      win: (cs.getPropertyValue('--win') || '#16a34a').trim() || '#16a34a',
+      loss: (cs.getPropertyValue('--loss') || '#ef4444').trim() || '#ef4444'
+    };
+  }
+  return up ? _prSparkColors.win : _prSparkColors.loss;
+}
 
 function _prReducedMotion() {
   return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
@@ -221,10 +234,9 @@ function _prDrawSparkline(canvas, data, animate) {
   }));
   // Trend color from the app's own win/loss tokens (so it tracks the theme and
   // matches the rank arrows), green when the value is up over the window, red down.
-  const cs = getComputedStyle(document.documentElement);
-  const green = (cs.getPropertyValue('--win') || '#16a34a').trim();
-  const red   = (cs.getPropertyValue('--loss') || '#ef4444').trim();
-  const col = (data[data.length - 1] >= data[0]) ? green : red;
+  // Colors are cached module-wide (see _prSparkColor) to avoid a forced style
+  // recalc per sparkline.
+  const col = _prSparkColor(data[data.length - 1] >= data[0]);
   // A new draw (or a re-render that recycled this canvas) must cancel the
   // previous sweep; otherwise the old rAF keeps painting a half-drawn line
   // and the sparkline looks hung.

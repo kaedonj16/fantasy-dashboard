@@ -23984,12 +23984,28 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
 
         _injected_picks = []
         _seen_ids: set = set(_db_pick_ids)
+        # Rookie picks are only for future drafts. Once a season starts, that
+        # year's picks have become players, so they are not offered. (2026
+        # season is underway: 2026 picks are out, 2027 is the earliest.)
+        try:
+            _pick_cutoff_yr = int((get_nfl_state() or {}).get("season") or 0)
+        except Exception:
+            _pick_cutoff_yr = 0
+        if not _pick_cutoff_yr:
+            from datetime import date as _d
+            _pick_cutoff_yr = _d.today().year
         for _pk_id in _pick_ids_union:
             _pk_val = float(_pick_values_1qb.get(_pk_id) or 0)
             _pk_sf = float(_pick_values_sf.get(_pk_id) or _pk_val or 0)
             if _pk_id in _seen_ids or (_pk_val <= 0 and _pk_sf <= 0):
                 continue
             _parts = _pk_id.split("_")
+            # Skip picks from the current or past seasons (draft already happened).
+            try:
+                if len(_parts) >= 1 and int(_parts[0]) <= _pick_cutoff_yr:
+                    continue
+            except (ValueError, TypeError):
+                pass
             if len(_parts) >= 2:
                 _key = (_parts[0], _parts[1])
                 _is_generic = len(_parts) == 2
@@ -24022,6 +24038,17 @@ def _build_league_players_payload_uncached(kdef: bool = False) -> dict:
                 "team": "",
             })
         model_value_table.extend(_injected_picks)
+        # Drop any pick rows from the current or past seasons (draft already
+        # happened). Covers picks that came from the DB/model table directly,
+        # not just the injected ones above.
+        def _pick_yr_ok(p):
+            if str(p.get("position") or "").upper() != "PICK":
+                return True
+            try:
+                return int(str(p.get("id") or "").split("_")[0]) > _pick_cutoff_yr
+            except (ValueError, TypeError, IndexError):
+                return True
+        model_value_table[:] = [p for p in model_value_table if _pick_yr_ok(p)]
         logger.info(f"[api/league-players] DB picks: {len(_db_pick_ids)}, WLS fallback picks: {len(_injected_picks)}")
 
         # Rebuild slot/bucket sets to include WLS-injected picks so the model
