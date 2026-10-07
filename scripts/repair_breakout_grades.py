@@ -29,9 +29,12 @@ published snapshot in ``weekly_breakout_scores`` and the run record in
   A. a completed *live* (non-reconstructed) run owns the snapshot, the
      grades were written *before* that run published, and the grade scores
      differ from the snapshot scores for the same players; or
-  B. the run is still flagged reconstructed but the snapshot scores no
-     longer match the grade scores (a live snapshot is present under the
-     same key while reconstructed grades shadow it).
+  B. the run is still flagged reconstructed but the snapshot no longer
+     matches the grades: either the scores differ for overlapping players,
+     or the graded player *population* barely overlaps the snapshot
+     population (under 50% overlap and not merely in-progress grading).
+     A live snapshot published under the same key while reconstructed
+     grades shadow it is the typical cause.
 
 Weeks that are reconstructed with no live snapshot are LEFT ALONE
 (backtest-only history is legitimate).  Weeks whose grades already match
@@ -95,6 +98,89 @@ def _run_reconstructed(detail) -> bool:
     return False
 
 
+OVERLAP_STALE_THRESHOLD = 0.5
+
+
+def decide_week(grade_scores, snap_scores, run_status, run_reconstructed,
+                newest_grade_at, published_at):
+    """Pure stale-grade decision for one (season, week, version) group.
+
+    ``grade_scores`` / ``snap_scores`` map player_id -> score (or None).
+    ``run_status`` is None when there is no run record. Returns
+    ``(decision, reason, details)``; ``decision`` is "delete" or "keep" and
+    ``details`` carries overlap stats for the human report.
+    """
+    grade_set = set(grade_scores)
+    snap_set = set(snap_scores)
+    overlap = [p for p in grade_scores if p in snap_scores]
+    mismatched = [
+        p for p in overlap
+        if grade_scores[p] is not None and snap_scores[p] is not None
+        and abs(grade_scores[p] - snap_scores[p]) > 0.001
+    ]
+    denom = max(len(grade_set), len(snap_set))
+    overlap_ratio = (len(overlap) / denom) if denom else 1.0
+    # Grades drawn from a different player population than the published
+    # snapshot. The subset guard excludes in-progress grading (every graded
+    # player still inside the snapshot set) from this signal.
+    populations_differ = (
+        bool(snap_set)
+        and overlap_ratio < OVERLAP_STALE_THRESHOLD
+        and not grade_set.issubset(snap_set)
+    )
+    details = {
+        "overlapping_players": len(overlap),
+        "overlap_ratio": round(overlap_ratio, 4),
+        "mismatched_players": len(mismatched),
+        "populations_differ": populations_differ,
+    }
+
+    run_live = run_status in ("completed", "success") and not run_reconstructed
+
+    decision = "keep"
+    reason = "grades match the published snapshot"
+    if run_status is None:
+        reason = "no run record; keeping (nothing to re-grade from)"
+    elif run_reconstructed:
+        if snap_set and (mismatched or populations_differ):
+            decision = "delete"
+            if populations_differ and not mismatched:
+                reason = (
+                    "run is flagged reconstructed and the graded player set "
+                    "barely overlaps the published snapshot "
+                    f"({overlap_ratio:.0%} overlap): reconstructed grades are "
+                    "shadowing a different (live) snapshot population"
+                )
+            else:
+                reason = (
+                    "run is flagged reconstructed but the published snapshot "
+                    "scores differ from the grade scores: reconstructed grades "
+                    "are shadowing a live snapshot"
+                )
+        elif snap_set:
+            reason = "reconstructed week with no live snapshot; keeping backtest history"
+        else:
+            reason = "reconstructed week with no snapshot rows; keeping"
+    elif run_live:
+        if not snap_set:
+            reason = "live run but no snapshot rows; keeping (nothing to re-grade from)"
+        elif (newest_grade_at is not None and published_at is not None
+              and newest_grade_at < published_at):
+            if mismatched or populations_differ:
+                decision = "delete"
+                reason = (
+                    "grades were written before the live snapshot published "
+                    "and do not match it: stale reconstructed grades shadowing live data"
+                )
+            else:
+                reason = "grades predate the live publish but scores still match; keeping"
+        else:
+            reason = "grades were written after the live snapshot published; keeping"
+    else:
+        reason = "run is not a completed live run; keeping"
+    return decision, reason, details
+
+
 def analyze(season: int | None = None, week: int | None = None) -> list[dict]:
     """Return one report dict per (season, as_of_week, scoring_version) with grades."""
     with get_conn() as conn:
@@ -135,7 +221,7 @@ def analyze(season: int | None = None, week: int | None = None) -> list[dict]:
             ).fetchone()
 
             snaps = conn.execute(
-                f"SELECT player_id, breakout_score "
+                f"SELECT player_id, player_name, breakout_score "
                 f"FROM {SCORES_TABLE} "
                 f"WHERE season = %s AND as_of_week = %s AND scoring_version = %s",
                 (s, w, ver),
@@ -143,61 +229,35 @@ def analyze(season: int | None = None, week: int | None = None) -> list[dict]:
 
             grade_scores = {str(r["player_id"]): _f(r["breakout_score"]) for r in grades}
             snap_scores = {str(r["player_id"]): _f(r["breakout_score"]) for r in snaps}
-            overlap = [p for p in grade_scores if p in snap_scores]
-            mismatched = [
-                p for p in overlap
-                if grade_scores[p] is not None and snap_scores[p] is not None
-                and abs(grade_scores[p] - snap_scores[p]) > 0.001
-            ]
 
             graded_ats = [r["graded_at"] for r in grades if r["graded_at"] is not None]
             newest_grade = max(graded_ats) if graded_ats else None
-
+            run_status = run.get("status") if run else None
             run_recon = bool(run) and _run_reconstructed(run.get("detail"))
-            run_live = bool(run) and (run.get("status") in ("completed", "success")) and not run_recon
             published_at = run.get("calculated_at") if run else None
 
-            decision = "keep"
-            reason = "grades match the published snapshot"
-            if not run:
-                reason = "no run record; keeping (nothing to re-grade from)"
-            elif run_recon:
-                if snaps and mismatched:
-                    decision = "delete"
-                    reason = (
-                        "run is flagged reconstructed but the published snapshot "
-                        "scores differ from the grade scores: reconstructed grades "
-                        "are shadowing a live snapshot"
-                    )
-                elif snaps:
-                    reason = "reconstructed week with no live snapshot; keeping backtest history"
-                else:
-                    reason = "reconstructed week with no snapshot rows; keeping"
-            elif run_live:
-                if not snaps:
-                    reason = "live run but no snapshot rows; keeping (nothing to re-grade from)"
-                elif newest_grade is not None and published_at is not None and newest_grade < published_at:
-                    if mismatched or not overlap:
-                        decision = "delete"
-                        reason = (
-                            "grades were written before the live snapshot published "
-                            "and do not match it: stale reconstructed grades shadowing live data"
-                        )
-                    else:
-                        reason = "grades predate the live publish but scores still match; keeping"
-                else:
-                    reason = "grades were written after the live snapshot published; keeping"
+            decision, reason, details = decide_week(
+                grade_scores, snap_scores, run_status, run_recon,
+                newest_grade, published_at,
+            )
 
-            # Sample a few mismatches for the report (names help Kaedon eyeball it).
+            # Samples for the report (names help Kaedon eyeball it).
             names = {str(r["player_id"]): r.get("player_name") for r in grades}
+            snap_names = {str(r["player_id"]): r.get("player_name") for r in snaps}
+            grade_set = set(grade_scores)
+            snap_set = set(snap_scores)
             sample_mm = [
                 {
                     "player": names.get(p, p),
                     "grade_score": grade_scores[p],
                     "snapshot_score": snap_scores[p],
                 }
-                for p in mismatched[:5]
-            ]
+                for p in sorted(grade_set & snap_set)
+                if (grade_scores[p] is not None and snap_scores[p] is not None
+                    and abs(grade_scores[p] - snap_scores[p]) > 0.001)
+            ][:5]
+            grade_only_sample = [names.get(p, p) for p in sorted(grade_set - snap_set)[:5]]
+            snap_only_sample = [snap_names.get(p, p) for p in sorted(snap_set - grade_set)[:5]]
 
             reports.append(
                 {
@@ -206,13 +266,17 @@ def analyze(season: int | None = None, week: int | None = None) -> list[dict]:
                     "scoring_version": ver,
                     "grade_rows": len(grades),
                     "snapshot_rows": len(snaps),
-                    "run_status": run.get("status") if run else None,
+                    "run_status": run_status,
                     "run_reconstructed": run_recon,
                     "run_published_at": _iso(published_at),
                     "newest_grade_at": _iso(newest_grade),
-                    "overlapping_players": len(overlap),
-                    "mismatched_players": len(mismatched),
+                    "overlapping_players": details["overlapping_players"],
+                    "overlap_ratio": details["overlap_ratio"],
+                    "mismatched_players": details["mismatched_players"],
+                    "populations_differ": details["populations_differ"],
                     "mismatch_sample": sample_mm,
+                    "grade_only_sample": grade_only_sample,
+                    "snapshot_only_sample": snap_only_sample,
                     "decision": decision,
                     "reason": reason,
                 }
@@ -250,6 +314,11 @@ def _print_human(reports: list[dict], deleted: dict[tuple, int] | None) -> None:
             + (" reconstructed" if r["run_reconstructed"] else "")
         )
         print(f"       {r['reason']}")
+        if r.get("overlap_ratio") is not None:
+            print(
+                f"       player overlap: {r['overlapping_players']} "
+                f"({r['overlap_ratio']:.0%} of larger set)"
+            )
         if r["mismatch_sample"]:
             for m in r["mismatch_sample"]:
                 print(
@@ -259,6 +328,11 @@ def _print_human(reports: list[dict], deleted: dict[tuple, int] | None) -> None:
             extra = r["mismatched_players"] - len(r["mismatch_sample"])
             if extra > 0:
                 print(f"       ... and {extra} more mismatched player(s)")
+        if r.get("populations_differ"):
+            if r.get("grade_only_sample"):
+                print(f"       only in grades: {', '.join(r['grade_only_sample'])}")
+            if r.get("snapshot_only_sample"):
+                print(f"       only in snapshot: {', '.join(r['snapshot_only_sample'])}")
         if deleted is not None and key in deleted:
             print(f"       deleted {deleted[key]} row(s)")
     print()
