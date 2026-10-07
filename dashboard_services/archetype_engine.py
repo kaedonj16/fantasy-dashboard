@@ -1503,6 +1503,70 @@ def _compute_lineup_score(
     return _optimal_lineup_value(pids, values_by_id, league_type, use_redraft=True)
 
 
+_FLEX_SLOT_TOKENS = frozenset({"FLEX", "WRRB", "WRRB_TE", "WR_TE", "RB_WR"})
+
+
+def _viewer_slot_need_weights(
+    viewer_players: List[str],
+    values_by_id: Dict[str, Any],
+    roster_positions: Optional[List[str]],
+) -> Dict[str, float]:
+    """Per-position need weights for RB/WR/TE from the viewer's weakest starters.
+
+    A distribute return should plug the viewer's thinnest starting slots, not
+    just land near the stud's value. For each of RB/WR/TE this finds the weakest
+    player currently filling a starting slot (positional slots first, then
+    FLEX-type slots assigned to the best remaining flex-eligible players) and
+    normalizes across the three positions: the weakest position scores ~1.0,
+    the strongest 0.0, and a balanced roster scores 0.0 everywhere. QB/K/DEF
+    are excluded (distribute already saturates QB in 1QB leagues).
+    """
+    pos_slots: Dict[str, int] = {"RB": 0, "WR": 0, "TE": 0}
+    flex_slots = 0
+    for slot in roster_positions or []:
+        s = str(slot or "").upper()
+        if s in pos_slots:
+            pos_slots[s] += 1
+        elif s in _FLEX_SLOT_TOKENS:
+            flex_slots += 1
+
+    by_pos: Dict[str, List[Tuple[str, float]]] = {}
+    for pid in viewer_players:
+        v = values_by_id.get(pid, {})
+        p = str(v.get("position") or "").upper()
+        if p in pos_slots:
+            by_pos.setdefault(p, []).append((pid, _f(v.get("value"))))
+    for lst in by_pos.values():
+        lst.sort(key=lambda x: -x[1])
+
+    # Weakest starter per position: value at index (slots - 1), or the weakest
+    # overall when she can't fill the slots. Flex-assigned players count toward
+    # their own position (min of positional and flex weakest).
+    weakest: Dict[str, float] = {}
+    remaining: List[Tuple[str, float, str]] = []
+    for p in ("RB", "WR", "TE"):
+        lst = by_pos.get(p, [])
+        n = pos_slots[p]
+        starters = lst[:n] if n else []
+        if starters:
+            weakest[p] = starters[-1][1]
+        elif lst:
+            weakest[p] = lst[-1][1]
+        else:
+            weakest[p] = 0.0
+        remaining.extend((pid, val, p) for pid, val in lst[len(starters):])
+    remaining.sort(key=lambda x: -x[1])
+    for pid, val, p in remaining[:flex_slots] if flex_slots else []:
+        if val < weakest[p]:
+            weakest[p] = val
+
+    mx = max(weakest.values())
+    mn = min(weakest.values())
+    if mx <= mn:
+        return {p: 0.0 for p in weakest}
+    return {p: (mx - v) / (mx - mn + 1.0) for p, v in weakest.items()}
+
+
 def _build_distribute(
     viewer_players: List[str],
     values_by_id: Dict[str, Any],
@@ -1565,6 +1629,11 @@ def _build_distribute(
     results: List[Dict[str, Any]] = []
     used_owners: set = set()
 
+    # Positional need weights from the viewer's weakest starters (RB/WR/TE).
+    # Used to steer each owner's return combo toward her thinnest slots instead
+    # of picking purely on value closeness.
+    need_w = _viewer_slot_need_weights(viewer_players, values_by_id, roster_positions)
+
     for stud in studs:
         sval  = _f(values_by_id[stud].get("value"))
         sname = values_by_id[stud].get("name", "")
@@ -1585,8 +1654,8 @@ def _build_distribute(
         # (that's the point of distributing a stud), but fall back to any combo
         # in the value band when no owner can offer a startable package - a
         # shallow league shouldn't leave the stud with no distribution at all.
-        def _collect_owner_bests(starters_only: bool) -> List[Tuple[str, List[Dict], float]]:
-            obs: List[Tuple[str, List[Dict], float]] = []
+        def _collect_owner_bests(starters_only: bool) -> List[Tuple[str, List[Dict], float, float]]:
+            obs: List[Tuple[str, List[Dict], float, float]] = []
             for owner, pool in targets_by_owner.items():
                 if owner in used_owners:
                     continue
@@ -1603,7 +1672,7 @@ def _build_distribute(
                     key=lambda x: -x.get("value", 0),
                 )[:2]
                 cand = players + owner_picks
-                local_best: Optional[Tuple[str, List[Dict], float]] = None
+                local_best: Optional[Tuple[str, List[Dict], float, float]] = None
                 for n in (2, 3):
                     for combo in combinations(cand, n):
                         if not any(not c.get("is_pick") for c in combo):
@@ -1611,8 +1680,18 @@ def _build_distribute(
                         s = sum(c["value"] for c in combo)
                         if lo <= s <= hi:
                             diff = abs(s - sval)
-                            if local_best is None or diff < local_best[2]:
-                                local_best = (owner, list(combo), diff)
+                            # Need-aware pick: a combo at her weakest slots gets
+                            # up to a 30% discount against a combo at her
+                            # strengths, so need wins ties and near-ties without
+                            # overturning a clearly fairer deal. Picks carry no
+                            # positional need.
+                            _need_sum = sum(
+                                need_w.get(str(c.get("position") or "").upper(), 0.0)
+                                for c in combo if not c.get("is_pick")
+                            )
+                            adj = diff * (1 - 0.30 * min(1.0, _need_sum / 2.0))
+                            if local_best is None or adj < local_best[3]:
+                                local_best = (owner, list(combo), diff, adj)
                 if local_best:
                     obs.append(local_best)
             return obs
@@ -1646,18 +1725,18 @@ def _build_distribute(
 
         # Re-score each owner's best combo by lineup improvement, then by how many
         # of its starters plug a position the viewer is actually short at.
-        scored_bests: List[Tuple[str, List[Dict], float, float, int]] = []
-        for owner, combo, diff in owner_bests:
+        scored_bests: List[Tuple[str, List[Dict], float, float, float, int]] = []
+        for owner, combo, diff, adj in owner_bests:
             recv_ids_trial = [c["player_id"] for c in combo]
             lineup_gain = _lineup_score(dep_players + recv_ids_trial) - dep_lineup
             need_fill = sum(1 for c in combo
                             if str(c.get("position") or "").upper() in _deficit_pos and _is_starter_tier(c))
-            scored_bests.append((owner, combo, diff, lineup_gain, need_fill))
+            scored_bests.append((owner, combo, diff, adj, lineup_gain, need_fill))
         # Sort: lineup improvement, then needs filled, then value closeness.
-        scored_bests.sort(key=lambda x: (-x[3], -x[4], x[2]))
-        owner_bests = [(o, c, d) for o, c, d, _, _ in scored_bests]
+        scored_bests.sort(key=lambda x: (-x[4], -x[5], x[2]))
+        owner_bests = [(o, c, d, a) for o, c, d, a, _, _ in scored_bests]
 
-        for owner, combo, _ in owner_bests[:3]:
+        for owner, combo, _diff, _adj in owner_bests[:3]:
             used_owners.add(owner)
 
             recv_ids    = [c["player_id"] for c in combo]
@@ -1702,6 +1781,21 @@ def _build_distribute(
             if _n_pk:
                 _piece_desc += f" and {_n_pk} pick{'s' if _n_pk != 1 else ''}"
 
+            # Name the filled need when the need discount materially tipped the
+            # combo choice toward her thinnest slots.
+            _need_clause = ""
+            if _adj < _diff * 0.97:
+                _need_pos, _need_best = "", 0.0
+                for c in combo:
+                    if c.get("is_pick"):
+                        continue
+                    _cp = str(c.get("position") or "").upper()
+                    _w = need_w.get(_cp, 0.0)
+                    if _w > _need_best:
+                        _need_pos, _need_best = _cp, _w
+                if _need_pos:
+                    _need_clause = f" Fills your thinnest spot: {_need_pos}."
+
             results.append({
                 "player_id":      stud,
                 "name":           sname,
@@ -1712,7 +1806,7 @@ def _build_distribute(
                 "redraft_value":  round(_f(values_by_id[stud].get("redraft_value")), 1),
                 "pos_rank_label": values_by_id[stud].get("pos_rank_label", ""),
                 "why":            (f"Spread {sname}'s value into {_piece_desc} from {pname}. "
-                                   f"{ceiling_note.capitalize()}, filling multiple holes at once."),
+                                   f"{ceiling_note.capitalize()}, filling multiple holes at once.{_need_clause}"),
                 "fit_note":       _fit_note([{"position": spos}],
                                             owner_meta.get(owner, {}).get("need"), None, None),
                 "partner_team":   pname,
