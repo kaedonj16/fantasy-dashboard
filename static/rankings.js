@@ -861,8 +861,13 @@ function prRender() {
   } else {
     // Normal sort when no search query
     players.sort((a, b) => prSortCmp(a, b, sortBy));
-    // Cap the board at the top 500 players by value
-    if (players.length > 500) players.length = 500;
+    // Cap the board at the top 500 PLAYERS; picks are added back on top so the
+    // list is always 500 players + N picks.
+    const _picks = players.filter(p => p.position === 'PICK');
+    const _nonPicks = players.filter(p => p.position !== 'PICK');
+    if (_nonPicks.length > 500) _nonPicks.length = 500;
+    players = _nonPicks.concat(_picks);
+    players.sort((a, b) => prSortCmp(a, b, sortBy));
   }
 
   const list   = document.getElementById('prList');
