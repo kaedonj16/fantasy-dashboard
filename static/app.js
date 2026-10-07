@@ -18581,12 +18581,27 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
     };
     const fill1 = _barFill(v1, ranks1, counts1, bounds1);
     const fill2 = _barFill(v2, ranks2, counts2, bounds2);
-    const pct1 = fill1 != null ? Math.round(fill1)
-      : (v1 != null ? Math.min(100, Math.round((v1 / range) * 100)) : 0);
-    const pct2 = fill2 != null ? Math.round(fill2)
-      : (v2 != null ? Math.min(100, Math.round((v2 / range) * 100)) : 0);
+    // Kaedon: percentage metrics (Boom Rate, Bust Rate, Catch Rate, ...) fill
+    // the bar to their actual percentage. The bar COLOR still uses the
+    // rank-based fill so green keeps meaning "good" relative to peers.
+    const _pctLen = v => {
+      if (v == null || !spec || !(spec.pct || spec.pct_frac)) return null;
+      const raw = spec.pct_frac ? v * 100 : v;
+      return Math.max(0, Math.min(100, Math.round(raw)));
+    };
+    const pctLen1 = _pctLen(v1), pctLen2 = _pctLen(v2);
+    const pct1 = pctLen1 != null ? pctLen1
+      : (fill1 != null ? Math.round(fill1)
+      : (v1 != null ? Math.min(100, Math.round((v1 / range) * 100)) : 0));
+    const pct2 = pctLen2 != null ? pctLen2
+      : (fill2 != null ? Math.round(fill2)
+      : (v2 != null ? Math.min(100, Math.round((v2 / range) * 100)) : 0));
+    // Color driver: rank-based goodness (unchanged), so pct bars keep
+    // meaningful colors even though their lengths are raw percentages.
+    const colPct1 = fill1 != null ? Math.round(fill1) : pct1;
+    const colPct2 = fill2 != null ? Math.round(fill2) : pct2;
 
-    const isInverse = spec ? spec.lower_better : ['int_rate', 'drop_rate', 'uncatchable_tgt_rate', 'fumble_rate', 'pressure_to_sack_rate', 'sack_rate', 'pressure_rate_faced', 'stuffed_rate', 'turnover_worthy_rate'].includes(key);
+    const isInverse = spec ? spec.lower_better : ['int_rate', 'drop_rate', 'uncatchable_tgt_rate', 'fumble_rate', 'pressure_to_sack_rate', 'sack_rate', 'pressure_rate_faced', 'stuffed_rate', 'turnover_worthy_rate', 'bust_rate', 'fp_cv', 'fp_stddev'].includes(key);
 
     // barColor: when the bar is bounds-driven (isRankFill), the fill already
     // encodes "good = high" regardless of lower_better, so use the normal
@@ -18647,15 +18662,20 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
     // sub-line beneath the value rather than an inline pill badge.
     const rankSub = r => (r != null) ? `<div class="pm-comp-sub rank-badge">(#${r})</div>` : '';
 
+    // Winner arrow next to the stat name, pointing toward the winning side.
+    const winArrow = win1
+      ? '<span class="cmp-win-arrow cmp-win-left" aria-hidden="true"></span>'
+      : (win2 ? '<span class="cmp-win-arrow cmp-win-right" aria-hidden="true"></span>' : '');
+
     return `
       <div class="compare-metric-row${alt ? ' cmp-row-alt' : ''}">
         <div class="compare-metric-p1-val${winCls1}">${fmt(v1)}${rankSub(r1)}</div>
         <div class="compare-bar-left">
-          <div class="compare-bar-fill" style="width:${pct1}%;background:${barColor(pct1, v1, fill1 != null)};"></div>
+          <div class="compare-bar-fill" style="width:${pct1}%;background:${barColor(colPct1, v1, fill1 != null)};"></div>
         </div>
-        <div class="compare-metric-label"${(spec?.desc || _ADV_METRIC_DESCS[key]) ? ` data-def="${(spec?.desc || _ADV_METRIC_DESCS[key]).replace(/"/g, '&quot;')}" onclick="advShowMetricDef(event)" onmouseenter="advEnterMetricDef(event)" onmouseleave="advLeaveMetricDef(event)"` : ''}>${_label(key)}</div>
+        <div class="compare-metric-label"${(spec?.desc || _ADV_METRIC_DESCS[key]) ? ` data-def="${(spec?.desc || _ADV_METRIC_DESCS[key]).replace(/"/g, '&quot;')}" onclick="advShowMetricDef(event)" onmouseenter="advEnterMetricDef(event)" onmouseleave="advLeaveMetricDef(event)"` : ''}>${win1 ? winArrow : ''}<span>${_label(key)}</span>${win2 ? winArrow : ''}</div>
         <div class="compare-bar-right">
-          <div class="compare-bar-fill" style="width:${pct2}%;background:${barColor(pct2, v2, fill2 != null)};"></div>
+          <div class="compare-bar-fill" style="width:${pct2}%;background:${barColor(colPct2, v2, fill2 != null)};"></div>
         </div>
         <div class="compare-metric-p2-val${winCls2}">${fmt(v2)}${rankSub(r2)}</div>
       </div>
@@ -19797,7 +19817,16 @@ function _buildCompareOverviewTable(players) {
       const disp = fmt ? fmt(v) : (v == null || v === '' ? '&ndash;' : esc(v));
       return '<td class="cmp3-cell' + (isBest ? ' cmp3-best' : '') + '">' + disp + '</td>';
     }).join('');
-    return { html: '<tr data-cmp-row="' + (key || '') + '"><th class="cmp3-rowlbl">' + esc(label) + '</th>' + cells + '</tr>', winner: winner };
+    // Winner arrow in the row label for 2-player compares: green triangle
+    // pointing toward the winning side (left player / right player).
+    // 3-player keeps just the green cell highlight (arrow is ambiguous there).
+    let arrow = '';
+    if (n === 2 && winner >= 0) {
+      arrow = winner === 0
+        ? ' <span class="cmp-win-arrow cmp-win-left" aria-hidden="true"></span>'
+        : ' <span class="cmp-win-arrow cmp-win-right" aria-hidden="true"></span>';
+    }
+    return { html: '<tr data-cmp-row="' + (key || '') + '"><th class="cmp3-rowlbl">' + esc(label) + arrow + '</th>' + cells + '</tr>', winner: winner };
   }
 
   const isSf = (typeof _cmpIsSf === 'function') ? _cmpIsSf() : false;
