@@ -66,13 +66,13 @@ def _css_rule(sel: str) -> str:
 
 
 def test_sos_name_ellipsis_lives_on_inner_text():
-    """YOU pill must not eat the last pixels of a long team name."""
+    """Long team names wrap to two lines instead of truncating with ellipsis."""
     name = re.search(r"\.rl-nm-text\s*\{([^}]+)\}", CSS)
     assert name, "missing .rl-nm-text rule"
     body = name.group(1)
-    assert "ellipsis" in body
+    assert "-webkit-line-clamp: 2" in body
     assert "overflow: hidden" in body
-    assert "nowrap" in body
+    assert "ellipsis" not in body
 
 
 def test_sos_bars_use_spread_not_max_only():
