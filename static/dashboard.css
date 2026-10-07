@@ -29437,28 +29437,6 @@ tr.team-clickable {
     margin-left: auto;
 }
 
-.compare-suggest-sim {
-    display: contents;
-}
-
-.compare-trend-label {
-    font-size: 11px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: .06em;
-    color: var(--text-muted);
-    margin: 10px 4px 2px;
-    display: block;
-    width: 100%;
-}
-
-.compare-trend-n {
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--text-muted);
-    margin-left: 6px;
-}
-
 .compare-suggest-chip {
     font-size: 13px;
     font-weight: 700;
@@ -45593,12 +45571,13 @@ table.rz-bs-table thead th:first-child {
 .rl-row .rk.t3 { background: #b45309; color: #fff; }
 .rl-row .nm { flex: 1; font-weight: 800; font-size: 14.5px; min-width: 0; color: var(--text); }
 .rl-nm-text {
-    display: inline-block;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
     max-width: 100%;
-    white-space: nowrap;
     overflow: hidden;
-    text-overflow: ellipsis;
     vertical-align: bottom;
+    line-height: 1.3;
 }
 .rl-you {
     display: inline-block;
@@ -45624,7 +45603,7 @@ table.rz-bs-table thead th:first-child {
 }
 .pill-pos { background: color-mix(in srgb, var(--win) 16%, transparent); color: var(--win); }
 .pill-neg { background: color-mix(in srgb, var(--loss) 14%, transparent); color: var(--loss); }
-.rl-row .vs.sos-vs { display: flex; gap: 8px; align-items: center; justify-content: flex-end; }
+.rl-row .vs.sos-vs { display: flex; gap: 8px; align-items: center; justify-content: flex-end; width: auto; flex: none; }
 .rl-row .vs.sos-vs b { font-size: 14px; min-width: 52px; text-align: right; }
 .vbar {
     height: 8px;
