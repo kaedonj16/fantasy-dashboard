@@ -18051,7 +18051,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
 
       function renderBoTrackRecord(data) {{
         boTrackData = data;
-        var html = '<div class="bo-rail-title">Track Record</div>';
+        var html = '<div class="bo-rail-title">Track Record</div><div style="font-size:11px;color:var(--text-muted);margin:-8px 0 12px;">All weeks</div>';
         html += '<div class="bo-tr-tabs">'
           + '<button class="bo-tr-tab' + (boTrackTab === 'weekly' ? ' active' : '') + '" onclick="boSwitchTrackTab(\\'weekly\\')">Weekly</button>'
           + '<button class="bo-tr-tab' + (boTrackTab === 'preseason' ? ' active' : '') + '" onclick="boSwitchTrackTab(\\'preseason\\')">Preseason</button></div>';
@@ -18095,7 +18095,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
         // Biggest hits
         var hits = data.hits || [];
         if (hits.length) {{
-          html += '<div class="bo-tr-hits-h hits">Biggest Hits</div><div style="font-size:11px;color:var(--text-muted);margin:-6px 0 8px;">PPG vs projection</div>';
+          html += '<div class="bo-tr-hits-h hits">Biggest Hits</div><div style="font-size:11px;color:var(--text-muted);margin:-6px 0 8px;">PPG over expected</div>';
           hits.slice(0, 3).forEach(function (r) {{
             var delta = r.ppg_delta != null ? (r.ppg_delta >= 0 ? '+' : '') + Number(r.ppg_delta).toFixed(1) : 'n/a';
             html += '<div class="bo-rail-row"><div><div class="bo-rail-name">' + _boPlayerLink(r.player_name, r.player_id)
@@ -18107,7 +18107,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
         // Biggest misses
         var misses = data.misses || [];
         if (misses.length) {{
-          html += '<div class="bo-tr-hits-h misses">Biggest Misses</div><div style="font-size:11px;color:var(--text-muted);margin:-6px 0 8px;">PPG vs projection</div>';
+          html += '<div class="bo-tr-hits-h misses">Biggest Misses</div><div style="font-size:11px;color:var(--text-muted);margin:-6px 0 8px;">PPG over expected</div>';
           misses.slice(0, 3).forEach(function (r) {{
             var delta = r.ppg_delta != null ? (r.ppg_delta >= 0 ? '+' : '') + Number(r.ppg_delta).toFixed(1) : 'n/a';
             html += '<div class="bo-rail-row"><div><div class="bo-rail-name">' + _boPlayerLink(r.player_name, r.player_id)

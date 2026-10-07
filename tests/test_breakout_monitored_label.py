@@ -136,9 +136,9 @@ def test_summarize_grades_buckets_stored_sub_threshold_watchlist():
     assert groups["watchlist"]["graded"] == 12
     assert groups["watchlist"]["hit_rate"] == pytest.approx(4 / 12, abs=1e-4)
     assert groups["emerging_breakout"]["graded"] == 12
-    # Bucketing moves rows between groups; it never changes the pool.
-    assert summary["overall"]["graded"] == 36
-    assert summary["overall"]["hit"] == 20
+    # Overall excludes watchlist/monitored (never surfaced): 12, not 36.
+    assert summary["overall"]["graded"] == 12
+    assert summary["overall"]["hit"] == 10
 
 
 def test_calibration_bands_agree_with_grader_bucketing():

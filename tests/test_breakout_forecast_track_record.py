@@ -277,7 +277,8 @@ def test_weekly_track_record_rates_and_floor(monkeypatch):
     watch = groups["watchlist"]
     assert watch["graded"] == 4
     assert watch["hit_rate"] is None
-    assert record["overall"]["graded"] == 16
+    # Overall excludes watchlist/monitored (never surfaced): 12, not 16
+    assert record["overall"]["graded"] == 12
 
 
 def test_weekly_track_record_biggest_hits_and_misses(monkeypatch):
@@ -679,7 +680,7 @@ def test_weekly_track_record_pools_reconstructed_grades(monkeypatch):
     assert "backtest" not in record
     # Live (12 graded) and reconstructed (15 graded) calls sum into one
     # overall, and the 10-graded floor applies to the pooled groups.
-    assert record["overall"]["graded"] == 27
+    assert record["overall"]["graded"] == 24  # excludes watchlist/monitored
     assert record["overall"]["hit"] == 19
     groups = {g["classification"]: g for g in record["groups"]}
     assert groups["emerging_breakout"]["graded"] == 24
@@ -703,7 +704,7 @@ def test_weekly_track_record_without_reconstructions(monkeypatch):
     record = forecasts.weekly_track_record(2026)
 
     assert "backtest" not in record
-    assert record["overall"]["graded"] == 16
+    assert record["overall"]["graded"] == 12  # excludes watchlist/monitored
     assert all(h["reconstructed"] is False for h in record["hits"])
 
 
@@ -1294,7 +1295,7 @@ def test_weekly_track_record_score_and_confidence_bands(monkeypatch):
                         lambda season: {1, 2})
     record = forecasts.weekly_track_record(2026)
 
-    assert record["overall"]["graded"] == 21
+    assert record["overall"]["graded"] == 16  # excludes watchlist/monitored
     score = {b["label"]: b for b in record["score_bands"]}
     # Fixed band order; the empty Under 18 band is omitted like a
     # classification with no calls.
