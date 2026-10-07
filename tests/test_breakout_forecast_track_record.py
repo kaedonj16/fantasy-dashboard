@@ -672,7 +672,7 @@ def _split_rows():
 def test_weekly_track_record_pools_reconstructed_grades(monkeypatch):
     monkeypatch.setattr(forecasts, "load_weekly_grade_rows",
                         lambda season: _split_rows())
-    monkeypatch.setattr(forecasts, "load_reconstructed_weeks",
+    monkeypatch.setattr(forecasts, "load_serving_reconstructed_weeks",
                         lambda season: {1, 2})
     record = forecasts.weekly_track_record(2026)
 
@@ -699,7 +699,7 @@ def test_weekly_track_record_pools_reconstructed_grades(monkeypatch):
 def test_weekly_track_record_without_reconstructions(monkeypatch):
     monkeypatch.setattr(forecasts, "load_weekly_grade_rows",
                         lambda season: _track_record_rows())
-    monkeypatch.setattr(forecasts, "load_reconstructed_weeks",
+    monkeypatch.setattr(forecasts, "load_serving_reconstructed_weeks",
                         lambda season: set())
     record = forecasts.weekly_track_record(2026)
 
@@ -1291,7 +1291,7 @@ def _band_rows():
 def test_weekly_track_record_score_and_confidence_bands(monkeypatch):
     monkeypatch.setattr(forecasts, "load_weekly_grade_rows",
                         lambda season: _band_rows())
-    monkeypatch.setattr(forecasts, "load_reconstructed_weeks",
+    monkeypatch.setattr(forecasts, "load_serving_reconstructed_weeks",
                         lambda season: {1, 2})
     record = forecasts.weekly_track_record(2026)
 

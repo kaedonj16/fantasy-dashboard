@@ -79,6 +79,7 @@ from dashboard_services.db import get_conn
 from data_building.breakout_engine.weekly_breakout import display_classification
 from data_building.breakout_engine.weekly_store import (
     WEEKLY_SCORES_TABLE,
+    get_serving_run,
     init_weekly_breakout_db,
 )
 
@@ -837,13 +838,33 @@ def summarize_grades(
 # =============================================================================
 
 def load_calls(season: int) -> List[Dict[str, Any]]:
-    """Every persisted weekly call for a season (one row per call)."""
+    """Every persisted weekly call for a season (one row per call).
+
+    Only calls from the serving run of each week are loaded: the same
+    run the board displays via ``get_serving_run`` (non-reconstructed
+    runs win over reconstructed ones). This keeps the grader aligned
+    with what was actually surfaced.
+    """
     init_weekly_breakout_db()
     with get_conn() as conn:
-        rows = conn.execute(
-            f"SELECT * FROM {WEEKLY_SCORES_TABLE} WHERE season = %s "
-            f"ORDER BY as_of_week, player_id",
+        weeks = conn.execute(
+            f"SELECT DISTINCT as_of_week FROM {WEEKLY_SCORES_TABLE} "
+            f"WHERE season = %s ORDER BY as_of_week",
             (int(season),),
+        ).fetchall()
+        serving_run_ids = []
+        for w in weeks:
+            run = get_serving_run(int(season), int(w["as_of_week"]))
+            if run and run.get("id") is not None:
+                serving_run_ids.append(int(run["id"]))
+        if not serving_run_ids:
+            return []
+        placeholders = ", ".join(["%s"] * len(serving_run_ids))
+        rows = conn.execute(
+            f"SELECT * FROM {WEEKLY_SCORES_TABLE} "
+            f"WHERE run_id IN ({placeholders}) "
+            f"ORDER BY as_of_week, player_id",
+            tuple(serving_run_ids),
         ).fetchall()
     return [dict(r) for r in rows]
 
