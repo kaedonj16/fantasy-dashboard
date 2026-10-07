@@ -32040,6 +32040,7 @@ def api_trade_database():
                 "trade_id": r["transaction_id"],
                 "date": trade_date,
                 "season": r["season"],
+                "week": r["week"],
                 "scoring_type": r["scoring_type"],
                 "is_superflex": r["is_superflex"],
                 "num_teams": r["num_teams"],
