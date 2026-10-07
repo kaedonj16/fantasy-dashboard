@@ -98,13 +98,8 @@ def build_trade_calculator_body(
     analyze_btn_disabled = 'disabled' if is_guest else ''
     analyze_btn_label = 'Connect League to Analyze' if is_guest else 'Analyze Trade'
 
-    team_select_block = '' if is_guest else """
-                <div class="otc-summary-team-select">
-                  <select id="teamSelect" class="otc-team-select-dropdown" required>
-                    <option value="">Select your team...</option>
-                  </select>
-                </div>
-    """
+    # Team dropdown removed per Kaedon (redundant - viewer team known from context).
+    team_select_block = '' 
 
     # Roster filter (logged-in only): restrict each side to that team's players.
     # Side A locks to the viewer's team; Side B is chosen here or auto-binds to the

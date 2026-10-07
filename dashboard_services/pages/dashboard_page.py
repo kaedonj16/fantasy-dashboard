@@ -633,6 +633,14 @@ def build_dashboard_body(ctx: dict) -> str:
       </aside>
 
       <main class="os-main-col">
+        <nav class="os-jump-nav" aria-label="Jump to section">
+          <button type="button" class="active" data-jump="os-jump-actions">Actions</button>
+          {('<button type="button" data-jump="os-jump-matchup">Matchups</button>' if _show_matchup_preview else '')}
+          <button type="button" data-jump="os-jump-report">Report</button>
+          <button type="button" data-jump="os-jump-standings">Standings</button>
+          <button type="button" data-jump="os-jump-teams">{teams_tab_label}</button>
+        </nav>
+
         <section class="os-hero-card">
           <div class="os-hero-top">
             <div>
@@ -652,14 +660,6 @@ def build_dashboard_body(ctx: dict) -> str:
         {_bb_outlook_html}
 
         <div id="sinceLastVisitCard" class="slv-wrap" data-slv-init="1"></div>
-
-        <nav class="os-jump-nav" aria-label="Jump to section">
-          <button type="button" class="active" data-jump="os-jump-actions">Actions</button>
-          {('<button type="button" data-jump="os-jump-matchup">Matchups</button>' if _show_matchup_preview else '')}
-          <button type="button" data-jump="os-jump-report">Report</button>
-          <button type="button" data-jump="os-jump-standings">Standings</button>
-          <button type="button" data-jump="os-jump-teams">{teams_tab_label}</button>
-        </nav>
 
         <div id="os-jump-matchup" class="os-tab-panel"{'' if _show_matchup_preview else ' hidden'}>
           {matchup_html}

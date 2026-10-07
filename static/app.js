@@ -10859,7 +10859,7 @@ window.initTradePage = function initTradePage(root = document) {
       ? "a"
       : (root.querySelector('input[name="viewerSide"]:checked')?.value || "a");
     const teamSelector = root.querySelector("#teamSelect");
-    const selectedTeamRosterId = teamSelector?.value || "";
+    const selectedTeamRosterId = teamSelector?.value || getCurrentRosterId() || "";
     const selectedTeamName =
       teamSelector?.options[teamSelector?.selectedIndex]?.text || "";
 
@@ -11562,26 +11562,6 @@ window.initTradePage = function initTradePage(root = document) {
     if (isGuest) return;
 
     bindOnce(btn, "clearTradeBtn", "click", () => {
-      const teamSelector = root.querySelector("#teamSelect");
-      const teamSelectWrap = root.querySelector(".otc-summary-team-select");
-
-      // Check if team is selected
-      if (!teamSelector?.value) {
-        // Shake the dropdown to indicate it needs to be filled
-        if (teamSelectWrap) {
-          teamSelectWrap.classList.add("shake");
-          // Remove shake class after animation completes
-          setTimeout(() => {
-            teamSelectWrap.classList.remove("shake");
-          }, 500);
-        }
-        // Focus the dropdown
-        if (teamSelector) {
-          teamSelector.focus();
-        }
-        return;
-      }
-
       analyzeTrade();
 
       // Scroll to BR Trade Analyst section after triggering analysis
