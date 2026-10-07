@@ -95,9 +95,8 @@ def test_rookie_names_dim():
 
 
 def test_compare_modal_names_dim():
-    src = _read(_JS_PATH)
-    assert ".cmp3-head:hover .cmp3-name{opacity:.72;}" in src
-    assert ".cmp3-head:hover .cmp3-name{text-decoration:underline;}" not in src
+    css = _read(_CSS_PATH)
+    _assert_dim(_rule_body(css, ".cmp3-head:hover .cmp3-name"), ".cmp3-head:hover .cmp3-name")
 
 
 def test_portfolio_movers_dim_name_not_row():

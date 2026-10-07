@@ -1758,7 +1758,7 @@ input[type="search"] {
 
 .compare-features {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(3, 1fr);
     gap: 10px;
 }
 
@@ -1807,6 +1807,35 @@ input[type="search"] {
 .compare-chip-pos.pos-TE { background: #8b5cf6; }
 
 .compare-chip-vs { font-size: 11px; font-weight: 700; color: var(--text-muted); }
+
+/* "Trending in real trades" divider: seeded by JS into the popular-matchups
+   grid, so it must span the full row and read as a section heading. */
+.compare-trend-label {
+    grid-column: 1 / -1;
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--text-muted);
+    margin: 14px 0 2px;
+}
+
+.compare-trend-n { margin-left: auto; flex-shrink: 0; font-size: 12px; font-weight: 600; color: var(--text-muted); }
+
+/* Compare result table (2 or 3 players): players as columns, best-in-row
+   highlighted. Mirrors the dashboard.css .cmp3-* rules so the guest shell
+   renders the result table before the full stylesheet lazy-loads. */
+.cmp3-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.cmp3-table { width: 100%; border-collapse: collapse; min-width: 360px; }
+.cmp3-col { text-align: center; padding: 4px 8px 12px; vertical-align: bottom; width: 26%; }
+.cmp3-head { display: flex; flex-direction: column; align-items: center; gap: 5px; background: none; border: none; padding: 0; width: 100%; cursor: pointer; font-family: inherit; }
+.cmp3-hs { width: 52px; height: 52px; border-radius: 50%; object-fit: cover; }
+.cmp3-hs-blank { display: inline-block; }
+.cmp3-name { font-weight: 800; font-size: 14px; color: var(--text); line-height: 1.15; text-align: center; }
+.cmp3-accent { width: 26px; height: 3px; border-radius: 2px; }
+.cmp3-meta { font-size: 11px; color: var(--muted); text-align: center; }
+.cmp3-rowlbl { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 700; padding: 10px; white-space: nowrap; }
+.cmp3-cell { text-align: center; padding: 10px 8px; font-weight: 700; font-size: 15px; border-top: 1px solid var(--border); color: var(--text); }
 
 @media (max-width: 700px) {
     .compare-pickers { grid-template-columns: 1fr; }

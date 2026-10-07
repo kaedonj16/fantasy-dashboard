@@ -347,10 +347,22 @@ def api_compare_trending():
     return jsonify({"players": players})
 
 
-def build_compare_page_body(popular_html: str = "") -> str:
+def build_compare_page_body(popular_html: str = "", show_connect_cta: bool = True) -> str:
     """Shell for the standalone compare page. Client-driven: static/app.js's
     initComparePage wires the two pickers, reads any ?p1=&p2= deep link, and
-    renders the comparison inline via renderCompareInline."""
+    renders the comparison inline via renderCompareInline.
+
+    show_connect_cta: the "Connect your league" banner is only for logged-out
+    visitors. Signed-in managers (Google or Sleeper) already have league
+    context, so showing it to them reads as a broken gate.
+    """
+    connect_cta = ""
+    if show_connect_cta:
+        connect_cta = """
+          <div class="static-section" style="max-width:860px;margin:24px auto 0;text-align:center;">
+            <a href="/auth/login" style="display:inline-block;padding:12px 28px;border-radius:8px;background:var(--accent);color:#fff;font-size:15px;font-weight:700;text-decoration:none;">Connect your league to compare your players</a>
+            <p style="font-size:12px;color:var(--text-muted);margin-top:8px;">Free for your first league</p>
+          </div>"""
     return f"""
     <div class="page-layout" data-page="compare">
       <main class="page-main">
@@ -413,10 +425,7 @@ def build_compare_page_body(popular_html: str = "") -> str:
             </div>
           </div>
           <div id="comparePageResult" class="compare-page-result"></div>
-          <div class="static-section" style="max-width:860px;margin:24px auto 0;text-align:center;">
-            <a href="/auth/login" style="display:inline-block;padding:12px 28px;border-radius:8px;background:var(--accent);color:#fff;font-size:15px;font-weight:700;text-decoration:none;">Connect your league to compare your players</a>
-            <p style="font-size:12px;color:var(--text-muted);margin-top:8px;">Free for your first league</p>
-          </div>
+          {connect_cta}
         </div>
       </main>
     </div>
@@ -441,7 +450,13 @@ def page_compare(platform: str | None = None, season: int | None = None,
         title = "Compare Players | BR Fantasy"
         desc = ("Put any two dynasty fantasy football players side by side: trade value, "
                 "advanced metrics, and weekly usage.")
-    body = build_compare_page_body(_compare_popular_matchups())
+    body = build_compare_page_body(
+        _compare_popular_matchups(),
+        # The connect CTA is for logged-out visitors only. Google-linked
+        # managers carry account_id with no Sleeper identity, so gating on the
+        # Sleeper username alone wrongly showed it to them.
+        show_connect_cta=not (session.get("account_id") or session.get("viewer_username")),
+    )
     if league_id and platform and season:
         return render_page(
             title, league_id, "compare", body, platform, season,

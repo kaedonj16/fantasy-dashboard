@@ -155,6 +155,13 @@ def test_start_sit_table_row_labels_sticky():
 
 
 def test_cmp3_table_row_labels_sticky():
-    assert '.cmp3-table th.cmp3-rowlbl{position:sticky;left:0' in APP_JS
-    assert '.cmp3-table thead th.cmp3-rowlbl{z-index:3;}' in APP_JS
+    # #2380 relocated these rules from the inline <style> block in app.js
+    # into dashboard.css; the contract is that the sticky rules still ship.
+    assert ".cmp3-table th.cmp3-rowlbl {" in DASHBOARD_CSS
+    body = DASHBOARD_CSS.split(".cmp3-table th.cmp3-rowlbl {")[1].split("}")[0]
+    assert "position: sticky" in body
+    assert "left: 0" in body
+    assert ".cmp3-table thead th.cmp3-rowlbl {" in DASHBOARD_CSS
+    thead = DASHBOARD_CSS.split(".cmp3-table thead th.cmp3-rowlbl {")[1].split("}")[0]
+    assert "z-index: 3" in thead
     assert '<th class="cmp3-rowlbl">' in APP_JS
