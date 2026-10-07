@@ -13318,7 +13318,6 @@ a.signed-home-league:hover {
 
 .home-hero {
     display: grid;
-    grid-template-columns: minmax(0, 1fr);
     gap: 40px;
     align-items: center;
     position: relative;
