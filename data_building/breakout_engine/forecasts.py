@@ -492,6 +492,21 @@ def weekly_backtest_forecasts(
     included: List[int] = []
     views: Dict[str, Dict[str, Any]] = {}
     for week in sorted(load_reconstructed_weeks(season)):
+        # Skip weeks that have a live (non-reconstructed) serving run:
+        # the board shows the live data for those weeks, so the
+        # reconstructed outlook would disagree with what the user sees
+        # when they click through. Reconstructed outlook only covers
+        # weeks with no live data.
+        try:
+            serving = weekly_store.get_serving_run(season, week)
+            if serving:
+                is_recon = str(
+                    (serving.get("detail") or {}).get("reconstructed", "")
+                ).lower() == "true"
+                if not is_recon:
+                    continue
+        except Exception:
+            pass
         try:
             run = weekly_store.get_reconstructed_run(season, week)
             if not run:
@@ -626,13 +641,38 @@ def load_weekly_grade_rows(season: int) -> List[Dict[str, Any]]:
             ver = run.get("scoring_version")
             if not ver:
                 continue
-            rows.extend(
-                conn.execute(
-                    f"SELECT * FROM {wg.GRADES_TABLE} "
-                    f"WHERE season = %s AND as_of_week = %s AND scoring_version = %s",
-                    (int(season), week_int, str(ver)),
-                ).fetchall()
-            )
+            # Only include grades for players actually surfaced in the
+            # serving run. Orphan grades (e.g., from a bad re-grading that
+            # wrote Week 2 players with as_of_week=1) are excluded so the
+            # track record can't show a "Week 1 call" that was never a
+            # Week 1 call.
+            run_id = run.get("id")
+            valid_pids = set()
+            if run_id:
+                try:
+                    score_rows = conn.execute(
+                        "SELECT player_id FROM weekly_breakout_scores "
+                        "WHERE run_id = %s",
+                        (run_id,),
+                    ).fetchall()
+                    valid_pids = {
+                        str(r.get("player_id") or "")
+                        for r in score_rows
+                        if r.get("player_id")
+                    }
+                except Exception:
+                    pass
+            grade_rows = conn.execute(
+                f"SELECT * FROM {wg.GRADES_TABLE} "
+                f"WHERE season = %s AND as_of_week = %s AND scoring_version = %s",
+                (int(season), week_int, str(ver)),
+            ).fetchall()
+            if valid_pids:
+                grade_rows = [
+                    r for r in grade_rows
+                    if str(r.get("player_id") or "") in valid_pids
+                ]
+            rows.extend(grade_rows)
     return [dict(r) for r in rows]
 
 
@@ -811,9 +851,11 @@ def _weekly_rates_by_week(rows: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]
     """Hit rates grouped by call week, newest week first.
 
     Each entry carries the week number, call counts, and the graded hit
-    rate (None until the 10-graded floor is met). Watchlist/monitored
-    rows are excluded, matching the hits/misses filter: only actual
-    breakout calls appear in the track record. Pure.
+    rate. Completed weeks (no ungraded calls left) show their real hit
+    rate regardless of the 10-call season floor; in-progress weeks keep
+    the floor. Watchlist/monitored rows are excluded, matching the
+    hits/misses filter: only actual breakout calls appear in the track
+    record. Pure.
     """
     by_week: Dict[int, List[Dict[str, Any]]] = {}
     for row in rows:
@@ -837,7 +879,16 @@ def _weekly_rates_by_week(rows: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]
         by_week.setdefault(wk, []).append(row)
     out = []
     for wk in sorted(by_week, reverse=True):
-        bucket = wg._rate_bucket(by_week[wk], wg.MIN_SUMMARY_SAMPLE)
+        week_rows = by_week[wk]
+        # Completed weeks (no ungraded calls left) show their real hit
+        # rate regardless of the 10-call season floor: with 3 calls and
+        # 2 hits, the week earned 67%, not n/a.
+        ungraded = sum(
+            1 for r in week_rows
+            if str(r.get("grade") or "") == wg.GRADE_UNGRADED
+        )
+        min_sample = 1 if ungraded == 0 else wg.MIN_SUMMARY_SAMPLE
+        bucket = wg._rate_bucket(week_rows, min_sample)
         out.append({"week": wk, **bucket})
     return out
 
