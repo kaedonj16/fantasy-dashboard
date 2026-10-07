@@ -774,80 +774,60 @@
             });
     }
 
-    // Show the Schedule tab only in-season (Draft + Power Rankings tabs removed).
-    (function () {
-        var sosBtn = document.getElementById('sosTabBtn');
-        // Schedule: visible when not in pure offseason (in-season or preseason)
-        if (sosBtn && !_offseasonMode) sosBtn.style.display = '';
-    })();
+    // Page-level tabs (TEAMS | VALUE | SCHEDULE). Toggles the full-width
+    // sections and lazy-loads each view's data on first open.
+    var _ptabToView = { teams: 'v-teams', value: 'v-value', sched: 'v-sched' };
 
-    // Wire data-loading onto the tab buttons; the active-panel toggling itself
-    // is handled by initCardTabs (app.js). We also mirror the active tab onto
-    // the page container's data-active-tab so the mobile CSS knows whether to
-    // show the team grid ("teams") or an analytics panel.
     function _setActiveTabAttr(tab) {
         var layout = document.getElementById('teamsPageLayout');
         if (layout) layout.dataset.activeTab = tab;
     }
 
-    // Directly toggle the active tab/panel (mirrors initCardTabs) plus the
-    // data-active-tab attr and lazy load. Used for the viewport default so it
-    // doesn't depend on initCardTabs having bound yet (soft-nav ordering).
-    function _activateTab(tab, load) {
-        var strip = document.getElementById('teamsAnalyticsTabs');
-        var card = document.getElementById('teamsAnalyticsCard');
-        if (strip) strip.querySelectorAll('.tab-btn').forEach(function (b) {
-            b.classList.toggle('active', b.dataset.tab === tab);
+    function _activatePtab(tab, load) {
+        document.querySelectorAll('.teams-ptabs [data-ptab]').forEach(function (b) {
+            var on = b.dataset.ptab === tab;
+            b.classList.toggle('on', on);
+            b.setAttribute('aria-selected', on ? 'true' : 'false');
         });
-        if (card) card.querySelectorAll('.tab-panel').forEach(function (p) {
-            p.classList.toggle('active', p.dataset.tab === tab);
+        Object.keys(_ptabToView).forEach(function (k) {
+            var sec = document.getElementById(_ptabToView[k]);
+            if (sec) sec.classList.toggle('on', k === tab);
         });
         _setActiveTabAttr(tab);
         if (load) {
-            if (tab === 'btm') loadBtm();
-            if (tab === 'roster-intel') loadRosterIntel();
-            if (tab === 'sos') loadSos();
+            if (tab === 'value') loadBtm();
+            if (tab === 'sched') loadSos();
         }
     }
 
-    function wireAnalyticsTabs() {
-        var tabs = document.querySelectorAll('#teamsAnalyticsTabs > .tab-btn');
-        tabs.forEach(function (btn) {
+    function wirePageTabs() {
+        document.querySelectorAll('.teams-ptabs [data-ptab]').forEach(function (btn) {
             btn.addEventListener('click', function () {
-                var tab = btn.dataset.tab;
-                _setActiveTabAttr(tab);
-                if (tab === 'btm') loadBtm();
-                if (tab === 'roster-intel') loadRosterIntel();
-                if (tab === 'sos') loadSos();
+                _activatePtab(btn.dataset.ptab, true);
             });
         });
-
-        // Default tab depends on viewport. On desktop the team grid is always
-        // visible in the main column, so the sidebar defaults to "Value". On
-        // mobile the single tabbed card opens on "Teams" (the grid). The server
-        // renders with "Teams" active for the mobile-first default; promote to
-        // Value on desktop here.
-        if (window.matchMedia('(min-width: 1181px)').matches) {
-            _activateTab('btm', true);
-        }
+        // Schedule tab visibility follows the offseason gate (same as before).
+        var schedBtn = document.getElementById('schedPtabBtn');
+        if (schedBtn && !_offseasonMode) schedBtn.style.display = '';
     }
 
-    // Auto-open a specific tab when navigated with a hash (e.g. #btm / #roster-intel / #sos)
+    // Auto-open a specific tab when navigated with a hash (e.g. #value / #sched)
     function _activateTabFromHash() {
         var hash = window.location.hash.replace('#', '');
         if (!hash) return;
-        var btn = document.querySelector('#teamsAnalyticsTabs > .tab-btn[data-tab="' + hash + '"]');
-        if (btn) btn.click();
+        var map = { value: 'value', btm: 'value', sched: 'sched', sos: 'sched', teams: 'teams' };
+        var tab = map[hash];
+        if (tab) _activatePtab(tab, true);
     }
 
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', function () {
-            wireAnalyticsTabs();
+            wirePageTabs();
             wireTeamDrawer();
             _activateTabFromHash();
         });
     } else {
-        wireAnalyticsTabs();
+        wirePageTabs();
         wireTeamDrawer();
         _activateTabFromHash();
     }
