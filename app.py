@@ -27087,6 +27087,28 @@ def _game_log_matchup(wk_team, games):
     return "", False, "", site_team
 
 
+def _game_log_upcoming_median(proj_vals, proj_from_week) -> float:
+    """Median weekly projection over UPCOMING weeks only (week >= boundary).
+
+    A player whose projections all predate the boundary (benched/cut: the
+    feed no longer projects them) gets 0 here, so stale early-season numbers
+    are never forward-filled into future game-log weeks -- those weeks stay
+    blank instead of wearing September's projection.
+    """
+    try:
+        from statistics import median as _med
+        vals = [float(v) for w, v in (proj_vals or {}).items()
+                if int(w) >= int(proj_from_week) and v is not None]
+    except (TypeError, ValueError):
+        return 0.0
+    if not vals:
+        return 0.0
+    try:
+        return float(_med(vals))
+    except Exception:
+        return 0.0
+
+
 def _load_schedule_week_file(schedule_file: str):
     """Parse one schedule week file into (week_num, games) or None.
 
@@ -27328,7 +27350,6 @@ def api_player_game_logs(player_id: str):
             try:
                 from utils.utils import load_week_projection
                 from utils.fantasy_scoring import projection_points as _proj_pts_fn
-                from statistics import median as _med_fn
                 _pos_gl = (player_meta.get("pos") or "").upper()
 
                 _prefetch_week_projections(_upcoming)
@@ -27372,9 +27393,6 @@ def api_player_game_logs(player_id: str):
                         _proj_vals[_w] = 0.0
 
                 if _proj_vals and (any(v > 0 for v in _proj_vals.values()) or _ir_zero):
-                    _mv = list(_proj_vals.values())
-                    _med = _med_fn(_mv) if _mv else 0
-
                     # Only project weeks that have NOT been played yet, so a
                     # finished game the player missed stays a real DNP rather than
                     # being overwritten with a projection. The boundary is the
@@ -27391,6 +27409,12 @@ def api_player_game_logs(player_id: str):
                         )
                     except Exception:
                         _proj_from_week = 1
+
+                    # Median-fill from UPCOMING weeks only. A player the feed no
+                    # longer projects (benched/cut) has no upcoming values, so
+                    # _fill_med is 0 and future weeks stay blank instead of
+                    # inheriting stale early-season projections.
+                    _fill_med = _game_log_upcoming_median(_proj_vals, _proj_from_week)
 
                     # Load upcoming season schedule for opponent lookup
                     _sched: dict = {}
@@ -27412,8 +27436,8 @@ def api_player_game_logs(player_id: str):
                         if _w < _proj_from_week:
                             continue  # finished week with no stats -> leave as DNP
                         _pv = _proj_vals.get(_w)
-                        if _pv is None and _med > 0 and not _ir_zero:
-                            _pv = _med
+                        if _pv is None and _fill_med > 0 and not _ir_zero:
+                            _pv = _fill_med
                         elif _pv is None and _ir_zero:
                             _pv = 0.0
 
@@ -27443,7 +27467,14 @@ def api_player_game_logs(player_id: str):
                             "stats": None,
                             "is_projection": True,
                         })
-                    if _proj_logs and any(g["fantasy_pts"] is not None for g in _proj_logs):
+                    # Merge even when every future week is blank (stale-only
+                    # projections): the is_projection rows render "-" for "no
+                    # projection" instead of the base loop's DNP styling, which
+                    # would wrongly imply those games already happened.
+                    _stale_only = (not any(w >= _proj_from_week for w in _proj_vals)
+                                   and not _ir_zero)
+                    if _proj_logs and (any(g["fantasy_pts"] is not None for g in _proj_logs)
+                                       or _stale_only):
                         _proj_weeks = {g.get("week") for g in _proj_logs}
                         existing = game_logs_by_year.get(_upcoming) or []
                         # Keep the real (played) and bye weeks; drop the blank
