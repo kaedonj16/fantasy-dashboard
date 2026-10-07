@@ -64,7 +64,7 @@ _DIM_SELECTORS = [
     ".inj-pname:hover",
     ".whl-name:hover",
     ".sched-pname:hover",
-    ".team-strength-card .pos-detail-inner .player-clickable:hover",
+    ".td-body .player-clickable:hover",
     ".compare-chip:hover .compare-chip-name",
 ]
 

@@ -109,33 +109,29 @@
                     '</div>';
             }
 
-            // Meta: date range + league avg
-            html += '<div class="btm-meta">' +
-                '<span class="btm-date-range">' + fmtDate(data.baseline_date) + ' – ' + fmtDate(data.latest_date) + '</span>' +
-                '<span class="btm-league-avg">League Avg: <strong>' + avgFmt + '</strong></span>' +
+            // Meta: date range + league avg (Mock 4 ranked-list header)
+            var avgCls = avgDelta >= 0 ? 'pos-chg' : 'neg-chg';
+            html += '<div class="rl-head">' +
+                '<span class="rng">' + fmtDate(data.baseline_date) + ' – ' + fmtDate(data.latest_date) + '</span>' +
+                '<span class="avg">League Avg: <b class="' + avgCls + '">' + avgFmt + '</b></span>' +
                 '</div>';
 
             // Column header
-            html += '<div class="btm-col-header' + (slim ? ' btm-slim' : '') + '">' +
-                '<span></span>' +
-                '<span>Team</span>' +
-                '<span style="text-align:right;">' + days + 'd</span>' +
-                '<span style="text-align:right;">vs Avg</span>' +
+            html += '<div class="rl-cols" aria-hidden="true">' +
+                '<span class="c-team">TEAM</span>' +
+                '<span class="c-30d">' + days + 'D</span>' +
+                '<span class="c-vs">VS AVG</span>' +
                 '</div>';
 
             // Rows
-            html += '<div class="btm-rows">';
+            html += '<div class="rl-rows' + (slim ? ' rl-slim' : '') + '">';
             rows.forEach(function (r, idx) {
                 var pos = r.vs_avg >= 0;
-                var cls = pos ? 'btm-pos' : 'btm-neg';
+                var chgCls = r.total_delta >= 0 ? 'pos-chg' : 'neg-chg';
                 var pdSign = r.total_delta >= 0 ? '+' : '';
                 var vsSign = pos ? '+' : '';
-
-                var rankHtml;
-                if (idx === 0) rankHtml = '<span class="btm-rank-badge rk-gold">1</span>';
-                else if (idx === 1) rankHtml = '<span class="btm-rank-badge rk-silver">2</span>';
-                else if (idx === 2) rankHtml = '<span class="btm-rank-badge rk-bronze">3</span>';
-                else rankHtml = '<span class="btm-rank-num">' + (idx + 1) + '</span>';
+                var rkCls = idx === 0 ? 't1' : (idx === 1 ? 't2' : (idx === 2 ? 't3' : ''));
+                var mine = _viewerRosterId && String(r.roster_id) === String(_viewerRosterId);
 
                 var moversHtml = '';
                 if (!slim && r.top_movers && r.top_movers.length) {
@@ -145,31 +141,27 @@
                         var arrow = m.delta >= 0 ? '↑' : '↓';
                         var lastName = m.name.split(' ').slice(-1)[0];
                         var dFmt = (m.delta >= 0 ? '+' : '') + Math.round(m.delta);
-                        moversHtml += '<span class="btm-mover ' + mc + '" title="' + m.name + ' · ' + m.position + '">' +
-                            arrow + ' <strong>' + lastName + '</strong>&nbsp;' + dFmt +
+                        moversHtml += '<span class="btm-mover ' + mc + '" title="' + _sosEsc(m.name) + ' · ' + _sosEsc(m.position) + '">' +
+                            arrow + ' <strong>' + _sosEsc(lastName) + '</strong>&nbsp;' + dFmt +
                             '</span>';
                     });
                     moversHtml += '</div>';
                 }
 
-                // Diverging bar: fills from the center (league avg) outward -- right/green
-                // for above-average rosters, left/red for below -- scaled to the widest gap.
+                // Diverging bar under the team name: fills from the center
+                // (league avg) outward -- right/green for above-average
+                // rosters, left/red for below -- scaled to the widest gap.
                 var barPct = Math.min(50, Math.round(Math.abs(r.vs_avg || 0) / maxAbsVs * 50));
                 var barStyle = (pos ? 'left:50%;' : 'right:50%;') + 'width:' + barPct + '%;';
 
-                html += '<div class="btm-row ' + cls + (slim ? ' btm-slim' : '') + '">' +
-                    '<div class="btm-rank-cell">' + rankHtml + '</div>' +
-                    '<div class="btm-team-cell">' +
-                    '<div class="btm-team-name">' + r.team_name + '</div>' +
+                html += '<div class="rl-row' + (mine ? ' rl-mine' : '') + '">' +
+                    '<div class="rk ' + rkCls + '">' + (idx + 1) + '</div>' +
+                    '<div class="nm"><span class="rl-nm-text">' + _sosEsc(r.team_name) + '</span>' +
+                    (mine ? '<span class="rl-you">YOU</span>' : '') +
                     moversHtml +
-                    '</div>' +
-                    '<div class="btm-change-cell">' +
-                    '<div class="btm-change-num ' + cls + '">' + pdSign + Math.round(r.total_delta).toLocaleString() + '</div>' +
-                    '</div>' +
-                    '<div class="btm-vsavg-cell">' +
-                    '<span class="btm-vsavg-badge ' + cls + '">' + vsSign + Math.round(r.vs_avg).toLocaleString() + '</span>' +
-                    '</div>' +
-                    '<div class="btm-bar-track"><span class="btm-bar-fill ' + cls + '" style="' + barStyle + '"></span></div>' +
+                    '<div class="vbar"><span class="vbar-mid"></span><em class="' + (pos ? 'gpos' : 'gneg') + '" style="' + barStyle + '"></em></div></div>' +
+                    '<div class="chg ' + chgCls + '">' + pdSign + Math.round(r.total_delta).toLocaleString() + '</div>' +
+                    '<div class="vs"><span class="' + (pos ? 'pill-pos' : 'pill-neg') + '">' + vsSign + Math.round(r.vs_avg).toLocaleString() + '</span></div>' +
                     '</div>';
             });
             html += '</div>';
@@ -226,6 +218,14 @@
         return Math.round(22 + ((val - minOpp) / spread) * 78);
     }
 
+    // Difficulty chip classes keyed off the tier: HARDEST/HARD/AVERAGE/EASY/EASIEST.
+    function _sosDiffCls(tier, idx, n) {
+        if (tier.key === 'even') return 'd-avg';
+        if (tier.key === 'hard') return idx === 0 ? 'd-hardest' : 'd-hard';
+        if (tier.key === 'easy') return idx === n - 1 ? 'd-easiest' : 'd-easy';
+        return 'd-avg';
+    }
+
     function renderSos(panel, data) {
         if (data.error) {
             _panelEmpty(panel, 'Couldn’t load', data.error, {error: true, icon: 'error'});
@@ -253,20 +253,10 @@
         }, 0) / values.length;
         var n = teams.length;
         var viewerId = _viewerRosterId != null && _viewerRosterId !== '' ? String(_viewerRosterId) : '';
-        var schedHref = (_platform && _leagueId && _season)
-            ? '/' + _platform + '/' + _season + '/' + _leagueId + '/schedule'
-            : '';
 
-        var html = '<div class="sos-panel">';
-        html += '<div class="sos-header">' +
-            '<div class="sos-header-text">' +
-            '<span class="sos-title">Remaining schedule</span>' +
-            '</div>';
-        html += '</div>';
-
-        html += '<div class="sos-meta">' +
-            '<span class="sos-weeks"><strong>' + wr + '</strong> week' + (wr === 1 ? '' : 's') + ' left</span>' +
-            '<span class="sos-sort-note">' + (even ? 'Schedules look even' : 'Hardest first') + '</span>' +
+        var html = '<div class="rl-head">' +
+            '<span class="rng"><b>' + wr + '</b> week' + (wr === 1 ? '' : 's') + ' left</span>' +
+            '<span class="avg">' + (even ? 'Schedules look even' : 'Hardest first') + '</span>' +
             '</div>';
 
         if (usingProj) {
@@ -277,52 +267,38 @@
             html += '<div class="sos-note" role="note">No games played yet -- SOS needs scoring and win rate, so remaining schedules look even.</div>';
         }
 
-        html += '<div class="sos-legend" aria-hidden="true">' +
-            '<span class="sos-leg sos-leg-hard"><i></i>Hard</span>' +
-            '<span class="sos-leg sos-leg-mid"><i></i>Average</span>' +
-            '<span class="sos-leg sos-leg-easy"><i></i>Easy</span>' +
+        html += '<div class="slegend" aria-hidden="true">' +
+            '<span><i class="sleg-hard"></i>Hard</span>' +
+            '<span><i class="sleg-avg"></i>Average</span>' +
+            '<span><i class="sleg-easy"></i>Easy</span>' +
             '</div>';
 
-        html += '<div class="sos-cols" aria-hidden="true"><span>#</span><span>Team</span><span>vs Avg</span></div>';
-        html += '<div class="sos-list">';
-
+        html += '<div class="rl-rows">';
         teams.forEach(function (t, idx) {
             var val = Number(t.avg_opp_points) || 0;
             var tier = _sosTier(idx, n, even);
-            var vs = val - avgOpp;
-            var vsLbl = (vs >= 0 ? '+' : '') + vs.toFixed(1);
+            // Above-average opponent scoring = a harder remaining schedule.
+            var hard = (val - avgOpp) >= 0;
+            var vsLbl = (hard ? '+' : '') + (val - avgOpp).toFixed(1);
             var mine = viewerId && String(t.roster_id) === viewerId;
             var pct = _sosBarPct(val, minOpp, spread);
-            var rankHtml;
-            if (idx === 0) rankHtml = '<span class="btm-rank-badge rk-gold">1</span>';
-            else if (idx === 1) rankHtml = '<span class="btm-rank-badge rk-silver">2</span>';
-            else if (idx === 2) rankHtml = '<span class="btm-rank-badge rk-bronze">3</span>';
-            else rankHtml = '<span class="sos-rank-num">' + (idx + 1) + '</span>';
+            var rkCls = idx === 0 ? 't1' : (idx === 1 ? 't2' : (idx === 2 ? 't3' : ''));
 
             var tipParts = [t.team_name || ''];
             if ((usingProj || usingBlend || !usingPR) && val) tipParts.push('SOS ' + val.toFixed(1));
             if (t.games_remaining) tipParts.push(t.games_remaining + ' games left');
 
-            html += '<div class="sos-row sos-' + tier.key + (mine ? ' sos-mine' : '') + '"' +
+            html += '<div class="rl-row' + (mine ? ' rl-mine' : '') + '"' +
                 ' title="' + _sosEsc(tipParts.join(' · ')) + '">' +
-                '<div class="sos-rank">' + rankHtml + '</div>' +
-                '<div class="sos-body">' +
-                '<div class="sos-top">' +
-                '<span class="sos-name">' +
-                '<span class="sos-name-text">' + _sosEsc(t.team_name) + '</span>' +
-                (mine ? '<span class="sos-you">YOU</span>' : '') +
-                '</span>' +
-                '<span class="sos-diff sos-diff-' + tier.key + '">' + tier.label + '</span>' +
-                '</div>' +
-                '<div class="sos-track">' +
-                '<div class="sos-fill sos-fill-' + tier.key + '" style="width:' + pct + '%"></div>' +
-                '</div>' +
-                '</div>' +
-                '<span class="sos-val">' + vsLbl + '</span>' +
+                '<div class="rk ' + rkCls + '">' + (idx + 1) + '</div>' +
+                '<div class="nm"><span class="rl-nm-text">' + _sosEsc(t.team_name) + '</span>' +
+                (mine ? '<span class="rl-you">YOU</span>' : '') +
+                '<div class="vbar"><em class="' + (hard ? 'gneg' : 'gpos') + '" style="left:0;width:' + pct + '%;"></em></div></div>' +
+                '<div class="vs sos-vs"><span class="diff ' + _sosDiffCls(tier, idx, n) + '">' + tier.label.toUpperCase() + '</span>' +
+                '<b class="' + (hard ? 'neg-chg' : 'pos-chg') + '">' + vsLbl + '</b></div>' +
                 '</div>';
         });
-
-        html += '</div></div>';
+        html += '</div>';
         panel.innerHTML = html;
     }
 
@@ -346,6 +322,321 @@
             });
     }
 
+    // ── Roster-intel shared builders (sidebar tab + team drawer) ──
+    var _RI_SIG_COLOR = {
+        'Core': '#22c55e',
+        'Sell High': '#ef4444',
+        'Breakout': '#8b5cf6',
+        'Sleeper': '#06b6d4',
+        'Monitor': '#f59e0b',
+        'Stash': '#0d9488',
+        'Hold': 'var(--text-muted)',
+        'Cut': '#94a3b8',
+    };
+    var _RI_HEALTH_COLOR = {
+        'Strong': '#22c55e',
+        'Average': 'var(--text-muted)',
+        'Thin': '#f59e0b',
+        'Aging': '#ef4444',
+    };
+    var _RI_POS_ORDER = ['QB', 'RB', 'WR', 'TE'];
+
+    // Cached roster-intel fetch shared by the sidebar tab and the team drawer.
+    // Keyed on the league identity so a league switch re-fetches.
+    var _riDataPromise = null;
+    var _riDataKey = '';
+    function _riFetchData() {
+        _syncLeagueCfg();
+        var key = [_platform, _leagueId, _season, _leagueType, _viewerRosterId].join('|');
+        if (!_riDataPromise || _riDataKey !== key) {
+            _riDataKey = key;
+            // Fetch FC dynasty ADP from the browser (server IP is blocked by FC).
+            // Gracefully degrade to empty dict if FC is unavailable.
+            var numQbs = _leagueType === 'sf' ? 2 : 1;
+            _riDataPromise = fetch(
+                'https://fantasycalc.com/api/values/current?numQbs=' + numQbs + '&ppr=0.5',
+                {credentials: 'omit'}
+            )
+                .then(function (r) {
+                    return r.ok ? r.json() : [];
+                })
+                .catch(function () {
+                    return [];
+                })
+                .then(function (fcRaw) {
+                    // Transform FC array into {sleeperId: {pos_rank, adp_rank, position}}
+                    var fcAdp = {};
+                    if (Array.isArray(fcRaw)) {
+                        var posCounters = {};
+                        var sorted = fcRaw.filter(function (e) {
+                            return e && e.overallRank;
+                        })
+                            .sort(function (a, b) {
+                                return a.overallRank - b.overallRank;
+                            });
+                        sorted.forEach(function (entry) {
+                            var pl = entry.player || {};
+                            var sid = String(pl.sleeperId || '');
+                            if (!sid || sid === 'null' || sid === 'undefined') return;
+                            var pos = String(pl.position || '').toUpperCase();
+                            posCounters[pos] = (posCounters[pos] || 0) + 1;
+                            fcAdp[sid] = {
+                                adp_rank: entry.overallRank,
+                                pos_rank: posCounters[pos],
+                                position: pos,
+                            };
+                        });
+                    }
+
+                    return fetch('/api/roster-intel', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            platform: _platform,
+                            league_id: _leagueId,
+                            season: _season,
+                            league_type: _leagueType,
+                            viewer_roster_id: _viewerRosterId || '',
+                            fc_adp: fcAdp,
+                        }),
+                    }).then(function (r) {
+                        return r.json();
+                    });
+                });
+        }
+        return _riDataPromise;
+    }
+
+    // Suggested-moves summary for one intel team (same math as the sidebar).
+    function _riSuggestedMoves(t) {
+        var positions = t.positions || {};
+        var buckets = {
+            'Sell High': [],
+            'Cut': [],
+            'Breakout': [],
+            'Sleeper': [],
+            'Stash': [],
+            'Monitor': []
+        };
+        var needs = [];
+        var names = function (arr) {
+            return arr.map(function (pl) {
+                return pl.name;
+            }).join(', ');
+        };
+        _RI_POS_ORDER.forEach(function (pos) {
+            var pd = positions[pos];
+            if (!pd || !pd.players.length) return;
+            pd.players.forEach(function (pl) {
+                if (buckets[pl.signal]) buckets[pl.signal].push(pl);
+            });
+            if (pd.health === 'Thin' || pd.health === 'Aging') {
+                // A thin spot that already has a strong anchor (a Core/keeper, or
+                // a top-third league rank at the position) needs depth behind it,
+                // not an upgrade. Only a thin spot with no anchor wants an upgrade.
+                var anchored = (pd.players || []).some(function (pl) {
+                        return pl.signal === 'Core';
+                    })
+                    || (!!pd.league_rank && pd.league_rank <= Math.max(1, Math.round((pd.num_teams || 10) * 0.3)));
+                needs.push({pos: pos, health: pd.health, anchored: anchored});
+            }
+        });
+        var moves = [];
+        var addMove = function (tag, color, body) {
+            moves.push('<div class="ri-move"><span class="ri-move-tag" style="background:' + color + '">' + tag +
+                '</span><span class="ri-move-body">' + body + '</span></div>');
+        };
+        if (buckets['Sell High'].length) addMove('Sell high', _RI_SIG_COLOR['Sell High'], '<b>' + names(buckets['Sell High']) + '</b><span class="why">: sell while the value is high.</span>');
+        if (buckets['Cut'].length) addMove('Cut', '#64748b', '<b>' + names(buckets['Cut']) + '</b><span class="why">: low value; free the bench spot' + (buckets['Cut'].length > 1 ? 's' : '') + '.</span>');
+        if (buckets['Breakout'].length) addMove('Breakout', _RI_SIG_COLOR['Breakout'], '<b>' + names(buckets['Breakout']) + '</b><span class="why">: breakout upside; hold for the leap.</span>');
+        if (buckets['Sleeper'].length) addMove('Buy / hold', _RI_SIG_COLOR['Sleeper'], '<b>' + names(buckets['Sleeper']) + '</b><span class="why">: valued above the market.</span>');
+        if (buckets['Stash'].length) addMove('Stash', _RI_SIG_COLOR['Stash'], '<b>' + names(buckets['Stash']) + '</b><span class="why">: young upside; stash for later.</span>');
+        if (buckets['Monitor'].length) addMove('Monitor', _RI_SIG_COLOR['Monitor'], '<b>' + names(buckets['Monitor']) + '</b><span class="why">: slipping; watch closely.</span>');
+        if (needs.length) {
+            var needStr = needs.map(function (n) {
+                var advice = n.health === 'Aging' ? 'get younger'
+                    : (n.anchored ? 'add a backup' : 'shop for an upgrade');
+                return '<b>' + n.pos + '</b> is ' + n.health.toLowerCase() + '<span class="why">, ' + advice + '</span>';
+            }).join('; ');
+            addMove('Target', _RI_HEALTH_COLOR['Thin'], needStr + '<span class="why">.</span>');
+        }
+        return '<div class="ri-summary"><div class="ri-summary-eyebrow">Suggested moves</div>' +
+            (moves.length ? moves.join('') : '<div class="ri-summary-stable">Roster looks stable, no moves flagged.</div>') +
+            '</div>';
+    }
+
+    // Signal -> drawer tag class (Mock 4 roster-intel tags).
+    function _riTagClass(signal) {
+        return {
+            'Core': 'td-t-core',
+            'Hold': 'td-t-hold',
+            'Sell High': 'td-t-sell',
+            'Stash': 'td-t-stash',
+            'Sleeper': 'td-t-sleeper',
+            'Breakout': 'td-t-breakout',
+            'Monitor': 'td-t-monitor',
+            'Cut': 'td-t-cut',
+        }[signal] || 'td-t-hold';
+    }
+
+    // ── Team detail drawer (Mock 4) ──
+    var _drawerDataCache = null;
+    var _drawerDataEl = null;
+    function _drawerPayload() {
+        // Re-parse when soft-nav swaps in a new payload element (league switch).
+        var el = document.getElementById('teamsDrawerData');
+        if (el && el !== _drawerDataEl) {
+            _drawerDataEl = el;
+            try {
+                _drawerDataCache = JSON.parse(el.textContent || '{}');
+            } catch (e) {
+                _drawerDataCache = {};
+            }
+        }
+        return _drawerDataCache || {};
+    }
+
+    function _tdEsc(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+            return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
+        });
+    }
+
+    function _tdAvatar(t) {
+        if (t.avatar) {
+            return '<span class="td-ava"><img src="' + _tdEsc(t.avatar) + '" alt="" loading="lazy" decoding="async" onerror="this.style.visibility=\'hidden\'"></span>';
+        }
+        return '<span class="td-ava td-ava-mono">' + _tdEsc(t.initials || '?') + '</span>';
+    }
+
+    function _tdHeadHtml(t) {
+        var status = t.window ? _tdEsc(t.window) : 'Unranked';
+        var bits = status;
+        if (t.grade && t.grade !== '?') bits += ' &middot; ' + _tdEsc(t.grade);
+        bits += ' &middot; Pos index ' + _tdEsc(t.pos_index);
+        return '<div class="td-head-row">' + _tdAvatar(t) +
+            '<div class="td-head-id">' +
+            '<div class="td-name">' + _tdEsc(t.name) + (t.is_viewer ? '<span class="tsc-you">YOU</span>' : '') + '</div>' +
+            '<div class="td-status"><span class="td-dot" style="background:' + _tdEsc(t.win_color || '#94a3b8') + ';"></span>' + bits + '</div>' +
+            '</div>' +
+            '<button class="td-x" id="teamDrawerClose" type="button" aria-label="Close team details">&#10005;</button></div>';
+    }
+
+    var _TD_POSC = {QB: '#3b82f6', RB: '#22c55e', WR: '#f59e0b', TE: '#8b5cf6'};
+    function _tdBodyHtml(t) {
+        var html = '<div class="td-sec">POSITIONAL BREAKDOWN</div>';
+        (t.positions || []).forEach(function (pos, i) {
+            var pills = '<span class="td-pill">PLAYERS <b>' + pos.count + '</b></span>';
+            if (pos.age) pills += '<span class="td-pill">AVG AGE <b>' + _tdEsc(pos.age) + ' yrs</b></span>';
+            if (pos.rank) pills += '<span class="td-pill">RANK <b>#' + pos.rank + '/' + (pos.num_teams || '') + '</b></span>';
+            if (pos.strength) pills += '<span class="td-pill">STRENGTH <b>' + _tdEsc(pos.strength) + '</b></span>';
+            html += '<details class="td-pos"' + (i === 0 ? ' open' : '') + '>' +
+                '<summary><span class="td-chip" style="background:' + _TD_POSC[pos.pos] + ';">' + _tdEsc(pos.pos) + '</span>' +
+                '<span class="td-pval">' + Number(pos.total).toFixed(1) + '</span>' +
+                (pos.rank ? '<span class="td-rank">#' + pos.rank + '</span>' : '') +
+                '</summary>' +
+                '<div class="td-pdet"><div class="td-pills">' + pills + '</div>' +
+                (pos.players_html || '<div class="td-note">No players at this position.</div>') +
+                '</div></details>';
+        });
+        html += '<div class="td-sec">ROSTER INTEL</div>' +
+            '<div class="td-intel" id="teamDrawerIntel">' +
+            '<div class="analytics-skeleton"><div class="sk-shimmer sk-line" style="width:60%"></div>' +
+            '<div class="sk-shimmer sk-line sk-line--w75" style="margin-top:10px"></div>' +
+            '<div class="sk-shimmer sk-line sk-line--w50" style="margin-top:10px"></div></div></div>';
+        return html;
+    }
+
+    function _tdInjectIntelTags(vt) {
+        var byName = {};
+        _RI_POS_ORDER.forEach(function (pos) {
+            var pd = (vt.positions || {})[pos];
+            if (!pd) return;
+            (pd.players || []).forEach(function (pl) {
+                if (pl && pl.name) byName[String(pl.name).toLowerCase()] = pl.signal;
+            });
+        });
+        var body = document.getElementById('teamDrawerBody');
+        if (!body) return;
+        Array.prototype.forEach.call(body.querySelectorAll('.player-clickable[data-player-name]'), function (el) {
+            var sig = byName[String(el.getAttribute('data-player-name') || '').toLowerCase()];
+            if (!sig) return;
+            var tag = document.createElement('span');
+            tag.className = 'td-tag ' + _riTagClass(sig);
+            tag.textContent = String(sig).toUpperCase();
+            el.parentNode.insertBefore(tag, el);
+        });
+    }
+
+    function _tdLoadIntel(rid, t) {
+        var box = document.getElementById('teamDrawerIntel');
+        if (!box) return;
+        // The roster-intel API only computes signals for the viewer's team.
+        if (!t.is_viewer) {
+            box.innerHTML = '<div class="td-note">Roster intel is only computed for your team, so this drawer shows the roster breakdown without move suggestions.</div>';
+            return;
+        }
+        _riFetchData()
+            .then(function (data) {
+                var b = document.getElementById('teamDrawerIntel');
+                if (!b) return;
+                var teams = (data && data.teams) || [];
+                var vt = null;
+                teams.forEach(function (x) {
+                    if (String(x.roster_id) === String(rid)) vt = x;
+                });
+                if (!vt) {
+                    b.innerHTML = '<div class="td-note">Could not load roster intel.</div>';
+                    return;
+                }
+                b.innerHTML = _riSuggestedMoves(vt);
+                _tdInjectIntelTags(vt);
+            })
+            .catch(function () {
+                var b2 = document.getElementById('teamDrawerIntel');
+                if (b2) b2.innerHTML = '<div class="td-note">Could not load roster intel.</div>';
+            });
+    }
+
+    function openTeamDrawer(rid) {
+        var payload = _drawerPayload();
+        var t = payload[String(rid)];
+        if (!t) return;
+        var drawer = document.getElementById('teamDrawer');
+        var scrim = document.getElementById('teamDrawerScrim');
+        if (!drawer || !scrim) return;
+        document.getElementById('teamDrawerHead').innerHTML = _tdHeadHtml(t);
+        document.getElementById('teamDrawerBody').innerHTML = _tdBodyHtml(t);
+        drawer.classList.add('open');
+        scrim.classList.add('open');
+        document.body.classList.add('td-lock');
+        var x = document.getElementById('teamDrawerClose');
+        if (x) x.addEventListener('click', closeTeamDrawer);
+        _tdLoadIntel(rid, t);
+    }
+
+    function closeTeamDrawer() {
+        var drawer = document.getElementById('teamDrawer');
+        var scrim = document.getElementById('teamDrawerScrim');
+        if (drawer) drawer.classList.remove('open');
+        if (scrim) scrim.classList.remove('open');
+        document.body.classList.remove('td-lock');
+    }
+
+    function wireTeamDrawer() {
+        var scrim = document.getElementById('teamDrawerScrim');
+        if (scrim) scrim.addEventListener('click', closeTeamDrawer);
+        Array.prototype.forEach.call(document.querySelectorAll('.team-strength-card'), function (card) {
+            card.addEventListener('click', function (e) {
+                if (e.target.closest('a')) return;
+                openTeamDrawer(card.getAttribute('data-roster-id'));
+            });
+        });
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' || e.key === 'Esc') closeTeamDrawer();
+        });
+    }
+
     function loadRosterIntel() {
         _syncLeagueCfg();
         if (_loaded.rosterIntel) return;
@@ -353,60 +644,7 @@
         var panel = document.getElementById('rosterIntelPanel');
         if (!panel) return;
 
-        // Fetch FC dynasty ADP from the browser (server IP is blocked by FC).
-        // Gracefully degrade to empty dict if FC is unavailable.
-        var numQbs = _leagueType === 'sf' ? 2 : 1;
-        var fcPromise = fetch(
-            'https://fantasycalc.com/api/values/current?numQbs=' + numQbs + '&ppr=0.5',
-            {credentials: 'omit'}
-        )
-            .then(function (r) {
-                return r.ok ? r.json() : [];
-            })
-            .catch(function () {
-                return [];
-            });
-
-        fcPromise.then(function (fcRaw) {
-            // Transform FC array into {sleeperId: {pos_rank, adp_rank, position}}
-            var fcAdp = {};
-            if (Array.isArray(fcRaw)) {
-                var posCounters = {};
-                var sorted = fcRaw.filter(function (e) {
-                    return e && e.overallRank;
-                })
-                    .sort(function (a, b) {
-                        return a.overallRank - b.overallRank;
-                    });
-                sorted.forEach(function (entry) {
-                    var p = entry.player || {};
-                    var sid = String(p.sleeperId || '');
-                    if (!sid || sid === 'null' || sid === 'undefined') return;
-                    var pos = String(p.position || '').toUpperCase();
-                    posCounters[pos] = (posCounters[pos] || 0) + 1;
-                    fcAdp[sid] = {
-                        adp_rank: entry.overallRank,
-                        pos_rank: posCounters[pos],
-                        position: pos,
-                    };
-                });
-            }
-
-            return fetch('/api/roster-intel', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    platform: _platform,
-                    league_id: _leagueId,
-                    season: _season,
-                    league_type: _leagueType,
-                    viewer_roster_id: _viewerRosterId || '',
-                    fc_adp: fcAdp,
-                }),
-            }).then(function (r) {
-                return r.json();
-            });
-        })
+        _riFetchData()
             .then(function (data) {
                 if (data.error) {
                     _panelEmpty(panel, 'Couldn’t load', data.error, {error: true, icon: 'error'});
@@ -465,57 +703,7 @@
                 teams.forEach(function (t) {
                     var positions = t.positions || {};
 
-                    // ── Action summary: pull the flagged players + thin/aging spots to the top ──
-                    var buckets = {
-                        'Sell High': [],
-                        'Cut': [],
-                        'Breakout': [],
-                        'Sleeper': [],
-                        'Stash': [],
-                        'Monitor': []
-                    };
-                    var needs = [];
-                    POS_ORDER.forEach(function (pos) {
-                        var pd = positions[pos];
-                        if (!pd || !pd.players.length) return;
-                        pd.players.forEach(function (p) {
-                            if (buckets[p.signal]) buckets[p.signal].push(p);
-                        });
-                        if (pd.health === 'Thin' || pd.health === 'Aging') {
-                            // A thin spot that already has a strong anchor (a Core/keeper, or
-                            // a top-third league rank at the position) needs depth behind it,
-                            // not an upgrade. Only a thin spot with no anchor wants an upgrade.
-                            var anchored = (pd.players || []).some(function (p) {
-                                    return p.signal === 'Core';
-                                })
-                                || (!!pd.league_rank && pd.league_rank <= Math.max(1, Math.round((pd.num_teams || 10) * 0.3)));
-                            needs.push({pos: pos, health: pd.health, anchored: anchored});
-                        }
-                    });
-                    var moves = [];
-                    var addMove = function (tag, color, body) {
-                        moves.push('<div class="ri-move"><span class="ri-move-tag" style="background:' + color + '">' + tag +
-                            '</span><span class="ri-move-body">' + body + '</span></div>');
-                    };
-                    if (buckets['Sell High'].length) addMove('Sell high', sigColor['Sell High'], '<b>' + names(buckets['Sell High']) + '</b><span class="why">: sell while the value is high.</span>');
-                    if (buckets['Cut'].length) addMove('Cut', '#64748b', '<b>' + names(buckets['Cut']) + '</b><span class="why">: low value; free the bench spot' + (buckets['Cut'].length > 1 ? 's' : '') + '.</span>');
-                    if (buckets['Breakout'].length) addMove('Breakout', sigColor['Breakout'], '<b>' + names(buckets['Breakout']) + '</b><span class="why">: breakout upside; hold for the leap.</span>');
-                    if (buckets['Sleeper'].length) addMove('Buy / hold', sigColor['Sleeper'], '<b>' + names(buckets['Sleeper']) + '</b><span class="why">: valued above the market.</span>');
-                    if (buckets['Stash'].length) addMove('Stash', sigColor['Stash'], '<b>' + names(buckets['Stash']) + '</b><span class="why">: young upside; stash for later.</span>');
-                    if (buckets['Monitor'].length) addMove('Monitor', sigColor['Monitor'], '<b>' + names(buckets['Monitor']) + '</b><span class="why">: slipping; watch closely.</span>');
-                    if (needs.length) {
-                        // Aging -> get younger; thin with an anchor -> add a backup; thin
-                        // with no anchor -> shop for an upgrade.
-                        var needStr = needs.map(function (n) {
-                            var advice = n.health === 'Aging' ? 'get younger'
-                                : (n.anchored ? 'add a backup' : 'shop for an upgrade');
-                            return '<b>' + n.pos + '</b> is ' + n.health.toLowerCase() + '<span class="why">, ' + advice + '</span>';
-                        }).join('; ');
-                        addMove('Target', healthColor['Thin'], needStr + '<span class="why">.</span>');
-                    }
-                    html += '<div class="ri-summary"><div class="ri-summary-eyebrow">Suggested moves</div>' +
-                        (moves.length ? moves.join('') : '<div class="ri-summary-stable">Roster looks stable, no moves flagged.</div>') +
-                        '</div>';
+                    html += _riSuggestedMoves(t);
 
                     // ── Legend for the signal chips ──
                     html += '<div class="ri-legend">' + ['Core', 'Sell High', 'Breakout', 'Sleeper', 'Stash', 'Monitor', 'Cut'].map(function (k) {
@@ -586,79 +774,61 @@
             });
     }
 
-    // Show the Schedule tab only in-season (Draft + Power Rankings tabs removed).
-    (function () {
-        var sosBtn = document.getElementById('sosTabBtn');
-        // Schedule: visible when not in pure offseason (in-season or preseason)
-        if (sosBtn && !_offseasonMode) sosBtn.style.display = '';
-    })();
+    // Page-level tabs (TEAMS | VALUE | SCHEDULE). Toggles the full-width
+    // sections and lazy-loads each view's data on first open.
+    var _ptabToView = { teams: 'v-teams', value: 'v-value', sched: 'v-sched' };
 
-    // Wire data-loading onto the tab buttons; the active-panel toggling itself
-    // is handled by initCardTabs (app.js). We also mirror the active tab onto
-    // the page container's data-active-tab so the mobile CSS knows whether to
-    // show the team grid ("teams") or an analytics panel.
     function _setActiveTabAttr(tab) {
         var layout = document.getElementById('teamsPageLayout');
         if (layout) layout.dataset.activeTab = tab;
     }
 
-    // Directly toggle the active tab/panel (mirrors initCardTabs) plus the
-    // data-active-tab attr and lazy load. Used for the viewport default so it
-    // doesn't depend on initCardTabs having bound yet (soft-nav ordering).
-    function _activateTab(tab, load) {
-        var strip = document.getElementById('teamsAnalyticsTabs');
-        var card = document.getElementById('teamsAnalyticsCard');
-        if (strip) strip.querySelectorAll('.tab-btn').forEach(function (b) {
-            b.classList.toggle('active', b.dataset.tab === tab);
+    function _activatePtab(tab, load) {
+        document.querySelectorAll('.teams-ptabs [data-ptab]').forEach(function (b) {
+            var on = b.dataset.ptab === tab;
+            b.classList.toggle('on', on);
+            b.setAttribute('aria-selected', on ? 'true' : 'false');
         });
-        if (card) card.querySelectorAll('.tab-panel').forEach(function (p) {
-            p.classList.toggle('active', p.dataset.tab === tab);
+        Object.keys(_ptabToView).forEach(function (k) {
+            var sec = document.getElementById(_ptabToView[k]);
+            if (sec) sec.classList.toggle('on', k === tab);
         });
         _setActiveTabAttr(tab);
         if (load) {
-            if (tab === 'btm') loadBtm();
-            if (tab === 'roster-intel') loadRosterIntel();
-            if (tab === 'sos') loadSos();
+            if (tab === 'value') loadBtm();
+            if (tab === 'sched') loadSos();
         }
     }
 
-    function wireAnalyticsTabs() {
-        var tabs = document.querySelectorAll('#teamsAnalyticsTabs > .tab-btn');
-        tabs.forEach(function (btn) {
+    function wirePageTabs() {
+        document.querySelectorAll('.teams-ptabs [data-ptab]').forEach(function (btn) {
             btn.addEventListener('click', function () {
-                var tab = btn.dataset.tab;
-                _setActiveTabAttr(tab);
-                if (tab === 'btm') loadBtm();
-                if (tab === 'roster-intel') loadRosterIntel();
-                if (tab === 'sos') loadSos();
+                _activatePtab(btn.dataset.ptab, true);
             });
         });
-
-        // Default tab depends on viewport. On desktop the team grid is always
-        // visible in the main column, so the sidebar defaults to "Value". On
-        // mobile the single tabbed card opens on "Teams" (the grid). The server
-        // renders with "Teams" active for the mobile-first default; promote to
-        // Value on desktop here.
-        if (window.matchMedia('(min-width: 1181px)').matches) {
-            _activateTab('btm', true);
-        }
+        // Schedule tab visibility follows the offseason gate (same as before).
+        var schedBtn = document.getElementById('schedPtabBtn');
+        if (schedBtn && !_offseasonMode) schedBtn.style.display = '';
     }
 
-    // Auto-open a specific tab when navigated with a hash (e.g. #btm / #roster-intel / #sos)
+    // Auto-open a specific tab when navigated with a hash (e.g. #value / #sched)
     function _activateTabFromHash() {
         var hash = window.location.hash.replace('#', '');
         if (!hash) return;
-        var btn = document.querySelector('#teamsAnalyticsTabs > .tab-btn[data-tab="' + hash + '"]');
-        if (btn) btn.click();
+        var map = { value: 'value', btm: 'value', sched: 'sched', sos: 'sched', teams: 'teams' };
+        var tab = map[hash];
+        if (tab) _activatePtab(tab, true);
     }
 
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', function () {
-            wireAnalyticsTabs();
+            wirePageTabs();
+            wireTeamDrawer();
             _activateTabFromHash();
         });
     } else {
-        wireAnalyticsTabs();
+        wirePageTabs();
+        wireTeamDrawer();
         _activateTabFromHash();
     }
 })();
