@@ -70,8 +70,8 @@ def test_compare_charts_and_triple_follow_league_type():
     assert "p.sf_value_band || p.value_band" in chart
     assert "_cmpIsSf()" in chart
 
-    triple = _slice(APP_JS, "function renderCompareTriple(d1, d2, d3, hostEl)", "function _renderTripleValueChart")
-    assert "const isSf = _cmpIsSf();" in triple
+    triple = _slice(APP_JS, "function _buildCompareOverviewTable(players)", "function renderCompareInline")
+    assert "const isSf = (typeof _cmpIsSf === 'function') ? _cmpIsSf() : false;" in triple
     assert "st(p).sf_value_ovr_rank" in triple
     assert "sf_pos_rank_label" in triple
     assert "st(p).adp.dynasty_sf" in triple

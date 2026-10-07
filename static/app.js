@@ -19687,17 +19687,202 @@ function _compareWireView(p1, p2) {
   }
 }
 
+// ── Unified compare overview table (2 or 3 players) ─────────────────────
+// One layout for the compare page Overview tab: players as columns,
+// best-in-row highlighted, verdict bar on top, 4 key stats with an
+// expandable "all metrics" section. Reuses the cmp3-* styles.
+function _buildCompareOverviewTable(players) {
+  const esc = (typeof _wlEsc === 'function') ? _wlEsc : (s => String(s == null ? '' : s));
+  const num = v => (v == null || v === '' || isNaN(parseFloat(v))) ? null : parseFloat(v);
+  const st = p => (p && p.stats) || {};
+  const n = players.length;
+  const colors = ['#3b82f6', '#f59e0b', '#22c55e'];
+
+  // dir: 'max' (higher wins) | 'min' (lower wins) | null (display only).
+  // Returns {html, winner} where winner is the player index or -1 for tie/none.
+  function buildRow(label, vals, dir, fmt, key) {
+    const nums = vals.map(num);
+    let best = null;
+    if (dir) {
+      const valid = nums.filter(v => v != null);
+      if (valid.length) best = dir === 'max' ? Math.max.apply(null, valid) : Math.min.apply(null, valid);
+    }
+    let winner = -1;
+    const cells = vals.map((v, i) => {
+      const isBest = dir && best != null && nums[i] != null && nums[i] === best;
+      if (isBest) {
+        // Only count as a win if strictly better than all others
+        const others = nums.filter((_, j) => j !== i && nums[j] != null);
+        if (others.every(o => dir === 'max' ? nums[i] > o : nums[i] < o) || others.length === 0) {
+          if (winner === -1) winner = i;
+        }
+      }
+      const disp = fmt ? fmt(v) : (v == null || v === '' ? '&ndash;' : esc(v));
+      return '<td class="cmp3-cell' + (isBest ? ' cmp3-best' : '') + '">' + disp + '</td>';
+    }).join('');
+    return { html: '<tr data-cmp-row="' + (key || '') + '"><th class="cmp3-rowlbl">' + esc(label) + '</th>' + cells + '</tr>', winner: winner };
+  }
+
+  const isSf = (typeof _cmpIsSf === 'function') ? _cmpIsSf() : false;
+  const isRedraft = (typeof _cmpIsRedraft === 'function') ? _cmpIsRedraft() : false;
+  const ppgSeason = players.map(p => st(p).ppg_season).find(Boolean) || '';
+
+  // Key 4 stats (always visible)
+  const keyRows = [];
+  // Dynasty value (primary for the league type)
+  keyRows.push(buildRow(
+    isRedraft ? (isSf ? 'SF Redraft Value' : 'Redraft Value (1QB)') : (isSf ? 'SF Dynasty Value' : 'Dynasty Value'),
+    players.map(p => isRedraft
+      ? (isSf ? (st(p).redraft_value_sf ?? st(p).redraft_value_1qb) : st(p).redraft_value_1qb)
+      : (isSf ? st(p).sf_value : st(p).value)),
+    'max', v => v == null ? '&ndash;' : Math.round(v), 'value'));
+  keyRows.push(buildRow(
+    (ppgSeason ? ppgSeason + ' ' : '') + 'PPG',
+    players.map(p => st(p).ppg), 'max',
+    v => v == null ? '&ndash;' : v, 'ppg'));
+  keyRows.push(buildRow(
+    'Age',
+    players.map(p => p.age), 'min',
+    v => v == null ? '&ndash;' : (Math.round(v * 10) / 10), 'age'));
+  keyRows.push(buildRow(
+    'Dynasty ADP',
+    players.map(p => st(p).adp && (isSf ? st(p).adp.dynasty_sf : st(p).adp.dynasty_1qb)),
+    'min', v => (v == null || v === '') ? '&ndash;' : v, 'adp'));
+
+  // Remaining metrics (behind expander)
+  const restRows = [];
+  restRows.push(buildRow(
+    isSf ? '1QB Value' : 'SF Value',
+    players.map(p => isSf ? st(p).value : st(p).sf_value),
+    'max', v => v == null ? '&ndash;' : Math.round(v), 'value2'));
+  restRows.push(buildRow(
+    'Overall Rank',
+    players.map(p => isSf ? st(p).sf_value_ovr_rank : st(p).value_ovr_rank),
+    'min', v => v == null ? '&ndash;' : ('#' + v), 'ovr_rank'));
+  restRows.push(buildRow(
+    'Position Rank',
+    players.map(p => {
+      if (isSf) return p.sf_pos_rank_label || st(p).sf_pos_rank_label || p.pos_rank_label || st(p).pos_rank_label;
+      return p.pos_rank_label || st(p).pos_rank_label;
+    }),
+    null, v => v || '&ndash;', 'pos_rank'));
+  restRows.push(buildRow(
+    'Redraft ADP',
+    players.map(p => st(p).adp && (isSf ? st(p).adp.redraft_sf : st(p).adp.redraft_1qb)),
+    'min', v => (v == null || v === '') ? '&ndash;' : v, 'radp'));
+  restRows.push(buildRow(
+    'Total Pts',
+    players.map(p => st(p).total_pts), 'max',
+    v => v == null ? '&ndash;' : v, 'total'));
+  restRows.push(buildRow(
+    'Games',
+    players.map(p => st(p).ppg_games), null,
+    v => (v == null || v === '') ? '&ndash;' : v, 'games'));
+
+  // ── Verdict bar ──
+  const allRows = keyRows.concat(restRows);
+  const wins = players.map(() => 0);
+  let contested = 0;
+  allRows.forEach(r => {
+    if (r.winner >= 0) { wins[r.winner]++; contested++; }
+  });
+  let verdictHTML = '';
+  if (contested > 0) {
+    const order = players.map((_, i) => i).sort((a, b) => wins[b] - wins[a]);
+    const leader = order[0];
+    const leaderName = esc(players[leader].name || ('Player ' + (leader + 1)));
+    // Split bar segments
+    const segs = order.map(i => {
+      const pct = contested ? (wins[i] / contested * 100) : 0;
+      return '<span style="display:block;height:100%;width:' + pct.toFixed(1) + '%;background:' + colors[i % colors.length] + ';"></span>';
+    }).join('');
+    const detail = order.map(i =>
+      '<span style="display:inline-flex;align-items:center;gap:5px;margin-right:14px;font-size:12px;color:var(--muted);">'
+      + '<span style="width:8px;height:8px;border-radius:2px;background:' + colors[i % colors.length] + ';display:inline-block;"></span>'
+      + esc(players[i].name || ('Player ' + (i + 1))) + ' <b style="color:var(--text);">' + wins[i] + '</b></span>'
+    ).join('');
+    verdictHTML =
+      '<div class="cmp-verdict" style="margin-bottom:16px;padding:14px 16px;background:var(--surface2,rgba(127,127,127,.08));border-radius:10px;">'
+      + '<div style="font-weight:800;font-size:15px;color:var(--text);margin-bottom:8px;">' + leaderName + ' wins ' + wins[leader] + ' of ' + contested + ' categories</div>'
+      + '<div style="display:flex;height:8px;border-radius:4px;overflow:hidden;background:var(--border);margin-bottom:10px;">' + segs + '</div>'
+      + '<div>' + detail + '</div>'
+      + '</div>';
+  }
+
+  // ── Table ──
+  const headCells = players.map((p, i) => {
+    const pos = String(p.position || '').toUpperCase();
+    const age = parseFloat(p.age);
+    const meta = [pos, p.team, isNaN(age) ? '' : age.toFixed(1) + ' yrs'].filter(Boolean).join(' · ');
+    const hs = p.espnHeadshot || '';
+    const hiRes = (typeof _hiResHeadshot === 'function') ? _hiResHeadshot(hs, 140) : hs;
+    const fb = (typeof _HS_FALLBACK !== 'undefined') ? _HS_FALLBACK : '';
+    return '<th class="cmp3-col">'
+      + '<button type="button" class="cmp3-head" data-pid="' + esc(p.player_id) + '" data-name="' + esc(p.name) + '">'
+      + (hs ? '<img class="cmp3-hs" src="' + esc(hiRes) + '" data-raw="' + esc(hs) + '" alt="" loading="lazy" onerror="' + fb + '"/>'
+            : '<span class="cmp3-hs cmp3-hs-blank"></span>')
+      + '<span class="cmp3-name">' + esc(p.name) + '</span>'
+      + '<span class="cmp3-accent" style="background:' + colors[i % colors.length] + ';"></span>'
+      + '<span class="cmp3-meta">' + esc(meta) + '</span>'
+      + '</button></th>';
+  }).join('');
+
+  const keyRowsHTML = keyRows.map(r => r.html).join('');
+  const restRowsHTML = restRows.map(r => r.html).join('');
+  const uid = 'cmpExp' + Math.random().toString(36).slice(2, 8);
+
+  return verdictHTML
+    + '<div class="cmp3-wrap"><table class="cmp3-table"><thead><tr>'
+    + '<th class="cmp3-rowlbl" aria-hidden="true"></th>' + headCells
+    + '</tr></thead><tbody>'
+    + keyRowsHTML
+    + '</tbody><tbody id="' + uid + '" hidden>' + restRowsHTML + '</tbody></table></div>'
+    + '<button type="button" class="cmp-expander" data-cmp-expander="' + uid + '" '
+    + 'style="margin-top:10px;background:none;border:1px solid var(--border);border-radius:8px;padding:8px 16px;font-size:13px;font-weight:700;color:var(--text);cursor:pointer;width:100%;">'
+    + 'Show all metrics (' + restRows.length + ' more)</button>';
+}
+
+// Toggle handler for the "show all metrics" expander (delegated).
+document.addEventListener('click', function (e) {
+  const btn = e.target.closest && e.target.closest('[data-cmp-expander]');
+  if (!btn) return;
+  const body = document.getElementById(btn.getAttribute('data-cmp-expander'));
+  if (!body) return;
+  const open = body.hidden;
+  body.hidden = !open;
+  btn.textContent = open
+    ? 'Show fewer metrics'
+    : 'Show all metrics (' + body.querySelectorAll('tr').length + ' more)';
+});
+
 // Render the full comparison inline into a page container (the /compare page).
 function renderCompareInline(p1, p2, hostEl) {
   if (!hostEl) return;
+  const players = [p1, p2];
+  const esc = (typeof _wlEsc === 'function') ? _wlEsc : (s => String(s == null ? '' : s));
+  const anyHistory = players.some(p => (p.value_history || []).length > 0);
+  const chartBlock = anyHistory
+    ? '<hr class="pm-section-divider">'
+      + '<div class="pm-section-header"><span class="pm-section-label">Value History</span></div>'
+      + '<div id="compareValueChart" class="player-modal-chart-container" style="min-height:220px;"></div>'
+    : '';
   hostEl.innerHTML =
     '<div class="compare-dual-header compare-inline-header">' +
       _buildComparePlayerHeader(p1) +
       '<div class="compare-vs-badge">VS</div>' +
       _buildComparePlayerHeader(p2) +
     '</div>' +
-    _compareBodyHTML(p1, p2, { nav: false });
-  _compareWireView(p1, p2);
+    _buildCompareOverviewTable(players) +
+    chartBlock;
+  // Headshot clicks open the player modal.
+  hostEl.querySelectorAll('.cmp3-head').forEach(b => {
+    b.addEventListener('click', () => {
+      if (typeof openPlayerModal === 'function') openPlayerModal(b.getAttribute('data-pid'), b.getAttribute('data-name'));
+    });
+  });
+  // Render the value-history chart via the shared wire-up (skips tab wiring
+  // gracefully when .compare-tab-bar is absent).
+  if (typeof _compareWireView === 'function') _compareWireView(p1, p2);
 }
 
 // Colors for the 3-way value-history lines (blue / amber / green), reused for
@@ -19712,65 +19897,6 @@ const _CMP3_COLORS = ['#3b82f6', '#f59e0b', '#22c55e'];
 function renderCompareTriple(d1, d2, d3, hostEl) {
   if (!hostEl) return;
   const players = [d1, d2, d3];
-  const esc = (typeof _wlEsc === 'function') ? _wlEsc : (s => String(s == null ? '' : s));
-  const num = v => (v == null || v === '' || isNaN(parseFloat(v))) ? null : parseFloat(v);
-  const st = p => (p && p.stats) || {};
-  const ppgSeason = st(d1).ppg_season || st(d2).ppg_season || st(d3).ppg_season || '';
-
-  const headCells = players.map((p, i) => {
-    const pos = String(p.position || '').toUpperCase();
-    const age = parseFloat(p.age);
-    const meta = [pos, p.team, isNaN(age) ? '' : age.toFixed(1) + ' yrs'].filter(Boolean).join(' · ');
-    const hs = p.espnHeadshot || '';
-    return '<th class="cmp3-col">'
-      + '<button type="button" class="cmp3-head" data-pid="' + esc(p.player_id) + '" data-name="' + esc(p.name) + '">'
-      + (hs ? '<img class="cmp3-hs" src="' + esc(_hiResHeadshot(hs, 140)) + '" data-raw="' + esc(hs) + '" alt="" loading="lazy" onerror="' + _HS_FALLBACK + '"/>'
-            : '<span class="cmp3-hs cmp3-hs-blank"></span>')
-      + '<span class="cmp3-name">' + esc(p.name) + '</span>'
-      + '<span class="cmp3-accent" style="background:' + _CMP3_COLORS[i] + ';"></span>'
-      + '<span class="cmp3-meta">' + esc(meta) + '</span>'
-      + '</button></th>';
-  }).join('');
-
-  // dir: 'max' (higher wins) | 'min' (lower wins) | null (display only, no winner).
-  function row(label, vals, dir, fmt) {
-    const nums = vals.map(num);
-    let best = null;
-    if (dir) {
-      const valid = nums.filter(v => v != null);
-      if (valid.length) best = dir === 'max' ? Math.max.apply(null, valid) : Math.min.apply(null, valid);
-    }
-    const cells = vals.map((v, i) => {
-      const isBest = dir && best != null && nums[i] != null && nums[i] === best;
-      const disp = fmt ? fmt(v) : (v == null || v === '' ? '&ndash;' : esc(v));
-      return '<td class="cmp3-cell' + (isBest ? ' cmp3-best' : '') + '">' + disp + '</td>';
-    }).join('');
-    return '<tr><th class="cmp3-rowlbl">' + esc(label) + '</th>' + cells + '</tr>';
-  }
-
-  const isSf = _cmpIsSf();
-  const isRedraft = _cmpIsRedraft();
-  const rows = [
-    row(isRedraft
-      ? (isSf ? 'Superflex Redraft Value' : 'Redraft Value (1QB)')
-      : (isSf ? 'Superflex Value' : 'Dynasty Value (1QB)'),
-      players.map(p => isRedraft
-        ? (isSf ? (st(p).redraft_value_sf ?? st(p).redraft_value_1qb) : st(p).redraft_value_1qb)
-        : (isSf ? st(p).sf_value : st(p).value)), 'max', v => v == null ? '&ndash;' : Math.round(v)),
-    row(isSf ? '1QB Value' : 'Superflex Value',
-      players.map(p => isSf ? st(p).value : st(p).sf_value), 'max', v => v == null ? '&ndash;' : Math.round(v)),
-    row('Overall Rank', players.map(p => isSf ? st(p).sf_value_ovr_rank : st(p).value_ovr_rank), 'min', v => v == null ? '&ndash;' : ('#' + v)),
-    row('Position Rank', players.map(p => {
-      if (isSf) return p.sf_pos_rank_label || st(p).sf_pos_rank_label || p.pos_rank_label || st(p).pos_rank_label;
-      return p.pos_rank_label || st(p).pos_rank_label;
-    }), null, v => v || '&ndash;'),
-    row('Dynasty ADP', players.map(p => st(p).adp && (isSf ? st(p).adp.dynasty_sf : st(p).adp.dynasty_1qb)), 'min', v => (v == null || v === '') ? '&ndash;' : v),
-    row('Redraft ADP', players.map(p => st(p).adp && (isSf ? st(p).adp.redraft_sf : st(p).adp.redraft_1qb)), 'min', v => (v == null || v === '') ? '&ndash;' : v),
-    row('Age', players.map(p => p.age), 'min', v => v == null ? '&ndash;' : (Math.round(v * 10) / 10)),
-    row((ppgSeason ? ppgSeason + ' ' : '') + 'PPG', players.map(p => st(p).ppg), 'max', v => v == null ? '&ndash;' : v),
-    row('Total Pts', players.map(p => st(p).total_pts), 'max', v => v == null ? '&ndash;' : v),
-    row('Games', players.map(p => st(p).ppg_games), null, v => (v == null || v === '') ? '&ndash;' : v),
-  ].join('');
 
   const anyHistory = players.some(p => (p.value_history || []).length > 0);
   const chartBlock = anyHistory
@@ -19779,11 +19905,7 @@ function renderCompareTriple(d1, d2, d3, hostEl) {
       + '<div id="compareTripleChart" class="player-modal-chart-container" style="min-height:240px;"></div>'
     : '';
 
-  const overviewHTML =
-    '<div class="cmp3-wrap"><table class="cmp3-table"><thead><tr>'
-    + '<th class="cmp3-rowlbl" aria-hidden="true"></th>' + headCells
-    + '</tr></thead><tbody>' + rows + '</tbody></table></div>'
-    + chartBlock;
+  const overviewHTML = _buildCompareOverviewTable(players) + chartBlock;
 
   // Stats / Advanced Metrics / Usage are three side-by-side single-player views,
   // lazy-loaded on first tab open (below), reusing the same renderers the player
