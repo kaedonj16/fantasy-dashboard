@@ -1348,3 +1348,83 @@ def get_default_history_season(available_seasons: List[int], current_season: int
         return past[0]
 
     return available[0]
+
+
+# ======================================================================
+# League-median game (Sleeper ``league_average_match``)
+# ======================================================================
+
+"""Weekly game against the league median score.
+
+Leagues with ``league_average_match`` on play an extra game each week versus
+the league median. Sleeper's official roster records include that game, so
+computed records must add it too or they disagree with the official ones.
+Streaks stay head-to-head only: median/head-to-head ordering inside a week is
+ambiguous, so that is out of scope. Division records also stay head-to-head
+only, matching Sleeper.
+"""
+
+from statistics import median as _median_of
+
+
+def median_match_enabled(settings) -> bool:
+    """True when the league plays a weekly game vs the league median.
+
+    Sleeper stores this as ``settings.league_average_match`` (1/0). Accepts
+    1, "1" and True. Any Mapping is fine; garbage fails closed to False.
+    """
+    try:
+        raw = settings.get("league_average_match") if isinstance(settings, Mapping) else None
+    except Exception:
+        return False
+    if raw is True or raw == 1:
+        return True
+    if isinstance(raw, str) and raw.strip().lower() in ("1", "true", "yes"):
+        return True
+    return False
+
+
+def median_game_outcomes(df) -> List[dict]:
+    """Per-week median-game outcome for each row of a weekly frame.
+
+    Returns dicts with owner, roster_id, week and outcome ("W", "L" or "T")
+    against that week's median of points. Uses statistics.median. Weeks with
+    no usable scores are skipped. The frame is expected to be finalized-only;
+    filtering is the caller's job.
+    """
+    if df is None or getattr(df, "empty", True):
+        return []
+    try:
+        cols = set(df.columns)
+    except Exception:
+        return []
+    if not {"week", "points"} <= cols:
+        return []
+    out: List[dict] = []
+    for week, grp in df.groupby("week"):
+        pts: List[float] = []
+        for p in grp["points"]:
+            try:
+                v = float(p)
+            except (TypeError, ValueError):
+                continue
+            if v == v:  # drop NaN without importing math
+                pts.append(v)
+        if not pts:
+            continue
+        med = _median_of(pts)
+        for row in grp.itertuples():
+            try:
+                v = float(row.points)
+            except (TypeError, ValueError):
+                continue
+            if v != v:
+                continue
+            outcome = "W" if v > med else ("L" if v < med else "T")
+            out.append({
+                "owner": getattr(row, "owner", None),
+                "roster_id": getattr(row, "roster_id", None),
+                "week": week,
+                "outcome": outcome,
+            })
+    return out

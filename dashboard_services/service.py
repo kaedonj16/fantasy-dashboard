@@ -330,6 +330,7 @@ def finalize_team_stats(
         users: list[dict],
         last_week: int,
         regular_season_weeks: int | None = None,
+        median_match: bool = False,
 ) -> pd.DataFrame:
     """Build the full standings/power team_stats table from finalized weekly
     rows (records, PF/PA/AVG, shared performance PowerScore (incl. past SoS), strength of schedule, and
@@ -344,7 +345,7 @@ def finalize_team_stats(
         if not seeded.empty:
             return seeded
 
-    records = _compute_team_records(df_finalized.copy())
+    records = _compute_team_records(df_finalized.copy(), median_match=median_match)
     team_stats = _aggregate_team_stats(df_finalized.copy(), records)
 
     if team_stats.empty:
@@ -561,14 +562,22 @@ def build_tables(
         last_week = int(df_finalized["week"].max())
     else:
         last_week = 0
+    # Median game: same request-scoped settings fallback as regular_season_length.
+    try:
+        from dashboard_services.api import get_league_settings
+        _bt_settings = get_league_settings() or {}
+    except Exception:
+        _bt_settings = {}
+    from utils.standings import median_match_enabled
     team_stats = finalize_team_stats(
-        df_finalized, owner_avatar, matchups_by_week, users, last_week
+        df_finalized, owner_avatar, matchups_by_week, users, last_week,
+        median_match=median_match_enabled(_bt_settings),
     )
 
     return df_weekly, team_stats, roster_map
 
 
-def _compute_team_records(df: pd.DataFrame) -> pd.DataFrame:
+def _compute_team_records(df: pd.DataFrame, *, median_match: bool = False) -> pd.DataFrame:
     wins = defaultdict(int)
     losses = defaultdict(int)
     ties = defaultdict(int)
@@ -595,6 +604,23 @@ def _compute_team_records(df: pd.DataFrame) -> pd.DataFrame:
         else:
             ties[owner1] += 1
             ties[owner2] += 1
+
+    if median_match:
+        # League-average-match leagues play an extra game each week against
+        # the league median; Sleeper's official record includes it.
+        from utils.standings import median_game_outcomes
+        for _mo in median_game_outcomes(df):
+            _owner = _mo.get("owner")
+            if _owner is None:
+                continue
+            games_played[_owner] += 1
+            _outcome = _mo.get("outcome")
+            if _outcome == "W":
+                wins[_owner] += 1
+            elif _outcome == "L":
+                losses[_owner] += 1
+            else:
+                ties[_owner] += 1
 
     results = []
     owners = sorted(set(df["owner"])) if "owner" in df.columns else []
