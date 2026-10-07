@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import logging
 import math
+import random
 import threading
 import time as _time
+from datetime import date as _date
 from itertools import combinations
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -676,6 +678,20 @@ _NEED_MULT_WORST = 1.12           # last-place tiebreaker; top half stays 1.0
 _MAX_TARGETS = 8
 _MAX_PER_POS = 3
 
+# ── Daily suggestion rotation ─────────────────────────────────────────────
+# Suggestion ranking is fully deterministic: identical roster + values yield
+# identical players on every visit. To keep the Strategy view fresh, builders
+# over-build (up to _ROTATION_BUILD_CAP) and _apply_daily_rotation pins the
+# top _ROTATION_KEEP_TOP deals while filling the remaining display slots from
+# the wider pool via a date-seeded shuffle. Stable within a calendar day,
+# fresh across days. Tests pass seed= explicitly for determinism.
+_ROTATION_KEEP_TOP = 3
+_ROTATION_DISPLAY_COUNT = 15
+_ROTATION_BUILD_CAP = 30
+# Targets per slate for the acquire path: wider than _MAX_TARGETS so the
+# rotation pool has real variety to draw from.
+_ROTATION_SLATE_TARGETS = 20
+
 
 def _default_slot_counts(league_type: str) -> Dict[str, int]:
     if (league_type or "").lower() == "sf":
@@ -763,32 +779,18 @@ def _acquire_rank_score(
     return (0.35 * score + 0.65 * fit) * avail * need_mult
 
 
-_LIFT_SEATS_TOP = 5
-_LIFT_SEATS_OTHER = 5
-
-
 def _select_varied_slate(
     scored: List[Tuple[float, Dict]],
     max_targets: int = _MAX_TARGETS,
     max_per_pos: int = _MAX_PER_POS,
-    lift_first: bool = False,
 ) -> List[Dict]:
     """Pick a varied slate in score order.
 
     One player per (owner, position), at most ``max_per_pos`` per position.
-    With ``lift_first`` (the consolidate "others" bucket), slot-upgrade
-    targets sort first and bypass the per-position cap (the owner/position
-    dedup still applies), so FLEX/spot upgrades stay visible next to the
-    studs even when a position's seats are full of higher-scoring elites.
-    Falls back to filling remaining slots if the caps leave it thin.
+    No reserved seats -- a low-rise hole does not jump a high-rise add at a
+    strength. Falls back to filling remaining slots if the caps leave it thin.
     """
-    if lift_first:
-        scored = sorted(
-            scored,
-            key=lambda x: (not bool(x[1].get("slot_upgrade")), -x[0]),
-        )
-    else:
-        scored = sorted(scored, key=lambda x: x[0], reverse=True)
+    scored = sorted(scored, key=lambda x: x[0], reverse=True)
     seen_owner_pos: set = set()
     seen_players: set = set()
     pos_in_top: Dict[str, int] = {}
@@ -800,8 +802,7 @@ def _select_varied_slate(
         key = (t["owner_roster_id"], t["position"])
         if key in seen_owner_pos:
             return False
-        _lifted = lift_first and bool(t.get("slot_upgrade"))
-        if not _lifted and pos_in_top.get(t["position"], 0) >= max_per_pos:
+        if pos_in_top.get(t["position"], 0) >= max_per_pos:
             return False
         seen_owner_pos.add(key)
         seen_players.add(t["player_id"])
@@ -820,6 +821,30 @@ def _select_varied_slate(
                 seen_players.add(t["player_id"])
                 top.append(t)
     return top
+
+
+def _apply_daily_rotation(
+    results: List[Dict[str, Any]],
+    seed: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Pin the best-ranked suggestions; rotate the rest daily.
+
+    ``results`` must already be sorted best-first (by ``_suggestion_rank``).
+    The first ``_ROTATION_KEEP_TOP`` stay pinned (best analytical deals).
+    Remaining display slots (up to ``_ROTATION_DISPLAY_COUNT`` total) are
+    filled from the rest of the pool via a date-seeded shuffle, so the order
+    is stable within a calendar day but fresh across days. Pass ``seed``
+    explicitly in tests for determinism.
+    """
+    if not results:
+        return results
+    pinned = results[:_ROTATION_KEEP_TOP]
+    pool = list(results[_ROTATION_KEEP_TOP:])
+    day = seed if seed is not None else _date.today().isoformat()
+    rng = random.Random(f"trade-suggestions-v1-{day}")
+    rng.shuffle(pool)
+    fill = _ROTATION_DISPLAY_COUNT - len(pinned)
+    return pinned + pool[:fill]
 
 
 def _weakest_starters(
@@ -1961,13 +1986,15 @@ def _build_distribute(
                     "position": c["position"], "value": round(c["value"], 1),
                 } for c in combo],
             })
-            if len(results) >= 15:
+            if len(results) >= _ROTATION_BUILD_CAP:
                 break
-        if len(results) >= 15:
+        if len(results) >= _ROTATION_BUILD_CAP:
             break
 
     _attach_trade_heat(results, season)
     results.sort(key=_suggestion_rank, reverse=True)
+    if group_key is None:
+        results = _apply_daily_rotation(results)
     return results
 
 
@@ -2250,14 +2277,16 @@ def _build_rebuilding(
                 }],
                 "suggested_receive": suggested_receive,
             })
-            if len(results) >= 15:
+            if len(results) >= _ROTATION_BUILD_CAP:
                 break
 
-        if len(results) >= 15:
+        if len(results) >= _ROTATION_BUILD_CAP:
             break
 
     _attach_trade_heat(results, season)
     results.sort(key=_suggestion_rank, reverse=True)
+    if group_key is None:
+        results = _apply_daily_rotation(results)
     return results
 
 
@@ -3088,18 +3117,7 @@ def _get_archetype_suggestions_impl(
         scored.append((final, t))
 
     scored.sort(key=lambda x: x[0], reverse=True)
-    if archetype == "consolidate":
-        # Split slate: 5 top targets by score (the studs) plus 5 "others"
-        # with slot-upgrade targets first, so a FLEX/spot upgrade is always
-        # visible next to the top-top players. Contending keeps the pure
-        # score-order slate.
-        top = _select_varied_slate(scored, max_targets=_LIFT_SEATS_TOP)
-        _seated = {t["player_id"] for t in top}
-        _rest = [(f, t) for f, t in scored if t["player_id"] not in _seated]
-        top = top + _select_varied_slate(
-            _rest, max_targets=_LIFT_SEATS_OTHER, lift_first=True)
-    else:
-        top = _select_varied_slate(scored)
+    top = _select_varied_slate(scored, max_targets=_ROTATION_SLATE_TARGETS)
 
     # ── Build send packages & assemble response ───────────────────────────────
     send_candidates = _score_sends(viewer_players, values_by_id, archetype, untouchable_ids=untouchable_ids)
@@ -3293,9 +3311,9 @@ def _get_archetype_suggestions_impl(
                     "is_stretch":              bool(t.get("is_stretch")),
                     "suggested_send":          pkg,
                 })
-            if len(results) >= 15:
+            if len(results) >= _ROTATION_BUILD_CAP:
                 break
-        if len(results) >= 15:
+        if len(results) >= _ROTATION_BUILD_CAP:
             break
 
     # Surface the most compelling deals first: ones that both move the needle
@@ -3304,6 +3322,7 @@ def _get_archetype_suggestions_impl(
     # fair-but-flat deal doesn't sit above a high-impact, high-acceptance one.
     _attach_trade_heat(results, season)
     results.sort(key=_suggestion_rank, reverse=True)
+    results = _apply_daily_rotation(results)
 
     return {
         "suggestions": results,
