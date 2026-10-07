@@ -337,14 +337,14 @@ def page_trade_database(platform: str, season: int, league_id: str):
     _tdb_dyn = " active" if _tdb_fmt == "dynasty" else ""
     _tdb_rd = " active" if _tdb_fmt == "redraft" else ""
     body_html = f"""
-    <div class="card central" style="max-width:960px;">
-      <div class="card-header" style="border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:0;">
-        <h2 style="margin:0 0 4px;font-size:22px;">Trade Database</h2>
-        <div style="font-size:13px;color:var(--text-muted);">
+    <div class="card central tdb-page-card">
+      <div class="card-header tdb-page-header">
+        <h2>Trade Database</h2>
+        <div class="tdb-page-sub">
           Explore thousands of real Sleeper trades. Filter by dynasty or redraft to match the market you care about. {_TI_SOURCE_NOTE}
         </div>
       </div>
-      <div class="card-body" style="padding-top:20px;">
+      <div class="card-body tdb-page-body">
 
         <div class="tdb-toolbar">
           <div class="tdb-sides-row">
@@ -393,9 +393,8 @@ def page_trade_database(platform: str, season: int, league_id: str):
         <div id="tdbStatus" class="tdb-status"></div>
         <div id="tdbList"   class="tdb-list"></div>
 
-        <div id="tdbLoading" style="text-align:center;padding:48px 0;color:var(--text-muted);display:none;">
-          <div class="loading-spinner" style="margin:0 auto 12px;"></div>
-          Loading trade data...
+        <div id="tdbLoading" class="tdb-loading" style="display:none;">
+          <div class="tdb-skeleton-grid" id="tdbSkeletonGrid"></div>
         </div>
 
         <div id="tdbPagination" class="ti-pagination" style="display:none;">
@@ -417,6 +416,43 @@ def page_trade_database(platform: str, season: int, league_id: str):
     </div>
 
     <style>
+      /* Trade DB page layout: wider on desktop for the 2-col card grid */
+      .tdb-page-card {{ max-width: 960px; }}
+      @media(min-width: 1100px) {{ .tdb-page-card {{ max-width: 1100px; }} }}
+      .tdb-page-header {{
+        border-bottom: 1px solid var(--border);
+        padding-bottom: 16px; margin-bottom: 0;
+      }}
+      .tdb-page-header h2 {{ margin: 0 0 4px; font-size: 22px; }}
+      .tdb-page-sub {{ font-size: 13px; color: var(--text-muted); }}
+      .tdb-page-body {{ padding-top: 20px; }}
+      /* Skeleton loading for trade cards */
+      .tdb-loading {{ padding: 8px 0; }}
+      .tdb-skeleton-grid {{
+        display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;
+      }}
+      @media(max-width: 600px) {{ .tdb-skeleton-grid {{ grid-template-columns: 1fr; }} }}
+      .tdb-skeleton-card {{
+        border: 1px solid var(--border); border-radius: 12px;
+        overflow: hidden; background: var(--card);
+      }}
+      .tdb-skeleton-head {{
+        height: 34px; border-bottom: 1px solid var(--border);
+        background: var(--bg-alt, rgba(0,0,0,.03));
+      }}
+      .tdb-skeleton-body {{ display: grid; grid-template-columns: 1fr 1px 1fr; min-height: 96px; }}
+      .tdb-skeleton-col {{ padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }}
+      .tdb-skeleton-line {{
+        height: 14px; border-radius: 4px;
+        background: linear-gradient(90deg, var(--bg-alt) 25%, var(--border) 50%, var(--bg-alt) 75%);
+        background-size: 200% 100%;
+        animation: tdb-skeleton-shimmer 1.2s infinite;
+      }}
+      .tdb-skeleton-line.short {{ width: 60%; }}
+      @keyframes tdb-skeleton-shimmer {{
+        0% {{ background-position: 200% 0; }}
+        100% {{ background-position: -200% 0; }}
+      }}
       .tdb-toolbar {{
         display: flex; gap: 12px; margin-bottom: 16px;
         flex-wrap: wrap; align-items: flex-start;
@@ -590,11 +626,25 @@ def page_trade_database(platform: str, season: int, league_id: str):
       async function ensureTDBPlayers() {{
         if (tdbAllPlayers) return tdbAllPlayers;
         if (!tdbPlayersPromise) {{
-          tdbPlayersPromise = fetch('/api/players')
+          // Fetch a compact list; server-side `q` filtering is used per keystroke
+          // via tdbSearchPlayers() below, so we only need a small initial set
+          // for the dropdown. Use limit to keep the payload small.
+          tdbPlayersPromise = fetch('/api/players?limit=100')
             .then(r => r.json())
             .then(data => {{ tdbAllPlayers = Array.isArray(data) ? data : (data.players || []); return tdbAllPlayers; }});
         }}
         return tdbPlayersPromise;
+      }}
+
+      async function tdbSearchPlayers(q) {{
+        // Server-side search: returns top matches without downloading the full list
+        try {{
+          const r = await fetch('/api/players?q=' + encodeURIComponent(q) + '&limit=15');
+          const data = await r.json();
+          return Array.isArray(data) ? data : (data.players || []);
+        }} catch (e) {{
+          return [];
+        }}
       }}
 
       function tdbScore(name, q) {{
@@ -627,23 +677,22 @@ def page_trade_database(platform: str, season: int, league_id: str):
         const input    = document.getElementById(side === 'A' ? 'tdbSideASearch' : 'tdbSideBSearch');
         const drop     = document.getElementById(side === 'A' ? 'tdbSideADropdown' : 'tdbSideBDropdown');
         if (!input) return;
+        let tdbDebounce = null;
 
-        input.addEventListener('input', async function() {{
+        input.addEventListener('input', function() {{
+          clearTimeout(tdbDebounce);
+          tdbDebounce = setTimeout(async function() {{
           const q = input.value.trim();
           drop.innerHTML = '';
           drop.style.display = 'none';
-          if (!q) return;
+          if (!q || q.length < 2) return;
 
           const arr     = side === 'A' ? selectedA : selectedB;
-          const players = await ensureTDBPlayers();
           const already = new Set(arr.map(p => p.id));
-          const matches = players
+          // Server-side search: fast, no full-list download
+          const matches = (await tdbSearchPlayers(q))
             .filter(p => !already.has(String(p.player_id)))
-            .map(p => ({{ p, score: tdbScore(p.name, q) }}))
-            .filter(({{ score }}) => score > 0)
-            .sort((a, b) => b.score - a.score || (b.p.value || 0) - (a.p.value || 0))
-            .slice(0, 15)
-            .map(({{ p }}) => p);
+            .slice(0, 15);
 
           if (!matches.length) return;
 
@@ -664,6 +713,7 @@ def page_trade_database(platform: str, season: int, league_id: str):
             drop.appendChild(item);
           }});
           drop.style.display = 'block';
+          }}, 250);
         }});
 
         input.addEventListener('blur', () => {{
@@ -686,6 +736,30 @@ def page_trade_database(platform: str, season: int, league_id: str):
           }}
         }});
       }}
+
+      function showTDBSkeletons() {{
+        const grid = document.getElementById('tdbSkeletonGrid');
+        let html = '';
+        for (let i = 0; i < 6; i++) {{
+          html += `<div class="tdb-skeleton-card">
+            <div class="tdb-skeleton-head"></div>
+            <div class="tdb-skeleton-body">
+              <div class="tdb-skeleton-col">
+                <div class="tdb-skeleton-line"></div>
+                <div class="tdb-skeleton-line short"></div>
+                <div class="tdb-skeleton-line"></div>
+              </div>
+              <div class="tdb-col-divider"></div>
+              <div class="tdb-skeleton-col">
+                <div class="tdb-skeleton-line short"></div>
+                <div class="tdb-skeleton-line"></div>
+              </div>
+            </div>
+          </div>`;
+        }}
+        grid.innerHTML = html;
+      }}
+      showTDBSkeletons();
 
       function loadTDBPage(page) {{
         if (loading) return;
@@ -765,6 +839,7 @@ def page_trade_database(platform: str, season: int, league_id: str):
                            : t.is_superflex === false ? '<span class="chip chip--sm">1QB</span>' : '';
           const teamsBadge = t.num_teams    ? `<span class="chip chip--sm">${{t.num_teams}} Teams</span>` : '';
           const scoreBadge = t.scoring_type ? `<span class="chip chip--sm">${{t.scoring_type.toUpperCase()}}</span>` : '';
+          const weekBadge  = t.week ? `<span class="chip chip--sm">Wk ${{t.week}}</span>` : '';
           function renderAsset(a) {{
             const pid   = a.player_id ? String(a.player_id) : '';
             const match = pid && (matchIdsA.has(pid) || matchIdsB.has(pid));
@@ -779,7 +854,7 @@ def page_trade_database(platform: str, season: int, league_id: str):
           card.innerHTML = `
             <div class="tdb-card-head">
               <span class="tdb-card-date">${{t.date || '-'}}</span>
-              <div class="tdb-badges">${{sfBadge}}${{teamsBadge}}${{scoreBadge}}</div>
+              <div class="tdb-badges">${{sfBadge}}${{teamsBadge}}${{scoreBadge}}${{weekBadge}}</div>
             </div>
             <div class="tdb-card-body">
               <div class="tdb-col">${{sideA}}</div>
