@@ -203,7 +203,6 @@ def page_advanced_metrics(platform: str = None, season: int = None, league_id: s
     from dashboard_services.pages.advanced_metrics_page import build_advanced_metrics_body
     from data_building.advanced_metrics import LEADERBOARD_METRICS
     from dashboard_services.subscriptions import has_premium_for_viewer
-    user_id = session.get("viewer_username")
     has_premium = has_premium_for_viewer(
         session.get("viewer_username"), session.get("viewer_user_id"),
         league_id, platform or "sleeper", season,
@@ -334,6 +333,9 @@ def page_graphs(platform: str, season: int, league_id: str):
     default_view = "career" if bool(ctx.get("offseason_mode")) else str(season)
     view = request.args.get("view", default_view)
     members = "all" if str(request.args.get("members", "current")).lower() == "all" else "current"
+    tab = str(request.args.get("tab", "perf")).lower()
+    if tab not in ("perf", "value", "trends"):
+        tab = "perf"
 
     # Resolve the /graphs URL here, in the request context, so the career
     # background build never has to call url_for off the request thread. The page
@@ -341,7 +343,7 @@ def page_graphs(platform: str, season: int, league_id: str):
     # app-level accessor as a parameter (see render_graphs_html).
     graphs_base_url = url_for("league_pages.page_graphs", platform=platform, season=season, league_id=league_id)
 
-    def _render(v: str, m: str) -> str:
+    def _render(v: str, m: str, t: str) -> str:
         return render_graphs_html(
             platform, season, league_id, v, m,
             ctx=get_league_ctx_from_cache(platform, league_id, season),
@@ -349,6 +351,7 @@ def page_graphs(platform: str, season: int, league_id: str):
             get_ctx=get_league_ctx_from_cache,
             model_value_table=get_model_value_table_cached() or [],
             graphs_base_url=graphs_base_url,
+            tab=t,
         )
 
     # Career view aggregates every past season (slow on a cold cache) -> build in
@@ -360,11 +363,11 @@ def page_graphs(platform: str, season: int, league_id: str):
             # provider owner ids rather than mutable team display names.
             platform, season, league_id, f"graphs:career:v2:{members}",
             "BR Fantasy Graphs", "graphs",
-            lambda: _render("career", members),
+            lambda: _render("career", members, tab),
             "Building career graphs",
         )
 
-    body_html = _render(view, members)
+    body_html = _render(view, members, tab)
     return render_page("BR Fantasy Graphs", league_id, "graphs", body_html, platform, season)
 
 

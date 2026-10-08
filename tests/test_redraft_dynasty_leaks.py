@@ -6,8 +6,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_graphs_page_skips_value_vs_age_for_redraft():
     src = (ROOT / "dashboard_services" / "pages" / "graphs_page.py").read_text(encoding="utf-8")
-    assert 'ctx_scoring_type(ctx) != "redraft"' in src
+    # The Value tab shows an honest empty state for redraft leagues instead of
+    # dynasty-only charts.
+    assert 'ctx_scoring_type(value_ctx) == "redraft"' in src
     assert "Dynasty Value vs Age" in src
+    assert "This league is redraft" in src
 
 
 def test_team_modal_skips_value_vs_age_for_redraft():

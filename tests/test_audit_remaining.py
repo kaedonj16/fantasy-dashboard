@@ -290,7 +290,9 @@ def test_graphs_empty_weekly_is_a_static_card():
     assert "graphs-empty" in GRAPHS
     assert "No weekly data available for this season." in GRAPHS
     body = GRAPHS[GRAPHS.index("def build_graphs_body"):]
-    assert "getattr(df_weekly, \"empty\"" in body or "getattr(df_weekly, 'empty'" in body
+    # _finalized_weekly returns None for empty/missing data; build_graphs_body
+    # shows the static card when team_stats is empty or df_weekly is None.
+    assert "getattr(team_stats, \"empty\"" in body or "df_weekly is None" in body
 
 
 def test_graphs_cold_cache_uses_chart_skeleton():
