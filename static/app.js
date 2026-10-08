@@ -22565,10 +22565,43 @@ function renderTeamDetails(data) {
 // the notification bell, and stays hidden when there are no actions.
 (function initMyActions() {
   var CACHE = null;
+  var ALL = [];
+  var HOST = null, PILL = null, DRAWER = null, COUNT = null;
+  var LS_KEY = 'br_mya_dismissed';
+  var SNOOZE_MS = 7 * 24 * 60 * 60 * 1000;
   function urgColor(kind) {
     if (kind === 'lineup') return 'var(--loss)';
     if (kind === 'waiver') return 'var(--warning)';
     return 'var(--brand-blue)';
+  }
+  // Stable per-action key (the API emits no id): league + kind + title.
+  function actionKey(a) {
+    var s = (a.league_id || '') + '|' + (a.kind || '') + '|' + (a.title || '');
+    var h = 0;
+    for (var i = 0; i < s.length; i++) { h = ((h << 5) - h + s.charCodeAt(i)) | 0; }
+    return 'k' + (h >>> 0).toString(36);
+  }
+  function readDismissed() {
+    var out = {};
+    try {
+      var raw = localStorage.getItem(LS_KEY);
+      if (!raw) return out;
+      var obj = JSON.parse(raw) || {};
+      var now = Date.now(), dirty = false;
+      Object.keys(obj).forEach(function (k) {
+        var exp = parseInt(obj[k], 10);
+        if (exp && exp > now) out[k] = exp; else dirty = true;
+      });
+      if (dirty) { try { localStorage.setItem(LS_KEY, JSON.stringify(out)); } catch (_) {} }
+    } catch (_) {}
+    return out;
+  }
+  function writeDismissed(map) {
+    try { localStorage.setItem(LS_KEY, JSON.stringify(map || {})); } catch (_) {}
+  }
+  function visibleActions() {
+    var dismissed = readDismissed();
+    return ALL.filter(function (a) { return !dismissed[actionKey(a)]; });
   }
   function buildDrawer(actions) {
     var groups = {}, order = [];
@@ -22585,6 +22618,7 @@ function renderTeamDetails(data) {
           '<span class="mya-dot" style="background:' + urgColor(a.kind) + '"></span>' +
           '<span class="mya-txt">' + _wlEsc(a.title || 'Action') +
           (a.detail ? '<small>' + _wlEsc(a.detail) + '</small>' : '') + '</span>' +
+          '<button type="button" class="mya-dismiss" data-mya-key="' + actionKey(a) + '" title="Snooze for a week" aria-label="Snooze this action for a week">&times;</button>' +
           '<span class="mya-go" aria-hidden="true">&rsaquo;</span></a>';
       });
       html += '</div>';
@@ -22592,7 +22626,7 @@ function renderTeamDetails(data) {
     html += '<div class="mya-group"><a class="mya-viewall" href="/portfolio">View all leagues &rsaquo;</a></div>';
     return html;
   }
-  function mount(actions) {
+  function mount() {
     var gear = document.querySelector('.settings-gear-wrapper');
     if (!gear || document.getElementById('myActionsPill')) return;
     var host = document.createElement('div');
@@ -22600,21 +22634,57 @@ function renderTeamDetails(data) {
     host.innerHTML =
       '<span class="nav-utility-divider" aria-hidden="true"></span>' +
       '<button type="button" id="myActionsPill" class="mya-pill" aria-haspopup="dialog" aria-expanded="false" title="Next steps across your leagues">' +
-        'Next steps <span id="myActionsCount" class="mya-count-badge">' + actions.length + '</span></button>' +
-      '<div id="myActionsDrawer" class="mya-drawer" role="dialog" aria-label="Actions across your leagues" hidden>' +
-        buildDrawer(actions) + '</div>';
+        'Next steps <span id="myActionsCount" class="mya-count-badge">0</span></button>' +
+      '<div id="myActionsDrawer" class="mya-drawer" role="dialog" aria-label="Actions across your leagues" hidden></div>';
     gear.parentNode.insertBefore(host, gear.nextSibling);
-    var pill = host.querySelector('#myActionsPill');
-    var drawer = host.querySelector('#myActionsDrawer');
+    HOST = host;
+    PILL = host.querySelector('#myActionsPill');
+    DRAWER = host.querySelector('#myActionsDrawer');
+    COUNT = host.querySelector('#myActionsCount');
+    var pill = PILL, drawer = DRAWER;
     pill.addEventListener('click', function (e) {
       e.stopPropagation();
       var willOpen = drawer.hidden;
       drawer.hidden = !willOpen;
       pill.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
     });
+    drawer.addEventListener('click', onDismissClick);
     document.addEventListener('click', function (e) {
       if (!host.contains(e.target)) { drawer.hidden = true; pill.setAttribute('aria-expanded', 'false'); }
     });
+    refresh();
+  }
+  // Re-render the drawer from ALL minus snoozed items; sync counts and
+  // hide the pill when nothing is visible.
+  function refresh() {
+    var vis = visibleActions();
+    if (DRAWER) DRAWER.innerHTML = buildDrawer(vis);
+    var n = vis.length;
+    if (COUNT) COUNT.textContent = String(n);
+    var moreRow = document.getElementById('moreMyActions');
+    var moreCount = document.getElementById('moreMyActionsCount');
+    if (moreCount) moreCount.textContent = String(n);
+    if (HOST) HOST.style.display = n ? '' : 'none';
+    if (moreRow) moreRow.hidden = !n;
+  }
+  function onDismissClick(e) {
+    var btn = e.target && e.target.closest ? e.target.closest('.mya-dismiss') : null;
+    if (!btn || !DRAWER || !DRAWER.contains(btn)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    var key = btn.getAttribute('data-mya-key');
+    var dismissed = readDismissed();
+    dismissed[key] = Date.now() + SNOOZE_MS;
+    writeDismissed(dismissed);
+    refresh();
+    if (typeof window.brUndoToast === 'function') {
+      window.brUndoToast('Snoozed for a week.', function () {
+        var d = readDismissed();
+        delete d[key];
+        writeDismissed(d);
+        refresh();
+      });
+    }
   }
   function load() {
     if (CACHE !== null) return;
@@ -22623,13 +22693,9 @@ function renderTeamDetails(data) {
       .then(function (d) {
         CACHE = d || {};
         var actions = (d && Array.isArray(d.actions)) ? d.actions : [];
+        ALL = actions;
         if (actions.length) {
-          mount(actions);
-          // Mobile: reveal the More-sheet "My Actions" entry with a count badge.
-          var moreRow = document.getElementById('moreMyActions');
-          var moreCount = document.getElementById('moreMyActionsCount');
-          if (moreRow) moreRow.hidden = false;
-          if (moreCount) moreCount.textContent = String(actions.length);
+          mount();
         }
       })
       .catch(function () { CACHE = {}; });
