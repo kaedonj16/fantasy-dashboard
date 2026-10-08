@@ -11,7 +11,6 @@ import plotly.graph_objects as go
 from flask import url_for
 from plotly.offline import plot as plotly_plot
 
-from dashboard_services.ai.history_recap import get_league_season_summary
 from dashboard_services.platform_api import get_bracket
 from dashboard_services.service import playoff_bracket as _render_playoff_bracket
 from utils.coerce import safe_int as _safe_int
@@ -471,12 +470,15 @@ def _build_summary(history_ctx: dict) -> dict:
         "best_defense_value": 0.0,
         "highest_week_team": "-",
         "highest_week_value": 0.0,
+        "highest_week_week": 0,
         "lowest_week_team": "-",
         "lowest_week_value": 0.0,
         "closest_matchup": "-",
         "closest_margin": 0.0,
+        "closest_detail": None,
         "biggest_blowout": "-",
         "biggest_blowout_margin": 0.0,
+        "biggest_blowout_detail": None,
         "unluckiest_team": "-",
         "unluckiest_delta": 0,
     }
@@ -520,6 +522,7 @@ def _build_summary(history_ctx: dict) -> dict:
 
         summary["highest_week_team"] = str(hi.get("owner", "-"))
         summary["highest_week_value"] = _safe_float(hi.get("points"))
+        summary["highest_week_week"] = _safe_int(hi.get("week"), 0)
 
         summary["lowest_week_team"] = str(lo.get("owner", "-"))
         summary["lowest_week_value"] = _safe_float(lo.get("points"))
@@ -553,10 +556,24 @@ def _build_summary(history_ctx: dict) -> dict:
             summary["closest_matchup"] = f"Week {closest['week']}: {closest['winner']} over {closest['loser']}"
             summary["closest_scores"] = f"{closest['winner_pts']:.1f}-{closest['loser_pts']:.1f}"
             summary["closest_margin"] = _safe_float(closest["margin"])
+            summary["closest_detail"] = {
+                "week": closest["week"],
+                "winner": closest["winner"],
+                "loser": closest["loser"],
+                "winner_pts": closest["winner_pts"],
+                "loser_pts": closest["loser_pts"],
+            }
 
             summary["biggest_blowout"] = f"Week {blowout['week']}: {blowout['winner']} over {blowout['loser']}"
             summary["biggest_blowout_scores"] = f"{blowout['winner_pts']:.1f}-{blowout['loser_pts']:.1f}"
             summary["biggest_blowout_margin"] = _safe_float(blowout["margin"])
+            summary["biggest_blowout_detail"] = {
+                "week": blowout["week"],
+                "winner": blowout["winner"],
+                "loser": blowout["loser"],
+                "winner_pts": blowout["winner_pts"],
+                "loser_pts": blowout["loser_pts"],
+            }
 
     return summary
 
@@ -595,27 +612,6 @@ def _history_chart(df_weekly: pd.DataFrame) -> str:
         output_type="div",
         config={"displayModeBar": False},
     )
-
-
-def _summary_card(label: str, value: str, sub: str = "", featured: bool = False, card_type: str = "") -> str:
-    cls = "history-card"
-    moment_attr = ""
-    if card_type == "champion":
-        cls += " is-featured is-champion br-champ"
-        # Crowning moment: the trophy label draws in, the team name rises, and a
-        # burst of gold confetti fires when the card first scrolls into view.
-        moment_attr = ' data-br-moment="champion" data-br-confetti="gold" data-br-confetti-delay="650"'
-    elif card_type == "runner_up":
-        cls += " is-featured is-runner-up"
-    elif featured:
-        cls += " is-featured"
-    return f"""
-    <div class="{cls}"{moment_attr}>
-      <div class="history-card-label">{label}</div>
-      <div class="history-card-value">{value}</div>
-      {f'<div class="history-card-sub">{sub}</div>' if sub else ''}
-    </div>
-    """
 
 
 def _standings_table(team_stats: pd.DataFrame) -> str:
@@ -667,78 +663,85 @@ def _standings_table(team_stats: pd.DataFrame) -> str:
     """
 
 
+def _fmt_pts(v: float) -> str:
+    """Compact points formatting: 178, 94.5 (no trailing .0)."""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return str(v)
+    return f"{f:.1f}".rstrip("0").rstrip(".")
+
+
+def _award_row(title: str, winner: str) -> str:
+    return (
+        '<div class="history-award-row">'
+        f'<span class="history-award-title">{_esc(title)}</span>'
+        f'<span class="history-award-winner">{_esc(winner)}</span>'
+        "</div>"
+    )
+
+
 def get_history_summary_html(history_ctx: dict) -> str:
-    """Generate season awards/summary section HTML."""
+    """Generate season awards section HTML as award rows (title + winner)."""
     summary = _build_summary(history_ctx)
 
-    featured_cards_html = "".join(
-        [
-            _summary_card(
-                "<i class='fa-solid fa-crown' aria-hidden='true'></i> Champion",
-                summary["champion"],
-                f"Regular season record: {summary['champion_record']}",
-                card_type="champion",
-            ),
-            _summary_card(
-                "<i class='fa-solid fa-medal' aria-hidden='true'></i> Runner-Up",
-                summary["runner_up"],
-                f"Regular season record: {summary['runner_up_record']}",
-                card_type="runner_up",
-            ),
-            _summary_card(
-                "Scoring Leader",
-                summary["top_scorer_team"],
-                f"{summary['top_scorer_value']:.1f} PF • {summary['top_scorer_avg']:.1f} avg pts",
-                featured=True,
-            ),
-        ]
-    )
-
-    compact_cards_html = "".join(
-        [
-            _summary_card(
-                "Best Defense",
-                summary["best_defense_team"],
-                f"{summary['best_defense_value']:.1f} PA",
-            ),
-            _summary_card(
-                "Highest Week",
-                summary["highest_week_team"],
-                f"{summary['highest_week_value']:.1f} pts",
-            ),
-            _summary_card(
-                "Lowest Week",
-                summary["lowest_week_team"],
-                f"{summary['lowest_week_value']:.1f} pts",
-            ),
-            _summary_card(
-                "Closest Matchup",
-                summary["closest_matchup"],
-                f"{summary['closest_margin']:.1f} point margin",
-            ),
-            _summary_card(
+    rows = []
+    if summary.get("top_scorer_team") not in (None, "-", ""):
+        rows.append(
+            _award_row(
+                "Highest Scorer",
+                f"{summary['top_scorer_team']} \u00b7 {_fmt_pts(summary['top_scorer_value'])} PF",
+            )
+        )
+    if summary.get("highest_week_team") not in (None, "-", "") and summary.get("highest_week_value"):
+        wk = summary.get("highest_week_week") or 0
+        wk_txt = f" (Wk {wk})" if wk else ""
+        rows.append(
+            _award_row(
+                "Best Week",
+                f"{summary['highest_week_team']} \u00b7 {_fmt_pts(summary['highest_week_value'])}{wk_txt}",
+            )
+        )
+    bd = summary.get("biggest_blowout_detail")
+    if bd:
+        rows.append(
+            _award_row(
                 "Biggest Blowout",
-                summary["biggest_blowout"],
-                f"{summary['biggest_blowout_margin']:.1f} point margin",
-            ),
-            _summary_card(
+                f"{bd['winner']} beat {bd['loser']} "
+                f"{_fmt_pts(bd['winner_pts'])}-{_fmt_pts(bd['loser_pts'])}",
+            )
+        )
+    cd = summary.get("closest_detail")
+    if cd:
+        rows.append(
+            _award_row(
+                "Closest Game",
+                f"{cd['winner']} beat {cd['loser']} "
+                f"{_fmt_pts(cd['winner_pts'])}-{_fmt_pts(cd['loser_pts'])}",
+            )
+        )
+    act = _wrapped_activity(history_ctx)
+    tt = (act or {}).get("top_trader")
+    if tt and tt.get("owner"):
+        n = _safe_int(tt.get("n"), 0)
+        rows.append(
+            _award_row(
+                "Most Active",
+                f"{tt['owner']} \u00b7 {n} trade{'s' if n != 1 else ''} + adds",
+            )
+        )
+    if summary.get("unluckiest_team") not in (None, "-", "") and summary.get("unluckiest_delta", 0) > 0:
+        rows.append(
+            _award_row(
                 "Unluckiest Team",
-                summary["unluckiest_team"],
-                (
-                    f"{summary['unluckiest_delta']} spots below PF rank"
-                    if summary["unluckiest_delta"] > 0
-                    else "Matched or beat its scoring rank"
-                ),
-            ),
-        ]
-    )
+                f"{summary['unluckiest_team']} \u00b7 {summary['unluckiest_delta']} spots below PF rank",
+            )
+        )
 
-    return f"""
-    <div class="history-awards-grid">
-      {featured_cards_html}
-      {compact_cards_html}
-    </div>
-    """
+    if not rows:
+        return "<div class='history-empty'>No awards data available for this season.</div>"
+
+    return f"""<div class="history-awards-list">{''.join(rows)}</div>"""
 
 
 def get_history_standings_html(history_ctx: dict) -> str:
@@ -828,173 +831,57 @@ def _get_history_bracket_html(history_ctx: dict) -> str:
     return bracket_html
 
 
-def _build_rivalry_card(
-        history_ctx: dict,
-        base_platform: str,
-        base_season: int,
-        base_league_id: str,
-) -> str:
-    """All-time head-to-head card: pick two managers, see their full rivalry."""
-    users = history_ctx.get("users") or []
-    opts = []
-    for u in users:
-        uid = str(u.get("user_id") or "").strip()
-        if not uid:
-            continue
-        metadata = u.get("metadata") or {}
-        name = (
-            u.get("display_name")
-            or metadata.get("team_name")
-            or u.get("username")
-            or uid
-        )
-        opts.append((str(name), uid))
-    if len(opts) < 2:
-        return ""
-    opts.sort(key=lambda t: t[0].lower())
-    options_html = "".join(
-        f"<option value='{_esc(uid)}'>{_esc(name)}</option>" for name, uid in opts
-    )
+def _season_head_to_head(history_ctx: dict, limit: int = 8) -> list:
+    """Per-season head-to-head records from df_weekly matchup pairs.
 
-    card = """
-      <div class="card rivalry-card">
-        <div class="card-header">
-          <h2>Rivalry Tracker</h2>
-          <div style="font-size:13px;color:var(--text-muted);">All-time head-to-head, every season included</div>
-        </div>
-        <div class="card-body">
-          <div class="rivalry-controls">
-            <select id="rivalrySelA" class="rivalry-select">
-              <option value="">Select manager…</option>
-              __OPTIONS__
-            </select>
-            <span class="rivalry-vs">VS</span>
-            <select id="rivalrySelB" class="rivalry-select">
-              <option value="">Select manager…</option>
-              __OPTIONS__
-            </select>
-            <button id="rivalryGoBtn" class="rivalry-go-btn" disabled>Compare</button>
-          </div>
-          <div id="rivalryResult" class="rivalry-result"></div>
-        </div>
-      </div>
-      <script>
-      (function() {
-        var selA = document.getElementById('rivalrySelA');
-        var selB = document.getElementById('rivalrySelB');
-        var goBtn = document.getElementById('rivalryGoBtn');
-        var result = document.getElementById('rivalryResult');
-        if (!selA || !selB || !goBtn) return;
-
-        function syncBtn() {
-          goBtn.disabled = !(selA.value && selB.value && selA.value !== selB.value);
-        }
-        selA.addEventListener('change', syncBtn);
-        selB.addEventListener('change', syncBtn);
-
-        function nameOf(sel) { return sel.options[sel.selectedIndex].text; }
-
-        goBtn.addEventListener('click', function() {
-          var a = selA.value, b = selB.value;
-          if (!a || !b || a === b) return;
-          result.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text-muted);">Loading rivalry…</div>';
-          fetch('/api/rivalry/__PLATFORM__/__SEASON__/__LEAGUE_ID__?a=' + encodeURIComponent(a) + '&b=' + encodeURIComponent(b))
-            .then(function(r) { return r.json(); })
-            .then(function(d) {
-              if (d.error) { result.innerHTML = '<div class="rivalry-empty">' + d.error + '</div>'; return; }
-              var games = d.games || [];
-              if (!games.length) {
-                window.brEmptyState(result, { icon: 'search', title: 'No head-to-head yet', message: 'These two managers have never faced each other.', compact: true });
-                return;
-              }
-              var nA = nameOf(selA), nB = nameOf(selB);
-              var margins = games.map(function(g) { return Math.abs(g.a_pts - g.b_pts); });
-              var avgMargin = margins.reduce(function(s, m) { return s + m; }, 0) / games.length;
-              var blowout = games.reduce(function(best, g) {
-                return Math.abs(g.a_pts - g.b_pts) > Math.abs(best.a_pts - best.b_pts) ? g : best;
-              }, games[0]);
-              var bWinner = blowout.a_pts > blowout.b_pts ? nA : nB;
-              var bMargin = Math.abs(blowout.a_pts - blowout.b_pts);
-
-              var streakLen = 0, streakSide = null;
-              for (var i = games.length - 1; i >= 0; i--) {
-                var w = games[i].a_pts > games[i].b_pts ? 'a' : (games[i].b_pts > games[i].a_pts ? 'b' : null);
-                if (w === null) break;
-                if (streakSide === null) { streakSide = w; streakLen = 1; }
-                else if (w === streakSide) { streakLen++; }
-                else break;
-              }
-              var streakName = streakSide === 'a' ? nA : nB;
-
-              var aLead = d.wins_a > d.wins_b, bLead = d.wins_b > d.wins_a;
-              var total = d.wins_a + d.wins_b + (d.ties || 0);
-              var barPct = total > 0 ? Math.round((d.wins_a / total) * 100) : 50;
-
-              // Score banner
-              var html = '<div class="rivalry-banner">'
-                + '<div class="rivalry-side' + (aLead ? ' rivalry-side--leader' : '') + '">'
-                +   '<div class="rivalry-name">' + nA + '</div>'
-                +   '<div class="rivalry-wins' + (aLead ? ' rivalry-wins--lead' : '') + '">' + d.wins_a + '</div>'
-                + '</div>'
-                + '<div class="rivalry-divider">'
-                +   '<div class="rivalry-divider-label">vs</div>'
-                +   '<div class="rivalry-divider-dash">–</div>'
-                + '</div>'
-                + '<div class="rivalry-side' + (bLead ? ' rivalry-side--leader' : '') + '">'
-                +   '<div class="rivalry-name">' + nB + '</div>'
-                +   '<div class="rivalry-wins' + (bLead ? ' rivalry-wins--lead' : '') + '">' + d.wins_b + '</div>'
-                + '</div>'
-                + '</div>';
-
-              if (d.ties) html += '<div class="rivalry-ties">' + d.ties + ' tie' + (d.ties > 1 ? 's' : '') + '</div>';
-
-              // Win-rate bar
-              html += '<div class="rivalry-bar-wrap">'
-                + '<span class="rivalry-bar-label">' + barPct + '%</span>'
-                + '<div class="rivalry-bar-track"><div class="rivalry-bar-fill" style="width:' + barPct + '%"></div></div>'
-                + '<span class="rivalry-bar-label rivalry-bar-label--right">' + (100 - barPct) + '%</span>'
-                + '</div>';
-
-              // Stat chips
-              html += '<div class="rivalry-chips">'
-                + '<span class="rivalry-chip"><i class="fa-solid fa-calendar rivalry-chip-icon"></i>' + games.length + ' meetings</span>'
-                + '<span class="rivalry-chip"><i class="fa-solid fa-chart-simple rivalry-chip-icon"></i>Total pts: ' + d.pts_a.toFixed(1) + ' – ' + d.pts_b.toFixed(1) + '</span>'
-                + '<span class="rivalry-chip"><i class="fa-solid fa-medal rivalry-chip-icon"></i>Avg margin: ' + avgMargin.toFixed(1) + '</span>'
-                + (streakLen > 1 ? '<span class="rivalry-chip rivalry-chip-streak"><i class="fa-solid fa-fire"></i>' + streakName + ' won ' + streakLen + ' straight</span>' : '')
-                + '<span class="rivalry-chip rivalry-chip-blowout"><i class="fa-solid fa-bolt"></i>' + bWinner + ' by ' + bMargin.toFixed(1) + ' (' + blowout.season + ' wk ' + blowout.week + ')</span>'
-                + '</div>';
-
-              // Matchup history table
-              html += '<div class="rivalry-table-wrap"><table class="rivalry-table"><thead><tr>'
-                + '<th>Season</th><th>Week</th>'
-                + '<th style="text-align:right">' + nA + '</th>'
-                + '<th style="text-align:right">' + nB + '</th>'
-                + '</tr></thead><tbody>';
-              var recent = games.slice(-12).reverse();
-              recent.forEach(function(g) {
-                var aWin = g.a_pts > g.b_pts, bWin = g.b_pts > g.a_pts;
-                html += '<tr><td style="color:var(--text-muted)">' + g.season + '</td><td style="color:var(--text-muted)">Wk ' + g.week + '</td>'
-                  + '<td style="text-align:right" class="' + (aWin ? 'rivalry-w' : '') + '">' + g.a_pts.toFixed(1) + '</td>'
-                  + '<td style="text-align:right" class="' + (bWin ? 'rivalry-w' : '') + '">' + g.b_pts.toFixed(1) + '</td></tr>';
-              });
-              html += '</tbody></table></div>';
-              if (games.length > 12) html += '<div class="rivalry-table-footer">Showing the 12 most recent of ' + games.length + ' meetings</div>';
-              result.innerHTML = html;
-            })
-            .catch(function() {
-              window.brErrorState(result, 'Could not load rivalry data.', function() { goBtn.click(); }, { compact: true });
-            });
-        });
-      })();
-      </script>
+    Returns [{a, b, wins_a, wins_b, games}] sorted by games desc. The team
+    with more wins is always listed first.
     """
-    return (
-        card
-        .replace("__OPTIONS__", options_html)
-        .replace("__PLATFORM__", _esc(str(base_platform)))
-        .replace("__SEASON__", _esc(str(base_season)))
-        .replace("__LEAGUE_ID__", _esc(str(base_league_id)))
-    )
+    df = _filtered_season_df(history_ctx.get("df_weekly", pd.DataFrame()))
+    needed = {"week", "matchup_id", "owner", "points"}
+    if df.empty or not needed.issubset(df.columns):
+        return []
+    pairs: dict = {}
+    for (_, _), grp in df.groupby(["week", "matchup_id"]):
+        if len(grp) != 2:
+            continue
+        ordered = grp.sort_values("points", ascending=False).reset_index(drop=True)
+        w = str(ordered.iloc[0]["owner"])
+        l = str(ordered.iloc[1]["owner"])
+        if not w or not l or w == l:
+            continue
+        key = tuple(sorted((w, l)))
+        rec = pairs.setdefault(key, {"games": 0, "wins": {w: 0, l: 0}})
+        rec["games"] += 1
+        rec["wins"][w] = rec["wins"].get(w, 0) + 1
+    out = []
+    for (t1, t2), rec in pairs.items():
+        w1 = rec["wins"].get(t1, 0)
+        w2 = rec["wins"].get(t2, 0)
+        if w1 >= w2:
+            a, b, wa, wb = t1, t2, w1, w2
+        else:
+            a, b, wa, wb = t2, t1, w2, w1
+        out.append({"a": a, "b": b, "wins_a": wa, "wins_b": wb, "games": rec["games"]})
+    out.sort(key=lambda r: (-r["games"], -(r["wins_a"] + r["wins_b"]), r["a"].lower()))
+    return out[:limit]
+
+
+def _build_season_rivalries_html(history_ctx: dict) -> str:
+    """Head-to-head record rows for the selected season (mock: Rivalries tab)."""
+    rows = _season_head_to_head(history_ctx)
+    if not rows:
+        return "<div class='history-empty'>No head-to-head data for this season.</div>"
+    html = []
+    for r in rows:
+        html.append(
+            '<div class="history-rival-row">'
+            f'<span class="history-rival-team">{_esc(r["a"])}</span>'
+            f'<span class="history-rival-rec">{r["wins_a"]}-{r["wins_b"]}</span>'
+            f'<span class="history-rival-team history-rival-team--right">{_esc(r["b"])}</span>'
+            "</div>"
+        )
+    return "".join(html)
 
 
 def _wrapped_longest_win_streak(df_weekly: pd.DataFrame, league: dict) -> tuple:
@@ -3041,11 +2928,36 @@ def build_history_body(
 
     summary = _build_summary(history_ctx)
 
-    # Add summary to history_ctx for AI generation
-    history_ctx["summary"] = summary
+    # Season hero data: champion + record + 4-stat strip (AVG PF, HIGH WEEK,
+    # TRADES, PLAYOFF TEAMS). All from the real season dataset.
+    champion = summary.get("champion") or "-"
+    champ_rec = summary.get("champion_record") or "-"
 
-    # Use AI to generate league season summary
-    recap_line = get_league_season_summary(history_ctx, selected_history_season)
+    _hero_df = _filtered_season_df(df_weekly)
+    if not _hero_df.empty and "points" in _hero_df.columns:
+        _avg_pf = pd.to_numeric(_hero_df["points"], errors="coerce").mean()
+        avg_pf_txt = f"{_avg_pf:.1f}" if pd.notna(_avg_pf) else "\u2013"
+    else:
+        avg_pf_txt = "\u2013"
+    _high_week = summary.get("highest_week_value") or 0
+    high_week_txt = f"{_high_week:.1f}" if _high_week else "\u2013"
+    _act = _wrapped_activity(history_ctx) or {}
+    trades_txt = str(_act.get("total_trades", 0)) if _act else "\u2013"
+    _playoff_teams = (league.get("settings") or {}).get("playoff_teams")
+    playoff_teams_txt = str(_safe_int(_playoff_teams, 0)) if _playoff_teams else "\u2013"
+
+    hero_stats = "".join(
+        [
+            f'<div class="history-stat"><div class="history-stat-v">{v}</div>'
+            f'<div class="history-stat-k">{k}</div></div>'
+            for v, k in [
+                (avg_pf_txt, "AVG PF"),
+                (high_week_txt, "HIGH WEEK"),
+                (trades_txt, "TRADES"),
+                (playoff_teams_txt, "PLAYOFF TEAMS"),
+            ]
+        ]
+    )
 
     options_html = []
     for yr in available_seasons:
@@ -3057,9 +2969,7 @@ def build_history_body(
             history_season=yr,
         )
         selected = "selected" if yr == selected_history_season else ""
-        options_html.append(f"<option value='{href}' {selected}>{yr}</option>")
-
-    league_name = league.get("name") or "League History"
+        options_html.append(f"<option value='{_esc(href)}' {selected}>{yr}</option>")
 
     _partial_chip = ""
     try:
@@ -3068,10 +2978,8 @@ def build_history_body(
             _max_w = int(pd.to_numeric(df_weekly["week"], errors="coerce").max() or 0)
             if 0 < _max_w < (_pw - 1):
                 _partial_chip = (
-                    f'<span class="history-partial-chip" style="display:inline-block;margin-top:8px;'
-                    f'padding:3px 8px;border-radius:999px;font-size:11px;font-weight:700;'
-                    f'background:color-mix(in srgb,#b45309 14%,transparent);color:#b45309;">'
-                    f'Partial season · through week {_max_w}</span>'
+                    '<span class="history-partial-chip">'
+                    f'Partial season \u00b7 through week {_max_w}</span>'
                 )
     except Exception:
         _partial_chip = ""
@@ -3079,6 +2987,7 @@ def build_history_body(
     # Season Wrapped: a stories-style recap, lazy-loaded on first click so its
     # per-week boxscore fetches never block the page render. Here we only build
     # the cheap (no-boxscore) slide set to decide whether to show the launcher.
+    league_name = league.get("name") or "League History"
     _wrapped_cheap = _build_wrapped_slides(
         history_ctx, summary, league_name, selected_history_season, include_players=False
     )
@@ -3092,40 +3001,28 @@ def build_history_body(
         _wrapped_btn = ""
     _wrapped_overlay = ""  # injected lazily into #wrappedMount by the launcher
 
-    # Shimmer skeletons shaped like the content they stand in for, so the lazy
-    # /api/history/* sections read as "arriving" rather than a bare spinner.
+    # Shimmer skeletons for the lazy /api/history/* sections (awards + chart).
     # (Unused when prerendered sections are provided.)
-    _sk_card = (
-        "<div class='history-card'>"
-        "<div class='sk-shimmer sk-line sk-line--sm' style='width:45%'></div>"
-        "<div class='sk-shimmer sk-line sk-line--lg' style='width:72%;margin-top:8px'></div>"
-        "<div class='sk-shimmer sk-line sk-line--sm' style='width:58%;margin-top:6px'></div>"
-        "</div>"
-    )
-    awards_skeleton = f"<div class='history-awards-grid'>{_sk_card * 6}</div>"
     _sk_row = (
         "<div style='display:flex;align-items:center;gap:12px;padding:10px 0;'>"
-        "<div class='sk-shimmer sk-avatar' style='width:22px;height:22px'></div>"
-        "<div class='sk-shimmer sk-line' style='width:38%;margin:0'></div>"
-        "<div class='sk-shimmer sk-line' style='width:13%;margin:0 0 0 auto'></div>"
-        "<div class='sk-shimmer sk-line' style='width:13%;margin:0'></div>"
+        "<div class='sk-shimmer sk-line sk-line--sm' style='width:32%;margin:0'></div>"
+        "<div class='sk-shimmer sk-line sk-line--sm' style='width:44%;margin:0 0 0 auto'></div>"
         "</div>"
     )
-    standings_skeleton = f"<div style='padding-top:12px'>{_sk_row * 8}</div>"
+    awards_skeleton = f"<div class='history-awards-list'>{_sk_row * 5}</div>"
     chart_skeleton = (
         "<div class='sk-shimmer' style='width:100%;height:280px;"
         "border-radius:12px;margin-top:6px'></div>"
     )
-    awards_html    = prerendered["summary"]   if prerendered else awards_skeleton
-    standings_html = prerendered["standings"] if prerendered else standings_skeleton
-    chart_html     = prerendered["chart"]     if prerendered else chart_skeleton
-    tour_input     = '<input type="hidden" id="historyTourMode" value="1">' if prerendered else ""
+    awards_html = prerendered.get("summary") if prerendered else awards_skeleton
+    chart_html = prerendered.get("chart") if prerendered else chart_skeleton
+    tour_input = '<input type="hidden" id="historyTourMode" value="1">' if prerendered else ""
 
     bracket_html = _get_history_bracket_html(history_ctx)
-
-    rivalry_html = _build_rivalry_card(
-        history_ctx, base_platform, base_season, base_league_id,
+    bracket_body = bracket_html or (
+        "<div class='history-empty'>No playoff bracket available for this season.</div>"
     )
+    rivalries_html = _build_season_rivalries_html(history_ctx)
 
     return f"""
     <div class="history-page">
@@ -3137,24 +3034,14 @@ def build_history_body(
       <input type="hidden" id="resolvedLeagueIdInput" value="{_esc(str(resolved_history_league_id))}">
       {tour_input}
 
-      <div class="history-header">
-        <div>
-          <div class="history-kicker">BR Fantasy · League History</div>
-          <h1 class="history-title">
-            <span class="history-title-accent">{_esc(league_name)}</span> • {selected_history_season}
-          </h1>
-          <p class="history-subtitle">{_esc(recap_line)}</p>
-          {_partial_chip}
-        </div>
-
-        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:12px;">
-          <div class="history-header-actions">
-            {_wrapped_btn}
-            <a href="/{base_platform}/{base_season}/{base_league_id}/awards" class="awards-page-nav-link">
-              <i class="fa-solid fa-trophy"></i>
-              All-Time Awards
-            </a>
-          </div>
+      <div class="history-head">
+        <h1 class="history-title">League History</h1>
+        <div class="history-head-actions">
+          {_wrapped_btn}
+          <a href="/{base_platform}/{base_season}/{base_league_id}/awards" class="awards-page-nav-link">
+            <i class="fa-solid fa-trophy"></i>
+            All-Time Awards
+          </a>
           <div class="history-season-picker">
             <label for="history-season-select">Season</label>
             <select
@@ -3167,75 +3054,84 @@ def build_history_body(
         </div>
       </div>
 
-      <nav class="history-anchor-nav" aria-label="Jump to section" style="position:sticky;top:0;z-index:10;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:8px 16px;margin-bottom:16px;display:flex;gap:16px;flex-wrap:wrap;">
-        <a href="#historyAwardsContent" style="font-size:13px;font-weight:600;color:var(--accent);text-decoration:none;">Awards</a>
-        <a href="#historyStandingsContent" style="font-size:13px;font-weight:600;color:var(--accent);text-decoration:none;">Standings</a>
-        <a href="#historyChartContent" style="font-size:13px;font-weight:600;color:var(--accent);text-decoration:none;">Charts</a>
-      </nav>
-
-      <div class="history-top-grid">
-        <div class="card history-awards-panel">
-          <div class="card-header"><h2>Season Awards</h2></div>
-          <div class="card-body" id="historyAwardsContent">
-            {awards_html}
-          </div>
+      <div class="card history-hero">
+        <div class="history-hero-year">{selected_history_season} Season</div>
+        <div class="history-hero-champ">Champion: <strong>{_esc(champion)}</strong> ({_esc(champ_rec)})</div>
+        {_partial_chip}
+        <div class="history-hero-stats">
+          {hero_stats}
         </div>
+      </div>
 
-        <div class="card history-standings-panel">
-          <div class="card-tabs" data-card="history-standings">
-            <div class="tab-strip">
-              <button class="tab-btn active" data-tab="standings">Standings</button>
-              {'<button class="tab-btn" data-tab="bracket">Playoff Bracket</button>' if bracket_html else ''}
+      <div class="card-tabs history-main-tabs" id="historyMainTabs">
+        <div class="tab-strip history-tab-strip">
+          <button class="tab-btn active" data-tab="bracket">Bracket</button>
+          <button class="tab-btn" data-tab="awards">Season Awards</button>
+          <button class="tab-btn" data-tab="recap">Recap</button>
+          <button class="tab-btn" data-tab="rivalries">Rivalries</button>
+        </div>
+        <div class="tab-panels">
+          <div class="tab-panel active" data-tab="bracket">
+            <div class="card">
+              <div class="card-header"><h2>Playoff Bracket</h2></div>
+              <div class="card-body">{bracket_body}</div>
             </div>
-            <div class="tab-panels" style="padding:0;">
-              <div class="tab-panel active" data-tab="standings" id="historyStandingsContent" style="padding-top:0;">
-                {standings_html}
+          </div>
+          <div class="tab-panel" data-tab="awards">
+            <div class="card">
+              <div class="card-header"><h2>Season Awards</h2></div>
+              <div class="card-body" id="historyAwardsContent">
+                {awards_html}
               </div>
-              {'<div class="tab-panel" data-tab="bracket">' + bracket_html + '</div>' if bracket_html else ''}
+            </div>
+          </div>
+          <div class="tab-panel" data-tab="recap">
+            <div class="card history-recap-panel">
+              <div class="card-header">
+                <h2>Season Recap</h2>
+                <div class="history-recap-controls">
+                  <select id="recapTeamDropdown" class="recap-team-dropdown">
+                    <option value="">Select your team...</option>
+                  </select>
+                  <button id="generateRecapBtn" class="recap-generate-btn" disabled>
+                    Generate Recap
+                  </button>
+                </div>
+              </div>
+              <div class="card-body history-recap-content">
+                <div class="otc-ai-empty" id="aiLoadingState" style="display:none;">
+                  <div class="otc-ai-empty-title">Analyzing Season...</div>
+                  <div class="otc-ai-empty-sub">
+                    <div class="loading-spinner" style="margin: 10px auto; width: 30px; height: 30px; border: 3px solid var(--border); border-radius: 50%; border-top-color: var(--accent); animation: spin 1s linear infinite; border-right-color: transparent;"></div>
+                  </div>
+                </div>
+                <div id="aiAnalysisResult" class="recap-result" style="display:none;"></div>
+                <div id="aiEmptyState" class="recap-empty">
+                  <div class="recap-empty-title">AI Season Recap</div>
+                  <div class="recap-empty-sub">
+                    Select your team above to generate a personalized season recap with AI analysis.
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-header"><h2>Scoring Trend</h2></div>
+              <div class="card-body" id="historyChartContent">
+                {chart_html}
+              </div>
+            </div>
+          </div>
+          <div class="tab-panel" data-tab="rivalries">
+            <div class="card">
+              <div class="card-header"><h2>Rivalry Tracker</h2></div>
+              <div class="card-body">
+                <div class="history-rival-note">Head-to-head records for the {selected_history_season} season.</div>
+                {rivalries_html}
+              </div>
             </div>
           </div>
         </div>
       </div>
-
-      <div class="history-top-grid">
-        <div class="card history-chart-panel">
-          <div class="card-header"><h2>Season Trend</h2></div>
-          <div class="card-body" id="historyChartContent">
-            {chart_html}
-          </div>
-        </div>
-
-        <div class="card history-recap-panel">
-          <div class="card-header">
-            <h2>Season Recap</h2>
-            <div class="history-recap-controls">
-              <select id="recapTeamDropdown" class="recap-team-dropdown">
-                <option value="">Select your team...</option>
-              </select>
-              <button id="generateRecapBtn" class="recap-generate-btn" disabled>
-                Generate AI Recap
-              </button>
-            </div>
-          </div>
-          <div class="card-body history-recap-content">
-            <div class="otc-ai-empty" id="aiLoadingState" style="display:none;">
-              <div class="otc-ai-empty-title">Analyzing Season...</div>
-              <div class="otc-ai-empty-sub">
-                <div class="loading-spinner" style="margin: 10px auto; width: 30px; height: 30px; border: 3px solid var(--border); border-radius: 50%; border-top-color: var(--accent); animation: spin 1s linear infinite; border-right-color: transparent;"></div>
-              </div>
-            </div>
-            <div id="aiAnalysisResult" class="recap-result" style="display:none;"></div>
-            <div id="aiEmptyState" class="recap-empty">
-              <div class="recap-empty-title">AI Season Recap</div>
-              <div class="recap-empty-sub">
-                Select your team above to generate a personalized season recap with AI analysis.
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {rivalry_html}
     </div>
     {_wrapped_overlay}
     """

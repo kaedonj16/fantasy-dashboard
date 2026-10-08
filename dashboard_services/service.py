@@ -1821,12 +1821,18 @@ def playoff_bracket(
 
         return {"label": "TBD", "avatar": "", "kind": "empty"}
 
-    def render_team_row(slot, score_text, top=False):
+    def render_team_row(slot, score_text, top=False, winner_rid=None):
         cls = "team-row"
         if slot["kind"] == "bye":
             cls += " bye"
         if top:
             cls += " top"
+        if (
+            winner_rid is not None
+            and slot.get("roster_id") is not None
+            and str(slot["roster_id"]) == str(winner_rid)
+        ):
+            cls += " team-row--winner"
 
         if slot.get("avatar"):
             img = (
@@ -1879,8 +1885,8 @@ def playoff_bracket(
 
             match_html.append(
                 "<div class='bracket-match'>"
-                f"  {render_team_row(slot1, s1_txt, top=True)}"
-                f"  {render_team_row(slot2, s2_txt, top=False)}"
+                f"  {render_team_row(slot1, s1_txt, top=True, winner_rid=m.get('w'))}"
+                f"  {render_team_row(slot2, s2_txt, top=False, winner_rid=m.get('w'))}"
                 "</div>"
             )
 
