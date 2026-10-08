@@ -1023,11 +1023,16 @@ def _in_lineup_lock_window(kickoff_epoch):
 
 
 def _lineup_lock_send(games, season, week, *, dedupe_key, dedupe_value, tag,
-                      kickoff_line, soon_line, log_label):
+                      kickoff_line, soon_line, log_label, week_games=None):
     """Shared per-league send for the lineup-lock reminders.
 
     Owners with hard lineup problems or a material bench upgrade get a
     specific push; clean lineups are skipped (R06.2).
+
+    Args:
+        games: the day's games (lock logic is scoped to these).
+        week_games: the full week's games, used only to build the set of
+            teams playing this week for bye detection. Defaults to games.
     """
     from dashboard_services.db import get_conn
 
@@ -1045,8 +1050,12 @@ def _lineup_lock_send(games, season, week, *, dedupe_key, dedupe_value, tag,
             format_lineup_lock_swaps, locked_teams_from_games,
         )
 
+        # Bye detection needs the full week's team set: a day-scoped set
+        # (e.g. just {TB, DAL} on Thursday) would falsely flag every other
+        # starter as on bye. Lock logic stays day-scoped below.
+        _bye_games = week_games if week_games is not None else games
         teams_playing = set()
-        for g in games:
+        for g in _bye_games:
             for side in ("home", "away"):
                 t = str(g.get(side) or "").upper()
                 if t:
@@ -1269,6 +1278,7 @@ def notify_lineup_lock():
                 kickoff_line=kickoff_line,
                 soon_line=soon_line,
                 log_label=day.strftime("%a").lower(),
+                week_games=games,
             ) or 0
         return total
     except Exception as exc:

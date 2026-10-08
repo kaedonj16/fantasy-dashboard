@@ -548,6 +548,94 @@ def test_lineup_lock_filters_past_games_per_day(monkeypatch):
     assert "DAL" in teams
 
 
+def test_lineup_lock_send_uses_week_games_for_bye_detection(monkeypatch):
+    """Regression: Thursday's lineup-lock send must not flag Sunday starters as on bye.
+
+    Commit 8aa8702d scoped _lineup_lock_send to that day's games, which
+    poisoned the teams_playing set used for bye detection (Thursday meant
+    just {TB, DAL}), firing false lineup alerts across all leagues.
+    """
+    import time
+
+    import utils.push_notifications as pn
+    import utils.lineup_issues as li_shim
+    import dashboard_services.db as dbmod
+
+    captured = {}
+
+    def fake_find_lineup_issues(starters, player_info, teams_playing):
+        captured["teams_playing"] = set(teams_playing or set())
+        return []
+
+    # Patch via the shim (utils.lineup_issues); the shim's propagate_sets_to
+    # mirrors it onto utils.lineups, so the in-function
+    # `from utils.lineup_issues import find_lineup_issues` picks it up
+    # regardless of module import order.
+    monkeypatch.setattr(li_shim, "find_lineup_issues", fake_find_lineup_issues)
+
+    class _FakeConn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def execute(self, *a, **k):
+            class _R:
+                def fetchall(self):
+                    return []
+
+            return _R()
+
+        def commit(self):
+            pass
+
+    monkeypatch.setattr(dbmod, "get_conn", lambda: _FakeConn())
+    monkeypatch.setattr(pn, "_app_state_get", lambda conn, key: None)
+    monkeypatch.setattr(pn, "_app_state_set", lambda conn, key, val: None)
+    monkeypatch.setattr(pn, "_get_subscribed_leagues", lambda: [("123", "sleeper")])
+    monkeypatch.setattr(pn, "_league_display_name", lambda *a: "Test League")
+
+    import sys
+    import types
+
+    _fake_app = types.ModuleType("app")
+    _fake_app.build_projections_by_week = lambda season, week, *a: {}
+    monkeypatch.setitem(sys.modules, "app", _fake_app)
+
+    import dashboard_services.api as api_mod
+    import dashboard_services.platform_api as plat_mod
+
+    monkeypatch.setattr(api_mod, "get_nfl_players", lambda: {
+        "p1": {"full_name": "TB Player", "team": "TB",
+               "injury_status": "", "position": "WR"},
+        "p2": {"full_name": "KC Player", "team": "KC",
+               "injury_status": "", "position": "WR"},
+    })
+    monkeypatch.setattr(plat_mod, "get_rosters", lambda *a: [
+        {"owner_id": "o1", "starters": ["p1", "p2"],
+         "players": ["p1", "p2"]},
+    ])
+    monkeypatch.setattr(plat_mod, "get_league",
+                        lambda *a: {"roster_positions": []})
+
+    future = str(time.time() + 3600 * 4)
+    day_games = [{"gameTime_epoch": future, "home": "TB", "away": "DAL"}]
+    week_games = day_games + [
+        {"gameTime_epoch": future, "home": "KC", "away": "BUF"}
+    ]
+
+    sent = pn._lineup_lock_send(
+        day_games, 2026, 5,
+        dedupe_key="lineup_lock_day", dedupe_value="2026-5-x",
+        tag="t", kickoff_line="k", soon_line="s", log_label="thu",
+        week_games=week_games,
+    )
+    assert sent == 0
+    # Bye detection must see the full week's teams, not just Thursday's.
+    assert captured["teams_playing"] == {"TB", "DAL", "KC", "BUF"}
+
+
 def test_run_hourly_lineup_lock_per_day(monkeypatch):
     import utils.push_notifications as pn
 
