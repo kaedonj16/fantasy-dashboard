@@ -19146,196 +19146,174 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
     ).reset_index(drop=True)
 
     # ── Render helpers ──────────────────────────────────────────────────────
-    _MEDALS = {
-        1: '<span class="rank rank-first">1</span>',
-        2: '<span class="rank rank-second">2</span>',
-        3: '<span class="rank rank-third">3</span>',
-    }
-
-    def _rank_badge(i: int) -> str:
-        return _MEDALS.get(i, f'<span class="rank-plain">{i}</span>')
-
-    def _record_style(wins: int, losses: int) -> str:
-        if wins > losses:
-            return "color:#16a34a;font-weight:700;"
-        if losses > wins:
-            return "color:#ef4444;font-weight:700;"
-        return "font-weight:700;"
-
-    def _winpct_bar(pct: float) -> str:
-        w = max(2, int(pct * 100))
-        color = "#16a34a" if pct >= 0.5 else "#ef4444"
-        return f'<div class="winpct-bar"><div class="winpct-fill" style="width:{w}%;background:{color};"></div></div>'
-
-    def _hist_card(label: str, value: str, sub: str = "", icon: str = "") -> str:
-        icon_html = f'<div class="history-card-icon">{icon}</div>' if icon else ""
-        sub_html = f"<div class='history-card-sub'>{sub}</div>" if sub else ""
+    def _fun_award(title: str, icon: str, winner: str, sub: str, bg: str, fg: str) -> str:
         return f"""
-        <div class="history-card">
-          {icon_html}
-          <div class="history-card-label">{label}</div>
-          <div class="history-card-value">{value}</div>
-          {sub_html}
+        <div class="awards-fun-item">
+          <div class="awards-fun-ic" style="--fun-bg:{bg};--fun-fg:{fg};"><i class="fa-solid {icon}"></i></div>
+          <div>
+            <div class="awards-fun-tt">{title}</div>
+            <div class="awards-fun-who">{winner}</div>
+            <div class="awards-fun-ds">{sub}</div>
+          </div>
         </div>"""
 
-    def _fun_award(title: str, icon: str, winner: str, sub: str, accent: str) -> str:
-        return f"""
-        <div class="fun-award-item" style="--award-accent:{accent};">
-          <div class="fun-award-title">{title}</div>
-          <div class="fun-award-icon">{icon}</div>
-          <div class="fun-award-winner">{winner}</div>
-          <div class="fun-award-sub">{sub}</div>
-        </div>"""
-
-    # ── Career standings table ──────────────────────────────────────────────
-    table_rows_html = ""
+    # ── All-Time Standings (simplified) ─────────────────────────────────────────
+    standings_rows_html = ""
     for i, (_, row) in enumerate(career_df.iterrows()):
         rank = i + 1
-        rings = (
-                '<i class="fa-solid fa-trophy" style="color:#f59e0b;" aria-hidden="true"></i> ' * int(
-            row["Championships"])
-        ) if row["Championships"] > 0 else ""
-        rec_style = _record_style(int(row["Wins"]), int(row["Losses"]))
-        table_rows_html += f"""
+        rank_html = f'<span class="awards-rank-1">{rank}</span>' if rank == 1 else str(rank)
+        winpct = f"{row['Win%']:.3f}".lstrip("0")
+        standings_rows_html += f"""
         <tr>
-          <td>{_rank_badge(rank)}</td>
-          <td class="hist-team">{html.escape(str(row['display_name']))} {rings}</td>
-          <td style="font-weight:700;color:var(--accent);">{int(row['Championships'])}</td>
-          <td style="{rec_style}">{int(row['Wins'])}-{int(row['Losses'])}</td>
-          <td>
-            <span>{row['Win%']:.1%}</span>
-            {_winpct_bar(row['Win%'])}
-          </td>
-          <td>{row['PF']:,.1f}</td>
-          <td>{row['PA']:,.1f}</td>
-          <td>{row['AVG']:.1f}</td>
-          <td>{row['MAX']:.1f}</td>
-          <td>{int(row['Seasons'])}</td>
+          <td>{rank_html}</td>
+          <td style="font-weight:700;">{html.escape(str(row['display_name']))}</td>
+          <td class="num">{int(row['Championships'])}</td>
+          <td class="num">{int(row['Wins'])}</td>
+          <td class="num">{winpct}</td>
         </tr>"""
 
     standings_table = f"""
-    <div class="card">
-      <div class="card-header"><h2>All-Time Standings</h2></div>
-      <div class="card-body" style="padding-top:0;">
-        <div class="history-table-wrap">
-          <table class="history-table">
-            <thead><tr>
-              <th>#</th><th class="hist-team">Team</th><th>Titles</th><th>Record</th>
-              <th>Win%</th><th>PF</th><th>PA</th><th>Avg/Wk</th><th>Best Wk</th><th>Seasons</th>
-            </tr></thead>
-            <tbody>{table_rows_html}</tbody>
-          </table>
-        </div>
+    <div>
+      <div class="awards-section-t"><i class="fa-solid fa-ranking-star"></i> All-Time Standings</div>
+      <div class="card">
+        <table class="awards-standings-table">
+          <thead><tr><th></th><th>OWNER</th><th class="num">TITLES</th><th class="num">W</th><th class="num">WIN%</th></tr></thead>
+          <tbody>{standings_rows_html}</tbody>
+        </table>
       </div>
     </div>"""
 
-    # ── Championship timeline ───────────────────────────────────────────────
-    def _cell(v: str) -> str:
-        return html.escape(v) if v and v != "–" else "<span style='color:var(--text-muted)'>–</span>"
+    # ── Champion hero + championship timeline ─────────────────────────────────
+    def _has_champ(rec: dict) -> bool:
+        return rec.get("champion") not in ("–", "-", "", None)
 
     sorted_records = sorted(season_records, key=lambda x: x["season"], reverse=True)
-    most_recent_season = sorted_records[0]["season"] if sorted_records else None
+    # Defending champion: most recent season with a completed bracket (skips the
+    # in-progress season, which has no champion yet).
+    defending = next((r for r in sorted_records if _has_champ(r)), None)
 
-    champ_rows_html = ""
-    for rec in sorted_records:
-        champ_display = _display_name(rec.get("champion_uid") or rec["champion"]) if rec.get("champion_uid") else rec[
-            "champion"]
-        runner_display = _display_name(rec.get("runner_up_uid") or rec["runner_up"]) if rec.get("runner_up_uid") else \
-            rec["runner_up"]
-        row_cls = ' class="champ-recent"' if rec["season"] == most_recent_season else ""
-        champ_rows_html += f"""
-        <tr{row_cls}>
-          <td><strong>{rec['season']}</strong></td>
-          <td style="font-weight:700;"><i class="fa-solid fa-trophy" style="color:#f59e0b;margin-right:5px;" aria-hidden="true"></i>{_cell(champ_display)}</td>
-          <td>{html.escape(rec['champion_record'])}</td>
-          <td>{_cell(runner_display)}</td>
-        </tr>"""
-
-    champ_table = f"""
-    <div class="card champ-history-card">
-      <div class="card-header"><h2>Championship History</h2></div>
-      <div class="card-body champ-history-body" style="padding-top:0;">
-        <div class="history-table-wrap champ-history-scroll">
-          <table class="history-table">
-            <thead><tr><th>Season</th><th>Champion</th><th>Record</th><th>Runner-Up</th></tr></thead>
-            <tbody>{champ_rows_html}</tbody>
-          </table>
+    hero_html = ""
+    if defending:
+        d_champ = _display_name(defending.get("champion_uid") or defending["champion"]) if defending.get(
+            "champion_uid") else defending["champion"]
+        d_runner = _display_name(defending.get("runner_up_uid") or defending["runner_up"]) if defending.get(
+            "runner_up_uid") else defending["runner_up"]
+        d_rec = defending.get("champion_record") or ""
+        d_detail = f"{defending['season']}"
+        if d_rec and d_rec != "–":
+            d_detail += f" &middot; {html.escape(d_rec)}"
+        if d_runner and d_runner != "–":
+            d_detail += f" &middot; Beat {html.escape(d_runner)}"
+        hero_html = f"""
+    <div class="awards-hero">
+      <div class="awards-hero-inner">
+        <div class="awards-hero-ic"><i class="fa-solid fa-trophy"></i></div>
+        <div>
+          <div class="awards-hero-label">DEFENDING CHAMPION</div>
+          <div class="awards-hero-winner">{html.escape(d_champ)}</div>
+          <div class="awards-hero-detail">{d_detail}</div>
         </div>
       </div>
     </div>"""
 
-    # ── League Records cards ────────────────────────────────────────────────
+    tl_chips_html = ""
+    for rec in sorted_records:
+        if not _has_champ(rec):
+            continue
+        champ_display = _display_name(rec.get("champion_uid") or rec["champion"]) if rec.get("champion_uid") else rec[
+            "champion"]
+        rec_val = rec.get("champion_record") or ""
+        sub_html = f'<div class="awards-tl-s">{html.escape(rec_val)}</div>' if rec_val and rec_val != "–" else ""
+        latest_cls = " latest" if defending and rec["season"] == defending["season"] else ""
+        tl_chips_html += f"""
+      <div class="awards-tl{latest_cls}">
+        <div class="awards-tl-y">{rec['season']}</div>
+        <div class="awards-tl-w">{html.escape(champ_display)}</div>
+        {sub_html}
+      </div>"""
+
+    timeline_section = ""
+    if tl_chips_html:
+        timeline_section = f"""
+    <div class="awards-section">
+      <div class="awards-section-t"><i class="fa-solid fa-clock-rotate-left"></i> Championship History</div>
+      <div class="awards-timeline">{tl_chips_html}
+      </div>
+    </div>"""
+
+    # ── League Records (label/value rows) ─────────────────────────────────────
+    record_rows: list = []  # (label, value, sub)
     if season_records:
         best_pf_rec = max(season_records, key=lambda x: x["top_pf"])
         best_wk_rec = max(season_records, key=lambda x: x["highest_week_value"])
     else:
         best_pf_rec = best_wk_rec = None
 
-    highlights_html = ""
     if best_pf_rec:
-        highlights_html += _hist_card(
+        record_rows.append((
             "Highest Season PF",
-            html.escape(best_pf_rec["top_pf_team"]),
-            f"{best_pf_rec['top_pf']:.1f} pts in {best_pf_rec['season']}",
-            '<i class="fa-solid fa-fire" style="color:#f97316;"></i>',
-        )
+            f"{best_pf_rec['top_pf']:.1f}",
+            f"{best_pf_rec['top_pf_team']} · {best_pf_rec['season']}",
+        ))
     if best_wk_rec:
-        highlights_html += _hist_card(
+        record_rows.append((
             "Highest Single Week",
-            html.escape(best_wk_rec["highest_week_team"]),
-            f"{best_wk_rec['highest_week_value']:.1f} pts in {best_wk_rec['season']}",
-            '<i class="fa-solid fa-bolt" style="color:#facc15;"></i>',
-        )
+            f"{best_wk_rec['highest_week_value']:.1f}",
+            f"{best_wk_rec['highest_week_team']} · Wk {best_wk_rec.get('highest_week', '')} {best_wk_rec['season']}".replace("  ", " ").strip(),
+        ))
 
     if not career_df.empty and int(career_df.iloc[0]["Championships"]) > 0:
         most_champ_owner = str(career_df.iloc[0]["display_name"])
         most_champ_n = int(career_df.iloc[0]["Championships"])
-        highlights_html += _hist_card(
+        record_rows.append((
             "Most Championships",
-            html.escape(most_champ_owner),
-            f"{most_champ_n} title{'s' if most_champ_n > 1 else ''}",
-            '<i class="fa-solid fa-trophy" style="color:#f59e0b;"></i>',
-        )
+            str(most_champ_n),
+            most_champ_owner,
+        ))
 
     # Best all-time win% (min 2 seasons)
     eligible = career_df[career_df["Seasons"] >= 2]
     if not eligible.empty:
         best_winpct_row = eligible.loc[eligible["Win%"].idxmax()]
-        highlights_html += _hist_card(
+        record_rows.append((
             "Best Win%",
-            html.escape(str(best_winpct_row["display_name"])),
-            f"{best_winpct_row['Win%']:.1%} over {int(best_winpct_row['Seasons'])} seasons",
-            '<i class="fa-solid fa-chart-line" style="color:#22c55e;"></i>',
-        )
+            f"{best_winpct_row['Win%']:.3f}".lstrip("0"),
+            f"{best_winpct_row['display_name']} · {int(best_winpct_row['Seasons'])} seasons",
+        ))
 
     # Most seasons played
     if not career_df.empty:
         most_seasons_row = career_df.loc[career_df["Seasons"].idxmax()]
-        highlights_html += _hist_card(
+        record_rows.append((
             "Most Seasons",
-            html.escape(str(most_seasons_row["display_name"])),
-            f"{int(most_seasons_row['Seasons'])} seasons played",
-            '<i class="fa-solid fa-calendar-days"></i>',
-        )
+            str(int(most_seasons_row["Seasons"])),
+            str(most_seasons_row["display_name"]),
+        ))
 
     # Most points, no ring
     no_titles = career_df[career_df["Championships"] == 0]
     if not no_titles.empty:
         unlucky_row = no_titles.loc[no_titles["PF"].idxmax()]
-        highlights_html += _hist_card(
+        record_rows.append((
             "Most Points, No Ring",
-            html.escape(str(unlucky_row["display_name"])),
-            f"{unlucky_row['PF']:,.1f} career points",
-            '<i class="fa-solid fa-heart-crack"></i>',
-        )
+            f"{unlucky_row['PF']:,.1f}",
+            str(unlucky_row["display_name"]),
+        ))
 
-    highlights_section = ""
-    if highlights_html:
-        highlights_section = f"""
-    <div class="card">
-      <div class="card-header"><h2>League Records</h2></div>
-      <div class="card-body">
-        <div class="history-cards-grid awards-records-grid">{highlights_html}</div>
+    records_rows_html = ""
+    for label, value, sub in record_rows:
+        records_rows_html += f"""
+        <div class="awards-rec-row">
+          <span class="awards-rec-k">{html.escape(label)}</span>
+          <span class="awards-rec-v">{html.escape(value)}<small>{html.escape(sub)}</small></span>
+        </div>"""
+
+    records_section = ""
+    if records_rows_html:
+        records_section = f"""
+    <div>
+      <div class="awards-section-t"><i class="fa-solid fa-medal"></i> League Records</div>
+      <div class="card">{records_rows_html}
       </div>
     </div>"""
 
@@ -19356,10 +19334,10 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
         bridesmaid_count = bridesmaid_candidates[bridesmaid_name]
         fun_awards_html += _fun_award(
             "The Bridesmaid",
-            '<i class="fa-solid fa-ring"></i>',
+            'fa-ring',
             html.escape(bridesmaid_name),
             f"{bridesmaid_count}× runner-up, 0 titles",
-            "#f59e0b",
+            "#fce7f3", "#be185d",
         )
 
     # Most Dominant - best career win% (2+ seasons)
@@ -19367,10 +19345,10 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
         dominant_row = eligible.loc[eligible["Win%"].idxmax()]
         fun_awards_html += _fun_award(
             "Most Dominant",
-            '<i class="fa-solid fa-crown"></i>',
+            'fa-crown',
             html.escape(str(dominant_row["display_name"])),
             f"{dominant_row['Win%']:.1%} all-time win rate",
-            "#f59e0b",
+            "#fef3c7", "#b45309",
         )
 
     # The Punching Bag - most PA with a losing record
@@ -19379,10 +19357,10 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
         punching_bag_row = losing.loc[losing["PA"].idxmax()]
         fun_awards_html += _fun_award(
             "The Punching Bag",
-            '<i class="fa-solid fa-dumbbell"></i>',
+            'fa-dumbbell',
             html.escape(str(punching_bag_row["display_name"])),
             f"{punching_bag_row['PA']:,.1f} points allowed",
-            "#94a3b8",
+            "#fee2e2", "#dc2626",
         )
 
     # Boom or Bust - highest weekly score std dev. Uses the same 2+ season frame
@@ -19394,10 +19372,10 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
         boom_row = boom_eligible.loc[boom_eligible["STD"].idxmax()]
         fun_awards_html += _fun_award(
             "Boom or Bust",
-            '<i class="fa-solid fa-dice"></i>',
+            'fa-dice',
             html.escape(str(boom_row["display_name"])),
             f"σ {boom_row['STD']:.1f} pts/week variance",
-            "#f97316",
+            "#e0e7ff", "#4338ca",
         )
 
     # Barely Breathing - most wins by <5 points
@@ -19406,10 +19384,10 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
         if int(close_row["CloseWins"]) > 0:
             fun_awards_html += _fun_award(
                 "Barely Breathing",
-                '<i class="fa-solid fa-heart-crack"></i>',
+                'fa-heart-crack',
                 html.escape(str(close_row["display_name"])),
                 f"{int(close_row['CloseWins'])} wins by fewer than 5 pts",
-                "#ef4444",
+                "#ecfeff", "#0e7490",
             )
 
     # Consistency King - lowest weekly score std dev (2+ seasons)
@@ -19417,10 +19395,10 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
         consistent_row = eligible.loc[eligible["STD"].idxmin()]
         fun_awards_html += _fun_award(
             "Consistency King",
-            '<i class="fa-solid fa-snowflake"></i>',
+            'fa-snowflake',
             html.escape(str(consistent_row["display_name"])),
             f"σ {consistent_row['STD']:.1f} pts/week",
-            "#60a5fa",
+            "#dbeafe", "#1d4ed8",
         )
 
     # Main Character - most total league activity (trades + pickups)
@@ -19431,10 +19409,10 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
             pickups = int(main_row.get("WaiverAdds", 0))
             fun_awards_html += _fun_award(
                 "Main Character",
-                '<i class="fa-solid fa-star"></i>',
+                'fa-star',
                 html.escape(str(main_row["display_name"])),
                 f"{pickups} pickups · {int(main_row['Activity'])} activity pts",
-                "#a855f7",
+                "#f3e8ff", "#7c3aed",
             )
 
     # Bench Warmer MVP - most career points left on bench
@@ -19443,10 +19421,10 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
         if float(bench_row["BenchPts"]) > 0:
             fun_awards_html += _fun_award(
                 "Bench Warmer MVP",
-                '<i class="fa-solid fa-clipboard-list"></i>',
+                'fa-clipboard-list',
                 html.escape(str(bench_row["display_name"])),
                 f"{bench_row['BenchPts']:,.1f} pts left on bench",
-                "#64748b",
+                "#dcfce7", "#15803d",
             )
 
     # Waiver Wire Demon - most FA/waiver pickups
@@ -19455,10 +19433,10 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
         if int(waiver_row["WaiverAdds"]) > 0:
             fun_awards_html += _fun_award(
                 "Waiver Wire Demon",
-                '<i class="fa-solid fa-magnifying-glass"></i>',
+                'fa-magnifying-glass',
                 html.escape(str(waiver_row["display_name"])),
                 f"{int(waiver_row['WaiverAdds'])} career pickups",
-                "#22c55e",
+                "#ffedd5", "#c2410c",
             )
 
     # Playoff Riser - biggest avg pts jump from regular season to playoffs
@@ -19470,19 +19448,18 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
         if delta > 0:
             fun_awards_html += _fun_award(
                 "Playoff Riser",
-                '<i class="fa-solid fa-arrow-trend-up"></i>',
+                'fa-arrow-trend-up',
                 html.escape(str(riser_row["display_name"])),
                 f"+{delta:.1f} pts/wk in playoffs",
-                "#16a34a",
+                "#d1fae5", "#065f46",
             )
 
     fun_awards_section = ""
     if fun_awards_html and season_records:
         fun_awards_section = f"""
-    <div class="card">
-      <div class="card-header"><h2>League Superlatives</h2></div>
-      <div class="card-body">
-        <div class="fun-awards-grid">{fun_awards_html}</div>
+    <div class="awards-section">
+      <div class="awards-section-t"><i class="fa-solid fa-award"></i> Fun Awards</div>
+      <div class="awards-fun-grid">{fun_awards_html}
       </div>
     </div>"""
 
@@ -19500,12 +19477,15 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
     <div class="overview-layout">
       <div class="overview-main">
         {nav_row}
-        {highlights_section}
-        <div class="awards-two-col">
-          {fun_awards_section}
-          {champ_table}
+        {hero_html}
+        {timeline_section}
+        <div class="awards-section">
+          <div class="awards-records-standings">
+            {records_section}
+            {standings_table}
+          </div>
         </div>
-        {standings_table}
+        {fun_awards_section}
       </div>
     </div>"""
 
@@ -32012,27 +31992,6 @@ def api_trade_database():
                 assets_by_trade[tid] = {"a": [], "b": []}
             assets_by_trade[tid][a["side"]].append(a)
 
-        # Per-side market values for the value-delta footer / Fair badge.
-        # One batched lookup for all player assets on this page.
-        _mv_by_pid: dict = {}
-        try:
-            _all_pids = list({
-                a["player_id"] for sides in assets_by_trade.values()
-                for side_assets in sides.values() for a in side_assets
-                if a["asset_type"] == "player" and a["player_id"]
-            })
-            if _all_pids:
-                _mv_rows = conn.execute(
-                    "SELECT player_id, weighted_market_value_1qb, weighted_market_value_sf"
-                    " FROM trade_intel_player_stats"
-                    " WHERE player_id = ANY(%s) AND season = %s",
-                    (_all_pids, season),
-                ).fetchall()
-                for _mvr in _mv_rows:
-                    _mv_by_pid[_mvr["player_id"]] = _mvr
-        except Exception:
-            logger.debug("suppressed exception", exc_info=True)
-
         def describe(a) -> dict:
             if a["asset_type"] == "player":
                 pid = a["player_id"]
@@ -32045,15 +32004,10 @@ def api_trade_database():
             slot = a["pick_slot"]
             if slot:
                 name = f"{s} Pick {r}.{str(slot).zfill(2)}"
-                pick_id = f"{s}_{r}_{str(slot).zfill(2)}"
             else:
-                order = (a["pick_order"] or "").lower()
+                order = a["pick_order"] or ""
                 name = f"{s} Round {r}" + (f" ({order})" if order else "")
-                pick_id = f"{s}_{r}_{order}" if order in ("early", "mid", "late") else None
-            out = {"type": "pick", "name": name}
-            if pick_id:
-                out["pick_id"] = pick_id
-            return out
+            return {"type": "pick", "name": name}
 
         result = []
         for r in trade_rows:
@@ -32069,19 +32023,6 @@ def api_trade_database():
                     trade_date = r["created_at"].strftime("%m/%d/%y")
                 except Exception:
                     trade_date = str(r["created_at"])[:10]
-            # Per-side market value (SF-aware) for the delta footer / Fair badge.
-            _mv_col = "weighted_market_value_sf" if r["is_superflex"] else "weighted_market_value_1qb"
-            def _side_value(raw_assets):
-                _v = 0.0
-                for _a in raw_assets:
-                    if _a["asset_type"] != "player":
-                        continue
-                    _mv = _mv_by_pid.get(_a["player_id"]) or {}
-                    try:
-                        _v += float(_mv.get(_mv_col) or 0)
-                    except (TypeError, ValueError):
-                        pass
-                return round(_v, 1)
             result.append({
                 "trade_id": r["transaction_id"],
                 "date": trade_date,
@@ -32092,8 +32033,6 @@ def api_trade_database():
                 "num_teams": r["num_teams"],
                 "side_a": side_a_assets,
                 "side_b": side_b_assets,
-                "side_a_value": _side_value(sides["a"]),
-                "side_b_value": _side_value(sides["b"]),
             })
 
         # Calculate pagination info
