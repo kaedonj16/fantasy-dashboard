@@ -10494,7 +10494,8 @@ window.initTradePage = function initTradePage(root = document) {
         // Progressive loading: fetch the analytical slate first (no Monte
         // Carlo, so it returns fast), paint it immediately, then resolve
         // each player's sim numbers with its own request (_strategySimFanout).
-        const res = await fetch(`/api/trade-intel/archetype-suggestions${qs}&phase=slate`, { cache: "no-store", signal: _ctrl.signal });
+        // Default cache mode: server caches the slate, so repeat views are fast.
+        const res = await fetch(`/api/trade-intel/archetype-suggestions${qs}&phase=slate`, { signal: _ctrl.signal });
         if (_isStale()) { _clearInflight(); return; }  // a newer selection superseded this one
         if (strategySpinner) strategySpinner.style.display = "none";
         if (res.status === 403) {
@@ -10584,7 +10585,7 @@ window.initTradePage = function initTradePage(root = document) {
       try {
         const res = await fetch(
           `/api/trade-intel/archetype-suggestion-sim${job.qs}&group_key=${encodeURIComponent(gk)}`,
-          { cache: "no-store", signal: job.ctrl.signal });
+          { signal: job.ctrl.signal });
         if (job.isStale()) return;
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const raw = await res.json();
@@ -15971,60 +15972,39 @@ document.addEventListener('DOMContentLoaded', function() {
     const tourMode = !!document.getElementById('historyTourMode');
 
     if (!tourMode && platform && season && leagueId && historySeason) {
-      // Load awards section
+      // Single combined fetch: summary + standings + chart in one round-trip.
+      // Historical data is immutable; the server sends Cache-Control max-age=3600.
       const awardsContent = document.getElementById('historyAwardsContent');
-      if (awardsContent) {
-        fetch(`/api/history/${platform}/${season}/${leagueId}/summary?history_season=${historySeason}`, { cache: 'no-store' })
-          .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
-          .then(data => {
-            if (data.html) {
-              awardsContent.innerHTML = data.html;
-              // Setup dynamic grid columns for fun awards
+      const standingsContent = document.getElementById('historyStandingsContent');
+      const chartContent = document.getElementById('historyChartContent');
+      fetch(`/api/history/${platform}/${season}/${leagueId}/sections?history_season=${historySeason}`)
+        .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
+        .then(data => {
+          // Awards section
+          if (awardsContent) {
+            if (data.summary) {
+              awardsContent.innerHTML = data.summary;
               if (typeof setupFunAwardsGrid === 'function') setupFunAwardsGrid();
             } else {
               window.brErrorState(awardsContent, 'Failed to load season awards.', null, { compact: true });
             }
-          })
-          .catch(err => {
-            console.error('Error loading history awards:', err);
-            window.brErrorState(awardsContent, 'Error loading season awards.', null, { compact: true });
-          });
-      }
-
-      // Load standings section
-      const standingsContent = document.getElementById('historyStandingsContent');
-      if (standingsContent) {
-        fetch(`/api/history/${platform}/${season}/${leagueId}/standings?history_season=${historySeason}`, { cache: 'no-store' })
-          .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
-          .then(data => {
-            if (data.html) {
-              standingsContent.innerHTML = data.html;
+          }
+          // Standings section
+          if (standingsContent) {
+            if (data.standings) {
+              standingsContent.innerHTML = data.standings;
             } else {
               window.brErrorState(standingsContent, 'Failed to load standings.', null, { compact: true });
             }
-          })
-          .catch(err => {
-            console.error('Error loading history standings:', err);
-            window.brErrorState(standingsContent, 'Error loading standings.', null, { compact: true });
-          });
-      }
-
-      // Load chart section
-      const chartContent = document.getElementById('historyChartContent');
-      if (chartContent) {
-        fetch(`/api/history/${platform}/${season}/${leagueId}/chart?history_season=${historySeason}`, { cache: 'no-store' })
-          .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
-          .then(data => {
-            if (data.html) {
-              // Empty state or error message
-              chartContent.innerHTML = data.html;
-            } else if (data.data && data.data.length > 0) {
-              // Create div for Plotly chart
+          }
+          // Chart section
+          if (chartContent) {
+            const chartData = (data.chart && data.chart.data) || [];
+            if (data.chart && data.chart.html) {
+              chartContent.innerHTML = data.chart.html;
+            } else if (chartData.length > 0) {
               chartContent.innerHTML = '<div id="historyChartPlotly" style="width: 100%; height: 430px;"></div>';
-
-              // Build Plotly traces (thin lines + small markers so up to a dozen
-              // teams stay readable rather than a marker-heavy tangle).
-              const traces = data.data.map(team => ({
+              const traces = chartData.map(team => ({
                 x: team.x,
                 y: team.y,
                 mode: 'lines+markers',
@@ -16033,9 +16013,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 marker: { size: 4 },
                 hovertemplate: '%{fullData.name}<br>Week %{x}<br>%{y:.1f} pts<extra></extra>'
               }));
-
-              // Theme-aware brand layout (replaces the always-white plotly_white
-              // template, which rendered a white chart on the dark theme).
               const _t = window.brandPlotlyTheme();
               const layout = {
                 colorway: window.brandPlotlyColorway,
@@ -16052,7 +16029,7 @@ document.addEventListener('DOMContentLoaded', function() {
                   showgrid: false, zeroline: false,
                   tickfont: { size: 11, color: _t.text },
                   tickmode: 'auto',
-                  nticks: Math.min(10, Math.max(...data.data.flatMap(team => team.x)) || 18)
+                  nticks: Math.min(10, Math.max(...chartData.flatMap(team => team.x)) || 18)
                 },
                 yaxis: {
                   title: { text: 'Points', font: { size: 11, color: _t.text } },
@@ -16060,8 +16037,6 @@ document.addEventListener('DOMContentLoaded', function() {
                   tickfont: { size: 11, color: _t.text }
                 }
               };
-
-              // Render chart (load Plotly on demand)
               if (window.ensurePlotly) window.ensurePlotly().then(function () { Plotly.newPlot('historyChartPlotly', traces, layout, { responsive: true, displayModeBar: false }); }).catch(function () {});
             } else {
               window.brEmptyState(chartContent, {
@@ -16071,12 +16046,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 compact: true
               });
             }
-          })
-          .catch(err => {
-            console.error('Error loading history chart:', err);
-            window.brErrorState(chartContent, 'Error loading season chart.', null, { compact: true });
-          });
-      }
+          }
+        })
+        .catch(err => {
+          console.error('Error loading history sections:', err);
+          if (awardsContent) window.brErrorState(awardsContent, 'Error loading season awards.', null, { compact: true });
+          if (standingsContent) window.brErrorState(standingsContent, 'Error loading standings.', null, { compact: true });
+          if (chartContent) window.brErrorState(chartContent, 'Error loading season chart.', null, { compact: true });
+        });
     }
   }
 });
@@ -23912,12 +23889,14 @@ function setupFunAwardsGrid() {
     _loading = true;
     _loadFailed = false;
     try {
-      // Shared page-level fetch: the trade calculator needs this same payload,
-      // so reuse its in-flight/completed request instead of a second download.
-      const data = await brGetLeaguePlayersData();
+      // Slim nav-search view: 5 fields per player (~50KB). Default cache mode
+      // lets the server's ETag + max-age=60 work; no-store is not used.
+      const res = await fetch('/api/league-players?view=search');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
       const raw = Array.isArray(data) ? data : (Array.isArray(data.players) ? data.players : []);
       _players = raw
-        .filter(p => p && p.id && p.name && p.position !== 'PICK' && !String(p.id).startsWith('pick_'))
+        .filter(p => p && p.id && p.name)
         .map(p => ({
           id:   String(p.id),
           name: String(p.name || ''),

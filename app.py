@@ -25114,6 +25114,18 @@ def api_league_players():
     _view_arg = str(request.args.get("view") or "").strip().lower()
     _view_board = _view_arg == "board"
     _view_trade = _view_arg == "trade"
+    _view_search = _view_arg == "search"
+    # Nav-search view: 5 fields per player, no overlays. Short-circuit before
+    # the projection/scoring/ADP overlay work below; the base payload already
+    # carries id, name, position, team, and espnHeadshot.
+    if _view_search:
+        from dashboard_services.league_players_board import slim_search_payload
+        slim = slim_search_payload(payload)
+        body = _dumps_league_players(slim)
+        _lp_version_key = _lp_response_version_key(
+            overlay_key="search", is_sf=False, view="search",
+        )
+        return _lp_cacheable_response(body, _lp_version_key)
     _trade_league_type = "sf" if _mi_is_sf else "1qb"
     _trade_league_size = 10
     try:
@@ -26999,6 +27011,31 @@ def api_player_details(player_id: str):
         except (TypeError, ValueError):
             _default_format = "ppr"
 
+        # Fold in league-context data (replaces 2 separate round-trips).
+        # Best-effort: failures leave the keys as None and the client falls
+        # back to the standalone endpoints.
+        _pd_league_trades = None
+        _pd_acquisition_events = None
+        if league_id:
+            try:
+                from dashboard_services.player_league_trades import (
+                    get_player_acquisition_events,
+                    get_player_league_trades,
+                )
+                _pd_league_trades = get_player_league_trades(
+                    player_id=player_id, platform=platform,
+                    league_id=league_id, season=season, limit=10,
+                )
+            except Exception:
+                logger.debug("[api_player_details] league trades fold-in skipped", exc_info=True)
+            try:
+                from dashboard_services.player_league_trades import get_player_acquisition_events
+                _pd_acquisition_events = get_player_acquisition_events(
+                    player_id, platform=platform, league_id=league_id, season=season,
+                )
+            except Exception:
+                logger.debug("[api_player_details] acquisition fold-in skipped", exc_info=True)
+
         response = {
             "player_id": player_id,
             "name": player_meta.get("name", "Unknown"),
@@ -27061,6 +27098,14 @@ def api_player_details(player_id: str):
             "has_advanced_metrics": has_advanced_metrics,
             "has_prospect_data": bool(prospect_data),
             "prospect_data": prospect_data,
+            # Folded-in league context (replaces separate /api/player-league-trades
+            # and /api/player-acquisition round-trips). Only populated when
+            # league_id is present; the client falls back to the standalone
+            # endpoints when these keys are absent. Note: startsit-strip is
+            # intentionally NOT folded (it runs the 859-line start-sit handler;
+            # the client lazy-loads it separately).
+            "league_trades": _pd_league_trades,
+            "acquisition_events": _pd_acquisition_events,
         }
 
         return jsonify(response)

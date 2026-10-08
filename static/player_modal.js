@@ -8,10 +8,9 @@
 // _ensure_features_js concatenates this file into app-features.js instead.
 // ============================================================
 
-// In-flight player breakout eligibility fetch, published by openPlayerModal so
-// the Breakout tab can join it instead of firing a duplicate request when
-// tapped before the prefetch resolves. { playerId, promise } or null.
-var _pmBreakoutInflight = null;
+// Breakout eligibility is lazy: fetched only when the Breakout tab is opened,
+// not on modal open. The tab handler's panel.dataset.loaded guard prevents
+// duplicate fetches on rapid re-taps.
 
 // Bounded per-player modal fetch cache (news + ADP). Reopening the same player
 // within the TTL reuses the payload, and in-flight requests are shared, so
@@ -371,19 +370,8 @@ function openPlayerModal(playerId, playerName, opts) {
       .finally(() => { _breakoutPromise = null; });
     return _breakoutPromise;
   }
-  // Start in parallel, but never join this promise to the details render.
-  const _initialBreakoutPromise = _loadBreakoutEligibility().then(
-    payload => ({ payload }), error => ({ error })
-  );
-  // Publish the in-flight eligibility fetch so the Breakout tab can join it
-  // instead of firing a duplicate request when tapped before it resolves.
-  // Same-tick as the call above, so this reuses the in-flight promise rather
-  // than starting a new fetch. Cleared on settle.
-  _pmBreakoutInflight = { playerId: String(playerId), promise: _loadBreakoutEligibility() };
-  _pmBreakoutInflight.promise.then(
-    () => { if (_pmBreakoutInflight && _pmBreakoutInflight.playerId === String(playerId)) _pmBreakoutInflight = null; },
-    () => { if (_pmBreakoutInflight && _pmBreakoutInflight.playerId === String(playerId)) _pmBreakoutInflight = null; }
-  );
+  // Breakout eligibility is lazy: fetched only when the Breakout tab is opened,
+  // not on every modal open.
 
   // Details and eligibility intentionally have separate lifecycles. A slow or
   // unavailable Breakout service must never hold the useful player profile.
@@ -1298,30 +1286,10 @@ function openPlayerModal(playerId, playerName, opts) {
         }
       };
       if (!contextBreakoutCandidate) {
-        if (breakoutStatus) { breakoutStatus.style.display = ''; breakoutStatus.textContent = 'Checking breakout…'; }
-        // A first-attempt failure on the initial load is usually a cold-backend
-        // timeout, not a genuine outage. Keep the subtle loading state and
-        // retry once silently in the background instead of flashing the retry
-        // chip. The chip only appears if the silent retry also fails.
-        let _breakoutInitialRetried = false;
-        const _settleInitialBreakout = (result) => {
-          if (!result.error) { applyBreakoutEligibility(result.payload, false); return; }
-          if (!_breakoutInitialRetried) {
-            _breakoutInitialRetried = true;
-            setTimeout(() => {
-              if (!overlay.isConnected || overlay.dataset.closed === '1'
-                  || document.querySelector('.player-modal-overlay') !== overlay
-                  || overlay.dataset.playerId !== String(playerId)) return;
-              _loadBreakoutEligibility().then(
-                payload => applyBreakoutEligibility(payload, false),
-                () => applyBreakoutEligibility(null, true)
-              );
-            }, 4000);
-            return;
-          }
-          applyBreakoutEligibility(null, true);
-        };
-        _initialBreakoutPromise.then(_settleInitialBreakout);
+        // Breakout eligibility is now lazy (fired on tab open, not modal open).
+        // The tab disabled state above already reflects player-details data;
+        // no eager fetch is needed here.
+        if (breakoutStatus) { breakoutStatus.style.display = 'none'; }
       } else {
         applyBreakoutEligibility(resolvedBreakoutData, false);
       }
@@ -1858,13 +1826,24 @@ function _pmLoadInLeague(playerId, data, leagueId, platform, season) {
   const el = document.getElementById('pmInLeague');
   if (!el) return;
   if (!leagueId) { el.hidden = true; return; }
-  const qs = '?platform=' + encodeURIComponent(platform) + '&league_id=' + encodeURIComponent(leagueId) +
-    '&season=' + encodeURIComponent(season);
-  const tradesUrl = '/api/player-league-trades/' + encodeURIComponent(playerId) + qs + '&limit=10';
-  const acqUrl = '/api/player-acquisition/' + encodeURIComponent(playerId) + qs;
+  // Prefer folded-in data from player-details (saves 2 round-trips).
+  // Fall back to standalone fetches when the keys are absent (e.g. cached
+  // older response shape).
   const jget = function (u) { return fetch(u).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }); };
+  let tradesPromise, acqPromise;
+  if (data && data.league_trades !== undefined && data.acquisition_events !== undefined) {
+    tradesPromise = Promise.resolve(data.league_trades);
+    acqPromise = Promise.resolve(data.acquisition_events);
+  } else {
+    const qs = '?platform=' + encodeURIComponent(platform) + '&league_id=' + encodeURIComponent(leagueId) +
+      '&season=' + encodeURIComponent(season);
+    const tradesUrl = '/api/player-league-trades/' + encodeURIComponent(playerId) + qs + '&limit=10';
+    const acqUrl = '/api/player-acquisition/' + encodeURIComponent(playerId) + qs;
+    tradesPromise = jget(tradesUrl);
+    acqPromise = jget(acqUrl);
+  }
 
-  Promise.all([jget(tradesUrl), jget(acqUrl)]).then(function (res) {
+  Promise.all([tradesPromise, acqPromise]).then(function (res) {
     const tradesData = res[0] || {};
     const acqData = res[1] || {};
     const events = [];
@@ -2233,11 +2212,8 @@ function pmSwitchTab(tab, clickEvent) {
     const _boLeague = _boMatch ? _boMatch[3] : '';
     const _boPlatform = _boMatch ? _boMatch[1] : 'sleeper';
     const _boUrl = `/api/breakout/player/${encodeURIComponent(playerId)}?season=${encodeURIComponent(season)}&league_id=${encodeURIComponent(_boLeague)}&platform=${encodeURIComponent(_boPlatform)}`;
-    // Join the modal-open eligibility fetch when it's still in flight for this
-    // player instead of firing a duplicate request.
-    const _bkInflight = (_pmBreakoutInflight && _pmBreakoutInflight.playerId === String(playerId))
-      ? _pmBreakoutInflight.promise : null;
-    const _bkRequest = _bkInflight || fetch(_boUrl)
+    // Lazy fetch on tab open (panel.dataset.loaded guards against duplicates).
+    const _bkRequest = fetch(_boUrl)
       .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
     _bkRequest
       .then(data => {

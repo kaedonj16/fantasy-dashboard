@@ -114,7 +114,7 @@ def build_teams_body(ctx: dict) -> str:
         logger.debug("teams: final pick slots failed", exc_info=True)
     _pk_odds = []
     try:
-        _pk_odds = _playoff_sim_cached(ctx, platform) or []
+        _pk_odds = _playoff_sim_cached(ctx, platform, block=False) or []
         if _pk_odds:
             _pk_order = sorted(
                 _pk_odds,

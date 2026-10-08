@@ -52,6 +52,12 @@ _RESULT_CACHE: Dict[tuple, Any] = {}
 _RESULT_CACHE_TTL = 300  # seconds (matches the sim-state cache window)
 _RESULT_CACHE_MAX = 256
 
+# Analytical slate cache: the phase=slate request stores its candidate rows
+# here keyed by the same _key. Phase=sim requests reuse the slate instead of
+# re-running the entire analytical candidate-selection pipeline.
+_SLATE_CACHE: Dict[tuple, Any] = {}
+_SLATE_CACHE_MAX = 256
+
 # Suggestion ranking uses the same 2k count as the trade-calculator Playoff
 # Impact card. Antithetic variates + frozen-opponent common random numbers
 # keep deltas tight; bumping this to 10k made every strategy chip wait on
@@ -107,6 +113,10 @@ def invalidate_league_caches(platform: str, league_id: str, season) -> None:
              if len(k) >= 3 and k[0] == platform and k[1] == str(league_id) and k[2] == _season]
     for k in stale:
         _RESULT_CACHE.pop(k, None)
+    stale_slate = [k for k in _SLATE_CACHE
+                   if len(k) >= 3 and k[0] == platform and k[1] == str(league_id) and k[2] == _season]
+    for k in stale_slate:
+        _SLATE_CACHE.pop(k, None)
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
@@ -2373,6 +2383,11 @@ def get_archetype_suggestions(
             else:
                 r["sim_pending"] = False
                 r["rank"] = _suggestion_rank(r)
+        # Store the analytical slate for phase=sim reuse (see below).
+        if len(_SLATE_CACHE) >= _SLATE_CACHE_MAX:
+            _oldest = min(_SLATE_CACHE, key=lambda k: _SLATE_CACHE[k]["ts"])
+            _SLATE_CACHE.pop(_oldest, None)
+        _SLATE_CACHE[_key] = {"rows": rows, "groups": groups, "ts": _time.time()}
         return {
             "suggestions": rows,
             "current_playoff_pct": None,
