@@ -1599,7 +1599,12 @@ def build_tour_mock_graphs_ctx(df_weekly) -> dict:
 def build_career_graphs_ctx(
     platform, league_id, season, available_seasons, get_ctx, only_owners=None,
 ) -> dict:
-    """Aggregate team_stats and df_weekly across completed seasons for career graphs.
+    """Aggregate team_stats and df_weekly across seasons for career graphs.
+
+    Includes the current in-progress season so career totals reflect this
+    year's games too (same pattern as awards all-time standings). Completed
+    seasons come from ``available_seasons``; the current season is appended
+    when missing.
 
     ``get_ctx(platform, rid, season)`` fetches a league context (injected so this
     module stays independent of app.py). When ``only_owners`` is a non-empty set of
@@ -1615,7 +1620,14 @@ def build_career_graphs_ctx(
     season_frames: list = []
     labels: dict[str, tuple[int, str]] = {}
 
-    for hist_s in available_seasons:
+    # Include the current in-progress season so career graphs reflect this
+    # year's games too. Current season goes last so its display names win
+    # over historical ones.
+    _seasons_to_process = list(available_seasons or [])
+    if int(season) not in [int(s) for s in _seasons_to_process]:
+        _seasons_to_process.append(int(season))
+
+    for hist_s in _seasons_to_process:
         rid = resolve_league_id_for_season(platform, league_id, season, hist_s)
         try:
             hctx = get_ctx(platform, rid, hist_s)
@@ -1811,7 +1823,10 @@ def render_graphs_html(
 
     # ── Render the appropriate graphs ──────────────────────────────────────
     if view == "career":
-        if not available_seasons:
+        _career_seasons = list(available_seasons or [])
+        if int(season) not in [int(s) for s in _career_seasons]:
+            _career_seasons.append(int(season))
+        if not _career_seasons:
             charts_html = """
             <div class="card central">
               <div class="card-body">
