@@ -98,6 +98,7 @@ def build_dashboard_body(ctx: dict) -> str:
             _wv_table,
             season=season,
             current_week=current_week,
+            last_final_week=last_final_week,
         )
     except Exception:
         logger.debug("dashboard next-steps queue failed", exc_info=True)
@@ -422,8 +423,11 @@ def build_dashboard_body(ctx: dict) -> str:
     )
     if _action_cards:
         _action_inner = "".join(h for _, h in _action_cards)
-        # Dismissal: client-side only, persisted per card type + day in
-        # localStorage so dismissed cards stay hidden until tomorrow.
+    # Dismissal: client-side only, persisted per card type + day in
+    # localStorage so dismissed cards stay hidden until tomorrow.
+    # Always included: the bench-check card (rendered in the matchup panel)
+    # is dismissable too.
+    if _action_cards or (bench_check_html or "").strip():
         _dismiss_script = f"""
           <script>
           (function() {{
