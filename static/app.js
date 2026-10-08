@@ -12371,6 +12371,11 @@ function initRecapPage(root = document) {
 window.initPageRoot = function initPageRoot(root = document) {
   initManagerPills(root);
   initCardTabs(root);
+  // Re-apply ?tab= deep-link after soft-nav DOM swaps (the weekly hub's
+  // inline IIFE only runs on full page load).
+  if (typeof window.wkActivateTabFromUrl === "function") {
+    try { window.wkActivateTabFromUrl(); } catch (e) {}
+  }
   initPlayoffOdds(root);
   initTeamTabs(root);
   initStandingsSort(root);
