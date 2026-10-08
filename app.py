@@ -865,8 +865,43 @@ for _warm in (
 ):
     _served_static(_warm)
 del _warm
-_FA_V = _static_hash("font-awesome.css")
-_ICONS_V = _static_hash("icons.css")
+
+
+def _load_critical_css() -> str:
+    """Critical above-the-fold CSS for the signed-in dashboard homepage.
+
+    Inlined in <head> so first paint doesn't wait for the full dashboard
+    bundle (which loads async via media="print"). Regenerated at startup if
+    dashboard.css is newer than the cached critical file.
+    """
+    static_dir = Path(__file__).parent / "static"
+    critical_path = static_dir / "critical-home.css"
+    dashboard_path = static_dir / "dashboard.css"
+    try:
+        if (critical_path.exists() and dashboard_path.exists()
+                and critical_path.stat().st_mtime >= dashboard_path.stat().st_mtime):
+            return critical_path.read_text(encoding="utf-8").strip()
+        # Stale or missing: regenerate from the extraction script
+        import importlib.util
+        _spec = importlib.util.spec_from_file_location(
+            "extract_critical_css",
+            Path(__file__).parent / "scripts" / "extract_critical_css.py",
+        )
+        _mod = importlib.util.module_from_spec(_spec)
+        _spec.loader.exec_module(_mod)
+        _critical = _mod.extract(dashboard_path).strip()
+        if _critical:
+            critical_path.write_text(_critical, encoding="utf-8")
+        return _critical
+    except Exception as _e:
+        logger.info("[critical-css] unavailable: %s", _e)
+        try:
+            return critical_path.read_text(encoding="utf-8").strip()
+        except OSError:
+            return ""
+
+
+_CRITICAL_CSS = _load_critical_css()
 
 # When this worker booted -- a cheap "did the deploy actually restart me?" signal
 # alongside the bundle hashes in /healthz/version (served by routes.health_bp).
@@ -2544,14 +2579,15 @@ BASE_HTML = """
     <!-- Crawlers and no-JS reviewers (AdSense) must see the page, not a full-screen splash. -->
     <noscript><style>#appSplash{{display:none!important}}</style></noscript>
 
-    <link rel="stylesheet" href="/static/{css_file}?v={css_v}">
-    <link rel="stylesheet" href="/static/icons.css?v={icons_v}">
-    <!-- Font Awesome is render-blocking on purpose: it's the ONLY source of the
-         icon box sizing (.fa{{display:inline-block;width:1em;line-height:1}}). If it
-         loads async, every <i class="fa-…"> renders 0x0 until it applies, then pops
-         to ~1em and reflows everything below it -- that was the ~0.4 CLS. It's a tiny
-         (~8 KB) same-origin file, so the render-blocking cost is negligible. -->
-    <link rel="stylesheet" href="/static/font-awesome.css?v={fa_v}">
+    <!-- Critical above-the-fold CSS (nav, hero, action rail, theme tokens, icon
+         box sizing) inlined so first paint doesn't wait for the full bundle.
+         The full dashboard stylesheet (which now includes icons.css and
+         font-awesome.css, merged at the end of dashboard.css) loads async via
+         the media="print" trick, same pattern paywall.css uses. Icon box sizing
+         lives in the critical CSS, so there's no 0x0 icon flash / CLS. -->
+    <style>{critical_css}</style>
+    <link rel="stylesheet" href="/static/{css_file}?v={css_v}"{css_async_attr}>
+    {css_noscript}
     <!-- Paywall CSS only styles the (hidden) upgrade modal -- no above-the-fold
          layout impact -- so it stays async and doesn't block first paint. -->
     <link rel="stylesheet" href="/static/{paywall_css_file}?v={paywall_css_v}" media="print" onload="this.media='all'">
@@ -6593,6 +6629,16 @@ def render_page(
     else:
         _page_css_file = _CSS_FILE
         _page_css_v = _CSS_V
+    # The full dashboard bundle loads async (non-blocking); critical
+    # above-the-fold CSS is inlined in <head>. Lite pages keep their small
+    # stylesheets render-blocking (the critical CSS is homepage-specific).
+    _css_async = _page_css_file == _CSS_FILE
+    _css_async_attr = ' media="print" onload="this.media=\'all\'"' if _css_async else ""
+    _css_noscript = (
+        f'<noscript><link rel="stylesheet" '
+        f'href="/static/{_page_css_file}?v={_page_css_v}"></noscript>'
+        if _css_async else ""
+    )
     # Tell the lazy-loader where the feature bundle lives (only on lite pages;
     # on full pages the features are already present so the loader no-ops).
     _features_js_js = (
@@ -6746,8 +6792,9 @@ def render_page(
         paywall_css_v=_PAYWALL_CSS_V,
         css_file=_page_css_file,
         css_v=_page_css_v,
-        fa_v=_FA_V,
-        icons_v=_ICONS_V,
+        critical_css=_CRITICAL_CSS,
+        css_async_attr=_css_async_attr,
+        css_noscript=_css_noscript,
         viewer_roster_id_js=_json.dumps(str(viewer_roster_id)),
         viewer_user_id_js=_json.dumps(str(viewer_user_id)),
         signed_in_js="true" if _session_signed_in() else "false",
@@ -37736,7 +37783,6 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
     (function(){{{"document.documentElement.setAttribute('data-theme','light');" if is_og else "var t=localStorage.getItem('sc-card-theme')||(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t);"}}})();
   </script>
   <link rel="stylesheet" href="/static/{_CSS_FILE}?v={_CSS_V}">
-  <link rel="stylesheet" href="/static/font-awesome.css?v={_CSS_V}">
   <style>
     body {{ background:var(--bg,#020617); {'min-height:100vh; justify-content:center;' if not is_embed else ''} display:flex; flex-direction:column; align-items:center; padding:{'0' if is_embed else '16px'}; }}
     .share-card-wrap {{ max-width:440px; width:100%; }}
