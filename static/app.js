@@ -10978,6 +10978,19 @@ window.initTradePage = function initTradePage(root = document) {
   // analyzeTrade - owns ALL loading/result/empty state transitions
   // Never call tradeAiBody.innerHTML directly from outside this fn
   // ------------------------------------------------------------
+  // Move the verdict fragment rendered by the server into the panel header
+  // slot (or clear it when no analysis is shown).
+  function syncAiVerdictSlot(fromResult) {
+    const slot = root.querySelector("#aiVerdictSlot");
+    if (!slot) return;
+    slot.innerHTML = "";
+    if (fromResult) {
+      const frag = fromResult.querySelector(".trade-ai-verdict-frag");
+      if (frag) slot.appendChild(frag);
+    }
+  }
+
+  // ------------------------------------------------------------
   async function analyzeTrade() {
     // Don't run analysis in guest mode
     const isGuest = root.querySelector("#isGuestMode")?.value === "true";
@@ -11006,6 +11019,7 @@ window.initTradePage = function initTradePage(root = document) {
       if (loadingState) loadingState.style.display = "none";
       if (resultState) resultState.style.display = "none";
       if (emptyState) emptyState.style.display = "block";
+      syncAiVerdictSlot(null);
       return;
     }
 
@@ -11013,6 +11027,7 @@ window.initTradePage = function initTradePage(root = document) {
     if (loadingState) loadingState.style.display = "block";
     if (emptyState) emptyState.style.display = "none";
     if (resultState) resultState.style.display = "none";
+    syncAiVerdictSlot(null);
 
     // Yield to browser so the loading state actually paints before fetch starts
     await new Promise(resolve => requestAnimationFrame(resolve));
@@ -11064,6 +11079,7 @@ window.initTradePage = function initTradePage(root = document) {
       if (res.status === 429) {
         if (loadingState) loadingState.style.display = "none";
         if (emptyState) emptyState.style.display = "none";
+        syncAiVerdictSlot(null);
         if (resultState) {
           resultState.style.display = "block";
           resultState.innerHTML = `
@@ -11090,7 +11106,9 @@ window.initTradePage = function initTradePage(root = document) {
         if (data.analysis_html) {
           resultState.innerHTML = window.brSanitizeHtml(data.analysis_html);
           if (window.brRevealText) window.brRevealText(resultState);
+          syncAiVerdictSlot(resultState);
         } else if (!_isPremium) {
+          syncAiVerdictSlot(null);
           resultState.innerHTML = `
             <div class="otc-ai-empty">
               <div class="otc-ai-empty-title" style="display:flex;align-items:center;gap:6px;">
@@ -11100,6 +11118,7 @@ window.initTradePage = function initTradePage(root = document) {
               <button onclick="showPaywall('trade-ai')" style="margin-top:10px;padding:8px 18px;background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">Upgrade to PRO</button>
             </div>`;
         } else if (data.error && data.error.includes("No user context")) {
+          syncAiVerdictSlot(null);
           resultState.innerHTML = `
             <div class="otc-ai-empty">
               <div class="otc-ai-empty-title">Select Your Team</div>
@@ -11109,12 +11128,14 @@ window.initTradePage = function initTradePage(root = document) {
               </div>
             </div>`;
         } else if (data.analysis_error) {
+          syncAiVerdictSlot(null);
           resultState.innerHTML = `
             <div class="otc-ai-empty">
               <div class="otc-ai-empty-title">Analysis unavailable</div>
               <div class="otc-ai-empty-sub">The AI take failed this time. Re-run the eval in a moment -- the value verdict above is still current.</div>
             </div>`;
         } else {
+          syncAiVerdictSlot(null);
           resultState.innerHTML = `
             <div class="otc-ai-empty">
               <div class="otc-ai-empty-title">No AI take yet</div>
@@ -11953,13 +11974,19 @@ window.initTradePage = function initTradePage(root = document) {
             const resultState = root.querySelector("#aiAnalysisResult");
             if (loadingState) loadingState.style.display = "none";
             if (resultState) resultState.style.display = "none";
+            syncAiVerdictSlot(null);
             if (emptyState) {
               emptyState.style.display = "block";
               emptyState.innerHTML = `
-                <div class="otc-ai-empty-title">Team Selected</div>
-                <div class="otc-ai-empty-sub">
-                  Now click Analyze Trade to generate analysis for
-                  ${selector.options[selector.selectedIndex].text}.
+                <div class="otc-ai-empty-compact">
+                  <div class="otc-ai-empty-icon"><i class="fa-solid fa-scale-balanced"></i></div>
+                  <div>
+                    <div class="otc-ai-empty-title">Team Selected</div>
+                    <div class="otc-ai-empty-sub">
+                      Now click Analyze Trade to generate analysis for
+                      ${selector.options[selector.selectedIndex].text}.
+                    </div>
+                  </div>
                 </div>`;
             }
           }

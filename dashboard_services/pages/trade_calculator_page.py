@@ -487,6 +487,7 @@ def build_trade_calculator_body(
                   <h2 class="otc-ai-title">BR Trade Analyst</h2>
                   <div class="otc-ai-sub">{ai_sub_text}</div>
                 </div>
+                <div id="aiVerdictSlot" class="otc-ai-verdict-slot"></div>
               </div>
 
               <div id="tradeAiBody" class="otc-ai-body">
@@ -497,8 +498,13 @@ def build_trade_calculator_body(
                   </div>
                 </div>
                 <div class="otc-ai-empty" id="aiEmptyState">
-                  <div class="otc-ai-empty-title">{ai_empty_title}</div>
-                  <div class="otc-ai-empty-sub">{ai_empty_sub}</div>
+                  <div class="otc-ai-empty-compact">
+                    <div class="otc-ai-empty-icon"><i class="fa-solid fa-scale-balanced"></i></div>
+                    <div>
+                      <div class="otc-ai-empty-title">{ai_empty_title}</div>
+                      <div class="otc-ai-empty-sub">{ai_empty_sub}</div>
+                    </div>
+                  </div>
                 </div>
                 <div id="aiAnalysisResult" style="display:none;"></div>
               </div>

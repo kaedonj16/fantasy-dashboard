@@ -654,12 +654,21 @@ def _trade_ai_takeaway(summary: str) -> str:
     return takeaway or text
 
 
+_TRADE_AI_VERDICTS = {
+    "ACCEPT": ("#16a34a", "&#10003;"),
+    "DECLINE": ("#dc2626", "&#10005;"),
+    "COUNTER": ("#d97706", "&#8646;"),
+}
+
+
 def render_trade_ai_html(result: dict) -> str:
-    verdict = html.escape(str(result.get("verdict") or "COUNTER").upper())
+    raw_verdict = str(result.get("verdict") or "COUNTER").upper()
+    verdict = html.escape(raw_verdict)
+    verdict_color, verdict_glyph = _TRADE_AI_VERDICTS.get(raw_verdict, _TRADE_AI_VERDICTS["COUNTER"])
     helps = result.get("helps") or []
     risks = result.get("risks") or []
     counter = html.escape(str(result.get("counter") or ""))
-    confidence = html.escape(str(result.get("confidence") or ""))
+    confidence_raw = str(result.get("confidence") or "").strip()
 
     helps_html = "".join(
         f"<li>{html.escape(str(x))}</li>" for x in helps[:4]) or "<li>No specific edge identified.</li>"
@@ -675,33 +684,39 @@ def render_trade_ai_html(result: dict) -> str:
         </div>
         """
 
-    confidence_html = ""
-    if confidence:
-        confidence_html = f"""<div class="trade-ai-score">Confidence: {confidence}</div>"""
+    # Verdict fragment: the client moves this into the panel header slot.
+    conf_label = f"{confidence_raw[:1].upper()}{confidence_raw[1:]} confidence" if confidence_raw else ""
+    conf_html = ""
+    if conf_label:
+        conf_html = (
+            f'<div class="trade-ai-conf-pill">'
+            f'<span class="trade-ai-conf-dot" style="background:{verdict_color};"></span>'
+            f"{html.escape(conf_label)}</div>"
+        )
+    verdict_frag = f"""
+      <div class="trade-ai-verdict-frag" data-verdict="{verdict}">
+        <div class="trade-ai-verdict-badge" style="background:{verdict_color};">{verdict_glyph} {verdict}</div>
+        {conf_html}
+      </div>
+    """
 
     takeaway = _trade_ai_takeaway(str(result.get("summary") or ""))
-    takeaway_html = ""
+    body_html = ""
     if takeaway:
-        takeaway_html = f"""
-      <div class="trade-ai-takeaway"><strong>Bottom line:</strong> {html.escape(takeaway)}</div>
-        """
+        body_html = f'<p class="trade-ai-body">{html.escape(takeaway)}</p>'
 
     return f"""
     <div class="ai-copy trade-ai-wrap">
-      <div class="trade-ai-top">
-        <div class="trade-ai-verdict trade-ai-verdict-{verdict.lower()}">{verdict}</div>
-        {confidence_html}
-      </div>
-
-      {takeaway_html}
-      <div class="trade-ai-grid">
-        <div class="trade-ai-block">
-          <div class="trade-ai-label">Pros:</div>
+      {verdict_frag}
+      {body_html}
+      <div class="trade-ai-pc-grid">
+        <div class="trade-ai-pc-col trade-ai-pc-pros">
+          <div class="trade-ai-pc-label">Pros</div>
           <ul class="trade-ai-list">{helps_html}</ul>
         </div>
 
-        <div class="trade-ai-block">
-          <div class="trade-ai-label">Cons:</div>
+        <div class="trade-ai-pc-col trade-ai-pc-cons">
+          <div class="trade-ai-pc-label">Cons</div>
           <ul class="trade-ai-list">{risks_html}</ul>
         </div>
       </div>
