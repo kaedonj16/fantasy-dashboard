@@ -22532,9 +22532,9 @@ function renderTeamDetails(data) {
   }
   async function hydrate(node) {
     if (!node || node.dataset.rivDone) return;
-    node.dataset.rivDone = '1';
     const c = window.__brctx || {};
     if (!c.platform || !c.season || !c.leagueId) return;
+    node.dataset.rivDone = '1';
     const a = node.dataset.rivA, b = node.dataset.rivB;
     if (!a || !b || a === b) return;
     try {
@@ -22550,6 +22550,11 @@ function renderTeamDetails(data) {
   }
   function start() {
     scan(document);
+    // Retry once after a delay in case __brctx wasn't ready on first scan
+    // (mobile can initialize context after DOMContentLoaded).
+    setTimeout(function() {
+      if (document.querySelector('.m-rivalry[data-riv-a]:not([data-riv-done])')) scan(document);
+    }, 2000);
     const container = document.getElementById('weeklyMatchupsContainer');
     if (container && 'MutationObserver' in window) {
       new MutationObserver(() => scan(container)).observe(container, { childList: true, subtree: true });
