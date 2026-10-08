@@ -347,20 +347,20 @@ def page_trade_database(platform: str, season: int, league_id: str):
       <div class="card-body tdb-page-body">
 
         <div class="tdb-toolbar">
-          <div class="tdb-sides-row">
+          <div class="tdb-sides-row tdb-search-card">
             <div class="tdb-side-wrap">
               <div class="tdb-side-label">Side A</div>
               <div class="tdb-search-outer">
-                <input id="tdbSideASearch" type="text" placeholder="Search player…" class="tdb-search" autocomplete="off">
+                <input id="tdbSideASearch" type="text" placeholder="Search player or pick…" class="tdb-search" autocomplete="off">
                 <div id="tdbSideADropdown" class="tdb-dropdown" style="display:none;"></div>
               </div>
               <div id="tdbSideAChip" class="tdb-chip-area" style="display:none;"></div>
             </div>
-            <div class="tdb-side-sep">vs</div>
+            <div class="tdb-side-sep">&#8646;</div>
             <div class="tdb-side-wrap">
               <div class="tdb-side-label">Side B</div>
               <div class="tdb-search-outer">
-                <input id="tdbSideBSearch" type="text" placeholder="Search player…" class="tdb-search" autocomplete="off">
+                <input id="tdbSideBSearch" type="text" placeholder="Search player or pick…" class="tdb-search" autocomplete="off">
                 <div id="tdbSideBDropdown" class="tdb-dropdown" style="display:none;"></div>
               </div>
               <div id="tdbSideBChip" class="tdb-chip-area" style="display:none;"></div>
@@ -461,6 +461,11 @@ def page_trade_database(platform: str, season: int, league_id: str):
         display: flex; gap: 12px; flex: 1; min-width: 0; flex-wrap: wrap;
         align-items: flex-start;
       }}
+      /* Unified two-sided search card (matches approved mock) */
+      .tdb-sides-row.tdb-search-card {{
+        background: var(--card); border: 1px solid var(--border);
+        border-radius: 14px; padding: 14px; align-items: stretch;
+      }}
       .tdb-side-wrap {{
         flex: 1; min-width: 160px; display: flex; flex-direction: column; gap: 6px;
       }}
@@ -469,8 +474,8 @@ def page_trade_database(platform: str, season: int, league_id: str):
         letter-spacing: .05em; color: var(--text-muted);
       }}
       .tdb-side-sep {{
-        align-self: center; padding-top: 22px;
-        font-size: 13px; font-weight: 700; color: var(--text-muted);
+        align-self: center; flex-shrink: 0;
+        font-size: 20px; color: var(--text-faint, #cbd5e1);
       }}
       .tdb-search-outer {{
         position: relative;
@@ -539,6 +544,10 @@ def page_trade_database(platform: str, season: int, league_id: str):
       .tdb-card-body {{ display: grid; grid-template-columns: 1fr 1px 1fr; }}
       .tdb-col {{ padding: 12px 14px; display: flex; flex-direction: column; gap: 5px; }}
       .tdb-col-divider {{ background: var(--border); }}
+      .tdb-side-label {{
+        font-size: 10px; font-weight: 800; letter-spacing: .06em;
+        color: var(--text-muted); text-transform: uppercase; margin-bottom: 2px;
+      }}
       .tdb-asset {{
         font-size: 15px; color: var(--text); font-weight: 500;
         display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
@@ -556,6 +565,20 @@ def page_trade_database(platform: str, season: int, league_id: str):
       .tdb-pos.pos-TE {{ background: color-mix(in srgb, #8b5cf6 16%, transparent); color: #8b5cf6; }}
       [data-theme="dark"] .tdb-pos.pos-RB {{ color: #22c55e; }}
       [data-theme="dark"] .tdb-pos.pos-WR {{ color: #f59e0b; }}
+      /* Card footer: value delta + league info (mock-approved) */
+      .tdb-card-foot {{
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 10px 14px; border-top: 1px solid var(--border);
+        background: var(--bg-alt, rgba(0,0,0,.02));
+      }}
+      .tdb-delta {{ font-size: 13px; font-weight: 700; color: #16a34a; }}
+      .tdb-delta-fair {{ color: var(--text-muted); font-weight: 600; }}
+      .tdb-league-info {{ font-size: 12px; color: var(--text-muted); }}
+      .chip--fair {{
+        background: color-mix(in srgb, #22c55e 14%, transparent);
+        color: #16a34a; border: 1px solid color-mix(in srgb, #22c55e 30%, transparent);
+      }}
+      [data-theme="dark"] .chip--fair {{ color: #22c55e; }}
       @media(max-width: 480px) {{
         .tdb-card-body {{ grid-template-columns: 1fr; }}
         .tdb-col-divider {{ height: 1px; width: auto; }}
@@ -563,6 +586,7 @@ def page_trade_database(platform: str, season: int, league_id: str):
       @media(max-width: 600px) {{
         .tdb-toolbar {{ flex-direction: column; gap: 10px; margin-bottom: 12px; }}
         .tdb-sides-row {{ flex-direction: column; gap: 10px; width: 100%; }}
+        .tdb-sides-row.tdb-search-card .tdb-side-sep {{ transform: rotate(90deg); }}
         .tdb-side-wrap {{ min-width: 0; width: 100%; flex: none; }}
         .tdb-search-outer {{ width: 100%; box-sizing: border-box; }}
         .tdb-chip-area {{ flex-wrap: wrap; gap: 6px; min-height: 0; }}
@@ -849,18 +873,37 @@ def page_trade_database(platform: str, season: int, league_id: str):
           }}
           const sideA = (t.side_a || []).map(renderAsset).join('') || '<div class="tdb-asset" style="color:var(--text-muted)">-</div>';
           const sideB = (t.side_b || []).map(renderAsset).join('') || '<div class="tdb-asset" style="color:var(--text-muted)">-</div>';
+          // Value delta footer + Fair badge (mock-approved)
+          const valA = parseFloat(t.side_a_value) || 0;
+          const valB = parseFloat(t.side_b_value) || 0;
+          const valDelta = valA - valB;
+          const valMax = Math.max(valA, valB, 1);
+          const isFair = Math.abs(valDelta) <= Math.max(25, 0.1 * valMax);
+          const fairBadge = isFair ? '<span class="chip chip--sm chip--fair">Fair</span>' : '';
+          let deltaText = '';
+          if (isFair) {{
+            deltaText = '<span class="tdb-delta tdb-delta-fair">Fair deal</span>';
+          }} else if (valDelta > 0) {{
+            deltaText = `<span class="tdb-delta">+${{valDelta.toFixed(1)}} value to A</span>`;
+          }} else {{
+            deltaText = `<span class="tdb-delta">+${{Math.abs(valDelta).toFixed(1)}} value to B</span>`;
+          }}
+          const leagueInfo = [t.num_teams ? t.num_teams + '-team' : '', t.scoring_type ? t.scoring_type.toUpperCase() : '']
+            .filter(Boolean).join(' ');
           const card = document.createElement('div');
           card.className = 'tdb-card';
           card.innerHTML = `
             <div class="tdb-card-head">
               <span class="tdb-card-date">${{t.date || '-'}}</span>
-              <div class="tdb-badges">${{sfBadge}}${{teamsBadge}}${{scoreBadge}}${{weekBadge}}</div>
+              <div class="tdb-badges">${{weekBadge}}${{sfBadge}}${{fairBadge}}</div>
             </div>
             <div class="tdb-card-body">
-              <div class="tdb-col">${{sideA}}</div>
+              <div class="tdb-col"><div class="tdb-side-label">Team A got</div>${{sideA}}</div>
               <div class="tdb-col-divider"></div>
-              <div class="tdb-col">${{sideB}}</div>
-            </div>`;
+              <div class="tdb-col"><div class="tdb-side-label">Team B got</div>${{sideB}}</div>
+            </div>
+            <div class="tdb-card-foot">${{deltaText}}${{leagueInfo ? `<span class="tdb-league-info">${{leagueInfo}}</span>` : ''}}</div>
+`;
           listEl.appendChild(card);
         }});
       }}

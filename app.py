@@ -32005,6 +32005,27 @@ def api_trade_database():
                 assets_by_trade[tid] = {"a": [], "b": []}
             assets_by_trade[tid][a["side"]].append(a)
 
+        # Per-side market values for the value-delta footer / Fair badge.
+        # One batched lookup for all player assets on this page.
+        _mv_by_pid: dict = {}
+        try:
+            _all_pids = list({
+                a["player_id"] for sides in assets_by_trade.values()
+                for side_assets in sides.values() for a in side_assets
+                if a["asset_type"] == "player" and a["player_id"]
+            })
+            if _all_pids:
+                _mv_rows = conn.execute(
+                    "SELECT player_id, weighted_market_value_1qb, weighted_market_value_sf"
+                    " FROM trade_intel_player_stats"
+                    " WHERE player_id = ANY(%s) AND season = %s",
+                    (_all_pids, season),
+                ).fetchall()
+                for _mvr in _mv_rows:
+                    _mv_by_pid[_mvr["player_id"]] = _mvr
+        except Exception:
+            logger.debug("suppressed exception", exc_info=True)
+
         def describe(a) -> dict:
             if a["asset_type"] == "player":
                 pid = a["player_id"]
@@ -32017,10 +32038,15 @@ def api_trade_database():
             slot = a["pick_slot"]
             if slot:
                 name = f"{s} Pick {r}.{str(slot).zfill(2)}"
+                pick_id = f"{s}_{r}_{str(slot).zfill(2)}"
             else:
-                order = a["pick_order"] or ""
+                order = (a["pick_order"] or "").lower()
                 name = f"{s} Round {r}" + (f" ({order})" if order else "")
-            return {"type": "pick", "name": name}
+                pick_id = f"{s}_{r}_{order}" if order in ("early", "mid", "late") else None
+            out = {"type": "pick", "name": name}
+            if pick_id:
+                out["pick_id"] = pick_id
+            return out
 
         result = []
         for r in trade_rows:
@@ -32036,6 +32062,19 @@ def api_trade_database():
                     trade_date = r["created_at"].strftime("%m/%d/%y")
                 except Exception:
                     trade_date = str(r["created_at"])[:10]
+            # Per-side market value (SF-aware) for the delta footer / Fair badge.
+            _mv_col = "weighted_market_value_sf" if r["is_superflex"] else "weighted_market_value_1qb"
+            def _side_value(raw_assets):
+                _v = 0.0
+                for _a in raw_assets:
+                    if _a["asset_type"] != "player":
+                        continue
+                    _mv = _mv_by_pid.get(_a["player_id"]) or {}
+                    try:
+                        _v += float(_mv.get(_mv_col) or 0)
+                    except (TypeError, ValueError):
+                        pass
+                return round(_v, 1)
             result.append({
                 "trade_id": r["transaction_id"],
                 "date": trade_date,
@@ -32046,6 +32085,8 @@ def api_trade_database():
                 "num_teams": r["num_teams"],
                 "side_a": side_a_assets,
                 "side_b": side_b_assets,
+                "side_a_value": _side_value(sides["a"]),
+                "side_b_value": _side_value(sides["b"]),
             })
 
         # Calculate pagination info
