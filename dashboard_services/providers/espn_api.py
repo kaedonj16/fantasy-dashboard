@@ -1346,9 +1346,25 @@ def espn_get_bracket_like(
     schedule = _playoff_schedule_cached(season, league_id)
     kind = kind.lower()
 
+    # ESPN does not populate playoffTierType for past seasons. Fall back to
+    # matchupPeriodId: playoff weeks come after the regular season.
+    try:
+        _lg = _league(season, league_id)
+        _reg_season_count = _safe_int(getattr(getattr(_lg, "settings", None), "reg_season_count", None))
+    except Exception:
+        _reg_season_count = 0
+
     def keep(g):
         p = (g.get("playoffTierType") or "").upper()
-        return ("WINNERS" in p) if kind == "winners" else ("LOSERS" in p or "CONSOLATION" in p)
+        if p:
+            return ("WINNERS" in p) if kind == "winners" else ("LOSERS" in p or "CONSOLATION" in p)
+        # Fallback for past seasons with no tier type: playoff games are in
+        # matchup periods after the regular season. Without tier type we
+        # cannot distinguish consolation games, so only the winners bracket
+        # gets the fallback.
+        if not _reg_season_count or kind != "winners":
+            return False
+        return _safe_int(g.get("matchupPeriodId")) > _reg_season_count
 
     games = [g for g in schedule if g.get("home") and g.get("away") and keep(g)]
     if not games:
@@ -1357,9 +1373,37 @@ def espn_get_bracket_like(
     rounds = sorted({_safe_int(g.get("matchupPeriodId")) for g in games})
     rmap = {mp: i + 1 for i, mp in enumerate(rounds)}
 
+    def _winner_loser(g):
+        """Extract (winner, loser) team IDs from ESPN matchup data."""
+        h, a = g["home"], g["away"]
+        t1 = _safe_int(h.get("teamId"))
+        t2 = _safe_int(a.get("teamId"))
+        # Prefer ESPN's explicit winner field when present.
+        winner = str(g.get("winner") or "").upper()
+        if winner == "HOME":
+            return t1, t2
+        if winner == "AWAY":
+            return t2, t1
+        if winner == "TIE":
+            return None, None
+        # Fall back to comparing total points for completed games.
+        try:
+            h_pts = float(h.get("totalPoints") or 0)
+            a_pts = float(a.get("totalPoints") or 0)
+        except (TypeError, ValueError):
+            return None, None
+        if h_pts == 0 and a_pts == 0:
+            return None, None  # not played yet
+        if h_pts > a_pts:
+            return t1, t2
+        if a_pts > h_pts:
+            return t2, t1
+        return None, None  # tie
+
     out = []
     for g in games:
         h, a = g["home"], g["away"]
+        w, l = _winner_loser(g)
         out.append({
             "r": rmap.get(_safe_int(g.get("matchupPeriodId")), 1),
             "m": _safe_int(g.get("id")),
@@ -1367,8 +1411,8 @@ def espn_get_bracket_like(
             "t2": _safe_int(a.get("teamId")),
             "t1_from": None,
             "t2_from": None,
-            "w": None,
-            "l": None,
+            "w": w,
+            "l": l,
         })
 
     return sorted(out, key=lambda x: (x["r"], x["m"]))
