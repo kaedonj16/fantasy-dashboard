@@ -8701,6 +8701,115 @@ select:focus {
     gap: 12px;
 }
 
+/* Verdict fragment: moved into the panel header slot by JS. */
+.trade-ai-verdict-frag {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+}
+
+.trade-ai-verdict-badge {
+    color: #fff;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: .04em;
+    padding: 8px 20px;
+    border-radius: 8px;
+    white-space: nowrap;
+}
+
+.trade-ai-conf-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted);
+    background: var(--card-soft, #f1f5f9);
+    padding: 4px 10px;
+    border-radius: 6px;
+    white-space: nowrap;
+}
+
+.trade-ai-conf-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.trade-ai-body {
+    font-size: 14px;
+    line-height: 1.7;
+    color: var(--text);
+    margin: 0;
+}
+
+.trade-ai-pc-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.trade-ai-pc-col {
+    border-top: 2px solid var(--border);
+    padding-top: 10px;
+}
+
+.trade-ai-pc-pros {
+    border-top-color: #16a34a;
+}
+
+.trade-ai-pc-cons {
+    border-top-color: #fca5a5;
+}
+
+.trade-ai-pc-label {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 8px;
+}
+
+.otc-ai-verdict-slot {
+    display: flex;
+    align-items: flex-start;
+    flex-shrink: 0;
+}
+
+.otc-ai-verdict-slot:empty {
+    display: none;
+}
+
+/* Compact horizontal empty state. */
+.otc-ai-empty-compact {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+}
+
+.otc-ai-empty-icon {
+    width: 36px;
+    height: 36px;
+    background: var(--card-soft, #f1f5f9);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: var(--muted);
+    font-size: 16px;
+}
+
+@media (max-width: 640px) {
+    .trade-ai-pc-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
 .trade-bar {
     margin-top: 4px;
     margin-bottom: 12px;
