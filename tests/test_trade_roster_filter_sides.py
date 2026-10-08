@@ -76,3 +76,19 @@ def test_roster_filter_forces_team_one_as_viewer_side():
 
     assert "const viewerSide = rosterFilterActive()" in analyzer
     assert '? "a"' in analyzer
+
+
+def test_analyze_button_auto_resolves_without_team_dropdown():
+    # The #teamSelect dropdown was removed from the page (viewer team is known
+    # from context), so the Analyze Trade button must enable from the injected
+    # viewer context instead of hard-disabling when #teamSelect is absent.
+    source = APP_JS.read_text(encoding="utf-8")
+    fn = source[source.index("function updateAnalyzeButtonState()") :]
+    fn = fn[: fn.index("\n  function ", 10)]
+
+    assert "getCurrentRosterId()" in fn
+    assert "window._viewerRid" in fn
+    # The old gate disabled the button whenever #teamSelect was missing.
+    assert "Please select your team first to analyze trades" not in fn
+    # The #teamSelect selection is still honored if the dropdown ever returns.
+    assert "selector && selector.value" in fn
