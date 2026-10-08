@@ -22566,16 +22566,17 @@ function renderTeamDetails(data) {
     return html;
   }
   function mount(actions) {
-    var wrap = document.querySelector('.changelog-bell-wrapper');
-    if (!wrap || document.getElementById('myActionsPill')) return;
+    var gear = document.querySelector('.settings-gear-wrapper');
+    if (!gear || document.getElementById('myActionsPill')) return;
     var host = document.createElement('div');
     host.className = 'mya-wrap';
     host.innerHTML =
+      '<span class="nav-utility-divider" aria-hidden="true"></span>' +
       '<button type="button" id="myActionsPill" class="mya-pill" aria-haspopup="dialog" aria-expanded="false" title="Next steps across your leagues">' +
         'Next steps <span id="myActionsCount" class="mya-count-badge">' + actions.length + '</span></button>' +
       '<div id="myActionsDrawer" class="mya-drawer" role="dialog" aria-label="Actions across your leagues" hidden>' +
         buildDrawer(actions) + '</div>';
-    wrap.parentNode.insertBefore(host, wrap);
+    gear.parentNode.insertBefore(host, gear.nextSibling);
     var pill = host.querySelector('#myActionsPill');
     var drawer = host.querySelector('#myActionsDrawer');
     pill.addEventListener('click', function (e) {
