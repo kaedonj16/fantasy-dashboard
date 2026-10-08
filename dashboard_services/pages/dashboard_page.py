@@ -633,14 +633,6 @@ def build_dashboard_body(ctx: dict) -> str:
       </aside>
 
       <main class="os-main-col">
-        <nav class="os-jump-nav" aria-label="Jump to section">
-          <button type="button" class="active" data-jump="os-jump-actions">Actions</button>
-          {('<button type="button" data-jump="os-jump-matchup">Matchups</button>' if _show_matchup_preview else '')}
-          <button type="button" data-jump="os-jump-report">Report</button>
-          <button type="button" data-jump="os-jump-standings">Standings</button>
-          <button type="button" data-jump="os-jump-teams">{teams_tab_label}</button>
-        </nav>
-
         <section class="os-hero-card">
           <div class="os-hero-top">
             <div>
@@ -652,6 +644,14 @@ def build_dashboard_body(ctx: dict) -> str:
             {_hero_stats_html}
           </div>
         </section>
+
+        <nav class="os-jump-nav" aria-label="Jump to section">
+          <button type="button" class="active" data-jump="os-jump-actions">Actions</button>
+          {('<button type="button" data-jump="os-jump-matchup">Matchups</button>' if _show_matchup_preview else '')}
+          <button type="button" data-jump="os-jump-report">Report</button>
+          <button type="button" data-jump="os-jump-standings">Standings</button>
+          <button type="button" data-jump="os-jump-teams">{teams_tab_label}</button>
+        </nav>
 
         {_action_queue_html}
 
