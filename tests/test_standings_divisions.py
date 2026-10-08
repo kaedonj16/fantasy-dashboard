@@ -365,8 +365,8 @@ def test_render_matchup_slide_shows_division_record(monkeypatch):
     html = mmod.render_matchup_slide(
         "2026", matchup, w=1, proj_week=0,
         div_records={1: (2, 0, 0), 2: (0, 1, 0)}, **kw)
-    assert '<span class="st-record">2-1 <span class="st-div-rec">(2-0)</span></span>' in html
-    assert '<span class="st-record">1-2 <span class="st-div-rec">(0-1)</span></span>' in html
+    assert '2-1 (2-0)' in html
+    assert '1-2 (0-1)' in html
     # No div_records -> plain records.
     plain = mmod.render_matchup_slide("2026", matchup, w=1, proj_week=0, **kw)
     assert "(2-0)" not in plain

@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import html
 import json
+import re
 from datetime import datetime, date
 from zoneinfo import ZoneInfo
 from itertools import zip_longest
@@ -42,6 +43,55 @@ STATUS_IN_PROGRESS = "in_progress"
 STATUS_FINAL = "final"
 
 logger = logging.getLogger(__name__)
+
+
+def streaks_from_matchups_by_week(matchups_by_week, last_final_week) -> dict:
+    """Current W/L streak per roster_id, e.g. {'1': 'W4', '2': 'L1'}.
+
+    Walks finalized weeks in order, pairing by (week, matchup_id) winners.
+    Ties do not extend a streak. Returns {} when no finalized weeks exist.
+    """
+    results: dict[str, list[str]] = {}
+    try:
+        weeks = sorted(
+            (wk for wk in (matchups_by_week or {}).keys()
+             if isinstance(wk, int) and wk <= int(last_final_week)),
+        )
+    except (TypeError, ValueError):
+        return {}
+    for wk in weeks:
+        for m in (matchups_by_week or {}).get(wk) or []:
+            left = m.get("left") or {}
+            right = m.get("right") or {}
+            lp = left.get("pts_total")
+            rp = right.get("pts_total")
+            if not isinstance(lp, (int, float)) or not isinstance(rp, (int, float)):
+                continue
+            if lp == rp:
+                continue
+            l_rid = str(left.get("roster_id") or "")
+            r_rid = str(right.get("roster_id") or "")
+            if not l_rid or not r_rid:
+                continue
+            if lp > rp:
+                results.setdefault(l_rid, []).append("W")
+                results.setdefault(r_rid, []).append("L")
+            else:
+                results.setdefault(l_rid, []).append("L")
+                results.setdefault(r_rid, []).append("W")
+    streaks: dict[str, str] = {}
+    for rid, res in results.items():
+        if not res:
+            continue
+        last = res[-1]
+        n = 0
+        for r in reversed(res):
+            if r == last:
+                n += 1
+            else:
+                break
+        streaks[rid] = f"{last}{n}"
+    return streaks
 
 
 def _format_final_game_line(score_str: str, prefix: str) -> str:
@@ -1798,6 +1848,7 @@ def render_matchup_slide(
         league_id: Optional[str] = None,
         rzm_hub_html: str = "",
         div_by_rid: Optional[dict] = None,
+        streaks: Optional[dict] = None,
 ) -> str:
     """One slide with rows like:
        [Left Name] [Left Pts/Proj] [Right Pts/Proj] [Right Name]
@@ -1817,6 +1868,9 @@ def render_matchup_slide(
 
     div_records: optional {roster_id: (w, l, t)} of records vs division
     opponents; when given, the team header record renders as "2-1 (2-0)".
+
+    streaks: optional {roster_id: 'W3'/'L2'} current streaks; when given,
+    the team meta line appends the streak, e.g. "@user - 4-0 (2-0) (W4)".
 
     league_id: when given (and the slide is not compact), Sunday drama is
     active: live weeks compare each poll's win-probability favorite against the
@@ -1990,29 +2044,83 @@ def render_matchup_slide(
         # division games yet shows 0-0 rather than dropping the parenthetical.
         return rec if rec is not None else (0, 0, 0)
 
-    def _team_col(t, side: str) -> str:
+    def _espn_avatar(t) -> str:
+        """Avatar img for the ESPN score row (flanks the big scores)."""
+        ava = t.get("avatar") or ""
+        if not ava:
+            return "<div class='m-espn-av'></div>"
+        return (f"<img class='m-espn-av' src='{ava}' alt='' loading='lazy' "
+                f"decoding='async' onerror=\"this.style.display='none'\">")
+
+    def _espn_score_block(t, side: str) -> str:
+        """Big score number with a small 'proj X' line underneath (when useful)."""
+        score_html, has_live = _score_html(t, proj)
+        m_num = re.search(r"<span class='(num[^']*)'>([^<]+)</span>", score_html)
+        big = html.escape(m_num.group(2)) if m_num else "-"
+        proj_only = bool(m_num and "m-proj-only" in m_num.group(1))
+        num_cls = "m-espn-num m-proj-only" if proj_only else "m-espn-num"
+        proj_line = ""
+        if proj:
+            if has_live:
+                m_proj = re.search(
+                    r"<span class='proj'>([\d.]+)(<span class='mb-trend.*?</span>)?</span>",
+                    score_html,
+                )
+                if m_proj:
+                    trend = m_proj.group(2) or ""
+                    proj_line = (f"<div class='m-espn-proj'>"
+                                 f"proj {html.escape(m_proj.group(1))}{trend}</div>")
+            else:
+                pregame = t.get("proj_total")
+                if isinstance(pregame, (int, float)) and m_num:
+                    try:
+                        same = abs(float(pregame) - float(m_num.group(2))) <= 0.05
+                    except (ValueError, TypeError):
+                        same = False
+                    # Skip the proj line when it just repeats the big number.
+                    if not same:
+                        proj_line = f"<div class='m-espn-proj'>proj {pregame:.1f}</div>"
+        align = "left" if side == "left" else "right"
+        cls = "m-espn-score-l" if side == "left" else "m-espn-score-r"
+        return (f"<div class='m-espn-score {cls}' style='text-align:{align}'>"
+                f"<div class='{num_cls}'>{big}</div>{proj_line}</div>")
+
+    def _espn_streak_for(rid) -> str:
+        """' (W4)' / ' (L1)' span, green/red, or '' when no streak data."""
+        if not streaks:
+            return ""
+        s = streaks.get(str(rid))
+        if s is None:
+            s = streaks.get(rid)
+        if not s:
+            return ""
+        s = str(s).strip().upper()
+        if len(s) < 2 or s[0] not in ("W", "L"):
+            return ""
+        cls = "m-streak-w" if s[0] == "W" else "m-streak-l"
+        return f" <span class='{cls}'>({html.escape(s)})</span>"
+
+    def _espn_team_info(t, side: str) -> str:
+        """Team name + '@user - W-L (dW-dL) (W4)' meta line."""
         rid = t.get('roster_id', '')
-        name = t['name']
+        name = t.get('name') or ''
         record = t.get('record', '0-0')
         _div = _div_record_for(rid)
+        div_txt = ""
         if _div is not None and record != "-":
             _dtxt = f"{_div[0]}-{_div[1]}" + (f"-{_div[2]}" if _div[2] else "")
-            # Keep the whole "W-L (dW-dL)" record on one line (st-record) with
-            # the division part muted, matching the standings tables.
-            record = (f'<span class="st-record">{html.escape(record)} '
-                      f'<span class="st-div-rec">({html.escape(_dtxt)})</span></span>')
+            div_txt = f" ({html.escape(_dtxt)})"
         username = t.get('username') or ''
-        ava = t.get("avatar") or ""
-        img_html = f"<img class='avatar m-av' src='{ava}' alt='' loading='lazy' decoding='async' onerror=\"this.style.display='none'\">" if ava else ""
-        name_el = f"<div class='m-team-name team-clickable' style='cursor:pointer;' data-roster-id='{rid}' data-team-name='{name}'>{name}</div>"
-        rank = t.get('rank')
-        rank_txt = f" (#{rank})" if rank else ""
-        if side == 'left':
-            meta = f"<div class='m-team-meta'>{record} &bull; @{username}{rank_txt}</div>"
-            return f"<div class='m-team-col m-col-left'>{img_html}{name_el}{meta}</div>"
-        else:
-            meta = f"<div class='m-team-meta'>@{username}{rank_txt} &bull; {record}</div>"
-            return f"<div class='m-team-col m-col-right'>{img_html}{name_el}{meta}</div>"
+        user_txt = f"@{html.escape(username)}" if username else ""
+        rec_txt = html.escape(record) if record else ""
+        meta_bits = " &middot; ".join(b for b in (user_txt, rec_txt + div_txt) if b)
+        streak_txt = _espn_streak_for(rid)
+        name_el = (f"<div class='m-espn-tname team-clickable' style='cursor:pointer;' "
+                   f"data-roster-id='{rid}' data-team-name='{html.escape(name, quote=True)}'>"
+                   f"{html.escape(name)}</div>")
+        side_cls = "m-espn-team-l" if side == "left" else "m-espn-team-r"
+        return (f"<div class='m-espn-team {side_cls}'>{name_el}"
+                f"<div class='m-espn-meta'>{meta_bits}{streak_txt}</div></div>")
 
 
     def format_team_game_line(team_abv: str, game: dict, pos: str, side: str) -> str:
@@ -2550,9 +2658,7 @@ def render_matchup_slide(
                 "sunday drama archive failed", exc_info=True,
             )
 
-    l_score, l_live = _score_html(m['left'], proj)
-    r_score, r_live = _score_html(m['right'], proj)
-    proj_class = " has-proj" if (l_live or r_live) else ""
+    # (scores are rendered by _espn_score_block in the return HTML below)
 
     # Matchup-win moment: on a completed (non-projection) week, the winning side's
     # score pops with a green glow and its team column lifts when the slide first
@@ -2590,12 +2696,16 @@ def render_matchup_slide(
     _riv_b = (m.get("right") or {}).get("owner_id")
     _riv_ln = str((m.get("left") or {}).get("name") or "")
     _riv_rn = str((m.get("right") or {}).get("name") or "")
+    _riv_lu = str((m.get("left") or {}).get("username") or "")
+    _riv_ru = str((m.get("right") or {}).get("username") or "")
     if (not compact) and _riv_a and _riv_b:
         h2h_html += (
             f"<div class='m-rivalry' data-riv-a=\"{html.escape(str(_riv_a), quote=True)}\" "
             f"data-riv-b=\"{html.escape(str(_riv_b), quote=True)}\" "
             f"data-riv-lname=\"{html.escape(_riv_ln, quote=True)}\" "
-            f"data-riv-rname=\"{html.escape(_riv_rn, quote=True)}\" hidden></div>"
+            f"data-riv-rname=\"{html.escape(_riv_rn, quote=True)}\" "
+            f"data-riv-luser=\"{html.escape(_riv_lu, quote=True)}\" "
+            f"data-riv-ruser=\"{html.escape(_riv_ru, quote=True)}\" hidden></div>"
         )
 
     slide_cls = "m-slide m-slide--compact" if compact else "m-slide"
@@ -2637,7 +2747,7 @@ def render_matchup_slide(
         _div_l = (m.get("left") or {}).get("roster_id")
         _div_r = (m.get("right") or {}).get("roster_id")
         if _is_div_game(_div_l, _div_r, div_by_rid):
-            div_badge_html = "<span class='div-badge'>Div</span>"
+            div_badge_html = "<span class='div-badge'>Divisional</span>"
     except Exception:
         div_badge_html = ""
 
@@ -2659,22 +2769,33 @@ def render_matchup_slide(
         )
         moments_mount = "<div class=\"mb-moments\" hidden></div>"
 
+    # ESPN-style badge row: GOTW on the left, DIVISIONAL on the far right.
+    espn_badges_html = ""
+    if gotw_badge_html or div_badge_html:
+        espn_badges_html = (
+            f"<div class='m-espn-badges'>"
+            f"<div class='m-espn-badges-l'>{gotw_badge_html}</div>"
+            f"<div class='m-espn-badges-r'>{div_badge_html}</div>"
+            f"</div>"
+        )
+
     return f"""
     <div class="{slide_cls}"{win_attr}{moments_attrs}>
-      <div class="m-head">
-        {gotw_badge_html}{div_badge_html}
-        <div class="m-head-row">
-          {_team_col(m['left'], 'left')}
-          <div class="m-scoreboard{proj_class}">
-            <div class="m-score-val m-score-l">{l_score}</div>
-            <div class="m-vs">vs</div>
-            <div class="m-score-val m-score-r">{r_score}</div>
-          </div>
-          {_team_col(m['right'], 'right')}
+      <div class="m-head m-head-espn">
+        {espn_badges_html}
+        <div class="m-espn-score-row">
+          {_espn_avatar(m['left'])}
+          {_espn_score_block(m['left'], 'left')}
+          {_espn_score_block(m['right'], 'right')}
+          {_espn_avatar(m['right'])}
+        </div>
+        {win_bar_html}
+        <div class="m-espn-teams">
+          {_espn_team_info(m['left'], 'left')}
+          {_espn_team_info(m['right'], 'right')}
         </div>
         {h2h_html}
       </div>
-      {win_bar_html}
       {rzm_hub_html}
       {drama_html}
       {moments_mount}

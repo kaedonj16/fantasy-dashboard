@@ -162,8 +162,9 @@ def test_team_meta_shows_standings_rank():
     matchup["right"]["record"] = "1-1"
     matchup["right"]["rank"] = 5
     html = _render(mmod, matchup, roster_positions=[])
-    assert "2-0 &bull; @hoodiekj1 (#2)" in html
-    assert "@opponent1 (#5) &bull; 1-1" in html
+    # ESPN header: "@user - record" (rank no longer shown in the meta line).
+    assert "@hoodiekj1 &middot; 2-0" in html
+    assert "@opponent1 &middot; 1-1" in html
 
 
 def test_team_meta_without_rank_keeps_old_format():
@@ -171,7 +172,7 @@ def test_team_meta_without_rank_keeps_old_format():
     matchup = _matchup([], [])
     html = _render(mmod, matchup, roster_positions=[])
     assert "(#" not in html
-    assert "0-0 &bull; @Team A" in html
+    assert "@Team A &middot; 0-0" in html
 
 
 def _media_640_block_with(selector: str) -> str:

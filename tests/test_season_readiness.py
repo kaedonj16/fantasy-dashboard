@@ -241,7 +241,7 @@ def test_compact_matchup_slide_is_head_and_win_bar_only(monkeypatch):
                   team_game_lookup={})
     html = mmod.render_matchup_slide(
         "2025", m, w=11, proj_week=10, compact=True, **common)
-    assert 'class="m-head"' in html
+    assert 'm-head' in html and 'm-head-espn' in html
     assert "m-win-bar" in html
     assert "m-slide--compact" in html
     assert "m-body" not in html
