@@ -643,9 +643,19 @@ def get_trade_ai_analysis(
         return _emit_ai_html(html_out)
 
 
+def _trade_ai_takeaway(summary: str) -> str:
+    """Extract the first 1-2 sentences from an analysis summary for the takeaway box."""
+    import re
+    text = (summary or "").strip()
+    if not text:
+        return ""
+    sentences = re.split(r"(?<=[.!?])\s+", text)
+    takeaway = " ".join(s for s in sentences[:2] if s).strip()
+    return takeaway or text
+
+
 def render_trade_ai_html(result: dict) -> str:
     verdict = html.escape(str(result.get("verdict") or "COUNTER").upper())
-    summary = html.escape(str(result.get("summary") or ""))
     helps = result.get("helps") or []
     risks = result.get("risks") or []
     counter = html.escape(str(result.get("counter") or ""))
@@ -669,6 +679,13 @@ def render_trade_ai_html(result: dict) -> str:
     if confidence:
         confidence_html = f"""<div class="trade-ai-score">Confidence: {confidence}</div>"""
 
+    takeaway = _trade_ai_takeaway(str(result.get("summary") or ""))
+    takeaway_html = ""
+    if takeaway:
+        takeaway_html = f"""
+      <div class="trade-ai-takeaway"><strong>Bottom line:</strong> {html.escape(takeaway)}</div>
+        """
+
     return f"""
     <div class="ai-copy trade-ai-wrap">
       <div class="trade-ai-top">
@@ -676,11 +693,7 @@ def render_trade_ai_html(result: dict) -> str:
         {confidence_html}
       </div>
 
-      <div class="trade-ai-block">
-        <div class="trade-ai-label">Analysis:</div>
-        <div class="trade-ai-copy-line">{summary}</div>
-      </div>
-
+      {takeaway_html}
       <div class="trade-ai-grid">
         <div class="trade-ai-block">
           <div class="trade-ai-label">Pros:</div>

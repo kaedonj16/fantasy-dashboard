@@ -8674,6 +8674,19 @@ select:focus {
     background: rgba(239, 68, 68, .14);
 }
 
+.trade-ai-takeaway {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    background: var(--card-soft, #f8fafc);
+    line-height: 1.6;
+    font-size: 14px;
+}
+
+.trade-ai-takeaway strong {
+    color: var(--accent);
+}
+
 .trade-ai-wrap {
     display: grid;
     gap: 12px;
