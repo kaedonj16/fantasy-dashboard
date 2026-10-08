@@ -11846,15 +11846,16 @@ window.initTradePage = function initTradePage(root = document) {
       return;
     }
 
-    if (!selector) {
-      analyzeBtn.disabled = true;
-      analyzeBtn.textContent = label;
-      analyzeBtn.classList.add("otc-btn-disabled");
-      analyzeBtn.setAttribute("data-tooltip", "Please select your team first to analyze trades");
-      return;
-    }
-
-    const hasSelection = selector.value && selector.value !== "";
+    // The team dropdown was removed (the viewer team is known from context),
+    // so resolve the roster from the injected viewer context instead of
+    // requiring a #teamSelect selection: URL param, the server-injected
+    // #viewerRosterIdInput, the dropdown if it ever returns, then the
+    // shell-injected session roster.
+    const hasSelection = !!(
+      getCurrentRosterId() ||
+      (typeof window !== "undefined" && window._viewerRid) ||
+      (selector && selector.value)
+    );
     if (hasSelection) {
       analyzeBtn.disabled = false;
       analyzeBtn.textContent = label;
@@ -11864,7 +11865,7 @@ window.initTradePage = function initTradePage(root = document) {
       analyzeBtn.disabled = true;
       analyzeBtn.textContent = label;
       analyzeBtn.classList.add("otc-btn-disabled");
-      analyzeBtn.setAttribute("data-tooltip", "Please select your team first to analyze trades");
+      analyzeBtn.setAttribute("data-tooltip", "Your team could not be resolved for this league");
     }
   }
 
