@@ -10098,12 +10098,14 @@ def _render_season_review_card(ctx: dict, viewer_roster_id, df_weekly, team_stat
         return ""
 
 
-def _render_bench_check(ctx: dict, viewer_roster_id, last_final_week: int) -> str:
-    """One-line post-week feedback: how many points the viewer's optimal lineup
-    left on the bench in the last finalized week, linking to the Lineup
-    Efficiency page. Empty string when there's nothing to say."""
+def _bench_check_metrics(ctx: dict, viewer_roster_id, last_final_week: int):
+    """Compute bench-check numbers for the last finalized week.
+
+    Returns dict with week, opt_pts, actual, left_on_bench, eff_url, warn
+    (bool: repeated pattern), or None when there's nothing to say.
+    """
     if not viewer_roster_id or not last_final_week:
-        return ""
+        return None
     try:
         matchups_by_week = ctx.get("matchups_by_week") or {}
         team = None
@@ -10116,12 +10118,12 @@ def _render_bench_check(ctx: dict, viewer_roster_id, last_final_week: int) -> st
             if team:
                 break
         if not team:
-            return ""
+            return None
 
         starters = [p for p in (team.get("starters") or []) if p]
         bench = team.get("bench") or []
         if not starters:
-            return ""
+            return None
         pts_map = {p["pid"]: float(p.get("pts") or 0) for p in starters + bench}
         pos_map = {p["pid"]: str(p.get("pos") or "") for p in starters + bench}
         actual = sum(float(p.get("pts") or 0) for p in starters)
@@ -10130,14 +10132,14 @@ def _render_bench_check(ctx: dict, viewer_roster_id, last_final_week: int) -> st
         if roster_positions is not None and hasattr(roster_positions, "tolist"):
             roster_positions = roster_positions.tolist()
         if not roster_positions:
-            return ""
+            return None
 
         from utils.optimal_lineup import compute_optimal_lineup
         _opt_set, opt_pts = compute_optimal_lineup(
             pts_map, pos_map, roster_positions, list(pts_map)
         )
         if not opt_pts:
-            return ""
+            return None
         left_on_bench = opt_pts - actual
 
         platform = ctx.get("platform", "sleeper")
@@ -10146,42 +10148,82 @@ def _render_bench_check(ctx: dict, viewer_roster_id, last_final_week: int) -> st
         eff_url = url_for(
             "page_weekly", platform=platform, season=season, league_id=league_id
         ) + "?tab=optimal"
-        if left_on_bench < 1.0:
-            msg = (
-                f"Week {last_final_week} bench check: you started your optimal "
-                f'lineup. <span class="la-em">Nothing left on the bench.</span>'
-            )
-        else:
-            msg = (
-                f"Week {last_final_week} bench check: your optimal lineup scored "
-                f"{opt_pts:.1f}. You scored {actual:.1f} and left "
-                f'<span class="la-em">{left_on_bench:.1f} points</span> on the bench.'
-            )
-        # Escalate to a warning only on a repeated pattern (not one-off weeks):
-        # three or more weeks with meaningful points left on the bench.
-        warn_html = ""
+
+        # Repeated pattern: three or more weeks with meaningful points left.
+        warn = False
         try:
             from dashboard_services.season_efficiency import compute_league_season_efficiency
             _wks = ((compute_league_season_efficiency(ctx).get("by_rid") or {})
                     .get(str(viewer_roster_id)) or {}).get("weeks") or []
             _bad = [w for w in _wks if (w.get("missed") or 0) >= 5.0]
-            if len(_bad) >= 3:
-                _avg_missed = sum(w["missed"] for w in _bad) / len(_bad)
-                warn_html = (
-                    f'<div class="bench-check-warn">Efficiency watch: you have left meaningful '
-                    f'points on the bench in {len(_bad)} weeks (avg '
-                    f'<span class="la-em">{_avg_missed:.1f}</span> missed). Locking lineups '
-                    f'earlier would meaningfully raise your scoring.</div>'
-                )
+            warn = len(_bad) >= 3
         except Exception:
-            warn_html = ""
+            warn = False
+
+        return {
+            "week": last_final_week,
+            "opt_pts": opt_pts,
+            "actual": actual,
+            "left_on_bench": left_on_bench,
+            "eff_url": eff_url,
+            "warn": warn,
+        }
+    except Exception:
+        logger.debug("bench check failed", exc_info=True)
+        return None
+
+
+def _render_bench_check(ctx: dict, viewer_roster_id, last_final_week: int) -> str:
+    """One-line post-week feedback: how many points the viewer's optimal lineup
+    left on the bench in the last finalized week, linking to the Lineup
+    Efficiency page. Empty string when there's nothing to say."""
+    m = _bench_check_metrics(ctx, viewer_roster_id, last_final_week)
+    if not m:
+        return ""
+    try:
+        week = m["week"]
+        opt_pts = m["opt_pts"]
+        actual = m["actual"]
+        left_on_bench = m["left_on_bench"]
+        eff_url = m["eff_url"]
+        if left_on_bench < 1.0:
+            msg = (
+                f"Week {week}: optimal lineup started. "
+                f'<span class="la-em">Nothing left on the bench.</span>'
+            )
+        else:
+            msg = (
+                f"Left <span class=\"la-em\">{left_on_bench:.1f}</span> on the bench "
+                f"({actual:.1f} vs {opt_pts:.1f} optimal, Week {week})."
+            )
+        # Escalate to a warning only on a repeated pattern (not one-off weeks).
+        warn_html = ""
+        if m["warn"]:
+            try:
+                from dashboard_services.season_efficiency import compute_league_season_efficiency
+                _wks = ((compute_league_season_efficiency(ctx).get("by_rid") or {})
+                        .get(str(viewer_roster_id)) or {}).get("weeks") or []
+                _bad = [w for w in _wks if (w.get("missed") or 0) >= 5.0]
+                if len(_bad) >= 3:
+                    _avg_missed = sum(w["missed"] for w in _bad) / len(_bad)
+                    warn_html = (
+                        f'<div class="bench-check-warn">Efficiency watch: you have left meaningful '
+                        f'points on the bench in {len(_bad)} weeks (avg '
+                        f'<span class="la-em">{_avg_missed:.1f}</span> missed). Locking lineups '
+                        f'earlier would meaningfully raise your scoring.</div>'
+                    )
+            except Exception:
+                warn_html = ""
 
         tone_cls = " bench-miss" if warn_html else (" bench-ok" if left_on_bench < 1.0 else " bench-miss")
         return f"""
-        <section class="os-card bench-check-card{tone_cls}">
+        <section class="os-card os-action-card bench-check-card{tone_cls}" data-action-card="bench-check">
           <div class="bench-check-row">
             <span class="bench-check-msg">{msg}</span>
-            <a class="os-section-link" href="{eff_url}">Lineup efficiency &rarr;</a>
+            <span class="os-card-actions">
+              <a class="os-section-link" href="{eff_url}">Lineup efficiency &rarr;</a>
+              <button type="button" class="os-action-dismiss" data-dismiss-card="bench-check" aria-label="Dismiss">&times;</button>
+            </span>
           </div>
           {warn_html}
         </section>"""
@@ -12413,6 +12455,39 @@ def _next_steps_roster_actions(ctx: dict, viewer_roster_id) -> list:
     return actions
 
 
+def _next_steps_bench_check_actions(ctx: dict, viewer_roster_id, last_final_week) -> list:
+    """Bench-check action for the Next steps queue.
+
+    Surfaces when the last finalized week left meaningful points on the
+    bench (>= 5.0). Short text, deep-links to Lineup efficiency.
+    """
+    actions = []
+    if not viewer_roster_id or not last_final_week:
+        return actions
+    try:
+        m = _bench_check_metrics(ctx, viewer_roster_id, last_final_week)
+        if not m:
+            return actions
+        left = m["left_on_bench"]
+        if left < 5.0:
+            return actions
+        _priority = "high" if left >= 15.0 else "med"
+        _score = 70 + left if left >= 15.0 else 40 + left
+        actions.append({
+            "priority": _priority,
+            "tag": "Lineup",
+            "action": f"Left {left:.1f} on the bench ({m['actual']:.1f} vs {m['opt_pts']:.1f} optimal)",
+            "why": f"Week {m['week']} optimal lineup review.",
+            "impact": f"-{left:.1f} points missed",
+            "cta_label": "Lineup efficiency",
+            "cta_url": m["eff_url"],
+            "score": _score,
+        })
+    except Exception:
+        logger.debug("next-steps bench check failed", exc_info=True)
+    return actions
+
+
 def _render_next_steps_queue(
     ctx: dict,
     viewer_roster_id,
@@ -12421,6 +12496,7 @@ def _render_next_steps_queue(
     season,
     current_week,
     preview_limit: int = 3,
+    last_final_week=None,
 ) -> str:
     """Unified Next steps action queue: one ranked list across lineup, waivers,
     and trades. Each item names a specific action, explains why, shows impact,
@@ -12435,6 +12511,7 @@ def _render_next_steps_queue(
     actions.extend(_next_steps_trade_actions(ctx, viewer_roster_id))
     actions.extend(_next_steps_trade_window_action(ctx, viewer_roster_id))
     actions.extend(_next_steps_roster_actions(ctx, viewer_roster_id))
+    actions.extend(_next_steps_bench_check_actions(ctx, viewer_roster_id, last_final_week))
 
     # Rank by score (expected impact), highest first.
     actions.sort(key=lambda a: -(a.get("score") or 0))
