@@ -1,3 +1,6 @@
+/* DEPRECATED: this file is merged into static/dashboard.css at the
+   MERGED sections (see scripts/merge_icon_css.py). It is no longer
+   loaded via <link>. Edit this source file, then re-run the merge. */
 /* PNG-based icon system - replaces Font Awesome webfont dependency */
 .fa-solid,
 .fa-regular {
