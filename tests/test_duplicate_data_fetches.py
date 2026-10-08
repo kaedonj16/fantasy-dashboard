@@ -32,9 +32,10 @@ def _run_harness(name: str) -> None:
 
 # ── Client behavioral harness ────────────────────────────────────────────────
 def test_request_sharing_behavioral_harness():
-    """brGetLeaguePlayersData (in-flight dedup, 60s reuse, failure retry) and
-    _pmSmallFetch (news/ADP: in-flight dedup, TTL reuse, expiry refetch, no
-    failure caching, LRU bound) -- exercised against the shipped code."""
+    """brGetLeaguePlayersData (in-flight dedup, 30min reuse, SWR, localStorage
+    persistence, failure retry) and _pmSmallFetch (news/ADP: in-flight dedup,
+    TTL reuse, expiry refetch, no failure caching, LRU bound) -- exercised
+    against the shipped code."""
     _run_harness("dupfetch_harness.mjs")
 
 
@@ -52,11 +53,11 @@ def test_trade_count_not_fetched_by_client():
 def test_league_players_fetch_shared_between_nav_and_trade():
     """One page-level /api/league-players promise serves both the nav search
     idle-preload and the trade calculator init. Uses the slim ?view=trade
-    payload with default cache mode (ETag + max-age=60)."""
+    payload with default cache mode (ETag + max-age=1800)."""
     assert "function brGetLeaguePlayersData(" in APP_JS
     # The slim trade endpoint is fetched (inside the shared helper).
     assert "'/api/league-players?view=trade'" in APP_JS
-    # No cache bypass: ETag + max-age=60 must work.
+    # No cache bypass: ETag + max-age=1800 must work.
     assert "cache: 'no-store'" not in APP_JS.split("function brGetLeaguePlayersData(")[1].split("}")[0]
     # Both callers go through the shared helper.
     assert APP_JS.count("brGetLeaguePlayersData(") >= 3  # def + 2 callers

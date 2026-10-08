@@ -6,7 +6,8 @@
 //
 //   * brGetLeaguePlayersData (app.js) -- the nav player-search idle-preload and
 //     the trade calculator share one /api/league-players request: in-flight
-//     dedup, 60s result reuse, and rejection clears for retry.
+//     dedup, 30min result reuse, stale-while-revalidate, localStorage
+//     persistence with ETag, and rejection clears for retry.
 //   * _pmSmallFetch (player_modal.js) -- the per-player news/ADP cache:
 //     in-flight dedup, 5min TTL reuse, expiry refetch, failures not cached,
 //     and the LRU bound.
@@ -57,8 +58,21 @@ function makeFetch(clock) {
   return fakeFetch;
 }
 
-function okJson(body) {
-  return { ok: true, json: async () => body };
+function okJson(body, etag) {
+  return {
+    ok: true,
+    status: 200,
+    headers: { get: (n) => (n === "ETag" ? (etag === undefined ? '"e1"' : etag) : null) },
+    json: async () => body,
+  };
+}
+function notModified() {
+  return {
+    ok: false,
+    status: 304,
+    headers: { get: () => null },
+    json: async () => { throw new Error("304 has no body"); },
+  };
 }
 
 let passed = 0;
@@ -72,17 +86,46 @@ function check(name, cond) {
 // brGetLeaguePlayersData (from static/app.js)
 // ═══════════════════════════════════════════════════════════════════════════
 {
+  // localStorage is injected as a function parameter so tests can share one
+  // browser profile across "tabs" (scopes) or isolate them.
+  const makeLS = () => {
+    const store = {};
+    return {
+      getItem: function (k) { return Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null; },
+      setItem: function (k, v) { store[k] = String(v); },
+      removeItem: function (k) { delete store[k]; },
+    };
+  };
+  const mainLS = makeLS();
   const vars = `
 var __brLeaguePlayersPromise = null;
 var __brLeaguePlayersAt = 0;
 var __brLeaguePlayersKey = "";
+var __brLeaguePlayersEtag = "";
+var __brLP_TTL_MS = 30 * 60 * 1000;
+var __brLP_LS_PREFIX = "br-lp-trade-v1:";
+function __brLPReadLS(key) {
+  try {
+    var raw = localStorage.getItem(__brLP_LS_PREFIX + key);
+    if (!raw) return null;
+    var rec = JSON.parse(raw);
+    if (!rec || !rec.data) return null;
+    return rec;
+  } catch (e) { return null; }
+}
+function __brLPWriteLS(key, etag, data) {
+  try {
+    localStorage.setItem(__brLP_LS_PREFIX + key,
+      JSON.stringify({ etag: etag || "", ts: Date.now(), data: data }));
+  } catch (e) {}
+}
 `;
   const fn = extractBlock(APP_SRC, 'function brGetLeaguePlayersData(forceKey)');
   const clock = makeClock();
   const fakeFetch = makeFetch(clock);
   const scope = { Date: { now: clock.now }, fetch: fakeFetch };
-  const run = new Function('Date', 'fetch', vars + '\n' + fn + '\nreturn brGetLeaguePlayersData;');
-  const brGetLeaguePlayersData = run.call(scope, scope.Date, scope.fetch);
+  const run = new Function('Date', 'fetch', 'localStorage', vars + '\n' + fn + '\nreturn brGetLeaguePlayersData;');
+  const brGetLeaguePlayersData = run.call(scope, scope.Date, scope.fetch, mainLS);
 
   // 1. Two concurrent callers share one in-flight request.
   fakeFetch.setHandler(() => okJson({ players: [1, 2, 3] }));
@@ -92,26 +135,72 @@ var __brLeaguePlayersKey = "";
   check('league-players: concurrent callers share one in-flight fetch',
     fakeFetch.calls.length === 1 && r1.players.length === 3 && r2 === r1);
 
-  // 2. A later call within 60s reuses the completed result.
+  // 2. A later call within 30min reuses the completed result (no refetch).
   const r3 = await brGetLeaguePlayersData();
-  check('league-players: sequential call within 60s reuses result (no refetch)',
+  check('league-players: sequential call within 30min reuses result (no refetch)',
     fakeFetch.calls.length === 1 && r3 === r1);
 
-  // 3. After 60s the cache expires and the next call refetches.
-  clock.advance(61_000);
+  // 3. After 30min: stale-while-revalidate serves stale immediately and
+  // revalidates in the background with If-None-Match.
+  clock.advance(31 * 60 * 1000);
+  fakeFetch.setHandler((url, opts) => {
+    check('league-players: background revalidation sends If-None-Match',
+      opts && opts.headers && opts.headers["If-None-Match"] === '"e1"');
+    return okJson({ players: [4, 5, 6] }, '"e2"');
+  });
   const r4 = await brGetLeaguePlayersData();
-  check('league-players: refetches after the 60s window expires',
-    fakeFetch.calls.length === 2 && r4 !== r1 && r4.players.length === 3);
+  check('league-players: stale copy served immediately after TTL expiry',
+    r4 === r1);
+  await microtask(); await microtask();
+  check('league-players: background revalidation fired exactly once',
+    fakeFetch.calls.length === 2);
 
-  // 4. A rejection clears the shared promise so the next caller retries.
-  clock.advance(61_000);
-  let attempts = 0;
-  fakeFetch.setHandler(() => { attempts++; throw new Error('boom'); });
-  await assert.rejects(brGetLeaguePlayersData(), /boom/);
-  fakeFetch.setHandler(() => okJson({ players: [] }));
+  // 4. After the background refresh lands, the new data is served.
   const r5 = await brGetLeaguePlayersData();
-  check('league-players: rejection clears shared state, next caller retries',
-    attempts === 1 && r5.players.length === 0 && fakeFetch.calls.length === 4);
+  check('league-players: refreshed data served after background revalidation',
+    r5 !== r1 && r5.players.length === 3 && r5.players[0] === 4);
+
+  // 5. A 304 keeps serving the current copy (no data swap).
+  clock.advance(31 * 60 * 1000);
+  fakeFetch.setHandler(() => notModified());
+  const r6 = await brGetLeaguePlayersData();
+  await microtask(); await microtask();
+  check('league-players: 304 keeps the current copy',
+    r6 === r5 && fakeFetch.calls.length === 3);
+
+  // 6. A rejection on a cold fetch clears the shared promise so the next
+  // caller retries. (Fresh scope: no stale copy to serve.)
+  {
+    const clock2 = makeClock();
+    const fakeFetch2 = makeFetch(clock2);
+    const scope2 = { Date: { now: clock2.now }, fetch: fakeFetch2 };
+    const brGet2 = run.call(scope2, scope2.Date, scope2.fetch, makeLS());
+    let attempts = 0;
+    fakeFetch2.setHandler(() => { attempts++; throw new Error('boom'); });
+    await assert.rejects(brGet2(), /boom/);
+    fakeFetch2.setHandler(() => okJson({ players: [] }));
+    const r7 = await brGet2();
+    check('league-players: rejection clears shared state, next caller retries',
+      attempts === 1 && r7.players.length === 0 && fakeFetch2.calls.length === 2);
+  }
+
+  // 7. localStorage persistence: a fresh scope sharing the same browser-profile
+  // localStorage (new tab) renders from the persisted copy immediately,
+  // then revalidates with the persisted ETag.
+  {
+    const clock3 = makeClock();
+    const fakeFetch3 = makeFetch(clock3);
+    const scope3 = { Date: { now: clock3.now }, fetch: fakeFetch3 };
+    const brGet3 = run.call(scope3, scope3.Date, scope3.fetch, mainLS);
+    fakeFetch3.setHandler(() => notModified());
+    const r8 = await brGet3();
+    await microtask(); await microtask();
+    check('league-players: new tab serves localStorage copy immediately',
+      r8 && r8.players && r8.players[0] === 4);
+    check('league-players: new tab revalidates with the persisted ETag',
+      fakeFetch3.calls.length === 1 &&
+      fakeFetch3.calls[0].opts.headers["If-None-Match"] === '"e2"');
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

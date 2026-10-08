@@ -221,3 +221,17 @@ def test_trade_calculator_hub_gated_for_non_pro():
     html = build_trade_calculator_body(None, 2026, has_premium=False)
     assert "otcSuggPaywall" in html
     assert "tiGrid" not in html  # no market intel markup for non-PRO
+
+
+def test_trade_search_inputs_debounced():
+    """Both trade-calculator search inputs (side A/B) and the suggestion
+    search debounce their input handlers instead of re-rendering on every
+    keystroke."""
+    from pathlib import Path
+    app_js = (Path(__file__).resolve().parents[1] / "static" / "app.js").read_text(encoding="utf-8")
+    # Side A/B search goes through a debounced wrapper.
+    assert "debouncedRenderSide = debounce(" in app_js
+    # Suggestion player search is debounced too.
+    assert "debouncedSuggSearch = debounce(" in app_js
+    # No raw per-keystroke render calls remain on these inputs.
+    assert 'input.addEventListener("input", () => { renderSide(input.value); })' not in app_js

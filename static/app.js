@@ -207,35 +207,91 @@ function _advFetch(url, ms, init) {
 // The nav player-search idle-preloads the player list and the trade
 // calculator needs the same payload on the same page. Without sharing, both
 // fire independent fetches. One page-level promise serves both callers:
-// in-flight requests are shared and completed results are reused for 60s
-// (matching the endpoint's own max-age=60). The ?view=trade slim payload
+// in-flight requests are shared and completed results are reused for 30 min
+// (matching the endpoint's own max-age=1800). The ?view=trade slim payload
 // (~200KB: QB/RB/WR/TE + picks, value fields, folded-in deltas/indicators)
-// covers both callers. Default cache mode lets ETag + max-age=60 work.
+// covers both callers. Default cache mode lets ETag + max-age=1800 work.
+// Stale-while-revalidate: a stale copy renders immediately while a background
+// conditional fetch (If-None-Match) refreshes it. localStorage persists the
+// payload across tab closes so reopening the tab renders instantly.
 // Defined above the bundle split marker so the trade calculator code in the
 // public bundle can use it.
 var __brLeaguePlayersPromise = null;
 var __brLeaguePlayersAt = 0;
 var __brLeaguePlayersKey = "";
+var __brLeaguePlayersEtag = "";
+var __brLP_TTL_MS = 30 * 60 * 1000;
+var __brLP_LS_PREFIX = "br-lp-trade-v1:";
+function __brLPReadLS(key) {
+  try {
+    var raw = localStorage.getItem(__brLP_LS_PREFIX + key);
+    if (!raw) return null;
+    var rec = JSON.parse(raw);
+    if (!rec || !rec.data) return null;
+    return rec;
+  } catch (e) { return null; }
+}
+function __brLPWriteLS(key, etag, data) {
+  try {
+    localStorage.setItem(__brLP_LS_PREFIX + key,
+      JSON.stringify({ etag: etag || "", ts: Date.now(), data: data }));
+  } catch (e) { /* quota/private mode: in-memory cache still works */ }
+}
 function brGetLeaguePlayersData(forceKey) {
   var now = Date.now();
   var key = forceKey || "";
-  if (__brLeaguePlayersPromise && key === __brLeaguePlayersKey && (now - __brLeaguePlayersAt) < 60000) {
+  var url = '/api/league-players?view=trade' + (key ? '&' + key : '');
+  if (__brLeaguePlayersPromise && key === __brLeaguePlayersKey && (now - __brLeaguePlayersAt) < __brLP_TTL_MS) {
     return __brLeaguePlayersPromise;
   }
-  __brLeaguePlayersAt = now;
+  // Stale-while-revalidate: serve the best-known copy now, refresh behind it.
+  var best = null, etag = "";
+  if (__brLeaguePlayersPromise && key === __brLeaguePlayersKey) {
+    best = __brLeaguePlayersPromise;
+    etag = __brLeaguePlayersEtag;
+  } else {
+    var ls = __brLPReadLS(key);
+    if (ls) { best = Promise.resolve(ls.data); etag = ls.etag || ""; }
+  }
+  var headers = {};
+  if (etag) headers["If-None-Match"] = etag;
+  var net = fetch(url, { headers: headers }).then(function (res) {
+    if (res.status === 304) return null; // unchanged: keep serving our copy
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    var newEtag = res.headers.get("ETag") || "";
+    return res.json().then(function (data) { return { etag: newEtag, data: data }; });
+  }).then(function (result) {
+    if (result) {
+      __brLeaguePlayersPromise = Promise.resolve(result.data);
+      __brLeaguePlayersEtag = result.etag;
+      __brLPWriteLS(key, result.etag, result.data);
+    } else if (best) {
+      __brLeaguePlayersPromise = best; // 304: our copy is current
+    }
+    __brLeaguePlayersAt = Date.now();
+    __brLeaguePlayersKey = key;
+    return result;
+  });
+  if (best) {
+    // Serve stale immediately; background refresh lands silently. On failure
+    // keep serving the stale copy.
+    net.catch(function () {});
+    return best;
+  }
+  // Cold: no copy to serve, caller waits on the network. Share in-flight.
   __brLeaguePlayersKey = key;
-  var url = '/api/league-players?view=trade' + (key ? '&' + key : '');
-  __brLeaguePlayersPromise = fetch(url)
-    .then(function (res) {
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      return res.json();
-    })
-    .catch(function (err) {
-      // Clear so the next caller retries instead of sharing the rejection.
-      __brLeaguePlayersPromise = null;
-      __brLeaguePlayersAt = 0;
-      throw err;
-    });
+  __brLeaguePlayersAt = now;
+  __brLeaguePlayersPromise = net.then(function (result) {
+    if (!result) throw new Error("HTTP 304 with no cached copy");
+    return result.data;
+  }, function (err) {
+    // Clear so the next caller retries instead of sharing the rejection.
+    __brLeaguePlayersPromise = null;
+    __brLeaguePlayersAt = 0;
+    __brLeaguePlayersKey = "";
+    __brLeaguePlayersEtag = "";
+    throw err;
+  });
   return __brLeaguePlayersPromise;
 }
 
@@ -8678,8 +8734,7 @@ window.initTradePage = function initTradePage(root = document) {
       playerDropdown.style.display = "block";
     }
 
-    playerInput.addEventListener("input", async () => {
-      _updateClearBtn();
+    const debouncedSuggSearch = debounce(async () => {
       const q = playerInput.value.trim().toLowerCase();
       if (!q.length) {
         _setTopChipsCollapsed(false);  // cleared: bring the chips back
@@ -8702,6 +8757,10 @@ window.initTradePage = function initTradePage(root = document) {
         (p.name || "").toLowerCase().includes(q)
       ).sort((a,b) => getPlayerValue(b) - getPlayerValue(a));
       renderDropdown(matches);
+    }, 180);
+    playerInput.addEventListener("input", () => {
+      _updateClearBtn();
+      debouncedSuggSearch();
     });
 
     playerDropdown.addEventListener("click", e => {
@@ -11372,7 +11431,8 @@ window.initTradePage = function initTradePage(root = document) {
       if (typeof _wlStarDecorate === "function") _wlStarDecorate(dropdown);
     }
 
-    input.addEventListener("input", () => { renderSide(input.value); });
+    var debouncedRenderSide = debounce(function () { renderSide(input.value); }, 180);
+    input.addEventListener("input", debouncedRenderSide);
     // Clicking into an empty search box opens the browse list.
     input.addEventListener("focus", () => { if (!input.value.trim()) renderSide(""); });
 

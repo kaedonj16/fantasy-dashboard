@@ -23536,16 +23536,16 @@ def _lp_not_modified_response(etag: str):
 
 
 def _lp_cacheable_response(body: str, version_key: tuple):
-    """200 JSON response with ETag + short client cache for league-players."""
+    """200 JSON response with ETag + client cache for league-players."""
     etag = _lp_etag_for(version_key)
     not_modified = _lp_not_modified_response(etag)
     if not_modified is not None:
         return not_modified
     resp = app.response_class(body, mimetype="application/json")
     resp.headers["ETag"] = etag
-    # Data changes at most on cron rebuilds (which change the ETag); a short
+    # Data changes at most on cron rebuilds (which change the ETag); a 30-min
     # client cache absorbs repeat visits, 304s handle everything after.
-    resp.headers["Cache-Control"] = "public, max-age=60"
+    resp.headers["Cache-Control"] = "public, max-age=1800"
     return resp
 
 _ADP_FIELDS = ("avg_pick", "sf_avg_pick", "rookie_avg_pick",
@@ -25023,7 +25023,7 @@ def _trade_league_players_response(payload: dict, *, overlay_key, is_sf: bool,
                                        league_type: str, league_size: int,
                                        version_key=None):
     """Trade-calculator JSON: skill players + picks, value fields, folded-in
-    deltas/indicators. ETag + max-age=60 like the board view."""
+    deltas/indicators. ETag + max-age=1800 like the board view."""
     if version_key is not None:
         etag = _lp_etag_for(version_key)
         not_modified = _lp_not_modified_response(etag)
