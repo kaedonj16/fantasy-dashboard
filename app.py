@@ -18893,7 +18893,14 @@ def _collect_all_season_data(platform: str, league_id: str, season: int):
     season_records: list = []
     user_id_to_name: dict = {}  # user_id → latest known display name
 
-    for hist_s in available:
+    # Include the current in-progress season so all-time standings reflect
+    # this year's records too. Current season goes last so its display names
+    # win over historical ones.
+    _seasons_to_process = list(available)
+    if int(season) not in [int(s) for s in _seasons_to_process]:
+        _seasons_to_process.append(int(season))
+
+    for hist_s in _seasons_to_process:
         rid = resolve_league_id_for_season(platform, league_id, season, hist_s)
         try:
             ctx = get_league_ctx_from_cache(platform, rid, hist_s)
@@ -19070,7 +19077,7 @@ def _collect_all_season_data(platform: str, league_id: str, season: int):
         champ_name, runner_up_name = get_champion_and_runner_up(ctx)
         champ_uid = name_to_uid.get(champ_name) or champ_name
         runner_up_uid = name_to_uid.get(runner_up_name) or runner_up_name
-        if champ_name != "–":
+        if champ_name not in ("–", "-", ""):
             championships.setdefault(champ_uid, []).append(hist_s)
 
         summary = _build_history_summary(ctx)
