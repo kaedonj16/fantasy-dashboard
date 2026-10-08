@@ -51,3 +51,26 @@ def test_season_resolution_uses_owner_id_not_display_name():
     df = canonicalize_weekly_owners(ctx["df_weekly"], ctx)
     assert set(df["owner_key"]) == {"alpha", "beta"}
     assert roster_id_for_owner(ctx, "beta") == "7"
+
+
+def test_career_graphs_include_current_season(monkeypatch):
+    # available_seasons covers completed seasons only; the current season
+    # (2026) must still be aggregated into career totals.
+    old = _ctx("old", 2024, [(1, "owner-1", "Team A")])
+    cur = _ctx("new", 2026, [(8, "owner-1", "Team B")])
+    contexts = {("old", 2024): old, ("new", 2026): cur}
+    monkeypatch.setattr("dashboard_services.api.resolve_league_id_for_season",
+                        lambda *args, **kwargs: "old" if (kwargs.get("target_season") or args[-1]) == 2024 else "new")
+
+    result = build_career_graphs_ctx(
+        "sleeper", "new", 2026, [2024],
+        lambda _p, lid, season: contexts[(lid, season)],
+    )
+
+    rows = result["team_stats"].set_index("owner_key")
+    assert set(rows.index) == {"owner-1"}
+    # Both seasons aggregated: 101 (2024) + 108 (2026)
+    assert rows.loc["owner-1", "PF"] == 209
+    # Current-season display name wins
+    assert rows.loc["owner-1", "owner"] == "Team B"
+    assert len(result["season_pf_df"].query("owner_key == 'owner-1'")) == 2
