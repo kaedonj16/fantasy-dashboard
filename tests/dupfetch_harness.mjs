@@ -75,8 +75,9 @@ function check(name, cond) {
   const vars = `
 var __brLeaguePlayersPromise = null;
 var __brLeaguePlayersAt = 0;
+var __brLeaguePlayersKey = "";
 `;
-  const fn = extractBlock(APP_SRC, 'function brGetLeaguePlayersData()');
+  const fn = extractBlock(APP_SRC, 'function brGetLeaguePlayersData(forceKey)');
   const clock = makeClock();
   const fakeFetch = makeFetch(clock);
   const scope = { Date: { now: clock.now }, fetch: fakeFetch };

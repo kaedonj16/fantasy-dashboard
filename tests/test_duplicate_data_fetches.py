@@ -40,21 +40,26 @@ def test_request_sharing_behavioral_harness():
 
 # ── Client source contracts ──────────────────────────────────────────────────
 def test_trade_count_not_fetched_by_client():
-    """The server renders #tradeCount; the page-load /api/trade-count fetch
-    and its setTradeCountLabel helper were removed."""
-    assert "fetch('/api/trade-count')" not in APP_JS
-    assert 'fetch("/api/trade-count")' not in APP_JS
+    """The server renders #tradeCount with a static fallback; the client only
+    lazy-refreshes it from /api/trade-count via requestIdleCallback (never on
+    the critical path)."""
     assert "setTradeCountLabel" not in APP_JS
+    # The lazy fetch exists but must be deferred, not blocking page load.
+    assert "requestIdleCallback" in APP_JS
+    assert '_lazyTradeCount' in APP_JS
 
 
 def test_league_players_fetch_shared_between_nav_and_trade():
     """One page-level /api/league-players promise serves both the nav search
-    idle-preload and the trade calculator init."""
-    assert "function brGetLeaguePlayersData()" in APP_JS
-    # The raw endpoint is fetched exactly once (inside the shared helper).
-    assert APP_JS.count("fetch('/api/league-players'") == 1
+    idle-preload and the trade calculator init. Uses the slim ?view=trade
+    payload with default cache mode (ETag + max-age=60)."""
+    assert "function brGetLeaguePlayersData(" in APP_JS
+    # The slim trade endpoint is fetched (inside the shared helper).
+    assert "'/api/league-players?view=trade'" in APP_JS
+    # No cache bypass: ETag + max-age=60 must work.
+    assert "cache: 'no-store'" not in APP_JS.split("function brGetLeaguePlayersData(")[1].split("}")[0]
     # Both callers go through the shared helper.
-    assert APP_JS.count("brGetLeaguePlayersData()") >= 3  # def + 2 callers
+    assert APP_JS.count("brGetLeaguePlayersData(") >= 3  # def + 2 callers
 
 
 def test_season_trends_single_call():
