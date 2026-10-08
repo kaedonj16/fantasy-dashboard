@@ -17575,6 +17575,12 @@ function initComparePage() {
       if (_names.length >= 2) document.title = _names.join(' vs ') + ' Dynasty Comparison | BR Fantasy';
     } catch (_) {}
     const picks = triple ? [chosen[1], chosen[2], chosen[3]] : [chosen[1], chosen[2]];
+    // Paint the compare shell immediately so the cleared pickers never sit over
+    // a dead page; the real view replaces it when both details arrive.
+    if (!triple) {
+      if (emptyEl) emptyEl.hidden = true;
+      _renderCompareSkeleton(resultEl, picks);
+    }
     Promise.all(picks.map(c => _fetchDetails(c.player_id)))
       .then(ds => { triple ? _openForTriple(ds[0], ds[1], ds[2]) : _openFor(ds[0], ds[1]); })
       .catch(() => { if (resultEl) window.brErrorState(resultEl, 'Could not load one of the players.', null, { compact: true }); });
@@ -17920,6 +17926,12 @@ function initComparePage() {
     const q3 = params.get('p3');
     if (q1 && q2) {
       const qs = q3 ? [q1, q2, q3] : [q1, q2];
+      // Deep links fetch before anything paints too: show the skeleton shell
+      // immediately (no names yet; the pickers fill in when details land).
+      if (!q3) {
+        if (emptyEl) emptyEl.hidden = true;
+        _renderCompareSkeleton(resultEl, qs.map(() => ({})));
+      }
       Promise.all(qs.map(q => _fetchDetails(q))).then(ds => {
         ds.forEach((d, i) => {
           const slot = i + 1;
@@ -18153,8 +18165,53 @@ function _buildComparePPGRow(p1, p2) {
 function _cmpIsSf() {
   return (typeof brLeagueType === 'function' ? brLeagueType() : '1qb') === 'sf';
 }
+// Manual Redraft | Dynasty override for the compare overview (2026-10-08).
+// Null = follow the league's scoring type via brScoringType(); the overview's
+// toggle sets 'dynasty' | 'redraft' explicitly for this page view.
+var _cmpValueMode = null;
 function _cmpIsRedraft() {
+  if (_cmpValueMode === 'redraft') return true;
+  if (_cmpValueMode === 'dynasty') return false;
   return (typeof brScoringType === 'function' ? brScoringType() : 'dynasty') === 'redraft';
+}
+function _cmpValueToggleHTML() {
+  const mode = _cmpValueMode || (_cmpIsRedraft() ? 'redraft' : 'dynasty');
+  return '<div class="cmp-value-toggle" role="group" aria-label="Value format">'
+    + '<button type="button" data-cmp-valuemode="dynasty" class="' + (mode === 'dynasty' ? 'is-active' : '') + '">Dynasty</button>'
+    + '<button type="button" data-cmp-valuemode="redraft" class="' + (mode === 'redraft' ? 'is-active' : '') + '">Redraft</button>'
+    + '</div>';
+}
+// Re-render every compare overview table in place (the /compare page's Overview
+// tab and its triple view share the builder), then rebind the headshot clicks.
+// Each .cmp3-overview carries its players on _cmpPlayers so the modal and page
+// never cross-contaminate.
+function _cmpRerenderOverview() {
+  document.querySelectorAll('.cmp3-overview').forEach(function (el) {
+    const ps = el._cmpPlayers;
+    if (!ps || !ps.length) return;
+    el.innerHTML = _buildCompareOverviewTable(ps);
+  });
+  _cmpBindOverviewHeads();
+}
+function _cmpBindOverviewHeads() {
+  document.querySelectorAll('.cmp3-head[data-pid]').forEach(function (b) {
+    if (b._cmpBound) return;
+    b._cmpBound = true;
+    b.addEventListener('click', function () {
+      if (typeof openPlayerModal === 'function') openPlayerModal(b.getAttribute('data-pid'), b.getAttribute('data-name'));
+    });
+  });
+}
+if (typeof document !== 'undefined' && document.addEventListener) {
+document.addEventListener('click', function (e) {
+  const btn = e.target.closest && e.target.closest('[data-cmp-valuemode]');
+  if (!btn) return;
+  _cmpValueMode = btn.getAttribute('data-cmp-valuemode');
+  document.querySelectorAll('[data-cmp-valuemode]').forEach(function (b) {
+    b.classList.toggle('is-active', b.getAttribute('data-cmp-valuemode') === _cmpValueMode);
+  });
+  _cmpRerenderOverview();
+});
 }
 function _cmpHistValue(h) {
   if (!h) return null;
@@ -18379,7 +18436,38 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
   const allKeys = new Set([...Object.keys(m1 || {}), ...Object.keys(m2 || {})]);
   const pos1 = (p1?.position || '').toUpperCase();
   const pos2 = (p2?.position || '').toUpperCase();
+  const name1 = (p1 && p1.name) || 'Player 1';
+  const name2 = (p2 && p2.name) || 'Player 2';
   const positions = [pos1, pos2].filter(Boolean);
+
+  // Hardcoded position-aware lists (used when cfg is unavailable, and by the
+  // cross-position split view to pick each side's own metrics).
+  const qbMetrics = [
+    'completion_pct', 'yards_per_attempt', 'td_rate', 'int_rate', 'nfl_passer_rating',
+    'epa_per_play', 'passing_epa', 'cpoe', 'success_rate', 'sack_rate', 'scramble_rate',
+    'adjusted_completion_rate', 'snap_share',
+    'ngs_avg_time_to_throw', 'ngs_aggressiveness', 'qb_hit_rate',
+    'explosive_pass_rate', 'play_action_rate', 'epa_vs_blitz',
+  ];
+  const rbMetrics = [
+    'yards_per_carry', 'yards_per_touch', 'rush_td_rate', 'snap_share',
+    'opportunity_share', 'rz_opp_share',
+    'breakaway_percentage', 'catch_rate', 'yards_after_catch', 'yards_after_catch_per_reception',
+    'rushing_epa', 'ngs_rush_yards_over_expected_per_att', 'receiving_epa', 'epa_per_play',
+    'rushing_success_rate', 'rushing_epa_per_att',
+    'ngs_percent_attempts_gte_eight_defenders', 'epa_vs_stacked_box',
+  ];
+  const wrTeMetrics = [
+    'yards_per_target', 'catch_rate', 'yards_per_reception', 'target_quality_score',
+    'snap_share', 'opportunity_share', 'rz_target_share',
+    'yards_after_catch', 'yards_after_catch_per_reception', 'avg_depth_of_target',
+    'contested_catch_rate', 'drop_rate', 'uncatchable_tgt_rate',
+    'ngs_avg_separation', 'ngs_avg_cushion', 'ngs_avg_yac_above_expectation',
+    'ngs_created_separation', 'receiving_epa',
+    'receiving_success_rate', 'receiving_epa_per_target',
+  ];
+  const _posFallbackList = pos => pos === 'QB' ? qbMetrics : pos === 'RB' ? rbMetrics
+    : (pos === 'WR' || pos === 'TE') ? wrTeMetrics : [];
 
   // Build display key list from cfg when available -- same metrics as leaderboard
   let displayKeys = [];
@@ -18402,30 +18490,6 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
     }
   } else {
     // No cfg -- use hardcoded position-aware lists
-    const qbMetrics = [
-      'completion_pct', 'yards_per_attempt', 'td_rate', 'int_rate', 'nfl_passer_rating',
-      'epa_per_play', 'passing_epa', 'cpoe', 'success_rate', 'sack_rate', 'scramble_rate',
-      'adjusted_completion_rate', 'snap_share',
-      'ngs_avg_time_to_throw', 'ngs_aggressiveness', 'qb_hit_rate',
-      'explosive_pass_rate', 'play_action_rate', 'epa_vs_blitz',
-    ];
-    const rbMetrics = [
-      'yards_per_carry', 'yards_per_touch', 'rush_td_rate', 'snap_share',
-      'opportunity_share', 'rz_opp_share',
-      'breakaway_percentage', 'catch_rate', 'yards_after_catch', 'yards_after_catch_per_reception',
-      'rushing_epa', 'ngs_rush_yards_over_expected_per_att', 'receiving_epa', 'epa_per_play',
-      'rushing_success_rate', 'rushing_epa_per_att',
-      'ngs_percent_attempts_gte_eight_defenders', 'epa_vs_stacked_box',
-    ];
-    const wrTeMetrics = [
-      'yards_per_target', 'catch_rate', 'yards_per_reception', 'target_quality_score',
-      'snap_share', 'opportunity_share', 'rz_target_share',
-      'yards_after_catch', 'yards_after_catch_per_reception', 'avg_depth_of_target',
-      'contested_catch_rate', 'drop_rate', 'uncatchable_tgt_rate',
-      'ngs_avg_separation', 'ngs_avg_cushion', 'ngs_avg_yac_above_expectation',
-      'ngs_created_separation', 'receiving_epa',
-      'receiving_success_rate', 'receiving_epa_per_target',
-    ];
     let rel = [];
     if (pos1 === 'QB' || pos2 === 'QB') rel.push(...qbMetrics);
     if (pos1 === 'RB' || pos2 === 'RB') rel.push(...rbMetrics);
@@ -18485,12 +18549,27 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
 
   const _label = key => cfgLabelMap[key] || fallbackLabels[key] || key;
 
+  // Metric descriptions also live in the lazy player_modal.js bundle; fall
+  // back to an empty map when it hasn't loaded yet.
+  const _advDescs = (typeof _ADV_METRIC_DESCS !== 'undefined') ? _ADV_METRIC_DESCS : {};
+
   if (!displayKeys.length) return '<div style="color:var(--text-muted);font-size:13px;padding:8px 0;">No shared metrics available</div>';
 
+  // Category order shared by the head-to-head rows and the cross-position
+  // split columns (same order as the player modal).
+  const _CAT_ORDER = ['Value', 'General', 'Passing', 'Rushing', 'Receiving', 'Volume'];
+
   // Render a single metric row (returns '' when neither player has the value).
-  const _rowHTML = (key, alt) => {
-    const v1 = m1?.[key] ?? null;
-    const v2 = m2?.[key] ?? null;
+  // The optional override `o` swaps the data sources so the cross-position
+  // split columns can render one side's metrics with an empty opponent.
+  const _rowHTML = (key, alt, o) => {
+    o = o || {};
+    const mA = o.m1 || m1, mB = o.m2 || m2;
+    const rA = o.ranks1 || ranks1, rB = o.ranks2 || ranks2;
+    const cA = o.counts1 || counts1, cB = o.counts2 || counts2;
+    const bA = o.bounds1 || bounds1, bB = o.bounds2 || bounds2;
+    const v1 = mA?.[key] ?? null;
+    const v2 = mB?.[key] ?? null;
     const spec = cfg?.[key] || null;
 
     // Metric-specific scaling ranges - upper end of realistic elite values
@@ -18603,8 +18682,8 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
       if (b && b[1] > 0) return Math.max(4, Math.min(100, (val / b[1]) * 100));
       return _rankPct(ranksX[key], countsX[key]);
     };
-    const fill1 = _barFill(v1, ranks1, counts1, bounds1);
-    const fill2 = _barFill(v2, ranks2, counts2, bounds2);
+    const fill1 = _barFill(v1, rA, cA, bA);
+    const fill2 = _barFill(v2, rB, cB, bB);
     // Kaedon: percentage metrics (Boom Rate, Bust Rate, Catch Rate, ...) fill
     // the bar to their actual percentage. The bar COLOR still uses the
     // rank-based fill so green keeps meaning "good" relative to peers.
@@ -18681,7 +18760,7 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
 
     const winCls2 = win2 ? ' compare-metric-win' : '';
 
-    const r1 = ranks1[key], r2 = ranks2[key];
+    const r1 = rA[key], r2 = rB[key];
     // Render ranks with the same style the player modal uses: a small "(#N)"
     // sub-line beneath the value rather than an inline pill badge.
     const rankSub = r => (r != null) ? `<div class="pm-comp-sub rank-badge">(#${r})</div>` : '';
@@ -18697,7 +18776,7 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
         <div class="compare-bar-left">
           <div class="compare-bar-fill" style="width:${pct1}%;background:${barColor(colPct1, v1, fill1 != null)};"></div>
         </div>
-        <div class="compare-metric-label"${(spec?.desc || _ADV_METRIC_DESCS[key]) ? ` data-def="${(spec?.desc || _ADV_METRIC_DESCS[key]).replace(/"/g, '&quot;')}" onclick="advShowMetricDef(event)" onmouseenter="advEnterMetricDef(event)" onmouseleave="advLeaveMetricDef(event)"` : ''}>${win1 ? winArrow : ''}<span>${_label(key)}</span>${win2 ? winArrow : ''}</div>
+        <div class="compare-metric-label"${(spec?.desc || _advDescs[key]) ? ` data-def="${(spec?.desc || _advDescs[key]).replace(/"/g, '&quot;')}" onclick="advShowMetricDef(event)" onmouseenter="advEnterMetricDef(event)" onmouseleave="advLeaveMetricDef(event)"` : ''}>${win1 ? winArrow : ''}<span>${_label(key)}</span>${win2 ? winArrow : ''}</div>
         <div class="compare-bar-right">
           <div class="compare-bar-fill" style="width:${pct2}%;background:${barColor(colPct2, v2, fill2 != null)};"></div>
         </div>
@@ -18706,10 +18785,80 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
     `;
   };
 
+  // ── Cross-position split ───────────────────────────────────────────────
+  // RB vs WR (etc.): each side gets its own column showing its OWN position's
+  // metrics, instead of one shared list with half-empty rows. Same-position
+  // compares keep the head-to-head rows below. Each column reuses _rowHTML
+  // with the opponent's side emptied (CSS hides that side's cells).
+  if (pos1 && pos2 && pos1 !== pos2) {
+    const _EMPTY = {};
+    const _keysForPos = (pos, m) => {
+      const keys = [];
+      if (cfg && Object.keys(cfg).length) {
+        for (const [key, spec] of Object.entries(cfg)) {
+          if (m?.[key] == null) continue;
+          if (spec.positions && spec.positions.length && !spec.positions.includes(pos)) continue;
+          keys.push(key);
+        }
+      } else {
+        for (const k of _posFallbackList(pos)) if (m?.[k] != null) keys.push(k);
+      }
+      return [...new Set(keys)];
+    };
+    const _groupKeys = (keys) => {
+      const groups = {}, order = [];
+      for (const key of keys) {
+        const cat = (cfg?.[key]?.category) || 'Other';
+        if (!groups[cat]) { groups[cat] = []; order.push(cat); }
+        groups[cat].push(key);
+      }
+      Object.keys(groups).forEach(cat => groups[cat].sort((a, b) => _label(a).localeCompare(_label(b))));
+      return _CAT_ORDER.filter(c => groups[c]).concat(order.filter(c => !_CAT_ORDER.includes(c)))
+        .map(cat => [cat, groups[cat]]);
+    };
+    const _splitCol = (si, colName, pos, m, ranks, counts, bounds) => {
+      const keys = _keysForPos(pos, m);
+      // Same basic/detailed split as the shared view, per column.
+      const _colHasBasic = keys.some(k => !!(cfg && cfg[k] && cfg[k].basic));
+      let html = `<div class="compare-metrics-col compare-split-${si === 0 ? 'left' : 'right'}">`
+        + `<div class="compare-metrics-col-head"><span class="compare-chip-pos pos-${pos}">${pos}</span><span>${_wlEsc(colName)}</span></div>`;
+      let idx = 0, anyRows = false;
+      for (const [cat, ckeys] of _groupKeys(keys)) {
+        const basicRows = [], detailRows = [];
+        for (const key of ckeys) {
+          const o = si === 0
+            ? { m2: _EMPTY, ranks2: _EMPTY, counts2: _EMPTY, bounds2: _EMPTY }
+            : { m1: _EMPTY, ranks1: _EMPTY, counts1: _EMPTY, bounds1: _EMPTY };
+          const rhtml = _rowHTML(key, idx % 2 === 1, o);
+          if (!rhtml) continue;
+          idx++;
+          if (!_colHasBasic || (cfg && cfg[key] && cfg[key].basic)) basicRows.push(rhtml);
+          else detailRows.push(rhtml);
+        }
+        if (!basicRows.length && !detailRows.length) continue;
+        anyRows = true;
+        // Per-side category key so the two columns' expanders don't collide.
+        const ck = 'p' + (si + 1) + '|' + cat;
+        if (cat !== 'Other') html += `<div class="am-metrics-cat-head cmp-cat-head">${_wlEsc(cat)}</div>`;
+        html += basicRows.join('');
+        if (detailRows.length) {
+          const startOpen = _cmpOpenCats.has(ck);
+          html += `<div class="cmp-cat-detail" data-cmp-detail="${_wlEsc(ck)}"${startOpen ? '' : ' hidden'}>` + detailRows.join('') + '</div>';
+          html += `<button type="button" class="cmp-cat-toggle" data-cmp-cat="${_wlEsc(ck)}" aria-expanded="${startOpen ? 'true' : 'false'}" onclick="cmpToggleCatDetails(this)">${startOpen ? 'Show fewer' : 'Show ' + detailRows.length + ' more'}</button>`;
+        }
+      }
+      if (!anyRows) html += '<div style="color:var(--text-muted);font-size:13px;padding:8px 0;">No metrics available</div>';
+      return html + '</div>';
+    };
+    return '<div class="compare-metrics-split">'
+      + _splitCol(0, name1, pos1, m1, ranks1, counts1, bounds1)
+      + _splitCol(1, name2, pos2, m2, ranks2, counts2, bounds2)
+      + '</div>';
+  }
+
   // Group the displayed metrics by category (same order as the player modal) so
   // both modals stay visually consistent. Categories with no visible row are
   // dropped. Keys without a cfg category fall to 'Other' (rendered last).
-  const _CAT_ORDER = ['Value', 'General', 'Passing', 'Rushing', 'Receiving', 'Volume'];
   const _groups = {};
   const _order = [];
   for (const key of displayKeys) {
@@ -18880,6 +19029,15 @@ function _cmpAggregateWeeks(weeks, wkStart, wkEnd) {
     yards_per_carry: div(rushYds, car),
     yards_per_touch: div(recYds + rushYds, tch),
   };
+
+  // xFP over the selected weeks: sum the weekly expected-PPR totals, then back
+  // to per-game so it matches the full-season expected_ppr_per_game metric.
+  let _xfpSum = 0, _xfpN = 0;
+  sel.forEach(w => {
+    const xv = parseFloat(w.expected_ppr);
+    if (!isNaN(xv)) { _xfpSum += xv; _xfpN++; }
+  });
+  if (_xfpN > 0) m.expected_ppr_per_game = _xfpSum / _xfpN;
 
   // New NGS/FTN/EPA metrics: totals summed, rates volume-weighted -- parity with
   // the server-side weekly aggregation in advanced_metrics.py so a week range
@@ -19160,9 +19318,13 @@ function cmpRenderMetrics() {
   metricsDiv.innerHTML = selectors() + '<div id="compareMetricsRows"' + _rowsAttr + '>' + _rowsInner + '</div>';
   _cmpInitWkBars();
   const token = ++_cmpRenderToken;
-  Promise.all([_cmpFetchSide(_cmpSides[1]), _cmpFetchSide(_cmpSides[2]), _ensureAdvMetricsCfg()]).then(([r1, r2, cfg]) => {
+  // _ensureAdvMetricsCfg lives in the lazy-loaded player_modal.js; if a
+  // season/week change re-renders before that bundle lands, fall back to the
+  // hardcoded metric lists rather than throwing.
+  const cfgP = (typeof _ensureAdvMetricsCfg === 'function') ? _ensureAdvMetricsCfg() : Promise.resolve({});
+  Promise.all([_cmpFetchSide(_cmpSides[1]), _cmpFetchSide(_cmpSides[2]), cfgP]).then(([r1, r2, cfg]) => {
     if (token !== _cmpRenderToken) return;  // a newer click superseded this render
-    const rows = renderCompareMetricRows(r1.metrics, r2.metrics, { position: _cmpSides[1].position }, { position: _cmpSides[2].position }, cfg, r1.ranks, r2.ranks, r1.counts, r2.counts, r1.bounds, r2.bounds);
+    const rows = renderCompareMetricRows(r1.metrics, r2.metrics, { position: _cmpSides[1].position, name: _cmpSides[1].name }, { position: _cmpSides[2].position, name: _cmpSides[2].name }, cfg, r1.ranks, r2.ranks, r1.counts, r2.counts, r1.bounds, r2.bounds);
     metricsDiv.innerHTML = selectors() + '<div id="compareMetricsRows">' + rows + '</div>';
     _cmpInitWkBars();
     // #6: keep the trends section in sync with each side (Weekly or Season).
@@ -19597,6 +19759,51 @@ const _SS_TAB_CSS =
 // Comparison body markup, shared by the player-modal compare view and the
 // standalone /compare page so the two never drift. opts.nav adds the modal-only
 // back / profile buttons (the page has its own navigation).
+// The tab bar shared by the compare modal and the standalone /compare page.
+// Extracted so the initial-load skeleton can paint the identical shell before
+// player data arrives (no layout shift when the real view replaces it).
+function _compareTabBarHTML() {
+  return `<div class="pm-tab-bar compare-tab-bar" role="tablist">
+        <button type="button" class="pm-tab active" data-cmptab="overview" role="tab" aria-selected="true" onclick="cmpSwitchTab('overview')">Overview</button>
+        <button type="button" class="pm-tab" data-cmptab="startsit" role="tab" aria-selected="false" onclick="cmpSwitchTab('startsit')">Start/Sit</button>
+        <button type="button" class="pm-tab" data-cmptab="logs" role="tab" aria-selected="false" onclick="cmpSwitchTab('logs')">Stats</button>
+        <button type="button" class="pm-tab" data-cmptab="metrics" role="tab" aria-selected="false" onclick="cmpSwitchTab('metrics')">Advanced Metrics</button>
+        <button type="button" class="pm-tab" data-cmptab="usage" role="tab" aria-selected="false" onclick="cmpSwitchTab('usage')">Usage</button>
+      </div>`;
+}
+
+// Skeleton shell for the /compare page: painted the instant the second player
+// is picked (names come from the pickers), then replaced by renderCompareInline
+// once both players' details arrive. The user never stares at cleared boxes.
+function _renderCompareSkeleton(hostEl, picks) {
+  if (!hostEl || !picks || !picks.length) return;
+  const esc = (typeof _wlEsc === 'function') ? _wlEsc : (s => String(s == null ? '' : s));
+  const cols = picks.map(c => {
+    const nm = (c && c.name) || 'Player';
+    return '<th class="cmp3-col"><span class="cmp3-head cmp3-head-compact">'
+      + '<span class="cmp3-hs cmp3-hs-sm cmp3-hs-blank"></span>'
+      + '<span class="cmp3-head-text"><span class="cmp3-name">' + esc(nm) + '</span></span>'
+      + '</span></th>';
+  }).join('');
+  let rows = '';
+  for (let i = 0; i < 4; i++) {
+    let cells = '';
+    for (let j = 0; j < picks.length; j++) cells += '<td class="cmp3-cell"><span class="cmp-skel" style="width:46px;"></span></td>';
+    rows += '<tr><th class="cmp3-rowlbl"><span class="cmp-skel" style="width:64px;"></span></th>' + cells + '</tr>';
+  }
+  const skPanels = ['startsit', 'logs', 'metrics', 'usage'].map(t =>
+    '<div class="compare-tab-panel" data-cmppanel="' + t + '" hidden><div class="cmp-skel-panel"><span class="cmp-skel" style="width:120px;"></span></div></div>'
+  ).join('');
+  hostEl.innerHTML = _compareTabBarHTML()
+    + '<div class="compare-tab-panel" data-cmppanel="overview">'
+    + '<div class="cmp3-overview"><div class="cmp-verdict"><div class="cmp-verdict-strip"><span class="cmp-skel" style="width:170px;"></span></div></div>'
+    + '<div class="cmp3-wrap"><table class="cmp3-table"><thead><tr>'
+    + '<th class="cmp3-rowlbl" aria-hidden="true"><span class="cmp3-vs">VS</span></th>' + cols
+    + '</tr></thead><tbody>' + rows + '</tbody></table></div></div>'
+    + '</div>'
+    + skPanels;
+}
+
 function _compareBodyHTML(p1, p2, opts) {
   opts = opts || {};
   const navBtns = opts.nav ? `
@@ -19604,9 +19811,10 @@ function _compareBodyHTML(p1, p2, opts) {
         <button class="compare-back-btn" id="compareBackBtn">← Back to ${p1.name}</button>
         ${p2 && p2.is_baseline ? '' : `<button class="compare-profile-btn" id="compareP2ProfileBtn">${p2.name}'s Profile →</button>`}
       </div>` : '';
-  // The standalone /compare page keeps #2367's slim overview (dual header +
-  // verdict table) as the Overview tab's content instead of the hero cards,
-  // so the page has the same tab set as the modal.
+  // The standalone /compare page uses the compact verdict table as the Overview
+  // tab's content instead of the modal's hero cards. The old dual-header hero
+  // row is gone: it duplicated the headshot + name + pos/team/age that the
+  // table header already shows, and left a dead empty cell in the header row.
   const _anyHistory = [p1, p2].some(p => (p.value_history || []).length > 0);
   const _chartBlock = _anyHistory
     ? '<hr class="pm-section-divider">'
@@ -19620,12 +19828,7 @@ function _compareBodyHTML(p1, p2, opts) {
       + '<div class="pm-section-header"><span class="pm-section-label">Value History</span></div>'
       + '<div id="compareValueChart" class="player-modal-chart-container" style="min-height:220px;"></div>';
   const _overviewInner = opts.slimOverview
-    ? '<div class="compare-dual-header compare-inline-header">'
-      + _buildComparePlayerHeader(p1)
-      + '<div class="compare-vs-badge">VS</div>'
-      + _buildComparePlayerHeader(p2)
-      + '</div>'
-      + _buildCompareOverviewTable([p1, p2])
+    ? _cmpOverviewHTML([p1, p2])
       + _chartBlock
     : `<div class="compare-hero-section">
           <div class="compare-hero-player" id="compareHero1" data-name="${(p1.name || p1.full_name || '').replace(/"/g, '&quot;')}">${_buildCompareHeroHTML(p1, p2)}</div>
@@ -19634,13 +19837,7 @@ function _compareBodyHTML(p1, p2, opts) {
         ${(p1 && p1.is_baseline && p2 && p2.is_baseline) ? '' : _heroChartBlock}`;
   return `
     <div class="compare-body">
-      <div class="pm-tab-bar compare-tab-bar" role="tablist">
-        <button type="button" class="pm-tab active" data-cmptab="overview" role="tab" aria-selected="true" onclick="cmpSwitchTab('overview')">Overview</button>
-        <button type="button" class="pm-tab" data-cmptab="startsit" role="tab" aria-selected="false" onclick="cmpSwitchTab('startsit')">Start/Sit</button>
-        <button type="button" class="pm-tab" data-cmptab="logs" role="tab" aria-selected="false" onclick="cmpSwitchTab('logs')">Stats</button>
-        <button type="button" class="pm-tab" data-cmptab="metrics" role="tab" aria-selected="false" onclick="cmpSwitchTab('metrics')">Advanced Metrics</button>
-        <button type="button" class="pm-tab" data-cmptab="usage" role="tab" aria-selected="false" onclick="cmpSwitchTab('usage')">Usage</button>
-      </div>
+      ${_compareTabBarHTML()}
 
       <div class="compare-tab-panel" data-cmppanel="overview">
         ${_overviewInner}
@@ -19738,8 +19935,23 @@ function _cmpEnsureStats() {
 // Load per-side advanced metrics (which also fills the Usage weekly panel), once.
 function _cmpEnsureMetrics() {
   const c = window._cmpLazy;
-  if (!c || c.metricsDone) return;
-  c.metricsDone = true;
+  if (!c || c.metricsDone || c.metricsLoading) return;
+  // The metrics config loader (_ensureAdvMetricsCfg) lives in player_modal.js,
+  // which lazy-loads on idle for signed-in users. Opening this tab before that
+  // bundle lands threw a ReferenceError and left the tab permanently dead (a
+  // spinner forever, with metricsDone stuck true). Wait for the bundle instead;
+  // if it never arrives, fall through after 8s and render with the hardcoded
+  // fallback metric lists.
+  if (typeof _ensureAdvMetricsCfg !== 'function' && typeof ensureFeatures === 'function' && !c.metricsBundleWaited) {
+    c.metricsBundleWaited = true;
+    c.metricsLoading = true;
+    let _done = false;
+    const _retry = () => { if (_done) return; _done = true; c.metricsLoading = false; _cmpEnsureMetrics(); };
+    ensureFeatures(_retry);
+    setTimeout(_retry, 8000);
+    return;
+  }
+  c.metricsLoading = true;
   fetch('/api/nfl-state').then(r => r.json()).catch(() => ({}))
     .then(function (nflState) {
       const st = (nflState.season_type || '').toLowerCase();
@@ -19747,9 +19959,16 @@ function _cmpEnsureMetrics() {
       // Default to the current season once it's underway (regular/postseason),
       // otherwise the most recent COMPLETED season (offseason/preseason) rather
       // than Career -- e.g. in the 2026 offseason this defaults to 2025.
-      const defaultSeason = (st === 'regular' || st === 'post') ? currentSeason : (currentSeason - 1);
+      // /api/nfl-state serves SHORT phase codes (reg/pre/off/post) via
+      // normalize_nfl_state, so accept those alongside the full words; without
+      // this the check never matched and every tab defaulted to last season.
+      const inSeason = st === 'regular' || st === 'reg' || st === 'post';
+      const defaultSeason = inSeason ? currentSeason : (currentSeason - 1);
+      c.metricsDone = true;
+      c.metricsLoading = false;
       loadCompareMetrics(c.p1.player_id, c.p2.player_id, defaultSeason, defaultSeason);
-    });
+    })
+    .catch(function () { c.metricsLoading = false; });
 }
 
 // Post-render wiring shared by both compare surfaces: lazy game logs, metrics
@@ -19772,6 +19991,8 @@ function _compareWireView(p1, p2) {
   _comparePlayerNames[p2.player_id] = p2.name || p2.full_name || 'Player 2';
   _cmpSides[1].position = (p1.position || '').toUpperCase();
   _cmpSides[2].position = (p2.position || '').toUpperCase();
+  _cmpSides[1].name = p1.name || p1.full_name || 'Player 1';
+  _cmpSides[2].name = p2.name || p2.full_name || 'Player 2';
 
   // The Stats (game logs) and Advanced Metrics tabs used to fetch for BOTH
   // players the instant the compare view opened, even though they start hidden --
@@ -19899,12 +20120,20 @@ function _buildCompareOverviewTable(players) {
 
   // Key 4 stats (always visible)
   const keyRows = [];
+  // Value accessors honor the Redraft | Dynasty toggle (_cmpValueMode): the
+  // value row and both ADP rows switch labels and fields together.
+  const valOf = (p, redraft, sf) => redraft
+    ? (sf ? (st(p).redraft_value_sf ?? st(p).redraft_value_1qb) : st(p).redraft_value_1qb)
+    : (sf ? st(p).sf_value : st(p).value);
+  const adpOf = (p, redraft, sf) => {
+    const a = st(p).adp;
+    if (!a) return null;
+    return sf ? (redraft ? a.redraft_sf : a.dynasty_sf) : (redraft ? a.redraft_1qb : a.dynasty_1qb);
+  };
   // Dynasty value (primary for the league type)
   keyRows.push(buildRow(
     isRedraft ? (isSf ? 'SF Redraft Value' : 'Redraft Value (1QB)') : (isSf ? 'SF Dynasty Value' : 'Dynasty Value'),
-    players.map(p => isRedraft
-      ? (isSf ? (st(p).redraft_value_sf ?? st(p).redraft_value_1qb) : st(p).redraft_value_1qb)
-      : (isSf ? st(p).sf_value : st(p).value)),
+    players.map(p => valOf(p, isRedraft, isSf)),
     'max', v => v == null ? '&ndash;' : Math.round(v), 'value'));
   keyRows.push(buildRow(
     (ppgSeason ? ppgSeason + ' ' : '') + 'PPG',
@@ -19915,15 +20144,15 @@ function _buildCompareOverviewTable(players) {
     players.map(p => p.age), 'min',
     v => v == null ? '&ndash;' : (Math.round(v * 10) / 10), 'age'));
   keyRows.push(buildRow(
-    'Dynasty ADP',
-    players.map(p => st(p).adp && (isSf ? st(p).adp.dynasty_sf : st(p).adp.dynasty_1qb)),
+    isRedraft ? 'Redraft ADP' : 'Dynasty ADP',
+    players.map(p => adpOf(p, isRedraft, isSf)),
     'min', v => (v == null || v === '') ? '&ndash;' : v, 'adp'));
 
   // Remaining metrics (behind expander)
   const restRows = [];
   restRows.push(buildRow(
-    isSf ? '1QB Value' : 'SF Value',
-    players.map(p => isSf ? st(p).value : st(p).sf_value),
+    isRedraft ? (isSf ? '1QB Redraft Value' : 'SF Redraft Value') : (isSf ? '1QB Value' : 'SF Value'),
+    players.map(p => valOf(p, isRedraft, !isSf)),
     'max', v => v == null ? '&ndash;' : Math.round(v), 'value2'));
   restRows.push(buildRow(
     'Overall Rank',
@@ -19937,8 +20166,8 @@ function _buildCompareOverviewTable(players) {
     }),
     null, v => v || '&ndash;', 'pos_rank'));
   restRows.push(buildRow(
-    'Redraft ADP',
-    players.map(p => st(p).adp && (isSf ? st(p).adp.redraft_sf : st(p).adp.redraft_1qb)),
+    isRedraft ? 'Dynasty ADP' : 'Redraft ADP',
+    players.map(p => adpOf(p, !isRedraft, isSf)),
     'min', v => (v == null || v === '') ? '&ndash;' : v, 'radp'));
   restRows.push(buildRow(
     'Total Pts',
@@ -19961,22 +20190,18 @@ function _buildCompareOverviewTable(players) {
     const order = players.map((_, i) => i).sort((a, b) => wins[b] - wins[a]);
     const leader = order[0];
     const leaderName = esc(players[leader].name || ('Player ' + (leader + 1)));
-    // Split bar segments
-    const segs = order.map(i => {
+    // Split bar segments (player order, matching the table columns below)
+    const segs = players.map((_, i) => {
       const pct = contested ? (wins[i] / contested * 100) : 0;
       return '<span style="display:block;height:100%;width:' + pct.toFixed(1) + '%;background:' + colors[i % colors.length] + ';"></span>';
     }).join('');
-    const detail = order.map(i =>
-      '<span style="display:inline-flex;align-items:center;gap:5px;margin-right:14px;font-size:12px;color:var(--muted);">'
-      + '<span style="width:8px;height:8px;border-radius:2px;background:' + colors[i % colors.length] + ';display:inline-block;"></span>'
-      + esc(players[i].name || ('Player ' + (i + 1))) + ' <b style="color:var(--text);">' + wins[i] + '</b></span>'
-    ).join('');
+    const score = players.map((_, i) => wins[i]).join(' - ');
     verdictHTML =
-      '<div class="cmp-verdict" style="margin-bottom:16px;padding:14px 16px;background:var(--surface2,rgba(127,127,127,.08));border-radius:10px;">'
-      + '<div style="font-weight:800;font-size:15px;color:var(--text);margin-bottom:8px;">' + leaderName + ' wins ' + wins[leader] + ' of ' + contested + ' categories</div>'
-      + '<div style="display:flex;height:8px;border-radius:4px;overflow:hidden;background:var(--border);margin-bottom:10px;">' + segs + '</div>'
-      + '<div>' + detail + '</div>'
-      + '</div>';
+      '<div class="cmp-verdict"><div class="cmp-verdict-strip">'
+      + '<span class="cmp-verdict-text">' + leaderName + ' wins ' + wins[leader] + ' of ' + contested + '</span>'
+      + '<span class="cmp-verdict-bar">' + segs + '</span>'
+      + '<span class="cmp-verdict-score">' + score + '</span>'
+      + '</div></div>';
   }
 
   // ── Table ──
@@ -19988,12 +20213,12 @@ function _buildCompareOverviewTable(players) {
     const hiRes = (typeof _hiResHeadshot === 'function') ? _hiResHeadshot(hs, 140) : hs;
     const fb = (typeof _HS_FALLBACK !== 'undefined') ? _HS_FALLBACK : '';
     return '<th class="cmp3-col">'
-      + '<button type="button" class="cmp3-head" data-pid="' + esc(p.player_id) + '" data-name="' + esc(p.name) + '">'
-      + (hs ? '<img class="cmp3-hs" src="' + esc(hiRes) + '" data-raw="' + esc(hs) + '" alt="" loading="lazy" onerror="' + fb + '"/>'
-            : '<span class="cmp3-hs cmp3-hs-blank"></span>')
-      + '<span class="cmp3-name">' + esc(p.name) + '</span>'
-      + '<span class="cmp3-accent" style="background:' + colors[i % colors.length] + ';"></span>'
-      + '<span class="cmp3-meta">' + esc(meta) + '</span>'
+      + '<button type="button" class="cmp3-head cmp3-head-compact" data-pid="' + esc(p.player_id) + '" data-name="' + esc(p.name) + '">'
+      + '<span class="cmp3-accent-v" style="background:' + colors[i % colors.length] + ';"></span>'
+      + (hs ? '<img class="cmp3-hs cmp3-hs-sm" src="' + esc(hiRes) + '" data-raw="' + esc(hs) + '" alt="" loading="lazy" onerror="' + fb + '"/>'
+            : '<span class="cmp3-hs cmp3-hs-sm cmp3-hs-blank"></span>')
+      + '<span class="cmp3-head-text"><span class="cmp3-name">' + esc(p.name) + '</span>'
+      + '<span class="cmp3-meta">' + esc(meta) + '</span></span>'
       + '</button></th>';
   }).join('');
 
@@ -20001,15 +20226,21 @@ function _buildCompareOverviewTable(players) {
   const restRowsHTML = restRows.map(r => r.html).join('');
   const uid = 'cmpExp' + Math.random().toString(36).slice(2, 8);
 
-  return verdictHTML
+  return '<div class="cmp-overview-top">' + _cmpValueToggleHTML() + '</div>'
+    + verdictHTML
     + '<div class="cmp3-wrap"><table class="cmp3-table"><thead><tr>'
-    + '<th class="cmp3-rowlbl" aria-hidden="true"></th>' + headCells
+    + '<th class="cmp3-rowlbl" aria-hidden="true"><span class="cmp3-vs">VS</span></th>' + headCells
     + '</tr></thead><tbody>'
     + keyRowsHTML
     + '</tbody><tbody id="' + uid + '" hidden>' + restRowsHTML + '</tbody></table></div>'
-    + '<button type="button" class="cmp-expander" data-cmp-expander="' + uid + '" '
-    + 'style="margin-top:10px;background:none;border:1px solid var(--border);border-radius:8px;padding:8px 16px;font-size:13px;font-weight:700;color:var(--text);cursor:pointer;width:100%;">'
-    + 'Show all metrics (' + restRows.length + ' more)</button>';
+    + '<button type="button" class="cmp-expander" data-cmp-expander="' + uid + '">'
+    + 'Show all metrics (' + restRows.length + ' more) &#9662;</button>';
+}
+
+// Wrapper: the .cmp3-overview shell carries its players so the Redraft/Dynasty
+// toggle can re-render each overview in place without cross-contamination.
+function _cmpOverviewHTML(players) {
+  return '<div class="cmp3-overview">' + _buildCompareOverviewTable(players) + '</div>';
 }
 
 // Toggle handler for the "show all metrics" expander (delegated).
@@ -20020,9 +20251,9 @@ document.addEventListener('click', function (e) {
   if (!body) return;
   const open = body.hidden;
   body.hidden = !open;
-  btn.textContent = open
-    ? 'Show fewer metrics'
-    : 'Show all metrics (' + body.querySelectorAll('tr').length + ' more)';
+  btn.innerHTML = open
+    ? 'Show fewer metrics &#9652;'
+    : 'Show all metrics (' + body.querySelectorAll('tr').length + ' more) &#9662;';
 });
 
 // Render the full comparison inline into a page container (the /compare page).
@@ -20030,14 +20261,13 @@ function renderCompareInline(p1, p2, hostEl) {
   if (!hostEl) return;
   // The full tab set (Overview / Start-Sit / Stats / Advanced Metrics / Usage),
   // shared with the modal via _compareBodyHTML; the Overview tab carries the
-  // slim dual-header + verdict table instead of the hero cards.
+  // compact verdict table instead of the hero cards.
   hostEl.innerHTML = _compareBodyHTML(p1, p2, { nav: false, slimOverview: true });
+  // Stash the players on the overview shell so the Redraft/Dynasty toggle can
+  // re-render it in place.
+  hostEl.querySelectorAll('.cmp3-overview').forEach(el => { el._cmpPlayers = [p1, p2]; });
   // Headshot clicks open the player modal.
-  hostEl.querySelectorAll('.cmp3-head').forEach(b => {
-    b.addEventListener('click', () => {
-      if (typeof openPlayerModal === 'function') openPlayerModal(b.getAttribute('data-pid'), b.getAttribute('data-name'));
-    });
-  });
+  _cmpBindOverviewHeads();
   // Render the value-history chart via the shared wire-up (skips tab wiring
   // gracefully when .compare-tab-bar is absent).
   if (typeof _compareWireView === 'function') _compareWireView(p1, p2);
@@ -20063,7 +20293,7 @@ function renderCompareTriple(d1, d2, d3, hostEl) {
       + '<div id="compareTripleChart" class="player-modal-chart-container" style="min-height:240px;"></div>'
     : '';
 
-  const overviewHTML = _buildCompareOverviewTable(players) + chartBlock;
+  const overviewHTML = _cmpOverviewHTML(players) + chartBlock;
 
   // Stats / Advanced Metrics / Usage are three side-by-side single-player views,
   // lazy-loaded on first tab open (below), reusing the same renderers the player
@@ -20090,11 +20320,10 @@ function renderCompareTriple(d1, d2, d3, hostEl) {
     + '<div class="compare-tab-panel" data-cmp3panel="metrics" hidden><div id="cmp3MetricsPanel"><div class="cmp3-colp-load">Loading&hellip;</div></div></div>'
     + '<div class="compare-tab-panel" data-cmp3panel="usage" hidden><div id="cmp3UsagePanel"><div class="cmp3-colp-load">Loading&hellip;</div></div></div>';
 
-  hostEl.querySelectorAll('.cmp3-head').forEach(b => {
-    b.addEventListener('click', () => {
-      if (typeof openPlayerModal === 'function') openPlayerModal(b.getAttribute('data-pid'), b.getAttribute('data-name'));
-    });
-  });
+  // Stash the players on the overview shell so the Redraft/Dynasty toggle can
+  // re-render it in place.
+  hostEl.querySelectorAll('.cmp3-overview').forEach(el => { el._cmpPlayers = players; });
+  _cmpBindOverviewHeads();
 
   if (anyHistory) _renderTripleValueChart(players);
 }
