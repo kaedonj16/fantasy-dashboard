@@ -96,7 +96,7 @@ def test_league_players_version_key_covers_all_inputs():
     assert "def _lp_cacheable_response" in APP
     # Overlay key (model_ts + adp_sig) + superflex + view + historical mtimes.
     assert "profile_aggregates_version" in APP
-    assert 'Cache-Control"] = "public, max-age=60"' in APP
+    assert 'Cache-Control"] = "public, max-age=1800"' in APP
     assert "status=304" in APP
 
 
