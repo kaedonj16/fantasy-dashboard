@@ -12198,6 +12198,14 @@ function bindRecapTeamSelector() {
             generateBtn.disabled = false;
           }
         }
+
+        // Auto-generate the recap for the identified viewer so the Recap tab
+        // is populated on load. The manual dropdown + button stay as fallback
+        // when no viewer team is identified.
+        if (teamDropdown.value && !window._historyRecapAutoFired) {
+          window._historyRecapAutoFired = true;
+          generateSeasonRecap();
+        }
       })
       .catch(err => {
         console.error("Failed to load recap teams:", err);

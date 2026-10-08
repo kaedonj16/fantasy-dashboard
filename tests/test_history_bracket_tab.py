@@ -143,9 +143,9 @@ def test_bracket_html_empty_when_all_empty_bracket(offline_client):
     assert html == ""
 
 
-def test_standings_panel_has_tabs_with_bracket(offline_client):
-    """build_history_body renders the standings card with card-tabs when bracket
-    data is available."""
+def test_main_tabs_render_bracket_with_data(offline_client):
+    """build_history_body renders the 4 main tabs; the Bracket tab shows the
+    playoff bracket when bracket data is available."""
     import app
     from dashboard_services.pages import history_page as H
 
@@ -153,30 +153,32 @@ def test_standings_panel_has_tabs_with_bracket(offline_client):
 
     with app.app.test_request_context("/"):
         with mock.patch.object(H, "get_bracket", return_value=_sample_bracket()):
-            with mock.patch.object(H, "get_league_season_summary", return_value="Test recap"):
-                body = H.build_history_body(
-                    history_ctx=ctx,
-                    available_seasons=[2024],
-                    base_platform="sleeper",
-                    base_season=2024,
-                    base_league_id="test_league",
-                    selected_history_season=2024,
-                    resolved_history_league_id="test_league",
-                    prerendered={
-                        "summary": "<div>awards</div>",
-                        "standings": "<div>standings</div>",
-                        "chart": "<div>chart</div>",
-                    },
-                )
+            body = H.build_history_body(
+                history_ctx=ctx,
+                available_seasons=[2024],
+                base_platform="sleeper",
+                base_season=2024,
+                base_league_id="test_league",
+                selected_history_season=2024,
+                resolved_history_league_id="test_league",
+                prerendered={
+                    "summary": "<div>awards</div>",
+                    "standings": "<div>standings</div>",
+                    "chart": "<div>chart</div>",
+                },
+            )
 
-    assert 'data-tab="standings"' in body
-    assert 'data-tab="bracket"' in body
+    for tab in ("bracket", "awards", "recap", "rivalries"):
+        assert f'data-tab="{tab}"' in body
     assert "Playoff Bracket" in body
-    assert "tab-strip" in body
+    assert "bracket-round" in body
+    # Winner (roster 1) gets the bold-winner class
+    assert "team-row--winner" in body
 
 
-def test_standings_panel_no_tabs_without_bracket(offline_client):
-    """build_history_body omits the bracket tab when no bracket data exists."""
+def test_bracket_tab_empty_state_without_bracket(offline_client):
+    """build_history_body keeps the Bracket tab but shows an empty state when
+    no bracket data exists."""
     import app
     from dashboard_services.pages import history_page as H
 
@@ -184,22 +186,20 @@ def test_standings_panel_no_tabs_without_bracket(offline_client):
 
     with app.app.test_request_context("/"):
         with mock.patch.object(H, "get_bracket", return_value=[]):
-            with mock.patch.object(H, "get_league_season_summary", return_value="Test recap"):
-                body = H.build_history_body(
-                    history_ctx=ctx,
-                    available_seasons=[2024],
-                    base_platform="sleeper",
-                    base_season=2024,
-                    base_league_id="test_league",
-                    selected_history_season=2024,
-                    resolved_history_league_id="test_league",
-                    prerendered={
-                        "summary": "<div>awards</div>",
-                        "standings": "<div>standings</div>",
-                        "chart": "<div>chart</div>",
-                    },
-                )
+            body = H.build_history_body(
+                history_ctx=ctx,
+                available_seasons=[2024],
+                base_platform="sleeper",
+                base_season=2024,
+                base_league_id="test_league",
+                selected_history_season=2024,
+                resolved_history_league_id="test_league",
+                prerendered={
+                    "summary": "<div>awards</div>",
+                    "standings": "<div>standings</div>",
+                    "chart": "<div>chart</div>",
+                },
+            )
 
-    assert 'data-tab="standings"' in body
-    assert 'data-tab="bracket"' not in body
-    assert "Playoff Bracket" not in body
+    assert 'data-tab="bracket"' in body
+    assert "No playoff bracket available" in body
