@@ -22,6 +22,8 @@ logger = logging.getLogger(__name__)
 
 misc_api_bp = Blueprint("misc_api", __name__)
 
+_TRADE_COUNT_CACHE: dict = {}
+
 
 @misc_api_bp.route("/api/changelog")
 def api_changelog():
@@ -50,13 +52,22 @@ def api_advanced_metrics_seasons():
 
 @misc_api_bp.route("/api/trade-count")
 def api_trade_count():
-    """Get the count of trades from trade_intel_trades table."""
+    """Get the count of trades from trade_intel_trades table.
+
+    Cached 1 hour: the count only changes on trade-intel rebuilds.
+    """
+    import time
+    now = time.time()
+    cached = _TRADE_COUNT_CACHE.get("v1")
+    if cached and now - cached[0] < 3600:
+        return jsonify({"count": cached[1]})
     try:
         from dashboard_services.db import get_conn
         with get_conn() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT COUNT(*) AS n FROM trade_intel_trades")
             count = cursor.fetchone()["n"]
+        _TRADE_COUNT_CACHE["v1"] = (now, count)
         return jsonify({"count": count})
     except Exception:
         # Return fallback count if table doesn't exist or other error

@@ -28,23 +28,9 @@ def build_trade_calculator_body(
     is_guest = not league_id
     platform_val = platform or "sleeper"
 
-    # Get trade count from database
+    # Trade count lazy-loads client-side from /api/trade-count so the
+    # COUNT(*) never blocks the page render.
     trade_count = "150,000+"
-    try:
-        from dashboard_services.db import get_conn
-        with get_conn() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) AS n FROM trade_intel_trades")
-            result = cursor.fetchone()
-            # Handle both tuple and dictionary return formats
-            if isinstance(result, dict):
-                count = result.get("n", result.get("count", 0))
-            else:
-                count = result[0] if result else 0
-            trade_count = f"{count:,}"
-    except Exception as e:
-        logger.warning("Trade count error: %s", e)
-        pass
 
     # Clamp logged-in league size to nearest supported value
     if num_teams and not is_guest:

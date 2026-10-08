@@ -204,21 +204,28 @@ function _advFetch(url, ms, init) {
 }
 
 // ── Shared /api/league-players fetch ──────────────────────────────────────────
-// The nav player-search idle-preloads the full player list and the trade
+// The nav player-search idle-preloads the player list and the trade
 // calculator needs the same payload on the same page. Without sharing, both
-// fire independent ~1MB fetches. One page-level promise serves both callers:
+// fire independent fetches. One page-level promise serves both callers:
 // in-flight requests are shared and completed results are reused for 60s
-// (matching the endpoint's own max-age=60). Defined above the bundle split
-// marker so the trade calculator code in the public bundle can use it.
+// (matching the endpoint's own max-age=60). The ?view=trade slim payload
+// (~200KB: QB/RB/WR/TE + picks, value fields, folded-in deltas/indicators)
+// covers both callers. Default cache mode lets ETag + max-age=60 work.
+// Defined above the bundle split marker so the trade calculator code in the
+// public bundle can use it.
 var __brLeaguePlayersPromise = null;
 var __brLeaguePlayersAt = 0;
-function brGetLeaguePlayersData() {
+var __brLeaguePlayersKey = "";
+function brGetLeaguePlayersData(forceKey) {
   var now = Date.now();
-  if (__brLeaguePlayersPromise && (now - __brLeaguePlayersAt) < 60000) {
+  var key = forceKey || "";
+  if (__brLeaguePlayersPromise && key === __brLeaguePlayersKey && (now - __brLeaguePlayersAt) < 60000) {
     return __brLeaguePlayersPromise;
   }
   __brLeaguePlayersAt = now;
-  __brLeaguePlayersPromise = fetch('/api/league-players', { cache: 'no-store' })
+  __brLeaguePlayersKey = key;
+  var url = '/api/league-players?view=trade' + (key ? '&' + key : '');
+  __brLeaguePlayersPromise = fetch(url)
     .then(function (res) {
       if (!res.ok) throw new Error('HTTP ' + res.status);
       return res.json();
@@ -5817,63 +5824,44 @@ window.initTradePage = function initTradePage(root = document) {
   }
 
   // In-flight dedupe: these fire on init and again on league-type/size changes,
-  // so collapse concurrent identical requests (keyed by params) into one.
-  let _deltasInflight = null, _deltasKey = "";
+  // Deltas and indicators now ride on the ?view=trade player rows
+  // (delta_7d, is_breakout, is_elite, is_prospect). These are no-ops kept
+  // for existing call sites.
   async function loadPlayerDeltas() {
-    const leagueType = getLeagueType();
-    const leagueSize = getLeagueSize();
-    const key = leagueType + "|" + leagueSize;
-    if (_deltasInflight && _deltasKey === key) return _deltasInflight;
-    _deltasKey = key;
-    _deltasInflight = (async () => {
-      try {
-        const res = await _advFetch(`/api/player-deltas?days=7&league_type=${leagueType}&league_size=${leagueSize}`, 8000, { cache: "no-store" });
-        if (!res.ok) return;
-        playerDeltas = await res.json();
-      } catch (err) {
-        console.error("[trade] Failed to load player deltas:", err);
-      } finally {
-        _deltasInflight = null;
-      }
-    })();
-    return _deltasInflight;
+    return;
   }
 
-  let _indicatorsInflight = null, _indicatorsKey = "";
   async function loadPlayerIndicators() {
-    const leagueType = getLeagueType();
-    const leagueSize = getLeagueSize();
-    const key = leagueType + "|" + leagueSize;
-    if (_indicatorsInflight && _indicatorsKey === key) return _indicatorsInflight;
-    _indicatorsKey = key;
-    _indicatorsInflight = (async () => {
-      try {
-        const res = await _advFetch(`/api/player-indicators?league_type=${leagueType}&league_size=${leagueSize}`, 8000, { cache: "no-store" });
-        if (!res.ok) return;
-        playerIndicators = await res.json();
-      } catch (err) {
-        console.error("[trade] Failed to load player indicators:", err);
-      } finally {
-        _indicatorsInflight = null;
-      }
-    })();
-    return _indicatorsInflight;
+    return;
+  }
+
+  // Indicator flags now ride on the ?view=trade player rows (is_rookie,
+  // is_breakout, is_elite, is_prospect). These helpers look up the normalized
+  // player first, falling back to the legacy indicator maps.
+  function _flagFor(playerId, flag, legacyList) {
+    var pid = String(playerId);
+    var pl = null;
+    for (var i = 0; i < allPlayers.length; i++) {
+      if (String(allPlayers[i].id) === pid) { pl = allPlayers[i]; break; }
+    }
+    if (pl && pl[flag] === true) return true;
+    return !!(legacyList && legacyList.includes(pid));
   }
 
   function isRookie(playerId) {
-    return playerIndicators.rookies && playerIndicators.rookies.includes(String(playerId));
+    return _flagFor(playerId, "is_rookie", playerIndicators.rookies);
   }
 
   function isBreakout(playerId) {
-    return playerIndicators.breakouts && playerIndicators.breakouts.includes(String(playerId));
+    return _flagFor(playerId, "is_breakout", playerIndicators.breakouts);
   }
 
   function isElite(playerId) {
-    return playerIndicators.elites && playerIndicators.elites.includes(String(playerId));
+    return _flagFor(playerId, "is_elite", playerIndicators.elites);
   }
 
   function isProspect(playerId) {
-    return playerIndicators.prospects && playerIndicators.prospects.includes(String(playerId));
+    return _flagFor(playerId, "is_prospect", playerIndicators.prospects);
   }
 
   function getStorageKey() {
@@ -6685,6 +6673,11 @@ window.initTradePage = function initTradePage(root = document) {
       sf_pos_rank_label: p.sf_pos_rank_label || "",
       is_rookie: p.is_rookie === true,
       search_name: p.search_name || "",
+      // Folded in from ?view=trade (replaces /api/player-deltas + /api/player-indicators)
+      delta_7d: p.delta_7d != null ? Number(p.delta_7d) : null,
+      is_breakout: p.is_breakout === true,
+      is_elite: p.is_elite === true,
+      is_prospect: p.is_prospect === true,
     };
   }
 
@@ -6922,8 +6915,32 @@ window.initTradePage = function initTradePage(root = document) {
   }
 
   async function onLeagueTypeChange() {
-    // Refresh all value displays
-    await Promise.all([loadPlayerDeltas(), loadPlayerIndicators()]);
+    // Deltas/indicators ride on the ?view=trade payload keyed by league
+    // type/size, so bust the shared fetch and reload players.
+    allPlayers = [];
+    var lt = getLeagueType();
+    var ls = getLeagueSize();
+    try {
+      var data = await brGetLeaguePlayersData("league_type=" + lt + "&league_size=" + ls);
+      var rawData = Array.isArray(data) ? data : (Array.isArray(data.players) ? data.players : []);
+      if (!Array.isArray(data) && data.tier_thresholds) _tierThresholds = data.tier_thresholds;
+      var players = rawData.filter(function (p) { return p.position !== "PICK"; });
+      var picks = rawData.filter(function (p) { return p.position === "PICK"; });
+      allPlayers = [
+        ...players
+          .filter(function (p) { return p && typeof p === "object" && p.id != null; })
+          .map(normalizePlayerRow)
+          .filter(function (p) { return ["QB", "RB", "WR", "TE"].includes(p.position) || p.is_rookie; }),
+        ...picks.map(function (p) { return Object.assign({}, p, { name: formatPickId(p.id) }); }),
+      ].sort(function (a, b) {
+        var vb = Number(b.value || 0);
+        var va = Number(a.value || 0);
+        if (vb !== va) return vb - va;
+        return String(a.name || "").localeCompare(String(b.name || ""));
+      });
+    } catch (err) {
+      console.warn("[trade] onLeagueTypeChange reload failed:", err.message);
+    }
     renderChips("A");
     renderChips("B");
     recomputeTrade();
@@ -7062,7 +7079,7 @@ window.initTradePage = function initTradePage(root = document) {
       valueEl.textContent = formatValue(getPlayerValue(p));
 
       // Add delta indicator if available
-      const delta = p.delta || p.recent_delta || playerDeltas[p.id];
+      const delta = p.delta || p.recent_delta || p.delta_7d || playerDeltas[p.id];
       if (delta && Math.abs(delta) >= 1) {
         const deltaEl = document.createElement("span");
         deltaEl.className = delta > 0 ? "otc-chip-delta otc-chip-delta-positive" : "otc-chip-delta otc-chip-delta-negative";
@@ -11961,9 +11978,41 @@ window.initTradePage = function initTradePage(root = document) {
   setupSearch("A");
   setupSearch("B");
 
+  // Movers tab is below the fold: defer until idle so it never blocks the
+  // critical path (player list + calculator render).
+  function _deferMovers() {
+    var run = function () { loadTopMovers(); };
+    if (typeof requestIdleCallback === "function") {
+      requestIdleCallback(run, { timeout: 3000 });
+    } else {
+      setTimeout(run, 500);
+    }
+  }
+
+  // Trade count lazy-loads from the cached /api/trade-count endpoint so the
+  // DB COUNT(*) never blocks the page render.
+  function _lazyTradeCount() {
+    var el = root.querySelector("#tradeCount");
+    if (!el) return;
+    var run = function () {
+      fetch("/api/trade-count").then(function (r) {
+        return r.ok ? r.json() : null;
+      }).then(function (d) {
+        if (d && d.count) el.textContent = Number(d.count).toLocaleString();
+      }).catch(function () {});
+    };
+    if (typeof requestIdleCallback === "function") {
+      requestIdleCallback(run, { timeout: 5000 });
+    } else {
+      setTimeout(run, 1000);
+    }
+  }
+
+  _deferMovers();
+  _lazyTradeCount();
+
   Promise.allSettled([
     ensurePlayersLoaded(),
-    loadTopMovers(),
     loadPlayerDeltas(),
     loadPlayerIndicators(),
   ]).then(() => {

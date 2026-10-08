@@ -117,8 +117,8 @@ def test_otc_info_tooltip_shows_trade_count():
     # relationships" and drop the live count. Guard against that regression.
     assert "those trade relationships" not in js
     assert "cachedTradeCountLabel" in js
-    # The client no longer fetches /api/trade-count on page load: the
-    # server-rendered #tradeCount is the single source of truth (the duplicate
-    # fetch was removed). The label is still preserved across tooltip rewrites.
-    assert "api/trade-count" not in js
+    # The client lazy-refreshes #tradeCount from /api/trade-count via
+    # requestIdleCallback (never on the critical path); the server-rendered
+    # fallback is the initial source of truth.
+    assert "_lazyTradeCount" in js
     assert "function tradeCountLabel()" in js

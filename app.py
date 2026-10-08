@@ -25019,6 +25019,59 @@ def _board_league_players_response(payload: dict, *, overlay_key, is_sf: bool,
     return resp
 
 
+def _trade_league_players_response(payload: dict, *, overlay_key, is_sf: bool,
+                                       league_type: str, league_size: int,
+                                       version_key=None):
+    """Trade-calculator JSON: skill players + picks, value fields, folded-in
+    deltas/indicators. ETag + max-age=60 like the board view."""
+    if version_key is not None:
+        etag = _lp_etag_for(version_key)
+        not_modified = _lp_not_modified_response(etag)
+        if not_modified is not None:
+            return not_modified
+    cache_key = ("trade", overlay_key, bool(is_sf), league_type, league_size)
+    cached = _LP_BOARD_JSON_CACHE.get(cache_key)
+    if cached is not None:
+        body = cached
+    else:
+        from dashboard_services.league_players_board import slim_trade_payload
+        # Fold in 7-day deltas (cached by snapshot date in get_top_movers).
+        delta_map = {}
+        try:
+            from data_building.player_value_history import get_top_movers
+            movers = get_top_movers(days=7, limit=1000, league_type=league_type,
+                                    league_size=league_size) or {}
+            for p in (movers.get("risers") or []) + (movers.get("fallers") or []):
+                pid = str(p.get("player_id") or "")
+                d = p.get("delta")
+                if pid and d is not None:
+                    try:
+                        delta_map[pid] = float(d)
+                    except (TypeError, ValueError):
+                        pass
+        except Exception:
+            logger.debug("[api/league-players] trade delta fold-in skipped", exc_info=True)
+        # Fold in indicator sets (rookies/breakouts/elites/prospects, cached 15m).
+        indicator_sets = {}
+        try:
+            from datetime import datetime
+            nfl_state = get_nfl_state() or {}
+            season = int(nfl_state.get("season") or datetime.now().year)
+            indicator_sets = _compute_player_indicators(league_type, league_size, season) or {}
+        except Exception:
+            logger.debug("[api/league-players] trade indicator fold-in skipped", exc_info=True)
+        slim = slim_trade_payload(payload, delta_map=delta_map,
+                                  indicator_sets=indicator_sets)
+        body = _dumps_league_players(slim)
+        _LP_BOARD_JSON_CACHE[cache_key] = body
+        _prune_ttl_cache(_LP_BOARD_JSON_CACHE, 64)
+    if version_key is not None:
+        return _lp_cacheable_response(body, version_key)
+    resp = app.response_class(body, mimetype="application/json")
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
 def _league_players_response(payload: dict, version_key=None):
     """Stamp compact historical signals, then jsonify. Does not change ranking inputs."""
     if "historical_available" not in (payload or {}):
@@ -25058,7 +25111,17 @@ def api_league_players():
     if _mi_scoring not in ("redraft", "dynasty", "rookie"):
         _mi_scoring = "redraft"
     _mi_is_sf = str(request.args.get("league_type") or "").lower() in ("sf", "superflex")
-    _view_board = str(request.args.get("view") or "").strip().lower() == "board"
+    _view_arg = str(request.args.get("view") or "").strip().lower()
+    _view_board = _view_arg == "board"
+    _view_trade = _view_arg == "trade"
+    _trade_league_type = "sf" if _mi_is_sf else "1qb"
+    _trade_league_size = 10
+    try:
+        _ls = int(request.args.get("league_size") or 10)
+        if _ls in (8, 10, 12, 14):
+            _trade_league_size = _ls
+    except (TypeError, ValueError):
+        pass
     overlay_key = _lp_overlay_cache_key(
         kdef, _projection_settings, _projection_season, _mi_scoring,
     )
@@ -25072,10 +25135,17 @@ def api_league_players():
 
     _lp_version_key = _lp_response_version_key(
         overlay_key=overlay_key, is_sf=_mi_is_sf,
-        view="board" if _view_board else "full",
+        view=(f"trade-{_trade_league_type}-{_trade_league_size}" if _view_trade
+              else ("board" if _view_board else "full")),
     )
 
     def _finish(result, *, board_cacheable=True):
+        if _view_trade:
+            return _trade_league_players_response(
+                result, overlay_key=overlay_key, is_sf=_mi_is_sf,
+                league_type=_trade_league_type, league_size=_trade_league_size,
+                version_key=_lp_version_key if board_cacheable else None,
+            )
         if _view_board:
             if board_cacheable:
                 return _board_league_players_response(

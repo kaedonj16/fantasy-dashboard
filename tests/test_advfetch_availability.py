@@ -38,12 +38,15 @@ def test_advfetch_not_duplicated_in_player_modal():
 
 
 def test_advfetch_used_by_trade_calculator():
-    """Trade calculator in app.js uses _advFetch for player deltas and indicators."""
-    # These are the calls that were failing with ReferenceError
-    assert "await _advFetch(`/api/player-deltas?" in APP_JS, \
-        "loadPlayerDeltas must use _advFetch"
-    assert "await _advFetch(`/api/player-indicators?" in APP_JS, \
-        "loadPlayerIndicators must use _advFetch"
+    """Deltas/indicators now ride on the ?view=trade payload (delta_7d,
+    is_breakout, is_elite, is_prospect per player); the separate
+    /api/player-deltas and /api/player-indicators fetches are gone."""
+    assert "await _advFetch(`/api/player-deltas?" not in APP_JS, \
+        "player-deltas fetch must be folded into ?view=trade"
+    assert "await _advFetch(`/api/player-indicators?" not in APP_JS, \
+        "player-indicators fetch must be folded into ?view=trade"
+    assert "delta_7d" in APP_JS, \
+        "trade calculator must read the folded-in delta_7d field"
 
 
 def test_advfetch_defined_before_usage():

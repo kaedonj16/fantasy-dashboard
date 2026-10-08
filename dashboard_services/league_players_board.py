@@ -159,3 +159,100 @@ def slim_board_payload(payload: Mapping[str, Any], *, is_superflex: bool) -> dic
     )
     out["historical_available"] = payload.get("historical_available") is True
     return out
+
+
+# ── Trade calculator view ──────────────────────────────────────────────────
+# The trade calculator needs ~500 players (QB/RB/WR/TE + PICKs) with the value
+# fields it actually reads, plus the per-player metadata it currently fetches
+# via two extra round-trips (/api/player-deltas, /api/player-indicators).
+# Folding those into this payload drops the calc from 3 requests to 1.
+
+TRADE_PLAYER_KEYS = (
+    "id",
+    "name",
+    "team",
+    "position",
+    "age",
+    "value",
+    "sf_value",
+    "value_8",
+    "value_12",
+    "value_14",
+    "sf_value_8",
+    "sf_value_12",
+    "sf_value_14",
+    "redraft_value_1qb",
+    "redraft_value_sf",
+    "redraft_value_8",
+    "redraft_value_12",
+    "redraft_value_14",
+    "redraft_sf_value_8",
+    "redraft_sf_value_12",
+    "redraft_sf_value_14",
+    "pos_rank_label",
+    "sf_pos_rank_label",
+    "is_rookie",
+    "search_name",
+    "espnHeadshot",
+)
+
+TRADE_POSITIONS = {"QB", "RB", "WR", "TE", "PICK"}
+
+
+def slim_trade_player(player: Mapping[str, Any]) -> Optional[dict]:
+    """One trade-calculator row, or None when the player is not tradeable."""
+    pos = str(player.get("position") or "").upper()
+    if pos not in TRADE_POSITIONS:
+        return None
+    row = {}
+    for key in TRADE_PLAYER_KEYS:
+        value = player.get(key)
+        if value is not None:
+            row[key] = value
+    row["position"] = pos
+    return row
+
+
+def slim_trade_payload(
+    payload: Mapping[str, Any],
+    *,
+    delta_map: Optional[Mapping[str, float]] = None,
+    indicator_sets: Optional[Mapping[str, Any]] = None,
+) -> dict:
+    """Return a trade-calculator-sized copy. Does not mutate ``payload``.
+
+    ``delta_map`` is player_id -> 7-day delta; ``indicator_sets`` has
+    breakouts/elites/prospects id lists. Both are folded in per-player so the
+    client needs no extra round-trips.
+    """
+    delta_map = delta_map or {}
+    indicator_sets = indicator_sets or {}
+    breakouts = set(str(x) for x in (indicator_sets.get("breakouts") or []))
+    elites = set(str(x) for x in (indicator_sets.get("elites") or []))
+    prospects = set(str(x) for x in (indicator_sets.get("prospects") or []))
+
+    players = []
+    for player in payload.get("players") or []:
+        if not isinstance(player, Mapping):
+            continue
+        row = slim_trade_player(player)
+        if row is None:
+            continue
+        pid = str(row.get("id") or "")
+        if pid and pid in delta_map:
+            try:
+                row["delta_7d"] = float(delta_map[pid])
+            except (TypeError, ValueError):
+                pass
+        if pid in breakouts:
+            row["is_breakout"] = True
+        if pid in elites:
+            row["is_elite"] = True
+        if pid in prospects:
+            row["is_prospect"] = True
+        players.append(row)
+
+    out = {"players": players}
+    if payload.get("tier_thresholds") is not None:
+        out["tier_thresholds"] = payload["tier_thresholds"]
+    return out
