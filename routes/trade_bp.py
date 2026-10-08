@@ -528,7 +528,7 @@ def page_trade_database(platform: str, season: int, league_id: str):
       }}
       .tdb-sort:hover {{ border-color: var(--accent, #3b82f6); }}
       .tdb-status {{ font-size: 13px; color: var(--text-muted); margin-bottom: 14px; min-height: 16px; }}
-      .tdb-list {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }}
+      .tdb-list {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; align-items: start; }}
       @media(max-width: 600px) {{ .tdb-list {{ grid-template-columns: 1fr; }} }}
       .tdb-card {{
         border: 1px solid var(--border); border-radius: 12px;
@@ -634,7 +634,11 @@ def page_trade_database(platform: str, season: int, league_id: str):
       let leagueType = 'all';
       let leagueFormat = '{_tdb_fmt}';
       let tdbSort = 'date_desc'; // date_desc | date_asc | value_desc | value_asc
-      let loading = false;
+      // Latest-wins request handling: a new filter change aborts the in-flight
+      // trade search instead of being silently dropped (the old `loading`
+      // guard left stale single-side results on screen with both chips set
+      // when the Side B player was added while the Side A request was in flight).
+      let tdbAbort = null;
       let selectedA = []; // [{{ id, name }}, ...]
       let selectedB = [];
       let tdbAllPlayers = null;
@@ -786,14 +790,15 @@ def page_trade_database(platform: str, season: int, league_id: str):
       showTDBSkeletons();
 
       function loadTDBPage(page) {{
-        if (loading) return;
+        if (tdbAbort) tdbAbort.abort();
+        tdbAbort = new AbortController();
+        const tdbSignal = tdbAbort.signal;
         if (typeof page === 'string') {{
           if (page === 'prev' && currentPage > 1) page = currentPage - 1;
           else if (page === 'next' && paginationData && paginationData.has_next) page = currentPage + 1;
           else return;
         }}
         currentPage = page;
-        loading = true;
         statusEl.textContent = '';
         listEl.style.display = 'none';
         document.getElementById('tdbLoading').style.display = '';
@@ -801,7 +806,7 @@ def page_trade_database(platform: str, season: int, league_id: str):
         const params = new URLSearchParams({{ page: page - 1, limit: 20, league_type: leagueType, season: TDB_SEASON, league_format: leagueFormat, sort: tdbSort }});
         if (selectedA.length) params.set('player_a', selectedA.map(p => p.id).join(','));
         if (selectedB.length) params.set('player_b', selectedB.map(p => p.id).join(','));
-        fetch('/api/trade-database?' + params)
+        fetch('/api/trade-database?' + params, {{ signal: tdbSignal }})
           .then(r => r.json())
           .then(data => {{
             if (data.error) throw new Error(data.error);
@@ -811,20 +816,18 @@ def page_trade_database(platform: str, season: int, league_id: str):
               listEl.innerHTML = '<div style="color:var(--text-muted);padding:20px 0;text-align:center;grid-column:1/-1;">No trades found.</div>';
               listEl.style.display = '';
               document.getElementById('tdbPagination').style.display = 'none';
-              loading = false;
               return;
             }}
             paginationData = data.pagination;
             listEl.style.display = '';
             updateTDBPaginationControls();
             renderTDBTrades(trades);
-            loading = false;
           }})
           .catch(err => {{
+            if (err && err.name === 'AbortError') return; // superseded by a newer request
             console.error('Error loading trades:', err);
             document.getElementById('tdbLoading').style.display = 'none';
             statusEl.textContent = 'Error loading trades';
-            loading = false;
           }});
       }}
 
