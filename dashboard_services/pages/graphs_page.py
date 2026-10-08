@@ -1,105 +1,271 @@
-"""Graphs page: league value/performance charts.
+"""Graphs page: league value/performance charts ("League Stats").
 
 Data contract for ``build_graphs_body(ctx)`` / ``render_graphs_html``:
 - ``ctx["team_stats"]``: PF/PA/AVG/STD per owner
 - ``ctx["df_weekly"]`` with ``finalized == True`` for in-season plots
+- ``ctx["viewer"]["viewer_team_name"]``: the viewer's team, highlighted in every chart
 - Empty weekly data returns a static "No weekly data" card (never a spinner hang)
 - Cold-cache Graphs requests use a chart-shaped ``.graphs-skeleton`` (not a generic list)
 - Career view may render a skeleton while a background aggregation fills in
+
+Layout: a four-tab shell (Performance | Value | Trends | Career). Each tab is a
+2-column chart grid (1 column on mobile). Every chart card carries a title, a
+subtitle, the chart, and a plain-English insight computed from the real
+underlying data.
 """
 import html
-import json
-from typing import Dict
+from typing import Dict, List
 
 import numpy as np
 import pandas as pd
 import plotly.graph_objs as go
-
-from utils.utils import z_better_outward
 from dashboard_services.plotly_theme import apply_brand_layout
-from utils.all_play import all_play_analysis
+from utils.standings import all_play_analysis
 from utils.standings_viz import luck_quadrant_svg, value_age_svg
-from utils.scatter_labels import scatter_label_placements
+
+
+# Validated categorical palette (dataviz skill) - shared by the season and
+# career graphs so a team keeps one color across every chart on the page.
+# Leagues past 8 teams cycle - no 10+ hue set can stay CVD-distinct, so 8
+# validated beats 10 raw.
+COLOR_CYCLE = [
+    "#2a78d6", "#eb6834", "#1baf7a", "#eda100",
+    "#e87ba4", "#008300", "#4a3aa7", "#e34948",
+]
+
+_YOU_BLUE = "#1e3a5f"
+_LEAGUE_GRAY = "#94a3b8"
+_ABOVE_AMBER = "#f59e0b"
+_BELOW_BLUE = "#60a5fa"
 
 
 def owner_color_map(owners) -> Dict[str, str]:
     """Per-owner color from the shared graphs COLOR_CYCLE, so a team is the same
-    color across every chart on the page (and the new SVG scatters)."""
+    color across every chart on the page."""
     m: Dict[str, str] = {}
     for idx, o in enumerate(owners or []):
         m[str(o)] = COLOR_CYCLE[idx % len(COLOR_CYCLE)]
     return m
 
 
-def _luck_and_value_age_cards(ctx: dict, df_weekly_finalized, owner_colors: dict = None) -> str:
-    """Two league-wide SVG scatters for the graphs page: a performance-vs-luck
-    quadrant (all-play win rate vs actual) and a dynasty-value-vs-age quadrant.
-    Both are server-rendered SVG (no Plotly), and return '' individually when
-    there isn't enough data, so the cards simply don't appear. ``owner_colors``
-    is the shared per-team color map so points match the other charts."""
-    viewer_owner = str((ctx.get("viewer") or {}).get("viewer_team_name") or "")
+def _viewer_owner(ctx: dict) -> str:
+    return str((ctx.get("viewer") or {}).get("viewer_team_name") or "")
 
-    luck_svg = ""
+
+def _league_name(ctx: dict) -> str:
+    return str((ctx.get("league") or {}).get("name") or "")
+
+
+def _ordinal(n: int) -> str:
+    if 10 <= n % 100 <= 20:
+        suffix = "th"
+    else:
+        suffix = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
+
+
+# ── Shared tab shell ─────────────────────────────────────────────────────────
+
+def _graphs_style() -> str:
+    """Scoped CSS for the tabbed League Stats page. Uses theme vars with
+    light fallbacks so cards read in both themes."""
+    return """<style>
+.gs-head{margin:0 0 4px;}
+.gs-head h1{font-size:22px;font-weight:800;margin:0 0 2px;}
+.gs-head p{font-size:13px;color:var(--text-muted,#64748b);margin:0 0 14px;}
+.gs-tabs{display:flex;gap:8px;margin-bottom:16px;overflow-x:auto;padding-bottom:2px;}
+.gs-tab{padding:8px 16px;border-radius:8px;font-size:13px;font-weight:700;background:var(--card,#fff);border:1px solid var(--border,#e2e8f0);color:var(--text-muted,#64748b);white-space:nowrap;cursor:pointer;font-family:inherit;}
+.gs-tab.active{background:#1e3a5f;color:#fff;border-color:#1e3a5f;}
+.gs-pane{display:none;}
+.gs-pane.active{display:block;}
+.gs-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;}
+@media (max-width:700px){.gs-grid{grid-template-columns:1fr;}}
+.gs-sub{font-size:12px;color:var(--text-muted,#94a3b8);margin-bottom:10px;}
+.gs-insight{margin-top:12px;padding:10px 12px;background:rgba(30,58,95,.07);border-radius:8px;font-size:13px;line-height:1.5;}
+.gs-legend{display:flex;gap:12px;flex-wrap:wrap;margin-top:8px;font-size:11px;color:var(--text-muted,#64748b);}
+.gs-dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px;vertical-align:baseline;}
+.gs-bar-row{display:grid;grid-template-columns:minmax(90px,130px) 1fr 52px;gap:8px;align-items:center;padding:5px 6px;margin:0 -6px;font-size:12px;border-radius:6px;}
+.gs-bar-row .nm{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.gs-bar-row.you{background:rgba(30,58,95,.08);}
+.gs-track{height:10px;background:rgba(127,127,127,.14);border-radius:5px;overflow:hidden;}
+.gs-fill{height:100%;border-radius:5px;}
+.gs-bar-row .v{text-align:right;font-variant-numeric:tabular-nums;color:var(--text-muted,#475569);}
+.gs-btn{display:inline-block;margin-top:10px;padding:9px 18px;border-radius:8px;background:#1e3a5f;color:#fff;font-weight:700;font-size:13px;text-decoration:none;}
+.cons-row{display:grid;grid-template-columns:12px minmax(90px,1.4fr) 3fr auto auto;align-items:center;gap:10px;padding:7px 2px;border-bottom:1px solid var(--border,#f1f5f9);}
+.cons-row:last-child{border-bottom:none;}
+.cons-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+.cons-name{font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.cons-track{height:8px;border-radius:5px;background:rgba(127,127,127,.14);overflow:hidden;}
+.cons-fill{display:block;height:100%;border-radius:5px;}
+.cons-vol{font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--text-muted,#64748b);min-width:34px;text-align:right;}
+.cons-band{font-size:11px;font-weight:800;letter-spacing:.03em;padding:2px 8px;border-radius:8px;white-space:nowrap;}
+@media (max-width:520px){.cons-row{grid-template-columns:10px minmax(70px,1fr) 2fr auto;}.cons-vol{display:none;}}
+</style>"""
+
+
+def _page_header(league_name: str, season_label: str) -> str:
+    sub = " · ".join(p for p in (league_name, season_label) if p)
+    sub_html = f"<p>{html.escape(sub)}</p>" if sub else ""
+    return f'<div class="gs-head"><h1>League Stats</h1>{sub_html}</div>'
+
+
+def _tab_shell(active_tab: str, panes: Dict[str, tuple]) -> str:
+    """Tab bar + panes. ``panes`` maps key -> (label, cards_html). The active
+    pane's cards sit in the 2-column grid."""
+    tabs = []
+    bodies = []
+    for key, (label, cards_html) in panes.items():
+        cls = "gs-tab active" if key == active_tab else "gs-tab"
+        tabs.append(
+            f'<button class="{cls}" data-tab="{key}" role="tab" '
+            f'aria-selected="{str(key == active_tab).lower()}">{html.escape(label)}</button>'
+        )
+        pane_cls = "gs-pane active" if key == active_tab else "gs-pane"
+        bodies.append(
+            f'<div class="{pane_cls}" id="gs-pane-{key}" role="tabpanel">'
+            f'<div class="gs-grid">{cards_html}</div></div>'
+        )
+    return (
+        f'<div class="gs-tabs" role="tablist">{"".join(tabs)}</div>'
+        f'{"".join(bodies)}'
+    )
+
+
+def _tabs_js() -> str:
+    """Client-side tab switching. Plotly charts render while their pane is
+    hidden at 0 width, so resize any plot in the pane being revealed."""
+    return """<script>(function(){
+var tabs=document.querySelectorAll('.gs-tabs .gs-tab[data-tab]');
+tabs.forEach(function(t){t.addEventListener('click',function(){
+tabs.forEach(function(x){x.classList.remove('active');x.setAttribute('aria-selected','false');});
+t.classList.add('active');t.setAttribute('aria-selected','true');
+document.querySelectorAll('.gs-pane').forEach(function(p){p.classList.remove('active');});
+var pane=document.getElementById('gs-pane-'+t.getAttribute('data-tab'));
+if(pane){pane.classList.add('active');
+if(window.Plotly){pane.querySelectorAll('.js-plotly-plot').forEach(function(el){try{window.Plotly.Plots.resize(el);}catch(e){}});}}
+});});})();</script>"""
+
+
+def _insight(text: str) -> str:
+    return f'<div class="gs-insight">{text}</div>' if text else ""
+
+
+def _card(title: str, subtitle: str, body_html: str, insight: str = "") -> str:
+    sub = f'<div class="gs-sub">{html.escape(subtitle)}</div>' if subtitle else ""
+    return (
+        f'<div class="card"><div class="card-header-row"><h2>{html.escape(title)}</h2></div>'
+        f'<div class="card-body graph-body">{sub}{body_html}{_insight(insight)}</div></div>'
+    )
+
+
+def _empty_card(message: str) -> str:
+    return (
+        f'<div class="card"><div class="card-body">'
+        f'<p style="color:var(--text-muted);">{html.escape(message)}</p>'
+        f"</div></div>"
+    )
+
+
+def _legend(items: List[tuple]) -> str:
+    spans = "".join(
+        f'<span><span class="gs-dot" style="background:{color}"></span>{html.escape(label)}</span>'
+        for color, label in items
+    )
+    return f'<div class="gs-legend">{spans}</div>'
+
+
+def _deferred_plotly_js(figs: Dict[str, str]) -> str:
+    """Render registered Plotly figs once Plotly loads. ``figs`` maps element
+    id -> fig JSON (already escaped)."""
+    if not figs:
+        return ""
+    entries = ",".join(f'"{cid}":' + fjson for cid, fjson in figs.items())
+    return (
+        "<script>(function(){"
+        "var _FIGS={" + entries + "};"
+        "var _CFG={responsive:true,displayModeBar:false};"
+        "(window.ensurePlotly?window.ensurePlotly():Promise.resolve(window.Plotly)).then(function(P){"
+        "if(!P)return;"
+        "Object.keys(_FIGS).forEach(function(id){"
+        "var f=_FIGS[id];var el=document.getElementById(id);"
+        "if(el)P.newPlot(el,f.data,f.layout,_CFG);"
+        "});});})();</script>"
+    )
+
+
+def _fig_json(fig) -> str:
+    return fig.to_json().replace("</", "<\\/")
+
+
+# ── Performance tab ──────────────────────────────────────────────────────────
+
+def _luck_analysis(df_weekly_finalized) -> dict:
+    """{owner: all-play row} from finalized weekly scores."""
+    weekly_scores: dict = {}
+    actual_wins: dict = {}
+    for _, r in df_weekly_finalized.iterrows():
+        try:
+            wk = int(r["week"])
+            owner = str(r["owner"])
+        except Exception:
+            continue
+        weekly_scores.setdefault(wk, {})[owner] = float(r["points"] or 0)
+        actual_wins[owner] = actual_wins.get(owner, 0.0) + float(r.get("win") or 0)
+    return all_play_analysis(weekly_scores, actual_wins)
+
+
+def _luck_card(df_weekly_finalized, viewer_owner: str, owner_colors: dict) -> str:
+    """Performance vs Luck scatter (all-play win rate vs actual), with a
+    plain-English read of the viewer's luck delta."""
     try:
-        if df_weekly_finalized is not None and not df_weekly_finalized.empty:
-            weekly_scores: dict = {}
-            actual_wins: dict = {}
-            for _, r in df_weekly_finalized.iterrows():
-                wk = int(r["week"])
-                owner = str(r["owner"])
-                weekly_scores.setdefault(wk, {})[owner] = float(r["points"] or 0)
-                actual_wins[owner] = actual_wins.get(owner, 0.0) + float(r.get("win") or 0)
-            luck_svg = luck_quadrant_svg(all_play_analysis(weekly_scores, actual_wins), viewer_owner, owner_colors)
+        analysis = _luck_analysis(df_weekly_finalized)
+        svg = luck_quadrant_svg(analysis, viewer_owner, owner_colors)
     except Exception:
-        luck_svg = ""
-
-    value_age_svg_str = ""
-    try:
-        from dashboard_services.ai.context_builders import ctx_scoring_type, team_value_age_rows
-        # Age-vs-value is a dynasty window chart. Redraft skips it.
-        if ctx_scoring_type(ctx) != "redraft":
-            value_age_svg_str = value_age_svg(team_value_age_rows(ctx), viewer_owner, owner_colors)
-    except Exception:
-        value_age_svg_str = ""
-
-    cards = ""
-    if luck_svg:
-        cards += f"""
-            <div class="card">
-              <div class="card-header-row">
-                <h2>Performance vs Luck</h2>
-              </div>
-              <div class="card-body graph-body svg-graph-body">
-                <div class="svg-graph-note">All-play win rate (how you would do against the whole league each week) vs your actual win rate. Above the dashed line means you have won more than your scoring earned.</div>
-                {luck_svg}
-              </div>
-            </div>"""
-    if value_age_svg_str:
-        cards += f"""
-            <div class="card">
-              <div class="card-header-row">
-                <h2>Dynasty Value vs Age</h2>
-              </div>
-              <div class="card-body graph-body svg-graph-body">
-                <div class="svg-graph-note">Each team by total roster value and average age. Top-left is young and loaded; top-right is a closing win-now window.</div>
-                {value_age_svg_str}
-              </div>
-            </div>"""
-    return cards
+        return ""
+    if not svg:
+        return ""
+    insight = ""
+    me = analysis.get(viewer_owner) if viewer_owner else None
+    if me and me.get("luck_delta") is not None and me.get("games"):
+        aw = float(me["actual_wins"])
+        exp = float(me["expected_wins"])
+        delta = float(me["luck_delta"])
+        games = int(me["games"])
+        losses = games - aw
+        if float(aw).is_integer() and float(losses).is_integer():
+            rec = f"{int(aw)}-{int(losses)}"
+        else:
+            rec = f"{aw:.1f} wins in {games} games"
+        if delta >= 1.0:
+            verdict = "You've been lucky."
+        elif delta <= -1.0:
+            verdict = "You've been unlucky."
+        else:
+            verdict = "Your record matches your scoring."
+        insight = (
+            f"You're {rec} but your all-play record says {exp:.1f} wins. {verdict}"
+        )
+    you_color = owner_colors.get(viewer_owner, _YOU_BLUE) if viewer_owner else _YOU_BLUE
+    legend = _legend([(you_color, "You"), (_LEAGUE_GRAY, "League")])
+    return _card(
+        "Performance vs Luck",
+        "All-play win rate (true strength) vs actual win rate. Above the dashed line means more wins than your scoring earned.",
+        f'<div class="svg-graph-body">{svg}</div>{legend}',
+        insight,
+    )
 
 
-def _consistency_card(team_stats, owner_colors: dict) -> str:
+def _consistency_card(team_stats, owner_colors: dict, viewer_owner: str) -> str:
     """Boom/bust consistency ranking from each team's weekly scoring spread.
 
-    Uses the coefficient of variation (STD / AVG): a lower ratio means a team
-    posts a similar score every week (steady), a higher ratio means big swings
-    (boom/bust). Teams are split into thirds by that ratio so the Steady /
-    Balanced / Boom-Bust label is percentile-ranked within the league rather
-    than tied to absolute thresholds that vary by scoring format."""
+    Uses the coefficient of variation (STD / AVG). Teams are split into thirds
+    by that ratio so the Steady / Balanced / Boom-Bust label is percentile-ranked
+    within the league rather than tied to absolute thresholds that vary by
+    scoring format."""
     rows = []
     for _, r in team_stats.iterrows():
         try:
-            owner = r["owner"]
+            owner = str(r["owner"])
             avg = float(r.get("AVG") or 0)
             std = float(r.get("STD") or 0)
         except Exception:
@@ -124,109 +290,255 @@ def _consistency_card(team_stats, owner_colors: dict) -> str:
         return "Boom / Bust", "#ef4444"
 
     body = ""
+    viewer_rank = None
+    viewer_band = ""
     for i, (owner, avg, std, cv) in enumerate(rows):
         label, col = _band(i)
+        is_you = viewer_owner and owner == viewer_owner
+        if is_you:
+            viewer_rank = i + 1
+            viewer_band = label
         dot = owner_colors.get(owner, "#9ca3af")
         bar_w = 10 + (cv - lo) / rng * 90      # 10..100% of the track
+        name = html.escape(owner) + (" (you)" if is_you else "")
         body += (
             f"<div class='cons-row'>"
             f"<span class='cons-dot' style='background:{dot};'></span>"
-            f"<span class='cons-name'>{html.escape(str(owner))}</span>"
+            f"<span class='cons-name'>{name}</span>"
             f"<span class='cons-track'><span class='cons-fill' style='width:{bar_w:.0f}%;background:{col};'></span></span>"
             f"<span class='cons-vol' title='Week-to-week volatility (std / avg)'>{cv * 100:.0f}%</span>"
             f"<span class='cons-band' style='color:{col};background:{col}1a;'>{label}</span>"
             f"</div>"
         )
-    return f"""
-    <div class="card">
-      <div class="card-header-row"><h2>Consistency (Boom / Bust)</h2></div>
-      <div class="card-body">
-        <div class="svg-graph-note">Week-to-week scoring volatility (standard deviation as a share of a team's average). Lower is steadier; higher swings between booms and busts. Ranked steadiest to most volatile.</div>
-        <style>
-          .cons-row {{ display:grid; grid-template-columns:12px minmax(90px,1.4fr) 3fr auto auto; align-items:center; gap:10px; padding:7px 2px; border-bottom:1px solid var(--border); }}
-          .cons-row:last-child {{ border-bottom:none; }}
-          .cons-dot {{ width:10px; height:10px; border-radius:50%; flex-shrink:0; }}
-          .cons-name {{ font-weight:600; font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
-          .cons-track {{ height:8px; border-radius:5px; background:var(--row,rgba(127,127,127,.12)); overflow:hidden; }}
-          .cons-fill {{ display:block; height:100%; border-radius:5px; }}
-          .cons-vol {{ font-size:13px; font-weight:700; font-variant-numeric:tabular-nums; color:var(--muted); min-width:34px; text-align:right; }}
-          .cons-band {{ font-size:11px; font-weight:800; letter-spacing:.03em; padding:2px 8px; border-radius:8px; white-space:nowrap; }}
-          @media (max-width:520px) {{ .cons-row {{ grid-template-columns:10px minmax(70px,1fr) 2fr auto; }} .cons-vol {{ display:none; }} }}
-        </style>
-        {body}
-      </div>
-    </div>"""
+    insight = ""
+    if viewer_rank is not None:
+        cv = rows[viewer_rank - 1][3]
+        insight = (
+            f"You rank {_ordinal(viewer_rank)} of {n} in steadiness "
+            f"({cv * 100:.0f}% spread), in the {viewer_band} third."
+        )
+    return _card(
+        "Consistency Ranking",
+        "Weekly scoring spread (coefficient of variation). Lower is steadier; higher swings between booms and busts.",
+        body,
+        insight,
+    )
 
 
-def _luck_trend_fig(df_weekly_finalized, owner_colors: dict):
-    """Luck-over-time line chart: cumulative actual-minus-expected wins per
-    team after each finalized week, from all-play win rate. Returns a Plotly
-    figure, or None when there is not enough data. Best-effort: any failure
-    yields None so the card simply does not render."""
+# ── Value tab ────────────────────────────────────────────────────────────────
+
+def _value_age_card(rows: list, viewer_owner: str, owner_colors: dict) -> str:
+    """Dynasty Value vs Age scatter, with the viewer's window read from real
+    value rank and age vs the league average."""
+    try:
+        svg = value_age_svg(rows, viewer_owner, owner_colors)
+    except Exception:
+        return ""
+    if not svg:
+        return ""
+    insight = ""
+    me = next((r for r in rows if str(r.get("owner")) == viewer_owner), None) if viewer_owner else None
+    if me:
+        vals = sorted((float(r.get("total_value") or 0) for r in rows), reverse=True)
+        ages = [float(r.get("avg_age") or 0) for r in rows if (r.get("avg_age") or 0) > 0]
+        rank = vals.index(float(me.get("total_value") or 0)) + 1
+        my_age = float(me.get("avg_age") or 0)
+        league_age = sum(ages) / len(ages) if ages else 0
+        younger = my_age < league_age
+        insight = (
+            f"Your roster (age {my_age:.1f}) is "
+            f"{'younger than' if younger else 'older than'} the league average "
+            f"({league_age:.1f}) and ranks {_ordinal(rank)} of {len(vals)} in dynasty value."
+        )
+    you_color = owner_colors.get(viewer_owner, _YOU_BLUE) if viewer_owner else _YOU_BLUE
+    legend = _legend([(you_color, "You"), (_LEAGUE_GRAY, "League")])
+    return _card(
+        "Dynasty Value vs Age",
+        "Each team by total roster value and average age. Top-left is young and loaded; top-right is a closing win-now window.",
+        f'<div class="svg-graph-body">{svg}</div>{legend}',
+        insight,
+    )
+
+
+def _roster_value_card(rows: list, viewer_owner: str, owner_colors: dict) -> str:
+    """Roster Value by Team: horizontal bars, viewer row highlighted."""
+    valued = [r for r in (rows or []) if (r.get("total_value") or 0) > 0]
+    if len(valued) < 2:
+        return ""
+    valued.sort(key=lambda r: -float(r.get("total_value") or 0))
+    top = float(valued[0].get("total_value") or 0) or 1.0
+    body = ""
+    viewer_rank = None
+    for i, r in enumerate(valued):
+        owner = str(r.get("owner"))
+        v = float(r.get("total_value") or 0)
+        is_you = viewer_owner and owner == viewer_owner
+        if is_you:
+            viewer_rank = i + 1
+        cls = "gs-bar-row you" if is_you else "gs-bar-row"
+        name = html.escape(owner) + (" (you)" if is_you else "")
+        color = owner_colors.get(owner, "#9ca3af")
+        body += (
+            f'<div class="{cls}"><span class="nm">{name}</span>'
+            f'<div class="gs-track"><div class="gs-fill" '
+            f'style="width:{v / top * 100:.1f}%;background:{color};"></div></div>'
+            f'<span class="v">{v:,.0f}</span></div>'
+        )
+    insight = ""
+    if viewer_rank is not None:
+        mine = float(valued[viewer_rank - 1].get("total_value") or 0)
+        if viewer_rank == 1:
+            insight = f"You have the most valuable roster in the league ({mine:,.0f})."
+        else:
+            gap = top - mine
+            leader = html.escape(str(valued[0].get("owner")))
+            insight = (
+                f"You rank {_ordinal(viewer_rank)} of {len(valued)} in roster value, "
+                f"{gap:,.0f} behind {leader}."
+            )
+    return _card(
+        "Roster Value by Team",
+        "Total dynasty value on each roster, highest first.",
+        body,
+        insight,
+    )
+
+
+def _value_pane(value_ctx: dict, viewer_owner: str, owner_colors: dict) -> str:
+    """The Value tab: value-vs-age scatter plus roster-value bars. Dynasty-only;
+    redraft leagues get an honest empty state instead of empty charts."""
+    try:
+        from dashboard_services.ai.context_builders import ctx_scoring_type, team_value_age_rows
+        if ctx_scoring_type(value_ctx) == "redraft":
+            return _empty_card(
+                "Dynasty value charts are for dynasty and keeper leagues. "
+                "This league is redraft."
+            )
+        rows = team_value_age_rows(value_ctx)
+    except Exception:
+        return _empty_card("Roster value data is unavailable right now.")
+    cards = _value_age_card(rows, viewer_owner, owner_colors)
+    cards += _roster_value_card(rows, viewer_owner, owner_colors)
+    if not cards:
+        return _empty_card("No roster value data available.")
+    return cards
+
+
+# ── Trends tab ───────────────────────────────────────────────────────────────
+
+def _trend_card(df_weekly_finalized, viewer_owner: str, owner_colors: dict, figs: dict) -> str:
+    """Weekly Scoring Trend: the viewer's line (thick, team color) against the
+    league average (dashed). Falls back to all teams when the viewer is unknown."""
     try:
         weeks = sorted(int(w) for w in df_weekly_finalized["week"].unique())
         if not weeks:
-            return None
-        owners = [str(o) for o in df_weekly_finalized["owner"].unique().tolist()]
-        series = {o: [] for o in owners}
-        for wk in weeks:
-            sub = df_weekly_finalized[df_weekly_finalized["week"] <= wk]
-            ws, aw = {}, {}
-            for _, r in sub.iterrows():
-                w = int(r["week"])
-                o = str(r["owner"])
-                ws.setdefault(w, {})[o] = float(r["points"] or 0)
-                aw[o] = aw.get(o, 0.0) + float(r.get("win") or 0)
-            ap = all_play_analysis(ws, aw)
-            for o in owners:
-                ld = (ap.get(o) or {}).get("luck_delta")
-                series[o].append(float(ld) if ld is not None else None)
+            return ""
+        wk_avg = df_weekly_finalized.groupby("week")["points"].mean()
+        avg_line = [float(wk_avg[w]) for w in weeks]
         traces = []
-        for o in owners:
-            pts = [(w, v) for w, v in zip(weeks, series[o]) if v is not None]
-            if not pts:
-                continue
-            xs, ys = zip(*pts)
+        me = None
+        owners = {str(o) for o in df_weekly_finalized["owner"].astype(str).tolist()}
+        if viewer_owner and viewer_owner in owners:
+            g = df_weekly_finalized[
+                df_weekly_finalized["owner"].astype(str) == viewer_owner
+            ].sort_values("week")
+            me = [float(v) for v in g["points"].tolist()]
+            me_weeks = [int(w) for w in g["week"].tolist()]
             traces.append(
                 go.Scatter(
-                    x=list(xs), y=list(ys),
+                    x=me_weeks, y=me,
                     mode="lines+markers",
-                    name=o,
-                    line=dict(color=owner_colors.get(o)),
-                    marker=dict(size=6),
+                    name=viewer_owner,
+                    line=dict(color=owner_colors.get(viewer_owner, _YOU_BLUE), width=3.5),
+                    marker=dict(size=7),
                     showlegend=False,
+                    hovertemplate="Wk %{x}: %{y:.1f}<extra></extra>",
                 )
             )
-        if not traces:
-            return None
+        else:
+            for owner, gg in df_weekly_finalized.sort_values("week").groupby("owner"):
+                gg = gg.sort_values("week")
+                traces.append(
+                    go.Scatter(
+                        x=[int(w) for w in gg["week"].tolist()],
+                        y=[float(v) for v in gg["points"].tolist()],
+                        mode="lines",
+                        name=str(owner),
+                        line=dict(color=owner_colors.get(str(owner)), width=1.5),
+                        opacity=0.55,
+                        showlegend=False,
+                    )
+                )
         traces.append(
             go.Scatter(
-                x=[weeks[0], weeks[-1]], y=[0, 0],
+                x=weeks, y=avg_line,
                 mode="lines",
-                line=dict(dash="dash", color="#9ca3af"),
-                name="Even luck",
+                name="League avg",
+                line=dict(dash="dash", width=2, color=_LEAGUE_GRAY),
                 showlegend=False,
-                hoverinfo="skip",
+                hovertemplate="Wk %{x}: %{y:.1f} avg<extra></extra>",
             )
         )
         fig = go.Figure(traces)
         fig.update_layout(
             xaxis_title=dict(text="Week", standoff=12),
             xaxis=dict(dtick=1),
-            yaxis_title=dict(text="Luck (wins above expected)"),
+            yaxis_title=dict(text="Points"),
             hovermode="x unified",
-            margin=dict(l=52, r=20, t=10, b=45),
+            margin=dict(l=44, r=16, t=10, b=45),
             showlegend=False,
         )
-        return fig
+        apply_brand_layout(fig)
+        figs["chart-trend"] = _fig_json(fig)
+
+        insight = ""
+        if me:
+            parts = []
+            if len(me) >= 3:
+                last3 = me[-3:]
+                direction = (
+                    "up" if last3[-1] > last3[0]
+                    else "down" if last3[-1] < last3[0]
+                    else "flat"
+                )
+                parts.append(
+                    "Your scoring is trending "
+                    + direction
+                    + ": "
+                    + " → ".join(f"{v:.0f}" for v in last3)
+                    + " over the last 3 weeks."
+                )
+            vavg = sum(me) / len(me)
+            lavg = float(np.mean(avg_line))
+            diff = vavg - lavg
+            parts.append(
+                f"You're averaging {abs(diff):.1f} points "
+                f"{'above' if diff >= 0 else 'below'} the league."
+            )
+            insight = " ".join(parts)
+        else:
+            avgs = df_weekly_finalized.groupby("owner")["points"].mean().sort_values(ascending=False)
+            if not avgs.empty:
+                insight = (
+                    f"{html.escape(str(avgs.index[0]))} leads the league "
+                    f"at {float(avgs.iloc[0]):.1f} points per week."
+                )
+        you_color = owner_colors.get(viewer_owner, _YOU_BLUE) if me else _LEAGUE_GRAY
+        legend = _legend([(you_color, "You"), (_LEAGUE_GRAY, "League avg")])
+        return _card(
+            "Weekly Scoring Trend",
+            "Points for by week: your team against the league average.",
+            '<div id="chart-trend" style="width:100%;min-height:350px;"></div>' + legend,
+            insight,
+        )
     except Exception:
-        return None
+        return ""
 
 
 def _sos_fig(df_weekly_finalized, owner_colors: dict):
     """Strength-of-schedule bar chart: average opponent score faced per team.
-    Returns a Plotly figure, or None when points_against is unavailable.
-    Best-effort: any failure yields None so the card simply does not render."""
+    Fallback for the SOS card when the viewer can't be identified. Returns a
+    Plotly figure, or None when points_against is unavailable."""
     try:
         if "points_against" not in getattr(df_weekly_finalized, "columns", []):
             return None
@@ -266,16 +578,157 @@ def _sos_fig(df_weekly_finalized, owner_colors: dict):
         return None
 
 
-def build_graphs_body(ctx: dict) -> str:
-    team_stats = ctx["team_stats"]
-    df_weekly = ctx["df_weekly"]
+def _sos_card(df_weekly_finalized, viewer_owner: str, owner_colors: dict, figs: dict) -> str:
+    """Strength of Schedule: the viewer's opponent points by week, with weeks
+    above the league average highlighted. Falls back to the per-team average
+    chart when the viewer can't be identified."""
+    try:
+        if "points_against" not in getattr(df_weekly_finalized, "columns", []):
+            return ""
+        owners = {str(o) for o in df_weekly_finalized["owner"].astype(str).tolist()}
+        if viewer_owner and viewer_owner in owners:
+            g = df_weekly_finalized[
+                df_weekly_finalized["owner"].astype(str) == viewer_owner
+            ].sort_values("week")
+            weeks = [int(w) for w in g["week"].tolist()]
+            opp = [float(v) for v in g["points_against"].tolist()]
+            if not weeks:
+                return ""
+            wk_avg = df_weekly_finalized.groupby("week")["points_against"].mean()
+            league_avg = float(wk_avg.mean())
+            colors = [
+                _ABOVE_AMBER if v > float(wk_avg[w]) else _BELOW_BLUE
+                for v, w in zip(opp, weeks)
+            ]
+            fig = go.Figure(
+                go.Bar(
+                    x=weeks, y=opp,
+                    marker=dict(color=colors),
+                    showlegend=False,
+                    hovertemplate="Wk %{x}: %{y:.1f} opp pts<extra></extra>",
+                )
+            )
+            fig.update_layout(
+                xaxis_title=dict(text="Week", standoff=12),
+                xaxis=dict(dtick=1),
+                yaxis_title=dict(text="Opponent points"),
+                margin=dict(l=44, r=16, t=10, b=45),
+                showlegend=False,
+                shapes=[dict(
+                    type="line",
+                    x0=min(weeks) - 0.6, x1=max(weeks) + 0.6,
+                    y0=league_avg, y1=league_avg,
+                    line=dict(dash="dash", color=_LEAGUE_GRAY),
+                )],
+            )
+            apply_brand_layout(fig)
+            figs["chart-sos"] = _fig_json(fig)
+            vavg = sum(opp) / len(opp)
+            insight = (
+                f"Opponents have averaged {vavg:.1f} against you vs "
+                f"{league_avg:.1f} league-wide. You've faced a "
+                f"{'tougher' if vavg > league_avg else 'softer'} than average schedule."
+            )
+            legend = _legend([(_ABOVE_AMBER, "Above avg week"), (_BELOW_BLUE, "Below avg week")])
+            return _card(
+                "Strength of Schedule",
+                "Opponent points faced by week. Weeks you faced above-average opponents are highlighted.",
+                '<div id="chart-sos" style="width:100%;min-height:350px;"></div>' + legend,
+                insight,
+            )
+        # Fallback: per-team average opponent score.
+        fig = _sos_fig(df_weekly_finalized, owner_colors)
+        if fig is None:
+            return ""
+        apply_brand_layout(fig)
+        figs["chart-sos"] = _fig_json(fig)
+        avgs = (
+            df_weekly_finalized.dropna(subset=["points_against"])
+            .groupby("owner")["points_against"].mean().sort_values(ascending=False)
+        )
+        insight = ""
+        if not avgs.empty:
+            insight = (
+                f"{html.escape(str(avgs.index[0]))} has faced the toughest schedule "
+                f"({float(avgs.iloc[0]):.1f} avg opponent score)."
+            )
+        return _card(
+            "Strength of Schedule",
+            "Average opponent score each team has faced. Dashed line is the league average.",
+            '<div id="chart-sos" style="width:100%;min-height:350px;"></div>',
+            insight,
+        )
+    except Exception:
+        return ""
+
+
+# ── Season panes ─────────────────────────────────────────────────────────────
+
+def _finalized_weekly(df_weekly):
     if df_weekly is None or "finalized" not in getattr(df_weekly, "columns", []):
-        df_weekly = None
-    else:
-        df_weekly = df_weekly[df_weekly["finalized"] == True].copy()
+        return None
+    sub = df_weekly[df_weekly["finalized"] == True].copy()
+    return sub if not sub.empty else None
+
+
+def _season_panes(perf_ctx: dict, value_ctx: dict, viewer_owner: str, figs: dict) -> Dict[str, tuple]:
+    """The Performance / Value / Trends panes for one season. ``perf_ctx``
+    carries the weekly results (luck, consistency, trends); ``value_ctx``
+    carries the rosters used for the dynasty value cards (usually the same ctx,
+    but the career view passes current rosters for value)."""
+    team_stats = perf_ctx.get("team_stats") if perf_ctx else None
+    df_weekly = _finalized_weekly(perf_ctx.get("df_weekly") if perf_ctx else None)
+    if team_stats is None or getattr(team_stats, "empty", True) or df_weekly is None:
+        empty = (
+            "<div class='card central'><div class='card-body'>"
+            "<p style='color:var(--text-muted);'>No weekly data available for this season.</p>"
+            "</div></div>"
+        )
+        return {
+            "perf": ("Performance", empty),
+            "value": ("Value", empty),
+            "trends": ("Trends", empty),
+        }
+
+    owners = team_stats["owner"].tolist()
+    owner_colors = owner_color_map(owners)
+
+    perf_html = _luck_card(df_weekly, viewer_owner, owner_colors)
+    perf_html += _consistency_card(team_stats, owner_colors, viewer_owner)
+    if not perf_html:
+        perf_html = _empty_card("Not enough weekly data for performance charts.")
+
+    v_owners = []
+    vts = (value_ctx or {}).get("team_stats")
+    if vts is not None and not getattr(vts, "empty", True) and "owner" in vts.columns:
+        v_owners = vts["owner"].tolist()
+    value_html = _value_pane(value_ctx or {}, viewer_owner, owner_color_map(v_owners or owners))
+
+    trends_html = _trend_card(df_weekly, viewer_owner, owner_colors, figs)
+    trends_html += _sos_card(df_weekly, viewer_owner, owner_colors, figs)
+    if not trends_html:
+        trends_html = _empty_card("Not enough weekly data for trend charts.")
+
+    return {
+        "perf": ("Performance", perf_html),
+        "value": ("Value", value_html),
+        "trends": ("Trends", trends_html),
+    }
+
+
+def build_graphs_body(ctx: dict, *, tab: str = "perf", career_url: str = "",
+                       season_label: str = "") -> str:
+    """Seasonal League Stats body: header, the four tabs, and the tab panes.
+
+    ``tab`` selects the initially active tab ("perf" | "value" | "trends").
+    ``career_url`` feeds the Career pane's call-to-action. ``season_label``
+    (e.g. "2026 season") goes under the page title next to the league name.
+    """
+    team_stats = ctx["team_stats"]
+    df_weekly = _finalized_weekly(ctx["df_weekly"])
     if (
         team_stats is None or getattr(team_stats, "empty", True)
-        or df_weekly is None or getattr(df_weekly, "empty", True)
+        or df_weekly is None
     ):
         return """
             <div class="card central graphs-empty">
@@ -286,682 +739,204 @@ def build_graphs_body(ctx: dict) -> str:
               </div>
             </div>"""
 
-    # ---------- Core aggregates ----------
-    pr_sorted = (
-        team_stats.sort_values(["PowerScore", "PF"], ascending=[False, False])
-        .reset_index(drop=True)
+    viewer_owner = _viewer_owner(ctx)
+    figs: Dict[str, str] = {}
+    panes = _season_panes(ctx, ctx, viewer_owner, figs)
+
+    career_cta = (
+        "<p style='color:var(--text-muted);margin:0;'>"
+        "Career stats aggregate every completed season: your franchise win% "
+        "trajectory and points by season.</p>"
     )
-    top3 = pr_sorted.head(3)
-    wk_avg = df_weekly.groupby("week")["points"].mean().reset_index()
+    if career_url:
+        career_cta += f'<a class="gs-btn" href="{html.escape(career_url)}">View career stats</a>'
+    panes["career"] = ("Career", _card("Career", "", career_cta))
 
-    metrics = ["PF", "PA", "MAX", "MIN", "AVG", "STD"]
-    Z = z_better_outward(team_stats, metrics)
-    theta = metrics
-    z_map: Dict[str, list] = {
-        team_stats.loc[i, "owner"]: Z.iloc[i].values.astype(float).tolist()
-        for i in range(len(team_stats))
-    }
-
-    owners = team_stats["owner"].tolist()
-
-    # ---------- ONE shared color map ----------
-    # Validated categorical palette (dataviz skill): worst adjacent CVD ΔE 9.1,
-    # normal-vision ΔE 19.6; the lighter hues' sub-3:1 surface contrast is relieved
-    # by the direct team labels + legend every chart carries. Leagues past 8 teams
-    # cycle - no 10+ hue set can stay CVD-distinct, so 8 validated beats 10 raw.
-    COLOR_CYCLE = [
-        "#2a78d6", "#eb6834", "#1baf7a", "#eda100",
-        "#e87ba4", "#008300", "#4a3aa7", "#e34948",
-    ]
-    owner_colors: Dict[str, str] = {}
-    for idx, o in enumerate(owners):
-        owner_colors[o] = COLOR_CYCLE[idx % len(COLOR_CYCLE)]
-
-    figs: Dict[str, go.Figure] = {}
-
-    # ---------- PF vs PA scatter ----------
-    # Offset / hide overlapping team labels in dense clusters (tour mock + big
-    # leagues); markers still carry hover/name when text is cleared.
-    scatter_traces = []
-    _owners = [str(r["owner"]) for _, r in team_stats.iterrows()]
-    _pas = [float(r["PA"]) for _, r in team_stats.iterrows()]
-    _pfs = [float(r["PF"]) for _, r in team_stats.iterrows()]
-    _label_plan = scatter_label_placements(_pas, _pfs, _owners)
-    for i, (_, r) in enumerate(team_stats.iterrows()):
-        owner = _owners[i]
-        text, textposition = _label_plan[i]
-        scatter_traces.append(
-            go.Scatter(
-                x=[_pas[i]],
-                y=[_pfs[i]],
-                mode="markers+text" if text else "markers",
-                text=[text] if text else None,
-                textposition=textposition if text else None,
-                cliponaxis=False,
-                marker=dict(
-                    size=11,
-                    line=dict(color="black", width=1),
-                    color=owner_colors.get(owner),
-                ),
-                name=owner,
-                showlegend=False,
-            )
-        )
-    x = team_stats["PA"].values
-    y = team_stats["PF"].values
-    if len(x) >= 2 and np.isfinite(x).all() and np.isfinite(y).all():
-        m = ((x - x.mean()) * (y - y.mean())).sum() / max(
-            ((x - x.mean()) ** 2).sum(), 1e-9
-        )
-        b = y.mean() - m * x.mean()
-        xs = [float(min(x) * 0.95), float(max(x) * 1.05)]
-        ys = [m * xs[0] + b, m * xs[1] + b]
-        scatter_traces.append(
-            go.Scatter(
-                x=xs,
-                y=ys,
-                mode="lines",
-                line=dict(dash="dash", color="#9ca3af"),
-                name="Trend",
-                showlegend=False,
-            )
-        )
-
-    figs["pf_pa"] = go.Figure(scatter_traces)
-    _xr = None
-    if len(x) and np.isfinite(x).all():
-        _pad = max((float(max(x)) - float(min(x))) * 0.12, 1.0)
-        _xr = [float(min(x)) - _pad, float(max(x)) + _pad]
-    figs["pf_pa"].update_layout(
-        xaxis_title=dict(text="Points Against (PA)", standoff=12),
-        xaxis=dict(range=_xr, automargin=True) if _xr else dict(automargin=True),
-        yaxis_title=dict(text="Points For (PF)"),
-        yaxis=dict(automargin=True),
-        hovermode="closest",
-        margin=dict(l=52, r=40, t=10, b=45),
-        showlegend=False,
+    active = tab if tab in panes else "perf"
+    return (
+        _graphs_style()
+        + _page_header(_league_name(ctx), season_label)
+        + _tab_shell(active, panes)
+        + _deferred_plotly_js(figs)
+        + _tabs_js()
     )
 
-    # ---------- Weekly scores line chart ----------
-    line_traces = [
-        go.Scatter(
-            x=wk_avg["week"],
-            y=wk_avg["points"],
-            mode="lines",
-            name="League Avg",
-            line=dict(dash="dash", width=3, color="#9ca3af"),
-            opacity=0.7,
+
+# ── Career tab ───────────────────────────────────────────────────────────────
+
+def _winpct_streak_line(seasons: List[int], pcts: List[float]) -> str:
+    """Plain-English read of a franchise win% trajectory, from real values."""
+    n = len(pcts)
+    if n == 0:
+        return ""
+    if n == 1:
+        return f"One season on record: {pcts[0]:.0%} in {seasons[0]}."
+    # Consecutive season-over-season climbs ending at the latest season.
+    up = 0
+    i = n - 1
+    while i > 0 and pcts[i] > pcts[i - 1]:
+        up += 1
+        i -= 1
+    if up >= 2:
+        return f"Your franchise win% has climbed {up} straight seasons."
+    if pcts[-1] < pcts[-2]:
+        k = 0
+        j = n - 2
+        while j > 0 and pcts[j] > pcts[j - 1]:
+            k += 1
+            j -= 1
+        if k >= 1:
+            return (
+                f"Your win% dipped in {seasons[-1]} after climbing "
+                f"{k} straight season{'s' if k > 1 else ''}."
+            )
+        return f"Your win% dipped in {seasons[-1]} to {pcts[-1]:.0%}."
+    if pcts[-1] == pcts[-2]:
+        return f"Your win% held steady in {seasons[-1]} at {pcts[-1]:.0%}."
+    if up == 1:
+        return f"Your win% rose in {seasons[-1]} to {pcts[-1]:.0%}."
+    best_i = max(range(n), key=lambda i: pcts[i])
+    return (
+        f"Your win% has been up and down. {seasons[best_i]} was your best "
+        f"at {pcts[best_i]:.0%}."
+    )
+
+
+def _career_winpct_card(season_record_df, viewer_owner: str, owner_colors: dict, figs: dict) -> str:
+    """Career Win % by Season: the viewer's franchise trajectory line."""
+    if season_record_df is None or getattr(season_record_df, "empty", True):
+        return _empty_card("No career season records available.")
+    if not viewer_owner:
+        return _empty_card("Sign in to see your franchise trajectory.")
+    sub = season_record_df[
+        season_record_df["owner"].astype(str) == viewer_owner
+    ].copy()
+    if sub.empty:
+        return _empty_card("Your team wasn't found in the career records.")
+    try:
+        sub["season"] = sub["season"].astype(int)
+    except Exception:
+        return _empty_card("Your team wasn't found in the career records.")
+    sub = sub.sort_values("season")
+    seasons = sub["season"].tolist()
+    pcts = []
+    for _, r in sub.iterrows():
+        w = float(r.get("wins", 0) or 0)
+        l = float(r.get("losses", 0) or 0)
+        t = float(r.get("ties", 0) or 0)
+        g = w + l + t
+        pcts.append((w + 0.5 * t) / g if g else 0.0)
+    try:
+        fig = go.Figure(
+            go.Scatter(
+                x=seasons,
+                y=[p * 100 for p in pcts],
+                mode="lines+markers",
+                name=viewer_owner,
+                line=dict(color=owner_colors.get(viewer_owner, _YOU_BLUE), width=3),
+                marker=dict(size=8),
+                showlegend=False,
+                hovertemplate="%{x}: %{y:.0f}%<extra></extra>",
+            )
+        )
+        fig.update_layout(
+            xaxis_title=dict(text="Season", standoff=12),
+            xaxis=dict(dtick=1),
+            yaxis_title=dict(text="Win %"),
+            margin=dict(l=44, r=16, t=10, b=45),
             showlegend=False,
         )
-    ]
-    for owner, g in df_weekly.sort_values("week").groupby("owner"):
-        line_traces.append(
-            go.Scatter(
-                x=g["week"],
-                y=g["points"],
-                mode="lines+markers",
-                name=owner,
-                line=dict(color=owner_colors.get(owner)),
-                marker=dict(size=6),
-                showlegend=False,
-            )
-        )
-
-    figs["scores_line"] = go.Figure(line_traces)
-    figs["scores_line"].update_layout(
-        xaxis_title=dict(text="Week", standoff=12),
-        yaxis_title=dict(text="Points"),
-        hovermode="x unified",
-        margin=dict(l=40, r=20, t=10, b=90),
-        showlegend=False,
+        apply_brand_layout(fig)
+        figs["chart-career-wpct"] = _fig_json(fig)
+        chart = '<div id="chart-career-wpct" style="width:100%;min-height:350px;"></div>'
+    except Exception:
+        chart = ""
+    return _card(
+        "Career Win % by Season",
+        "Your all-time franchise trajectory.",
+        chart,
+        _winpct_streak_line(seasons, pcts),
     )
 
-    # ---------- Boxplot of scores by team ----------
-    order = (
-        df_weekly.groupby("owner")["points"]
-        .median()
-        .sort_values(ascending=False)
-        .index
-        .tolist()
+
+def _career_pf_card(season_pf_df, viewer_owner: str, owner_colors: dict) -> str:
+    """Career Points For: the viewer's total points by season, as bars."""
+    if season_pf_df is None or getattr(season_pf_df, "empty", True):
+        return _empty_card("No career scoring data available.")
+    if not viewer_owner:
+        return _empty_card("Sign in to see your franchise scoring history.")
+    sub = season_pf_df[
+        season_pf_df["owner"].astype(str) == viewer_owner
+    ].copy()
+    if sub.empty:
+        return _empty_card("Your team wasn't found in the career records.")
+    try:
+        sub["season"] = sub["season"].astype(int)
+    except Exception:
+        return _empty_card("Your team wasn't found in the career records.")
+    sub = sub.sort_values("season")
+    top = float(sub["pf"].max()) or 1.0
+    color = owner_colors.get(viewer_owner, _YOU_BLUE)
+    body = ""
+    for _, r in sub.iterrows():
+        v = float(r.get("pf") or 0)
+        body += (
+            f'<div class="gs-bar-row"><span class="nm">{int(r["season"])}</span>'
+            f'<div class="gs-track"><div class="gs-fill" '
+            f'style="width:{v / top * 100:.1f}%;background:{color};"></div></div>'
+            f'<span class="v">{v:,.0f}</span></div>'
+        )
+    best_idx = sub["pf"].astype(float).idxmax()
+    best_season = int(sub.loc[best_idx, "season"])
+    best_pf = float(sub.loc[best_idx, "pf"])
+    insight = (
+        f"{best_season} was your highest-scoring season ever ({best_pf:,.0f} points)."
     )
-    box_traces = []
-    for o in order:
-        pts = df_weekly.loc[df_weekly["owner"] == o, "points"]
-        box_traces.append(
-            go.Box(
-                y=pts,
-                name=o,
-                boxmean=True,
-                orientation="v",
-                hoveron="boxes",
-                boxpoints=False,
-                marker=dict(color=owner_colors.get(o)),
-                showlegend=False,
-            )
-        )
-
-    figs["scores_box"] = go.Figure(box_traces)
-    figs["scores_box"].update_layout(
-        xaxis_title=dict(text="Team", standoff=12),
-        yaxis_title=dict(text="Points"),
-        hovermode="closest",
-        margin=dict(l=40, r=20, t=10, b=120),
-        showlegend=False,
-    )
-
-    # ---------- Radar selectors ----------
-    if not owners:
-        owners = ["Team A", "Team B"]
-
-    opts_a = []
-    opts_b = []
-    for i, o in enumerate(owners):
-        sel_a = " selected" if i == 0 else ""
-        sel_b = " selected" if i == 1 else ""
-        opts_a.append(f"<option value='{o}'{sel_a}>{o}</option>")
-        opts_b.append(f"<option value='{o}'{sel_b}>{o}</option>")
-
-    opts_a_html = "".join(opts_a)
-    opts_b_html = "".join(opts_b)
-
-    # ---------- Convert figs to JS-safe JSON for deferred rendering ----------
-    def _fig_json(fig):
-        return fig.to_json().replace("</", "<\\/")
-
-    for _f in figs.values():
-        apply_brand_layout(_f)
-
-    pfpa_json = _fig_json(figs["pf_pa"])
-    line_json  = _fig_json(figs["scores_line"])
-    box_json   = _fig_json(figs["scores_box"])
-
-    # League-wide SVG scatters (luck quadrant + dynasty value vs age).
-    svg_cards_html = _luck_and_value_age_cards(ctx, df_weekly, owner_colors)
-    consistency_html = _consistency_card(team_stats, owner_colors)
-
-    # Luck-over-time and strength-of-schedule cards (best-effort; a None fig
-    # means the card is omitted).
-    luck_trend_fig = _luck_trend_fig(df_weekly, owner_colors)
-    if luck_trend_fig is not None:
-        apply_brand_layout(luck_trend_fig)
-    sos_fig = _sos_fig(df_weekly, owner_colors)
-    if sos_fig is not None:
-        apply_brand_layout(sos_fig)
-
-    luck_trend_html = ""
-    if luck_trend_fig is not None:
-        luck_trend_html = """
-            <div class="card">
-              <div class="card-header-row">
-                <h2>Luck Over Time</h2>
-              </div>
-              <div class="card-body graph-body">
-                <div class="svg-graph-note">Cumulative wins above (or below) what each team's scoring deserved, from all-play win rate. Above zero means the record is better than the scoring earned.</div>
-                <div id="chart-lucktrend" style="width:100%;min-height:350px;"></div>
-              </div>
-            </div>"""
-    sos_html = ""
-    if sos_fig is not None:
-        sos_html = """
-            <div class="card">
-              <div class="card-header-row">
-                <h2>Strength of Schedule Faced</h2>
-              </div>
-              <div class="card-body graph-body">
-                <div class="svg-graph-note">Average opponent score each team has faced so far. Dashed line is the league average. A soft schedule flatters a record; a brutal one hides a good team.</div>
-                <div id="chart-sos" style="width:100%;min-height:350px;"></div>
-              </div>
-            </div>"""
-
-    # ---------- Sidebar: top teams + metrics + unified legend ----------
-    top_rows = []
-    for _, r in top3.iterrows():
-        top_rows.append(
-            f"<div class='mini-row'>"
-            f"  <div class='mini-label'>{r['owner']}</div>"
-            f"  <div class='mini-value'>"
-            f"    <span class='mini-stat'>Power {r['PowerScore']:.1f}</span>"
-            f"    <span class='mini-stat'>PF {r['PF']:.1f}</span>"
-            f"  </div>"
-            f"</div>"
-        )
-    top3_html = "".join(top_rows)
-
-    legend_items = []
-    for o in owners:
-        color = owner_colors.get(o, "#9ca3af")
-        legend_items.append(
-            f"""
-            <div class="legend-row">
-              <span class="legend-dot" style="background:{color};"></span>
-              <span class="legend-label">{o}</span>
-            </div>
-            """
-        )
-    legend_html = "".join(legend_items)
-
-    sidebar_html = f"""
-        <div class="card small">
-          <div class="card-header">
-            <h3>Legend</h3>
-          </div>
-          <div class="card-body mini-body">
-            {legend_html}
-          </div>
-        </div>
-
-        <div class="card small">
-          <div class="card-header">
-            <h3>Metrics Key</h3>
-          </div>
-          <div class="card-body">
-            <ul class="ticker-list">
-              <li><span class="mini-label">PF</span> - Points For</li>
-              <li><span class="mini-label">PA</span> - Points Against</li>
-              <li><span class="mini-label">MAX</span> - Best weekly score</li>
-              <li><span class="mini-label">MIN</span> - Worst weekly score</li>
-              <li><span class="mini-label">AVG</span> - Average weekly score</li>
-              <li><span class="mini-label">STD</span> - Volatility of scores</li>
-            </ul>
-          </div>
-        </div>
-    """
-
-    # ---------- Radar JS (uses same owner_colors) ----------
-    js_radar = f"""
-    <script>
-    const ZMAP = {json.dumps(z_map)};
-    const METRICS = {json.dumps(theta)};
-    const COLORS = {json.dumps(owner_colors)};
-    const closeRing = arr => arr.concat(arr[0]);
-
-    function makeRadarData(teamA, teamB) {{
-      const a = (ZMAP[teamA] || METRICS.map(() => 0));
-      const b = (ZMAP[teamB] || METRICS.map(() => 0));
-
-      const colorA = COLORS[teamA] || '#1f77b4';
-      const colorB = COLORS[teamB] || '#ff7f0e';
-
-      return [
-        {{
-          type: 'scatterpolar',
-          r: closeRing(METRICS.map(() => 0)),
-          theta: closeRing(METRICS),
-          name: 'League Avg',
-          line: {{ dash: 'dash', color: '#9ca3af' }},
-          opacity: 0.8
-        }},
-        {{
-          type: 'scatterpolar',
-          r: closeRing(a),
-          theta: closeRing(METRICS),
-          name: teamA,
-          fill: 'toself',
-          opacity: 0.45,
-          line: {{ color: colorA }},
-          fillcolor: colorA
-        }},
-        {{
-          type: 'scatterpolar',
-          r: closeRing(b),
-          theta: closeRing(METRICS),
-          name: teamB,
-          fill: 'toself',
-          opacity: 0.45,
-          line: {{ color: colorB }},
-          fillcolor: colorB
-        }}
-      ];
-    }}
-
-    function renderRadar(teamA, teamB) {{
-      const el = document.getElementById('radar-cmp');
-      if (!el) return;
-
-      const layout = {{
-        title: 'Radar Comparison (select two teams)',
-        font: {{ family: (window.brandPlotlyFont || 'system-ui, sans-serif'), size: 12.5, color: '#7c8798' }},
-        paper_bgcolor: 'rgba(0,0,0,0)',
-        polar: {{ radialaxis: {{ visible: false }}, bgcolor: 'rgba(0,0,0,0)' }},
-        showlegend: false,
-        margin: {{ l: 40, r: 20, t: 40, b: 30 }}
-      }};
-
-      const data = makeRadarData(teamA, teamB);
-
-      (window.ensurePlotly ? window.ensurePlotly() : Promise.resolve(window.Plotly)).then(function(P) {{
-        if (!P) return;
-        if (!el._plotted) {{
-          P.newPlot(el, data, layout);
-          el._plotted = true;
-        }} else {{
-          P.react(el, data, layout);
-        }}
-      }});
-    }}
-
-    function _initRadar() {{
-      const selA = document.getElementById('radarTeamA');
-      const selB = document.getElementById('radarTeamB');
-      if (!selA || !selB) return;
-
-      renderRadar(selA.value, selB.value);
-
-      selA.addEventListener('change', () => renderRadar(selA.value, selB.value));
-      selB.addEventListener('change', () => renderRadar(selA.value, selB.value));
-    }}
-    // Soft-nav swaps never re-fire DOMContentLoaded (it already fired for
-    // this document), so init immediately when the document is parsed.
-    if (document.readyState === 'loading') {{
-      document.addEventListener('DOMContentLoaded', _initRadar);
-    }} else {{
-      _initRadar();
-    }}
-    </script>
-    """
-
-    # ---------- Deferred chart rendering (Plotly loaded on demand) ----------
-    _chart_entries = [
-        '"chart-pfpa":' + pfpa_json,
-        '"chart-line":' + line_json,
-        '"chart-box":' + box_json,
-    ]
-    if luck_trend_fig is not None:
-        _chart_entries.append('"chart-lucktrend":' + _fig_json(luck_trend_fig))
-    if sos_fig is not None:
-        _chart_entries.append('"chart-sos":' + _fig_json(sos_fig))
-    js_charts = (
-        '<script>(function(){'
-        'var _FIGS={' + ",".join(_chart_entries) + '};'
-        'var _CFG={responsive:true,displayModeBar:false};'
-        '(window.ensurePlotly?window.ensurePlotly():Promise.resolve(window.Plotly)).then(function(P){'
-        'if(!P)return;'
-        'Object.keys(_FIGS).forEach(function(id){'
-        'var f=_FIGS[id];var el=document.getElementById(id);'
-        'if(el)P.newPlot(el,f.data,f.layout,_CFG);'
-        '});});})();</script>'
+    return _card(
+        "Career Points For",
+        "Your total points by season.",
+        body,
+        insight,
     )
 
-    # ---------- Main layout ----------
-    main_html = f"""
-      <div class="page-layout" data-page="graphs">
-        <main class="page-main">
-          <div class="graphs-page">
-            <div class="card">
-              <div class="card-header-row">
-                <h2>PF vs PA Scatter</h2>
-              </div>
-              <div class="card-body graph-body">
-                <div id="chart-pfpa" style="width:100%;min-height:350px;"></div>
-              </div>
-            </div>
 
-            <div class="card">
-              <div class="card-header-row">
-                <h2>Weekly Scores by Team</h2>
-              </div>
-              <div class="card-body graph-body">
-                <div id="chart-line" style="width:100%;min-height:350px;"></div>
-              </div>
-            </div>
+def build_career_graphs_body(career_ctx: dict, *, season_ctx: dict = None,
+                             value_ctx: dict = None, viewer_owner: str = "",
+                             league_name: str = "") -> str:
+    """Career League Stats body: the four-tab shell with the Career tab active.
 
-            <div class="card">
-              <div class="card-header-row">
-                <h2>Score Distribution</h2>
-              </div>
-              <div class="card-body graph-body">
-                <div id="chart-box" style="width:100%;min-height:350px;"></div>
-              </div>
-            </div>
-
-            {consistency_html}
-
-            {svg_cards_html}
-
-            {luck_trend_html}
-
-            {sos_html}
-
-            <div class="card">
-              <div class="card-header-row">
-                <h2>Radar Comparison</h2>
-                <div class="radar-selectors">
-                  <label>
-                    Team A
-                    <select id="radarTeamA" class="search">
-                      {opts_a_html}
-                    </select>
-                  </label>
-                  <label>
-                    Team B
-                    <select id="radarTeamB" class="search">
-                      {opts_b_html}
-                    </select>
-                  </label>
-                </div>
-              </div>
-              <div class="card-body graph-body">
-                <div id="radar-cmp" style="width:100%;min-height:380px;"></div>
-              </div>
-            </div>
-
-          </div>
-        </main>
-
-        <aside class="page-sidebar">
-          {sidebar_html}
-        </aside>
-      </div>
-      {js_charts}
-      {js_radar}
+    ``season_ctx`` feeds the Performance/Value/Trends panes (usually the latest
+    completed season); ``value_ctx`` feeds the dynasty value cards (usually the
+    current rosters). Either may be None, in which case those panes show an
+    empty state.
     """
-
-    return main_html
-
-
-def build_career_graphs_body(career_ctx: dict) -> str:
-    """
-    Build Plotly graphs for the career (all-seasons aggregate) view.
-    career_ctx keys: team_stats, df_weekly (combined with 'season' col), season_pf_df, is_career
-    """
-    import pandas as pd  # local import fine since module already imports it at top
     team_stats = career_ctx.get("team_stats", pd.DataFrame())
-    df_all = career_ctx.get("df_weekly", pd.DataFrame())
-    season_pf_df = career_ctx.get("season_pf_df", pd.DataFrame())
-
     if team_stats.empty:
         return "<div class='card central'><div class='card-body'><p>No career data available.</p></div></div>"
 
     owners = team_stats["owner"].tolist()
-    owner_colors: dict = {}
-    for idx, o in enumerate(owners):
-        owner_colors[o] = COLOR_CYCLE[idx % len(COLOR_CYCLE)]
+    owner_colors = owner_color_map(owners)
+    figs: Dict[str, str] = {}
 
-    figs: dict = {}
+    panes: Dict[str, tuple] = {}
+    if season_ctx is not None:
+        panes = _season_panes(season_ctx, value_ctx or {}, viewer_owner, figs)
 
-    # ── 1. Career PF vs PA scatter ─────────────────────────────────────────
-    scatter_traces = []
-    _owners = [str(r["owner"]) for _, r in team_stats.iterrows()]
-    _pas = [float(r["PA"]) for _, r in team_stats.iterrows()]
-    _pfs = [float(r["PF"]) for _, r in team_stats.iterrows()]
-    _label_plan = scatter_label_placements(_pas, _pfs, _owners)
-    for i, (_, r) in enumerate(team_stats.iterrows()):
-        owner = _owners[i]
-        text, textposition = _label_plan[i]
-        scatter_traces.append(
-            go.Scatter(
-                x=[_pas[i]],
-                y=[_pfs[i]],
-                mode="markers+text" if text else "markers",
-                text=[text] if text else None,
-                textposition=textposition if text else None,
-                cliponaxis=False,
-                marker=dict(size=12, color=owner_colors.get(owner), line=dict(color="black", width=1)),
-                name=owner,
-                showlegend=False,
-            )
-        )
-    figs["pf_pa"] = go.Figure(scatter_traces)
-    _cx = team_stats["PA"].values
-    _cxr = None
-    if len(_cx) and np.isfinite(_cx).all():
-        _cpad = max((float(max(_cx)) - float(min(_cx))) * 0.12, 1.0)
-        _cxr = [float(min(_cx)) - _cpad, float(max(_cx)) + _cpad]
-    figs["pf_pa"].update_layout(
-        xaxis_title=dict(text="Career Points Against", standoff=12),
-        xaxis=dict(range=_cxr, automargin=True) if _cxr else dict(automargin=True),
-        yaxis_title=dict(text="Career Points For"),
-        yaxis=dict(automargin=True),
-        hovermode="closest",
-        margin=dict(l=52, r=40, t=10, b=45),
-        showlegend=False,
+    career_html = _career_winpct_card(
+        career_ctx.get("season_record_df"), viewer_owner, owner_colors, figs
     )
-
-    # ── 2. Season-by-season points per team (line chart) ──────────────────
-    season_fig_traces = []
-    if not season_pf_df.empty and {"season", "owner", "pf"}.issubset(season_pf_df.columns):
-        for owner, grp in season_pf_df.groupby("owner"):
-            grp = grp.sort_values("season")
-            season_fig_traces.append(
-                go.Scatter(
-                    x=grp["season"],
-                    y=grp["pf"],
-                    mode="lines+markers",
-                    name=str(owner),
-                    line=dict(color=owner_colors.get(str(owner))),
-                    marker=dict(size=7),
-                    showlegend=False,
-                    hovertemplate="%{fullData.name}<br>%{x}: %{y:.1f} PF<extra></extra>",
-                )
-            )
-    figs["season_pf"] = go.Figure(season_fig_traces)
-    figs["season_pf"].update_layout(
-        xaxis_title=dict(text="Season", standoff=12),
-        yaxis_title=dict(text="Total Points (regular season)"),
-        xaxis=dict(dtick=1),
-        hovermode="x unified",
-        margin=dict(l=40, r=20, t=10, b=60),
-        showlegend=False,
+    career_html += _career_pf_card(
+        career_ctx.get("season_pf_df"), viewer_owner, owner_colors
     )
+    panes["career"] = ("Career", career_html)
 
-    # ── 3. Career score distribution (all weekly scores, box plot) ─────────
-    finalized_df = df_all[df_all["finalized"] == True].copy() if "finalized" in df_all.columns else df_all.copy()
-    box_order = (
-        finalized_df.groupby("owner")["points"].median()
-        .sort_values(ascending=False).index.tolist()
-    ) if not finalized_df.empty and "points" in finalized_df.columns else owners
-
-    box_traces = []
-    for o in box_order:
-        pts = finalized_df.loc[finalized_df["owner"] == o, "points"] if not finalized_df.empty else pd.Series()
-        box_traces.append(
-            go.Box(
-                y=pts,
-                name=o,
-                boxmean=True,
-                boxpoints=False,
-                marker=dict(color=owner_colors.get(o)),
-                showlegend=False,
-            )
-        )
-    figs["box"] = go.Figure(box_traces)
-    figs["box"].update_layout(
-        xaxis_title=dict(text="Team", standoff=12),
-        yaxis_title=dict(text="Weekly Points"),
-        hovermode="closest",
-        margin=dict(l=40, r=20, t=10, b=120),
-        showlegend=False,
+    return (
+        _graphs_style()
+        + _page_header(league_name, "Career (all seasons)")
+        + _tab_shell("career", panes)
+        + _deferred_plotly_js(figs)
+        + _tabs_js()
     )
-
-    def _fig_json(fig):
-        return fig.to_json().replace("</", "<\\/")
-
-    for _f in figs.values():
-        apply_brand_layout(_f)
-
-    scatter_json = _fig_json(figs["pf_pa"])
-    season_json  = _fig_json(figs["season_pf"])
-    box_c_json   = _fig_json(figs["box"])
-
-    # ── Sidebar: career standings table ───────────────────────────────────
-    ts_sorted = team_stats.sort_values("PF", ascending=False).reset_index(drop=True)
-    sidebar_rows = ""
-    for _, r in ts_sorted.iterrows():
-        owner = r["owner"]
-        color = owner_colors.get(owner, "#9ca3af")
-        games = int(r.get("Wins", 0)) + int(r.get("Losses", 0)) + int(r.get("Ties", 0))
-        sidebar_rows += (
-            f"<div class='mini-row'>"
-            f"  <div class='mini-label' style='display:flex;align-items:center;gap:6px;'>"
-            f"    <span style='display:inline-block;width:8px;height:8px;border-radius:50%;background:{color};'></span>"
-            f"    {owner}"
-            f"  </div>"
-            f"  <div class='mini-value'>"
-            f"    <span class='mini-stat'>{int(r.get('Wins',0))}-{int(r.get('Losses',0))}</span>"
-            f"    <span class='mini-stat'>{r['PF']:.0f} PF</span>"
-            f"  </div>"
-            f"</div>"
-        )
-
-    sidebar_html = f"""
-        <div class="card small career-standings">
-          <div class="card-header"><h3>Career Standings</h3></div>
-          <div class="card-body mini-body">{sidebar_rows}</div>
-        </div>
-        <div class="card small">
-          <div class="card-header"><h3>Metrics Key</h3></div>
-          <div class="card-body">
-            <ul class="ticker-list">
-              <li><span class="mini-label">PF</span> - Career points for</li>
-              <li><span class="mini-label">PA</span> - Career points against</li>
-              <li><span class="mini-label">W-L</span> - Career record</li>
-            </ul>
-          </div>
-        </div>"""
-
-    js_career = (
-        '<script>(function(){'
-        'var _FIGS={'
-        '"chart-scatter":' + scatter_json + ','
-        '"chart-season":'  + season_json  + ','
-        '"chart-box-c":'   + box_c_json   +
-        '};'
-        'var _CFG={responsive:true,displayModeBar:false};'
-        '(window.ensurePlotly?window.ensurePlotly():Promise.resolve(window.Plotly)).then(function(P){'
-        'if(!P)return;'
-        'Object.keys(_FIGS).forEach(function(id){'
-        'var f=_FIGS[id];var el=document.getElementById(id);'
-        'if(el)P.newPlot(el,f.data,f.layout,_CFG);'
-        '});});})();</script>'
-    )
-    return f"""
-      <div class="page-layout" data-page="graphs">
-        <main class="page-main">
-          <div class="graphs-page">
-            <div class="card">
-              <div class="card-header-row"><h2>Career PF vs PA</h2></div>
-              <div class="card-body graph-body"><div id="chart-scatter" style="width:100%;min-height:350px;"></div></div>
-            </div>
-            <div class="card">
-              <div class="card-header-row"><h2>Points Per Season by Team</h2></div>
-              <div class="card-body graph-body"><div id="chart-season" style="width:100%;min-height:350px;"></div></div>
-            </div>
-            <div class="card">
-              <div class="card-header-row"><h2>Career Score Distribution</h2></div>
-              <div class="card-body graph-body"><div id="chart-box-c" style="width:100%;min-height:350px;"></div></div>
-            </div>
-          </div>
-        </main>
-        <aside class="page-sidebar">{sidebar_html}</aside>
-      </div>{js_career}"""
-
-
-# Validated categorical palette (dataviz skill) - shared by the career graphs.
-# Same set as build_graphs_body so a team keeps one color across season/career.
-COLOR_CYCLE = [
-    "#2a78d6", "#eb6834", "#1baf7a", "#eda100",
-    "#e87ba4", "#008300", "#4a3aa7", "#e34948",
-]
 
 
 # ── Page orchestration (moved out of app.py) ──────────────────────────────────
@@ -1008,6 +983,7 @@ def build_career_graphs_ctx(
     from dashboard_services.historical_identity import canonicalize_weekly_owners, season_owner_index
     career: dict = {}  # stable owner id -> career totals
     season_pf_rows: list = []  # rows for per-season bar chart: {season, owner, pf}
+    season_record_rows: list = []  # rows for career win% line: {season, owner, wins, losses, ties}
     season_frames: list = []
     labels: dict[str, tuple[int, str]] = {}
 
@@ -1040,12 +1016,19 @@ def build_career_graphs_ctx(
                     "Wins": 0, "Losses": 0, "Ties": 0,
                     "PF": 0.0, "PA": 0.0, "weekly_pts": [],
                 }
-            career[owner_id]["Wins"] += int(row.get("Wins", 0))
-            career[owner_id]["Losses"] += int(row.get("Losses", 0))
-            career[owner_id]["Ties"] += int(row.get("Ties", 0))
+            wins = int(row.get("Wins", 0))
+            losses = int(row.get("Losses", 0))
+            ties = int(row.get("Ties", 0))
+            career[owner_id]["Wins"] += wins
+            career[owner_id]["Losses"] += losses
+            career[owner_id]["Ties"] += ties
             career[owner_id]["PF"] += float(row.get("PF", 0))
             career[owner_id]["PA"] += float(row.get("PA", 0))
             season_pf_rows.append({"season": hist_s, "owner_key": owner_id, "owner": owner, "pf": float(row.get("PF", 0))})
+            season_record_rows.append({
+                "season": hist_s, "owner_key": owner_id, "owner": owner,
+                "wins": wins, "losses": losses, "ties": ties,
+            })
 
         sub = df[df["finalized"] == True] if "finalized" in df.columns else df
         for owner_id, grp in sub.groupby("owner_key"):
@@ -1077,7 +1060,6 @@ def build_career_graphs_ctx(
         })
 
     team_stats = pd.DataFrame(stat_rows) if stat_rows else pd.DataFrame()
-
     if not team_stats.empty and "PF" in team_stats.columns:
         from dashboard_services.power_score import approximate_power_score_frame
         team_stats = approximate_power_score_frame(team_stats)
@@ -1099,6 +1081,11 @@ def build_career_graphs_ctx(
         season_pf_df["owner"] = season_pf_df["owner_key"].map(
             lambda key: labels.get(str(key), (0, str(key)))[1]
         )
+    season_record_df = pd.DataFrame(season_record_rows) if season_record_rows else pd.DataFrame()
+    if not season_record_df.empty:
+        season_record_df["owner"] = season_record_df["owner_key"].map(
+            lambda key: labels.get(str(key), (0, str(key)))[1]
+        )
 
     # Restrict to current members when the toggle asks for it.
     if only_owners:
@@ -1110,11 +1097,14 @@ def build_career_graphs_ctx(
             df_combined = df_combined[df_combined[key_col].astype(str).isin(_keep)].reset_index(drop=True)
         if not season_pf_df.empty:
             season_pf_df = season_pf_df[season_pf_df[key_col].astype(str).isin(_keep)].reset_index(drop=True)
+        if not season_record_df.empty:
+            season_record_df = season_record_df[season_record_df[key_col].astype(str).isin(_keep)].reset_index(drop=True)
 
     return {
         "team_stats": team_stats,
         "df_weekly": df_combined,
         "season_pf_df": season_pf_df,
+        "season_record_df": season_record_df,
         "is_career": True,
     }
 
@@ -1122,18 +1112,21 @@ def build_career_graphs_ctx(
 def render_graphs_html(
     platform, season, league_id, view, members, *,
     ctx, available_seasons, get_ctx, model_value_table, graphs_base_url,
+    tab: str = "perf",
 ) -> str:
-    """Build the /graphs page body for a given view ("career" or a season) and
-    member filter. Every app-level input is injected:
+    """Build the /graphs page body for a given view ("career" or a season),
+    member filter, and initially-active tab. Every app-level input is injected:
 
       ctx                current league context
       available_seasons  completed seasons with data (newest-first)
       get_ctx            callable (platform, rid, season) -> league context
       model_value_table  live dynasty value rows (for the value/age scatter)
       graphs_base_url    the /graphs URL for this league (selector links)
+      tab                initially active tab ("perf" | "value" | "trends")
 
-    Pure of request args (view/members are passed in) so the heavy career view -
-    which aggregates every past season - can build in a background thread."""
+    Pure of request args (view/members/tab are passed in) so the heavy career
+    view - which aggregates every past season - can build in a background thread.
+    """
     import logging
     from dashboard_services.api import resolve_league_id_for_season
     logger = logging.getLogger(__name__)
@@ -1206,37 +1199,23 @@ def render_graphs_html(
                     platform, league_id, season, available_seasons, get_ctx,
                     only_owners=(current_owners if members == "current" else None),
                 )
-                charts_html = build_career_graphs_body(career_ctx)
-
-                # The luck + value/age scatters aren't season-aggregates, so the
-                # career builder doesn't emit them. Inject them here: value/age
-                # from the current rosters, luck from the most recent completed
-                # season's weekly results.
+                # Seasonal panes come from the latest completed season; the
+                # value cards use the current rosters with the live value table.
+                latest_ctx = None
                 try:
-                    _co = None
-                    _cts = career_ctx.get("team_stats")
-                    if _cts is not None and not _cts.empty and "owner" in _cts.columns:
-                        _co = owner_color_map(_cts["owner"].tolist())
-                    _luck_df = None
                     _latest = max(available_seasons)
                     _lrid = resolve_league_id_for_season(platform, league_id, season, _latest)
-                    _lctx = get_ctx(platform, _lrid, _latest)
-                    _ldf = _lctx.get("df_weekly")
-                    if _ldf is not None and not _ldf.empty and "finalized" in _ldf.columns:
-                        _luck_df = _ldf[_ldf["finalized"] == True]
-                        if members == "current" and current_owners and "owner" in _luck_df.columns:
-                            _luck_df = _luck_df[_luck_df["owner"].astype(str).isin(current_owners)]
-                    # Use the live value table (the ctx copy can be stale/empty),
-                    # so the dynasty-value-vs-age scatter always has real values.
-                    _val_ctx = {**ctx, "model_value_table": (model_value_table or ctx.get("model_value_table") or [])}
-                    _svg_cards = _luck_and_value_age_cards(_val_ctx, _luck_df, _co)
-                    if _svg_cards and '<div class="graphs-page">' in charts_html:
-                        charts_html = charts_html.replace(
-                            '<div class="graphs-page">',
-                            '<div class="graphs-page">' + _svg_cards, 1,
-                        )
+                    latest_ctx = get_ctx(platform, _lrid, _latest)
                 except Exception:
-                    logger.debug("career graphs scatter injection failed", exc_info=True)
+                    logger.debug("career graphs latest-season ctx failed", exc_info=True)
+                _val_ctx = {**ctx, "model_value_table": (model_value_table or ctx.get("model_value_table") or [])}
+                charts_html = build_career_graphs_body(
+                    career_ctx,
+                    season_ctx=latest_ctx,
+                    value_ctx=_val_ctx,
+                    viewer_owner=_viewer_owner(ctx),
+                    league_name=_league_name(ctx),
+                )
             except Exception as exc:
                 import traceback; traceback.print_exc()
                 charts_html = (
@@ -1262,6 +1241,11 @@ def render_graphs_html(
               </div>
             </div>"""
         else:
-            charts_html = build_graphs_body(season_ctx)
+            charts_html = build_graphs_body(
+                season_ctx,
+                tab=tab,
+                career_url=f"{graphs_base_url}?view=career",
+                season_label=f"{target_season} season",
+            )
 
     return season_selector_html + charts_html

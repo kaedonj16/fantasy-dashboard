@@ -225,10 +225,13 @@ def test_draft_room_stops_timers_when_swapped_out():
     assert ticker and "_drGone()" in ticker.group(1), "the 1s poll ticker must stop when gone"
 
 
-def test_graphs_radar_uses_readystate_init():
+def test_graphs_tabs_init_inline():
+    # The tabbed graphs rework dropped the radar chart (and its readyState
+    # init). The interactive element now is the tab switcher, which must be
+    # inline (IIFE at the end of the body) so it works after a soft-nav swap
+    # without a DOMContentLoaded listener.
     src = _read(os.path.join(
         _REPO_ROOT, "dashboard_services", "pages", "graphs_page.py"))
-    assert "_initRadar" in src and "document.readyState === 'loading'" in src, (
-        "graphs radar must init via the readyState guard so it renders after a swap"
-    )
+    assert "_initRadar" not in src, "radar chart was removed from the graphs rework"
+    assert ".gs-tabs .gs-tab[data-tab]" in src
     assert "document.addEventListener('DOMContentLoaded', () =>" not in src

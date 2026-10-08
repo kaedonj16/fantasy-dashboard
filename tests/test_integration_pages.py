@@ -31,7 +31,9 @@ def test_tour_page_renders_200(offline_client, path):
 
 def test_graphs_tour_has_core_chart(offline_client):
     html = offline_client.get("/sleeper/2026/tourdemo/graphs?tour=1").get_data(as_text=True)
-    assert "PF vs PA" in html
+    # Tabbed graphs rework: tab shell + at least one chart card must render.
+    assert 'data-tab="perf"' in html
+    assert "Consistency Ranking" in html or "Weekly Scoring Trend" in html
 
 
 def test_robots_and_sitemap(offline_client):

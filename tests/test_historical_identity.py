@@ -40,6 +40,10 @@ def test_canonical_owner_survives_renames_and_does_not_merge_equal_names(monkeyp
     assert rows.loc["owner-1", "PF"] == 209
     assert len(result["season_pf_df"].query("owner_key == 'owner-1'")) == 2
     assert set(result["season_pf_df"].query("owner_key == 'owner-1'")["owner"]) == {"Team B"}
+    rec = result["season_record_df"]
+    assert {"season", "owner_key", "owner", "wins", "losses", "ties"}.issubset(set(rec.columns))
+    assert len(rec.query("owner_key == 'owner-1'")) == 2
+    assert set(rec.query("owner_key == 'owner-1'")["owner"]) == {"Team B"}
 
 
 def test_season_resolution_uses_owner_id_not_display_name():
