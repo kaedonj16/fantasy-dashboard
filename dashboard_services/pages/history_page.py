@@ -1109,14 +1109,14 @@ def _build_wrapped_slides(history_ctx: dict, summary: dict, league_name: str, se
 
     slides = [{**_txt("intro", f"{season} SEASON", league_name, "Wrapped",
                       "A look back at the year that was"),
-               "bgword": f"'{str(season)[-2:]}"}]
+               }]
 
     if summary.get("top_scorer_value"):
         slides.append({**_num("topscore", "MOST POINTS ON THE YEAR",
                               summary["top_scorer_value"], 1, " PTS",
                               summary.get("top_scorer_team", "-"),
                               f"{summary.get('top_scorer_avg', 0):.1f} avg per week, the league's top scoring machine"),
-                       "bgword": str(int(summary["top_scorer_value"]))})
+                       })
 
     # ── Player awards: season MVP + the best at each position ──────────────────
     # These are the only slides that need per-week boxscore fetches, so the
@@ -1129,7 +1129,6 @@ def _build_wrapped_slides(history_ctx: dict, summary: dict, league_name: str, se
             slides.append({**_num("mvp", "LEAGUE MVP", float(mvp["pts"]), 1, " PTS",
                                   mvp["name"],
                                   f"{_meta} · {mvp.get('ppg', 0):.1f} per game, the season's top fantasy producer"),
-                           "bgword": str(int(float(mvp["pts"]))),
                            "mvp": True})
 
         by_pos = (leaders or {}).get("by_pos") or {}
@@ -1139,7 +1138,7 @@ def _build_wrapped_slides(history_ctx: dict, summary: dict, league_name: str, se
             slides.append({"kind": "posleaders", "eyebrow": "TOP AT EACH POSITION",
                            "num": False, "big": "", "dp": 0, "suffix": "", "label": "",
                            "sub": "The points leader at every spot", "rows": pos_rows,
-                           "bgword": "TOP"})
+                           })
 
     # Season records: biggest single week + hottest streak, grouped.
     _rec_rows = []
@@ -1153,14 +1152,13 @@ def _build_wrapped_slides(history_ctx: dict, summary: dict, league_name: str, se
         slides.append({"kind": "records", "eyebrow": "SEASON RECORDS", "num": False,
                        "big": "", "dp": 0, "suffix": "", "label": "",
                        "sub": "The high-water marks of the year", "rows": _rec_rows,
-                       "bgword": "BEST"})
+                       })
 
     if summary.get("biggest_blowout_margin"):
         _b = _num("blowout", "BIGGEST BLOWOUT",
                   summary["biggest_blowout_margin"], 1, " PTS",
                   summary.get("biggest_blowout", "-"),
                   "The most lopsided result of the year")
-        _b["bgword"] = str(int(summary["biggest_blowout_margin"]))
         if summary.get("biggest_blowout_scores"):
             _b["scoreline"] = summary["biggest_blowout_scores"]
         slides.append(_b)
@@ -1170,7 +1168,6 @@ def _build_wrapped_slides(history_ctx: dict, summary: dict, league_name: str, se
                   summary["closest_margin"], 1, " PTS",
                   summary.get("closest_matchup", "-"),
                   "Decided by the slimmest margin all season")
-        _c["bgword"] = f"{summary['closest_margin']:.1f}"
         if summary.get("closest_scores"):
             _c["scoreline"] = summary["closest_scores"]
         slides.append(_c)
@@ -1186,7 +1183,7 @@ def _build_wrapped_slides(history_ctx: dict, summary: dict, league_name: str, se
         slides.append({"kind": "luck", "eyebrow": "THE LUCK INDEX", "num": False,
                        "big": "", "dp": 0, "suffix": "", "label": "",
                        "sub": "Wins above or below what the scoring earned", "rows": _luck_rows,
-                       "bgword": "LUCK"})
+                       })
 
     # League activity: total trades, most active trader, waiver-wire leader.
     act = _wrapped_activity(history_ctx)
@@ -1203,17 +1200,16 @@ def _build_wrapped_slides(history_ctx: dict, summary: dict, league_name: str, se
         slides.append({"kind": "activity", "eyebrow": "LEAGUE ACTIVITY", "num": False,
                        "big": "", "dp": 0, "suffix": "", "label": "",
                        "sub": "Who worked the phones and the wire", "rows": _act_rows,
-                       "bgword": "MOVES"})
+                       })
 
     if summary.get("runner_up") and summary.get("runner_up") not in ("-", None):
         slides.append({**_txt("runnerup", "RUNNER-UP", summary["runner_up"], "So close",
                               f"Finished {summary.get('runner_up_record', '')}, one game short"),
-                       "bgword": "2ND"})
+                       })
 
     if summary.get("champion") and summary.get("champion") not in ("-", None):
         slides.append({**_txt("champion", f"{season} CHAMPION", summary["champion"],
                               "", "Took the crown when it mattered most"),
-                       "bgword": "CHAMP",
                        "record": str(summary.get("champion_record", "") or "")})
 
     return slides
@@ -1278,8 +1274,6 @@ def _wrapped_overlay_markup(slides: list, share_data: dict | None = None,
         kind = s["kind"]
         kicker = (f"<div class='wrapped-kicker'><span class='wrapped-kicker-rule'></span>"
                   f"<span class='wrapped-kicker-txt'>{_esc(str(s['eyebrow']))}</span></div>")
-        bgword = (f"<div class='wrapped-bgword' aria-hidden='true'>{_esc(str(s['bgword']))}</div>"
-                  if s.get("bgword") else "")
         sub = (f"<div class='wrapped-divider'></div>"
                f"<div class='wrapped-sub'>{_esc(str(s['sub']))}</div>")
 
@@ -1403,7 +1397,7 @@ def _wrapped_overlay_markup(slides: list, share_data: dict | None = None,
             )
 
         slide_html.append(
-            f"<section class='wrapped-slide{' wrapped-mvp' if s.get('mvp') else ''}' data-kind='{kind}'>{bgword}{body}{foot}</section>"
+            f"<section class='wrapped-slide{' wrapped-mvp' if s.get('mvp') else ''}' data-kind='{kind}'>{body}{foot}</section>"
         )
 
     share_json = json.dumps(share_data or {}).replace("</", "<\\/")
@@ -1490,7 +1484,7 @@ def render_history_wrapped_overlay(history_ctx: dict, selected_history_season,
             "kind": "recap", "num": False, "big": "", "dp": 0, "suffix": "", "label": "",
             "eyebrow": f"{_season_txt} RECAP".strip() or "SEASON RECAP",
             "sub": "Tap Share to send it to the group chat",
-            "bgword": "RECAP", "recap": share_data,
+            "recap": share_data,
         })
     return _wrapped_overlay_markup(slides, share_data, season=selected_history_season,
                                    show_pro_cta=show_pro_cta)
@@ -1679,7 +1673,7 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
 
     slides = [{**_txt("intro", f"WEEK {week}", str(league_name), "Wrapped",
                       "The week that was, in stories"),
-               "bgword": f"W{week}", "intro_word": "WEEKLY<br>WRAPPED"}]
+               "intro_word": "WEEKLY<br>WRAPPED"}]
 
     hi = wdf.loc[wdf["points"].idxmax()]
     hi_pts = float(hi.get("points") or 0)
@@ -1687,7 +1681,7 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
         slides.append({**_num("topscore", f"HIGHEST SCORE · WEEK {week}",
                               hi_pts, 1, " PTS", str(hi.get("owner", "-")),
                               "The week's biggest team total"),
-                       "bgword": str(int(hi_pts))})
+                       })
 
     lo = wdf.loc[wdf["points"].idxmin()]
     lo_pts = float(lo.get("points") or 0)
@@ -1695,7 +1689,7 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
         slides.append({**_num("lowscore", f"LOWEST SCORE · WEEK {week}",
                               lo_pts, 1, " PTS", str(lo.get("owner", "-")),
                               "The week's quietest team total"),
-                       "bgword": str(int(lo_pts))})
+                       })
 
     # Pair the week's head-to-head results via matchup_id.
     matchup_rows = []
@@ -1724,7 +1718,6 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
         _b = _num("blowout", "BIGGEST BLOWOUT", bo["margin"], 1, " PTS",
                   f"{bo['winner']} over {bo['loser']}",
                   "The week's most lopsided result")
-        _b["bgword"] = str(int(bo["margin"]))
         _b["scoreline"] = f"{bo['winner_pts']:.1f}-{bo['loser_pts']:.1f}"
         slides.append(_b)
 
@@ -1733,7 +1726,6 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
         _c = _num("nailbiter", "CLOSEST GAME", nb["margin"], 1, " PTS",
                   f"{nb['winner']} over {nb['loser']}",
                   "Decided by the slimmest margin of the week")
-        _c["bgword"] = f"{nb['margin']:.1f}"
         _c["scoreline"] = f"{nb['winner_pts']:.1f}-{nb['loser_pts']:.1f}"
         slides.append(_c)
 
@@ -1760,7 +1752,7 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
             slides.append({"kind": "posleaders", "eyebrow": "TOP AT EACH POSITION",
                            "num": False, "big": "", "dp": 0, "suffix": "", "label": "",
                            "sub": "The week's points leader at every spot",
-                           "rows": pos_rows, "bgword": "TOP"})
+                           "rows": pos_rows})
 
         dud = (leaders or {}).get("dud")
         if dud and dud.get("pts"):
@@ -1769,7 +1761,7 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
                                   " PTS", dud["name"],
                                   f"{_dmeta}, the week's coldest starter" if _dmeta
                                   else "The week's coldest starter"),
-                           "bgword": f"{float(dud['pts']):.1f}"})
+                           })
 
         # ── Coaching report: efficiency top 3, biggest bust, worst start/sit
         # calls — one slide built from the same datasets the recap's Lineup
@@ -1832,7 +1824,7 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
             slides.append({"kind": "coaching", "eyebrow": "COACHING REPORT",
                            "num": False, "big": "", "dp": 0, "suffix": "", "label": "",
                            "sub": "Efficiency, busts & the week's worst start/sit calls",
-                           "sections": _coach_sections, "bgword": "COACH"})
+                           "sections": _coach_sections})
 
     # ── Standings: where the league stands after this week ─────────────────
     # Recap beat before the preview closer: top 5 by record, then points for.
@@ -1870,7 +1862,7 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
                 slides.append({"kind": "standings", "eyebrow": "LEAGUE STANDINGS",
                                "num": False, "big": "", "dp": 0, "suffix": "", "label": "",
                                "sub": f"Through Week {week}",
-                               "rows": _srows, "bgword": "TOP"})
+                               "rows": _srows})
         except Exception:
             pass  # standings slide is best-effort; the deck renders without it
 
@@ -1900,7 +1892,6 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
                 _scoreline = ""
             _g = {**_txt("gotw", f"WEEK {_nw} · GAME OF THE WEEK",
                          f"{_game['team_a']} vs {_game['team_b']}", "", _sub),
-                  "bgword": "GOTW",
                   "preview_teams": [_game["team_a"], _game["team_b"]],
                   "win_prob_a": _game.get("win_prob_a"),
                   "why": _why}
@@ -1969,7 +1960,7 @@ def render_weekly_wrapped_overlay(ctx: dict, week, show_pro_cta: bool = False) -
             "kind": "recap", "num": False, "big": "", "dp": 0, "suffix": "", "label": "",
             "eyebrow": f"WEEK {week} RECAP",
             "sub": "Tap Share to send it to the group chat",
-            "bgword": "RECAP", "recap": share_data,
+            "recap": share_data,
         })
     return _wrapped_overlay_markup(slides, share_data, ns="weekly-wrapped",
                                    footer_label=f"WEEK {week}",
@@ -2545,7 +2536,6 @@ _WRAPPED_BOOTSTRAP_JS = r"""
       sec.className = 'wrapped-slide';
       sec.setAttribute('data-kind', 'pro-cta');
       sec.innerHTML =
-        '<div class="wrapped-bgword" aria-hidden="true">PRO</div>' +
         '<div class="wrapped-kicker"><span class="wrapped-kicker-rule"></span>' +
         '<span class="wrapped-kicker-txt">GO FURTHER</span></div>' +
         '<div class="wrapped-pro-title">Get the full story with PRO</div>' +

@@ -526,13 +526,13 @@ def test_wrapped_pause_button_css():
 
 
 def test_wrapped_coaching_slide_compact_css():
-    """The six-row coaching slide compacts its rows and shrinks the backdrop
-    word so nothing collides."""
+    """The six-row coaching slide compacts its rows so nothing collides, and
+    the old giant backdrop word is gone from the stylesheet."""
     root = Path(__file__).resolve().parents[1]
     css = (root / "static/dashboard.css").read_text()
     assert '.wrapped-slide[data-kind="coaching"] .wrapped-row {' in css
-    assert '.wrapped-slide[data-kind="coaching"] .wrapped-bgword {' in css
-    assert "font-size: 76px" in css
+    assert "wrapped-bgword" not in css
+    assert "wrapBg" not in css
     assert ".wrapped-row-sec {" in css
     assert ".wrapped-row-sec::after {" in css
 

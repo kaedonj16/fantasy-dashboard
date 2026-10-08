@@ -41406,25 +41406,6 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     --wglow: rgba(245, 196, 81, .26);
 }
 
-/* Giant outlined stat, bleeding off the right edge behind the content. */
-.wrapped-bgword {
-    position: absolute;
-    z-index: 0;
-    right: -22px;
-    top: 88px;
-    font-family: "InterVariable", "Archivo", sans-serif;
-    font-weight: 900;
-    font-size: 76px;
-    letter-spacing: -.04em;
-    line-height: .84;
-    color: transparent;
-    -webkit-text-stroke: 2px var(--wa);
-    opacity: .13;
-    text-align: right;
-    pointer-events: none;
-    user-select: none;
-}
-
 /* Kicker: short accent rule + uppercase label above every headline. */
 .wrapped-kicker {
     display: flex;
@@ -41842,12 +41823,6 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     font-size: 18px;
 }
 
-.wrapped-slide[data-kind="coaching"] .wrapped-bgword {
-    font-size: 28px;
-    top: 100px;
-    opacity: .1;
-}
-
 /* Section headers inside a rows slide (coaching report groups). */
 .wrapped-row-sec {
     display: flex;
@@ -41964,21 +41939,6 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
 
 .wrapped-slide.active .wrapped-sub {
     animation: wrapUp .5s var(--ease-out) .56s both;
-}
-
-.wrapped-slide.active .wrapped-bgword {
-    animation: wrapBg .9s ease .1s both;
-}
-
-@keyframes wrapBg {
-    from {
-        opacity: 0;
-        transform: translateY(14px);
-    }
-    to {
-        opacity: .13;
-        transform: none;
-    }
 }
 
 @keyframes wrapUp {
@@ -42115,7 +42075,7 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     .wrapped-slide.active .wrapped-scores, .wrapped-slide.active .wrapped-record,
     .wrapped-slide.active .wrapped-winbar-row,
     .wrapped-slide.active .wrapped-divider, .wrapped-slide.active .wrapped-sub,
-    .wrapped-slide.active .wrapped-row, .wrapped-slide.active .wrapped-bgword,
+    .wrapped-slide.active .wrapped-row,
     .wrapped-slide.active .wrapped-crown,
     .wrapped-slide.active .wrapped-intro-logo {
         animation-duration: .01ms;
