@@ -22528,20 +22528,20 @@ function renderTeamDetails(data) {
       const swName = streakWinner === 'a' ? lname : rname;
       tail = (swName === lead) ? ` · Won last ${streakN}` : ` · ${swName} won last ${streakN}`;
     }
-    return `All-time series: ${head}${tail}`;
+    return `All-time H2H: ${head}${tail}`;
   }
   async function hydrate(node) {
     if (!node || node.dataset.rivDone) return;
-    node.dataset.rivDone = '1';
     const c = window.__brctx || {};
     if (!c.platform || !c.season || !c.leagueId) return;
+    node.dataset.rivDone = '1';
     const a = node.dataset.rivA, b = node.dataset.rivB;
     if (!a || !b || a === b) return;
     try {
       const res = await fetch(`/api/rivalry/${c.platform}/${c.season}/${c.leagueId}?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`);
       if (!res.ok) return;
       const data = await res.json();
-      const html = label(data, node.dataset.rivLname || 'Left', node.dataset.rivRname || 'Right');
+      const html = label(data, node.dataset.rivLuser || node.dataset.rivLname || 'Left', node.dataset.rivRuser || node.dataset.rivRname || 'Right');
       if (html) { node.innerHTML = html; node.hidden = false; }
     } catch (_) { /* leave the line hidden on any failure */ }
   }

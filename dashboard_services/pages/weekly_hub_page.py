@@ -62,6 +62,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
         matchup_gotw_flags,
         render_matchup_carousel_weeks,
         render_matchup_slide,
+        streaks_from_matchups_by_week,
     )
     from dashboard_services.pages.history_page import weekly_wrapped_launcher_html
     from dashboard_services.pages.scout_page import (
@@ -225,6 +226,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
     from utils.standings_divisions import division_records_for_ctx, div_map_for_ctx
     _hub_div_records = division_records_for_ctx(ctx)
     _hub_div_by_rid = div_map_for_ctx(ctx)
+    _hub_streaks = streaks_from_matchups_by_week(matchups_by_week, last_final_week)
     # ScoreZone Moments launcher: rendered under the win-probability bar of the
     # viewer's own matchup slide (not at the top of the tab). The client
     # fetches /api/scorezone/moments and reveals it when moments exist.
@@ -260,6 +262,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
             league_id=_gotw_lid,
             rzm_hub_html=_rzm_html_for_matchup(m),
             div_by_rid=_hub_div_by_rid,
+            streaks=_hub_streaks,
         )
         for m, is_gotw in zip(default_matchups, _gotw_flags)
     ]
