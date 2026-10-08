@@ -12574,6 +12574,13 @@ window.initPageRoot = function initPageRoot(root = document) {
   bindGlobalCarouselHandlersOnce();
   window.resetMatchupCarousels?.(root);
 
+  // Re-scan rivalry lines after soft-nav swaps. initRivalryLines only scans
+  // once per full page load, so .m-rivalry nodes injected by in-app
+  // navigation (e.g. mobile Matchups tab) would otherwise sit unhydrated.
+  if (typeof window.brScanRivalryLines === 'function') {
+    try { window.brScanRivalryLines(root); } catch (e) {}
+  }
+
   if (root.querySelector('[data-page="graphs"]')) {
     window.resizeAllPlotly?.(root);
   }
@@ -22548,8 +22555,15 @@ function renderTeamDetails(data) {
   function scan(root) {
     (root || document).querySelectorAll('.m-rivalry[data-riv-a]:not([data-riv-done])').forEach(hydrate);
   }
+  // Exposed so initPageRoot can re-scan after soft-nav content swaps. On
+  // mobile the weekly hub HTML arrives via in-app navigation (no full page
+  // load), so this IIFE's one-time scan never sees the new .m-rivalry nodes.
+  window.brScanRivalryLines = function (root) { scan(root || document); };
   function start() {
     scan(document);
+    // Retry once after 2s for nodes skipped because __brctx was not ready yet
+    // (hydrate leaves them unmarked so the retry picks them up).
+    setTimeout(function () { scan(document); }, 2000);
     const container = document.getElementById('weeklyMatchupsContainer');
     if (container && 'MutationObserver' in window) {
       new MutationObserver(() => scan(container)).observe(container, { childList: true, subtree: true });
