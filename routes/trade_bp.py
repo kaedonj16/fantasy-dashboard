@@ -528,11 +528,12 @@ def page_trade_database(platform: str, season: int, league_id: str):
       }}
       .tdb-sort:hover {{ border-color: var(--accent, #3b82f6); }}
       .tdb-status {{ font-size: 13px; color: var(--text-muted); margin-bottom: 14px; min-height: 16px; }}
-      .tdb-list {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; align-items: start; }}
+      .tdb-list {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }}
       @media(max-width: 600px) {{ .tdb-list {{ grid-template-columns: 1fr; }} }}
       .tdb-card {{
         border: 1px solid var(--border); border-radius: 12px;
         overflow: hidden; background: var(--card);
+        display: flex; flex-direction: column;
       }}
       .tdb-card-head {{
         display: flex; justify-content: space-between; align-items: center;
@@ -565,8 +566,11 @@ def page_trade_database(platform: str, season: int, league_id: str):
       .tdb-pos.pos-TE {{ background: color-mix(in srgb, #8b5cf6 16%, transparent); color: #8b5cf6; }}
       [data-theme="dark"] .tdb-pos.pos-RB {{ color: #22c55e; }}
       [data-theme="dark"] .tdb-pos.pos-WR {{ color: #f59e0b; }}
-      /* Card footer: value delta + league info (mock-approved) */
+      /* Card footer: pinned to the card bottom via margin-top:auto so footers
+         align in a flat row across equal-height cards; leftover space sits
+         above the footer inside the card. */
       .tdb-card-foot {{
+        margin-top: auto;
         display: flex; justify-content: space-between; align-items: center;
         padding: 10px 14px; border-top: 1px solid var(--border);
         background: var(--bg-alt, rgba(0,0,0,.02));
