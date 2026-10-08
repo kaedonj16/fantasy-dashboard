@@ -322,12 +322,17 @@ def api_player_advanced_metrics(player_id: str):
 
         metrics_payload.pop("role_score", None)  # internal-only; never shown
 
-        # Derive per-game rates from totals when not already present (season view)
+        # Derive per-game rates from totals when not already present (season view).
+        # expected_ppr_per_game is the free xFP metric: it anchors the Key
+        # Metrics / Start-Sit views and the compare Advanced Metrics tab, while
+        # the season-total expected_ppr stays PRO-gated. Deriving it here (before
+        # the PRO strip below) keeps it visible to everyone.
         _g = metrics_payload.get('games')
         if _g and not is_career_request:
             for _tot, _pg in [('total_targets', 'targets_per_game'),
                                ('total_receptions', 'receptions_per_game'),
-                               ('total_touches', 'touches_per_game')]:
+                               ('total_touches', 'touches_per_game'),
+                               ('expected_ppr', 'expected_ppr_per_game')]:
                 if metrics_payload.get(_tot) is not None and metrics_payload.get(_pg) is None:
                     metrics_payload[_pg] = float(metrics_payload[_tot]) / float(_g)
 

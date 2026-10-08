@@ -74,9 +74,21 @@ def test_compare_charts_and_triple_follow_league_type():
     assert "const isSf = (typeof _cmpIsSf === 'function') ? _cmpIsSf() : false;" in triple
     assert "st(p).sf_value_ovr_rank" in triple
     assert "sf_pos_rank_label" in triple
-    assert "st(p).adp.dynasty_sf" in triple
-    assert "st(p).adp.redraft_sf" in triple
-    assert "st(p).adp.dynasty_1qb" in triple
+    # The ADP rows are mode-aware via adpOf(): both key and expander rows cover
+    # all four ADP fields and swap labels with the Redraft/Dynasty toggle.
+    assert "const adpOf = (p, redraft, sf)" in triple
+    assert "a.redraft_sf" in triple
+    assert "a.dynasty_sf" in triple
+    assert "a.redraft_1qb" in triple
+    assert "a.dynasty_1qb" in triple
+    assert "isRedraft ? 'Redraft ADP' : 'Dynasty ADP'" in triple
+    assert "isRedraft ? 'Dynasty ADP' : 'Redraft ADP'" in triple
+    # The Redraft/Dynasty toggle overrides the league scoring type.
+    assert "var _cmpValueMode = null" in APP_JS
+    assert 'data-cmp-valuemode="dynasty"' in APP_JS
+    assert 'data-cmp-valuemode="redraft"' in APP_JS
+    assert "function _cmpValueToggleHTML()" in APP_JS
+    assert "function _cmpRerenderOverview()" in APP_JS
 
     triple_chart = _slice(APP_JS, "function _renderTripleValueChart(players)", "function openComparisonView")
     assert "_cmpHistValue(h)" in triple_chart

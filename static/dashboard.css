@@ -25687,6 +25687,190 @@ tr.cmp3-more td {
     margin-left: 5px;
 }
 
+/* ── Compare overview compact rework (2026-10-08) ────────────────────────── */
+/* One-line verdict strip replacing the old padded verdict card. */
+.cmp-verdict {
+    margin-bottom: 10px;
+    padding: 8px 12px;
+    background: var(--surface2, rgba(127, 127, 127, .08));
+    border-radius: 8px;
+}
+.cmp-verdict-strip {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.cmp-verdict-text {
+    font-weight: 800;
+    font-size: 13px;
+    color: var(--text);
+    white-space: nowrap;
+}
+.cmp-verdict-bar {
+    flex: 1;
+    display: flex;
+    height: 6px;
+    border-radius: 3px;
+    overflow: hidden;
+    background: var(--border);
+}
+.cmp-verdict-score {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--muted);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+/* VS badge living in the table header's row-label cell. */
+.cmp3-vs {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--surface2, rgba(127, 127, 127, .12));
+    font-size: 11px;
+    font-weight: 800;
+    color: var(--muted);
+}
+/* Compact horizontal player header: one row, small headshot, name + meta. */
+.cmp3-head-compact {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    text-align: left;
+}
+.cmp3-hs-sm {
+    width: 34px;
+    height: 34px;
+    flex-shrink: 0;
+}
+.cmp3-head-text {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    min-width: 0;
+}
+.cmp3-head-compact .cmp3-name {
+    font-size: 13px;
+    white-space: nowrap;
+}
+.cmp3-head-compact .cmp3-meta {
+    font-size: 10px;
+    white-space: nowrap;
+}
+.cmp3-accent-v {
+    width: 3px;
+    align-self: stretch;
+    min-height: 30px;
+    border-radius: 2px;
+    flex-shrink: 0;
+}
+/* Tighter overview rows. */
+.cmp3-table .cmp3-col {
+    padding: 6px 8px;
+}
+.cmp3-table .cmp3-cell {
+    padding: 7px 8px;
+    font-size: 14px;
+}
+/* Expander is a muted text link now, not a full-width button. */
+.cmp-expander {
+    display: block;
+    margin: 8px auto 0;
+    background: none;
+    border: none;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--muted);
+    cursor: pointer;
+}
+.cmp-expander:hover {
+    color: var(--text);
+}
+/* Redraft | Dynasty toggle above the overview table. */
+.cmp-overview-top {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 8px;
+}
+.cmp-value-toggle {
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+}
+.cmp-value-toggle button {
+    background: none;
+    border: none;
+    padding: 5px 12px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--muted);
+    cursor: pointer;
+}
+.cmp-value-toggle button.is-active {
+    background: var(--text);
+    color: var(--card);
+}
+/* Skeleton shimmer for the initial compare load. */
+.cmp-skel {
+    display: inline-block;
+    height: 12px;
+    border-radius: 6px;
+    background: linear-gradient(90deg, var(--surface2, rgba(127, 127, 127, .12)) 25%, rgba(127, 127, 127, .22) 50%, var(--surface2, rgba(127, 127, 127, .12)) 75%);
+    background-size: 200% 100%;
+    animation: cmp-skel-shimmer 1.2s infinite;
+    vertical-align: middle;
+}
+@keyframes cmp-skel-shimmer {
+    to { background-position: -200% 0; }
+}
+.cmp-skel-panel {
+    padding: 24px 0;
+    text-align: center;
+}
+/* Cross-position split: two per-player columns on the Advanced Metrics tab. */
+.compare-metrics-split {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+.compare-metrics-col-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 800;
+    font-size: 13px;
+    color: var(--text);
+    margin-bottom: 4px;
+}
+.compare-split-left .compare-bar-right,
+.compare-split-left .compare-metric-p2-val {
+    display: none;
+}
+.compare-split-left .compare-metric-row {
+    grid-template-columns: 52px minmax(0, 1fr) minmax(0, 1.5fr);
+}
+.compare-split-right .compare-bar-left,
+.compare-split-right .compare-metric-p1-val {
+    display: none;
+}
+.compare-split-right .compare-metric-row {
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) 52px;
+}
+.compare-metrics-split .compare-metric-label {
+    justify-content: flex-start;
+    text-align: left;
+}
+@media (max-width: 640px) {
+    .compare-metrics-split {
+        grid-template-columns: 1fr;
+    }
+}
+
 .cmp3-tabs {
     margin-bottom: 14px;
 }
