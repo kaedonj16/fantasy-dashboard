@@ -749,6 +749,7 @@ var wvCandidateController = null;
 var wvTrendingData = [];
 var wvBigGamesData = [];
 var wvStartSitData = {{}};
+var wvStartSitLoaded = false;  // set true once wvLoadStartSit has run
 var wvCompare = [null, null]; // [playerA, playerB]
 var wvUsesK = false;   // league starts kickers (start-sit data or waiver-candidates)
 var wvUsesDef = false; // league starts team defenses (same two sources)
@@ -1910,6 +1911,10 @@ function wvSetTab(tab) {{
   if (ss) ss.classList.toggle('wv-tab-active', !isWaivers);
   document.getElementById('wvTabWaivers').classList.toggle('active', isWaivers);
   if (ssTab) ssTab.classList.toggle('active', !isWaivers);
+  // Lazy-load Start/Sit when the tab is first opened (skipped on init if hidden).
+  if (!isWaivers && !wvStartSitLoaded) {{
+    wvLoadStartSit();
+  }}
 }}
 
 function wvSetPos(pos) {{
@@ -2350,7 +2355,11 @@ function wvLoad() {{
     .then(d => {{ wvTrendingData = d.trending || []; wvRenderTrending(wvTrendingData); }})
     .catch(() => {{}});
 
-  wvLoadStartSit();
+  // Start/Sit is below the fold on mobile (hidden tab). Only fetch on load
+  // when visible; wvSetTab triggers it when the user opens the tab.
+  if (wvStartSitVisible()) {{
+    wvLoadStartSit();
+  }}
 }}
 
 function wvLoadBigGames() {{
@@ -2402,7 +2411,19 @@ function wvLoadBigGames() {{
 var wvStartSitAttempts = 0;
 function wvLoadStartSit() {{
   wvStartSitAttempts = 0;
+  wvStartSitLoaded = true;
   wvFetchStartSit();
+}}
+// Returns true if the Start/Sit section is currently visible (not hidden by
+// best-ball mode, and either on desktop or the active mobile tab).
+function wvStartSitVisible() {{
+  var ss = document.getElementById('wvSectionStartSit');
+  if (!ss || ss.hidden) return false;
+  // On mobile (<=768px) sections are tabbed; only load when the tab is active.
+  if (window.matchMedia && window.matchMedia('(max-width: 768px)').matches) {{
+    return ss.classList.contains('wv-tab-active');
+  }}
+  return true;
 }}
 function wvFetchStartSit() {{
   wvStartSitAttempts++;

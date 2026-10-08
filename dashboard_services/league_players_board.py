@@ -256,3 +256,36 @@ def slim_trade_payload(
     if payload.get("tier_thresholds") is not None:
         out["tier_thresholds"] = payload["tier_thresholds"]
     return out
+
+
+# ── Nav-search view ───────────────────────────────────────────────────────────
+# The nav player search needs only 5 fields per player (id, name, position,
+# team, headshot) and skips picks. ~50KB vs ~200KB for the trade view.
+SEARCH_PLAYER_KEYS = ("id", "name", "position", "team", "espnHeadshot")
+
+
+def slim_search_player(player: Mapping[str, Any]) -> Optional[dict]:
+    """One nav-search row, or None when the player is a pick."""
+    pos = str(player.get("position") or "").upper()
+    pid = str(player.get("id") or "")
+    if pos == "PICK" or pid.startswith("pick_"):
+        return None
+    row = {}
+    for key in SEARCH_PLAYER_KEYS:
+        value = player.get(key)
+        if value is not None:
+            row[key] = value
+    row["position"] = pos
+    return row
+
+
+def slim_search_payload(payload: Mapping[str, Any]) -> dict:
+    """Return a nav-search-sized copy. Does not mutate ``payload``."""
+    players = []
+    for player in payload.get("players") or []:
+        if not isinstance(player, Mapping):
+            continue
+        row = slim_search_player(player)
+        if row is not None:
+            players.append(row)
+    return {"players": players}

@@ -297,6 +297,75 @@ def api_history_chart(platform: str, season: int, league_id: str):
         return _api_err("Request failed", e)
 
 
+@history_bp.route("/api/history/<platform>/<int:season>/<league_id>/sections")
+def api_history_sections(platform: str, season: int, league_id: str):
+    """Get season awards/summary + standings + trend chart in one call.
+
+    Merges the three separate /summary, /standings, and /chart endpoints.
+    Historical season data is immutable, so the response is cacheable.
+    """
+    from app import _api_err, get_available_history_seasons, get_league_ctx_from_cache
+
+    try:
+        from dashboard_services.pages.history_page import (
+            _filtered_season_df,
+            get_history_standings_html,
+            get_history_summary_html,
+        )
+
+        history_season = api_int("history_season", season)
+
+        available_seasons = get_available_history_seasons(platform, league_id, season)
+        if not available_seasons:
+            empty = "<div class='history-empty'>This is your first season. Historical data will be available after the season completes.</div>"
+            return jsonify({"summary": empty, "standings": empty, "chart": {"data": []}})
+
+        if history_season not in available_seasons:
+            empty = "<div class='history-empty'>No data available for this season.</div>"
+            return jsonify({"summary": empty, "standings": empty, "chart": {"data": []}})
+
+        resolved_history_league_id = resolve_league_id_for_season(
+            platform=platform,
+            league_id=league_id,
+            current_season=season,
+            target_season=history_season,
+        )
+
+        history_ctx = get_league_ctx_from_cache(platform, resolved_history_league_id, history_season)
+        if not history_ctx:
+            return jsonify({"error": "League context not found"}), 404
+
+        summary_html = get_history_summary_html(history_ctx)
+        standings_html = get_history_standings_html(history_ctx)
+
+        df_weekly = history_ctx.get("df_weekly", pd.DataFrame())
+        chart_df = _filtered_season_df(df_weekly)
+        chart_data = []
+        if not chart_df.empty and {"week", "owner", "points"}.issubset(chart_df.columns):
+            for owner, grp in chart_df.groupby("owner"):
+                grp = grp.sort_values("week")
+                chart_data.append({
+                    "name": str(owner),
+                    "x": grp["week"].tolist(),
+                    "y": grp["points"].tolist(),
+                })
+
+        resp = jsonify({
+            "summary": summary_html,
+            "standings": standings_html,
+            "chart": {"data": chart_data},
+        })
+        # Historical data is immutable; cacheable for an hour.
+        resp.headers["Cache-Control"] = "public, max-age=3600"
+        return resp
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("[api_history_sections] Error")
+        return _api_err("Request failed", e)
+
+
 # ────────────────────────────────────────────────────────────────────────────
 # Merged from routes/weekly_bp.py: Weekly API endpoints (Weekly Wrapped overlay).
 # ────────────────────────────────────────────────────────────────────────────

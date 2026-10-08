@@ -42,23 +42,13 @@ def test_player_modal_honors_authoritative_page_context():
 
 
 def test_breakout_initial_failure_retries_silently_before_showing_retry_chip():
-    # A first-attempt failure on the initial eligibility fetch is usually a
-    # cold-backend timeout. The modal must retry once silently in the
-    # background and only show the "unavailable" retry chip if that also fails.
+    # Breakout eligibility is now lazy (fired on tab open, not modal open).
+    # The eager initial fetch with silent retry was removed; the tab click
+    # handler fires the fetch on demand and shows the retry state on failure.
     js = (ROOT / "static" / "player_modal.js").read_text(encoding="utf-8")
-    assert "_settleInitialBreakout" in js
-    assert "_breakoutInitialRetried" in js
-    # Silent retry scheduled with a delay, guarded by the stale-overlay checks.
-    assert "setTimeout(() => {" in js
-    assert "_loadBreakoutEligibility().then(" in js
-    # The retry chip path is only reached after the silent retry also fails:
-    # inside the _settleInitialBreakout block, the silent retry is scheduled
-    # first and applyBreakoutEligibility(null, true) comes last.
-    block_start = js.index("const _settleInitialBreakout")
-    block = js[block_start:block_start + 2000]
-    assert "_breakoutInitialRetried = true;" in block
-    assert "setTimeout(() => {" in block
-    assert "_loadBreakoutEligibility().then(" in block
-    silent_retry_idx = block.index("_breakoutInitialRetried = true;")
-    chip_idx = block.index("applyBreakoutEligibility(null, true)")
-    assert silent_retry_idx < chip_idx
+    # Lazy: no eager fetch on modal open.
+    assert "_initialBreakoutPromise" not in js
+    assert "_settleInitialBreakout" not in js
+    assert "_pmBreakoutInflight" not in js
+    # The tab click still fetches on demand (guarded by panel.dataset.loaded).
+    assert "/api/breakout/player/${encodeURIComponent(playerId)}" in js

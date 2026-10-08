@@ -1313,16 +1313,19 @@ Promise.all([
     if (window.__leagueId) _q.push('league_id=' + encodeURIComponent(window.__leagueId));
     if (window.__platform) _q.push('platform=' + encodeURIComponent(window.__platform));
     if (_q.length) _u += '?' + _q.join('&');
+    // Default cache mode: the server sends ETag + max-age=60, so repeat
+    // visits get 304s instead of full re-downloads. no-store is not used.
     return (typeof window.brFetchWithTimeout === 'function'
-      ? window.brFetchWithTimeout(_u, { cache: 'no-store' }, 30000)
-      : fetch(_u, { cache: 'no-store' })
+      ? window.brFetchWithTimeout(_u, {}, 30000)
+      : fetch(_u)
     ).then(r => {
       if (!r.ok) throw new Error('league-players HTTP ' + r.status);
       return r.json();
     });
   })(),
-  fetch('/api/player-indicators?league_type=1qb&league_size=10', { cache: 'no-store' })
-    .then(r => r.json()).catch(() => ({}))
+  // Indicators deferred: loaded after first paint via requestIdleCallback.
+  // Row chips render without them initially, then update when they arrive.
+  Promise.resolve({})
 ]).then(([resp, indicators]) => {
   if (gen !== _prLoadGen) return;
   prIndicators = indicators || {};
@@ -1451,6 +1454,21 @@ Promise.all([
     prRender();
     _prSparkAnimate = false;
   }).catch(function() {});
+  // Lazy-load indicators - row chips (rookie/breakout/elite/prospect) update
+  // once they arrive. Deferred out of the critical path via idle callback.
+  var _loadIndicators = function() {
+    fetch('/api/player-indicators?league_type=1qb&league_size=10')
+      .then(function(r) { return r.json(); }).then(function(d) {
+        if (gen !== _prLoadGen) return;
+        prIndicators = d || {};
+        prRender();
+      }).catch(function() {});
+  };
+  if ('requestIdleCallback' in window) {
+    requestIdleCallback(_loadIndicators, { timeout: 3000 });
+  } else {
+    setTimeout(_loadIndicators, 100);
+  }
 }).catch(err => {
   if (gen !== _prLoadGen) return;
   // A reload/navigation aborts the in-flight hydrate. Don't replace the SSR

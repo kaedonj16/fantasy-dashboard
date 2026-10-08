@@ -73,13 +73,17 @@ def test_season_trends_single_call():
 
 
 def test_breakout_tab_joins_inflight_prefetch():
-    """Tapping Breakout before the modal-open eligibility fetch resolves must
-    join the in-flight promise instead of firing a duplicate request."""
-    assert "_pmBreakoutInflight = { playerId: String(playerId), promise:" in MODAL_JS
+    """Breakout eligibility is lazy (fired on tab open, not modal open).
+    The tab handler must fetch on demand, and the panel.dataset.loaded guard
+    set synchronously before the fetch must prevent duplicate requests on
+    rapid re-taps. No modal-open prefetch may exist."""
+    assert "_initialBreakoutPromise" not in MODAL_JS
+    assert "_pmBreakoutInflight" not in MODAL_JS
     tab = MODAL_JS.split("if (tab === 'breakout' && panel && !panel.dataset.loaded) {", 1)[1]
     tab = tab.split("// ──", 1)[0]
-    assert "_pmBreakoutInflight" in tab
-    assert "_bkInflight" in tab
+    # Loaded guard set synchronously before the fetch fires.
+    assert "panel.dataset.loaded = '1';" in tab
+    assert "fetch(_boUrl)" in tab
 
 
 def test_trade_intel_fetches_abortable_per_generation():
