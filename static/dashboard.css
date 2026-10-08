@@ -11665,26 +11665,54 @@ select:focus {
 
 .bracket {
     display: flex;
-    gap: 12px;
-    align-items: center;
+    gap: 28px;
+    align-items: stretch;
+    width: fit-content;
     max-width: 100%;
+    margin: 0 auto;
     overflow-x: auto;
     color: var(--accent);
     background-color: var(--card);
     border-radius: var(--radius);
-    padding: 12px 14px 14px;
+    padding: 16px 18px;
 }
 
 .bracket-match {
     position: relative;
-    width: 210px;
+    width: 260px;
+    max-width: 100%;
     border-radius: var(--radius);
     border: 1px solid var(--border);
     background: var(--card);
     box-shadow: 0 1px 4px rgba(0, 0, 0, .06);
     padding: 10px 12px;
-    margin: 5px 0;
     transition: border-color .15s;
+}
+
+/* Connector lines between rounds: horizontal stub from each match feeding
+   into the next round column. */
+.bracket-round:not(:last-child) .bracket-match::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    right: -28px;
+    width: 28px;
+    height: 2px;
+    background: var(--border);
+    transform: translateY(-50%);
+}
+
+@media (max-width: 640px) {
+    .bracket-match {
+        width: 210px;
+    }
+    .bracket-round:not(:last-child) .bracket-match::after {
+        right: -14px;
+        width: 14px;
+    }
+    .bracket {
+        gap: 14px;
+    }
 }
 
 .bracket-match:hover {
@@ -11703,7 +11731,15 @@ select:focus {
     position: relative;
     display: flex;
     flex-direction: column;
-    justify-content: space-between;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.bracket-round .round-body {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 16px;
 }
 
 .bracket-round .round-title {
@@ -11714,7 +11750,7 @@ select:focus {
     letter-spacing: .04em;
     text-transform: uppercase;
     color: var(--text-muted);
-    margin-bottom: 8px;
+    margin-bottom: 12px;
 }
 
 .m-slide, .matchup-carousel .m-slide {
@@ -11797,18 +11833,6 @@ select:focus {
 
 .matchups-loading-skel .skeleton-line {
     margin: 7px 0;
-}
-
-.round-1 .bracket-body, .round-2 .bracket-body {
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    height: 420px;
-}
-
-.round-3 .bracket-body {
-    display: flex;
-    justify-content: center;
 }
 
 /* ============================================
@@ -15975,12 +15999,6 @@ html[data-theme="dark"] .podium .bar {
     background: linear-gradient(90deg, #f472b6, #ef4444);
 }
 
-.round-2 .round-body {
-    display: flex;
-    flex-direction: column;
-    row-gap: 105px;
-}
-
 .row {
     margin-bottom: 12px;
 }
@@ -16425,7 +16443,13 @@ h2.static-section-title:first-child {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 130px;
+    max-width: 180px;
+}
+
+@media (max-width: 640px) {
+    .team-row .team-name {
+        max-width: 130px;
+    }
 }
 
 .team-row.bye .team-name {
