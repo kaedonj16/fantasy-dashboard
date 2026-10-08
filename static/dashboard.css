@@ -22961,7 +22961,7 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
 .m-espn-meta { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
 .m-streak-w { color: #16a34a; font-weight: 700; }
 .m-streak-l { color: #dc2626; font-weight: 700; }
-.m-head-espn .m-rivalry { font-size: 12px; background: var(--card-soft); border-radius: 8px; padding: 10px; margin-top: 12px; }
+.m-head-espn .m-rivalry { font-size: 12px; background: var(--card-soft); border-radius: 8px; padding: 6px 10px; margin-top: 8px; }
 .m-head-espn .m-h2h { text-align: center; font-size: 12px; color: var(--text-muted); margin-top: 8px; }
 
 /* Weekly Recap GOTW card: why explanation + deep link. */
