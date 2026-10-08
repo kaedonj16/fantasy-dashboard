@@ -364,7 +364,10 @@ def build_weekly_hub_body(ctx: dict) -> str:
     try:
         scout_tab_html = build_scout_body(ctx)
     except Exception:
-        logger.debug("weekly: scout body build failed", exc_info=True)
+        logger.warning(
+            "weekly: scout body build failed (platform=%s season=%s league=%s)",
+            platform, season, league_id, exc_info=True,
+        )
 
     _scout_sign_in_hint = platform_sign_in_hint(platform)
     _scout_unavail = (
@@ -729,19 +732,24 @@ function wkActivateTab(tab) {{
   if (panel) panel.classList.add('active');
 }}
 
-// Activate left tab from ?tab= query param (e.g. ?tab=scout, ?tab=optimal)
-(function() {{
+// Activate left tab from ?tab= query param (e.g. ?tab=scout, ?tab=optimal).
+// Exposed globally so soft-nav can re-apply it after DOM swaps; the IIFE
+// below runs it once on initial page load.
+window.wkActivateTabFromUrl = function() {{
   var tabParam = new URLSearchParams(window.location.search).get('tab');
-  if (!tabParam) return;
-  var container = document.getElementById('weeklyLeftTabs');
-  if (!container) return;
-  var btn = container.querySelector('.tab-btn[data-tab="' + tabParam + '"]');
-  if (!btn) return;
-  container.querySelectorAll('.tab-btn').forEach(function(b) {{ b.classList.remove('active'); }});
-  container.querySelectorAll('.tab-panel').forEach(function(p) {{ p.classList.remove('active'); }});
-  btn.classList.add('active');
-  var panel = container.querySelector('.tab-panel[data-tab="' + tabParam + '"]');
-  if (panel) panel.classList.add('active');
+  if (!tabParam) return false;
+  if (typeof wkActivateTab === 'function') {{
+    var container = document.getElementById('weeklyLeftTabs');
+    if (!container) return false;
+    var btn = container.querySelector('.tab-btn[data-tab=\"' + tabParam + '\"]');
+    if (!btn) return false;
+    wkActivateTab(tabParam);
+    return true;
+  }}
+  return false;
+}};
+(function() {{
+  window.wkActivateTabFromUrl();
 }})();
 
 // Desktop layout (>=1100px): restore the pre-tab-switcher arrangement -- the
