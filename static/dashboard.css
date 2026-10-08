@@ -22915,6 +22915,10 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
 .mya-txt { flex: 1; font-weight: 600; }
 .mya-txt small { display: block; font-weight: 400; color: var(--text-subtle); font-size: 11px; }
 .mya-go { color: var(--text-subtle); flex: none; }
+.mya-dismiss { flex: none; width: 26px; height: 26px; display: inline-flex; align-items: center;
+    justify-content: center; border: 0; background: transparent; color: var(--text-subtle);
+    border-radius: 6px; cursor: pointer; font-size: 15px; line-height: 1; padding: 0; }
+.mya-dismiss:hover { background: var(--card-soft); color: var(--text); }
 .mya-viewall { font-size: 13px; font-weight: 700; color: var(--accent); text-decoration: none; }
 .mya-viewall:hover { text-decoration: underline; }
 @media (max-width: 640px) { .mya-wrap { display: none; } }
