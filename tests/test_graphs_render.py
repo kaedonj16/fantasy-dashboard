@@ -233,3 +233,83 @@ def test_seed_series_for_ranks_by_cumulative_wins_then_pf():
     # Unknown owner and empty input are best-effort [].
     assert seed_series_for(df, "Nobody") == []
     assert seed_series_for(pd.DataFrame(), "Gridiron") == []
+
+
+def _ctx_with_matchups():
+    ctx = _ctx()
+    df = ctx["df_weekly"].copy()
+    df["matchup_id"] = [1, 1, 2, 1, 1, 2, 1, 1, 2]
+    ctx["df_weekly"] = df
+    return ctx
+
+
+def test_graphs_perf_tab_has_pfpa_scatter_with_real_insight():
+    html = _load_builder()(_ctx_with_matchups(), tab="perf")
+    assert "PF vs PA" in html
+    assert "chart-pfpa" in html
+    # Viewer insight compares their PF/PA to league averages.
+    assert "league averages" in html
+
+
+def test_graphs_perf_tab_has_margin_and_h2h_cards():
+    html = _load_builder()(_ctx_with_matchups(), tab="perf")
+    assert "Margin of Victory / Defeat" in html
+    assert "Head-to-Head Matrix" in html
+    assert "h2h-table" in html
+    # Gridiron swept Haunted 3-0 in the test data.
+    assert "3-0" in html
+
+
+def test_graphs_perf_tab_has_radar_with_team_selectors():
+    html = _load_builder()(_ctx_with_matchups(), tab="perf")
+    assert "Radar Comparison" in html
+    assert "radarTeamA" in html
+    assert "radarTeamB" in html
+    assert "_initRadar" in html
+
+
+def test_graphs_perf_tab_has_boxplot_expander():
+    html = _load_builder()(_ctx_with_matchups(), tab="perf")
+    assert "Show score distributions" in html
+    assert "chart-boxdist" in html
+
+
+def test_graphs_trends_tab_has_bump_and_all_teams_charts():
+    html = _load_builder()(_ctx_with_matchups(), tab="trends")
+    assert "Standings Bump Chart" in html
+    assert "chart-bump" in html
+    assert "Weekly Scoring: All Teams" in html
+    assert "chart-allteams" in html
+
+
+def test_graphs_value_tab_has_positional_breakdown():
+    from dashboard_services.pages.graphs_page import _positional_value_card
+
+    value_ctx = {
+        "rosters": [
+            {"roster_id": "1", "players": ["p1", "p2"]},
+            {"roster_id": "2", "players": ["p3", "p4"]},
+        ],
+        "roster_map": {"1": "Gridiron", "2": "Haunted"},
+        "players_index": {
+            "p1": {"full_name": "QB1", "position": "QB"},
+            "p2": {"full_name": "RB1", "position": "RB"},
+            "p3": {"full_name": "WR1", "position": "WR"},
+            "p4": {"full_name": "TE1", "position": "TE"},
+        },
+        "players_map": {},
+        "model_value_table": [
+            {"player_id": "p1", "value": 100},
+            {"player_id": "p2", "value": 80},
+            {"player_id": "p3", "value": 70},
+            {"player_id": "p4", "value": 40},
+        ],
+        "league": {"settings": {}},
+    }
+    html = _positional_value_card(value_ctx, "Gridiron", {"Gridiron": "#1e3a5f"})
+    assert "Positional Value Breakdown" in html
+    assert "pos-track" in html
+    # Viewer insight names their strongest and thinnest position.
+    assert "concentrated at" in html
+    # Empty rosters return empty string (card omitted).
+    assert _positional_value_card({"rosters": []}, "Gridiron", {}) == ""
