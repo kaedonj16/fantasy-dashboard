@@ -129,12 +129,11 @@ def test_portfolio_holdings_freeze_pos_and_player():
 
 
 def test_career_standings_team_column_uses_hist_team():
-    # The .history-table sticky rule keys off .hist-team; the app.py
-    # renderer was missing the classes its history_page sibling has.
-    assert '<th class="hist-team">Team</th>' in APP_PY
-    assert '<td class="hist-team">' in APP_PY
-    assert "td.hist-team" in DASHBOARD_CSS
-    assert ".history-table" in DASHBOARD_CSS
+    # The awards rework uses .awards-standings-table (a compact 5-column table
+    # that fits without horizontal scroll, so no sticky column needed).
+    assert 'class="awards-standings-table"' in APP_PY
+    assert "<th>OWNER</th>" in APP_PY
+    assert ".awards-standings-table" in DASHBOARD_CSS
 
 
 # ── Compare tables: row labels frozen ───────────────────────────────────
