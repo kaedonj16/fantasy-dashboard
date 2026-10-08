@@ -5995,6 +5995,91 @@ window.initTradePage = function initTradePage(root = document) {
     }
   }
 
+  // ── Instant pick restore ────────────────────────────────────────────────
+  // Render the user's picked players from localStorage synchronously on init,
+  // before the player list finishes downloading. The persisted objects carry
+  // everything renderChips needs (name, position, team, value), and
+  // recomputeTrade only needs IDs for the server eval. Live data refreshes
+  // the picks in the background via refreshPicksWithLiveData().
+  let _instantRestored = false;
+
+  // Resolve ?a= &b= &ap= &bp= URL ids against persisted picks so shared-link
+  // trades paint instantly too. IDs missing from storage resolve later in
+  // loadTradeFromURL() once the player list arrives. Returns true when the
+  // URL names a trade.
+  function resolveUrlTradeFromStorage() {
+    const params = new URLSearchParams(window.location.search);
+    const aIds = params.get("a")?.split(",").filter(Boolean) || [];
+    const bIds = params.get("b")?.split(",").filter(Boolean) || [];
+    const apIds = params.get("ap")?.split(",").filter(Boolean) || [];
+    const bpIds = params.get("bp")?.split(",").filter(Boolean) || [];
+    if (!aIds.length && !bIds.length && !apIds.length && !bpIds.length) return false;
+    let byId = {};
+    try {
+      const raw = localStorage.getItem(getStorageKey());
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        for (const p of [...(parsed.sideAPlayers || []), ...(parsed.sideBPlayers || [])]) {
+          if (p && p.id != null) byId[String(p.id)] = p;
+        }
+      }
+    } catch (_) {}
+    state.sideAPlayers = aIds.map(id => byId[String(id)]).filter(Boolean);
+    state.sideBPlayers = bIds.map(id => byId[String(id)]).filter(Boolean);
+    state.sideAPicks = apIds.map(id => ({ id, display: formatPickId(id) }));
+    state.sideBPicks = bpIds.map(id => ({ id, display: formatPickId(id) }));
+    return true;
+  }
+
+  function restorePicksInstant() {
+    const hasUrlTrade = resolveUrlTradeFromStorage();
+    if (hasUrlTrade) {
+      renderChips("A");
+      renderChips("B");
+    } else {
+      // allPlayers is still empty here, so loadState's hydrate falls back to
+      // the persisted objects, which is exactly what we want to render now.
+      loadState();
+    }
+    syncEmptyState("A");
+    syncEmptyState("B");
+    updateAnalyzeButtonState();
+    recomputeTrade();
+    _instantRestored = true;
+  }
+
+  // Swap persisted picks for live player objects once the list arrives: fresh
+  // values, flags and rank labels. Drops picks absent from fresh data (the
+  // fetch succeeded, so absence means the player is genuinely gone from the
+  // calculator's universe). No-op when the fetch failed.
+  function refreshPicksWithLiveData() {
+    if (!allPlayers.length) return;
+    let changed = false;
+    const refresh = (list) => {
+      const out = [];
+      for (const p of list) {
+        const live = allPlayers.find(x => String(x.id) === String(p && p.id));
+        if (live) {
+          out.push(live);
+          if (live !== p) changed = true;
+        } else {
+          changed = true;
+        }
+      }
+      return out;
+    };
+    state.sideAPlayers = refresh(state.sideAPlayers);
+    state.sideBPlayers = refresh(state.sideBPlayers);
+    if (changed) {
+      renderChips("A");
+      renderChips("B");
+      syncEmptyState("A");
+      syncEmptyState("B");
+      saveState();
+      recomputeTrade();
+    }
+  }
+
   function shareTradeToClipboard() {
     const btn = root.querySelector("#shareTradeBtn");
 
@@ -6748,7 +6833,7 @@ window.initTradePage = function initTradePage(root = document) {
     }
 
     renderAllPlayersList();
-    loadState();
+    refreshPicksWithLiveData();
   }
 
   function renderAllPlayersList() {
@@ -11978,6 +12063,10 @@ window.initTradePage = function initTradePage(root = document) {
   setupSearch("A");
   setupSearch("B");
 
+  // Paint the user's picked players from localStorage immediately, before the
+  // player list finishes downloading. Live values refresh in the background.
+  restorePicksInstant();
+
   // Movers tab is below the fold: defer until idle so it never blocks the
   // critical path (player list + calculator render).
   function _deferMovers() {
@@ -12042,7 +12131,7 @@ window.initTradePage = function initTradePage(root = document) {
     const applyInitialTrade = () => {
       const loadedFromURL = loadTradeFromURL();
       if (loadedFromURL === "pending") return false;
-      if (!loadedFromURL) {
+      if (!loadedFromURL && !_instantRestored) {
         loadState();
       }
       updateAnalyzeButtonState();
