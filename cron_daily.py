@@ -953,12 +953,17 @@ print("[cron] Breakout roster notifications dispatched")
     # weekday/hour itself.
 
     # ------------------------------------------------------------------ #
-    # Step 6: Weekly rookie data (Sundays only, off/pre season)          #
+    # Step 6: Weekly rookie data (Sundays, Sept-Apr)                      #
     # ------------------------------------------------------------------ #
+    # Runs on Sundays during the prospect window (Sept-Apr), which matches
+    # the draft-class rollover rule (class turns ~week 4 of the CFB season).
+    # The old `season_type not in ("reg", "post")` gate skipped the entire
+    # CFB season, exactly when the active class accumulates weekly data.
     ROOKIE_PIPELINE_PAUSED = (os.environ.get("ROOKIE_PIPELINE_PAUSED") or "0").strip().lower() in (
         "1", "true", "yes", "on",
     )
-    if not ROOKIE_PIPELINE_PAUSED and today_weekday == 6 and season_type not in ("reg", "post"):
+    _rookie_window = date.today().month in (1, 2, 3, 4, 9, 10, 11, 12)
+    if not ROOKIE_PIPELINE_PAUSED and today_weekday == 6 and _rookie_window:
         _run_step(f"""
 from dotenv import load_dotenv; load_dotenv()
 from data_building.rookie_pipeline.pipeline import run_rookie_pipeline, get_active_rookie_class

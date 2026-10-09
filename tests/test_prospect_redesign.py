@@ -255,3 +255,95 @@ class TestBundledSeed2027:
         normed = [normalize_prospect(p) for p in seed]
         assert len(normed) == len(seed)
         assert all(p.get("draft_class_year") == 2027 for p in seed)
+
+
+class TestCfbdRosterBio:
+    def test_fills_missing_measurements(self, monkeypatch):
+        import data_building.rookie_pipeline.ingestion as ing
+        monkeypatch.setattr(ing, "_cfbd_get", lambda path, params=None, retries=2: [
+            {"firstName": "Arch", "lastName": "Manning", "height": 76, "weight": 225},
+        ])
+        monkeypatch.setattr(ing, "CFBD_KEY", "test")
+        prospects = [{"name": "Arch Manning", "height_inches": None, "weight_lbs": None}]
+        out = ing._enrich_bio_from_cfbd_roster(prospects, 2027)
+        assert out[0]["height_inches"] == 76
+        assert out[0]["weight_lbs"] == 225
+
+    def test_no_key_noop(self, monkeypatch):
+        import data_building.rookie_pipeline.ingestion as ing
+        monkeypatch.setattr(ing, "CFBD_KEY", "")
+        prospects = [{"name": "Arch Manning", "height_inches": None, "weight_lbs": None}]
+        assert ing._enrich_bio_from_cfbd_roster(prospects, 2027) == prospects
+
+
+class TestBreakoutDiscovery:
+    def _fake_cfbd(self, path, params=None, retries=2):
+        if path == "/roster":
+            return [
+                {"firstName": "Breakout", "lastName": "Star", "year": 4, "team": "Kansas"},
+                {"firstName": "Young", "lastName": "Phenom", "year": 2, "team": "Georgia"},
+            ]
+        if path == "/stats/player/season" and (params or {}).get("category") == "passing":
+            return [
+                {"player": "Breakout Star", "position": "QB", "team": "Kansas", "statType": "YDS", "stat": 2800},
+                {"player": "Young Phenom", "position": "QB", "team": "Georgia", "statType": "YDS", "stat": 2700},
+            ]
+        return []
+
+    def test_finds_eligible_new_leaders(self, monkeypatch):
+        import data_building.rookie_pipeline.ingestion as ing
+        monkeypatch.setattr(ing, "_cfbd_get", self._fake_cfbd)
+        monkeypatch.setattr(ing, "CFBD_KEY", "test")
+        found = ing.discover_breakout_prospects(2027, {"Some Veteran"})
+        assert len(found) == 1
+        assert found[0]["name"] == "Breakout Star"
+        assert found[0]["draft_class_year"] == 2027
+        assert found[0]["source"] == "cfbd_discovery"
+
+    def test_excludes_known_and_ineligible(self, monkeypatch):
+        import data_building.rookie_pipeline.ingestion as ing
+        monkeypatch.setattr(ing, "_cfbd_get", self._fake_cfbd)
+        monkeypatch.setattr(ing, "CFBD_KEY", "test")
+        found = ing.discover_breakout_prospects(2027, {"Breakout Star"})
+        assert found == []
+
+    def test_no_key_returns_empty(self, monkeypatch):
+        import data_building.rookie_pipeline.ingestion as ing
+        monkeypatch.setattr(ing, "CFBD_KEY", "")
+        assert ing.discover_breakout_prospects(2027, set()) == []
+
+
+class TestSportradarTrialSkip:
+    def test_trial_skips_prospect_fetch(self, monkeypatch):
+        import data_building.rookie_pipeline.ingestion as ing
+        monkeypatch.setattr(ing, "SPORTRADAR_KEY", "test")
+        monkeypatch.setattr(ing, "SPORTRADAR_ACCESS", "trial")
+        called = []
+        monkeypatch.setattr(ing, "_sportradar_get", lambda path: called.append(path) or {})
+        assert ing.fetch_sportradar_prospects(2027) == []
+        assert called == []
+
+
+class TestSeedConsensus:
+    def test_builds_consensus_from_seed_picks(self):
+        from data_building.rookie_pipeline.pipeline import build_seed_consensus
+        prospects = [
+            {"player_id": "ROOKIE_2027_arch_manning", "name": "Arch Manning",
+             "position": "QB", "school": "Texas", "projected_pick": 1},
+            {"player_id": "ROOKIE_2027_nobody", "name": "Nobody Real",
+             "position": "WR", "school": "Nowhere"},
+        ]
+        sc = build_seed_consensus(prospects)
+        assert len(sc) == 1
+        entry = sc["ROOKIE_2027_arch_manning"]
+        assert entry["projected_pick"] == 1
+        assert entry["projected_round"] == 1
+        assert entry["projected_draft_capital_score"] == 100.0
+        assert entry["mock_sources"] == ["seed_consensus"]
+        assert entry["is_actual_pick"] is False
+
+    def test_full_seed_has_fourteen_picks(self):
+        from data_building.rookie_pipeline.pipeline import build_seed_consensus
+        from data_building.rookie_pipeline.ingestion import get_seed_prospects
+        sc = build_seed_consensus(get_seed_prospects(2027))
+        assert len(sc) == 14

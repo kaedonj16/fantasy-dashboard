@@ -1,6 +1,6 @@
 {
  "draft_class_year": 2027,
- "count": 65,
+ "count": 66,
  "profiles": [
   {
    "player_id": "ROOKIE_2027_arch_manning",
@@ -15,7 +15,8 @@
    "early_declare": false,
    "seasons": [],
    "athleticism": {},
-   "source": "seed_2027"
+   "source": "seed_2027",
+   "projected_pick": 1
   },
   {
    "player_id": "ROOKIE_2027_dante_moore",
@@ -30,7 +31,8 @@
    "early_declare": false,
    "seasons": [],
    "athleticism": {},
-   "source": "seed_2027"
+   "source": "seed_2027",
+   "projected_pick": 3
   },
   {
    "player_id": "ROOKIE_2027_drew_mestemaker",
@@ -240,7 +242,8 @@
    "early_declare": false,
    "seasons": [],
    "athleticism": {},
-   "source": "seed_2027"
+   "source": "seed_2027",
+   "projected_pick": 22
   },
   {
    "player_id": "ROOKIE_2027_jadan_baugh",
@@ -255,7 +258,8 @@
    "early_declare": false,
    "seasons": [],
    "athleticism": {},
-   "source": "seed_2027"
+   "source": "seed_2027",
+   "projected_pick": 23
   },
   {
    "player_id": "ROOKIE_2027_ahmad_hardy",
@@ -270,7 +274,8 @@
    "early_declare": false,
    "seasons": [],
    "athleticism": {},
-   "source": "seed_2027"
+   "source": "seed_2027",
+   "projected_pick": 17
   },
   {
    "player_id": "ROOKIE_2027_mark_fletcher_jr.",
@@ -465,7 +470,8 @@
    "early_declare": false,
    "seasons": [],
    "athleticism": {},
-   "source": "seed_2027"
+   "source": "seed_2027",
+   "projected_pick": 2
   },
   {
    "player_id": "ROOKIE_2027_cam_coleman",
@@ -480,7 +486,8 @@
    "early_declare": false,
    "seasons": [],
    "athleticism": {},
-   "source": "seed_2027"
+   "source": "seed_2027",
+   "projected_pick": 6
   },
   {
    "player_id": "ROOKIE_2027_charlie_becker",
@@ -495,7 +502,8 @@
    "early_declare": false,
    "seasons": [],
    "athleticism": {},
-   "source": "seed_2027"
+   "source": "seed_2027",
+   "projected_pick": 26
   },
   {
    "player_id": "ROOKIE_2027_nick_marsh",
@@ -510,7 +518,8 @@
    "early_declare": false,
    "seasons": [],
    "athleticism": {},
-   "source": "seed_2027"
+   "source": "seed_2027",
+   "projected_pick": 11
   },
   {
    "player_id": "ROOKIE_2027_ryan_coleman_williams",
@@ -525,7 +534,8 @@
    "early_declare": false,
    "seasons": [],
    "athleticism": {},
-   "source": "seed_2027"
+   "source": "seed_2027",
+   "projected_pick": 19
   },
   {
    "player_id": "ROOKIE_2027_kj_duff",
@@ -660,7 +670,8 @@
    "early_declare": false,
    "seasons": [],
    "athleticism": {},
-   "source": "seed_2027"
+   "source": "seed_2027",
+   "projected_pick": 32
   },
   {
    "player_id": "ROOKIE_2027_cooper_barkate",
@@ -735,7 +746,8 @@
    "early_declare": false,
    "seasons": [],
    "athleticism": {},
-   "source": "seed_2027"
+   "source": "seed_2027",
+   "projected_pick": 31
   },
   {
    "player_id": "ROOKIE_2027_tony_diaz",
@@ -810,7 +822,8 @@
    "early_declare": false,
    "seasons": [],
    "athleticism": {},
-   "source": "seed_2027"
+   "source": "seed_2027",
+   "projected_pick": 28
   },
   {
    "player_id": "ROOKIE_2027_treydez_green",
@@ -976,6 +989,22 @@
    "seasons": [],
    "athleticism": {},
    "source": "seed_2027"
+  },
+  {
+   "player_id": "ROOKIE_2027_drake_lindsey",
+   "name": "Drake Lindsey",
+   "position": "QB",
+   "school": "Minnesota",
+   "age": null,
+   "height_inches": null,
+   "weight_lbs": null,
+   "state": null,
+   "draft_class_year": 2027,
+   "early_declare": false,
+   "seasons": [],
+   "athleticism": {},
+   "source": "seed_2027",
+   "projected_pick": 4
   }
  ]
 }

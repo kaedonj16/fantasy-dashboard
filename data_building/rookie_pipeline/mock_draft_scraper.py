@@ -8,6 +8,7 @@ and converts it to the format expected by the rookie pipeline.
 from __future__ import annotations
 
 import logging
+import os
 import re
 import time
 import warnings
@@ -191,6 +192,15 @@ def _scrape_round_with_retry(
     return []
 
 
+def _playwright_browser_available() -> bool:
+    """Cheap pre-check: is the Playwright chromium executable installed?"""
+    try:
+        with sync_playwright() as p:
+            return os.path.exists(p.chromium.executable_path)
+    except Exception:
+        return False
+
+
 def scrape_consensus_mock_draft(draft_year: int) -> List[Dict[str, Any]]:
     """
     Scrape consensus mock draft from FantasyPros.
@@ -210,7 +220,11 @@ def scrape_consensus_mock_draft(draft_year: int) -> List[Dict[str, Any]]:
     """
     print(f"[mock_scraper] Starting consensus mock draft scrape for {draft_year}")
     print(f"[mock_scraper] FantasyPros URL: {FANTASYPROS_BASE}")
-    
+
+    if not _playwright_browser_available():
+        print("[mock_scraper] SKIP: Playwright chromium not installed - run `playwright install chromium` to enable mock drafts")
+        return []
+
     all_picks: List[Dict[str, Any]] = []
     round_results = {1: 0, 2: 0, 3: 0}
     

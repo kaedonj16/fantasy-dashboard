@@ -48,7 +48,7 @@ import os
 import re
 import time
 import warnings
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import requests
 def normalize_name(name: str) -> str:
@@ -1367,6 +1367,12 @@ def fetch_sportradar_prospects(draft_year: int) -> List[Dict[str, Any]]:
         print("[sportradar] FAILED: No SPORTRADAR_API_KEY set - cannot fetch prospects")
         return []
 
+    if SPORTRADAR_ACCESS == "trial":
+        # Verified 2026-10-09: trial keys get 403 on the draft-prospects
+        # endpoint, even for completed drafts. Skip the doomed call.
+        print("[sportradar] SKIP: trial access has no draft-prospects endpoint - using seed data")
+        return []
+
     try:
         data = _sportradar_get(f"{draft_year}/prospects.json")
     except Exception as exc:
@@ -1453,6 +1459,82 @@ def _enrich_bio_from_cfbd_roster(prospects: List[Dict[str, Any]], draft_year: in
             p["weight_lbs"] = w
     print(f"[cfbd] roster bio filled measurements for {filled} prospects ({season_year} rosters)")
     return prospects
+
+
+def discover_breakout_prospects(
+    draft_year: int,
+    existing_names: Set[str],
+    max_new: int = 25,
+) -> List[Dict[str, Any]]:
+    """
+    Free auto-discovery: scan CFB stat leaders for draft-eligible players
+    missing from the prospect universe. Catches breakout players the curated
+    seed didn't include. Eligibility via roster class year (JR/SR/GR only).
+    """
+    if not CFBD_KEY:
+        return []
+    season_year = draft_year - 1
+    existing = {n.lower().strip() for n in existing_names if n}
+
+    try:
+        roster = _cfbd_get("/roster", {"year": season_year}, retries=2) or []
+    except Exception as exc:
+        print(f"[discovery] roster fetch failed - {type(exc).__name__}: {exc}")
+        return []
+    eligible: Set[str] = set()
+    for row in roster:
+        name = f"{row.get('firstName') or ''} {row.get('lastName') or ''}".strip().lower()
+        if name and (_safe_int(row.get("year")) or 0) >= 3:  # 3=JR, 4=SR, 5=GR
+            eligible.add(name)
+
+    discovered: List[Dict[str, Any]] = []
+    seen_new: Set[str] = set()
+    for category, positions in [
+        ("passing", {"QB"}),
+        ("rushing", {"RB"}),
+        ("receiving", {"WR", "TE"}),
+    ]:
+        if len(discovered) >= max_new:
+            break
+        try:
+            data = _cfbd_get(
+                "/stats/player/season",
+                {"year": season_year, "seasonType": "regular", "category": category},
+                retries=2,
+            ) or []
+        except Exception as exc:
+            print(f"[discovery] {category} leaders failed - {type(exc).__name__}: {exc}")
+            continue
+        leaders = [
+            r for r in data
+            if r.get("statType") == "YDS" and (r.get("position") or "").upper() in positions
+        ]
+        leaders.sort(key=lambda r: float(r.get("stat") or 0), reverse=True)
+        for r in leaders[:30]:
+            if len(discovered) >= max_new:
+                break
+            name = (r.get("player") or "").strip()
+            key = name.lower()
+            if not name or key in existing or key in seen_new or key not in eligible:
+                continue
+            seen_new.add(key)
+            discovered.append({
+                "player_id": f"ROOKIE_{draft_year}_{_slug(name)}",
+                "name": name,
+                "position": (r.get("position") or "").upper(),
+                "school": r.get("team"),
+                "age": None,
+                "height_inches": None,
+                "weight_lbs": None,
+                "state": None,
+                "draft_class_year": draft_year,
+                "early_declare": False,
+                "seasons": [],
+                "athleticism": {},
+                "source": "cfbd_discovery",
+            })
+    print(f"[discovery] found {len(discovered)} new draft-eligible stat leaders for {draft_year}")
+    return discovered
 
 
 def get_seed_prospects(draft_year: int) -> List[Dict[str, Any]]:
@@ -1613,6 +1695,15 @@ def load_prospects_for_year(draft_year: int) -> List[Dict[str, Any]]:
         print(f"[ingestion] ERROR loading seed prospects - {type(exc).__name__}: {exc}")
         seed = []
     print(f"[ingestion] Loaded {len(seed)} seed prospects")
+
+    # Auto-discovery: catch draft-eligible breakouts the seed missed
+    try:
+        found = discover_breakout_prospects(draft_year, {p.get("name", "") for p in seed})
+        if found:
+            print(f"[ingestion] Discovery added {len(found)} prospects")
+            seed = seed + found
+    except Exception as exc:
+        print(f"[ingestion] Discovery failed - {type(exc).__name__}: {exc}")
 
     # ── No Sportradar key - use seed only ────────────────────────────────────
     if not SPORTRADAR_KEY:
