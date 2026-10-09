@@ -423,7 +423,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
   .m-adv-row .rk-meter-bar { height: 7px; flex: none; }
   .m-adv-score { font-size: 13px; font-weight: 700; text-align: right; color: var(--text); }
   .m-adv-grade { font-size: 13px; font-weight: 800; text-align: right; }
-  .m-adv-radar { display: flex; justify-content: center; }
+  .m-adv-radar { display: flex; justify-content: center; padding: 10px 14px; }
 
   /* Two-column modal layout */
   .m-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 28px; align-items: start; }
@@ -625,8 +625,28 @@ def build_prospects_body(is_admin: bool = False) -> str:
     if (v >= 60) return ['D', '#f87171'];
     return ['F', '#ef4444'];
   }
+  // Score display: one decimal, never rounded to whole, never 100.
+  function rkScore1(v) {
+    var n = parseFloat(v);
+    if (isNaN(n)) return '-';
+    n = Math.min(n, 99.9);
+    return (Math.round(n * 10) / 10).toFixed(1);
+  }
+  function rkScoreNum(v) {
+    var n = parseFloat(v);
+    if (isNaN(n)) return 0;
+    return Math.min(n, 99.9);
+  }
+  // Radar label abbreviations: full names live in the rows beside it.
+  var RK_RADAR_ABBR = {
+    'Dominator': 'DOM', 'Breakout Age': 'BO AGE', 'Yds/Carry': 'YDS/C',
+    'Yds/Rec': 'YDS/R', 'Scrim Yds/Gm': 'SCRIM', 'Mkt Share': 'MKT SH',
+    'TD Share': 'TD SH', 'Speed Score': 'SPEED', 'Efficiency': 'EFF',
+    'Production': 'PROD', 'Recruiting': 'REC', 'WEPA': 'WEPA',
+    'Cmp%': 'CMP%', 'TD:INT': 'TD:INT', 'Yds/Att': 'YDS/A', 'AY/A': 'AY/A'
+  };
   function rkRadarSVG(labels, values, color) {
-    var size = 220, cx = 110, cy = 112, R = 78, n = labels.length;
+    var size = 220, cx = 110, cy = 112, R = 68, n = labels.length;
     if (!n) return '';
     function pt(k, r) {
       var a = (-90 + k * 360 / n) * Math.PI / 180;
@@ -648,11 +668,12 @@ def build_prospects_body(is_admin: bool = False) -> str:
     var dots = vp.map(function(s) { var xy = s.split(','); return '<circle cx="' + xy[0] + '" cy="' + xy[1] + '" r="2.5" fill="' + color + '"/>'; }).join('');
     var labs = labels.map(function(l, k) {
       var a = (-90 + k * 360 / n) * Math.PI / 180;
-      var lx = cx + (R + 18) * Math.cos(a), ly = cy + (R + 18) * Math.sin(a);
+      var lx = cx + (R + 20) * Math.cos(a), ly = cy + (R + 20) * Math.sin(a);
       var anchor = Math.abs(Math.cos(a)) < 0.35 ? 'middle' : (Math.cos(a) > 0 ? 'start' : 'end');
-      return '<text x="' + lx.toFixed(1) + '" y="' + (ly + 3).toFixed(1) + '" text-anchor="' + anchor + '" font-size="9" font-weight="700" style="fill:var(--text-muted)">' + rkEsc(String(l).toUpperCase()) + '</text>';
+      var txt = RK_RADAR_ABBR[l] || String(l).toUpperCase();
+      return '<text x="' + lx.toFixed(1) + '" y="' + (ly + 3).toFixed(1) + '" text-anchor="' + anchor + '" font-size="9" font-weight="700" style="fill:var(--text-muted)">' + rkEsc(txt) + '</text>';
     }).join('');
-    return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size + '" role="img">' + grid + axes + poly + dots + labs + '</svg>';
+    return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size + '" style="overflow:visible" role="img">' + grid + axes + poly + dots + labs + '</svg>';
   }
 
   // Sort dropdown: choosing a key resets to that key's default direction.
@@ -913,11 +934,11 @@ def build_prospects_body(is_admin: bool = False) -> str:
 
       var compVals = [r.production_score, r.athleticism_score, r.projected_draft_capital_score];
       var compsHtml = '<div class="rk-comps3">' + compVals.map(function(v, k) {
-        var n = Math.round(parseFloat(v || 0));
-        return '<div class="rk-compcol" title="' + RK_COMP_NAMES[k] + ' ' + n + '">' +
+        var n = rkScoreNum(v), disp = rkScore1(v);
+        return '<div class="rk-compcol" title="' + RK_COMP_NAMES[k] + ' ' + disp + '">' +
           '<div class="rk-compcol-label">' + RK_COMP_SHORT[k] + '</div>' +
           '<div class="rk-compcol-row"><div class="rk-meter-bar"><div style="width:' + n + '%;background:' + RK_COMP_COLORS[k] + '"></div></div>' +
-          '<span class="rk-meter-val" style="color:' + RK_COMP_COLORS[k] + '">' + n + '</span></div></div>';
+          '<span class="rk-meter-val" style="color:' + RK_COMP_COLORS[k] + '">' + disp + '</span></div></div>';
       }).join('') + '</div>';
 
       row.innerHTML =
@@ -929,7 +950,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
           '<div class="rk-meta">' + metaBits.join(' &middot; ') + '</div></div>' +
         '</div></div>' +
         compsHtml +
-        '<div class="rk-score">' + Math.round(score) + '</div>' +
+        '<div class="rk-score">' + rkScore1(score) + '</div>' +
         '<div class="rk-mock" title="Expected draft spot based on mock drafts">' + mockPick + '</div>' +
         '<button class="rk-star' + (rkWatch[pid] ? ' watching' : '') + '"' +
           ' aria-label="Watch ' + rkEsc(r.name || '') + '">' + rkStarSVG() + '</button>';
@@ -985,11 +1006,11 @@ def build_prospects_body(is_admin: bool = False) -> str:
       { label: 'Draft Capital', val: r.projected_draft_capital_score, color: RK_COMP_COLORS[2], rawId: 'rkRawDc' }
     ];
     var compsHtml = compDefs.map(function(c) {
-      var v = Math.round(parseFloat(c.val || 0));
+      var v = rkScoreNum(c.val), disp = rkScore1(c.val);
       return '<div class="m-comp-row">' +
         '<div class="m-comp-label">' + c.label + '</div>' +
         '<div class="rk-meter-bar"><div style="width:' + v + '%;background:' + c.color + '"></div></div>' +
-        '<div class="rk-meter-val" style="color:' + c.color + '">' + v + '</div>' +
+        '<div class="rk-meter-val" style="color:' + c.color + '">' + disp + '</div>' +
         '<div class="m-comp-raw" id="' + c.rawId + '"></div></div>';
     }).join('');
 
@@ -1017,7 +1038,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
         '<div class="rk-hero-row">' +
           '<div class="rk-hero-stat" style="background:' + tc + '14;border-color:transparent;">' +
             '<div class="rk-hero-label">Prospect Score</div>' +
-            '<div class="rk-hero-val" style="color:' + tc + ';">' + Math.round(score) + '</div>' +
+            '<div class="rk-hero-val" style="color:' + tc + ';">' + rkScore1(score) + '</div>' +
             '<div class="rk-hero-sub">' + rkEsc(RK_TIER_NAMES[r.tier] || r.tier_label || '') + '</div></div>' +
           '<div class="rk-hero-stat"><div class="rk-hero-label">Breakout Age</div>' +
             '<div class="rk-hero-val" id="rkHeroBreakout">-</div><div class="rk-hero-sub">years</div></div>' +
@@ -1027,7 +1048,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
         '</div>' +
         '<hr class="rk-section-divider">' +
         '<div class="m-sec-head"><div class="m-sec-label">Grade breakdown</div>' +
-          '<div class="m-conf">Data confidence: <b>' + Math.round(conf) + '</b></div></div>' +
+          '<div class="m-conf">Data confidence: <b>' + rkScore1(conf) + '</b></div></div>' +
         compsHtml +
         '<div id="rkMoreComps" style="display:none"></div>' +
         '<button class="m-more-btn" id="rkMoreCompsBtn" onclick="rkToggleMoreComps()">Show all components</button>' +
@@ -1111,7 +1132,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
           return '<div class="m-sim-row">' + disc +
             '<div><div class="m-sim-name">' + rkEsc(c.name) + '</div>' +
             '<div class="m-sim-meta">' + rkEsc(meta) + '</div></div>' +
-            '<div class="m-sim-right"><span class="m-sim-score">' + Math.round(parseFloat(c.prospect_score || 0)) + '</span>' +
+            '<div class="m-sim-right"><span class="m-sim-score">' + rkScore1(c.prospect_score) + '</span>' +
             '<span class="m-sim-tier" style="background:' + ctc + '22;color:' + ctc + ';border:1px solid ' + ctc + '44;">T' + c.tier + '</span></div></div>';
         }).join('');
       })
@@ -1203,12 +1224,12 @@ def build_prospects_body(is_admin: bool = False) -> str:
                   d.experience_score, r.competition_score];
       var raws = ['', '', '', '', sosRaw];
       more.innerHTML = vals.map(function(v, k) {
-        var n = Math.round(parseFloat(v || 0));
+        var n = rkScoreNum(v), disp = rkScore1(v);
         var dd = RK_XCOMP[k];
         return '<div class="m-comp-row">' +
           '<div class="m-comp-label">' + dd[0] + '</div>' +
           '<div class="rk-meter-bar"><div style="width:' + n + '%;background:' + dd[1] + '"></div></div>' +
-          '<div class="rk-meter-val" style="color:' + dd[1] + '">' + n + '</div>' +
+          '<div class="rk-meter-val" style="color:' + dd[1] + '">' + disp + '</div>' +
           '<div class="m-comp-raw">' + rkEsc(raws[k]) + '</div></div>';
       }).join('');
     }
