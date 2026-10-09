@@ -25129,12 +25129,19 @@ window.brRzm = (function () {
     if (play.quarter) when.push('Q' + play.quarter);
     if (play.clock) when.push(play.clock);
     var whenStr = when.join(' ');
-    var pts = rzmPlayPts(play);
-    var ptsHtml = pts > 0 ? '<span class="rzm-tl-pts">+' + pts + '</span>' : '';
+    var pts = (play.fantasy_pts != null && isFinite(play.fantasy_pts))
+      ? Math.round(play.fantasy_pts * 10) / 10
+      : rzmPlayPts(play);
+    var ptsHtml = '';
+    if (pts > 0) {
+      ptsHtml = '<span class="rzm-tl-pts">+' + pts + '</span>';
+    } else if (pts < 0) {
+      ptsHtml = '<span class="rzm-tl-pts neg">' + pts + '</span>';
+    }
     var teamPos = [];
     if (play.team) teamPos.push(play.team);
     if (play.pos) teamPos.push(play.pos);
-    return '<button type="button" class="rzm-tl-row" data-rzm-play data-game-id="' + escapeHtml(play.game_id || '') + '" data-play-id="' + escapeHtml(play.play_id || '') + '">'
+    return '<div class="rzm-tl-row">'
       + '<span class="rzm-tl-dot ' + dotCls + '"></span>'
       + '<span class="rzm-tl-body">'
       + '<span class="rzm-tl-who">' + escapeHtml(play.name || 'Unknown')
@@ -25143,7 +25150,7 @@ window.brRzm = (function () {
       + '<span class="rzm-tl-what">' + escapeHtml(play.play_text || '') + '</span>'
       + '</span>'
       + '<span class="rzm-tl-meta">' + escapeHtml(whenStr) + (ptsHtml ? '<br>' + ptsHtml : '') + '</span>'
-      + '</button>';
+      + '</div>';
   }
   function openModal(payload, ctx) {
     if (!payload || !(payload.plays || []).length) return;
@@ -25164,7 +25171,8 @@ window.brRzm = (function () {
     var youPct = totalTds ? Math.round(youTds / totalTds * 100) : 0;
     var oppPct = totalTds ? Math.round(oppTds / totalTds * 100) : 0;
     var subtext = tdCount + (tdCount === 1 ? ' touchdown' : ' touchdowns') + ' from your matchup';
-    var playsHtml = plays.map(playHtml).join('');
+    var tdPlays = plays.filter(function (p) { return p.kind === 'td'; });
+    var playsHtml = tdPlays.map(playHtml).join('');
     var overlay = document.createElement('div');
     overlay.className = 'rzm-modal-overlay';
     overlay.id = 'rzmModalOverlay';
@@ -25176,7 +25184,8 @@ window.brRzm = (function () {
       + '<div class="rzm-modal-sub">' + escapeHtml(subtext) + '</div></div>'
       + '<button type="button" class="rzm-modal-close" data-rzm-close aria-label="Close">\u00d7</button></div>'
       + '<div class="rzm-filters" role="tablist">'
-      + '<button type="button" class="rzm-filter is-active" data-rzm-filter="all">All ' + plays.length + '</button>'
+      + '<button type="button" class="rzm-filter is-active" data-rzm-filter="td">TDs ' + tdCount + '</button>'
+      + '<button type="button" class="rzm-filter" data-rzm-filter="all">All ' + plays.length + '</button>'
       + '<button type="button" class="rzm-filter" data-rzm-filter="you">My team ' + youCount + '</button>'
       + '<button type="button" class="rzm-filter" data-rzm-filter="opp">' + escapeHtml(teams.opp || 'Opp') + ' ' + oppCount + '</button>'
       + '</div>'
@@ -25202,6 +25211,7 @@ window.brRzm = (function () {
     var list = overlay.querySelector('[data-rzm-list]');
     if (!list) return;
     var plays = (overlay._rzmPlays || []).filter(function (p) {
+      if (filter === 'td') return p.kind === 'td';
       return filter === 'all' || p.side === filter;
     });
     list.innerHTML = plays.length ? plays.map(playHtml).join('') : '<div class="rzm-empty">No moments for this filter.</div>';
@@ -25233,23 +25243,6 @@ window.brRzm = (function () {
     if (filterBtn) {
       applyFilter(overlay, filterBtn.getAttribute('data-rzm-filter'));
       return;
-    }
-    var playBtn = ev.target.closest('[data-rzm-play]');
-    if (playBtn) {
-      var gid = playBtn.getAttribute('data-game-id') || '';
-      var playId = playBtn.getAttribute('data-play-id') || '';
-      var ctx = overlay._rzmCtx || {};
-      closeModal();
-      // Jump to the play in the ScoreZone feed (league-scoped URL).
-      var url = '/scorezone';
-      if (ctx.platform && ctx.leagueId) {
-        url = '/' + ctx.platform + '/' + (ctx.season || '') + '/' + ctx.leagueId + '/scorezone';
-      }
-      var qs = [];
-      if (gid) qs.push('game=' + encodeURIComponent(gid));
-      if (playId) qs.push('play=' + encodeURIComponent(playId));
-      if (qs.length) url += '?' + qs.join('&');
-      window.location.href = url;
     }
   });
   document.addEventListener('keydown', function (ev) {
