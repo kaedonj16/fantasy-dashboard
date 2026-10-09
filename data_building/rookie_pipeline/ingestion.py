@@ -1595,6 +1595,19 @@ def load_prospects_for_year(draft_year: int) -> List[Dict[str, Any]]:
         espn_ages = {}
     print(f"[ingestion] ESPN ages resolved for {len(espn_ages)} prospects")
 
+    print(f"[ingestion] Resolving ESPN headshots for {len(sr_prospects)} prospects")
+    try:
+        from .espn_scraper import fetch_espn_headshots
+        espn_headshots = fetch_espn_headshots(
+            [p["name"] for p in sr_prospects],
+            draft_year,
+            prospects_meta=sr_prospects,   # provides school + position for disambiguation
+        )
+    except Exception as exc:
+        print(f"[ingestion] ERROR in ESPN headshot lookup - {type(exc).__name__}: {exc}")
+        espn_headshots = {}
+    print(f"[ingestion] ESPN headshots resolved for {len(espn_headshots)} prospects")
+
     print(f"[ingestion] Fetching NFLverse combine data for {draft_year}")
     try:
         combine_data = fetch_nflverse_combine(draft_year)
@@ -1654,6 +1667,16 @@ def load_prospects_for_year(draft_year: int) -> List[Dict[str, Any]]:
             except Exception as exc:
                 print(f"[ingestion] ERROR calculating age for '{sr['name']}' - {type(exc).__name__}: {exc}")
                 p["age"] = None
+
+            # ── Headshot: ESPN college headshot via athlete ID ────────────────
+            try:
+                p["headshot_url"] = (
+                    espn_headshots.get(name_key)
+                    or (seed_p or {}).get("headshot_url")
+                )
+            except Exception as exc:
+                print(f"[ingestion] ERROR setting headshot for '{sr['name']}' - {type(exc).__name__}: {exc}")
+                p["headshot_url"] = None
 
             # ── Athleticism / combine ─────────────────────────────────────────────
             try:

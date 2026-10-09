@@ -160,20 +160,39 @@ def _clip100(v):
 
 
 def _grade_dominator(d):
-    # The model treats >= 0.35 as an elite dominator (late-round upside gate).
+    # The model treats >= 0.35 as an elite dominator (late-round upside gate),
+    # so 0.35 anchors 100 here. (Previously 0.40, which graded a strong 31%
+    # season as a C+.)
     if d is None:
         return None
-    return _clip100(d / 0.40 * 100.0)
+    return _clip100(d / 0.35 * 100.0)
+
+
+_BREAKOUT_AGE_DISPLAY = (
+    # (age, grade) anchors for DISPLAY grading. An average breakout age
+    # (~20.5-21) reads as C, not F. The model's linear component scale in
+    # prospect_model is untouched; this only affects the modal's letter.
+    (18.5, 100.0), (19.0, 97.0), (19.5, 90.0), (20.0, 85.0),
+    (20.5, 78.0), (21.0, 70.0), (21.5, 60.0), (22.0, 50.0), (22.5, 40.0),
+)
 
 
 def _grade_breakout_age(age, pos):
-    # Same scale the model uses for its breakout-age component.
     if age is None:
         return None
-    pos = (pos or "").upper()
-    if pos == "QB":
-        return _clip100((23.5 - float(age)) / 5.0 * 100.0)
-    return _clip100((23.0 - float(age)) / 4.5 * 100.0)
+    try:
+        a = float(age)
+    except (TypeError, ValueError):
+        return None
+    if (pos or "").upper() == "QB":
+        a -= 0.7  # QBs break out later; grade on a shifted scale
+    pts = _BREAKOUT_AGE_DISPLAY
+    if a <= pts[0][0]:
+        return 100.0
+    for (a0, g0), (a1, g1) in zip(pts, pts[1:]):
+        if a <= a1:
+            return _clip100(g0 + (g1 - g0) * (a - a0) / (a1 - a0))
+    return _clip100(pts[-1][1])
 
 
 def _grade_ypr(v):
@@ -198,6 +217,21 @@ def _grade_cmp(v):
 
 def _grade_td_int(v):
     return _clip100(v / 4.0 * 100.0) if v is not None else None
+
+
+def _grade_scrim(v):
+    # Scrimmage yards per game; 140+ is an elite college season.
+    return _clip100(v / 140.0 * 100.0) if v is not None else None
+
+
+def _grade_aya(v):
+    # Adjusted yards per attempt; 10.5+ is elite college efficiency.
+    return _clip100(v / 10.5 * 100.0) if v is not None else None
+
+
+def _grade_td_share(v):
+    # Share of team TDs; 0.30+ is an elite scoring share.
+    return _clip100(v / 0.30 * 100.0) if v is not None else None
 
 
 def _grade_ypa(v):
@@ -287,12 +321,13 @@ def _fmt1(v):
     return ("%g" % round(f, 1))
 
 
-def _build_advanced_metrics(position, seasons, athleticism, row):
+def _build_advanced_metrics(position, seasons, athleticism, row, wepa_score=None):
     """Position-correct advanced metric sets: [{label, raw, grade}]."""
     pos = (position or "").upper()
     best = {}
     for s in seasons or []:
-        for k in ("dominator_rating", "market_share_yards", "yds_per_reception",
+        for k in ("dominator_rating", "market_share_yards", "market_share_tds",
+                  "yds_per_reception",
                   "yds_per_carry", "completion_pct", "td_int_ratio", "yds_per_attempt"):
             try:
                 v = float(s.get(k)) if s.get(k) is not None else None
@@ -300,14 +335,57 @@ def _build_advanced_metrics(position, seasons, athleticism, row):
                 v = None
             if v is not None and (k not in best or v > best[k]):
                 best[k] = v
+        # Derived per-season bests (all from real stored fields).
+        try:
+            gp = float(s.get("games_played") or 0)
+            if gp > 0:
+                scrim = (float(s.get("rush_yards") or 0) +
+                         float(s.get("receiving_yards") or 0)) / gp
+                if "scrimmage_per_game" not in best or scrim > best["scrimmage_per_game"]:
+                    best["scrimmage_per_game"] = scrim
+            att = float(s.get("pass_attempts") or 0)
+            if att > 0:
+                aya = (float(s.get("pass_yards") or 0)
+                       + 20.0 * float(s.get("pass_tds") or 0)
+                       - 45.0 * float(s.get("interceptions") or 0)) / att
+                if "aya" not in best or aya > best["aya"]:
+                    best["aya"] = aya
+        except (TypeError, ValueError, ZeroDivisionError):
+            pass
     try:
         speed = float(athleticism.get("speed_score")) if athleticism.get("speed_score") is not None else None
     except (TypeError, ValueError):
         speed = None
+    if speed is None:
+        # Derive from forty + weight when the pipeline stored measurables
+        # but no official speed score (common pre-combine).
+        try:
+            forty = float(athleticism.get("forty_yard")) if athleticism.get("forty_yard") is not None else None
+            wt = float(row.get("weight_lbs")) if row.get("weight_lbs") is not None else None
+            if forty and wt:
+                speed = round(wt * 200.0 / (forty ** 4), 1)
+        except (TypeError, ValueError, ZeroDivisionError):
+            pass
     eff = _safe_float(row.get("efficiency_score"))
     prod = _safe_float(row.get("production_score"))
     breakout_age = _compute_breakout_age(
         seasons, row.get("age"), pos)
+    # Recruiting pedigree (model v2.0): grade straight from recruiting_score.
+    recruit_grade = _clip100(row.get("recruiting_score"))
+    recruit_raw = None
+    try:
+        rs = row.get("recruit_stars")
+        if rs is not None:
+            recruit_raw = "%d-star" % int(float(rs))
+    except (TypeError, ValueError):
+        pass
+    # WEPA opponent-adjusted efficiency (Patreon-tier CFBD; None when unavailable).
+    try:
+        wepa = float(wepa_score) if wepa_score is not None else None
+    except (TypeError, ValueError):
+        wepa = None
+    wepa_row = (("WEPA", _fmt1(wepa), _clip100(wepa))
+                if wepa is not None else None)
     metrics = []
     if pos == "QB":
         metrics = [
@@ -315,27 +393,40 @@ def _build_advanced_metrics(position, seasons, athleticism, row):
              _grade_cmp(best.get("completion_pct"))),
             ("TD:INT", _fmt1(best.get("td_int_ratio")), _grade_td_int(best.get("td_int_ratio"))),
             ("Yds/Att", _fmt1(best.get("yds_per_attempt")), _grade_ypa(best.get("yds_per_attempt"))),
+            ("AY/A", _fmt1(best.get("aya")), _grade_aya(best.get("aya"))),
             ("Breakout Age", _fmt1(breakout_age), _grade_breakout_age(breakout_age, pos)),
             ("Efficiency", _fmt1(eff), _clip100(eff)),
             ("Production", _fmt1(prod), _clip100(prod)),
         ]
+        if wepa_row:
+            metrics.append(wepa_row)
+        metrics.append(("Recruiting", recruit_raw, recruit_grade))
     elif pos == "RB":
         metrics = [
             ("Dominator", _fmt_pct1(best.get("dominator_rating")), _grade_dominator(best.get("dominator_rating"))),
             ("Breakout Age", _fmt1(breakout_age), _grade_breakout_age(breakout_age, pos)),
             ("Yds/Carry", _fmt1(best.get("yds_per_carry")), _grade_ypc(best.get("yds_per_carry"))),
+            ("Scrim Yds/Gm", _fmt1(best.get("scrimmage_per_game")), _grade_scrim(best.get("scrimmage_per_game"))),
             ("Mkt Share", _fmt_pct1(best.get("market_share_yards")), _grade_market_share(best.get("market_share_yards"))),
+            ("TD Share", _fmt_pct1(best.get("market_share_tds")), _grade_td_share(best.get("market_share_tds"))),
             ("Speed Score", _fmt1(speed), _grade_speed_score(speed)),
-            ("Efficiency", _fmt1(eff), _clip100(eff)),
         ]
+        if wepa_row:
+            metrics.append(wepa_row)
+        metrics.extend([
+            ("Efficiency", _fmt1(eff), _clip100(eff)),
+            ("Recruiting", recruit_raw, recruit_grade),
+        ])
     else:  # WR / TE
         metrics = [
             ("Dominator", _fmt_pct1(best.get("dominator_rating")), _grade_dominator(best.get("dominator_rating"))),
             ("Breakout Age", _fmt1(breakout_age), _grade_breakout_age(breakout_age, pos)),
             ("Yds/Rec", _fmt1(best.get("yds_per_reception")), _grade_ypr(best.get("yds_per_reception"))),
             ("Mkt Share", _fmt_pct1(best.get("market_share_yards")), _grade_market_share(best.get("market_share_yards"))),
+            ("TD Share", _fmt_pct1(best.get("market_share_tds")), _grade_td_share(best.get("market_share_tds"))),
             ("Speed Score", _fmt1(speed), _grade_speed_score(speed)),
             ("Efficiency", _fmt1(eff), _clip100(eff)),
+            ("Recruiting", recruit_raw, recruit_grade),
         ]
     out = []
     for label, raw, grade in metrics:
@@ -462,6 +553,37 @@ def _get_prospect_detail(player_id: str, row: Dict) -> Dict:
                         detail["composite_stars"] = int(prow["composite_stars"])
                 except Exception:
                     pass
+            # WEPA opponent-adjusted efficiency (best normalized score, any season).
+            try:
+                wrow = conn.execute(
+                    """SELECT adj_efficiency_score FROM rookie_prospect_wepa
+                       WHERE player_id = %s AND adj_efficiency_score IS NOT NULL
+                       ORDER BY adj_efficiency_score DESC LIMIT 1""",
+                    (player_id,),
+                ).fetchone()
+                if wrow and wrow.get("adj_efficiency_score") is not None:
+                    detail["wepa_score"] = float(wrow["adj_efficiency_score"])
+            except Exception:
+                pass
+            # Team context: SP+ rating + SOS for the latest season's school.
+            try:
+                school = row.get("school")
+                latest_season = max(
+                    (int(s.get("season") or 0) for s in seasons), default=0)
+                if school and latest_season:
+                    trow = conn.execute(
+                        """SELECT sp_rating, sp_sos, talent_composite
+                           FROM rookie_team_context
+                           WHERE school = %s AND season = %s""",
+                        (school, latest_season),
+                    ).fetchone()
+                    if trow:
+                        detail["sp_rating"] = _safe_float(trow.get("sp_rating"))
+                        detail["sp_sos"] = _safe_float(trow.get("sp_sos"))
+                        detail["talent_composite"] = _safe_float(
+                            trow.get("talent_composite"))
+            except Exception:
+                pass
     except Exception:
         pass
 
@@ -484,7 +606,8 @@ def _get_prospect_detail(player_id: str, row: Dict) -> Dict:
         seasons, row.get("age"), row.get("position"))
     detail["mock_trend"] = _get_mock_trend(player_id)
     detail["advanced"] = _build_advanced_metrics(
-        row.get("position"), seasons, athleticism, row)
+        row.get("position"), seasons, athleticism, row,
+        wepa_score=detail.get("wepa_score"))
     return detail
 
 

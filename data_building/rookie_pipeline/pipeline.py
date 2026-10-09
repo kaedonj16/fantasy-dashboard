@@ -145,6 +145,7 @@ def upsert_prospects(prospects: List[Dict], conn) -> int:
                     weight_lbs       = EXCLUDED.weight_lbs,
                     early_declare    = EXCLUDED.early_declare,
                     transfer_history = EXCLUDED.transfer_history,
+                    headshot_url     = COALESCE(EXCLUDED.headshot_url, rookie_prospects.headshot_url),
                     updated_at       = NOW()
                 """,
                 {
