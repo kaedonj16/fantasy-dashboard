@@ -469,6 +469,176 @@ def upsert_prospect_athleticism(prospects: List[Dict], combine_data: Dict, conn)
     return saved
 
 
+def upsert_prospect_recruiting(
+    recruits: List[Dict[str, Any]], prospects: List[Dict], conn, draft_year: int
+) -> int:
+    """
+    Match 247 Composite recruits to prospects by normalized name and save the
+    best (highest-rated) entry per prospect to rookie_prospect_recruiting.
+
+    Position rank is computed within (recruit_year, position) cohorts by
+    composite rating. Unmatched prospects are simply skipped - missing
+    recruiting data is neutral in the model, never punitive.
+    """
+    from .ingestion import normalize_name
+
+    saved = 0
+    # Group recruits by (recruit_year, position) for position-rank computation
+    by_cohort: Dict[tuple, List[Dict]] = {}
+    for r in recruits:
+        by_cohort.setdefault((r.get("recruit_year"), r.get("position")), []).append(r)
+    for cohort in by_cohort.values():
+        cohort.sort(key=lambda r: (r.get("rating") is None, -(r.get("rating") or 0)))
+        for i, r in enumerate(cohort, start=1):
+            r["_position_rank"] = i
+
+    by_name: Dict[str, List[Dict]] = {}
+    for r in recruits:
+        by_name.setdefault(r.get("name_lower", ""), []).append(r)
+
+    with conn.cursor() as cur:
+        for prospect in prospects:
+            key = normalize_name(prospect.get("name", ""))
+            matches = by_name.get(key, [])
+            if not matches:
+                continue
+            # Best entry wins (transfers / reclassifications can double-list)
+            best = max(matches, key=lambda r: (r.get("rating") is not None, r.get("rating") or 0))
+            try:
+                cur.execute("SAVEPOINT save_recruit")
+                cur.execute(
+                    """
+                    INSERT INTO rookie_prospect_recruiting
+                        (player_id, draft_class_year, stars, composite_rating,
+                         national_rank, position_rank, recruit_class_year,
+                         committed_school, updated_at)
+                    VALUES
+                        (%(player_id)s, %(draft_class_year)s, %(stars)s, %(composite_rating)s,
+                         %(national_rank)s, %(position_rank)s, %(recruit_class_year)s,
+                         %(committed_school)s, now())
+                    ON CONFLICT (player_id) DO UPDATE SET
+                        stars              = EXCLUDED.stars,
+                        composite_rating   = EXCLUDED.composite_rating,
+                        national_rank      = EXCLUDED.national_rank,
+                        position_rank      = EXCLUDED.position_rank,
+                        recruit_class_year = EXCLUDED.recruit_class_year,
+                        committed_school   = EXCLUDED.committed_school,
+                        updated_at         = now()
+                    """,
+                    {
+                        "player_id": prospect["player_id"],
+                        "draft_class_year": draft_year,
+                        "stars": best.get("stars"),
+                        "composite_rating": best.get("rating"),
+                        "national_rank": best.get("ranking"),
+                        "position_rank": best.get("_position_rank"),
+                        "recruit_class_year": best.get("recruit_year"),
+                        "committed_school": best.get("committed_school"),
+                    },
+                )
+                cur.execute("RELEASE SAVEPOINT save_recruit")
+                saved += 1
+            except Exception as exc:
+                cur.execute("ROLLBACK TO SAVEPOINT save_recruit")
+                print(f"[pipeline] Failed to save recruiting data for {prospect.get('name')}: {exc}")
+    return saved
+
+
+def upsert_prospect_wepa(
+    wepa_data: Dict[str, Dict[int, Dict[str, Any]]], prospects: List[Dict], conn
+) -> int:
+    """
+    Save opponent-adjusted WEPA metrics to rookie_prospect_wepa, matched by
+    normalized name. Raw payloads are stored as JSONB for inspection; the
+    normalized adj_efficiency_score (when present) feeds the efficiency blend.
+    """
+    import json as _json
+    from .ingestion import normalize_name
+
+    saved = 0
+    by_name = {normalize_name(p.get("name", "")): p["player_id"] for p in prospects}
+
+    with conn.cursor() as cur:
+        for name_lower, by_year in wepa_data.items():
+            player_id = by_name.get(name_lower)
+            if not player_id:
+                continue
+            for season, rec in by_year.items():
+                try:
+                    cur.execute("SAVEPOINT save_wepa")
+                    cur.execute(
+                        """
+                        INSERT INTO rookie_prospect_wepa
+                            (player_id, season, wepa_type, adj_efficiency_score, metrics)
+                        VALUES
+                            (%(player_id)s, %(season)s, %(wepa_type)s,
+                             %(adj_efficiency_score)s, %(metrics)s)
+                        ON CONFLICT (player_id, season, wepa_type) DO UPDATE SET
+                            adj_efficiency_score = EXCLUDED.adj_efficiency_score,
+                            metrics              = EXCLUDED.metrics
+                        """,
+                        {
+                            "player_id": player_id,
+                            "season": season,
+                            "wepa_type": rec.get("wepa_type"),
+                            "adj_efficiency_score": rec.get("adj_efficiency_score"),
+                            "metrics": _json.dumps(rec.get("raw") or {}),
+                        },
+                    )
+                    cur.execute("RELEASE SAVEPOINT save_wepa")
+                    saved += 1
+                except Exception as exc:
+                    cur.execute("ROLLBACK TO SAVEPOINT save_wepa")
+                    print(f"[pipeline] Failed to save WEPA data for {name_lower} {season}: {exc}")
+    return saved
+
+
+def upsert_team_context(
+    context: Dict[tuple, Dict[str, Any]], conn
+) -> int:
+    """
+    Save per-school/per-season SP+ and 247 Team Talent Composite to
+    rookie_team_context. Keyed {(school_lower, season)}; the API's school
+    name is stored verbatim and matched case-insensitively at read time.
+    """
+    saved = 0
+    with conn.cursor() as cur:
+        for (school, season), vals in context.items():
+            try:
+                cur.execute("SAVEPOINT save_tctx")
+                cur.execute(
+                    """
+                    INSERT INTO rookie_team_context
+                        (school, season, sp_rating, sp_offense, sp_defense,
+                         sp_sos, talent_composite)
+                    VALUES
+                        (%(school)s, %(season)s, %(sp_rating)s, %(sp_offense)s,
+                         %(sp_defense)s, %(sp_sos)s, %(talent_composite)s)
+                    ON CONFLICT (school, season) DO UPDATE SET
+                        sp_rating        = EXCLUDED.sp_rating,
+                        sp_offense       = EXCLUDED.sp_offense,
+                        sp_defense       = EXCLUDED.sp_defense,
+                        sp_sos           = EXCLUDED.sp_sos,
+                        talent_composite = EXCLUDED.talent_composite
+                    """,
+                    {
+                        "school": school,
+                        "season": season,
+                        "sp_rating": vals.get("sp_rating"),
+                        "sp_offense": vals.get("sp_offense"),
+                        "sp_defense": vals.get("sp_defense"),
+                        "sp_sos": vals.get("sp_sos"),
+                        "talent_composite": vals.get("talent"),
+                    },
+                )
+                cur.execute("RELEASE SAVEPOINT save_tctx")
+                saved += 1
+            except Exception as exc:
+                cur.execute("ROLLBACK TO SAVEPOINT save_tctx")
+                print(f"[pipeline] Failed to save team context for {school} {season}: {exc}")
+    return saved
+
+
 def upsert_mock_entries_from_scraped(scraped_picks: List[Dict], draft_year: int, conn) -> int:
     """
     Save scraped mock draft entries to rookie_mock_draft_entries.
@@ -1101,7 +1271,8 @@ def upsert_rankings(scores: List[Dict], values: List[Dict], conn) -> int:
                      prospect_score, rookie_value, rookie_sf_value,
                      rookie_value_8, rookie_value_12, rookie_value_14,
                      rookie_sf_value_8, rookie_sf_value_12, rookie_sf_value_14,
-                     tier, tier_label, key_reasons, calculated_at)
+                     tier, tier_label, key_reasons, model_version,
+                     recruiting_score, calculated_at)
                 VALUES
                     (%(player_id)s, %(draft_class_year)s, %(overall_rank)s, %(position_rank)s,
                      %(production_score)s, %(efficiency_score)s, %(age_score)s,
@@ -1112,7 +1283,8 @@ def upsert_rankings(scores: List[Dict], values: List[Dict], conn) -> int:
                      %(prospect_score)s, %(rookie_value)s, %(rookie_sf_value)s,
                      %(rookie_value_8)s, %(rookie_value_12)s, %(rookie_value_14)s,
                      %(rookie_sf_value_8)s, %(rookie_sf_value_12)s, %(rookie_sf_value_14)s,
-                     %(tier)s, %(tier_label)s, %(key_reasons)s, NOW())
+                     %(tier)s, %(tier_label)s, %(key_reasons)s, %(model_version)s,
+                     %(recruiting_score)s, NOW())
                 ON CONFLICT (player_id, draft_class_year) DO UPDATE SET
                     overall_rank                  = EXCLUDED.overall_rank,
                     position_rank                 = EXCLUDED.position_rank,
@@ -1139,6 +1311,8 @@ def upsert_rankings(scores: List[Dict], values: List[Dict], conn) -> int:
                     tier                          = EXCLUDED.tier,
                     tier_label                    = EXCLUDED.tier_label,
                     key_reasons                   = EXCLUDED.key_reasons,
+                    model_version                 = EXCLUDED.model_version,
+                    recruiting_score              = EXCLUDED.recruiting_score,
                     calculated_at                 = NOW()
                 """,
                 {
@@ -1169,6 +1343,8 @@ def upsert_rankings(scores: List[Dict], values: List[Dict], conn) -> int:
                     "tier":                         v.get("tier"),
                     "tier_label":                   v.get("tier_label"),
                     "key_reasons":                  s.get("key_reasons"),
+                    "model_version":                s.get("model_version"),
+                    "recruiting_score":             s.get("recruiting_score"),
                 },
             )
             saved += 1
@@ -1487,6 +1663,68 @@ def load_prospects_from_db(draft_year: int, conn) -> List[Dict[str, Any]]:
             if eval_metrics:
                 prospect["_eval_metrics"] = eval_metrics
 
+        # ── Model v2.0 sources: recruiting pedigree, WEPA, team context ──
+        cur.execute(
+            """
+            SELECT player_id, stars, composite_rating, national_rank,
+                   position_rank, recruit_class_year, committed_school
+            FROM rookie_prospect_recruiting
+            WHERE player_id = ANY(%s)
+            """,
+            (player_ids_for_class,),
+        )
+        recruit_by_player = {}
+        for rr in cur.fetchall():
+            d = dict(rr)
+            pid = d.pop("player_id")
+            recruit_by_player[pid] = d
+        print(f"[pipeline] Loaded recruiting data for {len(recruit_by_player)}/{len(prospects)} prospects")
+
+        cur.execute(
+            """
+            SELECT player_id, season, wepa_type, adj_efficiency_score
+            FROM rookie_prospect_wepa
+            WHERE player_id = ANY(%s)
+            """,
+            (player_ids_for_class,),
+        )
+        wepa_by_player: Dict[str, Dict] = {}
+        for wr in cur.fetchall():
+            pid = wr["player_id"]
+            wepa_by_player.setdefault(pid, {})[(wr["season"], wr["wepa_type"])] = {
+                "adj_efficiency_score": (
+                    float(wr["adj_efficiency_score"])
+                    if wr["adj_efficiency_score"] is not None else None
+                ),
+            }
+        print(f"[pipeline] Loaded WEPA data for {len(wepa_by_player)}/{len(prospects)} prospects")
+
+        cur.execute(
+            """
+            SELECT school, season, sp_rating, sp_offense, sp_defense,
+                   sp_sos, talent_composite
+            FROM rookie_team_context
+            """
+        )
+        team_context: Dict[tuple, Dict] = {}
+        for tr in cur.fetchall():
+            d = dict(tr)
+            school = (d.pop("school") or "").lower().strip()
+            season = d.pop("season")
+            team_context[(school, season)] = {
+                k: (float(v) if v is not None else None) for k, v in d.items()
+            }
+        print(f"[pipeline] Loaded team context for {len(team_context)} school-seasons")
+
+        for prospect in prospects:
+            pid = prospect["player_id"]
+            if pid in recruit_by_player:
+                prospect["recruiting"] = recruit_by_player[pid]
+            if pid in wepa_by_player:
+                prospect["wepa"] = wepa_by_player[pid]
+            if team_context:
+                prospect["team_context"] = team_context
+
         return prospects
 
 
@@ -1775,6 +2013,44 @@ def run_rookie_pipeline_staged(
         print(f"[pipeline] STAGE 2 COMPLETE: Saved {n_stats} stat records to rookie_prospect_source_data")
 
     # ──────────────────────────────────────────────────────────────────────────
+    print("[pipeline] ====== STAGE 2b: Recruiting Pedigree + WEPA + Team Context ======")
+
+    # Skip when this class already has recruiting rows - composite ratings are
+    # immutable once a class is signed, so there is no value in re-fetching.
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT COUNT(*) AS count FROM rookie_prospect_recruiting "
+                "WHERE draft_class_year = %s",
+                (draft_year,),
+            )
+            existing_recruiting = cur.fetchone()["count"]
+
+    if existing_recruiting > 0:
+        print(f"[pipeline] STAGE 2b SKIPPED: {existing_recruiting} recruiting records already in DB for {draft_year}")
+        n_recruiting = n_wepa = n_tctx = 0
+    else:
+        from .ingestion import (
+            fetch_cfbd_recruiting,
+            fetch_cfbd_wepa,
+            fetch_cfbd_team_context,
+        )
+        recruits = fetch_cfbd_recruiting(draft_year)
+        print(f"[pipeline] Fetched {len(recruits)} recruiting records")
+        wepa_data = fetch_cfbd_wepa(draft_year)
+        print(f"[pipeline] Fetched WEPA data for {len(wepa_data)} players")
+        team_context = fetch_cfbd_team_context(draft_year)
+        print(f"[pipeline] Fetched team context for {len(team_context)} school-seasons")
+
+        with get_conn() as conn:
+            n_recruiting = upsert_prospect_recruiting(recruits, sr_prospects, conn, draft_year)
+            n_wepa = upsert_prospect_wepa(wepa_data, sr_prospects, conn)
+            n_tctx = upsert_team_context(team_context, conn)
+
+        print(f"[pipeline] STAGE 2b COMPLETE: Saved {n_recruiting} recruiting, "
+              f"{n_wepa} WEPA, {n_tctx} team-context records")
+
+    # ──────────────────────────────────────────────────────────────────────────
     print("[pipeline] ====== STAGE 3: Fetch Combine Data ======")
 
     combine_data = fetch_local_combine_csv(draft_year)
@@ -2027,6 +2303,11 @@ def get_rookie_rankings_from_db(draft_year: int, filter_undrafted: bool = False)
                             rr.breakout_profile_score, rr.athleticism_score,
                             rr.competition_score, rr.projected_draft_capital_score,
                             rr.confidence_score, rr.calculated_at,
+                            rr.recruiting_score, rr.model_version,
+                            rpr.stars AS recruit_stars,
+                            rpr.composite_rating AS recruit_composite_rating,
+                            rpr.national_rank AS recruit_national_rank,
+                            rpr.position_rank AS recruit_position_rank,
                             rmc.projected_round, rmc.projected_pick,
                             rmc.projected_pick_low, rmc.projected_pick_high,
                             rmc.num_mocks_used, rmc.consensus_confidence,
@@ -2036,6 +2317,7 @@ def get_rookie_rankings_from_db(draft_year: int, filter_undrafted: bool = False)
                         JOIN   rookie_prospects rp  ON rp.player_id = rr.player_id
                         LEFT   JOIN rookie_mock_draft_consensus rmc ON rmc.player_id = rr.player_id
                         LEFT   JOIN rookie_prospect_athleticism rpa ON rpa.player_id = rr.player_id
+                        LEFT   JOIN rookie_prospect_recruiting rpr ON rpr.player_id = rr.player_id
                         LEFT   JOIN player_values pv ON pv.player_id = rp.sleeper_id
                         WHERE  rr.draft_class_year = %s
                           AND  (%s = FALSE OR rp.draft_confirmed = TRUE)

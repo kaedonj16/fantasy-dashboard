@@ -53,38 +53,10 @@ def build_prospects_body(is_admin: bool = False) -> str:
           <button class="otc-day-filter pos-pill" data-pos="WR"  onclick="rkTogglePos('WR')">WR</button>
           <button class="otc-day-filter pos-pill" data-pos="TE"  onclick="rkTogglePos('TE')">TE</button>
         </div>
-        <div style="position:relative;">
-          <button id="rkSettingsBtn" class="filter-settings-btn" onclick="rkToggleSettings()">
-            Settings
-          </button>
-          <div id="rkSettingsPanel" class="filter-settings-panel" style="display:none;">
-            <div class="settings-section">
-              <span class="settings-section-label">League Format</span>
-              <div id="rkLeagueGroup" class="settings-toggle-group">
-                <button class="settings-toggle active" data-value="1qb" onclick="rkSetLeague('1qb')">1QB</button>
-                <button class="settings-toggle" data-value="sf" onclick="rkSetLeague('sf')">SF</button>
-              </div>
-            </div>
-            <div class="settings-section">
-              <span class="settings-section-label">League Size</span>
-              <div id="rkSizeGroup" class="settings-toggle-group">
-                <button class="settings-toggle" data-value="8" onclick="rkSetSize(8)">8</button>
-                <button class="settings-toggle active" data-value="10" onclick="rkSetSize(10)">10</button>
-                <button class="settings-toggle" data-value="12" onclick="rkSetSize(12)">12</button>
-                <button class="settings-toggle" data-value="14" onclick="rkSetSize(14)">14</button>
-              </div>
-            </div>
-            <button class="settings-reset-btn" onclick="rkResetSettings()">Reset to defaults</button>
-          </div>
-        </div>
       </div>
 
       <!-- Row 2: Active setting tags + sort -->
-      <div class="filter-row filter-row-secondary">
-        <div id="rkActiveSettings" class="active-settings-indicator">
-          <span class="active-setting-tag">10-Team</span>
-          <span class="active-setting-tag">1QB</span>
-        </div>
+      <div class="filter-row filter-row-secondary" style="justify-content:flex-end;">
         <div class="filter-sort">
           <label class="filter-label">Sort by</label>
           <select id="rkSort" onchange="rkSetSortKey(this.value)"
@@ -92,10 +64,9 @@ def build_prospects_body(is_admin: bool = False) -> str:
                    background:var(--card-bg);color:var(--text);font-size:13px;
                    cursor:pointer;outline:none;min-height:34px;width:140px;">
             <option value="rank">Overall Rank</option>
-            <option value="value">Value</option>
             <option value="score">Prospect Score</option>
+            <option value="mock">Mock Draft</option>
             <option value="age">Age</option>
-            <option value="adp">ADP</option>
             <option value="name">Name (A-Z)</option>
           </select>
         </div>
@@ -107,13 +78,14 @@ def build_prospects_body(is_admin: bool = False) -> str:
 
     <!-- Table header -->
     <div id="rkHeader" class="rk-grid-row rk-header" style="display:none;">
-      <span data-rk-sort-col="rank" role="button" tabindex="0" title="Sort by overall rank">#</span>
+      <span data-rk-sort-col="rank" role="button" tabindex="0" title="Sort by overall rank" style="text-align:center;">Rank</span>
       <span data-rk-sort-col="name" role="button" tabindex="0" title="Sort by prospect name">Prospect</span>
-      <span style="text-align:center;">Pos</span>
-      <span data-rk-sort-col="age" role="button" tabindex="0" title="Sort by age" style="text-align:center;">Age</span>
-      <span id="rkSortHeader" data-rk-sort-col="sort" role="button" tabindex="0" title="Sort direction: click to flip" style="text-align:center;">ADP</span>
+      <span><span class="hdot" style="background:#10b981"></span>Prod</span>
+      <span><span class="hdot" style="background:#3b82f6"></span>Ath</span>
+      <span><span class="hdot" style="background:#8b5cf6"></span>DC</span>
       <span data-rk-sort-col="score" role="button" tabindex="0" title="Sort by prospect score" style="text-align:right;">Score</span>
-      <span data-rk-sort-col="value" role="button" tabindex="0" title="Sort by dynasty value" style="text-align:right;">Value</span>
+      <span data-rk-sort-col="mock" role="button" tabindex="0" title="Sort by expected draft spot" style="text-align:center;" class="rk-mock-h">Mock</span>
+      <span></span>
     </div>
 
     <!-- Loading -->
@@ -163,7 +135,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
      display:none;align-items:center;justify-content:center;padding:20px;
      background:rgba(15,23,42,0.7);backdrop-filter:blur(4px);">
   <div id="rkModalContent"
-    style="background:var(--card);border-radius:16px;max-width:680px;width:100%;
+    style="background:var(--card);border-radius:16px;max-width:920px;width:100%;
            max-height:90vh;overflow-y:auto;
            box-shadow:0 24px 48px rgba(15,23,42,0.25);">
     <!-- filled by JS -->
@@ -235,98 +207,6 @@ def build_prospects_body(is_admin: bool = False) -> str:
     -webkit-overflow-scrolling: touch;
   }
   .filter-positions::-webkit-scrollbar { display: none; }
-  .filter-settings-btn {
-    padding: 7px 14px;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: var(--card-bg);
-    color: var(--text);
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    white-space: nowrap;
-    transition: all 0.12s;
-  }
-  .filter-settings-btn:hover {
-    background: var(--accent-soft);
-    border-color: var(--accent);
-    color: var(--accent);
-  }
-  .filter-settings-panel {
-    position: absolute;
-    top: 100%;
-    right: 0;
-    margin-top: 8px;
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.15);
-    padding: 16px;
-    min-width: 260px;
-    z-index: 1000;
-  }
-  .settings-section {
-    margin-bottom: 16px;
-  }
-  .settings-section:last-of-type {
-    margin-bottom: 0;
-  }
-  .settings-section-label {
-    display: block;
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    margin-bottom: 8px;
-  }
-  .settings-toggle-group {
-    display: flex;
-    gap: 6px;
-  }
-  .settings-toggle {
-    flex: 1;
-    padding: 8px 12px;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: var(--card-bg);
-    color: var(--text-muted);
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.12s;
-  }
-  .settings-toggle.active {
-    background: var(--accent);
-    color: #fff;
-    border-color: var(--accent);
-  }
-  .settings-reset-btn {
-    width: 100%;
-    margin-top: 12px;
-    padding: 7px 0;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: transparent;
-    color: var(--text-muted);
-    font-size: 11px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.12s;
-  }
-  .settings-reset-btn:hover {
-    background: var(--card);
-    color: var(--text);
-  }
-  .active-settings-indicator {
-    display: flex;
-    gap: 6px;
-    align-items: center;
-    flex-wrap: wrap;
-  }
   .active-setting-tag {
     padding: 4px 10px;
     border-radius: var(--radius-pill, 8px);
@@ -368,23 +248,22 @@ def build_prospects_body(is_admin: bool = False) -> str:
     .manager-pills-row { justify-content: center; }
   }
 
-  /* Table grid */
+  /* Table grid: Rank | Player | Prod | Ath | DC | Score | Mock | star */
   .rk-grid-row {
     display: grid;
-    grid-template-columns: 40px 1fr 48px 48px 48px 58px 60px;
+    grid-template-columns: 64px minmax(0,1fr) 96px 96px 96px 60px 56px 40px;
     align-items: center;
-    gap: 0;
+    gap: 8px;
   }
   .rk-header {
-    padding: 6px 12px;
-    border-radius: 6px;
-    background: var(--accent-soft);
+    padding: 12px 12px 8px;
     font-size: 11px;
     font-weight: 700;
-    color: var(--accent);
-    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    letter-spacing: 0.05em;
     text-transform: uppercase;
   }
+  .hdot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; }
   /* Clickable sort headers (AM-table pattern): pointer + arrow on active */
   #rkHeader [data-rk-sort-col] {
     cursor: pointer;
@@ -403,49 +282,47 @@ def build_prospects_body(is_admin: bool = False) -> str:
     border-top: 1px solid var(--border);
   }
   .rk-row:hover { background: var(--accent-soft); }
-  .rk-row:first-child { border-top: none; }
 
-  .rk-rank { font-size: 13px; font-weight: 700; color: var(--text-muted); display: flex; flex-direction: column; align-items: center; gap: 1px; }
-  .rk-name-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  .rk-name { font-size: 13px; font-weight: 600; color: var(--text); }
+  .rk-rank { display: flex; align-items: center; justify-content: center; gap: 7px; }
+  .rk-rank-num { font-size: 14px; font-weight: 700; color: var(--text-muted); }
+  .rk-pcell { min-width: 0; }
+  .rk-pplayer { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .rk-headshot {
+    width: 38px; height: 38px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 800; letter-spacing: 0.02em;
+    background: color-mix(in srgb, var(--pc, var(--accent)) 15%, transparent);
+    color: var(--pc, var(--accent));
+    border: 1px solid color-mix(in srgb, var(--pc, var(--accent)) 35%, transparent);
+    position: relative; overflow: hidden;
+  }
+  .rk-headshot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .rk-name { font-size: 13.5px; font-weight: 600; color: var(--text); }
   .rk-name:hover { opacity: 0.72; }
-  .rk-meta { font-size: 11px; color: var(--text-muted); }
-  .rk-pos  { text-align: center; font-size: 11px; font-weight: 700; color: var(--text-muted); }
-  .rk-age  { text-align: center; font-size: 13px; color: var(--text-muted); }
-  .rk-draft { text-align: center; font-size: 11px; color: var(--text-muted); white-space: nowrap; }
-  .rk-score { text-align: right; font-size: 13px; font-weight: 600; }
-  .rk-value { text-align: right; font-size: 13px; font-weight: 700; color: var(--accent); }
-
-  /* Tier badge */
-  .rk-tier {
-    display: inline-block;
-    font-size: 11px;
-    font-weight: 700;
-    padding: 1px 6px;
-    border-radius: 4px;
-    margin-left: 4px;
-    vertical-align: middle;
+  .rk-meta { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+  .rk-pos {
+    display: inline-block; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 4px;
+    background: color-mix(in srgb, var(--pc, var(--accent)) 15%, transparent);
+    color: var(--pc, var(--accent));
+    margin-left: 6px; vertical-align: middle;
   }
-  .rk-tier-1 { background: color-mix(in srgb, #10b981 15%, transparent); color: #10b981; }
-  .rk-tier-2 { background: color-mix(in srgb, #3b82f6 15%, transparent); color: #3b82f6; }
-  .rk-tier-3 { background: color-mix(in srgb, #8b5cf6 15%, transparent); color: #8b5cf6; }
-  .rk-tier-4 { background: color-mix(in srgb, #f59e0b 15%, transparent); color: #f59e0b; }
-  .rk-tier-5 { background: color-mix(in srgb, var(--text-muted) 15%, transparent); color: var(--text-muted); }
-  .rk-tier-6 { background: color-mix(in srgb, var(--text-subtle) 12%, transparent); color: var(--text-subtle); }
-
-  /* Score bar */
-  .rk-score-bar {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-  }
-  .rk-score-dot {
-    width: 6px; height: 6px; border-radius: 50%;
-  }
+  .rk-comps3 { display: contents; }
+  .rk-compcol { min-width: 0; }
+  .rk-compcol-label { display: none; }
+  .rk-compcol-row { display: flex; align-items: center; gap: 6px; }
+  .rk-meter-bar { flex: 1; height: 5px; border-radius: 3px; background: color-mix(in srgb, var(--text-muted) 14%, transparent); overflow: hidden; }
+  .rk-meter-bar > div { height: 100%; border-radius: 3px; }
+  .rk-meter-val { font-size: 11.5px; font-weight: 800; }
+  .rk-score { text-align: right; font-size: 14px; font-weight: 700; color: var(--text); }
+  .rk-mock { text-align: center; font-size: 12.5px; color: var(--text-muted); }
+  .rk-star { background: none; border: none; cursor: pointer; padding: 6px; display: flex; }
+  .rk-star svg { width: 17px; height: 17px; fill: none; stroke: var(--text-subtle); stroke-width: 1.8; }
+  .rk-star.watching svg { fill: var(--gold); stroke: var(--gold); }
 
   /* Modal */
+  #rkModalContent { border-top: 3px solid transparent; }
   .rk-modal-header {
-    padding: 24px 24px 0;
+    padding: 20px 20px 0;
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
@@ -458,18 +335,39 @@ def build_prospects_body(is_admin: bool = False) -> str:
     border-radius: 8px;
     cursor: pointer;
     color: var(--accent);
-    font-size: 18px;
+    font-size: 16px;
     flex-shrink: 0;
     display: flex; align-items: center; justify-content: center;
   }
-  .rk-modal-body { padding: 16px 24px 24px; }
+  .rk-modal-body { padding: 14px 20px 20px; }
+  .m-headwrap { display: flex; gap: 12px; align-items: center; min-width: 0; }
+  .m-headshot {
+    width: 52px; height: 52px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; font-weight: 800;
+    background: color-mix(in srgb, var(--pc, var(--accent)) 15%, transparent);
+    color: var(--pc, var(--accent));
+    border: 1px solid color-mix(in srgb, var(--pc, var(--accent)) 35%, transparent);
+    position: relative; overflow: hidden;
+  }
+  .m-headshot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .m-title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .m-name { font-size: 22px; font-weight: 700; color: var(--text); }
+  .m-tier { padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; }
+  .m-early {
+    padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700;
+    background: color-mix(in srgb, var(--text-muted) 12%, transparent); color: var(--text-muted);
+  }
+  .m-meta { font-size: 13px; color: var(--text-muted); margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .m-meta .m-rank { font-weight: 700; color: var(--text); }
+  .m-transfer { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
 
   /* Hero row */
   .rk-hero-row {
     display: grid;
     grid-template-columns: 1.2fr 1fr 1fr;
     gap: 8px;
-    margin-bottom: 10px;
+    margin: 14px 0 4px;
   }
   .rk-hero-stat {
     background: var(--card-bg);
@@ -477,10 +375,6 @@ def build_prospects_body(is_admin: bool = False) -> str:
     border-radius: 10px;
     padding: 12px 14px;
     text-align: center;
-  }
-  .rk-hero-primary {
-    background: var(--accent-soft);
-    border-color: transparent;
   }
   .rk-hero-label {
     font-size: 11px;
@@ -491,7 +385,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
     margin-bottom: 4px;
   }
   .rk-hero-val {
-    font-size: 28px;
+    font-size: 26px;
     font-weight: 700;
     color: var(--text);
     line-height: 1;
@@ -500,28 +394,45 @@ def build_prospects_body(is_admin: bool = False) -> str:
     font-size: 11px;
     color: var(--text-muted);
     margin-top: 4px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
 
-  /* Draft + measurables */
-  .rk-info-row {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    background: var(--card-bg);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 9px 14px;
-    margin-bottom: 10px;
+  /* Section divider */
+  .rk-section-divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 14px 0;
   }
-  .rk-meas-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 8px;
-    margin-bottom: 4px;
+  .m-sec-label { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 2px; }
+  .m-sec-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 2px; }
+  .m-conf { font-size: 11px; color: var(--text-muted); }
+  .m-conf b { color: var(--text); }
+  .m-comp-row { display: grid; grid-template-columns: 96px 1fr 38px auto; gap: 10px; align-items: center; margin-top: 12px; }
+  .m-comp-label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
+  .m-comp-row .rk-meter-bar { height: 7px; flex: none; }
+  .m-comp-row .rk-meter-val { font-size: 13px; }
+  .m-comp-raw { font-size: 12px; color: var(--text-subtle); }
+  .m-more-btn {
+    background: none; border: none; color: var(--accent); font-size: 12.5px;
+    font-weight: 700; cursor: pointer; padding: 10px 0 0;
   }
+
+  /* Advanced metrics */
+  .m-adv-grid { display: grid; grid-template-columns: 1fr 230px; gap: 20px; align-items: center; margin-top: 10px; }
+  .m-adv-row { display: grid; grid-template-columns: 104px 1fr 52px 30px; gap: 10px; align-items: center; margin-top: 9px; }
+  .m-adv-label { font-size: 12px; font-weight: 600; color: var(--text-muted); }
+  .m-adv-row .rk-meter-bar { height: 7px; flex: none; }
+  .m-adv-score { font-size: 13px; font-weight: 700; text-align: right; color: var(--text); }
+  .m-adv-grade { font-size: 13px; font-weight: 800; text-align: right; }
+  .m-adv-radar { display: flex; justify-content: center; }
+
+  /* Two-column modal layout */
+  .m-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 28px; align-items: start; }
+  .m-col { min-width: 0; }
+  .m-col .m-season-table { font-size: 12px; }
+  .m-col .m-season-table th, .m-col .m-season-table td { padding: 6px 6px; }
+
+  /* Combine grid */
+  .rk-meas-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
   .rk-meas-cell {
     background: var(--card-bg);
     border: 1px solid var(--border);
@@ -543,66 +454,70 @@ def build_prospects_body(is_admin: bool = False) -> str:
     color: var(--text);
   }
 
-  /* Section divider */
-  .rk-section-divider {
-    border: none;
-    border-top: 1px solid var(--border);
-    margin: 14px 0;
+  /* Season table */
+  .m-season-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12.5px; color: var(--text); }
+  .m-season-table th {
+    text-align: right; font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.04em; color: var(--text-subtle); padding: 6px 8px; border-bottom: 1px solid var(--border);
   }
+  .m-season-table th:first-child, .m-season-table td:first-child { text-align: left; }
+  .m-season-table td { text-align: right; padding: 7px 8px; border-bottom: 1px solid var(--border); }
+  .m-season-table tr:last-child td { border-bottom: none; }
+  .m-season-table td.yr { font-weight: 700; color: var(--text-muted); }
 
-  /* Component breakdown with bars */
-  .rk-comp-list {
-    display: flex;
-    flex-direction: column;
-    gap: 9px;
-  }
-  .rk-comp-row {
-    display: grid;
-    grid-template-columns: 90px 1fr 32px;
-    align-items: center;
-    gap: 10px;
-  }
-  .rk-comp-label {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-muted);
-  }
-  .rk-comp-bar-wrap {
-    height: 6px;
-    background: var(--border);
-    border-radius: 3px;
-    overflow: hidden;
-  }
-  .rk-comp-bar {
-    height: 100%;
-    border-radius: 3px;
-  }
-  .rk-comp-val {
-    font-size: 13px;
-    font-weight: 700;
-    text-align: right;
-  }
+  /* Scouting notes */
+  .m-notes { font-size: 13px; color: var(--text-muted); line-height: 1.7; margin-top: 8px; }
+  .m-notes div { padding: 2px 0; }
 
-  /* Modal mobile */
-  @media (max-width: 480px) {
-    .rk-hero-row { grid-template-columns: 1fr 1fr; }
-    .rk-hero-primary { grid-column: 1 / -1; }
-    .rk-meas-grid { grid-template-columns: repeat(2, 1fr); }
-    .rk-comp-row { grid-template-columns: 76px 1fr 28px; gap: 8px; }
+  /* Historical comparables */
+  .m-sim-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .m-sim-row:last-child { border-bottom: none; }
+  .m-sim-disc {
+    width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 800;
+    background: color-mix(in srgb, var(--pc, var(--accent)) 15%, transparent);
+    color: var(--pc, var(--accent));
+    border: 1px solid color-mix(in srgb, var(--pc, var(--accent)) 35%, transparent);
+    position: relative; overflow: hidden;
   }
+  .m-sim-disc img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .m-sim-name { font-size: 13px; font-weight: 600; color: var(--text); }
+  .m-sim-meta { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+  .m-sim-right { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .m-sim-score { font-size: 13px; font-weight: 700; color: var(--text); }
+  .m-sim-tier { padding: 2px 7px; border-radius: 5px; font-size: 11px; font-weight: 700; }
 
-  /* Mobile */
+  /* Tier-change nudge */
+  .m-nudge {
+    display: flex; align-items: center; gap: 8px; margin-top: 14px; padding: 10px 12px;
+    border: 1px dashed var(--border); border-radius: 10px; font-size: 13px; color: var(--text-muted);
+    cursor: pointer;
+  }
+  .m-nudge.on { border-style: solid; border-color: color-mix(in srgb, var(--gold) 45%, var(--border)); color: var(--text); }
+  .m-nudge .rk-star { padding: 0; }
+
+  /* Detail loading shimmer */
+  .rk-detail-loading { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-muted); padding: 12px 0; }
+
+  /* Mobile: hide Mock column, stack component bars under the row */
   @media (max-width: 768px) {
-    /* Show: rank | name | pos | sort-col | value - hide age and score */
-    .rk-grid-row { grid-template-columns: 34px 1fr 46px 54px 54px !important; }
-    .rk-score, #rkHeader span:nth-child(6) { display: none; }
-    .rk-age,   #rkHeader span:nth-child(4) { display: none; }
+    .rk-head { display: none; }
+    .rk-grid-row { grid-template-columns: 48px minmax(0,1fr) 48px 32px; }
+    #rkHeader .rk-mock-h, .rk-row .rk-mock { display: none; }
+    .rk-comps3 { display: grid; grid-column: 1 / -1; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 8px; }
+    .rk-compcol-label { display: block; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-subtle); margin-bottom: 4px; }
+    .rk-meter-val { font-size: 10.5px; }
+    .rk-name { font-size: 12.5px; }
+    .rk-headshot { width: 32px; height: 32px; font-size: 11px; }
+    .rk-pplayer { gap: 8px; }
     .rk-row { padding: 8px 10px; }
-  }
-  @media (max-width: 480px) {
-    /* Show: rank | name | sort-col | value - hide pos */
-    .rk-grid-row { grid-template-columns: 30px 1fr 52px 52px !important; }
-    .rk-pos,  #rkHeader span:nth-child(3) { display: none; }
+    .m-comp-row { grid-template-columns: 96px 1fr 38px; }
+    .m-comp-raw { display: none; }
+    .m-name { font-size: 19px; }
+    .m-cols { grid-template-columns: 1fr; }
+    .m-adv-grid { grid-template-columns: 1fr; }
+    .rk-meas-grid { grid-template-columns: repeat(3, 1fr); }
   }
 
   /* Pagination uses the universal .pagination component in dashboard.css */
@@ -610,8 +525,6 @@ def build_prospects_body(is_admin: bool = False) -> str:
 
 <script>
   var rkAllPlayers = [];   // full unfiltered list - never replaced after load
-  var rkLeague    = '1qb';
-  var rkSize      = 10;
   var rkPosFilters = new Set();
   var rkSearch    = '';
   var rkLoaded    = false;
@@ -623,7 +536,120 @@ def build_prospects_body(is_admin: bool = False) -> str:
   var rkSortKey = 'rank';  // active sort key (mirrors the #rkSort dropdown)
   var rkSortDir = 'asc';   // 'asc' | 'desc' -- flipped by clicking a column header
   // Default direction when a sort key is first chosen (AM-table convention).
-  var RK_SORT_DIRS = { rank: 'asc', value: 'desc', score: 'desc', age: 'asc', adp: 'asc', name: 'asc' };
+  var RK_SORT_DIRS = { rank: 'asc', score: 'desc', mock: 'asc', age: 'asc', name: 'asc' };
+
+  // Watchlist (localStorage-backed) with the shared undo toast.
+  var rkWatch = {};
+  try {
+    JSON.parse(localStorage.getItem('rkWatchlistV1') || '[]').forEach(function(id){ rkWatch[id] = true; });
+  } catch (e) {}
+  function rkSaveWatch() {
+    try { localStorage.setItem('rkWatchlistV1', JSON.stringify(Object.keys(rkWatch))); } catch (e) {}
+  }
+
+  var RK_POS_COLORS = { QB: '#3b82f6', RB: '#22c55e', WR: '#f59e0b', TE: '#8b5cf6' };
+  var RK_TIER_COLORS = ['', '#10b981', '#22d3ee', '#3b82f6', '#8b5cf6', '#a855f7', '#f59e0b', '#f97316', '#94a3b8', '#64748b'];
+  var RK_TIER_NAMES = { 1: 'ELITE', 2: 'GREAT', 3: 'GOOD' };
+  var RK_COMP_NAMES = ['Production', 'Athleticism', 'Draft Capital'];
+  var RK_COMP_SHORT = ['Prod', 'Ath', 'DC'];
+  var RK_COMP_COLORS = ['#10b981', '#3b82f6', '#8b5cf6'];
+  var RK_DISC_COLORS = ['#10b981','#3b82f6','#8b5cf6','#f59e0b','#ef4444','#06b6d4','#f97316','#84cc16'];
+  var RK_XCOMP = [['Utilization','#06b6d4'],['Efficiency','#818cf8'],['Durability','#f97316'],['Experience','#84cc16']];
+  var RK_SEASON_COLS = {
+    QB: ['Year','GP','Cmp%','Yds','TD','INT'],
+    RB: ['Year','GP','Att','Yds','TD'],
+    WR: ['Year','GP','Rec','Yds','TD'],
+    TE: ['Year','GP','Rec','Yds','TD']
+  };
+
+  function rkEsc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function rkInitials(name) {
+    var parts = String(name || '').split(' ');
+    return (((parts[0] || '').charAt(0) + (parts[1] ? parts[1].charAt(0) : '')) || '?').toUpperCase();
+  }
+  function rkDiscColor(pid) {
+    var s = String(pid || ''), hsh = 0;
+    for (var i = 0; i < s.length; i++) hsh = (hsh * 31 + s.charCodeAt(i)) >>> 0;
+    return RK_DISC_COLORS[hsh % RK_DISC_COLORS.length];
+  }
+  function rkHeadshot(r, cls) {
+    var url = r.headshot_url || r.espnHeadshot;
+    var color = rkDiscColor(r.player_id);
+    var init = rkInitials(r.name);
+    if (url) {
+      return '<div class="' + cls + '" style="--pc:' + color + '">' + init +
+        '<img src="' + rkEsc(url) + '" alt="" loading="lazy" onerror="this.remove()"></div>';
+    }
+    return '<div class="' + cls + '" style="--pc:' + color + '">' + init + '</div>';
+  }
+  function rkStarSVG() {
+    return '<svg viewBox="0 0 24 24"><path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4 6.1 20.5l1.2-6.5L2.5 9.4l6.6-.9z"/></svg>';
+  }
+  // Rank movement arrow. Positive delta = moved up the board.
+  function rkDelta(delta) {
+    if (delta == null || delta === '') return '';
+    delta = parseInt(delta, 10);
+    if (isNaN(delta)) return '';
+    if (delta > 0) return '<span class="dvt-change dvt-change-up">&#9650;' + delta + '</span>';
+    if (delta < 0) return '<span class="dvt-change dvt-change-down">&#9660;' + Math.abs(delta) + '</span>';
+    return '<span class="dvt-change dvt-change-flat">-</span>';
+  }
+  function rkHeightStr(r) {
+    var ht = parseInt(r.height_inches, 10);
+    if (isNaN(ht)) return '';
+    return Math.floor(ht / 12) + "'" + (ht % 12) + '"';
+  }
+  function rkWeightStr(r) {
+    return r.weight_lbs ? r.weight_lbs + ' lbs' : '';
+  }
+  function rkLetterGrade(v) {
+    if (v >= 97) return ['A+', '#10b981'];
+    if (v >= 93) return ['A', '#10b981'];
+    if (v >= 90) return ['A-', '#34d399'];
+    if (v >= 87) return ['B+', '#34d399'];
+    if (v >= 83) return ['B', '#6ee7b7'];
+    if (v >= 80) return ['B-', '#6ee7b7'];
+    if (v >= 77) return ['C+', '#f59e0b'];
+    if (v >= 73) return ['C', '#f59e0b'];
+    if (v >= 70) return ['C-', '#fbbf24'];
+    if (v >= 65) return ['D+', '#f87171'];
+    if (v >= 60) return ['D', '#f87171'];
+    return ['F', '#ef4444'];
+  }
+  function rkRadarSVG(labels, values, color) {
+    var size = 220, cx = 110, cy = 112, R = 78, n = labels.length;
+    if (!n) return '';
+    function pt(k, r) {
+      var a = (-90 + k * 360 / n) * Math.PI / 180;
+      return [cx + r * Math.cos(a), cy + r * Math.sin(a)];
+    }
+    function pts(k, r) { var q = pt(k, r); return q[0].toFixed(1) + ',' + q[1].toFixed(1); }
+    var grid = [25, 50, 75, 100].map(function(g) {
+      var pp = []; for (var k = 0; k < n; k++) pp.push(pts(k, R * g / 100));
+      return '<polygon points="' + pp.join(' ') + '" fill="none" style="stroke:var(--border)" stroke-width="1"/>';
+    }).join('');
+    var axes = '';
+    for (var k = 0; k < n; k++) {
+      var e = pt(k, R);
+      axes += '<line x1="' + cx + '" y1="' + cy + '" x2="' + e[0].toFixed(1) + '" y2="' + e[1].toFixed(1) + '" style="stroke:var(--border)" stroke-width="1"/>';
+    }
+    var vp = [];
+    for (var k = 0; k < n; k++) vp.push(pts(k, R * Math.max(0, Math.min(100, values[k] || 0)) / 100));
+    var poly = '<polygon points="' + vp.join(' ') + '" fill="' + color + '33" stroke="' + color + '" stroke-width="2"/>';
+    var dots = vp.map(function(s) { var xy = s.split(','); return '<circle cx="' + xy[0] + '" cy="' + xy[1] + '" r="2.5" fill="' + color + '"/>'; }).join('');
+    var labs = labels.map(function(l, k) {
+      var a = (-90 + k * 360 / n) * Math.PI / 180;
+      var lx = cx + (R + 18) * Math.cos(a), ly = cy + (R + 18) * Math.sin(a);
+      var anchor = Math.abs(Math.cos(a)) < 0.35 ? 'middle' : (Math.cos(a) > 0 ? 'start' : 'end');
+      return '<text x="' + lx.toFixed(1) + '" y="' + (ly + 3).toFixed(1) + '" text-anchor="' + anchor + '" font-size="9" font-weight="700" style="fill:var(--text-muted)">' + rkEsc(String(l).toUpperCase()) + '</text>';
+    }).join('');
+    return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size + '" role="img">' + grid + axes + poly + dots + labs + '</svg>';
+  }
+
   // Sort dropdown: choosing a key resets to that key's default direction.
   function rkSetSortKey(key) {
     rkSortKey = key;
@@ -642,18 +668,11 @@ def build_prospects_body(is_admin: bool = False) -> str:
     rkCurrentPage = 1;
     rkRender();
   }
-  // Arrow on the active sort header (AM-table pattern). On mobile the Age and
-  // Score columns are hidden, so their arrows move onto the sort column.
+  // Arrow on the active sort header (AM-table pattern).
   function rkUpdateSortHeaders() {
     var header = document.getElementById('rkHeader');
     if (!header) return;
-    var isMobile = window.innerWidth <= 768;
-    var col = 'sort';
-    if (rkSortKey === 'name') col = 'name';
-    else if (rkSortKey === 'rank') col = 'rank';
-    else if (rkSortKey === 'age' && !isMobile) col = 'age';
-    else if (rkSortKey === 'score' && !isMobile) col = 'score';
-    else if (rkSortKey === 'value' && !isMobile) col = 'value';
+    var col = rkSortKey;
     header.querySelectorAll('[data-rk-sort-col]').forEach(function(el) {
       var on = el.getAttribute('data-rk-sort-col') === col;
       el.classList.toggle('sorted-asc', on && rkSortDir === 'asc');
@@ -663,85 +682,61 @@ def build_prospects_body(is_admin: bool = False) -> str:
     });
   }
 
-  function rkGetValue(r) {
-    // Prefer values from the main player_values DB (overlaid by server when sleeper_id
-    // is linked), so the prospects page stays in sync with the /players page.
-    if (rkLeague === 'sf') {
-      var dbKey = rkSize === 10 ? 'sf_value' : 'sf_value_' + rkSize;
-      var pipeKey = rkSize === 10 ? 'rookie_sf_value' : 'rookie_sf_value_' + rkSize;
-      return parseFloat(r[dbKey] || r['sf_value'] || r[pipeKey] || r['rookie_sf_value'] || 0);
-    } else {
-      var dbKey = rkSize === 10 ? 'value' : 'value_' + rkSize;
-      var pipeKey = rkSize === 10 ? 'rookie_value' : 'rookie_value_' + rkSize;
-      return parseFloat(r[dbKey] || r['value'] || r[pipeKey] || r['rookie_value'] || 0);
+  // Watchlist toggle with the shared undo toast.
+  function rkToggleWatch(ev, pid, name) {
+    ev.stopPropagation();
+    if (rkWatch[pid]) {
+      delete rkWatch[pid];
+      rkSaveWatch();
+      rkRender();
+      return;
+    }
+    rkWatch[pid] = true;
+    rkSaveWatch();
+    rkRender();
+    if (window.brUndoToast) {
+      window.brUndoToast('Watching ' + name + '.', function() {
+        delete rkWatch[pid];
+        rkSaveWatch();
+        rkRender();
+        var card = document.getElementById('rkModalContent');
+        if (card) rkSyncModalWatch(card, pid, name);
+      });
     }
   }
-
-  // Settings panel toggle
-  function rkToggleSettings() {
-    var panel = document.getElementById('rkSettingsPanel');
-    var btn = document.getElementById('rkSettingsBtn');
-    if (!panel || !btn) return;
-
-    var isOpen = panel.style.display === 'block';
-    if (isOpen) {
-      panel.style.display = 'none';
-      btn.classList.remove('active');
+  // Sync the open modal's star + nudge row after a watchlist change.
+  function rkSyncModalWatch(card, pid, name) {
+    var on = !!rkWatch[pid];
+    card.querySelectorAll('.rk-star').forEach(function(s) { s.classList.toggle('watching', on); });
+    var n = card.querySelector('.m-nudge');
+    if (n) {
+      n.classList.toggle('on', on);
+      var sp = n.querySelector('span');
+      if (sp) sp.textContent = on ? 'You will be nudged if ' + name + ' changes tiers.'
+                                  : 'Get nudged if ' + name + ' changes tiers.';
+    }
+  }
+  function rkToggleWatchModal(ev, pid, name) {
+    ev.stopPropagation();
+    if (rkWatch[pid]) {
+      delete rkWatch[pid];
+      rkSaveWatch();
     } else {
-      panel.style.display = 'block';
-      btn.classList.add('active');
-      if (window.innerWidth <= 768) {
-        var rect = btn.getBoundingClientRect();
-        panel.style.position = 'fixed';
-        panel.style.top = (rect.bottom + 6) + 'px';
-        panel.style.left = '12px';
-        panel.style.right = '12px';
-        panel.style.minWidth = '';
-      } else {
-        panel.style.position = '';
-        panel.style.top = '';
-        panel.style.left = '';
-        panel.style.right = '';
-        panel.style.minWidth = '';
+      rkWatch[pid] = true;
+      rkSaveWatch();
+      if (window.brUndoToast) {
+        window.brUndoToast('Watching ' + name + '.', function() {
+          delete rkWatch[pid];
+          rkSaveWatch();
+          rkRender();
+          var card = document.getElementById('rkModalContent');
+          if (card) rkSyncModalWatch(card, pid, name);
+        });
       }
     }
-  }
-
-  // Update active settings indicator tags
-  function updateRookieSettingsIndicator() {
-    var indicator = document.getElementById('rkActiveSettings');
-    if (!indicator) return;
-
-    var sizeTag = indicator.querySelector('.active-setting-tag:first-child');
-    var formatTag = indicator.querySelector('.active-setting-tag:last-child');
-
-    if (sizeTag) sizeTag.textContent = rkSize + '-Team';
-    if (formatTag) formatTag.textContent = rkLeague.toUpperCase();
-  }
-
-  function rkSetLeague(type) {
-    rkLeague = type;
-    document.querySelectorAll('#rkLeagueGroup .settings-toggle').forEach(function(btn) {
-      btn.classList.toggle('active', btn.getAttribute('data-value') === type);
-    });
-    updateRookieSettingsIndicator();
-    rkCurrentPage = 1;
     rkRender();
-  }
-
-  function rkSetSize(sz) {
-    rkSize = sz;
-    document.querySelectorAll('#rkSizeGroup .settings-toggle').forEach(function(btn) {
-      btn.classList.toggle('active', parseInt(btn.getAttribute('data-value')) === sz);
-    });
-    updateRookieSettingsIndicator();
-    rkCurrentPage = 1;
-    rkRender();
-  }
-
-  function rkResetSettings() {
-    rkSetLeague('1qb');
-    rkSetSize(10);
+    var card = document.getElementById('rkModalContent');
+    if (card) rkSyncModalWatch(card, pid, name);
   }
 
   function rkTogglePos(pos) {
@@ -776,59 +771,22 @@ def build_prospects_body(is_admin: bool = False) -> str:
     return 0;
   }
 
-  function rkScoreColor(score) {
-    if (score >= 80) return '#10b981';
-    if (score >= 65) return '#3b82f6';
-    if (score >= 50) return '#f59e0b';
-    return '#6b7280';
-  }
-
-  function rkTierBadge(tier, label) {
-    return '<span class="rk-tier rk-tier-' + (tier||6) + '">' +
-      'T' + (tier||'?') + '</span>';
-  }
-
-  function rkAdpField(r) {
-    var v = rkLeague === 'sf' ? r.sf_avg_pick : r.avg_pick;
-    return v != null ? parseFloat(v).toFixed(1) : '-';
-  }
-  function rkAdpSort(a, b) {
-    var af = rkLeague === 'sf' ? a.sf_avg_pick : a.avg_pick;
-    var bf = rkLeague === 'sf' ? b.sf_avg_pick : b.avg_pick;
-    return (af != null ? af : 999) - (bf != null ? bf : 999);
-  }
-
-  // Map sort key → { header label, cell value function }
-  var RK_SORT_META = {
-    rank:  { label: 'ADP',   cell: function(r) { return rkAdpField(r); } },
-    value: { label: 'Value', cell: function(r) { var v = rkGetValue(r); return v > 0 ? v.toFixed(1) : '-'; } },
-    score: { label: 'Score', cell: function(r) { var s = parseFloat(r.prospect_score||0); return s > 0 ? s.toFixed(2) : '-'; } },
-    age:   { label: 'Age',   cell: function(r) { return r.age != null ? parseFloat(r.age).toFixed(1) : '-'; } },
-    adp:   { label: 'ADP',   cell: function(r) { return rkAdpField(r); } },
-    name:  { label: 'Name',  cell: function(r) { return rkAdpField(r); } },
-  };
-
   // Missing sort values always sort last, in either direction.
   function rkSortIsNull(r, sortBy) {
     switch (sortBy) {
-      case 'value': return !(rkGetValue(r) > 0);
       case 'score': return !(parseFloat(r.prospect_score||0) > 0);
+      case 'mock':  return r.projected_pick == null;
       case 'age':   return r.age == null;
-      case 'adp':   return (rkLeague === 'sf' ? r.sf_avg_pick : r.avg_pick) == null;
       case 'name':  return false;
       default:      return !(r.overall_rank > 0); // 'rank'
     }
   }
+  function rkMockSortVal(r) {
+    return r.projected_pick != null ? parseFloat(r.projected_pick) : 999;
+  }
   function rkRender() {
     if (!rkLoaded) return;
     var sortBy = rkSortKey;
-
-    // On mobile (≤768px) age and score are hidden, so switch the sort column
-    // to show whatever is being sorted. On desktop all columns are visible.
-    var isMobile = window.innerWidth <= 768;
-    var rkSortMeta = isMobile ? (RK_SORT_META[sortBy] || RK_SORT_META.adp) : RK_SORT_META.adp;
-    var rkSortHdr = document.getElementById('rkSortHeader');
-    if (rkSortHdr) rkSortHdr.textContent = rkSortMeta.label;
     rkUpdateSortHeaders();
 
     // 1. Start with full list
@@ -847,7 +805,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
       players = players
         .map(function(r) { return {r:r, s: rkFuzzy(r.name, q)}; })
         .filter(function(x) { return x.s > 0; })
-        .sort(function(a,b) { return b.s - a.s || rkGetValue(b.r) - rkGetValue(a.r); })
+        .sort(function(a,b) { return b.s - a.s || (parseFloat(b.r.prospect_score||0) - parseFloat(a.r.prospect_score||0)); })
         .map(function(x) { return x.r; });
     } else {
       // 4. Sort (only when not searching). Direction-aware: the ascending-base
@@ -860,10 +818,9 @@ def build_prospects_body(is_admin: bool = False) -> str:
         if (an) return 1;
         if (bn) return -1;
         switch (sortBy) {
-          case 'value': return (rkGetValue(a) - rkGetValue(b)) * rkDirMult;
           case 'score': return (parseFloat(a.prospect_score||0) - parseFloat(b.prospect_score||0)) * rkDirMult;
+          case 'mock':  return (rkMockSortVal(a) - rkMockSortVal(b)) * rkDirMult;
           case 'age':   return (parseFloat(a.age||99) - parseFloat(b.age||99)) * rkDirMult;
-          case 'adp':   return rkAdpSort(a, b) * rkDirMult;
           case 'name':  return String(a.name||'').localeCompare(String(b.name||'')) * rkDirMult;
           default:      return ((a.overall_rank||999) - (b.overall_rank||999)) * rkDirMult;
         }
@@ -910,44 +867,72 @@ def build_prospects_body(is_admin: bool = False) -> str:
     count.style.display  = 'none';
 
     list.innerHTML = '';
+
+    // Tier dividers (player-rankings style) only make sense on the default
+    // board order: all positions, no search, sorted by overall rank.
+    var showDividers = rkPosFilters.size === 0 && !rkSearch &&
+                       rkSortKey === 'rank' && rkSortDir === 'asc';
+    var lastTier = null;
+
     pageItems.forEach(function(r, idx) {
+      var pid = r.player_id || '';
+
+      // Tier break: thin colored line with T-label, reusing .otc-tier-divider.
+      if (showDividers && r.tier !== lastTier) {
+        lastTier = r.tier;
+        var tc = RK_TIER_COLORS[r.tier] || '#9ca3af';
+        var div = document.createElement('div');
+        div.className = 'otc-tier-divider';
+        div.style.padding = '10px 12px 2px';
+        div.innerHTML =
+          '<div class="otc-tier-divider-line" style="background:' + tc + ';"></div>' +
+          '<span class="otc-tier-divider-label" style="color:' + tc + ';">T' + (r.tier || '?') + '</span>' +
+          '<div class="otc-tier-divider-line" style="background:' + tc + ';"></div>';
+        list.appendChild(div);
+      }
+
       var row = document.createElement('div');
       row.className = 'rk-row rk-grid-row';
-      row.setAttribute('data-pid', r.player_id||'');
+      row.setAttribute('data-pid', pid);
 
-      var val   = rkGetValue(r);
       var score = parseFloat(r.prospect_score||0);
-      var age   = r.age != null ? parseFloat(r.age).toFixed(1) : '-';
-      var sortColDisplay = rkSortMeta.cell(r);
-      var posRk = r.position || '';
-      if (r.position_rank) posRk += r.position_rank;
+      var pos = (r.position || '').toUpperCase();
+      var posColor = RK_POS_COLORS[pos] || '#94a3b8';
+      var rankNum = r.overall_rank ? '#' + r.overall_rank : (offset + idx + 1);
+      var ht = rkHeightStr(r), wt = rkWeightStr(r);
+      var metaBits = [];
+      if (r.school) metaBits.push(rkEsc(r.school));
+      if (ht) metaBits.push(rkEsc(ht));
+      if (wt) metaBits.push(rkEsc(wt));
+      var mockPick = r.projected_pick != null ? Math.round(parseFloat(r.projected_pick)) : '-';
 
-      var tierHtml = rkTierBadge(r.tier, r.tier_label);
-      var earlyTag = r.early_declare ? '<span style="font-size:11px;color:var(--text-muted);margin-left:4px;">Early</span>' : '';
-      var scoreColor = rkScoreColor(score);
+      var compVals = [r.production_score, r.athleticism_score, r.projected_draft_capital_score];
+      var compsHtml = '<div class="rk-comps3">' + compVals.map(function(v, k) {
+        var n = Math.round(parseFloat(v || 0));
+        return '<div class="rk-compcol" title="' + RK_COMP_NAMES[k] + ' ' + n + '">' +
+          '<div class="rk-compcol-label">' + RK_COMP_SHORT[k] + '</div>' +
+          '<div class="rk-compcol-row"><div class="rk-meter-bar"><div style="width:' + n + '%;background:' + RK_COMP_COLORS[k] + '"></div></div>' +
+          '<span class="rk-meter-val" style="color:' + RK_COMP_COLORS[k] + '">' + n + '</span></div></div>';
+      }).join('') + '</div>';
 
       row.innerHTML =
-        '<span class="rk-rank">' + (r.overall_rank ? '#' + r.overall_rank : offset+idx+1) + '</span>' +
-        '<div class="rk-name-cell">' +
-          '<div class="rk-name">' + (r.name||'Unknown') + tierHtml + earlyTag + '</div>' +
-          '<div class="rk-meta">' + (r.school||'') + (r.school && r.position ? ' • ' : '') + (posRk||'') + '</div>' +
-        '</div>' +
-        '<span class="rk-pos">' + (r.position||'') + '</span>' +
-        '<span class="rk-age">' + age + '</span>' +
-        '<span class="rk-draft">' + sortColDisplay + '</span>' +
-        '<span class="rk-score"><span class="rk-score-bar">' +
-          '<span class="rk-score-dot" style="background:' + scoreColor + ';"></span>' +
-          score.toFixed(2) + '</span></span>' +
-        '<span class="rk-value">' + (val > 0 ? val.toFixed(1) : '-') + '</span>';
+        '<div class="rk-rank"><span class="rk-rank-num">' + rankNum + '</span>' + rkDelta(r.rank_delta) + '</div>' +
+        '<div class="rk-pcell"><div class="rk-pplayer">' +
+          rkHeadshot(r, 'rk-headshot') +
+          '<div style="min-width:0"><div class="rk-name">' + rkEsc(r.name || 'Unknown') +
+            '<span class="rk-pos" style="--pc:' + posColor + '">' + rkEsc(pos) + '</span></div>' +
+          '<div class="rk-meta">' + metaBits.join(' &middot; ') + '</div></div>' +
+        '</div></div>' +
+        compsHtml +
+        '<div class="rk-score">' + Math.round(score) + '</div>' +
+        '<div class="rk-mock" title="Expected draft spot based on mock drafts">' + mockPick + '</div>' +
+        '<button class="rk-star' + (rkWatch[pid] ? ' watching' : '') + '"' +
+          ' aria-label="Watch ' + rkEsc(r.name || '') + '">' + rkStarSVG() + '</button>';
 
-      row.addEventListener('click', function() {
-        var pid = r.sleeper_id ? String(r.sleeper_id) : (r.player_id || '');
-        if (pid) {
-          openPlayerModal(pid, r.name || '', {tab: 'prospect'});
-        } else {
-          rkOpenModal(r);
-        }
+      row.querySelector('.rk-star').addEventListener('click', function(ev) {
+        rkToggleWatch(ev, pid, r.name || '');
       });
+      row.addEventListener('click', function() { rkOpenModal(r); });
       list.appendChild(row);
     });
 
@@ -955,177 +940,313 @@ def build_prospects_body(is_admin: bool = False) -> str:
     rkUpdatePaginationControls(totalFiltered, totalPages);
   }
 
-  // ── Modal ──────────────────────────────────────────────────────────────────
+  // ── Modal ─────────────────────────────────────────────────────────────────────
+  function rkLoadingHtml() {
+    return '<div class="rk-detail-loading"><div class="loading-spinner" style="width:12px;height:12px;flex-shrink:0;"></div>Loading\u2026</div>';
+  }
+
+  function rkToggleMoreComps() {
+    var d = document.getElementById('rkMoreComps');
+    var btn = document.getElementById('rkMoreCompsBtn');
+    if (!d || !btn) return;
+    var open = d.style.display === 'none';
+    d.style.display = open ? 'block' : 'none';
+    btn.textContent = open ? 'Show fewer components' : 'Show all components';
+  }
+
   function rkOpenModal(r) {
     var modal   = document.getElementById('rkModal');
     var content = document.getElementById('rkModalContent');
+    var pid  = r.player_id || '';
+    var name = r.name || 'Unknown';
+    var pos  = (r.position || '').toUpperCase();
+    var posColor = RK_POS_COLORS[pos] || '#94a3b8';
+    var tc   = RK_TIER_COLORS[r.tier] || '#9ca3af';
+    var score = parseFloat(r.prospect_score || 0);
+    var conf  = parseFloat(r.confidence_score || 0);
+    var age   = r.age != null ? parseFloat(r.age).toFixed(1) : '-';
+    var mockPick = r.projected_pick != null ? Math.round(parseFloat(r.projected_pick)) : null;
+    var on = !!rkWatch[pid];
+    var rankNum = r.overall_rank ? '#' + r.overall_rank : '-';
 
-    var val1qb = parseFloat(r.value || r.rookie_value || 0);
-    var valsf  = parseFloat(r.sf_value || r.rookie_sf_value || 0);
-    var score  = parseFloat(r.prospect_score||0);
-    var conf   = parseFloat(r.confidence_score||0);
-    var age    = r.age != null ? parseFloat(r.age).toFixed(1) : '-';
-    var tier   = r.tier || '?';
-    var tierColors = ['','#10b981','#22d3ee','#3b82f6','#8b5cf6','#a855f7','#f59e0b','#f97316','#94a3b8','#64748b'];
-    var tierColor  = tierColors[tier] || '#9ca3af';
+    var reasons = String(r.key_reasons || '').split('\\n').filter(function(l){ return l.trim(); });
+    var notesHtml = reasons.length
+      ? '<div class="m-notes">' + reasons.map(function(l){ return '<div>&middot; ' + rkEsc(l.trim()) + '</div>'; }).join('') + '</div>'
+      : '<div class="m-notes">No scouting notes yet.</div>';
 
-    var reasons = (r.key_reasons||'').split('\\n').filter(function(l){ return l.trim(); });
-
-    // Measurables
-    var ht = r.height_inches;
-    var heightStr = ht ? (Math.floor(ht/12) + "'" + (ht%12) + '"') : '-';
-    var weightStr = r.weight_lbs ? r.weight_lbs + ' lbs' : '-';
-    var fortyStr  = r.forty_yard ? r.forty_yard + 's' : '-';
-    var rasStr    = r.ras_score  ? parseFloat(r.ras_score).toFixed(1) + '/10' : '-';
-
-    // Draft info - single consolidated line
-    var draftCapLabel = r.draft_capital_label || (r.projected_pick ? 'Pick #' + r.projected_pick : null);
-    var draftStr = draftCapLabel
-      ? draftCapLabel + (r.num_mocks_used && !rkDraftComplete ? '  ·  ' + r.num_mocks_used + ' mocks' : '')
-      : 'Undrafted / Unknown';
-
-    // Component scores (Confidence lives in the section header, not here)
-    var components = [
-      {label:'Production',  val: r.production_score,              color:'#10b981'},
-      {label:'Efficiency',  val: r.efficiency_score,              color:'#3b82f6'},
-      {label:'Age',         val: r.age_score,                     color:'#8b5cf6'},
-      {label:'Breakout',    val: r.breakout_profile_score,        color:'#f59e0b'},
-      {label:'Athleticism', val: r.athleticism_score,             color:'#ef4444'},
-      {label:'Competition', val: r.competition_score,             color:'#06b6d4'},
-      {label:'Draft Cap.',  val: r.projected_draft_capital_score, color:'#f97316'},
+    var compDefs = [
+      { label: 'Production',   val: r.production_score,              color: RK_COMP_COLORS[0], rawId: 'rkRawProd' },
+      { label: 'Athleticism',  val: r.athleticism_score,             color: RK_COMP_COLORS[1], rawId: 'rkRawAth' },
+      { label: 'Draft Capital', val: r.projected_draft_capital_score, color: RK_COMP_COLORS[2], rawId: 'rkRawDc' }
     ];
-
-    var compsHtml = components.map(function(c) {
-      var v = parseFloat(c.val||0);
-      return '<div class="rk-comp-row">' +
-        '<div class="rk-comp-label">' + c.label + '</div>' +
-        '<div class="rk-comp-bar-wrap"><div class="rk-comp-bar" style="width:' + Math.round(v) + '%;background:' + c.color + ';"></div></div>' +
-        '<div class="rk-comp-val" style="color:' + c.color + ';">' + v.toFixed(0) + '</div>' +
-      '</div>';
+    var compsHtml = compDefs.map(function(c) {
+      var v = Math.round(parseFloat(c.val || 0));
+      return '<div class="m-comp-row">' +
+        '<div class="m-comp-label">' + c.label + '</div>' +
+        '<div class="rk-meter-bar"><div style="width:' + v + '%;background:' + c.color + '"></div></div>' +
+        '<div class="rk-meter-val" style="color:' + c.color + '">' + v + '</div>' +
+        '<div class="m-comp-raw" id="' + c.rawId + '"></div></div>';
     }).join('');
 
-    var reasonsHtml = reasons.length > 0
-      ? '<div class="rk-section-divider"></div>' +
-        '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:10px;">Scouting Notes</div>' +
-        '<div style="font-size:13px;color:var(--text-muted);line-height:1.7;">' +
-          reasons.map(function(l){ return '<div style="padding:2px 0;">' + l + '</div>'; }).join('') +
-        '</div>'
-      : '';
-
     content.innerHTML =
-      // ── Header: name + tier badge + close ───────────────────────────────
-      '<div class="rk-modal-header">' +
-        '<div>' +
-          '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
-            '<span style="font-size:22px;font-weight:700;color:var(--text);">' + (r.name||'') + '</span>' +
-            '<span style="padding:3px 8px;border-radius:6px;font-size:11px;font-weight:700;' +
-                  'background:' + tierColor + '22;color:' + tierColor + ';border:1px solid ' + tierColor + '44;">' +
-              'Tier ' + tier +
-            '</span>' +
-          '</div>' +
-          '<div style="font-size:13px;color:var(--text-muted);margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">' +
-            '<span style="font-weight:600;color:var(--text);">' + (r.position||'') + (r.position_rank ? ' #'+r.position_rank : '') + '</span>' +
-            (r.school ? '<span style="opacity:.4;">·</span><span>' + r.school + '</span>' : '') +
-            '<span style="opacity:.4;">·</span><span>' + age + ' yrs</span>' +
-            (r.draft_class_year ? '<span style="opacity:.4;">·</span><span>' + r.draft_class_year + ' Draft</span>' : '') +
-          '</div>' +
+      '<div class="rk-modal-header"><div class="m-headwrap">' +
+        rkHeadshot(r, 'm-headshot') +
+        '<div style="min-width:0">' +
+        '<div class="m-title-row">' +
+          '<span class="m-name">' + rkEsc(name) + '</span>' +
+          '<span class="m-tier" style="background:' + tc + '22;color:' + tc + ';border:1px solid ' + tc + '44;">T' + (r.tier || '?') + '</span>' +
+          (r.early_declare ? '<span class="m-early">EARLY</span>' : '') +
+          '<button class="rk-star' + (on ? ' watching' : '') + '" data-rk-star="1" aria-label="Watch ' + rkEsc(name) + '">' + rkStarSVG() + '</button>' +
         '</div>' +
-        '<button class="rk-modal-close" onclick="rkCloseModal()" aria-label="Close">✕</button>' +
-      '</div>' +
-
+        '<div class="m-meta"><span class="m-rank">' + rankNum + '</span>' + rkDelta(r.rank_delta) +
+          '<span class="rk-pos" style="--pc:' + posColor + ';margin-left:0">' + rkEsc(pos) + '</span>' +
+          (r.school ? '<span>' + rkEsc(r.school) + '</span>' : '') +
+          '<span>&middot;</span><span>' + age + ' yrs</span>' +
+          '<span id="rkMetaStars"></span>' +
+          (r.draft_class_year ? '<span>&middot;</span><span>' + r.draft_class_year + ' Draft</span>' : '') + '</div>' +
+        (r.transfer_history ? '<div class="m-transfer">Transfer: ' + rkEsc(r.transfer_history) + '</div>' : '') +
+        '</div>' +
+      '</div><button class="rk-modal-close" onclick="rkCloseModal()" aria-label="Close">\u2715</button></div>' +
       '<div class="rk-modal-body">' +
-
-        // ── Hero: Prospect Score + 1QB Value + SF Value ──────────────────
         '<div class="rk-hero-row">' +
-          '<div class="rk-hero-stat rk-hero-primary">' +
+          '<div class="rk-hero-stat" style="background:' + tc + '14;border-color:transparent;">' +
             '<div class="rk-hero-label">Prospect Score</div>' +
-            '<div class="rk-hero-val" style="color:var(--accent);">' + score.toFixed(2) + '</div>' +
-            '<div class="rk-hero-sub">' + (r.tier_label||'') + '</div>' +
+            '<div class="rk-hero-val" style="color:' + tc + ';">' + Math.round(score) + '</div>' +
+            '<div class="rk-hero-sub">' + rkEsc(RK_TIER_NAMES[r.tier] || r.tier_label || '') + '</div></div>' +
+          '<div class="rk-hero-stat"><div class="rk-hero-label">Breakout Age</div>' +
+            '<div class="rk-hero-val" id="rkHeroBreakout">-</div><div class="rk-hero-sub">years</div></div>' +
+          '<div class="rk-hero-stat"><div class="rk-hero-label">Mock Draft</div>' +
+            '<div class="rk-hero-val">' + (mockPick != null ? 'Pick ' + mockPick : '-') + '</div>' +
+            '<div class="rk-hero-sub" id="rkHeroTrend"></div></div>' +
+        '</div>' +
+        '<hr class="rk-section-divider">' +
+        '<div class="m-sec-head"><div class="m-sec-label">Grade breakdown</div>' +
+          '<div class="m-conf">Data confidence: <b>' + Math.round(conf) + '</b></div></div>' +
+        compsHtml +
+        '<div id="rkMoreComps" style="display:none"></div>' +
+        '<button class="m-more-btn" id="rkMoreCompsBtn" onclick="rkToggleMoreComps()">Show all components</button>' +
+        '<hr class="rk-section-divider">' +
+        '<div class="m-sec-label">Advanced metrics</div>' +
+        '<div class="m-adv-grid"><div id="rkAdvBody">' + rkLoadingHtml() + '</div>' +
+        '<div class="m-adv-radar" id="rkRadarBody"></div></div>' +
+        '<div class="m-cols">' +
+          '<div class="m-col">' +
+            '<hr class="rk-section-divider">' +
+            '<div class="m-sec-label">Combine &amp; measurables</div><div class="rk-meas-grid" id="rkCombineBody">' + rkLoadingHtml() + '</div>' +
           '</div>' +
-          '<div class="rk-hero-stat">' +
-            '<div class="rk-hero-label">1QB Value</div>' +
-            '<div class="rk-hero-val">' + (val1qb > 0 ? val1qb.toFixed(1) : '-') + '</div>' +
-            '<div class="rk-hero-sub">10-team</div>' +
+          '<div class="m-col">' +
+            '<hr class="rk-section-divider">' +
+            '<div class="m-sec-label">College production</div><div id="rkSeasonsBody">' + rkLoadingHtml() + '</div>' +
           '</div>' +
-          '<div class="rk-hero-stat">' +
-            '<div class="rk-hero-label">SF Value</div>' +
-            '<div class="rk-hero-val">' + (valsf > 0 ? valsf.toFixed(1) : '-') + '</div>' +
-            '<div class="rk-hero-sub">10-team</div>' +
+          '<div class="m-col">' +
+            '<hr class="rk-section-divider">' +
+            '<div class="m-sec-label">Scouting notes</div>' + notesHtml +
+          '</div>' +
+          '<div class="m-col">' +
+            '<hr class="rk-section-divider">' +
+            '<div class="m-sec-label">Historical comparables</div>' +
+            '<div id="rkComparablesBody">' + rkLoadingHtml() + '</div>' +
           '</div>' +
         '</div>' +
-
-        // ── Draft (consolidated) ─────────────────────────────────────────
-        '<div class="rk-info-row">' +
-          '<span style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;white-space:nowrap;">Draft</span>' +
-          '<span style="font-size:13px;font-weight:600;color:var(--text);">' + draftStr + '</span>' +
-        '</div>' +
-
-        // ── Measurables ──────────────────────────────────────────────────
-        '<div class="rk-meas-grid">' +
-          '<div class="rk-meas-cell"><div class="rk-meas-label">Height</div><div class="rk-meas-val">' + heightStr + '</div></div>' +
-          '<div class="rk-meas-cell"><div class="rk-meas-label">Weight</div><div class="rk-meas-val">' + weightStr + '</div></div>' +
-          '<div class="rk-meas-cell"><div class="rk-meas-label">40 Dash</div><div class="rk-meas-val">' + fortyStr + '</div></div>' +
-          '<div class="rk-meas-cell"><div class="rk-meas-label">RAS</div><div class="rk-meas-val">' + rasStr + '</div></div>' +
-        '</div>' +
-
-        // ── Component scores with bars ───────────────────────────────────
-        '<div class="rk-section-divider"></div>' +
-        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">' +
-          '<span style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;">Component Scores</span>' +
-          '<span style="font-size:11px;color:var(--text-muted);">Data confidence: <strong style="color:var(--text);">' + conf.toFixed(0) + '</strong></span>' +
-        '</div>' +
-        '<div class="rk-comp-list">' + compsHtml + '</div>' +
-
-        reasonsHtml +
-
-        // ── Historical Comparables ────────────────────────────────────────
-        '<div class="rk-section-divider"></div>' +
-        '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px;">Historical Comparables</div>' +
-        '<div id="rkComparablesBody" style="font-size:13px;color:var(--text-muted);">' +
-          '<div style="display:flex;align-items:center;gap:8px;"><div class="loading-spinner" style="width:12px;height:12px;flex-shrink:0;"></div>Loading…</div>' +
-        '</div>' +
-
+        '<div class="m-nudge' + (on ? ' on' : '') + '" data-rk-nudge="1">' +
+          '<button class="rk-star' + (on ? ' watching' : '') + '" style="pointer-events:none" tabindex="-1">' + rkStarSVG() + '</button>' +
+          '<span>' + (on ? 'You will be nudged if ' + rkEsc(name) + ' changes tiers.'
+                          : 'Get nudged if ' + rkEsc(name) + ' changes tiers.') + '</span></div>' +
       '</div>';
 
+    // Wire the star + nudge (direct binding, no inline handlers).
+    var starBtn = content.querySelector('[data-rk-star]');
+    if (starBtn) starBtn.addEventListener('click', function(ev) { rkToggleWatchModal(ev, pid, name); });
+    var nudge = content.querySelector('[data-rk-nudge]');
+    if (nudge) nudge.addEventListener('click', function(ev) { rkToggleWatchModal(ev, pid, name); });
+
     modal.style.display = 'flex';
+    content.style.borderTop = '3px solid ' + tc;
     document.body.style.overflow = 'hidden';
 
     // Auto-link to Sleeper ID silently in background
-    if (r.player_id) {
-      fetch('/api/prospects/auto-link/' + encodeURIComponent(r.player_id)).catch(function(){});
+    if (pid) {
+      fetch('/api/prospects/auto-link/' + encodeURIComponent(pid)).catch(function(){});
     }
 
-    // Fetch historical comparables
-    fetch('/api/prospects/comparables/' + encodeURIComponent(r.player_id))
+    // Detail bundle: advanced metrics, combine, seasons, extras
+    var yearQ = r.draft_class_year || rkDraftYear || '';
+    fetch('/api/prospects/player/' + encodeURIComponent(pid) + '?year=' + encodeURIComponent(yearQ))
+      .then(function(res){ return res.json(); })
+      .then(function(d) { rkFillDetail(r, d || {}); })
+      .catch(function() {
+        ['rkAdvBody', 'rkCombineBody', 'rkSeasonsBody'].forEach(function(id) {
+          var el = document.getElementById(id);
+          if (el) el.innerHTML = '<span style="font-size:13px;color:var(--text-muted);">Details unavailable.</span>';
+        });
+      });
+
+    // Historical comparables from real past draft classes
+    fetch('/api/prospects/comparables/' + encodeURIComponent(pid))
       .then(function(res){ return res.json(); })
       .then(function(cd) {
         var cb = document.getElementById('rkComparablesBody');
         if (!cb) return;
         var comps = cd.comparables || [];
         if (!comps.length) {
-          cb.innerHTML = '<span>No close historical comps found.</span>';
+          cb.innerHTML = '<span style="font-size:13px;color:var(--text-muted);">No close historical comps found.</span>';
           return;
         }
-        var tc_ = ['','#10b981','#22d3ee','#3b82f6','#8b5cf6','#a855f7','#f59e0b','#f97316','#94a3b8','#64748b'];
         cb.innerHTML = comps.map(function(c) {
-          var tc = tc_[c.tier] || '#9ca3af';
-          var pickStr = c.actual_pick ? ' · Pick ' + c.actual_pick : '';
-          return '<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);">' +
-            '<div>' +
-              '<span style="font-weight:600;color:var(--text);font-size:13px;">' + c.name + '</span>' +
-              '<span style="color:var(--text-muted);font-size:13px;margin-left:6px;">' + c.draft_class_year + pickStr + '</span>' +
-              (c.school ? '<span style="color:var(--text-muted);font-size:13px;"> · ' + c.school + '</span>' : '') +
-            '</div>' +
-            '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">' +
-              '<span style="font-size:13px;color:var(--text-muted);">' + parseFloat(c.prospect_score).toFixed(2) + '</span>' +
-              '<span style="padding:2px 7px;border-radius:5px;font-size:11px;font-weight:700;background:' + tc + '22;color:' + tc + ';border:1px solid ' + tc + '44;">T' + c.tier + '</span>' +
-            '</div>' +
-          '</div>';
+          var ctc = RK_TIER_COLORS[c.tier] || '#9ca3af';
+          var meta = [c.draft_class_year,
+                      c.actual_pick ? 'Pick ' + c.actual_pick : null,
+                      c.school].filter(Boolean).join(' \u00b7 ');
+          var discColor = rkDiscColor(c.player_id);
+          var disc = '<div class="m-sim-disc" style="--pc:' + discColor + '">' + rkInitials(c.name) +
+            (c.headshot_url
+              ? '<img src="' + rkEsc(c.headshot_url) + '" alt="" loading="lazy" onerror="this.remove()"></div>'
+              : '</div>');
+          return '<div class="m-sim-row">' + disc +
+            '<div><div class="m-sim-name">' + rkEsc(c.name) + '</div>' +
+            '<div class="m-sim-meta">' + rkEsc(meta) + '</div></div>' +
+            '<div class="m-sim-right"><span class="m-sim-score">' + Math.round(parseFloat(c.prospect_score || 0)) + '</span>' +
+            '<span class="m-sim-tier" style="background:' + ctc + '22;color:' + ctc + ';border:1px solid ' + ctc + '44;">T' + c.tier + '</span></div></div>';
         }).join('');
       })
       .catch(function() {
-        window.brErrorState('rkComparablesBody', 'Could not load comparables.', null, { compact: true });
+        var cb2 = document.getElementById('rkComparablesBody');
+        if (cb2) cb2.innerHTML = '<span style="font-size:13px;color:var(--text-muted);">Could not load comparables.</span>';
       });
+  }
+
+  function rkFillDetail(r, d) {
+    function fmtNum(v) {
+      if (v == null || v === '') return '-';
+      var n = Number(v);
+      if (isNaN(n)) return '-';
+      return n >= 1000 ? n.toLocaleString() : String(Math.round(n));
+    }
+    // Composite stars (parallel data track; hidden until the column exists)
+    var ms = document.getElementById('rkMetaStars');
+    if (ms) {
+      ms.innerHTML = (d.composite_stars != null && d.composite_stars !== '')
+        ? '<span>&middot;</span><span>' + parseInt(d.composite_stars, 10) + '-star</span>' : '';
+    }
+    // Breakout age hero
+    var hb = document.getElementById('rkHeroBreakout');
+    if (hb) hb.textContent = d.breakout_age != null ? Number(d.breakout_age).toFixed(1) : '-';
+    // Mock draft month trend
+    var ht = document.getElementById('rkHeroTrend');
+    if (ht) {
+      var t = d.mock_trend;
+      if (t == null || t === '') ht.textContent = '';
+      else if (t > 0) ht.innerHTML = '<span class="dvt-change dvt-change-up">&#9650;' + t + ' this month</span>';
+      else if (t < 0) ht.innerHTML = '<span class="dvt-change dvt-change-down">&#9660;' + Math.abs(t) + ' this month</span>';
+      else ht.innerHTML = '<span class="dvt-change dvt-change-flat">no move this month</span>';
+    }
+    // Raw context lines under the three main components
+    function advRaw(label) {
+      var found = null;
+      (d.advanced || []).forEach(function(a){ if (a.label === label) found = a; });
+      return found && found.raw ? found.raw : null;
+    }
+    function setRaw(id, txt) {
+      var el = document.getElementById(id);
+      if (el && txt) el.textContent = txt;
+    }
+    var domRaw = advRaw('Dominator');
+    setRaw('rkRawProd', domRaw ? domRaw + ' dominator' : null);
+    var ath = d.athleticism || {};
+    setRaw('rkRawAth', ath.forty_yard != null ? Number(ath.forty_yard).toFixed(2) + ' forty'
+      : (ath.ras_score != null ? Number(ath.ras_score).toFixed(1) + ' RAS' : null));
+    setRaw('rkRawDc', r.projected_pick != null ? 'mock pick ' + Math.round(parseFloat(r.projected_pick)) : null);
+
+    // "Show all components" expander: utilization / efficiency / durability / experience
+    var more = document.getElementById('rkMoreComps');
+    if (more) {
+      var vals = [d.utilization_score, r.efficiency_score, r.durability_score, d.experience_score];
+      more.innerHTML = vals.map(function(v, k) {
+        var n = Math.round(parseFloat(v || 0));
+        var dd = RK_XCOMP[k];
+        return '<div class="m-comp-row">' +
+          '<div class="m-comp-label">' + dd[0] + '</div>' +
+          '<div class="rk-meter-bar"><div style="width:' + n + '%;background:' + dd[1] + '"></div></div>' +
+          '<div class="rk-meter-val" style="color:' + dd[1] + '">' + n + '</div>' +
+          '<div class="m-comp-raw"></div></div>';
+      }).join('');
+    }
+
+    // Advanced metrics rows + radar
+    var advBody = document.getElementById('rkAdvBody');
+    var radarBody = document.getElementById('rkRadarBody');
+    var adv = (d.advanced || []).filter(function(a){ return a.raw != null && a.grade != null; });
+    if (advBody) {
+      advBody.innerHTML = adv.length ? adv.map(function(a) {
+        var g = rkLetterGrade(a.grade);
+        return '<div class="m-adv-row">' +
+          '<div class="m-adv-label">' + rkEsc(a.label) + '</div>' +
+          '<div class="rk-meter-bar"><div style="width:' + a.grade + '%;background:' + g[1] + '"></div></div>' +
+          '<div class="m-adv-score">' + rkEsc(a.raw) + '</div>' +
+          '<div class="m-adv-grade" style="color:' + g[1] + '">' + g[0] + '</div></div>';
+      }).join('') : '<span style="font-size:13px;color:var(--text-muted);">No advanced metrics available.</span>';
+    }
+    if (radarBody) {
+      var tc = RK_TIER_COLORS[r.tier] || '#9ca3af';
+      radarBody.innerHTML = adv.length
+        ? rkRadarSVG(adv.map(function(a){ return a.label; }), adv.map(function(a){ return a.grade; }), tc) : '';
+    }
+
+    // Combine grid
+    var cb = document.getElementById('rkCombineBody');
+    if (cb) {
+      var bi = parseInt(ath.broad_jump_in, 10);
+      var broad = isNaN(bi) ? '-' : Math.floor(bi / 12) + "'" + (bi % 12) + '"';
+      var cells = [
+        ['Height', rkHeightStr(r) || '-'],
+        ['Weight', rkWeightStr(r) || '-'],
+        ['40 Dash', ath.forty_yard != null ? Number(ath.forty_yard).toFixed(2) + 's' : '-'],
+        ['Vertical', ath.vertical_inches != null ? Number(ath.vertical_inches).toFixed(0) + '"' : '-'],
+        ['Broad Jump', broad],
+        ['3-Cone', ath.three_cone != null ? Number(ath.three_cone).toFixed(2) : '-'],
+        ['Shuttle', ath.short_shuttle != null ? Number(ath.short_shuttle).toFixed(2) : '-'],
+        ['Bench', ath.bench_reps != null ? String(ath.bench_reps) : '-'],
+        ['RAS', ath.ras_score != null ? Number(ath.ras_score).toFixed(1) : '-']
+      ];
+      cb.innerHTML = cells.map(function(c) {
+        return '<div class="rk-meas-cell"><div class="rk-meas-label">' + c[0] + '</div>' +
+               '<div class="rk-meas-val">' + rkEsc(c[1]) + '</div></div>';
+      }).join('');
+    }
+
+    // Season-by-season production table (position-correct columns)
+    var sb = document.getElementById('rkSeasonsBody');
+    if (sb) {
+      var pos = (r.position || '').toUpperCase();
+      var cols = RK_SEASON_COLS[pos] || RK_SEASON_COLS.WR;
+      var seasons = d.seasons || [];
+      if (!seasons.length) {
+        sb.innerHTML = '<span style="font-size:13px;color:var(--text-muted);">No season data available.</span>';
+      } else {
+        var rowsHtml = seasons.map(function(s) {
+          var cells;
+          if (pos === 'QB') {
+            cells = [s.season, s.games_played,
+              s.completion_pct != null ? Number(s.completion_pct).toFixed(1) + '%' : '-',
+              fmtNum(s.pass_yards), s.pass_tds != null ? s.pass_tds : '-', s.interceptions != null ? s.interceptions : '-'];
+          } else if (pos === 'RB') {
+            cells = [s.season, s.games_played, fmtNum(s.rush_attempts), fmtNum(s.rush_yards),
+                     s.rush_tds != null ? s.rush_tds : '-'];
+          } else {
+            cells = [s.season, s.games_played, fmtNum(s.receptions), fmtNum(s.receiving_yards),
+                     s.receiving_tds != null ? s.receiving_tds : '-'];
+          }
+          return '<tr>' + cells.map(function(v, k) {
+            var disp = (v == null || v === '') ? '-' : v;
+            return k === 0 ? '<td class="yr">' + rkEsc(String(disp)) + '</td>'
+                           : '<td>' + rkEsc(String(disp)) + '</td>';
+          }).join('') + '</tr>';
+        }).join('');
+        sb.innerHTML = '<table class="m-season-table"><thead><tr>' +
+          cols.map(function(c){ return '<th>' + c + '</th>'; }).join('') +
+          '</tr></thead><tbody>' + rowsHtml + '</tbody></table>';
+      }
+    }
   }
 
   function rkCloseModal() {
@@ -1150,19 +1271,6 @@ def build_prospects_body(is_admin: bool = False) -> str:
     });
   })();
 
-  // Close settings panel when clicking outside
-  document.addEventListener('click', function(e) {
-    var panel = document.getElementById('rkSettingsPanel');
-    var btn = document.getElementById('rkSettingsBtn');
-
-    if (panel && btn && panel.style.display === 'block') {
-      if (!panel.contains(e.target) && !btn.contains(e.target)) {
-        panel.style.display = 'none';
-        btn.classList.remove('active');
-      }
-    }
-  });
-
   // Clickable sort headers (AM-table pattern): click a column to sort by it,
   // click again to flip direction. Bound once; targets resolve at event time
   // so soft-nav re-renders keep working.
@@ -1177,10 +1285,9 @@ def build_prospects_body(is_admin: bool = False) -> str:
         var col = cell.getAttribute('data-rk-sort-col');
         if (col === 'name') return 'name';
         if (col === 'rank') return 'rank';
-        if (col === 'age') return 'age';
         if (col === 'score') return 'score';
-        if (col === 'value') return 'value';
-        return rkSortKey; // 'sort' column: flip the current key's direction
+        if (col === 'mock') return 'mock';
+        return rkSortKey;
       }
       document.addEventListener('click', function(e) {
         var cell = rkHeaderCell(e);
@@ -1208,15 +1315,6 @@ def build_prospects_body(is_admin: bool = False) -> str:
     .then(function(r){ return r.json(); })
     .then(function(status) {
       rkDraftComplete = status.draft_complete || false;
-      // 1 week after the draft, default sort switches to ADP
-      if (rkDraftComplete && (status.days_since_draft || 0) >= 7) {
-        var sortEl = document.getElementById('rkSort');
-        if (sortEl && sortEl.value === 'rank') {
-          sortEl.value = 'adp';
-          rkSortKey = 'adp';
-          rkSortDir = RK_SORT_DIRS.adp;
-        }
-      }
       return fetch('/api/prospects/rankings?year=' + rkDraftYear);
     })
     .then(function(r){ return r.json(); })
@@ -1242,19 +1340,6 @@ def build_prospects_body(is_admin: bool = False) -> str:
       document.getElementById('rkLoading').innerHTML =
         '<div style="color:var(--loss);">Failed to load rookie data. Please refresh.</div>';
     });
-
-  function _buildLinkSleeperHtml(playerId, existingSleeperIdVal) {
-    if (existingSleeperIdVal) {
-      return '<div style="font-size:13px;color:var(--text-muted);">Sleeper ID: <strong style="color:var(--text);">' + existingSleeperIdVal + '</strong> <span style="color:var(--win);">✓ linked</span></div>';
-    }
-    // Linking writes to the database - only admins see the controls.
-    if (!window.RK_IS_ADMIN) { return ''; }
-    return '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
-      '<span style="font-size:13px;color:var(--text-muted);">Sleeper ID:</span>' +
-      '<input id="rkSleeperIdInput" type="text" placeholder="e.g. 10229" style="font-size:13px;padding:4px 8px;border:1px solid var(--border);border-radius:6px;background:var(--card-bg);color:var(--text);width:110px;" />' +
-      '<button onclick="rkLinkSleeper(\\'' + playerId + '\\')" style="font-size:13px;padding:4px 10px;border-radius:6px;background:var(--accent);color:#fff;border:none;cursor:pointer;font-weight:600;">Link &amp; Promote</button>' +
-    '</div>';
-  }
 
   function rkLoadPage(page) {
     if (page === 'prev') page = rkCurrentPage - 1;
@@ -1301,45 +1386,6 @@ def build_prospects_body(is_admin: bool = False) -> str:
     }
 
     pagination.style.display = 'flex';
-  }
-
-  function rkLinkSleeper(playerId) {
-    var inp = document.getElementById('rkSleeperIdInput');
-    if (!inp) return;
-    var sleeperIdVal = inp.value.trim();
-    if (!sleeperIdVal) { inp.focus(); return; }
-    var btn = inp.nextElementSibling;
-    if (!btn) return;
-    
-    btn.disabled = true;
-    btn.textContent = 'Linking...';
-    
-    fetch('/api/prospects/link-sleeper', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({player_id: playerId, sleeper_id: sleeperIdVal})
-    })
-    .then(function(r){ return r.json(); })
-    .then(function(resp){
-      if (resp.success) {
-        var sec = document.getElementById('rkLinkSleeperSection');
-        if (sec) sec.innerHTML = _buildLinkSleeperHtml(playerId, sleeperIdVal);
-        // Update the player in the global list for future renders
-        var p = rkAllPlayers.find(function(pl){ return pl.player_id === playerId; });
-        if (p) p.sleeper_id = sleeperIdVal;
-        rkRender(); // re-render to update the row
-      } else {
-        alert('Failed to link: ' + (resp.error || 'Unknown error'));
-        btn.disabled = false;
-        btn.textContent = 'Link & Promote';
-      }
-    })
-    .catch(function(err){
-      console.error('Link error:', err);
-      alert('Error linking Sleeper ID');
-      btn.disabled = false;
-      btn.textContent = 'Link & Promote';
-    });
   }
 </script>
 """
