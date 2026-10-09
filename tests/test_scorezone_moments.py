@@ -295,3 +295,22 @@ def test_moments_endpoint_success_reports_status_and_live(monkeypatch):
     assert body["status"] == "pre"
     assert body["live"] is False
     assert "pending" not in body
+
+
+def test_moment_fantasy_pts_uses_league_scoring():
+    """_moment_fantasy_pts applies the league's scoring settings, including
+    negative INT values."""
+    from routes.user_pages_bp import _moment_fantasy_pts
+
+    # Standard scoring: INT = -2
+    assert _moment_fantasy_pts({"int": 1}, {}) == -2.0
+    # Custom league scoring: INT = -1
+    assert _moment_fantasy_pts({"int": 1}, {"pass_int": -1.0}) == -1.0
+    # TD + yards
+    assert _moment_fantasy_pts(
+        {"rec_td": 1, "rec_yds": 25, "receptions": 2}, {}
+    ) == 6.0 + 2.5 + 2.0
+    # Fumble lost
+    assert _moment_fantasy_pts({"fumble_lost": 1}, {}) == -2.0
+    # Empty stat line = 0
+    assert _moment_fantasy_pts({}, {}) == 0.0

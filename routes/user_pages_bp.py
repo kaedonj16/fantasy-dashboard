@@ -1731,6 +1731,37 @@ def api_matchup_league_scores():
     return jsonify({"matchups": out, "week": week, "count": len(out)})
 
 
+def _moment_fantasy_pts(stat, scoring):
+    """Fantasy points for a single ScoreZone play using the league's scoring.
+
+    Maps the play's stat_line keys onto the league's normalized scoring
+    settings (pass_int, fum_lost, etc.), falling back to standard values
+    when a key is absent.
+    """
+    def num(v):
+        try:
+            return float(v or 0)
+        except (TypeError, ValueError):
+            return 0.0
+    def rate(key, default):
+        try:
+            return float(scoring.get(key, default))
+        except (TypeError, ValueError):
+            return default
+    pts = 0.0
+    pts += rate("pass_td", 4.0) * num(stat.get("pass_td"))
+    pts += rate("rush_td", 6.0) * num(stat.get("rush_td"))
+    pts += rate("rec_td", 6.0) * num(stat.get("rec_td"))
+    pts += rate("pass_yd", 0.04) * num(stat.get("pass_yds"))
+    pts += rate("rush_yd", 0.1) * num(stat.get("rush_yds"))
+    pts += rate("rec_yd", 0.1) * num(stat.get("rec_yds"))
+    pts += rate("rec", 1.0) * (num(stat.get("receptions")) or num(stat.get("rec")))
+    pts += rate("pass_int", -2.0) * num(stat.get("int"))
+    fum = num(stat.get("fumble_lost")) or num(stat.get("fumbles_lost"))
+    pts += rate("fum_lost", -2.0) * fum
+    return round(pts * 10) / 10
+
+
 @user_pages_bp.route("/api/redzone/moments")
 @user_pages_bp.route("/api/scorezone/moments")
 def api_scorezone_moments():
@@ -1880,6 +1911,7 @@ def api_scorezone_moments():
                 pid_to_pos[pid] = p.get("pos") or ""
 
     moments = []
+    scoring_settings = ctx.get("raw_scoring_settings") or {}
     for play in raw_plays:
         pid = str(play.get("pid") or "")
         if not pid or pid not in pid_to_side:
@@ -1927,6 +1959,7 @@ def api_scorezone_moments():
             "play_text": play.get("play_text") or "",
             "yards": yards,
             "stat_line": stat,
+            "fantasy_pts": _moment_fantasy_pts(stat, scoring_settings),
             "quarter": play.get("quarter") or "",
             "clock": play.get("clock") or "",
             "down": play.get("down") or "",

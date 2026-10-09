@@ -45764,8 +45764,7 @@ table.rz-bs-table thead th:first-child {
 .rzm-tl::before { content: ""; position: absolute; left: 23px; top: 14px; bottom: 14px;
     width: 2px; background: var(--border); }
 .rzm-tl-row { display: flex; align-items: center; gap: 10px; width: 100%;
-    padding: 10px 0; border: 0; border-bottom: 1px solid var(--border-soft, #f1f5f9);
-    background: none; cursor: pointer; text-align: left; color: var(--text); font: inherit; }
+    padding: 10px 0; border-bottom: 1px solid var(--border-soft, #f1f5f9); }
 .rzm-tl-row:last-child { border-bottom: 0; }
 .rzm-tl-dot { flex: 0 0 8px; width: 8px; height: 8px; border-radius: 50%;
     position: relative; z-index: 1; box-shadow: 0 0 0 2px var(--card, #fff); }
@@ -45780,6 +45779,7 @@ table.rz-bs-table thead th:first-child {
 .rzm-tl-pts { display: inline-block; margin-top: 2px; font-size: 11px; font-weight: 800;
     color: var(--win, #16a34a); background: rgba(22, 163, 74, 0.1);
     padding: 2px 7px; border-radius: 6px; }
+.rzm-tl-pts.neg { color: var(--loss, #dc2626); background: rgba(220, 38, 38, 0.1); }
 
 /* ScoreZone modal: TD split footer */
 .rzm-modal-foot { flex: none; display: flex; gap: 12px; padding: 10px 16px;
