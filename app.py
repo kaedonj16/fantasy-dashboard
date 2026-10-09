@@ -8910,7 +8910,12 @@ def render_standings_compact(team_stats, length=None, movement=None, owner_to_ri
         _is_div_lead = False
         if _use_div and div_id and div_id != _prev_div:
             _label = str(_div_names.get(div_id) or f"Division {div_id}")
-            rows.append(_standings_div_header(_label, _div_counts.get(div_id, 0), 4))
+            _n = _div_counts.get(div_id, 0)
+            _meta = f"{int(_n)} TEAM{'S' if int(_n) != 1 else ''}"
+            rows.append(
+                f"<div class='cc-div'><span>{html.escape(_label)}</span>"
+                f"<span>{html.escape(_meta)}</span></div>"
+            )
             _prev_div = div_id
             _is_div_lead = True
         record = format_record_html(int(row['Wins']), int(row['Losses']),
@@ -8920,32 +8925,26 @@ def render_standings_compact(team_stats, length=None, movement=None, owner_to_ri
         mv_html = ""
         if _mv:
             if _mv > 0:
-                mv_html = f"<span class='rank-move up' title='Up {_mv} since last week'>&#9650;{_mv}</span>"
+                mv_html = f" <span class='rank-move up' title='Up {_mv} since last week'>&#9650;{_mv}</span>"
             elif _mv < 0:
-                mv_html = f"<span class='rank-move down' title='Down {abs(_mv)} since last week'>&#9660;{abs(_mv)}</span>"
-        _lead = " <span class='st-div-lead' title='Division leader'>DIV</span>" if _is_div_lead else ""
-        _tr = " class='st-div-leader'" if _is_div_lead else ""
-        rows.append(f"""
-            <tr{_tr}>
-              <td class="num">{int(row['Rank'])}{mv_html}</td>
-              <td class="team" title="{html.escape(str(row['owner']), quote=True)}">{_clickable_team_name(row['owner'], owner_to_rid)}{_lead}</td>
-              <td>{record}</td>
-              <td>{row['PF']:.0f}</td>
-            </tr>""")
+                mv_html = f" <span class='rank-move down' title='Down {abs(_mv)} since last week'>&#9660;{abs(_mv)}</span>"
+        _rank = int(row['Rank'])
+        _rec_html = f"<strong>{record}</strong>" if _rank == 1 else record
+        _team_html = _clickable_team_name(row['owner'], owner_to_rid)
+        rows.append(
+            f"<div class='cc-rw'><span><strong>{_rank}</strong> {_team_html}{mv_html}</span>"
+            f"<span>{_rec_html}</span></div>"
+        )
 
     if length and not _use_div:
         rows = rows[:length]
 
-    return f"""
-        <table class="standings-table standings-compact" data-page="standings"{' data-divisions="1"' if _use_div else ''}>
-          <thead>
-            <tr><th scope='col'>#</th><th scope='col'>Team</th><th scope='col'>Rec</th><th scope='col'>PF</th></tr>
-          </thead>
-          <tbody>
-            {''.join(rows)}
-          </tbody>
-        </table>
-    """
+    _div_attr = ' data-divisions="1"' if _use_div else ""
+    return (
+        f"<div class='cc-standings'{_div_attr}>"
+        + "".join(rows) +
+        "</div>"
+    )
 
 
 def _ord_str(n) -> str:

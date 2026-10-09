@@ -1,3 +1,4 @@
+import html
 import logging
 
 import pandas as pd
@@ -14,53 +15,58 @@ def render_awards_section(awards: dict) -> str:
         # live on the Awards page.
         return ""
 
-    def acard(title, winner, value_num, value_unit="", context="", accent="honor"):
-        unit_html = (
-            f' <span class="award-value-unit">{value_unit}</span>' if value_unit else ""
+    def arow(label, detail, value_html):
+        return (
+            f"<div class=\"cc-rw cc-award-row\">"
+            f"<span>{label}<br><span class=\"cc-muted\">{detail}</span></span>"
+            f"{value_html}</div>"
         )
-        context_html = f'\n          <div class="award-context">{context}</div>' if context else ""
-        return f"""
-        <div class="award-item award-{accent}">
-          <div class="award-name">{title}</div>
-          <div class="award-winner">{winner}</div>
-          <div class="award-value"><span class="award-value-num">{value_num}</span>{unit_html}</div>{context_html}
-        </div>"""
+
+    def aval(num, color=""):
+        cls = f"cc-award-val{(' ' + color) if color else ''}"
+        return f"<span class=\"{cls}\">{num}</span>"
 
     def streak_winner(teams):
         # Tied teams stack one per line; a comma run-on reads as one name.
-        if len(teams) > 1:
-            return "".join(
-                f'<div class="award-winner-line">{team}</div>' for team in teams
-            )
-        return teams[0] if teams else ""
+        _esc = [html.escape(str(t)) for t in (teams or [])]
+        if len(_esc) > 1:
+            return "<br>".join(_esc)
+        return _esc[0] if _esc else ""
 
     rows = []
 
     if awards.get("highest_single_week"):
         t, w, p = awards["highest_single_week"]
-        rows.append(acard("Highest Single Week", t, f"{p:.1f}", "points", f"Week {w}"))
+        rows.append(arow("Highest week", f"{html.escape(str(t))} &middot; Wk {w}",
+                         aval(f"{p:.1f}", "cc-up")))
 
     if awards.get("lowest_single_week"):
         t, w, p = awards["lowest_single_week"]
-        rows.append(acard("Lowest Single Week", t, f"{p:.1f}", "points", f"Week {w}", accent="shame"))
+        rows.append(arow("Lowest week", f"{html.escape(str(t))} &middot; Wk {w}",
+                         aval(f"{p:.1f}", "cc-dn")))
 
     if awards.get("longest_win_streak"):
         teams, L = awards["longest_win_streak"]
-        rows.append(acard("Longest Win Streak", streak_winner(teams), f"{L}", "games"))
+        rows.append(arow("Longest win streak", streak_winner(teams),
+                         aval(f"{L}", "cc-up")))
 
     if awards.get("longest_loss_streak"):
         teams, L = awards["longest_loss_streak"]
-        rows.append(acard("Longest Losing Streak", streak_winner(teams), f"{L}", "games", accent="shame"))
+        rows.append(arow("Longest losing streak", streak_winner(teams),
+                         aval(f"{L}", "cc-dn")))
 
     if awards.get("most_consistent"):
         t, sd, n = awards["most_consistent"]
-        rows.append(acard("Most Consistent", t, f"σ {sd:.2f}", context=f"over {n} games"))
+        rows.append(arow("Most consistent", f"{html.escape(str(t))} &middot; &sigma;",
+                         aval(f"{sd:.2f}")))
 
     if awards.get("highest_player"):
         w, pts, n, pos, team, owner, pid = awards["highest_player"]
-        clickable_attrs = f" class='player-clickable' style='cursor:pointer;' data-player-id='{pid}' data-player-name='{n}'" if pid else ""
-        rows.append(acard("Highest Points By a Player",
-                          f"<span{clickable_attrs}>{n}</span>", f"{pts}", "points", f"Week {w}"))
+        _pn = html.escape(str(n))
+        clickable_attrs = f" class='player-clickable' style='cursor:pointer;' data-player-id='{html.escape(str(pid), quote=True)}' data-player-name='{_pn}'" if pid else ""
+        rows.append(arow("Top player week",
+                         f"<span{clickable_attrs}>{_pn}</span> &middot; Wk {w}",
+                         aval(f"{pts:.1f}", "cc-up")))
 
     return f"""
     <section class="os-side-plain awards-card" data-section="awards">
@@ -74,7 +80,7 @@ def render_awards_section(awards: dict) -> str:
         </div>
       </div>
       <div class="card-collapsible-body" id="dash-awards-body">
-        <div class="awards-grid">{''.join(rows)}</div>
+        <div class="cc-awards">{''.join(rows)}</div>
       </div>
     </section>
     """

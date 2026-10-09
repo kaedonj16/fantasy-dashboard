@@ -160,44 +160,6 @@ def build_dashboard_body(ctx: dict) -> str:
         bench_check_html = ""
         _dash_preview_slide = ""
 
-    # ---- Command Center: other league matchups (below the viewer's slide) ----
-    _other_matchups_html = ""
-    try:
-        if _show_matchup_preview and len(_dash_matchups) > 1:
-            _om_rows = []
-            for _m in _dash_matchups[1:6]:  # cap at 5 others
-                _ml = _m.get("left") or {}
-                _mr = _m.get("right") or {}
-                _ln = str(_ml.get("name") or "").strip()
-                _rn = str(_mr.get("name") or "").strip()
-                if not _ln or not _rn:
-                    continue
-                _lp = _ml.get("proj_total")
-                _rp = _mr.get("proj_total")
-                try:
-                    _proj_txt = (
-                        f"proj {float(_lp):.0f} - {float(_rp):.0f}"
-                        if _lp is not None and _rp is not None else ""
-                    )
-                except (TypeError, ValueError):
-                    _proj_txt = ""
-                _om_rows.append(
-                    '<div class="cc-other-mu">'
-                    f'<span class="cc-other-mu-teams">{html.escape(_ln)} vs {html.escape(_rn)}</span>'
-                    + (f'<span class="cc-other-mu-proj">{html.escape(_proj_txt)}</span>' if _proj_txt else '')
-                    + '</div>'
-                )
-            if _om_rows:
-                _other_matchups_html = (
-                    '<div class="cc-other-mus">'
-                    '<div class="cc-section-label">Other Matchups</div>'
-                    + "".join(_om_rows) +
-                    '</div>'
-                )
-    except Exception:
-        logger.debug("dashboard other matchups failed", exc_info=True)
-        _other_matchups_html = ""
-
     awards = compute_awards_season(finalized_df, players_map, league_id, platform, season, users, rosters)
     awards_html = render_awards_section(awards)
 
@@ -439,7 +401,6 @@ def build_dashboard_body(ctx: dict) -> str:
         </div>
       </div>
       {_dash_preview_slide}
-      {_other_matchups_html}
     </section>
     """
 
@@ -754,7 +715,15 @@ def build_dashboard_body(ctx: dict) -> str:
         def _pname(_pid):
             try:
                 _p = (players_map or {}).get(str(_pid)) or {}
-                return str(_p.get("full_name") or _p.get("last_name") or _pid)
+                # get_players_map stores the display name under "name".
+                _nm = str(_p.get("name") or _p.get("full_name") or "").strip()
+                if _nm and _nm != str(_pid):
+                    return _nm
+                # Sleeper D/ST entries use the team abbrev as the id (e.g. "CIN").
+                _pos = str(_p.get("pos") or "").upper()
+                if _pos == "DEF" or (len(str(_pid)) <= 3 and str(_pid).isupper()):
+                    return f"{_pid} D/ST"
+                return str(_pid)
             except Exception:
                 return str(_pid)
         def _rel_time(_ms):
