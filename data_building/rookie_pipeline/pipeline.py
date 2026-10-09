@@ -32,14 +32,13 @@ _active_class_cache: dict = {}  # {date_str: year}
 
 def get_active_rookie_class(today: Optional[date] = None) -> int:
     """
-    Return the draft class year that should currently be displayed.
+    Return the draft class year for rookie PROSPECTS.
 
-    Rules (mirrors the DB seed in migration 009):
-    - Rookie season ends ≈ second week of January each year (wild-card weekend).
-    - If today is on or after season_end for class Y, show class Y+1.
-    - Otherwise show class Y (either in pre-draft evaluation or rookie season).
-
-    Falls back to hardcoded logic when DB is unavailable.
+    The class turns over around week 4 of the college season (Sept 20): from
+    then through April the prospects are the next draft's class, and before
+    that they are the most recently drafted class (dynasty rookie-draft
+    season). Waiting until week 4 means the new class has a good bit of CFB
+    data before it becomes the prospect class.
     """
     if today is None:
         today = date.today()
@@ -48,59 +47,9 @@ def get_active_rookie_class(today: Optional[date] = None) -> int:
     if _key in _active_class_cache:
         return _active_class_cache[_key]
 
-    # Try DB first
-    try:
-        from dashboard_services.db import get_conn
-        with get_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT draft_class_year, season_end
-                    FROM   rookie_active_class
-                    ORDER  BY draft_class_year
-                    """
-                )
-                rows = cur.fetchall()
-        if rows:
-            for row in rows:
-                year = int(row['draft_class_year'])  # Ensure integer type
-                season_end = row['season_end']
-                # Convert season_end to date if needed
-                if season_end is not None:
-                    if isinstance(season_end, str):
-                        from datetime import datetime
-                        try:
-                            season_end = datetime.strptime(season_end, '%Y-%m-%d').date()
-                        except ValueError:
-                            # Try other common formats
-                            try:
-                                season_end = datetime.strptime(season_end, '%Y-%m-%d %H:%M:%S').date()
-                            except ValueError:
-                                print(f"Unable to parse season_end date: {season_end}")
-                                season_end = None
-                    elif not isinstance(season_end, date):
-                        print(f"Unexpected season_end type: {type(season_end)}")
-                        season_end = None
-                
-                if season_end is None or today <= season_end:
-                    _active_class_cache[_key] = year
-                    return year
-            # All classes have ended → return latest + 1
-            _result = int(rows[-1]['draft_class_year']) + 1
-            _active_class_cache[_key] = _result
-            return _result
-    except Exception as exc:
-        print(f"[pipeline] DB unavailable for active class lookup: {exc}")
-
-    # Fallback: heuristic
-    # NFL Draft is late April. Rookie season ends ≈ wild-card weekend (Jan 12-ish).
-    # Jan 1–11: still watching prior year's class in the playoffs → show year-1
-    # Jan 12 onward: prior class is done; next class is upcoming → show year
-    if today.month == 1 and today.day <= 11:
-        _active_class_cache[_key] = today.year - 1
-        return today.year - 1
-    _active_class_cache[_key] = today.year
-    return today.year
+    year = today.year + 1 if (today.month, today.day) >= (9, 20) else today.year
+    _active_class_cache[_key] = year
+    return year
 
 
 # ─────────────────────────────────────────────────────────────────────────────

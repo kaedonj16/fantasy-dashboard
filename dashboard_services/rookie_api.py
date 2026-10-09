@@ -150,13 +150,14 @@ _composite_col_cache: Dict[str, Any] = {}
 
 
 def _clip100(v):
+    # Display grades: one decimal, capped below 100 (no one grades a 100).
     try:
         v = float(v)
     except (TypeError, ValueError):
         return None
     if v != v:  # NaN
         return None
-    return round(max(0.0, min(100.0, v)), 1)
+    return round(max(0.0, min(99.9, v)), 1)
 
 
 def _grade_dominator(d):
