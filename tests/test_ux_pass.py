@@ -19,18 +19,20 @@ APP_PY = (ROOT / "app.py").read_text(encoding="utf-8")
 
 def test_dashboard_action_first_hierarchy():
     assert "os-action-queue" in DASH
-    assert 'data-jump="os-jump-actions"' in DASH
+    assert 'id="os-jump-actions"' in DASH
     assert "matchup_html" in DASH
-    assert 'data-jump="os-jump-matchup"' in DASH
-    # Center column stays action-first: digest, then next steps, then matchup.
-    assert DASH.index("sinceLastVisitCard") < DASH.index('id="os-jump-matchup"')
-    assert DASH.index('id="os-jump-matchup"') > DASH.index("do_next_waiver_html")
-    assert DASH.index("matchup_html") > DASH.index("do_next_waiver_html")
+    assert "_matchup_preview_html" in DASH
+    # Main column is action-first: hero strip, matchup preview, next steps, usage movers.
+    assert DASH.index("{_hero_strip_html}") < DASH.index("{_matchup_preview_html}")
+    assert DASH.index("{_matchup_preview_html}") < DASH.index("{_action_queue_html}")
+    assert DASH.index("{_action_queue_html}") < DASH.index("{usage_movers_html}")
+    assert DASH.index("sinceLastVisitCard") > DASH.index("{_action_queue_html}")
+    assert DASH.index("do_next_waiver_html") < DASH.index("{_matchup_preview_html}")
     # Front Office Report sits above Standings in the left rail.
     left = DASH[DASH.index("os-left-col"): DASH.index('class="os-main-col"')]
     assert "{gm_card_html}" in left
-    assert left.index("{gm_card_html}") < left.index('id="os-jump-standings"')
-    assert "{matchup_html}" not in left
+    assert left.index("{gm_card_html}") < left.index("dash-standings-body")
+    assert "{_matchup_preview_html}" not in left
     assert "Waiver Wire Targets" not in DASH
     assert "_render_next_steps_queue" in DASH
     assert "bench-ok" in APP_PY

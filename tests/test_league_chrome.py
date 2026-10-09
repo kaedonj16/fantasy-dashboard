@@ -117,13 +117,13 @@ def test_league_chrome_meta_falls_back_to_live_sleeper():
 
 
 def test_hub_page_titles_do_not_restate_week():
-    """Season/Offseason Hub H1s stay just the hub name."""
-    src = (
-        (_PAGES / "dashboard_page.py").read_text(encoding="utf-8")
-        + (_PAGES / "offseason_dashboard_page.py").read_text(encoding="utf-8")
-    )
-    assert '<h1 class="os-hero-title">Season Hub</h1>' in src
-    assert '<h1 class="os-hero-title">Offseason Hub</h1>' in src
-    assert "Viewing {season}" not in src
-    assert "Viewing {html.escape(str(season))}" not in src
-    assert 'class="os-hero-kicker"' not in src
+    """Season/Offseason Hub titles stay just the hub name."""
+    dash = (_PAGES / "dashboard_page.py").read_text(encoding="utf-8")
+    off = (_PAGES / "offseason_dashboard_page.py").read_text(encoding="utf-8")
+    # Season hub uses the compact hero strip (team name, no H1).
+    assert 'class="os-hero-strip-name"' in dash
+    assert '{html.escape(str(_vname or "Season Hub"))}' in dash
+    assert '<h1 class="os-hero-title">Offseason Hub</h1>' in off
+    assert "Viewing {season}" not in dash + off
+    assert "Viewing {html.escape(str(season))}" not in dash + off
+    assert 'class="os-hero-kicker"' not in dash + off

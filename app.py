@@ -8789,10 +8789,9 @@ def _standings_div_header(label: str, n_teams: int, colspan: int) -> str:
     return (
         f"<tr class='st-div-row'>"
         f"<td colspan='{int(colspan)}'>"
-        f"<div class='st-div-head'>"
-        f"<span class='st-div-mark' aria-hidden='true'></span>"
-        f"<span class='st-div-label'>{safe}</span>"
-        f"<span class='st-div-meta'>{html.escape(meta)}</span>"
+        f"<div class='div-label'>"
+        f"<span>&#9615; {safe}</span>"
+        f"<span>{html.escape(meta)}</span>"
         f"</div></td></tr>"
     )
 
@@ -8917,11 +8916,6 @@ def render_standings_compact(team_stats, length=None, movement=None, owner_to_ri
         record = format_record_html(int(row['Wins']), int(row['Losses']),
                                int(row.get("Ties", 0) or 0),
                                _div_record_for(row["owner"]))
-        avatar = row.get("avatar", "")
-        img = (
-            f"<img class='avatar sm' src='{avatar}' alt='' loading='lazy' decoding='async' onerror=\"this.style.display='none'\">"
-            if avatar else ""
-        )
         _mv = movement.get(str(row["owner"]))
         mv_html = ""
         if _mv:
@@ -8934,7 +8928,7 @@ def render_standings_compact(team_stats, length=None, movement=None, owner_to_ri
         rows.append(f"""
             <tr{_tr}>
               <td class="num">{int(row['Rank'])}{mv_html}</td>
-              <td class="team" title="{html.escape(str(row['owner']), quote=True)}">{img} {_clickable_team_name(row['owner'], owner_to_rid)}{_lead}</td>
+              <td class="team" title="{html.escape(str(row['owner']), quote=True)}">{_clickable_team_name(row['owner'], owner_to_rid)}{_lead}</td>
               <td>{record}</td>
               <td>{row['PF']:.0f}</td>
             </tr>""")
@@ -9320,7 +9314,7 @@ def render_standings(team_stats, length, all_play: dict = None,
                                _div_record_for(row["owner"]))
 
         streak = row.get("Streak", "")
-        avatar = row.get("avatar", "")
+
 
         # Form bars: last-N results as mini bars (oldest -> newest). Tooltip
         # keeps the exact streak label + sequence for screen readers.
@@ -9339,11 +9333,7 @@ def render_standings(team_stats, length, all_play: dict = None,
         else:
             form_cell = "<span class='muted'>&ndash;</span>"
 
-        img = (
-            f"<img class='avatar sm' src='{avatar}' alt='' loading='lazy' decoding='async' "
-            "onerror=\"this.style.display='none'\">"
-            if avatar else ""
-        )
+
 
         _ap = (all_play or {}).get(str(row['owner'])) or {}
         _luck = _ap.get('luck_delta')
@@ -9392,13 +9382,13 @@ def render_standings(team_stats, length, all_play: dict = None,
             # Flex line: the name ellipsizes, the status tag never clips (wraps
             # under the name on very tight widths rather than getting cut off).
             team_cell = (
-                f"<div class='pp-teamline'>{img}"
+                f"<div class='pp-teamline'>"
                 f"{_clickable_team_name(owner, owner_to_rid, cls='pp-team-name')}"
                 f"{_div_lead_tag}{_tag}</div>"
             )
         else:
             team_cell = (
-                f"{img} {_clickable_team_name(owner, owner_to_rid)}{_div_lead_tag}"
+                f"{_clickable_team_name(owner, owner_to_rid)}{_div_lead_tag}"
             )
         # Mobile Sleeper-style sub-line under the team name: "3-0 (1-0) · ▲ 3W".
         # Hidden on desktop via CSS; the Record/Streak columns hide on mobile
@@ -12558,7 +12548,7 @@ def _render_next_steps_queue(
             f'{html.escape(a.get("cta_label") or "View")}</a>'
         )
         return (
-            f'<div class="ns-item">'
+            f'<div class="ns-item ns-prio-{_prio}">'
             f'<div class="ns-priority {_prio}"></div>'
             f'<div class="ns-body">'
             f'<div class="ns-tag">{_tag}</div>'

@@ -21,17 +21,14 @@ def build_dashboard_body(ctx: dict) -> str:
         _section_title_link,
         _standings_movement,
         _league_is_redraft,
-        build_teams_overview,
         compute_awards_season,
         compute_win_prob,
         get_model_value_table_cached,
         html,
         logger,
         render_awards_section,
-        render_matchup_carousel_weeks,
         render_matchup_slide,
         render_standings_compact,
-        render_dashboard_teams_sidebar,
         url_for,
     )
     import pandas as pd
@@ -149,7 +146,7 @@ def build_dashboard_body(ctx: dict) -> str:
             )
             for m in _dash_matchups
         ]
-        slides_by_week = {matchup_week: "".join(slides)}
+        _dash_preview_slide = slides[0] if slides else ""
         _matchup_href = ""
         try:
             _matchup_href = url_for(
@@ -157,32 +154,16 @@ def build_dashboard_body(ctx: dict) -> str:
             )
         except Exception:
             _matchup_href = ""
-        matchup_html = render_matchup_carousel_weeks(
-            slides_by_week,
-            dashboard=True,
-            active_week=matchup_week,
-            title_href=_matchup_href or None,
-        )
+        matchup_html = ""  # dashboard redesign: preview card uses slides[0]
     else:
         matchup_html = ""
         bench_check_html = ""
+        _dash_preview_slide = ""
 
     awards = compute_awards_season(finalized_df, players_map, league_id, platform, season, users, rosters)
     awards_html = render_awards_section(awards)
 
-    teams_ctx = build_teams_overview(
-        rosters=rosters,
-        users_list=users,
-        picks_by_roster=picks_by_roster,
-        players=players_map,
-        players_index=players_index,
-        teams_index=teams_index,
-        platform=platform,
-    )
     ctx["model_value_table"] = list(get_model_value_table_cached() or []) or (ctx.get("model_value_table") or [])
-    teams_sidebar_html, teams_tab_label = render_dashboard_teams_sidebar(
-        ctx, teams_ctx, filled_label="Rosters",
-    )
 
     gm_card_html = ""
     if viewer_roster_id:
@@ -226,6 +207,7 @@ def build_dashboard_body(ctx: dict) -> str:
     from utils.format import ordinal as _dash_ord
 
     _hero_cards: list = []
+    _vname = ""
     try:
         _hs = team_stats.copy()
         _hs = _hs.sort_values(by=["Wins", "PF", "PA"], ascending=[False, False, True]).reset_index(drop=True)
@@ -326,17 +308,11 @@ def build_dashboard_body(ctx: dict) -> str:
 
     _hero_stats_html = "".join(_hero_tiles)
 
-    _viewer_team = viewer.get("viewer_team_name")
-    _hero_copy = (
-        f"Welcome back, {html.escape(str(_viewer_team))}. Here is what changed and what needs your attention."
-        if _viewer_team else
-        "What changed, what needs attention, and your next moves."
-    )
+    # Best-ball badge (hoisted: rendered in the hero strip next to the team name).
     _bb_badge = ""
-    _bb_outlook_html = ""
     try:
-        from utils.league_format import is_best_ball
-        if is_best_ball(
+        from utils.league_format import is_best_ball as _dash_is_bb
+        if _dash_is_bb(
             ctx.get("league") or {},
             settings=(ctx.get("league_settings")
                       or (ctx.get("league") or {}).get("settings")
@@ -349,6 +325,92 @@ def build_dashboard_body(ctx: dict) -> str:
                 'background:var(--accent-soft);" title="Best Ball: no weekly lineup locks">'
                 'Best Ball</span>'
             )
+    except Exception:
+        _bb_badge = ""
+
+    # ---- Compact hero strip (dashboard redesign): team identity + 4 stats ----
+    _hero_grade_badge = ""
+    _hero_archetype_tag = ""
+    if viewer_roster_id:
+        try:
+            from dashboard_services.ai.renderer import get_roster_grade
+            _gd = get_roster_grade(ctx, viewer_roster_id) or {}
+            _g = str(_gd.get("grade") or "").strip()
+            _w = str(_gd.get("win_window") or "").strip()
+            if _g and _g.upper() != "N/A":
+                _hero_grade_badge = (
+                    f'<span class="os-grade-badge">{html.escape(_g)}</span>'
+                )
+            if _w and _w.lower() not in ("", "unknown"):
+                _hero_archetype_tag = (
+                    f'<span class="os-archetype-tag">{html.escape(_w)}</span>'
+                )
+        except Exception:
+            logger.debug("dashboard hero grade failed", exc_info=True)
+    _strip_stats = []
+    for _sl, _sv, _ss in _hero_cards:
+        _strip_stats.append(
+            (html.escape(str(_sl)), html.escape(str(_sv)), html.escape(str(_ss)))
+        )
+    if viewer_roster_id and len(_strip_stats) >= 1:
+        _strip_stats.insert(1, ("Playoff odds", html.escape(str(_po_val)), _po_sub))
+    _strip_stats_html = "".join(
+        f'<div class="os-hero-strip-stat"><div class="sl">{_l}</div>'
+        f'<div class="sv">{_v}{f" <small>{_s}</small>" if _s else ""}</div></div>'
+        for _l, _v, _s in _strip_stats[:4]
+    )
+    _hero_strip_html = f"""
+    <section class="os-hero-strip">
+      <div class="os-hero-strip-team">
+        <div class="os-hero-strip-name">{html.escape(str(_vname or "Season Hub"))}{_bb_badge}</div>
+        <div class="os-hero-strip-badges">{_hero_grade_badge}{_hero_archetype_tag}</div>
+      </div>
+      <div class="os-hero-strip-div"></div>
+      <div class="os-hero-strip-stats">{_strip_stats_html}</div>
+    </section>
+    """
+
+    # ---- Matchup preview card (dashboard redesign) ----
+    _matchup_preview_html = ""
+    if _dash_preview_slide:
+        _mp_href = ""
+        try:
+            _mp_href = url_for(
+                "page_weekly", platform=platform, season=season,
+                league_id=str(league_id),
+            )
+        except Exception:
+            _mp_href = ""
+        _matchup_preview_html = f"""
+    <section class="os-card os-matchup-preview">
+      <div class="os-section-head">
+        <div class="os-section-head-content">
+          <h2 class="os-section-title">This Week&apos;s Matchup</h2>
+          <div class="os-section-subtitle">Week {int(matchup_week)}</div>
+        </div>
+        <div class="os-section-head-actions">
+          <a class="os-section-link" href="{html.escape(_mp_href, quote=True)}">View all &rarr;</a>
+        </div>
+      </div>
+      {_dash_preview_slide}
+    </section>
+    """
+
+    _viewer_team = viewer.get("viewer_team_name")
+    _hero_copy = (
+        f"Welcome back, {html.escape(str(_viewer_team))}. Here is what changed and what needs your attention."
+        if _viewer_team else
+        "What changed, what needs attention, and your next moves."
+    )
+    _bb_outlook_html = ""
+    try:
+        from utils.league_format import is_best_ball
+        if is_best_ball(
+            ctx.get("league") or {},
+            settings=(ctx.get("league_settings")
+                      or (ctx.get("league") or {}).get("settings")
+                      or ctx.get("settings") or {}),
+        ):
             if _viewer_team:
                 _hero_copy = (
                     f"Welcome back, {html.escape(str(_viewer_team))}. Best Ball mode: "
@@ -390,7 +452,6 @@ def build_dashboard_body(ctx: dict) -> str:
           {_outlook_odds}
         </section>"""
     except Exception:
-        _bb_badge = ""
         _bb_outlook_html = ""
 
     # The Actions queue is the default-active tab, so it must never render blank.
@@ -576,8 +637,7 @@ def build_dashboard_body(ctx: dict) -> str:
           </section>"""
 
     _action_queue_html = f"""
-        <div class="os-action-queue os-tab-panel os-tab-active" id="os-jump-actions">{_action_inner}
-          {usage_movers_html}
+        <div class="os-action-queue" id="os-jump-actions">{_action_inner}
         </div>"""
 
     # ScoreZone CTA: a calm pregame banner within the hour before kickoff, then a
@@ -614,50 +674,31 @@ def build_dashboard_body(ctx: dict) -> str:
     <div class="os-layout">
       <aside class="os-left-col os-side-rail">
         {gm_card_html}
-        <div class="os-tab-panel os-tab-active" id="os-jump-standings">
-          <section class="os-card os-col-fill">
-            <div class="os-section-head">
-              <div class="os-section-head-content">
-                {_section_title_link("Standings", "league_pages.page_standings", platform, season, league_id)}
-                <div class="os-section-subtitle">Where every team sits right now</div>
-              </div>
-              <div class="os-section-head-actions">
-                <button type="button" class="card-collapse-toggle" aria-label="Toggle section" aria-expanded="true" data-target="dash-standings-body">&#9660;</button>
-              </div>
+        <section class="os-card os-col-fill">
+          <div class="os-section-head">
+            <div class="os-section-head-content">
+              {_section_title_link("Standings", "league_pages.page_standings", platform, season, league_id)}
+              <div class="os-section-subtitle">Where every team sits right now</div>
             </div>
-            <div class="card-collapsible-body" id="dash-standings-body">
-              {standings_html}
+            <div class="os-section-head-actions">
+              <button type="button" class="card-collapse-toggle" aria-label="Toggle section" aria-expanded="true" data-target="dash-standings-body">&#9660;</button>
             </div>
-          </section>
-        </div>
-        <div id="os-jump-report" class="os-tab-panel">
-          {season_review_html}
-          {awards_html}
-        </div>
+          </div>
+          <div class="card-collapsible-body" id="dash-standings-body">
+            {standings_html}
+          </div>
+        </section>
+        {season_review_html}
       </aside>
 
       <main class="os-main-col">
-        <section class="os-hero-card">
-          <div class="os-hero-top">
-            <div>
-              <h1 class="os-hero-title">Season Hub</h1>{_bb_badge}
-              <p class="os-hero-copy">{_hero_copy}</p>
-            </div>
-          </div>
-          <div class="os-hero-stats">
-            {_hero_stats_html}
-          </div>
-        </section>
+        {_hero_strip_html}
 
-        <nav class="os-jump-nav" aria-label="Jump to section">
-          <button type="button" class="active" data-jump="os-jump-actions">Actions</button>
-          {('<button type="button" data-jump="os-jump-matchup">Matchups</button>' if _show_matchup_preview else '')}
-          <button type="button" data-jump="os-jump-report">Report</button>
-          <button type="button" data-jump="os-jump-standings">Standings</button>
-          <button type="button" data-jump="os-jump-teams">{teams_tab_label}</button>
-        </nav>
+        {_matchup_preview_html}
 
         {_action_queue_html}
+
+        {usage_movers_html}
 
         {_rz_cta_html}
 
@@ -665,35 +706,17 @@ def build_dashboard_body(ctx: dict) -> str:
 
         <div id="sinceLastVisitCard" class="slv-wrap" data-slv-init="1"></div>
 
-        <div id="os-jump-matchup" class="os-tab-panel"{'' if _show_matchup_preview else ' hidden'}>
-          {matchup_html}
-          {bench_check_html}
-        </div>
+        {bench_check_html}
       </main>
 
-      <aside class="os-right-col os-tab-panel os-side-rail" id="os-jump-teams">
-        <div class="os-sidebar-shell">
-          {teams_sidebar_html}
-        </div>
+      <aside class="os-right-col os-side-rail">
+        {awards_html}
       </aside>
     </div>
     <script>
     (function(){{
-      var nav = document.querySelector('.os-jump-nav');
-      if (!nav) return;
-      var ids = Array.prototype.map.call(nav.querySelectorAll('[data-jump]'), function(b){{ return b.getAttribute('data-jump'); }});
-      function activate(id){{
-        ids.forEach(function(pid){{
-          var p = document.getElementById(pid);
-          if (p) p.classList.toggle('os-tab-active', pid === id);
-        }});
-        nav.querySelectorAll('button').forEach(function(x){{ x.classList.toggle('active', x.getAttribute('data-jump') === id); }});
-      }}
-      nav.querySelectorAll('[data-jump]').forEach(function(btn){{
-        btn.addEventListener('click', function(){{ activate(btn.getAttribute('data-jump')); }});
-      }});
-      var init = nav.querySelector('button.active') || nav.querySelector('button');
-      if (init) activate(init.getAttribute('data-jump'));
+      // Dashboard redesign: sections stack, no jump-nav tab switching.
+      // Collapse toggles still work via the shared card-collapse delegate.
     }})();
     </script>
     <script>

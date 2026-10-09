@@ -131,16 +131,27 @@ def test_awards_css_has_tints_not_accent_bar_and_spans_orphan_tile():
     css = (
         Path(__file__).resolve().parent.parent / "static" / "dashboard.css"
     ).read_text(encoding="utf-8")
-    base = re.search(r"\.award-item \{(.*?)\}", css, re.DOTALL).group(1)
+    base = re.search(r"^\.award-item \{(.*?)\}", css, re.DOTALL | re.MULTILINE).group(1)
     # The thick side accent bar is gone from the tile chrome.
     assert "border-left" not in base
-    honor = re.search(r"\.award-item\.award-honor \{(.*?)\}", css, re.DOTALL).group(1)
-    shame = re.search(r"\.award-item\.award-shame \{(.*?)\}", css, re.DOTALL).group(1)
+    honor = re.search(
+        r"^\.award-item\.award-honor \{(.*?)\}", css, re.DOTALL | re.MULTILINE
+    ).group(1)
+    shame = re.search(
+        r"^\.award-item\.award-shame \{(.*?)\}", css, re.DOTALL | re.MULTILINE
+    ).group(1)
     # Honor/shame distinction is a soft whole-tile tint instead.
     assert "background: color-mix(in srgb, var(--win)" in honor
     assert "background: color-mix(in srgb, var(--loss)" in shame
     assert "border-left" not in honor
     assert "border-left" not in shame
+    # Dashboard awards rail: clean cards, no tint; values keep green/red.
+    dash = re.search(
+        r"\.awards-card \.award-item\.award-honor,\s*\.awards-card \.award-item\.award-shame \{(.*?)\}",
+        css,
+        re.DOTALL,
+    ).group(1)
+    assert "background: var(--card)" in dash
     # A lone final tile in the 2-column grid spans the row.
     span = re.search(
         r"\.award-item:last-child:nth-child\(odd\) \{(.*?)\}", css, re.DOTALL

@@ -102,12 +102,14 @@ def test_dashboard_hubs_share_os_layout_tab_structure():
     for pattern in (
         r'<aside class="os-left-col',
         r'<main class="os-main-col">',
-        r'<aside class="os-right-col os-tab-panel',
+        r'<aside class="os-right-col',
         r'os-side-rail',
-        r'os-tab-panel os-tab-active',
-        r'class="os-jump-nav"',
     ):
         assert len(re.findall(pattern, src)) >= 2, f"missing shared pattern: {pattern}"
+    # In-season redesign markers.
+    inseason = (_PAGES / "dashboard_page.py").read_text(encoding="utf-8")
+    assert "os-hero-strip" in inseason
+    assert "os-matchup-preview" in inseason
     # Offseason left rail is still a single tab panel (team snapshot).
     os_dash = (_PAGES / "offseason_dashboard_page.py").read_text(encoding="utf-8")
     assert '<aside class="os-left-col os-tab-panel os-side-rail"' in os_dash
@@ -126,55 +128,41 @@ def test_offseason_jump_nav_targets_match_tab_panel_ids():
         assert f'id="{panel_id}"' in src, f"missing tab panel id {panel_id}"
 
 
-def test_hubs_swap_empty_roster_sidebar_for_cheat_sheet():
-    for name in ("dashboard_page.py", "offseason_dashboard_page.py"):
-        src = (_PAGES / name).read_text(encoding="utf-8")
-        assert "render_dashboard_teams_sidebar" in src, name
-        assert "{teams_tab_label}" in src, name
-
-
-def test_inseason_jump_nav_targets_match_tab_panel_ids():
+def test_inseason_rosters_sidebar_removed():
+    """Dashboard redesign: the rosters sidebar is gone from the in-season hub."""
     src = (_PAGES / "dashboard_page.py").read_text(encoding="utf-8")
-    jumps = re.findall(r'data-jump="(os-jump-[^"]+)"', src)
-    assert jumps == [
-        "os-jump-actions",
-        "os-jump-matchup",
-        "os-jump-report",
-        "os-jump-standings",
-        "os-jump-teams",
-    ]
-    for panel_id in jumps:
-        assert f'id="{panel_id}"' in src or f"id='{panel_id}'" in src, (
-            f"missing tab panel id {panel_id}"
-        )
+    assert "render_dashboard_teams_sidebar" not in src
+    assert "teams_sidebar_html" not in src
+    assert "os-jump-teams" not in src
 
 
-def test_inseason_matchup_preview_has_own_tab():
-    """Matchup Preview must not be buried under the Report tab on mobile."""
+def test_inseason_jump_nav_removed():
+    """Dashboard redesign: sections stack, the jump-nav tab switcher is gone."""
     src = (_PAGES / "dashboard_page.py").read_text(encoding="utf-8")
-    assert 'data-jump="os-jump-matchup"' in src
-    assert 'id="os-jump-matchup"' in src
-    assert 'id="os-jump-report"' in src
-    # Front Office sits above Standings in the left rail; matchup stays in main.
-    left = src[src.index("os-left-col"): src.index('class="os-main-col"')]
+    assert "os-jump-nav" not in src
+    assert "data-jump=" not in src
+
+
+def test_inseason_matchup_preview_in_main_column():
+    """Dashboard redesign: matchup preview card sits at top of main column."""
+    src = (_PAGES / "dashboard_page.py").read_text(encoding="utf-8")
+    assert "_matchup_preview_html" in src
+    assert "os-matchup-preview" in src
+    # Preview renders before the action queue in the main column.
     main = src[src.index('class="os-main-col"'): src.index('class="os-right-col')]
-    assert "{gm_card_html}" in left
-    assert left.index("{gm_card_html}") < left.index('id="os-jump-standings"')
-    assert "{gm_card_html}" not in main
-    assert "{matchup_html}" in main
-    assert "{matchup_html}" not in left
-    assert 'id="os-jump-report"' in left
-    assert 'id="os-jump-standings"' in left
+    assert "{_matchup_preview_html}" in main
+    assert "{_action_queue_html}" in main
+    assert main.index("{_matchup_preview_html}") < main.index("{_action_queue_html}")
 
 
 def test_dashboard_matchup_preview_is_compact_with_full_page_link():
     src = (_PAGES / "dashboard_page.py").read_text(encoding="utf-8")
     assert "compact=True" in src
-    assert "title_href" in src
+    assert "_dash_preview_slide" in src
     assert '"page_weekly"' in src
+    assert "View all" in src
     hub = (_PAGES / "weekly_hub_page.py").read_text(encoding="utf-8")
     assert "compact=True" not in hub
-    assert "subtle-label" not in src
 
 
 def test_changelog_announces_compact_dashboard_matchup_preview():

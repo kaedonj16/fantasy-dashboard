@@ -4007,10 +4007,7 @@ button:hover {
 
 .standings-table td.team {
     text-align: left;
-    max-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    white-space: normal;
     width: 38%;
 }
 
@@ -4627,9 +4624,6 @@ button:hover {
     font-weight: 600;
     flex: 1 1 auto;
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
 }
 
 .pp-teamline .pp-tag {
@@ -9831,6 +9825,159 @@ select:focus {
     max-width: 760px;
     word-wrap: break-word;
     overflow-wrap: break-word;
+}
+
+/* Compact hero strip (dashboard redesign): single-row team identity + stats.
+   Replaces the tall Season Hub card. */
+.os-hero-strip {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    background: #0d2137;
+    border-radius: 14px;
+    padding: 14px 22px;
+    color: #fff;
+    margin-bottom: 16px;
+    overflow: hidden;
+}
+.os-hero-strip-team {
+    min-width: 0;
+    flex-shrink: 0;
+}
+.os-hero-strip-name {
+    font-size: 15px;
+    font-weight: 800;
+    white-space: nowrap;
+    color: #fff;
+}
+.os-hero-strip-badges {
+    display: flex;
+    gap: 6px;
+    margin-top: 6px;
+    align-items: center;
+}
+.os-grade-badge {
+    background: #16a34a;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 800;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+.os-archetype-tag {
+    background: rgba(255, 255, 255, 0.15);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 10px;
+    white-space: nowrap;
+}
+.os-hero-strip-div {
+    width: 1px;
+    height: 30px;
+    background: rgba(255, 255, 255, 0.2);
+    flex-shrink: 0;
+}
+.os-hero-strip-stats {
+    display: flex;
+    gap: 22px;
+    flex: 1;
+    min-width: 0;
+    overflow-x: auto;
+}
+.os-hero-strip-stat {
+    flex-shrink: 0;
+    cursor: pointer;
+}
+.os-hero-strip-stat .sl {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: rgba(255, 255, 255, 0.55);
+    text-transform: uppercase;
+}
+.os-hero-strip-stat .sv {
+    font-size: 17px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    color: #fff;
+    margin-top: 2px;
+}
+.os-hero-strip-stat .sv small {
+    font-size: 10px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.55);
+}
+.os-hero-strip-stat:hover .sv {
+    color: #38bdf8;
+}
+@media (max-width: 640px) {
+    .os-hero-strip {
+        flex-wrap: wrap;
+        gap: 12px;
+        padding: 12px 16px;
+    }
+    .os-hero-strip-div {
+        display: none;
+    }
+    .os-hero-strip-stats {
+        gap: 16px;
+        flex-basis: 100%;
+    }
+}
+
+/* Next steps cards: 3px left border, 6px radius, min-height, pinned CTA. */
+.ns-card .ns-list .ns-item {
+    border: 1px solid var(--border);
+    border-left-width: 3px;
+    border-radius: 6px;
+    background: var(--card);
+    min-height: 160px;
+    padding: 14px;
+}
+.ns-card .ns-list .ns-item .ns-priority {
+    display: none;
+}
+.ns-card .ns-list .ns-item.ns-prio-high {
+    border-left-color: #ef4444;
+}
+.ns-card .ns-list .ns-item.ns-prio-med {
+    border-left-color: #f59e0b;
+}
+.ns-card .ns-list .ns-item.ns-prio-low {
+    border-left-color: #22c55e;
+}
+.ns-card .ns-list .ns-item .ns-cta {
+    border-radius: 6px;
+}
+
+/* League Awards: clean white cards, no tint. */
+.awards-card .award-item.award-honor,
+.awards-card .award-item.award-shame {
+    background: var(--card);
+}
+.awards-card .award-item.award-honor .award-value {
+    color: var(--win);
+}
+.awards-card .award-item.award-shame .award-value {
+    color: var(--loss);
+}
+
+/* Dashboard Generate Report button: squarer. */
+#os-jump-report-card .recap-generate-btn,
+.os-left-col .recap-generate-btn {
+    border-radius: 6px;
+}
+
+/* Matchup preview card (dashboard redesign). */
+.os-matchup-preview {
+    margin-bottom: 16px;
 }
 
 .os-hero-footer {
@@ -44514,6 +44661,32 @@ a, button, [role="button"], [role="tab"], summary, label,
     width: 3px;
     height: 13px;
     border-radius: var(--radius-sm);
+}
+
+/* Division section label (dashboard redesign): compact pill header used by
+   _standings_div_header everywhere divisions render. */
+.div-label {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    color: #8a9bb0;
+    background: #f1f5f9;
+    padding: 6px 12px;
+    border-radius: 8px;
+    margin: 12px 0 4px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    text-transform: uppercase;
+}
+.st-div-row:first-child .div-label {
+    margin-top: 4px;
+}
+@media (prefers-color-scheme: dark) {
+    .div-label {
+        color: #94a3b8;
+        background: rgba(148, 163, 184, 0.12);
+    }
 }
 
 /* Eliminated rows: mute color, don't crush contrast with opacity. */
