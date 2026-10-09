@@ -35,13 +35,15 @@ class TestDisplayGrades:
 
     def test_dominator_anchors_on_model_elite_mark(self):
         # The model treats >= 0.35 as an elite dominator.
-        assert _grade_dominator(0.40) == 100.0
-        assert _grade_dominator(0.35) == 87.5
+        assert _grade_dominator(0.35) == 100.0
+        assert _grade_dominator(0.31) == 88.6
         assert _grade_dominator(None) is None
 
-    def test_breakout_age_uses_model_scale(self):
-        assert _grade_breakout_age(19.1, "WR") == round((23.0 - 19.1) / 4.5 * 100, 1)
-        assert _grade_breakout_age(19.3, "QB") == round((23.5 - 19.3) / 5.0 * 100, 1)
+    def test_breakout_age_display_scale(self):
+        # Display grading: average (~20.5-21) reads as C, not F.
+        assert _grade_breakout_age(19.1, "WR") == 95.6
+        assert _grade_breakout_age(20.8, "WR") == 73.2
+        assert _grade_breakout_age(20.8, "QB") == 83.6  # shifted scale
         assert _grade_breakout_age(None, "WR") is None
 
     def test_efficiency_grades(self):
@@ -93,16 +95,19 @@ class TestAdvancedMetrics:
 
     def test_wr_metric_set(self):
         seasons = [{"season": 2025, "dominator_rating": 0.38,
-                    "market_share_yards": 0.34, "yds_per_reception": 15.9}]
+                    "market_share_yards": 0.34, "market_share_tds": 0.28,
+                    "yds_per_reception": 15.9}]
         adv = _build_advanced_metrics("WR", seasons, {"speed_score": 112}, self._row())
         assert [a["label"] for a in adv] == [
             "Dominator", "Breakout Age", "Yds/Rec",
-            "Mkt Share", "Speed Score", "Efficiency",
+            "Mkt Share", "TD Share", "Speed Score", "Efficiency", "Recruiting",
         ]
         assert adv[0]["raw"] == "38%"
-        assert adv[0]["grade"] == 95.0
+        assert adv[0]["grade"] == 100.0  # 0.38 >= 0.35 elite anchor
         assert adv[2]["raw"] == "15.9"
-        assert adv[4]["raw"] == "112"
+        assert adv[5]["raw"] == "112"
+        assert adv[4]["raw"] == "28%"
+        assert adv[4]["grade"] == 93.3  # 0.28 / 0.30
 
     def test_te_uses_wr_set(self):
         adv = _build_advanced_metrics("TE", [], {}, self._row("TE"))
@@ -110,36 +115,66 @@ class TestAdvancedMetrics:
 
     def test_rb_metric_set(self):
         seasons = [{"season": 2025, "dominator_rating": 0.33,
-                    "market_share_yards": 0.29, "yds_per_carry": 6.8}]
+                    "market_share_yards": 0.29, "yds_per_carry": 6.8,
+                    "rush_yards": 1400, "receiving_yards": 300, "games_played": 12}]
         adv = _build_advanced_metrics("RB", seasons, {"speed_score": 118},
                                       self._row("RB"))
         assert [a["label"] for a in adv] == [
-            "Dominator", "Breakout Age", "Yds/Carry",
-            "Mkt Share", "Speed Score", "Efficiency",
+            "Dominator", "Breakout Age", "Yds/Carry", "Scrim Yds/Gm",
+            "Mkt Share", "TD Share", "Speed Score", "Efficiency", "Recruiting",
         ]
         assert adv[2]["raw"] == "6.8"
+        scrim = next(a for a in adv if a["label"] == "Scrim Yds/Gm")
+        assert scrim["raw"] == "141.7"  # 1700 / 12
+        assert scrim["grade"] == 100.0  # capped
 
     def test_qb_metric_set(self):
         seasons = [{"season": 2025, "completion_pct": 67.2, "td_int_ratio": 3.1,
-                    "yds_per_attempt": 8.9, "pass_yards": 3500,
+                    "yds_per_attempt": 8.9, "pass_yards": 3500, "pass_tds": 30,
+                    "interceptions": 8, "pass_attempts": 400,
                     "team_total_yards": 5000}]
         adv = _build_advanced_metrics(
             "QB", seasons, {},
             {"position": "QB", "age": 21.1,
              "efficiency_score": 90, "production_score": 90})
         assert [a["label"] for a in adv] == [
-            "Cmp%", "TD:INT", "Yds/Att",
-            "Breakout Age", "Efficiency", "Production",
+            "Cmp%", "TD:INT", "Yds/Att", "AY/A",
+            "Breakout Age", "Efficiency", "Production", "Recruiting",
         ]
         assert adv[0]["raw"] == "67%"
         assert adv[1]["raw"] == "3.1"
+        aya = next(a for a in adv if a["label"] == "AY/A")
+        assert aya["raw"] == "9.3"  # (3500 + 600 - 360) / 400
+        assert aya["grade"] == 89.0  # 9.35 / 10.5
 
     def test_missing_data_degrades_to_nulls(self):
         adv = _build_advanced_metrics(
             "WR", [], {}, {"position": "WR", "age": None,
                            "efficiency_score": None, "production_score": None})
-        assert len(adv) == 6
+        assert len(adv) == 8
         assert all(a["raw"] is None and a["grade"] is None for a in adv)
+
+    def test_speed_score_derived_from_forty_and_weight(self):
+        # No official speed_score stored, but forty + weight exist.
+        seasons = [{"season": 2025, "dominator_rating": 0.31,
+                    "market_share_yards": 0.30, "yds_per_carry": 7.1}]
+        adv = _build_advanced_metrics(
+            "RB", seasons, {"forty_yard": 4.53},
+            {"position": "RB", "age": 21.5, "weight_lbs": 195,
+             "efficiency_score": 80, "production_score": 80})
+        speed = next(a for a in adv if a["label"] == "Speed Score")
+        assert speed["raw"] == "92.6"
+        assert speed["grade"] == 77.2
+
+    def test_recruiting_metric_present_when_scored(self):
+        adv = _build_advanced_metrics(
+            "WR", [], {},
+            {"position": "WR", "age": None, "efficiency_score": None,
+             "production_score": None, "recruiting_score": 85,
+             "recruit_stars": 4})
+        rec = next(a for a in adv if a["label"] == "Recruiting")
+        assert rec["raw"] == "4-star"
+        assert rec["grade"] == 85.0
 
 
 class TestPageBuilder:
@@ -165,3 +200,32 @@ class TestPageBuilder:
         assert '<option value="adp">' not in html
         assert '<option value="mock">' in html
         assert "rkSettingsPanel" not in html
+
+
+class TestHeadshots:
+    def test_espn_headshot_url_format(self):
+        from data_building.rookie_pipeline.espn_scraper import _ESPN_HEADSHOT_URL
+        url = _ESPN_HEADSHOT_URL.format(id="5079369")
+        assert url == ("https://a.espncdn.com/i/headshots/college-football/"
+                       "players/full/5079369.png")
+
+    def test_fetch_espn_headshots_uses_cache(self):
+        # get_player_age is module-cached: a headshot pass right after the
+        # age pass costs zero extra HTTP.
+        from data_building.rookie_pipeline import espn_scraper as es
+        es._CACHE["jeremiyah love|notre dame|RB"] = {
+            "player_name": "Jeremiyah Love", "espn_id": "1234567",
+            "age": 21.5, "team": "Notre Dame", "position": "RB",
+        }
+        try:
+            out = es.fetch_espn_headshots(
+                ["Jeremiyah Love"], 2027,
+                prospects_meta=[{"name": "Jeremiyah Love",
+                                 "school": "Notre Dame", "position": "RB"}],
+                delay=0,
+            )
+        finally:
+            es._CACHE.pop("jeremiyah love|notre dame|RB", None)
+        assert out["jeremiyah love"] == (
+            "https://a.espncdn.com/i/headshots/college-football/"
+            "players/full/1234567.png")

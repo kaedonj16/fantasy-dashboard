@@ -544,6 +544,48 @@ def fetch_espn_ages_robust(
     return result
 
 
+_ESPN_HEADSHOT_URL = "https://a.espncdn.com/i/headshots/college-football/players/full/{id}.png"
+
+
+def fetch_espn_headshots(
+    names: List[str],
+    draft_year: Optional[int] = None,
+    prospects_meta: Optional[List[Dict[str, Any]]] = None,
+    delay: float = 0.2,
+) -> Dict[str, str]:
+    """Map prospect name -> ESPN college headshot URL.
+
+    Reuses get_player_age's module cache, so calling this right after
+    fetch_espn_ages_robust for the same names costs zero extra HTTP.
+    Missing entries mean "no photo" - the frontend falls back to the
+    initial disc (img onerror removes itself).
+    """
+    result: Dict[str, str] = {}
+    meta_by_name: Dict[str, Dict[str, Any]] = {}
+    for m in (prospects_meta or []):
+        try:
+            meta_by_name[_norm_name(m.get("name", ""))] = m
+        except Exception:
+            continue
+    for name in names:
+        try:
+            nk = _norm_name(name)
+            meta = meta_by_name.get(nk, {})
+            r = get_player_age(
+                name,
+                team=meta.get("school") or meta.get("team"),
+                position=meta.get("position"),
+                draft_year=draft_year,
+            )
+            eid = r.get("espn_id")
+            if eid:
+                result[name.lower().strip()] = _ESPN_HEADSHOT_URL.format(id=eid)
+        except Exception:
+            continue
+        time.sleep(delay)
+    return result
+
+
 if __name__ == "__main__":
     test_players = [
         ("Travis Hunter", "Colorado", "WR"),
