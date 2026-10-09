@@ -25,8 +25,8 @@ def test_dashboard_best_ball_badge():
     source = (ROOT / "dashboard_services" / "pages" / "dashboard_page.py").read_text(encoding="utf-8")
     assert "Best Ball</span>" in source
     assert "_bb_badge" in source
-    # H1 must stay exact — badge is a sibling only (league chrome tests).
-    assert '<h1 class="os-hero-title">Season Hub</h1>{_bb_badge}' in source
+    # Badge renders next to the team name in the compact hero strip.
+    assert '{html.escape(str(_vname or "Season Hub"))}{_bb_badge}' in source
 
 
 def test_dashboard_best_ball_thin_outlook():

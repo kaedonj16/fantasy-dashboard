@@ -1,15 +1,11 @@
-"""Usage risers placement on the Season Hub.
+"""Usage risers and League Awards placement on the Season Hub (redesign).
 
 The "Usage risers" card (the viewer's top-3 rostered players with rising
-usage) used to render inside the left rail's Report tab panel, which is not
-active by default, so the card was effectively hidden until the user tapped
-Report. It now renders at the end of the default-active Actions panel,
-after the action-queue content.
+usage) renders as its own card in the main column, below the Next steps
+action queue.
 
-The League Awards section made the opposite trip in the same change: out
-of the Standings tab panel (which now holds the Standings card only) and
-into the Report panel after the Season Review card, making Report the
-retrospective tab.
+The League Awards section renders in the right column as a single-column
+stack of clean cards.
 
 The dashboard render path isn't unit-tested (it needs a full league ctx +
 DB), so like test_dashboard_mobile_layout and
@@ -38,38 +34,39 @@ def test_usage_risers_still_computed_for_viewer():
     assert "usage_movers_html = _render_usage_movers(ctx, viewer_roster_id)" in src
 
 
-def test_usage_risers_render_once_inside_actions_panel_after_action_inner():
+def test_usage_risers_render_as_separate_card_in_main_column():
     src = _src()
     # Exactly one render site for the card in the whole page body.
     assert src.count("{usage_movers_html}") == 1
+    # Not nested inside the action queue: it is its own card in main.
     queue = _block(src, "_action_queue_html = f", "</div>")
-    assert 'id="os-jump-actions"' in queue
-    # Risers come after the action-queue content, inside the same panel, so
-    # they sit below the action cards (or the all-clear / link fallbacks).
-    assert queue.index("{_action_inner}") < queue.index("{usage_movers_html}")
+    assert "{usage_movers_html}" not in queue
+    main = _block(src, 'class="os-main-col"', 'class="os-right-col')
+    assert "{usage_movers_html}" in main
+    # Order: action queue first, then the risers card.
+    assert main.index("{_action_queue_html}") < main.index("{usage_movers_html}")
 
 
-def test_report_panel_holds_season_review_then_awards_without_usage_risers():
+def test_awards_in_right_column_not_left():
+    """Dashboard redesign: League Awards live in the right column."""
     src = _src()
-    panel = _block(src, '<div id="os-jump-report" class="os-tab-panel">', "</div>")
-    assert "{season_review_html}" in panel
-    assert "{awards_html}" in panel
-    assert "{usage_movers_html}" not in panel
-    # Retrospective order: season review first, League Awards after it.
-    assert panel.index("{season_review_html}") < panel.index("{awards_html}")
-    # The panel and its jump-nav button are untouched.
-    assert 'data-jump="os-jump-report"' in src
+    right = _block(src, '<aside class="os-right-col', "</aside>")
+    assert "{awards_html}" in right
+    left = _block(src, '<aside class="os-left-col', "</aside>")
+    assert "{awards_html}" not in left
+    main = _block(src, 'class="os-main-col"', 'class="os-right-col')
+    assert "{awards_html}" not in main
 
 
-def test_awards_render_once_and_not_in_standings_panel():
+def test_awards_render_once_and_not_in_standings_card():
     src = _src()
     # Exactly one render site for the awards section in the whole page body.
     assert src.count("{awards_html}") == 1
-    standings = _block(src, 'id="os-jump-standings"', '<div id="os-jump-report"')
-    assert "{awards_html}" not in standings
-    # The standings panel keeps the Standings card itself.
-    assert "{standings_html}" in standings
-    assert 'data-target="dash-standings-body"' in standings
+    left = _block(src, '<aside class="os-left-col', "</aside>")
+    assert "{awards_html}" not in left
+    # The left column keeps the Standings card itself.
+    assert "{standings_html}" in left
+    assert 'data-target="dash-standings-body"' in left
 
 
 def test_risers_do_not_suppress_actions_fallback():

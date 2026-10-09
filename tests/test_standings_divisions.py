@@ -168,7 +168,7 @@ def test_render_standings_splits_by_division():
     )
     assert 'data-divisions="1"' in html
     assert "st-div-row" in html
-    assert "st-div-head" in html
+    assert "div-label" in html
     assert "East" in html and "West" in html
     assert "3 teams" not in html  # 2 teams each in this fixture
     assert "2 teams" in html
