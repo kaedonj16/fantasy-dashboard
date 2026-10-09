@@ -10186,6 +10186,11 @@ def _render_bench_check(ctx: dict, viewer_roster_id, last_final_week: int) -> st
         actual = m["actual"]
         left_on_bench = m["left_on_bench"]
         eff_url = m["eff_url"]
+        # The Next steps queue surfaces the bench check at >= 5.0 (see
+        # _next_steps_bench_check_actions). Suppress the standalone card there
+        # so the alert appears in only one place.
+        if left_on_bench >= 5.0:
+            return ""
         if left_on_bench < 1.0:
             msg = (
                 f"Week {week}: optimal lineup started. "

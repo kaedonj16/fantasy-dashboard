@@ -86,3 +86,33 @@ def test_bye_alert_suppressed_when_swap_covers_player():
     assert "_swap_covered_pids" in src
     # The suppression check references the issue pid against covered pids.
     assert 'str(i.get("pid") or "") in _swap_covered_pids' in src
+
+
+def test_bench_check_card_suppressed_when_next_steps_fires():
+    """The standalone bench-check card is suppressed at >= 5.0, when the
+    Next steps queue surfaces the same alert. No duplication between the
+    two surfaces."""
+    src = (ROOT / "app.py").read_text(encoding="utf-8")
+    start = src.find("def _render_bench_check")
+    end = src.find("def render_power_and_playoffs", start)
+    body = src[start:end]
+    # Suppression guard: card returns empty at the Next steps threshold.
+    assert "if left_on_bench >= 5.0:" in body
+    assert 'return ""' in body
+
+
+def test_bench_check_thresholds_agree():
+    """Both surfaces must agree on the 5.0 threshold: the card suppresses
+    exactly where the Next steps item fires, so there is no gap and no
+    overlap."""
+    src = (ROOT / "app.py").read_text(encoding="utf-8")
+    # Next steps item fires at >= 5.0.
+    ns_start = src.find("def _next_steps_bench_check_actions")
+    ns_end = src.find("def _render_next_steps_queue", ns_start)
+    ns_body = src[ns_start:ns_end]
+    assert "if left < 5.0:" in ns_body
+    # Card still fires for 1.0-4.9 (nothing-bench message below 1.0).
+    card_start = src.find("def _render_bench_check")
+    card_end = src.find("def render_power_and_playoffs", card_start)
+    card_body = src[card_start:card_end]
+    assert "if left_on_bench < 1.0:" in card_body
