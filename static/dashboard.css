@@ -44588,13 +44588,14 @@ a, button, [role="button"], [role="tab"], summary, label,
    ========================================================================== */
 .mb-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 40px minmax(0, 1fr);
-    align-items: center;
+    grid-template-columns: 1fr 36px 44px 36px 1fr;
+    gap: 3px;
+    align-items: start;
     border-bottom: 1px solid var(--border);
 }
 .m-combo:has(.mb-row) { row-gap: 0; }
 
-.mb-cell { min-width: 0; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; justify-content: center; }
+.mb-cell { min-width: 0; padding: 6px 8px; display: flex; flex-direction: column; gap: 4px; justify-content: center; }
 .mb-cell-row { display: flex; gap: 7px; min-width: 0; align-items: center; }
 .mb-cell-r .mb-cell-row { flex-direction: row-reverse; text-align: right; }
 
@@ -44609,6 +44610,10 @@ a, button, [role="button"], [role="tab"], summary, label,
 /* Full text, no ellipsis: names, game line and box score wrap rather than clip. */
 .mb-nameline { flex-wrap: wrap; }
 .mb-nameline .pname { font-size: 13px; font-weight: 700; color: var(--accent); white-space: normal; overflow-wrap: anywhere; min-width: 0; }
+/* Compact rows: name is a direct child of .mb-info, first initial + last. */
+.mb-info > .pname { font-size: 15px; font-weight: 700; color: var(--accent); }
+/* Matchup/game details on their own smaller line. */
+.mb-matchup { display: block; font-size: 10px; color: var(--text-subtle); margin-top: 1px; line-height: 1.3; }
 .mb-team { font-size: 11px; font-weight: 700; color: var(--text-subtle); text-transform: uppercase; flex: 0 0 auto; }
 .mb-game { font-size: 11px; color: var(--text-muted); white-space: normal; overflow-wrap: anywhere; max-width: 100%; line-height: 1.3; }
 .mb-stat { display: block; font-size: 11px; color: var(--text-subtle); white-space: normal; overflow-wrap: anywhere; max-width: 100%; line-height: 1.3; }
@@ -44616,15 +44621,18 @@ a, button, [role="button"], [role="tab"], summary, label,
 .mb-live { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 .mb-game .live-dot { margin: 0; position: relative; top: -1px; }
 
-.mb-score { flex: 0 0 auto; align-self: center; text-align: right; font-variant-numeric: tabular-nums; line-height: 1.1; }
-.mb-cell-r .mb-score { text-align: left; }
+.mb-score { flex: 0 0 auto; align-self: start; text-align: center; font-variant-numeric: tabular-nums; line-height: 1.1; padding-top: 2px; }
+.mb-cell-r .mb-score { text-align: center; }
 .mb-a { display: block; font-size: 15px; font-weight: 800; color: var(--accent); }
 .mb-a.mb-win { color: var(--win); }
 .mb-a.mb-bye, .mb-a.mb-na, .mb-a.mb-proj-only { color: var(--text-subtle); font-weight: 700; }
 .mb-pj { display: block; font-size: 11px; font-weight: 600; color: var(--text-muted); }
 
-.mb-pos { display: flex; align-items: center; justify-content: center; }
+.mb-pos { display: flex; align-items: center; justify-content: center; align-self: center; }
 .mb-pos .pos-badge { width: 34px; height: 20px; font-size: 11px; padding: 1px 4px; }
+/* Drive-bar mounts span the player's cell plus their points column. */
+.mb-fld-span-l { grid-column: 1 / 3; }
+.mb-fld-span-r { grid-column: 4 / 6; }
 
 /* projection trend arrow in the header scoreboard */
 .mb-trend { font-size: 11px; margin-left: 3px; vertical-align: middle; }
