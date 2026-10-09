@@ -63,7 +63,7 @@ def render_awards_section(awards: dict) -> str:
                           f"<span{clickable_attrs}>{n}</span>", f"{pts}", "points", f"Week {w}"))
 
     return f"""
-    <section class="os-card awards-card" data-section="awards">
+    <section class="os-side-plain awards-card" data-section="awards">
       <div class="os-section-head">
         <div class="os-section-head-content">
           <h2 class="os-section-title"><i class="fa-solid fa-trophy" aria-hidden="true"></i> League Awards</h2>

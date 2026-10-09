@@ -41,7 +41,9 @@ def test_empty_awards_render_nothing():
 
 def test_section_uses_hub_card_chrome_with_collapse():
     out = render_awards_section(AWARDS)
-    assert '<section class="os-card awards-card" data-section="awards">' in out
+    # Redesign review: no outer card chrome on the sidebar; plain section.
+    assert '<section class="os-side-plain awards-card" data-section="awards">' in out
+    assert 'os-card awards-card' not in out
     assert '<div class="os-section-head">' in out
     assert '<h2 class="os-section-title">' in out
     assert 'class="fa-solid fa-trophy"' in out
@@ -152,8 +154,11 @@ def test_awards_css_has_tints_not_accent_bar_and_spans_orphan_tile():
         re.DOTALL,
     ).group(1)
     assert "background: var(--card)" in dash
-    # A lone final tile in the 2-column grid spans the row.
-    span = re.search(
-        r"\.award-item:last-child:nth-child\(odd\) \{(.*?)\}", css, re.DOTALL
+    # Redesign review: awards are always a single column; the 2-column
+    # orphan-tile spanning rules are gone.
+    grid = re.search(
+        r"^\.awards-grid \{(.*?)\}", css, re.DOTALL | re.MULTILINE
     ).group(1)
-    assert "grid-column: 1 / -1" in span
+    assert "grid-template-columns: 1fr" in grid
+    assert "repeat(2, 1fr)" not in css.split(".awards-grid")[1].split("}")[0]
+    assert ".award-item:last-child:nth-child(odd)" not in css
