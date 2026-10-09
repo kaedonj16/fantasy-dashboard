@@ -591,6 +591,9 @@ def _starter_flags(
             "name": p.get("name"), "pos": p.get("pos"),
             "proj": round(proj, 1), "value": value_by_pid.get(pid, 0.0),
             "impact": round(impact, 1),
+            # Typical-week average = the player's PPG; used for the outs
+            # section. None when only the dynasty-value fallback exists.
+            "ppg": round(avg, 1) if avg > 0 else None,
         }
         if raw in _OUT_STATUSES:
             out.append({**entry, "status": raw})
@@ -1248,9 +1251,10 @@ def _render_next_week_html(preview: dict, looking_ahead: str,
                     cands.append({
                         "name": p.get("name"), "pos": p.get("pos"),
                         "status": status, "cls": badge_cls, "impact": impact,
+                        "ppg": p.get("ppg"),
                     })
             cands.sort(key=lambda r: -r["impact"])
-            rows = [{k: r[k] for k in ("name", "pos", "status", "cls")} for r in cands[:3]]
+            rows = [{k: r.get(k) for k in ("name", "pos", "status", "cls", "ppg")} for r in cands[:3]]
             if rows:
                 cols.append({"team": team, "side": side, "rows": rows})
         return cols
@@ -1258,17 +1262,31 @@ def _render_next_week_html(preview: dict, looking_ahead: str,
     outs_cols = _notable_outs_cols()
     outs_html = ""
     if outs_cols:
+        def _out_row(r, side):
+            ppg_html = (f"<span class='br-gotw-out-ppg'>{r['ppg']:.1f} PPG</span>"
+                        if r.get("ppg") else "")
+            pos_html = (f"<span class='br-gotw-out-pos'>"
+                        f"{html.escape(str(r['pos'] or ''))}</span>")
+            name_html = html.escape(str(r['name']))
+            # Dot separator between pos and PPG, only when PPG is shown.
+            sep_html = "<span class='br-gotw-out-sep'>·</span>" if r.get("ppg") else ""
+            if side == "a":
+                inner = f"{name_html}{pos_html}{sep_html}{ppg_html}"
+            else:
+                # Right column mirrors fully: "15.2 PPG · QB Bryce Young".
+                inner = (f"{ppg_html}{sep_html}{pos_html}"
+                         f"<span class='br-gotw-out-nm'>{name_html}</span>")
+            return (
+                "<div class='br-gotw-out'>"
+                f"<span class='br-gotw-out-name'>{inner}</span>"
+                f"<span class='br-gotw-out-st {r['cls']}'>{html.escape(r['status'])}</span>"
+                "</div>"
+            )
+
         col_html = "".join(
             f"<div class='br-gotw-outs-col br-gotw-outs-{c['side']}'>"
             f"<div class='br-gotw-outs-title'>{html.escape(str(c['team']))} outs</div>"
-            + "".join(
-                "<div class='br-gotw-out'>"
-                f"<span class='br-gotw-out-name'>{html.escape(str(r['name']))}"
-                f"<span class='br-gotw-out-pos'>{html.escape(str(r['pos'] or ''))}</span></span>"
-                f"<span class='br-gotw-out-st {r['cls']}'>{html.escape(r['status'])}</span>"
-                "</div>"
-                for r in c["rows"]
-            )
+            + "".join(_out_row(r, c["side"]) for r in c["rows"])
             + "</div>"
             for c in outs_cols
         )
