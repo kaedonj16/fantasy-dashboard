@@ -14,7 +14,6 @@ always show the same grade and window label.
 from __future__ import annotations
 
 import logging
-from typing import Dict
 
 logger = logging.getLogger(__name__)
 
@@ -44,11 +43,9 @@ def _compute(ctx: dict, viewer_roster_id) -> dict:
         league_format_value_lookup,
         redraft_window_label,
     )
-    from utils.lineup_slots import (
-        count_roster_positions,
-        get_roster_positions,
-        is_superflex_lineup,
-    )
+    from dashboard_services.api import get_roster_positions
+    from utils.lineup_slots import is_superflex_lineup
+    from utils.live_stats import count_roster_positions
     from utils.trade import rank_rosters_by_position
 
     rosters = ctx.get("rosters") or []
@@ -61,9 +58,9 @@ def _compute(ctx: dict, viewer_roster_id) -> dict:
         return {}
 
     model_vals = ctx.get("model_value_table") or []
-    by_id: Dict[str, dict] = league_format_value_lookup(ctx)
+    by_id: dict[str, dict] = league_format_value_lookup(ctx)
 
-    name_to_age: Dict[str, float | None] = {}
+    name_to_age: dict[str, float | None] = {}
     for obj in model_vals:
         if not isinstance(obj, dict):
             continue
@@ -84,7 +81,7 @@ def _compute(ctx: dict, viewer_roster_id) -> dict:
     _is_redraft = scoring == "redraft"
 
     # Per-team position value buckets (for positional ranks).
-    team_pos_values: Dict[int, Dict[str, list]] = {}
+    team_pos_values: dict[int, dict[str, list]] = {}
     for r in rosters:
         rid = r.get("roster_id")
         if rid is None:
@@ -93,7 +90,7 @@ def _compute(ctx: dict, viewer_roster_id) -> dict:
             rid_i = int(rid)
         except (TypeError, ValueError):
             continue
-        buckets: Dict[str, list] = {p: [] for p in _POS_ORDER}
+        buckets: dict[str, list] = {p: [] for p in _POS_ORDER}
         for pid in (r.get("players") or []):
             row = by_id.get(str(pid))
             if not row:
@@ -115,9 +112,9 @@ def _compute(ctx: dict, viewer_roster_id) -> dict:
     )
 
     # Dynasty/redraft totals per team (top-8 by dynasty value), then percentiles.
-    team_dynasty_total: Dict[int, float] = {}
-    team_redraft_total: Dict[int, float] = {}
-    team_dr_ratio: Dict[int, float] = {}
+    team_dynasty_total: dict[int, float] = {}
+    team_redraft_total: dict[int, float] = {}
+    team_dr_ratio: dict[int, float] = {}
     for r in rosters:
         rid = r.get("roster_id")
         if rid is None:
@@ -149,7 +146,7 @@ def _compute(ctx: dict, viewer_roster_id) -> dict:
         ratios = [d / max(rv, 1) for d, rv in pairs[:10] if d > 50 or rv > 50]
         team_dr_ratio[rid_i] = round(sum(ratios) / len(ratios), 3) if ratios else 1.0
 
-    def _make_pct_fn(totals: Dict[int, float]):
+    def _make_pct_fn(totals: dict[int, float]):
         _sorted = sorted(totals.values())
         _n = max(len(_sorted) - 1, 1)
 
