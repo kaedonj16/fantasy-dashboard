@@ -8921,19 +8921,23 @@ def render_standings_compact(team_stats, length=None, movement=None, owner_to_ri
         record = format_record_html(int(row['Wins']), int(row['Losses']),
                                int(row.get("Ties", 0) or 0),
                                _div_record_for(row["owner"]))
+        _rank = int(row['Rank'])
+        _rank_cls = "cc-st-rank top" if _rank == 1 else "cc-st-rank"
         _mv = movement.get(str(row["owner"]))
         mv_html = ""
         if _mv:
             if _mv > 0:
-                mv_html = f" <span class='rank-move up' title='Up {_mv} since last week'>&#9650;{_mv}</span>"
+                mv_html = (f"<div class='cc-st-mv up' title='Up {_mv} since last week'>"
+                           f"&#9650;{_mv}</div>")
             elif _mv < 0:
-                mv_html = f" <span class='rank-move down' title='Down {abs(_mv)} since last week'>&#9660;{abs(_mv)}</span>"
-        _rank = int(row['Rank'])
-        _rec_html = f"<strong>{record}</strong>" if _rank == 1 else record
+                mv_html = (f"<div class='cc-st-mv dn' title='Down {abs(_mv)} since last week'>"
+                           f"&#9660;{abs(_mv)}</div>")
         _team_html = _clickable_team_name(row['owner'], owner_to_rid)
         rows.append(
-            f"<div class='cc-rw'><span><strong>{_rank}</strong> {_team_html}{mv_html}</span>"
-            f"<span>{_rec_html}</span></div>"
+            f"<div class='cc-st-row'><div class='{_rank_cls}'>{_rank}</div>"
+            f"<div class='cc-st-team'>{_team_html}</div>"
+            f"{mv_html}"
+            f"<div class='cc-st-rec'>{record}</div></div>"
         )
 
     if length and not _use_div:
@@ -8941,7 +8945,7 @@ def render_standings_compact(team_stats, length=None, movement=None, owner_to_ri
 
     _div_attr = ' data-divisions="1"' if _use_div else ""
     return (
-        f"<div class='cc-standings'{_div_attr}>"
+        f"<div class='cc-st-rows'{_div_attr}>"
         + "".join(rows) +
         "</div>"
     )

@@ -406,11 +406,11 @@ def test_render_standings_compact_division_record_breaks_record_tie():
         div_records={1: (1, 0, 0), 2: (0, 1, 0)},
     )
     assert html.index("(1-0)") < html.index("(0-1)")
-    # Rows render as mock-style divs (no table, no PF column).
-    assert "cc-standings" in html
+    # Rows render as character-card divs (no table, no PF column).
+    assert "cc-st-rows" in html
     assert "<table" not in html
     # The 1-0 division team sits above the 0-1 team despite less PF.
-    first_row = html.split("cc-rw")[1]
+    first_row = html.split("<div class='cc-st-row'>")[1]
     assert "(1-0)" in first_row
 
 
@@ -504,3 +504,38 @@ def test_render_standings_form_bars():
     flat = appmod.render_standings(df, length=2, owner_to_rid=o2r)
     assert "st-formbars" not in flat
     assert "&ndash;" in flat
+
+
+def test_compact_character_card_markup():
+    """Character-card markup: circular rank badges (dark for #1), movement
+    arrows between team and record, division pills."""
+    pytest.importorskip("flask")
+    pd = pytest.importorskip("pandas")
+    import app as appmod
+
+    rows = [
+        {"owner": "A", "Wins": 4, "Losses": 0, "Ties": 0, "PF": 400, "PA": 200, "Rank": 1},
+        {"owner": "B", "Wins": 3, "Losses": 1, "Ties": 0, "PF": 350, "PA": 250, "Rank": 2},
+        {"owner": "C", "Wins": 1, "Losses": 3, "Ties": 0, "PF": 280, "PA": 300, "Rank": 3},
+    ]
+    df = pd.DataFrame(rows)
+    o2r = {"A": "1", "B": "2", "C": "3"}
+    html = appmod.render_standings_compact(
+        df, owner_to_rid=o2r, movement={"B": 2, "C": -1},
+    )
+    # Rank badges: #1 gets the dark "top" badge.
+    assert "<div class='cc-st-rank top'>1</div>" in html
+    assert "<div class='cc-st-rank'>2</div>" in html
+    # Movement arrows sit between team and record.
+    assert "<div class='cc-st-mv up'" in html
+    assert "&#9650;2</div>" in html
+    assert "<div class='cc-st-mv dn'" in html
+    assert "&#9660;1</div>" in html
+    # No movement -> no arrow div for that row.
+    assert html.count("cc-st-mv") == 2
+    # Team and record cells present.
+    assert "cc-st-team" in html
+    assert "cc-st-rec" in html
+    # Old flat markup is gone.
+    assert "cc-rw" not in html
+    assert "rank-move" not in html

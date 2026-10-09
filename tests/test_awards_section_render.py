@@ -1,8 +1,8 @@
 """Render tests for the Season Hub League Awards section.
 
-Locks in the command-center row layout of render_awards_section: os-side-plain
-shell with the standard section head and collapse toggle, one row per award
-with label / detail left and a 16px value right (green for honors, red for
+Locks in the character-card layout of render_awards_section: dark gradient
+header (icon + title + subtitle + collapse toggle), one row per award with
+label / team / detail left and a 24px value right (green for honors, red for
 shame awards, dark for neutral), and the Highest Player name keeping its
 player-clickable behavior. Data, award set, and the empty-dict -> ""
 contract are unchanged.
@@ -28,9 +28,9 @@ AWARDS = {
 
 
 def _rows(out: str):
-    """[(value-class, label)] per row, in render order."""
+    """[label] per row, in render order."""
     return re.findall(
-        r'<div class="cc-rw cc-award-row"><span>([^<]+)<br>', out
+        r'<div class="cc-award-label">([^<]+)</div>', out
     )
 
 
@@ -39,50 +39,55 @@ def test_empty_awards_render_nothing():
     assert render_awards_section(None) == ""
 
 
-def test_section_uses_hub_chrome_with_collapse():
+def test_section_uses_character_chrome_with_collapse():
     out = render_awards_section(AWARDS)
-    assert '<section class="os-side-plain awards-card" data-section="awards">' in out
-    assert '<div class="os-section-head">' in out
-    assert '<h2 class="os-section-title">' in out
+    assert '<section class="os-side-plain cc-aw-card" data-section="awards">' in out
+    assert '<div class="cc-aw-head">' in out
+    assert '<div class="cc-aw-head-icon">' in out
     assert 'class="fa-solid fa-trophy"' in out
-    assert "League Awards" in out
-    assert '<div class="os-section-subtitle">Season superlatives so far</div>' in out
-    assert 'class="card-collapse-toggle"' in out
+    assert '<h3 class="cc-aw-title">League Awards</h3>' in out
+    assert '<div class="cc-aw-sub">Season superlatives so far</div>' in out
+    assert 'class="card-collapse-toggle cc-head-toggle"' in out
     assert 'data-target="dash-awards-body"' in out
     assert 'aria-expanded="true"' in out
     assert '<div class="card-collapsible-body" id="dash-awards-body">' in out
-    # Old tile chrome is gone.
+    # Old chrome is gone.
     assert "award-item" not in out
     assert "awards-grid" not in out
+    assert "os-section-head" not in out
+    assert "cc-rw cc-award-row" not in out
 
 
-def test_rows_have_label_detail_value():
+def test_rows_have_label_team_detail_value():
     out = render_awards_section(AWARDS)
-    assert out.count('class="cc-rw cc-award-row"') == 6
-    # Label + detail on the left, value on the right.
-    assert "<span>Highest week<br>" in out
-    assert '<span class="cc-muted">Team Alpha &middot; Wk 3</span>' in out
-    assert '<span class="cc-award-val cc-up">152.4</span>' in out
-    assert "<span>Lowest week<br>" in out
-    assert '<span class="cc-muted">Team Beta &middot; Wk 5</span>' in out
-    assert '<span class="cc-award-val cc-dn">61.2</span>' in out
+    assert out.count('class="cc-award"') == 6
+    # Label, team, detail on the left, value on the right.
+    assert '<div class="cc-award-label">Highest single week</div>' in out
+    assert '<div class="cc-award-team">Team Alpha</div>' in out
+    assert '<div class="cc-award-detail">Week 3</div>' in out
+    assert '<div class="cc-award-val cc-up">152.4</div>' in out
+    assert '<div class="cc-award-label">Lowest single week</div>' in out
+    assert '<div class="cc-award-team">Team Beta</div>' in out
+    assert '<div class="cc-award-detail">Week 5</div>' in out
+    assert '<div class="cc-award-val cc-dn">61.2</div>' in out
     # Tied streak winners stack with <br>, never a comma run-on.
     assert "Team Alpha<br>Team Gamma" in out
     assert "Team Alpha, Team Gamma" not in out
-    assert '<span class="cc-award-val cc-up">7</span>' in out
-    assert '<span class="cc-award-val cc-dn">6</span>' in out
-    # Consistency: sigma value, team in the detail line.
-    assert '<span class="cc-award-val">9.12</span>' in out
+    assert '<div class="cc-award-val cc-up">7</div>' in out
+    assert '<div class="cc-award-val cc-dn">6</div>' in out
+    # Consistency: sigma value, "over N games" detail.
+    assert '<div class="cc-award-val">9.12</div>' in out
+    assert '<div class="cc-award-detail">over 8 games</div>' in out
     assert "Team Epsilon" in out
-    assert '<span class="cc-award-val cc-up">41.2</span>' in out
+    assert '<div class="cc-award-val cc-up">41.2</div>' in out
 
 
 def test_row_order_and_labels():
     out = render_awards_section(AWARDS)
     labels = _rows(out)
     assert labels == [
-        "Highest week",
-        "Lowest week",
+        "Highest single week",
+        "Lowest single week",
         "Longest win streak",
         "Longest losing streak",
         "Most consistent",
@@ -108,9 +113,9 @@ def test_highest_player_without_id_is_plain():
 
 def test_partial_awards_render_only_present_rows():
     out = render_awards_section({"longest_loss_streak": (["Team Delta"], 6)})
-    assert out.count('class="cc-rw cc-award-row"') == 1
+    assert out.count('class="cc-award"') == 1
     assert _rows(out) == ["Longest losing streak"]
-    assert "Highest week" not in out
+    assert "Highest single week" not in out
 
 
 def test_team_names_are_escaped():
@@ -127,12 +132,16 @@ def test_awards_css_row_rules():
     css = (
         Path(__file__).resolve().parent.parent / "static" / "dashboard.css"
     ).read_text(encoding="utf-8")
-    # Award rows get extra vertical padding vs plain rows.
-    m = re.search(r"\.cc-award-row \{(.*?)\}", css, re.DOTALL)
-    assert m and "padding: 12px 0" in m.group(1)
-    # Values are 16px bold tabular numerals.
+    # Award rows get generous vertical padding.
+    m = re.search(r"\.cc-award \{(.*?)\}", css, re.DOTALL)
+    assert m and "padding: 14px 4px" in m.group(1)
+    # Values are 24px extra-bold tabular numerals.
     m = re.search(r"\.cc-award-val \{(.*?)\}", css, re.DOTALL)
-    assert m and "font-size: 16px" in m.group(1)
+    assert m and "font-size: 24px" in m.group(1)
+    assert m and "font-weight: 800" in m.group(1)
+    # Dark header card chrome exists.
+    assert re.search(r"\.cc-aw-card \{(.*?)\}", css, re.DOTALL)
+    assert re.search(r"\.cc-aw-head \{(.*?)\}", css, re.DOTALL)
     # Green/red accents exist.
     assert re.search(r"\.cc-up \{(.*?)\}", css, re.DOTALL)
     assert re.search(r"\.cc-dn \{(.*?)\}", css, re.DOTALL)

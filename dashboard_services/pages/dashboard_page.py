@@ -845,19 +845,21 @@ def build_dashboard_body(ctx: dict) -> str:
         logger.debug("dashboard injury watch failed", exc_info=True)
         _injury_watch_html = ""
 
+    # Standings card subtitle: "LeagueName · N teams" (character-card header).
+    _st_league_name = html.escape(str((ctx.get("league") or {}).get("name") or "League"))
+    _st_team_count = len(rosters or [])
+    _st_sub = (f"{_st_league_name} &middot; {_st_team_count} team"
+               f"{'' if _st_team_count == 1 else 's'}")
     body = f"""
     <div class="os-layout">
       <aside class="os-left-col os-side-rail">
         {gm_card_html}
-        <section class="os-side-plain">
-          <div class="os-section-head">
-            <div class="os-section-head-content">
-              {_section_title_link("Standings", "league_pages.page_standings", platform, season, league_id)}
-              <div class="os-section-subtitle">Where every team sits right now</div>
-            </div>
-            <div class="os-section-head-actions">
-              <button type="button" class="card-collapse-toggle" aria-label="Toggle section" aria-expanded="true" data-target="dash-standings-body">&#9660;</button>
-            </div>
+        <section class="os-side-plain cc-st-card" data-section="standings">
+          <div class="cc-st-head">
+            <div class="cc-st-head-icon"><i class="fa-solid fa-list" aria-hidden="true"></i></div>
+            <div class="cc-st-head-title">{_section_title_link("Standings", "league_pages.page_standings", platform, season, league_id)}</div>
+            <div class="cc-st-sub">{_st_sub}</div>
+            <button type="button" class="card-collapse-toggle cc-head-toggle" aria-label="Toggle section" aria-expanded="true" data-target="dash-standings-body">&#9660;</button>
           </div>
           <div class="card-collapsible-body" id="dash-standings-body">
             {standings_html}
