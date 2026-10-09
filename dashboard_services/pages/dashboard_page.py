@@ -170,7 +170,7 @@ def build_dashboard_body(ctx: dict) -> str:
         # Prompt-only until Generate Report. Serving a cached memo on first
         # paint (or generating one) made the report appear without a click.
         gm_card_html = f"""
-        <section class="os-card os-card-soft" id="os-jump-report-card">
+        <section class="os-side-plain" id="os-jump-report-card">
           <div class="os-section-head">
             <div class="os-section-head-content">
               <h2 class="os-section-title">Front Office Report</h2>
@@ -333,8 +333,10 @@ def build_dashboard_body(ctx: dict) -> str:
     _hero_archetype_tag = ""
     if viewer_roster_id:
         try:
-            from dashboard_services.ai.renderer import get_roster_grade
-            _gd = get_roster_grade(ctx, viewer_roster_id) or {}
+            # League-context grade (same source as the Teams page) so the
+            # hero strip never disagrees with Teams on grade/window.
+            from dashboard_services.ai.league_grades import viewer_league_context_grade
+            _gd = viewer_league_context_grade(ctx, viewer_roster_id) or {}
             _g = str(_gd.get("grade") or "").strip()
             _w = str(_gd.get("win_window") or "").strip()
             if _g and _g.upper() != "N/A":
@@ -354,10 +356,16 @@ def build_dashboard_body(ctx: dict) -> str:
         )
     if viewer_roster_id and len(_strip_stats) >= 1:
         _strip_stats.insert(1, ("Playoff odds", html.escape(str(_po_val)), _po_sub))
+    def _strip_stat_html(_l, _v, _s):
+        _sub = f'<div class="ss">{_s}</div>' if _s else ""
+        return (
+            f'<div class="os-hero-strip-stat"><div class="sl">{_l}</div>'
+            f'<div class="sv">{_v}</div>'
+            f"{_sub}</div>"
+        )
+
     _strip_stats_html = "".join(
-        f'<div class="os-hero-strip-stat"><div class="sl">{_l}</div>'
-        f'<div class="sv">{_v}{f" <small>{_s}</small>" if _s else ""}</div></div>'
-        for _l, _v, _s in _strip_stats[:4]
+        _strip_stat_html(_l, _v, _s) for _l, _v, _s in _strip_stats[:4]
     )
     _hero_strip_html = f"""
     <section class="os-hero-strip">
@@ -674,7 +682,7 @@ def build_dashboard_body(ctx: dict) -> str:
     <div class="os-layout">
       <aside class="os-left-col os-side-rail">
         {gm_card_html}
-        <section class="os-card os-col-fill">
+        <section class="os-side-plain">
           <div class="os-section-head">
             <div class="os-section-head-content">
               {_section_title_link("Standings", "league_pages.page_standings", platform, season, league_id)}
