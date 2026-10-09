@@ -135,11 +135,11 @@ def test_header_subline_shows_team_and_real_position():
     )
     html = _render(mmod, matchup, roster_positions=["FLEX", "BN"])
     # Name and sub-line are separate spans inside the same name line.
-    assert ">Chris Olave</span>" in html
-    assert "<span class='meta p-team mb-team'>NO \u2022 WR</span>" in html
-    assert "<span class='meta p-team mb-team'>CLE \u2022 RB</span>" in html
+    assert ">C. Olave</span>" in html
+    assert "<span class='meta p-team mb-team'>WR \u2022 NO</span>" in html
+    assert "<span class='meta p-team mb-team'>RB \u2022 CLE</span>" in html
     # The sub-line keeps the real position even though the slot chip is FLEX.
-    assert "WR</span>" in html
+    assert "WR \u2022 NO</span>" in html
 
 
 def test_defense_subline_reads_dst():
@@ -149,7 +149,7 @@ def test_defense_subline_reads_dst():
         [_starter("p2", "Denver D", "DEF", "DEN")],
     )
     html = _render(mmod, matchup, roster_positions=["DEF", "BN"])
-    assert "SEA \u2022 D/ST" in html
+    assert "D/ST \u2022 SEA" in html
 
 
 def test_team_meta_shows_standings_rank():

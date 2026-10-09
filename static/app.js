@@ -24928,16 +24928,19 @@ window._rzStubPbpEvents = function(pid, state) {
     return null;
   }
 
-  // Build the drive-bar markup for a team that currently has the ball. Returns
-  // '' when the game is not live, the team is on defense, or field position is
-  // not yet reliable -- the mount then clears.
+  // Build the drive-bar markup for a team in a live game. Returns '' when the
+  // game is not live or field position is not yet reliable -- the mount then
+  // clears. When the team is on defense, renders a compact "{TEAM} on Defense"
+  // indicator instead of the bar.
   function driveBarHtml(game, team) {
     if (!game || !window._rzFieldPosition) return '';
     var status = String(game.status || '').toLowerCase();
     if (status !== 'live') return '';
     if (game.field_position_reliable === false) return '';
     var poss = norm(game.possession);
-    if (!poss || poss !== norm(team)) return '';
+    var tn = norm(team);
+    if (!poss || (tn !== norm(game.home) && tn !== norm(game.away))) return '';
+    if (poss !== tn) return '<div class="mb-fld-def">' + esc(tn) + ' on Defense</div>';
     var fp = window._rzFieldPosition(game);
     if (!fp || fp.spot == null) return '';
     var atkAway = fp.side === 'away';

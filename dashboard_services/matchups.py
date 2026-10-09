@@ -2196,7 +2196,7 @@ def render_matchup_slide(
                 fpts_pos = pos
                 opp_rank, fpts_val = _get_fpts_rank(opp, fpts_pos)
                 if opp_rank is not None:
-                    suffix = f" (#{opp_rank} / {fpts_val:.1f})"
+                    suffix = f" (#{opp_rank})"
             elif pos == "DEF":
                 opp_rank = off_ranks.get("total_off_rank")
                 if opp_rank is not None:
@@ -2436,14 +2436,19 @@ def render_matchup_slide(
         _pos_label_inline = "D/ST" if pos in ("DEF", "DST") else (pos or "")
         _team_txt = str(nfl or "").strip()
         if _team_txt and _pos_label_inline:
-            meta_content = f"{_team_txt} \u2022 {_pos_label_inline}"
+            meta_content = f"{_pos_label_inline} \u2022 {_team_txt}"
         else:
-            meta_content = _team_txt or _pos_label_inline
+            meta_content = _pos_label_inline or _team_txt
         meta_content = html.escape(meta_content)
 
         # Add clickable attributes
         _safe_name = html.escape(name or "")
         _safe_pid = html.escape(str(pid or ""))
+        # Display as first initial + last name (e.g. "B. Purdy")
+        _display_name = _safe_name
+        _name_parts = str(name or "").strip().split()
+        if len(_name_parts) >= 2:
+            _display_name = html.escape(f"{_name_parts[0][0]}. {' '.join(_name_parts[1:])}")
         clickable_attrs = (
             f" class='pname player-clickable' style='cursor:pointer;'"
             f" data-player-id='{_safe_pid}' data-player-name='{_safe_name}'"
@@ -2458,19 +2463,19 @@ def render_matchup_slide(
             )
         team_span = f"<span class='meta p-team mb-team'>{meta_content}</span>" if meta_content else ""
 
-        # Compact board cell: name on top with a TEAM • POS sub-line, then the
-        # game line, then the box score. The position badge is NOT inline here
-        # -- it moves to the shared centre rail (assembled in the row loop) so
-        # both players in a slot read against one coloured chip. Left/right
-        # mirroring is handled in CSS off the parent .mb-cell-r, so the markup
-        # is identical either side.
+        # Compact board cell: name (first initial + last) on top, POS • TEAM
+        # sub-line, then the game/matchup line on its own smaller line, then
+        # the box score. The position badge is NOT inline here -- it moves to
+        # the shared centre rail (assembled in the row loop) so both players
+        # in a slot read against one coloured chip. Left/right mirroring is
+        # handled in CSS off the parent .mb-cell-r, so the markup is identical
+        # either side.
         bye_cls = " mb-info--bye" if is_bye else ""
         info_html = (
             f"<div class='mb-info{bye_cls}'>"
-            "<div class='p-name-line mb-nameline'>"
-            f"<span{clickable_attrs}>{_safe_name}</span>{team_span}"
-            "</div>"
-            f"<span class='meta p-game-line mb-game'>{game_line}</span>"
+            f"<span{clickable_attrs}>{_display_name}</span>"
+            f"{team_span}"
+            f"<span class='meta p-game-line mb-game mb-matchup'>{game_line}</span>"
             f"{stats_inline}"
             "</div>"
         )
@@ -2559,18 +2564,23 @@ def render_matchup_slide(
             if _chip_class else ""
         )
 
-        # Live drive-bar mounts -- one per player's cell, tagged with the NFL
-        # team. The client fills a bar under whichever player's team currently
-        # has the ball (from the shared live game feed); inert until then and
-        # only for started games.
-        left_fld = f"<div class='mb-fld' data-team='{html.escape(left_nfl)}'></div>"
-        right_fld = f"<div class='mb-fld' data-team='{html.escape(right_nfl)}'></div>"
+        # Live drive-bar mounts -- one per player, tagged with the NFL team.
+        # The client fills a bar under whichever player's team currently has
+        # the ball (from the shared live game feed); inert until then and only
+        # for started games. Each mount is its own grid row spanning the
+        # player's cell plus their points column (never past the centre).
+        left_fld = f"<div class='mb-fld mb-fld-span-l' data-team='{html.escape(left_nfl)}'></div>"
+        right_fld = f"<div class='mb-fld mb-fld-span-r' data-team='{html.escape(right_nfl)}'></div>"
 
         rows_html.append(
             "<div class=\"mb-row\">"
-            f"<div class=\"mb-cell mb-cell-l\"><div class=\"mb-cell-row\">{left_info}{left_sb}</div>{left_fld}</div>"
+            f"<div class=\"mb-cell mb-cell-l\">{left_info}</div>"
+            f"{left_sb}"
             f"<div class=\"mb-pos\">{pos_chip}</div>"
-            f"<div class=\"mb-cell mb-cell-r\"><div class=\"mb-cell-row\">{right_info}{right_sb}</div>{right_fld}</div>"
+            f"{right_sb}"
+            f"<div class=\"mb-cell mb-cell-r\">{right_info}</div>"
+            f"{left_fld}"
+            f"{right_fld}"
             "</div>"
         )
 
