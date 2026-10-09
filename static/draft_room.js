@@ -70,6 +70,25 @@
     }
     return '<img class="'+cls+'" src="'+playerImgUrl(p)+'" alt="" onerror="this.style.visibility=\'hidden\'">';
   };
+  // Phase 3 (draft-room visual redesign): mock-style headshot -- an initials
+  // circle with a position-color ring (--ring) and team tint (t-XXX), with the
+  // photo overlaid on top. The <img> removes itself on error (or is omitted
+  // when there is no URL), so the styled initials are always the fallback and
+  // the layout never breaks. Prefers the canonical p.espnHeadshot (stamped
+  // server-side on the pool payload); falls back to the existing
+  // Sleeper-CDN / team-logo builder.
+  var drHsHtml = function(p, sizeCls){
+    var name = String((p && p.name) || '').replace(/[^A-Za-z.' -]/g, '').trim();
+    var ini = name.split(/\s+/).map(function(w){ return w.charAt(0); }).join('').slice(0, 2).toUpperCase() || '?';
+    var team = String((p && p.team) || '').toUpperCase();
+    var url = (p && (p.espnHeadshot || playerImgUrl(p))) || '';
+    var h = '<span class="dr-hs' + (sizeCls ? ' ' + sizeCls : '') + (team ? ' t-' + team : '')
+      + '" style="--ring:' + posColor(p && p.position) + '">'
+      + '<span class="dr-hs-ini" aria-hidden="true">' + esc(ini) + '</span>';
+    if (url) h += '<img class="dr-hs-img" loading="lazy" decoding="async" src="' + esc(url) + '" alt="" onerror="this.remove()">';
+    if (team) h += '<span class="dr-hs-tm" aria-hidden="true">' + esc(team) + '</span>';
+    return h + '</span>';
+  };
 
   var sessKey = 'dr_' + location.pathname;
   var state = null;        // { type, teams, rounds, sf, slot, order, picks:{}, current }
@@ -1153,6 +1172,7 @@
   function startDraft(){
     var prev = state;
     _resetTransient();
+    _runDismissed = false;   // a new draft gets fresh run alerts
     state = readSetup();
     _seedOwnedForRandomSlot(state);
     state.owned = _setupOwned || defaultOwned();
@@ -3204,7 +3224,9 @@
     myPicksList().forEach(function(p){ var pos = (p.position||'').toUpperCase(); if (c[pos] != null) c[pos]++; });
     return c;
   }
-  function listInto(html){ document.getElementById('drBaList').innerHTML = html; }
+  // listInto targets the Best Available list by default; the rail panes pass
+  // their own element id (Phase 2: queue/needs/league render side by side).
+  function listInto(html, elId){ document.getElementById(elId || 'drBaList').innerHTML = html; }
 
   // Compact empty copy for the draft side panel (queue / best / needs / league).
   // Draft Room does not load app.js, so this mirrors the shared empty-state look.
@@ -4234,6 +4256,19 @@
     var t = tierOf(p); if (t == null) return null;
     return _ptc[(p.position || '').toUpperCase() + '|' + t] || 0;
   }
+  // Short tier/scarcity label for the Best Available rows (top 3 only), e.g.
+  // "Last Tier 3 RB." No analytical copy. Uses only existing tier helpers.
+  function scarcityReason(p){
+    var pos = String(p.position || '').toUpperCase();
+    var tier = tierOf(p);
+    if (tier == null) return '';
+    var left = tierRemaining(p);
+    if (isTierCliff(p)){
+      if (left <= 1) return 'Last Tier ' + tier + ' ' + pos + '.';
+      return 'Only ' + left + ' ' + pos + 's left in Tier ' + tier + '.';
+    }
+    return 'Tier ' + tier + ' ' + pos + '.';
+  }
   function pickReason(p, counts, opts){
     opts = opts || {};
     var pos = (p.position || '').toUpperCase();
@@ -4301,7 +4336,7 @@
     save(); renderSide();
   }
 
-  // opts: { reason, sub, wait, availAt: {pn, prob} }
+  // opts: { reason, sub, wait, availAt: {pn, prob}, top3, tierBand }
   function playerRowHtml(p, opts){
     opts = opts || {};
     var adp = adpOf(p);
@@ -4313,9 +4348,8 @@
     var sub = (adp != null ? 'ADP ' + Number(adp).toFixed(1) : '')
       + (!opts.showPickScore && p._ds != null && ps != null ? ' · PS ' + ps : '');
     var reasonLine = '';
-    if (opts.reason || (opts.rank && p._ds != null)) {
-      reasonLine = '<div class="dr-ba-reason">'
-        + (opts.reason ? '<span>' + esc(opts.reason) + '</span>' : '') + '</div>';
+    if (opts.reason) {
+      reasonLine = '<div class="dr-ba-reason"><span>' + esc(opts.reason) + '</span></div>';
     }
     var waitLine = opts.wait
       ? '<div class="dr-ba-wait">Can wait: ' + opts.wait.prob + '% there at #' + opts.wait.pn + '</div>'
@@ -4360,8 +4394,9 @@
     }
     // Compare button state
     var onCmp = compareIds.indexOf(String(p.id)) >= 0;
-    return '<div class="dr-ba-row' + availClass + '" data-id="' + esc(String(p.id)) + '">'
-      + playerImgTag(p, 'dr-ba-hs')
+    return '<div class="dr-ba-row' + availClass + (opts.top3 ? ' dr-top3' : '')
+      + (opts.tierBand ? ' dr-tier-band' : '') + '" data-id="' + esc(String(p.id)) + '">'
+      + drHsHtml(p, 'dr-hs-lg')
       + '<div class="dr-ba-body"><div class="dr-ba-name">' + esc(p.name) + '</div>'
       + '<div class="dr-ba-meta"><span class="dr-posbadge" style="background:' + posColor(p.position) + '">' + esc(p.position) + '</span>' + esc(p.team || '') + tierBadge(p) + ppgPart + byeFlag + '</div>'
       + reasonLine + waitLine + availLine + '</div>'
@@ -4383,7 +4418,9 @@
   function renderQueue(){
     var q = (state.queue || []).map(function(id){ return playersById[String(id)]; })
       .filter(function(p){ return p && !drafted[String(p.id)]; });
-    if (!q.length){ listInto(emptyNote('Queue is empty', 'Tap the ★ on any player to add a target.')); return; }
+    var qc = document.getElementById('drQueueCount');
+    if (qc) qc.textContent = q.length ? String(q.length) : '';
+    if (!q.length){ listInto(emptyNote('Queue is empty', 'Tap the ★ on any player to add a target.'), 'drQueueList'); return; }
     // Survival odds on every queued target: the whole point of a queue is
     // deciding who can wait until your next pick, so show the number.
     var nextPick = nextOwnedAfterCurrent();
@@ -4399,7 +4436,7 @@
       }
       html += playerRowHtml(p, opts);
     });
-    listInto(html);
+    listInto(html, 'drQueueList');
   }
 
   function renderSide(){
@@ -4417,25 +4454,72 @@
     for (var i = 0; i < kbtns.length; i++){ kbtns[i].style.display = kdef ? '' : 'none'; }
     var bc = document.getElementById('drBestControls');
     if (bc) bc.style.display = (sideTab === 'best') ? '' : 'none';
-    if (sideTab === 'queue')  return renderQueue();
-    if (sideTab === 'needs')  return renderNeeds();
-    if (sideTab === 'league') return renderLeague();
-    return renderBA();
+    // Phase 2: no tab strip -- Best Available, Queue, My Team and League
+    // Activity all render side by side, every pass.
+    renderBA();
+    renderQueue();
+    renderNeeds();
+    renderNeedsMatrix();
+    renderLeaguePane();
+  }
+
+  // The league-grades pane is the heaviest render (grades every team), so it
+  // only rebuilds when the board actually changed; the playoff-odds repaint
+  // forces it via _forceLeaguePane().
+  var _lastLeaguePaneSig = null;
+  function _leaguePaneSig(){
+    var n = 0, ks = Object.keys((state && state.picks) || {});
+    for (var i = 0; i < ks.length; i++){ if (state.picks[ks[i]]) n++; }
+    return n + '|' + (state ? state.current : 0) + '|' + (state ? state.teams : 0);
+  }
+  function _forceLeaguePane(){ _lastLeaguePaneSig = null; }
+  function renderLeaguePane(){
+    var sig = _leaguePaneSig();
+    if (sig === _lastLeaguePaneSig) return;
+    _lastLeaguePaneSig = sig;
+    renderLeague();
+  }
+
+  // Team Needs matrix: compact teams x QB/RB/WR/TE grid with filled dots per
+  // drafted starter, your row highlighted. Display-only assembly from the
+  // existing per-seat counts and roster targets -- no new computation.
+  function renderNeedsMatrix(){
+    var host = document.getElementById('drNeedsMatrix');
+    if (!host) return;
+    var teams = state.teams || 0;
+    var rs = (state && state.roster) || defaultRoster();
+    var posns = ['QB','RB','WR','TE'];
+    var starters = { QB: rs.QB || 0, RB: rs.RB || 0, WR: rs.WR || 0, TE: rs.TE || 0 };
+    var html = '<table class="dr-matrix"><thead><tr><th>Team</th><th>QB</th><th>RB</th><th>WR</th><th>TE</th></tr></thead><tbody>';
+    for (var s = 1; s <= teams; s++){
+      var c = teamCounts(s);
+      var you = ownsAnyInColumn(s);
+      html += '<tr' + (you ? ' class="dr-myou"' : '') + '><td>'
+        + esc(you && ownsAllInColumn(s) ? 'You' : teamName(s)) + '</td>';
+      posns.forEach(function(pn){
+        var tgt = starters[pn] || 0;
+        var have = Math.min(c[pn] || 0, tgt);
+        var dots = '';
+        for (var d = 0; d < Math.max(tgt, 1); d++)
+          dots += '<span class="dr-mdot' + (d < have ? ' f' : '') + '"></span>';
+        html += '<td><span class="dr-mdots">' + dots + '</span></td>';
+      });
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    host.innerHTML = html;
+    var nc = document.getElementById('drNeedsCount');
+    if (nc) nc.textContent = teams + ' teams';
   }
 
   function showCompleteSidebar(){
+    // Phase 2: no tab strip -- every pane stays visible for a finished draft;
+    // the complete bar (summary / deep dive / share) is what matters now.
     var side = document.getElementById('drSide');
-    side.style.display = '';
-    // Show only the Team tab for a finished draft - players/recs/queue are irrelevant.
-    var tabs = document.querySelectorAll('#drSideTabs .otc-main-tab');
-    tabs.forEach(function(b){
-      var stab = b.getAttribute('data-stab');
-      if (stab === 'needs'){ b.classList.add('is-active'); b.style.display = ''; }
-      else if (stab === 'league'){ b.classList.remove('is-active'); b.style.display = ''; }
-      else { b.classList.remove('is-active'); b.style.display = 'none'; }
-    });
+    if (side) side.style.display = '';
     sideTab = 'needs';
-    document.getElementById('drCompleteBar').style.display = '';
+    var cbar = document.getElementById('drCompleteBar');
+    if (cbar) cbar.style.display = '';
     renderSide();
     // Prefetch standings-engine odds so League / Summary / Deep Dive paint the
     // final number on first open (no interim JS estimate, no visible jump).
@@ -4443,14 +4527,8 @@
   }
 
   // Undo showCompleteSidebar(): a fresh mock/manual draft started after viewing a
-  // finished draft must get the full tab set back (Players/Queue were hidden and
-  // the Team tab pinned), the complete bar hidden, and the default tab restored.
+  // finished draft must get the complete bar hidden and the default tab restored.
   function resetSideTabs(){
-    var tabs = document.querySelectorAll('#drSideTabs .otc-main-tab');
-    for (var i = 0; i < tabs.length; i++){
-      tabs[i].style.display = '';
-      tabs[i].classList.toggle('is-active', tabs[i].getAttribute('data-stab') === 'best');
-    }
     sideTab = 'best';
     var cbar = document.getElementById('drCompleteBar');
     if (cbar) cbar.style.display = 'none';
@@ -4459,8 +4537,11 @@
   }
 
   // Positional-run alert banner (folded into Recs): fires when 3+ of the last 5
-  // picks share a position. Returns '' when there's no active run.
+  // picks share a position. Returns '' when there's no active run. Dismissible
+  // via the x chip (session-scoped; a new draft resets it).
+  var _runDismissed = false;
   function runBanner(){
+    if (_runDismissed) return '';
     var last5 = { QB:0, RB:0, WR:0, TE:0, K:0, DEF:0 }, n = 0;
     for (var pn = state.current - 1; pn >= 1 && n < 5; pn--){
       var p = state.picks[pn]; if (!p) continue;
@@ -4470,7 +4551,8 @@
     ['RB','WR','QB','TE'].forEach(function(pos){ if (!hot && last5[pos] >= 3) hot = pos; });
     if (!hot) return '';
     return '<div class="dr-run-banner"><i class="fa-solid fa-fire"></i> <b>' + hot + ' run</b>: ' + last5[hot]
-      + ' of the last 5 picks. Weigh your ' + hot + ' need before the tier dries up.</div>';
+      + ' of the last 5 picks. Weigh your ' + hot + ' need before the tier dries up.'
+      + '<button type="button" class="dr-run-x" aria-label="Dismiss">×</button></div>';
   }
 
   // Tier-cliff banner: a position whose top-tier (T1-2) shelf is about to
@@ -4627,7 +4709,7 @@
       var pickLbl = pickNoStr(p);
       return '<div class="dr-rslot">'
         + '<span class="dr-rslot-pos" style="background:' + slotColor(slot) + '">' + slot + '</span>'
-        + playerImgTag(p, 'dr-rslot-hs')
+        + drHsHtml(p, 'dr-hs-sm')
         + '<div class="dr-rslot-body"><div class="dr-rslot-name">' + esc(p.name) + '</div>'
         + '<div class="dr-rslot-meta">' + esc(p.position) + ' &middot; ' + esc(p.team || '') + (pickLbl ? ' &middot; <span style="color:var(--accent)">' + pickLbl + '</span>' : '') + '</div></div>'
         + psBadge
@@ -4773,7 +4855,10 @@
   var _poFailedSig = null;
   function _poSig(allTeams){ return allTeams.map(function(t){ return t.slot + ':' + (t.picks ? t.picks.length : 0); }).join('|') + '@' + state.current; }
   function _repaintPlayoffOdds(){
-    if (sideTab === 'league') renderSide();
+    // Phase 2: the league pane always renders, so force its rebuild past the
+    // signature guard -- the odds just landed.
+    _forceLeaguePane();
+    renderSide();
     // Summary / Deep Dive capture odds at open; rebuild once when the final
     // source lands so the first painted number is the only number.
     var sum = document.getElementById('drSummary');
@@ -5347,8 +5432,14 @@
   }
 
   function renderNeeds(){
-    if (!hasOwned()){ listInto(emptyNote('Set your pick slot', 'Choose your draft slot to see your team build.')); return; }
+    var mtc = document.getElementById('drMyTeamCount');
+    if (!hasOwned()){
+      if (mtc) mtc.textContent = '';
+      listInto(emptyNote('Set your pick slot', 'Choose your draft slot to see your team build.'), 'drMyTeamList');
+      return;
+    }
     var mine = myPicksList().slice().sort(function(a, b){ return (b.val || 0) - (a.val || 0); });
+    if (mtc) mtc.textContent = mine.length + ' / ' + (state.rounds || 0);
     var html = '';
     if (isAuctionMode()){
       html += emptyNote('Auction draft grades aren’t available yet',
@@ -5408,7 +5499,16 @@
     if (bench.length){ bench.forEach(function(p){ html += slotRow('BN', p); }); }
     else { html += slotRow('BN', null); }
     html += '</div>';
-    listInto(html);
+    // Needs strip: open starter slots by position, from the lineup above.
+    var _needBits = [];
+    ['QB','RB','WR','TE','FLEX','SF'].forEach(function(sl){
+      var n = 0;
+      _olN.starters.forEach(function(s){ if (s.slot === sl && !s.p) n++; });
+      if (n > 0) _needBits.push(sl + ' ' + n);
+    });
+    html += '<div class="dr-needs-line">Needs: <b>'
+      + (_needBits.length ? _needBits.join(' · ') : 'covered') + '</b></div>';
+    listInto(html, 'drMyTeamList');
   }
 
   // Monochrome inline icons for the recap headers (inherit the header color).
@@ -5543,16 +5643,16 @@
   function renderLeague(){
     if (isAuctionMode()){
       listInto(emptyNote('Auction draft grades aren’t available yet',
-        'Snake-round league grades don’t apply to auction drafts. Recommendation Rank and Pick Score still help nominations.'));
+        'Snake-round league grades don’t apply to auction drafts. Recommendation Rank and Pick Score still help nominations.'), 'drLeagueFeed');
       return;
     }
     var allTeams = gradeAllTeams();
     if (!allTeams.length){
-      listInto(emptyNote('No picks yet', 'Grades will appear as teams draft.'));
+      listInto(emptyNote('No picks yet', 'Grades will appear as teams draft.'), 'drLeagueFeed');
       return;
     }
     if (allTeams.length < 2){
-      listInto(emptyNote('Waiting on more teams', 'Grades appear once at least 2 teams have drafted.'));
+      listInto(emptyNote('Waiting on more teams', 'Grades appear once at least 2 teams have drafted.'), 'drLeagueFeed');
       return;
     }
     var _rc = ['gold','silver','bronze'];
@@ -5605,8 +5705,8 @@
         + '<div class="dr-sum-ldtl" id="drLegLdtl' + t.slot + '"></div>';
     });
     html += '</div></div>';
-    listInto(html);
-    document.querySelectorAll('#drBaList [data-legslot]').forEach(function(row){
+    listInto(html, 'drLeagueFeed');
+    document.querySelectorAll('#drLeagueFeed [data-legslot]').forEach(function(row){
       row.addEventListener('click', function(){
         var slot = parseInt(row.getAttribute('data-legslot'), 10);
         var dtl = document.getElementById('drLegLdtl' + slot);
@@ -5628,6 +5728,7 @@
             var psRx = _ps != null ? '<span class="dr-sum-ldtl-ps" style="color:' + psColor(_ps) + '">' + _ps + '</span>' : '';
             return '<div class="dr-sum-ldtl-row">'
               + '<span class="dr-sum-ldtl-slot" style="background:' + slotColor(slotLabel) + '">' + esc(slotLabel) + '</span>'
+              + drHsHtml(p, 'dr-hs-sm')
               + '<span class="dr-sum-ldtl-name">' + esc(p.name) + '</span>'
               + (pickRx ? '<span class="dr-sum-ldtl-pick">' + pickRx + '</span>' : '')
               + psRx + '</div>';
@@ -6760,6 +6861,15 @@
         el2.textContent = txt;
         el2.className = 'dr-pick-timer' + (remaining <= 30 ? ' urgent' : '');
       }
+      // Command-bar timer ring (SVG arc) + the you-on-the-clock ring number.
+      var frac = state.pickTimer > 0 ? (remaining / state.pickTimer) : 0;
+      var off = (100.53 * (1 - frac)).toFixed(1);
+      var rf = document.getElementById('drTimerRingFg');
+      if (rf) rf.style.strokeDashoffset = off;
+      var yf = document.getElementById('drYouTimerFg');
+      if (yf) yf.style.strokeDashoffset = off;
+      var yt = document.getElementById('drYouTimer');
+      if (yt){ yt.textContent = txt; yt.style.display = ''; yt.className = 'dr-pick-timer' + (remaining <= 30 ? ' urgent' : ''); }
       if (remaining === 0) stopPickTimer();
     }
     tick();
@@ -6769,6 +6879,12 @@
     if (_timerInterval){ clearInterval(_timerInterval); _timerInterval = null; }
     var el = document.getElementById('drPickTimer');
     if (el){ el.style.display = 'none'; el.textContent = ''; }
+    var rf = document.getElementById('drTimerRingFg');
+    if (rf) rf.style.strokeDashoffset = '0';
+    var yf = document.getElementById('drYouTimerFg');
+    if (yf) yf.style.strokeDashoffset = '0';
+    var yt = document.getElementById('drYouTimer');
+    if (yt){ yt.style.display = 'none'; yt.textContent = ''; }
   }
 
 
@@ -6808,16 +6924,27 @@
     el.setAttribute('aria-label', (canEdit ? 'Edit setup: ' : 'League settings: ') + parts.join(', '));
   }
 
+  // Ordinal for display copy ("you pick 9th"). Display-only.
+  function _drNth(n){
+    var sfx = ['th','st','nd','rd'], v = n % 100;
+    return n + (sfx[(v - 20) % 10] || sfx[v] || sfx[0]);
+  }
   function renderStatus(){
     var total = state.teams * state.rounds;
     var done = _draftComplete();
     var r = Math.ceil(state.current / state.teams);
     var pickInRound = ((state.current - 1) % state.teams) + 1;
-    document.getElementById('drPickPill').textContent = done ? 'Done' : ('Pick: ' + r + '.' + (pickInRound < 10 ? '0' : '') + pickInRound);
+    // Command bar: draft name (display-only; no league name lives in state).
+    var dnEl = document.getElementById('drDraftName');
+    if (dnEl) dnEl.textContent = state.mode === 'live' ? 'Live Draft' : (isManualDraft() ? 'Manual Draft' : 'Mock Draft');
+    var ppEl = document.getElementById('drPickPill');
+    if (ppEl) ppEl.textContent = done ? 'Done'
+      : ('Pick ' + r + '.' + (pickInRound < 10 ? '0' : '') + pickInRound + ' · ' + state.current + ' overall');
     renderLeagueMeta();
     var oc = document.getElementById('drOnClock');
     var ocWrap = document.getElementById('drOnClockWrap');
     var ocLabel = ocWrap ? ocWrap.querySelector('.dr-onclock-label') : null;
+    var cmdbar = document.getElementById('drCmdbar');
     var mineNow = false;
     // A paused draft HAS started - show who's on the clock (the "Paused" badge
     // already conveys the paused state). Only a true pre_draft is "not started".
@@ -6832,16 +6959,63 @@
       if (ocLabel){ ocLabel.style.display = ''; ocLabel.textContent = 'On the clock'; }
     }
     if (ocWrap) ocWrap.classList.toggle('dr-onclock-you', mineNow);
+    // You-on-the-clock state: the command bar swaps the on-clock cluster for
+    // the pulsing YOU ARE ON THE CLOCK banner (CSS does the swap).
+    if (cmdbar) cmdbar.classList.toggle('dr-you-on', mineNow);
     var nextPill = document.getElementById('drNextPill');
     var np = done ? null : userNextPick();
+    var npLbl = null, npAway = null;
     if (np){
       var npRound = Math.ceil(np / state.teams);
       var npInRound = ((np - 1) % state.teams) + 1;
+      npLbl = npRound + '.' + (npInRound < 10 ? '0' : '') + npInRound;
+      npAway = np - state.current;
       nextPill.style.display = '';
-      nextPill.textContent = 'Next: ' + npRound + '.' + (npInRound < 10 ? '0' : '') + npInRound;
+      nextPill.textContent = 'Next: ' + npLbl;
     }
     else { nextPill.style.display = 'none'; }
-    document.getElementById('drProgress').textContent = Math.min(state.current - 1, total) + ' / ' + total + ' picks';
+    // "Your next pick in N" countdown (hidden while you're on the clock).
+    var yourNext = document.getElementById('drYourNext');
+    if (yourNext){
+      if (np && !mineNow && npAway > 0){
+        yourNext.style.display = '';
+        yourNext.innerHTML = 'Your next pick in <b>' + npAway + '</b> pick' + (npAway === 1 ? '' : 's')
+          + ' · est. ' + npLbl;
+      } else { yourNext.style.display = 'none'; }
+    }
+    // Draft progress line under the command bar.
+    var made = Math.min(state.current - 1, total);
+    document.getElementById('drProgress').textContent = made + ' / ' + total + ' picks';
+    var bc = document.getElementById('drBoardCount');
+    if (bc) bc.textContent = made + ' / ' + total + ' picks';
+    var ordLbl = state.order === 'linear' ? 'Linear' : (state.order === '3rr' ? '3RR' : 'Snake');
+    var bk = document.getElementById('drBoardKicker');
+    if (bk) bk.textContent = ordLbl + (state.slot ? ' · you pick ' + _drNth(state.slot) : '');
+    var pr = document.getElementById('drPlRound');
+    if (pr) pr.innerHTML = '<b>Round ' + Math.min(r, state.rounds) + ' of ' + state.rounds + '</b> · ' + esc(ordLbl);
+    var pfill = document.getElementById('drPlFill');
+    if (pfill) pfill.style.width = (total ? (made / total * 100) : 0) + '%';
+    var pticks = document.getElementById('drPlTicks');
+    if (pticks){
+      var tkey = state.teams + 'x' + state.rounds;
+      if (pticks.getAttribute('data-t') !== tkey){
+        pticks.setAttribute('data-t', tkey);
+        var th = '';
+        for (var _tr = 1; _tr < state.rounds; _tr++)
+          th += '<span class="dr-pl-tick" style="left:' + (_tr / state.rounds * 100) + '%"></span>';
+        pticks.innerHTML = th;
+      }
+    }
+    var pmark = document.getElementById('drPlYou');
+    var pmarkLbl = document.getElementById('drPlNext');
+    if (pmark){
+      if (np){
+        pmark.style.display = '';
+        pmark.style.left = (total ? ((np - 1) / total * 100) : 0) + '%';
+        pmark.title = 'Your next pick: ' + np;
+      } else { pmark.style.display = 'none'; }
+    }
+    if (pmarkLbl) pmarkLbl.textContent = np ? ('Your next: pick ' + np + ' (' + npLbl + ')') : '';
     var gp = document.getElementById('drGradePill');
     var g = gradeTeam();
     if (g){ gp.style.display = ''; gp.textContent = 'Grade ' + gradeLetter(g.score) + gradeEarlySuffix(g); } else { gp.style.display = 'none'; }
@@ -7006,7 +7180,7 @@
       } else {
         if (pl.val != null) h += '<span class="dr-cell-val">' + Math.round(pl.val) + '</span>';
       }
-      h += playerImgTag(pl, 'dr-hs');
+      h += drHsHtml(pl, '');
       h += '<div class="dr-cell-body"><div class="dr-cell-name">' + esc(pl.name) + '</div>'
         + '<div class="dr-cell-meta"><span class="dr-posbadge" style="background:' + posColor(pl.position) + '">' + esc(pl.position) + '</span> ' + esc(pl.team || '') + '</div></div>';
     }
@@ -7018,13 +7192,15 @@
     board.style.gridTemplateColumns = '30px repeat(' + teams + ', minmax(108px, 1fr))';
     var html = '<div class="dr-colhead dr-rowhead dr-corner"></div>';
     for (var s = 1; s <= teams; s++){
-      // Highlight columns by actual ownership: full column you own = "You",
-      // a column where you only hold traded-in pick(s) keeps its seat name but
-      // still gets the star + accent so you can spot your picks.
+      // Highlight columns by actual ownership: a column you fully own gets a
+      // clear YOU pill header; a column where you only hold traded-in pick(s)
+      // keeps its seat name but still gets the star + accent so you can spot
+      // your picks.
       var ownsAny = ownsAnyInColumn(s);
       var you = ownsAny ? ' dr-colhead-you' : '';
-      var label = ownsAllInColumn(s) ? 'You' : teamName(s);
-      html += '<div class="dr-colhead' + you + '" data-slot="' + s + '" style="cursor:default;">' + esc(label) + (ownsAny ? ' ★' : '') + '</div>';
+      var label = ownsAllInColumn(s) ? '<span class="dr-youpill">YOU</span>'
+        : esc(teamName(s)) + (ownsAny ? ' ★' : '');
+      html += '<div class="dr-colhead' + you + '" data-slot="' + s + '" style="cursor:default;">' + label + '</div>';
     }
     for (var rnd = 1; rnd <= rounds; rnd++){
       html += '<div class="dr-colhead dr-rowhead">R' + rnd + '</div>';
@@ -7160,6 +7336,8 @@
       if (q && String(p.name||'').toLowerCase().indexOf(q) < 0) return false;
       return true;
     });
+    var bac = document.getElementById('drBaCount');
+    if (bac) bac.textContent = availablePool().length + ' left';
     // p._ps + the pool-relative scale are refreshed in renderSide; ensure they
     // exist for any path that reaches renderBA directly (search/sort handlers).
     if (_psPoolMax <= 0) refreshPsPool();
@@ -7223,11 +7401,34 @@
     _promoted.forEach(function(p){
       html += playerRowHtml(p, { reason: 'Fill your ' + String(p.position || '').toUpperCase() + ' slot before the draft ends' });
     });
+    // Recommendation counts for the ps sort path (manual-draft-aware: the
+    // on-the-clock seat's counts when filling for another team). The top-3
+    // scarcity labels below render from tier state; the counts stay resolved
+    // here so the rec-rank path keeps its roster-aware basis.
     var _reasonCounts = sortBy === 'ps' ? recommendationCounts() : null;
+    var _isPsSort = sortBy === 'ps';
+    // Tier dividers + shading bands (recommendation sort only): a divider fires
+    // when a position's shelf drops to a worse tier than any seen so far; rows
+    // alternate a subtle band per (position, tier) group. Sort order is untouched.
+    var _tierGroup = null, _bandAlt = false, _seenTier = {};
     for (var i = 0; i < Math.min(mainPool.length, 200); i++){
       var p = mainPool[i];
       var _rank = recommendationRanks[String(p.id)];
-      var opts = sortBy === 'ps' ? { reason: pickReason(p, _reasonCounts, { rank: _rank }), rank: _rank }
+      var _rpos = String(p.position || '').toUpperCase();
+      var _t = tierOf(p);
+      var _tk = _t == null ? null : _rpos + '|' + _t;
+      if (_isPsSort && _tk && _tk !== _tierGroup){
+        _tierGroup = _tk;
+        _bandAlt = !_bandAlt;
+        if (_seenTier[_rpos] == null || _t > _seenTier[_rpos]){
+          _seenTier[_rpos] = _t;
+          html += '<div class="dr-tier-div"><span>Tier ' + _t + ' · ' + _rpos + '</span>'
+            + '<span class="dr-tier-n">' + (_ptc[_tk] || 0) + ' left</span></div>';
+        }
+      }
+      var _top3 = _isPsSort && !!(_rank && _rank <= 3);
+      var opts = _isPsSort
+        ? { reason: _top3 ? scarcityReason(p) : '', rank: _rank, top3: _top3, tierBand: !!(_tk && _bandAlt) }
         : { showPickScore: sortBy === 'pickscore' };
       if (nextPick){
         var prob = availProb(p, nextPick);
@@ -9144,7 +9345,10 @@
     this.setAttribute('aria-expanded', String(!open));
     if (body) body.hidden = open;
   });
-  document.getElementById('drSideTabs').addEventListener('click', function(e){
+  // Phase 2: the tab strip is gone (panes render side by side); the wiring
+  // below is kept null-safe in case the strip ever returns.
+  var _sideTabsEl = document.getElementById('drSideTabs');
+  if (_sideTabsEl) _sideTabsEl.addEventListener('click', function(e){
     var b = e.target.closest('.otc-main-tab'); if (!b) return;
     sideTab = b.getAttribute('data-stab');
     this.querySelectorAll('.otc-main-tab').forEach(function(x){ x.classList.toggle('is-active', x === b); });
@@ -9333,7 +9537,12 @@
     apply(cur);
   })();
   document.getElementById('drSearch').addEventListener('input', renderBA);
-  document.getElementById('drBaList').addEventListener('click', function(e){
+  // Dismiss the positional-run chip (Best Available + Queue panes).
+  document.addEventListener('click', function(e){
+    var x = e.target && e.target.closest ? e.target.closest('.dr-run-x') : null;
+    if (x){ _runDismissed = true; renderSide(); }
+  });
+  function _playerListClick(e){
     var cmp = e.target.closest('[data-cmp]');
     if (cmp){ e.stopPropagation(); toggleCompare(cmp.getAttribute('data-cmp')); return; }
     var star = e.target.closest('[data-star]');
@@ -9342,7 +9551,9 @@
     if (draft){ e.stopPropagation(); draftPlayer(draft.getAttribute('data-draft')); return; }
     var row = e.target.closest('.dr-ba-row');
     if (row) openPreview(row.getAttribute('data-id'));
-  });
+  }
+  document.getElementById('drBaList').addEventListener('click', _playerListClick);
+  document.getElementById('drQueueList').addEventListener('click', _playerListClick);
   // Best-at-pos chips: collapse toggle, chip preview, scarcity filter
   document.getElementById('drBestChips').addEventListener('click', function(e){
     if (e.target.closest('#drBestChipsToggle')){
@@ -9390,6 +9601,39 @@
   document.getElementById('drGlossClose').addEventListener('click', closeGlossary);
   document.getElementById('drGloss').addEventListener('click', function(e){ if (e.target === this) closeGlossary(); });
   document.getElementById('drShare').addEventListener('click', shareDraft);
+  // ── Theme toggle (Phase 3) ──
+  // Follows the site convention exactly (see app.js toggleDarkMode): light =
+  // no data-theme attribute on documentElement, dark = data-theme="dark",
+  // persisted in localStorage key 'theme'. The pre-paint boot script in
+  // BASE_HTML (render_page) already restores the saved theme before first
+  // paint, so this only flips it live. Icon shows the CURRENT mode
+  // (sun in light, moon in dark), matching app.js's updateThemeIcons.
+  (function(){
+    var SUN = '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>';
+    var MOON = '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>';
+    function paintThemeIcon(){
+      var btn = document.getElementById('drThemeToggle');
+      if (!btn) return;
+      var dark = document.documentElement.getAttribute('data-theme') === 'dark';
+      btn.innerHTML = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">' + (dark ? MOON : SUN) + '</svg>';
+    }
+    var tbtn = document.getElementById('drThemeToggle');
+    if (tbtn && !tbtn.__drThemeWired){
+      tbtn.__drThemeWired = true;
+      tbtn.addEventListener('click', function(){
+        var root = document.documentElement;
+        if (root.getAttribute('data-theme') === 'dark'){
+          root.removeAttribute('data-theme');
+          try { localStorage.setItem('theme', 'light'); } catch (e) {}
+        } else {
+          root.setAttribute('data-theme', 'dark');
+          try { localStorage.setItem('theme', 'dark'); } catch (e) {}
+        }
+        paintThemeIcon();
+      });
+      paintThemeIcon();
+    }
+  })();
   document.getElementById('drCompleteSummaryBtn').addEventListener('click', openSummary);
   document.getElementById('drCompleteShareBtn').addEventListener('click', shareDraft);
   document.getElementById('drShareViewClose').addEventListener('click', function(){ document.getElementById('drShareView').style.display = 'none'; });
@@ -9745,8 +9989,10 @@
       optsPanel.addEventListener('touchstart', function(e){ e.stopPropagation(); }, { passive: false });
       optsBtn.addEventListener('touchstart', function(e){ e.stopPropagation(); }, { passive: false });
     }
-    // Tapping a tab while peeking lifts the sheet to mid so the content shows.
-    document.getElementById('drSideTabs').addEventListener('click', function(){
+    // Tapping the pool panel header while peeking lifts the sheet to mid so the
+    // player list shows.
+    var _poolHead = document.getElementById('drPoolHead');
+    if (_poolHead) _poolHead.addEventListener('click', function(){
       if (mq.matches && snapIdx === 2) snapTo(1);
     });
     function applyMode(){

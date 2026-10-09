@@ -77,6 +77,8 @@ _SCRIPT_CASES = [
     ("/static/cheat_sheet.min.js?v=2", True),
     ("/static/custom_selects.min.js", True),
     ("/static/draft_room.min.js?v=3", True),
+    ("/static/draft_room_wizard.min.js?v=1", True),
+    ("/static/draft_room_wizard.js", True),
     ("/static/draft_board_core.min.js", True),
     ("/static/draft_grade_team.min.js", True),
     ("/static/pick_score.min.js", True),

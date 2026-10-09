@@ -25108,6 +25108,45 @@ def _apply_league_type_market(payload: dict, *, is_sf: bool) -> dict:
     return payload
 
 
+def _stamp_espn_headshot(payload: dict) -> dict:
+    """Stamp the canonical espnHeadshot on the full-view /api/league-players
+    payload (the Draft Room pool). Visual data only: no ranking, value, ADP,
+    or projection input is touched. Builds the URL from the players_index
+    espnID exactly like routes/players_bp.py. Returns a copy, never mutating
+    the memoized base payload. Board / trade / search views are untouched
+    (their slim key lists already carry espnHeadshot where wanted)."""
+    players = (payload or {}).get("players")
+    if not players:
+        return payload
+    try:
+        from utils.utils import load_players_index
+        index = load_players_index() or {}
+    except Exception:
+        return payload
+    out = []
+    changed = False
+    for p in players:
+        if not isinstance(p, dict) or p.get("espnHeadshot"):
+            out.append(p)
+            continue
+        meta = index.get(str(p.get("id") or "")) or {}
+        espn_id = str(meta.get("espnID") or "").strip()
+        if not espn_id:
+            out.append(p)
+            continue
+        p = dict(p)
+        p["espnHeadshot"] = (
+            f"https://a.espncdn.com/i/headshots/nfl/players/full/{espn_id}.png"
+        )
+        out.append(p)
+        changed = True
+    if not changed:
+        return payload
+    payload = dict(payload)
+    payload["players"] = out
+    return payload
+
+
 def _dumps_league_players(payload: dict) -> str:
     body = json.dumps(_sanitize_for_json(payload), separators=(",", ":"), default=str)
     return body.replace("<", "\\u003c").replace(">", "\\u003e")
@@ -25290,10 +25329,11 @@ def api_league_players():
             return resp
         if board_cacheable:
             return _league_players_response(
-                _apply_league_type_market(result, is_sf=_mi_is_sf),
+                _stamp_espn_headshot(_apply_league_type_market(result, is_sf=_mi_is_sf)),
                 version_key=_lp_version_key,
             )
-        return _league_players_response(_apply_league_type_market(result, is_sf=_mi_is_sf))
+        return _league_players_response(
+            _stamp_espn_headshot(_apply_league_type_market(result, is_sf=_mi_is_sf)))
 
     # Historical draft views pass ?season=<yr> so grades use the ADP OF THAT
     # SEASON (Sleeper's projections API is season-keyed; the crawl fallback too),

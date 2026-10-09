@@ -1347,7 +1347,7 @@ window.brHaptic = function (pattern) {
   // are stripped before comparing -- a plain substring match on the list
   // entries would never match a minified src and silently full-navigate.
   var SOFT_OK_SCRIPTS = ['teams.js', 'rankings.js', 'scorezone.js', 'keeper.js',
-    'cheat_sheet.js', 'custom_selects.js', 'draft_room.js',
+    'cheat_sheet.js', 'custom_selects.js', 'draft_room.js', 'draft_room_wizard.js',
     'draft_board_core.js', 'draft_grade_team.js', 'pick_score.js'];
   function softScriptBase(src) {
     var base = String(src || '').split(/[?#]/)[0].split('/').pop() || '';
