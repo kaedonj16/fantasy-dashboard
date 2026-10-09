@@ -44650,6 +44650,8 @@ a, button, [role="button"], [role="tab"], summary, label,
 .mb-fld-fd { position: absolute; top: -1px; bottom: -1px; width: 2px; transform: translateX(-50%); background: #eab308; border-radius: var(--radius-sm); z-index: 3; }
 .mb-fld-mark { position: absolute; top: -2px; bottom: -2px; width: 2px; transform: translateX(-50%); background: var(--accent); border-radius: var(--radius-sm); z-index: 4; }
 @media (prefers-reduced-motion: reduce) { .mb-fld-fill { transition: none; } }
+.mb-fld-def { font-size: 11px; font-weight: 800; letter-spacing: .02em; text-transform: uppercase; color: var(--text-muted); font-variant-numeric: tabular-nums; padding: 0 1px; }
+.mb-cell-r .mb-fld-def { text-align: right; }
 
 /* ---- Matchup Moments strip (client-injected into .mb-moments) ------------ */
 .mb-moments { margin: 10px 12px 4px; }
