@@ -47093,6 +47093,90 @@ em.gneg { background: var(--loss); }
 }
 
 /* ============================================================
+   Command Center dashboard (dashboard redesign)
+   ============================================================ */
+.cc-section-label {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: var(--text-muted, #8a9bb0);
+  text-transform: uppercase;
+  margin: 16px 0 6px;
+}
+.cc-other-mus {
+  border-top: 1px solid var(--border, #e8eef4);
+  margin-top: 4px;
+}
+.cc-other-mu {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border, #f1f5f9);
+  font-size: 13px;
+}
+.cc-other-mu:last-child {
+  border-bottom: none;
+}
+.cc-other-mu-teams {
+  font-weight: 600;
+}
+.cc-other-mu-proj {
+  color: var(--text-muted, #8a9bb0);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.cc-act-row {
+  display: flex;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border, #f1f5f9);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.cc-act-row:last-child {
+  border-bottom: none;
+}
+.cc-act-tx {
+  flex: 1;
+  min-width: 0;
+}
+.cc-act-time {
+  font-size: 10px;
+  color: var(--text-muted, #8a9bb0);
+  margin-top: 2px;
+}
+.cc-inj-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border, #f1f5f9);
+  font-size: 13px;
+}
+.cc-inj-row:last-child {
+  border-bottom: none;
+}
+.cc-inj-status {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: #dc2626;
+  text-transform: uppercase;
+}
+.cc-muted {
+  color: var(--text-muted, #8a9bb0);
+  font-size: 11px;
+}
+@media (max-width: 768px) {
+  .cc-other-mu {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+}
+
+/* ============================================================
    MERGED: icons.css (PNG-based icon system)
    Do not edit here -- edit static/icons.css and re-run the merge.
    See scripts/merge_icon_css.py

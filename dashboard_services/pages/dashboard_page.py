@@ -160,6 +160,44 @@ def build_dashboard_body(ctx: dict) -> str:
         bench_check_html = ""
         _dash_preview_slide = ""
 
+    # ---- Command Center: other league matchups (below the viewer's slide) ----
+    _other_matchups_html = ""
+    try:
+        if _show_matchup_preview and len(_dash_matchups) > 1:
+            _om_rows = []
+            for _m in _dash_matchups[1:6]:  # cap at 5 others
+                _ml = _m.get("left") or {}
+                _mr = _m.get("right") or {}
+                _ln = str(_ml.get("name") or "").strip()
+                _rn = str(_mr.get("name") or "").strip()
+                if not _ln or not _rn:
+                    continue
+                _lp = _ml.get("proj_total")
+                _rp = _mr.get("proj_total")
+                try:
+                    _proj_txt = (
+                        f"proj {float(_lp):.0f} - {float(_rp):.0f}"
+                        if _lp is not None and _rp is not None else ""
+                    )
+                except (TypeError, ValueError):
+                    _proj_txt = ""
+                _om_rows.append(
+                    '<div class="cc-other-mu">'
+                    f'<span class="cc-other-mu-teams">{html.escape(_ln)} vs {html.escape(_rn)}</span>'
+                    + (f'<span class="cc-other-mu-proj">{html.escape(_proj_txt)}</span>' if _proj_txt else '')
+                    + '</div>'
+                )
+            if _om_rows:
+                _other_matchups_html = (
+                    '<div class="cc-other-mus">'
+                    '<div class="cc-section-label">Other Matchups</div>'
+                    + "".join(_om_rows) +
+                    '</div>'
+                )
+    except Exception:
+        logger.debug("dashboard other matchups failed", exc_info=True)
+        _other_matchups_html = ""
+
     awards = compute_awards_season(finalized_df, players_map, league_id, platform, season, users, rosters)
     awards_html = render_awards_section(awards)
 
@@ -401,6 +439,7 @@ def build_dashboard_body(ctx: dict) -> str:
         </div>
       </div>
       {_dash_preview_slide}
+      {_other_matchups_html}
     </section>
     """
 
@@ -678,6 +717,165 @@ def build_dashboard_body(ctx: dict) -> str:
             '</div>'
         )
 
+    # ---- Command Center: league activity feed (recent trades/waivers) ----
+    _activity_html = ""
+    try:
+        from dashboard_services.service import get_transactions_by_week
+        _act_weeks = sorted({int(current_week), max(1, int(current_week) - 1)})
+        _tx_by_week = get_transactions_by_week(
+            str(league_id), _act_weeks, platform=platform, season=int(season)
+        ) or {}
+        _all_tx = []
+        for _w in _act_weeks:
+            for _tx in (_tx_by_week.get(_w) or []):
+                if isinstance(_tx, dict):
+                    _all_tx.append(_tx)
+        # Newest first by created timestamp (ms).
+        def _tx_ts(_t):
+            try:
+                return int(_t.get("created") or 0)
+            except (TypeError, ValueError):
+                return 0
+        _all_tx.sort(key=_tx_ts, reverse=True)
+        # Roster id -> display name.
+        _rid_to_name = {}
+        try:
+            for _r in (rosters or []):
+                _rid = str(_r.get("roster_id") or _r.get("id") or "")
+                _nm = ""
+                _owner = _r.get("owner_id") or _r.get("owner")
+                for _u in (users or []):
+                    if str(_u.get("user_id") or "") == str(_owner):
+                        _nm = str(_u.get("display_name") or _u.get("username") or "")
+                        break
+                _rid_to_name[_rid] = _nm or f"Team {_rid}"
+        except Exception:
+            pass
+        def _pname(_pid):
+            try:
+                _p = (players_map or {}).get(str(_pid)) or {}
+                return str(_p.get("full_name") or _p.get("last_name") or _pid)
+            except Exception:
+                return str(_pid)
+        def _rel_time(_ms):
+            try:
+                import datetime
+                _dt = datetime.datetime.fromtimestamp(int(_ms) / 1000, tz=datetime.timezone.utc)
+                _delta = datetime.datetime.now(datetime.timezone.utc) - _dt
+                _hrs = int(_delta.total_seconds() // 3600)
+                if _hrs < 1:
+                    return "just now"
+                if _hrs < 24:
+                    return f"{_hrs}h ago"
+                _days = _hrs // 24
+                return f"{_days}d ago"
+            except Exception:
+                return ""
+        _act_rows = []
+        for _tx in _all_tx[:5]:
+            _kind = str(_tx.get("type") or "")
+            _ts = _rel_time(_tx.get("created"))
+            _txt = ""
+            if _kind == "trade":
+                _rids = [str(x) for x in (_tx.get("roster_ids") or [])]
+                _names = [_rid_to_name.get(r, r) for r in _rids]
+                # Summarize: first team sent players to second team.
+                _adds = _tx.get("adds") or {}
+                _sent = []
+                try:
+                    for _pid, _rid in list(_adds.items())[:2]:
+                        _sent.append(_pname(_pid))
+                except Exception:
+                    pass
+                if len(_names) >= 2 and _sent:
+                    _txt = (f"<strong>{html.escape(_names[0])}</strong> traded "
+                            f"{html.escape(', '.join(_sent))} to "
+                            f"<strong>{html.escape(_names[1])}</strong>")
+                elif len(_names) >= 2:
+                    _txt = (f"<strong>{html.escape(_names[0])}</strong> traded with "
+                            f"<strong>{html.escape(_names[1])}</strong>")
+            elif _kind in ("waiver", "free_agent"):
+                _adds = _tx.get("adds") or {}
+                _drops = _tx.get("drops") or {}
+                try:
+                    _by = ""
+                    _rids = [str(x) for x in (_tx.get("roster_ids") or [])]
+                    if _rids:
+                        _by = _rid_to_name.get(_rids[0], "")
+                    if _adds:
+                        _pn = _pname(next(iter(_adds)))
+                        _txt = (f"<strong>{html.escape(_by)}</strong> claimed "
+                                f"{html.escape(_pn)}" if _by else f"Claimed {html.escape(_pn)}")
+                    elif _drops:
+                        _pn = _pname(next(iter(_drops)))
+                        _txt = (f"<strong>{html.escape(_by)}</strong> dropped "
+                                f"{html.escape(_pn)}" if _by else f"Dropped {html.escape(_pn)}")
+                except Exception:
+                    pass
+            if _txt:
+                _act_rows.append(
+                    '<div class="cc-act-row"><div class="cc-act-tx">' + _txt
+                    + (f'<div class="cc-act-time">{html.escape(_ts)}</div>' if _ts else '')
+                    + '</div></div>'
+                )
+        if _act_rows:
+            _activity_html = (
+                '<section class="os-card cc-activity">'
+                '<div class="os-section-head"><div class="os-section-head-content">'
+                '<h2 class="os-section-title">League Activity</h2>'
+                '<div class="os-section-subtitle">Recent moves around the league</div>'
+                '</div></div>'
+                + "".join(_act_rows) +
+                '</section>'
+            )
+    except Exception:
+        logger.debug("dashboard league activity failed", exc_info=True)
+        _activity_html = ""
+
+    # ---- Command Center: injury watch (viewer's roster only) ----
+    _injury_watch_html = ""
+    try:
+        from app import ensure_injury_bits
+        ensure_injury_bits(ctx)
+        _inj_df = ctx.get("injury_df")
+        _vid_s = str(viewer_roster_id or "")
+        _inj_rows = []
+        if _inj_df is not None and not getattr(_inj_df, "empty", True) and _vid_s:
+            _has_rid = "RosterID" in getattr(_inj_df, "columns", [])
+            for _, _row in _inj_df.iterrows():
+                try:
+                    if _has_rid and str(_row.get("RosterID") or "") != _vid_s:
+                        continue
+                    _st = str(_row.get("Status") or _row.get("Injury") or "").strip()
+                    if not _st or _st.lower() in ("active", "healthy", ""):
+                        continue
+                    _pn = str(_row.get("Player") or "")
+                    _pos = str(_row.get("Pos") or "")
+                    _inj_rows.append(
+                        '<div class="cc-inj-row">'
+                        f'<span><strong>{html.escape(_pn)}</strong> '
+                        f'<span class="cc-muted">{html.escape(_pos)}</span></span>'
+                        f'<span class="cc-inj-status">{html.escape(_st)}</span>'
+                        '</div>'
+                    )
+                except Exception:
+                    continue
+                if len(_inj_rows) >= 6:
+                    break
+        if _inj_rows:
+            _injury_watch_html = (
+                '<section class="os-card cc-injury-watch">'
+                '<div class="os-section-head"><div class="os-section-head-content">'
+                '<h2 class="os-section-title">Injury Watch</h2>'
+                '<div class="os-section-subtitle">Your roster</div>'
+                '</div></div>'
+                + "".join(_inj_rows) +
+                '</section>'
+            )
+    except Exception:
+        logger.debug("dashboard injury watch failed", exc_info=True)
+        _injury_watch_html = ""
+
     body = f"""
     <div class="os-layout">
       <aside class="os-left-col os-side-rail">
@@ -719,6 +917,8 @@ def build_dashboard_body(ctx: dict) -> str:
 
       <aside class="os-right-col os-side-rail">
         {awards_html}
+        {_activity_html}
+        {_injury_watch_html}
       </aside>
     </div>
     <script>
