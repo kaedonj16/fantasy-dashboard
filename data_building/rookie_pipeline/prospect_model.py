@@ -3,21 +3,28 @@ Prospect evaluation model - position-aware, multi-factor scoring.
 
 Each component score is 0-100.  Final prospect_score is a weighted sum.
 
-Component weights:
-    projected_draft_capital_score 30 %   NFL draft position (position-weighted)
-                                         RB/WR/TE: 1.20-1.25x (early picks are gold)
-                                         QB: 0.65x (top picks common, less predictive)
-    production_score             15 %   college production volume (elite producers translate)
-    athleticism_score            12 %   combine / speed score / RAS
-    breakout_profile_score       10 %   early-career dominance trajectory
-    utilization_score             5 %   opportunity share (targets/carries per game)
-    efficiency_score              8 %   per-attempt / per-target efficiency
-    competition_score             8 %   conference + opponent quality (Notre Dame: 0.94)
-    age_score                     6 %   age-adjusted production; youth premium
-    environment_adjustment        3 %   team scheme / usage context
-    durability_score              3 %   games missed, injury history
+Model version: 2.0 (see MODEL_VERSION)
+  v1.x: baseline components below.
+  v2.0: adds recruiting-pedigree component (247 Composite via CFBD),
+        WEPA opponent-adjusted efficiency blend (QB/RB), and SP+/Team Talent
+        inputs to the competition adjustment.  Per Kaedon's rule, grading
+        changes are version-bumped, never silently tweaked: the version is
+        persisted per row in rookie_rankings.model_version.
+
+Component weights (v2.0 - recruiting takes 5%, others rescaled proportionally):
+    projected_draft_capital_score 27-28%  NFL draft position (position-weighted)
+    production_score             ~14-19%  college production volume
+    athleticism_score            ~7-10%   combine / speed score / RAS
+    breakout_profile_score        ~4-11%  early-career dominance trajectory
+    utilization_score             ~3-8%   opportunity share
+    efficiency_score              ~8-17%  per-attempt / per-target efficiency
+    competition_score             ~4-7%   conference + opponent quality (+SP+ SOS)
+    age_score                     ~8-13%  age-adjusted production; youth premium
+    environment_adjustment        ~0-6%   team scheme / usage context
+    durability_score              ~0-1%   games missed, injury history
+    recruiting_score               5 %   247 Composite pedigree (stars/rating)
     ──────────────────────────────────
-    Total                       100 %
+    Total                        100 %
 
 Position-weighted draft capital, day-tier multipliers (Day 1 R1 > Day 2 R2-3 > Day 3 R4-7)
 
@@ -28,6 +35,10 @@ from __future__ import annotations
 
 import math
 from typing import Any, Dict, List, Optional
+
+
+# Grading-model version. Bump on ANY change to scoring logic or weights.
+MODEL_VERSION = "2.0"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -569,6 +580,7 @@ def calc_efficiency_score(
     seasons: List[Dict],
     position: str,
     eval_metrics: Optional[Dict] = None,
+    wepa: Optional[Dict] = None,
 ) -> float:
     """
     Per-attempt / per-target efficiency.  Rewards quality over quantity.
@@ -580,6 +592,11 @@ def calc_efficiency_score(
     eval_metrics (optional): When available and confidence is sufficient:
     - QB: nfl_passer_rating (computed from box score) supplements efficiency
     - WR/TE: tprr proxy supplements yds_per_reception via a soft blend
+
+    wepa (optional, model v2.0): {(season, wepa_type): {"adj_efficiency_score": 0-100}}.
+    CFBD's opponent-adjusted efficiency percentile for the latest season is
+    blended 25/75 into the box-score efficiency.  Only QB (passing) and RB
+    (rushing) have WEPA coverage - WR/TE skip silently.
     """
     if not seasons:
         return 52.0  # pre-draft neutral: unknown ≠ bad
@@ -743,6 +760,21 @@ def calc_efficiency_score(
         scheme_discount = _scheme_inflation_discount(ls.get("team"))
         if scheme_discount < 1.0:
             eff = _clip(eff * scheme_discount)
+
+    # Model v2.0: opponent-adjusted WEPA blend.  wepa_score is a 0-100
+    # percentile within the season/position cohort - a conservative 25% blend
+    # so box-score efficiency stays primary and WEPA only nudges.
+    if wepa:
+        _WEPA_TYPE = {"QB": "passing", "RB": "rushing"}
+        wtype = _WEPA_TYPE.get(pos)
+        if wtype:
+            rec = wepa.get((ls.get("season", 0), wtype)) or {}
+            wscore = rec.get("adj_efficiency_score")
+            if wscore is not None:
+                try:
+                    eff = _clip(eff * 0.75 + float(wscore) * 0.25)
+                except (TypeError, ValueError):
+                    pass
 
     return _clip(eff)
 
@@ -1036,11 +1068,52 @@ def calc_utilization_score(seasons: List[Dict], position: str) -> float:
     return 50.0
 
 
-def calc_competition_score(seasons: List[Dict]) -> float:
+def calc_recruiting_score(recruiting: Optional[Dict[str, Any]]) -> float:
+    """
+    Recruiting-pedigree signal (model v2.0).
+
+    247 Composite rating → 0-100.  Recruiting pedigree is one of the strongest
+    known predictors of NFL success, largely orthogonal to college production
+    (it measures talent before the college scheme touches it).
+
+    Missing data is neutral (50.0), never punitive: older classes, JUCO and
+    international prospects often have no composite entry.
+    """
+    if not recruiting:
+        return 50.0
+    rating = recruiting.get("composite_rating")
+    if rating is not None:
+        try:
+            # Composite runs ~0.78 (2-star) to ~1.00 (elite 5-star).  The
+            # median draft prospect (~0.87, high 3-star) maps to neutral 50,
+            # so known-average pedigree never scores below unknown.
+            return _clip(_scale(float(rating), 0.74, 1.00))
+        except (TypeError, ValueError):
+            pass
+    stars = recruiting.get("stars")
+    if stars is not None:
+        try:
+            # Aligned to the composite scale: 5 (typical 0.985) -> 94,
+            # 4 (0.93) -> 73, 3 (0.87) -> 50, 2 (0.80) -> 23.
+            return {5: 94.0, 4: 73.0, 3: 50.0, 2: 23.0}.get(int(stars), 50.0)
+        except (TypeError, ValueError):
+            pass
+    return 50.0
+
+
+def calc_competition_score(
+    seasons: List[Dict],
+    team_context: Optional[Dict] = None,
+) -> float:
     """
     Conference quality + implied opponent strength.
     Recent seasons are weighted more heavily to reflect current competition level.
     Transfer players who upgraded conferences get credit for their most recent context.
+
+    team_context (optional, model v2.0): {(school_lower, season): {sp_sos, ...}}.
+    When SP+ strength-of-schedule is available for the latest season's team it
+    is blended 50/50 with the conference-quality estimate - a direct measure
+    of who they actually played rather than who shares their conference.
     """
     if not seasons:
         return 55.0
@@ -1067,6 +1140,21 @@ def calc_competition_score(seasons: List[Dict]) -> float:
         total_weight += weight
 
     avg_quality = weighted_quality / total_weight if total_weight > 0 else DEFAULT_CONF_QUALITY
+
+    # Model v2.0: blend in SP+ SOS when available for the latest season's team.
+    if team_context and sorted_seasons:
+        latest = sorted_seasons[0]
+        team_key = ((latest.get("team") or "").lower().strip(), latest.get("season", 0))
+        ctx = team_context.get(team_key) or {}
+        sos = ctx.get("sp_sos")
+        if sos is not None:
+            try:
+                # SP+ SOS typically spans roughly -12 (cupcake) to +12 (gauntlet)
+                sos_quality = _scale(float(sos), -12.0, 12.0) / 100.0
+                avg_quality = avg_quality * 0.5 + sos_quality * 0.5
+            except (TypeError, ValueError):
+                pass
+
     return _clip(_scale(avg_quality, 0.45, 1.00))
 
 
@@ -1249,6 +1337,17 @@ POSITION_WEIGHTS = {
         "durability": 0.01,
     },
 }
+
+# ── Model v2.0: recruiting-pedigree component ─────────────────────────────────
+# 5% weight carved proportionally out of every other component so the blend
+# stays at 1.0.  Calibrated overrides (historical_calibration) predate v2.0
+# and lack this key - score_prospect reads it via .get("recruiting", 0.0).
+_RECRUITING_WEIGHT = 0.05
+for _pos in POSITION_WEIGHTS:
+    _w = POSITION_WEIGHTS[_pos]
+    for _k in list(_w.keys()):
+        _w[_k] *= (1.0 - _RECRUITING_WEIGHT)
+    _w["recruiting"] = _RECRUITING_WEIGHT
 
 # Validate that all position weights sum to 1.0
 for pos, weights in POSITION_WEIGHTS.items():
@@ -1808,7 +1907,10 @@ def score_prospect(
     # when splitting reps with multiple NFL-caliber teammates. Apply the full multiplier.
     utilization_score = _clip(utilization_score * loaded_roster_adjustment)
 
-    efficiency_score    = calc_efficiency_score(seasons, pos, eval_metrics=eval_metrics)
+    efficiency_score    = calc_efficiency_score(
+        seasons, pos, eval_metrics=eval_metrics,
+        wepa=prospect.get("wepa"),
+    )
     # Efficiency blends per-touch quality (ypr, ypc - unaffected by depth) with
     # market_share_yards (~35% of WR/TE base, ~15% of RB base - suppressed by depth).
     # Apply ~40% of the bonus to credit the market-share fraction without distorting
@@ -1827,7 +1929,10 @@ def score_prospect(
         breakout_score = _clip(breakout_score * bk_adj)
 
     athleticism_score   = calc_athleticism_score(ath, pos)
-    competition_score   = calc_competition_score(seasons)
+    competition_score   = calc_competition_score(
+        seasons, team_context=prospect.get("team_context"),
+    )
+    recruiting_score    = calc_recruiting_score(prospect.get("recruiting"))
     environment_score   = calc_environment_adjustment(seasons, pos)
     durability_score    = calc_durability_score(seasons)
 
@@ -1921,7 +2026,10 @@ def score_prospect(
         competition_score     * pos_weights["competition"]   +
         environment_score     * pos_weights["environment"]   +
         durability_score      * pos_weights["durability"]    +
-        dc_score_adjusted     * pos_weights["draft_capital"]
+        dc_score_adjusted     * pos_weights["draft_capital"] +
+        # v2.0: recruiting pedigree. .get() because calibrated overrides
+        # (historical_calibration) predate the recruiting component.
+        recruiting_score      * pos_weights.get("recruiting", 0.0)
     )
 
     # Add experience score for QBs (uses the experience weight in QB weights)
@@ -2096,6 +2204,8 @@ def score_prospect(
         "competition_score":            round(competition_score, 2),
         "environment_adjustment":       round(environment_score, 2),
         "durability_score":             round(durability_score, 2),
+        "recruiting_score":             round(recruiting_score, 2),
+        "model_version":                MODEL_VERSION,
         "projected_draft_capital_score":round(dc_score_adjusted, 2),
         "fantasy_translation_score":    round(fantasy_translation, 2),
         "confidence_score":             confidence_score,
