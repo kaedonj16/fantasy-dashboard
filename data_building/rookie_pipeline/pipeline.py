@@ -929,6 +929,44 @@ def load_actual_picks_from_db(draft_year: int, conn) -> Dict[str, Dict[str, Any]
     return result
 
 
+def build_seed_consensus(prospects: List[Dict]) -> Dict[str, Dict]:
+    """
+    Fallback draft-capital consensus from the bundled seed's projected picks.
+    Used when no mock data exists (e.g. Sportradar trial, no Playwright).
+    DB-built consensus always wins; this only fills gaps. Marked clearly as
+    seed-derived with low confidence.
+    """
+    from .mock_draft_consensus import pick_to_draft_capital_score
+    consensus: Dict[str, Dict] = {}
+    for p in prospects:
+        pick = p.get("projected_pick")
+        pid = p.get("player_id")
+        if not pick or not pid:
+            continue
+        try:
+            pick = int(pick)
+        except (TypeError, ValueError):
+            continue
+        position = (p.get("position") or "WR").upper()
+        consensus[pid] = {
+            "player_name": p.get("name") or pid,
+            "position": position,
+            "school": p.get("school") or "",
+            "projected_round": ((pick - 1) // 32) + 1,
+            "projected_pick": pick,
+            "projected_pick_low": pick,
+            "projected_pick_high": pick,
+            "projected_draft_capital_score": pick_to_draft_capital_score(pick, position),
+            "num_mocks_used": 0,
+            "consensus_confidence": 40.0,
+            "mock_sources": ["seed_consensus"],
+            "is_actual_pick": False,
+        }
+    if consensus:
+        print(f"[pipeline] Seed consensus: {len(consensus)} prospects with projected picks")
+    return consensus
+
+
 def build_consensus_from_db_entries(draft_year: int, conn) -> Dict[str, Dict]:
     """
     Aggregate per-analyst rows from rookie_mock_draft_entries into a consensus
@@ -1047,6 +1085,23 @@ def build_consensus_from_db_entries(draft_year: int, conn) -> Dict[str, Dict]:
 
         if n_actual:
             print(f"[pipeline] Post-draft: overlaid {n_actual} actual picks (draft complete)")
+
+    # ── Step 3: seed fallback (pre-draft only) ─────────────────────────────
+    # When no mock data exists (no Playwright, Sportradar trial), fill gaps
+    # from the bundled seed's consensus projected picks. DB entries win.
+    if not is_draft_complete(draft_year, conn):
+        try:
+            from .ingestion import get_seed_prospects
+            seed_consensus = build_seed_consensus(get_seed_prospects(draft_year))
+            added = 0
+            for pid, entry in seed_consensus.items():
+                if pid not in consensus_map:
+                    consensus_map[pid] = entry
+                    added += 1
+            if added:
+                print(f"[pipeline] Seed consensus filled {added} prospects with projected picks")
+        except Exception as exc:
+            print(f"[pipeline] Seed consensus fallback failed - {type(exc).__name__}: {exc}")
 
     return consensus_map
 
@@ -1812,8 +1867,11 @@ def run_rookie_pipeline_staged(
     else:
         # Try to load from cache when API key is not available
         try:
-            from .ingestion import get_seed_prospects, _enrich_bio_from_cfbd_roster
+            from .ingestion import get_seed_prospects, _enrich_bio_from_cfbd_roster, discover_breakout_prospects
             sr_prospects = _enrich_bio_from_cfbd_roster(get_seed_prospects(draft_year), draft_year)
+            found = discover_breakout_prospects(draft_year, {p.get("name", "") for p in sr_prospects})
+            if found:
+                sr_prospects = sr_prospects + _enrich_bio_from_cfbd_roster(found, draft_year)
             print(f"[pipeline] Loaded {len(sr_prospects)} prospects from cached seed data")
         except Exception as exc:
             print(f"[pipeline] Failed to load cached prospects: {exc}")

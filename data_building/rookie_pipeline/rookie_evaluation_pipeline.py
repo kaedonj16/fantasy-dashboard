@@ -148,10 +148,12 @@ def run_rookie_evaluation_pipeline(
     identity_index = build_identity_index(prospects)
     draft_entries = fetch_draft_market_entries(year)
 
-    # Build Sportradar NCAAFB index for real target data (no-op if key absent)
+    # Build Sportradar NCAAFB index for real target data (no-op if key absent).
+    # Skip the expensive 266-team roster scan entirely when there is nothing
+    # to enrich.
     prospect_names = [p.get("name", "") for p in prospects if p.get("name")]
     print(f"[rookie_eval] Building Sportradar index for {len(prospect_names)} prospects")
-    sportradar_index = build_sportradar_ncaa_index(prospect_names)
+    sportradar_index = build_sportradar_ncaa_index(prospect_names) if prospect_names else None
     print(f"[rookie_eval] Sportradar index built with {len(sportradar_index) if sportradar_index else 0} players")
 
     # Backfill height/weight from Sportradar NCAA profiles into rookie_prospects where NULL
@@ -250,6 +252,22 @@ def run_rookie_evaluation_pipeline(
         rookie_profiles.append(profile)
         by_player_metrics[pid] = dict(metrics_by_season)
         raw_seasons_by_player[pid] = raw_seasons_for_player
+
+    # Never let an empty run clobber good data: a 0-prospect run means every
+    # source failed, not that the class is empty.
+    if not rookie_profiles:
+        print(f"[rookie_eval] ABORT: 0 profiles for class={year} - refusing to overwrite existing snapshots")
+        return {
+            "draft_class_year": year,
+            "metrics_file": None,
+            "profiles_file": None,
+            "log_summary": dict(logs),
+            "profile_count": 0,
+            "profiles": [],
+            "db_metrics_rows": 0,
+            "db_profiles_rows": 0,
+            "db_runs_rows": 0,
+        }
 
     metrics_snapshot = {
         "as_of_date": as_of,
