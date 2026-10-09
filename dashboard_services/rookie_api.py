@@ -137,6 +137,357 @@ def _row_to_dict(row: Dict) -> Dict:
     return out
 
 
+# ── Prospect redesign: detail helpers ─────────────────────────────────────────
+# The Advanced metrics section shows ONLY metrics the pipeline actually stores.
+# Raw values come straight from the DB tables; grades are simple documented
+# 0-100 display scalings for the bars/radar (they are not model scores).
+
+_BREAKOUT_DOM_THRESH = {"WR": 0.25, "RB": 0.275, "TE": 0.12}
+_COMPOSITE_COL_CANDIDATES = (
+    "composite_stars", "recruit_stars", "stars_247", "recruiting_stars",
+)
+_composite_col_cache: Dict[str, Any] = {}
+
+
+def _clip100(v):
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return None
+    if v != v:  # NaN
+        return None
+    return round(max(0.0, min(100.0, v)), 1)
+
+
+def _grade_dominator(d):
+    # The model treats >= 0.35 as an elite dominator (late-round upside gate).
+    if d is None:
+        return None
+    return _clip100(d / 0.40 * 100.0)
+
+
+def _grade_breakout_age(age, pos):
+    # Same scale the model uses for its breakout-age component.
+    if age is None:
+        return None
+    pos = (pos or "").upper()
+    if pos == "QB":
+        return _clip100((23.5 - float(age)) / 5.0 * 100.0)
+    return _clip100((23.0 - float(age)) / 4.5 * 100.0)
+
+
+def _grade_ypr(v):
+    return _clip100(v / 18.0 * 100.0) if v is not None else None
+
+
+def _grade_ypc(v):
+    return _clip100(v / 7.0 * 100.0) if v is not None else None
+
+
+def _grade_market_share(v):
+    return _clip100(v / 0.35 * 100.0) if v is not None else None
+
+
+def _grade_speed_score(v):
+    return _clip100(v / 120.0 * 100.0) if v is not None else None
+
+
+def _grade_cmp(v):
+    return _clip100(v / 70.0 * 100.0) if v is not None else None
+
+
+def _grade_td_int(v):
+    return _clip100(v / 4.0 * 100.0) if v is not None else None
+
+
+def _grade_ypa(v):
+    return _clip100(v / 9.5 * 100.0) if v is not None else None
+
+
+def _compute_breakout_age(seasons, age, position):
+    """Age in the first season the player hit the dominator breakout threshold.
+
+    Mirrors the model's breakout-age logic (prospect_model). QBs use the
+    pass-yard share proxy (>= 60% of team yards) since receiving dominator is
+    meaningless for them. Returns None when the player never broke out.
+    """
+    if not seasons or age is None:
+        return None
+    pos = (position or "").upper()
+    try:
+        cur_age = float(age)
+    except (TypeError, ValueError):
+        return None
+    ordered = sorted(seasons, key=lambda s: s.get("season") or 0)
+    if not ordered:
+        return None
+    try:
+        current_year = int(ordered[-1].get("season") or 0)
+    except (TypeError, ValueError):
+        return None
+    if current_year <= 0:
+        return None
+    for s in ordered:
+        try:
+            s_year = int(s.get("season") or 0)
+        except (TypeError, ValueError):
+            continue
+        if s_year <= 0:
+            continue
+        broke_out = False
+        if pos == "QB":
+            try:
+                team_yds = float(s.get("team_total_yards") or 0)
+                broke_out = team_yds > 0 and float(s.get("pass_yards") or 0) / team_yds >= 0.60
+            except (TypeError, ValueError):
+                broke_out = False
+        else:
+            thresh = _BREAKOUT_DOM_THRESH.get(pos)
+            try:
+                broke_out = thresh is not None and float(s.get("dominator_rating") or 0) >= thresh
+            except (TypeError, ValueError):
+                broke_out = False
+        if broke_out:
+            return round(cur_age - (current_year - s_year), 1)
+    return None
+
+
+def _composite_col(conn) -> Any:
+    """Name of the 247-composite stars column if the parallel track added one."""
+    if "col" in _composite_col_cache:
+        return _composite_col_cache["col"]
+    col = None
+    try:
+        row = conn.execute(
+            """SELECT column_name FROM information_schema.columns
+               WHERE table_name = 'rookie_prospects'
+                 AND column_name = ANY(%s) LIMIT 1""",
+            (list(_COMPOSITE_COL_CANDIDATES),),
+        ).fetchone()
+        if row:
+            col = row["column_name"]
+    except Exception:
+        col = None
+    _composite_col_cache["col"] = col
+    return col
+
+
+def _fmt_pct1(v):
+    try:
+        return "%d%%" % round(float(v) * 100)
+    except (TypeError, ValueError):
+        return None
+
+
+def _fmt1(v):
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return ("%g" % round(f, 1))
+
+
+def _build_advanced_metrics(position, seasons, athleticism, row):
+    """Position-correct advanced metric sets: [{label, raw, grade}]."""
+    pos = (position or "").upper()
+    best = {}
+    for s in seasons or []:
+        for k in ("dominator_rating", "market_share_yards", "yds_per_reception",
+                  "yds_per_carry", "completion_pct", "td_int_ratio", "yds_per_attempt"):
+            try:
+                v = float(s.get(k)) if s.get(k) is not None else None
+            except (TypeError, ValueError):
+                v = None
+            if v is not None and (k not in best or v > best[k]):
+                best[k] = v
+    try:
+        speed = float(athleticism.get("speed_score")) if athleticism.get("speed_score") is not None else None
+    except (TypeError, ValueError):
+        speed = None
+    eff = _safe_float(row.get("efficiency_score"))
+    prod = _safe_float(row.get("production_score"))
+    breakout_age = _compute_breakout_age(
+        seasons, row.get("age"), pos)
+    metrics = []
+    if pos == "QB":
+        metrics = [
+            ("Cmp%", _fmt_pct1(best.get("completion_pct") / 100) if best.get("completion_pct") is not None else None,
+             _grade_cmp(best.get("completion_pct"))),
+            ("TD:INT", _fmt1(best.get("td_int_ratio")), _grade_td_int(best.get("td_int_ratio"))),
+            ("Yds/Att", _fmt1(best.get("yds_per_attempt")), _grade_ypa(best.get("yds_per_attempt"))),
+            ("Breakout Age", _fmt1(breakout_age), _grade_breakout_age(breakout_age, pos)),
+            ("Efficiency", _fmt1(eff), _clip100(eff)),
+            ("Production", _fmt1(prod), _clip100(prod)),
+        ]
+    elif pos == "RB":
+        metrics = [
+            ("Dominator", _fmt_pct1(best.get("dominator_rating")), _grade_dominator(best.get("dominator_rating"))),
+            ("Breakout Age", _fmt1(breakout_age), _grade_breakout_age(breakout_age, pos)),
+            ("Yds/Carry", _fmt1(best.get("yds_per_carry")), _grade_ypc(best.get("yds_per_carry"))),
+            ("Mkt Share", _fmt_pct1(best.get("market_share_yards")), _grade_market_share(best.get("market_share_yards"))),
+            ("Speed Score", _fmt1(speed), _grade_speed_score(speed)),
+            ("Efficiency", _fmt1(eff), _clip100(eff)),
+        ]
+    else:  # WR / TE
+        metrics = [
+            ("Dominator", _fmt_pct1(best.get("dominator_rating")), _grade_dominator(best.get("dominator_rating"))),
+            ("Breakout Age", _fmt1(breakout_age), _grade_breakout_age(breakout_age, pos)),
+            ("Yds/Rec", _fmt1(best.get("yds_per_reception")), _grade_ypr(best.get("yds_per_reception"))),
+            ("Mkt Share", _fmt_pct1(best.get("market_share_yards")), _grade_market_share(best.get("market_share_yards"))),
+            ("Speed Score", _fmt1(speed), _grade_speed_score(speed)),
+            ("Efficiency", _fmt1(eff), _clip100(eff)),
+        ]
+    out = []
+    for label, raw, grade in metrics:
+        out.append({"label": label, "raw": raw,
+                    "grade": grade if grade is not None else None})
+    return out
+
+
+def _get_rank_deltas(year) -> Dict[str, int]:
+    """Rank movement: oldest snapshot in the trailing window vs current rank.
+
+    Positive delta = moved up the board. Returns {} when history is absent.
+    """
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            rows = conn.execute(
+                """SELECT player_id, overall_rank, snapshot_date
+                   FROM rookie_value_history
+                   WHERE draft_class_year = %s
+                     AND snapshot_date >= CURRENT_DATE - INTERVAL '40 days'
+                     AND overall_rank IS NOT NULL
+                   ORDER BY player_id, snapshot_date""",
+                (year,),
+            ).fetchall()
+    except Exception:
+        return {}
+    oldest: Dict[str, int] = {}
+    for r in rows:
+        pid = r.get("player_id")
+        if pid and pid not in oldest:
+            try:
+                oldest[pid] = int(r["overall_rank"])
+            except (TypeError, ValueError):
+                continue
+    return oldest
+
+
+def _get_mock_trend(player_id: str) -> Any:
+    """Month trend of mock-draft consensus pick. Positive = rising up boards."""
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            r = conn.execute(
+                """SELECT
+                     AVG(projected_pick) FILTER (
+                       WHERE mock_date >= CURRENT_DATE - INTERVAL '16 days') AS recent,
+                     AVG(projected_pick) FILTER (
+                       WHERE mock_date >= CURRENT_DATE - INTERVAL '46 days'
+                         AND mock_date < CURRENT_DATE - INTERVAL '16 days') AS older
+                   FROM rookie_mock_draft_entries
+                   WHERE player_id = %s AND projected_pick IS NOT NULL""",
+                (player_id,),
+            ).fetchone()
+        if r and r.get("recent") is not None and r.get("older") is not None:
+            return int(round(float(r["older"]) - float(r["recent"])))
+    except Exception:
+        pass
+    return None
+
+
+_SEASON_COLS = (
+    "season", "games_played", "team",
+    "pass_yards", "pass_tds", "pass_attempts", "completions", "interceptions",
+    "rush_attempts", "rush_yards", "rush_tds",
+    "receptions", "targets", "receiving_yards", "receiving_tds",
+    "dominator_rating", "market_share_yards", "market_share_tds",
+    "yds_per_carry", "yds_per_reception", "yds_per_attempt",
+    "completion_pct", "td_int_ratio",
+)
+
+
+def _get_prospect_detail(player_id: str, row: Dict) -> Dict:
+    """Everything the prospect modal needs beyond the rankings row.
+
+    All null-safe: missing tables/rows/columns degrade to None/[].
+    """
+    detail: Dict[str, Any] = {
+        "seasons": [],
+        "athleticism": {},
+        "utilization_score": None,
+        "experience_score": None,
+        "breakout_age": None,
+        "mock_trend": None,
+        "advanced": [],
+        "composite_stars": None,
+    }
+    seasons: List[Dict[str, Any]] = []
+    athleticism: Dict[str, Any] = {}
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            try:
+                srows = conn.execute(
+                    "SELECT " + ", ".join(_SEASON_COLS) +
+                    " FROM rookie_prospect_source_data"
+                    " WHERE player_id = %s ORDER BY season",
+                    (player_id,),
+                ).fetchall()
+                seasons = [_row_to_dict(s) for s in srows]
+            except Exception:
+                seasons = []
+            try:
+                arow = conn.execute(
+                    """SELECT forty_yard, vertical_inches, broad_jump_in,
+                              three_cone, short_shuttle, bench_reps,
+                              speed_score, ras_score
+                       FROM rookie_prospect_athleticism
+                       WHERE player_id = %s""",
+                    (player_id,),
+                ).fetchone()
+                athleticism = _row_to_dict(arow) if arow else {}
+            except Exception:
+                athleticism = {}
+            comp_col = _composite_col(conn)
+            if comp_col:
+                try:
+                    prow = conn.execute(
+                        "SELECT " + comp_col + " AS composite_stars"
+                        " FROM rookie_prospects WHERE player_id = %s",
+                        (player_id,),
+                    ).fetchone()
+                    if prow and prow.get("composite_stars") is not None:
+                        detail["composite_stars"] = int(prow["composite_stars"])
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    detail["seasons"] = seasons
+    detail["athleticism"] = athleticism
+    # Component scores the rankings table does not persist: compute on the fly
+    # with the model's own functions from the season lines.
+    try:
+        from data_building.rookie_pipeline.prospect_model import (
+            calc_utilization_score, calc_experience_score,
+        )
+        if seasons:
+            detail["utilization_score"] = round(
+                float(calc_utilization_score(seasons, row.get("position") or "")), 1)
+            detail["experience_score"] = round(
+                float(calc_experience_score(seasons, row.get("position") or "")), 1)
+    except Exception:
+        pass
+    detail["breakout_age"] = _compute_breakout_age(
+        seasons, row.get("age"), row.get("position"))
+    detail["mock_trend"] = _get_mock_trend(player_id)
+    detail["advanced"] = _build_advanced_metrics(
+        row.get("position"), seasons, athleticism, row)
+    return detail
+
+
 @rookie_bp.route("/active-class")
 def active_class():
     from data_building.rookie_pipeline.pipeline import get_active_rookie_class
@@ -225,8 +576,27 @@ def rankings():
             # Add headshot URL as espnHeadshot for modal compatibility
             if d.get("headshot_url"):
                 d["espnHeadshot"] = d["headshot_url"]
-            
+
             result.append(d)
+
+        # Rank movement vs the oldest board snapshot in the trailing window.
+        # Positive delta = moved up. Absent history degrades to null.
+        try:
+            _deltas = _get_rank_deltas(year)
+            for d in result:
+                pid = d.get("player_id")
+                cur = d.get("overall_rank")
+                old = _deltas.get(pid) if pid else None
+                if old is not None and cur:
+                    try:
+                        d["rank_delta"] = int(old) - int(cur)
+                    except (TypeError, ValueError):
+                        d["rank_delta"] = None
+                else:
+                    d["rank_delta"] = None
+        except Exception:
+            for d in result:
+                d.setdefault("rank_delta", None)
 
         # Overlay dynasty rookie ADP - read directly from dated cache files,
         # no DB connection required. Falls back to adp_service chain if files absent.
@@ -337,11 +707,18 @@ def player_detail(player_id: str):
             return jsonify({"error": "Player not found"}), 404
         
         player_data = _row_to_dict(row)
-        
+
         # Add headshot URL as espnHeadshot for modal compatibility
         if player_data.get("headshot_url"):
             player_data["espnHeadshot"] = player_data["headshot_url"]
-        
+
+        # Modal detail bundle: seasons, athleticism, computed extras. Additive
+        # and null-safe; the page renders fine when pieces are missing.
+        try:
+            player_data.update(_get_prospect_detail(player_id, row))
+        except Exception as exc:
+            log.debug("[rookie_api] /player detail skipped: %s", exc)
+
         return jsonify(player_data)
     except Exception as exc:
         log.exception("[rookie_api] /player error")
