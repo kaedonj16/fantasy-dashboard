@@ -112,6 +112,10 @@ def build_draft_room_body(
             + f'\n<script src="/static/{_static_src("draft_board_core.js")}?v={_static_v("draft_board_core.js")}" defer></script>\n'
             + f'\n<script src="/static/{_static_src("draft_grade_team.js")}?v={_static_v("draft_grade_team.js")}" defer></script>\n'
             + f'\n<script src="/static/{_static_src("draft_room.js")}?v={_static_v("draft_room.js")}" defer></script>\n'
+            # Setup wizard (Phase 1 of the draft room visual redesign). Runs after
+            # draft_room.js and drives the original setup inputs, so every setting
+            # keeps its exact semantics.
+            + f'\n<script src="/static/{_static_src("draft_room_wizard.js")}?v={_static_v("draft_room_wizard.js")}" defer></script>\n'
     )
 
 
@@ -131,8 +135,11 @@ _DRAFT_ROOM_HTML = r"""
   </div>
 
   <!-- Setup -->
+  <!-- Setup: 3-step wizard (Phase 1 visual redesign). All original setup inputs
+       stay in the DOM inside .wz-orig (visually hidden); the wizard writes
+       through to them so every setting keeps its exact semantics. -->
   <div class="dr-setup" id="drSetup">
-    <div class="dr-setup-card" id="drSetupCard">
+    <div class="dr-setup-card wz" id="drSetupCard">
       <header class="dr-setup-modal-head" id="drSetupModalHead" hidden>
         <div>
           <div class="dr-setup-modal-kicker">Current draft</div>
@@ -142,101 +149,164 @@ _DRAFT_ROOM_HTML = r"""
       </header>
       <p class="dr-setup-desc" id="drEditNote" hidden>Changes apply to this draft. Picks stay on the board unless you change teams, pick order, or your slot. Reset wipes the board and returns to setup.</p>
 
-      <div class="dr-step">
-        <div class="dr-step-head">
-          <span class="dr-step-num">1</span>
-          <div class="dr-step-title">Format</div>
-        </div>
-        <div class="dr-setup-grid">
-          <div class="dr-field"><span>Draft Type</span>
-            <select id="drType">
-              <option value="startup">Startup (Dynasty)</option>
-              <option value="rookie">Rookie (Dynasty)</option>
-              <option value="redraft">Redraft</option>
-              <option value="keeper">Keeper</option>
-            </select>
-          </div>
-          <!-- Keeper-only options; shown when Draft Type is Keeper. A keeper
-               draft is a redraft where each kept player costs that team the pick
-               at his keeper round, so those picks come off the board up front. -->
-          <div class="dr-field dr-keeper-only" style="display:none;"><span>Keepers</span>
-            <select id="drKeeperSource">
-              <option value="assistant">Use Keeper Assistant</option>
-              <option value="manual">Pick my own</option>
-            </select>
-          </div>
-          <div class="dr-field dr-keeper-only" style="display:none;"><span>Keepers / Team</span>
-            <input id="drKeeperCount" type="number" min="0" max="10" step="1" value="2">
-          </div>
-          <div class="dr-field"><span>QB Format</span>
-            <select id="drSf">
-              <option value="0">1QB</option>
-              <option value="1">Superflex</option>
-            </select>
-          </div>
-          <div class="dr-field"><span>Pick Order</span>
-            <select id="drOrder">
-              <option value="snake">Snake</option>
-              <option value="linear">Linear</option>
-              <option value="3rr">3rd Round Reversal</option>
-            </select>
-          </div>
-          <div class="dr-field"><span>PPR</span>
-            <select id="drPpr" aria-label="Reception scoring" title="Projected PPG uses this reception scoring (full, half, or standard).">
-              <option value="1" selected>Full PPR</option>
-              <option value="0.5">Half PPR</option>
-              <option value="0">Standard</option>
-            </select>
-          </div>
-          <div class="dr-field"><span>TE Premium</span>
-            <select id="drTep" aria-label="Tight end premium" title="Projected PPG for tight ends includes this TE premium.">
-              <option value="0" selected>None</option>
-              <option value="0.5">+0.5 PPR</option>
-              <option value="1">+1.0 PPR</option>
-            </select>
-          </div>
-          <div class="dr-field"><span>Passing TDs</span>
-            <select id="drPassTd" aria-label="Points per passing touchdown" title="Adjusts quarterback projected PPG, recommendations, and pick grades">
-              <option value="4" selected>4 points</option>
-              <option value="6">6 points</option>
-            </select>
+      <div class="wz-brand">
+        <h1>Set up your draft</h1>
+        <p>Three quick steps, then you are on the clock. Start from a preset or build it your way.</p>
+      </div>
+
+      <!-- Presets: collapsed by default -->
+      <div class="wz-preset-wrap" id="wzPresetWrap">
+        <button type="button" class="wz-preset-head" id="wzPresetHead" aria-expanded="false" aria-controls="wzPresetPanel">
+          <span>
+            <span class="wz-lt">Start from a preset</span>
+            <span class="wz-ls"><span id="wzPresetCurName">Custom</span><span class="wz-opt">optional</span></span>
+          </span>
+          <svg class="wz-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="wz-preset-panel" id="wzPresetPanel">
+          <div class="wz-preset-grid" aria-label="Presets">
+            <button type="button" class="wz-pcard" data-preset="ppr10">
+              <span class="wz-pname">10-Team PPR</span>
+              <span class="wz-pdesc">Redraft, 1QB, snake, full PPR</span>
+              <span class="wz-ppills"><span>10 teams</span><span>1QB</span><span>15 rds</span><span>Full PPR</span></span>
+              <span class="wz-pcheck" aria-hidden="true">&#10003;</span>
+            </button>
+            <button type="button" class="wz-pcard" data-preset="sf12">
+              <span class="wz-pname">12-Team SF TEP</span>
+              <span class="wz-pdesc">Redraft, superflex, snake, TE premium</span>
+              <span class="wz-ppills"><span>12 teams</span><span>SF</span><span>15 rds</span><span>+1.0 TEP</span></span>
+              <span class="wz-pcheck" aria-hidden="true">&#10003;</span>
+            </button>
+            <button type="button" class="wz-pcard" data-preset="dynasty">
+              <span class="wz-pname">Dynasty Startup</span>
+              <span class="wz-pdesc">Startup, superflex, snake, full PPR</span>
+              <span class="wz-ppills"><span>12 teams</span><span>SF</span><span>25 rds</span><span>Dynasty</span></span>
+              <span class="wz-pcheck" aria-hidden="true">&#10003;</span>
+            </button>
+            <button type="button" class="wz-pcard" data-preset="keeper2">
+              <span class="wz-pname">Keeper 2</span>
+              <span class="wz-pdesc">Redraft with 2 keepers, half PPR</span>
+              <span class="wz-ppills"><span>10 teams</span><span>1QB</span><span>15 rds</span><span>2 keepers</span></span>
+              <span class="wz-pcheck" aria-hidden="true">&#10003;</span>
+            </button>
+            <button type="button" class="wz-pcard" data-preset="custom" hidden>
+              <span class="wz-pname">Custom</span>
+              <span class="wz-pdesc">Your tweaks, tracked as you go</span>
+              <span class="wz-ppills"><span id="wzCustomPills">Custom</span></span>
+              <span class="wz-pcheck" aria-hidden="true">&#10003;</span>
+            </button>
           </div>
         </div>
       </div>
 
-      <div class="dr-step">
-        <div class="dr-step-head">
-          <span class="dr-step-num">2</span>
-          <div class="dr-step-title">Roster Slots</div>
+      <!-- Live draft connect: one button for the connected league -->
+      <div class="wz-live-card" id="wzLiveCard">
+        <div class="wz-live-simple">
+          <span class="wz-livedot" aria-hidden="true"></span>
+          <span>
+            <span class="wz-lt" id="wzLiveTitle">Sync your live draft</span>
+            <span class="wz-ls">Connected league. Setup comes from your live draft.</span>
+          </span>
+          <button type="button" class="wz-btn wz-btn-primary" id="wzLiveGo">Connect live draft</button>
         </div>
-        <div id="drRosterSection"></div>
+      </div>
+      <div class="dr-live-list wz-live-list" id="drLiveList" style="display:none;"></div>
+
+      <div class="wz-steps" aria-label="Setup progress">
+        <div class="wz-step on" id="wzStepDot1"><span class="n">1</span>Format</div>
+        <div class="wz-step-line"></div>
+        <div class="wz-step" id="wzStepDot2"><span class="n">2</span>League</div>
+        <div class="wz-step-line"></div>
+        <div class="wz-step" id="wzStepDot3"><span class="n">3</span>Your Picks</div>
       </div>
 
-      <div class="dr-step">
-        <div class="dr-step-head">
-          <span class="dr-step-num">3</span>
-          <div class="dr-step-title">League</div>
+      <!-- STEP 1: FORMAT -->
+      <div class="wz-card" id="wzStep1">
+        <h2>Format</h2>
+        <p class="wz-sub">What kind of draft this is and how scoring works.</p>
+
+        <div class="wz-field">
+          <label id="wzLblDtype">Draft type</label>
+          <div class="wz-segrow">
+            <div class="wz-seg" data-wz-seg="dtype" role="group" aria-labelledby="wzLblDtype"><button type="button" data-val="startup">Startup Dynasty</button><button type="button" data-val="rookie">Rookie Dynasty</button><button type="button" data-val="redraft">Redraft</button><button type="button" data-val="keeper" id="wzSegKeeper">Keeper</button></div>
+          </div>
         </div>
-        <div class="dr-setup-grid">
-          <div class="dr-field"><span>Teams</span>
-            <select id="drTeams">
-              <option>8</option><option>10</option><option selected>12</option><option>14</option>
-            </select>
+
+        <div class="wz-keeper-box" id="wzKeeperBox" hidden>
+          <div class="wz-field">
+            <label id="wzLblKsrc">Keepers source</label>
+            <div class="wz-segrow">
+              <div class="wz-seg" data-wz-seg="ksrc" role="group" aria-labelledby="wzLblKsrc"><button type="button" data-val="assistant">Use Keeper Assistant</button><button type="button" data-val="manual">Pick my own</button></div>
+            </div>
           </div>
-          <div class="dr-field" id="drRoundsField" style="display:none;"><span>Rounds</span>
-            <input id="drRounds" type="number" min="1" max="40" value="3">
+          <div class="wz-field">
+            <label id="wzLblKeepers">Keepers per team</label>
+            <div class="wz-stepper" data-wz-stepper="keepers" data-min="0" data-max="10" role="group" aria-labelledby="wzLblKeepers"><button type="button" data-dir="-1" aria-label="Fewer keepers">&minus;</button><span class="val">2</span><button type="button" data-dir="1" aria-label="More keepers">+</button></div>
+            <p class="wz-fhint">Keeper picks are removed from the board before the draft starts.</p>
           </div>
-          <div class="dr-field"><span>Your Pick</span>
-            <select id="drSlot"></select>
+        </div>
+
+        <div class="wz-field-row">
+          <div class="wz-field">
+            <label id="wzLblQb">QB format</label>
+            <div class="wz-segrow">
+              <div class="wz-seg" data-wz-seg="qb" role="group" aria-labelledby="wzLblQb"><button type="button" data-val="0">1QB</button><button type="button" data-val="1">Superflex</button></div>
+            </div>
           </div>
-          <!-- Which ADP the CPU opponents draft against. Consensus (blended
-               Sleeper/BR/ESPN/MFL/Yahoo) is the default and most platform-neutral;
-               pick a single platform to mock a board that drafts like that site.
-               This is a simulation rule, independent of the in-draft "ADP source"
-               display selector. A source with no data for the chosen format falls
-               back to consensus, so no pick is ever left without an ADP. -->
-          <div class="dr-field"><span>CPU drafts from</span>
-            <select id="drCpuAdpSource" title="Which ADP source the CPU opponents draft against. Consensus blends every platform. Live (7d) is recent BR Fantasy drafts only.">
+          <div class="wz-field">
+            <label id="wzLblOrder">Pick order</label>
+            <div class="wz-segrow">
+              <div class="wz-seg" data-wz-seg="order" role="group" aria-labelledby="wzLblOrder"><button type="button" data-val="snake">Snake</button><button type="button" data-val="linear">Linear</button><button type="button" data-val="3rr">3rd Round Reversal</button></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="wz-field-row">
+          <div class="wz-field">
+            <label id="wzLblPpr">PPR</label>
+            <div class="wz-segrow">
+              <div class="wz-seg" data-wz-seg="ppr" role="group" aria-labelledby="wzLblPpr"><button type="button" data-val="1">Full</button><button type="button" data-val="0.5">Half</button><button type="button" data-val="0">Standard</button></div>
+            </div>
+          </div>
+          <div class="wz-field">
+            <label id="wzLblTep">TE premium</label>
+            <div class="wz-segrow">
+              <div class="wz-seg" data-wz-seg="tep" role="group" aria-labelledby="wzLblTep"><button type="button" data-val="0">None</button><button type="button" data-val="0.5">+0.5</button><button type="button" data-val="1">+1.0</button></div>
+            </div>
+          </div>
+          <div class="wz-field">
+            <label id="wzLblPtd">Passing TDs</label>
+            <div class="wz-segrow">
+              <div class="wz-seg" data-wz-seg="ptd" role="group" aria-labelledby="wzLblPtd"><button type="button" data-val="4">4 pts</button><button type="button" data-val="6">6 pts</button></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="wz-nav">
+          <span class="wz-edit-later">You can change all of this mid-draft.</span>
+          <span class="wz-spacer"></span>
+          <button type="button" class="wz-btn wz-btn-primary" id="wzToStep2">Continue</button>
+        </div>
+      </div>
+
+      <!-- STEP 2: LEAGUE AND ROSTER -->
+      <div class="wz-card" id="wzStep2" hidden>
+        <h2>League</h2>
+        <p class="wz-sub">League size, your seat at the table, and roster slots.</p>
+
+        <div class="wz-field-row">
+          <div class="wz-field">
+            <label id="wzLblTeams">Teams</label>
+            <div class="wz-stepper" data-wz-stepper="teams" data-min="6" data-max="16" role="group" aria-labelledby="wzLblTeams"><button type="button" data-dir="-1" aria-label="Fewer teams">&minus;</button><span class="val">12</span><button type="button" data-dir="1" aria-label="More teams">+</button></div>
+          </div>
+          <div class="wz-field">
+            <label id="wzLblRounds">Rounds</label>
+            <div class="wz-stepper" data-wz-stepper="rounds" data-min="1" data-max="40" role="group" aria-labelledby="wzLblRounds"><button type="button" data-dir="-1" aria-label="Fewer rounds">&minus;</button><span class="val">15</span><button type="button" data-dir="1" aria-label="More rounds">+</button></div>
+          </div>
+          <div class="wz-field">
+            <label for="drCpuAdpSource">CPU drafts from</label>
+            <!-- Original select: draft_room.js rebuilds its options per draft type. -->
+            <select class="wz-inline" id="drCpuAdpSource" title="Which ADP source the CPU opponents draft against. Consensus blends every platform. Live (7d) is recent BR Fantasy drafts only.">
               <option value="consensus" selected>Consensus (all platforms)</option>
               <option value="sleeper">Sleeper</option>
               <option value="brfantasy">BR Fantasy</option>
@@ -247,29 +317,110 @@ _DRAFT_ROOM_HTML = r"""
             </select>
           </div>
         </div>
-      </div>
 
-      <div class="dr-step">
-        <div class="dr-step-head">
-          <span class="dr-step-num">4</span>
-          <div class="dr-step-title">Draft Capital</div>
+        <div class="wz-field">
+          <label id="wzLblSlot">Your draft slot</label>
+          <div class="wz-slots" id="wzSlotPicker" role="radiogroup" aria-labelledby="wzLblSlot"></div>
+          <p class="wz-slot-note" id="wzSlotNote"></p>
         </div>
-        <p class="dr-setup-desc" style="margin-bottom:8px;">Defaults to your slot's picks. Tap + on a round to add a traded-in pick, or click a pick to remove one you traded away.</p>
-        <div id="drCapitalSection"></div>
+
+        <div class="wz-field">
+          <label id="wzLblRoster">Roster slots</label>
+          <div class="wz-roster-lock" id="wzRosterLock" hidden></div>
+          <div class="wz-rostergrid" id="wzRosterGrid" role="group" aria-labelledby="wzLblRoster"></div>
+          <p class="wz-fhint">Starter slots plus bench. Set SF to 1 for superflex lineups.</p>
+        </div>
+
+        <div class="wz-nav">
+          <button type="button" class="wz-btn" id="wzBackToStep1">Back</button>
+          <span class="wz-spacer"></span>
+          <button type="button" class="wz-btn wz-btn-primary" id="wzToStep3">Continue</button>
+        </div>
       </div>
 
-      <div class="dr-setup-cta" id="drSetupStartCta">
-        <button class="dr-btn dr-btn-primary dr-btn-lg" id="drStartSim">&#9654;&nbsp; Start Mock Draft</button>
-        <button class="dr-btn dr-btn-lg" id="drStart">Draft Manually</button>
-        <button class="dr-btn dr-btn-ghost" id="drConnect">Connect Live Draft</button>
+      <!-- STEP 3: YOUR PICKS -->
+      <div class="wz-card" id="wzStep3" hidden>
+        <h2>Your picks</h2>
+        <p class="wz-sub">Your draft capital. Tweak it for any traded picks.</p>
+        <p class="wz-cap-summary" id="wzCapSummary"></p>
+        <div class="wz-picklist" id="wzPickList"></div>
+        <p class="wz-fhint">Defaults to your slot's picks for the chosen order. Use x to remove a pick you traded away, or + add pick for one you traded in.</p>
+        <div class="dr-setup-cta wz-cta3" id="drSetupStartCta">
+          <button type="button" class="wz-btn wz-btn-primary wz-btn-lg" id="drStartSim">Start Mock Draft</button>
+          <button type="button" class="wz-btn wz-btn-lg" id="drStart">Draft Manually</button>
+          <button type="button" class="wz-btn wz-btn-live" id="drConnect">Connect Live Draft</button>
+        </div>
+        <div class="wz-nav">
+          <button type="button" class="wz-btn" id="wzBackToStep2">Back</button>
+          <span class="wz-spacer"></span>
+          <span class="wz-edit-later">Edit later in settings.</span>
+        </div>
       </div>
+
       <div class="dr-setup-cta dr-setup-edit-cta" id="drSetupEditCta" hidden>
         <button type="button" class="dr-btn dr-btn-ghost dr-btn-danger" id="drEditReset"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>Reset Draft</button>
         <span class="dr-setup-edit-spacer"></span>
         <button type="button" class="dr-btn dr-btn-ghost" id="drEditCancel">Cancel</button>
         <button type="button" class="dr-btn dr-btn-primary" id="drEditApply">Apply Settings</button>
       </div>
-      <div class="dr-live-list" id="drLiveList" style="display:none;"></div>
+
+      <p class="wz-resume" id="wzResumeWrap" hidden>Already in a draft? <a href="#" id="wzResume">Resume where you left off</a></p>
+
+      <!-- Original setup controls. Kept in the DOM (visually hidden) so
+           draft_room.js keeps working unchanged; the wizard writes through to
+           these inputs and reads back the sections it renders into. -->
+      <div class="wz-orig" aria-hidden="true">
+        <select id="drType" tabindex="-1">
+          <option value="startup">Startup (Dynasty)</option>
+          <option value="rookie">Rookie (Dynasty)</option>
+          <option value="redraft">Redraft</option>
+          <option value="keeper">Keeper</option>
+        </select>
+        <!-- Keeper-only options; shown when Draft Type is Keeper. A keeper
+             draft is a redraft where each kept player costs that team the pick
+             at his keeper round, so those picks come off the board up front. -->
+        <div class="dr-keeper-only" style="display:none;">
+          <select id="drKeeperSource" tabindex="-1">
+            <option value="assistant">Use Keeper Assistant</option>
+            <option value="manual">Pick my own</option>
+          </select>
+        </div>
+        <div class="dr-keeper-only" style="display:none;">
+          <input id="drKeeperCount" type="number" min="0" max="10" step="1" value="2" tabindex="-1">
+        </div>
+        <select id="drSf" tabindex="-1">
+          <option value="0">1QB</option>
+          <option value="1">Superflex</option>
+        </select>
+        <select id="drOrder" tabindex="-1">
+          <option value="snake">Snake</option>
+          <option value="linear">Linear</option>
+          <option value="3rr">3rd Round Reversal</option>
+        </select>
+        <select id="drPpr" tabindex="-1" aria-label="Reception scoring" title="Projected PPG uses this reception scoring (full, half, or standard).">
+          <option value="1" selected>Full PPR</option>
+          <option value="0.5">Half PPR</option>
+          <option value="0">Standard</option>
+        </select>
+        <select id="drTep" tabindex="-1" aria-label="Tight end premium" title="Projected PPG for tight ends includes this TE premium.">
+          <option value="0" selected>None</option>
+          <option value="0.5">+0.5 PPR</option>
+          <option value="1">+1.0 PPR</option>
+        </select>
+        <select id="drPassTd" tabindex="-1" aria-label="Points per passing touchdown" title="Adjusts quarterback projected PPG, recommendations, and pick grades">
+          <option value="4" selected>4 points</option>
+          <option value="6">6 points</option>
+        </select>
+        <select id="drTeams" tabindex="-1">
+          <option value="6">6</option><option value="7">7</option><option value="8">8</option><option value="9">9</option><option value="10">10</option><option value="11">11</option><option value="12" selected>12</option><option value="13">13</option><option value="14">14</option><option value="15">15</option><option value="16">16</option>
+        </select>
+        <div class="dr-field" id="drRoundsField" style="display:none;">
+          <input id="drRounds" type="number" min="1" max="40" value="3" tabindex="-1">
+        </div>
+        <select id="drSlot" tabindex="-1"></select>
+        <div id="drRosterSection"></div>
+        <div id="drCapitalSection"></div>
+      </div>
     </div>
   </div>
 
@@ -278,97 +429,127 @@ _DRAFT_ROOM_HTML = r"""
     <div class="dr-start-banner" id="drStartBanner" style="display:none;"></div>
     <div class="dr-start-banner dr-espn-fallback" id="drEspnFallback" style="display:none;" hidden></div>
     <div class="dr-espn-tools" id="drEspnTools" style="display:none;" hidden></div>
-    <div class="dr-statusbar">
-      <div class="dr-status-info">
-        <div class="dr-onclock" id="drOnClockWrap">
+    <!-- Slim sticky command bar (Phase 2 draft-view redesign) -->
+    <header class="dr-cmdbar" id="drCmdbar">
+      <span class="dr-cb-name" id="drDraftName">Draft</span>
+      <span class="dr-cb-pills">
+        <button type="button" class="dr-league-meta" id="drLeagueMeta" hidden></button>
+        <span class="dr-pill dr-pill-live" id="drLiveBadge" style="display:none;">&#9679; LIVE</span>
+        <span class="dr-pill dr-pill-upcoming" id="drUpcomingBadge" style="display:none;">Upcoming</span>
+        <span class="dr-pill dr-pill-espn" id="drEspnSync" style="display:none;" hidden>ESPN Draft</span>
+        <button type="button" class="dr-pill-reconnect" id="drEspnReconnect" style="display:none;" hidden title="Reestablish extension sync">↻ Reconnect</button>
+        <span class="dr-poll-status" id="drPollStatus" style="display:none;"></span>
+        <span class="dr-save" id="drSave"></span>
+      </span>
+      <div class="dr-cb-onclock" id="drOnClockWrap">
+        <span class="dr-timer-ring" aria-hidden="true">
+          <svg viewBox="0 0 40 40"><circle class="dr-tr-bg" cx="20" cy="20" r="16"/><circle class="dr-tr-fg" id="drTimerRingFg" cx="20" cy="20" r="16"/></svg>
+          <span class="dr-pick-timer" id="drPickTimer" style="display:none;"></span>
+        </span>
+        <span class="dr-cb-who">
           <span class="dr-onclock-label">On the clock</span>
           <b id="drOnClock">Team 1</b>
-        </div>
-        <div class="dr-status-pills">
-          <span class="dr-ss-stat" id="drPickPill">Pick: 1.01</span>
-          <button type="button" class="dr-league-meta" id="drLeagueMeta" hidden></button>
-          <span class="dr-pick-timer" id="drPickTimer" style="display:none;"></span>
-          <span class="dr-pill dr-pill-live" id="drLiveBadge" style="display:none;">&#9679; LIVE</span>
-          <span class="dr-pill dr-pill-upcoming" id="drUpcomingBadge" style="display:none;">Upcoming</span>
-          <span class="dr-pill dr-pill-espn" id="drEspnSync" style="display:none;" hidden>ESPN Draft</span>
-          <button type="button" class="dr-pill-reconnect" id="drEspnReconnect" style="display:none;" hidden title="Reestablish extension sync">↻ Reconnect</button>
-          <span class="dr-progress" id="drProgress"></span>
-          <span class="dr-save" id="drSave"></span>
-          <span class="dr-poll-status" id="drPollStatus" style="display:none;"></span>
+          <span class="dr-cb-sub dr-ss-stat" id="drPickPill">Pick: 1.01</span>
+        </span>
+      </div>
+      <div class="dr-cb-youclock" id="drYouClock" hidden>
+        <span class="dr-you-flag">YOU</span>
+        <span class="dr-you-txt">YOU ARE ON THE CLOCK</span>
+        <span class="dr-timer-ring you" aria-hidden="true">
+          <svg viewBox="0 0 40 40"><circle class="dr-tr-bg" cx="20" cy="20" r="16"/><circle class="dr-tr-fg" id="drYouTimerFg" cx="20" cy="20" r="16"/></svg>
+          <span class="dr-pick-timer" id="drYouTimer" style="display:none;"></span>
+        </span>
+      </div>
+      <span class="dr-your-next" id="drYourNext" style="display:none;"></span>
+      <span class="dr-cb-spacer"></span>
+      <button class="dr-btn dr-btn-primary" id="drSimStart" style="display:none;">&#9654;&nbsp; Start Draft</button>
+      <button class="dr-btn dr-btn-ghost" id="drSimToggle" style="display:none;">Pause</button>
+      <button class="dr-btn dr-btn-ghost" id="drAutoBtn" style="display:none;" title="Auto-draft best available on your picks">Auto Draft</button>
+      <button class="dr-btn dr-btn-ghost" id="drPractice" style="display:none;">Practice Mock</button>
+      <span class="dr-pill dr-pill-you" id="drNextPill" style="display:none;"></span>
+      <span class="dr-pill dr-pill-grade" id="drGradePill" style="display:none;cursor:pointer;" title="View your draft report card"></span>
+      <div class="dr-side-opts">
+        <button type="button" class="dr-cb-icon" id="drThemeToggle" title="Toggle light/dark mode" aria-label="Toggle theme"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></button>
+        <button type="button" class="dr-cb-icon dr-undo-trigger" id="drUndo" aria-label="Undo last pick" title="Undo last pick"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
+        <a class="dr-opts-trigger dr-cs-trigger" id="drOptsCheatSheet" href="/draft/cheat-sheet" rel="noopener" title="Open your value board / cheat sheet (Cmd/Ctrl-click for a new tab)" aria-label="Cheat Sheet"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6M9 16h4"/></svg><span class="dr-cs-trigger-lbl">Cheat</span></a>
+        <button type="button" class="dr-cb-icon dr-pt-trigger" id="drPickTradeBtn" aria-label="Pick trade evaluator" title="Pick trade evaluator">Trade</button>
+        <button type="button" class="dr-cb-icon" id="drShare" aria-label="Share draft board" title="Share draft board"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg></button>
+        <button type="button" class="dr-cb-icon" id="drOptsBtn" aria-label="Settings" title="Settings"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button>
+        <div class="dr-opts-panel" id="drOptsPanel">
+          <!-- Auto-draft settings: mocks only, collapsed by default so the
+               menu is not cluttered by three selectors most people set once. -->
+          <div class="dr-opts-auto" id="drAutoSettings" style="display:none;">
+            <button type="button" class="dr-opts-expander" id="drAutoSettingsToggle" aria-expanded="false" aria-controls="drAutoSettingsBody">
+              <span>Auto-draft settings</span>
+              <svg class="dr-opts-chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+            <div class="dr-opts-auto-body" id="drAutoSettingsBody" hidden>
+              <select class="dr-sim-speed" id="drSimSpeed" title="Simulation speed">
+                <option value="1400">Speed: Slow</option>
+                <option value="700" selected>Speed: Normal</option>
+                <option value="300">Speed: Fast</option>
+                <option value="60">Speed: Instant</option>
+              </select>
+              <select class="dr-sim-speed" id="drMyStrat" title="Strategy your auto-draft follows on your picks">
+                <option value="">Auto: Balanced</option>
+                <option value="rb_heavy">Auto: RB heavy</option>
+                <option value="wr_heavy">Auto: WR heavy</option>
+                <option value="zero_rb">Auto: Zero RB</option>
+                <option value="hero_rb">Auto: Hero RB</option>
+                <option value="elite_te">Auto: Elite TE</option>
+                <option value="early_qb">Auto: Early QB</option>
+              </select>
+              <select class="dr-sim-speed" id="drMyAgeLean" title="Age lean your auto-draft follows on your picks">
+                <option value="">Age: Neutral</option>
+                <option value="win_now">Age: Win now</option>
+                <option value="youth">Age: Youth</option>
+              </select>
+            </div>
+          </div>
+          <div class="dr-opts-sec">
+            <button class="dr-btn dr-btn-ghost" id="drSummaryBtn" style="display:none;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>Summary</button>
+            <button class="dr-btn dr-btn-ghost" id="drEdit"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Edit Setup</button>
+            <button class="dr-btn dr-btn-ghost dr-btn-danger" id="drReset"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>Reset</button>
+          </div>
         </div>
       </div>
-      <div class="dr-status-right">
-        <span class="dr-pill dr-pill-you" id="drNextPill" style="display:none;"></span>
-        <span class="dr-pill dr-pill-grade" id="drGradePill" style="display:none;cursor:pointer;" title="View your draft report card"></span>
-        <span class="dr-sr-gap"></span>
-        <button class="dr-btn dr-btn-primary" id="drSimStart" style="display:none;">&#9654;&nbsp; Start Draft</button>
-        <button class="dr-btn dr-btn-ghost" id="drSimToggle" style="display:none;">Pause</button>
-        <button class="dr-btn dr-btn-ghost" id="drAutoBtn" style="display:none;" title="Auto-draft best available on your picks">Auto Draft</button>
-        <button class="dr-btn dr-btn-ghost" id="drPractice" style="display:none;">Practice Mock</button>
+    </header>
+
+    <!-- Draft progress line -->
+    <div class="dr-progressline" id="drProgressLine" aria-label="Draft progress">
+      <div class="dr-pl-labels">
+        <span class="dr-pl-round" id="drPlRound"></span>
+        <span class="dr-pl-you"><i aria-hidden="true"></i><span id="drPlNext"></span></span>
+        <span class="dr-progress" id="drProgress"></span>
+      </div>
+      <div class="dr-pl-track" id="drPlTrack">
+        <div class="dr-pl-fill" id="drPlFill"></div>
+        <span id="drPlTicks" aria-hidden="true"></span>
+        <span class="dr-pl-you-mk" id="drPlYou" title="Your next pick"></span>
       </div>
     </div>
 
     <div class="dr-cols">
-      <div class="dr-board-wrap">
-        <div class="dr-board-toolbar">
-          <div class="dr-cell-toggle" id="drCellToggle" title="Toggle between dynasty value and pick score">
-            <span class="dr-ct-opt is-active" data-mode="val">Value</span>
-            <span class="dr-ct-opt" data-mode="ps">Pick Score</span>
+      <section class="dr-panel dr-board-panel" aria-label="Draft board">
+        <div class="dr-panel-head">
+          <h2>Draft Board</h2>
+          <span class="dr-count" id="drBoardCount"></span>
+          <span class="dr-panel-kicker" id="drBoardKicker"></span>
+          <span class="dr-panel-sp"></span>
+          <div class="dr-board-toolbar">
+            <div class="dr-cell-toggle" id="drCellToggle" title="Toggle between dynasty value and pick score">
+              <span class="dr-ct-opt is-active" data-mode="val">Value</span>
+              <span class="dr-ct-opt" data-mode="ps">Pick Score</span>
+            </div>
           </div>
         </div>
         <div class="dr-board-scroll"><div class="dr-board" id="drBoard"></div></div>
-      </div>
-      <aside class="dr-side" id="drSide">
+      </section>
+      <section class="dr-panel dr-pool-panel dr-side" id="drSide" aria-label="Player pool">
         <button class="dr-sheet-handle" id="drSheetHandle" aria-label="Resize panel"><span class="dr-sheet-grip"></span></button>
-        <div class="otc-main-tabs dr-side-tabs" id="drSideTabs">
-          <button class="otc-main-tab is-active" data-stab="best">Players</button>
-          <button class="otc-main-tab" data-stab="queue">Queue</button>
-          <button class="otc-main-tab" data-stab="needs">Team</button>
-          <button class="otc-main-tab" data-stab="league">League</button>
-          <div class="dr-side-opts">
-            <button class="dr-opts-trigger dr-undo-trigger" id="drUndo" aria-label="Undo last pick" title="Undo last pick"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
-            <a class="dr-opts-trigger dr-cs-trigger" id="drOptsCheatSheet" href="/draft/cheat-sheet" rel="noopener" title="Open your value board / cheat sheet (Cmd/Ctrl-click for a new tab)" aria-label="Cheat Sheet"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6M9 16h4"/></svg><span class="dr-cs-trigger-lbl">Cheat</span></a>
-            <button class="dr-opts-trigger dr-pt-trigger" id="drPickTradeBtn" aria-label="Pick trade evaluator" title="Pick trade evaluator">Trade</button>
-            <button class="dr-opts-trigger" id="drOptsBtn" aria-label="Settings" title="Settings"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px;"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button>
-            <div class="dr-opts-panel" id="drOptsPanel">
-              <!-- Auto-draft settings: mocks only, collapsed by default so the
-                   menu is not cluttered by three selectors most people set once. -->
-              <div class="dr-opts-auto" id="drAutoSettings" style="display:none;">
-                <button type="button" class="dr-opts-expander" id="drAutoSettingsToggle" aria-expanded="false" aria-controls="drAutoSettingsBody">
-                  <span>Auto-draft settings</span>
-                  <svg class="dr-opts-chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
-                </button>
-                <div class="dr-opts-auto-body" id="drAutoSettingsBody" hidden>
-                  <select class="dr-sim-speed" id="drSimSpeed" title="Simulation speed">
-                    <option value="1400">Speed: Slow</option>
-                    <option value="700" selected>Speed: Normal</option>
-                    <option value="300">Speed: Fast</option>
-                    <option value="60">Speed: Instant</option>
-                  </select>
-                  <select class="dr-sim-speed" id="drMyStrat" title="Strategy your auto-draft follows on your picks">
-                    <option value="">Auto: Balanced</option>
-                    <option value="rb_heavy">Auto: RB heavy</option>
-                    <option value="wr_heavy">Auto: WR heavy</option>
-                    <option value="zero_rb">Auto: Zero RB</option>
-                    <option value="hero_rb">Auto: Hero RB</option>
-                    <option value="elite_te">Auto: Elite TE</option>
-                    <option value="early_qb">Auto: Early QB</option>
-                  </select>
-                  <select class="dr-sim-speed" id="drMyAgeLean" title="Age lean your auto-draft follows on your picks">
-                    <option value="">Age: Neutral</option>
-                    <option value="win_now">Age: Win now</option>
-                    <option value="youth">Age: Youth</option>
-                  </select>
-                </div>
-              </div>
-              <div class="dr-opts-sec">
-                <button class="dr-btn dr-btn-ghost" id="drSummaryBtn" style="display:none;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>Summary</button>
-                <button class="dr-btn dr-btn-ghost" id="drShare"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>Share</button>
-                <button class="dr-btn dr-btn-ghost" id="drEdit"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Edit Setup</button>
-                <button class="dr-btn dr-btn-ghost dr-btn-danger" id="drReset"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>Reset</button>
-              </div>
-            </div>
-          </div>
+        <div class="dr-panel-head" id="drPoolHead">
+          <h2>Best Available</h2>
+          <span class="dr-count" id="drBaCount"></span>
         </div>
         <div class="dr-side-head" id="drBestControls">
           <div class="dr-side-controls">
@@ -418,6 +599,25 @@ _DRAFT_ROOM_HTML = r"""
           <button class="dr-btn dr-btn-deepdive" id="drCompleteDeepDiveBtn" style="width:100%;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px;margin-right:5px;"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>Deep Dive<span class="dr-dd-prochip">PRO</span></button>
           <button class="dr-btn" id="drCompleteShareBtn" style="width:100%;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1px;margin-right:4px;"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>Share</button>
         </div>
+      </section>
+      <!-- Assistant rail: Queue / My Team / Team Needs / League Activity -->
+      <aside class="dr-rail" id="drRail" aria-label="Assistant rail">
+        <section class="dr-panel" aria-label="Queue">
+          <div class="dr-panel-head"><h2>Queue</h2><span class="dr-count" id="drQueueCount"></span></div>
+          <div class="dr-queue-list" id="drQueueList"></div>
+        </section>
+        <section class="dr-panel" aria-label="My team">
+          <div class="dr-panel-head"><h2>My Team</h2><span class="dr-count" id="drMyTeamCount"></span></div>
+          <div class="dr-myteam" id="drMyTeamList"></div>
+        </section>
+        <section class="dr-panel" aria-label="Team needs">
+          <div class="dr-panel-head"><h2>Team Needs</h2><span class="dr-count" id="drNeedsCount"></span></div>
+          <div class="dr-needs-matrix" id="drNeedsMatrix"></div>
+        </section>
+        <section class="dr-panel" aria-label="League activity">
+          <div class="dr-panel-head"><h2>League Activity</h2></div>
+          <div class="dr-feed" id="drLeagueFeed"></div>
+        </section>
       </aside>
     </div>
   </div>
@@ -575,6 +775,229 @@ _DRAFT_ROOM_HTML = r"""
     box-shadow: 0 24px 80px rgba(0,0,0,.45);
   }
   .dr-setup-is-modal .dr-live-list { display: none !important; }
+  /* ── Setup wizard (Phase 1 visual redesign) ── */
+  .dr-setup-card.wz {
+    max-width: 820px; background: var(--wz-panel); border-color: var(--wz-border);
+    border-radius: 16px; padding: 0; overflow: visible;
+    --wz-panel: #ffffff;
+    --wz-panel2: #eef2f8;
+    --wz-border: #e2e8f1;
+    --wz-text: #17222f;
+    --wz-muted: #5d6d86;
+    --wz-faint: #7e8da9;
+    --wz-accent: #2f6df6;
+    --wz-accent-soft: rgba(47,109,246,.10);
+    --wz-you: #9a6b0a;
+    --wz-you-soft: rgba(190,140,20,.12);
+    --wz-good: #1d9e6b;
+    --wz-bad: #d64545;
+    --wz-shadow: 0 1px 2px rgba(16,24,40,.04),0 8px 24px rgba(16,24,40,.06);
+    color: var(--wz-text);
+  }
+  :root[data-theme="dark"] .dr-setup-card.wz {
+    --wz-panel: #151c2c;
+    --wz-panel2: #1a2338;
+    --wz-border: #26304a;
+    --wz-text: #e8ecf5;
+    --wz-muted: #93a0bb;
+    --wz-faint: #5d6a88;
+    --wz-accent: #4f8cff;
+    --wz-accent-soft: rgba(79,140,255,.14);
+    --wz-you: #ffd166;
+    --wz-you-soft: rgba(255,209,102,.08);
+    --wz-good: #4fd08d;
+    --wz-bad: #f07a7a;
+    --wz-shadow: 0 10px 28px rgba(0,0,0,.4);
+  }
+  .dr-setup-card.wz .dr-setup-modal-head { padding: 22px 22px 0; }
+  .dr-setup-card.wz #drEditNote { padding: 0 22px; }
+  /* Original controls stay in the DOM for draft_room.js; visually hidden. */
+  .wz-orig { position: absolute !important; width: 1px; height: 1px; overflow: hidden;
+    clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+  .wz-brand { text-align: center; margin-bottom: 18px; padding: 26px 22px 0; }
+  .wz-brand h1 { font-size: 24px; font-weight: 800; letter-spacing: -.01em; margin: 0; color: var(--wz-text); }
+  .wz-brand p { color: var(--wz-muted); font-size: 13.5px; margin: 6px 0 0; }
+  /* Presets: collapsible, collapsed by default */
+  .wz-preset-wrap { border: 1px solid var(--wz-border); border-radius: 12px; background: var(--wz-panel);
+    margin: 0 22px 18px; box-shadow: var(--wz-shadow); overflow: hidden; }
+  .wz-preset-head { display: flex; align-items: center; gap: 12px; padding: 13px 16px; cursor: pointer;
+    text-align: left; width: 100%; border: 0; background: none; color: var(--wz-text); font-family: inherit; }
+  .wz-preset-wrap:hover .wz-preset-head { background: var(--wz-accent-soft); }
+  .wz-preset-head .wz-lt { font-weight: 800; font-size: 14px; display: block; }
+  .wz-preset-head .wz-ls { color: var(--wz-muted); font-size: 12.5px; margin-top: 2px; display: block; }
+  .wz-preset-head .wz-opt { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--wz-faint); border: 1px solid var(--wz-border); border-radius: 999px; padding: 2px 7px; margin-left: 6px; }
+  .wz-preset-head .wz-chev { margin-left: auto; color: var(--wz-faint); transition: transform .18s; flex: none; }
+  .wz-preset-wrap.open .wz-chev { transform: rotate(180deg); }
+  .wz-preset-panel { max-height: 0; overflow: hidden; transition: max-height .25s ease; }
+  .wz-preset-panel.open { max-height: 900px; }
+  .wz-preset-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; padding: 2px 14px 14px; }
+  @media (max-width: 560px){ .wz-preset-grid { grid-template-columns: 1fr; } }
+  .wz-pcard { position: relative; text-align: left; border: 1.5px solid var(--wz-border); border-radius: 12px;
+    background: var(--wz-panel); padding: 12px 14px; cursor: pointer; box-shadow: var(--wz-shadow);
+    display: flex; flex-direction: column; gap: 4px; color: var(--wz-text); font-family: inherit; }
+  .wz-pcard:hover { border-color: var(--wz-accent); }
+  .wz-pcard.on { border-color: var(--wz-accent); background: var(--wz-accent-soft); }
+  .wz-pname { font-size: 13.5px; font-weight: 800; }
+  .wz-pdesc { font-size: 11.5px; color: var(--wz-muted); }
+  .wz-ppills { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+  .wz-ppills span { font-size: 10px; font-weight: 700; color: var(--wz-muted); background: var(--wz-panel2);
+    border: 1px solid var(--wz-border); border-radius: 999px; padding: 3px 8px; }
+  .wz-pcheck { position: absolute; top: 10px; right: 10px; width: 20px; height: 20px; border-radius: 50%;
+    background: var(--wz-accent); color: #fff; font-size: 12px; font-weight: 800; display: none;
+    align-items: center; justify-content: center; }
+  .wz-pcard.on .wz-pcheck { display: flex; }
+  /* Live connect card */
+  .wz-live-card { border: 1.5px dashed var(--wz-accent); border-radius: 12px; background: var(--wz-panel);
+    margin: 0 22px 18px; box-shadow: var(--wz-shadow); overflow: hidden; }
+  .wz-live-simple { display: flex; align-items: center; gap: 12px; padding: 14px 16px; }
+  .wz-live-simple .wz-lt { font-weight: 800; font-size: 14px; display: block; color: var(--wz-text); }
+  .wz-live-simple .wz-ls { color: var(--wz-muted); font-size: 12.5px; margin-top: 2px; display: block; }
+  .wz-live-simple .wz-btn { margin-left: auto; flex: none; }
+  .wz-livedot { width: 10px; height: 10px; border-radius: 50%; background: var(--wz-good); flex: none;
+    animation: wz-livedotpulse 1.6s ease-in-out infinite; }
+  @keyframes wz-livedotpulse { 0%,100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--wz-good) 50%, transparent); } 50% { box-shadow: 0 0 0 8px transparent; } }
+  .wz-live-list { margin: 0 22px 18px; }
+  .wz-live-list .dr-live-item { display: block; width: 100%; text-align: left; margin-top: 8px; }
+  /* Step indicator */
+  .wz-steps { display: flex; align-items: center; gap: 0; margin: 0 22px 16px; }
+  .wz-step { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 700; color: var(--wz-faint); }
+  .wz-step .n { width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--wz-border);
+    display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800;
+    background: var(--wz-panel); }
+  .wz-step.on { color: var(--wz-text); }
+  .wz-step.on .n { border-color: var(--wz-accent); background: var(--wz-accent); color: #fff; }
+  .wz-step.done .n { border-color: var(--wz-good); background: var(--wz-good); color: #fff; }
+  .wz-step-line { flex: 1; height: 2px; background: var(--wz-border); margin: 0 12px; border-radius: 1px; }
+  /* Step cards */
+  .wz-card { background: var(--wz-panel); border: 1px solid var(--wz-border); border-radius: 16px;
+    box-shadow: var(--wz-shadow); padding: 22px; margin: 0 22px; overflow: hidden; }
+  .wz-card h2 { font-size: 16px; font-weight: 800; margin: 0 0 4px; color: var(--wz-text); }
+  .wz-card .wz-sub { font-size: 12.5px; color: var(--wz-muted); margin: 0 0 18px; }
+  .wz-field { margin-bottom: 18px; }
+  .wz-field > label { display: block; font-size: 11px; font-weight: 800; letter-spacing: .06em;
+    text-transform: uppercase; color: var(--wz-muted); margin-bottom: 8px; }
+  .wz-fhint { font-size: 11px; color: var(--wz-faint); font-weight: 500; margin-top: 10px; line-height: 1.5; }
+  .wz-segrow { display: flex; gap: 6px; flex-wrap: wrap; }
+  .wz-seg { display: inline-flex; background: var(--wz-panel2); border: 1px solid var(--wz-border);
+    border-radius: 999px; padding: 3px; gap: 2px; flex: 1; min-width: 0; }
+  .wz-seg button { border: 0; background: transparent; color: var(--wz-muted); font-size: 12.5px; font-weight: 700;
+    padding: 9px 6px; border-radius: 999px; cursor: pointer; flex: 1; white-space: nowrap; font-family: inherit; }
+  .wz-seg button.on { background: var(--wz-panel); color: var(--wz-text); box-shadow: var(--wz-shadow); }
+  .wz-seg button:hover:not(.on) { color: var(--wz-text); }
+  .wz-stepper { display: inline-flex; align-items: center; gap: 0; border: 1px solid var(--wz-border);
+    border-radius: 10px; overflow: hidden; background: var(--wz-panel2); }
+  .wz-stepper button { width: 38px; height: 38px; border: 0; background: transparent; font-size: 18px;
+    font-weight: 700; color: var(--wz-muted); cursor: pointer; font-family: inherit; }
+  .wz-stepper button:hover { color: var(--wz-accent); background: var(--wz-accent-soft); }
+  .wz-stepper .val { min-width: 56px; text-align: center; font-size: 15px; font-weight: 800;
+    font-variant-numeric: tabular-nums; color: var(--wz-text); }
+  .wz-field-row { display: flex; gap: 18px; flex-wrap: wrap; }
+  .wz-field-row .wz-field { flex: 1; min-width: 200px; }
+  .wz-keeper-box { border: 1px dashed var(--wz-border); border-radius: 12px; padding: 14px;
+    background: var(--wz-panel2); margin-bottom: 18px; }
+  .wz-keeper-box .wz-field:last-child { margin-bottom: 0; }
+  /* Slot picker */
+  .wz-slots { display: grid; grid-template-columns: repeat(10,1fr); gap: 6px; margin-top: 2px; }
+  .wz-slotbox { aspect-ratio: 1/1.15; border: 1.5px solid var(--wz-border); border-radius: 9px;
+    background: var(--wz-panel2); font-weight: 800; font-size: 13px; color: var(--wz-muted); cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+    font-variant-numeric: tabular-nums; font-family: inherit; padding: 0; }
+  .wz-slotbox small { font-size: 8.5px; font-weight: 700; letter-spacing: .04em; color: var(--wz-faint); }
+  .wz-slotbox:hover { border-color: var(--wz-accent); }
+  .wz-slotbox.sel { background: var(--wz-accent); border-color: var(--wz-accent); color: #fff; }
+  .wz-slotbox.sel small { color: rgba(255,255,255,.8); }
+  .wz-slotbox.random { aspect-ratio: auto; grid-column: span 2; font-size: 11px; }
+  .wz-slot-note { font-size: 11.5px; color: var(--wz-muted); margin-top: 8px; }
+  .wz-slot-note b { color: var(--wz-text); }
+  select.wz-inline { background: var(--wz-panel2); color: var(--wz-text); border: 1px solid var(--wz-border);
+    border-radius: 10px; font-size: 13px; font-weight: 600; padding: 10px 12px; min-width: 220px;
+    font-family: inherit; }
+  /* Roster grid */
+  .wz-rostergrid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; }
+  .wz-rslot { border: 1px solid var(--wz-border); border-radius: 10px; padding: 8px 10px; display: flex;
+    align-items: center; justify-content: space-between; background: var(--wz-panel2); }
+  .wz-rslot .wz-rl { font-size: 12px; font-weight: 800; color: var(--wz-muted); letter-spacing: .03em; }
+  .wz-mini-stepper { display: inline-flex; align-items: center; border: 1px solid var(--wz-border);
+    border-radius: 8px; overflow: hidden; background: var(--wz-panel); }
+  .wz-mini-stepper button { width: 28px; height: 30px; border: 0; background: transparent; font-size: 15px;
+    font-weight: 700; color: var(--wz-muted); cursor: pointer; font-family: inherit; }
+  .wz-mini-stepper button:hover { color: var(--wz-accent); background: var(--wz-accent-soft); }
+  .wz-mini-stepper .val { min-width: 34px; text-align: center; font-size: 14px; font-weight: 800;
+    font-variant-numeric: tabular-nums; color: var(--wz-text); }
+  .wz-mini-stepper button:disabled { opacity: .35; cursor: default; }
+  .wz-mini-stepper button:disabled:hover { color: var(--wz-muted); background: transparent; }
+  .wz-roster-lock { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--wz-panel2);
+    border: 1px solid var(--wz-border); border-radius: 10px; padding: 10px 12px; font-size: 12.5px;
+    color: var(--wz-muted); margin-bottom: 12px; }
+  .wz-roster-lock .wz-linkbtn { margin-left: auto; }
+  /* Draft capital */
+  .wz-cap-summary { font-size: 13.5px; font-weight: 600; color: var(--wz-text); background: var(--wz-panel2);
+    border: 1px solid var(--wz-border); border-radius: 10px; padding: 10px 14px; margin: 0 0 12px; line-height: 1.5; }
+  .wz-cap-summary b { color: var(--wz-accent); font-weight: 800; }
+  .wz-picklist { border: 1px solid var(--wz-border); border-radius: 12px; overflow: hidden; margin-bottom: 4px;
+    max-height: 420px; overflow-y: auto; }
+  .wz-prow { display: flex; align-items: center; gap: 12px; padding: 8px 14px; background: var(--wz-panel); }
+  .wz-prow:nth-child(even) { background: var(--wz-panel2); }
+  .wz-prow .wz-rd { width: 62px; flex: none; font-size: 10.5px; font-weight: 800; color: var(--wz-faint);
+    text-transform: uppercase; letter-spacing: .05em; }
+  .wz-prow .wz-picks { display: flex; gap: 8px; flex-wrap: wrap; flex: 1; align-items: center; }
+  .wz-pbadge { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 800;
+    background: var(--wz-panel); border: 1.5px solid var(--wz-accent); color: var(--wz-text); border-radius: 9px;
+    padding: 5px 10px; font-variant-numeric: tabular-nums; }
+  .wz-pbadge .wz-ov { font-size: 11px; font-weight: 600; color: var(--wz-muted); }
+  .wz-pbadge.traded { border-color: var(--wz-border); color: var(--wz-faint); background: transparent; }
+  .wz-pbadge.traded .wz-pk { text-decoration: line-through; }
+  .wz-pbadge .wz-tag { font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--wz-accent); }
+  .wz-pbadge.extra { border-style: dashed; }
+  .wz-prow .wz-acts { margin-left: auto; display: flex; gap: 6px; align-items: center; flex: none; }
+  .wz-mini-btn { font-size: 11px; font-weight: 700; border: 1px solid var(--wz-border); background: var(--wz-panel);
+    color: var(--wz-muted); border-radius: 8px; padding: 6px 10px; cursor: pointer; white-space: nowrap;
+    font-family: inherit; }
+  .wz-mini-btn:hover { color: var(--wz-accent); border-color: var(--wz-accent); }
+  .wz-mini-btn.undo { color: var(--wz-accent); border-color: var(--wz-accent); }
+  .wz-addgrid { display: flex; flex-wrap: wrap; gap: 5px; padding: 4px 14px 12px 88px; background: var(--wz-panel); }
+  .wz-addgrid .wz-slotbox { width: 30px; aspect-ratio: 1; font-size: 11px; }
+  .wz-addgrid .wz-slotbox.on { background: var(--wz-accent); border-color: var(--wz-accent); color: #fff; }
+  .wz-addgrid .wz-slotbox.home { border-style: dashed; }
+  /* Nav + CTAs */
+  .wz-nav { display: flex; align-items: center; gap: 10px; margin-top: 20px; }
+  .wz-nav .wz-spacer { flex: 1; }
+  .wz-cta3 { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 20px; }
+  .wz-btn { border: 1px solid var(--wz-border); background: var(--wz-panel); color: var(--wz-text);
+    border-radius: 10px; padding: 11px 20px; font-size: 13.5px; font-weight: 700; cursor: pointer;
+    font-family: inherit; display: inline-flex; align-items: center; gap: 8px; }
+  .wz-btn:hover { border-color: var(--wz-faint); }
+  .wz-btn-primary { background: var(--wz-accent); border-color: var(--wz-accent); color: #fff;
+    box-shadow: var(--wz-shadow); }
+  .wz-btn-primary:hover { filter: brightness(1.06); border-color: var(--wz-accent); }
+  .wz-btn-lg { padding: 12px 22px; font-size: 14px; }
+  .wz-btn-live { border-color: var(--wz-good); color: var(--wz-good); }
+  .wz-btn-live:hover { background: color-mix(in srgb, var(--wz-good) 8%, transparent); border-color: var(--wz-good); }
+  .wz-btn:disabled { opacity: .55; cursor: default; }
+  .wz-edit-later { font-size: 11.5px; color: var(--wz-faint); }
+  .wz-linkbtn { border: 0; background: none; color: var(--wz-accent); font-size: 13px; font-weight: 700;
+    cursor: pointer; padding: 8px 4px; font-family: inherit; }
+  .wz-linkbtn:hover { text-decoration: underline; }
+  .wz-resume { text-align: center; margin: 14px 22px 26px; font-size: 12.5px; color: var(--wz-muted); }
+  .wz-resume a { color: var(--wz-accent); font-weight: 700; text-decoration: none; }
+  .wz-resume a:hover { text-decoration: underline; }
+  .wz-connect-loading { display: none; align-items: center; gap: 10px; padding: 0 16px 14px; font-weight: 700;
+    font-size: 13.5px; color: var(--wz-text); }
+  .wz-connect-loading.show { display: flex; }
+  .wz-spinner { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--wz-border);
+    border-top-color: var(--wz-accent); animation: wz-spin .7s linear infinite; flex: none; }
+  @keyframes wz-spin { to { transform: rotate(360deg); } }
+  @media (max-width: 760px){
+    .wz-slots { grid-template-columns: repeat(5,1fr); }
+    .wz-card { padding: 16px; margin: 0 12px; }
+    .wz-rostergrid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+    .wz-brand, .wz-steps { margin-left: 12px; margin-right: 12px; padding-left: 0; padding-right: 0; }
+    .wz-preset-wrap, .wz-live-card { margin-left: 12px; margin-right: 12px; }
+    .wz-live-list { margin-left: 12px; margin-right: 12px; }
+    .wz-resume { margin-left: 12px; margin-right: 12px; }
+  }
   body.dr-edit-open { overflow: hidden; }
   .dr-league-meta {
     display: inline-flex; align-items: center; gap: 5px; flex-wrap: nowrap;
@@ -660,30 +1083,94 @@ _DRAFT_ROOM_HTML = r"""
     margin-left: auto; background: none; border: none; cursor: pointer;
     color: var(--text-muted); font-size: 22px; line-height: 1; padding: 0 4px;
   }
-  .dr-statusbar {
-    position: relative;
-    display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    padding: 10px 14px; margin-bottom: 12px; border: 1px solid var(--border); border-radius: 14px;
-    background:
-      linear-gradient(180deg, color-mix(in srgb, var(--brand-blue, #3b82f6) 4%, var(--card)), var(--card));
+  /* ── Slim sticky command bar (Phase 2 draft-view redesign) ── */
+  .dr-cmdbar {
+    position: sticky; top: 89px; z-index: 50;
+    display: flex; align-items: center; gap: 14px;
+    height: 58px; padding: 0 14px;
+    background: var(--card); border: 1px solid var(--border); border-bottom: none;
+    border-radius: 14px 14px 0 0;
     box-shadow: var(--shadow-sm, 0 2px 8px rgba(15, 23, 42, 0.05));
-    position: sticky; top: 89px; z-index: 30;
+    overflow-x: auto; scrollbar-width: none;
   }
-  .dr-status-info { display: flex; align-items: center; gap: 14px; min-width: 0; flex: 1; }
-  .dr-status-pills { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
-  /* Prominent round/pick stats inside status bar */
-  .dr-ss-stat { font-size: 15px; font-weight: 800; color: var(--text); white-space: nowrap; }
-  .dr-ss-sep { font-size: 13px; color: var(--text-muted); font-weight: 700; }
-  .dr-status-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
-  .dr-sr-gap { flex: 1; }
-  /* On-the-clock hero chip */
-  .dr-onclock { display: flex; flex-direction: column; gap: 1px; padding: 6px 14px; border-radius: 10px;
-    background: var(--bg); border: 1px solid var(--border); flex-shrink: 0; line-height: 1.2; }
-  .dr-onclock-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+  .dr-cmdbar::-webkit-scrollbar { display: none; }
+  .dr-cmdbar > * { flex-shrink: 0; }
+  .dr-cb-name { font-weight: 800; font-size: 14px; white-space: nowrap; color: var(--text); }
+  .dr-cb-pills { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .dr-cb-onclock { display: flex; align-items: center; gap: 10px; padding-left: 14px;
+    border-left: 1px solid var(--border); }
+  .dr-cb-who { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
+  .dr-onclock-label { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .07em;
     color: var(--text-muted); }
-  .dr-onclock b { font-size: 15px; font-weight: 800; color: var(--text); white-space: nowrap; }
-  .dr-onclock.dr-onclock-you { background: color-mix(in srgb, var(--win) 10%, transparent); border-color: color-mix(in srgb, var(--win) 40%, transparent); }
-  .dr-onclock.dr-onclock-you b { color: var(--win); }
+  .dr-cb-who b { font-size: 14px; font-weight: 800; color: var(--text); white-space: nowrap; }
+  .dr-cb-sub { font-size: 11px; color: var(--text-muted); font-weight: 600; white-space: nowrap;
+    font-variant-numeric: tabular-nums; }
+  .dr-ss-stat { font-size: 11px; font-weight: 700; color: var(--text-muted); white-space: nowrap; }
+  /* Pick timer ring */
+  .dr-timer-ring { position: relative; width: 38px; height: 38px; flex: none; }
+  .dr-timer-ring svg { width: 38px; height: 38px; transform: rotate(-90deg); display: block; }
+  .dr-tr-bg { fill: none; stroke: var(--border); stroke-width: 4; }
+  .dr-tr-fg { fill: none; stroke: var(--accent,#38bdf8); stroke-width: 4; stroke-linecap: round;
+    stroke-dasharray: 100.53; stroke-dashoffset: 0; }
+  .dr-timer-ring .dr-pick-timer { position: absolute; inset: 0; display: flex; align-items: center;
+    justify-content: center; font-size: 10.5px; font-weight: 800; color: var(--text);
+    font-variant-numeric: tabular-nums; }
+  .dr-pick-timer.urgent { color: var(--loss); }
+  /* You-are-on-the-clock state: pulsing banner swaps in for the on-clock cluster */
+  .dr-cb-youclock { display: none; align-items: center; gap: 10px; padding: 7px 14px; border-radius: 10px;
+    background: color-mix(in srgb, var(--warning) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--warning) 55%, transparent);
+    font-weight: 800; font-size: 13px; color: var(--warning); letter-spacing: .02em; white-space: nowrap;
+    animation: drYouPulse 1.4s ease-in-out infinite; }
+  .dr-cb-youclock[hidden] { display: none; }
+  .dr-cmdbar.dr-you-on .dr-cb-youclock { display: flex; }
+  .dr-cmdbar.dr-you-on #drOnClockWrap, .dr-cmdbar.dr-you-on #drYourNext { display: none; }
+  .dr-cmdbar.dr-you-on #drSimStart { animation: drYouPulse 1.4s ease-in-out infinite; }
+  @keyframes drYouPulse {
+    0%,100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--warning) 45%, transparent); }
+    50% { box-shadow: 0 0 0 7px transparent; } }
+  .dr-you-flag { font-size: 10px; font-weight: 800; letter-spacing: .1em; background: var(--warning);
+    color: #fff; border-radius: 6px; padding: 3px 8px; }
+  .dr-cb-youclock .dr-tr-fg { stroke: var(--warning); }
+  .dr-your-next { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+  .dr-your-next b { color: var(--text); font-variant-numeric: tabular-nums; }
+  .dr-cb-spacer { flex: 1; }
+  .dr-cb-icon { min-width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center;
+    gap: 4px; border: 1px solid var(--border); background: var(--card); border-radius: 10px;
+    color: var(--text-muted); cursor: pointer; text-decoration: none; font-size: 12px; font-weight: 700;
+    flex: none; padding: 0 8px; }
+  .dr-cb-icon:hover, .dr-cb-icon[aria-expanded="true"] { color: var(--accent,#38bdf8); border-color: var(--accent,#38bdf8); }
+  a.dr-cb-icon { color: var(--text-muted); }
+  .dr-cs-trigger-lbl { line-height: 1; }
+  /* Cheat-sheet link keeps its legacy classes (test contract); in the command
+     bar it gets the same icon-button treatment as its neighbors. */
+  .dr-cmdbar a.dr-opts-trigger.dr-cs-trigger {
+    min-width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center;
+    gap: 4px; border: 1px solid var(--border); background: var(--card); border-radius: 10px;
+    color: var(--text-muted); cursor: pointer; text-decoration: none; font-size: 12px; font-weight: 700;
+    flex: none; padding: 0 8px; }
+  .dr-cmdbar a.dr-opts-trigger.dr-cs-trigger:hover { color: var(--accent,#38bdf8); border-color: var(--accent,#38bdf8); }
+  /* ── Draft progress line ── */
+  .dr-progressline { position: sticky; top: 147px; z-index: 49; background: var(--card);
+    border: 1px solid var(--border); border-radius: 0 0 14px 14px;
+    padding: 8px 14px 10px; margin-bottom: 12px;
+    box-shadow: var(--shadow-sm, 0 2px 8px rgba(15, 23, 42, 0.05)); }
+  .dr-pl-labels { display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+    font-size: 11px; color: var(--text-muted); margin-bottom: 6px;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .dr-pl-labels b { color: var(--text); }
+  .dr-pl-you { display: inline-flex; align-items: center; gap: 6px; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; }
+  .dr-pl-you i { width: 8px; height: 8px; background: var(--warning); border-radius: 2px;
+    transform: rotate(45deg); flex: none; }
+  .dr-pl-track { position: relative; height: 6px; border-radius: 3px; background: var(--border); }
+  .dr-pl-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px;
+    background: var(--accent,#38bdf8); width: 0; transition: width .3s; }
+  #drPlTicks { position: absolute; inset: 0; }
+  .dr-pl-tick { position: absolute; top: -2px; width: 2px; height: 10px; background: var(--text-muted);
+    opacity: .45; border-radius: 1px; transform: translateX(-50%); }
+  .dr-pl-you-mk { position: absolute; top: -4px; width: 10px; height: 14px; background: var(--warning);
+    border-radius: 3px; transform: translateX(-50%) rotate(45deg); box-shadow: 0 0 0 2px var(--card); }
   .dr-pill { display:inline-flex; align-items:center; font-size:13px; font-weight:700; padding:3px 9px;
     border-radius:var(--radius-pill, 8px); background:color-mix(in srgb, var(--accent) 14%, transparent);
     color:var(--accent,#38bdf8); white-space:nowrap;
@@ -876,14 +1363,28 @@ _DRAFT_ROOM_HTML = r"""
   .dr-ls-drafting { background: color-mix(in srgb, var(--loss) 16%, transparent); color: var(--loss); }
   .dr-ls-pre_draft { background: color-mix(in srgb, var(--warning) 16%, transparent); color: var(--warning); }
   .dr-ls-complete { background: rgba(148,163,184,.16); color: var(--text-subtle); }
-  .dr-cols { display: grid; grid-template-columns: 1fr 375px; gap: 14px; align-items: start; }
+  /* ── Draft view: 3-column layout (board / Best Available / assistant rail) ── */
+  .dr-cols { display: grid; grid-template-columns: minmax(0,1.35fr) minmax(0,1fr) 300px; gap: 12px; align-items: start; }
+  .dr-panel { background: var(--card); border: 1px solid var(--border); border-radius: 14px; overflow: hidden;
+    box-shadow: var(--shadow-sm, 0 2px 8px rgba(15, 23, 42, 0.05)); min-width: 0; }
+  .dr-panel-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+    border-bottom: 1px solid var(--border); flex: none; }
+  .dr-panel-head h2 { font-size: 12px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--text-muted); margin: 0; }
+  .dr-count { font-size: 11px; font-weight: 700; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 999px; padding: 2px 8px; color: var(--text); font-variant-numeric: tabular-nums;
+    white-space: nowrap; }
+  .dr-panel-kicker { font-size: 10.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--text-muted); white-space: nowrap; }
+  .dr-panel-sp { flex: 1; }
   /* min-width:0 lets this grid item shrink to its track instead of growing to
      the wide board's width (the inner scroll, not the card, holds the overflow). */
-  .dr-board-wrap { position: relative; min-width: 0; border: 1px solid var(--border); border-radius: 14px; background: var(--card); padding: 8px; box-shadow: var(--shadow-sm, 0 2px 8px rgba(15, 23, 42, 0.05)); }
-  /* Only the board scrolls horizontally; the toolbar (Value/Pick Score toggle)
-     stays pinned to the card so it doesn't drift when you scroll the grid. */
-  .dr-board-scroll { overflow-x: auto; min-width: 0; }
-  .dr-board { display: grid; gap: 5px; min-width: max-content; }
+  .dr-board-panel { position: relative; min-width: 0; }
+  .dr-board-panel .dr-board-toolbar { padding: 0; }
+  /* The board scrolls on both axes; the header row sticks to the top and the
+     round-label column (+ corner cell) sticks to the left. */
+  .dr-board-scroll { overflow: auto; min-width: 0; max-height: calc(100vh - 330px); min-height: 300px; }
+  .dr-board { display: grid; gap: 5px; min-width: max-content; padding: 8px; }
   .dr-cell {
     border: 1px solid var(--border); border-radius: 8px; padding: 5px 6px 0; min-height: 50px;
     background: var(--bg); display: flex; align-items: flex-end; gap: 6px; position: relative; overflow: hidden;
@@ -929,27 +1430,110 @@ _DRAFT_ROOM_HTML = r"""
   .dr-ct-opt { padding: 3px 9px; cursor: pointer; color: var(--text-muted); transition: background .15s, color .15s; }
   .dr-ct-opt.is-active { background: var(--accent,#38bdf8); color: var(--on-accent, #fff); }
   .dr-ct-opt:not(.is-active):hover { background: var(--bg2,rgba(127,127,127,.12)); color: var(--text); }
-  .dr-hs { width: 40px; height: 40px; border-radius: 8px 8px 0 0; object-fit: cover; object-position: top center;
-    flex-shrink: 0; background: transparent; align-self: flex-end; }
+  /* ── Headshots: mock .hs treatment (Phase 3) ──
+     Initials circle with a position-color ring (--ring) and team tint
+     (t-XXX classes below, scoped to the draft room). The <img> overlays the
+     circle when the photo loads and removes itself on error, so the styled
+     initials are always the fallback. Both themes covered via the
+     :root[data-theme="dark"] overrides. */
+  .dr-hs { position: relative; width: 40px; height: 40px; flex: none; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 12px; letter-spacing: .02em;
+    border: 2.5px solid var(--ring, var(--text-muted));
+    background: var(--tint, rgba(127,127,127,.12)); color: var(--tfg, var(--text)); }
+  .dr-hs-ini { line-height: 1; }
+  .dr-hs-img { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 50%;
+    object-fit: cover; object-position: top center; }
+  .dr-hs-tm { position: absolute; right: -5px; bottom: -5px; font-size: 8.5px; font-weight: 800;
+    background: var(--card); border: 1px solid var(--border); border-radius: 4px;
+    padding: 0 3px; color: var(--text-muted); line-height: 1.5; }
+  .dr-hs-lg { width: 44px; height: 44px; font-size: 13px; }
+  .dr-hs-sm { width: 30px; height: 30px; font-size: 10px; border-width: 2px; }
+  .dr-hs-sm .dr-hs-tm { display: none; }
+  /* Team tints for the headshot circles, all 32 teams. Dark overrides follow. */
+  .dr-wrap .t-ARI{--tint:#fbe7e7;--tfg:#8f2323}.dr-wrap .t-ATL{--tint:#fbe7e7;--tfg:#8f2323}
+  .dr-wrap .t-BAL{--tint:#ece4f7;--tfg:#4b2d86}.dr-wrap .t-BUF{--tint:#dbe7fb;--tfg:#1a448f}
+  .dr-wrap .t-CAR{--tint:#dde7f5;--tfg:#274b7d}.dr-wrap .t-CHI{--tint:#fbe7d9;--tfg:#8f4a1d}
+  .dr-wrap .t-CIN{--tint:#fbe7d9;--tfg:#8f4a1d}.dr-wrap .t-CLE{--tint:#f5e6d3;--tfg:#7a4a1a}
+  .dr-wrap .t-DAL{--tint:#dde7f5;--tfg:#274b7d}.dr-wrap .t-DEN{--tint:#fbe7d9;--tfg:#8f4a1d}
+  .dr-wrap .t-DET{--tint:#dbe7fb;--tfg:#1c4d8f}.dr-wrap .t-GB{--tint:#ddeddf;--tfg:#1f5c2d}
+  .dr-wrap .t-HOU{--tint:#dde7f5;--tfg:#274b7d}.dr-wrap .t-IND{--tint:#dbe7fb;--tfg:#1a448f}
+  .dr-wrap .t-JAX{--tint:#dcf3f1;--tfg:#0f6b66}.dr-wrap .t-KC{--tint:#fbe3e3;--tfg:#8f1d1d}
+  .dr-wrap .t-LAC{--tint:#dbe7fb;--tfg:#1a448f}.dr-wrap .t-LAR{--tint:#dfeafb;--tfg:#1c4d8f}
+  .dr-wrap .t-LV{--tint:#e8e8ec;--tfg:#3a3a44}.dr-wrap .t-MIA{--tint:#dcf3f1;--tfg:#0f6b66}
+  .dr-wrap .t-MIN{--tint:#ece4f7;--tfg:#4b2d86}.dr-wrap .t-NE{--tint:#dde7f5;--tfg:#274b7d}
+  .dr-wrap .t-NO{--tint:#f5edd6;--tfg:#7a5c14}.dr-wrap .t-NYG{--tint:#dde7f5;--tfg:#274b7d}
+  .dr-wrap .t-NYJ{--tint:#ddeddf;--tfg:#1f5c2d}.dr-wrap .t-PHI{--tint:#ddeddf;--tfg:#1f5c2d}
+  .dr-wrap .t-PIT{--tint:#f5edd6;--tfg:#7a5c14}.dr-wrap .t-SF{--tint:#fbe7e7;--tfg:#8f2323}
+  .dr-wrap .t-SEA{--tint:#dcf0e4;--tfg:#14532d}.dr-wrap .t-TB{--tint:#fbe7e7;--tfg:#8f2323}
+  .dr-wrap .t-TEN{--tint:#dde7f5;--tfg:#274b7d}.dr-wrap .t-WAS{--tint:#f5e6e6;--tfg:#7d2f2f}
+  :root[data-theme="dark"] .dr-wrap .t-ARI{--tint:#3a2326;--tfg:#f0b0b0}:root[data-theme="dark"] .dr-wrap .t-ATL{--tint:#3a2326;--tfg:#f0b0b0}
+  :root[data-theme="dark"] .dr-wrap .t-BAL{--tint:#2a2545;--tfg:#c4b5f5}:root[data-theme="dark"] .dr-wrap .t-BUF{--tint:#1d2c47;--tfg:#a9c8f5}
+  :root[data-theme="dark"] .dr-wrap .t-CAR{--tint:#1f2a44;--tfg:#a9bfe8}:root[data-theme="dark"] .dr-wrap .t-CHI{--tint:#3d2f1c;--tfg:#f5cf96}
+  :root[data-theme="dark"] .dr-wrap .t-CIN{--tint:#3d2f1c;--tfg:#f5cf96}:root[data-theme="dark"] .dr-wrap .t-CLE{--tint:#3a2c1c;--tfg:#e8c896}
+  :root[data-theme="dark"] .dr-wrap .t-DAL{--tint:#1f2a44;--tfg:#a9bfe8}:root[data-theme="dark"] .dr-wrap .t-DEN{--tint:#3d2f1c;--tfg:#f5cf96}
+  :root[data-theme="dark"] .dr-wrap .t-DET{--tint:#1d2c47;--tfg:#a9c8f5}:root[data-theme="dark"] .dr-wrap .t-GB{--tint:#22382a;--tfg:#a9dcb2}
+  :root[data-theme="dark"] .dr-wrap .t-HOU{--tint:#1f2a44;--tfg:#a9bfe8}:root[data-theme="dark"] .dr-wrap .t-IND{--tint:#1d2c47;--tfg:#a9c8f5}
+  :root[data-theme="dark"] .dr-wrap .t-JAX{--tint:#1c3833;--tfg:#9fe0d8}:root[data-theme="dark"] .dr-wrap .t-KC{--tint:#3a2326;--tfg:#f0b0b0}
+  :root[data-theme="dark"] .dr-wrap .t-LAC{--tint:#1d2c47;--tfg:#a9c8f5}:root[data-theme="dark"] .dr-wrap .t-LAR{--tint:#1d2c47;--tfg:#a9c8f5}
+  :root[data-theme="dark"] .dr-wrap .t-LV{--tint:#2b2b33;--tfg:#c9c9d4}:root[data-theme="dark"] .dr-wrap .t-MIA{--tint:#1c3833;--tfg:#9fe0d8}
+  :root[data-theme="dark"] .dr-wrap .t-MIN{--tint:#2c2545;--tfg:#c9b3f0}:root[data-theme="dark"] .dr-wrap .t-NE{--tint:#1f2a44;--tfg:#a9bfe8}
+  :root[data-theme="dark"] .dr-wrap .t-NO{--tint:#3a301c;--tfg:#f0d896}:root[data-theme="dark"] .dr-wrap .t-NYG{--tint:#1f2a44;--tfg:#a9bfe8}
+  :root[data-theme="dark"] .dr-wrap .t-NYJ{--tint:#1f3826;--tfg:#a9dcb2}:root[data-theme="dark"] .dr-wrap .t-PHI{--tint:#1f3826;--tfg:#a9dcb2}
+  :root[data-theme="dark"] .dr-wrap .t-PIT{--tint:#3a301c;--tfg:#f0d896}:root[data-theme="dark"] .dr-wrap .t-SF{--tint:#3a2326;--tfg:#f0b0b0}
+  :root[data-theme="dark"] .dr-wrap .t-SEA{--tint:#1c3a2c;--tfg:#9fe0b8}:root[data-theme="dark"] .dr-wrap .t-TB{--tint:#3a2326;--tfg:#f0b0b0}
+  :root[data-theme="dark"] .dr-wrap .t-TEN{--tint:#1f2a44;--tfg:#a9bfe8}:root[data-theme="dark"] .dr-wrap .t-WAS{--tint:#3d2626;--tfg:#e8a8a8}
   .dr-cell-body { min-width: 0; line-height: 1.2; }
   .dr-cell-name { font-size: 13px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 96px; }
   .dr-cell-meta { font-size: 11px; color: var(--text-muted); }
   .dr-posbadge { font-size: 11px; font-weight: 700; color: #fff; border-radius: 3px; padding: 1px 4px; }
-  .dr-colhead { font-size: 11px; font-weight: 700; color: var(--text-muted); text-align: center; padding: 2px 0; white-space: nowrap; }
+  .dr-colhead { position: sticky; top: 0; z-index: 3; background: var(--card);
+    font-size: 11px; font-weight: 700; color: var(--text-muted); text-align: center; padding: 6px 0;
+    white-space: nowrap; border-bottom: 2px solid var(--border); }
   .dr-colhead-you { color: var(--accent,#38bdf8); }
+  /* Your seat's column header: a clear YOU pill (plus a star when you only
+     hold traded-in picks in the column). */
+  .dr-youpill { display: inline-block; font-size: 10px; font-weight: 800; letter-spacing: .1em;
+    text-transform: uppercase; background: var(--accent,#38bdf8); color: #fff;
+    border-radius: 6px; padding: 3px 10px; }
   /* Round-label column sticks to the left so "R11" stays visible while you
      scroll the board horizontally through team columns. */
   .dr-rowhead { position: sticky; left: 0; z-index: 2; background: var(--card);
     box-shadow: 2px 0 4px -2px rgba(0,0,0,.25);
     display: flex; align-items: center; justify-content: center; }
+  /* Corner cell sticks on BOTH axes during horizontal + vertical scroll. */
   .dr-corner { z-index: 4; }
-  .dr-side { border: 1px solid var(--border); border-radius: 14px; background: var(--card); display: flex; flex-direction: column;
-    position: sticky; top: 158px; align-self: start; max-height: calc(100vh - 166px); z-index: 20; overflow: hidden;
-    box-shadow: var(--shadow-sm, 0 2px 8px rgba(15, 23, 42, 0.05)); }
-  /* Reuse the trade-calculator pill tabs (otc-main-tabs), evenly spread across panel */
-  .dr-side-tabs.otc-main-tabs { width: auto; margin: 8px; }
-  .dr-side-tabs .otc-main-tab { flex: 1; display: flex; align-items: center; justify-content: center;
-    text-align: center; padding: 7px 4px; font-size: 13px; }
+  /* Best Available panel: keeps the old .dr-side id/class so the mobile sheet
+     logic keeps working; the tab strip is gone, so this is the player pool. */
+  .dr-pool-panel { display: flex; flex-direction: column;
+    position: sticky; top: 199px; align-self: start; max-height: calc(100vh - 211px); z-index: 20; }
+  /* Slim assistant rail */
+  .dr-rail { display: flex; flex-direction: column; gap: 12px; min-width: 0;
+    position: sticky; top: 199px; align-self: start; max-height: calc(100vh - 211px);
+    overflow-y: auto; scrollbar-width: thin; }
+  .dr-rail .dr-panel { flex: none; }
+  .dr-queue-list .dr-ba-row { cursor: pointer; }
+  .dr-feed { max-height: 260px; overflow-y: auto; }
+  .dr-myteam { padding: 2px 0 0; }
+  .dr-needs-line { padding: 10px 14px; font-size: 11.5px; color: var(--text-muted);
+    border-top: 1px solid var(--border); background: color-mix(in srgb, var(--warning) 8%, transparent); }
+  .dr-needs-line b { color: var(--warning); }
+  /* Team needs matrix: teams x QB/RB/WR/TE filled dots per drafted starter */
+  .dr-needs-matrix { padding: 2px 0 6px; }
+  table.dr-matrix { width: 100%; border-collapse: collapse; font-size: 11px; }
+  table.dr-matrix th { font-size: 9.5px; font-weight: 800; letter-spacing: .05em; color: var(--text-muted);
+    text-transform: uppercase; padding: 6px 4px; border-bottom: 1px solid var(--border); text-align: center; }
+  table.dr-matrix th:first-child, table.dr-matrix td:first-child { text-align: left; padding-left: 14px;
+    font-weight: 700; color: var(--text); white-space: nowrap; max-width: 104px;
+    overflow: hidden; text-overflow: ellipsis; }
+  table.dr-matrix td { text-align: center; padding: 6px 4px; border-bottom: 1px solid var(--border); }
+  table.dr-matrix tr:last-child td { border-bottom: 0; }
+  table.dr-matrix tr.dr-myou td { background: color-mix(in srgb, var(--warning) 10%, transparent); }
+  table.dr-matrix tr.dr-myou td:first-child { color: var(--warning); }
+  .dr-mdots { display: inline-flex; gap: 3px; }
+  .dr-mdot { width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid var(--text-muted); opacity: .45; }
+  .dr-mdot.f { background: var(--accent,#38bdf8); border-color: var(--accent,#38bdf8); opacity: 1; }
+  /* (draft-view tab strip removed in the Phase 2 redesign; panes render side by side) */
   /* Team needs hover tooltip */
   .dr-team-tip { background: var(--tooltip-bg,var(--card)); color: var(--tooltip-fg,var(--text)); border: 1px solid var(--tooltip-border,var(--border)); border-radius: var(--tooltip-radius,10px);
     padding: 10px 12px; box-shadow: var(--tooltip-shadow,0 8px 28px rgba(0,0,0,.28)); min-width: 160px; }
@@ -980,7 +1564,6 @@ _DRAFT_ROOM_HTML = r"""
   .dr-rslot { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); min-height: 42px; overflow: hidden; }
   .dr-rslot-open { opacity: .65; border-style: dashed; }
   .dr-rslot-pos { width: 36px; flex-shrink: 0; text-align: center; font-size: 11px; font-weight: 800; color: #fff; border-radius: 4px; padding: 3px 0; }
-  .dr-rslot-hs { width: 30px; height: 30px; border-radius: 6px 6px 0 0; object-fit: cover; object-position: top center; align-self: flex-end; background: transparent; flex-shrink: 0; }
   .dr-rslot-body { flex: 1; min-width: 0; line-height: 1.2; }
   .dr-rslot-name { font-size: 13px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .dr-rslot-meta { font-size: 11px; color: var(--text-muted); }
@@ -991,8 +1574,12 @@ _DRAFT_ROOM_HTML = r"""
   .dr-run-chip { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: var(--radius-pill, 8px); background: rgba(127,127,127,.14); color: var(--text); border: 1px solid color-mix(in srgb, currentColor 30%, transparent); }
   .dr-run-hot { background: color-mix(in srgb, var(--loss) 16%, transparent); color: var(--loss); }
   .dr-run-banner { margin: 10px 10px 4px; padding: 8px 10px; border-radius: 8px; font-size: 13px;
-    background: color-mix(in srgb, var(--loss) 12%, transparent); color: var(--loss); border: 1px solid color-mix(in srgb, var(--loss) 30%, transparent); }
+    background: color-mix(in srgb, var(--loss) 12%, transparent); color: var(--loss); border: 1px solid color-mix(in srgb, var(--loss) 30%, transparent);
+    display: flex; align-items: center; gap: 8px; }
   .dr-run-banner b { color: var(--loss); }
+  .dr-run-x { margin-left: auto; border: 0; background: none; color: var(--text-muted); font-size: 16px;
+    cursor: pointer; line-height: 1; padding: 2px 4px; flex: none; }
+  .dr-run-x:hover { color: var(--loss); }
   .dr-cliff-banner { background: color-mix(in srgb, var(--warning) 12%, transparent); color: var(--warning); border-color: color-mix(in srgb, var(--warning) 35%, transparent); }
   .dr-cliff-banner b { color: var(--warning); }
   .dr-strat-tag { margin-left: 6px; font-size: 11px; font-weight: 700; text-transform: uppercase;
@@ -1086,8 +1673,8 @@ _DRAFT_ROOM_HTML = r"""
     border: 1px solid color-mix(in srgb, currentColor 30%, transparent); }
   .dr-tier-cliff { background: color-mix(in srgb, var(--loss) 16%, transparent); color: var(--loss); }
   /* pick score */
-  .dr-ba-reason { font-size: 11px; color: var(--text-muted); margin-top: 5px; font-weight: 600;
-    display: flex; align-items: center; gap: 5px; line-height: 1.25; }
+  .dr-ba-reason { font-size: 11px; color: var(--accent,#38bdf8); margin-top: 4px; font-weight: 600;
+    line-height: 1.35; }
   .dr-ba-recchip { color: var(--accent,#38bdf8); background: color-mix(in srgb, var(--accent) 11%, transparent);
     font-size: 13px; font-weight: 900; }
   .dr-ba-wait { font-size: 11px; color: var(--win); margin-top: 2px; font-weight: 700; }
@@ -1201,25 +1788,35 @@ _DRAFT_ROOM_HTML = r"""
   .dr-ba-list { overflow-y: auto; flex: 1; }
   .dr-ba-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px 8px 5px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background .12s; }
   .dr-ba-row:hover { background: color-mix(in srgb, var(--accent) 6%, transparent); }
-  .dr-ba-hs { width: 65px; height: 65px; border-radius: 9px 9px 0 0; object-fit: cover; object-position: top center;
-    flex-shrink: 0; background: transparent; align-self: flex-end; margin-bottom: -8px; }
   .dr-ba-body { min-width: 0; flex: 1; line-height: 1.3; }
   .dr-ba-name { font-size: 13px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .dr-ba-meta { font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; margin-top: 2px; }
   .dr-ba-right { text-align: right; flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; min-width: 52px; }
   .dr-ba-val { font-size: 15px; font-weight: 800; color: var(--text); line-height: 1; }
   .dr-ba-sub { font-size: 11px; color: var(--text-muted); line-height: 1; white-space: nowrap; }
-  /* Compact pick-score chip shown in the row */
-  .dr-ba-pschip { flex-shrink: 0; width: 34px; text-align: center; border-radius: 7px; padding: 4px 0;
-    font-size: 13px; font-weight: 800; line-height: 1; }
-  .dr-ba-pschip small { display: block; font-size: 11px; font-weight: 700; letter-spacing: .06em; opacity: .8; margin-top: 2px; }
+  /* Recommendation-rank badge (mock: big number + "rec" label box) */
+  .dr-ba-pschip { flex-shrink: 0; width: 44px; text-align: center; border-radius: 10px; padding: 6px 0;
+    font-size: 16px; font-weight: 800; line-height: 1; border: 1px solid var(--border); background: var(--bg); }
+  .dr-ba-pschip small { display: block; font-size: 8.5px; font-weight: 700; letter-spacing: .06em;
+    text-transform: uppercase; opacity: .75; margin-top: 3px; }
+  /* Tier dividers + shading bands in the Best Available list */
+  .dr-tier-div { display: flex; align-items: center; gap: 10px; padding: 10px 14px 4px;
+    font-size: 10.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--text-muted); }
+  .dr-tier-div::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+  .dr-tier-n { font-size: 10px; font-weight: 800; letter-spacing: .02em; text-transform: none;
+    background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent,#38bdf8);
+    border-radius: 5px; padding: 1px 6px; }
+  .dr-ba-row.dr-tier-band { background: color-mix(in srgb, var(--accent) 3.5%, transparent); }
+  .dr-ba-row.dr-top3 { background: color-mix(in srgb, var(--accent) 5%, transparent); }
+  .dr-ba-row.dr-top3 .dr-ba-recchip { border: 1px solid var(--accent,#38bdf8); }
   .dr-ba-right-col { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; flex-shrink: 0; }
   .dr-ba-metrics { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
   .dr-ba-actions { display: flex; align-items: center; gap: 6px; }
-  .dr-ba-draft { padding: 5px 12px; border-radius: 7px; border: 1px solid var(--accent,#122d4b);
-    background: transparent; color: var(--accent,#122d4b); font-size: 11px; font-weight: 800;
-    cursor: pointer; white-space: nowrap; transition: background .12s, color .12s; }
-  .dr-ba-row:hover .dr-ba-draft, .dr-ba-draft:hover { background: var(--accent,#122d4b); color: #fff; }
+  .dr-ba-draft { margin-top: 4px; padding: 2px; border: none; background: none; cursor: pointer;
+    color: var(--accent,#38bdf8); font-size: 10.5px; font-weight: 800; letter-spacing: .03em;
+    white-space: nowrap; }
+  .dr-ba-draft:hover { text-decoration: underline; }
   /* ── Player availability indicators (Players tab) ── */
   .dr-ba-row.dr-avail-hi { box-shadow: inset 3px 0 0 var(--win); }
   .dr-ba-row.dr-avail-md { box-shadow: inset 3px 0 0 var(--warning); }
@@ -1252,15 +1849,25 @@ _DRAFT_ROOM_HTML = r"""
     body.dr-sheet-expanded .br-tabbar { display: none; }
     body.dr-sheet-expanded .dr-side .dr-ba-list { padding-bottom: calc(env(safe-area-inset-bottom) + 6px); }
   }
+  /* Phase 2: board spans full width on top at <=1100px; pool + rail sit beneath. */
+  @media (max-width: 1100px) {
+    .dr-cols { grid-template-columns: minmax(0,1fr) 300px; }
+    .dr-board-panel { grid-column: 1 / -1; }
+    .dr-board-scroll { max-height: 320px; }
+    .dr-pool-panel, .dr-rail { position: static; max-height: none; }
+    .dr-rail { overflow: visible; }
+    .dr-ba-list { max-height: 480px; }
+    .dr-feed { max-height: 220px; }
+  }
   @media (max-width: 900px) {
     .dr-cols { grid-template-columns: 1fr; padding-bottom: 52vh; }
-    .dr-statusbar { top: 0; }
-    /* The side panel becomes a draggable bottom sheet */
+    .dr-cmdbar { top: 0; height: 52px; }
+    .dr-progressline { top: 52px; }
+    /* The pool panel becomes a draggable bottom sheet */
     .dr-side {
       /* Anchored to the bottom so a full sheet still covers the tab bar. Height
          is capped below full-viewport so the top of a fully-raised sheet stops
-         under the page header + draft status bar (whose-pick / pick number)
-         instead of covering them. */
+         under the page header + command bar instead of covering them. */
       position: fixed; left: 0; right: 0; bottom: 0; top: auto;
       width: 100%; height: 85vh; max-height: 85vh; align-self: auto; order: 0;
       border-radius: 18px 18px 0 0; border-bottom: none;
@@ -1279,7 +1886,7 @@ _DRAFT_ROOM_HTML = r"""
       transition: background .12s; }
     .dr-sheet-handle:active .dr-sheet-grip { background: var(--accent,#38bdf8); }
     .dr-ba-list { max-height: none; }
-    .dr-board-wrap { max-width: calc(100vw - 16px); }
+    .dr-board-panel { max-width: calc(100vw - 16px); }
   }
   @media (max-width: 480px) {
     /* Hide player headshots in board cells on very small screens so columns stay readable */
@@ -1308,31 +1915,26 @@ _DRAFT_ROOM_HTML = r"""
       white-space: normal;
       text-align: center;
     }
-    /* Status bar: two compact rows */
-    .dr-statusbar { padding: 6px 10px; gap: 5px; flex-direction: column; align-items: stretch; border-radius: 10px; }
-    /* Row 1: on-clock inline + pills scroll */
-    .dr-status-info { width: 100%; flex-wrap: nowrap; gap: 8px; align-items: center; }
-    .dr-onclock { flex-direction: row; align-items: center; gap: 5px; padding: 4px 10px; flex-shrink: 0; }
-    .dr-onclock-label { font-size: 11px; }
-    .dr-onclock b { font-size: 13px; white-space: nowrap; }
-    .dr-status-pills { gap: 4px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; min-width: 0; flex: 1; }
-    .dr-status-pills::-webkit-scrollbar { display: none; }
-    .dr-ss-stat { font-size: 13px; }
+    /* Command bar: compress to one scrollable row */
+    .dr-cmdbar { gap: 8px; padding: 0 10px; }
+    .dr-cb-name { font-size: 13px; }
+    #drYourNext { display: none; }
+    .dr-cb-onclock { padding-left: 8px; gap: 8px; }
+    .dr-timer-ring { width: 32px; height: 32px; }
+    .dr-timer-ring svg { width: 32px; height: 32px; }
+    .dr-cb-icon { min-width: 32px; height: 32px; padding: 0 6px; }
+    .dr-cb-icon .dr-cs-trigger-lbl, .dr-cmdbar .dr-cs-trigger-lbl { display: none; }
+    .dr-cmdbar .dr-btn { flex: 0 0 auto; padding: 7px 11px; font-size: 13px; }
+    .dr-cmdbar .dr-pill { font-size: 11px; padding: 2px 7px; }
+    .dr-progressline { padding: 6px 10px 8px; }
+    .dr-pl-labels { font-size: 10.5px; }
+    .dr-pl-you { display: none; }
+    .dr-ss-stat { font-size: 11px; }
     .dr-league-meta { font-size: 11px; padding: 2px 4px; }
     .dr-lm-chip { font-size: 11px; padding: 1px 6px; }
-    .dr-pill, .dr-roster-src-tag, .dr-cap-pill { font-size: 11px; padding: 2px 7px; }
-    .dr-pick-timer { font-size: 13px; min-width: 32px; padding: 2px 6px; }
+    .dr-pick-timer { font-size: 13px; }
     .dr-progress, .dr-save { font-size: 11px; white-space: nowrap; }
-    /* Row 2: buttons scroll */
-    .dr-status-right {
-      width: 100%; gap: 5px; overflow-x: auto; -webkit-overflow-scrolling: touch;
-      flex-wrap: nowrap; padding-bottom: 2px; scrollbar-width: none;
-    }
-    .dr-status-right::-webkit-scrollbar { display: none; }
-    .dr-status-right .dr-btn { flex: 0 0 auto; padding: 7px 11px; font-size: 13px; }
-    .dr-side-tabs .otc-main-tab { font-size: 11px; padding: 6px 2px; }
-    .dr-opts-trigger { font-size: 13px; padding: 0 8px; }
-    .dr-board-wrap { padding: 4px; max-width: calc(100vw - 16px); }
+    .dr-board-panel { max-width: calc(100vw - 16px); }
     .dr-cta, .dr-setup-cta { flex-direction: column; align-items: stretch; }
     .dr-setup-cta .dr-btn { width: 100%; }
     .dr-prev-stats { grid-template-columns: repeat(2, 1fr); }
