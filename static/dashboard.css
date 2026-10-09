@@ -40456,11 +40456,30 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     color: var(--text);
 }
 
+/* Right-column mirrored name: sits at the outer edge after pos. */
+.br-gotw-out-nm {
+    margin-left: 4px;
+}
+
+/* Dot separator between pos and PPG. */
+.br-gotw-out-sep {
+    color: var(--muted);
+    margin-left: 6px;
+}
+
 .br-gotw-out-pos {
     font-size: 11px;
     font-weight: 800;
     color: var(--muted);
     margin-left: 4px;
+}
+
+.br-gotw-out-ppg {
+    font-size: 12px;
+    font-weight: 800;
+    color: var(--accent);
+    margin-left: 6px;
+    white-space: nowrap;
 }
 
 .br-gotw-out-st {

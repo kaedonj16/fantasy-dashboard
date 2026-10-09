@@ -323,3 +323,48 @@ def test_render_bye_notability_uses_value_fallback():
     assert "Alpha outs" in out
     assert "Star" in out
     assert "Scrub" not in out
+
+
+def test_outs_carry_ppg_and_render_it():
+    # _starter_flags stores the typical-week average as ppg; the render shows
+    # it for players that have one and omits it for value-fallback players.
+    pool = [_starter("p1", "Bye Star", nfl="DET"), _starter("p2", "Deep Stash", nfl="DET")]
+    out, maybe, byes, risk = _starter_flags(
+        pool, {}, {}, {"p1": 6000.0, "p2": 6000.0}, playing_teams={"KC"},
+        avg_proj_by_pid={"p1": 17.5},
+    )
+    by_name = {p["name"]: p for p in byes}
+    assert by_name["Bye Star"]["ppg"] == pytest.approx(17.5)
+    assert by_name["Deep Stash"]["ppg"] is None  # value fallback only: unknown PPG
+
+    preview = {
+        "next_week": 5,
+        "game_of_the_week": {
+            "team_a": "Alpha", "team_b": "Bravo",
+            "record_a": "4-0", "record_b": "2-2",
+            "rank_a": 1, "rank_b": 4,
+            "out_a": [], "maybe_a": [],
+            "bye_a": [
+                {"name": "Bye Star", "pos": "RB", "status": "BYE",
+                 "proj": 0.0, "value": 6000.0, "impact": 17.5, "ppg": 17.5},
+                {"name": "Deep Stash", "pos": "WR", "status": "BYE",
+                 "proj": 0.0, "value": 6000.0, "impact": 20.0, "ppg": None},
+            ],
+            "out_b": [], "maybe_b": [],
+            "bye_b": [
+                {"name": "Bryce Young", "pos": "QB", "status": "BYE",
+                 "proj": 0.0, "value": 5000.0, "impact": 15.2, "ppg": 15.2},
+            ],
+        },
+    }
+    out = _render_next_week_html(preview, "Blurb.")
+    assert "17.5 PPG" in out
+    assert out.count("br-gotw-out-ppg") == 2  # only known-PPG players get one
+    # Left column: pos · PPG; right column mirrors fully: PPG · pos · name.
+    # The dot separator only renders where a PPG is shown.
+    assert out.index("br-gotw-out-pos'>RB</span><span class='br-gotw-out-sep'>·</span>"
+                      "<span class='br-gotw-out-ppg'>17.5 PPG") > 0
+    assert out.index("15.2 PPG</span><span class='br-gotw-out-sep'>·</span>"
+                      "<span class='br-gotw-out-pos'>QB</span>"
+                      "<span class='br-gotw-out-nm'>Bryce Young</span>") > 0
+    assert out.count("br-gotw-out-sep") == 2
