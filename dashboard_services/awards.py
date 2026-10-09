@@ -15,16 +15,21 @@ def render_awards_section(awards: dict) -> str:
         # live on the Awards page.
         return ""
 
-    def arow(label, detail, value_html):
+    def arow(label, team_html, detail, value_html):
+        _detail = (f"<div class=\"cc-award-detail\">{detail}</div>"
+                   if detail else "")
         return (
-            f"<div class=\"cc-rw cc-award-row\">"
-            f"<span>{label}<br><span class=\"cc-muted\">{detail}</span></span>"
+            f"<div class=\"cc-award\">"
+            f"<div class=\"cc-award-info\">"
+            f"<div class=\"cc-award-label\">{label}</div>"
+            f"<div class=\"cc-award-team\">{team_html}</div>"
+            f"{_detail}</div>"
             f"{value_html}</div>"
         )
 
     def aval(num, color=""):
         cls = f"cc-award-val{(' ' + color) if color else ''}"
-        return f"<span class=\"{cls}\">{num}</span>"
+        return f"<div class=\"{cls}\">{num}</div>"
 
     def streak_winner(teams):
         # Tied teams stack one per line; a comma run-on reads as one name.
@@ -37,50 +42,47 @@ def render_awards_section(awards: dict) -> str:
 
     if awards.get("highest_single_week"):
         t, w, p = awards["highest_single_week"]
-        rows.append(arow("Highest week", f"{html.escape(str(t))} &middot; Wk {w}",
-                         aval(f"{p:.1f}", "cc-up")))
+        rows.append(arow("Highest single week", html.escape(str(t)),
+                         f"Week {w}", aval(f"{p:.1f}", "cc-up")))
 
     if awards.get("lowest_single_week"):
         t, w, p = awards["lowest_single_week"]
-        rows.append(arow("Lowest week", f"{html.escape(str(t))} &middot; Wk {w}",
-                         aval(f"{p:.1f}", "cc-dn")))
+        rows.append(arow("Lowest single week", html.escape(str(t)),
+                         f"Week {w}", aval(f"{p:.1f}", "cc-dn")))
 
     if awards.get("longest_win_streak"):
         teams, L = awards["longest_win_streak"]
         rows.append(arow("Longest win streak", streak_winner(teams),
-                         aval(f"{L}", "cc-up")))
+                         "", aval(f"{L}", "cc-up")))
 
     if awards.get("longest_loss_streak"):
         teams, L = awards["longest_loss_streak"]
         rows.append(arow("Longest losing streak", streak_winner(teams),
-                         aval(f"{L}", "cc-dn")))
+                         "", aval(f"{L}", "cc-dn")))
 
     if awards.get("most_consistent"):
         t, sd, n = awards["most_consistent"]
-        rows.append(arow("Most consistent", f"{html.escape(str(t))} &middot; &sigma;",
-                         aval(f"{sd:.2f}")))
+        rows.append(arow("Most consistent", html.escape(str(t)),
+                         f"over {n} games", aval(f"{sd:.2f}")))
 
     if awards.get("highest_player"):
         w, pts, n, pos, team, owner, pid = awards["highest_player"]
         _pn = html.escape(str(n))
         clickable_attrs = f" class='player-clickable' style='cursor:pointer;' data-player-id='{html.escape(str(pid), quote=True)}' data-player-name='{_pn}'" if pid else ""
         rows.append(arow("Top player week",
-                         f"<span{clickable_attrs}>{_pn}</span> &middot; Wk {w}",
-                         aval(f"{pts:.1f}", "cc-up")))
+                         f"<span{clickable_attrs}>{_pn}</span>",
+                         f"Week {w}", aval(f"{pts:.1f}", "cc-up")))
 
     return f"""
-    <section class="os-side-plain awards-card" data-section="awards">
-      <div class="os-section-head">
-        <div class="os-section-head-content">
-          <h2 class="os-section-title"><i class="fa-solid fa-trophy" aria-hidden="true"></i> League Awards</h2>
-          <div class="os-section-subtitle">Season superlatives so far</div>
-        </div>
-        <div class="os-section-head-actions">
-          <button type="button" class="card-collapse-toggle" aria-label="Toggle section" aria-expanded="true" data-target="dash-awards-body">&#9660;</button>
-        </div>
+    <section class="os-side-plain cc-aw-card" data-section="awards">
+      <div class="cc-aw-head">
+        <div class="cc-aw-head-icon"><i class="fa-solid fa-trophy" aria-hidden="true"></i></div>
+        <div><h3 class="cc-aw-title">League Awards</h3></div>
+        <div class="cc-aw-sub">Season superlatives so far</div>
+        <button type="button" class="card-collapse-toggle cc-head-toggle" aria-label="Toggle section" aria-expanded="true" data-target="dash-awards-body">&#9660;</button>
       </div>
       <div class="card-collapsible-body" id="dash-awards-body">
-        <div class="cc-awards">{''.join(rows)}</div>
+        <div class="cc-aw-body">{''.join(rows)}</div>
       </div>
     </section>
     """

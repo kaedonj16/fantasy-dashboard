@@ -47147,52 +47147,215 @@ em.gneg { background: var(--loss); }
   font-size: 11px;
 }
 
-/* Command Center standings rows (match the mock): rank + team left,
-   record right, division pill headers. */
-.cc-standings {
-  font-size: 13px;
+/* Standings character card: dark navy header, circular rank badges,
+   depth via layered shadow. Matches the approved character mock. */
+.cc-st-card {
+  background: var(--card, #fff);
+  border: none;
+  border-radius: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+}
+.cc-st-head {
+  background: #0d2137;
+  color: #fff;
+  padding: 18px 22px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.cc-st-head-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+.cc-st-head .os-section-title,
+.cc-st-head .os-section-title-link {
+  color: #fff;
+  font-size: 16px;
+  font-weight: 800;
+}
+.cc-st-head .os-section-title-arrow {
+  color: rgba(255, 255, 255, 0.6);
+}
+.cc-st-sub {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.6);
+  margin-left: auto;
+  white-space: nowrap;
+}
+.cc-head-toggle {
+  color: rgba(255, 255, 255, 0.7);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 4px 6px;
+  flex-shrink: 0;
+}
+.cc-head-toggle:hover {
+  color: #fff;
+}
+.cc-st-card .card-collapsible-body {
+  padding: 8px 22px 16px;
 }
 .cc-div {
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  color: #8a9bb0;
-  background: #f1f5f9;
-  padding: 5px 10px;
-  border-radius: 6px;
-  margin: 10px 0 4px;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  background: var(--bg-alt, #f1f5f9);
+  border-radius: 8px;
+  padding: 8px 14px;
+  margin: 14px 0 6px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: var(--text-subtle, #64748b);
   text-transform: uppercase;
 }
 .cc-div:first-child {
-  margin-top: 0;
+  margin-top: 6px;
 }
-.cc-rw {
+.cc-st-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 4px;
+  border-bottom: 1px solid var(--border, #f1f5f9);
+  font-size: 14px;
+}
+.cc-st-row:last-child {
+  border-bottom: none;
+}
+.cc-st-rank {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--bg-alt, #f1f5f9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--text-subtle, #64748b);
+  flex-shrink: 0;
+}
+.cc-st-rank.top {
+  background: #0d2137;
+  color: #fff;
+}
+.cc-st-team {
+  flex: 1;
+  font-weight: 600;
+  min-width: 0;
+}
+.cc-st-mv {
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.cc-st-mv.up {
+  color: #16a34a;
+}
+.cc-st-mv.dn {
+  color: #dc2626;
+}
+.cc-st-rec {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted, #64748b);
+  font-size: 13px;
+  flex-shrink: 0;
+}
+/* Awards character card: dark gradient header, large 24px values. */
+.cc-aw-card {
+  background: var(--card, #fff);
+  border: none;
+  border-radius: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+}
+.cc-aw-head {
+  background: linear-gradient(135deg, #0d2137, #1e3a5c);
+  color: #fff;
+  padding: 18px 22px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.cc-aw-head-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+.cc-aw-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: #fff;
+}
+.cc-aw-sub {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.6);
+  margin-left: auto;
+  white-space: nowrap;
+}
+.cc-aw-card .card-collapsible-body {
+  padding: 8px 22px 16px;
+}
+.cc-award {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 0;
+  gap: 12px;
+  padding: 14px 4px;
   border-bottom: 1px solid var(--border, #f1f5f9);
-  font-size: 13px;
 }
-.cc-rw:last-child {
+.cc-award:last-child {
   border-bottom: none;
 }
-.cc-rw .cc-muted {
+.cc-award-label {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
   color: var(--text-muted, #8a9bb0);
-  font-size: 11px;
+  text-transform: uppercase;
 }
-/* Command Center awards rows (match the mock): label + detail left,
-   16px value right. */
-.cc-award-row {
-  padding: 12px 0;
+.cc-award-team {
+  font-size: 14px;
+  font-weight: 700;
+  margin-top: 3px;
+  color: var(--text, #122d4b);
+}
+.cc-award-detail {
+  font-size: 11px;
+  color: var(--text-muted, #8a9bb0);
+  margin-top: 2px;
 }
 .cc-award-val {
-  font-size: 16px;
-  font-weight: 700;
+  font-size: 24px;
+  font-weight: 800;
   font-variant-numeric: tabular-nums;
+  color: var(--text, #122d4b);
+  flex-shrink: 0;
+}
+.cc-award-val.cc-up {
+  color: #16a34a;
+  font-weight: 800;
+}
+.cc-award-val.cc-dn {
+  color: #dc2626;
+  font-weight: 800;
 }
 .cc-up {
   color: #16a34a;
@@ -47202,9 +47365,50 @@ em.gneg { background: var(--loss); }
   color: #dc2626;
   font-weight: 700;
 }
-@media (max-width: 768px) {
-  .cc-standings {
-    font-size: 13px;
+/* Mobile (375px): tighter headers, wrapping team names, comfortable rows.
+   The os-layout already stacks to one column at <=640px, so these cards
+   go full width; the rules below keep them feeling intentional. */
+@media (max-width: 640px) {
+  .cc-st-head,
+  .cc-aw-head {
+    padding: 14px 16px;
+    gap: 10px;
+  }
+  .cc-st-head-icon,
+  .cc-aw-head-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
+    font-size: 14px;
+  }
+  .cc-st-head .os-section-title,
+  .cc-st-head .os-section-title-link,
+  .cc-aw-title {
+    font-size: 15px;
+  }
+  .cc-st-sub,
+  .cc-aw-sub {
+    font-size: 10px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .cc-st-card .card-collapsible-body,
+  .cc-aw-card .card-collapsible-body {
+    padding: 6px 16px 12px;
+  }
+  .cc-st-row {
+    gap: 10px;
+    padding: 10px 2px;
+  }
+  .cc-st-team {
+    overflow-wrap: break-word;
+    line-height: 1.35;
+  }
+  .cc-award {
+    padding: 12px 2px;
+  }
+  .cc-award-val {
+    font-size: 22px;
   }
 }
 

@@ -216,3 +216,25 @@ def test_css_scroll_wrapper_allows_horizontal_scroll():
     assert m, ".st-tblscroll rule missing"
     assert re.search(r"overflow-x\s*:\s*auto", m.group(1)), \
         ".st-tblscroll must allow horizontal scrolling"
+
+
+def test_css_mobile_character_cards():
+    """Character cards (standings + awards) get intentional mobile rules:
+    tighter headers, wrapping team names (never truncated), comfortable rows."""
+    head_rules = team_rules = award_rules = None
+    for block in _mobile_blocks():
+        m = re.search(r"\.cc-st-head,\s*\.cc-aw-head\s*\{([^}]*)\}", block)
+        if m:
+            head_rules = m.group(1)
+        m = re.search(r"\.cc-st-team\s*\{([^}]*)\}", block)
+        if m:
+            team_rules = m.group(1)
+        m = re.search(r"\.cc-award-val\s*\{([^}]*)\}", block)
+        if m:
+            award_rules = m.group(1)
+    assert head_rules, "mobile character-card header rule missing"
+    assert "padding: 14px 16px" in head_rules
+    assert team_rules, "mobile team-name wrap rule missing"
+    assert "overflow-wrap: break-word" in team_rules
+    assert award_rules, "mobile award-value rule missing"
+    assert "font-size: 22px" in award_rules
