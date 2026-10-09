@@ -170,7 +170,7 @@ def build_dashboard_body(ctx: dict) -> str:
         # Prompt-only until Generate Report. Serving a cached memo on first
         # paint (or generating one) made the report appear without a click.
         gm_card_html = f"""
-        <section class="os-side-plain" id="os-jump-report-card">
+        <section class="os-card" id="os-jump-report-card">
           <div class="os-section-head">
             <div class="os-section-head-content">
               <h2 class="os-section-title">Front Office Report</h2>
