@@ -243,3 +243,15 @@ class TestProspectDraftClass:
         assert pl.get_active_rookie_class(date(2027, 2, 15)) == 2027
         assert pl.get_active_rookie_class(date(2027, 5, 1)) == 2027
         assert pl.get_active_rookie_class(date(2026, 4, 1)) == 2026
+
+
+class TestBundledSeed2027:
+    def test_bundled_seed_loads_for_2027(self):
+        from data_building.rookie_pipeline.ingestion import get_seed_prospects, normalize_prospect
+        seed = get_seed_prospects(2027)
+        assert len(seed) >= 50
+        positions = {p["position"] for p in seed}
+        assert {"QB", "RB", "WR", "TE"} <= positions
+        normed = [normalize_prospect(p) for p in seed]
+        assert len(normed) == len(seed)
+        assert all(p.get("draft_class_year") == 2027 for p in seed)

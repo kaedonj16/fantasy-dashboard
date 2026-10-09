@@ -1418,6 +1418,43 @@ def fetch_sportradar_prospects(draft_year: int) -> List[Dict[str, Any]]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+def _enrich_bio_from_cfbd_roster(prospects: List[Dict[str, Any]], draft_year: int) -> List[Dict[str, Any]]:
+    """
+    Free replacement for Sportradar bio measurements: fill missing
+    height_inches/weight_lbs from the CFBD roster endpoint (no extra key).
+    Matches by player name; only fills fields that are currently empty.
+    """
+    if not CFBD_KEY or not prospects:
+        return prospects
+    season_year = draft_year - 1  # prospects' final college season
+    try:
+        data = _cfbd_get("/roster", {"year": season_year}, retries=2) or []
+    except Exception as exc:
+        print(f"[cfbd] roster bio lookup failed - {type(exc).__name__}: {exc}")
+        return prospects
+    by_name: Dict[str, Dict[str, Any]] = {}
+    for row in data:
+        name = f"{row.get('firstName') or ''} {row.get('lastName') or ''}".strip().lower()
+        if name and name not in by_name:
+            by_name[name] = row
+    filled = 0
+    for p in prospects:
+        if p.get("height_inches") and p.get("weight_lbs"):
+            continue
+        row = by_name.get((p.get("name") or "").lower())
+        if not row:
+            continue
+        h = _safe_int(row.get("height"))
+        w = _safe_int(row.get("weight"))
+        if h and not p.get("height_inches"):
+            p["height_inches"] = h
+            filled += 1
+        if w and not p.get("weight_lbs"):
+            p["weight_lbs"] = w
+    print(f"[cfbd] roster bio filled measurements for {filled} prospects ({season_year} rosters)")
+    return prospects
+
+
 def get_seed_prospects(draft_year: int) -> List[Dict[str, Any]]:
     """Return the curated seed dataset for a given draft year."""
     import json
@@ -1458,6 +1495,22 @@ def get_seed_prospects(draft_year: int) -> List[Dict[str, Any]]:
                 continue
     
     print(f"[ingestion] No seed data found for draft year {draft_year}")
+
+    # Bundled fallback: curated consensus prospect list shipped with the repo
+    # (used when Sportradar is unavailable and no prior run exists).
+    bundled = Path(__file__).parent / "seed_data" / f"prospects_{draft_year}.json"
+    if bundled.exists():
+        try:
+            with open(bundled, 'r') as f:
+                data = json.load(f)
+            profiles = data.get("profiles") or []
+            if profiles:
+                for profile in profiles:
+                    profile["draft_class_year"] = draft_year
+                print(f"[ingestion] Loaded {len(profiles)} bundled seed prospects from {bundled.name}")
+                return profiles
+        except Exception as exc:
+            print(f"[ingestion] ERROR loading bundled seed {bundled.name} - {type(exc).__name__}: {exc}")
     return []
 
 
@@ -1564,7 +1617,7 @@ def load_prospects_for_year(draft_year: int) -> List[Dict[str, Any]]:
     # ── No Sportradar key - use seed only ────────────────────────────────────
     if not SPORTRADAR_KEY:
         print(f"[ingestion] FAILED: No SPORTRADAR_API_KEY set - returning seed data only ({len(seed)} prospects)")
-        return [normalize_prospect(p) for p in seed]
+        return _enrich_bio_from_cfbd_roster([normalize_prospect(p) for p in seed], draft_year)
 
     # ── Fetch from all live sources ───────────────────────────────────────────
     print(f"[ingestion] Fetching Sportradar prospects for {draft_year}")
@@ -1573,11 +1626,11 @@ def load_prospects_for_year(draft_year: int) -> List[Dict[str, Any]]:
     except Exception as exc:
         print(f"[ingestion] ERROR fetching Sportradar prospects - {type(exc).__name__}: {exc}")
         print(f"[ingestion] Falling back to seed data ({len(seed)} prospects)")
-        return [normalize_prospect(p) for p in seed]
+        return _enrich_bio_from_cfbd_roster([normalize_prospect(p) for p in seed], draft_year)
     
     if not sr_prospects:
         print(f"[ingestion] FAILED: Sportradar returned no data for {draft_year} - using seed ({len(seed)} prospects)")
-        return [normalize_prospect(p) for p in seed]
+        return _enrich_bio_from_cfbd_roster([normalize_prospect(p) for p in seed], draft_year)
     
     print(f"[ingestion] Sportradar returned {len(sr_prospects)} prospects")
 

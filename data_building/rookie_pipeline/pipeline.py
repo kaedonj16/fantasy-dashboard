@@ -1812,8 +1812,8 @@ def run_rookie_pipeline_staged(
     else:
         # Try to load from cache when API key is not available
         try:
-            from .ingestion import get_seed_prospects
-            sr_prospects = get_seed_prospects(draft_year)
+            from .ingestion import get_seed_prospects, _enrich_bio_from_cfbd_roster
+            sr_prospects = _enrich_bio_from_cfbd_roster(get_seed_prospects(draft_year), draft_year)
             print(f"[pipeline] Loaded {len(sr_prospects)} prospects from cached seed data")
         except Exception as exc:
             print(f"[pipeline] Failed to load cached prospects: {exc}")
