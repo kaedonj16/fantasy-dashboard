@@ -44699,16 +44699,17 @@ a, button, [role="button"], [role="tab"], summary, label,
 }
 
 /* Division section label (dashboard redesign): compact pill header used by
-   _standings_div_header everywhere divisions render. */
+   _standings_div_header everywhere divisions render. Matches the command
+   center mock. */
 .div-label {
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 800;
     letter-spacing: 0.06em;
     color: #8a9bb0;
     background: #f1f5f9;
-    padding: 6px 12px;
-    border-radius: 8px;
-    margin: 12px 0 4px;
+    padding: 5px 10px;
+    border-radius: 6px;
+    margin: 10px 0 4px;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -47103,29 +47104,6 @@ em.gneg { background: var(--loss); }
   text-transform: uppercase;
   margin: 16px 0 6px;
 }
-.cc-other-mus {
-  border-top: 1px solid var(--border, #e8eef4);
-  margin-top: 4px;
-}
-.cc-other-mu {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--border, #f1f5f9);
-  font-size: 13px;
-}
-.cc-other-mu:last-child {
-  border-bottom: none;
-}
-.cc-other-mu-teams {
-  font-weight: 600;
-}
-.cc-other-mu-proj {
-  color: var(--text-muted, #8a9bb0);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
 .cc-act-row {
   display: flex;
   gap: 8px;
@@ -47168,11 +47146,65 @@ em.gneg { background: var(--loss); }
   color: var(--text-muted, #8a9bb0);
   font-size: 11px;
 }
+
+/* Command Center standings rows (match the mock): rank + team left,
+   record right, division pill headers. */
+.cc-standings {
+  font-size: 13px;
+}
+.cc-div {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #8a9bb0;
+  background: #f1f5f9;
+  padding: 5px 10px;
+  border-radius: 6px;
+  margin: 10px 0 4px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  text-transform: uppercase;
+}
+.cc-div:first-child {
+  margin-top: 0;
+}
+.cc-rw {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border, #f1f5f9);
+  font-size: 13px;
+}
+.cc-rw:last-child {
+  border-bottom: none;
+}
+.cc-rw .cc-muted {
+  color: var(--text-muted, #8a9bb0);
+  font-size: 11px;
+}
+/* Command Center awards rows (match the mock): label + detail left,
+   16px value right. */
+.cc-award-row {
+  padding: 12px 0;
+}
+.cc-award-val {
+  font-size: 16px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.cc-up {
+  color: #16a34a;
+  font-weight: 700;
+}
+.cc-dn {
+  color: #dc2626;
+  font-weight: 700;
+}
 @media (max-width: 768px) {
-  .cc-other-mu {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 2px;
+  .cc-standings {
+    font-size: 13px;
   }
 }
 

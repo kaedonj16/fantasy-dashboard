@@ -406,9 +406,12 @@ def test_render_standings_compact_division_record_breaks_record_tie():
         div_records={1: (1, 0, 0), 2: (0, 1, 0)},
     )
     assert html.index("(1-0)") < html.index("(0-1)")
-    # The division leader badge lands on the 1-0 team, not the PF leader.
-    lead_row = html.split("st-div-leader")[1].split("</tr>")[0]
-    assert "(1-0)" in lead_row
+    # Rows render as mock-style divs (no table, no PF column).
+    assert "cc-standings" in html
+    assert "<table" not in html
+    # The 1-0 division team sits above the 0-1 team despite less PF.
+    first_row = html.split("cc-rw")[1]
+    assert "(1-0)" in first_row
 
 
 def test_render_standings_division_record_breaks_record_tie():
