@@ -28,14 +28,14 @@ from dashboard_services.pages.rookies_page import build_prospects_body
 
 class TestDisplayGrades:
     def test_clip100_bounds(self):
-        assert _clip100(150) == 100.0
+        assert _clip100(150) == 99.9
         assert _clip100(-5) == 0.0
         assert _clip100(None) is None
         assert _clip100("bad") is None
 
     def test_dominator_anchors_on_model_elite_mark(self):
         # The model treats >= 0.35 as an elite dominator.
-        assert _grade_dominator(0.35) == 100.0
+        assert _grade_dominator(0.35) == 99.9
         assert _grade_dominator(0.31) == 88.6
         assert _grade_dominator(None) is None
 
@@ -47,13 +47,13 @@ class TestDisplayGrades:
         assert _grade_breakout_age(None, "WR") is None
 
     def test_efficiency_grades(self):
-        assert _grade_ypr(18.0) == 100.0
-        assert _grade_ypc(7.0) == 100.0
-        assert _grade_market_share(0.35) == 100.0
-        assert _grade_speed_score(120.0) == 100.0
-        assert _grade_cmp(70.0) == 100.0
-        assert _grade_td_int(4.0) == 100.0
-        assert _grade_ypa(9.5) == 100.0
+        assert _grade_ypr(18.0) == 99.9
+        assert _grade_ypc(7.0) == 99.9
+        assert _grade_market_share(0.35) == 99.9
+        assert _grade_speed_score(120.0) == 99.9
+        assert _grade_cmp(70.0) == 99.9
+        assert _grade_td_int(4.0) == 99.9
+        assert _grade_ypa(9.5) == 99.9
         assert _grade_ypr(None) is None
 
 
@@ -103,7 +103,7 @@ class TestAdvancedMetrics:
             "Mkt Share", "TD Share", "Speed Score", "Efficiency", "Recruiting",
         ]
         assert adv[0]["raw"] == "38%"
-        assert adv[0]["grade"] == 100.0  # 0.38 >= 0.35 elite anchor
+        assert adv[0]["grade"] == 99.9  # 0.38 >= 0.35 elite anchor, capped below 100
         assert adv[2]["raw"] == "15.9"
         assert adv[5]["raw"] == "112"
         assert adv[4]["raw"] == "28%"
@@ -126,7 +126,7 @@ class TestAdvancedMetrics:
         assert adv[2]["raw"] == "6.8"
         scrim = next(a for a in adv if a["label"] == "Scrim Yds/Gm")
         assert scrim["raw"] == "141.7"  # 1700 / 12
-        assert scrim["grade"] == 100.0  # capped
+        assert scrim["grade"] == 99.9  # capped below 100
 
     def test_qb_metric_set(self):
         seasons = [{"season": 2025, "completion_pct": 67.2, "td_int_ratio": 3.1,
@@ -229,3 +229,17 @@ class TestHeadshots:
         assert out["jeremiyah love"] == (
             "https://a.espncdn.com/i/headshots/college-football/"
             "players/full/1234567.png")
+
+
+class TestProspectDraftClass:
+    def test_turns_over_around_week_four(self):
+        from datetime import date
+        from data_building.rookie_pipeline import pipeline as pl
+        assert pl.get_active_rookie_class(date(2026, 10, 9)) == 2027
+        assert pl.get_active_rookie_class(date(2026, 9, 20)) == 2027
+        assert pl.get_active_rookie_class(date(2026, 9, 19)) == 2026
+        assert pl.get_active_rookie_class(date(2026, 9, 1)) == 2026
+        assert pl.get_active_rookie_class(date(2026, 8, 31)) == 2026
+        assert pl.get_active_rookie_class(date(2027, 2, 15)) == 2027
+        assert pl.get_active_rookie_class(date(2027, 5, 1)) == 2027
+        assert pl.get_active_rookie_class(date(2026, 4, 1)) == 2026
