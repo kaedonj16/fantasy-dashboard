@@ -94,7 +94,7 @@ def test_render_matchup_slide_uses_raw_fallback_when_bundle_empty(monkeypatch):
     )
     assert "21.5" in html
     assert "19.0" in html
-    assert "p-name-line" in html
+    assert "pname" in html
     # Name ellipsis lives on .pname via CSS class, not a shared parent nowrap.
     assert "white-space:nowrap;text-overflow:ellipsis;\">" not in html.replace(" ", "")
 
@@ -130,7 +130,7 @@ def test_render_matchup_keeps_team_abbr_outside_name_ellipsis():
             teams={},
             team_game_lookup={},
         )
-    assert "p-name-line" in html
+    assert "pname" in html
     assert "p-team" in html
     assert "IND" in html
     assert "Jonathan Taylor" in html
