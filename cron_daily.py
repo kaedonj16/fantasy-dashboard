@@ -955,7 +955,7 @@ print("[cron] Breakout roster notifications dispatched")
     # ------------------------------------------------------------------ #
     # Step 6: Weekly rookie data (Sundays only, off/pre season)          #
     # ------------------------------------------------------------------ #
-    ROOKIE_PIPELINE_PAUSED = (os.environ.get("ROOKIE_PIPELINE_PAUSED") or "1").strip().lower() in (
+    ROOKIE_PIPELINE_PAUSED = (os.environ.get("ROOKIE_PIPELINE_PAUSED") or "0").strip().lower() in (
         "1", "true", "yes", "on",
     )
     if not ROOKIE_PIPELINE_PAUSED and today_weekday == 6 and season_type not in ("reg", "post"):

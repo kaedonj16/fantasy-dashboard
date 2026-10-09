@@ -48,7 +48,7 @@ import os
 import re
 import time
 import warnings
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 def normalize_name(name: str) -> str:
@@ -815,6 +815,227 @@ def fetch_cfbd_player_ppa(draft_year: int) -> Dict[str, Dict[int, Dict[str, floa
         print(f"[cfbd_ppa] Loaded PPA for {yr}: {count} players")
 
     return result
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# New CFBD sources (model v2.0): recruiting pedigree, WEPA, team context
+# ─────────────────────────────────────────────────────────────────────────────
+
+def fetch_cfbd_recruiting(draft_year: int) -> List[Dict[str, Any]]:
+    """
+    Fetch 247 Composite recruiting rankings from CFBD.
+
+    Endpoint: GET /recruiting/players?year={recruit_year}
+    A draft class is fed by recruiting classes ~3-5 years earlier, so we pull
+    all three and match prospects to their best (highest-rated) entry.
+
+    Returns a list of:
+        {name, name_lower, position, stars, rating, ranking,
+         committed_school, recruit_year}
+    Returns [] silently if CFBD_API_KEY is not set or the fetch fails.
+    Fail-soft: missing recruiting data must never break the pipeline.
+    """
+    if not CFBD_KEY:
+        print("[cfbd_recruit] No CFBD_API_KEY - skipping recruiting fetch")
+        return []
+
+    recruit_years = [draft_year - 5, draft_year - 4, draft_year - 3]
+    recruits: List[Dict[str, Any]] = []
+
+    for yr in recruit_years:
+        try:
+            data = _cfbd_get("/recruiting/players", {"year": yr}, retries=2) or []
+        except Exception as exc:
+            print(f"[cfbd_recruit] Year {yr} error: {exc}")
+            continue
+
+        count = 0
+        for row in data:
+            try:
+                name = (row.get("name") or "").strip()
+                if not name:
+                    continue
+                recruits.append({
+                    "name":             name,
+                    "name_lower":       normalize_name(name),
+                    "position":         (row.get("position") or "").strip().upper(),
+                    "stars":            row.get("stars"),
+                    "rating":           row.get("rating"),      # 247 Composite, ~0.70-1.00
+                    "ranking":          row.get("ranking"),     # national rank
+                    "committed_school": row.get("committedTo") or row.get("school"),
+                    "recruit_year":     yr,
+                })
+                count += 1
+            except (TypeError, ValueError, AttributeError):
+                continue
+        print(f"[cfbd_recruit] Loaded {count} recruits for class of {yr}")
+
+    return recruits
+
+
+def _wepa_metric_value(raw: Dict[str, Any]) -> Optional[float]:
+    """
+    Best-effort extraction of a single per-play efficiency number from a WEPA
+    player record. CFBD's WEPA field naming is not pinned by our key tier, so
+    we try a prioritized candidate list and return None when nothing matches.
+    A None here makes the whole WEPA blend a no-op downstream - never a guess.
+    """
+    candidates = (
+        "averagePPA", "ppa", "predictedPointsAdded", "expectedPointsAdded",
+        "epa", "adjEPA", "pointsAdded", "wepa",
+    )
+    for key in candidates:
+        val = raw.get(key)
+        if isinstance(val, dict):
+            # e.g. {"passing": 0.25, "rushing": 0.12} - take the max play-type
+            nums = [v for v in val.values() if isinstance(v, (int, float))]
+            if nums:
+                return float(max(nums))
+            continue
+        if isinstance(val, (int, float)):
+            return float(val)
+    return None
+
+
+def _percentile_rank(sorted_vals: List[float], x: float) -> float:
+    """Percentile rank of x within sorted_vals, scaled 0-100."""
+    if not sorted_vals:
+        return 50.0
+    import bisect
+    idx = bisect.bisect_left(sorted_vals, x)
+    return round(idx / len(sorted_vals) * 100.0, 2)
+
+
+def fetch_cfbd_wepa(draft_year: int) -> Dict[str, Dict[int, Dict[str, Any]]]:
+    """
+    Fetch opponent-adjusted WEPA player metrics from CFBD.
+
+    Endpoints (Patreon-tier key required - free-tier keys get 403 and this
+    returns {} gracefully):
+        GET /wepa/players/passing?year=X
+        GET /wepa/players/rushing?year=X
+
+    Returns:
+        {name_lower: {year: {"wepa_type": "passing"|"rushing",
+                             "adj_efficiency_score": 0-100 percentile | None,
+                             "raw": <full record>}}}
+    Only seasons with a recognized efficiency field get a score; everything
+    else is stored raw for inspection. Fail-soft: never breaks the pipeline.
+    """
+    if not CFBD_KEY:
+        print("[cfbd_wepa] No CFBD_API_KEY - skipping WEPA fetch")
+        return {}
+
+    years = [draft_year - 1, draft_year - 2, draft_year - 3]
+    result: Dict[str, Dict[int, Dict[str, Any]]] = {}
+
+    for wepa_type in ("passing", "rushing"):
+        for yr in years:
+            try:
+                data = _cfbd_get(
+                    f"/wepa/players/{wepa_type}", {"year": yr}, retries=2
+                ) or []
+            except Exception as exc:
+                print(f"[cfbd_wepa] {wepa_type} {yr} error: {exc}")
+                continue
+
+            # First pass: extract raw efficiency values for percentile ranking
+            scored: List[Tuple[str, float, Dict]] = []
+            for row in data:
+                try:
+                    name = (row.get("name") or row.get("player") or "").strip()
+                    if not name:
+                        continue
+                    val = _wepa_metric_value(row)
+                    if val is None:
+                        continue
+                    scored.append((normalize_name(name), val, row))
+                except (TypeError, ValueError, AttributeError):
+                    continue
+
+            if not scored and data:
+                sample_keys = sorted({k for row in data[:5] for k in row.keys()})
+                print(f"[cfbd_wepa] {wepa_type} {yr}: {len(data)} rows but no "
+                      f"recognized efficiency field (saw keys: {sample_keys[:12]}) - "
+                      f"storing raw only")
+
+            vals_sorted = sorted(v for _, v, _ in scored)
+            for name_lower, val, row in scored:
+                score = _percentile_rank(vals_sorted, val)
+                result.setdefault(name_lower, {})[yr] = {
+                    "wepa_type": wepa_type,
+                    "adj_efficiency_score": score,
+                    "raw": row,
+                }
+            print(f"[cfbd_wepa] Loaded {wepa_type} for {yr}: "
+                  f"{len(scored)} scored / {len(data)} rows")
+
+    return result
+
+
+def fetch_cfbd_team_context(draft_year: int) -> Dict[Tuple[str, int], Dict[str, Any]]:
+    """
+    Fetch per-team context for the competition adjustment:
+      - SP+ ratings:      GET /ratings/sp?year=X  (rating, offense, defense, sos)
+      - 247 Team Talent:  GET /talent?year=X      (composite talent points)
+
+    Returns:
+        {(school_lower, year): {"sp_rating": float|None, "sp_offense": ...,
+                                "sp_defense": ..., "sp_sos": ..., "talent": ...}}
+    Returns {} silently if CFBD_API_KEY is not set or the fetch fails.
+    """
+    if not CFBD_KEY:
+        print("[cfbd_ctx] No CFBD_API_KEY - skipping team-context fetch")
+        return {}
+
+    years = [draft_year - 1, draft_year - 2, draft_year - 3]
+    context: Dict[Tuple[str, int], Dict[str, Any]] = {}
+
+    def _f(v):
+        try:
+            return float(v) if v is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    for yr in years:
+        try:
+            sp_data = _cfbd_get("/ratings/sp", {"year": yr}, retries=2) or []
+        except Exception as exc:
+            print(f"[cfbd_ctx] SP+ {yr} error: {exc}")
+            sp_data = []
+        for row in sp_data:
+            try:
+                team = (row.get("team") or "").strip().lower()
+                if not team:
+                    continue
+                off = row.get("offense") or {}
+                deff = row.get("defense") or {}
+                entry = context.setdefault((team, yr), {})
+                entry["sp_rating"]  = _f(row.get("rating"))
+                entry["sp_offense"] = _f(off.get("rating") if isinstance(off, dict) else None)
+                entry["sp_defense"] = _f(deff.get("rating") if isinstance(deff, dict) else None)
+                entry["sp_sos"]     = _f(row.get("sos"))
+            except (TypeError, ValueError, AttributeError):
+                continue
+
+        try:
+            talent_data = _cfbd_get("/talent", {"year": yr}, retries=2) or []
+        except Exception as exc:
+            print(f"[cfbd_ctx] talent {yr} error: {exc}")
+            talent_data = []
+        for row in talent_data:
+            try:
+                school = (row.get("school") or "").strip().lower()
+                if not school:
+                    continue
+                context.setdefault((school, yr), {})["talent"] = _f(row.get("talent"))
+            except (TypeError, ValueError, AttributeError):
+                continue
+
+        n_yr = sum(1 for (s, y) in context if y == yr)
+        print(f"[cfbd_ctx] Loaded team context for {yr}: {n_yr} teams")
+
+    return context
 
 
 def fetch_cfbd_college_stats(

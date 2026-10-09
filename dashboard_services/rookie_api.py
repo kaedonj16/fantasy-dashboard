@@ -299,7 +299,7 @@ def rankings():
         # Sort: tier ascending, then display_value descending within each tier
         result.sort(key=lambda x: (x.get("tier") or 99, -(x.get("display_value") or 0)))
 
-        paused = (os.environ.get("ROOKIE_PIPELINE_PAUSED") or "1").strip().lower() in (
+        paused = (os.environ.get("ROOKIE_PIPELINE_PAUSED") or "0").strip().lower() in (
             "1", "true", "yes", "on",
         )
         payload = {
