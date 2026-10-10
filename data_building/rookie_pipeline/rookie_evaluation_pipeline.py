@@ -10,7 +10,7 @@ from data_building.rookie_pipeline.draft_market_sources import (
 )
 from data_building.rookie_pipeline.rookie_db_storage import save_rookie_evaluation_to_db, backfill_bio_from_sportradar
 from data_building.rookie_pipeline.ingestion import load_prospects_for_year
-from data_building.rookie_pipeline.pipeline import load_prospects_from_db
+from data_building.rookie_pipeline.pipeline import load_prospects_from_db, upsert_prospects
 from data_building.rookie_pipeline.rookie_identity import build_identity_index, reconcile_player_identity
 from data_building.rookie_pipeline.rookie_profile_builder import build_rookie_profile
 from data_building.rookie_pipeline.rookie_source_registry import build_rookie_source_registry
@@ -288,6 +288,16 @@ def run_rookie_evaluation_pipeline(
     metrics_file, _ = write_rookie_snapshot("rookie_advanced_metrics", as_of, metrics_snapshot)
     profiles_file, _ = write_rookie_snapshot("rookie_profiles", as_of, profiles_snapshot)
     db_result = {"db_metrics_rows": 0, "db_profiles_rows": 0, "db_runs_rows": 0}
+    try:
+        # Ensure prospects exist in rookie_prospects first: source-data rows
+        # carry an FK to it, and seed-loaded prospects were never inserted.
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            n_upserted = upsert_prospects(prospects, conn)
+            conn.commit()
+        print(f"[rookie_eval] upserted {n_upserted} prospects to rookie_prospects")
+    except Exception as exc:
+        print(f"[rookie_eval] prospect_upsert_failed class={year}: {type(exc).__name__}: {exc}")
     try:
         db_result = save_rookie_evaluation_to_db(
             as_of_date=as_of,
