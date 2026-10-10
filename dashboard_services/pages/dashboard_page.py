@@ -170,22 +170,22 @@ def build_dashboard_body(ctx: dict) -> str:
         # Prompt-only until Generate Report. Serving a cached memo on first
         # paint (or generating one) made the report appear without a click.
         gm_card_html = f"""
-        <section class="os-card" id="os-jump-report-card">
-          <div class="os-section-head">
-            <div class="os-section-head-content">
-              <h2 class="os-section-title">Front Office Report</h2>
-              <div class="os-section-subtitle">Roster, trade targets, and standings analysis</div>
+        <section class="os-side-plain cc-fo-card" id="os-jump-report-card">
+          <div class="cc-fo-head">
+            <div class="cc-fo-head-icon"><i class="fa-solid fa-chart-line" aria-hidden="true"></i></div>
+            <div>
+              <h2 class="cc-fo-title">Front Office Report</h2>
+              <div class="cc-fo-sub">Roster, trade targets, and standings analysis</div>
             </div>
-            <div class="os-section-head-actions">
-              <button type="button" id="generateGmMemoBtn" class="recap-generate-btn"
-                      data-league-id="{html.escape(str(league_id))}"
-                      data-season="{html.escape(str(season))}"
-                      data-platform="{html.escape(str(platform))}"
-                      data-viewer-roster-id="{html.escape(str(viewer_roster_id))}">
-                Generate Report
-              </button>
-            </div>
+            <button type="button" id="generateGmMemoBtn" class="cc-fo-btn"
+                    data-league-id="{html.escape(str(league_id))}"
+                    data-season="{html.escape(str(season))}"
+                    data-platform="{html.escape(str(platform))}"
+                    data-viewer-roster-id="{html.escape(str(viewer_roster_id))}">
+              Generate Report
+            </button>
           </div>
+          <div class="card-collapsible-body">
           <div class="os-ai-copy">
             <div class="otc-ai-empty" id="gm-memo-empty">
               <div class="otc-ai-empty-sub">
@@ -199,6 +199,7 @@ def build_dashboard_body(ctx: dict) -> str:
               </div>
             </div>
             <div id="gm-memo-result" style="display:none;"></div>
+          </div>
           </div>
         </section>
         """
@@ -789,13 +790,15 @@ def build_dashboard_body(ctx: dict) -> str:
                 )
         if _act_rows:
             _activity_html = (
-                '<section class="os-card cc-activity">'
-                '<div class="os-section-head"><div class="os-section-head-content">'
-                '<h2 class="os-section-title">League Activity</h2>'
-                '<div class="os-section-subtitle">Recent moves around the league</div>'
-                '</div></div>'
+                '<section class="os-side-plain cc-act-card">'
+                '<div class="cc-act-head">'
+                '<div class="cc-act-head-icon"><i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i></div>'
+                '<div><h2 class="cc-act-title">League Activity</h2>'
+                '<div class="cc-act-sub">Recent moves around the league</div></div>'
+                '</div>'
+                '<div class="card-collapsible-body">'
                 + "".join(_act_rows) +
-                '</section>'
+                '</div></section>'
             )
     except Exception:
         logger.debug("dashboard league activity failed", exc_info=True)
@@ -833,13 +836,15 @@ def build_dashboard_body(ctx: dict) -> str:
                     break
         if _inj_rows:
             _injury_watch_html = (
-                '<section class="os-card cc-injury-watch">'
-                '<div class="os-section-head"><div class="os-section-head-content">'
-                '<h2 class="os-section-title">Injury Watch</h2>'
-                '<div class="os-section-subtitle">Your roster</div>'
-                '</div></div>'
+                '<section class="os-side-plain cc-inj-card">'
+                '<div class="cc-inj-head">'
+                '<div class="cc-inj-head-icon"><i class="fa-solid fa-heart-crack" aria-hidden="true"></i></div>'
+                '<div><h2 class="cc-inj-title">Injury Watch</h2>'
+                '<div class="cc-inj-sub">Your roster</div></div>'
+                '</div>'
+                '<div class="card-collapsible-body">'
                 + "".join(_inj_rows) +
-                '</section>'
+                '</div></section>'
             )
     except Exception:
         logger.debug("dashboard injury watch failed", exc_info=True)
@@ -856,7 +861,7 @@ def build_dashboard_body(ctx: dict) -> str:
         {gm_card_html}
         <section class="os-side-plain cc-st-card" data-section="standings">
           <div class="cc-st-head">
-            <div class="cc-st-head-icon"><i class="fa-solid fa-list" aria-hidden="true"></i></div>
+            <div class="cc-st-head-icon"><i class="fa-solid fa-clipboard-list" aria-hidden="true"></i></div>
             <div class="cc-st-head-title">{_section_title_link("Standings", "league_pages.page_standings", platform, season, league_id)}</div>
             <div class="cc-st-sub">{_st_sub}</div>
             <button type="button" class="card-collapse-toggle cc-head-toggle" aria-label="Toggle section" aria-expanded="true" data-target="dash-standings-body">&#9660;</button>
