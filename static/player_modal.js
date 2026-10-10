@@ -209,15 +209,6 @@ function openPlayerModal(playerId, playerName, opts) {
   const season = _detailsDescriptor.ctx.season;
   const leagueId = _detailsDescriptor.ctx.leagueId || null;
   const apiUrl = _detailsDescriptor.url;
-  // The player-specific breakout endpoint owns board membership.  Fetch it
-  // alongside player details so tab visibility never depends on the global
-  // indicator request's timing or cache.
-  const breakoutParams = new URLSearchParams({
-    season: String(season),
-    league_id: leagueId || '',
-    platform: platform || 'sleeper'
-  });
-  const breakoutUrl = `/api/breakout/player/${encodeURIComponent(playerId)}?${breakoutParams.toString()}`;
   
   // Create modal overlay
   const overlay = document.createElement('div');
@@ -262,7 +253,6 @@ function openPlayerModal(playerId, playerName, opts) {
       <button type="button" class="pm-tab" role="tab" aria-selected="false" id="pmTabMetrics" data-tab="metrics" onclick="pmSwitchTab('metrics', event)">Advanced</button>
       <button type="button" class="pm-tab" role="tab" aria-selected="false" id="pmTabProspect" data-tab="prospect" onclick="pmSwitchTab('prospect', event)">Prospect</button>
       <button type="button" class="pm-tab" role="tab" aria-selected="false" id="pmTabBreakout" data-tab="breakout" onclick="pmSwitchTab('breakout', event)">Breakout</button>
-      <button type="button" id="pmBreakoutStatus" class="pm-tab" style="display:none" aria-live="polite"></button>
       <button type="button" class="pm-tab" role="tab" aria-selected="false" data-tab="trades" onclick="pmSwitchTab('trades', event)">Trades</button>
     </div>
     <div class="player-modal-body" id="playerModalBody">
@@ -359,26 +349,12 @@ function openPlayerModal(playerId, playerName, opts) {
   // the shared details request deliberately does not use this controller.
   const _modalController = (typeof AbortController !== 'undefined') ? new AbortController() : null;
   overlay._pmRequestController = _modalController;
-  const _modalFetch = (url, init, timeout) => {
-    const requestInit = Object.assign({}, init || {}, _modalController ? { signal: _modalController.signal } : {});
-    return (typeof window.brFetchWithTimeout === 'function')
-      ? window.brFetchWithTimeout(url, requestInit, timeout || 12000) : fetch(url, requestInit);
-  };
   if (typeof window.pmPromotePlayerWarmup === 'function') window.pmPromotePlayerWarmup(playerId, opts);
   const _fetchPromise = window.pmPlayerDetails.load(playerId, opts);
 
   const contextBreakoutCandidate = opts.isBreakoutCandidate === true && opts.breakoutCandidate
     ? opts.breakoutCandidate
     : null;
-  let _breakoutPromise = null;
-  function _loadBreakoutEligibility() {
-    if (contextBreakoutCandidate) return Promise.resolve({ ...contextBreakoutCandidate, available: true, board_eligible: true });
-    if (_breakoutPromise) return _breakoutPromise;
-    _breakoutPromise = _modalFetch(breakoutUrl, { cache: 'no-store' }, 8000)
-      .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
-      .finally(() => { _breakoutPromise = null; });
-    return _breakoutPromise;
-  }
   // Breakout eligibility is lazy: fetched only when the Breakout tab is opened,
   // not on every modal open.
 
@@ -1271,7 +1247,10 @@ function openPlayerModal(playerId, playerName, opts) {
       const breakoutPanel = document.getElementById('pm-panel-breakout');
       if (breakoutPanel) breakoutPanel._breakoutData = resolvedBreakoutData;
 
-      const breakoutStatus = document.getElementById('pmBreakoutStatus');
+      // Breakout tab: unavailable means removed. The player-specific
+      // breakout endpoint owns board membership; if it fails (or the player
+      // is not board-eligible) the tab is hidden outright instead of showing
+      // an "unavailable / retry" placeholder tab.
       const applyBreakoutEligibility = (payload, failed) => {
         if (!overlay.isConnected || overlay.dataset.closed === '1'
             || document.querySelector('.player-modal-overlay') !== overlay
@@ -1279,27 +1258,10 @@ function openPlayerModal(playerId, playerName, opts) {
         const eligible = !failed && payload && payload.board_eligible === true;
         if (tabBreakout) tabBreakout.style.display = eligible ? '' : 'none';
         if (breakoutPanel && !failed) breakoutPanel._breakoutData = payload;
-        if (breakoutStatus) {
-          breakoutStatus.style.display = failed ? '' : 'none';
-          breakoutStatus.textContent = failed ? 'Breakout unavailable · Retry' : '';
-          breakoutStatus.onclick = failed ? function () {
-            breakoutStatus.textContent = 'Checking breakout…';
-            breakoutStatus.onclick = null;
-            _loadBreakoutEligibility().then(p => applyBreakoutEligibility(p, false)).catch(() => applyBreakoutEligibility(null, true));
-          } : null;
-        }
         const requested = (opts && opts.tab) || 'overview';
-        if (requested === 'breakout') {
-          if (eligible) pmSwitchTab('breakout');
-          else if (!failed) pmSwitchTab('overview');
-        }
+        if (requested === 'breakout' && eligible) pmSwitchTab('breakout');
       };
-      if (!contextBreakoutCandidate) {
-        // Breakout eligibility is now lazy (fired on tab open, not modal open).
-        // The tab disabled state above already reflects player-details data;
-        // no eager fetch is needed here.
-        if (breakoutStatus) { breakoutStatus.style.display = 'none'; }
-      } else {
+      if (contextBreakoutCandidate) {
         applyBreakoutEligibility(resolvedBreakoutData, false);
       }
 

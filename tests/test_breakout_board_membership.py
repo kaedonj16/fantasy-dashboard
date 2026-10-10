@@ -65,7 +65,7 @@ def test_player_endpoint_exposes_membership_without_premium_detail(monkeypatch):
 
 def test_board_membership_degrades_when_pipeline_raises(monkeypatch):
     """A failing candidate pipeline must never propagate as an exception; the
-    modal treats a raised board lookup as a hard error ("Breakout unavailable")."""
+    modal treats a raised board lookup as unavailable and hides the tab."""
     import dashboard_services.breakout_api as api
 
     def boom(*args, **kwargs):
@@ -81,8 +81,8 @@ def test_board_membership_degrades_when_pipeline_raises(monkeypatch):
 
 
 def test_player_endpoint_returns_200_when_membership_pipeline_raises(monkeypatch):
-    """Regression: a 500 here renders as 'Breakout unavailable - Retry' on every
-    player modal. The endpoint must return a graceful membership payload instead."""
+    """Regression: a 500 here used to break the breakout tab on every player
+    modal. The endpoint must return a graceful membership payload instead."""
     flask = pytest.importorskip("flask")
     import dashboard_services.breakout_api as api
 
