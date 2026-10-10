@@ -26354,6 +26354,103 @@ tr.cmp3-more td {
     padding-left: 8px;
 }
 
+/* ── Centered middle-column compare tables (Overview + Start/Sit, 2-player) ── */
+/* Player names sit in the center column between the two stat columns; every
+   value is centered in its own column. Shared by the /compare page and the
+   compare modal so the two surfaces read identically. */
+table.mid-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+.mid-col { width: 220px; }
+.mid-names {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    padding: 6px 8px;
+}
+.mid-names .mn {
+    font-weight: 800;
+    font-size: 12px;
+    white-space: nowrap;
+    line-height: 1.5;
+}
+.mid-names .mn-vs {
+    font-size: 9px;
+    font-weight: 800;
+    color: var(--muted);
+    letter-spacing: .1em;
+}
+.mid-score {
+    text-align: center;
+    font-size: 30px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    padding: 6px 12px;
+    line-height: 1.1;
+}
+.mid-cap {
+    font-size: 10px;
+    color: var(--muted);
+    font-weight: 500;
+    margin-top: 2px;
+}
+.mid-lbl {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--muted);
+    font-weight: 700;
+    padding: 7px 8px;
+    text-align: center;
+    white-space: nowrap;
+}
+.mid-val {
+    text-align: center;
+    padding: 7px 12px;
+    font-weight: 700;
+    font-size: 14px;
+    border-top: 1px solid var(--border);
+    font-variant-numeric: tabular-nums;
+}
+.mid-best {
+    color: var(--win, #16a34a);
+    background: color-mix(in srgb, var(--win, #16a34a) 12%, transparent);
+}
+.mid-section {
+    text-align: center;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding: 16px 10px 3px;
+}
+/* Verdict strip above the 2-player overview table. */
+.pv-strip {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    margin-bottom: 10px;
+    background: var(--surface2);
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 700;
+}
+.pv-bar {
+    flex: 1;
+    display: flex;
+    height: 6px;
+    border-radius: 3px;
+    overflow: hidden;
+    background: var(--border);
+}
+.pv-fill-a { background: var(--blue, #3b82f6); }
+.pv-fill-b { background: var(--amber, #f59e0b); }
+
 /* ── Nav buttons ────────────────────────────────────────────────── */
 .compare-nav-btns {
     display: flex;
