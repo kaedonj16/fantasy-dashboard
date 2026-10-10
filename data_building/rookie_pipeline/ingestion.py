@@ -1042,6 +1042,7 @@ def fetch_cfbd_college_stats(
     draft_year: int,
     fetch_games_played: bool = False,
     skip_sagarin: bool = False,
+    years: Optional[List[int]] = None,
 ) -> Dict[str, List[Dict]]:
     """
     Fetch college stats from CFBD for the 3 seasons before `draft_year`.
@@ -1053,13 +1054,15 @@ def fetch_cfbd_college_stats(
             /games/players endpoint (51 extra API calls per draft class).
             Default False to conserve rate-limit budget; per-game rates fall
             back to assuming 12 games when disabled.
+        years: Override the seasons to fetch (default: 4 seasons before draft_year).
+            Used by backfills to fetch only missing seasons.
     """
 
     if not CFBD_KEY:
         print("[cfbd] No CFBD_API_KEY set - skipping college stats")
         return {}
 
-    years = [draft_year - 1, draft_year - 2, draft_year - 3, draft_year - 4]
+    years = years or [draft_year - 1, draft_year - 2, draft_year - 3, draft_year - 4]
 
     try:
         # Team season totals for market share / dominator calculation
@@ -1567,6 +1570,51 @@ def backfill_cfbd_targets(draft_year: int) -> Dict[str, int]:
         conn.commit()
     print(f"[targets] backfilled targets for {updated} player-seasons ({len(teams)} teams)")
     return {"updated": updated, "teams": len(teams)}
+
+
+def backfill_cfbd_seasons(draft_year: int) -> Dict[str, int]:
+    """
+    Standalone seasons backfill: fetches CFBD stats for seasons missing from
+    rookie_prospect_source_data (e.g. 2025/2024 when only 2026 was saved due
+    to rate limiting), without re-running the full pipeline. Also refreshes
+    games_played via the /games/players endpoint.
+    Returns {"seasons_fetched": [...], "records_saved": n}.
+    """
+    from dashboard_services.db import get_conn
+    from data_building.rookie_pipeline.pipeline import upsert_prospect_source_data
+
+    expected = [draft_year - 1, draft_year - 2, draft_year - 3]
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT DISTINCT rsd.season
+                FROM rookie_prospect_source_data rsd
+                JOIN rookie_prospects rp ON rsd.player_id = rp.player_id
+                WHERE rp.draft_class_year = %s AND rsd.season = ANY(%s)
+                """,
+                (draft_year, expected),
+            )
+            have = {r["season"] for r in cur.fetchall()}
+    missing = [y for y in expected if y not in have]
+    if not missing:
+        print(f"[seasons] all seasons present for {draft_year}")
+        return {"seasons_fetched": [], "records_saved": 0}
+
+    print(f"[seasons] fetching missing seasons {missing} for {draft_year}")
+    cfbd_stats = fetch_cfbd_college_stats(
+        draft_year, fetch_games_played=True, years=missing,
+    )
+    if not cfbd_stats:
+        print("[seasons] fetch returned no data (rate limited?)")
+        return {"seasons_fetched": missing, "records_saved": 0}
+
+    prospects = load_prospects_for_year(draft_year)
+    with get_conn() as conn:
+        saved = upsert_prospect_source_data(prospects, cfbd_stats, draft_year, conn)
+        conn.commit()
+    print(f"[seasons] saved {saved} records for seasons {missing}")
+    return {"seasons_fetched": missing, "records_saved": saved}
 
 
 def _enrich_bio_from_cfbd_roster(prospects: List[Dict[str, Any]], draft_year: int) -> List[Dict[str, Any]]:
