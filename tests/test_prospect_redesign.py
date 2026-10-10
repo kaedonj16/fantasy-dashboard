@@ -100,12 +100,13 @@ class TestAdvancedMetrics:
         adv = _build_advanced_metrics("WR", seasons, {"speed_score": 112}, self._row())
         assert [a["label"] for a in adv] == [
             "Dominator", "Breakout Age", "Yds/Rec",
-            "Mkt Share", "TD Share", "Speed Score", "Efficiency", "Recruiting",
+            "Mkt Share", "TD Share", "Tgt/Gm", "Catch%",
+            "Speed Score", "Efficiency", "Recruiting",
         ]
         assert adv[0]["raw"] == "38%"
         assert adv[0]["grade"] == 99.9  # 0.38 >= 0.35 elite anchor, capped below 100
         assert adv[2]["raw"] == "15.9"
-        assert adv[5]["raw"] == "112"
+        assert adv[7]["raw"] == "112"
         assert adv[4]["raw"] == "28%"
         assert adv[4]["grade"] == 93.3  # 0.28 / 0.30
 
@@ -151,7 +152,7 @@ class TestAdvancedMetrics:
         adv = _build_advanced_metrics(
             "WR", [], {}, {"position": "WR", "age": None,
                            "efficiency_score": None, "production_score": None})
-        assert len(adv) == 8
+        assert len(adv) == 10
         assert all(a["raw"] is None and a["grade"] is None for a in adv)
 
     def test_speed_score_derived_from_forty_and_weight(self):

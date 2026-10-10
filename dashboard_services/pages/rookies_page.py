@@ -424,6 +424,14 @@ def build_prospects_body(is_admin: bool = False) -> str:
   .m-adv-score { font-size: 13px; font-weight: 700; text-align: right; color: var(--text); }
   .m-adv-grade { font-size: 13px; font-weight: 800; text-align: right; }
   .m-adv-radar { display: flex; justify-content: center; padding: 10px 14px; }
+  /* Full metrics table below radar */
+  .m-adv-table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 12.5px; }
+  .m-adv-table th { text-align: left; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-subtle); padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  .m-adv-table th:nth-child(2), .m-adv-table th:nth-child(3),
+  .m-adv-table td:nth-child(2), .m-adv-table td:nth-child(3) { text-align: right; }
+  .m-adv-table td { padding: 6px 8px; border-bottom: 1px solid var(--border); color: var(--text); }
+  .m-adv-table tr:last-child td { border-bottom: none; }
+  .m-adv-table td:first-child { color: var(--text-muted); font-weight: 600; }
 
   /* Two-column modal layout */
   .m-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 28px; align-items: start; }
@@ -1108,6 +1116,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
         '<div class="m-sec-label">Advanced metrics</div>' +
         '<div class="m-adv-grid"><div id="rkAdvBody">' + rkLoadingHtml() + '</div>' +
         '<div class="m-adv-radar" id="rkRadarBody"></div></div>' +
+        '<div id="rkAdvTable"></div>' +
         '<div class="m-cols">' +
           '<div class="m-col">' +
             '<hr class="rk-section-divider">' +
@@ -1290,6 +1299,15 @@ def build_prospects_body(is_admin: bool = False) -> str:
     var advBody = document.getElementById('rkAdvBody');
     var radarBody = document.getElementById('rkRadarBody');
     var adv = (d.advanced || []).filter(function(a){ return a.raw != null && a.grade != null; });
+    // Radar: 5 key metrics per position. Table below shows all.
+    var RK_RADAR_KEYS = {
+      QB: ["Cmp%", "Yds/Att", "AY/A", "TD:INT", "Efficiency"],
+      RB: ["Dominator", "Yds/Carry", "Scrim Yds/Gm", "Mkt Share", "Speed Score"],
+      WR: ["Dominator", "Yds/Rec", "Mkt Share", "TD Share", "Tgt/Gm"],
+      TE: ["Dominator", "Yds/Rec", "Mkt Share", "TD Share", "Tgt/Gm"]
+    };
+    var radarKeys = RK_RADAR_KEYS[(r.position || "").toUpperCase()] || RK_RADAR_KEYS.WR;
+    var radarAdv = adv.filter(function(a){ return radarKeys.indexOf(a.label) !== -1; });
     if (advBody) {
       advBody.innerHTML = adv.length ? adv.map(function(a) {
         var g = rkLetterGrade(a.grade);
@@ -1302,8 +1320,18 @@ def build_prospects_body(is_admin: bool = False) -> str:
     }
     if (radarBody) {
       var tc = RK_TIER_COLORS[r.tier] || '#9ca3af';
-      radarBody.innerHTML = adv.length
-        ? rkRadarSVG(adv.map(function(a){ return a.label; }), adv.map(function(a){ return a.grade; }), tc) : '';
+      radarBody.innerHTML = radarAdv.length
+        ? rkRadarSVG(radarAdv.map(function(a){ return a.label; }), radarAdv.map(function(a){ return a.grade; }), tc) : '';
+    }
+    // Full metrics table below radar
+    var advTable = document.getElementById('rkAdvTable');
+    if (advTable) {
+      advTable.innerHTML = adv.length ? '<table class="m-adv-table"><thead><tr><th>Metric</th><th>Value</th><th>Grade</th></tr></thead><tbody>' +
+        adv.map(function(a) {
+          var g = rkLetterGrade(a.grade);
+          return '<tr><td>' + rkEsc(a.label) + '</td><td>' + rkEsc(a.raw) + '</td>' +
+            '<td style="color:' + g[1] + ';font-weight:800">' + g[0] + '</td></tr>';
+        }).join('') + '</tbody></table>' : '';
     }
 
     // Combine grid

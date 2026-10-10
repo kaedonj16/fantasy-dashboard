@@ -239,6 +239,16 @@ def _grade_ypa(v):
     return _clip100(v / 9.5 * 100.0) if v is not None else None
 
 
+def _grade_tpg(v):
+    # Targets per game; 10+ is elite WR1 volume.
+    return _clip100(v / 10.0 * 100.0) if v is not None else None
+
+
+def _grade_catch_rate(v):
+    # Catch rate; 75%+ is elite hands.
+    return _clip100(v / 0.75 * 100.0) if v is not None else None
+
+
 def _compute_breakout_age(seasons, age, position):
     """Age in the first season the player hit the dominator breakout threshold.
 
@@ -329,7 +339,8 @@ def _build_advanced_metrics(position, seasons, athleticism, row, wepa_score=None
     for s in seasons or []:
         for k in ("dominator_rating", "market_share_yards", "market_share_tds",
                   "yds_per_reception",
-                  "yds_per_carry", "completion_pct", "td_int_ratio", "yds_per_attempt"):
+                  "yds_per_carry", "completion_pct", "td_int_ratio", "yds_per_attempt",
+                  "targets", "receptions"):
             try:
                 v = float(s.get(k)) if s.get(k) is not None else None
             except (TypeError, ValueError):
@@ -344,6 +355,16 @@ def _build_advanced_metrics(position, seasons, athleticism, row, wepa_score=None
                          float(s.get("receiving_yards") or 0)) / gp
                 if "scrimmage_per_game" not in best or scrim > best["scrimmage_per_game"]:
                     best["scrimmage_per_game"] = scrim
+                # Targets per game and catch rate (WR/TE opportunity metrics)
+                tgt = float(s.get("targets") or 0)
+                if tgt > 0:
+                    tpg = tgt / gp
+                    if "targets_per_game" not in best or tpg > best["targets_per_game"]:
+                        best["targets_per_game"] = tpg
+                    rec = float(s.get("receptions") or 0)
+                    catch_rate = rec / tgt if tgt > 0 else None
+                    if catch_rate is not None and ("catch_rate" not in best or catch_rate > best["catch_rate"]):
+                        best["catch_rate"] = catch_rate
             att = float(s.get("pass_attempts") or 0)
             if att > 0:
                 aya = (float(s.get("pass_yards") or 0)
@@ -425,6 +446,8 @@ def _build_advanced_metrics(position, seasons, athleticism, row, wepa_score=None
             ("Yds/Rec", _fmt1(best.get("yds_per_reception")), _grade_ypr(best.get("yds_per_reception"))),
             ("Mkt Share", _fmt_pct1(best.get("market_share_yards")), _grade_market_share(best.get("market_share_yards"))),
             ("TD Share", _fmt_pct1(best.get("market_share_tds")), _grade_td_share(best.get("market_share_tds"))),
+            ("Tgt/Gm", _fmt1(best.get("targets_per_game")), _grade_tpg(best.get("targets_per_game"))),
+            ("Catch%", _fmt_pct1(best.get("catch_rate")), _grade_catch_rate(best.get("catch_rate"))),
             ("Speed Score", _fmt1(speed), _grade_speed_score(speed)),
             ("Efficiency", _fmt1(eff), _clip100(eff)),
             ("Recruiting", recruit_raw, recruit_grade),
