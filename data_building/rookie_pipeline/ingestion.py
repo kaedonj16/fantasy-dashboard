@@ -672,13 +672,21 @@ def _build_cfbd_season(raw_stats: List[Dict], team_stats: Dict, season: int,
     return row
 
 
-def fetch_cfbd_games_played(draft_year: int) -> Dict[str, Dict[int, int]]:
+def fetch_cfbd_games_played(
+    draft_year: int,
+    limit_names: Optional[set] = None,
+) -> Dict[str, Dict[int, int]]:
     """
     Fetch exact games played per player per season via CFBD /games/players endpoint.
 
     The endpoint requires `year` + `week` - it does NOT accept a season-level query
     with just `year` + `seasonType`.  We loop weeks 1-17 and aggregate unique game
     IDs per player, giving an exact games-played count rather than the default 12.
+
+    Args:
+        draft_year: Draft class year.
+        limit_names: Optional set of lowercase player names to track. When set,
+            only these players are counted (saves memory/time vs 28k players).
 
     Returns:
         {player_name_lower: {year: games_played_count}}
@@ -732,7 +740,7 @@ def fetch_cfbd_games_played(draft_year: int) -> Dict[str, Dict[int, int]]:
                         for stat_type in (category.get("types") or []):
                             for athlete in (stat_type.get("athletes") or []):
                                 a_name = (athlete.get("name") or "").lower().strip()
-                                if a_name:
+                                if a_name and (limit_names is None or a_name in limit_names):
                                     player_games.setdefault(a_name, set()).add(game_id)
 
             time.sleep(0.2)   # light rate-limiting between week calls
@@ -1043,6 +1051,7 @@ def fetch_cfbd_college_stats(
     fetch_games_played: bool = False,
     skip_sagarin: bool = False,
     years: Optional[List[int]] = None,
+    limit_names: Optional[set] = None,
 ) -> Dict[str, List[Dict]]:
     """
     Fetch college stats from CFBD for the 3 seasons before `draft_year`.
@@ -1056,6 +1065,8 @@ def fetch_cfbd_college_stats(
             back to assuming 12 games when disabled.
         years: Override the seasons to fetch (default: 4 seasons before draft_year).
             Used by backfills to fetch only missing seasons.
+        limit_names: Optional set of lowercase player names to limit the
+            games_played fetch to (avoids processing 28k players).
     """
 
     if not CFBD_KEY:
@@ -1096,7 +1107,7 @@ def fetch_cfbd_college_stats(
         if fetch_games_played:
             print("[cfbd] Fetching games played from /games/players endpoint")
             try:
-                games_played_map = fetch_cfbd_games_played(draft_year)
+                games_played_map = fetch_cfbd_games_played(draft_year, limit_names=limit_names)
                 print(f"[cfbd] Games played resolved for {len(games_played_map)} players")
             except Exception as exc:
                 print(f"[cfbd] WARNING: games-played fetch failed ({exc}), will default to None")
@@ -1576,8 +1587,11 @@ def backfill_cfbd_seasons(draft_year: int) -> Dict[str, int]:
     """
     Standalone seasons backfill: fetches CFBD stats for seasons missing from
     rookie_prospect_source_data (e.g. 2025/2024 when only 2026 was saved due
-    to rate limiting), without re-running the full pipeline. Also refreshes
+to rate limiting), without re-running the full pipeline. Also refreshes
     games_played via the /games/players endpoint.
+to rate limiting), without re-running the full pipeline.
+
+    The games_played fetch is limited to prospect names only (not 28k players).
     Returns {"seasons_fetched": [...], "records_saved": n}.
     """
     from dashboard_services.db import get_conn
@@ -1601,9 +1615,13 @@ def backfill_cfbd_seasons(draft_year: int) -> Dict[str, int]:
         print(f"[seasons] all seasons present for {draft_year}")
         return {"seasons_fetched": [], "records_saved": 0}
 
-    print(f"[seasons] fetching missing seasons {missing} for {draft_year}")
+    # Get prospect names to limit the games_played fetch (not 28k players)
+    prospects = load_prospects_for_year(draft_year)
+    limit_names = {p["name"].lower().strip() for p in prospects if p.get("name")}
+    print(f"[seasons] fetching missing seasons {missing} for {draft_year} ({len(limit_names)} prospects)")
+
     cfbd_stats = fetch_cfbd_college_stats(
-        draft_year, fetch_games_played=True, years=missing,
+        draft_year, fetch_games_played=True, years=missing, limit_names=limit_names,
     )
     if not cfbd_stats:
         print("[seasons] fetch returned no data (rate limited?)")
