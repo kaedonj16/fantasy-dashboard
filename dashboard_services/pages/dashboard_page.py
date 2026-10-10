@@ -177,13 +177,6 @@ def build_dashboard_body(ctx: dict) -> str:
               <h2 class="cc-fo-title">Front Office Report</h2>
               <div class="cc-fo-sub">Roster, trade targets, and standings analysis</div>
             </div>
-            <button type="button" id="generateGmMemoBtn" class="cc-fo-btn"
-                    data-league-id="{html.escape(str(league_id))}"
-                    data-season="{html.escape(str(season))}"
-                    data-platform="{html.escape(str(platform))}"
-                    data-viewer-roster-id="{html.escape(str(viewer_roster_id))}">
-              Generate Report
-            </button>
           </div>
           <div class="card-collapsible-body">
           <div class="os-ai-copy">
@@ -192,6 +185,13 @@ def build_dashboard_body(ctx: dict) -> str:
                 Get personalized analysis on your roster, trade targets, and standings.
               </div>
             </div>
+            <button type="button" id="generateGmMemoBtn" class="cc-fo-btn"
+                    data-league-id="{html.escape(str(league_id))}"
+                    data-season="{html.escape(str(season))}"
+                    data-platform="{html.escape(str(platform))}"
+                    data-viewer-roster-id="{html.escape(str(viewer_roster_id))}">
+              Generate Report
+            </button>
             <div class="otc-ai-empty" id="gm-memo-loading" style="display:none;">
               <div class="otc-ai-empty-title">Analyzing Your Roster...</div>
               <div class="otc-ai-empty-sub">
