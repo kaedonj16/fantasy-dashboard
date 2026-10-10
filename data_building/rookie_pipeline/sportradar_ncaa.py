@@ -69,8 +69,16 @@ def _cache_write(key: str, data: Any) -> None:
 # HTTP
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Circuit breaker: once a profile request 403s, the key lacks NCAAFB product
+# access and every subsequent profile will 403 too. Skip them all.
+_profile_403_tripped = False
+
+
 def _sr_get(path: str, retries: int = 2) -> Optional[Any]:
     """Rate-limited GET against the Sportradar NCAAFB v7 API."""
+    global _profile_403_tripped
+    if _profile_403_tripped and "/profile.json" in path:
+        return None
     api_key = os.getenv("SPORTRADAR_API_KEY", "")
     if not api_key:
         return None
@@ -98,6 +106,9 @@ def _sr_get(path: str, retries: int = 2) -> Optional[Any]:
                     f"(key prefix: {api_key[:8]}..., access={access}). "
                     f"The NFL Draft and NCAAFB APIs are separate Sportradar products."
                 )
+                if "/profile.json" in path:
+                    _profile_403_tripped = True
+                    print("[sr_ncaa] Profile access denied - skipping remaining profile lookups")
                 return None
             print(f"[sr_ncaa] HTTP {resp.status_code} for {path} - body: {resp.text[:200]}")
             return None
