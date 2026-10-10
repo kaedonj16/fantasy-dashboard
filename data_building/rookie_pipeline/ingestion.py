@@ -1581,9 +1581,7 @@ def backfill_cfbd_seasons(draft_year: int) -> Dict[str, int]:
     Returns {"seasons_fetched": [...], "records_saved": n}.
     """
     from dashboard_services.db import get_conn
-    from data_building.rookie_pipeline.pipeline import (
-        upsert_prospect_source_data, load_prospects_for_year,
-    )
+    from data_building.rookie_pipeline.pipeline import upsert_prospect_source_data
 
     expected = [draft_year - 1, draft_year - 2, draft_year - 3]
     with get_conn() as conn:
