@@ -80,12 +80,7 @@ _dw_players_index_cache = None
 
 
 def _dw_players_index():
-    """Module-level lazy players_index (ESPN headshot IDs for drawer rows).
-
-    Loaded once per process, not per player or per request. Same index and
-    keying app.py's _stamp_espn_headshot uses: keyed by str(player_id), the
-    headshot URL is https://a.espncdn.com/i/headshots/nfl/players/full/{espnID}.png.
-    """
+    """Module-level lazy players_index (espnHeadshot URLs for drawer rows)."""
     global _dw_players_index_cache
     if _dw_players_index_cache is None:
         try:
@@ -94,6 +89,19 @@ def _dw_players_index():
         except Exception:
             _dw_players_index_cache = {}
     return _dw_players_index_cache
+
+
+def _dw_hires_headshot(url, width=128):
+    """Mirror of app.js _hiResHeadshot: route ESPN headshots through the
+    combiner at the requested width so drawer rows match the player modal."""
+    if not url:
+        return ""
+    if "/combiner/" in url:
+        return url
+    m = re.search(r"espncdn\.com(/i/headshots/[^?]+\.(?:png|jpg|jpeg))", url, re.I)
+    if not m:
+        return url
+    return f"https://a.espncdn.com/combiner/i?img={m.group(1)}&w={width}&scale=crop&cquality=100"
 
 
 def build_teams_body(ctx: dict) -> str:
@@ -397,14 +405,16 @@ def build_teams_body(ctx: dict) -> str:
             initials = "".join(w[0] for w in short_parts[:2]).upper()
             short_name = short_parts[-1] if short_parts else ""
 
-            # ESPN headshot, built exactly like app.py _stamp_espn_headshot;
-            # omitted entirely when the player has no espnID (initials show).
+            # ESPN combiner headshot at 128px, exactly like the player modal
+            # (_hiResHeadshot); tapping a row opens the modal, so the photo
+            # must not visibly change. Omitted when unknown (initials show).
             player_id = str(p.get("id", ""))
-            espn_id = str((index.get(player_id) or {}).get("espnID") or "").strip()
-            if espn_id:
+            raw_hs = str((index.get(player_id) or {}).get("espnHeadshot") or "").strip()
+            hs_url = _dw_hires_headshot(raw_hs, 128)
+            if hs_url:
                 headshot = (
                     '<img src="'
-                    + html.escape(f"https://a.espncdn.com/i/headshots/nfl/players/full/{espn_id}.png")
+                    + html.escape(hs_url)
                     + '" alt="" loading="lazy" decoding="async" onerror="this.remove()">'
                 )
             else:
