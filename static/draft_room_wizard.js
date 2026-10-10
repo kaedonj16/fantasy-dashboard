@@ -657,6 +657,25 @@
         if (list) list.scrollIntoView({block: 'center', behavior: 'smooth'});
       });
     }
+    /* Quiet until a draft is actually live: probe once; only status
+       'drafting' earns the prominent treatment. Failure stays quiet. */
+    (function(){
+      var url = '/api/draft/detect?platform=' + encodeURIComponent(cfg.platform)
+        + '&league_id=' + encodeURIComponent(cfg.leagueId) + '&season=' + (cfg.season || '');
+      var plat = String(cfg.platform || '').toLowerCase();
+      if (plat === 'espn' || plat === 'yahoo') url += '&sync=1';
+      fetch(url)
+        .then(function(r){ return r.json(); })
+        .then(function(resp){
+          var all = (resp && resp.drafts) || [];
+          var live = all.some(function(d){ return String(d.status) === 'drafting'; });
+          if (live){
+            card.classList.add('is-live');
+            if (go) go.classList.add('wz-btn-primary');
+          }
+        })
+        .catch(function(){});
+    })();
   }
 
   /* ── Resume: the page auto-resumes a session draft on load, so the link

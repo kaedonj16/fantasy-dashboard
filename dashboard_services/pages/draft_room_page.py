@@ -206,7 +206,7 @@ _DRAFT_ROOM_HTML = r"""
             <span class="wz-lt" id="wzLiveTitle">Sync your live draft</span>
             <span class="wz-ls">Connected league. Setup comes from your live draft.</span>
           </span>
-          <button type="button" class="wz-btn wz-btn-primary" id="wzLiveGo">Connect live draft</button>
+          <button type="button" class="wz-btn" id="wzLiveGo">Connect live draft</button>
         </div>
       </div>
       <div class="dr-live-list wz-live-list" id="drLiveList" style="display:none;"></div>
@@ -845,8 +845,12 @@ _DRAFT_ROOM_HTML = r"""
     align-items: center; justify-content: center; }
   .wz-pcard.on .wz-pcheck { display: flex; }
   /* Live connect card */
-  .wz-live-card { border: 1.5px dashed var(--wz-accent); border-radius: 12px; background: var(--wz-panel);
-    margin: 0 22px 18px; box-shadow: var(--wz-shadow); overflow: hidden; }
+  .wz-live-card { border: 1px solid var(--wz-border); border-radius: 12px; background: var(--wz-panel);
+    margin: 0 22px 18px; overflow: hidden; }
+  /* Prominent only when a draft is actually live (JS adds .is-live). */
+  .wz-live-card.is-live { border: 1.5px dashed var(--wz-accent); box-shadow: var(--wz-shadow); }
+  .wz-live-card .wz-livedot { display: none; }
+  .wz-live-card.is-live .wz-livedot { display: block; }
   .wz-live-simple { display: flex; align-items: center; gap: 12px; padding: 14px 16px; }
   .wz-live-simple .wz-lt { font-weight: 800; font-size: 14px; display: block; color: var(--wz-text); }
   .wz-live-simple .wz-ls { color: var(--wz-muted); font-size: 12.5px; margin-top: 2px; display: block; }
@@ -869,6 +873,11 @@ _DRAFT_ROOM_HTML = r"""
   /* Step cards */
   .wz-card { background: var(--wz-panel); border: 1px solid var(--wz-border); border-radius: 16px;
     box-shadow: var(--wz-shadow); padding: 22px; margin: 0 22px; overflow: hidden; }
+  /* Steps are sections of the outer setup card, not nested cards. */
+  .dr-setup-card.wz .wz-card {
+    background: transparent; border: none; border-radius: 0;
+    box-shadow: none; margin: 0 22px; padding: 4px 0 24px; overflow: visible;
+  }
   .wz-card h2 { font-size: 16px; font-weight: 800; margin: 0 0 4px; color: var(--wz-text); }
   .wz-card .wz-sub { font-size: 12.5px; color: var(--wz-muted); margin: 0 0 18px; }
   .wz-field { margin-bottom: 18px; }
