@@ -20091,8 +20091,14 @@ function _compareBodyHTML(p1, p2, opts) {
 
       <div class="compare-tab-panel" data-cmppanel="logs" hidden>
         <div class="compare-gamelogs-section">
-          <div class="compare-gamelogs-col" id="compareGameLogs1"></div>
-          <div class="compare-gamelogs-col" id="compareGameLogs2"></div>
+          <div class="compare-gamelogs-col">
+            <div class="compare-weekly-name">${p1.name || ''}</div>
+            <div id="compareGameLogs1"></div>
+          </div>
+          <div class="compare-gamelogs-col">
+            <div class="compare-weekly-name">${p2.name || ''}</div>
+            <div id="compareGameLogs2"></div>
+          </div>
         </div>
       </div>
       ${navBtns}
