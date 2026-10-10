@@ -14139,6 +14139,50 @@ a.signed-home-league:hover {
     color: var(--text-muted);
 }
 
+.home-testimonials {
+    padding: 48px 20px;
+    background: var(--bg-soft, #f8fafc);
+}
+.home-testimonials-inner {
+    max-width: 1080px;
+    margin: 0 auto;
+}
+.home-testimonials-title {
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    text-align: center;
+    margin: 0 0 24px;
+}
+.home-testimonials-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+}
+.home-testimonial {
+    margin: 0;
+    padding: 20px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+.home-testimonial blockquote {
+    margin: 0 0 12px;
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 1.4;
+    letter-spacing: -0.1px;
+}
+.home-testimonial figcaption {
+    font-size: 13px;
+    color: var(--text-muted);
+}
+.home-testimonial figcaption strong {
+    font-weight: 700;
+    margin-right: 6px;
+    color: var(--text);
+}
+
 .home-pro {
     position: relative;
     z-index: 1;

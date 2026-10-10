@@ -82,8 +82,9 @@ def test_real_testimonials_present():
     assert "Jayden Waddell" in region
     assert "Name coming soon" not in region
     assert "Blackedraw manager" not in region
-    # Testimonial appears once (hero proof); the duplicate quotes section was removed.
-    assert region.count("THATS ACTUALLY SO SICK BRO") == 1
+    # Testimonial appears in the hero proof and the dedicated testimonials section.
+    assert region.count("THATS ACTUALLY SO SICK BRO") == 2
+    assert '<section class="home-testimonials"' in region
 
 
 def test_free_tools_band_links_real_public_pages():
