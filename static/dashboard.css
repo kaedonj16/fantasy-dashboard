@@ -47149,8 +47149,8 @@ em.gneg { background: var(--loss); }
     font-weight: 800;
     font-size: 14px;
     color: var(--text-muted);
-    background: var(--accent-soft);
-    border: 2.5px solid var(--ring, var(--border));
+    background: none;
+    border: none;
 }
 .td-hs img {
     position: absolute;
