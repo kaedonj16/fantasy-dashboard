@@ -512,9 +512,19 @@ def build_prospects_body(is_admin: bool = False) -> str:
 
   /* Mobile: hide Mock column, stack component bars under the row */
   @media (max-width: 768px) {
-    #rkHeader { display: none; }
+    /* !important: rkRender sets an inline display:grid that would override this */
+    #rkHeader { display: none !important; }
     .rk-grid-row { grid-template-columns: 44px minmax(0,1fr) auto 36px; gap: 8px; }
     #rkHeader .rk-mock-h, .rk-row .rk-mock { display: none; }
+
+    /* Explicit placement: score belongs on the top row (rank | player | score | star),
+       bars strip on row 2. Without this, grid auto-placement drops the score below
+       the bars after the full-width .rk-comps3 strip. */
+    .rk-rank { grid-column: 1; grid-row: 1; }
+    .rk-pcell { grid-column: 2; grid-row: 1; }
+    .rk-score { grid-column: 3; grid-row: 1; align-self: center; }
+    .rk-star { grid-column: 4; grid-row: 1; align-self: center; }
+    .rk-comps3 { grid-row: 2; }
 
     /* Row: tighter, card-like */
     .rk-row {
@@ -562,12 +572,18 @@ def build_prospects_body(is_admin: bool = False) -> str:
     .m-adv-grid { grid-template-columns: 1fr; }
     .rk-meas-grid { grid-template-columns: repeat(3, 1fr); }
 
-    /* Modal: full-screen sheet on mobile */
-    #rkModal { padding: 0 !important; align-items: flex-end !important; }
+    /* Modal: same centered-card treatment as the standard player modal on mobile */
+    #rkModal { padding: 16px 4px !important; align-items: center !important; }
     #rkModalContent {
-      max-width: 100% !important;
-      max-height: 94vh !important;
-      border-radius: 16px 16px 0 0 !important;
+      /* Fixed height (not max-height) so the card stays the same size whether the
+         detail content is loading or loaded -- mirrors .player-modal. */
+      height: 88dvh;
+      height: 88vh;
+      max-height: 88dvh;
+      max-height: 88vh;
+      max-width: calc(100% - 8px) !important;
+      border-radius: var(--radius, 16px) !important;
+      margin: auto;
     }
     .rk-modal-header { padding: 16px 16px 0; }
     .rk-modal-body { padding: 12px 16px 24px; }
