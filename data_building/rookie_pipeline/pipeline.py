@@ -1861,20 +1861,23 @@ def run_rookie_pipeline_staged(
     if not _has_sr_key:
         print("[pipeline] SPORTRADAR_API_KEY not set - attempting to use cached data")
 
-    # Fetch prospects from Sportradar (use cache if no key)
+    # Fetch prospects from Sportradar; fall back to the bundled seed whenever
+    # Sportradar yields nothing (no key, trial key without the draft endpoint,
+    # or any other empty result). The seed is the reliable prospect universe.
     if _has_sr_key:
         sr_prospects = fetch_sportradar_prospects(draft_year)
     else:
-        # Try to load from cache when API key is not available
+        sr_prospects = []
+    if not sr_prospects:
         try:
             from .ingestion import get_seed_prospects, _enrich_bio_from_cfbd_roster, discover_breakout_prospects
             sr_prospects = _enrich_bio_from_cfbd_roster(get_seed_prospects(draft_year), draft_year)
             found = discover_breakout_prospects(draft_year, {p.get("name", "") for p in sr_prospects})
             if found:
                 sr_prospects = sr_prospects + _enrich_bio_from_cfbd_roster(found, draft_year)
-            print(f"[pipeline] Loaded {len(sr_prospects)} prospects from cached seed data")
+            print(f"[pipeline] Loaded {len(sr_prospects)} prospects from bundled seed data")
         except Exception as exc:
-            print(f"[pipeline] Failed to load cached prospects: {exc}")
+            print(f"[pipeline] Failed to load seed prospects: {exc}")
             sr_prospects = []
     if not sr_prospects:
         print("[pipeline] No prospects from Sportradar, attempting to create from mock data")
