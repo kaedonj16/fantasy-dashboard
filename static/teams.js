@@ -139,7 +139,7 @@
                     r.top_movers.slice(0, 4).forEach(function (m) {
                         var mc = m.delta >= 0 ? 'btm-mover-pos' : 'btm-mover-neg';
                         var arrow = m.delta >= 0 ? '↑' : '↓';
-                        var lastName = _sosLastName(m.name);
+                        var lastName = m.name.split(' ').slice(-1)[0];
                         var dFmt = (m.delta >= 0 ? '+' : '') + Math.round(m.delta);
                         moversHtml += '<span class="btm-mover ' + mc + '" title="' + _sosEsc(m.name) + ' · ' + _sosEsc(m.position) + '">' +
                             arrow + ' <strong>' + _sosEsc(lastName) + '</strong>&nbsp;' + dFmt +
@@ -198,16 +198,6 @@
         return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
             return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
         });
-    }
-
-    // Last token of a display name, ignoring generational suffixes so
-    // "Kenneth Walker III" shortens to "Walker", not "III".
-    function _sosLastName(full) {
-        var parts = String(full || '').trim().split(/\s+/);
-        while (parts.length > 1 && /^(II|III|IV|V|Jr|Sr)$/i.test(parts[parts.length - 1].replace(/\./g, ''))) {
-            parts.pop();
-        }
-        return parts[parts.length - 1] || '';
     }
 
     // Rank 0 = hardest remaining schedule. Spread-based bars so clustered
@@ -520,28 +510,44 @@
     }
 
     function _tdHeadHtml(t) {
-        var status = t.window ? _tdEsc(t.window) : 'Unranked';
-        var bits = status;
-        if (t.grade && t.grade !== '?') bits += ' &middot; ' + _tdEsc(t.grade);
-        bits += ' &middot; Pos index ' + _tdEsc(t.pos_index);
-        return '<div class="td-head-row">' + _tdAvatar(t) +
+        var head = '<div class="td-head-row">' + _tdAvatar(t) +
             '<div class="td-head-id">' +
-            '<div class="td-name">' + _tdEsc(t.name) + (t.is_viewer ? '<span class="tsc-you">YOU</span>' : '') + '</div>' +
-            '<div class="td-status"><span class="td-dot" style="background:' + _tdEsc(t.win_color || '#94a3b8') + ';"></span>' + bits + '</div>' +
-            '</div>' +
-            '<button class="td-x" id="teamDrawerClose" type="button" aria-label="Close team details">&#10005;</button></div>';
+            '<div class="td-name">' + _tdEsc(t.name) + (t.is_viewer ? '<span class="tsc-you">YOU</span>' : '') + '</div>';
+        if (t.window) {
+            head += '<div class="td-contend"><span class="td-dot" style="background:' + _tdEsc(t.win_color || '#94a3b8') + ';"></span>' + _tdEsc(t.window) + '</div>';
+        }
+        head += '</div>';
+        if (t.grade && t.grade !== '?') {
+            head += '<div class="td-grade-block">' +
+                '<div class="td-grade-kicker">TEAM GRADE</div>' +
+                '<div class="td-big-grade ' + _tdEsc(t.grade_cls) + '">' + _tdEsc(t.grade) + '</div>' +
+                '<div class="td-grade-sub">Pos index ' + _tdEsc(t.pos_index) + '</div>' +
+                '</div>';
+        }
+        head += '<button class="td-x" id="teamDrawerClose" type="button" aria-label="Close team details">&#10005;</button></div>';
+        return head;
     }
 
     var _TD_POSC = {QB: '#3b82f6', RB: '#22c55e', WR: '#f59e0b', TE: '#8b5cf6'};
     function _tdBodyHtml(t) {
-        var html = '<div class="td-sec">POSITIONAL BREAKDOWN</div>';
+        var html = '<div class="td-sec">POSITIONAL BREAKDOWN</div>' +
+            '<div class="td-bar-legend"><span><span class="td-bar-sw"></span>Share of best in league</span><span><span class="td-bar-tk"></span>League average</span></div>';
         (t.positions || []).forEach(function (pos, i) {
             var pills = '<span class="td-pill">PLAYERS <b>' + pos.count + '</b></span>';
             if (pos.age) pills += '<span class="td-pill">AVG AGE <b>' + _tdEsc(pos.age) + ' yrs</b></span>';
             if (pos.rank) pills += '<span class="td-pill">RANK <b>#' + pos.rank + '/' + (pos.num_teams || '') + '</b></span>';
             if (pos.strength) pills += '<span class="td-pill">STRENGTH <b>' + _tdEsc(pos.strength) + '</b></span>';
+            var chip = _TD_POSC[pos.pos] || '#64748b';
+            var posMax = Number(pos.pos_max);
+            var fillPct = 0, avgPct = 0;
+            if (posMax > 0) {
+                fillPct = Math.max(0, Math.min(100, Number(pos.total) / posMax * 100));
+                avgPct = Math.max(0, Math.min(100, Number(pos.pos_avg) / posMax * 100));
+            }
             html += '<details class="td-pos"' + (i === 0 ? ' open' : '') + '>' +
-                '<summary><span class="td-chip" style="background:' + _TD_POSC[pos.pos] + ';">' + _tdEsc(pos.pos) + '</span>' +
+                '<summary><span class="td-chip" style="background:' + chip + ';">' + _tdEsc(pos.pos) + '</span>' +
+                '<span class="td-barmid"><span class="td-bar"><span class="td-bar-fill" style="width:' + fillPct.toFixed(1) + '%;background:' + chip + ';"></span>' +
+                '<span class="td-bar-avg" style="left:' + avgPct.toFixed(1) + '%;"></span></span></span>' +
                 '<span class="td-pval">' + Number(pos.total).toFixed(1) + '</span>' +
                 (pos.rank ? '<span class="td-rank">#' + pos.rank + '</span>' : '') +
                 '</summary>' +
@@ -574,7 +580,9 @@
             var tag = document.createElement('span');
             tag.className = 'td-tag ' + _riTagClass(sig);
             tag.textContent = String(sig).toUpperCase();
-            el.parentNode.insertBefore(tag, el);
+            var row = el.closest('.td-prow');
+            var slot = row ? row.querySelector('.td-tag-slot') : null;
+            if (slot) { slot.appendChild(tag); } else { el.parentNode.insertBefore(tag, el); }
         });
     }
 

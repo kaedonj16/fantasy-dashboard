@@ -12,6 +12,7 @@ import html
 import json
 import logging
 import math
+import re
 from collections import defaultdict
 from datetime import datetime
 from typing import Dict, List, Optional, Union
@@ -60,6 +61,39 @@ def roster_shape_label(pos_vals: Dict[str, List[float]], is_sf: bool) -> str:
     if rs >= 0.38:
         return "Robust RB"
     return "Balanced"
+
+
+_DW_SUFFIX_RE = re.compile(r"^(II|III|IV|V|Jr|Sr)$", re.IGNORECASE)
+
+
+def _dw_short_parts(name):
+    """Name words with generational suffixes stripped (same regex approach as
+    PR #2442's JS _sosLastName: pop trailing II/III/IV/V/Jr/Sr tokens, dots
+    optional, so "Kenneth Walker III" shortens to "Walker", not "III")."""
+    parts = str(name or "").strip().split()
+    while len(parts) > 1 and _DW_SUFFIX_RE.match(parts[-1].replace(".", "")):
+        parts.pop()
+    return parts
+
+
+_dw_players_index_cache = None
+
+
+def _dw_players_index():
+    """Module-level lazy players_index (ESPN headshot IDs for drawer rows).
+
+    Loaded once per process, not per player or per request. Same index and
+    keying app.py's _stamp_espn_headshot uses: keyed by str(player_id), the
+    headshot URL is https://a.espncdn.com/i/headshots/nfl/players/full/{espnID}.png.
+    """
+    global _dw_players_index_cache
+    if _dw_players_index_cache is None:
+        try:
+            from utils.utils import load_players_index
+            _dw_players_index_cache = load_players_index() or {}
+        except Exception:
+            _dw_players_index_cache = {}
+    return _dw_players_index_cache
 
 
 def build_teams_body(ctx: dict) -> str:
@@ -334,9 +368,12 @@ def build_teams_body(ctx: dict) -> str:
         if not plist:
             return "<div style='color:#64748b;font-size:13px;'>No players at this position.</div>"
 
+        chip = _POS_CHIP.get(pos_code, "#64748b")
+        index = _dw_players_index()
+
         rows_html = []
         for p in plist:
-            name = p.get("name")
+            name = str(p.get("name") or "")
             name_raw = p.get('search_name', '')
             name_key = str(name_raw or "").strip().lower()
 
@@ -353,27 +390,51 @@ def build_teams_body(ctx: dict) -> str:
                 val = 0.0
             val_txt = f"{val:.1f}" if val > 0 else ""
 
+            # Short display-name pieces: initials come from the first two
+            # suffix-stripped words; the title uses the short (suffix-stripped)
+            # last name, e.g. "Walker" for "Kenneth Walker III".
+            short_parts = _dw_short_parts(name)
+            initials = "".join(w[0] for w in short_parts[:2]).upper()
+            short_name = short_parts[-1] if short_parts else ""
+
+            # ESPN headshot, built exactly like app.py _stamp_espn_headshot;
+            # omitted entirely when the player has no espnID (initials show).
+            player_id = str(p.get("id", ""))
+            espn_id = str((index.get(player_id) or {}).get("espnID") or "").strip()
+            if espn_id:
+                headshot = (
+                    '<img src="'
+                    + html.escape(f"https://a.espncdn.com/i/headshots/nfl/players/full/{espn_id}.png")
+                    + '" alt="" loading="lazy" decoding="async" onerror="this.remove()">'
+                )
+            else:
+                headshot = ""
+
             # Build meta parts (rank, team, age)
-            meta_parts = [rank_label, p.get('team', '')]
+            meta_parts = [str(rank_label or ""), str(p.get('team') or "")]
             if age_txt:
                 meta_parts.append(age_txt)
-            meta_str = " • ".join(filter(None, meta_parts))
+            meta_str = " · ".join(filter(None, meta_parts))
 
-            player_id = p.get("id", "")
             position = p.get('position', '')
             years_exp = p.get('years_exp')
+            team_abbr = str(p.get('team') or "")
             rows_html.append(
-                "<div class='player-activity'>"
-                "  <div style='display:flex;align-items:center;justify-content:space-between;width:100%'>"
-                "    <div style='display: inline-flex;gap: 5px;align-items: center;'>"
-                f"      <div style='font-weight:600;cursor:pointer;' class='player-clickable' data-player-id='{player_id}' data-player-name='{name}' data-position='{position}' data-years-exp='{years_exp}' data-value='{val}' data-breakout-check='true'>{name}</div>"
-                f"      <div style='color:#64748b;font-size:13px'>"
-                f"        {meta_str}"
-                "      </div>"
-                "    </div>"
-                f"    <div class='player-trade-value'>{val_txt}</div>"
-                "  </div>"
-                "</div>"
+                '<div class="td-prow">'
+                f'  <span class="td-hs" style="--ring:{html.escape(chip)};" title="{html.escape(short_name)} · {html.escape(str(rank_label or ""))}">'
+                f'    <span class="td-hs-init">{html.escape(initials)}</span>'
+                f'    {headshot}'
+                f'    <span class="td-hs-tm">{html.escape(team_abbr)}</span>'
+                '  </span>'
+                '  <div class="td-pinfo">'
+                f'    <div class="td-pnm player-clickable" data-player-id="{html.escape(player_id)}" data-player-name="{html.escape(name)}" data-position="{html.escape(str(position))}" data-years-exp="{html.escape(str(years_exp))}" data-value="{html.escape(str(val))}" data-breakout-check="true">{html.escape(name)}</div>'
+                f'    <div class="td-pmeta">{html.escape(meta_str)}</div>'
+                '  </div>'
+                '  <div class="td-pstat">'
+                f'    <div class="td-pval">{html.escape(val_txt)}</div>'
+                '    <span class="td-tag-slot"></span>'
+                '  </div>'
+                '</div>'
             )
 
         return "".join(rows_html)
@@ -480,6 +541,13 @@ def build_teams_body(ctx: dict) -> str:
     }
     _POS_CHIP = {"QB": "#3b82f6", "RB": "#22c55e", "WR": "#f59e0b", "TE": "#8b5cf6"}
 
+    # League-best positional totals for the drawer's vs-league strength bars
+    # (fill width = team total / best in league; tick = league average).
+    _dw_pos_max = {}
+    for _p in POS_ORDER:
+        _totals = [sum(team_pos_values[_rid].get(_p, [])) for _rid in team_meta.keys()]
+        _dw_pos_max[_p] = round(max(_totals, default=0.0), 1)
+
     for _card_idx, (rid, meta) in enumerate(team_meta.items()):
         name = meta["name"]
         avatar = meta.get("avatar") or ""
@@ -505,6 +573,8 @@ def build_teams_body(ctx: dict) -> str:
                 "pos": pos,
                 "chip": _POS_CHIP.get(pos, "#64748b"),
                 "total": round(total, 1),
+                "pos_max": _dw_pos_max.get(pos, 0.0),
+                "pos_avg": round(league_pos_avg.get(pos, 0.0), 1),
                 "count": count,
                 "age": _age_txt,
                 "rank": rank,
