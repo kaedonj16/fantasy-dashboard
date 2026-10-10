@@ -19,7 +19,8 @@ def _slice(src: str, start: str, end: str) -> str:
 
 def test_slim_overview_drops_dual_header():
     body = _slice(APP_JS, "function _compareBodyHTML(p1, p2, opts)", "function cmpSwitchTab(tab)")
-    assert "_cmpOverviewHTML([p1, p2])" in body
+    # The 2-player overview is the centered middle-column table on both surfaces.
+    assert "_cmpOverviewTable2(p1, p2)" in body
     # The duplicated hero row is gone from the inline-page path.
     assert "compare-dual-header compare-inline-header" not in body
     assert "_buildComparePlayerHeader(p1)" not in body

@@ -18404,7 +18404,9 @@ function _cmpRerenderOverview() {
   document.querySelectorAll('.cmp3-overview').forEach(function (el) {
     const ps = el._cmpPlayers;
     if (!ps || !ps.length) return;
-    el.innerHTML = _buildCompareOverviewTable(ps);
+    el.innerHTML = (ps.length === 2 && typeof _cmpOverviewTable2 === 'function')
+      ? _cmpOverviewTable2(ps[0], ps[1])
+      : _buildCompareOverviewTable(ps);
   });
   _cmpBindOverviewHeads();
 }
@@ -19660,9 +19662,9 @@ function _cmpLoadGameLogs(pid, position, containerId) {
         return;
       }
       el.innerHTML = _buildStatsHTML(logsByYear, true, position || '', data.season_teams || {}, {
-        // The compare modal's Stats tab shows the season summary strip only;
-        // the standalone /compare page keeps the full game-by-game logs.
-        summaryOnly: !!document.querySelector('#playerModal.compare-mode') && !document.querySelector('[data-page="compare"]'),
+        // The compare modal and the standalone /compare page both show the
+        // full game-by-game logs so the two surfaces align.
+        summaryOnly: false,
       });
     })
     .catch(() => {
@@ -19771,6 +19773,24 @@ function _ssTableRow(label, cells, dir) {
   return '<tr><th class="ss-rowlbl">' + label + '</th>' + tds + '</tr>';
 }
 
+// Middle-column variant of _ssTableRow for the 2-player compare: the two
+// players' values sit in centered outer columns with the row label between
+// them, so the /compare page and the compare modal read identically.
+function _ssMidRow(label, cells, dir) {
+  if (cells.every(c => _ssRowIsEmpty(c.html))) return '';
+  let best = null;
+  if (dir) {
+    const nums = cells.map(c => c.num).filter(v => v != null);
+    if (nums.length) best = dir === 'min' ? Math.min.apply(null, nums) : Math.max.apply(null, nums);
+  }
+  const td = function (c) {
+    const isBest = dir && best != null && c.num != null && c.num === best;
+    return '<td class="mid-val ' + (c.cls || '') + (isBest ? ' mid-best' : '') + '">'
+      + (c.html != null ? c.html : '&ndash;') + '</td>';
+  };
+  return '<tr>' + td(cells[0] || {}) + '<th class="mid-lbl mid-col">' + label + '</th>' + td(cells[1] || {}) + '</tr>';
+}
+
 // Demotion chip labels, mirroring WV_DEMOTION_LABELS on the waivers page.
 // 'out' and 'questionable' are covered by the injury badge, so they render no
 // chip here. A weather demotion names the specific condition ("22 mph wind")
@@ -19841,6 +19861,12 @@ function _buildStartSitTabHTML(players) {
   const ss = (p) => (s(p).start_sit) || {};
   const cons = (p) => ss(p).consistency || null;
 
+  // Two-player compare (page + modal): names move into a center column between
+  // the two stat columns and every value is centered, matching the Overview
+  // tab. The 3-player shortlist keeps the label-first table.
+  const twoUp = players.length === 2;
+  const _row = twoUp ? _ssMidRow : _ssTableRow;
+
   // Column header per player: name, then the start/sit score at the top of the
   // column (the 0-100 position-relative index, or the raw score when the index
   // could not be built), replacing the separate hero cards. Demotion chips
@@ -19866,26 +19892,48 @@ function _buildStartSitTabHTML(players) {
   // projection already reflects the opponent). The split stops the row
   // highlights from implying a verdict the score does not make.
   const nCols = players.length + 1;
-  const section = (label) => '<tr class="ss-section"><td class="ss-section-cell" colspan="' + nCols + '">' + label + '</td></tr>';
+  const section = (label) => twoUp
+    ? '<tr><td colspan="3" class="mid-section">' + label + '</td></tr>'
+    : '<tr class="ss-section"><td class="ss-section-cell" colspan="' + nCols + '">' + label + '</td></tr>';
 
-  const rProj = _ssTableRow('Proj PPG', players.map(p => { const n = _ssNum(ss(p).proj_pts); return { num: n, html: n != null ? n : dash }; }), 'max');
+  // Middle-column header for the 2-player layout: big score on each side with
+  // the demotion chip under it, both player names stacked in the center.
+  const scoreFor = function (p) {
+    const st = s(p);
+    if (st.start_score == null) return '<div class="mid-score" style="color:var(--muted)">' + dash + '</div>';
+    const pct = st.start_score_pct;
+    const hasPct = pct != null && !isNaN(pct);
+    const big = hasPct ? Math.round(Number(pct)) : (Math.round(Number(st.start_score) * 10) / 10);
+    const cap = hasPct ? 'index (0 to 100)' : 'score';
+    return '<div class="mid-score">' + big + '</div><div class="mid-cap">' + cap + '</div>';
+  };
+  const nmOf = (p) => _ssEsc(p.name || p.full_name || 'Player');
+  const midHead = twoUp
+    ? '<tr>'
+      + '<td style="text-align:center;vertical-align:bottom;padding:4px 8px 12px;">' + scoreFor(players[0]) + _ssDemoteChip(players[0]) + '</td>'
+      + '<td class="mid-col"><div class="mid-names"><span class="mn">' + nmOf(players[0]) + '</span><span class="mn-vs">VS</span><span class="mn">' + nmOf(players[1]) + '</span></div></td>'
+      + '<td style="text-align:center;vertical-align:bottom;padding:4px 8px 12px;">' + scoreFor(players[1]) + _ssDemoteChip(players[1]) + '</td>'
+      + '</tr>'
+    : '';
+
+  const rProj = _row('Proj PPG', players.map(p => { const n = _ssNum(ss(p).proj_pts); return { num: n, html: n != null ? n : dash }; }), 'max');
   // Compact WHY: the factors that moved each player's score most. Display
   // only, drawn from the same score_factors the verdict uses.
-  const rWhy = _ssTableRow('WHY', players.map(p => { const w = _ssWhyLine(p); return { num: null, html: w ? '<span class="ss-why">' + _ssEsc(w) + '</span>' : dash }; }), null);
-  const rL4 = _ssTableRow('L4 PPG', players.map(p => { const n = _ssNum(ss(p).recent_ppg) != null ? _ssNum(ss(p).recent_ppg) : _ssNum(s(p).ppg); return { num: n, html: n != null ? n : dash }; }), 'max');
-  const rFloor = _ssTableRow('Floor&ndash;Ceil', players.map(p => { const c = cons(p); return { num: c ? _ssNum(c.floor) : null, html: c ? (c.floor + '&ndash;' + c.ceiling) : dash }; }), 'max');
-  const rProfile = _ssTableRow('Profile', players.map(p => { const c = cons(p); return { num: null, html: _ssProfileChip(c) || dash }; }), null);
-  const rBoom = _ssTableRow('Boom / Bust', players.map(p => { const c = cons(p); return { num: null, html: (c && !c.small_sample) ? (Math.round(c.boom_rate * 100) + '% / ' + Math.round(c.bust_rate * 100) + '%') : dash }; }), null);
-  const rOline = _ssTableRow('O-Line', players.map(p => {
+  const rWhy = _row('WHY', players.map(p => { const w = _ssWhyLine(p); return { num: null, html: w ? '<span class="ss-why">' + _ssEsc(w) + '</span>' : dash }; }), null);
+  const rL4 = _row('L4 PPG', players.map(p => { const n = _ssNum(ss(p).recent_ppg) != null ? _ssNum(ss(p).recent_ppg) : _ssNum(s(p).ppg); return { num: n, html: n != null ? n : dash }; }), 'max');
+  const rFloor = _row('Floor&ndash;Ceil', players.map(p => { const c = cons(p); return { num: c ? _ssNum(c.floor) : null, html: c ? (c.floor + '&ndash;' + c.ceiling) : dash }; }), 'max');
+  const rProfile = _row('Profile', players.map(p => { const c = cons(p); return { num: null, html: _ssProfileChip(c) || dash }; }), null);
+  const rBoom = _row('Boom / Bust', players.map(p => { const c = cons(p); return { num: null, html: (c && !c.small_sample) ? (Math.round(c.boom_rate * 100) + '% / ' + Math.round(c.bust_rate * 100) + '%') : dash }; }), null);
+  const rOline = _row('O-Line', players.map(p => {
     const ol = ss(p).oline; if (!ol || ol.primary_value == null) return { num: null, html: dash };
     const lbl = ol.primary === 'pass_block' ? 'pass blk' : ol.primary === 'run_block' ? 'run blk' : 'o-line';
     const rk = ol.primary_rank ? ' (#' + ol.primary_rank + ')' : '';
     return { num: _ssNum(ol.primary_value), html: Math.round(ol.primary_value) + ' ' + lbl + rk };
   }), 'max');
-  const rVegas = _ssTableRow('Vegas total', players.map(p => { const n = _ssNum(ss(p).implied_total); return { num: n, html: n != null ? (n + ' implied') : dash }; }), 'max');
+  const rVegas = _row('Vegas total', players.map(p => { const n = _ssNum(ss(p).implied_total); return { num: n, html: n != null ? (n + ' implied') : dash }; }), 'max');
   // Venue: home/away plus the specific weather (or the static dome/cold tag
   // when there is no live weather signal). Display only.
-  const rVenue = _ssTableRow('Venue', players.map(p => {
+  const rVenue = _row('Venue', players.map(p => {
     const x = ss(p);
     if (x.on_bye) return { num: null, html: 'BYE' };
     const ha = x.is_home === true ? 'Home' : (x.is_home === false ? 'Away' : '');
@@ -19895,14 +19943,14 @@ function _buildStartSitTabHTML(players) {
     if (chip) bits.push(chip);
     return { num: null, html: bits.length ? bits.join(' · ') : dash };
   }), null);
-  const rValue = _ssTableRow('Value', players.map(p => { const n = _ssNum(isSf ? s(p).sf_value : s(p).value); return { num: n, html: n != null ? Math.round(n) : dash }; }), 'max');
-  const rOpp = _ssTableRow('Opponent', players.map(p => { const o = ss(p).opponent_label || ss(p).opponent; return { num: null, html: o ? _ssEsc(o) : (ss(p).on_bye ? 'BYE' : dash) }; }), null);
-  const rDef = _ssTableRow('Def vs pos', players.map(p => { const f = _ssNum(ss(p).fpts_against); return { num: null, cls: _ssMuClass(ss(p).def_rank, ss(p).def_total), html: f != null ? (f + ' pts') : (ss(p).on_bye ? 'BYE' : dash) }; }), null);
-  const rMatchup = _ssTableRow('Matchup', players.map(p => { const c = _ssMuChip(ss(p).def_rank, ss(p).def_total); return { num: null, html: c || dash }; }), null);
+  const rValue = _row('Value', players.map(p => { const n = _ssNum(isSf ? s(p).sf_value : s(p).value); return { num: n, html: n != null ? Math.round(n) : dash }; }), 'max');
+  const rOpp = _row('Opponent', players.map(p => { const o = ss(p).opponent_label || ss(p).opponent; return { num: null, html: o ? _ssEsc(o) : (ss(p).on_bye ? 'BYE' : dash) }; }), null);
+  const rDef = _row('Def vs pos', players.map(p => { const f = _ssNum(ss(p).fpts_against); return { num: null, cls: _ssMuClass(ss(p).def_rank, ss(p).def_total), html: f != null ? (f + ' pts') : (ss(p).on_bye ? 'BYE' : dash) }; }), null);
+  const rMatchup = _row('Matchup', players.map(p => { const c = _ssMuChip(ss(p).def_rank, ss(p).def_total); return { num: null, html: c || dash }; }), null);
   // Notable absences around each player's game. Display only; rows drop out
   // entirely when neither player has anything notable.
-  const rTmAbs = _ssTableRow('Teammates out', players.map(p => { const t = _ssAbsText(p, 'teammates'); return { num: null, html: t || dash }; }), null);
-  const rOppAbs = _ssTableRow('Opp defense out', players.map(p => { const t = _ssAbsText(p, 'opponents'); return { num: null, html: t || dash }; }), null);
+  const rTmAbs = _row('Teammates out', players.map(p => { const t = _ssAbsText(p, 'teammates'); return { num: null, html: t || dash }; }), null);
+  const rOppAbs = _row('Opp defense out', players.map(p => { const t = _ssAbsText(p, 'opponents'); return { num: null, html: t || dash }; }), null);
 
   // Empty rows return '' from _ssTableRow; drop them and skip a section header
   // whose whole group hid out, so a missing signal leaves no trace.
@@ -19915,11 +19963,13 @@ function _buildStartSitTabHTML(players) {
     ctxRows.join(''),
   ].join('');
 
-  const table = '<div class="ss-tbl-wrap"><table class="ss-tbl"><thead><tr><th class="ss-rowlbl" aria-hidden="true"></th>' + heads + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+  const table = twoUp
+    ? '<table class="mid-table"><tbody>' + midHead + rows + '</tbody></table>'
+    : '<div class="ss-tbl-wrap"><table class="ss-tbl"><thead><tr><th class="ss-rowlbl" aria-hidden="true"></th>' + heads + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
 
+  const introScore = twoUp ? 'The score at the top of each side ' : 'The score at the top of each column ';
   return _SS_TAB_CSS
-    + '<div class="ss-tab-intro">The same read as the Start/Sit page compare. The score at the top of each '
-    + 'column is a 0 to 100 index relative to that player\'s own position (100 is the top weekly projection '
+    + '<div class="ss-tab-intro">The same read as the Start/Sit page compare. ' + introScore + 'is a 0 to 100 index relative to that player\'s own position (100 is the top weekly projection '
     + 'there), so a QB and a WR are comparable. Rows are split into what actually moves the start/sit score '
     + 'and context that does not: value, opponent, and matchup do not change the score, because the weekly '
     + 'projection already reflects the opponent. Best in each row is highlighted.</div>'
@@ -20019,6 +20069,77 @@ function _renderCompareSkeleton(hostEl, picks) {
     + skPanels;
 }
 
+// Two-player Overview tab: centered middle-column table shared by the
+// standalone /compare page and the compare modal (replaces the page's compact
+// verdict table and the modal's hero cards so the two surfaces align). The
+// big score at the top of each side is the 1QB value; rows below compare the
+// SF value, scoring, and ranks. Honors the Redraft/Dynasty value toggle.
+function _cmpOverviewTable2(p1, p2) {
+  const esc = (typeof _wlEsc === 'function') ? _wlEsc : (s => String(s == null ? '' : s));
+  const num = v => (v == null || v === '' || isNaN(parseFloat(v))) ? null : parseFloat(v);
+  const isRedraft = (typeof _cmpIsRedraft === 'function') ? _cmpIsRedraft() : false;
+  const st = p => (p && p.stats) || {};
+  const val1qb = p => num(isRedraft ? st(p).redraft_value_1qb : st(p).value);
+  const valSf = p => num(isRedraft ? st(p).redraft_value_sf : st(p).sf_value);
+  const ppg = p => num(st(p).ppg);
+  const tot = p => num(st(p).total_pts);
+  const ppgRank = p => num(st(p).ppg_rank);
+  const valRank = p => num(isRedraft ? st(p).redraft_pos_rank : st(p).pos_rank);
+  const posOf = p => (p && p.position) || '';
+  const nameOf = p => (p && (p.name || p.full_name)) || 'Player';
+  const lastOf = p => String(nameOf(p)).trim().split(/\s+/).slice(-1)[0] || nameOf(p);
+  const fmtVal = v => v == null ? '&ndash;' : Math.round(v).toLocaleString('en-US');
+  const fmt1 = v => v == null ? '&ndash;' : (Math.abs(v) >= 10 ? v.toFixed(1) : v.toFixed(2));
+  const dash = '&ndash;';
+
+  const v1 = val1qb(p1), v2 = val1qb(p2);
+  const w1 = v1 != null && (v2 == null || v1 >= v2);
+  const w2 = v2 != null && (v1 == null || v2 > v1);
+
+  // Verdict strip: split bar by 1QB value, edge call to the higher side.
+  const tot_v = (v1 || 0) + (v2 || 0);
+  const pct1 = tot_v > 0 ? Math.round((v1 || 0) / tot_v * 100) : 50;
+  const edgeName = w2 && !w1 ? lastOf(p2) : (w1 && !w2 ? lastOf(p1) : null);
+  const strip = '<div class="pv-strip"><span>' + esc(lastOf(p1)) + ' vs ' + esc(lastOf(p2)) + '</span>'
+    + '<div class="pv-bar"><div class="pv-fill-a" style="width:' + pct1 + '%"></div>'
+    + '<div class="pv-fill-b" style="width:' + (100 - pct1) + '%"></div></div>'
+    + (edgeName ? '<span style="font-size:12px;color:var(--muted)">Value edge: ' + esc(edgeName) + '</span>' : '')
+    + '</div>';
+
+  // Row: [label, htmlA, numA, htmlB, numB, dir] where dir picks the winner.
+  const rows = [
+    ['Value (SF)', fmtVal(valSf(p1)), valSf(p1), fmtVal(valSf(p2)), valSf(p2), 'max'],
+    ['PPG', fmt1(ppg(p1)), ppg(p1), fmt1(ppg(p2)), ppg(p2), 'max'],
+    ['Total pts', fmt1(tot(p1)), tot(p1), fmt1(tot(p2)), tot(p2), 'max'],
+    ['PPG rank', ppgRank(p1) != null ? esc(posOf(p1) + ppgRank(p1)) : dash, ppgRank(p1),
+     ppgRank(p2) != null ? esc(posOf(p2) + ppgRank(p2)) : dash, ppgRank(p2), 'min'],
+    ['Value rank', valRank(p1) != null ? esc(posOf(p1) + valRank(p1)) : dash, valRank(p1),
+     valRank(p2) != null ? esc(posOf(p2) + valRank(p2)) : dash, valRank(p2), 'min'],
+  ];
+  const body = rows.map(function (r) {
+    const lbl = r[0], hA = r[1], nA = r[2], hB = r[3], nB = r[4], dir = r[5];
+    let bestA = false, bestB = false;
+    if (dir && nA != null && nB != null && nA !== nB) {
+      if (dir === 'max') { bestA = nA > nB; bestB = nB > nA; }
+      else { bestA = nA < nB; bestB = nB < nA; }
+    } else if (dir && ((nA != null) !== (nB != null))) {
+      bestA = nA != null; bestB = nB != null;
+    }
+    return '<tr><td class="mid-val' + (bestA ? ' mid-best' : '') + '">' + hA + '</td>'
+      + '<td class="mid-lbl mid-col">' + lbl + '</td>'
+      + '<td class="mid-val' + (bestB ? ' mid-best' : '') + '">' + hB + '</td></tr>';
+  }).join('');
+
+  const head = '<tr><td class="mid-score">' + fmtVal(v1) + '<div class="mid-cap">value (1QB)</div></td>'
+    + '<td class="mid-col"><div class="mid-names"><span class="mn">' + esc(nameOf(p1)) + '</span>'
+    + '<span class="mn-vs">VS</span><span class="mn">' + esc(nameOf(p2)) + '</span></div></td>'
+    + '<td class="mid-score">' + fmtVal(v2) + '<div class="mid-cap">value (1QB)</div></td></tr>';
+
+  return '<div class="cmp-overview-top">' + ((typeof _cmpValueToggleHTML === 'function') ? _cmpValueToggleHTML() : '') + '</div>'
+    + strip
+    + '<table class="mid-table"><tbody>' + head + body + '</tbody></table>';
+}
+
 function _compareBodyHTML(p1, p2, opts) {
   opts = opts || {};
   const navBtns = opts.nav ? `
@@ -20042,14 +20163,10 @@ function _compareBodyHTML(p1, p2, opts) {
     : '<hr class="pm-section-divider">'
       + '<div class="pm-section-header"><span class="pm-section-label">Value History</span></div>'
       + '<div id="compareValueChart" class="player-modal-chart-container" style="min-height:220px;"></div>';
-  const _overviewInner = opts.slimOverview
-    ? _cmpOverviewHTML([p1, p2])
-      + _chartBlock
-    : `<div class="compare-hero-section">
-          <div class="compare-hero-player" id="compareHero1" data-name="${(p1.name || p1.full_name || '').replace(/"/g, '&quot;')}">${_buildCompareHeroHTML(p1, p2)}</div>
-          <div class="compare-hero-player" id="compareHero2" data-name="${(p2.name || p2.full_name || '').replace(/"/g, '&quot;')}">${_buildCompareHeroHTML(p2, p1)}</div>
-        </div>
-        ${(p1 && p1.is_baseline && p2 && p2.is_baseline) ? '' : _heroChartBlock}`;
+  // Two-player Overview: one centered middle-column table on both the page and
+  // the modal (names in the center, values outside), replacing the page's
+  // compact verdict table and the modal's hero cards so the surfaces align.
+  const _overviewInner = '<div class="cmp3-overview">' + _cmpOverviewTable2(p1, p2) + '</div>';
   return `
     <div class="compare-body">
       ${_compareTabBarHTML()}
@@ -20868,6 +20985,9 @@ function openComparisonView(p1, p2) {
 
   // Build the comparison body (shared with the standalone /compare page).
   body.innerHTML = _compareBodyHTML(p1, p2, { nav: true });
+  // Stash the players on the overview shell so the Redraft/Dynasty toggle can
+  // re-render it in place (same as the standalone page).
+  body.querySelectorAll('.cmp3-overview').forEach(el => { el._cmpPlayers = [p1, p2]; });
 
   document.getElementById('compareBackBtn')?.addEventListener('click', () => {
     closePlayerModal();
