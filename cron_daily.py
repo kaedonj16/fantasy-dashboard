@@ -962,8 +962,12 @@ print("[cron] Breakout roster notifications dispatched")
     ROOKIE_PIPELINE_PAUSED = (os.environ.get("ROOKIE_PIPELINE_PAUSED") or "0").strip().lower() in (
         "1", "true", "yes", "on",
     )
+    # ROOKIE_PIPELINE_FORCE=1 bypasses the Sunday-only gate for manual runs.
+    ROOKIE_PIPELINE_FORCE = (os.environ.get("ROOKIE_PIPELINE_FORCE") or "0").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
     _rookie_window = date.today().month in (1, 2, 3, 4, 9, 10, 11, 12)
-    if not ROOKIE_PIPELINE_PAUSED and today_weekday == 6 and _rookie_window:
+    if not ROOKIE_PIPELINE_PAUSED and (ROOKIE_PIPELINE_FORCE or (today_weekday == 6 and _rookie_window)):
         _run_step(f"""
 from dotenv import load_dotenv; load_dotenv()
 from data_building.rookie_pipeline.pipeline import run_rookie_pipeline, get_active_rookie_class
