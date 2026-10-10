@@ -27,7 +27,22 @@
   // Match the site-wide position palette (see .nav-search-pos-* in dashboard.css).
   var POS_COLOR = { QB:'#3b82f6', RB:'#22c55e', WR:'#f59e0b', TE:'#8b5cf6', K:'#c92c68', DEF:'#475569', FLEX:'#14b8a6', SF:'#a78bfa', BN:'#64748b', IR:'#94a3b8', TAXI:'#64748b', IDP:'#0f766e' };
   var posColor = function(p){ return POS_COLOR[(p||'').toUpperCase()] || '#94a3b8'; };
-  var hsUrl = function(id){ return 'https://sleepercdn.com/content/nfl/players/' + id + '.jpg'; };
+  // Same combiner transform the player modal uses (_hiResHeadshot in app.js):
+  // upgrade an ESPN headshot URL to a higher-resolution crop at the requested
+  // width. Non-ESPN URLs and empty strings pass through untouched, and an
+  // already-combined URL is left as-is.
+  var _drHiResHeadshot = function(url, width){
+    if (!url || typeof url !== 'string') return url || '';
+    if (url.indexOf('/combiner/') !== -1) return url;
+    var m = url.match(/espncdn\.com(\/i\/headshots\/[^?]+\.(?:png|jpg|jpeg))/i);
+    if (!m) return url;
+    var w = Math.max(1, Math.round(width || 200));
+    return 'https://a.espncdn.com/combiner/i?img=' + m[1] + '&w=' + w + '&scale=crop&cquality=100';
+  };
+  var hsUrl = function(id, espnHeadshot){
+    if (espnHeadshot) return _drHiResHeadshot(espnHeadshot, 160);
+    return 'https://sleepercdn.com/content/nfl/players/' + id + '.jpg';
+  };
   // DEF players: prefer locally cached logo (after running download_team_logos.py),
   // fall back to ESPN CDN which the browser fetches directly. Prefer the shared
   // helpers when app.js/public.js already loaded them.
@@ -39,7 +54,7 @@
       if (t === 'WSH') t = 'WAS';
       return '/static/images/team_logos/' + t + '.png';
     }
-    return hsUrl(p.id);
+    return hsUrl(p.id, p.espnHeadshot);
   };
   // Inline onerror for DEF logo <img> tags: try ESPN CDN, then hide.
   var _defImgErr = function(img){
