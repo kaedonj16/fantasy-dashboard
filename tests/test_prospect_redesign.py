@@ -211,13 +211,27 @@ class TestHeadshots:
                        "players/full/5079369.png")
 
     def test_fetch_espn_headshots_uses_cache(self):
-        # get_player_age is module-cached: a headshot pass right after the
-        # age pass costs zero extra HTTP.
+        # Roster API path: mock the HTTP layer so no network is needed.
         from data_building.rookie_pipeline import espn_scraper as es
-        es._CACHE["jeremiyah love|notre dame|RB"] = {
-            "player_name": "Jeremiyah Love", "espn_id": "1234567",
-            "age": 21.5, "team": "Notre Dame", "position": "RB",
-        }
+
+        orig_get = es._get
+
+        def fake_get(url, params=None, headers=None):
+            class FakeResp:
+                def json(self):
+                    if "teams/" in url and "roster" in url:
+                        return {"athletes": [{"position": "RB", "items": [
+                            {"fullName": "Jeremiyah Love",
+                             "headshot": {"href": "https://a.espncdn.com/i/headshots/college-football/players/full/1234567.png"}},
+                        ]}]}
+                    # teams list
+                    return {"sports": [{"leagues": [{"teams": [
+                        {"team": {"id": "87", "displayName": "Notre Dame",
+                                  "shortDisplayName": "Notre Dame"}},
+                    ]}]}]}
+            return FakeResp()
+
+        es._get = fake_get
         try:
             out = es.fetch_espn_headshots(
                 ["Jeremiyah Love"], 2027,
@@ -226,7 +240,7 @@ class TestHeadshots:
                 delay=0,
             )
         finally:
-            es._CACHE.pop("jeremiyah love|notre dame|RB", None)
+            es._get = orig_get
         assert out["jeremiyah love"] == (
             "https://a.espncdn.com/i/headshots/college-football/"
             "players/full/1234567.png")
