@@ -34,9 +34,9 @@ class TestDisplayGrades:
         assert _clip100("bad") is None
 
     def test_dominator_anchors_on_model_elite_mark(self):
-        # The model treats >= 0.35 as an elite dominator.
+        # Average (0.20) -> C (75); elite (0.35+) -> 99.9.
         assert _grade_dominator(0.35) == 99.9
-        assert _grade_dominator(0.31) == 88.6
+        assert _grade_dominator(0.20) == 74.9
         assert _grade_dominator(None) is None
 
     def test_breakout_age_display_scale(self):
@@ -104,11 +104,11 @@ class TestAdvancedMetrics:
             "Speed Score", "Efficiency", "Recruiting",
         ]
         assert adv[0]["raw"] == "38%"
-        assert adv[0]["grade"] == 99.9  # 0.38 >= 0.35 elite anchor, capped below 100
+        assert adv[0]["grade"] == 99.9  # 0.38 / 0.267, capped below 100
         assert adv[2]["raw"] == "15.9"
         assert adv[7]["raw"] == "112"
         assert adv[4]["raw"] == "28%"
-        assert adv[4]["grade"] == 93.3  # 0.28 / 0.30
+        assert adv[4]["grade"] == 99.9  # 0.28 / 0.20, capped below 100
 
     def test_te_uses_wr_set(self):
         adv = _build_advanced_metrics("TE", [], {}, self._row("TE"))
@@ -175,7 +175,7 @@ class TestAdvancedMetrics:
              "recruit_stars": 4})
         rec = next(a for a in adv if a["label"] == "Recruiting")
         assert rec["raw"] == "4-star"
-        assert rec["grade"] == 85.0
+        assert rec["grade"] == 67.5  # rescaled: 50 + (85-50)*0.5
 
 
 class TestPageBuilder:

@@ -10,11 +10,10 @@ Endpoints:
 """
 from __future__ import annotations
 
-import json
 import logging
 import os
 import re
-from typing import Any, Dict, List
+from typing import Any
 
 from flask import Blueprint, jsonify, request
 
@@ -26,10 +25,10 @@ rookie_bp = Blueprint("prospects", __name__, url_prefix="/api/prospects")
 
 # In-memory cache so we don't re-run the pipeline on every page load.
 # Invalidated on refresh or on first hit per process.
-_cache: Dict[Any, List[Dict[str, Any]]] = {}
+_cache: dict[Any, list[dict[str, Any]]] = {}
 
 # FantasyCalc ADP fallback - keyed by ("sf"|"1qb", YYYY-MM-DD), lives for the day.
-_FC_ADP_CACHE: Dict[tuple, list] = {}
+_FC_ADP_CACHE: dict[tuple, list] = {}
 
 
 def _nfl_draft_complete(draft_year: int) -> bool:
@@ -42,7 +41,7 @@ def _nfl_draft_complete(draft_year: int) -> bool:
         return is_draft_complete(draft_year)
 
 
-def _get_rankings(draft_year: int) -> List[Dict[str, Any]]:
+def _get_rankings(draft_year: int) -> list[dict[str, Any]]:
     draft_done = _nfl_draft_complete(draft_year)
     cache_key = (draft_year, draft_done)
     if cache_key not in _cache:
@@ -55,7 +54,7 @@ def _get_rankings(draft_year: int) -> List[Dict[str, Any]]:
     return _cache[cache_key]
 
 
-def _auto_link_unlinked(rows: List[Dict[str, Any]]) -> None:
+def _auto_link_unlinked(rows: list[dict[str, Any]]) -> None:
     """
     For every prospect row missing sleeper_id, attempt a name-based match
     against players_index.json.  Persists successful matches to the DB and
@@ -81,13 +80,13 @@ def _auto_link_unlinked(rows: List[Dict[str, Any]]) -> None:
             return _re.sub(r"\s+", " ", n).strip()
 
         # Build norm_name -> sleeper_id map from players_index
-        _name_to_sid: Dict[str, str] = {}
+        _name_to_sid: dict[str, str] = {}
         for _sid, _pdata in _pi.items():
             _pn = _pdata.get("name", "")
             if _pn:
                 _name_to_sid[_norm(_pn)] = _sid
 
-        links: Dict[str, str] = {}  # prospect player_id -> sleeper_id
+        links: dict[str, str] = {}  # prospect player_id -> sleeper_id
         for row in unlinked:
             prospect_name = row.get("name", "")
             if not prospect_name:
@@ -126,7 +125,7 @@ def _safe_float(v, default=None):
         return default
 
 
-def _row_to_dict(row: Dict) -> Dict:
+def _row_to_dict(row: dict) -> dict:
     """Serialise a row dict to JSON-safe types."""
     out = {}
     for k, v in row.items():
@@ -146,7 +145,7 @@ _BREAKOUT_DOM_THRESH = {"WR": 0.25, "RB": 0.275, "TE": 0.12}
 _COMPOSITE_COL_CANDIDATES = (
     "composite_stars", "recruit_stars", "stars_247", "recruiting_stars",
 )
-_composite_col_cache: Dict[str, Any] = {}
+_composite_col_cache: dict[str, Any] = {}
 
 
 def _clip100(v):
@@ -161,12 +160,10 @@ def _clip100(v):
 
 
 def _grade_dominator(d):
-    # The model treats >= 0.35 as an elite dominator (late-round upside gate),
-    # so 0.35 anchors 100 here. (Previously 0.40, which graded a strong 31%
-    # season as a C+.)
+    # Average (0.20) -> C (75); 0.35+ elite -> 99.9.
     if d is None:
         return None
-    return _clip100(d / 0.35 * 100.0)
+    return _clip100(d / 0.267 * 100.0)
 
 
 _BREAKOUT_AGE_DISPLAY = (
@@ -205,7 +202,8 @@ def _grade_ypc(v):
 
 
 def _grade_market_share(v):
-    return _clip100(v / 0.35 * 100.0) if v is not None else None
+    # Average (0.20) -> C (75); 0.35+ elite -> 99.9.
+    return _clip100(v / 0.267 * 100.0) if v is not None else None
 
 
 def _grade_speed_score(v):
@@ -217,12 +215,13 @@ def _grade_cmp(v):
 
 
 def _grade_td_int(v):
-    return _clip100(v / 4.0 * 100.0) if v is not None else None
+    # Average (2.0) -> C (75); 4.0+ elite -> 99.9.
+    return _clip100(v / 2.67 * 100.0) if v is not None else None
 
 
 def _grade_scrim(v):
-    # Scrimmage yards per game; 140+ is an elite college season.
-    return _clip100(v / 140.0 * 100.0) if v is not None else None
+    # Average (80 yds/gm) -> C (75); 140+ elite -> 99.9.
+    return _clip100(v / 106.7 * 100.0) if v is not None else None
 
 
 def _grade_aya(v):
@@ -231,8 +230,8 @@ def _grade_aya(v):
 
 
 def _grade_td_share(v):
-    # Share of team TDs; 0.30+ is an elite scoring share.
-    return _clip100(v / 0.30 * 100.0) if v is not None else None
+    # Average (0.15) -> C (75); 0.30+ elite -> 99.9.
+    return _clip100(v / 0.20 * 100.0) if v is not None else None
 
 
 def _grade_ypa(v):
@@ -240,13 +239,23 @@ def _grade_ypa(v):
 
 
 def _grade_tpg(v):
-    # Targets per game; 10+ is elite WR1 volume.
-    return _clip100(v / 10.0 * 100.0) if v is not None else None
+    # Average (6.5) -> C (75); 10+ elite -> 99.9.
+    return _clip100(v / 8.67 * 100.0) if v is not None else None
 
 
 def _grade_catch_rate(v):
     # Catch rate; 75%+ is elite hands.
     return _clip100(v / 0.75 * 100.0) if v is not None else None
+
+def _rescale_mid_to_c(v):
+    """Rescale a 0-100 model score so average (50) -> C (75).
+
+    Used for Efficiency/Production/WEPA which are raw model outputs
+    where 50 is mid-pack, not failing.
+    """
+    if v is None:
+        return None
+    return _clip100(50.0 + (v - 50.0) * 0.5)
 
 
 def _compute_breakout_age(seasons, age, position):
@@ -392,8 +401,9 @@ def _build_advanced_metrics(position, seasons, athleticism, row, wepa_score=None
     prod = _safe_float(row.get("production_score"))
     breakout_age = _compute_breakout_age(
         seasons, row.get("age"), pos)
-    # Recruiting pedigree (model v2.0): grade straight from recruiting_score.
-    recruit_grade = _clip100(row.get("recruiting_score"))
+    # Recruiting pedigree (model v2.0): rescale the 0-100 model score
+    # (50 = average 3-star) so display grade shows C, not F.
+    recruit_grade = _rescale_mid_to_c(row.get("recruiting_score"))
     recruit_raw = None
     try:
         rs = row.get("recruit_stars")
@@ -406,7 +416,7 @@ def _build_advanced_metrics(position, seasons, athleticism, row, wepa_score=None
         wepa = float(wepa_score) if wepa_score is not None else None
     except (TypeError, ValueError):
         wepa = None
-    wepa_row = (("WEPA", _fmt1(wepa), _clip100(wepa))
+    wepa_row = (("WEPA", _fmt1(wepa), _rescale_mid_to_c(wepa))
                 if wepa is not None else None)
     metrics = []
     if pos == "QB":
@@ -417,8 +427,8 @@ def _build_advanced_metrics(position, seasons, athleticism, row, wepa_score=None
             ("Yds/Att", _fmt1(best.get("yds_per_attempt")), _grade_ypa(best.get("yds_per_attempt"))),
             ("AY/A", _fmt1(best.get("aya")), _grade_aya(best.get("aya"))),
             ("Breakout Age", _fmt1(breakout_age), _grade_breakout_age(breakout_age, pos)),
-            ("Efficiency", _fmt1(eff), _clip100(eff)),
-            ("Production", _fmt1(prod), _clip100(prod)),
+            ("Efficiency", _fmt1(eff), _rescale_mid_to_c(eff)),
+            ("Production", _fmt1(prod), _rescale_mid_to_c(prod)),
         ]
         if wepa_row:
             metrics.append(wepa_row)
@@ -436,7 +446,7 @@ def _build_advanced_metrics(position, seasons, athleticism, row, wepa_score=None
         if wepa_row:
             metrics.append(wepa_row)
         metrics.extend([
-            ("Efficiency", _fmt1(eff), _clip100(eff)),
+            ("Efficiency", _fmt1(eff), _rescale_mid_to_c(eff)),
             ("Recruiting", recruit_raw, recruit_grade),
         ])
     else:  # WR / TE
@@ -449,7 +459,7 @@ def _build_advanced_metrics(position, seasons, athleticism, row, wepa_score=None
             ("Tgt/Gm", _fmt1(best.get("targets_per_game")), _grade_tpg(best.get("targets_per_game"))),
             ("Catch%", _fmt_pct1(best.get("catch_rate")), _grade_catch_rate(best.get("catch_rate"))),
             ("Speed Score", _fmt1(speed), _grade_speed_score(speed)),
-            ("Efficiency", _fmt1(eff), _clip100(eff)),
+            ("Efficiency", _fmt1(eff), _rescale_mid_to_c(eff)),
             ("Recruiting", recruit_raw, recruit_grade),
         ]
     out = []
@@ -459,7 +469,7 @@ def _build_advanced_metrics(position, seasons, athleticism, row, wepa_score=None
     return out
 
 
-def _get_rank_deltas(year) -> Dict[str, int]:
+def _get_rank_deltas(year) -> dict[str, int]:
     """Rank movement: oldest snapshot in the trailing window vs current rank.
 
     Positive delta = moved up the board. Returns {} when history is absent.
@@ -478,7 +488,7 @@ def _get_rank_deltas(year) -> Dict[str, int]:
             ).fetchall()
     except Exception:
         return {}
-    oldest: Dict[str, int] = {}
+    oldest: dict[str, int] = {}
     for r in rows:
         pid = r.get("player_id")
         if pid and pid not in oldest:
@@ -523,12 +533,12 @@ _SEASON_COLS = (
 )
 
 
-def _get_prospect_detail(player_id: str, row: Dict) -> Dict:
+def _get_prospect_detail(player_id: str, row: dict) -> dict:
     """Everything the prospect modal needs beyond the rankings row.
 
     All null-safe: missing tables/rows/columns degrade to None/[].
     """
-    detail: Dict[str, Any] = {
+    detail: dict[str, Any] = {
         "seasons": [],
         "athleticism": {},
         "utilization_score": None,
@@ -538,8 +548,8 @@ def _get_prospect_detail(player_id: str, row: Dict) -> Dict:
         "advanced": [],
         "composite_stars": None,
     }
-    seasons: List[Dict[str, Any]] = []
-    athleticism: Dict[str, Any] = {}
+    seasons: list[dict[str, Any]] = []
+    athleticism: dict[str, Any] = {}
     try:
         from dashboard_services.db import get_conn
         with get_conn() as conn:
@@ -748,7 +758,7 @@ def rankings():
         # Overlay dynasty rookie ADP - read directly from dated cache files,
         # no DB connection required. Falls back to adp_service chain if files absent.
         try:
-            import re as _re, glob as _glob, json as _adpj
+            import glob as _glob, json as _adpj
             from utils.paths import DATA_DIR as _DATA_DIR
 
             def _load_adp_file(is_sf: bool) -> dict:
@@ -761,8 +771,8 @@ def rankings():
                     return _adpj.loads(open(dated[-1]).read())
                 return {}
 
-            def _extract(raw: dict) -> Dict[str, float]:
-                out: Dict[str, float] = {}
+            def _extract(raw: dict) -> dict[str, float]:
+                out: dict[str, float] = {}
                 for pid, entry in raw.items():
                     if isinstance(entry, dict):
                         v = entry.get("avg_pick")
@@ -783,7 +793,7 @@ def rankings():
                 n = _r.sub(r"\b(jr|sr|ii|iii|iv)\b", "", n)
                 return _r.sub(r"\s+", " ", n).strip()
 
-            _sid_to_norm: Dict[str, str] = {}
+            _sid_to_norm: dict[str, str] = {}
             try:
                 from utils.paths import CACHE_DIR as _CD
                 _pi_path = _CD / "players_index.json"
@@ -796,8 +806,8 @@ def rankings():
             except Exception:
                 logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
-            sf_by_name:  Dict[str, float] = {_sid_to_norm[s]: v for s, v in sf_map.items()  if s in _sid_to_norm}
-            qb1_by_name: Dict[str, float] = {_sid_to_norm[s]: v for s, v in qb1_map.items() if s in _sid_to_norm}
+            sf_by_name:  dict[str, float] = {_sid_to_norm[s]: v for s, v in sf_map.items()  if s in _sid_to_norm}
+            qb1_by_name: dict[str, float] = {_sid_to_norm[s]: v for s, v in qb1_map.items() if s in _sid_to_norm}
 
             for d in result:
                 sid = str(d.get("sleeper_id") or "")
@@ -952,7 +962,7 @@ def add_prospects():
 
             # Build a flat row matching the shape returned by _merge_inmemory_result
             ath = prospect.get("athleticism") or {}
-            row: Dict[str, Any] = {
+            row: dict[str, Any] = {
                 "player_id":                     prospect["player_id"],
                 "draft_class_year":              draft_year,
                 "name":                          prospect.get("name"),
@@ -1011,7 +1021,7 @@ def add_prospects():
 
             # Re-sort by prospect_score and re-assign overall + position ranks
             current.sort(key=lambda x: x.get("prospect_score") or 0.0, reverse=True)
-            pos_counters: Dict[str, int] = {}
+            pos_counters: dict[str, int] = {}
             for i, r in enumerate(current):
                 r["overall_rank"] = i + 1
                 pos = (r.get("position") or "UNK").upper()
@@ -1192,7 +1202,6 @@ def link_sleeper():
 
         from dashboard_services.db import get_conn
         from data_building.rookie_pipeline.pipeline import get_active_rookie_class
-        from data_building.rookie_pipeline.value_translation import format_draft_capital
 
         # Update DB
         try:
