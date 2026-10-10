@@ -1,6 +1,6 @@
 {
  "draft_class_year": 2027,
- "count": 66,
+ "count": 62,
  "profiles": [
   {
    "player_id": "ROOKIE_2027_arch_manning",
@@ -428,21 +428,6 @@
    "source": "seed_2027"
   },
   {
-   "player_id": "ROOKIE_2027_jadarian_price",
-   "name": "Jadarian Price",
-   "position": "RB",
-   "school": "Notre Dame",
-   "age": null,
-   "height_inches": null,
-   "weight_lbs": null,
-   "state": null,
-   "draft_class_year": 2027,
-   "early_declare": false,
-   "seasons": [],
-   "athleticism": {},
-   "source": "seed_2027"
-  },
-  {
    "player_id": "ROOKIE_2027_adam_mohammed",
    "name": "Adam Mohammed",
    "position": "RB",
@@ -678,51 +663,6 @@
    "name": "Cooper Barkate",
    "position": "WR",
    "school": "Miami",
-   "age": null,
-   "height_inches": null,
-   "weight_lbs": null,
-   "state": null,
-   "draft_class_year": 2027,
-   "early_declare": false,
-   "seasons": [],
-   "athleticism": {},
-   "source": "seed_2027"
-  },
-  {
-   "player_id": "ROOKIE_2027_makai_lemon",
-   "name": "Makai Lemon",
-   "position": "WR",
-   "school": "USC",
-   "age": null,
-   "height_inches": null,
-   "weight_lbs": null,
-   "state": null,
-   "draft_class_year": 2027,
-   "early_declare": false,
-   "seasons": [],
-   "athleticism": {},
-   "source": "seed_2027"
-  },
-  {
-   "player_id": "ROOKIE_2027_kc_concepcion",
-   "name": "KC Concepcion",
-   "position": "WR",
-   "school": "Texas A&M",
-   "age": null,
-   "height_inches": null,
-   "weight_lbs": null,
-   "state": null,
-   "draft_class_year": 2027,
-   "early_declare": false,
-   "seasons": [],
-   "athleticism": {},
-   "source": "seed_2027"
-  },
-  {
-   "player_id": "ROOKIE_2027_omar_cooper_jr.",
-   "name": "Omar Cooper Jr.",
-   "position": "WR",
-   "school": "Indiana",
    "age": null,
    "height_inches": null,
    "weight_lbs": null,
