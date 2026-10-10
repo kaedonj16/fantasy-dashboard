@@ -1123,7 +1123,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
           '<span class="rk-pos" style="--pc:' + posColor + ';margin-left:0">' + rkEsc(pos) + '</span>' +
           (r.school ? '<span>' + rkEsc(r.school) + '</span>' : '') +
           '<span id="rkMetaConf"></span>' +
-          '<span>&middot;</span><span>' + age + ' yrs</span>' +
+          (r.age != null ? '<span>&middot;</span><span>' + parseFloat(r.age).toFixed(1) + ' yrs</span>' : '') +
           '<span id="rkMetaStars"></span>' +
           (r.draft_class_year ? '<span>&middot;</span><span>' + r.draft_class_year + ' Draft</span>' : '') + '</div>' +
         (r.transfer_history ? '<div class="m-transfer">Transfer: ' + rkEsc(r.transfer_history) + '</div>' : '') +
@@ -1263,12 +1263,13 @@ def build_prospects_body(is_admin: bool = False) -> str:
         st = parseInt(r.recruit_stars, 10);
       if (st) {
         var det = '';
+        var posStr = (r.position || '').toUpperCase();
         if (r.recruit_composite_rating != null)
           det += Number(r.recruit_composite_rating).toFixed(4);
         if (r.recruit_national_rank != null)
           det += (det ? ', ' : '') + '#' + r.recruit_national_rank + " nat'l";
-        if (r.recruit_position_rank != null)
-          det += (det ? ', ' : '') + '#' + r.recruit_position_rank + ' ' + pos;
+        if (r.recruit_position_rank != null && posStr)
+          det += (det ? ', ' : '') + '#' + r.recruit_position_rank + ' ' + posStr;
         ms.innerHTML = '<span>&middot;</span><span>' + st + '-star' +
           (det ? ' (' + rkEsc(det) + ')' : '') + '</span>';
       } else {
@@ -1277,15 +1278,21 @@ def build_prospects_body(is_admin: bool = False) -> str:
     }
     // Breakout age hero
     var hb = document.getElementById('rkHeroBreakout');
-    if (hb) hb.textContent = d.breakout_age != null ? Number(d.breakout_age).toFixed(1) : '-';
+    if (hb) {
+      var ba = d.breakout_age != null ? Number(d.breakout_age).toFixed(1) : null;
+      hb.textContent = ba || '-';
+      var baSub = hb.parentElement.querySelector('.rk-hero-sub');
+      if (baSub) baSub.style.display = ba ? '' : 'none';
+    }
     // Mock draft sub: round + positional rank + month trend
     var ht = document.getElementById('rkHeroTrend');
     if (ht) {
       var bits = [];
+      var posStr2 = (r.position || '').toUpperCase();
       if (r.projected_round != null && r.projected_round !== '')
         bits.push('Rd ' + r.projected_round);
-      if (r.position_rank != null && r.position_rank !== '')
-        bits.push(pos + r.position_rank);
+      if (r.position_rank != null && r.position_rank !== '' && posStr2)
+        bits.push(posStr2 + r.position_rank);
       var t = d.mock_trend, trendHtml = '';
       if (t != null && t !== '') {
         if (t > 0) trendHtml = '<span class="dvt-change dvt-change-up">&#9650;' + t + ' this month</span>';
