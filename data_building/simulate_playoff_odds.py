@@ -159,6 +159,20 @@ override_injury_rates = _inj.override_injury_rates
 _TIE_MARGIN = 0.05
 
 
+def _median_match_enabled(ctx: dict) -> bool:
+    """True when the league plays a weekly game vs the league median.
+
+    Sleeper stores this as ``settings.league_average_match`` (1/0); the
+    shared ``median_match_enabled`` helper reads the same source the
+    standings/recap paths use. Fails closed for other platforms.
+    """
+    try:
+        from utils.standings import median_match_enabled
+        return bool(median_match_enabled((ctx or {}).get("league_settings") or {}))
+    except Exception:
+        return False
+
+
 def _safe_float(value, default: float) -> float:
     """float(value), guarding against None/NaN/non-numeric (e.g. pandas'
     ddof=1 std of a single-game sample, which is NaN, not 0)."""
@@ -314,6 +328,7 @@ def _build_sim_state_impl(ctx: dict, platform: str = "sleeper") -> Optional[dict
         teams             — list of team dicts (roster_id, avg, std, wins, …)
         matchups          — {week: [(rid_a, rid_b), …]}
         playoff_teams     — int
+        median_match      — bool (Sleeper league_average_match: weekly median game)
         seed              — int | None
         ppg_map           — {player_id: {ppg, pos}}
         pos_map           — {player_id: position}
@@ -326,6 +341,10 @@ def _build_sim_state_impl(ctx: dict, platform: str = "sleeper") -> Optional[dict
     current_week       = int(ctx.get("current_week") or 0)
     season             = int(ctx.get("season") or 0)
     league_id          = str(ctx.get("league_id") or "")
+    median_match       = _median_match_enabled(ctx)
+
+    # Deterministic seed per league+season so odds don't drift on each reload.
+    # Caller-supplied seed overrides (useful for testing).
 
     seed: Optional[int] = None
     if league_id:
@@ -406,6 +425,7 @@ def _build_sim_state_impl(ctx: dict, platform: str = "sleeper") -> Optional[dict
         "teams":            teams,
         "matchups":         matchups,
         "playoff_teams":    playoff_teams,
+        "median_match":     median_match,
         "seed":             seed,
         "ppg_map":          season_ppg_map,
         "pos_map":          pos_map,
@@ -763,6 +783,7 @@ def simulate_playoff_odds(
     current_week       = int(ctx.get("current_week") or 0)
     season             = int(ctx.get("season") or 0)
     league_id          = str(ctx.get("league_id") or "")
+    median_match       = _median_match_enabled(ctx)
 
     # Deterministic seed per league+season so odds don't drift on each reload.
     # Caller-supplied seed overrides (useful for testing).
@@ -805,7 +826,8 @@ def simulate_playoff_odds(
             ctx, platform, league_id, season, remaining_weeks, strength_weights,
             hist_avg, hist_std, pos_map, season_ppg_map, roster_positions,
         )
-        result = _run_mc(teams, matchups_by_week, week_profiles, playoff_teams, n_sims, seed)
+        result = _run_mc(teams, matchups_by_week, week_profiles, playoff_teams, n_sims, seed,
+                        median_match=median_match)
         for r in result:
             r["is_projected"] = True
         return result
@@ -838,7 +860,8 @@ def simulate_playoff_odds(
         hist_avg, hist_std, pos_map, season_ppg_map, roster_positions,
     )
 
-    result = _run_mc(teams, matchups_by_week, week_profiles, playoff_teams, n_sims, seed)
+    result = _run_mc(teams, matchups_by_week, week_profiles, playoff_teams, n_sims, seed,
+                        median_match=median_match)
     for r in result:
         r["is_projected"] = False
         logger.debug(
@@ -2092,21 +2115,25 @@ def _simulate_week_scores(
     n_sims: int,
     seed: Optional[int],
     playing_weeks: Optional[dict[int, list[int]]] = None,
+    median_match: bool = False,
 ) -> tuple[dict[int, dict[int, "np.ndarray"]], "np.ndarray", dict[int, list[int]]]:
     """Draw weekly scores for every team.
 
     Returns ``(score_map, games_per_team, playing_weeks)`` where
     ``score_map[week][roster_id]`` is an ``(n_sims,)`` array.
+    ``games_per_team`` counts the remaining games each team still has to play
+    (two per week — head-to-head plus the median game — in median leagues).
     """
     n = len(teams)
     idx = {t["roster_id"]: i for i, t in enumerate(teams)}
     if playing_weeks is None:
         playing_weeks = _playing_weeks_by_rid(matchups_by_week)
+    games_per_week = 2.0 if median_match else 1.0
     games_per_team = np.zeros(n, dtype=np.float32)
     for rid, weeks in playing_weeks.items():
         i = idx.get(rid)
         if i is not None:
-            games_per_team[i] = float(len(weeks))
+            games_per_team[i] = games_per_week * float(len(weeks))
     fb_avg = {t["roster_id"]: float(t.get("avg", 0.0)) for t in teams}
     fb_std = {
         t["roster_id"]: max(float(t.get("std", _MIN_STD)), _MIN_STD) for t in teams
@@ -2232,8 +2259,13 @@ def _standings_from_score_map(
     n_sims: int,
     games_per_team: "np.ndarray",
     overlays: Optional[dict[int, dict[int, "np.ndarray"]]] = None,
+    median_match: bool = False,
 ) -> list[dict]:
-    """Resolve the remaining schedule from frozen (optionally overlaid) scores."""
+    """Resolve the remaining schedule from frozen (optionally overlaid) scores.
+
+    In median leagues (Sleeper ``league_average_match``) every team that
+    posts a score in a week also plays the weekly median as a second game.
+    """
     n = len(teams)
     idx = {t["roster_id"]: i for i, t in enumerate(teams)}
     wins = np.tile([t["wins"] for t in teams], (n_sims, 1)).astype(np.float32)
@@ -2266,6 +2298,29 @@ def _standings_from_score_map(
             pf[:, ia] += sa
             pf[:, ib] += sb
 
+    if median_match:
+        # League-median game: vectorised per week across sims. The median is
+        # taken over the teams that actually posted a score that week (bye
+        # teams sit out, matching the completed-weeks record logic). PF is
+        # untouched — the median game adds a result, not extra points.
+        for week in sorted(matchups_by_week.keys()):
+            cols: list[tuple[int, "np.ndarray"]] = []
+            for rid, i in idx.items():
+                try:
+                    cols.append((i, _score(week, rid)))
+                except KeyError:
+                    continue
+            if len(cols) < 2:
+                continue
+            med = np.median(np.stack([s for _, s in cols], axis=1), axis=1)
+            for i, s in cols:
+                diff = s - med
+                tie = np.abs(diff) < _TIE_MARGIN
+                won = (diff > 0) & ~tie
+                tie_f = tie.astype(np.float32)
+                wins[:, i] += won.astype(np.float32) + 0.5 * tie_f
+                ties_gained[:, i] += tie_f
+
     return _pack_mc_results(
         teams, wins, pf, ties_gained, games_per_team, playoff_teams, n_sims,
     )
@@ -2285,12 +2340,14 @@ def _ensure_freeze(sim_state: dict, n_sims: int) -> dict:
         freeze = sim_state.get("_mc_freeze")
         if freeze is not None and freeze.get("n_sims") == n_sims:
             return freeze
+        median = bool(sim_state.get("median_match", False))
         score_map, games, playing = _simulate_week_scores(
             sim_state["teams"],
             sim_state["matchups"],
             sim_state.get("week_profiles") or {},
             n_sims,
             sim_state.get("seed"),
+            median_match=median,
         )
         result = _standings_from_score_map(
             sim_state["teams"],
@@ -2299,6 +2356,7 @@ def _ensure_freeze(sim_state: dict, n_sims: int) -> dict:
             sim_state["playoff_teams"],
             n_sims,
             games,
+            median_match=median,
         )
         freeze = {
             "n_sims": n_sims,
@@ -2348,6 +2406,7 @@ def _standings_with_overrides(
         n_sims,
         freeze["games_per_team"],
         overlays=overlays,
+        median_match=bool(sim_state.get("median_match", False)),
     )
 
 
@@ -2358,6 +2417,7 @@ def _run_mc(
     playoff_teams: int,
     n_sims: int,
     seed: Optional[int],
+    median_match: bool = False,
 ) -> list[dict]:
     """Monte Carlo over the remaining schedule.
 
@@ -2370,7 +2430,9 @@ def _run_mc(
     """
     score_map, games, _ = _simulate_week_scores(
         teams, matchups_by_week, week_profiles, n_sims, seed,
+        median_match=median_match,
     )
     return _standings_from_score_map(
         teams, matchups_by_week, score_map, playoff_teams, n_sims, games,
+        median_match=median_match,
     )
