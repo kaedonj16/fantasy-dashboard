@@ -199,6 +199,14 @@ def fetch_ratings(year: int) -> Dict[str, float]:
         except (json.JSONDecodeError, OSError) as exc:
             logger.warning("Sagarin disk cache corrupt for %d (%s) - re-fetching", year, exc)
 
+    # Historical Sagarin URLs (cf{yy}end.htm) are dead (404) - only the
+    # current-season page (cfsend.htm) works. Skip the network call for
+    # historical years instead of spamming 404s.
+    import datetime
+    if year < datetime.date.today().year:
+        _CACHE[year] = {}
+        return {}
+
     url = _url_for_year(year)
     logger.info("Fetching Sagarin ratings for %d from %s", year, url)
     resp = requests.get(url, timeout=20)
