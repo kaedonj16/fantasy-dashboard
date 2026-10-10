@@ -133,3 +133,36 @@ def test_espn_connect_stores_swid_as_platform_identity():
     source = open("dashboard_services/accounts.py", encoding="utf-8").read()
     fn = source.split("def add_espn_league_connection")[1].split("\ndef ")[0]
     assert 'link_platform_identity(account_id, "espn"' in fn
+
+
+def test_unlinked_league_resolves_via_linked_platform_identity(monkeypatch):
+    # Signed in via Google with a linked Sleeper identity, but this league was
+    # never explicitly linked (bookmark / shared URL, no user_leagues row):
+    # the roster still resolves from the identity, session-scoped, without
+    # creating a saved league row.
+    connection = install_db(monkeypatch, None, [
+        {"platform_user_id": "sleeper-user-9", "handle": "hoodiekj1"},
+    ])
+    viewer = accounts.resolve_account_viewer_for_league(
+        7, "sleeper", "league-c", 2026,
+        [{"user_id": "sleeper-user-9", "username": "hoodiekj1",
+          "display_name": "Caleb's"}],
+        [{"roster_id": 3, "owner_id": "sleeper-user-9",
+          "metadata": {"team_name": "Caleb's Casting Couch"}}],
+    )
+    assert viewer["viewer_roster_id"] == "3"
+    assert viewer["viewer_user_id"] == "sleeper-user-9"
+    assert viewer["viewer_team_name"] == "Caleb's Casting Couch"
+    assert connection.updated == []
+
+
+def test_unlinked_league_without_identity_stays_unresolved(monkeypatch):
+    # No saved row and no linked identity owning a roster here: still None so
+    # the link-your-team prompt keeps showing for genuine guests.
+    install_db(monkeypatch, None, [])
+    viewer = accounts.resolve_account_viewer_for_league(
+        7, "sleeper", "league-c", 2026,
+        [{"user_id": "someone-else", "username": "other"}],
+        [{"roster_id": 3, "owner_id": "someone-else", "metadata": {}}],
+    )
+    assert viewer is None
