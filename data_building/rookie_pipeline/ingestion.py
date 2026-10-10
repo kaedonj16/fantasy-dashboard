@@ -1195,6 +1195,33 @@ def fetch_cfbd_college_stats(
                 print(f"[cfbd] ERROR processing player '{name}' - {type(exc).__name__}: {exc}")
 
         print(f"[cfbd] COMPLETE: Loaded stats for {len(result)} players (draft class {draft_year})")
+
+        # Target share from play-by-play (latest season only - that's what
+        # the model reads). Best-effort: skips silently when unavailable.
+        try:
+            latest = draft_year - 1
+            teams = {
+                s.get("team")
+                for seasons in result.values()
+                for s in seasons
+                if s.get("season") == latest and s.get("team")
+            }
+            targets_map = fetch_cfbd_targets(draft_year, sorted(teams))
+            if targets_map:
+                merged = 0
+                for name, seasons in result.items():
+                    t = targets_map.get(name)
+                    if not t:
+                        continue
+                    for s in seasons:
+                        if s.get("season") == latest:
+                            s["targets"] = t["targets"]
+                            s["target_share"] = t["target_share"]
+                            merged += 1
+                print(f"[cfbd] Merged targets/target_share for {merged} player-seasons")
+        except Exception as exc:
+            print(f"[cfbd] Target merge failed - {type(exc).__name__}: {exc}")
+
         return result
         
     except Exception as exc:
@@ -1422,6 +1449,72 @@ def fetch_sportradar_prospects(draft_year: int) -> List[Dict[str, Any]]:
 # The seed focuses on the 2026 draft class (active as of April 2026).
 # 2025 class data is included as the "prior year" class.
 # ─────────────────────────────────────────────────────────────────────────────
+
+
+def fetch_cfbd_targets(
+    draft_year: int,
+    teams: List[str],
+) -> Dict[str, Dict[str, Any]]:
+    """
+    Target share from CFBD play-by-play stats (free, no PFF needed).
+
+    Uses /plays/stats/types to find the targets stat type, then pulls
+    per-athlete target counts per team for the latest college season.
+    Returns {name_lower: {"targets": int, "target_share": float}}.
+    Returns {} on any failure - the pipeline continues without targets
+    (the model falls back to receptions-based proxies).
+    """
+    if not CFBD_KEY or not teams:
+        return {}
+    season_year = draft_year - 1
+
+    try:
+        types = _cfbd_get("/plays/stats/types", retries=2) or []
+    except Exception as exc:
+        print(f"[targets] stat-types lookup failed - {type(exc).__name__}: {exc}")
+        return {}
+    target_type_id = None
+    for t in types:
+        tname = str(t.get("name") or t.get("statType") or t.get("stat_type") or "").lower()
+        if "target" in tname:
+            target_type_id = t.get("id") or t.get("statTypeId") or t.get("stat_type_id")
+            print(f"[targets] using stat type '{t.get('name')}' (id={target_type_id})")
+            break
+    if not target_type_id:
+        print("[targets] no targets stat type in /plays/stats/types - skipping")
+        return {}
+
+    result: Dict[str, Dict[str, Any]] = {}
+    for team in sorted(set(teams)):
+        try:
+            rows = _cfbd_get(
+                "/plays/stats",
+                {"year": season_year, "team": team, "statTypeId": target_type_id},
+                retries=2,
+            ) or []
+        except Exception as exc:
+            print(f"[targets] {team} failed - {type(exc).__name__}: {exc}")
+            continue
+        by_athlete: Dict[str, int] = {}
+        team_total = 0
+        for r in rows:
+            name = str(
+                r.get("athleteName") or r.get("athlete") or r.get("player") or r.get("name") or ""
+            ).strip()
+            count = _safe_int(r.get("stat") or r.get("count") or r.get("value")) or 0
+            if not name or count <= 0:
+                continue
+            key = name.lower()
+            by_athlete[key] = by_athlete.get(key, 0) + count
+            team_total += count
+        for key, tgts in by_athlete.items():
+            result[key] = {
+                "targets": tgts,
+                "target_share": round(tgts / team_total, 4) if team_total else 0.0,
+                "team": team,
+            }
+    print(f"[targets] collected targets for {len(result)} athletes ({season_year}, {len(set(teams))} teams)")
+    return result
 
 
 def _enrich_bio_from_cfbd_roster(prospects: List[Dict[str, Any]], draft_year: int) -> List[Dict[str, Any]]:
