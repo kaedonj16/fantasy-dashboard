@@ -139,7 +139,7 @@
                     r.top_movers.slice(0, 4).forEach(function (m) {
                         var mc = m.delta >= 0 ? 'btm-mover-pos' : 'btm-mover-neg';
                         var arrow = m.delta >= 0 ? '↑' : '↓';
-                        var lastName = m.name.split(' ').slice(-1)[0];
+                        var lastName = _sosLastName(m.name);
                         var dFmt = (m.delta >= 0 ? '+' : '') + Math.round(m.delta);
                         moversHtml += '<span class="btm-mover ' + mc + '" title="' + _sosEsc(m.name) + ' · ' + _sosEsc(m.position) + '">' +
                             arrow + ' <strong>' + _sosEsc(lastName) + '</strong>&nbsp;' + dFmt +
@@ -198,6 +198,16 @@
         return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
             return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
         });
+    }
+
+    // Last token of a display name, ignoring generational suffixes so
+    // "Kenneth Walker III" shortens to "Walker", not "III".
+    function _sosLastName(full) {
+        var parts = String(full || '').trim().split(/\s+/);
+        while (parts.length > 1 && /^(II|III|IV|V|Jr|Sr)$/i.test(parts[parts.length - 1].replace(/\./g, ''))) {
+            parts.pop();
+        }
+        return parts[parts.length - 1] || '';
     }
 
     // Rank 0 = hardest remaining schedule. Spread-based bars so clustered

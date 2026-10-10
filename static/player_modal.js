@@ -17,6 +17,15 @@
 // repeated modal opens don't refetch identical data.
 var _pmSmallCache = new Map(); // key -> { ts, promise, data }
 var _PM_SMALL_TTL = 5 * 60 * 1000, _PM_SMALL_MAX = 40;
+// Last token of a display name, ignoring generational suffixes so
+// "Kenneth Walker III" shortens to "Walker", not "III".
+function _pmLastName(full) {
+  var parts = String(full || '').trim().split(/\s+/);
+  while (parts.length > 1 && /^(II|III|IV|V|Jr|Sr)$/i.test(parts[parts.length - 1].replace(/\./g, ''))) {
+    parts.pop();
+  }
+  return parts[parts.length - 1] || '';
+}
 function _pmSmallFetch(key, url) {
   var now = Date.now();
   var hit = _pmSmallCache.get(key);
@@ -2981,7 +2990,7 @@ function _pmTeamShareBar(data) {
     return `<i class="${s.me ? 'me' : ''}" style="width:${s.pct}%;background:${col}" data-def="${tip}" onmouseenter="advEnterMetricDef(event)" onmouseleave="advLeaveMetricDef(event)" onclick="advShowMetricDef(event)">${s.pct >= 9 ? '<span>' + s.pct + '%</span>' : ''}</i>`;
   }).join('');
   const restBar = rest > 3 ? `<i style="width:${rest}%;background:var(--border)" data-def="Rest of offense: ${rest}%" onmouseenter="advEnterMetricDef(event)" onmouseleave="advLeaveMetricDef(event)" onclick="advShowMetricDef(event)"></i>` : '';
-  const last = String(data.player_name || '').split(' ').slice(-1)[0];
+  const last = _pmLastName(data.player_name);
   return `<div class="pm-tshare-cap"><span>Team target share</span><span><b>${me ? me.pct + '%' : '--'}</b>${me ? ' to ' + last : ''}</span></div>
     <div class="pm-tshare-bar">${bars}${restBar}</div>`;
 }
@@ -3225,7 +3234,7 @@ function _pmBuildTeamHTML(data) {
     return `<div class="pm-mini-col"><h5>${p}</h5>${body}</div>`;
   }).join('');
 
-  const roleName = String(data.player_name || '').split(' ').slice(-1)[0] || pos;
+  const roleName = _pmLastName(data.player_name) || pos;
   const advOpen = _pmTeamAdvOpen;
   const advChev = advOpen ? '&#9662;' : '&#9656;';
   const advHint = advOpen ? 'Hide details' : 'Show details';

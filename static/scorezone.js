@@ -433,6 +433,15 @@
     return n >= 120 ? Math.round(n / 60) + 'm' : n + 's';
   }
   function _name(pid) { return ((_state.player_info || {})[pid] || {}).name || pid; }
+  // Last token of a display name, ignoring generational suffixes so
+  // "Kenneth Walker III" shortens to "Walker", not "III".
+  function _shortName(full) {
+    var parts = String(full || '').trim().split(/\s+/);
+    while (parts.length > 1 && /^(II|III|IV|V|Jr|Sr)$/i.test(parts[parts.length - 1].replace(/\./g, ''))) {
+      parts.pop();
+    }
+    return parts[parts.length - 1] || '';
+  }
   function _pos(pid)  { return ((_state.player_info || {})[pid] || {}).pos  || ''; }
   function _team(pid) { return ((_state.player_info || {})[pid] || {}).team || ''; }
   function _statLine(pid) { return ((_state.player_info || {})[pid] || {}).stat_line || null; }
@@ -3068,7 +3077,7 @@
                : '<span class="rz-mt-pre">' + (gs.label || '') + '</span>';
     // Last name only keeps the compact list scannable across many leagues.
     var full = _name(pid) || pid;
-    var short = full.indexOf(' ') >= 0 ? full.split(' ').slice(-1)[0] : full;
+    var short = _shortName(full);
     return (
       '<div class="rz-mt-row' + (live ? ' is-live' : '') + '" data-pid="' + pid + '">'
       + _posHtml(_pos(pid))
