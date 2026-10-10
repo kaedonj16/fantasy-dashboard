@@ -520,6 +520,58 @@ def build_prospects_body(is_admin: bool = False) -> str:
     .m-cols { grid-template-columns: 1fr; }
     .m-adv-grid { grid-template-columns: 1fr; }
     .rk-meas-grid { grid-template-columns: repeat(3, 1fr); }
+
+    /* Modal: full-screen sheet on mobile */
+    #rkModal { padding: 0 !important; align-items: flex-end !important; }
+    #rkModalContent {
+      max-width: 100% !important;
+      max-height: 94vh !important;
+      border-radius: 16px 16px 0 0 !important;
+    }
+    .rk-modal-header { padding: 16px 16px 0; }
+    .rk-modal-body { padding: 12px 16px 24px; }
+    .rk-modal-close { width: 36px; height: 36px; }
+
+    /* Hero row: tighter on mobile */
+    .rk-hero-row { gap: 6px; margin: 12px 0 2px; }
+    .rk-hero-stat { padding: 10px 8px; }
+    .rk-hero-val { font-size: 22px; }
+    .rk-hero-label { font-size: 10px; }
+
+    /* Season table: horizontal scroll on mobile */
+    .m-season-table { font-size: 11.5px; }
+    .m-season-table th, .m-season-table td { padding: 6px 5px; }
+    .m-col { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .m-col .m-season-table { min-width: 460px; }
+
+    /* Advanced metrics rows: tighter labels */
+    .m-adv-row { grid-template-columns: 88px 1fr 48px 28px; gap: 8px; }
+    .m-adv-label { font-size: 11px; }
+    .m-adv-radar { padding: 6px 0; }
+
+    /* Comparables: tighter */
+    .m-sim-row { gap: 8px; padding: 7px 0; }
+    .m-sim-disc { width: 28px; height: 28px; font-size: 10px; }
+
+    /* Scouting notes: comfortable reading size */
+    .m-notes { font-size: 13px; line-height: 1.6; }
+  }
+
+  /* Very small screens: further tightening */
+  @media (max-width: 480px) {
+    .rk-grid-row { grid-template-columns: 40px minmax(0,1fr) 44px 28px; gap: 6px; }
+    .rk-row { padding: 8px 8px; }
+    .rk-rank-num { font-size: 13px; }
+    .rk-score { font-size: 13px; }
+    .rk-comps3 { gap: 8px; }
+    .m-headwrap { gap: 10px; }
+    .m-headshot { width: 44px; height: 44px; font-size: 14px; }
+    .m-name { font-size: 17px; }
+    .m-meta { font-size: 12px; }
+    .rk-hero-val { font-size: 20px; }
+    .rk-meas-grid { grid-template-columns: repeat(2, 1fr); }
+    .rk-meas-val { font-size: 14px; }
+    .filter-controls-container { padding: 12px 0 10px; gap: 10px; }
   }
 
   /* Pagination uses the universal .pagination component in dashboard.css */
