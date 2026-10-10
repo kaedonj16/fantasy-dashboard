@@ -66,7 +66,17 @@ def _scale(raw: float, lo: float, hi: float) -> float:
 def _latest_season(seasons: List[Dict]) -> Optional[Dict]:
     if not seasons:
         return None
-    return max(seasons, key=lambda s: _safe(s.get("season"), 0))
+    # Prefer the latest season with actual stat data; the eval pipeline writes
+    # placeholder rows for the draft year (e.g. 2027) that must not shadow the
+    # real latest college season (e.g. 2026).
+    def _has_data(s: Dict) -> bool:
+        return any(_safe(s.get(k)) > 0 for k in (
+            "receiving_yards", "rush_yards", "pass_yards",
+            "receptions", "rush_attempts", "pass_attempts",
+        ))
+    with_data = [s for s in seasons if _has_data(s)]
+    pool = with_data or seasons
+    return max(pool, key=lambda s: _safe(s.get("season"), 0))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
