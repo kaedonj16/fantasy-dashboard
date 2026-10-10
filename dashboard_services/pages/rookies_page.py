@@ -505,15 +505,48 @@ def build_prospects_body(is_admin: bool = False) -> str:
   /* Mobile: hide Mock column, stack component bars under the row */
   @media (max-width: 768px) {
     #rkHeader { display: none; }
-    .rk-grid-row { grid-template-columns: 48px minmax(0,1fr) 48px 32px; }
+    .rk-grid-row { grid-template-columns: 44px minmax(0,1fr) auto 36px; gap: 8px; }
     #rkHeader .rk-mock-h, .rk-row .rk-mock { display: none; }
-    .rk-comps3 { display: grid; grid-column: 1 / -1; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 8px; }
-    .rk-compcol-label { display: block; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-subtle); margin-bottom: 4px; }
-    .rk-meter-val { font-size: 10.5px; }
-    .rk-name { font-size: 12.5px; }
-    .rk-headshot { width: 32px; height: 32px; font-size: 11px; }
-    .rk-pplayer { gap: 8px; }
-    .rk-row { padding: 8px 10px; }
+
+    /* Row: tighter, card-like */
+    .rk-row {
+      padding: 10px 12px 8px;
+      border-top: 1px solid var(--border);
+    }
+    .rk-rank { gap: 4px; }
+    .rk-rank-num { font-size: 13px; }
+    .rk-pplayer { gap: 9px; }
+    .rk-headshot { width: 36px; height: 36px; font-size: 12px; }
+    .rk-name { font-size: 13px; line-height: 1.25; }
+    .rk-meta { font-size: 10.5px; margin-top: 2px; }
+    .rk-pos { font-size: 9px; padding: 1px 5px; margin-left: 5px; }
+    .rk-score { font-size: 15px; }
+    .rk-star { padding: 8px 4px; }
+    .rk-star svg { width: 18px; height: 18px; }
+
+    /* Component bars: single compact strip, tighter */
+    .rk-comps3 {
+      display: grid;
+      grid-column: 1 / -1;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px dashed color-mix(in srgb, var(--border) 60%, transparent);
+    }
+    .rk-compcol-label {
+      display: block;
+      font-size: 8.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-subtle);
+      margin-bottom: 3px;
+    }
+    .rk-compcol-row { gap: 5px; }
+    .rk-meter-bar { height: 4px; }
+    .rk-meter-val { font-size: 10px; font-weight: 700; }
+
     .m-comp-row { grid-template-columns: 96px 1fr 38px; }
     .m-comp-raw { display: none; }
     .m-name { font-size: 19px; }
@@ -559,11 +592,13 @@ def build_prospects_body(is_admin: bool = False) -> str:
 
   /* Very small screens: further tightening */
   @media (max-width: 480px) {
-    .rk-grid-row { grid-template-columns: 40px minmax(0,1fr) 44px 28px; gap: 6px; }
-    .rk-row { padding: 8px 8px; }
-    .rk-rank-num { font-size: 13px; }
-    .rk-score { font-size: 13px; }
-    .rk-comps3 { gap: 8px; }
+    .rk-grid-row { grid-template-columns: 36px minmax(0,1fr) auto 32px; gap: 6px; }
+    .rk-row { padding: 9px 10px 7px; }
+    .rk-rank-num { font-size: 12px; }
+    .rk-score { font-size: 14px; }
+    .rk-comps3 { gap: 10px; margin-top: 7px; padding-top: 7px; }
+    .rk-headshot { width: 32px; height: 32px; font-size: 11px; }
+    .rk-name { font-size: 12.5px; }
     .m-headwrap { gap: 10px; }
     .m-headshot { width: 44px; height: 44px; font-size: 14px; }
     .m-name { font-size: 17px; }
