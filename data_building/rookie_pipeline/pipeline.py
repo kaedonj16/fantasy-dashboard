@@ -1978,6 +1978,38 @@ def run_rookie_pipeline_staged(
     ages_total = sum(1 for p in sr_prospects if p.get("age"))
     print(f"[pipeline] Total prospects with age set: {ages_total}/{len(sr_prospects)}")
 
+    # Headshots: ESPN college headshots (Sleeper CDN only has NFL players).
+    # Only fetches for prospects missing one in the DB.
+    print(f"[pipeline] Resolving ESPN headshots for {len(sr_prospects)} prospects")
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT name FROM rookie_prospects "
+                    "WHERE draft_class_year = %s AND headshot_url IS NOT NULL",
+                    (draft_year,),
+                )
+                _hs_known = {row["name"].lower().strip() for row in cur.fetchall()}
+        _hs_missing = [p for p in sr_prospects if p["name"].lower().strip() not in _hs_known]
+        if _hs_missing:
+            from .espn_scraper import fetch_espn_headshots
+            hs_map = fetch_espn_headshots(
+                [p["name"] for p in _hs_missing],
+                draft_year,
+                prospects_meta=_hs_missing,
+            )
+            _hs_set = 0
+            for p in _hs_missing:
+                url = hs_map.get(p["name"].lower().strip()) or hs_map.get(p["name"])
+                if url:
+                    p["headshot_url"] = url
+                    _hs_set += 1
+            print(f"[pipeline] ESPN headshots resolved for {_hs_set}/{len(_hs_missing)} prospects")
+        else:
+            print("[pipeline] All prospects already have headshots in DB")
+    except Exception as exc:
+        print(f"[pipeline] Headshot lookup failed - {type(exc).__name__}: {exc} (continuing without)")
+
     # Save prospects to DB (age reflects ESPN DOB where available, else experience estimate)
     with get_conn() as conn:
         n_prospects = upsert_prospects(sr_prospects, conn)
@@ -1996,8 +2028,12 @@ def run_rookie_pipeline_staged(
     print("[pipeline] ====== STAGE 2: Fetch College Stats ======")
 
     # Skip CFBD fetch if we already have non-zero stats in the DB for this class.
-    # CFBD has a strict rate limit (~600 req/hr); college stats don't change once
-    # the season ends, so there's no value in re-fetching on every pipeline run.
+    # CFBD has a strict rate limit (~600 req/hr); completed-season stats don't
+    # change, so there's no value in re-fetching those. But the in-progress
+    # season (the one right before the draft year) changes weekly - always
+    # refresh it so per-game rates reflect the current point in the year.
+    from datetime import date as _date
+    _season_complete = _date.today() >= _date(draft_year, 1, 15)
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -2011,11 +2047,16 @@ def run_rookie_pipeline_staged(
             )
             existing_stats = cur.fetchone()["count"]
 
-    if existing_stats > 0:
+    if existing_stats > 0 and _season_complete:
         print(f"[pipeline] STAGE 2 SKIPPED: {existing_stats} non-zero stat records already in DB for {draft_year}")
         n_stats = 0
     else:
-        cfbd_stats = fetch_cfbd_college_stats(draft_year)
+        if existing_stats > 0:
+            print(f"[pipeline] STAGE 2: refreshing in-progress season stats ({existing_stats} records exist)")
+        # fetch_games_played=True: exact games-played counts via /games/players
+        # (~51 API calls) so per-game rates are accurate mid-season instead of
+        # defaulting to 12 games.
+        cfbd_stats = fetch_cfbd_college_stats(draft_year, fetch_games_played=True)
         print(f"[pipeline] Fetched stats for {len(cfbd_stats)} players")
 
         with get_conn() as conn:
