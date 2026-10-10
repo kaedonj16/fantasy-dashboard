@@ -738,6 +738,26 @@ def assign_optimal_lineup(
             "unfilled_slots": unfilled}
 
 
+@lru_cache(maxsize=4096)
+def _match_slot(slot_i: int, used: int, slots_t: tuple, players_t: tuple,
+                pos_items: tuple) -> Optional[tuple]:
+    """Recursive slot matcher with a bounded cross-call cache.
+
+    All parameters are hashable tuples so the cache persists across calls.
+    ``pos_items`` is a tuple of (player_id, canonical_position) pairs.
+    """
+    if slot_i == len(slots_t):
+        return () if used == (1 << len(players_t)) - 1 else None
+    pos_map = dict(pos_items)
+    for i, pid in enumerate(players_t):
+        if not used & (1 << i) and pos_map.get(pid) in slot_eligible_positions(slots_t[slot_i]):
+            tail = _match_slot(slot_i + 1, used | (1 << i), slots_t, players_t, pos_items)
+            if tail is not None:
+                return (pid,) + tail
+    tail = _match_slot(slot_i + 1, used, slots_t, players_t, pos_items)
+    return (None,) + tail if tail is not None else None
+
+
 def assign_fixed_lineup(starters: Iterable, player_positions: Mapping,
                         roster_positions: Iterable) -> Optional[list[Optional[str]]]:
     """Find a legal assignment for a provider's historical starter set."""
@@ -759,19 +779,10 @@ def assign_fixed_lineup(starters: Iterable, player_positions: Mapping,
             return direct
     players = [p for p in raw if p not in {"", "0"}]
 
-    @lru_cache(maxsize=None)
-    def match(slot_i: int, used: int):
-        if slot_i == len(slots):
-            return () if used == (1 << len(players)) - 1 else None
-        for i, pid in enumerate(players):
-            if not used & (1 << i) and canonicalize_slot(player_positions.get(pid)) in slot_eligible_positions(slots[slot_i]):
-                tail = match(slot_i + 1, used | (1 << i))
-                if tail is not None:
-                    return (pid,) + tail
-        tail = match(slot_i + 1, used)
-        return (None,) + tail if tail is not None else None
-
-    result = match(0, 0)
+    slots_t = tuple(slots)
+    players_t = tuple(players)
+    pos_items = tuple((pid, canonicalize_slot(player_positions.get(pid))) for pid in players_t)
+    result = _match_slot(0, 0, slots_t, players_t, pos_items)
     return list(result) if result is not None else None
 
 

@@ -265,7 +265,7 @@ def _positive_env_int(name: str, default: int) -> int:
         return default
 
 
-DASHBOARD_CACHE_MAX = _positive_env_int("DASHBOARD_CACHE_MAX", 8)
+DASHBOARD_CACHE_MAX = _positive_env_int("DASHBOARD_CACHE_MAX", 4)
 _DASHBOARD_CACHE_LOCK = threading.RLock()
 
 
@@ -1465,8 +1465,7 @@ FORM_BODY = """
   <section class="home-hero">
     <div class="home-hero-left">
       <p class="home-brand">BR Fantasy</p>
-      <h1 class="home-title">Free fantasy football trade calculator and dynasty tools.</h1>
-      <p class="home-punch"><span class="home-punch-words">Upgraded. Decoded. Dominated.</span> Built for managers who take winning personally.</p>
+      <h1 class="home-title">Your dynasty league,<br><span class="home-rot" aria-label="decoded"><span class="home-rot-track"><span>decoded.</span><span>dominated.</span><span>decoded.</span></span></span></h1>
       <p class="home-subtitle">
         Trade values, AI analysis, and league tools for Sleeper, ESPN, Yahoo, MFL, and Fleaflicker.
       </p>
@@ -1743,6 +1742,18 @@ FORM_BODY = """
     <div class="tour-cta">
       <p>Every one of these loads with <strong>your</strong> teams and players.</p>
       <a href="#homeCardTitle" class="tour-cta-btn">Connect your league</a>
+    </div>
+  </div>
+</section>
+
+<section class="home-testimonials" aria-label="What managers say">
+  <div class="home-testimonials-inner">
+    <h2 class="home-testimonials-title">Managers are talking</h2>
+    <div class="home-testimonials-grid">
+      <figure class="home-testimonial">
+        <blockquote>THATS ACTUALLY SO SICK BRO</blockquote>
+        <figcaption><strong>Jayden Waddell</strong><span>Pittsburgh Pilots &middot; on the weekly recap</span></figcaption>
+      </figure>
     </div>
   </div>
 </section>

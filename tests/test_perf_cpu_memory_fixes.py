@@ -168,12 +168,12 @@ def test_scorezone_client_polls_conditionally():
 
 # ── OOM caps (2026-09-26): tightened after 31 memory-limit restarts in 7 days ──
 
-def test_dashboard_cache_max_is_8():
+def test_dashboard_cache_max_is_4():
     # Each gunicorn worker holds its own full copy of DASHBOARD_CACHE, so the
     # worst case is 2x the cap against the 2GB plan. 24 entries of full league
-    # context was the dominant term in the OOM estimate; 8 keeps the hot
-    # leagues warm while bounding the worst case.
-    assert '_positive_env_int("DASHBOARD_CACHE_MAX", 8)' in APP
+    # context was the dominant term in the OOM estimate; 4 keeps the hottest
+    # leagues warm while bounding the worst case tighter.
+    assert '_positive_env_int("DASHBOARD_CACHE_MAX", 4)' in APP
 
 
 def test_game_logs_cache_max_is_500():
