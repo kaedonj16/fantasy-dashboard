@@ -2617,7 +2617,9 @@ BASE_HTML = """
     <script>
       (function(){{
         var s=document.getElementById('appSplash');
+        var _done=false;
         function hide(){{
+          if(_done)return; _done=true;
           if(!s)return;
           s.classList.add('app-splash-hide');
           setTimeout(function(){{ if(s.parentNode) s.parentNode.removeChild(s); }},400);
@@ -2628,29 +2630,47 @@ BASE_HTML = """
             s = null;
           }}
         }} catch(e){{}}
-        // The white splash is for the cold PWA launch only. On any in-app
-        // navigation within the same session (e.g. tapping the mobile dock)
-        // remove it immediately so pages don't flash a white loading screen.
-        // Keep it up for an explicit Refresh so we don't paint the cached shell
-        // while the league rebuilds.
-        var _warm = false;
-        var _userRefresh = false;
+        // The main stylesheet loads async (media="print" trick) so first paint
+        // never blocks on the ~1.2 MB bundle. On a hard refresh the sheet can
+        // trail the DOM by seconds -- keep the branded splash up until it has
+        // applied so the page never paints unstyled. The link's onload/onerror
+        // (see _css_async_attr) calls window.__brCssReady; render-blocking
+        // sheets (lite pages) are always ready by first paint.
+        var _cssDone=false;
+        function cssReady(){{
+          if(_cssDone)return true;
+          var l=document.getElementById('brMainCss');
+          if(!l)return true;
+          try {{
+            var target=l.href;
+            for(var i=0;i<document.styleSheets.length;i++){{
+              if(document.styleSheets[i].href===target)return true;
+            }}
+          }} catch(e){{}}
+          return false;
+        }}
+        window.__brCssReady=function(){{ _cssDone=true; maybeHide(); }};
+        var _domReady=false;
+        function maybeHide(){{ if(_domReady&&cssReady())hide(); }}
+        // Warm in-app navigations used to drop the splash synchronously during
+        // parse. With the CSS gate above, the splash now lifts the moment DOM +
+        // CSS are ready, which is effectively immediate for warm cached
+        // sessions. On an explicit refresh it stays up while the league
+        // rebuilds (the old brUserRefresh intent) instead of flashing
+        // unstyled content.
         try {{
-          _userRefresh = sessionStorage.getItem('brUserRefresh') === '1';
-          _warm = !!sessionStorage.getItem('br_warm');
-          if (_warm && !_userRefresh) {{
-            if (s && s.parentNode) s.parentNode.removeChild(s);
-            s = null;
-          }} else if (!_warm) {{
-            sessionStorage.setItem('br_warm','1');
-          }}
+          if(!sessionStorage.getItem('br_warm')){{ sessionStorage.setItem('br_warm','1'); }}
         }} catch(e){{}}
         if(!s) return;
         // Reveal the (already server-rendered) content as soon as the DOM is
-        // parsed -- waiting for window 'load' gated LCP behind every image and
-        // deferred script (measured LCP was ~14.6s on mobile).
-        if(document.readyState!=='loading'){{ hide(); }} else {{ document.addEventListener('DOMContentLoaded',hide); }}
-        setTimeout(hide,2500);  // safety: never let the splash get stuck
+        // parsed AND the main stylesheet has applied -- waiting for window
+        // 'load' gated LCP behind every image and deferred script (measured
+        // LCP was ~14.6s on mobile), but revealing at DOMContentLoaded alone
+        // painted the page unstyled for seconds on hard refresh.
+        if(document.readyState!=='loading'){{ _domReady=true; }}
+        else {{ document.addEventListener('DOMContentLoaded',function(){{ _domReady=true; maybeHide(); }}); }}
+        maybeHide();
+        setTimeout(hide,5000);  // safety: never let the splash get stuck
       }})();
     </script>
     <a class="skip-link" href="#page-root">Skip to main content</a>
@@ -6633,7 +6653,16 @@ def render_page(
     # above-the-fold CSS is inlined in <head>. Lite pages keep their small
     # stylesheets render-blocking (the critical CSS is homepage-specific).
     _css_async = _page_css_file == _CSS_FILE
-    _css_async_attr = ' media="print" onload="this.media=\'all\'"' if _css_async else ""
+    # The splash-screen script (BASE_HTML) keeps the branded splash up until this
+    # sheet applies: the id lets it find the link, and the onload/onerror hooks
+    # release the splash the moment the sheet finishes (or fails), so a hard
+    # refresh never paints the page unstyled while the ~1.2 MB bundle downloads.
+    _css_async_attr = (
+        ' id="brMainCss" media="print"'
+        " onload=\"this.media='all';window.__brCssReady&&window.__brCssReady()\""
+        " onerror=\"window.__brCssReady&&window.__brCssReady()\""
+        if _css_async else ""
+    )
     _css_noscript = (
         f'<noscript><link rel="stylesheet" '
         f'href="/static/{_page_css_file}?v={_page_css_v}"></noscript>'

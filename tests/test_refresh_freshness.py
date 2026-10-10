@@ -16,6 +16,7 @@ when the rebuild is slow, so the page looks like it reloaded but ``data-cache-ts
 from __future__ import annotations
 
 import os
+import re
 import tempfile
 import time
 from pathlib import Path
@@ -157,9 +158,21 @@ def test_sw_late_network_notifies_after_explicit_refresh_fallback():
     assert block.index("notifyNavFresh(request, networkFetch)") > block.index("if (cached) {")
 
 
-def test_splash_stays_up_during_user_refresh():
-    assert "brUserRefresh" in APP_PY
-    assert "_warm && !_userRefresh" in APP_PY
+def test_splash_stays_up_until_css_applies():
+    # Regression: a hard refresh painted the page unstyled for seconds because
+    # the splash hid at DOMContentLoaded while the async 1.2 MB dashboard.css
+    # was still downloading. The splash now lifts only after the DOM is parsed
+    # AND the main stylesheet has applied (or the safety timeout fires), which
+    # also covers the explicit-refresh case the old brUserRefresh gate handled.
+    assert 'id="brMainCss"' in APP_PY
+    assert "window.__brCssReady" in APP_PY
+    assert "document.styleSheets" in APP_PY
+    # No synchronous removal path may bypass the CSS gate (the old warm-session
+    # removal did -- and sessionStorage survives a browser hard refresh, which
+    # is exactly how the unstyled flash reproduced).
+    assert "_warm && !_userRefresh" not in APP_PY
+    assert "maybeHide()" in APP_PY
+    assert re.search(r"setTimeout\(hide,\d+\)", APP_PY)
     # __brWarmLaunch is gone: app.js no longer auto-reloads on warm
     # navigations, so the splash script no longer needs to broadcast it.
     assert "__brWarmLaunch" not in APP_PY
