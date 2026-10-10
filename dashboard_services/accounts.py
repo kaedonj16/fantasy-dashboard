@@ -1362,11 +1362,17 @@ def resolve_account_viewer_for_league(
     account_id: int, platform: str, league_id: str, season: int,
     users: list[dict], rosters: list[dict],
 ) -> Optional[dict]:
-    """Resolve an account's stable identity to its team in one saved league.
+    """Resolve an account's stable identity to its team in one league.
 
     The league-scoped ``team_id`` wins when present. Otherwise a stable platform
     user id is matched to the roster owner and the resulting team is persisted.
     Display names are never used to establish ownership.
+
+    When the league was never explicitly linked (no ``user_leagues`` row -- e.g.
+    a bookmark or shared URL), the account's linked platform identities are
+    still matched against this league's rosters. That match is league-scoped,
+    so it can never leak a roster from another league; it is returned for the
+    session only and does not create a saved league row.
     """
     if not (account_id and platform and league_id and season):
         return None
@@ -1396,16 +1402,18 @@ def resolve_account_viewer_for_league(
                    AND league_id=%s ORDER BY season DESC LIMIT 1""",
                 (account_id, platform, str(league_id)),
             ).fetchone()
-        if not membership:
-            return None
+        # A signed-in account may open a league it never explicitly linked (no
+        # user_leagues row): bookmark, shared URL, or a fresh season key. The
+        # linked platform identities still identify the manager's roster in
+        # this league, so resolve them instead of giving up here.
         identity_rows = conn.execute(
             """SELECT platform_user_id,handle FROM account_identities
                WHERE account_id=%s AND platform=%s""", (account_id, platform),
         ).fetchall()
 
     identities = {str(row["platform_user_id"]): row.get("handle") for row in identity_rows}
-    stored_team_id = str(membership.get("team_id") or "")
-    stored_season = int(membership.get("season") or season)
+    stored_team_id = str((membership or {}).get("team_id") or "")
+    stored_season = int((membership or {}).get("season") or season)
     ident_ids = []
     for pid in identities:
         ident_ids.extend(owner_id_variants(pid))
@@ -1455,7 +1463,7 @@ def resolve_account_viewer_for_league(
     )
     team_name = (roster_meta.get("team_name") or user_meta.get("team_name")
                  or user.get("display_name") or username or f"Roster {roster_id}")
-    if roster_id and roster_id != stored_team_id:
+    if membership and roster_id and roster_id != stored_team_id:
         with get_conn() as conn:
             conn.execute(
                 """UPDATE user_leagues SET team_id=%s WHERE account_id=%s AND platform=%s
