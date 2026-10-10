@@ -1517,6 +1517,58 @@ def fetch_cfbd_targets(
     return result
 
 
+def backfill_cfbd_targets(draft_year: int) -> Dict[str, int]:
+    """
+    Standalone targets backfill: fills the `targets` column in
+    rookie_prospect_source_data for the class's latest college season,
+    without re-running the full CFBD stats fetch (Stage 2 skips when stats
+    already exist). Returns {"updated": n, "teams": m}.
+    """
+    from dashboard_services.db import get_conn
+
+    season_year = draft_year - 1
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT DISTINCT rp.player_id, rp.name, rsd.team
+                FROM rookie_prospects rp
+                JOIN rookie_prospect_source_data rsd ON rsd.player_id = rp.player_id
+                WHERE rp.draft_class_year = %s AND rsd.season = %s AND rsd.team IS NOT NULL
+                """,
+                (draft_year, season_year),
+            )
+            rows = cur.fetchall()
+    if not rows:
+        print(f"[targets] no prospect teams found for {draft_year} season {season_year}")
+        return {"updated": 0, "teams": 0}
+
+    teams = sorted({r["team"] for r in rows})
+    targets_map = fetch_cfbd_targets(draft_year, teams)
+    if not targets_map:
+        return {"updated": 0, "teams": len(teams)}
+
+    updated = 0
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            for r in rows:
+                t = targets_map.get(r["name"].lower().strip())
+                if not t:
+                    continue
+                cur.execute(
+                    """
+                    UPDATE rookie_prospect_source_data
+                    SET targets = %s
+                    WHERE player_id = %s AND season = %s
+                    """,
+                    (t["targets"], r["player_id"], season_year),
+                )
+                updated += cur.rowcount
+        conn.commit()
+    print(f"[targets] backfilled targets for {updated} player-seasons ({len(teams)} teams)")
+    return {"updated": updated, "teams": len(teams)}
+
+
 def _enrich_bio_from_cfbd_roster(prospects: List[Dict[str, Any]], draft_year: int) -> List[Dict[str, Any]]:
     """
     Free replacement for Sportradar bio measurements: fill missing
