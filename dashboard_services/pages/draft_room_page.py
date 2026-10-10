@@ -123,11 +123,8 @@ def build_draft_room_body(
 _DRAFT_ROOM_HTML = r"""
 <div class="dr-wrap">
   <div class="dr-hero" id="drHero">
-    <div class="dr-hero-row">
-      <div>
-        <h1 class="dr-title">Draft Room</h1>
-        <p class="dr-sub">Mock against CPU teams, draft manually, or sync a live draft with best-available ranks, tiers, and a live grade.</p>
-      </div>
+    <div class="dr-hero-centered">
+      <h1 class="dr-title">Draft Room</h1>
       <div class="dr-hero-actions">
         <a class="dr-hero-link" id="drToCheatSheet" href="/draft/cheat-sheet">Cheat Sheet</a>
         <a class="dr-hero-link" id="drToHistory" href="/draft/history">Draft History</a>
@@ -694,7 +691,9 @@ _DRAFT_ROOM_HTML = r"""
     max-width: 1640px; margin: 0 auto; padding: 14px 14px 48px;
   }
   .dr-hero { margin: 2px 0 18px; }
-  .dr-hero-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .dr-hero-centered { text-align: center; }
+  .dr-hero-centered .dr-title { margin: 0 0 10px; }
+  .dr-hero-centered .dr-hero-actions { justify-content: center; }
 
   .dr-title {
     font-size: 24px; font-weight: 800; color: var(--text);
@@ -778,7 +777,7 @@ _DRAFT_ROOM_HTML = r"""
   /* ── Setup wizard (Phase 1 visual redesign) ── */
   .dr-setup-card.wz {
     max-width: 820px; background: var(--wz-panel); border-color: var(--wz-border);
-    border-radius: 16px; padding: 0; overflow: visible;
+    border-radius: 16px; padding: 22px 0 0; overflow: visible;
     --wz-panel: #ffffff;
     --wz-panel2: #eef2f8;
     --wz-border: #e2e8f1;
