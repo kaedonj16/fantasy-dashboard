@@ -479,6 +479,9 @@ def build_sportradar_ncaa_index(names: List[str]) -> SportradarNCAAIndex:
     caching at each step.  Returns a SportradarNCAAIndex for use by
     SportradarNCAAFBSource.
     """
+    if os.getenv("DISABLE_SPORTRADAR", "").lower() in ("1", "true", "yes"):
+        print("[sr_ncaa] DISABLE_SPORTRADAR set - skipping index build")
+        return {}
     api_key = os.getenv("SPORTRADAR_API_KEY", "")
     if not api_key:
         print("[sr_ncaa] SPORTRADAR_API_KEY not set - attempting to build index from cached data")

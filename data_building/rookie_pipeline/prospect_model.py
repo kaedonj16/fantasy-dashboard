@@ -941,7 +941,7 @@ def calc_athleticism_score(athleticism: Dict[str, Any], position: str) -> float:
     vertical for TE, speed score for RB).
     """
     if not athleticism:
-        return 55.0
+        return None
 
     pos = position.upper()
 
@@ -996,7 +996,7 @@ def calc_athleticism_score(athleticism: Dict[str, Any], position: str) -> float:
         metric_scores["shuttle"] = _scale(_safe(shuttle), 4.55, 3.95)
 
     if not metric_scores:
-        return 55.0
+        return None
 
     # Weighted average using position-specific weights
     pos_weights = _ATH_WEIGHTS.get(pos, {})
@@ -2004,7 +2004,7 @@ def score_prospect(
     experience_score = calc_experience_score(seasons, pos)
     late_round_upside = calc_late_round_upside(draft_capital, seasons, pos)
     interaction_features = calc_interaction_features(
-        production_score, efficiency_score, athleticism_score, dc_score_adjusted
+        production_score, efficiency_score, athleticism_score or 0.0, dc_score_adjusted
     )
 
     # Get position-specific weights (optionally overridden by calibrated weights)
@@ -2032,7 +2032,7 @@ def score_prospect(
         efficiency_score      * pos_weights["efficiency"]    +
         age_score             * pos_weights["age"]           +
         breakout_score        * pos_weights["breakout"]      +
-        athleticism_score     * pos_weights["athleticism"]   +
+        (athleticism_score or 0.0) * pos_weights["athleticism"]   +
         competition_score     * pos_weights["competition"]   +
         environment_score     * pos_weights["environment"]   +
         durability_score      * pos_weights["durability"]    +
@@ -2078,7 +2078,7 @@ def score_prospect(
     meaningful_components = 0
     if production_score > 10.0:    meaningful_components += 1
     if efficiency_score > 10.0:     meaningful_components += 1
-    if athleticism_score > 10.0:    meaningful_components += 1
+    if athleticism_score and athleticism_score > 10.0:    meaningful_components += 1
     if age_score > 10.0:           meaningful_components += 1
     if breakout_score > 10.0:      meaningful_components += 1
     if utilization_score > 10.0:  meaningful_components += 1
@@ -2210,7 +2210,7 @@ def score_prospect(
         "efficiency_score":             round(efficiency_score, 2),
         "age_score":                    round(age_score, 2),
         "breakout_profile_score":       round(breakout_score, 2),
-        "athleticism_score":            round(athleticism_score, 2),
+        "athleticism_score":            None if athleticism_score is None else round(athleticism_score, 2),
         "competition_score":            round(competition_score, 2),
         "environment_adjustment":       round(environment_score, 2),
         "durability_score":             round(durability_score, 2),
@@ -2422,7 +2422,7 @@ def _build_reasons(
         ath_msgs.append(f"{_safe(tc):.2f}s 3-cone (elite agility)")
     if ath_msgs:
         bullets.append(f"Elite athleticism: {', '.join(ath_msgs)}")
-    elif ath_sc <= 35 and ath:
+    elif ath_sc is not None and ath_sc <= 35 and ath:
         bullets.append("Below-average athleticism profile - will need to win on scheme/technique")
 
     # ── Competition ───────────────────────────────────────────────────────────

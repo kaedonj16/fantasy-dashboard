@@ -1513,7 +1513,7 @@ def fetch_cfbd_targets(
         team_total = 0
         for r in rows:
             name = str(
-                r.get("athlete") or r.get("player") or r.get("name") or ""
+                r.get("athleteName") or r.get("athlete") or r.get("player") or r.get("name") or ""
             ).strip()
             count = _safe_int(r.get("stat") or r.get("count") or r.get("value")) or 0
             if not name or count <= 0:
@@ -1922,6 +1922,9 @@ def load_prospects_for_year(draft_year: int) -> List[Dict[str, Any]]:
         return _enrich_bio_from_cfbd_roster([normalize_prospect(p) for p in seed], draft_year)
 
     # ── Fetch from all live sources ───────────────────────────────────────────
+    if __import__("os").getenv("DISABLE_SPORTRADAR", "").lower() in ("1", "true", "yes"):
+        print(f"[ingestion] DISABLE_SPORTRADAR set - using seed data ({len(seed)} prospects)")
+        return _enrich_bio_from_cfbd_roster([normalize_prospect(p) for p in seed], draft_year)
     print(f"[ingestion] Fetching Sportradar prospects for {draft_year}")
     try:
         sr_prospects = fetch_sportradar_prospects(draft_year)
