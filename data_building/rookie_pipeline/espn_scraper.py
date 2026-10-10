@@ -545,6 +545,103 @@ def fetch_espn_ages_robust(
 
 
 _ESPN_HEADSHOT_URL = "https://a.espncdn.com/i/headshots/college-football/players/full/{id}.png"
+_ESPN_TEAMS_URL = "https://site.api.espn.com/apis/site/v2/sports/football/college-football/teams"
+_ESPN_ROSTER_URL = "https://site.api.espn.com/apis/site/v2/sports/football/college-football/teams/{id}/roster"
+
+
+def fetch_espn_headshots_via_roster(
+    prospects_meta: List[Dict[str, Any]],
+    delay: float = 0.2,
+) -> Dict[str, str]:
+    """Map prospect name -> ESPN headshot URL via team roster API.
+
+    The ESPN site search API is dead (404). Instead, fetch each team's
+    roster and match prospects by name. Returns {name_lower: headshot_url}.
+    """
+    result: Dict[str, str] = {}
+    if not prospects_meta:
+        return result
+
+    # Build team -> prospects map
+    by_team: Dict[str, List[Dict]] = {}
+    for m in prospects_meta:
+        team = (m.get("school") or m.get("team") or "").strip()
+        if team:
+            by_team.setdefault(team.lower(), []).append(m)
+
+    if not by_team:
+        return result
+
+    # Get ESPN team ID map
+    team_id_map: Dict[str, str] = {}
+    try:
+        resp = _get(_ESPN_TEAMS_URL, headers=_JSON_HEADERS)
+        if resp:
+            data = resp.json()
+            for league in data.get("sports", [{}])[0].get("leagues", [{}])[0].get("teams", []):
+                team = league.get("team", {})
+                name = (team.get("displayName") or "").lower()
+                short = (team.get("shortDisplayName") or "").lower()
+                tid = str(team.get("id", ""))
+                if tid:
+                    if name:
+                        team_id_map[name] = tid
+                    if short:
+                        team_id_map[short] = tid
+    except Exception:
+        pass
+
+    if not team_id_map:
+        # Fallback: try the flat teams list
+        try:
+            resp = _get(_ESPN_TEAMS_URL + "?limit=200", headers=_JSON_HEADERS)
+            if resp:
+                data = resp.json()
+                # Try different response shapes
+                teams = data.get("teams", []) or []
+                for t in teams:
+                    tid = str(t.get("id", ""))
+                    for key in ("displayName", "shortDisplayName", "name", "school"):
+                        n = (t.get(key) or "").lower()
+                        if n and tid:
+                            team_id_map[n] = tid
+        except Exception:
+            pass
+
+    for team_lower, prospects in by_team.items():
+        tid = team_id_map.get(team_lower)
+        if not tid:
+            # Try partial match
+            for espn_name, eid in team_id_map.items():
+                if team_lower in espn_name or espn_name in team_lower:
+                    tid = eid
+                    break
+        if not tid:
+            continue
+
+        try:
+            resp = _get(_ESPN_ROSTER_URL.format(id=tid), headers=_JSON_HEADERS)
+            if not resp:
+                continue
+            data = resp.json()
+            # Build name -> headshot map from roster
+            roster_map: Dict[str, str] = {}
+            for group in data.get("athletes", []):
+                for player in group.get("items", []):
+                    pname = (player.get("fullName") or "").lower().strip()
+                    hs = (player.get("headshot") or {}).get("href")
+                    if pname and hs:
+                        roster_map[pname] = hs
+            # Match prospects
+            for p in prospects:
+                pname = (p.get("name") or "").lower().strip()
+                if pname in roster_map:
+                    result[pname] = roster_map[pname]
+        except Exception:
+            continue
+        time.sleep(delay)
+
+    return result
 
 
 def fetch_espn_headshots(
@@ -555,35 +652,12 @@ def fetch_espn_headshots(
 ) -> Dict[str, str]:
     """Map prospect name -> ESPN college headshot URL.
 
-    Reuses get_player_age's module cache, so calling this right after
-    fetch_espn_ages_robust for the same names costs zero extra HTTP.
-    Missing entries mean "no photo" - the frontend falls back to the
-    initial disc (img onerror removes itself).
+    Uses the team roster API (ESPN site search is dead). Missing entries
+    mean "no photo" - the frontend falls back to the initial disc
+    (img onerror removes itself).
     """
-    result: Dict[str, str] = {}
-    meta_by_name: Dict[str, Dict[str, Any]] = {}
-    for m in (prospects_meta or []):
-        try:
-            meta_by_name[_norm_name(m.get("name", ""))] = m
-        except Exception:
-            continue
-    for name in names:
-        try:
-            nk = _norm_name(name)
-            meta = meta_by_name.get(nk, {})
-            r = get_player_age(
-                name,
-                team=meta.get("school") or meta.get("team"),
-                position=meta.get("position"),
-                draft_year=draft_year,
-            )
-            eid = r.get("espn_id")
-            if eid:
-                result[name.lower().strip()] = _ESPN_HEADSHOT_URL.format(id=eid)
-        except Exception:
-            continue
-        time.sleep(delay)
-    return result
+    # Use roster API (search API returns 404)
+    return fetch_espn_headshots_via_roster(prospects_meta or [], delay=delay)
 
 
 if __name__ == "__main__":

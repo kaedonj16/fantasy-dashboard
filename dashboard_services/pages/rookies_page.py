@@ -1027,13 +1027,20 @@ def build_prospects_body(is_admin: bool = False) -> str:
       if (wt) metaBits.push(rkEsc(wt));
       var mockPick = r.projected_pick != null ? Math.round(parseFloat(r.projected_pick)) : '-';
 
-      var compVals = [r.production_score, r.athleticism_score, r.projected_draft_capital_score];
-      var compsHtml = '<div class="rk-comps3">' + compVals.map(function(v, k) {
-        var n = rkScoreNum(v), disp = rkScore1(v);
-        return '<div class="rk-compcol" title="' + RK_COMP_NAMES[k] + ' ' + disp + '">' +
-          '<div class="rk-compcol-label">' + RK_COMP_SHORT[k] + '</div>' +
-          '<div class="rk-compcol-row"><div class="rk-meter-bar"><div style="width:' + n + '%;background:' + RK_COMP_COLORS[k] + '"></div></div>' +
-          '<span class="rk-meter-val" style="color:' + RK_COMP_COLORS[k] + '">' + disp + '</span></div></div>';
+      var compDefs3 = [
+        { val: r.production_score, name: RK_COMP_NAMES[0], short: RK_COMP_SHORT[0], color: RK_COMP_COLORS[0] },
+        { val: r.projected_draft_capital_score, name: RK_COMP_NAMES[2], short: RK_COMP_SHORT[2], color: RK_COMP_COLORS[2] }
+      ];
+      if (r.athleticism_score != null) {
+        compDefs3.splice(1, 0,
+          { val: r.athleticism_score, name: RK_COMP_NAMES[1], short: RK_COMP_SHORT[1], color: RK_COMP_COLORS[1] });
+      }
+      var compsHtml = '<div class="rk-comps3">' + compDefs3.map(function(c) {
+        var n = rkScoreNum(c.val), disp = rkScore1(c.val);
+        return '<div class="rk-compcol" title="' + c.name + ' ' + disp + '">' +
+          '<div class="rk-compcol-label">' + c.short + '</div>' +
+          '<div class="rk-compcol-row"><div class="rk-meter-bar"><div style="width:' + n + '%;background:' + c.color + '"></div></div>' +
+          '<span class="rk-meter-val" style="color:' + c.color + '">' + disp + '</span></div></div>';
       }).join('') + '</div>';
 
       row.innerHTML =
@@ -1097,9 +1104,13 @@ def build_prospects_body(is_admin: bool = False) -> str:
 
     var compDefs = [
       { label: 'Production',   val: r.production_score,              color: RK_COMP_COLORS[0], rawId: 'rkRawProd' },
-      { label: 'Athleticism',  val: r.athleticism_score,             color: RK_COMP_COLORS[1], rawId: 'rkRawAth' },
       { label: 'Draft Capital', val: r.projected_draft_capital_score, color: RK_COMP_COLORS[2], rawId: 'rkRawDc' }
     ];
+    // Only show Athleticism when we have real data (hide when null)
+    if (r.athleticism_score != null) {
+      compDefs.splice(1, 0,
+        { label: 'Athleticism', val: r.athleticism_score, color: RK_COMP_COLORS[1], rawId: 'rkRawAth' });
+    }
     var compsHtml = compDefs.map(function(c) {
       var v = rkScoreNum(c.val), disp = rkScore1(c.val);
       return '<div class="m-comp-row">' +
