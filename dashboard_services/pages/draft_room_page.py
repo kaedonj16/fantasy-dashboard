@@ -123,11 +123,15 @@ def build_draft_room_body(
 _DRAFT_ROOM_HTML = r"""
 <div class="dr-wrap">
   <div class="dr-hero" id="drHero">
-    <h1 class="dr-title">Draft Room</h1>
-    <p class="dr-sub">Mock against CPU teams, draft manually, or sync a live Sleeper or ESPN draft with best-available ranks, tiers, and a live grade.</p>
-    <div class="dr-hero-actions">
-      <a class="dr-hero-link" id="drToCheatSheet" href="/draft/cheat-sheet">Cheat Sheet</a>
-      <a class="dr-hero-link" id="drToHistory" href="/draft/history">Draft History</a>
+    <div class="dr-hero-row">
+      <div>
+        <h1 class="dr-title">Draft Room</h1>
+        <p class="dr-sub">Mock against CPU teams, draft manually, or sync a live draft with best-available ranks, tiers, and a live grade.</p>
+      </div>
+      <div class="dr-hero-actions">
+        <a class="dr-hero-link" id="drToCheatSheet" href="/draft/cheat-sheet">Cheat Sheet</a>
+        <a class="dr-hero-link" id="drToHistory" href="/draft/history">Draft History</a>
+      </div>
     </div>
     <div class="dr-auction-note" id="drAuctionNote" hidden style="margin-top:12px;padding:10px 12px;border-radius:10px;background:var(--accent-soft,rgba(37,99,235,.08));border:1px solid var(--border);font-size:13px;line-height:1.45;color:var(--text);">
       <strong>Auction league detected.</strong> Recommendation Rank and Pick Score still help nominations. Suggested $ amounts are guidance from BR values, not clearing prices. Snake-round draft grades are disabled for auction.
@@ -148,11 +152,6 @@ _DRAFT_ROOM_HTML = r"""
         <button type="button" class="dr-setup-modal-close" id="drEditClose" aria-label="Close">&times;</button>
       </header>
       <p class="dr-setup-desc" id="drEditNote" hidden>Changes apply to this draft. Picks stay on the board unless you change teams, pick order, or your slot. Reset wipes the board and returns to setup.</p>
-
-      <div class="wz-brand">
-        <h1>Set up your draft</h1>
-        <p>Three quick steps, then you are on the clock. Start from a preset or build it your way.</p>
-      </div>
 
       <!-- Presets: collapsed by default -->
       <div class="wz-preset-wrap" id="wzPresetWrap">
@@ -694,17 +693,18 @@ _DRAFT_ROOM_HTML = r"""
   .dr-wrap {
     max-width: 1640px; margin: 0 auto; padding: 14px 14px 48px;
   }
-  .dr-hero { margin: 2px 0 22px; text-align: center; }
+  .dr-hero { margin: 2px 0 18px; }
+  .dr-hero-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 
   .dr-title {
-    font-size: clamp(28px, 4.4vw, 40px); font-weight: 800; color: var(--text);
-    margin: 0 0 8px; letter-spacing: -0.03em; line-height: 1.1;
+    font-size: 24px; font-weight: 800; color: var(--text);
+    margin: 0 0 4px; letter-spacing: -0.02em; line-height: 1.15;
   }
   .dr-sub {
-    font-size: 15px; color: var(--text-muted); margin: 0 auto; max-width: 540px; line-height: 1.55;
+    font-size: 13px; color: var(--text-muted); margin: 0; max-width: 560px; line-height: 1.5;
   }
   .dr-hero-actions {
-    display: inline-flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 14px;
+    display: inline-flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin: 0; flex-shrink: 0;
   }
   .dr-hero-link {
     display: inline-flex; align-items: center; padding: 7px 12px; font-size: 13px; font-weight: 700;
@@ -814,9 +814,6 @@ _DRAFT_ROOM_HTML = r"""
   /* Original controls stay in the DOM for draft_room.js; visually hidden. */
   .wz-orig { position: absolute !important; width: 1px; height: 1px; overflow: hidden;
     clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
-  .wz-brand { text-align: center; margin-bottom: 18px; padding: 26px 22px 0; }
-  .wz-brand h1 { font-size: 24px; font-weight: 800; letter-spacing: -.01em; margin: 0; color: var(--wz-text); }
-  .wz-brand p { color: var(--wz-muted); font-size: 13.5px; margin: 6px 0 0; }
   /* Presets: collapsible, collapsed by default */
   .wz-preset-wrap { border: 1px solid var(--wz-border); border-radius: 12px; background: var(--wz-panel);
     margin: 0 22px 18px; box-shadow: var(--wz-shadow); overflow: hidden; }
@@ -993,7 +990,7 @@ _DRAFT_ROOM_HTML = r"""
     .wz-slots { grid-template-columns: repeat(5,1fr); }
     .wz-card { padding: 16px; margin: 0 12px; }
     .wz-rostergrid { grid-template-columns: repeat(2,minmax(0,1fr)); }
-    .wz-brand, .wz-steps { margin-left: 12px; margin-right: 12px; padding-left: 0; padding-right: 0; }
+    .wz-steps { margin-left: 12px; margin-right: 12px; padding-left: 0; padding-right: 0; }
     .wz-preset-wrap, .wz-live-card { margin-left: 12px; margin-right: 12px; }
     .wz-live-list { margin-left: 12px; margin-right: 12px; }
     .wz-resume { margin-left: 12px; margin-right: 12px; }
@@ -2624,7 +2621,7 @@ _DRAFT_HISTORY_HTML = r"""
 <style>
   .dr-wrap { max-width: 900px; margin: 0 auto; padding: 14px 14px 48px; }
   .dr-hero { margin-bottom: 18px; }
-  .dr-title { font-size: clamp(24px,4vw,34px); font-weight: 800; color: var(--text); margin: 0 0 6px; letter-spacing: -0.03em; }
+  .dr-title { font-size: 24px; font-weight: 800; color: var(--text); margin: 0 0 4px; letter-spacing: -0.02em; }
   .dr-sub { font-size: 15px; color: var(--text-muted); margin: 0; line-height: 1.5; max-width: 520px; }
   .dr-hero-actions { display: inline-flex; gap: 8px; margin-top: 12px; }
   .dr-hero-link {
