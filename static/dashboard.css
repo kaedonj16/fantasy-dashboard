@@ -25463,7 +25463,7 @@ tr.team-clickable {
 
 /* Widened modal in compare mode */
 .player-modal.compare-mode {
-    max-width: 1000px;
+    max-width: 1240px;
 }
 
 /* ── Dual-player header ─────────────────────────────────────────── */
@@ -29796,7 +29796,7 @@ tr.cmp3-more td {
 }
 
 .compare-page {
-    max-width: 920px;
+    max-width: 1440px;
     margin: 0 auto;
     padding: 8px 0 40px;
 }
