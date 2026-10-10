@@ -18616,6 +18616,22 @@ def page_breakouts(platform: str, season: int, league_id: str):
         );
       }}
 
+      // Prefer the hi-res ESPN combiner crop when the candidate carries an
+      // espnHeadshot URL (same transform the player modal uses). Sleeper stays
+      // as the fallback so cards never break where ESPN data is missing.
+      function _boHiResHeadshot(url, width) {{
+        if (!url || typeof url !== 'string') return url || '';
+        if (url.indexOf('/combiner/') !== -1) return url;
+        var m = url.match(/espncdn\\.com(\\/i\\/headshots\\/[^?]+\\.(?:png|jpg|jpeg))/i);
+        if (!m) return url;
+        var w = Math.max(1, Math.round(width || 200));
+        return 'https://a.espncdn.com/combiner/i?img=' + m[1] + '&w=' + w + '&scale=crop&cquality=100';
+      }}
+      function _boHeadshotSrc(candidate, pid) {{
+        var u = _boHiResHeadshot(candidate && candidate.espnHeadshot, 160);
+        return u || ('https://sleepercdn.com/content/nfl/players/' + pid + '.jpg');
+      }}
+
       function renderBreakoutCard(candidate) {{
           const isWeekly = candidate.weekly === true || candidate.mode === 'weekly';
           const name = candidate.player_name || 'Unknown';
@@ -18708,7 +18724,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
             <div class="` + cardCls + `"` + moAttr + ` style="cursor:pointer;" onclick="openBreakoutCandidateModal('` + encodedPid + `')">
               <div class="breakout-card-header">
                 <div class="breakout-id">
-                  <div class="breakout-headshot">${{(name[0] || '?').toUpperCase()}}<img src="https://sleepercdn.com/content/nfl/players/` + pid + `.jpg" alt="" loading="lazy" decoding="async" onerror="this.remove()"></div>
+                  <div class="breakout-headshot">${{(name[0] || '?').toUpperCase()}}<img src="` + _boHeadshotSrc(candidate, pid) + `" alt="" loading="lazy" decoding="async" onerror="this.remove()"></div>
                   <div>
                     <div class="breakout-player-name">` + name + `</div>
                     <div class="breakout-player-meta" style="font-size:13px;color:var(--text-muted);margin-top:2px;">${{age}} yr • ${{team}} • ${{pos}}</div>
@@ -20586,6 +20602,26 @@ def page_schedule(platform: str, season: int, league_id: str):
 # WEEKLY RECAP
 # ══════════════════════════════════════════════════════════════════════════════
 
+_ESPN_HEADSHOT_RE = re.compile(r"espncdn\.com(/i/headshots/[^?]+\.(?:png|jpg|jpeg))", re.IGNORECASE)
+
+
+def _hires_headshot_url(url, width):
+    """Python mirror of the client-side _hiResHeadshot (static/app.js): upgrade
+    an ESPN headshot URL to the combiner crop at the requested width. Returns ""
+    for falsy input, leaves already-combined or non-ESPN URLs untouched."""
+    if not url:
+        return ""
+    url = str(url)
+    if "/combiner/" in url:
+        return url
+    m = _ESPN_HEADSHOT_RE.search(url)
+    if not m:
+        return url
+    w = max(1, round(width or 200))
+    return (f"https://a.espncdn.com/combiner/i?img={m.group(1)}"
+            f"&w={w}&scale=crop&cquality=100")
+
+
 def _face_html(p: dict, tone: str) -> str:
     """Player headshot backed by a tone-tinted initial badge. The initial shows
     through when the headshot is missing/404s (onerror removes the img).
@@ -20613,6 +20649,16 @@ def _face_html(p: dict, tone: str) -> str:
                    f'decoding="async" onerror="{onerr}">')
     elif pid:
         url = f"https://sleepercdn.com/content/nfl/players/thumb/{pid}.jpg"
+        try:
+            espn = str(p.get("espnHeadshot") or "").strip()
+            if not espn:
+                meta = (get_players_index_global() or {}).get(pid) or {}
+                espn = str(meta.get("espnHeadshot") or "").strip()
+            hi = _hires_headshot_url(espn, 160)
+            if hi:
+                url = hi
+        except Exception:
+            pass
         img = (f'<img class="rc-face" src="{url}" alt="" loading="lazy" '
                f'decoding="async" onerror="this.remove()">')
     return f'<div class="rc-badge {tone}">{initial}{img}</div>'

@@ -16187,6 +16187,7 @@ window.brPlayerImgUrl = function (p) {
     var local = window.brTeamLogoLocal(team);
     if (local) return local;
   }
+  if (p.espnHeadshot) return (typeof _hiResHeadshot === 'function') ? _hiResHeadshot(p.espnHeadshot, 360) : p.espnHeadshot;
   var id = p.id != null ? p.id : p.pid;
   if (id == null || id === '') return '';
   return 'https://sleepercdn.com/content/nfl/players/' + id + '.jpg';
@@ -16199,6 +16200,7 @@ window.brPlayerThumbUrl = function (p) {
     var local = window.brTeamLogoLocal(team);
     if (local) return local;
   }
+  if (p.espnHeadshot) return (typeof _hiResHeadshot === 'function') ? _hiResHeadshot(p.espnHeadshot, 160) : p.espnHeadshot;
   var id = p.id != null ? p.id : p.pid;
   if (id == null || id === '') return '';
   return 'https://sleepercdn.com/content/nfl/players/thumb/' + id + '.jpg';
