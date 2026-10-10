@@ -347,3 +347,34 @@ class TestSeedConsensus:
         from data_building.rookie_pipeline.ingestion import get_seed_prospects
         sc = build_seed_consensus(get_seed_prospects(2027))
         assert len(sc) == 14
+
+
+class TestCfbdTargets:
+    def _fake_cfbd(self, path, params=None, retries=2):
+        if path == "/plays/stats/types":
+            return [{"id": 7, "name": "Targets"}]
+        if path == "/plays/stats":
+            return [
+                {"athlete": "Ryan Wingo", "stat": 68},
+                {"athlete": "Parker Livingstone", "stat": 42},
+            ]
+        return []
+
+    def test_collects_targets_and_share(self, monkeypatch):
+        import data_building.rookie_pipeline.ingestion as ing
+        monkeypatch.setattr(ing, "_cfbd_get", self._fake_cfbd)
+        monkeypatch.setattr(ing, "CFBD_KEY", "test")
+        out = ing.fetch_cfbd_targets(2027, ["Texas"])
+        assert out["ryan wingo"]["targets"] == 68
+        assert out["ryan wingo"]["target_share"] == round(68 / 110, 4)
+
+    def test_no_targets_type_returns_empty(self, monkeypatch):
+        import data_building.rookie_pipeline.ingestion as ing
+        monkeypatch.setattr(ing, "_cfbd_get", lambda *a, **k: [{"id": 1, "name": "Yards"}])
+        monkeypatch.setattr(ing, "CFBD_KEY", "test")
+        assert ing.fetch_cfbd_targets(2027, ["Texas"]) == {}
+
+    def test_no_key_returns_empty(self, monkeypatch):
+        import data_building.rookie_pipeline.ingestion as ing
+        monkeypatch.setattr(ing, "CFBD_KEY", "")
+        assert ing.fetch_cfbd_targets(2027, ["Texas"]) == {}
