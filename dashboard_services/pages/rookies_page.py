@@ -504,7 +504,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
 
   /* Mobile: hide Mock column, stack component bars under the row */
   @media (max-width: 768px) {
-    .rk-head { display: none; }
+    #rkHeader { display: none; }
     .rk-grid-row { grid-template-columns: 48px minmax(0,1fr) 48px 32px; }
     #rkHeader .rk-mock-h, .rk-row .rk-mock { display: none; }
     .rk-comps3 { display: grid; grid-column: 1 / -1; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 8px; }
