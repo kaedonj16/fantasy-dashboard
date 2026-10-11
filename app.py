@@ -3312,6 +3312,40 @@ def start_score_pos_anchors(season, week, scoring_settings=None) -> dict:
     return anchors
 
 
+# ── Tier-anchored 0-100 start/sit index ──────────────────────────────────────
+# Maps a player's rank (1-indexed) within their position to a 0-100 score.
+# Rank 1-12 (QB) or 1-10 (RB/WR) get 90-100 (elite tier), etc.
+# This replaces the anchor-based pct which clamped everyone to 100.
+_SS_TIER_BANDS = {
+    "QB": ((1, 6, 90, 100), (7, 12, 70, 89), (13, 16, 40, 69), (17, 20, 1, 39)),
+    "RB": ((1, 10, 90, 100), (11, 22, 70, 89), (23, 30, 40, 69), (31, 36, 1, 39)),
+    "WR": ((1, 10, 90, 100), (11, 22, 70, 89), (23, 30, 40, 69), (31, 36, 1, 39)),
+    "TE": ((1, 4, 90, 100), (5, 12, 70, 89), (13, 16, 40, 69), (17, 18, 1, 39)),
+}
+
+
+def start_score_tier_index(pos, rank):
+    """0-100 display index for a 1-indexed rank by start score desc within pos.
+
+    Linear within each tier band; single-rank tier maps to band_hi;
+    rank beyond the table maps to 1. Returns None for unknown pos/bad rank.
+    """
+    bands = _SS_TIER_BANDS.get(str(pos or "").upper())
+    try:
+        rank = int(rank)
+    except (TypeError, ValueError):
+        return None
+    if not bands or rank < 1:
+        return None
+    for lo, hi, band_lo, band_hi in bands:
+        if lo <= rank <= hi:
+            if hi <= lo:
+                return int(band_hi)
+            frac = (rank - lo) / (hi - lo)
+            return int(round(band_hi - frac * (band_hi - band_lo)))
+    return 1
+
+
 def run_daily_data_async(season: int, week: int, owner: str = "web") -> bool:
     """Start daily data build in a background thread."""
     # Never kick off the real daily build under tests: build_daily_data scrapes
@@ -15237,6 +15271,13 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
 
     for pos in positions_out:
         positions_out[pos].sort(key=lambda x: (not x["on_bye"], x["_score"]), reverse=True)
+        # Tier-anchored 0-100 index: rank within position -> tier band.
+        # Replaces the anchor-based pct (which clamped elites to 100).
+        for rank, p in enumerate(positions_out[pos], start=1):
+            try:
+                p["start_score_pct"] = start_score_tier_index(pos, rank)
+            except Exception:
+                pass
         n_start = lineup_requirements.get(pos, 1)
         eligible_for_flex = pos in ("RB", "WR", "TE")
         for i, p in enumerate(positions_out[pos]):
