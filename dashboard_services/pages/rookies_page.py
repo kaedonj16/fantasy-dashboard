@@ -1293,7 +1293,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
       if (r.projected_round != null && r.projected_round !== '')
         bits.push('Rd ' + r.projected_round);
       if (r.position_rank != null && r.position_rank !== '')
-        bits.push(pos + r.position_rank);
+        bits.push((r.position || '').toUpperCase() + r.position_rank);
       var t = d.mock_trend, trendHtml = '';
       if (t != null && t !== '') {
         if (t > 0) trendHtml = '<span class="dvt-change dvt-change-up">&#9650;' + t + ' this month</span>';
