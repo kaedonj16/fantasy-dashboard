@@ -177,8 +177,9 @@ def build_dashboard_body(ctx: dict) -> str:
               <h2 class="cc-fo-title">Front Office Report</h2>
               <div class="cc-fo-sub">Roster, trade targets, and standings analysis</div>
             </div>
+            <button type="button" class="card-collapse-toggle cc-head-toggle" aria-label="Toggle section" aria-expanded="true" data-target="dash-fo-body">&#9660;</button>
           </div>
-          <div class="card-collapsible-body">
+          <div class="card-collapsible-body" id="dash-fo-body">
           <div class="os-ai-copy">
             <div class="otc-ai-empty" id="gm-memo-empty">
               <div class="otc-ai-empty-sub">
@@ -795,8 +796,9 @@ def build_dashboard_body(ctx: dict) -> str:
                 '<div class="cc-act-head-icon"><i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i></div>'
                 '<div><h2 class="cc-act-title">League Activity</h2>'
                 '<div class="cc-act-sub">Recent moves around the league</div></div>'
+                '<button type="button" class="card-collapse-toggle cc-head-toggle" aria-label="Toggle section" aria-expanded="true" data-target="dash-act-body">&#9660;</button>'
                 '</div>'
-                '<div class="card-collapsible-body">'
+                '<div class="card-collapsible-body" id="dash-act-body">'
                 + "".join(_act_rows) +
                 '</div></section>'
             )
@@ -841,8 +843,9 @@ def build_dashboard_body(ctx: dict) -> str:
                 '<div class="cc-inj-head-icon"><i class="fa-solid fa-heart-crack" aria-hidden="true"></i></div>'
                 '<div><h2 class="cc-inj-title">Injury Watch</h2>'
                 '<div class="cc-inj-sub">Your roster</div></div>'
+                '<button type="button" class="card-collapse-toggle cc-head-toggle" aria-label="Toggle section" aria-expanded="true" data-target="dash-inj-body">&#9660;</button>'
                 '</div>'
-                '<div class="card-collapsible-body">'
+                '<div class="card-collapsible-body" id="dash-inj-body">'
                 + "".join(_inj_rows) +
                 '</div></section>'
             )
