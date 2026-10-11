@@ -289,13 +289,10 @@ def build_prospects_body(is_admin: bool = False) -> str:
   .rk-pplayer { display: flex; align-items: center; gap: 10px; min-width: 0; }
   .rk-headshot {
     width: 38px; height: 38px; border-radius: 50%; flex-shrink: 0;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 12px; font-weight: 800; letter-spacing: 0.02em;
-    background: color-mix(in srgb, var(--pc, var(--accent)) 15%, transparent);
-    color: var(--pc, var(--accent));
-    border: 1px solid color-mix(in srgb, var(--pc, var(--accent)) 35%, transparent);
     position: relative; overflow: hidden;
+    background: transparent; border: none;
   }
+  .rk-headshot.rk-hs-empty { display: none; }
   .rk-headshot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
   .rk-name { font-size: 13.5px; font-weight: 600; color: var(--text); }
   .rk-name:hover { opacity: 0.72; }
@@ -343,13 +340,10 @@ def build_prospects_body(is_admin: bool = False) -> str:
   .m-headwrap { display: flex; gap: 12px; align-items: center; min-width: 0; }
   .m-headshot {
     width: 52px; height: 52px; border-radius: 50%; flex-shrink: 0;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 16px; font-weight: 800;
-    background: color-mix(in srgb, var(--pc, var(--accent)) 15%, transparent);
-    color: var(--pc, var(--accent));
-    border: 1px solid color-mix(in srgb, var(--pc, var(--accent)) 35%, transparent);
     position: relative; overflow: hidden;
+    background: transparent; border: none;
   }
+  .m-headshot.rk-hs-empty { display: none; }
   .m-headshot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
   .m-title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .m-name { font-size: 22px; font-weight: 700; color: var(--text); }
@@ -424,14 +418,6 @@ def build_prospects_body(is_admin: bool = False) -> str:
   .m-adv-score { font-size: 13px; font-weight: 700; text-align: right; color: var(--text); }
   .m-adv-grade { font-size: 13px; font-weight: 800; text-align: right; }
   .m-adv-radar { display: flex; justify-content: center; padding: 10px 14px; }
-  /* Full metrics table below radar */
-  .m-adv-table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 12.5px; }
-  .m-adv-table th { text-align: left; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-subtle); padding: 6px 8px; border-bottom: 1px solid var(--border); }
-  .m-adv-table th:nth-child(2), .m-adv-table th:nth-child(3),
-  .m-adv-table td:nth-child(2), .m-adv-table td:nth-child(3) { text-align: right; }
-  .m-adv-table td { padding: 6px 8px; border-bottom: 1px solid var(--border); color: var(--text); }
-  .m-adv-table tr:last-child td { border-bottom: none; }
-  .m-adv-table td:first-child { color: var(--text-muted); font-weight: 600; }
 
   /* Two-column modal layout */
   .m-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 28px; align-items: start; }
@@ -616,13 +602,11 @@ def build_prospects_body(is_admin: bool = False) -> str:
 
   /* Very small screens: further tightening */
   @media (max-width: 480px) {
-    .rk-grid-row { grid-template-columns: 36px minmax(0,1fr) auto 32px; gap: 6px; }
-    .rk-row { padding: 9px 10px 7px; }
-    .rk-rank-num { font-size: 12px; }
-    .rk-score { font-size: 14px; }
-    .rk-comps3 { gap: 10px; margin-top: 7px; padding-top: 7px; }
-    .rk-headshot { width: 32px; height: 32px; font-size: 11px; }
-    .rk-name { font-size: 12.5px; }
+    .rk-grid-row { grid-template-columns: 40px minmax(0,1fr) 44px 28px; gap: 6px; }
+    .rk-row { padding: 10px 10px; }
+    .rk-rank-num { font-size: 13px; }
+    .rk-score { font-size: 13px; }
+    .rk-comps3 { gap: 8px; }
     .m-headwrap { gap: 10px; }
     .m-headshot { width: 44px; height: 44px; font-size: 14px; }
     .m-name { font-size: 17px; }
@@ -694,13 +678,11 @@ def build_prospects_body(is_admin: bool = False) -> str:
   }
   function rkHeadshot(r, cls) {
     var url = r.headshot_url || r.espnHeadshot;
-    var color = rkDiscColor(r.player_id);
-    var init = rkInitials(r.name);
     if (url) {
-      return '<div class="' + cls + '" style="--pc:' + color + '">' + init +
+      return '<div class="' + cls + ' rk-hs-img">' +
         '<img src="' + rkEsc(url) + '" alt="" loading="lazy" onerror="this.remove()"></div>';
     }
-    return '<div class="' + cls + '" style="--pc:' + color + '">' + init + '</div>';
+    return '<div class="' + cls + ' rk-hs-empty"></div>';
   }
   function rkStarSVG() {
     return '<svg viewBox="0 0 24 24"><path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4 6.1 20.5l1.2-6.5L2.5 9.4l6.6-.9z"/></svg>';
@@ -1150,7 +1132,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
           '<span class="rk-pos" style="--pc:' + posColor + ';margin-left:0">' + rkEsc(pos) + '</span>' +
           (r.school ? '<span>' + rkEsc(r.school) + '</span>' : '') +
           '<span id="rkMetaConf"></span>' +
-          (r.age != null ? '<span>&middot;</span><span>' + parseFloat(r.age).toFixed(1) + ' yrs</span>' : '') +
+          '<span>&middot;</span><span>' + age + ' yrs</span>' +
           '<span id="rkMetaStars"></span>' +
           (r.draft_class_year ? '<span>&middot;</span><span>' + r.draft_class_year + ' Draft</span>' : '') + '</div>' +
         (r.transfer_history ? '<div class="m-transfer">Transfer: ' + rkEsc(r.transfer_history) + '</div>' : '') +
@@ -1178,7 +1160,6 @@ def build_prospects_body(is_admin: bool = False) -> str:
         '<div class="m-sec-label">Advanced metrics</div>' +
         '<div class="m-adv-grid"><div id="rkAdvBody">' + rkLoadingHtml() + '</div>' +
         '<div class="m-adv-radar" id="rkRadarBody"></div></div>' +
-        '<div id="rkAdvTable"></div>' +
         '<div class="m-cols">' +
           '<div class="m-col">' +
             '<hr class="rk-section-divider">' +
@@ -1290,13 +1271,12 @@ def build_prospects_body(is_admin: bool = False) -> str:
         st = parseInt(r.recruit_stars, 10);
       if (st) {
         var det = '';
-        var posStr = (r.position || '').toUpperCase();
         if (r.recruit_composite_rating != null)
           det += Number(r.recruit_composite_rating).toFixed(4);
         if (r.recruit_national_rank != null)
           det += (det ? ', ' : '') + '#' + r.recruit_national_rank + " nat'l";
-        if (r.recruit_position_rank != null && posStr)
-          det += (det ? ', ' : '') + '#' + r.recruit_position_rank + ' ' + posStr;
+        if (r.recruit_position_rank != null)
+          det += (det ? ', ' : '') + '#' + r.recruit_position_rank + ' ' + pos;
         ms.innerHTML = '<span>&middot;</span><span>' + st + '-star' +
           (det ? ' (' + rkEsc(det) + ')' : '') + '</span>';
       } else {
@@ -1305,21 +1285,15 @@ def build_prospects_body(is_admin: bool = False) -> str:
     }
     // Breakout age hero
     var hb = document.getElementById('rkHeroBreakout');
-    if (hb) {
-      var ba = d.breakout_age != null ? Number(d.breakout_age).toFixed(1) : null;
-      hb.textContent = ba || '-';
-      var baSub = hb.parentElement.querySelector('.rk-hero-sub');
-      if (baSub) baSub.style.display = ba ? '' : 'none';
-    }
+    if (hb) hb.textContent = d.breakout_age != null ? Number(d.breakout_age).toFixed(1) : '-';
     // Mock draft sub: round + positional rank + month trend
     var ht = document.getElementById('rkHeroTrend');
     if (ht) {
       var bits = [];
-      var posStr2 = (r.position || '').toUpperCase();
       if (r.projected_round != null && r.projected_round !== '')
         bits.push('Rd ' + r.projected_round);
-      if (r.position_rank != null && r.position_rank !== '' && posStr2)
-        bits.push(posStr2 + r.position_rank);
+      if (r.position_rank != null && r.position_rank !== '')
+        bits.push(pos + r.position_rank);
       var t = d.mock_trend, trendHtml = '';
       if (t != null && t !== '') {
         if (t > 0) trendHtml = '<span class="dvt-change dvt-change-up">&#9650;' + t + ' this month</span>';
@@ -1368,15 +1342,6 @@ def build_prospects_body(is_admin: bool = False) -> str:
     var advBody = document.getElementById('rkAdvBody');
     var radarBody = document.getElementById('rkRadarBody');
     var adv = (d.advanced || []).filter(function(a){ return a.raw != null && a.grade != null; });
-    // Radar: 5 key metrics per position. Table below shows all.
-    var RK_RADAR_KEYS = {
-      QB: ["Cmp%", "Yds/Att", "AY/A", "TD:INT", "Efficiency"],
-      RB: ["Dominator", "Yds/Carry", "Scrim Yds/Gm", "Mkt Share", "Speed Score"],
-      WR: ["Dominator", "Yds/Rec", "Mkt Share", "TD Share", "Tgt/Gm"],
-      TE: ["Dominator", "Yds/Rec", "Mkt Share", "TD Share", "Tgt/Gm"]
-    };
-    var radarKeys = RK_RADAR_KEYS[(r.position || "").toUpperCase()] || RK_RADAR_KEYS.WR;
-    var radarAdv = adv.filter(function(a){ return radarKeys.indexOf(a.label) !== -1; });
     if (advBody) {
       advBody.innerHTML = adv.length ? adv.map(function(a) {
         var g = rkLetterGrade(a.grade);
@@ -1389,18 +1354,8 @@ def build_prospects_body(is_admin: bool = False) -> str:
     }
     if (radarBody) {
       var tc = RK_TIER_COLORS[r.tier] || '#9ca3af';
-      radarBody.innerHTML = radarAdv.length
-        ? rkRadarSVG(radarAdv.map(function(a){ return a.label; }), radarAdv.map(function(a){ return a.grade; }), tc) : '';
-    }
-    // Full metrics table below radar
-    var advTable = document.getElementById('rkAdvTable');
-    if (advTable) {
-      advTable.innerHTML = adv.length ? '<table class="m-adv-table"><thead><tr><th>Metric</th><th>Value</th><th>Grade</th></tr></thead><tbody>' +
-        adv.map(function(a) {
-          var g = rkLetterGrade(a.grade);
-          return '<tr><td>' + rkEsc(a.label) + '</td><td>' + rkEsc(a.raw) + '</td>' +
-            '<td style="color:' + g[1] + ';font-weight:800">' + g[0] + '</td></tr>';
-        }).join('') + '</tbody></table>' : '';
+      radarBody.innerHTML = adv.length
+        ? rkRadarSVG(adv.map(function(a){ return a.label; }), adv.map(function(a){ return a.grade; }), tc) : '';
     }
 
     // Combine grid
