@@ -608,15 +608,37 @@ def fetch_espn_headshots_via_roster(
         except Exception:
             pass
 
+    def _norm_team(t):
+        """Normalize team name for matching."""
+        t = t.lower().strip()
+        # Handle common abbreviations
+        t = t.replace(" st.", " state").replace(" st ", " state ")
+        t = t.replace(".", "")
+        return t
+
+    def _norm_player(p):
+        """Normalize player name: lowercase, strip suffixes."""
+        p = p.lower().strip()
+        # Remove suffixes
+        for suffix in [" jr.", " sr.", " ii", " iii", " iv", " jr", " sr"]:
+            if p.endswith(suffix):
+                p = p[:-len(suffix)].strip()
+        return p
+
+    # Build normalized team map
+    norm_team_map = {_norm_team(k): v for k, v in team_id_map.items()}
+
     for team_lower, prospects in by_team.items():
-        tid = team_id_map.get(team_lower)
+        norm_team = _norm_team(team_lower)
+        tid = norm_team_map.get(norm_team)
         if not tid:
             # Try partial match
-            for espn_name, eid in team_id_map.items():
-                if team_lower in espn_name or espn_name in team_lower:
+            for espn_name, eid in norm_team_map.items():
+                if norm_team in espn_name or espn_name in norm_team:
                     tid = eid
                     break
         if not tid:
+            print(f"[headshots] no ESPN team ID for '{team_lower}'")
             continue
 
         try:
@@ -624,19 +646,23 @@ def fetch_espn_headshots_via_roster(
             if not resp:
                 continue
             data = resp.json()
-            # Build name -> headshot map from roster
+            # Build name -> headshot map from roster (normalized names)
             roster_map: Dict[str, str] = {}
             for group in data.get("athletes", []):
                 for player in group.get("items", []):
-                    pname = (player.get("fullName") or "").lower().strip()
+                    pname = _norm_player(player.get("fullName") or "")
                     hs = (player.get("headshot") or {}).get("href")
                     if pname and hs:
                         roster_map[pname] = hs
-            # Match prospects
+            # Match prospects (normalized)
+            matched = 0
             for p in prospects:
-                pname = (p.get("name") or "").lower().strip()
+                pname = _norm_player(p.get("name") or "")
+                orig_key = (p.get("name") or "").lower().strip()
                 if pname in roster_map:
-                    result[pname] = roster_map[pname]
+                    result[orig_key] = roster_map[pname]
+                    matched += 1
+            print(f"[headshots] {team_lower}: matched {matched}/{len(prospects)}")
         except Exception:
             continue
         time.sleep(delay)
