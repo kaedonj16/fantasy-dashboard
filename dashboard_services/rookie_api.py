@@ -636,12 +636,21 @@ def _get_prospect_detail(player_id: str, row: dict) -> dict:
                 float(calc_experience_score(seasons, row.get("position") or "")), 1)
     except Exception:
         pass
-    detail["breakout_age"] = _compute_breakout_age(
-        seasons, row.get("age"), row.get("position"))
-    detail["mock_trend"] = _get_mock_trend(player_id)
-    detail["advanced"] = _build_advanced_metrics(
-        row.get("position"), seasons, athleticism, row,
-        wepa_score=detail.get("wepa_score"))
+    try:
+        detail["breakout_age"] = _compute_breakout_age(
+            seasons, row.get("age"), row.get("position"))
+    except Exception:
+        detail["breakout_age"] = None
+    try:
+        detail["mock_trend"] = _get_mock_trend(player_id)
+    except Exception:
+        detail["mock_trend"] = None
+    try:
+        detail["advanced"] = _build_advanced_metrics(
+            row.get("position"), seasons, athleticism, row,
+            wepa_score=detail.get("wepa_score"))
+    except Exception:
+        detail["advanced"] = []
     return detail
 
 
