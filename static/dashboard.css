@@ -45011,6 +45011,33 @@ a, button, [role="button"], [role="tab"], summary, label,
 .mb-fld-def { font-size: 11px; font-weight: 800; letter-spacing: .02em; text-transform: uppercase; color: var(--text-muted); font-variant-numeric: tabular-nums; padding: 0 1px; }
 .mb-cell-r .mb-fld-def { text-align: right; }
 
+/* ---- Compact matchup rows (Kaedon's call): tighter rows, smaller text,
+   thinner drive bars, stat line under the drive bar, never truncated. ---- */
+.mb-stat-row { min-width: 0; padding: 2px 9px 0; }
+.mb-stat-row .mb-stat {
+    display: block;
+    font-size: 11px;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    max-width: 100%;
+}
+.mb-cell-r .mb-stat-row { text-align: right; }
+
+/* Compact sizing: names 13.5px, scores 16px, game info 9px single-line */
+.mb-info > .pname { font-size: 13.5px; }
+.mb-a { font-size: 16px; }
+.mb-game { font-size: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.mb-fld-track { height: 8px; }
+.mb-fld-head { font-size: 10px; }
+.mb-fld-def { font-size: 10px; }
+.mb-cell { padding: 8px 12px; }
+
+@media (min-width: 641px) {
+    .mb-fld-track { height: 10px; }
+    .mb-stat-row .mb-stat { font-size: 11.5px; }
+}
+
 /* ---- Matchup Moments strip (client-injected into .mb-moments) ------------ */
 .mb-moments { margin: 10px 12px 4px; }
 .mb-moments[hidden] { display: none; }
