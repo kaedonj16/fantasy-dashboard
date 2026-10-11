@@ -1249,43 +1249,28 @@ def calc_durability_score(seasons: List[Dict]) -> float:
     if not _completed_entries:
         return 60.0
 
-    n = len(sorted_s)
-    # Recency weights: most recent season gets highest weight
+    # Use ONLY completed seasons for the average. The in-progress season
+    # hasn't finished, so including its partial GP drags the average down
+    # unfairly (e.g. 7 games in week 7 looks like "missed games").
+    n = len(_completed_entries)
     weighted_sum = 0.0
     total_weight = 0.0
-    for rank, gp in gp_entries:
-        # rank 0 = oldest; rank n-1 = most recent
+    for rank, (i, gp) in enumerate(_completed_entries):
+        # rank 0 = oldest; rank n-1 = most recent completed
         w = 0.4 + 0.6 * (rank / max(n - 1, 1))
         weighted_sum += gp * w
         total_weight += w
 
     avg_gp = weighted_sum / total_weight
 
-    # Most-recent season penalty: if the player just had a short season it's a red flag.
-    # Skip when the most recent season is still in progress (current year):
-    # games haven't been "missed", they just haven't been played yet.
-    from datetime import date as _date
-    _current_year = _date.today().year
-    _most_recent_idx = gp_entries[-1][0]
-    _most_recent_season_year = sorted_s[_most_recent_idx].get("season")
-    _in_progress = _most_recent_season_year == _current_year
-    recent_gp = gp_entries[-1][1]  # last entry is most recent with gp data
-    if _in_progress:
-        recent_penalty = 0.0
-    else:
-        recent_penalty = max(0.0, (9.0 - recent_gp) * 6.0) if recent_gp < 9 else 0.0
+    # Most-recent COMPLETED season penalty: if the player just had a short
+    # season it's a red flag. In-progress season is already excluded.
+    recent_gp = _completed_entries[-1][1]
+    recent_penalty = max(0.0, (9.0 - recent_gp) * 6.0) if recent_gp < 9 else 0.0
 
-    # Career floor: any COMPLETED season with very few games is concerning.
-    # Exclude the in-progress season from the floor check.
-    _completed_gps = [
-        gp for i, gp in gp_entries
-        if sorted_s[i].get("season") != _current_year
-    ]
-    if _completed_gps:
-        min_gp = min(_completed_gps)
-        floor_pen = max(0.0, (7.0 - min_gp) * 4.0)
-    else:
-        floor_pen = 0.0
+    # Career floor: any completed season with very few games is concerning.
+    min_gp = min(gp for _, gp in _completed_entries)
+    floor_pen = max(0.0, (7.0 - min_gp) * 4.0)
 
     avg_score = _scale(avg_gp, 7.0, 14.0)
     return _clip(avg_score - recent_penalty - floor_pen)
@@ -2056,6 +2041,7 @@ def score_prospect(
 
     # Neutralize missing athleticism: redistribute its weight to other
     # components so a lack of combine data doesn't drag the score down.
+    # Keep as None (not 0.0) so the DB stores NULL and the UI hides it.
     _weights = dict(pos_weights)
     _athleticism_missing = athleticism_score is None
     if _athleticism_missing:
@@ -2064,7 +2050,7 @@ def score_prospect(
         if remaining > 0 and ath_w > 0:
             for k in _weights:
                 _weights[k] *= (1.0 + ath_w / remaining)
-        athleticism_score = 0.0  # weight is 0, value irrelevant
+        # athleticism_score stays None -> DB NULL -> UI hides the bar
 
     # Base prospect score with position-specific weights
     prospect_score = (
