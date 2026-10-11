@@ -47901,6 +47901,9 @@ em.gneg { background: var(--loss); }
      into the approved mobile flow. */
   .os-layout {
     gap: 12px;
+    /* Override the desktop grid's align-items: start, which would
+       shrink-to-fit cards in the mobile flex column. */
+    align-items: stretch;
   }
   .os-layout > .os-left-col,
   .os-layout > .os-main-col,
@@ -47908,24 +47911,40 @@ em.gneg { background: var(--loss); }
     display: contents;
   }
 
+  /* Belt and suspenders: every banner card is full width on phones. */
+  .os-layout .cc-fo-card,
+  .os-layout .cc-inj-card,
+  .os-layout .cc-st-card,
+  .os-layout .cc-aw-card,
+  .os-layout .cc-act-card,
+  .os-layout .os-hero-strip,
+  .os-layout .os-action-queue,
+  .os-layout .os-matchup-preview,
+  .os-layout .usage-movers-card {
+    width: 100%;
+    max-width: none;
+    flex-shrink: 0;
+  }
+
   /* Default: supporting sections (season review, bench check,
-     ScoreZone CTA, best-ball outlook, since-last-visit) go last. */
+     best-ball outlook, since-last-visit) go last. ScoreZone is ordered
+     explicitly below (right under the hero). */
   .os-layout section,
   .os-layout .os-action-queue,
-  .os-layout .weekly-rz-cta,
   .os-layout .slv-wrap {
     order: 20;
   }
-  /* Approved mobile flow. */
+  /* Approved mobile flow: ScoreZone banner sits right under the hero. */
   .os-layout .os-hero-strip { order: 1; }
-  .os-layout .os-action-queue { order: 2; }
-  .os-layout .os-matchup-preview { order: 3; }
-  .os-layout .cc-fo-card { order: 4; }
-  .os-layout .cc-inj-card { order: 5; }
-  .os-layout .cc-st-card { order: 6; }
-  .os-layout .cc-aw-card { order: 7; }
-  .os-layout .cc-act-card { order: 8; }
-  .os-layout .usage-movers-card { order: 9; }
+  .os-layout .weekly-rz-cta { order: 2; }
+  .os-layout .os-action-queue { order: 3; }
+  .os-layout .os-matchup-preview { order: 4; }
+  .os-layout .cc-fo-card { order: 5; }
+  .os-layout .cc-inj-card { order: 6; }
+  .os-layout .cc-st-card { order: 7; }
+  .os-layout .cc-aw-card { order: 8; }
+  .os-layout .cc-act-card { order: 9; }
+  .os-layout .usage-movers-card { order: 10; }
 
   /* Compact hero: team + grade + archetype on one line, 2x2 stat grid. */
   .os-hero-strip {
@@ -47951,36 +47970,45 @@ em.gneg { background: var(--loss); }
     font-size: 19px;
   }
 
-  /* Compact Next Steps: horizontal cards, inline CTA. */
+  /* Compact Next Steps: horizontal cards, inline CTA, tight rhythm. */
+  .ns-card .ns-list {
+    gap: 4px;
+  }
   .ns-card .ns-list .ns-item {
     min-height: 0;
-    padding: 10px 12px;
+    padding: 8px 10px;
     align-items: center;
   }
   .ns-card .ns-list .ns-item .ns-body {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
-    column-gap: 10px;
+    column-gap: 8px;
     align-items: center;
     height: auto;
   }
   .ns-card .ns-list .ns-item .ns-tag {
     grid-column: 1;
     margin-bottom: 2px;
+    font-size: 10px;
+    padding: 2px 6px;
   }
   .ns-card .ns-list .ns-item .ns-action {
     grid-column: 1;
-    font-size: 13px;
+    font-size: 12px;
+    line-height: 1.3;
   }
   .ns-card .ns-list .ns-item .ns-why {
     grid-column: 1;
-    font-size: 12px;
+    font-size: 11px;
     margin-bottom: 0;
+    line-height: 1.3;
   }
   .ns-card .ns-list .ns-item .ns-impact {
     grid-column: 1;
     margin-bottom: 0;
     justify-self: start;
+    font-size: 10px;
+    padding: 2px 6px;
   }
   .ns-card .ns-list .ns-item .ns-body > br {
     display: none;
@@ -47992,8 +48020,8 @@ em.gneg { background: var(--loss); }
     align-self: center;
     white-space: nowrap;
     flex-shrink: 0;
-    padding: 8px 12px;
-    font-size: 12px;
+    padding: 6px 10px;
+    font-size: 11px;
   }
   .ns-card .ns-expand-toggle,
   .ns-card .os-action-dismiss {
