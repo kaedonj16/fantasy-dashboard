@@ -701,7 +701,7 @@ def fetch_cfbd_games_played(draft_year: int) -> Dict[str, Dict[int, int]]:
             try:
                 data = _cfbd_get(
                     "/games/players",
-                    {"year": yr, "week": week, "seasonType": "regular"},
+                    {"year": yr, "week": week, "seasonType": "both"},
                     retries=2,
                 ) or []
             except Exception as exc:
@@ -779,7 +779,7 @@ def fetch_cfbd_player_ppa(draft_year: int) -> Dict[str, Dict[int, Dict[str, floa
         try:
             data = _cfbd_get(
                 "/ppa/players/season",
-                {"year": yr, "seasonType": "regular"},
+                {"year": yr, "seasonType": "both"},
                 retries=2,
             ) or []
         except Exception as exc:
@@ -1065,7 +1065,7 @@ def fetch_cfbd_college_stats(
         # Team season totals for market share / dominator calculation
         team_stats: Dict[int, Dict] = {}
         for yr in years:
-            data = _cfbd_get("/stats/season", {"year": yr, "seasonType": "regular"})
+            data = _cfbd_get("/stats/season", {"year": yr, "seasonType": "both"})
             if not data:
                 print(f"[cfbd] No team stats data for {yr}")
                 team_stats[yr] = {}
@@ -1109,7 +1109,7 @@ def fetch_cfbd_college_stats(
             print(f"[cfbd] Fetching player stats for {yr}")
             try:
                 data = _cfbd_get("/stats/player/season",
-                                 {"year": yr, "seasonType": "regular"}) or []
+                                 {"year": yr, "seasonType": "both"}) or []
                 bn: Dict[str, List] = {}
                 bi: Dict[int, List] = {}
                 for row in data:
@@ -1644,7 +1644,7 @@ def discover_breakout_prospects(
         try:
             data = _cfbd_get(
                 "/stats/player/season",
-                {"year": season_year, "seasonType": "regular", "category": category},
+                {"year": season_year, "seasonType": "both", "category": category},
                 retries=2,
             ) or []
         except Exception as exc:
