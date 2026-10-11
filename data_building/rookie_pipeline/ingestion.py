@@ -1900,6 +1900,15 @@ def load_prospects_for_year(draft_year: int) -> List[Dict[str, Any]]:
         espn_headshots = {}
     print(f"[ingestion] ESPN headshots resolved for {len(espn_headshots)} prospects")
 
+    print(f"[ingestion] Resolving ESPN experience for {len(sr_prospects)} prospects")
+    try:
+        from .espn_scraper import fetch_espn_experience_via_roster
+        espn_experience = fetch_espn_experience_via_roster(sr_prospects)
+    except Exception as exc:
+        print(f"[ingestion] ERROR in ESPN experience lookup - {type(exc).__name__}: {exc}")
+        espn_experience = {}
+    print(f"[ingestion] ESPN experience resolved for {len(espn_experience)} prospects")
+
     print(f"[ingestion] Fetching NFLverse combine data for {draft_year}")
     try:
         combine_data = fetch_nflverse_combine(draft_year)
@@ -1949,11 +1958,12 @@ def load_prospects_for_year(draft_year: int) -> List[Dict[str, Any]]:
                 "source":           "sportradar",
             }
 
-            # ── Age: ESPN DOB (exact) → seed → experience estimate ───────────────
+            # ── Age: ESPN DOB (exact) → seed → ESPN roster experience → Sportradar experience ──
             try:
                 p["age"] = (
                     espn_ages.get(name_key) or
                     (seed_p or {}).get("age") or
+                    _estimate_age(espn_experience.get(name_key), draft_year) or
                     _estimate_age(sr.get("_experience"), draft_year)
                 )
             except Exception as exc:
