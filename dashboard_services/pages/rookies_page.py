@@ -985,6 +985,12 @@ def build_prospects_body(is_admin: bool = False) -> str:
     header.style.display = 'grid';
     count.style.display  = 'none';
 
+    // Hide the Ath header column when no prospect has athleticism data
+    // (pre-combine). Matches the row-level hide in rkRender.
+    var hasAth = pageItems.some(function(r) { return r.athleticism_score != null; });
+    var athHeader = header.querySelector('span:nth-child(4)');
+    if (athHeader) athHeader.style.display = hasAth ? '' : 'none';
+
     list.innerHTML = '';
 
     // Tier dividers (player-rankings style) only make sense on the default
