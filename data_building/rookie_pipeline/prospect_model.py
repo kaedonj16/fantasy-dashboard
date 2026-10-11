@@ -860,9 +860,24 @@ def calc_breakout_score(seasons: List[Dict], age: Optional[float], position: str
     traj_score = 50.0
     if len(sorted_s) >= 2:
         prev = sorted_s[-2]
+        from datetime import date as _d
+        _cy = _d.today().year
+        _is_current_in_progress = _safe(ls.get("season"), 0) == _cy
+
         curr_yds = _safe(ls.get("receiving_yards", 0)) + _safe(ls.get("rush_yards", 0)) + _safe(ls.get("pass_yards", 0)) * 0.5
         prev_yds = _safe(prev.get("receiving_yards", 0)) + _safe(prev.get("rush_yards", 0)) + _safe(prev.get("pass_yards", 0)) * 0.5
-        if prev_yds > 0:
+
+        if _is_current_in_progress:
+            # In-progress season: compare per-game rates, not totals.
+            # A player with 916 yds in 7 games is improving over 1243 yds in 13 games.
+            curr_gp = max(_safe(ls.get("games_played"), 1), 1)
+            prev_gp = max(_safe(prev.get("games_played"), 1), 1)
+            curr_pg = curr_yds / curr_gp
+            prev_pg = prev_yds / prev_gp
+            if prev_pg > 0:
+                growth = (curr_pg - prev_pg) / prev_pg
+                traj_score = _clip(_scale(growth, -0.20, 0.60))
+        elif prev_yds > 0:
             growth = (curr_yds - prev_yds) / prev_yds
             traj_score = _clip(_scale(growth, -0.20, 0.60))
 
@@ -899,15 +914,46 @@ def calc_breakout_score(seasons: List[Dict], age: Optional[float], position: str
         # the player was, not merely that they cleared the threshold.  A player
         # barely above threshold (dom ≈ thresh) should not receive the same age
         # credit as a player who doubled the threshold.
-        # Scale: dom = thresh → 0% credit; dom = 2×thresh → 100% credit.
+        # Improved scale: dom = thresh → 50% credit; dom = 1.5×thresh → 100% credit.
+        # The old scale (0% at threshold) was too harsh, especially for in-progress
+        # seasons where DOM can be volatile with small samples.
         if thresh is not None and thresh > 0 and pos != "QB":
             if dom > thresh:
-                dominance_factor = min(1.0, (dom / thresh - 1.0))
+                ratio = dom / thresh
+                # 1.0x -> 0.5, 1.5x -> 1.0, cap at 1.0
+                dominance_factor = min(1.0, 0.5 + (ratio - 1.0))
                 adj_breakout_score *= dominance_factor
             else:
                 adj_breakout_score = 0.0
 
     score = dom_score * 0.45 + traj_score * 0.35 + adj_breakout_score * 0.20
+
+    # Elite underclassman floor: a freshman/sophomore (age <= 20 in that
+    # season) with elite raw production has proven breakout ability regardless
+    # of what the weighted components say. Don't let trajectory noise from
+    # in-progress seasons or DOM thresholds on stacked teams drag down a
+    # genuinely elite early-career season.
+    # WR/TE: 1,200+ receiving yards; RB: 1,200+ rush yards; QB: 3,500+ pass yards
+    if age is not None and sorted_s:
+        current_year = _safe(sorted_s[-1].get("season"), 0)
+        for s in sorted_s:
+            s_year = _safe(s.get("season"), 0)
+            if s_year <= 0 or current_year <= 0:
+                continue
+            s_age = age - (current_year - s_year)
+            if s_age > 20:
+                continue
+            elite_prod = False
+            if pos in ("WR", "TE"):
+                elite_prod = _safe(s.get("receiving_yards", 0)) >= 1200
+            elif pos == "RB":
+                elite_prod = _safe(s.get("rush_yards", 0)) >= 1200
+            elif pos == "QB":
+                elite_prod = _safe(s.get("pass_yards", 0)) >= 3500
+            if elite_prod:
+                score = max(score, 85.0)
+                break
+
     return _clip(score)
 
 
