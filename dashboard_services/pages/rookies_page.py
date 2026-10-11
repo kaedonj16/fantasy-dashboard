@@ -1132,7 +1132,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
           '<span class="rk-pos" style="--pc:' + posColor + ';margin-left:0">' + rkEsc(pos) + '</span>' +
           (r.school ? '<span>' + rkEsc(r.school) + '</span>' : '') +
           '<span id="rkMetaConf"></span>' +
-          '<span>&middot;</span><span>' + age + ' yrs</span>' +
+          (age != null && age !== '' && age !== '-' ? '<span>&middot;</span><span>' + age + ' yrs</span>' : '') +
           '<span id="rkMetaStars"></span>' +
           (r.draft_class_year ? '<span>&middot;</span><span>' + r.draft_class_year + ' Draft</span>' : '') + '</div>' +
         (r.transfer_history ? '<div class="m-transfer">Transfer: ' + rkEsc(r.transfer_history) + '</div>' : '') +
@@ -1276,8 +1276,8 @@ def build_prospects_body(is_admin: bool = False) -> str:
         if (r.recruit_national_rank != null)
           det += (det ? ', ' : '') + '#' + r.recruit_national_rank + " nat'l";
         if (r.recruit_position_rank != null)
-          det += (det ? ', ' : '') + '#' + r.recruit_position_rank + ' ' + pos;
-        ms.innerHTML = '<span>&middot;</span><span>' + st + '-star' +
+          det += (det ? ', ' : '') + '#' + r.recruit_position_rank + ' ' + (r.position || '');
+        ms.innerHTML = '<span>&middot;</span> <span>' + st + '-star' +
           (det ? ' (' + rkEsc(det) + ')' : '') + '</span>';
       } else {
         ms.innerHTML = '';
