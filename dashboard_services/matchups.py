@@ -2229,7 +2229,11 @@ def render_matchup_slide(
             period = line_score.get("period", "")
             clock = game.get("gameClock", "")
             prefix = "@ " + opp if not is_home else "vs " + opp
-            live_clock = " ".join(str(x) for x in [period, clock] if x).strip()
+            # "Q" prefix on the quarter number: "3 5:35" -> "Q3 5:35"
+            period_txt = str(period).strip()
+            if period_txt.isdigit():
+                period_txt = f"Q{period_txt}"
+            live_clock = " ".join(str(x) for x in [period_txt, clock] if x).strip()
             rest = " ".join(x for x in [score_str, prefix] if x).strip()
 
             if not allow_live:
@@ -2455,12 +2459,6 @@ def render_matchup_slide(
             if pid else " class='pname'"
         )
 
-        stats_inline = f"<span class='meta m-cell-stats mb-stat'>{stats}</span>" if stats else ""
-        if status == STATUS_FINAL and not stats and raw_stat_entry is None and not is_bye:
-            stats_inline = (
-                "<span class='meta m-cell-stats mb-stat m-cell-stats--unavailable'>"
-                "Stats unavailable</span>"
-            )
         team_span = f"<span class='meta p-team mb-team'>{meta_content}</span>" if meta_content else ""
 
         # Compact board cell: name (first initial + last) on top, POS • TEAM
@@ -2476,10 +2474,16 @@ def render_matchup_slide(
             f"<span{clickable_attrs}>{_display_name}</span>"
             f"{team_span}"
             f"<span class='meta p-game-line mb-game mb-matchup'>{game_line}</span>"
-            f"{stats_inline}"
             "</div>"
         )
 
+        # Stat line content for the under-drive-bar row. Raw stats string,
+        # or the "Stats unavailable" marker for final games with no line.
+        _stat_content = stats if stats else None
+        _stat_unavailable = (
+            status == STATUS_FINAL and not stats
+            and raw_stat_entry is None and not is_bye
+        )
         return (
             info_html,
             pos,
@@ -2487,7 +2491,7 @@ def render_matchup_slide(
             display_proj,
             is_bye,
             is_not_started,
-            (stats if stats else None),
+            (_stat_content, _stat_unavailable),
             str(nfl or "").upper(),
             str(pid or ""),
         )
@@ -2572,6 +2576,30 @@ def render_matchup_slide(
         left_fld = f"<div class='mb-fld mb-fld-span-l' data-team='{html.escape(left_nfl)}'></div>"
         right_fld = f"<div class='mb-fld mb-fld-span-r' data-team='{html.escape(right_nfl)}'></div>"
 
+        # Stat line sits UNDER the drive bar (Kaedon's call), never truncated.
+        # Stats come back from player_bits as element 6; keep the
+        # "Stats unavailable" fallback that player_bits already builds.
+        def _stat_row(stats_tuple, span_cls):
+            if not stats_tuple:
+                return ""
+            stats_val, unavailable = stats_tuple
+            if unavailable:
+                inner = (
+                    "<span class='meta m-cell-stats mb-stat "
+                    "m-cell-stats--unavailable'>Stats unavailable</span>"
+                )
+            elif stats_val:
+                inner = (
+                    "<span class='meta m-cell-stats mb-stat'>"
+                    f"{html.escape(str(stats_val))}</span>"
+                )
+            else:
+                return ""
+            return f"<div class='mb-stat-row {span_cls}'>{inner}</div>"
+
+        left_stat_row = _stat_row(_left_stats, "mb-fld-span-l")
+        right_stat_row = _stat_row(_right_stats, "mb-fld-span-r")
+
         rows_html.append(
             "<div class=\"mb-row\">"
             f"<div class=\"mb-cell mb-cell-l\">{left_info}</div>"
@@ -2581,6 +2609,8 @@ def render_matchup_slide(
             f"<div class=\"mb-cell mb-cell-r\">{right_info}</div>"
             f"{left_fld}"
             f"{right_fld}"
+            f"{left_stat_row}"
+            f"{right_stat_row}"
             "</div>"
         )
 
