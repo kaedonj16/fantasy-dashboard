@@ -1238,6 +1238,17 @@ def calc_durability_score(seasons: List[Dict]) -> float:
     if not gp_entries:
         return 60.0
 
+    from datetime import date as _date2
+    _cy = _date2.today().year
+    _completed_entries = [
+        (i, gp) for i, gp in gp_entries
+        if sorted_s[i].get("season") != _cy
+    ]
+    # If no COMPLETED season has GP data, we can't judge durability yet.
+    # Return neutral instead of penalizing an in-progress season.
+    if not _completed_entries:
+        return 60.0
+
     n = len(sorted_s)
     # Recency weights: most recent season gets highest weight
     weighted_sum = 0.0
@@ -1250,13 +1261,31 @@ def calc_durability_score(seasons: List[Dict]) -> float:
 
     avg_gp = weighted_sum / total_weight
 
-    # Most-recent season penalty: if the player just had a short season it's a red flag
+    # Most-recent season penalty: if the player just had a short season it's a red flag.
+    # Skip when the most recent season is still in progress (current year):
+    # games haven't been "missed", they just haven't been played yet.
+    from datetime import date as _date
+    _current_year = _date.today().year
+    _most_recent_idx = gp_entries[-1][0]
+    _most_recent_season_year = sorted_s[_most_recent_idx].get("season")
+    _in_progress = _most_recent_season_year == _current_year
     recent_gp = gp_entries[-1][1]  # last entry is most recent with gp data
-    recent_penalty = max(0.0, (9.0 - recent_gp) * 6.0) if recent_gp < 9 else 0.0
+    if _in_progress:
+        recent_penalty = 0.0
+    else:
+        recent_penalty = max(0.0, (9.0 - recent_gp) * 6.0) if recent_gp < 9 else 0.0
 
-    # Career floor: any season with very few games is concerning
-    min_gp = min(gp for _, gp in gp_entries)
-    floor_pen = max(0.0, (7.0 - min_gp) * 4.0)
+    # Career floor: any COMPLETED season with very few games is concerning.
+    # Exclude the in-progress season from the floor check.
+    _completed_gps = [
+        gp for i, gp in gp_entries
+        if sorted_s[i].get("season") != _current_year
+    ]
+    if _completed_gps:
+        min_gp = min(_completed_gps)
+        floor_pen = max(0.0, (7.0 - min_gp) * 4.0)
+    else:
+        floor_pen = 0.0
 
     avg_score = _scale(avg_gp, 7.0, 14.0)
     return _clip(avg_score - recent_penalty - floor_pen)
