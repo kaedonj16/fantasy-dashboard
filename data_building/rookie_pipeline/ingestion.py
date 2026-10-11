@@ -1198,23 +1198,27 @@ def fetch_cfbd_college_stats(
 
         # Target share from play-by-play (latest season only - that's what
         # the model reads). Best-effort: skips silently when unavailable.
+        # Fetches for ALL seasons with data, not just the latest.
         try:
-            latest = draft_year - 1
-            teams = {
-                s.get("team")
-                for seasons in result.values()
-                for s in seasons
-                if s.get("season") == latest and s.get("team")
-            }
-            targets_map = fetch_cfbd_targets(draft_year, sorted(teams))
+            teams_by_year: Dict[int, set] = {}
+            for seasons in result.values():
+                for s in seasons:
+                    yr = s.get("season")
+                    team = s.get("team")
+                    if yr and team:
+                        teams_by_year.setdefault(yr, set()).add(team)
+            teams_by_year = {yr: sorted(teams) for yr, teams in teams_by_year.items()}
+            targets_map = fetch_cfbd_targets(draft_year, teams_by_year)
             if targets_map:
                 merged = 0
                 for name, seasons in result.items():
-                    t = targets_map.get(name)
-                    if not t:
+                    t_by_year = targets_map.get(name)
+                    if not t_by_year:
                         continue
                     for s in seasons:
-                        if s.get("season") == latest:
+                        yr = s.get("season")
+                        t = t_by_year.get(yr) if yr else None
+                        if t:
                             s["targets"] = t["targets"]
                             s["target_share"] = t["target_share"]
                             merged += 1
@@ -1453,23 +1457,29 @@ def fetch_sportradar_prospects(draft_year: int) -> List[Dict[str, Any]]:
 
 def fetch_cfbd_targets(
     draft_year: int,
-    teams: List[str],
-) -> Dict[str, Dict[str, Any]]:
+    teams_by_year: Dict[int, List[str]],
+) -> Dict[str, Dict[int, Dict[str, Any]]]:
     """
     Target share from CFBD play-by-play stats (free, no PFF needed).
 
     Uses /plays/stats/types to find the targets stat type, then pulls
-    per-athlete target counts per team for the latest college season.
-    Returns {name_lower: {"targets": int, "target_share": float}}.
+    per-athlete target counts per team for each season in teams_by_year.
+    Returns {name_lower: {year: {"targets": int, "target_share": float}}}.
     Returns {} on any failure - the pipeline continues without targets
     (the model falls back to receptions-based proxies).
+
+    Args:
+        draft_year: The draft class year (for logging)
+        teams_by_year: {season_year: [team names]} - teams to fetch per season
     """
-    if not CFBD_KEY or not teams:
+    if not CFBD_KEY or not teams_by_year:
+        if not CFBD_KEY:
+            print("[targets] No CFBD_API_KEY - skipping")
         return {}
-    season_year = draft_year - 1
 
     try:
         types = _cfbd_get("/plays/stats/types", retries=2) or []
+        print(f"[targets] Got {len(types)} stat types from API")
     except Exception as exc:
         print(f"[targets] stat-types lookup failed - {type(exc).__name__}: {exc}")
         return {}
@@ -1482,77 +1492,98 @@ def fetch_cfbd_targets(
             break
     if not target_type_id:
         print("[targets] no targets stat type in /plays/stats/types - skipping")
+        print(f"[targets] Available types: {[str(t.get('name'))[:30] for t in types[:10]]}")
         return {}
 
-    result: Dict[str, Dict[str, Any]] = {}
-    for team in sorted(set(teams)):
-        try:
-            rows = _cfbd_get(
-                "/plays/stats",
-                {"year": season_year, "team": team, "statTypeId": target_type_id},
-                retries=2,
-            ) or []
-        except Exception as exc:
-            print(f"[targets] {team} failed - {type(exc).__name__}: {exc}")
+    result: Dict[str, Dict[int, Dict[str, Any]]] = {}
+    for season_year, teams in sorted(teams_by_year.items()):
+        if not teams:
             continue
-        by_athlete: Dict[str, int] = {}
-        team_total = 0
-        for r in rows:
-            name = str(
-                r.get("athleteName") or r.get("athlete") or r.get("player") or r.get("name") or ""
-            ).strip()
-            count = _safe_int(r.get("stat") or r.get("count") or r.get("value")) or 0
-            if not name or count <= 0:
+        print(f"[targets] Fetching {season_year} for {len(set(teams))} teams")
+        for team in sorted(set(teams)):
+            try:
+                rows = _cfbd_get(
+                    "/plays/stats",
+                    {"year": season_year, "team": team, "statTypeId": target_type_id},
+                    retries=2,
+                ) or []
+            except Exception as exc:
+                print(f"[targets] {team} {season_year} failed - {type(exc).__name__}: {exc}")
                 continue
-            key = name.lower()
-            by_athlete[key] = by_athlete.get(key, 0) + count
-            team_total += count
-        for key, tgts in by_athlete.items():
-            result[key] = {
-                "targets": tgts,
-                "target_share": round(tgts / team_total, 4) if team_total else 0.0,
-                "team": team,
-            }
-    print(f"[targets] collected targets for {len(result)} athletes ({season_year}, {len(set(teams))} teams)")
+            by_athlete: Dict[str, int] = {}
+            team_total = 0
+            for r in rows:
+                name = str(
+                    r.get("athleteName") or r.get("athlete") or r.get("player") or r.get("name") or ""
+                ).strip()
+                count = _safe_int(r.get("stat") or r.get("count") or r.get("value")) or 0
+                if not name or count <= 0:
+                    continue
+                key = name.lower()
+                by_athlete[key] = by_athlete.get(key, 0) + count
+                team_total += count
+            for key, tgts in by_athlete.items():
+                if key not in result:
+                    result[key] = {}
+                result[key][season_year] = {
+                    "targets": tgts,
+                    "target_share": round(tgts / team_total, 4) if team_total else 0.0,
+                    "team": team,
+                }
+    total_athletes = len(result)
+    print(f"[targets] collected targets for {total_athletes} athletes across {len(teams_by_year)} seasons")
     return result
 
 
 def backfill_cfbd_targets(draft_year: int) -> Dict[str, int]:
     """
     Standalone targets backfill: fills the `targets` column in
-    rookie_prospect_source_data for the class's latest college season,
-    without re-running the full CFBD stats fetch (Stage 2 skips when stats
-    already exist). Returns {"updated": n, "teams": m}.
+    rookie_prospect_source_data for ALL seasons of the class,
+    without re-running the full CFBD stats fetch. Returns {"updated": n, "teams": m}.
     """
     from dashboard_services.db import get_conn
 
-    season_year = draft_year - 1
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT DISTINCT rp.player_id, rp.name, rsd.team
+                SELECT DISTINCT rp.player_id, rp.name, rsd.team, rsd.season
                 FROM rookie_prospects rp
                 JOIN rookie_prospect_source_data rsd ON rsd.player_id = rp.player_id
-                WHERE rp.draft_class_year = %s AND rsd.season = %s AND rsd.team IS NOT NULL
+                WHERE rp.draft_class_year = %s AND rsd.team IS NOT NULL
+                AND (rsd.targets IS NULL OR rsd.targets = 0)
                 """,
-                (draft_year, season_year),
+                (draft_year,),
             )
             rows = cur.fetchall()
     if not rows:
-        print(f"[targets] no prospect teams found for {draft_year} season {season_year}")
+        print(f"[targets] no prospects missing targets for {draft_year}")
         return {"updated": 0, "teams": 0}
 
-    teams = sorted({r["team"] for r in rows})
-    targets_map = fetch_cfbd_targets(draft_year, teams)
+    # Group teams by season
+    teams_by_year: Dict[int, set] = {}
+    for r in rows:
+        season = r["season"] if isinstance(r, dict) else r[3]
+        team = r["team"] if isinstance(r, dict) else r[2]
+        teams_by_year.setdefault(season, set()).add(team)
+    teams_by_year = {yr: sorted(teams) for yr, teams in teams_by_year.items()}
+
+    targets_map = fetch_cfbd_targets(draft_year, teams_by_year)
     if not targets_map:
-        return {"updated": 0, "teams": len(teams)}
+        total_teams = sum(len(t) for t in teams_by_year.values())
+        return {"updated": 0, "teams": total_teams}
 
     updated = 0
     with get_conn() as conn:
         with conn.cursor() as cur:
             for r in rows:
-                t = targets_map.get(r["name"].lower().strip())
+                pid = r["player_id"] if isinstance(r, dict) else r[0]
+                name = r["name"] if isinstance(r, dict) else r[1]
+                season = r["season"] if isinstance(r, dict) else r[3]
+                t_by_year = targets_map.get(name.lower().strip())
+                if not t_by_year:
+                    continue
+                t = t_by_year.get(season)
                 if not t:
                     continue
                 cur.execute(
@@ -1561,12 +1592,13 @@ def backfill_cfbd_targets(draft_year: int) -> Dict[str, int]:
                     SET targets = %s
                     WHERE player_id = %s AND season = %s
                     """,
-                    (t["targets"], r["player_id"], season_year),
+                    (t["targets"], pid, season),
                 )
                 updated += cur.rowcount
         conn.commit()
-    print(f"[targets] backfilled targets for {updated} player-seasons ({len(teams)} teams)")
-    return {"updated": updated, "teams": len(teams)}
+    total_teams = sum(len(t) for t in teams_by_year.values())
+    print(f"[targets] backfilled targets for {updated} player-seasons ({total_teams} teams)")
+    return {"updated": updated, "teams": total_teams}
 
 
 def _enrich_bio_from_cfbd_roster(prospects: List[Dict[str, Any]], draft_year: int) -> List[Dict[str, Any]]:
