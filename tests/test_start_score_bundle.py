@@ -116,6 +116,23 @@ class _FakeResult:
         return self._one
 
 
+class _FakeCursor:
+    """Mirrors psycopg3: executemany lives on the cursor, not the connection."""
+    def __init__(self, conn):
+        self._conn = conn
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def executemany(self, sql, rows):
+        self._conn.statements.append(sql)
+        self._conn.written.extend(rows)
+        return _FakeResult()
+
+
 class _FakeConn:
     """Captures writes; serves canned reads. Context-manager compatible."""
     def __init__(self, read_rows=None, count=0):
@@ -130,17 +147,15 @@ class _FakeConn:
     def __exit__(self, *exc):
         return False
 
+    def cursor(self):
+        return _FakeCursor(self)
+
     def execute(self, sql, params=None):
         self.statements.append(sql)
         if "COUNT(*)" in sql:
             return _FakeResult(one={"n": self.count})
         if sql.strip().upper().startswith("SELECT"):
             return _FakeResult(rows=self.read_rows)
-        return _FakeResult()
-
-    def executemany(self, sql, rows):
-        self.statements.append(sql)
-        self.written.extend(rows)
         return _FakeResult()
 
 
