@@ -672,6 +672,61 @@ def _build_cfbd_season(raw_stats: List[Dict], team_stats: Dict, season: int,
     return row
 
 
+def _get_existing_games_played(draft_year: int, years: List[int]) -> Dict[str, Dict[int, int]]:
+    """Get existing games_played from DB: {name_lower: {year: count}}"""
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT LOWER(name), season, games_played
+                    FROM rookie_prospect_source_data
+                    WHERE draft_class_year = %s AND season = ANY(%s)
+                    AND games_played IS NOT NULL
+                """, (draft_year, years))
+                result = {}
+                for name, season, gp in cur.fetchall():
+                    result.setdefault(name, {})[season] = gp
+                return result
+    except Exception:
+        return {}
+
+
+def _get_weeks_needing_fetch(year: int, draft_year: int, db_games: Dict) -> List[int]:
+    """
+    Determine which weeks need API fetching.
+    - Past seasons: if we have DB data, skip entirely (return [])
+    - Current season: fetch only weeks after the max week already counted
+    """
+    from datetime import date as _d
+    today = _d.today()
+    current_year = today.year
+
+    if year < current_year:
+        # Past season: if any player has data, assume complete
+        for yr_counts in db_games.values():
+            if year in yr_counts:
+                return []  # Already have data, skip
+        return list(range(1, 18))  # No data, fetch all
+
+    # Current season: estimate current week, fetch only new weeks
+    # We don't track per-week, so if we have any data, fetch only the latest week
+    # to catch up. This is approximate but saves API calls.
+    season_start = _d(current_year, 8, 25)
+    if today < season_start:
+        current_week = 1
+    else:
+        current_week = min((today - season_start).days // 7 + 1, 17)
+
+    has_data = any(year in yr_counts for yr_counts in db_games.values())
+    if has_data:
+        # Only fetch the current week (incremental update)
+        return [current_week]
+    else:
+        # No data yet, fetch all weeks up to current
+        return list(range(1, current_week + 1))
+
+
 def fetch_cfbd_games_played(draft_year: int) -> Dict[str, Dict[int, int]]:
     """
     Fetch exact games played per player per season via CFBD /games/players endpoint.
@@ -693,11 +748,25 @@ def fetch_cfbd_games_played(draft_year: int) -> Dict[str, Dict[int, int]]:
     years   = [draft_year - 1, draft_year - 2, draft_year - 3]
     result: Dict[str, Dict[int, int]] = {}   # name_lower → {yr: count}
 
+    # Incremental: for past seasons, use DB values if available (don't re-fetch).
+    # For current season, only fetch weeks not yet in DB.
+    db_games = _get_existing_games_played(draft_year, years)
+
     for yr in years:
         player_games: Dict[str, set] = {}   # name_lower → set of game_ids
         empty_streak = 0
 
-        for week in range(1, 18):   # weeks 1-17 covers FBS regular season
+        # Determine which weeks need fetching
+        weeks_to_fetch = _get_weeks_needing_fetch(yr, draft_year, db_games)
+        if not weeks_to_fetch:
+            print(f"[cfbd_gp] Skipping {yr} - all weeks already fetched")
+            # Use DB values directly
+            for name_lower, yr_counts in db_games.items():
+                if yr in yr_counts:
+                    result.setdefault(name_lower, {})[yr] = yr_counts[yr]
+            continue
+
+        for week in weeks_to_fetch:
             try:
                 data = _cfbd_get(
                     "/games/players",
@@ -738,12 +807,27 @@ def fetch_cfbd_games_played(draft_year: int) -> Dict[str, Dict[int, int]]:
             time.sleep(0.2)   # light rate-limiting between week calls
 
         # Convert game-id sets → counts and store
+        # For incremental updates, ADD new games to existing DB count
         count = 0
         for player_name, game_ids in player_games.items():
-            result.setdefault(player_name, {})[yr] = len(game_ids)
+            new_games = len(game_ids)
+            existing = db_games.get(player_name, {}).get(yr, 0)
+            # If we fetched only new weeks, add to existing.
+            # If we fetched all weeks (first run), use the fresh count.
+            if yr == _get_current_year() and existing > 0:
+                # Incremental: add new week's games
+                result.setdefault(player_name, {})[yr] = existing + new_games
+            else:
+                # First fetch or past season: use fresh count
+                result.setdefault(player_name, {})[yr] = new_games
             count += 1
 
     return result
+
+
+def _get_current_year():
+    from datetime import date as _d
+    return _d.today().year
 
 
 # Name mapping: {cfbd_name: desired_display_name}
@@ -1038,6 +1122,43 @@ def fetch_cfbd_team_context(draft_year: int) -> Dict[Tuple[str, int], Dict[str, 
     return context
 
 
+def _filter_years_needing_fetch(all_years: List[int], draft_year: int) -> List[int]:
+    """
+    Incremental fetch logic: past seasons only need to be fetched once.
+    Returns the subset of all_years that actually need API calls:
+    - Always includes the current season (all_years[0]) for fresh data
+    - Includes past seasons only if they have no data in the DB yet
+    """
+    if not all_years:
+        return []
+
+    current_season = all_years[0]
+    past_seasons = all_years[1:]
+
+    # Check which past seasons already have data
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT DISTINCT season FROM rookie_prospect_source_data
+                    WHERE draft_class_year = %s AND season = ANY(%s)
+                """, (draft_year, past_seasons))
+                existing = {row[0] for row in cur.fetchall()}
+    except Exception:
+        # If DB check fails, fall back to fetching everything (safe)
+        existing = set()
+
+    needed = [current_season]  # Always refresh current season
+    for yr in past_seasons:
+        if yr not in existing:
+            needed.append(yr)
+        else:
+            print(f"[cfbd] Skipping {yr} - already in DB")
+
+    return sorted(needed)
+
+
 def fetch_cfbd_college_stats(
     draft_year: int,
     fetch_games_played: bool = False,
@@ -1059,7 +1180,11 @@ def fetch_cfbd_college_stats(
         print("[cfbd] No CFBD_API_KEY set - skipping college stats")
         return {}
 
-    years = [draft_year - 1, draft_year - 2, draft_year - 3, draft_year - 4]
+    all_years = [draft_year - 1, draft_year - 2, draft_year - 3, draft_year - 4]
+    # Incremental fetch: only get past seasons on first ingestion.
+    # After that, only refresh the current season (all_years[0]).
+    # Old data doesn't change, so don't waste API calls re-fetching it.
+    years = _filter_years_needing_fetch(all_years, draft_year)
 
     try:
         # Team season totals for market share / dominator calculation
