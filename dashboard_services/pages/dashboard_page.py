@@ -879,13 +879,13 @@ def build_dashboard_body(ctx: dict) -> str:
       <main class="os-main-col">
         {_hero_strip_html}
 
+        {_rz_cta_html}
+
         {_matchup_preview_html}
 
         {_action_queue_html}
 
         {usage_movers_html}
-
-        {_rz_cta_html}
 
         {_bb_outlook_html}
 
