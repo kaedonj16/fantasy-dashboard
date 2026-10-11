@@ -22639,6 +22639,16 @@ function renderTeamDetails(data) {
 // the multi-season scan never blocks the matchups render. Each node hydrates
 // once; a MutationObserver picks up week-switch slide swaps.
 (function initRivalryLines() {
+  // Rendered-label cache, keyed by league + ordered pair, plus in-flight
+  // fetch dedupe. In-place content swaps (soft-nav, auto-revalidate,
+  // manual refresh) wipe the hydrated nodes; without a cache each swap
+  // re-fires the slow /api/rivalry multi-season scan and the line visibly
+  // blinks out and back in. Cached labels re-render synchronously.
+  const labelCache = new Map();
+  const inflight = new Map();
+  function cacheKey(c, a, b) {
+    return [c.platform, c.season, c.leagueId, a, b].join(':');
+  }
   function label(data, lname, rname) {
     const wa = data.wins_a || 0, wb = data.wins_b || 0;
     const games = Array.isArray(data.games) ? data.games : [];
@@ -22665,6 +22675,9 @@ function renderTeamDetails(data) {
     }
     return `All-time H2H: ${head}${tail}`;
   }
+  function renderRivalry(node, html) {
+    if (html) { node.innerHTML = html; node.hidden = false; }
+  }
   async function hydrate(node) {
     if (!node || node.dataset.rivDone) return;
     const c = window.__brctx || {};
@@ -22672,12 +22685,26 @@ function renderTeamDetails(data) {
     node.dataset.rivDone = '1';
     const a = node.dataset.rivA, b = node.dataset.rivB;
     if (!a || !b || a === b) return;
+    const key = cacheKey(c, a, b);
+    const lname = node.dataset.rivLuser || node.dataset.rivLname || 'Left';
+    const rname = node.dataset.rivRuser || node.dataset.rivRname || 'Right';
+    // Swap wiped a previously hydrated node: re-render from cache instantly.
+    if (labelCache.has(key)) { renderRivalry(node, labelCache.get(key)); return; }
     try {
-      const res = await fetch(`/api/rivalry/${c.platform}/${c.season}/${c.leagueId}?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`);
-      if (!res.ok) return;
-      const data = await res.json();
-      const html = label(data, node.dataset.rivLuser || node.dataset.rivLname || 'Left', node.dataset.rivRuser || node.dataset.rivRname || 'Right');
-      if (html) { node.innerHTML = html; node.hidden = false; }
+      let p = inflight.get(key);
+      if (!p) {
+        p = fetch(`/api/rivalry/${c.platform}/${c.season}/${c.leagueId}?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`)
+          .then(res => (res && res.ok ? res.json() : null))
+          .catch(() => null)
+          .finally(() => { inflight.delete(key); });
+        inflight.set(key, p);
+      }
+      const data = await p;
+      const html = data ? label(data, lname, rname) : '';
+      // Cache only successful responses: a failed fetch stays retryable on
+      // the next swap instead of hiding the line for the whole session.
+      if (data) labelCache.set(key, html);
+      renderRivalry(node, html);
     } catch (_) { /* leave the line hidden on any failure */ }
   }
   function scan(root) {
