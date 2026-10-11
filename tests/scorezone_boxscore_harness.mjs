@@ -86,6 +86,12 @@ const RB_COLS = [
   { key: 'rush_att', label: 'Att' }, { key: 'rush_yds', label: 'Ru Yds' },
   { key: 'rush_td', label: 'Ru TD' }, { key: 'rec', label: 'Rec' },
 ];
+// Montgomery (3.0 FP) must sort below Gibbs (16.2); Knight has no data at all.
+const DET_RB = [
+  { id: '2', name: 'J. Gibbs', cells: { rush_att: 14, rush_yds: 72, rush_td: 1, rec: 3 } },
+  { id: '6', name: 'D. Montgomery', cells: { rush_att: 8, rush_yds: 20, rush_td: 0, rec: 1 } },
+  { id: '7', name: 'Z. Knight', cells: {} },
+];
 const LIVE = {
   available: true, started: true, status: 'live',
   quarter: '3', clock: '4:32', view_team: 'DET',
@@ -93,7 +99,7 @@ const LIVE = {
   teams: {
     DET: { team: 'DET', groups: [
       group('QB', QB_COLS, [{ id: '1', name: 'J. Goff', cells: { cmp_att: '18/26', pass_yds: 214, pass_td: 2, pass_int: 0 } }]),
-      group('RB', RB_COLS, [{ id: '2', name: 'J. Gibbs', cells: { rush_att: 14, rush_yds: 72, rush_td: 1, rec: 3 } }]),
+      group('RB', RB_COLS, DET_RB),
       group('K', [{ key: 'fg', label: 'FG' }], [{ id: '3', name: 'J. Bates', cells: { fg: '1/1' } }]),
       group('DEF', [{ key: 'sacks', label: 'Sacks' }], [{ id: '', name: 'DET Defense', cells: { sacks: 2 } }]),
     ] },
@@ -127,6 +133,17 @@ assert.ok(!html.includes('DET Defense'), 'DEF group excluded');
 assert.ok(html.includes('data-box-team="DET"'), 'team toggle has DET');
 assert.ok(html.includes('data-box-team="GB"'), 'team toggle has GB');
 assert.match(html, /is-on[^>]*data-box-team="DET"|data-box-team="DET"[^>]*is-on/, 'DET toggle active');
+
+// ── 1b. Fantasy points column: values, sorting, empty-row drop ──────────
+assert.ok(html.includes('<th scope="col" class="rz-bs-fp"'), 'FP header column rendered');
+assert.ok(html.includes('>16.6</td>'), 'Goff FP = 16.6 PPR (214/25 + 2*4)');
+assert.ok(html.includes('>16.2</td>'), 'Gibbs FP = 16.2 PPR (7.2 + 6 + 3)');
+assert.ok(html.indexOf('J. Gibbs') < html.indexOf('D. Montgomery'),
+  'rows sort by FP descending within the group');
+assert.ok(!html.includes('Z. Knight'), 'all-dash rows are dropped');
+assert.ok(html.includes('16.6 FP'), 'QB group header shows combined FP');
+assert.ok(html.includes('19.2 FP'), 'RB group header shows combined FP (16.2 + 3.0)');
+assert.ok(html.includes('rz-bs-fp is-lead'), 'group FP leader gets the lead class');
 
 // ── 2. Team toggle swaps tables ──────────────────────────────────────────
 const sheetEl = appended.find((el) => el.className.includes('rz-bs-sheet'));

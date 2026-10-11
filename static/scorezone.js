@@ -5020,28 +5020,55 @@
     var groups = (t.groups || []).filter(function(gr) {
       return Object.prototype.hasOwnProperty.call(_BOX_SKILL_POS, gr.pos);
     });
+    // PPR fantasy points from a shaped box-score cell map. The sheet only
+    // renders skill positions (QB/RB/WR/TE), so no K/DEF math is needed.
+    function _boxFantasyPts(cells) {
+      var num = function(v) { var x = parseFloat(v); return isFinite(x) ? x : 0; };
+      var c = cells || {};
+      return num(c.pass_yds) / 25 + num(c.pass_td) * 4 - num(c.pass_int) * 2
+        + num(c.rush_yds) / 10 + num(c.rush_td) * 6
+        + num(c.rec) + num(c.rec_yds) / 10 + num(c.rec_td) * 6
+        - num(c.fum_lost) * 2;
+    }
+    function _boxHasData(p, cols) {
+      return cols.some(function(c) {
+        var v = (p.cells || {})[c.key];
+        return v !== null && v !== undefined && v !== '';
+      });
+    }
     var tables = groups.map(function(gr) {
       var cols = gr.columns || [];
+      var rows = (gr.players || [])
+        .filter(function(p) { return _boxHasData(p, cols); })
+        .map(function(p) { return { p: p, fp: _boxFantasyPts(p.cells) }; })
+        .sort(function(a, b) { return b.fp - a.fp; });
+      if (!rows.length) return '';
+      var groupFp = rows.reduce(function(s, r) { return s + r.fp; }, 0);
+      var leadFp = rows[0].fp;
       var head = '<tr><th scope="col"><span class="rz-sr">Player</span></th>'
+        + '<th scope="col" class="rz-bs-fp" title="Fantasy points (PPR)">FP</th>'
         + cols.map(function(c) { return '<th scope="col">' + _esc(c.label || c.key) + '</th>'; }).join('')
         + '</tr>';
-      var rows = (gr.players || []).map(function(p) {
+      var body = rows.map(function(r) {
+        var p = r.p;
         var cells = cols.map(function(c) {
           var v = (p.cells || {})[c.key];
           return '<td>' + (v === null || v === undefined || v === '' ? '–' : _esc(String(v))) + '</td>';
         }).join('');
         return '<tr data-pid="' + _esc(p.id || '') + '" data-pname="' + _esc(p.name || '') + '">'
-          + '<td class="rz-bs-pname">' + _esc(p.name || '–') + '</td>' + cells + '</tr>';
+          + '<td class="rz-bs-pname">' + _esc(p.name || '–') + '</td>'
+          + '<td class="rz-bs-fp' + (r.fp === leadFp && r.fp > 0 ? ' is-lead' : '') + '">'
+          + r.fp.toFixed(1) + '</td>' + cells + '</tr>';
       }).join('');
-      if (!rows) return '';
-      return '<div class="rz-bs-ptitle">' + _esc(_BOX_SKILL_POS[gr.pos] || gr.pos) + '</div>'
+      return '<div class="rz-bs-ptitle"><span>' + _esc(_BOX_SKILL_POS[gr.pos] || gr.pos)
+        + '</span><span class="rz-bs-gfp">' + groupFp.toFixed(1) + ' FP</span></div>'
         + '<div class="rz-bs-tscroll"><table class="rz-bs-table" data-sortable><thead>' + head
-        + '</thead><tbody>' + rows + '</tbody></table></div>';
+        + '</thead><tbody>' + body + '</tbody></table></div>';
     }).join('');
     if (!tables) {
       tables = '<div class="rz-bs-empty"><p>No player stats yet.</p></div>';
     }
-    return '<div class="rz-bs-sec">Player stats</div>' + toggle + tables;
+    return '<div class="rz-bs-sec">Player stats <span class="rz-bs-note">\u00b7 fantasy points (PPR)</span></div>' + toggle + tables;
   }
 
   function _renderBoxSheet() {
