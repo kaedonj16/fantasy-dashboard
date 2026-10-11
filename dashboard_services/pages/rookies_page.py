@@ -1362,22 +1362,29 @@ def build_prospects_body(is_admin: bool = False) -> str:
     var cb = document.getElementById('rkCombineBody');
     if (cb) {
       var bi = parseInt(ath.broad_jump_in, 10);
-      var broad = isNaN(bi) ? '-' : Math.floor(bi / 12) + "'" + (bi % 12) + '"';
+      var broad = isNaN(bi) ? null : Math.floor(bi / 12) + "'" + (bi % 12) + '"';
       var cells = [
-        ['Height', rkHeightStr(r) || '-'],
-        ['Weight', rkWeightStr(r) || '-'],
-        ['40 Dash', ath.forty_yard != null ? Number(ath.forty_yard).toFixed(2) + 's' : '-'],
-        ['Vertical', ath.vertical_inches != null ? Number(ath.vertical_inches).toFixed(0) + '"' : '-'],
+        ['Height', rkHeightStr(r) || null],
+        ['Weight', rkWeightStr(r) || null],
+        ['40 Dash', ath.forty_yard != null ? Number(ath.forty_yard).toFixed(2) + 's' : null],
+        ['Vertical', ath.vertical_inches != null ? Number(ath.vertical_inches).toFixed(0) + '"' : null],
         ['Broad Jump', broad],
-        ['3-Cone', ath.three_cone != null ? Number(ath.three_cone).toFixed(2) : '-'],
-        ['Shuttle', ath.short_shuttle != null ? Number(ath.short_shuttle).toFixed(2) : '-'],
-        ['Bench', ath.bench_reps != null ? String(ath.bench_reps) : '-'],
-        ['RAS', ath.ras_score != null ? Number(ath.ras_score).toFixed(1) : '-']
-      ];
-      cb.innerHTML = cells.map(function(c) {
-        return '<div class="rk-meas-cell"><div class="rk-meas-label">' + c[0] + '</div>' +
-               '<div class="rk-meas-val">' + rkEsc(c[1]) + '</div></div>';
-      }).join('');
+        ['3-Cone', ath.three_cone != null ? Number(ath.three_cone).toFixed(2) : null],
+        ['Shuttle', ath.short_shuttle != null ? Number(ath.short_shuttle).toFixed(2) : null],
+        ['Bench', ath.bench_reps != null ? String(ath.bench_reps) : null],
+        ['RAS', ath.ras_score != null ? Number(ath.ras_score).toFixed(1) : null]
+      ].filter(function(c) { return c[1] != null && c[1] !== '-'; });
+      if (!cells.length) {
+        // Hide the entire section if no measurables
+        var sec = cb.closest('.rk-modal-sec') || cb.parentElement;
+        if (sec) sec.style.display = 'none';
+        cb.innerHTML = '';
+      } else {
+        cb.innerHTML = cells.map(function(c) {
+          return '<div class="rk-meas-cell"><div class="rk-meas-label">' + c[0] + '</div>' +
+                 '<div class="rk-meas-val">' + rkEsc(c[1]) + '</div></div>';
+        }).join('');
+      }
     }
 
     // Season-by-season production table (position-correct columns)
