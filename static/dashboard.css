@@ -47889,6 +47889,147 @@ em.gneg { background: var(--loss); }
 }
 
 /* ============================================================
+   Mobile dashboard reorg (approved mock: mobile-dashboard-v1.html)
+   Phone-only (<=768px): card reorder, compact hero, compact
+   Next Steps, collapse toggles, 44px touch targets.
+   Placed before the MERGED icon blocks so the merge script
+   cannot wipe it.
+   ============================================================ */
+@media (max-width: 768px) {
+  /* Flatten the 3 desktop columns so every card becomes a flex
+     item of .os-layout (flex-column at <=1280px), then reorder
+     into the approved mobile flow. */
+  .os-layout {
+    gap: 12px;
+  }
+  .os-layout > .os-left-col,
+  .os-layout > .os-main-col,
+  .os-layout > .os-right-col {
+    display: contents;
+  }
+
+  /* Default: supporting sections (season review, bench check,
+     ScoreZone CTA, best-ball outlook, since-last-visit) go last. */
+  .os-layout section,
+  .os-layout .os-action-queue,
+  .os-layout .weekly-rz-cta,
+  .os-layout .slv-wrap {
+    order: 20;
+  }
+  /* Approved mobile flow. */
+  .os-layout .os-hero-strip { order: 1; }
+  .os-layout .os-action-queue { order: 2; }
+  .os-layout .os-matchup-preview { order: 3; }
+  .os-layout .cc-fo-card { order: 4; }
+  .os-layout .cc-inj-card { order: 5; }
+  .os-layout .cc-st-card { order: 6; }
+  .os-layout .cc-aw-card { order: 7; }
+  .os-layout .cc-act-card { order: 8; }
+  .os-layout .usage-movers-card { order: 9; }
+
+  /* Compact hero: team + grade + archetype on one line, 2x2 stat grid. */
+  .os-hero-strip {
+    flex-wrap: wrap;
+    padding: 14px 16px;
+    margin-bottom: 0;
+  }
+  .os-hero-strip-team {
+    flex: 1 1 auto;
+  }
+  .os-hero-strip-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .os-hero-strip-stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 12px;
+    flex-basis: 100%;
+    overflow: visible;
+  }
+  .os-hero-strip-stat .sv {
+    font-size: 19px;
+  }
+
+  /* Compact Next Steps: horizontal cards, inline CTA. */
+  .ns-card .ns-list .ns-item {
+    min-height: 0;
+    padding: 10px 12px;
+    align-items: center;
+  }
+  .ns-card .ns-list .ns-item .ns-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 10px;
+    align-items: center;
+    height: auto;
+  }
+  .ns-card .ns-list .ns-item .ns-tag {
+    grid-column: 1;
+    margin-bottom: 2px;
+  }
+  .ns-card .ns-list .ns-item .ns-action {
+    grid-column: 1;
+    font-size: 13px;
+  }
+  .ns-card .ns-list .ns-item .ns-why {
+    grid-column: 1;
+    font-size: 12px;
+    margin-bottom: 0;
+  }
+  .ns-card .ns-list .ns-item .ns-impact {
+    grid-column: 1;
+    margin-bottom: 0;
+    justify-self: start;
+  }
+  .ns-card .ns-list .ns-item .ns-body > br {
+    display: none;
+  }
+  .ns-card .ns-list .ns-item .ns-cta {
+    grid-column: 2;
+    grid-row: 1 / -1;
+    margin-top: 0;
+    align-self: center;
+    white-space: nowrap;
+    flex-shrink: 0;
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+  .ns-card .ns-expand-toggle,
+  .ns-card .os-action-dismiss {
+    min-height: 44px;
+  }
+
+  /* Banner card collapse toggles: 44px touch target, far right. */
+  .cc-fo-card .card-collapse-toggle,
+  .cc-inj-card .card-collapse-toggle,
+  .cc-act-card .card-collapse-toggle,
+  .cc-st-card .card-collapse-toggle,
+  .cc-aw-card .card-collapse-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+    margin-left: auto;
+    padding: 4px;
+    flex-shrink: 0;
+  }
+
+  /* Standings rows: 44px tall, full names. */
+  .cc-st-row {
+    min-height: 44px;
+  }
+
+  /* Banner card bodies: comfortable touch rhythm. */
+  .cc-act-row,
+  .cc-inj-row,
+  .cc-award {
+    min-height: 44px;
+  }
+}
+
+/* ============================================================
    MERGED: icons.css (PNG-based icon system)
    Do not edit here -- edit static/icons.css and re-run the merge.
    See scripts/merge_icon_css.py
