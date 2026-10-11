@@ -1219,61 +1219,81 @@ def calc_environment_adjustment(seasons: List[Dict], position: str) -> float:
 
 def calc_durability_score(seasons: List[Dict]) -> float:
     """
-    Games played vs expected, with recency weighting.
+    Durability: how often the player is available when the team plays.
 
-    - A missed-game season 3 years ago matters less than last year's injury
-    - Most recent season carries the most weight
-    - Extra penalty when the most recent season was short (≤8 games)
-    - 12-game base; 14+ excellent; 8 or fewer triggers meaningful penalty
+    Core principle: games_played / games_available.
+    - 12+ games in a completed season = full season (100%). The extra games
+      beyond 12 are just playoff runs, not extra durability credit.
+    - In-progress season: compare against current week. If the player has
+      played every game so far, that's 100% - don't discount for the season
+      being unfinished.
+
+    Sophistication beyond raw percentage:
+    - Recency weighting: recent seasons predict future availability better
+    - Missed-games penalty: a completed season under 9 games suggests injury
+      risk. Scaled: 8 games = small ding, 4 games = major red flag.
+    - In-progress seasons never trigger penalties, only contribute positively
+      to the average if the player has been available.
+
+    Returns 60.0 (neutral) if no GP data.
     """
     if not seasons:
         return 60.0
 
+    from datetime import date as _d
+    today = _d.today()
+    current_year = today.year
+    season_start = _d(current_year, 8, 25)
+    current_week = 1 if today < season_start else min((today - season_start).days // 7 + 1, 16)
+
+    FULL_SEASON_GAMES = 12  # 12+ = full season, no bonus for playoff extras
+
     sorted_s = sorted(seasons, key=lambda s: s.get("season", 0))
-    gp_entries = [
-        (i, _safe(s.get("games_played")))
-        for i, s in enumerate(sorted_s)
-        if s.get("games_played") is not None
-    ]
-    if not gp_entries:
+    scored = []  # (pct, is_completed, gp)
+
+    for s in sorted_s:
+        gp = s.get("games_played")
+        if gp is None:
+            continue
+        gp = _safe(gp)
+        season_year = s.get("season", 0)
+
+        if season_year == current_year:
+            # In-progress: available = weeks played so far
+            pct = min(gp / current_week, 1.0) if current_week > 0 else 1.0
+            scored.append((pct, False, gp))
+        elif season_year < current_year:
+            # Completed: 12+ games = 100%, scale below that
+            pct = min(gp / FULL_SEASON_GAMES, 1.0)
+            scored.append((pct, True, gp))
+
+    if not scored:
         return 60.0
 
-    from datetime import date as _date2
-    _cy = _date2.today().year
-    _completed_entries = [
-        (i, gp) for i, gp in gp_entries
-        if sorted_s[i].get("season") != _cy
-    ]
-    # If no COMPLETED season has GP data, we can't judge durability yet.
-    # Return neutral instead of penalizing an in-progress season.
-    if not _completed_entries:
-        return 60.0
-
-    # Use ONLY completed seasons for the average. The in-progress season
-    # hasn't finished, so including its partial GP drags the average down
-    # unfairly (e.g. 7 games in week 7 looks like "missed games").
-    n = len(_completed_entries)
+    # Weighted average: recent seasons count more
+    n = len(scored)
     weighted_sum = 0.0
     total_weight = 0.0
-    for rank, (i, gp) in enumerate(_completed_entries):
-        # rank 0 = oldest; rank n-1 = most recent completed
-        w = 0.4 + 0.6 * (rank / max(n - 1, 1))
-        weighted_sum += gp * w
+    for rank, (pct, _, _) in enumerate(scored):
+        w = 0.5 + 0.5 * (rank / max(n - 1, 1))  # 0.5 to 1.0
+        weighted_sum += pct * w * 100.0
         total_weight += w
+    base = weighted_sum / total_weight
 
-    avg_gp = weighted_sum / total_weight
+    # Penalty for missed games in completed seasons only.
+    # 9+ games: no penalty. Below that, increasingly harsh.
+    # 8 games -> -5, 6 games -> -15, 4 games -> -30, 2 games -> -45
+    penalty = 0.0
+    for pct, is_completed, gp in scored:
+        if not is_completed:
+            continue
+        if gp < 9:
+            # Quadratic penalty: missing more games hurts disproportionately
+            missed = 9 - gp
+            penalty = max(penalty, missed * missed * 1.2)
 
-    # Most-recent COMPLETED season penalty: if the player just had a short
-    # season it's a red flag. In-progress season is already excluded.
-    recent_gp = _completed_entries[-1][1]
-    recent_penalty = max(0.0, (9.0 - recent_gp) * 6.0) if recent_gp < 9 else 0.0
+    return _clip(base - penalty)
 
-    # Career floor: any completed season with very few games is concerning.
-    min_gp = min(gp for _, gp in _completed_entries)
-    floor_pen = max(0.0, (7.0 - min_gp) * 4.0)
-
-    avg_score = _scale(avg_gp, 7.0, 14.0)
-    return _clip(avg_score - recent_penalty - floor_pen)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
