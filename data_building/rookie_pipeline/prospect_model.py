@@ -2025,6 +2025,18 @@ def score_prospect(
             for k in other_keys:
                 pos_weights[k] *= ratio
 
+    # Neutralize missing athleticism: redistribute its weight to other
+    # components so a lack of combine data doesn't drag the score down.
+    _weights = dict(pos_weights)
+    _athleticism_missing = athleticism_score is None
+    if _athleticism_missing:
+        ath_w = _weights.pop("athleticism", 0.0)
+        remaining = sum(_weights.values())
+        if remaining > 0 and ath_w > 0:
+            for k in _weights:
+                _weights[k] *= (1.0 + ath_w / remaining)
+        athleticism_score = 0.0  # weight is 0, value irrelevant
+
     # Base prospect score with position-specific weights
     prospect_score = (
         production_score      * pos_weights["production"]    +
@@ -2039,7 +2051,7 @@ def score_prospect(
         dc_score_adjusted     * pos_weights["draft_capital"] +
         # v2.0: recruiting pedigree. .get() because calibrated overrides
         # (historical_calibration) predate the recruiting component.
-        recruiting_score      * pos_weights.get("recruiting", 0.0)
+        recruiting_score      * _weights.get("recruiting", 0.0)
     )
 
     # Add experience score for QBs (uses the experience weight in QB weights)
