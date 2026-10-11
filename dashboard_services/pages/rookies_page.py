@@ -985,6 +985,12 @@ def build_prospects_body(is_admin: bool = False) -> str:
     header.style.display = 'grid';
     count.style.display  = 'none';
 
+    // Hide the Ath header column when no prospect has athleticism data
+    // (pre-combine). Matches the row-level hide in rkRender.
+    var hasAth = pageItems.some(function(r) { return r.athleticism_score != null; });
+    var athHeader = header.querySelector('span:nth-child(4)');
+    if (athHeader) athHeader.style.display = hasAth ? '' : 'none';
+
     list.innerHTML = '';
 
     // Tier dividers (player-rankings style) only make sense on the default
@@ -1132,7 +1138,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
           '<span class="rk-pos" style="--pc:' + posColor + ';margin-left:0">' + rkEsc(pos) + '</span>' +
           (r.school ? '<span>' + rkEsc(r.school) + '</span>' : '') +
           '<span id="rkMetaConf"></span>' +
-          (age != null && age !== '' && age !== '-' ? '<span>&middot;</span><span>' + age + ' yrs</span>' : '') +
+          '<span>&middot;</span><span>' + age + ' yrs</span>' +
           '<span id="rkMetaStars"></span>' +
           (r.draft_class_year ? '<span>&middot;</span><span>' + r.draft_class_year + ' Draft</span>' : '') + '</div>' +
         (r.transfer_history ? '<div class="m-transfer">Transfer: ' + rkEsc(r.transfer_history) + '</div>' : '') +
@@ -1276,8 +1282,8 @@ def build_prospects_body(is_admin: bool = False) -> str:
         if (r.recruit_national_rank != null)
           det += (det ? ', ' : '') + '#' + r.recruit_national_rank + " nat'l";
         if (r.recruit_position_rank != null)
-          det += (det ? ', ' : '') + '#' + r.recruit_position_rank + ' ' + (r.position || '');
-        ms.innerHTML = '<span>&middot;</span> <span>' + st + '-star' +
+          det += (det ? ', ' : '') + '#' + r.recruit_position_rank + ' ' + pos;
+        ms.innerHTML = '<span>&middot;</span><span>' + st + '-star' +
           (det ? ' (' + rkEsc(det) + ')' : '') + '</span>';
       } else {
         ms.innerHTML = '';
@@ -1293,7 +1299,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
       if (r.projected_round != null && r.projected_round !== '')
         bits.push('Rd ' + r.projected_round);
       if (r.position_rank != null && r.position_rank !== '')
-        bits.push((r.position || '').toUpperCase() + r.position_rank);
+        bits.push(pos + r.position_rank);
       var t = d.mock_trend, trendHtml = '';
       if (t != null && t !== '') {
         if (t > 0) trendHtml = '<span class="dvt-change dvt-change-up">&#9650;' + t + ' this month</span>';
@@ -1362,29 +1368,22 @@ def build_prospects_body(is_admin: bool = False) -> str:
     var cb = document.getElementById('rkCombineBody');
     if (cb) {
       var bi = parseInt(ath.broad_jump_in, 10);
-      var broad = isNaN(bi) ? null : Math.floor(bi / 12) + "'" + (bi % 12) + '"';
+      var broad = isNaN(bi) ? '-' : Math.floor(bi / 12) + "'" + (bi % 12) + '"';
       var cells = [
-        ['Height', rkHeightStr(r) || null],
-        ['Weight', rkWeightStr(r) || null],
-        ['40 Dash', ath.forty_yard != null ? Number(ath.forty_yard).toFixed(2) + 's' : null],
-        ['Vertical', ath.vertical_inches != null ? Number(ath.vertical_inches).toFixed(0) + '"' : null],
+        ['Height', rkHeightStr(r) || '-'],
+        ['Weight', rkWeightStr(r) || '-'],
+        ['40 Dash', ath.forty_yard != null ? Number(ath.forty_yard).toFixed(2) + 's' : '-'],
+        ['Vertical', ath.vertical_inches != null ? Number(ath.vertical_inches).toFixed(0) + '"' : '-'],
         ['Broad Jump', broad],
-        ['3-Cone', ath.three_cone != null ? Number(ath.three_cone).toFixed(2) : null],
-        ['Shuttle', ath.short_shuttle != null ? Number(ath.short_shuttle).toFixed(2) : null],
-        ['Bench', ath.bench_reps != null ? String(ath.bench_reps) : null],
-        ['RAS', ath.ras_score != null ? Number(ath.ras_score).toFixed(1) : null]
-      ].filter(function(c) { return c[1] != null && c[1] !== '-'; });
-      if (!cells.length) {
-        // Hide the entire section if no measurables
-        var sec = cb.closest('.rk-modal-sec') || cb.parentElement;
-        if (sec) sec.style.display = 'none';
-        cb.innerHTML = '';
-      } else {
-        cb.innerHTML = cells.map(function(c) {
-          return '<div class="rk-meas-cell"><div class="rk-meas-label">' + c[0] + '</div>' +
-                 '<div class="rk-meas-val">' + rkEsc(c[1]) + '</div></div>';
-        }).join('');
-      }
+        ['3-Cone', ath.three_cone != null ? Number(ath.three_cone).toFixed(2) : '-'],
+        ['Shuttle', ath.short_shuttle != null ? Number(ath.short_shuttle).toFixed(2) : '-'],
+        ['Bench', ath.bench_reps != null ? String(ath.bench_reps) : '-'],
+        ['RAS', ath.ras_score != null ? Number(ath.ras_score).toFixed(1) : '-']
+      ];
+      cb.innerHTML = cells.map(function(c) {
+        return '<div class="rk-meas-cell"><div class="rk-meas-label">' + c[0] + '</div>' +
+               '<div class="rk-meas-val">' + rkEsc(c[1]) + '</div></div>';
+      }).join('');
     }
 
     // Season-by-season production table (position-correct columns)
