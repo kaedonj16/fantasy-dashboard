@@ -5037,7 +5037,15 @@
       });
     }
     var tables = groups.map(function(gr) {
-      var cols = gr.columns || [];
+      var allCols = gr.columns || [];
+      // Drop columns with no recorded data at all (all-dash columns), so the
+      // tables stay compact instead of scrolling through empty stat columns.
+      var cols = allCols.filter(function(c) {
+        return (gr.players || []).some(function(p) {
+          var v = (p.cells || {})[c.key];
+          return v !== null && v !== undefined && v !== '';
+        });
+      });
       var rows = (gr.players || [])
         .filter(function(p) { return _boxHasData(p, cols); })
         .map(function(p) { return { p: p, fp: _boxFantasyPts(p.cells) }; })

@@ -85,6 +85,7 @@ const QB_COLS = [
 const RB_COLS = [
   { key: 'rush_att', label: 'Att' }, { key: 'rush_yds', label: 'Ru Yds' },
   { key: 'rush_td', label: 'Ru TD' }, { key: 'rec', label: 'Rec' },
+  { key: 'fum_lost', label: 'Fum' }, // all-null in fixture: must be dropped
 ];
 // Montgomery (3.0 FP) must sort below Gibbs (16.2); Knight has no data at all.
 const DET_RB = [
@@ -144,6 +145,7 @@ assert.ok(!html.includes('Z. Knight'), 'all-dash rows are dropped');
 assert.ok(html.includes('16.6 FP'), 'QB group header shows combined FP');
 assert.ok(html.includes('19.2 FP'), 'RB group header shows combined FP (16.2 + 3.0)');
 assert.ok(html.includes('rz-bs-fp is-lead'), 'group FP leader gets the lead class');
+assert.ok(!html.includes('>Fum</th>'), 'all-dash columns are dropped');
 
 // ── 2. Team toggle swaps tables ──────────────────────────────────────────
 const sheetEl = appended.find((el) => el.className.includes('rz-bs-sheet'));
