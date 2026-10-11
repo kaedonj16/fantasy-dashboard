@@ -2579,7 +2579,7 @@ def render_matchup_slide(
         # Stat line sits UNDER the drive bar (Kaedon's call), never truncated.
         # Stats come back from player_bits as element 6; keep the
         # "Stats unavailable" fallback that player_bits already builds.
-        def _stat_row(stats_tuple, span_cls):
+        def _stat_row(stats_tuple, span_cls, side_cls=""):
             if not stats_tuple:
                 return ""
             stats_val, unavailable = stats_tuple
@@ -2595,10 +2595,10 @@ def render_matchup_slide(
                 )
             else:
                 return ""
-            return f"<div class='mb-stat-row {span_cls}'>{inner}</div>"
+            return f"<div class='mb-stat-row {span_cls} {side_cls}'>{inner}</div>"
 
         left_stat_row = _stat_row(_left_stats, "mb-fld-span-l")
-        right_stat_row = _stat_row(_right_stats, "mb-fld-span-r")
+        right_stat_row = _stat_row(_right_stats, "mb-fld-span-r", "mb-cell-r")
 
         rows_html.append(
             "<div class=\"mb-row\">"
