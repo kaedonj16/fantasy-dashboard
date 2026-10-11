@@ -660,6 +660,12 @@ def _get_top_movers_from_db(
 
     max_days = max(int(days), 1)
 
+    # get_latest_snapshot_date returns an ISO string; the arithmetic and
+    # comparisons below need a real date (as_of_date is a DATE column, so
+    # candidate_date comes back as a date object).
+    if isinstance(latest_date, str):
+        latest_date = date.fromisoformat(latest_date)
+
     with get_conn() as conn:
         with conn.cursor() as cur:
             comparison_date = None

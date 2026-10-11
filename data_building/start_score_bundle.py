@@ -518,18 +518,20 @@ def build_start_score_bundles(season: int = None, week: int = None) -> dict:
                 "DELETE FROM start_score_bundle WHERE NOT (season = %s AND week = %s)",
                 (season, week),
             )
-            for i in range(0, len(rows), 500):
-                chunk = rows[i:i + 500]
-                conn.executemany(
-                    """
-                    INSERT INTO start_score_bundle
-                        (season, week, player_id, variant, bundle, updated_at)
-                    VALUES (%s, %s, %s, %s, %s::jsonb, now())
-                    ON CONFLICT (season, week, player_id, variant)
-                    DO UPDATE SET bundle = EXCLUDED.bundle, updated_at = now()
-                    """,
-                    chunk,
-                )
+            # psycopg3 only exposes executemany on cursors, not connections.
+            with conn.cursor() as cur:
+                for i in range(0, len(rows), 500):
+                    chunk = rows[i:i + 500]
+                    cur.executemany(
+                        """
+                        INSERT INTO start_score_bundle
+                            (season, week, player_id, variant, bundle, updated_at)
+                        VALUES (%s, %s, %s, %s, %s::jsonb, now())
+                        ON CONFLICT (season, week, player_id, variant)
+                        DO UPDATE SET bundle = EXCLUDED.bundle, updated_at = now()
+                        """,
+                        chunk,
+                    )
         summary.update({
             "ok": True,
             "players": len(universe),
