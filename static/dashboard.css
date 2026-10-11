@@ -45882,6 +45882,57 @@ table.rz-bs-table thead th:first-child {
     z-index: 3;
 }
 
+/* ── ScoreZone box-score sheet: fantasy points column ──────────────────────
+   The FP column sticks with the Player column so fantasy points stay visible
+   without horizontal scrolling. The name column gets a fixed width so the FP
+   sticky offset always lines up; the divider moves from the name cells to the
+   FP cells. Wash uses color-mix over --rz-card so the sticky cells stay
+   opaque while scrolled columns slide underneath. */
+table.rz-bs-table td.rz-bs-pname {
+    width: 108px;
+    min-width: 108px;
+    max-width: 108px;
+    border-right: none;
+}
+table.rz-bs-table th.rz-bs-fp,
+table.rz-bs-table td.rz-bs-fp {
+    position: sticky;
+    left: 108px; /* must match the fixed name-column width above */
+    z-index: 2;
+    background: color-mix(in srgb, var(--rz-accent, #6366f1) 7%, var(--rz-card));
+    border-right: 1px solid var(--rz-border);
+    color: var(--rz-text);
+    font-weight: 800;
+}
+table.rz-bs-table thead th.rz-bs-fp {
+    z-index: 3;
+}
+table.rz-bs-table td.rz-bs-fp {
+    font-size: 14px;
+}
+table.rz-bs-table td.rz-bs-fp.is-lead {
+    color: var(--rz-accent, #6366f1);
+}
+
+/* Group title carries the position's combined fantasy points. */
+.rz-bs-ptitle {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+}
+.rz-bs-gfp {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0;
+    text-transform: none;
+    font-weight: 700;
+}
+.rz-bs-sec .rz-bs-note {
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 600;
+}
+
 /* ── Trade Hub: top trade chips (Targets tab, under the search bar) ───────── */
 .otc-top-chips-head {
     display: flex;
