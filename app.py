@@ -3260,57 +3260,146 @@ def _ss_scoring_sig(scoring_settings) -> str:
         return "default"
 
 
-def start_score_pos_anchors(season, week, scoring_settings=None) -> dict:
-    """Return ``{pos: anchor_points}`` for one week under one scoring config.
 
-    ``anchor`` is the position's TOP weekly projection, so the 0-100 index reads
-    as "share of the best startable option at your position" and 100 marks the
-    single top projection rather than the whole elite tier. (A 95th-percentile
-    anchor made every WR1-caliber player clamp to 100, because the projection
-    pool is dominated by low-projection bench players that drag the percentile
-    down.) Cached per key so the pool is scanned at most once per week/scoring
-    per process.
-    """
-    if not season or not week:
-        return {}
-    key = (int(season), int(week), _ss_scoring_sig(scoring_settings))
-    cached = _SS_POS_ANCHOR_CACHE.get(key)
-    if cached is not None:
-        return cached
-    anchors: dict = {}
+# Tier-anchored 0-100 start/sit index, one scale per (season, week, scoring).
+# The raw start/sit score is projected points scaled by capped multipliers, so
+# it is unbounded and position-relative -- a QB 20 and a WR 20 mean different
+# things. The index maps a player's 1-indexed rank (by start score desc within
+# the position) through the approved tier bands, so several locked-in starters
+# can share the 90s: anchoring to a single max (or top projection) crowned one
+# winner at 100 and capped the rest, which could not separate WR1 from WR2.
+# Tiers: START = 12-team starters, FLEX = 14/16-team range.
+_SS_TIER_BANDS = {
+    "QB": ((1, 6, 90, 100), (7, 12, 70, 89), (13, 16, 40, 69), (17, 20, 1, 39)),
+    "RB": ((1, 10, 90, 100), (11, 22, 70, 89), (23, 30, 40, 69), (31, 36, 1, 39)),
+    "WR": ((1, 10, 90, 100), (11, 22, 70, 89), (23, 30, 40, 69), (31, 36, 1, 39)),
+    "TE": ((1, 4, 90, 100), (5, 12, 70, 89), (13, 16, 40, 69), (17, 18, 1, 39)),
+}
+_SS_TIER_POOL_CACHE: dict = {}
+_SS_TIER_POOL_LOCK = threading.Lock()
+
+
+def _ss_scoring_sig(scoring_settings) -> str:
+    try:
+        return hashlib.sha1(
+            json.dumps(scoring_settings or {}, sort_keys=True).encode()
+        ).hexdigest()[:12]
+    except Exception:
+        return "default"
+
+
+def start_score_tier_index(pos, rank):
+    """0-100 display index for a 1-indexed rank by start score desc within
+    ``pos``. Linear within each tier band
+    (``round(band_hi - (rank-lo)/(hi-lo) * (band_hi-band_lo))``); a
+    single-rank tier maps to ``band_hi``; a rank beyond the table maps to 1.
+    Returns None for an unknown position or bad rank."""
+    bands = _SS_TIER_BANDS.get(str(pos or "").upper())
+    try:
+        rank = int(rank)
+    except (TypeError, ValueError):
+        return None
+    if not bands or rank < 1:
+        return None
+    for lo, hi, band_lo, band_hi in bands:
+        if lo <= rank <= hi:
+            if hi <= lo:
+                return int(band_hi)
+            frac = (rank - lo) / (hi - lo)
+            return int(round(band_hi - frac * (band_hi - band_lo)))
+    return 1
+
+
+def _start_score_reduced(proj_pts, recent_ppg=0.0, season_ppg=0.0,
+                         usage_delta=None, usage_season_avg=None,
+                         injury_status=None, position=None):
+    """Rank-driving core of ``compute_start_score``: projection x form x
+    usage x availability. Small residuals (vegas, weather, o-line, pace,
+    role, floor) stay neutral -- they rarely move rank order, and this keeps
+    the position pool cheap to score in bulk."""
+    from utils.start_sit import compute_start_score as _css
+    try:
+        _s, _, _ = _css(
+            proj_pts,
+            recent_ppg=recent_ppg,
+            season_ppg=season_ppg,
+            usage_delta=usage_delta,
+            usage_season_avg=usage_season_avg,
+            injury_status=injury_status,
+            position=position,
+        )
+        return float(_s)
+    except Exception:
+        try:
+            return float(proj_pts or 0.0)
+        except (TypeError, ValueError):
+            return 0.0
+
+
+def _start_score_pos_pool(season, week, scoring_settings, pos):
+    """Sorted ``[(pid, reduced_score)]`` for the week's top-40 projected
+    players at ``pos``. Cached per (season, week, scoring-sig, pos);
+    best-effort (empty list on failure). Callers rank a target score against
+    it -- ``1 + #{pool scores strictly greater}`` -- so the target need not
+    be in the pool."""
+    pos = str(pos or "").upper()
+    key = (int(season), int(week), _ss_scoring_sig(scoring_settings), pos)
+    hit = _SS_TIER_POOL_CACHE.get(key)
+    if hit is not None:
+        return hit
+    pool = []
     try:
         from utils.utils import load_week_projection as _swp
         from utils.fantasy_scoring import weekly_projection_points as _wpp
-        from utils.lineup_slots import start_sit_pos as _ssp
+        from data_building.weekly_metrics import get_usage_trends as _gut
         proj_map = _swp(int(season), int(week)) or {}
         index = get_players_index_global() or {}
-        by_pos: dict = {}
-        for pid in proj_map.keys():
-            meta = index.get(str(pid)) or index.get(pid) or {}
-            pos = _ssp((meta.get("pos") or meta.get("position") or ""))
-            if not pos:
+        cands = []
+        for _pid in proj_map.keys():
+            _meta = index.get(str(_pid)) or index.get(_pid) or {}
+            if _start_sit_pos(_meta.get("pos") or _meta.get("position") or "") != pos:
                 continue
             try:
-                pts = _wpp(proj_map, pid, scoring_settings, pos)
+                _pts = _wpp(proj_map, _pid, scoring_settings, pos)
             except Exception:
-                pts = None
-            if pts and pts > 0:
-                by_pos.setdefault(pos, []).append(float(pts))
-        for pos, vals in by_pos.items():
-            if not vals:
-                continue
-            anchor = max(vals)  # the position's top weekly projection
-            if anchor and anchor > 0:
-                anchors[pos] = round(anchor, 2)
+                _pts = None
+            if _pts and _pts > 0:
+                cands.append((str(_pid), float(_pts), _meta))
+        cands.sort(key=lambda _t: _t[1], reverse=True)
+        # Bulk form inputs, same source/math as the Start/Sit page.
+        _ws_pids, _ws_flat = _season_weekstat_points(
+            int(season), scoring_settings or {}, pos) or ((), ())
+        _ws_idx = {}
+        for _i, _wp in enumerate(_ws_pids):
+            _ws_idx[str(_wp)] = _i
+        _uts = _gut(int(season)) or {}
+        for _pid, _pts, _meta in cands[:40]:
+            _spg = _rpg = 0.0
+            _wi = _ws_idx.get(_pid)
+            if _wi is not None:
+                _base = _wi * _WEEKSTAT_NCOLS
+                _n = _ws_flat[_base + 1]
+                if _n > 0:
+                    _spg = round(_ws_flat[_base] / _n, 1)
+                _rvals = [_v for _v in _ws_flat[_base + 2:_base + 6] if _v == _v]
+                if _rvals:
+                    _rpg = round(sum(_rvals) / len(_rvals), 1)
+            _ut = _uts.get(_pid) or {}
+            _raw = str(_meta.get("injury_status") or _meta.get("status") or "").strip()
+            _inj = None if _raw in {"", "active", "Active", "ACT"} else _raw
+            pool.append((_pid, _start_score_reduced(
+                _pts, recent_ppg=_rpg, season_ppg=_spg,
+                usage_delta=_ut.get("delta"),
+                usage_season_avg=_ut.get("season_avg"),
+                injury_status=_inj, position=pos)))
+        pool.sort(key=lambda _t: _t[1], reverse=True)
     except Exception:
-        logger.debug("[start_score_pos_anchors] failed", exc_info=True)
-        anchors = {}
-    with _SS_POS_ANCHOR_LOCK:
-        if len(_SS_POS_ANCHOR_CACHE) > 64:
-            _SS_POS_ANCHOR_CACHE.clear()
-        _SS_POS_ANCHOR_CACHE[key] = anchors
-    return anchors
-
+        logger.debug("[start-sit] tier pool skipped", exc_info=True)
+        pool = []
+    with _SS_TIER_POOL_LOCK:
+        if len(_SS_TIER_POOL_CACHE) > 64:
+            _SS_TIER_POOL_CACHE.clear()
+        _SS_TIER_POOL_CACHE[key] = pool
 
 def run_daily_data_async(season: int, week: int, owner: str = "web") -> bool:
     """Start daily data build in a background thread."""
