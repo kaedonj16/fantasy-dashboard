@@ -670,6 +670,96 @@ def fetch_espn_headshots_via_roster(
     return result
 
 
+def fetch_espn_experience_via_roster(
+    prospects_meta: List[Dict[str, Any]],
+    delay: float = 0.2,
+) -> Dict[str, str]:
+    """Map prospect name -> ESPN experience abbreviation (FR/SO/JR/SR).
+
+    Uses the same roster API as headshots. Returns {name_lower: abbreviation}.
+    Used for age estimation when DOB is unavailable (ESPN removed dateOfBirth).
+    """
+    result: Dict[str, str] = {}
+    if not prospects_meta:
+        return result
+
+    by_team: Dict[str, List[Dict]] = {}
+    for m in prospects_meta:
+        team = (m.get("school") or m.get("team") or "").strip()
+        if team:
+            by_team.setdefault(team.lower(), []).append(m)
+
+    if not by_team:
+        return result
+
+    team_id_map: Dict[str, str] = {}
+    try:
+        resp = _get(_ESPN_TEAMS_URL, headers=_JSON_HEADERS)
+        if resp:
+            data = resp.json()
+            for league in data.get("sports", [{}])[0].get("leagues", [{}])[0].get("teams", []):
+                team = league.get("team", {})
+                name = (team.get("displayName") or "").lower()
+                short = (team.get("shortDisplayName") or "").lower()
+                tid = str(team.get("id", ""))
+                if tid:
+                    if name:
+                        team_id_map[name] = tid
+                    if short:
+                        team_id_map[short] = tid
+    except Exception:
+        pass
+
+    def _norm_team(t):
+        t = t.lower().strip()
+        t = t.replace(" st.", " state").replace(" st ", " state ")
+        t = t.replace(".", "")
+        return t
+
+    def _norm_player(p):
+        p = p.lower().strip()
+        for suffix in [" jr.", " sr.", " ii", " iii", " iv", " jr", " sr"]:
+            if p.endswith(suffix):
+                p = p[:-len(suffix)].strip()
+        return p
+
+    norm_team_map = {_norm_team(k): v for k, v in team_id_map.items()}
+
+    for team_lower, prospects in by_team.items():
+        norm_team = _norm_team(team_lower)
+        tid = norm_team_map.get(norm_team)
+        if not tid:
+            for espn_name, eid in norm_team_map.items():
+                if norm_team in espn_name or espn_name in norm_team:
+                    tid = eid
+                    break
+        if not tid:
+            continue
+        try:
+            resp = _get(_ESPN_ROSTER_URL.format(id=tid), headers=_JSON_HEADERS)
+            if not resp:
+                continue
+            data = resp.json()
+            roster_map: Dict[str, str] = {}
+            for group in data.get("athletes", []):
+                for player in group.get("items", []):
+                    pname = _norm_player(player.get("fullName") or "")
+                    exp = player.get("experience", {})
+                    abbrev = (exp.get("abbreviation") or "").upper() if isinstance(exp, dict) else ""
+                    if pname and abbrev in ("FR", "SO", "JR", "SR"):
+                        roster_map[pname] = abbrev
+            for p in prospects:
+                pname = _norm_player(p.get("name") or "")
+                orig_key = (p.get("name") or "").lower().strip()
+                if pname in roster_map:
+                    result[orig_key] = roster_map[pname]
+        except Exception:
+            continue
+        time.sleep(delay)
+
+    return result
+
+
 def fetch_espn_headshots(
     names: List[str],
     draft_year: Optional[int] = None,
