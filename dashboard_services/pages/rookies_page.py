@@ -221,7 +221,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
   .rk-dense-score-val { font-size: 38px; font-weight: 800; letter-spacing: -.03em; line-height: 1; font-variant-numeric: tabular-nums; }
   .rk-dense-score-lbl { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); margin-top: 4px; }
   .rk-dense-score-sub { font-size: 10.5px; color: var(--text-muted); margin-top: 2px; }
-  .rk-dense-comps { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+  .rk-dense-comps { display: flex; gap: 6px; align-items: flex-end; width: 100%; justify-content: space-between; }
   .rk-dcomp { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; }
   .rk-dcomp-bar { display: flex; align-items: flex-end; height: 64px; }
   .rk-dcomp-fill { display: block; width: 20px; border-radius: 4px; }
@@ -229,9 +229,9 @@ def build_prospects_body(is_admin: bool = False) -> str:
   .rk-dcomp-val { font-size: 9.5px; font-weight: 700; font-family: ui-monospace, Menlo, monospace; }
   .rk-dense-meta-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-muted); flex-wrap: wrap; margin-bottom: 4px; }
   .rk-dense-meta-row b { color: var(--text); }
-  .rk-traj { display: flex; gap: 14px; align-items: flex-end; margin: 8px 0; }
-  .rk-tbar { position: relative; display: flex; flex-direction: column; align-items: center; }
-  .rk-ttrack { display: flex; align-items: flex-end; justify-content: center; height: 110px; width: 100%; max-width: 110px; }
+  .rk-traj { display: flex; gap: 14px; align-items: flex-end; margin: 8px 0; width: 100%; }
+  .rk-tbar { position: relative; display: flex; flex-direction: column; align-items: center; flex: 1 1 0; min-width: 0; }
+  .rk-ttrack { display: flex; align-items: flex-end; justify-content: center; height: 110px; width: 100%; }
   .rk-tfill { width: 100%; border-radius: 6px 6px 0 0; background: var(--text-muted); opacity: .82; }
   .rk-tbar.live .rk-tfill { opacity: 1; }
   .rk-tpg { font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; margin-top: 6px; }
