@@ -764,7 +764,8 @@ def _get_existing_games_played(draft_year: int, years: List[int]) -> Dict[str, D
                     AND games_played IS NOT NULL
                 """, (_player_id_prefix(draft_year) + "%", years))
                 result: Dict[str, Dict[int, int]] = {}
-                for player_id, season, gp in cur.fetchall():
+                for _row in cur.fetchall():
+                    player_id, season, gp = _row["player_id"], _row["season"], _row["games_played"]
                     name = _name_key_from_player_id(player_id, draft_year)
                     if not name:
                         continue
@@ -792,7 +793,8 @@ def _get_existing_targets(draft_year: int, years: List[int]) -> Dict[str, Dict[i
                     AND targets IS NOT NULL
                 """, (_player_id_prefix(draft_year) + "%", years))
                 result: Dict[str, Dict[int, Dict[str, Any]]] = {}
-                for player_id, season, targets, team in cur.fetchall():
+                for _row in cur.fetchall():
+                    player_id, season, targets, team = _row["player_id"], _row["season"], _row["targets"], _row["team"]
                     name = _name_key_from_player_id(player_id, draft_year)
                     if not name:
                         continue
@@ -816,7 +818,7 @@ def _get_team_targets_baselines(years: List[int]) -> Dict[Tuple[int, str], int]:
                     SELECT season, team, team_targets FROM rookie_targets_team_totals
                     WHERE season = ANY(%s)
                 """, (years,))
-                return {(int(s), t): int(tt) for s, t, tt in cur.fetchall()}
+                return {(int(_r["season"]), _r["team"]): int(_r["team_targets"]) for _r in cur.fetchall()}
     except Exception:
         return {}
 
@@ -850,7 +852,8 @@ def _get_fetched_weeks(kind: str, years: List[int]) -> Dict[int, Dict[str, Set[i
                     WHERE kind = %s AND season = ANY(%s)
                 """, (kind, years))
                 result: Dict[int, Dict[str, Set[int]]] = {}
-                for season, team, week in cur.fetchall():
+                for _row in cur.fetchall():
+                    season, team, week = _row["season"], _row["team"], _row["week"]
                     result.setdefault(int(season), {}).setdefault(team or "", set()).add(int(week))
                 return result
     except Exception:
@@ -1327,7 +1330,7 @@ def _filter_years_needing_fetch(all_years: List[int], draft_year: int) -> List[i
                     SELECT DISTINCT season FROM rookie_prospect_source_data
                     WHERE player_id LIKE %s AND season = ANY(%s)
                 """, (_player_id_prefix(draft_year) + "%", past_seasons))
-                existing = {row[0] for row in cur.fetchall()}
+                existing = {row["season"] for row in cur.fetchall()}
     except Exception:
         # If DB check fails, fall back to fetching everything (safe)
         existing = set()
