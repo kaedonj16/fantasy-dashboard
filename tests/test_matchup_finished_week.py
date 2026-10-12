@@ -12,14 +12,15 @@ import dashboard_services.matchups as matchups
 
 def test_format_final_game_line_score_before_opponent():
     # Score is the player's team first: 24-31 is a loss, 34-3 a win.
-    assert matchups._format_final_game_line("24-31", "@ LV") == "Final L 24-31 @ LV"
-    assert matchups._format_final_game_line("7-27", "@ CHI") == "Final L 7-27 @ CHI"
-    assert matchups._format_final_game_line("34-3", "vs ATL") == "Final W 34-3 vs ATL"
-    assert matchups._format_final_game_line("20-20", "@ CHI") == "Final T 20-20 @ CHI"
+    _tag = "<span class='mb-final-tag'>Final</span>"
+    assert matchups._format_final_game_line("24-31", "@ LV") == f"{_tag} L 24-31 @ LV"
+    assert matchups._format_final_game_line("7-27", "@ CHI") == f"{_tag} L 7-27 @ CHI"
+    assert matchups._format_final_game_line("34-3", "vs ATL") == f"{_tag} W 34-3 vs ATL"
+    assert matchups._format_final_game_line("20-20", "@ CHI") == f"{_tag} T 20-20 @ CHI"
 
 
 def test_format_final_game_line_bare_final_without_score():
-    assert matchups._format_final_game_line("", "@ LV") == "Final"
+    assert matchups._format_final_game_line("", "@ LV") == "<span class='mb-final-tag'>Final</span>"
 
 
 def test_week_stats_for_slide_backfills_sleeper_for_past_weeks(monkeypatch):
