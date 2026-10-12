@@ -3,7 +3,7 @@ Prospect evaluation model - position-aware, multi-factor scoring.
 
 Each component score is 0-100.  Final prospect_score is a weighted sum.
 
-Model version: 2.0 (see MODEL_VERSION)
+Model version: 3.0 (see MODEL_VERSION)
   v1.x: baseline components below.
   v2.0: adds recruiting-pedigree component (247 Composite via CFBD),
         WEPA opponent-adjusted efficiency blend (QB/RB), and SP+/Team Talent
@@ -38,7 +38,7 @@ from typing import Any, Dict, List, Optional
 
 
 # Grading-model version. Bump on ANY change to scoring logic or weights.
-MODEL_VERSION = "2.0"
+MODEL_VERSION = "3.0"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -236,7 +236,7 @@ def _score_production_season(season: Dict, pos: str, skip_sagarin: bool = False)
             dom_score  = _scale(dom * (1 + sag_adj), 0.08, 0.40)
 
         prod = (
-            _scale(rec_yds_pg, 32,  120) * 0.40 +
+            _scale(rec_yds_pg, 32,  100) * 0.40 +
             _scale(rec_tds_pg, 0.25, 0.9) * 0.30 +
             dom_score                      * 0.30
         )
@@ -251,13 +251,10 @@ def _score_production_season(season: Dict, pos: str, skip_sagarin: bool = False)
             rz_rate = total_rec_tds / total_rec_yds * 100
             if rz_rate >= 8.0:   prod = _clip(prod * 1.06)
             elif rz_rate >= 5.5: prod = _clip(prod * 1.03)
-        # G5 / lower-tier conference discount applied directly to production.
-        # competition_score (7% weight) is not strong enough to offset stats
-        # that are genuinely inflated by weaker defenses (MAC, CUSA, Sun Belt, etc.).
-        # Power 4 conferences (conf_q ≥ 0.85) are unaffected.
-        conf_q = _conf_quality(season.get("conference", ""))
-        if conf_q < 0.85:
-            prod = _clip(prod * (1.0 - (1.0 - conf_q) * 0.75))
+        # v3.0: G5 production discount REMOVED. Competition quality is already
+        # captured by calc_competition_score, so the additional production cut
+        # (up to -25%) was double-jeopardy. One mechanism, not two.
+        pass
         return prod
 
     elif pos == "RB":
@@ -273,9 +270,9 @@ def _score_production_season(season: Dict, pos: str, skip_sagarin: bool = False)
         ypc         = _safe(season.get("yds_per_carry"))
 
         prod = (
-            _scale(rush_yds_pg, 20,  145) * 0.18 +
-            _scale(all_yds_pg,  30,  180) * 0.17 +
-            _scale(tds_pg,       0.4,  2.0) * 0.25 +
+            _scale(rush_yds_pg, 20,  120) * 0.18 +
+            _scale(all_yds_pg,  30,  150) * 0.17 +
+            _scale(tds_pg,       0.4,  1.6) * 0.25 +
             _scale(dom,          0.12, 0.50) * 0.15 +  # ceiling lowered: 0.45+ dom is elite
             _scale(ypc,          3.5,  7.0) * 0.25     # ceiling lowered: 7.0 YPC is generational
         )
@@ -328,10 +325,10 @@ def _score_production_season(season: Dict, pos: str, skip_sagarin: bool = False)
         # inflate college comp% (Mac Jones 77%) while dual-threat systems
         # suppress it without signalling worse NFL potential.
         pass_comp = (
-            _scale(pass_yds_pg, 150, 330) * 0.22 +
-            _scale(tds_pg,        1.5,  3.5) * 0.22 +
-            _scale(comp_pct,     58.0, 76.0) * 0.18 +
-            _scale(ypa,           6.5,  10.5) * 0.28 +
+            _scale(pass_yds_pg, 150, 300) * 0.22 +
+            _scale(tds_pg,        1.5,  3.0) * 0.22 +
+            _scale(comp_pct,     58.0, 72.0) * 0.18 +
+            _scale(ypa,           6.5,   9.5) * 0.28 +
             _scale(td_int,        1.5,   6.0) * 0.10
         )
         rush_comp = _scale(rush_yds_pg, 10.0, 85.0)  # 0–100; Lamar ~90+ yd/g → near 100
@@ -693,8 +690,8 @@ def calc_efficiency_score(
         td_int_mod = td_int
 
         eff   = (
-            _scale(ypa,      6.5, 10.5) * 0.45 +
-            _scale(cpct,    60.0, 76.0) * 0.30 +
+            _scale(ypa,      6.5,  9.5) * 0.45 +
+            _scale(cpct,    58.0, 72.0) * 0.30 +
             _scale(td_int_mod, 1.5, 7.0) * 0.25
         )
 
@@ -1914,8 +1911,11 @@ def calc_translation_adjustment(
             return _safe(s.get("receiving_yards"), 0.0) / gp
         best_rec_yds_pg = max((_rec_ydpg(s) for s in seasons_te), default=rec_yds_pg)
 
-        # Baseline dynasty development delay: TEs typically take 2-3 NFL seasons.
-        adj -= 5.0
+        # v3.0: Baseline TE development delay is now CONDITIONAL, not universal.
+        # Previously every TE started at -5.0. Now only applies to TEs with
+        # genuinely weak receiving usage (blocking archetypes).
+        if best_rec_yds_pg < 50.0:
+            adj -= 5.0
 
         # Elite receiving TE upside: uses peak season so injury years don't suppress it.
         # Tiers calibrated so generational prospects (Pitts #4 → ~91, Bowers #13 → ~88).
@@ -2019,6 +2019,14 @@ def score_prospect(
         breakout_score = _clip(breakout_score * bk_adj)
 
     athleticism_score   = calc_athleticism_score(ath, pos)
+    # v3.0 R6: Production-implied athleticism floor. Elite producers are
+    # almost certainly functional athletes; don't leave the athleticism
+    # weight on the table pre-combine. 70.0 is solid-not-elite.
+    _athleticism_projected = False
+    if (athleticism_score is None and production_score >= 90.0
+            and breakout_score >= 75.0):
+        athleticism_score = 70.0
+        _athleticism_projected = True
     competition_score   = calc_competition_score(
         seasons, team_context=prospect.get("team_context"),
     )
@@ -2118,18 +2126,22 @@ def score_prospect(
                 _weights[k] *= (1.0 + ath_w / remaining)
         # athleticism_score stays None -> DB NULL -> UI hides the bar
 
-    # Base prospect score with position-specific weights
+    # Base prospect score with position-specific weights.
+    # v3.0 R6: Use _weights (athleticism redistribution applied) so the
+    # redistributed weight actually takes effect. Previously the sum used
+    # pos_weights, silently dropping the redistribution and capping the
+    # max score when athleticism was NULL.
     prospect_score = (
-        production_score      * pos_weights["production"]    +
-        utilization_score     * pos_weights["utilization"]   +
-        efficiency_score      * pos_weights["efficiency"]    +
-        age_score             * pos_weights["age"]           +
-        breakout_score        * pos_weights["breakout"]      +
-        (athleticism_score or 0.0) * pos_weights["athleticism"]   +
-        competition_score     * pos_weights["competition"]   +
-        environment_score     * pos_weights["environment"]   +
-        durability_score      * pos_weights["durability"]    +
-        dc_score_adjusted     * pos_weights["draft_capital"] +
+        production_score      * _weights["production"]    +
+        utilization_score     * _weights["utilization"]   +
+        efficiency_score      * _weights["efficiency"]    +
+        age_score             * _weights["age"]           +
+        breakout_score        * _weights["breakout"]      +
+        (athleticism_score or 0.0) * _weights.get("athleticism", 0.0)   +
+        competition_score     * _weights["competition"]   +
+        environment_score     * _weights["environment"]   +
+        durability_score      * _weights["durability"]    +
+        dc_score_adjusted     * _weights["draft_capital"] +
         # v2.0: recruiting pedigree. .get() because calibrated overrides
         # (historical_calibration) predate the recruiting component.
         recruiting_score      * _weights.get("recruiting", 0.0)
@@ -2190,7 +2202,7 @@ def score_prospect(
         #   80 raw → 89.0  (top tier)
         #   75 raw → 82.9  (solid starter)
         #   65 raw → 70.9  (developmental)
-        prospect_score = min(100.0, prospect_score + (prospect_score / 100.0) ** 2 * 14.0)
+        prospect_score = min(99.9, prospect_score + 6.0)
         
         # Apply benchmark boosts only for complete data profiles
         # The benchmark boost is the only post-sum modifier: a small signal (max 3%)
@@ -2233,8 +2245,8 @@ def score_prospect(
     # utilization but modest production (e.g. a committee RB) is not penalised.
     # Maximum penalty: 22% (both metrics at zero).  Example: Sadiq (prod=52.5,
     # util=43.6) → gate≈0.64 → ~8% penalty, dropping him ~5-6 points.
-    _PROD_GATE = 65.0
-    _UTIL_GATE = 55.0
+    _PROD_GATE = 55.0
+    _UTIL_GATE = 45.0
     # RB bypass: a back with elite per-carry efficiency (YPC ≥ 5.5) is
     # opportunity-constrained, not talent-constrained (e.g. blocked by a generational
     # back). The gate was designed for genuinely sparse evidence, not committee backs
@@ -2243,7 +2255,7 @@ def score_prospect(
     _rb_efficiency_bypass = (pos == "RB" and _rb_ypc >= 5.5)
     if production_score < _PROD_GATE and utilization_score < _UTIL_GATE and not _rb_efficiency_bypass:
         gate = (production_score / _PROD_GATE) * (utilization_score / _UTIL_GATE)
-        prospect_score *= 1.0 - (1.0 - gate) * 0.22
+        prospect_score *= 1.0 - (1.0 - gate) * 0.11
 
     # Final clamp to the documented 0-100 grade scale. The quadratic boost and
     # benchmark boost each cap at 100, but the additive translation_adjustment
@@ -2304,6 +2316,7 @@ def score_prospect(
         "age_score":                    round(age_score, 2),
         "breakout_profile_score":       round(breakout_score, 2),
         "athleticism_score":            None if athleticism_score is None else round(athleticism_score, 2),
+        "athleticism_projected":        _athleticism_projected,
         "competition_score":            round(competition_score, 2),
         "environment_adjustment":       round(environment_score, 2),
         "durability_score":             round(durability_score, 2),
