@@ -217,15 +217,15 @@ def build_prospects_body(is_admin: bool = False) -> str:
     .rk-dense-table tbody tr:nth-child(even) td:nth-child(2) { background: #fafbfd; }
   }
   /* ===== Dense modal styles ===== */
-  .rk-dense-score-row { display: flex; align-items: flex-start; gap: 20px; margin: 4px 0 10px; }
+  .rk-dense-score-row { display: flex; align-items: stretch; gap: 18px; margin: 0; }
   .rk-dense-score-val { font-size: 38px; font-weight: 800; letter-spacing: -.03em; line-height: 1; font-variant-numeric: tabular-nums; }
-  .rk-dense-score-lbl { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); margin-top: 4px; }
+  .rk-dense-score-lbl { font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .1em; color: var(--text-muted); margin-top: 4px; }
   .rk-dense-score-sub { font-size: 10.5px; color: var(--text-muted); margin-top: 2px; }
   .rk-dense-comps { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
   .rk-dcomp { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; }
   .rk-dcomp-bar { display: flex; align-items: flex-end; height: 64px; }
   .rk-dcomp-fill { display: block; width: 20px; border-radius: 4px; }
-  .rk-dcomp-lbl { font-size: 8.5px; font-weight: 700; letter-spacing: .05em; color: var(--text-muted); }
+  .rk-dcomp-lbl { font-size: 8px; font-weight: 800; letter-spacing: .05em; color: var(--text-muted); margin-top: 2px; }
   .rk-dcomp-val { font-size: 9.5px; font-weight: 700; font-family: ui-monospace, Menlo, monospace; }
   .rk-dense-meta-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-muted); flex-wrap: wrap; margin-bottom: 4px; }
   .rk-dense-meta-row b { color: var(--text); }
@@ -235,9 +235,9 @@ def build_prospects_body(is_admin: bool = False) -> str:
   .rk-tfill { width: 100%; border-radius: 6px 6px 0 0; background: var(--text-muted); opacity: .82; }
   .rk-tbar.live .rk-tfill { opacity: 1; }
   .rk-tpg { font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; margin-top: 6px; }
-  .rk-tyr { font-size: 10px; color: var(--text-muted); font-weight: 600; }
+  .rk-tyr { font-size: 10.5px; color: var(--text-muted); font-weight: 700; margin-top: 1px; }
   .rk-live-tag { position: absolute; top: -8px; left: 50%; transform: translateX(-50%); font-size: 8.5px; font-weight: 800; letter-spacing: .08em; color: #fff; background: #2563eb; border-radius: 4px; padding: 2px 6px; white-space: nowrap; z-index: 2; }
-  .rk-trend-note { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-muted); margin-top: 4px; }
+  .rk-trend-note { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-muted); margin-top: 10px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 9px 12px; }
   .rk-trend-note b { color: var(--text); }
   @media (max-width: 600px) {
     .rk-dense-score-row { flex-direction: column; gap: 12px; }
@@ -422,34 +422,37 @@ def build_prospects_body(is_admin: bool = False) -> str:
   /* Modal */
   #rkModalContent { border-top: 3px solid transparent; }
   .rk-modal-header {
-    padding: 20px 20px 0;
+    padding: 14px 18px 12px;
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
     gap: 12px;
+    border-bottom: 1px solid var(--border);
   }
   .rk-modal-close {
-    background: var(--accent-soft);
-    border: none;
-    width: 32px; height: 32px;
-    border-radius: 8px;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    width: 30px; height: 30px;
+    border-radius: 50%;
     cursor: pointer;
-    color: var(--accent);
-    font-size: 16px;
+    color: var(--text-muted);
+    font-size: 13px;
     flex-shrink: 0;
     display: flex; align-items: center; justify-content: center;
+    margin-left: auto;
+    line-height: 1;
   }
-  .rk-modal-body { padding: 14px 20px 20px; }
+  .rk-modal-body { padding: 14px 18px 20px; }
   .m-headwrap { display: flex; gap: 12px; align-items: center; min-width: 0; }
   .m-headshot {
-    width: 52px; height: 52px; border-radius: 50%; flex-shrink: 0;
+    width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
     position: relative; overflow: hidden;
     background: transparent; border: none;
   }
   .m-headshot.rk-hs-empty { display: none; }
   .m-headshot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
   .m-title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .m-name { font-size: 22px; font-weight: 700; color: var(--text); }
+  .m-name { font-size: 19px; font-weight: 900; letter-spacing: -.02em; color: var(--text); white-space: nowrap; }
   .m-tier { padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; }
   .m-early {
     padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700;
@@ -496,13 +499,19 @@ def build_prospects_body(is_admin: bool = False) -> str:
     margin-top: 4px;
   }
 
+  /* Dense modal sections (matches mock) */
+  .rk-sec { padding: 14px 18px; border-bottom: 1px solid var(--border); }
+  .rk-sec:last-child { border-bottom: none; }
+  .rk-sec-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+  .m-sec-hint { font-size: 11px; color: var(--text-subtle); margin-left: auto; }
+
   /* Section divider */
   .rk-section-divider {
     border: none;
     border-top: 1px solid var(--border);
     margin: 14px 0;
   }
-  .m-sec-label { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 2px; }
+  .m-sec-label { font-size: 10.5px; font-weight: 800; color: var(--text-muted); text-transform: uppercase; letter-spacing: .1em; margin-bottom: 10px; }
   .m-sec-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 2px; }
   .m-conf { font-size: 11px; color: var(--text-muted); }
   .m-conf b { color: var(--text); }
@@ -516,7 +525,20 @@ def build_prospects_body(is_admin: bool = False) -> str:
     font-weight: 700; cursor: pointer; padding: 10px 0 0;
   }
 
-  /* Advanced metrics */
+  /* Advanced metrics: dense table (matches mock) */
+  .rk-adv-tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .rk-adv-tbl th { text-align: left; font-size: 9.5px; font-weight: 800; letter-spacing: .08em; color: var(--text-subtle); text-transform: uppercase; padding: 5px 8px; border-bottom: 1px solid var(--border); }
+  .rk-adv-tbl th.r, .rk-adv-tbl td.r { text-align: right; }
+  .rk-adv-tbl td { padding: 7px 8px; border-bottom: 1px solid var(--border); font-family: ui-monospace, Menlo, monospace; }
+  .rk-adv-tbl tr:last-child td { border-bottom: none; }
+  .rk-adv-tbl td.rk-adv-name { font-family: Archivo, Inter, system-ui, sans-serif; font-weight: 600; color: var(--text); }
+  .rk-adv-raw { font-weight: 800; font-size: 13px; }
+  .rk-pbar { display: inline-block; width: 72px; height: 5px; background: var(--border); border-radius: 3px; vertical-align: middle; margin-right: 8px; overflow: hidden; }
+  .rk-pbar i { display: block; height: 100%; border-radius: 3px; }
+  .rk-pctl { font-weight: 700; color: var(--text-muted); font-size: 11.5px; }
+  .rk-pctl b { color: var(--text); }
+
+  /* Advanced metrics (legacy) */
   .m-adv-grid { display: grid; grid-template-columns: 1fr 230px; gap: 20px; align-items: center; margin-top: 10px; }
   .m-adv-row { display: grid; grid-template-columns: 104px 1fr 52px 30px; gap: 10px; align-items: center; margin-top: 9px; }
   .m-adv-label { font-size: 12px; font-weight: 600; color: var(--text-muted); }
@@ -554,11 +576,15 @@ def build_prospects_body(is_admin: bool = False) -> str:
     color: var(--text);
   }
 
+  /* Season table wrapper (matches mock) */
+  .rk-stblwrap { overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--border); border-radius: 8px; }
+
   /* Season table */
-  .m-season-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12.5px; color: var(--text); }
+  .m-season-table { width: 100%; min-width: 560px; border-collapse: collapse; font-size: 11.5px; font-family: ui-monospace, Menlo, monospace; color: var(--text); }
   .m-season-table th {
-    text-align: right; font-size: 10.5px; font-weight: 700; text-transform: uppercase;
-    letter-spacing: 0.04em; color: var(--text-subtle); padding: 6px 8px; border-bottom: 1px solid var(--border);
+    text-align: right; font-size: 9.5px; font-weight: 800; text-transform: uppercase;
+    letter-spacing: .07em; color: var(--text-muted); padding: 7px 8px; border-bottom: 1px solid var(--border);
+    white-space: nowrap;
   }
   .m-season-table th:first-child, .m-season-table td:first-child { text-align: left; }
   .m-season-table td { text-align: right; padding: 7px 8px; border-bottom: 1px solid var(--border); }
@@ -660,6 +686,9 @@ def build_prospects_body(is_admin: bool = False) -> str:
     .m-comp-row { grid-template-columns: 96px 1fr 38px; }
     .m-comp-raw { display: none; }
     .m-name { font-size: 19px; }
+    .rk-dense-score-val { font-size: 32px; }
+    .rk-dcomp-bar { height: 54px; }
+    .rk-dcomp-fill { width: 16px; }
     .m-cols { grid-template-columns: 1fr; }
     .m-adv-grid { grid-template-columns: 1fr; }
     .rk-meas-grid { grid-template-columns: repeat(3, 1fr); }
@@ -1291,7 +1320,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
     var age   = r.age != null ? parseFloat(r.age).toFixed(1) : '-';
     var mockPick = r.projected_pick != null ? Math.round(parseFloat(r.projected_pick)) : null;
     var on = !!rkWatch[pid];
-    var rankNum = r.overall_rank ? '#' + r.overall_rank : '-';
+    var rankNum = r.overall_rank ? String(r.overall_rank) : '-';
 
     var reasons = String(r.key_reasons || '').split('\\n').filter(function(l){ return l.trim(); });
     var notesHtml = reasons.length
@@ -1317,17 +1346,16 @@ def build_prospects_body(is_admin: bool = False) -> str:
     }).join('');
 
     content.innerHTML =
-      '<div class="rk-modal-header"><div class="m-headwrap">' +
-        rkHeadshot(r, 'm-headshot') +
-        '<div style="min-width:0">' +
-        '<div class="m-title-row">' +
+      '<div class="rk-modal-header"><div style="min-width:0;flex:1;">' +
+        '<div class="m-title-row" style="display:flex;align-items:center;gap:10px;">' +
+          '<span class="rk-rank-chip" style="font-family:ui-monospace,Menlo,monospace;font-size:12px;font-weight:700;color:var(--text-muted);border:1px solid var(--border);border-radius:6px;padding:3px 8px;white-space:nowrap;">#' + rankNum + '</span>' +
+          rkHeadshot(r, 'm-headshot') +
           '<span class="m-name">' + rkEsc(name) + '</span>' +
+          '<span class="rk-pos" style="--pc:' + posColor + ';display:inline-flex;align-items:center;justify-content:center;min-width:34px;height:20px;padding:0 8px;border-radius:6px;font-size:10.5px;font-weight:800;color:#fff;letter-spacing:.04em;background:' + posColor + '">' + rkEsc(pos) + '</span>' +
           '<span class="m-tier" style="background:' + tc + '22;color:' + tc + ';border:1px solid ' + tc + '44;">T' + (r.tier || '?') + '</span>' +
           (r.early_declare ? '<span class="m-early">EARLY</span>' : '') +
-          '<button class="rk-star' + (on ? ' watching' : '') + '" data-rk-star="1" aria-label="Watch ' + rkEsc(name) + '">' + rkStarSVG() + '</button>' +
         '</div>' +
-        '<div class="m-meta"><span class="m-rank">#' + rankNum + '</span>' + rkDelta(r.rank_delta) +
-          '<span class="rk-pos" style="--pc:' + posColor + ';margin-left:0">' + rkEsc(pos) + '</span>' +
+        '<div class="m-meta">' + rkDelta(r.rank_delta) +
           (r.school ? '<span>' + rkEsc(r.school) + '</span>' : '') +
           '<span id="rkMetaConf"></span>' +
           '<span>Age <b>' + age + '</b></span>' +
@@ -1336,8 +1364,10 @@ def build_prospects_body(is_admin: bool = False) -> str:
         '<div class="m-recruit" id="rkMetaStars"></div>' +
         (r.transfer_history ? '<div class="m-transfer">Transfer: ' + rkEsc(r.transfer_history) + '</div>' : '') +
         '</div>' +
-      '</div><button class="rk-modal-close" onclick="rkCloseModal()" aria-label="Close">\u2715</button></div>' +
+        '<button class="rk-star' + (on ? ' watching' : '') + '" data-rk-star="1" aria-label="Watch ' + rkEsc(name) + '" style="flex:none;">' + rkStarSVG() + '</button>' +
+        '<button class="rk-modal-close" onclick="rkCloseModal()" aria-label="Close">\u2715</button></div>' +
       '<div class="rk-modal-body">' +
+        '<div class="rk-sec-head" style="margin-bottom:10px;"><span class="m-sec-label">Prospect score</span><span class="m-sec-hint" id="rkScoreHint"></span></div>' +
         '<div class="rk-dense-score-row">' +
           '<div class="rk-dense-score"><div class="rk-dense-score-val" style="color:' + tc + ';">' + rkScore1(score) + '</div>' +
           '<div class="rk-dense-score-lbl">Prospect Score</div>' +
@@ -1351,12 +1381,11 @@ def build_prospects_body(is_admin: bool = False) -> str:
           '<span style="margin-left:auto;">Data confidence: <b>' + rkScore1(conf) + '</b></span>' +
         '</div>' +
         '<hr class="rk-section-divider">' +
-        '<div class="m-sec-label">Production trajectory (per game)</div>' +
+        '<div class="m-sec-head"><span class="m-sec-label">Production trajectory</span><span class="m-sec-hint">Per-game rates, not season totals</span></div>' +
         '<div id="rkTrajBody">' + rkLoadingHtml() + '</div>' +
         '<hr class="rk-section-divider">' +
-        '<div class="m-sec-label">Advanced metrics</div>' +
-        '<div class="m-adv-grid"><div id="rkAdvBody">' + rkLoadingHtml() + '</div>' +
-        '<div class="m-adv-radar" id="rkRadarBody"></div></div>' +
+        '<div class="m-sec-head"><span class="m-sec-label">Advanced metrics</span><span class="m-sec-hint" style="font-size:11px;color:var(--text-subtle);margin-left:auto;">Only metrics with data</span></div>' +
+        '<div id="rkAdvBody">' + rkLoadingHtml() + '</div>' +
         '<div class="m-cols">' +
           '<div class="m-col">' +
             '<hr class="rk-section-divider">' +
@@ -1364,7 +1393,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
           '</div>' +
           '<div class="m-col">' +
             '<hr class="rk-section-divider">' +
-            '<div class="m-sec-label">College production</div><div id="rkSeasonsBody">' + rkLoadingHtml() + '</div>' +
+            '<div class="m-sec-head"><span class="m-sec-label">College production</span><span class="m-sec-hint">Includes postseason</span></div><div class="rk-stblwrap"><div id="rkSeasonsBody">' + rkLoadingHtml() + '</div></div>' +
           '</div>' +
           '<div class="m-col">' +
             '<hr class="rk-section-divider">' +
@@ -1478,6 +1507,12 @@ def build_prospects_body(is_admin: bool = False) -> str:
       } else {
         ms.innerHTML = '';
       }
+    }
+    // Score section hint: model version + confidence (like mock)
+    var sh = document.getElementById('rkScoreHint');
+    if (sh) {
+      var mv = r.model_version || '3.1';
+      sh.textContent = 'Model v' + mv + ' \u00b7 confidence ' + Math.round(parseFloat(r.confidence_score || 0));
     }
     // Breakout age hero
     var hb = document.getElementById('rkHeroBreakout');
@@ -1597,14 +1632,15 @@ def build_prospects_body(is_admin: bool = False) -> str:
     var radarBody = document.getElementById('rkRadarBody');
     var adv = (d.advanced || []).filter(function(a){ return a.raw != null && a.grade != null; });
     if (advBody) {
-      advBody.innerHTML = adv.length ? adv.map(function(a) {
-        var g = rkLetterGrade(a.grade);
-        return '<div class="m-adv-row">' +
-          '<div class="m-adv-label">' + rkEsc(a.label) + '</div>' +
-          '<div class="rk-meter-bar"><div style="width:' + a.grade + '%;background:' + g[1] + '"></div></div>' +
-          '<div class="m-adv-score">' + rkEsc(a.raw) + '</div>' +
-          '<div class="m-adv-grade" style="color:' + g[1] + '">' + g[0] + '</div></div>';
-      }).join('') : '<span style="font-size:13px;color:var(--text-muted);">No advanced metrics available.</span>';
+      advBody.innerHTML = adv.length ? '<table class="rk-adv-tbl"><thead><tr><th>Metric</th><th class="r">Raw</th><th class="r">Percentile</th></tr></thead><tbody>' +
+        adv.map(function(a) {
+        var pct = Math.min(100, Math.max(0, parseFloat(a.grade) || 0));
+        var barColor = pct >= 80 ? '#16a34a' : (pct >= 50 ? '#d97706' : '#94a3b8');
+        return '<tr><td class="rk-adv-name">' + rkEsc(a.label) + '</td>' +
+          '<td class="r rk-adv-raw">' + rkEsc(a.raw) + '</td>' +
+          '<td class="r"><span class="rk-pbar"><i style="width:' + pct + '%;background:' + barColor + '"></i></span>' +
+          '<span class="rk-pctl"><b>' + pct.toFixed(1) + '</b></span></td></tr>';
+      }).join('') + '</tbody></table>' : '<span style="font-size:13px;color:var(--text-muted);">No advanced metrics available.</span>';
     }
     if (radarBody) {
       var tc = RK_TIER_COLORS[r.tier] || '#9ca3af';
