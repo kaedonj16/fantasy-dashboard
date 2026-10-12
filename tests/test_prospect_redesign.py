@@ -110,6 +110,28 @@ class TestAdvancedMetrics:
         assert adv[4]["raw"] == "28%"
         assert adv[4]["grade"] == 99.9  # 0.28 / 0.20, capped below 100
 
+    def test_decimal_inputs_from_psycopg(self):
+        # Regression: psycopg returns NUMERIC columns as Decimal. A Decimal
+        # recruiting_score used to kill _build_advanced_metrics outright
+        # (Decimal - float TypeError in _rescale_mid_to_c), which the detail
+        # endpoint swallowed, leaving the modal with NO advanced metrics.
+        from decimal import Decimal
+        seasons = [{"season": 2025, "dominator_rating": Decimal("0.315"),
+                    "market_share_yards": Decimal("0.305"),
+                    "market_share_tds": Decimal("0.333"),
+                    "yds_per_reception": Decimal("19.08"),
+                    "games_played": 7, "targets": 61, "receptions": 48}]
+        row = self._row()
+        row["recruiting_score"] = Decimal("88.5")
+        row["recruit_stars"] = Decimal("5")
+        adv = _build_advanced_metrics("WR", seasons, {}, row)
+        by_label = {a["label"]: a for a in adv}
+        assert by_label["Dominator"]["raw"] == "32%"
+        assert by_label["Dominator"]["grade"] is not None
+        assert by_label["Mkt Share"]["raw"] == "30%"
+        assert by_label["Recruiting"]["raw"] == "5-star"
+        assert by_label["Recruiting"]["grade"] is not None
+
     def test_te_uses_wr_set(self):
         adv = _build_advanced_metrics("TE", [], {}, self._row("TE"))
         assert [a["label"] for a in adv][2] == "Yds/Rec"
