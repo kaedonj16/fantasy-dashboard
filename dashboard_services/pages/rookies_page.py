@@ -184,7 +184,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
   .rk-dense-table tbody tr:hover { background: rgba(59,130,246,.06); cursor: pointer; }
   .rk-dense-table tbody tr:last-child td { border-bottom: none; }
   .rk-dense-table .rk-rk { font-weight: 700; color: var(--text-subtle, #94a3b8); }
-  .rk-dense-table .rk-nm { font-family: Archivo, Inter, system-ui, sans-serif; font-weight: 700; font-size: 10.5px; line-height: 1.2; max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+  .rk-dense-table .rk-nm { font-family: Archivo, Inter, system-ui, sans-serif; font-weight: 700; font-size: 11px; line-height: 1.25; max-width: 150px; }
   .rk-dense-table .rk-nm small { display: block; font-weight: 500; color: var(--text-muted); font-size: 9px; line-height: 1.3; white-space: normal; }
   .rk-dense-table .rk-pos-chip {
     display: inline-flex; align-items: center; justify-content: center;
@@ -193,6 +193,8 @@ def build_prospects_body(is_admin: bool = False) -> str:
     font-family: Archivo, Inter, system-ui, sans-serif;
   }
   .rk-dense-table .rk-sc { font-weight: 800; font-size: 13px; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  .rk-dense-table .rk-scbar { height: 3px; background: var(--hair, #edf1f6); border-radius: 2px; margin-top: 3px; overflow: hidden; }
+  .rk-dense-table .rk-scbar i { display: block; height: 100%; border-radius: 2px; }
   .rk-dense-table .rk-vbar { display: inline-flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 56px; }
   .rk-dense-table .rk-vbar .vv { font-size: 8px; font-weight: 700; color: var(--text-muted); font-family: ui-monospace, Menlo, monospace; line-height: 1.2; }
   .rk-dense-table .rk-vbar .track { position: relative; width: 14px; height: 34px; background: var(--hair, #edf1f6); border-radius: 3px; overflow: hidden; }
@@ -216,23 +218,23 @@ def build_prospects_body(is_admin: bool = False) -> str:
   }
   /* ===== Dense modal styles ===== */
   .rk-dense-score-row { display: flex; align-items: flex-start; gap: 20px; margin: 4px 0 10px; }
-  .rk-dense-score-val { font-size: 40px; font-weight: 800; letter-spacing: -.02em; line-height: 1; font-variant-numeric: tabular-nums; }
+  .rk-dense-score-val { font-size: 38px; font-weight: 800; letter-spacing: -.03em; line-height: 1; font-variant-numeric: tabular-nums; }
   .rk-dense-score-lbl { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); margin-top: 4px; }
   .rk-dense-score-sub { font-size: 10.5px; color: var(--text-muted); margin-top: 2px; }
   .rk-dense-comps { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
   .rk-dcomp { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; }
-  .rk-dcomp-bar { display: flex; align-items: flex-end; height: 52px; }
-  .rk-dcomp-fill { display: block; width: 16px; border-radius: 3px; }
+  .rk-dcomp-bar { display: flex; align-items: flex-end; height: 64px; }
+  .rk-dcomp-fill { display: block; width: 20px; border-radius: 4px; }
   .rk-dcomp-lbl { font-size: 8.5px; font-weight: 700; letter-spacing: .05em; color: var(--text-muted); }
   .rk-dcomp-val { font-size: 9.5px; font-weight: 700; font-family: ui-monospace, Menlo, monospace; }
   .rk-dense-meta-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-muted); flex-wrap: wrap; margin-bottom: 4px; }
   .rk-dense-meta-row b { color: var(--text); }
   .rk-traj { display: flex; gap: 14px; align-items: flex-end; margin: 8px 0; }
   .rk-tbar { position: relative; display: flex; flex-direction: column; align-items: center; }
-  .rk-ttrack { display: flex; align-items: flex-end; height: 100px; }
-  .rk-tfill { width: 44px; border-radius: 4px 4px 0 0; background: var(--text-muted); opacity: .75; }
+  .rk-ttrack { display: flex; align-items: flex-end; justify-content: center; height: 110px; width: 100%; max-width: 110px; }
+  .rk-tfill { width: 100%; border-radius: 6px 6px 0 0; background: var(--text-muted); opacity: .82; }
   .rk-tbar.live .rk-tfill { opacity: 1; }
-  .rk-tpg { font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums; margin-top: 6px; }
+  .rk-tpg { font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; margin-top: 6px; }
   .rk-tyr { font-size: 10px; color: var(--text-muted); font-weight: 600; }
   .rk-live-tag { position: absolute; top: -8px; left: 50%; transform: translateX(-50%); font-size: 8.5px; font-weight: 800; letter-spacing: .08em; color: #fff; background: #2563eb; border-radius: 4px; padding: 2px 6px; white-space: nowrap; z-index: 2; }
   .rk-trend-note { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-muted); margin-top: 4px; }
@@ -453,7 +455,10 @@ def build_prospects_body(is_admin: bool = False) -> str:
     padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700;
     background: color-mix(in srgb, var(--text-muted) 12%, transparent); color: var(--text-muted);
   }
-  .m-meta { font-size: 13px; color: var(--text-muted); margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .m-meta { font-size: 11.5px; color: var(--text-muted); margin-top: 7px; display: flex; gap: 4px 14px; flex-wrap: wrap; align-items: center; }
+  .m-meta b { color: var(--text); font-weight: 700; }
+  .m-recruit { font-size: 11px; color: var(--text-subtle, #94a3b8); margin-top: 4px; }
+  .m-recruit-det { color: var(--text-muted); }
   .m-meta .m-rank { font-weight: 700; color: var(--text); }
   .m-transfer { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
 
@@ -1207,7 +1212,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
         var tc = RK_TIER_COLORS[r.tier] || '#9ca3af';
         var trow = document.createElement('tr');
         var _colspan = 6 + RK_DENSE_COMPS.length;
-        trow.innerHTML = '<td colspan="' + _colspan + '" style="padding:10px 12px 2px;border-bottom:none;background:transparent;">' +
+        trow.innerHTML = '<td colspan="' + _colspan + '" style="padding:3px 12px 1px;border-bottom:none;background:transparent;">' +
           '<div class="otc-tier-divider" style="display:flex;align-items:center;gap:8px;">' +
           '<div class="otc-tier-divider-line" style="background:' + tc + ';flex:1;height:1px;"></div>' +
           '<span class="otc-tier-divider-label" style="color:' + tc + ';font-size:11px;font-weight:800;">T' + (r.tier || '?') + '</span>' +
@@ -1239,7 +1244,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
         '<td class="l rk-sticky-col"><span class="rk-nm">' + rkEsc(r.name || 'Unknown') +
           '<small>' + rkEsc(r.school || '') + (ageStr ? ' &middot; ' + ageStr : '') + '</small></span></td>' +
         '<td><span class="rk-pos-chip" style="background:' + posColor + '">' + rkEsc(pos) + '</span></td>' +
-        '<td><span class="rk-sc">' + rkScore1(score) + '</span></td>' +
+        '<td><span class="rk-sc">' + rkScore1(score) + '</span><div class="rk-scbar"><i style="width:' + Math.min(100, score) + '%;background:' + posColor + '"></i></div></td>' +
         cellsHtml +
         '<td>' + rkTrendCell(r) + '</td>' +
         '<td><button class="rk-star' + (rkWatch[pid] ? ' watching' : '') + '"' +
@@ -1321,13 +1326,14 @@ def build_prospects_body(is_admin: bool = False) -> str:
           (r.early_declare ? '<span class="m-early">EARLY</span>' : '') +
           '<button class="rk-star' + (on ? ' watching' : '') + '" data-rk-star="1" aria-label="Watch ' + rkEsc(name) + '">' + rkStarSVG() + '</button>' +
         '</div>' +
-        '<div class="m-meta"><span class="m-rank">' + rankNum + '</span>' + rkDelta(r.rank_delta) +
+        '<div class="m-meta"><span class="m-rank">#' + rankNum + '</span>' + rkDelta(r.rank_delta) +
           '<span class="rk-pos" style="--pc:' + posColor + ';margin-left:0">' + rkEsc(pos) + '</span>' +
           (r.school ? '<span>' + rkEsc(r.school) + '</span>' : '') +
           '<span id="rkMetaConf"></span>' +
-          '<span>&middot;</span><span>' + age + ' yrs</span>' +
-          '<span id="rkMetaStars"></span>' +
-          (r.draft_class_year ? '<span>&middot;</span><span>' + r.draft_class_year + ' Draft</span>' : '') + '</div>' +
+          '<span>Age <b>' + age + '</b></span>' +
+          (r.draft_class_year ? '<span>Class <b>' + r.draft_class_year + '</b></span>' : '') +
+          (mockPick != null ? '<span>Mock <b>Pick ' + mockPick + '</b></span>' : '') + '</div>' +
+        '<div class="m-recruit" id="rkMetaStars"></div>' +
         (r.transfer_history ? '<div class="m-transfer">Transfer: ' + rkEsc(r.transfer_history) + '</div>' : '') +
         '</div>' +
       '</div><button class="rk-modal-close" onclick="rkCloseModal()" aria-label="Close">\u2715</button></div>' +
@@ -1335,7 +1341,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
         '<div class="rk-dense-score-row">' +
           '<div class="rk-dense-score"><div class="rk-dense-score-val" style="color:' + tc + ';">' + rkScore1(score) + '</div>' +
           '<div class="rk-dense-score-lbl">Prospect Score</div>' +
-          '<div class="rk-dense-score-sub">' + rkEsc(RK_TIER_NAMES[r.tier] || r.tier_label || '') + ' &middot; No score reaches 100</div></div>' +
+          '<div class="rk-dense-score-sub">' + rkEsc(RK_TIER_NAMES[r.tier] || r.tier_label || '') + '</div></div>' +
           '<div class="rk-dense-comps" id="rkDenseComps"></div>' +
         '</div>' +
         '<div class="rk-dense-meta-row">' +
@@ -1451,7 +1457,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
       (d.seasons || []).forEach(function(s) {
         if (s.conference) conf = s.conference;
       });
-      mc.innerHTML = conf ? '<span>&middot;</span><span>' + rkEsc(conf) + '</span>' : '';
+      mc.innerHTML = conf ? '<span>' + rkEsc(conf) + '</span>' : '';
     }
     // Composite stars + recruiting details (parallel data track; hidden until present)
     var ms = document.getElementById('rkMetaStars');
@@ -1467,8 +1473,8 @@ def build_prospects_body(is_admin: bool = False) -> str:
         if (r.recruit_national_rank != null && r.recruit_national_rank !== '')
           det += (det ? ' · ' : '') + '#' + r.recruit_national_rank + ' nationally';
         // Skip position rank if missing to avoid "#1 undefined"
-        ms.innerHTML = '<span>&middot;</span><span>' + st + '-star' +
-          (det ? ' (' + rkEsc(det) + ')' : '') + '</span>';
+        ms.innerHTML = st + '-star recruit' +
+          (det ? ' <span class="m-recruit-det">(' + rkEsc(det) + ')</span>' : '');
       } else {
         ms.innerHTML = '';
       }
