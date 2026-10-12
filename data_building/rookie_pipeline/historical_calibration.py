@@ -18,12 +18,16 @@ from __future__ import annotations
 
 import csv
 import datetime as dt
+import hashlib
 import io
 import json
 import logging
 import math
+import os
 import statistics
+import threading
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.error import HTTPError
 from typing import Any, Dict, List, Optional, Tuple
 from utils.coerce import safe_float as _safe_float
@@ -64,19 +68,46 @@ except ImportError:
 # HTTP helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
+_CACHE_DIR = "/tmp/nflverse_cache"
+_cache_lock = threading.Lock()
+
+
+def _cache_path(url: str) -> str:
+    digest = hashlib.sha256(url.encode("utf-8")).hexdigest()
+    return os.path.join(_CACHE_DIR, f"{digest}.csv")
+
+
+def _parse_csv_content(content: str) -> List[Dict[str, str]]:
+    reader = csv.DictReader(io.StringIO(content))
+    return list(reader)
+
+
 def _fetch_csv(url: str, *, quiet_404: bool = False) -> List[Dict[str, str]]:
     """Download a CSV URL and return list of row dicts.
+
+    Downloads are cached on disk under ``/tmp/nflverse_cache/`` (keyed by a
+    hash of the URL) so repeated calibration runs reuse the same nflverse
+    files instead of re-downloading ~30 large CSVs every time. Failed
+    downloads are never cached.
 
     Args:
         url: CSV URL to fetch.
         quiet_404: If True, suppress warning logs for HTTP 404 responses.
     """
+    cache_file = _cache_path(url)
+    try:
+        if os.path.isfile(cache_file) and os.path.getsize(cache_file) > 0:
+            with open(cache_file, encoding="utf-8", errors="replace") as fh:
+                content = fh.read()
+            log.info("[calibration] Cache hit: %s", url.rsplit("/", 1)[-1])
+            return _parse_csv_content(content)
+    except OSError as exc:
+        log.warning("[calibration] Cache read failed for %s: %s", url, exc)
+
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "fantasy-dashboard/1.0"})
         with urllib.request.urlopen(req, timeout=30) as resp:
             content = resp.read().decode("utf-8", errors="replace")
-        reader = csv.DictReader(io.StringIO(content))
-        return list(reader)
     except HTTPError as exc:
         if not (quiet_404 and exc.code == 404):
             log.warning("[calibration] Failed to fetch %s: %s", url, exc)
@@ -84,6 +115,55 @@ def _fetch_csv(url: str, *, quiet_404: bool = False) -> List[Dict[str, str]]:
     except Exception as exc:
         log.warning("[calibration] Failed to fetch %s: %s", url, exc)
         return []
+
+    if content:
+        # Write via a per-thread temp file + atomic replace so parallel
+        # fetches of the same URL cannot leave a truncated cache file.
+        try:
+            with _cache_lock:
+                os.makedirs(_CACHE_DIR, exist_ok=True)
+            tmp_file = f"{cache_file}.tmp-{threading.get_ident()}"
+            with open(tmp_file, "w", encoding="utf-8") as fh:
+                fh.write(content)
+            os.replace(tmp_file, cache_file)
+        except OSError as exc:
+            log.warning("[calibration] Cache write failed for %s: %s", url, exc)
+
+    return _parse_csv_content(content)
+
+
+def _fetch_csv_parallel(
+    items: Dict[Any, Tuple[str, bool]],
+    label: str,
+) -> Dict[Any, List[Dict[str, str]]]:
+    """Fetch many CSVs in parallel (max 4 workers), logging progress.
+
+    Args:
+        items: {key: (url, quiet_404)} mapping; keys are echoed back in the
+            result so callers can look rows up by year.
+        label: Human-readable label for progress logs (e.g. "roster").
+
+    Returns: {key: [row, ...]} with an entry for every requested key.
+    """
+    results: Dict[Any, List[Dict[str, str]]] = {}
+    if not items:
+        return results
+    total = len(items)
+    done = 0
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = {
+            pool.submit(_fetch_csv, url, quiet_404=quiet): key
+            for key, (url, quiet) in items.items()
+        }
+        for fut in as_completed(futures):
+            key = futures[fut]
+            results[key] = fut.result()
+            done += 1
+            log.info(
+                "[calibration] Fetched %s %s (%d/%d): %d rows",
+                label, key, done, total, len(results[key]),
+            )
+    return results
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -128,9 +208,38 @@ def _build_nfl_outcomes(
     outcomes: Dict[str, Dict[str, Any]] = {}
     latest_completed_regular_season = dt.datetime.now(dt.timezone.utc).year - 1
 
+    # Prefetch everything up front in parallel: one roster per draft year and
+    # one player-stats file per distinct NFL season any class needs. The same
+    # season file serves several draft classes, so fetching it once here
+    # (instead of once per class, sequentially) is the main speedup; the disk
+    # cache in _fetch_csv makes repeat runs faster still.
+    roster_items: Dict[Any, Tuple[str, bool]] = {
+        yr: (_NFLVERSE_ROSTER.format(year=yr), False) for yr in draft_years
+    }
+    stat_years = sorted({
+        nfl_yr
+        for yr in draft_years
+        for nfl_yr in range(
+            yr, min(yr + nfl_data_years - 1, latest_completed_regular_season) + 1
+        )
+    })
+    stats_items: Dict[Any, Tuple[str, bool]] = {
+        yr: (
+            _NFLVERSE_BASE.format(year=yr),
+            yr >= latest_completed_regular_season,
+        )
+        for yr in stat_years
+    }
+    log.info(
+        "[calibration] Prefetching %d rosters and %d season stat files",
+        len(roster_items), len(stats_items),
+    )
+    roster_by_year = _fetch_csv_parallel(roster_items, "roster")
+    stats_by_year = _fetch_csv_parallel(stats_items, "player stats")
+
     for draft_year in draft_years:
         log.info("[calibration] Loading draft class %d roster", draft_year)
-        roster_rows = _fetch_csv(_NFLVERSE_ROSTER.format(year=draft_year))
+        roster_rows = roster_by_year.get(draft_year, [])
 
         # Build player → draft metadata from the rookie class
         draft_class: Dict[str, Dict[str, Any]] = {}
@@ -151,16 +260,18 @@ def _build_nfl_outcomes(
                 "gsis_id": row.get("gsis_id") or "",
             }
 
+        log.info(
+            "[calibration] Loaded draft class %d: %d players",
+            draft_year, len(draft_class),
+        )
+
         # Accumulate NFL stats for nfl_data_years following draft
         season_stats: Dict[str, List[float]] = {p: [] for p in draft_class}
         season_games: Dict[str, List[int]]   = {p: [] for p in draft_class}
 
         last_eval_year = min(draft_year + nfl_data_years - 1, latest_completed_regular_season)
         for nfl_yr in range(draft_year, last_eval_year + 1):
-            stat_rows = _fetch_csv(
-                _NFLVERSE_BASE.format(year=nfl_yr),
-                quiet_404=(nfl_yr >= latest_completed_regular_season),
-            )
+            stat_rows = stats_by_year.get(nfl_yr, [])
 
             if not stat_rows:
                 # If a recent season file is unavailable yet (or temporarily missing),
@@ -210,6 +321,11 @@ def _build_nfl_outcomes(
             entry["nfl_ppr_4yr_avg"] = statistics.mean(sseries) if sseries else 0.0
             entry["nfl_games_y1"]    = gseries[0] if gseries else 0
             outcomes[player]         = entry
+
+        log.info(
+            "[calibration] Draft class %d outcomes done: %d players total so far",
+            draft_year, len(outcomes),
+        )
 
     log.info("[calibration] Built NFL outcomes for %d players", len(outcomes))
     return outcomes
