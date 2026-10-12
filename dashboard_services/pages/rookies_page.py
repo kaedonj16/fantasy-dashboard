@@ -217,12 +217,13 @@ def build_prospects_body(is_admin: bool = False) -> str:
     .rk-dense-table tbody tr:nth-child(even) td:nth-child(2) { background: #fafbfd; }
   }
   /* ===== Dense modal styles ===== */
-  .rk-dense-score-row { display: flex; align-items: stretch; gap: 18px; margin: 0; }
-  .rk-dense-score-val { font-size: 38px; font-weight: 800; letter-spacing: -.03em; line-height: 1; font-variant-numeric: tabular-nums; }
+  .rk-dense-score-row { display: flex; align-items: stretch; gap: 18px; margin: 4px 0 10px; }
+  .rk-dense-score { flex: none; display: flex; flex-direction: column; justify-content: center; align-items: flex-start; padding-right: 18px; border-right: 1px solid var(--border); }
+  .rk-dense-score-val { font-family: ui-monospace, Menlo, monospace; font-size: 38px; font-weight: 800; letter-spacing: -.03em; line-height: 1; font-variant-numeric: tabular-nums; }
   .rk-dense-score-lbl { font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .1em; color: var(--text-muted); margin-top: 4px; }
   .rk-dense-score-sub { font-size: 10.5px; color: var(--text-muted); margin-top: 2px; }
-  .rk-dense-comps { display: flex; gap: 6px; align-items: flex-end; width: 100%; justify-content: space-between; }
-  .rk-dcomp { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; }
+  .rk-dense-comps { flex: 1; display: flex; justify-content: space-between; align-items: flex-end; gap: 4px; min-width: 0; }
+  .rk-dcomp { display: inline-flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 2px; flex: 1 1 0; min-width: 0; }
   .rk-dcomp-bar { display: flex; align-items: flex-end; height: 64px; }
   .rk-dcomp-fill { display: block; width: 20px; border-radius: 4px; }
   .rk-dcomp-lbl { font-size: 8px; font-weight: 800; letter-spacing: .05em; color: var(--text-muted); margin-top: 2px; }
@@ -241,6 +242,8 @@ def build_prospects_body(is_admin: bool = False) -> str:
   .rk-trend-note b { color: var(--text); }
   @media (max-width: 600px) {
     .rk-dense-score-row { flex-direction: column; gap: 12px; }
+    .rk-dense-score { border-right: none; padding-right: 0; }
+    .rk-dense-score-val { font-size: 32px; }
     .rk-traj { gap: 8px; width: 100%; }
     .rk-tbar { flex: 1 1 0; min-width: 0; }
     .rk-ttrack { width: 100%; justify-content: center; }
@@ -591,6 +594,11 @@ def build_prospects_body(is_admin: bool = False) -> str:
   .m-season-table tr:last-child td { border-bottom: none; }
   .m-season-table td.yr { font-weight: 700; color: var(--text-muted); }
   .m-season-table tr.rk-career-row td { border-top: 2px solid var(--border); font-weight: 700; }
+  .m-season-table td.pg { font-weight: 700; }
+  .m-season-table th.grp, .m-season-table td.grp { border-left: 1px solid var(--border); }
+  .m-season-table th.grp { color: var(--text-subtle); }
+  .delta { font-size: 10px; font-weight: 700; color: #16a34a; }
+  .delta-down { color: #dc2626; }
   .m-season-table tr.rk-career-row td.yr { color: var(--text); }
 
   /* Scouting notes */
@@ -788,11 +796,13 @@ def build_prospects_body(is_admin: bool = False) -> str:
   var RK_DISC_COLORS = ['#10b981','#3b82f6','#8b5cf6','#f59e0b','#ef4444','#06b6d4','#f97316','#84cc16'];
   var RK_XCOMP = [['Utilization','#06b6d4'],['Efficiency','#818cf8'],['Durability','#f97316'],['Experience','#84cc16'],['Competition','#f472b6']];
   var RK_SEASON_COLS = {
-    QB: ['Year','GP','Cmp%','Yds','Y/A','TD','INT','Dom'],
-    RB: ['Year','GP','Att','Yds','YPC','TD','Dom'],
-    WR: ['Year','GP','Rec','Yds','YPR','TD','Dom'],
-    TE: ['Year','GP','Rec','Yds','YPR','TD','Dom']
+    QB: ['Year','GP','Cmp%','Yds','Y/A','TD','INT','Yds/G','TD/G','Dom'],
+    RB: ['Year','GP','Att','Yds','TD','Att/G','Yds/G','TD/G','YPC','Dom'],
+    WR: ['Year','GP','Rec','Yds','TD','Rec/G','Yds/G','TD/G','YPR','Dom'],
+    TE: ['Year','GP','Rec','Yds','TD','Rec/G','Yds/G','TD/G','YPR','Dom']
   };
+  // Column indexes that start a visual group (left divider), matching the mock
+  var RK_SEASON_GRP = { QB: [7, 9], RB: [5, 8], WR: [5, 8], TE: [5, 8] };
   function rkDomCell(s) {
     return s.dominator_rating != null ? Math.round(Number(s.dominator_rating) * 100) + '%' : '-';
   }
@@ -1374,13 +1384,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
           '<div class="rk-dense-score-sub">' + rkEsc(RK_TIER_NAMES[r.tier] || r.tier_label || '') + '</div></div>' +
           '<div class="rk-dense-comps" id="rkDenseComps"></div>' +
         '</div>' +
-        '<div class="rk-dense-meta-row">' +
-          '<span>Breakout Age: <b id="rkHeroBreakout">-</b> yrs</span><span>&middot;</span>' +
-          '<span>Mock: <b>' + (mockPick != null ? 'Pick ' + mockPick : '-') + '</b></span>' +
-          '<span id="rkHeroTrend"></span>' +
-          '<span style="margin-left:auto;">Data confidence: <b>' + rkScore1(conf) + '</b></span>' +
-        '</div>' +
-        '<hr class="rk-section-divider">' +
+'<hr class="rk-section-divider">' +
         '<div class="m-sec-head"><span class="m-sec-label">Production trajectory</span><span class="m-sec-hint">Per-game rates, not season totals</span></div>' +
         '<div id="rkTrajBody">' + rkLoadingHtml() + '</div>' +
         '<hr class="rk-section-divider">' +
@@ -1679,29 +1683,57 @@ def build_prospects_body(is_admin: bool = False) -> str:
       if (!seasons.length) {
         sb.innerHTML = '<span style="font-size:13px;color:var(--text-muted);">No season data available.</span>';
       } else {
-        var rowsHtml = seasons.map(function(s) {
-          var cells;
-          if (pos === 'QB') {
-            cells = [s.season, s.games_played,
-              s.completion_pct != null ? Number(s.completion_pct).toFixed(1) + '%' : '-',
-              fmtNum(s.pass_yards),
-              s.yds_per_attempt != null ? Number(s.yds_per_attempt).toFixed(1) : '-',
-              s.pass_tds != null ? s.pass_tds : '-', s.interceptions != null ? s.interceptions : '-',
-              rkDomCell(s)];
-          } else if (pos === 'RB') {
-            cells = [s.season, s.games_played, fmtNum(s.rush_attempts), fmtNum(s.rush_yards),
-                     s.yds_per_carry != null ? Number(s.yds_per_carry).toFixed(1) : '-',
-                     s.rush_tds != null ? s.rush_tds : '-', rkDomCell(s)];
-          } else {
-            cells = [s.season, s.games_played, fmtNum(s.receptions), fmtNum(s.receiving_yards),
-                     s.yds_per_reception != null ? Number(s.yds_per_reception).toFixed(1) : '-',
-                     s.receiving_tds != null ? s.receiving_tds : '-', rkDomCell(s)];
+        // Per-game helpers: value/gp, and mock-style ▲/▼ vs previous season
+        function rkPgVal(val, gp) {
+          var v = Number(val), g = Number(gp);
+          return (val != null && isFinite(v) && g > 0) ? v / g : null;
+        }
+        function rkPgCell(cur, prev, grp, dec) {
+          var d = dec || 1;
+          var disp = (cur != null && isFinite(cur)) ? cur.toFixed(d) : '-';
+          var arrow = '';
+          if (cur != null && isFinite(cur) && prev != null && isFinite(prev)) {
+            if (cur > prev) arrow = ' <span class="delta">&#9650;</span>';
+            else if (cur < prev) arrow = ' <span class="delta delta-down">&#9660;</span>';
           }
-          return '<tr>' + cells.map(function(v, k) {
-            var disp = (v == null || v === '') ? '-' : v;
-            return k === 0 ? '<td class="yr">' + rkEsc(String(disp)) + '</td>'
-                           : '<td>' + rkEsc(String(disp)) + '</td>';
-          }).join('') + '</tr>';
+          return '<td class="pg' + (grp ? ' grp' : '') + '">' + disp + arrow + '</td>';
+        }
+        function rkCell(v, cls) {
+          var disp = (v == null || v === '') ? '-' : v;
+          return '<td' + (cls ? ' class="' + cls + '"' : '') + '>' + rkEsc(String(disp)) + '</td>';
+        }
+        var rowsHtml = seasons.map(function(s, idx) {
+          var prev = idx > 0 ? seasons[idx - 1] : null;
+          var gp = Number(s.games_played) || 0;
+          var pgp = prev ? (Number(prev.games_played) || 0) : 0;
+          var html;
+          if (pos === 'QB') {
+            html = rkCell(s.season, 'yr') + rkCell(fmtNum(s.games_played)) +
+              rkCell(s.completion_pct != null ? Number(s.completion_pct).toFixed(1) + '%' : '-') +
+              rkCell(fmtNum(s.pass_yards)) +
+              rkCell(s.yds_per_attempt != null ? Number(s.yds_per_attempt).toFixed(1) : '-') +
+              rkCell(s.pass_tds) + rkCell(s.interceptions) +
+              rkPgCell(rkPgVal(s.pass_yards, gp), rkPgVal(prev && prev.pass_yards, pgp), true) +
+              rkPgCell(rkPgVal(s.pass_tds, gp), rkPgVal(prev && prev.pass_tds, pgp), false, 2) +
+              rkCell(rkDomCell(s), 'grp');
+          } else if (pos === 'RB') {
+            html = rkCell(s.season, 'yr') + rkCell(fmtNum(s.games_played)) +
+              rkCell(fmtNum(s.rush_attempts)) + rkCell(fmtNum(s.rush_yards)) + rkCell(s.rush_tds) +
+              rkPgCell(rkPgVal(s.rush_attempts, gp), rkPgVal(prev && prev.rush_attempts, pgp), true) +
+              rkPgCell(rkPgVal(s.rush_yards, gp), rkPgVal(prev && prev.rush_yards, pgp), false) +
+              rkPgCell(rkPgVal(s.rush_tds, gp), rkPgVal(prev && prev.rush_tds, pgp), false, 2) +
+              rkCell(s.yds_per_carry != null ? Number(s.yds_per_carry).toFixed(1) : '-', 'grp') +
+              rkCell(rkDomCell(s));
+          } else {
+            html = rkCell(s.season, 'yr') + rkCell(fmtNum(s.games_played)) +
+              rkCell(fmtNum(s.receptions)) + rkCell(fmtNum(s.receiving_yards)) + rkCell(s.receiving_tds) +
+              rkPgCell(rkPgVal(s.receptions, gp), rkPgVal(prev && prev.receptions, pgp), true) +
+              rkPgCell(rkPgVal(s.receiving_yards, gp), rkPgVal(prev && prev.receiving_yards, pgp), false) +
+              rkPgCell(rkPgVal(s.receiving_tds, gp), rkPgVal(prev && prev.receiving_tds, pgp), false, 2) +
+              rkCell(s.yds_per_reception != null ? Number(s.yds_per_reception).toFixed(1) : '-', 'grp') +
+              rkCell(rkDomCell(s));
+          }
+          return '<tr>' + html + '</tr>';
         }).join('');
         // Career totals row (counting stats summed, efficiency re-weighted)
         (function() {
@@ -1720,29 +1752,40 @@ def build_prospects_body(is_admin: bool = False) -> str:
             t.ptd = (t.ptd || 0) + (Number(s.pass_tds) || 0);
             if (s.dominator_rating != null) { t.dom += Number(s.dominator_rating); t.domN++; }
           });
-          var tcells, avgDom = t.domN ? Math.round(t.dom / t.domN * 100) + '%' : '-';
+          var avgDom = t.domN ? Math.round(t.dom / t.domN * 100) + '%' : '-';
+          var cHtml;
           if (pos === 'QB') {
-            tcells = ['Career', t.gp,
-              t.patt ? (100 * t.cmp / t.patt).toFixed(1) + '%' : '-',
-              fmtNum(t.py), t.patt ? (t.py / t.patt).toFixed(1) : '-',
-              t.ptd, t.pint, avgDom];
+            cHtml = rkCell('Career', 'yr') + rkCell(t.gp) +
+              rkCell(t.patt ? (100 * t.cmp / t.patt).toFixed(1) + '%' : '-') +
+              rkCell(fmtNum(t.py)) + rkCell(t.patt ? (t.py / t.patt).toFixed(1) : '-') +
+              rkCell(t.ptd) + rkCell(t.pint) +
+              rkPgCell(rkPgVal(t.py, t.gp), null, true) +
+              rkPgCell(rkPgVal(t.ptd, t.gp), null, false, 2) +
+              rkCell(avgDom, 'grp');
           } else if (pos === 'RB') {
-            tcells = ['Career', t.gp, fmtNum(t.att), fmtNum(t.yds),
-              t.att ? (t.yds / t.att).toFixed(1) : '-', t.td, avgDom];
+            cHtml = rkCell('Career', 'yr') + rkCell(t.gp) +
+              rkCell(fmtNum(t.att)) + rkCell(fmtNum(t.yds)) + rkCell(t.td) +
+              rkPgCell(rkPgVal(t.att, t.gp), null, true) +
+              rkPgCell(rkPgVal(t.yds, t.gp), null, false) +
+              rkPgCell(rkPgVal(t.td, t.gp), null, false, 2) +
+              rkCell(t.att ? (t.yds / t.att).toFixed(1) : '-', 'grp') +
+              rkCell(avgDom);
           } else {
             var rtd = 0;
             seasons.forEach(function(s){ rtd += Number(s.receiving_tds) || 0; });
-            tcells = ['Career', t.gp, fmtNum(t.rec), fmtNum(t.ry),
-              t.rec ? (t.ry / t.rec).toFixed(1) : '-', rtd, avgDom];
+            cHtml = rkCell('Career', 'yr') + rkCell(t.gp) +
+              rkCell(fmtNum(t.rec)) + rkCell(fmtNum(t.ry)) + rkCell(rtd) +
+              rkPgCell(rkPgVal(t.rec, t.gp), null, true) +
+              rkPgCell(rkPgVal(t.ry, t.gp), null, false) +
+              rkPgCell(rkPgVal(rtd, t.gp), null, false, 2) +
+              rkCell(t.rec ? (t.ry / t.rec).toFixed(1) : '-', 'grp') +
+              rkCell(avgDom);
           }
-          rowsHtml += '<tr class="rk-career-row">' + tcells.map(function(v, k) {
-            var disp = (v == null || v === '') ? '-' : v;
-            return k === 0 ? '<td class="yr">' + rkEsc(String(disp)) + '</td>'
-                           : '<td>' + rkEsc(String(disp)) + '</td>';
-          }).join('') + '</tr>';
+          rowsHtml += '<tr class="rk-career-row">' + cHtml + '</tr>';
         })();
+        var grpIdx = RK_SEASON_GRP[pos] || RK_SEASON_GRP.WR;
         sb.innerHTML = '<table class="m-season-table"><thead><tr>' +
-          cols.map(function(c){ return '<th>' + c + '</th>'; }).join('') +
+          cols.map(function(c, k){ return '<th' + (grpIdx.indexOf(k) >= 0 ? ' class="grp"' : '') + '>' + c + '</th>'; }).join('') +
           '</tr></thead><tbody>' + rowsHtml + '</tbody></table>';
       }
     }
