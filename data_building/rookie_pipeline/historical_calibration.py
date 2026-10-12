@@ -135,7 +135,7 @@ def _build_nfl_outcomes(
         # Build player → draft metadata from the rookie class
         draft_class: Dict[str, Dict[str, Any]] = {}
         for row in roster_rows:
-            if _safe_float(row.get("draft_year")) != draft_year:
+            if _safe_float(row.get("entry_year")) != draft_year:
                 continue
             player = (row.get("full_name") or row.get("player_name") or "").strip().lower()
             if not player:
