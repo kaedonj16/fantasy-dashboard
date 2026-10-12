@@ -672,6 +672,85 @@ def _build_cfbd_season(raw_stats: List[Dict], team_stats: Dict, season: int,
     return row
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Incremental fetch state (games played + targets)
+#
+# rookie_prospect_source_data keys on player_id (e.g. ROOKIE_2027_jeremiah_smith);
+# it has NO draft_class_year and NO name column, so every "already have data"
+# check must key on the player_id prefix.  Which CFBD weeks have already been
+# folded into the stored season totals is tracked in rookie_stat_fetched_weeks
+# (kind = 'gp' or 'targets'; team is '' for GP, the team name for targets), so
+# each run fetches only the next unprocessed week(s) and ADDS their counts to
+# the stored totals.  Weeks are disjoint, so adding per-week counts can never
+# double count, and a run's written totals are always stored + new, never a
+# partial slice.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_FETCHED_WEEKS_DDL = """
+CREATE TABLE IF NOT EXISTS rookie_stat_fetched_weeks (
+    kind TEXT NOT NULL,
+    season INT NOT NULL,
+    week INT NOT NULL,
+    team TEXT NOT NULL DEFAULT '',
+    fetched_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (kind, season, week, team)
+)
+"""
+
+# Per-(season, team) accumulated team target totals: the denominator for
+# target_share.  Targets themselves live on the player rows; the team total
+# has to persist separately so incremental runs can add new weeks to it.
+_TEAM_TARGETS_DDL = """
+CREATE TABLE IF NOT EXISTS rookie_targets_team_totals (
+    season INT NOT NULL,
+    team TEXT NOT NULL,
+    team_targets INT NOT NULL DEFAULT 0,
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (season, team)
+)
+"""
+
+
+def _today() -> datetime.date:
+    """Current date (isolated so tests can pin the season clock)."""
+    return datetime.date.today()
+
+
+def _estimated_current_week(today: datetime.date) -> int:
+    """Rough CFB week number for `today` (week 1 starts ~Aug 25, capped at 17)."""
+    season_start = datetime.date(today.year, 8, 25)
+    if today < season_start:
+        return 1
+    return min((today - season_start).days // 7 + 1, 17)
+
+
+def _candidate_weeks(year: int, today: datetime.date) -> List[int]:
+    """
+    Weeks that may legitimately be fetched for `year`:
+    - Past seasons: weeks 1-17 (the season is final).
+    - Current season: weeks 1..estimated current week.  Weeks that have not
+      happened yet are NEVER candidates.
+    """
+    if year < today.year:
+        return list(range(1, 18))
+    if year > today.year:
+        return []
+    return list(range(1, _estimated_current_week(today) + 1))
+
+
+def _player_id_prefix(draft_year: int) -> str:
+    return f"ROOKIE_{draft_year}_"
+
+
+def _name_key_from_player_id(player_id: str, draft_year: int) -> Optional[str]:
+    """'ROOKIE_2027_jeremiah_smith' -> 'jeremiah smith' (inverse of _slug)."""
+    prefix = _player_id_prefix(draft_year)
+    if not player_id or not player_id.startswith(prefix):
+        return None
+    name = player_id[len(prefix):].replace("_", " ").strip().lower()
+    return name or None
+
+
 def _get_existing_games_played(draft_year: int, years: List[int]) -> Dict[str, Dict[int, int]]:
     """Get existing games_played from DB: {name_lower: {year: count}}"""
     try:
@@ -679,92 +758,185 @@ def _get_existing_games_played(draft_year: int, years: List[int]) -> Dict[str, D
         with get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute("""
-                    SELECT LOWER(name), season, games_played
+                    SELECT player_id, season, games_played
                     FROM rookie_prospect_source_data
-                    WHERE draft_class_year = %s AND season = ANY(%s)
+                    WHERE player_id LIKE %s AND season = ANY(%s)
                     AND games_played IS NOT NULL
-                """, (draft_year, years))
-                result = {}
-                for name, season, gp in cur.fetchall():
-                    result.setdefault(name, {})[season] = gp
+                """, (_player_id_prefix(draft_year) + "%", years))
+                result: Dict[str, Dict[int, int]] = {}
+                for player_id, season, gp in cur.fetchall():
+                    name = _name_key_from_player_id(player_id, draft_year)
+                    if not name:
+                        continue
+                    gp_int = int(gp)
+                    prev = result.setdefault(name, {}).get(season)
+                    # Defensive: if two ids collapse to one name key, keep
+                    # the larger stored total rather than an arbitrary one.
+                    if prev is None or gp_int > prev:
+                        result[name][season] = gp_int
                 return result
     except Exception:
         return {}
 
 
-def _get_weeks_needing_fetch(year: int, draft_year: int, db_games: Dict) -> List[int]:
-    """
-    Determine which weeks need API fetching.
-    - Past seasons: if we have DB data, skip entirely (return [])
-    - Current season: fetch only weeks after the max week already counted
-    """
-    from datetime import date as _d
-    today = _d.today()
-    current_year = today.year
+def _get_existing_targets(draft_year: int, years: List[int]) -> Dict[str, Dict[int, Dict[str, Any]]]:
+    """Stored targets from DB: {name_lower: {year: {"targets": int, "team": str}}}"""
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT player_id, season, targets, team
+                    FROM rookie_prospect_source_data
+                    WHERE player_id LIKE %s AND season = ANY(%s)
+                    AND targets IS NOT NULL
+                """, (_player_id_prefix(draft_year) + "%", years))
+                result: Dict[str, Dict[int, Dict[str, Any]]] = {}
+                for player_id, season, targets, team in cur.fetchall():
+                    name = _name_key_from_player_id(player_id, draft_year)
+                    if not name:
+                        continue
+                    t_int = int(targets)
+                    prev = result.setdefault(name, {}).get(season)
+                    if prev is None or t_int > prev["targets"]:
+                        result[name][season] = {"targets": t_int, "team": team or ""}
+                return result
+    except Exception:
+        return {}
 
-    if year < current_year:
-        # Past season: if any player has data, assume complete
-        for yr_counts in db_games.values():
-            if year in yr_counts:
-                return []  # Already have data, skip
-        return list(range(1, 18))  # No data, fetch all
 
-    # Current season: estimate current week, fetch only new weeks
-    # We don't track per-week, so if we have any data, fetch only the latest week
-    # to catch up. This is approximate but saves API calls.
-    season_start = _d(current_year, 8, 25)
-    if today < season_start:
-        current_week = 1
-    else:
-        current_week = min((today - season_start).days // 7 + 1, 17)
+def _get_team_targets_baselines(years: List[int]) -> Dict[Tuple[int, str], int]:
+    """Accumulated team target totals: {(season, team): team_targets}."""
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(_TEAM_TARGETS_DDL)
+                cur.execute("""
+                    SELECT season, team, team_targets FROM rookie_targets_team_totals
+                    WHERE season = ANY(%s)
+                """, (years,))
+                return {(int(s), t): int(tt) for s, t, tt in cur.fetchall()}
+    except Exception:
+        return {}
 
-    has_data = any(year in yr_counts for yr_counts in db_games.values())
-    if has_data:
-        # Only fetch the current week (incremental update)
-        return [current_week]
-    else:
-        # No data yet, fetch all weeks up to current
-        return list(range(1, current_week + 1))
+
+def _record_team_targets(season: int, team: str, team_targets: int) -> None:
+    """Persist the accumulated team target total for (season, team)."""
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(_TEAM_TARGETS_DDL)
+                cur.execute("""
+                    INSERT INTO rookie_targets_team_totals (season, team, team_targets)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (season, team) DO UPDATE
+                    SET team_targets = EXCLUDED.team_targets, updated_at = NOW()
+                """, (season, team, int(team_targets)))
+    except Exception as exc:
+        print(f"[targets] WARNING: could not record team total for {team} {season}: {exc}")
+
+
+def _get_fetched_weeks(kind: str, years: List[int]) -> Dict[int, Dict[str, Set[int]]]:
+    """Weeks already folded into stored totals: {season: {team: {week, ...}}}."""
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(_FETCHED_WEEKS_DDL)
+                cur.execute("""
+                    SELECT season, team, week FROM rookie_stat_fetched_weeks
+                    WHERE kind = %s AND season = ANY(%s)
+                """, (kind, years))
+                result: Dict[int, Dict[str, Set[int]]] = {}
+                for season, team, week in cur.fetchall():
+                    result.setdefault(int(season), {}).setdefault(team or "", set()).add(int(week))
+                return result
+    except Exception:
+        return {}
+
+
+def _mark_weeks_fetched(kind: str, season: int, team: str, weeks: List[int]) -> None:
+    """Record weeks as processed so later runs never request them again."""
+    if not weeks:
+        return
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(_FETCHED_WEEKS_DDL)
+                for week in weeks:
+                    cur.execute("""
+                        INSERT INTO rookie_stat_fetched_weeks (kind, season, week, team)
+                        VALUES (%s, %s, %s, %s)
+                        ON CONFLICT (kind, season, week, team) DO NOTHING
+                    """, (kind, season, int(week), team or ""))
+    except Exception as exc:
+        print(f"[ingestion] WARNING: could not record fetched {kind} weeks for {season}: {exc}")
 
 
 def fetch_cfbd_games_played(draft_year: int) -> Dict[str, Dict[int, int]]:
     """
-    Fetch exact games played per player per season via CFBD /games/players endpoint.
+    Fetch exact games played per player per season via CFBD /games/players.
 
-    The endpoint requires `year` + `week` - it does NOT accept a season-level query
-    with just `year` + `seasonType`.  We loop weeks 1-17 and aggregate unique game
-    IDs per player, giving an exact games-played count rather than the default 12.
+    Week-incremental and idempotent: rookie_stat_fetched_weeks records which
+    (season, week) pairs have already been folded into the stored totals, so a
+    run fetches only the next unprocessed week(s) and ADDS their unique game
+    counts to the stored season totals.  Weeks are disjoint (a game belongs to
+    exactly one week), so adding can never double count.  The returned map
+    always carries full season totals (stored + newly fetched), never just
+    the new weeks' counts.
+
+    Weeks that have not happened yet are never requested: current-season
+    candidates stop at the estimated current week, and a candidate week whose
+    fetch comes back empty at that boundary is left unmarked so it is retried
+    on the next run once games exist.  When in doubt, a week is NOT marked.
 
     Returns:
-        {player_name_lower: {year: games_played_count}}
-
-    ~51 API calls total (17 weeks × 3 years) with 0.2s rate-limit sleep ≈ ~10s.
-    Empty weeks (bye weeks, season end) are skipped automatically.
+        {player_name_lower: {year: games_played_total}}
     """
     if not CFBD_KEY:
         print("[cfbd_gp] No CFBD_API_KEY - skipping games-played lookup")
         return {}
 
-    years   = [draft_year - 1, draft_year - 2, draft_year - 3]
-    result: Dict[str, Dict[int, int]] = {}   # name_lower → {yr: count}
+    years  = [draft_year - 1, draft_year - 2, draft_year - 3]
+    result: Dict[str, Dict[int, int]] = {}   # name_lower → {yr: total count}
+    today  = _today()
 
-    # Incremental: for past seasons, use DB values if available (don't re-fetch).
-    # For current season, only fetch weeks not yet in DB.
+    # Stored season totals + which weeks produced them.
     db_games = _get_existing_games_played(draft_year, years)
+    tracked  = _get_fetched_weeks("gp", years)
 
     for yr in years:
-        player_games: Dict[str, set] = {}   # name_lower → set of game_ids
-        empty_streak = 0
+        candidates = _candidate_weeks(yr, today)
+        done: Set[int] = set(tracked.get(yr, {}).get("", set()))
+        has_db_data = any(yr in counts for counts in db_games.values())
 
-        # Determine which weeks need fetching
-        weeks_to_fetch = _get_weeks_needing_fetch(yr, draft_year, db_games)
+        # Legacy bootstrap: stored totals exist but no week tracking (they
+        # came from the old full-fetch code or a backfill, so they are
+        # complete for every candidate week).  Adopt the candidate weeks as
+        # fetched so the first incremental run does not re-fetch a whole
+        # season that is already in the DB.
+        if not done and has_db_data and candidates:
+            _mark_weeks_fetched("gp", yr, "", candidates)
+            done = set(candidates)
+            print(f"[cfbd_gp] {yr}: adopted existing GP totals; "
+                  f"weeks {candidates[0]}-{candidates[-1]} marked fetched (bootstrap)")
+
+        # Seed with stored totals; newly fetched weeks add on top below.
+        for name_lower, yr_counts in db_games.items():
+            if yr in yr_counts:
+                result.setdefault(name_lower, {})[yr] = yr_counts[yr]
+
+        weeks_to_fetch = [w for w in candidates if w not in done]
         if not weeks_to_fetch:
-            print(f"[cfbd_gp] Skipping {yr} - all weeks already fetched")
-            # Use DB values directly
-            for name_lower, yr_counts in db_games.items():
-                if yr in yr_counts:
-                    result.setdefault(name_lower, {})[yr] = yr_counts[yr]
+            print(f"[cfbd_gp] Skipping {yr} - all candidate weeks already fetched")
             continue
+
+        player_games: Dict[str, set] = {}   # name_lower → set of game_ids
+        fetched_ok: List[int] = []
+        empty_streak = 0
 
         for week in weeks_to_fetch:
             try:
@@ -772,19 +944,36 @@ def fetch_cfbd_games_played(draft_year: int) -> Dict[str, Dict[int, int]]:
                     "/games/players",
                     {"year": yr, "week": week, "seasonType": "both"},
                     retries=2,
-                ) or []
+                )
             except Exception as exc:
                 print(f"[cfbd_gp] Week {week} error: {exc}")
                 continue
 
+            if data is None:
+                # API failure (after retries): leave the week unmarked so it
+                # is retried next run; never mistake a failure for "no games".
+                print(f"[cfbd_gp] {yr} week {week}: fetch failed, will retry next run")
+                continue
+
             if not data:
                 empty_streak += 1
+                # An empty week may be recorded as processed ONLY when it is
+                # safely in the past: any week of a finished season, or a week
+                # strictly before the estimated current week (a season-data
+                # quirk).  An empty week at the current boundary most likely
+                # has not been played yet, so leave it unmarked.
+                if yr < today.year or week < _estimated_current_week(today):
+                    fetched_ok.append(week)
                 if empty_streak >= 3:
                     # 3 consecutive empty weeks = season has ended; stop early
+                    if yr < today.year:
+                        # Finished season: the remaining weeks are final too.
+                        fetched_ok.extend(w for w in weeks_to_fetch if w > week)
                     break
                 continue
 
             empty_streak = 0
+            fetched_ok.append(week)
 
             # Each element in `data` is one game.  Structure:
             # { "id": <game_id>, "teams": [ { "categories": [
@@ -806,21 +995,14 @@ def fetch_cfbd_games_played(draft_year: int) -> Dict[str, Dict[int, int]]:
 
             time.sleep(0.2)   # light rate-limiting between week calls
 
-        # Convert game-id sets → counts and store
-        # For incremental updates, ADD new games to existing DB count
-        count = 0
+        if fetched_ok:
+            _mark_weeks_fetched("gp", yr, "", fetched_ok)
+
+        # Accumulate: stored total + unique games from the newly fetched
+        # weeks (disjoint from the weeks behind the stored total).
         for player_name, game_ids in player_games.items():
-            new_games = len(game_ids)
-            existing = db_games.get(player_name, {}).get(yr, 0)
-            # If we fetched only new weeks, add to existing.
-            # If we fetched all weeks (first run), use the fresh count.
-            if yr == _get_current_year() and existing > 0:
-                # Incremental: add new week's games
-                result.setdefault(player_name, {})[yr] = existing + new_games
-            else:
-                # First fetch or past season: use fresh count
-                result.setdefault(player_name, {})[yr] = new_games
-            count += 1
+            base = db_games.get(player_name, {}).get(yr, 0)
+            result.setdefault(player_name, {})[yr] = base + len(game_ids)
 
     return result
 
@@ -1135,15 +1317,16 @@ def _filter_years_needing_fetch(all_years: List[int], draft_year: int) -> List[i
     current_season = all_years[0]
     past_seasons = all_years[1:]
 
-    # Check which past seasons already have data
+    # Check which past seasons already have data.  The source table keys on
+    # player_id (ROOKIE_<draft_year>_...); it has no draft_class_year column.
     try:
         from dashboard_services.db import get_conn
         with get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute("""
                     SELECT DISTINCT season FROM rookie_prospect_source_data
-                    WHERE draft_class_year = %s AND season = ANY(%s)
-                """, (draft_year, past_seasons))
+                    WHERE player_id LIKE %s AND season = ANY(%s)
+                """, (_player_id_prefix(draft_year) + "%", past_seasons))
                 existing = {row[0] for row in cur.fetchall()}
     except Exception:
         # If DB check fails, fall back to fetching everything (safe)
@@ -1344,8 +1527,13 @@ def fetch_cfbd_college_stats(
                         yr = s.get("season")
                         t = t_by_year.get(yr) if yr else None
                         if t:
-                            s["targets"] = t["targets"]
-                            s["target_share"] = t["target_share"]
+                            # Totals from the targets fetch are stored+new
+                            # (additive); only overwrite when it carries a
+                            # value so a partial entry can never blank a stat.
+                            if t.get("targets") is not None:
+                                s["targets"] = t["targets"]
+                            if t.get("target_share") is not None:
+                                s["target_share"] = t["target_share"]
                             merged += 1
                 print(f"[cfbd] Merged targets/target_share for {merged} player-seasons")
         except Exception as exc:
@@ -1583,19 +1771,39 @@ def fetch_sportradar_prospects(draft_year: int) -> List[Dict[str, Any]]:
 def fetch_cfbd_targets(
     draft_year: int,
     teams_by_year: Dict[int, List[str]],
+    adopt_stored: bool = True,
 ) -> Dict[str, Dict[int, Dict[str, Any]]]:
     """
-    Target share from CFBD play-by-play stats (free, no PFF needed).
+    Target counts + target share from CFBD play-by-play stats (free, no PFF).
 
-    Uses /plays/stats/types to find the targets stat type, then pulls
-    per-athlete target counts per team for each season in teams_by_year.
-    Returns {name_lower: {year: {"targets": int, "target_share": float}}}.
+    Week-incremental, same discipline as the games-played fetch:
+    rookie_stat_fetched_weeks (kind='targets', tracked per team) records which
+    (season, week, team) slices are already folded into the stored totals, so
+    a run fetches only unprocessed weeks and ADDS their counts.  Weeks are
+    disjoint, so written totals are always stored + new, never a partial
+    slice; a run with zero new weeks returns the stored totals unchanged.
+
+    - Current season: per-week fetches (/plays/stats accepts a week param),
+      capped at the estimated current week.  A team-week that comes back
+      empty at that boundary is left unmarked and retried next run.
+    - Past seasons are final, so one season-level call per team is exact:
+      fetched that way once, then all weeks are marked.  Stored totals with
+      no tracking (legacy) are adopted instead of re-fetched; one
+      season-level call per team then only establishes the share denominator.
+
+    Team target totals (the share denominator) persist in
+    rookie_targets_team_totals so incremental runs add to them.
+
+    Returns {name_lower: {year: {"targets": int, "target_share": float, "team": str}}}.
     Returns {} on any failure - the pipeline continues without targets
     (the model falls back to receptions-based proxies).
 
     Args:
         draft_year: The draft class year (for logging)
         teams_by_year: {season_year: [team names]} - teams to fetch per season
+        adopt_stored: When False (standalone backfill), never adopt stored
+            totals: fetch complete data for every requested season/team so
+            players whose stored targets are missing actually get filled.
     """
     if not CFBD_KEY or not teams_by_year:
         if not CFBD_KEY:
@@ -1620,41 +1828,168 @@ def fetch_cfbd_targets(
         print(f"[targets] Available types: {[str(t.get('name'))[:30] for t in types[:10]]}")
         return {}
 
+    def _fetch_rows(season_year: int, team: str, week: Optional[int] = None):
+        """One /plays/stats call; None signals an API failure (retry later)."""
+        params: Dict[str, Any] = {"year": season_year, "team": team,
+                                  "statTypeId": target_type_id}
+        if week is not None:
+            params["week"] = week
+        try:
+            return _cfbd_get("/plays/stats", params, retries=2)
+        except Exception as exc:
+            print(f"[targets] {team} {season_year} failed - {type(exc).__name__}: {exc}")
+            return None
+
+    def _aggregate(rows) -> Tuple[Dict[str, int], int]:
+        by_athlete: Dict[str, int] = {}
+        team_total = 0
+        for r in rows or []:
+            name = str(
+                r.get("athleteName") or r.get("athlete") or r.get("player") or r.get("name") or ""
+            ).strip()
+            count = _safe_int(r.get("stat") or r.get("count") or r.get("value")) or 0
+            if not name or count <= 0:
+                continue
+            by_athlete[name.lower()] = by_athlete.get(name.lower(), 0) + count
+            team_total += count
+        return by_athlete, team_total
+
+    today = _today()
+    seasons = sorted(teams_by_year)
+    stored = _get_existing_targets(draft_year, seasons)
+    tracked = _get_fetched_weeks("targets", seasons)
+    baselines = _get_team_targets_baselines(seasons)
     result: Dict[str, Dict[int, Dict[str, Any]]] = {}
-    for season_year, teams in sorted(teams_by_year.items()):
+
+    def _put(name: str, season_year: int, targets: int, team: str) -> None:
+        denom = baselines.get((season_year, team), 0)
+        result.setdefault(name, {})[season_year] = {
+            "targets": targets,
+            "target_share": round(targets / denom, 4) if denom else 0.0,
+            "team": team,
+        }
+
+    def _seed_stored(season_year: int) -> None:
+        """Return stored totals unchanged (zero-new-weeks no-op path)."""
+        for name, yrs in stored.items():
+            entry = yrs.get(season_year)
+            if entry:
+                _put(name, season_year, entry["targets"], entry.get("team") or "")
+
+    def _establish_denominator(season_year: int, team: str) -> None:
+        """One season-level call whose only job is the share denominator."""
+        rows = _fetch_rows(season_year, team)
+        if rows is not None:
+            _, team_total = _aggregate(rows)
+            baselines[(season_year, team)] = team_total
+            _record_team_targets(season_year, team, team_total)
+
+    for season_year in seasons:
+        teams = sorted(set(teams_by_year[season_year]))
         if not teams:
             continue
-        print(f"[targets] Fetching {season_year} for {len(set(teams))} teams")
-        for team in sorted(set(teams)):
-            try:
-                rows = _cfbd_get(
-                    "/plays/stats",
-                    {"year": season_year, "team": team, "statTypeId": target_type_id},
-                    retries=2,
-                ) or []
-            except Exception as exc:
-                print(f"[targets] {team} {season_year} failed - {type(exc).__name__}: {exc}")
+        candidates = _candidate_weeks(season_year, today)
+        season_tracked = tracked.get(season_year, {})
+        has_stored = any(season_year in yrs for yrs in stored.values())
+        print(f"[targets] Fetching {season_year} for {len(teams)} teams")
+
+        if season_year < today.year:
+            # ── Finished season: season-level fetch is exact and cheap ──
+            all_done = bool(candidates) and adopt_stored and all(
+                set(candidates) <= season_tracked.get(t, set()) for t in teams)
+            if all_done:
+                _seed_stored(season_year)
                 continue
-            by_athlete: Dict[str, int] = {}
-            team_total = 0
-            for r in rows:
-                name = str(
-                    r.get("athleteName") or r.get("athlete") or r.get("player") or r.get("name") or ""
-                ).strip()
-                count = _safe_int(r.get("stat") or r.get("count") or r.get("value")) or 0
-                if not name or count <= 0:
+            if adopt_stored and not season_tracked and has_stored:
+                # Bootstrap: adopt stored totals; never re-fetch player data.
+                for team in teams:
+                    _establish_denominator(season_year, team)
+                    _mark_weeks_fetched("targets", season_year, team, candidates)
+                _seed_stored(season_year)
+                continue
+            for team in teams:
+                rows = _fetch_rows(season_year, team)
+                if rows is None:
+                    continue  # failure: leave unmarked, retried next run
+                by_athlete, team_total = _aggregate(rows)
+                baselines[(season_year, team)] = team_total
+                _record_team_targets(season_year, team, team_total)
+                _mark_weeks_fetched("targets", season_year, team, candidates)
+                for name, tgts in by_athlete.items():
+                    _put(name, season_year, tgts, team)
+            continue
+
+        # ── Current season: per-week incremental per team ──
+        if adopt_stored and not season_tracked and has_stored:
+            # Bootstrap: adopt stored totals; establish denominators only.
+            for team in teams:
+                _establish_denominator(season_year, team)
+                _mark_weeks_fetched("targets", season_year, team, candidates)
+            _seed_stored(season_year)
+            continue
+
+        est = _estimated_current_week(today)
+        additions: Dict[str, Tuple[int, str]] = {}   # name → (added targets, team)
+        for team in teams:
+            # Backfill mode (adopt_stored=False) ignores prior tracking and
+            # stored baselines: it fetches every candidate week so the totals
+            # it produces are complete, never a partial slice.
+            done = set(season_tracked.get(team, set())) if adopt_stored else set()
+            weeks_to_fetch = [w for w in candidates if w not in done]
+            if not weeks_to_fetch:
+                continue
+            fetched_ok: List[int] = []
+            new_team_total = 0
+            team_complete = True
+            for week in weeks_to_fetch:
+                rows = _fetch_rows(season_year, team, week=week)
+                if rows is None:
+                    team_complete = False
+                    continue  # failure: leave this team-week unmarked
+                if not rows:
+                    # Empty team-week (bye / no data): record it only when it
+                    # is strictly before the current-week boundary; at the
+                    # boundary it may simply not have been played yet.
+                    if week < est:
+                        fetched_ok.append(week)
+                    else:
+                        team_complete = False
                     continue
-                key = name.lower()
-                by_athlete[key] = by_athlete.get(key, 0) + count
-                team_total += count
-            for key, tgts in by_athlete.items():
-                if key not in result:
-                    result[key] = {}
-                result[key][season_year] = {
-                    "targets": tgts,
-                    "target_share": round(tgts / team_total, 4) if team_total else 0.0,
-                    "team": team,
-                }
+                fetched_ok.append(week)
+                wk_athletes, wk_total = _aggregate(rows)
+                for n, c in wk_athletes.items():
+                    prev_add, _ = additions.get(n, (0, team))
+                    additions[n] = (prev_add + c, team)
+                new_team_total += wk_total
+                time.sleep(0.15)   # light rate-limiting between calls
+            if not adopt_stored and not team_complete:
+                # Backfill must never write a partial slice as a season
+                # total: drop this team's additions entirely.
+                additions = {n: v for n, v in additions.items() if v[1] != team}
+                new_team_total = 0
+            if fetched_ok and (adopt_stored or team_complete):
+                # In backfill mode an incomplete team's weeks stay unmarked:
+                # nothing was persisted from them, so normal runs must still
+                # treat them as unprocessed.
+                _mark_weeks_fetched("targets", season_year, team, fetched_ok)
+            if new_team_total:
+                team_base = baselines.get((season_year, team), 0) if adopt_stored else 0
+                team_total_all = team_base + new_team_total
+                baselines[(season_year, team)] = team_total_all
+                _record_team_targets(season_year, team, team_total_all)
+
+        # Merge: stored totals for everyone, additions on top for players
+        # with newly fetched weeks.  Nothing fetched → totals identical to
+        # what is already stored (pure no-op, never zeros).  Backfill mode
+        # skips the stored base entirely: its totals come from the complete
+        # fetch above.
+        if adopt_stored:
+            _seed_stored(season_year)
+        for name, (add, team) in additions.items():
+            base = ((stored.get(name, {}).get(season_year) or {}).get("targets", 0)
+                    if adopt_stored else 0)
+            _put(name, season_year, base + add, team)
+
     total_athletes = len(result)
     print(f"[targets] collected targets for {total_athletes} athletes across {len(teams_by_year)} seasons")
     return result
@@ -1693,7 +2028,7 @@ def backfill_cfbd_targets(draft_year: int) -> Dict[str, int]:
         teams_by_year.setdefault(season, set()).add(team)
     teams_by_year = {yr: sorted(teams) for yr, teams in teams_by_year.items()}
 
-    targets_map = fetch_cfbd_targets(draft_year, teams_by_year)
+    targets_map = fetch_cfbd_targets(draft_year, teams_by_year, adopt_stored=False)
     if not targets_map:
         total_teams = sum(len(t) for t in teams_by_year.values())
         return {"updated": 0, "teams": total_teams}

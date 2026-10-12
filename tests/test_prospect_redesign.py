@@ -376,9 +376,15 @@ class TestCfbdTargets:
         return []
 
     def test_collects_targets_and_share(self, monkeypatch):
+        import datetime as _dt
+
         import data_building.rookie_pipeline.ingestion as ing
         monkeypatch.setattr(ing, "_cfbd_get", self._fake_cfbd)
         monkeypatch.setattr(ing, "CFBD_KEY", "test")
+        # Pin the clock to 2027 so 2026 is a finished season: finished
+        # seasons are fetched with one season-level call per team (the
+        # week-incremental path applies to the in-progress season only).
+        monkeypatch.setattr(ing, "_today", lambda: _dt.date(2027, 1, 15))
         out = ing.fetch_cfbd_targets(2027, {2026: ["Texas"]})
         assert out["ryan wingo"][2026]["targets"] == 68
         assert out["ryan wingo"][2026]["target_share"] == round(68 / 110, 4)
