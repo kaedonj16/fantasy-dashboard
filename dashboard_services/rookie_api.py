@@ -255,6 +255,10 @@ def _rescale_mid_to_c(v):
     """
     if v is None:
         return None
+    try:
+        v = float(v)  # psycopg NUMERIC arrives as Decimal; Decimal - float raises
+    except (TypeError, ValueError):
+        return None
     return _clip100(50.0 + (v - 50.0) * 0.5)
 
 
