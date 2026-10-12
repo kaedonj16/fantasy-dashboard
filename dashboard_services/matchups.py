@@ -384,6 +384,80 @@ def _proj_value_for_pid(
     return 0.0
 
 
+def build_slide_proj_lookups(
+    season: Any,
+    w: Any,
+    proj_week: Any,
+    projections: Dict[str, Any],
+    team_game_lookup: Optional[dict],
+    scoring_settings: Optional[Dict[str, Any]] = None,
+):
+    """Build the projection lookups the matchup slide uses.
+
+    Returns ``(week_proj_map, pid_proj, frac_lookup)``:
+
+    - ``pid_proj(pid, pos)`` is the scoring-settings-aware, position-aware
+      projection lookup with the raw-weekly-file fallback (same source
+      Scout uses) when the bundle is empty or a starter pid is missing.
+    - ``frac_lookup(starter)`` returns the fraction of that starter's NFL
+      game still to play so in-progress players blend banked points with
+      remaining projection, using the week schedule as fallback.
+
+    Shared by the matchup carousel (``render_matchup_slide``) and the
+    League Scores tab (``build_league_scores_list``) so both surfaces
+    always agree on live totals. Previously the League Scores embed used
+    neither lookup and undercounted projections for players missing from
+    the bundle or mid-game.
+    """
+    team_schedule_lookup = build_team_schedule_lookup(load_week_schedule(season, w))
+    # For future-week previews, today's live scores are from a different week
+    # (e.g., viewing Week 5 on Tuesday shows Week 4 MNF finals). Ignore final
+    # games from the live lookup so player rows fall back to the upcoming
+    # matchup schedule. In-progress games are kept: they drive the live
+    # projected-finish blend.
+    proj = int(w or 0) > int(proj_week or 0)
+    if proj and team_game_lookup:
+        slide_game_lookup = {
+            k: g for k, g in team_game_lookup.items()
+            if str((g or {}).get("gameStatusCode") or "").strip() != "2"
+        }
+    else:
+        slide_game_lookup = team_game_lookup
+    frac_lookup = make_frac_lookup(slide_game_lookup, team_schedule_lookup)
+
+    week_proj_map = _week_proj_map_from_bundles(projections, w)
+    # Lazy raw-file fallback when the bundle is empty or a starter pid is
+    # missing -- common for Yahoo where scoreboard rows omit lineups and the
+    # first paint races projection hydration.
+    _raw_week_proj: Optional[Dict[str, Any]] = None
+
+    def _raw_week_map() -> Dict[str, Any]:
+        nonlocal _raw_week_proj
+        if _raw_week_proj is None:
+            try:
+                from utils.utils import load_week_projection
+                _raw_week_proj = load_week_projection(int(season), int(w)) or {}
+            except Exception:
+                _raw_week_proj = {}
+        return _raw_week_proj
+
+    def _pid_proj(pid: Any, pos: str = "") -> float:
+        mapped = _proj_value_for_pid(
+            week_proj_map, pid,
+            raw_week_map=None, scoring_settings=scoring_settings, pos=pos,
+        )
+        if mapped != 0.0 or (pid is not None and str(pid) in week_proj_map):
+            return mapped
+        # Bundle miss (or explicit absence): try the raw weekly file once.
+        return _proj_value_for_pid(
+            week_proj_map, pid,
+            raw_week_map=_raw_week_map(),
+            scoring_settings=scoring_settings, pos=pos,
+        )
+
+    return week_proj_map, _pid_proj, frac_lookup
+
+
 def _allow_live_game_indicators(viewed_season) -> bool:
     """Live pulse/dot only during regular season or playoffs for the current NFL year."""
     from dashboard_services.api import get_nfl_state
@@ -2844,7 +2918,7 @@ def render_matchup_slide(
     """
 
 
-def build_league_scores_list(matchups, viewer_rid, status_by_pid, proj_map, frac_lookup=None):
+def build_league_scores_list(matchups, viewer_rid, status_by_pid, proj_map, proj_lookup=None, frac_lookup=None):
     """Build the League Scores payload from already-computed matchup data.
 
     The Weekly Hub carousel and the League Scores tab show the same numbers
@@ -2852,10 +2926,17 @@ def build_league_scores_list(matchups, viewer_rid, status_by_pid, proj_map, frac
     inputs so the tab can render instantly from embedded data instead of
     making a separate /api/matchup/league-scores fetch that recomputes
     everything.
+
+    ``proj_lookup`` / ``frac_lookup`` are the slide-style lookups built by
+    ``build_slide_proj_lookups`` (scoring-aware projections with raw-file
+    fallback, schedule-backed live-game fraction). Passing them keeps the
+    tab's totals identical to the carousel's; without them bundle misses
+    and in-progress players undercount.
     """
     def _side(team):
         actual, proj = team_live_totals(
-            team, status_by_pid, proj_map, frac_lookup=frac_lookup,
+            team, status_by_pid, proj_map,
+            proj_lookup=proj_lookup, frac_lookup=frac_lookup,
         )
         return {
             "name": team.get("name") or "",

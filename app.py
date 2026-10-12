@@ -21658,14 +21658,19 @@ def api_weekly_week():
         logger.debug("[api_weekly_week] wrapped url check failed", exc_info=True)
 
     # League Scores payload, built from the same matchup data as the carousel
-    # so the tab renders instantly without a separate API fetch.
+    # so the tab renders instantly without a separate API fetch. Uses the
+    # same slide-style lookups as the carousel so totals always agree.
     _api_ls_payload = []
     try:
-        from dashboard_services.matchups import build_league_scores_list, make_frac_lookup
-        _api_ls_frac = make_frac_lookup(team_game_lookup or {})
+        from dashboard_services.matchups import build_league_scores_list, build_slide_proj_lookups
+        _api_ls_proj_map, _api_ls_pid_proj, _api_ls_frac = build_slide_proj_lookups(
+            season, week, last_final_week, proj_by_week,
+            team_game_lookup or {},
+            scoring_settings=ctx.get("raw_scoring_settings") or ctx.get("scoring_settings"),
+        )
         _api_ls_payload = build_league_scores_list(
-            matchups, _api_vid, status_by_pid, proj_by_week,
-            frac_lookup=_api_ls_frac,
+            matchups, _api_vid, status_by_pid, _api_ls_proj_map,
+            proj_lookup=_api_ls_pid_proj, frac_lookup=_api_ls_frac,
         )
     except Exception:
         logger.debug("[api_weekly_week] league-scores payload failed", exc_info=True)

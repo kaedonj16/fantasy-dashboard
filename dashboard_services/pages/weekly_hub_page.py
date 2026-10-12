@@ -400,13 +400,20 @@ def build_weekly_hub_body(ctx: dict) -> str:
     if _show_matchup_preview and default_matchups:
         try:
             from dashboard_services.matchups import (
-                build_league_scores_list, make_frac_lookup,
+                build_league_scores_list, build_slide_proj_lookups,
             )
-            _ls_frac = make_frac_lookup(team_game_lookup or {})
             _ls_statuses = (statuses.get(default_week) or {}).get("statuses", {}) or {}
+            # Same slide-style lookups the carousel uses (scoring-aware
+            # projections with raw-file fallback, schedule-backed live-game
+            # fraction) so the tab's totals match the carousel's.
+            _ls_proj_map, _ls_pid_proj, _ls_frac = build_slide_proj_lookups(
+                season, default_week, last_final_week, proj_by_week,
+                team_game_lookup or {},
+                scoring_settings=ctx.get("raw_scoring_settings") or ctx.get("scoring_settings"),
+            )
             _ls_payload = build_league_scores_list(
-                default_matchups, _hub_vid, _ls_statuses, proj_by_week,
-                frac_lookup=_ls_frac,
+                default_matchups, _hub_vid, _ls_statuses, _ls_proj_map,
+                proj_lookup=_ls_pid_proj, frac_lookup=_ls_frac,
             )
             _ls_embedded_json = (
                 '<script type="application/json" id="ls-embedded-data">'
