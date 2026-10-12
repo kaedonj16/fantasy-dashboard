@@ -832,6 +832,55 @@ def rankings():
             logging.getLogger(__name__).debug("suppressed exception", exc_info=True)
 
 
+        # Per-game production trajectory (last 3 seasons) for the dense table trend column.
+        # One query for all players; per-game rates avoid comparing partial seasons raw.
+        try:
+            from dashboard_services.db import get_conn as _get_conn_traj
+            _pids = [d.get("player_id") for d in result if d.get("player_id")]
+            if _pids:
+                with _get_conn_traj() as _tconn:
+                    with _tconn.cursor() as _tcur:
+                        _tcur.execute(
+                            """SELECT player_id, season, games_played, position,
+                                      receiving_yards, rush_yards, pass_yards
+                               FROM rookie_prospect_source_data
+                               WHERE player_id = ANY(%s) AND draft_class_year = %s
+                               ORDER BY player_id, season""",
+                            (_pids, year),
+                        )
+                        _trows = _tcur.fetchall() or []
+                _traj_map: dict = {}
+                for _tr in _trows:
+                    _pid = _tr.get("player_id")
+                    _gp = _tr.get("games_played") or 0
+                    _pos = (_tr.get("position") or "").upper()
+                    if _pos == "QB":
+                        _yds = _tr.get("pass_yards") or 0
+                        _lbl = "pass yds/g"
+                    elif _pos == "RB":
+                        _yds = _tr.get("rush_yards") or 0
+                        _lbl = "rush yds/g"
+                    else:
+                        _yds = _tr.get("receiving_yards") or 0
+                        _lbl = "rec yds/g"
+                    _pg = round(float(_yds) / _gp, 1) if _gp else 0.0
+                    _traj_map.setdefault(_pid, []).append(
+                        {"season": _tr.get("season"), "per_game": _pg, "label": _lbl,
+                         "gp": _gp, "is_current": _tr.get("season") == 2026})
+                for d in result:
+                    _t = _traj_map.get(d.get("player_id")) or []
+                    # Last 3 seasons only
+                    _t = _t[-3:]
+                    if _t:
+                        d["trajectory"] = {
+                            "values": [x["per_game"] for x in _t],
+                            "seasons": [x["season"] for x in _t],
+                            "label": _t[0]["label"],
+                            "is_current_last": _t[-1]["is_current"],
+                        }
+        except Exception:
+            logging.getLogger(__name__).debug("trajectory overlay skipped", exc_info=True)
+
         # Sort: tier ascending, then display_value descending within each tier
         result.sort(key=lambda x: (x.get("tier") or 99, -(x.get("display_value") or 0)))
 

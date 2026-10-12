@@ -76,7 +76,29 @@ def build_prospects_body(is_admin: bool = False) -> str:
     <!-- Count -->
     <div id="rkCount" style="font-size:13px;color:var(--text-muted);margin-bottom:8px;display:none;"></div>
 
-    <!-- Table header -->
+    <!-- Dense table header -->
+    <div id="rkDenseWrap" style="display:none;overflow-x:auto;-webkit-overflow-scrolling:touch;">
+    <table id="rkDenseTable" class="rk-dense-table">
+      <thead><tr>
+        <th class="l" data-rk-sort-col="rank" role="button" tabindex="0" title="Sort by overall rank">RK</th>
+        <th class="l rk-sticky-col" data-rk-sort-col="name" role="button" tabindex="0" title="Sort by prospect name">PLAYER</th>
+        <th data-rk-sort-col="pos" role="button" tabindex="0" title="Sort by position">POS</th>
+        <th data-rk-sort-col="score" role="button" tabindex="0" title="Sort by prospect score">SCORE</th>
+        <th title="Production">PROD</th>
+        <th title="Draft Capital">DC</th>
+        <th title="Age">AGE</th>
+        <th title="Breakout">BO</th>
+        <th title="Efficiency">EFF</th>
+        <th title="Durability">DUR</th>
+        <th title="Competition">COMP</th>
+        <th title="Utilization">UTIL</th>
+        <th title="Per-game production trajectory">3-YR /G TREND</th>
+        <th></th>
+      </tr></thead>
+      <tbody id="rkDenseBody"></tbody>
+    </table>
+    </div>
+    <!-- Legacy header (hidden, kept for sort header sync) -->
     <div id="rkHeader" class="rk-grid-row rk-header" style="display:none;">
       <span data-rk-sort-col="rank" role="button" tabindex="0" title="Sort by overall rank" style="text-align:center;">Rank</span>
       <span data-rk-sort-col="name" role="button" tabindex="0" title="Sort by prospect name">Prospect</span>
@@ -143,6 +165,82 @@ def build_prospects_body(is_admin: bool = False) -> str:
 </div>
 
 <style>
+  /* ===== Dense prospect table (Bloomberg-style) ===== */
+  .rk-dense-table { border-collapse: collapse; width: 100%; min-width: 900px; font-size: 11.5px; }
+  .rk-dense-table thead th {
+    position: sticky; top: 0; background: var(--card); z-index: 5;
+    text-align: center; font-size: 10px; font-weight: 700; letter-spacing: .06em;
+    color: var(--text-muted); padding: 8px 6px; border-bottom: 1px solid var(--border);
+    white-space: nowrap; cursor: pointer; user-select: none;
+  }
+  .rk-dense-table thead th.l, .rk-dense-table tbody td.l { text-align: left; }
+  .rk-dense-table tbody td {
+    padding: 6px; border-bottom: 1px solid var(--hair, #edf1f6);
+    text-align: center; font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    white-space: nowrap; vertical-align: bottom;
+  }
+  .rk-dense-table tbody td:nth-child(-n+4) { vertical-align: middle; }
+  .rk-dense-table tbody tr:nth-child(even) { background: rgba(18,45,75,.022); }
+  .rk-dense-table tbody tr:hover { background: rgba(59,130,246,.06); cursor: pointer; }
+  .rk-dense-table tbody tr:last-child td { border-bottom: none; }
+  .rk-dense-table .rk-rk { font-weight: 700; color: var(--text-subtle, #94a3b8); }
+  .rk-dense-table .rk-nm { font-family: Archivo, Inter, system-ui, sans-serif; font-weight: 700; font-size: 11px; line-height: 1.25; max-width: 150px; }
+  .rk-dense-table .rk-nm small { display: block; font-weight: 500; color: var(--text-muted); font-size: 9px; line-height: 1.3; white-space: normal; }
+  .rk-dense-table .rk-pos-chip {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 34px; height: 20px; padding: 0 8px; border-radius: 6px;
+    font-size: 10.5px; font-weight: 800; color: #fff; letter-spacing: .04em;
+    font-family: Archivo, Inter, system-ui, sans-serif;
+  }
+  .rk-dense-table .rk-sc { font-weight: 800; font-size: 13px; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  .rk-dense-table .rk-vbar { display: inline-flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 56px; }
+  .rk-dense-table .rk-vbar .vv { font-size: 8px; font-weight: 700; color: var(--text-muted); font-family: ui-monospace, Menlo, monospace; line-height: 1.2; }
+  .rk-dense-table .rk-vbar .track { position: relative; width: 14px; height: 34px; background: var(--hair, #edf1f6); border-radius: 3px; overflow: hidden; }
+  .rk-dense-table .rk-vbar .fill { position: absolute; bottom: 0; left: 0; right: 0; border-radius: 3px; }
+  .rk-dense-table .rk-trcell {
+    display: inline-flex; align-items: center; gap: 7px; justify-content: center;
+    background: var(--card-soft, #f6f8fb); border: 1px solid var(--hair, #edf1f6);
+    border-radius: 8px; padding: 4px 8px; text-align: center;
+  }
+  .rk-dense-table .rk-trstat { display: block; font-size: 8.5px; font-weight: 700; letter-spacing: .04em; color: var(--text-muted); text-transform: uppercase; margin-bottom: 2px; font-family: Archivo, Inter, sans-serif; }
+  .rk-dense-table .rk-trpct { font-size: 10px; font-weight: 800; font-family: ui-monospace, Menlo, monospace; }
+  .rk-dense-table .rk-trpct.up { color: #16a34a; } .rk-dense-table .rk-trpct.dn { color: #dc2626; }
+  .rk-dense-table td:last-child { text-align: center; vertical-align: middle; }
+  @media (max-width: 720px) {
+    .rk-dense-table thead th:nth-child(2), .rk-dense-table tbody td:nth-child(2) {
+      position: sticky; left: 0; z-index: 2; background: var(--card);
+      box-shadow: 1px 0 0 var(--border);
+    }
+    .rk-dense-table thead th:nth-child(2) { z-index: 6; }
+    .rk-dense-table tbody tr:nth-child(even) td:nth-child(2) { background: #fafbfd; }
+  }
+  /* ===== Dense modal styles ===== */
+  .rk-dense-score-row { display: flex; align-items: flex-start; gap: 20px; margin: 4px 0 10px; }
+  .rk-dense-score-val { font-size: 40px; font-weight: 800; letter-spacing: -.02em; line-height: 1; font-variant-numeric: tabular-nums; }
+  .rk-dense-score-lbl { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); margin-top: 4px; }
+  .rk-dense-score-sub { font-size: 10.5px; color: var(--text-muted); margin-top: 2px; }
+  .rk-dense-comps { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+  .rk-dcomp { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; }
+  .rk-dcomp-bar { display: flex; align-items: flex-end; height: 52px; }
+  .rk-dcomp-fill { display: block; width: 16px; border-radius: 3px; }
+  .rk-dcomp-lbl { font-size: 8.5px; font-weight: 700; letter-spacing: .05em; color: var(--text-muted); }
+  .rk-dcomp-val { font-size: 9.5px; font-weight: 700; font-family: ui-monospace, Menlo, monospace; }
+  .rk-dense-meta-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-muted); flex-wrap: wrap; margin-bottom: 4px; }
+  .rk-dense-meta-row b { color: var(--text); }
+  .rk-traj { display: flex; gap: 14px; align-items: flex-end; margin: 8px 0; }
+  .rk-tbar { position: relative; display: flex; flex-direction: column; align-items: center; }
+  .rk-ttrack { display: flex; align-items: flex-end; height: 100px; }
+  .rk-tfill { width: 44px; border-radius: 4px 4px 0 0; background: var(--text-muted); opacity: .75; }
+  .rk-tbar.live .rk-tfill { opacity: 1; }
+  .rk-tpg { font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums; margin-top: 6px; }
+  .rk-tyr { font-size: 10px; color: var(--text-muted); font-weight: 600; }
+  .rk-live-tag { position: absolute; top: -8px; left: 50%; transform: translateX(-50%); font-size: 8.5px; font-weight: 800; letter-spacing: .08em; color: #fff; background: #2563eb; border-radius: 4px; padding: 2px 6px; white-space: nowrap; z-index: 2; }
+  .rk-trend-note { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-muted); margin-top: 4px; }
+  .rk-trend-note b { color: var(--text); }
+  @media (max-width: 600px) {
+    .rk-dense-score-row { flex-direction: column; gap: 12px; }
+    .rk-tfill { width: 36px; }
+  }
   /* Prospects card-header: override global 50px height, allow vertical stacking */
   .rk-card-header {
     height: auto !important;
@@ -789,17 +887,27 @@ def build_prospects_body(is_admin: bool = False) -> str:
   }
   // Arrow on the active sort header (AM-table pattern).
   function rkUpdateSortHeaders() {
-    var header = document.getElementById('rkHeader');
-    if (!header) return;
-    var col = rkSortKey;
-    header.querySelectorAll('[data-rk-sort-col]').forEach(function(el) {
-      var on = el.getAttribute('data-rk-sort-col') === col;
-      el.classList.toggle('sorted-asc', on && rkSortDir === 'asc');
-      el.classList.toggle('sorted-desc', on && rkSortDir === 'desc');
-      if (on) el.setAttribute('aria-sort', rkSortDir === 'asc' ? 'ascending' : 'descending');
-      else el.removeAttribute('aria-sort');
+    // Dense table header (primary) + legacy header (hidden, kept for compat)
+    ['rkDenseTable', 'rkHeader'].forEach(function(hid) {
+      var header = document.getElementById(hid);
+      if (!header) return;
+      var col = rkSortKey;
+      header.querySelectorAll('[data-rk-sort-col]').forEach(function(el) {
+        var on = el.getAttribute('data-rk-sort-col') === col;
+        el.classList.toggle('sorted-asc', on && rkSortDir === 'asc');
+        el.classList.toggle('sorted-desc', on && rkSortDir === 'desc');
+        if (on) el.setAttribute('aria-sort', rkSortDir === 'asc' ? 'ascending' : 'descending');
+        else el.removeAttribute('aria-sort');
+      });
     });
   }
+  // Wire sort clicks on the dense table header (delegated, survives re-render)
+  document.addEventListener('click', function(ev) {
+    var th = ev.target.closest ? ev.target.closest('#rkDenseTable [data-rk-sort-col]') : null;
+    if (!th) return;
+    var key = th.getAttribute('data-rk-sort-col');
+    if (key) rkSetSortKey(key);
+  });
 
   // Watchlist toggle with the shared undo toast.
   function rkToggleWatch(ev, pid, name) {
@@ -903,6 +1011,61 @@ def build_prospects_body(is_admin: bool = False) -> str:
   function rkMockSortVal(r) {
     return r.projected_pick != null ? parseFloat(r.projected_pick) : 999;
   }
+  // ===== Dense table helpers =====
+  // Vertical bar for a component score (0-100), tinted by position
+  function rkVBar(val, posColor) {
+    var n = rkScoreNum(val), disp = rkScore1(val);
+    var h = Math.max(2, Math.round(n * 0.34)); // 34px max
+    var op = n >= 80 ? 0.95 : (n >= 60 ? 0.7 : (n >= 40 ? 0.45 : 0.28));
+    var bg = posColor || '#94a3b8';
+    // Use hex alpha if bg is hex, else rgba fallback
+    var fill = bg;
+    return '<span class="rk-vbar"><span class="track"><span class="fill" style="height:' + h +
+      'px;background:' + fill + ';opacity:' + op + '"></span></span>' +
+      '<span class="vv">' + disp + '</span></span>';
+  }
+  // SVG sparkline for trajectory values
+  function rkSpark(vals, w, h, color) {
+    w = w || 88; h = h || 30; color = color || '#94a3b8';
+    if (!vals || vals.length < 2) return '';
+    var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
+    var rng = (max - min) || 1;
+    var pts = vals.map(function(v, i) {
+      var x = (i / (vals.length - 1)) * (w - 4) + 2;
+      var y = h - 3 - ((v - min) / rng) * (h - 8);
+      return x.toFixed(1) + ',' + y.toFixed(1);
+    }).join(' ');
+    var last = pts.split(' ').pop().split(',');
+    return '<svg class="spark" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">' +
+      '<polyline points="' + pts + '" fill="none" stroke="' + color + '" stroke-width="1.8" ' +
+      'stroke-linecap="round" stroke-linejoin="round"/>' +
+      '<circle cx="' + last[0] + '" cy="' + last[1] + '" r="2.5" fill="' + color + '"/></svg>';
+  }
+  function rkUpTri() {
+    return '<svg width="8" height="8" viewBox="0 0 8 8"><path d="M4 1L7.5 7H0.5Z" fill="#16a34a"/></svg>';
+  }
+  function rkDnTri() {
+    return '<svg width="8" height="8" viewBox="0 0 8 8"><path d="M4 7L0.5 1H7.5Z" fill="#dc2626"/></svg>';
+  }
+  // Trajectory cell: stat label + sparkline + % change
+  function rkTrendCell(r) {
+    var t = r.trajectory;
+    if (!t || !t.values || t.values.length < 2) {
+      return '<span style="color:var(--text-muted);font-size:11px;">-</span>';
+    }
+    var vals = t.values, first = vals[0], last = vals[vals.length - 1];
+    var pct = first ? ((last - first) / first * 100) : 0;
+    var up = pct >= 0;
+    var pos = (r.position || '').toUpperCase();
+    var pc = RK_POS_COLORS[pos] || '#94a3b8';
+    var lbl = (t.label || 'yds/g').toUpperCase();
+    return '<span class="rk-trcell">' +
+      '<span><span class="rk-trstat">' + rkEsc(lbl) + '</span>' +
+      rkSpark(vals, 88, 30, pc) + '</span>' +
+      '<span class="rk-trpct ' + (up ? 'up' : 'dn') + '">' + (up ? '+' : '') + Math.round(pct) + '%</span>' +
+      (up ? rkUpTri() : rkDnTri()) + '</span>';
+  }
+
   function rkRender() {
     if (!rkLoaded) return;
     var sortBy = rkSortKey;
@@ -941,6 +1104,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
           case 'mock':  return (rkMockSortVal(a) - rkMockSortVal(b)) * rkDirMult;
           case 'age':   return (parseFloat(a.age||99) - parseFloat(b.age||99)) * rkDirMult;
           case 'name':  return String(a.name||'').localeCompare(String(b.name||'')) * rkDirMult;
+          case 'pos':   return String(a.position||'').localeCompare(String(b.position||'')) * rkDirMult;
           default:      return ((a.overall_rank||999) - (b.overall_rank||999)) * rkDirMult;
         }
       });
@@ -957,12 +1121,16 @@ def build_prospects_body(is_admin: bool = False) -> str:
     var pageItems = players.slice(offset, offset + RK_PER_PAGE);
 
     var list   = document.getElementById('rkList');
+    var denseWrap = document.getElementById('rkDenseWrap');
+    var denseBody = document.getElementById('rkDenseBody');
     var empty  = document.getElementById('rkEmpty');
     var count  = document.getElementById('rkCount');
     var header = document.getElementById('rkHeader');
 
     if (pageItems.length === 0) {
       list.innerHTML = '';
+      if (denseBody) denseBody.innerHTML = '';
+      if (denseWrap) denseWrap.style.display = 'none';
       empty.style.display = 'block';
       header.style.display = 'none';
       count.style.display  = 'none';
@@ -982,16 +1150,12 @@ def build_prospects_body(is_admin: bool = False) -> str:
     }
 
     empty.style.display  = 'none';
-    header.style.display = 'grid';
+    header.style.display = 'none';
+    if (denseWrap) denseWrap.style.display = 'block';
     count.style.display  = 'none';
 
-    // Hide the Ath header column when no prospect has athleticism data
-    // (pre-combine). Matches the row-level hide in rkRender.
-    var hasAth = pageItems.some(function(r) { return r.athleticism_score != null; });
-    var athHeader = header.querySelector('span:nth-child(4)');
-    if (athHeader) athHeader.style.display = hasAth ? '' : 'none';
-
     list.innerHTML = '';
+    if (denseBody) denseBody.innerHTML = '';
 
     // Tier dividers (player-rankings style) only make sense on the default
     // board order: all positions, no search, sorted by overall rank.
@@ -999,73 +1163,71 @@ def build_prospects_body(is_admin: bool = False) -> str:
                        rkSortKey === 'rank' && rkSortDir === 'asc';
     var lastTier = null;
 
+    // Dense table: 8 component vertical bars + per-game trend
+    var RK_DENSE_COMPS = [
+      { key: 'production_score', short: 'PROD', name: 'Production' },
+      { key: 'projected_draft_capital_score', short: 'DC', name: 'Draft Capital' },
+      { key: 'age_score', short: 'AGE', name: 'Age' },
+      { key: 'breakout_profile_score', short: 'BO', name: 'Breakout' },
+      { key: 'efficiency_score', short: 'EFF', name: 'Efficiency' },
+      { key: 'durability_score', short: 'DUR', name: 'Durability' },
+      { key: 'competition_score', short: 'COMP', name: 'Competition' },
+      { key: 'utilization_score', short: 'UTIL', name: 'Utilization' }
+    ];
     pageItems.forEach(function(r, idx) {
       var pid = r.player_id || '';
 
-      // Tier break: thin colored line with T-label, reusing .otc-tier-divider.
+      // Tier break as a full-width table row
       if (showDividers && r.tier !== lastTier) {
         lastTier = r.tier;
         var tc = RK_TIER_COLORS[r.tier] || '#9ca3af';
-        var div = document.createElement('div');
-        div.className = 'otc-tier-divider';
-        div.style.padding = '10px 12px 2px';
-        div.innerHTML =
-          '<div class="otc-tier-divider-line" style="background:' + tc + ';"></div>' +
-          '<span class="otc-tier-divider-label" style="color:' + tc + ';">T' + (r.tier || '?') + '</span>' +
-          '<div class="otc-tier-divider-line" style="background:' + tc + ';"></div>';
-        list.appendChild(div);
+        var trow = document.createElement('tr');
+        trow.innerHTML = '<td colspan="14" style="padding:10px 12px 2px;border-bottom:none;background:transparent;">' +
+          '<div class="otc-tier-divider" style="display:flex;align-items:center;gap:8px;">' +
+          '<div class="otc-tier-divider-line" style="background:' + tc + ';flex:1;height:1px;"></div>' +
+          '<span class="otc-tier-divider-label" style="color:' + tc + ';font-size:11px;font-weight:800;">T' + (r.tier || '?') + '</span>' +
+          '<div class="otc-tier-divider-line" style="background:' + tc + ';flex:1;height:1px;"></div></div></td>';
+        if (denseBody) denseBody.appendChild(trow);
       }
-
-      var row = document.createElement('div');
-      row.className = 'rk-row rk-grid-row';
-      row.setAttribute('data-pid', pid);
 
       var score = parseFloat(r.prospect_score||0);
       var pos = (r.position || '').toUpperCase();
       var posColor = RK_POS_COLORS[pos] || '#94a3b8';
       var rankNum = r.overall_rank ? '#' + r.overall_rank : (offset + idx + 1);
-      var ht = rkHeightStr(r), wt = rkWeightStr(r);
-      var metaBits = [];
-      if (r.school) metaBits.push(rkEsc(r.school));
-      if (ht) metaBits.push(rkEsc(ht));
-      if (wt) metaBits.push(rkEsc(wt));
-      var mockPick = r.projected_pick != null ? Math.round(parseFloat(r.projected_pick)) : '-';
+      var ageStr = r.age != null ? parseFloat(r.age).toFixed(1) + ' yrs' : '';
 
-      var compDefs3 = [
-        { val: r.production_score, name: RK_COMP_NAMES[0], short: RK_COMP_SHORT[0], color: RK_COMP_COLORS[0] },
-        { val: r.projected_draft_capital_score, name: RK_COMP_NAMES[2], short: RK_COMP_SHORT[2], color: RK_COMP_COLORS[2] }
-      ];
-      if (r.athleticism_score != null) {
-        compDefs3.splice(1, 0,
-          { val: r.athleticism_score, name: RK_COMP_NAMES[1], short: RK_COMP_SHORT[1], color: RK_COMP_COLORS[1] });
-      }
-      var compsHtml = '<div class="rk-comps3">' + compDefs3.map(function(c) {
-        var n = rkScoreNum(c.val), disp = rkScore1(c.val);
-        return '<div class="rk-compcol" title="' + c.name + ' ' + disp + '">' +
-          '<div class="rk-compcol-label">' + c.short + '</div>' +
-          '<div class="rk-compcol-row"><div class="rk-meter-bar"><div style="width:' + n + '%;background:' + c.color + '"></div></div>' +
-          '<span class="rk-meter-val" style="color:' + c.color + '">' + disp + '</span></div></div>';
-      }).join('') + '</div>';
+      // 8 component vertical bars
+      var cellsHtml = RK_DENSE_COMPS.map(function(c) {
+        var v = r[c.key];
+        var disp = (v == null) ? '-' : rkScore1(v);
+        var title = c.name + ' ' + disp;
+        if (v == null) {
+          return '<td title="' + rkEsc(title) + '"><span style="color:var(--text-muted);font-size:10px;">-</span></td>';
+        }
+        return '<td title="' + rkEsc(title) + '">' + rkVBar(v, posColor) + '</td>';
+      }).join('');
 
-      row.innerHTML =
-        '<div class="rk-rank"><span class="rk-rank-num">' + rankNum + '</span>' + rkDelta(r.rank_delta) + '</div>' +
-        '<div class="rk-pcell"><div class="rk-pplayer">' +
-          rkHeadshot(r, 'rk-headshot') +
-          '<div style="min-width:0"><div class="rk-name">' + rkEsc(r.name || 'Unknown') +
-            '<span class="rk-pos" style="--pc:' + posColor + '">' + rkEsc(pos) + '</span></div>' +
-          '<div class="rk-meta">' + metaBits.join(' &middot; ') + '</div></div>' +
-        '</div></div>' +
-        compsHtml +
-        '<div class="rk-score">' + rkScore1(score) + '</div>' +
-        '<div class="rk-mock" title="Expected draft spot based on mock drafts">' + mockPick + '</div>' +
-        '<button class="rk-star' + (rkWatch[pid] ? ' watching' : '') + '"' +
-          ' aria-label="Watch ' + rkEsc(r.name || '') + '">' + rkStarSVG() + '</button>';
+      var tr = document.createElement('tr');
+      tr.setAttribute('data-pid', pid);
+      tr.innerHTML =
+        '<td class="l"><span class="rk-rk">' + rankNum + '</span>' + rkDelta(r.rank_delta) + '</td>' +
+        '<td class="l rk-sticky-col"><span class="rk-nm">' + rkEsc(r.name || 'Unknown') +
+          '<small>' + rkEsc(r.school || '') + (ageStr ? ' &middot; ' + ageStr : '') + '</small></span></td>' +
+        '<td><span class="rk-pos-chip" style="background:' + posColor + '">' + rkEsc(pos) + '</span></td>' +
+        '<td><span class="rk-sc">' + rkScore1(score) + '</span></td>' +
+        cellsHtml +
+        '<td>' + rkTrendCell(r) + '</td>' +
+        '<td><button class="rk-star' + (rkWatch[pid] ? ' watching' : '') + '"' +
+          ' aria-label="Watch ' + rkEsc(r.name || '') + '" style="background:none;border:none;cursor:pointer;">' +
+          rkStarSVG() + '</button></td>';
 
-      row.querySelector('.rk-star').addEventListener('click', function(ev) {
+      var starBtn = tr.querySelector('.rk-star');
+      if (starBtn) starBtn.addEventListener('click', function(ev) {
+        ev.stopPropagation();
         rkToggleWatch(ev, pid, r.name || '');
       });
-      row.addEventListener('click', function() { rkOpenModal(r); });
-      list.appendChild(row);
+      tr.addEventListener('click', function() { rkOpenModal(r); });
+      if (denseBody) denseBody.appendChild(tr);
     });
 
     // 6. Update pagination controls
@@ -1145,23 +1307,21 @@ def build_prospects_body(is_admin: bool = False) -> str:
         '</div>' +
       '</div><button class="rk-modal-close" onclick="rkCloseModal()" aria-label="Close">\u2715</button></div>' +
       '<div class="rk-modal-body">' +
-        '<div class="rk-hero-row">' +
-          '<div class="rk-hero-stat" style="background:' + tc + '14;border-color:transparent;">' +
-            '<div class="rk-hero-label">Prospect Score</div>' +
-            '<div class="rk-hero-val" style="color:' + tc + ';">' + rkScore1(score) + '</div>' +
-            '<div class="rk-hero-sub">' + rkEsc(RK_TIER_NAMES[r.tier] || r.tier_label || '') + '</div></div>' +
-          '<div class="rk-hero-stat"><div class="rk-hero-label">Breakout Age</div>' +
-            '<div class="rk-hero-val" id="rkHeroBreakout">-</div><div class="rk-hero-sub">years</div></div>' +
-          '<div class="rk-hero-stat"><div class="rk-hero-label">Mock Draft</div>' +
-            '<div class="rk-hero-val">' + (mockPick != null ? 'Pick ' + mockPick : '-') + '</div>' +
-            '<div class="rk-hero-sub" id="rkHeroTrend"></div></div>' +
+        '<div class="rk-dense-score-row">' +
+          '<div class="rk-dense-score"><div class="rk-dense-score-val" style="color:' + tc + ';">' + rkScore1(score) + '</div>' +
+          '<div class="rk-dense-score-lbl">Prospect Score</div>' +
+          '<div class="rk-dense-score-sub">' + rkEsc(RK_TIER_NAMES[r.tier] || r.tier_label || '') + ' &middot; No score reaches 100</div></div>' +
+          '<div class="rk-dense-comps" id="rkDenseComps"></div>' +
+        '</div>' +
+        '<div class="rk-dense-meta-row">' +
+          '<span>Breakout Age: <b id="rkHeroBreakout">-</b> yrs</span><span>&middot;</span>' +
+          '<span>Mock: <b>' + (mockPick != null ? 'Pick ' + mockPick : '-') + '</b></span>' +
+          '<span id="rkHeroTrend"></span>' +
+          '<span style="margin-left:auto;">Data confidence: <b>' + rkScore1(conf) + '</b></span>' +
         '</div>' +
         '<hr class="rk-section-divider">' +
-        '<div class="m-sec-head"><div class="m-sec-label">Grade breakdown</div>' +
-          '<div class="m-conf">Data confidence: <b>' + rkScore1(conf) + '</b></div></div>' +
-        compsHtml +
-        '<div id="rkMoreComps" style="display:none"></div>' +
-        '<button class="m-more-btn" id="rkMoreCompsBtn" onclick="rkToggleMoreComps()">Show all components</button>' +
+        '<div class="m-sec-label">Production trajectory (per game)</div>' +
+        '<div id="rkTrajBody">' + rkLoadingHtml() + '</div>' +
         '<hr class="rk-section-divider">' +
         '<div class="m-sec-label">Advanced metrics</div>' +
         '<div class="m-adv-grid"><div id="rkAdvBody">' + rkLoadingHtml() + '</div>' +
@@ -1292,6 +1452,63 @@ def build_prospects_body(is_admin: bool = False) -> str:
     // Breakout age hero
     var hb = document.getElementById('rkHeroBreakout');
     if (hb) hb.textContent = d.breakout_age != null ? Number(d.breakout_age).toFixed(1) : '-';
+    // Dense component vertical bars (same as table columns)
+    var dcEl = document.getElementById('rkDenseComps');
+    if (dcEl) {
+      var dPos = (r.position || '').toUpperCase();
+      var dPc = RK_POS_COLORS[dPos] || '#94a3b8';
+      var dComps = [
+        ['PROD', r.production_score], ['DC', r.projected_draft_capital_score],
+        ['AGE', r.age_score], ['BO', r.breakout_profile_score],
+        ['EFF', r.efficiency_score], ['DUR', r.durability_score],
+        ['COMP', r.competition_score], ['UTIL', r.utilization_score || d.utilization_score]
+      ];
+      // Hide athleticism when null (pre-combine); show if present
+      if (r.athleticism_score != null) dComps.splice(1, 0, ['ATH', r.athleticism_score]);
+      dcEl.innerHTML = dComps.map(function(c) {
+        if (c[1] == null) return '<span class="rk-dcomp"><span class="rk-dcomp-lbl">' + c[0] + '</span><span style="color:var(--text-muted);font-size:10px;">-</span></span>';
+        return '<span class="rk-dcomp" title="' + c[0] + ' ' + rkScore1(c[1]) + '">' +
+          '<span class="rk-dcomp-bar"><span class="rk-dcomp-fill" style="height:' +
+          Math.max(2, Math.round(rkScoreNum(c[1]) * 0.5)) + 'px;background:' + dPc + ';opacity:' +
+          (rkScoreNum(c[1]) >= 80 ? 0.95 : (rkScoreNum(c[1]) >= 60 ? 0.7 : 0.45)) + '"></span></span>' +
+          '<span class="rk-dcomp-lbl">' + c[0] + '</span>' +
+          '<span class="rk-dcomp-val">' + rkScore1(c[1]) + '</span></span>';
+      }).join('');
+    }
+    // Per-game production trajectory (hero visual)
+    var trajEl = document.getElementById('rkTrajBody');
+    if (trajEl) {
+      var seasons = d.seasons || [];
+      var tPos = (r.position || '').toUpperCase();
+      if (!seasons.length) {
+        trajEl.innerHTML = '<span style="font-size:13px;color:var(--text-muted);">No season data available.</span>';
+      } else {
+        var tData = seasons.slice(-3).map(function(s) {
+          var gp = s.games_played || 0;
+          var yds = tPos === 'QB' ? (s.pass_yards || 0) : (tPos === 'RB' ? (s.rush_yards || 0) : (s.receiving_yards || 0));
+          var pg = gp ? (yds / gp) : 0;
+          var lbl = tPos === 'QB' ? 'pass yds/g' : (tPos === 'RB' ? 'rush yds/g' : 'rec yds/g');
+          return { season: s.season, pg: pg, gp: gp, lbl: lbl, yds: yds };
+        });
+        var tMax = Math.max.apply(null, tData.map(function(x){ return x.pg; })) || 1;
+        var tBars = tData.map(function(x, i) {
+          var isLast = i === tData.length - 1;
+          var isLive = isLast && x.season === 2026;
+          var h = Math.max(8, Math.round((x.pg / tMax) * 90));
+          return '<div class="rk-tbar' + (isLive ? ' live' : '') + '">' +
+            (isLive ? '<span class="rk-live-tag">LIVE</span>' : '') +
+            '<div class="rk-ttrack"><div class="rk-tfill" style="height:' + h + 'px' +
+            (isLive ? ';background:#2563eb' : '') + '"></div></div>' +
+            '<div class="rk-tpg">' + x.pg.toFixed(1) + '</div>' +
+            '<div class="rk-tyr">' + x.season + ' &middot; ' + x.lbl + '</div></div>';
+        }).join('');
+        var tFirst = tData[0].pg, tLast = tData[tData.length-1].pg;
+        var tPct = tFirst ? Math.round((tLast - tFirst) / tFirst * 100) : 0;
+        trajEl.innerHTML = '<div class="rk-traj">' + tBars + '</div>' +
+          '<div class="rk-trend-note">' + (tPct >= 0 ? rkUpTri() : rkDnTri()) +
+          ' <b>' + (tPct >= 0 ? '+' : '') + tPct + '%</b> per-game vs ' + tData[0].season + '</div>';
+      }
+    }
     // Mock draft sub: round + positional rank + month trend
     var ht = document.getElementById('rkHeroTrend');
     if (ht) {
