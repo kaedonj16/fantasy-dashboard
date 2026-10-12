@@ -1212,11 +1212,11 @@ def build_prospects_body(is_admin: bool = False) -> str:
         var tc = RK_TIER_COLORS[r.tier] || '#9ca3af';
         var trow = document.createElement('tr');
         var _colspan = 6 + RK_DENSE_COMPS.length;
-        trow.innerHTML = '<td colspan="' + _colspan + '" style="padding:3px 12px 1px;border-bottom:none;background:transparent;">' +
-          '<div class="otc-tier-divider" style="display:flex;align-items:center;gap:8px;">' +
-          '<div class="otc-tier-divider-line" style="background:' + tc + ';flex:1;height:1px;"></div>' +
-          '<span class="otc-tier-divider-label" style="color:' + tc + ';font-size:11px;font-weight:800;">T' + (r.tier || '?') + '</span>' +
-          '<div class="otc-tier-divider-line" style="background:' + tc + ';flex:1;height:1px;"></div></div></td>';
+        trow.innerHTML = '<td colspan="' + _colspan + '" style="padding:0 12px;border:none;background:transparent;line-height:1;">' +
+          '<div class="otc-tier-divider" style="display:flex;align-items:center;gap:6px;height:14px;">' +
+          '<div class="otc-tier-divider-line" style="background:' + tc + ';flex:1;height:1px;opacity:0.5;"></div>' +
+          '<span class="otc-tier-divider-label" style="color:' + tc + ';font-size:9px;font-weight:800;letter-spacing:0.05em;">T' + (r.tier || '?') + '</span>' +
+          '<div class="otc-tier-divider-line" style="background:' + tc + ';flex:1;height:1px;opacity:0.5;"></div></div></td>';
         if (denseBody) denseBody.appendChild(trow);
       }
 
