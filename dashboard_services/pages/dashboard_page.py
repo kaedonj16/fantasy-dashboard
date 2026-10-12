@@ -21,6 +21,7 @@ def build_dashboard_body(ctx: dict) -> str:
         _section_title_link,
         _standings_movement,
         _league_is_redraft,
+        compute_awards_alltime,
         compute_awards_season,
         compute_win_prob,
         get_model_value_table_cached,
@@ -160,8 +161,18 @@ def build_dashboard_body(ctx: dict) -> str:
         bench_check_html = ""
         _dash_preview_slide = ""
 
-    awards = compute_awards_season(finalized_df, players_map, league_id, platform, season, users, rosters)
-    awards_html = render_awards_section(awards)
+    # League Awards: all-time history across seasons; fall back to the
+    # single-season card if the all-time computation has nothing (or fails).
+    _awards_alltime = compute_awards_alltime(
+        platform, league_id, season, players_map, users, rosters, finalized_df,
+    )
+    if _awards_alltime:
+        awards = _awards_alltime
+        _awards_is_alltime = True
+    else:
+        awards = compute_awards_season(finalized_df, players_map, league_id, platform, season, users, rosters)
+        _awards_is_alltime = False
+    awards_html = render_awards_section(awards, alltime=_awards_is_alltime)
 
     ctx["model_value_table"] = list(get_model_value_table_cached() or []) or (ctx.get("model_value_table") or [])
 

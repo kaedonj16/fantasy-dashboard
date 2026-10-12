@@ -48160,6 +48160,26 @@ em.gneg { background: var(--loss); }
   }
 }
 
+/* Scrollable sidebar card bodies: League Activity, League Awards,
+   Injury Watch. Fixed max-height with overflow-y auto; the collapse
+   toggle still wins via max-height: 0 !important. Placed before the
+   MERGED icon blocks so the merge script cannot wipe it. */
+.cc-act-card .card-collapsible-body {
+  max-height: 300px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.cc-aw-card .card-collapsible-body {
+  max-height: 340px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.cc-inj-card .card-collapsible-body {
+  max-height: 280px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 /* ============================================================
    MERGED: icons.css (PNG-based icon system)
    Do not edit here -- edit static/icons.css and re-run the merge.
