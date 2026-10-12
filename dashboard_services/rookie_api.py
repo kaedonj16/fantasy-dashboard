@@ -844,9 +844,9 @@ def rankings():
                             """SELECT player_id, season, games_played, position,
                                       receiving_yards, rush_yards, pass_yards
                                FROM rookie_prospect_source_data
-                               WHERE player_id = ANY(%s) AND draft_class_year = %s
+                               WHERE player_id = ANY(%s)
                                ORDER BY player_id, season""",
-                            (_pids, year),
+                            (_pids,),
                         )
                         _trows = _tcur.fetchall() or []
                 _traj_map: dict = {}

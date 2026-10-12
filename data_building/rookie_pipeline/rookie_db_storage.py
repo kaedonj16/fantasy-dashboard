@@ -184,11 +184,13 @@ def save_rookie_evaluation_to_db(
                              rush_attempts, rush_yards, rush_tds,
                              pass_attempts, pass_yards, pass_tds, completions, interceptions,
                              yds_per_carry, yds_per_reception, yds_per_attempt,
-                             completion_pct, td_int_ratio)
+                             completion_pct, td_int_ratio,
+                             dominator_rating, market_share_yards, market_share_tds)
                         VALUES
                             (%s, %s, %s, %s, %s, NOW(),
                              %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                             %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                             %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                             %s, %s, %s)
                         ON CONFLICT (player_id, season, source)
                         DO UPDATE SET
                             rookie_eval_metrics     = EXCLUDED.rookie_eval_metrics,
@@ -222,7 +224,10 @@ def save_rookie_evaluation_to_db(
                             yds_per_reception = COALESCE(rookie_prospect_source_data.yds_per_reception, EXCLUDED.yds_per_reception),
                             yds_per_attempt = COALESCE(rookie_prospect_source_data.yds_per_attempt, EXCLUDED.yds_per_attempt),
                             completion_pct  = COALESCE(rookie_prospect_source_data.completion_pct,  EXCLUDED.completion_pct),
-                            td_int_ratio    = COALESCE(rookie_prospect_source_data.td_int_ratio,    EXCLUDED.td_int_ratio)
+                            td_int_ratio    = COALESCE(rookie_prospect_source_data.td_int_ratio,    EXCLUDED.td_int_ratio),
+                            dominator_rating = COALESCE(rookie_prospect_source_data.dominator_rating, EXCLUDED.dominator_rating),
+                            market_share_yards = COALESCE(rookie_prospect_source_data.market_share_yards, EXCLUDED.market_share_yards),
+                            market_share_tds = COALESCE(rookie_prospect_source_data.market_share_tds, EXCLUDED.market_share_tds)
                         """,
                         (
                             player_id,
@@ -260,6 +265,9 @@ def save_rookie_evaluation_to_db(
                             _raw_float(raw, "yds_per_attempt"),
                             _raw_float(raw, "completion_pct"),
                             _raw_float(raw, "td_int_ratio"),
+                            _raw_float(raw, "dominator_rating"),
+                            _raw_float(raw, "market_share_yards"),
+                            _raw_float(raw, "market_share_tds"),
                         ),
                     )
                     metrics_rows += 1

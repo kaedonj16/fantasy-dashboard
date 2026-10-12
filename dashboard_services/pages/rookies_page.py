@@ -184,7 +184,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
   .rk-dense-table tbody tr:hover { background: rgba(59,130,246,.06); cursor: pointer; }
   .rk-dense-table tbody tr:last-child td { border-bottom: none; }
   .rk-dense-table .rk-rk { font-weight: 700; color: var(--text-subtle, #94a3b8); }
-  .rk-dense-table .rk-nm { font-family: Archivo, Inter, system-ui, sans-serif; font-weight: 700; font-size: 11px; line-height: 1.25; max-width: 150px; }
+  .rk-dense-table .rk-nm { font-family: Archivo, Inter, system-ui, sans-serif; font-weight: 700; font-size: 10.5px; line-height: 1.2; max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
   .rk-dense-table .rk-nm small { display: block; font-weight: 500; color: var(--text-muted); font-size: 9px; line-height: 1.3; white-space: normal; }
   .rk-dense-table .rk-pos-chip {
     display: inline-flex; align-items: center; justify-content: center;
@@ -239,7 +239,10 @@ def build_prospects_body(is_admin: bool = False) -> str:
   .rk-trend-note b { color: var(--text); }
   @media (max-width: 600px) {
     .rk-dense-score-row { flex-direction: column; gap: 12px; }
-    .rk-tfill { width: 36px; }
+    .rk-traj { gap: 8px; width: 100%; }
+    .rk-tbar { flex: 1 1 0; min-width: 0; }
+    .rk-ttrack { width: 100%; justify-content: center; }
+    .rk-tfill { width: 100%; max-width: 64px; }
   }
   /* Prospects card-header: override global 50px height, allow vertical stacking */
   .rk-card-header {
@@ -1164,7 +1167,8 @@ def build_prospects_body(is_admin: bool = False) -> str:
     var lastTier = null;
 
     // Dense table: 8 component vertical bars + per-game trend
-    var RK_DENSE_COMPS = [
+    // Hide columns where ALL values are empty/null/zero
+    var RK_DENSE_COMPS_ALL = [
       { key: 'production_score', short: 'PROD', name: 'Production' },
       { key: 'projected_draft_capital_score', short: 'DC', name: 'Draft Capital' },
       { key: 'age_score', short: 'AGE', name: 'Age' },
@@ -1174,6 +1178,26 @@ def build_prospects_body(is_admin: bool = False) -> str:
       { key: 'competition_score', short: 'COMP', name: 'Competition' },
       { key: 'utilization_score', short: 'UTIL', name: 'Utilization' }
     ];
+    var RK_DENSE_COMPS = RK_DENSE_COMPS_ALL.filter(function(c) {
+      return pageItems.some(function(r) {
+        var v = r[c.key];
+        return v != null && v !== '' && Number(v) !== 0;
+      });
+    });
+    // Hide empty column headers
+    (function() {
+      var hideShorts = {};
+      RK_DENSE_COMPS_ALL.forEach(function(c) {
+        if (RK_DENSE_COMPS.indexOf(c) === -1) hideShorts[c.short] = true;
+      });
+      var ths = document.querySelectorAll('#rkDenseTable thead th');
+      ths.forEach(function(th) {
+        var txt = (th.textContent || '').trim();
+        if (hideShorts[txt]) th.style.display = 'none';
+      });
+      // Store for row cell hiding (cells are rendered in order, so we need to skip hidden)
+      window._rkHiddenComps = hideShorts;
+    })();
     pageItems.forEach(function(r, idx) {
       var pid = r.player_id || '';
 
@@ -1182,7 +1206,8 @@ def build_prospects_body(is_admin: bool = False) -> str:
         lastTier = r.tier;
         var tc = RK_TIER_COLORS[r.tier] || '#9ca3af';
         var trow = document.createElement('tr');
-        trow.innerHTML = '<td colspan="14" style="padding:10px 12px 2px;border-bottom:none;background:transparent;">' +
+        var _colspan = 6 + RK_DENSE_COMPS.length;
+        trow.innerHTML = '<td colspan="' + _colspan + '" style="padding:10px 12px 2px;border-bottom:none;background:transparent;">' +
           '<div class="otc-tier-divider" style="display:flex;align-items:center;gap:8px;">' +
           '<div class="otc-tier-divider-line" style="background:' + tc + ';flex:1;height:1px;"></div>' +
           '<span class="otc-tier-divider-label" style="color:' + tc + ';font-size:11px;font-weight:800;">T' + (r.tier || '?') + '</span>' +
@@ -1439,10 +1464,9 @@ def build_prospects_body(is_admin: bool = False) -> str:
         var det = '';
         if (r.recruit_composite_rating != null)
           det += Number(r.recruit_composite_rating).toFixed(4);
-        if (r.recruit_national_rank != null)
-          det += (det ? ', ' : '') + '#' + r.recruit_national_rank + " nat'l";
-        if (r.recruit_position_rank != null)
-          det += (det ? ', ' : '') + '#' + r.recruit_position_rank + ' ' + pos;
+        if (r.recruit_national_rank != null && r.recruit_national_rank !== '')
+          det += (det ? ' · ' : '') + '#' + r.recruit_national_rank + ' nationally';
+        // Skip position rank if missing to avoid "#1 undefined"
         ms.innerHTML = '<span>&middot;</span><span>' + st + '-star' +
           (det ? ' (' + rkEsc(det) + ')' : '') + '</span>';
       } else {
@@ -1513,10 +1537,11 @@ def build_prospects_body(is_admin: bool = False) -> str:
     var ht = document.getElementById('rkHeroTrend');
     if (ht) {
       var bits = [];
+      var _pos = (r.position || '').toUpperCase();
       if (r.projected_round != null && r.projected_round !== '')
         bits.push('Rd ' + r.projected_round);
-      if (r.position_rank != null && r.position_rank !== '')
-        bits.push(pos + r.position_rank);
+      if (r.position_rank != null && r.position_rank !== '' && _pos)
+        bits.push(_pos + ' #' + r.position_rank);
       var t = d.mock_trend, trendHtml = '';
       if (t != null && t !== '') {
         if (t > 0) trendHtml = '<span class="dvt-change dvt-change-up">&#9650;' + t + ' this month</span>';
