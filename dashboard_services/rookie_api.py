@@ -841,7 +841,7 @@ def rankings():
                 with _get_conn_traj() as _tconn:
                     with _tconn.cursor() as _tcur:
                         _tcur.execute(
-                            """SELECT player_id, season, games_played, position,
+                            """SELECT player_id, season, games_played,
                                       receiving_yards, rush_yards, pass_yards
                                FROM rookie_prospect_source_data
                                WHERE player_id = ANY(%s)
@@ -849,11 +849,15 @@ def rankings():
                             (_pids,),
                         )
                         _trows = _tcur.fetchall() or []
+                _pos_by_pid = {
+                    d.get("player_id"): (d.get("position") or "").upper()
+                    for d in result
+                }
                 _traj_map: dict = {}
                 for _tr in _trows:
                     _pid = _tr.get("player_id")
                     _gp = _tr.get("games_played") or 0
-                    _pos = (_tr.get("position") or "").upper()
+                    _pos = _pos_by_pid.get(_pid, "")
                     if _pos == "QB":
                         _yds = _tr.get("pass_yards") or 0
                         _lbl = "pass yds/g"
