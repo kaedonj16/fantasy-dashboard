@@ -851,36 +851,22 @@ ul {
     overflow-x: hidden;
 }
 
-/* Desktop hub: side rails scroll internally with a visible card boundary. */
+/* Desktop hub: side rails are plain stacks with no card chrome of their own.
+   Each item keeps its own card styling and the rail grows to fit all of its
+   content (no internal scroll), so cards like League Awards can extend longer. */
 @media (min-width: 1281px) {
     .os-layout.os-hub-cols-synced > .os-side-rail {
-        height: var(--os-hub-main-h);
-        max-height: var(--os-hub-main-h);
-        min-height: var(--os-hub-main-h);
-        overflow-x: hidden;
-        overflow-y: auto;
-        overscroll-behavior: contain;
-        scrollbar-width: thin;
-        box-sizing: border-box;
-        border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
-        border-radius: var(--radius);
-        background: var(--card);
-        box-shadow: var(--shadow-sm);
-        padding: 12px;
-    }
-
-    /* Nested cards inside a scroll rail: drop duplicate chrome so the rail reads as one card. */
-    .os-hub-cols-synced .os-side-rail > .os-card,
-    .os-hub-cols-synced .os-side-rail > .os-card-soft,
-    .os-hub-cols-synced .os-side-rail .os-sidebar-shell > .card {
+        height: auto;
         max-height: none;
+        min-height: 0;
+        overflow-x: hidden;
+        overflow-y: visible;
+        box-sizing: border-box;
+        border: none;
+        border-radius: 0;
+        background: transparent;
         box-shadow: none;
-    }
-
-    .os-hub-cols-synced .os-side-rail > .os-card:last-child,
-    .os-hub-cols-synced .os-side-rail > .os-card-soft:last-child,
-    .os-hub-cols-synced .os-side-rail .os-sidebar-shell:last-child > .card:last-child {
-        margin-bottom: 0;
+        padding: 0;
     }
 }
 
