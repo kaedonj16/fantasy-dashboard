@@ -73,10 +73,24 @@ class _FakeThread:
         self.started = True
 
 
+class _FakeTimer:
+    """Stands in for threading.Timer: never schedules, never runs."""
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def start(self):
+        pass
+
+    def cancel(self):
+        pass
+
+
 @pytest.fixture()
 def fake_thread(monkeypatch, push_mod):
     _FakeThread.instances.clear()
     monkeypatch.setattr(push_mod.threading, "Thread", _FakeThread)
+    monkeypatch.setattr(push_mod.threading, "Timer", _FakeTimer)
     return _FakeThread
 
 
