@@ -44951,6 +44951,14 @@ a, button, [role="button"], [role="tab"], summary, label,
 
 .mb-info { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 1px; }
 .mb-cell-r .mb-info { align-items: flex-end; }
+/* Right column: game line and stat line span the full info width with
+   right-aligned text, so wrapped lines share the same right edge as the
+   name instead of drifting toward the center. */
+.mb-cell-r .mb-info .mb-game,
+.mb-cell-r .mb-info .mb-stat {
+    text-align: right;
+    width: 100%;
+}
 .mb-info--bye { opacity: .45; }
 
 .mb-nameline { display: flex; align-items: baseline; gap: 5px; min-width: 0; line-height: 1.2; }

@@ -404,7 +404,9 @@ def test_matchup_hides_stale_line_when_points_contradict_it(monkeypatch):
         scoring_settings=_PPR_SCORING,
     )
     assert "233" not in html
-    assert "Stats unavailable" in html
+    # Live game with hidden stale line: no "Stats unavailable" (that's for
+    # final games only); the row just shows no stat line yet.
+    assert "Stats unavailable" not in html
     assert "Jayden Daniels" in html
 
 
