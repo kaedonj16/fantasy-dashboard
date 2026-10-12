@@ -2478,6 +2478,9 @@ def render_matchup_slide(
                             rescued = abs(implied - float(live_pts)) <= tol
                 if not rescued:
                     stats = None
+                    # The Footballguys entry was stale and hidden; clear it so
+                    # the "Stats unavailable" gate below sees no usable data.
+                    raw_stat_entry = None
         elif is_not_started:
             stats = None
 
@@ -2507,6 +2510,9 @@ def render_matchup_slide(
                     tol = max(4.0, 0.4 * max(abs(implied), abs(float(live_pts))))
                     if abs(implied - float(live_pts)) > tol:
                         stats = None
+                        # Stale line hidden; clear the entry so the
+                        # "Stats unavailable" gate sees no usable data.
+                        raw_stat_entry = None
 
         # Gap fill: a skill starter whose game has started but who has no line
         # (Footballguys missed them, or a stale leftover was just dropped) still
@@ -2567,10 +2573,16 @@ def render_matchup_slide(
 
         # Stat line content for the under-drive-bar row. Raw stats string,
         # or the "Stats unavailable" marker for final games with no line.
+        # Only show the marker when the game data confirms the game has
+        # started/finished: the status bundle and schedule can disagree
+        # (stale gameStatusCode), and a scheduled-looking game line paired
+        # with "Stats unavailable" is confusing.
         _stat_content = stats if stats else None
+        _game_confirms_played = game is not None and game_has_started(game)
         _stat_unavailable = (
             status == STATUS_FINAL and not stats
             and raw_stat_entry is None and not is_bye
+            and _game_confirms_played
         )
         return (
             info_html,
