@@ -4,6 +4,7 @@ import datetime
 import json
 import logging
 import os
+import sys
 import threading
 import time
 from contextlib import contextmanager
@@ -243,36 +244,51 @@ def get_conn(autocommit: bool = False, retries: int = 3) -> Iterator[psycopg.Con
             yield conn
         return
 
-    # Acquire a pooled connection (with retry/backoff on connect/timeout).
+    # Check out a pooled connection, retrying transient acquisition failures
+    # with backoff. The retry wraps ONLY the checkout: once a connection is
+    # handed out, the caller's body runs exactly once and its exceptions
+    # propagate unwrapped. (Previously the yield sat inside the retry's
+    # try-block, so an OperationalError raised by the body itself -- e.g.
+    # QueryCanceled from a statement timeout, which subclasses
+    # OperationalError -- was mistaken for a checkout failure; the loop then
+    # re-yielded and CPython raised "RuntimeError: generator didn't stop
+    # after throw()", masking the real error. Hit in production 2026-10-10
+    # and 2026-10-12 in draft_adp_crawl's compute_adp.)
     last_err: Exception = RuntimeError("get_conn: no attempts made")
     pool = _get_pool()
+    checkout = None
     for attempt in range(retries):
         try:
-            # Nest the pool's context manager (instead of driving
-            # __enter__/__exit__ by hand) so the checkout is always returned
-            # -- rolled back on error -- even if flipping autocommit below
-            # raises. Previously a failed flip skipped the pool exit, leaving
-            # the INTRANS connection to be recycled into the next checkout.
-            with pool.connection() as conn:
-                # The pool default is autocommit=False; flip per-checkout when
-                # requested and restore before returning the connection so the
-                # next borrower sees default.
-                set_ac = bool(autocommit) and not conn.autocommit
-                if set_ac:
-                    _discard_stray_transaction(conn)
-                    conn.autocommit = True
-                try:
-                    yield conn
-                finally:
-                    if set_ac:
-                        _discard_stray_transaction(conn)
-                        try:
-                            conn.autocommit = False
-                        except Exception:
-                            logger.debug("suppressed exception", exc_info=True)
-            return
+            checkout = pool.connection()
+            conn = checkout.__enter__()
+            break
         except (psycopg.OperationalError, PoolTimeout) as e:  # type: ignore
             last_err = e
             if attempt < retries - 1:
                 time.sleep(2 ** attempt)
-    raise last_err
+    else:
+        raise last_err
+    assert checkout is not None  # loop either breaks with a checkout or raises
+
+    # The checkout is live here; its __exit__ must run even if the autocommit
+    # flip below raises, so the connection is always returned -- rolled back
+    # on error -- to the pool instead of being recycled mid-transaction.
+    try:
+        # The pool default is autocommit=False; flip per-checkout when
+        # requested and restore before returning the connection so the next
+        # borrower sees default.
+        set_ac = bool(autocommit) and not conn.autocommit
+        if set_ac:
+            _discard_stray_transaction(conn)
+            conn.autocommit = True
+        try:
+            yield conn
+        finally:
+            if set_ac:
+                _discard_stray_transaction(conn)
+                try:
+                    conn.autocommit = False
+                except Exception:
+                    logger.debug("suppressed exception", exc_info=True)
+    finally:
+        checkout.__exit__(*sys.exc_info())

@@ -271,6 +271,11 @@ def compute_adp() -> int:
     Returns the total number of rows in draft_adp after the update.
     """
     with get_conn() as conn:
+        # The full-table recompute outgrows the pooled 60s statement_timeout
+        # as draft_adp_picks grows (production QueryCanceled 2026-10-10 and
+        # 2026-10-12). SET LOCAL dies with this transaction, so every other
+        # checkout keeps the fail-fast default.
+        conn.execute("SET LOCAL statement_timeout = '10min'")
         conn.execute(
             """
             INSERT INTO draft_adp
