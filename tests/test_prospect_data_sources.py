@@ -222,7 +222,7 @@ class _FakeCursor:
             pattern, years = params
             prefix = pattern[:-1]  # strip trailing %
             self._rows = [
-                (pid, season, tgts, team)
+                {"player_id": pid, "season": season, "targets": tgts, "team": team}
                 for (pid, season, tgts, team) in self.state["target_rows"]
                 if pid.startswith(prefix) and season in years and tgts is not None
             ]
@@ -230,14 +230,14 @@ class _FakeCursor:
             pattern, years = params
             prefix = pattern[:-1]  # strip trailing %
             self._rows = [
-                (pid, season, gp)
+                {"player_id": pid, "season": season, "games_played": gp}
                 for (pid, season, gp) in self.state["source_rows"]
                 if pid.startswith(prefix) and season in years and gp is not None
             ]
         elif "FROM ROOKIE_STAT_FETCHED_WEEKS" in s:
             kind, years = params
             self._rows = [
-                (season, team, week)
+                {"season": season, "team": team, "week": week}
                 for (k, season, week, team) in self.state["weeks"]
                 if k == kind and season in years
             ]
@@ -248,7 +248,7 @@ class _FakeCursor:
         elif "FROM ROOKIE_TARGETS_TEAM_TOTALS" in s:
             (years,) = params
             self._rows = [
-                (season, team, total)
+                {"season": season, "team": team, "team_targets": total}
                 for (season, team), total in self.state["team_totals"].items()
                 if season in years
             ]
