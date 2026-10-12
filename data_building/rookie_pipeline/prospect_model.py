@@ -3,7 +3,7 @@ Prospect evaluation model - position-aware, multi-factor scoring.
 
 Each component score is 0-100.  Final prospect_score is a weighted sum.
 
-Model version: 3.0 (see MODEL_VERSION)
+Model version: 3.1 (see MODEL_VERSION)
   v1.x: baseline components below.
   v2.0: adds recruiting-pedigree component (247 Composite via CFBD),
         WEPA opponent-adjusted efficiency blend (QB/RB), and SP+/Team Talent
@@ -38,7 +38,7 @@ from typing import Any, Dict, List, Optional
 
 
 # Grading-model version. Bump on ANY change to scoring logic or weights.
-MODEL_VERSION = "3.0"
+MODEL_VERSION = "3.1"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -951,6 +951,28 @@ def calc_breakout_score(seasons: List[Dict], age: Optional[float], position: str
                 score = max(score, 85.0)
                 break
 
+    # v3.1: Ascending trajectory bonus. A player whose most recent season's
+    # per-game production exceeds the prior season's is developing, not
+    # stagnating. The base traj_score rewards growth, but players who never
+    # hit the dominator threshold get crushed by dom_score=30 and
+    # adj_breakout_score=0. This bonus recognizes real improvement.
+    # Up to +15, scaled by growth rate.
+    if len(sorted_s) >= 2:
+        _ls = sorted_s[-1]
+        _pv = sorted_s[-2]
+        _ls_yds = _safe(_ls.get("receiving_yards", 0)) + _safe(_ls.get("rush_yards", 0)) + _safe(_ls.get("pass_yards", 0)) * 0.5
+        _pv_yds = _safe(_pv.get("receiving_yards", 0)) + _safe(_pv.get("rush_yards", 0)) + _safe(_pv.get("pass_yards", 0)) * 0.5
+        # Use per-game rates to avoid penalizing in-progress seasons
+        _ls_gp = max(_safe(_ls.get("games_played"), 1), 1)
+        _pv_gp = max(_safe(_pv.get("games_played"), 1), 1)
+        _ls_pg = _ls_yds / _ls_gp
+        _pv_pg = _pv_yds / _pv_gp
+        if _pv_pg > 0 and _ls_pg > _pv_pg:
+            _growth = (_ls_pg - _pv_pg) / _pv_pg
+            # +15 at 50%+ growth, scaled linearly, 0 at no growth
+            _traj_bonus = min(15.0, max(0.0, _growth / 0.50 * 15.0))
+            score = _clip(score + _traj_bonus)
+
     return _clip(score)
 
 
@@ -1260,7 +1282,7 @@ def calc_environment_adjustment(seasons: List[Dict], position: str) -> float:
     return _clip(base)
 
 
-def calc_durability_score(seasons: List[Dict]) -> float:
+def calc_durability_score(seasons: List[Dict]) -> Optional[float]:
     """
     Durability: how often the player is available when the team plays.
 
@@ -1278,10 +1300,10 @@ def calc_durability_score(seasons: List[Dict]) -> float:
     - In-progress seasons never trigger penalties, only contribute positively
       to the average if the player has been available.
 
-    Returns 60.0 (neutral) if no GP data.
+    Returns None if no GP data (weight redistributed, like athleticism).
     """
     if not seasons:
-        return 60.0
+        return None
 
     from datetime import date as _d
     today = _d.today()
@@ -1311,7 +1333,7 @@ def calc_durability_score(seasons: List[Dict]) -> float:
             scored.append((pct, True, gp))
 
     if not scored:
-        return 60.0
+        return None
 
     # Weighted average: recent seasons count more
     n = len(scored)
@@ -2126,6 +2148,18 @@ def score_prospect(
                 _weights[k] *= (1.0 + ath_w / remaining)
         # athleticism_score stays None -> DB NULL -> UI hides the bar
 
+    # v3.1: Neutralize missing durability the same way. A fake 60.0 is
+    # worse than honest NULL - it drags down durable players and inflates
+    # injury-prone ones. Redistribute the weight when GP data is absent.
+    _durability_missing = durability_score is None
+    if _durability_missing:
+        dur_w = _weights.pop("durability", 0.0)
+        remaining = sum(_weights.values())
+        if remaining > 0 and dur_w > 0:
+            for k in _weights:
+                _weights[k] *= (1.0 + dur_w / remaining)
+        # durability_score stays None -> DB NULL -> UI hides the bar
+
     # Base prospect score with position-specific weights.
     # v3.0 R6: Use _weights (athleticism redistribution applied) so the
     # redistributed weight actually takes effect. Previously the sum used
@@ -2140,7 +2174,7 @@ def score_prospect(
         (athleticism_score or 0.0) * _weights.get("athleticism", 0.0)   +
         competition_score     * _weights["competition"]   +
         environment_score     * _weights["environment"]   +
-        durability_score      * _weights["durability"]    +
+        (durability_score or 0.0) * _weights.get("durability", 0.0) +
         dc_score_adjusted     * _weights["draft_capital"] +
         # v2.0: recruiting pedigree. .get() because calibrated overrides
         # (historical_calibration) predate the recruiting component.
@@ -2202,7 +2236,15 @@ def score_prospect(
         #   80 raw → 89.0  (top tier)
         #   75 raw → 82.9  (solid starter)
         #   65 raw → 70.9  (developmental)
-        prospect_score = min(99.9, prospect_score + 6.0)
+        # v3.1: Two-tier boost. Base +6.0 for everyone (fair calibration),
+        # plus kickers for elite/very-good production. The kickers are EARNED
+        # by hitting production thresholds, not automatic by score level.
+        _boost = 6.0
+        if production_score >= 90.0 and breakout_score >= 75.0:
+            _boost += 4.0  # Elite: generational production + early breakout (Smith)
+        elif production_score >= 80.0:
+            _boost += 2.0  # Very good: high production (Hardy)
+        prospect_score = min(99.9, prospect_score + _boost)
         
         # Apply benchmark boosts only for complete data profiles
         # The benchmark boost is the only post-sum modifier: a small signal (max 3%)
@@ -2319,7 +2361,7 @@ def score_prospect(
         "athleticism_projected":        _athleticism_projected,
         "competition_score":            round(competition_score, 2),
         "environment_adjustment":       round(environment_score, 2),
-        "durability_score":             round(durability_score, 2),
+        "durability_score":             None if durability_score is None else round(durability_score, 2),
         "recruiting_score":             round(recruiting_score, 2),
         "model_version":                MODEL_VERSION,
         "projected_draft_capital_score":round(dc_score_adjusted, 2),
