@@ -44976,7 +44976,20 @@ a, button, [role="button"], [role="tab"], summary, label,
 .mb-a { display: block; font-size: 15px; font-weight: 800; color: var(--accent); }
 .mb-a.mb-win { color: var(--win); }
 .mb-a.mb-bye, .mb-a.mb-na, .mb-a.mb-proj-only { color: var(--text-subtle); font-weight: 700; }
+/* Final games: larger centered score, no projection underneath. */
+.mb-a.mb-final { font-size: 20px; color: var(--text); }
+.mb-a.mb-final.mb-win { color: var(--win); }
+/* Pre-game: projection muted at 65% opacity so it reads as a projection. */
+.mb-a.mb-preproj { color: var(--text-subtle); opacity: 0.65; }
+.mb-preproj-label { display: block; font-size: 8px; font-weight: 700; color: var(--text-subtle); opacity: 0.6; letter-spacing: 0.06em; text-transform: uppercase; margin-top: 1px; }
 .mb-pj { display: block; font-size: 11px; font-weight: 600; color: var(--text-muted); }
+/* Small FINAL tag in the game line for finished games. */
+.mb-final-tag { display: inline-block; font-size: 8px; font-weight: 800; letter-spacing: 0.06em; color: var(--text-subtle); text-transform: uppercase; }
+@media (min-width: 769px) {
+  .mb-a.mb-final { font-size: 26px; }
+  .mb-a.mb-preproj { font-size: 20px; }
+  .mb-preproj-label { font-size: 9px; }
+}
 
 .mb-pos { display: flex; align-items: center; justify-content: center; align-self: center; }
 .mb-pos .pos-badge { width: 34px; height: 20px; font-size: 11px; padding: 1px 4px; }

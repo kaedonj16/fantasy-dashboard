@@ -102,8 +102,9 @@ def _format_final_game_line(score_str: str, prefix: str) -> str:
     'Final' when no score is available, and to the score with no letter when
     the score cannot be parsed.
     """
+    _final_tag = "<span class='mb-final-tag'>Final</span>"
     if not score_str:
-        return "Final"
+        return _final_tag
     result = ""
     try:
         mine, theirs = score_str.split("-", 1)
@@ -111,7 +112,7 @@ def _format_final_game_line(score_str: str, prefix: str) -> str:
         result = "W" if mine_f > theirs_f else "L" if mine_f < theirs_f else "T"
     except (ValueError, AttributeError):
         result = ""
-    return " ".join(x for x in ["Final", result, score_str, prefix] if x)
+    return " ".join(x for x in [_final_tag, result, score_str, prefix] if x)
 
 
 def _week_stats_for_slide(season, w, ensure_sleeper: bool = False) -> dict:
@@ -1697,7 +1698,7 @@ _SLEEPER_TO_WEEKSTATS = {
 
 
 def _sleeper_skill_stat_line(season, w, pid, pos, name, team_code) -> Optional[str]:
-    """A QB/RB/WR/TE box-score line built from the Sleeper per-player feed.
+    """A QB/RB/WR/TE/K/DEF box-score line built from the Sleeper per-player feed.
 
     Footballguys can miss a player entirely (rookies, mid-week adds), leaving a
     starter who clearly played with no line. Sleeper's feed -- the same source
@@ -1705,7 +1706,7 @@ def _sleeper_skill_stat_line(season, w, pid, pos, name, team_code) -> Optional[s
     pid, so this fills the gap. The Sleeper line is this week's real data (it is
     what the points are scored from), never a stale leftover.
     """
-    if pos not in ("QB", "RB", "WR", "TE") or not pid or not team_code:
+    if pos not in ("QB", "RB", "WR", "TE", "K", "DEF") or not pid or not team_code:
         return None
     try:
         week = load_sleeper_week_stats(season, w)
@@ -1719,6 +1720,19 @@ def _sleeper_skill_stat_line(season, w, pid, pos, name, team_code) -> Optional[s
         v = row.get(src)
         if isinstance(v, (int, float)) and not isinstance(v, bool):
             mapped[dst] = v
+    # Kicker stats: Sleeper uses fgm/fga/xpm/xpa directly.
+    if pos == "K":
+        for k in ("fgm", "fga", "xpm", "xpa", "fgm_yds"):
+            v = row.get(k)
+            if isinstance(v, (int, float)) and not isinstance(v, bool):
+                mapped[k] = v
+    # Defense stats: Sleeper uses sack/int/pts_allow/def_td etc. directly.
+    if pos == "DEF":
+        for k in ("sack", "int", "pts_allow", "def_td", "fum_rec",
+                  "ff", "yds_allow", "sack_yd"):
+            v = row.get(k)
+            if isinstance(v, (int, float)) and not isinstance(v, bool):
+                mapped[k] = v
     if not mapped:
         return None
     # Reuse the real formatter by handing it a one-player, one-team snapshot in
@@ -2423,7 +2437,7 @@ def render_matchup_slide(
         # Gap fill: a skill starter whose game has started but who has no line
         # (Footballguys missed them, or a stale leftover was just dropped) still
         # gets a box score from the Sleeper per-player feed, keyed by their pid.
-        if stats is None and not is_bye and pid and nfl and pos in ("QB", "RB", "WR", "TE"):
+        if stats is None and not is_bye and pid and nfl and pos in ("QB", "RB", "WR", "TE", "K", "DEF"):
             _played = (
                 game_has_started(game) if game is not None
                 else status in (STATUS_FINAL, STATUS_IN_PROGRESS)
@@ -2501,14 +2515,16 @@ def render_matchup_slide(
     def _score_box(actual_val, proj_val, is_bye: bool, more: bool, not_started: bool) -> str:
         """Compact score cell: big actual on top, small live projection under it.
         The projection-only (not-started) state keeps ``m-proj-only`` so the
-        existing tests and styling still find it."""
+        existing tests and styling still find it. Final games show a larger
+        centered score with no projection."""
         if is_bye:
             return "<div class='mb-score'><span class='mb-a mb-bye'>BYE</span></div>"
         if not_started:
             pv = proj_val if isinstance(proj_val, (int, float)) else 0.0
             return (
                 "<div class='mb-score'>"
-                f"<span class='mb-a mb-proj-only m-proj-only'>{pv:.1f}</span>"
+                f"<span class='mb-a mb-preproj m-proj-only'>{pv:.1f}</span>"
+                "<span class='mb-preproj-label'>proj</span>"
                 "</div>"
             )
         if actual_val is None:
@@ -2517,6 +2533,11 @@ def render_matchup_slide(
                 "<span class='mb-a mb-na' title='Weekly fantasy points unavailable'>&mdash;</span>"
                 "</div>"
             )
+        # Final game: no live projection left, show the final score larger
+        # and centered with no projection underneath.
+        if not isinstance(proj_val, (int, float)):
+            f_cls = "mb-a mb-final" + (" mb-win" if more else "")
+            return f"<div class='mb-score'><span class='{f_cls}'>{actual_val:.1f}</span></div>"
         a_cls = "mb-a" + (" mb-win" if more else "")
         proj_line = (
             f"<span class='mb-pj'>{proj_val:.1f}</span>"
