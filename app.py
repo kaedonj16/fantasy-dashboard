@@ -61,7 +61,7 @@ from dashboard_services.api import (
     get_total_rosters,
     resolve_league_id_for_season,
 )
-from dashboard_services.awards import compute_awards_season, render_awards_section
+from dashboard_services.awards import compute_awards_alltime, compute_awards_season, render_awards_section
 from dashboard_services.display_names import team_label_from_user, username_from_user
 from dashboard_services.changelog import CHANGELOG
 from dashboard_services.injuries import build_injury_report, render_injury_watch
