@@ -883,7 +883,8 @@ def player_detail(player_id: str):
         try:
             player_data.update(_get_prospect_detail(player_id, row))
         except Exception as exc:
-            log.debug("[rookie_api] /player detail skipped: %s", exc)
+            log.error("[rookie_api] /player detail failed for %s: %s", player_id, exc, exc_info=True)
+            player_data["_detail_error"] = str(exc)
 
         return jsonify(player_data)
     except Exception as exc:
