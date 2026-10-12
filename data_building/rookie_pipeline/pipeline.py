@@ -142,7 +142,7 @@ def upsert_prospects(prospects: List[Dict], conn) -> int:
                          %(team_pass_rate)s, %(team_total_yards)s, %(team_total_tds)s,
                          %(team_pass_yards)s, %(sagarin_team_rating)s, %(source)s)
                     ON CONFLICT (player_id, season, source) DO UPDATE SET
-                        games_played         = EXCLUDED.games_played,
+                        games_played         = COALESCE(EXCLUDED.games_played, rookie_prospect_source_data.games_played),
                         pass_yards           = EXCLUDED.pass_yards,
                         pass_tds             = EXCLUDED.pass_tds,
                         pass_attempts        = EXCLUDED.pass_attempts,
@@ -152,7 +152,7 @@ def upsert_prospects(prospects: List[Dict], conn) -> int:
                         rush_yards           = EXCLUDED.rush_yards,
                         rush_tds             = EXCLUDED.rush_tds,
                         receptions           = EXCLUDED.receptions,
-                        targets              = EXCLUDED.targets,
+                        targets              = COALESCE(EXCLUDED.targets, rookie_prospect_source_data.targets),
                         receiving_yards      = EXCLUDED.receiving_yards,
                         receiving_tds        = EXCLUDED.receiving_tds,
                         dominator_rating     = EXCLUDED.dominator_rating,
@@ -289,7 +289,7 @@ def upsert_prospect_source_data(prospects: List[Dict], cfbd_stats: Dict, draft_y
                              %(team_total_yards)s, %(team_total_tds)s,
                              %(team_pass_yards)s, %(sagarin_team_rating)s, %(source)s)
                         ON CONFLICT (player_id, season, source) DO UPDATE SET
-                            games_played        = EXCLUDED.games_played,
+                            games_played        = COALESCE(EXCLUDED.games_played, rookie_prospect_source_data.games_played),
                             pass_yards          = EXCLUDED.pass_yards,
                             pass_tds            = EXCLUDED.pass_tds,
                             pass_attempts       = EXCLUDED.pass_attempts,
@@ -299,7 +299,7 @@ def upsert_prospect_source_data(prospects: List[Dict], cfbd_stats: Dict, draft_y
                             rush_yards          = EXCLUDED.rush_yards,
                             rush_tds            = EXCLUDED.rush_tds,
                             receptions          = EXCLUDED.receptions,
-                            targets             = EXCLUDED.targets,
+                            targets             = COALESCE(EXCLUDED.targets, rookie_prospect_source_data.targets),
                             receiving_yards     = EXCLUDED.receiving_yards,
                             receiving_tds       = EXCLUDED.receiving_tds,
                             dominator_rating    = EXCLUDED.dominator_rating,
