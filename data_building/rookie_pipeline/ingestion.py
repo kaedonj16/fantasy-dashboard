@@ -1507,40 +1507,14 @@ def fetch_cfbd_college_stats(
 
         print(f"[cfbd] COMPLETE: Loaded stats for {len(result)} players (draft class {draft_year})")
 
-        # Target share from play-by-play (latest season only - that's what
-        # the model reads). Best-effort: skips silently when unavailable.
-        # Fetches for ALL seasons with data, not just the latest.
-        try:
-            teams_by_year: Dict[int, set] = {}
-            for seasons in result.values():
-                for s in seasons:
-                    yr = s.get("season")
-                    team = s.get("team")
-                    if yr and team:
-                        teams_by_year.setdefault(yr, set()).add(team)
-            teams_by_year = {yr: sorted(teams) for yr, teams in teams_by_year.items()}
-            targets_map = fetch_cfbd_targets(draft_year, teams_by_year)
-            if targets_map:
-                merged = 0
-                for name, seasons in result.items():
-                    t_by_year = targets_map.get(name)
-                    if not t_by_year:
-                        continue
-                    for s in seasons:
-                        yr = s.get("season")
-                        t = t_by_year.get(yr) if yr else None
-                        if t:
-                            # Totals from the targets fetch are stored+new
-                            # (additive); only overwrite when it carries a
-                            # value so a partial entry can never blank a stat.
-                            if t.get("targets") is not None:
-                                s["targets"] = t["targets"]
-                            if t.get("target_share") is not None:
-                                s["target_share"] = t["target_share"]
-                            merged += 1
-                print(f"[cfbd] Merged targets/target_share for {merged} player-seasons")
-        except Exception as exc:
-            print(f"[cfbd] Target merge failed - {type(exc).__name__}: {exc}")
+        # Targets are NOT merged from CFBD play-by-play: its "Target" stat
+        # type is tagged on only a small subset of plays (verified 2026-10-13:
+        # Ohio State vs Ball State had ~35 pass attempts but only 5 Target
+        # rows, while Reception rows were complete at 31). Counts from it are
+        # partial and wrong (Jeremiah Smith: 18 stored targets vs 48
+        # receptions), so seasons carry no targets at all and the model uses
+        # its receptions-based fallbacks. fetch_cfbd_targets stays available
+        # if a complete source ever appears; do not re-wire it to this one.
 
         return result
         
