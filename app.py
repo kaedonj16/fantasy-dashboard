@@ -12082,6 +12082,7 @@ def _next_steps_lineup_actions(ctx: dict, viewer_roster_id) -> list:
                 actions.append({
                     "priority": _priority,
                     "tag": "Lineup",
+                    "kind": "lineup",
                     "action": f"Start {_in_name} over {_out_name}",
                     "why": _why,
                     "impact": f"+{_gain:.1f} projected points",
@@ -12126,6 +12127,7 @@ def _next_steps_lineup_actions(ctx: dict, viewer_roster_id) -> list:
                 actions.append({
                     "priority": "high",
                     "tag": "Lineup",
+                    "kind": "lineup",
                     "action": f"Address: {_name}" if _name else "Fix lineup issue",
                     "why": _detail,
                     "impact": None,
@@ -12215,6 +12217,11 @@ def _next_steps_waiver_actions(ctx: dict, viewer_roster_id, model_value_table: l
             actions.append({
                 "priority": _priority,
                 "tag": "Waivers",
+                "kind": "waiver",
+                # Shared dismissal key: the portfolio moves digest emits the
+                # same "wv:<player_id>" key for its add of this player, so a
+                # dismissal on either surface hides it on both.
+                "dismiss_key": f"wv:{_pid}",
                 "action": f"Claim {_name}",
                 "why": _why or _sub,
                 "impact": _impact,
@@ -12333,6 +12340,7 @@ def _next_steps_trade_actions(ctx: dict, viewer_roster_id) -> list:
             actions.append({
                 "priority": "low",
                 "tag": f"Trade \u00b7 {_opp}",
+                "kind": "trade",
                 "action": _action,
                 "why": _why,
                 "impact": _impact,
@@ -12449,6 +12457,7 @@ def _next_steps_roster_actions(ctx: dict, viewer_roster_id) -> list:
             actions.append({
                 "priority": "medium",
                 "tag": _kind_tag.get(_kind, "Roster"),
+                "kind": "roster",
                 "action": _detail,
                 "why": f"Free up a roster spot{_moves_txt}",
                 "impact": None,
@@ -12482,6 +12491,7 @@ def _next_steps_bench_check_actions(ctx: dict, viewer_roster_id, last_final_week
         actions.append({
             "priority": _priority,
             "tag": "Lineup",
+            "kind": "bench",
             "action": f"Left {left:.1f} on the bench",
             "why": f"Week {m['week']} optimal lineup review.",
             "impact": f"-{left:.1f} points missed",
@@ -12559,8 +12569,20 @@ def _render_next_steps_queue(
         _item_id = hashlib.md5(
             f"{a.get('tag') or ''}|{a.get('action') or ''}|{a.get('cta_url') or ''}".encode("utf-8")
         ).hexdigest()[:10]  # noqa: S324 (non-crypto)
+        # Server-synced dismissal hooks: data-ns-kind lets a portfolio
+        # category dismissal ("cat:lineup" / "cat:roster") hide this league's
+        # queue items of that kind; data-ns-key is the shared cross-surface
+        # key (waiver adds use "wv:<player_id>" on both surfaces).
+        _kind_attr = (
+            f' data-ns-kind="{html.escape(str(a.get("kind")), quote=True)}"'
+            if a.get("kind") else ""
+        )
+        _key_attr = (
+            f' data-ns-key="{html.escape(str(a.get("dismiss_key")), quote=True)}"'
+            if a.get("dismiss_key") else ""
+        )
         return (
-            f'<div class="ns-item ns-prio-{_prio}" data-ns-item="{_item_id}">'
+            f'<div class="ns-item ns-prio-{_prio}" data-ns-item="{_item_id}"{_kind_attr}{_key_attr}>'
             f'<div class="ns-priority {_prio}"></div>'
             f'<div class="ns-body">'
             f'<div class="ns-tag">{_tag}</div>'
@@ -36615,6 +36637,11 @@ def build_portfolio_body(
         ".pf-move-chevron{flex-shrink:0;display:flex;align-items:center;padding:0 12px 0 4px;"
         "font-size:22px;font-weight:300;color:var(--text-subtle);opacity:.55;transition:opacity .15s,transform .15s;}"
         ".pf-move-row:hover .pf-move-chevron{opacity:1;color:var(--accent);transform:translateX(2px);}"
+        # Per-row dismiss (style B: plain bold x, muted slate) -- writes to the
+        # account dismissal store so it also hides on the league dashboard.
+        ".pf-move-dismiss{flex-shrink:0;align-self:flex-start;margin:10px 2px 0 0;background:none;border:none;"
+        "font-size:17px;font-weight:800;line-height:1;color:var(--text-muted);opacity:.55;cursor:pointer;padding:2px 4px;}"
+        ".pf-move-dismiss:hover{opacity:1;color:var(--text);}"
         ".pf-moves-loading{font-size:13px;color:var(--text-muted);padding:6px 2px;}"
         ".pf-moves-empty{font-size:13px;color:var(--text-muted);line-height:1.5;padding:14px 4px;}"
         ".pf-moves-empty strong{color:var(--text);}"
@@ -36711,6 +36738,7 @@ def build_portfolio_body(
         "}"
         "var card=document.getElementById('pfMovesCard');"
         "var body=document.getElementById('pfMovesBody');"
+        f"var PF_WEEK={int(current_week or 0)};"
         "if(!card||!body)return;"
         "var prem=(window.__brctx&&window.__brctx.isPremium)||"
         "(document.getElementById('page-root')&&document.getElementById('page-root').getAttribute('data-premium')==='true');"
@@ -36736,7 +36764,24 @@ def build_portfolio_body(
         "No lineup, waiver, roster, or deadline moves need your attention across your leagues right now. "
         "Check back after games and waivers process.</div>';return;}"
         "card.hidden=false;"
-        "body.innerHTML='<div class=\"pf-moves-list\">'+acts.map(function(a){"
+        # Dismissals: the account store (/api/action-dismissals) is shared
+        # with the league dashboards, so a move dismissed here stays hidden
+        # there and the reverse. Keys come from the API (dismiss_key); kinds
+        # without one (injury, calendar) fall back to a stable kind+title
+        # hash, the same derivation the header My Actions drawer uses.
+        "var pfDismissed={};"
+        "function pfDay(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}"
+        "function pfHash(s){var h=0;for(var i=0;i<s.length;i++){h=((h<<5)-h+s.charCodeAt(i))|0;}return (h>>>0).toString(36);}"
+        "function pfKey(a){return a.dismiss_key||('pf:'+kindKey(a.kind)+':'+pfHash((a.kind||'')+'|'+(a.title||'')));}"
+        "function pfScope(a){return String(a.platform||'sleeper')+'|'+String(a.league_id||'')+'|'+String(a.season||'');}"
+        "function pfVisible(){return acts.filter(function(a){var s=pfDismissed[pfScope(a)];return !(s&&s[pfKey(a)]);});}"
+        "function pfRender(){"
+        "var vis=pfVisible();"
+        "if(!vis.length){"
+        "body.innerHTML='<div class=\"pf-moves-empty\"><strong>You\\'re all caught up.</strong> "
+        "No lineup, waiver, roster, or deadline moves need your attention across your leagues right now. "
+        "Check back after games and waivers process.</div>';return;}"
+        "body.innerHTML='<div class=\"pf-moves-list\">'+vis.map(function(a,idx){"
         "var k=kindKey(a.kind);"
         "var urg=String(a.urgency||'').toLowerCase();"
         "var urgCls=urg==='high'?'high':(urg==='medium'?'medium':'low');"
@@ -36752,9 +36797,37 @@ def build_portfolio_body(
         "+'<span class=\"pf-move-urgency pf-move-urgency--'+urgCls+'\">'+esc(urgLabel)+'</span>'"
         "+'</div>'"
         "+'</span>'"
+        "+'<button type=\"button\" class=\"pf-move-dismiss\" data-pf-idx=\"'+idx+'\" aria-label=\"Dismiss action\">&times;</button>'"
         "+'<span class=\"pf-move-chevron\" aria-hidden=\"true\">›</span>'"
         "+'</a>';"
         "}).join('')+'</div>';"
+        "}"
+        "function pfPersist(a,method){"
+        "try{fetch('/api/action-dismissals',{method:method,headers:{'Content-Type':'application/json'},credentials:'same-origin',"
+        "body:JSON.stringify({platform:a.platform||'sleeper',league_id:String(a.league_id||''),season:a.season||0,week:PF_WEEK,day:pfDay(),item_key:pfKey(a)})}).catch(function(){});}catch(e){}"
+        "}"
+        "body.addEventListener('click',function(e){"
+        "var btn=e.target&&e.target.closest?e.target.closest('.pf-move-dismiss'):null;"
+        "if(!btn)return;"
+        "e.preventDefault();e.stopPropagation();"
+        "var a=pfVisible()[parseInt(btn.getAttribute('data-pf-idx'),10)];"
+        "if(!a)return;"
+        "var sk=pfScope(a);if(!pfDismissed[sk])pfDismissed[sk]={};"
+        "pfDismissed[sk][pfKey(a)]=true;"
+        "pfPersist(a,'POST');pfRender();"
+        "if(window.brUndoToast){window.brUndoToast('Action dismissed.',function(){"
+        "if(pfDismissed[sk])delete pfDismissed[sk][pfKey(a)];"
+        "pfPersist(a,'DELETE');pfRender();});}"
+        "});"
+        "var pfScopes={};acts.forEach(function(a){pfScopes[pfScope(a)]=a;});"
+        "Promise.all(Object.keys(pfScopes).map(function(sk){"
+        "var a=pfScopes[sk];"
+        "var qs='?platform='+encodeURIComponent(a.platform||'sleeper')+'&league_id='+encodeURIComponent(a.league_id||'')+'&season='+encodeURIComponent(a.season||'')+'&week='+PF_WEEK+'&day='+encodeURIComponent(pfDay());"
+        "return fetch('/api/action-dismissals'+qs,{credentials:'same-origin'}).then(function(r){return r.json();}).then(function(d){"
+        "var m={};if(d&&d.dismissed){d.dismissed.forEach(function(k){m[k]=true;});}"
+        "pfDismissed[sk]=m;"
+        "}).catch(function(){pfDismissed[sk]={};});"
+        "})).then(pfRender);"
         "}).catch(function(){body.innerHTML='<div class=\"pf-moves-empty\">Actions temporarily unavailable.</div>';});}"
         "var __pfIdle=window.requestIdleCallback||function(f){return setTimeout(f,200);};"
         "var __pfMovesStarted=false;function __pfMovesStart(){if(__pfMovesStarted)return;__pfMovesStarted=true;__pfIdle(__pfMovesGo);}"
