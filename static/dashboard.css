@@ -46827,6 +46827,22 @@ table.rz-bs-table thead th:not(:first-child) {
 .bo-wk-link:hover {
     background: var(--surface-alt, #f1f5f9);
 }
+.bo-rail-row.bo-row-link {
+    cursor: pointer;
+    border-radius: 8px;
+    padding-left: 6px;
+    padding-right: 6px;
+    margin-left: -6px;
+    margin-right: -6px;
+}
+.bo-rail-row.bo-row-link:hover {
+    background: var(--surface-alt, #f1f5f9);
+}
+.bo-wk-link:focus-visible,
+.bo-rail-row.bo-row-link:focus-visible {
+    outline: 2px solid #3b82f6;
+    outline-offset: 1px;
+}
 .bo-show-all {
     font-size: 12px;
     color: #3b82f6;

@@ -1632,3 +1632,248 @@ def test_breakout_rail_hero_reads_singular_hit_field():
     # hero text once read "hits" and always rendered 0.
     assert "overall.hits" not in src
     assert src.count("var hits = overall.hit || 0;") == 2
+
+
+# ---------------------------------------------------------------------------
+# track record row clicks: jump the board (and the week selector) to the
+# row's week, through the selector's own change event
+# ---------------------------------------------------------------------------
+
+def _extract_bo_fn(src, signature):
+    """A breakout page JS function from the app.py f-string, with the
+    f-string's doubled braces collapsed back into real JS braces (same
+    extraction as _extract_bo_outlook_block, keyed by signature)."""
+    start = src.index(signature)
+    i = src.index("{{", start)
+    depth, j = 0, i
+    while True:
+        two = src[j:j + 2]
+        if two == "{{":
+            depth += 1
+            j += 2
+            continue
+        if two == "}}":
+            depth -= 1
+            j += 2
+            if depth == 0:
+                break
+            continue
+        j += 1
+    out = src[start:j].replace("{{", "{").replace("}}", "}")
+    # The page f-string escapes quotes inside inline handlers with extra
+    # backslashes (\\' in the file, \\\' one nesting level deeper);
+    # Python's escape pass collapses each pair when serving, so mirror
+    # that (longest first) or node sees a stray backslash and the string
+    # literal ends early.
+    return out.replace("\\\\\\'", "\\'").replace("\\\\'", "\\'")
+
+
+_BO_FAKE_DOM = """
+var changeEvents = [];
+var loadedWeeks = [];
+var fakeSel = {
+  value: '5',
+  options: [{value: 'preseason'}, {value: '1'}, {value: '2'},
+            {value: '3'}, {value: '4'}, {value: '5'}],
+  _listeners: {},
+  addEventListener: function (type, fn) { this._listeners[type] = fn; },
+  dispatchEvent: function (ev) {
+    changeEvents.push({type: ev.type, bubbles: ev.bubbles});
+    if (this._listeners[ev.type]) this._listeners[ev.type]();
+    return true;
+  }
+};
+var fakeContainer = {scrolled: false,
+                     scrollIntoView: function () { this.scrolled = true; }};
+var document = {
+  getElementById: function (id) {
+    if (id === 'breakoutWeekSelect') return fakeSel;
+    if (id === 'breakoutsContainer') return fakeContainer;
+    return null;
+  }
+};
+// Stands in for onBreakoutWeekChange: the page's own change listener,
+// which loads the board for the selector's current value.
+fakeSel.addEventListener('change', function () {
+  loadedWeeks.push(fakeSel.value);
+});
+"""
+
+
+@pytest.mark.skipif(shutil.which("node") is None,
+                    reason="node not available")
+def test_bo_go_week_routes_through_selector_change_event():
+    src = (ROOT / "app.py").read_text(encoding="utf-8")
+    fn_src = _extract_bo_fn(src, "function boGoWeek(week)")
+    driver = _BO_FAKE_DOM + """
+boGoWeek(3);
+var afterNumeric = {value: fakeSel.value, loaded: loadedWeeks.slice(),
+                    events: changeEvents.length,
+                    bubbles: changeEvents[0] && changeEvents[0].bubbles,
+                    scrolled: fakeContainer.scrolled};
+loadedWeeks.length = 0; changeEvents.length = 0;
+boGoWeek('preseason');
+var afterPreseason = {value: fakeSel.value, loaded: loadedWeeks.slice()};
+loadedWeeks.length = 0; changeEvents.length = 0;
+boGoWeek(0);
+var afterZero = {value: fakeSel.value, loaded: loadedWeeks.slice()};
+loadedWeeks.length = 0; changeEvents.length = 0;
+boGoWeek(99);
+var afterUnknown = {value: fakeSel.value, loaded: loadedWeeks.slice(),
+                    events: changeEvents.length};
+console.log(JSON.stringify({afterNumeric: afterNumeric,
+  afterPreseason: afterPreseason, afterZero: afterZero,
+  afterUnknown: afterUnknown}));
+"""
+    res = subprocess.run(["node", "-e", fn_src + "\n" + driver],
+                         capture_output=True, text=True, timeout=20)
+    assert res.returncode == 0, res.stderr
+    out = json.loads(res.stdout)
+
+    # A numeric week: selector value set, exactly one change dispatched,
+    # and the page's change listener (the stand-in above) loads that week.
+    assert out["afterNumeric"]["value"] == "3"
+    assert out["afterNumeric"]["events"] == 1
+    assert out["afterNumeric"]["bubbles"] is True
+    assert out["afterNumeric"]["loaded"] == ["3"]
+    assert out["afterNumeric"]["scrolled"] is True
+    # 'preseason' and week 0 both land on the Preseason option.
+    assert out["afterPreseason"] == {"value": "preseason",
+                                     "loaded": ["preseason"]}
+    assert out["afterZero"] == {"value": "preseason",
+                                "loaded": ["preseason"]}
+    # A week the selector does not offer changes nothing.
+    assert out["afterUnknown"]["value"] == "preseason"
+    assert out["afterUnknown"]["loaded"] == []
+    assert out["afterUnknown"]["events"] == 0
+
+
+def test_bo_go_week_never_loads_the_board_directly():
+    src = (ROOT / "app.py").read_text(encoding="utf-8")
+    fn_src = _extract_bo_fn(src, "function boGoWeek(week)")
+    # The old implementation set the value and called loadBreakouts
+    # itself, which left the custom dropdown showing the old week. The
+    # jump must go through the selector's change event instead.
+    assert "loadBreakouts" not in fn_src
+    assert "dispatchEvent(new Event('change'" in fn_src
+    assert "breakoutWeekSelect" in fn_src
+
+
+@pytest.mark.skipif(shutil.which("node") is None,
+                    reason="node not available")
+def test_bo_row_week_attrs_and_keyboard_jump():
+    src = (ROOT / "app.py").read_text(encoding="utf-8")
+    fn_src = "\n".join([
+        _extract_bo_fn(src, "function boGoWeek(week)"),
+        _extract_bo_fn(src, "function _boRowWeekAttrs(week)"),
+        _extract_bo_fn(src, "function boWeekRowKey(event, el)"),
+        _extract_bo_fn(src, "function _boWeekBar(week, calls, pct, color, label)"),
+    ])
+    driver = _BO_FAKE_DOM + """
+var prevented = 0;
+function keyEv(key) {
+  return {key: key, preventDefault: function () { prevented += 1; }};
+}
+var out = {
+  attrsNum: _boRowWeekAttrs(4),
+  attrsPre: _boRowWeekAttrs('preseason'),
+  attrsNull: _boRowWeekAttrs(null),
+  attrsEmpty: _boRowWeekAttrs(''),
+  bar: _boWeekBar(2, 5, 0.5, null, 'hits')
+};
+boWeekRowKey(keyEv('Enter'), {dataset: {week: '2'}});
+out.afterEnter = fakeSel.value;
+boWeekRowKey(keyEv(' '), {dataset: {week: '1'}});
+out.afterSpace = fakeSel.value;
+boWeekRowKey(keyEv('x'), {dataset: {week: '3'}});
+out.afterOtherKey = fakeSel.value;
+out.prevented = prevented;
+out.loaded = loadedWeeks;
+console.log(JSON.stringify(out));
+"""
+    res = subprocess.run(["node", "-e", fn_src + "\n" + driver],
+                         capture_output=True, text=True, timeout=20)
+    assert res.returncode == 0, res.stderr
+    out = json.loads(res.stdout)
+
+    assert 'data-week="4"' in out["attrsNum"]
+    assert 'role="button"' in out["attrsNum"]
+    assert 'tabindex="0"' in out["attrsNum"]
+    assert 'onclick="boGoWeek(this.dataset.week)"' in out["attrsNum"]
+    assert 'data-week="preseason"' in out["attrsPre"]
+    assert "the Preseason board" in out["attrsPre"]
+    # Rows without a week stay inert.
+    assert out["attrsNull"] == ""
+    assert out["attrsEmpty"] == ""
+    # The by-week bar renders as a week-jump row for its own week.
+    assert out["bar"].startswith('<div class="bo-wk-link" data-week="2"')
+    assert "Week 2" in out["bar"]
+    # Enter and Space jump; other keys do not.
+    assert out["afterEnter"] == "2"
+    assert out["afterSpace"] == "1"
+    assert out["afterOtherKey"] == "1"
+    assert out["prevented"] == 2
+    assert out["loaded"] == ["2", "1"]
+
+
+@pytest.mark.skipif(shutil.which("node") is None,
+                    reason="node not available")
+def test_weekly_track_rows_carry_their_week():
+    src = (ROOT / "app.py").read_text(encoding="utf-8")
+    fn_src = "\n".join([
+        "var _boPlayerNames = {};",
+        "function boOpenPlayerModal(pid) {}",
+        _extract_bo_fn(src, "function _boRowWeekAttrs(week)"),
+        _extract_bo_fn(src, "function boWeekRowKey(event, el)"),
+        _extract_bo_fn(src, "function _boPlayerLink(name, playerId)"),
+        _extract_bo_fn(src, "function _boWeekBar(week, calls, pct, color, label)"),
+        _extract_bo_fn(src, "function _boWeeklyTrackHTML(data)"),
+    ])
+    driver = """
+var data = {
+  weekly: {overall: {}},
+  by_week: [{week: 2, graded: 3, hit_rate: 0.5}],
+  hits: [{player_name: 'Hit Player', player_id: '11',
+          call_week: 3, ppg_delta: 4.2}],
+  misses: [{player_name: 'Miss Player', player_id: '12',
+            call_week: null, ppg_delta: -3.1}],
+  still_tracking: [{week: 4, calls: 2, tracking_to_hit_rate: 0.5}]
+};
+console.log(JSON.stringify({html: _boWeeklyTrackHTML(data)}));
+"""
+    res = subprocess.run(["node", "-e", fn_src + "\n" + driver],
+                         capture_output=True, text=True, timeout=20)
+    assert res.returncode == 0, res.stderr
+    html = json.loads(res.stdout)["html"]
+
+    # By-week bar, hit row and still-tracking bar all carry their week.
+    assert 'data-week="2"' in html
+    assert 'data-week="3"' in html
+    assert 'data-week="4"' in html
+    assert html.count('data-week="') == 3
+    # Only the hit row (the one rail row with a week) gets the link
+    # styling; the weekless miss row stays a plain, inert rail row.
+    assert html.count("bo-row-link") == 1
+    assert "Week ? call" in html
+
+
+def test_track_record_week_click_wiring_in_page_source():
+    src = (ROOT / "app.py").read_text(encoding="utf-8")
+    # Hits and misses rows attach their call week at render time.
+    assert src.count("_boRowWeekAttrs(r.call_week)") == 2
+    # The by-week / still-tracking bars share the same attributes helper.
+    assert "_boRowWeekAttrs(week)" in src
+    # The preseason (season engine) rows carry no weekly week and must
+    # not navigate: no week-jump wiring inside that renderer.
+    start = src.index("function _boPreseasonTrackHTML(data)")
+    end = src.index("function _boOutlookBlock(title, block)")
+    assert "boGoWeek" not in src[start:end]
+    assert "_boRowWeekAttrs" not in src[start:end]
+
+
+def test_dashboard_css_styles_clickable_rail_rows():
+    css = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
+    rule = css.split(".bo-rail-row.bo-row-link {")[1].split("}")[0]
+    assert "cursor: pointer" in rule
+    hover = css.split(".bo-rail-row.bo-row-link:hover {")[1].split("}")[0]
+    assert "background:" in hover

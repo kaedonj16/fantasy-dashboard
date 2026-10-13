@@ -18071,19 +18071,46 @@ def page_breakouts(platform: str, season: int, league_id: str):
         }});
       }}
 
+      // Jump the board to the week a track record row belongs to. Sets
+      // the week selector and fires its change event, so the board loads
+      // through the exact same handler as picking the week in the
+      // dropdown, and the CSD custom dropdown re-syncs its visible label
+      // (it listens for 'change' on the select). Week 0 and the string
+      // 'preseason' both mean the Preseason option.
       function boGoWeek(week) {{
         var sel = document.getElementById('breakoutWeekSelect');
-        if (sel) {{
-          sel.value = String(week);
-          loadBreakouts(String(week));
-          document.getElementById('breakoutsContainer').scrollIntoView({{ behavior: 'smooth', block: 'start' }});
+        if (!sel) return;
+        var value = (week === 'preseason' || week === 0 || week === '0') ? 'preseason' : String(week);
+        var offered = Array.prototype.some.call(sel.options, function (o) {{ return o.value === value; }});
+        if (!offered) return;
+        sel.value = value;
+        sel.dispatchEvent(new Event('change', {{ bubbles: true }}));
+        var container = document.getElementById('breakoutsContainer');
+        if (container) container.scrollIntoView({{ behavior: 'smooth', block: 'start' }});
+      }}
+
+      // Attributes that turn a track record row into a week jump: the
+      // row's week rides on data-week, and click / Enter / Space all
+      // route through boGoWeek. Rows without a week get no attributes
+      // and stay inert.
+      function _boRowWeekAttrs(week) {{
+        if (week == null || week === '') return '';
+        var label = week === 'preseason' ? 'the Preseason board' : 'the Week ' + week + ' board';
+        return ' data-week="' + week + '" role="button" tabindex="0" title="View ' + label + '"'
+          + ' onclick="boGoWeek(this.dataset.week)" onkeydown="boWeekRowKey(event, this)"';
+      }}
+
+      function boWeekRowKey(event, el) {{
+        if (event.key === 'Enter' || event.key === ' ') {{
+          event.preventDefault();
+          boGoWeek(el.dataset.week);
         }}
       }}
 
       function _boWeekBar(week, calls, pct, color, label) {{
         var pctTxt = pct != null ? Math.round(pct * 100) + '% ' + (label || 'hits') : 'n/a';
         var barColor = color || '#16a34a';
-        return '<div class="bo-wk-link" onclick="boGoWeek(' + week + ')">'
+        return '<div class="bo-wk-link"' + _boRowWeekAttrs(week) + '>'
           + '<div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px;">'
           + '<span>Week ' + week + ' &middot; ' + calls + ' calls</span>'
           + '<span style="font-weight:700;color:' + barColor + ';">' + pctTxt + '</span></div>'
@@ -18169,7 +18196,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
           html += '<div class="bo-tr-hits-h hits">Biggest Hits</div><div style="font-size:11px;color:var(--text-muted);margin:-6px 0 8px;">PPG over expected</div>';
           hits.slice(0, 3).forEach(function (r) {{
             var delta = r.ppg_delta != null ? (r.ppg_delta >= 0 ? '+' : '') + Number(r.ppg_delta).toFixed(1) : 'n/a';
-            html += '<div class="bo-rail-row"><div><div class="bo-rail-name">' + _boPlayerLink(r.player_name, r.player_id)
+            html += '<div class="bo-rail-row' + (r.call_week != null ? ' bo-row-link' : '') + '"' + _boRowWeekAttrs(r.call_week) + '><div><div class="bo-rail-name">' + _boPlayerLink(r.player_name, r.player_id)
               + '</div><div class="bo-rail-meta">Week ' + (r.call_week != null ? r.call_week : '?') + ' call</div></div>'
               + '<div class="bo-rail-value" style="color:#16a34a;font-weight:800;">' + delta + '</div></div>';
           }});
@@ -18181,7 +18208,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
           html += '<div class="bo-tr-hits-h misses">Biggest Misses</div><div style="font-size:11px;color:var(--text-muted);margin:-6px 0 8px;">PPG over expected</div>';
           misses.slice(0, 3).forEach(function (r) {{
             var delta = r.ppg_delta != null ? (r.ppg_delta >= 0 ? '+' : '') + Number(r.ppg_delta).toFixed(1) : 'n/a';
-            html += '<div class="bo-rail-row"><div><div class="bo-rail-name">' + _boPlayerLink(r.player_name, r.player_id)
+            html += '<div class="bo-rail-row' + (r.call_week != null ? ' bo-row-link' : '') + '"' + _boRowWeekAttrs(r.call_week) + '><div><div class="bo-rail-name">' + _boPlayerLink(r.player_name, r.player_id)
               + '</div><div class="bo-rail-meta">Week ' + (r.call_week != null ? r.call_week : '?') + ' call</div></div>'
               + '<div class="bo-rail-value" style="color:#dc2626;font-weight:800;">' + delta + '</div></div>';
           }});
