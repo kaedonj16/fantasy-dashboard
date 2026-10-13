@@ -5,8 +5,11 @@ Provides REST API endpoints for querying breakout candidates and scores.
 Includes detailed breakout type classification (readiness vs opportunity driven).
 """
 
+import copy
 import logging
 import os
+import threading
+import time
 from datetime import date
 from typing import Any, Dict, List, Optional
 
@@ -1244,6 +1247,128 @@ def get_breakout_candidates(season: Optional[int] = None, min_score: float = 0.0
     }
 
 
+# =============================================================================
+# BREAKOUT READ CACHE (board + track record payloads)
+# =============================================================================
+#
+# The board pipeline and the track record aggregate take seconds to build
+# (the track record loads every completed week's board on top of the grade
+# and forecast reads), yet the underlying data only changes on a weekly
+# cadence: a new breakout run completes, grades are written, a new weekly
+# metrics week lands, or the offseason opportunity scores are recalculated.
+# Both payloads are viewer-independent (no session, league, or request state
+# reaches the compute functions; the route applies the non-premium preview
+# slice to the returned board), so they are cached in-process keyed by the
+# request inputs and guarded by a cheap data watermark. A cached entry is
+# served only while the watermark is unchanged and a TTL backstop bounds how
+# long anything can be served even if a watermark source is ever missed.
+# Gunicorn workers are separate processes, so the cache is per worker; that
+# still turns every repeat view in a worker into one light watermark query.
+#
+# The watermark check is fail-soft: if it cannot be read, nothing is served
+# from or written to the cache and the caller computes fresh, exactly the
+# pre-cache behavior.
+
+def _breakout_cache_ttl_seconds() -> float:
+    try:
+        return max(30.0, float(
+            os.environ.get("BREAKOUT_CACHE_TTL_SECONDS", "300")))
+    except (TypeError, ValueError):
+        return 300.0
+
+
+_BREAKOUT_CACHE_MAX_ENTRIES = 256
+_breakout_cache_lock = threading.Lock()
+_breakout_board_cache: Dict[Any, Dict[str, Any]] = {}
+_breakout_track_record_cache: Dict[Any, Dict[str, Any]] = {}
+
+_WATERMARK_SQL = """
+    SELECT
+      (SELECT MAX(completed_at) FROM weekly_breakout_runs
+        WHERE season = %s AND status = 'completed') AS run_completed_at,
+      (SELECT MAX(graded_at) FROM weekly_breakout_grades
+        WHERE season = %s) AS grades_written_at,
+      (SELECT MAX(week) FROM player_weekly_metrics
+        WHERE season = %s) AS metrics_max_week,
+      (SELECT MAX(calculated_at) FROM breakout_opportunity_scores
+        WHERE season = %s) AS opportunity_calculated_at
+"""
+
+
+def _breakout_data_watermark(season: int) -> Optional[tuple]:
+    """One light query describing everything the breakout reads depend on.
+
+    Returns a tuple of the newest completed weekly run, the newest grade
+    write, the newest stored metrics week, and the newest offseason
+    opportunity calculation for the season. Any data change that can alter
+    a board or track record payload moves at least one component. Returns
+    None when the watermark cannot be read; callers then bypass the cache
+    and compute fresh.
+    """
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(_WATERMARK_SQL, (season, season, season, season))
+                row = cur.fetchone() or {}
+        return (
+            row.get("run_completed_at"),
+            row.get("grades_written_at"),
+            row.get("metrics_max_week"),
+            row.get("opportunity_calculated_at"),
+        )
+    except Exception:
+        logger.debug(
+            "breakout_api: data watermark read failed for season %s",
+            season, exc_info=True)
+        return None
+
+
+def _breakout_cache_lookup(store: Dict, key: Any,
+                           watermark: tuple) -> Optional[Dict]:
+    """Deep-copied cached payload for ``key`` when the watermark still
+    matches and the TTL backstop has not expired, else None. The copy
+    keeps callers free to treat the payload as their own."""
+    now = time.monotonic()
+    with _breakout_cache_lock:
+        entry = store.get(key)
+        if (entry is None or entry["watermark"] != watermark
+                or now >= entry["expires"]):
+            return None
+        return copy.deepcopy(entry["payload"])
+
+
+def _breakout_cache_store(store: Dict, key: Any, watermark: tuple,
+                          payload: Dict) -> None:
+    with _breakout_cache_lock:
+        if key not in store and len(store) >= _BREAKOUT_CACHE_MAX_ENTRIES:
+            store.clear()
+        store[key] = {
+            "watermark": watermark,
+            "expires": time.monotonic() + _breakout_cache_ttl_seconds(),
+            "payload": copy.deepcopy(payload),
+        }
+
+
+def _clear_breakout_payload_caches() -> None:
+    """Drop every cached breakout payload (tests and manual resets)."""
+    with _breakout_cache_lock:
+        _breakout_board_cache.clear()
+        _breakout_track_record_cache.clear()
+
+
+def _compute_breakout_board_candidates(
+    requested_season: Optional[int] = None,
+    min_score: float = BREAKOUT_BOARD_MIN_SCORE,
+    limit: Optional[int] = BREAKOUT_BOARD_LIMIT,
+    week: Optional[object] = None,
+) -> Dict:
+    season = _resolve_bo_season(requested_season)
+    # Only forward week when set, so the default call shape stays identical to
+    # the old pipeline (existing mocks and callers keep working untouched).
+    extra = {"week": week} if week is not None else {}
+    return get_breakout_candidates(season, min_score=min_score, limit=limit, **extra)
+
+
 def get_breakout_board_candidates(
     requested_season: Optional[int] = None,
     min_score: float = BREAKOUT_BOARD_MIN_SCORE,
@@ -1259,12 +1384,29 @@ def get_breakout_board_candidates(
 
     ``week`` forwards the week selector value ("preseason", an int week, or
     None) into the candidate pipeline.
+
+    Results are served from the in-process read cache (see the cache section
+    above) while the season's data watermark is unchanged.
     """
     season = _resolve_bo_season(requested_season)
-    # Only forward week when set, so the default call shape stays identical to
-    # the old pipeline (existing mocks and callers keep working untouched).
-    extra = {"week": week} if week is not None else {}
-    return get_breakout_candidates(season, min_score=min_score, limit=limit, **extra)
+    week_key = _parse_breakout_week(week)
+    if season is None or week_key is _BREAKOUT_WEEK_INVALID:
+        # Nothing stable to key on: compute fresh, exactly as before.
+        return _compute_breakout_board_candidates(
+            requested_season, min_score, limit, week)
+    watermark = _breakout_data_watermark(season)
+    if watermark is None:
+        return _compute_breakout_board_candidates(
+            requested_season, min_score, limit, week)
+    key = (season, week_key, float(min_score or 0.0),
+           int(limit) if limit else None)
+    cached = _breakout_cache_lookup(_breakout_board_cache, key, watermark)
+    if cached is not None:
+        return cached
+    payload = _compute_breakout_board_candidates(
+        requested_season, min_score, limit, week)
+    _breakout_cache_store(_breakout_board_cache, key, watermark, payload)
+    return payload
 
 
 def list_breakout_weeks(requested_season: Optional[int] = None) -> Dict:
@@ -2065,7 +2207,7 @@ def _reconstructed_outlook_candidates(season: int) -> List[Dict]:
     return candidates
 
 
-def get_breakout_track_record(requested_season: Optional[int] = None) -> Dict:
+def _compute_breakout_track_record(requested_season: Optional[int] = None) -> Dict:
     """Sidebar payload for the breakout page.
 
     Track record (finished grades only): weekly hit rates per
@@ -2214,6 +2356,30 @@ def get_breakout_track_record(requested_season: Optional[int] = None) -> Dict:
     # Still tracking: open calls by week, watchlist/monitored excluded,
     # matching the hits/misses filter. Only actual breakout calls appear.
     payload["still_tracking"] = _still_tracking_by_week(_merged)
+    return payload
+
+
+def get_breakout_track_record(requested_season: Optional[int] = None) -> Dict:
+    """Sidebar payload for the breakout page (see
+    :func:`_compute_breakout_track_record` for the payload contract).
+
+    Served from the in-process read cache while the season's data
+    watermark is unchanged: a repeat view costs one light watermark query
+    instead of the full board-per-week plus grades plus forecasts build.
+    """
+    season = _resolve_bo_season(requested_season)
+    if season is None:
+        return _compute_breakout_track_record(requested_season)
+    watermark = _breakout_data_watermark(season)
+    if watermark is None:
+        return _compute_breakout_track_record(requested_season)
+    cached = _breakout_cache_lookup(
+        _breakout_track_record_cache, season, watermark)
+    if cached is not None:
+        return cached
+    payload = _compute_breakout_track_record(requested_season)
+    _breakout_cache_store(
+        _breakout_track_record_cache, season, watermark, payload)
     return payload
 
 
