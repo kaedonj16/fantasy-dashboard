@@ -1352,7 +1352,17 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
                         f'<h2>Season Complete</h2></div><div class="card recap-next-history">'
                         f'<a href="{history_url}">Open season history and recap</a>.</div></section>')
 
+    # Mock A layout (approved 2026-10-13): Scoreboard + Week at a Glance in
+    # the main column, Lineup Efficiency / League Activity / Injury Report
+    # in a 336px right rail, and Lineup Review, Weekly Story, Standings &
+    # Power Rankings and Up Next full width below. Visual only: every
+    # section builder above is unchanged.
     return ('<main class="weekly-recap">' + week_selector + preview_banner + history_banner
-            + scoreboard_html + story_html + cards_html + efficiency_html
-            + lineup_html + standings_html + activity_html + injuries_html
-            + up_next_html + '</main>')
+            + '<div class="recap-layout"><div class="recap-main">'
+            + scoreboard_html + cards_html
+            + '</div><aside class="recap-rail">'
+            + efficiency_html + activity_html + injuries_html
+            + '</aside></div>'
+            + '<div class="recap-below">'
+            + lineup_html + story_html + standings_html + up_next_html
+            + '</div></main>')

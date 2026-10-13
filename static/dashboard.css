@@ -32116,6 +32116,25 @@ button:disabled {
     box-sizing: border-box;
 }
 .weekly-recap .recap-section { margin-bottom: 24px; min-width: 0; }
+/* Mock A layout: main column + 336px rail, full-width sections below. */
+.weekly-recap .recap-layout { display:grid; grid-template-columns:minmax(0,1fr) 336px; gap:20px; align-items:start; }
+.weekly-recap .recap-main, .weekly-recap .recap-rail { min-width:0; }
+.weekly-recap .recap-rail .recap-section:last-child { margin-bottom:24px; }
+@media (min-width: 1025px) {
+    /* Rail cards are single column: the two-up grids they use full width
+       would squeeze to unreadable slivers at 336px. */
+    .weekly-recap .recap-rail .recap-eff-grid { grid-template-columns:minmax(0,1fr); }
+    .weekly-recap .recap-rail .rc-act-card { grid-template-columns:minmax(0,1fr); }
+    .weekly-recap .recap-rail .rc-act-item:nth-child(2) { border-top:1px solid var(--border); }
+    .weekly-recap .recap-rail .rc-inj-card { grid-template-columns:minmax(0,1fr); }
+    .weekly-recap .recap-rail .rc-inj-row:nth-child(2) { border-top:1px solid var(--border); }
+}
+@media (min-width: 769px) {
+    .weekly-recap .recap-main .rc-awards { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media (max-width: 1024px) {
+    .weekly-recap .recap-layout { grid-template-columns:minmax(0,1fr); }
+}
 .weekly-recap .recap-section-heading { display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:8px 16px; margin:0 0 10px; }
 .weekly-recap .recap-section-heading h2 { margin:0; color:var(--text); font-size:18px; font-weight:800; letter-spacing:-.01em; }
 .weekly-recap .recap-section-heading small { color:var(--muted); font-size:11px; font-weight:600; }
@@ -32265,12 +32284,15 @@ button:disabled {
     .weekly-recap .rc-player-row .rc-name { white-space:normal; overflow:visible; text-overflow:clip; overflow-wrap:anywhere; }
     .weekly-recap .rc-player-row .rc-team-name { grid-column:2; white-space:normal; overflow:visible; text-overflow:clip; overflow-wrap:anywhere; }
     .weekly-recap .rc-player-row .rc-score { grid-column:3; grid-row:1 / span 2; }
-    .weekly-recap .rc-swap-row { grid-template-columns:1fr auto; gap:8px 12px; padding:12px; }
-    .weekly-recap .rc-swap-team { grid-column:1 / -1; }
-    .weekly-recap .rc-swap-pair { grid-template-columns:1fr; gap:7px; }
-    .weekly-recap .rc-swap-arrow { transform:rotate(90deg); }
+    /* Missed Opportunities reads top to bottom on phones, not left to
+       right: team and gain share a header row, then Started, a down arrow
+       aligned under the player faces, then Benched. */
+    .weekly-recap .rc-swap-row { grid-template-columns:minmax(0,1fr) auto; grid-template-areas:"team gain" "pair pair"; gap:8px 12px; padding:12px; }
+    .weekly-recap .rc-swap-team { grid-area:team; align-self:center; }
+    .weekly-recap .rc-swap-pair { grid-area:pair; grid-template-columns:minmax(0,1fr); gap:2px; }
+    .weekly-recap .rc-swap-arrow { transform:rotate(90deg); justify-self:start; margin-left:9px; line-height:1; }
     .weekly-recap .rc-swap-name { white-space:normal; overflow:visible; text-overflow:clip; overflow-wrap:anywhere; }
-    .weekly-recap .rc-swap-gain { align-self:center; }
+    .weekly-recap .rc-swap-gain { grid-area:gain; align-self:center; }
 }
 
 
@@ -46827,22 +46849,6 @@ table.rz-bs-table thead th:not(:first-child) {
 .bo-wk-link:hover {
     background: var(--surface-alt, #f1f5f9);
 }
-.bo-rail-row.bo-row-link {
-    cursor: pointer;
-    border-radius: 8px;
-    padding-left: 6px;
-    padding-right: 6px;
-    margin-left: -6px;
-    margin-right: -6px;
-}
-.bo-rail-row.bo-row-link:hover {
-    background: var(--surface-alt, #f1f5f9);
-}
-.bo-wk-link:focus-visible,
-.bo-rail-row.bo-row-link:focus-visible {
-    outline: 2px solid #3b82f6;
-    outline-offset: 1px;
-}
 .bo-show-all {
     font-size: 12px;
     color: #3b82f6;
@@ -47582,13 +47588,9 @@ em.gneg { background: var(--loss); }
 
 /* Standings character card: dark navy header, circular rank badges,
    depth via layered shadow. Matches the approved character mock. */
-/* Sidebar character cards carry a real 1px border (like .gm-card): the
-   rails clip horizontal overflow, so a borderless card whose only edge is
-   its box-shadow loses that shadow at the rail edge and reads borderless
-   on the sides. The border is inside the box, so it always renders. */
 .cc-st-card {
   background: var(--card, #fff);
-  border: 1px solid var(--border, #e8eef4);
+  border: none;
   border-radius: 16px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.06);
   overflow: hidden;
@@ -47714,7 +47716,7 @@ em.gneg { background: var(--loss); }
 /* Awards character card: dark gradient header, large 24px values. */
 .cc-aw-card {
   background: var(--card, #fff);
-  border: 1px solid var(--border, #e8eef4);
+  border: none;
   border-radius: 16px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.06);
   overflow: hidden;
@@ -47888,7 +47890,7 @@ em.gneg { background: var(--loss); }
    matching the standings/awards character treatment. */
 .cc-fo-card {
   background: var(--card, #fff);
-  border: 1px solid var(--border, #e8eef4);
+  border: none;
   border-radius: 16px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.06);
   overflow: hidden;
@@ -47954,7 +47956,7 @@ em.gneg { background: var(--loss); }
    matching the standings/awards character treatment. */
 .cc-inj-card {
   background: var(--card, #fff);
-  border: 1px solid var(--border, #e8eef4);
+  border: none;
   border-radius: 16px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.06);
   overflow: hidden;
@@ -47996,7 +47998,7 @@ em.gneg { background: var(--loss); }
    matching the other sidebar character cards. */
 .cc-act-card {
   background: var(--card, #fff);
-  border: 1px solid var(--border, #e8eef4);
+  border: none;
   border-radius: 16px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.06);
   overflow: hidden;
