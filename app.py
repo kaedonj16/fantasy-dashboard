@@ -12616,10 +12616,6 @@ def _render_next_steps_queue(
         _tag = html.escape(a.get("tag") or "")
         _action = html.escape(a.get("action") or "")
         _why = html.escape(a.get("why") or "")
-        _impact = a.get("impact")
-        _impact_html = (
-            f'<div class="ns-impact">{html.escape(_impact)}</div>' if _impact else ""
-        )
         _cta = (
             f'<a class="ns-cta" href="{html.escape(a.get("cta_url") or "#")}">'
             f'{html.escape(a.get("cta_label") or "View")}</a>'
@@ -12631,7 +12627,6 @@ def _render_next_steps_queue(
             f'<div class="ns-tag">{_tag}</div>'
             f'<div class="ns-action">{_action}</div>'
             + (f'<div class="ns-why">{_why}</div>' if _why else '')
-            + (_impact_html + "<br>" if _impact else "")
             + _cta
             + f'</div></div>'
         )

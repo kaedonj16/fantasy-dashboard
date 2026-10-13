@@ -42,7 +42,7 @@ def test_next_steps_queue_ranking_order():
 def test_next_steps_css_classes():
     css = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
     for cls in ["ns-card", "ns-item", "ns-priority", "ns-action", "ns-why",
-                "ns-impact", "ns-cta", "ns-tag", "ns-empty"]:
+                "ns-cta", "ns-tag", "ns-empty"]:
         assert f".{cls}" in css, f"missing .{cls}"
 
 
