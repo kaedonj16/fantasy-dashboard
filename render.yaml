@@ -328,6 +328,33 @@ services:
         sync: false
 
   - type: cron
+    name: weekly-recap-push
+    runtime: python
+    # Tuesday ~9am Eastern: push "Your Week N recap is ready" to each league's
+    # push subscribers. Same slot and shape as weekly-email. Render cron
+    # expressions are UTC (TZ env does not shift the schedule). 13:00 UTC is
+    # 9am EDT / 8am EST. DST cannot be expressed in a single UTC cron, so
+    # this is the year-round compromise that keeps the job on Tuesday
+    # morning Eastern. Hits the web service so VAPID keys stay on the app.
+    # notify_recap_ready claims per league+week in app_state, so a retry
+    # the same Tuesday is a no-op.
+    schedule: "0 13 * * 2"
+    plan: starter
+    buildCommand: python -c "print('weekly-recap-push - no Python deps')"
+    startCommand: python scripts/trigger_notifications.py recap
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: TZ
+        value: America/New_York
+      - key: PYTHON_ENV
+        value: production
+      - key: APP_URL
+        sync: false
+      - key: CRON_SECRET
+        sync: false
+
+  - type: cron
     name: market-intelligence-refresh
     runtime: python
     schedule: 15 */4 * * *
