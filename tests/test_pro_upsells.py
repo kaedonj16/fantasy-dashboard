@@ -349,4 +349,4 @@ def test_breakout_locked_card_replaced_by_dismissible_nudge():
     assert "PRO unlocks the full list with full details." in src
     # The three free preview candidates still render (grid built from the
     # API's preview list before the nudge placeholder).
-    assert "renderBreakoutCard(candidate)" in src
+    assert "renderBreakoutCard(candidate," in src

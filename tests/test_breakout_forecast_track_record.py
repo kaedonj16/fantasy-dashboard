@@ -825,6 +825,121 @@ def test_weekly_board_attaches_forecast_on_explicit_week_view(monkeypatch):
     assert candidates[0]["forecast"]["band"] == "tracking_to_hit"
 
 
+def _graded_week_payload():
+    # Four surfaced week-2 rows, one per stamp outcome plus a player
+    # whose call was voided by injury (never stamped).
+    def _row(pid, name):
+        return {
+            "player_id": pid, "player_name": name, "team": "KC",
+            "position": "WR", "breakout_score": 55.0, "confidence": 80.0,
+            "classification": "emerging_breakout", "as_of_week": 2,
+            "evidence": {
+                "score_basis": "role_change", "main_board_eligible": True,
+                "provisional": False,
+                "fantasy": {"baseline_ppg": 8.0, "recent_ppg": 14.0},
+                "signals": {},
+            },
+        }
+    return {
+        "season": 2026, "as_of_week": 2, "as_of_date": "2026-09-14",
+        "count": 4,
+        "candidates": [_row("101", "Hit Player"), _row("102", "Partial Player"),
+                       _row("103", "Miss Player"), _row("104", "Hurt Player")],
+        "scoring_version": "weekly-v6", "data_available": True,
+        "data_status": "available",
+    }
+
+
+def _grade_rows_for_week_two():
+    return [
+        {"player_id": "101", "as_of_week": 2, "grade": "hit",
+         "ppg_delta": Decimal("9.17"), "snap_delta": Decimal("51.7"),
+         "opp_delta": None, "outcome_games": 3,
+         "detail": {"reason": "role_held_and_production_rose",
+                    "role_state": "held"}},
+        {"player_id": "102", "as_of_week": 2, "grade": "partial",
+         "ppg_delta": 3.1, "snap_delta": -4.0, "opp_delta": 2.6,
+         "outcome_games": 3,
+         "detail": {"reason": "production_rose_despite_role_reverted",
+                    "role_state": "reverted"}},
+        {"player_id": "103", "as_of_week": 2, "grade": "miss",
+         "ppg_delta": -2.53, "snap_delta": -3.9, "opp_delta": -2.0,
+         "outcome_games": 3,
+         "detail": {"reason": "role_reverted_to_baseline",
+                    "role_state": "reverted"}},
+        {"player_id": "104", "as_of_week": 2, "grade": "injured",
+         "ppg_delta": None, "snap_delta": None, "opp_delta": None,
+         "outcome_games": 1, "detail": {"reason": "out_for_window"}},
+        # A week-3 verdict for the hit player must never leak onto the
+        # week-2 board.
+        {"player_id": "101", "as_of_week": 3, "grade": "miss",
+         "ppg_delta": -5.0, "snap_delta": -9.0, "opp_delta": -3.0,
+         "outcome_games": 3, "detail": {"reason": "production_collapsed"}},
+    ]
+
+
+def test_weekly_board_attaches_grades_and_receipt_detail(monkeypatch):
+    import dashboard_services.breakout_api as api
+    from data_building.breakout_engine import weekly_store
+
+    monkeypatch.setattr(weekly_store, "load_weekly_candidates",
+                        lambda season, **kw: _graded_week_payload())
+    monkeypatch.setattr(forecasts, "weekly_forecasts_for_calls",
+                        lambda season, calls: {})
+    monkeypatch.setattr(forecasts, "load_weekly_grade_rows",
+                        lambda season: _grade_rows_for_week_two())
+
+    payload = api.get_weekly_breakout_candidates(
+        2026, min_score=0, limit=None, as_of_week=2)
+    by_id = {c["player_id"]: c for c in payload["candidates"]}
+    assert set(by_id) == {"101", "102", "103", "104"}
+
+    # Hit: grade plus the full receipt evidence, Decimals as floats.
+    hit = by_id["101"]
+    assert hit["grade"] == "hit"
+    detail = hit["grade_detail"]
+    assert detail["ppg_delta"] == 9.17
+    assert isinstance(detail["ppg_delta"], float)
+    assert detail["snap_delta"] == 51.7
+    assert detail["opp_delta"] is None
+    assert detail["outcome_games"] == 3
+    assert detail["reason"] == "role_held_and_production_rose"
+
+    # Partial is stampable now too, with its own evidence.
+    partial = by_id["102"]
+    assert partial["grade"] == "partial"
+    assert partial["grade_detail"]["opp_delta"] == 2.6
+    assert partial["grade_detail"]["reason"] == (
+        "production_rose_despite_role_reverted")
+
+    assert by_id["103"]["grade"] == "miss"
+    assert by_id["103"]["grade_detail"]["ppg_delta"] == -2.53
+
+    # Injured calls are never stamped.
+    assert "grade" not in by_id["104"]
+    assert "grade_detail" not in by_id["104"]
+
+    # The whole payload stays JSON-serializable (no Decimal leaks).
+    json.dumps(payload)
+
+
+def test_weekly_board_no_grade_attach_on_current_board(monkeypatch):
+    import dashboard_services.breakout_api as api
+    from data_building.breakout_engine import weekly_store
+
+    monkeypatch.setattr(weekly_store, "load_weekly_candidates",
+                        lambda season, **kw: _graded_week_payload())
+    monkeypatch.setattr(forecasts, "weekly_forecasts_for_calls",
+                        lambda season, calls: {})
+    monkeypatch.setattr(forecasts, "load_weekly_grade_rows",
+                        lambda season: _grade_rows_for_week_two())
+
+    payload = api.get_weekly_breakout_candidates(2026, min_score=0, limit=None)
+    for candidate in payload["candidates"]:
+        assert "grade" not in candidate
+        assert "grade_detail" not in candidate
+
+
 def test_preseason_board_attaches_forecast(monkeypatch):
     import dashboard_services.breakout_api as api
 
@@ -1909,3 +2024,272 @@ def test_dashboard_css_styles_clickable_rail_rows():
     assert "cursor: pointer" in rule
     hover = css.split(".bo-rail-row.bo-row-link:hover {")[1].split("}")[0]
     assert "background:" in hover
+
+
+# ---------------------------------------------------------------------------
+# grade stamps: animated HIT / PARTIAL / MISS stamps, receipts, definition
+# ---------------------------------------------------------------------------
+
+def _bo_stamp_core_fns(src):
+    return "\n".join([
+        _extract_bo_fn(src, "function _boFmtDelta(v)"),
+        _extract_bo_fn(src, "function _boGradeReceiptHtml(candidate, receiptId)"),
+        _extract_bo_fn(src, "function _boGradeStampHtml(candidate, idx, receiptId)"),
+    ])
+
+
+def _rc_row(html, label):
+    """The receipt row chunk carrying `label` (its pass/fail mark class
+    sits in the same chunk, ahead of the label)."""
+    for chunk in html.split("bo-rc-row"):
+        if label in chunk:
+            return chunk
+    raise AssertionError(f"no receipt row for {label!r} in {html!r}")
+
+
+@pytest.mark.skipif(shutil.which("node") is None,
+                    reason="node not available")
+def test_grade_stamp_and_receipt_render_on_graded_cards():
+    src = (ROOT / "app.py").read_text(encoding="utf-8")
+    fn_src = "\n".join([
+        _bo_stamp_core_fns(src),
+        _extract_bo_fn(src, "function _boWeeklySignal(candidate)"),
+        _extract_bo_fn(src, "function _boWeeklySignalText(signal)"),
+        _extract_bo_fn(src, "function renderBreakoutCard(candidate, idx)"),
+    ])
+    driver = """
+// Headshot source is stubbed: the real helper's regex escapes do not
+// survive source extraction, and the URL is irrelevant to the stamps.
+function _boHeadshotSrc(candidate, pid) { return 'hs-' + pid; }
+var currentWeek = '2';
+function fakeCandidate(over) {
+  return Object.assign({
+    player_id: '101', player_name: 'Golden Boy', team: 'GB',
+    position: 'WR', age: 23, mode: 'weekly', weekly: true,
+    breakout_score: 34, classification_label: 'Early Watch',
+    confidence: 62, score_basis: 'role_change',
+    sample: {recent_games: 3}, as_of_week: 1, grade: 'hit',
+    grade_detail: {ppg_delta: 9.2, snap_delta: 51.7, opp_delta: null,
+                   outcome_games: 3,
+                   reason: 'role_held_and_production_rose'}
+  }, over || {});
+}
+var out = {
+  hit: renderBreakoutCard(fakeCandidate(), 0),
+  partial: renderBreakoutCard(fakeCandidate({
+    player_id: '102', grade: 'partial',
+    grade_detail: {ppg_delta: 3.1, snap_delta: -4.0, opp_delta: 2.6,
+                   outcome_games: 3}}), 1),
+  miss: renderBreakoutCard(fakeCandidate({
+    player_id: '103', grade: 'miss',
+    grade_detail: {ppg_delta: -2.5, snap_delta: -3.9, opp_delta: -2.0,
+                   outcome_games: 3}}), 2),
+  deep: renderBreakoutCard(fakeCandidate({player_id: '104'}), 40),
+  stampSpan: _boGradeStampHtml({grade: 'hit'}, 3, null),
+  stampDelay: _boGradeStampHtml({grade: 'miss'}, 40, 'bo-grc-x')
+};
+currentWeek = 'latest';
+out.latest = renderBreakoutCard(fakeCandidate(), 0);
+console.log(JSON.stringify(out));
+"""
+    res = subprocess.run(["node", "-e", fn_src + "\n" + driver],
+                         capture_output=True, text=True, timeout=20)
+    assert res.returncode == 0, res.stderr
+    out = json.loads(res.stdout)
+
+    hit = out["hit"]
+    assert "bo-stamp bo-stamp-hit" in hit
+    assert ">HIT</button>" in hit
+    assert 'title="Why this grade?"' in hit
+    assert 'id="bo-grc-0-101"' in hit
+    # The Hit card flashes its border once; the others do not.
+    assert "bo-grade-flash" in hit
+    assert "bo-grade-flash" not in out["partial"]
+    assert "bo-grade-flash" not in out["miss"]
+    # Receipt: actual vs bar per leg, missing touches row hidden.
+    assert "Production" in hit and "+9.2 PPG" in hit and "bar +2.0" in hit
+    assert "Role (touches)" not in hit
+    snap_row = _rc_row(hit, "Role (snap share)")
+    assert "bo-rc-pass" in snap_row and "+51.7 pts" in snap_row
+    assert "bar +8.0" in snap_row
+    assert "Graded over 3 games" in hit
+
+    partial = out["partial"]
+    assert "bo-stamp bo-stamp-partial" in partial
+    assert ">PARTIAL</button>" in partial
+    touch_row = _rc_row(partial, "Role (touches)")
+    assert "bo-rc-pass" in touch_row and "+2.6 per game" in touch_row
+    snap_row = _rc_row(partial, "Role (snap share)")
+    assert "bo-rc-fail" in snap_row and "-4.0 pts" in snap_row
+
+    miss = out["miss"]
+    assert "bo-stamp bo-stamp-miss" in miss
+    assert ">MISS</button>" in miss
+    prod_row = _rc_row(miss, "Production")
+    assert "bo-rc-fail" in prod_row and "-2.5 PPG" in prod_row
+
+    # Stagger: 60ms per card, capped at 600ms however deep the list.
+    assert "animation-delay:180ms" in out["stampSpan"]
+    assert ">HIT</span>" in out["stampSpan"]
+    assert "animation-delay:600ms" in out["deep"]
+    assert "animation-delay:600ms" in out["stampDelay"]
+
+    # The current board renders exactly as before: no stamp, no receipt.
+    assert "bo-stamp" not in out["latest"]
+    assert "bo-receipt" not in out["latest"]
+    assert "bo-grade-flash" not in out["latest"]
+
+
+@pytest.mark.skipif(shutil.which("node") is None,
+                    reason="node not available")
+def test_grade_receipt_rows_mirror_the_grader():
+    src = (ROOT / "app.py").read_text(encoding="utf-8")
+    fn_src = "\n".join([
+        _extract_bo_fn(src, "function _boFmtDelta(v)"),
+        _extract_bo_fn(src, "function _boGradeReceiptHtml(candidate, receiptId)"),
+    ])
+    driver = """
+var out = {
+  guardFail: _boGradeReceiptHtml({grade_detail: {
+    ppg_delta: 7.5, snap_delta: 20.1, opp_delta: -2.0,
+    outcome_games: 3}}, 'r1'),
+  snapOnly: _boGradeReceiptHtml({grade_detail: {
+    ppg_delta: null, snap_delta: 20.1, opp_delta: null,
+    outcome_games: 2}}, 'r2'),
+  empty: _boGradeReceiptHtml({grade_detail: {}}, 'r3'),
+  noDetail: _boGradeReceiptHtml({}, 'r4'),
+  gamesOnly: _boGradeReceiptHtml({grade_detail: {
+    outcome_games: 1}}, 'r5')
+};
+console.log(JSON.stringify(out));
+"""
+    res = subprocess.run(["node", "-e", fn_src + "\n" + driver],
+                         capture_output=True, text=True, timeout=20)
+    assert res.returncode == 0, res.stderr
+    out = json.loads(res.stdout)
+
+    # Snap guard: +20.1 pts of snap share still fails the leg when
+    # touches fell, exactly as the grader rules it.
+    snap_row = _rc_row(out["guardFail"], "Role (snap share)")
+    assert "bo-rc-fail" in snap_row and "+20.1 pts" in snap_row
+    touch_row = _rc_row(out["guardFail"], "Role (touches)")
+    assert "bo-rc-fail" in touch_row and "-2.0 per game" in touch_row
+
+    # Touches unmeasured: the snap leg is judged on snap share alone.
+    snap_row = _rc_row(out["snapOnly"], "Role (snap share)")
+    assert "bo-rc-pass" in snap_row
+    assert "Production" not in out["snapOnly"]
+    assert "Role (touches)" not in out["snapOnly"]
+    assert "Graded over 2 games" in out["snapOnly"]
+
+    # No evidence at all: no receipt, so the stamp renders plain.
+    assert out["empty"] == ""
+    assert out["noDetail"] == ""
+    # Games alone still earn the footer line.
+    assert "Graded over 1 game" in out["gamesOnly"]
+    assert "bo-rc-row" not in out["gamesOnly"]
+
+
+@pytest.mark.skipif(shutil.which("node") is None,
+                    reason="node not available")
+def test_grade_receipt_toggle_opens_and_closes():
+    src = (ROOT / "app.py").read_text(encoding="utf-8")
+    fn_src = _extract_bo_fn(src, "function boToggleGradeReceipt(btn, id)")
+    driver = """
+var receiptEl = {hidden: true};
+var btn = {attrs: {}, setAttribute: function (k, v) { this.attrs[k] = v; }};
+var document = {
+  getElementById: function (id) {
+    return id === 'bo-grc-0-101' ? receiptEl : null;
+  }
+};
+boToggleGradeReceipt(btn, 'bo-grc-0-101');
+var opened = {hidden: receiptEl.hidden,
+              expanded: btn.attrs['aria-expanded']};
+boToggleGradeReceipt(btn, 'bo-grc-0-101');
+var closed = {hidden: receiptEl.hidden,
+              expanded: btn.attrs['aria-expanded']};
+boToggleGradeReceipt(btn, 'bo-grc-missing');
+console.log(JSON.stringify({opened: opened, closed: closed}));
+"""
+    res = subprocess.run(["node", "-e", fn_src + "\n" + driver],
+                         capture_output=True, text=True, timeout=20)
+    assert res.returncode == 0, res.stderr
+    out = json.loads(res.stdout)
+    assert out["opened"] == {"hidden": False, "expanded": "true"}
+    assert out["closed"] == {"hidden": True, "expanded": "false"}
+
+
+@pytest.mark.skipif(shutil.which("node") is None,
+                    reason="node not available")
+def test_definition_bar_only_on_graded_week_views():
+    src = (ROOT / "app.py").read_text(encoding="utf-8")
+    fn_src = "\n".join([
+        _extract_bo_fn(src, "function _boHitDefinitionBarHtml()"),
+        _extract_bo_fn(src, "function _boBoardTopHtml(list)"),
+    ])
+    driver = """
+var currentWeek = '2';
+var out = {
+  graded: _boBoardTopHtml([{grade: 'partial'}, {}]),
+  ungraded: _boBoardTopHtml([{grade: 'injured'}, {}]),
+  empty: _boBoardTopHtml([])
+};
+currentWeek = 'latest';
+out.latest = _boBoardTopHtml([{grade: 'hit'}]);
+console.log(JSON.stringify(out));
+"""
+    res = subprocess.run(["node", "-e", fn_src + "\n" + driver],
+                         capture_output=True, text=True, timeout=20)
+    assert res.returncode == 0, res.stderr
+    out = json.loads(res.stdout)
+
+    bar = out["graded"]
+    assert "What counts as a Hit:" in bar
+    assert "kept the bigger role (snap share +8 pts or touches +2.0 per game)" in bar
+    assert "gained at least +2.0 PPG" in bar
+    assert "One leg only is a Partial" in bar
+    assert "production collapsing by 2.0 PPG or more, is a Miss" in bar
+    # Static legend stamps for all three grades.
+    assert "bo-stamp bo-stamp-hit bo-stamp-static" in bar
+    assert "bo-stamp bo-stamp-partial bo-stamp-static" in bar
+    assert "bo-stamp bo-stamp-miss bo-stamp-static" in bar
+    # UI copy carries no em dashes.
+    assert "—" not in bar
+
+    assert out["ungraded"] == ""
+    assert out["empty"] == ""
+    assert out["latest"] == ""
+
+
+def test_grade_stamp_wiring_and_styles():
+    src = (ROOT / "app.py").read_text(encoding="utf-8")
+    # The card stamps through the helper; both old flat pills are gone.
+    assert "_boGradeStampHtml(candidate, idx || 0" in src
+    assert "background:#16a34a;padding:3px 10px" not in src
+    assert "background:#dc2626;padding:3px 10px" not in src
+    # Both board render paths prepend the definition bar and pass the
+    # card index through for the stagger.
+    assert src.count("_boBoardTopHtml(filtered)") == 2
+    assert "renderBreakoutCard(candidate, i)" in src
+    assert "renderBreakoutCard(candidate, start + i)" in src
+
+    css = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
+    stamp = css.split(".bo-stamp {")[1].split("}")[0]
+    assert "border: 2px solid currentColor" in stamp
+    assert "rotate(-8deg)" in stamp
+    assert "background: transparent" in stamp
+    assert "#16a34a" in css.split(".bo-stamp-hit {")[1].split("}")[0]
+    assert "#d97706" in css.split(".bo-stamp-partial {")[1].split("}")[0]
+    assert "#b91c1c" in css.split(".bo-stamp-miss {")[1].split("}")[0]
+    # Slam keyframes overshoot through the brief's scale stops, the Hit
+    # gets its one ring pulse, and Hit cards flash once.
+    slam = css.split("@keyframes boStampSlam {")[1].split("@keyframes")[0]
+    assert "scale(2.6)" in slam and "scale(0.92)" in slam
+    assert "scale(1.07)" in slam
+    assert "@keyframes boStampRing" in css
+    assert ".bo-grade-flash" in css and "@keyframes boCardFlash" in css
+    # Reduced motion degrades the stamps to a plain fade.
+    rm_segments = css.split("@media (prefers-reduced-motion: reduce)")
+    assert any("bo-stamp-hit" in seg[:600] and "boStampFadeIn" in seg[:600]
+               for seg in rm_segments[1:])
