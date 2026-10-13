@@ -24190,6 +24190,269 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
 .tm-strength-mid { background: var(--info); }
 .tm-strength-weak { background: var(--warning); }
 
+/* ── Team modal Roster tab (A2) ──────────────────────────────────────────
+   Summary strip, position rooms with collapsible benches, rail cards below.
+   Layout keys off the modal's own width (container queries, with media
+   query twins) so the panel can never crush its rows. */
+.team-modal { container-type: inline-size; }
+
+#tm-panel-roster.active { display: block; }
+
+.tm2 { width: 100%; }
+
+.tm2-sum {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: stretch;
+    margin-bottom: 16px;
+}
+
+.tm2-sum-item {
+    flex: 1 1 0;
+    min-width: 130px;
+    background: var(--bg-alt);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 9px 13px;
+}
+
+.tm2-sum-v { font-size: 17px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
+.tm2-sum-l { font-size: 11px; color: var(--text-muted); font-weight: 600; margin-top: 2px; }
+
+.tm2-seg {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    background: var(--bg-alt);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 3px;
+}
+
+.tm2-seg-btn {
+    font: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 6px 12px;
+    border: none;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+}
+
+.tm2-seg-btn.is-active { background: var(--accent); color: #fff; }
+
+.tm2-rooms {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(430px, 100%), 1fr));
+    gap: 0 22px;
+    align-items: start;
+}
+
+.tm2-col { min-width: 0; }
+.tm2-group { margin-bottom: 14px; }
+
+.tm2-group-head {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin-bottom: 6px;
+}
+
+.tm2-room-chip { font-size: 12px; color: var(--text-muted); font-weight: 600; }
+.tm2-badge-ir { background: #ef4444; }
+.tm2-badge-taxi { background: #64748b; }
+
+.tm2-hs {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--bg-alt);
+    border: 1px solid var(--border);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    position: relative;
+    flex-shrink: 0;
+    font-weight: 800;
+    color: var(--text-muted);
+    font-size: 11px;
+}
+
+.tm2-hs img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.tm2-hs-def { border-radius: 9px; background: #475569; color: #fff; font-size: 9px; border: none; }
+
+.tm2-slot {
+    font-size: 9px;
+    font-weight: 800;
+    color: var(--text-muted);
+    background: var(--bg-alt);
+    border: 1px solid var(--border);
+    padding: 2px 5px;
+    border-radius: 5px;
+    letter-spacing: .04em;
+}
+
+.tm2-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-alt);
+    margin-bottom: 5px;
+    flex-wrap: wrap;
+    overflow: hidden;
+}
+
+.tm2-row.tm-roster-click { cursor: pointer; }
+.tm2-row.tm-roster-click:hover { border-color: var(--accent); }
+
+.tm2-main { flex: 1 1 168px; min-width: 0; }
+
+.tm2-name-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.tm2-name { font-size: 14px; font-weight: 650; color: var(--text); }
+.tm2-name.muted { color: var(--text-muted); }
+.tm2-meta { font-size: 10.5px; color: var(--text-muted); margin-top: 1px; }
+
+.tm2-stat { text-align: right; min-width: 78px; }
+.tm2-stat-v { font-size: 14px; font-weight: 750; color: var(--text); font-variant-numeric: tabular-nums; }
+.tm2-stat-l { font-size: 9.5px; color: var(--text-muted); font-weight: 600; }
+.tm2-stat-val { min-width: 66px; }
+
+.tm2-bench-line {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    text-align: left;
+    padding: 7px 10px;
+    border: 1px dashed var(--border-strong, #cbd5e1);
+    border-radius: 10px;
+    background: var(--card-bg);
+    cursor: pointer;
+    font-family: inherit;
+    flex-wrap: wrap;
+}
+
+.tm2-bl-label {
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: .07em;
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+
+.tm2-bl-names {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+    flex: 1;
+}
+
+.tm2-bl-right {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 650;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+}
+
+.tm2-bl-chev { color: var(--text-muted); font-size: 11px; }
+.tm2-bl-chev i { transition: transform .15s ease; }
+.tm2-group.tm2-open .tm2-bl-chev i { transform: rotate(180deg); }
+
+.tm2-bench-div {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 8px 2px 6px;
+    color: var(--text-muted);
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+}
+
+.tm2-bench-div::before,
+.tm2-bench-div::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+.tm2-stash-rank { color: var(--text-muted); font-weight: 600; font-size: 11px; }
+
+.tm2-rail { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 2px; }
+
+.tm2-card {
+    flex: 1 1 270px;
+    min-width: 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 13px 15px;
+    background: var(--card-bg);
+}
+
+.tm2-card h3 { margin: 0 0 4px; font-size: 14.5px; color: var(--text); }
+.tm2-note { font-size: 11px; color: var(--text-muted); margin-bottom: 9px; line-height: 1.45; }
+
+.tm2-s-row { margin-bottom: 9px; }
+.tm2-s-head { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text); }
+.tm2-s-rank { font-weight: 700; }
+.tm2-s-val { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
+.tm2-s-bar { height: 6px; background: var(--bg-alt); border-radius: var(--radius-pill); margin-top: 4px; overflow: hidden; }
+.tm2-s-fill { height: 100%; border-radius: var(--radius-pill); }
+.tm2-s-strong { background: var(--win); }
+.tm2-s-mid { background: var(--info); }
+.tm2-s-weak { background: var(--warning); }
+
+.tm2-pick-row { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 7px; }
+.tm2-pick-year { font-weight: 800; font-size: 13px; min-width: 36px; padding-top: 3px; color: var(--text); }
+.tm2-pick-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.tm2-pick-chip { font-size: 11.5px; font-weight: 650; background: var(--bg-alt); border: 1px solid var(--border); border-radius: 6px; padding: 3px 7px; color: var(--text); }
+.tm2-pick-via { color: var(--text-muted); font-weight: 500; font-size: 10.5px; }
+
+.tm2-shape-top { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; font-weight: 650; color: var(--text); margin-bottom: 6px; }
+.tm2-shape-bar { height: 8px; background: var(--bg-alt); border-radius: var(--radius-pill); overflow: hidden; margin-bottom: 9px; }
+.tm2-shape-fill { height: 100%; background: var(--accent); }
+.tm2-shape-rows > div { display: flex; justify-content: space-between; gap: 8px; font-size: 12.5px; padding: 5px 0; border-top: 1px solid var(--border); color: var(--text); }
+.tm2-shape-rows span { color: var(--text-muted); }
+.tm2-shape-rows b { font-variant-numeric: tabular-nums; }
+
+@container (max-width: 700px) {
+    .tm2-sum-item { min-width: calc(50% - 6px); }
+    .tm2-seg { flex: 1 1 100%; justify-content: center; }
+    .tm2-stat-val { display: none; }
+    .tm2-stat { min-width: 62px; }
+    .tm2-best { display: none; }
+    .tm2-card { flex-basis: 100%; }
+}
+
+@media (max-width: 700px) {
+    .tm2-sum-item { min-width: calc(50% - 6px); }
+    .tm2-seg { flex: 1 1 100%; justify-content: center; }
+    .tm2-stat-val { display: none; }
+    .tm2-stat { min-width: 62px; }
+    .tm2-best { display: none; }
+    .tm2-card { flex-basis: 100%; }
+}
+
+
 /* ── Ages / Schedule summary tiles ─────────────────────────────────────── */
 /* Header .tm-stat-tile is a fixed 96px chip. Reusing it in a 1fr grid left
    96px boxes stranded in wide tracks (big gaps, tiny values). Keep these
