@@ -82,6 +82,10 @@ def build_standings_as_of_week(*args, **kwargs):
     from app import build_standings_as_of_week as _fn
     return _fn(*args, **kwargs)
 
+def _standings_available_weeks(*args, **kwargs):
+    from app import _standings_available_weeks as _fn
+    return _fn(*args, **kwargs)
+
 def _standings_panels(*args, **kwargs):
     from app import _standings_panels as _fn
     return _fn(*args, **kwargs)
@@ -123,7 +127,34 @@ def api_standings_week():
     try:
         ctx = get_league_ctx_from_cache(platform, league_id, season)
         capped = build_standings_as_of_week(ctx, week)
-        panels = _standings_panels(capped, power_rankings=None)
+        # Same split the weekly recap follows, so the same week reads the
+        # same everywhere: the latest finalized week is the standings
+        # page's default load (live blended list, with last week's blended
+        # list as the movement baseline); older weeks rank by the
+        # performance PowerScore in the capped team_stats.
+        _weeks = _standings_available_weeks(ctx)
+        _power_rankings = None
+        _prev_power_ranks = None
+        if _weeks and week >= _weeks[-1]:
+            from dashboard_services.ai.context_builders import (
+                build_power_rankings_context,
+            )
+            _power_rankings = (
+                build_power_rankings_context(capped) or {}
+            ).get("teams") or []
+            if len(_weeks) >= 2:
+                _prev_capped = build_standings_as_of_week(ctx, _weeks[-2])
+                _prev_teams = (
+                    build_power_rankings_context(_prev_capped) or {}
+                ).get("teams") or []
+                _prev_power_ranks = {
+                    str(t.get("team_name")): int(t.get("rank") or (i + 1))
+                    for i, t in enumerate(_prev_teams)
+                    if t.get("team_name") is not None
+                }
+        panels = _standings_panels(
+            capped, power_rankings=_power_rankings,
+            prev_power_ranks=_prev_power_ranks)
         return jsonify({
             "ok": True,
             "week": week,

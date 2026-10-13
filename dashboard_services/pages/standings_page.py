@@ -12,8 +12,10 @@ def build_standings_body(ctx: dict) -> str:
     )
 
     # Live Standings Power Rankings card (in-season: all-play, PPG tie-break).
-    # The week-selector re-renders with the performance PowerScore, which is
-    # what past weeks can reconstruct faithfully.
+    # The week-selector re-renders past weeks with the performance
+    # PowerScore, which is what past weeks can reconstruct faithfully, and
+    # the latest week with this same blended list. The weekly recap follows
+    # the same split, so the same week reads the same on both pages.
     try:
         from dashboard_services.ai.context_builders import build_power_rankings_context
         _pr_teams = (build_power_rankings_context(ctx) or {}).get("teams") or []
