@@ -937,7 +937,10 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
         logger.warning("recap gotw lookup failed", exc_info=True)
         _gotw_idx = None
     if _gotw_idx is not None:
-        badge_map.setdefault(_gotw_idx, []).insert(0, "GOTW")
+        # A recovered pick is labeled as one: it was reconstructed after the
+        # fact from historical signals, not chosen before the week was played.
+        badge_map.setdefault(_gotw_idx, []).insert(
+            0, "GOTW (recovered)" if (_gotw_selection or {}).get("recovered") else "GOTW")
 
     def matchup_result_row(m, matchup_index):
         w_team = team_name(m["winner"], m["w_rid"])
@@ -972,7 +975,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
         _div_badge = ('<span class="div-badge">Div</span>'
                       if is_division_game(m.get("w_rid"), m.get("l_rid"), _recap_div_by_rid)
                       else "")
-        _badges_html = ''.join('<span class="recap-badge-gotw">' + label + '</span>' if label == "GOTW" else f'<span>{label}</span>' for label in badge_map.get(matchup_index, []))
+        _badges_html = ''.join('<span class="recap-badge-gotw">' + label + '</span>' if label.startswith("GOTW") else f'<span>{label}</span>' for label in badge_map.get(matchup_index, []))
         return f"""
 <article class="recap-matchup-row">
   <div class="recap-matchup-badges">{_badges_html}{_div_badge}</div>
