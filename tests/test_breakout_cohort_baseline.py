@@ -122,6 +122,19 @@ def test_cohort_partial_between_the_bars():
     assert verdict["grade"] == wg.GRADE_PARTIAL
 
 
+def test_cohort_hit_caps_at_partial_on_a_single_game():
+    # +3.0 over the cohort clears the hit bar, but grading v4 needs a
+    # 2-game sample before any hit counts, cohort path included.
+    one = wg.window_stats([wk(2, ppr=10.5)])
+    verdict = wg.classify_outcome(_cohort_baseline(), one, cohort=True)
+    assert verdict["grade"] == wg.GRADE_PARTIAL
+    assert verdict["reason"] == "single_game_sample"
+    assert verdict["role_state"] == "cohort"
+    two = wg.window_stats([wk(2, ppr=10.5), wk(3, ppr=10.5)])
+    verdict = wg.classify_outcome(_cohort_baseline(), two, cohort=True)
+    assert verdict["grade"] == wg.GRADE_HIT
+
+
 def test_cohort_still_ungraded_with_no_outcome_games():
     verdict = wg.classify_outcome(_cohort_baseline(), {"games": 0},
                                   cohort=True)
@@ -149,7 +162,7 @@ def test_grade_call_cohort_records_cohort_source():
     assert grade["baseline_source"] == "cohort"
     assert grade["baseline_ppg"] == 7.5
     assert grade["ppg_delta"] == pytest.approx(4.5)
-    assert grade["grading_version"] == "weekly-grading-v3"
+    assert grade["grading_version"] == "weekly-grading-v4"
 
 
 def test_grade_call_without_cohort_stays_ungraded():
@@ -219,10 +232,12 @@ def test_load_cohort_baselines_empty_on_db_error(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_weekly_forecast_cohort_band_and_basis(monkeypatch):
-    monkeypatch.setattr(wg, "default_through_week", lambda season: 2)
+    monkeypatch.setattr(wg, "default_through_week", lambda season: 3)
     call = no_baseline_call(as_of_week=1)
+    # Two banked games: the grading-v4 hit floor needs a 2-game sample
+    # before hit pace can show as Tracking to hit.
     forecast = forecasts.weekly_forecast(
-        call, [wk(2, ppr=12.0)], 2, None, cohort_ppg=7.5)
+        call, [wk(2, ppr=12.0), wk(3, ppr=12.0)], 3, None, cohort_ppg=7.5)
     assert forecast is not None
     assert forecast["band"] == "tracking_to_hit"
     assert "typical-rookie RB baseline" in forecast["basis"]
@@ -240,9 +255,11 @@ def test_weekly_forecast_still_pending_without_cohort(monkeypatch):
 
 def test_forecasts_for_calls_loads_cohort_only_when_needed(monkeypatch):
     _stub_weekly_metrics(monkeypatch)
-    monkeypatch.setattr(wg, "default_through_week", lambda season: 2)
+    monkeypatch.setattr(wg, "default_through_week", lambda season: 3)
     monkeypatch.setattr(wg, "load_season_series", lambda season, through: {
         "101": [{"week": 2, "snap_pct": 62.0, "targets": 4, "carries": 16,
+                 "ppr_pts": 12.0, "snaps": 62},
+                {"week": 3, "snap_pct": 62.0, "targets": 4, "carries": 16,
                  "ppr_pts": 12.0, "snaps": 62}]})
     loaded = []
 
@@ -260,9 +277,11 @@ def test_forecasts_for_calls_loads_cohort_only_when_needed(monkeypatch):
 
 def test_forecasts_for_calls_skips_cohort_load_when_unneeded(monkeypatch):
     _stub_weekly_metrics(monkeypatch)
-    monkeypatch.setattr(wg, "default_through_week", lambda season: 2)
+    monkeypatch.setattr(wg, "default_through_week", lambda season: 3)
     monkeypatch.setattr(wg, "load_season_series", lambda season, through: {
         "101": [{"week": 2, "snap_pct": 62.0, "targets": 4, "carries": 16,
+                 "ppr_pts": 12.0, "snaps": 62},
+                {"week": 3, "snap_pct": 62.0, "targets": 4, "carries": 16,
                  "ppr_pts": 12.0, "snaps": 62}]})
 
     def _boom(season):
@@ -307,16 +326,26 @@ def test_orchestrator_passes_cohort_to_grade_call(monkeypatch):
 def test_existing_grade_keys_excludes_ungraded(monkeypatch):
     _no_db(monkeypatch)
     graded = {"player_id": "1", "season": 2026, "as_of_week": 1,
-              "scoring_version": "weekly-v6", "grade": "hit"}
+              "scoring_version": "weekly-v6", "grade": "hit",
+              "grading_version": wg.GRADING_VERSION}
     ungraded = {"player_id": "2", "season": 2026, "as_of_week": 1,
-                "scoring_version": "weekly-v6", "grade": "ungraded"}
-    all_rows = [graded, ungraded]
+                "scoring_version": "weekly-v6", "grade": "ungraded",
+                "grading_version": wg.GRADING_VERSION}
+    # A stale verdict from the previous grading version: the v4 logic
+    # must regrade this call, so its key stays out of the frontier.
+    stale = {"player_id": "3", "season": 2026, "as_of_week": 1,
+             "scoring_version": "weekly-v6", "grade": "hit",
+             "grading_version": "weekly-grading-v3"}
+    all_rows = [graded, ungraded, stale]
 
     class _Cur:
         def execute(self, sql, params):
             # The SQL itself must do the filtering; the fake mirrors it.
             assert "grade" in sql
-            self._rows = [r for r in all_rows if r["grade"] != "ungraded"]
+            assert "grading_version" in sql
+            self._rows = [r for r in all_rows
+                          if r["grade"] != "ungraded"
+                          and r["grading_version"] == wg.GRADING_VERSION]
             return self
 
         def fetchall(self):
