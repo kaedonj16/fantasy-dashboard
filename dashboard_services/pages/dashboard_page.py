@@ -532,9 +532,9 @@ def build_dashboard_body(ctx: dict) -> str:
               return "nsitem-" + id + "-" + SEASON + "-" + WEEK + "-" + dayStr();
             }}
             function refreshNsCard(card, map) {{
-              if (!card) return;
+              if (!card) return null;
               var items = card.querySelectorAll(".ns-item[data-ns-item]");
-              if (!items.length) return;
+              if (!items.length) return null;
               var remaining = 0;
               for (var i = 0; i < items.length; i++) {{
                 if (!map[itemKey(items[i].getAttribute("data-ns-item"))]) remaining++;
@@ -544,6 +544,57 @@ def build_dashboard_body(ctx: dict) -> str:
               if (!map[cardKey("nextsteps")]) {{
                 card.style.display = remaining ? "" : "none";
               }}
+              return rebalanceNsFrame(card, map);
+            }}
+            // Collapsed view keeps its frame full: the first N remaining
+            // actions (N = the server-rendered preview size, captured on
+            // first run) live in the main list and later ones wait in the
+            // extra list. Dismissing a framed action promotes the next
+            // waiting one into the freed slot; undoing sends it back.
+            // Dismissed items themselves never move lists. Returns the
+            // promoted element so the caller can animate its entrance,
+            // else null.
+            function rebalanceNsFrame(card, map) {{
+              if (!card.classList.contains("ns-collapsed")) return null;
+              var frame = card.querySelector(".ns-list:not(.ns-hidden)");
+              var extra = card.querySelector(".ns-list.ns-hidden");
+              if (!frame || !extra) return null;
+              var limit = parseInt(card.getAttribute("data-ns-frame-limit") || "0", 10);
+              if (!limit) {{
+                limit = frame.querySelectorAll(".ns-item[data-ns-item]").length;
+                if (!limit) return null;
+                card.setAttribute("data-ns-frame-limit", String(limit));
+                // Stamp the server-rendered order on first run: rebalances
+                // move surviving items around hidden dismissed ones, and
+                // undo relies on these stamps to restore the exact slots.
+                var stampKids = frame.querySelectorAll(".ns-item[data-ns-item]");
+                var stampExtra = extra.querySelectorAll(".ns-item[data-ns-item]");
+                var stamp = 0;
+                for (var si = 0; si < stampKids.length; si++) stampKids[si].setAttribute("data-ns-order", String(stamp++));
+                for (var sj = 0; sj < stampExtra.length; sj++) stampExtra[sj].setAttribute("data-ns-order", String(stamp++));
+              }}
+              var ordered = [];
+              var frameKids = frame.querySelectorAll(".ns-item[data-ns-item]");
+              var extraKids = extra.querySelectorAll(".ns-item[data-ns-item]");
+              for (var i = 0; i < frameKids.length; i++) ordered.push(frameKids[i]);
+              for (var j = 0; j < extraKids.length; j++) ordered.push(extraKids[j]);
+              ordered.sort(function(x, y) {{
+                return (parseInt(x.getAttribute("data-ns-order") || "0", 10) || 0)
+                  - (parseInt(y.getAttribute("data-ns-order") || "0", 10) || 0);
+              }});
+              var remaining = [];
+              for (var k = 0; k < ordered.length; k++) {{
+                if (!map[itemKey(ordered[k].getAttribute("data-ns-item"))]) remaining.push(ordered[k]);
+              }}
+              var promoted = null;
+              for (var f = 0; f < remaining.length && f < limit; f++) {{
+                if (remaining[f].parentNode !== frame) promoted = remaining[f];
+                frame.appendChild(remaining[f]);
+              }}
+              for (var r = limit; r < remaining.length; r++) {{
+                extra.appendChild(remaining[r]);
+              }}
+              return promoted;
             }}
             function hideDismissed() {{
               var map = dismissedMap();
@@ -630,6 +681,7 @@ def build_dashboard_body(ctx: dict) -> str:
                 (function(el, old) {{
                   if (el.style.display === "none") return;
                   var now = el.getBoundingClientRect();
+                  if (!now.width && !now.height) return;
                   var dx = old.left - now.left;
                   var dy = old.top - now.top;
                   if (!dx && !dy) return;
@@ -644,6 +696,24 @@ def build_dashboard_body(ctx: dict) -> str:
                   }}, 300);
                 }})(siblings[i], before[i]);
               }}
+            }}
+            // Entrance for a promoted action: rises from just below its
+            // slot while fading in, on the same .25s ease as the FLIP
+            // glide, so the refill reads as one motion with the slide.
+            function animateNsEnter(el) {{
+              if (!el || reducedMotion()) return;
+              el.style.transition = "none";
+              el.style.opacity = "0";
+              el.style.transform = "translateY(22px)";
+              void el.offsetWidth;
+              el.style.transition = "transform .25s ease, opacity .25s ease";
+              el.style.opacity = "";
+              el.style.transform = "";
+              setTimeout(function() {{
+                el.style.transition = "";
+                el.style.transform = "";
+                el.style.opacity = "";
+              }}, 300);
             }}
             function bindItemDismiss() {{
               var btns = document.querySelectorAll("[data-dismiss-ns-item]");
@@ -660,10 +730,12 @@ def build_dashboard_body(ctx: dict) -> str:
                     try {{ localStorage.setItem(LS_KEY, JSON.stringify(map)); }} catch (e) {{}}
                     var siblings = visibleItemSiblings(item, card);
                     function finishDismiss() {{
+                      var promoted = null;
                       flipSiblings(siblings, function() {{
                         item.style.display = "none";
-                        refreshNsCard(card, dismissedMap());
+                        promoted = refreshNsCard(card, dismissedMap());
                       }});
+                      animateNsEnter(promoted);
                     }}
                     if (reducedMotion()) {{
                       finishDismiss();

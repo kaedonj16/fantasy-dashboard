@@ -129,6 +129,27 @@ def test_next_steps_item_dismiss_css():
     assert ".ns-item-dismiss" in css
 
 
+def test_next_steps_item_refill_script():
+    """Dismissing a framed action in the collapsed view promotes the next
+    hidden action into the freed slot; undo reverses the promotion."""
+    dash = (ROOT / "dashboard_services" / "pages" / "dashboard_page.py").read_text(encoding="utf-8")
+    # The frame is rebalanced between the main list and the hidden list.
+    assert "rebalanceNsFrame" in dash
+    assert 'querySelector(".ns-list:not(.ns-hidden)")' in dash
+    assert 'querySelector(".ns-list.ns-hidden")' in dash
+    # Frame size is captured once from the server-rendered preview.
+    assert "data-ns-frame-limit" in dash
+    # Server order is stamped on first run so undo restores exact slots.
+    assert "data-ns-order" in dash
+    # Promotion only happens in the collapsed view.
+    assert 'classList.contains("ns-collapsed")' in dash
+    # refreshNsCard hands the promoted element back to the dismiss flow,
+    # which plays the rise-and-fade entrance on the FLIP timing.
+    assert "promoted = refreshNsCard" in dash
+    assert "animateNsEnter" in dash
+    assert "translateY(22px)" in dash
+
+
 def test_bench_check_thresholds_agree():
     """Both surfaces must agree on the 5.0 threshold: the card suppresses
     exactly where the Next steps item fires, so there is no gap and no
