@@ -3313,9 +3313,12 @@ def start_score_pos_anchors(season, week, scoring_settings=None) -> dict:
 
 
 # ── Tier-anchored 0-100 start/sit index ──────────────────────────────────────
-# Maps a player's rank (1-indexed) within their position to a 0-100 score.
-# Rank 1-12 (QB) or 1-10 (RB/WR) get 90-100 (elite tier), etc.
+# Maps a player's LEAGUE-WIDE rank (1-indexed) within their position to a
+# 0-100 score. Rank 1-12 (QB) or 1-10 (RB/WR) get 90-100 (elite tier), etc.
 # This replaces the anchor-based pct which clamped everyone to 100.
+# The rank must come from the full player pool (see start_score_pool_scores):
+# ranking a viewer roster against itself puts every rostered RB/WR in the
+# 90-100 band no matter how they stack up league-wide.
 _SS_TIER_BANDS = {
     "QB": ((1, 6, 90, 100), (7, 12, 70, 89), (13, 16, 40, 69), (17, 20, 1, 39)),
     "RB": ((1, 10, 90, 100), (11, 22, 70, 89), (23, 30, 40, 69), (31, 36, 1, 39)),
@@ -3344,6 +3347,160 @@ def start_score_tier_index(pos, rank):
             frac = (rank - lo) / (hi - lo)
             return int(round(band_hi - frac * (band_hi - band_lo)))
     return 1
+
+
+_SS_POOL_CACHE: dict = {}
+_SS_POOL_LOCK = threading.Lock()
+# A bundle read that returns only a handful of rows is a partial batch, not
+# a league-wide pool; below this the pool falls back to raw projections.
+_SS_POOL_MIN_BUNDLES = 40
+
+
+def start_score_pool_scores(season, week, scoring_settings=None) -> dict:
+    """League-wide start/sit pool for one week under one scoring config.
+
+    Returns ``{"kind": ..., "by_pos": {pos: [values, desc]}}``:
+
+    * ``kind == "score"``: values are full ``compute_start_score`` outputs
+      for the whole player universe, rebuilt from the daily start-score
+      bundles. Only available when the scoring exactly matches a canonical
+      variant (the bundles' exactness contract).
+    * ``kind == "proj"``: fallback for custom scoring the bundles do not
+      cover. Values are raw weekly projections for the whole pool, from the
+      same scan ``start_score_pos_anchors`` uses. Ranks are then taken on
+      projection, which tracks the start score closely (its multipliers
+      are small capped residuals).
+    * ``kind is None``: no pool could be built; callers keep whatever
+      index they already had instead of inventing one.
+
+    Cached per (season, week, scoring) like the position anchors.
+    """
+    if not season or not week:
+        return {"kind": None, "by_pos": {}}
+    key = (int(season), int(week), _ss_scoring_sig(scoring_settings))
+    cached = _SS_POOL_CACHE.get(key)
+    if cached is not None:
+        return cached
+    pool: dict = {"kind": None, "by_pos": {}}
+    # Primary: rebuild league-wide start scores from the daily bundles.
+    try:
+        from data_building.start_score_bundle import (
+            load_start_score_bundles as _pool_load,
+            variant_for_exact_scoring as _pool_variant_for,
+        )
+        from utils.start_sit_score import compute_start_score as _pool_score
+
+        variant = _pool_variant_for(scoring_settings)
+        if variant:
+            index = get_players_index_global() or {}
+            bundles = _pool_load(
+                int(season), int(week), variant, list(index.keys())) or {}
+            if len(bundles) >= _SS_POOL_MIN_BUNDLES:
+                by_pos: dict = {}
+                for bundle in bundles.values():
+                    if not isinstance(bundle, dict):
+                        continue
+                    pos = str(bundle.get("pos") or "").upper()
+                    if pos not in _SS_TIER_BANDS:
+                        continue
+                    try:
+                        score, _, _ = _pool_score(
+                            bundle.get("proj_pts") or 0.0,
+                            on_bye=bool(bundle.get("on_bye")),
+                            recent_ppg=bundle.get("recent_ppg") or 0.0,
+                            season_ppg=bundle.get("season_ppg") or 0.0,
+                            usage_delta=bundle.get("usage_delta"),
+                            usage_season_avg=bundle.get("usage_season_avg"),
+                            injury_status=bundle.get("injury_status"),
+                            implied_total=bundle.get("implied_total"),
+                            bust_rate=bundle.get("bust_rate"),
+                            weather_kind=bundle.get("weather_kind"),
+                            position=pos,
+                            oline_index=bundle.get("oline_index"),
+                            expected_team_plays=bundle.get(
+                                "expected_team_plays"),
+                            league_average_plays=bundle.get(
+                                "league_average_plays"),
+                            role_confidence=bundle.get("role_confidence"),
+                            low_total_team=bool(
+                                bundle.get("low_total_team")),
+                        )
+                    except Exception:
+                        continue
+                    if score and score > 0:
+                        by_pos.setdefault(pos, []).append(float(score))
+                if by_pos:
+                    for vals in by_pos.values():
+                        vals.sort(reverse=True)
+                    pool = {"kind": "score", "by_pos": by_pos}
+    except Exception:
+        logger.debug("[start_score_pool] bundle pool failed", exc_info=True)
+        pool = {"kind": None, "by_pos": {}}
+    # Fallback: rank on the full projection pool (custom scoring).
+    if pool["kind"] is None:
+        try:
+            from utils.utils import load_week_projection as _pool_swp
+            from utils.fantasy_scoring import (
+                weekly_projection_points as _pool_wpp,
+            )
+            from utils.lineup_slots import start_sit_pos as _pool_ssp
+
+            proj_map = _pool_swp(int(season), int(week)) or {}
+            index = get_players_index_global() or {}
+            by_pos = {}
+            for pid in proj_map.keys():
+                meta = index.get(str(pid)) or index.get(pid) or {}
+                pos = _pool_ssp(
+                    (meta.get("pos") or meta.get("position") or ""))
+                if not pos or pos not in _SS_TIER_BANDS:
+                    continue
+                try:
+                    pts = _pool_wpp(proj_map, pid, scoring_settings, pos)
+                except Exception:
+                    pts = None
+                if pts and pts > 0:
+                    by_pos.setdefault(pos, []).append(float(pts))
+            if by_pos:
+                for vals in by_pos.values():
+                    vals.sort(reverse=True)
+                pool = {"kind": "proj", "by_pos": by_pos}
+        except Exception:
+            logger.debug("[start_score_pool] proj pool failed", exc_info=True)
+            pool = {"kind": None, "by_pos": {}}
+    with _SS_POOL_LOCK:
+        if len(_SS_POOL_CACHE) > 64:
+            _SS_POOL_CACHE.clear()
+        _SS_POOL_CACHE[key] = pool
+    return pool
+
+
+def start_score_league_index(season, week, scoring_settings, pos,
+                             score, proj_pts):
+    """Tier-anchored index for one player from their LEAGUE-WIDE rank.
+
+    ``score`` is the player's start score, ``proj_pts`` their raw weekly
+    projection; the pool kind decides which one is ranked (full start
+    scores when bundles cover the scoring, projections otherwise).
+    Competition ranking: tied values share a rank. Returns None when no
+    league-wide pool exists for the position, so callers can fall back
+    to the anchor pct instead of showing a roster-relative number.
+    """
+    pos = str(pos or "").upper()
+    if pos not in _SS_TIER_BANDS:
+        return None
+    pool = start_score_pool_scores(season, week, scoring_settings)
+    vals = (pool.get("by_pos") or {}).get(pos) or []
+    if not vals:
+        return None
+    value = score if pool.get("kind") == "score" else proj_pts
+    try:
+        value = float(value or 0)
+    except (TypeError, ValueError):
+        return None
+    if value <= 0:
+        return None
+    rank = 1 + sum(1 for v in vals if v > value)
+    return start_score_tier_index(pos, rank)
 
 
 def run_daily_data_async(season: int, week: int, owner: str = "web") -> bool:
@@ -15050,13 +15207,6 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
 
     for pos in positions_out:
         positions_out[pos].sort(key=lambda x: (not x["on_bye"], x["_score"]), reverse=True)
-        # Tier-anchored 0-100 index: rank within position -> tier band.
-        # Replaces the anchor-based pct (which clamped elites to 100).
-        for rank, p in enumerate(positions_out[pos], start=1):
-            try:
-                p["start_score_pct"] = start_score_tier_index(pos, rank)
-            except Exception:
-                pass
         n_start = lineup_requirements.get(pos, 1)
         eligible_for_flex = pos in ("RB", "WR", "TE")
         for i, p in enumerate(positions_out[pos]):
@@ -15260,6 +15410,25 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
                       scoring_settings=ctx.get("raw_scoring_settings") or {})
     except Exception:
         logger.debug("market intelligence unavailable for start/sit", exc_info=True)
+
+    # Tier-anchored 0-100 index from each player's LEAGUE-WIDE rank at
+    # their position (roster and guest rows alike, now that guests are
+    # merged in). Ranking the roster against itself put every rostered
+    # RB/WR in the 90-100 band; the pool rank is what the bands mean.
+    # When no league-wide pool can be built, rows keep the anchor pct
+    # computed at build time.
+    try:
+        for _pos, _rows in positions_out.items():
+            for _p in _rows:
+                _idx = start_score_league_index(
+                    season, current_week,
+                    ctx.get("raw_scoring_settings")
+                    or ctx.get("scoring_settings"),
+                    _pos, _p.get("start_score"), _p.get("proj_pts"))
+                if _idx is not None:
+                    _p["start_score_pct"] = _idx
+    except Exception:
+        logger.debug("[start-sit] league index skipped", exc_info=True)
 
     has_eligible = _has_roster_rows
     return {
@@ -27087,17 +27256,23 @@ def api_player_details(player_id: str):
                 _start_score = round(float(_ss_val), 2)
                 _start_factors = _ss_fac
                 _start_demotion = _ss_dem
-                # Position-relative 0-100 index so Compare can rank a QB against a
-                # WR honestly. 100 = the position's top weekly projection; a
-                # player whose favorable multipliers push past it simply caps.
+                # Tier-anchored 0-100 index from the player's LEAGUE-WIDE
+                # rank at their position: the same index the Start/Sit page
+                # shows, so Compare and the page can never disagree. The
+                # anchor pct (share of the top projection) remains only as
+                # a fallback when no league-wide pool can be built.
                 try:
-                    _ss_anchor = (start_score_pos_anchors(
-                        int(season), _ss_week, scoring_settings
-                    ) or {}).get(_start_sit_pos(_ss_pos))
-                    if _ss_anchor and _ss_anchor > 0:
-                        _start_score_pct = int(max(0, min(100, round(
-                            100.0 * float(_ss_val) / float(_ss_anchor)
-                        ))))
+                    _start_score_pct = start_score_league_index(
+                        int(season), _ss_week, scoring_settings,
+                        _start_sit_pos(_ss_pos), _ss_val, _ss_proj)
+                    if _start_score_pct is None:
+                        _ss_anchor = (start_score_pos_anchors(
+                            int(season), _ss_week, scoring_settings
+                        ) or {}).get(_start_sit_pos(_ss_pos))
+                        if _ss_anchor and _ss_anchor > 0:
+                            _start_score_pct = int(max(0, min(100, round(
+                                100.0 * float(_ss_val) / float(_ss_anchor)
+                            ))))
                 except Exception:
                     logger.debug("[api_player_details] start_score_pct skipped", exc_info=True)
         except Exception:
