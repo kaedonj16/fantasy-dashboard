@@ -1813,9 +1813,17 @@ def _build_weekly_wrapped_slides(ctx: dict, league_name: str, season, week,
             _miss_section = []
             for _i, _mo in enumerate((_analysis.get("missed_opportunities") or [])[:2]):
                 _st, _bn = _mo.get("starter") or {}, _mo.get("bench_player") or {}
+                _rot = len(_mo.get("rotation_in") or []) > 1 or len(_mo.get("rotation_out") or []) > 1
+                if _rot:
+                    # Multi-player hindsight rotation: the gain belongs to
+                    # the whole rotation, not the headline pair alone.
+                    _label = (f"{_mo.get('team') or 'Team'}: {_bn.get('name') or '?'} "
+                              f"headlines a {max(len(_mo.get('rotation_in') or []), len(_mo.get('rotation_out') or []))}-move rotation")
+                else:
+                    _label = f"Started {_st.get('name') or '?'} over {_bn.get('name') or '?'}"
                 _miss_section.append((
                     f"#{_i + 1}",
-                    f"Started {_st.get('name') or '?'} over {_bn.get('name') or '?'}",
+                    _label,
                     f"+{float(_mo.get('gap') or 0):.1f}",
                 ))
             if _miss_section:
