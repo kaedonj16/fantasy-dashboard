@@ -150,6 +150,62 @@ def test_next_steps_item_refill_script():
     assert "translateY(22px)" in dash
 
 
+def test_next_steps_single_action_renders_flat_class():
+    """A queue with exactly one action renders the long-and-flat class on
+    the section so the lone card is horizontal from first paint; the
+    dismiss script keeps the class in sync afterwards."""
+    src = (ROOT / "app.py").read_text(encoding="utf-8")
+    start = src.find("def _render_next_steps_queue")
+    end = src.find("def _nfl_regular_season_kickoff_ms", start)
+    body = src[start:end]
+    assert '" ns-frame-single" if _n == 1 else ""' in body
+    assert "ns-card{collapsed_cls}{_single_cls}" in body
+
+
+def test_next_steps_fit_frame_script():
+    """Fit-the-row bookkeeping in the dismiss script: the Show all
+    toggle hides once the remaining actions fit the frame, and the
+    flat class tracks exactly one framed action."""
+    dash = (ROOT / "dashboard_services" / "pages" / "dashboard_page.py").read_text(encoding="utf-8")
+    assert "function fitNsFrame" in dash
+    # Toggle visibility is driven by remaining vs the frame limit.
+    assert 'querySelector(".ns-expand-toggle")' in dash
+    assert "remaining > limit" in dash
+    # Flat state is exactly one visible framed action.
+    assert 'classList.toggle("ns-frame-single", framed === 1)' in dash
+    # refreshNsCard runs the fit pass after the refill rebalance.
+    assert "fitNsFrame(card, map, remaining);" in dash
+
+
+def test_next_steps_fit_animation_timing():
+    """Dismiss, FLIP glide, and refill entrance share one smoother
+    timing (.38s cubic-bezier), and the FLIP animates card size as
+    well as position so re-fits resize instead of snapping."""
+    dash = (ROOT / "dashboard_services" / "pages" / "dashboard_page.py").read_text(encoding="utf-8")
+    assert 'NS_EASE = "cubic-bezier(0.22, 1, 0.36, 1)"' in dash
+    assert '", width .38s " + NS_EASE' in dash
+    assert '", height .38s " + NS_EASE' in dash
+    assert '"opacity .38s " + NS_EASE' in dash
+    # The promoted card rises on the same timing.
+    assert '"transform .38s " + NS_EASE + ", opacity .38s " + NS_EASE' in dash
+
+
+def test_next_steps_fit_frame_css():
+    """Desktop fit layout: framed cards flex-split the row, and the
+    lone-card flat state lays the item out horizontally with the CTA
+    beside the text block (dismiss x keeps its top-right corner on
+    big cards; only the flat state centers it next to the CTA)."""
+    css = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
+    assert ".ns-card .ns-list:not(.ns-hidden) .ns-item" in css
+    assert "flex: 1 1 0" in css
+    assert ".ns-card.ns-frame-single .ns-list:not(.ns-hidden) .ns-item" in css
+    flat = css[css.find(".ns-card.ns-frame-single"):]
+    flat = flat[:flat.find("\n}\n")]
+    assert "grid-template-columns: minmax(0, 1fr) auto" in flat
+    assert "grid-template-rows: repeat(3, auto)" in flat
+    assert "grid-column: 2" in flat
+
+
 def test_bench_check_thresholds_agree():
     """Both surfaces must agree on the 5.0 threshold: the card suppresses
     exactly where the Next steps item fires, so there is no gap and no

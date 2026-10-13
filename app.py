@@ -12583,8 +12583,12 @@ def _render_next_steps_queue(
         )
 
     _n = len(actions)
+    # A lone action fills its frame and goes long and flat (horizontal
+    # layout) instead of sitting in a tall third-of-a-row box. The
+    # dismiss script keeps this class in sync as actions come and go.
+    _single_cls = " ns-frame-single" if _n == 1 else ""
     return f"""
-        <section class="os-card os-action-card ns-card{collapsed_cls}" data-action-card="nextsteps">
+        <section class="os-card os-action-card ns-card{collapsed_cls}{_single_cls}" data-action-card="nextsteps">
           <div class="os-section-head">
             <div class="os-section-head-content">
               <h2 class="os-section-title">Next steps</h2>

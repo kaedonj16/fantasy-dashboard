@@ -20621,11 +20621,53 @@ img, svg, canvas {
     gap: 6px;
 }
 @media (min-width: 1025px) {
+    /* Fit the row: framed cards split the row evenly between them
+       (3 across in thirds, 2 in halves, 1 full width) instead of
+       sitting in fixed grid tracks that leave the rest of the row
+       empty. The hidden extra list keeps its own layout below. */
     .ns-card .ns-list {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        display: flex;
         gap: 8px;
         align-items: stretch;
+    }
+    .ns-card .ns-list:not(.ns-hidden) .ns-item {
+        flex: 1 1 0;
+        min-width: 0;
+    }
+    /* A lone framed action goes long and flat: text block on the
+       left, CTA with the dismiss x right after it on the right,
+       vertically centered, at natural height instead of stretched
+       to the tall card height. Big cards keep the dismiss x at the
+       top-right corner (the base .ns-item-dismiss placement). */
+    .ns-card.ns-frame-single .ns-list:not(.ns-hidden) .ns-item {
+        align-items: center;
+        min-height: 0;
+    }
+    .ns-card.ns-frame-single .ns-list:not(.ns-hidden) .ns-item .ns-body {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-rows: repeat(3, auto);
+        column-gap: 14px;
+        align-items: center;
+        height: auto;
+    }
+    .ns-card.ns-frame-single .ns-list:not(.ns-hidden) .ns-item .ns-tag,
+    .ns-card.ns-frame-single .ns-list:not(.ns-hidden) .ns-item .ns-action,
+    .ns-card.ns-frame-single .ns-list:not(.ns-hidden) .ns-item .ns-why {
+        grid-column: 1;
+    }
+    .ns-card.ns-frame-single .ns-list:not(.ns-hidden) .ns-item .ns-why {
+        max-width: 560px;
+        margin-bottom: 0;
+    }
+    .ns-card.ns-frame-single .ns-list:not(.ns-hidden) .ns-item .ns-cta {
+        grid-column: 2;
+        grid-row: 1 / -1;
+        margin-top: 0;
+        align-self: center;
+    }
+    .ns-card.ns-frame-single .ns-list:not(.ns-hidden) .ns-item .ns-item-dismiss {
+        align-self: center;
     }
 }
 .ns-card.ns-collapsed .ns-hidden {
