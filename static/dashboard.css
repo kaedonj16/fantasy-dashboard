@@ -24261,8 +24261,6 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
     position: relative;
     flex-shrink: 0;
     font-weight: 800;
-    color: var(--text-muted);
-    font-size: 11px;
 }
 
 .tm2-hs img {
@@ -24435,6 +24433,189 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
     .tm2-card { flex-basis: 100%; }
 }
 
+
+/* ── Team modal tabs v2 (Schedule / Ages / Graphs / Trades) ──────────────
+   Same visual language as the Roster A2 (tm2) rebuild: summary strips,
+   cards, position badges. Responsive rules key off the modal's own width
+   via container queries (the .team-modal is the container), with @media
+   twins for parity with the tm2 block. */
+.tm3 { display: block; }
+.tm3-strip { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+.tm3-sum-item { flex: 1 1 118px; min-width: 0; background: var(--bg-alt); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; }
+.tm3-sum-v { font-size: 17px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; line-height: 1.15; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.tm3-sum-name { font-size: 14.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tm3-sum-l { font-size: 11.5px; color: var(--text-muted); margin-top: 3px; line-height: 1.35; }
+.tm3-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 13px 15px; margin-bottom: 14px; }
+.tm3-card h3 { font-size: 14.5px; font-weight: 750; color: var(--text); margin: 0 0 4px; }
+.tm3-note { font-size: 12px; color: var(--text-muted); margin-bottom: 9px; line-height: 1.45; }
+.tm3-two-col { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(430px, 100%), 1fr)); gap: 14px; align-items: start; }
+.tm3-two-col .tm3-card { margin-bottom: 0; }
+.tm3-sec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 9px; }
+.tm3-sec-head h3 { font-size: 14.5px; font-weight: 750; color: var(--text); margin: 0; }
+.tm3-sec-sub { font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; text-align: right; }
+
+/* Schedule */
+.tm3-form-chip { display: inline-flex; align-items: center; justify-content: center; width: 21px; height: 21px; border-radius: 6px; font-size: 11px; font-weight: 800; }
+.tm3-form-w { background: rgba(34, 197, 94, .16); color: #16a34a; }
+.tm3-form-l { background: rgba(239, 68, 68, .14); color: #dc2626; }
+.tm3-form-t { background: var(--bg-alt); color: var(--text-muted); border: 1px solid var(--border); }
+.tm3-opp-rec { font-size: 11.5px; color: var(--text-muted); font-weight: 600; margin-left: 7px; font-variant-numeric: tabular-nums; }
+.tm3-margin { font-size: 11.5px; font-weight: 800; border-radius: 20px; padding: 2px 8px; font-variant-numeric: tabular-nums; background: var(--bg-alt); color: var(--text-muted); white-space: nowrap; }
+.tm3-margin-w { background: rgba(34, 197, 94, .15); color: #16a34a; }
+.tm3-margin-l { background: rgba(239, 68, 68, .13); color: #dc2626; }
+.tm3-chip { font-size: 10.5px; font-weight: 800; border-radius: 20px; padding: 2.5px 8px; white-space: nowrap; }
+.tm3-chip-playoff { background: rgba(245, 158, 11, .16); color: #b45309; }
+.tm3-chip-week { background: rgba(59, 130, 246, .14); color: #2563eb; }
+.tm3-splits { font-size: 12.5px; color: var(--text-muted); margin: 0 0 12px; }
+.tm3-splits b { color: var(--text); font-variant-numeric: tabular-nums; }
+.tm3-spot-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.tm3-spot-head h3 { margin: 0; }
+.tm3-spot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+.tm3-spot-col { background: var(--bg-alt); border-radius: 10px; padding: 10px 12px; min-width: 0; }
+.tm3-spot-team { font-size: 13px; font-weight: 750; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tm3-spot-nums { display: flex; gap: 14px; font-size: 12.5px; color: var(--text-muted); margin-top: 5px; font-variant-numeric: tabular-nums; }
+.tm3-spot-nums b { color: var(--text); }
+.tm3-spot-form { display: flex; gap: 4px; margin-top: 8px; }
+
+/* Ages */
+.tm3-verdict { font-size: 14.5px; font-weight: 750; color: var(--text); line-height: 1.5; margin-bottom: 12px; }
+.tm3-verdict span { font-weight: 500; color: var(--text-muted); }
+.tm3-win-row { padding: 7px 0; }
+.tm3-win-row:first-of-type { padding-top: 2px; }
+.tm3-win-head { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); }
+.tm3-win-label { font-weight: 700; }
+.tm3-win-sub { color: var(--text-muted); font-size: 12px; }
+.tm3-win-val { margin-left: auto; font-weight: 750; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tm3-bar { position: relative; height: 9px; background: var(--bg-alt); border-radius: 6px; margin-top: 6px; }
+.tm3-fill { height: 100%; border-radius: 6px; }
+.tm3-win-asc { background: #22c55e; }
+.tm3-win-prime { background: var(--accent); }
+.tm3-win-late { background: #f59e0b; }
+.tm3-win-cliff { background: #ef4444; }
+.tm3-tier-strong { background: #22c55e; }
+.tm3-tier-mid { background: var(--accent); }
+.tm3-tier-weak { background: #f59e0b; }
+.tm3-bar-tick { overflow: visible; }
+.tm3-tick { position: absolute; top: -3px; bottom: -3px; width: 3px; margin-left: -1px; border-radius: 2px; background: var(--text); opacity: .75; }
+.tm3-age-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; }
+.tm3-age-pill { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); padding: 6px 0; border-top: 1px solid var(--border); }
+.tm3-age-pill:first-of-type { border-top: none; }
+.tm3-pill-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tm3-pill-age { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.tm3-pill-val { font-weight: 750; font-variant-numeric: tabular-nums; min-width: 38px; text-align: right; }
+.tm3-lg-row { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text); padding: 6px 8px; border-radius: 8px; }
+.tm3-lg-me { background: rgba(59, 130, 246, .09); font-weight: 700; }
+.tm3-lg-rank { color: var(--text-muted); width: 16px; font-variant-numeric: tabular-nums; }
+.tm3-lg-name { flex: 0 1 190px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tm3-lg-bar { flex: 1; height: 8px; background: var(--bg-alt); border-radius: 6px; overflow: hidden; }
+.tm3-lg-bar span { display: block; height: 100%; background: var(--accent); border-radius: 6px; }
+.tm3-lg-val { font-weight: 750; font-variant-numeric: tabular-nums; }
+
+/* Graphs */
+#tm-panel-charts .tm3-strip, #tm-panel-charts .tm3-season-line, #tm-panel-charts .tm3-sec-head,
+#tm-panel-charts .tm3-card, #tm-panel-charts .tm3-two-col, #tm-panel-charts .tm-chart-eff {
+    flex: 1 1 100%; min-width: 0;
+}
+.tm3-season-line { display: flex; align-items: center; gap: 9px; font-size: 12.5px; color: var(--text-muted); margin-bottom: 14px; }
+.tm3-season-chip { font-size: 11px; font-weight: 800; border: 1px solid var(--border); background: var(--bg-alt); color: var(--text); border-radius: 20px; padding: 3px 10px; white-space: nowrap; }
+.tm3-fin-row { display: flex; flex-wrap: wrap; gap: 7px; }
+.tm3-fin-chip { display: inline-flex; flex-direction: column; align-items: center; border: 1px solid var(--border); background: var(--bg-alt); border-radius: 9px; padding: 6px 11px; font-size: 14px; font-weight: 800; color: var(--text); line-height: 1.1; }
+.tm3-fin-wk { font-size: 10px; font-weight: 700; color: var(--text-muted); margin-top: 2px; }
+
+/* Trades */
+.tm3-trade-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 13px 15px; margin-bottom: 12px; }
+.tm3-trade-head { display: flex; align-items: center; gap: 9px; }
+.tm3-trade-head .tm-sched-avatar { width: 24px; height: 24px; font-size: 11px; flex: none; }
+.tm3-trade-with { font-size: 13.5px; color: var(--text-muted); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tm3-trade-with b { color: var(--text); }
+.tm3-trade-when { margin-left: auto; font-size: 12px; color: var(--text-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tm3-net-chip { display: none; font-size: 12.5px; font-weight: 800; border-radius: 20px; padding: 3px 10px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tm3-net-pos { background: rgba(34, 197, 94, .15); color: #16a34a; }
+.tm3-net-neg { background: rgba(239, 68, 68, .13); color: #dc2626; }
+.tm3-net-pos-t { color: #16a34a; }
+.tm3-net-neg-t { color: #dc2626; }
+.tm3-trade-cols { display: flex; gap: 10px; margin-top: 11px; }
+.tm3-col { flex: 1; min-width: 0; background: var(--bg-alt); border-radius: 10px; padding: 9px 11px; }
+.tm3-col-label { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 5px; }
+.tm3-col-got .tm3-col-label { color: #16a34a; }
+.tm3-col-sent .tm3-col-label { color: #dc2626; }
+.tm3-arrow { align-self: center; color: var(--text-muted); font-size: 16px; flex: none; }
+.tm3-asset { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--text); padding: 3.5px 0; min-width: 0; }
+.tm3-sign { display: none; font-weight: 800; width: 12px; flex: none; }
+.tm3-asset-name { min-width: 0; }
+.tm3-asset-val { margin-left: auto; font-weight: 750; font-variant-numeric: tabular-nums; }
+.tm3-asset-none { font-size: 13px; color: var(--text-muted); padding: 3.5px 0; }
+.tm3-pick-chip { background: var(--surface); border: 1px solid var(--border); border-radius: 7px; padding: 2px 8px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.tm3-pick-via { color: var(--text-muted); font-weight: 500; }
+.tm3-pick-became { font-size: 12.5px; color: #2563eb; white-space: nowrap; }
+.tm3-trade-foot { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--border); font-size: 12.5px; color: var(--text-muted); }
+.tm3-ledger-row { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text); padding: 7px 0; border-top: 1px solid var(--border); }
+.tm3-ledger-row:first-of-type { border-top: none; }
+.tm3-ledger-mid { margin-left: auto; font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tm3-ledger-net { font-weight: 800; font-variant-numeric: tabular-nums; min-width: 44px; text-align: right; }
+.tm3-stuck-line { display: flex; gap: 10px; font-size: 13px; color: var(--text); padding: 6px 0; border-top: 1px solid var(--border); line-height: 1.45; }
+.tm3-stuck-line:first-of-type { border-top: none; }
+.tm3-stuck-label { flex: none; width: 96px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); padding-top: 2px; }
+
+@container (max-width: 700px) {
+    .tm3-sum-item { flex-basis: calc(50% - 6px); }
+    .tm3-spot-grid { grid-template-columns: 1fr; }
+    .tm3-age-cols { grid-template-columns: 1fr; }
+    .tm3-opp-rec { display: none; }
+    /* Trades becomes the T3 ledger: no columns or asset boxes, one line per
+       asset with a + / - edge, net as a chip in the card header. */
+    .tm3-trade-cols { flex-direction: column; gap: 0; margin-top: 6px; }
+    .tm3-col { background: none; border-radius: 0; padding: 0; }
+    .tm3-col-label, .tm3-arrow, .tm3-trade-foot, .tm3-asset-none { display: none; }
+    .tm3-net-chip { display: inline-flex; }
+    .tm3-trade-when { margin-left: 0; }
+    .tm3-net-chip { margin-left: auto; }
+    .tm3-asset { border-left: 3px solid transparent; padding: 6px 2px 6px 9px; }
+    .tm3-col .tm3-asset ~ .tm3-asset { border-top: 1px solid var(--border); }
+    .tm3-col-got .tm3-asset { border-left-color: #22c55e; }
+    .tm3-col-sent .tm3-asset { border-left-color: #ef4444; }
+    .tm3-sign { display: inline; }
+    .tm3-col-got .tm3-sign { color: #16a34a; }
+    .tm3-col-sent .tm3-sign { color: #dc2626; }
+    .tm3-pick-became { white-space: normal; }
+}
+
+@media (max-width: 700px) {
+    .tm3-sum-item { flex-basis: calc(50% - 6px); }
+    .tm3-spot-grid { grid-template-columns: 1fr; }
+    .tm3-age-cols { grid-template-columns: 1fr; }
+    .tm3-opp-rec { display: none; }
+    .tm3-trade-cols { flex-direction: column; gap: 0; margin-top: 6px; }
+    .tm3-col { background: none; border-radius: 0; padding: 0; }
+    .tm3-col-label, .tm3-arrow, .tm3-trade-foot, .tm3-asset-none { display: none; }
+    .tm3-net-chip { display: inline-flex; margin-left: auto; }
+    .tm3-trade-when { margin-left: 0; }
+    .tm3-asset { border-left: 3px solid transparent; padding: 6px 2px 6px 9px; }
+    .tm3-col .tm3-asset ~ .tm3-asset { border-top: 1px solid var(--border); }
+    .tm3-col-got .tm3-asset { border-left-color: #22c55e; }
+    .tm3-col-sent .tm3-asset { border-left-color: #ef4444; }
+    .tm3-sign { display: inline; }
+    .tm3-col-got .tm3-sign { color: #16a34a; }
+    .tm3-col-sent .tm3-sign { color: #dc2626; }
+    .tm3-pick-became { white-space: normal; }
+}
+
+/* Container twin of the @media (max-width: 768px) modal-header rules: when
+   the modal itself is narrow (file-preview panel, split view) the header
+   must wrap like it does on a phone, or the stat tiles paint over the team
+   name and push the close button out of the modal. Declarations mirror the
+   media block so both paths render identically. */
+@container (max-width: 768px) {
+    .team-modal-header { padding: 16px; position: relative; }
+    .team-modal-header-top { flex-wrap: wrap; align-items: flex-start; gap: 12px; }
+    .team-modal-close { position: absolute; top: 10px; right: 10px; }
+    .tm-menu-wrap { margin-right: 44px; }
+    .team-modal-statbar { order: 2; flex-basis: 100%; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .tm-stat-tile { width: auto; padding: 10px 6px; }
+    .team-modal-avatar { width: 48px; height: 48px; }
+    .team-modal-name { font-size: 18px; }
+    .tm-panel { padding: 16px; }
+}
 
 /* ── Ages / Schedule summary tiles ─────────────────────────────────────── */
 /* Header .tm-stat-tile is a fixed 96px chip. Reusing it in a 1fr grid left

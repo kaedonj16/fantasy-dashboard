@@ -21469,6 +21469,60 @@ function _tmBuildEffChart(weeks) {
   );
 }
 
+// Graphs tab (v2) SVG builders: score vs opponent, points race, seed
+// movement. Same no-fixed-height viewBox pattern as the efficiency chart so
+// they stretch to the card width instead of letterboxing.
+function _tmSvgVsOpp(series) {
+  const rows = (series || []).filter(d => d && d.points != null && d.opp_points != null);
+  if (!rows.length) return '';
+  const W = 660, H = 210, base = 168, top = 18;
+  const maxv = Math.max.apply(null, rows.map(d => Math.max(d.points, d.opp_points))) * 1.12 || 1;
+  const step = Math.min(150, (W - 60) / rows.length);
+  let g = '';
+  rows.forEach((d, i) => {
+    const gx = 38 + i * step + (step - 54) / 2;
+    [['points', 'var(--brand-blue)'], ['opp_points', 'var(--text-subtle)']].forEach((pair, j) => {
+      const v = Number(d[pair[0]]);
+      const h = (v / maxv) * (base - top);
+      const x = gx + j * 30;
+      const op = j === 1 ? ' opacity="0.45"' : '';
+      g += `<rect x="${x.toFixed(0)}" y="${(base - h).toFixed(0)}" width="24" height="${h.toFixed(0)}" rx="3" fill="${pair[1]}"${op}/>`;
+      g += `<text x="${(x + 12).toFixed(0)}" y="${(base - h - 5).toFixed(0)}" font-size="10.5" font-weight="700" fill="var(--text)" text-anchor="middle">${Number(v).toFixed(1)}</text>`;
+    });
+    const res = d.points > d.opp_points ? 'W' : (d.points < d.opp_points ? 'L' : 'T');
+    g += `<text x="${(gx + 27).toFixed(0)}" y="${base + 18}" font-size="11" font-weight="700" fill="var(--text-subtle)" text-anchor="middle">W${d.week} · ${res}</text>`;
+  });
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;height:auto;" role="img" aria-label="Score versus opponent by week"><line x1="30" y1="${base}" x2="${W - 10}" y2="${base}" stroke="var(--grid)"/>${g}</svg>`;
+}
+
+function _tmSvgRace(race) {
+  const me = (race && race.me) || [], best = (race && race.best) || [];
+  if (!me.length) return '';
+  const W = 660, H = 200;
+  const vals = me.concat(best).map(d => Number(d.points) || 0);
+  const hi = Math.max.apply(null, vals) * 1.08 || 1;
+  const X = i => 48 + i * Math.min(148, (W - 90) / Math.max(1, me.length - 1 || 1));
+  const Y = v => 168 - (Number(v) / hi) * 138;
+  const line = arr => arr.map((d, i) => `${X(i).toFixed(0)},${Y(d.points).toFixed(0)}`).join(' ');
+  const dots = me.map((d, i) => `<circle cx="${X(i).toFixed(0)}" cy="${Y(d.points).toFixed(0)}" r="4" fill="var(--brand-blue)"/><text x="${X(i).toFixed(0)}" y="${(Y(d.points) - 9).toFixed(0)}" font-size="10.5" font-weight="700" fill="var(--text)" text-anchor="middle">${Number(d.points).toFixed(1)}</text>`).join('');
+  const wk = me.map((d, i) => `<text x="${X(i).toFixed(0)}" y="190" font-size="11" font-weight="700" fill="var(--text-subtle)" text-anchor="middle">W${d.week}</text>`).join('');
+  const bestLbl = best.length ? `<text x="${W - 8}" y="${(Y(best[best.length - 1].points) + 16).toFixed(0)}" font-size="10" fill="var(--text-subtle)" text-anchor="end">Best other team</text>` : '';
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;height:auto;" role="img" aria-label="Cumulative points race"><polyline points="${line(best)}" fill="none" stroke="var(--text-subtle)" stroke-width="2.5" opacity="0.5"/><polyline points="${line(me)}" fill="none" stroke="var(--brand-blue)" stroke-width="2.5"/>${dots}${wk}${bestLbl}</svg>`;
+}
+
+function _tmSvgSeed(seeds, ofTeams) {
+  const rows = (seeds || []).filter(d => d && d.seed != null);
+  if (!rows.length) return '';
+  const W = 660, H = 170;
+  const maxSeed = Math.max(ofTeams || 0, Math.max.apply(null, rows.map(d => d.seed)), 2);
+  const X = i => 44 + i * Math.min(148, (W - 80) / Math.max(1, rows.length - 1 || 1));
+  const Y = s => 26 + (s - 1) * (120 / Math.max(1, maxSeed - 1));
+  const line = rows.map((d, i) => `${X(i).toFixed(0)},${Y(d.seed).toFixed(0)}`).join(' ');
+  const dots = rows.map((d, i) => `<circle cx="${X(i).toFixed(0)}" cy="${Y(d.seed).toFixed(0)}" r="4.5" fill="var(--brand-blue)"/><text x="${X(i).toFixed(0)}" y="${(Y(d.seed) - 9).toFixed(0)}" font-size="11" font-weight="800" fill="var(--text)" text-anchor="middle">#${d.seed}</text>`).join('');
+  const wk = rows.map((d, i) => `<text x="${X(i).toFixed(0)}" y="162" font-size="11" font-weight="700" fill="var(--text-subtle)" text-anchor="middle">W${d.week}</text>`).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;height:auto;" role="img" aria-label="Seed movement by week"><polyline points="${line}" fill="none" stroke="var(--brand-blue)" stroke-width="2.5"/>${dots}${wk}</svg>`;
+}
+
 // Persistent achievement chips (max 3) for the team, shown as a full-width
 // strip across the top of the roster panel.
 function _tmAchievementsHtml(achievements) {
@@ -21574,7 +21628,8 @@ async function tmLoadTrades(rosterId) {
 
     if (!leagueId) throw new Error('League ID not found');
 
-    const res = await fetch(`/api/team-trades/${rosterId}?league_id=${leagueId}&platform=${platform}&season=${season}`);
+    const _lt = (typeof brLeagueType === 'function') ? brLeagueType() : '1qb';
+    const res = await fetch(`/api/team-trades/${rosterId}?league_id=${leagueId}&platform=${platform}&season=${season}&league_type=${encodeURIComponent(_lt)}`);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     if (data.error) throw new Error(data.error);
@@ -21585,50 +21640,79 @@ async function tmLoadTrades(rosterId) {
       return;
     }
 
-    const renderAssets = (players, picks) => {
+    const esc = _tmEsc;
+    const fmtV = v => (v == null || isNaN(parseFloat(v))) ? '' : Math.round(parseFloat(v)).toLocaleString('en-US');
+    const signed = v => { const n = Math.round(parseFloat(v) || 0); return (n > 0 ? '+' : '') + n.toLocaleString('en-US'); };
+
+    const assetPlayer = (p, sign) => `<div class="tm3-asset"><span class="tm3-sign">${sign}</span>` +
+      (p.position ? `<span class="pos-badge ${esc(p.position)}">${esc(p.position)}</span>` : '') +
+      `<span class="tm3-asset-name player-clickable" data-player-id="${esc(p.player_id)}" data-player-name="${esc(p.name)}">${esc(p.name)}</span>` +
+      (p.value ? `<span class="tm3-asset-val">${fmtV(p.value)}</span>` : '') + '</div>';
+    const assetPick = (p, sign) => {
+      const via = p.owner_name ? ` <span class="tm3-pick-via">via ${esc(p.owner_name)}</span>` : '';
+      const became = p.became && p.became.name ? `<span class="tm3-pick-became">became ${esc(p.became.name)}</span>` : '';
+      return `<div class="tm3-asset tm3-asset-pick"><span class="tm3-sign">${sign}</span><span class="tm3-pick-chip">${esc(p.season)} R${esc(p.round)}${via}</span>${became}</div>`;
+    };
+    const assetFaab = (amount, sign) => `<div class="tm3-asset tm3-asset-faab"><span class="tm3-sign">${sign}</span><span class="tm3-asset-name">$${amount} FAAB</span></div>`;
+    const renderSide = (players, picks, faab, sign) => {
       const parts = [
-        ...players.map(p => `<div class="pm-trade-asset player-clickable" data-player-id="${p.player_id}" data-player-name="${p.name}" style="cursor:pointer">${p.name}${p.position ? `<span style="font-size:11px;color:var(--text-muted);margin-left:4px;">${p.position}</span>` : ''}</div>`),
-        ...picks.map(p => `<div class="pm-trade-asset pm-pick">${p.season} Rd ${p.round}</div>`),
+        ...(players || []).map(p => assetPlayer(p, sign)),
+        ...(picks || []).map(p => assetPick(p, sign)),
+        ...(faab ? [assetFaab(faab, sign)] : []),
       ];
-      return parts.length ? parts.join('') : '<div class="pm-trade-asset" style="color:var(--text-muted);">–</div>';
+      return parts.length ? parts.join('') : '<div class="tm3-asset-none">Nothing</div>';
     };
 
     const cards = trades.map(tr => {
-      const weekLabel = tr.week ? `Week ${tr.week}` : '';
-      const dateLabel = tr.date || '';
-      const headRight = weekLabel && dateLabel ? `${weekLabel} · ${dateLabel}` : weekLabel || dateLabel;
-
-      // Outcome payload from this team's perspective (players only; picks are
-      // valued separately by the endpoint and are omitted to keep ids clean).
-      const gets = (tr.my_gets || []).map(p => ({ id: String(p.player_id), name: p.name }));
-      const sends = (tr.my_sends || []).map(p => ({ id: String(p.player_id), name: p.name }));
-      const outcomeTeams = JSON.stringify([{ team_name: 'This team', gets, sends }]).replace(/'/g, '&#39;');
-      const canOutcome = (gets.length + sends.length) > 0 && !!tr.date_iso;
-      const outcomeBtn = canOutcome
-        ? `<button type="button" class="pm-trade-outcome-btn" data-trade-teams='${outcomeTeams}' data-trade-date="${tr.date_iso}" onclick="checkTradeOutcome(this)">Check Outcome</button>`
-        : '';
-
-      return `<div class="pm-trade-card trade-card">
-        <div class="pm-trade-head">
-          <span class="pm-trade-date">${headRight}</span>
-          ${outcomeBtn}
-        </div>
-        <div class="pm-trade-body">
-          <div class="pm-trade-col">
-            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#10b981;margin-bottom:4px;">Received</div>
-            ${renderAssets(tr.my_gets, tr.my_pick_gets)}
-          </div>
-          <div style="color:var(--text-muted);font-size:18px;align-self:center;">⇄</div>
-          <div class="pm-trade-col">
-            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#ef4444;margin-bottom:4px;">Sent</div>
-            ${renderAssets(tr.my_sends, tr.my_pick_sends)}
-          </div>
-        </div>
-        <div class="trade-outcome-result" style="display:none;"></div>
+      const partner = tr.partner || null;
+      const headLeft = partner
+        ? `${_tmAvatar({ team_name: partner.team_name, avatar: partner.avatar })}<span class="tm3-trade-with">with <b>${esc(partner.team_name)}</b></span>`
+        : '<span class="tm3-trade-with">Trade</span>';
+      const hasPlayers = (tr.my_gets || []).length + (tr.my_sends || []).length > 0;
+      const netChip = hasPlayers
+        ? `<span class="tm3-net-chip ${tr.players_net >= 0 ? 'tm3-net-pos' : 'tm3-net-neg'}">${signed(tr.players_net)}</span>` : '';
+      const when = [tr.week ? `Week ${tr.week}` : '', tr.date || ''].filter(Boolean).join(' · ');
+      const foot = hasPlayers
+        ? `<div class="tm3-trade-foot">Players at today's values: <b class="${tr.players_net >= 0 ? 'tm3-net-pos-t' : 'tm3-net-neg-t'}">${signed(tr.players_net)}</b></div>` : '';
+      return `<div class="tm3-trade-card">
+        <div class="tm3-trade-head">${headLeft}${netChip}<span class="tm3-trade-when">${esc(when)}</span></div>
+        <div class="tm3-trade-cols">
+          <div class="tm3-col tm3-col-got"><div class="tm3-col-label">Received</div>${renderSide(tr.my_gets, tr.my_pick_gets, tr.faab_gets, '+')}</div>
+          <div class="tm3-arrow">⇄</div>
+          <div class="tm3-col tm3-col-sent"><div class="tm3-col-label">Sent</div>${renderSide(tr.my_sends, tr.my_pick_sends, tr.faab_sends, '−')}</div>
+        </div>${foot}
       </div>`;
     }).join('');
 
-    panel.innerHTML = `<div style="padding:4px 0;">${cards}</div>`;
+    // Summary strip + partner ledger + what stuck, from the endpoint's
+    // season summary. Every block hides when its data is absent.
+    const S = data.summary || null;
+    let strip = '', extras = '';
+    if (S) {
+      const items = [`<div class="tm3-sum-item"><div class="tm3-sum-v">${S.total}</div><div class="tm3-sum-l">Trades this season</div></div>`];
+      items.push(`<div class="tm3-sum-item"><div class="tm3-sum-v">${signed(S.players_net)}</div><div class="tm3-sum-l">Players net · today's values</div></div>`);
+      if (S.top_partner) items.push(`<div class="tm3-sum-item"><div class="tm3-sum-v tm3-sum-name">${esc(S.top_partner.team_name)}</div><div class="tm3-sum-l">Most frequent partner · ${S.top_partner.trades} trade${S.top_partner.trades === 1 ? '' : 's'}</div></div>`);
+      items.push(`<div class="tm3-sum-item"><div class="tm3-sum-v">${S.picks_in} in · ${S.picks_out} out</div><div class="tm3-sum-l">Draft picks moved</div></div>`);
+      strip = `<div class="tm3-strip">${items.join('')}</div>`;
+
+      let ledgerCard = '', stuckCard = '';
+      if (Array.isArray(S.ledger) && S.ledger.length) {
+        const rows = S.ledger.map(l => `<div class="tm3-ledger-row"><span class="tm3-lg-name">${esc(l.team_name)}</span>` +
+          `<span class="tm3-ledger-mid">${l.trades} trade${l.trades === 1 ? '' : 's'} · picks ${l.picks_in} in / ${l.picks_out} out</span>` +
+          `<span class="tm3-ledger-net ${l.players_net >= 0 ? 'tm3-net-pos-t' : 'tm3-net-neg-t'}">${signed(l.players_net)}</span></div>`).join('');
+        ledgerCard = `<div><div class="tm3-card"><h3>Partner Ledger</h3><div class="tm3-note">Player net at today's values, by partner.</div>${rows}</div></div>`;
+      }
+      const st = S.stuck || {};
+      const stuckLines = [];
+      const stillList = [...(st.still_rostered || []), ...((st.became_still || []).map(b => `${b.name} (from an acquired ${b.label})`))];
+      if (stillList.length) stuckLines.push(`<div class="tm3-stuck-line"><span class="tm3-stuck-label">Still rostered</span><span>${stillList.map(esc).join(', ')}</span></div>`);
+      if ((st.picks_held || []).length) stuckLines.push(`<div class="tm3-stuck-line"><span class="tm3-stuck-label">Picks held</span><span>${st.picks_held.map(esc).join(', ')}</span></div>`);
+      if ((st.gone || []).length) stuckLines.push(`<div class="tm3-stuck-line"><span class="tm3-stuck-label">Gone</span><span>${st.gone.map(esc).join(', ')}</span></div>`);
+      if (stuckLines.length) stuckCard = `<div><div class="tm3-card"><h3>What Stuck</h3>${stuckLines.join('')}</div></div>`;
+      if (ledgerCard || stuckCard) extras = `<div class="tm3-two-col">${ledgerCard}${stuckCard}</div>`;
+    }
+
+    panel.innerHTML = `<div class="tm3">${strip}${cards}${extras}</div>`;
   } catch (err) {
     panel.innerHTML = `<div class="team-modal-error"><div>Failed to load trades</div><div style="font-size:13px;color:#9ca3af">${err.message}</div></div>`;
   }
@@ -22048,6 +22132,7 @@ function _renderBkModalContent(data, playerId) {
 function _tmBuildAgesHtml(data) {
   const POS_ORDER = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF'];
   const roster = (data && Array.isArray(data.roster)) ? data.roster : [];
+  const ctx = (data && data.age_context) || null;
   // Only players we actually have an age for. Unknown/placeholder rows (numeric
   // names) never carry an age, so they drop out naturally.
   const withAge = roster
@@ -22066,18 +22151,27 @@ function _tmBuildAgesHtml(data) {
 
   const mean = arr => arr.reduce((s, x) => s + x, 0) / arr.length;
   const fmt1 = n => (n == null || isNaN(n)) ? '--' : n.toFixed(1);
+  const fmt0 = n => (n == null || isNaN(n)) ? '--' : Math.round(n).toLocaleString('en-US');
+  const ord = n => { if (!n) return ''; const s = ['th', 'st', 'nd', 'rd'], v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); };
+  const esc = _tmEsc;
+  const lastName = name => { const parts = String(name || '').trim().split(/\s+/); return parts.length > 1 ? parts[parts.length - 1] : (parts[0] || ''); };
 
   const allAges = withAge.map(p => p.age);
-  const avgAge = mean(allAges);
+  let avgAge = mean(allAges);
   const starterAges = withAge.filter(p => p.starter).map(p => p.age);
-  const starterAvg = starterAges.length ? mean(starterAges) : null;
+  let starterAvg = starterAges.length ? mean(starterAges) : null;
+  // Prefer the server's aggregates when present: the ranks beside these
+  // tiles were computed from them, so the numbers must be the same ones.
+  if (ctx && ctx.avg_age != null) avgAge = ctx.avg_age;
+  if (ctx && ctx.starter_avg != null) starterAvg = ctx.starter_avg;
 
-  // Value-weighted age: where the roster's value actually sits on the age curve.
-  // A young roster with an old, high-value core reads differently than the plain
-  // average lets on, and this tile surfaces that.
+  // Value-weighted age: where the roster's value actually sits on the age
+  // curve. Prefer the server's figure (same basis, and it carries the rank).
   let vwAge = null;
   const vSum = withAge.reduce((s, p) => s + p.value, 0);
   if (vSum > 0) vwAge = withAge.reduce((s, p) => s + p.age * p.value, 0) / vSum;
+  if (ctx && ctx.vw_age != null) vwAge = ctx.vw_age;
+  if (ctx && ctx.avg_age != null) { /* server avg matches this basis; keep local for tiles fallback */ }
 
   const sortedYoung = [...withAge].sort((a, b) => a.age - b.age);
   const youngest = sortedYoung[0];
@@ -22089,71 +22183,106 @@ function _tmBuildAgesHtml(data) {
   const agePct = a => Math.max(4, Math.min(100, ((AGE_MAX - a) / (AGE_MAX - AGE_MIN)) * 100));
   const ageTier = a => a <= 25 ? 'strong' : (a >= 29 ? 'weak' : 'mid');
 
-  // ── Header stat tiles ──
+  // ── Value by age window (replaces the old headcount distribution) ──
+  const windows = [
+    { label: 'Ascending', sub: 'Under 24', cls: 'tm3-win-asc', test: a => a < 24 },
+    { label: 'Prime', sub: '24 to 27', cls: 'tm3-win-prime', test: a => a >= 24 && a < 28 },
+    { label: 'Late prime', sub: '28 to 29', cls: 'tm3-win-late', test: a => a >= 28 && a < 30 },
+    { label: 'Cliff', sub: '30 and over', cls: 'tm3-win-cliff', test: a => a >= 30 },
+  ].map(w => {
+    const xs = withAge.filter(p => w.test(p.age));
+    const v = xs.reduce((s, p) => s + p.value, 0);
+    return { ...w, n: xs.length, value: v, pct: vSum > 0 ? Math.round(v / vSum * 100) : 0 };
+  });
+  const under28 = windows[0].pct + windows[1].pct;
+
+  let html = '';
+
+  // ── Verdict line: only states what the league context proves ──
+  if (ctx && ctx.vw_rank) {
+    const lead = ctx.vw_rank === 1 ? 'Youngest value core in the league.'
+      : `${ord(ctx.vw_rank)} youngest value core in the league.`;
+    let tail = `${under28}% of this roster's value is under 28`;
+    if (ctx.starter_rank && ctx.of) {
+      tail += `, while the starting lineup ranks ${ord(ctx.starter_rank)} youngest of ${ctx.of}.`;
+    } else {
+      tail += '.';
+    }
+    html += `<div class="tm3-verdict">${lead} <span>${tail}</span></div>`;
+  }
+
+  // ── Header stat tiles, ranked against the league when context exists ──
+  const rankSub = (rank, of) => (rank && of) ? ` · ${ord(rank)} youngest of ${of}` : '';
   const tiles = [
-    { v: fmt1(avgAge), l: 'Avg Age' },
-    { v: starterAvg != null ? fmt1(starterAvg) : '--', l: 'Starter Avg' },
-    { v: vwAge != null ? fmt1(vwAge) : '--', l: 'Value-Wtd Age' },
-    { v: youngest ? fmt1(youngest.age) : '--', l: 'Youngest' },
-    { v: oldest ? fmt1(oldest.age) : '--', l: 'Oldest' },
+    { v: fmt1(avgAge), l: 'Avg age' + rankSub(ctx && ctx.avg_rank, ctx && ctx.of) },
+    { v: starterAvg != null ? fmt1(starterAvg) : '--', l: 'Starter avg' + rankSub(ctx && ctx.starter_rank, ctx && ctx.of) },
+    { v: vwAge != null ? fmt1(vwAge) : '--', l: 'Value-weighted' + rankSub(ctx && ctx.vw_rank, ctx && ctx.of) },
+    { v: youngest ? fmt1(youngest.age) : '--', l: 'Youngest' + (youngest ? ` · ${lastName(youngest.name)}` : '') },
+    { v: oldest ? fmt1(oldest.age) : '--', l: 'Oldest' + (oldest ? ` · ${lastName(oldest.name)}` : '') },
   ];
-  let html = '<div class="tm-ages-tiles">' + tiles.map(t =>
-    `<div class="tm-stat-tile"><div class="tm-stat-tile-value">${t.v}</div><div class="tm-stat-tile-label">${t.l}</div></div>`
+  html += '<div class="tm3-strip">' + tiles.map(t =>
+    `<div class="tm3-sum-item"><div class="tm3-sum-v">${t.v}</div><div class="tm3-sum-l">${esc(t.l)}</div></div>`
   ).join('') + '</div>';
 
-  // ── Average age by position ──
+  // ── Value by Age Window ──
+  const winRows = windows.map(w => `
+    <div class="tm3-win-row">
+      <div class="tm3-win-head"><span class="tm3-win-label">${w.label}</span><span class="tm3-win-sub">${w.sub} · ${w.n} player${w.n === 1 ? '' : 's'}</span>
+      <span class="tm3-win-val">${fmt0(w.value)} · ${w.pct}%</span></div>
+      <div class="tm3-bar"><div class="tm3-fill ${w.cls}" style="width:${Math.max(w.pct, w.value > 0 ? 1.5 : 0)}%;"></div></div>
+    </div>`).join('');
+  const windowsCard = `<div class="tm3-card"><h3>Value by Age Window</h3><div class="tm3-note">Where the roster value sits, not how many heads. Total ${fmt0(vSum)}.</div>${winRows}</div>`;
+
+  // ── Average age by position, with the league average tick ──
   const byPos = {};
   withAge.forEach(p => { (byPos[p.pos] = byPos[p.pos] || []).push(p.age); });
+  const lgPos = (ctx && ctx.league_pos_avg) || {};
   const posRows = POS_ORDER.filter(pos => byPos[pos] && byPos[pos].length).map(pos => {
     const ages = byPos[pos];
     const a = mean(ages);
+    const lg = lgPos[pos];
+    const tick = lg != null ? `<span class="tm3-tick" style="left:${agePct(lg)}%"></span>` : '';
     return `
-      <div class="tm-strength-row">
-        <div class="tm-strength-head">
-          <span class="pos-badge ${pos}">${pos}</span>
-          <span class="tm-strength-rank">${ages.length} player${ages.length === 1 ? '' : 's'}</span>
-          <span class="tm-strength-val">${fmt1(a)} yrs</span>
-        </div>
-        <div class="tm-strength-bar"><div class="tm-strength-fill tm-strength-${ageTier(a)}" style="width:${agePct(a)}%;"></div></div>
+      <div class="tm3-win-row">
+        <div class="tm3-win-head"><span class="pos-badge ${pos}">${pos}</span>
+        <span class="tm3-win-sub">${ages.length} player${ages.length === 1 ? '' : 's'}</span>
+        <span class="tm3-win-val">${fmt1(a)} yrs${lg != null ? ` · league ${fmt1(lg)}` : ''}</span></div>
+        <div class="tm3-bar tm3-bar-tick"><div class="tm3-fill tm3-tier-${ageTier(a)}" style="width:${agePct(a)}%;"></div>${tick}</div>
       </div>`;
   }).join('');
-  html += '<div class="team-modal-section"><h3>Average Age by Position</h3>'
-    + '<div class="tm-strength-note">Younger rooms show a fuller, greener bar (scaled ' + AGE_MIN + '–' + AGE_MAX + ').</div>'
-    + '<div class="tm-strength-list">' + posRows + '</div></div>';
+  const byPosCard = '<div class="tm3-card"><h3>Average Age by Position</h3>'
+    + (Object.keys(lgPos).length ? '<div class="tm3-note">Tick marks the league average for the room.</div>' : '')
+    + posRows + '</div>';
 
-  // ── Age distribution ──
-  const buckets = [
-    { label: '≤ 23', test: a => a <= 23 },
-    { label: '24–26', test: a => a >= 24 && a <= 26 },
-    { label: '27–29', test: a => a >= 27 && a <= 29 },
-    { label: '30+', test: a => a >= 30 },
-  ];
-  const maxBucket = Math.max(1, ...buckets.map(b => withAge.filter(p => b.test(p.age)).length));
-  const distRows = buckets.map(b => {
-    const n = withAge.filter(p => b.test(p.age)).length;
-    const pct = (n / maxBucket) * 100;
-    const tier = b.label === '≤ 23' || b.label === '24–26' ? 'strong' : (b.label === '30+' ? 'weak' : 'mid');
-    return `
-      <div class="tm-strength-row">
-        <div class="tm-strength-head">
-          <span class="tm-age-bucket">${b.label}</span>
-          <span class="tm-strength-val">${n}</span>
-        </div>
-        <div class="tm-strength-bar"><div class="tm-strength-fill tm-strength-${tier}" style="width:${Math.max(n ? 4 : 0, pct)}%;"></div></div>
-      </div>`;
-  }).join('');
-  html += '<div class="team-modal-section"><h3>Age Distribution</h3>'
-    + '<div class="tm-strength-list">' + distRows + '</div></div>';
-
-  // ── Youngest / oldest lists ──
-  const pill = p => `<div class="tm-age-pill"><span class="pos-badge ${p.pos}">${p.pos}</span>`
-    + `<span class="tm-age-pill-name">${p.name}</span><span class="tm-age-pill-age">${fmt1(p.age)}</span></div>`;
+  // ── Youngest / oldest lists, now with values ──
+  const pill = p => `<div class="tm3-age-pill"><span class="pos-badge ${p.pos}">${p.pos}</span>`
+    + `<span class="tm3-pill-name">${esc(p.name)}</span><span class="tm3-pill-age">${fmt1(p.age)}</span><span class="tm3-pill-val">${fmt0(p.value)}</span></div>`;
   const youngList = sortedYoung.slice(0, 3).map(pill).join('');
   const oldList = [...sortedYoung].reverse().slice(0, 3).map(pill).join('');
-  html += '<div class="tm-age-cols">'
-    + '<div class="team-modal-section"><h3>Youngest</h3><div class="tm-age-pill-list">' + youngList + '</div></div>'
-    + '<div class="team-modal-section"><h3>Oldest</h3><div class="tm-age-pill-list">' + oldList + '</div></div>'
+  const colsCard = '<div class="tm3-age-cols">'
+    + '<div class="tm3-card"><h3>Youngest</h3>' + youngList + '</div>'
+    + '<div class="tm3-card"><h3>Oldest</h3>' + oldList + '</div>'
     + '</div>';
+
+  html += `<div class="tm3-two-col"><div>${windowsCard}</div><div>${byPosCard}${colsCard}</div></div>`;
+
+  // ── League table + cliff watch ──
+  let extra = '';
+  if (ctx && Array.isArray(ctx.league_table) && ctx.league_table.length) {
+    const rows = ctx.league_table.map((t, i) => {
+      const wd = Math.max(6, Math.min(100, (30 - t.vw_age) / 8 * 100));
+      return `<div class="tm3-lg-row${t.me ? ' tm3-lg-me' : ''}"><span class="tm3-lg-rank">${i + 1}</span><span class="tm3-lg-name">${esc(t.team_name)}</span><span class="tm3-lg-bar"><span style="width:${wd}%"></span></span><span class="tm3-lg-val">${fmt1(t.vw_age)}</span></div>`;
+    }).join('');
+    extra += `<div><div class="tm3-card"><h3>League by Value-Weighted Age</h3><div class="tm3-note">Youngest core first. The ranking behind the tiles above.</div>${rows}</div></div>`;
+  }
+  const cliff = withAge.filter(p => p.age >= 27 && p.value > 0).sort((a, b) => b.age - a.age);
+  if (cliff.length) {
+    const cTotal = cliff.reduce((s, p) => s + p.value, 0);
+    const cPct = vSum > 0 ? Math.round(cTotal / vSum * 100) : 0;
+    const rows = cliff.map(pill).join('');
+    extra += `<div><div class="tm3-card"><h3>Cliff Watch · 27 and Older</h3><div class="tm3-note">The value that ages out first: ${fmt0(cTotal)} of ${fmt0(vSum)}, ${cPct}% of roster value.</div>${rows}</div></div>`;
+  }
+  if (extra) html += `<div class="tm3-two-col" style="margin-top:14px">${extra}</div>`;
 
   return html;
 }
@@ -22211,30 +22340,115 @@ function _tmStateLabel(state) {
   return ({final: 'Final', live: 'Live', scheduled: 'Upcoming', unavailable: 'Unavailable', unpublished: 'Opponent TBD'})[state] || 'Unavailable';
 }
 
-function _tmScheduleRow(w) {
+function _tmRecordStr(rec) {
+  if (!rec) return '';
+  const g = (rec.wins || 0) + (rec.losses || 0) + (rec.ties || 0);
+  if (!g) return '';
+  return `${rec.wins || 0}-${rec.losses || 0}` + (rec.ties ? `-${rec.ties}` : '');
+}
+
+function _tmScheduleRow(w, ctx) {
   if (!w.published) return `<div class="tm-sched-item" data-week="${w.week}"><div class="tm-sched-row tm-sched-row-upcoming"><span class="tm-sched-week">W${w.week}</span><span class="tm-sched-opp">${_tmAvatar(null)}<span class="tm-sched-opp-name">Opponent TBD</span></span><span class="tm-sched-result tm-sched-upcoming">Upcoming</span><span class="tm-sched-chevron" aria-hidden="true">›</span></div></div>`;
   const opp = w.opponent;
-  const opponent = w.is_bye ? 'Bye' : (opp ? _tmEsc(opp.team_name) : 'Opponent TBD');
+  const isBye = w.is_bye || !opp;
+  const opponent = isBye ? 'Bye' : _tmEsc(opp.team_name);
+  const recStr = !isBye && opp ? _tmRecordStr(opp.record) : '';
   const started = w.state === 'live' || w.state === 'final';
-  const score = started ? `<span class="tm-sched-score">${_tmPoints(w.team_points)} <span class="tm-sched-dash">–</span> ${_tmPoints(w.opponent_points)}</span>`
-    : (w.team_projection != null && w.opponent_projection != null ? `<span class="tm-sched-score tm-sched-proj" title="Projection">Proj ${_tmPoints(w.team_projection)} – ${_tmPoints(w.opponent_projection)}</span>` : '');
+  let score = '';
+  if (started) {
+    score = `<span class="tm-sched-score">${_tmPoints(w.team_points)} <span class="tm-sched-dash">–</span> ${_tmPoints(w.opponent_points)}</span>`;
+    if (w.state === 'final' && w.team_points != null && w.opponent_points != null) {
+      const m = Math.round((w.team_points - w.opponent_points) * 10) / 10;
+      score += `<span class="tm3-margin ${m > 0 ? 'tm3-margin-w' : (m < 0 ? 'tm3-margin-l' : '')}">${m > 0 ? '+' : ''}${m.toFixed(1)}</span>`;
+    }
+  } else if (w.team_projection != null && w.opponent_projection != null) {
+    score = `<span class="tm-sched-score tm-sched-proj" title="Projection">Proj ${_tmPoints(w.team_projection)} – ${_tmPoints(w.opponent_projection)}</span>`;
+  }
+  let chips = '';
+  if (!started && ctx) {
+    if (ctx.playoff_week_start && w.week >= ctx.playoff_week_start) chips += '<span class="tm3-chip tm3-chip-playoff">Playoffs</span>';
+    if (ctx.spotlight && ctx.spotlight.week === w.week) chips += '<span class="tm3-chip tm3-chip-week">This week</span>';
+  }
   const stateLabel = _tmStateLabel(w.state);
   const badge = w.result ? `<span class="tm-sched-result tm-sched-${w.result.toLowerCase()}">${w.result}</span>`
-    : `<span class="tm-sched-result tm-sched-${w.state === 'live' ? 'live' : 'upcoming'}">${stateLabel}</span>`;
-  const clickable = !w.is_bye && !!opp;
+    : (started || chips ? '' : `<span class="tm-sched-result tm-sched-${w.state === 'live' ? 'live' : 'upcoming'}">${stateLabel}</span>`);
+  const liveBadge = w.state === 'live' && !w.result ? `<span class="tm-sched-result tm-sched-live">Live</span>` : '';
+  const clickable = !isBye && !!opp;
   return `<div class="tm-sched-item" data-week="${w.week}">` +
     `<button type="button" class="tm-sched-row${w.state === 'scheduled' ? ' tm-sched-row-upcoming' : ''}" aria-expanded="false" ${clickable ? `onclick="tmToggleMatchup(this, ${w.week})"` : 'disabled'}>` +
-    `<span class="tm-sched-week">W${w.week}</span><span class="tm-sched-opp"><span class="tm-sched-vs">vs</span>${_tmAvatar(opp)}<span class="tm-sched-opp-name">${opponent}</span></span>${score}${badge}` +
+    `<span class="tm-sched-week">W${w.week}</span><span class="tm-sched-opp"><span class="tm-sched-vs">vs</span>${_tmAvatar(opp)}<span class="tm-sched-opp-name">${opponent}${recStr ? `<span class="tm3-opp-rec">${recStr}</span>` : ''}</span></span>${chips}${score}${liveBadge}${badge}` +
     `<span class="tm-sched-chevron" aria-hidden="true">›</span></button>` +
     `<div class="tm-sched-detail" hidden></div></div>`;
 }
 
 function _tmBuildScheduleHtml(payload, data) {
   const weeks = (payload && payload.weeks) || [];
-  const tiles = `<div class="tm-ages-tiles"><div class="tm-stat-tile"><div class="tm-stat-tile-value">${_tmEsc(data.record || '—')}</div><div class="tm-stat-tile-label">Record</div></div>` +
-    `<div class="tm-stat-tile"><div class="tm-stat-tile-value">${_tmPoints(data.points_for)}</div><div class="tm-stat-tile-label">Points For</div></div>` +
-    `<div class="tm-stat-tile"><div class="tm-stat-tile-value">${_tmPoints(data.points_against)}</div><div class="tm-stat-tile-label">Points Against</div></div></div>`;
-  return tiles + `<div class="team-modal-section"><h3>Season Schedule</h3><div class="tm-sched-hint">Select a matchup to view lineups and scores.</div><div class="tm-sched-list">${weeks.map(_tmScheduleRow).join('')}</div></div>`;
+  const ctx = (payload && payload.context) || null;
+  const ord = n => { if (!n) return ''; const s = ['th', 'st', 'nd', 'rd'], v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); };
+  let html = '';
+
+  // Summary strip: recent form, remaining schedule difficulty, best/worst
+  // weeks. Replaces the old tiles, which duplicated the modal header.
+  const items = [];
+  if (ctx && ctx.form && (ctx.form.results || []).length) {
+    const chips = ctx.form.results.map(r => `<span class="tm3-form-chip tm3-form-${r.toLowerCase()}">${r}</span>`).join('');
+    const sub = ctx.form.avg_margin != null ? `Form · avg margin ${ctx.form.avg_margin > 0 ? '+' : ''}${Number(ctx.form.avg_margin).toFixed(1)}` : 'Form';
+    items.push(`<div class="tm3-sum-item"><div class="tm3-sum-v tm3-form-v">${chips}</div><div class="tm3-sum-l">${sub}</div></div>`);
+  }
+  if (ctx && ctx.remaining_sos && ctx.remaining_sos.rank) {
+    items.push(`<div class="tm3-sum-item"><div class="tm3-sum-v">${ord(ctx.remaining_sos.rank)} hardest</div><div class="tm3-sum-l">Remaining schedule of ${ctx.remaining_sos.of || ''}</div></div>`);
+  }
+  if (ctx && ctx.best_week) items.push(`<div class="tm3-sum-item"><div class="tm3-sum-v">${_tmPoints(ctx.best_week.points)}</div><div class="tm3-sum-l">Best week · Week ${ctx.best_week.week}</div></div>`);
+  if (ctx && ctx.worst_week) items.push(`<div class="tm3-sum-item"><div class="tm3-sum-v">${_tmPoints(ctx.worst_week.points)}</div><div class="tm3-sum-l">Worst week · Week ${ctx.worst_week.week}</div></div>`);
+  if (items.length) html += `<div class="tm3-strip">${items.join('')}</div>`;
+
+  // Up Next spotlight: the next unplayed matchup, both teams profiled.
+  if (ctx && ctx.spotlight && ctx.spotlight.opponent) {
+    const sp = ctx.spotlight;
+    const formChips = f => (f || []).map(r => `<span class="tm3-form-chip tm3-form-${String(r).toLowerCase()}">${r}</span>`).join('');
+    const prof = (p, label) => `<div class="tm3-spot-col"><div class="tm3-spot-team">${_tmEsc(label)}</div>` +
+      `<div class="tm3-spot-nums">${p.pf_per_game != null ? `<span><b>${_tmPoints(p.pf_per_game)}</b> PF/g</span>` : ''}${p.pa_per_game != null ? `<span><b>${_tmPoints(p.pa_per_game)}</b> PA/g</span>` : ''}</div>` +
+      ((p.form || []).length ? `<div class="tm3-spot-form">${formChips(p.form)}</div>` : '') + '</div>';
+    html += `<div class="tm3-card"><div class="tm3-spot-head"><h3>Up Next · Week ${sp.week}</h3><span class="tm3-sec-sub">vs ${_tmEsc(sp.opponent.team_name)}${_tmRecordStr(sp.opponent.record) ? ` · ${_tmRecordStr(sp.opponent.record)}` : ''}</span></div>` +
+      `<div class="tm3-spot-grid">${prof(sp.team, sp.team.team_name)}${prof(sp.opponent, sp.opponent.team_name)}</div></div>`;
+  }
+
+  const finals = weeks.filter(w => w.published && w.state === 'final');
+  const rest = weeks.filter(w => !(w.published && w.state === 'final'));
+
+  // Splits line: record vs current playoff seeds vs the rest, from the
+  // server-computed current seeds.
+  if (ctx && ctx.seeds && ctx.playoff_teams && finals.length) {
+    let tw = 0, tl = 0, bw = 0, bl = 0, any = false;
+    finals.forEach(w => {
+      if (!w.opponent || !w.result) return;
+      const seed = ctx.seeds[String(w.opponent.roster_id)];
+      if (!seed) return;
+      any = true;
+      if (seed <= ctx.playoff_teams) { if (w.result === 'W') tw++; else if (w.result === 'L') tl++; }
+      else { if (w.result === 'W') bw++; else if (w.result === 'L') bl++; }
+    });
+    if (any) html += `<div class="tm3-splits">Splits: <b>${tw}-${tl}</b> vs current top-${ctx.playoff_teams} seeds · <b>${bw}-${bl}</b> vs the rest</div>`;
+  }
+
+  if (finals.length) {
+    let w = 0, l = 0, pf = 0, pa = 0;
+    finals.forEach(x => {
+      if (x.result === 'W') w++; else if (x.result === 'L') l++;
+      pf += x.team_points || 0; pa += x.opponent_points || 0;
+    });
+    const diff = pf - pa;
+    html += `<div class="tm3-sec-head"><h3>Played</h3><span class="tm3-sec-sub">${w}-${l} · PF ${_tmPoints(pf)} · PA ${_tmPoints(pa)} · ${diff >= 0 ? '+' : ''}${diff.toFixed(1)} differential</span></div>`;
+    html += `<div class="tm-sched-list">${finals.map(x => _tmScheduleRow(x, ctx)).join('')}</div>`;
+  }
+  if (rest.length) {
+    html += `<div class="tm3-sec-head" style="margin-top:16px"><h3>Remaining</h3>${ctx && ctx.playoff_week_start ? `<span class="tm3-sec-sub">Playoffs start Week ${ctx.playoff_week_start}</span>` : ''}</div>`;
+    html += `<div class="tm-sched-list">${rest.map(x => _tmScheduleRow(x, ctx)).join('')}</div>`;
+  }
+  if (!finals.length && !rest.length) {
+    html += '<div class="team-modal-empty">No schedule published yet.</div>';
+  }
+  return html;
 }
 
 async function tmLoadSchedule(force) {
@@ -22408,8 +22622,6 @@ function renderTeamDetails(data) {
     if (player.position === 'DEF') {
       return `<span class="tm2-hs tm2-hs-def">${_tmEsc2(player.team || 'DEF')}</span>`;
     }
-    const nm = String(player.name || '?').trim().split(/\s+/);
-    const ini = ((nm[0] || '?').charAt(0) + (nm.length > 1 ? nm[nm.length - 1].charAt(0) : '')).toUpperCase();
     const espn = player.espn_id ? String(player.espn_id).replace(/\D/g, '') : '';
     const srcs = [];
     if (espn) srcs.push(`https://a.espncdn.com/i/headshots/nfl/players/full/${espn}.png`);
@@ -22417,7 +22629,7 @@ function renderTeamDetails(data) {
     const img = srcs.length
       ? `<img src="${srcs[0]}" alt="" loading="lazy" onerror="tm2ImgFallback(this)" data-fb="${srcs.slice(1).join('|')}">`
       : '';
-    return `<span class="tm2-hs">${img}<span class="tm2-hs-ini">${_tmEsc2(ini)}</span></span>`;
+    return `<span class="tm2-hs">${img}</span>`;
   };
 
   const _tmRow = (player) => {
@@ -22593,28 +22805,85 @@ function renderTeamDetails(data) {
     ? `<div class="tm2-rail">${_strengthCard}${_picksCard}${_shapeCard}</div>`
     : '';
 
-  // Build graphs section - each chart in its own section for side-by-side layout
+  // Build graphs section (v2): summary strip first, then charts grouped
+  // under Scoring and League Context. The old server-rendered trends tiles
+  // are superseded by the strip (same facts, same visual language as the
+  // other tabs); Actual vs Optimal moves below the grouped charts.
   let graphsHTML = '';
+  const G = data.graphs || {};
+  const S = G.series || {};
+  const ord3 = n => { if (!n) return ''; const s = ['th', 'st', 'nd', 'rd'], v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); };
+  const num3 = (v, nd) => (v != null && !isNaN(parseFloat(v))) ? parseFloat(v).toFixed(nd) : '--';
 
-  // Trends block (seed movement, playoff odds, roster value, luck) -- server
-  // renders it as HTML+SVG so it drops straight in above the charts.
-  if (data.trends_html) {
-    graphsHTML += data.trends_html;
-  }
-
-  // Weekly actual-vs-optimal points (lineup efficiency over the season).
-  if (Array.isArray(data.efficiency_weeks) && data.efficiency_weeks.length > 0) {
-    graphsHTML += _tmBuildEffChart(data.efficiency_weeks);
-  }
-
-  if (data.graphs && (data.graphs.weekly_scores || data.graphs.radar)) {
-    if (data.graphs.weekly_scores && data.graphs.weekly_scores.length > 0) {
-      graphsHTML += '<div class="team-modal-section tm-chart-weekly"><h3>Weekly Scoring</h3><div class="team-chart-container" id="teamWeeklyChart"></div></div>';
+  if (G.strip) {
+    const st = G.strip;
+    const items = [];
+    if (st.seed) {
+      const sub = st.seed_since && st.weeks
+        ? (st.seed_since < st.weeks ? `Held since Week ${st.seed_since}` : `Reached in Week ${st.seed_since}`)
+        : 'Current seed';
+      items.push(`<div class="tm3-sum-item"><div class="tm3-sum-v">#${st.seed} seed</div><div class="tm3-sum-l">${sub}</div></div>`);
     }
-    if (data.graphs.radar && data.graphs.radar.z_scores) {
-      graphsHTML += '<div class="team-modal-section tm-chart-radar"><h3>Team Breakdown</h3><div class="team-chart-container" id="teamRadarChart"></div></div>';
+    if (st.allplay_wins != null && st.allplay_losses != null) {
+      const fw = n => { const x = parseFloat(n); return Number.isInteger(x) ? String(x) : x.toFixed(1); };
+      const luck = st.luck != null ? ` · luck ${st.luck > 0 ? '+' : ''}${num3(st.luck, 1)} wins` : '';
+      items.push(`<div class="tm3-sum-item"><div class="tm3-sum-v">${fw(st.allplay_wins)}-${fw(st.allplay_losses)}</div><div class="tm3-sum-l">All-play record${luck}</div></div>`);
     }
+    if (st.pf != null) {
+      items.push(`<div class="tm3-sum-item"><div class="tm3-sum-v">${num3(st.pf, 1)}</div><div class="tm3-sum-l">Points for${st.pf_rank ? ` · ${ord3(st.pf_rank)} of ${st.pf_of || ''}` : ''}</div></div>`);
+    }
+    if (st.ppg != null) {
+      items.push(`<div class="tm3-sum-item"><div class="tm3-sum-v">${num3(st.ppg, 1)}</div><div class="tm3-sum-l">Points per game${st.weeks ? ` · through Week ${st.weeks}` : ''}</div></div>`);
+    }
+    if (items.length) graphsHTML += `<div class="tm3-strip">${items.join('')}</div>`;
   }
+
+  // Season honesty line: name the season the charts actually describe,
+  // especially when the endpoint fell back to a prior season.
+  if (G.season_used) {
+    const viewedSeason = (window.location.pathname.split('/').filter(Boolean)[1] || '');
+    let note;
+    if (viewedSeason && String(G.season_used) !== String(viewedSeason)) {
+      note = `Showing ${G.season_used} data: the viewed season has no finalized weeks yet.`;
+    } else if (G.strip && G.strip.weeks) {
+      note = `Weeks 1-${G.strip.weeks} final`;
+    } else if (Array.isArray(G.weekly_scores) && G.weekly_scores.length) {
+      note = `Weeks 1-${G.weekly_scores.length} final`;
+    } else {
+      note = '';
+    }
+    graphsHTML += `<div class="tm3-season-line"><span class="tm3-season-chip">${G.season_used} season</span>${note ? `<span>${note}</span>` : ''}</div>`;
+  }
+
+  // Scoring section.
+  let scoring = '';
+  if (Array.isArray(S.vs_opponent) && S.vs_opponent.length) {
+    scoring += `<div class="tm3-card"><h3>Score vs Opponent</h3><div class="tm3-note">This team in color, opponent in gray.</div>${_tmSvgVsOpp(S.vs_opponent)}</div>`;
+  }
+  if (Array.isArray(G.weekly_scores) && G.weekly_scores.length > 0) {
+    scoring += '<div class="team-modal-section tm-chart-weekly"><h3>Weekly Scoring</h3><div class="team-chart-container" id="teamWeeklyChart"></div></div>';
+  }
+  // The radar keeps its old seat beside Weekly Scoring (the charts panel is
+  // a flex grid: 66% + 34%); the new blocks around them are full rows.
+  if (G.radar && G.radar.z_scores) {
+    scoring += '<div class="team-modal-section tm-chart-radar"><h3>Team Breakdown</h3><div class="team-chart-container" id="teamRadarChart"></div></div>';
+  }
+  if (S.race && Array.isArray(S.race.me) && S.race.me.length) {
+    scoring += `<div class="tm3-card"><h3>Points Race</h3><div class="tm3-note">Cumulative points for vs the best other team each week.</div>${_tmSvgRace(S.race)}</div>`;
+  }
+  if (scoring) graphsHTML += `<div class="tm3-sec-head"><h3>Scoring</h3></div>` + scoring;
+
+  // League Context section.
+  let contextCards = '';
+  if (Array.isArray(S.seeds) && S.seeds.length) {
+    contextCards += `<div><div class="tm3-card"><h3>Seed Movement</h3>${_tmSvgSeed(S.seeds, (G.strip && G.strip.pf_of) || null)}</div></div>`;
+  }
+  if (Array.isArray(S.finishes) && S.finishes.length) {
+    const chips = S.finishes.map(f => `<span class="tm3-fin-chip">${ord3(f.finish)}<span class="tm3-fin-wk">W${f.week}</span></span>`).join('');
+    contextCards += `<div><div class="tm3-card"><h3>Weekly Finish</h3><div class="tm3-note">Where this team's score ranked in the league each week.${S.std != null ? ` Weekly standard deviation ${num3(S.std, 1)} points.` : ''}</div><div class="tm3-fin-row">${chips}</div></div></div>`;
+  }
+  if (contextCards) graphsHTML += `<div class="tm3-sec-head" style="margin-top:18px"><h3>League Context</h3></div><div class="tm3-two-col">${contextCards}</div>`;
+
   // League-wide SVG scatters (this team highlighted), injected as-is.
   if (data.graphs && data.graphs.luck_svg) {
     graphsHTML += '<div class="team-modal-section tm-chart-svg"><h3>Performance vs Luck</h3>' +
@@ -22629,6 +22898,11 @@ function renderTeamDetails(data) {
     graphsHTML += '<div class="team-modal-section tm-chart-svg"><h3>' + _vaTitle + '</h3>' +
       '<div class="tm-svg-note">' + _vaNote + '</div>' +
       '<div class="team-svg-chart">' + data.graphs.value_age_svg + '</div></div>';
+  }
+
+  // Actual vs Optimal closes the tab (moved below the grouped charts).
+  if (Array.isArray(data.efficiency_weeks) && data.efficiency_weeks.length > 0) {
+    graphsHTML += _tmBuildEffChart(data.efficiency_weeks);
   }
 
   // Populate tab panels
