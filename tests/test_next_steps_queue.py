@@ -12,8 +12,6 @@ def test_next_steps_queue_functions_exist():
     assert "def _next_steps_lineup_actions" in src
     assert "def _next_steps_waiver_actions" in src
     assert "def _next_steps_trade_actions" in src
-    assert "def _next_steps_trade_window_action" in src
-    assert "def _trade_window_data" in src
 
 
 def test_next_steps_queue_empty_state():
@@ -69,15 +67,16 @@ def test_no_lineup_banner_on_dashboard():
     assert "lineup_alert_html" not in dash
 
 
-def test_no_standalone_trade_window_card():
-    """The trade window card is folded into Next steps; no standalone card."""
+def test_no_trade_window_in_next_steps():
+    """The buy/sell window alert is removed from Next steps entirely:
+    no standalone card and no queue action."""
     src = (ROOT / "app.py").read_text(encoding="utf-8")
     assert "def _trade_window_card_html" not in src
+    assert "_next_steps_trade_window_action" not in src
+    assert "_trade_window_data" not in src
     dash = (ROOT / "dashboard_services" / "pages" / "dashboard_page.py").read_text(encoding="utf-8")
     assert "_trade_window_card_html" not in dash
     assert "trade_window_html" not in dash
-    # The queue includes the trade window action.
-    assert "_next_steps_trade_window_action(ctx, viewer_roster_id)" in src
 
 
 def test_bye_alert_suppressed_when_swap_covers_player():
