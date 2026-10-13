@@ -47824,7 +47824,7 @@ em.gneg { background: var(--loss); }
    depth via layered shadow. Matches the approved character mock. */
 .cc-st-card {
   background: var(--card, #fff);
-  border: none;
+  border: 1px solid var(--border, #e8eef4);
   border-radius: 16px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.06);
   overflow: hidden;
@@ -47950,7 +47950,7 @@ em.gneg { background: var(--loss); }
 /* Awards character card: dark gradient header, large 24px values. */
 .cc-aw-card {
   background: var(--card, #fff);
-  border: none;
+  border: 1px solid var(--border, #e8eef4);
   border-radius: 16px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.06);
   overflow: hidden;
@@ -48124,7 +48124,7 @@ em.gneg { background: var(--loss); }
    matching the standings/awards character treatment. */
 .cc-fo-card {
   background: var(--card, #fff);
-  border: none;
+  border: 1px solid var(--border, #e8eef4);
   border-radius: 16px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.06);
   overflow: hidden;
@@ -48190,7 +48190,7 @@ em.gneg { background: var(--loss); }
    matching the standings/awards character treatment. */
 .cc-inj-card {
   background: var(--card, #fff);
-  border: none;
+  border: 1px solid var(--border, #e8eef4);
   border-radius: 16px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.06);
   overflow: hidden;
@@ -48232,7 +48232,7 @@ em.gneg { background: var(--loss); }
    matching the other sidebar character cards. */
 .cc-act-card {
   background: var(--card, #fff);
-  border: none;
+  border: 1px solid var(--border, #e8eef4);
   border-radius: 16px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.06);
   overflow: hidden;
