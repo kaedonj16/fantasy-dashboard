@@ -101,6 +101,6 @@ def test_current_week_zero_requires_explicit_live_state():
 def test_schedule_markup_uses_existing_design_contract():
     js = (ROOT / "static/app.js").read_text()
     for token in ("tm-sched-week", "tm-sched-avatar", "tm-sched-opp-name", "tm-sched-chevron",
-                  "Select a matchup to view lineups and scores.", "tm-sched-row-open"):
+                  "tm3-sec-head", "tm-sched-row-open"):
         assert token in js
     assert "Lineups load from the provider" not in js

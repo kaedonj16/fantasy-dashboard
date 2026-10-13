@@ -30241,6 +30241,111 @@ def api_team_details(roster_id: str):
                          exc_info=True)
             positional_strength = []
 
+        # League age context for the Ages tab: every roster's average age,
+        # starter average, and value-weighted average on the exact basis the
+        # roster loop above used (same value fields, same TE premium, same
+        # age fallback chain), so the Ages tiles can be ranked against the
+        # league instead of standing alone. Best-effort: any failure leaves
+        # age_context null and the tab falls back to unranked tiles.
+        age_context = None
+        try:
+            def _age_stats_for(roster_obj):
+                rows = []
+                starter_ids = {str(s) for s in (roster_obj.get("starters") or [])}
+                for pid in (roster_obj.get("players") or []):
+                    pid_s = str(pid)
+                    meta = players_index.get(pid_s, {})
+                    vrow = values_by_id.get(pid_s, {})
+                    age = age_from_bday(meta.get("bDay")) or vrow.get("age") or meta.get("age")
+                    if age is None:
+                        continue
+                    try:
+                        age = float(age)
+                    except (TypeError, ValueError):
+                        continue
+                    if age <= 0:
+                        continue
+                    pos = meta.get("pos") or ""
+                    if pos == "PK":
+                        pos = "K"
+                    elif pos in ("DST", "D/ST"):
+                        pos = "DEF"
+                    raw = vrow.get(_value_primary)
+                    if raw is None:
+                        raw = vrow.get(_value_fallback, 0) or 0
+                    try:
+                        raw = float(raw or 0)
+                    except (TypeError, ValueError):
+                        raw = 0.0
+                    raw = apply_te_premium(raw, pos, _tep)
+                    rows.append({"age": age, "value": raw,
+                                 "starter": pid_s in starter_ids, "pos": pos})
+                if not rows:
+                    return None
+                avg = sum(r["age"] for r in rows) / len(rows)
+                st_ages = [r["age"] for r in rows if r["starter"]]
+                v_sum = sum(r["value"] for r in rows)
+                return {
+                    "avg": avg,
+                    "starter_avg": (sum(st_ages) / len(st_ages)) if st_ages else None,
+                    "vw_age": (sum(r["age"] * r["value"] for r in rows) / v_sum) if v_sum > 0 else None,
+                    "rows": rows,
+                }
+
+            _age_by_roster = {}
+            for _r in rosters:
+                _st = _age_stats_for(_r)
+                if _st:
+                    _age_by_roster[str(_r.get("roster_id"))] = _st
+            _my_age_stats = _age_by_roster.get(str(roster_id))
+            if _my_age_stats:
+                def _age_rank(key):
+                    ordered = sorted(
+                        (v[key], k) for k, v in _age_by_roster.items() if v.get(key) is not None)
+                    for _i, (_, _k) in enumerate(ordered, start=1):
+                        if _k == str(roster_id):
+                            return _i
+                    return None
+
+                _pos_ages: dict = {}
+                for _st in _age_by_roster.values():
+                    for _row in _st["rows"]:
+                        if _row["pos"]:
+                            _pos_ages.setdefault(_row["pos"], []).append(_row["age"])
+                _league_pos_avg = {
+                    p: round(sum(v) / len(v), 1) for p, v in _pos_ages.items() if v
+                }
+                _user_by_owner = {str(u.get("user_id")): u for u in users}
+                _league_table = []
+                for _r in rosters:
+                    _st = _age_by_roster.get(str(_r.get("roster_id")))
+                    if not _st or _st["vw_age"] is None:
+                        continue
+                    _u = _user_by_owner.get(str(_r.get("owner_id")))
+                    _league_table.append({
+                        "team_name": team_label_from_user(_u, _r, fallback="") or f"Team {_r.get('roster_id')}",
+                        "vw_age": round(_st["vw_age"], 1),
+                        "avg_age": round(_st["avg"], 1),
+                        "me": str(_r.get("roster_id")) == str(roster_id),
+                    })
+                _league_table.sort(key=lambda x: x["vw_age"])
+                age_context = {
+                    "avg_age": round(_my_age_stats["avg"], 1),
+                    "avg_rank": _age_rank("avg"),
+                    "starter_avg": (round(_my_age_stats["starter_avg"], 1)
+                                    if _my_age_stats["starter_avg"] is not None else None),
+                    "starter_rank": _age_rank("starter_avg"),
+                    "vw_age": (round(_my_age_stats["vw_age"], 1)
+                               if _my_age_stats["vw_age"] is not None else None),
+                    "vw_rank": _age_rank("vw_age"),
+                    "of": len(_age_by_roster),
+                    "league_pos_avg": _league_pos_avg,
+                    "league_table": _league_table,
+                }
+        except Exception:
+            logger.debug("[api_team_details] age context skipped", exc_info=True)
+            age_context = None
+
         # Get graph data for team modal
         graphs_data = {}
         try:
@@ -30422,6 +30527,113 @@ def api_team_details(roster_id: str):
                             "luck_svg": league_luck_svg,
                             "season_used": graph_season  # Add info about which season data was used
                         })
+
+                        # Series for the Graphs tab's Scoring / League Context
+                        # sections (score vs opponent, points race, seed
+                        # movement, weekly finishes), all derived from the
+                        # same finalized weekly frame as the charts above.
+                        try:
+                            from utils.standings import seed_series_for as _seed_series_for
+                            import statistics as _statistics
+                            _fin = df_weekly
+                            if "finalized" in _fin.columns:
+                                _fin = _fin[_fin["finalized"] == True]  # noqa: E712
+                            _series: dict = {}
+                            _my = _fin[_fin["owner"] == team_name].sort_values("week") if team_name is not None else pd.DataFrame()
+                            if not _my.empty:
+                                _opp_by_pair = {}
+                                if "matchup_id" in _fin.columns:
+                                    for (_wk2, _mid2), _grp in _fin.groupby(["week", "matchup_id"]):
+                                        _owners = [str(o) for o in _grp["owner"].tolist()]
+                                        if len(_owners) == 2:
+                                            _opp_by_pair[(int(_wk2), str(_owners[0]))] = _owners[1]
+                                            _opp_by_pair[(int(_wk2), str(_owners[1]))] = _owners[0]
+                                _vs = []
+                                for _, _r in _my.iterrows():
+                                    _wk2 = int(_r["week"])
+                                    _entry = {"week": _wk2,
+                                              "points": round(float(_r["points"]), 1),
+                                              "opp_points": (round(float(_r["points_against"]), 1)
+                                                             if "points_against" in _fin.columns and pd.notna(_r.get("points_against")) else None),
+                                              "opp_name": _opp_by_pair.get((_wk2, str(team_name)))}
+                                    _vs.append(_entry)
+                                if any(e["opp_points"] is not None for e in _vs):
+                                    _series["vs_opponent"] = _vs
+                                _ss = _seed_series_for(_fin, team_name)
+                                if _ss:
+                                    _series["seeds"] = [{"week": int(w), "seed": int(s)} for (w, s) in _ss]
+                                _wsmap: dict = {}
+                                for _, _r in _fin.iterrows():
+                                    _wsmap.setdefault(int(_r["week"]), {})[str(_r["owner"])] = float(_r["points"] or 0)
+                                if _wsmap:
+                                    _cum: dict = {}
+                                    _race_me, _race_best, _finishes = [], [], []
+                                    for _wk2 in sorted(_wsmap):
+                                        for _o, _p in _wsmap[_wk2].items():
+                                            _cum[_o] = _cum.get(_o, 0.0) + _p
+                                        if str(team_name) in _cum:
+                                            _race_me.append({"week": _wk2, "points": round(_cum[str(team_name)], 1)})
+                                            _others = [v for k, v in _cum.items() if k != str(team_name)]
+                                            if _others:
+                                                _race_best.append({"week": _wk2, "points": round(max(_others), 1)})
+                                            _my_pts = _wsmap[_wk2].get(str(team_name))
+                                            if _my_pts is not None:
+                                                _finishes.append({"week": _wk2,
+                                                                  "finish": 1 + sum(1 for v in _wsmap[_wk2].values() if v > _my_pts)})
+                                    if _race_me:
+                                        _series["race"] = {"me": _race_me, "best": _race_best}
+                                    if _finishes:
+                                        _series["finishes"] = _finishes
+                                    _my_pts_list = [float(r["points"] or 0) for _, r in _my.iterrows()]
+                                    if len(_my_pts_list) >= 2:
+                                        _series["std"] = round(_statistics.pstdev(_my_pts_list), 1)
+                            if _series:
+                                graphs_data["series"] = _series
+
+                            # Summary strip (current-standing semantics, so
+                            # only when the graphs describe the viewed season,
+                            # never a prior-season fallback).
+                            if int(graph_season) == int(season) and _series.get("seeds"):
+                                _strip: dict = {}
+                                _seeds_list = _series["seeds"]
+                                _last_seed = _seeds_list[-1]["seed"]
+                                _since = _seeds_list[-1]["week"]
+                                for _e in reversed(_seeds_list):
+                                    if _e["seed"] == _last_seed:
+                                        _since = _e["week"]
+                                    else:
+                                        break
+                                _strip["seed"] = _last_seed
+                                _strip["seed_since"] = _since
+                                _ws2 = locals().get("_ws") or {}
+                                _aw2 = locals().get("_aw") or {}
+                                if _ws2 and team_name is not None:
+                                    try:
+                                        from utils.all_play import all_play_analysis as _ap2
+                                        _ap_entry = (_ap2(_ws2, _aw2) or {}).get(str(team_name))
+                                    except Exception:
+                                        _ap_entry = None
+                                    if _ap_entry:
+                                        _strip["allplay_wins"] = _ap_entry.get("all_play_wins")
+                                        _strip["allplay_losses"] = _ap_entry.get("all_play_losses")
+                                        if _ap_entry.get("luck_delta") is not None:
+                                            _strip["luck"] = round(float(_ap_entry["luck_delta"]), 1)
+                                if weekly_scores:
+                                    _pf_rank = 1
+                                    for _r2 in rosters:
+                                        _s2 = _r2.get("settings") or {}
+                                        _t2 = float(_s2.get("fpts") or 0) + float(_s2.get("fpts_decimal") or 0) / 100.0
+                                        if _t2 > float(points_for or 0):
+                                            _pf_rank += 1
+                                    _strip["pf"] = points_for
+                                    _strip["pf_rank"] = _pf_rank
+                                    _strip["pf_of"] = len(rosters)
+                                    _strip["ppg"] = round(float(points_for or 0) / len(weekly_scores), 1)
+                                    _strip["weeks"] = len(weekly_scores)
+                                if _strip:
+                                    graphs_data["strip"] = _strip
+                        except Exception:
+                            logger.debug("[api_team_details] graph series skipped", exc_info=True)
                     else:
                         logger.info(
                             f"[api_team_details] No graphs generated - team_row is empty for team_name='{team_name}'") if team_name is not None else logger.info(
@@ -30527,6 +30739,7 @@ def api_team_details(roster_id: str):
             "roster": roster_players,
             "picks": all_picks,
             "positional_strength": positional_strength,
+            "age_context": age_context,
             "is_redraft": bool(is_redraft),
             "draft_capital_available": bool((not is_redraft) and _cap_ok),
             "draft_capital_note": (
@@ -30711,7 +30924,13 @@ def api_team_schedule_week(roster_id: str, week: int):
 
 @app.route("/api/team-trades/<roster_id>")
 def api_team_trades(roster_id: str):
-    """Return all trades for a specific team in the current league season."""
+    """Return all trades for a specific team in the current league season.
+
+    Each trade names its counterparty, carries current model values on the
+    players, resolves traded picks to the player they became when that
+    draft is complete, and the response adds a season summary (net player
+    value at today's prices, partner ledger, what is still on the roster).
+    """
     try:
         from dashboard_services.service import get_transactions_by_week
         from utils.utils import load_players_index
@@ -30724,59 +30943,251 @@ def api_team_trades(roster_id: str):
             return jsonify({"error": "league_id required"}), 400
 
         players_index = load_players_index() or {}
+        league = get_league(platform, league_id, season) or {}
+        rosters = get_rosters(platform, league_id, season) or []
+        users = get_users(platform, league_id, season) or []
+
+        # Value basis matches /api/team-details: redraft leagues use the
+        # redraft columns, dynasty the dynasty columns, SF per the query or
+        # a SUPER_FLEX roster slot, TE premium from the league's scoring.
+        _lt = str(request.args.get("league_type") or "").strip().lower()
+        is_redraft = _league_is_redraft({
+            "platform": platform,
+            "league": league,
+            "league_settings": (league or {}).get("settings") or {},
+        })
+        _roster_positions = [str(s).upper() for s in ((league or {}).get("roster_positions") or [])]
+        is_sf = _lt in ("sf", "superflex") or "SUPER_FLEX" in _roster_positions
+        _value_primary, _value_fallback = (
+            (("redraft_value_sf" if is_sf else "redraft_value_1qb"),
+             ("sf_value" if is_sf else "value"))
+            if is_redraft else
+            (("sf_value" if is_sf else "value"), "value")
+        )
+        _tep = te_premium_from_settings((league or {}).get("scoring_settings"))
+        _value_table = list(get_model_value_table_cached() or [])
+        _values_by_id = {str(r["id"]): r for r in _value_table if isinstance(r, dict) and r.get("id")}
+
+        def _value_of(pid, pos):
+            vrow = _values_by_id.get(str(pid), {})
+            raw = vrow.get(_value_primary)
+            if raw is None:
+                raw = vrow.get(_value_fallback, 0) or 0
+            try:
+                raw = float(raw or 0)
+            except (TypeError, ValueError):
+                raw = 0.0
+            return round(apply_te_premium(raw, pos, _tep), 1)
+
+        _user_by_owner = {str(u.get("user_id")): u for u in users}
+        _roster_by_id = {str(r.get("roster_id")): r for r in rosters}
+
+        def _team_name(rid):
+            r = _roster_by_id.get(str(rid))
+            if not r:
+                return f"Team {rid}"
+            u = _user_by_owner.get(str(r.get("owner_id")))
+            return team_label_from_user(u, r, fallback="") or f"Team {rid}"
+
+        def _pinfo(pid):
+            meta = players_index.get(str(pid)) or {}
+            pos = meta.get("pos") or ""
+            if pos == "PK":
+                pos = "K"
+            elif pos in ("DST", "D/ST"):
+                pos = "DEF"
+            return {
+                "player_id": str(pid),
+                "name": meta.get("name") or str(pid),
+                "position": pos,
+                "value": _value_of(pid, pos),
+            }
 
         weeks = list(range(1, 19))
         tx_by_week = get_transactions_by_week(league_id, weeks, platform=platform, season=season) or {}
 
-        def _pinfo(pid):
-            meta = players_index.get(str(pid)) or {}
-            return {
-                "player_id": str(pid),
-                "name": meta.get("name") or str(pid),
-                "position": meta.get("pos") or "",
-            }
-
-        trades = []
+        raw_trades = []
+        pick_seasons = set()
         for week in sorted(tx_by_week):
             for t in (tx_by_week[week] or []):
                 if t.get("type") != "trade":
                     continue
-
                 adds = t.get("adds") or {}
                 drops = t.get("drops") or {}
                 draft_picks = t.get("draft_picks") or []
                 base_rids = set(str(r) for r in (t.get("roster_ids") or []))
                 all_rids = base_rids | {str(v) for v in adds.values()} | {str(v) for v in drops.values()}
-
                 if str(roster_id) not in all_rids:
                     continue
+                raw_trades.append((week, t, adds, drops, draft_picks, all_rids))
+                for p in draft_picks:
+                    try:
+                        pick_seasons.add(int(p.get("season")))
+                    except (TypeError, ValueError):
+                        pass
 
-                ts_raw = t.get("status_updated") or t.get("created")
-                date_str = ""
-                date_iso = ""
-                if ts_raw:
-                    from datetime import timezone as _tz
-                    _dt = datetime.fromtimestamp(ts_raw / 1000.0, tz=_tz.utc)
-                    date_str = f"{_dt.month}/{_dt.day}/{_dt.strftime('%y')}"
-                    date_iso = _dt.strftime("%Y-%m-%d")
+        # Draft resolution (who each traded pick became) reuses the
+        # player-modal's verified map; Sleeper-only, empty elsewhere.
+        resolution_map = {}
+        if pick_seasons:
+            try:
+                from dashboard_services.player_league_trades import build_draft_resolution_map
+                resolution_map = build_draft_resolution_map(platform, league_id, seasons=pick_seasons) or {}
+            except Exception:
+                logger.debug("[api_team_trades] draft resolution skipped", exc_info=True)
+                resolution_map = {}
 
-                my_gets = [_pinfo(pid) for pid, to_rid in adds.items() if str(to_rid) == str(roster_id)]
-                my_sends = [_pinfo(pid) for pid, from_rid in drops.items() if str(from_rid) == str(roster_id)]
-                my_pick_gets = [p for p in draft_picks if str(p.get("owner_id")) == str(roster_id)]
-                my_pick_sends = [p for p in draft_picks if str(p.get("previous_owner_id")) == str(roster_id)]
+        def _pick_out(p):
+            orig = str(p.get("roster_id")) if p.get("roster_id") is not None else None
+            became = None
+            if orig is not None and resolution_map:
+                try:
+                    hit = resolution_map.get((int(p.get("season")), int(p.get("round")), orig))
+                except (TypeError, ValueError):
+                    hit = None
+                if hit:
+                    became = {"player_id": hit.get("player_id"), "name": hit.get("name"),
+                              "position": hit.get("position") or ""}
+            return {
+                "season": p.get("season"),
+                "round": p.get("round"),
+                "roster_id": orig,
+                "owner_id": str(p.get("owner_id")) if p.get("owner_id") is not None else None,
+                "previous_owner_id": str(p.get("previous_owner_id")) if p.get("previous_owner_id") is not None else None,
+                "owner_name": _team_name(orig) if orig is not None else None,
+                "became": became,
+            }
 
-                trades.append({
-                    "week": week,
-                    "date": date_str,
-                    "date_iso": date_iso,
-                    "my_gets": my_gets,
-                    "my_sends": my_sends,
-                    "my_pick_gets": my_pick_gets,
-                    "my_pick_sends": my_pick_sends,
-                })
+        my_roster = _roster_by_id.get(str(roster_id)) or {}
+        my_player_ids = {str(p) for p in (my_roster.get("players") or [])}
 
-        trades.sort(key=lambda x: x["week"], reverse=True)
-        return jsonify({"trades": trades, "total": len(trades)})
+        trades = []
+        sent_pick_keys = set()
+        for week, t, adds, drops, draft_picks, all_rids in raw_trades:
+            for p in draft_picks:
+                if str(p.get("previous_owner_id")) == str(roster_id):
+                    try:
+                        sent_pick_keys.add((int(p.get("season")), int(p.get("round")), str(p.get("roster_id"))))
+                    except (TypeError, ValueError):
+                        pass
+
+        for week, t, adds, drops, draft_picks, all_rids in raw_trades:
+            ts_raw = t.get("status_updated") or t.get("created")
+            date_str = ""
+            date_iso = ""
+            if ts_raw:
+                from datetime import timezone as _tz
+                _dt = datetime.fromtimestamp(ts_raw / 1000.0, tz=_tz.utc)
+                date_str = f"{_dt.month}/{_dt.day}/{_dt.strftime('%y')}"
+                date_iso = _dt.strftime("%Y-%m-%d")
+
+            my_gets = [_pinfo(pid) for pid, to_rid in adds.items() if str(to_rid) == str(roster_id)]
+            my_sends = [_pinfo(pid) for pid, from_rid in drops.items() if str(from_rid) == str(roster_id)]
+            my_pick_gets = [_pick_out(p) for p in draft_picks if str(p.get("owner_id")) == str(roster_id)]
+            my_pick_sends = [_pick_out(p) for p in draft_picks if str(p.get("previous_owner_id")) == str(roster_id)]
+
+            # Counterparty: the other roster with the most assets in this
+            # trade (multi-team trades resolve to the principal partner).
+            partner = None
+            others = [r for r in all_rids if r != str(roster_id)]
+            if others:
+                def _involvement(rid):
+                    n = sum(1 for v in adds.values() if str(v) == rid)
+                    n += sum(1 for v in drops.values() if str(v) == rid)
+                    n += sum(1 for p in draft_picks
+                             if str(p.get("owner_id")) == rid or str(p.get("previous_owner_id")) == rid)
+                    return n
+                partner_rid = max(others, key=_involvement)
+                partner_roster = _roster_by_id.get(partner_rid) or {}
+                partner = {
+                    "roster_id": partner_rid,
+                    "team_name": _team_name(partner_rid),
+                    "avatar": team_avatar(platform, partner_roster, users) or "",
+                }
+
+            faab_gets = 0
+            faab_sends = 0
+            for move in (t.get("waiver_budget") or []):
+                try:
+                    amount = int(move.get("amount") or 0)
+                except (TypeError, ValueError):
+                    amount = 0
+                if str(move.get("receiver")) == str(roster_id):
+                    faab_gets += amount
+                if str(move.get("sender")) == str(roster_id):
+                    faab_sends += amount
+
+            players_net = round(
+                sum(p["value"] for p in my_gets) - sum(p["value"] for p in my_sends), 1)
+
+            trades.append({
+                "week": week,
+                "date": date_str,
+                "date_iso": date_iso,
+                "partner": partner,
+                "my_gets": my_gets,
+                "my_sends": my_sends,
+                "my_pick_gets": my_pick_gets,
+                "my_pick_sends": my_pick_sends,
+                "faab_gets": faab_gets,
+                "faab_sends": faab_sends,
+                "players_net": players_net,
+            })
+
+        trades.sort(key=lambda x: (x["date_iso"] or "", x["week"]), reverse=True)
+
+        # Season summary: totals, partner ledger, and what stuck.
+        ledger_by_partner: dict = {}
+        for tr in trades:
+            if not tr["partner"]:
+                continue
+            key = tr["partner"]["roster_id"]
+            entry = ledger_by_partner.setdefault(key, {
+                "roster_id": key, "team_name": tr["partner"]["team_name"],
+                "trades": 0, "players_net": 0.0, "picks_in": 0, "picks_out": 0,
+            })
+            entry["trades"] += 1
+            entry["players_net"] = round(entry["players_net"] + tr["players_net"], 1)
+            entry["picks_in"] += len(tr["my_pick_gets"])
+            entry["picks_out"] += len(tr["my_pick_sends"])
+        ledger = sorted(ledger_by_partner.values(),
+                          key=lambda e: (-e["trades"], -e["players_net"]))
+        top_partner = None
+        if ledger:
+            top_partner = {"team_name": ledger[0]["team_name"], "trades": ledger[0]["trades"]}
+
+        still, gone, became_still, picks_held = [], [], [], []
+        for tr in trades:
+            for p in tr["my_gets"]:
+                (still if p["player_id"] in my_player_ids else gone).append(p["name"])
+            for pk in tr["my_pick_gets"]:
+                label = f'{pk["season"]} R{pk["round"]}'
+                if pk.get("became"):
+                    if str(pk["became"].get("player_id")) in my_player_ids:
+                        became_still.append({"name": pk["became"]["name"], "label": label})
+                else:
+                    try:
+                        key = (int(pk["season"]), int(pk["round"]), str(pk.get("roster_id")))
+                    except (TypeError, ValueError):
+                        key = None
+                    if key is not None and key not in sent_pick_keys:
+                        picks_held.append(label)
+
+        summary = {
+            "total": len(trades),
+            "players_net": round(sum(tr["players_net"] for tr in trades), 1),
+            "picks_in": sum(len(tr["my_pick_gets"]) for tr in trades),
+            "picks_out": sum(len(tr["my_pick_sends"]) for tr in trades),
+            "top_partner": top_partner,
+            "ledger": ledger,
+            "stuck": {
+                "still_rostered": still,
+                "gone": gone,
+                "became_still": became_still,
+                "picks_held": picks_held,
+            },
+        }
+        return jsonify({"trades": trades, "total": len(trades), "summary": summary})
 
     except Exception as e:
         import traceback;
