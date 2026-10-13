@@ -282,6 +282,12 @@ def build_status_by_pid(
                 # Schedule data missing entirely — assume games haven't started
                 # so projections are shown instead of wall-to-wall 0.0 actuals.
                 status_by_pid[pid] = STATUS_NOT_STARTED
+            elif (lookup_team_map(teams_index or {}, team) or {}).get("byeWeek") == current_week:
+                # Gameless because it is the team's bye week (the same rule
+                # the DEF branch below applies). FINAL here would send a
+                # locked 0 into matchup score headers, team totals and win
+                # probability for a player who simply has no game this week.
+                status_by_pid[pid] = "BYE"
             else:
                 status_by_pid[pid] = STATUS_FINAL
             continue
