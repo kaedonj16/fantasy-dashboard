@@ -544,7 +544,32 @@ def build_dashboard_body(ctx: dict) -> str:
               if (!map[cardKey("nextsteps")]) {{
                 card.style.display = remaining ? "" : "none";
               }}
-              return rebalanceNsFrame(card, map);
+              var promoted = rebalanceNsFrame(card, map);
+              fitNsFrame(card, map, remaining);
+              return promoted;
+            }}
+            // Fit-the-row state, refreshed on load, dismiss, and undo.
+            // The Show all toggle only earns its place while more
+            // actions remain than the frame holds: at or below the
+            // frame limit everything left is already visible, so the
+            // toggle hides. And when exactly one action sits in the
+            // frame it goes long and flat: .ns-frame-single switches
+            // the item to its horizontal layout in the stylesheet.
+            function fitNsFrame(card, map, remaining) {{
+              var limit = parseInt(card.getAttribute("data-ns-frame-limit") || "3", 10) || 3;
+              var toggle = card.querySelector(".ns-expand-toggle");
+              if (toggle) toggle.style.display = remaining > limit ? "" : "none";
+              var frame = card.querySelector(".ns-list:not(.ns-hidden)");
+              var extra = card.querySelector(".ns-list.ns-hidden");
+              var framed = 0;
+              if (frame && (card.classList.contains("ns-collapsed") || !extra)) {{
+                var kids = frame.querySelectorAll(".ns-item[data-ns-item]");
+                for (var i = 0; i < kids.length; i++) {{
+                  if (kids[i].style.display !== "none"
+                      && !map[itemKey(kids[i].getAttribute("data-ns-item"))]) framed++;
+                }}
+              }}
+              card.classList.toggle("ns-frame-single", framed === 1);
             }}
             // Collapsed view keeps its frame full: the first N remaining
             // actions (N = the server-rendered preview size, captured on
@@ -630,9 +655,9 @@ def build_dashboard_body(ctx: dict) -> str:
                     map[key] = true;
                     try {{ localStorage.setItem(LS_KEY, JSON.stringify(map)); }} catch (e) {{}}
                     if (card) {{
-                      card.style.transition = "opacity .25s";
+                      card.style.transition = "opacity .38s cubic-bezier(0.22, 1, 0.36, 1)";
                       card.style.opacity = "0";
-                      setTimeout(function() {{ card.style.display = "none"; }}, 260);
+                      setTimeout(function() {{ card.style.display = "none"; }}, 400);
                     }}
                     if (window.brUndoToast) {{
                       window.brUndoToast("Card dismissed.", function() {{
@@ -666,39 +691,63 @@ def build_dashboard_body(ctx: dict) -> str:
               }}
               return out;
             }}
-            // FLIP: record sibling positions, mutate layout, then glide each
-            // moved sibling from its old spot to its new one so dismissals
-            // and undo restores shift the grid smoothly (2D on desktop,
-            // vertical on mobile) instead of jumping.
+            // One shared timing for every Next steps motion (dismiss
+            // fade, FLIP glide, refill rise, flatten/unflatten): a
+            // gentle .38s ease-out so re-fits land softly, not snappy.
+            var NS_EASE = "cubic-bezier(0.22, 1, 0.36, 1)";
+            // FLIP: record sibling rects, mutate layout, then glide each
+            // moved sibling from its old rect to its new one, animating
+            // size as well as position, so dismissals and undo restores
+            // re-fit the row smoothly (cards split the freed width on
+            // desktop, stack vertically on mobile) instead of jumping.
             function flipSiblings(siblings, mutate) {{
               if (reducedMotion() || !siblings.length) {{ mutate(); return; }}
+              var els = [];
               var before = [];
               for (var i = 0; i < siblings.length; i++) {{
-                before.push(siblings[i].getBoundingClientRect());
+                var r = siblings[i].getBoundingClientRect();
+                if (r.width || r.height) {{ els.push(siblings[i]); before.push(r); }}
               }}
               mutate();
-              for (var i = 0; i < siblings.length; i++) {{
-                (function(el, old) {{
-                  if (el.style.display === "none") return;
-                  var now = el.getBoundingClientRect();
-                  if (!now.width && !now.height) return;
-                  var dx = old.left - now.left;
-                  var dy = old.top - now.top;
-                  if (!dx && !dy) return;
-                  el.style.transition = "none";
-                  el.style.transform = "translate(" + dx + "px, " + dy + "px)";
-                  void el.offsetWidth;
-                  el.style.transition = "transform .25s ease";
-                  el.style.transform = "";
+              var jobs = [];
+              for (var j = 0; j < els.length; j++) {{
+                var el = els[j];
+                if (el.style.display === "none") continue;
+                var now = el.getBoundingClientRect();
+                if (!now.width && !now.height) continue;
+                var dx = before[j].left - now.left;
+                var dy = before[j].top - now.top;
+                if (!dx && !dy && before[j].width === now.width && before[j].height === now.height) continue;
+                jobs.push({{ el: el, old: before[j], now: now, dx: dx, dy: dy }});
+              }}
+              if (!jobs.length) return;
+              for (var a = 0; a < jobs.length; a++) {{
+                var job = jobs[a];
+                job.el.style.transition = "none";
+                job.el.style.flex = "none";
+                job.el.style.width = job.old.width + "px";
+                job.el.style.height = job.old.height + "px";
+                job.el.style.transform = "translate(" + job.dx + "px, " + job.dy + "px)";
+              }}
+              void jobs[0].el.offsetWidth;
+              for (var b = 0; b < jobs.length; b++) {{
+                (function(job) {{
+                  job.el.style.transition = "transform .38s " + NS_EASE + ", width .38s " + NS_EASE + ", height .38s " + NS_EASE;
+                  job.el.style.width = job.now.width + "px";
+                  job.el.style.height = job.now.height + "px";
+                  job.el.style.transform = "";
                   setTimeout(function() {{
-                    el.style.transition = "";
-                    el.style.transform = "";
-                  }}, 300);
-                }})(siblings[i], before[i]);
+                    job.el.style.transition = "";
+                    job.el.style.transform = "";
+                    job.el.style.width = "";
+                    job.el.style.height = "";
+                    job.el.style.flex = "";
+                  }}, 440);
+                }})(jobs[b]);
               }}
             }}
             // Entrance for a promoted action: rises from just below its
-            // slot while fading in, on the same .25s ease as the FLIP
+            // slot while fading in, on the same .38s timing as the FLIP
             // glide, so the refill reads as one motion with the slide.
             function animateNsEnter(el) {{
               if (!el || reducedMotion()) return;
@@ -706,14 +755,14 @@ def build_dashboard_body(ctx: dict) -> str:
               el.style.opacity = "0";
               el.style.transform = "translateY(22px)";
               void el.offsetWidth;
-              el.style.transition = "transform .25s ease, opacity .25s ease";
+              el.style.transition = "transform .38s " + NS_EASE + ", opacity .38s " + NS_EASE;
               el.style.opacity = "";
               el.style.transform = "";
               setTimeout(function() {{
                 el.style.transition = "";
                 el.style.transform = "";
                 el.style.opacity = "";
-              }}, 300);
+              }}, 440);
             }}
             function bindItemDismiss() {{
               var btns = document.querySelectorAll("[data-dismiss-ns-item]");
@@ -740,9 +789,9 @@ def build_dashboard_body(ctx: dict) -> str:
                     if (reducedMotion()) {{
                       finishDismiss();
                     }} else {{
-                      item.style.transition = "opacity .15s";
+                      item.style.transition = "opacity .38s " + NS_EASE;
                       item.style.opacity = "0";
-                      setTimeout(finishDismiss, 160);
+                      setTimeout(finishDismiss, 390);
                     }}
                     if (window.brUndoToast) {{
                       window.brUndoToast("Action dismissed.", function() {{
