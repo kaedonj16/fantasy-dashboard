@@ -29865,6 +29865,81 @@ def api_team_details(roster_id: str):
 
         player_ids = roster.get("players") or []
         starters = roster.get("starters") or []
+
+        # Season production for the roster tab: league-scored PPG per player
+        # plus each player's finish at his position by PPG (2+ games, so a
+        # one-week fill-in cannot top a ranking). Same cached weekly-points
+        # source as the player modal. Missing data leaves the fields null and
+        # the client simply does not render the stat.
+        _weekly_pts = {}
+        try:
+            _weekly_pts = _load_season_weekly_points(
+                int(season), (league or {}).get("scoring_settings") or {}) or {}
+        except Exception:
+            logger.debug("[api_team_details] weekly points skipped", exc_info=True)
+            _weekly_pts = {}
+        _ppg_finish = {}
+        try:
+            _pos_buckets = {}
+            for _pid2, _wk_pts in _weekly_pts.items():
+                if not _wk_pts or len(_wk_pts) < 2:
+                    continue
+                _meta2 = players_index.get(str(_pid2)) or {}
+                _pos2 = _meta2.get("pos") or ""
+                if _pos2 == "PK":
+                    _pos2 = "K"
+                elif _pos2 in ("DST", "D/ST"):
+                    _pos2 = "DEF"
+                if not _pos2:
+                    continue
+                _pos_buckets.setdefault(_pos2, []).append(
+                    (str(_pid2), sum(_wk_pts) / len(_wk_pts)))
+            for _pos2, _lst2 in _pos_buckets.items():
+                for _rank2, (_pid2, _ppg2) in enumerate(
+                        sorted(_lst2, key=lambda x: -x[1]), start=1):
+                    _ppg_finish[_pid2] = f"{_pos2}{_rank2}"
+        except Exception:
+            logger.debug("[api_team_details] ppg finish skipped", exc_info=True)
+            _ppg_finish = {}
+
+        # Value rank labels rebuilt on the same basis as the displayed value
+        # (dynasty 1QB/SF or redraft 1QB/SF), so a label can never describe a
+        # different value column than the number beside it.
+        _value_rank_label = {}
+        try:
+            _rank_buckets = {}
+            for _pid3, _row3 in values_by_id.items():
+                _pos3 = str(_row3.get("position") or "").upper()
+                if not _pos3 or _pos3 == "PICK":
+                    continue
+                _v3 = _row3.get(_value_primary)
+                if _v3 is None:
+                    _v3 = _row3.get(_value_fallback, 0) or 0
+                try:
+                    _v3 = float(_v3 or 0)
+                except (TypeError, ValueError):
+                    _v3 = 0.0
+                if _v3 > 0:
+                    _rank_buckets.setdefault(_pos3, []).append((_pid3, _v3))
+            for _pos3, _lst3 in _rank_buckets.items():
+                for _rank3, (_pid3, _v3) in enumerate(
+                        sorted(_lst3, key=lambda x: -x[1]), start=1):
+                    _value_rank_label[_pid3] = f"{_pos3}{_rank3}"
+        except Exception:
+            logger.debug("[api_team_details] value rank labels skipped", exc_info=True)
+            _value_rank_label = {}
+
+        # Lineup slot per starter (starters align with the non-bench slots of
+        # roster_positions, in order) plus IR / taxi membership for grouping.
+        _bench_slot_names = {"BN", "IR", "TAXI", "RES", "RESERVE"}
+        _slot_list = [
+            str(s) for s in ((league or {}).get("roster_positions") or [])
+            if str(s).strip().upper() not in _bench_slot_names
+        ]
+        _starter_ids = [str(s) for s in starters]
+        _reserve_ids = {str(s) for s in (roster.get("reserve") or [])}
+        _taxi_ids = {str(s) for s in (roster.get("taxi") or [])}
+
         from utils.injury_plan import ir_capacity, injury_plan as _team_injury_plan
         _ir_cap = ir_capacity(
             (league or {}).get("roster_positions"),
@@ -29940,6 +30015,12 @@ def api_team_details(roster_id: str):
                 except Exception:
                     _return_plan = None
 
+            _wk_pts = _weekly_pts.get(pid_str) or []
+            _slot = None
+            if pid_str in _starter_ids:
+                _sidx = _starter_ids.index(pid_str)
+                if _sidx < len(_slot_list):
+                    _slot = _slot_list[_sidx]
             roster_players.append({
                 "player_id": pid_str,
                 "name": player_name,
@@ -29948,8 +30029,16 @@ def api_team_details(roster_id: str):
                 "age": age,
                 "years_exp": player_meta.get("years_exp"),
                 "value": round(float(value), 1) if value else None,
-                "pos_rank_label": value_row.get("pos_rank_label"),
+                "pos_rank_label": _value_rank_label.get(pid_str) or value_row.get("pos_rank_label"),
                 "is_starter": pid_str in starters,
+                "slot": _slot,
+                "is_ir": pid_str in _reserve_ids,
+                "is_taxi": pid_str in _taxi_ids,
+                "bye_week": player_meta.get("byeWeek"),
+                "espn_id": player_meta.get("espnID"),
+                "ppg": round(sum(_wk_pts) / len(_wk_pts), 1) if _wk_pts else None,
+                "games": len(_wk_pts),
+                "ppg_finish": _ppg_finish.get(pid_str),
                 "injury_status": inj_status,
                 "injury_body_part": inj_body,
                 "return_plan": _return_plan,
@@ -30083,75 +30172,74 @@ def api_team_details(roster_id: str):
             except Exception:
                 logger.debug("suppressed exception", exc_info=True)
 
-        # Positional strength -- redraft's answer to dynasty draft capital. Where
-        # a dynasty modal shows future picks, redraft has none, so surface how
-        # this team's QB/RB/WR/TE rooms rank against the rest of the league using
-        # the same calibrated composite that drives the Teams page grades.
+        # Positional strength -- how this team's QB/RB/WR/TE rooms rank
+        # against the rest of the league, using the same calibrated composite
+        # that drives the Teams page grades. Computed for every format:
+        # dynasty shows it alongside the draft capital list, redraft alone.
         positional_strength = []
-        if is_redraft:
-            try:
-                from utils.utils import count_roster_positions
-                from utils.roster_strength import (
-                    positional_strength_profile,
-                    strength_percentile,
-                )
+        try:
+            from utils.utils import count_roster_positions
+            from utils.roster_strength import (
+                positional_strength_profile,
+                strength_percentile,
+            )
 
-                slot_counts = count_roster_positions(
-                    (league or {}).get("roster_positions") or [])
-                core_pos = ["QB", "RB", "WR", "TE"]
+            slot_counts = count_roster_positions(
+                (league or {}).get("roster_positions") or [])
+            core_pos = ["QB", "RB", "WR", "TE"]
 
-                def _pos_values_for(roster_obj):
-                    """value lists per core position for one roster."""
-                    buckets = {p: [] for p in core_pos}
-                    for pid in (roster_obj.get("players") or []):
-                        meta = players_index.get(str(pid), {})
-                        pos = meta.get("pos") or ""
-                        if pos == "PK":
-                            pos = "K"
-                        elif pos in ("DST", "D/ST"):
-                            pos = "DEF"
-                        if pos not in buckets:
-                            continue
-                        vrow = values_by_id.get(str(pid), {})
-                        raw = vrow.get(_value_primary)
-                        if raw is None:
-                            raw = vrow.get(_value_fallback, 0) or 0
-                        try:
-                            raw = float(raw or 0)
-                        except (TypeError, ValueError):
-                            raw = 0.0
-                        raw = apply_te_premium(raw, pos, _tep)
-                        if raw > 0:
-                            buckets[pos].append(raw)
-                    return buckets
+            def _pos_values_for(roster_obj):
+                """value lists per core position for one roster."""
+                buckets = {p: [] for p in core_pos}
+                for pid in (roster_obj.get("players") or []):
+                    meta = players_index.get(str(pid), {})
+                    pos = meta.get("pos") or ""
+                    if pos == "PK":
+                        pos = "K"
+                    elif pos in ("DST", "D/ST"):
+                        pos = "DEF"
+                    if pos not in buckets:
+                        continue
+                    vrow = values_by_id.get(str(pid), {})
+                    raw = vrow.get(_value_primary)
+                    if raw is None:
+                        raw = vrow.get(_value_fallback, 0) or 0
+                    try:
+                        raw = float(raw or 0)
+                    except (TypeError, ValueError):
+                        raw = 0.0
+                    raw = apply_te_premium(raw, pos, _tep)
+                    if raw > 0:
+                        buckets[pos].append(raw)
+                return buckets
 
-                # League-wide composite per position, so ranks are relative.
-                league_composite = {p: [] for p in core_pos}
-                for r in rosters:
-                    vals = _pos_values_for(r)
-                    for p in core_pos:
-                        prof = positional_strength_profile(vals[p], p, slot_counts)
-                        league_composite[p].append(prof["composite"])
-
-                target_vals = _pos_values_for(roster)
-                n_teams = len(rosters)
+            # League-wide composite per position, so ranks are relative.
+            league_composite = {p: [] for p in core_pos}
+            for r in rosters:
+                vals = _pos_values_for(r)
                 for p in core_pos:
-                    prof = positional_strength_profile(target_vals[p], p, slot_counts)
-                    comp = prof["composite"]
-                    others = league_composite[p]
-                    rank = 1 + sum(1 for c in others if c > comp)
-                    pct = strength_percentile(comp, others)
-                    positional_strength.append({
-                        "position": p,
-                        "value": round(sum(target_vals[p]), 1),
-                        "rank": rank,
-                        "of": n_teams,
-                        "percentile": round(pct),
-                    })
-            except Exception:
-                logger.debug("[api_team_details] positional strength skipped",
-                             exc_info=True)
-                positional_strength = []
+                    prof = positional_strength_profile(vals[p], p, slot_counts)
+                    league_composite[p].append(prof["composite"])
+
+            target_vals = _pos_values_for(roster)
+            n_teams = len(rosters)
+            for p in core_pos:
+                prof = positional_strength_profile(target_vals[p], p, slot_counts)
+                comp = prof["composite"]
+                others = league_composite[p]
+                rank = 1 + sum(1 for c in others if c > comp)
+                pct = strength_percentile(comp, others)
+                positional_strength.append({
+                    "position": p,
+                    "value": round(sum(target_vals[p]), 1),
+                    "rank": rank,
+                    "of": n_teams,
+                    "percentile": round(pct),
+                })
+        except Exception:
+            logger.debug("[api_team_details] positional strength skipped",
+                         exc_info=True)
+            positional_strength = []
 
         # Get graph data for team modal
         graphs_data = {}

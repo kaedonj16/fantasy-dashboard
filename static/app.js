@@ -21389,6 +21389,27 @@ function _tmAchievementsHtml(achievements) {
 
 // Primary "Trade with this team" button pinned at the bottom of the Roster tab
 // for opposing teams. Hidden for the viewer's own team. Idempotent.
+// Roster tab (A2): expand/collapse one position room's bench or stash rows.
+function _tm2SetGroupOpen(group, open) {
+  if (!group) return;
+  group.classList.toggle('tm2-open', open);
+  const rows = group.querySelector('.tm2-bench-rows');
+  if (rows) rows.hidden = !open;
+  const btn = group.querySelector('[data-tm2-toggle]');
+  if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
+// Headshot fallback chain: ESPN CDN, then Sleeper CDN, then initials.
+function tm2ImgFallback(img) {
+  const fb = (img.getAttribute('data-fb') || '').split('|').filter(Boolean);
+  if (fb.length) {
+    img.setAttribute('data-fb', fb.slice(1).join('|'));
+    img.src = fb[0];
+  } else {
+    img.remove();
+  }
+}
+
 function tmInjectRosterTradeCta() {
   if (window._tmIsMine) return;
   const panel = document.getElementById('tm-panel-roster');
@@ -22236,169 +22257,242 @@ function renderTeamDetails(data) {
     }
   }
 
-  // Build roster list
-  let rosterHTML = '<div class="team-modal-section"><h3>Roster</h3>';
+  // ── Roster tab: summary strip, position rooms with collapsible benches,
+  // then a rail row (positional strength / draft picks / roster shape). ──
+  const _tmEsc2 = (s) => String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const _tmNum = (v, nd) => (v != null && !isNaN(parseFloat(v))) ? parseFloat(v).toFixed(nd) : '--';
+  const _tmOrdinal = (n) => {
+    const s = ['th', 'st', 'nd', 'rd'];
+    const v = n % 100;
+    return n + (s[(v - 20) % 10] || s[v] || s[0]);
+  };
 
-  if (data.roster && data.roster.length > 0) {
-    rosterHTML += '<div class="tm-roster-list">';
-
-    data.roster.forEach(player => {
-      const isUnknown = !player.name || player.name === 'Unknown' || /^\d+$/.test(player.name);
-      // Determine badges with position-aware thresholds
-      let badges = '';
-      const value = player.value || 0;
-      const pos = player.position;
-
-      // Position-specific elite thresholds (players who would make any team better)
-      const eliteThresholds = {
-        'RB': 650,   // Elite young backs
-        'WR': 650,   // Elite WRs
-        'TE': 500,   // Premium TE scarcity
-        'QB': 360,   // Solid QB1s
-        'K': 9999,   // No elite kickers
-        'DEF': 9999  // No elite defenses
-      };
-
-      const threshold = eliteThresholds[pos] || 750;
-      const isElite = value >= threshold;
-      const isRookie = player.years_exp != null && player.years_exp === 0;
-      const isBreakoutPlayer = !isElite && isBreakout(player.player_id);
-
-      if (isElite) {
-        badges += '<span class="player-badge player-badge-elite"><i class="fa-solid fa-star-solid" aria-hidden="true"></i> ELITE</span>';
-      }
-      if (isRookie) {
-        badges += '<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>';
-      }
-      if (isBreakoutPlayer) {
-        badges += '<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>';
-      }
-      // Injury designation (from the full Sleeper feed). Severity by color and a
-      // compact code, mirroring the player-detail modal; body part on hover.
-      const injRaw = String(player.injury_status || '').trim();
-      if (injRaw) {
-        const _u = injRaw.toUpperCase();
-        let _icls = 'player-badge-inj-q';
-        if (['IR', 'OUT', 'O', 'PUP', 'SUSP', 'SUS', 'SUSPENDED', 'NFI', 'DNR', 'COV'].includes(_u)) _icls = 'player-badge-inj-out';
-        else if (['DOUBTFUL', 'D'].includes(_u)) _icls = 'player-badge-inj-d';
-        const _code = _u === 'QUESTIONABLE' ? 'Q'
-          : _u === 'DOUBTFUL' ? 'D'
-          : (_u === 'OUT' || _u === 'O') ? 'OUT'
-          : (_u === 'SUSP' || _u === 'SUS' || _u === 'SUSPENDED') ? 'SUS'
-          : (_u.length > 4 ? _u.slice(0, 4) : _u);
-        const _tip = [injRaw, player.injury_body_part].filter(Boolean).join(' · ');
-        badges += `<span class="player-badge ${_icls}" title="${_tip.replace(/"/g, '&quot;')}"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> ${_code}</span>`;
-        const plan = player.return_plan;
-        // A "Monitor" verdict is implied by a Q/D tag, so rendering both
-        // pills is redundant. Other verdicts still show: they give roster
-        // guidance the status pill does not.
-        const _planRedundant = plan && plan.verdict === 'Monitor'
-          && ['QUESTIONABLE', 'Q', 'DOUBTFUL', 'D'].includes(_u);
-        if (plan && plan.verdict && !_planRedundant) {
-          const wk = plan.weeks_label || '';
-          const tip = String(plan.reason || 'Approximate return guidance, not medical advice.')
-            .replace(/"/g, '&quot;');
-          badges += `<span class="player-badge player-badge-inj-q" title="${tip}">${plan.verdict}${wk ? ' · ' + wk : ''} (approx)</span>`;
-        }
-      }
-
-      const ageStr = player.age != null && !isNaN(parseFloat(player.age)) ? parseFloat(player.age).toFixed(1) : '--';
-      const valStr = player.value != null && !isNaN(parseFloat(player.value)) ? parseFloat(player.value).toFixed(1) : '--';
-      const rowAttrs = isUnknown
-        ? ''
-        : ` data-player-id="${player.player_id}" data-player-name="${player.name}" tabindex="0"`;
-      const rowCls = isUnknown ? 'tm-roster-row' : 'tm-roster-row tm-roster-click';
-
-      rosterHTML += `
-        <div class="${rowCls}"${rowAttrs}>
-          <div class="tm-roster-main">
-            <div class="tm-roster-name-row">
-              ${isUnknown
-                ? `<span class="tm-roster-name muted">${/^\d+$/.test(player.name) ? `Unknown ${player.position || ''}`.trim() : (player.name || 'Unknown')}</span>`
-                : `<span class="tm-roster-name player-clickable">${player.name}</span>`}
-              ${badges ? `<span class="tm-roster-badges">${badges}</span>` : ''}
-            </div>
-            <div class="tm-roster-meta">${player.team || '--'} · Age ${ageStr}</div>
-          </div>
-          <div class="tm-roster-side">
-            <span class="pos-badge ${player.position}">${player.position}</span>
-            <span class="tm-roster-value">${valStr}</span>
-          </div>
-        </div>
-      `;
-    });
-
-    rosterHTML += '</div>';
-  } else {
-    rosterHTML += '<div class="team-modal-empty">No players on roster</div>';
-  }
-
-  rosterHTML += '</div>';
-
-  // Build picks section. Redraft and hosts without a pick feed stay honest.
-  let picksHTML = '';
-  if (!data.is_redraft) {
-    picksHTML = '<div class="team-modal-section"><h3>Draft Picks</h3>';
-
-    if (data.picks && data.picks.length > 0) {
-      picksHTML += '<div class="team-picks-list">';
-
-      data.picks.forEach(pick => {
-        const viaText = pick.via ? ` <span class="pick-via">via ${pick.via}</span>` : '';
-        picksHTML += `
-          <div class="team-pick-item">
-            <span class="pick-label">${pick.year} Round ${pick.round}</span>
-            ${viaText}
-          </div>
-        `;
-      });
-
-      picksHTML += '</div>';
-    } else if (data.draft_capital_available === false && data.draft_capital_note) {
-      picksHTML += '<div class="team-modal-empty">' + data.draft_capital_note + '</div>';
-    } else {
-      picksHTML += '<div class="team-modal-empty">No future picks</div>';
+  const _tmBadges = (player) => {
+    let badges = '';
+    const isRookie = player.years_exp != null && player.years_exp === 0;
+    if (isRookie) {
+      badges += '<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>';
     }
+    // Injury designation (from the full Sleeper feed). Severity by color and a
+    // compact code, mirroring the player-detail modal; body part on hover.
+    const injRaw = String(player.injury_status || '').trim();
+    if (injRaw) {
+      const _u = injRaw.toUpperCase();
+      let _icls = 'player-badge-inj-q';
+      if (['IR', 'OUT', 'O', 'PUP', 'SUSP', 'SUS', 'SUSPENDED', 'NFI', 'DNR', 'COV'].includes(_u)) _icls = 'player-badge-inj-out';
+      else if (['DOUBTFUL', 'D'].includes(_u)) _icls = 'player-badge-inj-d';
+      const _code = _u === 'QUESTIONABLE' ? 'Q'
+        : _u === 'DOUBTFUL' ? 'D'
+        : (_u === 'OUT' || _u === 'O') ? 'OUT'
+        : (_u === 'SUSP' || _u === 'SUS' || _u === 'SUSPENDED') ? 'SUS'
+        : (_u.length > 4 ? _u.slice(0, 4) : _u);
+      const _tip = [injRaw, player.injury_body_part].filter(Boolean).join(' · ');
+      badges += `<span class="player-badge ${_icls}" title="${_tip.replace(/"/g, '&quot;')}"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> ${_code}</span>`;
+      const plan = player.return_plan;
+      // A "Monitor" verdict is implied by a Q/D tag, so rendering both
+      // pills is redundant. Other verdicts still show: they give roster
+      // guidance the status pill does not.
+      const _planRedundant = plan && plan.verdict === 'Monitor'
+        && ['QUESTIONABLE', 'Q', 'DOUBTFUL', 'D'].includes(_u);
+      if (plan && plan.verdict && !_planRedundant) {
+        const wk = plan.weeks_label || '';
+        const tip = String(plan.reason || 'Approximate return guidance, not medical advice.')
+          .replace(/"/g, '&quot;');
+        badges += `<span class="player-badge player-badge-inj-q" title="${tip}">${plan.verdict}${wk ? ' · ' + wk : ''} (approx)</span>`;
+      }
+    }
+    return badges;
+  };
 
-    picksHTML += '</div>';
+  const _tmHeadshot = (player) => {
+    if (player.position === 'DEF') {
+      return `<span class="tm2-hs tm2-hs-def">${_tmEsc2(player.team || 'DEF')}</span>`;
+    }
+    const nm = String(player.name || '?').trim().split(/\s+/);
+    const ini = ((nm[0] || '?').charAt(0) + (nm.length > 1 ? nm[nm.length - 1].charAt(0) : '')).toUpperCase();
+    const espn = player.espn_id ? String(player.espn_id).replace(/\D/g, '') : '';
+    const srcs = [];
+    if (espn) srcs.push(`https://a.espncdn.com/i/headshots/nfl/players/full/${espn}.png`);
+    if (player.player_id) srcs.push(`https://sleepercdn.com/content/nfl/players/thumb/${encodeURIComponent(player.player_id)}.jpg`);
+    const img = srcs.length
+      ? `<img src="${srcs[0]}" alt="" loading="lazy" onerror="tm2ImgFallback(this)" data-fb="${srcs.slice(1).join('|')}">`
+      : '';
+    return `<span class="tm2-hs">${img}<span class="tm2-hs-ini">${_tmEsc2(ini)}</span></span>`;
+  };
+
+  const _tmRow = (player) => {
+    const isUnknown = !player.name || player.name === 'Unknown' || /^\d+$/.test(player.name);
+    const metaBits = [player.team || '--'];
+    if (player.bye_week) metaBits.push('Bye ' + player.bye_week);
+    metaBits.push('Age ' + _tmNum(player.age, 1));
+    const badges = _tmBadges(player);
+    const ppgLbl = 'PPG' + (player.ppg_finish ? ' · ' + player.ppg_finish + ' by PPG' : '');
+    const valLbl = 'Value' + (player.pos_rank_label ? ' · ' + player.pos_rank_label : '');
+    const slotChip = player.slot ? `<span class="tm2-slot">${_tmEsc2(player.slot)}</span>` : '';
+    const nameHTML = isUnknown
+      ? `<span class="tm2-name muted">${/^\d+$/.test(player.name || '') ? `Unknown ${player.position || ''}`.trim() : _tmEsc2(player.name || 'Unknown')}</span>`
+      : `<span class="tm2-name player-clickable">${_tmEsc2(player.name)}</span>`;
+    const attrs = isUnknown ? '' : ` data-player-id="${_tmEsc2(player.player_id)}" data-player-name="${_tmEsc2(player.name)}" tabindex="0"`;
+    return `<div class="tm2-row${isUnknown ? '' : ' tm-roster-click'}"${attrs}>
+      ${_tmHeadshot(player)}
+      <div class="tm2-main">
+        <div class="tm2-name-row">${slotChip}${nameHTML}${badges ? `<span class="tm-roster-badges">${badges}</span>` : ''}</div>
+        <div class="tm2-meta">${_tmEsc2(metaBits.join(' · '))}</div>
+      </div>
+      <div class="tm2-stat"><div class="tm2-stat-v">${_tmNum(player.ppg, 1)}</div><div class="tm2-stat-l">${ppgLbl}</div></div>
+      <div class="tm2-stat tm2-stat-val"><div class="tm2-stat-v">${_tmNum(player.value, 0)}</div><div class="tm2-stat-l">${valLbl}</div></div>
+    </div>`;
+  };
+
+  const _rosterAll = Array.isArray(data.roster) ? data.roster : [];
+  const _strengthByPos = {};
+  (Array.isArray(data.positional_strength) ? data.positional_strength : []).forEach(r => {
+    if (r && r.position) _strengthByPos[r.position] = r;
+  });
+  const _lastName = (p) => {
+    const parts = String(p.name || '').trim().split(/\s+/);
+    return parts[parts.length - 1] || '';
+  };
+
+  const _tmBenchLine = (players) => {
+    const bval = players.reduce((a, p) => a + (parseFloat(p.value) || 0), 0);
+    let best = null;
+    players.forEach(p => { if (p.ppg != null && (best == null || parseFloat(p.ppg) > best)) best = parseFloat(p.ppg); });
+    const right = `${_tmNum(bval, 0)} value` + (best != null ? `<span class="tm2-best"> · best ${_tmNum(best, 1)} PPG</span>` : '');
+    return `<button type="button" class="tm2-bench-line" data-tm2-toggle aria-expanded="false">
+      <span class="tm2-bl-label">Bench</span>
+      <span class="tm2-bl-names">${players.map(p => _tmEsc2(_lastName(p))).join(', ')}</span>
+      <span class="tm2-bl-right">${right}</span>
+      <span class="tm2-bl-chev"><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></span></button>`;
+  };
+
+  const _tmRoom = (pos, players) => {
+    if (!players.length) return '';
+    const st = _strengthByPos[pos];
+    const chip = st && st.of
+      ? `Room ${_tmOrdinal(st.rank)} of ${st.of} · ${_tmNum(st.value, 0)} value`
+      : `${players.length} rostered`;
+    // Starters and bench each by value, matching the approved mock.
+    const _byValue = (a, b) => (parseFloat(b.value) || 0) - (parseFloat(a.value) || 0);
+    const starters = players.filter(p => p.is_starter).slice().sort(_byValue);
+    const bench = players.filter(p => !p.is_starter).slice().sort(_byValue);
+    let h = `<div class="tm2-group" data-tm2-group>
+      <div class="tm2-group-head"><span class="pos-badge ${pos}">${pos}</span><span class="tm2-room-chip">${chip}</span></div>`;
+    h += starters.map(_tmRow).join('');
+    if (bench.length) {
+      h += _tmBenchLine(bench);
+      h += `<div class="tm2-bench-rows" hidden><div class="tm2-bench-div"><span>Bench</span></div>${bench.map(_tmRow).join('')}</div>`;
+    }
+    return h + '</div>';
+  };
+
+  const _tmStash = (kind, players) => {
+    if (!players.length) return '';
+    const label = kind === 'ir' ? 'IR' : 'Taxi';
+    const bits = players.map(p => {
+      let b = _tmEsc2(_lastName(p));
+      if (p.pos_rank_label) b += ` <span class="tm2-stash-rank">${_tmEsc2(p.pos_rank_label)}</span>`;
+      if (p.ppg != null) b += ` · ${_tmNum(p.ppg, 1)} PPG`;
+      return b;
+    }).join(' · ');
+    return `<div class="tm2-group" data-tm2-group>
+      <div class="tm2-group-head"><span class="pos-badge tm2-badge-${kind}">${label}</span><span class="tm2-room-chip">${players.length} player${players.length === 1 ? '' : 's'}</span></div>
+      <button type="button" class="tm2-bench-line" data-tm2-toggle aria-expanded="false">
+        <span class="tm2-bl-names">${bits}</span>
+        <span class="tm2-bl-chev"><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></span></button>
+      <div class="tm2-bench-rows" hidden>${players.map(_tmRow).join('')}</div>
+    </div>`;
+  };
+
+  const _startersAll = _rosterAll.filter(p => p.is_starter);
+  const _totalPVal = _rosterAll.reduce((a, p) => a + (parseFloat(p.value) || 0), 0);
+  const _starterVal = _startersAll.reduce((a, p) => a + (parseFloat(p.value) || 0), 0);
+  const _ppgStarters = _startersAll.filter(p => p.ppg != null);
+  const _starterPpg = _ppgStarters.length ? _ppgStarters.reduce((a, p) => a + parseFloat(p.ppg), 0) : null;
+  const _starterAges = _startersAll.filter(p => p.age != null && !isNaN(parseFloat(p.age))).map(p => parseFloat(p.age));
+  const _avgAge = _starterAges.length ? _starterAges.reduce((a, b) => a + b, 0) / _starterAges.length : null;
+  const _irList = _rosterAll.filter(p => p.is_ir);
+  const _taxiList = _rosterAll.filter(p => p.is_taxi && !p.is_ir);
+
+  let _summaryHTML = '';
+  if (_rosterAll.length) {
+    const items = [];
+    if (_starterPpg != null) items.push(`<div class="tm2-sum-item"><div class="tm2-sum-v">${_tmNum(_starterPpg, 1)}</div><div class="tm2-sum-l">Starter PPG combined</div></div>`);
+    if (_totalPVal > 0) items.push(`<div class="tm2-sum-item"><div class="tm2-sum-v">${Math.round(_starterVal / _totalPVal * 100)}%</div><div class="tm2-sum-l">Value in starters</div></div>`);
+    if (_avgAge != null) items.push(`<div class="tm2-sum-item"><div class="tm2-sum-v">${_tmNum(_avgAge, 1)}</div><div class="tm2-sum-l">Avg starter age</div></div>`);
+    if (_irList.length || _taxiList.length) items.push(`<div class="tm2-sum-item"><div class="tm2-sum-v">${_irList.length} IR · ${_taxiList.length} Taxi</div><div class="tm2-sum-l">Off the active roster</div></div>`);
+    _summaryHTML = `<div class="tm2-sum">${items.join('')}<div class="tm2-seg" role="group" aria-label="Roster view">
+      <button type="button" class="tm2-seg-btn is-active" data-tm2-mode="starters">Starters</button>
+      <button type="button" class="tm2-seg-btn" data-tm2-mode="full">Full roster</button></div></div>`;
   }
 
-  // Positional strength -- the redraft stand-in for dynasty draft capital. Fills
-  // the right column with how each position room ranks in the league, since
-  // redraft teams have no future picks to show there.
-  let strengthHTML = '';
-  if (data.is_redraft && Array.isArray(data.positional_strength) && data.positional_strength.length > 0) {
-    const _ordinal = (n) => {
-      const s = ['th', 'st', 'nd', 'rd'];
-      const v = n % 100;
-      return n + (s[(v - 20) % 10] || s[v] || s[0]);
-    };
-    strengthHTML = '<div class="team-modal-section"><h3>Positional Strength</h3>'
-      + '<div class="tm-strength-note">Each position room ranked against the league.</div>'
-      + '<div class="tm-strength-list">';
+  const _activeByPos = {};
+  _rosterAll.filter(p => !p.is_ir && !p.is_taxi).forEach(p => {
+    (_activeByPos[p.position] = _activeByPos[p.position] || []).push(p);
+  });
+  const _roomsHTML = _rosterAll.length
+    ? `<div class="tm2-rooms"><div class="tm2-col">${_tmRoom('QB', _activeByPos.QB || [])}${_tmRoom('WR', _activeByPos.WR || [])}${_tmRoom('K', _activeByPos.K || [])}${_tmRoom('DEF', _activeByPos.DEF || [])}</div><div class="tm2-col">${_tmRoom('RB', _activeByPos.RB || [])}${_tmRoom('TE', _activeByPos.TE || [])}${_tmStash('ir', _irList)}${_tmStash('taxi', _taxiList)}</div></div>`
+    : '<div class="team-modal-empty">No players on roster</div>';
+
+  // Rail cards: positional strength (every format), draft picks (dynasty),
+  // and roster shape.
+  let _strengthCard = '';
+  if (Array.isArray(data.positional_strength) && data.positional_strength.length > 0) {
+    let rows = '';
     data.positional_strength.forEach(row => {
       const pct = Math.max(0, Math.min(100, Number(row.percentile) || 0));
-      const rankTxt = row.of ? `${_ordinal(row.rank)} of ${row.of}` : _ordinal(row.rank);
-      const valTxt = row.value != null ? Number(row.value).toFixed(1) : '--';
-      // Rank drives the bar color: top third strong, bottom third weak.
+      const rankTxt = row.of ? `${_tmOrdinal(row.rank)} of ${row.of}` : _tmOrdinal(row.rank);
       let tier = 'mid';
       if (row.of) {
         if (row.rank <= Math.ceil(row.of / 3)) tier = 'strong';
         else if (row.rank > row.of - Math.ceil(row.of / 3)) tier = 'weak';
       }
-      strengthHTML += `
-        <div class="tm-strength-row">
-          <div class="tm-strength-head">
-            <span class="pos-badge ${row.position}">${row.position}</span>
-            <span class="tm-strength-rank">${rankTxt}</span>
-            <span class="tm-strength-val">${valTxt}</span>
-          </div>
-          <div class="tm-strength-bar"><div class="tm-strength-fill tm-strength-${tier}" style="width:${pct}%;"></div></div>
-        </div>
-      `;
+      rows += `<div class="tm2-s-row">
+        <div class="tm2-s-head"><span class="pos-badge ${row.position}">${row.position}</span>
+        <span class="tm2-s-rank">${rankTxt}</span><span class="tm2-s-val">${_tmNum(row.value, 0)}</span></div>
+        <div class="tm2-s-bar"><div class="tm2-s-fill tm2-s-${tier}" style="width:${pct}%;"></div></div>
+      </div>`;
     });
-    strengthHTML += '</div></div>';
+    _strengthCard = `<div class="tm2-card"><h3>Positional Strength</h3><div class="tm2-note">Each position room ranked against the league.</div>${rows}</div>`;
   }
+
+  let _picksCard = '';
+  if (!data.is_redraft) {
+    let body = '';
+    if (data.picks && data.picks.length > 0) {
+      const byYear = {};
+      data.picks.forEach(pk => { (byYear[pk.year] = byYear[pk.year] || []).push(pk); });
+      body = `<div class="tm2-note">${data.picks.length} future picks owned.</div>` + Object.keys(byYear).sort().map(y => {
+        const chips = byYear[y].slice().sort((a, b) => a.round - b.round).map(pk =>
+          `<span class="tm2-pick-chip">R${pk.round}${pk.via ? ` <span class="tm2-pick-via">via ${_tmEsc2(pk.via)}</span>` : ''}</span>`).join('');
+        return `<div class="tm2-pick-row"><span class="tm2-pick-year">${y}</span><span class="tm2-pick-chips">${chips}</span></div>`;
+      }).join('');
+    } else if (data.draft_capital_available === false && data.draft_capital_note) {
+      body = `<div class="team-modal-empty">${_tmEsc2(data.draft_capital_note)}</div>`;
+    } else {
+      body = '<div class="team-modal-empty">No future picks</div>';
+    }
+    _picksCard = `<div class="tm2-card"><h3>Draft Picks</h3>${body}</div>`;
+  }
+
+  let _shapeCard = '';
+  if (_totalPVal > 0) {
+    const pct = Math.round(_starterVal / _totalPVal * 100);
+    const benchCount = _rosterAll.length - _startersAll.length;
+    _shapeCard = `<div class="tm2-card"><h3>Roster Shape</h3>
+      <div class="tm2-shape-top"><span>Starters hold ${pct}% of roster value</span><span>${_tmNum(_starterVal, 0)} of ${_tmNum(_totalPVal, 0)}</span></div>
+      <div class="tm2-shape-bar"><div class="tm2-shape-fill" style="width:${pct}%"></div></div>
+      <div class="tm2-shape-rows">
+        <div><span>Starters</span><b>${_startersAll.length} players${_starterPpg != null ? ` · ${_tmNum(_starterPpg, 1)} PPG combined` : ''}</b></div>
+        <div><span>Bench</span><b>${benchCount} players · ${_tmNum(_totalPVal - _starterVal, 0)} value</b></div>
+        ${_avgAge != null ? `<div><span>Avg starter age</span><b>${_tmNum(_avgAge, 1)}</b></div>` : ''}
+      </div></div>`;
+  }
+
+  const _railHTML = (_strengthCard || _picksCard || _shapeCard)
+    ? `<div class="tm2-rail">${_strengthCard}${_picksCard}${_shapeCard}</div>`
+    : '';
 
   // Build graphs section - each chart in its own section for side-by-side layout
   let graphsHTML = '';
@@ -22441,13 +22535,27 @@ function renderTeamDetails(data) {
   // Populate tab panels
   const rosterPanel = document.getElementById('tm-panel-roster');
   if (rosterPanel) {
-    const sideHTML = picksHTML || strengthHTML;
     const achieveHTML = _tmAchievementsHtml(data.achievements);
-    const bodyHTML = sideHTML
-      ? `<div class="team-modal-body-left">${rosterHTML}</div><div class="team-modal-body-right">${sideHTML}</div>`
-      : `<div class="team-modal-body-left" style="flex:1;max-width:100%;">${rosterHTML}</div>`;
-    rosterPanel.innerHTML = achieveHTML + bodyHTML;
+    rosterPanel.innerHTML = achieveHTML
+      + `<div class="tm2">${_summaryHTML}${_roomsHTML}${_railHTML}</div>`;
     tmInjectRosterTradeCta();
+    if (!rosterPanel.dataset.tm2Wired) {
+      rosterPanel.dataset.tm2Wired = '1';
+      rosterPanel.addEventListener('click', (ev) => {
+        const modeBtn = ev.target.closest('[data-tm2-mode]');
+        if (modeBtn) {
+          const full = modeBtn.dataset.tm2Mode === 'full';
+          rosterPanel.querySelectorAll('.tm2-seg-btn').forEach(b => b.classList.toggle('is-active', b === modeBtn));
+          rosterPanel.querySelectorAll('[data-tm2-group]').forEach(g => _tm2SetGroupOpen(g, full));
+          return;
+        }
+        const toggle = ev.target.closest('[data-tm2-toggle]');
+        if (toggle) {
+          const group = toggle.closest('[data-tm2-group]');
+          if (group) _tm2SetGroupOpen(group, !group.classList.contains('tm2-open'));
+        }
+      });
+    }
   }
   const chartsPanel = document.getElementById('tm-panel-charts');
   if (chartsPanel) {
