@@ -12624,16 +12624,24 @@ def _render_next_steps_queue(
             f'<a class="ns-cta" href="{html.escape(a.get("cta_url") or "#")}">'
             f'{html.escape(a.get("cta_label") or "View")}</a>'
         )
+        # Stable per-action id for the per-card dismiss: derived from the
+        # action content so the same action keeps the same id across loads
+        # (dismissals persist client-side per season/week/day, like cards).
+        _item_id = hashlib.md5(
+            f"{a.get('tag') or ''}|{a.get('action') or ''}|{a.get('cta_url') or ''}".encode("utf-8")
+        ).hexdigest()[:10]  # noqa: S324 (non-crypto)
         return (
-            f'<div class="ns-item ns-prio-{_prio}">'
+            f'<div class="ns-item ns-prio-{_prio}" data-ns-item="{_item_id}">'
             f'<div class="ns-priority {_prio}"></div>'
             f'<div class="ns-body">'
             f'<div class="ns-tag">{_tag}</div>'
             f'<div class="ns-action">{_action}</div>'
             + (f'<div class="ns-why">{_why}</div>' if _why else '')
             + (_impact_html + "<br>" if _impact else "")
+            + f'<div class="ns-cta-row">'
             + _cta
-            + f'</div></div>'
+            + f'<button type="button" class="ns-item-dismiss" data-dismiss-ns-item="{_item_id}" aria-label="Dismiss action">&times;</button>'
+            + f'</div></div></div>'
         )
 
     _items_html = "".join(_item_html(a) for a in _shown)

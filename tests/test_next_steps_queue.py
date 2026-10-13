@@ -101,6 +101,38 @@ def test_bench_check_card_suppressed_when_next_steps_fires():
     assert 'return ""' in body
 
 
+def test_next_steps_item_dismiss_markup():
+    """Each queue item renders a per-card dismiss button with a stable id."""
+    src = (ROOT / "app.py").read_text(encoding="utf-8")
+    start = src.find("def _render_next_steps_queue")
+    end = src.find("def _nfl_regular_season_kickoff_ms", start)
+    body = src[start:end]
+    assert 'data-ns-item="{_item_id}"' in body
+    assert 'data-dismiss-ns-item="{_item_id}"' in body
+    assert "ns-item-dismiss" in body
+    # The dismiss sits in one row with the CTA: [CTA] [x].
+    assert "ns-cta-row" in body
+
+
+def test_next_steps_item_dismiss_script():
+    """The dashboard dismiss script handles per-item dismissal with undo,
+    reusing the same localStorage map and day-scoped keys as card dismiss."""
+    dash = (ROOT / "dashboard_services" / "pages" / "dashboard_page.py").read_text(encoding="utf-8")
+    assert "data-dismiss-ns-item" in dash
+    assert '"nsitem-" + id' in dash
+    assert "Action dismissed." in dash
+    assert "brUndoToast" in dash
+    # Header count is refreshed from remaining items.
+    assert "refreshNsCard" in dash
+    assert 'querySelector(".ns-count")' in dash
+
+
+def test_next_steps_item_dismiss_css():
+    css = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
+    assert ".ns-item-dismiss" in css
+    assert ".ns-cta-row" in css
+
+
 def test_bench_check_thresholds_agree():
     """Both surfaces must agree on the 5.0 threshold: the card suppresses
     exactly where the Next steps item fires, so there is no gap and no
