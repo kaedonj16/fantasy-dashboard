@@ -6,6 +6,7 @@ live in app.py are lazy-imported inside the builder (request time).
 from __future__ import annotations
 
 import logging
+import math
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -19,6 +20,51 @@ def _rank_movement(current: list[dict], prior: list[dict]) -> dict[str, int]:
         for rank, row in enumerate(current, 1)
         if str(row["rid"]) in old
     }
+
+
+def _power_teams_from_team_stats(team_stats, owner_to_rid: dict) -> list[dict]:
+    """Power rankings exactly as the standings week view renders them.
+
+    ``team_stats`` is the week-capped frame ``build_standings_as_of_week``
+    produced (the same frame ``_standings_panels`` ranks by when no blended
+    list is passed): order is the performance PowerScore, PF breaking ties.
+    Returns blended-shaped dicts (``roster_id`` / ``team_name`` /
+    ``power_score``) sorted best-first, so the recap card, its movement
+    arrows, and the AI team context all read the standings numbers.
+    """
+    if team_stats is None:
+        return []
+    if hasattr(team_stats, "to_dict"):
+        try:
+            records = team_stats.to_dict("records")
+        except Exception:
+            return []
+    else:
+        records = list(team_stats)
+
+    def _num(row, key):
+        try:
+            value = float(row.get(key))
+        except (TypeError, ValueError):
+            return 0.0
+        return 0.0 if math.isnan(value) else value  # NaN reads as no score
+
+    teams = []
+    for row in records:
+        if not isinstance(row, dict):
+            continue
+        owner = str(row.get("owner") or "")
+        rid = str((owner_to_rid or {}).get(owner) or "")
+        if not rid or "PowerScore" not in row:
+            continue
+        teams.append({
+            "roster_id": rid,
+            "team_name": owner,
+            "power_score": _num(row, "PowerScore"),
+            "pf": _num(row, "PF"),
+        })
+    teams.sort(key=lambda t: (-t["power_score"], -t["pf"]))
+    return teams
 
 
 def _matchup_badges(matchups: list[dict]) -> dict[int, list[str]]:
@@ -893,6 +939,37 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     recap_ctx["df_weekly"] = fin_df
     historical_ctx = build_standings_as_of_week(recap_ctx, selected_week)
     from dashboard_services.ai.context_builders import build_power_rankings_context
+
+    # Power rankings must match the standings page for the same week. The
+    # standings page has two same-week views and the recap follows each:
+    # the latest finalized week is its default load (the live blended list
+    # from build_power_rankings_context), while any older week is the
+    # week-selector view (the performance PowerScore in the capped
+    # team_stats, the only score a past week can reconstruct faithfully:
+    # the blended list reads today's rosters, injuries, and values, so it
+    # cannot speak for a past week). /api/standings-week applies the same
+    # split, so all three surfaces agree week for week.
+    _latest_final_week = available_weeks[-1] if available_weeks else selected_week
+    _power_is_live = selected_week >= _latest_final_week
+
+    def _owner_to_rid_for(capped_ctx):
+        mapping = {name: rid for rid, name in team_by_rid.items()}
+        capped_df = capped_ctx.get("df_weekly")
+        try:
+            if capped_df is not None and "owner" in capped_df.columns \
+                    and "roster_id" in capped_df.columns:
+                for _owner, _rid in zip(capped_df["owner"], capped_df["roster_id"]):
+                    mapping[str(_owner)] = str(_rid)
+        except Exception:
+            pass
+        return mapping
+
+    def _power_teams_for(capped_ctx):
+        if _power_is_live:
+            return (build_power_rankings_context(capped_ctx) or {}).get("teams") or []
+        return _power_teams_from_team_stats(
+            capped_ctx.get("team_stats"), _owner_to_rid_for(capped_ctx))
+
     from utils.standings_divisions import resolve_divisions
     from utils.standings import median_match_enabled
     division_info = resolve_divisions(historical_ctx) or {}
@@ -1056,7 +1133,11 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     if selected_week > 1:
         prior_ctx = build_standings_as_of_week(recap_ctx, selected_week - 1)
         prior_standings = _standings_rows(prior_ctx)
-        prior_power_teams = (build_power_rankings_context(prior_ctx) or {}).get("teams") or []
+        # Same split as the current week (like-for-like movement): when the
+        # recap week is live, standings movement also baselines on the
+        # blended list capped to last week; for a historical recap both
+        # weeks read the performance PowerScore.
+        prior_power_teams = _power_teams_for(prior_ctx)
     from dashboard_services.recap_calculations import scoped_rank_movement
     standings_movement = scoped_rank_movement(standings_rows_data, prior_standings)
 
@@ -1103,7 +1184,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
   {standing_rows_html}
 </div>"""
 
-    power_teams = (build_power_rankings_context(historical_ctx) or {}).get("teams") or []
+    power_teams = _power_teams_for(historical_ctx)
     prior_power_rank = {str(p.get("roster_id")): i for i, p in enumerate(prior_power_teams, 1)}
     power_deltas = {
         i: prior_power_rank.get(str(p.get("roster_id")), i) - i
