@@ -1390,3 +1390,245 @@ def test_breakout_page_renders_calibration_band_rows():
     assert "by_week" in src
     assert "_boWeekBar" in src
     assert "Show all weeks" in src
+
+
+# ---------------------------------------------------------------------------
+# one surfaced definition: hits/misses floor, grade-row repeat filter,
+# the surfaced-by-week helper, and Still Tracking for open live weeks
+# ---------------------------------------------------------------------------
+
+def test_top_grade_rows_excludes_non_surfaced_scores():
+    rows = [
+        # Roman Wilson Week 1: a real graded hit, but his surfaced score
+        # was 23.2 and the Week 1 board never showed him.
+        {**_grade_row("roman", "early_watch", "hit", 10.1),
+         "breakout_score": 23.2},
+        # Keenan Allen Week 1: a 0.0 temporary-opportunity miss, likewise
+        # never surfaced.
+        {**_grade_row("keenan", "temporary_opportunity", "miss", -0.8),
+         "breakout_score": 0.0},
+        {**_grade_row("golden", "early_watch", "hit", 9.2),
+         "breakout_score": 33.5},
+        {**_grade_row("realmiss", "emerging_breakout", "miss", -3.0),
+         "breakout_score": 41.0},
+    ]
+    hits = forecasts.top_grade_rows(rows, "hit")
+    assert [h["player_id"] for h in hits] == ["golden"]
+    misses = forecasts.top_grade_rows(rows, "miss")
+    assert [m["player_id"] for m in misses] == ["realmiss"]
+
+
+class _GradeRowsConn:
+    """Fake conn for load_weekly_grade_rows, shaped like the real one:
+    execute(query, params) -> result with fetchall() of dict rows."""
+
+    def __init__(self, weeks, score_pids_by_run, grade_rows_by_week):
+        self._weeks = weeks
+        self._score_pids = score_pids_by_run
+        self._grade_rows = grade_rows_by_week
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def execute(self, query, params=None):
+        if "DISTINCT as_of_week" in query:
+            return _RowsResult([{"as_of_week": w} for w in self._weeks])
+        if "FROM weekly_breakout_scores" in query:
+            run_id = params[0]
+            return _RowsResult(
+                [{"player_id": pid}
+                 for pid in self._score_pids.get(run_id, [])])
+        if "SELECT *" in query and wg.GRADES_TABLE in query:
+            week = params[1]
+            return _RowsResult(self._grade_rows.get(week, []))
+        raise AssertionError(f"unexpected query: {query}")
+
+
+def _patch_grade_row_load(monkeypatch, surfaced):
+    """Wire load_weekly_grade_rows to fakes: Week 1 surfaced Golden and
+    Coker; Week 2's serving run re-scored Golden plus a new player."""
+    from data_building.breakout_engine import weekly_store
+
+    runs = {1: {"id": 11, "scoring_version": "weekly-v6"},
+            2: {"id": 22, "scoring_version": "weekly-v6"}}
+    grade_rows = {
+        1: [{"player_id": "golden", "as_of_week": 1, "grade": "hit",
+             "scoring_version": "weekly-v6"}],
+        2: [{"player_id": "golden", "as_of_week": 2, "grade": "hit",
+             "scoring_version": "weekly-v6"},
+            {"player_id": "newguy", "as_of_week": 2, "grade": "miss",
+             "scoring_version": "weekly-v6"},
+            {"player_id": "ghost", "as_of_week": 2, "grade": "hit",
+             "scoring_version": "weekly-v6"}],
+    }
+    conn = _GradeRowsConn(
+        [1, 2], {11: ["golden", "coker"], 22: ["golden", "newguy"]},
+        grade_rows)
+    monkeypatch.setattr(forecasts, "get_conn", lambda: conn)
+    monkeypatch.setattr(wg, "init_weekly_breakout_grades_db", lambda: None)
+    monkeypatch.setattr(weekly_store, "get_serving_run",
+                        lambda season, week: runs.get(week))
+    if isinstance(surfaced, Exception):
+        def _boom(season):
+            raise surfaced
+        monkeypatch.setattr(wg, "surfaced_player_ids_by_week", _boom)
+    else:
+        monkeypatch.setattr(wg, "surfaced_player_ids_by_week",
+                            lambda season: surfaced)
+
+
+def test_load_weekly_grade_rows_drops_repeats_and_non_surfaced(monkeypatch):
+    _patch_grade_row_load(monkeypatch,
+                          {1: {"golden", "coker"}, 2: {"newguy"}})
+    rows = forecasts.load_weekly_grade_rows(2026)
+    # Week 1 Golden stays. Week 2 Golden is a repeat (surfaced Week 1,
+    # not Week 2) and drops; the orphan "ghost" grade drops via the
+    # serving-run player filter as before.
+    assert [(r["player_id"], r["as_of_week"]) for r in rows] == [
+        ("golden", 1), ("newguy", 2)]
+
+
+def test_load_weekly_grade_rows_helper_failure_keeps_old_behavior(monkeypatch):
+    _patch_grade_row_load(monkeypatch, RuntimeError("store unavailable"))
+    rows = forecasts.load_weekly_grade_rows(2026)
+    assert [(r["player_id"], r["as_of_week"]) for r in rows] == [
+        ("golden", 1), ("golden", 2), ("newguy", 2)]
+
+
+def _score_row(pid, classification, score, evidence=None):
+    return {"player_id": pid, "classification": classification,
+            "breakout_score": score, "evidence": evidence or {}}
+
+
+def _patch_surfaced_store(monkeypatch):
+    """Five completed weeks. Serving runs carry the ids 101..105; run
+    999 is a completed NON-serving Week 2 run whose rows must never
+    count. Returns the list of run ids the helper actually loaded."""
+    from data_building.breakout_engine import weekly_store
+
+    serving = {w: {"id": 100 + w, "scoring_version": "weekly-v6"}
+               for w in range(1, 6)}
+    rows_by_run = {
+        101: [
+            _score_row("alpha", "early_watch", Decimal("40.0")),
+            _score_row("watchy", "watchlist", 50.0),
+            _score_row("tempo", "temporary_opportunity", 45.0,
+                       {"main_board_eligible": True}),
+            _score_row("initlow", "emerging_breakout", 44.0,
+                       {"main_board_eligible": True,
+                        "score_basis": "initial_role",
+                        "subscores": {"current_role_score": 20.0}}),
+            _score_row("inithi", "emerging_breakout", 46.0,
+                       json.dumps({"main_board_eligible": True,
+                                   "score_basis": "initial_role",
+                                   "subscores": {"current_role_score": 40.0}})),
+        ],
+        102: [
+            _score_row("alpha", "early_watch", 45.0),
+            _score_row("bravo", "early_watch", 38.0),
+            _score_row("watchy", "early_watch", 41.0),
+        ],
+        103: [
+            _score_row("xray", "early_watch", 42.0),
+            _score_row("alpha", "early_watch", 44.0),
+        ],
+        104: [_score_row("alpha", "early_watch", 44.0)],
+        105: [_score_row("alpha", "early_watch", 44.0)],
+        999: [_score_row("xray", "early_watch", 60.0)],
+    }
+    loaded_run_ids = []
+
+    def _load(run_id):
+        loaded_run_ids.append(run_id)
+        return list(rows_by_run.get(run_id, []))
+
+    monkeypatch.setattr(weekly_store, "list_completed_weeks",
+                        lambda season: [{"as_of_week": w}
+                                        for w in range(1, 6)])
+    monkeypatch.setattr(weekly_store, "get_serving_run",
+                        lambda season, week: serving.get(week))
+    monkeypatch.setattr(weekly_store, "load_run_score_rows", _load)
+    return loaded_run_ids
+
+
+def test_surfaced_player_ids_by_week_canonical(monkeypatch):
+    loaded = _patch_surfaced_store(monkeypatch)
+    by_week = wg.surfaced_player_ids_by_week(2026)
+
+    # Week 1: the watchlist row and the sub-gate initial-role row are
+    # not pool-eligible; the eligible temporary opportunity and the
+    # gated initial-role row (evidence as a JSON string) are.
+    assert by_week[1] == {"alpha", "tempo", "inithi"}
+    # Week 2: alpha is a repeat of Week 1 and is not a new call; watchy
+    # surfaces now because its Week 1 watchlist row never counted.
+    assert by_week[2] == {"bravo", "watchy"}
+    # Week 3: xray surfaces; its 60.0 in the non-serving Week 2 run was
+    # never loaded and never counted.
+    assert by_week[3] == {"xray"}
+    assert 999 not in loaded
+    # Alpha stays blocked in Weeks 3 and 4 (the 3 weeks after Week 1)
+    # and is a fresh call again in Week 5.
+    assert by_week[4] == set()
+    assert by_week[5] == {"alpha"}
+
+
+def test_recently_surfaced_ids_use_canonical_surfaced_sets(monkeypatch):
+    _patch_surfaced_store(monkeypatch)
+    import dashboard_services.breakout_api as api
+
+    assert api._recently_surfaced_player_ids(2026, 2) == {
+        "alpha", "tempo", "inithi"}
+    # For the Week 5 board, only Weeks 2-4 block: alpha's Week 1 call
+    # has finished its window and does not block.
+    assert api._recently_surfaced_player_ids(2026, 5) == {
+        "bravo", "watchy", "xray"}
+
+
+def test_track_record_still_tracking_includes_open_historical_weeks(monkeypatch):
+    api = _patch_track_record(monkeypatch)
+    from data_building.breakout_engine import weekly_store
+
+    monkeypatch.setattr(weekly_store, "list_completed_weeks",
+                        lambda season: [{"as_of_week": 3},
+                                        {"as_of_week": 4},
+                                        {"as_of_week": 5}])
+
+    def _cand(pid, week, band):
+        return {"player_id": pid, "player_name": pid,
+                "classification": "emerging_breakout",
+                "classification_label": "Emerging Breakout",
+                "breakout_score": 50.0,
+                "forecast": {"kind": "weekly", "band": band,
+                             "band_label": "Tracking to hit",
+                             "basis": "stubbed", "call_week": week}}
+
+    def _board(season, min_score, limit, week=None):
+        if week == "preseason":
+            return {"view": "preseason", "candidates": []}
+        if week == 3:
+            return {"as_of_week": 3, "candidates": [_cand("w3", 3, "tracking_to_hit")]}
+        if week == 4:
+            return {"as_of_week": 4, "candidates": [_cand("w4", 4, "borderline")]}
+        return {"as_of_week": 5, "candidates": [_cand("w5", 5, "tracking_to_hit")]}
+
+    monkeypatch.setattr(api, "get_breakout_board_candidates", _board)
+
+    payload = api.get_breakout_track_record(2026)
+
+    tracking = {t["week"]: t for t in payload["still_tracking"]}
+    assert set(tracking) == {3, 4, 5}
+    assert tracking[3]["calls"] == 1
+    assert tracking[3]["tracking_to_hit_rate"] == pytest.approx(1.0)
+    assert tracking[4]["calls"] == 1
+    assert tracking[5]["calls"] == 1
+
+
+def test_breakout_rail_hero_reads_singular_hit_field():
+    src = (ROOT / "app.py").read_text(encoding="utf-8")
+    # The API bucket field is "hit" (weekly_grading._rate_bucket); the
+    # hero text once read "hits" and always rendered 0.
+    assert "overall.hits" not in src
+    assert src.count("var hits = overall.hit || 0;") == 2

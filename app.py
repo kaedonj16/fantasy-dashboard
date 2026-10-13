@@ -18353,7 +18353,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
         var hitRate = overall.hit_rate != null ? Math.round(overall.hit_rate * 100) : null;
         var forecastRate = overall.forecast_rate != null ? Math.round(overall.forecast_rate * 100) : null;
         var graded = overall.graded || 0;
-        var hits = overall.hits || 0;
+        var hits = overall.hit || 0;
         var heroBig, heroDetail;
         if (hitRate != null) {{
           heroBig = hitRate + '%';
@@ -18428,7 +18428,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
         var hitRate = overall.hit_rate != null ? Math.round(overall.hit_rate * 100) : null;
         var forecastRate = overall.forecast_rate != null ? Math.round(overall.forecast_rate * 100) : null;
         var graded = overall.graded || 0;
-        var hits = overall.hits || 0;
+        var hits = overall.hit || 0;
         var heroBig, heroDetail;
         if (hitRate != null) {{
           heroBig = hitRate + '%';

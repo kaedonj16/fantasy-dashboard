@@ -615,6 +615,19 @@ def load_weekly_grade_rows(season: int) -> List[Dict[str, Any]]:
     """
     from data_building.breakout_engine.weekly_store import get_serving_run
     wg.init_weekly_breakout_grades_db()
+    # Canonical surfaced sets per week (the same definition the board
+    # uses), so repeat calls the board never re-surfaced cannot be
+    # counted as fresh calls here. A helper failure keeps the old
+    # valid-player behavior for this load rather than dropping every
+    # grade; a week missing from the map is likewise left unfiltered,
+    # while a week present with an empty set really had no surfaced
+    # calls and filters to none.
+    try:
+        surfaced_by_week = wg.surfaced_player_ids_by_week(int(season))
+    except Exception:
+        logger.warning("forecasts: surfaced-by-week lookup failed",
+                       exc_info=True)
+        surfaced_by_week = {}
     with get_conn() as conn:
         weeks = conn.execute(
             f"SELECT DISTINCT as_of_week FROM {wg.GRADES_TABLE} "
@@ -671,6 +684,12 @@ def load_weekly_grade_rows(season: int) -> List[Dict[str, Any]]:
                 grade_rows = [
                     r for r in grade_rows
                     if str(r.get("player_id") or "") in valid_pids
+                ]
+            if week_int in surfaced_by_week:
+                surfaced = surfaced_by_week[week_int]
+                grade_rows = [
+                    r for r in grade_rows
+                    if str(r.get("player_id") or "") in surfaced
                 ]
             rows.extend(grade_rows)
     return [dict(r) for r in rows]
@@ -767,15 +786,18 @@ def top_grade_rows(
     Hits rank by PPG delta descending. Misses rank by PPG delta ascending
     (the deepest production collapse first), falling back to opportunity
     delta when no PPG delta was recorded. Rows missing the ranking delta
-    sort last, never first. When ``reconstructed_weeks`` is given, each
-    view is flagged so the UI can tag backtest rows.
+    sort last, never first. Only surfaced calls count
+    (``weekly_grading.is_surfaced_row``: not watchlist/monitored and
+    breakout score at or above 30), matching the overall and by-week
+    rates. When ``reconstructed_weeks`` is given, each view is flagged
+    so the UI can tag backtest rows.
     """
     recon = reconstructed_weeks or set()
     picked = [
         _grade_row_view(r, reconstructed=r.get("as_of_week") in recon)
         for r in rows
         if r.get("grade") == grade
-        and str(r.get("classification") or "") not in ("watchlist", "monitored")
+        and wg.is_surfaced_row(r)
     ]
     if grade == wg.GRADE_HIT:
         picked.sort(key=lambda v: (v["ppg_delta"] is None,
