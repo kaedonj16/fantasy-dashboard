@@ -45172,7 +45172,10 @@ a, button, [role="button"], [role="tab"], summary, label,
 .mb-row {
     display: grid;
     grid-template-columns: 1fr 36px 44px 36px 1fr;
-    gap: 3px;
+    /* Column gap 7px: with the chip badge's 5px inset inside its 44px
+       centre column, a score number sits exactly 12px from the badge on
+       both sides. */
+    gap: 3px 7px;
     align-items: start;
     border-bottom: 1px solid var(--border);
 }
@@ -45192,6 +45195,12 @@ a, button, [role="button"], [role="tab"], summary, label,
     text-align: right;
     width: 100%;
 }
+/* Inside .m-combo the legacy .m-combo .p-game-line rule turns this span
+   into a flex row (it still carries the p-game-line class), where
+   text-align is a no-op: the line sat at flex-start while the name above
+   it hugged the right edge. Pin the flex content to the right edge, the
+   same fix the legacy .p-text--right rows already use. */
+.m-combo .mb-cell-r .mb-info .mb-game { justify-content: flex-end; }
 .mb-info--bye { opacity: .45; }
 /* The bye game slot carries the literal BYE label, not a kickoff line:
    style it as a label so it reads at a glance inside the greyed block. */
@@ -45217,6 +45226,13 @@ a, button, [role="button"], [role="tab"], summary, label,
 
 .mb-score { flex: 0 0 auto; align-self: start; text-align: center; font-variant-numeric: tabular-nums; line-height: 1.1; padding-top: 2px; }
 .mb-cell-r .mb-score { text-align: center; }
+/* A number wider than its 36px column (20px projections, 26px finals)
+   overflows toward the centre chip on the left side: centred lines spill
+   right in LTR, eating the gap the right number keeps. RTL makes the left
+   number spill toward its own name cell instead, so both numbers sit the
+   same distance from the chip at any width. Digits render identically;
+   only the overflow direction changes. */
+.mb-score-l { direction: rtl; }
 .mb-a { display: block; font-size: 15px; font-weight: 800; color: var(--accent); }
 .mb-a.mb-win { color: var(--win); }
 .mb-a.mb-bye, .mb-a.mb-na, .mb-a.mb-proj-only { color: var(--text-subtle); font-weight: 700; }

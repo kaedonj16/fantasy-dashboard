@@ -2621,24 +2621,24 @@ def render_matchup_slide(
 
     rows_html: List[str] = []
 
-    def _score_box(actual_val, proj_val, is_bye: bool, more: bool, not_started: bool) -> str:
+    def _score_box(actual_val, proj_val, is_bye: bool, more: bool, not_started: bool, side_cls: str = "") -> str:
         """Compact score cell: big actual on top, small live projection under it.
         The projection-only (not-started) state keeps ``m-proj-only`` so the
         existing tests and styling still find it. Final games show a larger
         centered score with no projection."""
         if is_bye:
-            return "<div class='mb-score'><span class='mb-a mb-bye'>BYE</span></div>"
+            return f"<div class='mb-score{side_cls}'><span class='mb-a mb-bye'>BYE</span></div>"
         if not_started:
             pv = proj_val if isinstance(proj_val, (int, float)) else 0.0
             return (
-                "<div class='mb-score'>"
+                f"<div class='mb-score{side_cls}'>"
                 f"<span class='mb-a mb-preproj m-proj-only'>{pv:.1f}</span>"
                 "<span class='mb-preproj-label'>proj</span>"
                 "</div>"
             )
         if actual_val is None:
             return (
-                "<div class='mb-score'>"
+                f"<div class='mb-score{side_cls}'>"
                 "<span class='mb-a mb-na' title='Weekly fantasy points unavailable'>&mdash;</span>"
                 "</div>"
             )
@@ -2646,13 +2646,13 @@ def render_matchup_slide(
         # and centered with no projection underneath.
         if not isinstance(proj_val, (int, float)):
             f_cls = "mb-a mb-final" + (" mb-win" if more else "")
-            return f"<div class='mb-score'><span class='{f_cls}'>{actual_val:.1f}</span></div>"
+            return f"<div class='mb-score{side_cls}'><span class='{f_cls}'>{actual_val:.1f}</span></div>"
         a_cls = "mb-a" + (" mb-win" if more else "")
         proj_line = (
             f"<span class='mb-pj'>{proj_val:.1f}</span>"
             if isinstance(proj_val, (int, float)) else ""
         )
-        return f"<div class='mb-score'><span class='{a_cls}'>{actual_val:.1f}</span>{proj_line}</div>"
+        return f"<div class='mb-score{side_cls}'><span class='{a_cls}'>{actual_val:.1f}</span>{proj_line}</div>"
 
     # Canonical slot order: some providers (ESPN) report slots in slot-id
     # order, e.g. QB, RB, RB, WR, WR, TE, DEF, K, IR, FLEX, which mislabels
@@ -2684,7 +2684,7 @@ def render_matchup_slide(
         left_more = la is not None and ra is not None and la > ra
         right_more = la is not None and ra is not None and ra > la
 
-        left_sb = _score_box(left_actual, left_proj, left_is_bye, left_more, left_not_started)
+        left_sb = _score_box(left_actual, left_proj, left_is_bye, left_more, left_not_started, " mb-score-l")
         right_sb = _score_box(right_actual, right_proj, right_is_bye, right_more, right_not_started)
 
         # Shared centre rail: one coloured chip per *lineup slot*. A FLEX row
