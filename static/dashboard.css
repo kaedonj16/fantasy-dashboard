@@ -32116,6 +32116,25 @@ button:disabled {
     box-sizing: border-box;
 }
 .weekly-recap .recap-section { margin-bottom: 24px; min-width: 0; }
+/* Mock A layout: main column + 336px rail, full-width sections below. */
+.weekly-recap .recap-layout { display:grid; grid-template-columns:minmax(0,1fr) 336px; gap:20px; align-items:start; }
+.weekly-recap .recap-main, .weekly-recap .recap-rail { min-width:0; }
+.weekly-recap .recap-rail .recap-section:last-child { margin-bottom:24px; }
+@media (min-width: 1025px) {
+    /* Rail cards are single column: the two-up grids they use full width
+       would squeeze to unreadable slivers at 336px. */
+    .weekly-recap .recap-rail .recap-eff-grid { grid-template-columns:minmax(0,1fr); }
+    .weekly-recap .recap-rail .rc-act-card { grid-template-columns:minmax(0,1fr); }
+    .weekly-recap .recap-rail .rc-act-item:nth-child(2) { border-top:1px solid var(--border); }
+    .weekly-recap .recap-rail .rc-inj-card { grid-template-columns:minmax(0,1fr); }
+    .weekly-recap .recap-rail .rc-inj-row:nth-child(2) { border-top:1px solid var(--border); }
+}
+@media (min-width: 769px) {
+    .weekly-recap .recap-main .rc-awards { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media (max-width: 1024px) {
+    .weekly-recap .recap-layout { grid-template-columns:minmax(0,1fr); }
+}
 .weekly-recap .recap-section-heading { display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:8px 16px; margin:0 0 10px; }
 .weekly-recap .recap-section-heading h2 { margin:0; color:var(--text); font-size:18px; font-weight:800; letter-spacing:-.01em; }
 .weekly-recap .recap-section-heading small { color:var(--muted); font-size:11px; font-weight:600; }
@@ -32265,12 +32284,15 @@ button:disabled {
     .weekly-recap .rc-player-row .rc-name { white-space:normal; overflow:visible; text-overflow:clip; overflow-wrap:anywhere; }
     .weekly-recap .rc-player-row .rc-team-name { grid-column:2; white-space:normal; overflow:visible; text-overflow:clip; overflow-wrap:anywhere; }
     .weekly-recap .rc-player-row .rc-score { grid-column:3; grid-row:1 / span 2; }
-    .weekly-recap .rc-swap-row { grid-template-columns:1fr auto; gap:8px 12px; padding:12px; }
-    .weekly-recap .rc-swap-team { grid-column:1 / -1; }
-    .weekly-recap .rc-swap-pair { grid-template-columns:1fr; gap:7px; }
-    .weekly-recap .rc-swap-arrow { transform:rotate(90deg); }
+    /* Missed Opportunities reads top to bottom on phones, not left to
+       right: team and gain share a header row, then Started, a down arrow
+       aligned under the player faces, then Benched. */
+    .weekly-recap .rc-swap-row { grid-template-columns:minmax(0,1fr) auto; grid-template-areas:"team gain" "pair pair"; gap:8px 12px; padding:12px; }
+    .weekly-recap .rc-swap-team { grid-area:team; align-self:center; }
+    .weekly-recap .rc-swap-pair { grid-area:pair; grid-template-columns:minmax(0,1fr); gap:2px; }
+    .weekly-recap .rc-swap-arrow { transform:rotate(90deg); justify-self:start; margin-left:9px; line-height:1; }
     .weekly-recap .rc-swap-name { white-space:normal; overflow:visible; text-overflow:clip; overflow-wrap:anywhere; }
-    .weekly-recap .rc-swap-gain { align-self:center; }
+    .weekly-recap .rc-swap-gain { grid-area:gain; align-self:center; }
 }
 
 

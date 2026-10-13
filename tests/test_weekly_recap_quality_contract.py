@@ -36,8 +36,8 @@ def test_recap_sections_follow_editorial_order_and_end_with_up_next():
     """The recap moves from the completed week to its forward-looking ending."""
     source = (ROOT / "dashboard_services/pages/recap_page.py").read_text()
     returned = source.split("    return ('<main class=\"weekly-recap\">'", 1)[1]
-    expected = ["week_selector", "scoreboard_html", "story_html", "cards_html",
-                "efficiency_html", "lineup_html",
+    expected = ["week_selector", "scoreboard_html", "cards_html",
+                "efficiency_html", "lineup_html", "story_html",
                 "standings_html", "up_next_html"]
     positions = [returned.index(item) for item in expected]
     assert positions == sorted(positions)
@@ -221,3 +221,15 @@ def test_scoreboard_highlights_winners_and_chips_gotw():
     # Repo design rule: no pill-shaped buttons (6px chips, not 999px).
     pill_rule = css.split(".recap-margin-pill")[1].split("}")[0]
     assert "999px" not in pill_rule
+
+
+def test_recap_mock_a_layout_and_mobile_swap_css_contracts():
+    """Mock A: rail layout in dashboard.css; missed-opportunity swaps read
+    top to bottom on phones (team + gain header row, down arrow, Benched)."""
+    css = (ROOT / "static/dashboard.css").read_text()
+    assert ".weekly-recap .recap-layout { display:grid; grid-template-columns:minmax(0,1fr) 336px;" in css
+    assert ".weekly-recap .recap-rail .recap-eff-grid { grid-template-columns:minmax(0,1fr); }" in css
+    assert ".weekly-recap .recap-rail .rc-act-card { grid-template-columns:minmax(0,1fr); }" in css
+    assert ".weekly-recap .recap-rail .rc-inj-card { grid-template-columns:minmax(0,1fr); }" in css
+    assert 'grid-template-areas:"team gain" "pair pair"' in css
+    assert ".weekly-recap .rc-swap-arrow { transform:rotate(90deg); justify-self:start;" in css

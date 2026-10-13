@@ -169,9 +169,12 @@ def test_recap_source_contracts_for_new_sections():
     # (stacking to one on phones).
     assert "<small>New this week</small>" in page
     assert "grid-template-columns:repeat(2, minmax(0,1fr))" in page
-    # League activity renders after standings, before Up Next.
+    # Mock A layout: activity and injuries live in the right rail with
+    # efficiency, ahead of the full-width sections below the layout grid.
     assert "<h2>League Activity</h2>" in page
     ret = page.split("return ('<main class=\"weekly-recap\">'", 1)[1]
-    assert ret.index("standings_html") < ret.index("activity_html") < ret.index("up_next_html")
-    # Injury report sits just above Up Next.
-    assert ret.index("activity_html") < ret.index("injuries_html") < ret.index("up_next_html")
+    assert '<div class="recap-layout"><div class="recap-main">' in ret
+    assert '<aside class="recap-rail">' in ret
+    assert ret.index("scoreboard_html") < ret.index("cards_html") < ret.index("efficiency_html")
+    assert ret.index("efficiency_html") < ret.index("activity_html") < ret.index("injuries_html")
+    assert ret.index("injuries_html") < ret.index("lineup_html") < ret.index("standings_html") < ret.index("up_next_html")
