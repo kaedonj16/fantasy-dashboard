@@ -11781,11 +11781,6 @@ window.initTradePage = function initTradePage(root = document) {
       }
       analyzeTrade();
     });
-
-    btn.addEventListener("mouseenter", () => {
-      const hasLeague = root.querySelector("#leagueIdInput")?.value;
-      if (hasLeague && !teamSelector?.value) showTeamSelectionPopup();
-    });
   }
 
   function bindSetupButton() {
@@ -12095,19 +12090,47 @@ window.initTradePage = function initTradePage(root = document) {
   const infoWrapper = root.querySelector(".otc-info-tooltip-wrapper");
 
   if (infoBtn && infoTooltip && infoWrapper) {
+    // Click pins the tooltip open so touch and keyboard users can read it;
+    // while pinned, mouseleave does not hide it. Escape closes and unpins.
+    let otcInfoPinned = false;
+
     // Show tooltip on hover
     bindOnce(infoBtn, "otcInfoMouseenter", "mouseenter", (e) => {
       infoTooltip.style.display = "block";
     });
 
-    // Hide tooltip when mouse leaves
+    // Hide tooltip when mouse leaves (unless pinned open)
     bindOnce(infoBtn, "otcInfoMouseleave", "mouseleave", (e) => {
-      infoTooltip.style.display = "none";
+      if (!otcInfoPinned) infoTooltip.style.display = "none";
     });
 
     // Also hide when mouse leaves the tooltip wrapper
     bindOnce(infoWrapper, "otcWrapperMouseleave", "mouseleave", (e) => {
-      if (!infoWrapper.contains(e.relatedTarget)) {
+      if (!otcInfoPinned && !infoWrapper.contains(e.relatedTarget)) {
+        infoTooltip.style.display = "none";
+      }
+    });
+
+    // Click toggles the tooltip pinned open/closed
+    bindOnce(infoBtn, "otcInfoClick", "click", (e) => {
+      otcInfoPinned = !otcInfoPinned;
+      infoTooltip.style.display = otcInfoPinned ? "block" : "none";
+    });
+
+    // Focus shows the tooltip; focus leaving the whole wrapper hides it
+    bindOnce(infoBtn, "otcInfoFocus", "focus", (e) => {
+      infoTooltip.style.display = "block";
+    });
+    bindOnce(infoWrapper, "otcInfoFocusout", "focusout", (e) => {
+      if (!otcInfoPinned && !infoWrapper.contains(e.relatedTarget)) {
+        infoTooltip.style.display = "none";
+      }
+    });
+
+    // Escape closes and unpins
+    bindOnce(infoBtn, "otcInfoKeydown", "keydown", (e) => {
+      if (e.key === "Escape") {
+        otcInfoPinned = false;
         infoTooltip.style.display = "none";
       }
     });
@@ -16241,6 +16264,82 @@ function normalizeClickableAccessibility(root = document) {
     _makeKeyboardActionable(el, nm ? ('Open ' + nm) : null);
   });
 }
+
+// [title-upgrade:start]
+// Upgrade native title= tooltips to the themed [data-tooltip] bubble
+// (dashboard.css styles it on hover and :focus-visible), so every title=
+// in markup and every JS-set .title gets the site tooltip and a keyboard
+// focus path with no call-site edits, including future title= usage.
+// Form controls keep native behavior; SVG titles are accessible names,
+// not tooltips; elements that already carry a custom tooltip
+// (data-tooltip / data-def) just lose the duplicate native one.
+// Elements whose data-tooltip came from this upgrader. Tracked so a
+// later JS .title change on the same element updates the bubble instead
+// of being swallowed; an author-provided data-tooltip is never touched.
+const _titleUpgradedEls = new WeakSet();
+
+function _upgradeTitleEl(el) {
+  if (!el || !el.getAttribute) return;
+  const tag = el.tagName;
+  if (tag === 'IFRAME' || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+  if (el.namespaceURI && el.namespaceURI.indexOf('svg') !== -1) return;
+  if (el.hasAttribute('pattern')) return;
+  const text = (el.getAttribute('title') || '').trim();
+  if (!text) {
+    // Code set an empty title: drop a bubble we created from the old one.
+    // (An ABSENT title here means we just consumed it ourselves; the
+    // observer re-fire must not clear the bubble we just set.)
+    if (el.hasAttribute('title') && _titleUpgradedEls.has(el)) {
+      el.removeAttribute('data-tooltip');
+      _titleUpgradedEls.delete(el);
+    }
+    return;
+  }
+  if (el.hasAttribute('data-def')) {
+    el.removeAttribute('title');
+    return;
+  }
+  if (!el.hasAttribute('data-tooltip') || _titleUpgradedEls.has(el)) {
+    el.setAttribute('data-tooltip', text);
+    _titleUpgradedEls.add(el);
+  }
+  el.removeAttribute('title');
+}
+
+window.brUpgradeTitles = function (root) {
+  if (!root) return;
+  if (root.getAttribute && root.getAttribute('title')) _upgradeTitleEl(root);
+  if (root.querySelectorAll) root.querySelectorAll('[title]').forEach(_upgradeTitleEl);
+};
+
+// Watch for soft-nav swaps and later .title assignments. Removing the
+// title re-fires the attribute callback, but the element no longer has
+// one by then, so _upgradeTitleEl returns immediately (no loop).
+function _watchTitleUpgrades() {
+  if (!('MutationObserver' in window) || !document.documentElement) return;
+  const obs = new MutationObserver(function (mutations) {
+    mutations.forEach(function (m) {
+      if (m.type === 'attributes') { _upgradeTitleEl(m.target); return; }
+      m.addedNodes.forEach(function (n) {
+        if (n.nodeType === 1) window.brUpgradeTitles(n);
+      });
+    });
+  });
+  obs.observe(document.documentElement, {
+    childList: true, subtree: true, attributes: true, attributeFilter: ['title']
+  });
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', function () {
+    window.brUpgradeTitles(document);
+    _watchTitleUpgrades();
+  });
+} else {
+  window.brUpgradeTitles(document);
+  _watchTitleUpgrades();
+}
+// [title-upgrade:end]
 
 // @public-js:core-end  (everything below is app/feature code; excluded from public.js)
 

@@ -1187,6 +1187,9 @@ def build_advanced_metrics_body(
       }
       .am-row:hover .am-pin-btn { opacity:.55; }
       .am-pin-btn.am-pin-active { opacity:1 !important; color:var(--accent,#2563eb); }
+      .am-row:focus-within .am-pin-btn { opacity:.55; }
+      .am-pin-btn:focus-visible { opacity:.55; }
+      @media (pointer: coarse) { .am-pin-btn { opacity:.55; } }
       .am-row.am-pinned { background:color-mix(in srgb, var(--accent) 5%, transparent); }
       .am-row.am-pinned:hover { background:color-mix(in srgb, var(--accent) 10%, transparent); }
       .am-row.am-pinned.am-owned { background:color-mix(in srgb, var(--accent) 10%, transparent); }
@@ -3454,23 +3457,31 @@ _AM_JS = r"""
   }
 
   // Attach the shared metric-definition tooltip to a column header <th>.
-  // Uses mouseenter/mouseleave (desktop hover) bound via addEventListener so
-  // the sort click-handler already on the element is not affected.  Stores
-  // the bound functions on the element itself so they can be removed cleanly
-  // when the primary metric header is refreshed.
+  // Uses mouseenter/mouseleave (desktop hover) plus focus/blur (keyboard)
+  // bound via addEventListener so the sort click-handler already on the
+  // element is not affected.  Stores the bound functions on the element
+  // itself so they can be removed cleanly when the primary metric header
+  // is refreshed.
   function _bindColTip(th, key) {
     const desc = (cfg.metrics[key] && cfg.metrics[key].desc) || '';
     // Remove any previous tooltip listeners to avoid duplicates on re-bind.
     if (th._amTipEnter) { th.removeEventListener('mouseenter', th._amTipEnter); delete th._amTipEnter; }
     if (th._amTipLeave) { th.removeEventListener('mouseleave', th._amTipLeave); delete th._amTipLeave; }
-    if (!desc) { delete th.dataset.def; th.removeAttribute('title'); th.style.cursor = ''; return; }
+    if (th._amTipFocus) { th.removeEventListener('focus', th._amTipFocus); delete th._amTipFocus; }
+    if (th._amTipBlur) { th.removeEventListener('blur', th._amTipBlur); delete th._amTipBlur; }
+    if (!desc) { delete th.dataset.def; th.removeAttribute('title'); th.removeAttribute('tabindex'); th.style.cursor = ''; return; }
     th.dataset.def = desc;
     th.removeAttribute('title');
     th.style.cursor = 'help';
+    th.tabIndex = 0;
     th._amTipEnter = function(e) { if (typeof advEnterMetricDef === 'function') advEnterMetricDef(e); };
     th._amTipLeave = function(e) { if (typeof advLeaveMetricDef === 'function') advLeaveMetricDef(e); };
     th.addEventListener('mouseenter', th._amTipEnter);
     th.addEventListener('mouseleave', th._amTipLeave);
+    th._amTipFocus = function(e) { if (typeof advEnterMetricDef === 'function') advEnterMetricDef(e); };
+    th._amTipBlur = function(e) { if (typeof advLeaveMetricDef === 'function') advLeaveMetricDef(e); };
+    th.addEventListener('focus', th._amTipFocus);
+    th.addEventListener('blur', th._amTipBlur);
   }
 
   function syncExtraCols() {

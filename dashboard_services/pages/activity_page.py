@@ -989,7 +989,7 @@ def build_activity_body(ctx: dict) -> str:
       .act-pulse .act-rmain {{ min-width: 0; }}
       .act-pulse .act-rtop {{ display: flex; align-items: center; gap: 7px; flex-wrap: wrap; font-size: 13px; }}
       .act-pulse .act-tm {{ font-weight: 700; color: var(--text); }}
-      .act-pulse .act-tm.team-clickable:hover {{ color: var(--accent); text-decoration: underline; }}
+      .act-pulse .act-tm.team-clickable:hover {{ opacity: 0.72; }}
       .act-pulse .act-verb {{ color: var(--text-muted); font-weight: 600; }}
       .act-pulse .act-verb.trade {{ color: var(--accent); }}
       .act-pulse .act-kindtag {{ font-size: 11px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; padding: 2px 6px; border-radius: 5px; }}

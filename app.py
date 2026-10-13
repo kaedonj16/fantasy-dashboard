@@ -37240,7 +37240,7 @@ def build_portfolio_body(
         ".pf-lg-title{min-width:0;max-width:100%;display:flex;align-items:baseline;gap:5px;}"
         ".pf-lg-name{font-weight:800;font-size:13px;line-height:1.2;text-decoration:none;color:var(--text);"
         "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;min-width:0;flex:1 1 auto;}"
-        ".pf-lg-name:hover{color:var(--accent);}"
+        "a.pf-lg-name:hover{color:var(--accent);}"
         ".pf-lg-off{font-size:11px;color:var(--text-subtle);flex:0 0 auto;white-space:nowrap;}"
         ".pf-lg-meta{display:flex;align-items:center;gap:6px;min-width:0;max-width:100%;}"
         ".pf-lg-team{font-size:11px;color:var(--text-muted);line-height:1.2;"

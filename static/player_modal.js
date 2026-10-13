@@ -480,7 +480,7 @@ function openPlayerModal(playerId, playerName, opts) {
           ? ' · ' + (vt.slope_pct_month >= 0 ? '+' : '') + vt.slope_pct_month.toFixed(1) + '%/mo'
           : '';
         const _tipTxt = (vt.description || vt.label) + _slopeTxt;
-        metaParts.push(`<span class="pm-trend-pill" data-trend-tip="${_tipTxt}" style="padding:1px 6px;border-radius:4px;background:${vt.color}18;border:1px solid ${vt.color}40;color:${vt.color};font-size:10px;font-weight:700;cursor:help;">${vtIcon} ${vt.label}</span>`);
+        metaParts.push(`<span class="pm-trend-pill" tabindex="0" data-trend-tip="${_tipTxt}" style="padding:1px 6px;border-radius:4px;background:${vt.color}18;border:1px solid ${vt.color}40;color:${vt.color};font-size:10px;font-weight:700;cursor:help;">${vtIcon} ${vt.label}</span>`);
       }
 
       const metaEl = document.getElementById('playerModalMeta');
@@ -4892,7 +4892,21 @@ function pmSparkline(series, color, tips) {
     if (!tip) { tip = document.createElement('div'); tip.className = 'wk-tip'; document.body.appendChild(tip); }
     return tip;
   }
-  function place(e) { tip.style.left = e.clientX + 'px'; tip.style.top = e.clientY + 'px'; }
+  function place(e) {
+    // Clamp horizontally so the centered, nowrap bubble never spills off a
+    // viewport edge, and flip below the point when there is no room above
+    // (the CSS default transform renders it above via -100% - 10px).
+    var w = tip.offsetWidth, h = tip.offsetHeight;
+    var left = Math.max(w / 2 + 8, Math.min(e.clientX, window.innerWidth - w / 2 - 8));
+    tip.style.left = left + 'px';
+    if (e.clientY - h - 18 < 8) {
+      tip.style.top = e.clientY + 'px';
+      tip.style.transform = 'translate(-50%, 16px)';
+    } else {
+      tip.style.top = e.clientY + 'px';
+      tip.style.transform = '';
+    }
+  }
   function show(d, e) { ensureTip(); tip.textContent = d.getAttribute('data-tip') || ''; place(e); tip.classList.add('show'); }
   document.addEventListener('pointerover', function (e) {
     if (e.pointerType && e.pointerType !== 'mouse') return;   // touch handled on pointerdown

@@ -219,9 +219,9 @@
 }
 
 .pricing-option:hover {
-  border-color: var(--brand-blue, #3b82f6);
-  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.15);
-  transform: translateY(-2px);
+  transform: translateY(-3px);
+  border-color: color-mix(in srgb, var(--brand-blue, #2563eb) 55%, var(--border));
+  box-shadow: 0 14px 30px rgba(15, 30, 60, 0.12);
 }
 
 .pricing-header {
@@ -638,11 +638,6 @@
   background: var(--card);
   box-shadow: 0 2px 10px rgba(15, 30, 60, 0.05);
   transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
-}
-.paywall-pricing .pricing-option:hover {
-  transform: translateY(-3px);
-  border-color: color-mix(in srgb, var(--brand-blue, #2563eb) 55%, var(--border));
-  box-shadow: 0 14px 30px rgba(15, 30, 60, 0.12);
 }
 .paywall-pricing .pricing-option.featured {
   border: 1.5px solid var(--brand-blue, #2563eb);

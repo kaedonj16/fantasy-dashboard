@@ -2402,6 +2402,8 @@ _DRAFT_ROOM_HTML = r"""
   .dr-cap-pill-x { font-style:normal; font-size:13px; line-height:1; opacity:0; width:0; overflow:hidden;
     transition:opacity .12s, width .12s; }
   .dr-cap-pill:hover .dr-cap-pill-x { opacity:1; width:11px; }
+  /* No hover on touch: keep the remove cue visible. */
+  @media (pointer: coarse) { .dr-cap-pill-x { opacity:1; width:11px; } }
   .dr-cap-pill-traded { background:color-mix(in srgb, var(--warning) 16%, transparent); }
   .dr-cap-addbtn { width:26px; height:26px; flex-shrink:0; border:none; border-radius:7px;
     background:rgba(127,127,127,.1); color:var(--text-muted); font-size:18px; font-weight:600; line-height:1;
@@ -2636,10 +2638,11 @@ _DRAFT_HISTORY_HTML = r"""
     display: inline-flex; align-items: center; padding: 7px 12px; font-size: 13px; font-weight: 700;
     color: var(--text-muted); text-decoration: none; border: 1px solid var(--border);
     border-radius: var(--radius-pill, 8px); background: color-mix(in srgb, var(--card) 80%, transparent);
+    transition: color .15s, border-color .15s, background .15s;
   }
   .dr-hero-link:hover {
     color: var(--brand-blue, #3b82f6); border-color: color-mix(in srgb, var(--brand-blue, #3b82f6) 45%, var(--border));
-    text-decoration: none;
+    background: color-mix(in srgb, var(--brand-blue, #3b82f6) 8%, transparent); text-decoration: none;
   }
   .dr-hist-list { display: flex; flex-direction: column; gap: 10px; position: relative; z-index: 1; }
   .dr-hist-card { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border: 1px solid var(--border);
