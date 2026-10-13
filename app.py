@@ -10265,8 +10265,7 @@ def _render_bench_check(ctx: dict, viewer_roster_id, last_final_week: int) -> st
             )
         else:
             msg = (
-                f"Left <span class=\"la-em\">{left_on_bench:.1f}</span> on the bench "
-                f"({actual:.1f} vs {opt_pts:.1f} optimal, Week {week})."
+                f"Left <span class=\"la-em\">{left_on_bench:.1f}</span> on the bench."
             )
         # Escalate to a warning only on a repeated pattern (not one-off weeks).
         warn_html = ""
@@ -12548,7 +12547,7 @@ def _next_steps_bench_check_actions(ctx: dict, viewer_roster_id, last_final_week
         actions.append({
             "priority": _priority,
             "tag": "Lineup",
-            "action": f"Left {left:.1f} on the bench ({m['actual']:.1f} vs {m['opt_pts']:.1f} optimal)",
+            "action": f"Left {left:.1f} on the bench",
             "why": f"Week {m['week']} optimal lineup review.",
             "impact": f"-{left:.1f} points missed",
             "cta_label": "Lineup efficiency",
