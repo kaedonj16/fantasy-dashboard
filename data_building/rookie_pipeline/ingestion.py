@@ -1507,9 +1507,17 @@ def fetch_cfbd_college_stats(
 
         print(f"[cfbd] COMPLETE: Loaded stats for {len(result)} players (draft class {draft_year})")
 
-        # Target share from play-by-play (latest season only - that's what
-        # the model reads). Best-effort: skips silently when unavailable.
-        # Fetches for ALL seasons with data, not just the latest.
+        # Targets parsed from CFBD play-by-play TEXT (/plays) by
+        # fetch_cfbd_targets_from_plays: the structured "Target" stat type
+        # is tagged on only a small subset of plays (verified 2026-10-13:
+        # Ohio State vs Ball State had ~35 pass attempts but only 5 Target
+        # rows, while Reception rows were complete at 31), and neither CFBD
+        # nor ESPN box scores carry targets - so the old /plays/stats merge
+        # (fetch_cfbd_targets) stays disconnected. Play text names the
+        # intended receiver on nearly every pass play, and every parsed
+        # game is validated against the box score (derived receptions must
+        # match REC exactly, >= 85% of pass plays must name a receiver) or
+        # discarded. Best-effort: skips silently when unavailable.
         try:
             teams_by_year: Dict[int, set] = {}
             for seasons in result.values():
@@ -1519,7 +1527,7 @@ def fetch_cfbd_college_stats(
                     if yr and team:
                         teams_by_year.setdefault(yr, set()).add(team)
             teams_by_year = {yr: sorted(teams) for yr, teams in teams_by_year.items()}
-            targets_map = fetch_cfbd_targets(draft_year, teams_by_year)
+            targets_map = fetch_cfbd_targets_from_plays(draft_year, teams_by_year)
             if targets_map:
                 merged = 0
                 for name, seasons in result.items():
@@ -1996,6 +2004,762 @@ def fetch_cfbd_targets(
     total_athletes = len(result)
     print(f"[targets] collected targets for {total_athletes} athletes across {len(teams_by_year)} seasons")
     return result
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Targets parsed from play-by-play TEXT (/plays), validated per game
+#
+# The structured sources are all dead ends for college targets (verified
+# 2026-10-13): the /plays/stats "Target" stat type is tagged on only a small
+# subset of plays (~5 of ~35 attempts in Ohio State vs Ball State), CFBD box
+# scores (/games/players) have no targets stat type, and ESPN college box
+# scores omit targets too.  Play TEXT, however, names the intended receiver
+# on nearly every pass play:
+#   completion:  "... pass complete short right to #32 I.West caught at ..."
+#   incomplete:  "... pass incomplete short middle to #89 N.Lautar thrown ..."
+# Receiver identity in the text is "#<jersey> <FirstInitial>.<LastName>".
+# Because text parsing can silently lie, every game is VALIDATED before its
+# targets are used (see fetch_cfbd_targets_from_plays): derived receptions
+# must equal the box-score REC line exactly, and >= 85% of the team's pass
+# plays must name their receiver, or the game is discarded entirely.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_PLAY_TARGET_MIN_COVERAGE = 0.85
+
+# Scoring-summary lines ride along in /plays payloads in a different format
+# ("Legend Bey 25 Yd pass from Luke Fahey (Connor Hawkins Kick)").  They are
+# never counted as plays outright: live verification (Ohio State 2026) showed
+# some completions exist ONLY as a summary line (the detailed entry is
+# missing), while others duplicate a detailed entry.  So summary PASS lines
+# are collected as per-player CANDIDATES and used only to fill the gap
+# between derived receptions and the box score, capped at the box total
+# (see _validate_game) - never beyond it, so a duplicate can never overshoot.
+_SCORING_SUMMARY_RE = re.compile(r"\bYd\s+(?:pass|run)\s+from\b", re.IGNORECASE)
+_SCORING_SUMMARY_PASS_RE = re.compile(
+    r"^\s*(.+?)\s+\d+\s+Yd\s+pass\s+from\b", re.IGNORECASE)
+
+# Anchored on the pass verb so the parenthetical tackler "(#2 Q.Scandrett)"
+# can never be mistaken for the receiver: the receiver is the FIRST
+# "to #<jersey> <I>.<Name>" after "pass complete|incomplete", before any "(".
+_PLAY_TARGET_JERSEY_RE = re.compile(
+    r"pass\s+(?:complete|incomplete)\b[^()]*?"
+    r"(?:\bto|\bintended\s+for)\s+#(\d+)\s+([A-Za-z])\."
+    r"([A-Za-z][A-Za-z'.\-]*(?:\s+[A-Za-z][A-Za-z'.\-]*){0,2})",
+    re.IGNORECASE,
+)
+# Fallback for texts that name the receiver without a jersey number.
+_PLAY_TARGET_NAME_RE = re.compile(
+    r"pass\s+(?:complete|incomplete)\b[^()]*?\bto\s+"
+    r"([A-Z][a-zA-Z'\-]+)\s+([A-Z][a-zA-Z'\-]+)",
+)
+
+
+def _norm_last_name(raw: str) -> str:
+    """'St. Clair' -> 'stclair'; 'Thompson Jr.' -> 'thompson'."""
+    tokens = re.findall(r"[A-Za-z]+", raw or "")
+    while tokens and tokens[-1].lower() in _NAME_SUFFIXES:
+        tokens.pop()
+    return "".join(tokens).lower()
+
+
+def _canonical_name_key(name: str) -> Tuple[str, str]:
+    """
+    Validation-only comparison key: (first-name initial, normalized surname
+    with suffix tokens stripped).  The box score and the roster do not always
+    spell a player the same way (box "Max LeBlanc" vs roster "Maxence
+    LeBlanc"), so derived-vs-box REC counts are compared on this key, summed
+    per key on both sides - two players sharing a key are summed together,
+    never mismatched against each other.  Stored data keeps full names.
+    """
+    tokens = re.findall(r"[A-Za-z]+", str(name or "").lower())
+    while tokens and tokens[-1] in _NAME_SUFFIXES:
+        tokens.pop()
+    if not tokens:
+        return ("", "")
+    last = _norm_last_name(" ".join(tokens[1:])) if len(tokens) > 1 else tokens[0]
+    return (tokens[0][0], last)
+
+
+def _canon_sums(counts: Dict[str, int]) -> Dict[Tuple[str, str], int]:
+    """Sum a {full_name: n} dict onto canonical comparison keys."""
+    out: Dict[Tuple[str, str], int] = {}
+    for n, c in counts.items():
+        k = _canonical_name_key(n)
+        out[k] = out.get(k, 0) + c
+    return out
+
+
+def _build_roster_maps(roster_rows) -> Tuple[Dict, Dict, Set[str]]:
+    """
+    Receiver-resolution maps for ONE team-season from CFBD /roster rows:
+    - by_jersey: {(jersey, last_norm, first_initial): name_lower}
+    - by_name:   {(last_norm, first_initial): name_lower} - kept only where
+      the key is unique on the roster (ambiguous keys are dropped)
+    - all_names: every roster player's name_lower (box-score fallback use)
+    """
+    by_jersey: Dict[Tuple[int, str, str], str] = {}
+    counts: Dict[Tuple[str, str], int] = {}
+    names: Dict[Tuple[str, str], str] = {}
+    all_names: Set[str] = set()
+    for row in roster_rows or []:
+        first = str(row.get("firstName") or "").strip()
+        last = str(row.get("lastName") or "").strip()
+        if not first or not last:
+            continue
+        name_lower = f"{first} {last}".lower()
+        all_names.add(name_lower)
+        last_norm = _norm_last_name(last)
+        initial = first[0].lower()
+        if not last_norm or not initial:
+            continue
+        jersey = _safe_int(row.get("jersey"))
+        if jersey is not None:
+            by_jersey[(jersey, last_norm, initial)] = name_lower
+        key = (last_norm, initial)
+        counts[key] = counts.get(key, 0) + 1
+        names[key] = name_lower
+    by_name = {k: v for k, v in names.items() if counts[k] == 1}
+    return by_jersey, by_name, all_names
+
+
+def _resolve_receiver(jersey, initial, last_span, by_jersey, by_name) -> Optional[str]:
+    """
+    Resolve a parsed receiver mention to a roster name_lower, or None.
+
+    `last_span` is the raw text captured after the initial - up to 3 tokens
+    that may include trailing play words ("West caught at ...").  Progressively
+    shorter surname candidates are tried against the roster maps, longest
+    first, so multi-token surnames ("St. Clair") win over their first token.
+    """
+    if not initial:
+        return None
+    initial = str(initial).lower()
+    tokens = re.findall(r"[A-Za-z][A-Za-z'.\-]*", last_span or "")
+    jersey_int = _safe_int(jersey) if jersey is not None else None
+    for k in range(len(tokens), 0, -1):
+        last_norm = _norm_last_name(" ".join(tokens[:k]))
+        if not last_norm:
+            continue
+        if jersey_int is not None:
+            hit = by_jersey.get((jersey_int, last_norm, initial))
+            if hit:
+                return hit
+        hit = by_name.get((last_norm, initial))
+        if hit:
+            return hit
+    return None
+
+
+def _summary_receiver_name(text, by_jersey, by_name, all_names) -> Optional[str]:
+    """
+    Receiver name_lower for a scoring-summary PASS line ("Legend Bey 25 Yd
+    pass from Luke Fahey ..."), or None when the line is not a pass summary
+    or the receiver cannot be resolved to this team's roster.  Summary lines
+    carry the FULL name (no jersey/initial abbreviation), so resolution is
+    an exact full-name hit first, then the (surname, initial) roster map.
+    """
+    m = _SCORING_SUMMARY_PASS_RE.match(text or "")
+    if not m:
+        return None
+    raw = " ".join(m.group(1).split()).lower()
+    if raw in (all_names or set()):
+        return raw
+    tokens = re.findall(r"[A-Za-z][A-Za-z'.\-]*", m.group(1))
+    if len(tokens) < 2:
+        return None
+    return _resolve_receiver(None, tokens[0][0], " ".join(tokens[1:]),
+                             by_jersey, by_name)
+
+
+def _play_text(play: Dict[str, Any]) -> str:
+    return str(play.get("playText") or play.get("play_text") or "")
+
+
+def _play_offense(play: Dict[str, Any]) -> str:
+    for key in ("offense", "offenseTeam", "offense_team"):
+        v = play.get(key)
+        if v:
+            return str(v).strip()
+    return ""
+
+
+def _pass_attempt_info(play: Dict[str, Any]):
+    """
+    Classify one /plays row.
+
+    Returns (is_pass_attempt, is_completion, receiver_mention) where
+    receiver_mention is (jersey|None, first_initial, last_name_span) or None
+    when the play names no receiver (thrown away, intercepted, ...).
+    Scoring-summary lines and non-pass plays return (False, False, None).
+    """
+    text = _play_text(play)
+    if not text or _SCORING_SUMMARY_RE.search(text):
+        return (False, False, None)
+    tl = text.lower()
+    ptype = str(play.get("playType") or play.get("play_type") or "").lower()
+    verb = None
+    if "pass complete" in tl:
+        verb = "complete"
+    elif "pass incomplete" in tl:
+        verb = "incomplete"
+    elif "pass intercepted" in tl or ptype == "interception":
+        verb = "intercepted"
+    if verb is None and "pass" not in ptype:
+        return (False, False, None)
+    mention = None
+    if verb in ("complete", "incomplete"):
+        m = _PLAY_TARGET_JERSEY_RE.search(text)
+        if m:
+            mention = (_safe_int(m.group(1)), m.group(2), m.group(3))
+        else:
+            m2 = _PLAY_TARGET_NAME_RE.search(text)
+            if m2:
+                mention = (None, m2.group(1)[0], m2.group(2))
+    return (True, verb == "complete", mention)
+
+
+def _derive_game_targets(plays, team, by_jersey, by_name, roster_names=None):
+    """
+    Parse one game's plays for `team`'s offense.
+
+    Returns {"targets": {name: n}, "receptions": {name: n},
+             "summary": {name: n}, "attempts": int, "named": int} - or None
+    when the payload carries no offense field at all, in which case plays
+    cannot be safely attributed to this team (a /plays response mixes BOTH
+    teams' plays).  A receiver mention that resolves to no roster player
+    counts as an attempt but not as named (conservative for the coverage
+    gate).  "summary" holds scoring-summary-line completions per receiver:
+    candidates for the box-score gap fill in _validate_game, NOT counted in
+    targets/receptions here (some summary lines duplicate detailed plays).
+    """
+    plays = plays or []
+    if not any(_play_offense(p) for p in plays):
+        return None
+    targets: Dict[str, int] = {}
+    receptions: Dict[str, int] = {}
+    summary: Dict[str, int] = {}
+    attempts = 0
+    named = 0
+    seen_play_ids: Set[Any] = set()
+    for play in plays:
+        pid = play.get("id")
+        if pid is not None:
+            if pid in seen_play_ids:
+                continue  # same play listed twice must never double count
+            seen_play_ids.add(pid)
+        if _play_offense(play).lower() != team.lower():
+            continue
+        sname = _summary_receiver_name(_play_text(play), by_jersey, by_name,
+                                       roster_names)
+        if sname:
+            summary[sname] = summary.get(sname, 0) + 1
+            continue
+        is_pass, completed, mention = _pass_attempt_info(play)
+        if not is_pass:
+            continue
+        attempts += 1
+        if mention is None:
+            continue
+        name = _resolve_receiver(mention[0], mention[1], mention[2],
+                                 by_jersey, by_name)
+        if not name:
+            continue
+        named += 1
+        targets[name] = targets.get(name, 0) + 1
+        if completed:
+            receptions[name] = receptions.get(name, 0) + 1
+    return {"targets": targets, "receptions": receptions,
+            "summary": summary, "attempts": attempts, "named": named}
+
+
+def _box_receptions(box_payload, game_id, team, roster_names):
+    """
+    {name_lower: receptions} for `team` in one game from a /games/players
+    payload (receiving category, REC type - the box-score ground truth), or
+    None when the game/team cannot be located in the payload.
+    """
+    for game_obj in box_payload or []:
+        if str(game_obj.get("id")) != str(game_id):
+            continue
+        entries = []
+        for t in game_obj.get("teams") or []:
+            tname = ""
+            for key in ("team", "school", "name"):
+                if t.get(key):
+                    tname = str(t[key]).strip()
+                    break
+            rec: Dict[str, int] = {}
+            for category in t.get("categories") or []:
+                if str(category.get("name") or "").lower() != "receiving":
+                    continue
+                for stat_type in category.get("types") or []:
+                    if str(stat_type.get("name") or "").upper() != "REC":
+                        continue
+                    for athlete in stat_type.get("athletes") or []:
+                        a_name = str(athlete.get("name") or "").lower().strip()
+                        if a_name:
+                            rec[a_name] = _safe_int(athlete.get("stat")) or 0
+            entries.append((tname, rec))
+        for tname, rec in entries:
+            if tname and tname.lower() == team.lower():
+                return rec
+        # Fallback: the entry whose receivers sit on this team's roster.
+        best, best_overlap = None, 0
+        for _tname, rec in entries:
+            overlap = len(set(rec) & roster_names)
+            if overlap > best_overlap:
+                best, best_overlap = rec, overlap
+        return best
+    return None
+
+
+def _group_plays_by_game(rows):
+    """[(game_id, [plays], week|None)] from a /plays payload, order kept."""
+    groups: Dict[Any, List[Dict[str, Any]]] = {}
+    order: List[Any] = []
+    for p in rows or []:
+        gid = p.get("gameId") or p.get("game_id")
+        if gid is None:
+            continue
+        if gid not in groups:
+            groups[gid] = []
+            order.append(gid)
+        groups[gid].append(p)
+    out = []
+    for gid in order:
+        plays = groups[gid]
+        week = None
+        for p in plays:
+            w = _safe_int(p.get("week"))
+            if w:
+                week = w
+                break
+        out.append((gid, plays, week))
+    return out
+
+
+def fetch_cfbd_targets_from_plays(
+    draft_year: int,
+    teams_by_year: Dict[int, List[str]],
+    adopt_stored: bool = True,
+) -> Dict[str, Dict[int, Dict[str, Any]]]:
+    """
+    Target counts + target share parsed from CFBD play-by-play TEXT.
+
+    Same return shape and week-incremental discipline as fetch_cfbd_targets
+    (rookie_stat_fetched_weeks, kind='targets', tracked per team): a run
+    fetches only unprocessed team-weeks and ADDS their counts to the stored
+    totals; a run with zero new weeks returns the stored totals unchanged.
+
+    - Current season: per-week /plays calls, capped at the estimated current
+      week.  A week is marked only when EVERY game in it validates.
+    - Past seasons: one season-level /plays call per team (per-week fallback
+      if that yields nothing); plays are grouped and validated per game, and
+      only weeks whose game passed validation are marked - games in
+      already-tracked weeks are never re-added (no double counting).
+
+    VALIDATION (per game, mandatory): derived receptions per player must
+    EQUAL the /games/players box-score REC for that player-game, and named
+    receiver coverage (pass plays naming a resolvable receiver / all pass
+    plays: complete + incomplete + intercepted) must be >= 0.85.
+    Completions that exist only as scoring-summary lines first fill the
+    derived-vs-box gap per player (capped at the box total), and the REC
+    comparison runs on canonical (initial, surname) keys so roster/box
+    spelling variants cannot false-flag.  A game
+    failing either check is discarded whole: nothing is written for it and
+    its week stays unmarked.  A provably pass-less game (no pass plays in
+    the text AND an empty box-score REC line) validates with zero targets.
+
+    target_share denominator = sum of derived targets for the team-season
+    (named receivers only, so numerator and denominator are consistent),
+    accumulated in rookie_targets_team_totals exactly like the old fetcher.
+
+    Returns {} on any failure - the pipeline continues without targets.
+    """
+    if not CFBD_KEY or not teams_by_year:
+        if not CFBD_KEY:
+            print("[targets-plays] No CFBD_API_KEY - skipping")
+        return {}
+
+    today = _today()
+    seasons = sorted(teams_by_year)
+    stored = _get_existing_targets(draft_year, seasons)
+    tracked = _get_fetched_weeks("targets", seasons)
+    baselines = _get_team_targets_baselines(seasons)
+    result: Dict[str, Dict[int, Dict[str, Any]]] = {}
+
+    def _put(name: str, season_year: int, targets: int, team: str) -> None:
+        denom = baselines.get((season_year, team), 0)
+        result.setdefault(name, {})[season_year] = {
+            "targets": targets,
+            "target_share": round(targets / denom, 4) if denom else 0.0,
+            "team": team,
+        }
+
+    def _seed_stored(season_year: int) -> None:
+        """Return stored totals unchanged (zero-new-weeks no-op path)."""
+        for name, yrs in stored.items():
+            entry = yrs.get(season_year)
+            if entry:
+                _put(name, season_year, entry["targets"], entry.get("team") or "")
+
+    # ── Roster maps per (season, team), fetched once per run ──
+    roster_cache: Dict[Tuple[int, str], Optional[Tuple[Dict, Dict, Set[str]]]] = {}
+
+    def _roster(season_year: int, team: str):
+        key = (season_year, team)
+        if key not in roster_cache:
+            try:
+                rows = _cfbd_get("/roster", {"year": season_year, "team": team},
+                                 retries=2)
+            except Exception as exc:
+                print(f"[targets-plays] roster {team} {season_year} failed - "
+                      f"{type(exc).__name__}: {exc}")
+                rows = None
+            roster_cache[key] = _build_roster_maps(rows) if rows is not None else None
+        return roster_cache[key]
+
+    # ── Box-score payloads per (season, week), shared across teams ──
+    box_cache: Dict[Tuple[int, int], Optional[list]] = {}
+
+    def _box_payload(season_year: int, week: int):
+        key = (season_year, week)
+        if key not in box_cache:
+            try:
+                box_cache[key] = _cfbd_get(
+                    "/games/players",
+                    {"year": season_year, "week": week, "seasonType": "both"},
+                    retries=2)
+            except Exception:
+                box_cache[key] = None
+        return box_cache[key]
+
+    def _validate_game(season_year, week_hint, game_id, team, roster_names, derived):
+        """
+        (ok, week): `derived` must survive the box-score truth checks.
+        The game is located in the hint week's box payload when a hint is
+        given, else by scanning candidate weeks (payloads are cached).
+
+        Before the REC comparison, scoring-summary candidates fill any
+        per-player gap between derived and box receptions - some
+        completions exist only as a summary line - capped at the box total
+        so a summary line duplicating a detailed play adds nothing.  The
+        comparison itself runs on canonical name keys, so roster/box
+        spelling variants ("Maxence LeBlanc" vs "Max LeBlanc") do not
+        false-flag; the fill mutates `derived` so callers store the
+        filled receptions/targets.
+        """
+        if derived is None:
+            return (False, week_hint)
+        if derived["attempts"] > 0:
+            coverage = derived["named"] / derived["attempts"]
+            if coverage < _PLAY_TARGET_MIN_COVERAGE:
+                return (False, week_hint)
+        if week_hint:
+            weeks_to_try = [week_hint]
+        else:
+            weeks_to_try = _candidate_weeks(season_year, today)
+        for wk in weeks_to_try:
+            payload = _box_payload(season_year, wk)
+            if not payload:
+                continue
+            rec = _box_receptions(payload, game_id, team, roster_names)
+            if rec is None:
+                continue  # game not in this week's payload; keep looking
+            if derived["attempts"] == 0:
+                # Provably pass-less game: no targets exist to get wrong.
+                return (len(rec) == 0, wk)
+            derived_c = _canon_sums(derived["receptions"])
+            box_c = _canon_sums(rec)
+            summary_c = _canon_sums(derived.get("summary") or {})
+            for key, box_n in box_c.items():
+                gap = box_n - derived_c.get(key, 0)
+                if gap <= 0:
+                    continue
+                fill = min(gap, summary_c.get(key, 0))
+                if fill <= 0:
+                    continue
+                # Attribute the fill to one full name under this key:
+                # prefer a name the detailed parse already credited, else
+                # the summary line's own resolved name.
+                target_name = None
+                for n in derived["targets"]:
+                    if _canonical_name_key(n) == key:
+                        target_name = n
+                        break
+                if target_name is None:
+                    for n in (derived.get("summary") or {}):
+                        if _canonical_name_key(n) == key:
+                            target_name = n
+                            break
+                if target_name is None:
+                    continue
+                derived["receptions"][target_name] = (
+                    derived["receptions"].get(target_name, 0) + fill)
+                derived["targets"][target_name] = (
+                    derived["targets"].get(target_name, 0) + fill)
+                derived_c[key] = derived_c.get(key, 0) + fill
+            keys = set(derived_c) | set(box_c)
+            ok = all(derived_c.get(k, 0) == box_c.get(k, 0) for k in keys)
+            return (ok, wk)
+        return (False, week_hint)
+
+    def _fetch_plays(season_year: int, team: str, week: Optional[int] = None):
+        """One /plays call; None signals an API failure (retry later)."""
+        params: Dict[str, Any] = {"year": season_year, "team": team}
+        if week is not None:
+            params["week"] = week
+        try:
+            return _cfbd_get("/plays", params, retries=2)
+        except Exception as exc:
+            print(f"[targets-plays] {team} {season_year} failed - "
+                  f"{type(exc).__name__}: {exc}")
+            return None
+
+    for season_year in seasons:
+        teams = sorted(set(teams_by_year[season_year]))
+        if not teams:
+            continue
+        candidates = _candidate_weeks(season_year, today)
+        season_tracked = tracked.get(season_year, {})
+        has_stored = any(season_year in yrs for yrs in stored.values())
+        print(f"[targets-plays] Fetching {season_year} for {len(teams)} teams")
+        additions: Dict[str, Tuple[int, str]] = {}   # name → (added, team)
+
+        def _add_targets(tgts: Dict[str, int], team: str) -> None:
+            for n, c in tgts.items():
+                prev_add, _ = additions.get(n, (0, team))
+                additions[n] = (prev_add + c, team)
+
+        # Legacy bootstrap (mirrors GP / old targets): stored totals exist
+        # but no week tracking at all - adopt them as complete for every
+        # candidate week instead of re-parsing a whole season.
+        if adopt_stored and not season_tracked and has_stored:
+            for team in teams:
+                _mark_weeks_fetched("targets", season_year, team, candidates)
+            _seed_stored(season_year)
+            continue
+
+        if season_year < today.year:
+            # ── Finished season: ONE season-level /plays call per team ──
+            for team in teams:
+                done = set(season_tracked.get(team, set())) if adopt_stored else set()
+                if adopt_stored and candidates and set(candidates) <= done:
+                    continue  # every week already folded into stored totals
+                maps = _roster(season_year, team)
+                if maps is None:
+                    continue
+                by_jersey, by_name, roster_names = maps
+                games = _group_plays_by_game(_fetch_plays(season_year, team))
+                if not games:
+                    # Season-level yielded nothing (endpoint may demand a
+                    # week): fall back to per-week calls for unprocessed
+                    # weeks only - same validation, just more calls.
+                    for wk in candidates:
+                        if wk in done:
+                            continue
+                        wk_rows = _fetch_plays(season_year, team, week=wk)
+                        if wk_rows is None:
+                            continue
+                        games.extend(
+                            (gid, gp, w or wk)
+                            for gid, gp, w in _group_plays_by_game(wk_rows))
+                        time.sleep(0.15)
+                team_total_new = 0
+                ok_weeks: Set[int] = set()
+                for gid, gplays, wk_hint in games:
+                    derived = _derive_game_targets(gplays, team, by_jersey,
+                                                   by_name, roster_names)
+                    ok, wk = _validate_game(season_year, wk_hint, gid, team,
+                                            roster_names, derived)
+                    if not ok or wk is None:
+                        continue  # discarded whole; week stays unmarked
+                    if adopt_stored and wk in done:
+                        continue  # already folded in; never double count
+                    _add_targets(derived["targets"], team)
+                    team_total_new += sum(derived["targets"].values())
+                    ok_weeks.add(wk)
+                if ok_weeks:
+                    _mark_weeks_fetched("targets", season_year, team, sorted(ok_weeks))
+                if team_total_new:
+                    base = baselines.get((season_year, team), 0) if adopt_stored else 0
+                    total_all = base + team_total_new
+                    baselines[(season_year, team)] = total_all
+                    _record_team_targets(season_year, team, total_all)
+        else:
+            # ── Current season: per-week incremental per team ──
+            est = _estimated_current_week(today)
+            for team in teams:
+                done = set(season_tracked.get(team, set())) if adopt_stored else set()
+                weeks_to_fetch = [w for w in candidates if w not in done]
+                if not weeks_to_fetch:
+                    continue
+                maps = _roster(season_year, team)
+                if maps is None:
+                    continue
+                by_jersey, by_name, roster_names = maps
+                team_total_new = 0
+                fetched_ok: List[int] = []
+                for week in weeks_to_fetch:
+                    rows = _fetch_plays(season_year, team, week=week)
+                    if rows is None:
+                        continue  # failure: leave unmarked, retried next run
+                    if not rows:
+                        # Empty team-week (bye / not played): record it only
+                        # when strictly before the current-week boundary.
+                        if week < est:
+                            fetched_ok.append(week)
+                        continue
+                    games = _group_plays_by_game(rows)
+                    if not games:
+                        continue  # plays without game ids cannot validate
+                    week_targets: List[Dict[str, int]] = []
+                    week_ok = True
+                    for gid, gplays, _wk in games:
+                        derived = _derive_game_targets(gplays, team,
+                                                       by_jersey, by_name,
+                                                       roster_names)
+                        ok, _found_wk = _validate_game(
+                            season_year, week, gid, team, roster_names, derived)
+                        if not ok:
+                            week_ok = False
+                            break
+                        week_targets.append(derived["targets"])
+                    if not week_ok:
+                        continue  # whole week unmarked; retried next run
+                    for tgts in week_targets:
+                        _add_targets(tgts, team)
+                        team_total_new += sum(tgts.values())
+                    fetched_ok.append(week)
+                    time.sleep(0.15)   # light rate-limiting between calls
+                if fetched_ok:
+                    _mark_weeks_fetched("targets", season_year, team, fetched_ok)
+                if team_total_new:
+                    base = baselines.get((season_year, team), 0) if adopt_stored else 0
+                    total_all = base + team_total_new
+                    baselines[(season_year, team)] = total_all
+                    _record_team_targets(season_year, team, total_all)
+
+        # Merge: stored totals for everyone, additions on top.  Nothing
+        # validated → totals identical to what's stored (pure no-op).
+        if adopt_stored:
+            _seed_stored(season_year)
+        for name, (add, team) in additions.items():
+            base = ((stored.get(name, {}).get(season_year) or {}).get("targets", 0)
+                    if adopt_stored else 0)
+            _put(name, season_year, base + add, team)
+
+    total_athletes = len(result)
+    print(f"[targets-plays] collected targets for {total_athletes} athletes "
+          f"across {len(teams_by_year)} seasons")
+    return result
+
+
+def backfill_cfbd_targets_from_plays(draft_year: int) -> Dict[str, Any]:
+    """
+    One-time backfill: fill `targets` in rookie_prospect_source_data for
+    EVERY stored season of the class, parsed from CFBD play-by-play text.
+
+    Why this exists: fetch_cfbd_college_stats builds its teams_by_year from
+    the seasons it (re)fetched, and _filter_years_needing_fetch drops past
+    seasons once their source rows exist - so a normal pipeline run only
+    ever derives play-text targets for the current season.  This entry
+    point instead reads the team set from the stored source rows
+    themselves and runs fetch_cfbd_targets_from_plays over all of them;
+    its week tracking, per-game box-score validation, team-totals
+    bookkeeping and additive composition apply unchanged (with stored
+    targets NULL, the composed totals are exactly the validated sums).
+
+    Persisted with the games-played backfill's match pattern: player_id =
+    ROOKIE_<year>_<name_lower with spaces as underscores>.  A name in the
+    targets map whose slug has no stored row updates nothing (counted via
+    rowcount).  Only the `targets` column is ever written.
+
+    Returns {"updated": total_rows, "teams": team_seasons,
+             "by_season": {season: rows}}.
+    """
+    from dashboard_services.db import get_conn
+
+    prefix = _player_id_prefix(draft_year)
+    summary: Dict[str, Any] = {"updated": 0, "teams": 0, "by_season": {}}
+
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT DISTINCT season, team
+                    FROM rookie_prospect_source_data
+                    WHERE player_id LIKE %s AND team IS NOT NULL
+                    """,
+                    (prefix + "%",),
+                )
+                rows = cur.fetchall()
+    except Exception as exc:
+        print(f"[targets-plays] backfill: could not load stored teams - "
+              f"{type(exc).__name__}: {exc}")
+        return summary
+
+    teams_by_year: Dict[int, set] = {}
+    for r in rows:
+        season = r["season"] if isinstance(r, dict) else r[0]
+        team = r["team"] if isinstance(r, dict) else r[1]
+        if season is None or not team:
+            continue
+        teams_by_year.setdefault(int(season), set()).add(team)
+    if not teams_by_year:
+        print(f"[targets-plays] backfill: no stored teams for class {draft_year}")
+        return summary
+    teams_by_year = {yr: sorted(ts) for yr, ts in sorted(teams_by_year.items())}
+    summary["teams"] = sum(len(ts) for ts in teams_by_year.values())
+
+    targets_map = fetch_cfbd_targets_from_plays(draft_year, teams_by_year)
+    if not targets_map:
+        print(f"[targets-plays] backfill: no validated targets derived "
+              f"for class {draft_year}")
+        return summary
+
+    # Flatten to per-season (targets, player_id, season) update rows.
+    updates: Dict[int, List[Tuple[int, str, int]]] = {}
+    for name_lower, by_year in targets_map.items():
+        if not name_lower or not by_year:
+            continue
+        player_id = prefix + str(name_lower).strip().replace(" ", "_")
+        for season, entry in by_year.items():
+            if not entry:
+                continue
+            targets = entry.get("targets")
+            if targets is None:
+                continue
+            updates.setdefault(int(season), []).append(
+                (int(targets), player_id, int(season)))
+
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                for season in sorted(updates):
+                    season_updated = 0
+                    for targets, player_id, seas in updates[season]:
+                        cur.execute(
+                            """
+                            UPDATE rookie_prospect_source_data
+                            SET targets = %s
+                            WHERE player_id = %s AND season = %s
+                            """,
+                            (targets, player_id, seas),
+                        )
+                        season_updated += cur.rowcount or 0
+                    conn.commit()
+                    summary["by_season"][season] = season_updated
+                    summary["updated"] += season_updated
+    except Exception as exc:
+        print(f"[targets-plays] backfill: update failed - "
+              f"{type(exc).__name__}: {exc}")
+
+    print(f"[targets-plays] backfill: updated {summary['updated']} "
+          f"player-season rows across {summary['teams']} team-seasons "
+          f"for class {draft_year}: {summary['by_season']}")
+    return summary
 
 
 def backfill_cfbd_targets(draft_year: int) -> Dict[str, int]:
