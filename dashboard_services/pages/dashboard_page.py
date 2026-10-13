@@ -602,6 +602,49 @@ def build_dashboard_body(ctx: dict) -> str:
                 }})(btns[i]);
               }}
             }}
+            function reducedMotion() {{
+              try {{ return window.matchMedia("(prefers-reduced-motion: reduce)").matches; }}
+              catch (e) {{ return false; }}
+            }}
+            function visibleItemSiblings(item, card) {{
+              var out = [];
+              if (!card) return out;
+              var items = card.querySelectorAll(".ns-item[data-ns-item]");
+              for (var i = 0; i < items.length; i++) {{
+                if (items[i] !== item && items[i].style.display !== "none") out.push(items[i]);
+              }}
+              return out;
+            }}
+            // FLIP: record sibling positions, mutate layout, then glide each
+            // moved sibling from its old spot to its new one so dismissals
+            // and undo restores shift the grid smoothly (2D on desktop,
+            // vertical on mobile) instead of jumping.
+            function flipSiblings(siblings, mutate) {{
+              if (reducedMotion() || !siblings.length) {{ mutate(); return; }}
+              var before = [];
+              for (var i = 0; i < siblings.length; i++) {{
+                before.push(siblings[i].getBoundingClientRect());
+              }}
+              mutate();
+              for (var i = 0; i < siblings.length; i++) {{
+                (function(el, old) {{
+                  if (el.style.display === "none") return;
+                  var now = el.getBoundingClientRect();
+                  var dx = old.left - now.left;
+                  var dy = old.top - now.top;
+                  if (!dx && !dy) return;
+                  el.style.transition = "none";
+                  el.style.transform = "translate(" + dx + "px, " + dy + "px)";
+                  void el.offsetWidth;
+                  el.style.transition = "transform .25s ease";
+                  el.style.transform = "";
+                  setTimeout(function() {{
+                    el.style.transition = "";
+                    el.style.transform = "";
+                  }}, 300);
+                }})(siblings[i], before[i]);
+              }}
+            }}
             function bindItemDismiss() {{
               var btns = document.querySelectorAll("[data-dismiss-ns-item]");
               for (var i = 0; i < btns.length; i++) {{
@@ -615,12 +658,20 @@ def build_dashboard_body(ctx: dict) -> str:
                     var key = itemKey(id);
                     map[key] = true;
                     try {{ localStorage.setItem(LS_KEY, JSON.stringify(map)); }} catch (e) {{}}
-                    item.style.transition = "opacity .25s";
-                    item.style.opacity = "0";
-                    setTimeout(function() {{
-                      item.style.display = "none";
-                      refreshNsCard(card, dismissedMap());
-                    }}, 260);
+                    var siblings = visibleItemSiblings(item, card);
+                    function finishDismiss() {{
+                      flipSiblings(siblings, function() {{
+                        item.style.display = "none";
+                        refreshNsCard(card, dismissedMap());
+                      }});
+                    }}
+                    if (reducedMotion()) {{
+                      finishDismiss();
+                    }} else {{
+                      item.style.transition = "opacity .15s";
+                      item.style.opacity = "0";
+                      setTimeout(finishDismiss, 160);
+                    }}
                     if (window.brUndoToast) {{
                       window.brUndoToast("Action dismissed.", function() {{
                         try {{
@@ -628,11 +679,13 @@ def build_dashboard_body(ctx: dict) -> str:
                           delete m[key];
                           localStorage.setItem(LS_KEY, JSON.stringify(m));
                         }} catch (e) {{}}
-                        item.style.display = "";
+                        flipSiblings(visibleItemSiblings(item, card), function() {{
+                          item.style.display = "";
+                          refreshNsCard(card, dismissedMap());
+                        }});
                         requestAnimationFrame(function() {{
                           item.style.opacity = "1";
                         }});
-                        refreshNsCard(card, dismissedMap());
                       }});
                     }}
                   }});
