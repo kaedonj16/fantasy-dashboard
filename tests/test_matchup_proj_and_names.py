@@ -141,6 +141,76 @@ def test_render_matchup_keeps_team_abbr_outside_name_ellipsis():
     assert "class='pname player-clickable'" in html or 'class="pname' in html
 
 
+def _bye_week_preview(mmod, monkeypatch, schedule_lookup):
+    """Kaedon's Week 6 case: CIN is on a bye. The status builder marks a
+    gameless team's players FINAL and the player index carries no byeWeek,
+    so Ja'Marr Chase used to render a big final-style 0.0."""
+    from datetime import datetime, timedelta
+
+    game_day = (datetime.now() + timedelta(days=7)).strftime("%Y%m%d")
+    dal_game = {
+        "home": "GB", "away": "DAL", "gameDate": game_day,
+        "gameTime": "8:20p", "gameStatusCode": "0",
+    }
+    monkeypatch.setattr(mmod, "load_teams_index", lambda: {})
+    monkeypatch.setattr(mmod, "build_offense_rankings", lambda *_a, **_k: {})
+    monkeypatch.setattr(mmod, "load_week_stats", lambda *_a, **_k: {})
+    monkeypatch.setattr(mmod, "load_week_schedule", lambda *_a, **_k: [])
+    monkeypatch.setattr(
+        mmod, "build_team_schedule_lookup",
+        lambda *_a, **_k: schedule_lookup(dal_game),
+    )
+    monkeypatch.setattr(mmod, "_allow_live_game_indicators", lambda *_a, **_k: False)
+    monkeypatch.setattr("utils.utils.load_week_projection", lambda *_a, **_k: {})
+
+    matchup = {
+        "left": {
+            "name": "Team A", "roster_id": "1", "record": "0-0", "username": "a",
+            "avatar": "", "pts_total": None,
+            "starters": [{"pid": "4867", "name": "CeeDee Lamb", "pos": "WR", "nfl": "DAL", "pts": None}],
+        },
+        "right": {
+            "name": "Team B", "roster_id": "2", "record": "0-0", "username": "b",
+            "avatar": "", "pts_total": None,
+            "starters": [{"pid": "7564", "name": "Ja'Marr Chase", "pos": "WR", "nfl": "CIN", "pts": 0.0}],
+        },
+    }
+    return mmod.render_matchup_slide(
+        "2026", matchup, w=6, proj_week=5,
+        status_by_pid={"4867": mmod.STATUS_NOT_STARTED, "7564": mmod.STATUS_FINAL},
+        projections={6: {"projections": {"4867": 20.1, "7564": 0.0}}},
+        players={"4867": {"name": "CeeDee Lamb"}, "7564": {"name": "Ja'Marr Chase"}},
+        teams={},
+        team_game_lookup={},
+        scoring_settings={"rec": 1.0},
+    )
+
+
+def test_preview_bye_player_renders_bye_not_zero(monkeypatch):
+    mmod = _matchups()
+    html = _bye_week_preview(
+        mmod, monkeypatch,
+        lambda g: {"DAL": g, "GB": g},  # CIN absent: on a bye
+    )
+    # Centre score column reads BYE, game slot under the name reads BYE,
+    # and the whole info block carries the greyed-out bye class.
+    assert "<span class='mb-a mb-bye'>BYE</span>" in html
+    assert "mb-info--bye" in html
+    assert "mb-matchup'>BYE</span>" in html
+    # The opponent side is untouched: real projection and a real game line.
+    assert "20.1" in html
+    assert "@ GB" in html
+
+
+def test_preview_no_bye_verdict_when_schedule_unavailable(monkeypatch):
+    """An empty schedule lookup means the data never loaded: fall back to
+    the metadata verdicts instead of marking everyone a bye."""
+    mmod = _matchups()
+    html = _bye_week_preview(mmod, monkeypatch, lambda g: {})
+    assert "mb-bye" not in html
+    assert "mb-info--bye" not in html
+
+
 def test_team_live_totals_uses_yahoo_proj_total_when_starters_have_no_sleeper_proj():
     mmod = _matchups()
     team = {

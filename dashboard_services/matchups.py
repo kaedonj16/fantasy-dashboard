@@ -2392,6 +2392,24 @@ def render_matchup_slide(
         # blend below and the game/stats lines further down share it.
         game = resolve_team_game(nfl, _slide_game_lookup, team_schedule_lookup)
 
+        # Schedule-based bye detection: this week's schedule loaded and the
+        # player's team is not in it (and no live game resolved either), so
+        # the team is on a bye. The metadata checks above miss skill players:
+        # build_status_by_pid marks a gameless team FINAL, and the player
+        # index does not always carry byeWeek, so a bye starter in a preview
+        # rendered a big final-style 0.0 instead of BYE. Keyed off the
+        # schedule (the same data the game lines below use), never the
+        # projection value; an empty schedule lookup means the data is
+        # unavailable and leaves the metadata verdicts above untouched.
+        if (
+            not is_bye
+            and nfl
+            and game is None
+            and team_schedule_lookup
+            and lookup_team_map(team_schedule_lookup, str(nfl).upper()) is None
+        ):
+            is_bye = True
+
         # decide what to show
         is_not_started = False
         if is_bye:
@@ -2562,6 +2580,11 @@ def render_matchup_slide(
         # in a slot read against one coloured chip. Left/right mirroring is
         # handled in CSS off the parent .mb-cell-r, so the markup is identical
         # either side.
+        # A bye player's game slot reads BYE: there is no kickoff line to
+        # show, and the .mb-info--bye class greys the whole block.
+        if is_bye:
+            game_line = "BYE"
+
         bye_cls = " mb-info--bye" if is_bye else ""
         info_html = (
             f"<div class='mb-info{bye_cls}'>"
