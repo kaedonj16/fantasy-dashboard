@@ -11,13 +11,18 @@ tuned from live outcomes. This module closes that loop:
   weeks is the ~21-day horizon the call needs to prove itself over), computes
   the realized outcome over the 3 weeks AFTER the call week from
   ``player_weekly_metrics`` (the same source the engine reads), and persists
-  one immutable grade per call.
+  one grade per call.
 * :func:`summarize_grades` aggregates grades into hit / partial / miss rates
   grouped by classification and by scoring version, for threshold review.
 
-Grading is idempotent: a call's grade is keyed by the call's identity
-(player_id, season, as_of_week, scoring_version) and inserts use
-ON CONFLICT DO NOTHING, so re-running never duplicates or rewrites a grade.
+Grading is idempotent within a grading version: a call's grade is keyed
+by the call's identity (player_id, season, as_of_week, scoring_version)
+and re-running under the same GRADING_VERSION never duplicates or
+rewrites a grade. A new GRADING_VERSION is a new verdict on the same
+history, not new history: stale-version grades stop counting as the
+idempotency frontier (see :func:`load_existing_grade_keys`) and the
+saver overwrites them in place (see :func:`save_grade_rows`), so a
+grading-logic change regrades every stored call on the next run.
 
 Like the scorer, the outcome math is pure: :func:`grade_call` and
 :func:`classify_outcome` operate on plain row dicts and never touch the DB.
@@ -26,15 +31,24 @@ All DB access is confined to the loader / saver functions at the bottom.
 Outcome thresholds (change vs the call's stored baseline; see
 :func:`classify_outcome`):
 
-* role held / grew: opportunity delta >= +2.0 per game OR snap-share
-  delta >= +8.0 percentage points
+* role held / grew: opportunity delta >= +2.0 per game, OR snap-share
+  delta >= +8.0 percentage points with opportunities not falling
+  (opportunity delta >= 0, or unmeasured). Snaps alone cannot carry
+  the role leg when the player is actually being used less.
 * role reverted: every available role delta is back at baseline noise
   (opportunity <= +0.5 per game AND snap share <= +3.0 points)
 * production rose: PPR PPG delta >= +2.0
-* hit    = role held/grew AND production rose
-* miss   = role reverted
-* partial = anything in between (role held without production, role
-  partially retained, production up on a partially retained role, ...)
+* production collapsed: PPR PPG delta <= -2.0
+* hit    = role held/grew AND production rose, on at least 2 outcome
+  games. A hit-pace outcome on a single game is a partial
+  (single_game_sample): one game cannot prove a breakout.
+* miss   = role reverted, OR production collapsed (even when the role
+  held: a player who kept the snaps but stopped producing did not
+  break out). One exception: role reverted BUT production rose still
+  grades partial, not miss (production_rose_despite_role_reverted).
+* partial = anything in between (role held without a production rise
+  or collapse, role partially retained, production up on a partially
+  retained role, ...)
 * injured = the outcome window was wiped out by injury: fewer than 2
   games played while the player carried an IR / PUP / NFI designation
   (any outcome week) or an OUT / DOUBTFUL designation (>= 2 of the 3
@@ -85,7 +99,7 @@ from data_building.breakout_engine.weekly_store import (
 
 GRADES_TABLE = "weekly_breakout_grades"
 INJURY_SNAPSHOTS_TABLE = "player_injury_snapshots"
-GRADING_VERSION = "weekly-grading-v3"
+GRADING_VERSION = "weekly-grading-v4"
 
 logger = logging.getLogger(__name__)
 
@@ -108,10 +122,14 @@ BASELINE_FALLBACK_WEEKS = 3
 
 # Outcome thresholds (deltas vs the call's baseline). See module docstring.
 PPG_HIT_DELTA = 2.0          # PPR points per game
+PPG_MISS_DELTA = -2.0        # PPR points per game: a collapse this deep is
+                             # a miss on its own (production-aware miss)
 OPP_HELD_DELTA = 2.0         # carries+targets per game
 SNAP_HELD_DELTA = 8.0        # snap-share percentage points
 OPP_REVERTED_DELTA = 0.5     # carries+targets per game
 SNAP_REVERTED_DELTA = 3.0    # snap-share percentage points
+HIT_MIN_GAMES = 2            # a hit needs at least this many outcome games;
+                             # a 1-game hit-pace outcome caps at partial
 
 # Rates in summarize_grades are None below this many *graded* calls in a
 # group (counts are always reported). Small samples produce noise, not signal.
@@ -463,10 +481,12 @@ def classify_outcome(
                     "opp_delta": None, "snap_delta": None, "ppg_delta": None}
         if ppg_delta >= PPG_HIT_DELTA:
             grade, reason = GRADE_HIT, "production_above_cohort"
-        elif ppg_delta <= -PPG_HIT_DELTA:
+        elif ppg_delta <= PPG_MISS_DELTA:
             grade, reason = GRADE_MISS, "production_below_cohort"
         else:
             grade, reason = GRADE_PARTIAL, "production_near_cohort"
+        if grade == GRADE_HIT and int(outcome.get("games") or 0) < HIT_MIN_GAMES:
+            grade, reason = GRADE_PARTIAL, "single_game_sample"
         return {"grade": grade, "role_state": "cohort", "reason": reason,
                 "opp_delta": None, "snap_delta": None, "ppg_delta": ppg_delta}
     opp_delta = _delta(outcome.get("opp_pg"), baseline.get("opp_pg"))
@@ -477,22 +497,46 @@ def classify_outcome(
                 "reason": "no_role_baseline",
                 "opp_delta": None, "snap_delta": None, "ppg_delta": ppg_delta}
 
+    # Role held has two legs. The touches leg stands on its own. The
+    # snap leg is guarded: snaps only count as a held role when touches
+    # did not fall, because a player can be on the field more while
+    # being used less (or while a teammate's absence inflates his snaps).
     role_held = (
         (opp_delta is not None and opp_delta >= OPP_HELD_DELTA)
-        or (snap_delta is not None and snap_delta >= SNAP_HELD_DELTA)
+        or (snap_delta is not None and snap_delta >= SNAP_HELD_DELTA
+            and (opp_delta is None or opp_delta >= 0))
     )
     role_reverted = (
         (opp_delta is None or opp_delta <= OPP_REVERTED_DELTA)
         and (snap_delta is None or snap_delta <= SNAP_REVERTED_DELTA)
     )
-    if role_held and ppg_delta is not None and ppg_delta >= PPG_HIT_DELTA:
+    production_rose = ppg_delta is not None and ppg_delta >= PPG_HIT_DELTA
+    production_collapsed = ppg_delta is not None and ppg_delta <= PPG_MISS_DELTA
+    if role_held and production_rose:
         grade, role_state, reason = GRADE_HIT, "held", "role_held_and_production_rose"
+    elif role_reverted and production_rose:
+        # The role went away but the player produced anyway (efficiency,
+        # touchdowns): that is not a failed call, just not a breakout.
+        grade, role_state, reason = (GRADE_PARTIAL, "reverted",
+                                     "production_rose_despite_role_reverted")
     elif role_reverted:
         grade, role_state, reason = GRADE_MISS, "reverted", "role_reverted_to_baseline"
+    elif production_collapsed:
+        # Role held or mixed, but production fell off a cliff: a miss,
+        # not a partial. Keeping the snaps is not a breakout when the
+        # points disappear.
+        grade = GRADE_MISS
+        role_state = "held" if role_held else "mixed"
+        reason = "production_collapsed"
     elif role_held:
         grade, role_state, reason = GRADE_PARTIAL, "held", "role_held_without_production_rise"
     else:
         grade, role_state, reason = GRADE_PARTIAL, "mixed", "role_partially_retained"
+    if grade == GRADE_HIT and int(outcome.get("games") or 0) < HIT_MIN_GAMES:
+        # One game at hit pace is a promising start, not a proven
+        # breakout: the verdict caps at partial until a second game
+        # exists. Role state is preserved; only the grade is capped.
+        grade, reason = GRADE_PARTIAL, "single_game_sample"
     return {"grade": grade, "role_state": role_state, "reason": reason,
             "opp_delta": opp_delta, "snap_delta": snap_delta, "ppg_delta": ppg_delta}
 
@@ -642,11 +686,13 @@ def grade_call(
         detail["injury"] = verdict["injury"]
     detail["thresholds"] = {
         "ppg_hit_delta": PPG_HIT_DELTA,
+        "ppg_miss_delta": PPG_MISS_DELTA,
         "cohort_miss_delta": -PPG_HIT_DELTA,
         "opp_held_delta": OPP_HELD_DELTA,
         "snap_held_delta": SNAP_HELD_DELTA,
         "opp_reverted_delta": OPP_REVERTED_DELTA,
         "snap_reverted_delta": SNAP_REVERTED_DELTA,
+        "hit_min_games": HIT_MIN_GAMES,
     }
     return {
         "player_id": str(call.get("player_id") or ""),
@@ -970,17 +1016,23 @@ def load_calls(season: int) -> List[Dict[str, Any]]:
 def load_existing_grade_keys(season: int) -> Set[Tuple[str, int, int, str]]:
     """Call keys that already have a real grade - the idempotency frontier.
 
+    The frontier is per grading version: only rows graded under the
+    current GRADING_VERSION count. A grade written by an older grading
+    version is a stale verdict under old logic, so it does not block;
+    the call is regraded and the saver overwrites the row in place.
+
     Ungraded rows are not grades (they record 'could not grade yet') and
-    never block a future grading attempt, so a call that was ungraded for
-    lack of a baseline becomes gradeable once a baseline exists. Every
-    other grade (hit, partial, miss, injured) is terminal: it is written
-    once and never retried."""
+    never block a future grading attempt under any version, so a call
+    that was ungraded for lack of a baseline becomes gradeable once a
+    baseline exists. Every other current-version grade (hit, partial,
+    miss, injured) is terminal: it is written once and never retried."""
     init_weekly_breakout_grades_db()
     with get_conn() as conn:
         rows = conn.execute(
             f"SELECT player_id, season, as_of_week, scoring_version "
-            f"FROM {GRADES_TABLE} WHERE season = %s AND grade <> %s",
-            (int(season), GRADE_UNGRADED),
+            f"FROM {GRADES_TABLE} WHERE season = %s AND grade <> %s "
+            f"AND grading_version = %s",
+            (int(season), GRADE_UNGRADED, GRADING_VERSION),
         ).fetchall()
     return {call_key(dict(r)) for r in rows}
 
@@ -1129,9 +1181,17 @@ def load_injury_weeks(
 
 
 def save_grade_rows(grades: List[Dict[str, Any]]) -> int:
-    """Insert grades idempotently. An existing grade for the same call is
-    never duplicated and never rewritten (grades are immutable history).
-    Returns the number of rows actually inserted."""
+    """Insert grades idempotently, with a version-guarded overwrite.
+
+    A grade is immutable history WITHIN its grading version: when the
+    stored row for a call already carries the incoming grading_version,
+    the conflict is a true no-op (no update, no returned id), so
+    same-version reruns never rewrite a grade. When the stored row
+    carries an OLDER grading_version, it is a stale verdict under old
+    logic: the conflict updates every grade column in place from the
+    incoming row, guarded by the version mismatch, so a grading-logic
+    bump regrades history instead of being silently blocked by it.
+    Returns the number of rows actually inserted or regraded."""
     if not grades:
         return 0
     init_weekly_breakout_grades_db()
@@ -1147,6 +1207,11 @@ def save_grade_rows(grades: List[Dict[str, Any]]) -> int:
         f"%({column})s::jsonb" if column == "detail" else f"%({column})s"
         for column in cols
     )
+    key_cols = {"player_id", "season", "as_of_week", "scoring_version"}
+    updates = ", ".join(
+        f"{column} = EXCLUDED.{column}" for column in cols
+        if column not in key_cols
+    )
     inserted = 0
     with get_conn() as conn:
         for grade in grades:
@@ -1156,7 +1221,9 @@ def save_grade_rows(grades: List[Dict[str, Any]]) -> int:
                 f"INSERT INTO {GRADES_TABLE} ({', '.join(cols)}) "
                 f"VALUES ({placeholders}) "
                 f"ON CONFLICT (player_id, season, as_of_week, scoring_version) "
-                f"DO NOTHING RETURNING id",
+                f"DO UPDATE SET {updates} "
+                f"WHERE {GRADES_TABLE}.grading_version <> EXCLUDED.grading_version "
+                f"RETURNING id",
                 row,
             ).fetchone()
             if result:

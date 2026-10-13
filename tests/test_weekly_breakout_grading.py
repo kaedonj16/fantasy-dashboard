@@ -146,6 +146,148 @@ def test_ungraded_when_no_role_baseline_exists():
 
 
 # ---------------------------------------------------------------------------
+# grading v4: production-aware miss, snap guard, 2-game hit floor
+# ---------------------------------------------------------------------------
+
+_BASE = {"ppr_ppg": 10.0, "opp_pg": 10.0, "snap_pct": 40.0}
+
+
+def _outcome(*, ppg, opp, snap, games=3):
+    return {"games": games, "ppr_ppg": ppg, "opp_pg": opp, "snap_pct": snap}
+
+
+def test_v4_reverted_role_with_production_rise_is_partial():
+    # The Malachi Fields shape: role back at baseline (opp +0.2, snap
+    # +1.0) but production up +2.5, over the hit bar. Not a miss.
+    verdict = wg.classify_outcome(_BASE, _outcome(ppg=12.5, opp=10.2, snap=41.0))
+    assert verdict["grade"] == "partial"
+    assert verdict["role_state"] == "reverted"
+    assert verdict["reason"] == "production_rose_despite_role_reverted"
+
+
+def test_v4_reverted_role_without_production_rise_stays_miss():
+    verdict = wg.classify_outcome(_BASE, _outcome(ppg=11.0, opp=10.2, snap=41.0))
+    assert verdict["grade"] == "miss"
+    assert verdict["reason"] == "role_reverted_to_baseline"
+
+
+def test_v4_production_collapse_is_miss_even_when_role_holds():
+    verdict = wg.classify_outcome(_BASE, _outcome(ppg=7.5, opp=12.5, snap=40.0))
+    assert verdict["grade"] == "miss"
+    assert verdict["role_state"] == "held"
+    assert verdict["reason"] == "production_collapsed"
+
+
+def test_v4_production_collapse_is_miss_on_a_mixed_role():
+    verdict = wg.classify_outcome(_BASE, _outcome(ppg=7.0, opp=11.0, snap=45.0))
+    assert verdict["grade"] == "miss"
+    assert verdict["role_state"] == "mixed"
+    assert verdict["reason"] == "production_collapsed"
+
+
+def test_v4_mild_production_dip_with_role_held_stays_partial():
+    verdict = wg.classify_outcome(_BASE, _outcome(ppg=9.0, opp=12.5, snap=40.0))
+    assert verdict["grade"] == "partial"
+    assert verdict["reason"] == "role_held_without_production_rise"
+
+
+def test_v4_snap_leg_fails_when_touches_fell():
+    # Snap share +10 but touches -1.0/g: on the field more, used less.
+    # The snap leg cannot carry the role, so hit pace is only a partial.
+    verdict = wg.classify_outcome(_BASE, _outcome(ppg=13.0, opp=9.0, snap=50.0))
+    assert verdict["grade"] == "partial"
+    assert verdict["role_state"] == "mixed"
+    assert verdict["reason"] == "role_partially_retained"
+
+
+def test_v4_snap_leg_holds_when_touches_flat_to_up():
+    verdict = wg.classify_outcome(_BASE, _outcome(ppg=13.0, opp=10.5, snap=50.0))
+    assert verdict["grade"] == "hit"
+    assert verdict["role_state"] == "held"
+
+
+def test_v4_touches_leg_holds_on_its_own():
+    # Touches +2.5 with snap share down: the touches leg never needed
+    # the snap guard.
+    verdict = wg.classify_outcome(_BASE, _outcome(ppg=13.0, opp=12.5, snap=35.0))
+    assert verdict["grade"] == "hit"
+
+
+def test_v4_hit_needs_two_outcome_games():
+    one = wg.classify_outcome(
+        _BASE, _outcome(ppg=13.0, opp=12.5, snap=40.0, games=1))
+    assert one["grade"] == "partial"
+    assert one["reason"] == "single_game_sample"
+    assert one["role_state"] == "held"
+    two = wg.classify_outcome(
+        _BASE, _outcome(ppg=13.0, opp=12.5, snap=40.0, games=2))
+    assert two["grade"] == "hit"
+    assert two["reason"] == "role_held_and_production_rose"
+
+
+def test_v4_grade_call_caps_single_game_hit_at_partial():
+    call = make_call()
+    one = wg.grade_call(call, [wk(5, snap=65, tgt=9, car=11, ppr=18.0)])
+    assert one["grade"] == "partial"
+    assert one["outcome_games"] == 1
+    assert one["detail"]["reason"] == "single_game_sample"
+    assert one["grading_version"] == "weekly-grading-v4"
+    assert one["detail"]["thresholds"]["hit_min_games"] == 2
+    assert one["detail"]["thresholds"]["ppg_miss_delta"] == -2.0
+    two = wg.grade_call(call, [wk(5, snap=65, tgt=9, car=11, ppr=18.0),
+                               wk(6, snap=65, tgt=9, car=11, ppr=18.0)])
+    assert two["grade"] == "hit"
+
+
+# ---------------------------------------------------------------------------
+# regrade frontier: the existing-keys set is per grading version
+# ---------------------------------------------------------------------------
+
+def test_existing_grade_keys_only_counts_current_version(monkeypatch):
+    _no_db(monkeypatch)
+    rows = [
+        {"player_id": "1", "season": 2026, "as_of_week": 1,
+         "scoring_version": "weekly-v6", "grade": "hit",
+         "grading_version": wg.GRADING_VERSION},
+        # Same call shape, graded under v3: stale logic, must regrade.
+        {"player_id": "2", "season": 2026, "as_of_week": 1,
+         "scoring_version": "weekly-v6", "grade": "hit",
+         "grading_version": "weekly-grading-v3"},
+        # Ungraded never blocks, under any version.
+        {"player_id": "3", "season": 2026, "as_of_week": 1,
+         "scoring_version": "weekly-v6", "grade": "ungraded",
+         "grading_version": wg.GRADING_VERSION},
+        {"player_id": "4", "season": 2026, "as_of_week": 1,
+         "scoring_version": "weekly-v6", "grade": "ungraded",
+         "grading_version": "weekly-grading-v3"},
+    ]
+
+    class _Cur:
+        def execute(self, sql, params):
+            # The SQL itself must do the filtering; the fake mirrors it.
+            assert "grading_version" in sql
+            assert params[2] == wg.GRADING_VERSION
+            self._rows = [r for r in rows
+                          if r["grade"] != "ungraded"
+                          and r["grading_version"] == wg.GRADING_VERSION]
+            return self
+
+        def fetchall(self):
+            return self._rows
+
+    class _Conn:
+        def __enter__(self):
+            return _Cur()
+
+        def __exit__(self, *args):
+            return False
+
+    monkeypatch.setattr(wg, "get_conn", lambda: _Conn())
+    keys = wg.load_existing_grade_keys(2026)
+    assert keys == {wg.call_key(rows[0])}
+
+
+# ---------------------------------------------------------------------------
 # baseline resolution
 # ---------------------------------------------------------------------------
 
@@ -371,7 +513,8 @@ class _Result:
 
 
 class _Conn:
-    """Hands back a row for the first insert, None after (conflict)."""
+    """Hands back a row for the first insert, None after (a same-version
+    conflict is a no-op under the version guard, so no id comes back)."""
 
     def __init__(self):
         self.queries = []
@@ -389,16 +532,23 @@ class _Conn:
         return _Result({"id": 1} if self.calls == 1 else None)
 
 
-def test_save_grade_rows_uses_on_conflict_do_nothing(monkeypatch):
+def test_save_grade_rows_uses_version_guarded_do_update(monkeypatch):
     _no_db(monkeypatch)
     conn = _Conn()
     monkeypatch.setattr(wg, "get_conn", lambda: conn)
     grade = wg.grade_call(make_call(), [wk(5, snap=65, tgt=9, car=11, ppr=18.0)])
     inserted = wg.save_grade_rows([grade, grade])
-    assert inserted == 1                    # second insert conflicted away
+    assert inserted == 1                    # second insert no-ops (same version)
     assert len(conn.queries) == 2
-    assert "ON CONFLICT (player_id, season, as_of_week, scoring_version)" in conn.queries[0]
-    assert "DO NOTHING" in conn.queries[0]
+    sql = conn.queries[0]
+    assert "ON CONFLICT (player_id, season, as_of_week, scoring_version)" in sql
+    # A stale-version row is overwritten in place; a same-version row is
+    # left untouched by the grading_version guard on the UPDATE.
+    assert "DO UPDATE SET" in sql
+    assert "DO NOTHING" not in sql
+    assert "grading_version = EXCLUDED.grading_version" in sql
+    assert ".grading_version <> EXCLUDED.grading_version" in sql
+    assert "RETURNING id" in sql
 
 
 # ---------------------------------------------------------------------------

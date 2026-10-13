@@ -1,4 +1,4 @@
-"""Tests for the "injured" breakout grade (weekly-grading-v3).
+"""Tests for the "injured" breakout grade (weekly-grading-v4).
 
 Covers the pure injury-window classifier, the grade_call wiring (the
 2-games rule), summary exclusion of injured grades from hit-rate
@@ -149,7 +149,7 @@ def test_ir_zero_games_grades_injured():
         injury_by_week=inj_weeks({5: ("IR", "IR"), 6: ("IR", "IR"),
                                   7: ("IR", "IR")}))
     assert grade["grade"] == wg.GRADE_INJURED
-    assert grade["grading_version"] == "weekly-grading-v3"
+    assert grade["grading_version"] == "weekly-grading-v4"
     assert grade["detail"]["reason"] == "on_ir_during_window"
     assert grade["detail"]["injury"]["designation"] == "IR"
     assert grade["ppg_delta"] is None
@@ -324,17 +324,17 @@ def test_orchestrator_grades_ir_call_as_injured(monkeypatch):
     assert result["injury_snapshot"] == {"week": 7, "rows": 5}
     grade = saved["g"][0]
     assert grade["grade"] == "injured"
-    assert grade["grading_version"] == "weekly-grading-v3"
+    assert grade["grading_version"] == "weekly-grading-v4"
 
 
 def test_injured_grade_is_terminal_in_frontier(monkeypatch):
     """load_existing_grade_keys keeps every non-ungraded grade, so an
-    injured grade is written once and never retried (v2 rule: only
-    ungraded is retried)."""
+    injured grade is written once and never retried (only
+    ungraded is retried, and only within the current grading version)."""
     _no_db(monkeypatch)
     calls = [make_call()]
     monkeypatch.setattr(wg, "load_calls", lambda season: calls)
-    # the call was already graded injured under v3
+    # the call was already graded injured under the current version
     monkeypatch.setattr(
         wg, "load_existing_grade_keys",
         lambda season: {wg.call_key(calls[0])})

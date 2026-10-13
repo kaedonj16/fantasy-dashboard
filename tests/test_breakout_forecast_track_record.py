@@ -59,6 +59,7 @@ def make_call(as_of_week=4, baseline_ppg=8.0, baseline_snap=40.0,
 
 
 HELD_ROW = wk(5, snap=65.0, tgt=9.0, car=11.0, ppr=18.0)      # held + rose
+HELD_ROW_6 = wk(6, snap=65.0, tgt=9.0, car=11.0, ppr=18.0)    # held + rose
 REVERTED_ROW = wk(5, snap=41.0, tgt=4.0, car=6.0, ppr=8.5)    # role reverted
 MIXED_ROW = wk(5, snap=45.0, tgt=5.0, car=6.0, ppr=9.0)       # neither
 
@@ -68,14 +69,27 @@ MIXED_ROW = wk(5, snap=45.0, tgt=5.0, car=6.0, ppr=9.0)       # neither
 # ---------------------------------------------------------------------------
 
 def test_weekly_forecast_tracking_to_hit():
-    fc = forecasts.weekly_forecast(make_call(), [HELD_ROW], through_week=5)
+    # Two games at hit pace: a hit needs a 2-game sample (grading v4),
+    # so the fixture banks two held weeks.
+    fc = forecasts.weekly_forecast(make_call(), [HELD_ROW, HELD_ROW_6],
+                                   through_week=6)
     assert fc["state"] == "forecast"
     assert fc["kind"] == "weekly"
     assert fc["band"] == forecasts.BAND_TRACKING_HIT
     assert fc["band_label"] == "Tracking to hit"
-    assert fc["weeks_in"] == 1
+    assert fc["weeks_in"] == 2
+    assert fc["games"] == 2
+    assert "2 of 3 weeks in" in fc["basis"]
+
+
+def test_weekly_forecast_one_game_hit_pace_is_borderline():
+    # The grading-v4 hit floor applied live: one game at hit pace would
+    # grade partial (single_game_sample) if the window closed today, so
+    # the forecast band is Borderline, not Tracking to hit.
+    fc = forecasts.weekly_forecast(make_call(), [HELD_ROW], through_week=5)
+    assert fc["state"] == "forecast"
     assert fc["games"] == 1
-    assert "1 of 3 weeks in" in fc["basis"]
+    assert fc["band"] == forecasts.BAND_BORDERLINE
 
 
 def test_weekly_forecast_tracking_to_miss_on_reverted_role():
@@ -127,8 +141,9 @@ def test_weekly_forecast_prior_season_call_caps_at_borderline_without_prior_rows
 
 def test_weekly_forecast_prior_season_ppg_fill_tracks_to_hit():
     prior_rows = [wk(1, ppr=9.0), wk(2, ppr=11.0)]   # prior mean 10.0 PPG
-    fc = forecasts.weekly_forecast(_prior_season_call(), [HELD_ROW],
-                                   through_week=5, prior_rows=prior_rows)
+    fc = forecasts.weekly_forecast(_prior_season_call(),
+                                   [HELD_ROW, HELD_ROW_6],
+                                   through_week=6, prior_rows=prior_rows)
     assert fc["state"] == "forecast"
     assert fc["band"] == forecasts.BAND_TRACKING_HIT
     assert fc["ppg_delta"] == pytest.approx(8.0)     # 18.0 vs prior 10.0
@@ -141,9 +156,9 @@ def test_weekly_forecasts_for_calls_loads_prior_series_when_needed(monkeypatch):
         loaded.append(season)
         if season == 2025:
             return {"101": [wk(1, ppr=9.0), wk(2, ppr=11.0)]}
-        return {"101": [HELD_ROW]}
+        return {"101": [HELD_ROW, HELD_ROW_6]}
 
-    monkeypatch.setattr(wg, "default_through_week", lambda season: 5)
+    monkeypatch.setattr(wg, "default_through_week", lambda season: 6)
     monkeypatch.setattr(wg, "load_season_series", _series)
     out = forecasts.weekly_forecasts_for_calls(2026, [_prior_season_call()])
     assert loaded == [2026, 2025]
@@ -155,9 +170,9 @@ def test_weekly_forecasts_for_calls_skips_prior_load_when_unneeded(monkeypatch):
 
     def _series(season, through):
         loaded.append(season)
-        return {"101": [HELD_ROW]}
+        return {"101": [HELD_ROW, HELD_ROW_6]}
 
-    monkeypatch.setattr(wg, "default_through_week", lambda season: 5)
+    monkeypatch.setattr(wg, "default_through_week", lambda season: 6)
     monkeypatch.setattr(wg, "load_season_series", _series)
     out = forecasts.weekly_forecasts_for_calls(2026, [make_call()])
     assert loaded == [2026]                  # no prior-season load paid for
@@ -169,9 +184,9 @@ def test_weekly_forecast_never_for_a_mature_call():
 
 
 def test_weekly_forecasts_for_calls_skips_mature(monkeypatch):
-    monkeypatch.setattr(wg, "default_through_week", lambda season: 5)
+    monkeypatch.setattr(wg, "default_through_week", lambda season: 6)
     monkeypatch.setattr(wg, "load_season_series",
-                        lambda season, through: {"101": [HELD_ROW]})
+                        lambda season, through: {"101": [HELD_ROW, HELD_ROW_6]})
     open_call = make_call(as_of_week=4)
     mature_call = make_call(as_of_week=1, player_id="202")
     out = forecasts.weekly_forecasts_for_calls(2026, [open_call, mature_call])
@@ -929,7 +944,24 @@ def _patch_reconstructed_outlook(monkeypatch, *, through=3, week_rows=None,
 
 
 def test_outlook_pools_reconstructed_open_calls(monkeypatch):
-    api = _patch_reconstructed_outlook(monkeypatch)
+    # Through week 4 with two banked window games per reconstructed
+    # player: the week 2 call for 101 needs 2 games to sit at hit pace
+    # under the grading-v4 hit floor (1 game would cap at borderline).
+    # 102's call sits in week 2 here, not week 1 as in the helper
+    # default: at through=4 a week 1 call is mature and forecasts
+    # nothing, so the pooled miss has to come from a week 2 call.
+    api = _patch_reconstructed_outlook(
+        monkeypatch, through=4,
+        week_rows={
+            1: [_recon_row("101", 1, 55.0)],
+            2: [_recon_row("101", 2, 60.0), _recon_row("102", 2, 50.0),
+                _recon_row("103", 2, 45.0)],
+        },
+        series={
+            "101": [wk(2, **_HELD), wk(3, **_HELD), wk(4, **_HELD)],
+            "102": [wk(3, **_REVERTED), wk(4, **_REVERTED)],
+            "103": [],
+        })
     payload = api.get_breakout_track_record(2026)
 
     # No separate backtest entry: the reconstructed forecasts are inside
