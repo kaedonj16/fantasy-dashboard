@@ -20634,10 +20634,25 @@ def _build_lineup_analysis_html(
                     f'<strong class="rc-swap-points" aria-label="{points:.2f} points">{points:.2f}</strong></div>')
 
         team = html.escape(str(item.get("team") or team_by_rid.get(str(item.get("rid") or "")) or "Team"))
+        rot_out = item.get("rotation_out") or [started]
+        rot_in = item.get("rotation_in") or [reserve]
+        if len(rot_out) > 1 or len(rot_in) > 1 or not rot_out:
+            # Full hindsight rotation: every displaced starter stacks on the
+            # left, every bench player who should have started on the right,
+            # and the gain is the whole rotation's gain.
+            left = "".join(swap_player(p, "Started" if i == 0 else "", "loss")
+                           for i, p in enumerate(rot_out)) or swap_player(started, "Started", "loss")
+            right = "".join(swap_player(p, "Benched" if i == 0 else "", "win")
+                            for i, p in enumerate(rot_in))
+            pair = (f'<div class="rc-swap-stack">{left}</div>'
+                    f'<i class="fa-solid fa-arrow-right rc-swap-arrow" aria-hidden="true"></i>'
+                    f'<div class="rc-swap-stack">{right}</div>')
+        else:
+            pair = (f'{swap_player(started, "Started", "loss")}'
+                    f'<i class="fa-solid fa-arrow-right rc-swap-arrow" aria-hidden="true"></i>'
+                    f'{swap_player(reserve, "Benched", "win")}')
         return (f'<div class="rc-swap-row"><div class="rc-swap-team">{team}</div>'
-                f'<div class="rc-swap-pair">{swap_player(started, "Started", "loss")}'
-                f'<i class="fa-solid fa-arrow-right rc-swap-arrow" aria-hidden="true"></i>'
-                f'{swap_player(reserve, "Benched", "win")}</div>'
+                f'<div class="rc-swap-pair">{pair}</div>'
                 f'<div class="rc-swap-gain"><strong>+{item["gap"]:.2f}</strong><span>Potential gain</span></div></div>')
 
     missed_rows = [missed_row(item) for item in analysis["missed_opportunities"]]

@@ -103,8 +103,9 @@ def build_lineup_analysis(matchups_by_week: dict, selected_week: int,
                           roster_positions: list[str] | None = None) -> dict:
     """Build one authoritative lineup review from verified historical lineups.
 
-    A missed opportunity is a single legal hindsight replacement. We deliberately
-    do not add independent swaps, which can reuse a player or conflict for FLEX.
+    A missed opportunity is the team's full hindsight rotation: the exact
+    optimal legal lineup differenced against the actual starters, so flex
+    shifts are priced correctly and the gain matches Lineup Efficiency.
     Historical projections are accepted only when explicitly marked as historical.
     """
     matchups = week_value(matchups_by_week or {}, selected_week, []) or []
@@ -166,27 +167,91 @@ def build_lineup_analysis(matchups_by_week: dict, selected_week: int,
     gems = sorted((p for p in bench if str(p.get("pos") or "").upper() in allowed),
                   key=lambda p: -float(p["pts"]))[:6]
 
+    # A team's missed opportunity is its full hindsight rotation, computed by
+    # the same exact optimizer as Lineup Efficiency: bench players come in,
+    # starters drop out, and retained starters may shift slots (an RB starter
+    # sliding to RB2 so a WR can take his FLEX spot, and so on). A single
+    # pairwise swap understates the loss whenever the optimal change rotates
+    # more than one player, which flex-heavy formats do constantly, and it
+    # cannot express a bench player filling a slot that was left empty.
     missed = []
     for team in teams:
-        current = team["starters"]
-        for reserve in team["bench"]:
-            for index, started in enumerate(current):
-                if float(reserve["pts"]) <= float(started["pts"]):
-                    continue
-                alternative = current[:index] + [reserve] + current[index + 1:]
-                legal = _assignable(alternative, slots) if slots else (
-                    str(reserve.get("pos") or "").upper() == str(started.get("pos") or "").upper())
-                if legal:
-                    missed.append({**team, "starter": started, "bench_player": reserve,
-                                   "gap": float(reserve["pts"]) - float(started["pts"])})
-        # One mutually compatible hypothetical per team.
-    best_by_team = {}
-    for item in missed:
-        rid = item["rid"]
-        if rid not in best_by_team or item["gap"] > best_by_team[rid]["gap"]:
-            best_by_team[rid] = item
+        item = _optimal_rotation(team, slots) if slots else None
+        if item is None:
+            item = _best_single_swap(team, slots)
+        if item is not None:
+            missed.append(item)
     return {"available": True, "historical_projections": trustworthy_projection,
             "under_title": under_title, "under_note": under_note,
             "underperformers": underperformers, "bench_gems": gems,
-            "missed_opportunities": sorted(best_by_team.values(), key=lambda x: -x["gap"]),
+            "missed_opportunities": sorted(missed, key=lambda x: -x["gap"]),
             "teams": teams}
+
+
+def _best_single_swap(team, slots):
+    """Fallback: the best legal one-out/one-in swap (used when the exact
+    optimizer cannot score the team, or no slot list is available)."""
+    current = team["starters"]
+    best = None
+    for reserve in team["bench"]:
+        for index, started in enumerate(current):
+            if float(reserve["pts"]) <= float(started["pts"]):
+                continue
+            alternative = current[:index] + [reserve] + current[index + 1:]
+            legal = _assignable(alternative, slots) if slots else (
+                str(reserve.get("pos") or "").upper() == str(started.get("pos") or "").upper())
+            if legal:
+                gap = float(reserve["pts"]) - float(started["pts"])
+                if best is None or gap > best["gap"]:
+                    best = {**team, "starter": started, "bench_player": reserve,
+                            "gap": gap, "rotation_in": [reserve],
+                            "rotation_out": [started]}
+    return best
+
+
+def _optimal_rotation(team, slots):
+    """The team's exact optimal lineup change, or None when the optimizer
+    cannot produce a complete legal lineup from the scored pool."""
+    try:
+        from utils.lineups import assign_optimal_lineup
+    except Exception:
+        return None
+    current, bench = team["starters"], team["bench"]
+    pool = list(current) + list(bench)
+    scores = {str(p.get("pid") or ""): float(p["pts"]) for p in pool if p.get("pid")}
+    positions = {str(p.get("pid") or ""): str(p.get("pos") or "") for p in pool if p.get("pid")}
+    if not scores:
+        return None
+    try:
+        optimal = assign_optimal_lineup(
+            scores, positions, slots, list(scores),
+            prefer_starters=[str(p.get("pid") or "") for p in current])
+    except Exception:
+        return None
+    if not optimal.get("complete"):
+        return None
+    actual_ids = [str(p.get("pid") or "") for p in current]
+    optimal_ids = {str(pid) for pid in (optimal.get("starters") or []) if pid}
+    incoming_ids = list(dict.fromkeys(
+        str(pid) for pid in (optimal.get("assignment") or [])
+        if pid and str(pid) not in set(actual_ids)))
+    outgoing_ids = [pid for pid in actual_ids if pid not in optimal_ids]
+    if not incoming_ids:
+        return None
+    gain = round(float(optimal["total"]) - sum(float(p["pts"]) for p in current), 2)
+    if gain <= 0:
+        return None
+    by_pid = {str(p.get("pid") or ""): p for p in pool}
+    rotation_in = [by_pid[pid] for pid in incoming_ids if pid in by_pid]
+    rotation_out = [by_pid[pid] for pid in outgoing_ids if pid in by_pid]
+    if not rotation_in:
+        return None
+    primary_in = max(rotation_in, key=lambda p: float(p["pts"]))
+    if rotation_out:
+        primary_out = min(rotation_out, key=lambda p: float(p["pts"]))
+    else:
+        # A bench player filled a slot nobody scored in: there is no
+        # displaced starter, so the pair reads as the empty slot itself.
+        primary_out = {"pid": "", "name": "Empty slot", "pos": "", "nfl": "", "pts": 0.0}
+    return {**team, "starter": primary_out, "bench_player": primary_in,
+            "gap": gain, "rotation_in": rotation_in, "rotation_out": rotation_out}

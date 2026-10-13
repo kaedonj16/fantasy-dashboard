@@ -99,3 +99,53 @@ def test_bench_gems_do_not_default_to_backup_qbs_in_one_qb():
     ])}]}
     result = build_lineup_analysis(data, 1, ["QB", "RB", "WR", "FLEX"])
     assert [p["pid"] for p in result["bench_gems"]] == ["receiver"]
+
+
+def test_missed_opportunity_is_the_full_flex_rotation_not_one_swap():
+    # Two-FLEX format: the optimal hindsight change rotates three players.
+    # A single-swap search reports only +16.5 here (WR in for the RB2);
+    # the true missed gain is 34.2, matching Lineup Efficiency.
+    slots = ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "FLEX", "K", "DEF"]
+    starters = [
+        _player("qb", "QB", 16.0), _player("rb-a", "RB", 36.8),
+        _player("rb-b", "RB", 0.7), _player("wr-a", "WR", 2.9),
+        _player("wr-b", "WR", 18.8), _player("te", "TE", 21.6),
+        _player("wr-c", "WR", 10.6), _player("rb-c", "RB", 2.2),
+        _player("k", "K", 17.0), _player("def", "DEF", 10.5),
+    ]
+    bench = [_player("rb-d", "RB", 14.8), _player("rb-e", "RB", 8.0),
+             _player("wr-d", "WR", 17.2)]
+    data = {1: [{"left": _side(1, starters, bench)}]}
+    result = build_lineup_analysis(data, 1, slots)
+    miss = result["missed_opportunities"][0]
+    assert miss["gap"] == 34.2
+    assert {p["pid"] for p in miss["rotation_in"]} == {"wr-d", "rb-d", "rb-e"}
+    assert {p["pid"] for p in miss["rotation_out"]} == {"rb-b", "wr-a", "rb-c"}
+
+
+def test_missed_opportunity_flex_shift_stays_a_single_pair():
+    # Bench RB enters at FLEX, the flexed WR drops: one change, priced once.
+    slots = ["RB", "WR", "FLEX"]
+    starters = [_player("rb-a", "RB", 20), _player("wr-a", "WR", 19),
+                _player("wr-flex", "WR", 9)]
+    bench = [_player("rb-b", "RB", 18)]
+    data = {1: [{"left": _side(1, starters, bench)}]}
+    miss = build_lineup_analysis(data, 1, slots)["missed_opportunities"][0]
+    assert miss["gap"] == 9
+    assert miss["starter"]["pid"] == "wr-flex"
+    assert miss["bench_player"]["pid"] == "rb-b"
+    assert len(miss["rotation_in"]) == len(miss["rotation_out"]) == 1
+
+
+def test_missed_opportunity_counts_a_bench_player_filling_an_empty_slot():
+    # The TE starter never scored (absent from the lineup data), so the
+    # bench TE's full points are the missed gain, with no displaced starter.
+    slots = ["RB", "TE"]
+    starters = [_player("rb-a", "RB", 20)]
+    bench = [_player("te-b", "TE", 15), _player("rb-b", "RB", 10)]
+    data = {1: [{"left": _side(1, starters, bench)}]}
+    miss = build_lineup_analysis(data, 1, slots)["missed_opportunities"][0]
+    assert miss["gap"] == 15
+    assert miss["bench_player"]["pid"] == "te-b"
+    assert miss["rotation_out"] == []
+    assert miss["starter"]["name"] == "Empty slot"

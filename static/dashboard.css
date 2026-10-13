@@ -32233,6 +32233,7 @@ button:disabled {
 .weekly-recap .rc-swap-row:last-child { border-bottom:0; }
 .weekly-recap .rc-swap-team { min-width:0; color:var(--muted); font-size: 13px; font-weight:650; overflow-wrap:anywhere; }
 .weekly-recap .rc-swap-pair { display:grid; grid-template-columns:minmax(0,1fr) 18px minmax(0,1fr); align-items:center; gap:10px; min-width:0; }
+.weekly-recap .rc-swap-stack { display:flex; flex-direction:column; gap:7px; min-width:0; }
 .weekly-recap .rc-swap-player { display:grid; grid-template-columns:30px minmax(0,1fr) auto; align-items:center; gap:9px; min-width:0; }
 .weekly-recap .rc-swap-copy { display:flex; flex-direction:column; min-width:0; }
 .weekly-recap .rc-swap-label { color:var(--muted); font-size: 11px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; }
@@ -46849,6 +46850,22 @@ table.rz-bs-table thead th:not(:first-child) {
 .bo-wk-link:hover {
     background: var(--surface-alt, #f1f5f9);
 }
+.bo-rail-row.bo-row-link {
+    cursor: pointer;
+    border-radius: 8px;
+    padding-left: 6px;
+    padding-right: 6px;
+    margin-left: -6px;
+    margin-right: -6px;
+}
+.bo-rail-row.bo-row-link:hover {
+    background: var(--surface-alt, #f1f5f9);
+}
+.bo-wk-link:focus-visible,
+.bo-rail-row.bo-row-link:focus-visible {
+    outline: 2px solid #3b82f6;
+    outline-offset: 1px;
+}
 .bo-show-all {
     font-size: 12px;
     color: #3b82f6;
@@ -47588,9 +47605,13 @@ em.gneg { background: var(--loss); }
 
 /* Standings character card: dark navy header, circular rank badges,
    depth via layered shadow. Matches the approved character mock. */
+/* Sidebar character cards carry a real 1px border (like .gm-card): the
+   rails clip horizontal overflow, so a borderless card whose only edge is
+   its box-shadow loses that shadow at the rail edge and reads borderless
+   on the sides. The border is inside the box, so it always renders. */
 .cc-st-card {
   background: var(--card, #fff);
-  border: none;
+  border: 1px solid var(--border, #e8eef4);
   border-radius: 16px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.06);
   overflow: hidden;
@@ -47716,7 +47737,7 @@ em.gneg { background: var(--loss); }
 /* Awards character card: dark gradient header, large 24px values. */
 .cc-aw-card {
   background: var(--card, #fff);
-  border: none;
+  border: 1px solid var(--border, #e8eef4);
   border-radius: 16px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.06);
   overflow: hidden;
@@ -47890,7 +47911,7 @@ em.gneg { background: var(--loss); }
    matching the standings/awards character treatment. */
 .cc-fo-card {
   background: var(--card, #fff);
-  border: none;
+  border: 1px solid var(--border, #e8eef4);
   border-radius: 16px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.06);
   overflow: hidden;
@@ -47956,7 +47977,7 @@ em.gneg { background: var(--loss); }
    matching the standings/awards character treatment. */
 .cc-inj-card {
   background: var(--card, #fff);
-  border: none;
+  border: 1px solid var(--border, #e8eef4);
   border-radius: 16px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.06);
   overflow: hidden;
@@ -47998,7 +48019,7 @@ em.gneg { background: var(--loss); }
    matching the other sidebar character cards. */
 .cc-act-card {
   background: var(--card, #fff);
-  border: none;
+  border: 1px solid var(--border, #e8eef4);
   border-radius: 16px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.06);
   overflow: hidden;
