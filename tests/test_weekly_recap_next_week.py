@@ -235,6 +235,20 @@ def test_render_outs_columns_are_per_side():
     assert out.count("br-gotw-outs-col") >= 2
 
 
+def test_outs_columns_pinned_to_their_own_side_in_css():
+    # Regression: the renderer only emits a column for a team that has outs.
+    # Without an explicit grid-column pin, grid auto-placement drops a lone
+    # right-side (b) column into the left track, so the right team's outs
+    # rendered under the left team.
+    from pathlib import Path
+    css = (Path(__file__).resolve().parents[1] / "static" / "dashboard.css").read_text()
+    assert ".br-gotw-outs-a {\n    grid-column: 1;" in css
+    assert ".br-gotw-outs-b {\n    grid-column: 2;" in css
+    # Mobile stacks to a single track; both columns must be re-pinned to it
+    # so the desktop pin cannot push side b into a phantom second track.
+    assert ".br-gotw-outs-a, .br-gotw-outs-b { grid-column: 1; }" in css
+
+
 def test_render_hides_outs_section_when_no_notable_outs():
     # Scrub-level outs (low projection) do not earn a section.
     df = pd.DataFrame([_fin_row(1, 1, "1", 100, 90), _fin_row(1, 1, "2", 90, 100)])

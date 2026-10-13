@@ -40782,7 +40782,15 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     background: color-mix(in srgb, var(--accent) 4%, transparent);
 }
 
+/* Each column is pinned to its own team's track. The renderer only emits a
+   column for a team that has outs, and grid auto-placement would otherwise
+   drop a lone right-side column into the left track. */
+.br-gotw-outs-a {
+    grid-column: 1;
+}
+
 .br-gotw-outs-b {
+    grid-column: 2;
     text-align: right;
 }
 
@@ -45143,6 +45151,10 @@ a, button, [role="button"], [role="tab"], summary, label,
     .br-gotw-proj-hero { font-size: 28px; }
     .br-gotw-vs { width: 44px; height: 44px; font-size: 13px; }
     .br-gotw-outs-grid { grid-template-columns: 1fr; }
+    /* Stacked: both columns take the single track in DOM order (a then b);
+       without this, the desktop pin would push side b into a phantom
+       second track. */
+    .br-gotw-outs-a, .br-gotw-outs-b { grid-column: 1; }
 }
 
 .weekly-recap .st-row.recap-viewer-team { background:color-mix(in srgb,var(--accent) 8%,var(--card)); box-shadow:inset 3px 0 var(--accent); }
