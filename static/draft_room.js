@@ -9934,14 +9934,45 @@
     });
     board.addEventListener('mousemove', function(e){
       if (tip.style.display === 'none') return;
+      // Flip against the tip's measured size, not a guessed constant: a
+      // long pick list is taller than any fixed estimate.
+      var tipW = tip.offsetWidth || 0, tipH = tip.offsetHeight || 0;
       var x = e.clientX + 16, y = e.clientY + 24;
-      if (x + 200 > window.innerWidth) x = e.clientX - 210;
-      if (y + 180 > window.innerHeight) y = e.clientY - 180;
+      if (x + tipW > window.innerWidth - 8) x = e.clientX - tipW - 10;
+      if (y + tipH > window.innerHeight - 8) y = e.clientY - tipH - 8;
       tip.style.left = x + 'px';
       tip.style.top = y + 'px';
     });
     board.addEventListener('mouseleave', function(){
       tip.style.display = 'none'; _tipSlot = null;
+    });
+    // Tap path: hover is unavailable on coarse pointers, and the board tip
+    // is disabled entirely at phone widths, so a tap on a column head
+    // toggles the same tip, anchored to the head. Desktop fine-pointer
+    // behavior is untouched (this returns immediately there).
+    board.addEventListener('click', function(e){
+      if (!(window.matchMedia('(pointer: coarse)').matches
+            || window.matchMedia('(max-width: 900px)').matches)) return;
+      var head = e.target.closest('[data-slot]');
+      if (!head){ tip.style.display = 'none'; _tipSlot = null; return; }
+      var slot = parseInt(head.getAttribute('data-slot'), 10);
+      if (slot === _tipSlot && tip.style.display !== 'none'){
+        tip.style.display = 'none'; _tipSlot = null; return;
+      }
+      _tipSlot = slot;
+      tip.innerHTML = buildTeamTip(slot);
+      // Measure with the real content in place but the tip not yet visible,
+      // so positioning uses its actual size.
+      tip.style.visibility = 'hidden';
+      tip.style.display = '';
+      var tipW = tip.offsetWidth || 0, tipH = tip.offsetHeight || 0;
+      var rect = head.getBoundingClientRect();
+      var x = Math.max(8, Math.min(rect.left, window.innerWidth - tipW - 8));
+      var y = rect.bottom + 8;
+      if (y + tipH > window.innerHeight - 8) y = rect.top - tipH - 8;
+      tip.style.left = x + 'px';
+      tip.style.top = y + 'px';
+      tip.style.visibility = '';
     });
   })();
 

@@ -867,8 +867,6 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
   .recap-view-matchup:hover {{ text-decoration:underline; }}
   .recap-matchup-score .recap-view-matchup {{ margin-top:6px; }}
   .recap-team .team-clickable {{ border-radius:6px; }}
-  .recap-team-name .team-clickable:hover {{ text-decoration:underline; }}
-  .st-name .team-clickable:hover {{ text-decoration:underline; }}
   .rc-pos-wrap {{ margin-top:14px; }}
   .rc-pos-label {{ font-size:11px; font-weight:800; letter-spacing:.07em; text-transform:uppercase; color:var(--muted); margin-bottom:8px; }}
   .rc-pos-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(165px,1fr)); gap:10px; }}

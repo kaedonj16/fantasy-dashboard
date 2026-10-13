@@ -466,7 +466,7 @@ def build_trade_calculator_body(
                   <div class="otc-pi-sub">How this trade affects your playoff odds</div>
                 </div>
                 <div class="pi-info-wrap">
-                  <span class="pi-info-btn" aria-label="Metric explanations">&#9432;</span>
+                  <button type="button" class="pi-info-btn" aria-label="Metric explanations">&#9432;</button>
                   <div class="pi-tooltip">
                     <div class="pi-tooltip-title">What each stat means</div>
                     <div class="pi-tooltip-row"><strong>Playoff Odds</strong> Monte Carlo sim. % of seasons your roster makes the playoffs.</div>
@@ -551,7 +551,8 @@ def build_trade_calculator_body(
             .pi-info-wrap {{ position:relative;flex-shrink:0;margin-top:2px; }}
             .pi-info-btn  {{
               font-size:15px;color:var(--text-muted);opacity:.55;line-height:1;
-              cursor:default;transition:opacity .15s;user-select:none;
+              font-family:inherit;background:none;border:none;padding:0;
+              cursor:pointer;transition:opacity .15s;user-select:none;
             }}
             .pi-info-btn:hover {{ opacity:1; }}
             .pi-tooltip {{
@@ -566,7 +567,7 @@ def build_trade_calculator_body(
             .pi-tooltip::before {{
               content:"";position:absolute;left:0;right:0;top:-8px;height:8px;
             }}
-            .pi-info-wrap:hover .pi-tooltip {{ display:block; }}
+            .pi-info-wrap:hover .pi-tooltip, .pi-info-wrap:focus-within .pi-tooltip {{ display:block; }}
             .pi-tooltip-title {{
               font-size:11px;font-weight:800;text-transform:uppercase;
               letter-spacing:.06em;color:var(--text-muted);margin-bottom:8px;

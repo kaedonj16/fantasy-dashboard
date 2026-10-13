@@ -372,7 +372,6 @@ html[data-theme="dark"] .fp-discord-icon {
 .utility-icon-btn:hover {
     background: var(--accent-soft);
     border-color: var(--accent);
-    transform: scale(1.05);
 }
 
 .nav-svg-icon {
@@ -543,7 +542,6 @@ html[data-theme="dark"] .fp-discord-icon {
 .nav-search-inner:hover {
     background: var(--accent-soft);
     border-color: var(--accent);
-    transform: scale(1.05);
 }
 
 .nav-search-wrapper:focus-within .nav-search-inner {

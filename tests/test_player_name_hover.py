@@ -66,6 +66,7 @@ _DIM_SELECTORS = [
     ".sched-pname:hover",
     ".td-body .player-clickable:hover",
     ".compare-chip:hover .compare-chip-name",
+    ".bo-plink:hover",
 ]
 
 
