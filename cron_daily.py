@@ -863,13 +863,16 @@ notify_top_movers()
 print("[cron] Weekly top-movers notification dispatched (throttled to 7 days)")
 """, "notify_top_movers")
 
+    # The weekly-recap push is NOT sent from here: it moved to the dedicated
+    # weekly-recap-push Render cron (Tuesdays ~9am ET) so subscribers get it
+    # Tuesday morning, not at this job's ~4am ET run. notify_recap_ready's
+    # per-league app_state claims would dedupe an overlap anyway.
     _run_step("""
 from dotenv import load_dotenv; load_dotenv()
-from utils.push_notifications import notify_recap_ready, notify_matchup_preview, notify_standings_update
-notify_recap_ready()
+from utils.push_notifications import notify_matchup_preview, notify_standings_update
 notify_matchup_preview()
 notify_standings_update()
-print("[cron] Recap/matchup/standings notifications dispatched")
+print("[cron] Matchup/standings notifications dispatched")
 """, "notify_weekly_game")
 
     # ------------------------------------------------------------------ #

@@ -12,8 +12,6 @@ def test_next_steps_queue_functions_exist():
     assert "def _next_steps_lineup_actions" in src
     assert "def _next_steps_waiver_actions" in src
     assert "def _next_steps_trade_actions" in src
-    assert "def _next_steps_trade_window_action" in src
-    assert "def _trade_window_data" in src
 
 
 def test_next_steps_queue_empty_state():
@@ -42,7 +40,7 @@ def test_next_steps_queue_ranking_order():
 def test_next_steps_css_classes():
     css = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
     for cls in ["ns-card", "ns-item", "ns-priority", "ns-action", "ns-why",
-                "ns-impact", "ns-cta", "ns-tag", "ns-empty"]:
+                "ns-cta", "ns-tag", "ns-empty"]:
         assert f".{cls}" in css, f"missing .{cls}"
 
 
@@ -69,15 +67,16 @@ def test_no_lineup_banner_on_dashboard():
     assert "lineup_alert_html" not in dash
 
 
-def test_no_standalone_trade_window_card():
-    """The trade window card is folded into Next steps; no standalone card."""
+def test_no_trade_window_in_next_steps():
+    """The buy/sell window alert is removed from Next steps entirely:
+    no standalone card and no queue action."""
     src = (ROOT / "app.py").read_text(encoding="utf-8")
     assert "def _trade_window_card_html" not in src
+    assert "_next_steps_trade_window_action" not in src
+    assert "_trade_window_data" not in src
     dash = (ROOT / "dashboard_services" / "pages" / "dashboard_page.py").read_text(encoding="utf-8")
     assert "_trade_window_card_html" not in dash
     assert "trade_window_html" not in dash
-    # The queue includes the trade window action.
-    assert "_next_steps_trade_window_action(ctx, viewer_roster_id)" in src
 
 
 def test_bye_alert_suppressed_when_swap_covers_player():
@@ -99,6 +98,35 @@ def test_bench_check_card_suppressed_when_next_steps_fires():
     # Suppression guard: card returns empty at the Next steps threshold.
     assert "if left_on_bench >= 5.0:" in body
     assert 'return ""' in body
+
+
+def test_next_steps_item_dismiss_markup():
+    """Each queue item renders a per-card dismiss button with a stable id."""
+    src = (ROOT / "app.py").read_text(encoding="utf-8")
+    start = src.find("def _render_next_steps_queue")
+    end = src.find("def _nfl_regular_season_kickoff_ms", start)
+    body = src[start:end]
+    assert 'data-ns-item="{_item_id}"' in body
+    assert 'data-dismiss-ns-item="{_item_id}"' in body
+    assert "ns-item-dismiss" in body
+
+
+def test_next_steps_item_dismiss_script():
+    """The dashboard dismiss script handles per-item dismissal with undo,
+    reusing the same localStorage map and day-scoped keys as card dismiss."""
+    dash = (ROOT / "dashboard_services" / "pages" / "dashboard_page.py").read_text(encoding="utf-8")
+    assert "data-dismiss-ns-item" in dash
+    assert '"nsitem-" + id' in dash
+    assert "Action dismissed." in dash
+    assert "brUndoToast" in dash
+    # Header count is refreshed from remaining items.
+    assert "refreshNsCard" in dash
+    assert 'querySelector(".ns-count")' in dash
+
+
+def test_next_steps_item_dismiss_css():
+    css = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
+    assert ".ns-item-dismiss" in css
 
 
 def test_bench_check_thresholds_agree():

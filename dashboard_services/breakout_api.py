@@ -833,28 +833,21 @@ def _recently_surfaced_player_ids(season: int, current_week: int,
     A player surfaced in week W is excluded from the board until their
     3-week grading window completes (weeks W+1 through W+3). This prevents
     the same player appearing back-to-back while their earlier call is
-    still being graded. The lookup is scoring-version agnostic: a player
-    surfaced under any version still blocks re-surfacing. Fails soft to
-    an empty set.
+    still being graded. "Surfaced" is the canonical definition in
+    weekly_grading.surfaced_player_ids_by_week: only players who were
+    actually on a served board count, so a high raw score in a run or
+    classification the board never showed cannot block anyone. Fails
+    soft to an empty set.
     """
     try:
-        from data_building.breakout_engine.weekly_store import (
-            WEEKLY_SCORES_TABLE, WEEKLY_RUNS_TABLE)
-        with get_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    f"SELECT DISTINCT s.player_id FROM {WEEKLY_SCORES_TABLE} s "
-                    f"JOIN {WEEKLY_RUNS_TABLE} r ON r.id = s.run_id "
-                    f"WHERE s.season = %s AND s.as_of_week > %s "
-                    f"AND s.as_of_week < %s "
-                    f"AND s.breakout_score >= %s "
-                    f"AND r.status = 'completed'",
-                    (int(season), int(current_week) - int(window_weeks) - 1,
-                     int(current_week),
-                     float(BREAKOUT_SURFACED_MIN_SCORE)),
-                )
-                return {str(r["player_id"]) for r in cur.fetchall()
-                        if r.get("player_id")}
+        from data_building.breakout_engine.weekly_grading import (
+            surfaced_player_ids_by_week)
+        by_week = surfaced_player_ids_by_week(int(season))
+        blocked: set = set()
+        for week in range(int(current_week) - int(window_weeks),
+                          int(current_week)):
+            blocked |= by_week.get(week, set())
+        return blocked
     except Exception:
         logger.warning("breakout: recently-surfaced lookup failed", exc_info=True)
         return set()
@@ -2172,13 +2165,50 @@ def get_breakout_track_record(requested_season: Optional[int] = None) -> Dict:
         logger.warning(
             "breakout track record: preseason board load failed", exc_info=True)
         preseason_board = {}
+    # Open calls from earlier completed weeks pool in too, each loaded
+    # through the same board pipeline. Without this, a live week whose
+    # grading window has not finished yet (too old to be the current
+    # board, too young to have grades) vanished from Still Tracking
+    # entirely. The current board's own week is skipped: it is already
+    # in the merge, and the first-wins dedupe would drop the duplicate
+    # anyway. Each week fails soft on its own.
+    historical_boards = []
+    try:
+        from data_building.breakout_engine.weekly_store import (
+            list_completed_weeks)
+        _completed_weeks = list_completed_weeks(season) or []
+    except Exception:
+        logger.warning(
+            "breakout track record: completed-weeks lookup failed",
+            exc_info=True)
+        _completed_weeks = []
+    _current_week = board.get("as_of_week") if isinstance(board, dict) else None
+    for _week_row in _completed_weeks:
+        try:
+            _week_int = int(_week_row.get("as_of_week"))
+        except (TypeError, ValueError, AttributeError):
+            continue
+        if _current_week is not None:
+            try:
+                if _week_int == int(_current_week):
+                    continue
+            except (TypeError, ValueError):
+                pass
+        try:
+            historical_boards.append(get_breakout_board_candidates(
+                season, BREAKOUT_BOARD_MIN_SCORE, BREAKOUT_BOARD_LIMIT,
+                week=_week_int))
+        except Exception:
+            logger.warning(
+                "breakout track record: week %s board load failed",
+                _week_int, exc_info=True)
     # The reconstructed weeks' open calls pool into the weekly outlook:
     # their synthetic candidates merge AFTER the boards, so under the
     # first-wins dedupe the live board's call for the same player always
     # beats the reconstruction. The pooled set is the live board's top 15
     # plus each reconstructed week's top 15; it is not re-capped whole.
     _merged = _merged_board_candidates(
-        board, preseason_board,
+        board, preseason_board, *historical_boards,
         {"candidates": _reconstructed_outlook_candidates(season)})
     payload["outlook"] = _forecast_outlook(_merged)
     # Still tracking: open calls by week, watchlist/monitored excluded,

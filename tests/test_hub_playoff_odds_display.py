@@ -175,15 +175,6 @@ def test_tile_helper_has_no_integer_rounding():
     assert "_fmt_playoff_pct_display" in helper_src
 
 
-def test_trade_window_card_uses_display_formatter():
-    start = APP_PY.index("def _next_steps_trade_window_action")
-    end = APP_PY.index("\ndef ", start + 1)
-    card_src = APP_PY[start:end]
-    assert "{pct:.0f}" not in card_src
-    assert "_fmt_playoff_pct_display(pct)" in card_src
-    assert "playoff odds" in card_src
-
-
 def test_dashboard_client_fill_mirrors_the_formatter():
     # No Math.round on any of the three odds fields in the tile fill.
     assert "Math.round(row.playoff_pct" not in DASH_PY

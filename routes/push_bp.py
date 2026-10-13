@@ -8,8 +8,9 @@ Routes:
     /api/push/leagues
     /api/push/preferences      (GET, PUT)
     /api/push/broadcast        (POST, admin)
-    /api/cron/notifications    (POST, admin; type=hourly|daily|weekly|scorezone|injury)
+    /api/cron/notifications    (POST, admin; type=hourly|daily|weekly|scorezone|injury|recap)
                                weekly = weekly email digest (utils.weekly_email)
+                               recap  = Tuesday weekly-recap push (notify_recap_ready)
 
 Extracted from app.py. Depends on extensions.limiter + dashboard_services/utils
 (DB, pywebpush, push_notifications) - no app.py internals. _push_broadcast is
@@ -541,7 +542,7 @@ def api_cron_notifications():
     Pass type='hourly' (lineup lock / close games / drops),
     type='daily', type='scorezone' (server-side TD poll),
     type='injury' (starter/bench injury flips, every 15 min on game days),
-    or type='weekly'.
+    type='weekly' (email digest), or type='recap' (Tuesday recap push).
     Auth is X-Admin-Secret or CRON_SECRET
     (header X-Cron-Secret or JSON ``secret``, same as /api/flush-value-cache).
 
@@ -638,6 +639,13 @@ def _run_cron_notifications(kind, account_id=None, email=None, force=False):
             res = send_weekly_digests(account_id=account_id, email=email, force=force) or {}
             logger.info("[cron/notifications] weekly digest: sent=%s (eligible=%s, failed=%s)",
                         res.get("sent", 0), res.get("eligible", 0), res.get("failed", 0))
+        elif kind == "recap":
+            # Tuesday weekly-recap push. notify_recap_ready self-gates to
+            # Tuesdays and claims per league+week in app_state, so a re-fire
+            # the same Tuesday is a no-op per league.
+            from utils.push_notifications import notify_recap_ready
+            sent = notify_recap_ready() or 0
+            logger.info("[cron/notifications] recap push: sent=%s", sent)
         else:
             run_hourly()
     except Exception as exc:
