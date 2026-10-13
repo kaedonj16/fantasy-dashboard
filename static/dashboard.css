@@ -2413,6 +2413,8 @@ html[data-theme="dark"] img[src*="discord-brands-solid.png"] {
 .site-logo {
     width: 225px;
     height: auto;
+    /* Never distort the mark if a future rule caps one dimension. */
+    object-fit: contain;
 }
 
 [data-theme="dark"] .site-logo {
@@ -2458,6 +2460,8 @@ html[data-theme="dark"] img[src*="discord-brands-solid.png"] {
 .nav-left > a {
     display: flex;
     align-items: center;
+    /* The league chip beside the logo truncates instead of squeezing it. */
+    flex-shrink: 0;
     text-decoration: none;
     cursor: pointer;
     transition: opacity 0.2s ease;
@@ -18489,8 +18493,18 @@ img, svg, canvas {
         padding-top: max(12px, env(safe-area-inset-top)); /* clear PWA status bar */
     }
 
-    .site-logo {
-        max-height: 42px;
+    /* Shrink the logo proportionally to ~42px tall. Website_Logo.png is
+       512x211 (ratio 2.43), so 42px tall is ~102px wide. The old rule set
+       only max-height: 42px, which kept width: 180px from .nav-left and
+       squashed the logo to 180x42 (ratio 4.29) at 769-1024px viewports.
+       The higher-specificity selectors are repeated here so this width
+       actually wins over .nav-left / .nav-header-main. */
+    .site-logo,
+    .nav-left .site-logo,
+    .nav-header-main .site-logo {
+        width: 102px;
+        height: auto;
+        max-height: none;
     }
 
     #page-root {
