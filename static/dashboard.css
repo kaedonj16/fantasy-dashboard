@@ -45193,6 +45193,9 @@ a, button, [role="button"], [role="tab"], summary, label,
     width: 100%;
 }
 .mb-info--bye { opacity: .45; }
+/* The bye game slot carries the literal BYE label, not a kickoff line:
+   style it as a label so it reads at a glance inside the greyed block. */
+.mb-info--bye .mb-game { font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 
 .mb-nameline { display: flex; align-items: baseline; gap: 5px; min-width: 0; line-height: 1.2; }
 /* Both sides read name-first ("C.J. Stroud HOU • QB"); the right column's
@@ -45217,6 +45220,9 @@ a, button, [role="button"], [role="tab"], summary, label,
 .mb-a { display: block; font-size: 15px; font-weight: 800; color: var(--accent); }
 .mb-a.mb-win { color: var(--win); }
 .mb-a.mb-bye, .mb-a.mb-na, .mb-a.mb-proj-only { color: var(--text-subtle); font-weight: 700; }
+/* BYE in the score column is a label, not a number: smaller than the
+   score/projection figures beside it, letter-spaced like the game slot. */
+.mb-a.mb-bye { font-size: 13px; letter-spacing: .08em; }
 /* Final games: larger centered score, no projection underneath. */
 .mb-a.mb-final { font-size: 20px; color: var(--text); }
 .mb-a.mb-final.mb-win { color: var(--win); }
@@ -45845,6 +45851,9 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 .hp-mb .mb-cell-r .mb-cell-row { flex-direction: row-reverse; text-align: right; }
 .hp-mb .mb-info { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 1px; }
 .hp-mb .mb-cell-r .mb-info { align-items: flex-end; }
+/* Same right-edge rule as the main board: right-column game lines span the
+   full info width, right-aligned under the name. */
+.hp-mb .mb-cell-r .mb-info .mb-game { text-align: right; width: 100%; }
 .hp-mb .mb-nameline { display: flex; align-items: baseline; gap: 5px; min-width: 0; line-height: 1.2; flex-wrap: wrap; }
 .hp-mb .mb-cell-r .mb-nameline { flex-direction: row; justify-content: flex-end; }
 .hp-mb .mb-nameline .pname { font-size: 13px; font-weight: 700; color: var(--accent); white-space: normal; overflow-wrap: anywhere; min-width: 0; }
