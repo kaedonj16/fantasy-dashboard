@@ -9742,228 +9742,6 @@ def _render_usage_movers(ctx: dict, viewer_roster_id) -> str:
 
 
 
-def _trade_window_data(ctx: dict, viewer_roster_id) -> dict | None:
-    """Buy/sell trade-window advisor data: playoff odds plus roster-age
-    standing plus the trade deadline, with partners on the opposite side of
-    the market. Returns None when it has nothing confident to say."""
-    if not viewer_roster_id:
-        return None
-    try:
-        import time as _time
-        from utils.trade_window import (
-            redraft_deadline_card_visible,
-            trade_partners,
-            trade_window_verdict,
-        )
-
-        platform = ctx.get("platform", "sleeper")
-        # Warm-cache only: a cold sim must never block the dashboard paint.
-        odds = _playoff_sim_cached(ctx, platform, block=False)
-        if not odds:
-            return None
-        me = next(
-            (r for r in odds if str(r.get("roster_id")) == str(viewer_roster_id)),
-            None,
-        )
-        if not me or me.get("is_complete"):
-            return None
-        pct = float(me.get("playoff_pct") or 0)
-
-        # Sleeper keeps trade_deadline on league.settings; ESPN maps
-        # tradeSettings.deadlineDate onto league_settings.trade_deadline_ts.
-        settings = {}
-        settings.update(ctx.get("league_settings") or {})
-        settings.update((ctx.get("league") or {}).get("settings") or {})
-        current_week = int(ctx.get("current_week") or 0)
-        try:
-            deadline = int(settings.get("trade_deadline") or 0)
-        except (TypeError, ValueError):
-            deadline = 0
-        weeks_to = None
-        if 0 < deadline < 30:
-            if current_week > deadline:
-                return None  # deadline passed; the window is closed
-            weeks_to = deadline - current_week
-        else:
-            try:
-                deadline_ts = int(settings.get("trade_deadline_ts") or 0)
-            except (TypeError, ValueError):
-                deadline_ts = 0
-            if deadline_ts > 0:
-                remaining = deadline_ts - _time.time()
-                if remaining < 0:
-                    return None
-                weeks_to = int(remaining // (7 * 86400))
-                # Display label only -- approximate week from now + remaining.
-                deadline = max(1, current_week + weeks_to)
-
-        is_redraft = _league_is_redraft(ctx)
-        # Redraft copy is explicitly "Trade deadline: …". Hide it in Week 1 /
-        # early season when the deadline is unknown or still far away.
-        if is_redraft and not redraft_deadline_card_visible(weeks_to):
-            return None
-
-        # Roster-age standing is a dynasty window signal. Redraft ignores it.
-        age_rank = None
-        n_teams = len(odds)
-        if not is_redraft:
-            try:
-                values_by_id = {
-                    str(row["id"]): row
-                    for row in (get_model_value_table_cached() or [])
-                    if isinstance(row, dict) and row.get("id") is not None
-                }
-                team_ages: dict = {}
-                for r in ctx.get("rosters") or []:
-                    rid = str(r.get("roster_id"))
-                    core = sorted(
-                        (
-                            (float(v.get("value") or 0), float(v.get("age") or 0))
-                            for p in (r.get("players") or [])
-                            if (v := values_by_id.get(str(p))) and float(v.get("age") or 0) > 0
-                        ),
-                        reverse=True,
-                    )[:8]
-                    if core:
-                        team_ages[rid] = sum(a for _, a in core) / len(core)
-                if str(viewer_roster_id) in team_ages and len(team_ages) >= 4:
-                    _order = sorted(team_ages.items(), key=lambda kv: -kv[1])
-                    age_rank = next(
-                        i + 1 for i, (rid, _) in enumerate(_order) if rid == str(viewer_roster_id)
-                    )
-                    n_teams = len(team_ages)
-            except Exception:
-                logger.debug("trade window age rank failed", exc_info=True)
-
-        vw = trade_window_verdict(pct, weeks_to, age_rank, n_teams)
-        partners = trade_partners(
-            [
-                {
-                    "name": r.get("team_name"),
-                    "playoff_pct": r.get("playoff_pct"),
-                    "is_viewer": (
-                        str(r.get("roster_id")) == str(viewer_roster_id)
-                        or str(r.get("team_name") or "").strip().lower()
-                        == str(
-                            (ctx.get("roster_map") or {}).get(str(viewer_roster_id))
-                            or (ctx.get("viewer") or {}).get("viewer_team_name")
-                            or ""
-                        ).strip().lower()
-                    ),
-                }
-                for r in odds
-            ],
-            vw["verdict"],
-        )
-
-        return {
-            "verdict": vw["verdict"],
-            "urgent": vw["urgent"],
-            "modifier": vw["modifier"],
-            "pct": pct,
-            "age_rank": age_rank,
-            "n_teams": n_teams,
-            "partners": partners,
-            "weeks_to": weeks_to,
-            "deadline": deadline,
-            "is_redraft": is_redraft,
-        }
-    except Exception:
-        logger.debug("trade window data failed", exc_info=True)
-        return None
-
-
-def _next_steps_trade_window_action(ctx: dict, viewer_roster_id) -> list:
-    """Trade-window advisor as a Next steps queue action.
-
-    Converts the buy/sell window verdict (playoff odds, core age, deadline,
-    opposite-side partners) into a single ranked action. Empty list when the
-    window has nothing confident to say.
-    """
-    data = _trade_window_data(ctx, viewer_roster_id)
-    if not data:
-        return []
-    try:
-        verdict = data["verdict"]
-        pct = data["pct"]
-        age_rank = data["age_rank"]
-        n_teams = data["n_teams"]
-        partners = data["partners"] or []
-        weeks_to = data["weeks_to"]
-        deadline = data["deadline"]
-        is_redraft = data["is_redraft"]
-        modifier = data["modifier"]
-        urgent = data["urgent"]
-
-        if is_redraft:
-            titles = {"buy": "Playoff push", "sell": "Out of it", "hold": "On the bubble"}
-        else:
-            titles = {"buy": "Buy window", "sell": "Sell window", "hold": "Hold"}
-        title = titles.get(verdict, "Trade window")
-
-        # Why line: playoff odds + core age + modifier.
-        _why_bits = [f"You are at {_fmt_playoff_pct_display(pct)}% playoff odds"]
-        if (not is_redraft) and age_rank and n_teams:
-            _sfx = "th" if 10 <= age_rank % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(age_rank % 10, "th")
-            _why_bits.append(f"with the {age_rank}{_sfx}-oldest core of {n_teams}")
-        if not is_redraft:
-            mod_lines = {
-                "all_in": "Your core is old and you are contending. The window is now.",
-                "youth": "Your core is young. Stay patient and keep stacking picks.",
-                "aging_bubble": "Aging core on the playoff bubble. Pick a direction before the deadline.",
-            }
-            if modifier in mod_lines:
-                _why_bits.append(mod_lines[modifier])
-        _why = " ".join(_why_bits) + "."
-        # Partner count only; names live on the trade page behind the CTA.
-        if partners:
-            _who = "sellers" if verdict == "buy" else "buyers"
-            _why += f" {len(partners)} {_who} waiting."
-
-        # Impact line: deadline proximity only.
-        _impact_bits = []
-        if weeks_to is not None and weeks_to <= 2:
-            _when = "this week" if weeks_to == 0 else "next week" if weeks_to == 1 else f"in {weeks_to} weeks"
-            _impact_bits.append(f"Trade deadline {deadline} {_when}")
-        _impact = " | ".join(_impact_bits) if _impact_bits else None
-
-        platform = ctx.get("platform", "sleeper")
-        season = ctx.get("current_season") or ctx.get("season")
-        league_id = ctx.get("league_id", "")
-        _trade_url = url_for(
-            "trade.page_trade", platform=platform, season=season, league_id=league_id,
-        ) + "?tab=suggestions"
-
-        # Score: urgent windows rank high; hold ranks low.
-        _score = 50
-        _priority = "low"
-        if verdict == "buy":
-            _score = 75
-            _priority = "med"
-        elif verdict == "sell":
-            _score = 70
-            _priority = "med"
-        if urgent and verdict != "hold":
-            _score += 15
-            _priority = "high"
-
-        return [{
-            "priority": _priority,
-            "tag": f"Trade | {title}",
-            "action": f"{title}: " + (
-                "go get your guys" if verdict == "buy"
-                else "shop your veterans" if verdict == "sell"
-                else "stay the course"
-            ),
-            "why": _why,
-            "impact": _impact,
-            "cta_label": "View trades",
-            "cta_url": _trade_url,
-            "score": _score,
-        }]
-    except Exception:
-        logger.debug("next-steps trade window action failed", exc_info=True)
-        return []
 def _losing_streak_trade_html(ctx: dict, viewer_roster_id) -> str:
     """Proactive trade suggestion card for losing teams.
 
@@ -10265,8 +10043,7 @@ def _render_bench_check(ctx: dict, viewer_roster_id, last_final_week: int) -> st
             )
         else:
             msg = (
-                f"Left <span class=\"la-em\">{left_on_bench:.1f}</span> on the bench "
-                f"({actual:.1f} vs {opt_pts:.1f} optimal, Week {week})."
+                f"Left <span class=\"la-em\">{left_on_bench:.1f}</span> on the bench."
             )
         # Escalate to a warning only on a repeated pattern (not one-off weeks).
         warn_html = ""
@@ -12548,7 +12325,7 @@ def _next_steps_bench_check_actions(ctx: dict, viewer_roster_id, last_final_week
         actions.append({
             "priority": _priority,
             "tag": "Lineup",
-            "action": f"Left {left:.1f} on the bench ({m['actual']:.1f} vs {m['opt_pts']:.1f} optimal)",
+            "action": f"Left {left:.1f} on the bench",
             "why": f"Week {m['week']} optimal lineup review.",
             "impact": f"-{left:.1f} points missed",
             "cta_label": "Lineup efficiency",
@@ -12581,7 +12358,6 @@ def _render_next_steps_queue(
     actions.extend(_next_steps_lineup_actions(ctx, viewer_roster_id))
     actions.extend(_next_steps_waiver_actions(ctx, viewer_roster_id, model_value_table or []))
     actions.extend(_next_steps_trade_actions(ctx, viewer_roster_id))
-    actions.extend(_next_steps_trade_window_action(ctx, viewer_roster_id))
     actions.extend(_next_steps_roster_actions(ctx, viewer_roster_id))
     actions.extend(_next_steps_bench_check_actions(ctx, viewer_roster_id, last_final_week))
 
@@ -12616,24 +12392,27 @@ def _render_next_steps_queue(
         _tag = html.escape(a.get("tag") or "")
         _action = html.escape(a.get("action") or "")
         _why = html.escape(a.get("why") or "")
-        _impact = a.get("impact")
-        _impact_html = (
-            f'<div class="ns-impact">{html.escape(_impact)}</div>' if _impact else ""
-        )
         _cta = (
             f'<a class="ns-cta" href="{html.escape(a.get("cta_url") or "#")}">'
             f'{html.escape(a.get("cta_label") or "View")}</a>'
         )
+        # Stable per-action id for the per-card dismiss: derived from the
+        # action content so the same action keeps the same id across loads
+        # (dismissals persist client-side per season/week/day, like cards).
+        _item_id = hashlib.md5(
+            f"{a.get('tag') or ''}|{a.get('action') or ''}|{a.get('cta_url') or ''}".encode("utf-8")
+        ).hexdigest()[:10]  # noqa: S324 (non-crypto)
         return (
-            f'<div class="ns-item ns-prio-{_prio}">'
+            f'<div class="ns-item ns-prio-{_prio}" data-ns-item="{_item_id}">'
             f'<div class="ns-priority {_prio}"></div>'
             f'<div class="ns-body">'
             f'<div class="ns-tag">{_tag}</div>'
             f'<div class="ns-action">{_action}</div>'
             + (f'<div class="ns-why">{_why}</div>' if _why else '')
-            + (_impact_html + "<br>" if _impact else "")
             + _cta
-            + f'</div></div>'
+            + f'</div>'
+            + f'<button type="button" class="ns-item-dismiss" data-dismiss-ns-item="{_item_id}" aria-label="Dismiss action">&times;</button>'
+            + f'</div>'
         )
 
     _items_html = "".join(_item_html(a) for a in _shown)
@@ -18353,7 +18132,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
         var hitRate = overall.hit_rate != null ? Math.round(overall.hit_rate * 100) : null;
         var forecastRate = overall.forecast_rate != null ? Math.round(overall.forecast_rate * 100) : null;
         var graded = overall.graded || 0;
-        var hits = overall.hits || 0;
+        var hits = overall.hit || 0;
         var heroBig, heroDetail;
         if (hitRate != null) {{
           heroBig = hitRate + '%';
@@ -18428,7 +18207,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
         var hitRate = overall.hit_rate != null ? Math.round(overall.hit_rate * 100) : null;
         var forecastRate = overall.forecast_rate != null ? Math.round(overall.forecast_rate * 100) : null;
         var graded = overall.graded || 0;
-        var hits = overall.hits || 0;
+        var hits = overall.hit || 0;
         var heroBig, heroDetail;
         if (hitRate != null) {{
           heroBig = hitRate + '%';

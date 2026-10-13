@@ -207,6 +207,7 @@ class _FakeCursor:
     def __init__(self, state):
         self.state = state
         self._rows = []
+        self.rowcount = 0
 
     def __enter__(self):
         return self
@@ -218,7 +219,28 @@ class _FakeCursor:
         s = " ".join(sql.split()).upper()
         if s.startswith("CREATE TABLE"):
             return
-        if "FROM ROOKIE_PROSPECT_SOURCE_DATA" in s and "TARGETS" in s:
+        if s.startswith("SELECT DISTINCT") and "FROM ROOKIE_PROSPECT_SOURCE_DATA" in s:
+            (pattern,) = params
+            prefix = pattern[:-1]  # strip trailing %
+            seen = []
+            for (pid, season, _tgts, team) in self.state["target_rows"]:
+                if pid.startswith(prefix) and team is not None:
+                    pair = {"season": season, "team": team}
+                    if pair not in seen:
+                        seen.append(pair)
+            self._rows = seen
+        elif s.startswith("UPDATE ROOKIE_PROSPECT_SOURCE_DATA"):
+            targets, pid, season = params
+            self.rowcount = 0
+            new_rows = []
+            for row in self.state["target_rows"]:
+                if row[0] == pid and row[1] == season:
+                    row = (row[0], row[1], targets, row[3])
+                    self.rowcount += 1
+                new_rows.append(row)
+            self.state["target_rows"] = new_rows
+            self._rows = []
+        elif "FROM ROOKIE_PROSPECT_SOURCE_DATA" in s and "TARGETS" in s:
             pattern, years = params
             prefix = pattern[:-1]  # strip trailing %
             self._rows = [
@@ -275,6 +297,12 @@ class _FakeConn:
 
     def cursor(self):
         return _FakeCursor(self.state)
+
+    def commit(self):
+        pass
+
+    def rollback(self):
+        pass
 
 
 def _game(game_id, athlete_name):
@@ -517,3 +545,435 @@ class TestIncrementalTargets:
         assert sorted(r["week"] for r in requests) == [1, 2, 3, 4, 5]
         assert result["test player"][2026]["targets"] == 40
         assert result["test player"][2026]["target_share"] == round(40 / 100, 4)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Targets parsed from play-by-play TEXT (/plays), validated per game.
+#
+# The structured "Target" stat type is tagged on only a handful of plays, so
+# targets are derived from play text instead - and a game only counts when
+# the parse PROVES itself against the box score (derived REC == box REC and
+# >= 85% of pass plays name a resolvable receiver).
+# ─────────────────────────────────────────────────────────────────────────────
+
+_OSU_ROSTER = [
+    {"firstName": "Luke", "lastName": "Fahey", "jersey": 13, "team": "Ohio State"},
+    {"firstName": "Isaac", "lastName": "West", "jersey": 32, "team": "Ohio State"},
+    {"firstName": "Noah", "lastName": "Lautar", "jersey": 89, "team": "Ohio State"},
+    {"firstName": "Jeremiah", "lastName": "Smith", "jersey": 4, "team": "Ohio State"},
+    {"firstName": "Terrance", "lastName": "St. Clair", "jersey": 9, "team": "Ohio State"},
+]
+
+
+def _play(pid, game_id, offense, text, play_type="Pass Reception", week=5):
+    return {"id": pid, "gameId": game_id, "week": week, "offense": offense,
+            "defense": "Ball State" if offense == "Ohio State" else "Ohio State",
+            "playType": play_type, "playText": text}
+
+
+def _box_game(game_id, team_rec):
+    """One /games/players element; team_rec = {team: {player name: REC}}."""
+    return {
+        "id": game_id,
+        "teams": [
+            {"team": team,
+             "categories": [{"name": "receiving", "types": [
+                 {"name": "REC", "athletes": [
+                     {"name": n, "stat": c} for n, c in recs.items()]}]}]}
+            for team, recs in team_rec.items()
+        ],
+    }
+
+
+class TestPlayTextParsing:
+    """Parser fixtures use the REAL play texts sampled from Ohio State vs
+    Ball State (2026 wk1) on the Render shell, 2026-10-13."""
+
+    def _resolve(self, play):
+        _is_pass, _comp, mention = ing._pass_attempt_info(play)
+        if mention is None:
+            return None
+        by_jersey, by_name, _ = ing._build_roster_maps(_OSU_ROSTER)
+        return ing._resolve_receiver(mention[0], mention[1], mention[2],
+                                     by_jersey, by_name)
+
+    def test_completion_counts_target_and_reception(self):
+        play = _play(1, 777, "Ohio State",
+                     "Shotgun #13 L.Fahey pass complete short right to #32 I.West "
+                     "caught at OhioSt24, for 2 yards to the OhioSt24 (#2 Q.Scandrett)")
+        is_pass, completed, mention = ing._pass_attempt_info(play)
+        assert is_pass and completed and mention is not None
+        # The receiver is West; the parenthetical (#2 Q.Scandrett) is the
+        # tackler and must never resolve as the target.
+        assert self._resolve(play) == "isaac west"
+
+    def test_named_incomplete_counts_target_only(self):
+        play = _play(2, 777, "Ohio State",
+                     "No Huddle-Shotgun #9 T.St. Clair pass incomplete short "
+                     "middle to #89 N.Lautar thrown to BallSt45",
+                     play_type="Pass Incompletion")
+        is_pass, completed, mention = ing._pass_attempt_info(play)
+        assert is_pass and not completed and mention is not None
+        assert self._resolve(play) == "noah lautar"
+
+    def test_unnamed_incomplete_is_attempt_without_target(self):
+        play = _play(3, 777, "Ohio State",
+                     "Shotgun #6 K.Luster pass incomplete short right thrown "
+                     "to OhioSt30", play_type="Pass Incompletion")
+        is_pass, completed, mention = ing._pass_attempt_info(play)
+        assert is_pass and not completed and mention is None
+
+    def test_scoring_summary_line_is_skipped(self):
+        play = _play(4, 777, "Ohio State",
+                     "Legend Bey 25 Yd pass from Luke Fahey (Connor Hawkins Kick)",
+                     play_type="Passing Touchdown")
+        assert ing._pass_attempt_info(play) == (False, False, None)
+
+    def test_interception_is_an_unnamed_attempt(self):
+        play = _play(5, 777, "Ohio State",
+                     "Shotgun #13 L.Fahey pass intercepted by #2 Q.Scandrett "
+                     "at OhioSt30, returned for 5 yards to the OhioSt35",
+                     play_type="Interception")
+        is_pass, completed, mention = ing._pass_attempt_info(play)
+        assert is_pass and not completed and mention is None
+
+    def test_two_token_surname_resolves(self):
+        play = _play(6, 777, "Ohio State",
+                     "Shotgun #13 L.Fahey pass complete deep left to #9 "
+                     "T.St. Clair caught at BallSt40, for 25 yards")
+        assert self._resolve(play) == "terrance st. clair"
+
+
+@pytest.fixture()
+def plays_env(monkeypatch):
+    """
+    Fake DB + fake CFBD transport for fetch_cfbd_targets_from_plays, pinned
+    to 2026-09-26 (estimated current week = 5, same as the other fixtures).
+    state["plays"] is keyed (year, team, week) with week=None for
+    season-level calls; state["box"] is keyed (year, week); state["roster"]
+    is keyed (year, team).  requests logs (path, params) for every call.
+    """
+    state = {"source_rows": [], "target_rows": [], "weeks": set(),
+             "team_totals": {}, "plays": {}, "box": {}, "roster": {}}
+    requests = []
+
+    @contextmanager
+    def fake_get_conn(*args, **kwargs):
+        yield _FakeConn(state)
+
+    monkeypatch.setattr(_db_mod, "get_conn", fake_get_conn)
+    monkeypatch.setattr(ing, "CFBD_KEY", "test-key")
+    monkeypatch.setattr(ing, "_today", lambda: _dt.date(2026, 9, 26))
+    monkeypatch.setattr(ing.time, "sleep", lambda _s: None)
+
+    def fake_cfbd_get(path, params=None, retries=2):
+        params = params or {}
+        requests.append((path, dict(params)))
+        if path == "/plays":
+            return state["plays"].get(
+                (params["year"], params["team"], params.get("week")), [])
+        if path == "/games/players":
+            return state["box"].get((params["year"], params["week"]), [])
+        if path == "/roster":
+            return state["roster"].get((params["year"], params["team"]), [])
+        raise AssertionError(f"Unexpected path in fake transport: {path}")
+
+    monkeypatch.setattr(ing, "_cfbd_get", fake_cfbd_get)
+    return state, requests
+
+
+def _osu_week5_plays(extra_plays=()):
+    """Ohio State's week-5 game (id 777): 7 pass attempts, 6 naming a
+    receiver (coverage 6/7 ~ 0.857); derived REC West 2, Smith 2, Lautar 1;
+    derived targets West 2, Smith 3, Lautar 1."""
+    osu = "Ohio State"
+    plays = [
+        _play(1, 777, osu,
+              "Shotgun #13 L.Fahey pass complete short right to #32 I.West "
+              "caught at OhioSt24, for 2 yards to the OhioSt24 (#2 Q.Scandrett)"),
+        _play(2, 777, osu,
+              "Shotgun #13 L.Fahey pass complete short left to #32 I.West "
+              "caught at OhioSt40, for 6 yards to the OhioSt46"),
+        _play(3, 777, osu,
+              "Shotgun #13 L.Fahey pass complete deep middle to #4 J.Smith "
+              "caught at BallSt20, for 30 yards to the BallSt10"),
+        _play(4, 777, osu,
+              "Shotgun #13 L.Fahey pass complete short right to #4 J.Smith "
+              "caught at OhioSt35, for 5 yards to the OhioSt40"),
+        _play(5, 777, osu,
+              "Shotgun #13 L.Fahey pass complete short left to #89 N.Lautar "
+              "caught at BallSt45, for 8 yards to the BallSt37"),
+        _play(6, 777, osu,
+              "No Huddle-Shotgun #13 L.Fahey pass incomplete deep right to "
+              "#4 J.Smith thrown to BallSt15", play_type="Pass Incompletion"),
+        _play(7, 777, osu,
+              "Shotgun #13 L.Fahey pass incomplete short right thrown to "
+              "OhioSt30", play_type="Pass Incompletion"),
+        # The opponent's plays ride in the same payload; never counted.
+        _play(8, 777, "Ball State",
+              "Shotgun #6 K.Luster pass complete short right to #3 "
+              "J.Thompson Jr. caught at OhioSt41, for 7 yards to the OhioSt34"),
+        # A scoring-summary line is not a play; skipped, not double counted.
+        _play(9, 777, osu,
+              "Legend Bey 25 Yd pass from Luke Fahey (Connor Hawkins Kick)",
+              play_type="Passing Touchdown"),
+        _play(10, 777, osu,
+              "Shotgun #32 I.West rush left guard for 5 yards to the OhioSt30",
+              play_type="Rush"),
+    ]
+    return plays + list(extra_plays)
+
+
+def _osu_box(rec_smith=2):
+    return [_box_game(777, {
+        "Ohio State": {"Isaac West": 2, "Jeremiah Smith": rec_smith,
+                       "Noah Lautar": 1},
+        "Ball State": {"J Thompson Jr": 1},
+    })]
+
+
+def _seed_osu_stored(state):
+    """Stored through week 4: Smith 40 targets, team denominator 200."""
+    state["target_rows"] = [
+        ("ROOKIE_2027_jeremiah_smith", 2026, 40, "Ohio State"),
+    ]
+    state["weeks"] = {("targets", 2026, w, "Ohio State") for w in (1, 2, 3, 4)}
+    state["team_totals"] = {(2026, "Ohio State"): 200}
+    state["roster"] = {(2026, "Ohio State"): _OSU_ROSTER}
+
+
+class TestTargetsFromPlays:
+    def test_validated_game_merges_and_marks_week(self, plays_env):
+        state, requests = plays_env
+        _seed_osu_stored(state)
+        state["plays"] = {(2026, "Ohio State", 5): _osu_week5_plays()}
+        state["box"] = {(2026, 5): _osu_box()}
+
+        result = ing.fetch_cfbd_targets_from_plays(2027, {2026: ["Ohio State"]})
+
+        # Incremental: the ONLY /plays call is the next unprocessed week.
+        plays_calls = [p for (path, p) in requests if path == "/plays"]
+        assert [(p["year"], p["team"], p.get("week")) for p in plays_calls] == [
+            (2026, "Ohio State", 5)]
+        # Additive: Smith 40 stored + 3 derived (2 comp + 1 inc); the share
+        # denominator accumulated the game's 6 named targets (200 + 6).
+        entry = result["jeremiah smith"][2026]
+        assert entry["targets"] == 43
+        assert entry["target_share"] == round(43 / 206, 4)
+        assert result["isaac west"][2026]["targets"] == 2
+        assert ("targets", 2026, 5, "Ohio State") in state["weeks"]
+        assert state["team_totals"][(2026, "Ohio State")] == 206
+
+    def test_rec_mismatch_discards_game(self, plays_env):
+        state, requests = plays_env
+        _seed_osu_stored(state)
+        state["plays"] = {(2026, "Ohio State", 5): _osu_week5_plays()}
+        # Box score disagrees with the parse (Smith REC 3 vs derived 2):
+        # the game cannot be trusted, so nothing from it is used.
+        state["box"] = {(2026, 5): _osu_box(rec_smith=3)}
+
+        result = ing.fetch_cfbd_targets_from_plays(2027, {2026: ["Ohio State"]})
+
+        assert result["jeremiah smith"][2026]["targets"] == 40
+        assert result["jeremiah smith"][2026]["target_share"] == round(40 / 200, 4)
+        assert "isaac west" not in result
+        assert ("targets", 2026, 5, "Ohio State") not in state["weeks"]
+        assert state["team_totals"][(2026, "Ohio State")] == 200
+
+    def test_low_coverage_discards_game(self, plays_env):
+        state, requests = plays_env
+        _seed_osu_stored(state)
+        # Two extra unnamed incompletes drop named coverage to 6/9 < 0.85
+        # even though the box REC line matches the parse exactly.
+        extra = [
+            _play(21, 777, "Ohio State",
+                  "Shotgun #13 L.Fahey pass incomplete deep left thrown to "
+                  "BallSt10", play_type="Pass Incompletion"),
+            _play(22, 777, "Ohio State",
+                  "Shotgun #13 L.Fahey pass incomplete short middle thrown "
+                  "away", play_type="Pass Incompletion"),
+        ]
+        state["plays"] = {(2026, "Ohio State", 5): _osu_week5_plays(extra)}
+        state["box"] = {(2026, 5): _osu_box()}
+
+        result = ing.fetch_cfbd_targets_from_plays(2027, {2026: ["Ohio State"]})
+
+        assert result["jeremiah smith"][2026]["targets"] == 40
+        assert "isaac west" not in result
+        assert ("targets", 2026, 5, "Ohio State") not in state["weeks"]
+        assert state["team_totals"][(2026, "Ohio State")] == 200
+
+
+_OSU_ROSTER_WITH_BEY = _OSU_ROSTER + [
+    {"firstName": "Legend", "lastName": "Bey", "jersey": 1,
+     "team": "Ohio State"},
+    {"firstName": "Maxence", "lastName": "LeBlanc", "jersey": 88,
+     "team": "Ohio State"},
+]
+
+
+class TestPlayTextSummaryGapFill:
+    """Live-verified defects (Ohio State 2026): some completions exist ONLY
+    as scoring-summary lines, and roster/box name spellings can differ."""
+
+    def test_summary_line_fills_rec_gap(self, plays_env):
+        state, requests = plays_env
+        _seed_osu_stored(state)
+        state["roster"] = {(2026, "Ohio State"): _OSU_ROSTER_WITH_BEY}
+        osu = "Ohio State"
+        # Bey: one detailed completion; his second catch exists only as a
+        # scoring-summary line.  Box REC = 2, so the gap fill must credit
+        # both the reception and the target.
+        state["plays"] = {(2026, osu, 5): [
+            _play(1, 777, osu,
+                  "Shotgun #13 L.Fahey pass complete short right to #1 "
+                  "L.Bey caught at OhioSt30, for 9 yards to the OhioSt39"),
+            _play(2, 777, osu,
+                  "Legend Bey 25 Yd pass from Luke Fahey "
+                  "(Connor Hawkins Kick)", play_type="Passing Touchdown"),
+        ]}
+        state["box"] = {(2026, 5): [_box_game(777, {
+            "Ohio State": {"Legend Bey": 2}, "Ball State": {}})]}
+
+        result = ing.fetch_cfbd_targets_from_plays(2027, {2026: [osu]})
+
+        assert result["legend bey"][2026]["targets"] == 2
+        assert ("targets", 2026, 5, osu) in state["weeks"]
+        assert state["team_totals"][(2026, osu)] == 202
+
+    def test_summary_line_duplicating_detailed_play_never_overshoots(
+            self, plays_env):
+        state, requests = plays_env
+        _seed_osu_stored(state)
+        osu = "Ohio State"
+        # Smith: one detailed completion AND a summary line for the same
+        # catch.  Box REC = 1, so the gap is zero and nothing is added.
+        state["plays"] = {(2026, osu, 5): [
+            _play(1, 777, osu,
+                  "Shotgun #13 L.Fahey pass complete deep middle to #4 "
+                  "J.Smith caught at BallSt20, for 30 yards to the BallSt10"),
+            _play(2, 777, osu,
+                  "Jeremiah Smith 30 Yd pass from Luke Fahey "
+                  "(Connor Hawkins Kick)", play_type="Passing Touchdown"),
+        ]}
+        state["box"] = {(2026, 5): [_box_game(777, {
+            "Ohio State": {"Jeremiah Smith": 1}, "Ball State": {}})]}
+
+        result = ing.fetch_cfbd_targets_from_plays(2027, {2026: [osu]})
+
+        # 40 stored + exactly 1 derived (not 2): no double count.
+        assert result["jeremiah smith"][2026]["targets"] == 41
+        assert ("targets", 2026, 5, osu) in state["weeks"]
+        assert state["team_totals"][(2026, osu)] == 201
+
+    def test_roster_box_name_alias_validates(self, plays_env):
+        state, requests = plays_env
+        _seed_osu_stored(state)
+        state["roster"] = {(2026, "Ohio State"): _OSU_ROSTER_WITH_BEY}
+        osu = "Ohio State"
+        # Roster spells him "Maxence LeBlanc"; the box score says
+        # "Max LeBlanc".  Equal counts must validate, stored under the
+        # roster full name.
+        state["plays"] = {(2026, osu, 5): [
+            _play(1, 777, osu,
+                  "Shotgun #13 L.Fahey pass complete short left to #88 "
+                  "M.LeBlanc caught at OhioSt45, for 6 yards to the "
+                  "BallSt49"),
+        ]}
+        state["box"] = {(2026, 5): [_box_game(777, {
+            "Ohio State": {"Max LeBlanc": 1}, "Ball State": {}})]}
+
+        result = ing.fetch_cfbd_targets_from_plays(2027, {2026: [osu]})
+
+        assert result["maxence leblanc"][2026]["targets"] == 1
+        assert ("targets", 2026, 5, osu) in state["weeks"]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# One-time backfill of play-text targets over EVERY stored season.
+# A normal pipeline run only derives targets for seasons the stats fetch
+# (re)ran; past seasons already have source rows, so the backfill reads
+# its team set from the stored rows themselves.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _stored_targets(state, player_id, season):
+    for (pid, seas, tgts, _team) in state["target_rows"]:
+        if pid == player_id and seas == season:
+            return tgts
+    raise AssertionError(f"no stored row for {player_id} {season}")
+
+
+def _seed_2025_backfill(state, stored_pids):
+    """One validated 2025 Ohio State game (id 555, week 3): Smith REC 2 /
+    TGT 3, West REC 2 / TGT 2, full named coverage.  Stored source rows
+    carry targets NULL (production state after the bad-source cleanup)."""
+    osu = "Ohio State"
+    state["target_rows"] = [(pid, 2025, None, osu) for pid in stored_pids]
+    state["roster"] = {(2025, osu): _OSU_ROSTER}
+    state["plays"] = {(2025, osu, None): [
+        _play(1, 555, osu,
+              "Shotgun #13 L.Fahey pass complete deep middle to #4 J.Smith "
+              "caught at BallSt20, for 30 yards to the BallSt10", week=3),
+        _play(2, 555, osu,
+              "Shotgun #13 L.Fahey pass complete short right to #4 J.Smith "
+              "caught at OhioSt35, for 5 yards to the OhioSt40", week=3),
+        _play(3, 555, osu,
+              "No Huddle-Shotgun #13 L.Fahey pass incomplete deep right to "
+              "#4 J.Smith thrown to BallSt15",
+              play_type="Pass Incompletion", week=3),
+        _play(4, 555, osu,
+              "Shotgun #13 L.Fahey pass complete short right to #32 I.West "
+              "caught at OhioSt24, for 2 yards to the OhioSt24 "
+              "(#2 Q.Scandrett)", week=3),
+        _play(5, 555, osu,
+              "Shotgun #13 L.Fahey pass complete short left to #32 I.West "
+              "caught at OhioSt40, for 6 yards to the OhioSt46", week=3),
+    ]}
+    state["box"] = {(2025, 3): [_box_game(555, {
+        "Ohio State": {"Jeremiah Smith": 2, "Isaac West": 2},
+        "Ball State": {}})]}
+
+
+class TestBackfillTargetsFromPlays:
+    def test_past_season_backfilled_from_stored_teams(self, plays_env):
+        state, requests = plays_env
+        _seed_2025_backfill(state, [
+            "ROOKIE_2027_jeremiah_smith",
+            "ROOKIE_2027_isaac_west",
+            "ROOKIE_2027_noah_lautar",
+        ])
+
+        summary = ing.backfill_cfbd_targets_from_plays(2027)
+
+        # The 2025 team set came from the stored source rows (nothing else
+        # supplies past seasons), fetched with one season-level /plays call.
+        plays_calls = [p for (path, p) in requests if path == "/plays"]
+        assert [(p["year"], p["team"], p.get("week")) for p in plays_calls] == [
+            (2025, "Ohio State", None)]
+        # Validated totals written back to exactly the stored rows.
+        assert summary["updated"] == 2
+        assert summary["by_season"] == {2025: 2}
+        assert summary["teams"] == 1
+        assert _stored_targets(state, "ROOKIE_2027_jeremiah_smith", 2025) == 3
+        assert _stored_targets(state, "ROOKIE_2027_isaac_west", 2025) == 2
+        # Lautar has no derived targets: his row is untouched (still NULL).
+        assert _stored_targets(state, "ROOKIE_2027_noah_lautar", 2025) is None
+        # The fetcher's bookkeeping ran as usual for the backfilled season.
+        assert ("targets", 2025, 3, "Ohio State") in state["weeks"]
+        assert state["team_totals"][(2025, "Ohio State")] == 5
+
+    def test_map_names_without_stored_rows_update_nothing(self, plays_env):
+        state, requests = plays_env
+        # West is in the derived map but has NO stored source row: his
+        # UPDATE must hit nothing (rowcount 0) and not raise.
+        _seed_2025_backfill(state, [
+            "ROOKIE_2027_jeremiah_smith",
+            "ROOKIE_2027_noah_lautar",
+        ])
+
+        summary = ing.backfill_cfbd_targets_from_plays(2027)
+
+        assert summary["updated"] == 1
+        assert summary["by_season"] == {2025: 1}
+        assert _stored_targets(state, "ROOKIE_2027_jeremiah_smith", 2025) == 3
+        assert _stored_targets(state, "ROOKIE_2027_noah_lautar", 2025) is None

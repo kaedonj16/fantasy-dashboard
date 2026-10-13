@@ -507,8 +507,9 @@ def build_dashboard_body(ctx: dict) -> str:
         _action_inner = "".join(h for _, h in _action_cards)
     # Dismissal: client-side only, persisted per card type + day in
     # localStorage so dismissed cards stay hidden until tomorrow.
-    # Always included: the bench-check card (rendered in the matchup panel)
-    # is dismissable too.
+    # Individual Next steps actions dismiss the same way, per action id
+    # (nsitem- keys in the same map). Always included: the bench-check card
+    # (rendered in the matchup panel) is dismissable too.
     if _action_cards or (bench_check_html or "").strip():
         _dismiss_script = f"""
           <script>
@@ -520,10 +521,29 @@ def build_dashboard_body(ctx: dict) -> str:
               try {{ return JSON.parse(localStorage.getItem(LS_KEY) || "{{}}"); }}
               catch (e) {{ return {{}}; }}
             }}
-            function cardKey(type) {{
+            function dayStr() {{
               var d = new Date();
-              var day = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
-              return type + "-" + SEASON + "-" + WEEK + "-" + day;
+              return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+            }}
+            function cardKey(type) {{
+              return type + "-" + SEASON + "-" + WEEK + "-" + dayStr();
+            }}
+            function itemKey(id) {{
+              return "nsitem-" + id + "-" + SEASON + "-" + WEEK + "-" + dayStr();
+            }}
+            function refreshNsCard(card, map) {{
+              if (!card) return;
+              var items = card.querySelectorAll(".ns-item[data-ns-item]");
+              if (!items.length) return;
+              var remaining = 0;
+              for (var i = 0; i < items.length; i++) {{
+                if (!map[itemKey(items[i].getAttribute("data-ns-item"))]) remaining++;
+              }}
+              var count = card.querySelector(".ns-count");
+              if (count) count.textContent = remaining + " action" + (remaining !== 1 ? "s" : "");
+              if (!map[cardKey("nextsteps")]) {{
+                card.style.display = remaining ? "" : "none";
+              }}
             }}
             function hideDismissed() {{
               var map = dismissedMap();
@@ -533,6 +553,17 @@ def build_dashboard_body(ctx: dict) -> str:
                 if (t && map[cardKey(t)]) {{
                   cards[i].style.display = "none";
                 }}
+              }}
+              var items = document.querySelectorAll(".ns-item[data-ns-item]");
+              for (var j = 0; j < items.length; j++) {{
+                var iid = items[j].getAttribute("data-ns-item");
+                if (iid && map[itemKey(iid)]) {{
+                  items[j].style.display = "none";
+                }}
+              }}
+              var nsCards = document.querySelectorAll(".ns-card[data-action-card]");
+              for (var k = 0; k < nsCards.length; k++) {{
+                refreshNsCard(nsCards[k], map);
               }}
             }}
             function bindDismiss() {{
@@ -571,10 +602,47 @@ def build_dashboard_body(ctx: dict) -> str:
                 }})(btns[i]);
               }}
             }}
+            function bindItemDismiss() {{
+              var btns = document.querySelectorAll("[data-dismiss-ns-item]");
+              for (var i = 0; i < btns.length; i++) {{
+                (function(btn) {{
+                  btn.addEventListener("click", function() {{
+                    var id = btn.getAttribute("data-dismiss-ns-item");
+                    var item = btn.closest(".ns-item");
+                    var card = btn.closest("[data-action-card]");
+                    if (!id || !item) return;
+                    var map = dismissedMap();
+                    var key = itemKey(id);
+                    map[key] = true;
+                    try {{ localStorage.setItem(LS_KEY, JSON.stringify(map)); }} catch (e) {{}}
+                    item.style.transition = "opacity .25s";
+                    item.style.opacity = "0";
+                    setTimeout(function() {{
+                      item.style.display = "none";
+                      refreshNsCard(card, dismissedMap());
+                    }}, 260);
+                    if (window.brUndoToast) {{
+                      window.brUndoToast("Action dismissed.", function() {{
+                        try {{
+                          var m = dismissedMap();
+                          delete m[key];
+                          localStorage.setItem(LS_KEY, JSON.stringify(m));
+                        }} catch (e) {{}}
+                        item.style.display = "";
+                        requestAnimationFrame(function() {{
+                          item.style.opacity = "1";
+                        }});
+                        refreshNsCard(card, dismissedMap());
+                      }});
+                    }}
+                  }});
+                }})(btns[i]);
+              }}
+            }}
             if (document.readyState === "loading") {{
-              document.addEventListener("DOMContentLoaded", function() {{ hideDismissed(); bindDismiss(); }});
+              document.addEventListener("DOMContentLoaded", function() {{ hideDismissed(); bindDismiss(); bindItemDismiss(); }});
             }} else {{
-              hideDismissed(); bindDismiss();
+              hideDismissed(); bindDismiss(); bindItemDismiss();
             }}
           }})();
           </script>"""

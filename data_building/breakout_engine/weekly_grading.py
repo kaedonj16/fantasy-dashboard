@@ -778,6 +778,104 @@ def is_surfaced_row(row: Dict[str, Any]) -> bool:
     return s is None or s >= 30
 
 
+# The surfaced board floor, shared with the board in breakout_api
+# (BREAKOUT_SURFACED_MIN_SCORE). Kept as a literal here so this module
+# never imports the API layer.
+SURFACED_MIN_SCORE = 30.0
+SURFACED_REPEAT_WINDOW_WEEKS = 3
+
+
+def _row_evidence(row: Dict[str, Any]) -> Dict[str, Any]:
+    """A score row's evidence dict, parsed defensively (the DB returns
+    JSON text in some drivers, a dict in others)."""
+    evidence = (row or {}).get("evidence") or {}
+    if isinstance(evidence, str):
+        try:
+            evidence = json.loads(evidence)
+        except (ValueError, TypeError):
+            return {}
+    return evidence if isinstance(evidence, dict) else {}
+
+
+def _evidence_truthy(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() == "true"
+    return bool(value)
+
+
+def _is_pool_eligible_row(row: Dict[str, Any]) -> bool:
+    """True when a serving-run score row belongs to the board pool the
+    surfaced board is drawn from, mirroring
+    ``get_weekly_breakout_candidates`` in breakout_api: breakout score
+    at or above the surfaced floor, in the main-board-eligible or
+    early-watch groups, and past the initial-role discovery gate."""
+    score = _score((row or {}).get("breakout_score"))
+    if score is None or score < SURFACED_MIN_SCORE:
+        return False
+    evidence = _row_evidence(row)
+    if not (_evidence_truthy(evidence.get("main_board_eligible"))
+            or str(row.get("classification") or "") == "early_watch"):
+        return False
+    if evidence.get("score_basis") == "initial_role":
+        from data_building.breakout_engine.weekly_breakout import (
+            INITIAL_ROLE_DISCOVERY_MIN,
+        )
+        subscores = evidence.get("subscores") or {}
+        current_role = _score(subscores.get(
+            "current_role_score", evidence.get("current_role_score")))
+        if current_role is None or current_role < INITIAL_ROLE_DISCOVERY_MIN:
+            return False
+    return True
+
+
+def surfaced_player_ids_by_week(season: int) -> Dict[int, Set[str]]:
+    """{week: {player_id, ...}}: the players actually surfaced on the
+    board each week, the one canonical surfaced definition.
+
+    Weeks are walked ascending over completed weeks; only each week's
+    SERVING run counts (a high score in some other completed run for
+    the same week was never shown to anyone). A pool-eligible player
+    (see :func:`_is_pool_eligible_row`) is surfaced in a week only if
+    they were not surfaced in any of the previous
+    ``SURFACED_REPEAT_WINDOW_WEEKS`` weeks, matching the board's
+    no-repeat rule: a player surfaced in week W is not a new call again
+    in weeks W+1 through W+3. Fails soft to ``{}`` on any error; an
+    absent week means "could not determine", a present week with an
+    empty set means nobody surfaced that week.
+    """
+    try:
+        from data_building.breakout_engine import weekly_store
+
+        completed = weekly_store.list_completed_weeks(int(season)) or []
+        weeks = sorted({
+            int(r["as_of_week"]) for r in completed
+            if isinstance(r, dict) and r.get("as_of_week") is not None
+        })
+        out: Dict[int, Set[str]] = {}
+        for week in weeks:
+            run = weekly_store.get_serving_run(int(season), week)
+            if not run or run.get("id") is None:
+                out[week] = set()
+                continue
+            surfaced: Set[str] = set()
+            for row in weekly_store.load_run_score_rows(run["id"]) or []:
+                if not isinstance(row, dict) or not _is_pool_eligible_row(row):
+                    continue
+                pid = str(row.get("player_id") or "")
+                if not pid:
+                    continue
+                if any(pid in out.get(w, ())
+                       for w in range(week - SURFACED_REPEAT_WINDOW_WEEKS,
+                                      week)):
+                    continue
+                surfaced.add(pid)
+            out[week] = surfaced
+        return out
+    except Exception:
+        logger.warning("weekly_grading: surfaced-by-week lookup failed",
+                       exc_info=True)
+        return {}
+
 
 def summarize_grade_rows(
     rows: Sequence[Dict[str, Any]],

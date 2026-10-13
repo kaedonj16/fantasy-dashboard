@@ -1986,53 +1986,90 @@ def notify_top_movers():
 
 # ── Notification 8: Weekly recap available (Tuesday) ─────────────────────────
 
-def notify_recap_ready():
-    """Push 'Week X recap is live' on Tuesdays during the regular season, once per week."""
+def _recap_completed_week(state):
+    """The NFL week whose games just finished, for the Tuesday recap push.
+
+    Sleeper's state flips to the upcoming week on Tuesday and reports the
+    finished one as ``previous_week``; trust that when it is usable. The
+    fallback is ``week - 1``: on a Tuesday the state week is the upcoming
+    week, so the recap covers the one before it. Returns 0 when no week
+    has completed yet (e.g. state still on Week 1 before its games end).
+    """
+    def _as_int(v):
+        try:
+            return int(v or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    week = _as_int((state or {}).get("week"))
+    prev = _as_int((state or {}).get("previous_week"))
+    if 1 <= prev < week:
+        return prev
+    return week - 1 if week > 1 else 0
+
+
+def notify_recap_ready(today=None):
+    """Push 'Your Week N recap is ready' on Tuesdays, once per league+week.
+
+    Fired by the weekly-recap-push Render cron (Tuesdays ~9am ET) through the
+    /api/cron/notifications hook (kind='recap'). Idempotency is per league:
+    each league's send is gated on the atomic app_state claim
+    ``recap_ready:{league}:{season}:{week}`` (the same primitive behind the
+    ScoreZone ``redzone_td:`` keys), so a re-run the same Tuesday, or any
+    overlap with another caller, never double-sends a league. ``today`` is
+    injectable for tests; production callers pass nothing.
+    """
     try:
         from datetime import date as _date
         from dashboard_services.api import get_nfl_state
         from dashboard_services.db import get_conn
 
-        if _date.today().weekday() != 1:
-            return
+        if (today or _date.today()).weekday() != 1:
+            return 0
 
         state  = get_nfl_state() or {}
         season = state.get("season")
-        week   = state.get("week", 0)
-        if not season or not week or state.get("season_type") not in ("reg", "post"):
-            return
-
-        state_key = f"recap_ready_notified_{season}_{week}"
-        with get_conn() as conn:
-            if _app_state_get(conn, state_key):
-                return
+        if not season or state.get("season_type") not in ("reg", "post"):
+            return 0
+        week = _recap_completed_week(state)
+        if week < 1:
+            return 0
 
         leagues = _get_subscribed_leagues()
         if not leagues:
-            return
+            return 0
 
         sent = 0
         for league_id, platform in leagues:
+            claim_key = f"recap_ready:{league_id}:{season}:{week}"
+            try:
+                with get_conn() as conn:
+                    claimed = _app_state_claim(conn, claim_key)
+                    conn.commit()
+            except Exception as exc:
+                logger.debug("[notify] recap_ready claim %s failed: %s",
+                             claim_key, exc)
+                continue
+            if not claimed:
+                continue
             league_name = _league_display_name(platform, league_id, season)
             recap_body = (
-                "Scores are final. Check your weekly recap to see how your team stacked up"
+                "Scores are final. See how your matchup shook out"
                 f"{' in ' + league_name if league_name else ''}."
             )
             sent += _broadcast_league(
                 league_id,
-                title=f"Week {week} recap is live",
+                title=f"Your Week {week} recap is ready",
                 body=recap_body,
                 url=f"/{platform}/{season}/{league_id}/weekly",
                 tag=f"recap-ready-{season}-{week}",
                 notif_type="recap_ready",
-            )
+            ) or 0
         logger.info("[notify] recap_ready week %s sent %d", week, sent)
-
-        with get_conn() as conn:
-            _app_state_set(conn, state_key, "1")
-            conn.commit()
+        return sent
     except Exception as exc:
         logger.warning("[notify] recap_ready failed: %s", exc)
+        return 0
 
 
 # ── Notification 9: Matchup preview (Monday) ─────────────────────────────────
