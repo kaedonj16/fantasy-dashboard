@@ -445,10 +445,10 @@ def _build_matchup_context(
 _OUT_STATUSES = {"OUT", "IR", "DOUBTFUL", "PUP", "NFI", "SUSP"}
 _MAYBE_STATUSES = {"QUESTIONABLE", "Q"}
 
-# How the six signals combine into the game-of-the-week score. Every signal is
-# normalized to 0-1 first (below), so these weights -- not raw scales -- decide
-# what wins. Stakes and closeness lead: what's on the line and whether it'll be
-# close is the heart of a great game.
+# How the seven signals combine into the game-of-the-week score. Every signal
+# is normalized to 0-1 first (below), so these weights -- not raw scales --
+# decide what wins. Stakes and closeness lead: what's on the line and whether
+# it'll be close is the heart of a great game.
 _SIGNAL_WEIGHTS = {
     "stakes":    1.10,
     "closeness": 1.00,
@@ -456,6 +456,7 @@ _SIGNAL_WEIGHTS = {
     "rivalry":   0.60,
     "drama":     0.60,
     "heat":      0.50,
+    "division":  0.40,
 }
 # Projected points at risk (missing + half of questionable/bye) that saturate
 # the drama / star-watch signal.
@@ -470,11 +471,12 @@ def _prior_series(
         rid_a: str,
         rid_b: str,
         upto_week: int,
-) -> tuple[int, int, int]:
+) -> tuple[int, int, int, float | None]:
     """Season head-to-head between two rosters through ``upto_week`` (inclusive):
-    (meetings, rid_a wins, rid_b wins)."""
+    (meetings, rid_a wins, rid_b wins, margin of the most recent meeting)."""
     fin = df_weekly[(df_weekly["finalized"] == True) & (df_weekly["week"] <= upto_week)]
     meetings = a_wins = b_wins = 0
+    last_margin: float | None = None
     for (_w, _mid), g in fin.groupby(["week", "matchup_id"]):
         if len(g) != 2:
             continue
@@ -484,11 +486,12 @@ def _prior_series(
         ga = g[g["roster_id"].astype(str) == str(rid_a)].iloc[0]
         gb = g[g["roster_id"].astype(str) == str(rid_b)].iloc[0]
         meetings += 1
+        last_margin = abs(float(ga["points"]) - float(gb["points"]))
         if float(ga["points"]) > float(gb["points"]):
             a_wins += 1
         elif float(gb["points"]) > float(ga["points"]):
             b_wins += 1
-    return meetings, a_wins, b_wins
+    return meetings, a_wins, b_wins, last_margin
 
 
 def _all_play_strength(df_weekly: pd.DataFrame, upto_week: int) -> dict:
@@ -567,7 +570,10 @@ def _starter_flags(
     hurt' measure): the live weekly projection, else the player's typical
     weekly projection this season (bye-week and ruled-out players carry no
     live line), else dynasty value as a last resort. Returns
-    (out, questionable, bye, points_at_risk)."""
+    (out, questionable, bye, points_at_risk). The risk total weights
+    QUESTIONABLE players fully -- a star who might miss the game is the
+    suspense -- while confirmed outs and byes count half: the player is
+    simply gone, which removes intrigue instead of adding it."""
     out: list[dict] = []
     maybe: list[dict] = []
     byes: list[dict] = []
@@ -597,10 +603,10 @@ def _starter_flags(
         }
         if raw in _OUT_STATUSES:
             out.append({**entry, "status": raw})
-            risk += impact
+            risk += impact * 0.5
         elif raw in _MAYBE_STATUSES:
             maybe.append({**entry, "status": "QUESTIONABLE"})
-            risk += impact * 0.5
+            risk += impact
         elif playing_teams and nfl and nfl not in playing_teams:
             byes.append({**entry, "status": "BYE"})
             risk += impact * 0.5
@@ -653,6 +659,7 @@ def _reason_bits(
         sa: dict, sb: dict, rank_a: int, rank_b: int, num_teams: int,
         win_prob: float, meetings: int, stakes_label: str | None,
         is_playoff: bool, round_label: str, top_star: dict | None,
+        division_top: bool = False,
 ) -> str:
     """A short, specific headline explaining why THIS is the game of the week,
     drawn from the dominant scoring factor."""
@@ -673,6 +680,8 @@ def _reason_bits(
         return "Heavyweight matchup"
     if top_factor == "rivalry":
         return "The rubber match" if meetings >= 2 else "A rematch with a score to settle"
+    if top_factor == "division":
+        return "Division rivals at the top" if division_top else "A division battle"
     if top_factor == "heat":
         hot = [s for s in (sa, sb) if str(s.get("streak") or "").startswith("W")
                and int(str(s.get("streak"))[1:] or 0) >= 2]
@@ -694,13 +703,18 @@ def _build_next_week_preview(
         playoff_teams: int,
         num_teams: int,
         nctx: dict,
+        pin_pair: tuple | None = None,
 ) -> dict | None:
-    """Score each of next week's matchups on six normalized signals -- playoff
-    stakes, projected closeness, team strength (all-play), a rivalry angle,
-    star-availability drama, and momentum -- combine them with intentional
-    weights, and pick the game of the week. Records which signal drove the pick
-    so the card and the AI can say *why*. Deterministic and data-grounded; the AI
-    only narrates the choice."""
+    """Score each of next week's matchups on seven normalized signals --
+    playoff stakes, projected closeness, team strength (all-play), a rivalry
+    angle, star-availability drama, momentum, and division stakes -- combine
+    them with intentional weights, and pick the game of the week. Records
+    which signal drove the pick so the card and the AI can say *why*.
+    Deterministic and data-grounded; the AI only narrates the choice.
+
+    ``pin_pair`` (a roster-id pair with an already-saved selection) forces
+    that matchup to the top regardless of score: a GOTW pick, once made and
+    saved, never changes just because projections moved mid-week."""
     matchups = (nctx or {}).get("matchups") or []
     if not matchups:
         return None
@@ -730,7 +744,7 @@ def _build_next_week_preview(
 
         rank_a = sa["rank_after"] or num_teams
         rank_b = sb["rank_after"] or num_teams
-        meetings, a_wins, b_wins = _prior_series(df_weekly, rid_a, rid_b, selected_week)
+        meetings, a_wins, b_wins, last_margin = _prior_series(df_weekly, rid_a, rid_b, selected_week)
         out_a, maybe_a, bye_a, risk_a = _starter_flags(
             _full_roster_pool(left), player_index, proj_by_pid, value_by_pid,
             playing_teams, avg_proj_by_pid)
@@ -738,11 +752,15 @@ def _build_next_week_preview(
             _full_roster_pool(right), player_index, proj_by_pid, value_by_pid,
             playing_teams, avg_proj_by_pid)
 
-        # ── Six signals, each normalized to [0, 1] ─────────────────────────────
+        # ── Seven signals, each normalized to [0, 1] ───────────────────────────
         signals: dict[str, float] = {}
 
-        # Team strength: average all-play win pct of the two teams.
-        signals["strength"] = (strength.get(rid_a, 0.5) + strength.get(rid_b, 0.5)) / 2.0
+        # Team strength: geometric mean of the two all-play win pcts. Unlike
+        # the arithmetic mean, one elite team cannot carry a weak opponent:
+        # 0.95 vs 0.30 scores ~0.53 while two 0.62 teams score 0.62, so the
+        # signal prefers games where BOTH teams are strong.
+        signals["strength"] = sqrt(max(0.0, strength.get(rid_a, 0.5))
+                                   * max(0.0, strength.get(rid_b, 0.5)))
 
         # Closeness: projected win prob near 50/50. Only trust it when both teams
         # actually have projections, else an empty slate reads as a false 50/50.
@@ -758,8 +776,29 @@ def _build_next_week_preview(
             return n if n >= 2 else 0
         signals["heat"] = min(1.0, (_hot(sa) + _hot(sb)) / 8.0)
 
-        # Rivalry: a season series already underway.
-        signals["rivalry"] = 0.0 if meetings == 0 else (0.6 if meetings == 1 else 1.0)
+        # Rivalry: a season series already underway, sharpened by how the
+        # last meeting went -- a one-score rematch is a grudge game, a
+        # blowout rematch is a formality.
+        rivalry = 0.0 if meetings == 0 else (0.6 if meetings == 1 else 1.0)
+        if last_margin is not None:
+            if last_margin <= 5.0:
+                rivalry += 0.25
+            elif last_margin >= 28.0:
+                rivalry -= 0.2
+        signals["rivalry"] = max(0.0, min(1.0, rivalry))
+
+        # Division: same-division games swing the tiebreaker and the
+        # division race directly; two division leaders meeting is the
+        # strongest version. Zero in leagues without divisions.
+        div_a = str(sa.get("division_name") or "")
+        div_b = str(sb.get("division_name") or "")
+        if div_a and div_a == div_b:
+            dr_a = int(sa.get("division_rank") or 99)
+            dr_b = int(sb.get("division_rank") or 99)
+            signals["division"] = (1.0 if (dr_a <= 2 and dr_b <= 2)
+                                   else 0.75 if (dr_a <= 3 and dr_b <= 3) else 0.55)
+        else:
+            signals["division"] = 0.0
 
         # Drama: projected points at risk from missing / questionable / bye stars.
         signals["drama"] = min(1.0, (risk_a + risk_b) / _DRAMA_FULL)
@@ -783,6 +822,7 @@ def _build_next_week_preview(
             top_factor, sa=sa, sb=sb, rank_a=rank_a, rank_b=rank_b, num_teams=num_teams,
             win_prob=win_prob, meetings=meetings, stakes_label=stakes_label,
             is_playoff=is_playoff, round_label=round_label, top_star=top_star,
+            division_top=signals["division"] >= 1.0,
         )
 
         # Ordered supporting reasons (every meaningfully-firing factor, best first).
@@ -792,6 +832,8 @@ def _build_next_week_preview(
                          _CLOSE_PROBABILITY_MIN <= round(win_prob * 100) <= _CLOSE_PROBABILITY_MAX else None,
             "strength": "two of the league's best" if signals["strength"] >= 0.55 else None,
             "rivalry": ("rubber match" if meetings >= 2 else "a rematch") if meetings else None,
+            "division": ("division lead on the line" if signals["division"] >= 1.0
+                         else "a division game") if signals["division"] else None,
             "drama": f"{top_star['name']} ({top_star['status']}) in doubt" if top_star else None,
             "heat": (f"{sa['team']} on {sa['streak']}" if _hot(sa) >= _hot(sb) and _hot(sa)
                      else (f"{sb['team']} on {sb['streak']}" if _hot(sb) else None)),
@@ -814,7 +856,8 @@ def _build_next_week_preview(
             "win_prob_a": round(win_prob * 100) if have_proj else None,
             "proj_a": round(_team_proj_total(left.get("starters"), proj_by_pid), 1) if have_proj else None,
             "proj_b": round(_team_proj_total(right.get("starters"), proj_by_pid), 1) if have_proj else None,
-            "h2h": {"meetings": meetings, "a_wins": a_wins, "b_wins": b_wins} if meetings else None,
+            "h2h": {"meetings": meetings, "a_wins": a_wins, "b_wins": b_wins,
+                    "last_margin": last_margin} if meetings else None,
             "out_a": out_a, "maybe_a": maybe_a, "bye_a": bye_a,
             "out_b": out_b, "maybe_b": maybe_b, "bye_b": bye_b,
             "why": headline, "top_factor": top_factor,
@@ -826,6 +869,15 @@ def _build_next_week_preview(
         return None
 
     games.sort(key=lambda g: -g["score"])
+    if pin_pair:
+        # A saved selection outranks a fresh score: the pick was already
+        # shown to the league, so the card must keep showing that game.
+        want = {str(pin_pair[0]), str(pin_pair[1])}
+        for i, g in enumerate(games):
+            if {g["roster_id_a"], g["roster_id_b"]} == want:
+                if i:
+                    games.insert(0, games.pop(i))
+                break
     top = games[0]
     # A quiet slate (nothing scored high) is framed honestly rather than hyped.
     quiet_week = top["score"] < 0.9
@@ -856,6 +908,7 @@ def build_weekly_recap_payload(
     league: dict,
     next_week_ctx: dict | None = None,
     team_context: dict | None = None,
+    gotw_pin_pair: tuple | None = None,
 ) -> dict:
     storylines = _build_team_storylines(df_weekly, selected_week, team_by_rid)
     for storyline in storylines:
@@ -938,6 +991,7 @@ def build_weekly_recap_payload(
         playoff_teams,
         num_teams,
         next_week_ctx or {},
+        pin_pair=gotw_pin_pair,
     )
 
     return {
@@ -1343,10 +1397,26 @@ def get_weekly_ai_recap(
     """
     if df_weekly is None or df_weekly.empty:
         return "", ""
+    # Write-once: a GOTW selection already saved for next week is the pick,
+    # full stop. Pin the preview to it and never overwrite it below -- a
+    # mid-week projection or injury swing must not quietly change the game
+    # the league was already shown (the retroactive-GOTW complaint).
+    existing_selection = None
+    try:
+        existing_selection = get_cached_gotw_selection(
+            platform, league_id, season, int(selected_week) + 1)
+    except Exception:
+        existing_selection = None
+    pin_pair = None
+    if existing_selection:
+        _ids = [str(x) for x in (existing_selection.get("roster_ids") or []) if str(x)]
+        if len(_ids) == 2:
+            pin_pair = (_ids[0], _ids[1])
     try:
         payload = build_weekly_recap_payload(
             df_weekly, matchups_by_week, selected_week, team_by_rid, league,
-            next_week_ctx=next_week_ctx, team_context=team_context)
+            next_week_ctx=next_week_ctx, team_context=team_context,
+            gotw_pin_pair=pin_pair)
     except Exception as exc:
         logger.warning("[weekly-recap] payload build failed: %s", exc)
         return "", ""
@@ -1386,7 +1456,7 @@ def get_weekly_ai_recap(
         if not looking_ahead:
             looking_ahead = _fallback_preview(game)
         roster_ids = [str(game.get("roster_id_a") or ""), str(game.get("roster_id_b") or "")]
-        if all(roster_ids):
+        if all(roster_ids) and existing_selection is None:
             selection = {"platform": str(platform or "").lower(), "league_id": str(league_id),
                          "season": str(season), "source_week": int(selected_week),
                          "target_week": int(preview["next_week"]),

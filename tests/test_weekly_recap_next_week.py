@@ -1,8 +1,9 @@
 """Guards the deterministic 'game of the week' pick in the weekly recap.
 
-The AI only narrates the pick; Python chooses which game leads by combining six
-normalized signals (playoff stakes, projected closeness, all-play strength, a
-rivalry angle, star-availability drama, momentum) and records *why* it won.
+The AI only narrates the pick; Python chooses which game leads by combining
+seven normalized signals (playoff stakes, projected closeness, all-play
+strength, a rivalry angle, star-availability drama, momentum, division
+stakes) and records *why* it won.
 These tests pin that scoring and the reason it surfaces.
 
 weekly_recap imports pandas at module load, so the whole module is skipped in
@@ -62,7 +63,8 @@ def test_prior_series_counts_only_meetings_between_the_two():
         _fin_row(2, 11, "1", 90, 110), _fin_row(2, 11, "3", 110, 90),    # unrelated
         _fin_row(3, 12, "1", 105, 130), _fin_row(3, 12, "2", 130, 105),  # 2 beat 1
     ])
-    assert _prior_series(df, "1", "2", upto_week=5) == (2, 1, 1)
+    # (meetings, a wins, b wins, most recent margin: week 3 was 105-130)
+    assert _prior_series(df, "1", "2", upto_week=5) == (2, 1, 1, 25.0)
 
 
 def test_all_play_strength_rewards_high_scoring_regardless_of_record():
@@ -101,8 +103,9 @@ def test_starter_flags_split_out_questionable_and_bye_with_impact():
     assert [p["name"] for p in out] == ["Out Star"]
     assert [p["name"] for p in maybe] == ["Q Guy"]
     assert [p["name"] for p in byes] == ["Bye Guy"]
-    # risk = 20 (out) + 10*0.5 (q) + 12*0.5 (bye) = 31
-    assert risk == pytest.approx(31.0)
+    # risk = 20*0.5 (out: gone, half) + 10 (questionable: full, the suspense)
+    #        + 12*0.5 (bye) = 26
+    assert risk == pytest.approx(26.0)
 
 
 def test_regular_stakes_flags_a_win_and_in_finale():
@@ -144,7 +147,7 @@ def test_star_watch_surfaces_the_missing_player_as_the_why():
     df = pd.DataFrame([_fin_row(1, 1, "1", 100, 90), _fin_row(1, 1, "2", 90, 100)])
     storylines = {"1": _storyline(1, "Alpha", 5), "2": _storyline(2, "Bravo", 6)}
     b = [_starter("b1", "Bijan", nfl="ATL"), _starter("b2", "B2", nfl="ATL")]
-    pidx = {"b1": {"injury_status": "OUT"}}
+    pidx = {"b1": {"injury_status": "QUESTIONABLE"}}
     proj = {"b1": 21.0, "b2": 12.0}
     nctx = _nctx([_matchup("1", "2", starters_b=b)], proj_by_pid=proj, player_index=pidx,
                  playing_teams={"ATL"})
@@ -152,8 +155,10 @@ def test_star_watch_surfaces_the_missing_player_as_the_why():
         df, storylines, selected_week=3, playoff_start=14, playoff_teams=6, num_teams=10, nctx=nctx,
     )
     got = preview["game_of_the_week"]
-    assert got["why"] == "Star on the shelf: Bijan (OUT)"
-    assert got["out_b"] and got["out_b"][0]["proj"] == 21.0
+    # A questionable star is the suspense case the drama signal headlines;
+    # a confirmed OUT counts half in the risk total (see _starter_flags).
+    assert got["why"] == "Star on the shelf: Bijan (QUESTIONABLE)"
+    assert got["maybe_b"] and got["maybe_b"][0]["proj"] == 21.0
 
 
 def test_playoff_week_uses_the_round_label_as_the_why():
@@ -368,3 +373,70 @@ def test_outs_carry_ppg_and_render_it():
                       "<span class='br-gotw-out-pos'>QB</span>"
                       "<span class='br-gotw-out-nm'>Bryce Young</span>") > 0
     assert out.count("br-gotw-out-sep") == 2
+
+
+# ── picker v2 ─────────────────────────────────────────────────────────────────
+
+def test_strength_geometric_mean_prefers_two_good_teams(monkeypatch):
+    # 1.0 + 0.45 averages HIGHER than 0.7 + 0.7 (0.725 vs 0.70), so the old
+    # arithmetic mean picked the elite-vs-weak game. The geometric mean
+    # (0.67 vs 0.70) must pick the two-good-teams game.
+    import dashboard_services.ai.weekly_recap as wr
+    monkeypatch.setattr(wr, "_all_play_strength",
+                        lambda df, w: {"1": 1.0, "2": 0.45, "3": 0.7, "4": 0.7})
+    # Week-1 results pair 1v3 and 2v4 so neither preview game is a rematch.
+    df = pd.DataFrame([
+        _fin_row(1, 1, "1", 100, 90), _fin_row(1, 1, "3", 90, 100),
+        _fin_row(1, 2, "2", 100, 90), _fin_row(1, 2, "4", 90, 100),
+    ])
+    storylines = {str(i): _storyline(i, f"T{i}", 5) for i in (1, 2, 3, 4)}
+    nctx = _nctx([_matchup("1", "2"), _matchup("3", "4")])
+    preview = _build_next_week_preview(
+        df, storylines, selected_week=3, playoff_start=14, playoff_teams=6,
+        num_teams=4, nctx=nctx)
+    got = preview["game_of_the_week"]
+    assert {got["team_a"], got["team_b"]} == {"T3", "T4"}
+
+
+def test_division_signal_breaks_a_tie(monkeypatch):
+    import dashboard_services.ai.weekly_recap as wr
+    monkeypatch.setattr(wr, "_all_play_strength",
+                        lambda df, w: {str(i): 0.6 for i in (1, 2, 3, 4)})
+    df = pd.DataFrame([_fin_row(1, 1, "1", 100, 90), _fin_row(1, 1, "2", 90, 100)])
+    storylines = {str(i): _storyline(i, f"T{i}", 5) for i in (1, 2, 3, 4)}
+    storylines["1"].update({"division_name": "East", "division_rank": 1})
+    storylines["2"].update({"division_name": "East", "division_rank": 2})
+    storylines["3"].update({"division_name": "East", "division_rank": 3})
+    storylines["4"].update({"division_name": "West", "division_rank": 1})
+    nctx = _nctx([_matchup("1", "2"), _matchup("3", "4")])
+    preview = _build_next_week_preview(
+        df, storylines, selected_week=3, playoff_start=14, playoff_teams=6,
+        num_teams=4, nctx=nctx)
+    got = preview["game_of_the_week"]
+    assert {got["team_a"], got["team_b"]} == {"T1", "T2"}
+    assert "division" in " ".join(got["reasons"]).lower()
+
+
+def test_pin_pair_keeps_the_saved_pick_on_top(monkeypatch):
+    import dashboard_services.ai.weekly_recap as wr
+    monkeypatch.setattr(wr, "_all_play_strength",
+                        lambda df, w: {"1": 1.0, "2": 0.45, "3": 0.7, "4": 0.7})
+    df = pd.DataFrame([_fin_row(1, 1, "1", 100, 90), _fin_row(1, 1, "2", 90, 100)])
+    storylines = {str(i): _storyline(i, f"T{i}", 5) for i in (1, 2, 3, 4)}
+    nctx = _nctx([_matchup("1", "2"), _matchup("3", "4")])
+    preview = _build_next_week_preview(
+        df, storylines, selected_week=3, playoff_start=14, playoff_teams=6,
+        num_teams=4, nctx=nctx, pin_pair=("2", "1"))
+    got = preview["game_of_the_week"]
+    assert {got["team_a"], got["team_b"]} == {"T1", "T2"}
+
+
+def test_write_once_guard_and_recovered_label_are_in_the_sources():
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    recap_ai = (root / "dashboard_services/ai/weekly_recap.py").read_text()
+    # The recap writer saves a fresh selection only when none exists yet.
+    assert "existing_selection is None" in recap_ai
+    assert "gotw_pin_pair=pin_pair" in recap_ai
+    recap_page = (root / "dashboard_services/pages/recap_page.py").read_text()
+    assert '"GOTW (recovered)"' in recap_page
