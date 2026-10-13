@@ -20718,10 +20718,25 @@ def _build_lineup_analysis_html(
                     f'<strong class="rc-swap-points" aria-label="{points:.2f} points">{points:.2f}</strong></div>')
 
         team = html.escape(str(item.get("team") or team_by_rid.get(str(item.get("rid") or "")) or "Team"))
+        rot_out = item.get("rotation_out") or [started]
+        rot_in = item.get("rotation_in") or [reserve]
+        if len(rot_out) > 1 or len(rot_in) > 1 or not rot_out:
+            # Full hindsight rotation: every displaced starter stacks on the
+            # left, every bench player who should have started on the right,
+            # and the gain is the whole rotation's gain.
+            left = "".join(swap_player(p, "Started" if i == 0 else "", "loss")
+                           for i, p in enumerate(rot_out)) or swap_player(started, "Started", "loss")
+            right = "".join(swap_player(p, "Benched" if i == 0 else "", "win")
+                            for i, p in enumerate(rot_in))
+            pair = (f'<div class="rc-swap-stack">{left}</div>'
+                    f'<i class="fa-solid fa-arrow-right rc-swap-arrow" aria-hidden="true"></i>'
+                    f'<div class="rc-swap-stack">{right}</div>')
+        else:
+            pair = (f'{swap_player(started, "Started", "loss")}'
+                    f'<i class="fa-solid fa-arrow-right rc-swap-arrow" aria-hidden="true"></i>'
+                    f'{swap_player(reserve, "Benched", "win")}')
         return (f'<div class="rc-swap-row"><div class="rc-swap-team">{team}</div>'
-                f'<div class="rc-swap-pair">{swap_player(started, "Started", "loss")}'
-                f'<i class="fa-solid fa-arrow-right rc-swap-arrow" aria-hidden="true"></i>'
-                f'{swap_player(reserve, "Benched", "win")}</div>'
+                f'<div class="rc-swap-pair">{pair}</div>'
                 f'<div class="rc-swap-gain"><strong>+{item["gap"]:.2f}</strong><span>Potential gain</span></div></div>')
 
     missed_rows = [missed_row(item) for item in analysis["missed_opportunities"]]
@@ -20741,12 +20756,35 @@ def _build_lineup_analysis_html(
     own = next((x for x in analysis["missed_opportunities"] if str(x["rid"]) == str(viewer_rid)), None)
     team = next((x for x in analysis["teams"] if str(x["rid"]) == str(viewer_rid)), None)
     if team:
-        actual = next((side.get("points") for matchup in (matchups_by_week.get(selected_week) or matchups_by_week.get(str(selected_week)) or [])
-                       for side in (matchup.get("left") or {}, matchup.get("right") or {})
-                       if str(side.get("roster_id") or "") == str(viewer_rid)), None)
-        actual_text = f"<strong>{float(actual):.2f}</strong> points" if isinstance(actual, (int, float)) and not isinstance(actual, bool) else "Score unavailable"
-        hindsight = (f" Best legal hindsight swap: {html.escape(str(own['bench_player'].get('name') or 'Bench player'))} "
-                     f"for {html.escape(str(own['starter'].get('name') or 'starter'))} (+{own['gap']:.2f})." if own else "")
+        # Normalized matchup sides carry the team total as pts_total (there
+        # is no "points" key on a side; reading one made every viewer's
+        # banner say "Score unavailable"). Fall back to the starters' sum.
+        actual = None
+        for matchup in (matchups_by_week.get(selected_week) or matchups_by_week.get(str(selected_week)) or []):
+            for side in (matchup.get("left") or {}, matchup.get("right") or {}):
+                if str(side.get("roster_id") or "") != str(viewer_rid):
+                    continue
+                total = side.get("pts_total")
+                if isinstance(total, (int, float)) and not isinstance(total, bool):
+                    actual = float(total)
+                else:
+                    starter_pts = [p.get("pts") for p in side.get("starters") or []
+                                   if isinstance(p.get("pts"), (int, float))]
+                    if starter_pts:
+                        actual = float(sum(starter_pts))
+        actual_text = f"<strong>{actual:.2f}</strong> points" if actual is not None else "Score unavailable"
+        hindsight = ""
+        if own:
+            rot_in = own.get("rotation_in") or [own["bench_player"]]
+            rot_out = own.get("rotation_out") or [own["starter"]]
+            if len(rot_in) > 1 or len(rot_out) > 1 or not rot_out:
+                # A multi-move rotation is not a swap; name who comes in and
+                # price the whole rotation, matching the Missed Opps rows.
+                ins = ", ".join(html.escape(str(p.get("name") or "Bench player")) for p in rot_in)
+                hindsight = f" Best legal hindsight lineup: {ins} in (+{own['gap']:.2f})."
+            else:
+                hindsight = (f" Best legal hindsight swap: {html.escape(str(own['bench_player'].get('name') or 'Bench player'))} "
+                             f"for {html.escape(str(own['starter'].get('name') or 'starter'))} (+{own['gap']:.2f}).")
         viewer = f"<div class='recap-viewer-decision'><b>Your team · {html.escape(str(team['team']))}</b><span>{actual_text}.{hindsight}</span></div>"
 
     return (viewer + "<div class='card recap-lineup-card'><div class='recap-lineup-cols'>"

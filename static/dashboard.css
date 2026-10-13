@@ -32313,6 +32313,10 @@ button:disabled {
 .weekly-recap .recap-main, .weekly-recap .recap-rail { min-width:0; }
 .weekly-recap .recap-rail .recap-section:last-child { margin-bottom:24px; }
 @media (min-width: 1025px) {
+    /* The rail pins under the sticky top nav and travels with the page, so
+       a week where it runs shorter than the main column leaves no dead
+       white space beside the main column's tail (and vice versa). */
+    .weekly-recap .recap-rail { position:sticky; top:76px; }
     /* Rail cards are single column: the two-up grids they use full width
        would squeeze to unreadable slivers at 336px. */
     .weekly-recap .recap-rail .recap-eff-grid { grid-template-columns:minmax(0,1fr); }
@@ -32425,6 +32429,7 @@ button:disabled {
 .weekly-recap .rc-swap-row:last-child { border-bottom:0; }
 .weekly-recap .rc-swap-team { min-width:0; color:var(--muted); font-size: 13px; font-weight:650; overflow-wrap:anywhere; }
 .weekly-recap .rc-swap-pair { display:grid; grid-template-columns:minmax(0,1fr) 18px minmax(0,1fr); align-items:center; gap:10px; min-width:0; }
+.weekly-recap .rc-swap-stack { display:flex; flex-direction:column; gap:7px; min-width:0; }
 .weekly-recap .rc-swap-player { display:grid; grid-template-columns:30px minmax(0,1fr) auto; align-items:center; gap:9px; min-width:0; }
 .weekly-recap .rc-swap-copy { display:flex; flex-direction:column; min-width:0; }
 .weekly-recap .rc-swap-label { color:var(--muted); font-size: 11px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; }
