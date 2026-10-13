@@ -13,7 +13,7 @@ import pytest
 pytest.importorskip("flask")
 pytest.importorskip("bs4")
 
-from utils.utils import build_status_by_pid, STATUS_NOT_STARTED, STATUS_FINAL
+from utils.utils import build_status_by_pid, STATUS_NOT_STARTED
 
 
 _PLAYERS = {
@@ -40,12 +40,17 @@ def test_empty_schedule_defenses_not_started():
         assert statuses[team] == STATUS_NOT_STARTED
 
 
-def test_partial_schedule_missing_team_is_final():
+def test_partial_schedule_missing_team_is_bye():
+    # A team absent from a loaded schedule is on its bye; the schedule is
+    # the only authority. This used to assert FINAL (a missing game read as
+    # a data gap), gated by teams-index byeWeek metadata in #2556, but that
+    # metadata is stale in production (prior-season bye weeks), so the gate
+    # kept bye starters FINAL and their locked 0 reached the score header.
     games = {"KC": {"status": "pre"}}
     statuses = build_status_by_pid(_PLAYERS, games, _TEAMS, 1)
     assert statuses["4046"] == STATUS_NOT_STARTED
-    assert statuses["6794"] == STATUS_FINAL
-    assert statuses["4034"] == STATUS_FINAL
+    assert statuses["6794"] == "BYE"
+    assert statuses["4034"] == "BYE"
 
 
 def test_partial_schedule_defense_bye():

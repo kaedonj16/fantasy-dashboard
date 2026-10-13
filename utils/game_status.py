@@ -282,14 +282,17 @@ def build_status_by_pid(
                 # Schedule data missing entirely — assume games haven't started
                 # so projections are shown instead of wall-to-wall 0.0 actuals.
                 status_by_pid[pid] = STATUS_NOT_STARTED
-            elif (lookup_team_map(teams_index or {}, team) or {}).get("byeWeek") == current_week:
-                # Gameless because it is the team's bye week (the same rule
-                # the DEF branch below applies). FINAL here would send a
-                # locked 0 into matchup score headers, team totals and win
-                # probability for a player who simply has no game this week.
-                status_by_pid[pid] = "BYE"
             else:
-                status_by_pid[pid] = STATUS_FINAL
+                # The week's schedule loaded and this team is not in it: the
+                # team is on its bye. Key off the schedule itself, never the
+                # teams-index byeWeek metadata: in production that metadata
+                # still carries prior-season values (it matched the 2026
+                # schedule only for HOU/MIN, whose bye stayed in week 6, and
+                # failed CIN/DET, whose bye moved), so #2556's metadata gate
+                # left bye starters FINAL and their locked 0 kept flowing
+                # into matchup score headers, team totals and win
+                # probability. Same schedule rule the preview rows use.
+                status_by_pid[pid] = "BYE"
             continue
 
         t_status = game.get("status")  # 'pre' | 'in' | 'post'
@@ -317,11 +320,10 @@ def build_status_by_pid(
             if not games_by_team:
                 status_by_pid[pid] = STATUS_NOT_STARTED
             else:
-                bye_week = team_info.get("byeWeek")
-                if bye_week == current_week:
-                    status_by_pid[pid] = "BYE"
-                else:
-                    status_by_pid[pid] = STATUS_FINAL
+                # Schedule loaded, team absent: bye week. Same rule as the
+                # player branch above; the teams-index byeWeek metadata is
+                # stale in production and must not gate this verdict.
+                status_by_pid[pid] = "BYE"
             continue
 
         t_status = game.get("status")
