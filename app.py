@@ -18426,8 +18426,8 @@ def page_breakouts(platform: str, season: int, league_id: str):
           }}
           document.getElementById('breakoutsEmpty').style.display = 'none';
           container.style.display = 'block';
-          let html = '<div class="breakout-grid">';
-          filtered.forEach(candidate => {{ html += renderBreakoutCard(candidate); }});
+          let html = _boBoardTopHtml(filtered) + '<div class="breakout-grid">';
+          filtered.forEach((candidate, i) => {{ html += renderBreakoutCard(candidate, i); }});
           if (lockedCount > 0) {{
             // One dismissible inline nudge instead of the old locked card. The
             // free preview candidates always stay visible; the nudge sits below
@@ -18467,8 +18467,8 @@ def page_breakouts(platform: str, season: int, league_id: str):
         const start = (currentPage - 1) * PAGE_SIZE;
         const visible = filtered.slice(start, start + PAGE_SIZE);
 
-        let html = '<div class="breakout-grid">';
-        visible.forEach(candidate => {{ html += renderBreakoutCard(candidate); }});
+        let html = _boBoardTopHtml(filtered) + '<div class="breakout-grid">';
+        visible.forEach((candidate, i) => {{ html += renderBreakoutCard(candidate, start + i); }});
         html += '</div>';
 
         // Pagination controls
@@ -18519,7 +18519,84 @@ def page_breakouts(platform: str, season: int, league_id: str):
         return u || ('https://sleepercdn.com/content/nfl/players/' + pid + '.jpg');
       }}
 
-      function renderBreakoutCard(candidate) {{
+      // Signed one-decimal delta for grade receipts ("+9.2", "-2.5");
+      // null when the grader recorded no value, so receipt rows hide
+      // instead of inventing a number.
+      function _boFmtDelta(v) {{
+        if (v == null || isNaN(parseFloat(v))) return null;
+        const n = parseFloat(v);
+        return (n >= 0 ? '+' : '') + n.toFixed(1);
+      }}
+
+      // Grade receipt: what the grader measured against the bar each leg
+      // had to clear (weekly grading v4). Pass marks mirror the grader:
+      // production and touches clear at +2.0; the snap leg clears at
+      // +8.0 only when touches did not fall (the snap guard), or when
+      // touches were never measured. The stored verdict is never
+      // recomputed here; the rows only explain it. Rows with no recorded
+      // value are omitted, and with no evidence at all there is no
+      // receipt (the stamp then renders as a plain stamp).
+      function _boGradeReceiptHtml(candidate, receiptId) {{
+        const d = candidate.grade_detail || {{}};
+        const check = '<svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2 6.5 4.8 9 10 3"/></svg>';
+        const cross = '<svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 3l6 6M9 3l-6 6"/></svg>';
+        const row = (label, value, bar, ok) => `<div class="bo-rc-row"><span class="bo-rc-mark ${{ok ? 'bo-rc-pass' : 'bo-rc-fail'}}">${{ok ? check : cross}}</span><span class="bo-rc-label">${{label}}</span><span class="bo-rc-value">${{value}}</span><span>${{bar}}</span></div>`;
+        let rows = '';
+        const ppg = _boFmtDelta(d.ppg_delta);
+        if (ppg !== null) rows += row('Production', ppg + ' PPG', 'bar +2.0', parseFloat(d.ppg_delta) >= 2.0);
+        const opp = _boFmtDelta(d.opp_delta);
+        if (opp !== null) rows += row('Role (touches)', opp + ' per game', 'bar +2.0', parseFloat(d.opp_delta) >= 2.0);
+        const snap = _boFmtDelta(d.snap_delta);
+        if (snap !== null) {{
+          const snapOk = parseFloat(d.snap_delta) >= 8.0 && (d.opp_delta == null || parseFloat(d.opp_delta) >= 0);
+          rows += row('Role (snap share)', snap + ' pts', 'bar +8.0', snapOk);
+        }}
+        if (!rows && d.outcome_games == null) return '';
+        const foot = d.outcome_games != null ? `<div class="bo-rc-foot">Graded over ${{d.outcome_games}} game${{d.outcome_games === 1 ? '' : 's'}}</div>` : '';
+        return `<div class="bo-receipt" id="${{receiptId}}" hidden>${{rows}}${{foot}}</div>`;
+      }}
+
+      // HIT / PARTIAL / MISS stamp for graded week views, replacing the
+      // old flat pill. A rotated, double-bordered stamp that animates in
+      // (see .bo-stamp in dashboard.css); the per-card delay staggers the
+      // slam across the board, capped so a long list never waits. When
+      // the card carries grade evidence (receiptId given), the stamp is
+      // a button toggling the receipt; otherwise it is a plain stamp.
+      function _boGradeStampHtml(candidate, idx, receiptId) {{
+        const g = candidate.grade;
+        if (currentWeek === 'latest' || (g !== 'hit' && g !== 'partial' && g !== 'miss')) return '';
+        const label = g === 'hit' ? 'HIT' : (g === 'partial' ? 'PARTIAL' : 'MISS');
+        const delay = Math.min((idx || 0) * 60, 600);
+        const cls = 'bo-stamp bo-stamp-' + g;
+        if (!receiptId) {{
+          return `<span class="${{cls}}" style="animation-delay:${{delay}}ms">${{label}}</span>`;
+        }}
+        return `<button type="button" class="${{cls}}" style="animation-delay:${{delay}}ms" onclick="event.stopPropagation(); boToggleGradeReceipt(this, '${{receiptId}}')" aria-expanded="false" aria-controls="${{receiptId}}" title="Why this grade?">${{label}}</button>`;
+      }}
+
+      function boToggleGradeReceipt(btn, id) {{
+        const el = document.getElementById(id);
+        if (!el) return;
+        const show = el.hidden;
+        el.hidden = !show;
+        if (btn) btn.setAttribute('aria-expanded', show ? 'true' : 'false');
+      }}
+
+      // Definition bar for graded week views: what a Hit is, in the
+      // grader's own terms, with static legend stamps.
+      function _boHitDefinitionBarHtml() {{
+        return `<div class="bo-hit-def"><span class="bo-hit-def-text"><strong>What counts as a Hit:</strong> over the 3 weeks after the call, the player kept the bigger role (snap share +8 pts or touches +2.0 per game) and gained at least +2.0 PPG. One leg only is a Partial. Losing the role, or production collapsing by 2.0 PPG or more, is a Miss.</span><span class="bo-hit-def-legend"><span class="bo-stamp bo-stamp-hit bo-stamp-static">HIT</span><span class="bo-stamp bo-stamp-partial bo-stamp-static">PARTIAL</span><span class="bo-stamp bo-stamp-miss bo-stamp-static">MISS</span></span></div>`;
+      }}
+
+      // The definition bar only appears on a graded week view whose
+      // board actually carries graded cards.
+      function _boBoardTopHtml(list) {{
+        if (currentWeek === 'latest') return '';
+        const graded = (list || []).some(c => c && (c.grade === 'hit' || c.grade === 'partial' || c.grade === 'miss'));
+        return graded ? _boHitDefinitionBarHtml() : '';
+      }}
+
+      function renderBreakoutCard(candidate, idx) {{
           const isWeekly = candidate.weekly === true || candidate.mode === 'weekly';
           const name = candidate.player_name || 'Unknown';
           const team = candidate.team || '?';
@@ -18596,6 +18673,13 @@ def page_breakouts(platform: str, season: int, league_id: str):
                  <span style="font-size:11px;color:var(--text-muted);">${{fc.basis || ''}}</span>
                </div>`;
 
+          // Graded week views stamp the card (see _boGradeStampHtml) and
+          // carry a hidden receipt the stamp toggles open.
+          const showGrade = currentWeek !== 'latest' && (candidate.grade === 'hit' || candidate.grade === 'partial' || candidate.grade === 'miss');
+          const receiptId = showGrade ? ('bo-grc-' + (idx || 0) + '-' + String(pid).replace(/[^a-zA-Z0-9]/g, '')) : null;
+          const receiptHtml = showGrade ? _boGradeReceiptHtml(candidate, receiptId) : '';
+          const stampHtml = showGrade ? _boGradeStampHtml(candidate, idx || 0, receiptHtml ? receiptId : null) : '';
+
           const signalPoints = weeklySignal ? parseFloat(weeklySignal.points || 0) : 0;
           const barFill = Math.min(100, Math.max(0, isWeekly ? signalPoints : topComp.val));
           const driverLabel = isWeekly ? _boWeeklySignalText(weeklySignal) : `Top Driver: ${{topComp.label}}`;
@@ -18604,7 +18688,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
           // Elite-tier candidates "ignite": the card catches fire (glow + score
           // badge pop) the first time it scrolls into view.
           const isElite = score >= 60;
-          const cardCls = isElite ? 'breakout-card br-brk' : 'breakout-card';
+          const cardCls = (isElite ? 'breakout-card br-brk' : 'breakout-card') + (showGrade && candidate.grade === 'hit' ? ' bo-grade-flash' : '');
           const moAttr = isElite ? ' data-br-moment="breakout"' : '';
           const encodedPid = encodeURIComponent(String(candidate.player_id));
           return `
@@ -18620,8 +18704,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
                 <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
                   <div class="breakout-score-badge" style="background:${{scoreColor}};color:#fff;font-size:13px;font-weight:700;padding:3px 9px;border-radius:6px;">${{score}}</div>
                   ${{hitHtml}}
-                  ${{(currentWeek !== 'latest' && candidate.grade === 'hit') ? '<div style="font-size:11px;font-weight:800;color:#fff;background:#16a34a;padding:3px 10px;border-radius:6px;letter-spacing:0.05em;">HIT</div>' : ''}}
-                  ${{(currentWeek !== 'latest' && candidate.grade === 'miss') ? '<div style="font-size:11px;font-weight:800;color:#fff;background:#dc2626;padding:3px 10px;border-radius:6px;letter-spacing:0.05em;">MISS</div>' : ''}}
+                  ${{stampHtml}}
                 </div>
               </div>
               <div style="margin-bottom:12px;">${{ppgHtml}}</div>
@@ -18636,6 +18719,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
                 </div>
               </div>
               ${{topReason ? `<div style="font-size:11px;color:var(--text-muted);line-height:1.4;border-top:1px solid var(--border-color);padding-top:8px;">${{topReason}}</div>` : ''}}
+              ${{receiptHtml}}
             </div>`;
       }}
     </script>
@@ -20634,25 +20718,10 @@ def _build_lineup_analysis_html(
                     f'<strong class="rc-swap-points" aria-label="{points:.2f} points">{points:.2f}</strong></div>')
 
         team = html.escape(str(item.get("team") or team_by_rid.get(str(item.get("rid") or "")) or "Team"))
-        rot_out = item.get("rotation_out") or [started]
-        rot_in = item.get("rotation_in") or [reserve]
-        if len(rot_out) > 1 or len(rot_in) > 1 or not rot_out:
-            # Full hindsight rotation: every displaced starter stacks on the
-            # left, every bench player who should have started on the right,
-            # and the gain is the whole rotation's gain.
-            left = "".join(swap_player(p, "Started" if i == 0 else "", "loss")
-                           for i, p in enumerate(rot_out)) or swap_player(started, "Started", "loss")
-            right = "".join(swap_player(p, "Benched" if i == 0 else "", "win")
-                            for i, p in enumerate(rot_in))
-            pair = (f'<div class="rc-swap-stack">{left}</div>'
-                    f'<i class="fa-solid fa-arrow-right rc-swap-arrow" aria-hidden="true"></i>'
-                    f'<div class="rc-swap-stack">{right}</div>')
-        else:
-            pair = (f'{swap_player(started, "Started", "loss")}'
-                    f'<i class="fa-solid fa-arrow-right rc-swap-arrow" aria-hidden="true"></i>'
-                    f'{swap_player(reserve, "Benched", "win")}')
         return (f'<div class="rc-swap-row"><div class="rc-swap-team">{team}</div>'
-                f'<div class="rc-swap-pair">{pair}</div>'
+                f'<div class="rc-swap-pair">{swap_player(started, "Started", "loss")}'
+                f'<i class="fa-solid fa-arrow-right rc-swap-arrow" aria-hidden="true"></i>'
+                f'{swap_player(reserve, "Benched", "win")}</div>'
                 f'<div class="rc-swap-gain"><strong>+{item["gap"]:.2f}</strong><span>Potential gain</span></div></div>')
 
     missed_rows = [missed_row(item) for item in analysis["missed_opportunities"]]

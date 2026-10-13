@@ -978,10 +978,14 @@ def get_weekly_breakout_candidates(season: int, min_score: float = 0.0,
         except Exception:
             logger.warning("weekly breakout: forecast attach failed", exc_info=True)
 
-    # Attach grades for historical weeks so the UI can show HIT/MISS badges.
-    # Only for explicit week views; the current board has no finished grades.
+    # Attach grades for historical weeks so the UI can stamp HIT /
+    # PARTIAL / MISS on graded cards, with the grade evidence attached
+    # for the card's receipt (deltas, outcome games, reason). Only for
+    # explicit week views; the current board has no finished grades.
+    # Injured and ungraded calls are never stamped.
     if candidates and as_of_week is not None:
         try:
+            import json as _json
             from data_building.breakout_engine import forecasts as _bo_forecasts
             from data_building.breakout_engine import weekly_grading as _wg
             _grade_rows = _bo_forecasts.load_weekly_grade_rows(season)
@@ -990,14 +994,40 @@ def get_weekly_breakout_candidates(season: int, min_score: float = 0.0,
                 try:
                     if int(_gr.get("as_of_week") or 0) == int(as_of_week):
                         _g = str(_gr.get("grade") or "")
-                        if _g in (_wg.GRADE_HIT, _wg.GRADE_MISS):
-                            _grades[str(_gr.get("player_id"))] = _g
+                        if _g in (_wg.GRADE_HIT, _wg.GRADE_PARTIAL,
+                                  _wg.GRADE_MISS):
+                            _detail = _gr.get("detail")
+                            if isinstance(_detail, str):
+                                try:
+                                    _detail = _json.loads(_detail)
+                                except (TypeError, ValueError):
+                                    _detail = None
+                            _games = _gr.get("outcome_games")
+                            _grades[str(_gr.get("player_id"))] = {
+                                "grade": _g,
+                                "grade_detail": {
+                                    "ppg_delta": _wg._num(
+                                        _gr.get("ppg_delta")),
+                                    "snap_delta": _wg._num(
+                                        _gr.get("snap_delta")),
+                                    "opp_delta": _wg._num(
+                                        _gr.get("opp_delta")),
+                                    "outcome_games": (
+                                        int(_games)
+                                        if _games is not None else None),
+                                    "reason": (
+                                        _detail.get("reason")
+                                        if isinstance(_detail, dict)
+                                        else None),
+                                },
+                            }
                 except (TypeError, ValueError):
                     continue
             for _c in candidates:
-                _g = _grades.get(str(_c.get("player_id")))
-                if _g:
-                    _c["grade"] = _g
+                _entry = _grades.get(str(_c.get("player_id")))
+                if _entry:
+                    _c["grade"] = _entry["grade"]
+                    _c["grade_detail"] = _entry["grade_detail"]
         except Exception:
             logger.warning("weekly breakout: grade attach failed", exc_info=True)
 

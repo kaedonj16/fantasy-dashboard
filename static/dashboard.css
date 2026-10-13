@@ -2129,6 +2129,198 @@ html[data-theme="dark"] img[src*="discord-brands-solid.png"] {
     color: var(--text-faint);
 }
 
+/* Grade stamps (graded week views): a rotated, double-bordered stamp
+   replaces the old flat HIT/MISS pill. When the card carries grade
+   evidence the stamp is a button that toggles the receipt below it. */
+.bo-stamp {
+    display: inline-block;
+    position: relative;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 4px 10px 3px;
+    background: transparent;
+    border: 2px solid currentColor;
+    border-radius: 4px;
+    transform: rotate(-8deg);
+    cursor: pointer;
+    appearance: none;
+}
+
+.bo-stamp::after {
+    content: "";
+    position: absolute;
+    inset: 2px;
+    border: 1px solid currentColor;
+    border-radius: 2px;
+    opacity: 0.55;
+    pointer-events: none;
+}
+
+.bo-stamp-hit {
+    color: #16a34a;
+    animation: boStampSlam 0.45s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
+
+.bo-stamp-hit::before {
+    content: "";
+    position: absolute;
+    inset: -2px;
+    border: 2px solid rgba(22, 163, 74, 0.55);
+    border-radius: 6px;
+    opacity: 0;
+    pointer-events: none;
+    animation: boStampRing 0.7s ease-out 0.3s 1 both;
+}
+
+.bo-stamp-partial {
+    color: #d97706;
+    animation: boStampPress 0.4s ease-out both;
+}
+
+.bo-stamp-miss {
+    color: #b91c1c;
+    animation: boStampPressIn 0.35s ease-out both;
+}
+
+.bo-stamp-static {
+    animation: none;
+    cursor: default;
+    font-size: 10px;
+    padding: 2px 7px 1px;
+}
+
+.bo-stamp-static::before {
+    display: none;
+}
+
+@keyframes boStampSlam {
+    0% { opacity: 0; transform: rotate(-22deg) scale(2.6); }
+    55% { opacity: 1; transform: rotate(-6deg) scale(0.92); }
+    75% { transform: rotate(-9deg) scale(1.07); }
+    100% { opacity: 1; transform: rotate(-8deg) scale(1); }
+}
+
+@keyframes boStampPress {
+    0% { opacity: 0; transform: rotate(-14deg) scale(1.8); }
+    60% { opacity: 1; transform: rotate(-7deg) scale(0.96); }
+    100% { opacity: 1; transform: rotate(-8deg) scale(1); }
+}
+
+@keyframes boStampPressIn {
+    0% { opacity: 0; transform: rotate(-8deg) scale(1.15); }
+    100% { opacity: 1; transform: rotate(-8deg) scale(1); }
+}
+
+@keyframes boStampRing {
+    0% { opacity: 0.7; transform: scale(1); }
+    100% { opacity: 0; transform: scale(1.5); }
+}
+
+@keyframes boStampFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+/* One soft green border flash on cards whose call graded a Hit. */
+.bo-grade-flash {
+    animation: boCardFlash 1.1s ease-out 0.25s 1;
+}
+
+@keyframes boCardFlash {
+    0% { border-color: var(--border); box-shadow: none; }
+    30% { border-color: #16a34a; box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.28); }
+    100% { border-color: var(--border); box-shadow: none; }
+}
+
+/* Grade receipt: the evidence strip a stamp toggles open on the card. */
+.bo-receipt {
+    margin-top: 10px;
+    border-top: 1px dashed var(--border);
+    padding-top: 8px;
+}
+
+.bo-rc-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--text-muted);
+    padding: 2px 0;
+}
+
+.bo-rc-mark {
+    display: inline-flex;
+    flex: 0 0 auto;
+}
+
+.bo-rc-pass { color: #16a34a; }
+.bo-rc-fail { color: #b91c1c; }
+
+.bo-rc-label {
+    flex: 1 1 auto;
+    font-weight: 600;
+    color: var(--text);
+}
+
+.bo-rc-value {
+    font-weight: 700;
+    color: var(--text);
+}
+
+.bo-rc-foot {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 4px;
+}
+
+/* Definition bar above the board grid on graded week views. */
+.bo-hit-def {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 14px;
+    margin-bottom: 14px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface-alt, var(--card));
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--text-muted);
+}
+
+.bo-hit-def-text {
+    flex: 1 1 320px;
+}
+
+.bo-hit-def-text strong {
+    color: var(--text);
+}
+
+.bo-hit-def-legend {
+    display: inline-flex;
+    gap: 10px;
+    align-items: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .bo-stamp-hit, .bo-stamp-partial, .bo-stamp-miss {
+        animation: boStampFadeIn 0.2s ease-out both;
+    }
+
+    .bo-stamp-hit::before {
+        animation: none;
+        display: none;
+    }
+
+    .bo-grade-flash {
+        animation: none;
+    }
+}
+
 .bo-view-tabs {
     display: none;
 }
@@ -32233,7 +32425,6 @@ button:disabled {
 .weekly-recap .rc-swap-row:last-child { border-bottom:0; }
 .weekly-recap .rc-swap-team { min-width:0; color:var(--muted); font-size: 13px; font-weight:650; overflow-wrap:anywhere; }
 .weekly-recap .rc-swap-pair { display:grid; grid-template-columns:minmax(0,1fr) 18px minmax(0,1fr); align-items:center; gap:10px; min-width:0; }
-.weekly-recap .rc-swap-stack { display:flex; flex-direction:column; gap:7px; min-width:0; }
 .weekly-recap .rc-swap-player { display:grid; grid-template-columns:30px minmax(0,1fr) auto; align-items:center; gap:9px; min-width:0; }
 .weekly-recap .rc-swap-copy { display:flex; flex-direction:column; min-width:0; }
 .weekly-recap .rc-swap-label { color:var(--muted); font-size: 11px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; }
@@ -47605,13 +47796,9 @@ em.gneg { background: var(--loss); }
 
 /* Standings character card: dark navy header, circular rank badges,
    depth via layered shadow. Matches the approved character mock. */
-/* Sidebar character cards carry a real 1px border (like .gm-card): the
-   rails clip horizontal overflow, so a borderless card whose only edge is
-   its box-shadow loses that shadow at the rail edge and reads borderless
-   on the sides. The border is inside the box, so it always renders. */
 .cc-st-card {
   background: var(--card, #fff);
-  border: 1px solid var(--border, #e8eef4);
+  border: none;
   border-radius: 16px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.06);
   overflow: hidden;
@@ -47737,7 +47924,7 @@ em.gneg { background: var(--loss); }
 /* Awards character card: dark gradient header, large 24px values. */
 .cc-aw-card {
   background: var(--card, #fff);
-  border: 1px solid var(--border, #e8eef4);
+  border: none;
   border-radius: 16px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.06);
   overflow: hidden;
@@ -47911,7 +48098,7 @@ em.gneg { background: var(--loss); }
    matching the standings/awards character treatment. */
 .cc-fo-card {
   background: var(--card, #fff);
-  border: 1px solid var(--border, #e8eef4);
+  border: none;
   border-radius: 16px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.06);
   overflow: hidden;
@@ -47977,7 +48164,7 @@ em.gneg { background: var(--loss); }
    matching the standings/awards character treatment. */
 .cc-inj-card {
   background: var(--card, #fff);
-  border: 1px solid var(--border, #e8eef4);
+  border: none;
   border-radius: 16px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.06);
   overflow: hidden;
@@ -48019,7 +48206,7 @@ em.gneg { background: var(--loss); }
    matching the other sidebar character cards. */
 .cc-act-card {
   background: var(--card, #fff);
-  border: 1px solid var(--border, #e8eef4);
+  border: none;
   border-radius: 16px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.06);
   overflow: hidden;
