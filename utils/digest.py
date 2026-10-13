@@ -2100,6 +2100,7 @@ def make_action(
     detail: str = "",
     href: str = "",
     severity: float = 0.0,
+    dismiss_key: str = "",
 ) -> dict[str, Any]:
     plat = (platform or "sleeper").strip().lower()
     lid = str(league_id or "").strip()
@@ -2115,7 +2116,7 @@ def make_action(
     except (TypeError, ValueError):
         sev = 0.0
     urgency = "high" if sev >= 0.8 else ("medium" if sev >= 0.5 else "low")
-    return {
+    action = {
         "kind": kind,
         "platform": plat,
         "season": int(season),
@@ -2127,6 +2128,12 @@ def make_action(
         "priority": action_priority(kind, severity=severity),
         "urgency": urgency,
     }
+    if dismiss_key:
+        # Shared server-dismissal key (see /api/action-dismissals): the same
+        # underlying action on the league dashboard carries the same key, so
+        # dismissing it on either surface hides it on both.
+        action["dismiss_key"] = dismiss_key
+    return action
 
 
 def rank_cross_league_actions(actions: list[dict], *, limit: int = 8) -> list[dict]:
@@ -2214,6 +2221,10 @@ def lineup_actions_from_issues(
         title=title,
         detail=detail,
         severity=sev,
+        # One aggregate card for all of the league's lineup issues: its
+        # dismissal is category-scoped, hiding the dashboard queue's
+        # lineup-kind items for the league too.
+        dismiss_key="cat:lineup",
     )]
 
 
@@ -2685,6 +2696,7 @@ def waiver_pickup_action(
     pos_rank: Optional[int] = None,
     is_sf: bool = False,
     n_teams: int = 12,
+    player_id: str = "",
 ) -> dict:
     """A waiver add that already cleared ``select_waiver_add``'s quality bar."""
     pos = str(position or "").upper()
@@ -2709,6 +2721,8 @@ def waiver_pickup_action(
         title=title,
         detail=detail,
         severity=sev,
+        # Same key the dashboard queue uses for its "Claim <player>" item.
+        dismiss_key=f"wv:{player_id}" if player_id else "",
     )
 
 
@@ -2750,6 +2764,7 @@ def roster_slot_action(
         detail=str(top.get("detail") or ""),
         href=f"/{plat}/{int(season)}/{league_id}/teams",
         severity=_ROSTER_ISSUE_RANK.get(kind, 0.5),
+        dismiss_key="cat:roster",
     )
 
 

@@ -505,21 +505,32 @@ def build_dashboard_body(ctx: dict) -> str:
     )
     if _action_cards:
         _action_inner = "".join(h for _, h in _action_cards)
-    # Dismissal: client-side only, persisted per card type + day in
-    # localStorage so dismissed cards stay hidden until tomorrow.
+    # Dismissal: persisted per card type + day so dismissed cards stay hidden
+    # until tomorrow. For signed-in accounts the source of truth is the
+    # server store (/api/action-dismissals, account-scoped): the script syncs
+    # from it on load and writes dismiss/undo through to it, so a dismissal
+    # follows the user across devices and is shared with the portfolio page.
+    # localStorage remains the paint cache (and the whole store for guests).
     # Individual Next steps actions dismiss the same way, per action id
     # (nsitem- keys in the same map). Always included: the bench-check card
     # (rendered in the matchup panel) is dismissable too.
     if _action_cards or (bench_check_html or "").strip():
+        import json as _json
+
         _dismiss_script = f"""
           <script>
           (function() {{
             var SEASON = {int(season or 0)};
             var WEEK = {int(current_week or 0)};
+            var PLATFORM = {_json.dumps(str(platform or "sleeper"))};
+            var LEAGUE_ID = {_json.dumps(str(league_id or ""))};
             var LS_KEY = "br-actions-dismissed";
             function dismissedMap() {{
               try {{ return JSON.parse(localStorage.getItem(LS_KEY) || "{{}}"); }}
               catch (e) {{ return {{}}; }}
+            }}
+            function saveMap(map) {{
+              try {{ localStorage.setItem(LS_KEY, JSON.stringify(map)); }} catch (e) {{}}
             }}
             function dayStr() {{
               var d = new Date();
@@ -531,13 +542,85 @@ def build_dashboard_body(ctx: dict) -> str:
             function itemKey(id) {{
               return "nsitem-" + id + "-" + SEASON + "-" + WEEK + "-" + dayStr();
             }}
+            // An item counts as dismissed when its own key is set, when its
+            // shared cross-surface key (data-ns-key, e.g. "wv:<player_id>"
+            // from a portfolio dismissal) is set, or when its whole kind was
+            // dismissed from the portfolio digest ("cat:<kind>").
+            function itemIsDismissed(el, map) {{
+              if (!el) return false;
+              if (map[itemKey(el.getAttribute("data-ns-item"))]) return true;
+              var ck = el.getAttribute("data-ns-key");
+              if (ck && map[ck]) return true;
+              var kind = el.getAttribute("data-ns-kind");
+              if (kind && map["cat:" + kind]) return true;
+              return false;
+            }}
+            // Server sync: /api/action-dismissals is the source of truth for
+            // signed-in accounts (keyed by the account, so dismissals follow
+            // the user across devices and between the portfolio page and
+            // this dashboard). localStorage is only the paint cache here,
+            // and the whole store for guests (the endpoint reports
+            // synced:false for them and sync stays off).
+            var SYNC_MODE = "unknown"; // "unknown" -> "server" | "guest"
+            var touchedBare = {{}}; // bare keys changed before sync resolved
+            function bareFromPageKey(map, bare, on) {{
+              var pageKeys = [];
+              if (bare.indexOf("card:") === 0) pageKeys.push(cardKey(bare.slice(5)));
+              else if (bare.indexOf(":") !== -1) pageKeys.push(bare);
+              else pageKeys.push(itemKey(bare));
+              for (var i = 0; i < pageKeys.length; i++) {{
+                if (on) map[pageKeys[i]] = true; else delete map[pageKeys[i]];
+              }}
+            }}
+            function persistBare(method, bare) {{
+              if (SYNC_MODE === "guest") return;
+              if (SYNC_MODE === "unknown") touchedBare[bare] = (method === "POST");
+              try {{
+                fetch("/api/action-dismissals", {{
+                  method: method,
+                  headers: {{ "Content-Type": "application/json" }},
+                  credentials: "same-origin",
+                  body: JSON.stringify({{
+                    platform: PLATFORM, league_id: LEAGUE_ID,
+                    season: SEASON, week: WEEK, day: dayStr(), item_key: bare
+                  }})
+                }}).then(function(r) {{ return r.json(); }})
+                  .then(function(d) {{ if (d && d.synced === false) SYNC_MODE = "guest"; }})
+                  .catch(function() {{}});
+              }} catch (e) {{}}
+            }}
+            function syncFromServer() {{
+              var qs = "?platform=" + encodeURIComponent(PLATFORM)
+                + "&league_id=" + encodeURIComponent(LEAGUE_ID)
+                + "&season=" + SEASON + "&week=" + WEEK
+                + "&day=" + encodeURIComponent(dayStr());
+              try {{
+                fetch("/api/action-dismissals" + qs, {{ credentials: "same-origin" }})
+                  .then(function(r) {{ return r.json(); }})
+                  .then(function(d) {{
+                    if (!d || !d.synced) {{ SYNC_MODE = "guest"; return; }}
+                    SYNC_MODE = "server";
+                    var map = {{}};
+                    var keys = d.dismissed || [];
+                    for (var i = 0; i < keys.length; i++) bareFromPageKey(map, keys[i], true);
+                    // Re-apply anything dismissed/undone while the fetch
+                    // was in flight so a fast click is never overwritten.
+                    for (var bare in touchedBare) bareFromPageKey(map, bare, touchedBare[bare]);
+                    saveMap(map);
+                    hideDismissed();
+                    var nsCards = document.querySelectorAll(".ns-card[data-action-card]");
+                    for (var j = 0; j < nsCards.length; j++) refreshNsCard(nsCards[j], dismissedMap());
+                  }})
+                  .catch(function() {{}});
+              }} catch (e) {{}}
+            }}
             function refreshNsCard(card, map) {{
               if (!card) return null;
               var items = card.querySelectorAll(".ns-item[data-ns-item]");
               if (!items.length) return null;
               var remaining = 0;
               for (var i = 0; i < items.length; i++) {{
-                if (!map[itemKey(items[i].getAttribute("data-ns-item"))]) remaining++;
+                if (!itemIsDismissed(items[i], map)) remaining++;
               }}
               var count = card.querySelector(".ns-count");
               if (count) count.textContent = remaining + " action" + (remaining !== 1 ? "s" : "");
@@ -584,7 +667,7 @@ def build_dashboard_body(ctx: dict) -> str:
               }});
               var remaining = [];
               for (var k = 0; k < ordered.length; k++) {{
-                if (!map[itemKey(ordered[k].getAttribute("data-ns-item"))]) remaining.push(ordered[k]);
+                if (!itemIsDismissed(ordered[k], map)) remaining.push(ordered[k]);
               }}
               var promoted = null;
               for (var f = 0; f < remaining.length && f < limit; f++) {{
@@ -607,8 +690,7 @@ def build_dashboard_body(ctx: dict) -> str:
               }}
               var items = document.querySelectorAll(".ns-item[data-ns-item]");
               for (var j = 0; j < items.length; j++) {{
-                var iid = items[j].getAttribute("data-ns-item");
-                if (iid && map[itemKey(iid)]) {{
+                if (itemIsDismissed(items[j], map)) {{
                   items[j].style.display = "none";
                 }}
               }}
@@ -628,7 +710,8 @@ def build_dashboard_body(ctx: dict) -> str:
                     var map = dismissedMap();
                     var key = cardKey(t);
                     map[key] = true;
-                    try {{ localStorage.setItem(LS_KEY, JSON.stringify(map)); }} catch (e) {{}}
+                    saveMap(map);
+                    persistBare("POST", "card:" + t);
                     if (card) {{
                       card.style.transition = "opacity .25s";
                       card.style.opacity = "0";
@@ -636,11 +719,10 @@ def build_dashboard_body(ctx: dict) -> str:
                     }}
                     if (window.brUndoToast) {{
                       window.brUndoToast("Card dismissed.", function() {{
-                        try {{
-                          var m = dismissedMap();
-                          delete m[key];
-                          localStorage.setItem(LS_KEY, JSON.stringify(m));
-                        }} catch (e) {{}}
+                        var m = dismissedMap();
+                        delete m[key];
+                        saveMap(m);
+                        persistBare("DELETE", "card:" + t);
                         if (card) {{
                           card.style.display = "";
                           requestAnimationFrame(function() {{
@@ -727,7 +809,14 @@ def build_dashboard_body(ctx: dict) -> str:
                     var map = dismissedMap();
                     var key = itemKey(id);
                     map[key] = true;
-                    try {{ localStorage.setItem(LS_KEY, JSON.stringify(map)); }} catch (e) {{}}
+                    // Shared cross-surface key when the action carries one
+                    // (waiver adds): the server record uses it, so the same
+                    // player add dismissed here stays dismissed in the
+                    // portfolio digest, and vice versa.
+                    var bare = item.getAttribute("data-ns-key") || id;
+                    if (bare !== id) map[bare] = true;
+                    saveMap(map);
+                    persistBare("POST", bare);
                     var siblings = visibleItemSiblings(item, card);
                     function finishDismiss() {{
                       var promoted = null;
@@ -746,11 +835,11 @@ def build_dashboard_body(ctx: dict) -> str:
                     }}
                     if (window.brUndoToast) {{
                       window.brUndoToast("Action dismissed.", function() {{
-                        try {{
-                          var m = dismissedMap();
-                          delete m[key];
-                          localStorage.setItem(LS_KEY, JSON.stringify(m));
-                        }} catch (e) {{}}
+                        var m = dismissedMap();
+                        delete m[key];
+                        if (bare !== id) delete m[bare];
+                        saveMap(m);
+                        persistBare("DELETE", bare);
                         flipSiblings(visibleItemSiblings(item, card), function() {{
                           item.style.display = "";
                           refreshNsCard(card, dismissedMap());
@@ -765,9 +854,9 @@ def build_dashboard_body(ctx: dict) -> str:
               }}
             }}
             if (document.readyState === "loading") {{
-              document.addEventListener("DOMContentLoaded", function() {{ hideDismissed(); bindDismiss(); bindItemDismiss(); }});
+              document.addEventListener("DOMContentLoaded", function() {{ hideDismissed(); bindDismiss(); bindItemDismiss(); syncFromServer(); }});
             }} else {{
-              hideDismissed(); bindDismiss(); bindItemDismiss();
+              hideDismissed(); bindDismiss(); bindItemDismiss(); syncFromServer();
             }}
           }})();
           </script>"""

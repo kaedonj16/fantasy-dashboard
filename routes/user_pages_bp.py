@@ -912,6 +912,7 @@ def api_portfolio_actions():
                         pos_rank=hit.get("pos_rank"),
                         is_sf=is_sf,
                         n_teams=len(rosters) or 12,
+                        player_id=str(hit.get("player_id") or ""),
                     ))
         except Exception:
             logger.debug("[portfolio-actions] waiver pickup failed", exc_info=True)
@@ -2149,6 +2150,181 @@ def api_ui_prefs():
     except Exception as exc:
         logger.warning("[ui-prefs] error: %s", exc)
         return jsonify({"ok": False, "synced": False, "prefs": {}}), 500
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Account-scoped action dismissals (dashboard Next steps + portfolio moves).
+#
+# Dismissals used to live only in localStorage ("br-actions-dismissed"), which
+# is per-browser: dismissing an action on your phone left it sitting on your
+# laptop, and the portfolio page never saw dashboard dismissals at all. This
+# store is the server-side source of truth, keyed by account (the same
+# _user_key() as ui-prefs: the Google-linked account id, never a Sleeper
+# identity, which Google-only managers do not have). One row per dismissed
+# item, scoped to (league, season, week, day) so the existing semantics hold:
+# a dismissal hides the item for the rest of the day and it returns tomorrow.
+#
+# item_key is an opaque client key. Shared keys make the same action on the
+# portfolio page and the league dashboard hide each other:
+#   "wv:<player_id>"   the waiver add for that player (both surfaces)
+#   "cat:lineup"       the portfolio lineup digest card; the dashboard hides
+#                      its lineup-kind queue items for the league that day
+#   "cat:roster"       same, for roster-kind items
+#   "card:<type>"      a whole dashboard action card (nextsteps, bench-check)
+#   anything else      a surface-local key (dashboard md5 action id, or a
+#                      portfolio "pf:<kind>:<hash>" key)
+# ─────────────────────────────────────────────────────────────────────────────
+
+_DISMISS_TABLE_READY = False
+_DISMISS_DAY_RE = None  # compiled lazily to keep module import light
+
+
+def _init_dismissals_table():
+    global _DISMISS_TABLE_READY
+    if _DISMISS_TABLE_READY:
+        return
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS user_action_dismissals (
+                    user_key    TEXT NOT NULL,
+                    platform    TEXT NOT NULL,
+                    league_id   TEXT NOT NULL,
+                    season      INTEGER NOT NULL,
+                    week        INTEGER NOT NULL,
+                    day         TEXT NOT NULL,
+                    item_key    TEXT NOT NULL,
+                    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    PRIMARY KEY (user_key, platform, league_id, season, week, day, item_key)
+                )
+                """
+            )
+            conn.commit()
+        _DISMISS_TABLE_READY = True
+    except Exception as exc:
+        logger.warning("[action-dismissals] table init failed: %s", exc)
+
+
+def _clean_dismissal_scope(raw) -> tuple | None:
+    """Validate one dismissal scope dict; return a clean tuple or None.
+
+    Accepts (platform, league_id, season, week, day[, item_key]). Values are
+    coerced conservatively; anything malformed rejects the whole request so a
+    bad client can never write or read another scope shape.
+    """
+    import re as _re
+
+    global _DISMISS_DAY_RE
+    if _DISMISS_DAY_RE is None:
+        _DISMISS_DAY_RE = _re.compile(r"^\d{4}-\d{2}-\d{2}$")
+    if not isinstance(raw, dict):
+        return None
+    platform = str(raw.get("platform") or "").strip().lower()
+    if not _re.fullmatch(r"[a-z0-9_-]{1,20}", platform):
+        return None
+    league_id = str(raw.get("league_id") or "").strip()
+    if not _re.fullmatch(r"[A-Za-z0-9._-]{1,80}", league_id):
+        return None
+    try:
+        season = int(raw.get("season"))
+        week = int(raw.get("week"))
+    except (TypeError, ValueError):
+        return None
+    if not (2000 <= season <= 2100 and 0 <= week <= 25):
+        return None
+    day = str(raw.get("day") or "").strip()
+    if not _DISMISS_DAY_RE.match(day):
+        return None
+    scope = (platform, league_id, season, week, day)
+    if "item_key" in raw:
+        item_key = str(raw.get("item_key") or "").strip()
+        if not _re.fullmatch(r"[A-Za-z0-9:._+\-]{1,96}", item_key):
+            return None
+        scope = scope + (item_key,)
+    return scope
+
+
+def _load_dismissals(user_key: str, scope: tuple) -> list:
+    from dashboard_services.db import get_conn
+    platform, league_id, season, week, day = scope
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT item_key FROM user_action_dismissals
+            WHERE user_key = %s AND platform = %s AND league_id = %s
+              AND season = %s AND week = %s AND day = %s
+            ORDER BY created_at
+            """,
+            (user_key, platform, league_id, season, week, day),
+        ).fetchall()
+    out = []
+    for row in rows or []:
+        out.append(row["item_key"] if isinstance(row, dict) else row[0])
+    return out
+
+
+@user_pages_bp.route("/api/action-dismissals", methods=["GET", "POST", "DELETE"])
+@limiter.limit("120/minute")
+def api_action_dismissals():
+    """Read / record / undo account-scoped action dismissals.
+
+    GET    ?platform&league_id&season&week&day -> {"dismissed": [item_key, ...]}
+    POST   JSON scope + item_key              -> dismiss (idempotent)
+    DELETE JSON scope + item_key              -> undo one dismissal
+    """
+    _init_dismissals_table()
+    user_key = _user_key()
+    if not user_key:
+        # Guests keep the localStorage behavior; the server store is
+        # account-only so a dismissal can follow the signed-in user.
+        return jsonify({"ok": True, "synced": False, "dismissed": []})
+
+    try:
+        if request.method == "GET":
+            scope = _clean_dismissal_scope(request.args.to_dict())
+            if scope is None:
+                return jsonify({"ok": False, "error": "Bad scope."}), 400
+            return jsonify({
+                "ok": True, "synced": True,
+                "dismissed": _load_dismissals(user_key, scope),
+            })
+
+        body = request.get_json(silent=True) or {}
+        scope = _clean_dismissal_scope(body)
+        if scope is None or len(scope) != 6:
+            return jsonify({"ok": False, "error": "Bad dismissal."}), 400
+        platform, league_id, season, week, day, item_key = scope
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            if request.method == "POST":
+                conn.execute(
+                    """
+                    INSERT INTO user_action_dismissals
+                        (user_key, platform, league_id, season, week, day, item_key)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT DO NOTHING
+                    """,
+                    (user_key, platform, league_id, season, week, day, item_key),
+                )
+            else:  # DELETE = undo
+                conn.execute(
+                    """
+                    DELETE FROM user_action_dismissals
+                    WHERE user_key = %s AND platform = %s AND league_id = %s
+                      AND season = %s AND week = %s AND day = %s AND item_key = %s
+                    """,
+                    (user_key, platform, league_id, season, week, day, item_key),
+                )
+            conn.commit()
+        return jsonify({
+            "ok": True, "synced": True,
+            "dismissed": _load_dismissals(user_key, scope[:5]),
+        })
+    except Exception as exc:
+        logger.warning("[action-dismissals] error: %s", exc)
+        return jsonify({"ok": False, "synced": False, "dismissed": []}), 500
 
 
 @user_pages_bp.route("/api/events", methods=["POST"])
