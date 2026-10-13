@@ -9901,11 +9901,19 @@ def _next_steps_trade_window_action(ctx: dict, viewer_roster_id) -> list:
             titles = {"buy": "Buy window", "sell": "Sell window", "hold": "Hold"}
         title = titles.get(verdict, "Trade window")
 
-        # Why line: playoff odds + core age + modifier.
-        _why_bits = [f"You are at {_fmt_playoff_pct_display(pct)}% playoff odds"]
+        # Why line: compact stat segments joined by " · ". A segment
+        # with no data is omitted (with its separator), never padded.
+        _why_bits = [f"{_fmt_playoff_pct_display(pct)}% playoff odds"]
         if (not is_redraft) and age_rank and n_teams:
             _sfx = "th" if 10 <= age_rank % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(age_rank % 10, "th")
-            _why_bits.append(f"with the {age_rank}{_sfx}-oldest core of {n_teams}")
+            _why_bits.append(f"{age_rank}{_sfx}-oldest core")
+        # Partner count only; names live on the trade page behind the CTA.
+        if partners:
+            _who = "seller" if verdict == "buy" else "buyer"
+            if len(partners) != 1:
+                _who += "s"
+            _why_bits.append(f"{len(partners)} {_who} waiting")
+        _why = " · ".join(_why_bits)
         if not is_redraft:
             mod_lines = {
                 "all_in": "Your core is old and you are contending. The window is now.",
@@ -9913,12 +9921,7 @@ def _next_steps_trade_window_action(ctx: dict, viewer_roster_id) -> list:
                 "aging_bubble": "Aging core on the playoff bubble. Pick a direction before the deadline.",
             }
             if modifier in mod_lines:
-                _why_bits.append(mod_lines[modifier])
-        _why = " ".join(_why_bits) + "."
-        # Partner count only; names live on the trade page behind the CTA.
-        if partners:
-            _who = "sellers" if verdict == "buy" else "buyers"
-            _why += f" {len(partners)} {_who} waiting."
+                _why += f". {mod_lines[modifier]}"
 
         # Impact line: deadline proximity only.
         _impact_bits = []
