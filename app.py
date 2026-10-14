@@ -27766,8 +27766,11 @@ def api_player_details(player_id: str):
         )
 
         # Breakout tab visibility: hard rule, the tab only exists for players
-        # on the breakout board. Best-effort; any failure hides the tab.
+        # the breakout board has actually called -- on the current board, or
+        # surfaced in any earlier week this season (their tab then serves
+        # that week's card). Best-effort; any failure hides the tab.
         on_breakout_board = False
+        breakout_call = None
         try:
             from dashboard_services.breakout_api import breakout_board_membership
             on_breakout_board, _board = breakout_board_membership(player_id, season)
@@ -27775,6 +27778,13 @@ def api_player_details(player_id: str):
         except Exception:
             logger.debug("[api_player_details] breakout membership skipped", exc_info=True)
             on_breakout_board = False
+        if not on_breakout_board:
+            try:
+                from dashboard_services.breakout_api import breakout_call_history
+                breakout_call = breakout_call_history(player_id, season)
+            except Exception:
+                logger.debug("[api_player_details] breakout history skipped", exc_info=True)
+                breakout_call = None
 
         response = {
             "player_id": player_id,
@@ -27782,6 +27792,8 @@ def api_player_details(player_id: str):
             "value_trend": value_trend,
             "is_rookie": is_rookie,
             "on_breakout_board": on_breakout_board,
+            "has_breakout_call": bool(on_breakout_board or breakout_call),
+            "breakout_call": breakout_call,
             "position": player_meta.get("pos"),
             "team": player_meta.get("team"),
             "oline": _oline_for_player(season, player_team, player_meta.get("pos")),

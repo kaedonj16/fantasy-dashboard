@@ -856,6 +856,54 @@ def _recently_surfaced_player_ids(season: int, current_week: int,
         return set()
 
 
+def _weekly_grades_for_week(season: int, as_of_week: int) -> Dict[str, Dict]:
+    """Finished grades for one week's calls: {player_id: {grade, grade_detail}}.
+
+    Only hit / partial / miss verdicts are returned; injured and ungraded
+    calls are never stamped. grade_detail carries the grader's evidence
+    (ppg / snap / touches deltas, outcome games, reason) for the receipt.
+    Fails soft to {}.
+    """
+    try:
+        import json as _json
+        from data_building.breakout_engine import forecasts as _bo_forecasts
+        from data_building.breakout_engine import weekly_grading as _wg
+        grades: Dict[str, Dict] = {}
+        for _gr in _bo_forecasts.load_weekly_grade_rows(season) or []:
+            try:
+                if int(_gr.get("as_of_week") or 0) != int(as_of_week):
+                    continue
+                _g = str(_gr.get("grade") or "")
+                if _g not in (_wg.GRADE_HIT, _wg.GRADE_PARTIAL, _wg.GRADE_MISS):
+                    continue
+                _detail = _gr.get("detail")
+                if isinstance(_detail, str):
+                    try:
+                        _detail = _json.loads(_detail)
+                    except (TypeError, ValueError):
+                        _detail = None
+                _games = _gr.get("outcome_games")
+                grades[str(_gr.get("player_id"))] = {
+                    "grade": _g,
+                    "grade_detail": {
+                        "ppg_delta": _wg._num(_gr.get("ppg_delta")),
+                        "snap_delta": _wg._num(_gr.get("snap_delta")),
+                        "opp_delta": _wg._num(_gr.get("opp_delta")),
+                        "outcome_games": (
+                            int(_games) if _games is not None else None),
+                        "reason": (
+                            _detail.get("reason")
+                            if isinstance(_detail, dict) else None),
+                    },
+                }
+            except (TypeError, ValueError):
+                continue
+        return grades
+    except Exception:
+        logger.warning("weekly breakout: grade lookup failed", exc_info=True)
+        return {}
+
+
 def get_weekly_breakout_candidates(season: int, min_score: float = 0.0,
                                    limit: Optional[int] = None,
                                    as_of_week: Optional[int] = None) -> Dict:
@@ -984,52 +1032,12 @@ def get_weekly_breakout_candidates(season: int, min_score: float = 0.0,
     # explicit week views; the current board has no finished grades.
     # Injured and ungraded calls are never stamped.
     if candidates and as_of_week is not None:
-        try:
-            import json as _json
-            from data_building.breakout_engine import forecasts as _bo_forecasts
-            from data_building.breakout_engine import weekly_grading as _wg
-            _grade_rows = _bo_forecasts.load_weekly_grade_rows(season)
-            _grades = {}
-            for _gr in _grade_rows:
-                try:
-                    if int(_gr.get("as_of_week") or 0) == int(as_of_week):
-                        _g = str(_gr.get("grade") or "")
-                        if _g in (_wg.GRADE_HIT, _wg.GRADE_PARTIAL,
-                                  _wg.GRADE_MISS):
-                            _detail = _gr.get("detail")
-                            if isinstance(_detail, str):
-                                try:
-                                    _detail = _json.loads(_detail)
-                                except (TypeError, ValueError):
-                                    _detail = None
-                            _games = _gr.get("outcome_games")
-                            _grades[str(_gr.get("player_id"))] = {
-                                "grade": _g,
-                                "grade_detail": {
-                                    "ppg_delta": _wg._num(
-                                        _gr.get("ppg_delta")),
-                                    "snap_delta": _wg._num(
-                                        _gr.get("snap_delta")),
-                                    "opp_delta": _wg._num(
-                                        _gr.get("opp_delta")),
-                                    "outcome_games": (
-                                        int(_games)
-                                        if _games is not None else None),
-                                    "reason": (
-                                        _detail.get("reason")
-                                        if isinstance(_detail, dict)
-                                        else None),
-                                },
-                            }
-                except (TypeError, ValueError):
-                    continue
-            for _c in candidates:
-                _entry = _grades.get(str(_c.get("player_id")))
-                if _entry:
-                    _c["grade"] = _entry["grade"]
-                    _c["grade_detail"] = _entry["grade_detail"]
-        except Exception:
-            logger.warning("weekly breakout: grade attach failed", exc_info=True)
+        _grades = _weekly_grades_for_week(season, as_of_week)
+        for _c in candidates:
+            _entry = _grades.get(str(_c.get("player_id")))
+            if _entry:
+                _c["grade"] = _entry["grade"]
+                _c["grade_detail"] = _entry["grade_detail"]
 
     return {
         "season": season,
@@ -1106,14 +1114,37 @@ def _weekly_series_for_payload(player_id: str, season: int) -> List[Dict]:
     return out
 
 
-def get_weekly_breakout_detail(player_id: str, season: int) -> Dict:
-    """In-season player detail served from the weekly engine."""
+def get_weekly_breakout_detail(player_id: str, season: int,
+                               as_of_week: Optional[int] = None) -> Dict:
+    """In-season player detail served from the weekly engine.
+
+    With ``as_of_week``, serves that week's stored call instead of the
+    latest snapshot, and attaches the call's finished grade (verdict +
+    grade evidence) when one exists, so a historical breakout card can
+    carry its stamp and receipt exactly like the board's week view.
+    """
     from data_building.breakout_engine.weekly_store import get_weekly_candidate
-    row = get_weekly_candidate(str(player_id), season)
+    if as_of_week is not None:
+        row = get_weekly_candidate(str(player_id), season, int(as_of_week))
+    else:
+        row = get_weekly_candidate(str(player_id), season)
     if not row:
         return {"player_id": player_id, "season": season, "available": False,
                 "mode": "weekly", "data_available": False}
     cand = _weekly_row_to_candidate(row)
+    if as_of_week is not None:
+        cand["historical_call"] = True
+        cand["breakout_call"] = {
+            "kind": "weekly",
+            "season": int(season),
+            "as_of_week": int(as_of_week),
+            "label": f"Week {int(as_of_week)}",
+        }
+        _entry = _weekly_grades_for_week(season, int(as_of_week)).get(
+            str(player_id))
+        if _entry:
+            cand["grade"] = _entry["grade"]
+            cand["grade_detail"] = _entry["grade_detail"]
     cand["weekly_series"] = _weekly_series_for_payload(player_id, season)
     cand["season"] = season
     cand["available"] = True
@@ -1135,6 +1166,96 @@ def get_weekly_breakout_detail(player_id: str, season: int) -> Dict:
     if rank:
         cand['breakout_rank'] = rank
     return cand
+
+
+def _surfaced_weeks_for(player_id: object, season: int) -> List[int]:
+    """Weeks this season in which the player was actually surfaced.
+
+    "Surfaced" is the canonical definition the track record counts
+    (``weekly_grading.surfaced_player_ids_by_week``: pool-eligible,
+    score >= the surfaced floor, no-repeat window applied), so anything
+    built on this list covers exactly the players the board actually
+    called, in the weeks it called them -- not just this week's board.
+    Fails soft to []: history is an enhancement, never an error.
+    """
+    pid = str(player_id or "").strip()
+    if not pid or not season:
+        return []
+    try:
+        from data_building.breakout_engine.weekly_grading import (
+            surfaced_player_ids_by_week)
+        by_week = surfaced_player_ids_by_week(int(season)) or {}
+    except Exception:
+        logger.warning(
+            "breakout_api: surfaced-weeks lookup failed for %s (season=%s)",
+            player_id, season, exc_info=True)
+        return []
+    return [int(week) for week in sorted(by_week, key=lambda w: int(w))
+            if pid in {str(p) for p in (by_week.get(week) or set())}]
+
+
+def breakout_call_history(player_id: object,
+                          requested_season: Optional[int] = None) -> Optional[Dict]:
+    """A player's earliest surfaced weekly breakout call this season,
+    as ``{"kind": "weekly", "season", "as_of_week", "label"}``, or None
+    when the board never surfaced them this season."""
+    season = _resolve_bo_season(requested_season)
+    if not season:
+        return None
+    weeks = _surfaced_weeks_for(player_id, int(season))
+    if not weeks:
+        return None
+    week = weeks[0]
+    return {
+        "kind": "weekly",
+        "season": int(season),
+        "as_of_week": week,
+        "label": f"Week {week}",
+    }
+
+
+def get_historical_weekly_breakout_detail(player_id: str, season: int,
+                                          as_of_week: int) -> Dict:
+    """The stored breakout card for one past week's call.
+
+    Built from that week's own snapshot (never the latest week's data
+    relabeled), with the week's rank and live forecast taken from that
+    week's served board when the player is on it, and the finished
+    grade attached by :func:`get_weekly_breakout_detail`.
+    """
+    week = int(as_of_week)
+    detail = get_weekly_breakout_detail(player_id, season, as_of_week=week)
+    if not detail.get("available"):
+        return detail
+    detail["breakout_rank"] = None
+    try:
+        board = get_weekly_breakout_candidates(season, as_of_week=week)
+        cands = board.get("candidates") or []
+        ids = [str(c.get("player_id")) for c in cands]
+        if str(player_id) in ids:
+            idx = ids.index(str(player_id))
+            served = cands[idx]
+            pos = str(served.get("position") or "").upper()
+            pos_ids = [str(c.get("player_id")) for c in cands
+                       if str(c.get("position") or "").upper() == pos]
+            detail["breakout_rank"] = {
+                "overall": idx + 1,
+                "overall_total": len(cands),
+                "pos": (pos_ids.index(str(player_id)) + 1) if pos else None,
+                "pos_total": len(pos_ids) if pos else None,
+                "position": pos or None,
+            }
+            if served.get("forecast") and not detail.get("forecast"):
+                detail["forecast"] = served["forecast"]
+            if served.get("grade") and not detail.get("grade"):
+                detail["grade"] = served["grade"]
+                detail["grade_detail"] = served.get("grade_detail")
+    except Exception:
+        logger.debug("historical breakout: board rank/forecast skipped",
+                     exc_info=True)
+    if detail.get("breakout_rank") is None:
+        detail.pop("breakout_rank", None)
+    return detail
 
 
 def get_breakout_candidates(season: Optional[int] = None, min_score: float = 0.0,
@@ -1671,7 +1792,28 @@ def get_breakout_candidate_detail(player_id: str, season: Optional[int] = None) 
 
     # In-season: serve weekly detail when a snapshot exists.
     if _weekly_breakout_available(season):
-        return get_weekly_breakout_detail(player_id, season)
+        detail = get_weekly_breakout_detail(player_id, season)
+        surfaced_weeks = _surfaced_weeks_for(player_id, season)
+        if not surfaced_weeks:
+            return detail
+        # A player surfaced in the latest completed week is a current
+        # call: their latest row IS their breakout card.
+        try:
+            from data_building.breakout_engine.weekly_store import (
+                list_completed_weeks)
+            completed = [int(r["as_of_week"]) for r in
+                         (list_completed_weeks(int(season)) or [])
+                         if isinstance(r, dict) and r.get("as_of_week") is not None]
+        except Exception:
+            completed = []
+        if completed and surfaced_weeks[-1] == max(completed):
+            return detail
+        # Otherwise the call that counts is the earliest one: serve
+        # that week's stored card (with its grade), not a later
+        # non-call row relabeled as a breakout.
+        historical = get_historical_weekly_breakout_detail(
+            player_id, season, surfaced_weeks[0])
+        return historical if historical.get("available") else detail
 
     if not opportunity_data_ready(season):
         return {
@@ -2551,10 +2693,19 @@ def player_detail(player_id):
     league_id = request.args.get('league_id')
     platform = request.args.get('platform', 'sleeper')
     eligible, board = breakout_board_membership(player_id, requested_season)
+    # Any-week call history: a player surfaced in an earlier week keeps
+    # their Breakout tab (and their card from that week) after they roll
+    # off the current board. Only checked when not currently eligible,
+    # so current-board players pay nothing extra.
+    history = None
+    if not eligible:
+        history = breakout_call_history(player_id, board.get('season'))
     membership = {
         'player_id': str(player_id),
         'season': board.get('season'),
         'board_eligible': eligible,
+        'has_breakout_call': bool(eligible or history),
+        'breakout_call': history,
         'data_available': board.get('data_available', True),
     }
     try:

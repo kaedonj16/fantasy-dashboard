@@ -124,8 +124,9 @@ def test_breakout_weekly_score_card_layout():
     # Row 1 grid: score card + why card.
     assert 'class="pm-bk-top' in seg
     assert 'class="pm-bk-card"' in seg
-    # Kind line carries the classification (no standalone pill row).
-    assert "In season · ${_pmEsc(clsLabel)}" in seg
+    # Kind line carries the classification (no standalone pill row), and
+    # the call's week label when the card is a specific week's call.
+    assert "In season · ${callLabel ? _pmEsc(callLabel) + ' call · ' : ''}${_pmEsc(clsLabel)}" in seg
     assert 'class="pm-bk-kind"' in seg
     # Big untinted score, tier line, definition, folded-in confidence line.
     assert 'class="pm-bk-score-big">${score}</div>' in seg

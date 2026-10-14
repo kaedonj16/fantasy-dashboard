@@ -681,9 +681,28 @@ def get_weekly_candidate(
     season: int,
     as_of_week: Optional[int] = None,
 ) -> Optional[Dict[str, Any]]:
-    """One player's latest weekly row (or the given week's)."""
+    """One player's latest weekly row (or the given week's).
+
+    An explicit week is served verbatim from that week's serving run
+    under whatever scoring version scored it, mirroring
+    :func:`load_weekly_candidates`; only the default latest view is
+    gated on the current SCORING_VERSION. Without this, a historical
+    call (e.g. a Week 2 breakout) becomes unreadable the moment the
+    scoring version moves on, even though its snapshot is stored.
+    """
     init_weekly_breakout_db()
-    week = as_of_week if as_of_week is not None else latest_scored_week(season)
+    if as_of_week is not None:
+        serving_run = get_serving_run(season, int(as_of_week))
+        if serving_run is None:
+            return None
+        with get_conn() as conn:
+            row = conn.execute(
+                f"SELECT s.* FROM {WEEKLY_SCORES_TABLE} s "
+                f"WHERE s.player_id = %s AND s.run_id = %s",
+                (str(player_id), int(serving_run["id"])),
+            ).fetchone()
+        return dict(row) if row else None
+    week = latest_scored_week(season)
     if week is None:
         return None
     from data_building.breakout_engine.weekly_breakout import SCORING_VERSION

@@ -57,6 +57,8 @@ def test_player_endpoint_exposes_membership_without_premium_detail(monkeypatch):
     assert response.status_code == 200
     assert response.get_json() == {
         "board_eligible": True,
+        "has_breakout_call": True,
+        "breakout_call": None,
         "data_available": True,
         "player_id": "00123",
         "season": 2027,
