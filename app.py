@@ -24480,34 +24480,74 @@ def _attach_adp_to_players(players, adp_season, clear_first=False, sleeper_only=
 
 
 def _ppg_map_with_ranks(entries: dict) -> dict:
-    """Attach positional PPG / total-points ranks to a PPG entry map.
+    """Attach PPG / total-points ranks (positional + overall) to a PPG map.
 
     ``entries`` maps player_id -> {"ppg", "total_pts", "games", "season",
-    "position"} with ppg/total already rounded to the displayed 0.1. Ranks use
-    competition semantics on those rounded values (ties share the better
-    rank), matching the usage-file implementation this replaced. Returns a
-    new dict keyed by player_id carrying exactly the payload fields.
+    "position"} plus the unrounded "ppg_raw" / "total_pts_raw" the ranks are
+    computed on (falling back to the display values when a caller does not
+    supply them). Ranks use competition semantics (1 + number strictly
+    greater) on the RAW values, never the rounded display values: two
+    players who both display 20.9 PPG tie only if their actual PPG is
+    identical. The pool is the same one the player modal ranks over in
+    _season_rank_rows (every QB/RB/WR/TE with a scored appearance), and the
+    overall ranks use the same semantics, so the rankings page and the
+    modal show the same ranks. Returns a new dict keyed by player_id
+    carrying exactly the payload fields.
     """
+    from bisect import bisect_right
+
+    def _raw(_e, _raw_key, _disp_key):
+        _v = _e.get(_raw_key)
+        if _v is None:
+            _v = _e.get(_disp_key)
+        try:
+            return float(_v) if _v is not None else None
+        except (TypeError, ValueError):
+            return None
+
     pos_ppg: dict = {}
     pos_total: dict = {}
+    all_ppg: list = []
+    all_total: list = []
     for _e in entries.values():
-        pos_ppg.setdefault(_e["position"], []).append(_e["ppg"])
-        pos_total.setdefault(_e["position"], []).append(_e["total_pts"])
+        if str(_e.get("position") or "").upper() not in ("QB", "RB", "WR", "TE"):
+            continue
+        _rp = _raw(_e, "ppg_raw", "ppg")
+        _rt = _raw(_e, "total_pts_raw", "total_pts")
+        if _rp is not None:
+            pos_ppg.setdefault(_e["position"], []).append(_rp)
+            all_ppg.append(_rp)
+        if _rt is not None:
+            pos_total.setdefault(_e["position"], []).append(_rt)
+            all_total.append(_rt)
     for _vals in pos_ppg.values():
-        _vals.sort(reverse=True)
+        _vals.sort()
     for _vals in pos_total.values():
-        _vals.sort(reverse=True)
+        _vals.sort()
+    all_ppg.sort()
+    all_total.sort()
+
+    def _rank(_sorted, _v):
+        if _v is None or not _sorted:
+            return None
+        return 1 + (len(_sorted) - bisect_right(_sorted, _v))
+
     out = {}
     for _pid, _e in entries.items():
-        _ppg_sorted = pos_ppg.get(_e["position"], [])
-        _tot_sorted = pos_total.get(_e["position"], [])
+        _rp = _raw(_e, "ppg_raw", "ppg")
+        _rt = _raw(_e, "total_pts_raw", "total_pts")
+        _skill = str(_e.get("position") or "").upper() in ("QB", "RB", "WR", "TE")
         out[_pid] = {
             "ppg": _e["ppg"],
             "total_pts": _e["total_pts"],
+            "ppg_raw": _rp,
+            "total_pts_raw": _rt,
             "ppg_games": _e["games"],
             "ppg_season": _e["season"],
-            "ppg_rank": (_ppg_sorted.index(_e["ppg"]) + 1) if _e["ppg"] in _ppg_sorted else None,
-            "total_pts_rank": (_tot_sorted.index(_e["total_pts"]) + 1) if _e["total_pts"] in _tot_sorted else None,
+            "ppg_rank": _rank(pos_ppg.get(_e["position"]) or [], _rp) if _skill else None,
+            "total_pts_rank": _rank(pos_total.get(_e["position"]) or [], _rt) if _skill else None,
+            "ppg_ovr_rank": _rank(all_ppg, _rp) if _skill else None,
+            "total_pts_ovr_rank": _rank(all_total, _rt) if _skill else None,
         }
     return out
 
@@ -24575,6 +24615,8 @@ def _current_season_ppg_map(season: int, positions: dict) -> dict:
                 _entries[_pid] = {
                     "ppg": round(float(_summary["ppg"]), 1),
                     "total_pts": round(float(_summary["total"]), 1),
+                    "ppg_raw": float(_summary["ppg"]),
+                    "total_pts_raw": float(_summary["total"]),
                     "games": int(_summary["games"]),
                     "season": int(season),
                     "position": str(positions.get(_pid) or _index_pos.get(_pid) or ""),

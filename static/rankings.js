@@ -94,8 +94,8 @@ function prSortBase(a, b, sortBy) {
     var rA = prPosRankMap[String(a.id)] || 9999, rB = prPosRankMap[String(b.id)] || 9999;
     return rA - rB;
   }
-  if (sortBy === 'ppg')       return (a.ppg != null ? a.ppg : -1) - (b.ppg != null ? b.ppg : -1);
-  if (sortBy === 'total_pts') return (a.total_pts != null ? a.total_pts : -1) - (b.total_pts != null ? b.total_pts : -1);
+  if (sortBy === 'ppg')       { var aP = a.ppg_raw != null ? a.ppg_raw : a.ppg, bP = b.ppg_raw != null ? b.ppg_raw : b.ppg; return (aP != null ? aP : -1) - (bP != null ? bP : -1); }
+  if (sortBy === 'total_pts') { var aT = a.total_pts_raw != null ? a.total_pts_raw : a.total_pts, bT = b.total_pts_raw != null ? b.total_pts_raw : b.total_pts; return (aT != null ? aT : -1) - (bT != null ? bT : -1); }
   return prGetValue(a) - prGetValue(b);
 }
 function prSortCmp(a, b, sortBy) {
@@ -835,7 +835,20 @@ function prRender() {
     players.slice()
       .filter(p => p.position !== 'PICK' && !(p.is_rookie && !isDrafted(p)))
       .sort(_rankSort)
-      .forEach(p => { _rankMap.set(String(p.id), ++_rankIdx); });
+      .forEach(p => {
+        // PPG / Total Points sorts show the player's ACTUAL overall rank
+        // (server-computed on unrounded values over the full stat-line
+        // pool, the same rank the player modal shows), not a row count of
+        // this table. Other sorts keep the sequential board rank.
+        const _srvRank = sortBy === 'ppg' ? p.ppg_ovr_rank
+          : (sortBy === 'total_pts' ? p.total_pts_ovr_rank : null);
+        if (_srvRank != null) {
+          _rankMap.set(String(p.id), _srvRank);
+          if (_srvRank > _rankIdx) _rankIdx = _srvRank;
+        } else {
+          _rankMap.set(String(p.id), ++_rankIdx);
+        }
+      });
   }
 
   // Position filter (multi-select) -- narrows which rows show, but each keeps the
@@ -1182,8 +1195,12 @@ function prExportCSV() {
   const rows = players.map((p, i) => {
     const val1qb = Number(p[prValueKey(false)] ?? p.value ?? 0);
     const valsf  = Number(p[prValueKey(true)]  ?? p.sf_value ?? 0);
+    // PPG / Total Points exports carry the actual overall rank (the same
+    // server rank the table shows), not the export row number.
+    const _srvRank = prSortKey === 'ppg' ? p.ppg_ovr_rank
+      : (prSortKey === 'total_pts' ? p.total_pts_ovr_rank : null);
     return [
-      i + 1,
+      _srvRank != null ? _srvRank : i + 1,
       q(p.name),
       p.position || '',
       p.team || '',
@@ -1427,8 +1444,12 @@ Promise.all([
         rank_change_7d:   p.rank_change_7d != null ? Number(p.rank_change_7d) : null,
         ppg:              p.ppg != null ? Number(p.ppg) : null,
         total_pts:        p.total_pts != null ? Number(p.total_pts) : null,
+        ppg_raw:          p.ppg_raw != null ? Number(p.ppg_raw) : null,
+        total_pts_raw:    p.total_pts_raw != null ? Number(p.total_pts_raw) : null,
         ppg_rank:         p.ppg_rank != null ? Number(p.ppg_rank) : null,
         total_pts_rank:   p.total_pts_rank != null ? Number(p.total_pts_rank) : null,
+        ppg_ovr_rank:     p.ppg_ovr_rank != null ? Number(p.ppg_ovr_rank) : null,
+        total_pts_ovr_rank: p.total_pts_ovr_rank != null ? Number(p.total_pts_ovr_rank) : null,
         ppg_season:       p.ppg_season || null,
       };
     })

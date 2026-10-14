@@ -146,10 +146,75 @@ def test_ppg_map_with_ranks_shares_better_rank_on_ties():
     assert result["2"]["ppg_rank"] == 1
     assert result["3"]["ppg_rank"] == 3
     assert result["3"]["total_pts_rank"] == 1
+    # Overall ranks use the same competition semantics over the whole pool.
+    assert result["1"]["ppg_ovr_rank"] == 1
+    assert result["2"]["ppg_ovr_rank"] == 1
+    assert result["3"]["ppg_ovr_rank"] == 3
+    assert result["3"]["total_pts_ovr_rank"] == 1
     # Exactly the payload fields, nothing extra (no internal "position").
     assert set(result["1"]) == {
-        "ppg", "total_pts", "ppg_games", "ppg_season", "ppg_rank", "total_pts_rank",
+        "ppg", "total_pts", "ppg_raw", "total_pts_raw", "ppg_games",
+        "ppg_season", "ppg_rank", "total_pts_rank",
+        "ppg_ovr_rank", "total_pts_ovr_rank",
     }
+
+
+def test_ppg_ranks_use_unrounded_values_not_display_values():
+    # Both QBs display 20.9 PPG (and 83.7 total), but their actual PPGs
+    # differ, so they must NOT tie: the rank follows the actual ranking,
+    # with no rounding. Regression for the 2026-10-14 report: the modal
+    # (raw values) and the rankings page (rounded values) disagreed.
+    entries = {
+        "1": {"ppg": 20.9, "total_pts": 83.7, "ppg_raw": 20.94,
+              "total_pts_raw": 83.76, "games": 4, "season": 2026, "position": "QB"},
+        "2": {"ppg": 20.9, "total_pts": 83.7, "ppg_raw": 20.85,
+              "total_pts_raw": 83.71, "games": 4, "season": 2026, "position": "QB"},
+        "3": {"ppg": 30.0, "total_pts": 30.0, "ppg_raw": 30.0,
+              "total_pts_raw": 30.0, "games": 1, "season": 2026, "position": "WR"},
+    }
+    result = app._ppg_map_with_ranks(entries)
+    assert result["1"]["ppg_rank"] == 1
+    assert result["2"]["ppg_rank"] == 2
+    assert result["1"]["total_pts_rank"] == 1
+    assert result["2"]["total_pts_rank"] == 2
+    # Overall ranks span positions over the same pool.
+    assert result["3"]["ppg_ovr_rank"] == 1
+    assert result["1"]["ppg_ovr_rank"] == 2
+    assert result["2"]["ppg_ovr_rank"] == 3
+    assert result["3"]["ppg_rank"] == 1  # positional rank is per-position
+
+
+def test_current_season_ppg_ranks_match_actual_unrounded_order(monkeypatch):
+    # End to end through the map builder: weekly points whose PPGs round
+    # to the same display value still rank by the actual values, and the
+    # payload carries the overall rank the rankings page displays.
+    weekly = {"1": [20.94], "2": [20.85], "3": [30.0]}
+    _patch_season(monkeypatch, weekly, weeks=(1,), games_min=1)
+    positions = {"1": "QB", "2": "QB", "3": "WR"}
+
+    result = app._current_season_ppg_map(2026, positions)
+
+    assert result["1"]["ppg"] == 20.9
+    assert result["2"]["ppg"] == 20.9
+    assert result["1"]["ppg_rank"] == 1
+    assert result["2"]["ppg_rank"] == 2
+    assert result["1"]["ppg_ovr_rank"] == 2
+    assert result["2"]["ppg_ovr_rank"] == 3
+    assert result["3"]["ppg_ovr_rank"] == 1
+    assert result["1"]["ppg_raw"] == pytest.approx(20.94)
+
+
+def test_rankings_page_displays_actual_ppg_ranks():
+    js = (ROOT / "static" / "rankings.js").read_text(encoding="utf-8")
+    # The payload whitelist carries the raw values and overall ranks...
+    assert "ppg_raw" in js
+    assert "ppg_ovr_rank" in js
+    assert "total_pts_ovr_rank" in js
+    # ...the PPG sort orders by the unrounded values...
+    assert "a.ppg_raw" in js
+    # ...and the displayed # for a PPG sort is the server overall rank,
+    # not a sequential row count.
+    assert "sortBy === 'ppg' ? p.ppg_ovr_rank" in js
 
 
 def test_payload_builder_uses_current_season_with_no_usage_fallback():
