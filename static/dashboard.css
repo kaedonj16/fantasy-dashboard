@@ -46430,63 +46430,13 @@ a, button, [role="button"], [role="tab"], summary, label,
   border-radius: var(--radius-sm); padding: 1px 5px; margin-left: 6px; white-space: nowrap;
 }
 .for-inj-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.for-inj-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-@media (max-width: 640px) { .for-inj-grid { grid-template-columns: 1fr; } }
 .for-inj-row {
   display: flex; justify-content: space-between; align-items: center; gap: 8px 12px; flex-wrap: wrap;
   border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 12px; background: var(--card-soft);
 }
 .for-inj-name { font-weight: 700; }
 .for-inj-meta { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
-.for-inj-meta .for-inj { margin-left: 0; margin-right: 6px; }
 .for-inj-action { font-size: 13px; font-weight: 800; flex-shrink: 0; }
-
-/* Front Office rework: Top Moves, Swap trade cards, potential rows */
-.for-sec-sub { font-size: 13px; color: var(--text-muted); margin: -4px 0 10px; }
-.for-moves-list { display: flex; flex-direction: column; gap: 10px; }
-.for-move-card { display: flex; gap: 12px; border: 1px solid var(--border); border-radius: var(--radius); padding: 13px 14px; background: var(--card-soft); }
-.for-move-rank { flex-shrink: 0; width: 28px; height: 28px; border-radius: var(--radius-pill); background: var(--accent); color: #fff; font-weight: 900; font-size: 14px; display: flex; align-items: center; justify-content: center; margin-top: 1px; }
-.for-move-main { min-width: 0; flex: 1; }
-.for-move-line { font-size: 15px; font-weight: 700; }
-.for-move-why { font-size: 13px; margin-top: 3px; }
-.for-move-type { flex-shrink: 0; font-size: 11px; font-weight: 800; letter-spacing: 0.8px; text-transform: uppercase; color: var(--text-muted); border: 1px solid var(--border); background: var(--card); border-radius: var(--radius-pill); padding: 4px 8px; height: fit-content; white-space: nowrap; }
-.for-covered { margin-top: 10px; font-size: 13px; border: 1px solid var(--border); border-radius: var(--radius); padding: 9px 12px; background: var(--card); }
-.for-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; color: var(--text); border: 1px solid var(--border); background: var(--card); border-radius: var(--radius-pill); padding: 4px 10px; white-space: nowrap; }
-.for-dot { width: 7px; height: 7px; border-radius: 50%; background: #1a7f4b; flex-shrink: 0; }
-.for-dot-amber { background: #b98a1d; }
-.for-avatar { flex-shrink: 0; width: 34px; height: 34px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; color: #fff; }
-.for-pos-chip { display: inline-block; font-size: 10px; font-weight: 800; letter-spacing: 0.6px; border-radius: var(--radius-sm); padding: 2px 6px; }
-.for-pos-qb { background: #2563eb1a; color: #2563eb; }
-.for-pos-rb { background: #1a7f4b1a; color: #1a7f4b; }
-.for-pos-wr { background: #f973161a; color: #c2410c; }
-.for-pos-te { background: #8b5cf61a; color: #7c3aed; }
-.for-tier-tag { font-size: 11px; font-weight: 800; color: #b3541e; border: 1px solid #b3541e55; border-radius: var(--radius-pill); padding: 2px 8px; margin-left: 6px; white-space: nowrap; }
-.for-swap-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; background: var(--card); }
-.for-swap-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
-.for-swap-who { font-size: 14px; }
-.for-swap-grid { display: grid; grid-template-columns: 1fr 36px 1fr; gap: 10px; align-items: stretch; }
-@media (max-width: 640px) { .for-swap-grid { grid-template-columns: 1fr; } .for-swap-arrow { transform: rotate(90deg); margin: 0 auto; } }
-.for-swap-side { border-radius: var(--radius); padding: 10px 12px; }
-.for-swap-get { background: #1a7f4b0d; border: 1px solid #1a7f4b30; }
-.for-swap-give { background: var(--card-soft); border: 1px solid var(--border); }
-.for-swap-lbl { font-size: 10px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 7px; }
-.for-swap-get .for-swap-lbl { color: #1a7f4b; }
-.for-swap-player { display: flex; align-items: center; gap: 9px; padding: 4px 0; }
-.for-swap-name { font-weight: 700; font-size: 14px; }
-.for-swap-meta { font-size: 12px; color: var(--text-muted); }
-.for-swap-val { margin-left: auto; font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
-.for-swap-arrow { display: flex; align-items: center; justify-content: center; }
-.for-swap-arrow span { width: 30px; height: 30px; border-radius: var(--radius-pill); border: 1px solid var(--border); background: var(--card); display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 14px; }
-.for-swap-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 12px; font-size: 13px; }
-.for-swap-why { flex: 1; min-width: 200px; }
-.for-swap-depth { font-size: 12.5px; color: var(--text-muted); margin-top: 8px; }
-.for-analyze-lite { font-size: 13px; font-weight: 700; color: var(--accent); text-decoration: none; white-space: nowrap; }
-.for-prow { border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); padding: 12px 14px; display: flex; gap: 12px; align-items: flex-start; }
-.for-prow-main { flex: 1; min-width: 0; }
-.for-prow-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; }
-.for-prow-name { font-weight: 800; font-size: 15px; color: var(--text); }
-.for-prow-sub { font-size: 13px; margin-top: 4px; line-height: 1.5; }
-.for-prow-side { flex-shrink: 0; }
 .for-card-inj { display: flex; flex-direction: column; gap: 6px; }
 .for-card-inj ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .for-card-inj li { font-size: 13px; }
@@ -48686,6 +48636,79 @@ em.gneg { background: var(--loss); }
     background: var(--card);
     color: var(--text);
     box-shadow: 0 1px 3px rgba(0,0,0,.12);
+}
+/* Dynasty / This Season grading toggle (Teams page topbar, dynasty leagues) */
+.teams-mode-toggle {
+    position: relative;
+    display: inline-flex;
+    background: var(--accent-soft);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 3px;
+    gap: 2px;
+    flex-shrink: 0;
+}
+/* Sliding pill behind the active label (positioned by the inline script) */
+.teams-mode-thumb {
+    position: absolute;
+    top: 3px;
+    left: 0;
+    height: calc(100% - 6px);
+    background: var(--card);
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.12);
+    transition: transform .28s cubic-bezier(.4, 0, .2, 1), width .28s cubic-bezier(.4, 0, .2, 1);
+    pointer-events: none;
+}
+.teams-mode-toggle button {
+    position: relative;
+    z-index: 1;
+    border: none;
+    background: transparent;
+    padding: 6px 16px;
+    border-radius: 8px;
+    font-weight: 700;
+    font-size: 12px;
+    letter-spacing: .04em;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-family: inherit;
+    transition: color .2s ease;
+}
+.teams-mode-toggle button.on {
+    background: var(--card);
+    color: var(--text);
+    box-shadow: 0 1px 3px rgba(0,0,0,.12);
+}
+/* Once the script positions the sliding thumb, it carries the pill instead */
+.teams-mode-toggle.js-thumb button.on {
+    background: transparent;
+    box-shadow: none;
+}
+@media (max-width: 768px) {
+    .teams-mode-toggle { align-self: flex-start; }
+}
+/* Mode flip: outgoing grid fades, incoming cards stagger up */
+.teams-grid {
+    transition: opacity .14s ease, transform .14s ease;
+}
+.teams-grid.mode-leave {
+    opacity: 0;
+    transform: translateY(4px);
+}
+@keyframes tscModeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.teams-grid.mode-enter .team-strength-card {
+    /* backwards (not both): the from-state covers the stagger delay, but a
+       finished card must release its transform so sort FLIP can move it. */
+    animation: tscModeIn .38s cubic-bezier(.22, .61, .36, 1) backwards;
+}
+@media (prefers-reduced-motion: reduce) {
+    .teams-mode-thumb { transition: none; }
+    .teams-grid { transition: none; }
+    .teams-grid.mode-enter .team-strength-card { animation: none; }
 }
 .teams-pview { display: none; }
 .teams-pview.on { display: block; }

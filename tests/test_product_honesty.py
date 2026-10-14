@@ -318,7 +318,9 @@ def test_lineup_lock_push_has_no_em_dash():
 
 def test_teams_page_hides_cap_row_without_a_pick_feed():
     teams = (ROOT / "dashboard_services" / "pages" / "teams_page.py").read_text(encoding="utf-8")
-    assert "if not _is_redraft and ctx.get(\"draft_capital_available\", True):" in teams
+    # Per-mode guard inside _build_mode_assets: CAP shows only in dynasty
+    # mode and only when a pick feed exists.
+    assert "if not is_redraft_m and ctx.get(\"draft_capital_available\", True):" in teams
 
 
 def test_public_pages_opt_into_lite_js():
