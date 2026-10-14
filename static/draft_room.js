@@ -100,7 +100,10 @@
     var h = '<span class="dr-hs' + (sizeCls ? ' ' + sizeCls : '') + (team ? ' t-' + team : '')
       + '" style="--ring:' + posColor(p && p.position) + '">'
       + '<span class="dr-hs-ini" aria-hidden="true">' + esc(ini) + '</span>';
-    if (url) h += '<img class="dr-hs-img" loading="lazy" decoding="async" src="' + esc(url) + '" alt="" onerror="this.remove()">';
+    // onload hides the initials: headshots are transparent PNGs, so the
+    // letters underneath would show through around the neck/shoulders once
+    // the photo paints. onerror removes the img, restoring the initials.
+    if (url) h += '<img class="dr-hs-img" loading="lazy" decoding="async" src="' + esc(url) + '" alt="" onload="this.previousElementSibling.style.display=\'none\'" onerror="this.remove()">';
     if (team) h += '<span class="dr-hs-tm" aria-hidden="true">' + esc(team) + '</span>';
     return h + '</span>';
   };
