@@ -18894,7 +18894,8 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
     deep_target_rate:'Deep Tgt %', stuffed_rate:'Stuffed %',
     third_down_conv_rate:'3rd Down Conv %',
     turnover_worthy_rate:'Turnover-Worthy %', contested_target_rate:'Contested Tgt %',
-    screen_target_rate:'Screen Tgt %', rec_broken_tackles_per_reception:'Brk Tackles/Catch',
+    screen_target_rate:'Screen Tgt %', first_read_tgt_pct:'First-Read Tgt %',
+    designed_tgt_pct:'Designed Tgt %', rec_broken_tackles_per_reception:'Brk Tackles/Catch',
     grades_offense:'PFF Off Grade', grades_pass_block:'PFF Block Grade',
     pass_block_rate:'Block Rate',
     vorp:'VORP', war:'WAR',
@@ -18950,6 +18951,7 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
       'goal_line_opp_share': 60, 'end_zone_target_rate': 30, 'deep_target_rate': 40,
       'stuffed_rate': 30, 'third_down_conv_rate': 60,
       'turnover_worthy_rate': 6, 'contested_target_rate': 40, 'screen_target_rate': 30,
+      'first_read_tgt_pct': 90, 'designed_tgt_pct': 50,
       'rec_broken_tackles_per_reception': 0.6,
 
       // Yardage metrics
@@ -19422,6 +19424,7 @@ function _cmpAggregateWeeks(weeks, wkStart, wkEnd) {
     goal_line_opp_share: 'w_team_gl_opps', third_down_conv_rate: 'w_third_down_dropbacks',
     stuffed_rate: 'w_carries', turnover_worthy_rate: 'w_dropbacks',
     contested_target_rate: 'w_targets', screen_target_rate: 'w_targets',
+    first_read_tgt_pct: 'w_targets', designed_tgt_pct: 'w_targets',
     rec_broken_tackles_per_reception: 'w_receptions',
     rec_first_down_rate: 'w_targets', rush_first_down_rate: 'w_carries',
     receiving_success_rate: 'w_targets', receiving_epa_per_target: 'w_targets',

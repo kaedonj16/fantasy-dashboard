@@ -36,7 +36,7 @@ DECISION_EXPECTED = {
 # counts and sort directions follow their primary metric, not the 7-metric
 # "desc" house shape of EXPECTED. (primary, position, sort, metric count)
 LENS_EXPECTED = {
-    "target_quality": ("uncatchable_tgt_rate", None, "asc", 6),
+    "target_quality": ("uncatchable_tgt_rate", None, "asc", 8),
     "td_regression": ("td_over_expected", None, "desc", 5),
 }
 
@@ -118,6 +118,7 @@ def test_metrics_batch_keys_all_have_player_modal_glossary_entries():
         "pressure_rate_faced", "goal_line_opp_share", "end_zone_target_rate",
         "deep_target_rate", "stuffed_rate", "third_down_conv_rate",
         "turnover_worthy_rate", "contested_target_rate", "screen_target_rate",
+        "first_read_tgt_pct", "designed_tgt_pct",
         "rec_broken_tackles_per_reception", "td_share",
     }
     assert added <= set(LEADERBOARD_METRICS)

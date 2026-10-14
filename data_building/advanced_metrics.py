@@ -454,11 +454,16 @@ def _add_rookie_eval_columns(conn) -> None:
     # FTN charting additions: turnover-worthy play rate (passer),
     # contested target rate and screen target rate (receiver). Distinct
     # from contested_catch_rate, which is catches per contested target.
+    # first_read_tgt_pct / designed_tgt_pct come from FTN read_thrown
+    # (2023+ only; the weekly table gets its columns from
+    # WEEKLY_ADV_METRIC_COLS via init_weekly_advanced_metrics_db).
     conn.execute("""
         ALTER TABLE player_advanced_metrics
             ADD COLUMN IF NOT EXISTS turnover_worthy_rate  NUMERIC,
             ADD COLUMN IF NOT EXISTS contested_target_rate NUMERIC,
-            ADD COLUMN IF NOT EXISTS screen_target_rate    NUMERIC;
+            ADD COLUMN IF NOT EXISTS screen_target_rate    NUMERIC,
+            ADD COLUMN IF NOT EXISTS first_read_tgt_pct    NUMERIC,
+            ADD COLUMN IF NOT EXISTS designed_tgt_pct      NUMERIC;
     """)
 
     # PFR receiving broken tackles per reception, and TD share of team
@@ -2532,6 +2537,7 @@ def get_player_career_metrics(
         'goal_line_opp_share', 'end_zone_target_rate', 'deep_target_rate',
         'stuffed_rate', 'third_down_conv_rate',
         'turnover_worthy_rate', 'contested_target_rate', 'screen_target_rate',
+        'first_read_tgt_pct', 'designed_tgt_pct',
         'rec_broken_tackles_per_reception', 'td_share',
     ]
 
@@ -2822,6 +2828,8 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "deep_target_rate": {"label": "Deep Tgt %", "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "pct": True, "min_vol": _V_TARGETS, "desc": "Percent of targets thrown 20+ air yards downfield (nflverse play-by-play)."},
     "contested_target_rate": {"label": "Contested Tgt %", "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "pct": True, "min_vol": _V_TARGETS, "desc": "Percent of charted targets that were contested (tightly covered), per FTN charting via nflverse. Not the same as Contested Catch %: this is how often coverage was tight, not whether the catch was made."},
     "screen_target_rate": {"label": "Screen Tgt %", "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "pct": True, "min_vol": _V_TARGETS, "desc": "Percent of charted targets that were screen passes, per FTN charting via nflverse. Designed short-game usage."},
+    "first_read_tgt_pct": {"label": "First-Read Tgt %", "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "pct": True, "min_vol": _V_TARGETS, "desc": "Percent of charted targets where the receiver was the quarterback's first read, per FTN charting via nflverse, not PFF. Higher is better: the passing game is designed to go to him first."},
+    "designed_tgt_pct": {"label": "Designed Tgt %", "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "pct": True, "min_vol": _V_TARGETS, "desc": "Percent of charted targets on designed plays with no quarterback progression (screens, RPOs and other schemed touches), per FTN charting via nflverse, not PFF. A usage type, not a quality grade: high means the offense schemes him the ball."},
     "rec_first_down_rate":  {"label": "Rec 1st Down %",      "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "pct": True, "min_vol": _V_TARGETS, "desc": "Percent of targets that result in a first down (nflverse play-by-play). How often a target moves the chains, not just catches."},
     "drop_rate":            {"label": "Drop Rate",           "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "pct": True, "lower_better": True, "min_vol": _V_TARGETS, "desc": "Percent of catchable targets dropped. Lower is better."},
     "uncatchable_tgt_rate": {"label": "Uncatchable Tgt %",   "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "pct": True, "lower_better": True, "min_vol": _V_TARGETS, "desc": "Percent of targets charted as uncatchable by FTN charting (off-target throws the receiver had no realistic chance to catch), via the nflverse FTN release, not PFF. Lower is better: a high rate means poor QB throw quality, not poor receiving."},
@@ -3023,6 +3031,7 @@ WEEKLY_ADV_METRIC_COLS: List[str] = [
     "goal_line_opp_share", "end_zone_target_rate", "deep_target_rate",
     "stuffed_rate", "third_down_conv_rate",
     "turnover_worthy_rate", "contested_target_rate", "screen_target_rate",
+    "first_read_tgt_pct", "designed_tgt_pct",
     "rec_broken_tackles_per_reception",
     # Expected Fantasy Points (xFP): that week's expected total + over-expected
     # total, per reception format. Totals (like passing_epa) so a week range
@@ -3356,6 +3365,7 @@ _ADV_WEEKLY_WEIGHTED_METRICS = {
     "qb_rating_when_targeted": "w_targets",
     "end_zone_target_rate": "w_targets", "deep_target_rate": "w_targets",
     "contested_target_rate": "w_targets", "screen_target_rate": "w_targets",
+    "first_read_tgt_pct": "w_targets", "designed_tgt_pct": "w_targets",
     "goal_line_opp_share": "w_team_gl_opps",
     "rec_first_down_rate": "w_targets",
     "rush_first_down_rate": "w_carries",

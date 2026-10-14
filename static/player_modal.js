@@ -6230,6 +6230,8 @@ const _ADV_METRIC_DESCS = {
   turnover_worthy_rate: "Percent of dropbacks charted as turnover-worthy throws (is_interception_worthy) by FTN charting via nflverse, whether or not they were actually intercepted. Lower is better.",
   contested_target_rate: "Percent of charted targets that were contested (tightly covered, is_contested_ball) per FTN charting via nflverse. Different from Contested Catch %: this is how often coverage was tight.",
   screen_target_rate: "Percent of charted targets that were screen passes (is_screen_pass) per FTN charting via nflverse.",
+  first_read_tgt_pct: "Percent of charted targets where the receiver was the quarterback's first read (read_thrown) per FTN charting via nflverse, not PFF. Higher is better: the passing game is designed to go to him first.",
+  designed_tgt_pct: "Percent of charted targets on designed plays with no quarterback progression, like screens and RPOs (read_thrown) per FTN charting via nflverse, not PFF. A usage type, not a quality grade: high means the offense schemes him the ball.",
   rec_broken_tackles_per_reception: "Broken tackles per reception on receiving plays only, per Pro Football Reference charting: receiving broken tackles divided by receptions. Different from the combined rush plus rec broken tackle rates.",
   td_share: "Share of the team's offensive touchdowns scored by this player: rushing plus receiving TDs divided by the team's offensive TD total. Every offensive TD is one player's rush or receiving TD, so nothing double counts.",
   snap_share: "Percent of the team's offensive snaps the player was on the field for.",

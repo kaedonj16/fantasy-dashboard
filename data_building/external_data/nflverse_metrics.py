@@ -924,6 +924,19 @@ def build_ftn_charting_for_season(season: int) -> Dict[str, Dict[str, float]]:
     has_twp_col = "is_interception_worthy" in merged.columns
     has_screen_col = "is_screen_pass" in merged.columns
     has_contested_col = "is_contested_ball" in merged.columns
+    # read_thrown codes the QB's progression on each throw: "1" = first
+    # (primary) read, "DES" = designed play with no progression (screens,
+    # RPOs). Validated against the released FTN files for 2023-2026 (the
+    # code "1" is the modal code on targeted throws; "0" is the non-throw
+    # default). In 2022 primary reads are not coded, so the read metrics
+    # below are season >= 2023 only. Same fail-loud rule as the other flag
+    # columns: a missing/renamed column skips them, never stores zeros.
+    has_read_col = "read_thrown" in merged.columns
+    if not has_read_col:
+        print("[nflverse_metrics] WARNING: FTN frame missing read_thrown; "
+              "first_read_tgt_pct/designed_tgt_pct will be skipped for "
+              f"{season} (FTN columns may have been renamed upstream)")
+    read_metrics_ok = has_read_col and season >= 2023
     for _col, _what in (("is_interception_worthy", "turnover_worthy_rate"),
                         ("is_screen_pass", "screen_target_rate"),
                         ("is_contested_ball", "contested_target_rate")):
@@ -942,10 +955,16 @@ def build_ftn_charting_for_season(season: int) -> Dict[str, Dict[str, float]]:
         bucket = agg.setdefault(gsis, {"catchable": 0.0, "drops": 0.0,
                                        "contested": 0.0, "contested_caught": 0.0,
                                        "charted_targets": 0.0,
-                                       "targets": 0.0, "screens": 0.0})
+                                       "targets": 0.0, "screens": 0.0,
+                                       "first_read": 0.0, "designed": 0.0})
         bucket["charted_targets"] += 1.0
         bucket["targets"] += 1.0
         bucket["screens"] += _flag(r.get("is_screen_pass"))
+        _read = str(r.get("read_thrown") or "").strip()
+        if _read == "1":
+            bucket["first_read"] += 1.0
+        elif _read == "DES":
+            bucket["designed"] += 1.0
         bucket["catchable"] += _f(r.get("is_catchable_ball")) or 0.0
         bucket["drops"] += _f(r.get("is_drop")) or 0.0
         contested = _f(r.get("is_contested_ball")) or 0.0
@@ -974,6 +993,13 @@ def build_ftn_charting_for_season(season: int) -> Dict[str, Dict[str, float]]:
             scr_rate = _rate_pct(b["screens"], b["targets"])
             if scr_rate is not None:
                 row["screen_target_rate"] = scr_rate
+        if read_metrics_ok and b["targets"] > 0:
+            fr_rate = _rate_pct(b["first_read"], b["targets"])
+            if fr_rate is not None:
+                row["first_read_tgt_pct"] = fr_rate
+            des_rate = _rate_pct(b["designed"], b["targets"])
+            if des_rate is not None:
+                row["designed_tgt_pct"] = des_rate
         if row:
             out.setdefault(pid, {}).update(row)
 
@@ -1935,7 +1961,8 @@ def build_nflverse_weekly_metrics_for_season(
                           "have been renamed upstream)")
                 for _col, _what in (("is_interception_worthy", "turnover_worthy_rate"),
                                     ("is_screen_pass", "screen_target_rate"),
-                                    ("is_contested_ball", "contested_target_rate")):
+                                    ("is_contested_ball", "contested_target_rate"),
+                                    ("read_thrown", "first_read_tgt_pct/designed_tgt_pct")):
                     if _col not in merged.columns:
                         print("[nflverse_metrics] WARNING: weekly FTN frame "
                               f"missing {_col}; {_what} will be skipped for "
@@ -1971,6 +1998,18 @@ def build_nflverse_weekly_metrics_for_season(
                             float(g["is_screen_pass"].fillna(0).sum()), charted)
                         if scr_rate is not None:
                             cols["screen_target_rate"] = scr_rate
+                    # First-read / designed target rates from FTN read_thrown
+                    # ("1" = first read, "DES" = designed play). The coding
+                    # is validated for 2023+ only (2022 primary reads are
+                    # not coded), so both metrics are season >= 2023 only.
+                    if season >= 2023 and "read_thrown" in g.columns and charted > 0:
+                        _reads = g["read_thrown"].astype(str).str.strip()
+                        fr_rate = _rate_pct(float((_reads == "1").sum()), charted)
+                        if fr_rate is not None:
+                            cols["first_read_tgt_pct"] = fr_rate
+                        des_rate = _rate_pct(float((_reads == "DES").sum()), charted)
+                        if des_rate is not None:
+                            cols["designed_tgt_pct"] = des_rate
                 for (gsis, week), g in merged[merged["passer_player_id"].notna()].groupby(
                         ["passer_player_id", "week"]):
                     pid = crosswalk.get(str(gsis).strip())
