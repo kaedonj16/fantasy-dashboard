@@ -235,32 +235,104 @@ def test_swap_card_carries_fairness_acceptance_and_depth():
     assert "Partner Team A" in out
 
 
+_BLACKEDRAW_POSITIONS = ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "FLEX", "K", "DEF"]
+
+
 def test_potential_targets_rank_surplus_first_with_gap():
+    # Two-flex league (Blackedraw shape): skill starter capacity is
+    # 2 RB + 2 WR + 1 TE + 2 FLEX = 7. Their RB3 is the partner's 8th
+    # skill player, so he is genuinely behind the starting group.
     lookup = {
         "vrb1": {"name": "My RB1", "position": "RB", "value": 900},
+        "vwr1": {"name": "My WR1", "position": "WR", "value": 850},
+        "vwr2": {"name": "My WR2", "position": "WR", "value": 840},
         "vrb2": {"name": "My RB2", "position": "RB", "value": 800},
+        "vwr3": {"name": "My WR3", "position": "WR", "value": 780},
+        "vrb4": {"name": "My RB4", "position": "RB", "value": 720},
         "vrb3": {"name": "My RB3", "position": "RB", "value": 700},
+        "vte1": {"name": "My TE1", "position": "TE", "value": 650},
         "p1": {"name": "Their RB1", "position": "RB", "value": 1000},
+        "pw1": {"name": "Their WR1", "position": "WR", "value": 980},
+        "pw2": {"name": "Their WR2", "position": "WR", "value": 940},
+        "pw3": {"name": "Their WR3", "position": "WR", "value": 930},
         "p2": {"name": "Their RB2", "position": "RB", "value": 900},
+        "pt1": {"name": "Their TE1", "position": "TE", "value": 700},
+        "pw4": {"name": "Their WR4", "position": "WR", "value": 600},
         "p3": {"name": "Their RB3", "position": "RB", "value": 500},
     }
     ctx = {
         "rosters": [
-            {"roster_id": 1, "players": ["vrb1", "vrb2", "vrb3"]},
-            {"roster_id": 2, "players": ["p1", "p2", "p3"]},
+            {"roster_id": 1, "players": ["vrb1", "vwr1", "vwr2", "vrb2",
+                                          "vwr3", "vrb4", "vrb3", "vte1"]},
+            {"roster_id": 2, "players": ["p1", "pw1", "pw2", "pw3",
+                                          "p2", "pt1", "pw4", "p3"]},
         ],
         "roster_map": {"2": "Partner Team A"},
+        "roster_positions": _BLACKEDRAW_POSITIONS,
     }
     out = fmod._potential_trade_targets(ctx, 1, lookup, ["RB"])
-    # Their RB3 is genuine surplus (behind two starters) and ranks first
-    # despite the lowest value; the per-position cap keeps two.
+    # Their RB3 is genuine surplus (8th skill player, capacity 7) and
+    # ranks first despite the lowest value; the cap keeps two.
     assert [p["name"] for p in out] == ["Their RB3", "Their RB2"]
     top = out[0]
     assert top["is_surplus"] is True
+    assert top["skill_rank"] == 8
+    assert top["flex_slots"] == 2
     assert top["attainability"] == "Realistic"
-    # Viewer surplus package is My RB3 (700) vs his 500: gap = 500/700.
-    assert top["gap_pct"] == 71
-    assert top["starting_point"]["name"] == "My RB3"
+    # The viewer's only sendable piece is My TE1 (650, 8th skill player):
+    # gap = 500/650 = 77%.
+    assert top["gap_pct"] == 77
+    assert top["starting_point"]["name"] == "My TE1"
+
+
+def test_potential_targets_wr3_is_not_surplus_with_two_flex():
+    # Kaedon's correction: in a two-flex league a WR3 is a flex starter,
+    # not bench depth. He must not be flagged surplus or Realistic.
+    lookup = {
+        "p1": {"name": "Their RB1", "position": "RB", "value": 1000},
+        "pw1": {"name": "Their WR1", "position": "WR", "value": 980},
+        "pw2": {"name": "Their WR2", "position": "WR", "value": 940},
+        "p2": {"name": "Their RB2", "position": "RB", "value": 900},
+        "pw3": {"name": "Their WR3", "position": "WR", "value": 700},
+        "pt1": {"name": "Their TE1", "position": "TE", "value": 650},
+    }
+    ctx = {
+        "rosters": [
+            {"roster_id": 1, "players": []},
+            {"roster_id": 2, "players": ["p1", "pw1", "pw2", "p2", "pw3", "pt1"]},
+        ],
+        "roster_map": {"2": "Partner Team A"},
+        "roster_positions": _BLACKEDRAW_POSITIONS,
+    }
+    out = fmod._potential_trade_targets(ctx, 1, lookup, ["WR"])
+    wr3 = next(p for p in out if p["name"] == "Their WR3")
+    assert wr3["depth_rank"] == 3
+    assert wr3["skill_rank"] == 5  # inside the 7-man starting group
+    assert wr3["is_surplus"] is False
+    assert wr3["attainability"] == "Reach"
+    html_out = fmod._potential_trade_targets_html([wr3])
+    assert "in their starting group" in html_out
+
+
+def test_potential_target_build_around_button():
+    entry = {
+        "id": "7", "name": "Chris Olave", "position": "WR", "value": 551.3,
+        "partner": "Pittsburgh Pilots", "depth_rank": 3, "flex_slots": 2,
+        "is_surplus": False, "gap_pct": 69, "attainability": "Reach",
+        "build_url": "/sleeper/2026/123/trade?tab=hub&build=7&name=Chris+Olave",
+    }
+    out = fmod._potential_trade_targets_html([entry])
+    assert "Build around" in out
+    assert "build=7" in out and "name=Chris+Olave" in out
+    entry.pop("build_url")
+    assert "Build around" not in fmod._potential_trade_targets_html([entry])
+
+
+def test_trade_hub_reads_build_around_deep_link():
+    js = open("static/app.js", encoding="utf-8").read()
+    assert "_buildAroundDeepLink" in js
+    assert 'qp.get("build")' in js
+    assert 'fetchPackages(pid, pname)' in js
 
 
 # ── Trade engine: injury filter + ranking fields ────────────────────────────

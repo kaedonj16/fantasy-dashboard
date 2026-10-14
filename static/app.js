@@ -10392,6 +10392,26 @@ window.initTradePage = function initTradePage(root = document) {
     // Restore sub-tab on load
     setTimeout(() => { _setSuggSubtab(_hubStoredSubtab()); }, 0);
 
+    // Deep link from the Front Office report's Potential trade targets:
+    // ?build=<player_id>&name=<player_name> opens the Targets sub-tab
+    // with that player loaded into Build around (the "get" search).
+    (function _buildAroundDeepLink() {
+      const qp = new URLSearchParams(window.location.search);
+      const pid = qp.get("build");
+      if (!pid) return;
+      const pname = qp.get("name") || "";
+      setTimeout(() => {
+        switchTab("suggestions");
+        _setSuggSubtab("targets");
+        _applySearchModeUI("get");
+        if (playerInput) {
+          playerInput.value = pname;
+          _updateClearBtn();
+        }
+        fetchPackages(pid, pname);
+      }, 250);
+    })();
+
     // ── Strategy view loader ──────────────────────────────────────────────────
     async function loadStrategyView(archetype) {
       if (!strategyImpact || !strategyCards) return;
