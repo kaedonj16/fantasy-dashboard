@@ -362,6 +362,23 @@ def test_css_has_new_report_selectors():
         assert sel in css, f"missing CSS selector {sel}"
 
 
+def test_card_result_clears_refresh_button_for_rotated_stamp():
+    """The Season Hub card renders #gm-memo-result directly under the
+    Refresh button, and the verdict stamp is rotated, so its top corner
+    paints above its layout box. The result needs real top clearance or
+    the stamp overlaps the button (Kaedon's 2026-10-14 screenshot)."""
+    import re
+
+    css = open("static/dashboard.css", encoding="utf-8").read()
+    m = re.search(r"\.cc-fo-card #gm-memo-result\s*\{([^}]*)\}", css)
+    assert m, "missing .cc-fo-card #gm-memo-result clearance rule"
+    mt = re.search(r"margin-top:\s*(\d+(?:\.\d+)?)px", m.group(1))
+    assert mt, "clearance rule must set margin-top"
+    # The rotated 58px stamp protrudes ~3px; clearance must leave a
+    # visible gap after that, not just cancel the protrusion.
+    assert float(mt.group(1)) >= 10
+
+
 def test_positional_grades_match_teams_page_ranking(monkeypatch):
     import dashboard_services.ai.front_office_report as fmod
     from utils.roster_strength import rank_rosters_by_position
