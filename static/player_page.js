@@ -55,8 +55,10 @@
     var xData = hist.map(function (d) { return formatDateLabel(d.as_of_date); });
     var n = xData.length;
     var y1qb = hist.map(function (d) { return d.value_1qb != null ? d.value_1qb : null; });
-    var ysf  = hist.map(function (d) { return d.value_sf != null ? d.value_sf : d.value_1qb; });
-    var hasDual = y1qb.some(function (v, i) { return Math.abs((v || 0) - (ysf[i] || 0)) > 1; });
+    // A date with no SF value stays a gap (null) so Plotly breaks the SF
+    // line there; substituting the 1QB value drew invented plunges.
+    var ysf  = hist.map(function (d) { return d.value_sf != null ? d.value_sf : null; });
+    var hasDual = y1qb.some(function (v, i) { return v != null && ysf[i] != null && Math.abs(v - ysf[i]) > 1; });
 
     var muted = getComputedStyle(document.documentElement)
       .getPropertyValue("--text-muted").trim() || "#6b7280";
@@ -80,9 +82,10 @@
     };
 
     var isMobile = window.innerWidth <= 768;
+    var chartH = isMobile ? 210 : 250;
     var layout = {
       margin: { l: 34, r: 18, t: 10, b: 34 },
-      height: isMobile ? 210 : 250,
+      height: chartH,
       paper_bgcolor: "transparent", plot_bgcolor: "transparent",
       showlegend: hasDual,
       legend: { orientation: "h", x: 0.5, xanchor: "center", y: 1.12, font: { size: 11, color: muted } },
@@ -91,6 +94,10 @@
       yaxis: { showgrid: true, gridcolor: "rgba(128,128,128,0.12)", tickfont: { size: 11, color: muted },
                fixedrange: true, zeroline: false }
     };
+    // Pin the container to the chart height: with responsive: true Plotly
+    // autosizes from the container box on later resizes, which could redraw
+    // the chart at a different height than the first draw.
+    div.style.height = chartH + 'px';
     Plotly.newPlot(div, hasDual ? [trace1qb, traceSF] : [trace1qb], layout,
       { displayModeBar: false, responsive: true });
   }
