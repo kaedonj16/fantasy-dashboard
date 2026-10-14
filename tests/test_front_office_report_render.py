@@ -379,6 +379,31 @@ def test_card_result_clears_refresh_button_for_rotated_stamp():
     assert float(mt.group(1)) >= 10
 
 
+def test_css_masthead_layout_and_stamp_animation():
+    """L1 masthead (approved 2026-10-14): the verdict block is a row (stamp
+    beside the headline, not a column above it), the stamp slams in, and
+    reduced-motion users get a plain fade instead of the slam."""
+    import re
+
+    css = open("static/dashboard.css", encoding="utf-8").read()
+    m = re.search(r"\.for-card-verdict\s*\{([^}]*)\}", css)
+    assert m, "missing .for-card-verdict rule"
+    assert "flex-direction: column" not in m.group(1)
+    assert "align-items: center" in m.group(1)
+    assert "@keyframes forStampSlam" in css
+    assert ".for-card-verdict .for-stamp" in css
+    assert "forStampSlam 0.5s" in css
+    rm = re.search(r"prefers-reduced-motion: reduce\)\s*\{[^}]*forFadeUp 0\.2s", css)
+    assert rm, "reduced-motion fallback for the card entrance is missing"
+    # Key numbers render as a tile grid, injuries as one panel.
+    assert re.search(r"\.for-keys\s*\{[^}]*display: grid", css)
+    assert re.search(r"\.for-card-inj\s*\{[^}]*border: 1px solid", css)
+    # F3: long verdict labels get a capped stamp with a smaller wrapped
+    # label, scoped to the card masthead (the modal hero stamp is wider).
+    assert re.search(r"\.for-card-verdict \.for-stamp-long\s*\{[^}]*max-width: 118px", css)
+    assert re.search(r"\.for-stamp-long span\s*\{[^}]*font-size: 11px", css)
+
+
 def test_positional_grades_match_teams_page_ranking(monkeypatch):
     import dashboard_services.ai.front_office_report as fmod
     from utils.roster_strength import rank_rosters_by_position

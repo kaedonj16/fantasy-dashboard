@@ -53,7 +53,7 @@ from utils.roster_strength import STARTER_THRESHOLD
 
 logger = logging.getLogger(__name__)
 
-CACHE_VERSION = "v4"
+CACHE_VERSION = "v5"
 _SKILL_POS = ("QB", "RB", "WR", "TE")
 
 
@@ -1793,6 +1793,12 @@ def _verdict_stamp(verdict: str | None, size: str = "md") -> str:
         return ""
     color, label = _VERDICT_STYLE.get(str(verdict).upper(), ("#334155", str(verdict).upper()))
     cls = "for-stamp for-stamp-sm" if size == "sm" else "for-stamp"
+    # Long labels (PRIORITIZE WAIVERS, SELL VETERANS, REBUILD AGGRESSIVELY)
+    # get the small wrapped treatment on the card so the stamp cannot
+    # squeeze the headline (F3, approved 2026-10-14); CSS scopes it to the
+    # card masthead, the modal hero stamp is unaffected.
+    if len(label) > 10:
+        cls += " for-stamp-long"
     return (
         f"<div class='{cls}' style='border-color:{color};color:{color};'>"
         f"<span>{html.escape(label)}</span></div>"
@@ -1857,20 +1863,29 @@ def _injury_card_html(rows: list[dict]) -> str:
     items = []
     for r in rows[:3]:
         meta = " · ".join(
-            p for p in (r.get("body"), r.get("return_label"), r.get("action")) if p
+            p for p in (r.get("body"), r.get("return_label")) if p
+        )
+        action = (
+            f"<span class='for-inj-act'>{html.escape(str(r['action']))}</span>"
+            if r.get("action") else ""
         )
         items.append(
-            "<li><strong>" + html.escape(str(r.get("name") or "")) + "</strong> "
+            "<li class='for-card-inj-row'>"
+            f"<span class='for-inj-name'>{html.escape(str(r.get('name') or ''))}</span> "
             f"<span class='for-inj'>{html.escape(str(r.get('injury') or ''))}</span>"
             + (f" <span class='for-muted'>{html.escape(meta)}</span>" if meta else "")
+            + action
             + "</li>"
         )
     more = ""
     if len(rows) > 3:
-        more = f"<li class='for-muted'>+{len(rows) - 3} more in the full report</li>"
+        more = (
+            f"<span class='for-muted'>+{len(rows) - 3} more in the full report</span>"
+        )
     return (
-        "<div class='for-card-inj'><span class='for-lbl'>Injuries</span>"
-        f"<ul>{''.join(items)}{more}</ul></div>"
+        "<div class='for-card-inj'><div class='for-card-inj-head'>"
+        f"<span class='for-lbl'>Injuries</span>{more}</div>"
+        f"<ul>{''.join(items)}</ul></div>"
     )
 
 
@@ -1988,15 +2003,30 @@ def render_front_office_card_html(data: dict, ai: dict) -> str:
     if top_move:
         move_html = (
             "<div class='for-card-move'>"
+            "<div class='for-move-main'>"
             "<span class='for-lbl'>Top move</span>"
-            f"<div>{top_move}</div></div>"
+            f"<div class='for-move-txt'>{top_move}</div></div>"
+            "<span class='for-move-arrow' aria-hidden='true'>→</span></div>"
         )
     stamp = _verdict_stamp(verdict, size="sm")
-    verdict_block = f"<div class='for-card-verdict'>{stamp}<div class='for-card-headline'>{headline}</div></div>" if (stamp or headline) else ""
-    inj_html = _injury_card_html(data.get("injury_rows") or [])
-    foot = f"{html.escape(team)}" if team else ""
+    # Masthead (L1, approved 2026-10-14): stamp and headline share one row,
+    # with the team/week line under the headline in place of a footer.
+    sub = f"{team}" if team else ""
     if week_lbl:
-        foot = f"{foot} · {week_lbl}" if foot else week_lbl
+        sub = f"{sub} · {week_lbl}" if sub else week_lbl
+    mast_main = ""
+    if headline or sub:
+        mast_main = (
+            "<div class='for-card-mast-main'>"
+            + (f"<div class='for-card-headline'>{headline}</div>" if headline else "")
+            + (f"<div class='for-card-sub'>{sub}</div>" if sub else "")
+            + "</div>"
+        )
+    verdict_block = (
+        f"<div class='for-card-verdict'>{stamp}{mast_main}</div>"
+        if (stamp or mast_main) else ""
+    )
+    inj_html = _injury_card_html(data.get("injury_rows") or [])
     return f"""
     <div class='for-card-summary'>
       {verdict_block}
@@ -2004,7 +2034,6 @@ def render_front_office_card_html(data: dict, ai: dict) -> str:
       <ul class='for-keys'>{keys_html}</ul>
       {move_html}
       <button type='button' class='for-view-full' id='forViewFullBtn'>View full report →</button>
-      <div class='for-card-foot'>{foot}</div>
     </div>
     """
 

@@ -273,9 +273,63 @@ def test_card_injury_compact_caps_at_three():
         for i in range(5)
     ]
     html_out = _injury_card_html(rows)
-    assert html_out.count("<li>") == 3
+    assert html_out.count("<li") == 3
     assert "+2 more in the full report" in html_out
     assert _injury_card_html([]) == ""
+
+
+def test_card_masthead_layout():
+    """L1 masthead (approved 2026-10-14): stamp and headline share one row,
+    the team/week line rides under the headline instead of a footer, the
+    injury action sits at the row's right edge, and the top-move row
+    carries an arrow."""
+    data = {
+        "team_name": "Caleb's Casting Couch",
+        "week": 6,
+        "playoff_pct": None,
+        "grades": [{"pos": "QB", "rank": 5, "of": 10, "grade": "C"}],
+        "last_week": {"week": 5, "result": "L", "pf": 137.3, "pa": 157.0,
+                      "opponent": "Nunky Figgas"},
+        "top_moves": [{"line": "Shop Bo Nix"}],
+        "injury_rows": [
+            {"name": "Jayden Higgins", "position": "WR", "team": "HOU",
+             "injury": "IR", "body": "Knee - ACL", "return_label": "",
+             "action": "Hold"},
+        ],
+    }
+    ai = {"verdict": "BUY", "headline": "Elite roster, but QB depth is cluttered"}
+    card = render_front_office_card_html(data, ai)
+    assert "for-card-mast-main" in card
+    assert "Caleb&#x27;s Casting Couch · Week 6" in card
+    assert "for-card-foot" not in card
+    assert card.index("for-stamp") < card.index("for-card-headline")
+    assert "for-card-inj-head" in card
+    assert "for-inj-act" in card and ">Hold</span>" in card
+    assert "for-move-arrow" in card
+    assert "QB ranks 5 of 10" in card
+
+
+def test_card_long_verdict_gets_wrapped_stamp():
+    """F3 (approved 2026-10-14): long verdict labels get the small wrapped
+    stamp treatment so they cannot squeeze the masthead headline; short
+    labels keep the full-size stamp."""
+    data = {"team_name": "T", "week": 6, "grades": [], "injury_rows": []}
+    long_card = render_front_office_card_html(
+        data, {"verdict": "PRIORITIZE WAIVERS", "headline": "H."}
+    )
+    assert "for-stamp-long" in long_card
+    rebuild = render_front_office_card_html(
+        data, {"verdict": "REBUILD AGGRESSIVELY", "headline": "H."}
+    )
+    assert "for-stamp-long" in rebuild
+    short_card = render_front_office_card_html(
+        data, {"verdict": "BUY", "headline": "H."}
+    )
+    assert "for-stamp-long" not in short_card
+    depth_card = render_front_office_card_html(
+        data, {"verdict": "SELL DEPTH", "headline": "H."}
+    )
+    assert "for-stamp-long" not in depth_card
 
 
 def test_trade_target_injury_pill():
