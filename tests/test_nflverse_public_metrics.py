@@ -19,7 +19,10 @@ PUBLIC_NEW_METRICS = (
     "ngs_avg_completed_air_yards",
     "ngs_avg_air_yards_to_sticks",
     "ngs_percent_attempts_gte_eight_defenders",
-    "ngs_created_separation",
+    # ngs_created_separation is deliberately absent: retired as a display
+    # metric in favor of Avg Sep Score. It survives only as a stored
+    # data-layer field (season column, nflverse public JSONs, historical
+    # warehouse; derivation covered by test_nflverse_metric_helpers).
     "play_action_rate",
     "play_action_epa",
     "blitz_rate_faced",
