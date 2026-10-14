@@ -28,8 +28,9 @@ ADVANCED_METRIC_PRESETS = {
     "general": {"label": "General / Opportunity", "description": "Cross-position opportunity and red-zone workload.", "position": None, "primary": "opportunity_share", "metrics": ["opportunity_share", "snap_share", "carries_per_game", "target_share", "air_yards_share", "rz_opp_share", "rz_target_share"], "sort": "desc", "samples": ["games", "carries", "targets"]},
     "expected": {"label": "Expected Points", "description": "Opportunity-based expected PPR production and efficiency vs. expectation; FPOE is not a promise of future points.", "position": None, "primary": "expected_ppr_per_game", "metrics": ["expected_ppr_per_game", "ppr_over_expected_per_game", "xfp_trend", "opportunity_share", "target_share", "rz_opp_share", "total_tds_per_game"], "sort": "desc", "samples": ["games"]},
     "receiving_profile": {"label": "Receiving Profile", "description": "Target shape, alignment context, and after-catch performance.", "position": None, "primary": "target_share", "metrics": ["target_share", "avg_depth_of_target", "air_yards_share", "ngs_avg_cushion", "ngs_avg_separation", "yards_after_catch_per_reception", "ngs_avg_yac_above_expectation"], "sort": "desc", "samples": ["games", "targets", "receptions"]},
-    "target_quality": {"label": "Target Quality", "description": "How catchable a receiver's targets are: throw quality, contested and deep looks, end-zone and screen usage.", "position": None, "primary": "uncatchable_tgt_rate", "metrics": ["uncatchable_tgt_rate", "contested_target_rate", "qb_rating_when_targeted", "deep_target_rate", "end_zone_target_rate", "screen_target_rate", "first_read_tgt_pct", "designed_tgt_pct"], "sort": "asc", "samples": ["games", "targets", "receptions"]},
+    "target_quality": {"label": "Target Quality", "description": "How catchable a receiver's targets are: throw quality, contested and deep looks, end-zone and screen usage.", "position": None, "primary": "uncatchable_tgt_rate", "metrics": ["uncatchable_tgt_rate", "contested_target_rate", "qb_rating_when_targeted", "deep_target_rate", "end_zone_target_rate", "screen_target_rate", "first_read_tgt_pct", "designed_tgt_pct", "first_read_share"], "sort": "asc", "samples": ["games", "targets", "receptions"]},
     "td_regression": {"label": "TD Regression", "description": "Touchdowns vs. expectation: who is running hot or cold on TD luck, and the goal-line role behind it.", "position": None, "primary": "td_over_expected", "metrics": ["td_over_expected", "xtd_per_game", "td_share", "goal_line_opp_share", "first_downs_per_game"], "sort": "desc", "samples": ["games"]},
+    "qb_charting": {"label": "QB Charting", "description": "Quarterback decision-making and scheme, per FTN charting: first-read reliance, adjusted completion, turnover-worthy throws, play-action, blitz and out-of-pocket rates.", "position": "QB", "primary": "first_read_pct", "metrics": ["first_read_pct", "adjusted_completion_rate", "turnover_worthy_rate", "play_action_rate", "blitz_rate_faced", "out_of_pocket_rate"], "sort": "desc", "samples": ["games", "attempts", "dropbacks"]},
     # --- Decision presets: organized by the question being answered, not the
     # metric taxonomy. "kind": "decision" puts them in their own picker group
     # and drives the preset-pill row above the table. ---
@@ -2197,9 +2198,10 @@ _AM_JS = r"""
     const ADV_WEIGHTED = {
       epa_per_play: 'w_dropbacks', cpoe: 'w_dropbacks', success_rate: 'w_dropbacks',
       sack_rate: 'w_dropbacks', scramble_rate: 'w_dropbacks', nfl_passer_rating: 'w_dropbacks',
-      adjusted_completion_rate: 'w_pass_att',
+      adjusted_completion_rate: 'w_pass_att', first_read_pct: 'w_pass_att',
       qb_hit_rate: 'w_dropbacks', explosive_pass_rate: 'w_pass_att',
       play_action_rate: 'w_dropbacks', play_action_epa: 'w_dropbacks',
+      out_of_pocket_rate: 'w_dropbacks',
       blitz_rate_faced: 'w_dropbacks',
       epa_vs_blitz: 'w_dropbacks',
       ngs_avg_time_to_throw: 'w_pass_att', ngs_aggressiveness: 'w_pass_att',
@@ -2219,6 +2221,7 @@ _AM_JS = r"""
       stuffed_rate: 'w_carries', turnover_worthy_rate: 'w_dropbacks',
       contested_target_rate: 'w_targets', screen_target_rate: 'w_targets',
       first_read_tgt_pct: 'w_targets', designed_tgt_pct: 'w_targets',
+      first_read_share: 'w_targets',
       rec_broken_tackles_per_reception: 'w_receptions',
       rec_first_down_rate: 'w_targets', rush_first_down_rate: 'w_carries',
       receiving_success_rate: 'w_targets', receiving_epa_per_target: 'w_targets',
@@ -4820,6 +4823,8 @@ _AM_JS = r"""
       'explosive_pass_rate': ['Explosive passes', 'Dink and dunk'],
       'explosive_run_rate': ['Explosive runs', 'No explosives'],
       'first_downs_per_game': ['Chain mover', 'No first downs'],
+      'first_read_pct': ['First read or designed', 'Later reads'],
+      'first_read_share': ['First-look throws', 'Rest of team'],
       'first_read_tgt_pct': ['First read', 'Later reads'],
       'fp_cv': ['Volatile', 'Consistent'],
       'fpts_per_carry': ['Scores per carry', 'Empty carries'],
@@ -4842,6 +4847,7 @@ _AM_JS = r"""
       'ngs_rush_yards_over_expected_per_att': ['Creates yards', 'Leaves yards'],
       'opportunity_share': ['Workhorse', 'Limited role'],
       'opportunity_trend': ['Role growing', 'Role shrinking'],
+      'out_of_pocket_rate': ['Out of pocket', 'In pocket'],
       'pass_tds_per_game': ['TD passer', 'No pass TDs'],
       'passing_epa': ['Adds value', 'Hurts offense'],
       'play_action_epa': ['PA efficient', 'PA hurts'],

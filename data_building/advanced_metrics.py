@@ -457,13 +457,18 @@ def _add_rookie_eval_columns(conn) -> None:
     # first_read_tgt_pct / designed_tgt_pct come from FTN read_thrown
     # (2023+ only; the weekly table gets its columns from
     # WEEKLY_ADV_METRIC_COLS via init_weekly_advanced_metrics_db).
+    # first_read_pct (passer) and first_read_share (receiver) come from
+    # the same read_thrown coding, with designed throws counted as
+    # first-read throws (2023+ only, same reason).
     conn.execute("""
         ALTER TABLE player_advanced_metrics
             ADD COLUMN IF NOT EXISTS turnover_worthy_rate  NUMERIC,
             ADD COLUMN IF NOT EXISTS contested_target_rate NUMERIC,
             ADD COLUMN IF NOT EXISTS screen_target_rate    NUMERIC,
             ADD COLUMN IF NOT EXISTS first_read_tgt_pct    NUMERIC,
-            ADD COLUMN IF NOT EXISTS designed_tgt_pct      NUMERIC;
+            ADD COLUMN IF NOT EXISTS designed_tgt_pct      NUMERIC,
+            ADD COLUMN IF NOT EXISTS first_read_pct        NUMERIC,
+            ADD COLUMN IF NOT EXISTS first_read_share      NUMERIC;
     """)
 
     # PFR receiving broken tackles per reception, and TD share of team
@@ -2523,7 +2528,7 @@ def get_player_career_metrics(
         'ngs_avg_time_to_throw', 'ngs_aggressiveness', 'ngs_avg_completed_air_yards',
         'ngs_avg_air_yards_to_sticks',
         'ngs_percent_attempts_gte_eight_defenders', 'ngs_avg_sep_score',
-        'play_action_rate', 'play_action_epa',
+        'play_action_rate', 'play_action_epa', 'out_of_pocket_rate',
         'blitz_rate_faced', 'epa_vs_blitz', 'epa_vs_stacked_box',
         'rushing_success_rate', 'receiving_success_rate',
         'rushing_epa_per_att', 'receiving_epa_per_target',
@@ -2538,6 +2543,7 @@ def get_player_career_metrics(
         'stuffed_rate', 'third_down_conv_rate',
         'turnover_worthy_rate', 'contested_target_rate', 'screen_target_rate',
         'first_read_tgt_pct', 'designed_tgt_pct',
+        'first_read_pct', 'first_read_share',
         'rec_broken_tackles_per_reception', 'td_share',
     ]
 
@@ -2734,6 +2740,7 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "yards_per_attempt":    {"basic": True, "label": "Yards / Attempt",    "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Passing yards per attempt; core passing efficiency stat."},
     "completion_pct":       {"basic": True, "label": "Completion %",       "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Percent of pass attempts completed."},
     "adjusted_completion_rate": {"label": "Adj Completion %", "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Completion percent adjusted for drops, throwaways, spikes, and batted passes."},
+    "first_read_pct": {"label": "First Read %", "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Percent of targeted throws that went to the quarterback's first read, per FTN charting via nflverse, not PFF. Designed throws (screens, RPOs, schemed plays) count as first reads because the designed target is the first look by construction. High means a quick-strike scheme built on the primary target; low means the quarterback works through his progressions."},
     "catchable_pass_pct": {"label": "Catchable %", "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Percent of pass attempts that were catchable (100% minus the bad-throw rate). Bad throws are charted by Pro Football Reference via nflverse, not PFF. Higher is better."},
     "pressure_rate_faced": {"label": "Pressure Rate Faced", "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "lower_better": True, "min_vol": _V_PASS_ATT, "desc": "Percent of dropbacks (attempts plus sacks taken) on which the QB was pressured. Pressures are charted by Pro Football Reference via nflverse, not PFF. Lower is better."},
     "third_down_conv_rate": {"label": "3rd Down Conv %", "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Percent of third-down dropbacks that end in a first down (nflverse play-by-play). The season board requires a minimum number of total attempts; week ranges require a minimum number of actual third-down dropbacks."},
@@ -2758,6 +2765,7 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "explosive_pass_rate":  {"label": "Explosive Pass %",    "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Percent of pass attempts that gained 16+ yards (nflverse). Explosive-play rate for passers."},
     "play_action_rate":     {"label": "Play-Action %",       "category": "Passing", "positions": ["QB"], "pct": True, "min_vol": _V_PASS_ATT, "desc": "Percent of dropbacks that are play-action (FTN charting)."},
     "play_action_epa":      {"label": "PA EPA / Play",       "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Expected Points Added per play-action dropback (FTN + nflverse)."},
+    "out_of_pocket_rate":   {"label": "Out of Pocket Rate",  "category": "Passing", "positions": ["QB"], "pct": True, "min_vol": _V_PASS_ATT, "desc": "Percent of dropbacks where the quarterback left the pocket, per FTN charting via nflverse, not PFF."},
     "blitz_rate_faced":     {"label": "Blitz Rate Faced",    "category": "Passing", "positions": ["QB"], "pct": True, "min_vol": _V_PASS_ATT, "desc": "Percent of dropbacks against a blitz (FTN charting)."},
     "epa_vs_blitz":         {"label": "EPA vs Blitz",        "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Expected Points Added per dropback against the blitz (FTN + nflverse). Closest public 'vs pressure' split."},
     "int_rate":             {"basic": True, "label": "INT Rate",            "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "lower_better": True, "min_vol": _V_PASS_ATT, "desc": "Percent of pass attempts intercepted. Lower is better."},
@@ -2830,6 +2838,7 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "screen_target_rate": {"label": "Screen Tgt %", "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "pct": True, "min_vol": _V_TARGETS, "desc": "Percent of charted targets that were screen passes, per FTN charting via nflverse. Designed short-game usage."},
     "first_read_tgt_pct": {"label": "First-Read Tgt %", "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "pct": True, "min_vol": _V_TARGETS, "desc": "Percent of charted targets where the receiver was the quarterback's first read, per FTN charting via nflverse, not PFF. Higher is better: the passing game is designed to go to him first."},
     "designed_tgt_pct": {"label": "Designed Tgt %", "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "pct": True, "min_vol": _V_TARGETS, "desc": "Percent of charted targets on designed plays with no quarterback progression (screens, RPOs and other schemed touches), per FTN charting via nflverse, not PFF. A usage type, not a quality grade: high means the offense schemes him the ball."},
+    "first_read_share": {"label": "First-Read Share", "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "pct": True, "min_vol": _V_TARGETS, "desc": "Percent of his team's first-read plus designed targeted throws that went to this receiver, per FTN charting via nflverse, not PFF. Designed throws count as first-read throws: the designed target is the first look by construction. Higher is better: the offense's first-look passing runs through him."},
     "rec_first_down_rate":  {"label": "Rec 1st Down %",      "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "pct": True, "min_vol": _V_TARGETS, "desc": "Percent of targets that result in a first down (nflverse play-by-play). How often a target moves the chains, not just catches."},
     "drop_rate":            {"label": "Drop Rate",           "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "pct": True, "lower_better": True, "min_vol": _V_TARGETS, "desc": "Percent of catchable targets dropped. Lower is better."},
     "uncatchable_tgt_rate": {"label": "Uncatchable Tgt %",   "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "pct": True, "lower_better": True, "min_vol": _V_TARGETS, "desc": "Percent of targets charted as uncatchable by FTN charting (off-target throws the receiver had no realistic chance to catch), via the nflverse FTN release, not PFF. Lower is better: a high rate means poor QB throw quality, not poor receiving."},
@@ -3032,6 +3041,7 @@ WEEKLY_ADV_METRIC_COLS: List[str] = [
     "stuffed_rate", "third_down_conv_rate",
     "turnover_worthy_rate", "contested_target_rate", "screen_target_rate",
     "first_read_tgt_pct", "designed_tgt_pct",
+    "first_read_pct", "first_read_share",
     "rec_broken_tackles_per_reception",
     # Expected Fantasy Points (xFP): that week's expected total + over-expected
     # total, per reception format. Totals (like passing_epa) so a week range
@@ -3341,11 +3351,13 @@ _ADV_WEEKLY_WEIGHTED_METRICS = {
     "turnover_worthy_rate": "w_dropbacks",
     "sack_rate": "w_dropbacks", "scramble_rate": "w_dropbacks", "nfl_passer_rating": "w_dropbacks",
     "adjusted_completion_rate": "w_pass_att",
+    "first_read_pct": "w_pass_att",
     "catchable_pass_pct": "w_pass_att",
     "pressure_rate_faced": "w_pressure_opps",
     "third_down_conv_rate": "w_third_down_dropbacks",
     "qb_hit_rate": "w_dropbacks", "explosive_pass_rate": "w_pass_att",
     "play_action_rate": "w_dropbacks", "play_action_epa": "w_dropbacks",
+    "out_of_pocket_rate": "w_dropbacks",
     "blitz_rate_faced": "w_dropbacks",
     "epa_vs_blitz": "w_dropbacks",
     "ngs_avg_time_to_throw": "w_pass_att", "ngs_aggressiveness": "w_pass_att",
@@ -3366,6 +3378,7 @@ _ADV_WEEKLY_WEIGHTED_METRICS = {
     "end_zone_target_rate": "w_targets", "deep_target_rate": "w_targets",
     "contested_target_rate": "w_targets", "screen_target_rate": "w_targets",
     "first_read_tgt_pct": "w_targets", "designed_tgt_pct": "w_targets",
+    "first_read_share": "w_targets",
     "goal_line_opp_share": "w_team_gl_opps",
     "rec_first_down_rate": "w_targets",
     "rush_first_down_rate": "w_carries",

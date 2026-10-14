@@ -8,6 +8,10 @@ The underlying DB columns, writers, and internal computations intentionally
 remain; only the catalog entries are gone. These tests pin the removal so a
 removed key cannot quietly come back, and pin that every preset still
 points at metrics that exist.
+
+Exception: out_of_pocket_rate was restored to the catalog on 2026-10-14 at
+Kaedon's request (it anchors the QB Charting preset), so it is no longer in
+REMOVED_KEYS below; the other 25 removals stay pinned.
 """
 import pytest
 
@@ -50,7 +54,6 @@ REMOVED_KEYS = (
     # Trivia / composite entries.
     "ngs_max_completed_air_distance",
     "ngs_avg_time_to_los",
-    "out_of_pocket_rate",
     "pacr",
     "racr",
     "ngs_avg_air_yards_differential",

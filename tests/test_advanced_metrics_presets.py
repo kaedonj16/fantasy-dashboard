@@ -36,8 +36,9 @@ DECISION_EXPECTED = {
 # counts and sort directions follow their primary metric, not the 7-metric
 # "desc" house shape of EXPECTED. (primary, position, sort, metric count)
 LENS_EXPECTED = {
-    "target_quality": ("uncatchable_tgt_rate", None, "asc", 8),
+    "target_quality": ("uncatchable_tgt_rate", None, "asc", 9),
     "td_regression": ("td_over_expected", None, "desc", 5),
+    "qb_charting": ("first_read_pct", "QB", "desc", 6),
 }
 
 
@@ -88,6 +89,9 @@ def test_lens_presets_have_valid_metrics_samples_and_free_keys():
     assert ADVANCED_METRIC_PRESETS["target_quality"]["samples"] == [
         "games", "targets", "receptions"]
     assert ADVANCED_METRIC_PRESETS["td_regression"]["samples"] == ["games"]
+    # QB Charting mirrors the passing/qb presets' sample columns.
+    assert ADVANCED_METRIC_PRESETS["qb_charting"]["samples"] == [
+        "games", "attempts", "dropbacks"]
     # Preset keys must never collide with metric keys (target_quality_score
     # is a PRO metric; the preset key is target_quality, a different string).
     assert not (set(ADVANCED_METRIC_PRESETS) & set(LEADERBOARD_METRICS))
