@@ -16376,6 +16376,149 @@ if (document.readyState === 'loading') {
 }
 // [title-upgrade:end]
 
+// [tooltip-positioner:start]
+// Render every [data-tooltip] bubble from one fixed-position singleton
+// instead of the CSS ::after. The ::after is centered on its trigger and
+// always opens upward, with no idea where the viewport, the sticky nav,
+// or the nearest overflow:hidden ancestor is, so bubbles clipped flat
+// (the Teams card Positional Index definition lost its first lines to
+// the card's top edge; the AM command bar lost bubbles to the nav).
+// This mirrors _advPositionTip for metric definitions: center on the
+// trigger, clamp inside the viewport, flip below when above does not
+// fit. As a body-level fixed element the singleton also escapes ancestor
+// overflow clipping. html.br-tips-js suppresses the ::after while this
+// runs; the ::after stays as the no-JS fallback. Excluded: .pm-adp-dot
+// (its own ::after bubble) and [data-def] elements (the metric
+// definition tip owns those). Touch devices get tap-to-toggle on
+// non-interactive triggers, like advShowMetricDef; interactive
+// elements keep their normal click behavior.
+(function () {
+  var tip = null;
+  var anchor = null;
+  var rafPending = false;
+
+  function _tipEl() {
+    if (tip) return tip;
+    tip = document.createElement('div');
+    tip.className = 'br-tip';
+    tip.setAttribute('role', 'tooltip');
+    document.body.appendChild(tip);
+    return tip;
+  }
+
+  function _anchorOf(node) {
+    if (!node || !node.closest) return null;
+    var el = node.closest('[data-tooltip]');
+    if (!el) return null;
+    if (el.classList && el.classList.contains('pm-adp-dot')) return null;
+    if (el.hasAttribute('data-def')) return null;
+    if (!el.getAttribute('data-tooltip')) return null;
+    return el;
+  }
+
+  function _coarsePointer() {
+    return !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+  }
+
+  function _navBottom() {
+    var nav = document.querySelector('.top-nav');
+    if (!nav) return 0;
+    var cs = window.getComputedStyle(nav);
+    if (cs.position !== 'fixed' && cs.position !== 'sticky') return 0;
+    var r = nav.getBoundingClientRect();
+    return r.bottom > 0 ? r.bottom : 0;
+  }
+
+  function _position() {
+    if (!anchor || !tip || tip.style.display === 'none') return;
+    if (!anchor.isConnected) { _hide(); return; }
+    var rect = anchor.getBoundingClientRect();
+    var vw = window.innerWidth;
+    var vh = window.innerHeight;
+    var tw = tip.offsetWidth;
+    var th = tip.offsetHeight;
+    var left = rect.left + rect.width / 2 - tw / 2;
+    left = Math.max(8, Math.min(left, vw - tw - 8));
+    var above = rect.top - th - 6;
+    var below = rect.bottom + 6;
+    var top;
+    if (above >= _navBottom() + 4) {
+      top = above;
+    } else if (below + th <= vh - 8) {
+      top = below;
+    } else {
+      // Neither side fully fits: take the roomier side, clamped on screen.
+      top = rect.top >= vh - rect.bottom ? above : below;
+      top = Math.max(8, Math.min(top, Math.max(8, vh - th - 8)));
+    }
+    tip.style.left = left + 'px';
+    tip.style.top = top + 'px';
+  }
+
+  function _show(el) {
+    var text = el.getAttribute('data-tooltip');
+    if (!text) return;
+    anchor = el;
+    var t = _tipEl();
+    t.textContent = text;
+    t.style.display = 'block';
+    _position();
+  }
+
+  function _hide() {
+    anchor = null;
+    if (tip) tip.style.display = 'none';
+  }
+
+  function _repositionSoon() {
+    if (!anchor || rafPending) return;
+    rafPending = true;
+    window.requestAnimationFrame(function () {
+      rafPending = false;
+      _position();
+    });
+  }
+
+  document.addEventListener('mouseover', function (e) {
+    if (_coarsePointer()) return; // touch uses the tap path below
+    var el = _anchorOf(e.target);
+    if (el && el !== anchor) _show(el);
+  });
+  document.addEventListener('mouseout', function (e) {
+    if (_coarsePointer()) return; // synthetic post-tap mouse events; taps own visibility
+    if (!anchor) return;
+    if (e.relatedTarget && anchor.contains(e.relatedTarget)) return;
+    if (_anchorOf(e.target) === anchor) _hide();
+  });
+  document.addEventListener('focusin', function (e) {
+    var el = _anchorOf(e.target);
+    if (el) _show(el);
+  });
+  document.addEventListener('focusout', function (e) {
+    if (anchor && !(e.relatedTarget && anchor.contains(e.relatedTarget))) _hide();
+  });
+  document.addEventListener('click', function (e) {
+    if (!_coarsePointer()) return;
+    var el = _anchorOf(e.target);
+    if (!el) { _hide(); return; }
+    var tag = el.tagName;
+    if (tag === 'A' || tag === 'BUTTON' || tag === 'INPUT' || tag === 'SELECT' ||
+        tag === 'TEXTAREA' || el.getAttribute('role') === 'button') return;
+    if (anchor === el && tip && tip.style.display !== 'none') _hide();
+    else _show(el);
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') _hide();
+  });
+  document.addEventListener('scroll', _repositionSoon, true);
+  window.addEventListener('resize', _repositionSoon);
+
+  if (document.documentElement) {
+    document.documentElement.classList.add('br-tips-js');
+  }
+})();
+// [tooltip-positioner:end]
+
 // @public-js:core-end  (everything below is app/feature code; excluded from public.js)
 
 // R06.3 -- one in-app toast near lineup lock when starters need attention.

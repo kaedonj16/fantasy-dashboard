@@ -17581,6 +17581,45 @@ h2.static-section-title:first-child {
     box-shadow: var(--tooltip-shadow);
 }
 
+/* JS-positioned singleton bubble for [data-tooltip] (the tooltip
+   positioner in app.js, next to the title upgrader). The ::after above is
+   centered on its trigger with no edge awareness, so it clips flat
+   against overflow:hidden cards, viewport edges, and the sticky nav.
+   The singleton is fixed-position and JS-clamped/flipped instead, and
+   while JS runs (html.br-tips-js) the ::after is suppressed so the two
+   never render together; with JS off the ::after remains the fallback. */
+.br-tip {
+    position: fixed;
+    display: none;
+    background: var(--tooltip-bg);
+    color: var(--tooltip-fg);
+    border: 1px solid var(--tooltip-border);
+    padding: var(--tooltip-pad);
+    border-radius: var(--tooltip-radius);
+    font-size: var(--tooltip-fs);
+    line-height: var(--tooltip-lh);
+    white-space: normal;
+    word-break: break-word;
+    width: max-content;
+    max-width: min(240px, calc(100vw - 16px));
+    z-index: var(--z-tooltip);
+    pointer-events: none;
+    box-shadow: var(--tooltip-shadow);
+}
+
+html.br-tips-js [data-tooltip]:not(.pm-adp-dot):hover::after,
+html.br-tips-js [data-tooltip]:not(.pm-adp-dot):focus-visible::after {
+    content: none;
+}
+
+/* The More actions override in advanced_metrics_page.py keys off the
+   element ID, which outranks the class-level suppression above; repeat
+   the suppression at ID specificity so its bubble is not doubled. */
+html.br-tips-js #amMoreToggle[data-tooltip]:hover::after,
+html.br-tips-js #amMoreToggle[data-tooltip]:focus-visible::after {
+    content: none;
+}
+
 /* Trend pill tooltip -- chrome matches .adv-def-tip */
 .pm-trend-pill {
     position: relative;
