@@ -142,6 +142,24 @@ def test_playoff_sos_weeks_bad_position_is_empty(monkeypatch):
     assert app._playoff_sos_weeks_for(2026, "", "WR") == []
 
 
+def test_playoff_fpts_max_uses_rank_table_info(monkeypatch):
+    info = {"LAR": {"fpts": 34.64}, "JAX": {"fpts": 33.08}, "NYG": {}}
+    monkeypatch.setattr(
+        app, "_matchup_rank_table",
+        lambda season, pos: ({}, 32, info, True),
+    )
+    assert app._playoff_fpts_max(2026, "WR") == 34.6
+    assert app._playoff_fpts_max(2026, "K") is None
+
+
+def test_playoff_fpts_max_empty_info_is_none(monkeypatch):
+    monkeypatch.setattr(
+        app, "_matchup_rank_table",
+        lambda season, pos: ({}, 32, {}, True),
+    )
+    assert app._playoff_fpts_max(2026, "WR") is None
+
+
 def test_playoff_sos_for_weeks_param_changes_cache_entry(monkeypatch):
     """The aggregate honors the weeks argument (and caches per week set)."""
     monkeypatch.setattr(

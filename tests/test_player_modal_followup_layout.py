@@ -65,7 +65,7 @@ def test_overview_two_column_structure():
 def test_overview_phone_order():
     block = CSS[CSS.find(".pm-ov-playoff { order: 1;") - 200:]
     for cls, n in [("pm-ov-playoff", 1), ("pm-ov-recent", 2), ("pm-ov-value", 3),
-                   ("pm-ov-role", 4), ("pm-ov-inleague", 5), ("pm-ov-adp", 6),
+                   ("pm-ov-role", 4), ("pm-ov-adp", 5), ("pm-ov-inleague", 6),
                    ("pm-ov-news", 7)]:
         assert f".{cls} {{ order: {n}; }}" in block
     # Columns flatten via display:contents so the order interleaves.

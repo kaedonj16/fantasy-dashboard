@@ -20776,6 +20776,31 @@ def _playoff_sos_weeks_for(season: int, team: str, pos: str, weeks=_PLAYOFF_WEEK
     return rows
 
 
+def _playoff_fpts_max(season: int, pos: str):
+    """League-high per-game fantasy points allowed to `pos` this season.
+
+    The scale the player modal's playoff bars are drawn against, so a bar
+    means the same thing on every player's card. None when the position
+    has no ratings table or the table carries no usable values."""
+    pos = (pos or "").upper()
+    if pos not in ("QB", "RB", "WR", "TE"):
+        return None
+    try:
+        _rank_map, _total, info, _is_z = _matchup_rank_table(int(season), pos)
+    except Exception:
+        return None
+    vals = []
+    for v in (info or {}).values():
+        f = (v or {}).get("fpts")
+        if f is None:
+            continue
+        try:
+            vals.append(float(f))
+        except (TypeError, ValueError):
+            continue
+    return round(max(vals), 1) if vals else None
+
+
 def _playoff_sos_for(season: int, team: str, pos: str, weeks=_PLAYOFF_WEEKS):
     """Rest-of-season strength-of-schedule over the fantasy playoff weeks
     (15-17 by default) for a team+position. Returns (rank, total, ease) with
@@ -27512,6 +27537,12 @@ def api_player_details(player_id: str):
                 except Exception:
                     logger.debug("[api_player_details] playoff SoS weeks skipped", exc_info=True)
                     playoff_sos["weeks"] = []
+                try:
+                    _fpts_max = _playoff_fpts_max(season, player_meta.get("pos"))
+                    if _fpts_max:
+                        playoff_sos["fpts_max"] = _fpts_max
+                except Exception:
+                    logger.debug("[api_player_details] playoff fpts max skipped", exc_info=True)
         except Exception:
             logger.debug("[api_player_details] playoff SoS skipped", exc_info=True)
 
