@@ -49286,6 +49286,13 @@ em.gneg { background: var(--loss); }
   opacity: 0.6;
   cursor: default;
 }
+/* The result renders directly under the Refresh button with no gap, and
+   the verdict stamp inside it is rotated -6deg, so the stamp's top corner
+   paints ~3px above its layout box and touches the button's bottom edge.
+   Give the result real clearance so the stamp sits clear of the button. */
+.cc-fo-card #gm-memo-result {
+  margin-top: 16px;
+}
 /* Standings header icon renders white on the dark navy banner. The merged
    PNG icon mapping tints fa-clipboard-list dark gray, so override it here. */
 .cc-st-head-icon .fa-clipboard-list {
