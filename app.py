@@ -17890,8 +17890,14 @@ def _rankings_methodology_faq() -> str:
 @app.route("/<platform>/<int:season>/<league_id>/players")
 def page_players(platform: str = None, season: int = None, league_id: str = None,
                  _title: str | None = None, _desc: str | None = None,
-                 _canonical: str | None = None):
-    """Player Rankings page - searchable, filterable, sortable list of all players."""
+                 _canonical: str | None = None,
+                 _extra_editorial: str | None = None):
+    """Player Rankings page - searchable, filterable, sortable list of all players.
+
+    _extra_editorial: optional extra server-rendered editorial HTML for a
+    single public page (AdSense Tier 3 uses it for the dynasty trade value
+    chart only). Callers that do not pass it render exactly as before.
+    """
     from dashboard_services.pages.players_page import build_players_shell
     body_html = build_players_shell()
 
@@ -17948,7 +17954,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
       </p>
     </div>
     """
-        body_html = _intro + body_html + _rankings_methodology_faq()
+        body_html = _intro + body_html + (_extra_editorial or "") + _rankings_methodology_faq()
 
     # Auto-apply the league's TE premium (from its scoring settings) to the
     # rankings, so TE-premium leagues see boosted TE values without toggling.

@@ -279,7 +279,115 @@ def build_dynasty_value_chart_body(value_table: list[dict], as_of_date: str | No
 """
 
 
+# ── AdSense Tier 3: dynasty trade value chart editorial ──────────────────────
+# Unique long-form copy for /dynasty-trade-value-chart only. The chart route
+# passes this block to page_players via its _extra_editorial parameter, so the
+# shared /players page renders exactly as before. No em dashes (site rule).
+
+_CHART_EDITORIAL_HTML = """
+<section class="static-section" data-tier3="chart-editorial" style="max-width:860px;margin:22px auto 0;">
+  <h2 class="static-section-title">How to read this chart</h2>
+  <p style="color:var(--text-muted);font-size:15px;line-height:1.75;">
+    Every row on this chart is a price, not a prediction. The number estimates what the
+    rest of a dynasty league would give up to acquire that player today, on one shared
+    scale that covers quarterbacks, running backs, receivers, tight ends and rookie
+    picks. A receiver valued at 42 and a running
+    back valued at 42 cost the same to acquire, even though they score and age
+    differently. Read the gaps, not just the
+    order. Two players separated by two or three points are effectively tied, and the
+    choice between them belongs to roster fit. Two players separated by twenty points
+    sit in different tiers, and no amount of fit closes that gap without extra pieces
+    in the deal.
+  </p>
+  <h2 class="static-section-title">How the values are built</h2>
+  <p style="color:var(--text-muted);font-size:15px;line-height:1.75;">
+    BR Fantasy values blend real dynasty trade data and market prices with what a
+    player is actually doing on the field. The market side comes from completed league
+    to league trades, startup pricing and consensus value across the dynasty
+    community. The model side layers in recent production, opportunity metrics such
+    as snap share, target share and backfield share, and positional age curves that
+    discount running backs early while letting receivers and quarterbacks hold value
+    longer. Values are
+    recalculated daily, with guardrails so one loud game moves a price instead of
+    rebuilding it. A breakout has to show up in the role, in snaps and touches over
+    several weeks, before the full repricing lands.
+  </p>
+  <h2 class="static-section-title">1QB and Superflex: use the right column</h2>
+  <p style="color:var(--text-muted);font-size:15px;line-height:1.75;">
+    The chart carries separate values for 1QB and Superflex because format changes
+    the price of the scarcest position. In a 1QB league you start one passer,
+    streamable options sit on waivers, and quarterbacks are correctly discounted. In
+    Superflex you can start a second quarterback every week, only 32 passers hold NFL
+    starting jobs, and even a mid tier starter becomes a weekly lineup asset. The
+    same young quarterback can be a bench piece on the 1QB side and a cornerstone on
+    the Superflex side. Always read the column that matches your league. Grading a
+    Superflex deal with 1QB numbers underprices every quarterback in it, and it is a
+    common way to talk yourself into a trade you regret.
+  </p>
+  <h2 class="static-section-title">From the chart to a trade offer</h2>
+  <p style="color:var(--text-muted);font-size:15px;line-height:1.75;">
+    Use the chart in two passes. First, price the names you already have in mind and
+    look for the tier break: the point where value drops off tells you what a fair
+    package has to contain. Second, scan the band just below your target for cheaper
+    players with similar roles, because the best offer is often the cheaper player
+    with a similar role. When a package looks close, take it
+    to the <a href="/trade">trade calculator</a>, set your league format, size and
+    scoring, and grade both sides with every pick included. For the full method
+    behind these numbers, read the
+    <a href="/guides/dynasty-trade-value">dynasty trade value guide</a>, and check
+    <a href="/top-movers">top movers</a> before you send anything, so you know which
+    direction each name is moving.
+  </p>
+</section>
+"""
+
+
+def build_chart_editorial_html() -> str:
+    """Tier 3 editorial block rendered only on /dynasty-trade-value-chart."""
+    return _CHART_EDITORIAL_HTML
+
+
 # ── Risers & Fallers ──────────────────────────────────────────────────────────
+
+# AdSense Tier 3: unique editorial for /top-movers, appended after the short
+# legacy explainer in build_risers_fallers_body. No em dashes (site rule).
+_TOP_MOVERS_EDITORIAL_HTML = """
+  <div class="rf-seo-content" data-tier3="top-movers-editorial">
+    <h2>What actually moves dynasty value</h2>
+    <p>Five forces move a dynasty price. Production is the loudest: points change
+    minds, and a month of strong scoring reprices a player whether the role changed
+    or not. Opportunity is the force that lasts: a new starting job, a rising snap
+    share or a bigger slice of team targets changes what a player will score for the
+    rest of the season, not just last week. Injury moves prices in both directions,
+    discounting the player who is out and inflating the backup who inherits the role.
+    Age moves prices slowly and
+    then suddenly, as a player crosses the part of his positional curve where the
+    market stops paying for future seasons. Sentiment ties the rest together: once a
+    league makes up its mind, prices can run ahead of the evidence in either
+    direction.</p>
+
+    <h2>Why the 7, 30 and 90 day windows tell different stories</h2>
+    <p>The short window is a reaction window. Seven days captures one game, one
+    injury report and one round of group chat conviction, so it is the best place to
+    find overreactions and the worst place to find proof. Thirty days is a role
+    window: a month is long enough for snap and target trends to separate a real
+    depth chart change from a single game plan. Ninety days is a repricing window,
+    where age, situation and a full stretch of production have had time to reset
+    what the market believes. A player rising on all three windows is usually a
+    genuine breakout. A player rising only on the shortest one is a question to
+    investigate, not a conclusion.</p>
+
+    <h2>How to act on a move</h2>
+    <p>Start with the role, not the arrow. If a faller kept his snaps and targets and
+    only lost touchdowns and yardage luck, the dip is a buying window: see the
+    <a href="/guides/buy-low-sell-high">buy low and sell high guide</a> for how to
+    price it. If a riser gained value on touchdowns while his share of the offense
+    stood still, the spike is a selling window. When a move checks out, grade the actual
+    package in the <a href="/trade">trade calculator</a> with your format set
+    correctly.</p>
+  </div>
+"""
+
 
 def build_risers_fallers_body(movers: dict, as_of_date: str | None = None,
                               signed_in: bool = False, days: int = 7) -> str:
@@ -429,6 +537,7 @@ def build_risers_fallers_body(movers: dict, as_of_date: str | None = None,
     reason. Use the <a href="/trade">BR Fantasy Trade Calculator</a> to turn this intel
     into winning trades in your dynasty league.</p>
   </div>
+{_TOP_MOVERS_EDITORIAL_HTML}
 
   <div class="static-section" style="max-width:860px;margin:24px auto 0;text-align:center;">
     <a href="/auth/login" style="display:inline-block;padding:12px 28px;border-radius:8px;background:var(--accent);color:#fff;font-size:15px;font-weight:700;text-decoration:none;">Connect your league to track movers on your roster</a>
@@ -516,6 +625,140 @@ _POSITION_ANALYSIS = {
         'to the free <a href="/trade">trade calculator</a> to see the net value.</p>'
     ),
 }
+
+
+# ── AdSense Tier 3: rankings methodology + per-position depth ────────────────
+# A shared methodology section shown on all five rankings pages, plus a
+# distinct second section per position so the five near-identical templates
+# carry genuinely different editorial. Rendered below the table by
+# build_rankings_hub_body. No em dashes (site rule).
+
+_RANKINGS_METHODOLOGY_HTML = (
+    '<section class="rnk-analysis" data-tier3="rankings-methodology">'
+    '<h2 class="rnk-analysis-title">How these rankings are built</h2>'
+    "<p>These rankings are the trade value chart organized by position. Every player "
+    "carries one dynasty value on a shared scale, built by blending real dynasty trade "
+    "data and market prices with recent production, opportunity metrics and positional "
+    "age curves. A ranking here is a statement about price: what the rest of your league "
+    "would give up to acquire the player, given his age, his role and the years of "
+    "production he has left. It is not a projection of next week and it is not a redraft "
+    "list, which is why a younger player with a secure role can sit above an older "
+    "player who scores more right now.</p>"
+    "<p>Values are recalculated daily. One game moves a price a little. A sustained "
+    "change in role, in snap share, target share or backfield share, moves it a lot, "
+    "because opportunity is what the market is really buying. Age curves are position "
+    "specific: running backs are discounted earliest, receivers hold value into their "
+    "early thirties, quarterbacks last longest of all, and tight ends develop slowly "
+    "before they settle. Use the format toggle before you read a single name. Superflex "
+    "values price quarterbacks as the scarce weekly starters they are in that format, "
+    "while 1QB values discount them because only one starts. Reading the wrong format "
+    "is reading a different league.</p>"
+    "<p>Finally, read tiers before ranks. The gap between rank 4 and rank 5 can be a "
+    "cliff, while the gap between rank 14 and rank 24 can be a gentle slope. The rank "
+    "is the order. The value is the distance, and the distance is what a trade has to "
+    "respect.</p>"
+    "</section>"
+)
+
+_POSITION_TIER3 = {
+    "QB": (
+        "Quarterbacks: scarcity, the Superflex premium and the cornerstone question",
+        "<p>No position swings more between formats than quarterback, and the swing is "
+        "pure scarcity. A twelve team Superflex league can start twenty four passers a "
+        "week, but only thirty two quarterbacks hold NFL starting jobs, and several of "
+        "those jobs are shaky. That squeezes the supply of startable passers until even "
+        "an average starter carries the price of a good receiver. In 1QB the squeeze "
+        "disappears. Twelve starters are needed, the thirteenth passer scores close to "
+        "the tenth, and the position becomes streamable week to week.</p>"
+        "<p>The roster decision follows from the format. In Superflex, build around "
+        "cornerstones: young starters with secure jobs and rushing upside, and hold a "
+        "third startable passer as insurance, because one injury can turn a contender "
+        "into a team flexing a backup. In 1QB, rent the position instead. Stream "
+        "matchups, keep one steady starter, and spend your real capital at running "
+        "back, receiver and tight end, where the weekly edge is harder to replace.</p>",
+    ),
+    "RB": (
+        "Running backs: the aging cliff, workload and handcuff value",
+        "<p>Running back value rests on workload, and workload rests on a short clock. "
+        "Carries plus targets tell you the size of the role, and the role is the asset. "
+        "A back earning most of his team backfield touches has a floor that efficiency "
+        "alone never provides. But the same position hits the aging cliff first: backs "
+        "who peak in their early and middle twenties often decline sharply by their "
+        "late twenties, so every season of elite workload spends part of the asset you "
+        "are holding. Price that honestly. A twenty seven year old workhorse can be the "
+        "right buy for a contender and the wrong buy for a rebuilder at the exact same "
+        "number.</p>"
+        "<p>Handcuffs deserve their own line in your thinking. The backup behind an "
+        "injury prone or heavily used starter is cheap insurance during the season and "
+        "instant value the week the starter misses, which makes him worth more to the "
+        "manager who owns the starter than to anyone else in the league.</p>",
+    ),
+    "WR": (
+        "Wide receivers: longevity and why target share is the sticky signal",
+        "<p>Receivers are where dynasty value compounds. The position develops over a "
+        "season or two, peaks later than running back and holds value into the early "
+        "thirties, so a receiver who hits gives you more prime seasons per acquisition "
+        "than almost any other asset. That longevity is why rebuilds are built on "
+        "receivers first, and why contenders can buy a receiver without renting a one "
+        "year window that closes before the rest of the roster is ready.</p>"
+        "<p>The signal to trust is target share. Targets are a coaching decision, and "
+        "coaching decisions repeat: a receiver earning a quarter of his team targets "
+        "owns a role, not a hot streak. Touchdowns, by contrast, swing wildly on "
+        "similar volume. A receiver scoring on a small share is a sell candidate "
+        "dressed as a breakout, while a receiver with a rising share and quiet box "
+        "scores is often the cheapest ascending asset in the format. Air yards and "
+        "route share confirm the role is real and downfield, not a collection of "
+        "screens near the line.</p>",
+    ),
+    "TE": (
+        "Tight ends: the elite tier, the wasteland and TE premium",
+        "<p>Tight end value is a cliff with a long flat plain behind it. A small elite "
+        "tier scores like a top receiver and creates a weekly advantage almost no "
+        "opponent can match. Behind that tier sit dozens of tight ends separated by a "
+        "catch or two a week, and chasing order inside that group buys you almost "
+        "nothing. That shape drives the strategy. Either pay for the scarce tier, "
+        "where the advantage is real, or punt the position, stream the best matchup "
+        "from the flat group and spend the saved capital where tiers actually "
+        "separate rosters.</p>"
+        "<p>TE premium scoring changes the math at the top only. The extra points per "
+        "reception compound for a tight end catching eighty passes and barely register "
+        "for one catching forty, so premium formats widen the elite gap without "
+        "rescuing the middle. Patience matters too: tight ends often need two or "
+        "three seasons before the role and the production arrive together, which "
+        "makes a young tight end a rebuild asset long before he is a weekly starter.</p>",
+    ),
+    None: (
+        "Overall rankings: positional scarcity and why cross position value exists",
+        "<p>An overall list only works because every player is priced on one scale, "
+        "and that scale is set by scarcity, not by raw points. The highest scoring "
+        "player is not automatically the most valuable: value asks how hard the "
+        "player is to replace. A startable Superflex quarterback is scarce because "
+        "the supply of NFL starters is fixed. An elite tight end is scarce because "
+        "only a handful exist. A productive running back on an expiring age curve is "
+        "less scarce than he looks, because the next committee back is always "
+        "arriving to take a share of the work.</p>"
+        "<p>Read the overall board for tier breaks. Within a tier, players are close "
+        "substitutes and roster need decides between them. Across a tier break, the "
+        "higher player costs real extra capital, and a fair cross position trade has "
+        "to pay it. That is what makes two for one offers gradeable at all: add the "
+        "values, respect the tiers, and remember that consolidation favors the side "
+        "getting the best player, because starting spots are limited and stars are "
+        "the hardest assets in the format to replace.</p>",
+    ),
+}
+
+
+def _rankings_tier3_html(pos_filter: str | None) -> str:
+    entry = _POSITION_TIER3.get(pos_filter) or _POSITION_TIER3.get(None)
+    heading, prose = entry
+    key = pos_filter or "ALL"
+    unique = (
+        f'<section class="rnk-analysis" data-tier3="rankings-unique-{key}">'
+        f'<h2 class="rnk-analysis-title">{html.escape(heading)}</h2>'
+        f"{prose}"
+        "</section>"
+    )
+    return _RANKINGS_METHODOLOGY_HTML + unique
 
 
 def _position_analysis_html(pos_filter: str | None) -> str:
@@ -670,6 +913,7 @@ def build_rankings_hub_body(
       </tbody>
     </table>
   </div>
+  {_rankings_tier3_html(pos_filter)}
   <div class="static-section" style="max-width:860px;margin:24px auto 0;text-align:center;">
     <a href="/auth/login" style="display:inline-block;padding:12px 28px;border-radius:8px;background:var(--accent);color:#fff;font-size:15px;font-weight:700;text-decoration:none;">Connect your league to see rankings for your roster</a>
     <p style="font-size:12px;color:var(--text-muted);margin-top:8px;">Free for your first league</p>

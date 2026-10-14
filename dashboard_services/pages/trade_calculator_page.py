@@ -4,6 +4,40 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+# AdSense Tier 3: public-only editorial for the guest trade calculator.
+# Rendered only when build_trade_calculator_body is called with
+# include_public_editorial=True (the public /trade route). League-scoped
+# pages never pass the flag and render exactly as before. No em dashes.
+TRADE_PUBLIC_EDITORIAL_HTML = """
+    <div data-tier3="trade-editorial" style="background:var(--card);border:1px solid var(--border);border-radius:14px;margin-top:18px;padding:22px 24px;">
+      <h2 style="font-size:15px;font-weight:700;margin:0 0 12px;">How the calculator grades fairness, and when fair is still wrong</h2>
+      <p style="font-size:13px;color:var(--text-muted);margin:0 0 12px;line-height:1.65;">
+        The calculator grades a deal the way the market would price it. Every player
+        and pick on both sides carries the same dynasty value used on the
+        <a href="/dynasty-trade-value-chart">trade value chart</a>, the totals are
+        compared, and the verdict describes the gap: close enough to call fair, or
+        tilted toward one side. Fair does not mean identical. Small gaps are noise,
+        because values are estimates and they move daily as the market moves. Treat a near even
+        grade as a tie that your roster gets to break, and treat a large gap as a
+        demand for a reason: if you cannot name why you are paying it, the grade is
+        probably right.
+      </p>
+      <p style="font-size:13px;color:var(--text-muted);margin:0;line-height:1.65;">
+        A fair trade can still be the wrong trade. Consolidating two good players
+        into one star loses raw value on paper and wins starting lineups in practice,
+        because only one of them could start for you anyway. Unpacking a star into
+        younger pieces grades light for a rebuilder and is still correct when the
+        star will age out before the team is ready. Picks carry their own trap: a
+        future first is priced as a mid first because nobody knows where it lands,
+        and its value is an option on a player who does not exist yet. Set the format
+        toggles to your league first: Superflex, league size, scoring and TE premium
+        all move the verdict. Then use the
+        <a href="/guides/evaluating-a-trade">trade evaluation guide</a> to judge the
+        fit the numbers cannot see.
+      </p>
+    </div>
+"""
+
 SUPPORTED_LEAGUE_SIZES = [8, 10, 12, 14]
 
 SUPPORTED_SCORING_FORMATS = [("ppr", "PPR"), ("half", "Half"), ("std", "STD")]
@@ -21,6 +55,7 @@ def build_trade_calculator_body(
         te_premium: float = 0.0,
         seo_footer: str = "",
         scoring_type: Optional[str] = None,
+        include_public_editorial: bool = False,
 ) -> str:
     league_val = league_id or ""
     season_val = season if season is not None else ""
@@ -1190,6 +1225,7 @@ def build_trade_calculator_body(
 
         </div><!-- /.otc-shell -->
         {seo_footer}
+        {TRADE_PUBLIC_EDITORIAL_HTML if include_public_editorial else ""}
       </main>
 
       <aside class="otc-side">
