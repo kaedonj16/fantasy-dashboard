@@ -2054,6 +2054,24 @@ function _pmLoadRecentForm(playerId, season, pos) {
           _roleRows.push(`<div class="pm-ov-kv"><span>Snap share</span><b>${_snapPct.toFixed(1)}%</b></div>`);
           _roleRows.push(_shareBar(_snapPct));
         }
+        // Position-dependent usage line, from these same game logs: RBs
+        // live on touches, QBs on pass attempts. WR/TE usage is the target
+        // share above, so they get no extra row.
+        if (_pos === 'RB') {
+          let _tch = 0, _tchG = 0;
+          real.forEach(g => {
+            const s = g.stats || {};
+            if (s.rush_att != null || s.rec_tgt != null) { _tchG++; _tch += (_nv(s.rush_att) || 0) + (_nv(s.rec_tgt) || 0); }
+          });
+          if (_tchG) _roleRows.push(`<div class="pm-ov-kv"><span>Touches / game</span><b>${(_tch / _tchG).toFixed(1)}</b></div>`);
+        } else if (_pos === 'QB') {
+          let _pa = 0, _paG = 0;
+          real.forEach(g => {
+            const s = g.stats || {};
+            if (s.pass_att != null) { _paG++; _pa += _nv(s.pass_att) || 0; }
+          });
+          if (_paG) _roleRows.push(`<div class="pm-ov-kv"><span>Pass att / game</span><b>${(_pa / _paG).toFixed(1)}</b></div>`);
+        }
         const _recRow = _recGames ? `<div class="pm-ov-kv"><span>Receiving</span><b>${_rec} / ${_recYd} / ${_recTd}</b></div>` : '';
         const _rushRow = _rushGames ? `<div class="pm-ov-kv"><span>Rushing</span><b>${_rush} / ${_rushYd} / ${_rushTd}</b></div>` : '';
         const _passRow = _passGames ? `<div class="pm-ov-kv"><span>Passing</span><b>${_passYd.toLocaleString('en-US')} / ${_passTd} / ${_passInt}</b></div>` : '';
@@ -3352,7 +3370,13 @@ function _pmLoadUsageBars(container, team, season, focusName) {
     .then(data => {
       if (!container.isConnected) return;
       const html = _pmTeamUsageBars(data, focusName);
-      if (html) container.innerHTML = html;
+      if (html) {
+        container.innerHTML = html;
+        // The situational card starts hidden so a no-data response never
+        // leaves an empty bordered box in the stack.
+        const card = container.closest('.pm-pair-situational');
+        if (card) card.hidden = false;
+      }
     })
     .catch(() => { /* silent: usage bars are enhancement, not critical */ });
 }
@@ -3716,21 +3740,39 @@ function _pmBuildTeamHTML(data) {
   const teamStrip = _tsCells.length ? `<div class="pm-team-strip">${_tsCells.join('')}</div>` : '';
 
   // Usage-by-week card: the right half of the Room / Usage pair. Built from
-  // the payload's focus_weekly series (played weeks only: weekly targets +
-  // snap share from the weekly-metrics store). Bars need 2+ weeks; each
-  // summary row hides when its data is absent; the whole card is omitted
-  // when the series carries nothing renderable.
+  // the payload's focus_weekly series (played weeks only, from the
+  // weekly-metrics store). The metric is position-dependent: RBs are used
+  // on touches, QBs on pass attempts, WR/TE on targets; when the position's
+  // own metric has no data the card falls back through the other series
+  // rather than showing the wrong stat. Bars need 2+ weeks; each summary
+  // row hides when its data is absent; the whole card is omitted when the
+  // series carries nothing renderable.
   const _fw = (Array.isArray(data.focus_weekly) ? data.focus_weekly : [])
     .filter(p => p && isFinite(Number(p.week)))
-    .map(p => ({ week: Number(p.week), targets: p.targets, snap_share: p.snap_share }))
+    .map(p => ({ week: Number(p.week), targets: p.targets, carries: p.carries, touches: p.touches, pass_att: p.pass_att, snap_share: p.snap_share }))
     .sort((a, b) => a.week - b.week);
   let usageCard = '';
   if (_fw.length) {
-    const _tgts = _fw.map(p => (p.targets != null && isFinite(Number(p.targets))) ? Number(p.targets) : null);
-    const _hasTgt = _tgts.some(v => v != null);
+    const _metricDefs = [
+      { key: 'touches', noun: 'Touches', low: 'touches', sing: 'touch' },
+      { key: 'targets', noun: 'Targets', low: 'targets', sing: 'target' },
+      { key: 'pass_att', noun: 'Pass attempts', low: 'pass attempts', sing: 'pass attempt' },
+      { key: 'carries', noun: 'Carries', low: 'carries', sing: 'carry' },
+    ];
+    const _seriesFor = (key) => _fw.map(p => (p[key] != null && isFinite(Number(p[key]))) ? Number(p[key]) : null);
+    const _wantKey = pos === 'RB' ? 'touches' : pos === 'QB' ? 'pass_att' : 'targets';
+    let _metric = _metricDefs.find(m => m.key === _wantKey) || _metricDefs[1];
+    let _mvals = _seriesFor(_metric.key);
+    if (!_mvals.some(v => v != null)) {
+      for (const m of _metricDefs) {
+        const vs = _seriesFor(m.key);
+        if (vs.some(v => v != null)) { _metric = m; _mvals = vs; break; }
+      }
+    }
+    const _hasMetric = _mvals.some(v => v != null);
     let _bars = '';
-    if (_fw.length >= 2 && _hasTgt) {
-      const _vals = _tgts.map(v => v || 0);
+    if (_fw.length >= 2 && _hasMetric) {
+      const _vals = _mvals.map(v => v || 0);
       const _mx = Math.max.apply(null, _vals);
       const _mn = Math.min.apply(null, _vals);
       _bars = '<div class="pm-recent-bars pm-usage-wk-bars">' + _fw.map((p, i) => {
@@ -3738,7 +3780,7 @@ function _pmBuildTeamHTML(data) {
         const h = _mx > 0 ? Math.max(6, Math.round(v / _mx * 100)) : 6;
         const low = v === _mn && _mn < 0.6 * _mx;
         return '<div class="pm-recent-col">'
-          + `<span class="pm-recent-val">${p.targets != null ? p.targets : ''}</span>`
+          + `<span class="pm-recent-val">${_mvals[i] != null ? _mvals[i] : ''}</span>`
           + `<div class="pm-recent-track"><div class="pm-recent-bar${low ? ' pm-bar-low' : ''}" style="height:${h}%"></div></div>`
           + `<span class="pm-recent-wk">W${p.week}</span></div>`;
       }).join('') + '</div>';
@@ -3748,23 +3790,65 @@ function _pmBuildTeamHTML(data) {
     if (_snaps.length) {
       _urows.push(`<div class="pm-ov-kv"><span>Snap share by week</span><b>${_snaps.map(v => (Math.round(Number(v) * 10) / 10).toFixed(1)).join(' · ')}</b></div>`);
     }
-    if (_hasTgt) {
-      const _last3 = _tgts.filter(v => v != null).slice(-3);
+    if (_hasMetric) {
+      const _last3 = _mvals.filter(v => v != null).slice(-3);
       if (_last3.length) {
         const _avg = _last3.reduce((a, b) => a + b, 0) / _last3.length;
-        _urows.push(`<div class="pm-ov-kv"><span>Targets, last ${_last3.length} week${_last3.length === 1 ? '' : 's'}</span><b>${_avg.toFixed(1)} / game</b></div>`);
+        _urows.push(`<div class="pm-ov-kv"><span>${_metric.noun}, last ${_last3.length} week${_last3.length === 1 ? '' : 's'}</span><b>${_avg.toFixed(1)} / game</b></div>`);
       }
       let _hi = null;
-      _fw.forEach((p, i) => { if (_tgts[i] != null && (_hi == null || _tgts[i] > _hi.v)) _hi = { v: _tgts[i], w: p.week }; });
-      if (_hi) _urows.push(`<div class="pm-ov-kv"><span>Season high</span><b>${_hi.v} target${_hi.v === 1 ? '' : 's'} · Week ${_hi.w}</b></div>`);
+      _fw.forEach((p, i) => { if (_mvals[i] != null && (_hi == null || _mvals[i] > _hi.v)) _hi = { v: _mvals[i], w: p.week }; });
+      if (_hi) _urows.push(`<div class="pm-ov-kv"><span>Season high</span><b>${_hi.v} ${_metric.sing}${_hi.v === 1 ? '' : 's'} · Week ${_hi.w}</b></div>`);
     }
     if (_bars || _urows.length) {
       usageCard = `<div class="pm-team-pair-card pm-pair-usage">
-        <div class="pm-section-header"><span class="pm-section-label">Usage by week · targets</span></div>
+        <div class="pm-section-header"><span class="pm-section-label">Usage by week · ${_metric.low}</span></div>
         ${_bars}${_urows.join('')}
       </div>`;
     }
   }
+
+  // Week-by-week detail card: the per-week composition behind the usage
+  // chart (same focus_weekly series), position-shaped like the chart:
+  // RB car/tgt/touch, QB att/rush, WR/TE tgt (plus carries when real).
+  let detailCard = '';
+  if (_fw.length) {
+    const _drows = _fw.map(p => {
+      const parts = [];
+      if (pos === 'QB') {
+        if (p.pass_att != null) parts.push(`${p.pass_att} att`);
+        if (p.carries != null) parts.push(`${p.carries} rush`);
+      } else if (pos === 'RB') {
+        if (p.carries != null) parts.push(`${p.carries} car`);
+        if (p.targets != null) parts.push(`${p.targets} tgt`);
+        if (p.touches != null) parts.push(`${p.touches} touch`);
+      } else {
+        if (p.targets != null) parts.push(`${p.targets} tgt`);
+        if (p.carries != null && Number(p.carries) > 0) parts.push(`${p.carries} car`);
+      }
+      if (p.snap_share != null && isFinite(Number(p.snap_share))) {
+        parts.push(`${(Math.round(Number(p.snap_share) * 10) / 10).toFixed(1)}% snap`);
+      }
+      return parts.length ? `<div class="pm-ov-kv"><span>Week ${p.week}</span><b>${parts.join(' · ')}</b></div>` : '';
+    }).join('');
+    if (_drows) {
+      detailCard = `<div class="pm-team-pair-card pm-pair-weekly">
+        <div class="pm-section-header"><span class="pm-section-label">Week by week</span></div>
+        ${_drows}
+      </div>`;
+    }
+  }
+
+  // RB situational usage moves out of the room card into the right stack
+  // as its own card. It loads async and may legitimately have no data, so
+  // the card starts hidden; _pmLoadUsageBars unhides it only when bars
+  // actually render.
+  const _sitCard = pos === 'RB'
+    ? `<div class="pm-team-pair-card pm-pair-situational" hidden><div class="pm-usage-bars-wrap" data-team="${_pmEsc(team)}" data-season="${summarySeason}" data-focus="${_pmEsc(data.player_name || '')}"></div></div>`
+    : '';
+  const _stackHtml = (usageCard || detailCard || _sitCard)
+    ? `<div class="pm-team-stack">${usageCard}${_sitCard}${detailCard}</div>`
+    : '';
 
   return `<div class="pm-team-wrap">
     ${teamStrip}
@@ -3782,11 +3866,10 @@ function _pmBuildTeamHTML(data) {
       ${data.team_timeframe && !data.team_timeframe.season_team_confirmed ? '<div class="pm-team-context-warning">No team record was found for this player in the selected season; current-team context is shown separately.</div>' : ''}
       ${heroStats ? '<div class="pm-team-herostats">' + heroStats + '</div>' : ''}
     </div>
-    <div class="pm-team-pair${usageCard ? '' : ' pm-team-pair-solo'}">
+    <div class="pm-team-pair${_stackHtml ? '' : ' pm-team-pair-solo'}">
       <div class="pm-team-pair-card pm-pair-room">
         <div class="pm-section-header"><span class="pm-section-label">Depth Chart / Competition</span><span class="pm-team-secnote">${pos} room</span></div>
         ${roleSummary}${shareBar}
-        ${pos === 'RB' ? `<div class="pm-usage-bars-wrap" data-team="${_pmEsc(team)}" data-season="${summarySeason}" data-focus="${_pmEsc(data.player_name || '')}"></div>` : ''}
         <div class="pm-team-usage pm-room-${pos.toLowerCase()}">
           <div class="pm-troom-row pm-troom-head"><span></span><span>${pos} Room</span>${roomCols.map(c => `<span class="pm-col-${c.key}">${c.label}</span>`).join('')}</div>
           ${roomRows}
@@ -3794,7 +3877,7 @@ function _pmBuildTeamHTML(data) {
         ${competingHTML}
         <div class="pm-team-note">${data.roster_timeframe && data.roster_timeframe.historical_unavailable ? `Historical depth charts are unavailable. This is the current roster; injuries are current, while usage is from ${data.usage_timeframe ? data.usage_timeframe.season : 'the latest available season'}.` : `Current Sleeper depth order and injuries. Usage is from ${data.usage_timeframe ? data.usage_timeframe.season : seasonNote}.`} PPR PPG uses PPR scoring. Tap any teammate to open their card.</div>
       </div>
-      ${usageCard}
+      ${_stackHtml}
     </div>
     <div class="pm-team-sec pm-environment-sec">
       <div class="pm-section-header"><span class="pm-section-label">Offensive Environment</span><span class="pm-team-secnote">${seasonNote} · rank of 32</span></div>

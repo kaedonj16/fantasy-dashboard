@@ -1071,6 +1071,13 @@ def _weekly_series_for_payload(player_id: str, season: int) -> List[Dict]:
         except (TypeError, ValueError):
             return 0.0
 
+    def _int_or_none(row: Dict, key: str):
+        value = row.get(key)
+        try:
+            return int(float(value)) if value is not None else None
+        except (TypeError, ValueError):
+            return None
+
     out: List[Dict] = []
     for row in rows:
         if not isinstance(row, dict) or row.get("week") is None:
@@ -1088,6 +1095,12 @@ def _weekly_series_for_payload(player_id: str, season: int) -> List[Dict]:
             "week": week,
             "snap_share": round(float(snap), 1) if snap is not None else None,
             "targets": int(float(tgt)) if tgt is not None else None,
+            # Carries/touches/pass attempts ride along so the Team tab's
+            # usage-by-week card can pick its metric by position (RB touches,
+            # QB pass attempts, WR/TE targets) from the same series.
+            "carries": _int_or_none(row, "carries"),
+            "touches": _int_or_none(row, "touches"),
+            "pass_att": _int_or_none(row, "pass_att"),
         })
     out.sort(key=lambda p: p["week"])
     return out

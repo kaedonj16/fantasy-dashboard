@@ -23814,7 +23814,9 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
 
 /* ── Summary strips (Stats tab + Team tab share the cell pattern) ──────── */
 .pm-stats-strip, .pm-team-strip { display: flex; flex-wrap: wrap; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 18px; margin-bottom: 12px; }
-.pm-team-strip { margin-bottom: 14px; }
+/* Inset like the Team tab's other sections (the wrap itself is full-bleed,
+   so without this the strip's border sits flush on the modal edges). */
+.pm-team-strip { margin: 14px 18px; }
 .pm-strip-cell { flex: 1 1 0; min-width: 74px; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 4px 10px; text-align: center; }
 .pm-strip-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
 .pm-strip-val { font-size: 15px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; line-height: 1.2; }
@@ -44796,7 +44798,12 @@ a, button, [role="button"], [role="tab"], summary, label,
 
 /* Room / Usage-by-week card pair: the room card (the role section's content)
    and the usage card side by side at equal height; stacks on phone. */
-.pm-team-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: stretch; padding: 14px 18px; border-top: 1px solid var(--border); }
+/* align-items: start, not stretch: the right side is a stack of cards
+   (usage, situational, week-by-week), and stretching the old single usage
+   card to the room card's height left a large blank box under it. */
+.pm-team-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; padding: 14px 18px; border-top: 1px solid var(--border); }
+.pm-team-stack { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.pm-team-pair-card[hidden] { display: none; }
 .pm-team-pair-solo { grid-template-columns: 1fr; }
 .pm-team-pair-card { background: var(--bg-alt); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; min-width: 0; }
 .pm-team-pair-card .pm-section-header { margin-bottom: 12px; display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }

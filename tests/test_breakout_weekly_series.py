@@ -36,10 +36,15 @@ def test_weekly_series_shape_and_played_weeks(monkeypatch):
     )
     out = breakout_api._weekly_series_for_payload("12514", 2026)
     assert [p["week"] for p in out] == [1, 2, 4, 5]  # bye absent, DNP dropped
-    assert out[0] == {"week": 1, "snap_share": 86.0, "targets": 6}
-    assert out[-1] == {"week": 5, "snap_share": 88.9, "targets": 9}
+    # Carries/touches/pass_att ride along (touches unset in these rows ->
+    # None) so the Team tab usage card can pick its metric by position.
+    assert out[0] == {"week": 1, "snap_share": 86.0, "targets": 6,
+                      "carries": 0, "touches": None, "pass_att": 0}
+    assert out[-1] == {"week": 5, "snap_share": 88.9, "targets": 9,
+                       "carries": 0, "touches": None, "pass_att": 0}
     for point in out:
-        assert set(point.keys()) == {"week", "snap_share", "targets"}
+        assert set(point.keys()) == {"week", "snap_share", "targets",
+                                     "carries", "touches", "pass_att"}
 
 
 def test_weekly_series_keeps_unknown_snap_share_none(monkeypatch):
