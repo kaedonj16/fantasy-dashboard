@@ -2351,7 +2351,19 @@ def get_player_metrics(player_id: str, as_of_date: Optional[str] = None) -> Opti
                 LIMIT 1
             """, (player_id,)).fetchone()
 
-        return dict(row) if row else None
+        if not row:
+            return None
+        out = dict(row)
+        # Same display swap as get_player_metrics_by_season: Created Sep
+        # out, computed Avg Sep Score in (for the row's own season).
+        out.pop("ngs_created_separation", None)
+        try:
+            _sep_score = _avg_sep_scores_for_season(int(out["season"])).get(str(player_id))
+        except Exception:
+            _sep_score = None
+        if _sep_score is not None:
+            out["ngs_avg_sep_score"] = _sep_score
+        return out
 
 
 def get_player_metrics_by_season(player_id: str, season: int) -> Optional[Dict[str, Any]]:
@@ -2391,6 +2403,17 @@ def get_player_metrics_by_season(player_id: str, season: int) -> Optional[Dict[s
             for key, value in older.items():
                 if merged.get(key) is None and value is not None:
                     merged[key] = value
+        # Created Sep is retired as a display metric (it is separation
+        # minus cushion, negative for every qualified player, and ranks
+        # cushion allowed more than space created). Its replacement,
+        # Avg Sep Score, is computed from the season pool, not stored.
+        merged.pop("ngs_created_separation", None)
+        try:
+            _sep_score = _avg_sep_scores_for_season(int(season)).get(str(player_id))
+        except Exception:
+            _sep_score = None
+        if _sep_score is not None:
+            merged["ngs_avg_sep_score"] = _sep_score
         return merged
 
 
@@ -2494,7 +2517,7 @@ def get_player_career_metrics(
         'ngs_rush_efficiency',
         'ngs_avg_time_to_throw', 'ngs_aggressiveness', 'ngs_avg_completed_air_yards',
         'ngs_avg_air_yards_to_sticks',
-        'ngs_percent_attempts_gte_eight_defenders', 'ngs_created_separation',
+        'ngs_percent_attempts_gte_eight_defenders', 'ngs_avg_sep_score',
         'play_action_rate', 'play_action_epa',
         'blitz_rate_faced', 'epa_vs_blitz', 'epa_vs_stacked_box',
         'rushing_success_rate', 'receiving_success_rate',
@@ -2562,6 +2585,14 @@ def get_player_career_metrics(
                     for key, value in older.items():
                         if merged.get(key) is None and value is not None:
                             merged[key] = value
+                # Avg Sep Score is computed, not stored: attach this
+                # season's score so Step 2 averages it like any metric.
+                try:
+                    _sep_score = _avg_sep_scores_for_season(int(s)).get(str(player_id))
+                except Exception:
+                    _sep_score = None
+                if _sep_score is not None:
+                    merged["ngs_avg_sep_score"] = _sep_score
                 season_snapshots.append(merged)
         else:
             season_snapshots = [latest]
@@ -2782,7 +2813,7 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "ngs_avg_yac_above_expectation": {"label": "YAC Over Exp", "category": "Receiving", "positions": ["WR", "TE", "RB"], "efficiency": True, "min_vol": _V_RECS, "desc": "Yards after catch above expectation given the catch situation (NFL Next Gen Stats)."},
     "ngs_avg_separation":   {"label": "Separation",          "category": "Receiving", "positions": ["WR", "TE"], "efficiency": True, "min_vol": _V_TARGETS, "desc": "Average yards of separation from the nearest defender at the catch point (NFL Next Gen Stats)."},
     "ngs_avg_cushion":      {"label": "Cushion",             "category": "Receiving", "positions": ["WR", "TE"], "efficiency": True, "min_vol": _V_TARGETS, "desc": "Average yards of cushion the defender gives at the snap (NFL Next Gen Stats)."},
-    "ngs_created_separation": {"label": "Created Sep",       "category": "Receiving", "positions": ["WR", "TE"], "efficiency": True, "min_vol": _V_TARGETS, "desc": "Separation minus pre-snap cushion (NFL Next Gen Stats). Positive means the receiver created space vs the look they were given."},
+    "ngs_avg_sep_score":    {"label": "Avg Sep Score",       "category": "Receiving", "positions": ["WR", "TE"], "efficiency": True, "min_vol": _V_TARGETS, "integer": True, "desc": "0-100 score: the percentile of a player's average separation among qualified players at the same position (50 is the middle of the pack), from NFL Next Gen Stats. Separation is charted only on targeted plays, so the score cannot see routes where a receiver was open but not thrown to."},
     "receiving_success_rate": {"label": "Rec Success %",     "category": "Receiving", "positions": ["WR", "TE", "RB"], "efficiency": True, "pct": True, "min_vol": _V_TARGETS, "desc": "Percent of targets with positive EPA (nflverse)."},
     "receiving_epa_per_target": {"label": "Rec EPA / Tgt",   "category": "Receiving", "positions": ["WR", "TE", "RB"], "efficiency": True, "min_vol": _V_TARGETS, "desc": "Expected Points Added per target (nflverse). Rate companion to total receiving EPA."},
     "contested_catch_rate": {"label": "Contested Catch %",   "category": "Receiving", "positions": ["WR", "TE"], "efficiency": True, "pct": True, "min_vol": _V_TARGETS, "desc": "Percent of contested (tightly covered) targets the player came down with."},
@@ -2981,7 +3012,7 @@ WEEKLY_ADV_METRIC_COLS: List[str] = [
     "ngs_avg_time_to_throw", "ngs_aggressiveness", "ngs_avg_completed_air_yards",
     "ngs_avg_air_yards_differential", "ngs_avg_air_yards_to_sticks", "ngs_cpoe",
     "ngs_max_completed_air_distance", "ngs_avg_time_to_los",
-    "ngs_percent_attempts_gte_eight_defenders", "ngs_created_separation",
+    "ngs_percent_attempts_gte_eight_defenders",
     "play_action_rate", "play_action_epa", "out_of_pocket_rate",
     "blitz_rate_faced", "epa_vs_blitz", "epa_vs_stacked_box",
     "rushing_success_rate", "receiving_success_rate",
@@ -3248,6 +3279,15 @@ def get_player_weekly_adv_range(
     usage = _get_player_weekly_usage_range(player_id, season, lo, hi)
     for k, v in usage.items():
         out.setdefault(k, v)
+    # Created Sep is retired as a display metric; Avg Sep Score replaces
+    # it, computed over the range's qualified same-position pool.
+    out.pop("ngs_created_separation", None)
+    try:
+        _sep_score = _avg_sep_scores_for_range(int(season), int(lo), int(hi)).get(str(player_id))
+    except Exception:
+        _sep_score = None
+    if _sep_score is not None:
+        out["ngs_avg_sep_score"] = _sep_score
     return out
 
 
@@ -3319,7 +3359,11 @@ _ADV_WEEKLY_WEIGHTED_METRICS = {
     "goal_line_opp_share": "w_team_gl_opps",
     "rec_first_down_rate": "w_targets",
     "rush_first_down_rate": "w_carries",
-    "ngs_created_separation": "w_targets",
+    # Avg Sep Score has no stored weekly column: the entry registers its
+    # w_targets aggregation basis (week-range support + Min Targets spec).
+    # get_adv_weekly_range_leaderboard intercepts the key and computes the
+    # range percentile before any SQL aggregation could reference it.
+    "ngs_avg_sep_score": "w_targets",
     "receiving_success_rate": "w_targets", "receiving_epa_per_target": "w_targets",
     "yards_after_catch_per_reception": "w_receptions", "ngs_avg_yac": "w_receptions",
     "rec_broken_tackles_per_reception": "w_receptions",
@@ -3425,6 +3469,11 @@ def get_adv_weekly_range_leaderboard(
     but for the NGS/FTN/EPA metrics. Returns
     [{player_id, name, team, position, value, games, vol}].
     """
+    if metric == "ngs_avg_sep_score":
+        return get_sep_score_range_leaderboard(
+            position=position, season=season, week_start=week_start,
+            week_end=week_end, min_vol=min_vol, limit=limit,
+        )
     agg = _adv_weekly_agg_sql(metric)
     if not agg or metric not in LEADERBOARD_METRICS:
         return []
@@ -4270,6 +4319,303 @@ def get_breakout_trend_leaderboard(position=None, season=None, min_vol=None, lim
     return out[:limit] if limit else out
 
 
+# ── Avg Sep Score ────────────────────────────────────────────────────────────
+# A 0-100 percentile of ngs_avg_separation among qualified players at the
+# same position, replacing the retired Created Sep display metric (raw
+# separation minus pre-snap cushion: negative for every qualified player,
+# and it ranked the cushion a defense allowed more than the space a
+# receiver created). The score is computed from the season pool, never
+# stored. One pool definition everywhere (leaderboard, player payloads,
+# modal ranks): coalesced season snapshot rows for WR/TE whose
+# total_targets clears the qualification policy's target minimum.
+_SEP_SCORE_POSITIONS = ("WR", "TE")
+_SEP_SCORE_CACHE: Dict[tuple, Dict[str, float]] = {}
+_SEP_RANGE_SCORE_CACHE: Dict[tuple, Dict[str, float]] = {}
+
+
+def _sep_player_age(meta: dict) -> Optional[int]:
+    """Age from the players-index birth date (same math as the generic
+    leaderboard's nested helper)."""
+    bday = meta.get("bDay") or meta.get("bday") or ""
+    if not bday:
+        return None
+    try:
+        from datetime import date as _date
+        parts = str(bday).split("/")
+        if len(parts) == 3:
+            born = _date(int(parts[2]), int(parts[0]), int(parts[1]))
+            today = _date.today()
+            return today.year - born.year - ((today.month, today.day) < (born.month, born.day))
+    except Exception:
+        return None
+    return None
+
+
+def _sep_percentile_map(pairs: List[Tuple[str, float]]) -> Dict[str, float]:
+    """{player_id: 0-100 percentile score} for (player_id, value) pairs.
+
+    score = 100 * (players below + 0.5 * players tied) / pool size, so the
+    median player scores 50 and the pool leader scores just under 100.
+    """
+    if not pairs:
+        return {}
+    from bisect import bisect_left, bisect_right
+    vals = sorted(v for _, v in pairs)
+    n = len(vals)
+    out: Dict[str, float] = {}
+    for pid, v in pairs:
+        below = bisect_left(vals, v)
+        tied = bisect_right(vals, v) - below
+        out[pid] = round(100.0 * (below + 0.5 * tied) / n, 1)
+    return out
+
+
+def _sep_season_pool(season: int) -> List[Dict[str, Any]]:
+    """Coalesced season rows for WR/TE: one dict per player with
+    ngs_avg_separation, total_targets, games (latest non-null wins,
+    mirroring the get_player_metric_ranks supplement merge)."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT player_id, position, ngs_avg_separation, total_targets, games "
+            "FROM player_advanced_metrics "
+            "WHERE season = %s AND position IN ('WR', 'TE') "
+            "ORDER BY player_id, as_of_date DESC",
+            (int(season),),
+        ).fetchall()
+    merged: Dict[str, Dict[str, Any]] = {}
+    for r in rows:
+        d = dict(r)
+        pid = str(d.get("player_id"))
+        cur = merged.get(pid)
+        if cur is None:
+            merged[pid] = {
+                "player_id": pid,
+                "position": d.get("position"),
+                "ngs_avg_separation": d.get("ngs_avg_separation"),
+                "total_targets": d.get("total_targets"),
+                "games": d.get("games"),
+            }
+            continue
+        for key in ("ngs_avg_separation", "total_targets", "games", "position"):
+            if cur.get(key) is None and d.get(key) is not None:
+                cur[key] = d.get(key)
+    return list(merged.values())
+
+
+def _sep_scores_from_pool(pool: List[Dict[str, Any]], gate: float) -> Dict[str, float]:
+    """Position-partitioned percentile scores over pool rows whose
+    total_targets clears `gate` (NULL targets never qualify, matching the
+    modal rank gates)."""
+    by_pos: Dict[str, List[Tuple[str, float]]] = {}
+    for row in pool:
+        sep = row.get("ngs_avg_separation")
+        tgt = row.get("total_targets")
+        if sep is None or tgt is None:
+            continue
+        try:
+            if float(tgt) < gate:
+                continue
+            value = float(sep)
+        except (TypeError, ValueError):
+            continue
+        by_pos.setdefault(str(row.get("position")), []).append(
+            (str(row["player_id"]), value))
+    scores: Dict[str, float] = {}
+    for pairs in by_pos.values():
+        scores.update(_sep_percentile_map(pairs))
+    return scores
+
+
+def _avg_sep_scores_for_season(season: int) -> Dict[str, float]:
+    """{player_id: Avg Sep Score} for one season (daily-cached)."""
+    from datetime import date as _date
+    key = (_date.today().isoformat(), int(season))
+    hit = _SEP_SCORE_CACHE.get(key)
+    if hit is not None:
+        return hit
+    from utils.season_qualification import qualification_policy
+    gate = qualification_policy(int(season)).minimum("total_targets", 15)
+    scores = _sep_scores_from_pool(_sep_season_pool(int(season)), gate)
+    for _k in [k for k in _SEP_SCORE_CACHE if k[0] != key[0]]:
+        _SEP_SCORE_CACHE.pop(_k, None)
+    _SEP_SCORE_CACHE[key] = scores
+    return scores
+
+
+def get_sep_score_leaderboard(
+    position: Optional[str] = None,
+    season: Optional[int] = None,
+    min_vol: Optional[int] = None,
+    limit: int = 500,
+) -> List[Dict[str, Any]]:
+    """Players ranked by Avg Sep Score for one season.
+
+    Only pool-qualified players appear (a percentile against a qualified
+    pool is the metric; unqualified players have no score). `min_vol`
+    further filters displayed rows by total targets, mirroring the
+    generic leaderboard's volume filter.
+    """
+    if season is None:
+        with get_conn() as conn:
+            srow = conn.execute(
+                "SELECT season FROM player_advanced_metrics "
+                "WHERE ngs_avg_separation IS NOT NULL AND season IS NOT NULL "
+                "ORDER BY season DESC LIMIT 1"
+            ).fetchone()
+        if not srow:
+            return []
+        season = int(srow["season"])
+    pool = _sep_season_pool(int(season))
+    from utils.season_qualification import qualification_policy
+    gate = qualification_policy(int(season)).minimum("total_targets", 15)
+    scores = _sep_scores_from_pool(pool, gate)
+    if not scores:
+        return []
+    try:
+        from utils.utils import load_players_index
+        idx = load_players_index() or {}
+    except Exception:
+        idx = {}
+    pos = (position or "").upper().strip() or None
+    out: List[Dict[str, Any]] = []
+    for row in pool:
+        pid = str(row["player_id"])
+        score = scores.get(pid)
+        if score is None:
+            continue
+        if pos and row.get("position") != pos:
+            continue
+        tgt = row.get("total_targets")
+        tgt_int = int(tgt) if tgt is not None else None
+        if min_vol and tgt_int is not None and tgt_int < int(min_vol):
+            continue
+        meta = idx.get(pid) or {}
+        games = row.get("games")
+        out.append({
+            "player_id": pid,
+            "name": meta.get("name") or "Unknown",
+            "team": meta.get("team") or "",
+            "position": row.get("position"),
+            "headshot": meta.get("espnHeadshot") or "",
+            "value": score,
+            "games": int(games) if games is not None else None,
+            "vol": tgt_int,
+            "age": _sep_player_age(meta),
+            "rec": None,
+            "tgt": tgt_int,
+            "car": None,
+            "att": None,
+            "cmp": None,
+            "season": int(season),
+        })
+    out.sort(key=lambda r: r["value"], reverse=True)
+    return out[: int(limit)] if limit else out
+
+
+def _sep_range_pool(season: int, week_start: int, week_end: int) -> List[Dict[str, Any]]:
+    """Per-player week-range aggregates from the weekly advanced table:
+    target-weighted ngs_avg_separation, summed w_targets, weeks played."""
+    init_weekly_advanced_metrics_db()
+    lo, hi = (week_start, week_end) if week_start <= week_end else (week_end, week_start)
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT player_id, position, "
+            "SUM(ngs_avg_separation * w_targets)::float / "
+            "NULLIF(SUM(CASE WHEN ngs_avg_separation IS NOT NULL THEN w_targets END), 0) "
+            "AS ngs_avg_separation, "
+            "SUM(w_targets) AS total_targets, "
+            "COUNT(*) FILTER (WHERE ngs_avg_separation IS NOT NULL) AS weeks "
+            "FROM player_weekly_advanced_metrics "
+            "WHERE season = %s AND week BETWEEN %s AND %s "
+            "AND position IN ('WR', 'TE') "
+            "GROUP BY player_id, position",
+            (int(season), int(lo), int(hi)),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def _avg_sep_scores_for_range(season: int, week_start: int, week_end: int) -> Dict[str, float]:
+    """{player_id: Avg Sep Score} over a week range (daily-cached). The
+    pool gate scales with the range via the qualification policy, exactly
+    like the other week-range rank gates."""
+    from datetime import date as _date
+    lo, hi = (week_start, week_end) if week_start <= week_end else (week_end, week_start)
+    key = (_date.today().isoformat(), int(season), int(lo), int(hi))
+    hit = _SEP_RANGE_SCORE_CACHE.get(key)
+    if hit is not None:
+        return hit
+    from utils.season_qualification import qualification_policy
+    gate = qualification_policy(
+        int(season), week_start=int(lo), week_end=int(hi),
+    ).minimum("total_targets", 15)
+    scores = _sep_scores_from_pool(_sep_range_pool(int(season), int(lo), int(hi)), gate)
+    for _k in [k for k in _SEP_RANGE_SCORE_CACHE if k[0] != key[0]]:
+        _SEP_RANGE_SCORE_CACHE.pop(_k, None)
+    _SEP_RANGE_SCORE_CACHE[key] = scores
+    return scores
+
+
+def get_sep_score_range_leaderboard(
+    position: Optional[str] = None,
+    season: Optional[int] = None,
+    week_start: Optional[int] = None,
+    week_end: Optional[int] = None,
+    min_vol: Optional[int] = None,
+    limit: int = 500,
+) -> List[Dict[str, Any]]:
+    """Players ranked by Avg Sep Score over a week range. Row shape
+    mirrors get_adv_weekly_range_leaderboard."""
+    if season is None or week_start is None or week_end is None:
+        return []
+    pool = _sep_range_pool(int(season), int(week_start), int(week_end))
+    from utils.season_qualification import qualification_policy
+    lo, hi = (week_start, week_end) if week_start <= week_end else (week_end, week_start)
+    gate = qualification_policy(
+        int(season), week_start=int(lo), week_end=int(hi),
+    ).minimum("total_targets", 15)
+    scores = _sep_scores_from_pool(pool, gate)
+    if not scores:
+        return []
+    try:
+        from utils.utils import load_players_index
+        idx = load_players_index() or {}
+    except Exception:
+        idx = {}
+    pos = (position or "").upper().strip() or None
+    out: List[Dict[str, Any]] = []
+    for row in pool:
+        pid = str(row["player_id"])
+        score = scores.get(pid)
+        if score is None:
+            continue
+        if pos and row.get("position") != pos:
+            continue
+        tgt = row.get("total_targets")
+        tgt_int = int(tgt) if tgt is not None else None
+        if min_vol and tgt_int is not None and tgt_int < int(min_vol):
+            continue
+        meta = idx.get(pid) or {}
+        weeks = int(row["weeks"]) if row.get("weeks") is not None else None
+        out.append({
+            "player_id": pid,
+            "name": meta.get("name") or "Unknown",
+            "team": meta.get("team") or "",
+            "position": row.get("position"),
+            "value": score,
+            "games": weeks,
+            "vol": tgt_int if tgt_int is not None else weeks,
+            "weeks": weeks,
+            "rec": None,
+            "tgt": tgt_int,
+            "car": None,
+            "att": None,
+            "db": None,
+            "season": int(season),
+        })
+    out.sort(key=lambda r: r["value"], reverse=True)
+    return out[: int(limit)] if limit else out
+
+
 def get_metric_leaderboard(
     metric: str,
     position: Optional[str] = None,
@@ -4319,6 +4665,14 @@ def get_metric_leaderboard(
     if metric == "breakout_trend_score":
         return _stamp_season(
             get_breakout_trend_leaderboard(
+                position=position, season=season, min_vol=min_vol, limit=limit),
+            season,
+        )
+    # Avg Sep Score is a Python percentile of ngs_avg_separation over the
+    # qualified same-position pool, not a DB column.
+    if metric == "ngs_avg_sep_score":
+        return _stamp_season(
+            get_sep_score_leaderboard(
                 position=position, season=season, min_vol=min_vol, limit=limit),
             season,
         )
@@ -5095,7 +5449,7 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                 "rushing_success_rate": ("total_carries", 20),
                 "rushing_epa_per_att": ("total_carries", 20),
                 "epa_vs_stacked_box": ("total_carries", 20),
-                "ngs_created_separation": ("total_targets", 15),
+                "ngs_avg_sep_score": ("total_targets", 15),
                 "receiving_success_rate": ("total_targets", 15),
                 "receiving_epa_per_target": ("total_targets", 15),
                 "explosive_run_rate": ("total_carries", 20),
@@ -5181,6 +5535,27 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                     _row["touches_per_snap"] = _touches / _snaps
                 if _touches > 0 and _row.get("total_tds") is not None:
                     _row["td_rate_per_opp"] = _safe(_row.get("total_tds")) / _touches
+            # Avg Sep Score: percentile of ngs_avg_separation within this
+            # position's qualified pool (srows are this position only, and
+            # the gate matches _sep_scores_from_pool's season definition).
+            _sep_gate = _policy.minimum("total_targets", 15)
+            _sep_pairs: List[Tuple[str, float]] = []
+            for _row in srows:
+                _sv = _row.get("ngs_avg_separation")
+                _tg = _row.get("total_targets")
+                if _sv is None or _tg is None:
+                    continue
+                try:
+                    if float(_tg) < _sep_gate:
+                        continue
+                    _sep_pairs.append((str(_row["player_id"]), float(_sv)))
+                except (TypeError, ValueError):
+                    continue
+            _sep_scores = _sep_percentile_map(_sep_pairs)
+            for _row in srows:
+                _sc = _sep_scores.get(str(_row["player_id"]))
+                if _sc is not None:
+                    _row["ngs_avg_sep_score"] = _sc
             for metric, (gate_col, gate_min) in _SUPP_GATES.items():
                 gate_min = _policy.minimum(gate_col, gate_min)
                 if not srows or not any(r.get(metric) is not None for r in srows):
@@ -5365,6 +5740,24 @@ def get_player_weekly_metric_ranks(
             for m in adv_keys:
                 if d.get(m) is not None:
                     _record(m, pid, float(d[m]))
+
+    # Created Sep is retired as a display metric: never rank it.
+    value_by_metric.pop("ngs_created_separation", None)
+
+    # Avg Sep Score over this range: percentile of the range-aggregated
+    # separation among same-position players whose range targets clear
+    # the (range-scaled) qualification gate. Recorded as a value so the
+    # rank/bounds passes below cover it like any other metric.
+    _sep_vals = value_by_metric.get("ngs_avg_separation") or {}
+    _tgt_vals = value_by_metric.get("total_targets") or {}
+    if _sep_vals:
+        _sep_gate = _policy.minimum("total_targets", 15)
+        _sep_pairs = [
+            (pid, v) for pid, v in _sep_vals.items()
+            if _tgt_vals.get(pid) is not None and _tgt_vals[pid] >= _sep_gate
+        ]
+        for _pid, _score in _sep_percentile_map(_sep_pairs).items():
+            _record("ngs_avg_sep_score", _pid, _score)
 
     # ── Rank the target player within each metric ────────────────────────────
     ranks: Dict[str, int] = {}

@@ -18796,7 +18796,7 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
     'yards_after_catch', 'yards_after_catch_per_reception', 'avg_depth_of_target',
     'contested_catch_rate', 'drop_rate', 'uncatchable_tgt_rate',
     'ngs_avg_separation', 'ngs_avg_cushion', 'ngs_avg_yac_above_expectation',
-    'ngs_created_separation', 'receiving_epa',
+    'ngs_avg_sep_score', 'receiving_epa',
     'receiving_success_rate', 'receiving_epa_per_target',
   ];
   const _posFallbackList = pos => pos === 'QB' ? qbMetrics : pos === 'RB' ? rbMetrics
@@ -18844,7 +18844,7 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
     drop_rate:'Drop Rate', uncatchable_tgt_rate:'Uncatchable Tgt %', slot_rate:'Slot Rate', wide_rate:'Wide Rate',
     inline_rate:'Inline Rate',     ngs_avg_separation:'Separation',
     ngs_avg_cushion:'Cushion', ngs_avg_yac_above_expectation:'YAC Over Exp',
-    ngs_created_separation:'Created Sep',
+    ngs_avg_sep_score:'Avg Sep Score',
     ngs_avg_time_to_throw:'Time to Throw', ngs_aggressiveness:'Aggressiveness',
     ngs_avg_completed_air_yards:'Completed Air Yds',
     ngs_avg_air_yards_to_sticks:'Air Yds to Sticks',
@@ -18941,7 +18941,7 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
 
       // NGS tracking metrics (yards)
       'ngs_avg_separation': 5, 'ngs_avg_cushion': 9, 'ngs_avg_yac_above_expectation': 4,
-      'ngs_created_separation': 3,
+      'ngs_avg_sep_score': 100,
       'ngs_avg_time_to_throw': 3.5, 'ngs_aggressiveness': 25,
       'ngs_avg_completed_air_yards': 12,
       'ngs_avg_air_yards_to_sticks': 4,
@@ -19404,7 +19404,6 @@ function _cmpAggregateWeeks(weeks, wkStart, wkEnd) {
     contested_target_rate: 'w_targets', screen_target_rate: 'w_targets',
     rec_broken_tackles_per_reception: 'w_receptions',
     rec_first_down_rate: 'w_targets', rush_first_down_rate: 'w_carries',
-    ngs_created_separation: 'w_targets',
     receiving_success_rate: 'w_targets', receiving_epa_per_target: 'w_targets',
     yards_after_catch_per_reception: 'w_receptions', ngs_avg_yac: 'w_receptions',
     ngs_avg_expected_yac: 'w_receptions', ngs_avg_yac_above_expectation: 'w_receptions',
