@@ -46370,7 +46370,14 @@ a, button, [role="button"], [role="tab"], summary, label,
 
 /* ── Front Office Report v2 (card summary + modal) ─────────────────────── */
 .for-card-summary { display: flex; flex-direction: column; gap: 12px; }
-.for-card-verdict { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+/* Masthead layout (L1): the stamp and headline share one row, with the
+   team/week line under the headline instead of a separate footer. */
+.for-card-verdict { display: flex; gap: 14px; align-items: center; }
+.for-card-sub { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+/* Long verdict labels wrap small inside a capped stamp (F3) so the
+   masthead row keeps a readable headline column. */
+.for-card-verdict .for-stamp-long { max-width: 118px; }
+.for-card-verdict .for-stamp-long span { font-size: 11px; letter-spacing: 0; line-height: 1.3; }
 .for-stamp {
   flex-shrink: 0; min-width: 64px; min-height: 64px; padding: 6px;
   border: 2.5px solid #334155; border-radius: var(--radius);
@@ -46379,19 +46386,24 @@ a, button, [role="button"], [role="tab"], summary, label,
 }
 .for-stamp span { font-weight: 900; font-size: 15px; letter-spacing: 0.5px; text-align: center; line-height: 1.15; }
 .for-stamp-sm { min-width: 58px; min-height: 58px; }
-.for-card-headline { font-size: 15px; font-weight: 800; line-height: 1.35; letter-spacing: -0.1px; color: var(--text); }
-.for-keys { margin: 0; padding: 0; list-style: none; }
+.for-card-headline { font-size: 16px; font-weight: 800; line-height: 1.3; letter-spacing: -0.1px; color: var(--text); }
+/* Key numbers as tiles in a 2-column grid; a lone or third tile spans. */
+.for-keys { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .for-keys li {
-  display: flex; justify-content: space-between; gap: 8px;
-  font-size: 13px; padding: 7px 0; border-bottom: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 3px;
+  background: var(--card-soft); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 9px 12px;
 }
-.for-keys li:last-child { border-bottom: none; }
-.for-key-k { color: var(--text-muted); }
-.for-key-v { font-weight: 700; text-align: right; color: var(--text); }
+.for-keys li:only-child, .for-keys li:last-child:nth-child(3) { grid-column: 1 / -1; }
+.for-key-k { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--text-muted); }
+.for-key-v { font-size: 13px; font-weight: 700; line-height: 1.35; color: var(--text); }
 .for-card-move {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
   background: var(--card-soft); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 10px 12px; font-size: 13px; line-height: 1.5; color: var(--text);
 }
+.for-move-txt { font-size: 14px; font-weight: 700; line-height: 1.35; }
+.for-move-arrow { font-size: 18px; font-weight: 800; color: var(--text); flex-shrink: 0; }
 .for-lbl {
   display: block; font-size: 11px; font-weight: 700; letter-spacing: 1px;
   text-transform: uppercase; color: var(--text-muted); margin-bottom: 4px;
@@ -46404,6 +46416,28 @@ a, button, [role="button"], [role="tab"], summary, label,
 }
 .for-view-full:hover { background: var(--accent-strong); }
 .for-card-foot { text-align: center; font-size: 11px; color: var(--text-muted); }
+
+/* Card entrance (L1): the stamp slams in, then the masthead text and the
+   sections fade up in sequence. Runs when the report HTML is inserted. */
+@keyframes forStampSlam {
+  0% { opacity: 0; transform: rotate(-20deg) scale(2); }
+  55% { opacity: 1; transform: rotate(-5deg) scale(0.93); }
+  100% { opacity: 1; transform: rotate(-6deg) scale(1); }
+}
+@keyframes forFadeUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+.for-card-verdict .for-stamp { animation: forStampSlam 0.5s cubic-bezier(0.2, 1.4, 0.4, 1) both; }
+.for-card-mast-main { animation: forFadeUp 0.5s ease-out 0.3s both; }
+.for-card-summary .for-card-inj { animation: forFadeUp 0.45s ease-out 0.15s both; }
+.for-card-summary .for-keys { animation: forFadeUp 0.45s ease-out 0.25s both; }
+.for-card-summary .for-card-move { animation: forFadeUp 0.45s ease-out 0.35s both; }
+@media (prefers-reduced-motion: reduce) {
+  .for-card-verdict .for-stamp, .for-card-mast-main,
+  .for-card-summary .for-card-inj, .for-card-summary .for-keys,
+  .for-card-summary .for-card-move { animation: forFadeUp 0.2s ease-out both; }
+}
 
 .for-modal-overlay {
   position: fixed; top: 0; left: 0; width: 100%; height: 100%;
@@ -46590,9 +46624,19 @@ a, button, [role="button"], [role="tab"], summary, label,
 .for-prow-sub { font-size: 13px; margin-top: 4px; line-height: 1.5; }
 .for-prow-side { flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
 .for-prow-btn { margin-top: 0; padding: 5px 10px; font-size: 12px; }
-.for-card-inj { display: flex; flex-direction: column; gap: 6px; }
-.for-card-inj ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-.for-card-inj li { font-size: 13px; }
+/* Injuries as one tight panel: label + more-count on the head row, the
+   action (Hold) pinned to the right edge of each row. */
+.for-card-inj {
+  background: var(--card-soft); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 8px 12px;
+}
+.for-card-inj-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 2px 0 4px; font-size: 12px; }
+.for-card-inj-head .for-lbl { margin-bottom: 0; }
+.for-card-inj ul { list-style: none; margin: 0; padding: 0; }
+.for-card-inj-row { display: flex; align-items: center; gap: 7px; font-size: 13px; padding: 5px 0; border-bottom: 1px solid var(--grid); }
+.for-card-inj-row:last-child { border-bottom: none; }
+.for-card-inj-row .for-muted { font-size: 12px; }
+.for-inj-act { margin-left: auto; color: var(--text-muted); font-size: 12px; flex-shrink: 0; }
 .for-opp-inj { font-size: 13px; margin-top: 10px; }
 .for-role { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: var(--radius-sm); }
 .for-role-starter { background: #1a7f4b18; color: #1a7f4b; }
