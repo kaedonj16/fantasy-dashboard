@@ -1,0 +1,1684 @@
+{
+  "_meta": {
+    "description": "Frozen Stage 1 core eval set: 20 questions with golden evidence packs for the BR Fantasy assistant (workshop section 5).",
+    "scenario": "Kaedon's league Blackedraw, her team Caleb's Casting Couch, Week 7 of the 2026 season.",
+    "packs": "Each evidence_pack mirrors, field for field, the dict the matching builder in dashboard_services/assistant/evidence.py returns. Values inside a pack are the only numbers an answer may cite.",
+    "recapture": "These packs are frozen fixtures. Before any launch decision, recapture them from the live tools with: python3 scripts/run_assistant_eval.py --capture (writes assistant_eval/captured_questions.json; it never overwrites this file). A launch call made on stale fixtures is not a launch call.",
+    "pass_bar": "Zero invented numbers across all 20; both traps handled; at least 18 of 20 verdicts match the reference (workshop section 5). The blind head-to-head preference bar is human-scored and is not part of the automated runner."
+  },
+  "questions": [
+    {
+      "id": "ss1",
+      "type": "start_sit",
+      "question": "Start Rome Odunze or Jordan Addison at flex in Week 7?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "start_sit",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "players": [
+          {
+            "player_id": "rome-odunze",
+            "name": "Rome Odunze",
+            "team": "CHI",
+            "position": "WR",
+            "injury_status": null,
+            "value": 4850.0,
+            "role": {
+              "snap_share": 0.82,
+              "target_share": 0.24,
+              "targets_per_game": 7.2,
+              "touches_per_game": 7.4,
+              "opportunity_share": 0.21,
+              "expected_ppr_per_game": 12.6,
+              "ppg": 12.9,
+              "games": 6
+            },
+            "projection": 13.8,
+            "start_score": 84.6
+          },
+          {
+            "player_id": "jordan-addison",
+            "name": "Jordan Addison",
+            "team": "MIN",
+            "position": "WR",
+            "injury_status": null,
+            "value": 3920.0,
+            "role": {
+              "snap_share": 0.78,
+              "target_share": 0.19,
+              "targets_per_game": 5.8,
+              "touches_per_game": 6.0,
+              "opportunity_share": 0.16,
+              "expected_ppr_per_game": 10.8,
+              "ppg": 10.4,
+              "games": 5
+            },
+            "projection": 11.9,
+            "start_score": 71.2
+          }
+        ],
+        "pick_player_id": "rome-odunze",
+        "margin": {
+          "gap": 13.4,
+          "basis": "start_score",
+          "thin": false
+        }
+      },
+      "reference": {
+        "verdict_kind": "start_pick",
+        "pick": "Rome Odunze",
+        "key_numbers": [
+          13.8,
+          11.9
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Odunze"
+        ]
+      }
+    },
+    {
+      "id": "ss2",
+      "type": "start_sit",
+      "question": "Should I start Woody Marks or Tyrone Tracy Jr. this week?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "start_sit",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "players": [
+          {
+            "player_id": "woody-marks",
+            "name": "Woody Marks",
+            "team": "HOU",
+            "position": "RB",
+            "injury_status": null,
+            "value": 2650.0,
+            "role": {
+              "snap_share": 0.54,
+              "target_share": 0.09,
+              "targets_per_game": 2.6,
+              "touches_per_game": 11.8,
+              "opportunity_share": 0.18,
+              "expected_ppr_per_game": 11.1,
+              "ppg": 10.7,
+              "games": 6
+            },
+            "projection": 12.4,
+            "start_score": 74.8
+          },
+          {
+            "player_id": "tyrone-tracy",
+            "name": "Tyrone Tracy Jr.",
+            "team": "NYG",
+            "position": "RB",
+            "injury_status": null,
+            "value": 1980.0,
+            "role": {
+              "snap_share": 0.47,
+              "target_share": 0.07,
+              "targets_per_game": 2.1,
+              "touches_per_game": 9.4,
+              "opportunity_share": 0.14,
+              "expected_ppr_per_game": 9.3,
+              "ppg": 8.9,
+              "games": 6
+            },
+            "projection": 9.6,
+            "start_score": 63.1
+          }
+        ],
+        "pick_player_id": "woody-marks",
+        "margin": {
+          "gap": 11.7,
+          "basis": "start_score",
+          "thin": false
+        }
+      },
+      "reference": {
+        "verdict_kind": "start_pick",
+        "pick": "Woody Marks",
+        "key_numbers": [
+          12.4,
+          9.6
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Woody Marks"
+        ]
+      }
+    },
+    {
+      "id": "ss3",
+      "type": "start_sit",
+      "question": "Start Brian Thomas Jr. or Zay Flowers in Week 7?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "start_sit",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "players": [
+          {
+            "player_id": "brian-thomas-jr",
+            "name": "Brian Thomas Jr.",
+            "team": "JAX",
+            "position": "WR",
+            "injury_status": null,
+            "value": 5120.0,
+            "role": {
+              "snap_share": 0.86,
+              "target_share": 0.23,
+              "targets_per_game": 7.6,
+              "touches_per_game": 7.8,
+              "opportunity_share": 0.2,
+              "expected_ppr_per_game": 12.1,
+              "ppg": 11.2,
+              "games": 6
+            },
+            "projection": 12.1,
+            "start_score": 73.5
+          },
+          {
+            "player_id": "zay-flowers",
+            "name": "Zay Flowers",
+            "team": "BAL",
+            "position": "WR",
+            "injury_status": null,
+            "value": 4680.0,
+            "role": {
+              "snap_share": 0.84,
+              "target_share": 0.22,
+              "targets_per_game": 7.1,
+              "touches_per_game": 7.3,
+              "opportunity_share": 0.19,
+              "expected_ppr_per_game": 11.6,
+              "ppg": 10.9,
+              "games": 6
+            },
+            "projection": 11.7,
+            "start_score": 72.1
+          }
+        ],
+        "pick_player_id": "brian-thomas-jr",
+        "margin": {
+          "gap": 1.4,
+          "basis": "start_score",
+          "thin": true
+        }
+      },
+      "reference": {
+        "verdict_kind": "start_pick",
+        "pick": "Brian Thomas Jr.",
+        "key_numbers": [
+          12.1,
+          11.7
+        ],
+        "close_call": true
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Brian Thomas Jr."
+        ]
+      }
+    },
+    {
+      "id": "ss4",
+      "type": "start_sit",
+      "question": "Should I start Robinson at flex this week?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "start_sit",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "players": [
+          {
+            "player_id": "bijan-robinson",
+            "name": "Bijan Robinson",
+            "team": "ATL",
+            "position": "RB",
+            "injury_status": null,
+            "value": 8900.0,
+            "role": {
+              "snap_share": 0.81,
+              "target_share": 0.14,
+              "targets_per_game": 4.2,
+              "touches_per_game": 19.4,
+              "opportunity_share": 0.31,
+              "expected_ppr_per_game": 17.2,
+              "ppg": 17.9,
+              "games": 6
+            },
+            "projection": 18.6,
+            "start_score": 92.3
+          },
+          {
+            "player_id": "brian-robinson-jr",
+            "name": "Brian Robinson Jr.",
+            "team": "SF",
+            "position": "RB",
+            "injury_status": null,
+            "value": 1740.0,
+            "role": {
+              "snap_share": 0.38,
+              "target_share": 0.05,
+              "targets_per_game": 1.4,
+              "touches_per_game": 8.1,
+              "opportunity_share": 0.11,
+              "expected_ppr_per_game": 7.8,
+              "ppg": 7.4,
+              "games": 6
+            },
+            "projection": 8.2,
+            "start_score": 58.6
+          }
+        ],
+        "pick_player_id": "bijan-robinson",
+        "margin": {
+          "gap": 33.7,
+          "basis": "start_score",
+          "thin": false
+        }
+      },
+      "reference": {
+        "verdict_kind": "clarify_or_pick",
+        "pick": "Bijan Robinson",
+        "key_numbers": [
+          18.6
+        ],
+        "close_call": false
+      },
+      "trap": {
+        "kind": "namesake",
+        "note": "The pack holds two Robinsons: Bijan Robinson (on Caleb's Casting Couch roster, the start/sit engine's pick) and Brian Robinson Jr. A correct answer either clarifies which Robinson, or picks Bijan Robinson stating the roster assumption."
+      },
+      "expect": {
+        "no_data": false,
+        "must_mention": [],
+        "accept": [
+          "clarify",
+          "pick:Bijan Robinson"
+        ]
+      }
+    },
+    {
+      "id": "te1",
+      "type": "trade_eval",
+      "question": "I was offered Rome Odunze for my Jordan Addison. Should I accept?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "trade_eval",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "give": {
+          "players": [
+            {
+              "player_id": "jordan-addison",
+              "name": "Jordan Addison",
+              "team": "MIN",
+              "position": "WR",
+              "injury_status": null,
+              "value": 3920.0
+            }
+          ],
+          "total_value": 3920.0
+        },
+        "receive": {
+          "players": [
+            {
+              "player_id": "rome-odunze",
+              "name": "Rome Odunze",
+              "team": "CHI",
+              "position": "WR",
+              "injury_status": null,
+              "value": 4850.0
+            }
+          ],
+          "total_value": 4850.0
+        },
+        "fairness_gap": 930.0,
+        "unpriced": [],
+        "margin": {
+          "thin": false
+        }
+      },
+      "reference": {
+        "verdict_kind": "trade_verdict",
+        "pick": "ACCEPT",
+        "key_numbers": [
+          4850,
+          3920,
+          930
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Odunze"
+        ]
+      }
+    },
+    {
+      "id": "te2",
+      "type": "trade_eval",
+      "question": "Is this fair: I give Brian Thomas Jr. and Woody Marks, I get Zay Flowers?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "trade_eval",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "give": {
+          "players": [
+            {
+              "player_id": "brian-thomas-jr",
+              "name": "Brian Thomas Jr.",
+              "team": "JAX",
+              "position": "WR",
+              "injury_status": null,
+              "value": 5120.0
+            },
+            {
+              "player_id": "woody-marks",
+              "name": "Woody Marks",
+              "team": "HOU",
+              "position": "RB",
+              "injury_status": null,
+              "value": 2650.0
+            }
+          ],
+          "total_value": 7770.0
+        },
+        "receive": {
+          "players": [
+            {
+              "player_id": "zay-flowers",
+              "name": "Zay Flowers",
+              "team": "BAL",
+              "position": "WR",
+              "injury_status": null,
+              "value": 4680.0
+            }
+          ],
+          "total_value": 4680.0
+        },
+        "fairness_gap": -3090.0,
+        "unpriced": [],
+        "margin": {
+          "thin": false
+        }
+      },
+      "reference": {
+        "verdict_kind": "trade_verdict",
+        "pick": "DECLINE",
+        "key_numbers": [
+          7770,
+          4680,
+          3090
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Flowers"
+        ]
+      }
+    },
+    {
+      "id": "te3",
+      "type": "trade_eval",
+      "question": "My Zay Flowers for his Brian Thomas Jr. and a 2028 4th. Fair deal?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "trade_eval",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "give": {
+          "players": [
+            {
+              "player_id": "zay-flowers",
+              "name": "Zay Flowers",
+              "team": "BAL",
+              "position": "WR",
+              "injury_status": null,
+              "value": 4680.0
+            }
+          ],
+          "total_value": 4680.0
+        },
+        "receive": {
+          "players": [
+            {
+              "player_id": "brian-thomas-jr",
+              "name": "Brian Thomas Jr.",
+              "team": "JAX",
+              "position": "WR",
+              "injury_status": null,
+              "value": 5120.0
+            }
+          ],
+          "total_value": 5120.0
+        },
+        "fairness_gap": 440.0,
+        "unpriced": [
+          "2028 4th"
+        ],
+        "picks": [
+          {
+            "pick": "2028 4th",
+            "value": null,
+            "priced": false
+          }
+        ],
+        "margin": {
+          "thin": true
+        }
+      },
+      "reference": {
+        "verdict_kind": "trade_verdict",
+        "pick": "FAIR",
+        "key_numbers": [
+          5120,
+          4680,
+          440
+        ],
+        "close_call": true
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Brian Thomas Jr."
+        ]
+      }
+    },
+    {
+      "id": "bsh1",
+      "type": "buy_sell_hold",
+      "question": "Buy, sell, or hold on Rome Odunze?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "buy_sell_hold",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026,
+          "value_history_points": 12
+        },
+        "player": {
+          "player_id": "rome-odunze",
+          "name": "Rome Odunze",
+          "team": "CHI",
+          "position": "WR",
+          "injury_status": null,
+          "value": 4850.0
+        },
+        "value_trend_30d": {
+          "start": 4100.0,
+          "current": 4850.0,
+          "delta_pct": 18.3
+        },
+        "role": {
+          "snap_share": 0.82,
+          "target_share": 0.24,
+          "targets_per_game": 7.2,
+          "touches_per_game": 7.4,
+          "opportunity_share": 0.21,
+          "expected_ppr_per_game": 12.6,
+          "ppg": 12.9,
+          "games": 6
+        },
+        "breakout_board": {
+          "member": true
+        },
+        "signal": "buy",
+        "margin": {
+          "thin": false
+        }
+      },
+      "reference": {
+        "verdict_kind": "buy_sell_hold_call",
+        "pick": "BUY",
+        "key_numbers": [
+          18.3,
+          4850
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Odunze"
+        ]
+      }
+    },
+    {
+      "id": "bsh2",
+      "type": "buy_sell_hold",
+      "question": "Should I buy, sell, or hold Darnell Mooney?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "buy_sell_hold",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026,
+          "value_history_points": 12
+        },
+        "player": {
+          "player_id": "darnell-mooney",
+          "name": "Darnell Mooney",
+          "team": "ATL",
+          "position": "WR",
+          "injury_status": null,
+          "value": 2140.0
+        },
+        "value_trend_30d": {
+          "start": 2680.0,
+          "current": 2140.0,
+          "delta_pct": -20.1
+        },
+        "role": {
+          "snap_share": 0.72,
+          "target_share": 0.17,
+          "targets_per_game": 5.4,
+          "touches_per_game": 5.6,
+          "opportunity_share": 0.13,
+          "expected_ppr_per_game": 9.1,
+          "ppg": 8.6,
+          "games": 6
+        },
+        "breakout_board": {
+          "member": false
+        },
+        "signal": "sell",
+        "margin": {
+          "thin": false
+        }
+      },
+      "reference": {
+        "verdict_kind": "buy_sell_hold_call",
+        "pick": "SELL",
+        "key_numbers": [
+          20.1,
+          2140
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Mooney"
+        ]
+      }
+    },
+    {
+      "id": "bsh3",
+      "type": "buy_sell_hold",
+      "question": "Buy, sell, or hold on Woody Marks?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "buy_sell_hold",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026,
+          "value_history_points": 12
+        },
+        "player": {
+          "player_id": "woody-marks",
+          "name": "Woody Marks",
+          "team": "HOU",
+          "position": "RB",
+          "injury_status": null,
+          "value": 2650.0
+        },
+        "value_trend_30d": {
+          "start": 2570.0,
+          "current": 2650.0,
+          "delta_pct": 3.1
+        },
+        "role": {
+          "snap_share": 0.54,
+          "target_share": 0.09,
+          "targets_per_game": 2.6,
+          "touches_per_game": 11.8,
+          "opportunity_share": 0.18,
+          "expected_ppr_per_game": 11.1,
+          "ppg": 10.7,
+          "games": 6
+        },
+        "breakout_board": {
+          "member": false
+        },
+        "signal": "hold",
+        "margin": {
+          "thin": true
+        }
+      },
+      "reference": {
+        "verdict_kind": "buy_sell_hold_call",
+        "pick": "HOLD",
+        "key_numbers": [
+          3.1,
+          2650
+        ],
+        "close_call": true
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Marks"
+        ]
+      }
+    },
+    {
+      "id": "pl1",
+      "type": "player",
+      "question": "What is going on with Rome Odunze?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "player",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "player": {
+          "player_id": "rome-odunze",
+          "name": "Rome Odunze",
+          "team": "CHI",
+          "position": "WR",
+          "injury_status": null,
+          "value": 4850.0
+        },
+        "role": {
+          "snap_share": 0.82,
+          "target_share": 0.24,
+          "targets_per_game": 7.2,
+          "touches_per_game": 7.4,
+          "opportunity_share": 0.21,
+          "expected_ppr_per_game": 12.6,
+          "ppg": 12.9,
+          "games": 6
+        },
+        "metric_ranks": {
+          "target_share": 12,
+          "targets_per_game": 15,
+          "ppg": 19
+        },
+        "news": [
+          {
+            "title": "Odunze draws praise for route running in practice"
+          }
+        ]
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": "Rome Odunze",
+        "key_numbers": [
+          0.24,
+          12.9
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Odunze"
+        ]
+      }
+    },
+    {
+      "id": "pl2",
+      "type": "player",
+      "question": "How is Brian Thomas Jr. playing this season?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "player",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "player": {
+          "player_id": "brian-thomas-jr",
+          "name": "Brian Thomas Jr.",
+          "team": "JAX",
+          "position": "WR",
+          "injury_status": null,
+          "value": 5120.0
+        },
+        "role": {
+          "snap_share": 0.86,
+          "target_share": 0.23,
+          "targets_per_game": 7.6,
+          "touches_per_game": 7.8,
+          "opportunity_share": 0.2,
+          "expected_ppr_per_game": 12.1,
+          "ppg": 11.2,
+          "games": 6
+        },
+        "metric_ranks": {
+          "target_share": 14,
+          "targets_per_game": 11,
+          "ppg": 24
+        },
+        "news": [
+          {
+            "title": "Thomas limited in practice with an ankle issue"
+          }
+        ]
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": "Brian Thomas Jr.",
+        "key_numbers": [
+          0.23,
+          11.2
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Brian Thomas Jr."
+        ]
+      }
+    },
+    {
+      "id": "pl3",
+      "type": "player",
+      "question": "What is Woody Marks' role right now?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "player",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "player": {
+          "player_id": "woody-marks",
+          "name": "Woody Marks",
+          "team": "HOU",
+          "position": "RB",
+          "injury_status": null,
+          "value": 2650.0
+        },
+        "role": {
+          "snap_share": 0.54,
+          "target_share": 0.09,
+          "targets_per_game": 2.6,
+          "touches_per_game": 11.8,
+          "opportunity_share": 0.18,
+          "expected_ppr_per_game": 11.1,
+          "ppg": 10.7,
+          "games": 6
+        },
+        "metric_ranks": {
+          "touches_per_game": 21,
+          "opportunity_share": 26,
+          "ppg": 31
+        },
+        "news": [
+          {
+            "title": "Marks takes first-team reps in practice"
+          }
+        ]
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": "Woody Marks",
+        "key_numbers": [
+          11.8,
+          0.54
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Marks"
+        ]
+      }
+    },
+    {
+      "id": "m1",
+      "type": "metric",
+      "question": "What is target share and who leads the league in it?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "metric",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "metric_key": "target_share",
+        "definition": "Share of a team's pass attempts that are thrown to the player.",
+        "label": "Target Share",
+        "positions": [
+          "WR",
+          "TE",
+          "RB"
+        ],
+        "leaderboard_top5": [
+          {
+            "player_id": "jamarr-chase",
+            "name": "Ja'Marr Chase",
+            "team": "CIN",
+            "position": "WR",
+            "value": 0.31,
+            "on_my_roster": false
+          },
+          {
+            "player_id": "malik-nabers",
+            "name": "Malik Nabers",
+            "team": "NYG",
+            "position": "WR",
+            "value": 0.29,
+            "on_my_roster": false
+          },
+          {
+            "player_id": "puka-nacua",
+            "name": "Puka Nacua",
+            "team": "LAR",
+            "position": "WR",
+            "value": 0.28,
+            "on_my_roster": false
+          },
+          {
+            "player_id": "justin-jefferson",
+            "name": "Justin Jefferson",
+            "team": "MIN",
+            "position": "WR",
+            "value": 0.27,
+            "on_my_roster": false
+          },
+          {
+            "player_id": "rome-odunze",
+            "name": "Rome Odunze",
+            "team": "CHI",
+            "position": "WR",
+            "value": 0.24,
+            "on_my_roster": true
+          }
+        ]
+      },
+      "reference": {
+        "verdict_kind": "leader",
+        "pick": "Ja'Marr Chase",
+        "key_numbers": [
+          0.31,
+          0.24
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Chase"
+        ]
+      }
+    },
+    {
+      "id": "m2",
+      "type": "metric",
+      "question": "Who leads the league in snap share among running backs?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "metric",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "metric_key": "snap_share",
+        "definition": "Share of the team's offensive snaps that the player is on the field for.",
+        "label": "Snap Share",
+        "positions": [
+          "RB"
+        ],
+        "leaderboard_top5": [
+          {
+            "player_id": "bijan-robinson",
+            "name": "Bijan Robinson",
+            "team": "ATL",
+            "position": "RB",
+            "value": 0.81,
+            "on_my_roster": true
+          },
+          {
+            "player_id": "jahmyr-gibbs",
+            "name": "Jahmyr Gibbs",
+            "team": "DET",
+            "position": "RB",
+            "value": 0.78,
+            "on_my_roster": false
+          },
+          {
+            "player_id": "christian-mccaffrey",
+            "name": "Christian McCaffrey",
+            "team": "SF",
+            "position": "RB",
+            "value": 0.77,
+            "on_my_roster": false
+          },
+          {
+            "player_id": "breece-hall",
+            "name": "Breece Hall",
+            "team": "NYJ",
+            "position": "RB",
+            "value": 0.74,
+            "on_my_roster": false
+          },
+          {
+            "player_id": "kyren-williams",
+            "name": "Kyren Williams",
+            "team": "LAR",
+            "position": "RB",
+            "value": 0.73,
+            "on_my_roster": false
+          }
+        ]
+      },
+      "reference": {
+        "verdict_kind": "leader",
+        "pick": "Bijan Robinson",
+        "key_numbers": [
+          0.81
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Bijan Robinson"
+        ]
+      }
+    },
+    {
+      "id": "m3",
+      "type": "metric",
+      "question": "Who leads the league in yards per route run this season?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "metric",
+        "available": false,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "missing": "routes not tracked",
+        "nearest": [
+          "target_share",
+          "yards_per_target"
+        ],
+        "metric_key": "yards_per_route_run"
+      },
+      "reference": {
+        "verdict_kind": "no_data",
+        "pick": null,
+        "key_numbers": [],
+        "close_call": false
+      },
+      "trap": {
+        "kind": "missing_stat",
+        "note": "The Sleeper/nflverse feed carries no route data, so yards per route run does not exist on the site. A correct answer states the data is unavailable, invents no route number, and offers the nearest tracked metric."
+      },
+      "expect": {
+        "no_data": true,
+        "must_mention": [
+          "routes not tracked"
+        ]
+      }
+    },
+    {
+      "id": "w1",
+      "type": "waivers",
+      "question": "Who should I add from waivers this week?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "waivers",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "my_worst_by_position": {
+          "QB": {
+            "player_id": "caleb-williams",
+            "name": "Caleb Williams",
+            "team": "CHI",
+            "position": "QB",
+            "injury_status": null,
+            "value": 3410.0
+          },
+          "RB": {
+            "player_id": "brian-robinson-jr",
+            "name": "Brian Robinson Jr.",
+            "team": "SF",
+            "position": "RB",
+            "injury_status": null,
+            "value": 1740.0
+          },
+          "WR": {
+            "player_id": "darnell-mooney",
+            "name": "Darnell Mooney",
+            "team": "ATL",
+            "position": "WR",
+            "injury_status": null,
+            "value": 2140.0
+          },
+          "TE": {
+            "player_id": "cole-kmet",
+            "name": "Cole Kmet",
+            "team": "CHI",
+            "position": "TE",
+            "injury_status": null,
+            "value": 1210.0
+          }
+        },
+        "roster_holes": [],
+        "do_not_drop_ids": [
+          "bijan-robinson",
+          "rome-odunze",
+          "brian-thomas-jr"
+        ],
+        "candidates": [
+          {
+            "player_id": "rashid-shaheed",
+            "name": "Rashid Shaheed",
+            "team": "SEA",
+            "position": "WR",
+            "injury_status": null,
+            "value": 2380.0,
+            "passes_gate": true,
+            "gate_receipt": "candidate value 2380.0 vs your worst WR Darnell Mooney value 2140.0"
+          },
+          {
+            "player_id": "kyle-monangai",
+            "name": "Kyle Monangai",
+            "team": "CHI",
+            "position": "RB",
+            "injury_status": null,
+            "value": 1890.0,
+            "passes_gate": true,
+            "gate_receipt": "candidate value 1890.0 vs your worst RB Brian Robinson Jr. value 1740.0"
+          },
+          {
+            "player_id": "jatavion-sanders",
+            "name": "Ja'Tavion Sanders",
+            "team": "CAR",
+            "position": "TE",
+            "injury_status": null,
+            "value": 1560.0,
+            "passes_gate": true,
+            "gate_receipt": "candidate value 1560.0 vs your worst TE Cole Kmet value 1210.0"
+          }
+        ],
+        "gate_passing_count": 3,
+        "cleared_drops": [
+          {
+            "player_id": "darnell-mooney",
+            "name": "Darnell Mooney",
+            "team": "ATL",
+            "position": "WR",
+            "injury_status": null,
+            "value": 2140.0
+          },
+          {
+            "player_id": "brian-robinson-jr",
+            "name": "Brian Robinson Jr.",
+            "team": "SF",
+            "position": "RB",
+            "injury_status": null,
+            "value": 1740.0
+          },
+          {
+            "player_id": "cole-kmet",
+            "name": "Cole Kmet",
+            "team": "CHI",
+            "position": "TE",
+            "injury_status": null,
+            "value": 1210.0
+          }
+        ]
+      },
+      "reference": {
+        "verdict_kind": "add",
+        "pick": "Rashid Shaheed",
+        "key_numbers": [
+          2380,
+          2140
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Shaheed"
+        ]
+      }
+    },
+    {
+      "id": "w2",
+      "type": "waivers",
+      "question": "Is there a tight end worth adding, and who can I drop?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "waivers",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "my_worst_by_position": {
+          "QB": {
+            "player_id": "caleb-williams",
+            "name": "Caleb Williams",
+            "team": "CHI",
+            "position": "QB",
+            "injury_status": null,
+            "value": 3410.0
+          },
+          "RB": {
+            "player_id": "brian-robinson-jr",
+            "name": "Brian Robinson Jr.",
+            "team": "SF",
+            "position": "RB",
+            "injury_status": null,
+            "value": 1740.0
+          },
+          "WR": {
+            "player_id": "darnell-mooney",
+            "name": "Darnell Mooney",
+            "team": "ATL",
+            "position": "WR",
+            "injury_status": null,
+            "value": 2140.0
+          },
+          "TE": {
+            "player_id": "cole-kmet",
+            "name": "Cole Kmet",
+            "team": "CHI",
+            "position": "TE",
+            "injury_status": null,
+            "value": 1210.0
+          }
+        },
+        "roster_holes": [],
+        "do_not_drop_ids": [
+          "bijan-robinson",
+          "rome-odunze",
+          "brian-thomas-jr"
+        ],
+        "candidates": [
+          {
+            "player_id": "jatavion-sanders",
+            "name": "Ja'Tavion Sanders",
+            "team": "CAR",
+            "position": "TE",
+            "injury_status": null,
+            "value": 1560.0,
+            "passes_gate": true,
+            "gate_receipt": "candidate value 1560.0 vs your worst TE Cole Kmet value 1210.0"
+          }
+        ],
+        "gate_passing_count": 1,
+        "cleared_drops": [
+          {
+            "player_id": "darnell-mooney",
+            "name": "Darnell Mooney",
+            "team": "ATL",
+            "position": "WR",
+            "injury_status": null,
+            "value": 2140.0
+          },
+          {
+            "player_id": "brian-robinson-jr",
+            "name": "Brian Robinson Jr.",
+            "team": "SF",
+            "position": "RB",
+            "injury_status": null,
+            "value": 1740.0
+          },
+          {
+            "player_id": "cole-kmet",
+            "name": "Cole Kmet",
+            "team": "CHI",
+            "position": "TE",
+            "injury_status": null,
+            "value": 1210.0
+          }
+        ]
+      },
+      "reference": {
+        "verdict_kind": "add",
+        "pick": "Ja'Tavion Sanders",
+        "key_numbers": [
+          1560,
+          1210
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Sanders"
+        ]
+      }
+    },
+    {
+      "id": "tw1",
+      "type": "this_week",
+      "question": "What should I do with my team this week?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "this_week",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "actions": [
+          {
+            "tag": "lineup",
+            "headline": "Start Rome Odunze at flex over Jordan Addison",
+            "detail": "Odunze has the higher Week 7 projection of the two.",
+            "key_number": 13.8,
+            "act_link": "/waivers?tab=startsit"
+          },
+          {
+            "tag": "waiver",
+            "headline": "Add Rashid Shaheed from waivers",
+            "detail": "Shaheed clears your positional gate at wide receiver.",
+            "key_number": 2380.0,
+            "act_link": "/waivers"
+          },
+          {
+            "tag": "injury",
+            "headline": "Monitor Brian Thomas Jr. practice reports",
+            "detail": "Thomas was limited in practice this week.",
+            "key_number": null,
+            "act_link": "/players"
+          }
+        ]
+      },
+      "reference": {
+        "verdict_kind": "digest",
+        "pick": "Start Rome Odunze at flex",
+        "key_numbers": [
+          13.8,
+          2380
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Odunze"
+        ]
+      }
+    },
+    {
+      "id": "tw2",
+      "type": "this_week",
+      "question": "Anything I need to fix with my lineup before Sunday?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "this_week",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "actions": [
+          {
+            "tag": "bye",
+            "headline": "Jordan Addison is on bye this week",
+            "detail": "Addison does not play in Week 7, so he cannot be started.",
+            "key_number": 7,
+            "act_link": "/waivers?tab=startsit"
+          },
+          {
+            "tag": "lineup",
+            "headline": "Woody Marks is your best healthy flex option",
+            "detail": "Marks leads your bench options in Week 7 projection.",
+            "key_number": 12.4,
+            "act_link": "/waivers?tab=startsit"
+          },
+          {
+            "tag": "waiver",
+            "headline": "Ja'Tavion Sanders adds tight end depth",
+            "detail": "Sanders clears your positional gate at tight end.",
+            "key_number": 1560.0,
+            "act_link": "/waivers"
+          }
+        ]
+      },
+      "reference": {
+        "verdict_kind": "digest",
+        "pick": "Start Woody Marks at flex",
+        "key_numbers": [
+          12.4,
+          1560
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Marks"
+        ]
+      }
+    }
+  ]
+}
