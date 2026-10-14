@@ -21649,7 +21649,7 @@ async function tmLoadTrades(rosterId) {
       `<span class="tm3-asset-name player-clickable" data-player-id="${esc(p.player_id)}" data-player-name="${esc(p.name)}">${esc(p.name)}</span>` +
       (p.value ? `<span class="tm3-asset-val">${fmtV(p.value)}</span>` : '') + '</div>';
     const assetPick = (p, sign) => {
-      const via = p.owner_name ? ` <span class="tm3-pick-via">via ${esc(p.owner_name)}</span>` : '';
+      const via = p.owner_name ? ` <span class="tm3-pick-via">· via ${esc(p.owner_name)}</span>` : '';
       const became = p.became && p.became.name ? `<span class="tm3-pick-became">became ${esc(p.became.name)}</span>` : '';
       return `<div class="tm3-asset tm3-asset-pick"><span class="tm3-sign">${sign}</span><span class="tm3-pick-chip">${esc(p.season)} R${esc(p.round)}${via}</span>${became}</div>`;
     };
@@ -22776,7 +22776,7 @@ function renderTeamDetails(data) {
       data.picks.forEach(pk => { (byYear[pk.year] = byYear[pk.year] || []).push(pk); });
       body = `<div class="tm2-note">${data.picks.length} future picks owned.</div>` + Object.keys(byYear).sort().map(y => {
         const chips = byYear[y].slice().sort((a, b) => a.round - b.round).map(pk =>
-          `<span class="tm2-pick-chip">R${pk.round}${pk.via ? ` <span class="tm2-pick-via">via ${_tmEsc2(pk.via)}</span>` : ''}</span>`).join('');
+          `<span class="tm2-pick-chip">R${pk.round}${pk.via ? ` <span class="tm2-pick-via">· via ${_tmEsc2(pk.via)}</span>` : ''}</span>`).join('');
         return `<div class="tm2-pick-row"><span class="tm2-pick-year">${y}</span><span class="tm2-pick-chips">${chips}</span></div>`;
       }).join('');
     } else if (data.draft_capital_available === false && data.draft_capital_note) {
