@@ -484,7 +484,14 @@
     var _drawerDataEl = null;
     function _drawerPayload() {
         // Re-parse when soft-nav swaps in a new payload element (league switch).
+        // Dynasty leagues also ship a This Season (redraft) payload; the
+        // inline grading-mode toggle records the active mode on
+        // window.__teamsValueMode, and the payload follows it.
         var el = document.getElementById('teamsDrawerData');
+        if (window.__teamsValueMode === 'redraft') {
+            var alt = document.getElementById('teamsDrawerDataRedraft');
+            if (alt) el = alt;
+        }
         if (el && el !== _drawerDataEl) {
             _drawerDataEl = el;
             try {

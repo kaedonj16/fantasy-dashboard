@@ -301,7 +301,11 @@ def build_model_value_lookup(
     return out
 
 
-def league_format_value_lookup(ctx: dict, _cache: dict | None = None) -> dict[str, dict]:
+def league_format_value_lookup(
+    ctx: dict,
+    _cache: dict | None = None,
+    force_scoring_type: str | None = None,
+) -> dict[str, dict]:
     """pid → value row with ``value`` rewritten for this league's type.
 
     Numbers match the player-modal hero: Superflex vs 1QB, redraft vs dynasty,
@@ -314,6 +318,12 @@ def league_format_value_lookup(ctx: dict, _cache: dict | None = None) -> dict[st
     output depends only on league type settings, not the viewer, so N leagues
     with the same settings share one computation instead of re-walking the
     entire value table per league.
+
+    ``force_scoring_type`` ("dynasty" / "redraft") prices the table as the
+    other format without changing the league: the Teams page Dynasty /
+    This Season toggle uses it to grade a dynasty league's rosters on
+    redraft values. The SF, scoring-format, and TE-premium axes still come
+    from the league itself.
     """
     from utils.lineup_slots import is_superflex_lineup
     from utils.trade_value import player_trade_value
@@ -331,8 +341,12 @@ def league_format_value_lookup(ctx: dict, _cache: dict | None = None) -> dict[st
         or []
     )
     is_sf = is_superflex_lineup(roster_positions)
-    is_redraft = ctx_scoring_type(ctx) == "redraft"
-    scoring = "redraft" if is_redraft else "dynasty"
+    forced = str(force_scoring_type or "").strip().lower()
+    if forced in ("dynasty", "redraft"):
+        scoring = forced
+    else:
+        scoring = ctx_scoring_type(ctx)
+    is_redraft = scoring == "redraft"
     settings = (
         ctx.get("scoring_settings")
         or (ctx.get("league") or {}).get("scoring_settings")

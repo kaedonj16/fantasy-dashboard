@@ -48637,6 +48637,79 @@ em.gneg { background: var(--loss); }
     color: var(--text);
     box-shadow: 0 1px 3px rgba(0,0,0,.12);
 }
+/* Dynasty / This Season grading toggle (Teams page topbar, dynasty leagues) */
+.teams-mode-toggle {
+    position: relative;
+    display: inline-flex;
+    background: var(--accent-soft);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 3px;
+    gap: 2px;
+    flex-shrink: 0;
+}
+/* Sliding pill behind the active label (positioned by the inline script) */
+.teams-mode-thumb {
+    position: absolute;
+    top: 3px;
+    left: 0;
+    height: calc(100% - 6px);
+    background: var(--card);
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.12);
+    transition: transform .28s cubic-bezier(.4, 0, .2, 1), width .28s cubic-bezier(.4, 0, .2, 1);
+    pointer-events: none;
+}
+.teams-mode-toggle button {
+    position: relative;
+    z-index: 1;
+    border: none;
+    background: transparent;
+    padding: 6px 16px;
+    border-radius: 8px;
+    font-weight: 700;
+    font-size: 12px;
+    letter-spacing: .04em;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-family: inherit;
+    transition: color .2s ease;
+}
+.teams-mode-toggle button.on {
+    background: var(--card);
+    color: var(--text);
+    box-shadow: 0 1px 3px rgba(0,0,0,.12);
+}
+/* Once the script positions the sliding thumb, it carries the pill instead */
+.teams-mode-toggle.js-thumb button.on {
+    background: transparent;
+    box-shadow: none;
+}
+@media (max-width: 768px) {
+    .teams-mode-toggle { align-self: flex-start; }
+}
+/* Mode flip: outgoing grid fades, incoming cards stagger up */
+.teams-grid {
+    transition: opacity .14s ease, transform .14s ease;
+}
+.teams-grid.mode-leave {
+    opacity: 0;
+    transform: translateY(4px);
+}
+@keyframes tscModeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.teams-grid.mode-enter .team-strength-card {
+    /* backwards (not both): the from-state covers the stagger delay, but a
+       finished card must release its transform so sort FLIP can move it. */
+    animation: tscModeIn .38s cubic-bezier(.22, .61, .36, 1) backwards;
+}
+@media (prefers-reduced-motion: reduce) {
+    .teams-mode-thumb { transition: none; }
+    .teams-grid { transition: none; }
+    .teams-grid.mode-enter .team-strength-card { animation: none; }
+}
 .teams-pview { display: none; }
 .teams-pview.on { display: block; }
 /* Value/Schedule panels use the full page width on desktop (match TEAMS tab);

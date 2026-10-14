@@ -112,7 +112,10 @@ def test_strategy_js_has_redraft_copy_and_hides_rebuild():
 
 def test_roster_grade_uses_scoring_type_on_teams_page():
     src = (ROOT / "dashboard_services" / "pages" / "teams_page.py").read_text(encoding="utf-8")
-    assert "scoring_type=_scoring" in src
+    # Grades are computed per mode inside _build_mode_assets; the primary
+    # pass receives the league's own scoring type (_scoring).
+    assert "scoring_type=scoring_m" in src
+    assert "by_id, _rank_label_key, _scoring, _is_redraft" in src
 
 
 def test_teams_page_pos_rank_uses_format_rank_label():
