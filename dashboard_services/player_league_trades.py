@@ -30,6 +30,47 @@ def _player_info(pid: str, players_index: dict, *, is_focus: bool = False) -> di
     }
 
 
+def _load_value_map() -> dict[str, dict[str, float]]:
+    """Current model values by player id: {"value": 1QB, "sf_value": SF}.
+
+    Same canonical source as /api/player-details: ``load_model_value_table``
+    from utils.utils. Players missing from the table, or valued at 0 in both
+    columns, are omitted so their trade assets simply carry no value keys.
+    Loaded once per get_player_league_trades call, never per asset.
+
+    No TE premium is applied: player-details derives the premium multiplier
+    from league scoring settings, which this service never loads, so these
+    are the base model-table numbers.
+    """
+    try:
+        from utils.utils import load_model_value_table
+
+        table = load_model_value_table() or []
+    except Exception:
+        logger.debug("[player-league-trades] value table load failed", exc_info=True)
+        return {}
+    out: dict[str, dict[str, float]] = {}
+    for row in table:
+        if not isinstance(row, dict):
+            continue
+        pid = str(row.get("id") or "").strip()
+        if not pid:
+            continue
+        try:
+            value = float(row.get("value") or 0)
+        except (TypeError, ValueError):
+            value = 0.0
+        sf_raw = row.get("sf_value")
+        try:
+            sf_value = float(sf_raw) if sf_raw is not None else value
+        except (TypeError, ValueError):
+            sf_value = value
+        if not value and not sf_value:
+            continue
+        out[pid] = {"value": round(value, 1), "sf_value": round(sf_value, 1)}
+    return out
+
+
 def _pick_label(season: Any, round_: Any, slot: Optional[int], order: Optional[str] = None) -> str:
     s = str(season) if season not in (None, "") else "?"
     r = str(round_) if round_ not in (None, "") else "?"
@@ -251,6 +292,7 @@ def _format_trade_sides(
     players_index: dict,
     slot_map: dict[tuple[str, str], int],
     resolution_map: dict[tuple[int, int, str], dict],
+    value_map: dict[str, dict[str, float]] | None = None,
 ) -> tuple[dict, dict] | None:
     """
     Split a Sleeper-style trade into two sides centered on the focus player.
@@ -297,7 +339,13 @@ def _format_trade_sides(
         for pid, to_rid in adds.items():
             if str(to_rid) != str(rid):
                 continue
-            out.append(_player_info(str(pid), players_index, is_focus=(str(pid) == focus)))
+            info = _player_info(str(pid), players_index, is_focus=(str(pid) == focus))
+            if value_map:
+                vals = value_map.get(str(pid))
+                if vals:
+                    info["value"] = vals["value"]
+                    info["sf_value"] = vals["sf_value"]
+            out.append(info)
         for pick in draft_picks:
             if str(pick.get("owner_id") or "") != str(rid):
                 continue
@@ -314,6 +362,17 @@ def _format_trade_sides(
                     pick_roster_id=roster_id,
                     resolution_map=resolution_map,
                 )
+            # "via": team name of the pick's original owner (the transaction's
+            # roster_id, which resolve_pick_asset surfaces as pick_roster_id
+            # once drafted). The frontend compares it with the receiving
+            # side's team name to decide between "via X" and "own pick".
+            orig_rid = asset.get("pick_roster_id") or (
+                str(roster_id) if roster_id not in (None, "") else None
+            )
+            if orig_rid:
+                via_name = roster_names.get(str(orig_rid)) or roster_names.get(orig_rid)
+                if via_name:
+                    asset["via"] = via_name
             if matching_pick is pick:
                 asset["is_focus"] = True
                 asset["via_draft_pick"] = True
@@ -366,6 +425,8 @@ def get_player_league_trades(
     limit = max(1, min(int(limit or 50), 50))
     season_map = build_league_history_map(plat, lid, int(season)) or {int(season): lid}
     players_index = load_players_index() or {}
+    # Current model values for trade assets, loaded once for the whole call.
+    value_map = _load_value_map()
 
     # Prefetch draft resolution for every league_id in the chain (picks resolve
     # against the season the pick belongs to, which may be a later league year).
@@ -429,6 +490,7 @@ def get_player_league_trades(
                     players_index=players_index,
                     slot_map=slot_map,
                     resolution_map=merged_resolution,
+                    value_map=value_map,
                 )
                 if not sides:
                     continue

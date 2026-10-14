@@ -20609,31 +20609,197 @@ def _matchup_rank_table(season: int, position: str, scoring_settings=None):
 from utils.schedule_ease import matchup_cell_ease as _matchup_cell_ease  # noqa: E402
 
 _PLAYOFF_WEEKS = (15, 16, 17)
-_PLAYOFF_SOS_CACHE: dict = {}  # season -> {"ts": float, "by_pos": {pos: {team: (rank,total,ease)}}}
+_PLAYOFF_SOS_CACHE: dict = {}  # (season, weeks) -> {"ts": float, "by_pos": {pos: {team: (rank,total,ease)}}}
 _PLAYOFF_SOS_TTL = 6 * 3600  # refresh with the daily matchup-ratings cron
 
 
-def _playoff_sos_for(season: int, team: str, pos: str):
-    """Rest-of-season strength-of-schedule over the fantasy playoff weeks
-    (15-17) for a team+position. Returns (rank, total, ease) with rank 1 =
-    easiest, or None when unavailable. Cached per season+position (schedule is
-    fixed; ratings drift slowly), so the player modal can show it cheaply."""
+_TREND_META = {
+    "rising": ("Rising", "#10b981"),
+    "recovering": ("Recovering", "#3b82f6"),
+    "peaked": ("Cooling off", "#f59e0b"),
+    "declining": ("Declining", "#ef4444"),
+    "stable": ("Stable", "#6b7280"),
+    "volatile": ("Volatile", "#a855f7"),
+}
+
+
+def _value_trend_from_history(history):
+    """Classify a player's recent value movement for the modal header pill.
+
+    Computed over the trailing 30 days of the (already current-value-scaled)
+    value history. Returns {"class", "label", "color", "description",
+    "slope_pct_month"} or None when there is not enough history to say
+    anything honest (fewer than 2 positive points, or a span under 7 days).
+    The classification mirrors classifyTrend in static/player_modal.js, plus
+    a volatility check on the window range."""
+    from datetime import date as _date, datetime as _datetime, timedelta as _timedelta
+
+    points = []
+    for entry in history or []:
+        if not isinstance(entry, dict):
+            continue
+        raw_v = entry.get("value")
+        if raw_v is None:
+            raw_v = entry.get("value_1qb")
+        try:
+            value = float(raw_v)
+        except (TypeError, ValueError):
+            continue
+        if value <= 0:
+            continue
+        raw_d = entry.get("as_of_date")
+        when = None
+        if isinstance(raw_d, _datetime):
+            when = raw_d.date()
+        elif isinstance(raw_d, _date):
+            when = raw_d
+        elif isinstance(raw_d, str) and raw_d:
+            try:
+                when = _datetime.fromisoformat(raw_d.replace("Z", "+00:00")).date()
+            except ValueError:
+                try:
+                    when = _date.fromisoformat(raw_d[:10])
+                except ValueError:
+                    when = None
+        if when is None:
+            continue
+        points.append((when, value))
+    points.sort(key=lambda p: p[0])
+    if len(points) < 2:
+        return None
+    latest_date, last = points[-1]
+    if (latest_date - points[0][0]).days < 7:
+        return None
+
+    cutoff = latest_date - _timedelta(days=30)
+    base = None
+    for when, value in points:
+        if when <= cutoff:
+            base = (when, value)
+        else:
+            break
+    if base is None:
+        base = next(p for p in points if p[0] >= cutoff)
+    window_vals = [v for when, v in points if when >= base[0]]
+    pct = (last - base[1]) / base[1] * 100.0
+    slope = round(pct, 1)
+    lo = min(window_vals)
+    hi = max(window_vals)
+
+    if (hi - lo) / last >= 0.30 and abs(pct) < 3:
+        cls = "volatile"
+    elif abs(pct) < 3:
+        cls = "stable"
+    elif pct > 0:
+        cls = "recovering" if (lo < last * 0.92 and last < hi * 0.995) else "rising"
+    else:
+        cls = "peaked" if (hi > last * 1.08 and last > lo * 1.02) else "declining"
+
+    label, color = _TREND_META[cls]
+    if cls == "rising":
+        description = f"Value up {pct:.1f}% over the last 30 days"
+    elif cls == "recovering":
+        description = f"Value up {pct:.1f}% over the last 30 days after an earlier dip"
+    elif cls == "declining":
+        description = f"Value down {abs(pct):.1f}% over the last 30 days"
+    elif cls == "peaked":
+        description = f"Value down {abs(pct):.1f}% over the last 30 days after a recent peak"
+    elif cls == "volatile":
+        description = "Value has swung widely over the last 30 days"
+    else:
+        description = "Value nearly flat over the last 30 days"
+    return {
+        "class": cls,
+        "label": label,
+        "color": color,
+        "description": description,
+        "slope_pct_month": slope,
+    }
+
+
+def _is_rookie_player(years_exp, draft_year, season) -> bool:
+    """Rookie = 0 years of NFL experience; when that is unknown, a player
+    whose draft class is the modal's season counts as a rookie."""
+    if years_exp is not None:
+        try:
+            return int(years_exp) == 0
+        except (TypeError, ValueError):
+            pass
+    if draft_year is not None and season is not None:
+        try:
+            return int(draft_year) == int(season)
+        except (TypeError, ValueError):
+            return False
+    return False
+
+
+def _playoff_sos_weeks_for(season: int, team: str, pos: str, weeks=_PLAYOFF_WEEKS):
+    """Per-playoff-week matchup rows for the player modal's Playoff SoS card.
+
+    One {"week", "opp", "at", "opp_rank", "opp_fpts"} entry per week in
+    `weeks` where the player's team actually plays (bye weeks are skipped).
+    opp_rank/opp_fpts come from _matchup_rank_table for the player's
+    position (rank 1 = easiest defense to face)."""
     season = int(season)
+    pos = (pos or "").upper()
+    team = _norm_sched_team(team)
+    if not team or pos not in ("QB", "RB", "WR", "TE"):
+        return []
+    rank_map, _total, info, _is_z = _matchup_rank_table(season, pos)
+    rows = []
+    for w in weeks:
+        opp = None
+        at = False
+        for g in (load_week_schedule(season, int(w)) or []):
+            home = _norm_sched_team(g.get("home"))
+            away = _norm_sched_team(g.get("away"))
+            if home == team and away:
+                opp, at = away, False
+                break
+            if away == team and home:
+                opp, at = home, True
+                break
+        if not opp:
+            continue
+        fpts = (info.get(opp) or {}).get("fpts")
+        try:
+            fpts = round(float(fpts), 1) if fpts is not None else None
+        except (TypeError, ValueError):
+            fpts = None
+        rows.append({
+            "week": int(w),
+            "opp": opp,
+            "at": at,
+            "opp_rank": rank_map.get(opp),
+            "opp_fpts": fpts,
+        })
+    return rows
+
+
+def _playoff_sos_for(season: int, team: str, pos: str, weeks=_PLAYOFF_WEEKS):
+    """Rest-of-season strength-of-schedule over the fantasy playoff weeks
+    (15-17 by default) for a team+position. Returns (rank, total, ease) with
+    rank 1 = easiest, or None when unavailable. Cached per season+weeks+
+    position (schedule is fixed; ratings drift slowly), so the player modal
+    can show it cheaply."""
+    season = int(season)
+    weeks = tuple(int(w) for w in (weeks or _PLAYOFF_WEEKS))
     pos = (pos or "").upper()
     team = _norm_sched_team(team)
     if not team or pos not in ("QB", "RB", "WR", "TE"):
         return None
     now = time.time()
-    entry = _PLAYOFF_SOS_CACHE.get(season)
+    cache_key = (season, weeks)
+    entry = _PLAYOFF_SOS_CACHE.get(cache_key)
     if not entry or now - entry.get("ts", 0) > _PLAYOFF_SOS_TTL:
         entry = {"ts": now, "by_pos": {}}
-        _PLAYOFF_SOS_CACHE[season] = entry
+        _PLAYOFF_SOS_CACHE[cache_key] = entry
     by_pos = entry["by_pos"]
     if pos not in by_pos:
         try:
             rank_map, total, info, _is_z = _matchup_rank_table(season, pos)
             week_lookups = []
-            for w in _PLAYOFF_WEEKS:
+            for w in weeks:
                 lk = {}
                 for g in (load_week_schedule(season, w) or []):
                     h = _norm_sched_team(g.get("home"))
@@ -26692,6 +26858,7 @@ def api_player_details(player_id: str):
         # context accessor, whose cache miss rebuilds the entire league.
         _speculative = request.headers.get("X-BR-Speculative") == "player-details"
         _spec_ctx = None
+        _ctx = None
         if league_id and _speculative:
             _entry = DASHBOARD_CACHE.get(_cache_key(platform, season, league_id))
             if not _league_ctx_cache_valid(_entry, platform, season, league_id):
@@ -27306,13 +27473,45 @@ def api_player_details(player_id: str):
 
         # ── Playoff strength-of-schedule (fantasy weeks 15-17) ───────────────
         # A rest-of-season buy/sell cue: how the player's team ranks for their
-        # position over the championship weeks. Cached; best-effort.
+        # position over the championship weeks. Cached; best-effort. When the
+        # request carries a league, the week set follows that league's
+        # Sleeper playoff_week_start (through week 17); the aggregate and the
+        # per-week rows are computed over the same set.
         playoff_sos = None
         try:
-            _sos = _playoff_sos_for(season, player_meta.get("team"), player_meta.get("pos"))
+            _playoff_weeks = _PLAYOFF_WEEKS
+            if league_id:
+                try:
+                    # Reuse the ctx the ownership lookup already resolved
+                    # above: the accessor must be asked at most once per
+                    # request (cold-path contract, allow_build=False).
+                    _po_ctx = _spec_ctx if _speculative else (_ctx or {})
+                    _po_settings = (
+                        (_po_ctx or {}).get("league_settings")
+                        or ((_po_ctx or {}).get("league") or {}).get("settings")
+                        or (_po_ctx or {}).get("settings")
+                        or {}
+                    )
+                    _pws = int(_po_settings.get("playoff_week_start") or 0)
+                    if 1 <= _pws <= 17:
+                        _playoff_weeks = tuple(range(_pws, 18))
+                except Exception:
+                    logger.debug("[api_player_details] playoff weeks lookup skipped", exc_info=True)
+            _sos = _playoff_sos_for(
+                season, player_meta.get("team"), player_meta.get("pos"),
+                weeks=_playoff_weeks,
+            )
             if _sos:
                 _sr, _st, _se = _sos
                 playoff_sos = {"rank": _sr, "total": _st, "ease": _se}
+                try:
+                    playoff_sos["weeks"] = _playoff_sos_weeks_for(
+                        season, player_meta.get("team"), player_meta.get("pos"),
+                        weeks=_playoff_weeks,
+                    )
+                except Exception:
+                    logger.debug("[api_player_details] playoff SoS weeks skipped", exc_info=True)
+                    playoff_sos["weeks"] = []
         except Exception:
             logger.debug("[api_player_details] playoff SoS skipped", exc_info=True)
 
@@ -27459,9 +27658,39 @@ def api_player_details(player_id: str):
             except Exception:
                 logger.debug("[api_player_details] acquisition fold-in skipped", exc_info=True)
 
+        # Header value-trend pill: classified from the scaled history above.
+        # None (frontend hides the pill) when history is too thin to classify.
+        try:
+            value_trend = _value_trend_from_history(value_history)
+        except Exception:
+            logger.debug("[api_player_details] value trend skipped", exc_info=True)
+            value_trend = None
+
+        # Rookie tab visibility: years_exp is authoritative; the prospect
+        # row's draft class is the fallback when Sleeper has no years_exp.
+        is_rookie = _is_rookie_player(
+            player_meta.get("years_exp"),
+            player_meta.get("draft_year") or (prospect_data or {}).get("draft_class_year"),
+            season,
+        )
+
+        # Breakout tab visibility: hard rule, the tab only exists for players
+        # on the breakout board. Best-effort; any failure hides the tab.
+        on_breakout_board = False
+        try:
+            from dashboard_services.breakout_api import breakout_board_membership
+            on_breakout_board, _board = breakout_board_membership(player_id, season)
+            on_breakout_board = bool(on_breakout_board)
+        except Exception:
+            logger.debug("[api_player_details] breakout membership skipped", exc_info=True)
+            on_breakout_board = False
+
         response = {
             "player_id": player_id,
             "name": player_meta.get("name", "Unknown"),
+            "value_trend": value_trend,
+            "is_rookie": is_rookie,
+            "on_breakout_board": on_breakout_board,
             "position": player_meta.get("pos"),
             "team": player_meta.get("team"),
             "oline": _oline_for_player(season, player_team, player_meta.get("pos")),
@@ -28832,6 +29061,52 @@ def _snap_pct_for_depth_player(
     return None, None
 
 
+def _team_total_targets(usage_table, focus_team: str):
+    """Season team target total on the usage table's own basis.
+
+    The usage builder derives target_share as player targets / team targets,
+    with the team total summed over every player who recorded a target for
+    the team. Summing total_targets over the usage entries attributed to
+    this team reproduces that same total. Returns None when the table
+    carries no team attribution to sum over (callers then omit the count
+    rather than showing a wrong denominator).
+    """
+    def _entry_usage(row):
+        if not isinstance(row, dict):
+            return None
+        inner = row.get("usage")
+        if isinstance(inner, dict) and inner:
+            return inner
+        if any(k in row for k in ("total_targets", "season_targets", "target_share")):
+            return row
+        return None
+
+    entries = []
+    if isinstance(usage_table, dict):
+        entries = list(usage_table.values())
+    elif isinstance(usage_table, list):
+        entries = usage_table
+    total = 0.0
+    seen = False
+    for row in entries:
+        u = _entry_usage(row)
+        if not u:
+            continue
+        team = _canon_team_abbr(u.get("season_team") or "")
+        if not team or team != focus_team:
+            continue
+        tgt = u.get("total_targets")
+        if tgt is None:
+            tgt = u.get("season_targets")
+        try:
+            if tgt is not None:
+                total += float(tgt)
+                seen = True
+        except (TypeError, ValueError):
+            continue
+    return int(round(total)) if seen else None
+
+
 def _build_player_team_depth_chart(
         focus_id: str,
         focus_team: str,
@@ -28851,6 +29126,7 @@ def _build_player_team_depth_chart(
     off_snaps_pg = ti.get("off_snaps_pg")
 
     by_pos: dict = {p: [] for p in positions}
+    focus_usage: dict = {}
     for pid, p in (full_players or {}).items():
         if not isinstance(p, dict):
             continue
@@ -28884,6 +29160,35 @@ def _build_player_team_depth_chart(
         avg_targets = usage.get("avg_targets")
         ppg = usage.get("ppr_ppg")
         ppg_val = round(float(ppg), 1) if ppg is not None else None
+        # Season counting stats from the same usage block the shares come
+        # from, so the Team tab strip can show real counts next to the
+        # percentages (targets as "51 of 186", the receiving line). The
+        # usage table stores per-game averages; season totals are avg x
+        # games. Fields stay None when the usage block lacks them.
+        tgt_total = usage.get("total_targets")
+        if tgt_total is None:
+            tgt_total = usage.get("season_targets")
+        targets_val = None
+        try:
+            if tgt_total is not None:
+                targets_val = int(round(float(tgt_total)))
+        except (TypeError, ValueError):
+            targets_val = None
+        rec_val = rec_yd_val = rec_td_val = None
+        try:
+            _g = float(games) if games is not None else 0.0
+        except (TypeError, ValueError):
+            _g = 0.0
+        if _g > 0:
+            def _season_total(key, _usage=usage, _games=_g):
+                v = _usage.get(key)
+                try:
+                    return int(round(float(v) * _games)) if v is not None else None
+                except (TypeError, ValueError):
+                    return None
+            rec_val = _season_total("avg_receptions")
+            rec_yd_val = _season_total("avg_rec_yards")
+            rec_td_val = _season_total("avg_rec_tds")
         inj = str(p.get("injury_status") or "").strip()
         if inj.lower() in ("", "active", "act"):
             inj = ""
@@ -28902,7 +29207,31 @@ def _build_player_team_depth_chart(
             "games": int(games) if games is not None else None,
             "avg_targets": round(float(avg_targets), 1) if avg_targets is not None else None,
             "ppg": ppg_val,
+            "targets": targets_val,
+            "rec": rec_val,
+            "rec_yd": rec_yd_val,
+            "rec_td": rec_td_val,
         })
+        if is_focus:
+            focus_usage = usage
+
+    # Team target total (the strip's "of 186" denominator), stamped on every
+    # row. Primary basis: the usage table's own team attribution. Fallback:
+    # the focus player's targets / target share, the builder's own ratio.
+    team_targets_total = _team_total_targets(usage_table, focus_team)
+    if team_targets_total is None and focus_usage:
+        try:
+            _ft = focus_usage.get("total_targets")
+            if _ft is None:
+                _ft = focus_usage.get("season_targets")
+            _fs = focus_usage.get("target_share")
+            if _ft is not None and _fs is not None and float(_fs) > 0:
+                team_targets_total = int(round(float(_ft) / float(_fs)))
+        except (TypeError, ValueError):
+            team_targets_total = None
+    for _rows in by_pos.values():
+        for _r in _rows:
+            _r["team_targets"] = team_targets_total
 
     out: dict = {}
     for pos in positions:
@@ -28922,6 +29251,35 @@ def _team_rank_entry(ranks: dict, team: str) -> Optional[dict]:
     if not entry:
         return None
     return {"rank": entry["rank"], "value": entry["value"], "total": entry["total"]}
+
+
+def _player_team_ppg_rank(player_id: str, position: str, season: int):
+    """Positional PPG rank for the Team tab strip's PPG chip.
+
+    Computed with the exact machinery the player-details payload uses for
+    its ppg_rank (the shared _season_rank_rows arrays over
+    _load_season_weekly_points, RANK semantics on unrounded values), on the
+    normalized Sleeper scoring the team payload's PPR PPG is based on. This
+    is the same rank, not a second method: no depth-chart-local ordering.
+    Returns None when the player has no scored weeks or no rank population.
+    """
+    try:
+        from bisect import bisect_right
+
+        settings = get_normalized_scoring_settings("sleeper")
+        weekly = _load_season_weekly_points(int(season), settings) or {}
+        pts = weekly.get(str(player_id))
+        if not pts:
+            return None
+        ppg = float(sum(pts)) / len(pts)
+        rows = _season_rank_rows(int(season), settings) or {}
+        vals = (rows.get("pos_ppg") or {}).get(str(position or "").upper()) or []
+        if not vals:
+            return None
+        return 1 + (len(vals) - bisect_right(vals, ppg))
+    except Exception:
+        logger.debug("team tab ppg rank failed", exc_info=True)
+        return None
 
 
 @app.route("/api/player-team/<player_id>")
@@ -29018,6 +29376,28 @@ def api_player_team(player_id: str):
             teams_index, pfr_snaps,
         )
 
+        # PPG rank chip for the summary strip: focus row only, actual-data
+        # payloads only (a projection payload has no real PPG to rank).
+        if data_mode == "actual":
+            _focus_row = next(
+                (r for r in (depth_chart.get(position) or []) if r.get("is_focus")),
+                None,
+            )
+            if _focus_row is not None:
+                _focus_row["ppg_rank"] = _player_team_ppg_rank(
+                    str(player_id), position, int(stats_season))
+
+        # The focus player's played-week usage (targets + snap share) for
+        # the Usage-by-week card: the same weekly-metrics series the
+        # breakout payload carries, shaped by the same helper.
+        focus_weekly = []
+        try:
+            from dashboard_services.breakout_api import _weekly_series_for_payload
+            focus_weekly = _weekly_series_for_payload(str(player_id), int(stats_season))
+        except Exception:
+            logger.debug("team tab weekly usage failed", exc_info=True)
+            focus_weekly = []
+
         schedule = []
         try:
             schedule = build_team_schedule(
@@ -29101,6 +29481,7 @@ def api_player_team(player_id: str):
             "ranks": ranks,
             "ranks_more": ranks_more,
             "depth_chart": depth_chart,
+            "focus_weekly": focus_weekly,
             "oline": _oline_for_player(int(stats_season), team, position),
             "schedule": schedule,
             "def_vs_pos_matchup": def_vs_pos_matchup,

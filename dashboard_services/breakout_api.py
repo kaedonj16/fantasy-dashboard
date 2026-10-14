@@ -1047,6 +1047,52 @@ def get_weekly_breakout_candidates(season: int, min_score: float = 0.0,
     }
 
 
+def _weekly_series_for_payload(player_id: str, season: int) -> List[Dict]:
+    """Per-week snap share + targets for the modal's weekly charts.
+
+    Played weeks only: bye weeks have no row in player_weekly_metrics, and
+    the engine never stores a no-usage week (build_weekly_metrics skips a
+    week whose snaps / targets / carries / pass attempts are all zero);
+    the same predicate is re-applied here so a stale row can never leak a
+    DNP week into the charts. snap_pct stays None when the source has no
+    snap data for the week (unknown, never a fabricated 0).
+    """
+    try:
+        from data_building.weekly_metrics import get_player_weekly_series
+        rows = get_player_weekly_series(str(player_id), int(season)) or []
+    except Exception:
+        logger.debug("weekly series load failed", exc_info=True)
+        return []
+
+    def _num(row: Dict, key: str) -> float:
+        try:
+            value = row.get(key)
+            return float(value) if value is not None else 0.0
+        except (TypeError, ValueError):
+            return 0.0
+
+    out: List[Dict] = []
+    for row in rows:
+        if not isinstance(row, dict) or row.get("week") is None:
+            continue
+        if (_num(row, "snaps") <= 0 and _num(row, "targets") <= 0
+                and _num(row, "carries") <= 0 and _num(row, "pass_att") <= 0):
+            continue  # inactive / no usage, same rule as the engine
+        snap = row.get("snap_pct")
+        tgt = row.get("targets")
+        try:
+            week = int(row.get("week"))
+        except (TypeError, ValueError):
+            continue
+        out.append({
+            "week": week,
+            "snap_share": round(float(snap), 1) if snap is not None else None,
+            "targets": int(float(tgt)) if tgt is not None else None,
+        })
+    out.sort(key=lambda p: p["week"])
+    return out
+
+
 def get_weekly_breakout_detail(player_id: str, season: int) -> Dict:
     """In-season player detail served from the weekly engine."""
     from data_building.breakout_engine.weekly_store import get_weekly_candidate
@@ -1055,6 +1101,7 @@ def get_weekly_breakout_detail(player_id: str, season: int) -> Dict:
         return {"player_id": player_id, "season": season, "available": False,
                 "mode": "weekly", "data_available": False}
     cand = _weekly_row_to_candidate(row)
+    cand["weekly_series"] = _weekly_series_for_payload(player_id, season)
     cand["season"] = season
     cand["available"] = True
     cand["as_of_date"] = (row.get("as_of_date").isoformat()

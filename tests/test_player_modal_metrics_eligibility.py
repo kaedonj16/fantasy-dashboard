@@ -164,8 +164,13 @@ def test_frontend_uses_backend_signal_and_safe_game_log_fallback():
     assert "['QB', 'RB', 'WR', 'TE'].includes(String(pos || '').toUpperCase())" in source
     assert "(data.has_advanced_metrics === true || hasGameLogs)" in source
     assert "!hasProspectData && pos" not in source
-    assert "hasProspectData && !hasGameLogs" in source
-    assert "Metrics are being processed for the current week." in source
+    # Rookie tab (player modal redesign): visibility is driven solely by the
+    # backend is_rookie flag, not the old prospect-data/game-log gate.
+    assert "hasProspectData && !hasGameLogs" not in source
+    assert "data.is_rookie === true" in source
+    # Advanced empty state is honest copy, not the old "being processed" line.
+    assert "Metrics are being processed for the current week." not in source
+    assert "No advanced metrics for this player" in source
 
 
 def test_backend_explicit_flags_and_supported_positions_are_guarded():

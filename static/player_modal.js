@@ -251,7 +251,7 @@ function openPlayerModal(playerId, playerName, opts) {
       <button type="button" class="pm-tab" role="tab" aria-selected="false" data-tab="stats" onclick="pmSwitchTab('stats', event)">Stats</button>
       <button type="button" class="pm-tab" role="tab" aria-selected="false" id="pmTabTeam" data-tab="team" onclick="pmSwitchTab('team', event)">Team</button>
       <button type="button" class="pm-tab" role="tab" aria-selected="false" id="pmTabMetrics" data-tab="metrics" onclick="pmSwitchTab('metrics', event)">Advanced</button>
-      <button type="button" class="pm-tab" role="tab" aria-selected="false" id="pmTabProspect" data-tab="prospect" onclick="pmSwitchTab('prospect', event)">Prospect</button>
+      <button type="button" class="pm-tab" role="tab" aria-selected="false" id="pmTabProspect" data-tab="prospect" onclick="pmSwitchTab('prospect', event)">Rookie</button>
       <button type="button" class="pm-tab" role="tab" aria-selected="false" id="pmTabBreakout" data-tab="breakout" onclick="pmSwitchTab('breakout', event)">Breakout</button>
       <button type="button" class="pm-tab" role="tab" aria-selected="false" data-tab="trades" onclick="pmSwitchTab('trades', event)">Trades</button>
     </div>
@@ -636,8 +636,6 @@ function openPlayerModal(playerId, playerName, opts) {
       // ── Prospect Profile tab ─────────────────────────────────────────────────
       const pd = data.prospect_data;
       const hasProspectData = pd && pd.prospect_score != null;
-      // isRookieWithProspectData controls the ROOKIE badge and no-stats overview layout
-      const isRookieWithProspectData = !hasGameLogs && hasProspectData;
       let pdColHTML = '';
       if (hasProspectData) {
         const pdConf  = parseFloat(pd.confidence_score || 0);
@@ -715,6 +713,52 @@ function openPlayerModal(playerId, playerName, opts) {
             </ul>
           </div>` : '';
 
+        // Rookie value hero cards: each shows only when its value exists.
+        const _pdValCard = (label, raw) => {
+          if (raw == null || raw === '' || isNaN(parseFloat(raw))) return '';
+          return `<div style="background:var(--card-bg);border:1px solid var(--border);border-radius:12px;padding:14px 12px;text-align:center;">
+              <div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">${label}</div>
+              <div style="font-size:18px;font-weight:700;color:var(--text);line-height:1;">${Math.round(parseFloat(raw))}</div>
+            </div>`;
+        };
+        const pdRookieValCards =
+          _pdValCard('Rookie value · 1QB', pd.rookie_value) +
+          _pdValCard('Rookie value · SF', pd.rookie_sf_value);
+
+        // Component radar: one axis per component that actually has a value,
+        // scaled by the same 0-100 score the bars below use. Needs 3+ axes.
+        const pdRadarComps = pdComponents.filter(c => c.val != null && c.val !== '' && !isNaN(parseFloat(c.val)));
+        let pdRadarHtml = '';
+        if (pdRadarComps.length >= 3) {
+          const cx = 120, cy = 88, R = 54, n = pdRadarComps.length;
+          const pt = (i, frac) => {
+            const ang = (-90 + i * 360 / n) * Math.PI / 180;
+            return [cx + R * frac * Math.cos(ang), cy + R * frac * Math.sin(ang)];
+          };
+          const ring = (frac) => pdRadarComps.map((c, i) => pt(i, frac).map(v => v.toFixed(1)).join(',')).join(' ');
+          const polyPts = pdRadarComps.map((c, i) => pt(i, Math.max(0, Math.min(100, parseFloat(c.val))) / 100).map(v => v.toFixed(1)).join(',')).join(' ');
+          const axes = pdRadarComps.map((c, i) => {
+            const [x, y] = pt(i, 1);
+            return `<line x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="var(--border)"/>`;
+          }).join('');
+          const dots = pdRadarComps.map((c, i) => {
+            const [x, y] = pt(i, Math.max(0, Math.min(100, parseFloat(c.val))) / 100);
+            return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.4" fill="${c.color}"/>`;
+          }).join('');
+          const labels = pdRadarComps.map((c, i) => {
+            const ang = (-90 + i * 360 / n) * Math.PI / 180;
+            const dx = Math.cos(ang), dy = Math.sin(ang);
+            const x = cx + (R + 14) * dx, y = cy + (R + 14) * dy;
+            const anchor = dx > 0.3 ? 'start' : dx < -0.3 ? 'end' : 'middle';
+            return `<text x="${x.toFixed(1)}" y="${(y + 3).toFixed(1)}" font-size="9.5" fill="${c.color}" font-weight="700" text-anchor="${anchor}">${c.label}</text>`;
+          }).join('');
+          pdRadarHtml = `<div style="text-align:center;padding:2px 0 6px;"><svg width="240" height="176" viewBox="0 0 240 176" role="img" aria-label="Component score radar">`
+            + [0.25, 0.5, 0.75, 1].map(f => `<polygon points="${ring(f)}" fill="none" stroke="var(--border)" stroke-width="1"/>`).join('')
+            + axes
+            + `<polygon points="${polyPts}" fill="rgba(59,130,246,.16)" stroke="#3b82f6" stroke-width="1.6"/>`
+            + dots + labels + `</svg></div>`;
+        }
+
         const pdScore = parseFloat(pd.prospect_score || 0);
         const pdTier  = pd.tier;
         const pdTierClass  = pdTier ? `rk-tier-${pdTier}` : '';
@@ -736,6 +780,7 @@ function openPlayerModal(playerId, playerName, opts) {
               <div style="font-size:18px;font-weight:700;color:var(--text);line-height:1;">${pdRankStr || '-'}</div>
               ${pdPosRankStr ? `<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">${pdPosRankStr}</div>` : ''}
             </div>
+            ${pdRookieValCards}
           </div>`;
 
         pdColHTML = `
@@ -746,8 +791,10 @@ function openPlayerModal(playerId, playerName, opts) {
             <span style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;">Component Scores</span>
             <span style="font-size:12px;color:var(--text-muted);">Data confidence: <strong style="color:var(--text);">${pdConf.toFixed(0)}</strong></span>
           </div>
+          ${pdRadarHtml}
           ${pdCompsHtml}
           ${pdScoutingHtml}
+          <div id="pmRookieReturns" data-pid="${playerId}"></div>
           <div id="pmProspectComparables" style="margin-top:20px;">
             <div class="rk-section-divider"></div>
             <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">Historical Comparables</div>
@@ -936,10 +983,40 @@ function openPlayerModal(playerId, playerName, opts) {
       // Render the block with a skeleton up front; the real grid replaces it once
       // the market fetch settles (or falls back to what we have on timeout/error).
       const adpRow = `
-        <div class="pm-adp-block" id="pmAdpBlock" data-pid="${playerId}">
+        <div class="pm-adp-block pm-ov-adp" id="pmAdpBlock" data-pid="${playerId}">
           <div class="pm-adp-head">ADP</div>
           <div class="pm-adp-grid" id="pmAdpGrid">${_adpSkeletonGrid()}</div>
         </div>`;
+
+      // Playoff schedule card: rendered synchronously from the player-details
+      // payload (data.playoff_sos). Stays out entirely when the payload has no
+      // SOS rank or no per-week rows -- never a placeholder card.
+      const _ps = data.playoff_sos || null;
+      const _psWeeks = (_ps && Array.isArray(_ps.weeks)) ? _ps.weeks.filter(w => w && w.week != null) : [];
+      let playoffCard = '';
+      if (_ps && _ps.rank != null && isFinite(Number(_ps.rank)) && _psWeeks.length) {
+        const _psPos = String(data.position || '').toUpperCase();
+        const _psFirst = _psWeeks[0], _psLast = _psWeeks[_psWeeks.length - 1];
+        const _psRows = _psWeeks.map(w => {
+          const _loc = w.at ? 'at' : 'vs';
+          const _left = `Week ${w.week}${w.opp ? ` · ${_loc} ${_pmEsc(w.opp)}` : ''}`;
+          const _rightBits = [];
+          if (w.opp_rank != null) _rightBits.push('#' + w.opp_rank);
+          if (w.opp_fpts != null && isFinite(Number(w.opp_fpts))) _rightBits.push(Number(w.opp_fpts).toFixed(1) + ' pts allowed');
+          return `<div class="pm-playoff-row"><span class="pm-playoff-week">${_left}</span>${_rightBits.length ? `<span class="pm-playoff-allowed">${_rightBits.join(' · ')}</span>` : ''}</div>`;
+        }).join('');
+        playoffCard = `
+        <div class="pm-playoff-card pm-ov-playoff">
+          <div class="pm-playoff-head">
+            <span class="pm-section-label">Playoff schedule</span>
+            <div class="pm-playoff-rank">
+              <div class="pm-playoff-rank-big">${_pmTeamOrd(Number(_ps.rank))} easiest</div>
+              ${_psPos ? `<div class="pm-playoff-rank-sub">for ${_psPos}s · Weeks ${_psFirst.week}-${_psLast.week}</div>` : ''}
+            </div>
+          </div>
+          <div class="pm-playoff-rows">${_psRows}</div>
+        </div>`;
+      }
 
       const _h0 = _heroActive();
       const _heroCardCount = 2 + (ppgCard ? 1 : 0) + (totalCard ? 1 : 0);
@@ -956,6 +1033,34 @@ function openPlayerModal(playerId, playerName, opts) {
             <button type="button" class="pm-trades-toggle-btn${pmScoringFormat === 'std' ? ' active' : ''}" data-format="std" role="tab" aria-selected="${pmScoringFormat === 'std'}">STD</button>
           </div>
         </div>`;
+      // Value History block (main column, below Recent Form).
+      const valueHistoryBlock = hasChart ? `
+          <div class="pm-ov-value">
+          <hr class="pm-section-divider">
+          <div class="pm-section-header"><span class="pm-section-label" id="pmValueHistoryLabel">${pmScoringType === 'redraft' ? 'Dynasty Value History' : 'Value History'}</span></div>
+          <div class="pm-vh-summary" id="pmVhSummary" aria-live="polite"></div>
+          <div class="player-modal-chart-container" id="playerValueChart" style="min-height:200px;"></div>
+          </div>
+        ` : '';
+
+      // Recent News block (right rail, bottom).
+      const newsBlock = (data.position && data.position !== 'PICK') ? `
+          <div class="pm-news-section pm-ov-news" id="pmNewsSection">
+            <hr class="pm-section-divider">
+            <div class="pm-section-header"><span class="pm-section-label">Recent News</span></div>
+            <div id="pmNewsBody" style="padding:8px 0;font-size:13px;color:var(--text-muted);max-height:300px;overflow-y:auto;">
+              <div class="loading-spinner" style="width:14px;height:14px;flex-shrink:0;"></div>Loading…
+            </div>
+          </div>
+        ` : '';
+
+      // Two-column Overview body (mock layout): start/sit strip, scoring
+      // toggles and the hero row stay full width above the columns. Main
+      // column: Recent Form, Value History, In this league. Right rail:
+      // Playoff Schedule, Role, ADP, Recent News. Every section keeps its
+      // existing id and render path; the lazy loaders find them by id.
+      // On phone the columns flatten (CSS order) to: hero, Playoff, Recent
+      // Form, Value History, Role, In this league, ADP, Recent News.
       let overviewHTML = `
         <div id="pmStartSitStrip" class="pm-ss-strip" hidden></div>
         ${scoringToggles}
@@ -973,34 +1078,20 @@ function openPlayerModal(playerId, playerName, opts) {
           ${ppgCard}
           ${totalCard}
         </div>
-        ${adpRow}
-      `;
-
-      // "In this league" acquisition/ownership timeline: after the value /
-      // production summary, before the longer value-history analysis. Populated
-      // after render (see _pmLoadInLeague); stays hidden when there's nothing.
-      overviewHTML += `<div id="pmInLeague" class="pm-inleague" hidden></div>`;
-
-      if (hasChart) {
-        overviewHTML += `
-          <hr class="pm-section-divider">
-          <div class="pm-section-header"><span class="pm-section-label" id="pmValueHistoryLabel">${pmScoringType === 'redraft' ? 'Dynasty Value History' : 'Value History'}</span></div>
-          <div class="pm-vh-summary" id="pmVhSummary" aria-live="polite"></div>
-          <div class="player-modal-chart-container" id="playerValueChart" style="min-height:200px;"></div>
-        `;
-      }
-
-      if (data.position && data.position !== 'PICK') {
-        overviewHTML += `
-          <hr class="pm-section-divider">
-          <div class="pm-news-section" id="pmNewsSection">
-            <div class="pm-section-header"><span class="pm-section-label">Recent News</span></div>
-            <div id="pmNewsBody" style="padding:8px 0;font-size:13px;color:var(--text-muted);max-height:300px;overflow-y:auto;">
-              <div class="loading-spinner" style="width:14px;height:14px;flex-shrink:0;"></div>Loading…
-            </div>
+        <div class="pm-ov-cols">
+          <div class="pm-ov-main">
+            <div id="pmRecentForm" class="pm-recent pm-ov-recent" data-pid="${playerId}" hidden></div>
+            ${valueHistoryBlock}
+            <div id="pmInLeague" class="pm-inleague pm-ov-inleague" hidden></div>
           </div>
-        `;
-      }
+          <div class="pm-ov-rail">
+            ${playoffCard}
+            <div id="pmOvRole" class="pm-ov-role" hidden></div>
+            ${adpRow}
+            ${newsBlock}
+          </div>
+        </div>
+      `;
 
       // ── Build Adv Metrics panel HTML ──────────────────────────────────────
       const _metricsBase = leagueId
@@ -1039,7 +1130,7 @@ function openPlayerModal(playerId, playerName, opts) {
             <div id="pmWeeklyTrendsBody" style="display:none;"></div>
           </div>
         </div>
-      ` : '<div class="player-modal-loading" style="padding:32px 0;"><div style="color:var(--text-muted);font-size:13px;">Advanced metrics not available for this player.</div></div>';
+      ` : _pmAdvEmptyHTML();
 
       // ── Build Breakout panel HTML (lazy-loaded) ───────────────────────────
       const breakoutHTML = `
@@ -1057,9 +1148,12 @@ function openPlayerModal(playerId, playerName, opts) {
         </div>
       `;
 
-      // ── Build Prospect panel HTML ─────────────────────────────────────────
-      const prospectPanelHTML = isRookieWithProspectData ? pdColHTML
-        : '<div class="player-modal-loading" style="padding:32px 0;"><div style="color:var(--text-muted);font-size:13px;">No prospect data available.</div></div>';
+      // ── Build Rookie panel HTML ─────────────────────────────────────────
+      // Built whenever prospect data exists, regardless of game logs; a
+      // rookie with no prospect data still gets the (lazy) Early NFL
+      // returns mount point and nothing else.
+      const prospectPanelHTML = hasProspectData ? pdColHTML
+        : `<div id="pmRookieReturns" data-pid="${playerId}"></div>`;
 
       // ── Assemble panels into modal body ───────────────────────────────────
       modalBody.innerHTML = `
@@ -1204,6 +1298,7 @@ function openPlayerModal(playerId, playerName, opts) {
       pmTabBar.dataset.pmSeason = season;
       pmTabBar.dataset.pmPlayerName = data.name || playerName || '';
       pmTabBar.dataset.pmPosition = data.position || '';
+      pmTabBar.dataset.pmPpgRank = (data.stats && data.stats.ppg_rank != null) ? String(data.stats.ppg_rank) : '';
       const _teamPanel = document.getElementById('pm-panel-team');
       if (_teamPanel && opts.teamSeason) _teamPanel.dataset.pmTeamSeason = String(opts.teamSeason);
 
@@ -1224,46 +1319,28 @@ function openPlayerModal(playerId, playerName, opts) {
       }
       if (pmTabBar) pmTabBar.dataset.pmHasTeam = _showTeamTab ? '1' : '';
       const tabProspect = document.getElementById('pmTabProspect');
-      // Prospect tab: only for players with no NFL game logs drafted in the current season
-      const _currentNFLYear = new Date().getFullYear();
-      const _isCurrentYearProspect = hasProspectData && !hasGameLogs
-        && String(pd.draft_class_year) === String(_currentNFLYear);
+      // Rookie tab: shown for the whole season for every true rookie,
+      // driven solely by the player-details is_rookie flag.
+      const _isRookie = data.is_rookie === true;
       if (tabProspect) {
-        // Hide entirely for non-prospects (dead UI for veterans); keep
-        // disabled+tooltip pattern only for plausibly-relevant tabs.
-        tabProspect.style.display = _isCurrentYearProspect ? '' : 'none';
-        tabProspect.disabled = !_isCurrentYearProspect;
-        tabProspect.title = _isCurrentYearProspect ? '' : 'Prospect data only for current-year rookies';
-        tabProspect.classList.toggle('pm-tab-disabled', !_isCurrentYearProspect);
+        tabProspect.style.display = _isRookie ? '' : 'none';
+        tabProspect.disabled = !_isRookie;
+        tabProspect.title = '';
+        tabProspect.classList.toggle('pm-tab-disabled', !_isRookie);
       }
-      // Breakout tab: the server compares this normalized player ID with the
-      // exact, unfiltered top-N board for the resolved page season.
+      if (pmTabBar) pmTabBar.dataset.pmPpg = (data.stats && data.stats.ppg != null) ? String(data.stats.ppg) : '';
+      // Breakout tab: HARD RULE. The tab exists only when the
+      // player-details payload says this player is on the current
+      // breakout board (on_breakout_board). Otherwise it is hidden
+      // outright: never disabled, never titled, never shown later.
+      // The breakout-page candidate context stays as panel data only.
       const tabBreakout = document.getElementById('pmTabBreakout');
+      const _onBreakoutBoard = data.on_breakout_board === true;
       if (tabBreakout) {
-        tabBreakout.disabled = !boardEligible;
-        tabBreakout.title = boardEligible ? '' : 'Not on the current breakout board';
-        tabBreakout.classList.toggle('pm-tab-disabled', !boardEligible);
+        tabBreakout.style.display = _onBreakoutBoard ? '' : 'none';
       }
       const breakoutPanel = document.getElementById('pm-panel-breakout');
       if (breakoutPanel) breakoutPanel._breakoutData = resolvedBreakoutData;
-
-      // Breakout tab: unavailable means removed. The player-specific
-      // breakout endpoint owns board membership; if it fails (or the player
-      // is not board-eligible) the tab is hidden outright instead of showing
-      // an "unavailable / retry" placeholder tab.
-      const applyBreakoutEligibility = (payload, failed) => {
-        if (!overlay.isConnected || overlay.dataset.closed === '1'
-            || document.querySelector('.player-modal-overlay') !== overlay
-            || overlay.dataset.playerId !== String(playerId)) return;
-        const eligible = !failed && payload && payload.board_eligible === true;
-        if (tabBreakout) tabBreakout.style.display = eligible ? '' : 'none';
-        if (breakoutPanel && !failed) breakoutPanel._breakoutData = payload;
-        const requested = (opts && opts.tab) || 'overview';
-        if (requested === 'breakout' && eligible) pmSwitchTab('breakout');
-      };
-      if (contextBreakoutCandidate) {
-        applyBreakoutEligibility(resolvedBreakoutData, false);
-      }
 
       // Must be set before pmSwitchTab is called so the metrics lazy-load check works
       if (pmTabBar) pmTabBar.dataset.pmHasMetrics = hasMetrics ? '1' : '';
@@ -1293,7 +1370,7 @@ function openPlayerModal(playerId, playerName, opts) {
       pmPrefetchTabs();
 
       // ── Lazy-load prospect comparables for rookies ─────────────────────────
-      if (isRookieWithProspectData && pd.player_id) {
+      if (data.is_rookie === true && pd && pd.player_id) {
         fetch(`/api/prospects/comparables/${encodeURIComponent(pd.player_id)}`)
           .then(r => r.json())
           .then(cd => {
@@ -1379,6 +1456,7 @@ function openPlayerModal(playerId, playerName, opts) {
       pmInjectContextActions(playerId, playerName, data, leagueId, platform, season);
       _pmLoadInLeague(playerId, data, leagueId, platform, season);
       _pmLoadStartSitStrip(playerId, data, leagueId, platform, season);
+      _pmLoadRecentForm(playerId, season);
 
       // The "vs Avg <pos><tier>" benchmark is reachable from Actions → Compare
       // (it offers the positional-tier averages as pickable opponents),
@@ -1873,6 +1951,97 @@ function _pmLoadInLeague(playerId, data, leagueId, platform, season) {
   });
 }
 
+function _pmLoadRecentForm(playerId, season) {
+  // Recent Form bars on the Overview: the player's last 5 real games of the
+  // current season, oldest to newest. Bars only (no trend line, per spec).
+  // The card stays hidden when there are no real games to show.
+  const el = document.getElementById('pmRecentForm');
+  if (!el) return;
+  // Mirror the Stats tab's game-logs URL construction exactly.
+  const pathParts = window.location.pathname.split('/').filter(p => p);
+  const _platform = pathParts[0] || 'sleeper';
+  const _season = pathParts[1] || season || new Date().getFullYear();
+  const _leagueId = pathParts[2] || null;
+  const _lt = (typeof brLeagueType === 'function') ? brLeagueType() : '';
+  const _ls = (typeof brLeagueSize === 'function') ? brLeagueSize() : '';
+  let logsUrl = `/api/player-game-logs/${encodeURIComponent(playerId)}?season=${_season}&league_type=${_lt}&league_size=${_ls}`;
+  if (_leagueId) logsUrl += `&league_id=${_leagueId}&platform=${_platform}`;
+  fetch(logsUrl)
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(data => {
+      // Stale-render guards, same as the neighboring lazy loaders: the
+      // element must still be in the DOM and still belong to this player.
+      if (!document.body.contains(el)) return;
+      if (el.dataset.pid !== String(playerId)) return;
+      const logsByYear = (data && data.game_logs_by_year) || {};
+      let logs = logsByYear[_season] || logsByYear[String(_season)] || null;
+      if (!Array.isArray(logs)) {
+        const keys = Object.keys(logsByYear);
+        if (keys.length === 1) logs = logsByYear[keys[0]];
+      }
+      if (!Array.isArray(logs) || !logs.length) return;
+      // Real games only, same filter semantics as _buildStatsHTML (no byes,
+      // no projections, box-score stats present) plus scored fantasy points.
+      const real = logs.filter(g => {
+        if (!g || g.is_bye || g.is_projection) return false;
+        if (g.fantasy_pts == null) return false;
+        const s = g.stats || {};
+        return s.pass_yd != null || s.rush_att != null || s.rec != null || s.rec_tgt != null;
+      }).slice().sort((a, b) => (Number(a.week) || 0) - (Number(b.week) || 0));
+      if (!real.length) return;
+      const shown = real.slice(-5);
+      const max = Math.max.apply(null, shown.map(g => Number(g.fantasy_pts) || 0));
+      const cols = shown.map(g => {
+        const pts = Number(g.fantasy_pts) || 0;
+        const h = max > 0 ? Math.max(6, Math.round(pts / max * 100)) : 6;
+        return '<div class="pm-recent-col">'
+          + `<span class="pm-recent-val">${pts.toFixed(1)}</span>`
+          + `<div class="pm-recent-track"><div class="pm-recent-bar" style="height:${h}%"></div></div>`
+          + `<span class="pm-recent-wk">W${g.week != null ? g.week : ''}</span>`
+          + '</div>';
+      }).join('');
+      el.innerHTML = '<hr class="pm-section-divider">'
+        + '<div class="pm-section-header"><span class="pm-section-label">Recent form</span>'
+        + '<span class="pm-recent-cap">Fantasy points</span></div>'
+        + `<div class="pm-recent-bars">${cols}</div>`;
+      el.hidden = false;
+
+      // Overview rail Role card: season target share / snap share /
+      // receiving line aggregated from these same game logs (the Stats
+      // tab's own per-game adv + box-score stats). Target share is the
+      // totals ratio (player targets over the team targets implied by
+      // each week's share), the same basis as the Team tab. Each row
+      // renders only when its data exists; the card stays hidden when
+      // none do.
+      const roleEl = document.getElementById('pmOvRole');
+      if (roleEl) {
+        const _nv = (v) => { const n = Number(v); return (v != null && isFinite(n)) ? n : null; };
+        let _tsTeam = 0, _tsMine = 0, _snapSum = 0, _snapN = 0;
+        let _rec = 0, _recYd = 0, _recTd = 0, _recGames = 0;
+        real.forEach(g => {
+          const s = g.stats || {}, a = g.adv || {};
+          const tgt = _nv(s.rec_tgt), ts = _nv(a.target_share);
+          if (tgt != null && ts != null && ts > 0) { _tsMine += tgt; _tsTeam += tgt / (ts / 100); }
+          const sp = _nv(a.snap_pct);
+          if (sp != null) { _snapSum += sp; _snapN++; }
+          if (s.rec != null || s.rec_yd != null || s.rec_td != null) {
+            _recGames++;
+            _rec += _nv(s.rec) || 0; _recYd += _nv(s.rec_yd) || 0; _recTd += _nv(s.rec_td) || 0;
+          }
+        });
+        const _roleRows = [];
+        if (_tsTeam > 0) _roleRows.push(`<div class="pm-ov-kv"><span>Target share</span><b>${(_tsMine / _tsTeam * 100).toFixed(1)}%</b></div>`);
+        if (_snapN) _roleRows.push(`<div class="pm-ov-kv"><span>Snap share</span><b>${(_snapSum / _snapN).toFixed(1)}%</b></div>`);
+        if (_recGames) _roleRows.push(`<div class="pm-ov-kv"><span>Receiving</span><b>${_rec} / ${_recYd} / ${_recTd}</b></div>`);
+        if (_roleRows.length) {
+          roleEl.innerHTML = `<div class="pm-section-header"><span class="pm-section-label">Role${_season ? ' · ' + _pmEsc(String(_season)) : ''}</span></div>` + _roleRows.join('');
+          roleEl.hidden = false;
+        }
+      }
+    })
+    .catch(() => { /* card stays hidden on failure */ });
+}
+
 function pmInjectContextActions(playerId, playerName, data, leagueId, platform, season) {
   const modal = document.getElementById('playerModal');
   if (!modal) return;
@@ -2246,13 +2415,19 @@ function pmSwitchTab(tab, clickEvent) {
           window.brEmptyState(panel, { icon: 'search', title: 'No game logs', message: 'No game-by-game data is available for this player yet.', compact: true });
           return;
         }
-        panel.innerHTML = _buildStatsHTML(logsByYear, false, (pmTabBar && pmTabBar.dataset.pmPosition) || '', data.season_teams || {});
+        panel.innerHTML = _buildStatsHTML(logsByYear, false, (pmTabBar && pmTabBar.dataset.pmPosition) || '', data.season_teams || {}, { showSummaryStrip: true, ppgRank: (pmTabBar && pmTabBar.dataset.pmPpgRank) || '' });
       })
       .catch(() => {
         if (panel.isConnected) {
           window.brErrorState(panel, 'Could not load stats.', () => { panel.dataset.loaded = ''; pmSwitchTab(tab); }, { compact: true });
         }
       });
+  }
+
+  // ── Lazy-load Rookie tab Early NFL returns ─────────────────────────────
+  if (tab === 'prospect' && panel && !panel.dataset.rookieLoaded) {
+    panel.dataset.rookieLoaded = '1';
+    _pmLoadRookieReturns(panel, playerId, pmTabBar);
   }
 
   // ── Lazy-load Trades tab (This League ↔ Trade DB toggle) ────────────────
@@ -2272,22 +2447,55 @@ function _pmTradePathCtx() {
   return { platform, season, leagueId, isLeague };
 }
 
-function _pmRenderTradeAssets(assets, playerId) {
+function _pmTradeIsPick(a) {
+  return !!a && (a.type === 'pick' || a.is_pick ||
+    (a.name || '').toLowerCase().includes('pick') ||
+    (a.name || '').toLowerCase().includes('round'));
+}
+
+// The asset's current value in the viewer's league format: SF value in
+// superflex leagues, the 1QB value otherwise. Picks and FAAB never carry
+// one. Null when the chosen-format value is absent (asset renders bare).
+function _pmTradeChosenValue(a) {
+  if (!a || _pmTradeIsPick(a)) return null;
+  const raw = (typeof brLeagueType === 'function' && brLeagueType() === 'sf')
+    ? a.sf_value : a.value;
+  if (raw == null || raw === '') return null;
+  const v = Number(raw);
+  return isFinite(v) ? v : null;
+}
+
+function _pmRenderTradeAssets(assets, playerId, opts) {
+  opts = opts || {};
   if (!assets || !assets.length) {
     return '<span style="font-size:12px;color:var(--text-muted);">-</span>';
   }
   return assets.map(a => {
-    const isPick = a.type === 'pick' || a.is_pick ||
-      (a.name || '').toLowerCase().includes('pick') ||
-      (a.name || '').toLowerCase().includes('round');
+    const isPick = _pmTradeIsPick(a);
     const isFocus = String(a.player_id || '') === String(playerId) || a.is_focus;
     const cls = isPick ? 'pm-trade-asset pm-pick' : (isFocus ? 'pm-trade-asset pm-focus' : 'pm-trade-asset');
-    let label = a.name || a.player_name || '?';
+    let label;
+    if (isPick && a.pick_season != null && a.pick_round != null) {
+      label = `${a.pick_season} R${a.pick_round}`;
+      if (a.via) {
+        label += (opts.focusTeamName && a.via === opts.focusTeamName)
+          ? ' · own pick'
+          : ` · via ${a.via}`;
+      }
+    } else {
+      label = a.name || a.player_name || '?';
+    }
     if (a.drafted_player && a.drafted_player.name && isPick && !String(label).includes('→')) {
       label = `${label} → ${a.drafted_player.name}`;
     }
     const pos = (!isPick && a.position) ? `<span class="pm-trade-pos">${a.position}</span>` : '';
-    return `<div class="${cls}">${label}${pos}</div>`;
+    const since = (isFocus && opts.vchgBadge) ? opts.vchgBadge : '';
+    let valSpan = '';
+    if (opts.showValues) {
+      const v = _pmTradeChosenValue(a);
+      if (v != null) valSpan = `<span class="pm-trade-val">${Math.round(v)}</span>`;
+    }
+    return `<div class="${cls}">${label}${pos}${since}${valSpan}</div>`;
   }).join('');
 }
 
@@ -2359,18 +2567,117 @@ function _pmRenderTradeCards(trades, playerId, { showTeams } = {}) {
       ? `<div class="pm-trade-team">${sides.b.direction || 'Sent'} · ${sides.b.team_name}</div>` : '';
     const viaPick = t.via_draft_pick
       ? '<span class="pm-trade-badge pm-trade-badge-pick">Via draft pick</span>' : '';
+    // League view: headline names the partner (the non-receiving side), the
+    // since-trade chip rides the focus player's own asset line when that
+    // line is rendered (head keeps it as a fallback), and a players-only
+    // net footer appears when both sides have valued players.
+    const partner = showTeams ? (sides.b.team_name || '') : '';
+    const headline = partner ? `<div class="pm-trade-with">Trade with ${partner}</div>` : '';
+    const _focusInA = (sides.a.assets || []).some(a =>
+      String(a.player_id || '') === String(playerId) || a.is_focus);
+    const headBadge = _focusInA ? '' : vchgBadge;
+    const assetBadge = _focusInA ? vchgBadge : '';
+    let footer = '';
+    if (showTeams) {
+      const _sumSide = (assets) => (assets || []).reduce((acc, a) => {
+        const v = _pmTradeChosenValue(a);
+        return v == null ? acc : { n: acc.n + 1, sum: acc.sum + v };
+      }, { n: 0, sum: 0 });
+      const _ra = _sumSide(sides.a.assets), _rb = _sumSide(sides.b.assets);
+      if (_ra.n > 0 && _rb.n > 0) {
+        const net = Math.round(_ra.sum - _rb.sum);
+        const netCls = net > 0 ? ' up' : net < 0 ? ' down' : '';
+        const netStr = net > 0 ? '+' + net : String(net);
+        footer = `<div class="pm-trade-foot"><span>Players at today's values</span><span class="pm-trade-net${netCls}">${netStr}</span></div>`;
+      }
+    }
+    const assetOpts = { showValues: !!showTeams, focusTeamName: sides.a.team_name || '' };
     return `<div class="pm-trade-card">
       <div class="pm-trade-head">
-        <span class="pm-trade-date">${dateStr}${seasonBit ? ' · ' + seasonBit : ''}${vchgBadge}</span>
+        <div class="pm-trade-head-main">${headline}<span class="pm-trade-date">${dateStr}${seasonBit ? ' · ' + seasonBit : ''}${headBadge}</span></div>
         <div style="display:flex;gap:5px;">${viaPick}${sfBadge}</div>
       </div>
       <div class="pm-trade-body">
-        <div class="pm-trade-col">${teamA}${_pmRenderTradeAssets(sides.a.assets, playerId)}</div>
+        <div class="pm-trade-col">${teamA}${_pmRenderTradeAssets(sides.a.assets, playerId, Object.assign({}, assetOpts, { vchgBadge: assetBadge }))}</div>
         <div class="pm-trade-swap">⇄</div>
-        <div class="pm-trade-col">${teamB}${_pmRenderTradeAssets(sides.b.assets, playerId)}</div>
+        <div class="pm-trade-col">${teamB}${_pmRenderTradeAssets(sides.b.assets, playerId, assetOpts)}</div>
       </div>
+      ${footer}
     </div>`;
   }).join('');
+}
+
+// ── Rookie tab: Early NFL returns (lazy, from the same game-logs feed and
+// the same real-game parsing as the Stats tab). The whole section stays
+// hidden until real games come back; there is no placeholder state.
+function _pmLoadRookieReturns(panel, playerId, pmTabBar) {
+  const el = panel.querySelector('#pmRookieReturns');
+  if (!el || el.dataset.pid !== String(playerId)) return;
+  const pathParts = window.location.pathname.split('/').filter(p => p);
+  const _platform = pathParts[0] || 'sleeper';
+  const _season = pathParts[1] || new Date().getFullYear();
+  const _leagueId = pathParts[2] || null;
+  const _lt = brLeagueType();
+  const _ls = brLeagueSize();
+  let logsUrl = `/api/player-game-logs/${encodeURIComponent(playerId)}?season=${_season}&league_type=${_lt}&league_size=${_ls}`;
+  if (_leagueId) logsUrl += `&league_id=${_leagueId}&platform=${_platform}`;
+  fetch(logsUrl)
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(data => {
+      if (!panel.isConnected || !el.isConnected || el.dataset.pid !== String(playerId)) return;
+      const logsByYear = data.game_logs_by_year || {};
+      const year = logsByYear[String(_season)] ? String(_season)
+        : Object.keys(logsByYear).sort((a, b) => b - a)[0];
+      if (!year) return;
+      // Real games only: no byes, no projections (same filter as Stats).
+      const real = (logsByYear[year] || []).filter(g => {
+        if (g.is_bye || g.is_projection) return false;
+        const s = g.stats || {};
+        return s.pass_yd != null || s.rush_att != null || s.rec != null || s.rec_tgt != null;
+      });
+      if (!real.length) return;
+      const _n = v => (v == null || v === '' || isNaN(+v) ? 0 : +v);
+      const sum = k => real.reduce((acc, g) => acc + _n((g.stats || {})[k]), 0);
+      const pos = String((pmTabBar && pmTabBar.dataset.pmPosition) || '').toUpperCase();
+      const _kv = (k, v) => `<div style="display:flex;justify-content:space-between;gap:10px;padding:4px 0;font-size:13px;"><span style="color:var(--text-muted);">${k}</span><span style="color:var(--text);font-weight:600;text-align:right;">${v}</span></div>`;
+      let rows = '';
+      const passAtt = sum('pass_att'), rushAtt = sum('rush_att'), targets = sum('rec_tgt');
+      if (pos === 'QB' || passAtt > 0) {
+        rows += _kv('Passing', `${sum('pass_att')} att · ${sum('pass_yd')} yd · ${sum('pass_td')} TD`);
+      }
+      if (pos === 'RB' || rushAtt > 0) {
+        rows += _kv('Rushing', `${sum('rush_att')} att · ${sum('rush_yd')} yd · ${sum('rush_td')} TD`);
+      }
+      if (pos !== 'QB' || targets > 0) {
+        rows += _kv('Receiving', `${targets} tgt · ${sum('rec')} rec · ${sum('rec_yd')} yd · ${sum('rec_td')} TD`);
+      }
+      const ppgStored = pmTabBar && pmTabBar.dataset.pmPpg ? parseFloat(pmTabBar.dataset.pmPpg) : null;
+      const totalPts = real.reduce((acc, g) => acc + (g.fantasy_pts != null && !isNaN(+g.fantasy_pts) ? +g.fantasy_pts : 0), 0);
+      const ppg = (ppgStored != null && !isNaN(ppgStored)) ? ppgStored : (real.length ? totalPts / real.length : null);
+      let bestPts = null, bestWeek = null;
+      real.forEach(g => {
+        const v = g.fantasy_pts != null && !isNaN(+g.fantasy_pts) ? +g.fantasy_pts : null;
+        if (v != null && (bestPts == null || v > bestPts)) { bestPts = v; bestWeek = g.week; }
+      });
+      const fantBits = [];
+      if (ppg != null) fantBits.push(ppg.toFixed(1) + ' PPG');
+      if (bestPts != null) fantBits.push('best ' + bestPts.toFixed(1) + (bestWeek != null ? ' in W' + bestWeek : ''));
+      if (fantBits.length) rows += _kv('Fantasy', fantBits.join(' · '));
+      const snaps = real
+        .map(g => ({ week: g.week, v: (g.adv && g.adv.snap_pct != null && !isNaN(+g.adv.snap_pct)) ? +g.adv.snap_pct : null }))
+        .filter(x => x.v != null)
+        .sort((a, b) => (a.week || 0) - (b.week || 0));
+      if (snaps.length) {
+        rows += _kv('Snap share', snaps.map(x => `W${x.week} ${x.v.toFixed(1)}%`).join(' · '));
+      }
+      if (!rows) return;
+      el.innerHTML = `<div style="margin-top:20px;">
+          <div class="rk-section-divider"></div>
+          <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">Early NFL returns</div>
+          ${rows}
+        </div>`;
+    })
+    .catch(() => { /* section simply stays hidden on failure */ });
 }
 
 function pmLoadTradesTab(panel, playerId, season, pmTabBar) {
@@ -2457,7 +2764,10 @@ function _pmFetchTradesInto(panel, playerId, season, ctx) {
         body.innerHTML = `<div class="player-modal-loading" style="padding:32px 0;"><div style="color:var(--text-muted);font-size:13px;">${emptyMsg}</div></div>`;
         return;
       }
-      body.innerHTML = `<div style="padding:4px 0;">${_pmRenderTradeCards(trades, playerId, { showTeams: scope === 'league' })}</div>`;
+      const countLine = (scope !== 'league' && data.total != null)
+        ? `<div class="pm-trades-count">Showing ${trades.length} of ${data.total}</div>`
+        : '';
+      body.innerHTML = `${countLine}<div style="padding:4px 0;">${_pmRenderTradeCards(trades, playerId, { showTeams: scope === 'league' })}</div>`;
     })
     .catch(() => {
       clearTimeout(timer);
@@ -3160,7 +3470,35 @@ function _pmBuildTeamHTML(data) {
 
   const room = (data.depth_chart && data.depth_chart[pos]) || [];
   const roomCols = _pmTeamRoomColumns(pos, room);
-  const roomRows = room.length ? room.map((r, i) => _pmTeamRoomRow(r, i, pos, roomCols)).join('') : '<div class="pm-team-depth-empty">No role data available.</div>';
+  // Room list: a copy sorted by target share descending (nulls last; depth
+  // order, then original order, breaks ties). Only the top 3 render up front,
+  // unless the focus player sits deeper, in which case his row takes the
+  // third slot (e.g. WR1 / WR2 / WR5). The rest sit behind a Show all toggle.
+  // Slot numbers follow the sorted order.
+  const _roomSorted = room.map((r, i) => ({ r: r, i: i })).sort((a, b) => {
+    const av = a.r.tgt_share != null ? Number(a.r.tgt_share) : null;
+    const bv = b.r.tgt_share != null ? Number(b.r.tgt_share) : null;
+    if (av != null && bv != null && av !== bv) return bv - av;
+    if (av != null && bv == null) return -1;
+    if (av == null && bv != null) return 1;
+    const ao = a.r.order != null ? Number(a.r.order) : 99;
+    const bo = b.r.order != null ? Number(b.r.order) : 99;
+    if (ao !== bo) return ao - bo;
+    return a.i - b.i;
+  });
+  const _roomFocusIdx = _roomSorted.findIndex(x => x.r.is_focus);
+  const _roomVisibleIdx = _roomSorted.length <= 3
+    ? _roomSorted.map((_, i) => i)
+    : (_roomFocusIdx > 2 ? [0, 1, _roomFocusIdx] : [0, 1, 2]);
+  const _roomRowAt = (si) => _pmTeamRoomRow(_roomSorted[si].r, si, pos, roomCols);
+  const _roomHiddenIdx = _roomSorted.map((_, i) => i).filter(i => !_roomVisibleIdx.includes(i));
+  const roomRows = room.length
+    ? _roomVisibleIdx.map(_roomRowAt).join('')
+      + (_roomHiddenIdx.length
+        ? `<div class="pm-room-more" hidden>${_roomHiddenIdx.map(_roomRowAt).join('')}</div>`
+          + '<button type="button" class="pm-room-toggle" aria-expanded="false">Show all</button>'
+        : '')
+    : '<div class="pm-team-depth-empty">No role data available.</div>';
   const focusRole = room.find(r => r.is_focus);
   const roleLabel = focusRole && Number(focusRole.order) === 1 ? 'Starter' : (focusRole && focusRole.order ? `Depth ${focusRole.order}` : 'Team role');
   const posLine = [pos, roleLabel].filter(Boolean).join(' · ');
@@ -3188,6 +3526,29 @@ function _pmBuildTeamHTML(data) {
     return `<span><small>${c.label}</small><b>${v == null ? '—' : v + suffix}${c.key === 'snap_pct' && focusRole.snap_pct_source === 'derived' ? ' <i>est.</i>' : ''}</b></span>`;
   }).join('') + '</div>' : '';
   const shareBar = _pmTeamShareBar(data);
+
+  // "Also competing for targets": the top target earner at each other
+  // receiving position, rendered when that position has any target-share
+  // data at all. Omitted entirely when no other position qualifies.
+  const _compPosList = pos === 'QB' ? ['WR', 'TE', 'RB'] : ['WR', 'TE', 'RB'].filter(p => p !== pos);
+  const _compRows = [];
+  _compPosList.forEach(p => {
+    const rows = ((data.depth_chart && data.depth_chart[p]) || [])
+      .filter(r => r.tgt_share != null)
+      .slice().sort((a, b) => Number(b.tgt_share) - Number(a.tgt_share));
+    if (rows.length) _compRows.push({ p: p, row: rows[0] });
+  });
+  const competingHTML = _compRows.length ? `<div class="pm-competing">
+      <div class="pm-competing-div"><span>Also competing for targets</span></div>
+      ${_compRows.map(({ p, row }) => {
+        const clickable = !row.is_focus && !!row.id;
+        const cls = 'pm-troom-row pm-competing-row' + (clickable ? ' pm-troom-click pm-player-link' : '');
+        const attrs = clickable
+          ? ` data-pid="${row.id}" data-pname="${String(row.name || '').replace(/"/g, '&quot;')}" role="button" tabindex="0"`
+          : '';
+        return `<div class="${cls}"${attrs}><span class="pm-troom-slot pm-competing-slot">${p}1</span><span class="pm-troom-name">${_pmEsc(row.name || '--')}${_pmTeamInjBadge(row.injury)}</span><span class="pm-troom-num">${row.tgt_share}%</span></div>`;
+      }).join('')}
+    </div>` : '';
 
   const otherPos = ['QB', 'RB', 'WR', 'TE'].filter(function (p) { return p !== pos; });
   const miniCols = otherPos.map(function (p) {
@@ -3285,7 +3646,88 @@ function _pmBuildTeamHTML(data) {
 
   const scheduleSec = _pmBuildScheduleHTML(data);
 
+  // Summary strip at the very top of the panel: one cell per fact the
+  // payload actually carries for the focus player, each cell hidden when
+  // its fields are absent. When the depth row carries target counts, the
+  // share renders at one-decimal precision from the counts themselves
+  // (51 of 186 -> 27.4%); otherwise the usage table's integer share shows.
+  const _tsCells = [];
+  if (focusRole && focusRole.order != null) {
+    _tsCells.push(`<div class="pm-strip-cell"><span class="pm-strip-label">Role</span><span class="pm-strip-val">${_pmEsc(pos + focusRole.order)}${team ? ` · ${_pmEsc(team)}` : ''}</span></div>`);
+  }
+  if (focusRole && focusRole.tgt_share != null) {
+    const _tsCounts = (focusRole.targets != null && focusRole.team_targets != null)
+      ? ` <span class="pm-strip-sub">${focusRole.targets} of ${focusRole.team_targets}</span>` : '';
+    const _tsPct = (focusRole.targets != null && focusRole.team_targets)
+      ? (100 * focusRole.targets / focusRole.team_targets).toFixed(1)
+      : focusRole.tgt_share;
+    _tsCells.push(`<div class="pm-strip-cell"><span class="pm-strip-label">Target Share</span><span class="pm-strip-val">${_tsPct}%${_tsCounts}</span></div>`);
+  }
+  if (focusRole && focusRole.snap_pct != null) {
+    _tsCells.push(`<div class="pm-strip-cell"><span class="pm-strip-label">Snap Share</span><span class="pm-strip-val">${focusRole.snap_pct}%${focusRole.snap_pct_source === 'derived' ? ' <span class="pm-strip-sub">est.</span>' : ''}</span></div>`);
+  }
+  if (focusRole && focusRole.rec != null && focusRole.rec_yd != null && focusRole.rec_td != null) {
+    _tsCells.push(`<div class="pm-strip-cell"><span class="pm-strip-label">Receiving</span><span class="pm-strip-val">${focusRole.rec} · ${focusRole.rec_yd} · ${focusRole.rec_td}</span><span class="pm-strip-sub">rec / yd / td</span></div>`);
+  }
+  if (focusRole && focusRole.ppg != null) {
+    const _tsRank = focusRole.ppg_rank != null ? ` <span class="pm-strip-chip">${_pmEsc(pos + focusRole.ppg_rank)}</span>` : '';
+    _tsCells.push(`<div class="pm-strip-cell"><span class="pm-strip-label">PPG</span><span class="pm-strip-val">${Number(focusRole.ppg).toFixed(1)}${_tsRank}</span></div>`);
+  }
+  const teamStrip = _tsCells.length ? `<div class="pm-team-strip">${_tsCells.join('')}</div>` : '';
+
+  // Usage-by-week card: the right half of the Room / Usage pair. Built from
+  // the payload's focus_weekly series (played weeks only: weekly targets +
+  // snap share from the weekly-metrics store). Bars need 2+ weeks; each
+  // summary row hides when its data is absent; the whole card is omitted
+  // when the series carries nothing renderable.
+  const _fw = (Array.isArray(data.focus_weekly) ? data.focus_weekly : [])
+    .filter(p => p && isFinite(Number(p.week)))
+    .map(p => ({ week: Number(p.week), targets: p.targets, snap_share: p.snap_share }))
+    .sort((a, b) => a.week - b.week);
+  let usageCard = '';
+  if (_fw.length) {
+    const _tgts = _fw.map(p => (p.targets != null && isFinite(Number(p.targets))) ? Number(p.targets) : null);
+    const _hasTgt = _tgts.some(v => v != null);
+    let _bars = '';
+    if (_fw.length >= 2 && _hasTgt) {
+      const _vals = _tgts.map(v => v || 0);
+      const _mx = Math.max.apply(null, _vals);
+      const _mn = Math.min.apply(null, _vals);
+      _bars = '<div class="pm-recent-bars pm-usage-wk-bars">' + _fw.map((p, i) => {
+        const v = _vals[i];
+        const h = _mx > 0 ? Math.max(6, Math.round(v / _mx * 100)) : 6;
+        const low = v === _mn && _mn < 0.6 * _mx;
+        return '<div class="pm-recent-col">'
+          + `<span class="pm-recent-val">${p.targets != null ? p.targets : ''}</span>`
+          + `<div class="pm-recent-track"><div class="pm-recent-bar${low ? ' pm-bar-low' : ''}" style="height:${h}%"></div></div>`
+          + `<span class="pm-recent-wk">W${p.week}</span></div>`;
+      }).join('') + '</div>';
+    }
+    const _urows = [];
+    const _snaps = _fw.map(p => p.snap_share).filter(v => v != null && isFinite(Number(v)));
+    if (_snaps.length) {
+      _urows.push(`<div class="pm-ov-kv"><span>Snap share by week</span><b>${_snaps.map(v => (Math.round(Number(v) * 10) / 10).toFixed(1)).join(' · ')}</b></div>`);
+    }
+    if (_hasTgt) {
+      const _last3 = _tgts.filter(v => v != null).slice(-3);
+      if (_last3.length) {
+        const _avg = _last3.reduce((a, b) => a + b, 0) / _last3.length;
+        _urows.push(`<div class="pm-ov-kv"><span>Targets, last ${_last3.length} week${_last3.length === 1 ? '' : 's'}</span><b>${_avg.toFixed(1)} / game</b></div>`);
+      }
+      let _hi = null;
+      _fw.forEach((p, i) => { if (_tgts[i] != null && (_hi == null || _tgts[i] > _hi.v)) _hi = { v: _tgts[i], w: p.week }; });
+      if (_hi) _urows.push(`<div class="pm-ov-kv"><span>Season high</span><b>${_hi.v} target${_hi.v === 1 ? '' : 's'} · Week ${_hi.w}</b></div>`);
+    }
+    if (_bars || _urows.length) {
+      usageCard = `<div class="pm-team-pair-card pm-pair-usage">
+        <div class="pm-section-header"><span class="pm-section-label">Usage by week · targets</span></div>
+        ${_bars}${_urows.join('')}
+      </div>`;
+    }
+  }
+
   return `<div class="pm-team-wrap">
+    ${teamStrip}
     <div class="pm-team-header">
       <div class="pm-team-headtop">
         ${logoImg}
@@ -3300,15 +3742,19 @@ function _pmBuildTeamHTML(data) {
       ${data.team_timeframe && !data.team_timeframe.season_team_confirmed ? '<div class="pm-team-context-warning">No team record was found for this player in the selected season; current-team context is shown separately.</div>' : ''}
       ${heroStats ? '<div class="pm-team-herostats">' + heroStats + '</div>' : ''}
     </div>
-    <div class="pm-team-sec pm-role-sec">
-      <div class="pm-section-header"><span class="pm-section-label">Depth Chart / Competition</span><span class="pm-team-secnote">${pos} room</span></div>
-      ${roleSummary}${shareBar}
-      ${pos === 'RB' ? `<div class="pm-usage-bars-wrap" data-team="${_pmEsc(team)}" data-season="${summarySeason}" data-focus="${_pmEsc(data.player_name || '')}"></div>` : ''}
-      <div class="pm-team-usage pm-room-${pos.toLowerCase()}">
-        <div class="pm-troom-row pm-troom-head"><span></span><span>${pos} Room</span>${roomCols.map(c => `<span class="pm-col-${c.key}">${c.label}</span>`).join('')}</div>
-        ${roomRows}
+    <div class="pm-team-pair${usageCard ? '' : ' pm-team-pair-solo'}">
+      <div class="pm-team-pair-card pm-pair-room">
+        <div class="pm-section-header"><span class="pm-section-label">Depth Chart / Competition</span><span class="pm-team-secnote">${pos} room</span></div>
+        ${roleSummary}${shareBar}
+        ${pos === 'RB' ? `<div class="pm-usage-bars-wrap" data-team="${_pmEsc(team)}" data-season="${summarySeason}" data-focus="${_pmEsc(data.player_name || '')}"></div>` : ''}
+        <div class="pm-team-usage pm-room-${pos.toLowerCase()}">
+          <div class="pm-troom-row pm-troom-head"><span></span><span>${pos} Room</span>${roomCols.map(c => `<span class="pm-col-${c.key}">${c.label}</span>`).join('')}</div>
+          ${roomRows}
+        </div>
+        ${competingHTML}
+        <div class="pm-team-note">${data.roster_timeframe && data.roster_timeframe.historical_unavailable ? `Historical depth charts are unavailable. This is the current roster; injuries are current, while usage is from ${data.usage_timeframe ? data.usage_timeframe.season : 'the latest available season'}.` : `Current Sleeper depth order and injuries. Usage is from ${data.usage_timeframe ? data.usage_timeframe.season : seasonNote}.`} PPR PPG uses PPR scoring. Tap any teammate to open their card.</div>
       </div>
-      <div class="pm-team-note">${data.roster_timeframe && data.roster_timeframe.historical_unavailable ? `Historical depth charts are unavailable. This is the current roster; injuries are current, while usage is from ${data.usage_timeframe ? data.usage_timeframe.season : 'the latest available season'}.` : `Current Sleeper depth order and injuries. Usage is from ${data.usage_timeframe ? data.usage_timeframe.season : seasonNote}.`} PPR PPG uses PPR scoring. Tap any teammate to open their card.</div>
+      ${usageCard}
     </div>
     <div class="pm-team-sec pm-environment-sec">
       <div class="pm-section-header"><span class="pm-section-label">Offensive Environment</span><span class="pm-team-secnote">${seasonNote} · rank of 32</span></div>
@@ -3402,6 +3848,15 @@ function _pmWireTeamPanel(panel, playerId) {
     }
     const nav = findPlayerNavTarget(target);
     if (nav) { e.preventDefault(); openTeammate(nav); return; }
+    const roomTgl = target.closest && target.closest('.pm-room-toggle');
+    if (roomTgl) {
+      const more = panel.querySelector('.pm-room-more');
+      const open = more ? more.hidden : false;
+      if (more) more.hidden = !open;
+      roomTgl.setAttribute('aria-expanded', String(open));
+      roomTgl.textContent = open ? 'Show less' : 'Show all';
+      return;
+    }
     const adv = target.closest && target.closest('.pm-team-adv-toggle');
     if (adv) { _pmTeamAdvOpen = !_pmTeamAdvOpen; _pmSyncDisclosure(adv, panel.querySelector('.pm-team-adv-body'), _pmTeamAdvOpen); return; }
     const sched = target.closest && target.closest('.pm-team-sched-toggle');
@@ -3459,6 +3914,41 @@ function pmPrefetchTabs() {
   } catch (_) {}
 }
 
+// One weekly bar chart with an amber trend line traced through the bar
+// tops (mock: Breakout frame). Blue bars; the lowest bar is muted when it
+// sits well below the series max. Values sit above the bars, week labels
+// below. Returns '' for fewer than 2 points so a chart never renders on a
+// sliver of data.
+function _pmBkWeeklyChart(title, points, opts) {
+  const pts = (points || []).filter(p =>
+    p && p.week != null && p.value != null && isFinite(Number(p.value)));
+  if (pts.length < 2) return '';
+  const vals = pts.map(p => Number(p.value));
+  const maxVal = Math.max.apply(null, vals);
+  const minVal = Math.min.apply(null, vals);
+  const scaleMax = (opts && opts.max) || (maxVal > 0 ? maxVal : 1);
+  const fmt = (opts && opts.fmt) || (v => String(Math.round(v)));
+  const base = 66, maxH = 50;
+  const barH = v => Math.max(2, Math.round(v / scaleMax * maxH * 10) / 10);
+  let inner = '';
+  pts.forEach((p, i) => {
+    const v = Number(p.value);
+    const h = barH(v);
+    const x = 13 + 60 * i, cx = x + 17, y = base - h;
+    const low = v === minVal && minVal < 0.6 * maxVal;
+    inner += `<rect class="pm-bk-bar${low ? ' pm-bk-bar-low' : ''}" x="${x}" y="${y}" width="34" height="${h}" rx="3"/>`;
+    inner += `<text class="pm-bk-val" x="${cx}" y="${y - 5}">${_pmEsc(fmt(v))}</text>`;
+    inner += `<text class="pm-bk-wk" x="${cx}" y="80">W${p.week}</text>`;
+  });
+  const linePts = pts.map((p, i) => `${13 + 60 * i + 17},${base - barH(Number(p.value))}`).join(' ');
+  const dots = pts.map((p, i) =>
+    `<circle class="pm-bk-dot" cx="${13 + 60 * i + 17}" cy="${base - barH(Number(p.value))}" r="3"/>`).join('');
+  return `<div class="pm-bk-chart">
+    <div class="pm-section-header"><span class="pm-section-label">${_pmEsc(title)}</span></div>
+    <svg class="pm-bk-svg" viewBox="0 0 ${60 * pts.length} 88" role="img" aria-label="${_pmEsc(title)}">${inner}<polyline class="pm-bk-line" points="${linePts}"/>${dots}</svg>
+  </div>`;
+}
+
 // ── Weekly (in-season) breakout tab builder ──────────────────────────────────
 // Renders the current-season usage-based read: classification + score +
 // confidence (kept visually separate), 2-3 concise reasons, the main risk, a
@@ -3511,6 +4001,9 @@ function _buildWeeklyBkTabHTML(data) {
       <div style="font-size:11px;color:var(--text-muted);margin-top:1px;">evidence strength</div>
     </div>`;
   html += `</div>`;
+  html += `<div style="font-size:12.5px;color:var(--text-muted);line-height:1.5;margin:2px 0 4px;">${data.score_basis === 'initial_role'
+    ? 'How strong his role is in his first NFL games, scored on its own with no prior baseline.'
+    : 'How much his role has grown compared with his early-season baseline.'}</div>`;
 
   // ── Why (concise reasons) ──────────────────────────────────────────────────
   const reasons = Array.isArray(data.reasons) ? data.reasons.filter(Boolean).slice(0, 3)
@@ -3526,6 +4019,23 @@ function _buildWeeklyBkTabHTML(data) {
                </div>`;
     });
     html += `</div>`;
+  }
+
+  // ── Weekly charts: snap share + targets, bars with amber trend lines ───────
+  const wkSeries = Array.isArray(data.weekly_series) ? data.weekly_series : [];
+  const snapPts = wkSeries.filter(p => p && p.snap_share != null)
+    .map(p => ({ week: p.week, value: Number(p.snap_share) }));
+  const tgtPts = wkSeries.filter(p => p && p.targets != null)
+    .map(p => ({ week: p.week, value: Number(p.targets) }));
+  const wkCharts = [
+    _pmBkWeeklyChart('Snap share by week', snapPts,
+      { max: 100, fmt: v => (Math.round(v * 10) / 10).toFixed(1) }),
+    _pmBkWeeklyChart('Targets by week', tgtPts,
+      { fmt: v => String(Math.round(v)) }),
+  ].filter(Boolean);
+  if (wkCharts.length) {
+    html += `<hr class="pm-section-divider">`;
+    html += `<div class="pm-bk-charts${wkCharts.length === 1 ? ' pm-bk-charts-1' : ''}">${wkCharts.join('')}</div>`;
   }
 
   // ── Usage comparison (baseline -> recent) ──────────────────────────────────
@@ -3704,7 +4214,8 @@ function _buildBkTabHTML(data, scoreColor) {
     <div class="pm-hero-stat">
       <div class="pm-hero-label">Breakout Score</div>
       <div class="pm-hero-val" style="color:${scoreColor};">${score != null ? score : '--'}</div>
-      ${score != null ? `<div style="font-size:11px;font-weight:700;color:${scoreColor};text-transform:uppercase;letter-spacing:0.03em;margin-top:1px;">${tier}${hitProb ? ` · ${hitProb} hit` : ''}</div>` : ''}
+      ${score != null ? `<div style="font-size:11px;font-weight:700;color:${scoreColor};text-transform:uppercase;letter-spacing:0.03em;margin-top:1px;">${tier}</div>` : ''}
+      ${hitProb ? `<div style="font-size:11px;color:var(--text-muted);margin-top:1px;">${hitProb} hit rate</div>` : ''}
     </div>`;
   if (rank && rank.overall) {
     const posLabel = rank.position && rank.pos ? `${rank.position} #${rank.pos}` : null;
@@ -4103,10 +4614,52 @@ function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint, seasonTeam
     return ds;
   };
 
+  // Optional headline strip for the player modal's Stats tab (opt-in via
+  // opts.showSummaryStrip; Compare's summary-only reuse never sets it, so its
+  // output is unchanged). Latest season only, real games only, reusing the
+  // same aggregates as the season cards below. Renders nothing when the
+  // latest season has no real games; the PPG Rank cell appears only when a
+  // rank was passed in opts.
+  let _summaryStripHTML = '';
+  if (opts && opts.showSummaryStrip && !_summaryOnly && game_logs_by_year) {
+    const _stripYears = Object.keys(game_logs_by_year).sort((a, b) => b - a);
+    const _stripYear = _stripYears[0];
+    if (_stripYear != null) {
+      const _stripReal = (game_logs_by_year[_stripYear] || []).filter((g) => {
+        if (g.is_bye || g.is_projection) return false;
+        const s = g.stats || {};
+        return s.pass_yd != null || s.rush_att != null || s.rec != null || s.rec_tgt != null;
+      });
+      if (_stripReal.length) {
+        const _sAgg = _seasonAgg(_stripReal);
+        const _wkPts = _stripReal.map((g) => _num(g.fantasy_pts)).filter((v) => v != null).sort((a, b) => a - b);
+        const _median = !_wkPts.length ? null
+          : _wkPts.length % 2 ? _wkPts[(_wkPts.length - 1) / 2]
+          : (_wkPts[_wkPts.length / 2 - 1] + _wkPts[_wkPts.length / 2]) / 2;
+        let _bestPts = null, _bestWeek = null;
+        _stripReal.forEach((g) => {
+          const v = _num(g.fantasy_pts);
+          if (v != null && (_bestPts == null || v > _bestPts)) { _bestPts = v; _bestWeek = g.week; }
+        });
+        const _rankStr = (opts.ppgRank != null && String(opts.ppgRank).trim() !== '') ? String(opts.ppgRank).trim() : '';
+        const _scell = (label, val) => `<div class="pm-strip-cell"><span class="pm-strip-label">${label}</span><span class="pm-strip-val">${val}</span></div>`;
+        _summaryStripHTML = '<div class="pm-stats-strip">'
+          + _scell('Season', _pmEsc(_stripYear))
+          + _scell('Games', String(_sAgg.n))
+          + _scell('PPG', _sAgg.n ? _r1(_sAgg.pts / _sAgg.n) : '-')
+          + ((_rankStr && POS) ? `<div class="pm-strip-cell"><span class="pm-strip-label">PPG Rank</span><span class="pm-strip-chip">${_pmEsc(POS + _rankStr)}</span></div>` : '')
+          + _scell('Total Pts', _r1(_sAgg.pts))
+          + _scell('Median Week', _median != null ? _r1(_median) : '-')
+          + _scell('Best Week', _bestPts != null ? _r1(_bestPts) + (_bestWeek != null ? ` <span class="pm-strip-sub">W${_bestWeek}</span>` : '') : '-')
+          + '</div>';
+      }
+    }
+  }
+
   let statsHTML = '';
   if (game_logs_by_year && Object.keys(game_logs_by_year).length > 0) {
     const _mode = window._glAvgTot || 'avg';
-    statsHTML += `
+    statsHTML += _summaryStripHTML + `
       <div class="player-modal-section">
         ${skipHeader ? '' : `
         <div class="pm-section-header">
@@ -4335,6 +4888,27 @@ function _ensureAdvMetricsCfg() {
 
 // Week-range helpers live in static/week_range.js, loaded by the core shell.
 
+// Empty state for the Advanced tab when a player has no charted metrics.
+function _pmAdvEmptyHTML() {
+  return '<div class="pm-adv-empty">'
+    + '<div class="pm-adv-empty-title">No advanced metrics for this player</div>'
+    + '<div class="pm-adv-empty-sub">There is nothing to show yet. Metrics appear here once his games are charted.</div>'
+    + '</div>';
+}
+
+// Per-category "Show N more" expander for the Advanced tab detail metrics.
+// The toggle button sits directly before the hidden detail container.
+window.pmToggleAdvDetails = function (btn) {
+  if (!btn) return;
+  const wrap = btn.nextElementSibling;
+  if (!wrap) return;
+  const show = !!wrap.hidden;
+  wrap.hidden = !show;
+  btn.setAttribute('aria-expanded', show ? 'true' : 'false');
+  const n = btn.getAttribute('data-count') || '';
+  btn.textContent = show ? 'Show less' : ('Show ' + n + ' more');
+};
+
 function _advParseSeasons(raw) {
   return String(raw || '').split(',').map(function(s) { return s.trim(); })
     .filter(function(s) { return /^\d{4}$/.test(s); })
@@ -4463,8 +5037,10 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
     .then(metricsData => {
       if (token !== _advMetricsToken) return; // superseded by a newer call
       if (metricsData.error || metricsData.premium_required) {
-        contentEl.innerHTML = '<div class="player-modal-loading" style="padding:32px 0;">'
-          + '<div style="color:var(--text-muted);font-size:13px;">Metrics are being processed for the current week.</div></div>';
+        // No-metrics state (the endpoint 404s into an error payload, and
+        // premium_required arrives on the same shape with no distinct
+        // paywall rendering in this tab): show the honest empty state.
+        contentEl.innerHTML = _pmAdvEmptyHTML();
         return;
       }
 
@@ -6099,7 +6675,7 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
     if (f != null) d.fill = f;
   });
 
-  if (defs.length === 0) return '';
+  if (defs.length === 0) return _pmAdvEmptyHTML();
 
   function _cells(m, isRank) {
     if (!m) return '<span></span><span></span><span></span>';
@@ -6174,7 +6750,21 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
       if (!group.length) continue;
       const catLabel = cat === '__other__' ? '' : cat;
       if (catLabel) html += '<div class="am-metrics-cat-head">' + catLabel + '</div>';
-      html += _grid(group, true);
+      // Basic/detail split, mirroring Compare: metrics whose config entry
+      // flags `basic` (and defs with no config entry at all) stay visible;
+      // the rest hide behind a per-category expander. Alphabetical order is
+      // kept within each set (the group sort above carries into both).
+      const basics = [], details = [];
+      group.forEach(def => {
+        const spec = def.key ? cfg[def.key] : null;
+        if (!spec || spec.basic) basics.push(def);
+        else details.push(def);
+      });
+      if (basics.length) html += _grid(basics, true);
+      if (details.length) {
+        html += '<button type="button" class="cmp-cat-toggle" aria-expanded="false" data-count="' + details.length + '" onclick="pmToggleAdvDetails(this)">Show ' + details.length + ' more</button>';
+        html += '<div class="pm-adv-detail" hidden>' + _grid(details, true) + '</div>';
+      }
     }
   } else {
     html += _grid(defs, true);

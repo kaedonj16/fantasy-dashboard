@@ -13,7 +13,14 @@ def test_player_modal_breakout_tab_gated_on_authoritative_membership():
     # Outside the Breakout page, tab visibility comes from the authoritative
     # player-specific result rather than the asynchronous global indicator list.
     assert "breakoutData.board_eligible === true" in js
-    assert "tabBreakout.disabled = !boardEligible" in js
+    # Hard rule (player modal redesign): the tab exists ONLY when the
+    # player-details payload flags the player as on the breakout board.
+    # No disabled state, no placeholder, no reveal-after-fetch flow.
+    assert "data.on_breakout_board === true" in js
+    assert "tabBreakout.style.display = _onBreakoutBoard ? '' : 'none'" in js
+    assert "tabBreakout.disabled" not in js
+    assert "applyBreakoutEligibility" not in js
+    assert "Not on the current breakout board" not in js
     assert "isBreakout(pid) ? '' : 'none'" not in js
     assert "/api/breakout/player/${encodeURIComponent(playerId)}" in js
     # Must not unconditionally reveal the tab for every player.
