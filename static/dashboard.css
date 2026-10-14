@@ -49066,13 +49066,18 @@ em.gneg { background: var(--loss); }
   .ns-card .ns-list .ns-item .ns-body {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
+    /* Explicit rows so the CTA's grid-row: 1 / -1 below really spans
+       the text rows. Without them the span collapses into row 1, the
+       34px CTA sizes that row, and the headline is pushed a full CTA
+       height away from the tag. */
+    grid-template-rows: repeat(3, auto);
     column-gap: 8px;
     align-items: center;
     height: auto;
   }
   .ns-card .ns-list .ns-item .ns-tag {
     grid-column: 1;
-    margin-bottom: 2px;
+    margin-bottom: 6px;
     font-size: 10px;
     padding: 2px 6px;
   }
@@ -49094,7 +49099,9 @@ em.gneg { background: var(--loss); }
     grid-column: 2;
     grid-row: 1 / -1;
     margin-top: 0;
-    align-self: center;
+    /* Spanning the text rows now; stay pinned to the tag row at the
+       top instead of centering against the whole text block. */
+    align-self: start;
     white-space: nowrap;
     flex-shrink: 0;
     padding: 6px 10px;
