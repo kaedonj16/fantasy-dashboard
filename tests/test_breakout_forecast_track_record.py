@@ -826,8 +826,8 @@ def test_weekly_board_attaches_forecast_on_explicit_week_view(monkeypatch):
 
 
 def _graded_week_payload():
-    # Four surfaced week-2 rows, one per stamp outcome plus a player
-    # whose call was voided by injury (never stamped).
+    # Four surfaced week-2 rows, one per grade outcome plus a player
+    # whose call was voided by injury (never graded).
     def _row(pid, name):
         return {
             "player_id": pid, "player_name": name, "team": "KC",
@@ -905,7 +905,7 @@ def test_weekly_board_attaches_grades_and_receipt_detail(monkeypatch):
     assert detail["outcome_games"] == 3
     assert detail["reason"] == "role_held_and_production_rose"
 
-    # Partial is stampable now too, with its own evidence.
+    # Partial is graded now too, with its own evidence.
     partial = by_id["102"]
     assert partial["grade"] == "partial"
     assert partial["grade_detail"]["opp_delta"] == 2.6
@@ -915,7 +915,7 @@ def test_weekly_board_attaches_grades_and_receipt_detail(monkeypatch):
     assert by_id["103"]["grade"] == "miss"
     assert by_id["103"]["grade_detail"]["ppg_delta"] == -2.53
 
-    # Injured calls are never stamped.
+    # Injured calls are never graded.
     assert "grade" not in by_id["104"]
     assert "grade_detail" not in by_id["104"]
 
@@ -2027,14 +2027,14 @@ def test_dashboard_css_styles_clickable_rail_rows():
 
 
 # ---------------------------------------------------------------------------
-# grade stamps: animated HIT / PARTIAL / MISS stamps, receipts, definition
+# grade pills: animated HIT / PARTIAL / MISS solid pills, receipts, definition
 # ---------------------------------------------------------------------------
 
-def _bo_stamp_core_fns(src):
+def _bo_pill_core_fns(src):
     return "\n".join([
         _extract_bo_fn(src, "function _boFmtDelta(v)"),
         _extract_bo_fn(src, "function _boGradeReceiptHtml(candidate, receiptId)"),
-        _extract_bo_fn(src, "function _boGradeStampHtml(candidate, idx, receiptId)"),
+        _extract_bo_fn(src, "function _boGradePillHtml(candidate, idx, receiptId)"),
     ])
 
 
@@ -2049,17 +2049,17 @@ def _rc_row(html, label):
 
 @pytest.mark.skipif(shutil.which("node") is None,
                     reason="node not available")
-def test_grade_stamp_and_receipt_render_on_graded_cards():
+def test_grade_pill_and_receipt_render_on_graded_cards():
     src = (ROOT / "app.py").read_text(encoding="utf-8")
     fn_src = "\n".join([
-        _bo_stamp_core_fns(src),
+        _bo_pill_core_fns(src),
         _extract_bo_fn(src, "function _boWeeklySignal(candidate)"),
         _extract_bo_fn(src, "function _boWeeklySignalText(signal)"),
         _extract_bo_fn(src, "function renderBreakoutCard(candidate, idx)"),
     ])
     driver = """
 // Headshot source is stubbed: the real helper's regex escapes do not
-// survive source extraction, and the URL is irrelevant to the stamps.
+// survive source extraction, and the URL is irrelevant to the pills.
 function _boHeadshotSrc(candidate, pid) { return 'hs-' + pid; }
 var currentWeek = '2';
 function fakeCandidate(over) {
@@ -2085,8 +2085,8 @@ var out = {
     grade_detail: {ppg_delta: -2.5, snap_delta: -3.9, opp_delta: -2.0,
                    outcome_games: 3}}), 2),
   deep: renderBreakoutCard(fakeCandidate({player_id: '104'}), 40),
-  stampSpan: _boGradeStampHtml({grade: 'hit'}, 3, null),
-  stampDelay: _boGradeStampHtml({grade: 'miss'}, 40, 'bo-grc-x')
+  pillSpan: _boGradePillHtml({grade: 'hit'}, 3, null),
+  pillDelay: _boGradePillHtml({grade: 'miss'}, 40, 'bo-grc-x')
 };
 currentWeek = 'latest';
 out.latest = renderBreakoutCard(fakeCandidate(), 0);
@@ -2098,9 +2098,12 @@ console.log(JSON.stringify(out));
     out = json.loads(res.stdout)
 
     hit = out["hit"]
-    assert "bo-stamp bo-stamp-hit" in hit
+    assert "bo-grade-pill bo-grade-pill-hit" in hit
     assert ">HIT</button>" in hit
-    assert 'title="Why this grade?"' in hit
+    # The pill button carries aria-label, never title: a title would be
+    # upgraded into a tooltip bubble at the card's right edge.
+    assert 'aria-label="Why this grade?"' in hit
+    assert 'title="Why this grade?"' not in hit
     assert 'id="bo-grc-0-101"' in hit
     # The Hit card flashes its border once; the others do not.
     assert "bo-grade-flash" in hit
@@ -2115,7 +2118,7 @@ console.log(JSON.stringify(out));
     assert "Graded over 3 games" in hit
 
     partial = out["partial"]
-    assert "bo-stamp bo-stamp-partial" in partial
+    assert "bo-grade-pill bo-grade-pill-partial" in partial
     assert ">PARTIAL</button>" in partial
     touch_row = _rc_row(partial, "Role (touches)")
     assert "bo-rc-pass" in touch_row and "+2.6 per game" in touch_row
@@ -2123,19 +2126,19 @@ console.log(JSON.stringify(out));
     assert "bo-rc-fail" in snap_row and "-4.0 pts" in snap_row
 
     miss = out["miss"]
-    assert "bo-stamp bo-stamp-miss" in miss
+    assert "bo-grade-pill bo-grade-pill-miss" in miss
     assert ">MISS</button>" in miss
     prod_row = _rc_row(miss, "Production")
     assert "bo-rc-fail" in prod_row and "-2.5 PPG" in prod_row
 
-    # Stagger: 60ms per card, capped at 600ms however deep the list.
-    assert "animation-delay:180ms" in out["stampSpan"]
-    assert ">HIT</span>" in out["stampSpan"]
-    assert "animation-delay:600ms" in out["deep"]
-    assert "animation-delay:600ms" in out["stampDelay"]
+    # Stagger: 150ms per card, capped at 750ms however deep the list.
+    assert "--pill-delay:450ms" in out["pillSpan"]
+    assert ">HIT</span>" in out["pillSpan"]
+    assert "--pill-delay:750ms" in out["deep"]
+    assert "--pill-delay:750ms" in out["pillDelay"]
 
-    # The current board renders exactly as before: no stamp, no receipt.
-    assert "bo-stamp" not in out["latest"]
+    # The current board renders exactly as before: no pill, no receipt.
+    assert "bo-grade-pill" not in out["latest"]
     assert "bo-receipt" not in out["latest"]
     assert "bo-grade-flash" not in out["latest"]
 
@@ -2182,7 +2185,7 @@ console.log(JSON.stringify(out));
     assert "Role (touches)" not in out["snapOnly"]
     assert "Graded over 2 games" in out["snapOnly"]
 
-    # No evidence at all: no receipt, so the stamp renders plain.
+    # No evidence at all: no receipt, so the pill renders plain.
     assert out["empty"] == ""
     assert out["noDetail"] == ""
     # Games alone still earn the footer line.
@@ -2222,6 +2225,37 @@ console.log(JSON.stringify({opened: opened, closed: closed}));
 
 @pytest.mark.skipif(shutil.which("node") is None,
                     reason="node not available")
+def test_definition_toggle_opens_and_closes():
+    src = (ROOT / "app.py").read_text(encoding="utf-8")
+    fn_src = _extract_bo_fn(src, "function boToggleHitDef(btn)")
+    driver = """
+var bodyEl = {hidden: true};
+var btn = {attrs: {'aria-expanded': 'false'},
+           getAttribute: function (k) {
+             return k === 'aria-controls' ? 'boHitDefBody' : null;
+           },
+           setAttribute: function (k, v) { this.attrs[k] = v; }};
+var document = {
+  getElementById: function (id) {
+    return id === 'boHitDefBody' ? bodyEl : null;
+  }
+};
+boToggleHitDef(btn);
+var opened = {hidden: bodyEl.hidden, expanded: btn.attrs['aria-expanded']};
+boToggleHitDef(btn);
+var closed = {hidden: bodyEl.hidden, expanded: btn.attrs['aria-expanded']};
+console.log(JSON.stringify({opened: opened, closed: closed}));
+"""
+    res = subprocess.run(["node", "-e", fn_src + "\n" + driver],
+                         capture_output=True, text=True, timeout=20)
+    assert res.returncode == 0, res.stderr
+    out = json.loads(res.stdout)
+    assert out["opened"] == {"hidden": False, "expanded": "true"}
+    assert out["closed"] == {"hidden": True, "expanded": "false"}
+
+
+@pytest.mark.skipif(shutil.which("node") is None,
+                    reason="node not available")
 def test_definition_bar_only_on_graded_week_views():
     src = (ROOT / "app.py").read_text(encoding="utf-8")
     fn_src = "\n".join([
@@ -2245,15 +2279,21 @@ console.log(JSON.stringify(out));
     out = json.loads(res.stdout)
 
     bar = out["graded"]
-    assert "What counts as a Hit:" in bar
-    assert "kept the bigger role (snap share +8 pts or touches +2.0 per game)" in bar
+    # Collapsed by default: a toggle row (title, legend pills, chevron)
+    # with the definition body hidden underneath it.
+    assert 'class="bo-hit-def-toggle"' in bar
+    assert 'aria-expanded="false"' in bar
+    assert 'aria-controls="boHitDefBody"' in bar
+    assert "What counts as a Hit?" in bar
+    assert 'id="boHitDefBody" hidden' in bar
+    assert "Over the 3 weeks after the call, the player kept the bigger role (snap share +8 pts or touches +2.0 per game)" in bar
     assert "gained at least +2.0 PPG" in bar
     assert "One leg only is a Partial" in bar
     assert "production collapsing by 2.0 PPG or more, is a Miss" in bar
-    # Static legend stamps for all three grades.
-    assert "bo-stamp bo-stamp-hit bo-stamp-static" in bar
-    assert "bo-stamp bo-stamp-partial bo-stamp-static" in bar
-    assert "bo-stamp bo-stamp-miss bo-stamp-static" in bar
+    # Static legend pills for all three grades.
+    assert "bo-grade-pill bo-grade-pill-hit bo-grade-pill-sm" in bar
+    assert "bo-grade-pill bo-grade-pill-partial bo-grade-pill-sm" in bar
+    assert "bo-grade-pill bo-grade-pill-miss bo-grade-pill-sm" in bar
     # UI copy carries no em dashes.
     assert "—" not in bar
 
@@ -2262,10 +2302,12 @@ console.log(JSON.stringify(out));
     assert out["latest"] == ""
 
 
-def test_grade_stamp_wiring_and_styles():
+def test_grade_pill_wiring_and_styles():
     src = (ROOT / "app.py").read_text(encoding="utf-8")
-    # The card stamps through the helper; both old flat pills are gone.
-    assert "_boGradeStampHtml(candidate, idx || 0" in src
+    # The card pills through the helper; the stamps are gone everywhere.
+    assert "_boGradePillHtml(candidate, idx || 0" in src
+    assert "_boGradeStampHtml" not in src
+    assert "bo-stamp" not in src
     assert "background:#16a34a;padding:3px 10px" not in src
     assert "background:#dc2626;padding:3px 10px" not in src
     # Both board render paths prepend the definition bar and pass the
@@ -2275,21 +2317,29 @@ def test_grade_stamp_wiring_and_styles():
     assert "renderBreakoutCard(candidate, start + i)" in src
 
     css = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
-    stamp = css.split(".bo-stamp {")[1].split("}")[0]
-    assert "border: 2px solid currentColor" in stamp
-    assert "rotate(-8deg)" in stamp
-    assert "background: transparent" in stamp
-    assert "#16a34a" in css.split(".bo-stamp-hit {")[1].split("}")[0]
-    assert "#d97706" in css.split(".bo-stamp-partial {")[1].split("}")[0]
-    assert "#b91c1c" in css.split(".bo-stamp-miss {")[1].split("}")[0]
-    # Slam keyframes overshoot through the brief's scale stops, the Hit
-    # gets its one ring pulse, and Hit cards flash once.
-    slam = css.split("@keyframes boStampSlam {")[1].split("@keyframes")[0]
-    assert "scale(2.6)" in slam and "scale(0.92)" in slam
-    assert "scale(1.07)" in slam
-    assert "@keyframes boStampRing" in css
+    assert ".bo-stamp" not in css
+    pill = css.split(".bo-grade-pill {")[1].split("}")[0]
+    assert "padding: 3px 10px" in pill
+    assert "border-radius: 6px" in pill
+    assert "font-weight: 800" in pill
+    assert "background: #16a34a" in css.split(".bo-grade-pill-hit {")[1].split("}")[0]
+    assert "background: #d97706" in css.split(".bo-grade-pill-partial {")[1].split("}")[0]
+    assert "background: #dc2626" in css.split(".bo-grade-pill-miss {")[1].split("}")[0]
+    # The entrance runs longer than the retired stamp's: a 0.95s pop
+    # through the overshoot stops, one ring pulse on Hits, and the Hit
+    # card flash stretched to 1.8s.
+    hit_rule = css.split(".bo-grade-pill-hit {")[1].split("}")[0]
+    assert "0.95s" in hit_rule and "boPillRing" in hit_rule
+    pop = css.split("@keyframes boPillPop {")[1].split("@keyframes")[0]
+    assert "scale(0.5)" in pop and "scale(1.12)" in pop
+    assert "scale(0.97)" in pop
+    assert "@keyframes boPillRing" in css
     assert ".bo-grade-flash" in css and "@keyframes boCardFlash" in css
-    # Reduced motion degrades the stamps to a plain fade.
+    assert "1.8s" in css.split(".bo-grade-flash {")[1].split("}")[0]
+    # The definition bar is a collapsed block with a toggle row.
+    assert "display: block" in css.split(".bo-hit-def {")[1].split("}")[0]
+    assert ".bo-hit-def-toggle" in css and ".bo-hit-def-body" in css
+    # Reduced motion degrades the pills to a plain fade.
     rm_segments = css.split("@media (prefers-reduced-motion: reduce)")
-    assert any("bo-stamp-hit" in seg[:600] and "boStampFadeIn" in seg[:600]
+    assert any("bo-grade-pill-hit" in seg[:900] and "boPillFadeIn" in seg[:900]
                for seg in rm_segments[1:])

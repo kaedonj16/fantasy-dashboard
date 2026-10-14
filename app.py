@@ -18778,7 +18778,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
       // touches were never measured. The stored verdict is never
       // recomputed here; the rows only explain it. Rows with no recorded
       // value are omitted, and with no evidence at all there is no
-      // receipt (the stamp then renders as a plain stamp).
+      // receipt (the pill then renders as a plain pill).
       function _boGradeReceiptHtml(candidate, receiptId) {{
         const d = candidate.grade_detail || {{}};
         const check = '<svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2 6.5 4.8 9 10 3"/></svg>';
@@ -18799,22 +18799,24 @@ def page_breakouts(platform: str, season: int, league_id: str):
         return `<div class="bo-receipt" id="${{receiptId}}" hidden>${{rows}}${{foot}}</div>`;
       }}
 
-      // HIT / PARTIAL / MISS stamp for graded week views, replacing the
-      // old flat pill. A rotated, double-bordered stamp that animates in
-      // (see .bo-stamp in dashboard.css); the per-card delay staggers the
-      // slam across the board, capped so a long list never waits. When
-      // the card carries grade evidence (receiptId given), the stamp is
-      // a button toggling the receipt; otherwise it is a plain stamp.
-      function _boGradeStampHtml(candidate, idx, receiptId) {{
+      // HIT / PARTIAL / MISS solid pill for graded week views. A solid
+      // pill (the pre-stamp design) that animates in (see .bo-grade-pill
+      // in dashboard.css); the per-card delay staggers the entrance across
+      // the board, capped so a long list never waits. When the card
+      // carries grade evidence (receiptId given), the pill is a button
+      // toggling the receipt; otherwise it is a plain pill. The button
+      // carries aria-label, never title: the title upgrader would turn a
+      // title into a tooltip bubble pinned to the card's right edge.
+      function _boGradePillHtml(candidate, idx, receiptId) {{
         const g = candidate.grade;
         if (currentWeek === 'latest' || (g !== 'hit' && g !== 'partial' && g !== 'miss')) return '';
         const label = g === 'hit' ? 'HIT' : (g === 'partial' ? 'PARTIAL' : 'MISS');
-        const delay = Math.min((idx || 0) * 60, 600);
-        const cls = 'bo-stamp bo-stamp-' + g;
+        const delay = Math.min((idx || 0) * 150, 750);
+        const cls = 'bo-grade-pill bo-grade-pill-' + g;
         if (!receiptId) {{
-          return `<span class="${{cls}}" style="animation-delay:${{delay}}ms">${{label}}</span>`;
+          return `<span class="${{cls}}" style="--pill-delay:${{delay}}ms">${{label}}</span>`;
         }}
-        return `<button type="button" class="${{cls}}" style="animation-delay:${{delay}}ms" onclick="event.stopPropagation(); boToggleGradeReceipt(this, '${{receiptId}}')" aria-expanded="false" aria-controls="${{receiptId}}" title="Why this grade?">${{label}}</button>`;
+        return `<button type="button" class="${{cls}}" style="--pill-delay:${{delay}}ms" onclick="event.stopPropagation(); boToggleGradeReceipt(this, '${{receiptId}}')" aria-expanded="false" aria-controls="${{receiptId}}" aria-label="Why this grade?">${{label}}</button>`;
       }}
 
       function boToggleGradeReceipt(btn, id) {{
@@ -18825,10 +18827,20 @@ def page_breakouts(platform: str, season: int, league_id: str):
         if (btn) btn.setAttribute('aria-expanded', show ? 'true' : 'false');
       }}
 
+      function boToggleHitDef(btn) {{
+        const el = document.getElementById(btn.getAttribute('aria-controls'));
+        if (!el) return;
+        const show = el.hidden;
+        el.hidden = !show;
+        btn.setAttribute('aria-expanded', show ? 'true' : 'false');
+      }}
+
       // Definition bar for graded week views: what a Hit is, in the
-      // grader's own terms, with static legend stamps.
+      // grader's own terms, with static legend pills. Collapsed by
+      // default: the toggle row shows the title, the pills, and a
+      // chevron; the definition text sits hidden underneath.
       function _boHitDefinitionBarHtml() {{
-        return `<div class="bo-hit-def"><span class="bo-hit-def-text"><strong>What counts as a Hit:</strong> over the 3 weeks after the call, the player kept the bigger role (snap share +8 pts or touches +2.0 per game) and gained at least +2.0 PPG. One leg only is a Partial. Losing the role, or production collapsing by 2.0 PPG or more, is a Miss.</span><span class="bo-hit-def-legend"><span class="bo-stamp bo-stamp-hit bo-stamp-static">HIT</span><span class="bo-stamp bo-stamp-partial bo-stamp-static">PARTIAL</span><span class="bo-stamp bo-stamp-miss bo-stamp-static">MISS</span></span></div>`;
+        return `<div class="bo-hit-def"><button type="button" class="bo-hit-def-toggle" aria-expanded="false" aria-controls="boHitDefBody" onclick="boToggleHitDef(this)"><span class="bo-hit-def-title">What counts as a Hit?</span><span class="bo-hit-def-legend"><span class="bo-grade-pill bo-grade-pill-hit bo-grade-pill-sm">HIT</span><span class="bo-grade-pill bo-grade-pill-partial bo-grade-pill-sm">PARTIAL</span><span class="bo-grade-pill bo-grade-pill-miss bo-grade-pill-sm">MISS</span></span><svg class="bo-hit-def-chev" viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5"/></svg></button><div class="bo-hit-def-body" id="boHitDefBody" hidden><span class="bo-hit-def-text">Over the 3 weeks after the call, the player kept the bigger role (snap share +8 pts or touches +2.0 per game) and gained at least +2.0 PPG. One leg only is a Partial. Losing the role, or production collapsing by 2.0 PPG or more, is a Miss.</span></div></div>`;
       }}
 
       // The definition bar only appears on a graded week view whose
@@ -18916,12 +18928,12 @@ def page_breakouts(platform: str, season: int, league_id: str):
                  <span style="font-size:11px;color:var(--text-muted);">${{fc.basis || ''}}</span>
                </div>`;
 
-          // Graded week views stamp the card (see _boGradeStampHtml) and
-          // carry a hidden receipt the stamp toggles open.
+          // Graded week views pill the card (see _boGradePillHtml) and
+          // carry a hidden receipt the pill toggles open.
           const showGrade = currentWeek !== 'latest' && (candidate.grade === 'hit' || candidate.grade === 'partial' || candidate.grade === 'miss');
           const receiptId = showGrade ? ('bo-grc-' + (idx || 0) + '-' + String(pid).replace(/[^a-zA-Z0-9]/g, '')) : null;
           const receiptHtml = showGrade ? _boGradeReceiptHtml(candidate, receiptId) : '';
-          const stampHtml = showGrade ? _boGradeStampHtml(candidate, idx || 0, receiptHtml ? receiptId : null) : '';
+          const pillHtml = showGrade ? _boGradePillHtml(candidate, idx || 0, receiptHtml ? receiptId : null) : '';
 
           const signalPoints = weeklySignal ? parseFloat(weeklySignal.points || 0) : 0;
           const barFill = Math.min(100, Math.max(0, isWeekly ? signalPoints : topComp.val));
@@ -18947,7 +18959,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
                 <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
                   <div class="breakout-score-badge" style="background:${{scoreColor}};color:#fff;font-size:13px;font-weight:700;padding:3px 9px;border-radius:6px;">${{score}}</div>
                   ${{hitHtml}}
-                  ${{stampHtml}}
+                  ${{pillHtml}}
                 </div>
               </div>
               <div style="margin-bottom:12px;">${{ppgHtml}}</div>
