@@ -4575,10 +4575,615 @@ function showLoginGate(target, opts) {
     if (!chip._brTick) { chip._brTick = true; setInterval(updateChip, 60000); }
   }
 
+  // BR Assistant popup (Stage 1). Renders only for signed-in users with a
+  // league: guests and league-less pages get nothing. All server and user
+  // text is injected with textContent; innerHTML is used only for static
+  // skeleton markup and inline SVG icons defined in this function.
+  function initAssistant() {
+    if (document.getElementById('brAsstLauncher')) return;
+    var SVG_LIST = '<svg viewBox="0 0 448 512" aria-hidden="true"><path d="M0 96C0 60.7 28.7 32 64 32H384c35.3 0 64 28.7 64 64s-28.7 64-64 64H64C28.7 160 0 131.3 0 96zM0 256c0-35.3 28.7-64 64-64H384c35.3 0 64 28.7 64 64s-28.7 64-64 64H64C28.7 320 0 291.3 0 256zM448 416c0 35.3-28.7 64-64 64H64c-35.3 0-64-28.7-64-64s28.7-64 64-64H384c35.3 0 64 28.7 64 64z"/></svg>';
+    var SVG_CHEVRON_DOWN = '<svg viewBox="0 0 512 512" aria-hidden="true"><path d="M233.4 406.6c12.5 12.5 32.8 12.5 45.3 0l192-192c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L256 338.7 86.6 169.4c-12.5-12.5-12.5-32.8 0-45.3s-32.8 12.5 0 45.3l192 192z"/></svg>';
+    var SVG_X = '<svg viewBox="0 0 384 512" aria-hidden="true"><path d="M342.6 150.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L192 210.7 86.6 105.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3L146.7 256 41.4 361.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0L192 301.3 297.4 406.6c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L237.3 256 342.6 150.6z"/></svg>';
+    var SVG_BACK = '<svg viewBox="0 0 320 512" aria-hidden="true"><path d="M9.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l192 192c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L77.3 256 246.6 86.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-192 192z"/></svg>';
+    var SVG_UP = '<svg viewBox="0 0 512 512" aria-hidden="true"><path d="M313.4 32.9c26 5.2 42.9 30.5 37.7 56.5l-2.3 11.4c-5.3 26.7-15.1 52.1-28.8 75.2H464c26.5 0 48 21.5 48 48 0 18.5-10.5 34.6-25.9 42.6C497 275.4 504 288.9 504 304c0 23.4-16.8 42.9-38.9 47.1 4.4 7.3 6.9 15.8 6.9 24.9 0 21.3-13.9 39.4-33.1 45.6.7 3.3 1.1 6.8 1.1 10.4 0 26.5-21.5 48-48 48H294.5c-19 0-37.5-5.6-53.3-16.1l-38.5-25.7C176 420.4 160 390.4 160 358.3V320 272 247.1c0-29.2 13.3-56.7 36-75l7.4-5.9c26.5-21.2 44.6-51 51.2-84.2l2.3-11.4c5.2-26 30.5-42.9 56.5-37.7zM32 192H96c17.7 0 32 14.3 32 32V448c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32V224c0-17.7 14.3-32 32-32z"/></svg>';
+    var SVG_DOWN = '<svg viewBox="0 0 512 512" aria-hidden="true"><path d="M313.4 479.1c26-5.2 42.9-30.5 37.7-56.5l-2.3-11.4c-5.3-26.7-15.1-52.1-28.8-75.2H464c26.5 0 48-21.5 48-48 0-18.5 10.5-34.6 25.9-42.6C497 236.6 504 223.1 504 208c0-23.4-16.8-42.9-38.9-47.1 4.4-7.3 6.9-15.8 6.9-24.9 0-21.3-13.9-39.4-33.1-45.6.7-3.3 1.1-6.8 1.1-10.4 0-26.5-21.5-48-48-48H294.5c-19 0-37.5 5.6-53.3 16.1L202.7 73.8C176 91.6 160 121.6 160 153.7V192v48 24.9c0 29.2 13.3 56.7 36 75l7.4 5.9c26.5 21.2 44.6 51 51.2 84.2l2.3 11.4c5.2 26 30.5 42.9 56.5 37.7zM32 384H96c17.7 0 32-14.3 32-32V128c0-17.7-14.3-32-32-32H32C14.3 96 0 110.3 0 128V352c0 17.7 14.3 32 32 32z"/></svg>';
+    var SVG_CHECK = '<svg viewBox="0 0 512 512" aria-hidden="true" width="12" height="12" fill="currentColor"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM369 209L241 337c-9.4 9.4-24.6 9.4-33.9 0l-64-64c-9.4-9.4-9.4-24.6 0-33.9s24.6-9.4 33.9 0l47 47L335 175c9.4-9.4 24.6-9.4 33.9 0s9.4 24.6 0 33.9z"/></svg>';
+    var SVG_SEND = '<svg viewBox="0 0 384 512" aria-hidden="true"><path d="M214.6 41.4c-12.5-12.5-32.8-12.5-45.3 0l-160 160c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0L160 141.2V448c0 17.7 14.3 32 32 32s32-14.3 32-32V141.2L329.4 246.6c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3l-160-160z"/></svg>';
+    var SVG_TRASH = '<svg viewBox="0 0 448 512" aria-hidden="true"><path d="M135.2 17.7L128 32H32C14.3 32 0 46.3 0 64S14.3 96 32 96H416c17.7 0 32-14.3 32-32s-14.3-32-32-32H320l-7.2-14.3C307.4 6.8 296.3 0 284.2 0H163.8c-12.1 0-23.2 6.8-28.6 17.7zM416 128H32L53.2 467c1.6 25.3 22.6 45 47.9 45H346.9c25.3 0 46.3-19.7 47.9-45L416 128z"/></svg>';
+
+    var state = {
+      league: null, caps: null, teaser: null, teaserInserted: false,
+      threadId: null, busy: false, lastSend: null, view: 'thread'
+    };
+
+    function pageLeagueParams() {
+      var parts = window.location.pathname.split('/').filter(Boolean);
+      var platform = (parts[0] || '').toLowerCase();
+      var valid = ['sleeper', 'espn', 'yahoo', 'mfl', 'fleaflicker'];
+      if (valid.indexOf(platform) === -1 || parts.length < 3) return null;
+      return { platform: platform, season: parts[1], league_id: parts[2] };
+    }
+    function safeHref(href) {
+      var h = String(href || '');
+      if (h.charAt(0) === '/' && h.charAt(1) !== '/') return h;
+      if (h.indexOf('https://') === 0) return h;
+      return '';
+    }
+    function el(tag, cls, text) {
+      var node = document.createElement(tag);
+      if (cls) node.className = cls;
+      if (text != null) node.textContent = text;
+      return node;
+    }
+    function apiJson(url, opts) {
+      var init = { credentials: 'same-origin', headers: { 'Content-Type': 'application/json' } };
+      if (opts) { for (var k in opts) init[k] = opts[k]; }
+      return fetch(url, init);
+    }
+
+    var params = pageLeagueParams();
+    var ctxUrl = '/api/assistant/context';
+    if (params) {
+      ctxUrl += '?platform=' + encodeURIComponent(params.platform) +
+        '&league_id=' + encodeURIComponent(params.league_id) +
+        '&season=' + encodeURIComponent(params.season);
+    }
+    apiJson(ctxUrl, { method: 'GET' }).then(function (resp) {
+      if (!resp.ok) return null;
+      return resp.json();
+    }).then(function (data) {
+      if (!data || !data.league) return;
+      state.league = data.league;
+      state.caps = data.caps || null;
+      state.teaser = data.teaser || null;
+      buildChrome();
+    }).catch(function () {});
+
+    function buildChrome() {
+      var league = state.league;
+      // Launcher
+      var launcher = el('button', 'br-asst-launcher');
+      launcher.id = 'brAsstLauncher';
+      launcher.type = 'button';
+      launcher.setAttribute('aria-label', 'Ask BR Assistant');
+      var mark = document.createElement('img');
+      mark.src = '/static/BR_Mark_dark.png';
+      mark.alt = '';
+      launcher.appendChild(mark);
+      var dot = el('span', 'br-asst-dot');
+      dot.id = 'brAsstDot';
+      dot.hidden = true;
+      launcher.appendChild(dot);
+      document.body.appendChild(launcher);
+
+      // Teaser card
+      var teaserEl = null;
+      var dismissed = false;
+      try {
+        dismissed = state.teaser &&
+          sessionStorage.getItem('brAsstTeaserDismissed') === String(state.teaser.log_id);
+      } catch (e) {}
+      if (state.teaser && !dismissed) {
+        teaserEl = el('aside', 'br-asst-teaser');
+        teaserEl.id = 'brAsstTeaser';
+        teaserEl.setAttribute('aria-label', 'BR Assistant suggestion');
+        var head = el('div', 'br-asst-teaser-head');
+        var tmark = el('span', 'br-asst-teaser-mark');
+        var timg = document.createElement('img');
+        timg.src = '/static/BR_Mark_dark.png';
+        timg.alt = '';
+        tmark.appendChild(timg);
+        head.appendChild(tmark);
+        var kick = el('span', 'br-asst-teaser-kicker', 'BR Assistant');
+        head.appendChild(kick);
+        var dismiss = el('button', 'br-asst-teaser-dismiss', '×');
+        dismiss.type = 'button';
+        dismiss.setAttribute('aria-label', 'Dismiss');
+        head.appendChild(dismiss);
+        teaserEl.appendChild(head);
+        if (state.teaser.title) teaserEl.appendChild(el('div', 'br-asst-teaser-title', state.teaser.title));
+        if (state.teaser.lead) teaserEl.appendChild(el('div', 'br-asst-teaser-lead', state.teaser.lead));
+        var foot = el('div', 'br-asst-teaser-foot');
+        var planBtn = el('button', 'ns-cta', 'See the plan');
+        planBtn.type = 'button';
+        foot.appendChild(planBtn);
+        teaserEl.appendChild(foot);
+        document.body.appendChild(teaserEl);
+        dot.hidden = false;
+        dismiss.addEventListener('click', function () {
+          try { sessionStorage.setItem('brAsstTeaserDismissed', String(state.teaser.log_id)); } catch (e) {}
+          teaserEl.remove();
+          dot.hidden = true;
+        });
+        planBtn.addEventListener('click', function () { openPopup(true); });
+      }
+
+      // Scrim (mobile only, styled in the 768px media query)
+      var scrim = el('div', 'br-asst-scrim');
+      scrim.id = 'brAsstScrim';
+      scrim.hidden = true;
+      document.body.appendChild(scrim);
+
+      // Popup
+      var popup = el('aside', 'br-asst-popup');
+      popup.id = 'brAsstPopup';
+      popup.setAttribute('aria-label', 'BR Assistant chat');
+      popup.hidden = true;
+      popup.innerHTML =
+        '<div class="br-asst-grab" aria-hidden="true"></div>' +
+        '<div class="br-asst-head"><div class="br-asst-head-row">' +
+        '<div class="br-asst-tile"><img src="/static/BR_Mark_dark.png" alt=""></div>' +
+        '<div><div class="br-asst-title">BR Assistant</div><div class="br-asst-ctx" id="brAsstCtx"></div></div>' +
+        '<span class="br-asst-head-actions">' +
+        '<button type="button" class="br-asst-icon-btn" id="brAsstBack" title="Back to chat" aria-label="Back to chat" hidden>' + SVG_BACK + '</button>' +
+        '<button type="button" class="br-asst-icon-btn" id="brAsstMemoryBtn" title="What BR remembers about you" aria-label="What BR remembers about you">' + SVG_LIST + '</button>' +
+        '<button type="button" class="br-asst-icon-btn" id="brAsstMin" title="Minimize" aria-label="Minimize">' + SVG_CHEVRON_DOWN + '</button>' +
+        '<button type="button" class="br-asst-icon-btn" id="brAsstClose" title="Close" aria-label="Close">' + SVG_X + '</button>' +
+        '</span></div></div>' +
+        '<div class="br-asst-body" id="brAsstThread"></div>' +
+        '<div class="br-asst-memory" id="brAsstMemory" hidden></div>' +
+        '<div class="br-asst-foot" id="brAsstFoot">' +
+        '<div class="br-asst-thinking" id="brAsstThinking" hidden>Thinking...</div>' +
+        '<div class="br-asst-composer">' +
+        '<textarea class="br-asst-input" id="brAsstInput" rows="1" placeholder="Ask about your team..." aria-label="Ask about your team"></textarea>' +
+        '<button type="button" class="br-asst-send" id="brAsstSend" aria-label="Send">' + SVG_SEND + '</button>' +
+        '</div>' +
+        '<div class="br-asst-foot-note">Answers come from BR data on your league. If BR does not track it, it will say so.</div>' +
+        '</div>';
+      document.body.appendChild(popup);
+
+      var ctxEl = popup.querySelector('#brAsstCtx');
+      var ctxStrong = el('strong', null, league.league_name || '');
+      ctxEl.appendChild(ctxStrong);
+      if (league.week != null && league.week !== '') {
+        ctxEl.appendChild(document.createTextNode(' · Week ' + league.week));
+      }
+
+      var threadEl = popup.querySelector('#brAsstThread');
+      var memoryEl = popup.querySelector('#brAsstMemory');
+      var footEl = popup.querySelector('#brAsstFoot');
+      var inputEl = popup.querySelector('#brAsstInput');
+      var sendBtn = popup.querySelector('#brAsstSend');
+      var thinkingEl = popup.querySelector('#brAsstThinking');
+      var backBtn = popup.querySelector('#brAsstBack');
+      var memoryBtn = popup.querySelector('#brAsstMemoryBtn');
+
+      function scrollThread() { threadEl.scrollTop = threadEl.scrollHeight; }
+      function openPopup(fromTeaser) {
+        popup.hidden = false;
+        scrim.hidden = false;
+        if (teaserEl) { teaserEl.remove(); teaserEl = null; }
+        dot.hidden = true;
+        if (fromTeaser && state.teaser && !state.teaserInserted) {
+          state.teaserInserted = true;
+          if (state.teaser.answer) { renderAnswer(state.teaser.answer, state.teaser.log_id); hideStarters(); }
+        }
+        if (state.view === 'thread') inputEl.focus();
+      }
+      function closePopup() {
+        popup.hidden = true;
+        scrim.hidden = true;
+      }
+      launcher.addEventListener('click', function () {
+        if (popup.hidden) openPopup(false); else closePopup();
+      });
+      popup.querySelector('#brAsstMin').addEventListener('click', closePopup);
+      popup.querySelector('#brAsstClose').addEventListener('click', closePopup);
+      scrim.addEventListener('click', closePopup);
+
+      function setBusy(on) {
+        state.busy = on;
+        thinkingEl.hidden = !on;
+        sendBtn.disabled = on;
+        inputEl.disabled = on;
+        if (on) scrollThread();
+      }
+
+      function appendUser(text) {
+        threadEl.appendChild(el('div', 'br-asst-msg-user', text));
+        scrollThread();
+      }
+      function appendSystem(message, retryFn) {
+        var box = el('div', 'br-asst-sys');
+        box.appendChild(el('div', null, message));
+        if (retryFn) {
+          var retry = el('button', 'br-asst-retry', 'Retry');
+          retry.type = 'button';
+          retry.addEventListener('click', function () { box.remove(); retryFn(); });
+          box.appendChild(retry);
+        }
+        threadEl.appendChild(box);
+        scrollThread();
+      }
+
+      function verdictClass(verdict) {
+        var v = String(verdict || '').toUpperCase();
+        if (v.indexOf('START') === 0 || v.indexOf('BUY') === 0 || v.indexOf('ACCEPT') === 0) return 'trade-ai-verdict trade-ai-verdict-accept';
+        if (v.indexOf('SIT') === 0 || v.indexOf('SELL') === 0 || v.indexOf('DECLINE') === 0) return 'trade-ai-verdict trade-ai-verdict-decline';
+        return 'trade-ai-verdict';
+      }
+
+      function renderAnswer(answer, logId) {
+        if (!answer) return;
+        var wrap = el('div', 'br-asst-msg');
+        if (answer.verdict) {
+          var vrow = el('div', 'br-asst-verdict-row');
+          vrow.appendChild(el('span', verdictClass(answer.verdict), String(answer.verdict)));
+          wrap.appendChild(vrow);
+        }
+        if (answer.text) wrap.appendChild(el('p', 'br-asst-text', answer.text));
+        var candidates = answer.candidates || [];
+        if (candidates.length) {
+          var crow = el('div', 'br-asst-chip-row');
+          candidates.forEach(function (c) {
+            var label = String(c.name || '');
+            var meta = [c.position, c.team].filter(Boolean).join(' · ');
+            if (meta) label += ' (' + meta + ')';
+            var chip = el('button', 'br-asst-chip', label);
+            chip.type = 'button';
+            chip.addEventListener('click', function () {
+              sendMessage(String(c.name || ''), c.player_id, false);
+            });
+            crow.appendChild(chip);
+          });
+          wrap.appendChild(crow);
+        }
+        var actions = answer.actions || [];
+        if (actions.length) {
+          var list = el('div', 'br-asst-actions');
+          actions.forEach(function (action, idx) {
+            var item = el('div', 'ns-item');
+            var prio = el('span', idx === 0 ? 'ns-priority gold' : 'ns-priority');
+            item.appendChild(prio);
+            var body = el('div', 'ns-body');
+            if (action.tag) body.appendChild(el('span', 'ns-tag', action.tag));
+            if (action.headline) body.appendChild(el('div', 'ns-action', action.headline));
+            if (action.detail) body.appendChild(el('div', 'ns-why', action.detail));
+            var href = safeHref(action.href);
+            if (href) {
+              var cta = el('a', 'ns-cta', action.cta_label || 'View');
+              cta.href = href;
+              body.appendChild(cta);
+            }
+            item.appendChild(body);
+            if (action.key_number != null && action.key_number !== '') {
+              var num = el('div', 'br-asst-num');
+              if (typeof action.key_number === 'object') {
+                num.appendChild(el('span', 'v', String(action.key_number.value || '')));
+                if (action.key_number.label) num.appendChild(el('span', 'l', String(action.key_number.label)));
+              } else {
+                num.appendChild(el('span', 'v', String(action.key_number)));
+              }
+              item.appendChild(num);
+            }
+            list.appendChild(item);
+          });
+          wrap.appendChild(list);
+        }
+        var receipts = answer.receipts || [];
+        if (receipts.length) {
+          var rec = el('div', 'bo-receipt');
+          rec.appendChild(el('div', 'br-asst-receipt-title', 'Receipts'));
+          receipts.forEach(function (r) {
+            var row = el('div', 'bo-rc-row');
+            var markSpan = el('span', 'bo-rc-mark bo-rc-pass');
+            markSpan.innerHTML = SVG_CHECK;
+            row.appendChild(markSpan);
+            row.appendChild(el('span', 'bo-rc-label', String(r.label || '')));
+            row.appendChild(el('span', 'bo-rc-value', String(r.value || '')));
+            rec.appendChild(row);
+          });
+          wrap.appendChild(rec);
+        }
+        if (answer.caveat) wrap.appendChild(el('div', 'br-asst-caveat', answer.caveat));
+        if (answer.act_link && safeHref(answer.act_link.href)) {
+          var link = el('a', 'br-asst-actlink', answer.act_link.label || 'Open');
+          link.href = safeHref(answer.act_link.href);
+          wrap.appendChild(link);
+        }
+        var followups = answer.followups || [];
+        if (followups.length) {
+          var fwrap = el('div', null);
+          fwrap.appendChild(el('div', 'br-asst-follow-label', 'Keep going'));
+          var frow = el('div', 'br-asst-chip-row');
+          followups.forEach(function (f) {
+            var chip = el('button', 'br-asst-chip', String(f));
+            chip.type = 'button';
+            chip.addEventListener('click', function () { sendMessage(String(f), null, false); });
+            frow.appendChild(chip);
+          });
+          fwrap.appendChild(frow);
+          wrap.appendChild(fwrap);
+        }
+        if (logId) wrap.appendChild(buildFeedback(logId));
+        threadEl.appendChild(wrap);
+        scrollThread();
+      }
+
+      function buildFeedback(logId) {
+        var wrap = el('div', null);
+        var row = el('div', 'br-asst-fb-row');
+        row.appendChild(el('span', 'q', 'Was this helpful?'));
+        var upBtn = el('button', 'br-asst-fb-btn');
+        upBtn.type = 'button';
+        upBtn.setAttribute('aria-label', 'Helpful');
+        upBtn.innerHTML = SVG_UP;
+        var downBtn = el('button', 'br-asst-fb-btn');
+        downBtn.type = 'button';
+        downBtn.setAttribute('aria-label', 'Not helpful');
+        downBtn.innerHTML = SVG_DOWN;
+        row.appendChild(upBtn);
+        row.appendChild(downBtn);
+        wrap.appendChild(row);
+
+        var corr = el('div', 'br-asst-correction');
+        corr.hidden = true;
+        corr.appendChild(el('span', 'q', 'What was wrong?'));
+        var chipRow = el('div', 'br-asst-chip-row');
+        var chosen = { category: null };
+        var cats = [
+          ['wrong_data', 'Wrong player data'],
+          ['bad_reasoning', 'Bad reasoning'],
+          ['ignored_situation', 'Ignored my situation'],
+          ['other', 'Other']
+        ];
+        cats.forEach(function (pair) {
+          var chip = el('button', 'br-asst-chip br-asst-corr-chip', pair[1]);
+          chip.type = 'button';
+          chip.addEventListener('click', function () {
+            chosen.category = pair[0];
+            var all = chipRow.querySelectorAll('.br-asst-corr-chip');
+            for (var i = 0; i < all.length; i++) all[i].classList.remove('br-asst-chip-on');
+            chip.classList.add('br-asst-chip-on');
+          });
+          chipRow.appendChild(chip);
+        });
+        corr.appendChild(chipRow);
+        var corrInput = el('input', 'br-asst-corr-input');
+        corrInput.type = 'text';
+        corrInput.placeholder = 'Anything else? (optional)';
+        corrInput.setAttribute('aria-label', 'What was wrong');
+        corr.appendChild(corrInput);
+        var submit = el('button', 'br-asst-corr-submit', 'Submit');
+        submit.type = 'button';
+        corr.appendChild(submit);
+        wrap.appendChild(corr);
+
+        function postFeedback(thumb) {
+          apiJson('/api/assistant/feedback', {
+            method: 'POST',
+            body: JSON.stringify({ log_id: logId, thumb: thumb })
+          }).catch(function () {});
+        }
+        upBtn.addEventListener('click', function () {
+          postFeedback('up');
+          upBtn.classList.add('br-asst-picked-up');
+          downBtn.classList.remove('br-asst-picked-down');
+          corr.hidden = true;
+        });
+        downBtn.addEventListener('click', function () {
+          postFeedback('down');
+          downBtn.classList.add('br-asst-picked-down');
+          upBtn.classList.remove('br-asst-picked-up');
+          corr.hidden = false;
+        });
+        submit.addEventListener('click', function () {
+          var payload = { log_id: logId, category: chosen.category || 'other' };
+          var txt = corrInput.value.trim();
+          if (txt) payload.text = txt;
+          apiJson('/api/assistant/correction', {
+            method: 'POST',
+            body: JSON.stringify(payload)
+          }).then(function (resp) { return resp.ok ? resp.json() : null; })
+            .then(function (data) {
+              wrap.innerHTML = '';
+              wrap.appendChild(el('div', 'br-asst-fb-note', (data && data.ack) || 'Thanks, noted.'));
+              // A wrong-data correction can come back with a revised answer
+              // (the re-check changed the call): append it to the thread.
+              if (data && data.revision && data.revision.answer) {
+                renderAnswer(data.revision.answer, data.revision.log_id);
+              }
+            }).catch(function () {
+              wrap.innerHTML = '';
+              wrap.appendChild(el('div', 'br-asst-fb-note', 'Thanks, noted.'));
+            });
+        });
+        return wrap;
+      }
+
+      function sendMessage(text, playerId, alreadyRendered) {
+        var msg = String(text || '').trim();
+        if (!msg || state.busy) return;
+        hideStarters();
+        if (!alreadyRendered) appendUser(msg);
+        state.lastSend = { text: msg, playerId: playerId || null };
+        setBusy(true);
+        var payload = { message: msg };
+        if (state.threadId) payload.thread_id = state.threadId;
+        if (state.league) {
+          payload.platform = state.league.platform;
+          payload.league_id = state.league.league_id;
+          payload.season = state.league.season;
+        } else if (params) {
+          payload.platform = params.platform;
+          payload.league_id = params.league_id;
+          payload.season = params.season;
+        }
+        if (playerId) payload.player_id = playerId;
+        apiJson('/api/assistant/chat', {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        }).then(function (resp) {
+          return resp.json().then(function (data) { return { status: resp.status, data: data }; })
+            .catch(function () { return { status: resp.status, data: null }; });
+        }).then(function (res) {
+          setBusy(false);
+          var data = res.data || {};
+          if (data.caps) state.caps = data.caps;
+          if (res.status === 200 && data.answer) {
+            if (data.thread_id) state.threadId = data.thread_id;
+            renderAnswer(data.answer, data.log_id);
+          } else if (res.status === 429) {
+            appendSystem(data.message || 'You have hit your message limit for now.', null);
+          } else if (res.status === 503) {
+            appendSystem(data.message || 'The assistant is unavailable right now.', function () {
+              sendMessage(msg, playerId, true);
+            });
+          } else {
+            appendSystem(data.message || 'Something went wrong. Try again.', function () {
+              sendMessage(msg, playerId, true);
+            });
+          }
+        }).catch(function () {
+          setBusy(false);
+          appendSystem('Could not reach the assistant. Check your connection and try again.', function () {
+            sendMessage(msg, playerId, true);
+          });
+        });
+      }
+
+      function submitComposer() {
+        var text = inputEl.value;
+        if (!text.trim()) return;
+        inputEl.value = '';
+        sendMessage(text, null, false);
+      }
+      sendBtn.addEventListener('click', submitComposer);
+      inputEl.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitComposer(); }
+      });
+
+      // Starter chips: shown only while the thread is empty, hidden once
+      // the first message is sent (hideStarters, called from sendMessage
+      // and the teaser insert). The digest chip sends as-is; the start/sit
+      // and buy-low chips prefill the composer, since those questions need
+      // the player names only the user can supply.
+      var startersEl = el('div', 'br-asst-starters');
+      startersEl.id = 'brAsstStarters';
+      startersEl.appendChild(el('div', 'br-asst-starters-label', 'Try asking'));
+      [
+        { label: 'What should I do with my team this week?', send: 'What should I do with my team this week?' },
+        { label: 'Who should I start at FLEX this week?', fill: 'Should I start ' },
+        { label: 'Which player is a buy-low right now?', fill: 'Should I buy, sell, or hold ' }
+      ].forEach(function (starter) {
+        var chip = el('button', 'br-asst-chip', starter.label);
+        chip.type = 'button';
+        chip.addEventListener('click', function () {
+          if (starter.send) { sendMessage(starter.send, null, false); return; }
+          inputEl.value = starter.fill;
+          inputEl.focus();
+        });
+        startersEl.appendChild(chip);
+      });
+      threadEl.appendChild(startersEl);
+      function hideStarters() { if (startersEl) startersEl.hidden = true; }
+
+      // Memory view
+      function showMemory() {
+        state.view = 'memory';
+        threadEl.hidden = true;
+        footEl.hidden = true;
+        memoryEl.hidden = false;
+        backBtn.hidden = false;
+        memoryBtn.hidden = true;
+        loadPreferences();
+      }
+      function showThread() {
+        state.view = 'thread';
+        memoryEl.hidden = true;
+        threadEl.hidden = false;
+        footEl.hidden = false;
+        backBtn.hidden = true;
+        memoryBtn.hidden = false;
+        scrollThread();
+      }
+      memoryBtn.addEventListener('click', showMemory);
+      backBtn.addEventListener('click', showThread);
+
+      function loadPreferences() {
+        memoryEl.innerHTML = '';
+        memoryEl.appendChild(el('div', 'br-asst-memory-intro', 'What BR remembers about you'));
+        var list = el('div', null);
+        list.style.display = 'flex';
+        list.style.flexDirection = 'column';
+        list.style.gap = '8px';
+        memoryEl.appendChild(list);
+        apiJson('/api/assistant/preferences', { method: 'GET' })
+          .then(function (resp) { return resp.ok ? resp.json() : null; })
+          .then(function (data) {
+            var prefs = (data && data.preferences) || [];
+            list.innerHTML = '';
+            if (!prefs.length) {
+              list.appendChild(el('div', 'br-asst-pref-empty', 'Nothing saved yet. Tell the assistant how you like to play and it can remember it here.'));
+            }
+            prefs.forEach(function (pref) { list.appendChild(prefRow(pref, list)); });
+          }).catch(function () {
+            list.innerHTML = '';
+            list.appendChild(el('div', 'br-asst-pref-empty', 'Could not load your saved preferences.'));
+          });
+        var addRow = el('div', 'br-asst-add-row');
+        var addInput = el('input', 'br-asst-add-input');
+        addInput.type = 'text';
+        addInput.placeholder = 'Add something to remember';
+        addInput.setAttribute('aria-label', 'Add something to remember');
+        var addBtn = el('button', 'br-asst-add-btn', 'Add');
+        addBtn.type = 'button';
+        addRow.appendChild(addInput);
+        addRow.appendChild(addBtn);
+        memoryEl.appendChild(addRow);
+        addBtn.addEventListener('click', function () {
+          var text = addInput.value.trim();
+          if (!text) return;
+          var payload = { text: text };
+          if (state.league && state.league.league_id) payload.league_id = state.league.league_id;
+          apiJson('/api/assistant/preferences', {
+            method: 'POST',
+            body: JSON.stringify(payload)
+          }).then(function () { loadPreferences(); }).catch(function () {});
+        });
+        var forgetBtn = el('button', 'br-asst-forget', 'Forget everything BR remembers');
+        forgetBtn.type = 'button';
+        var armed = false;
+        forgetBtn.addEventListener('click', function () {
+          if (!armed) {
+            armed = true;
+            forgetBtn.textContent = 'Tap again to confirm';
+            return;
+          }
+          apiJson('/api/assistant/preferences', { method: 'DELETE' })
+            .then(function () { loadPreferences(); }).catch(function () {});
+        });
+        memoryEl.appendChild(forgetBtn);
+      }
+      function prefRow(pref, list) {
+        var row = el('div', 'br-asst-pref-row');
+        var main = el('div', 'br-asst-pref-main');
+        main.appendChild(el('div', 'br-asst-pref-text', String(pref.text || '')));
+        if (pref.league_id) {
+          main.appendChild(el('div', 'br-asst-pref-scope', 'This league only'));
+        } else {
+          main.appendChild(el('div', 'br-asst-pref-scope', 'All leagues'));
+        }
+        row.appendChild(main);
+        var del = el('button', 'br-asst-pref-del');
+        del.type = 'button';
+        del.setAttribute('aria-label', 'Delete this preference');
+        del.innerHTML = SVG_TRASH;
+        del.addEventListener('click', function () {
+          apiJson('/api/assistant/preferences/' + encodeURIComponent(pref.id), { method: 'DELETE' })
+            .then(function () { row.remove(); }).catch(function () {});
+        });
+        row.appendChild(del);
+        return row;
+      }
+    }
+  }
+
   function init() {
     wireSheetRefresh();
     updateLabels();
     initPills();
+    initAssistant();
     // Fresh load / native navigation: if the served snapshot is aging, rebuild
     // it from source in the background and swap it in place.
     autoRevalidate();
