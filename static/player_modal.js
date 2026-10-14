@@ -972,7 +972,6 @@ function openPlayerModal(playerId, playerName, opts) {
       // SOS rank or no per-week rows -- never a placeholder card.
       const _ps = data.playoff_sos || null;
       const _psWeeks = (_ps && Array.isArray(_ps.weeks)) ? _ps.weeks.filter(w => w && w.week != null) : [];
-      const _psMax = (_ps && _ps.fpts_max != null && isFinite(Number(_ps.fpts_max)) && Number(_ps.fpts_max) > 0) ? Number(_ps.fpts_max) : null;
       let playoffCard = '';
       if (_ps && _ps.rank != null && isFinite(Number(_ps.rank)) && _psWeeks.length) {
         const _psPos = String(data.position || '').toUpperCase();
@@ -984,10 +983,16 @@ function openPlayerModal(playerId, playerName, opts) {
           if (w.opp_rank != null) _rightBits.push('#' + w.opp_rank);
           if (w.opp_fpts != null && isFinite(Number(w.opp_fpts))) _rightBits.push(Number(w.opp_fpts).toFixed(1) + ' pts allowed');
           let _bar = '';
-          if (_psMax && w.opp_fpts != null && isFinite(Number(w.opp_fpts))) {
-            const _pct = Math.max(4, Math.min(100, Math.round(100 * Number(w.opp_fpts) / _psMax)));
-            const _tier = (w.opp_rank != null && Number(w.opp_rank) <= 10) ? ' pm-playoff-fill-easy'
-              : (w.opp_rank != null && Number(w.opp_rank) > 20) ? ' pm-playoff-fill-hard' : '';
+          if (w.opp_rank != null && isFinite(Number(w.opp_rank))) {
+            // The bar IS the rank: #1 (easiest matchup) fills the track and
+            // #32 (toughest) leaves a sliver, on the same scale as the tier
+            // colors. Pts allowed stays as the text figure only -- scaling
+            // the bar by pts drew identical bars for equal-pts weeks whose
+            // ranks differed (20.6 pts at both #26 and #24).
+            const _rk = Math.max(1, Math.min(32, Number(w.opp_rank)));
+            const _pct = Math.max(4, Math.min(100, Math.round(100 * (33 - _rk) / 32)));
+            const _tier = (_rk <= 10) ? ' pm-playoff-fill-easy'
+              : (_rk > 20) ? ' pm-playoff-fill-hard' : '';
             _bar = `<div class="pm-playoff-track"><div class="pm-playoff-fill${_tier}" style="width:${_pct}%"></div></div>`;
           }
           return `<div class="pm-playoff-row"><div class="pm-playoff-line"><span class="pm-playoff-week">${_left}</span>${_rightBits.length ? `<span class="pm-playoff-allowed">${_rightBits.join(' · ')}</span>` : ''}</div>${_bar}</div>`;
