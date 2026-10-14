@@ -1324,12 +1324,14 @@ function openPlayerModal(playerId, playerName, opts) {
       }
       if (pmTabBar) pmTabBar.dataset.pmPpg = (data.stats && data.stats.ppg != null) ? String(data.stats.ppg) : '';
       // Breakout tab: HARD RULE. The tab exists only when the
-      // player-details payload says this player is on the current
-      // breakout board (on_breakout_board). Otherwise it is hidden
-      // outright: never disabled, never titled, never shown later.
+      // player-details payload says this player has a breakout call:
+      // on the current board (on_breakout_board), or surfaced in any
+      // earlier week this season (has_breakout_call -- the tab then
+      // serves that week's card). Otherwise it is hidden outright:
+      // never disabled, never titled, never shown later.
       // The breakout-page candidate context stays as panel data only.
       const tabBreakout = document.getElementById('pmTabBreakout');
-      const _onBreakoutBoard = data.on_breakout_board === true;
+      const _onBreakoutBoard = data.on_breakout_board === true || data.has_breakout_call === true;
       if (tabBreakout) {
         tabBreakout.style.display = _onBreakoutBoard ? '' : 'none';
       }
@@ -4072,6 +4074,82 @@ function _pmBkWeeklyChart(title, points, opts) {
   </div>`;
 }
 
+// ── Grade verdict for a weekly breakout call ─────────────────────────────────
+// Mirrors the Breakout page's grade pill + receipt (_boGradePillHtml /
+// _boGradeReceiptHtml in app.py): the same bars, the same pass marks,
+// the grader's own stored verdict -- never recomputed here. The pill
+// toggles the receipt ("why this grade") open. The pill is the solid
+// design (11px/800 white on the grade color, radius 6px), styled inline
+// so it renders identically whatever order the board's pill CSS lands;
+// it carries aria-label, never title (a title would be upgraded into a
+// tooltip bubble pinned to the card edge).
+function pmToggleBkGradeReceipt(btn, id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const show = el.hidden;
+  el.hidden = !show;
+  if (btn) btn.setAttribute('aria-expanded', show ? 'true' : 'false');
+}
+
+function _pmBkGradeReceiptHtml(data, receiptId) {
+  const d = (data && data.grade_detail) || {};
+  const fmtDelta = (v) => {
+    if (v == null || isNaN(parseFloat(v))) return null;
+    const n = parseFloat(v);
+    return (n >= 0 ? '+' : '') + n.toFixed(1);
+  };
+  const check = '<svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2 6.5 4.8 9 10 3"/></svg>';
+  const cross = '<svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 3l6 6M9 3l-6 6"/></svg>';
+  const row = (label, value, bar, ok) => `<div class="bo-rc-row"><span class="bo-rc-mark ${ok ? 'bo-rc-pass' : 'bo-rc-fail'}">${ok ? check : cross}</span><span class="bo-rc-label">${label}</span><span class="bo-rc-value">${value}</span><span>${bar}</span></div>`;
+  let rows = '';
+  const ppg = fmtDelta(d.ppg_delta);
+  if (ppg !== null) rows += row('Production', ppg + ' PPG', 'bar +2.0', parseFloat(d.ppg_delta) >= 2.0);
+  const opp = fmtDelta(d.opp_delta);
+  if (opp !== null) rows += row('Role (touches)', opp + ' per game', 'bar +2.0', parseFloat(d.opp_delta) >= 2.0);
+  const snap = fmtDelta(d.snap_delta);
+  if (snap !== null) {
+    const snapOk = parseFloat(d.snap_delta) >= 8.0 && (d.opp_delta == null || parseFloat(d.opp_delta) >= 0);
+    rows += row('Role (snap share)', snap + ' pts', 'bar +8.0', snapOk);
+  }
+  if (!rows && d.outcome_games == null && !d.reason) return '';
+  const reason = d.reason ? `<div class="bo-rc-foot">${_pmEsc(d.reason)}</div>` : '';
+  const foot = d.outcome_games != null ? `<div class="bo-rc-foot">Graded over ${d.outcome_games} game${d.outcome_games === 1 ? '' : 's'}</div>` : '';
+  return `<div class="bo-receipt" id="${receiptId}" hidden>${rows}${reason}${foot}</div>`;
+}
+
+function _pmBkGradeHtml(data) {
+  const g = data && data.grade;
+  if (g !== 'hit' && g !== 'partial' && g !== 'miss') {
+    // No verdict yet: a historical call still tracking shows its live
+    // forecast when one exists, else a plain still-tracking line. A
+    // forecast is not a grade and is labeled as one.
+    if (data && data.historical_call) {
+      const fc = data.forecast || null;
+      const wk = data.as_of_week != null ? `Week ${data.as_of_week}` : 'that week';
+      if (fc && fc.band_label) {
+        return `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:10px;">
+                  <span class="bo-fc-chip" title="Live projection from the games played so far. A forecast is not a grade.">Forecast: ${_pmEsc(fc.band_label)}</span>
+                  <span style="font-size:11px;color:var(--text-muted);">Still tracking the ${wk} call - graded over the 3 weeks after the call.</span>
+                </div>`;
+      }
+      return `<div style="font-size:11.5px;color:var(--text-muted);margin-top:10px;">Still tracking the ${wk} call - graded over the 3 weeks after the call.</div>`;
+    }
+    return '';
+  }
+  const label = g === 'hit' ? 'HIT' : (g === 'partial' ? 'PARTIAL' : 'MISS');
+  const receiptId = 'pm-bk-grc-' + String(data.as_of_week != null ? data.as_of_week : 'x');
+  const receiptHtml = _pmBkGradeReceiptHtml(data, receiptId);
+  const pillColor = g === 'hit' ? '#16a34a' : (g === 'partial' ? '#d97706' : '#dc2626');
+  const pillStyle = `background:${pillColor};color:#fff;font-size:11px;font-weight:800;letter-spacing:0.05em;padding:3px 10px;border:0;border-radius:6px;`;
+  const pillHtml = receiptHtml
+    ? `<button type="button" style="${pillStyle}cursor:pointer;" onclick="pmToggleBkGradeReceipt(this, '${receiptId}')" aria-expanded="false" aria-controls="${receiptId}" aria-label="Why this grade?">${label}</button>`
+    : `<span style="${pillStyle}display:inline-block;">${label}</span>`;
+  return `<div style="display:flex;align-items:center;gap:10px;margin-top:12px;">
+            <span style="font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--text-muted);">Verdict</span>
+            ${pillHtml}
+          </div>${receiptHtml}`;
+}
+
 // ── Weekly (in-season) breakout tab builder ──────────────────────────────────
 // Renders the current-season usage-based read in the mock layout: a top row
 // with the Role Change Score card (classification kind line, tier, definition,
@@ -4095,6 +4173,10 @@ function _buildWeeklyBkTabHTML(data) {
   const provisional = data.provisional === true;
   const weeksStale  = parseInt(data.weeks_stale || 0, 10) || 0;
   const asOfWeek    = data.as_of_week;
+  // The call's week, labeled up top: a historical card must say which
+  // week's call it is (e.g. "Week 2 call"), not just "In season".
+  const callLabel   = (data.breakout_call && data.breakout_call.label)
+    || (data.historical_call && asOfWeek != null ? 'Week ' + asOfWeek : null);
 
   // ── Row 1: score card + why card ───────────────────────────────────────────
   const isInitial  = data.score_basis === 'initial_role';
@@ -4105,7 +4187,7 @@ function _buildWeeklyBkTabHTML(data) {
     : '';
   const scoreCard = `
     <div class="pm-bk-card">
-      <div class="pm-bk-kind">In season · ${_pmEsc(clsLabel)}${provPill}</div>
+      <div class="pm-bk-kind">In season · ${callLabel ? _pmEsc(callLabel) + ' call · ' : ''}${_pmEsc(clsLabel)}${provPill}</div>
       <div class="pm-bk-title">${isInitial ? 'Initial Role Score' : 'Role Change Score'}</div>
       <div class="pm-bk-score-big">${score}</div>
       <div class="pm-bk-tier">${isInitial ? 'No prior NFL baseline' : tier + ' role change'}</div>
@@ -4125,6 +4207,7 @@ function _buildWeeklyBkTabHTML(data) {
     </div>` : '';
 
   let html = `<div class="pm-bk-top${whyCard ? '' : ' pm-bk-top-solo'}">${scoreCard}${whyCard}</div>`;
+  html += _pmBkGradeHtml(data);
 
   // ── Weekly charts: snap share + targets, bars with amber trend lines ───────
   const wkSeries = Array.isArray(data.weekly_series) ? data.weekly_series : [];
