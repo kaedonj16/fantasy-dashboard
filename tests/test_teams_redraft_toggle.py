@@ -245,6 +245,29 @@ def test_drawer_position_totals_use_mode_values(app_stub):
     assert qb_total(season, "2") == 1120.0
 
 
+def test_drawer_pos_avg_is_mean_of_position_totals(app_stub):
+    """The drawer's league-average tick divides pos_avg by pos_max, and
+    pos_max is the best raw position total in the league. pos_avg must be
+    the mean of those same raw totals (dynasty QB totals here are 1300 /
+    620 / 840, mean 920), not the weighted-strength average (~763 for
+    team 1's QBs), or the tick lands far left of the true average."""
+    from dashboard_services.pages.teams_page import build_teams_body
+
+    html_out = build_teams_body(_fixture_ctx(league_type=2))
+    for el_id in ("teamsDrawerData", "teamsDrawerDataRedraft"):
+        payload = _drawer(html_out, el_id)
+        pos_rows = {}
+        for rid, team in payload.items():
+            for p in team["positions"]:
+                pos_rows.setdefault(p["pos"], {})[rid] = p
+        for pos, by_rid in pos_rows.items():
+            totals = [p["total"] for p in by_rid.values()]
+            expected_avg = round(sum(totals) / len(totals), 1)
+            for p in by_rid.values():
+                assert p["pos_max"] == max(totals), (el_id, pos)
+                assert p["pos_avg"] == expected_avg, (el_id, pos)
+
+
 # --------------------------------------------------------------------------
 # Wiring guards
 # --------------------------------------------------------------------------

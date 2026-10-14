@@ -86,3 +86,24 @@ def test_roster_intel_fetch_is_shared_and_league_keyed():
 def test_no_em_dashes_in_drawer_copy():
     load = JS[JS.index("function _tdLoadIntel("):]
     assert "\u2014" not in load
+
+
+def test_td_bar_track_is_block_level():
+    """The bar track is a <span> in teams.js. Without display:block the
+    inline box ignores height/width, collapses to 0x0, and the absolutely
+    positioned fill (width % of the track) renders at 0px too - only the
+    2px league-average tick stayed visible at the track's left edge."""
+    m = re.search(r"\.td-bar\s*\{([^}]*)\}", CSS)
+    assert m, "missing .td-bar rule"
+    assert "display: block" in m.group(1)
+    assert "height: 8px" in m.group(1)
+
+
+def test_drawer_bar_scale_comes_from_position_totals():
+    """fill = total / pos_max and tick = pos_avg / pos_max in teams.js, so
+    pos_avg must be the mean of the same raw position totals. Feeding it
+    league_pos_avg (mean weighted_pos_strength, a weighted average of top
+    players on a far smaller scale) pinned the tick near the left edge."""
+    assert "_dw_pos_avg" in TEAMS_PAGE
+    assert '"pos_avg": _dw_pos_avg.get(pos, 0.0)' in TEAMS_PAGE
+    assert '"pos_avg": round(league_pos_avg.get(pos, 0.0), 1)' not in TEAMS_PAGE

@@ -48624,11 +48624,11 @@ em.gneg { background: var(--loss); }
 }
 .td-barmid { flex: 1; min-width: 0; }
 .td-bar {
+    display: block;
     position: relative;
     height: 8px;
     border-radius: 99px;
     background: color-mix(in srgb, var(--border) 65%, transparent);
-    margin-top: 8px;
 }
 .td-bar-fill {
     position: absolute;

@@ -590,10 +590,16 @@ def build_teams_body(ctx: dict) -> str:
 
         # League-best positional totals for the drawer's vs-league strength bars
         # (fill width = team total / best in league; tick = league average).
+        # Both bar scale values must come from these same raw totals:
+        # league_pos_avg is the mean of weighted_pos_strength (a weighted
+        # average of a team's top players, a much smaller scale), so dividing
+        # it by a raw-sum max put the average tick near the left edge.
         _dw_pos_max = {}
+        _dw_pos_avg = {}
         for _p in POS_ORDER:
             _totals = [sum(team_pos_values[_rid].get(_p, [])) for _rid in team_meta.keys()]
             _dw_pos_max[_p] = round(max(_totals, default=0.0), 1)
+            _dw_pos_avg[_p] = round(sum(_totals) / len(_totals), 1) if _totals else 0.0
 
         for _card_idx, (rid, meta) in enumerate(team_meta.items()):
             name = meta["name"]
@@ -621,7 +627,7 @@ def build_teams_body(ctx: dict) -> str:
                     "chip": _POS_CHIP.get(pos, "#64748b"),
                     "total": round(total, 1),
                     "pos_max": _dw_pos_max.get(pos, 0.0),
-                    "pos_avg": round(league_pos_avg.get(pos, 0.0), 1),
+                    "pos_avg": _dw_pos_avg.get(pos, 0.0),
                     "count": count,
                     "age": _age_txt,
                     "rank": rank,
