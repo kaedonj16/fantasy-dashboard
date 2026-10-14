@@ -83,9 +83,12 @@ def test_toggle_renders_animate_only_the_changed_layer():
 
 def test_simple_mode_simplifies_and_detailed_restores():
     js = _js(html := _html())
-    # Bigger dots + tighter label cap in simple mode.
+    # Bigger dots in simple mode.
     assert "_dotBoost" in js
-    assert "Math.min(_lblCount, 8)" in js
+    # The Labels count is the user's control in BOTH modes: Simple used to
+    # cap it at 8, which made a 25 pick print only the capped handful.
+    assert "Math.min(_lblCount, 8)" not in js
+    assert "const showCut = Math.min(pts.length, _lblCount);" in js
     # R^2 chip hidden in simple mode (trend line stays).
     assert "if (!_amGraphSimple)" in js
     # Simple presets quadrants off; Detailed restores her standing default.

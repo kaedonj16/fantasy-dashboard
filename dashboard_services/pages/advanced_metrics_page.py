@@ -589,14 +589,14 @@ def build_advanced_metrics_body(
                   <button class="otc-day-filter am-pos" data-gpos="WR">WR</button>
                   <button class="otc-day-filter am-pos" data-gpos="TE">TE</button>
                 </div>
+              </div>
               <div class="am-gctrl am-graph-actions">
-                <label>&nbsp;</label>
-                <div style="display:flex;gap:6px;">
+                <div class="am-graph-actions-row">
                   <button type="button" id="amGraphThemeBtn" class="am-add-stat-btn" onclick="amToggleGraphTheme()" title="Toggle light / dark"></button>
                   <button type="button" id="amGraphLabelAxisBtn" class="am-add-stat-btn" onclick="amToggleGraphLabelAxis()" title="Flip star labels between X and Y values">X vals</button>
                   <button type="button" id="amGraphQuadrantsBtn" class="am-add-stat-btn am-active" onclick="amToggleGraphQuadrants()" title="Show quadrant dividers and labels">Quadrants</button>
                   <span class="am-graph-mode" role="group" aria-label="Graph detail level">
-                    <button type="button" id="amGraphModeSimple" class="am-add-stat-btn am-active" onclick="amSetGraphMode('simple')" title="Consumer-friendly: bigger dots, fewer labels, no clutter">Simple</button>
+                    <button type="button" id="amGraphModeSimple" class="am-add-stat-btn am-active" onclick="amSetGraphMode('simple')" title="Consumer-friendly: bigger dots, no quadrant clutter">Simple</button>
                     <button type="button" id="amGraphModeDetailed" class="am-add-stat-btn" onclick="amSetGraphMode('detailed')" title="Full analyst view: quadrants, trend strength, more labels">Detailed</button>
                   </span>
                   <button type="button" id="amGraphDownloadBtn" class="am-add-stat-btn" onclick="amDownloadGraph()" title="Download image">
@@ -609,9 +609,14 @@ def build_advanced_metrics_body(
                   </button>
                 </div>
               </div>
-              </div>
             </div>
             <div class="am-graph-plot-wrap">
+              <div class="am-graph-zoom" role="group" aria-label="Graph zoom">
+                <button type="button" id="amGraphZoomOut" class="am-graph-zoom-btn" onclick="amZoomGraph(0.7)" title="Zoom out" aria-label="Zoom out">&minus;</button>
+                <span id="amGraphZoomPct" class="am-graph-zoom-pct">100%</span>
+                <button type="button" id="amGraphZoomIn" class="am-graph-zoom-btn" onclick="amZoomGraph(1.45)" title="Zoom in" aria-label="Zoom in">+</button>
+                <button type="button" id="amGraphZoomReset" class="am-graph-zoom-btn am-graph-zoom-reset" onclick="amResetGraphZoom()" title="Reset zoom">Reset</button>
+              </div>
               <div id="amGraphPlot"><div class="am-graph-empty">Pick two metrics to plot.</div></div>
               <div id="amGraphHover" class="am-graph-hover"></div>
               <div id="amGraphTip" class="am-graph-tip"></div>
@@ -1285,30 +1290,67 @@ def build_advanced_metrics_body(
         border-radius:8px; padding:6px 12px; margin-bottom:10px;
       }
       /* Graph (scatter) modal */
-      .am-graph-card { max-width:720px; max-height:97vh; }
+      .am-graph-card { max-width:880px; max-height:97vh; }
       .am-graph-controls {
-        display:flex; flex-wrap:wrap; gap:12px;
+        display:flex; flex-wrap:wrap; gap:10px 12px; align-items:flex-end;
         padding:12px 18px; border-bottom:1px solid var(--border);
       }
-      .am-graph-controls .am-gctrl { display:flex; flex-direction:column; gap:3px; flex:1 1 130px; min-width:120px; }
+      .am-graph-controls .am-gctrl { display:flex; flex-direction:column; gap:3px; flex:1 1 150px; min-width:0; }
       .am-graph-controls label {
         font-size:11px; text-transform:uppercase; letter-spacing:.04em;
-        color:var(--text-muted); font-weight:700;
+        color:var(--text-muted); font-weight:700; white-space:nowrap;
       }
       .am-graph-controls select {
         font-size:13px; padding:6px 8px; border:1px solid var(--border);
         border-radius:7px; background:var(--card); color:var(--text); cursor:pointer; width:100%;
+        height:32px; box-sizing:border-box;
       }
-      .am-graph-actions { flex:0 0 auto !important; min-width:0 !important; justify-content:flex-end; margin-left:auto; }
+      /* Metric pickers inside the graph controls: the global .am-metric-btn
+         min-width (180px) overflowed the flex cell and the label wrapped to
+         two lines ("Uncatchable Tgt" / "%"), growing that one button taller
+         than its row. Inside the modal the button fills its cell, stays one
+         line, and truncates with an ellipsis. */
+      .am-graph-controls .am-graph-picker { width:100%; min-width:0; }
+      .am-graph-controls .am-graph-picker .am-metric-btn {
+        width:100%; min-width:0; height:32px; box-sizing:border-box;
+        white-space:nowrap; overflow:hidden;
+      }
+      .am-graph-controls .am-graph-picker .am-metric-btn > span {
+        min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+      }
+      /* Actions get their own full-width row and wrap, instead of being
+         squeezed into the position row (the old markup nested this block
+         inside the position control, which clipped the TE pill and pushed
+         the action buttons off the card edge). */
+      .am-graph-actions { flex:1 1 100% !important; min-width:0 !important; }
+      .am-graph-actions-row { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
       .am-graph-actions .am-add-stat-btn { display:inline-flex; align-items:center; gap:5px; white-space:nowrap; }
       /* Position filter bar inside the graph modal */
       .am-graph-pos-bar {
-        display:flex; gap:6px; flex-wrap:wrap;
+        display:flex; gap:6px; flex-wrap:nowrap;
       }
-      .am-graph-pos-ctrl { flex-direction:row; align-items:center; gap:10px; flex:1 1 auto; }
-      .am-graph-pos-ctrl label { margin:0; white-space:nowrap; }
-      .am-graph-pos-ctrl .am-graph-pos-bar { flex-wrap:nowrap; padding-top:0; }
-      .am-gctrl-sm { flex:0 1 90px; min-width:80px; }
+      .am-graph-pos-bar .am-pos { flex:0 0 auto; white-space:nowrap; }
+      .am-graph-pos-ctrl { flex:1 1 250px !important; }
+      .am-gctrl-sm { flex:0 1 96px !important; min-width:84px !important; }
+      /* Zoom controls: overlay at the plot's top-right. Buttons step the
+         viewBox zoom, the wheel zooms toward the cursor, drag pans and two
+         fingers pinch (wired in _amWireGraphZoom). */
+      .am-graph-zoom {
+        position:absolute; top:10px; right:12px; z-index:7;
+        display:flex; align-items:center; gap:2px;
+        background:var(--card); border:1px solid var(--border); border-radius:10px;
+        padding:2px; box-shadow:0 4px 14px rgba(0,0,0,.10);
+      }
+      .am-graph-zoom-btn {
+        border:none; background:transparent; color:var(--text); cursor:pointer;
+        font-size:15px; font-weight:700; line-height:1; min-width:28px; height:26px;
+        border-radius:7px; padding:0 6px;
+      }
+      .am-graph-zoom-btn:hover { background:var(--row,rgba(0,0,0,.05)); }
+      .am-graph-zoom-reset { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.03em; }
+      .am-graph-zoom-pct { font-size:11px; font-weight:700; color:var(--text-muted); min-width:36px; text-align:center; }
+      .am-graph-svg.am-graph-zoomed { cursor:grab; }
+      .am-graph-svg.am-graph-panning { cursor:grabbing; }
       /* Plot area flexes and scrolls inside the 82vh card so controls never clip. */
       .am-graph-plot-wrap { position:relative; padding:14px 16px 16px; overflow:auto; flex:1 1 auto; min-height:0; -webkit-overflow-scrolling:touch; }
       /* Hover/tap card: player headshot + the selected stats. Uses site-theme
@@ -1440,6 +1482,7 @@ def build_advanced_metrics_body(
         background:transparent !important; display:flex !important; flex-direction:column !important;
       }
       html.og-render .am-legend-head, html.og-render .am-graph-controls,
+      html.og-render .am-graph-zoom,
       html.og-render #amGraphHover, html.og-render #amGraphTip { display:none !important; }
       html.og-render .am-graph-plot-wrap {
         flex:1 1 auto !important; display:flex !important; align-items:center !important; justify-content:center !important;
@@ -4194,6 +4237,112 @@ _AM_JS = r"""
     _amAnimPending = 'quadrants';
     window.amRenderGraph();
   };
+  // ── Graph zoom ────────────────────────────────────────────────────────
+  // Scale + center kept as fractions of the base viewBox, so the zoom
+  // survives re-renders (theme/quadrant/label toggles rebuild the SVG) and
+  // the narrow/desktop layout switch. 1 = the full graph. Zoom via the
+  // overlay buttons, the mouse wheel (toward the cursor), drag to pan,
+  // or a two-finger pinch.
+  let _amZoomK = 1, _amZoomCX = 0.5, _amZoomCY = 0.5, _amPanMovedAt = 0;
+  function _amZoomBase(svg) {
+    const b = (svg.getAttribute('data-base-vb') || '0 0 720 600').split(/\s+/).map(Number);
+    return { w: b[2] || 720, h: b[3] || 600 };
+  }
+  function _amApplyGraphZoom(svg) {
+    if (!svg) return;
+    const base = _amZoomBase(svg);
+    const w = base.w / _amZoomK, h = base.h / _amZoomK;
+    let x = _amZoomCX * base.w - w / 2, y = _amZoomCY * base.h - h / 2;
+    x = Math.min(Math.max(x, 0), Math.max(0, base.w - w));
+    y = Math.min(Math.max(y, 0), Math.max(0, base.h - h));
+    // Re-derive the center from the clamped origin so the state stays honest.
+    _amZoomCX = (x + w / 2) / base.w; _amZoomCY = (y + h / 2) / base.h;
+    svg.setAttribute('viewBox', x.toFixed(1) + ' ' + y.toFixed(1) + ' ' + w.toFixed(1) + ' ' + h.toFixed(1));
+    svg.classList.toggle('am-graph-zoomed', _amZoomK > 1.01);
+    const pct = document.getElementById('amGraphZoomPct');
+    if (pct) pct.textContent = Math.round(_amZoomK * 100) + '%';
+  }
+  // Zoom to nk keeping the point at window fraction (fx, fy) stationary.
+  function _amZoomAt(svg, nk, fx, fy) {
+    const k0 = _amZoomK;
+    const bx = (_amZoomCX - 0.5 / k0) + fx / k0;
+    const by = (_amZoomCY - 0.5 / k0) + fy / k0;
+    _amZoomK = Math.min(5, Math.max(1, nk));
+    _amZoomCX = bx - fx / _amZoomK + 0.5 / _amZoomK;
+    _amZoomCY = by - fy / _amZoomK + 0.5 / _amZoomK;
+    _amApplyGraphZoom(svg);
+  }
+  window.amZoomGraph = function(factor) {
+    const svg = document.querySelector('#amGraphPlot svg.am-graph-svg');
+    if (svg) _amZoomAt(svg, _amZoomK * factor, 0.5, 0.5);
+  };
+  window.amResetGraphZoom = function() {
+    _amZoomK = 1; _amZoomCX = 0.5; _amZoomCY = 0.5;
+    _amApplyGraphZoom(document.querySelector('#amGraphPlot svg.am-graph-svg'));
+  };
+  function _amWireGraphZoom(svg) {
+    if (!svg) return;
+    _amApplyGraphZoom(svg);
+    function frac(e) {
+      const r = svg.getBoundingClientRect();
+      return { fx: (e.clientX - r.left) / Math.max(1, r.width), fy: (e.clientY - r.top) / Math.max(1, r.height) };
+    }
+    svg.addEventListener('wheel', function(e) {
+      e.preventDefault();
+      const f = frac(e);
+      _amZoomAt(svg, _amZoomK * (e.deltaY < 0 ? 1.18 : 0.85), f.fx, f.fy);
+    }, { passive: false });
+    const ptrs = new Map();
+    let panStart = null, pinchD0 = 0, pinchK0 = 1;
+    svg.addEventListener('pointerdown', function(e) {
+      ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      try { svg.setPointerCapture(e.pointerId); } catch (_) {}
+      if (ptrs.size === 2) {
+        const p = Array.from(ptrs.values());
+        pinchD0 = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) || 1;
+        pinchK0 = _amZoomK;
+        panStart = null;
+      } else if (ptrs.size === 1) {
+        panStart = { x: e.clientX, y: e.clientY, cx: _amZoomCX, cy: _amZoomCY, moved: false };
+      }
+    });
+    svg.addEventListener('pointermove', function(e) {
+      if (!ptrs.has(e.pointerId)) return;
+      ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (ptrs.size === 2) {
+        const p = Array.from(ptrs.values());
+        const d = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) || 1;
+        const f = frac({ clientX: (p[0].x + p[1].x) / 2, clientY: (p[0].y + p[1].y) / 2 });
+        _amZoomAt(svg, pinchK0 * (d / pinchD0), f.fx, f.fy);
+        return;
+      }
+      if (!panStart || _amZoomK <= 1.01) return;
+      const r = svg.getBoundingClientRect();
+      const dx = (e.clientX - panStart.x) / Math.max(1, r.width) / _amZoomK;
+      const dy = (e.clientY - panStart.y) / Math.max(1, r.height) / _amZoomK;
+      if (!panStart.moved && Math.abs(e.clientX - panStart.x) + Math.abs(e.clientY - panStart.y) > 6) {
+        panStart.moved = true;
+        svg.classList.add('am-graph-panning');
+        _amPinnedDot = null; _amHideHoverForce();
+      }
+      if (panStart.moved) {
+        _amPanMovedAt = Date.now();
+        _amZoomCX = panStart.cx - dx; _amZoomCY = panStart.cy - dy;
+        _amApplyGraphZoom(svg);
+      }
+    });
+    function ptrUp(e) {
+      ptrs.delete(e.pointerId);
+      if (!ptrs.size) { panStart = null; svg.classList.remove('am-graph-panning'); }
+    }
+    svg.addEventListener('pointerup', ptrUp);
+    svg.addEventListener('pointercancel', ptrUp);
+    // A pan drag ends in a click on whatever dot sits under the pointer;
+    // swallow that one click so panning never pins a player card.
+    svg.addEventListener('click', function(e) {
+      if (Date.now() - _amPanMovedAt < 250) { e.stopPropagation(); e.preventDefault(); }
+    }, true);
+  }
   // Position filter local to the graph modal (null = all). Initialized from
   // state.position each time the modal opens; can be changed without leaving the modal.
   let _amGraphPos = null;
@@ -4234,7 +4383,7 @@ _AM_JS = r"""
   // button in the graph controls.
   let _amGraphQuadrants = true;
   // Simple (consumer) vs Detailed (analyst) graph mode. Simple is the default:
-  // bigger dots, fewer labels, no quadrant dividers, no R^2 chip. Sticky per
+  // bigger dots, no quadrant dividers, no R^2 chip. Sticky per
   // browser via localStorage; the segmented control presets the underlying
   // toggles so everything stays consistent.
   let _amGraphSimple = true;
@@ -4244,12 +4393,14 @@ _AM_JS = r"""
   // for a full entrance on data/initial renders). Consumed by amRenderGraph.
   let _amAnimPending = null;
   // Apply the current mode to the controls (no re-render; callers render after).
+  // The Labels count is NOT a mode preset: it is the user's own control and
+  // this sync used to overwrite it with 8 (Simple) / 12 (Detailed) on every
+  // modal open and every mode switch, so a 25/All pick silently snapped back
+  // to the original 12. Mode owns quadrants + button states only.
   function _amSyncGraphModeCtrls() {
     _amGraphQuadrants = !_amGraphSimple;
     const q = document.getElementById('amGraphQuadrantsBtn');
     if (q) q.classList.toggle('am-active', _amGraphQuadrants);
-    const ls = document.getElementById('amGraphLabels');
-    if (ls) ls.value = _amGraphSimple ? '8' : '12';
     const ms = document.getElementById('amGraphModeSimple');
     if (ms) ms.classList.toggle('am-active', _amGraphSimple);
     const md = document.getElementById('amGraphModeDetailed');
@@ -4412,6 +4563,9 @@ _AM_JS = r"""
     _amSyncGraphThemeBtn();
     // Apply the sticky Simple/Detailed mode to the controls before first render.
     _amSyncGraphModeCtrls();
+    // A fresh open starts at the full graph, not wherever a previous
+    // session's zoom/pan happened to leave the view.
+    _amZoomK = 1; _amZoomCX = 0.5; _amZoomCY = 0.5;
     _amLoadLogo('light'); _amLoadLogo('dark');
     if (note) {
       const bits = [];
@@ -4530,6 +4684,7 @@ _AM_JS = r"""
         const _scope = _amAnimPending || 'all';
         _amAnimPending = null;
         plot.innerHTML = _amBuildScatter(pts, xk, yk, zk, logo, trend, _scope);
+        _amWireGraphZoom(plot.querySelector('svg.am-graph-svg'));
         const tipEl = document.getElementById('amGraphTip');
         if (tipEl) tipEl.innerHTML = '<span style="opacity:.6">Hover or tap a point for player details</span>';
         // Signal the social-preview renderer that the graph is fully drawn.
@@ -4786,7 +4941,7 @@ _AM_JS = r"""
     })();
     padT += _hlLines.length ? _hlLines.length * _hlLH + 6 : 0;
     let s = '<svg class="am-graph-svg' + _animCls + '" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"'
-      + ' viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" style="font-family:' + FONT + ';">';
+      + ' viewBox="0 0 ' + W + ' ' + H + '" data-base-vb="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" style="font-family:' + FONT + ';">';
     // Themed panel background.
     s += '<rect x="0.5" y="0.5" width="' + (W - 1) + '" height="' + (H - 1) + '" rx="14" fill="' + TH.bg + '" stroke="' + TH.border + '"/>';
     // Editorial header: accent kicker rule + label, left-aligned title + context.
@@ -4893,14 +5048,14 @@ _AM_JS = r"""
     // Emphasis: the top-ranked players carry the story -- full-strength dots and
     // bold "Name 23.6" labels; the rest of the pool becomes a muted field with a
     // few quiet labels. pts is pre-sorted best-first, so index = rank.
-    // Phones can't fit as many labels as the wide desktop chart, so cap them
-    // tighter there -- a crammed stack of overlapping names reads as noise. Every
-    // dot stays tappable for its full detail card, so fewer printed labels loses
-    // no information, it just keeps the ones that print legible.
+    // Every dot stays tappable for its full detail card, and the printed
+    // label count is whatever the user picked in the Labels control.
     // User picks the label count via #amGraphLabels; stars are the top ~40%.
+    // The count is honored as picked in BOTH modes -- Simple used to cap it
+    // at 8 here, so choosing 25 still printed only the capped handful.
     const _lblSel = document.getElementById('amGraphLabels');
     const _lblCount = _lblSel ? (parseInt(_lblSel.value, 10) || 0) : 12;
-    const showCut = Math.min(pts.length, _amGraphSimple ? Math.min(_lblCount, 8) : _lblCount);
+    const showCut = Math.min(pts.length, _lblCount);
     const starCut = showCut === 0 ? 0
       : Math.min(showCut, isNarrow ? 6 : 8, Math.max(4, Math.round(showCut * 0.4)));
     const lblSize = L.fLbl;
@@ -4982,9 +5137,11 @@ _AM_JS = r"""
       if (chosen) {
         placed.push(chosenBox);
       } else {
-        // No clear slot: stars keep their name at the least-crowded anchor;
-        // quiet field labels bow out rather than smear the plot.
-        if (!isStar || !best) return;
+        // No perfectly clear slot: every label the user asked for keeps its
+        // name at the least-crowded anchor. Dropping non-star labels here
+        // used to make a 25-label pick print far fewer than 25 in a dense
+        // cluster; only a label with no in-bounds anchor at all is skipped.
+        if (!best) return;
         chosen = best; placed.push(bestBox);
       }
       const lblFill = isStar ? TH.text : TH.muted;
@@ -5187,9 +5344,13 @@ _AM_JS = r"""
       setTimeout(function() { btn.innerHTML = prev; }, 2500);
     };
     const TH = _amGraphPalette();
-    const vb = (svg.getAttribute('viewBox') || '0 0 720 580').split(/\s+/).map(Number);
+    // Export the FULL graph even when the on-screen view is zoomed in:
+    // size the clone from the stamped base viewBox, not the live one.
+    const vb = (svg.getAttribute('data-base-vb') || svg.getAttribute('viewBox') || '0 0 720 580').split(/\s+/).map(Number);
     const W = vb[2] || 720, H = vb[3] || 580, scale = 2;
     const clone = svg.cloneNode(true);
+    clone.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+    clone.removeAttribute('data-base-vb');
     clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
     clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
     clone.setAttribute('width', W); clone.setAttribute('height', H);
