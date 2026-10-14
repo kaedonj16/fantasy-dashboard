@@ -648,9 +648,12 @@ def _ensure_minified_appjs() -> str:
     """Minify app.js → app.min.js at startup (once, under --preload) and return
     the filename to serve. The minified file is regenerated whenever app.js
     changes (tracked via a source-hash sidecar), so it never goes stale. Falls
-    back to the unminified app.js if rjsmin is unavailable or minification fails,
-    so the site never breaks.
+    back to the unminified app.js if minification is unavailable or declines,
+    so the site never breaks. Minification goes through safe_jsmin: bare
+    rjsmin eats significant spaces inside template literals.
     """
+    from utils.static_minify import safe_jsmin, sidecar_matches, sidecar_value
+
     static_dir = Path(__file__).parent / "static"
     src = static_dir / "app.js"
     out = static_dir / "app.min.js"
@@ -660,16 +663,16 @@ def _ensure_minified_appjs() -> str:
     except OSError:
         return "app.js"
     try:
-        if out.exists() and meta.exists() and meta.read_text().strip() == src_hash:
+        if out.exists() and meta.exists() and sidecar_matches(meta.read_text(), src_hash):
             return "app.min.js"  # already current
-        import rjsmin
-        minified = rjsmin.jsmin(src.read_text(encoding="utf-8"))
-        if not minified or len(minified) < len(src.read_text(encoding="utf-8")) * 0.4:
-            return "app.js"  # sanity check failed -- serve original
+        text = src.read_text(encoding="utf-8")
+        minified = safe_jsmin(text)
+        if minified is None or len(minified) < len(text) * 0.4:
+            return "app.js"  # minify declined / sanity check failed -- serve original
         out.write_text(minified, encoding="utf-8")
-        meta.write_text(src_hash, encoding="utf-8")
+        meta.write_text(sidecar_value(src_hash), encoding="utf-8")
         return "app.min.js"
-    except Exception as _e:  # rjsmin missing or any failure → safe fallback
+    except Exception as _e:  # minifier missing or any failure → safe fallback
         logger.info("[app.js] minify unavailable, serving unminified: %s", _e)
         return "app.js"
 
@@ -689,6 +692,8 @@ def _ensure_public_js() -> str:
     the marker (player modal, advanced metrics, compare, scorezone, trade calc
     internals) is excluded. Falls back to app.js on any problem so nothing breaks.
     """
+    from utils.static_minify import safe_jsmin, sidecar_matches, sidecar_value
+
     static_dir = Path(__file__).parent / "static"
     src = static_dir / "app.js"
     out = static_dir / "public.js"
@@ -703,7 +708,7 @@ def _ensure_public_js() -> str:
     if marker not in full:
         return _APP_JS_FILE  # marker missing → safest to serve full bundle
     try:
-        if out_min.exists() and meta.exists() and meta.read_text().strip() == src_hash:
+        if out_min.exists() and meta.exists() and sidecar_matches(meta.read_text(), src_hash):
             return "public.min.js"  # already current
         core = full.split(marker, 1)[0]
         # Pull in explicitly-marked shared helpers that live below the marker.
@@ -724,11 +729,10 @@ def _ensure_public_js() -> str:
         public_src = core + "\n" + "\n".join(includes) + "\n"
         out.write_text(public_src, encoding="utf-8")
         try:
-            import rjsmin
-            minified = rjsmin.jsmin(public_src)
-            if minified and len(minified) > 200:
+            minified = safe_jsmin(public_src)
+            if minified is not None and len(minified) > 200:
                 out_min.write_text(minified, encoding="utf-8")
-                meta.write_text(src_hash, encoding="utf-8")
+                meta.write_text(sidecar_value(src_hash), encoding="utf-8")
                 logger.info("[public.js] built: %d KB min (from %d KB app.js)",
                             len(minified) // 1024, len(full) // 1024)
                 return "public.min.js"
@@ -753,6 +757,8 @@ def _ensure_features_js() -> str:
 
     Returns "" on any problem, which tells render_page to fall back to serving the
     full app.js (so the site never breaks)."""
+    from utils.static_minify import safe_jsmin, sidecar_matches, sidecar_value
+
     static_dir = Path(__file__).parent / "static"
     src = static_dir / "app.js"
     modal_src = static_dir / "player_modal.js"
@@ -769,7 +775,7 @@ def _ensure_features_js() -> str:
     if marker not in full:
         return ""
     try:
-        if out_min.exists() and meta.exists() and meta.read_text().strip() == src_hash:
+        if out_min.exists() and meta.exists() and sidecar_matches(meta.read_text(), src_hash):
             return "app-features.min.js"
         # Everything after the marker LINE (not just the marker token -- the token
         # sits inside a `//` comment, so splitting on it alone would leave a bare
@@ -784,11 +790,10 @@ def _ensure_features_js() -> str:
             feat_src = feat_src.rstrip() + "\n" + modal + "\n"
         out.write_text(feat_src, encoding="utf-8")
         try:
-            import rjsmin
-            minified = rjsmin.jsmin(feat_src)
-            if minified and len(minified) > 200:
+            minified = safe_jsmin(feat_src)
+            if minified is not None and len(minified) > 200:
                 out_min.write_text(minified, encoding="utf-8")
-                meta.write_text(src_hash, encoding="utf-8")
+                meta.write_text(sidecar_value(src_hash), encoding="utf-8")
                 logger.info("[app-features.js] built: %d KB min", len(minified) // 1024)
                 return "app-features.min.js"
         except Exception as _e:
