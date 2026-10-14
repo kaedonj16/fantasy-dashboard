@@ -83,12 +83,17 @@ def _nav_fresh_block() -> str:
 
 def test_nav_fresh_only_reloads_for_explicit_user_refresh():
     """The stale-page auto-reload is gone; nav-fresh only swaps in the fresh
-    copy after an EXPLICIT user refresh (iOS paints the cached shell first)."""
+    copy after an EXPLICIT user refresh (iOS paints the cached shell first),
+    or when the SW flags viewerChanged (the painted shell's identity marker
+    differs from the fresh copy's, e.g. a guest paint served to a signed-in
+    manager). The viewer swap is rate-limited per URL (brViewerSwapAt)."""
     block = _nav_fresh_block()
     assert "d.type !== 'nav-fresh'" in block
     assert "brUserRefresh" in block
     assert "if (!userRefresh) return;" in block
     assert "location.reload();" in block
+    assert "d.viewerChanged === true" in block
+    assert "brViewerSwapAt" in block
     # None of the removed auto-reload machinery may come back.
     for dead in ("STALE_MS", "reloadOnce", "maybeResumeReload", "hiddenSince",
                  "brAutoRefreshTs", "liveSurface", "visibilitychange",
@@ -98,8 +103,9 @@ def test_nav_fresh_only_reloads_for_explicit_user_refresh():
 
 @pytest.mark.skipif(os.environ.get("SKIP_NODE") == "1", reason="node skipped")
 def test_nav_fresh_explicit_refresh_swap_behavior_node():
-    """Behavioral: nav-fresh only reloads when the explicit-refresh flag is
-    set. No flag, no reload; a nav-fresh for another URL is ignored."""
+    """Behavioral: nav-fresh reloads only when the explicit-refresh flag is
+    set, or when the SW flags a viewer-state change (rate-limited per URL).
+    No flag and no viewer change, no reload; another URL is ignored."""
     import shutil
     import subprocess
 
@@ -120,8 +126,10 @@ var swListeners = {};
 var navigator = { serviceWorker: { addEventListener: function(n, fn) { swListeners[n] = fn; } } };
 var location = { href: 'http://x/advanced-metrics', reload: function() { reloads++; } };
 """ + src + r"""
-function navFresh(url) {
-  swListeners['message']({ data: { type: 'nav-fresh', url: url } });
+function navFresh(url, extra) {
+  var data = { type: 'nav-fresh', url: url };
+  if (extra) { for (var k in extra) data[k] = extra[k]; }
+  swListeners['message']({ data: data });
 }
 if (typeof swListeners['message'] !== 'function') process.exit(2);
 // No explicit-refresh flag: nav-fresh must not reload.
@@ -138,6 +146,15 @@ if (store['brUserRefresh'] !== undefined) process.exit(6);
 // A late duplicate nav-fresh after the flag was consumed: no second reload.
 navFresh('http://x/advanced-metrics');
 if (reloads !== 1) process.exit(7);
+// Viewer-state change for a different URL: ignored.
+navFresh('http://x/other-page', { viewerChanged: true });
+if (reloads !== 1) process.exit(8);
+// Viewer-state change + matching URL, no refresh flag: one swap reload.
+navFresh('http://x/advanced-metrics', { viewerChanged: true });
+if (reloads !== 2) process.exit(9);
+// An immediate second viewer-change flag is rate-limited: no reload loop.
+navFresh('http://x/advanced-metrics', { viewerChanged: true });
+if (reloads !== 2) process.exit(10);
 process.exit(0);
 """
     with tempfile.TemporaryDirectory() as td:
@@ -150,12 +167,12 @@ process.exit(0);
 
 def test_sw_late_network_notifies_after_explicit_refresh_fallback():
     block = SW[SW.index("async function handleNavigate") : SW.index("// ── Push notifications")]
-    assert "notifyNavFresh(request, networkFetch)" in block
+    assert "notifyNavFresh(request, networkFetch, cached)" in block
     # Every page paints its cached shell on timeout (ScoreZone included: its
     # shell live-polls the API on boot), with the late-network nudge after it.
     assert "if (cached) {" in block
     assert "if (cached && !rzNav)" not in block
-    assert block.index("notifyNavFresh(request, networkFetch)") > block.index("if (cached) {")
+    assert block.index("notifyNavFresh(request, networkFetch, cached)") > block.index("if (cached) {")
 
 
 def test_splash_stays_up_until_css_applies():

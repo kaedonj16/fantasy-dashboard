@@ -380,10 +380,15 @@ if (window.__FEATURES_JS || window.__PLAYER_MODAL_JS) {
 // An explicit Refresh (doRefresh/hardReload) asks the SW to wait for the
 // network; on iOS the SW may still paint the cached shell first (location.reload
 // cache mode is often ignored), then the SW posts nav-fresh when the fresh
-// copy lands. Swap it in, but only for the explicit-refresh case: the
-// stale-page auto-reload was removed because dashboard data updates on cron
-// schedules (daily/weekly), not minute by minute, and a background reload
-// wiped view state (graph settings, scroll position) for no benefit.
+// copy lands. Swap it in for the explicit-refresh case, and for ONE more:
+// the SW flags viewerChanged when the painted shell's identity marker
+// (<meta name="br-viewer-state">) differs from the fresh copy's, meaning the
+// cached page was rendered for a different identity state (a guest paint
+// showing "link your team" to a signed-in manager). Any other stale paint
+// still does NOT auto-reload: dashboard data updates on cron schedules
+// (daily/weekly), not minute by minute, and a background reload wipes view
+// state (graph settings, scroll position) for no benefit. The viewer swap
+// is rate-limited per URL so a flapping session can never reload-loop.
 if (navigator.serviceWorker) {
   navigator.serviceWorker.addEventListener('message', function (e) {
     var d = e.data || {};
@@ -392,6 +397,16 @@ if (navigator.serviceWorker) {
     if (document.visibilityState !== 'visible') return;
     var userRefresh = false;
     try { userRefresh = sessionStorage.getItem('brUserRefresh') === '1'; } catch (e) {}
+    if (!userRefresh && d.viewerChanged === true) {
+      var swapKey = 'brViewerSwapAt';
+      var lastSwap = {};
+      try { lastSwap = JSON.parse(sessionStorage.getItem(swapKey) || '{}'); } catch (e) {}
+      var nowTs = Date.now();
+      if (lastSwap.url === location.href && nowTs - (lastSwap.ts || 0) < 30000) return;
+      try { sessionStorage.setItem(swapKey, JSON.stringify({ url: location.href, ts: nowTs })); } catch (e) {}
+      location.reload();
+      return;
+    }
     if (!userRefresh) return;
     try { sessionStorage.removeItem('brUserRefresh'); } catch (e) {}
     location.reload();

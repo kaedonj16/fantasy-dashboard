@@ -2,7 +2,7 @@
 // Caches static assets and key pages for offline/fast repeat loads.
 // Handles Web Push notifications.
 
-const CACHE_NAME = 'br-fantasy-v32';
+const CACHE_NAME = 'br-fantasy-v33';
 
 // How long to wait on the network for a page before painting a cached /
 // offline fallback. This is what kills the blank white screen on PWA launch:
@@ -191,15 +191,44 @@ async function unredirect(response) {
   });
 }
 
-function notifyNavFresh(request, networkFetch) {
+// Identity marker stamped into every page head by the server
+// (<meta name="br-viewer-state">): signed-in / account / viewer ids at render
+// time. The page cache is keyed by URL only, so a shell captured while the
+// session was unresolved (guest paint, expired session) carries a different
+// marker than the same URL rendered after sign-in.
+function viewerStateOf(text) {
+  if (!text) return null;
+  const m = /<meta name="br-viewer-state" content="([^"]*)">/.exec(text);
+  return m ? m[1] : null;
+}
+
+function notifyNavFresh(request, networkFetch, cachedResponse) {
   // Cached / offline shell went to the screen; when the real page lands, tell
   // the client so it can swap the stale paint for fresh data (app.js and
   // offline.html listen and reload only when appropriate).
-  networkFetch.then(response => {
+  // Clone the painted copy NOW, synchronously: once it is returned to the
+  // navigation its body is consumed and can no longer be read for the
+  // marker comparison below.
+  let cachedClone = null;
+  try { cachedClone = cachedResponse ? cachedResponse.clone() : null; } catch (_) {}
+  networkFetch.then(async response => {
     if (!response) return;
+    // viewerChanged is true only when BOTH copies carry a marker and they
+    // differ: the painted shell's identity state is stale (e.g. it shows
+    // "link your team" to a signed-in manager). app.js treats that one case
+    // as swap-worthy even without an explicit user refresh.
+    let viewerChanged = false;
+    if (cachedClone) {
+      try {
+        const pair = await Promise.all([cachedClone.text(), response.clone().text()]);
+        const before = viewerStateOf(pair[0]);
+        const after = viewerStateOf(pair[1]);
+        viewerChanged = !!(before && after && before !== after);
+      } catch (_) {}
+    }
     clients.matchAll({ type: 'window' }).then(wcs => {
       wcs.forEach(wc => {
-        if (wc.url === request.url) wc.postMessage({ type: 'nav-fresh', url: request.url });
+        if (wc.url === request.url) wc.postMessage({ type: 'nav-fresh', url: request.url, viewerChanged: viewerChanged });
       });
     });
   });
@@ -296,7 +325,7 @@ async function handleNavigate(request) {
   // to fresh plays within seconds -- a 13-60s blank white screen while the
   // server rebuilds the HTML is worse than a briefly stale shell.
   if (cached) {
-    notifyNavFresh(request, networkFetch);
+    notifyNavFresh(request, networkFetch, cached);
     return cached;
   }
   if (networkError) return networkError;
@@ -310,7 +339,7 @@ async function handleNavigate(request) {
   const late = await Promise.race([networkFetch, grace]);
   if (late) return late;
   if (networkError) return networkError;
-  notifyNavFresh(request, networkFetch);
+  notifyNavFresh(request, networkFetch, cached);
   return navigationFallback(cache, cached, request.url);
 }
 
