@@ -1114,6 +1114,18 @@ def _weekly_series_for_payload(player_id: str, season: int) -> List[Dict]:
     return out
 
 
+def _call_for_week_label(week) -> str:
+    """User-facing label for a breakout call's week.
+
+    Calls are stored by their data week (``as_of_week`` / call_week: the
+    last completed week the board was generated from), but users read
+    the week the breakout is FOR -- the first week of the outcome
+    window, one later (a call from Week 2 data is the Week 3 call).
+    Display only: stored values and API week fields never change.
+    """
+    return f"Week {int(week) + 1}"
+
+
 def get_weekly_breakout_detail(player_id: str, season: int,
                                as_of_week: Optional[int] = None) -> Dict:
     """In-season player detail served from the weekly engine.
@@ -1138,7 +1150,7 @@ def get_weekly_breakout_detail(player_id: str, season: int,
             "kind": "weekly",
             "season": int(season),
             "as_of_week": int(as_of_week),
-            "label": f"Week {int(as_of_week)}",
+            "label": _call_for_week_label(as_of_week),
         }
         _entry = _weekly_grades_for_week(season, int(as_of_week)).get(
             str(player_id))
@@ -1210,7 +1222,7 @@ def breakout_call_history(player_id: object,
         "kind": "weekly",
         "season": int(season),
         "as_of_week": week,
-        "label": f"Week {week}",
+        "label": _call_for_week_label(week),
     }
 
 
@@ -1638,7 +1650,7 @@ def list_breakout_weeks(requested_season: Optional[int] = None) -> Dict:
     for row in completed:
         entry = {
             "value": row["as_of_week"],
-            "label": f"Week {row['as_of_week']}",
+            "label": _call_for_week_label(row["as_of_week"]),
             "as_of_date": row.get("as_of_date"),
         }
         if row.get("scoring_version"):

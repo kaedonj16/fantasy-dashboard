@@ -108,6 +108,8 @@ def test_weekly_forecast_suppressed_with_zero_games():
     assert fc["state"] == "no_games"
     assert fc["band"] is None
     assert "No games yet" in fc["basis"]
+    # The basis labels the call by the week it is FOR (call week + 1).
+    assert "the Week 5 call" in fc["basis"]
     # A week elapsed but the player has no recorded game in it: same state.
     fc2 = forecasts.weekly_forecast(make_call(), [wk(3)], through_week=5)
     assert fc2["state"] == "no_games"
@@ -1944,6 +1946,9 @@ console.log(JSON.stringify(out));
     out = json.loads(res.stdout)
 
     assert 'data-week="4"' in out["attrsNum"]
+    # The jump target keeps the stored week; the title names the week
+    # the breakouts are FOR (stored week + 1).
+    assert "the Week 5 board" in out["attrsNum"]
     assert 'role="button"' in out["attrsNum"]
     assert 'tabindex="0"' in out["attrsNum"]
     assert 'onclick="boGoWeek(this.dataset.week)"' in out["attrsNum"]
@@ -1952,9 +1957,10 @@ console.log(JSON.stringify(out));
     # Rows without a week stay inert.
     assert out["attrsNull"] == ""
     assert out["attrsEmpty"] == ""
-    # The by-week bar renders as a week-jump row for its own week.
+    # The by-week bar renders as a week-jump row for its own week: the
+    # jump keeps the stored week, the visible label is the for-week.
     assert out["bar"].startswith('<div class="bo-wk-link" data-week="2"')
-    assert "Week 2" in out["bar"]
+    assert "Week 3" in out["bar"]
     # Enter and Space jump; other keys do not.
     assert out["afterEnter"] == "2"
     assert out["afterSpace"] == "1"
@@ -2002,6 +2008,12 @@ console.log(JSON.stringify({html: _boWeeklyTrackHTML(data)}));
     # styling; the weekless miss row stays a plain, inert rail row.
     assert html.count("bo-row-link") == 1
     assert "Week ? call" in html
+    # Visible week labels name the week the breakouts are FOR (stored
+    # week + 1): the Week 2 bar reads Week 3, the call_week 3 hit row
+    # reads "Week 4 call", the Week 4 tracking bar reads Week 5.
+    assert "Week 3" in html
+    assert "Week 4 call" in html
+    assert "Week 5" in html
 
 
 def test_track_record_week_click_wiring_in_page_source():

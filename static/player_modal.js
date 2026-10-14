@@ -4145,7 +4145,7 @@ function _pmBkGradeHtml(data) {
     // forecast is not a grade and is labeled as one.
     if (data && data.historical_call) {
       const fc = data.forecast || null;
-      const wk = data.as_of_week != null ? `Week ${data.as_of_week}` : 'that week';
+      const wk = data.as_of_week != null ? `Week ${Number(data.as_of_week) + 1}` : 'that week';
       if (fc && fc.band_label) {
         return `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:10px;">
                   <span class="bo-fc-chip" title="Live projection from the games played so far. A forecast is not a grade.">Forecast: ${_pmEsc(fc.band_label)}</span>
@@ -4194,9 +4194,11 @@ function _buildWeeklyBkTabHTML(data) {
   const weeksStale  = parseInt(data.weeks_stale || 0, 10) || 0;
   const asOfWeek    = data.as_of_week;
   // The call's week, labeled up top: a historical card must say which
-  // week's call it is (e.g. "Week 2 call"), not just "In season".
+  // week's call it is, not just "In season". The label names the week
+  // the breakout is FOR (the stored as_of_week + 1; the API's
+  // breakout_call.label already carries that naming).
   const callLabel   = (data.breakout_call && data.breakout_call.label)
-    || (data.historical_call && asOfWeek != null ? 'Week ' + asOfWeek : null);
+    || (data.historical_call && asOfWeek != null ? 'Week ' + (Number(asOfWeek) + 1) : null);
 
   // ── Row 1: score card + why card ───────────────────────────────────────────
   const isInitial  = data.score_basis === 'initial_role';

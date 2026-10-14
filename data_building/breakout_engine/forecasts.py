@@ -139,8 +139,11 @@ def weekly_forecast(
     if not outcome["games"]:
         base.update({
             "state": "no_games",
+            # The call is labeled by the week it is FOR (the first
+            # outcome week), matching the site's display naming; the
+            # stored call_week stays the data week.
             "basis": f"No games yet in the {wg.OUTCOME_WEEKS} weeks after "
-                     f"the Week {call_week} call",
+                     f"the Week {call_week + 1} call",
         })
         return base
     baseline, _source = wg.resolve_baseline(call, rows, prior_rows,
