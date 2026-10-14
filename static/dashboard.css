@@ -45421,6 +45421,57 @@ a, button, [role="button"], [role="tab"], summary, label,
 .pwr-right { text-align: right; }
 .pwr-score { font-family: "Archivo", system-ui, sans-serif; font-weight: 800; font-size: 15px; color: var(--text); font-variant-numeric: tabular-nums; }
 
+/* ---- Power panel stretch (desktop standings two-col) -------
+   The power card fills the standings card's height: the layout row
+   stretches both columns, the card becomes a flex column, and each
+   tab view's list distributes its rows through the leftover height
+   so no dead space sits under the last row. Desktop only: at 1024px
+   and under the columns stack and the panel keeps natural height. */
+@media (min-width: 1025px) {
+    .std-rework .standings-main.two-col-standings { align-items: stretch; }
+    .std-rework .standings-main .standings-col {
+        display: flex; flex-direction: column;
+    }
+    .std-rework .standings-main .standings-col > .card { flex: 1 1 auto; min-height: 0; }
+    .std-rework #stPowerInner {
+        flex: 1 1 auto; min-height: 0;
+        display: flex; flex-direction: column;
+    }
+    .std-rework .card.power {
+        flex: 1 1 auto; min-height: 0;
+        display: flex; flex-direction: column;
+    }
+    .std-rework .card.power .card-tabs {
+        flex: 1 1 auto; min-height: 0;
+    }
+    .std-rework .card.power .tab-panels {
+        flex: 1 1 auto; min-height: 0;
+        display: flex; flex-direction: column;
+    }
+    .std-rework .card.power .tab-panel.active {
+        flex: 1 1 auto; min-height: 0;
+        display: flex; flex-direction: column;
+    }
+    /* Power Rankings view: hero keeps its natural size, the ranked
+       rows share whatever height is left. */
+    .std-rework .card.power .pwr-lead { flex: 0 0 auto; }
+    .std-rework .card.power .pwr-list { flex: 1 1 auto; min-height: 0; padding-bottom: 0; }
+    .std-rework .card.power .pwr-row { flex: 1 1 0; }
+    .std-rework .card.power .pwr-row .avatar.sm,
+    .std-rework .card.power .pwr-row .pwr-noav.sm { width: 30px; height: 30px; }
+    .std-rework .card.power .pwr-bar { height: 6px; }
+    /* Playoff Picture view: the bracket fills the panel height; its
+       rounds already stretch and center their matches. */
+    .std-rework .card.power .bracket { flex: 1 1 auto; min-height: 0; }
+    /* Playoff Odds view: the odds table takes the leftover height
+       and its rows grow into it. */
+    .std-rework .card.power .po-wrap {
+        flex: 1 1 auto; min-height: 0;
+        display: flex; flex-direction: column;
+        padding-bottom: 0;
+    }
+    .std-rework .card.power .po-table { flex: 1 1 auto; }
+}
 /* Keep the (now wider, with Trend) standings table inside its column: scroll it
    horizontally instead of letting it spill over the Power Rankings card. */
 .two-col-standings > .standings-col { min-width: 0; }
