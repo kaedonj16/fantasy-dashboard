@@ -1650,6 +1650,18 @@ def build_advanced_metrics_body(
       }
       .am-cmd-btn:hover { background:var(--row,rgba(0,0,0,.05)); }
       .am-cmd-btn[aria-expanded="true"] { background:var(--row,rgba(0,0,0,.06)); border-color:var(--border); }
+      /* Command-bar tooltips open DOWNWARD. The shared [data-tooltip] bubble
+         renders above its trigger, but this bar sits at the top of the first
+         card, flush under the sticky top nav: the bubble needs ~41px above
+         the button and only ~19px is clear, so most of it (text included)
+         slid behind the opaque nav (z 100) -- the bar's own sticky stacking
+         context (z 60) traps the bubble's z-index under the nav, leaving
+         just the bubble's bottom sliver visible. Downward keeps the bubble
+         inside the card, the same direction the overflow menu opens. */
+      .am-cmdbar .am-cmd-btn[data-tooltip]:hover::after,
+      .am-cmdbar .am-cmd-btn[data-tooltip]:focus-visible::after {
+        bottom:auto; top:100%; margin-bottom:0; margin-top:6px;
+      }
       /* The filter sheet's close button reads too tall at the shared 36px
          command size; pin it shorter with its own box model. */
       #amSheetClose {
