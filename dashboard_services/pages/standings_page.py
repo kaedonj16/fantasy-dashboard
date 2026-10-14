@@ -23,9 +23,11 @@ def build_standings_body(ctx: dict) -> str:
         _pr_teams = []
 
     # Week-over-week power movement: recompute last week's ranking from the
-    # week-capped ctx and diff ranks by team name. Deterministic from weekly
-    # scores, so it works even if nobody visited last week. Empty until 2+
-    # finalized weeks exist; the card then shows constant grey dashes.
+    # week-capped ctx and diff ranks by roster_id (team names are not a
+    # safe join key: they can carry trailing spaces team_stats strips).
+    # Deterministic from weekly scores, so it works even if nobody visited
+    # last week. Empty until 2+ finalized weeks exist; the card then shows
+    # constant grey dashes.
     _prev_power_ranks = {}
     try:
         _weeks = _standings_available_weeks(ctx)
@@ -35,9 +37,9 @@ def build_standings_body(ctx: dict) -> str:
                 build_power_rankings_context(_capped) or {}
             ).get("teams") or []
             _prev_power_ranks = {
-                str(t.get("team_name")): int(t.get("rank") or (i + 1))
+                str(t.get("roster_id")): int(t.get("rank") or (i + 1))
                 for i, t in enumerate(_prev_teams)
-                if t.get("team_name") is not None
+                if t.get("roster_id") is not None
             }
     except Exception:
         _prev_power_ranks = {}

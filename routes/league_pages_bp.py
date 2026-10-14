@@ -148,9 +148,9 @@ def api_standings_week():
                     build_power_rankings_context(_prev_capped) or {}
                 ).get("teams") or []
                 _prev_power_ranks = {
-                    str(t.get("team_name")): int(t.get("rank") or (i + 1))
+                    str(t.get("roster_id")): int(t.get("rank") or (i + 1))
                     for i, t in enumerate(_prev_teams)
-                    if t.get("team_name") is not None
+                    if t.get("roster_id") is not None
                 }
         panels = _standings_panels(
             capped, power_rankings=_power_rankings,

@@ -10300,8 +10300,9 @@ def render_power_and_playoffs(
         ({"team_name", "power_score", "rank"}). When provided, the podium's
         order and PowerScore are taken from here so this card matches the
         Standings Power Rankings source exactly.
-    prev_power_ranks: {team_name: rank} from last week's power ranking. Drives
-        the constant week-over-week movement arrows (green up / red down /
+    prev_power_ranks: {roster_id: rank} from last week's power ranking
+        (legacy team-name keys still accepted). Drives the constant
+        week-over-week movement arrows (green up / red down /
         grey dash when unchanged or unknown).
     """
     if team_stats is None or team_stats.empty:
@@ -10312,16 +10313,44 @@ def render_power_and_playoffs(
 
     # ---- Align with Standings Power Rankings when provided ----
     # Override PowerScore (and therefore ordering) using the canonical
-    # build_power_rankings_context() output, matched by team name.
+    # build_power_rankings_context() output, matched by roster_id.
+    # Team names are NOT a safe join key: a Sleeper team name can carry a
+    # trailing space (Blackedraw's "Nunky Figgas ") while team_stats owner
+    # is stripped, and the old name-keyed map silently zeroed that team's
+    # score, ranking it on a fabricated 0.0. Fall back to a stripped-name
+    # match, and a team that matches neither keeps its performance
+    # PowerScore from team_stats instead of being zeroed.
     if power_rankings:
-        pr_score_by_name = {
-            str(t.get("team_name")): float(t.get("power_score") or 0.0)
-            for t in power_rankings
+        pr_score_by_rid: dict = {}
+        pr_score_by_name: dict = {}
+        for t in power_rankings:
+            try:
+                _score = float(t.get("power_score") or 0.0)
+            except (TypeError, ValueError):
+                continue
+            _rid = t.get("roster_id")
+            if _rid is not None and str(_rid) != "":
+                pr_score_by_rid[str(_rid)] = _score
+            _name = str(t.get("team_name") or "").strip()
+            if _name:
+                pr_score_by_name[_name] = _score
+        _o2r_stripped = {
+            str(k).strip(): str(v) for k, v in _o2r.items()
         }
+
+        def _pr_score_for(owner) -> float | None:
+            _rid = _o2r_stripped.get(str(owner).strip())
+            if _rid is not None and _rid in pr_score_by_rid:
+                return pr_score_by_rid[_rid]
+            return pr_score_by_name.get(str(owner).strip())
+
         if "owner" in team_stats.columns:
-            team_stats["PowerScore"] = team_stats["owner"].map(
-                lambda o: pr_score_by_name.get(str(o), 0.0)
-            )
+            _mapped = team_stats["owner"].map(_pr_score_for)
+            if "PowerScore" in team_stats.columns:
+                team_stats["PowerScore"] = _mapped.fillna(
+                    team_stats["PowerScore"])
+            else:
+                team_stats["PowerScore"] = _mapped.fillna(0.0)
 
     # ---- Sort by PowerScore, with PF as tiebreaker if available ----
     has_power = "PowerScore" in team_stats.columns
@@ -10352,17 +10381,48 @@ def render_power_and_playoffs(
     # week's ranking is reconstructed deterministically from the week-capped
     # ctx by the caller (see build_standings_body), so this needs no snapshot
     # table and stays exact even if the page wasn't visited last week.
-    _prev_ranks = {
-        str(k): int(v) for k, v in (prev_power_ranks or {}).items()
-        if v is not None
+    # Previous ranks arrive keyed by roster_id (callers migrated off team
+    # names for the same trailing-space hazard as the score override);
+    # legacy name keys are still accepted via the stripped-name fallback.
+    _rid_values = {str(v) for v in _o2r.values()}
+    _o2r_stripped_prev = {
+        str(k).strip(): str(v) for k, v in _o2r.items()
     }
+    _prev_by_rid: dict = {}
+    _prev_by_name: dict = {}
+    for _k, _v in (prev_power_ranks or {}).items():
+        if _v is None:
+            continue
+        try:
+            _rank = int(_v)
+        except (TypeError, ValueError):
+            continue
+        _ks = str(_k)
+        if _ks in _rid_values:
+            _prev_by_rid[_ks] = _rank
+        else:
+            _prev_by_name[_ks.strip()] = _rank
     _cur_rank_by_owner = {}
+    _cur_rank_by_rid = {}
     for _pos, _r in enumerate(pr_sorted.itertuples()):
-        _cur_rank_by_owner[str(getattr(_r, "owner", ""))] = _pos + 1
+        _owner = str(getattr(_r, "owner", ""))
+        _cur_rank_by_owner[_owner.strip()] = _pos + 1
+        _rid = _o2r_stripped_prev.get(_owner.strip())
+        if _rid is not None:
+            _cur_rank_by_rid[_rid] = _pos + 1
 
     def move_arrow(owner_name) -> str:
-        cur = _cur_rank_by_owner.get(str(owner_name))
-        prev = _prev_ranks.get(str(owner_name))
+        _rid = _o2r_stripped_prev.get(str(owner_name).strip())
+        cur = _cur_rank_by_owner.get(str(owner_name).strip())
+        if _rid is not None and _rid in _cur_rank_by_rid:
+            cur = _cur_rank_by_rid[_rid]
+        prev = None
+        if _rid is not None and _rid in _prev_by_rid:
+            prev = _prev_by_rid[_rid]
+        elif str(owner_name).strip() in _prev_by_name:
+            prev = _prev_by_name[str(owner_name).strip()]
+        elif str(owner_name) in _prev_by_rid:
+            prev = _prev_by_rid[str(owner_name)]
         if cur is None or prev is None:
             return ("<span class='pr-move pr-move-flat' title='No last-week ranking'>"
                     "&ndash;</span>")
@@ -11321,7 +11381,7 @@ def _standings_panels(ctx: dict, power_rankings=None, prev_power_ranks=None) -> 
     power_rankings: value-blended list from build_power_rankings_context to match
     the Teams page (current view); None ranks by the performance PowerScore in
     team_stats, which is what a historical week can reconstruct faithfully.
-    prev_power_ranks: {team_name: rank} from last week's power ranking, for the
+    prev_power_ranks: {roster_id: rank} from last week's power ranking, for the
     week-over-week movement arrows in the power card. None/{} renders constant
     grey dashes."""
     team_stats = ctx["team_stats"]
