@@ -13798,6 +13798,15 @@ def get_league_ctx_from_cache(
     except Exception:
         logger.debug("[ui-audit] fixture lookup failed", exc_info=True)
 
+    # League pages are being browsed in this process: start the player-modal
+    # cache warm now (once per process, background, never raises) so the
+    # first player click does not pay the modal's league-independent cold
+    # fills inline. The warm used to be kicked only by the first
+    # player-details request itself, so that request raced the warm and
+    # still paid for the players feed, week conditions, ADP, projections and
+    # week-stat files on its own path (the ~10s first modal open).
+    _kick_player_modal_warm()
+
     key = _cache_key(platform, season, league_id)
     entry = DASHBOARD_CACHE.get(key)
     if _league_ctx_cache_valid(entry, platform, season, league_id):
@@ -13808,6 +13817,7 @@ def get_league_ctx_from_cache(
             ctx.get("users") or [], ctx.get("rosters") or [], platform, league_id, season
         )
         _maybe_check_roster_freshness(platform, league_id, season, key, _roster_sig(ctx))
+        _kick_modal_league_warm(platform, league_id, season, ctx)
         return ctx
 
     stale_entry = entry
@@ -13955,6 +13965,7 @@ def get_league_ctx_from_cache(
                     "build_ms": round((time.monotonic() - build_started) * 1000), "success": True,
                     "cache_entries": len(DASHBOARD_CACHE), "rss_before": rss_before, "rss_after": rss_after,
                 }, separators=(",", ":")))
+                _kick_modal_league_warm(platform, league_id, season, ctx)
                 return ctx
             except Exception:
                 # One refresh attempt failed: drop the force marker so later
@@ -26951,6 +26962,57 @@ def _compute_compare_baselines():
     return out
 
 
+# Short-TTL cache of built /api/player-details payloads, following the
+# _cached_value_history pattern. The response depends only on (player,
+# platform, league, season, league type/size, account, value-table version),
+# yet the build re-runs per-player league trades, eligibility, weekly-points
+# and start/sit work on every open (~0.4s warm, several seconds cold). The
+# client already caches each payload for 5 minutes per browser; 120s here
+# stays strictly fresher than that while making repeat opens (a reopened
+# modal, a second viewer of the same league) near-instant.
+_PLAYER_DETAILS_CACHE: dict = {}  # key -> (ts, payload)
+_PLAYER_DETAILS_TTL = 120  # seconds
+_PLAYER_DETAILS_MAX = 24  # ~4KB payloads, mirroring the client cache bound
+
+
+def _player_details_cache_active() -> bool:
+    """Payload caching is a production path only: tests exercise the real
+    build (and may toggle this on explicitly to cover the cache itself)."""
+    try:
+        return not app.testing
+    except Exception:
+        return False
+
+
+def _player_details_cache_get(key):
+    """Deep-copied cached payload for key, or None. Never raises."""
+    try:
+        hit = _PLAYER_DETAILS_CACHE.get(key)
+        if not hit:
+            return None
+        ts, payload = hit
+        if time.time() - ts >= _PLAYER_DETAILS_TTL:
+            _PLAYER_DETAILS_CACHE.pop(key, None)
+            return None
+        _PLAYER_DETAILS_CACHE[key] = _PLAYER_DETAILS_CACHE.pop(key)  # LRU refresh
+        return json.loads(json.dumps(payload))
+    except Exception:
+        return None
+
+
+def _player_details_cache_put(key, payload) -> None:
+    """Store a deep copy of a built payload. Never raises; a payload that is
+    not JSON-round-trippable simply is not cached."""
+    try:
+        _lru_cache_put(
+            _PLAYER_DETAILS_CACHE, key,
+            (time.time(), json.loads(json.dumps(payload))),
+            _PLAYER_DETAILS_MAX,
+        )
+    except Exception:
+        pass
+
+
 @app.route("/api/player-details/<player_id>")
 def api_player_details(player_id: str):
     """Get comprehensive player details for modal display."""
@@ -26986,6 +27048,19 @@ def api_player_details(player_id: str):
         _speculative = request.headers.get("X-BR-Speculative") == "player-details"
         _spec_ctx = None
         _ctx = None
+        # Serve a fresh-enough built payload instead of rebuilding it.
+        # Speculative requests bypass the cache entirely: their 204 gate
+        # below must keep deciding from the live league snapshot.
+        _pd_cache_key = None
+        if not _speculative and _player_details_cache_active():
+            _pd_cache_key = (
+                str(player_id), platform, str(league_id or ""), season,
+                _modal_lt, _modal_ls, str(session.get("account_id") or ""),
+                _MODEL_VALUE_CACHE_TS,
+            )
+            _pd_cached = _player_details_cache_get(_pd_cache_key)
+            if _pd_cached is not None:
+                return jsonify(_pd_cached)
         if league_id and _speculative:
             _entry = DASHBOARD_CACHE.get(_cache_key(platform, season, league_id))
             if not _league_ctx_cache_valid(_entry, platform, season, league_id):
@@ -27904,6 +27979,11 @@ def api_player_details(player_id: str):
             "league_trades": _pd_league_trades,
             "acquisition_events": _pd_acquisition_events,
         }
+
+        # Never pin an unresolved-ownership payload: a cold league context
+        # must not mask the resolved ownership for the whole TTL window.
+        if _pd_cache_key is not None and not ownership_unknown:
+            _player_details_cache_put(_pd_cache_key, response)
 
         return jsonify(response)
 
@@ -38782,6 +38862,123 @@ def _warm_player_modal_caches() -> None:
 
 _MODAL_WARM_LOCK = threading.Lock()
 _MODAL_WARM_STARTED = False
+
+
+_MODAL_LEAGUE_WARMED: set = set()
+_MODAL_LEAGUE_WARM_LOCK = threading.Lock()
+
+
+def _kick_modal_league_warm(platform: str, league_id: str, season: int, ctx) -> None:
+    """Background-fill the player modal's league-scoped caches for one league.
+
+    The modal's expensive builds are keyed by (season, scoring signature):
+    the full-season weekly-points builds (current and previous season), the
+    PPG rank rows, the per-position weekstat pools behind start/sit extras,
+    and the league trade history's provider inputs (transactions and draft
+    resolution for every season in the league chain). The first modal open
+    in a league used to pay all of them inline, serially (several seconds).
+    Building them when the league context lands makes the first click a
+    cache hit. The calls are exactly the ones the handler makes, with the
+    scoring normalized the same way the handler normalizes it, so payloads
+    are unchanged. Deduped per (league, season, scoring signature) per
+    process; every step best-effort; never raises.
+    """
+    try:
+        if app.testing:
+            return
+        raw_scoring = (ctx or {}).get("scoring_settings")
+        if not isinstance(raw_scoring, dict) or not raw_scoring:
+            return
+        import hashlib
+
+        # Dedupe signature only; the build scoring is resolved in _run.
+        sig = hashlib.md5(
+            json.dumps(raw_scoring, sort_keys=True, default=str).encode()
+        ).hexdigest()[:10]
+        key = (str(platform), str(league_id), int(season), sig)
+        with _MODAL_LEAGUE_WARM_LOCK:
+            if key in _MODAL_LEAGUE_WARMED:
+                return
+            if len(_MODAL_LEAGUE_WARMED) > 64:
+                _MODAL_LEAGUE_WARMED.clear()
+            _MODAL_LEAGUE_WARMED.add(key)
+
+        plat = str(platform)
+        lid = str(league_id)
+        yr = int(season)
+
+        def _run() -> None:
+            # The handler normalizes the RAW league scoring (read back through
+            # the synced provider globals); the ctx carries an enriched
+            # variant whose signature matches nothing the handler builds.
+            # Warm with the handler's exact key so the first click hits.
+            build_scoring = None
+            try:
+                from dashboard_services.api import get_league as _svc_get_league
+                from utils.league_scoring import normalize_league_scoring
+
+                _raw = (_svc_get_league(lid) or {}).get("scoring_settings")
+                if isinstance(_raw, dict) and _raw:
+                    build_scoring = normalize_league_scoring(
+                        plat, _raw, league_id=lid, season=yr)
+            except Exception:
+                logger.debug(
+                    "modal league warm: handler scoring failed", exc_info=True)
+            if not build_scoring:
+                return
+            scoring = build_scoring
+            steps = [
+                ("weekly points", lambda: _load_season_weekly_points(yr, scoring)),
+                ("prev weekly points", lambda: _load_season_weekly_points(yr - 1, scoring)),
+                ("rank rows", lambda: _season_rank_rows(yr, scoring)),
+            ]
+            for pos in ("QB", "RB", "WR", "TE"):
+                steps.append((
+                    f"weekstat {pos}",
+                    lambda pos=pos: _season_weekstat_points(yr, scoring, pos),
+                ))
+            for label, fn in steps:
+                try:
+                    fn()
+                except Exception:
+                    logger.debug("modal league warm: %s failed", label, exc_info=True)
+            try:
+                from dashboard_services import player_league_trades as _plt
+                from dashboard_services.api import (
+                    build_league_history_map as _history_map,
+                )
+                from dashboard_services.service import get_transactions_by_week as _gtx
+
+                season_map = _history_map(plat, lid, yr) or {}
+                for hist_season, hist_lid in season_map.items():
+                    try:
+                        _gtx(str(hist_lid), _plt._TX_WEEKS, platform=plat,
+                             season=int(hist_season))
+                    except Exception:
+                        logger.debug(
+                            "modal league warm: tx failed", exc_info=True)
+                    try:
+                        _plt._roster_names(plat, str(hist_lid), int(hist_season))
+                    except Exception:
+                        logger.debug(
+                            "modal league warm: roster names failed", exc_info=True)
+                for chain_lid in {str(v) for v in season_map.values()} | {lid}:
+                    try:
+                        _plt.build_draft_resolution_map(plat, chain_lid)
+                    except Exception:
+                        logger.debug(
+                            "modal league warm: resolution failed", exc_info=True)
+                    try:
+                        _plt._slot_map_for_league(plat, chain_lid)
+                    except Exception:
+                        logger.debug(
+                            "modal league warm: slot map failed", exc_info=True)
+            except Exception:
+                logger.debug("modal league warm: trades failed", exc_info=True)
+
+        threading.Thread(target=_run, daemon=True, name="modal-league-warm").start()
+    except Exception:
+        logger.debug("modal league warm kick failed", exc_info=True)
 
 
 def _kick_player_modal_warm() -> None:

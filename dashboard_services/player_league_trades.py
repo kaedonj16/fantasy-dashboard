@@ -8,6 +8,7 @@ traded pick eventually became.
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -428,18 +429,50 @@ def get_player_league_trades(
     # Current model values for trade assets, loaded once for the whole call.
     value_map = _load_value_map()
 
-    # Prefetch draft resolution for every league_id in the chain (picks resolve
-    # against the season the pick belongs to, which may be a later league year).
+    # Prefetch every per-league / per-season input concurrently: draft
+    # resolution, slot maps, roster names and transactions are independent
+    # provider fetches, and the ordered merge below consumes them exactly as
+    # before, so the output is unchanged. A cold call previously paid these
+    # strictly serially (the largest single serial segment of a modal open).
+    # Draft resolution covers every league_id in the chain (picks resolve
+    # against the season the pick belongs to, which may be a later league
+    # year) plus the current league id, whose record often holds dynasty
+    # drafts for future pick seasons.
+    _chain_lids = sorted({str(v) for v in season_map.values()} | {lid})
+    _season_lids = [(int(s), str(l)) for s, l in season_map.items()]
+
+    def _prefetch_league(_hlid: str):
+        return (
+            _hlid,
+            build_draft_resolution_map(plat, _hlid),
+            _slot_map_for_league(plat, _hlid),
+        )
+
+    def _prefetch_season(_pair):
+        _hs, _hlid = _pair
+        try:
+            _tx = get_transactions_by_week(
+                _hlid, _TX_WEEKS, platform=plat, season=_hs
+            ) or {}
+        except Exception:
+            logger.debug(
+                "[player-league-trades] tx fetch failed %s %s",
+                _hlid, _hs, exc_info=True,
+            )
+            _tx = None
+        return (_hs, _roster_names(plat, _hlid, _hs), _tx)
+
     resolution_by_league: dict[str, dict[tuple[int, int, str], dict]] = {}
     slot_by_league: dict[str, dict[tuple[str, str], int]] = {}
-    for hist_lid in {str(v) for v in season_map.values()}:
-        resolution_by_league[hist_lid] = build_draft_resolution_map(plat, hist_lid)
-        slot_by_league[hist_lid] = _slot_map_for_league(plat, hist_lid)
-
-    # Also resolve against the current league id -- dynasty drafts for future
-    # pick seasons often live on the newest league record.
-    if lid not in resolution_by_league:
-        resolution_by_league[lid] = build_draft_resolution_map(plat, lid)
+    roster_names_by_season: dict[int, dict[str, str]] = {}
+    tx_by_season: dict[int, Optional[dict]] = {}
+    with ThreadPoolExecutor(max_workers=4) as _pool:
+        for _hlid, _res_map, _slots in _pool.map(_prefetch_league, _chain_lids):
+            resolution_by_league[_hlid] = _res_map
+            slot_by_league[_hlid] = _slots
+        for _hs, _names, _tx in _pool.map(_prefetch_season, _season_lids):
+            roster_names_by_season[_hs] = _names
+            tx_by_season[_hs] = _tx
     # Merge all resolution maps (later seasons / newer leagues win on conflict)
     lineage_ids = {str(v) for v in season_map.values()} | {lid}
     merged_resolution: dict[tuple[int, int, str], dict] = _cached_resolution_map(lineage_ids, players_index)
@@ -458,17 +491,10 @@ def get_player_league_trades(
     seen_txn_ids: set[str] = set()
     for hist_season in sorted(season_map.keys(), reverse=True):
         hist_lid = str(season_map[hist_season])
-        roster_names = _roster_names(plat, hist_lid, int(hist_season))
+        roster_names = roster_names_by_season.get(int(hist_season)) or {}
         slot_map = slot_by_league.get(hist_lid) or {}
-        try:
-            tx_by_week = get_transactions_by_week(
-                hist_lid, _TX_WEEKS, platform=plat, season=int(hist_season)
-            ) or {}
-        except Exception:
-            logger.debug(
-                "[player-league-trades] tx fetch failed %s %s",
-                hist_lid, hist_season, exc_info=True,
-            )
+        tx_by_week = tx_by_season.get(int(hist_season))
+        if tx_by_week is None:
             continue
 
         for week in sorted(tx_by_week.keys(), reverse=True):
