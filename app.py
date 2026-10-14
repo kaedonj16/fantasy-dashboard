@@ -1320,6 +1320,11 @@ try:
     app.register_blueprint(waiver_bp)
     logger.info("[waiver-bp] registered")
 
+    from routes.assistant_bp import assistant_bp
+
+    app.register_blueprint(assistant_bp)
+    logger.info("[assistant-bp] registered")
+
     from routes.advanced_metrics_bp import advanced_metrics_bp
 
     app.register_blueprint(advanced_metrics_bp)
