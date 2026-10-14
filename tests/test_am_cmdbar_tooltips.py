@@ -18,6 +18,16 @@ Fix: command-bar bubbles open DOWNWARD (top:100% + 6px), inside the
 card, the same direction the bar's overflow menu already opens. The
 flip is scoped to .am-cmdbar .am-cmd-btn so every other [data-tooltip]
 surface keeps the shared above-trigger placement.
+
+Follow-up (2026-10-14, screenshot): the same bubble clipped
+HORIZONTALLY on the overflow button. #amMoreToggle hugs the card's
+right edge (its center sits ~29px from it), so the centered 102px
+"More actions" bubble spilled ~21px past the card and the viewport
+(harness-measured at 1280 and 900px wide) and the text cut off
+mid-word. Fix: the More bubble right-aligns to the button's right
+edge (left:auto; right:0; transform:none). The other three buttons
+sit far enough inboard that centering never reaches the edge, so
+they keep the shared centered placement.
 """
 import re
 
@@ -60,6 +70,20 @@ def test_cmdbar_tooltips_flip_below_the_button():
     assert "top:100%" in body
     assert "margin-top:6px" in body
     assert "margin-bottom:0" in body
+
+
+def test_more_actions_bubble_right_aligns_to_the_button():
+    css = _style(_html())
+    m = re.search(
+        r"#amMoreToggle\[data-tooltip\]:hover::after,\s*"
+        r"#amMoreToggle\[data-tooltip\]:focus-visible::after\s*\{([^}]*)\}",
+        css,
+    )
+    assert m, "overflow-button tooltip right-alignment rule missing"
+    body = m.group(1)
+    assert "left:auto" in body
+    assert "right:0" in body
+    assert "transform:none" in body
 
 
 def test_flip_stays_scoped_to_the_command_bar():

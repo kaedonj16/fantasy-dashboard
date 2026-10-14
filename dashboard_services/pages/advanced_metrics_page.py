@@ -1705,6 +1705,15 @@ def build_advanced_metrics_body(
       .am-cmdbar .am-cmd-btn[data-tooltip]:focus-visible::after {
         bottom:auto; top:100%; margin-bottom:0; margin-top:6px;
       }
+      /* The overflow button hugs the card's right edge, so the centered
+         bubble spills ~21px past the card and the viewport and clips its
+         own text ("More actio..."). Right-align its bubble to the
+         button's right edge; the other buttons sit far enough inboard
+         that centering never reaches the edge. */
+      #amMoreToggle[data-tooltip]:hover::after,
+      #amMoreToggle[data-tooltip]:focus-visible::after {
+        left:auto; right:0; transform:none;
+      }
       /* The filter sheet's close button reads too tall at the shared 36px
          command size; pin it shorter with its own box model. */
       #amSheetClose {
