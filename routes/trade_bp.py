@@ -282,7 +282,8 @@ def page_trade(platform: Optional[str] = None, season: Optional[int] = None,
         current_season = int(state.get("season") or datetime.now().year)
         has_premium = has_premium_access(user_id, None, "sleeper")
         body = build_trade_calculator_body(None, current_season, has_premium=has_premium,
-                                           seo_footer=_TRADE_CALCULATOR_SEO_CONTENT)
+                                           seo_footer=_TRADE_CALCULATOR_SEO_CONTENT,
+                                           include_public_editorial=True)
 
     return render_page(
         "Fantasy Football Trade Calculator - Dynasty & Redraft Trade Values | BR Fantasy",

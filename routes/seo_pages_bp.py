@@ -110,6 +110,7 @@ def page_prospects(*args, **kwargs):
 def dynasty_trade_value_chart():
     """Public dynasty trade value chart -- same UI as player rankings, with SEO-optimised metadata."""
     from datetime import datetime as _dt
+    from dashboard_services.pages.dynasty_pages import build_chart_editorial_html
     as_of = _dt.now().strftime("%B %Y")
     year  = _dt.now().year
     return page_players(
@@ -119,6 +120,9 @@ def dynasty_trade_value_chart():
             f"Sortable by position, age, and value. Use with the free Trade Calculator."
         ),
         _canonical="/dynasty-trade-value-chart",
+        # AdSense Tier 3: chart-only editorial. page_players renders this
+        # block solely when it is passed, so /players is unchanged.
+        _extra_editorial=build_chart_editorial_html(),
     )
 
 
@@ -426,6 +430,33 @@ def build_compare_page_body(popular_html: str = "", show_connect_cta: bool = Tru
           </div>
           <div id="comparePageResult" class="compare-page-result"></div>
           {connect_cta}
+          <section class="static-section" data-tier3="compare-editorial" style="max-width:860px;margin:24px auto 0;">
+            <h2 class="static-section-title">How to read a head to head comparison</h2>
+            <p style="color:var(--text-muted);font-size:15px;line-height:1.75;">
+              A comparison answers three different questions, and confusing them is how
+              managers pick the wrong player. Value asks what each player costs: the
+              market price on the shared dynasty scale, the number a trade has to
+              respect. Production asks what each player is doing now: recent scoring,
+              snap share, target share and the other opportunity signals that show
+              whether the points rest on a real role. Age asks how long it lasts: a
+              twenty four year old and a twenty nine year old with identical value and
+              production are different assets, because one carries years of prime
+              seasons the other has already spent. Read all three before you decide.
+              The player who wins on value alone may simply be the more expensive
+              version of the same weekly output.
+            </p>
+            <p style="color:var(--text-muted);font-size:15px;line-height:1.75;">
+              The lower value player is sometimes the right pick. A contender one
+              starter short should take the older producer whose points arrive this
+              season over the younger asset whose value is stored in future years. A
+              team thin at a scarce position should pay the premium the chart shows
+              rather than pretend a cheaper flex piece replaces it. And when the values
+              sit close, trust the role: the player whose opportunity is growing beats
+              the player whose efficiency is carrying him. Once a pair is close here,
+              load both names into the <a href="/trade">trade calculator</a> to see
+              what a fair deal between them actually requires.
+            </p>
+          </section>
         </div>
       </main>
     </div>
