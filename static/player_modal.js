@@ -3795,7 +3795,7 @@ function _pmBuildTeamHTML(data) {
     const _tsRank = focusRole.ppg_rank != null ? ` <span class="pm-strip-chip">${_pmEsc(pos + focusRole.ppg_rank)}</span>` : '';
     _tsCells.push(`<div class="pm-strip-cell"><span class="pm-strip-label">PPG</span><span class="pm-strip-val">${Number(focusRole.ppg).toFixed(1)}${_tsRank}</span></div>`);
   }
-  const teamStrip = _tsCells.length ? `<div class="pm-team-strip">${_tsCells.join('')}</div>` : '';
+  const teamStrip = _tsCells.length ? `<div class="pm-team-strip pm-cells-${_tsCells.length}">${_tsCells.join('')}</div>` : '';
 
   // Usage-by-week card: the right half of the Room / Usage pair. Built from
   // the payload's focus_weekly series (played weeks only, from the

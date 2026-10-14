@@ -23883,6 +23883,39 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
 .pm-strip-sub { font-size: 11px; font-weight: 600; color: var(--text-muted); }
 .pm-strip-chip { display: inline-block; font-size: 12px; font-weight: 800; color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); border-radius: var(--radius-sm); padding: 2px 8px; font-variant-numeric: tabular-nums; }
 
+/* ── Summary strips on mobile: fit the text, never split a value ─────────
+   Same stats, same order, same one-strip-per-tab layout as desktop. Cells
+   shrink as whole units, values and labels stay on one line, and a sub-line
+   that shares the value span (target counts, "est.", best-week number)
+   drops under its value so it still reads as part of that stat. */
+@media (max-width: 768px) {
+  .pm-stats-strip, .pm-team-strip { padding: 12px 10px; }
+  .pm-strip-cell { min-width: 0; padding: 4px 2px; }
+  .pm-strip-label { font-size: 10px; white-space: nowrap; }
+  .pm-strip-val { font-size: 13.5px; white-space: nowrap; }
+  .pm-strip-val .pm-strip-sub { display: block; margin-top: 1px; }
+  .pm-strip-sub { font-size: 10px; }
+  .pm-strip-chip { font-size: 11px; padding: 1px 5px; }
+  /* The Stats strip carries six or seven cells: wrap as whole cells. */
+  .pm-stats-strip .pm-strip-cell { flex: 1 1 22%; }
+}
+@media (max-width: 560px) {
+  /* Team strip: whole-cell rows sized by how many stats are showing, so
+     no stat is left alone on a row (5 across becomes 3 + 2, 4 becomes
+     2 + 2). The pm-cells-N class comes from the strip builder. */
+  .pm-team-strip.pm-cells-5 .pm-strip-cell { flex: 1 1 30%; }
+  .pm-team-strip.pm-cells-4 .pm-strip-cell { flex: 1 1 40%; }
+  .pm-stats-strip .pm-strip-label { font-size: 9.5px; }
+}
+@media (max-width: 360px) {
+  .pm-stats-strip, .pm-team-strip { padding: 12px 8px; }
+  .pm-team-strip { margin-left: 10px; margin-right: 10px; }
+  .pm-strip-cell { padding: 4px 1px; }
+  .pm-strip-label { font-size: 9.5px; letter-spacing: 0.03em; }
+  /* Seven stats at this width: 3 + 3 + 1 whole cells (six stays 3 + 3). */
+  .pm-stats-strip .pm-strip-cell { flex: 1 1 30%; }
+}
+
 /* ── Team tab: room Show all toggle + Also competing for targets ───────── */
 .pm-room-more[hidden] { display: none; }
 .pm-room-more .pm-troom-row:first-child { border-top: 1px solid var(--grid); }
