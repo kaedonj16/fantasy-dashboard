@@ -1967,12 +1967,37 @@ function _pmLoadInLeague(playerId, data, leagueId, platform, season) {
   });
 }
 
+function _pmRecentFormSkeleton() {
+  // Loading placeholder in the real card's exact footprint: same divider,
+  // header, and column structure (value line, 64px track, week line,
+  // opponent line), with muted shimmer bars at plausible heights. The
+  // pm-recent-skel-* sizes in dashboard.css mirror the real text line
+  // boxes, so swapping in the real graph does not move anything.
+  const heights = [58, 84, 44, 96, 68];
+  const cols = heights.map(h =>
+    '<div class="pm-recent-col">'
+    + '<span class="skeleton pm-recent-skel-val"></span>'
+    + `<div class="pm-recent-track"><div class="skeleton pm-recent-skel-bar" style="height:${h}%"></div></div>`
+    + '<span class="skeleton pm-recent-skel-wk"></span>'
+    + '<span class="skeleton pm-recent-skel-opp"></span>'
+    + '</div>').join('');
+  return '<hr class="pm-section-divider">'
+    + '<div class="pm-section-header"><span class="skeleton pm-recent-skel-label"></span>'
+    + '<span class="skeleton pm-recent-skel-cap"></span></div>'
+    + `<div class="pm-recent-bars">${cols}</div>`;
+}
+
 function _pmLoadRecentForm(playerId, season, pos) {
   // Recent Form bars on the Overview: the player's last 5 real games of the
   // current season, oldest to newest. Bars only (no trend line, per spec).
   // The card stays hidden when there are no real games to show.
   const el = document.getElementById('pmRecentForm');
   if (!el) return;
+  // Skeleton up front in the card's footprint; the real bars replace it
+  // when the logs land. No-data and failure paths re-hide the card below.
+  el.innerHTML = _pmRecentFormSkeleton();
+  el.hidden = false;
+  let _barsRendered = false;
   // Mirror the Stats tab's game-logs URL construction exactly.
   const pathParts = window.location.pathname.split('/').filter(p => p);
   const _platform = pathParts[0] || 'sleeper';
@@ -1995,7 +2020,7 @@ function _pmLoadRecentForm(playerId, season, pos) {
         const keys = Object.keys(logsByYear);
         if (keys.length === 1) logs = logsByYear[keys[0]];
       }
-      if (!Array.isArray(logs) || !logs.length) return;
+      if (!Array.isArray(logs) || !logs.length) { el.hidden = true; return; }
       // Real games only, same filter semantics as _buildStatsHTML (no byes,
       // no projections, box-score stats present) plus scored fantasy points.
       const real = logs.filter(g => {
@@ -2004,7 +2029,7 @@ function _pmLoadRecentForm(playerId, season, pos) {
         const s = g.stats || {};
         return s.pass_yd != null || s.rush_att != null || s.rec != null || s.rec_tgt != null;
       }).slice().sort((a, b) => (Number(a.week) || 0) - (Number(b.week) || 0));
-      if (!real.length) return;
+      if (!real.length) { el.hidden = true; return; }
       const shown = real.slice(-5);
       const max = Math.max.apply(null, shown.map(g => Number(g.fantasy_pts) || 0));
       let _bestUsed = false;
@@ -2013,10 +2038,18 @@ function _pmLoadRecentForm(playerId, season, pos) {
         const h = max > 0 ? Math.max(6, Math.round(pts / max * 100)) : 6;
         const _best = max > 0 && pts === max && !_bestUsed;
         if (_best) _bestUsed = true;
+        // Opponent per game, from the game-log payload ("@LV" away, "LV"
+        // home), rendered in the modal schedule convention: "@ LV" away,
+        // "vs LV" home. The span stays (empty) when the payload has no
+        // opponent for a game, so every column keeps the same structure.
+        const _oppRaw = String(g.opponent || '').trim();
+        const _opp = !_oppRaw || _oppRaw === 'BYE' ? ''
+          : _oppRaw.charAt(0) === '@' ? '@ ' + _oppRaw.slice(1) : 'vs ' + _oppRaw;
         return '<div class="pm-recent-col">'
           + `<span class="pm-recent-val${_best ? ' pm-recent-val-best' : ''}">${pts.toFixed(1)}</span>`
           + `<div class="pm-recent-track"><div class="pm-recent-bar${_best ? ' pm-recent-bar-best' : ''}" style="height:${h}%"></div></div>`
           + `<span class="pm-recent-wk">W${g.week != null ? g.week : ''}</span>`
+          + `<span class="pm-recent-opp">${_pmEsc(_opp)}</span>`
           + '</div>';
       }).join('');
       el.innerHTML = '<hr class="pm-section-divider">'
@@ -2024,6 +2057,7 @@ function _pmLoadRecentForm(playerId, season, pos) {
         + '<span class="pm-recent-cap">Fantasy points</span></div>'
         + `<div class="pm-recent-bars">${cols}</div>`;
       el.hidden = false;
+      _barsRendered = true;
 
       // Overview rail Role card: season target share / snap share plus the
       // position's production lines, aggregated from these same game logs
@@ -2112,7 +2146,9 @@ function _pmLoadRecentForm(playerId, season, pos) {
         }
       }
     })
-    .catch(() => { /* card stays hidden on failure */ });
+    .catch(() => { /* card stays hidden on failure: drop the skeleton */
+      if (!_barsRendered) el.hidden = true;
+    });
 }
 
 function pmInjectContextActions(playerId, playerName, data, leagueId, platform, season) {
