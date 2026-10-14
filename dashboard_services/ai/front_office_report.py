@@ -52,7 +52,7 @@ from utils.roster_strength import STARTER_THRESHOLD
 
 logger = logging.getLogger(__name__)
 
-CACHE_VERSION = "v3"
+CACHE_VERSION = "v4"
 _SKILL_POS = ("QB", "RB", "WR", "TE")
 
 
@@ -293,11 +293,17 @@ def _trade_targets(ctx: dict, viewer_roster_id: str, scoring_type: str) -> list[
             why_they_say_yes = "They win the value math."
         else:
             why_they_say_yes = "Straight value swap at a spot they can use."
-        targets.append({
+        base = {
             "partner": _safe_str(p.get("team_name") or ""),
             "partner_record": partner_record,
             "partner_needs": partner_needs,
+            "partner_direction": _safe_str(p.get("partner_direction") or ""),
             "why_they_say_yes": why_they_say_yes,
+            "depth_warnings": [str(w) for w in (p.get("depth_warnings") or [])],
+            "depth_checked": bool(p.get("depth_checked")),
+        }
+        targets.append({
+            **base,
             "gets": [
                 {
                     "id": str(g.get("id")),
@@ -305,6 +311,7 @@ def _trade_targets(ctx: dict, viewer_roster_id: str, scoring_type: str) -> list[
                     "position": _safe_str(g.get("position")),
                     "age": g.get("age"),
                     "value": round(safe_float(g.get("value")), 1),
+                    "tier": _safe_str(g.get("tier") or ""),
                 }
                 for g in gets
             ],
@@ -318,20 +325,141 @@ def _trade_targets(ctx: dict, viewer_roster_id: str, scoring_type: str) -> list[
                 for g in gives
             ],
             "fairness": p.get("fairness"),
+            "fairness_label": _fairness_label(p.get("fairness"),
+                                              p.get("value_you_get"),
+                                              p.get("value_you_give")),
+            "acceptance_rate": p.get("acceptance_rate"),
+            "acceptance_label": _acceptance_label(p.get("acceptance_rate")),
             "analyzer_url": url,
         })
-    return targets
+        # Second deal with the same partner (different need), when the
+        # engine found one: it renders as its own card.
+        alt = p.get("alt_deal") or {}
+        alt_gets = (alt.get("gets") or [])[:2]
+        alt_gives = (alt.get("gives") or [])[:3]
+        if alt_gets and alt_gives:
+            a_get_ids = ",".join(str(g.get("id")) for g in alt_gets if g.get("id"))
+            a_give_ids = ",".join(str(g.get("id")) for g in alt_gives if g.get("id"))
+            targets.append({
+                **base,
+                "gets": [
+                    {
+                        "id": str(g.get("id")),
+                        "name": _safe_str(g.get("name")),
+                        "position": _safe_str(g.get("position")),
+                        "age": g.get("age"),
+                        "value": round(safe_float(g.get("value")), 1),
+                        "tier": _safe_str(g.get("tier") or ""),
+                    }
+                    for g in alt_gets
+                ],
+                "gives": [
+                    {
+                        "id": str(g.get("id")),
+                        "name": _safe_str(g.get("name")),
+                        "position": _safe_str(g.get("position")),
+                        "value": round(safe_float(g.get("value")), 1),
+                    }
+                    for g in alt_gives
+                ],
+                "fairness": alt.get("fairness"),
+                "fairness_label": _fairness_label(
+                    alt.get("fairness"),
+                    sum(safe_float(g.get("value")) for g in alt_gets),
+                    sum(safe_float(g.get("value")) for g in alt_gives),
+                ),
+                "acceptance_rate": alt.get("acceptance_rate"),
+                "acceptance_label": _acceptance_label(alt.get("acceptance_rate")),
+                "depth_warnings": [str(w) for w in (alt.get("depth_warnings") or [])],
+                "depth_checked": bool(alt.get("depth_checked")),
+                "analyzer_url": (
+                    f"/{platform}/{season}/{league_id}/trade"
+                    f"?a={a_get_ids}&b={a_give_ids}"
+                ),
+            })
+    return targets[:4]
+
+
+def _fairness_label(fairness, value_get=None, value_give=None) -> str:
+    """Plain-language fairness for the card pill: 'Fair deal, within 5%'."""
+    try:
+        f = float(fairness)
+    except (TypeError, ValueError):
+        return ""
+    if f <= 0:
+        return ""
+    off = max(0, int(round((1.0 - f) * 100)))
+    if off <= 2:
+        return "Fair deal, even"
+    label = f"Fair deal, within {off}%"
+    try:
+        get_v, give_v = float(value_get or 0), float(value_give or 0)
+    except (TypeError, ValueError):
+        get_v = give_v = 0.0
+    if give_v > get_v > 0:
+        label = f"Fair deal, you add about {off}%"
+    return label
+
+
+def _acceptance_label(rate) -> str:
+    """Acceptance estimate (5-90 scale) as a card pill label."""
+    try:
+        r = int(rate)
+    except (TypeError, ValueError):
+        return ""
+    if r <= 0:
+        return ""
+    if r >= 60:
+        return "Likely to accept"
+    if r >= 40:
+        return "Possible"
+    return "Long shot"
+
+
+def _starter_bar(pos: str) -> float:
+    """Starter-caliber value bar for a position, tolerant of test envs
+    where STARTER_THRESHOLD is stubbed to a non-dict."""
+    try:
+        return float(STARTER_THRESHOLD.get(pos, 350))
+    except Exception:
+        return 350.0
+
+
+def _position_slots(ctx: dict) -> dict[str, int]:
+    """Dedicated starting slots per skill position from roster_positions.
+
+    FLEX is fungible and not attributed (same convention as the trade
+    engine's depth model); SUPER_FLEX counts toward QB. Defaults to a
+    standard 1QB lineup when the league shape is unknown."""
+    rp = [str(p or "").upper() for p in (ctx.get("roster_positions") or [])]
+    if not rp:
+        return {"QB": 1, "RB": 2, "WR": 2, "TE": 1}
+    return {
+        "QB": max(1, rp.count("QB") + rp.count("SUPER_FLEX")),
+        "RB": max(1, rp.count("RB")),
+        "WR": max(1, rp.count("WR")),
+        "TE": max(1, rp.count("TE")),
+    }
 
 
 def _potential_trade_targets(ctx: dict, viewer_roster_id: str,
                              model_value_lookup: dict,
                              positions: list[str],
-                             limit: int = 6, per_position: int = 2) -> list[dict]:
+                             limit: int = 4, per_position: int = 2,
+                             qb_add_allowed: bool = True) -> list[dict]:
     """Players worth pursuing at the viewer's need positions, rostered by
     leaguemates. Used when the suggestions engine cannot construct a fair
     package: the report still names who to go get instead of silently
-    dropping the trade section. No give side is invented here; these are
-    targets, not priced deals."""
+    dropping the trade section.
+
+    Reworked ranking: a candidate must not be seriously injured, and is
+    ranked by how gettable he is: genuine surplus for his owner (ranked
+    below their dedicated starters at his position) first, then depth on
+    the partner's roster, then how close the viewer's own surplus package
+    gets to fair value, never by raw value alone. A partner's starter can
+    still appear, but only flagged as a Reach with the reason attached.
+    The gap to fair and a starting-point piece from the viewer's surplus
+    are reported honestly instead of an invented priced deal."""
     priority: list[str] = []
     for pos in positions or []:
         p = str(pos or "").upper()
@@ -339,37 +467,137 @@ def _potential_trade_targets(ctx: dict, viewer_roster_id: str,
             priority.append(p)
     if not priority:
         return []
+    if not qb_add_allowed:
+        priority = [p for p in priority if p != "QB"]
+        if not priority:
+            return []
     prio = {pos: i for i, pos in enumerate(priority)}
+    slots = _position_slots(ctx)
     players_index = ctx.get("players_index") or {}
     players_map = ctx.get("players_map") or {}
     roster_map = ctx.get("roster_map") or {}
+    inj_lookup = _injury_lookup(ctx)
     viewer_rid = str(viewer_roster_id)
-    cands: list[dict] = []
-    for r in ctx.get("rosters") or []:
-        rid = str(r.get("roster_id") or "")
-        if not rid or rid == viewer_rid:
-            continue
-        partner = _safe_str(roster_map.get(rid) or r.get("team_name") or f"Team {rid}")
-        for pid in r.get("players") or []:
+
+    def _ordered_players(roster: dict, pos: str) -> list[dict]:
+        out = []
+        for pid in roster.get("players") or []:
             spid = str(pid)
             mv = model_value_lookup.get(spid) or {}
             meta = players_index.get(spid) or players_map.get(spid) or {}
-            pos = str(meta.get("position") or meta.get("pos") or mv.get("position") or "").upper()
-            if pos not in prio:
+            p = str(meta.get("position") or meta.get("pos") or mv.get("position") or "").upper()
+            if p != pos:
                 continue
             value = round(safe_float(mv.get("value") or mv.get("model_value") or mv.get("trade_value")), 1)
             if value <= 0:
                 continue
-            cands.append({
+            out.append({
                 "id": spid,
                 "name": _safe_str(meta.get("full_name") or meta.get("name") or mv.get("name") or spid),
                 "position": pos,
                 "team": _safe_str(meta.get("team") or mv.get("team") or "FA"),
                 "age": meta.get("age") if meta.get("age") not in (None, "") else mv.get("age"),
                 "value": value,
-                "partner": partner,
             })
-    cands.sort(key=lambda c: (prio[c["position"]], -c["value"]))
+        return sorted(out, key=lambda x: -x["value"])
+
+    def _is_serious(pid: str) -> bool:
+        return _inj_canonical(inj_lookup.get(pid) or "") in (
+            "IR", "PUP", "NFI", "SUSP", "SUS", "OUT", "DOUBTFUL", "NA",
+        )
+
+    # Viewer's sendable surplus: startable players beyond the dedicated
+    # slots at each position, cheapest first (the engine's bench pool).
+    viewer_roster = _roster_lookup(ctx, viewer_roster_id) or {}
+    surplus_pool: list[dict] = []
+    surplus_by_pos: dict[str, list[dict]] = {}
+    for pos in ("QB", "RB", "WR", "TE"):
+        ordered = _ordered_players(viewer_roster, pos)
+        bar = _starter_bar(pos)
+        startable = [pl for pl in ordered if pl["value"] >= bar and not _is_serious(pl["id"])]
+        sendable = startable[slots.get(pos, 1):]
+        surplus_by_pos[pos] = sendable
+        surplus_pool.extend(sendable)
+    surplus_pool.sort(key=lambda pl: pl["value"])
+
+    def _package_for(target_val: float) -> tuple[float, list[dict]]:
+        """Fairest cheapest-first prefix of the surplus pool (max 3)."""
+        best_val, best_pkg, running = 0.0, [], 0.0
+        best_fair = 0.0
+        for i, pl in enumerate(surplus_pool[:3]):
+            running += pl["value"]
+            if running <= 0 or target_val <= 0:
+                continue
+            fair = min(running, target_val) / max(running, target_val)
+            if fair > best_fair:
+                best_fair, best_val, best_pkg = fair, running, surplus_pool[: i + 1]
+        return best_val, best_pkg
+
+    cands: list[dict] = []
+    for r in ctx.get("rosters") or []:
+        rid = str(r.get("roster_id") or "")
+        if not rid or rid == viewer_rid:
+            continue
+        partner = _safe_str(roster_map.get(rid) or r.get("team_name") or f"Team {rid}")
+        # Partner holes: positions where they cannot field their starters.
+        partner_holes: list[str] = []
+        for pos in ("QB", "RB", "WR", "TE"):
+            ordered_all = _ordered_players(r, pos)
+            bar = _starter_bar(pos)
+            n_start = sum(1 for pl in ordered_all if pl["value"] >= bar)
+            if n_start < slots.get(pos, 1):
+                partner_holes.append(pos)
+        for pos in priority:
+            ordered = _ordered_players(r, pos)
+            bar = _starter_bar(pos)
+            n_startable = sum(1 for pl in ordered if pl["value"] >= bar)
+            for idx, cand in enumerate(ordered):
+                if cand["value"] < bar:
+                    continue
+                depth_rank = idx + 1
+                # Surplus: he sits below the partner's dedicated starters
+                # at his position, so moving him costs them no lineup
+                # spot. Starters are not excluded, but they can only ever
+                # be flagged Reach (see attainability below).
+                is_surplus = depth_rank > slots.get(pos, 1)
+                if _is_serious(cand["id"]):
+                    continue
+                pkg_val, pkg = _package_for(cand["value"])
+                gap = (min(pkg_val, cand["value"]) / max(pkg_val, cand["value"])
+                       if pkg_val > 0 and cand["value"] > 0 else 0.0)
+                start_piece = None
+                for hole in partner_holes:
+                    if surplus_by_pos.get(hole):
+                        start_piece = surplus_by_pos[hole][0]
+                        break
+                if start_piece is None and pkg:
+                    start_piece = pkg[0]
+                cands.append({
+                    **cand,
+                    "partner": partner,
+                    "partner_holes": partner_holes,
+                    "depth_rank": depth_rank,
+                    "is_surplus": is_surplus,
+                    "sole_starter": n_startable <= 1,
+                    "gap_pct": int(round(gap * 100)),
+                    "starting_point": (
+                        {"name": start_piece["name"], "position": start_piece["position"]}
+                        if start_piece else None
+                    ),
+                    "attainability": (
+                        "Realistic"
+                        if is_surplus and (gap >= 0.75 or (gap >= 0.60 and depth_rank >= 3))
+                        else "Reach"
+                    ),
+                })
+    # Gettability first: surplus pieces and deeper names on the partner's
+    # chart, closer to a fair package, outrank a bigger name who will
+    # never move.
+    cands.sort(key=lambda c: (
+        prio[c["position"]],
+        0 if c["is_surplus"] else 1,
+        -c["depth_rank"], -c["gap_pct"], -c["value"],
+    ))
     out: list[dict] = []
     per_pos_count: dict[str, int] = {}
     for c in cands:
@@ -383,9 +611,20 @@ def _potential_trade_targets(ctx: dict, viewer_roster_id: str,
 
 
 def _waiver_targets(ctx: dict, viewer_roster_id: str, model_value_lookup: dict,
-                   scoring_type: str, weakest: list[str]) -> list[dict]:
-    """Best free agents at the team's weakest positions, gated by the
-    existing waiver quality bar."""
+                   scoring_type: str, weakest: list[str],
+                   qb_add_allowed: bool = True,
+                   hole_positions: list[str] | None = None) -> list[dict]:
+    """Best free agents, gated by the existing waiver quality bar.
+
+    Two rework gates on top of the quality bar:
+    - QB adds are suppressed entirely when the roster already covers the
+      position (see _qb_context): in a 1QB league with a healthy QB on
+      the roster, no wire QB is ever a suggestion.
+    - The starter_gap stretch inside the quality bar now means a TRUE
+      lineup hole (fewer healthy startable players than dedicated
+      slots), not merely a weak positional grade. A weak grade alone no
+      longer waives the 1QB streamer bar or the startable-rank ceilings.
+    """
     try:
         from utils.cross_league_actions import waiver_add_clears_quality_bar
     except Exception:
@@ -394,6 +633,7 @@ def _waiver_targets(ctx: dict, viewer_roster_id: str, model_value_lookup: dict,
     is_redraft = scoring_type == "redraft"
     is_sf = bool(_ctx_is_sf(ctx))
     n_teams = len(ctx.get("rosters") or []) or 12
+    holes = set(hole_positions or [])
     rostered: set[str] = set()
     for r in ctx.get("rosters") or []:
         rostered.update(str(pid) for pid in (r.get("players") or []))
@@ -406,6 +646,8 @@ def _waiver_targets(ctx: dict, viewer_roster_id: str, model_value_lookup: dict,
         pos = str(row.get("position") or "").upper()
         if pos not in ("QB", "RB", "WR", "TE"):
             continue
+        if pos == "QB" and not qb_add_allowed:
+            continue
         val = safe_float(row.get("value") or row.get("model_value") or row.get("trade_value"))
         try:
             pos_rank = row.get("pos_rank")
@@ -416,7 +658,7 @@ def _waiver_targets(ctx: dict, viewer_roster_id: str, model_value_lookup: dict,
             age = float(row.get("age") or 0.0)
         except (TypeError, ValueError):
             age = 0.0
-        gap = 1.0 if pos in weakest else 0.0
+        gap = 1.0 if pos in holes else 0.0
         try:
             ok = waiver_add_clears_quality_bar(
                 pos=pos, pos_rank=pos_rank, value=val,
@@ -445,6 +687,284 @@ def _waiver_targets(ctx: dict, viewer_roster_id: str, model_value_lookup: dict,
 def _cut_candidates(roster_rows: list[dict]) -> list[dict]:
     skill = [r for r in roster_rows if r["position"] in ("QB", "RB", "WR", "TE")]
     return skill[-3:][::-1] if skill else []
+
+
+# ── Top Moves: deterministic candidates + hard gates ────────────────────────
+# Designations that mean a player cannot help a lineup any time soon. A
+# player carrying one can never be an "add" in the Top Moves, in any
+# format; dynasty may still list him in Waivers as an IR stash only.
+_SERIOUS_DESIGNATIONS = ("IR", "PUP", "NFI", "SUSP", "SUS", "OUT", "DOUBTFUL", "NA")
+
+
+def _is_serious_designation(injury) -> bool:
+    return _inj_canonical(str(injury or "")) in _SERIOUS_DESIGNATIONS
+
+
+def _qb_context(ctx: dict, roster: dict, roster_rows: list[dict]) -> dict:
+    """QB room facts that gate every QB suggestion in the report.
+
+    healthy: QBs with no serious designation and no QUESTIONABLE tag.
+    add_allowed: 1QB needs zero healthy QBs before a wire QB is a real
+    suggestion; superflex needs fewer healthy QBs than its QB slots.
+    excess: healthy QBs beyond the keep count (2 in 1QB, 3 in superflex),
+    worst first: the shop candidates."""
+    try:
+        is_sf = bool(_ctx_is_sf(ctx))
+    except Exception:
+        is_sf = False
+    slots = _position_slots(ctx)
+    qbs = [r for r in roster_rows if str(r.get("position") or "").upper() == "QB"]
+    healthy, questionable = [], []
+    for r in qbs:
+        canon = _inj_canonical(str(r.get("injury") or ""))
+        if canon in _SERIOUS_DESIGNATIONS:
+            continue
+        if canon == "QUESTIONABLE":
+            questionable.append(r)
+        else:
+            healthy.append(r)
+    starter_ids = {str(pid) for pid in (roster or {}).get("starters") or []}
+    starter_q = next((r for r in qbs if str(r.get("id")) in starter_ids), None)
+    starter_questionable = bool(
+        starter_q
+        and _inj_canonical(str(starter_q.get("injury") or "")) == "QUESTIONABLE"
+    )
+    keep = 3 if is_sf else 2
+    movable = sorted(healthy + questionable, key=lambda r: safe_float(r.get("value")))
+    excess = movable[: max(0, len(movable) - keep)] if len(movable) > keep else []
+    if is_sf:
+        add_allowed = len(healthy) < max(2, slots.get("QB", 2))
+        covered = len(healthy) >= max(2, slots.get("QB", 2))
+    else:
+        add_allowed = len(healthy) == 0
+        covered = len(healthy) >= 1
+    return {
+        "is_sf": is_sf,
+        "total": len(qbs),
+        "healthy": len(healthy),
+        "questionable": len(questionable),
+        "starter_questionable_name": starter_q.get("name") if starter_questionable else "",
+        "covered": covered,
+        "add_allowed": add_allowed,
+        "excess": excess,
+    }
+
+
+def _hole_positions(ctx: dict, roster_rows: list[dict]) -> list[str]:
+    """Positions where the viewer cannot field their dedicated starters
+    with healthy, starter-caliber players. This (not a weak grade) is
+    what 'starter hole' means for the waiver quality bar."""
+    slots = _position_slots(ctx)
+    holes = []
+    for pos in ("QB", "RB", "WR", "TE"):
+        bar = _starter_bar(pos)
+        n = sum(
+            1 for r in roster_rows
+            if str(r.get("position") or "").upper() == pos
+            and safe_float(r.get("value")) >= bar
+            and not _is_serious_designation(r.get("injury"))
+        )
+        if n < slots.get(pos, 1):
+            holes.append(pos)
+    return holes
+
+
+def _qb_needy_team_count(ctx: dict, viewer_roster_id: str,
+                         model_value_lookup: dict) -> int:
+    """Other teams thinner at QB than the viewer is: fewer healthy
+    starter-caliber QBs than their QB slots. Context for shopping an
+    excess QB, computed from the same lookup as everything else."""
+    slots = _position_slots(ctx)
+    inj = _injury_lookup(ctx)
+    bar = _starter_bar("QB")
+    count = 0
+    for r in ctx.get("rosters") or []:
+        rid = str(r.get("roster_id") or "")
+        if not rid or rid == str(viewer_roster_id):
+            continue
+        n = 0
+        for pid in r.get("players") or []:
+            spid = str(pid)
+            mv = model_value_lookup.get(spid) or {}
+            if str(mv.get("position") or "").upper() != "QB":
+                continue
+            if safe_float(mv.get("value")) < bar:
+                continue
+            if _inj_canonical(inj.get(spid) or "") in _SERIOUS_DESIGNATIONS:
+                continue
+            n += 1
+        if n < slots.get("QB", 1):
+            count += 1
+    return count
+
+
+def _waiver_bar_filter(waiver_targets: list[dict], roster_rows: list[dict],
+                       holes: list[str]) -> list[dict]:
+    """Kaedon's drop-bar rule (2026-10-07), now applied to Front Office
+    waivers too: an add is suggested only if it beats the worst rostered
+    player at the same position by x1.05, or it fills a true hole.
+    Dynasty IR stashes are holds, not lineup adds, and are exempt."""
+    worst: dict[str, float] = {}
+    for r in roster_rows or []:
+        pos = str(r.get("position") or "").upper()
+        val = safe_float(r.get("value"))
+        if pos in ("QB", "RB", "WR", "TE") and val > 0:
+            if pos not in worst or val < worst[pos]:
+                worst[pos] = val
+    hole_set = set(holes or [])
+    out = []
+    for w in waiver_targets or []:
+        if w.get("stash_only"):
+            out.append(w)
+            continue
+        pos = str(w.get("position") or "").upper()
+        if pos in hole_set or pos not in worst:
+            out.append(w)
+            continue
+        if safe_float(w.get("value")) > worst[pos] * 1.05:
+            out.append(w)
+    return out
+
+
+def _build_top_moves(*, trade_targets: list[dict], drop_add_pairs: list[dict],
+                     qb: dict, injury_rows: list[dict], roster: dict,
+                     ctx: dict, grades: list[dict], holes: list[str],
+                     qb_needy_count: int) -> list[dict]:
+    """The report's Top Moves, computed and ranked in code. The model
+    never chooses these; it only narrates around them. Every candidate
+    has already passed the hard gates (QB coverage, injury, drop pairing)
+    before it can be scored here."""
+    moves: list[dict] = []
+    worst = max(grades, key=lambda g: g["rank"]) if grades else None
+    if trade_targets:
+        t = trade_targets[0]
+        get = (t.get("gets") or [{}])[0]
+        give_names = ", ".join(
+            str(g.get("name") or "") for g in (t.get("gives") or [])
+        )
+        why_bits = []
+        if worst and str(get.get("position") or "").upper() == worst.get("pos"):
+            why_bits.append(
+                f"Fixes your {worst['pos']} room, ranked {worst['rank']} of {worst['of']}."
+            )
+        if t.get("why_they_say_yes"):
+            why_bits.append(str(t["why_they_say_yes"]))
+        if t.get("acceptance_label"):
+            why_bits.append(f"{t['acceptance_label']}.")
+        score = 90.0 + safe_float(t.get("fairness")) * 10.0
+        try:
+            score += float(t.get("acceptance_rate") or 0) / 20.0
+        except (TypeError, ValueError):
+            pass
+        moves.append({
+            "type": "Trade",
+            "line": f"Trade for {get.get('name')} ({get.get('position')})",
+            "why": (f"You give {give_names}. " if give_names else "") + " ".join(why_bits),
+            "_score": score,
+        })
+    if drop_add_pairs:
+        p = drop_add_pairs[0]
+        drop, add = p.get("drop") or {}, p.get("add") or {}
+        delta = safe_float(add.get("value")) - safe_float(drop.get("value"))
+        why_bits = [
+            f"{add.get('name')} beats {drop.get('name')} on value "
+            f"({safe_float(add.get('value')):g} vs {safe_float(drop.get('value')):g})."
+        ]
+        if str(add.get("position") or "").upper() in holes:
+            why_bits.append(f"Fills your {add.get('position')} hole.")
+        moves.append({
+            "type": "Waiver",
+            "line": f"Drop {drop.get('name')}, add {add.get('name')}",
+            "why": " ".join(why_bits),
+            "_score": 80.0 + min(15.0, max(0.0, delta) / 25.0),
+        })
+    excess = (qb or {}).get("excess") or []
+    if excess:
+        q = excess[0]
+        fmt = "superflex" if qb.get("is_sf") else "1QB"
+        why_bits = [
+            f"You roster {qb.get('total')} QBs in a {fmt} league. "
+            f"{q.get('name')} has no path to your lineup."
+        ]
+        if qb_needy_count:
+            why_bits.append(
+                f"{qb_needy_count} team{'s' if qb_needy_count != 1 else ''} in this "
+                "league are thinner at QB than you."
+            )
+        moves.append({
+            "type": "Trade",
+            "line": f"Shop {q.get('name')}",
+            "why": " ".join(why_bits),
+            "_score": 70.0,
+        })
+    rp = [str(p or "").upper() for p in (ctx.get("roster_positions") or [])]
+    if "IR" in rp:
+        reserve_ids = {str(pid) for pid in (roster or {}).get("reserve") or []}
+        for r in injury_rows or []:
+            canon = _inj_canonical(str(r.get("injury") or ""))
+            if canon in ("IR", "PUP", "NFI", "OUT") and str(r.get("id")) not in reserve_ids:
+                moves.append({
+                    "type": "Roster",
+                    "line": f"Move {r.get('name')} to the IR slot",
+                    "why": "Frees a bench spot without dropping anyone. "
+                           f"{r.get('name')} stays stashed while out.",
+                    "_score": 60.0,
+                })
+                break
+    moves.sort(key=lambda m: -m["_score"])
+    out = []
+    seen = set()
+    for m in moves:
+        if m["line"] in seen:
+            continue
+        seen.add(m["line"])
+        out.append({"type": m["type"], "line": m["line"], "why": m["why"]})
+        if len(out) >= 3:
+            break
+    return out
+
+
+def _qb_note(qb: dict) -> dict | None:
+    """The explicit QB line under Top Moves. When the room is covered it
+    says so (and why no QB add appears); when there is a genuine hole it
+    says that instead, so silence is never ambiguous."""
+    if not qb or not qb.get("total"):
+        return None
+    healthy = qb.get("healthy") or 0
+    if qb.get("starter_questionable_name") and qb.get("covered"):
+        return {
+            "covered": True,
+            "lead": "QB: covered, no move.",
+            "text": (
+                f"{qb['starter_questionable_name']} is QUESTIONABLE, a game-time call. "
+                f"You hold {healthy} healthy QB{'s' if healthy != 1 else ''} behind him, "
+                "so no QB add is suggested. A QB on IR cannot play and is never an add here."
+            ),
+        }
+    if qb.get("add_allowed"):
+        return {
+            "covered": False,
+            "lead": "QB: real hole.",
+            "text": "You have no healthy QB available to start. QB is a genuine need this week.",
+        }
+    return None
+
+
+def _ai_top_move_ok(top_move: str, data: dict) -> bool:
+    """Deterministic post-check on the model's free-text top move. The
+    prompt already bars injured adds and covered-QB adds; this enforces
+    it in code so a bad sentence can never reach the card or report."""
+    if not top_move:
+        return False
+    low = f" {top_move.lower()} "
+    qb = data.get("qb_context") or {}
+    if qb and not qb.get("add_allowed"):
+        if " add " in low and (" qb" in low or "quarterback" in low):
+            return False
+    for w in data.get("waiver_targets") or []:
+        if w.get("stash_only") and str(w.get("name") or "").lower() in low and "add" in low:
+            return False
+    return True
 
 
 def _trade_deadline_info(ctx: dict) -> dict | None:
@@ -983,8 +1503,12 @@ def build_front_office_data(ctx: dict, viewer_roster_id: str) -> dict | None:
     this_week = _this_week_matchup(ctx, viewer_roster_id)
     week = team_ctx.get("week")
     trade_targets = _trade_targets(ctx, viewer_roster_id, scoring_type)
+    qb_ctx = _qb_context(ctx, roster, roster_rows)
+    hole_positions = _hole_positions(ctx, roster_rows)
     waiver_targets = _waiver_targets(ctx, viewer_roster_id, model_value_lookup,
-                                     scoring_type, weakest)
+                                     scoring_type, weakest,
+                                     qb_add_allowed=qb_ctx["add_allowed"],
+                                     hole_positions=hole_positions)
     cut_candidates = _cut_candidates(roster_rows)
     urgent_needs = _urgent_needs(ctx, roster, roster_rows, week)
     _apply_urgency(trade_targets, waiver_targets, urgent_needs)
@@ -997,6 +1521,7 @@ def build_front_office_data(ctx: dict, viewer_roster_id: str) -> dict | None:
         need_positions = [u.get("position") for u in urgent_needs] + list(weakest)
         potential_targets = _potential_trade_targets(
             ctx, viewer_roster_id, model_value_lookup, need_positions,
+            qb_add_allowed=qb_ctx["add_allowed"],
         )
     injury_rows = _build_injury_rows(ctx, roster_rows)
     # Roster table shows the ESPN return estimate next to the injury pill.
@@ -1027,8 +1552,24 @@ def build_front_office_data(ctx: dict, viewer_roster_id: str) -> dict | None:
     # so a hurt free agent is never pitched as the reason to skip a trade.
     for t in trade_targets:
         t.pop("waiver_alternative", None)
+    waiver_targets = _waiver_bar_filter(waiver_targets, roster_rows, hole_positions)
     _annotate_waiver_alternatives(trade_targets, waiver_targets)
     opponent_injuries = _opponent_injuries(ctx, this_week)
+    # IR stashes (dynasty) are holds, not adds: they never pair with a
+    # drop and never become a Top Move.
+    pair_targets = [w for w in waiver_targets if not w.get("stash_only")]
+    drop_add_pairs = _drop_add_pairs(cut_candidates, pair_targets)
+    top_moves = _build_top_moves(
+        trade_targets=trade_targets,
+        drop_add_pairs=drop_add_pairs,
+        qb=qb_ctx,
+        injury_rows=injury_rows,
+        roster=roster,
+        ctx=ctx,
+        grades=grades,
+        holes=hole_positions,
+        qb_needy_count=_qb_needy_team_count(ctx, viewer_roster_id, model_value_lookup),
+    )
     data = {
         "team_name": team_ctx.get("team_name"),
         "record": team_ctx.get("record"),
@@ -1053,7 +1594,10 @@ def build_front_office_data(ctx: dict, viewer_roster_id: str) -> dict | None:
         "potential_trade_targets": potential_targets,
         "waiver_targets": waiver_targets,
         "cut_candidates": cut_candidates,
-        "drop_add_pairs": _drop_add_pairs(cut_candidates, waiver_targets),
+        "drop_add_pairs": drop_add_pairs,
+        "top_moves": top_moves,
+        "qb_note": _qb_note(qb_ctx),
+        "qb_context": qb_ctx,
         "urgent_needs": urgent_needs,
         "injury_rows": injury_rows,
         "opponent_injuries": opponent_injuries,
@@ -1211,11 +1755,16 @@ def _injury_section_html(rows: list[dict]) -> str:
         )
     items = []
     for r in rows:
+        # The designation pill rides the meta line, not the name line: in
+        # the two-column grid the name line wraps badly when the pill,
+        # position, and team all compete for the same narrow row.
         meta_bits = [p for p in (r.get("body"), r.get("return_label")) if p]
-        meta = (
-            f"<div class='for-inj-meta'>{html.escape(' · '.join(meta_bits))}</div>"
-            if meta_bits else ""
+        pill = (
+            f"<span class='for-inj'>{html.escape(str(r.get('injury') or ''))}</span>"
+            if r.get("injury") else ""
         )
+        meta_inner = " ".join(x for x in (pill, html.escape(" · ".join(meta_bits))) if x)
+        meta = f"<div class='for-inj-meta'>{meta_inner}</div>" if meta_inner else ""
         action = (
             f"<div class='for-inj-action'>{html.escape(r['action'])}</div>"
             if r.get("action") else ""
@@ -1224,13 +1773,12 @@ def _injury_section_html(rows: list[dict]) -> str:
             "<li class='for-inj-row'>"
             f"<div><span class='for-inj-name'>{html.escape(str(r.get('name') or ''))}</span> "
             f"<span class='for-muted'>{html.escape(str(r.get('position') or ''))}"
-            f" · {html.escape(str(r.get('team') or ''))}</span> "
-            f"<span class='for-inj'>{html.escape(str(r.get('injury') or ''))}</span>{meta}</div>"
+            f" · {html.escape(str(r.get('team') or ''))}</span>{meta}</div>"
             f"{action}</li>"
         )
     return (
         "<div class='for-sec'><div class='for-sec-title'>Injury report</div>"
-        f"<ul class='for-inj-list'>{''.join(items)}</ul></div>"
+        f"<ul class='for-inj-list for-inj-grid'>{''.join(items)}</ul></div>"
     )
 
 
@@ -1258,11 +1806,90 @@ def _injury_card_html(rows: list[dict]) -> str:
     )
 
 
+_POS_AVATAR_BG = {"QB": "#2563eb", "RB": "#1a7f4b", "WR": "#c2410c", "TE": "#7c3aed"}
+
+
+def _pos_avatar(pos: str) -> str:
+    p = html.escape(str(pos or "?").upper())
+    bg = _POS_AVATAR_BG.get(str(pos or "").upper(), "#64748b")
+    return f"<span class='for-avatar' style='background:{bg}'>{p}</span>"
+
+
+def _pos_chip(pos: str) -> str:
+    p = str(pos or "").upper()
+    if p not in _POS_AVATAR_BG:
+        return ""
+    return f"<span class='for-pos-chip for-pos-{p.lower()}'>{html.escape(p)}</span>"
+
+
+def _dot_pill(label: str, amber: bool = False) -> str:
+    if not label:
+        return ""
+    cls = "for-dot for-dot-amber" if amber else "for-dot"
+    return (
+        f"<span class='for-pill'><span class='{cls}'></span>"
+        f"{html.escape(label)}</span>"
+    )
+
+
+def _top_moves_html(data: dict, ai: dict) -> str:
+    """Top Moves section: the deterministic ranked list when it exists,
+    else the model's single top move after the code-level guard. The QB
+    note (covered or real hole) renders under the list either way."""
+    moves = data.get("top_moves") or []
+    note = data.get("qb_note") or {}
+    note_html = ""
+    if note.get("lead"):
+        note_html = (
+            "<div class='for-covered'>"
+            f"<strong>{html.escape(str(note['lead']))}</strong> "
+            f"<span class='for-muted'>{html.escape(str(note.get('text') or ''))}</span></div>"
+        )
+    if moves:
+        cards = []
+        for i, m in enumerate(moves, start=1):
+            why = (
+                f"<div class='for-move-why'>{html.escape(str(m.get('why') or ''))}</div>"
+                if m.get("why") else ""
+            )
+            cards.append(
+                "<div class='for-move-card'>"
+                f"<div class='for-move-rank'>{i}</div>"
+                "<div class='for-move-main'>"
+                f"<div class='for-move-line'>{html.escape(str(m.get('line') or ''))}</div>"
+                f"{why}</div>"
+                f"<span class='for-move-type'>{html.escape(str(m.get('type') or ''))}</span>"
+                "</div>"
+            )
+        return (
+            "<div class='for-sec'><div class='for-sec-title'>Top moves</div>"
+            "<div class='for-sec-sub'>Ranked by what actually improves your starting lineup. "
+            "Every add names its drop.</div>"
+            f"<div class='for-moves-list'>{''.join(cards)}</div>{note_html}</div>"
+        )
+    raw_move = str(ai.get("top_move") or "")
+    if raw_move and _ai_top_move_ok(raw_move, data):
+        return (
+            "<div class='for-sec'><div class='for-sec-title'>Top move</div>"
+            f"<div class='for-card-move'><div>{html.escape(raw_move)}</div></div>"
+            f"{note_html}</div>"
+        )
+    if note_html:
+        return f"<div class='for-sec'>{note_html}</div>"
+    return ""
+
+
 def render_front_office_card_html(data: dict, ai: dict) -> str:
     """Condensed summary for the Season Hub card."""
     verdict = ai.get("verdict")
     headline = html.escape(str(ai.get("headline") or ""))
-    top_move = html.escape(str(ai.get("top_move") or ""))
+    _moves = data.get("top_moves") or []
+    if _moves:
+        top_move = html.escape(str(_moves[0].get("line") or ""))
+    elif _ai_top_move_ok(str(ai.get("top_move") or ""), data):
+        top_move = html.escape(str(ai.get("top_move") or ""))
+    else:
+        top_move = ""
     week = data.get("week")
     week_lbl = f"Week {week}" if week else ""
     team = html.escape(str(data.get("team_name") or ""))
@@ -1423,61 +2050,89 @@ def _move_row(m: dict, up: bool) -> str:
     )
 
 
+def _swap_player_row(p: dict) -> str:
+    inj = (
+        f" <span class='for-inj'>{html.escape(str(p['injury']))}</span>"
+        if p.get("injury") else ""
+    )
+    age = f" · age {p['age']}" if p.get("age") not in (None, "") else ""
+    return (
+        "<div class='for-swap-player'>"
+        f"{_pos_avatar(p.get('position'))}"
+        f"<span class='for-swap-name'>{html.escape(str(p.get('name') or ''))}</span>{inj} "
+        f"{_pos_chip(p.get('position'))}"
+        f"<span class='for-swap-meta'>{html.escape(age)}</span>"
+        f"<span class='for-swap-val'>{safe_float(p.get('value')):g}</span>"
+        "</div>"
+    )
+
+
 def _trade_targets_html(targets: list[dict], trade_notes: dict) -> str:
+    """Priced deals as Swap cards (the design Kaedon picked): the trade
+    itself is the visual, Get and Give boxes with a swap arrow between
+    them, then one footer line carrying fairness, the why, and the
+    post-trade depth result. No label-row walls."""
     if not targets:
         return ""
     cards = []
     for t in targets:
         get = t["gets"][0]
-        get_inj = (
-            f" <span class='for-inj'>{html.escape(str(get['injury']))}</span>"
-            if get.get("injury") else ""
-        )
-        give_names = ", ".join(
-            f"{html.escape(g['name'])} ({html.escape(g['position'])})" for g in t["gives"]
-        )
-        note = html.escape(str(trade_notes.get(get["id"]) or ""))
-        note_html = f"<div class='for-target-note'>{note}</div>" if note else ""
-        why = t.get("why_they_say_yes") or ""
-        partner_rec = t.get("partner_record") or ""
-        why_html = ""
-        if why:
-            why_html = (
-                "<div class='for-target-why'><span class='for-lbl-inline'>Why they'd say yes</span> "
-                f"{html.escape(why)}"
-                + (f" <span class='for-muted'>({html.escape(partner_rec)})</span>" if partner_rec else "")
-                + "</div>"
-            )
-        urgent_html = ""
-        if t.get("urgent"):
-            urgent_html = (
-                "<div class='for-target-urgent'><span class='for-lbl-inline'>Urgent</span> "
-                f"{html.escape(str(t.get('urgent_reason') or ''))}</div>"
-            )
+        note = str(trade_notes.get(get["id"]) or "")
+        why = note or str(t.get("why_they_say_yes") or "")
+        if t.get("urgent") and t.get("urgent_reason"):
+            why = f"Urgent: {t['urgent_reason']}. {why}".strip()
         alt = t.get("waiver_alternative") or {}
-        alt_html = ""
         if alt.get("name"):
-            alt_html = (
-                "<div class='for-target-alt'><span class='for-lbl-inline'>Free alternative</span> "
-                f"{html.escape(str(alt['name']))} is on waivers.</div>"
+            why = (why + f" Free alternative: {alt['name']} is on waivers.").strip()
+        meta_bits = [
+            str(x) for x in (t.get("partner_record"), t.get("partner_direction")) if x
+        ]
+        meta_html = (
+            f" <span class='for-muted'>({html.escape(' · '.join(meta_bits))})</span>"
+            if meta_bits else ""
+        )
+        tier = str(get.get("tier") or "")
+        tier_html = ""
+        if tier == "buy_low":
+            tier_html = " <span class='for-tier-tag'>Buy-low</span>"
+        elif tier == "elite":
+            tier_html = " <span class='for-tier-tag'>Elite</span>"
+        depth_html = ""
+        if t.get("depth_warnings"):
+            depth_html = (
+                "<div class='for-swap-depth'>"
+                f"{html.escape(str(t['depth_warnings'][0]))}</div>"
             )
+        elif t.get("depth_checked"):
+            depth_html = (
+                "<div class='for-swap-depth'>After the trade: no new hole created.</div>"
+            )
+        get_rows = "".join(_swap_player_row(g) for g in t["gets"])
+        give_rows = "".join(_swap_player_row(g) for g in t["gives"])
         cards.append(
-            "<div class='for-target-card'>"
-            f"<div class='for-target-top'><div class='for-target-head'><strong>{html.escape(get['name'])}</strong>{get_inj} "
-            f"<span class='for-muted'>{html.escape(get['position'])}"
-            + (f" · age {get['age']}" if get.get("age") not in (None, "") else "")
-            + f" · value {get['value']:g}</span></div>"
-            f"<span class='for-target-from'>From {html.escape(t['partner'])}</span></div>"
-            f"<div class='for-target-give'><span class='for-lbl-inline'>You give</span> {give_names}</div>"
-            f"{urgent_html}"
-            f"{why_html}"
-            f"{alt_html}"
-            f"{note_html}"
-            f"<a class='for-analyze' href='{html.escape(t['analyzer_url'], quote=True)}'>Analyze this trade →</a>"
+            "<div class='for-swap-card'>"
+            "<div class='for-swap-head'>"
+            f"<div class='for-swap-who'>With <strong>{html.escape(str(t.get('partner') or ''))}</strong>"
+            f"{meta_html}{tier_html}</div>"
+            f"{_dot_pill(str(t.get('acceptance_label') or ''), amber=(str(t.get('acceptance_label') or '') == 'Long shot'))}"
+            "</div>"
+            "<div class='for-swap-grid'>"
+            f"<div class='for-swap-side for-swap-get'><div class='for-swap-lbl'>You get</div>{get_rows}</div>"
+            "<div class='for-swap-arrow'><span>&#8596;</span></div>"
+            f"<div class='for-swap-side for-swap-give'><div class='for-swap-lbl'>You give</div>{give_rows}</div>"
+            "</div>"
+            "<div class='for-swap-foot'>"
+            f"{_dot_pill(str(t.get('fairness_label') or ''))}"
+            f"<span class='for-swap-why'>{html.escape(why)}</span>"
+            f"<a class='for-analyze-lite' href='{html.escape(str(t.get('analyzer_url') or ''), quote=True)}'>Analyze &rarr;</a>"
+            "</div>"
+            f"{depth_html}"
             "</div>"
         )
     return (
         "<div class='for-sec'><div class='for-sec-title'>Trade targets</div>"
+        "<div class='for-sec-sub'>Ranked by fairness and how likely they are to say yes, "
+        "not by player value. Every deal is checked so it does not leave you short at a position.</div>"
         f"<div class='for-targets'>{''.join(cards)}</div></div>"
     )
 
@@ -1500,17 +2155,56 @@ def _potential_trade_targets_html(potential: list[dict]) -> str:
             f" <span class='for-inj'>{html.escape(str(p['injury']))}</span>"
             if p.get("injury") else ""
         )
+        pos = str(p.get("position") or "")
+        rank = int(p.get("depth_rank") or 0)
+        if p.get("sole_starter"):
+            why = (
+                f"He is their only startable {pos}, so he does not move "
+                f"without a {pos} going back."
+            )
+        elif p.get("is_surplus"):
+            why = (
+                f"{pos}{rank} on their team, behind their starters. "
+                "Startable depth at a position you need."
+            )
+        elif rank:
+            why = f"{pos}{rank} on their team. He starts for them, so this takes a real package."
+        else:
+            why = "Startable depth at a position you need."
+        gap = int(p.get("gap_pct") or 0)
+        gap_txt = ""
+        if gap > 0:
+            gap_txt = f" Your surplus package reaches about {gap}% of his value."
+            if gap >= 75:
+                gap_txt += " Close."
+            elif gap < 65:
+                gap_txt += " Not close enough to lead with."
+        start = p.get("starting_point") or {}
+        start_txt = ""
+        if start.get("name") and gap > 0:
+            start_txt = f" Start with {start['name']}"
+            holes = p.get("partner_holes") or []
+            if start.get("position") in holes:
+                start_txt += f", where they are thin at {start['position']}"
+            start_txt += "."
+        attn = str(p.get("attainability") or "")
         cards.append(
-            "<div class='for-target-card'>"
-            f"<div class='for-target-top'><div class='for-target-head'><strong>{html.escape(str(p.get('name') or ''))}</strong>{inj} "
-            f"<span class='for-muted'>{html.escape(str(p.get('position') or ''))}"
-            + (f" · age {p['age']}" if p.get("age") not in (None, "") else "")
-            + f" · value {p.get('value', 0):g}</span></div>"
-            f"<span class='for-target-from'>On {html.escape(str(p.get('partner') or ''))}</span></div>"
+            "<div class='for-prow'>"
+            f"{_pos_avatar(pos)}"
+            "<div class='for-prow-main'>"
+            f"<div class='for-prow-top'><span class='for-prow-name'>{html.escape(str(p.get('name') or ''))}</span>{inj} "
+            f"{_pos_chip(pos)}"
+            f"<span class='for-muted'>{safe_float(p.get('value')):g} · {html.escape(str(p.get('partner') or ''))}</span></div>"
+            f"<div class='for-prow-sub'>{html.escape(why)}"
+            f"<span class='for-muted'>{html.escape(gap_txt + start_txt)}</span></div>"
+            "</div>"
+            f"<div class='for-prow-side'>{_dot_pill(attn, amber=(attn == 'Reach'))}</div>"
             "</div>"
         )
     return (
         "<div class='for-sec'><div class='for-sec-title'>Potential trade targets</div>"
+        "<div class='for-sec-sub'>No fair priced deal yet. Ranked by how gettable they are, "
+        "with the honest gap to fair.</div>"
         f"<div class='for-targets'>{''.join(cards)}</div></div>"
     )
 
@@ -1583,7 +2277,6 @@ def render_front_office_report_html(data: dict, ai: dict) -> str:
     verdict = ai.get("verdict")
     headline = html.escape(str(ai.get("headline") or ""))
     posture = html.escape(str(ai.get("posture") or ""))
-    top_move = html.escape(str(ai.get("top_move") or ""))
     gm_alert = html.escape(str(ai.get("gm_alert") or ""))
     team = html.escape(str(data.get("team_name") or "Front Office Report"))
     week = data.get("week")
@@ -1614,12 +2307,7 @@ def render_front_office_report_html(data: dict, ai: dict) -> str:
             f"<p class='for-alert'>{gm_alert}</p></div>"
         )
     posture_html = f"<p class='for-posture'>{posture}</p>" if posture else ""
-    top_move_html = ""
-    if top_move:
-        top_move_html = (
-            "<div class='for-sec'><div class='for-sec-title'>Top move</div>"
-            f"<div class='for-card-move'><div>{top_move}</div></div></div>"
-        )
+    top_move_html = _top_moves_html(data, ai)
     stamp = _verdict_stamp(verdict)
     chips_html = _hero_chips_html(week, rec, pct, data.get("trade_deadline"))
 
