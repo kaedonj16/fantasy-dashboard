@@ -78,7 +78,6 @@ def build_standings_body(ctx: dict) -> str:
         <div id="stPowerInner">{panels['power']}</div>
       </div>
     </div>
-    <div id="stSidebarInner" class="standings-insights-wrap">{panels['sidebar']}</div>
     </div>
     <script>
     (function() {{

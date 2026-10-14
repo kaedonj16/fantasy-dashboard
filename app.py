@@ -10675,10 +10675,10 @@ def render_standings_tiles(team_stats, *, all_play=None, weekly_points=None,
                            movement=None, owner_to_rid=None,
                            power_rankings=None, roster_values=None) -> str:
     """The at-a-glance hero strip above the standings: top seed, highest week,
-    hottest team, luckiest team, and biggest riser. Every figure is derived from
-    the same team_stats / weekly scores the tables use, so it stays in step with a
-    week-capped view. Before any games are played it falls back to value/power
-    tiles so the strip isn't empty preseason."""
+    hottest team, luckiest team, unluckiest team, and biggest riser. Every figure
+    is derived from the same team_stats / weekly scores the tables use, so it
+    stays in step with a week-capped view. Before any games are played it falls
+    back to value/power tiles so the strip isn't empty preseason."""
     if team_stats is None or team_stats.empty:
         return ""
     df = team_stats.copy()
@@ -10730,7 +10730,21 @@ def render_standings_tiles(team_stats, *, all_play=None, weekly_points=None,
             f"{_clickable_team_name(lucky[0], owner_to_rid)} over expected",
             accent="st-ic-good"))
 
-    # 5) Biggest riser (largest week-over-week climb)
+    # 5) Unluckiest team (most actual wins under all-play expectation)
+    unlucky = None
+    for owner, ap in all_play.items():
+        ld = ap.get("luck_delta")
+        if ld is None:
+            continue
+        if unlucky is None or ld < unlucky[1]:
+            unlucky = (owner, float(ld))
+    if unlucky and unlucky[1] <= -0.5:
+        tiles.append(_st_tile(
+            "fa-bullseye", "Unluckiest", f"{unlucky[1]:.1f}",
+            f"{_clickable_team_name(unlucky[0], owner_to_rid)} below expected",
+            accent="st-ic-bad"))
+
+    # 6) Biggest riser (largest week-over-week climb)
     riser = None
     for owner, mv in movement.items():
         if mv and mv > 0 and (riser is None or mv > riser[1]):
@@ -10744,65 +10758,6 @@ def render_standings_tiles(team_stats, *, all_play=None, weekly_points=None,
     if len(tiles) < 2:
         return ""
     return f"<div class='st-tiles'>{''.join(tiles)}</div>"
-
-
-def _st_insight(cls: str, icon: str, label: str, value_html: str, sub_html: str) -> str:
-    return (
-        f"<div class='st-insight {cls}'><span class='st-insight-ic'>"
-        f"<i class='fa-solid {icon}'></i></span>"
-        f"<div class='st-insight-body'><div class='st-insight-label'>{label}</div>"
-        f"<div class='st-insight-val'>{value_html}</div>"
-        f"<div class='st-insight-sub'>{sub_html}</div></div></div>"
-    )
-
-
-def render_standings_insights(team_stats, *, all_play=None, weekly_points=None,
-                              owner_to_rid=None) -> str:
-    """Full-width insight strip under the standings grid: hottest, coldest, top
-    single week, and most-unlucky team. Replaces the old narrow hottest/coldest
-    sidebar. Cards drop out individually when their stat isn't available yet."""
-    if team_stats is None or team_stats.empty:
-        return ""
-    df = team_stats.copy()
-    all_play = all_play or {}
-    cards = []
-
-    if "StreakType" in df.columns and (df["StreakType"] == "W").any():
-        hot = df[df["StreakType"] == "W"].sort_values("StreakLen", ascending=False).iloc[0]
-        cards.append(_st_insight(
-            "st-in-hot", "fa-fire", "Hottest team",
-            _clickable_team_name(hot["owner"], owner_to_rid, cls="st-insight-name"),
-            f"Won {int(hot['StreakLen'])} straight"))
-
-    if "StreakType" in df.columns and (df["StreakType"] == "L").any():
-        cold = df[df["StreakType"] == "L"].sort_values("StreakLen", ascending=False).iloc[0]
-        cards.append(_st_insight(
-            "st-in-cold", "fa-snowflake", "Coldest team",
-            _clickable_team_name(cold["owner"], owner_to_rid, cls="st-insight-name"),
-            f"Lost {int(cold['StreakLen'])} straight"))
-
-    top = _top_single_week(weekly_points)
-    if top:
-        cards.append(_st_insight(
-            "st-in-bolt", "fa-bolt", "Top single week", f"{top[2]:.1f}",
-            f"{_clickable_team_name(top[0], owner_to_rid)} &middot; Week {top[1]}"))
-
-    unlucky = None
-    for owner, ap in all_play.items():
-        ld = ap.get("luck_delta")
-        if ld is None:
-            continue
-        if unlucky is None or ld < unlucky[1]:
-            unlucky = (owner, float(ld))
-    if unlucky and unlucky[1] <= -0.5:
-        cards.append(_st_insight(
-            "st-in-unlucky", "fa-bullseye", "Most unlucky",
-            _clickable_team_name(unlucky[0], owner_to_rid, cls="st-insight-name"),
-            f"{unlucky[1]:.1f} wins below expected"))
-
-    if not cards:
-        return ""
-    return f"<div class='st-insights'>{''.join(cards)}</div>"
 
 
 def _build_offseason_standings_body(ctx: dict) -> str:
@@ -11426,8 +11381,6 @@ def _standings_panels(ctx: dict, power_rankings=None, prev_power_ranks=None) -> 
         power_rankings=power_rankings,
         prev_power_ranks=prev_power_ranks,
     )
-    sidebar_html = render_standings_insights(
-        team_stats, all_play=_all_play, weekly_points=_weekly_pts, owner_to_rid=_o2r)
     # Roster values only feed the preseason tiles (records all 0-0); skip the DB
     # read once games are being played and the game-derived tiles take over.
     _roster_vals = (
@@ -11441,7 +11394,6 @@ def _standings_panels(ctx: dict, power_rankings=None, prev_power_ranks=None) -> 
     return {
         "standings": standings_html,
         "power": power_html,
-        "sidebar": sidebar_html,
         "tiles": tiles_html,
         "shares": shares_html,
     }
@@ -11485,7 +11437,7 @@ def build_standings_as_of_week(ctx: dict, week: int) -> dict:
 
 def _standings_week_selector(ctx: dict, weeks: list) -> str:
     """A 'Through Week N' selector (mirrors the Matchups hub week picker) plus
-    the JS that swaps the standings/power/sidebar panels via /api/standings-week.
+    the JS that swaps the standings/power panels via /api/standings-week.
     Returns '' when there aren't at least two finalized weeks to scrub."""
     if len(weeks) < 2:
         return ""
@@ -11515,7 +11467,6 @@ def _standings_week_selector(ctx: dict, weeks: list) -> str:
           tiles:     document.getElementById('stTilesInner'),
           standings: document.getElementById('stStandingsInner'),
           power:     document.getElementById('stPowerInner'),
-          sidebar:   document.getElementById('stSidebarInner'),
           shares:    document.getElementById('stSharesInner')
         }};
       }}
@@ -11542,8 +11493,7 @@ def _standings_week_selector(ctx: dict, weeks: list) -> str:
             if (my !== seq || !data || !data.ok) return;
             var p = panels();
             var map = {{ tiles: data.tiles_html, standings: data.standings_html,
-                        power: data.power_html,
-                        sidebar: data.sidebar_html, shares: data.shares_html }};
+                        power: data.power_html, shares: data.shares_html }};
             Object.keys(map).forEach(function(k) {{
               if (p[k] && typeof map[k] === 'string') {{
                 if (window.brSwapRanks) {{ window.brSwapRanks(p[k], map[k]); }}

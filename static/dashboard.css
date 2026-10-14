@@ -45279,8 +45279,8 @@ a, button, [role="button"], [role="tab"], summary, label,
 
 /* ============================================================
    STANDINGS ROOK -- reworked standings surfaces
-   (summary tiles, PF-trend sparklines, power leaderboard,
-    insight strip). All colors come from theme tokens so both
+   (summary tiles, PF-trend sparklines, power leaderboard).
+   All colors come from theme tokens so both
     light and dark resolve automatically.
    ============================================================ */
 
@@ -45413,51 +45413,6 @@ a, button, [role="button"], [role="tab"], summary, label,
 .pwr-bar > div { height: 100%; border-radius: var(--radius-sm); background: var(--accent); }
 .pwr-right { text-align: right; }
 .pwr-score { font-family: "Archivo", system-ui, sans-serif; font-weight: 800; font-size: 15px; color: var(--text); font-variant-numeric: tabular-nums; }
-
-/* ---- Insight strip --------------------------------------- */
-.standings-insights-wrap { margin-top: 16px; }
-.st-insights {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 12px;
-}
-.st-insight {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 14px 15px;
-    box-shadow: var(--shadow-sm);
-    display: flex; align-items: center; gap: 12px; min-width: 0;
-}
-.st-insight-ic {
-    width: 40px; height: 40px; border-radius: var(--radius);
-    display: grid; place-items: center; font-size: 18px; flex: 0 0 auto;
-    background: var(--accent-soft); color: var(--accent);
-}
-.st-in-hot .st-insight-ic { background: color-mix(in srgb, var(--loss) 13%, transparent); color: var(--loss); }
-.st-in-cold .st-insight-ic { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); }
-.st-in-bolt .st-insight-ic { background: color-mix(in srgb, var(--gold) 16%, transparent); color: var(--gold); }
-.st-in-unlucky .st-insight-ic { background: color-mix(in srgb, var(--loss) 12%, transparent); color: var(--loss); }
-.st-insight-body { min-width: 0; }
-.st-insight-label {
-    font-family: "Archivo", system-ui, sans-serif;
-    text-transform: uppercase; letter-spacing: .06em; font-size: 11px; font-weight: 700;
-    color: var(--text-muted);
-}
-.st-insight-val {
-    font-family: "Archivo", system-ui, sans-serif;
-    font-weight: 800; font-size: 15px; line-height: 1.1; color: var(--text); margin-top: 2px;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums;
-}
-.st-insight-val .team-clickable { cursor: pointer; }
-.st-insight-sub { font-size: 11px; color: var(--text-muted); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-@media (max-width: 1024px) {
-    .st-insights { grid-template-columns: 1fr 1fr; }
-}
-@media (max-width: 640px) {
-    .st-insights { grid-template-columns: 1fr; }
-}
 
 /* Keep the (now wider, with Trend) standings table inside its column: scroll it
    horizontally instead of letting it spill over the Power Rankings card. */

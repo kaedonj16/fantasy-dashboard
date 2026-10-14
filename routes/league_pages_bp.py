@@ -113,7 +113,7 @@ def page_standings(platform: str, season: int, league_id: str):
 
 @league_pages_bp.route("/api/standings-week")
 def api_standings_week():
-    """Re-render the standings/power/sidebar panels as they stood through a
+    """Re-render the standings/power panels as they stood through a
     chosen finalized week, for the standings page week-selector."""
     platform = request.args.get("platform", "sleeper")
     league_id = request.args.get("league_id", "")
@@ -160,7 +160,6 @@ def api_standings_week():
             "week": week,
             "standings_html": panels["standings"],
             "power_html": panels["power"],
-            "sidebar_html": panels["sidebar"],
             "tiles_html": panels.get("tiles", ""),
             "shares_html": panels["shares"],
         })
