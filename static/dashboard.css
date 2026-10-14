@@ -42044,7 +42044,7 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     margin: 0 0 14px;
     padding: 12px 16px;
     background: var(--card);
-    border: 2px solid var(--accent);
+    border: none;
     border-radius: var(--radius);
 }
 
