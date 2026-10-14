@@ -79,16 +79,22 @@ def test_overview_phone_order():
 def test_team_pair_structure_and_usage_card():
     assert "pm-team-pair" in JS and "pm-pair-room" in JS
     assert "pm-pair-usage" in JS
-    assert "Usage by week · targets" in JS
+    # The usage metric is position-dependent (RB touches, QB pass attempts,
+    # WR/TE targets), so the header and last-3 label render the picked noun.
+    assert "Usage by week · ${_metric.low}" in JS
     assert "data.focus_weekly" in JS
     # Pair rows from the mock: dotted snap list, last-3 per-game, season high.
     assert "Snap share by week" in JS
-    assert "Targets, last " in JS
+    assert "${_metric.noun}, last " in JS
     assert "Season high" in JS
-    # Equal height: stretched grid row of card pair.
+    # The pair no longer stretches to equal height (that left a large
+    # blank box under the usage card): the right side is a stack of cards.
     assert ".pm-team-pair { display: grid; grid-template-columns: 1fr 1fr;" in CSS
-    assert "align-items: stretch" in CSS
-    # No usage data -> room card goes solo full width.
+    pair_rule = CSS[CSS.find(".pm-team-pair { display: grid;"):]
+    pair_rule = pair_rule[:pair_rule.find("}")]
+    assert "align-items: start" in pair_rule
+    assert "pm-team-stack" in JS and ".pm-team-stack {" in CSS
+    # No stack content at all -> room card goes solo full width.
     assert "pm-team-pair-solo" in JS and "pm-team-pair-solo" in CSS
     # Phone stacks the pair.
     pair_css = CSS[CSS.find(".pm-team-pair { display: grid;"):]
