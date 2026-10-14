@@ -61,8 +61,8 @@ def test_list_breakout_weeks_shape(monkeypatch):
     assert payload["season"] == 2026
     assert payload["weeks"] == [
         {"value": "preseason", "label": "Preseason"},
-        {"value": 2, "label": "Week 2", "as_of_date": "2026-09-15"},
-        {"value": 4, "label": "Week 4", "as_of_date": "2026-09-29"},
+        {"value": 2, "label": "Week 3", "as_of_date": "2026-09-15"},
+        {"value": 4, "label": "Week 5", "as_of_date": "2026-09-29"},
     ]
     assert payload["latest_week"] == 4
     assert payload["preseason_available"] is True

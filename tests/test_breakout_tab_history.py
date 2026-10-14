@@ -1,8 +1,9 @@
 """Breakout tab for players surfaced in ANY week, not just the current board.
 
-A player the board called in Week 2 keeps their Breakout tab after they
-roll off the latest board: the tab serves that week's stored card,
-labeled with its week, with the finished grade's verdict stamp and the
+A player the board called from Week 2 data keeps their Breakout tab
+after they roll off the latest board: the tab serves that week's stored
+card, labeled with the week the breakout is for (the Week 3 call), with
+the finished grade's verdict stamp and the
 grade receipt (why this grade) attached. Canonical "surfaced" is
 weekly_grading.surfaced_player_ids_by_week -- the same set the track
 record counts.
@@ -34,7 +35,7 @@ def test_call_history_returns_earliest_surfaced_week(monkeypatch):
     _patch_surfaced(monkeypatch, {2: {"love"}, 3: set(), 5: {"love", "other"}})
 
     assert api.breakout_call_history("love", 2026) == {
-        "kind": "weekly", "season": 2026, "as_of_week": 2, "label": "Week 2",
+        "kind": "weekly", "season": 2026, "as_of_week": 2, "label": "Week 3",
     }
     assert api._surfaced_weeks_for("love", 2026) == [2, 5]
 
@@ -89,7 +90,7 @@ def test_weekly_detail_for_week_attaches_grade_and_call_label(monkeypatch):
 
     assert detail["available"] is True
     assert detail["historical_call"] is True
-    assert detail["breakout_call"]["label"] == "Week 2"
+    assert detail["breakout_call"]["label"] == "Week 3"
     assert detail["as_of_week"] == 2
     assert detail["grade"] == "hit"
     assert detail["grade_detail"]["ppg_delta"] == 4.2
@@ -217,7 +218,7 @@ def test_player_endpoint_membership_includes_history(monkeypatch):
     monkeypatch.setattr(
         api, "breakout_call_history",
         lambda player_id, season: {"kind": "weekly", "season": 2026,
-                                    "as_of_week": 2, "label": "Week 2"},
+                                    "as_of_week": 2, "label": "Week 3"},
     )
     monkeypatch.setattr(subscriptions, "has_premium_for_viewer", lambda *args: False)
 
@@ -225,7 +226,7 @@ def test_player_endpoint_membership_includes_history(monkeypatch):
 
     assert body["board_eligible"] is False
     assert body["has_breakout_call"] is True
-    assert body["breakout_call"]["label"] == "Week 2"
+    assert body["breakout_call"]["label"] == "Week 3"
 
 
 # ---------------------------------------------------------------------------

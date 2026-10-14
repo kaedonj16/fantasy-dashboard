@@ -18349,7 +18349,9 @@ def page_breakouts(platform: str, season: int, league_id: str):
       // and stay inert.
       function _boRowWeekAttrs(week) {{
         if (week == null || week === '') return '';
-        var label = week === 'preseason' ? 'the Preseason board' : 'the Week ' + week + ' board';
+        // Display week = the week the breakouts are FOR (stored call
+        // week + 1); data-week below keeps the stored week for the jump.
+        var label = week === 'preseason' ? 'the Preseason board' : 'the Week ' + (parseInt(week, 10) + 1) + ' board';
         return ' data-week="' + week + '" role="button" tabindex="0" title="View ' + label + '"'
           + ' onclick="boGoWeek(this.dataset.week)" onkeydown="boWeekRowKey(event, this)"';
       }}
@@ -18366,7 +18368,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
         var barColor = color || '#16a34a';
         return '<div class="bo-wk-link"' + _boRowWeekAttrs(week) + '>'
           + '<div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px;">'
-          + '<span>Week ' + week + ' &middot; ' + calls + ' calls</span>'
+          + '<span>Week ' + (parseInt(week, 10) + 1) + ' &middot; ' + calls + ' calls</span>'
           + '<span style="font-weight:700;color:' + barColor + ';">' + pctTxt + '</span></div>'
           + '<div class="bo-rail-bar"><span style="width:' + (pct != null ? Math.round(pct * 100) : 0) + '%;background:' + barColor + ';"></span></div></div>';
       }}
@@ -18451,7 +18453,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
           hits.slice(0, 3).forEach(function (r) {{
             var delta = r.ppg_delta != null ? (r.ppg_delta >= 0 ? '+' : '') + Number(r.ppg_delta).toFixed(1) : 'n/a';
             html += '<div class="bo-rail-row' + (r.call_week != null ? ' bo-row-link' : '') + '"' + _boRowWeekAttrs(r.call_week) + '><div><div class="bo-rail-name">' + _boPlayerLink(r.player_name, r.player_id)
-              + '</div><div class="bo-rail-meta">Week ' + (r.call_week != null ? r.call_week : '?') + ' call</div></div>'
+              + '</div><div class="bo-rail-meta">Week ' + (r.call_week != null ? (parseInt(r.call_week, 10) + 1) : '?') + ' call</div></div>'
               + '<div class="bo-rail-value" style="color:#16a34a;font-weight:800;">' + delta + '</div></div>';
           }});
         }}
@@ -18463,7 +18465,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
           misses.slice(0, 3).forEach(function (r) {{
             var delta = r.ppg_delta != null ? (r.ppg_delta >= 0 ? '+' : '') + Number(r.ppg_delta).toFixed(1) : 'n/a';
             html += '<div class="bo-rail-row' + (r.call_week != null ? ' bo-row-link' : '') + '"' + _boRowWeekAttrs(r.call_week) + '><div><div class="bo-rail-name">' + _boPlayerLink(r.player_name, r.player_id)
-              + '</div><div class="bo-rail-meta">Week ' + (r.call_week != null ? r.call_week : '?') + ' call</div></div>'
+              + '</div><div class="bo-rail-meta">Week ' + (r.call_week != null ? (parseInt(r.call_week, 10) + 1) : '?') + ' call</div></div>'
               + '<div class="bo-rail-value" style="color:#dc2626;font-weight:800;">' + delta + '</div></div>';
           }});
         }}
@@ -18574,7 +18576,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
           var chips = (r.reconstructed ? '<span class="bo-grade-chip bo-grade-chip-bt">Backtest</span> ' : '')
             + (r.label ? '<span class="bo-grade-chip">' + r.label + '</span> ' : '');
           html += '<div class="bo-rail-row"><div><div class="bo-rail-name">' + (r.player_name || 'Unknown') + '</div>'
-            + '<div class="bo-rail-meta">' + chips + 'Week ' + (r.call_week != null ? r.call_week : '?') + ' call' + (role ? ' · ' + role : '') + '</div></div>'
+            + '<div class="bo-rail-meta">' + chips + 'Week ' + (r.call_week != null ? (parseInt(r.call_week, 10) + 1) : '?') + ' call' + (role ? ' · ' + role : '') + '</div></div>'
             + '<div class="bo-rail-value bo-delta" style="color:' + color + ';">' + delta + '</div></div>';
         }});
         return html;
