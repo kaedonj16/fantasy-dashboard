@@ -20,6 +20,7 @@ from __future__ import annotations
 import html
 import json
 import logging
+from urllib.parse import quote_plus
 
 from dashboard_services.ai.cache import (
     AI_CACHE_FALLBACK_TTL,
@@ -442,6 +443,26 @@ def _position_slots(ctx: dict) -> dict[str, int]:
     }
 
 
+_FLEX_SLOT_NAMES = ("FLEX", "WRRB_FLEX")
+
+
+def _flex_slot_count(ctx: dict) -> int:
+    """RB/WR/TE-eligible flex slots in the league's roster positions.
+    SUPER_FLEX is not counted here: it is QB-eligible and already raises
+    the QB slot count in _position_slots."""
+    rp = [str(p or "").upper() for p in (ctx.get("roster_positions") or [])]
+    return sum(1 for p in rp if p in _FLEX_SLOT_NAMES)
+
+
+def _skill_starter_capacity(ctx: dict) -> int:
+    """How many RB/WR/TE players a team starts each week: dedicated
+    RB + WR + TE slots plus flex slots. A skill player ranked below
+    this on his own roster is genuinely behind the starters; with two
+    flex spots, a WR3 is usually NOT (Kaedon's correction, 2026-10-14)."""
+    slots = _position_slots(ctx)
+    return slots.get("RB", 0) + slots.get("WR", 0) + slots.get("TE", 0) + _flex_slot_count(ctx)
+
+
 def _potential_trade_targets(ctx: dict, viewer_roster_id: str,
                              model_value_lookup: dict,
                              positions: list[str],
@@ -453,12 +474,15 @@ def _potential_trade_targets(ctx: dict, viewer_roster_id: str,
     dropping the trade section.
 
     Reworked ranking: a candidate must not be seriously injured, and is
-    ranked by how gettable he is: genuine surplus for his owner (ranked
-    below their dedicated starters at his position) first, then depth on
-    the partner's roster, then how close the viewer's own surplus package
-    gets to fair value, never by raw value alone. A partner's starter can
-    still appear, but only flagged as a Reach with the reason attached.
-    The gap to fair and a starting-point piece from the viewer's surplus
+    ranked by how gettable he is: genuine surplus for his owner first,
+    then depth on the partner's roster, then how close the viewer's own
+    surplus package gets to fair value, never by raw value alone.
+    Surplus is FLEX-AWARE: a skill player is surplus only when his rank
+    among all of the partner's RB/WR/TE players falls below their total
+    starting capacity (dedicated slots + flex slots), because flex
+    spots absorb exactly that depth. A partner's starter can still
+    appear, but only flagged as a Reach with the reason attached. The
+    gap to fair and a starting-point piece from the viewer's surplus
     are reported honestly instead of an invented priced deal."""
     priority: list[str] = []
     for pos in positions or []:
@@ -506,16 +530,37 @@ def _potential_trade_targets(ctx: dict, viewer_roster_id: str,
             "IR", "PUP", "NFI", "SUSP", "SUS", "OUT", "DOUBTFUL", "NA",
         )
 
-    # Viewer's sendable surplus: startable players beyond the dedicated
-    # slots at each position, cheapest first (the engine's bench pool).
+    capacity = _skill_starter_capacity(ctx)
+    flex_n = _flex_slot_count(ctx)
+
+    def _skill_rank_map(roster: dict) -> dict[str, int]:
+        """Player id -> rank (1 = best) among the roster's RB/WR/TE
+        players by value. Compared against the flex-aware capacity to
+        decide who is really behind the starters."""
+        combined: list[dict] = []
+        for pos in ("RB", "WR", "TE"):
+            combined.extend(_ordered_players(roster, pos))
+        combined.sort(key=lambda pl: -pl["value"])
+        return {pl["id"]: i + 1 for i, pl in enumerate(combined)}
+
+    # Viewer's sendable surplus: startable players who would not start
+    # for the viewer either. Skill positions use the flex-aware capacity
+    # (a flex starter is not a free chip); QB keeps the slot rule.
     viewer_roster = _roster_lookup(ctx, viewer_roster_id) or {}
+    viewer_skill_ranks = _skill_rank_map(viewer_roster)
     surplus_pool: list[dict] = []
     surplus_by_pos: dict[str, list[dict]] = {}
     for pos in ("QB", "RB", "WR", "TE"):
         ordered = _ordered_players(viewer_roster, pos)
         bar = _starter_bar(pos)
         startable = [pl for pl in ordered if pl["value"] >= bar and not _is_serious(pl["id"])]
-        sendable = startable[slots.get(pos, 1):]
+        if pos == "QB":
+            sendable = startable[slots.get(pos, 1):]
+        else:
+            sendable = [
+                pl for pl in startable
+                if viewer_skill_ranks.get(pl["id"], 0) > capacity
+            ]
         surplus_by_pos[pos] = sendable
         surplus_pool.extend(sendable)
     surplus_pool.sort(key=lambda pl: pl["value"])
@@ -547,6 +592,7 @@ def _potential_trade_targets(ctx: dict, viewer_roster_id: str,
             n_start = sum(1 for pl in ordered_all if pl["value"] >= bar)
             if n_start < slots.get(pos, 1):
                 partner_holes.append(pos)
+        partner_skill_ranks = _skill_rank_map(r)
         for pos in priority:
             ordered = _ordered_players(r, pos)
             bar = _starter_bar(pos)
@@ -555,11 +601,20 @@ def _potential_trade_targets(ctx: dict, viewer_roster_id: str,
                 if cand["value"] < bar:
                     continue
                 depth_rank = idx + 1
-                # Surplus: he sits below the partner's dedicated starters
-                # at his position, so moving him costs them no lineup
-                # spot. Starters are not excluded, but they can only ever
-                # be flagged Reach (see attainability below).
-                is_surplus = depth_rank > slots.get(pos, 1)
+                # Surplus is flex-aware: for skill positions he must fall
+                # below the partner's TOTAL starting capacity (dedicated
+                # slots + flex), not just his position's dedicated slots.
+                # A WR3 in a two-flex league is a flex starter, not depth.
+                # Starters are not excluded, but they can only ever be
+                # flagged Reach (see attainability below).
+                if pos == "QB":
+                    skill_rank = None
+                    buried = depth_rank - slots.get("QB", 1)
+                    is_surplus = buried > 0
+                else:
+                    skill_rank = partner_skill_ranks.get(cand["id"])
+                    buried = (skill_rank or 0) - capacity
+                    is_surplus = buried > 0
                 if _is_serious(cand["id"]):
                     continue
                 pkg_val, pkg = _package_for(cand["value"])
@@ -577,6 +632,9 @@ def _potential_trade_targets(ctx: dict, viewer_roster_id: str,
                     "partner": partner,
                     "partner_holes": partner_holes,
                     "depth_rank": depth_rank,
+                    "skill_rank": skill_rank,
+                    "buried": buried,
+                    "flex_slots": flex_n,
                     "is_surplus": is_surplus,
                     "sole_starter": n_startable <= 1,
                     "gap_pct": int(round(gap * 100)),
@@ -586,17 +644,17 @@ def _potential_trade_targets(ctx: dict, viewer_roster_id: str,
                     ),
                     "attainability": (
                         "Realistic"
-                        if is_surplus and (gap >= 0.75 or (gap >= 0.60 and depth_rank >= 3))
+                        if is_surplus and (gap >= 0.75 or (gap >= 0.60 and buried >= 2))
                         else "Reach"
                     ),
                 })
-    # Gettability first: surplus pieces and deeper names on the partner's
-    # chart, closer to a fair package, outrank a bigger name who will
-    # never move.
+    # Gettability first: surplus pieces and the players buried deepest
+    # below the partner's starting group (flex included), closer to a
+    # fair package, outrank a bigger name who will never move.
     cands.sort(key=lambda c: (
         prio[c["position"]],
         0 if c["is_surplus"] else 1,
-        -c["depth_rank"], -c["gap_pct"], -c["value"],
+        -c["buried"], -c["gap_pct"], -c["value"],
     ))
     out: list[dict] = []
     per_pos_count: dict[str, int] = {}
@@ -1523,6 +1581,16 @@ def build_front_office_data(ctx: dict, viewer_roster_id: str) -> dict | None:
             ctx, viewer_roster_id, model_value_lookup, need_positions,
             qb_add_allowed=qb_ctx["add_allowed"],
         )
+        # Deep link into the Trade Hub's Build around search (Targets
+        # sub-tab), pre-loaded with this player. The hub reads ?build=.
+        _ba_platform = _safe_str(ctx.get("platform") or "sleeper")
+        _ba_season = ctx.get("season") or ""
+        _ba_league = ctx.get("league_id") or ""
+        for _pt in potential_targets:
+            _pt["build_url"] = (
+                f"/{_ba_platform}/{_ba_season}/{_ba_league}/trade"
+                f"?tab=hub&build={_pt.get('id')}&name={quote_plus(str(_pt.get('name') or ''))}"
+            )
     injury_rows = _build_injury_rows(ctx, roster_rows)
     # Roster table shows the ESPN return estimate next to the injury pill.
     wo_by_id = {r["id"]: r["weeks_out"] for r in injury_rows}
@@ -2157,18 +2225,32 @@ def _potential_trade_targets_html(potential: list[dict]) -> str:
         )
         pos = str(p.get("position") or "")
         rank = int(p.get("depth_rank") or 0)
+        flex_n = int(p.get("flex_slots") or 0)
+        flex_txt = f"{flex_n} flex spot{'s' if flex_n != 1 else ''}"
         if p.get("sole_starter"):
             why = (
                 f"He is their only startable {pos}, so he does not move "
                 f"without a {pos} going back."
             )
         elif p.get("is_surplus"):
-            why = (
-                f"{pos}{rank} on their team, behind their starters. "
-                "Startable depth at a position you need."
-            )
+            if flex_n:
+                why = (
+                    f"{pos}{rank} on their team, outside their starting group "
+                    f"even with {flex_txt} filled. Startable depth at a position you need."
+                )
+            else:
+                why = (
+                    f"{pos}{rank} on their team, behind their starters. "
+                    "Startable depth at a position you need."
+                )
         elif rank:
-            why = f"{pos}{rank} on their team. He starts for them, so this takes a real package."
+            if flex_n and pos in ("RB", "WR", "TE"):
+                why = (
+                    f"{pos}{rank} on their team. With {flex_txt}, he is in their "
+                    "starting group, so this takes a real package."
+                )
+            else:
+                why = f"{pos}{rank} on their team. He starts for them, so this takes a real package."
         else:
             why = "Startable depth at a position you need."
         gap = int(p.get("gap_pct") or 0)
@@ -2188,6 +2270,12 @@ def _potential_trade_targets_html(potential: list[dict]) -> str:
                 start_txt += f", where they are thin at {start['position']}"
             start_txt += "."
         attn = str(p.get("attainability") or "")
+        build_btn = ""
+        if p.get("build_url"):
+            build_btn = (
+                f"<a class='for-analyze for-prow-btn' "
+                f"href='{html.escape(str(p['build_url']), quote=True)}'>Build around</a>"
+            )
         cards.append(
             "<div class='for-prow'>"
             f"{_pos_avatar(pos)}"
@@ -2198,7 +2286,7 @@ def _potential_trade_targets_html(potential: list[dict]) -> str:
             f"<div class='for-prow-sub'>{html.escape(why)}"
             f"<span class='for-muted'>{html.escape(gap_txt + start_txt)}</span></div>"
             "</div>"
-            f"<div class='for-prow-side'>{_dot_pill(attn, amber=(attn == 'Reach'))}</div>"
+            f"<div class='for-prow-side'>{_dot_pill(attn, amber=(attn == 'Reach'))}{build_btn}</div>"
             "</div>"
         )
     return (
