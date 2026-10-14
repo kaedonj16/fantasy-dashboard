@@ -21059,8 +21059,10 @@ def _hires_headshot_url(url, width):
 
 
 def _face_html(p: dict, tone: str) -> str:
-    """Player headshot backed by a tone-tinted initial badge. The initial shows
-    through when the headshot is missing/404s (onerror removes the img).
+    """Player headshot backed by a tone-tinted initial badge. The initial is
+    only a loading/failure fallback: onload hides it, because headshots are
+    transparent PNGs and the letter would otherwise show through around the
+    neck and shoulders. onerror removes the img, bringing the initial back.
     DEF/DST use the NFL team logo (local → ESPN) instead of a Sleeper headshot --
     defense ids are team abbreviations and have no player photo."""
     name = str(p.get("name") or "?").strip()
@@ -21082,7 +21084,9 @@ def _face_html(p: dict, tone: str) -> str:
                 f"else this.remove()"
             )
             img = (f'<img class="rc-face" src="{src}" alt="" loading="lazy" '
-                   f'decoding="async" onerror="{onerr}">')
+                   f'decoding="async" '
+                   f'onload="if(this.previousElementSibling)this.previousElementSibling.style.display=\'none\'" '
+                   f'onerror="{onerr}">')
     elif pid:
         url = f"https://sleepercdn.com/content/nfl/players/thumb/{pid}.jpg"
         try:
@@ -21096,8 +21100,11 @@ def _face_html(p: dict, tone: str) -> str:
         except Exception:
             pass
         img = (f'<img class="rc-face" src="{url}" alt="" loading="lazy" '
-               f'decoding="async" onerror="this.remove()">')
-    return f'<div class="rc-badge {tone}">{initial}{img}</div>'
+               f'decoding="async" '
+               f'onload="if(this.previousElementSibling)this.previousElementSibling.style.display=\'none\'" '
+               f'onerror="this.remove()">')
+    return (f'<div class="rc-badge {tone}">'
+            f'<span class="rc-init">{initial}</span>{img}</div>')
 
 
 def _player_row(p: dict, owner: str, team_label: str, ava_html: str,

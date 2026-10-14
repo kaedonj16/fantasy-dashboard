@@ -497,10 +497,17 @@ def build_teams_body(ctx: dict) -> str:
                 raw_hs = str((index.get(player_id) or {}).get("espnHeadshot") or "").strip()
                 hs_url = _dw_hires_headshot(raw_hs, 128)
                 if hs_url:
+                    # The initials sit under the photo as a loading/failure
+                    # fallback only: onload hides them, because ESPN headshots
+                    # are transparent PNGs and the letters would otherwise
+                    # show through around the neck and shoulders. onerror
+                    # removes the img, which brings the initials back.
                     headshot = (
                         '<img src="'
                         + html.escape(hs_url)
-                        + '" alt="" loading="lazy" decoding="async" onerror="this.remove()">'
+                        + '" alt="" loading="lazy" decoding="async"'
+                        + ' onload="if(this.previousElementSibling)this.previousElementSibling.style.display=\'none\'"'
+                        + ' onerror="this.remove()">'
                     )
                 else:
                     headshot = ""
