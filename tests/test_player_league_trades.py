@@ -334,6 +334,99 @@ def test_get_player_league_trades_includes_pick_link_before_limit(monkeypatch):
     assert out["trades"][0]["via_draft_pick"] is True
 
 
+def test_format_trade_sides_attaches_values_and_pick_via():
+    txn = {
+        "roster_ids": [1, 2],
+        "adds": {"111": 2, "222": 1},
+        "drops": {"111": 1, "222": 2},
+        "draft_picks": [
+            {"season": "2026", "round": 1, "roster_id": 3,
+             "owner_id": 1, "previous_owner_id": 2},
+            {"season": "2027", "round": 2, "roster_id": 99,
+             "owner_id": 2, "previous_owner_id": 1},
+        ],
+    }
+    roster_names = {"1": "Film Room", "2": "Hoodie's Heroes", "3": "Original Owners"}
+    players = {
+        "111": {"name": "Chase Brown", "pos": "RB"},
+        "222": {"name": "Depth Piece", "pos": "WR"},
+    }
+    value_map = {"111": {"value": 5000.0, "sf_value": 6200.1}}
+
+    sides = _format_trade_sides(
+        txn,
+        focus_pid="111",
+        roster_names=roster_names,
+        players_index=players,
+        slot_map={},
+        resolution_map={},
+        value_map=value_map,
+    )
+    assert sides is not None
+    side_a, side_b = sides
+
+    chase = next(a for a in side_a["assets"] if a.get("player_id") == "111")
+    assert chase["value"] == 5000.0
+    assert chase["sf_value"] == 6200.1
+    # Player absent from the value map carries neither key.
+    depth = next(a for a in side_b["assets"] if a.get("player_id") == "222")
+    assert "value" not in depth
+    assert "sf_value" not in depth
+
+    # Pick whose original owner (roster_id 3) resolves gets "via".
+    pick = next(a for a in side_b["assets"] if a.get("type") == "pick")
+    assert pick["via"] == "Original Owners"
+    # Pick with an unresolvable original owner has no "via" key.
+    pick2 = next(a for a in side_a["assets"] if a.get("type") == "pick")
+    assert "via" not in pick2
+
+
+def test_get_player_league_trades_attaches_model_values(monkeypatch):
+    import sys
+    import types
+    from dashboard_services import player_league_trades as plt
+
+    fake_api = types.ModuleType("dashboard_services.api")
+    fake_api.build_league_history_map = lambda plat, lid, season: {2026: "L26"}
+    fake_service = types.ModuleType("dashboard_services.service")
+    fake_service.get_transactions_by_week = (
+        lambda league_id, weeks, platform="sleeper", season=0: {0: [_trade_txn()]}
+    )
+    fake_utils = types.ModuleType("utils.utils")
+    fake_utils.load_players_index = lambda: {
+        "111": {"name": "Chase Brown", "pos": "RB"},
+        "222": {"name": "Depth", "pos": "WR"},
+    }
+    fake_utils.load_model_value_table = lambda *a, **k: [
+        {"id": "111", "value": 5000.04, "sf_value": 6200.06},
+        {"id": "222", "value": 0, "sf_value": 0},
+    ]
+    monkeypatch.setitem(sys.modules, "dashboard_services.api", fake_api)
+    monkeypatch.setitem(sys.modules, "dashboard_services.service", fake_service)
+    monkeypatch.setitem(sys.modules, "utils.utils", fake_utils)
+    monkeypatch.setattr(plt, "build_draft_resolution_map", lambda *a, **k: {})
+    monkeypatch.setattr(plt, "_slot_map_for_league", lambda *a, **k: {})
+    monkeypatch.setattr(plt, "_roster_names", lambda *a, **k: {"1": "Film Room", "2": "Hoodie's Heroes"})
+
+    out = plt.get_player_league_trades(
+        player_id="111", platform="sleeper", league_id="L26", season=2026, limit=20,
+    )
+    assert out["total"] == 1
+    trade = out["trades"][0]
+    chase = next(
+        a for a in trade["side_a"]["assets"] if a.get("player_id") == "111"
+    )
+    # Rounded to 1 decimal from the model value table.
+    assert chase["value"] == 5000.0
+    assert chase["sf_value"] == 6200.1
+    # Zero-valued player omits both keys.
+    depth = next(
+        a for a in trade["side_b"]["assets"] if a.get("player_id") == "222"
+    )
+    assert "value" not in depth
+    assert "sf_value" not in depth
+
+
 def test_roster_names_calls_build_roster_map_with_league_id(monkeypatch):
     import sys
     import types
