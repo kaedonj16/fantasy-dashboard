@@ -23504,6 +23504,15 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
 .pm-playoff-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
 .pm-playoff-rank { text-align: right; }
 .pm-playoff-rank-big { font-size: 17px; font-weight: 800; color: var(--text); line-height: 1.15; font-variant-numeric: tabular-nums; }
+/* Color pass: the aggregate and each week's rank carry their tier color;
+   the rest of the line stays plain text. */
+.pm-playoff-rank-easy { color: #059669; }
+.pm-playoff-rank-mid { color: #b45309; }
+.pm-playoff-rank-hard { color: #dc2626; }
+.pm-rk { font-weight: 800; }
+.pm-rk-easy { color: #059669; }
+.pm-rk-mid { color: #b45309; }
+.pm-rk-hard { color: #dc2626; }
 .pm-playoff-rank-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 .pm-playoff-rows { display: flex; flex-direction: column; }
 .pm-playoff-row { display: flex; flex-direction: column; padding: 7px 0; border-top: 1px solid var(--border); font-size: 13px; }
@@ -23523,6 +23532,8 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
 .pm-recent-val { font-size: 12px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
 .pm-recent-track { width: 100%; max-width: 44px; height: 64px; display: flex; align-items: flex-end; }
 .pm-recent-bar { width: 100%; background: var(--accent); border-radius: var(--radius-sm) var(--radius-sm) 0 0; min-height: 4px; }
+.pm-recent-bar-best { background: #10b981; }
+.pm-recent-val-best { color: #059669; }
 .pm-recent-wk { font-size: 11px; font-weight: 600; color: var(--text-muted); }
 
 /* ── Player modal Overview: two-column body (main + right rail) ────────── */
@@ -23533,14 +23544,20 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
 .pm-ov-role { background: var(--bg-alt); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 10px; }
 .pm-ov-role[hidden] { display: none; }
 .pm-ov-kv { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 6px 0; border-top: 1px solid var(--border); font-size: 13px; }
+/* Role card share bars: tier-colored fill under the Target/Snap share rows. */
+.pm-ov-sharebar { height: 5px; border-radius: 3px; background: var(--grid); margin: 3px 0 5px; overflow: hidden; }
+.pm-ov-sharebar i { display: block; height: 100%; border-radius: 3px; }
 .pm-ov-kv span { color: var(--text-muted); }
 .pm-ov-kv b { font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; text-align: right; }
 .pm-ov-role .pm-section-header + .pm-ov-kv,
 .pm-pair-usage .pm-section-header + .pm-ov-kv { border-top: none; }
 @media (max-width: 768px) {
   /* Phone: one column, mock order (hero sits above the columns):
-     Playoff, Recent Form, Value History, Role, In this league, ADP, News. */
-  .pm-ov-cols { display: flex; flex-direction: column; }
+     Playoff, Recent Form, Value History, Role, In this league, ADP, News.
+     align-items must reset to stretch here: the desktop grid's
+     align-items: start otherwise carries into the flex column and every
+     card shrinks to its content width. */
+  .pm-ov-cols { display: flex; flex-direction: column; align-items: stretch; }
   .pm-ov-main, .pm-ov-rail { display: contents; }
   .pm-ov-playoff { order: 1; }
   .pm-ov-recent { order: 2; }
@@ -25383,16 +25400,19 @@ tr.team-clickable {
 
     .player-modal-header {
         position: relative;
-        padding: 10px 12px 14px;
+        padding: 10px 12px 0;
         gap: 10px;
-        align-items: flex-start;
+        align-items: stretch;
         flex-wrap: nowrap;
     }
 
-    /* Push content below the absolutely-positioned buttons */
+    /* Push content below the absolutely-positioned buttons. Bottom padding
+       lives here now: the header's own bottom padding is 0 so the headshot
+       can sit flush on the tab bar. */
     .player-modal-title-section {
         padding-top: 44px;
         padding-right: 35px;
+        padding-bottom: 12px;
         gap: 0;
         align-items: flex-start;
         flex: 1;
@@ -25405,11 +25425,18 @@ tr.team-clickable {
         width: 100%;
     }
 
-    /* Headshot: compact 56px square on phone (approved mock), aligned to top */
+    /* Headshot: fills the full header height on phone, its bottom edge
+       flush with the tab bar below (the header stretches it; no floating
+       56px square with dead space under it). */
+    .player-modal-headshot-container {
+        display: flex;
+        flex-shrink: 0;
+    }
+
     .player-modal-headshot {
-        width: 56px;
-        height: 56px;
-        border-radius: var(--radius);
+        width: 88px;
+        height: 100%;
+        border-radius: 0;
         object-fit: cover;
         object-position: top;
         flex-shrink: 0;

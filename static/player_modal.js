@@ -976,11 +976,13 @@ function openPlayerModal(playerId, playerName, opts) {
       if (_ps && _ps.rank != null && isFinite(Number(_ps.rank)) && _psWeeks.length) {
         const _psPos = String(data.position || '').toUpperCase();
         const _psFirst = _psWeeks[0], _psLast = _psWeeks[_psWeeks.length - 1];
+        const _rkTier = (r) => (r != null && Number(r) <= 10) ? 'easy'
+          : (r != null && Number(r) > 20) ? 'hard' : 'mid';
         const _psRows = _psWeeks.map(w => {
           const _loc = w.at ? 'at' : 'vs';
           const _left = `Week ${w.week}${w.opp ? ` <span class="pm-playoff-loc">· ${_loc} ${_pmEsc(w.opp)}</span>` : ''}`;
           const _rightBits = [];
-          if (w.opp_rank != null) _rightBits.push('#' + w.opp_rank);
+          if (w.opp_rank != null) _rightBits.push(`<span class="pm-rk pm-rk-${_rkTier(w.opp_rank)}">#${w.opp_rank}</span>`);
           if (w.opp_fpts != null && isFinite(Number(w.opp_fpts))) _rightBits.push(Number(w.opp_fpts).toFixed(1) + ' pts allowed');
           let _bar = '';
           if (w.opp_rank != null && isFinite(Number(w.opp_rank))) {
@@ -1002,7 +1004,7 @@ function openPlayerModal(playerId, playerName, opts) {
           <div class="pm-playoff-head">
             <span class="pm-section-label">Playoff schedule</span>
             <div class="pm-playoff-rank">
-              <div class="pm-playoff-rank-big">${_pmTeamOrd(Number(_ps.rank))} easiest</div>
+              <div class="pm-playoff-rank-big pm-playoff-rank-${_rkTier(_ps.rank)}">${_pmTeamOrd(Number(_ps.rank))} easiest</div>
               ${_psPos ? `<div class="pm-playoff-rank-sub">for ${_psPos}s · Weeks ${_psFirst.week}-${_psLast.week}</div>` : ''}
             </div>
           </div>
@@ -1983,12 +1985,15 @@ function _pmLoadRecentForm(playerId, season, pos) {
       if (!real.length) return;
       const shown = real.slice(-5);
       const max = Math.max.apply(null, shown.map(g => Number(g.fantasy_pts) || 0));
+      let _bestUsed = false;
       const cols = shown.map(g => {
         const pts = Number(g.fantasy_pts) || 0;
         const h = max > 0 ? Math.max(6, Math.round(pts / max * 100)) : 6;
+        const _best = max > 0 && pts === max && !_bestUsed;
+        if (_best) _bestUsed = true;
         return '<div class="pm-recent-col">'
-          + `<span class="pm-recent-val">${pts.toFixed(1)}</span>`
-          + `<div class="pm-recent-track"><div class="pm-recent-bar" style="height:${h}%"></div></div>`
+          + `<span class="pm-recent-val${_best ? ' pm-recent-val-best' : ''}">${pts.toFixed(1)}</span>`
+          + `<div class="pm-recent-track"><div class="pm-recent-bar${_best ? ' pm-recent-bar-best' : ''}" style="height:${h}%"></div></div>`
           + `<span class="pm-recent-wk">W${g.week != null ? g.week : ''}</span>`
           + '</div>';
       }).join('');
@@ -2034,8 +2039,21 @@ function _pmLoadRecentForm(playerId, season, pos) {
           }
         });
         const _roleRows = [];
-        if (_tsTeam > 0) _roleRows.push(`<div class="pm-ov-kv"><span>Target share</span><b>${(_tsMine / _tsTeam * 100).toFixed(1)}%</b></div>`);
-        if (_snapN) _roleRows.push(`<div class="pm-ov-kv"><span>Snap share</span><b>${(_snapSum / _snapN).toFixed(1)}%</b></div>`);
+        const _shareBar = (v) => {
+          const n = Math.max(0, Math.min(100, Number(v) || 0));
+          const c = n >= 60 ? '#10b981' : n >= 25 ? '#3b82f6' : '#f59e0b';
+          return `<div class="pm-ov-sharebar"><i style="width:${n.toFixed(1)}%;background:${c}"></i></div>`;
+        };
+        if (_tsTeam > 0) {
+          const _tsPct = _tsMine / _tsTeam * 100;
+          _roleRows.push(`<div class="pm-ov-kv"><span>Target share</span><b>${_tsPct.toFixed(1)}%</b></div>`);
+          _roleRows.push(_shareBar(_tsPct));
+        }
+        if (_snapN) {
+          const _snapPct = _snapSum / _snapN;
+          _roleRows.push(`<div class="pm-ov-kv"><span>Snap share</span><b>${_snapPct.toFixed(1)}%</b></div>`);
+          _roleRows.push(_shareBar(_snapPct));
+        }
         const _recRow = _recGames ? `<div class="pm-ov-kv"><span>Receiving</span><b>${_rec} / ${_recYd} / ${_recTd}</b></div>` : '';
         const _rushRow = _rushGames ? `<div class="pm-ov-kv"><span>Rushing</span><b>${_rush} / ${_rushYd} / ${_rushTd}</b></div>` : '';
         const _passRow = _passGames ? `<div class="pm-ov-kv"><span>Passing</span><b>${_passYd.toLocaleString('en-US')} / ${_passTd} / ${_passInt}</b></div>` : '';
@@ -3270,21 +3288,16 @@ function _pmTeamShareBar(data) {
   if (!segs.length) return '';
   const rest = Math.max(0, 100 - segs.reduce((a, s) => a + s.pct, 0));
   const me = segs.find(s => s.me);
-  // Theme-adaptive neutral ramp (subtle text blended toward the card) so the
-  // teammate segments read correctly in both light and dark themes.
-  const grays = [
-    'color-mix(in srgb, var(--text-subtle) 85%, var(--card))',
-    'color-mix(in srgb, var(--text-subtle) 66%, var(--card))',
-    'color-mix(in srgb, var(--text-subtle) 50%, var(--card))',
-    'color-mix(in srgb, var(--text-subtle) 37%, var(--card))',
-    'color-mix(in srgb, var(--text-subtle) 27%, var(--card))',
-  ];
+  // Teammates read as one restrained blue family, darkest first; the focus
+  // player takes his position color so his segment is the one that pops.
+  const blues = ['#3b82f6', '#7aa5e8', '#a8c3ef', '#b9cff2', '#cbd5e1'];
+  const _focusColor = { WR: '#f97316', TE: '#8b5cf6' }[pos] || 'var(--accent)';
   let gi = 0;
   // Custom tooltip only (data-def + advEnterMetricDef), the same engine as
   // the metric rows above: a native title would surface a plain browser
   // tooltip instead, and never fires on touch.
   const bars = segs.map(s => {
-    const col = s.me ? 'var(--accent)' : grays[Math.min(gi++, grays.length - 1)];
+    const col = s.me ? _focusColor : blues[Math.min(gi++, blues.length - 1)];
     const tip = `${s.name}: ${s.pct}% of team targets`.replace(/"/g, '&quot;');
     return `<i class="${s.me ? 'me' : ''}" style="width:${s.pct}%;background:${col}" data-def="${tip}" onmouseenter="advEnterMetricDef(event)" onmouseleave="advLeaveMetricDef(event)" onclick="advShowMetricDef(event)">${s.pct >= 9 ? '<span>' + s.pct + '%</span>' : ''}</i>`;
   }).join('');
