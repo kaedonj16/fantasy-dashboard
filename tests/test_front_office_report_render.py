@@ -224,10 +224,14 @@ def test_roster_header_says_trend():
 
 
 def test_trade_target_card_structure():
+    # Swap card design (Kaedon's pick): Get/Give boxes, partner in the
+    # header, Analyze as a footer link.
     out = _render()
-    assert "for-target-from" in out and "From Veiny Oilers" in out
-    assert "You give" in out
-    assert "Analyze this trade" in out
+    assert "for-swap-card" in out
+    assert "With <strong>Veiny Oilers</strong>" in out
+    assert "You get" in out and "You give" in out
+    assert "Puka Nacua" in out and "Jaylen Warren" in out
+    assert "for-analyze-lite" in out and "Analyze &rarr;" in out
 
 
 def _potential_entry(**over):
@@ -251,10 +255,10 @@ def test_potential_trade_targets_render_when_no_priced_deal():
     ))
     assert "Potential trade targets" in out
     assert "Bijan Robinson" in out
-    assert "On Veiny Oilers" in out
+    assert "Veiny Oilers" in out
     # No priced deal exists, so no give side or analyzer link is invented.
     assert "You give" not in out
-    assert "Analyze this trade" not in out
+    assert "Analyze" not in out
 
 
 def test_priced_trade_targets_take_precedence_over_potential():
@@ -310,8 +314,11 @@ def test_potential_trade_targets_helper_picks_need_positions(monkeypatch):
     out = fmod._potential_trade_targets(ctx, 1, lookup, ["RB", "WR"])
     # Viewer's own player excluded, TE is not a need position, and the
     # per-position cap drops the third RB. Need positions rank first.
-    assert [p["name"] for p in out] == ["Alpha RB", "Beta RB", "Delta WR"]
+    # Reworked gettability order: deeper on the partner's depth chart
+    # first (Beta is their RB2, Alpha their RB1), so Beta now leads.
+    assert [p["name"] for p in out] == ["Beta RB", "Alpha RB", "Delta WR"]
     assert out[0]["partner"] == "Veiny Oilers"
+    assert out[0]["depth_rank"] == 2
     assert fmod._potential_trade_targets(ctx, 1, lookup, []) == []
 
 

@@ -278,6 +278,7 @@ def build_front_office_prompt_payload(data: dict) -> dict:
                 "target": _for_trade_target_label(t["gets"][0]),
                 "target_id": t["gets"][0]["id"],
                 "target_injury": (t["gets"][0].get("injury") or None),
+                "target_tier": (t["gets"][0].get("tier") or None),
                 "you_give": ", ".join(
                     f"{g.get('name')} ({g.get('position')}"
                     f"{', value ' + str(g['value']) if g.get('value') is not None else ''})"
@@ -285,12 +286,21 @@ def build_front_office_prompt_payload(data: dict) -> dict:
                 ),
                 "partner": t["partner"],
                 "partner_record": t.get("partner_record") or None,
+                "partner_direction": t.get("partner_direction") or None,
+                "fairness": t.get("fairness_label") or None,
+                "acceptance": t.get("acceptance_label") or None,
+                "depth_warnings": t.get("depth_warnings") or [],
                 "why_they_say_yes": t.get("why_they_say_yes"),
                 "waiver_alternative": t.get("waiver_alternative") or None,
                 "urgent_need": t.get("urgent_reason") or None,
             }
             for t in (data.get("trade_targets") or [])
         ],
+        "top_moves": [
+            {"type": m.get("type"), "move": m.get("line"), "why": m.get("why")}
+            for m in (data.get("top_moves") or [])
+        ],
+        "qb_note": data.get("qb_note"),
         "waiver_targets": [
             {
                 "name": w.get("name"), "id": w.get("id"), "pos": w.get("position"),
@@ -362,13 +372,17 @@ Return a JSON object with these fields:
   exactly.
 - headline: one sharp line on the team's situation (max 12 words).
 - posture: one short paragraph on the team's current posture.
-- top_move: the single most important move, naming specific players
-  (one sentence). When a drop_add_pairs entry covers the top waiver add,
-  phrase it as the paired move ("Drop X, add Y"). It must NEVER recommend
-  ADDING a player with a serious injury designation (IR, PUP, NFI, OUT,
-  DOUBTFUL, NA, SUS/SUSP). If every candidate at the needed position is
-  hurt, say that plainly (name the position need and the injury situation)
-  instead of recommending an injured add.
+- top_move: one sentence restating the FIRST entry of top_moves when
+  top_moves is present (use its players and action; do not invent a
+  different move). Only when top_moves is empty: the single most
+  important move, naming specific players. When a drop_add_pairs entry
+  covers the top waiver add, phrase it as the paired move ("Drop X, add
+  Y"). It must NEVER recommend ADDING a player with a
+  serious injury designation (IR, PUP, NFI, OUT, DOUBTFUL, NA, SUS/SUSP).
+  If every candidate at the needed position is hurt, say that plainly (name the
+  position need and the injury situation) instead of recommending an
+  injured add. When qb_note says the QB room is covered, never recommend
+  adding a quarterback in any field.
 - trade_notes: array of {"target_id", "note"} objects, one per trade target
   you can justify. target_id must be one of the target_id values in the JSON
   below. Omit targets you cannot justify; do not invent ids. Each note is two

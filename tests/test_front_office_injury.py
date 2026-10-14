@@ -289,7 +289,10 @@ def test_trade_target_injury_pill():
         }
     ]
     html_out = _trade_targets_html(targets, {})
-    assert "Puka Nacua</strong> <span class='for-inj'>Q</span>" in html_out
+    # Swap card: the pill rides next to the get player's name.
+    assert "Puka Nacua" in html_out
+    assert "<span class='for-inj'>Q</span>" in html_out
+    assert "for-swap-card" in html_out
 
 
 def test_waiver_target_injury_pill():
