@@ -1499,6 +1499,27 @@ def build_trade_suggestions_context(
     viewer_needs = starter_gap_needs(viewer_counts, _ng_depth_floor)
     viewer_surplus = startable_surplus(viewer_counts, _ng_depth_floor)
 
+    def _serious_injury(pid: str) -> bool:
+        """True when the player's current status means he cannot play any
+        time soon (IR/PUP/NFI/suspended/OUT/DOUBTFUL). Seriously-injured
+        players are never trade targets here: pricing a deal on full
+        value for a player who cannot play is bad advice on every surface
+        that reads this context. First non-empty status wins, scanning
+        the same sources the Front Office injury map uses."""
+        for src in (ctx.get("players") or {}, ctx.get("players_index") or {},
+                    ctx.get("players_map") or {}):
+            if not isinstance(src, dict):
+                continue
+            info = src.get(str(pid)) or {}
+            if not isinstance(info, dict):
+                continue
+            raw = str(info.get("injury_status") or info.get("status") or "").strip().upper()
+            if raw:
+                return raw in (
+                    "IR", "PUP", "NFI", "SUSP", "SUS", "OUT", "DOUBTFUL", "NA", "O", "D",
+                )
+        return False
+
     # League averages for context only
     league_avg: dict[str, float] = {}
     for pos in _SCARCITY_POSITIONS:
@@ -1635,11 +1656,14 @@ def build_trade_suggestions_context(
     def _score_candidates(pool6: list, partner_roster: dict, pos: str, partner_direction: str) -> list:
         """Expand the target pool (top 6 by value) and rank by gettability:
         60% how movable the player is, 40% normalized value. Returns
-        [(score, player)] sorted best-first."""
+        [(score, player)] sorted best-first. The gettability score is
+        stamped onto the player dict so partner ranking can use it too
+        (previously computed here and then thrown away)."""
         _pmax = max([_safe_float(t.get("value")) for t in pool6], default=0.0)
         _scored: list = []
         for t in pool6:
             _g = _gettability_score(t, partner_roster, pos, partner_direction)
+            t["gettability"] = round(_g, 3)
             _nv = (_safe_float(t.get("value")) / _pmax) if _pmax > 0 else 0.0
             _scored.append((0.6 * _g + 0.4 * _nv, t))
         _scored.sort(key=lambda x: x[0], reverse=True)
@@ -1686,7 +1710,13 @@ def build_trade_suggestions_context(
         # fund a trade: only players beyond the dedicated starting slots move.
         def _startable(players: list, pos: str) -> list:
             bar = _ng_starter_thr.get(pos, 350)
-            return [pl for pl in players if pl.get("value", 0) >= bar]
+            # In redraft a seriously-injured player is not a trade chip:
+            # no partner pays for a player who cannot play this season.
+            return [
+                pl for pl in players
+                if pl.get("value", 0) >= bar
+                and not (is_redraft and _serious_injury(str(pl.get("id"))))
+            ]
 
         def _bench_pool(positions) -> list:
             """Startable players beyond the starting slots, cheapest first."""
@@ -1735,6 +1765,7 @@ def build_trade_suggestions_context(
                 _cands = [
                     t for t in _pool6
                     if _safe_float(t.get("value")) >= _bar and _target_tier_ok(t)
+                    and not _serious_injury(str(t.get("id")))
                 ]
                 for _, cand in _score_candidates(_cands, r, pos, partner_direction)[:3]:
                     package, fair = _fairest_package(need_pool, cand["value"])
@@ -1770,6 +1801,7 @@ def build_trade_suggestions_context(
                         if t.get("value", 0) >= 350
                         and _target_tier_ok(t)
                         and t["value"] > viewer_best_val
+                        and not _serious_injury(str(t.get("id")))
                     ]
                     upgrade_cands.extend(_score_candidates(_ok, r, pos, partner_direction)[:3])
                 for _, cand in sorted(upgrade_cands, key=lambda x: x[0], reverse=True):
@@ -1780,6 +1812,75 @@ def build_trade_suggestions_context(
                             continue
                         deal = (fair, cand, package)
                         is_package_trade = True
+                        break
+
+        # Path 3: ceiling upgrade. No starter hole and no mutual surplus
+        # match, but the viewer fields no elite at a position where this
+        # partner holds surplus: pay from bench surplus (any position)
+        # for the cheapest genuine upgrade over the viewer's best there.
+        # Ceiling needs were previously computed and never used. Sellers
+        # and rebuilders are skipped: this is a contender's move.
+        if deal is None and viewer_ceiling_needs and partner_surplus:
+            _vd = (viewer_direction or "").lower()
+            if "rebuild" not in _vd and "sell" not in _vd:
+                _ceil_pool = _bench_pool(list(viewer_surplus))
+                if _ceil_pool:
+                    _ceil_cands: list = []
+                    for pos in viewer_ceiling_needs:
+                        if pos not in partner_surplus:
+                            continue
+                        _vbest = _pt_viewer_best.get(pos)
+                        _vbest_val = _vbest[1] if _vbest else 0.0
+                        _pool6c = _roster_top_players(r, pos, exclude_ids=viewer_player_ids)[:6]
+                        _okc = [
+                            t for t in _pool6c
+                            if t.get("value", 0) > _vbest_val
+                            and _target_tier_ok(t)
+                            and not _serious_injury(str(t.get("id")))
+                        ]
+                        _ceil_cands.extend(_score_candidates(_okc, r, pos, partner_direction)[:3])
+                    for _, candc in sorted(_ceil_cands, key=lambda x: x[0], reverse=True):
+                        packagec, fairc = _fairest_package(_ceil_pool, candc["value"])
+                        if fairc >= 0.80:
+                            _pkg_posc = {str(p.get("position") or "").upper() for p in packagec}
+                            if _partner_sole_starter(r, candc, _pkg_posc):
+                                continue
+                            deal = (fairc, candc, packagec)
+                            is_package_trade = True
+                            break
+
+        # Second deal with the same partner, for a different need, paid
+        # from what the primary package did not use. Surfaced as alt_deal
+        # on the partner entry so existing consumers (one entry per
+        # partner) are undisturbed; the Front Office renders it as its
+        # own card.
+        alt_deal = None
+        if deal is not None and need_pool:
+            _used_ids = {str(pl.get("id")) for pl in deal[2]}
+            _remaining = [pl for pl in need_pool if str(pl.get("id")) not in _used_ids]
+            if _remaining:
+                for pos in viewer_needs:
+                    if pos == str(deal[1].get("position") or "").upper():
+                        continue
+                    if pos not in partner_surplus:
+                        continue
+                    _pool6b = _roster_top_players(r, pos, exclude_ids=viewer_player_ids)[:6]
+                    _barb = _ng_starter_thr.get(pos, 350)
+                    _candsb = [
+                        t for t in _pool6b
+                        if _safe_float(t.get("value")) >= _barb
+                        and _target_tier_ok(t)
+                        and not _serious_injury(str(t.get("id")))
+                    ]
+                    for _, candb in _score_candidates(_candsb, r, pos, partner_direction)[:3]:
+                        packageb, fairb = _fairest_package(_remaining, candb["value"])
+                        if fairb >= 0.80:
+                            _pkg_posb = {str(p.get("position") or "").upper() for p in packageb}
+                            if _partner_sole_starter(r, candb, _pkg_posb):
+                                continue
+                            alt_deal = (fairb, candb, packageb)
+                            break
+                    if alt_deal is not None:
                         break
 
         # No logical, fair deal exists with this partner: skip rather than
@@ -1821,6 +1922,29 @@ def build_trade_suggestions_context(
         if fairness < 0.80:
             continue
 
+        # Post-trade depth check on the engine's own deal, using the
+        # warning helper that already lives in this module but was never
+        # run here: a deal that leaves the viewer unable to field a
+        # position is never surfaced; a caution rides along on the entry
+        # so the card can say so.
+        depth_warnings: list = []
+        depth_checked = False
+        try:
+            _dw = calculate_roster_depth_warning(
+                roster, model_value_lookup,
+                targets_viewer_sends, targets_they_have,
+                roster_positions=ctx.get("roster_positions") or [],
+                num_teams=n_teams, is_sf=_ctx_is_sf(ctx),
+            )
+            depth_checked = True
+            if any(v.get("severity") == "danger" for v in _dw.values()):
+                continue
+            depth_warnings = [
+                str(v.get("warning") or "") for v in _dw.values() if v.get("warning")
+            ]
+        except Exception:
+            pass
+
         # Acceptance estimate from the partner's perspective: value ratio run
         # through the archetype engine's logistic curve, nudged by whether the
         # send package fills a position they're thin at.
@@ -1838,13 +1962,61 @@ def build_trade_suggestions_context(
         # mutually beneficial deal now outranks a lopsided same-fit one, a deal
         # where the viewer isn't overpaying gets a small nudge, and the age
         # profile of the acquisition is nudged toward the viewer's window.
+        # Rework: the acceptance estimate and the target's gettability now
+        # actually count. Both were computed and then ignored, so a deal the
+        # partner would reject could outrank one they would take.
         direction_fit = _direction_age_fit(viewer_direction, targets_they_have)
+        _acc = (acceptance_rate or 0) / 100.0
+        _get = _safe_float((targets_they_have[0] or {}).get("gettability"))
         suggestion_score = round(
-            match_score + fairness * 3.0
+            match_score + fairness * 3.0 + _acc * 2.0 + _get * 1.0
             + (0.5 if value_you_get >= value_you_give else 0.0)
             + direction_fit,
             3,
         )
+
+        # Alt deal payload (second deal, different need): same acceptance
+        # and depth treatment as the primary. Dropped when it would leave
+        # the viewer unable to field a position.
+        alt_payload = None
+        if alt_deal is not None:
+            _a_fair, _a_target, _a_package = alt_deal
+            _a_target = {**_a_target, "tier": _assign_target_tier(_a_target, r)}
+            _a_get = round(sum(p["value"] for p in [_a_target]), 1)
+            _a_give = round(sum(p["value"] for p in _a_package), 1)
+            try:
+                _a_afit = _acceptance_fit(
+                    _a_package, set(partner_needs), set(partner_surplus)
+                )
+                _a_acc = _estimate_acceptance(_a_give, _a_get, is_preferred=False, fit=_a_afit)
+            except Exception:
+                _a_acc = None
+            _a_warnings: list = []
+            _a_checked = False
+            _a_danger = False
+            try:
+                _a_dw = calculate_roster_depth_warning(
+                    roster, model_value_lookup,
+                    _a_package, [_a_target],
+                    roster_positions=ctx.get("roster_positions") or [],
+                    num_teams=n_teams, is_sf=_ctx_is_sf(ctx),
+                )
+                _a_checked = True
+                _a_danger = any(v.get("severity") == "danger" for v in _a_dw.values())
+                _a_warnings = [
+                    str(v.get("warning") or "") for v in _a_dw.values() if v.get("warning")
+                ]
+            except Exception:
+                pass
+            if not _a_danger:
+                alt_payload = {
+                    "gets": [_a_target],
+                    "gives": _a_package,
+                    "fairness": _a_fair,
+                    "acceptance_rate": _a_acc,
+                    "depth_warnings": _a_warnings,
+                    "depth_checked": _a_checked,
+                }
 
         partners.append({
             "roster_id": rid,
@@ -1853,6 +2025,10 @@ def build_trade_suggestions_context(
             "suggestion_score": suggestion_score,
             "fairness": fairness,
             "acceptance_rate": acceptance_rate,
+            "gettability": _get,
+            "depth_warnings": depth_warnings,
+            "depth_checked": depth_checked,
+            "alt_deal": alt_payload,
             "partner_needs": partner_needs,
             "partner_surplus": partner_surplus,
             "partner_direction": partner_direction,
@@ -1889,7 +2065,26 @@ def build_trade_suggestions_context(
                 targets = []
                 for pos in viewer_needs:
                     top = _roster_top_players(r, pos, exclude_ids=viewer_player_ids)[:1]
-                    targets.extend(p for p in top if p.get("value", 0) >= 250)
+                    # Same guards as the player-package paths: never a
+                    # seriously-injured target, never a partner's sole
+                    # starter with nothing at the position going back.
+                    targets.extend(
+                        p for p in top
+                        if p.get("value", 0) >= 250
+                        and not _serious_injury(str(p.get("id")))
+                        and not _partner_sole_starter(r, p, set())
+                    )
+                # Pick sanity: when the offered picks carry a projected
+                # value, they must be at least in the player's ballpark.
+                _best_pick_val = max(
+                    (_safe_float(p.get("proj_val")) for p in all_picks_as_offers),
+                    default=0.0,
+                )
+                if _best_pick_val > 0:
+                    targets = [
+                        t for t in targets
+                        if _best_pick_val >= 0.35 * _safe_float(t.get("value"))
+                    ]
                 if not targets:
                     continue
                 for t in targets:
@@ -1898,6 +2093,11 @@ def build_trade_suggestions_context(
                     _direction_by_rid[rid] = _cheap_partner_direction(r, rid)
                     _pr, _, _ = _record_pf_pa_for_roster(ctx, rid, r)
                     _record_by_rid[rid] = _pr
+                _pd = _direction_by_rid.get(rid) or ""
+                for t in targets:
+                    t["gettability"] = round(
+                        _gettability_score(t, r, str(t.get("position") or ""), _pd), 3
+                    )
                 pick_trade_partners.append({
                     "roster_id":         rid,
                     "team_name":         roster_map.get(rid) or f"Team {rid}",
@@ -1906,7 +2106,15 @@ def build_trade_suggestions_context(
                     "targets_they_have": targets[:2],
                     "picks_you_offer":   all_picks_as_offers[:2],
                 })
-        pick_trade_partners.sort(key=lambda x: max((t.get("value", 0) for t in x["targets_they_have"]), default=0), reverse=True)
+        # Rank by how gettable the best target is, not by his value: the
+        # old value sort put the least movable name first.
+        pick_trade_partners.sort(
+            key=lambda x: (
+                max((t.get("gettability", 0) for t in x["targets_they_have"]), default=0),
+                max((t.get("value", 0) for t in x["targets_they_have"]), default=0),
+            ),
+            reverse=True,
+        )
         pick_trade_partners = pick_trade_partners[:3]
 
     return {
