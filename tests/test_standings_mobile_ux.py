@@ -108,6 +108,81 @@ def test_no_sub_line_in_compact_table(_third_party_stubs):
     assert "st-team-sub" not in html
 
 
+def test_sub_line_scoreboard_content_no_divisions(_third_party_stubs):
+    # Direction C sub-line: streak + PF/PA (the record rides the name line).
+    # No divisions -> no "Div" segment, and the overall record is not
+    # repeated in the sub-line.
+    import app as appmod
+    html = appmod.render_standings(
+        _team_stats(), length=2, owner_to_rid={"Alpha": "1", "Bravo": "2"})
+    sub = html.split("st-team-sub'>")[1].split("</div>")[0]
+    assert "PF 1400.0" in sub and "PA 1100.0" in sub
+    assert "3W" in sub
+    assert "Div " not in sub
+    assert "10-2" not in sub
+
+
+def test_sub_line_scoreboard_content_with_divisions(_third_party_stubs):
+    import app as appmod
+    divisions = {"by_rid": {1: 1, 2: 2}, "names": {1: "East", 2: "West"},
+                 "ids": [1, 2], "count": 2}
+    html = appmod.render_standings(
+        _team_stats(), length=2, owner_to_rid={"Alpha": "1", "Bravo": "2"},
+        divisions=divisions)
+    sub = html.split("st-team-sub'>")[1].split("</div>")[0]
+    assert sub.startswith("Div 0-0")
+    assert "PF 1400.0" in sub and "PA 1100.0" in sub
+
+
+def _blocks_768():
+    """All @media (max-width: 768px) blocks, brace-matched, as text."""
+    css = CSS.read_text()
+    blocks = []
+    for m in re.finditer(r"@media\s*\(max-width:\s*768px\)\s*\{", css):
+        depth = 0
+        for i in range(m.end() - 1, len(css)):
+            if css[i] == "{":
+                depth += 1
+            elif css[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    blocks.append(css[m.end():i])
+                    break
+    return blocks
+
+
+def _scoreboard_block():
+    for block in _blocks_768():
+        if "scoreboard" in block or "grid-template-columns: 32px 1fr auto" in block:
+            return block
+    return ""
+
+
+def test_css_scoreboard_block_gated_on_non_detail():
+    block = _scoreboard_block()
+    assert block, "mobile scoreboard (direction C) block missing"
+    # Every standings rule in the block is gated so Detailed mode keeps the
+    # wide table exactly as before.
+    for m in re.finditer(r"([^{}]+)\{", block):
+        sel = m.group(1)
+        if "standings-table" in sel:
+            assert ":not(.show-detail)" in sel, sel.strip()[:100]
+
+
+def test_css_scoreboard_layout_rules():
+    block = _scoreboard_block()
+    # Rows become the two-line scoreboard grid.
+    assert "grid-template-columns: 32px 1fr auto" in block
+    # The legacy #stats min-width is released or the rows can never fit.
+    assert re.search(r"table#stats[^{]*\{\s*min-width:\s*0", block)
+    # Column headers hide in scoreboard mode.
+    assert re.search(r"thead\s*\{\s*display:\s*none", block)
+    # Columns 4+ hide; their data lives on line 1 / the sub-line.
+    assert "td:nth-child(n+4)" in block
+    # Seed movement arrows hide in the scoreboard seed column.
+    assert ".rank-move" in block
+
+
 def _mobile_blocks():
     """All @media (max-width: 640px) blocks, brace-matched, as text."""
     css = CSS.read_text()

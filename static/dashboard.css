@@ -4661,6 +4661,198 @@ button:hover {
     }
 }
 
+/* Mobile standings scoreboard (direction C): at phone widths the ordinary
+   standings table reads as two-line scoreboard rows: seed + team name + the
+   record big and right-aligned on line 1, and the .st-team-sub line inside
+   the team cell carrying division record, streak, PF and PA. Division
+   headers become quiet small-caps labels with a rule, and division leaders
+   keep the slim navy accent on the leading cell. Every rule is gated on
+   :not(.show-detail): Detailed mode keeps the wide scrollable table exactly
+   as it works today, and desktop never enters this block. */
+@media (max-width: 768px) {
+    /* The legacy #stats rule pins the table at min-width 720px for the wide
+       layout; the scoreboard rows fit the card, so release it here (the ID
+       in the selector is required to outrank that rule). */
+    .st-tblscroll table#stats.standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) {
+        min-width: 0;
+    }
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) thead {
+        display: none;
+    }
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) tbody tr:not(.st-div-row):not(.pp-scnrow):not(.pp-cutrow) {
+        display: grid;
+        grid-template-columns: 32px 1fr auto;
+        align-items: start;
+        padding: 10px 2px;
+        border-bottom: 1px solid var(--grid);
+    }
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) tbody tr:not(.st-div-row):not(.pp-scnrow):not(.pp-cutrow) td {
+        display: block;
+        position: static;
+        padding: 0;
+        border-top: none;
+        text-align: left;
+    }
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) tbody tr:not(.st-div-row):not(.pp-scnrow):not(.pp-cutrow) td:nth-child(n+4) {
+        display: none;
+    }
+    /* Seed: one bare numeral treatment for every row; gold only for seed 1. */
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) tbody tr:not(.st-div-row):not(.pp-scnrow):not(.pp-cutrow) td:nth-child(1) {
+        width: auto;
+        min-width: 0;
+        padding-left: 10px;
+        padding-top: 1px;
+    }
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) tbody tr:not(.st-div-row):not(.pp-scnrow):not(.pp-cutrow) td:nth-child(1) .rank-mark {
+        min-width: 0 !important;
+        justify-content: flex-start;
+    }
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) tbody tr:not(.st-div-row):not(.pp-scnrow):not(.pp-cutrow) td:nth-child(1) .rank,
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) tbody tr:not(.st-div-row):not(.pp-scnrow):not(.pp-cutrow) td:nth-child(1) .rank-plain {
+        display: inline;
+        width: auto;
+        height: auto;
+        border: none;
+        background: none;
+        box-shadow: none;
+        font-size: 12.5px;
+        font-weight: 800;
+        color: var(--text-subtle);
+    }
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) tbody tr:not(.st-div-row):not(.pp-scnrow):not(.pp-cutrow) td:nth-child(1) .rank-first {
+        color: var(--gold);
+    }
+    /* Week-over-week seed movement rides the wide table; the scoreboard
+       seed column is a single numeral, so the arrow hides here. */
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) tbody tr:not(.st-div-row):not(.pp-scnrow):not(.pp-cutrow) td:nth-child(1) .rank-move {
+        display: none;
+    }
+    /* Team: name at scoreboard weight, DIV chip inline after the name. */
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) tbody tr:not(.st-div-row):not(.pp-scnrow):not(.pp-cutrow) td.team {
+        width: auto;
+        max-width: none;
+        min-width: 0;
+        border-right: none;
+        font-size: 16px;
+        font-weight: 800;
+        line-height: 1.2;
+        color: var(--text);
+    }
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) tbody tr:not(.st-div-row):not(.pp-scnrow):not(.pp-cutrow) td.team .team-clickable {
+        display: inline;
+        white-space: normal;
+        overflow: visible;
+        font-size: 16px;
+        font-weight: 800;
+        line-height: 1.2;
+    }
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) .st-div-lead {
+        display: inline-block;
+        vertical-align: 2px;
+        margin-left: 7px;
+        padding: 2px 6px 1px;
+        border: 1px solid #c7d3e4;
+        border-radius: var(--radius-pill);
+        background: var(--accent-soft-2);
+        color: var(--accent);
+        font-size: 9.5px;
+        font-weight: 800;
+        letter-spacing: .09em;
+    }
+    /* Record: big, right-aligned on line 1; its division part moves to the
+       sub-line, so the parenthesized span hides here. */
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) tbody tr:not(.st-div-row):not(.pp-scnrow):not(.pp-cutrow) td:nth-child(3) {
+        padding-left: 10px;
+        text-align: right;
+        font-size: 17px;
+        font-weight: 800;
+        color: var(--text);
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+    }
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) tbody tr:not(.st-div-row):not(.pp-scnrow):not(.pp-cutrow) td:nth-child(3) .st-div-rec {
+        display: none;
+    }
+    /* Sub-line: division record, streak, PF, PA under the name. */
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) .st-team-sub {
+        display: block;
+        margin: 3px 0 0;
+        overflow: hidden;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text-muted);
+        white-space: nowrap;
+        font-variant-numeric: tabular-nums;
+    }
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) .st-team-sub .st-sub-pts {
+        color: var(--text-subtle);
+    }
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) .st-streak-dir.up {
+        color: var(--win);
+    }
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) .st-streak-dir.down {
+        color: var(--loss);
+    }
+    /* Leader rows: no tint wash in scoreboard mode; the leading cell keeps
+       the slim navy inset accent from the base leader rule. */
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) tbody tr.st-div-leader td {
+        background: transparent;
+    }
+    /* Division headers: quiet small-caps label + rule, no pale bar, no
+       block glyph, no team-count pill. */
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) tbody tr.st-div-row {
+        display: block;
+    }
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) tbody tr.st-div-row td {
+        display: block;
+        position: static;
+        padding: 0;
+        border-top: none;
+        text-align: left;
+    }
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) .st-div-row .div-label {
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 10px;
+        margin: 0;
+        padding: 15px 2px 6px;
+        background: none;
+        border-radius: 0;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: .11em;
+        color: var(--text-subtle);
+        text-transform: uppercase;
+    }
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) .st-div-row:first-child .div-label {
+        padding-top: 4px;
+    }
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) .st-div-row .div-label .st-div-glyph,
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) .st-div-row .div-label span:last-child {
+        display: none;
+    }
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) .st-div-row .div-label::after {
+        content: "";
+        flex: 1;
+        border-top: 1px solid var(--border);
+    }
+    /* Full-width playoff-picture rows span the scoreboard as plain blocks. */
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) tbody tr.pp-scnrow,
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) tbody tr.pp-cutrow {
+        display: block;
+        border-bottom: 1px solid var(--grid);
+    }
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) tbody tr.pp-scnrow td,
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) tbody tr.pp-cutrow td {
+        display: block;
+        position: static;
+        padding: 6px 2px;
+        border-top: none;
+        text-align: left;
+    }
+}
+
 /* ── Playoff picture: standings enrichment ─────────────────────────────────── */
 :root {
     --pp-bye: #7c3aed;
