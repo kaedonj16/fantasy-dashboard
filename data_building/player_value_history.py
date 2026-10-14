@@ -346,7 +346,12 @@ def get_player_value_history(
     # reads the smoothed `value`) stayed clean. The final point is re-aligned to
     # calibrated_value_sf below, so using the smoothed base keeps the right end
     # value while giving a clean trend.
-    _sf_expr = f"COALESCE(sf_value, {_sf_col}, {_1qb_col}, value)"
+    # The SF fallback chain stops at SF columns on purpose: a date where the
+    # pipeline stored no SF value is a gap (value_sf None), not a point at
+    # the 1QB level. Falling back to the 1QB column / base value invented SF
+    # points down at the 1QB line, which the chart drew as deep rectangular
+    # plunges in the SF series.
+    _sf_expr = f"COALESCE(sf_value, {_sf_col})"
     # Same reasoning for 1QB: the smoother only touches `value`, not the
     # size-specific value_8/12/14 columns, so on 8/12/14-team leagues those
     # produced a spiky 1QB line. Prefer the smoothed base `value` (re-scaled to
@@ -386,7 +391,13 @@ def get_player_value_history(
     _cal_scale_sf  = 1.0
     try:
         _last_raw_1qb = float(rows[-1]["value_1qb"]) if rows else 0.0
-        _last_raw_sf  = float(rows[-1]["value_sf"])  if rows else 0.0
+        # SF scale denominator: the latest row that actually has an SF value
+        # (trailing gap dates have none and cannot anchor the scale).
+        _last_raw_sf  = 0.0
+        for _r in reversed(rows):
+            if _r["value_sf"] is not None:
+                _last_raw_sf = float(_r["value_sf"])
+                break
         if _cal_row:
             if _cal_row["calibrated_value_1qb"] and _last_raw_1qb > 0:
                 _cal_scale_1qb = float(_cal_row["calibrated_value_1qb"]) / _last_raw_1qb
@@ -401,10 +412,13 @@ def get_player_value_history(
     prev_val: Optional[float] = None
     for r in rows:
         v1qb = float(r["value_1qb"]) * _cal_scale_1qb
-        vsf  = float(r["value_sf"])  * _cal_scale_sf
-        # Primary "value" follows league_type for backwards-compat callers
+        vsf  = None if r["value_sf"] is None else float(r["value_sf"]) * _cal_scale_sf
+        # Primary "value" follows league_type for backwards-compat callers.
+        # On a gap date an SF league has no primary value either (None), and
+        # the delta chain skips the gap so the next real point is compared
+        # against the last real one.
         primary = vsf if _use_sf else v1qb
-        delta = None if prev_val is None else round(primary - prev_val, 1)
+        delta = None if (prev_val is None or primary is None) else round(primary - prev_val, 1)
         out.append(
             {
                 "as_of_date":    str(r["as_of_date"]),
@@ -412,14 +426,15 @@ def get_player_value_history(
                 "name":          r["name"],
                 "position":      r["position"],
                 "team":          r["team"],
-                "value":         round(primary, 1),
+                "value":         None if primary is None else round(primary, 1),
                 "value_1qb":     round(v1qb, 1),
-                "value_sf":      round(vsf, 1),
+                "value_sf":      None if vsf is None else round(vsf, 1),
                 "delta_from_prev": delta,
                 "source":        r["source"],
             }
         )
-        prev_val = primary
+        if primary is not None:
+            prev_val = primary
 
     _player_history_cache[_cache_key] = (out, _time.time())
     return out

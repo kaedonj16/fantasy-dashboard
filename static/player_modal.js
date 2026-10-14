@@ -1513,8 +1513,8 @@ function openPlayerModal(playerId, playerName, opts) {
             const vals = history.map(d => Number(d.value_1qb ?? d.value)).filter(v => !isNaN(v));
             if (vals.length < 2) { el.style.display = 'none'; el.innerHTML = ''; return; }
             el.style.display = '';
-            const ysf2 = history.map(d => Number(d.value_sf ?? d.value));
-            const dual = vals.some((v, i) => Math.abs(v - ysf2[i]) > 1);
+            const ysf2 = history.map(d => d.value_sf != null ? Number(d.value_sf) : null);
+            const dual = vals.some((v, i) => ysf2[i] != null && Math.abs(v - ysf2[i]) > 1);
             const first = vals[0], last = vals[vals.length - 1];
             const peak = Math.max.apply(null, vals), floor = Math.min.apply(null, vals);
             const diff = last - first;
@@ -1552,22 +1552,25 @@ function openPlayerModal(playerId, playerName, opts) {
             const xIdx  = history.map((_, i) => i);            // numeric x for clean tick control
             const dates = history.map(d => formatDateLabel(d.as_of_date));
 
-            const y1qb = history.map(d => Number(d.value_1qb ?? d.value));
-            const ysf  = history.map(d => Number(d.value_sf  ?? d.value));
+            // A date with no SF value stays a gap (null) so Plotly breaks
+            // the SF line there. Substituting the primary value (the old
+            // ?? d.value fallback) drew invented plunges to the 1QB line.
+            const y1qb = history.map(d => (d.value_1qb ?? d.value) != null ? Number(d.value_1qb ?? d.value) : null);
+            const ysf  = history.map(d => d.value_sf != null ? Number(d.value_sf) : null);
 
             // Show both 1QB and Superflex lines whenever they genuinely diverge.
             // Both columns are EMA-smoothed at the data layer (smooth_value_history.py),
             // so the SF series is already clean; for players where SF tracks 1QB the
             // two coincide and we fall back to a single "Value" line.
-            const hasDualSeries = y1qb.some((v, i) => Math.abs(v - ysf[i]) > 1);
+            const hasDualSeries = y1qb.some((v, i) => v != null && ysf[i] != null && Math.abs(v - ysf[i]) > 1);
 
-            const allY = hasDualSeries ? [...y1qb, ...ysf] : y1qb;
+            const allY = (hasDualSeries ? [...y1qb, ...ysf] : y1qb).filter(v => v != null);
             const yMin = Math.min(...allY);
             const yMax = Math.max(...allY);
             const yRange = yMax - yMin;
             const yPad = Math.max(yRange * 0.15, 20);
             // Floor: no tighter than (currentValue - 200), so small wiggles don't look huge
-            const currentVal = allY[allY.length - 1] ?? yMax;
+            const currentVal = (hasDualSeries ? ysf[ysf.length - 1] : y1qb[y1qb.length - 1]) ?? yMax;
             const yFloor = Math.max(0, currentVal - 200);
 
             // 3-4 evenly spaced date ticks (deduped) so labels never collide.
@@ -1615,20 +1618,29 @@ function openPlayerModal(playerId, playerName, opts) {
             ];
             // A single marker at the latest point of each line -- echoes the
             // ADP source dots (colored fill, surface-colored ring) so the two
-            // blocks share a visual language.
-            const endDot = (color, yArr) => ({
-              x: [xIdx[n - 1]], y: [yArr[n - 1]],
-              type: 'scatter', mode: 'markers', showlegend: false, hoverinfo: 'skip',
-              marker: { color, size: 8, line: { color: rowColor, width: 2 } },
-            });
+            // blocks share a visual language. A series ending in gap dates
+            // marks its last real point instead.
+            const endDot = (color, yArr) => {
+              let idx = yArr.length - 1;
+              while (idx > 0 && yArr[idx] == null) idx--;
+              return {
+                x: [xIdx[idx]], y: [yArr[idx]],
+                type: 'scatter', mode: 'markers', showlegend: false, hoverinfo: 'skip',
+                marker: { color, size: 8, line: { color: rowColor, width: 2 } },
+              };
+            };
             // Peak & floor markers on the primary (1QB) series -- Direction 1
             // "momentum": make the high-water mark and the trough self-evident.
             // Skipped when they land on the current point (the end dot already
             // marks it) or when the series is flat / too short.
             const winC  = rootStyle.getPropertyValue('--win').trim()  || '#16a34a';
             const lossC = rootStyle.getPropertyValue('--loss').trim() || '#ef4444';
-            const peakIdx  = y1qb.indexOf(Math.max.apply(null, y1qb));
-            const floorIdx = y1qb.indexOf(Math.min.apply(null, y1qb));
+            let peakIdx = -1, floorIdx = -1, peakV = -Infinity, floorV = Infinity;
+            y1qb.forEach((v, i) => {
+              if (v == null) return;
+              if (v > peakV) { peakV = v; peakIdx = i; }
+              if (v < floorV) { floorV = v; floorIdx = i; }
+            });
             const extremeDot = (idx, color) => ({
               x: [xIdx[idx]], y: [y1qb[idx]],
               type: 'scatter', mode: 'markers', showlegend: false, hoverinfo: 'skip',
@@ -1686,6 +1698,14 @@ function openPlayerModal(playerId, playerName, opts) {
             };
 
             if (window.ensurePlotly) window.ensurePlotly().then(function () {
+              // Pin the container to the chart height before drawing. With
+              // responsive: true Plotly runs autosize, so any later resize
+              // (tab switch, window resize) re-derives the plot height from
+              // the container's current box, padding included, and a
+              // first-open drawing could come out at the wrong height with
+              // the x labels pushed below the card. A pinned height makes
+              // the draw and every later resize measure the same height.
+              chartDiv.style.height = chartHeight + 'px';
               Plotly.newPlot('playerValueChart', traces, layout, {
                 displayModeBar: false,
                 responsive: true
