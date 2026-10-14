@@ -19038,7 +19038,9 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
     third_down_conv_rate:'3rd Down Conv %',
     turnover_worthy_rate:'Turnover-Worthy %', contested_target_rate:'Contested Tgt %',
     screen_target_rate:'Screen Tgt %', first_read_tgt_pct:'First-Read Tgt %',
-    designed_tgt_pct:'Designed Tgt %', rec_broken_tackles_per_reception:'Brk Tackles/Catch',
+    designed_tgt_pct:'Designed Tgt %', first_read_pct:'First Read %',
+    first_read_share:'First-Read Share', out_of_pocket_rate:'Out of Pocket %',
+    rec_broken_tackles_per_reception:'Brk Tackles/Catch',
     grades_offense:'PFF Off Grade', grades_pass_block:'PFF Block Grade',
     pass_block_rate:'Block Rate',
     vorp:'VORP', war:'WAR',
@@ -19079,6 +19081,7 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
 
       // Percentage-stored rates (0-100)
       'completion_pct': 85, 'adjusted_completion_rate': 90,
+      'out_of_pocket_rate': 35,
       'contested_catch_rate': 65, 'drop_rate': 20, 'uncatchable_tgt_rate': 50,
       'slot_rate': 100, 'wide_rate': 100, 'inline_rate': 100,
       'pass_block_rate': 100, 'breakaway_percentage': 40,
@@ -19095,6 +19098,7 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
       'stuffed_rate': 30, 'third_down_conv_rate': 60,
       'turnover_worthy_rate': 6, 'contested_target_rate': 40, 'screen_target_rate': 30,
       'first_read_tgt_pct': 90, 'designed_tgt_pct': 50,
+      'first_read_pct': 95, 'first_read_share': 55,
       'rec_broken_tackles_per_reception': 0.6,
 
       // Yardage metrics
@@ -19546,9 +19550,10 @@ function _cmpAggregateWeeks(weeks, wkStart, wkEnd) {
   const ADV_WEIGHTED = {
     epa_per_play: 'w_dropbacks', cpoe: 'w_dropbacks', success_rate: 'w_dropbacks',
     sack_rate: 'w_dropbacks', scramble_rate: 'w_dropbacks', nfl_passer_rating: 'w_dropbacks',
-    adjusted_completion_rate: 'w_pass_att',
+    adjusted_completion_rate: 'w_pass_att', first_read_pct: 'w_pass_att',
     qb_hit_rate: 'w_dropbacks', explosive_pass_rate: 'w_pass_att',
     play_action_rate: 'w_dropbacks', play_action_epa: 'w_dropbacks',
+    out_of_pocket_rate: 'w_dropbacks',
     blitz_rate_faced: 'w_dropbacks',
     epa_vs_blitz: 'w_dropbacks',
     ngs_avg_time_to_throw: 'w_pass_att', ngs_aggressiveness: 'w_pass_att',
@@ -19568,6 +19573,7 @@ function _cmpAggregateWeeks(weeks, wkStart, wkEnd) {
     stuffed_rate: 'w_carries', turnover_worthy_rate: 'w_dropbacks',
     contested_target_rate: 'w_targets', screen_target_rate: 'w_targets',
     first_read_tgt_pct: 'w_targets', designed_tgt_pct: 'w_targets',
+    first_read_share: 'w_targets',
     rec_broken_tackles_per_reception: 'w_receptions',
     rec_first_down_rate: 'w_targets', rush_first_down_rate: 'w_carries',
     receiving_success_rate: 'w_targets', receiving_epa_per_target: 'w_targets',

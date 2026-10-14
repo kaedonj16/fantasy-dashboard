@@ -883,7 +883,7 @@ def build_ftn_charting_for_season(season: int) -> Dict[str, Dict[str, float]]:
                 "game_id", "play_id", "season_type",
                 "receiver_player_id", "passer_player_id", "rusher_player_id",
                 "complete_pass", "pass_attempt", "rush_attempt",
-                "epa", "qb_dropback",
+                "epa", "qb_dropback", "posteam",
             ],
             downcast=True,
         )
@@ -931,11 +931,25 @@ def build_ftn_charting_for_season(season: int) -> Dict[str, Dict[str, float]]:
     # default). In 2022 primary reads are not coded, so the read metrics
     # below are season >= 2023 only. Same fail-loud rule as the other flag
     # columns: a missing/renamed column skips them, never stores zeros.
+    # first_read_pct (per passer) and first_read_share (per receiver)
+    # count DESIGNED throws as first-read throws: the designed target is
+    # the first look by construction. That matches the definition
+    # Fantasy Points publishes, which is the version readers cross-check
+    # against; first_read_tgt_pct / designed_tgt_pct stay separate so
+    # the two looks can still be told apart.
     has_read_col = "read_thrown" in merged.columns
     if not has_read_col:
         print("[nflverse_metrics] WARNING: FTN frame missing read_thrown; "
-              "first_read_tgt_pct/designed_tgt_pct will be skipped for "
+              "first_read_tgt_pct/designed_tgt_pct/first_read_pct/"
+              "first_read_share will be skipped for "
               f"{season} (FTN columns may have been renamed upstream)")
+    # first_read_share denominators are per-posteam totals, so a missing
+    # posteam column skips just that metric, with the same loud warning.
+    has_posteam_col = "posteam" in merged.columns
+    if not has_posteam_col:
+        print("[nflverse_metrics] WARNING: pbp frame missing posteam; "
+              "first_read_share will be skipped for "
+              f"{season} (pbp columns may have been renamed upstream)")
     read_metrics_ok = has_read_col and season >= 2023
     for _col, _what in (("is_interception_worthy", "turnover_worthy_rate"),
                         ("is_screen_pass", "screen_target_rate"),
@@ -948,6 +962,11 @@ def build_ftn_charting_for_season(season: int) -> Dict[str, Dict[str, float]]:
     # --- Per targeted receiver: drop rate + contested catch rate ---
     recs = reg[reg["receiver_player_id"].notna()]
     agg: Dict[str, Dict[str, float]] = {}
+    # Team totals of first-read + designed targeted throws (the
+    # first_read_share denominators) and per-passer targeted-throw
+    # counts (for first_read_pct), accumulated in the same pass.
+    team_fr_des: Dict[str, float] = {}
+    qagg: Dict[str, Dict[str, float]] = {}
     for _, r in recs.iterrows():
         gsis = str(r.get("receiver_player_id") or "").strip()
         if not gsis:
@@ -956,7 +975,8 @@ def build_ftn_charting_for_season(season: int) -> Dict[str, Dict[str, float]]:
                                        "contested": 0.0, "contested_caught": 0.0,
                                        "charted_targets": 0.0,
                                        "targets": 0.0, "screens": 0.0,
-                                       "first_read": 0.0, "designed": 0.0})
+                                       "first_read": 0.0, "designed": 0.0,
+                                       "tgt_by_team": {}})
         bucket["charted_targets"] += 1.0
         bucket["targets"] += 1.0
         bucket["screens"] += _flag(r.get("is_screen_pass"))
@@ -965,6 +985,18 @@ def build_ftn_charting_for_season(season: int) -> Dict[str, Dict[str, float]]:
             bucket["first_read"] += 1.0
         elif _read == "DES":
             bucket["designed"] += 1.0
+        _team = str(r.get("posteam") or "").strip()
+        if _team:
+            _tbt = bucket["tgt_by_team"]
+            _tbt[_team] = _tbt.get(_team, 0.0) + 1.0
+            if _read in ("1", "DES"):
+                team_fr_des[_team] = team_fr_des.get(_team, 0.0) + 1.0
+        _pgsis = str(r.get("passer_player_id") or "").strip()
+        if _pgsis:
+            _qb = qagg.setdefault(_pgsis, {"throws": 0.0, "first_or_des": 0.0})
+            _qb["throws"] += 1.0
+            if _read in ("1", "DES"):
+                _qb["first_or_des"] += 1.0
         bucket["catchable"] += _f(r.get("is_catchable_ball")) or 0.0
         bucket["drops"] += _f(r.get("is_drop")) or 0.0
         contested = _f(r.get("is_contested_ball")) or 0.0
@@ -1000,8 +1032,33 @@ def build_ftn_charting_for_season(season: int) -> Dict[str, Dict[str, float]]:
             des_rate = _rate_pct(b["designed"], b["targets"])
             if des_rate is not None:
                 row["designed_tgt_pct"] = des_rate
+            # First-Read Share: the player's first-read + designed
+            # targets over his team's first-read + designed targeted
+            # throws. The numerator sums across stints; the denominator
+            # is the team he took the most targets for (a mid-season
+            # trade is the only case this simplifies, and it is rare).
+            if has_posteam_col and b["tgt_by_team"]:
+                _primary_team = max(b["tgt_by_team"],
+                                    key=b["tgt_by_team"].get)
+                share_rate = _rate_pct(b["first_read"] + b["designed"],
+                                       team_fr_des.get(_primary_team, 0.0))
+                if share_rate is not None:
+                    row["first_read_share"] = share_rate
         if row:
             out.setdefault(pid, {}).update(row)
+
+    # --- Per passer: First Read % ---
+    # (first-read + designed targeted throws) / targeted throws, from
+    # the qagg counts accumulated in the receiver pass above. Designed
+    # throws count as first-read throws (see the read_thrown note).
+    if read_metrics_ok:
+        for _pgsis, _qb in qagg.items():
+            _pid = crosswalk.get(_pgsis)
+            if not _pid:
+                continue
+            _fr_pct = _rate_pct(_qb["first_or_des"], _qb["throws"])
+            if _fr_pct is not None:
+                out.setdefault(_pid, {})["first_read_pct"] = _fr_pct
 
     # --- Per passer: adjusted completion rate ---
     # (completions + drops) / (attempts - throwaways): PFF-style accuracy.
@@ -1943,10 +2000,17 @@ def build_nflverse_weekly_metrics_for_season(
                 # FTN has its own 'week' column; drop it before merging so we
                 # use pbp's week without pandas creating week_x / week_y suffixes.
                 ftn_trimmed = ftn.drop(columns=["week"], errors="ignore")
+                # posteam joins the merge only when present: it feeds
+                # first_read_share alone, and one missing column must
+                # not take down the whole weekly FTN block.
+                _merge_cols = ["game_id", "play_id", "week",
+                               "receiver_player_id", "passer_player_id",
+                               "rusher_player_id", "complete_pass",
+                               "pass_attempt", "epa", "qb_dropback"]
+                if "posteam" in pbp.columns:
+                    _merge_cols.append("posteam")
                 merged = ftn_trimmed.merge(
-                    pbp[["game_id", "play_id", "week", "receiver_player_id",
-                         "passer_player_id", "rusher_player_id",
-                         "complete_pass", "pass_attempt", "epa", "qb_dropback"]],
+                    pbp[_merge_cols],
                     left_on=["nflverse_game_id", "nflverse_play_id"],
                     right_on=["game_id", "play_id"],
                     how="inner",
@@ -1962,12 +2026,29 @@ def build_nflverse_weekly_metrics_for_season(
                 for _col, _what in (("is_interception_worthy", "turnover_worthy_rate"),
                                     ("is_screen_pass", "screen_target_rate"),
                                     ("is_contested_ball", "contested_target_rate"),
-                                    ("read_thrown", "first_read_tgt_pct/designed_tgt_pct")):
+                                    ("read_thrown", "first_read_tgt_pct/designed_tgt_pct/first_read_pct/first_read_share")):
                     if _col not in merged.columns:
                         print("[nflverse_metrics] WARNING: weekly FTN frame "
                               f"missing {_col}; {_what} will be skipped for "
                               f"{season} (FTN columns may have been renamed "
                               "upstream)")
+                # Team-week totals of first-read + designed targeted
+                # throws: the first_read_share denominators. Designed
+                # throws count as first-read throws (the designed
+                # target is the first look by construction; this
+                # matches the definition Fantasy Points publishes).
+                team_week_fr_des: Dict[Tuple[str, Any], float] = {}
+                if "read_thrown" in merged.columns and "posteam" in merged.columns:
+                    _tgt_all = merged[merged["receiver_player_id"].notna()]
+                    _codes_all = _tgt_all["read_thrown"].astype(str).str.strip()
+                    _fd_all = _tgt_all[_codes_all.isin(["1", "DES"])]
+                    for (_tm, _wk), _tg in _fd_all.groupby(["posteam", "week"]):
+                        team_week_fr_des[(str(_tm), _wk)] = float(len(_tg))
+                elif "posteam" not in merged.columns:
+                    print("[nflverse_metrics] WARNING: weekly FTN frame "
+                          "missing posteam; first_read_share will be "
+                          f"skipped for {season} (pbp columns may have "
+                          "been renamed upstream)")
                 for (gsis, week), g in merged[merged["receiver_player_id"].notna()].groupby(
                         ["receiver_player_id", "week"]):
                     pid = crosswalk.get(str(gsis).strip())
@@ -2010,6 +2091,22 @@ def build_nflverse_weekly_metrics_for_season(
                         des_rate = _rate_pct(float((_reads == "DES").sum()), charted)
                         if des_rate is not None:
                             cols["designed_tgt_pct"] = des_rate
+                        # First-Read Share for the week: the player's
+                        # first-read + designed targets over his team's
+                        # first-read + designed targeted throws. Numerator
+                        # and denominator both use the posteam on each
+                        # play, so a traded player's stints stay separate.
+                        if "posteam" in g.columns and team_week_fr_des:
+                            _team = str(g["posteam"].mode().iat[0])
+                            _g_team = g[g["posteam"] == _team]
+                            _treads = _g_team["read_thrown"].astype(str).str.strip()
+                            _fd_n = float(((_treads == "1")
+                                           | (_treads == "DES")).sum())
+                            share_rate = _rate_pct(
+                                _fd_n,
+                                team_week_fr_des.get((_team, week), 0.0))
+                            if share_rate is not None:
+                                cols["first_read_share"] = share_rate
                 for (gsis, week), g in merged[merged["passer_player_id"].notna()].groupby(
                         ["passer_player_id", "week"]):
                     pid = crosswalk.get(str(gsis).strip())
@@ -2023,6 +2120,22 @@ def build_nflverse_weekly_metrics_for_season(
                         cmp_ = float(g["complete_pass"].fillna(0).sum())
                         drops = float(g["is_drop"].fillna(0).sum()) if "is_drop" in g.columns else 0.0
                         cols["adjusted_completion_rate"] = round((cmp_ + drops) / denom * 100, 1)
+                    # First Read %: targeted throws (rows with a receiver)
+                    # coded first read or designed over all targeted
+                    # throws. Designed throws count as first-read throws:
+                    # the designed target is the first look by
+                    # construction (matches the published Fantasy Points
+                    # definition). 2023+ only, like the receiver reads.
+                    if season >= 2023 and "read_thrown" in g.columns:
+                        _tgt_rows = g[g["receiver_player_id"].notna()]
+                        if len(_tgt_rows) > 0:
+                            _preads = _tgt_rows["read_thrown"].astype(str).str.strip()
+                            _fr_pct = _rate_pct(
+                                float(((_preads == "1")
+                                       | (_preads == "DES")).sum()),
+                                float(len(_tgt_rows)))
+                            if _fr_pct is not None:
+                                cols["first_read_pct"] = _fr_pct
                     # Match season FTN: situation rates/EPA are dropback-only.
                     db = g[g["qb_dropback"].fillna(0) > 0] if "qb_dropback" in g.columns else g
                     dropbacks = float(len(db))
