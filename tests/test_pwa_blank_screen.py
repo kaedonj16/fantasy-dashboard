@@ -36,8 +36,10 @@ def _handle_navigate() -> str:
 def test_cache_name_bumped_for_blank_screen_fix():
     # Cache name is bumped so poisoned entries from older SWs are purged.
     # v31 was the blank-screen fix version; v32 adds the live-game 60s
-    # timeout for league pages. Assert the current version, not a stale pin.
-    assert "br-fantasy-v32" in SW
+    # timeout for league pages; v33 adds the viewer-state marker comparison
+    # (and purges guest-painted shells cached by v32). Assert the current
+    # version, not a stale pin.
+    assert "br-fantasy-v33" in SW
 
 
 def test_nav_timeout_always_races_even_without_cache():
@@ -65,7 +67,7 @@ def test_navigation_fallback_chain():
     assert "if (cached) {" in body
     assert "if (cached && !rzNav)" not in body
     assert "if (networkError) return networkError;" in body
-    assert "notifyNavFresh(request, networkFetch)" in body
+    assert "notifyNavFresh(request, networkFetch, cached)" in body
     # Uncached timeout must wait for grace / in-flight fetch before offline.
     assert "NAV_UNCACHED_GRACE_MS" in body
     assert "Promise.race([networkFetch, grace])" in body

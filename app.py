@@ -2568,6 +2568,7 @@ BASE_HTML = """
          is kept in sync by app.js rather than a prefers-color-scheme meta, which
          would mismatch a user on OS-dark who hasn't switched the app to dark. -->
     <meta name="theme-color" id="br-theme-color" content="#f8fafc">
+    <meta name="br-viewer-state" content="{viewer_state_meta}">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" id="br-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="BR Fantasy">
@@ -6946,6 +6947,22 @@ def render_page(
     viewer_roster_id = session.get("viewer_roster_id") or ""
     viewer_user_id = session.get("viewer_user_id") or ""
 
+    # Identity marker for the service worker, stamped into the page head.
+    # The SW caches page HTML by URL only, so a shell painted while this
+    # session was unresolved (guest paint, expired session) would otherwise
+    # keep serving its "link your team" state after sign-in. The SW compares
+    # this marker between the cached and fresh copies of a page and flags a
+    # swap-in reload only when the identity state actually changed.
+    _viewer_state_meta = re.sub(
+        r"[^A-Za-z0-9:._-]", "",
+        "v1:{}:{}:{}:{}".format(
+            1 if _session_signed_in() else 0,
+            1 if session.get("account_id") else 0,
+            str(viewer_user_id or ""),
+            str(viewer_roster_id or ""),
+        ),
+    )
+
     # Yahoo Fantasy API terms require a "Fantasy data provided by Yahoo Fantasy"
     # attribution with a link back on any view that shows Yahoo data. Render it in
     # the footer only on Yahoo-platform pages (harmless no-op everywhere else).
@@ -7028,6 +7045,7 @@ def render_page(
         css_noscript=_css_noscript,
         viewer_roster_id_js=_json.dumps(str(viewer_roster_id)),
         viewer_user_id_js=_json.dumps(str(viewer_user_id)),
+        viewer_state_meta=_viewer_state_meta,
         signed_in_js="true" if _session_signed_in() else "false",
         prewarm_enabled_js="true" if os.getenv("LEAGUE_PREWARM_ENABLED", "").lower() in {"1", "true", "yes", "on"} else "false",
         has_account_js="true" if session.get("account_id") else "false",
