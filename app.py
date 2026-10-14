@@ -9044,7 +9044,7 @@ def _standings_div_header(label: str, n_teams: int, colspan: int) -> str:
         f"<tr class='st-div-row'>"
         f"<td colspan='{int(colspan)}'>"
         f"<div class='div-label'>"
-        f"<span>&#9615; {safe}</span>"
+        f"<span><span class='st-div-glyph' aria-hidden='true'>&#9615;</span> {safe}</span>"
         f"<span>{html.escape(meta)}</span>"
         f"</div></td></tr>"
     )
@@ -9647,13 +9647,17 @@ def render_standings(team_stats, length, all_play: dict = None,
             team_cell = (
                 f"{_clickable_team_name(owner, owner_to_rid)}{_div_lead_tag}"
             )
-        # Mobile Sleeper-style sub-line under the team name: "3-0 (1-0) · ▲ 3W".
-        # Hidden on desktop via CSS; the Record/Streak columns hide on mobile
-        # (non-detail) so the info is not duplicated.
-        _sub_rec = format_record(int(row['Wins']), int(row['Losses']),
-                                 int(row.get("Ties", 0) or 0),
-                                 _div_record_for(row["owner"]))
-        _sub = html.escape(_sub_rec)
+        # Mobile scoreboard sub-line under the team name (direction C):
+        # division record, streak, then PF/PA. The overall record rides big
+        # on the name line instead, and the PF/PA columns hide on mobile
+        # (non-detail), so nothing is duplicated. Hidden on desktop via CSS;
+        # a segment with no data for the team is omitted, never faked.
+        _sub_parts = []
+        _drec = _div_record_for(row["owner"])
+        if _drec is not None:
+            _dw, _dl, _dt = (int(x or 0) for x in _drec)
+            _dtxt = f"{_dw}-{_dl}" + (f"-{_dt}" if _dt else "")
+            _sub_parts.append(f"Div {_dtxt}")
         _stxt = str(streak or "").strip()
         if _stxt:
             _m = re.match(r"^([WLwl])\s*(\d+)\s*$", _stxt)
@@ -9661,11 +9665,22 @@ def render_standings(team_stats, length, all_play: dict = None,
                 _w = _m.group(1).upper() == "W"
                 _tri = "&#9650;" if _w else "&#9660;"
                 _cls = "up" if _w else "down"
-                _sub += (f" &middot; <span class='st-streak-dir {_cls}'>{_tri}</span>"
-                         f" {_m.group(2)}{'W' if _w else 'L'}")
+                _sub_parts.append(
+                    f"<span class='st-streak-dir {_cls}'>{_tri}</span>"
+                    f" {_m.group(2)}{'W' if _w else 'L'}")
             else:
-                _sub += f" &middot; {html.escape(_stxt)}"
-        team_cell += f"<div class='st-team-sub'>{_sub}</div>"
+                _sub_parts.append(html.escape(_stxt))
+        for _lbl in ("PF", "PA"):
+            try:
+                _pv = float(row[_lbl])
+            except (TypeError, ValueError):
+                _pv = None
+            if _pv is not None and not pd.isna(_pv):
+                _sub_parts.append(
+                    f"<span class='st-sub-pts'>{_lbl} {_pv:.1f}</span>")
+        if _sub_parts:
+            team_cell += (
+                f"<div class='st-team-sub'>{' &middot; '.join(_sub_parts)}</div>")
 
         # Week-over-week seed movement (positive = climbed). Same arrows as the
         # compact standings; blank when there's no prior week to compare.
