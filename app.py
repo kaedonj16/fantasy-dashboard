@@ -2568,7 +2568,6 @@ BASE_HTML = """
          is kept in sync by app.js rather than a prefers-color-scheme meta, which
          would mismatch a user on OS-dark who hasn't switched the app to dark. -->
     <meta name="theme-color" id="br-theme-color" content="#f8fafc">
-    <meta name="br-viewer-state" content="{viewer_state_meta}">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" id="br-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="BR Fantasy">
@@ -6947,22 +6946,6 @@ def render_page(
     viewer_roster_id = session.get("viewer_roster_id") or ""
     viewer_user_id = session.get("viewer_user_id") or ""
 
-    # Identity marker for the service worker, stamped into the page head.
-    # The SW caches page HTML by URL only, so a shell painted while this
-    # session was unresolved (guest paint, expired session) would otherwise
-    # keep serving its "link your team" state after sign-in. The SW compares
-    # this marker between the cached and fresh copies of a page and flags a
-    # swap-in reload only when the identity state actually changed.
-    _viewer_state_meta = re.sub(
-        r"[^A-Za-z0-9:._-]", "",
-        "v1:{}:{}:{}:{}".format(
-            1 if _session_signed_in() else 0,
-            1 if session.get("account_id") else 0,
-            str(viewer_user_id or ""),
-            str(viewer_roster_id or ""),
-        ),
-    )
-
     # Yahoo Fantasy API terms require a "Fantasy data provided by Yahoo Fantasy"
     # attribution with a link back on any view that shows Yahoo data. Render it in
     # the footer only on Yahoo-platform pages (harmless no-op everywhere else).
@@ -7045,7 +7028,6 @@ def render_page(
         css_noscript=_css_noscript,
         viewer_roster_id_js=_json.dumps(str(viewer_roster_id)),
         viewer_user_id_js=_json.dumps(str(viewer_user_id)),
-        viewer_state_meta=_viewer_state_meta,
         signed_in_js="true" if _session_signed_in() else "false",
         prewarm_enabled_js="true" if os.getenv("LEAGUE_PREWARM_ENABLED", "").lower() in {"1", "true", "yes", "on"} else "false",
         has_account_js="true" if session.get("account_id") else "false",
@@ -20794,6 +20776,31 @@ def _playoff_sos_weeks_for(season: int, team: str, pos: str, weeks=_PLAYOFF_WEEK
     return rows
 
 
+def _playoff_fpts_max(season: int, pos: str):
+    """League-high per-game fantasy points allowed to `pos` this season.
+
+    The scale the player modal's playoff bars are drawn against, so a bar
+    means the same thing on every player's card. None when the position
+    has no ratings table or the table carries no usable values."""
+    pos = (pos or "").upper()
+    if pos not in ("QB", "RB", "WR", "TE"):
+        return None
+    try:
+        _rank_map, _total, info, _is_z = _matchup_rank_table(int(season), pos)
+    except Exception:
+        return None
+    vals = []
+    for v in (info or {}).values():
+        f = (v or {}).get("fpts")
+        if f is None:
+            continue
+        try:
+            vals.append(float(f))
+        except (TypeError, ValueError):
+            continue
+    return round(max(vals), 1) if vals else None
+
+
 def _playoff_sos_for(season: int, team: str, pos: str, weeks=_PLAYOFF_WEEKS):
     """Rest-of-season strength-of-schedule over the fantasy playoff weeks
     (15-17 by default) for a team+position. Returns (rank, total, ease) with
@@ -27530,6 +27537,12 @@ def api_player_details(player_id: str):
                 except Exception:
                     logger.debug("[api_player_details] playoff SoS weeks skipped", exc_info=True)
                     playoff_sos["weeks"] = []
+                try:
+                    _fpts_max = _playoff_fpts_max(season, player_meta.get("pos"))
+                    if _fpts_max:
+                        playoff_sos["fpts_max"] = _fpts_max
+                except Exception:
+                    logger.debug("[api_player_details] playoff fpts max skipped", exc_info=True)
         except Exception:
             logger.debug("[api_player_details] playoff SoS skipped", exc_info=True)
 

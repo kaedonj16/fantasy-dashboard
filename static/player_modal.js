@@ -640,45 +640,34 @@ function openPlayerModal(playerId, playerName, opts) {
       if (hasProspectData) {
         const pdConf  = parseFloat(pd.confidence_score || 0);
 
-        // Draft info + ADP row
+        // Profile facts: the old standalone Draft row and Measurables tile
+        // row fold into the Profile card (mock layout). Every row hides
+        // when its field is absent.
         const pdAdp1qb = pd.avg_pick != null ? parseFloat(pd.avg_pick).toFixed(1) : null;
         const pdAdpSf  = pd.sf_avg_pick != null ? parseFloat(pd.sf_avg_pick).toFixed(1) : null;
         const pdDraftCap = pd.draft_capital_label || (pd.projected_pick ? `Pick #${pd.projected_pick}` : null);
-        const pdDraftRow = `
-          <div style="display:flex;justify-content:space-between;align-items:center;
-                      border:1px solid var(--border);border-radius:10px;padding:13px 16px;
-                      margin-bottom:14px;flex-wrap:wrap;gap:8px;">
-            <div style="display:flex;align-items:baseline;gap:8px;">
-              <span style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;">Draft</span>
-              <span style="font-size:15px;font-weight:700;color:var(--text);">${pdDraftCap || 'TBD'}</span>
-              ${pd.num_mocks_used ? `<span style="font-size:11px;color:var(--text-muted);">(${pd.num_mocks_used} mocks)</span>` : ''}
-            </div>
-            <div style="display:flex;gap:16px;flex-wrap:wrap;">
-              ${pdAdp1qb ? `<span style="font-size:12px;color:var(--text-muted);">1QB ADP: <strong style="color:var(--text);font-size:13px;">${pdAdp1qb}</strong></span>` : ''}
-              ${pdAdpSf  ? `<span style="font-size:12px;color:var(--text-muted);">SF ADP: <strong style="color:var(--text);font-size:13px;">${pdAdpSf}</strong></span>` : ''}
-            </div>
-          </div>`;
-
-        // Measurables row
-        const pdHt = pd.height_inches;
-        const pdHeightStr = pdHt ? `${Math.floor(pdHt/12)}'${pdHt%12}"` : '-';
-        const pdWeightStr = pd.weight_lbs ? `${pd.weight_lbs} lbs` : '-';
-        const pdFortyStr  = pd.forty_yard  ? `${pd.forty_yard}s`  : '-';
-        const pdRasStr    = pd.ras_score   ? `${parseFloat(pd.ras_score).toFixed(1)}` : '-';
-        const pdMeasurables = [
-          {label:'Height',  val: pdHeightStr},
-          {label:'Weight',  val: pdWeightStr},
-          {label:'40 Dash', val: pdFortyStr},
-          {label:'RAS',     val: pdRasStr},
-        ];
-        const pdMeasRow = `
-          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px;">
-            ${pdMeasurables.map(m => `
-              <div style="border:1px solid var(--border);border-radius:10px;padding:11px 8px;text-align:center;">
-                <div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px;">${m.label}</div>
-                <div style="font-size:14px;font-weight:700;color:var(--text);">${m.val}</div>
-              </div>`).join('')}
-          </div>`;
+        const pdSizeStr = (pd.height_inches || pd.weight_lbs)
+          ? [pd.height_inches ? `${Math.floor(pd.height_inches / 12)}-${pd.height_inches % 12}` : null,
+             pd.weight_lbs ? `${pd.weight_lbs} lb` : null].filter(Boolean).join(' · ')
+          : null;
+        const pdFortyStr = pd.forty_yard ? `${pd.forty_yard}s` : null;
+        const pdRasStr   = pd.ras_score  ? parseFloat(pd.ras_score).toFixed(1) : null;
+        const pdAdpStr   = (pdAdp1qb || pdAdpSf)
+          ? [pdAdp1qb ? `1QB ${pdAdp1qb}` : null, pdAdpSf ? `SF ${pdAdpSf}` : null].filter(Boolean).join(' · ')
+          : null;
+        const _pdKv = (k, v) => v
+          ? `<div class="pm-rk-kv"><span>${k}</span><b>${_pmEsc(String(v))}</b></div>` : '';
+        const pdProfileRows =
+          _pdKv('School', pd.school) +
+          _pdKv('Size', pdSizeStr) +
+          _pdKv('40 dash', pdFortyStr) +
+          _pdKv('RAS', pdRasStr) +
+          _pdKv('NFL team', data.team) +
+          _pdKv('Draft capital', pdDraftCap) +
+          _pdKv('Mock ADP', pdAdpStr);
+        const pdProfileCard = pdProfileRows
+          ? `<div class="pm-rk-card"><div class="pm-rk-card-h">Profile</div>${pdProfileRows}</div>`
+          : '';
 
         // Component scores
         const pdComponents = [
@@ -706,24 +695,36 @@ function openPlayerModal(playerId, playerName, opts) {
           .map(l => l.replace(/^[•·\-\*]\s*/, '').trim())
           .filter(l => l);
         const pdScoutingHtml = pdReasons.length ? `
-          <div style="margin-top:20px;">
-            <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">Scouting Notes</div>
+          <div class="pm-rk-card pm-rk-scout">
+            <div class="pm-rk-card-h">Scouting notes</div>
             <ul style="margin:0;padding:0;list-style:none;">
               ${pdReasons.map(r => `<li style="font-size:13px;color:var(--text-muted);padding:3px 0 3px 14px;position:relative;line-height:1.5;"><span style="position:absolute;left:0;color:var(--accent);">·</span>${r}</li>`).join('')}
             </ul>
           </div>` : '';
 
-        // Rookie value hero cards: each shows only when its value exists.
-        const _pdValCard = (label, raw) => {
-          if (raw == null || raw === '' || isNaN(parseFloat(raw))) return '';
-          return `<div style="background:var(--card-bg);border:1px solid var(--border);border-radius:12px;padding:14px 12px;text-align:center;">
-              <div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">${label}</div>
-              <div style="font-size:18px;font-weight:700;color:var(--text);line-height:1;">${Math.round(parseFloat(raw))}</div>
-            </div>`;
+        // Hero: four equal cards (mock layout). Each card hides when its
+        // value is absent; there is no standalone Tier card.
+        const pdScore      = parseFloat(pd.prospect_score || 0);
+        const pdPosRankStr = pd.position_rank ? `${pos}${pd.position_rank}` : '';
+        const pdClassYr    = pd.draft_class_year ? String(pd.draft_class_year) : '';
+        const _pdHeroCard = (label, value, subs) => {
+          if (value == null || value === '') return '';
+          const subHtml = (subs || []).filter(Boolean)
+            .map(s => `<div class="pm-rk-hero-s">${_pmEsc(String(s))}</div>`).join('');
+          return `<div class="pm-rk-hero-card"><div class="pm-rk-hero-k">${label}</div><div class="pm-rk-hero-v">${_pmEsc(String(value))}</div>${subHtml}</div>`;
         };
-        const pdRookieValCards =
-          _pdValCard('Rookie value · 1QB', pd.rookie_value) +
-          _pdValCard('Rookie value · SF', pd.rookie_sf_value);
+        const _pdValStr = (raw) => (raw != null && raw !== '' && !isNaN(parseFloat(raw)))
+          ? String(Math.round(parseFloat(raw))) : '';
+        const pdHeroSection = `<div class="pm-rk-hero">`
+          + _pdHeroCard('Prospect score', pdScore.toFixed(1), [pd.tier_label || ''])
+          + _pdHeroCard('Class rank', pdPosRankStr,
+              [pdClassYr ? `${pdClassYr} class` : '',
+               pd.overall_rank ? `#${pd.overall_rank} overall` : ''])
+          + _pdHeroCard('Rookie value · 1QB', _pdValStr(pd.rookie_value),
+              [pdClassYr ? `At the ${pdClassYr} draft` : ''])
+          + _pdHeroCard('Rookie value · SF', _pdValStr(pd.rookie_sf_value),
+              [pdClassYr ? `At the ${pdClassYr} draft` : ''])
+          + `</div>`;
 
         // Component radar: one axis per component that actually has a value,
         // scaled by the same 0-100 score the bars below use. Needs 3+ axes.
@@ -759,49 +760,27 @@ function openPlayerModal(playerId, playerName, opts) {
             + dots + labels + `</svg></div>`;
         }
 
-        const pdScore = parseFloat(pd.prospect_score || 0);
-        const pdTier  = pd.tier;
-        const pdTierClass  = pdTier ? `rk-tier-${pdTier}` : '';
-        const pdRankStr    = pd.overall_rank ? `#${pd.overall_rank} Overall` : '';
-        const pdPosRankStr = pd.position_rank ? `${pos}${pd.position_rank}` : '';
-
-        const pdHeroSection = `
-          <div style="display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:10px;margin-bottom:14px;">
-            <div style="background:var(--accent-soft);border-radius:12px;padding:14px 16px;text-align:center;">
-              <div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">Prospect Score</div>
-              <div style="font-size:28px;font-weight:700;color:var(--accent);line-height:1;">${pdScore.toFixed(1)}</div>
-              <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">${pd.tier_label || ''}</div>
-            </div>
-            <div class="${pdTierClass}" style="border-radius:12px;padding:14px 12px;text-align:center;display:flex;align-items:center;justify-content:center;">
-              ${pdTier ? `<div style="font-size:22px;font-weight:700;">Tier ${pdTier}</div>` : '<div style="font-size:18px;font-weight:700;color:var(--text-muted);">-</div>'}
-            </div>
-            <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:12px;padding:14px 12px;text-align:center;">
-              <div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">Rank</div>
-              <div style="font-size:18px;font-weight:700;color:var(--text);line-height:1;">${pdRankStr || '-'}</div>
-              ${pdPosRankStr ? `<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">${pdPosRankStr}</div>` : ''}
-            </div>
-            ${pdRookieValCards}
-          </div>`;
-
         pdColHTML = `
           ${pdHeroSection}
-          ${pdDraftRow}
-          ${pdMeasRow}
-          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px;">
-            <span style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;">Component Scores</span>
-            <span style="font-size:12px;color:var(--text-muted);">Data confidence: <strong style="color:var(--text);">${pdConf.toFixed(0)}</strong></span>
-          </div>
-          ${pdRadarHtml}
-          ${pdCompsHtml}
-          ${pdScoutingHtml}
-          <div id="pmRookieReturns" data-pid="${playerId}"></div>
-          <div id="pmProspectComparables" style="margin-top:20px;">
-            <div class="rk-section-divider"></div>
-            <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">Historical Comparables</div>
-            <div id="pmComparablesBody" style="font-size:13px;color:var(--text-muted);">
-              <div style="display:flex;align-items:center;gap:8px;"><div class="loading-spinner" style="width:12px;height:12px;flex-shrink:0;"></div>Loading…</div>
+          <div class="pm-rk-cols">
+            <div class="pm-rk-card">
+              <div class="pm-rk-card-h">Score components</div>
+              ${pdRadarHtml}
+              ${pdCompsHtml}
+              <div class="pm-rk-conf">Data confidence: ${pdConf.toFixed(0)}</div>
+            </div>
+            <div class="pm-rk-stack">
+              ${pdProfileCard}
+              <div id="pmRookieReturns" data-pid="${playerId}"></div>
+              <div class="pm-rk-card" id="pmProspectComparables">
+                <div class="pm-rk-card-h">Comparables</div>
+                <div id="pmComparablesBody" style="font-size:13px;color:var(--text-muted);">
+                  <div style="display:flex;align-items:center;gap:8px;"><div class="loading-spinner" style="width:12px;height:12px;flex-shrink:0;"></div>Loading…</div>
+                </div>
+              </div>
             </div>
           </div>
+          ${pdScoutingHtml}
         `;
       }
 
@@ -993,17 +972,25 @@ function openPlayerModal(playerId, playerName, opts) {
       // SOS rank or no per-week rows -- never a placeholder card.
       const _ps = data.playoff_sos || null;
       const _psWeeks = (_ps && Array.isArray(_ps.weeks)) ? _ps.weeks.filter(w => w && w.week != null) : [];
+      const _psMax = (_ps && _ps.fpts_max != null && isFinite(Number(_ps.fpts_max)) && Number(_ps.fpts_max) > 0) ? Number(_ps.fpts_max) : null;
       let playoffCard = '';
       if (_ps && _ps.rank != null && isFinite(Number(_ps.rank)) && _psWeeks.length) {
         const _psPos = String(data.position || '').toUpperCase();
         const _psFirst = _psWeeks[0], _psLast = _psWeeks[_psWeeks.length - 1];
         const _psRows = _psWeeks.map(w => {
           const _loc = w.at ? 'at' : 'vs';
-          const _left = `Week ${w.week}${w.opp ? ` · ${_loc} ${_pmEsc(w.opp)}` : ''}`;
+          const _left = `Week ${w.week}${w.opp ? ` <span class="pm-playoff-loc">· ${_loc} ${_pmEsc(w.opp)}</span>` : ''}`;
           const _rightBits = [];
           if (w.opp_rank != null) _rightBits.push('#' + w.opp_rank);
           if (w.opp_fpts != null && isFinite(Number(w.opp_fpts))) _rightBits.push(Number(w.opp_fpts).toFixed(1) + ' pts allowed');
-          return `<div class="pm-playoff-row"><span class="pm-playoff-week">${_left}</span>${_rightBits.length ? `<span class="pm-playoff-allowed">${_rightBits.join(' · ')}</span>` : ''}</div>`;
+          let _bar = '';
+          if (_psMax && w.opp_fpts != null && isFinite(Number(w.opp_fpts))) {
+            const _pct = Math.max(4, Math.min(100, Math.round(100 * Number(w.opp_fpts) / _psMax)));
+            const _tier = (w.opp_rank != null && Number(w.opp_rank) <= 10) ? ' pm-playoff-fill-easy'
+              : (w.opp_rank != null && Number(w.opp_rank) > 20) ? ' pm-playoff-fill-hard' : '';
+            _bar = `<div class="pm-playoff-track"><div class="pm-playoff-fill${_tier}" style="width:${_pct}%"></div></div>`;
+          }
+          return `<div class="pm-playoff-row"><div class="pm-playoff-line"><span class="pm-playoff-week">${_left}</span>${_rightBits.length ? `<span class="pm-playoff-allowed">${_rightBits.join(' · ')}</span>` : ''}</div>${_bar}</div>`;
         }).join('');
         playoffCard = `
         <div class="pm-playoff-card pm-ov-playoff">
@@ -1056,11 +1043,11 @@ function openPlayerModal(playerId, playerName, opts) {
 
       // Two-column Overview body (mock layout): start/sit strip, scoring
       // toggles and the hero row stay full width above the columns. Main
-      // column: Recent Form, Value History, In this league. Right rail:
-      // Playoff Schedule, Role, ADP, Recent News. Every section keeps its
-      // existing id and render path; the lazy loaders find them by id.
-      // On phone the columns flatten (CSS order) to: hero, Playoff, Recent
-      // Form, Value History, Role, In this league, ADP, Recent News.
+      // column: Recent Form, Value History, ADP. Right rail:
+      // Playoff Schedule, Role, In this league, Recent News. Every section
+      // keeps its existing id and render path; the lazy loaders find them
+      // by id. On phone the columns flatten (CSS order) to: hero, Playoff,
+      // Recent Form, Value History, Role, ADP, In this league, Recent News.
       let overviewHTML = `
         <div id="pmStartSitStrip" class="pm-ss-strip" hidden></div>
         ${scoringToggles}
@@ -1082,12 +1069,12 @@ function openPlayerModal(playerId, playerName, opts) {
           <div class="pm-ov-main">
             <div id="pmRecentForm" class="pm-recent pm-ov-recent" data-pid="${playerId}" hidden></div>
             ${valueHistoryBlock}
-            <div id="pmInLeague" class="pm-inleague pm-ov-inleague" hidden></div>
+            ${adpRow}
           </div>
           <div class="pm-ov-rail">
             ${playoffCard}
             <div id="pmOvRole" class="pm-ov-role" hidden></div>
-            ${adpRow}
+            <div id="pmInLeague" class="pm-inleague pm-ov-inleague" hidden></div>
             ${newsBlock}
           </div>
         </div>
@@ -1456,7 +1443,7 @@ function openPlayerModal(playerId, playerName, opts) {
       pmInjectContextActions(playerId, playerName, data, leagueId, platform, season);
       _pmLoadInLeague(playerId, data, leagueId, platform, season);
       _pmLoadStartSitStrip(playerId, data, leagueId, platform, season);
-      _pmLoadRecentForm(playerId, season);
+      _pmLoadRecentForm(playerId, season, (data && data.position) || '');
 
       // The "vs Avg <pos><tier>" benchmark is reachable from Actions → Compare
       // (it offers the positional-tier averages as pickable opponents),
@@ -1951,7 +1938,7 @@ function _pmLoadInLeague(playerId, data, leagueId, platform, season) {
   });
 }
 
-function _pmLoadRecentForm(playerId, season) {
+function _pmLoadRecentForm(playerId, season, pos) {
   // Recent Form bars on the Overview: the player's last 5 real games of the
   // current season, oldest to newest. Bars only (no trend line, per spec).
   // The card stays hidden when there are no real games to show.
@@ -2006,18 +1993,22 @@ function _pmLoadRecentForm(playerId, season) {
         + `<div class="pm-recent-bars">${cols}</div>`;
       el.hidden = false;
 
-      // Overview rail Role card: season target share / snap share /
-      // receiving line aggregated from these same game logs (the Stats
-      // tab's own per-game adv + box-score stats). Target share is the
-      // totals ratio (player targets over the team targets implied by
-      // each week's share), the same basis as the Team tab. Each row
-      // renders only when its data exists; the card stays hidden when
-      // none do.
+      // Overview rail Role card: season target share / snap share plus the
+      // position's production lines, aggregated from these same game logs
+      // (the Stats tab's own per-game adv + box-score stats). Target share
+      // is the totals ratio (player targets over the team targets implied
+      // by each week's share), the same basis as the Team tab. Production
+      // rows are position-aware: RBs lead with Rushing (Receiving under
+      // it), QBs with Passing, WR/TE with Receiving. Each row renders
+      // only when its data exists; the card stays hidden when none do.
       const roleEl = document.getElementById('pmOvRole');
       if (roleEl) {
+        const _pos = String(pos || '').toUpperCase();
         const _nv = (v) => { const n = Number(v); return (v != null && isFinite(n)) ? n : null; };
         let _tsTeam = 0, _tsMine = 0, _snapSum = 0, _snapN = 0;
         let _rec = 0, _recYd = 0, _recTd = 0, _recGames = 0;
+        let _rush = 0, _rushYd = 0, _rushTd = 0, _rushGames = 0;
+        let _passYd = 0, _passTd = 0, _passInt = 0, _passGames = 0;
         real.forEach(g => {
           const s = g.stats || {}, a = g.adv || {};
           const tgt = _nv(s.rec_tgt), ts = _nv(a.target_share);
@@ -2028,11 +2019,30 @@ function _pmLoadRecentForm(playerId, season) {
             _recGames++;
             _rec += _nv(s.rec) || 0; _recYd += _nv(s.rec_yd) || 0; _recTd += _nv(s.rec_td) || 0;
           }
+          if (s.rush_att != null || s.rush_yd != null || s.rush_td != null) {
+            _rushGames++;
+            _rush += _nv(s.rush_att) || 0; _rushYd += _nv(s.rush_yd) || 0; _rushTd += _nv(s.rush_td) || 0;
+          }
+          if (s.pass_yd != null || s.pass_td != null) {
+            _passGames++;
+            _passYd += _nv(s.pass_yd) || 0; _passTd += _nv(s.pass_td) || 0; _passInt += _nv(s.pass_int) || 0;
+          }
         });
         const _roleRows = [];
         if (_tsTeam > 0) _roleRows.push(`<div class="pm-ov-kv"><span>Target share</span><b>${(_tsMine / _tsTeam * 100).toFixed(1)}%</b></div>`);
         if (_snapN) _roleRows.push(`<div class="pm-ov-kv"><span>Snap share</span><b>${(_snapSum / _snapN).toFixed(1)}%</b></div>`);
-        if (_recGames) _roleRows.push(`<div class="pm-ov-kv"><span>Receiving</span><b>${_rec} / ${_recYd} / ${_recTd}</b></div>`);
+        const _recRow = _recGames ? `<div class="pm-ov-kv"><span>Receiving</span><b>${_rec} / ${_recYd} / ${_recTd}</b></div>` : '';
+        const _rushRow = _rushGames ? `<div class="pm-ov-kv"><span>Rushing</span><b>${_rush} / ${_rushYd} / ${_rushTd}</b></div>` : '';
+        const _passRow = _passGames ? `<div class="pm-ov-kv"><span>Passing</span><b>${_passYd.toLocaleString('en-US')} / ${_passTd} / ${_passInt}</b></div>` : '';
+        if (_pos === 'RB') {
+          if (_rushRow) _roleRows.push(_rushRow);
+          if (_recRow) _roleRows.push(_recRow);
+        } else if (_pos === 'QB') {
+          if (_passRow) _roleRows.push(_passRow);
+          if (_rushRow) _roleRows.push(_rushRow);
+        } else if (_recRow) {
+          _roleRows.push(_recRow);
+        }
         if (_roleRows.length) {
           roleEl.innerHTML = `<div class="pm-section-header"><span class="pm-section-label">Role${_season ? ' · ' + _pmEsc(String(_season)) : ''}</span></div>` + _roleRows.join('');
           roleEl.hidden = false;
@@ -2281,6 +2291,19 @@ function pmSwitchTab(tab, clickEvent) {
   if (btn) {
     btn.classList.add('active');
     btn.setAttribute('aria-selected', 'true');
+  }
+  // Value History chart: Plotly measures its container once at build time.
+  // If the modal first opened on another tab, the Overview panel was
+  // display:none then and the chart kept a fallback width that spills over
+  // the rail; a tab switch is not a window resize, so re-measure now that
+  // the panel is active. No-op when the player has no chart.
+  if (tab === 'overview') {
+    requestAnimationFrame(() => {
+      try {
+        const cd = document.getElementById('playerValueChart');
+        if (cd && window.Plotly && cd._fullLayout) Plotly.Plots.resize(cd);
+      } catch (e) {}
+    });
   }
   // The Team tab manages its own edge-to-edge section padding, so drop the
   // modal body's inset while it's active.
@@ -2639,7 +2662,7 @@ function _pmLoadRookieReturns(panel, playerId, pmTabBar) {
       const _n = v => (v == null || v === '' || isNaN(+v) ? 0 : +v);
       const sum = k => real.reduce((acc, g) => acc + _n((g.stats || {})[k]), 0);
       const pos = String((pmTabBar && pmTabBar.dataset.pmPosition) || '').toUpperCase();
-      const _kv = (k, v) => `<div style="display:flex;justify-content:space-between;gap:10px;padding:4px 0;font-size:13px;"><span style="color:var(--text-muted);">${k}</span><span style="color:var(--text);font-weight:600;text-align:right;">${v}</span></div>`;
+      const _kv = (k, v) => `<div class="pm-rk-kv"><span>${k}</span><b>${v}</b></div>`;
       let rows = '';
       const passAtt = sum('pass_att'), rushAtt = sum('rush_att'), targets = sum('rec_tgt');
       if (pos === 'QB' || passAtt > 0) {
@@ -2668,12 +2691,11 @@ function _pmLoadRookieReturns(panel, playerId, pmTabBar) {
         .filter(x => x.v != null)
         .sort((a, b) => (a.week || 0) - (b.week || 0));
       if (snaps.length) {
-        rows += _kv('Snap share', snaps.map(x => `W${x.week} ${x.v.toFixed(1)}%`).join(' · '));
+        rows += _kv('Snap share', snaps.map(x => x.v.toFixed(1)).join(' · '));
       }
       if (!rows) return;
-      el.innerHTML = `<div style="margin-top:20px;">
-          <div class="rk-section-divider"></div>
-          <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">Early NFL returns</div>
+      el.innerHTML = `<div class="pm-rk-card">
+          <div class="pm-rk-card-h">Early NFL returns · ${year}</div>
           ${rows}
         </div>`;
     })
@@ -3950,10 +3972,12 @@ function _pmBkWeeklyChart(title, points, opts) {
 }
 
 // ── Weekly (in-season) breakout tab builder ──────────────────────────────────
-// Renders the current-season usage-based read: classification + score +
-// confidence (kept visually separate), 2-3 concise reasons, the main risk, a
-// compact baseline->recent usage comparison, and data freshness. Provisional
-// signals and unavailable data are clearly marked. No DOM side effects.
+// Renders the current-season usage-based read in the mock layout: a top row
+// with the Role Change Score card (classification kind line, tier, definition,
+// confidence folded in) beside the "Why the role is growing" card, then the
+// weekly charts, the main risk, a compact baseline->recent usage comparison,
+// and data freshness. Provisional signals and unavailable data are clearly
+// marked. No DOM side effects.
 function _buildWeeklyBkTabHTML(data) {
   const score = Math.round(parseFloat(data.breakout_score != null ? data.breakout_score : (data.breakout_opportunity_score || 0)));
   const conf  = Math.round(parseFloat(data.confidence != null ? data.confidence : (data.confidence_score || 0)));
@@ -3961,65 +3985,45 @@ function _buildWeeklyBkTabHTML(data) {
   const clsLabel = data.classification_label ||
     ({emerging_breakout:'Emerging Breakout', provisional_emerging:'Provisional Emerging', temporary_opportunity:'Temporary Opportunity', watchlist:'Watchlist'}[cls] || cls);
 
-  // Classification drives the accent; score drives the tier word.
-  const clsColor = cls === 'emerging_breakout' ? '#10b981'
-                 : cls === 'temporary_opportunity' ? '#f59e0b'
-                 : '#6b7280';
-  let tier = 'Low', scoreColor = '#6b7280';
-  if (score >= 60)      { tier = 'Strong';   scoreColor = '#10b981'; }
-  else if (score >= 42) { tier = 'Notable';  scoreColor = '#3b82f6'; }
-  else if (score >= 18) { tier = 'Modest';   scoreColor = '#f59e0b'; }
+  // Score drives the tier word.
+  let tier = 'Low';
+  if (score >= 60)      { tier = 'Strong'; }
+  else if (score >= 42) { tier = 'Notable'; }
+  else if (score >= 18) { tier = 'Modest'; }
 
   const provisional = data.provisional === true;
   const weeksStale  = parseInt(data.weeks_stale || 0, 10) || 0;
   const asOfWeek    = data.as_of_week;
 
-  // ── Hero: Classification | Score | Confidence (three separate reads) ───────
-  let html = '';
-  html += `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;align-items:center;">`;
-  html += `<span style="display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:999px;
-             background:${clsColor}1a;color:${clsColor};border:1px solid ${clsColor}44;font-size:12px;font-weight:800;
-             text-transform:uppercase;letter-spacing:0.03em;">${_pmEsc(clsLabel)}</span>`;
-  if (provisional) {
-    html += `<span title="Limited current-season sample; read as an early signal."
-               style="padding:3px 9px;border-radius:999px;background:var(--surface-2,rgba(255,255,255,0.06));
-               color:var(--text-muted);font-size:11px;font-weight:700;">Provisional</span>`;
-  }
-  html += `</div>`;
-
-  html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px;">`;
-  html += `
-    <div class="pm-hero-stat" style="background:${scoreColor}1a;border-color:${scoreColor}33;">
-      <div class="pm-hero-label" style="color:${scoreColor};">${data.score_basis === 'initial_role' ? 'Initial Role Score' : 'Role Change Score'}</div>
-      <div class="pm-hero-val" style="color:${scoreColor};">${score}</div>
-      <div style="font-size:11px;font-weight:700;color:${scoreColor};text-transform:uppercase;letter-spacing:0.03em;margin-top:1px;">${data.score_basis === 'initial_role' ? 'No prior NFL baseline' : tier + ' role change'}</div>
+  // ── Row 1: score card + why card ───────────────────────────────────────────
+  const isInitial  = data.score_basis === 'initial_role';
+  const provPill   = provisional
+    ? `<span title="Limited current-season sample; read as an early signal."
+         style="padding:3px 9px;border-radius:999px;background:var(--surface-2,rgba(255,255,255,0.06));
+         color:var(--text-muted);font-size:11px;font-weight:700;text-transform:none;letter-spacing:0;">Provisional</span>`
+    : '';
+  const scoreCard = `
+    <div class="pm-bk-card">
+      <div class="pm-bk-kind">In season · ${_pmEsc(clsLabel)}${provPill}</div>
+      <div class="pm-bk-title">${isInitial ? 'Initial Role Score' : 'Role Change Score'}</div>
+      <div class="pm-bk-score-big">${score}</div>
+      <div class="pm-bk-tier">${isInitial ? 'No prior NFL baseline' : tier + ' role change'}</div>
+      <div class="pm-bk-def">${isInitial
+        ? 'How strong his role is in his first NFL games, scored on its own with no prior baseline.'
+        : 'How much his role has grown compared with his early-season baseline.'}</div>
+      <div class="pm-bk-conf">Confidence ${conf} · evidence strength</div>
     </div>`;
-  html += `
-    <div class="pm-hero-stat">
-      <div class="pm-hero-label">Confidence</div>
-      <div class="pm-hero-val" style="color:var(--text);">${conf}</div>
-      <div style="font-size:11px;color:var(--text-muted);margin-top:1px;">evidence strength</div>
-    </div>`;
-  html += `</div>`;
-  html += `<div style="font-size:12.5px;color:var(--text-muted);line-height:1.5;margin:2px 0 4px;">${data.score_basis === 'initial_role'
-    ? 'How strong his role is in his first NFL games, scored on its own with no prior baseline.'
-    : 'How much his role has grown compared with his early-season baseline.'}</div>`;
 
   // ── Why (concise reasons) ──────────────────────────────────────────────────
   const reasons = Array.isArray(data.reasons) ? data.reasons.filter(Boolean).slice(0, 3)
                 : String(data.key_reasons || '').split('\n').map(r => r.trim()).filter(Boolean).slice(0, 3);
-  if (reasons.length) {
-    html += `<hr class="pm-section-divider">`;
-    html += `<div class="pm-section-header"><span class="pm-section-label">Why</span></div>`;
-    html += `<div style="display:flex;flex-direction:column;gap:6px;">`;
-    reasons.forEach(r => {
-      html += `<div style="display:flex;gap:9px;align-items:flex-start;font-size:13px;color:var(--text);line-height:1.45;">
-                 <span style="color:${clsColor};margin-top:1px;flex-shrink:0;">&#8226;</span>
-                 <span>${_pmEsc(r)}</span>
-               </div>`;
-    });
-    html += `</div>`;
-  }
+  const whyCard = reasons.length ? `
+    <div class="pm-bk-card">
+      <div class="pm-bk-card-h">Why the role is growing</div>
+      <ul class="pm-bk-why-list">${reasons.map(r => `<li>${_pmEsc(r)}</li>`).join('')}</ul>
+    </div>` : '';
+
+  let html = `<div class="pm-bk-top${whyCard ? '' : ' pm-bk-top-solo'}">${scoreCard}${whyCard}</div>`;
 
   // ── Weekly charts: snap share + targets, bars with amber trend lines ───────
   const wkSeries = Array.isArray(data.weekly_series) ? data.weekly_series : [];
@@ -4034,7 +4038,6 @@ function _buildWeeklyBkTabHTML(data) {
       { fmt: v => String(Math.round(v)) }),
   ].filter(Boolean);
   if (wkCharts.length) {
-    html += `<hr class="pm-section-divider">`;
     html += `<div class="pm-bk-charts${wkCharts.length === 1 ? ' pm-bk-charts-1' : ''}">${wkCharts.join('')}</div>`;
   }
 
