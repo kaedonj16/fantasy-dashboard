@@ -28,7 +28,7 @@ ADVANCED_METRIC_PRESETS = {
     "general": {"label": "General / Opportunity", "description": "Cross-position opportunity and red-zone workload.", "position": None, "primary": "opportunity_share", "metrics": ["opportunity_share", "snap_share", "carries_per_game", "target_share", "air_yards_share", "rz_opp_share", "rz_target_share"], "sort": "desc", "samples": ["games", "carries", "targets"]},
     "expected": {"label": "Expected Points", "description": "Opportunity-based expected PPR production and efficiency vs. expectation; FPOE is not a promise of future points.", "position": None, "primary": "expected_ppr_per_game", "metrics": ["expected_ppr_per_game", "ppr_over_expected_per_game", "xfp_trend", "opportunity_share", "target_share", "rz_opp_share", "total_tds_per_game"], "sort": "desc", "samples": ["games"]},
     "receiving_profile": {"label": "Receiving Profile", "description": "Target shape, alignment context, and after-catch performance.", "position": None, "primary": "target_share", "metrics": ["target_share", "avg_depth_of_target", "air_yards_share", "ngs_avg_cushion", "ngs_avg_separation", "yards_after_catch_per_reception", "ngs_avg_yac_above_expectation"], "sort": "desc", "samples": ["games", "targets", "receptions"]},
-    "target_quality": {"label": "Target Quality", "description": "How catchable a receiver's targets are: throw quality, contested and deep looks, end-zone and screen usage.", "position": None, "primary": "uncatchable_tgt_rate", "metrics": ["uncatchable_tgt_rate", "contested_target_rate", "qb_rating_when_targeted", "deep_target_rate", "end_zone_target_rate", "screen_target_rate"], "sort": "asc", "samples": ["games", "targets", "receptions"]},
+    "target_quality": {"label": "Target Quality", "description": "How catchable a receiver's targets are: throw quality, contested and deep looks, end-zone and screen usage.", "position": None, "primary": "uncatchable_tgt_rate", "metrics": ["uncatchable_tgt_rate", "contested_target_rate", "qb_rating_when_targeted", "deep_target_rate", "end_zone_target_rate", "screen_target_rate", "first_read_tgt_pct", "designed_tgt_pct"], "sort": "asc", "samples": ["games", "targets", "receptions"]},
     "td_regression": {"label": "TD Regression", "description": "Touchdowns vs. expectation: who is running hot or cold on TD luck, and the goal-line role behind it.", "position": None, "primary": "td_over_expected", "metrics": ["td_over_expected", "xtd_per_game", "td_share", "goal_line_opp_share", "first_downs_per_game"], "sort": "desc", "samples": ["games"]},
     # --- Decision presets: organized by the question being answered, not the
     # metric taxonomy. "kind": "decision" puts them in their own picker group
@@ -2218,6 +2218,7 @@ _AM_JS = r"""
       goal_line_opp_share: 'w_team_gl_opps', third_down_conv_rate: 'w_third_down_dropbacks',
       stuffed_rate: 'w_carries', turnover_worthy_rate: 'w_dropbacks',
       contested_target_rate: 'w_targets', screen_target_rate: 'w_targets',
+      first_read_tgt_pct: 'w_targets', designed_tgt_pct: 'w_targets',
       rec_broken_tackles_per_reception: 'w_receptions',
       rec_first_down_rate: 'w_targets', rush_first_down_rate: 'w_carries',
       receiving_success_rate: 'w_targets', receiving_epa_per_target: 'w_targets',
@@ -4806,6 +4807,7 @@ _AM_JS = r"""
       'contested_target_rate': ['Contested looks', 'Open looks'],
       'cpoe': ['Above expected', 'Below expected'],
       'deep_target_rate': ['Deep looks', 'No deep looks'],
+      'designed_tgt_pct': ['Schemed the ball', 'Not schemed'],
       'drop_rate': ['Drop issues', 'Reliable hands'],
       'end_zone_target_rate': ['End zone looks', 'No end zone looks'],
       'epa_per_play': ['Efficient passer', 'Inefficient'],
@@ -4818,6 +4820,7 @@ _AM_JS = r"""
       'explosive_pass_rate': ['Explosive passes', 'Dink and dunk'],
       'explosive_run_rate': ['Explosive runs', 'No explosives'],
       'first_downs_per_game': ['Chain mover', 'No first downs'],
+      'first_read_tgt_pct': ['First read', 'Later reads'],
       'fp_cv': ['Volatile', 'Consistent'],
       'fpts_per_carry': ['Scores per carry', 'Empty carries'],
       'fpts_per_target': ['Scores per target', 'Empty targets'],
