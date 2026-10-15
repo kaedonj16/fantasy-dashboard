@@ -109,6 +109,70 @@ def test_keyword_outcome_rule_does_not_steal_neighbors(keyword):
     assert _intent(keyword, "Break down my matchup")["intent"] == "matchup"
 
 
+# -- Class E battery: keyword-fallback gaps (deep-dive audit) -------------------
+# Bare player questions carried no anchor and fell to out_of_scope, so the
+# service declined before entity resolution ever ran. A question-shaped
+# message with a name-like token now falls through to player, with the
+# name extracted for the resolver.
+
+def test_keyword_bare_player_questions_fall_through_to_player(keyword):
+    out = _intent(keyword, "How is Puka Nacua doing this season?")
+    assert out["intent"] == "player"
+    assert out["entities"]["player_names"] == ["Puka Nacua"]
+    out = _intent(keyword, "Tell me about Bijan Robinson")
+    assert out["intent"] == "player"
+    assert out["entities"]["player_names"] == ["Bijan Robinson"]
+    out = _intent(keyword, "Is Josh Allen healthy?")
+    assert out["intent"] == "player"
+    assert out["entities"]["player_names"] == ["Josh Allen"]
+    out = _intent(keyword, "How many points did Chase score last week?")
+    assert out["intent"] == "player"
+    assert out["entities"]["player_names"] == ["Chase"]
+
+
+def test_keyword_player_fallthrough_does_not_claim_real_nfl_trivia(keyword):
+    # "Who wins the game" is the user's phrasing for a real game, defined
+    # as out_of_scope in the SYSTEM prompt; the team names in it are not
+    # adjacent and sit in no name slot, so the fallthrough must not fire.
+    assert _intent(keyword, "Who wins the game tonight, Chiefs or Bills?")["intent"] == "out_of_scope"
+    # The user's own game stays a matchup question (#2626 outcome rule).
+    assert _intent(keyword, "Who wins my game this week?")["intent"] == "matchup"
+
+
+def test_keyword_start_sit_play_and_bench_anchors(keyword):
+    assert _intent(keyword, "Who should I play at QB this week, Allen or Mahomes?")["intent"] == "start_sit"
+    assert _intent(keyword, "Bench Chase or play Higgins on Sunday?")["intent"] == "start_sit"
+
+
+def test_keyword_trade_verb_forms_and_accept_anchor(keyword):
+    assert _intent(keyword, "Is trading Lamb for a 2027 first fair?")["intent"] == "trade_eval"
+    assert _intent(keyword, "Should I accept Gibbs for Bijan and a second?")["intent"] == "trade_eval"
+
+
+def test_keyword_trade_deadline_date_question_is_out_of_scope(keyword):
+    assert _intent(keyword, "When is the trade deadline?")["intent"] == "out_of_scope"
+    # A finding ask that merely mentions the deadline still finds a trade.
+    assert _intent(keyword, "Who should I target before the trade deadline?")["intent"] == "trade_finding"
+
+
+def test_keyword_standings_seed_and_points_leader(keyword):
+    assert _intent(keyword, "What seed am I right now?")["intent"] == "standings"
+    assert _intent(keyword, "Who has scored the most points in the league?")["intent"] == "standings"
+
+
+def test_keyword_win_precedence_and_this_week_protections_hold(keyword):
+    # The #2626 controls, re-run against the widened rules: outcome
+    # questions stay matchup, plan questions stay this_week, and the
+    # waiver add keeps its anchor over any win wording.
+    assert _intent(keyword, "Will I win this week?")["intent"] == "matchup"
+    assert _intent(keyword, "What should I do with my team this week?")["intent"] == "this_week"
+    assert _intent(keyword, "What should I do with my team")["intent"] == "this_week"
+    assert _intent(keyword, "Who should I add from waivers to win this week?")["intent"] == "waivers"
+    assert _intent(keyword, "What are my chances of making the playoffs?")["intent"] == "playoffs"
+    # Metric anchors still outrank the player fallthrough.
+    assert _intent(keyword, "What is Puka Nacua's target share?")["intent"] == "metric"
+
+
 def test_router_prompt_carries_the_outcome_precedence():
     # The model path gets the same rule in words: outcome questions are
     # matchup even when they say "this week"; this_week is plan/actions.
