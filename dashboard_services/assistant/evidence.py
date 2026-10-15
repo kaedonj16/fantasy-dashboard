@@ -132,6 +132,14 @@ Reality notes vs the workshop tool map (verified in this repo):
   utils.watchlist_alerts.is_value_alert, the threshold the in-app and
   push alerts share, plus any real injury designation from the players
   index. The assistant never adds or removes a watched player.
+- Front Office answers carry the report's computed DATA only
+  (ai/front_office_report.build_front_office_data: direction, playoff
+  odds, weakest positions, the deterministic top moves, trade targets,
+  waiver targets, cut candidates), distilled to names and totals. The
+  report's written memo is never quoted; the model presents the data in
+  its own words. The pack sits behind the same PRO gate /api/gm-memo
+  applies (subscriptions.has_premium_for_viewer with the session viewer
+  identity) before any report data is built.
 """
 from __future__ import annotations
 
@@ -299,6 +307,8 @@ def watchlist_rows(*args, **kwargs):
 
 def watchlist_top_movers(*args, **kwargs):
     from dashboard_services.player_value_history import get_top_movers as _fn
+def front_office_data(*args, **kwargs):
+    from dashboard_services.ai.front_office_report import build_front_office_data as _fn
     return _fn(*args, **kwargs)
 
 
@@ -5187,6 +5197,80 @@ def build_watchlist(bundle, entities=None, player_ids=None) -> tuple[dict, list[
     movers_only = [p for p in players if p["delta7"] is not None]
     pack["top_mover"] = max(movers_only, key=lambda p: abs(p["delta7"])) if movers_only else None
     return pack, tools
+def _fo_players(rows) -> list[dict]:
+    out = []
+    for r in rows or []:
+        if not isinstance(r, dict):
+            continue
+        out.append({"name": r.get("name"), "position": r.get("position"),
+                    "value": r.get("value") if r.get("value") is not None
+                    else r.get("model_value")})
+    return out
+
+
+def _fo_target(t) -> dict | None:
+    if not isinstance(t, dict):
+        return None
+    gets = _fo_players(t.get("gets"))
+    gives = _fo_players(t.get("gives"))
+
+    def _total(rows):
+        vals = [r["value"] for r in rows if isinstance(r.get("value"), (int, float))]
+        return round(sum(vals), 1) if vals else None
+
+    return {"partner": t.get("partner"), "gets": gets, "gives": gives,
+            "get_total": _total(gets), "give_total": _total(gives),
+            "fairness_label": t.get("fairness_label")}
+
+
+def build_front_office(bundle, entities=None, player_ids=None) -> tuple[dict, list[str]]:
+    """Front Office pack: the GM report's computed data (direction, playoff
+    odds, weakest positions, deterministic top moves, trade/waiver targets,
+    cut candidates), PRO-gated exactly like /api/gm-memo. Data only: the
+    report's written memo is never part of the pack."""
+    tools: list[str] = []
+    pack = _base_pack("front_office", bundle)
+    ctx = bundle.get("ctx") or {}
+    roster = bundle.get("roster") or {}
+    if not ctx or roster.get("roster_id") is None:
+        pack["available"] = False
+        pack["missing"] = "your roster in this league"
+        return pack, tools
+    tools.append("subscriptions.has_premium_for_viewer")
+    viewer = bundle.get("viewer") or {}
+    try:
+        premium = bool(has_premium_for_viewer(
+            viewer.get("viewer_username") or viewer.get("username"),
+            viewer.get("viewer_user_id") or viewer.get("user_id"),
+            bundle.get("league_id"), bundle.get("platform") or "sleeper",
+            bundle.get("season")))
+    except Exception:
+        premium = False
+    if not premium:
+        pack["gated"] = True
+        return pack, tools
+    try:
+        data = front_office_data(ctx, str(roster["roster_id"]))
+        tools.append("ai.front_office_report.build_front_office_data")
+    except Exception:
+        logger.debug("[assistant] front office data failed", exc_info=True)
+        data = None
+    if not data:
+        pack["available"] = False
+        pack["missing"] = "front office data is not available for your team yet"
+        return pack, tools
+    pack["direction"] = data.get("direction")
+    pack["record"] = data.get("record")
+    pack["playoff_pct"] = data.get("playoff_pct")
+    pack["weakest_positions"] = list(data.get("weakest_positions") or [])
+    pack["top_moves"] = [
+        {"line": m.get("line"), "type": m.get("type"), "why": m.get("why")}
+        for m in (data.get("top_moves") or [])[:3] if isinstance(m, dict)]
+    pack["trade_targets"] = [t for t in
+                             (_fo_target(t) for t in (data.get("trade_targets") or [])[:3]) if t]
+    pack["waiver_targets"] = _fo_players((data.get("waiver_targets") or [])[:3])
+    pack["cut_candidates"] = _fo_players((data.get("cut_candidates") or [])[:3])
+    return pack, tools
 
 
 BUILDERS = {
@@ -5216,4 +5300,5 @@ BUILDERS = {
     "handcuff": build_handcuff,
     "activity": build_activity,
     "watchlist": build_watchlist,
+    "front_office": build_front_office,
 }

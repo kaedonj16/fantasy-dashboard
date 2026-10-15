@@ -280,6 +280,7 @@ _LEAGUE_LINKS = {
     "matchup": ("weekly", "View Matchups"),
     "schedule": ("schedule", "Open in Schedule Assistant"),
     "activity": ("activity", "View Activity"),
+    "front_office": ("dashboard", "View Front Office"),
 }
 
 
@@ -641,10 +642,35 @@ def _gated_trade_finding_answer(pack):
         "actions": [],
     }
 
+def _gated_front_office_answer(pack):
+    """Mirror of compose._gated_front_office_answer (same strings)."""
+    league = pack.get("league") or {}
+    if league.get("season") and league.get("league_id"):
+        pricing = (f"/{league.get('platform') or 'sleeper'}/{league['season']}"
+                   f"/{league['league_id']}/pricing")
+    else:
+        pricing = "/pricing"
+    return {
+        "verdict": "The Front Office report is a PRO feature",
+        "text": ("The Front Office report is part of PRO on BR Fantasy. It computes your "
+                 "team's direction, playoff odds, top moves, trade targets, and cut "
+                 "candidates, and your plan does not include it, so I cannot pull it here. "
+                 "With PRO you can ask me what your front office says and I will walk "
+                 "through its computed data."),
+        "receipts": [], "caveat": None,
+        "followups": [_fu("What should I do with my team this week?"),
+                      _fu("Who should I add from waivers?")],
+        "act_link": {"href": pricing, "label": "See PRO plans"},
+        "actions": [],
+    }
+
+
 def gated_answer(pack: dict) -> dict:
     """Mirror of compose.gated_answer (same strings, same shape)."""
     if (pack or {}).get("type") == "trade_finding":
         return _gated_trade_finding_answer(pack)
+    if (pack or {}).get("type") == "front_office":
+        return _gated_front_office_answer(pack)
     label = pack.get("label") or "That metric"
     text = (f"{label} is a PRO metric on BR Fantasy, so its board is not included "
             "on the free tier. Free boards I can pull right now include target share, "
@@ -1499,6 +1525,49 @@ def _watchlist(pack):
     return ans
 
 
+def _front_office(pack):
+    top = (pack.get("trade_targets") or [None])[0]
+    receipts = []
+    if pack.get("playoff_pct") is not None:
+        receipts.append({"label": "Playoff odds (%)", "value": fmt(pack["playoff_pct"])})
+    if top and top.get("get_total") is not None:
+        receipts.append({"label": f"{top.get('partner')} trade: you receive (total value)",
+                         "value": fmt(top["get_total"])})
+    if top and top.get("give_total") is not None and len(receipts) < 4:
+        receipts.append({"label": f"{top.get('partner')} trade: you give (total value)",
+                         "value": fmt(top["give_total"])})
+    ans = _base("front_office", pack)
+    ans["act_link"] = _league_link("front_office", pack) or ans["act_link"]
+    lines = []
+    if pack.get("direction"):
+        lines.append(f"Your front office profiles you as a {pack['direction']} team"
+                     + (f" at {pack['record']}" if pack.get("record") else "")
+                     + (f" with a {fmt(pack.get('playoff_pct'))}% chance to make the playoffs."
+                        if pack.get("playoff_pct") is not None else "."))
+    if pack.get("weakest_positions"):
+        lines.append(f"Your weakest spot is {', '.join(pack['weakest_positions'])}.")
+    for m in (pack.get("top_moves") or [])[:1]:
+        if m.get("line"):
+            lines.append(f"Top move: {m['line']}.")
+    if top:
+        gets = ", ".join(g.get("name") for g in top.get("gets") or [] if g.get("name"))
+        gives = ", ".join(g.get("name") for g in top.get("gives") or [] if g.get("name"))
+        lines.append(f"The top trade target is with {top.get('partner')}: you receive "
+                     f"{gets} ({fmt(top.get('get_total'))}) for {gives} "
+                     f"({fmt(top.get('give_total'))})"
+                     + (f", graded {top['fairness_label']}." if top.get("fairness_label") else "."))
+    wv = (pack.get("waiver_targets") or [None])[0]
+    if wv:
+        lines.append(f"Top waiver target: {wv.get('name')} at {fmt(wv.get('value'))}.")
+    cuts = [c.get("name") for c in (pack.get("cut_candidates") or []) if c.get("name")]
+    if cuts:
+        lines.append(f"Cut candidates if you need a roster spot: {', '.join(cuts)}.")
+    ans.update({"verdict": f"Front office: {pack.get('direction') or 'your report'}",
+                "text": " ".join(lines), "receipts": receipts,
+                "followups": [_fu("Find me a trade"), _fu("Who should I add from waivers?")]})
+    return ans
+
+
 _BUILDERS = {"start_sit": _start_sit, "trade_eval": _trade_eval,
              "buy_sell_hold": _buy_sell_hold, "player": _player, "metric": _metric,
              "leaderboard": _leaderboard, "trade_finding": _trade_finding,
@@ -1511,7 +1580,7 @@ _BUILDERS = {"start_sit": _start_sit, "trade_eval": _trade_eval,
              "playoffs": _playoffs, "power_rankings": _power_rankings,
              "standings": _standings, "matchup": _matchup, "schedule": _schedule,
              "keeper": _keeper, "rookie": _rookie, "cross_league": _cross_league,
-             "activity": _activity, "watchlist": _watchlist}
+             "activity": _activity, "watchlist": _watchlist, "front_office": _front_office}
 
 
 def compose_mock(question: dict) -> dict:
