@@ -11,7 +11,7 @@ from dashboard_services.ai.cache import build_ai_cache_key, load_cached_ai_text,
 from dashboard_services.assistant import PROMPT_VERSION
 from dashboard_services.assistant import context as ctx_mod
 from dashboard_services.assistant import infer, store
-from dashboard_services.assistant.compose import compose_answer, numbers_shown_from
+from dashboard_services.assistant.compose import compose_answer, followup_pair, numbers_shown_from
 from dashboard_services.assistant.evidence import BUILDERS
 from dashboard_services.assistant.model import last_usage
 from dashboard_services.assistant.resolve import resolve_player
@@ -338,7 +338,7 @@ def ask(account_key: str, message: str, *, platform=None, league_id=None, season
         answer = {"verdict": None,
                   "text": "That is outside what I can answer from your league data. I can help with start/sit, trades, buy/sell/hold, player questions, metrics, waivers, or what to do this week.",
                   "receipts": [], "caveat": None,
-                  "followups": ["What should I do with my team this week?"], "act_link": None, "actions": [], "mentions": []}
+                  "followups": [followup_pair("What should I do with my team this week?")], "act_link": None, "actions": [], "mentions": []}
         return _finish(answer, log_intent="out_of_scope")
 
     # entity resolution (clarify short-circuit)
@@ -398,6 +398,21 @@ def _parse_json_col(value):
         except Exception:
             return None
     return value
+
+
+def get_thread(account_key: str, thread_id: str) -> dict | None:
+    """One of the account's threads plus its chat history, for restoring
+    the conversation after a page change. None when the thread does not
+    exist or belongs to another account."""
+    if not thread_id:
+        return None
+    row = store.get_thread_row(str(thread_id))
+    if not row or row.get("account_key") != account_key:
+        return None
+    return {"thread_id": row["thread_id"],
+            "league": {"platform": row.get("platform"), "league_id": row.get("league_id"),
+                       "season": row.get("season")},
+            "messages": store.list_thread_messages(account_key, str(thread_id))}
 
 
 def get_context(account_key: str, *, platform=None, league_id=None, season=None) -> dict:

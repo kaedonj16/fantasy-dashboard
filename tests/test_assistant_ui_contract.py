@@ -428,6 +428,117 @@ def test_grab_bar_drags_sheet_to_minimize():
     assert "touch-action: none" in grab
 
 
+def test_followup_chip_sends_ask_not_label():
+    # Follow-ups are {label, ask} pairs: the chip renders the label and
+    # sends the ask (the user's own question), never the label. Legacy
+    # bare-string follow-ups from stored thread history render and send
+    # as-is via the typeof fallback.
+    assert "typeof f === 'object'" in ASSISTANT_JS
+    assert "var label = String(pair.label || pair.ask || '');" in ASSISTANT_JS
+    assert "var ask = String(pair.ask || pair.label || '');" in ASSISTANT_JS
+    assert "el('button', 'br-asst-chip', label)" in ASSISTANT_JS
+    assert "sendMessage(ask, null, false)" in ASSISTANT_JS
+    # The old send-the-label-verbatim handler is gone.
+    assert "sendMessage(String(f), null, false)" not in ASSISTANT_JS
+
+
+def test_starter_chip_sends_its_question():
+    # "Try asking" starters send on tap through sendMessage (which owns
+    # the in-flight busy guard), exactly like a typed send; no starter
+    # prefills the composer and leaves text sitting in the input.
+    starters = ASSISTANT_JS[ASSISTANT_JS.index("brAsstStarters"):]
+    starters = starters[:starters.index("function hideStarters")]
+    assert "sendMessage(starter, null, false)" in starters
+    assert "inputEl.value" not in starters
+    assert "starter.fill" not in ASSISTANT_JS
+    for question in (
+        "What should I do with my team this week?",
+        "Who should I start at FLEX this week?",
+        "Which player is a buy-low right now?",
+    ):
+        assert question in starters
+    # The busy guard the starters inherit lives in sendMessage itself.
+    assert "if (!msg || state.busy) return;" in ASSISTANT_JS
+
+
+def _slice(start: str, end: str) -> str:
+    i = ASSISTANT_JS.index(start)
+    return ASSISTANT_JS[i:ASSISTANT_JS.index(end, i)]
+
+
+def test_thread_restore_on_contextless_page():
+    # Continuity: the saved session steers the context fetch when the
+    # page has no league of its own, and the saved thread's messages
+    # are re-rendered from the server history endpoint.
+    assert "brAsstSession" in ASSISTANT_JS
+    assert "var ctxParams = params || savedCtxParams();" in ASSISTANT_JS
+    restore = _slice("function restoreSession()", "if (!savedAtLoad) saveSession();")
+    assert "/api/assistant/thread?thread_id=" in restore
+    assert "appendUser(m.question)" in restore
+    assert "renderAnswer(m.answer, m.log_id)" in restore
+    # A closed conversation stays closed: it never restores.
+    assert "saved.popup === 'closed'" in restore
+
+
+def test_league_page_switch_wins_over_saved_session():
+    # Page params are consulted first (the || order), and a saved
+    # thread restores only into its own league's context.
+    assert "var ctxParams = params || savedCtxParams();" in ASSISTANT_JS
+    restore = _slice("function restoreSession()", "if (!savedAtLoad) saveSession();")
+    assert "String(saved.league.league_id) !== String(state.league.league_id)" in restore
+
+
+def test_launcher_typing_state_follows_in_flight_ask():
+    assert "brAsstLauncherTyping" in ASSISTANT_JS
+    assert ".br-asst-launcher-typing" in ASSISTANT_CSS
+    busy = _slice("function setBusy(on)", "function appendUser")
+    assert "launcherTyping.hidden = !(on && popup.hidden);" in busy
+    minimized = _slice("function minimizePopup()", "function closeConversation")
+    assert "if (state.busy) launcherTyping.hidden = false;" in minimized
+    opened = _slice("function openPopup(fromTeaser)", "function collapsePopup")
+    assert "launcherTyping.hidden = true;" in opened
+
+
+def test_dot_on_completion_while_minimized_cleared_on_open():
+    handler = _slice("if (res.status === 200 && data.answer) {", "showPlans();")
+    assert "if (popup.hidden) { dot.hidden = false; } else { markSeen(data.log_id); }" in handler
+    opened = _slice("function openPopup(fromTeaser)", "function collapsePopup")
+    assert "markSeen(state.lastLogId)" in opened
+
+
+def test_cross_page_unseen_dot_from_last_seen_marker():
+    assert "brAsstSeen" in ASSISTANT_JS
+    restore = _slice("function restoreSession()", "if (!savedAtLoad) saveSession();")
+    assert "parseInt(sessionStorage.getItem(SEEN_KEY)" in restore
+    assert "latest > seen" in restore
+    assert "dot.hidden = false" in restore
+
+
+def test_reopen_flag_set_by_act_link_and_consumed_once():
+    link = _slice("answer.act_link && safeHref", "link.appendChild(linkArrow);")
+    assert "sessionStorage.setItem(REOPEN_KEY, '1')" in link
+    assert "brAsstReopen" in ASSISTANT_JS
+    # Both navigating anchors in the popup set the flag: the answer
+    # act-link and the plans panel Upgrade link. Player-mention links
+    # open the in-page modal without navigating, so they set nothing.
+    assert ASSISTANT_JS.count("sessionStorage.setItem(REOPEN_KEY, '1')") == 2
+    restore = _slice("function restoreSession()", "if (!savedAtLoad) saveSession();")
+    assert "sessionStorage.removeItem(REOPEN_KEY)" in restore
+    # The session is re-persisted on every popup state change.
+    assert ASSISTANT_JS.count("saveSession();") >= 5
+
+
+def test_minimize_chevron_path_is_the_full_fa_outline():
+    # Regression: the chevron-down path shipped with the left tip's two
+    # rounding segments transposed (x and y deltas swapped), so the
+    # outline looped back on itself at the tip and only the right arm
+    # painted, with a faint dot at the tip and a notch at the vertex.
+    # The corrected segments round the tip out to x=41.4 and the closing
+    # l192 192 lands exactly on the path start. Pin the exact tail.
+    assert "86.6 169.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3l192 192z" in ASSISTANT_JS
+    assert "86.6 169.4c-12.5-12.5-12.5-32.8 0-45.3s-32.8 12.5 0 45.3" not in ASSISTANT_JS
+
+
 def test_server_text_is_not_injected_as_html():
     # innerHTML is allowed only for static skeleton markup and icons.
     # Answer rendering must go through textContent (the el() helper).

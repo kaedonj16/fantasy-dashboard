@@ -99,6 +99,17 @@ def api_assistant_feedback():
     return jsonify({"ok": True})
 
 
+@assistant_bp.route("/api/assistant/thread", methods=["GET"])
+def api_assistant_thread():
+    key, err = _require_account()
+    if err:
+        return err
+    thread = service.get_thread(key, request.args.get("thread_id") or "")
+    if thread is None:
+        return jsonify({"error": "thread_not_found"}), 404
+    return jsonify({"ok": True, "thread": thread})
+
+
 @assistant_bp.route("/api/assistant/correction", methods=["POST"])
 def api_assistant_correction():
     key, err = _require_account()

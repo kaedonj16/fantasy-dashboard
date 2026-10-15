@@ -71,14 +71,19 @@ SYSTEM = (
     "position is the offensive position). For leaderboard also extract top_n when a "
     "count is stated, position (QB/RB/WR/TE) and team (NFL abbreviation) filters when "
     "stated, and window_weeks when a last-N-weeks window is stated. "
-    "waivers: adds, drops, or FAAB. this_week: what to do with my team this week. "
+    "waivers: adds, drops, or FAAB. this_week: a plan or actions question, what to do with my "
+    "team this week; NOT whether the user will win this week's game (that is matchup, even "
+    "when the question says 'this week'). "
     "playoffs: playoff odds, clinching, elimination, or what a team needs to make the playoffs. "
     "power_rankings: the power rankings, who is strongest, or the team to beat; a ranking of team "
     "strength, NOT the win-loss standings table. "
     "standings: the standings table itself, records, points for, seeds, or division races; the "
     "win-loss table, NOT power rankings. "
-    "matchup: a head-to-head matchup preview or a win probability between two teams this week "
-    "(team_names holds the team names mentioned). "
+    "matchup: a head-to-head matchup preview, a win probability between two teams this week, "
+    "or ANY question about the outcome of the user's own game this week: will I win, am I "
+    "going to win, do I beat X, what are my chances, am I projected to win, will I lose. "
+    "Outcome questions are matchup even when they name no team and even when they say "
+    "'this week'; team_names holds any team names mentioned. "
     "schedule: remaining schedule strength, the easiest or hardest remaining schedule, or how "
     "hard a specific stretch of weeks is (a playoff stretch question is schedule, not playoffs). "
     "breakout_board: this week's breakout calls or the breakout board. "
@@ -185,6 +190,23 @@ def _target_position(m: str):
             return pos
     return None
 
+# Outcome-of-the-game questions: whether the user wins or loses this
+# week's matchup. They outrank the this_week catch-all below ("this week"
+# appears in most of them), so the matchup rule checks this pattern too.
+# Plan/action questions carry no win/lose outcome anchor and still land
+# in this_week; playoff-chances questions are claimed by the playoff rule
+# above matchup, and add/drop questions keep their waiver anchor because
+# no pattern here matches a bare "to win".
+_OUTCOME_RE = re.compile(
+    r"\bwill i (win|lose|beat)\b"
+    r"|\bam i (going to |gonna )?(win|lose)\b"
+    r"|\bam i projected to (win|lose)\b|\bprojected to (win|lose)\b"
+    r"|\bdo i (win|lose|beat)\b|\bcan i (win|beat)\b"
+    r"|\bwhat are my chances\b|\bmy chances of winning\b"
+    r"|\bwho wins (my|our|the) (game|matchup)\b"
+    r"|\bam i favored\b|\bam i the favorite\b")
+
+
 def _keyword_route(message: str) -> dict:
     m = (message or "").lower()
     base = {"player_names": [], "give_player_names": [], "receive_player_names": [], "picks": [],
@@ -213,7 +235,7 @@ def _keyword_route(message: str) -> dict:
         return {**base, "intent": "power_rankings"}
     if re.search(r"standings|division|most points for|first place|what place am i", m):
         return {**base, "intent": "standings"}
-    if re.search(r"\bmatchup\b|who wins between|win probability|win prob\b", m):
+    if re.search(r"\bmatchup\b|who wins between|win probability|win prob\b", m) or _OUTCOME_RE.search(m):
         return {**base, "intent": "matchup"}
     if re.search(r"remaining schedule|schedule strength|easiest schedule|hardest schedule|"
                  r"toughest schedule|playoff stretch|my schedule|league schedule", m):

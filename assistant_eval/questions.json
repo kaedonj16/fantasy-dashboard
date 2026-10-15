@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "description": "Frozen assistant eval set: 49 questions with golden evidence packs for the BR Fantasy assistant (workshop section 5 core 20, the deep-cuts leaderboard family lb1-lb6, and the section 9 P1 league-context types: playoffs, power rankings, standings, matchup, schedule) plus the P1 trade-finding family tf1-tf4, and the P1 breakout board, Teams, and pick-ownership families bo1-bo3, tm1-tm2, pk1 (renamed from the branch po1, which collided with the playoffs po1), with te4 an extra trade_eval.",
+    "description": "Frozen assistant eval set: 62 questions with golden evidence packs for the BR Fantasy assistant (workshop section 5 core 20, the deep-cuts leaderboard family lb1-lb6, and the section 9 P1 league-context types: playoffs, power rankings, standings, matchup, schedule) plus the P1 trade-finding family tf1-tf4, and the P1 breakout board, Teams, and pick-ownership families bo1-bo3, tm1-tm2, pk1 (renamed from the branch po1, which collided with the playoffs po1), with te4 an extra trade_eval. The win-outcome family mu4-mu6 pins the game-outcome phrasings (will I win / what are my chances / will I lose) to matchup packs: a decisive favorite, a close game, and a decisive underdog.",
     "scenario": "Kaedon's league Blackedraw, her team Caleb's Casting Couch, Week 7 of the 2026 season.",
     "packs": "Each evidence_pack mirrors, field for field, the dict the matching builder in dashboard_services/assistant/evidence.py returns. Values inside a pack are the only numbers an answer may cite.",
     "recapture": "These packs are frozen fixtures. Before any launch decision, recapture them from the live tools with: python3 scripts/run_assistant_eval.py --capture (writes assistant_eval/captured_questions.json; it never overwrites this file). A launch call made on stale fixtures is not a launch call.",
@@ -4490,6 +4490,441 @@
         "no_data": true,
         "must_mention": [
           "no scheduled matchup"
+        ]
+      }
+    },
+    {
+      "id": "mu4",
+      "type": "matchup",
+      "question": "Will I win this week?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "matchup",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "margin": {
+          "thin": false
+        },
+        "matchup": {
+          "week": 7,
+          "is_mine": true,
+          "team_a": {
+            "roster_id": "3",
+            "team_name": "Caleb's Casting Couch",
+            "record": "5-2",
+            "current_points": 0.0,
+            "projected": 156.7,
+            "win_prob_pct": 95.0,
+            "top_starters": [
+              {
+                "name": "Rome Odunze",
+                "position": "WR",
+                "projection": 22.4
+              },
+              {
+                "name": "Woody Marks",
+                "position": "RB",
+                "projection": 18.2
+              },
+              {
+                "name": "Jordan Addison",
+                "position": "WR",
+                "projection": 15.9
+              }
+            ]
+          },
+          "team_b": {
+            "roster_id": "7",
+            "team_name": "Gibbs and Take",
+            "record": "3-4",
+            "current_points": 0.0,
+            "projected": 96.7,
+            "win_prob_pct": 5.0,
+            "top_starters": [
+              {
+                "name": "Jahmyr Gibbs",
+                "position": "RB",
+                "projection": 19.6
+              },
+              {
+                "name": "Jared Goff",
+                "position": "QB",
+                "projection": 16.3
+              },
+              {
+                "name": "Sam LaPorta",
+                "position": "TE",
+                "projection": 11.8
+              }
+            ]
+          }
+        },
+        "board": [
+          {
+            "team_a": "Caleb's Casting Couch",
+            "team_b": "Gibbs and Take",
+            "a_projected": 156.7,
+            "b_projected": 96.7,
+            "a_win_prob_pct": 95.0
+          },
+          {
+            "team_a": "Pittsburgh Pilots",
+            "team_b": "Burrowed Time",
+            "a_projected": 121.3,
+            "b_projected": 92.8,
+            "a_win_prob_pct": 76.6
+          },
+          {
+            "team_a": "Saquon You Very Much",
+            "team_b": "Lamb Chop",
+            "a_projected": 112.4,
+            "b_projected": 108.9,
+            "a_win_prob_pct": 57.8
+          },
+          {
+            "team_a": "Hurts So Good",
+            "team_b": "Bijan Mustard",
+            "a_projected": 110.4,
+            "b_projected": 109.8,
+            "a_win_prob_pct": 51.2
+          },
+          {
+            "team_a": "St. Brown Bread",
+            "team_b": "CMC See Me Rollin",
+            "a_projected": 104.6,
+            "b_projected": 107.2,
+            "a_win_prob_pct": 46.9
+          },
+          {
+            "team_a": "Ja'Marr Chase Bank",
+            "team_b": "Puka Shells",
+            "a_projected": 101.3,
+            "b_projected": 98.7,
+            "a_win_prob_pct": 53.1
+          }
+        ]
+      },
+      "reference": {
+        "verdict_kind": "matchup",
+        "pick": "Caleb's Casting Couch favored",
+        "key_numbers": [
+          95.0,
+          156.7,
+          96.7
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Gibbs and Take"
+        ]
+      }
+    },
+    {
+      "id": "mu5",
+      "type": "matchup",
+      "question": "What are my chances this week?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "matchup",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "matchup": {
+          "week": 7,
+          "is_mine": true,
+          "team_a": {
+            "roster_id": "3",
+            "team_name": "Caleb's Casting Couch",
+            "record": "5-2",
+            "current_points": 0.0,
+            "projected": 118.6,
+            "win_prob_pct": 46.2,
+            "top_starters": [
+              {
+                "name": "Rome Odunze",
+                "position": "WR",
+                "projection": 16.8
+              },
+              {
+                "name": "Woody Marks",
+                "position": "RB",
+                "projection": 13.9
+              },
+              {
+                "name": "Jordan Addison",
+                "position": "WR",
+                "projection": 12.7
+              }
+            ]
+          },
+          "team_b": {
+            "roster_id": "1",
+            "team_name": "Pittsburgh Pilots",
+            "record": "6-1",
+            "current_points": 0.0,
+            "projected": 121.3,
+            "win_prob_pct": 53.8,
+            "top_starters": [
+              {
+                "name": "Josh Allen",
+                "position": "QB",
+                "projection": 24.6
+              },
+              {
+                "name": "Saquon Barkley",
+                "position": "RB",
+                "projection": 18.9
+              },
+              {
+                "name": "CeeDee Lamb",
+                "position": "WR",
+                "projection": 17.4
+              }
+            ]
+          }
+        },
+        "board": [
+          {
+            "team_a": "Caleb's Casting Couch",
+            "team_b": "Pittsburgh Pilots",
+            "a_projected": 118.6,
+            "b_projected": 121.3,
+            "a_win_prob_pct": 46.2
+          },
+          {
+            "team_a": "Saquon You Very Much",
+            "team_b": "Lamb Chop",
+            "a_projected": 112.4,
+            "b_projected": 108.9,
+            "a_win_prob_pct": 57.8
+          },
+          {
+            "team_a": "Hurts So Good",
+            "team_b": "Bijan Mustard",
+            "a_projected": 110.4,
+            "b_projected": 109.8,
+            "a_win_prob_pct": 51.2
+          },
+          {
+            "team_a": "St. Brown Bread",
+            "team_b": "CMC See Me Rollin",
+            "a_projected": 104.6,
+            "b_projected": 107.2,
+            "a_win_prob_pct": 46.9
+          },
+          {
+            "team_a": "Ja'Marr Chase Bank",
+            "team_b": "Puka Shells",
+            "a_projected": 101.3,
+            "b_projected": 98.7,
+            "a_win_prob_pct": 53.1
+          },
+          {
+            "team_a": "Gibbs and Take",
+            "team_b": "Burrowed Time",
+            "a_projected": 99.4,
+            "b_projected": 92.8,
+            "a_win_prob_pct": 57.4
+          }
+        ],
+        "margin": {
+          "thin": true
+        }
+      },
+      "reference": {
+        "verdict_kind": "matchup",
+        "pick": "Pittsburgh Pilots favored",
+        "key_numbers": [
+          46.2,
+          118.6,
+          121.3
+        ],
+        "close_call": true
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Pittsburgh Pilots"
+        ]
+      }
+    },
+    {
+      "id": "mu6",
+      "type": "matchup",
+      "question": "Will I lose this week?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "matchup",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "margin": {
+          "thin": false
+        },
+        "matchup": {
+          "week": 7,
+          "is_mine": true,
+          "team_a": {
+            "roster_id": "3",
+            "team_name": "Caleb's Casting Couch",
+            "record": "5-2",
+            "current_points": 0.0,
+            "projected": 96.7,
+            "win_prob_pct": 5.0,
+            "top_starters": [
+              {
+                "name": "Rome Odunze",
+                "position": "WR",
+                "projection": 14.2
+              },
+              {
+                "name": "Woody Marks",
+                "position": "RB",
+                "projection": 11.6
+              },
+              {
+                "name": "Jordan Addison",
+                "position": "WR",
+                "projection": 10.8
+              }
+            ]
+          },
+          "team_b": {
+            "roster_id": "1",
+            "team_name": "Pittsburgh Pilots",
+            "record": "6-1",
+            "current_points": 0.0,
+            "projected": 156.7,
+            "win_prob_pct": 95.0,
+            "top_starters": [
+              {
+                "name": "Josh Allen",
+                "position": "QB",
+                "projection": 28.9
+              },
+              {
+                "name": "Saquon Barkley",
+                "position": "RB",
+                "projection": 24.2
+              },
+              {
+                "name": "CeeDee Lamb",
+                "position": "WR",
+                "projection": 21.6
+              }
+            ]
+          }
+        },
+        "board": [
+          {
+            "team_a": "Caleb's Casting Couch",
+            "team_b": "Pittsburgh Pilots",
+            "a_projected": 96.7,
+            "b_projected": 156.7,
+            "a_win_prob_pct": 5.0
+          },
+          {
+            "team_a": "Gibbs and Take",
+            "team_b": "Burrowed Time",
+            "a_projected": 99.4,
+            "b_projected": 92.8,
+            "a_win_prob_pct": 57.4
+          },
+          {
+            "team_a": "Saquon You Very Much",
+            "team_b": "Lamb Chop",
+            "a_projected": 112.4,
+            "b_projected": 108.9,
+            "a_win_prob_pct": 57.8
+          },
+          {
+            "team_a": "Hurts So Good",
+            "team_b": "Bijan Mustard",
+            "a_projected": 110.4,
+            "b_projected": 109.8,
+            "a_win_prob_pct": 51.2
+          },
+          {
+            "team_a": "St. Brown Bread",
+            "team_b": "CMC See Me Rollin",
+            "a_projected": 104.6,
+            "b_projected": 107.2,
+            "a_win_prob_pct": 46.9
+          },
+          {
+            "team_a": "Ja'Marr Chase Bank",
+            "team_b": "Puka Shells",
+            "a_projected": 101.3,
+            "b_projected": 98.7,
+            "a_win_prob_pct": 53.1
+          }
+        ]
+      },
+      "reference": {
+        "verdict_kind": "matchup",
+        "pick": "Pittsburgh Pilots favored",
+        "key_numbers": [
+          5.0,
+          96.7,
+          156.7
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Pittsburgh Pilots"
         ]
       }
     },

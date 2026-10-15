@@ -81,7 +81,13 @@ def _answer_texts(answer: dict) -> list[str]:
             texts.append(str(r.get("label") or ""))
             texts.append(str(r.get("value") or ""))
     for f in answer.get("followups") or []:
-        texts.append(str(f))
+        if isinstance(f, dict):
+            # Pair shape: the label is reader-visible and the ask is
+            # what gets sent, so numbers on either surface count.
+            texts.append(str(f.get("label") or ""))
+            texts.append(str(f.get("ask") or ""))
+        else:
+            texts.append(str(f))
     for a in answer.get("actions") or []:
         if isinstance(a, dict):
             texts.append(str(a.get("headline") or ""))

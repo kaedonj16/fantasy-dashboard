@@ -4611,7 +4611,7 @@ function showLoginGate(target, opts) {
   function initAssistant() {
     if (document.getElementById('brAsstLauncher')) return;
     var SVG_LIST = '<svg viewBox="0 0 448 512" aria-hidden="true"><path d="M0 96C0 60.7 28.7 32 64 32H384c35.3 0 64 28.7 64 64s-28.7 64-64 64H64C28.7 160 0 131.3 0 96zM0 256c0-35.3 28.7-64 64-64H384c35.3 0 64 28.7 64 64s-28.7 64-64 64H64C28.7 320 0 291.3 0 256zM448 416c0 35.3-28.7 64-64 64H64c-35.3 0-64-28.7-64-64s28.7-64 64-64H384c35.3 0 64 28.7 64 64z"/></svg>';
-    var SVG_CHEVRON_DOWN = '<svg viewBox="0 0 512 512" aria-hidden="true"><path d="M233.4 406.6c12.5 12.5 32.8 12.5 45.3 0l192-192c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L256 338.7 86.6 169.4c-12.5-12.5-12.5-32.8 0-45.3s-32.8 12.5 0 45.3l192 192z"/></svg>';
+    var SVG_CHEVRON_DOWN = '<svg viewBox="0 0 512 512" aria-hidden="true"><path d="M233.4 406.6c12.5 12.5 32.8 12.5 45.3 0l192-192c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L256 338.7 86.6 169.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3l192 192z"/></svg>';
     var SVG_X = '<svg viewBox="0 0 384 512" aria-hidden="true"><path d="M342.6 150.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L192 210.7 86.6 105.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3L146.7 256 41.4 361.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0L192 301.3 297.4 406.6c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L237.3 256 342.6 150.6z"/></svg>';
     var SVG_BACK = '<svg viewBox="0 0 320 512" aria-hidden="true"><path d="M9.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l192 192c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L77.3 256 246.6 86.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-192 192z"/></svg>';
     var SVG_CHEVRON_RIGHT = '<svg viewBox="0 0 320 512" aria-hidden="true"><path d="M310.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-192 192c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L242.7 256 118.6 86.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l192 192z"/></svg>';
@@ -4625,7 +4625,7 @@ function showLoginGate(target, opts) {
     var state = {
       league: null, caps: null, teaser: null, teaserInserted: false,
       threadId: null, busy: false, lastSend: null, view: 'thread',
-      gen: 0, savedScroll: null
+      gen: 0, savedScroll: null, lastLogId: null, popupState: 'closed'
     };
 
     function pageLeagueParams() {
@@ -4653,12 +4653,47 @@ function showLoginGate(target, opts) {
       return fetch(url, init);
     }
 
+    // ---- Cross-page continuity -----------------------------------------
+    // The active thread, its league, and the popup state persist in
+    // sessionStorage so the conversation survives navigation. League
+    // precedence on load: the page's own league params win; on a page
+    // without them, the saved conversation league wins over the
+    // server's default league.
+    var SESSION_KEY = 'brAsstSession';
+    var SEEN_KEY = 'brAsstSeen';
+    var REOPEN_KEY = 'brAsstReopen';
+    function loadSavedSession() {
+      try {
+        var raw = sessionStorage.getItem(SESSION_KEY);
+        return raw ? JSON.parse(raw) : null;
+      } catch (e) { return null; }
+    }
+    var savedAtLoad = loadSavedSession();
+    function saveSession() {
+      try {
+        sessionStorage.setItem(SESSION_KEY, JSON.stringify({
+          thread_id: state.threadId || null,
+          league: state.league ? { platform: state.league.platform,
+            league_id: state.league.league_id, season: state.league.season } : null,
+          popup: state.popupState
+        }));
+      } catch (e) {}
+    }
+    function savedCtxParams() {
+      var lg = savedAtLoad && savedAtLoad.league;
+      if (!lg || !lg.platform || !lg.league_id) return null;
+      var p = { platform: lg.platform, league_id: lg.league_id };
+      if (lg.season) p.season = lg.season;
+      return p;
+    }
+
     var params = pageLeagueParams();
+    var ctxParams = params || savedCtxParams();
     var ctxUrl = '/api/assistant/context';
-    if (params) {
-      ctxUrl += '?platform=' + encodeURIComponent(params.platform) +
-        '&league_id=' + encodeURIComponent(params.league_id) +
-        '&season=' + encodeURIComponent(params.season);
+    if (ctxParams) {
+      ctxUrl += '?platform=' + encodeURIComponent(ctxParams.platform) +
+        '&league_id=' + encodeURIComponent(ctxParams.league_id) +
+        (ctxParams.season ? '&season=' + encodeURIComponent(ctxParams.season) : '');
     }
     apiJson(ctxUrl, { method: 'GET' }).then(function (resp) {
       if (!resp.ok) return null;
@@ -4686,7 +4721,25 @@ function showLoginGate(target, opts) {
       dot.id = 'brAsstDot';
       dot.hidden = true;
       launcher.appendChild(dot);
+      // In-flight indicator on the launcher: the same bouncing dots as
+      // the thread typing bubble, shown while an answer loads and the
+      // popup is not open.
+      var launcherTyping = el('span', 'br-asst-launcher-typing');
+      launcherTyping.id = 'brAsstLauncherTyping';
+      launcherTyping.hidden = true;
+      launcherTyping.setAttribute('aria-hidden', 'true');
+      for (var tdi = 0; tdi < 3; tdi++) launcherTyping.appendChild(el('span', 'br-asst-dot-anim'));
+      launcher.appendChild(launcherTyping);
       document.body.appendChild(launcher);
+
+      // Opening the popup (or an answer rendering into the open popup)
+      // marks the latest assistant answer as seen and clears the dot.
+      function markSeen(logId) {
+        if (logId) {
+          try { sessionStorage.setItem(SEEN_KEY, String(logId)); } catch (e) {}
+        }
+        dot.hidden = true;
+      }
 
       // Teaser card
       var teaserEl = null;
@@ -4867,7 +4920,10 @@ function showLoginGate(target, opts) {
           scrim.classList.add('br-asst-enter');
         }
         if (teaserEl) { teaserEl.remove(); teaserEl = null; }
-        dot.hidden = true;
+        state.popupState = 'open';
+        launcherTyping.hidden = true;
+        markSeen(state.lastLogId);
+        saveSession();
         if (fromTeaser && state.teaser && !state.teaserInserted) {
           state.teaserInserted = true;
           if (state.teaser.answer) { renderAnswer(state.teaser.answer, state.teaser.log_id); hideStarters(); }
@@ -4916,6 +4972,9 @@ function showLoginGate(target, opts) {
       function minimizePopup() {
         if (popup.hidden) return;
         state.savedScroll = threadEl.scrollTop;
+        state.popupState = 'minimized';
+        saveSession();
+        if (state.busy) launcherTyping.hidden = false;
         collapsePopup(null);
       }
 
@@ -4929,13 +4988,17 @@ function showLoginGate(target, opts) {
         if (popup.hidden) return;
         state.gen += 1;
         state.savedScroll = null;
+        state.popupState = 'closed';
+        saveSession();
         collapsePopup(resetThread);
       }
 
       function resetThread() {
         if (state.busy) setBusy(false);
         state.threadId = null;
+        state.lastLogId = null;
         state.lastSend = null;
+        saveSession();
         inputEl.value = '';
         while (threadEl.firstChild) threadEl.removeChild(threadEl.firstChild);
         threadEl.appendChild(startersEl);
@@ -5088,6 +5151,9 @@ function showLoginGate(target, opts) {
           } else if ((TIER_RANK[t.key] != null ? TIER_RANK[t.key] : -1) > myRank) {
             var up = el('a', 'br-asst-add-btn br-asst-plan-btn', 'Upgrade');
             up.href = pricingUrl();
+            up.addEventListener('click', function () {
+              try { sessionStorage.setItem(REOPEN_KEY, '1'); } catch (e) {}
+            });
             row.appendChild(up);
           }
           plansEl.appendChild(row);
@@ -5112,6 +5178,9 @@ function showLoginGate(target, opts) {
           typingEl.remove();
           typingEl = null;
         }
+        // The launcher carries the typing state whenever the popup is
+        // not open to show the in-thread bubble.
+        launcherTyping.hidden = !(on && popup.hidden);
       }
 
       function appendUser(text) {
@@ -5259,6 +5328,12 @@ function showLoginGate(target, opts) {
         if (answer.act_link && safeHref(answer.act_link.href)) {
           var link = el('a', 'br-asst-actlink', answer.act_link.label || 'Open');
           link.href = safeHref(answer.act_link.href);
+          // Following an assistant link navigates away; the flag makes
+          // the assistant reopen with this thread on the next page.
+          // restoreSession consumes it exactly once.
+          link.addEventListener('click', function () {
+            try { sessionStorage.setItem(REOPEN_KEY, '1'); } catch (e) {}
+          });
           var linkArrow = el('span', 'br-asst-actlink-arrow');
           linkArrow.innerHTML = SVG_ARROW;
           link.appendChild(linkArrow);
@@ -5270,9 +5345,17 @@ function showLoginGate(target, opts) {
           fwrap.appendChild(el('div', 'br-asst-follow-label', 'Keep going'));
           var frow = el('div', 'br-asst-chip-row');
           followups.forEach(function (f) {
-            var chip = el('button', 'br-asst-chip', String(f));
+            // Follow-ups are {label, ask} pairs: the chip shows the
+            // label, the click sends the ask (the user's own question),
+            // never the label. Legacy answers in thread history carry
+            // bare strings; those render and send as-is.
+            var pair = (f && typeof f === 'object') ? f : { label: f, ask: f };
+            var label = String(pair.label || pair.ask || '');
+            var ask = String(pair.ask || pair.label || '');
+            if (!label || !ask) return;
+            var chip = el('button', 'br-asst-chip', label);
             chip.type = 'button';
-            chip.addEventListener('click', function () { sendMessage(String(f), null, false); });
+            chip.addEventListener('click', function () { sendMessage(ask, null, false); });
             frow.appendChild(chip);
           });
           fwrap.appendChild(frow);
@@ -5409,6 +5492,12 @@ function showLoginGate(target, opts) {
           if (res.status === 200 && data.answer) {
             if (data.thread_id) state.threadId = data.thread_id;
             renderAnswer(data.answer, data.log_id);
+            state.lastLogId = data.log_id || state.lastLogId;
+            // An answer that lands while the popup is not open waits
+            // behind the launcher dot; one that lands in the open
+            // popup is seen by definition.
+            if (popup.hidden) { dot.hidden = false; } else { markSeen(data.log_id); }
+            saveSession();
           } else if (res.status === 429) {
             // At cap: land on the plans panel, not a dead-end message.
             showPlans();
@@ -5443,24 +5532,20 @@ function showLoginGate(target, opts) {
 
       // Starter chips: shown only while the thread is empty, hidden once
       // the first message is sent (hideStarters, called from sendMessage
-      // and the teaser insert). The digest chip sends as-is; the start/sit
-      // and buy-low chips prefill the composer, since those questions need
-      // the player names only the user can supply.
+      // and the teaser insert). Every starter SENDS its question on tap
+      // through sendMessage, the same path (and busy guard) as a typed
+      // send or a follow-up chip; no starter prefills the composer.
       var startersEl = el('div', 'br-asst-starters');
       startersEl.id = 'brAsstStarters';
       startersEl.appendChild(el('div', 'br-asst-starters-label', 'Try asking'));
       [
-        { label: 'What should I do with my team this week?', send: 'What should I do with my team this week?' },
-        { label: 'Who should I start at FLEX this week?', fill: 'Should I start ' },
-        { label: 'Which player is a buy-low right now?', fill: 'Should I buy, sell, or hold ' }
+        'What should I do with my team this week?',
+        'Who should I start at FLEX this week?',
+        'Which player is a buy-low right now?'
       ].forEach(function (starter) {
-        var chip = el('button', 'br-asst-chip', starter.label);
+        var chip = el('button', 'br-asst-chip', starter);
         chip.type = 'button';
-        chip.addEventListener('click', function () {
-          if (starter.send) { sendMessage(starter.send, null, false); return; }
-          inputEl.value = starter.fill;
-          inputEl.focus();
-        });
+        chip.addEventListener('click', function () { sendMessage(starter, null, false); });
         startersEl.appendChild(chip);
       });
       threadEl.appendChild(startersEl);
@@ -5618,7 +5703,55 @@ function showLoginGate(target, opts) {
         return row;
       }
 
+      // Restore the conversation that was live when the user left the
+      // previous page: same thread, same league context, popup open or
+      // minimized exactly as it was. The saved thread only restores
+      // into its own league's context: a league page for a different
+      // league already steered the context fetch to that league, so a
+      // mismatch here simply means a fresh start on this page.
+      function restoreSession() {
+        // The reopen flag is consumed exactly once, whatever happens.
+        var reopen = false;
+        try {
+          reopen = sessionStorage.getItem(REOPEN_KEY) === '1';
+          if (reopen) sessionStorage.removeItem(REOPEN_KEY);
+        } catch (e) {}
+        var saved = savedAtLoad;
+        if (!saved || !saved.thread_id || saved.popup === 'closed') return;
+        if (!saved.league || !state.league) return;
+        if (String(saved.league.league_id) !== String(state.league.league_id)) return;
+        var gen = state.gen;
+        apiJson('/api/assistant/thread?thread_id=' + encodeURIComponent(saved.thread_id), { method: 'GET' })
+          .then(function (resp) { return resp.ok ? resp.json() : null; })
+          .then(function (data) {
+            if (!data || !data.thread || gen !== state.gen) return;
+            var msgs = data.thread.messages || [];
+            if (!msgs.length) return;
+            state.threadId = data.thread.thread_id || saved.thread_id;
+            hideStarters();
+            msgs.forEach(function (m) {
+              if (m.question) appendUser(m.question);
+              if (m.answer) renderAnswer(m.answer, m.log_id);
+            });
+            var latest = msgs[msgs.length - 1].log_id;
+            state.lastLogId = latest || state.lastLogId;
+            state.popupState = (saved.popup === 'open' || reopen) ? 'open' : 'minimized';
+            saveSession();
+            var seen = 0;
+            try { seen = parseInt(sessionStorage.getItem(SEEN_KEY) || '0', 10) || 0; } catch (e) {}
+            if (state.popupState === 'open') {
+              openPopup(false);
+            } else if (latest && latest > seen) {
+              // An answer landed while the user was away: the dot
+              // waits on the launcher until the popup opens.
+              dot.hidden = false;
+            }
+          }).catch(function () {});
+      }
+
       renderMeter();
+      restoreSession();
+      if (!savedAtLoad) saveSession();
     }
   }
 
