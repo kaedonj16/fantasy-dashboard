@@ -17441,6 +17441,7 @@ def _scorezone_user_stream_response(platform, season, league_id, week):
 
 @app.route("/api/<platform>/<int:season>/<league_id>/redzone-data")
 @app.route("/api/<platform>/<int:season>/<league_id>/scorezone-data")
+@limiter.limit("300 per minute")
 def api_scorezone_data(platform: str, season: int, league_id: str):
     scope = "user" if request.args.get("scope") == "user" else "league"
     if request.args.get("demo") == "1":
@@ -23985,6 +23986,7 @@ def _trade_future_outlook(give_ids, get_ids, is_sf=False, current_pids=None):
 
 
 @app.route("/api/players")
+@limiter.limit("300 per minute")
 def api_players():
     """Compact player list for comparison search.
 
@@ -25830,6 +25832,7 @@ def _league_players_response(payload: dict, version_key=None):
 
 
 @app.route("/api/league-players")
+@limiter.limit("300 per minute")
 def api_league_players():
     kdef = bool(request.args.get("kdef"))
     payload = _build_league_players_payload(kdef=kdef)
@@ -26093,6 +26096,7 @@ def api_league_players():
 
 
 @app.route("/api/teams")
+@limiter.limit("300 per minute")
 def api_teams():
     league_id = (request.args.get("league_id") or "").strip()
     platform = (request.args.get("platform") or "sleeper").strip().lower()
@@ -26133,6 +26137,7 @@ def api_teams():
 
 
 @app.route("/api/league-rosters")
+@limiter.limit("300 per minute")
 def api_league_rosters():
     """Per-team rosters for the trade calculator's roster filter.
 
@@ -26266,6 +26271,7 @@ def _displayed_value_map(league_type: str) -> dict:
 
 
 @app.route("/api/value-movers")
+@limiter.limit("300 per minute")
 def api_value_movers():
     try:
         days = int(request.args.get("days", 7))
@@ -26316,6 +26322,7 @@ def api_value_movers():
 
 
 @app.route("/api/player-deltas")
+@limiter.limit("300 per minute")
 def api_player_deltas():
     """
     Return recent 7-day deltas for all players in a compact format.

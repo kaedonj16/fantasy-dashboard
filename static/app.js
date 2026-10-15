@@ -38,6 +38,35 @@ function escapeHtml(s) {
   });
 }
 
+// ── Global JS error hook ────────────────────────────────────────────────────
+// Forward uncaught errors and unhandled promise rejections to Sentry when
+// (and only when) the lazily loaded Sentry SDK is present on the page.
+// Silent no-op otherwise: no user-facing copy and no console output.
+// Defined before the @public-js:core-end marker so the public bundle and
+// the full app bundle both carry it. Guarded so a double include of this
+// bundle never registers the listeners twice.
+(function installGlobalErrorHook() {
+  if (window.__brGlobalErrorHookInstalled) return;
+  window.__brGlobalErrorHookInstalled = true;
+  function _brForwardError(err, message) {
+    try {
+      if (!window.Sentry) return;
+      if (err && typeof window.Sentry.captureException === 'function') {
+        window.Sentry.captureException(err);
+      } else if (typeof window.Sentry.captureMessage === 'function') {
+        window.Sentry.captureMessage(String(message || 'Unknown error'));
+      }
+    } catch (_) {}
+  }
+  window.addEventListener('error', function (event) {
+    _brForwardError(event && event.error, event && event.message);
+  });
+  window.addEventListener('unhandledrejection', function (event) {
+    var reason = event && event.reason;
+    _brForwardError(reason, reason && reason.message);
+  });
+})();
+
 // ── Guest league view recorder ──────────────────────────────────────────────
 // When a guest (not signed in) views a league dashboard, remember which league
 // it was in localStorage. If they later sign in with zero saved leagues, the
