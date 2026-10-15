@@ -383,6 +383,31 @@ def test_no_fit_answer_links_to_suggestions_tab(monkeypatch):
     assert answer["act_link"]["href"] == "/sleeper/2026/blackedraw/trade?tab=suggestions"
 
 
+def test_no_fit_answer_is_code_composed_and_names_the_miss(monkeypatch):
+    # Live eval tf4: the model proposed the closest miss as a real trade
+    # and never named the partner. A no-fit pack now composes without a
+    # model call at all, so the trap shape cannot recur.
+    def boom(*a, **k):
+        raise AssertionError("model called for a no-fit pack")
+    monkeypatch.setattr(compose_mod, "call_model_json", boom)
+    import json
+    from pathlib import Path
+    doc = json.loads((Path(__file__).resolve().parent.parent
+                      / "assistant_eval" / "questions.json").read_text())
+    q = next(q for q in doc["questions"] if q["id"] == "tf4")
+    answer = compose_answer("trade_finding", q["question"], q["evidence_pack"])
+    assert answer["verdict"] == "No clean fit right now"
+    assert "no clean fit" in answer["text"].lower()
+    assert "Pittsburgh Pilots" in answer["text"]
+    assert "Njoku" in answer["text"]
+    assert "waiver" in answer["text"].lower()
+    values = {r["value"] for r in answer["receipts"]}
+    assert {"2900", "3920", "-1020"} <= values
+    assert answer["actions"] == []
+    assert answer["act_link"]["href"].endswith("/trade?tab=suggestions")
+    assert answer["followups"]
+
+
 # -- end to end through the API --------------------------------------------------------------
 
 from flask import Flask

@@ -313,6 +313,80 @@ def test_trade_verdict_band_edges(monkeypatch):
     assert answer["verdict"] == "FAIR"
 
 
+# -- live eval 2026-10-15: answer-shape determinism -----------------------------
+# Each test replays one live failure against its frozen pack with a draft
+# that reproduces the defect; the guarantee must come from code, not from
+# the model behaving.
+
+def _frozen(qid):
+    import json
+    from pathlib import Path
+    doc = json.loads((Path(__file__).resolve().parent.parent
+                      / "assistant_eval" / "questions.json").read_text())
+    return next(q for q in doc["questions"] if q["id"] == qid)
+
+
+def test_player_answer_never_ships_an_empty_verdict(monkeypatch):
+    # pl2/pl3 flipped PASS to FAIL between runs on empty model verdicts.
+    q = _frozen("pl2")
+    for empty in ("", None, "   "):
+        _canned(monkeypatch, {"verdict": empty,
+                              "text": "Thomas is seeing steady work in the offense.",
+                              "receipts": [], "caveat": None, "followups": [],
+                              "act_link": None})
+        answer = compose_answer("player", q["question"], q["evidence_pack"])
+        assert answer["verdict"] == "Brian Thomas Jr. update"
+
+
+def test_playoffs_answer_names_the_scenario_opponent(monkeypatch):
+    # po3: "Win and you're in" never named the team it hinges on.
+    q = _frozen("po3")
+    _canned(monkeypatch, {"verdict": "Win and you're in",
+                          "text": "Win your next game and the playoff spot is yours.",
+                          "receipts": [], "caveat": None, "followups": [],
+                          "act_link": None})
+    answer = compose_answer("playoffs", q["question"], q["evidence_pack"])
+    assert "Pittsburgh Pilots" in answer["text"]
+
+
+def test_schedule_answer_names_every_stretch_opponent(monkeypatch):
+    # sc2: the stretch index was cited without naming any opponent.
+    q = _frozen("sc2")
+    _canned(monkeypatch, {"verdict": "A hard playoff stretch",
+                          "text": "Your playoff stretch index is 104.3 against a league mark of 99.8.",
+                          "receipts": [], "caveat": None, "followups": [],
+                          "act_link": None})
+    answer = compose_answer("schedule", q["question"], q["evidence_pack"])
+    for name in ("Pittsburgh Pilots", "Saquon You Very Much", "Lamb Chop"):
+        assert name in answer["text"]
+
+
+def test_power_rankings_receipts_pin_the_runner_up_score(monkeypatch):
+    # pr2: the #2 team's 83.6 was a key number the model never cited.
+    q = _frozen("pr2")
+    _canned(monkeypatch, {"verdict": "Pittsburgh Pilots is the team to beat",
+                          "text": "Pittsburgh Pilots leads the power rankings.",
+                          "receipts": [], "caveat": None, "followups": [],
+                          "act_link": None})
+    answer = compose_answer("power_rankings", q["question"], q["evidence_pack"])
+    values = [r["value"] for r in answer["receipts"]]
+    assert "88.1" in values and "83.6" in values
+
+
+def test_trade_answer_names_every_pick_by_its_canonical_label(monkeypatch):
+    # te4: the 2027 1.11 pick in the deal was never mentioned by label.
+    q = _frozen("te4")
+    _canned(monkeypatch, {"verdict": "ACCEPT",
+                          "text": "Woody Marks for Zay Flowers is a clear win on value: "
+                                  "4680 back against 3430 out.",
+                          "receipts": [{"label": "You give (total value)", "value": "3430"}],
+                          "caveat": None, "followups": [], "act_link": None})
+    answer = compose_answer("trade_eval", q["question"], q["evidence_pack"])
+    assert "2027 1.11" in answer["text"]
+    pick_rows = [r for r in answer["receipts"] if "2027 1.11" in r["label"]]
+    assert pick_rows and pick_rows[0]["value"] == "780"
+
+
 # -- receipt humanization (live screenshot: raw JSON league row, [] actions row) --
 
 def test_receipt_values_humanized_and_empty_rows_dropped(monkeypatch):

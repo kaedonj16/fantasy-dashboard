@@ -203,8 +203,57 @@ _OUTCOME_RE = re.compile(
     r"|\bam i projected to (win|lose)\b|\bprojected to (win|lose)\b"
     r"|\bdo i (win|lose|beat)\b|\bcan i (win|beat)\b"
     r"|\bwhat are my chances\b|\bmy chances of winning\b"
-    r"|\bwho wins (my|our|the) (game|matchup)\b"
+    # "who wins the game" is real-NFL trivia (out of scope per the SYSTEM
+    # prompt); only the user's own game/matchup is a matchup question.
+    r"|\bwho wins (my|our) (game|matchup)\b"
     r"|\bam i favored\b|\bam i the favorite\b")
+
+# Trade-deadline date questions: they mention a trade but ask for a date,
+# which no evidence pack can answer. Narrow on purpose (a date-seeking
+# shape) so deal questions that merely mention the deadline still route
+# to their trade intent.
+_DEADLINE_RE = re.compile(
+    r"\bwhen is (the |our |my )?trade deadline\b"
+    r"|\bwhat (date|day) is (the |our |my )?trade deadline\b"
+    r"|\bwhat is (the |our |my )?trade deadline\b"
+    r"|\btrade deadline (date|day)\b")
+
+# Player fallthrough for the keyword fallback, the last resort before
+# out_of_scope: bare player questions ("How is Puka Nacua doing?") carry
+# no intent anchor, and declining them never reaches entity resolution.
+# A proper-name span in the raw message is the signal: two or more
+# capitalized tokens in a row, or one capitalized token in the name slot
+# after did/is/was/about ("did Chase score"). Calendar words and
+# sentence-initial filler never count.
+_NAME_TOKEN = r"[A-Z][a-z]+(?:'[A-Za-z]+)?"
+_PAIR_STARTERS = {"How", "What", "Who", "Whom", "Is", "Are", "Was", "Were",
+                  "Did", "Does", "Do", "Tell", "Show", "Give", "The", "This",
+                  "That", "When", "Why", "Can", "Could", "Should", "Would",
+                  "Has", "Have", "Will", "Am"}
+# A name pair may not START with a question word: in "Is Josh Allen
+# healthy?" the pair is "Josh Allen", not "Is Josh Allen".
+_PROPER_NAME_RE = re.compile(
+    rf"\b(?!(?:{'|'.join(sorted(_PAIR_STARTERS))})\b)"
+    rf"{_NAME_TOKEN}(?:\s+(?:{_NAME_TOKEN}|Jr\.|Sr\.))+\b")
+_SINGLE_NAME_RE = re.compile(rf"\b(?:did|is|was|about)\s+({_NAME_TOKEN})\b")
+_NAME_STOPWORDS = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday",
+                   "Friday", "Saturday", "Week", "Season"}
+_QUESTION_SHAPE_RE = re.compile(
+    r"^\s*(how|what|who|whom|is|are|was|were|did|does|do|should|can|could|"
+    r"would|tell|show|give|has|have)\b", re.IGNORECASE)
+
+
+def _player_name_in(message: str) -> str | None:
+    """The name-like span in a message, or None. Runs on the raw message:
+    capitalization is the signal, so the lowered copy cannot be used."""
+    text = message or ""
+    pair = _PROPER_NAME_RE.search(text)
+    if pair:
+        return pair.group(0).removesuffix("'s")
+    single = _SINGLE_NAME_RE.search(text)
+    if single and single.group(1) not in _NAME_STOPWORDS:
+        return single.group(1).removesuffix("'s")
+    return None
 
 
 def _keyword_route(message: str) -> dict:
@@ -233,7 +282,8 @@ def _keyword_route(message: str) -> dict:
         return {**base, "intent": "playoffs"}
     if re.search(r"power ranking|power rank|team to beat|strongest team", m):
         return {**base, "intent": "power_rankings"}
-    if re.search(r"standings|division|most points for|first place|what place am i", m):
+    if re.search(r"standings|division|most points|points leader|highest scoring|"
+                 r"\bseed\b|first place|what place am i", m):
         return {**base, "intent": "standings"}
     if re.search(r"\bmatchup\b|who wins between|win probability|win prob\b", m) or _OUTCOME_RE.search(m):
         return {**base, "intent": "matchup"}
@@ -256,11 +306,18 @@ def _keyword_route(message: str) -> dict:
     board = _keyword_board(message, m)
     if board is not None:
         return {**base, **board}
-    if re.search(r"\bstart\b|\bsit\b|\bflex\b", m):
+    if re.search(r"\bstart\b|\bsit\b|\bflex\b|\bbench\b|who (should|do) i play", m):
         return {**base, "intent": "start_sit"}
     if _FINDING_RE.search(m):
         return {**base, "intent": "trade_finding", "target_position": _target_position(m)}
-    if re.search(r"\btrade\b|\bswap\b", m):
+    if _DEADLINE_RE.search(m):
+        # "When is the trade deadline?" asks for a date, not a deal: the
+        # trade_eval pack needs two sides and cannot answer it. Placed
+        # after the finding rule so "target before the trade deadline"
+        # still finds a trade.
+        return {**base, "intent": "out_of_scope"}
+    if re.search(r"\btrad(?:e|es|ed|ing)\b|\bswap\b"
+                 r"|\bshould i accept\b|\baccept (this|the) (trade|deal|offer)\b", m):
         return {**base, "intent": "trade_eval"}
     if re.search(r"\bbuy\b|\bsell\b|\bhold\b", m):
         return {**base, "intent": "buy_sell_hold"}
@@ -292,6 +349,14 @@ def _keyword_route(message: str) -> dict:
                 hint = cand
                 break
         return {**base, "intent": "metric", "metric_hint": hint}
+    # Player fallthrough: a question-shaped message carrying a player
+    # name belongs to the player intent even with no other anchor. The
+    # extracted name rides along so the resolver can confirm it (or ask
+    # which player) instead of the question being declined unread.
+    name = _player_name_in(message)
+    if name and ("?" in (message or "") or _QUESTION_SHAPE_RE.search(message or "")
+                 or len((message or "").split()) <= 6):
+        return {**base, "intent": "player", "player_names": [name]}
     return {**base, "intent": "out_of_scope"}
 
 

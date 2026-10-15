@@ -1,7 +1,7 @@
 """BR Fantasy AI assistant (Stage 1 grounding spine)."""
 from __future__ import annotations
 
-PROMPT_VERSION = "assistant-v5"
-ROUTER_PROMPT_VERSION = "assistant-router-v4"
+PROMPT_VERSION = "assistant-v6"
+ROUTER_PROMPT_VERSION = "assistant-router-v5"
 
 __all__ = ["PROMPT_VERSION", "ROUTER_PROMPT_VERSION"]
