@@ -1319,6 +1319,35 @@ def assistant_summary() -> Dict[str, Any]:
         """
     )
 
+    # Outcome grades (stage 2): all-time, since hit rates are cumulative
+    # and a month window would mostly show an empty board early on. The
+    # backlog counts ungraded rows for the two intents that have graders.
+    grade_rows = _fetchall(
+        """
+        SELECT COALESCE(intent, 'unknown') AS intent,
+               COUNT(*) FILTER (WHERE grade = 'hit') AS hit,
+               COUNT(*) FILTER (WHERE grade = 'partial') AS partial,
+               COUNT(*) FILTER (WHERE grade = 'miss') AS miss,
+               COUNT(*) FILTER (WHERE grade IS NULL
+                                  AND intent IN ('start_sit', 'buy_sell_hold')) AS backlog
+        FROM assistant_advice_log
+        GROUP BY 1 ORDER BY intent
+        """
+    )
+    grading = {}
+    for r in grade_rows:
+        if "intent" not in r:
+            continue
+        hit = int(r.get("hit") or 0)
+        partial = int(r.get("partial") or 0)
+        miss = int(r.get("miss") or 0)
+        graded = hit + partial + miss
+        grading[str(r["intent"])] = {
+            "graded": graded, "hit": hit, "partial": partial, "miss": miss,
+            "hit_rate": round(hit / graded, 3) if graded else None,
+            "backlog": int(r.get("backlog") or 0),
+        }
+
     free_cap, paid_cap = _assistant_caps()
     by_tier = {"free": {"users": 0, "chats": 0}, "paid": {"users": 0, "chats": 0}}
     users_at_cap = 0
@@ -1351,6 +1380,7 @@ def assistant_summary() -> Dict[str, Any]:
             {"intent": str(r["intent"]), "chats": int(r["chats"])} for r in intent_rows
         ],
         "by_tier": by_tier,
+        "grading": grading,
         "users_at_cap": users_at_cap,
         "free_cap": free_cap,
         "paid_cap": paid_cap,

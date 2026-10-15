@@ -345,6 +345,97 @@ def find_proactive_digest(account_key: str, league_id, week) -> dict | None:
         return None
 
 
+# -- outcome grading (stage 2) -------------------------------------------------
+
+_LOG_GRADE_COLS = ("log_id", "created_at", "account_key", "league_id", "platform", "season",
+                   "week", "question_text", "intent", "entities", "evidence_pack",
+                   "answer_text", "verdict", "numbers_shown", "thumb", "correction_text",
+                   "corrected_claim", "correction_category", "reask_flag", "proactive",
+                   "trigger", "grade", "grader", "graded_at", "outcome_detail")
+_LOG_JSON_COLS = ("entities", "evidence_pack", "verdict", "numbers_shown", "outcome_detail")
+
+
+def _grade_row(row) -> dict:
+    d = dict(row) if isinstance(row, dict) else dict(zip(_LOG_GRADE_COLS, row))
+    for col in _LOG_JSON_COLS:
+        if isinstance(d.get(col), str):
+            try:
+                d[col] = json.loads(d[col])
+            except Exception:
+                d[col] = {}
+    return d
+
+
+def fetch_ungraded_rows(intent: str, limit: int = 500) -> list[dict]:
+    """Ungraded advice-log rows for one intent, oldest first (grader input)."""
+    _init_tables()
+    try:
+        with get_conn() as conn:
+            rows = conn.execute(
+                f"SELECT {', '.join(_LOG_GRADE_COLS)} FROM assistant_advice_log "
+                "WHERE intent = %s AND grade IS NULL ORDER BY log_id ASC LIMIT %s",
+                (intent, int(limit)),
+            ).fetchall()
+        return [_grade_row(r) for r in (rows or [])]
+    except Exception:
+        logger.warning("[assistant] fetch_ungraded_rows failed", exc_info=True)
+        return []
+
+
+def write_grade(log_id, grade: str, grader: str, outcome_detail) -> bool:
+    """Write one outcome grade onto a log row.
+
+    The grade IS NULL guard is the idempotency rule: a row that already
+    carries a grade is never rewritten, so re-running a grader is safe and
+    a version bump never rewrites history (workshop section 4).
+    """
+    _init_tables()
+    try:
+        with get_conn() as conn:
+            cur = conn.execute(
+                "UPDATE assistant_advice_log SET grade = %s, grader = %s, graded_at = NOW(), "
+                "outcome_detail = %s::jsonb WHERE log_id = %s AND grade IS NULL",
+                (grade, grader, _j(outcome_detail or {}), int(log_id)),
+            )
+            conn.commit()
+        return bool(getattr(cur, "rowcount", 0))
+    except Exception:
+        logger.warning("[assistant] write_grade failed", exc_info=True)
+        return False
+
+
+def fetch_log_rows_between(start, end) -> list[dict]:
+    """All advice-log rows created in [start, end), for the review packet."""
+    _init_tables()
+    try:
+        with get_conn() as conn:
+            rows = conn.execute(
+                f"SELECT {', '.join(_LOG_GRADE_COLS)} FROM assistant_advice_log "
+                "WHERE created_at >= %s AND created_at < %s ORDER BY log_id ASC",
+                (start, end),
+            ).fetchall()
+        return [_grade_row(r) for r in (rows or [])]
+    except Exception:
+        logger.warning("[assistant] fetch_log_rows_between failed", exc_info=True)
+        return []
+
+
+def fetch_graded_rows_between(start, end) -> list[dict]:
+    """Advice-log rows whose grade was written in [start, end)."""
+    _init_tables()
+    try:
+        with get_conn() as conn:
+            rows = conn.execute(
+                f"SELECT {', '.join(_LOG_GRADE_COLS)} FROM assistant_advice_log "
+                "WHERE graded_at >= %s AND graded_at < %s ORDER BY log_id ASC",
+                (start, end),
+            ).fetchall()
+        return [_grade_row(r) for r in (rows or [])]
+    except Exception:
+        logger.warning("[assistant] fetch_graded_rows_between failed", exc_info=True)
+        return []
+
+
 # -- preferences ---------------------------------------------------------------
 
 def _pref_dict(row) -> dict:

@@ -1544,12 +1544,14 @@ def test_cohort_heatmap_future_weeks_are_none_not_zero(monkeypatch):
 
 # ── Assistant summary (admin page section) ────────────────────────────────────
 
-def _assistant_fake_fetchall(totals, intents, users, captured=None):
+def _assistant_fake_fetchall(totals, intents, users, captured=None, grades=None):
     def fake(sql, args=()):
         if captured is not None:
             captured.append(sql)
         if "GROUP BY account_key" in sql:
             return users
+        if "grade = 'hit'" in sql:
+            return grades or []
         if "COALESCE(intent" in sql:
             return intents
         return [totals]
@@ -1577,10 +1579,15 @@ def test_assistant_summary_aggregates_month(monkeypatch):
         {"account_key": "acct:9", "chats": 25},
         {"account_key": "acct:11", "chats": 3},
     ]
+    grades = [
+        {"intent": "start_sit", "hit": 12, "partial": 3, "miss": 5, "backlog": 4},
+        {"intent": "buy_sell_hold", "hit": 2, "partial": 1, "miss": 0, "backlog": 7},
+        {"intent": "trade_eval", "hit": 0, "partial": 0, "miss": 0, "backlog": 0},
+    ]
     captured = []
     monkeypatch.setattr(
         "dashboard_services.analytics._fetchall",
-        _assistant_fake_fetchall(totals, intents, users, captured),
+        _assistant_fake_fetchall(totals, intents, users, captured, grades),
     )
     # Only acct:7 holds an active personal plan.
     monkeypatch.setattr(
@@ -1610,11 +1617,20 @@ def test_assistant_summary_aggregates_month(monkeypatch):
         {"account_key": "acct:9", "chats": 25, "tier": "free"},
         {"account_key": "acct:11", "chats": 3, "tier": "free"},
     ]
-    # Every query uses the caps' own month window on the advice log.
-    assert len(captured) == 3
+    assert out["grading"]["start_sit"] == {
+        "graded": 20, "hit": 12, "partial": 3, "miss": 5,
+        "hit_rate": 0.6, "backlog": 4,
+    }
+    assert out["grading"]["buy_sell_hold"]["backlog"] == 7
+    assert out["grading"]["trade_eval"]["hit_rate"] is None
+    # The usage queries use the caps' own month window on the advice log;
+    # the grading query is deliberately all-time (hit rates accumulate).
+    assert len(captured) == 4
     for sql in captured:
         assert "assistant_advice_log" in sql
+    for sql in captured[:3]:
         assert "date_trunc('month', now())" in sql
+    assert "date_trunc('month', now())" not in captured[3]
 
 
 def test_assistant_summary_paid_lookup_failure_reads_free(monkeypatch):
