@@ -130,6 +130,12 @@ SYSTEM = (
     "totals, and present the computed top moves, targets, and cut candidates as the site's "
     "data in your own words; the report's written memo is not in your evidence, so never "
     "quote or invent memo language. "
+    "For start/sit, cite the recommended starter's projection and the projection of the "
+    "player he is compared against. When the evidence is roster-scoped (a slot and "
+    "decisions from the user's own lineup), the verdict names the recommended starter "
+    "at that slot, the text names the current starter he replaces (or that he stays "
+    "ahead of) and the other candidates, and a sit question names who sits and who "
+    "starts in his place. "
     "If fixed_verdict is present in the payload, the verdict field must be exactly that value; "
     "it is set by the site's trade fairness band and is not yours to change. "
     "Caveat only when the pack marks margin.thin true or data stale, otherwise null. "
@@ -778,6 +784,21 @@ def _required_receipts(intent: str, pack: dict) -> list[dict]:
             rows.append({"label": "You give (total value)", "value": _fmt_num(top["give_total"])})
         if top.get("fairness_gap") is not None and len(rows) < 4:
             rows.append({"label": "Fairness gap", "value": _fmt_num(top["fairness_gap"])})
+    elif intent == "start_sit":
+        players = [p for p in (pack.get("players") or []) if isinstance(p, dict)]
+        pick = next((p for p in players
+                     if str(p.get("player_id")) == str(pack.get("pick_player_id") or "")), None)
+        others = [p for p in players if p is not pick]
+        # The comparison the answer makes: the slot's current occupant in
+        # roster mode, else the runner-up.
+        other = (next((p for p in others if p.get("slot_occupant")), None)
+                 or next((p for p in others
+                          if str(p.get("player_id")) == str(pack.get("sit_player_id") or "")), None)
+                 or (others[0] if others else None))
+        for p in ([pick] if pick else []) + ([other] if other else []):
+            if p.get("projection") is not None:
+                rows.append({"label": f"{p.get('name')} projection",
+                             "value": _fmt_num(p["projection"])})
     elif intent == "metric":
         top = [e for e in (pack.get("leaderboard_top5") or [])
                if isinstance(e, dict) and e.get("value") is not None]

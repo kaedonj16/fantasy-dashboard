@@ -33,6 +33,22 @@ Reality notes vs the workshop tool map (verified in this repo):
   the defense rank comes from app._matchup_rank_table (rank 1 = easiest).
   The view's live Vegas/weather conditions are request-scoped there and
   are not reproduced here; compute_start_score treats them as optional.
+- Roster-scoped start/sit (2026-10-15): build_start_sit's named-player
+  path is unchanged, but a start_sit question that resolves NO players
+  (a slot question like "who should I start at FLEX", a who-to-sit
+  mirror, or a bare "who should I start this week") no longer declines:
+  _roster_start_sit builds the candidate set from the asking user's own
+  roster in the pack's league, running the site's lineup solver
+  (utils.lineups assign_optimal_lineup / assign_fixed_lineup) over the
+  same week projection map, with each candidate scored by the same
+  per-player path as named questions (weekly projection plus
+  utils.start_sit compute_start_score). The pack carries roster_mode,
+  slot/slot_label, question_mode (start|sit), decisions (per-slot
+  in/out/gain), recommended_player_id, and sit_player_id on sit
+  questions; entries carry current_starter and slot_occupant flags.
+  The router carries the slot on both paths: the model schema has
+  slot/start_mode entities, and the keyword fallback parses them from
+  the message (_slot_in / _start_mode_in).
 - Recent form (game logs) is built from the same Sleeper week-stat cache
   the player modal reads: utils.utils.load_sleeper_week_stats scored by
   utils.projections.week_stat_points under league settings.
@@ -654,8 +670,17 @@ def build_start_sit(bundle, entities, player_ids) -> tuple[dict, list[str]]:
         rank = rmap.get(opponent) or rmap.get(str(opponent).upper())
         return (rank, total) if rank is not None else (None, None)
 
-    players = []
-    for pid in player_ids[:3]:
+    def _raw_proj(pid, position):
+        if not week_map:
+            return None
+        try:
+            from utils.fantasy_scoring import weekly_projection_points
+            pts = weekly_projection_points(week_map, str(pid), scoring, position or "")
+            return round(float(pts), 1) if pts is not None else None
+        except Exception:
+            return None
+
+    def _entry_for(pid):
         info = _player_info(pid, index)
         entry = dict(info)
         val = _row_value(values.get(str(pid)))
@@ -669,15 +694,7 @@ def build_start_sit(bundle, entities, player_ids) -> tuple[dict, list[str]]:
                 pack["as_of"]["metrics_as_of"] = metrics["as_of_date"]
         # Projection from the week's projection map (the same source the
         # start/sit page scores), not from the value row.
-        proj = None
-        if week_map:
-            try:
-                from utils.fantasy_scoring import weekly_projection_points
-                pts = weekly_projection_points(week_map, str(pid), scoring, entry.get("position") or "")
-                if pts is not None:
-                    proj = round(float(pts), 1)
-            except Exception:
-                proj = None
+        proj = _raw_proj(pid, entry.get("position"))
         opponent, matchup_label, on_bye = _opponent_for(entry.get("team"), games)
         if opponent:
             entry["opponent"] = opponent
@@ -713,23 +730,210 @@ def build_start_sit(bundle, entities, player_ids) -> tuple[dict, list[str]]:
                 tools.append("utils.start_sit.compute_start_score")
             except Exception:
                 logger.debug("[assistant] start score failed", exc_info=True)
-        players.append(entry)
+        return entry
+
+    if player_ids:
+        players = [_entry_for(pid) for pid in player_ids[:3]]
+    else:
+        # No players named: the question is about the asking user's own
+        # lineup (a slot, or the lineup as a whole), so the candidates
+        # come from their roster, not from a decline.
+        players = _roster_start_sit(bundle, entities, pack, tools,
+                                    _entry_for, _raw_proj)
     pack["players"] = players
     scored = [p for p in players if p.get("start_score") is not None]
     key = "start_score" if scored else "value"
     ranked = sorted(players, key=lambda p: (p.get(key) is not None, p.get(key) or 0), reverse=True)
     if ranked:
         pack["pick_player_id"] = ranked[0]["player_id"]
+    # Roster mode: the lineup solver's pick at the asked slot outranks the
+    # raw score order (it sees the whole lineup's slot constraints).
+    rec = pack.get("recommended_player_id")
+    if rec and any(p.get("player_id") == rec for p in players):
+        pack["pick_player_id"] = rec
     if len(ranked) >= 2 and ranked[0].get(key) is not None and ranked[1].get(key) is not None:
         gap = abs(float(ranked[0][key]) - float(ranked[1][key]))
         base = max(abs(float(ranked[0][key])), 1.0)
         pack["margin"] = {"gap": round(gap, 2), "basis": key, "thin": bool(gap / base < 0.10)}
     else:
         pack["margin"] = {"thin": False}
-    if not players:
+    if not players and pack.get("available") is not False:
         pack["available"] = False
         pack["missing"] = "no resolved players"
     return pack, tools
+
+
+def _roster_start_sit(bundle, entities, pack, tools, entry_for, raw_proj):
+    """Roster-scoped start/sit: candidates from the asking user's roster.
+
+    The lineup math is the site's own solver (utils.lineups
+    assign_optimal_lineup / assign_fixed_lineup, the machinery behind
+    projection_upgrades, the Lineup Lab, and the recap) run over this
+    week's projection map, the same map the named-player path scores
+    from. Slot questions scope to that slot's real decision set (the
+    current occupant plus the bench players who could take it; for a
+    base position slot, every rostered player at the position). A
+    who-to-sit question mirrors it: the starter the solver benches for
+    the biggest gain. Returns candidate entries in start-score order,
+    or [] with the pack marked unavailable when no roster answer exists.
+    """
+    entities = entities or {}
+    roster = bundle.get("roster") or {}
+    ctx = bundle.get("ctx") or {}
+    roster_positions = ctx.get("roster_positions") or []
+    if hasattr(roster_positions, "tolist"):
+        roster_positions = list(roster_positions)
+    starters = [str(p) for p in (roster.get("starters") or [])
+                if str(p) not in ("", "0")]
+    reserve = {str(p) for p in (roster.get("reserve") or [])}
+    taxi = {str(p) for p in (roster.get("taxi") or [])}
+    eligible = [str(p) for p in (roster.get("players") or [])
+                if str(p) not in reserve and str(p) not in taxi]
+    if not eligible or not starters or not roster_positions:
+        pack["available"] = False
+        pack["missing"] = ("no linked team: link your team and I can make "
+                           "lineup calls from your roster")
+        return []
+    index = _index()
+    pos_map: dict[str, str] = {}
+    proj_map: dict[str, float] = {}
+    for pid in eligible:
+        pos_map[pid] = _player_info(pid, index).get("position") or ""
+        proj = raw_proj(pid, pos_map[pid])
+        if proj is not None:
+            proj_map[pid] = proj
+    if not proj_map:
+        pack["available"] = False
+        pack["missing"] = "no projections are available for your roster this week"
+        return []
+    try:
+        from utils.lineup_slots import canonicalize_slot, slot_eligible_positions
+        from utils.lineups import assign_fixed_lineup, assign_optimal_lineup
+        optimal = assign_optimal_lineup(proj_map, pos_map, roster_positions,
+                                        list(proj_map), prefer_starters=starters)
+        actual = assign_fixed_lineup(starters, pos_map, roster_positions) or []
+        tools.append("utils.lineups.assign_optimal_lineup")
+    except Exception:
+        logger.debug("[assistant] roster start/sit solver failed", exc_info=True)
+        pack["available"] = False
+        pack["missing"] = "lineup data is not available for your roster right now"
+        return []
+    slots = optimal.get("slots") or []
+    opt_assign = optimal.get("assignment") or []
+    starter_set = set(starters)
+    mode = "sit" if str(entities.get("start_mode") or "").lower() == "sit" else "start"
+    pack["roster_mode"] = True
+    pack["question_mode"] = mode
+
+    def _at(assign, i):
+        return assign[i] if 0 <= i < len(assign) else None
+
+    # Per-slot decisions: the optimal lineup benches a current starter
+    # for a bench player at that slot.
+    decisions = []
+    for i, slot in enumerate(slots):
+        inc = _at(opt_assign, i)
+        out = _at(actual, i)
+        if inc and inc not in starter_set:
+            decisions.append({
+                "slot": slot, "in_player_id": inc, "out_player_id": out,
+                "gain": round(proj_map.get(inc, 0.0)
+                              - (proj_map.get(out, 0.0) if out else 0.0), 1),
+            })
+    decisions.sort(key=lambda d: -d["gain"])
+
+    slot_raw = str(entities.get("slot") or "").strip().upper().replace(" ", "_")
+    target_idx = None
+    occupant = recommended = None
+    if slot_raw:
+        digits = ""
+        while slot_raw and slot_raw[-1].isdigit():
+            digits = slot_raw[-1] + digits
+            slot_raw = slot_raw[:-1]
+        canon = canonicalize_slot(slot_raw) or slot_raw
+        pack["slot_label"] = canon + digits
+        matches = [i for i, s in enumerate(slots) if s == canon]
+        if matches:
+            if digits and 1 <= int(digits) <= len(matches):
+                target_idx = matches[int(digits) - 1]
+            else:
+                target_idx = matches[-1]
+
+    if target_idx is not None:
+        slot = slots[target_idx]
+        pack["slot"] = slot
+        occupant = _at(actual, target_idx)
+        recommended = _at(opt_assign, target_idx)
+        elig = slot_eligible_positions(slot)
+        if slot in ("FLEX", "SUPER_FLEX", "RB_WR", "WR_TE", "RB_TE"):
+            # The flex decision set: the bench players who could take
+            # the slot, plus the player currently in it.
+            cand_ids = [pid for pid in eligible
+                        if pid not in starter_set
+                        and pos_map.get(pid) in elig and pid in proj_map]
+            if occupant:
+                cand_ids.append(occupant)
+        else:
+            cand_ids = [pid for pid in eligible
+                        if pos_map.get(pid) in elig and pid in proj_map]
+        pack["decisions"] = [d for d in decisions if d["slot"] == slot]
+    else:
+        pack["slot"] = None
+        involved: list[str] = []
+        for d in decisions:
+            for pid in (d["in_player_id"], d["out_player_id"]):
+                if pid and pid not in involved:
+                    involved.append(pid)
+        cand_ids = involved or list(starters)
+        pack["decisions"] = decisions
+        if decisions:
+            recommended = decisions[0]["in_player_id"]
+            occupant = decisions[0]["out_player_id"]
+            pack["slot"] = decisions[0]["slot"]
+            pack["slot_label"] = decisions[0]["slot"]
+
+    if mode == "sit":
+        sit_pid = None
+        if target_idx is not None:
+            if occupant and recommended and recommended != occupant:
+                sit_pid = occupant
+        elif decisions:
+            sit_pid = decisions[0]["out_player_id"]
+        if sit_pid:
+            pack["sit_player_id"] = sit_pid
+            for d in pack["decisions"]:
+                if d["out_player_id"] == sit_pid:
+                    recommended = d["in_player_id"]
+                    break
+    if recommended:
+        pack["recommended_player_id"] = recommended
+
+    entries = {}
+    for pid in cand_ids:
+        if pid in proj_map:
+            entries[pid] = entry_for(pid)
+    for pid, entry in entries.items():
+        entry["current_starter"] = pid in starter_set
+        if occupant and pid == occupant:
+            entry["slot_occupant"] = True
+
+    def _rank_key(pid):
+        entry = entries[pid]
+        for field in ("start_score", "projection", "value"):
+            if entry.get(field) is not None:
+                return (1, float(entry[field]))
+        return (0, 0.0)
+
+    ordered = sorted(entries, key=_rank_key, reverse=True)
+    keep = ordered[:5]
+    for pid in (recommended, occupant):
+        if pid and pid in entries and pid not in keep:
+            keep.append(pid)
+    if not keep:
+        pack["available"] = False
+        pack["missing"] = "no startable players were found on your roster for that slot"
+        return []
+    return [entries[pid] for pid in keep]
 
 
 # -- league machinery: the Teams page's strengths, ranks, and grades -----------

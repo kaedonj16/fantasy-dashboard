@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "description": "Frozen assistant eval set: 88 questions with golden evidence packs for the BR Fantasy assistant (workshop section 5 core 20, the deep-cuts leaderboard family lb1-lb6, and the section 9 P1 league-context types: playoffs, power rankings, standings, matchup, schedule) plus the P1 trade-finding family tf1-tf4, and the P1 breakout board, Teams, and pick-ownership families bo1-bo3, tm1-tm2, pk1 (renamed from the branch po1, which collided with the playoffs po1), with te4 an extra trade_eval. The win-outcome family mu4-mu6 pins the game-outcome phrasings (will I win / what are my chances / will I lose) to matchup packs: a decisive favorite, a close game, and a decisive underdog. The buy/sell board family bl1/sh1 pins pool-wide buy-low and sell-high asks (no named player) to leaderboard value boards, with bsh4/bsh5 as the named-player controls that must stay single-player buy_sell_hold.",
+    "description": "Frozen assistant eval set: 91 questions with golden evidence packs for the BR Fantasy assistant (workshop section 5 core 20, the deep-cuts leaderboard family lb1-lb6, and the section 9 P1 league-context types: playoffs, power rankings, standings, matchup, schedule) plus the P1 trade-finding family tf1-tf4, and the P1 breakout board, Teams, and pick-ownership families bo1-bo3, tm1-tm2, pk1 (renamed from the branch po1, which collided with the playoffs po1), with te4 an extra trade_eval. The win-outcome family mu4-mu6 pins the game-outcome phrasings (will I win / what are my chances / will I lose) to matchup packs: a decisive favorite, a close game, and a decisive underdog. The buy/sell board family bl1/sh1 pins pool-wide buy-low and sell-high asks (no named player) to leaderboard value boards, with bsh4/bsh5 as the named-player controls that must stay single-player buy_sell_hold. The roster start/sit family ss5-ss7 pins slot questions that name no players (start at FLEX, start at RB, sit at FLEX) to roster-scoped packs built from the asking user's own lineup: the FLEX occupant is benched for the bench challenger who out-projects him, and the RB question is a keep-the-starter call.",
     "scenario": "Kaedon's league Blackedraw, her team Caleb's Casting Couch, Week 7 of the 2026 season.",
     "packs": "Each evidence_pack mirrors, field for field, the dict the matching builder in dashboard_services/assistant/evidence.py returns. Values inside a pack are the only numbers an answer may cite.",
     "recapture": "These packs are frozen fixtures. Before any launch decision, recapture them from the live tools with: python3 scripts/run_assistant_eval.py --capture (writes assistant_eval/captured_questions.json; it never overwrites this file). A launch call made on stale fixtures is not a launch call.",
@@ -10613,6 +10613,352 @@
           "Kaleb Johnson"
         ]
       }
+    },
+    {
+      "id": "ss5",
+      "type": "start_sit",
+      "question": "Who should I start at FLEX this week?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "start_sit",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": null,
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "players": [
+          {
+            "player_id": "brian-thomas-jr",
+            "name": "Brian Thomas Jr.",
+            "team": "JAX",
+            "position": "WR",
+            "injury_status": null,
+            "value": 5120,
+            "role": {
+              "ppg": 11.2
+            },
+            "projection": 12.6,
+            "start_score": 82.0,
+            "current_starter": false
+          },
+          {
+            "player_id": "zay-flowers",
+            "name": "Zay Flowers",
+            "team": "BAL",
+            "position": "WR",
+            "injury_status": null,
+            "value": 4680,
+            "role": {
+              "ppg": 10.9
+            },
+            "projection": 11.7,
+            "start_score": 72.1,
+            "current_starter": false
+          },
+          {
+            "player_id": "jordan-addison",
+            "name": "Jordan Addison",
+            "team": "MIN",
+            "position": "WR",
+            "injury_status": null,
+            "value": 3920,
+            "role": {
+              "ppg": 10.4
+            },
+            "projection": 11.4,
+            "start_score": 71.2,
+            "current_starter": true,
+            "slot_occupant": true
+          },
+          {
+            "player_id": "tyrone-tracy",
+            "name": "Tyrone Tracy",
+            "team": "NYG",
+            "position": "RB",
+            "injury_status": null,
+            "value": 2890,
+            "role": {
+              "ppg": 9.8
+            },
+            "projection": 10.8,
+            "start_score": 66.0,
+            "current_starter": false
+          }
+        ],
+        "pick_player_id": "brian-thomas-jr",
+        "margin": {
+          "gap": 9.9,
+          "basis": "start_score",
+          "thin": false
+        },
+        "roster_mode": true,
+        "question_mode": "start",
+        "slot": "FLEX",
+        "slot_label": "FLEX",
+        "recommended_player_id": "brian-thomas-jr",
+        "decisions": [
+          {
+            "slot": "FLEX",
+            "in_player_id": "brian-thomas-jr",
+            "out_player_id": "jordan-addison",
+            "gain": 1.2
+          }
+        ]
+      },
+      "reference": {
+        "verdict_kind": "start_pick",
+        "pick": "Brian Thomas Jr.",
+        "key_numbers": [
+          12.6,
+          11.4
+        ],
+        "close_call": false
+      },
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Brian Thomas Jr.",
+          "Addison"
+        ]
+      },
+      "trap": null
+    },
+    {
+      "id": "ss6",
+      "type": "start_sit",
+      "question": "Who should I start at RB this week?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "start_sit",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": null,
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "players": [
+          {
+            "player_id": "bijan-robinson",
+            "name": "Bijan Robinson",
+            "team": "ATL",
+            "position": "RB",
+            "injury_status": null,
+            "value": 7450,
+            "role": {
+              "ppg": 16.2
+            },
+            "projection": 16.9,
+            "start_score": 85.0,
+            "current_starter": true
+          },
+          {
+            "player_id": "woody-marks",
+            "name": "Woody Marks",
+            "team": "HOU",
+            "position": "RB",
+            "injury_status": null,
+            "value": 3410,
+            "role": {
+              "ppg": 11.8
+            },
+            "projection": 12.3,
+            "start_score": 70.5,
+            "current_starter": true,
+            "slot_occupant": true
+          },
+          {
+            "player_id": "tyrone-tracy",
+            "name": "Tyrone Tracy",
+            "team": "NYG",
+            "position": "RB",
+            "injury_status": null,
+            "value": 2890,
+            "role": {
+              "ppg": 9.8
+            },
+            "projection": 10.8,
+            "start_score": 66.0,
+            "current_starter": false
+          }
+        ],
+        "pick_player_id": "woody-marks",
+        "margin": {
+          "gap": 14.5,
+          "basis": "start_score",
+          "thin": false
+        },
+        "roster_mode": true,
+        "question_mode": "start",
+        "slot": "RB",
+        "slot_label": "RB",
+        "recommended_player_id": "woody-marks",
+        "decisions": []
+      },
+      "reference": {
+        "verdict_kind": "start_pick",
+        "pick": "Woody Marks",
+        "key_numbers": [
+          12.3,
+          10.8
+        ],
+        "close_call": false
+      },
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Woody Marks",
+          "Tracy"
+        ]
+      },
+      "trap": null
+    },
+    {
+      "id": "ss7",
+      "type": "start_sit",
+      "question": "Who should I sit at FLEX this week?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "start_sit",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": null,
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "players": [
+          {
+            "player_id": "brian-thomas-jr",
+            "name": "Brian Thomas Jr.",
+            "team": "JAX",
+            "position": "WR",
+            "injury_status": null,
+            "value": 5120,
+            "role": {
+              "ppg": 11.2
+            },
+            "projection": 12.6,
+            "start_score": 82.0,
+            "current_starter": false
+          },
+          {
+            "player_id": "zay-flowers",
+            "name": "Zay Flowers",
+            "team": "BAL",
+            "position": "WR",
+            "injury_status": null,
+            "value": 4680,
+            "role": {
+              "ppg": 10.9
+            },
+            "projection": 11.7,
+            "start_score": 72.1,
+            "current_starter": false
+          },
+          {
+            "player_id": "jordan-addison",
+            "name": "Jordan Addison",
+            "team": "MIN",
+            "position": "WR",
+            "injury_status": null,
+            "value": 3920,
+            "role": {
+              "ppg": 10.4
+            },
+            "projection": 11.4,
+            "start_score": 71.2,
+            "current_starter": true,
+            "slot_occupant": true
+          },
+          {
+            "player_id": "tyrone-tracy",
+            "name": "Tyrone Tracy",
+            "team": "NYG",
+            "position": "RB",
+            "injury_status": null,
+            "value": 2890,
+            "role": {
+              "ppg": 9.8
+            },
+            "projection": 10.8,
+            "start_score": 66.0,
+            "current_starter": false
+          }
+        ],
+        "pick_player_id": "brian-thomas-jr",
+        "margin": {
+          "gap": 9.9,
+          "basis": "start_score",
+          "thin": false
+        },
+        "roster_mode": true,
+        "question_mode": "sit",
+        "slot": "FLEX",
+        "slot_label": "FLEX",
+        "recommended_player_id": "brian-thomas-jr",
+        "sit_player_id": "jordan-addison",
+        "decisions": [
+          {
+            "slot": "FLEX",
+            "in_player_id": "brian-thomas-jr",
+            "out_player_id": "jordan-addison",
+            "gain": 1.2
+          }
+        ]
+      },
+      "reference": {
+        "verdict_kind": "start_pick",
+        "pick": "Brian Thomas Jr.",
+        "key_numbers": [
+          12.6,
+          11.4
+        ],
+        "close_call": false
+      },
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Jordan Addison",
+          "Brian Thomas Jr."
+        ]
+      },
+      "trap": null
     }
   ]
 }
