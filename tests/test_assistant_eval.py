@@ -167,11 +167,11 @@ def test_namesake_wrong_robinson_fails():
 # -- questions.json schema sanity ------------------------------------------------------
 
 def test_questions_distribution_and_ids():
-    assert len(QUESTIONS) == 20
-    assert len(BY_ID) == 20
+    assert len(QUESTIONS) == 26
+    assert len(BY_ID) == 26
     assert Counter(q["type"] for q in QUESTIONS) == {
         "start_sit": 4, "trade_eval": 3, "buy_sell_hold": 3, "player": 3,
-        "metric": 3, "waivers": 2, "this_week": 2}
+        "metric": 3, "waivers": 2, "this_week": 2, "leaderboard": 6}
 
 
 def test_questions_entry_shape():
@@ -189,7 +189,7 @@ def test_questions_entry_shape():
 
 def test_both_traps_present_and_shaped():
     traps = {q["id"]: q for q in QUESTIONS if q["trap"]}
-    assert {q["trap"]["kind"] for q in traps.values()} == {"missing_stat", "namesake"}
+    assert {q["trap"]["kind"] for q in traps.values()} == {"missing_stat", "namesake", "pro_gate"}
     m3 = BY_ID["m3"]
     assert m3["trap"]["kind"] == "missing_stat"
     assert m3["evidence_pack"]["available"] is False
@@ -201,6 +201,41 @@ def test_both_traps_present_and_shaped():
     assert ss4["expect"]["accept"] == ["clarify", "pick:Bijan Robinson"]
     names = [p["name"] for p in ss4["evidence_pack"]["players"]]
     assert names == ["Bijan Robinson", "Brian Robinson Jr."]
+    lb5 = BY_ID["lb5"]
+    assert lb5["trap"]["kind"] == "pro_gate"
+    assert lb5["evidence_pack"]["gated"] is True
+    assert lb5["evidence_pack"]["available"] is False
+    assert "board" not in lb5["evidence_pack"]
+    assert lb5["expect"]["gated"] is True
+    lb6 = BY_ID["lb6"]
+    assert lb6["trap"]["kind"] == "missing_stat"
+    assert lb6["evidence_pack"]["missing"] == "routes not tracked"
+
+
+def test_leaderboard_reference_matches_pack_board():
+    for q in QUESTIONS:
+        if q["type"] != "leaderboard":
+            continue
+        pack = q["evidence_pack"]
+        board = pack.get("board") or []
+        if not board:
+            continue
+        assert [r["rank"] for r in board] == list(range(1, len(board) + 1)), q["id"]
+        assert q["reference"]["pick"] == board[0]["name"], q["id"]
+        assert pack["board_count"] == len(board), q["id"]
+        kind = pack["board_kind"]
+        if kind in ("board", "intersection", "matchup"):
+            values = [r["value"] for r in board]
+            assert values == sorted(values, reverse=True), q["id"]
+        if kind == "movers":
+            deltas = [r["delta"] for r in board]
+            assert deltas == sorted(deltas, reverse=True), q["id"]
+            for r in board:
+                assert round(r["value"] - r["baseline_value"], 3) == r["delta"], q["id"]
+        if kind == "intersection":
+            for r in board:
+                assert r["secondary"]["value"] is not None, q["id"]
+                assert 1 <= r["secondary"]["rank"] <= pack["requested_n"], q["id"]
 
 
 def test_start_sit_reference_matches_pack_mechanically():
@@ -262,7 +297,7 @@ def test_buy_sell_hold_reference_matches_pack_trend():
 
 # -- mock mode + poison ------------------------------------------------------------------
 
-def test_mock_mode_full_run_passes_20_of_20():
+def test_mock_mode_full_run_passes_26_of_26():
     for q in QUESTIONS:
         score = score_answer(q, compose_mock(q))
         assert score["passed"], f"{q['id']}: {score}"
@@ -271,7 +306,7 @@ def test_mock_mode_full_run_passes_20_of_20():
 def test_runner_mock_mode_exit_zero(capsys):
     assert runner.main(["--mode", "mock"]) == 0
     out = capsys.readouterr().out
-    assert "20/20 answers passed" in out
+    assert "26/26 answers passed" in out
 
 
 def test_runner_poison_is_detected(capsys):

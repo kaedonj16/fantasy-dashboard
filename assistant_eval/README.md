@@ -1,14 +1,15 @@
 # Assistant eval harness (Stage 1)
 
-The frozen eval for the BR Fantasy AI assistant's core seven question types,
+The frozen eval for the BR Fantasy AI assistant's question types,
 from section 5 of `~/workspace/chatbot-workshop/chatbot-workshop.md`. A
 question type serves traffic only after it clears this bar; the harness is
 how that is measured without live calls during scoring.
 
 ## What is here
 
-- `questions.json`: exactly 20 frozen questions (start_sit 4, trade_eval 3,
-  buy_sell_hold 3, player 3, metric 3, waivers 2, this_week 2), written
+- `questions.json`: exactly 26 frozen questions (start_sit 4, trade_eval 3,
+  buy_sell_hold 3, player 3, metric 3, waivers 2, this_week 2, leaderboard 6),
+  written
   against Kaedon's league Blackedraw, her team Caleb's Casting Couch,
   Week 7 of the 2026 season. Each entry carries a golden evidence pack that
   mirrors, field for field, what the matching builder in
@@ -22,7 +23,9 @@ how that is measured without live calls during scoring.
   nor the question itself is invented and fails the answer), the verdict
   against the reference, the traps, and the answer structure (verdict
   first, 2 to 4 receipts on number-rich packs; waived for no-data and
-  clarify outcomes).
+  clarify outcomes). Leaderboard answers are scored as boards: every
+  reference key number must be cited and the receipt rows must carry the
+  board names in the pack's computed order, one receipt per board row.
 - `mock_composer.py`: a deterministic stub composer that builds each
   answer from its pack's own fields. Mock mode validates the harness and
   scorer mechanics; it says nothing about model quality.
@@ -31,7 +34,7 @@ how that is measured without live calls during scoring.
   checks (including mechanical reference-vs-pack consistency), the mock
   full run, and the poison check.
 
-## The two traps
+## The three traps
 
 - `m3` (metric): asks for yards per route run. The feed carries no route
   data, so the pack is the backend's real no-data shape
@@ -42,11 +45,24 @@ how that is measured without live calls during scoring.
   her roster, the engine's pick) and Brian Robinson Jr. in the pack.
   Accepted outcomes are in `expect.accept`: `clarify`, or
   `pick:Bijan Robinson` with the roster assumption.
+- `lb5` (leaderboard): asks a free caller for the WOPR board. WOPR is a
+  PRO metric, so the pack is the gated shape (`available: false`,
+  `gated: true`). A correct answer names PRO as the reason and shows no
+  board numbers anywhere, matching the Advanced Metrics surfaces.
+- `lb6` (leaderboard): the routes trap on a pool-wide phrasing (top 10 in
+  yards per route run). Same no-data shape as `m3`.
+
+## The leaderboard family (lb1-lb6)
+
+Pool-wide boards from the deep-cuts intent: a single-metric board (lb1),
+an intersection of two top-10 boards (lb2), a movers board over a recent
+window against a prior baseline (lb3), a matchup board of defenses
+against a position (lb4), the PRO gate (lb5), and the no-data trap (lb6).
 
 ## Pass bar (automated part)
 
-Zero invented numbers across all 20, both traps handled, and at least
-18 of 20 verdicts matching the reference. The workshop's fourth bar
+Zero invented numbers across all 26, all traps handled, and at least
+24 of 26 verdicts matching the reference. The workshop's fourth bar
 (blind head-to-head preference, at least 60%) is human-scored and is not
 part of this runner.
 
@@ -55,7 +71,7 @@ part of this runner.
 From the app root:
 
 ```bash
-# Deterministic harness check (no key, no model). All 20 must pass.
+# Deterministic harness check (no key, no model). All 26 must pass.
 python3 scripts/run_assistant_eval.py --mode mock
 
 # Poison check: injects one invented number (9999) into ss1 and verifies

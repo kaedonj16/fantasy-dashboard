@@ -33,6 +33,7 @@ _ACT_LINKS = {
     "buy_sell_hold": {"href": "/players", "label": "View player"},
     "player": {"href": "/players", "label": "View player"},
     "metric": {"href": "/metrics", "label": "Open Advanced Metrics"},
+    "leaderboard": {"href": "/metrics", "label": "Open Advanced Metrics"},
     "waivers": {"href": "/waivers", "label": "Open Waivers"},
     "this_week": {"href": "/", "label": "Open dashboard"},
 }
@@ -199,6 +200,21 @@ def no_data_answer(pack: dict) -> dict:
     return {"verdict": None, "text": text, "receipts": [], "caveat": None,
             "followups": [f"What is {n}?" for n in nearest[:2]],
             "act_link": dict(_ACT_LINKS["metric"]), "actions": [], "mentions": []}
+
+
+def _board_link(pack):
+    """Mirror of compose._board_link: the leaderboard preset link shape."""
+    key = (pack or {}).get("metric_key")
+    if not key:
+        return None
+    base = _league_base(pack)
+    href = (f"{base}/metrics" if base else "/metrics") + "?metric=" + quote(str(key), safe="")
+    positions = [str(p) for p in (pack.get("positions") or []) if p]
+    if not positions and pack.get("position_filter"):
+        positions = [str(pack["position_filter"])]
+    if len(positions) == 1:
+        href += "&pos=" + quote(positions[0], safe="")
+    return {"href": href, "label": "Open Advanced Metrics"}
 
 
 def _base(intent, pack):
@@ -397,14 +413,146 @@ def _cta_label(action):
     return "View"
 
 
+# -- leaderboard: mirrors of compose's deterministic board rendering -------------
+
+def gated_answer(pack: dict) -> dict:
+    """Mirror of compose.gated_answer (same strings, same shape)."""
+    label = pack.get("label") or "That metric"
+    text = (f"{label} is a PRO metric on BR Fantasy, so its board is not included "
+            "on the free tier. Free boards I can pull right now include target share, "
+            "air yards share, and snap share.")
+    return {"verdict": None, "text": text, "receipts": [], "caveat": None,
+            "followups": ["Who leads in target share?", "Who leads in snap share?"],
+            "act_link": _board_link(pack) or dict(_ACT_LINKS["leaderboard"]),
+            "actions": []}
+
+
+def _fmt_delta(value) -> str:
+    f = float(value)
+    if f == 0:
+        return "0"
+    return ("+" if f > 0 else "-") + fmt(abs(f))
+
+
+def _board_verdict(pack):
+    board = pack.get("board") or []
+    if not board:
+        return None
+    top = board[0]
+    kind = pack.get("board_kind")
+    label = pack.get("label") or ""
+    if kind == "matchup":
+        return f"{top.get('team')} gives up the most to {pack.get('position_filter')}s"
+    if kind == "intersection":
+        return f"{top.get('name')} tops both boards"
+    if kind == "movers":
+        word = "faller" if pack.get("direction") == "fallers" else "riser"
+        return f"{top.get('name')} is the biggest {word} in {label}"
+    return f"{top.get('name')} leads {label}"
+
+
+def _board_line(row, pack):
+    kind = pack.get("board_kind")
+    rank = row.get("rank")
+    name = row.get("name") or ""
+    meta = ", ".join(x for x in (row.get("team"), row.get("position")) if x)
+    head = f"{rank}. {name}" + (f" ({meta})" if meta else "")
+    value = fmt(row.get("value")) if row.get("value") is not None else ""
+    if kind == "matchup":
+        return (f"{rank}. {row.get('team')}: {value} fantasy points allowed "
+                f"per game to {pack.get('position_filter')}")
+    if kind == "movers":
+        if row.get("delta") is not None:
+            return (f"{head}: {_fmt_delta(row['delta'])} to {value} "
+                    f"(was {fmt(row.get('baseline_value'))})")
+        return f"{head}: {value} {pack.get('label')}"
+    if kind == "intersection":
+        sec = row.get("secondary") or {}
+        return (f"{head}: {value} {pack.get('label')}, "
+                f"{fmt(sec.get('value'))} {pack.get('second_label')}")
+    line = f"{head}: {value}"
+    if kind == "dual":
+        sec = row.get("secondary")
+        if sec:
+            line += (f" - {pack.get('second_label')} {fmt(sec.get('value'))} "
+                     f"(#{sec.get('rank')})")
+        elif pack.get("second_label"):
+            line += f" - {pack.get('second_label')} not qualified"
+    return line
+
+
+def _board_receipt(row, pack):
+    kind = pack.get("board_kind")
+    label = f"{row.get('rank')}. {row.get('name') or row.get('team')}"
+    value = fmt(row.get("value")) if row.get("value") is not None else ""
+    if kind == "movers" and row.get("delta") is not None:
+        return {"label": label, "value": f"{_fmt_delta(row['delta'])} (now {value})"}
+    if kind == "intersection":
+        sec = row.get("secondary") or {}
+        return {"label": label,
+                "value": f"{value} - {pack.get('second_label')} {fmt(sec.get('value'))}"}
+    if kind == "dual":
+        sec = row.get("secondary")
+        if sec:
+            return {"label": label,
+                    "value": (f"{value} - {pack.get('second_label')} "
+                              f"{fmt(sec.get('value'))} (#{sec.get('rank')})")}
+    return {"label": label, "value": value}
+
+
+def _board_intro_template(pack):
+    board = pack.get("board") or []
+    top = board[0] if board else {}
+    kind = pack.get("board_kind")
+    label = pack.get("label") or ""
+    value = fmt(top.get("value")) if top.get("value") is not None else ""
+    if kind == "matchup":
+        return (f"{top.get('team')} is the softest matchup for "
+                f"{pack.get('position_filter')}s at {value} fantasy points "
+                "allowed per game.")
+    if kind == "intersection":
+        return (f"{pack.get('board_count')} players sit in the top "
+                f"{pack.get('requested_n')} of both {label} and "
+                f"{pack.get('second_label')}.")
+    if kind == "movers":
+        if top.get("delta") is not None:
+            return (f"{top.get('name')} moved the most in {label} over the "
+                    f"recent window, {_fmt_delta(top['delta'])} to {value}.")
+        return f"{top.get('name')} leads the {label} board at {value}."
+    return (f"{top.get('name')} leads {label} at {value} across "
+            f"{pack.get('pool_size')} qualified players.")
+
+
+def _leaderboard(pack):
+    # Mock mode has no model, so the intro is always the deterministic
+    # template (the live composer may swap in a model framing sentence that
+    # names no board entry; verdict, lines, and receipts are identical).
+    board = pack.get("board") or []
+    body = "\n".join([_board_intro_template(pack)]
+                     + [_board_line(r, pack) for r in board])
+    qual = pack.get("qualification_text")
+    if qual:
+        body += "\n" + qual
+    ans = _base("leaderboard", pack)
+    ans["act_link"] = _board_link(pack) or ans["act_link"]
+    ans.update({"verdict": _board_verdict(pack), "text": body,
+                "receipts": [_board_receipt(r, pack) for r in board],
+                "followups": ["Who is rising in target share?",
+                              "Who leads in air yards share?"]})
+    return ans
+
+
 _BUILDERS = {"start_sit": _start_sit, "trade_eval": _trade_eval,
              "buy_sell_hold": _buy_sell_hold, "player": _player, "metric": _metric,
+             "leaderboard": _leaderboard,
              "waivers": _waivers, "this_week": _this_week}
 
 
 def compose_mock(question: dict) -> dict:
     """Build the mock answer for one frozen question entry."""
     pack = question.get("evidence_pack") or {}
+    if isinstance(pack, dict) and pack.get("gated"):
+        return gated_answer(pack)
     if isinstance(pack, dict) and pack.get("available") is False:
         return no_data_answer(pack)
     builder = _BUILDERS[question["type"]]

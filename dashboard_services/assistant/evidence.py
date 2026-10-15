@@ -98,6 +98,84 @@ def matchup_rank_table(*args, **kwargs):
     return _fn(*args, **kwargs)
 
 
+def metric_leaderboard(*args, **kwargs):
+    from data_building.advanced_metrics import get_metric_leaderboard as _fn
+    return _fn(*args, **kwargs)
+
+
+def weekly_range_leaderboard(*args, **kwargs):
+    from data_building.advanced_metrics import get_weekly_range_leaderboard as _fn
+    return _fn(*args, **kwargs)
+
+
+def adv_weekly_range_leaderboard(*args, **kwargs):
+    from data_building.advanced_metrics import get_adv_weekly_range_leaderboard as _fn
+    return _fn(*args, **kwargs)
+
+
+def situational_leaderboard(*args, **kwargs):
+    from data_building.advanced_metrics import get_situational_leaderboard as _fn
+    return _fn(*args, **kwargs)
+
+
+def adv_weekly_supported(metric) -> bool:
+    from data_building.advanced_metrics import adv_weekly_metric_supported
+    return bool(adv_weekly_metric_supported(metric))
+
+
+def weekly_metric_keys():
+    from data_building.advanced_metrics import _WEEKLY_METRICS
+    return _WEEKLY_METRICS
+
+
+def situational_metric_keys():
+    from data_building.advanced_metrics import SITUATIONAL_METRICS
+    return SITUATIONAL_METRICS
+
+
+def qualification_policy_for(season, week_start=None, week_end=None):
+    from utils.season_qualification import qualification_policy
+    return qualification_policy(season, week_start=week_start, week_end=week_end)
+
+
+def pro_metric_keys():
+    from data_building.advanced_metrics import PRO_METRICS
+    return PRO_METRICS
+
+
+def premium_metric_keys():
+    from data_building.advanced_metrics import PREMIUM_METRICS
+    return PREMIUM_METRICS
+
+
+def premium_metrics_exposed() -> bool:
+    from data_building.advanced_metrics import premium_metrics_exposed as _fn
+    return bool(_fn())
+
+
+def request_has_pro(bundle) -> bool:
+    """Per-user PRO check for assistant callers, mirroring
+    routes/advanced_metrics_bp._request_has_premium: the same
+    has_premium_for_viewer call with the session's viewer identity and this
+    bundle's league/platform/season. Fail closed."""
+    try:
+        from flask import session
+        from dashboard_services.subscriptions import has_premium_for_viewer
+        return bool(has_premium_for_viewer(
+            session.get("viewer_username"), session.get("viewer_user_id"),
+            (bundle or {}).get("league_id"), (bundle or {}).get("platform", "sleeper"),
+            (bundle or {}).get("season"),
+        ))
+    except Exception:
+        return False
+
+
+def _caller_has_pro(bundle) -> bool:
+    if isinstance(bundle, dict) and bundle.get("has_pro") is not None:
+        return bool(bundle["has_pro"])
+    return request_has_pro(bundle or {})
+
+
 def sleeper_trending_adds(*args, **kwargs):
     from routes.waiver_bp import _sleeper_trending_adds as _fn
     return _fn(*args, **kwargs)
@@ -741,6 +819,28 @@ def build_player(bundle, entities, player_ids) -> tuple[dict, list[str]]:
             tools.append("advanced_metrics.get_player_metric_ranks")
     except Exception:
         logger.debug("[assistant] metric ranks failed", exc_info=True)
+    # Player-in-pool framing for target share: the player's rank inside the
+    # QUALIFIED position pool (the same leaderboard pool the AM page uses).
+    if metrics.get("target_share") is not None and info.get("position"):
+        try:
+            config = _metric_config()
+            spec = config.get("target_share") or {}
+            qrows, _qual = _season_board("target_share", spec,
+                                          bundle.get("season"), info["position"])
+            for i, r in enumerate(qrows):
+                if isinstance(r, dict) and str(r.get("player_id") or r.get("id") or "") == str(pid):
+                    pool = len(qrows)
+                    rank = i + 1
+                    pack["pool_framing"] = {
+                        "metric_key": "target_share", "label": "Target Share",
+                        "rank": rank, "pool_size": pool,
+                        "percentile": (round(100 * (pool - rank) / max(pool - 1, 1))
+                                       if pool > 1 else 100),
+                    }
+                    tools.append("advanced_metrics.get_metric_leaderboard")
+                    break
+        except Exception:
+            logger.debug("[assistant] player pool framing failed", exc_info=True)
     try:
         from dashboard_services.news import get_player_news
         news = get_player_news(info["name"], limit=3) or {}
@@ -778,6 +878,168 @@ def _metric_config():
     return LEADERBOARD_METRICS
 
 
+def _resolve_metric_key(hint, config) -> str | None:
+    """Resolve a free-text metric hint to a LEADERBOARD_METRICS key: exact
+    key, then label or substring match (the build_metric resolution rule,
+    shared by the leaderboard builder)."""
+    if not hint:
+        return None
+    if hint in config:
+        return hint
+    for k, spec in config.items():
+        label = str(spec.get("label") or "").lower().replace(" ", "_")
+        if hint in (k, label) or hint in k or hint in label:
+            return k
+    return None
+
+
+def _r3(value):
+    try:
+        return round(float(value), 3)
+    except (TypeError, ValueError):
+        return None
+
+
+def _vol_label(spec) -> str:
+    mv = (spec or {}).get("min_vol") or {}
+    label = str(mv.get("label") or "").strip().lower()
+    if label.startswith("min "):
+        label = label[4:]
+    return label or str(mv.get("col") or "games")
+
+
+def _season_board(key, spec, season, position):
+    """(rows, qualification) for a season board, using the SAME pool
+    definition as the Advanced Metrics leaderboard route: the metric's own
+    min_vol default scaled by the season qualification policy
+    (routes/advanced_metrics_bp.py computes min_vol exactly this way)."""
+    min_vol = None
+    games_min = None
+    provisional = False
+    if isinstance(season, int):
+        mv = (spec or {}).get("min_vol") or {}
+        opts = mv.get("opts") or []
+        full_default = int(opts[0]) if opts else 1
+        try:
+            policy = qualification_policy_for(season)
+            min_vol = policy.minimum(mv.get("col") or "games", full_default)
+            games_min = policy.games_min
+            provisional = bool(policy.provisional)
+        except Exception:
+            min_vol = None
+    rows = metric_leaderboard(key, position=position, season=season,
+                              min_vol=min_vol, limit=500) or []
+    qual = {"vol_col": ((spec or {}).get("min_vol") or {}).get("col") or "games",
+            "vol_label": _vol_label(spec), "min_vol": min_vol,
+            "games_min": games_min, "provisional": provisional}
+    return rows, qual
+
+
+def _range_capable(key) -> bool:
+    """Week-range boards exist for weekly, advanced-weekly, and situational
+    metrics: the same dispatch the AM route uses."""
+    try:
+        if key in (weekly_metric_keys() or {}):
+            return True
+    except Exception:
+        pass
+    try:
+        if adv_weekly_supported(key):
+            return True
+    except Exception:
+        pass
+    try:
+        if key in (situational_metric_keys() or {}):
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _range_board(key, spec, season, position, week_start, week_end):
+    """Rows for one week window, dispatched exactly like the AM route's
+    week-filtered leaderboard (weekly, then adv-weekly, then situational),
+    with the qualification-scaled min_vol the route computes."""
+    min_vol = None
+    if isinstance(season, int):
+        mv = (spec or {}).get("min_vol") or {}
+        opts = mv.get("opts") or []
+        full_default = int(opts[0]) if opts else 1
+        try:
+            policy = qualification_policy_for(season, week_start=week_start,
+                                              week_end=week_end)
+            min_vol = policy.minimum(mv.get("col") or "games", full_default)
+        except Exception:
+            min_vol = None
+    if key in (weekly_metric_keys() or {}):
+        rows = weekly_range_leaderboard(key, position=position, season=season,
+                                        week_start=week_start, week_end=week_end,
+                                        min_vol=min_vol, limit=500)
+    elif adv_weekly_supported(key):
+        rows = adv_weekly_range_leaderboard(key, position=position, season=season,
+                                            week_start=week_start, week_end=week_end,
+                                            min_vol=min_vol, limit=500)
+    elif key in (situational_metric_keys() or {}):
+        rows = situational_leaderboard(key, position=position, season=season,
+                                       week_start=week_start, week_end=week_end,
+                                       limit=500)
+    else:
+        rows = []
+    return rows or []
+
+
+def _gate_for(bundle, key) -> str | None:
+    """PRO/PREMIUM gating with parity to routes/advanced_metrics_bp.py:
+    premium metrics that are not exposed answer 'metric not available';
+    PRO metrics answer gated for callers without PRO. Returns 'gated',
+    'unavailable', or None."""
+    try:
+        if key in (premium_metric_keys() or set()) and not premium_metrics_exposed():
+            return "unavailable"
+    except Exception:
+        pass
+    try:
+        if key in (pro_metric_keys() or set()) and not _caller_has_pro(bundle):
+            return "gated"
+    except Exception:
+        pass
+    return None
+
+
+def _season_qual_text(qual, pool_size, position, team) -> str:
+    pool_what = f"{position} players" if position else "players"
+    text = f"Qualified pool: {pool_size} {pool_what}"
+    if qual.get("min_vol") is not None:
+        text += f", minimum {qual['min_vol']} {qual.get('vol_label') or 'games'}"
+    text += "."
+    if qual.get("provisional"):
+        text += " Early season: the pool is still provisional and ranks will move."
+    if team:
+        text += f" Showing {team} only."
+    return text
+
+
+def _board_row(rank, r, roster_ids, value=None):
+    pid = str(r.get("player_id") or r.get("id") or "")
+    return {"rank": rank, "player_id": pid,
+            "name": r.get("name") or pid,
+            "team": r.get("team") or "",
+            "position": r.get("position") or "",
+            "value": _r3(value if value is not None else
+                         (r.get("value") if r.get("value") is not None else None)),
+            "games": r.get("games"),
+            "on_my_roster": bool(pid and pid in roster_ids)}
+
+
+def _gated_pack(pack, key, label):
+    pack["available"] = False
+    pack["gated"] = True
+    pack["metric_key"] = key
+    pack["label"] = label
+    pack["missing"] = "pro_only"
+    return pack
+
+
 def build_metric(bundle, entities, player_ids=None) -> tuple[dict, list[str]]:
     pack = _base_pack("metric", bundle)
     tools: list[str] = ["advanced_metrics.config"]
@@ -788,16 +1050,7 @@ def build_metric(bundle, entities, player_ids=None) -> tuple[dict, list[str]]:
     except Exception:
         config = {}
     # Resolve hint to a config key by key, label, or substring.
-    key = None
-    if hint:
-        if hint in config:
-            key = hint
-        else:
-            for k, spec in config.items():
-                label = str(spec.get("label") or "").lower().replace(" ", "_")
-                if hint in (k, label) or hint in k or hint in label:
-                    key = k
-                    break
+    key = _resolve_metric_key(hint, config)
     if not key:
         missing_note, nearest = KNOWN_MISSING.get(hint, ("metric not in the site config", []))
         if not nearest:
@@ -834,6 +1087,348 @@ def build_metric(bundle, entities, player_ids=None) -> tuple[dict, list[str]]:
         ]
     except Exception:
         logger.debug("[assistant] leaderboard failed", exc_info=True)
+    # Player-in-pool framing: where the asked-about player sits in the
+    # QUALIFIED pool (the AM page's qualification minimums), not just the
+    # raw list above.
+    if player_ids:
+        try:
+            qrows, _qual = _season_board(key, spec, bundle.get("season"), None)
+            pack["pool_size"] = len(qrows)
+            target = str(player_ids[0])
+            for i, r in enumerate(qrows):
+                if isinstance(r, dict) and str(r.get("player_id") or r.get("id") or "") == target:
+                    pool = len(qrows)
+                    rank = i + 1
+                    pack["player_rank"] = {
+                        "player_id": target, "rank": rank, "pool_size": pool,
+                        "percentile": (round(100 * (pool - rank) / max(pool - 1, 1))
+                                       if pool > 1 else 100),
+                        "value": _r3(r.get("value") if r.get("value") is not None else r.get(key)),
+                    }
+                    break
+        except Exception:
+            logger.debug("[assistant] metric pool framing failed", exc_info=True)
+    return pack, tools
+
+
+# -- leaderboard (deep cuts) ------------------------------------------------------------
+
+def _no_board(pack, missing, nearest):
+    pack["available"] = False
+    pack["missing"] = missing
+    pack["nearest"] = nearest
+    return pack
+
+
+def _build_matchup_board(pack, bundle, position, top_n, tools):
+    """Defenses ranked by the site's matchup ratings (the same
+    app._matchup_rank_table the start/sit path uses): rank 1 is the easiest
+    matchup; the value shown is raw fantasy points allowed per game."""
+    if not position:
+        return _no_board(pack, "a position to rank defenses against", []), tools
+    season = bundle.get("season")
+    rows = []
+    total = 0
+    if season:
+        try:
+            table = matchup_rank_table(int(season), position)
+            tools.append("app._matchup_rank_table")
+            ranks = table[0] or {}
+            total = table[1] or len(ranks)
+            info = table[2] if len(table) > 2 else {}
+            for team, rank in sorted(ranks.items(), key=lambda kv: kv[1]):
+                fpts = (info.get(team) or {}).get("fpts")
+                if fpts is None:
+                    continue
+                try:
+                    rows.append({"rank": int(rank), "team": team, "name": team,
+                                 "player_id": "", "position": "",
+                                 "value": round(float(fpts), 1),
+                                 "on_my_roster": False})
+                except (TypeError, ValueError):
+                    continue
+        except Exception:
+            logger.debug("[assistant] matchup board failed", exc_info=True)
+            rows = []
+    if not rows:
+        return _no_board(pack, "matchup ratings are not available yet", []), tools
+    pack["board"] = rows[:top_n]
+    pack["board_count"] = len(pack["board"])
+    pack["pool_size"] = int(total) if total else len(rows)
+    pack["metric_key"] = "defense_points_allowed"
+    pack["label"] = f"Fantasy points allowed to {position}"
+    pack["qualification_text"] = (
+        f"All {pack['pool_size']} defenses, ranked easiest to hardest by the "
+        f"site's opponent-adjusted matchup ratings. Values are raw fantasy "
+        f"points allowed per game to {position}.")
+    return pack, tools
+
+
+def build_leaderboard(bundle, entities, player_ids=None) -> tuple[dict, list[str]]:
+    """Pool-wide boards ("deep cuts"): leaderboards, intersections and dual
+    ranks, movers, and matchup boards. Every rank and value is computed here
+    from the Advanced Metrics leaderboards (one pool definition, the AM
+    page's own qualification minimums) or the matchup-rank table; the model
+    only phrases an intro and follow-ups around the finished board."""
+    pack = _base_pack("leaderboard", bundle)
+    tools: list[str] = ["advanced_metrics.config"]
+    ent = entities or {}
+    kind = str(ent.get("board_kind") or "board").strip().lower()
+    if kind not in ("board", "intersection", "dual", "movers", "matchup"):
+        kind = "board"
+    pack["board_kind"] = kind
+    try:
+        top_n = int(ent.get("top_n") or 10)
+    except (TypeError, ValueError):
+        top_n = 10
+    top_n = max(1, min(25, top_n))
+    pack["requested_n"] = top_n
+    position = str(ent.get("position") or "").strip().upper() or None
+    if position not in ("QB", "RB", "WR", "TE"):
+        position = None
+    pack["position_filter"] = position
+    team = str(ent.get("team") or "").strip().upper() or None
+    pack["team_filter"] = team
+    season = bundle.get("season")
+    roster_ids = bundle.get("roster_player_ids") or set()
+
+    if kind == "matchup":
+        return _build_matchup_board(pack, bundle, position, top_n, tools)
+
+    try:
+        config = _metric_config()
+    except Exception:
+        config = {}
+    hint = str(ent.get("metric_hint") or "").strip().lower().replace(" ", "_")
+    pack["metric_hint"] = hint or None
+    key = _resolve_metric_key(hint, config)
+    trend_default = False
+    if not key and kind == "movers" and not hint:
+        # "Biggest risers" with no metric named is the site's own movers
+        # strip: the Usage Trend board (PRO-gated, like the strip itself).
+        key = "opportunity_trend" if "opportunity_trend" in config else None
+        trend_default = bool(key)
+    if not key:
+        missing_note, nearest = KNOWN_MISSING.get(hint, ("metric not in the site config", []))
+        if not nearest:
+            nearest = [k for k in list(config.keys())[:5]]
+        return _no_board(pack, missing_note, nearest), tools
+    spec = config.get(key) or {}
+    pack["metric_key"] = key
+    pack["label"] = spec.get("label") or key
+    pack["definition"] = spec.get("desc") or spec.get("label") or key
+    gate = _gate_for(bundle, key)
+    if gate == "gated":
+        return _gated_pack(pack, key, pack["label"]), tools
+    if gate == "unavailable":
+        return _no_board(pack, "metric not available", []), tools
+
+    second_key = None
+    second_spec = None
+    if kind in ("intersection", "dual"):
+        shint = str(ent.get("second_metric_hint") or "").strip().lower().replace(" ", "_")
+        second_key = _resolve_metric_key(shint, config) if shint else None
+        if second_key:
+            second_spec = config.get(second_key) or {}
+            gate2 = _gate_for(bundle, second_key)
+            if gate2 == "gated":
+                return _gated_pack(pack, second_key,
+                                   second_spec.get("label") or second_key), tools
+            if gate2 == "unavailable":
+                return _no_board(pack, "metric not available", []), tools
+            pack["second_metric_key"] = second_key
+            pack["second_label"] = second_spec.get("label") or second_key
+        else:
+            # One resolvable metric: degrade to the plain board.
+            kind = "board"
+            pack["board_kind"] = "board"
+
+    try:
+        window_weeks = int(ent.get("window_weeks") or 0)
+    except (TypeError, ValueError):
+        window_weeks = 0
+    week = bundle.get("week")
+    completed = (int(week) - 1) if week else 0
+    direction = str(ent.get("direction") or "risers").strip().lower()
+    if direction not in ("risers", "fallers"):
+        direction = "risers"
+
+    if kind == "movers":
+        return _build_movers(pack, bundle, tools, key, spec, trend_default,
+                             direction, window_weeks, completed, position,
+                             team, top_n, roster_ids)
+
+    # -- season or windowed boards (board / intersection / dual) ----------------
+    window = {"kind": "season", "applied": False,
+              "requested_weeks": window_weeks or None}
+    range_ok = bool(window_weeks) and _range_capable(key) and (
+        second_key is None or _range_capable(second_key))
+    if range_ok and completed >= 1:
+        ws = max(1, completed - window_weeks + 1)
+        we = completed
+        rows = _range_board(key, spec, season, position, ws, we)
+        tools.append("advanced_metrics.range_leaderboard")
+        second_rows = (_range_board(second_key, second_spec, season, position, ws, we)
+                       if second_key else None)
+        window = {"kind": "weeks", "week_start": ws, "week_end": we,
+                  "applied": True, "requested_weeks": window_weeks}
+        pool_size = len(rows)
+        qual_text = (f"Weeks {ws} to {we} only. Qualified pool: {pool_size} "
+                     f"players.")
+        if team:
+            qual_text += f" Showing {team} only."
+    else:
+        rows, qual = _season_board(key, spec, season, position)
+        tools.append("advanced_metrics.get_metric_leaderboard")
+        second_rows = None
+        if second_key:
+            srows, _sq = _season_board(second_key, second_spec, season, position)
+            second_rows = srows
+        pool_size = len(rows)
+        pack["qualification"] = qual
+        qual_text = _season_qual_text(qual, pool_size, position, team)
+    pack["window"] = window
+    pack["pool_size"] = pool_size
+    pack["qualification_text"] = qual_text
+
+    def _filtered(rs):
+        if not team:
+            return list(rs)
+        return [r for r in rs if str(r.get("team") or "").upper() == team]
+
+    rows = _filtered(rows)
+    board = _shape_board(kind, rows, second_rows, top_n, roster_ids)
+    if not board:
+        return _no_board(pack, "no qualified players match those filters", []), tools
+    pack["board"] = board
+    pack["board_count"] = len(board)
+    return pack, tools
+
+
+def _shape_board(kind, rows, second_rows, top_n, roster_ids):
+    """Rank-order rows into the pack board. Source order is the board's own
+    ranking (the leaderboard layer sorts by value, honoring lower-is-better
+    metrics); this never re-sorts."""
+    second_by_id = {}
+    if second_rows:
+        for i, r in enumerate(second_rows):
+            if isinstance(r, dict):
+                pid = str(r.get("player_id") or r.get("id") or "")
+                if pid:
+                    second_by_id[pid] = (i + 1, r)
+    board = []
+    if kind == "intersection":
+        primary_top = rows[:top_n]
+        second_top_ids = {str(r.get("player_id") or r.get("id") or "")
+                          for r in (second_rows or [])[:top_n]
+                          if isinstance(r, dict)}
+        for i, r in enumerate(primary_top):
+            if not isinstance(r, dict):
+                continue
+            pid = str(r.get("player_id") or r.get("id") or "")
+            if pid not in second_top_ids:
+                continue
+            row = _board_row(len(board) + 1, r, roster_ids)
+            srank, srow = second_by_id[pid]
+            row["rank_primary"] = i + 1
+            row["secondary"] = {"value": _r3(srow.get("value")),
+                                "rank": srank}
+            board.append(row)
+        return board
+    for i, r in enumerate(rows[:top_n]):
+        if not isinstance(r, dict):
+            continue
+        row = _board_row(i + 1, r, roster_ids)
+        if kind == "dual" and second_rows is not None:
+            pid = str(r.get("player_id") or r.get("id") or "")
+            hit = second_by_id.get(pid)
+            row["secondary"] = ({"value": _r3(hit[1].get("value")), "rank": hit[0]}
+                                if hit else None)
+        board.append(row)
+    return board
+
+
+def _build_movers(pack, bundle, tools, key, spec, trend_default, direction,
+                  window_weeks, completed, position, team, top_n, roster_ids):
+    season = bundle.get("season")
+    label = pack["label"]
+    if trend_default:
+        # The Usage Trend board itself is the movement ranking: its value is
+        # recent usage versus the season baseline.
+        rows, qual = _season_board(key, spec, season, position)
+        tools.append("advanced_metrics.get_metric_leaderboard")
+        pack["pool_size"] = len(rows)
+        pack["qualification"] = qual
+        pack["movers_basis"] = "trend_metric"
+        pack["direction"] = direction
+        pack["qualification_text"] = _season_qual_text(
+            qual, len(rows), position, team)
+        ordered = list(rows)
+        if direction == "fallers":
+            ordered.reverse()
+        ordered = [r for r in ordered
+                   if not team or str(r.get("team") or "").upper() == team]
+        board = [_board_row(i + 1, r, roster_ids)
+                 for i, r in enumerate(ordered[:top_n]) if isinstance(r, dict)]
+        if not board:
+            return _no_board(pack, "no qualified players match those filters", []), tools
+        pack["board"] = board
+        pack["board_count"] = len(board)
+        return pack, tools
+    if not _range_capable(key):
+        nearest = [k for k in ("target_share", "snap_share") if k != key]
+        return _no_board(
+            pack, f"{label} does not have week-by-week history here", nearest), tools
+    if completed < 4:
+        return _no_board(
+            pack, "not enough completed weeks yet to compare windows", []), tools
+    recent_len = min(window_weeks or 4, completed - 2)
+    rs, re_ = completed - recent_len + 1, completed
+    bs, be = 1, rs - 1
+    recent = _range_board(key, spec, season, position, rs, re_)
+    base = _range_board(key, spec, season, position, bs, be)
+    tools.append("advanced_metrics.range_leaderboard")
+    base_by_id = {str(r.get("player_id") or r.get("id") or ""): r
+                  for r in base if isinstance(r, dict)}
+    joined = []
+    for r in recent:
+        if not isinstance(r, dict):
+            continue
+        pid = str(r.get("player_id") or r.get("id") or "")
+        brow = base_by_id.get(pid)
+        if brow is None:
+            continue
+        rv, bv = _r3(r.get("value")), _r3(brow.get("value"))
+        if rv is None or bv is None:
+            continue
+        joined.append((r, rv, bv, round(rv - bv, 3)))
+    joined.sort(key=lambda t: t[3], reverse=(direction == "risers"))
+    pack["pool_size"] = len(joined)
+    pack["direction"] = direction
+    pack["movers_basis"] = "window_delta"
+    pack["window"] = {"kind": "movers", "recent_start": rs, "recent_end": re_,
+                      "recent_weeks": recent_len, "base_start": bs,
+                      "base_end": be, "applied": True}
+    pack["qualification_text"] = (
+        f"Recent window: weeks {rs} to {re_}. Baseline: weeks {bs} to {be}. "
+        f"Only players with a {label} in both windows are ranked; "
+        f"{len(joined)} qualify.")
+    if team:
+        pack["qualification_text"] += f" Showing {team} only."
+    board = []
+    for r, rv, bv, delta in joined:
+        if team and str(r.get("team") or "").upper() != team:
+            continue
+        row = _board_row(len(board) + 1, r, roster_ids, value=rv)
+        row["baseline_value"] = bv
+        row["delta"] = delta
+        board.append(row)
+        if len(board) >= top_n:
+            break
+    if not board:
+        return _no_board(pack, "no qualified players match those filters", []), tools
+    pack["board"] = board
+    pack["board_count"] = len(board)
     return pack, tools
 
 
@@ -1032,6 +1627,7 @@ BUILDERS = {
     "buy_sell_hold": build_buy_sell_hold,
     "player": build_player,
     "metric": build_metric,
+    "leaderboard": build_leaderboard,
     "waivers": build_waivers,
     "this_week": build_this_week,
 }
