@@ -2091,7 +2091,7 @@ _AM_JS = r"""
                   minVol: _initParams.get('minvol') || '',
                   rosterOnly: false, page: 0,
                   team: _initParams.get('team') || '',
-                  fetching: false, volCol: 'games', team: '',
+                  fetching: false, volCol: 'games',
                   weekRange: '',       // '', 'last4', 'last8', 'last12', 'custom'
                   weekStart: null,     // resolved numeric week start
                   weekEnd: null,       // resolved numeric week end
@@ -6347,9 +6347,13 @@ _AM_JS = r"""
     // amLoadPreset, custom via the saved-set refresh chain).
     _presetLoaded = true;
   }
-  else {
+  else if (!_hasAmUrlState()) {
     // Default landing: the last-used decision view, else Key Metrics
     // (free). Free users with a stale PRO last-preset fall back to 'general'.
+    // A state-bearing deep link (?metric= / ?pos= / ?team= / ...) with no
+    // ?preset= must NOT be run over by the landing preset: the URL state
+    // already seeded `state`, so fall through and let fetchData() below
+    // load exactly the staged board.
     let _lastPreset = null;
     try { _lastPreset = localStorage.getItem('amLastPreset'); } catch (e) {}
     let _landing = (_lastPreset && _PRESETS[_lastPreset]) ? _lastPreset : 'key_metrics';
@@ -6387,6 +6391,13 @@ _AM_JS = r"""
         if (_gyInit && ySel) ySel.value = _gyInit;
         if (_gzInit && zSel) zSel.value = _gzInit;
         if (_gnInit && nSel) nSel.value = _gnInit;
+        // The search-picker labels sync off the select 'change' event (the
+        // same event amOpenGraph dispatches for its defaults); a bare
+        // .value assignment leaves the picker buttons naming the default
+        // metrics while the plot renders the staged ones.
+        [xSel, ySel, zSel].forEach(function(s) {
+          if (s) s.dispatchEvent(new Event('change'));
+        });
         if (_isOgRender) _amGraphTheme = 'light';
         window.amRenderGraph();
       }, 50);

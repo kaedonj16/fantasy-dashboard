@@ -757,9 +757,15 @@ def page_trade_database(platform: str, season: int, league_id: str):
       bindTDBSearch('A');
       bindTDBSearch('B');
 
-      // Auto-select player from ?q= URL param
+      // Auto-select player from ?q= URL param. Resolve through the same
+      // server-side search an interactive pick uses (tdbSearchPlayers):
+      // the old path searched only the limit=100 starter pool from
+      // ensureTDBPlayers(), so a ?q= naming anyone outside that pool
+      // silently staged nothing. The starter pool stays as a fallback
+      // when the search comes back empty (e.g. a transient error).
       if (initQ) {{
-        ensureTDBPlayers().then(players => {{
+        tdbSearchPlayers(initQ).then(async players => {{
+          if (!players.length) players = await ensureTDBPlayers();
           const q = initQ.toLowerCase();
           const match = players.find(p => p.name && p.name.toLowerCase().includes(q));
           if (match) {{

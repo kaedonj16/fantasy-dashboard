@@ -168,7 +168,14 @@ def build_schedule_body(ctx):
       if (!Array.isArray(selPids) || !selPids.length) selPids = CFG.initPids.slice();
       try {
         var addPid = new URLSearchParams(window.location.search).get('add');
-        if (addPid && selPids.indexOf(addPid) === -1) selPids.unshift(addPid);
+        if (addPid && selPids.indexOf(addPid) === -1) {
+          selPids.unshift(addPid);
+          // An interactive add persist()s the list; a URL-staged add must
+          // land in the same saved list or it silently vanishes on the
+          // next visit without the ?add= param. Only the pid list is
+          // written here: the week range is not initialized yet.
+          try { localStorage.setItem(LS_PIDS, JSON.stringify(selPids)); } catch (e2) {}
+        }
       } catch (e) {}
 
       var wkStart = CFG.defStart, wkEnd = CFG.defEnd;

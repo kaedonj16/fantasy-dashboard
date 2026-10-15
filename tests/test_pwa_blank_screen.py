@@ -45,9 +45,10 @@ def test_cache_name_bumped_for_blank_screen_fix():
     # continuity build (cross-page thread restore, launcher typing and
     # unseen-answer indicators, the corrected minimize chevron); v38
     # ships the Class A shared-cache viewer fixes (client-side viewer
-    # marking in teams.js).
+    # marking in teams.js); v39 ships the staged deep-link parity
+    # fixes in app.js.
     # Assert the current version, not a stale pin.
-    assert "br-fantasy-v38" in SW
+    assert "br-fantasy-v39" in SW
 
 
 def test_nav_timeout_always_races_even_without_cache():
