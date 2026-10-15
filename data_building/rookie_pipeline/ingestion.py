@@ -840,6 +840,125 @@ def _record_team_targets(season: int, team: str, team_targets: int) -> None:
         print(f"[targets] WARNING: could not record team total for {team} {season}: {exc}")
 
 
+def _get_existing_receptions(draft_year: int, years: List[int]) -> Dict[str, Dict[int, int]]:
+    """Stored receptions from DB: {name_lower: {year: receptions}}."""
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT player_id, season, receptions
+                    FROM rookie_prospect_source_data
+                    WHERE player_id LIKE %s AND season = ANY(%s)
+                    AND receptions IS NOT NULL
+                """, (_player_id_prefix(draft_year) + "%", years))
+                result: Dict[str, Dict[int, int]] = {}
+                for _row in cur.fetchall():
+                    name = _name_key_from_player_id(_row["player_id"], draft_year)
+                    if not name:
+                        continue
+                    rec_int = int(_row["receptions"])
+                    prev = result.setdefault(name, {}).get(int(_row["season"]))
+                    if prev is None or rec_int > prev:
+                        result[name][int(_row["season"])] = rec_int
+                return result
+    except Exception:
+        return {}
+
+
+def detect_stranded_target_team_seasons(
+    draft_year: int, season: int, teams: List[str],
+) -> List[str]:
+    """
+    Team-seasons stranded by a killed targets run: the fetch persisted
+    week marks and/or an accumulated team total (team_targets > 0), but
+    the end-of-run player write never happened, so ZERO players have
+    stored targets for that team-season.  A rerun trusting those marks
+    would skip the weeks and undercount permanently, so these must be
+    cleared and refetched.  Team-seasons with any stored player targets
+    are never stranded, however partial they look.
+    """
+    stored = _get_existing_targets(draft_year, [season])
+    teams_with_targets = {
+        (entry.get("team") or "")
+        for yrs in stored.values()
+        for entry in [yrs.get(season)] if entry
+    }
+    tracked = _get_fetched_weeks("targets", [season]).get(season, {})
+    baselines = _get_team_targets_baselines([season])
+    stranded = []
+    for team in teams:
+        if team in teams_with_targets:
+            continue
+        has_marks = bool(tracked.get(team))
+        has_total = baselines.get((season, team), 0) > 0
+        if has_marks or has_total:
+            stranded.append(team)
+    return stranded
+
+
+def clear_target_team_season_tracking(season: int, team: str) -> None:
+    """Clear ONLY one team-season's targets tracking (marks + team total)."""
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    DELETE FROM rookie_stat_fetched_weeks
+                    WHERE kind = 'targets' AND season = %s AND team = %s
+                """, (int(season), team))
+                cur.execute(_TEAM_TARGETS_DDL)
+                cur.execute("""
+                    DELETE FROM rookie_targets_team_totals
+                    WHERE season = %s AND team = %s
+                """, (int(season), team))
+    except Exception as exc:
+        print(f"[targets] WARNING: could not clear stranded tracking for "
+              f"{team} {season}: {exc}")
+
+
+def _write_player_targets(
+    draft_year: int,
+    season: int,
+    totals_by_name: Dict[str, int],
+    receptions_by_name: Optional[Dict[str, Dict[int, int]]] = None,
+) -> Tuple[int, int]:
+    """
+    Write one team-season's composed player targets NOW (its own commit).
+
+    Sanity guard: a composed total below the player's stored receptions
+    is impossible (targets >= receptions by definition) and marks a bad
+    parse/composition, so it is logged and skipped rather than written.
+
+    Returns (rows_updated, rows_skipped_by_guard).
+    """
+    from dashboard_services.db import get_conn
+
+    prefix = _player_id_prefix(draft_year)
+    updated = 0
+    skipped = 0
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            for name_lower, targets in totals_by_name.items():
+                if not name_lower or targets is None:
+                    continue
+                rec = ((receptions_by_name or {}).get(name_lower) or {}).get(season)
+                if rec is not None and int(targets) < int(rec):
+                    print(f"[targets] GUARD: skipping {name_lower} {season}: "
+                          f"targets {targets} < receptions {rec}")
+                    skipped += 1
+                    continue
+                player_id = prefix + str(name_lower).strip().replace(" ", "_")
+                cur.execute("""
+                    UPDATE rookie_prospect_source_data
+                    SET targets = %s
+                    WHERE player_id = %s AND season = %s
+                """, (int(targets), player_id, int(season)))
+                updated += cur.rowcount or 0
+        conn.commit()
+    return updated, skipped
+
+
 def _get_fetched_weeks(kind: str, years: List[int]) -> Dict[int, Dict[str, Set[int]]]:
     """Weeks already folded into stored totals: {season: {team: {week, ...}}}."""
     try:
@@ -2342,6 +2461,7 @@ def fetch_cfbd_targets_from_plays(
     draft_year: int,
     teams_by_year: Dict[int, List[str]],
     adopt_stored: bool = True,
+    on_team_season=None,
 ) -> Dict[str, Dict[int, Dict[str, Any]]]:
     """
     Target counts + target share parsed from CFBD play-by-play TEXT.
@@ -2373,6 +2493,14 @@ def fetch_cfbd_targets_from_plays(
     target_share denominator = sum of derived targets for the team-season
     (named receivers only, so numerator and denominator are consistent),
     accumulated in rookie_targets_team_totals exactly like the old fetcher.
+
+    on_team_season (optional): callable(season, team, {name_lower: total})
+    invoked the moment a team-season finishes (weeks marked, team total
+    recorded), with that team-season's composed totals (stored + new when
+    adopt_stored).  It lets a caller persist player targets per team-season
+    instead of only at the very end of a multi-hour sweep: a kill mid-run
+    then loses at most the in-flight team-season.  Callback exceptions are
+    logged, never fatal to the fetch.
 
     Returns {} on any failure - the pipeline continues without targets.
     """
@@ -2525,11 +2653,32 @@ def fetch_cfbd_targets_from_plays(
         has_stored = any(season_year in yrs for yrs in stored.values())
         print(f"[targets-plays] Fetching {season_year} for {len(teams)} teams")
         additions: Dict[str, Tuple[int, str]] = {}   # name → (added, team)
+        team_additions: Dict[str, Dict[str, int]] = {}  # team → name → added
 
         def _add_targets(tgts: Dict[str, int], team: str) -> None:
             for n, c in tgts.items():
                 prev_add, _ = additions.get(n, (0, team))
                 additions[n] = (prev_add + c, team)
+                per_team = team_additions.setdefault(team, {})
+                per_team[n] = per_team.get(n, 0) + c
+
+        def _emit_team_season(team: str) -> None:
+            """Persist-as-you-go hook: fire once a team-season is complete."""
+            if on_team_season is None:
+                return
+            per_team = team_additions.get(team) or {}
+            if not per_team:
+                return
+            totals: Dict[str, int] = {}
+            for n, add in per_team.items():
+                base = ((stored.get(n, {}).get(season_year) or {}).get("targets", 0)
+                        if adopt_stored else 0)
+                totals[n] = base + add
+            try:
+                on_team_season(season_year, team, totals)
+            except Exception as exc:
+                print(f"[targets-plays] WARNING: on_team_season callback failed "
+                      f"for {team} {season_year}: {exc}")
 
         # Legacy bootstrap (mirrors GP / old targets): stored totals exist
         # but no week tracking at all - adopt them as complete for every
@@ -2586,6 +2735,7 @@ def fetch_cfbd_targets_from_plays(
                     total_all = base + team_total_new
                     baselines[(season_year, team)] = total_all
                     _record_team_targets(season_year, team, total_all)
+                _emit_team_season(team)
         else:
             # ── Current season: per-week incremental per team ──
             est = _estimated_current_week(today)
@@ -2639,6 +2789,7 @@ def fetch_cfbd_targets_from_plays(
                     total_all = base + team_total_new
                     baselines[(season_year, team)] = total_all
                     _record_team_targets(season_year, team, total_all)
+                _emit_team_season(team)
 
         # Merge: stored totals for everyone, additions on top.  Nothing
         # validated → totals identical to what's stored (pure no-op).
@@ -2759,6 +2910,114 @@ def backfill_cfbd_targets_from_plays(draft_year: int) -> Dict[str, Any]:
     print(f"[targets-plays] backfill: updated {summary['updated']} "
           f"player-season rows across {summary['teams']} team-seasons "
           f"for class {draft_year}: {summary['by_season']}")
+    return summary
+
+
+def run_daily_prospect_targets(draft_year: int) -> Dict[str, Any]:
+    """
+    Daily-job targets fill, scoped to the LATEST stored season only.
+
+    Why latest only: the grading model reads targets only from the latest
+    season (prospect_model calc_utilization_score targets/game, and the TE
+    catch rate in calc_efficiency_score, both via _latest_season), so that
+    season is where targets move grades.  Older seasons are a separate,
+    later catch-up, not a daily cost.  A full 3-season sweep measured
+    ~1,800 CFBD calls at the 4s throttle (9-10+ hours); one season is a
+    fraction of that, and after the first fill the existing week marks
+    make each daily run fetch only the new week.
+
+    Resumable by construction: fetch_cfbd_targets_from_plays fires the
+    on_team_season callback per completed team-season and this writes
+    that team-season's player targets immediately (with the
+    targets >= receptions guard), so a kill loses at most the in-flight
+    team-season.  Team-seasons stranded by the Oct 2026 wiped run (marks
+    and team totals persisted, zero player targets written) are detected
+    and cleared for exactly that team-season before the fetch, never a
+    blanket delete.
+
+    Returns a summary dict; raises nothing on missing team data (the
+    fetcher returns {}), so the cron step can record health from it.
+    """
+    from dashboard_services.db import get_conn
+
+    prefix = _player_id_prefix(draft_year)
+    summary: Dict[str, Any] = {
+        "season": None, "team_seasons": 0, "est_plays_calls": 0,
+        "healed": [], "updated": 0, "skipped_guard": 0, "athletes": 0,
+    }
+
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT DISTINCT season, team
+                    FROM rookie_prospect_source_data
+                    WHERE player_id LIKE %s AND team IS NOT NULL
+                    """,
+                    (prefix + "%",),
+                )
+                rows = cur.fetchall()
+    except Exception as exc:
+        print(f"[targets-daily] could not load stored teams - "
+              f"{type(exc).__name__}: {exc}")
+        return summary
+
+    teams_by_season: Dict[int, set] = {}
+    for r in rows:
+        season = r["season"] if isinstance(r, dict) else r[0]
+        team = r["team"] if isinstance(r, dict) else r[1]
+        if season is None or not team:
+            continue
+        teams_by_season.setdefault(int(season), set()).add(team)
+    if not teams_by_season:
+        print(f"[targets-daily] no stored teams for class {draft_year}")
+        return summary
+
+    season = max(teams_by_season)
+    teams = sorted(teams_by_season[season])
+    summary["season"] = season
+    summary["team_seasons"] = len(teams)
+
+    # Self-heal stranded team-seasons before trusting any week marks.
+    stranded = detect_stranded_target_team_seasons(draft_year, season, teams)
+    for team in stranded:
+        print(f"[targets-daily] stranded team-season detected, clearing "
+              f"tracking for refetch: {team} {season}")
+        clear_target_team_season_tracking(season, team)
+    summary["healed"] = stranded
+
+    # Call estimate: unmarked candidate weeks per team, plus one roster
+    # call per team.  Logged so the daily cost is visible in cron output.
+    candidates = _candidate_weeks(season, _today())
+    tracked = _get_fetched_weeks("targets", [season]).get(season, {})
+    unmarked = sum(
+        len([w for w in candidates if w not in tracked.get(team, set())])
+        for team in teams
+    )
+    est_calls = unmarked + len(teams)
+    summary["est_plays_calls"] = est_calls
+    print(f"[targets-daily] class {draft_year} latest season {season}: "
+          f"{len(teams)} team-seasons, ~{est_calls} CFBD calls estimated "
+          f"({unmarked} unmarked team-weeks + {len(teams)} rosters)")
+
+    receptions = _get_existing_receptions(draft_year, [season])
+    counters = {"updated": 0, "skipped_guard": 0}
+
+    def _persist_team_season(season_year, team, totals_by_name):
+        updated, skipped = _write_player_targets(
+            draft_year, int(season_year), totals_by_name, receptions)
+        counters["updated"] += updated
+        counters["skipped_guard"] += skipped
+        print(f"[targets-daily] persisted {team} {season_year}: "
+              f"{updated} rows updated, {skipped} guard-skipped")
+
+    targets_map = fetch_cfbd_targets_from_plays(
+        draft_year, {season: teams}, on_team_season=_persist_team_season)
+    summary["updated"] = counters["updated"]
+    summary["skipped_guard"] = counters["skipped_guard"]
+    summary["athletes"] = len(targets_map or {})
+    print(f"[targets-daily] done: {summary}")
     return summary
 
 

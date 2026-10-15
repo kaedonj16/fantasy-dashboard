@@ -28,6 +28,7 @@ CRON_STEPS = (
     "notify_waiver_playoff",
     "notify_top_movers",
     "build_weekly_rookie_data",
+    "build_prospect_targets",
     "trade_intel_discovery",
     "trade_intel_crawl",
     "trade_intel_analytics",
@@ -986,6 +987,33 @@ print(f"[cron] Scoring: {{len(result.get('prospects', []))}} prospects")
         reason = "paused" if ROOKIE_PIPELINE_PAUSED else f"weekday={today_weekday}, season_type={season_type!r}"
         print(f"[cron] Rookie weekly run skipped - {reason}")
         record_pipeline_health("build_weekly_rookie_data", "skipped")
+
+    # ------------------------------------------------------------------ #
+    # Step 6a: Prospect targets fill (EVERY daily run)                    #
+    # ------------------------------------------------------------------ #
+    # Separate from the Sunday-gated Step 6 on purpose: Kaedon ordered
+    # this to run on the next daily trigger, so there is no weekday or
+    # season-window gate here.  Scoped inside run_daily_prospect_targets
+    # to the latest stored season only, per-team-season persisted and
+    # week-incremental, so the first fill is bounded and every later run
+    # fetches only the new week.  Fail-soft via _run_step: a targets
+    # failure records health "error" and never blocks later steps.
+    # ROOKIE_PIPELINE_PAUSED is honored (documented choice): a paused
+    # pipeline means no prospect work at all.  A manual daily trigger
+    # with the pipeline unpaused runs this step unconditionally.
+    if not ROOKIE_PIPELINE_PAUSED:
+        _run_step("""
+from dotenv import load_dotenv; load_dotenv()
+from data_building.rookie_pipeline.pipeline import get_active_rookie_class
+from data_building.rookie_pipeline.ingestion import run_daily_prospect_targets
+year = get_active_rookie_class()
+print(f"[cron] Prospect targets fill - {year} draft class (latest season)")
+summary = run_daily_prospect_targets(year)
+print(f"[cron] Prospect targets: {summary}")
+""", "build_prospect_targets", timeout=5400)
+    else:
+        print("[cron] Prospect targets fill skipped - ROOKIE_PIPELINE_PAUSED")
+        record_pipeline_health("build_prospect_targets", "skipped")
 
     # ------------------------------------------------------------------ #
     # Step 6b: Prospect accuracy report (annually in February)           #
