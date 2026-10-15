@@ -5469,6 +5469,12 @@ function showLoginGate(target, opts) {
         list.style.flexDirection = 'column';
         list.style.gap = '8px';
         memoryEl.appendChild(list);
+        var profileEl = el('div', 'br-asst-profile');
+        profileEl.hidden = true;
+        memoryEl.appendChild(profileEl);
+        var propsEl = el('div', 'br-asst-props');
+        propsEl.hidden = true;
+        memoryEl.appendChild(propsEl);
         apiJson('/api/assistant/preferences', { method: 'GET' })
           .then(function (resp) { return resp.ok ? resp.json() : null; })
           .then(function (data) {
@@ -5478,6 +5484,8 @@ function showLoginGate(target, opts) {
               list.appendChild(el('div', 'br-asst-pref-empty', 'Nothing saved yet. Tell the assistant how you like to play and it can remember it here.'));
             }
             prefs.forEach(function (pref) { list.appendChild(prefRow(pref, list)); });
+            renderProfile(profileEl, (data && data.profile_lines) || []);
+            renderProposals(propsEl, (data && data.proposals) || []);
           }).catch(function () {
             list.innerHTML = '';
             list.appendChild(el('div', 'br-asst-pref-empty', 'Could not load your saved preferences.'));
@@ -5535,6 +5543,49 @@ function showLoginGate(target, opts) {
             .then(function () { row.remove(); }).catch(function () {});
         });
         row.appendChild(del);
+        return row;
+      }
+      function renderProfile(box, lines) {
+        box.innerHTML = '';
+        if (!lines.length) { box.hidden = true; return; }
+        box.hidden = false;
+        box.appendChild(el('div', 'br-asst-section-head', 'Your risk profile'));
+        lines.forEach(function (line) {
+          box.appendChild(el('div', 'br-asst-profile-line', line));
+        });
+      }
+      function renderProposals(box, proposals) {
+        box.innerHTML = '';
+        if (!proposals.length) { box.hidden = true; return; }
+        box.hidden = false;
+        box.appendChild(el('div', 'br-asst-section-head', 'Suggested from your chats'));
+        proposals.forEach(function (p) { box.appendChild(proposalRow(p)); });
+      }
+      function proposalRow(p) {
+        var row = el('div', 'br-asst-prop-row');
+        var main = el('div', 'br-asst-pref-main');
+        main.appendChild(el('div', 'br-asst-pref-text', String(p.text || '')));
+        var summary = p.evidence && p.evidence.summary;
+        if (summary) {
+          main.appendChild(el('div', 'br-asst-pref-scope', String(summary)));
+        }
+        row.appendChild(main);
+        var actions = el('div', 'br-asst-prop-actions');
+        var confirmBtn = el('button', 'br-asst-prop-btn', 'Confirm');
+        confirmBtn.type = 'button';
+        confirmBtn.addEventListener('click', function () {
+          apiJson('/api/assistant/preference-proposals/' + encodeURIComponent(p.id) + '/confirm', { method: 'POST' })
+            .then(function () { loadPreferences(); }).catch(function () {});
+        });
+        var dismissBtn = el('button', 'br-asst-prop-btn br-asst-prop-btn-dismiss', 'Dismiss');
+        dismissBtn.type = 'button';
+        dismissBtn.addEventListener('click', function () {
+          apiJson('/api/assistant/preference-proposals/' + encodeURIComponent(p.id) + '/dismiss', { method: 'POST' })
+            .then(function () { loadPreferences(); }).catch(function () {});
+        });
+        actions.appendChild(confirmBtn);
+        actions.appendChild(dismissBtn);
+        row.appendChild(actions);
         return row;
       }
 

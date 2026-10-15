@@ -138,7 +138,30 @@ def api_assistant_preferences_list():
     key, err = _require_account()
     if err:
         return err
-    return jsonify({"preferences": service.list_preferences(key)})
+    # The panel payload: stored preferences plus fresh inferred
+    # proposals and the confirmed risk profile, computed on open.
+    return jsonify(service.preference_panel(key))
+
+
+@assistant_bp.route("/api/assistant/preference-proposals/<int:proposal_id>/confirm", methods=["POST"])
+def api_assistant_proposal_confirm(proposal_id):
+    key, err = _require_account()
+    if err:
+        return err
+    result = service.confirm_proposal(key, proposal_id)
+    if result is None:
+        return jsonify({"error": "not_found"}), 404
+    return jsonify({"ok": True, **result})
+
+
+@assistant_bp.route("/api/assistant/preference-proposals/<int:proposal_id>/dismiss", methods=["POST"])
+def api_assistant_proposal_dismiss(proposal_id):
+    key, err = _require_account()
+    if err:
+        return err
+    if not service.dismiss_proposal(key, proposal_id):
+        return jsonify({"error": "not_found"}), 404
+    return jsonify({"ok": True})
 
 
 @assistant_bp.route("/api/assistant/preferences", methods=["POST"])
