@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-10-14",
         "tag": "new",
+        "text": "Meet your BR Assistant: tap the BR button in the corner of your dashboard and ask about your team. Start or sit, trade checks, buy, sell or hold, waiver targets and a plan for the week, every answer built from your league data with the numbers to back it up.",
+        "link": "/"
+    },
+    {
+        "date": "2026-10-14",
+        "tag": "new",
         "text": "Teams: dynasty leagues now have a Dynasty / This Season toggle. Switch to This Season and every roster is re-ranked on this-season (redraft) value instead of dynasty value, grades and position ranks included, so you can see who is built to win right now. Switch back to Dynasty for the long view.",
         "link": "/teams"
     },

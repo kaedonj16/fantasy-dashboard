@@ -157,6 +157,52 @@ def test_answer_contract_fields_consumed():
         assert needle in ASSISTANT_JS, f"UI does not consume contract field {needle}"
 
 
+def test_minimize_and_close_are_distinct():
+    # Minimize collapses and preserves; Close collapses and ends the
+    # conversation. They must be separate handlers wired to separate
+    # header buttons, with the launcher toggle and the scrim on
+    # minimize semantics (neither ends the conversation).
+    assert "function minimizePopup()" in ASSISTANT_JS
+    assert "function closeConversation()" in ASSISTANT_JS
+    assert "querySelector('#brAsstMin').addEventListener('click', minimizePopup)" in ASSISTANT_JS
+    assert "querySelector('#brAsstClose').addEventListener('click', closeConversation)" in ASSISTANT_JS
+    assert "scrim.addEventListener('click', minimizePopup)" in ASSISTANT_JS
+    # Minimize saves the thread scroll; reopening restores it.
+    assert "state.savedScroll = threadEl.scrollTop" in ASSISTANT_JS
+    assert "threadEl.scrollTop = state.savedScroll" in ASSISTANT_JS
+    # Close drops the server thread and rebuilds the starter state.
+    assert "state.threadId = null" in ASSISTANT_JS
+    assert "threadEl.appendChild(startersEl)" in ASSISTANT_JS
+    assert "startersEl.hidden = false" in ASSISTANT_JS
+    # An answer in flight for the closed conversation never renders.
+    assert "gen !== state.gen" in ASSISTANT_JS
+
+
+def test_panel_motion_and_typing_indicator():
+    # Enter/exit motion rides the Next Steps glide curve at .38s, with
+    # a sheet variant on mobile and a reduced-motion guard.
+    assert "@keyframes br-asst-in" in ASSISTANT_CSS
+    assert "@keyframes br-asst-out" in ASSISTANT_CSS
+    enter = _rule(ASSISTANT_CSS, ".br-asst-popup.br-asst-enter")
+    assert ".38s" in enter and "cubic-bezier(0.22, 1, 0.36, 1)" in enter
+    exit_rule = _rule(ASSISTANT_CSS, ".br-asst-popup.br-asst-exit")
+    assert ".38s" in exit_rule and "cubic-bezier(0.22, 1, 0.36, 1)" in exit_rule
+    media = ASSISTANT_CSS[ASSISTANT_CSS.index("@media (max-width: 768px)"):]
+    assert "animation-name: br-asst-sheet-in" in media
+    assert "animation-name: br-asst-sheet-out" in media
+    assert "@media (prefers-reduced-motion: reduce)" in ASSISTANT_CSS
+    # Typing indicator: bouncing ellipsis bubble rendered into the
+    # thread by setBusy, removed when the answer lands.
+    assert ".br-asst-typing" in ASSISTANT_CSS
+    assert "@keyframes br-asst-typing-dot" in ASSISTANT_CSS
+    assert "br-asst-dot-anim" in ASSISTANT_JS
+    assert "threadEl.appendChild(typingEl)" in ASSISTANT_JS
+    assert "typingEl.remove()" in ASSISTANT_JS
+    # The old foot-of-panel "Thinking..." text is gone.
+    assert "brAsstThinking" not in ASSISTANT_JS
+    assert "br-asst-thinking" not in ASSISTANT_CSS
+
+
 def test_no_banned_values_in_new_sections():
     assert "999px" not in ASSISTANT_CSS
     assert "999px" not in ASSISTANT_JS

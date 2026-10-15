@@ -49738,8 +49738,7 @@ em.gneg { background: var(--loss); }
 .br-asst-memory[hidden],
 .br-asst-foot[hidden],
 .br-asst-correction[hidden],
-.br-asst-icon-btn[hidden],
-.br-asst-thinking[hidden] {
+.br-asst-icon-btn[hidden] {
     display: none !important;
 }
 .br-asst-launcher {
@@ -49753,7 +49752,7 @@ em.gneg { background: var(--loss); }
     border: 1px solid var(--accent-strong);
     border-radius: var(--radius);
     background: var(--accent);
-    box-shadow: var(--shadow-lg);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, .2);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -49878,6 +49877,40 @@ em.gneg { background: var(--loss); }
     font-size: 14px;
     color: var(--text);
 }
+/* Panel motion: the popup enters and exits on the Next Steps glide
+   curve (cubic-bezier(0.22, 1, 0.36, 1), .38s). On mobile the same
+   classes switch to the sheet keyframes, which rise from the dock
+   line. The JS only toggles these classes; reduced motion skips the
+   animation entirely (see the guard at the end of this section). */
+@keyframes br-asst-in {
+    from { opacity: 0; transform: translateY(14px) scale(.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes br-asst-out {
+    from { opacity: 1; transform: translateY(0) scale(1); }
+    to { opacity: 0; transform: translateY(14px) scale(.98); }
+}
+@keyframes br-asst-sheet-in {
+    from { opacity: 0; transform: translateY(32px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+@keyframes br-asst-sheet-out {
+    from { opacity: 1; transform: translateY(0); }
+    to { opacity: 0; transform: translateY(32px); }
+}
+@keyframes br-asst-fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+.br-asst-popup.br-asst-enter {
+    animation: br-asst-in .38s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.br-asst-popup.br-asst-exit {
+    animation: br-asst-out .38s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.br-asst-scrim.br-asst-enter {
+    animation: br-asst-fade .38s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
 .br-asst-grab {
     display: none;
     width: 38px;
@@ -49974,11 +50007,35 @@ em.gneg { background: var(--loss); }
     background: var(--card);
     flex: 0 0 auto;
 }
-.br-asst-thinking {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text-muted);
-    margin-bottom: 8px;
+/* Typing indicator: a soft bubble in the thread with a bouncing
+   ellipsis, present only while an answer is loading. */
+.br-asst-typing {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 11px 13px;
+    background: var(--bg-alt);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    border-bottom-left-radius: 4px;
+}
+.br-asst-dot-anim {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    animation: br-asst-typing-dot 1.2s ease-in-out infinite;
+}
+.br-asst-dot-anim:nth-child(2) {
+    animation-delay: .15s;
+}
+.br-asst-dot-anim:nth-child(3) {
+    animation-delay: .3s;
+}
+@keyframes br-asst-typing-dot {
+    0%, 60%, 100% { transform: translateY(0); opacity: .45; }
+    30% { transform: translateY(-4px); opacity: 1; }
 }
 .br-asst-composer {
     display: flex;
@@ -50393,6 +50450,20 @@ em.gneg { background: var(--loss); }
     }
     .br-asst-head {
         padding-top: 7px;
+    }
+    .br-asst-popup.br-asst-enter {
+        animation-name: br-asst-sheet-in;
+    }
+    .br-asst-popup.br-asst-exit {
+        animation-name: br-asst-sheet-out;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .br-asst-popup.br-asst-enter,
+    .br-asst-popup.br-asst-exit,
+    .br-asst-scrim.br-asst-enter,
+    .br-asst-dot-anim {
+        animation: none;
     }
 }
 /* == BR ASSISTANT END == */

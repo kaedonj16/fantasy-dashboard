@@ -4593,7 +4593,8 @@ function showLoginGate(target, opts) {
 
     var state = {
       league: null, caps: null, teaser: null, teaserInserted: false,
-      threadId: null, busy: false, lastSend: null, view: 'thread'
+      threadId: null, busy: false, lastSend: null, view: 'thread',
+      gen: 0, savedScroll: null
     };
 
     function pageLeagueParams() {
@@ -4723,7 +4724,6 @@ function showLoginGate(target, opts) {
         '<div class="br-asst-body" id="brAsstThread"></div>' +
         '<div class="br-asst-memory" id="brAsstMemory" hidden></div>' +
         '<div class="br-asst-foot" id="brAsstFoot">' +
-        '<div class="br-asst-thinking" id="brAsstThinking" hidden>Thinking...</div>' +
         '<div class="br-asst-composer">' +
         '<textarea class="br-asst-input" id="brAsstInput" rows="1" placeholder="Ask about your team..." aria-label="Ask about your team"></textarea>' +
         '<button type="button" class="br-asst-send" id="brAsstSend" aria-label="Send">' + SVG_SEND + '</button>' +
@@ -4744,39 +4744,137 @@ function showLoginGate(target, opts) {
       var footEl = popup.querySelector('#brAsstFoot');
       var inputEl = popup.querySelector('#brAsstInput');
       var sendBtn = popup.querySelector('#brAsstSend');
-      var thinkingEl = popup.querySelector('#brAsstThinking');
       var backBtn = popup.querySelector('#brAsstBack');
       var memoryBtn = popup.querySelector('#brAsstMemoryBtn');
 
       function scrollThread() { threadEl.scrollTop = threadEl.scrollHeight; }
+
+      // Panel motion: enter/exit run the .br-asst-enter / .br-asst-exit
+      // CSS animations (the Next Steps glide family); under reduced
+      // motion the panel simply appears and disappears.
+      var reduceMotion = false;
+      try { reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
+      var exitTimer = null;
+      var pendingAfter = null;
+
       function openPopup(fromTeaser) {
+        if (exitTimer) { clearTimeout(exitTimer); exitTimer = null; }
+        // A close whose exit animation was interrupted still ends the
+        // conversation: run its pending reset before reopening fresh.
+        if (pendingAfter) { var runAfter = pendingAfter; pendingAfter = null; runAfter(); }
+        popup.classList.remove('br-asst-exit');
+        var wasHidden = popup.hidden;
         popup.hidden = false;
         scrim.hidden = false;
+        if (wasHidden && !reduceMotion) {
+          popup.classList.remove('br-asst-enter');
+          void popup.offsetWidth; // restart the enter animation on reopen
+          popup.classList.add('br-asst-enter');
+          scrim.classList.remove('br-asst-enter');
+          void scrim.offsetWidth;
+          scrim.classList.add('br-asst-enter');
+        }
         if (teaserEl) { teaserEl.remove(); teaserEl = null; }
         dot.hidden = true;
         if (fromTeaser && state.teaser && !state.teaserInserted) {
           state.teaserInserted = true;
           if (state.teaser.answer) { renderAnswer(state.teaser.answer, state.teaser.log_id); hideStarters(); }
         }
+        // Minimize restore: the thread node was never rebuilt, so put
+        // its scroll position back exactly where the user left it.
+        if (state.savedScroll != null) {
+          threadEl.scrollTop = state.savedScroll;
+          state.savedScroll = null;
+        }
         if (state.view === 'thread') inputEl.focus();
       }
-      function closePopup() {
-        popup.hidden = true;
-        scrim.hidden = true;
-      }
-      launcher.addEventListener('click', function () {
-        if (popup.hidden) openPopup(false); else closePopup();
-      });
-      popup.querySelector('#brAsstMin').addEventListener('click', closePopup);
-      popup.querySelector('#brAsstClose').addEventListener('click', closePopup);
-      scrim.addEventListener('click', closePopup);
 
+      // Collapse with the exit animation; the hidden flag lands when the
+      // animation ends (or at once under reduced motion). `after` runs
+      // once the panel is fully gone.
+      function collapsePopup(after) {
+        scrim.hidden = true;
+        scrim.classList.remove('br-asst-enter');
+        if (reduceMotion) {
+          popup.hidden = true;
+          if (after) after();
+          return;
+        }
+        popup.classList.remove('br-asst-enter');
+        popup.classList.add('br-asst-exit');
+        if (exitTimer) clearTimeout(exitTimer);
+        pendingAfter = after || null;
+        exitTimer = setTimeout(function () {
+          exitTimer = null;
+          popup.classList.remove('br-asst-exit');
+          popup.hidden = true;
+          var runAfter = pendingAfter;
+          pendingAfter = null;
+          if (runAfter) runAfter();
+        }, 400);
+      }
+
+      // Minimize: collapse to the launcher with the conversation fully
+      // preserved (thread DOM, server thread, scroll position).
+      function minimizePopup() {
+        if (popup.hidden) return;
+        state.savedScroll = threadEl.scrollTop;
+        collapsePopup(null);
+      }
+
+      // Close: collapse AND end the conversation. The thread resets to
+      // the fresh starter state and the server thread id is dropped, so
+      // the next send starts a new server-side thread; the old thread
+      // and its advice-log rows stay as history, nothing is deleted.
+      // In-flight answers for the ended conversation are dropped via
+      // the generation counter.
+      function closeConversation() {
+        if (popup.hidden) return;
+        state.gen += 1;
+        state.savedScroll = null;
+        collapsePopup(resetThread);
+      }
+
+      function resetThread() {
+        if (state.busy) setBusy(false);
+        state.threadId = null;
+        state.lastSend = null;
+        inputEl.value = '';
+        while (threadEl.firstChild) threadEl.removeChild(threadEl.firstChild);
+        threadEl.appendChild(startersEl);
+        startersEl.hidden = false;
+        threadEl.scrollTop = 0;
+        if (state.view !== 'thread') showThread();
+      }
+
+      launcher.addEventListener('click', function () {
+        if (popup.hidden) openPopup(false); else minimizePopup();
+      });
+      popup.querySelector('#brAsstMin').addEventListener('click', minimizePopup);
+      popup.querySelector('#brAsstClose').addEventListener('click', closeConversation);
+      scrim.addEventListener('click', minimizePopup);
+
+      // Busy state: a typing bubble (bouncing ellipsis) lives in the
+      // thread itself while an answer loads and is removed the moment
+      // the answer (or an error) lands.
+      var typingEl = null;
       function setBusy(on) {
         state.busy = on;
-        thinkingEl.hidden = !on;
         sendBtn.disabled = on;
         inputEl.disabled = on;
-        if (on) scrollThread();
+        if (on) {
+          if (!typingEl) {
+            typingEl = el('div', 'br-asst-typing');
+            typingEl.setAttribute('role', 'status');
+            typingEl.setAttribute('aria-label', 'BR Assistant is typing');
+            for (var d = 0; d < 3; d++) typingEl.appendChild(el('span', 'br-asst-dot-anim'));
+            threadEl.appendChild(typingEl);
+          }
+          scrollThread();
+        } else if (typingEl) {
+          typingEl.remove();
+          typingEl = null;
+        }
       }
 
       function appendUser(text) {
@@ -4997,6 +5095,7 @@ function showLoginGate(target, opts) {
         hideStarters();
         if (!alreadyRendered) appendUser(msg);
         state.lastSend = { text: msg, playerId: playerId || null };
+        var gen = state.gen;
         setBusy(true);
         var payload = { message: msg };
         if (state.threadId) payload.thread_id = state.threadId;
@@ -5017,6 +5116,7 @@ function showLoginGate(target, opts) {
           return resp.json().then(function (data) { return { status: resp.status, data: data }; })
             .catch(function () { return { status: resp.status, data: null }; });
         }).then(function (res) {
+          if (gen !== state.gen) return; // conversation was closed mid-flight
           setBusy(false);
           var data = res.data || {};
           if (data.caps) state.caps = data.caps;
@@ -5035,6 +5135,7 @@ function showLoginGate(target, opts) {
             });
           }
         }).catch(function () {
+          if (gen !== state.gen) return; // conversation was closed mid-flight
           setBusy(false);
           appendSystem('Could not reach the assistant. Check your connection and try again.', function () {
             sendMessage(msg, playerId, true);
