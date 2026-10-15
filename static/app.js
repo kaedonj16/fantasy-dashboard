@@ -4585,6 +4585,8 @@ function showLoginGate(target, opts) {
     var SVG_CHEVRON_DOWN = '<svg viewBox="0 0 512 512" aria-hidden="true"><path d="M233.4 406.6c12.5 12.5 32.8 12.5 45.3 0l192-192c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L256 338.7 86.6 169.4c-12.5-12.5-12.5-32.8 0-45.3s-32.8 12.5 0 45.3l192 192z"/></svg>';
     var SVG_X = '<svg viewBox="0 0 384 512" aria-hidden="true"><path d="M342.6 150.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L192 210.7 86.6 105.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3L146.7 256 41.4 361.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0L192 301.3 297.4 406.6c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L237.3 256 342.6 150.6z"/></svg>';
     var SVG_BACK = '<svg viewBox="0 0 320 512" aria-hidden="true"><path d="M9.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l192 192c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L77.3 256 246.6 86.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-192 192z"/></svg>';
+    var SVG_CHEVRON_RIGHT = '<svg viewBox="0 0 320 512" aria-hidden="true"><path d="M310.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-192 192c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L242.7 256 118.6 86.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l192 192z"/></svg>';
+    var SVG_ARROW = '<svg viewBox="0 0 448 512" aria-hidden="true"><path d="M438.6 278.6c12.5-12.5 12.5-32.8 0-45.3l-160-160c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3L338.8 224 32 224c-17.7 0-32 14.3-32 32s14.3 32 32 32l306.7 0L233.4 393.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0l160-160z"/></svg>';
     var SVG_UP = '<svg viewBox="0 0 512 512" aria-hidden="true"><path d="M313.4 32.9c26 5.2 42.9 30.5 37.7 56.5l-2.3 11.4c-5.3 26.7-15.1 52.1-28.8 75.2H464c26.5 0 48 21.5 48 48 0 18.5-10.5 34.6-25.9 42.6C497 275.4 504 288.9 504 304c0 23.4-16.8 42.9-38.9 47.1 4.4 7.3 6.9 15.8 6.9 24.9 0 21.3-13.9 39.4-33.1 45.6.7 3.3 1.1 6.8 1.1 10.4 0 26.5-21.5 48-48 48H294.5c-19 0-37.5-5.6-53.3-16.1l-38.5-25.7C176 420.4 160 390.4 160 358.3V320 272 247.1c0-29.2 13.3-56.7 36-75l7.4-5.9c26.5-21.2 44.6-51 51.2-84.2l2.3-11.4c5.2-26 30.5-42.9 56.5-37.7zM32 192H96c17.7 0 32 14.3 32 32V448c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32V224c0-17.7 14.3-32 32-32z"/></svg>';
     var SVG_DOWN = '<svg viewBox="0 0 512 512" aria-hidden="true"><path d="M313.4 479.1c26-5.2 42.9-30.5 37.7-56.5l-2.3-11.4c-5.3-26.7-15.1-52.1-28.8-75.2H464c26.5 0 48-21.5 48-48 0-18.5 10.5-34.6 25.9-42.6C497 236.6 504 223.1 504 208c0-23.4-16.8-42.9-38.9-47.1 4.4-7.3 6.9-15.8 6.9-24.9 0-21.3-13.9-39.4-33.1-45.6.7-3.3 1.1-6.8 1.1-10.4 0-26.5-21.5-48-48-48H294.5c-19 0-37.5 5.6-53.3 16.1L202.7 73.8C176 91.6 160 121.6 160 153.7V192v48 24.9c0 29.2 13.3 56.7 36 75l7.4 5.9c26.5 21.2 44.6 51 51.2 84.2l2.3 11.4c5.2 26 30.5 42.9 56.5 37.7zM32 384H96c17.7 0 32-14.3 32-32V128c0-17.7-14.3-32-32-32H32C14.3 96 0 110.3 0 128V352c0 17.7 14.3 32 32 32z"/></svg>';
     var SVG_CHECK = '<svg viewBox="0 0 512 512" aria-hidden="true" width="12" height="12" fill="currentColor"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM369 209L241 337c-9.4 9.4-24.6 9.4-33.9 0l-64-64c-9.4-9.4-9.4-24.6 0-33.9s24.6-9.4 33.9 0l47 47L335 175c9.4-9.4 24.6-9.4 33.9 0s9.4 24.6 0 33.9z"/></svg>';
@@ -4665,30 +4667,30 @@ function showLoginGate(target, opts) {
           sessionStorage.getItem('brAsstTeaserDismissed') === String(state.teaser.log_id);
       } catch (e) {}
       if (state.teaser && !dismissed) {
+        // Slim single-line prompt (no card, no CTA button): the BR
+        // mark, the top action as one line of text, a chevron. The
+        // whole line opens the sheet with the digest answer in it.
         teaserEl = el('aside', 'br-asst-teaser');
         teaserEl.id = 'brAsstTeaser';
         teaserEl.setAttribute('aria-label', 'BR Assistant suggestion');
-        var head = el('div', 'br-asst-teaser-head');
+        var tmain = el('button', 'br-asst-teaser-main');
+        tmain.type = 'button';
         var tmark = el('span', 'br-asst-teaser-mark');
         var timg = document.createElement('img');
         timg.src = '/static/BR_Mark_dark.png';
         timg.alt = '';
         tmark.appendChild(timg);
-        head.appendChild(tmark);
-        var kick = el('span', 'br-asst-teaser-kicker', 'BR Assistant');
-        head.appendChild(kick);
+        tmain.appendChild(tmark);
+        tmain.appendChild(el('span', 'br-asst-teaser-line',
+          state.teaser.lead || state.teaser.title || ''));
+        var tchev = el('span', 'br-asst-teaser-chev');
+        tchev.innerHTML = SVG_CHEVRON_RIGHT;
+        tmain.appendChild(tchev);
+        teaserEl.appendChild(tmain);
         var dismiss = el('button', 'br-asst-teaser-dismiss', '×');
         dismiss.type = 'button';
         dismiss.setAttribute('aria-label', 'Dismiss');
-        head.appendChild(dismiss);
-        teaserEl.appendChild(head);
-        if (state.teaser.title) teaserEl.appendChild(el('div', 'br-asst-teaser-title', state.teaser.title));
-        if (state.teaser.lead) teaserEl.appendChild(el('div', 'br-asst-teaser-lead', state.teaser.lead));
-        var foot = el('div', 'br-asst-teaser-foot');
-        var planBtn = el('button', 'ns-cta', 'See the plan');
-        planBtn.type = 'button';
-        foot.appendChild(planBtn);
-        teaserEl.appendChild(foot);
+        teaserEl.appendChild(dismiss);
         document.body.appendChild(teaserEl);
         dot.hidden = false;
         dismiss.addEventListener('click', function () {
@@ -4696,7 +4698,7 @@ function showLoginGate(target, opts) {
           teaserEl.remove();
           dot.hidden = true;
         });
-        planBtn.addEventListener('click', function () { openPopup(true); });
+        tmain.addEventListener('click', function () { openPopup(true); });
       }
 
       // Scrim (mobile only, styled in the 768px media query)
@@ -4761,6 +4763,16 @@ function showLoginGate(target, opts) {
 
       function scrollThread() { threadEl.scrollTop = threadEl.scrollHeight; }
 
+      // New answers anchor to their TOP (verdict first): the thread
+      // scrolls so the answer's first line is what gets read, not its
+      // receipts at the bottom. offsetTop is layout-only, so the enter
+      // animation's transform cannot skew it; both nodes share the
+      // popup as offsetParent. Reopening a minimized thread is NOT
+      // this path: openPopup restores the exact saved scroll position.
+      function scrollToAnswer(node) {
+        threadEl.scrollTop = node.offsetTop - threadEl.offsetTop - 12;
+      }
+
       // Panel motion: enter/exit run the .br-asst-enter / .br-asst-exit
       // CSS animations (the Next Steps glide family); under reduced
       // motion the panel simply appears and disappears.
@@ -4768,6 +4780,44 @@ function showLoginGate(target, opts) {
       try { reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
       var exitTimer = null;
       var pendingAfter = null;
+
+      // Keyboard-aware sheet (mobile widths): iOS does not shrink the
+      // layout viewport for fixed elements when the keyboard opens, so
+      // the dock-parked sheet kept its geometry and the composer sat
+      // behind the keyboard. Track the visual viewport instead: publish
+      // the keyboard inset as --br-asst-kb on the root element and flag
+      // the popup .br-asst-kb-open; the mobile CSS then parks the sheet
+      // directly above the keyboard and restores the exact dock
+      // geometry when the keyboard closes. Browsers without
+      // visualViewport keep the current behavior (no-op).
+      var vv = window.visualViewport || null;
+      var KB_MIN_INSET = 60; // smaller deltas are toolbar/safe-area jitter
+      function sheetLayout() {
+        try { return window.matchMedia('(max-width: 768px)').matches; } catch (e) { return false; }
+      }
+      function syncKbInset() {
+        if (!vv) return;
+        var inset = 0;
+        if (sheetLayout()) {
+          inset = Math.round(window.innerHeight - vv.height - vv.offsetTop);
+          if (inset < KB_MIN_INSET) inset = 0;
+        }
+        document.documentElement.style.setProperty('--br-asst-kb', inset + 'px');
+        popup.classList.toggle('br-asst-kb-open', inset > 0);
+      }
+      function kbListen(on) {
+        if (!vv) return;
+        if (on) {
+          vv.addEventListener('resize', syncKbInset);
+          vv.addEventListener('scroll', syncKbInset);
+          syncKbInset();
+        } else {
+          vv.removeEventListener('resize', syncKbInset);
+          vv.removeEventListener('scroll', syncKbInset);
+          document.documentElement.style.setProperty('--br-asst-kb', '0px');
+          popup.classList.remove('br-asst-kb-open');
+        }
+      }
 
       function openPopup(fromTeaser) {
         if (exitTimer) { clearTimeout(exitTimer); exitTimer = null; }
@@ -4778,6 +4828,7 @@ function showLoginGate(target, opts) {
         var wasHidden = popup.hidden;
         popup.hidden = false;
         scrim.hidden = false;
+        kbListen(true);
         if (wasHidden && !reduceMotion) {
           popup.classList.remove('br-asst-enter');
           void popup.offsetWidth; // restart the enter animation on reopen
@@ -4798,13 +4849,18 @@ function showLoginGate(target, opts) {
           threadEl.scrollTop = state.savedScroll;
           state.savedScroll = null;
         }
-        if (state.view === 'thread') inputEl.focus();
+        // Desktop keeps the composer focused on open. On sheet widths
+        // focusing here summons the keyboard the instant the sheet
+        // opens (and the keyboard then covered the composer), so the
+        // user taps the composer herself when she wants to type.
+        if (state.view === 'thread' && !sheetLayout()) inputEl.focus();
       }
 
       // Collapse with the exit animation; the hidden flag lands when the
       // animation ends (or at once under reduced motion). `after` runs
       // once the panel is fully gone.
       function collapsePopup(after) {
+        kbListen(false);
         scrim.hidden = true;
         scrim.classList.remove('br-asst-enter');
         if (reduceMotion) {
@@ -4865,6 +4921,71 @@ function showLoginGate(target, opts) {
       popup.querySelector('#brAsstMin').addEventListener('click', minimizePopup);
       popup.querySelector('#brAsstClose').addEventListener('click', closeConversation);
       scrim.addEventListener('click', minimizePopup);
+
+      // Grab-bar drag (sheet widths only; desktop has no grab bar and
+      // this stays inert there): drag the grab handle or the header
+      // strip down and the sheet follows the finger. Release past
+      // 120px, or a fast downward flick, minimizes with the exact
+      // minimizePopup semantics above; anything less springs back on
+      // the site's glide curve. Drags starting on a header button are
+      // left to the button.
+      var grabEl = popup.querySelector('.br-asst-grab');
+      var headEl = popup.querySelector('.br-asst-head');
+      var dragState = null;
+      function dragStart(e) {
+        if (!sheetLayout() || popup.hidden) return;
+        if (e.button != null && e.button !== 0) return;
+        if (e.target && e.target.closest && e.target.closest('button')) return;
+        popup.classList.remove('br-asst-enter', 'br-asst-exit');
+        dragState = { id: e.pointerId, startY: e.clientY, dy: 0, lastY: e.clientY, lastT: Date.now(), vel: 0 };
+        try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) {}
+        popup.style.transition = 'none';
+      }
+      function dragMove(e) {
+        if (!dragState || e.pointerId !== dragState.id) return;
+        var now = Date.now();
+        var dt = now - dragState.lastT;
+        if (dt > 0) dragState.vel = (e.clientY - dragState.lastY) / dt;
+        dragState.lastY = e.clientY;
+        dragState.lastT = now;
+        dragState.dy = Math.max(0, e.clientY - dragState.startY);
+        popup.style.transform = 'translateY(' + dragState.dy + 'px)';
+      }
+      function dragEnd(e) {
+        if (!dragState || (e && e.pointerId !== dragState.id)) return;
+        var dy = dragState.dy;
+        var vel = dragState.vel;
+        dragState = null;
+        if (dy > 120 || (dy > 40 && vel > 0.5)) {
+          // Hand the sheet back to the exit animation clean.
+          popup.style.transform = '';
+          popup.style.transition = '';
+          minimizePopup();
+          return;
+        }
+        if (dy > 0 && !reduceMotion) {
+          // Spring back: keep the dragged offset as the transition's
+          // start value, then drive the transform home on the glide
+          // curve and clean up when it lands.
+          popup.style.transition = 'transform .38s cubic-bezier(0.22, 1, 0.36, 1)';
+          void popup.offsetWidth;
+          popup.style.transform = 'translateY(0px)';
+          setTimeout(function () {
+            popup.style.transition = '';
+            popup.style.transform = '';
+          }, 400);
+          return;
+        }
+        popup.style.transform = '';
+        popup.style.transition = '';
+      }
+      [grabEl, headEl].forEach(function (node) {
+        if (!node) return;
+        node.addEventListener('pointerdown', dragStart);
+        node.addEventListener('pointermove', dragMove);
+        node.addEventListener('pointerup', dragEnd);
+        node.addEventListener('pointercancel', dragEnd);
+      });
 
       // Busy state: a typing bubble (bouncing ellipsis) lives in the
       // thread itself while an answer loads and is removed the moment
@@ -5051,42 +5172,43 @@ function showLoginGate(target, opts) {
           });
           wrap.appendChild(crow);
         }
+        // Actions render as a plain bulleted list inside the message:
+        // who (the headline, bold) plus why (the detail line). No
+        // Next Steps cards, no per-action CTA buttons; the answer's
+        // single act_link below is the one way out.
         var actions = answer.actions || [];
         if (actions.length) {
-          var list = el('div', 'br-asst-actions');
-          actions.forEach(function (action, idx) {
-            var item = el('div', 'ns-item');
-            var prio = el('span', idx === 0 ? 'ns-priority gold' : 'ns-priority');
-            item.appendChild(prio);
-            var body = el('div', 'ns-body');
-            if (action.tag) body.appendChild(el('span', 'ns-tag', action.tag));
-            if (action.headline) body.appendChild(el('div', 'ns-action', action.headline));
-            if (action.detail) body.appendChild(el('div', 'ns-why', action.detail));
-            var href = safeHref(action.href);
-            if (href) {
-              var cta = el('a', 'ns-cta', action.cta_label || 'View');
-              cta.href = href;
-              body.appendChild(cta);
+          var list = el('ul', 'br-asst-list');
+          actions.forEach(function (action) {
+            var li = el('li', 'br-asst-list-item');
+            li.appendChild(el('strong', null, String(action.headline || '')));
+            var why = action.detail || '';
+            if (!why && action.key_number != null && action.key_number !== '') {
+              why = typeof action.key_number === 'object'
+                ? [action.key_number.value, action.key_number.label].filter(Boolean).join(' ')
+                : String(action.key_number);
             }
-            item.appendChild(body);
-            if (action.key_number != null && action.key_number !== '') {
-              var num = el('div', 'br-asst-num');
-              if (typeof action.key_number === 'object') {
-                num.appendChild(el('span', 'v', String(action.key_number.value || '')));
-                if (action.key_number.label) num.appendChild(el('span', 'l', String(action.key_number.label)));
-              } else {
-                num.appendChild(el('span', 'v', String(action.key_number)));
-              }
-              item.appendChild(num);
-            }
-            list.appendChild(item);
+            if (why) li.appendChild(document.createTextNode(': ' + why));
+            list.appendChild(li);
           });
           wrap.appendChild(list);
         }
         var receipts = answer.receipts || [];
         if (receipts.length) {
-          var rec = el('div', 'bo-receipt');
-          rec.appendChild(el('div', 'br-asst-receipt-title', 'Receipts'));
+          // Receipts start COLLAPSED behind a small toggle row; the
+          // rows live in the DOM and expand in place per answer (one
+          // answer's toggle never touches another's). The rows wrapper
+          // animates its grid track on the site's glide curve.
+          var rec = el('div', 'bo-receipt br-asst-receipts br-asst-collapsed');
+          var recToggle = el('button', 'br-asst-receipt-toggle', 'Receipts');
+          recToggle.type = 'button';
+          recToggle.setAttribute('aria-expanded', 'false');
+          var recChev = el('span', 'br-asst-chev');
+          recChev.innerHTML = SVG_CHEVRON_DOWN;
+          recToggle.appendChild(recChev);
+          rec.appendChild(recToggle);
+          var recRows = el('div', 'br-asst-receipt-rows');
+          var recInner = el('div', 'br-asst-receipt-inner');
           receipts.forEach(function (r) {
             var row = el('div', 'bo-rc-row');
             var markSpan = el('span', 'bo-rc-mark bo-rc-pass');
@@ -5094,7 +5216,13 @@ function showLoginGate(target, opts) {
             row.appendChild(markSpan);
             row.appendChild(el('span', 'bo-rc-label', String(r.label || '')));
             row.appendChild(el('span', 'bo-rc-value', String(r.value || '')));
-            rec.appendChild(row);
+            recInner.appendChild(row);
+          });
+          recRows.appendChild(recInner);
+          rec.appendChild(recRows);
+          recToggle.addEventListener('click', function () {
+            var collapsed = rec.classList.toggle('br-asst-collapsed');
+            recToggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
           });
           wrap.appendChild(rec);
         }
@@ -5102,6 +5230,9 @@ function showLoginGate(target, opts) {
         if (answer.act_link && safeHref(answer.act_link.href)) {
           var link = el('a', 'br-asst-actlink', answer.act_link.label || 'Open');
           link.href = safeHref(answer.act_link.href);
+          var linkArrow = el('span', 'br-asst-actlink-arrow');
+          linkArrow.innerHTML = SVG_ARROW;
+          link.appendChild(linkArrow);
           wrap.appendChild(link);
         }
         var followups = answer.followups || [];
@@ -5120,7 +5251,7 @@ function showLoginGate(target, opts) {
         }
         if (logId) wrap.appendChild(buildFeedback(logId));
         threadEl.appendChild(wrap);
-        scrollThread();
+        scrollToAnswer(wrap);
       }
 
       function buildFeedback(logId) {

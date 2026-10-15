@@ -97,14 +97,14 @@ SYSTEM = (
 # These are the fallbacks; _resolve_act_link upgrades most intents to a
 # deep link that stages state in the target tool (see the builders below).
 _ACT_LINKS = {
-    "start_sit": {"href": "/waivers?tab=startsit", "label": "Open Start/Sit"},
+    "start_sit": {"href": "/waivers?tab=startsit", "label": "View in Start/Sit"},
     "trade_eval": {"href": "/trade", "label": "Open in Trade Calculator"},
     "buy_sell_hold": {"href": "/players", "label": "View player"},
     "player": {"href": "/players", "label": "View player"},
-    "metric": {"href": "/metrics", "label": "Open Advanced Metrics"},
-    "leaderboard": {"href": "/metrics", "label": "Open Advanced Metrics"},
-    "waivers": {"href": "/waivers", "label": "Open Waivers"},
-    "this_week": {"href": "/", "label": "Open dashboard"},
+    "metric": {"href": "/metrics", "label": "View on Advanced Metrics"},
+    "leaderboard": {"href": "/metrics", "label": "View on Advanced Metrics"},
+    "waivers": {"href": "/waivers", "label": "View on Waivers"},
+    "this_week": {"href": "/", "label": "View dashboard"},
 }
 
 
@@ -519,7 +519,10 @@ def _required_receipts(intent: str, pack: dict) -> list[dict]:
             if kn is None or kn == "":
                 continue
             value = _fmt_num(kn) if isinstance(kn, (int, float)) else str(kn)
-            rows.append({"label": str(a.get("tag") or "action"), "value": value})
+            # The label names the action's subject (the headline names
+            # the player: "Claim Kaleb Johnson"), never the bare tag.
+            rows.append({"label": str(a.get("headline") or a.get("tag") or "action"),
+                         "value": value})
             if len(rows) >= 4:
                 break
     elif intent == "waivers":
@@ -548,6 +551,39 @@ def _required_receipts(intent: str, pack: dict) -> list[dict]:
         if player.get("value") is not None and len(rows) < 4:
             rows.append({"label": "Value", "value": _fmt_num(player["value"])})
     return rows[:4]
+
+
+_ORDINAL_SLOTS = {"top": 0, "first": 0, "second": 1, "third": 2, "fourth": 3}
+
+
+def _name_waiver_receipts(pack: dict, receipts: list) -> list:
+    """Name the player in rank-only waiver receipt labels.
+
+    Model receipts sometimes describe a candidate by rank alone ("Top
+    waiver candidate", "Second waiver option") without naming him. When
+    such a label names nobody in the pack and its ordinal matches a
+    ranked candidate slot, the label names that candidate instead: a
+    receipt about a specific player names the player.
+    """
+    cands = [c for c in (pack.get("candidates") or [])
+             if isinstance(c, dict) and c.get("name")]
+    if not cands:
+        return receipts
+    names = [str(c["name"]) for c in cands]
+    out = []
+    for r in receipts:
+        if isinstance(r, dict):
+            label = str(r.get("label") or "")
+            low = label.lower()
+            first = low.split(" ")[0].strip("#") if low else ""
+            idx = _ORDINAL_SLOTS.get(first)
+            if (label and idx is not None and idx < len(cands)
+                    and not any(n.lower() in low for n in names)
+                    and any(w in low for w in ("waiver", "candidate", "option", "pickup"))):
+                r = dict(r)
+                r["label"] = f"{names[idx]} value"
+        out.append(r)
+    return out
 
 
 def _required_numbers(intent: str, pack: dict) -> set[str]:
@@ -1075,6 +1111,8 @@ def compose_answer(intent: str, question: str, pack: dict, *, preferences=None, 
     if internal:
         data = _strip_internal_language(data)
     receipts = _ensure_required_receipts(intent, pack, _final_receipts(data, allowed))
+    if intent == "waivers":
+        receipts = _name_waiver_receipts(pack, receipts)
     if intent == "trade_eval":
         data = _ensure_deal_names(pack, data)
         if fixed_verdict:
