@@ -31,6 +31,8 @@ _INTENT_LABELS = {
     "this_week": "this-week answer", "clarify": "answer", "out_of_scope": "answer", "remember": "answer",
     "playoffs": "playoff answer", "power_rankings": "power rankings answer",
     "standings": "standings answer", "matchup": "matchup answer", "schedule": "schedule answer",
+    "keeper": "keeper answer", "rookie": "rookie answer",
+    "cross_league": "cross-league answer",
 }
 
 

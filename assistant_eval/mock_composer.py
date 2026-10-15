@@ -40,6 +40,9 @@ _ACT_LINKS = {
     "breakout_board": {"href": "/breakouts", "label": "View breakout board"},
     "breakout_track_record": {"href": "/breakouts", "label": "View breakout board"},
     "breakout_history": {"href": "/breakouts", "label": "View breakout board"},
+    "keeper": {"href": "/keeper", "label": "View Keeper Optimizer"},
+    "rookie": {"href": "/prospects", "label": "View Rookie Rankings"},
+    "cross_league": {"href": "/portfolio", "label": "View Portfolio"},
 }
 
 
@@ -146,6 +149,10 @@ def _resolve_act_link(intent, pack):
         link = _player_modal_link(pack.get("player"))
         if link:
             return link
+    elif intent == "keeper":
+        base = _league_base(pack)
+        return {"href": f"{base}/keeper" if base else "/keeper",
+                "label": "View Keeper Optimizer"}
     elif intent == "metric":
         link = _metric_link(pack)
         if link:
@@ -154,6 +161,10 @@ def _resolve_act_link(intent, pack):
         link = _start_sit_link(pack)
         if link:
             return link
+    elif intent == "keeper":
+        base = _league_base(pack)
+        return {"href": f"{base}/keeper" if base else "/keeper",
+                "label": "View Keeper Optimizer"}
     pack_link = _pack_act_link(intent, pack)
     if pack_link:
         return pack_link
@@ -191,6 +202,16 @@ def _mentions(intent, pack):
             _add(p)
         for p in pack.get("cleared_drops") or []:
             _add(p)
+    elif intent == "keeper":
+        for p in pack.get("my_keepers") or []:
+            _add(p)
+        _add(pack.get("asked_player"))
+        for p in pack.get("roster_core") or []:
+            _add(p)
+    elif intent == "rookie":
+        prospect = pack.get("prospect") or {}
+        if prospect.get("sleeper_id") and prospect.get("name"):
+            _add({"player_id": prospect["sleeper_id"], "name": prospect["name"]})
     return found[:8]
 
 
@@ -236,7 +257,12 @@ def no_data_answer(pack: dict) -> dict:
     text = f"That is not available: {missing}."
     if nearest:
         text += f" The nearest tracked options are {', '.join(str(n) for n in nearest[:3])}. Ask about one of those and I can pull the live numbers."
-    link = _league_link((pack or {}).get("type"), pack) or dict(_ACT_LINKS["metric"])
+    # The link names the surface the question was about: league-context
+    # intents use their league link, everything else resolves normally
+    # (a keeper no-data lands on the Keeper Optimizer, not Advanced Metrics).
+    link = (_league_link((pack or {}).get("type"), pack)
+            or _resolve_act_link(str((pack or {}).get("type") or "metric"), pack)
+            or dict(_ACT_LINKS["metric"]))
     return {"verdict": None, "text": text, "receipts": [], "caveat": None,
             "followups": [f"What is {n}?" for n in nearest[:2]],
             "act_link": link, "actions": [], "mentions": []}
@@ -954,6 +980,175 @@ def _pick_ownership(pack):
 
 
 
+def _keeper_receipts(pack):
+    """Mirror of compose._required_receipts for keeper packs."""
+    rows = []
+    if (pack.get("mode") or "") == "dynasty":
+        for p in (pack.get("roster_core") or [])[:2]:
+            if p.get("value") is not None:
+                rows.append({"label": f"{p.get('name')} value", "value": fmt(p["value"])})
+        if pack.get("roster_value_total") is not None and len(rows) < 4:
+            rows.append({"label": "Roster value total",
+                         "value": fmt(pack["roster_value_total"])})
+        return rows[:4]
+    for p in (pack.get("my_keepers") or [])[:2]:
+        if p.get("value") is not None:
+            rows.append({"label": f"{p.get('name')} value", "value": fmt(p["value"])})
+        if p.get("cost_round") is not None and len(rows) < 4:
+            rows.append({"label": f"{p.get('name')} keeper cost (round)",
+                         "value": fmt(p["cost_round"])})
+    asked = pack.get("asked_player") or {}
+    if asked.get("value") is not None and len(rows) < 4:
+        rows.append({"label": f"{asked.get('name')} value", "value": fmt(asked["value"])})
+    return rows[:4]
+
+
+def _keeper(pack):
+    ans = _base("keeper", pack)
+    league_name = (pack.get("league") or {}).get("league_name") or "this league"
+    if (pack.get("mode") or "") == "dynasty":
+        core = pack.get("roster_core") or []
+        top = core[0] if core else {}
+        text = (f"In {league_name} there is no keeper decision to make: a dynasty "
+                f"roster carries over in full. Your core is led by {top.get('name')} "
+                f"at {fmt(top.get('value'))}, the roster totals "
+                f"{fmt(pack.get('roster_value_total'))} in value, and the average "
+                f"age is {fmt(pack.get('roster_avg_age'))}.")
+        ans.update({"verdict": "Dynasty: the whole roster carries over",
+                    "text": text, "receipts": _keeper_receipts(pack),
+                    "followups": ["Who is first on my cut line?"]})
+        return ans
+    keepers = pack.get("my_keepers") or []
+    asked = pack.get("asked_player") or {}
+    listing = "; ".join(
+        f"{k['name']} (round {fmt(k.get('cost_round'))}, value {fmt(k.get('value'))})"
+        for k in keepers)
+    text = f"Your projected keepers in {league_name}: {listing}."
+    cut = pack.get("cut_line") or []
+    if cut:
+        text += (f" The cut line starts with {cut[0]['name']} at "
+                 f"{fmt(cut[0].get('value'))}.")
+    verdict = f"Your {fmt(pack.get('keeper_limit'))} keepers in {league_name}"
+    if asked.get("name"):
+        if asked.get("projected_keeper"):
+            verdict = f"KEEP {asked['name']}"
+            text = (f"Yes. {asked['name']} projects as a keeper at a round "
+                    f"{fmt(asked.get('cost_round'))} cost with a value of "
+                    f"{fmt(asked.get('value'))}. " + text)
+        else:
+            verdict = f"NOT A KEEPER: {asked['name']}"
+            text = (f"No. {asked['name']} (value {fmt(asked.get('value'))}) sits "
+                    f"outside your projected keepers. " + text)
+    ans.update({"verdict": verdict, "text": text, "receipts": _keeper_receipts(pack),
+                "followups": ["Who is first on my cut line?"]})
+    return ans
+
+
+def _rookie_receipts(pack):
+    """Mirror of compose._required_receipts for rookie packs."""
+    rows = []
+    prospect = pack.get("prospect") or {}
+    board = [prospect] if prospect else (pack.get("prospects") or [])
+    for p in board[:2]:
+        if p.get("prospect_score") is not None:
+            rows.append({"label": f"{p.get('name')} prospect score",
+                         "value": fmt(p["prospect_score"])})
+    if prospect and prospect.get("projected_pick") is not None and len(rows) < 4:
+        rows.append({"label": "Projected draft pick",
+                     "value": fmt(prospect["projected_pick"])})
+    line = prospect.get("college_latest") or {}
+    for key, label in (("receiving_yards", "Receiving yards (latest college season)"),
+                       ("rush_yards", "Rushing yards (latest college season)"),
+                       ("pass_yards", "Passing yards (latest college season)")):
+        if line.get(key) is not None and len(rows) < 4:
+            rows.append({"label": label, "value": fmt(line[key])})
+            break
+    return rows[:4]
+
+
+def _rookie(pack):
+    ans = _base("rookie", pack)
+    year = fmt(pack.get("draft_year"))
+    prospect = pack.get("prospect") or {}
+    if prospect:
+        line = prospect.get("college_latest") or {}
+        segs = []
+        if line.get("pass_yards") is not None:
+            segs.append(f"{fmt(line['pass_yards'])} passing yards and "
+                        f"{fmt(line.get('pass_tds'))} passing touchdowns")
+        if line.get("rush_yards") is not None:
+            segs.append(f"{fmt(line['rush_yards'])} rushing yards and "
+                        f"{fmt(line.get('rush_tds'))} rushing touchdowns")
+        if line.get("receiving_yards") is not None:
+            segs.append(f"{fmt(line.get('receptions'))} catches for "
+                        f"{fmt(line['receiving_yards'])} yards and "
+                        f"{fmt(line.get('receiving_tds'))} receiving touchdowns "
+                        f"on {fmt(line.get('targets'))} targets")
+        text = (f"{prospect['name']} is the {prospect.get('position')}"
+                f"{fmt(prospect.get('position_rank'))} and number "
+                f"{fmt(prospect.get('overall_rank'))} overall in the {year} class "
+                f"out of {prospect.get('school')}, with a prospect score of "
+                f"{fmt(prospect.get('prospect_score'))}.")
+        if segs:
+            text += (f" Latest college season at {prospect.get('school')}: "
+                     f"{fmt(line.get('games_played'))} games, "
+                     + " and ".join(segs) + ".")
+        ans.update({"verdict": f"{prospect['name']}: {prospect.get('position')}"
+                               f"{fmt(prospect.get('position_rank'))} in the {year} class",
+                    "text": text, "receipts": _rookie_receipts(pack),
+                    "followups": ["Who are the top quarterbacks in the class?"]})
+        return ans
+    board = pack.get("prospects") or []
+    top = board[0] if board else {}
+    pos = pack.get("position_filter")
+    listing = "; ".join(
+        f"{p['name']} ({p.get('school')}) at {fmt(p.get('prospect_score'))}"
+        for p in board[:5])
+    verdict = (f"{year} {pos} class: {top.get('name')} leads" if pos
+               else f"{year} class: {top.get('name')} leads")
+    ans.update({"verdict": verdict,
+                "text": f"The board: {listing}.",
+                "receipts": _rookie_receipts(pack),
+                "followups": ["Who are the top quarterbacks in the class?"]})
+    return ans
+
+
+def _cross_league(pack):
+    ans = _base("cross_league", pack)
+    leagues = [s for s in (pack.get("leagues") or []) if isinstance(s, dict)]
+    rows = []
+    for s in leagues:
+        if len(rows) >= 4:
+            break
+        if s.get("rank") is None:
+            continue
+        if s.get("record"):
+            rows.append({"label": f"{s.get('league_name')} record",
+                         "value": str(s["record"])})
+        if len(rows) < 4:
+            rows.append({"label": f"{s.get('league_name')} rank",
+                         "value": fmt(s["rank"])})
+    lines = []
+    for s in leagues:
+        if s.get("rank") is None and not s.get("record"):
+            lines.append(f"{s.get('league_name')}: data is unavailable right now.")
+            continue
+        seg = (f"{s.get('league_name')}: {s.get('record')}, rank "
+               f"{fmt(s.get('rank'))} of {fmt(s.get('total_teams'))}")
+        qr = (s.get("pos_ranks") or {}).get("QB")
+        if qr is not None:
+            seg += f"; your QB room ranks {fmt(qr)}"
+        lines.append(seg + ".")
+    ranked = [s for s in leagues if s.get("rank") and s.get("total_teams")]
+    verdict = "Your leagues at a glance"
+    if ranked:
+        best = min(ranked, key=lambda s: s["rank"] / s["total_teams"])
+        verdict = f"Strongest: {best.get('league_name')}"
+    ans.update({"verdict": verdict, "text": " ".join(lines), "receipts": rows,
+                "followups": ["Which of my teams is strongest?"]})
+    return ans
+
+
 _BUILDERS = {"start_sit": _start_sit, "trade_eval": _trade_eval,
              "buy_sell_hold": _buy_sell_hold, "player": _player, "metric": _metric,
              "leaderboard": _leaderboard, "trade_finding": _trade_finding,
@@ -963,7 +1158,8 @@ _BUILDERS = {"start_sit": _start_sit, "trade_eval": _trade_eval,
              "teams": _teams, "pick_ownership": _pick_ownership,
              "waivers": _waivers, "this_week": _this_week,
              "playoffs": _playoffs, "power_rankings": _power_rankings,
-             "standings": _standings, "matchup": _matchup, "schedule": _schedule}
+             "standings": _standings, "matchup": _matchup, "schedule": _schedule,
+             "keeper": _keeper, "rookie": _rookie, "cross_league": _cross_league}
 
 
 def compose_mock(question: dict) -> dict:

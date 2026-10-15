@@ -91,6 +91,25 @@ Reality notes vs the workshop tool map (verified in this repo):
 - The breakout board builder mirrors the board route's non-premium
   preview rule exactly: a caller without a paid plan sees the first 3
   candidates plus the locked count, never the names beyond the preview.
+- Keeper answers use the Keeper Assistant's own machinery
+  (dashboard_services.pages.keeper_page): league_keeper_limit gates
+  applicability (a redraft league with no keeper settings gets the no-data
+  shape, never a default-limit invention), compute_league_keepers runs the
+  surplus optimizer for the projected set and cost rounds, and a full
+  dynasty league (is_dynasty_without_keepers) gets dynasty framing from
+  the roster's stored values and ages instead of meaningless last-round
+  costs, the same call the keeper page itself makes.
+- Rookie answers read the prospect pipeline's stored rows exactly as
+  stored (rookie_api._get_rankings over get_rookie_rankings_from_db, plus
+  _get_prospect_detail for one prospect's college seasons): scores are
+  never recomputed or rescaled, and the pack carries the rows'
+  model_version as score_version so the stored set is identifiable.
+- Cross-league answers fan out over the account's leagues with the
+  portfolio page's own builder (portfolio_summary.build_league_summary,
+  fed by accounts.list_user_leagues and the assistant's league ctx
+  loader). Each league is a labeled slice with its own numbers; nothing
+  is blended across leagues. The fan-out runs inside one ask(), so the
+  turn still counts once against the monthly cap.
 """
 from __future__ import annotations
 
@@ -307,6 +326,54 @@ def rank_positions(team_pos_values, slot_counts, positions=None):
     if positions:
         return _fn(team_pos_values, slot_counts, positions=positions)
     return _fn(team_pos_values, slot_counts)
+def compute_league_keepers(*args, **kwargs):
+    from dashboard_services.pages.keeper_page import compute_league_keepers as _fn
+    return _fn(*args, **kwargs)
+
+
+def keeper_league_limit(ctx):
+    from dashboard_services.pages.keeper_page import league_keeper_limit as _fn
+    return _fn(ctx)
+
+
+def dynasty_without_keepers(ctx):
+    from dashboard_services.pages.keeper_page import is_dynasty_without_keepers as _fn
+    return _fn(ctx)
+
+
+def rookie_rankings(draft_year):
+    from dashboard_services.rookie_api import _get_rankings as _fn
+    return _fn(draft_year)
+
+
+def prospect_detail(player_id, row):
+    from dashboard_services.rookie_api import _get_prospect_detail as _fn
+    return _fn(player_id, row)
+
+
+def active_rookie_class():
+    from data_building.rookie_pipeline.pipeline import get_active_rookie_class as _fn
+    return _fn()
+
+
+def list_account_leagues(account_id):
+    from dashboard_services.accounts import list_user_leagues as _fn
+    return _fn(account_id)
+
+
+def league_summary(account_id, membership, context_loader):
+    from dashboard_services.portfolio_summary import build_league_summary as _fn
+    return _fn(account_id, membership, context_loader)
+
+
+def league_ctx_loader(platform, league_id, season):
+    from dashboard_services.assistant.context import get_league_ctx_from_cache as _fn
+    return _fn(platform, str(league_id), season)
+
+
+def resolve_account_id():
+    from dashboard_services.assistant.context import resolve_account_id as _fn
+    return _fn()
 
 
 def _index():
@@ -2535,6 +2602,21 @@ def _f(value, nd=1):
     return round(f, nd)
 
 
+def _fnum(value):
+    """Coerce a stored numeric (Decimal from psycopg rows included) to a
+    plain float/int for the pack. Type normalization only: the stored
+    number itself is never recomputed or rescaled."""
+    if value is None:
+        return None
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return None
+    return int(f) if f == int(f) else f
+
+
+
+
 def _f0(value, nd=1):
     out = _f(value, nd)
     return 0.0 if out is None else out
@@ -3512,6 +3594,335 @@ def build_pick_ownership(bundle, entities, player_ids=None) -> tuple[dict, list[
     return pack, tools
 
 
+def build_keeper(bundle, entities=None, player_ids=None) -> tuple[dict, list[str]]:
+    """Keeper decisions from the Keeper Assistant's own machinery.
+
+    Applicability is the keeper page's own call: a full dynasty league
+    (is_dynasty_without_keepers) gets dynasty framing (the roster carries
+    over; the numbers are stored values and ages, never keeper costs),
+    and a league with no detected keeper limit gets the no-data shape
+    (redraft leagues draft fresh; there is no keeper decision to make).
+    Real keeper leagues run compute_league_keepers for the projected set
+    and cost rounds, joined to the model value table for the value math.
+    """
+    entities = entities or {}
+    pack = _base_pack("keeper", bundle)
+    tools: list[str] = []
+    ctx = bundle.get("ctx") or {}
+    if not bundle.get("league_id") or not ctx:
+        pack["available"] = False
+        pack["missing"] = "keepers do not apply here: no league is linked for this conversation"
+        pack["nearest"] = []
+        return pack, tools
+    roster = bundle.get("roster") or {}
+    roster_id = roster.get("roster_id")
+    values = _value_rows()
+    index = _index()
+
+    def _val(pid):
+        return _row_value(values.get(str(pid)))
+
+    if dynasty_without_keepers(ctx):
+        tools.append("keeper_page.is_dynasty_without_keepers")
+        pack["mode"] = "dynasty"
+        pack["dynasty"] = True
+        pack["keeper_limit"] = None
+        core = []
+        total = 0.0
+        ages = []
+        roster_ids = [str(p) for p in (roster.get("players") or [])]
+        for pid in roster_ids:
+            v = _val(pid)
+            if v is not None:
+                total += v
+            age = _fnum((index.get(pid) or {}).get("age"))
+            if age is not None:
+                ages.append(age)
+            info = _player_info(pid, index)
+            core.append({"player_id": pid, "name": info["name"],
+                         "position": info["position"], "age": age, "value": v})
+        core = [c for c in core if c["value"] is not None]
+        core.sort(key=lambda c: -c["value"])
+        pack["roster_core"] = core[:8]
+        pack["roster_size"] = len(roster_ids)
+        pack["roster_value_total"] = round(total, 1) if core else None
+        pack["roster_avg_age"] = round(sum(ages) / len(ages), 1) if ages else None
+        return pack, tools
+
+    limit = keeper_league_limit(ctx)
+    tools.append("keeper_page.league_keeper_limit")
+    if not limit or int(limit) <= 0:
+        pack["available"] = False
+        pack["missing"] = ("keepers do not apply in this league: it drafts fresh "
+                           "every year and has no keeper settings")
+        pack["nearest"] = []
+        return pack, tools
+
+    result = None
+    try:
+        result = compute_league_keepers(
+            ctx, bundle.get("platform") or "sleeper",
+            str(bundle.get("league_id") or ""), viewer_roster_id=roster_id)
+        tools.append("keeper_page.compute_league_keepers")
+    except Exception:
+        logger.debug("[assistant] compute_league_keepers failed", exc_info=True)
+    if not isinstance(result, dict):
+        pack["available"] = False
+        pack["missing"] = "keeper data is not available for this league right now"
+        pack["nearest"] = []
+        return pack, tools
+
+    pack["mode"] = "keeper"
+    pack["keeper_limit"] = result.get("limit") or int(limit)
+    kept = [k for k in (result.get("kept") or []) if isinstance(k, dict)]
+    mine = [k for k in kept if roster_id is not None
+            and str(k.get("rosterId")) == str(roster_id)]
+    kept_ids = {str(k.get("id")) for k in mine}
+    my_keepers = []
+    for k in mine:
+        pid = str(k.get("id"))
+        my_keepers.append({
+            "player_id": pid, "name": k.get("name") or _player_info(pid, index)["name"],
+            "position": k.get("pos") or _player_info(pid, index)["position"],
+            "cost_round": k.get("costRound"), "adp_overall": _fnum(k.get("adpOverall")),
+            "value": _val(pid),
+        })
+    my_keepers.sort(key=lambda c: -(c["value"] or 0))
+    pack["my_keepers"] = my_keepers
+    pack["league_kept_total"] = len(kept)
+    # The cut line: the viewer's most valuable players the optimizer did
+    # not keep, i.e. where the last keeper spot was decided.
+    cut = []
+    for pid in (roster.get("players") or []):
+        pid = str(pid)
+        if pid in kept_ids:
+            continue
+        v = _val(pid)
+        if v is None:
+            continue
+        info = _player_info(pid, index)
+        cut.append({"player_id": pid, "name": info["name"],
+                    "position": info["position"], "value": v})
+    cut.sort(key=lambda c: -c["value"])
+    pack["cut_line"] = cut[:3]
+    asked = None
+    for pid in (player_ids or []):
+        pid = str(pid)
+        info = _player_info(pid, index)
+        entry = next((k for k in my_keepers if k["player_id"] == pid), None)
+        asked = {"player_id": pid, "name": info["name"], "position": info["position"],
+                 "value": _val(pid), "projected_keeper": entry is not None,
+                 "cost_round": entry["cost_round"] if entry else None}
+        break
+    pack["asked_player"] = asked
+    return pack, tools
+
+
+def _prospect_row_out(row: dict) -> dict:
+    """One stored rankings row, trimmed to answerable fields, numbers as
+    stored (type-normalized only)."""
+    out = {
+        "player_id": str(row.get("player_id") or ""),
+        "sleeper_id": str(row.get("sleeper_id")) if row.get("sleeper_id") else None,
+        "name": row.get("name") or "",
+        "position": (row.get("position") or ""),
+        "school": row.get("school") or "",
+        "age": _fnum(row.get("age")),
+        "overall_rank": _fnum(row.get("overall_rank")),
+        "position_rank": _fnum(row.get("position_rank")),
+        "prospect_score": _fnum(row.get("prospect_score")),
+        "tier_label": row.get("tier_label") or row.get("tier") or None,
+        "projected_round": _fnum(row.get("projected_round")),
+        "projected_pick": _fnum(row.get("projected_pick")),
+    }
+    return out
+
+
+def build_rookie(bundle, entities=None, player_ids=None) -> tuple[dict, list[str]]:
+    """Prospect and draft-class answers from the pipeline's stored rows.
+
+    Scores are the stored prospect scores, used exactly as stored (never
+    recomputed or rescaled); the pack carries the rows' model_version as
+    score_version. A named prospect resolves against the rankings rows
+    themselves (by sleeper id when the router resolved an NFL id, else by
+    normalized name), because the upcoming class is not in the NFL
+    players index.
+    """
+    entities = entities or {}
+    pack = _base_pack("rookie", bundle)
+    tools: list[str] = []
+    year = entities.get("draft_year")
+    if not year:
+        try:
+            year = active_rookie_class()
+            tools.append("rookie_pipeline.get_active_rookie_class")
+        except Exception:
+            year = None
+    if not year and bundle.get("season"):
+        year = int(bundle["season"]) + 1
+    pack["draft_year"] = int(year) if year else None
+    if not year:
+        pack["available"] = False
+        pack["missing"] = "no draft class is active for prospect rankings right now"
+        pack["nearest"] = []
+        return pack, tools
+    try:
+        rows = rookie_rankings(int(year)) or []
+        tools.append("rookie_api._get_rankings")
+    except Exception:
+        logger.debug("[assistant] rookie rankings failed", exc_info=True)
+        rows = []
+    rows = [r for r in rows if isinstance(r, dict)]
+    if not rows:
+        pack["available"] = False
+        pack["missing"] = f"no prospect rankings are stored for the {int(year)} class yet"
+        pack["nearest"] = []
+        return pack, tools
+    versions = [str(r.get("model_version")) for r in rows if r.get("model_version")]
+    if versions:
+        pack["score_version"] = max(set(versions), key=versions.count)
+    pack["class_size"] = len(rows)
+
+    # Named prospect: sleeper-id match first, then normalized name match.
+    named = None
+    id_set = {str(p) for p in (player_ids or [])}
+    if id_set:
+        named = next((r for r in rows if r.get("sleeper_id") and str(r["sleeper_id"]) in id_set), None)
+        if named is None:
+            named = next((r for r in rows if str(r.get("player_id")) in id_set), None)
+    if named is None:
+        from dashboard_services.assistant.resolve import _normalize
+        for name in (entities.get("player_names") or []):
+            target = _normalize(name)
+            if not target:
+                continue
+            named = next((r for r in rows if _normalize(r.get("name") or "") == target), None)
+            if named is not None:
+                break
+    if named is not None:
+        out = _prospect_row_out(named)
+        try:
+            detail = prospect_detail(str(named.get("player_id")), named) or {}
+            tools.append("rookie_api._get_prospect_detail")
+        except Exception:
+            detail = {}
+        seasons = [s for s in (detail.get("seasons") or []) if isinstance(s, dict)]
+        if seasons:
+            latest = max(seasons, key=lambda s: int(s.get("season") or 0))
+            line = {"season": _fnum(latest.get("season")), "team": latest.get("team"),
+                    "games_played": _fnum(latest.get("games_played"))}
+            for k in ("pass_yards", "pass_tds", "rush_attempts", "rush_yards", "rush_tds",
+                      "receptions", "targets", "receiving_yards", "receiving_tds",
+                      "dominator_rating"):
+                v = _fnum(latest.get(k))
+                if v is not None:
+                    line[k] = v
+            out["college_latest"] = line
+        ath = detail.get("athleticism") or {}
+        ath_out = {k: _fnum(ath.get(k)) for k in ("forty_yard", "ras_score")
+                   if _fnum(ath.get(k)) is not None}
+        if ath_out:
+            out["athleticism"] = ath_out
+        reasons = named.get("key_reasons")
+        if isinstance(reasons, str):
+            try:
+                import json as _json
+                reasons = _json.loads(reasons)
+            except Exception:
+                reasons = [reasons]
+        if isinstance(reasons, list) and reasons:
+            out["key_reasons"] = [str(r) for r in reasons[:3]]
+        pack["prospect"] = out
+        pack["position_filter"] = None
+        return pack, tools
+
+    pos = str(entities.get("position") or "").upper() or None
+    if pos not in ("QB", "RB", "WR", "TE"):
+        pos = None
+    pack["position_filter"] = pos
+    board = rows
+    if pos:
+        board = [r for r in rows if str(r.get("position") or "").upper() == pos]
+    pack["prospects"] = [_prospect_row_out(r) for r in board[:10 if not pos else 8]]
+    return pack, tools
+
+
+def build_cross_league(bundle, entities=None, player_ids=None) -> tuple[dict, list[str]]:
+    """Cross-league answers: one labeled slice per linked league, from the
+    portfolio page's own summary builder. Numbers are never blended across
+    leagues (different scoring); each slice carries its league's name.
+    Runs inside a single ask(), so the turn counts once against the cap
+    however many leagues it fans out to. The thread's active league (the
+    bundle) is untouched, so follow-ups still default to it.
+    """
+    entities = entities or {}
+    pack = _base_pack("cross_league", bundle)
+    tools: list[str] = []
+    account_id = bundle.get("account_id")
+    if not account_id:
+        try:
+            account_id = resolve_account_id()
+        except Exception:
+            account_id = None
+    if not account_id:
+        pack["available"] = False
+        pack["missing"] = "no account leagues are linked for cross-league answers"
+        pack["nearest"] = []
+        return pack, tools
+    try:
+        memberships = list_account_leagues(int(account_id)) or []
+        tools.append("accounts.list_user_leagues")
+    except Exception:
+        logger.debug("[assistant] list_user_leagues failed", exc_info=True)
+        memberships = []
+    if not memberships:
+        pack["available"] = False
+        pack["missing"] = "no leagues are linked to this account yet"
+        pack["nearest"] = []
+        return pack, tools
+    pack["leagues_total"] = len(memberships)
+    slices = []
+    for m in memberships[:8]:
+        if not isinstance(m, dict):
+            continue
+        slice_ = {
+            "league_name": m.get("name") or "Unknown league",
+            "platform": m.get("platform"), "league_id": str(m.get("league_id") or ""),
+            "season": m.get("season"),
+            "active": str(m.get("league_id") or "") == str(bundle.get("league_id") or ""),
+            "state": "unavailable",
+        }
+        try:
+            summary = league_summary(int(account_id), m, league_ctx_loader)
+            if "portfolio_summary.build_league_summary" not in tools:
+                tools.append("portfolio_summary.build_league_summary")
+        except Exception:
+            logger.debug("[assistant] league summary failed for %s",
+                         m.get("league_id"), exc_info=True)
+            summary = None
+        if isinstance(summary, dict):
+            slice_["league_name"] = summary.get("name") or slice_["league_name"]
+            slice_["state"] = summary.get("state") or "ready"
+            slice_["team_name"] = summary.get("team_name")
+            if summary.get("state") not in ("reconnect_required", "team_not_linked"):
+                slice_.update({
+                    "record": summary.get("record"),
+                    "wins": summary.get("wins"), "losses": summary.get("losses"),
+                    "rank": summary.get("rank"), "total_teams": summary.get("total_teams"),
+                    "points_for": _fnum(summary.get("pf")),
+                    "total_value": _fnum(summary.get("total_value")),
+                    "streak": summary.get("streak"),
+                    "pos_ranks": {k: v for k, v in (summary.get("pos_user_rank") or {}).items()
+                                  if v is not None},
+                })
+            elif summary.get("message"):
+                slice_["note"] = summary.get("message")
+        slices.append(slice_)
+    pack["leagues"] = slices
+    pack["leagues_count"] = len(slices)
+    return pack, tools
+
+
 BUILDERS = {
     "start_sit": build_start_sit,
     "trade_eval": build_trade_eval,
@@ -3532,4 +3943,7 @@ BUILDERS = {
     "breakout_history": build_breakout_history,
     "teams": build_teams,
     "pick_ownership": build_pick_ownership,
+    "keeper": build_keeper,
+    "rookie": build_rookie,
+    "cross_league": build_cross_league,
 }

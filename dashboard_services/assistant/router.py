@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 INTENTS = ["start_sit", "trade_eval", "trade_finding", "buy_sell_hold", "player", "metric", "leaderboard", "waivers", "this_week",
            "playoffs", "power_rankings", "standings", "matchup", "schedule",
            "breakout_board", "breakout_track_record", "breakout_history", "teams", "pick_ownership",
+           "keeper", "rookie", "cross_league",
            "remember", "out_of_scope"]
 
 SCHEMA = {
@@ -33,6 +34,8 @@ SCHEMA = {
         "position_hint": {"type": ["string", "null"]},
         "teams_mode": {"type": ["string", "null"], "enum": ["dynasty", "this_season", None]},
         "week": {"type": ["integer", "null"]},
+        "draft_year": {"type": ["integer", "null"]},
+        "position": {"type": ["string", "null"]},
         "preference_text": {"type": ["string", "null"]},
         "board_kind": {"type": ["string", "null"], "enum": ["board", "intersection", "dual", "movers", "matchup", None]},
         "second_metric_hint": {"type": ["string", "null"]},
@@ -42,7 +45,7 @@ SCHEMA = {
         "window_weeks": {"type": ["integer", "null"]},
         "direction": {"type": ["string", "null"], "enum": ["risers", "fallers", None]},
     },
-    "required": ["intent", "player_names", "give_player_names", "receive_player_names", "picks", "give_picks", "receive_picks", "other_team_hint", "team_names", "metric_hint", "target_position", "position_hint", "teams_mode", "week", "preference_text", "board_kind", "second_metric_hint", "top_n", "position", "team", "window_weeks", "direction"],
+    "required": ["intent", "player_names", "give_player_names", "receive_player_names", "picks", "give_picks", "receive_picks", "other_team_hint", "team_names", "metric_hint", "target_position", "position_hint", "teams_mode", "week", "draft_year", "preference_text", "board_kind", "second_metric_hint", "top_n", "position", "team", "window_weeks", "direction"],
     "additionalProperties": False,
 }
 
@@ -84,6 +87,18 @@ SYSTEM = (
     "teams: roster strength or grades across the league's teams (position_hint is a position room like TE or WR when one is named; "
     "teams_mode is this_season when they ask about this season or right now, otherwise dynasty). "
     "pick_ownership: who owns a draft pick (the pick text goes in picks). "
+    "keeper: deciding which players to keep into next season, keeper costs or rounds, "
+    "or keeping a player versus a draft pick. If a trade offer with two sides is on the "
+    "table, it is trade_eval even when the user says keep; keeper is for the keeper "
+    "decision itself, outside a specific offer. "
+    "rookie: questions about college prospects and upcoming NFL draft classes (best "
+    "rookie RBs in a class, tell me about a prospect, top players in the 2027 class); "
+    "draft_year is the class year when stated and position the position filter when stated. "
+    "A named player who is already in the NFL, asked about as a player, is player, "
+    "buy_sell_hold, or start_sit as usual; rookie needs the prospect or draft-class framing. "
+    "cross_league: questions that explicitly span the user's leagues (across my leagues, "
+    "all my leagues, which of my teams). A question about one league stays with its "
+    "normal intent even if the user has other leagues. "
     "remember: the user asks you to remember a preference (preference_text is the preference). "
     "out_of_scope: anything else (trivia, real-game talk, other leagues). "
     "Use thread history only to resolve short follow-ups. Return JSON only. No em dashes."
@@ -176,9 +191,12 @@ def _keyword_route(message: str) -> dict:
             "give_picks": [], "receive_picks": [],
             "other_team_hint": None, "team_names": [], "metric_hint": None, "target_position": None,
             "position_hint": None, "teams_mode": None, "week": None,
+            "draft_year": None, "position": None,
             "preference_text": None, **_BOARD_ENTITY_DEFAULTS}
     if re.search(r"\bremember\b|\bdon'?t forget\b|\bkeep in mind\b", m):
         return {**base, "intent": "remember", "preference_text": message.strip()}
+    if re.search(r"across (all )?my leagues|all my leagues|my other leagues|which of my teams|in my leagues\b", m):
+        return {**base, "intent": "cross_league"}
     # League-context intents run before the player/team-week rules below:
     # their phrasings overlap ("this week", "my team", "who leads"), so the
     # specific subject wins. Disambiguation: power rankings need the word
@@ -235,6 +253,14 @@ def _keyword_route(message: str) -> dict:
             pos = pm.group(1).upper()
         mode = "this_season" if re.search(r"this season|right now|this year", m) else None
         return {**base, "intent": "teams", "position_hint": pos, "teams_mode": mode}
+    if re.search(r"\bkeepers?\b|who should i keep|keep .* (next year|next season)|\bkeep\b.*\bor the\b", m):
+        return {**base, "intent": "keeper"}
+    if re.search(r"\brookies?\b|\bprospects?\b|\bdraft class\b|\b(202[4-9]) class\b|\bpre[- ]draft\b", m):
+        year = re.search(r"\b(202[4-9])\b", m)
+        pos = re.search(r"\b(qb|rb|wr|te)s?\b", m)
+        return {**base, "intent": "rookie",
+                "draft_year": int(year.group(1)) if year else None,
+                "position": pos.group(1).upper() if pos else None}
     if re.search(r"what should i do|this week|my team", m):
         return {**base, "intent": "this_week"}
     if re.search(r"target share|snap share|route|metric|what is|who leads", m):
@@ -271,6 +297,7 @@ def classify(question: str, context: dict | None = None, history: list | None = 
             "position_hint": data.get("position_hint"),
             "teams_mode": data.get("teams_mode"),
             "week": data.get("week"),
+            "draft_year": data.get("draft_year"),
             "board_kind": data.get("board_kind"),
             "second_metric_hint": data.get("second_metric_hint"),
             "top_n": data.get("top_n"),

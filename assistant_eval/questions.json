@@ -6212,6 +6212,895 @@
           "Pittsburgh Pilots"
         ]
       }
+    },
+    {
+      "id": "kp1",
+      "type": "keeper",
+      "question": "Who should I keep in Sunday Scaries?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "keeper",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "sunday-scaries",
+          "season": 2026,
+          "league_name": "Sunday Scaries",
+          "team_name": "Bye Week Bandits"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "mode": "keeper",
+        "keeper_limit": 3,
+        "my_keepers": [
+          {
+            "player_id": "rome-odunze",
+            "name": "Rome Odunze",
+            "position": "WR",
+            "cost_round": 6,
+            "adp_overall": 24,
+            "value": 4850
+          },
+          {
+            "player_id": "jordan-addison",
+            "name": "Jordan Addison",
+            "position": "WR",
+            "cost_round": 9,
+            "adp_overall": 61,
+            "value": 3920
+          },
+          {
+            "player_id": "woody-marks",
+            "name": "Woody Marks",
+            "position": "RB",
+            "cost_round": 12,
+            "adp_overall": 118,
+            "value": 2380
+          }
+        ],
+        "league_kept_total": 31,
+        "cut_line": [
+          {
+            "player_id": "darnell-mooney",
+            "name": "Darnell Mooney",
+            "position": "WR",
+            "value": 2600
+          },
+          {
+            "player_id": "rashid-shaheed",
+            "name": "Rashid Shaheed",
+            "position": "WR",
+            "value": 1980
+          }
+        ],
+        "asked_player": null
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": "Rome Odunze",
+        "key_numbers": [
+          4850,
+          6
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Odunze"
+        ]
+      }
+    },
+    {
+      "id": "kp2",
+      "type": "keeper",
+      "question": "Is Jordan Addison a keeper at a 9th in Sunday Scaries?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "keeper",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "sunday-scaries",
+          "season": 2026,
+          "league_name": "Sunday Scaries",
+          "team_name": "Bye Week Bandits"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "mode": "keeper",
+        "keeper_limit": 3,
+        "my_keepers": [
+          {
+            "player_id": "rome-odunze",
+            "name": "Rome Odunze",
+            "position": "WR",
+            "cost_round": 6,
+            "adp_overall": 24,
+            "value": 4850
+          },
+          {
+            "player_id": "jordan-addison",
+            "name": "Jordan Addison",
+            "position": "WR",
+            "cost_round": 9,
+            "adp_overall": 61,
+            "value": 3920
+          },
+          {
+            "player_id": "woody-marks",
+            "name": "Woody Marks",
+            "position": "RB",
+            "cost_round": 12,
+            "adp_overall": 118,
+            "value": 2380
+          }
+        ],
+        "league_kept_total": 31,
+        "cut_line": [
+          {
+            "player_id": "darnell-mooney",
+            "name": "Darnell Mooney",
+            "position": "WR",
+            "value": 2600
+          },
+          {
+            "player_id": "rashid-shaheed",
+            "name": "Rashid Shaheed",
+            "position": "WR",
+            "value": 1980
+          }
+        ],
+        "asked_player": {
+          "player_id": "jordan-addison",
+          "name": "Jordan Addison",
+          "position": "WR",
+          "value": 3920,
+          "projected_keeper": true,
+          "cost_round": 9
+        }
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": "Jordan Addison",
+        "key_numbers": [
+          3920,
+          9
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Addison"
+        ]
+      }
+    },
+    {
+      "id": "kp3",
+      "type": "keeper",
+      "question": "Who should I keep in my home league?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "keeper",
+        "available": false,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "home-league",
+          "season": 2026,
+          "league_name": "Home League",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "missing": "keepers do not apply in this league: it drafts fresh every year and has no keeper settings",
+        "nearest": []
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": null,
+        "key_numbers": [],
+        "close_call": false
+      },
+      "trap": {
+        "kind": "no_keeper_settings",
+        "note": "A redraft league with no keeper settings: the correct answer is the no-data shape (keepers do not apply), never an invented keeper list."
+      },
+      "expect": {
+        "no_data": true,
+        "must_mention": []
+      }
+    },
+    {
+      "id": "kp4",
+      "type": "keeper",
+      "question": "Who should I keep in Blackedraw?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "keeper",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "mode": "dynasty",
+        "dynasty": true,
+        "keeper_limit": null,
+        "roster_core": [
+          {
+            "player_id": "bijan-robinson",
+            "name": "Bijan Robinson",
+            "position": "RB",
+            "age": 24.5,
+            "value": 7200
+          },
+          {
+            "player_id": "brian-thomas-jr",
+            "name": "Brian Thomas Jr.",
+            "position": "WR",
+            "age": 23.9,
+            "value": 4980
+          },
+          {
+            "player_id": "rome-odunze",
+            "name": "Rome Odunze",
+            "position": "WR",
+            "age": 24.2,
+            "value": 4850
+          },
+          {
+            "player_id": "jordan-addison",
+            "name": "Jordan Addison",
+            "position": "WR",
+            "age": 25.1,
+            "value": 3920
+          },
+          {
+            "player_id": "woody-marks",
+            "name": "Woody Marks",
+            "position": "RB",
+            "age": 23.8,
+            "value": 2380
+          }
+        ],
+        "roster_size": 24,
+        "roster_value_total": 31240,
+        "roster_avg_age": 25.6
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": "Bijan Robinson",
+        "key_numbers": [
+          7200,
+          31240
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Bijan Robinson"
+        ]
+      }
+    },
+    {
+      "id": "rk1",
+      "type": "rookie",
+      "question": "Who are the top 2027 prospects?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "rookie",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "draft_year": 2027,
+        "score_version": "3.0",
+        "class_size": 62,
+        "position_filter": null,
+        "prospects": [
+          {
+            "player_id": "p-jeremiah-smith",
+            "sleeper_id": null,
+            "name": "Jeremiah Smith",
+            "position": "WR",
+            "school": "Ohio State",
+            "age": 20.8,
+            "overall_rank": 1,
+            "position_rank": 1,
+            "prospect_score": 96.4,
+            "tier_label": "Elite",
+            "projected_round": 1,
+            "projected_pick": 4
+          },
+          {
+            "player_id": "p-arch-manning",
+            "sleeper_id": null,
+            "name": "Arch Manning",
+            "position": "QB",
+            "school": "Texas",
+            "age": 21.4,
+            "overall_rank": 2,
+            "position_rank": 1,
+            "prospect_score": 94.1,
+            "tier_label": "Elite",
+            "projected_round": 1,
+            "projected_pick": 1
+          },
+          {
+            "player_id": "p-kewan-lacy",
+            "sleeper_id": null,
+            "name": "Kewan Lacy",
+            "position": "RB",
+            "school": "Ole Miss",
+            "age": 21.1,
+            "overall_rank": 3,
+            "position_rank": 1,
+            "prospect_score": 91.7,
+            "tier_label": "High-end starter",
+            "projected_round": 1,
+            "projected_pick": 18
+          },
+          {
+            "player_id": "p-cam-coleman",
+            "sleeper_id": null,
+            "name": "Cam Coleman",
+            "position": "WR",
+            "school": "Texas",
+            "age": 20.6,
+            "overall_rank": 4,
+            "position_rank": 2,
+            "prospect_score": 90.2,
+            "tier_label": "High-end starter",
+            "projected_round": 1,
+            "projected_pick": 9
+          },
+          {
+            "player_id": "p-dante-moore",
+            "sleeper_id": null,
+            "name": "Dante Moore",
+            "position": "QB",
+            "school": "Oregon",
+            "age": 21.7,
+            "overall_rank": 5,
+            "position_rank": 2,
+            "prospect_score": 88.9,
+            "tier_label": "Starter",
+            "projected_round": 1,
+            "projected_pick": 6
+          }
+        ]
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": "Jeremiah Smith",
+        "key_numbers": [
+          96.4
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Jeremiah Smith"
+        ]
+      }
+    },
+    {
+      "id": "rk2",
+      "type": "rookie",
+      "question": "Best rookie RBs in the 2027 class?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "rookie",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "draft_year": 2027,
+        "score_version": "3.0",
+        "class_size": 62,
+        "position_filter": "RB",
+        "prospects": [
+          {
+            "player_id": "p-kewan-lacy",
+            "sleeper_id": null,
+            "name": "Kewan Lacy",
+            "position": "RB",
+            "school": "Ole Miss",
+            "age": 21.1,
+            "overall_rank": 3,
+            "position_rank": 1,
+            "prospect_score": 91.7,
+            "tier_label": "High-end starter",
+            "projected_round": 1,
+            "projected_pick": 18
+          },
+          {
+            "player_id": "p-jadan-baugh",
+            "sleeper_id": null,
+            "name": "Jadan Baugh",
+            "position": "RB",
+            "school": "Florida",
+            "age": 20.9,
+            "overall_rank": 11,
+            "position_rank": 2,
+            "prospect_score": 86.3,
+            "tier_label": "Starter",
+            "projected_round": 2,
+            "projected_pick": 41
+          },
+          {
+            "player_id": "p-ahmad-hardy",
+            "sleeper_id": null,
+            "name": "Ahmad Hardy",
+            "position": "RB",
+            "school": "Missouri",
+            "age": 21.3,
+            "overall_rank": 15,
+            "position_rank": 3,
+            "prospect_score": 84.0,
+            "tier_label": "Starter",
+            "projected_round": 2,
+            "projected_pick": 52
+          }
+        ]
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": "Kewan Lacy",
+        "key_numbers": [
+          91.7
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Kewan Lacy"
+        ]
+      }
+    },
+    {
+      "id": "rk3",
+      "type": "rookie",
+      "question": "Tell me about Jeremiah Smith.",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "rookie",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "draft_year": 2027,
+        "score_version": "3.0",
+        "class_size": 62,
+        "position_filter": null,
+        "prospect": {
+          "player_id": "p-jeremiah-smith",
+          "sleeper_id": null,
+          "name": "Jeremiah Smith",
+          "position": "WR",
+          "school": "Ohio State",
+          "age": 20.8,
+          "overall_rank": 1,
+          "position_rank": 1,
+          "prospect_score": 96.4,
+          "tier_label": "Elite",
+          "projected_round": 1,
+          "projected_pick": 4,
+          "key_reasons": [
+            "Elite production profile",
+            "Early declare"
+          ],
+          "college_latest": {
+            "season": 2026,
+            "team": "Ohio State",
+            "games_played": 6,
+            "receptions": 48,
+            "targets": 68,
+            "receiving_yards": 812,
+            "receiving_tds": 9,
+            "dominator_rating": 0.38
+          },
+          "athleticism": {
+            "ras_score": 9.61
+          }
+        }
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": "Jeremiah Smith",
+        "key_numbers": [
+          96.4,
+          812
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Jeremiah Smith",
+          "Ohio State"
+        ]
+      }
+    },
+    {
+      "id": "xl1",
+      "type": "cross_league",
+      "question": "Across all my leagues, where do I need a QB most?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "cross_league",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "leagues_total": 2,
+        "leagues_count": 2,
+        "leagues": [
+          {
+            "league_name": "Blackedraw",
+            "platform": "sleeper",
+            "league_id": "blackedraw",
+            "season": 2026,
+            "active": true,
+            "state": "ready",
+            "team_name": "Caleb's Casting Couch",
+            "record": "5-2",
+            "wins": 5,
+            "losses": 2,
+            "rank": 3,
+            "total_teams": 12,
+            "points_for": 842.5,
+            "total_value": 31240,
+            "streak": "W3",
+            "pos_ranks": {
+              "QB": 4,
+              "RB": 2,
+              "WR": 5,
+              "TE": 7
+            }
+          },
+          {
+            "league_name": "Sunday Scaries",
+            "platform": "sleeper",
+            "league_id": "sunday-scaries",
+            "season": 2026,
+            "active": false,
+            "state": "ready",
+            "team_name": "Bye Week Bandits",
+            "record": "2-5",
+            "wins": 2,
+            "losses": 5,
+            "rank": 9,
+            "total_teams": 12,
+            "points_for": 701.3,
+            "total_value": 22480,
+            "streak": "L2",
+            "pos_ranks": {
+              "QB": 11,
+              "RB": 6,
+              "WR": 8,
+              "TE": 10
+            }
+          }
+        ]
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": "Sunday Scaries",
+        "key_numbers": [
+          11,
+          4
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Blackedraw",
+          "Sunday Scaries"
+        ]
+      }
+    },
+    {
+      "id": "xl2",
+      "type": "cross_league",
+      "question": "Which of my teams is strongest?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "cross_league",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "leagues_total": 2,
+        "leagues_count": 2,
+        "leagues": [
+          {
+            "league_name": "Blackedraw",
+            "platform": "sleeper",
+            "league_id": "blackedraw",
+            "season": 2026,
+            "active": true,
+            "state": "ready",
+            "team_name": "Caleb's Casting Couch",
+            "record": "5-2",
+            "wins": 5,
+            "losses": 2,
+            "rank": 3,
+            "total_teams": 12,
+            "points_for": 842.5,
+            "total_value": 31240,
+            "streak": "W3",
+            "pos_ranks": {
+              "QB": 4,
+              "RB": 2,
+              "WR": 5,
+              "TE": 7
+            }
+          },
+          {
+            "league_name": "Sunday Scaries",
+            "platform": "sleeper",
+            "league_id": "sunday-scaries",
+            "season": 2026,
+            "active": false,
+            "state": "ready",
+            "team_name": "Bye Week Bandits",
+            "record": "2-5",
+            "wins": 2,
+            "losses": 5,
+            "rank": 9,
+            "total_teams": 12,
+            "points_for": 701.3,
+            "total_value": 22480,
+            "streak": "L2",
+            "pos_ranks": {
+              "QB": 11,
+              "RB": 6,
+              "WR": 8,
+              "TE": 10
+            }
+          }
+        ]
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": "Blackedraw",
+        "key_numbers": [
+          3,
+          9
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Blackedraw",
+          "Sunday Scaries"
+        ]
+      }
+    },
+    {
+      "id": "xl3",
+      "type": "cross_league",
+      "question": "How are all my leagues doing?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "cross_league",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "leagues_total": 3,
+        "leagues_count": 3,
+        "leagues": [
+          {
+            "league_name": "Blackedraw",
+            "platform": "sleeper",
+            "league_id": "blackedraw",
+            "season": 2026,
+            "active": true,
+            "state": "ready",
+            "team_name": "Caleb's Casting Couch",
+            "record": "5-2",
+            "wins": 5,
+            "losses": 2,
+            "rank": 3,
+            "total_teams": 12,
+            "points_for": 842.5,
+            "total_value": 31240,
+            "streak": "W3",
+            "pos_ranks": {
+              "QB": 4,
+              "RB": 2,
+              "WR": 5,
+              "TE": 7
+            }
+          },
+          {
+            "league_name": "Sunday Scaries",
+            "platform": "sleeper",
+            "league_id": "sunday-scaries",
+            "season": 2026,
+            "active": false,
+            "state": "ready",
+            "team_name": "Bye Week Bandits",
+            "record": "2-5",
+            "wins": 2,
+            "losses": 5,
+            "rank": 9,
+            "total_teams": 12,
+            "points_for": 701.3,
+            "total_value": 22480,
+            "streak": "L2",
+            "pos_ranks": {
+              "QB": 11,
+              "RB": 6,
+              "WR": 8,
+              "TE": 10
+            }
+          },
+          {
+            "league_name": "Office League",
+            "platform": "sleeper",
+            "league_id": "office-league",
+            "season": 2026,
+            "active": false,
+            "state": "unavailable"
+          }
+        ]
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": "Blackedraw",
+        "key_numbers": [
+          3
+        ],
+        "close_call": false
+      },
+      "trap": {
+        "kind": "missing_league",
+        "note": "One league's data is unavailable: the correct answer covers the other leagues and names the gap, never blends numbers across leagues or invents the missing league's record."
+      },
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Office League",
+          "Blackedraw"
+        ]
+      }
     }
   ]
 }
