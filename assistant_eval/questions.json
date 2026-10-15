@@ -1,10 +1,10 @@
 {
   "_meta": {
-    "description": "Frozen Stage 1 core eval set: 20 questions with golden evidence packs for the BR Fantasy assistant (workshop section 5).",
+    "description": "Frozen eval set: 26 questions with golden evidence packs for the BR Fantasy assistant (workshop section 5): the Stage 1 core 20 plus the deep-cuts leaderboard family (lb1-lb6).",
     "scenario": "Kaedon's league Blackedraw, her team Caleb's Casting Couch, Week 7 of the 2026 season.",
     "packs": "Each evidence_pack mirrors, field for field, the dict the matching builder in dashboard_services/assistant/evidence.py returns. Values inside a pack are the only numbers an answer may cite.",
     "recapture": "These packs are frozen fixtures. Before any launch decision, recapture them from the live tools with: python3 scripts/run_assistant_eval.py --capture (writes assistant_eval/captured_questions.json; it never overwrites this file). A launch call made on stale fixtures is not a launch call.",
-    "pass_bar": "Zero invented numbers across all 20; both traps handled; at least 18 of 20 verdicts match the reference (workshop section 5). The blind head-to-head preference bar is human-scored and is not part of the automated runner."
+    "pass_bar": "Zero invented numbers across all 26; all three traps handled; at least 24 of 26 verdicts match the reference (workshop section 5). The blind head-to-head preference bar is human-scored and is not part of the automated runner."
   },
   "questions": [
     {
@@ -1677,6 +1677,788 @@
         "no_data": false,
         "must_mention": [
           "Marks"
+        ]
+      }
+    },
+    {
+      "id": "lb1",
+      "type": "leaderboard",
+      "question": "Who are the top 10 in target share?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "leaderboard",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "board_kind": "board",
+        "requested_n": 10,
+        "position_filter": null,
+        "team_filter": null,
+        "metric_hint": "target share",
+        "metric_key": "target_share",
+        "label": "Target Share",
+        "definition": "Share of a team's pass attempts that are thrown to the player.",
+        "pool_size": 84,
+        "qualification": {
+          "vol_col": "games",
+          "vol_label": "games",
+          "min_vol": 4,
+          "games_min": 4,
+          "provisional": false
+        },
+        "qualification_text": "Qualified pool: 84 players, minimum 4 games.",
+        "window": {
+          "kind": "season",
+          "applied": false,
+          "requested_weeks": null
+        },
+        "board_count": 10,
+        "board": [
+          {
+            "rank": 1,
+            "player_id": "jamarr-chase",
+            "name": "Ja'Marr Chase",
+            "team": "CIN",
+            "position": "WR",
+            "value": 0.31,
+            "games": 6,
+            "on_my_roster": false
+          },
+          {
+            "rank": 2,
+            "player_id": "malik-nabers",
+            "name": "Malik Nabers",
+            "team": "NYG",
+            "position": "WR",
+            "value": 0.29,
+            "games": 6,
+            "on_my_roster": false
+          },
+          {
+            "rank": 3,
+            "player_id": "puka-nacua",
+            "name": "Puka Nacua",
+            "team": "LAR",
+            "position": "WR",
+            "value": 0.28,
+            "games": 6,
+            "on_my_roster": false
+          },
+          {
+            "rank": 4,
+            "player_id": "justin-jefferson",
+            "name": "Justin Jefferson",
+            "team": "MIN",
+            "position": "WR",
+            "value": 0.27,
+            "games": 6,
+            "on_my_roster": false
+          },
+          {
+            "rank": 5,
+            "player_id": "rome-odunze",
+            "name": "Rome Odunze",
+            "team": "CHI",
+            "position": "WR",
+            "value": 0.24,
+            "games": 6,
+            "on_my_roster": true
+          },
+          {
+            "rank": 6,
+            "player_id": "ceedee-lamb",
+            "name": "CeeDee Lamb",
+            "team": "DAL",
+            "position": "WR",
+            "value": 0.23,
+            "games": 6,
+            "on_my_roster": false
+          },
+          {
+            "rank": 7,
+            "player_id": "amon-ra-st-brown",
+            "name": "Amon-Ra St. Brown",
+            "team": "DET",
+            "position": "WR",
+            "value": 0.22,
+            "games": 6,
+            "on_my_roster": false
+          },
+          {
+            "rank": 8,
+            "player_id": "drake-london",
+            "name": "Drake London",
+            "team": "ATL",
+            "position": "WR",
+            "value": 0.21,
+            "games": 6,
+            "on_my_roster": false
+          },
+          {
+            "rank": 9,
+            "player_id": "garrett-wilson",
+            "name": "Garrett Wilson",
+            "team": "NYJ",
+            "position": "WR",
+            "value": 0.2,
+            "games": 6,
+            "on_my_roster": false
+          },
+          {
+            "rank": 10,
+            "player_id": "zay-flowers",
+            "name": "Zay Flowers",
+            "team": "BAL",
+            "position": "WR",
+            "value": 0.19,
+            "games": 6,
+            "on_my_roster": false
+          }
+        ]
+      },
+      "reference": {
+        "verdict_kind": "board",
+        "pick": "Ja'Marr Chase",
+        "key_numbers": [
+          0.31,
+          0.29,
+          0.28,
+          0.27,
+          0.24,
+          0.23,
+          0.22,
+          0.21,
+          0.2,
+          0.19
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Ja'Marr Chase",
+          "Target Share"
+        ]
+      }
+    },
+    {
+      "id": "lb2",
+      "type": "leaderboard",
+      "question": "Who is in the top 10 in both target share and air yards share?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "leaderboard",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "board_kind": "intersection",
+        "requested_n": 10,
+        "position_filter": null,
+        "team_filter": null,
+        "metric_hint": "target share",
+        "metric_key": "target_share",
+        "label": "Target Share",
+        "definition": "Share of a team's pass attempts that are thrown to the player.",
+        "second_metric_key": "air_yards_share",
+        "second_label": "Air Yards Share",
+        "pool_size": 84,
+        "qualification": {
+          "vol_col": "games",
+          "vol_label": "games",
+          "min_vol": 4,
+          "games_min": 4,
+          "provisional": false
+        },
+        "qualification_text": "Qualified pool: 84 players, minimum 4 games.",
+        "window": {
+          "kind": "season",
+          "applied": false,
+          "requested_weeks": null
+        },
+        "board_count": 8,
+        "board": [
+          {
+            "rank": 1,
+            "player_id": "jamarr-chase",
+            "name": "Ja'Marr Chase",
+            "team": "CIN",
+            "position": "WR",
+            "value": 0.31,
+            "games": 6,
+            "on_my_roster": false,
+            "rank_primary": 1,
+            "secondary": {
+              "value": 0.34,
+              "rank": 2
+            }
+          },
+          {
+            "rank": 2,
+            "player_id": "malik-nabers",
+            "name": "Malik Nabers",
+            "team": "NYG",
+            "position": "WR",
+            "value": 0.29,
+            "games": 6,
+            "on_my_roster": false,
+            "rank_primary": 2,
+            "secondary": {
+              "value": 0.36,
+              "rank": 1
+            }
+          },
+          {
+            "rank": 3,
+            "player_id": "puka-nacua",
+            "name": "Puka Nacua",
+            "team": "LAR",
+            "position": "WR",
+            "value": 0.28,
+            "games": 6,
+            "on_my_roster": false,
+            "rank_primary": 3,
+            "secondary": {
+              "value": 0.3,
+              "rank": 4
+            }
+          },
+          {
+            "rank": 4,
+            "player_id": "justin-jefferson",
+            "name": "Justin Jefferson",
+            "team": "MIN",
+            "position": "WR",
+            "value": 0.27,
+            "games": 6,
+            "on_my_roster": false,
+            "rank_primary": 4,
+            "secondary": {
+              "value": 0.33,
+              "rank": 3
+            }
+          },
+          {
+            "rank": 5,
+            "player_id": "rome-odunze",
+            "name": "Rome Odunze",
+            "team": "CHI",
+            "position": "WR",
+            "value": 0.24,
+            "games": 6,
+            "on_my_roster": true,
+            "rank_primary": 5,
+            "secondary": {
+              "value": 0.25,
+              "rank": 9
+            }
+          },
+          {
+            "rank": 6,
+            "player_id": "drake-london",
+            "name": "Drake London",
+            "team": "ATL",
+            "position": "WR",
+            "value": 0.21,
+            "games": 6,
+            "on_my_roster": false,
+            "rank_primary": 6,
+            "secondary": {
+              "value": 0.28,
+              "rank": 6
+            }
+          },
+          {
+            "rank": 7,
+            "player_id": "garrett-wilson",
+            "name": "Garrett Wilson",
+            "team": "NYJ",
+            "position": "WR",
+            "value": 0.2,
+            "games": 6,
+            "on_my_roster": false,
+            "rank_primary": 7,
+            "secondary": {
+              "value": 0.27,
+              "rank": 7
+            }
+          },
+          {
+            "rank": 8,
+            "player_id": "zay-flowers",
+            "name": "Zay Flowers",
+            "team": "BAL",
+            "position": "WR",
+            "value": 0.19,
+            "games": 6,
+            "on_my_roster": false,
+            "rank_primary": 8,
+            "secondary": {
+              "value": 0.26,
+              "rank": 8
+            }
+          }
+        ]
+      },
+      "reference": {
+        "verdict_kind": "board",
+        "pick": "Ja'Marr Chase",
+        "key_numbers": [
+          0.31,
+          0.34,
+          0.29,
+          0.36,
+          0.28,
+          0.3,
+          0.27,
+          0.33,
+          0.24,
+          0.25,
+          0.21,
+          0.28,
+          0.2,
+          0.27,
+          0.19,
+          0.26
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Ja'Marr Chase",
+          "Air Yards Share"
+        ]
+      }
+    },
+    {
+      "id": "lb3",
+      "type": "leaderboard",
+      "question": "Who are the biggest risers in target share over the last few weeks?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "leaderboard",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "board_kind": "movers",
+        "requested_n": 10,
+        "position_filter": null,
+        "team_filter": null,
+        "metric_hint": "target share",
+        "metric_key": "target_share",
+        "label": "Target Share",
+        "definition": "Share of a team's pass attempts that are thrown to the player.",
+        "direction": "risers",
+        "movers_basis": "window_delta",
+        "window": {
+          "kind": "movers",
+          "recent_start": 3,
+          "recent_end": 6,
+          "recent_weeks": 4,
+          "base_start": 1,
+          "base_end": 2,
+          "applied": true
+        },
+        "pool_size": 61,
+        "qualification_text": "Recent window: weeks 3 to 6. Baseline: weeks 1 to 2. Only players with a Target Share in both windows are ranked; 61 qualify.",
+        "board_count": 5,
+        "board": [
+          {
+            "rank": 1,
+            "player_id": "rome-odunze",
+            "name": "Rome Odunze",
+            "team": "CHI",
+            "position": "WR",
+            "value": 0.27,
+            "games": null,
+            "on_my_roster": true,
+            "baseline_value": 0.18,
+            "delta": 0.09
+          },
+          {
+            "rank": 2,
+            "player_id": "quentin-johnston",
+            "name": "Quentin Johnston",
+            "team": "LAC",
+            "position": "WR",
+            "value": 0.24,
+            "games": null,
+            "on_my_roster": false,
+            "baseline_value": 0.16,
+            "delta": 0.08
+          },
+          {
+            "rank": 3,
+            "player_id": "drake-london",
+            "name": "Drake London",
+            "team": "ATL",
+            "position": "WR",
+            "value": 0.25,
+            "games": null,
+            "on_my_roster": false,
+            "baseline_value": 0.19,
+            "delta": 0.06
+          },
+          {
+            "rank": 4,
+            "player_id": "keon-coleman",
+            "name": "Keon Coleman",
+            "team": "BUF",
+            "position": "WR",
+            "value": 0.2,
+            "games": null,
+            "on_my_roster": false,
+            "baseline_value": 0.15,
+            "delta": 0.05
+          },
+          {
+            "rank": 5,
+            "player_id": "zay-flowers",
+            "name": "Zay Flowers",
+            "team": "BAL",
+            "position": "WR",
+            "value": 0.22,
+            "games": null,
+            "on_my_roster": false,
+            "baseline_value": 0.18,
+            "delta": 0.04
+          }
+        ]
+      },
+      "reference": {
+        "verdict_kind": "board",
+        "pick": "Rome Odunze",
+        "key_numbers": [
+          0.09,
+          0.27,
+          0.18,
+          0.08,
+          0.24,
+          0.16,
+          0.06,
+          0.25,
+          0.19,
+          0.05,
+          0.2,
+          0.15,
+          0.04,
+          0.22
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Rome Odunze",
+          "Target Share"
+        ]
+      }
+    },
+    {
+      "id": "lb4",
+      "type": "leaderboard",
+      "question": "Which defenses give up the most fantasy points to tight ends?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "leaderboard",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "board_kind": "matchup",
+        "requested_n": 10,
+        "position_filter": "TE",
+        "team_filter": null,
+        "metric_key": "defense_points_allowed",
+        "label": "Fantasy points allowed to TE",
+        "pool_size": 32,
+        "qualification_text": "All 32 defenses, ranked easiest to hardest by the site's opponent-adjusted matchup ratings. Values are raw fantasy points allowed per game to TE.",
+        "board_count": 10,
+        "board": [
+          {
+            "rank": 1,
+            "team": "JAX",
+            "name": "JAX",
+            "player_id": "",
+            "position": "",
+            "value": 12.9,
+            "on_my_roster": false
+          },
+          {
+            "rank": 2,
+            "team": "ATL",
+            "name": "ATL",
+            "player_id": "",
+            "position": "",
+            "value": 12.4,
+            "on_my_roster": false
+          },
+          {
+            "rank": 3,
+            "team": "CIN",
+            "name": "CIN",
+            "player_id": "",
+            "position": "",
+            "value": 11.8,
+            "on_my_roster": false
+          },
+          {
+            "rank": 4,
+            "team": "DAL",
+            "name": "DAL",
+            "player_id": "",
+            "position": "",
+            "value": 11.5,
+            "on_my_roster": false
+          },
+          {
+            "rank": 5,
+            "team": "NYG",
+            "name": "NYG",
+            "player_id": "",
+            "position": "",
+            "value": 10.9,
+            "on_my_roster": false
+          },
+          {
+            "rank": 6,
+            "team": "LV",
+            "name": "LV",
+            "player_id": "",
+            "position": "",
+            "value": 10.6,
+            "on_my_roster": false
+          },
+          {
+            "rank": 7,
+            "team": "TEN",
+            "name": "TEN",
+            "player_id": "",
+            "position": "",
+            "value": 10.2,
+            "on_my_roster": false
+          },
+          {
+            "rank": 8,
+            "team": "ARI",
+            "name": "ARI",
+            "player_id": "",
+            "position": "",
+            "value": 9.8,
+            "on_my_roster": false
+          },
+          {
+            "rank": 9,
+            "team": "CLE",
+            "name": "CLE",
+            "player_id": "",
+            "position": "",
+            "value": 9.6,
+            "on_my_roster": false
+          },
+          {
+            "rank": 10,
+            "team": "MIA",
+            "name": "MIA",
+            "player_id": "",
+            "position": "",
+            "value": 9.4,
+            "on_my_roster": false
+          }
+        ]
+      },
+      "reference": {
+        "verdict_kind": "board",
+        "pick": "JAX",
+        "key_numbers": [
+          12.9,
+          12.4,
+          11.8,
+          11.5,
+          10.9,
+          10.6,
+          10.2,
+          9.8,
+          9.6,
+          9.4
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "JAX",
+          "TE"
+        ]
+      }
+    },
+    {
+      "id": "lb5",
+      "type": "leaderboard",
+      "question": "Who leads the league in WOPR?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "leaderboard",
+        "available": false,
+        "gated": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "board_kind": "board",
+        "requested_n": 10,
+        "position_filter": null,
+        "team_filter": null,
+        "metric_hint": "wopr",
+        "metric_key": "wopr",
+        "label": "WOPR",
+        "definition": "Weighted opportunity rating combining target share and air yards share.",
+        "missing": "pro_only"
+      },
+      "reference": {
+        "verdict_kind": "no_data",
+        "pick": null,
+        "key_numbers": [],
+        "close_call": false
+      },
+      "trap": {
+        "kind": "pro_gate",
+        "note": "WOPR is a PRO metric. A free caller gets the gated answer: the metric is named as PRO and no board numbers are shown, matching the Advanced Metrics surfaces."
+      },
+      "expect": {
+        "no_data": true,
+        "gated": true,
+        "must_mention": [
+          "WOPR"
+        ]
+      }
+    },
+    {
+      "id": "lb6",
+      "type": "leaderboard",
+      "question": "Who are the top 10 in yards per route run?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "leaderboard",
+        "available": false,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "board_kind": "board",
+        "requested_n": 10,
+        "position_filter": null,
+        "team_filter": null,
+        "metric_hint": "yards_per_route_run",
+        "missing": "routes not tracked",
+        "nearest": [
+          "target_share",
+          "yards_per_target"
+        ]
+      },
+      "reference": {
+        "verdict_kind": "no_data",
+        "pick": null,
+        "key_numbers": [],
+        "close_call": false
+      },
+      "trap": {
+        "kind": "missing_stat",
+        "note": "The Sleeper/nflverse feed carries no route data, so yards per route run does not exist on the site. A correct answer states the data is unavailable and offers the nearest tracked metric."
+      },
+      "expect": {
+        "no_data": true,
+        "must_mention": [
+          "routes not tracked"
         ]
       }
     }

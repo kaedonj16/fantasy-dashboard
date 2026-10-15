@@ -212,6 +212,12 @@ def score_answer(question: dict, answer: dict) -> dict:
         accept = expect.get("accept") or []
         verdict_ok = outcome is not None and outcome in accept
         notes.append(f"namesake outcome: {outcome or 'unresolved'} (accept: {accept})")
+    elif expect.get("gated"):
+        # PRO-gate: no verdict, no board numbers, and the answer names PRO as
+        # the reason (parity with the site's gated surfaces).
+        verdict_ok = not verdict_text.strip() and "pro" in full.lower()
+        if not verdict_ok:
+            notes.append("expected the PRO-gated answer shape (no verdict, PRO named)")
     elif no_data_expected:
         verdict_ok = _no_data_shape(answer)
         if not verdict_ok:
@@ -239,6 +245,26 @@ def score_answer(question: dict, answer: dict) -> dict:
         verdict_ok = got is not None and got == want
         if not verdict_ok:
             notes.append(f"buy/sell/hold call {got!r} != reference {want!r}")
+    elif qtype == "leaderboard":
+        # The reference board IS the verdict: every reference key number must
+        # be cited, and the board names must appear in the receipts in the
+        # pack's computed order (the model may never reorder a board).
+        keys = _canon_key_numbers(reference.get("key_numbers"))
+        missing = [k for k in keys if k not in found]
+        verdict_ok = not missing
+        if missing:
+            notes.append(f"key numbers not cited: {', '.join(missing)}")
+        board = pack.get("board") or []
+        names = [str(r.get("name")) for r in board
+                 if isinstance(r, dict) and r.get("name")]
+        if names:
+            rec_text = " | ".join(
+                f"{r.get('label', '')} {r.get('value', '')}"
+                for r in (answer.get("receipts") or []) if isinstance(r, dict))
+            positions = [rec_text.find(n) for n in names]
+            if any(p < 0 for p in positions) or positions != sorted(positions):
+                verdict_ok = False
+                notes.append("receipt board order does not match the computed board")
     else:  # player, metric, waivers, this_week: key numbers must be cited
         keys = _canon_key_numbers(reference.get("key_numbers"))
         missing = [k for k in keys if k not in found]
@@ -260,12 +286,24 @@ def score_answer(question: dict, answer: dict) -> dict:
             notes.append("missing-stat trap failed: needs the no-data shape and zero invented numbers")
     elif trap.get("kind") == "namesake":
         trap_ok = verdict_ok  # the accept-list check above IS the trap check
+    elif trap.get("kind") == "pro_gate":
+        trap_ok = verdict_ok and grounding_ok
+        if not trap_ok:
+            notes.append("pro-gate trap failed: needs the gated shape and zero invented numbers")
 
     # Structure
     if no_data_expected or clarify:
         structure_ok = bool((answer or {}).get("text"))
         if not structure_ok:
             notes.append("no-data/clarify answer has no text")
+    elif qtype == "leaderboard":
+        # A board answer carries exactly one receipt per board row.
+        board = pack.get("board") or []
+        receipts = (answer or {}).get("receipts") or []
+        structure_ok = bool(verdict_text.strip()) and len(receipts) == len(board)
+        if not structure_ok:
+            notes.append(f"board answer needs a verdict and {len(board)} receipts "
+                         f"(one per row), got {len(receipts)}")
     else:
         receipts = (answer or {}).get("receipts") or []
         structure_ok = bool(verdict_text.strip())

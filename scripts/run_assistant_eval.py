@@ -3,15 +3,16 @@
 
 Modes:
   --mode mock    Deterministic stub composer (assistant_eval.mock_composer)
-                 answers all 20 frozen questions from their packs and the
-                 full scorer runs. No model, no API key. All 20 must pass;
+                 answers all frozen questions from their packs and the
+                 full scorer runs. No model, no API key. All must pass;
                  this validates the harness and scorer mechanics.
   --mode live    The real model path: dashboard_services.assistant.compose
                  .compose_answer(type, question, frozen_pack, ...) per
                  question. Requires OPENAI_API_KEY and the openai package.
                  Prints per-question PASS/FAIL, then the summary against the
-                 automated pass bar: zero invented numbers across all 20,
-                 both traps handled, at least 18 of 20 verdicts matching.
+                 automated pass bar: zero invented numbers across all
+                 questions, all traps handled, at least (total - 2) verdicts
+                 matching.
                  (The workshop's blind head-to-head preference bar is
                  human-scored and is not part of this runner.)
                  Exit 0 = bar met, 1 = bar failed, 2 = cannot run.

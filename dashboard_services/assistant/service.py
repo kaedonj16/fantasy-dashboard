@@ -288,6 +288,16 @@ def ask(account_key: str, message: str, *, platform=None, league_id=None, season
         entities["player_names"] = last_entities.get("player_names") or []
         if intent in ("out_of_scope",):
             intent = last_entities.get("_intent") or intent
+    # Board follow-ups ("WRs only", "last 4 weeks"): a short message after a
+    # leaderboard answer continues the board, inheriting the metric(s) it
+    # does not restate; a fresh board question carries its own metric.
+    if last_entities.get("_intent") == "leaderboard" and len((message or "").split()) <= 6:
+        if intent == "out_of_scope":
+            intent = "leaderboard"
+        if intent == "leaderboard":
+            for _f in ("metric_hint", "second_metric_hint", "board_kind"):
+                if not entities.get(_f) and last_entities.get(_f):
+                    entities[_f] = last_entities[_f]
 
     def _finish(answer, *, log_intent, pack=None, tools=None, verdict=None, entities_out=None):
         usage = last_usage()

@@ -11,7 +11,7 @@ from dashboard_services.assistant.model import call_model_json
 
 logger = logging.getLogger(__name__)
 
-INTENTS = ["start_sit", "trade_eval", "buy_sell_hold", "player", "metric", "waivers", "this_week", "remember", "out_of_scope"]
+INTENTS = ["start_sit", "trade_eval", "buy_sell_hold", "player", "metric", "leaderboard", "waivers", "this_week", "remember", "out_of_scope"]
 
 SCHEMA = {
     "type": "object",
@@ -25,8 +25,15 @@ SCHEMA = {
         "metric_hint": {"type": ["string", "null"]},
         "week": {"type": ["integer", "null"]},
         "preference_text": {"type": ["string", "null"]},
+        "board_kind": {"type": ["string", "null"], "enum": ["board", "intersection", "dual", "movers", "matchup", None]},
+        "second_metric_hint": {"type": ["string", "null"]},
+        "top_n": {"type": ["integer", "null"]},
+        "position": {"type": ["string", "null"]},
+        "team": {"type": ["string", "null"]},
+        "window_weeks": {"type": ["integer", "null"]},
+        "direction": {"type": ["string", "null"], "enum": ["risers", "fallers", None]},
     },
-    "required": ["intent", "player_names", "give_player_names", "receive_player_names", "picks", "other_team_hint", "metric_hint", "week", "preference_text"],
+    "required": ["intent", "player_names", "give_player_names", "receive_player_names", "picks", "other_team_hint", "metric_hint", "week", "preference_text", "board_kind", "second_metric_hint", "top_n", "position", "team", "window_weeks", "direction"],
     "additionalProperties": False,
 }
 
@@ -35,22 +42,92 @@ SYSTEM = (
     "Classify into exactly one intent and extract entities verbatim from the message. "
     "start_sit: who to start. trade_eval: a proposed trade with give and receive sides. "
     "buy_sell_hold: buy/sell/hold on a player. player: a general player question. "
-    "metric: a metric definition or leaderboard question (metric_hint is the metric name). "
+    "metric: a question about one named player and a metric, or a metric definition "
+    "(metric_hint is the metric name). "
+    "leaderboard: a pool-wide ranking question with no single player as the subject: "
+    "top N in a metric, who leads a metric, players ranked by a metric, players in the "
+    "top N of two metrics (board_kind intersection, second_metric_hint is the second "
+    "metric), one metric ranked with a second metric shown alongside (board_kind dual), "
+    "biggest risers or fallers in a metric (board_kind movers, direction risers or "
+    "fallers), or which defenses give up the most to a position (board_kind matchup, "
+    "position is the offensive position). For leaderboard also extract top_n when a "
+    "count is stated, position (QB/RB/WR/TE) and team (NFL abbreviation) filters when "
+    "stated, and window_weeks when a last-N-weeks window is stated. "
     "waivers: adds, drops, or FAAB. this_week: what to do with my team this week. "
     "remember: the user asks you to remember a preference (preference_text is the preference). "
     "out_of_scope: anything else (trivia, real-game talk, other leagues). "
     "Use thread history only to resolve short follow-ups. Return JSON only. No em dashes."
 )
 
+_BOARD_ENTITY_DEFAULTS = {"board_kind": None, "second_metric_hint": None, "top_n": None,
+                          "position": None, "team": None, "window_weeks": None,
+                          "direction": None}
+
+
+_METRIC_PHRASES = ("yards per route run", "air yards share", "target share",
+                   "snap share", "opportunity share", "usage trend", "wopr",
+                   "route rate", "yards per target", "yards per reception")
+
+_POSITION_WORDS = (("quarterback", "QB"), ("running back", "RB"),
+                   ("wide receiver", "WR"), ("tight end", "TE"),
+                   (" qbs", "QB"), (" rbs", "RB"), (" wrs", "WR"), (" tes", "TE"),
+                   (" qb", "QB"), (" rb", "RB"), (" wr", "WR"), (" te", "TE"))
+
+
+def _metric_hints_in(m: str) -> list[str]:
+    # Text order: the first metric named is the primary board.
+    return sorted((cand for cand in _METRIC_PHRASES if cand in m), key=m.find)
+
+
+def _keyword_board(message: str, m: str) -> dict | None:
+    """Pool-wide ranking phrasings -> the leaderboard intent (or None)."""
+    hints = _metric_hints_in(m)
+    top = re.search(r"\btop\s+(\d{1,2})\b", m)
+    window = re.search(r"\blast\s+(\d{1,2})\s+weeks?\b", m)
+    position = None
+    for word, pos in _POSITION_WORDS:
+        if word in m:
+            position = pos
+            break
+    kind = None
+    direction = None
+    if re.search(r"gives? up the most|allow(s|ed)? the most|worst defenses?|easiest defenses?", m):
+        kind = "matchup"
+    elif re.search(r"\brisers?\b|\brising\b|heating up|trending up", m):
+        kind, direction = "movers", "risers"
+    elif re.search(r"\bfallers?\b|\bfalling\b|cooling off|trending down", m):
+        kind, direction = "movers", "fallers"
+    elif len(hints) >= 2 and top:
+        kind = "intersection"
+    elif hints and (top or re.search(r"\bwho (leads|has)\b|\bleaderboard\b|\branked\b|\bmost\b.{0,30}\bshare\b", m)):
+        kind = "board"
+    if kind is None:
+        return None
+    return {
+        "intent": "leaderboard",
+        "metric_hint": hints[0] if hints else None,
+        "second_metric_hint": hints[1] if len(hints) > 1 else None,
+        "board_kind": kind,
+        "top_n": int(top.group(1)) if top else None,
+        "position": position,
+        "team": None,
+        "window_weeks": int(window.group(1)) if window else None,
+        "direction": direction,
+    }
+
 
 def _keyword_route(message: str) -> dict:
     m = (message or "").lower()
     base = {"player_names": [], "give_player_names": [], "receive_player_names": [], "picks": [],
-            "other_team_hint": None, "metric_hint": None, "week": None, "preference_text": None}
+            "other_team_hint": None, "metric_hint": None, "week": None, "preference_text": None,
+            **_BOARD_ENTITY_DEFAULTS}
     if re.search(r"\bremember\b|\bdon'?t forget\b|\bkeep in mind\b", m):
         return {**base, "intent": "remember", "preference_text": message.strip()}
     if re.search(r"\bwaiver|add\b|drop\b|faab|pick up\b", m):
         return {**base, "intent": "waivers"}
+    board = _keyword_board(message, m)
+    if board is not None:
+        return {**base, **board}
     if re.search(r"\bstart\b|\bsit\b|\bflex\b", m):
         return {**base, "intent": "start_sit"}
     if re.search(r"\btrade\b|\bswap\b", m):
@@ -87,6 +164,13 @@ def classify(question: str, context: dict | None = None, history: list | None = 
             "other_team_hint": data.get("other_team_hint"),
             "metric_hint": data.get("metric_hint"),
             "week": data.get("week"),
+            "board_kind": data.get("board_kind"),
+            "second_metric_hint": data.get("second_metric_hint"),
+            "top_n": data.get("top_n"),
+            "position": data.get("position"),
+            "team": data.get("team"),
+            "window_weeks": data.get("window_weeks"),
+            "direction": data.get("direction"),
         }
         return {"intent": intent, "entities": entities, "preference_text": data.get("preference_text"), "router_model": "model", "prompt_version": ROUTER_PROMPT_VERSION}
     except Exception as exc:  # model down (rate limit / unavailable): keyword fallback
