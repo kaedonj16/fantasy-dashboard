@@ -240,6 +240,25 @@ class _FakeCursor:
                 new_rows.append(row)
             self.state["target_rows"] = new_rows
             self._rows = []
+        elif s.startswith("DELETE FROM ROOKIE_STAT_FETCHED_WEEKS"):
+            season, team = params  # kind is the literal 'targets' in the SQL
+            self.state["weeks"] = {
+                w for w in self.state["weeks"]
+                if not (w[0] == "targets" and w[1] == season and w[3] == team)
+            }
+            self._rows = []
+        elif s.startswith("DELETE FROM ROOKIE_TARGETS_TEAM_TOTALS"):
+            season, team = params
+            self.state["team_totals"].pop((season, team), None)
+            self._rows = []
+        elif "FROM ROOKIE_PROSPECT_SOURCE_DATA" in s and "RECEPTIONS" in s:
+            pattern, years = params
+            prefix = pattern[:-1]  # strip trailing %
+            self._rows = [
+                {"player_id": pid, "season": season, "receptions": rec}
+                for (pid, season, rec) in self.state.get("rec_rows", [])
+                if pid.startswith(prefix) and season in years and rec is not None
+            ]
         elif "FROM ROOKIE_PROSPECT_SOURCE_DATA" in s and "TARGETS" in s:
             pattern, years = params
             prefix = pattern[:-1]  # strip trailing %
@@ -977,3 +996,139 @@ class TestBackfillTargetsFromPlays:
         assert summary["by_season"] == {2025: 1}
         assert _stored_targets(state, "ROOKIE_2027_jeremiah_smith", 2025) == 3
         assert _stored_targets(state, "ROOKIE_2027_noah_lautar", 2025) is None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Daily-job targets fill (run_daily_prospect_targets): latest season only,
+# per-team-season persisted, stranded team-season self-heal, week-incremental
+# after the first fill, and the targets >= receptions write guard.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _seed_daily_osu(state):
+    """2026 Ohio State stored rows with targets NULL and no tracking;
+    week 5 carries the validated game from _osu_week5_plays/_osu_box."""
+    osu = "Ohio State"
+    state["target_rows"] = [
+        ("ROOKIE_2027_jeremiah_smith", 2026, None, osu),
+        ("ROOKIE_2027_isaac_west", 2026, None, osu),
+        ("ROOKIE_2027_noah_lautar", 2026, None, osu),
+        # An older-season row: the daily fill must never touch it.
+        ("ROOKIE_2027_jeremiah_smith", 2025, None, osu),
+    ]
+    state["roster"] = {(2026, osu): _OSU_ROSTER}
+    state["plays"] = {(2026, osu, 5): _osu_week5_plays()}
+    state["box"] = {(2026, 5): _osu_box()}
+
+
+class TestDailyProspectTargets:
+    def test_latest_season_only_and_per_team_write(self, plays_env):
+        state, requests = plays_env
+        _seed_daily_osu(state)
+
+        summary = ing.run_daily_prospect_targets(2027)
+
+        assert summary["season"] == 2026
+        assert summary["team_seasons"] == 1
+        assert summary["healed"] == []
+        # 5 unmarked candidate weeks + 1 roster call estimated.
+        assert summary["est_plays_calls"] == 6
+        # Per-team-season write landed during the run: Smith 3, West 2,
+        # Lautar 1 derived, but Lautar has a stored row too: 3 rows.
+        assert summary["updated"] == 3
+        assert summary["skipped_guard"] == 0
+        assert _stored_targets(state, "ROOKIE_2027_jeremiah_smith", 2026) == 3
+        assert _stored_targets(state, "ROOKIE_2027_isaac_west", 2026) == 2
+        # Older season untouched and never fetched.
+        assert _stored_targets(state, "ROOKIE_2027_jeremiah_smith", 2025) is None
+        assert all(p["year"] == 2026 for (path, p) in requests if path == "/plays")
+        assert state["team_totals"][(2026, "Ohio State")] == 6
+
+    def test_second_run_is_week_incremental_noop(self, plays_env):
+        state, requests = plays_env
+        _seed_daily_osu(state)
+        ing.run_daily_prospect_targets(2027)
+        plays_after_first = [r for r in requests if r[0] == "/plays"]
+        assert plays_after_first  # the first fill did fetch
+
+        summary = ing.run_daily_prospect_targets(2027)
+
+        # Every candidate week is marked now: zero new /plays calls, and
+        # the stored totals stand (no double count, no rewrite needed).
+        assert [r for r in requests if r[0] == "/plays"] == plays_after_first
+        assert summary["updated"] == 0
+        assert summary["est_plays_calls"] == 1  # roster only in the estimate
+        assert _stored_targets(state, "ROOKIE_2027_jeremiah_smith", 2026) == 3
+
+    def test_stranded_team_season_healed_others_untouched(self, plays_env):
+        state, requests = plays_env
+        _seed_daily_osu(state)
+        osu = "Ohio State"
+        # Wiped-run state for Ohio State: full marks + a team total, but
+        # zero player targets were ever written.
+        state["weeks"] = {("targets", 2026, w, osu) for w in (1, 2, 3, 4, 5)}
+        state["team_totals"] = {(2026, osu): 200}
+        # Michigan is NOT stranded: it has a stored player target, so its
+        # marks and total must survive untouched and it is never fetched.
+        state["target_rows"].append(
+            ("ROOKIE_2027_some_player", 2026, 10, "Michigan"))
+        state["weeks"] |= {("targets", 2026, w, "Michigan") for w in (1, 2, 3, 4, 5)}
+        state["team_totals"][(2026, "Michigan")] = 100
+
+        summary = ing.run_daily_prospect_targets(2027)
+
+        assert summary["healed"] == [osu]
+        # Refetched from scratch: totals are the validated game's, not the
+        # stranded baseline (200) plus the game.
+        assert _stored_targets(state, "ROOKIE_2027_jeremiah_smith", 2026) == 3
+        assert state["team_totals"][(2026, osu)] == 6
+        assert ("targets", 2026, 5, osu) in state["weeks"]
+        # Michigan untouched.
+        assert state["team_totals"][(2026, "Michigan")] == 100
+        assert _stored_targets(state, "ROOKIE_2027_some_player", 2026) == 10
+        assert all(p["team"] != "Michigan"
+                   for (path, p) in requests if path == "/plays")
+
+    def test_targets_below_receptions_guard_skips_write(self, plays_env):
+        state, requests = plays_env
+        _seed_daily_osu(state)
+        # Smith's stored receptions (50) exceed the derived targets (3):
+        # impossible data, must be flagged and skipped, never written.
+        state["rec_rows"] = [
+            ("ROOKIE_2027_jeremiah_smith", 2026, 50),
+            ("ROOKIE_2027_isaac_west", 2026, 2),
+            ("ROOKIE_2027_noah_lautar", 2026, 1),
+        ]
+
+        summary = ing.run_daily_prospect_targets(2027)
+
+        assert summary["skipped_guard"] == 1
+        assert summary["updated"] == 2
+        assert _stored_targets(state, "ROOKIE_2027_jeremiah_smith", 2026) is None
+        assert _stored_targets(state, "ROOKIE_2027_isaac_west", 2026) == 2
+
+    def test_one_team_failure_does_not_block_other_team_persist(self, plays_env):
+        state, requests = plays_env
+        _seed_daily_osu(state)
+        uga = "Georgia"
+        # Georgia sorts before Ohio State, and its week-5 game cannot
+        # validate (no roster, so no named receivers resolve).  Ohio
+        # State's per-team write must still land later in the same run.
+        state["target_rows"].append(
+            ("ROOKIE_2027_georgia_guy", 2026, None, uga))
+        uga_roster = [dict(r, team=uga) for r in _OSU_ROSTER]
+        state["roster"][(2026, uga)] = uga_roster
+        state["plays"][(2026, uga, 5)] = [
+            _play(p["id"] + 100, 888, uga, p["playText"],
+                  play_type=p["playType"])
+            for p in _osu_week5_plays()
+        ]
+        # Georgia's failure mode: no roster entry at all in the fake
+        # transport, so its plays cannot resolve to named receivers and
+        # nothing validates for it (its week stays unmarked).
+        del state["roster"][(2026, uga)]
+
+        summary = ing.run_daily_prospect_targets(2027)
+
+        assert _stored_targets(state, "ROOKIE_2027_jeremiah_smith", 2026) == 3
+        assert summary["updated"] == 3
+        assert ("targets", 2026, 5, uga) not in state["weeks"]
