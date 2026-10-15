@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "description": "Frozen assistant eval set: 111 questions with golden evidence packs for the BR Fantasy assistant (workshop section 5 core 20, the deep-cuts leaderboard family lb1-lb6, and the section 9 P1 league-context types: playoffs, power rankings, standings, matchup, schedule) plus the P1 trade-finding family tf1-tf4, and the P1 breakout board, Teams, and pick-ownership families bo1-bo3, tm1-tm2, pk1 (renamed from the branch po1, which collided with the playoffs po1), with te4 an extra trade_eval. The win-outcome family mu4-mu6 pins the game-outcome phrasings (will I win / what are my chances / will I lose) to matchup packs: a decisive favorite, a close game, and a decisive underdog. The buy/sell board family bl1/sh1 pins pool-wide buy-low and sell-high asks (no named player) to leaderboard value boards, with bsh4/bsh5 as the named-player controls that must stay single-player buy_sell_hold. The roster start/sit family ss5-ss7 pins slot questions that name no players (start at FLEX, start at RB, sit at FLEX) to roster-scoped packs built from the asking user's own lineup: the FLEX occupant is benched for the bench challenger who out-projects him, and the RB question is a keep-the-starter call. The open-layer wild set ow1-ow19 freezes tool evidence (production tool-entry shape) instead of builder packs: ungoverned phrasings, a follow-up chain (ow5-ow7), a two-part question (ow8), a non-default team (ow9), a PRO gate through the open layer (ow18), and an off-site decline (ow19).",
+    "description": "Frozen assistant eval set: 114 questions with golden evidence packs for the BR Fantasy assistant (workshop section 5 core 20, the deep-cuts leaderboard family lb1-lb6, and the section 9 P1 league-context types: playoffs, power rankings, standings, matchup, schedule) plus the P1 trade-finding family tf1-tf4, and the P1 breakout board, Teams, and pick-ownership families bo1-bo3, tm1-tm2, pk1 (renamed from the branch po1, which collided with the playoffs po1), with te4 an extra trade_eval. The win-outcome family mu4-mu6 pins the game-outcome phrasings (will I win / what are my chances / will I lose) to matchup packs: a decisive favorite, a close game, and a decisive underdog. The buy/sell board family bl1/sh1 pins pool-wide buy-low and sell-high asks (no named player) to leaderboard value boards, with bsh4/bsh5 as the named-player controls that must stay single-player buy_sell_hold. The roster start/sit family ss5-ss7 pins slot questions that name no players (start at FLEX, start at RB, sit at FLEX) to roster-scoped packs built from the asking user's own lineup: the FLEX occupant is benched for the bench challenger who out-projects him, and the RB question is a keep-the-starter call. The open-layer wild set ow1-ow19 freezes tool evidence (production tool-entry shape) instead of builder packs: ungoverned phrasings, a follow-up chain (ow5-ow7), a two-part question (ow8), a non-default team (ow9), a PRO gate through the open layer (ow18), and an off-site decline (ow19). The breadth family lb7-lb9 pins cross-metric breadth boards (top-N finishes counted across a metric family: lb7 receiving in Kaedon's exact phrasing, lb8 rushing) and the players-only receiving-yards stat board (the team-row regression: the live board once ranked TEAM_LAR first).",
     "scenario": "Kaedon's league Blackedraw, her team Caleb's Casting Couch, Week 7 of the 2026 season.",
     "packs": "Each evidence_pack mirrors, field for field, the dict the matching builder in dashboard_services/assistant/evidence.py returns. Values inside a pack are the only numbers an answer may cite.",
     "recapture": "These packs are frozen fixtures. Before any launch decision, recapture them from the live tools with: python3 scripts/run_assistant_eval.py --capture (writes assistant_eval/captured_questions.json; it never overwrites this file). A launch call made on stale fixtures is not a launch call.",
@@ -13229,6 +13229,383 @@
       "expect": {
         "no_data": true,
         "must_mention": []
+      }
+    },
+    {
+      "id": "lb7",
+      "type": "leaderboard",
+      "question": "who is rated in the top 10 of the most receiving metrics?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "leaderboard",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "board_kind": "breadth",
+        "requested_n": 10,
+        "position_filter": "WR",
+        "team_filter": null,
+        "metric_hint": null,
+        "family": "receiving",
+        "family_word": "receiving",
+        "breadth_top_n": 10,
+        "label": "Receiving metrics",
+        "metric_count": 4,
+        "family_metric_total": 4,
+        "gated_metric_count": 0,
+        "gated_metrics": [],
+        "pool_size": 3,
+        "board_count": 3,
+        "qualification_text": "Basis: top-10 finishes counted across the 4 receiving metrics on the Advanced Metrics season boards (the WR pool, each metric's own qualification minimums). 3 players own at least one top-10 finish.",
+        "board": [
+          {
+            "rank": 1,
+            "player_id": "jamarr-chase",
+            "name": "Ja'Marr Chase",
+            "team": "CIN",
+            "position": "WR",
+            "value": 4,
+            "games": 6,
+            "on_my_roster": false,
+            "top_finishes": [
+              {
+                "metric_key": "air_yards_share",
+                "label": "Air Yards Share",
+                "rank": 1,
+                "value": 0.4
+              },
+              {
+                "metric_key": "target_share",
+                "label": "Target Share",
+                "rank": 1,
+                "value": 0.31
+              },
+              {
+                "metric_key": "wopr",
+                "label": "WOPR",
+                "rank": 1,
+                "value": 0.5
+              },
+              {
+                "metric_key": "rec_yards_per_game",
+                "label": "Rec Yds/G",
+                "rank": 2,
+                "value": 92.0
+              }
+            ],
+            "finish_count": 4,
+            "rank_sum": 5
+          },
+          {
+            "rank": 2,
+            "player_id": "justin-jefferson",
+            "name": "Justin Jefferson",
+            "team": "MIN",
+            "position": "WR",
+            "value": 3,
+            "games": 6,
+            "on_my_roster": false,
+            "top_finishes": [
+              {
+                "metric_key": "rec_yards_per_game",
+                "label": "Rec Yds/G",
+                "rank": 1,
+                "value": 95.0
+              },
+              {
+                "metric_key": "air_yards_share",
+                "label": "Air Yards Share",
+                "rank": 2,
+                "value": 0.35
+              },
+              {
+                "metric_key": "target_share",
+                "label": "Target Share",
+                "rank": 2,
+                "value": 0.29
+              }
+            ],
+            "finish_count": 3,
+            "rank_sum": 5
+          },
+          {
+            "rank": 3,
+            "player_id": "puka-nacua",
+            "name": "Puka Nacua",
+            "team": "LAR",
+            "position": "WR",
+            "value": 3,
+            "games": 6,
+            "on_my_roster": false,
+            "top_finishes": [
+              {
+                "metric_key": "air_yards_share",
+                "label": "Air Yards Share",
+                "rank": 3,
+                "value": 0.28
+              },
+              {
+                "metric_key": "rec_yards_per_game",
+                "label": "Rec Yds/G",
+                "rank": 3,
+                "value": 55.0
+              },
+              {
+                "metric_key": "target_share",
+                "label": "Target Share",
+                "rank": 3,
+                "value": 0.27
+              }
+            ],
+            "finish_count": 3,
+            "rank_sum": 9
+          }
+        ]
+      },
+      "reference": {
+        "verdict_kind": "board",
+        "pick": "Ja'Marr Chase",
+        "key_numbers": [
+          4,
+          3
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Ja'Marr Chase",
+          "Receiving"
+        ]
+      }
+    },
+    {
+      "id": "lb8",
+      "type": "leaderboard",
+      "question": "Which running back is top 10 in the most rushing metrics?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "leaderboard",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "board_kind": "breadth",
+        "requested_n": 10,
+        "position_filter": "RB",
+        "team_filter": null,
+        "metric_hint": null,
+        "family": "rushing",
+        "family_word": "rushing",
+        "breadth_top_n": 10,
+        "label": "Rushing metrics",
+        "metric_count": 2,
+        "family_metric_total": 2,
+        "gated_metric_count": 0,
+        "gated_metrics": [],
+        "pool_size": 2,
+        "board_count": 2,
+        "qualification_text": "Basis: top-10 finishes counted across the 2 rushing metrics on the Advanced Metrics season boards (the RB pool, each metric's own qualification minimums). 2 players own at least one top-10 finish.",
+        "board": [
+          {
+            "rank": 1,
+            "player_id": "bijan-robinson",
+            "name": "Bijan Robinson",
+            "team": "ATL",
+            "position": "RB",
+            "value": 2,
+            "games": 6,
+            "on_my_roster": false,
+            "top_finishes": [
+              {
+                "metric_key": "rush_yards_per_game",
+                "label": "Rush Yds/G",
+                "rank": 1,
+                "value": 88.0
+              },
+              {
+                "metric_key": "yards_per_carry",
+                "label": "Yards/Carry",
+                "rank": 1,
+                "value": 5.1
+              }
+            ],
+            "finish_count": 2,
+            "rank_sum": 2
+          },
+          {
+            "rank": 2,
+            "player_id": "jahmyr-gibbs",
+            "name": "Jahmyr Gibbs",
+            "team": "DET",
+            "position": "RB",
+            "value": 2,
+            "games": 6,
+            "on_my_roster": false,
+            "top_finishes": [
+              {
+                "metric_key": "rush_yards_per_game",
+                "label": "Rush Yds/G",
+                "rank": 2,
+                "value": 70.0
+              },
+              {
+                "metric_key": "yards_per_carry",
+                "label": "Yards/Carry",
+                "rank": 2,
+                "value": 4.8
+              }
+            ],
+            "finish_count": 2,
+            "rank_sum": 4
+          }
+        ]
+      },
+      "reference": {
+        "verdict_kind": "board",
+        "pick": "Bijan Robinson",
+        "key_numbers": [
+          2
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Bijan Robinson",
+          "Rushing"
+        ]
+      }
+    },
+    {
+      "id": "lb9",
+      "type": "leaderboard",
+      "question": "Who are the top 10 in receiving yards?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "leaderboard",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "board_kind": "board",
+        "requested_n": 10,
+        "position_filter": null,
+        "team_filter": null,
+        "metric_hint": "receiving yards",
+        "stat_board": true,
+        "stat_key": "rec_yd",
+        "label": "Receiving yards",
+        "pool_size": 3,
+        "board_count": 3,
+        "qualification_text": "Season totals through Week 6, ranked by receiving yards. 3 players have a recorded total.",
+        "board": [
+          {
+            "rank": 1,
+            "player_id": "jamarr-chase",
+            "name": "Ja'Marr Chase",
+            "team": "CIN",
+            "position": "WR",
+            "value": 720,
+            "games": 6,
+            "on_my_roster": false,
+            "rec_yd": 720,
+            "rec": 58,
+            "rec_tgt": 79,
+            "rec_td": 5
+          },
+          {
+            "rank": 2,
+            "player_id": "puka-nacua",
+            "name": "Puka Nacua",
+            "team": "LAR",
+            "position": "WR",
+            "value": 640,
+            "games": 6,
+            "on_my_roster": false,
+            "rec_yd": 640,
+            "rec": 52,
+            "rec_tgt": 70,
+            "rec_td": 3
+          },
+          {
+            "rank": 3,
+            "player_id": "justin-jefferson",
+            "name": "Justin Jefferson",
+            "team": "MIN",
+            "position": "WR",
+            "value": 610,
+            "games": 6,
+            "on_my_roster": false,
+            "rec_yd": 610,
+            "rec": 49,
+            "rec_tgt": 66,
+            "rec_td": 4
+          }
+        ]
+      },
+      "reference": {
+        "verdict_kind": "board",
+        "pick": "Ja'Marr Chase",
+        "key_numbers": [
+          720,
+          640,
+          610
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Ja'Marr Chase",
+          "Receiving yards"
+        ]
       }
     }
   ]

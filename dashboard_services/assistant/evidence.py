@@ -2620,6 +2620,16 @@ def season_stat_totals(bundle) -> tuple[dict, int]:
     return totals, completed
 
 
+# Positions a raw stat board may rank: the week-stat cache also carries
+# team aggregate rows (TEAM_LAR-style keys with no player record behind
+# them), and ranking them produced a "receiving yards leaders" board of
+# NFL teams (live, 2026-10-15). A pid ranks only when the players index
+# holds a record for him at a real player position: the stat's own
+# positions from aliases.STAT_DEFS (the skill positions for receiving,
+# QB for passing, ...), or any player position for an unscoped stat.
+_PLAYER_POSITIONS = ("QB", "RB", "WR", "TE", "K")
+
+
 def stat_board_rows(bundle, stat_key, position=None, team=None, limit=25):
     """Ranked season-total rows for one raw stat (aliases.STAT_DEFS key).
 
@@ -2634,6 +2644,7 @@ def stat_board_rows(bundle, stat_key, position=None, team=None, limit=25):
         return [], completed
     index = _index()
     fam_keys = aliases.FAMILIES.get(spec.get("family") or "", {}).get("stats", ())
+    allowed_positions = tuple(spec.get("positions") or ()) or _PLAYER_POSITIONS
     rows = []
     for pid, entry in totals.items():
         v = entry.get(stat_key)
@@ -2641,6 +2652,8 @@ def stat_board_rows(bundle, stat_key, position=None, team=None, limit=25):
             continue
         info = _player_info(pid, index)
         pos = str(info.get("position") or "").upper()
+        if pos not in allowed_positions:
+            continue
         if position and pos != position:
             continue
         if team and str(info.get("team") or "").upper() != team:
@@ -3529,7 +3542,7 @@ def build_leaderboard(bundle, entities, player_ids=None) -> tuple[dict, list[str
     ent = entities or {}
     kind = str(ent.get("board_kind") or "board").strip().lower()
     if kind not in ("board", "intersection", "dual", "movers", "matchup",
-                    "buy_low", "sell_high"):
+                    "buy_low", "sell_high", "breadth"):
         kind = "board"
     pack["board_kind"] = kind
     try:
@@ -3553,6 +3566,10 @@ def build_leaderboard(bundle, entities, player_ids=None) -> tuple[dict, list[str
     if kind in ("buy_low", "sell_high"):
         return _build_value_board(pack, bundle, tools, kind, position, team,
                                   top_n, roster_ids)
+
+    if kind == "breadth":
+        return _build_breadth_board(pack, bundle, tools, ent, position, team,
+                                    top_n, roster_ids)
 
     try:
         config = _metric_config()
@@ -3713,6 +3730,155 @@ def _shape_board(kind, rows, second_rows, top_n, roster_ids):
                                 if hit else None)
         board.append(row)
     return board
+
+
+# -- breadth boards (top-N finishes across a metric family) -------------------
+#
+# "Who is top 10 in the most receiving metrics?" asks for breadth, not a
+# single board: across every metric in a family, count how many top-N
+# finishes each player owns and rank by that count. The family is the
+# Advanced Metrics catalog's own category (Receiving / Rushing / Passing,
+# plus General as the overall-fantasy family), so the metrics counted are
+# exactly the ones the site tracks; each metric's board is the AM page's
+# own qualified season board (_season_board: the metric's qualification
+# minimums, lower-is-better honored by source order). Hidden catalog
+# entries are not site boards and never count.
+#
+# Gating parity with the single boards: a PRO metric the caller cannot
+# see is excluded from the count (its values never enter the pack) and
+# the basis line says the count covers the metrics available on their
+# plan; premium metrics the site does not expose are excluded entirely.
+#
+# Ranking: finish count desc, then the SUM of the player's finish ranks
+# (a #1 and a #9 beat two #5s at equal count), then best single rank,
+# then name. Every finish (metric, rank, value) rides on the board row,
+# so receipts can show exactly what the count is made of.
+
+_BREADTH_FAMILIES = {
+    "receiving": {"category": "Receiving", "word": "receiving",
+                  "default_position": "WR"},
+    "rushing": {"category": "Rushing", "word": "rushing",
+                "default_position": "RB"},
+    "passing": {"category": "Passing", "word": "passing",
+                "default_position": "QB"},
+    "fantasy": {"category": "General", "word": "fantasy",
+                "default_position": None},
+}
+
+
+def _breadth_family_for(text: str) -> str | None:
+    t = str(text or "").lower()
+    for word, family in (("receiv", "receiving"), ("rush", "rushing"),
+                         ("running", "rushing"), ("pass", "passing"),
+                         ("fantasy", "fantasy"), ("overall", "fantasy")):
+        if word in t:
+            return family
+    return None
+
+
+def _build_breadth_board(pack, bundle, tools, ent, position, team, top_n,
+                         roster_ids):
+    """Count top-N finishes per player across one metric family."""
+    family = str(ent.get("family") or "").strip().lower()
+    if family not in _BREADTH_FAMILIES:
+        family = _breadth_family_for(ent.get("metric_hint")) or "fantasy"
+    fam = _BREADTH_FAMILIES[family]
+    eff_position = position or fam["default_position"]
+    pack["family"] = family
+    pack["family_word"] = fam["word"]
+    pack["breadth_top_n"] = top_n
+    pack["position_filter"] = eff_position
+    season = bundle.get("season")
+    try:
+        config = _metric_config()
+    except Exception:
+        config = {}
+    specs = []
+    for key, spec in config.items():
+        if not isinstance(spec, dict):
+            continue
+        if spec.get("category") != fam["category"] or spec.get("hidden"):
+            continue
+        if eff_position and eff_position not in (spec.get("positions") or []):
+            continue
+        specs.append((key, spec))
+    counted = []
+    gated_labels = []
+    for key, spec in specs:
+        gate = _gate_for(bundle, key)
+        if gate == "unavailable":
+            continue
+        if gate == "gated":
+            gated_labels.append(spec.get("label") or key)
+            continue
+        counted.append((key, spec))
+    pack["metric_count"] = len(counted)
+    pack["family_metric_total"] = len(counted) + len(gated_labels)
+    pack["gated_metric_count"] = len(gated_labels)
+    pack["gated_metrics"] = gated_labels[:12]
+    pack["label"] = f"{fam['category']} metrics"
+    finishes: dict[str, dict] = {}
+    for key, spec in counted:
+        rows, _qual = _season_board(key, spec, season, eff_position)
+        tools.append("advanced_metrics.get_metric_leaderboard")
+        for i, r in enumerate(rows[:top_n]):
+            if not isinstance(r, dict):
+                continue
+            pid = str(r.get("player_id") or r.get("id") or "")
+            if not pid:
+                continue
+            if team and str(r.get("team") or "").upper() != team:
+                continue
+            entry = finishes.setdefault(pid, {"row": r, "finishes": []})
+            value = r.get("value") if r.get("value") is not None else r.get(key)
+            entry["finishes"].append({
+                "metric_key": key, "label": spec.get("label") or key,
+                "rank": i + 1, "value": _r3(value)})
+    if not finishes:
+        return _no_board(pack, "no qualified players match those filters",
+                         []), tools
+    index = _index()
+    players = []
+    for pid, entry in finishes.items():
+        fins = sorted(entry["finishes"],
+                      key=lambda f: (f["rank"], str(f["label"])))
+        src = entry["row"]
+        info = _player_info(pid, index)
+        players.append({
+            "player_id": pid,
+            "name": src.get("name") or info.get("name"),
+            "team": src.get("team") or info.get("team"),
+            "position": src.get("position") or info.get("position"),
+            "games": src.get("games"),
+            "finishes": fins, "finish_count": len(fins),
+            "rank_sum": sum(f["rank"] for f in fins),
+            "best_rank": min(f["rank"] for f in fins),
+        })
+    players.sort(key=lambda p: (-p["finish_count"], p["rank_sum"],
+                                p["best_rank"], str(p["name"])))
+    board = []
+    for i, p in enumerate(players[:top_n]):
+        row = _board_row(i + 1, p, roster_ids, value=p["finish_count"])
+        row["top_finishes"] = p["finishes"]
+        row["finish_count"] = p["finish_count"]
+        row["rank_sum"] = p["rank_sum"]
+        board.append(row)
+    pack["board"] = board
+    pack["board_count"] = len(board)
+    pack["pool_size"] = len(players)
+    basis = (f"Basis: top-{top_n} finishes counted across the "
+             f"{len(counted)} {fam['word']} metrics on the Advanced "
+             f"Metrics season boards "
+             f"({'the ' + eff_position + ' pool' if eff_position else 'all positions'}, "
+             f"each metric's own qualification minimums). "
+             f"{len(players)} players own at least one top-{top_n} finish.")
+    if gated_labels:
+        basis += (f" {len(gated_labels)} more {fam['word']} metrics are "
+                  f"PRO and are not counted on your plan.")
+    if team:
+        basis += f" Showing {team} only."
+    pack["qualification_text"] = basis
+    return pack, tools
 
 
 def _build_movers(pack, bundle, tools, key, spec, trend_default, direction,

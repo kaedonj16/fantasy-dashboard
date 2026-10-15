@@ -37,7 +37,8 @@ SCHEMA = {
         "draft_year": {"type": ["integer", "null"]},
         "position": {"type": ["string", "null"]},
         "preference_text": {"type": ["string", "null"]},
-        "board_kind": {"type": ["string", "null"], "enum": ["board", "intersection", "dual", "movers", "matchup", "buy_low", "sell_high", None]},
+        "board_kind": {"type": ["string", "null"], "enum": ["board", "intersection", "dual", "movers", "matchup", "buy_low", "sell_high", "breadth", None]},
+        "family": {"type": ["string", "null"], "enum": ["receiving", "rushing", "passing", "fantasy", None]},
         "second_metric_hint": {"type": ["string", "null"]},
         "top_n": {"type": ["integer", "null"]},
         "position": {"type": ["string", "null"]},
@@ -51,7 +52,7 @@ SCHEMA = {
         "slot": {"type": ["string", "null"]},
         "start_mode": {"type": ["string", "null"], "enum": ["start", "sit", None]},
     },
-    "required": ["intent", "player_names", "give_player_names", "receive_player_names", "picks", "give_picks", "receive_picks", "other_team_hint", "team_names", "metric_hint", "target_position", "position_hint", "teams_mode", "week", "draft_year", "preference_text", "board_kind", "second_metric_hint", "top_n", "position", "team", "window_weeks", "direction", "replace_mode", "waiver_mode", "value_in_picks", "shop_pool", "slot", "start_mode"],
+    "required": ["intent", "player_names", "give_player_names", "receive_player_names", "picks", "give_picks", "receive_picks", "other_team_hint", "team_names", "metric_hint", "target_position", "position_hint", "teams_mode", "week", "draft_year", "preference_text", "board_kind", "family", "second_metric_hint", "top_n", "position", "team", "window_weeks", "direction", "replace_mode", "waiver_mode", "value_in_picks", "shop_pool", "slot", "start_mode"],
     "additionalProperties": False,
 }
 
@@ -86,7 +87,12 @@ SYSTEM = (
     "low, buy-low candidates, who is undervalued: board_kind buy_low; who should I "
     "sell high, sell-high candidates, who is overvalued: board_kind sell_high), "
     "or which defenses give up the most to a position (board_kind matchup, "
-    "position is the offensive position). For leaderboard also extract top_n when a "
+    "position is the offensive position), or players ranked by how many metrics "
+    "they finish in the top N of (top 10 in the most receiving metrics, the most "
+    "top-10 finishes, ranked in the most categories: board_kind breadth, family "
+    "is receiving, rushing, passing, or fantasy for overall, top_n is the N in "
+    "top N, position when a position is stated). A top-N question about ONE "
+    "named metric stays board_kind board. For leaderboard also extract top_n when a "
     "count is stated, position (QB/RB/WR/TE) and team (NFL abbreviation) filters when "
     "stated, and window_weeks when a last-N-weeks window is stated. "
     "waivers: adds, drops, FAAB, stashes, or streaming a position for this week. waiver_mode is "
@@ -158,7 +164,7 @@ SYSTEM = (
     "Use thread history only to resolve short follow-ups. Return JSON only. No em dashes."
 )
 
-_BOARD_ENTITY_DEFAULTS = {"board_kind": None, "second_metric_hint": None, "top_n": None,
+_BOARD_ENTITY_DEFAULTS = {"board_kind": None, "family": None, "second_metric_hint": None, "top_n": None,
                           "position": None, "team": None, "window_weeks": None,
                           "direction": None}
 
@@ -202,6 +208,16 @@ _SELL_HIGH_RE = re.compile(
     r"|\bwhich players? (is|are) (the )?(most )?overvalued\b")
 
 
+# Breadth phrasings: ranking players by how many metrics they place in
+# the top N of ("top 10 in the most receiving metrics", "most top-10
+# finishes", "ranked in the most categories"). The word metrics (or
+# categories / finishes) is required: "top 5 in the most receiving STATS"
+# is the receiving-yards season-total board, not a breadth question.
+_BREADTH_RE = re.compile(
+    r"\bmost\b[^.?]{0,40}?\b(?:metrics|categories)\b"
+    r"|\btop[ -]?\d+\s+finishes\b")
+
+
 def _keyword_board(message: str, m: str) -> dict | None:
     """Pool-wide ranking phrasings -> the leaderboard intent (or None)."""
     hints = _metric_hints_in(m)
@@ -223,6 +239,25 @@ def _keyword_board(message: str, m: str) -> dict | None:
         if word in m:
             position = pos
             break
+    if _BREADTH_RE.search(m):
+        family = "fantasy"
+        for word, fam in (("receiv", "receiving"), ("rush", "rushing"),
+                          ("running", "rushing"), ("pass", "passing")):
+            if word in m:
+                family = fam
+                break
+        return {
+            "intent": "leaderboard",
+            "metric_hint": None,
+            "second_metric_hint": None,
+            "board_kind": "breadth",
+            "family": family,
+            "top_n": int(top.group(1)) if top else None,
+            "position": position,
+            "team": None,
+            "window_weeks": None,
+            "direction": None,
+        }
     value_kind = None
     if _BUY_LOW_RE.search(m):
         value_kind = "buy_low"
@@ -593,6 +628,7 @@ def classify(question: str, context: dict | None = None, history: list | None = 
             "week": data.get("week"),
             "draft_year": data.get("draft_year"),
             "board_kind": data.get("board_kind"),
+            "family": data.get("family"),
             "second_metric_hint": data.get("second_metric_hint"),
             "top_n": data.get("top_n"),
             "position": data.get("position"),

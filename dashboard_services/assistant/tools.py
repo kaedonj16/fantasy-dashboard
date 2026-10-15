@@ -319,6 +319,58 @@ def _tool_top_board(bundle, args) -> dict:
     return out
 
 
+def _tool_breadth_board(bundle, args) -> dict:
+    """Cross-metric breadth: who places in the top N of the most metrics
+    in one family. A thin distillation of the leaderboard breadth pack
+    (evidence.build_leaderboard), so the open path and the fixed intent
+    can never disagree; PRO-gated metrics are already excluded from the
+    pack's count for callers without PRO."""
+    out = _base("breadth_board")
+    family = str(args.get("family") or "").strip().lower()
+    if family not in ("receiving", "rushing", "passing", "fantasy"):
+        family = ev._breadth_family_for(family) or "receiving"
+    position = str(args.get("position") or "").strip().upper() or None
+    if position not in _POSITIONS:
+        position = None
+    try:
+        top_n = int(args.get("top_n") or 10)
+    except (TypeError, ValueError):
+        top_n = 10
+    top_n = max(1, min(25, top_n))
+    pack, _tools = ev.build_leaderboard(
+        bundle, {"board_kind": "breadth", "family": family,
+                 "position": position, "top_n": top_n}, [])
+    if pack.get("available") is False:
+        out.update({"ok": False,
+                    "missing": pack.get("missing") or "no qualified players"})
+        return out
+    board = []
+    for r in pack.get("board") or []:
+        row = {"rank": r.get("rank"), "player_id": r.get("player_id"),
+               "name": r.get("name"), "team": r.get("team"),
+               "position": r.get("position"),
+               "finish_count": r.get("finish_count"),
+               "top_finishes": [
+                   {"label": f.get("label"), "rank": f.get("rank"),
+                    "value": f.get("value")}
+                   for f in (r.get("top_finishes") or [])[:6]]}
+        board.append(row)
+    out.update({"board": board, "label": pack.get("label"),
+                "family": pack.get("family"),
+                "breadth_top_n": pack.get("breadth_top_n"),
+                "metric_count": pack.get("metric_count"),
+                "basis": pack.get("qualification_text")})
+    out["players"] = [{"player_id": r["player_id"], "name": r["name"]}
+                      for r in board if r.get("player_id")]
+    n = pack.get("breadth_top_n") or top_n
+    for r in board[:3]:
+        out["receipts"].append({
+            "label": f"{r['rank']}. {r['name']}",
+            "value": f"top {n} in {r['finish_count']} metrics"})
+    out["link"] = {"href": "/metrics", "label": "View on Advanced Metrics"}
+    return out
+
+
 def _tool_metric_definition(bundle, args) -> dict:
     out = _base("metric_definition")
     phrase = str(args.get("metric") or args.get("stat") or "").strip()
@@ -689,6 +741,7 @@ TOOL_FUNCS = {
     "player_stats": _tool_player_stats,
     "player_metrics": _tool_player_metrics,
     "top_board": _tool_top_board,
+    "breadth_board": _tool_breadth_board,
     "team_roster": _tool_team_roster,
     "league_lookup": _tool_league_lookup,
     "compare_players": _tool_compare_players,
@@ -712,6 +765,11 @@ TOOL_CATALOG = [
      "description": "A ranked top-N board by any tracked metric or raw stat (receiving yards, targets, carries, passing yards, fantasy points, target share, any Advanced Metrics stat). Counting-stat phrases resolve to season totals; per-game phrases to the per-game board.",
      "args": {"stat": "the stat or metric phrase", "position": "QB/RB/WR/TE or null",
               "top_n": "how many rows (default 5)"}},
+    {"name": "breadth_board",
+     "description": "Which players place in the top N of the MOST metrics in one family (receiving, rushing, passing, or overall fantasy): counts each player's top-N finishes across the family's Advanced Metrics boards and ranks by that count, with each player's finishes listed. Use for 'top 10 in the most receiving metrics', 'most top-10 finishes', 'ranked in the most categories'.",
+     "args": {"family": "receiving | rushing | passing | fantasy",
+              "position": "QB/RB/WR/TE or null",
+              "top_n": "the N in top N (default 10)"}},
     {"name": "team_roster",
      "description": "A fantasy team's roster in this league: starters and bench with values, injuries, roster value total, and its standing line. team is a team name, or 'mine' for the user's own team.",
      "args": {"team": "team name or 'mine'"}},
