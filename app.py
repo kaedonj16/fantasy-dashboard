@@ -8992,6 +8992,15 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
         page_html.pop(page, None)
 
     entry["ts"] = time.time()
+    # The refresh rebuilt users/rosters in place on the shared cached ctx,
+    # whose baked "viewer" may belong to the build context (or nobody).
+    # Re-resolve for THIS request before the caller renders from it, the
+    # same per-request invariant get_league_ctx_from_cache now enforces on
+    # every serve path; otherwise a Refresh could hand a signed-in manager
+    # the "link your team" dashboard body.
+    ctx["viewer"] = get_viewer_session_for_league(
+        ctx.get("users") or [], ctx.get("rosters") or [], platform, league_id, season
+    )
     return ctx
 
 
@@ -13803,6 +13812,24 @@ def get_league_ctx_from_cache(
     except Exception:
         logger.debug("[ui-audit] fixture lookup failed", exc_info=True)
 
+    def _stamp_viewer(c):
+        # The ctx is cached per league and shared across viewers, so the
+        # "viewer" baked in at build time belongs to whatever context ran the
+        # build -- routinely a background warm with an empty session, which
+        # bakes an all-None viewer. EVERY serve path below must re-resolve
+        # the viewer for the current request before returning, the same
+        # invariant the Redis load path follows (the Redis slice excludes
+        # "viewer" for exactly this reason). Paths that skipped the
+        # re-resolve served the baked viewer verbatim, so a signed-in,
+        # already-linked manager could be rendered as unlinked ("Link your
+        # team to see this week's actions") whenever their request landed
+        # on a build / busy / stale-degrade path.
+        if c:
+            c["viewer"] = get_viewer_session_for_league(
+                c.get("users") or [], c.get("rosters") or [], platform, league_id, season
+            )
+        return c
+
     # League pages are being browsed in this process: start the player-modal
     # cache warm now (once per process, background, never raises) so the
     # first player click does not pay the modal's league-independent cold
@@ -13861,7 +13888,7 @@ def get_league_ctx_from_cache(
             old["_cache_synced_at"] = (
                 datetime.fromtimestamp(old_ts, timezone.utc).isoformat() if old_ts else None
             )
-            return old
+            return _stamp_viewer(old)
         raise
     try:
         # Re-check after acquiring lock - another thread may have built it while we waited
@@ -13893,7 +13920,7 @@ def get_league_ctx_from_cache(
             if old and time.time() - old_ts <= stale_window:
                 old["_cache_stale"] = True
                 old["_cache_synced_at"] = datetime.fromtimestamp(old_ts, timezone.utc).isoformat() if old_ts else None
-                return old
+                return _stamp_viewer(old)
             raise
         try:
             # A sibling may have completed while this worker waited.  Its full
@@ -13905,13 +13932,13 @@ def get_league_ctx_from_cache(
                 old["_cache_stale"] = True
                 old_ts = float((stale_entry or {}).get("ts") or 0)
                 old["_cache_synced_at"] = datetime.fromtimestamp(old_ts, timezone.utc).isoformat() if old_ts else None
-                return old
+                return _stamp_viewer(old)
             entry = DASHBOARD_CACHE.get(key)
             if _league_ctx_cache_valid(entry, platform, season, league_id):
                 ctx = entry["ctx"]
                 ctx["_cache_synced_at"] = datetime.fromtimestamp(float(entry.get("ts") or 0), timezone.utc).isoformat() if entry.get("ts") else None
                 ctx["_cache_stale"] = False
-                return ctx
+                return _stamp_viewer(ctx)
             # A sibling worker may have persisted its build to Redis (or this
             # worker was recycled / evicted since): hydrate from there instead
             # of repeating the 7-28s provider build. Validation inside mirrors
@@ -13971,7 +13998,7 @@ def get_league_ctx_from_cache(
                     "cache_entries": len(DASHBOARD_CACHE), "rss_before": rss_before, "rss_after": rss_after,
                 }, separators=(",", ":")))
                 _kick_modal_league_warm(platform, league_id, season, ctx)
-                return ctx
+                return _stamp_viewer(ctx)
             except Exception:
                 # One refresh attempt failed: drop the force marker so later
                 # requests fall back to normal cache rules instead of retrying
@@ -13989,7 +14016,7 @@ def get_league_ctx_from_cache(
                 if old and time.time() - old_ts <= stale_window:
                     old["_cache_stale"] = True
                     old["_cache_synced_at"] = datetime.fromtimestamp(old_ts, timezone.utc).isoformat() if old_ts else None
-                    return old
+                    return _stamp_viewer(old)
                 raise
         finally:
             cross_lock.__exit__(None, None, None)
