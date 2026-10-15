@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 INTENTS = ["start_sit", "trade_eval", "trade_finding", "buy_sell_hold", "player", "metric", "leaderboard", "waivers", "this_week",
            "playoffs", "power_rankings", "standings", "matchup", "schedule",
+           "breakout_board", "breakout_track_record", "breakout_history", "teams", "pick_ownership",
            "remember", "out_of_scope"]
 
 SCHEMA = {
@@ -23,10 +24,14 @@ SCHEMA = {
         "give_player_names": {"type": "array", "items": {"type": "string"}},
         "receive_player_names": {"type": "array", "items": {"type": "string"}},
         "picks": {"type": "array", "items": {"type": "string"}},
+        "give_picks": {"type": "array", "items": {"type": "string"}},
+        "receive_picks": {"type": "array", "items": {"type": "string"}},
         "other_team_hint": {"type": ["string", "null"]},
         "team_names": {"type": "array", "items": {"type": "string"}},
         "metric_hint": {"type": ["string", "null"]},
         "target_position": {"type": ["string", "null"]},
+        "position_hint": {"type": ["string", "null"]},
+        "teams_mode": {"type": ["string", "null"], "enum": ["dynasty", "this_season", None]},
         "week": {"type": ["integer", "null"]},
         "preference_text": {"type": ["string", "null"]},
         "board_kind": {"type": ["string", "null"], "enum": ["board", "intersection", "dual", "movers", "matchup", None]},
@@ -37,7 +42,7 @@ SCHEMA = {
         "window_weeks": {"type": ["integer", "null"]},
         "direction": {"type": ["string", "null"], "enum": ["risers", "fallers", None]},
     },
-    "required": ["intent", "player_names", "give_player_names", "receive_player_names", "picks", "other_team_hint", "team_names", "metric_hint", "target_position", "week", "preference_text", "board_kind", "second_metric_hint", "top_n", "position", "team", "window_weeks", "direction"],
+    "required": ["intent", "player_names", "give_player_names", "receive_player_names", "picks", "give_picks", "receive_picks", "other_team_hint", "team_names", "metric_hint", "target_position", "position_hint", "teams_mode", "week", "preference_text", "board_kind", "second_metric_hint", "top_n", "position", "team", "window_weeks", "direction"],
     "additionalProperties": False,
 }
 
@@ -50,6 +55,7 @@ SYSTEM = (
     "target, what can I get for X, I need a running back, who is gettable). For trade_finding, put a "
     "named player (theirs to move, or a specific target on another team) in player_names and a wanted "
     "position in target_position (QB, RB, WR, TE), else null. "
+    "Draft picks go in give_picks or receive_picks by side when the side is clear, else in picks. "
     "buy_sell_hold: buy/sell/hold on a player. player: a general player question. "
     "metric: a question about one named player and a metric, or a metric definition "
     "(metric_hint is the metric name). "
@@ -72,6 +78,12 @@ SYSTEM = (
     "(team_names holds the team names mentioned). "
     "schedule: remaining schedule strength, the easiest or hardest remaining schedule, or how "
     "hard a specific stretch of weeks is (a playoff stretch question is schedule, not playoffs). "
+    "breakout_board: this week's breakout calls or the breakout board. "
+    "breakout_track_record: how good or accurate BR's breakout calls have been. "
+    "breakout_history: whether a specific named player was a breakout call (the player goes in player_names). "
+    "teams: roster strength or grades across the league's teams (position_hint is a position room like TE or WR when one is named; "
+    "teams_mode is this_season when they ask about this season or right now, otherwise dynasty). "
+    "pick_ownership: who owns a draft pick (the pick text goes in picks). "
     "remember: the user asks you to remember a preference (preference_text is the preference). "
     "out_of_scope: anything else (trivia, real-game talk, other leagues). "
     "Use thread history only to resolve short follow-ups. Return JSON only. No em dashes."
@@ -161,7 +173,9 @@ def _target_position(m: str):
 def _keyword_route(message: str) -> dict:
     m = (message or "").lower()
     base = {"player_names": [], "give_player_names": [], "receive_player_names": [], "picks": [],
-            "other_team_hint": None, "team_names": [], "metric_hint": None, "target_position": None, "week": None,
+            "give_picks": [], "receive_picks": [],
+            "other_team_hint": None, "team_names": [], "metric_hint": None, "target_position": None,
+            "position_hint": None, "teams_mode": None, "week": None,
             "preference_text": None, **_BOARD_ENTITY_DEFAULTS}
     if re.search(r"\bremember\b|\bdon'?t forget\b|\bkeep in mind\b", m):
         return {**base, "intent": "remember", "preference_text": message.strip()}
@@ -186,6 +200,17 @@ def _keyword_route(message: str) -> dict:
     if re.search(r"remaining schedule|schedule strength|easiest schedule|hardest schedule|"
                  r"toughest schedule|playoff stretch|my schedule|league schedule", m):
         return {**base, "intent": "schedule"}
+    # Pick ownership before trades: "who owns my 2027 first" names no deal.
+    if re.search(r"who owns|whose pick|who has my .*pick|own my .*pick", m):
+        return {**base, "intent": "pick_ownership"}
+    # Breakout family: track record (accuracy) vs one player's call history
+    # (past-tense framing) vs the board itself.
+    if "breakout" in m:
+        if re.search(r"track record|how good|how accurate|hit rate|record on", m):
+            return {**base, "intent": "breakout_track_record"}
+        if re.search(r"\bwas\b|\bdid\b|has .* been|call for|call on", m):
+            return {**base, "intent": "breakout_history"}
+        return {**base, "intent": "breakout_board"}
     if re.search(r"\bwaiver|add\b|drop\b|faab|pick up\b", m):
         return {**base, "intent": "waivers"}
     board = _keyword_board(message, m)
@@ -199,6 +224,17 @@ def _keyword_route(message: str) -> dict:
         return {**base, "intent": "trade_eval"}
     if re.search(r"\bbuy\b|\bsell\b|\bhold\b", m):
         return {**base, "intent": "buy_sell_hold"}
+    # League-wide roster strength/grades, before the this_week catch below
+    # ("grade my team's WR room" is a Teams question, not a digest ask).
+    if re.search(r"strongest roster|strongest team|roster is strongest|team is strongest|"
+                 r"weakest at|weakest team|grade every|grade all|"
+                 r"grade my team|position room|\b(qb|rb|wr|te) room\b|roster grades|team grades", m):
+        pos = None
+        pm = re.search(r"\b(qb|rb|wr|te)\b", m)
+        if pm:
+            pos = pm.group(1).upper()
+        mode = "this_season" if re.search(r"this season|right now|this year", m) else None
+        return {**base, "intent": "teams", "position_hint": pos, "teams_mode": mode}
     if re.search(r"what should i do|this week|my team", m):
         return {**base, "intent": "this_week"}
     if re.search(r"target share|snap share|route|metric|what is|who leads", m):
@@ -226,10 +262,14 @@ def classify(question: str, context: dict | None = None, history: list | None = 
             "give_player_names": data.get("give_player_names") or [],
             "receive_player_names": data.get("receive_player_names") or [],
             "picks": data.get("picks") or [],
+            "give_picks": data.get("give_picks") or [],
+            "receive_picks": data.get("receive_picks") or [],
             "other_team_hint": data.get("other_team_hint"),
             "team_names": data.get("team_names") or [],
             "metric_hint": data.get("metric_hint"),
             "target_position": data.get("target_position"),
+            "position_hint": data.get("position_hint"),
+            "teams_mode": data.get("teams_mode"),
             "week": data.get("week"),
             "board_kind": data.get("board_kind"),
             "second_metric_hint": data.get("second_metric_hint"),

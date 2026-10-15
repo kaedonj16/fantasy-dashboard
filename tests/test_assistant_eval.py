@@ -191,13 +191,14 @@ def test_no_clean_fit_rejects_forced_trade():
 # -- questions.json schema sanity ------------------------------------------------------
 
 def test_questions_distribution_and_ids():
-    assert len(QUESTIONS) == 42
-    assert len(BY_ID) == 42
+    assert len(QUESTIONS) == 49
+    assert len(BY_ID) == 49
     assert Counter(q["type"] for q in QUESTIONS) == {
-        "start_sit": 4, "trade_eval": 3, "trade_finding": 4, "buy_sell_hold": 3, "player": 3,
+        "start_sit": 4, "trade_eval": 4, "trade_finding": 4, "buy_sell_hold": 3, "player": 3,
         "metric": 3, "waivers": 2, "this_week": 2, "leaderboard": 6,
         "playoffs": 3, "power_rankings": 2, "standings": 2, "matchup": 3,
-        "schedule": 2}
+        "schedule": 2, "breakout_board": 1, "breakout_track_record": 1,
+        "breakout_history": 1, "teams": 2, "pick_ownership": 1}
 
 
 def test_questions_entry_shape():
@@ -322,7 +323,10 @@ def test_trade_reference_matches_pack_totals():
             continue
         pack = q["evidence_pack"]
         for side in ("give", "receive"):
-            total = round(sum(p["value"] for p in pack[side]["players"]), 1)
+            # Side totals are players plus that side's priced picks.
+            total = round(sum(p["value"] for p in pack[side]["players"])
+                          + sum(p["value"] for p in pack.get(f"{side}_picks") or []
+                                if p.get("value")), 1)
             assert pack[side]["total_value"] == total
         assert pack["fairness_gap"] == round(
             pack["receive"]["total_value"] - pack["give"]["total_value"], 1)
@@ -343,6 +347,28 @@ def test_trade_reference_matches_analyzer_band():
         band = max(max(give, receive, 1.0) * 0.07, 25.0)
         expected = "FAIR" if abs(gap) <= band else ("ACCEPT" if gap > 0 else "DECLINE")
         assert q["reference"]["pick"] == expected, q["id"]
+
+
+def test_trade_with_picks_reference_depends_on_pick_attribution():
+    # te4: the 2027 1st in the deal is the user's OWN pick, and their team
+    # is strong, so it is a late pick (slot 11, value 780) and the deal is
+    # an ACCEPT. Priced as an early pick instead (slot 2, value 2400, as
+    # if it belonged to the league's worst team), the same deal derives
+    # DECLINE: the reference verdict only holds with correct attribution.
+    import copy
+    q = BY_ID["te4"]
+    entry = q["evidence_pack"]["give_picks"][0]
+    assert entry["slot"] == 11
+    assert entry["original_owner_team"] == q["evidence_pack"]["league"]["team_name"]
+    flipped = copy.deepcopy(q)
+    fp = flipped["evidence_pack"]
+    fp["give_picks"][0].update({"pick_id": "2027_1_02", "label": "2027 1.02",
+                                "slot": 2, "value": 2400.0})
+    fp["picks"] = fp["give_picks"]
+    fp["give"]["total_value"] = round(2650.0 + 2400.0, 1)
+    fp["fairness_gap"] = round(fp["receive"]["total_value"] - fp["give"]["total_value"], 1)
+    score = score_answer(flipped, compose_mock(flipped))
+    assert score["verdict_ok"] is False
 
 
 def test_buy_sell_hold_reference_matches_pack_trend():
@@ -399,7 +425,7 @@ def test_league_context_references_match_packs():
 
 # -- mock mode + poison ------------------------------------------------------------------
 
-def test_mock_mode_full_run_passes_42_of_42():
+def test_mock_mode_full_run_passes_49_of_49():
     for q in QUESTIONS:
         score = score_answer(q, compose_mock(q))
         assert score["passed"], f"{q['id']}: {score}"
@@ -408,7 +434,7 @@ def test_mock_mode_full_run_passes_42_of_42():
 def test_runner_mock_mode_exit_zero(capsys):
     assert runner.main(["--mode", "mock"]) == 0
     out = capsys.readouterr().out
-    assert "42/42 answers passed" in out
+    assert "49/49 answers passed" in out
 
 
 def test_runner_poison_is_detected(capsys):

@@ -91,6 +91,8 @@ SYSTEM = (
     "or a player swap, and order by mutual fit, not by how much the user wins. When the evidence marks "
     "no_fit, say plainly that there is no clean fit right now, name the closest miss if one is given, "
     "and point at the nearest alternative instead of forcing a bad trade. "
+    "for breakout calls, the top candidates and their scores; for team grades, the strongest and "
+    "weakest teams and their grade scores; for a draft pick, its value and who owns it. "
     "If fixed_verdict is present in the payload, the verdict field must be exactly that value; "
     "it is set by the site's trade fairness band and is not yours to change. "
     "Caveat only when the pack marks margin.thin true or data stale, otherwise null. "
@@ -115,6 +117,9 @@ _ACT_LINKS = {
     "waivers": {"href": "/waivers", "label": "View on Waivers"},
     "this_week": {"href": "/", "label": "View dashboard"},
     "trade_finding": {"href": "/trade?tab=suggestions", "label": "Open Trade Suggestions"},
+    "breakout_board": {"href": "/breakouts", "label": "View breakout board"},
+    "breakout_track_record": {"href": "/breakouts", "label": "View breakout board"},
+    "breakout_history": {"href": "/breakouts", "label": "View breakout board"},
 }
 
 
@@ -301,6 +306,9 @@ def _resolve_act_link(intent: str, pack: dict) -> dict | None:
         link = _finding_act_link(pack)
         if link:
             return link
+    pack_link = _pack_act_link(intent, pack)
+    if pack_link:
+        return pack_link
     league_link = _league_link(intent, pack)
     if league_link:
         return league_link
@@ -365,6 +373,19 @@ def _league_link(intent: str, pack: dict) -> dict | None:
     page, label = spec
     return {"href": f"/{league['platform']}/{league['season']}/{league['league_id']}/{page}",
             "label": label}
+
+
+
+def _pack_act_link(intent: str, pack: dict) -> dict | None:
+    """League-scoped act link built from the pack, for intents whose page
+    lives under the league path (the Teams page has no bare route)."""
+    if intent not in ("teams", "pick_ownership"):
+        return None
+    league = (pack or {}).get("league") or {}
+    platform, season, league_id = league.get("platform"), league.get("season"), league.get("league_id")
+    if not (platform and season and league_id):
+        return None
+    return {"href": f"/{platform}/{season}/{league_id}/teams", "label": "View on Teams"}
 
 
 # CTA labels for this-week action rows, keyed by the pack action's tag; the
@@ -685,6 +706,54 @@ def _required_receipts(intent: str, pack: dict) -> list[dict]:
         if easiest.get("opp_index") is not None and easiest.get("roster_id") != me.get("roster_id"):
             rows.append({"label": f"{easiest.get('team_name')} opponent index",
                          "value": _fmt_num(easiest["opp_index"])})
+    elif intent == "breakout_board":
+        for c in (pack.get("candidates") or [])[:3]:
+            if isinstance(c, dict) and c.get("breakout_score") is not None and len(rows) < 4:
+                rows.append({"label": str(c.get("name") or "Candidate"),
+                             "value": _fmt_num(c["breakout_score"])})
+    elif intent == "breakout_track_record":
+        overall = pack.get("overall") or {}
+        for key, label in (("graded", "Graded calls"), ("hit_rate_pct", "Hit rate (percent)"),
+                           ("hit", "Hits"), ("miss", "Misses")):
+            if overall.get(key) is not None and len(rows) < 4:
+                rows.append({"label": label, "value": _fmt_num(overall[key])})
+    elif intent == "breakout_history":
+        earliest = pack.get("earliest_call") or {}
+        if earliest.get("label"):
+            rows.append({"label": "First breakout call", "value": str(earliest["label"])})
+        if earliest.get("breakout_score") is not None:
+            rows.append({"label": "Breakout score", "value": _fmt_num(earliest["breakout_score"])})
+        current = pack.get("current_call") or {}
+        if current.get("breakout_score") is not None and len(rows) < 4:
+            rows.append({"label": "Current breakout score",
+                         "value": _fmt_num(current["breakout_score"])})
+    elif intent == "teams":
+        ranking = pack.get("position_ranking") or []
+        focus = pack.get("position_focus")
+        if focus and ranking:
+            first, last = ranking[0], ranking[-1]
+            if first.get("strength") is not None:
+                rows.append({"label": f"Best {focus} room ({first.get('team_name')})",
+                             "value": _fmt_num(first["strength"])})
+            if last.get("strength") is not None and len(rows) < 4:
+                rows.append({"label": f"Weakest {focus} room ({last.get('team_name')})",
+                             "value": _fmt_num(last["strength"])})
+        else:
+            strongest = pack.get("strongest") or {}
+            if strongest.get("grade_score") is not None:
+                rows.append({"label": f"Strongest roster ({strongest.get('team_name')}) grade score",
+                             "value": _fmt_num(strongest["grade_score"])})
+            mine = next((t for t in (pack.get("teams") or []) if t.get("is_viewer")), None)
+            if mine and mine.get("grade_score") is not None and len(rows) < 4:
+                rows.append({"label": "Your grade score", "value": _fmt_num(mine["grade_score"])})
+            weakest = pack.get("weakest") or {}
+            if weakest.get("grade_score") is not None and len(rows) < 4:
+                rows.append({"label": f"Weakest roster ({weakest.get('team_name')}) grade score",
+                             "value": _fmt_num(weakest["grade_score"])})
+    elif intent == "pick_ownership":
+        pick = pack.get("pick") or {}
+        if pick.get("value") is not None:
+            rows.append({"label": f"{pick.get('label')} value", "value": _fmt_num(pick["value"])})
     return rows[:4]
 
 
@@ -823,6 +892,11 @@ _FOLLOWUP_TEMPLATES = {
                 "What are my playoff odds?"],
     "schedule": ["What are my playoff odds?", "Break down my matchup",
                  "Who has the hardest remaining schedule?"],
+    "breakout_board": ["How good is BR at breakout calls?", "Who are the breakout calls at RB?"],
+    "breakout_track_record": ["Who are this week's breakout calls?", "Who was the biggest breakout hit?"],
+    "breakout_history": ["Who are this week's breakout calls?", "How good is BR at breakout calls?"],
+    "teams": ["Who is weakest at TE?", "Grade every team's WR room"],
+    "pick_ownership": ["What other picks do I own?", "Who has the most draft capital?"],
 }
 
 
