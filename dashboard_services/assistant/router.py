@@ -11,7 +11,9 @@ from dashboard_services.assistant.model import call_model_json
 
 logger = logging.getLogger(__name__)
 
-INTENTS = ["start_sit", "trade_eval", "buy_sell_hold", "player", "metric", "leaderboard", "waivers", "this_week", "remember", "out_of_scope"]
+INTENTS = ["start_sit", "trade_eval", "buy_sell_hold", "player", "metric", "leaderboard", "waivers", "this_week",
+           "playoffs", "power_rankings", "standings", "matchup", "schedule",
+           "remember", "out_of_scope"]
 
 SCHEMA = {
     "type": "object",
@@ -22,6 +24,7 @@ SCHEMA = {
         "receive_player_names": {"type": "array", "items": {"type": "string"}},
         "picks": {"type": "array", "items": {"type": "string"}},
         "other_team_hint": {"type": ["string", "null"]},
+        "team_names": {"type": "array", "items": {"type": "string"}},
         "metric_hint": {"type": ["string", "null"]},
         "week": {"type": ["integer", "null"]},
         "preference_text": {"type": ["string", "null"]},
@@ -33,7 +36,7 @@ SCHEMA = {
         "window_weeks": {"type": ["integer", "null"]},
         "direction": {"type": ["string", "null"], "enum": ["risers", "fallers", None]},
     },
-    "required": ["intent", "player_names", "give_player_names", "receive_player_names", "picks", "other_team_hint", "metric_hint", "week", "preference_text", "board_kind", "second_metric_hint", "top_n", "position", "team", "window_weeks", "direction"],
+    "required": ["intent", "player_names", "give_player_names", "receive_player_names", "picks", "other_team_hint", "team_names", "metric_hint", "week", "preference_text", "board_kind", "second_metric_hint", "top_n", "position", "team", "window_weeks", "direction"],
     "additionalProperties": False,
 }
 
@@ -54,6 +57,15 @@ SYSTEM = (
     "count is stated, position (QB/RB/WR/TE) and team (NFL abbreviation) filters when "
     "stated, and window_weeks when a last-N-weeks window is stated. "
     "waivers: adds, drops, or FAAB. this_week: what to do with my team this week. "
+    "playoffs: playoff odds, clinching, elimination, or what a team needs to make the playoffs. "
+    "power_rankings: the power rankings, who is strongest, or the team to beat; a ranking of team "
+    "strength, NOT the win-loss standings table. "
+    "standings: the standings table itself, records, points for, seeds, or division races; the "
+    "win-loss table, NOT power rankings. "
+    "matchup: a head-to-head matchup preview or a win probability between two teams this week "
+    "(team_names holds the team names mentioned). "
+    "schedule: remaining schedule strength, the easiest or hardest remaining schedule, or how "
+    "hard a specific stretch of weeks is (a playoff stretch question is schedule, not playoffs). "
     "remember: the user asks you to remember a preference (preference_text is the preference). "
     "out_of_scope: anything else (trivia, real-game talk, other leagues). "
     "Use thread history only to resolve short follow-ups. Return JSON only. No em dashes."
@@ -119,10 +131,31 @@ def _keyword_board(message: str, m: str) -> dict | None:
 def _keyword_route(message: str) -> dict:
     m = (message or "").lower()
     base = {"player_names": [], "give_player_names": [], "receive_player_names": [], "picks": [],
-            "other_team_hint": None, "metric_hint": None, "week": None, "preference_text": None,
-            **_BOARD_ENTITY_DEFAULTS}
+            "other_team_hint": None, "team_names": [], "metric_hint": None, "week": None,
+            "preference_text": None, **_BOARD_ENTITY_DEFAULTS}
     if re.search(r"\bremember\b|\bdon'?t forget\b|\bkeep in mind\b", m):
         return {**base, "intent": "remember", "preference_text": message.strip()}
+    # League-context intents run before the player/team-week rules below:
+    # their phrasings overlap ("this week", "my team", "who leads"), so the
+    # specific subject wins. Disambiguation: power rankings need the word
+    # power (or team-to-beat / strongest), standings own the record table
+    # (standings, division, points for, place), and a matchup mention beats
+    # the generic this-week digest.
+    if re.search(r"playoff stretch", m):
+        # "Playoff stretch" names the schedule window (weeks 15-17), not the
+        # odds question; it is the one phrase that outranks the playoff rule.
+        return {**base, "intent": "schedule"}
+    if re.search(r"playoff|postseason|clinch|eliminat", m):
+        return {**base, "intent": "playoffs"}
+    if re.search(r"power ranking|power rank|team to beat|strongest team", m):
+        return {**base, "intent": "power_rankings"}
+    if re.search(r"standings|division|most points for|first place|what place am i", m):
+        return {**base, "intent": "standings"}
+    if re.search(r"\bmatchup\b|who wins between|win probability|win prob\b", m):
+        return {**base, "intent": "matchup"}
+    if re.search(r"remaining schedule|schedule strength|easiest schedule|hardest schedule|"
+                 r"toughest schedule|playoff stretch|my schedule|league schedule", m):
+        return {**base, "intent": "schedule"}
     if re.search(r"\bwaiver|add\b|drop\b|faab|pick up\b", m):
         return {**base, "intent": "waivers"}
     board = _keyword_board(message, m)
@@ -162,6 +195,7 @@ def classify(question: str, context: dict | None = None, history: list | None = 
             "receive_player_names": data.get("receive_player_names") or [],
             "picks": data.get("picks") or [],
             "other_team_hint": data.get("other_team_hint"),
+            "team_names": data.get("team_names") or [],
             "metric_hint": data.get("metric_hint"),
             "week": data.get("week"),
             "board_kind": data.get("board_kind"),

@@ -189,6 +189,26 @@ def _mentions(intent, pack):
 _CTA_LABELS = {"lineup": "Set lineup", "waiver": "View waivers",
                "waivers": "View waivers", "trade": "Build offer"}
 
+# Mirror of compose._LEAGUE_LINKS: league-context intents link at the
+# league surface, href built from the pack's league fields.
+_LEAGUE_LINKS = {
+    "playoffs": ("dashboard", "View Playoff Odds"),
+    "power_rankings": ("standings", "View Power Rankings"),
+    "standings": ("standings", "View standings"),
+    "matchup": ("weekly", "View Matchups"),
+    "schedule": ("schedule", "Open in Schedule Assistant"),
+}
+
+
+def _league_link(intent, pack):
+    spec = _LEAGUE_LINKS.get(intent or "")
+    league = (pack or {}).get("league") or {}
+    if not spec or not league.get("platform") or not league.get("season") or not league.get("league_id"):
+        return None
+    page, label = spec
+    return {"href": f"/{league['platform']}/{league['season']}/{league['league_id']}/{page}",
+            "label": label}
+
 
 def no_data_answer(pack: dict) -> dict:
     """Mirror of compose.no_data_answer (same strings, same shape)."""
@@ -197,9 +217,10 @@ def no_data_answer(pack: dict) -> dict:
     text = f"That is not available: {missing}."
     if nearest:
         text += f" The nearest tracked options are {', '.join(str(n) for n in nearest[:3])}. Ask about one of those and I can pull the live numbers."
+    link = _league_link((pack or {}).get("type"), pack) or dict(_ACT_LINKS["metric"])
     return {"verdict": None, "text": text, "receipts": [], "caveat": None,
             "followups": [f"What is {n}?" for n in nearest[:2]],
-            "act_link": dict(_ACT_LINKS["metric"]), "actions": [], "mentions": []}
+            "act_link": link, "actions": [], "mentions": []}
 
 
 def _board_link(pack):
@@ -542,10 +563,171 @@ def _leaderboard(pack):
     return ans
 
 
+def _playoffs(pack):
+    me = pack.get("me") or {}
+    scen = pack.get("scenario") or {}
+    receipts = []
+    if me.get("playoff_pct") is not None:
+        receipts.append({"label": "Your playoff odds (%)", "value": fmt(me["playoff_pct"])})
+    if scen.get("wins_to_clinch") is not None:
+        receipts.append({"label": "Wins to clinch", "value": fmt(scen["wins_to_clinch"])})
+    elif me.get("wins_still_needed") is not None:
+        receipts.append({"label": "Wins still needed (projected)",
+                         "value": fmt(me["wins_still_needed"])})
+    if pack.get("weeks_remaining") is not None:
+        receipts.append({"label": "Weeks remaining", "value": fmt(pack["weeks_remaining"])})
+    ans = _base("playoffs", pack)
+    if pack.get("odds_soft"):
+        ans.update({
+            "verdict": "Too early to call",
+            "text": (f"The odds are soft this early, so read the percentage loosely: the sim puts "
+                     f"{me.get('team_name')} at {fmt(me.get('playoff_pct'))} percent with "
+                     f"{fmt(pack.get('weeks_remaining'))} weeks left. The wins math is firmer: "
+                     f"the projected cut line is {fmt(pack.get('projected_cut_wins'))} wins, so "
+                     f"you need about {fmt(me.get('wins_still_needed'))} more wins from here."),
+            "receipts": receipts[:4],
+            "followups": ["What are my odds of a first-round bye?", "Who is on the bubble?"],
+        })
+        return ans
+    if scen:
+        text = (f"The sim has {me.get('team_name')} at {fmt(me.get('playoff_pct'))} percent. "
+                f"{scen.get('summary')}.")
+        if scen.get("next_opponent"):
+            text += f" Your next game is against {scen['next_opponent']}."
+        ans.update({"verdict": scen.get("summary") or "Alive", "text": text,
+                    "receipts": receipts[:4],
+                    "followups": ["What are my odds of a first-round bye?",
+                                  "How hard is my remaining schedule?"]})
+        return ans
+    ans.update({
+        "verdict": f"{fmt(me.get('playoff_pct'))}% playoff odds",
+        "text": (f"{me.get('team_name')} sits at {me.get('record')} with "
+                 f"{fmt(pack.get('weeks_remaining'))} weeks left. Your projected finish is "
+                 f"{fmt(me.get('avg_final_wins'))} wins against a projected cut line of "
+                 f"{fmt(pack.get('projected_cut_wins'))} wins, so the math says about "
+                 f"{fmt(me.get('wins_still_needed'))} more wins gets you in."),
+        "receipts": receipts[:4],
+        "followups": ["What are my odds of a first-round bye?", "Who is on the bubble?"],
+    })
+    return ans
+
+
+def _power_rankings(pack):
+    me = pack.get("me") or {}
+    leader = pack.get("leader") or {}
+    receipts = []
+    if me.get("rank") is not None:
+        receipts.append({"label": "Your power rank", "value": fmt(me["rank"])})
+    if me.get("power_score") is not None:
+        receipts.append({"label": "Your power score", "value": fmt(me["power_score"])})
+    if leader.get("power_score") is not None and leader.get("roster_id") != me.get("roster_id"):
+        receipts.append({"label": f"{leader.get('team_name')} power score",
+                         "value": fmt(leader["power_score"])})
+    rows = pack.get("teams") or []
+    second = rows[1] if len(rows) > 1 else {}
+    if (second.get("power_score") is not None and len(receipts) < 4
+            and second.get("roster_id") not in (me.get("roster_id"), leader.get("roster_id"))):
+        receipts.append({"label": f"{second.get('team_name')} power score",
+                         "value": fmt(second["power_score"])})
+    ans = _base("power_rankings", pack)
+    if leader.get("roster_id") == me.get("roster_id"):
+        verdict = "You are the team to beat"
+    else:
+        verdict = f"{leader.get('team_name')} is the team to beat"
+    text = (f"{leader.get('team_name')} tops the board at {fmt(leader.get('power_score'))}. "
+            f"You sit at number {fmt(me.get('rank'))} with a power score of "
+            f"{fmt(me.get('power_score'))} and a {me.get('record')} record.")
+    ans.update({"verdict": verdict, "text": text, "receipts": receipts[:4],
+                "followups": ["What do the standings look like?", "What are my playoff odds?"]})
+    return ans
+
+
+def _standings(pack):
+    me = pack.get("me") or {}
+    leader = pack.get("points_leader") or {}
+    receipts = []
+    if me.get("seed") is not None:
+        receipts.append({"label": "Your seed", "value": fmt(me["seed"])})
+    if me.get("pf") is not None:
+        receipts.append({"label": "Your points for", "value": fmt(me["pf"])})
+    if leader.get("pf") is not None and leader.get("team_name") != me.get("team_name"):
+        receipts.append({"label": f"{leader.get('team_name')} points for",
+                         "value": fmt(leader["pf"])})
+    text = (f"You are {me.get('record')} with {fmt(me.get('pf'))} points for. "
+            f"{leader.get('team_name')} leads the league in scoring at "
+            f"{fmt(leader.get('pf'))} points for.")
+    divs = pack.get("division_leaders") or []
+    if divs:
+        named = " and ".join(f"{d.get('team_name')} in Division {fmt(d.get('division'))}"
+                              for d in divs)
+        text += f" Division leaders: {named}."
+    ans = _base("standings", pack)
+    ans.update({"verdict": f"Seed {fmt(me.get('seed'))} at {me.get('record')}", "text": text,
+                "receipts": receipts[:4],
+                "followups": ["Where am I in the power rankings?", "What are my playoff odds?"]})
+    return ans
+
+
+def _matchup(pack):
+    m = pack.get("matchup") or {}
+    a, b = m.get("team_a") or {}, m.get("team_b") or {}
+    receipts = []
+    if a.get("win_prob_pct") is not None:
+        receipts.append({"label": f"{a.get('team_name')} win probability (%)",
+                         "value": fmt(a["win_prob_pct"])})
+    if a.get("projected") is not None:
+        receipts.append({"label": f"{a.get('team_name')} projected", "value": fmt(a["projected"])})
+    if b.get("projected") is not None:
+        receipts.append({"label": f"{b.get('team_name')} projected", "value": fmt(b["projected"])})
+    favored = a if (a.get("win_prob_pct") or 0) >= (b.get("win_prob_pct") or 0) else b
+    text = (f"{a.get('team_name')} projects {fmt(a.get('projected'))} against "
+            f"{fmt(b.get('projected'))} for {b.get('team_name')}. The win probability is "
+            f"{fmt(a.get('win_prob_pct'))} percent for {a.get('team_name')} and "
+            f"{fmt(b.get('win_prob_pct'))} percent for {b.get('team_name')}.")
+    ans = _base("matchup", pack)
+    ans.update({"verdict": f"{favored.get('team_name')} favored", "text": text,
+                "receipts": receipts[:4],
+                "followups": ["Who should I start at FLEX?", "What are my playoff odds?"]})
+    if (pack.get("margin") or {}).get("thin"):
+        ans["caveat"] = "Close call: the win probability is nearly even."
+    return ans
+
+
+def _schedule(pack):
+    me = pack.get("me") or {}
+    easiest = pack.get("easiest") or {}
+    hardest = pack.get("hardest") or {}
+    stretch = (pack.get("playoff_stretch") or {}).get("me") or {}
+    receipts = []
+    if stretch.get("opp_index") is not None:
+        receipts.append({"label": "Your playoff stretch opponent index",
+                         "value": fmt(stretch["opp_index"])})
+    if me.get("opp_index") is not None:
+        receipts.append({"label": "Your remaining opponent index", "value": fmt(me["opp_index"])})
+    if easiest.get("opp_index") is not None and easiest.get("roster_id") != me.get("roster_id"):
+        receipts.append({"label": f"{easiest.get('team_name')} opponent index",
+                         "value": fmt(easiest["opp_index"])})
+    text = (f"{easiest.get('team_name')} has the softest remaining slate at "
+            f"{fmt(easiest.get('opp_index'))} on the opponent strength index, where higher "
+            f"means tougher. Yours rates {fmt(me.get('opp_index'))}, and "
+            f"{hardest.get('team_name')} has the toughest at {fmt(hardest.get('opp_index'))}.")
+    if stretch.get("opp_index") is not None:
+        opps = ", ".join(o.get("opponent") or "" for o in stretch.get("opponents") or [])
+        text += (f" Your playoff stretch rates {fmt(stretch['opp_index'])}"
+                 + (f", against {opps}." if opps else "."))
+    ans = _base("schedule", pack)
+    ans.update({"verdict": f"{easiest.get('team_name')} has the easiest remaining schedule",
+                "text": text, "receipts": receipts[:4],
+                "followups": ["What are my playoff odds?", "Break down my matchup"]})
+    return ans
+
+
 _BUILDERS = {"start_sit": _start_sit, "trade_eval": _trade_eval,
              "buy_sell_hold": _buy_sell_hold, "player": _player, "metric": _metric,
              "leaderboard": _leaderboard,
-             "waivers": _waivers, "this_week": _this_week}
+             "waivers": _waivers, "this_week": _this_week,
+             "playoffs": _playoffs, "power_rankings": _power_rankings,
+             "standings": _standings, "matchup": _matchup, "schedule": _schedule}
 
 
 def compose_mock(question: dict) -> dict:
