@@ -303,14 +303,66 @@ def _fallback_verdict(evidence: list) -> str | None:
     return None
 
 
-def _evidence_receipts(evidence: list) -> list:
-    out = []
+def _receipt_match_keys(value) -> set:
+    """Canonical keys under which an evidence value can be cited in prose.
+
+    The direct canonical form, plus the percent form for fractions: a
+    share stored as 0.29 is naturally stated as "29%" in prose, and the
+    two must recognize each other when matching a citation to its
+    source row. Matching only: the receipt itself always carries the
+    evidence's own value, never a rescaled one.
+    """
+    keys = {compose_mod._canon(str(value))}
+    try:
+        f = float(compose_mod._norm_num(str(value)))
+    except (TypeError, ValueError):
+        f = None
+    if f is not None and 0 < abs(f) < 1:
+        keys.add(compose_mod._canon(str(abs(f) * 100)))
+    return keys
+
+
+def _complete_citations(verdict, text, model_receipts, evidence) -> list:
+    """Citation completion: every number the final verdict+text states
+    gets a receipt row sourced from the tool evidence that produced it.
+
+    The parity gate proves a stated number is grounded in the evidence,
+    but the model's own receipt picks are independent of its prose, so
+    a number the draft leaned on could ship with no receipt behind it
+    (live eval round 3: ow4, ow9, ow13, ow15, ow17 all failed on
+    uncited key numbers with zero invented). Rows are taken from the
+    evidence entries' own receipt rows (label and value as the tools
+    built them), prioritized: rows backing a stated number first, then
+    the model's surviving receipts, then any remaining evidence rows,
+    deduplicated by value and capped at the standard 4. A stated number
+    with no evidence source gets NO row here: the grounding gate strips
+    it from the prose, and no receipt is ever invented for it.
+    """
+    cited = compose_mod._canon_numbers(verdict) \
+        | compose_mod._canon_numbers(text)
+    backed, generic = [], []
     for entry in evidence:
         for r in entry.get("receipts") or []:
-            if isinstance(r, dict) and r.get("label") and r.get("value") not in (None, ""):
-                out.append({"label": str(r["label"]), "value": str(r["value"])})
-            if len(out) >= 4:
-                return out
+            if not (isinstance(r, dict) and r.get("label")
+                    and r.get("value") not in (None, "")):
+                continue
+            row = {"label": str(r["label"]), "value": str(r["value"])}
+            if _receipt_match_keys(r["value"]) & cited:
+                backed.append(row)
+            else:
+                generic.append(row)
+    out, seen = [], set()
+    for row in backed + list(model_receipts or []) + generic:
+        if not isinstance(row, dict) or row.get("value") in (None, ""):
+            continue
+        key = compose_mod._canon(str(row["value"]))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({"label": str(row.get("label") or ""),
+                    "value": str(row["value"])})
+        if len(out) >= 4:
+            break
     return out
 
 
@@ -369,12 +421,21 @@ def compose_open_answer(question: str, pack: dict, *, history=None,
     }
     allowed = compose_mod._ground_set(pack, question)
     data = compose_mod._draft(_OPEN_SYSTEM, payload, allowed)
-    receipts = compose_mod._final_receipts(data, allowed)
-    if not receipts:
-        receipts = _evidence_receipts(usable)
     verdict = data.get("verdict")
     if not (verdict and str(verdict).strip()):
         verdict = _fallback_verdict(usable)
+    # Required mentions, pack-path machinery reused directly: the teams
+    # the fetched evidence is about must be named in the prose (live
+    # eval round 3 ow12 named neither). _required_mentions has an
+    # "open" branch that reads the teams off the evidence entries, so
+    # the injection is the same deterministic one the packs get.
+    draft = {"verdict": verdict, "text": data.get("text") or "",
+             "caveat": None, "followups": data.get("followups")}
+    draft = compose_mod._ensure_required_mentions("open", pack, draft, [])
+    verdict = draft.get("verdict")
+    text = draft.get("text") or ""
+    receipts = _complete_citations(
+        verdict, text, compose_mod._final_receipts(data, allowed), usable)
     link = None
     for entry in usable:
         if entry.get("link"):
@@ -382,10 +443,10 @@ def compose_open_answer(question: str, pack: dict, *, history=None,
             break
     return compose_mod._enforce_grounding({
         "verdict": verdict,
-        "text": data.get("text") or "",
+        "text": text,
         "receipts": receipts,
         "caveat": None,
-        "followups": compose_mod._clean_followups("open", data.get("followups")),
+        "followups": compose_mod._clean_followups("open", draft.get("followups")),
         "act_link": link,
         "actions": [],
         "mentions": _evidence_mentions(usable),

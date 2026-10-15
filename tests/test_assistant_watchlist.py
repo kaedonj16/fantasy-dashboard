@@ -140,3 +140,17 @@ def test_watchlist_mention_injected_when_draft_skips_it():
 def test_watchlist_act_link():
     assert compose._resolve_act_link("watchlist", _golden_pack()) == {
         "href": "/watchlist", "label": "View Watchlist"}
+
+
+def test_watchlist_empty_model_verdict_falls_back_to_top_mover(monkeypatch):
+    # Live eval round 3 wl1: the model returned no verdict at all. The
+    # deterministic fallback names the pack's top mover, the same
+    # contract the player intent got in round 2.
+    def _draft():
+        return {"verdict": None,
+                "text": "Zay Flowers is up 620 over the last 7 days to 4680.",
+                "receipts": [], "caveat": None, "followups": []}
+    monkeypatch.setattr(compose, "call_model_json", lambda *a, **k: _draft())
+    answer = compose.compose_answer(
+        "watchlist", "What's happening with my watchlist?", _golden_pack())
+    assert answer["verdict"] == "Zay Flowers"

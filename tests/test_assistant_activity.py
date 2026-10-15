@@ -151,7 +151,20 @@ def test_activity_required_receipts_cite_latest_trade():
 
 def test_activity_required_mentions_name_both_teams():
     assert compose._required_mentions("activity", _golden_pack()) == [
-        ("Pittsburgh Pilots", "activity"), ("Caleb's Casting Couch", "activity")]
+        ("Pittsburgh Pilots", "activity"), ("Caleb's Casting Couch", "activity"),
+        ("Zay Flowers", "activity_player"), ("Woody Marks", "activity_player"),
+        ("Jordan Addison", "activity_player")]
+
+
+def test_activity_mentions_injected_when_draft_skips_the_players():
+    # Live eval round 3 ac2: the draft named both teams but never the
+    # players who actually moved; the injection must name them too.
+    data = {"verdict": "Pittsburgh Pilots and Caleb's Casting Couch",
+            "text": "Pittsburgh Pilots and Caleb's Casting Couch made a deal.",
+            "caveat": None, "receipts": [], "followups": []}
+    out = compose._ensure_required_mentions("activity", _golden_pack(), data, [])
+    assert "Zay Flowers" in out["text"]
+    assert "Woody Marks" in out["text"]
 
 
 def test_activity_mentions_injected_when_draft_skips_them():
