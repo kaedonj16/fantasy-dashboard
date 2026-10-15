@@ -19660,6 +19660,10 @@ function initComparePage() {
         chosen[1] = { player_id: String(d.player_id || q1), name: d.name || d.full_name || '', position: d.position || '', team: d.team || '' };
         const inp = document.getElementById('cmpPick1'); if (inp) inp.value = chosen[1].name;
         _syncClears();
+        // Same registration step an interactive picker selection runs:
+        // without it the tier-benchmark and similar-player suggestions for
+        // slot 2 never render under a lone ?p1= deep link.
+        _renderSuggestions();
         const second = document.getElementById('cmpPick2');
         if (second) { try { second.focus(); } catch (_) {} }
       }).catch(() => {});
