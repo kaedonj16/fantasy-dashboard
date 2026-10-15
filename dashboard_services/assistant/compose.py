@@ -520,6 +520,20 @@ def _ground_set(pack, question: str | None = None) -> set[str]:
     return allowed
 
 
+def _allowed_canon(pack, question: str | None = None) -> set[str]:
+    """The eval scorer's allowed set, canonicalized: every number in the
+    pack JSON plus every number in the question, in _canon form. The
+    scorer compares canonical-to-canonical (sign dropped, trailing zeros
+    trimmed); the final grounding gate uses this set so its pass/fail
+    line is exactly the scorer's."""
+    allowed: set[str] = set()
+    for token in _numbers_in(json.dumps(pack or {}, default=str)):
+        allowed.add(_canon(token))
+    for token in _numbers_in(question or ""):
+        allowed.add(_canon(token))
+    return allowed
+
+
 def _receipt_grounded(receipt_value: str, allowed: set[str]) -> bool:
     return all(_norm_num(n) in allowed for n in _numbers_in(receipt_value))
 
@@ -1250,48 +1264,78 @@ def _ensure_deal_names(pack: dict, data: dict) -> dict:
     return out
 
 
-def _required_mentions(intent: str, pack: dict) -> list[str]:
-    """Team names the answer must state, from the pack's scenario fields.
+def _required_mentions(intent: str, pack: dict) -> list[tuple[str, str]]:
+    """Names the answer must state, as (name, kind) pairs from the pack.
 
-    A scenario or stretch answer that never names the team it hinges on
-    reads as a dodge, and the eval checks for it (live eval po3/sc2):
-    the sim's next opponent for a playoff scenario, and every opponent
-    inside a playoff-stretch window.
+    An answer that never names the team or league it is about reads as a
+    dodge, and the eval checks for it. Kinds: the subject team whose
+    playoff odds are quoted (live eval po1: the odds shipped without
+    naming Caleb's Casting Couch), the sim's next opponent for a playoff
+    scenario (po3), every opponent inside a playoff-stretch window (sc2),
+    and every league in a cross-league comparison (xl2: one league named,
+    the other dropped).
     """
     pack = pack or {}
+    out: list[tuple[str, str]] = []
     if intent == "playoffs":
+        subject = ((pack.get("me") or {}).get("team_name")
+                   or (pack.get("league") or {}).get("team_name"))
+        if subject:
+            out.append((str(subject), "subject"))
         opp = (pack.get("scenario") or {}).get("next_opponent")
-        return [str(opp)] if opp else []
-    if intent == "schedule":
+        if opp:
+            out.append((str(opp), "opponent"))
+    elif intent == "schedule":
         stretch = (pack.get("playoff_stretch") or {}).get("me") or {}
-        return [str(o["opponent"]) for o in (stretch.get("opponents") or [])
+        out += [(str(o["opponent"]), "stretch")
+                for o in (stretch.get("opponents") or [])
                 if isinstance(o, dict) and o.get("opponent")]
-    return []
+    elif intent == "cross_league":
+        out += [(str(s["league_name"]), "league")
+                for s in (pack.get("leagues") or [])
+                if isinstance(s, dict) and s.get("league_name")]
+    return out
+
+
+def _join_names(names: list[str]) -> str:
+    if len(names) <= 2:
+        return " and ".join(names)
+    return ", ".join(names[:-1]) + " and " + names[-1]
 
 
 def _ensure_required_mentions(intent: str, pack: dict, data: dict, receipts: list) -> dict:
-    """Inject a deterministic sentence naming any required team the draft
-    skipped: the receipt-injection pattern, for names instead of numbers.
-    The check runs on the prose surfaces only (verdict, text, caveat): a
-    name that survives only inside a receipt label has not been said.
-    The sentence carries no numbers, so it can never break grounding."""
+    """Inject a deterministic sentence naming any required team or league
+    the draft skipped: the receipt-injection pattern, for names instead
+    of numbers. The check runs on the prose surfaces only (verdict, text,
+    caveat): a name that survives only inside a receipt label has not
+    been said. The sentences carry no numbers, so they can never break
+    grounding."""
     required = _required_mentions(intent, pack)
     if not required:
         return data
     full = " ".join([str(data.get("verdict") or ""), str(data.get("text") or ""),
                      str(data.get("caveat") or "")]).lower()
-    missing = [n for n in required if n.lower() not in full]
+    missing: dict[str, list[str]] = {}
+    for name, kind in required:
+        if name.lower() not in full:
+            missing.setdefault(kind, []).append(name)
     if not missing:
         return data
-    if intent == "playoffs":
-        sentence = f"Your next matchup is against {missing[0]}."
-    elif len(missing) == 1:
-        sentence = f"That stretch includes {missing[0]}."
-    else:
-        sentence = ("That stretch runs through "
-                    + ", ".join(missing[:-1]) + f" and {missing[-1]}.")
+    sentences = []
+    for kind, names in missing.items():
+        if kind == "subject":
+            sentences.append(f"These are the playoff odds for {names[0]}.")
+        elif kind == "opponent":
+            sentences.append(f"Your next matchup is against {names[0]}.")
+        elif kind == "league":
+            sentences.append(f"That comparison also includes {_join_names(names)}.")
+        elif len(names) == 1:
+            sentences.append(f"That stretch includes {names[0]}.")
+        else:
+            sentences.append("That stretch runs through " + _join_names(names) + ".")
     out = dict(data)
-    out["text"] = (str(out.get("text") or "").rstrip() + " " + sentence).strip()
+    out["text"] = (str(out.get("text") or "").rstrip() + " "
+                   + " ".join(sentences)).strip()
     return out
 
 
@@ -1530,7 +1574,7 @@ def _compose_leaderboard(question: str, pack: dict, *, preferences=None,
     entry, so it cannot restate or contradict the computed board) and the
     follow-up chips."""
     if pack.get("gated"):
-        return gated_answer(pack)
+        return _enforce_grounding(gated_answer(pack), "leaderboard", pack, question)
     board = pack.get("board") or []
     payload = {
         "intent": "leaderboard",
@@ -1564,12 +1608,14 @@ def _compose_leaderboard(question: str, pack: dict, *, preferences=None,
     qual = pack.get("qualification_text")
     if qual:
         body += "\n" + qual
-    return {"verdict": _board_verdict(pack), "text": body,
-            "receipts": [_board_receipt(r, pack) for r in board],
-            "caveat": None,
-            "followups": _clean_followups("leaderboard", followups),
-            "act_link": _board_link(pack) or dict(_ACT_LINKS["leaderboard"]),
-            "actions": []}
+    return _enforce_grounding(
+        {"verdict": _board_verdict(pack), "text": body,
+         "receipts": [_board_receipt(r, pack) for r in board],
+         "caveat": None,
+         "followups": _clean_followups("leaderboard", followups),
+         "act_link": _board_link(pack) or dict(_ACT_LINKS["leaderboard"]),
+         "actions": []},
+        "leaderboard", pack, question)
 
 
 _STRICT_SUFFIX = (
@@ -1621,7 +1667,16 @@ def _draft(system: str, payload: dict, allowed: set[str]) -> dict:
 
 
 def _final_receipts(data: dict, allowed: set[str]) -> list:
-    """Model receipts, humanized and grounding-filtered, capped at 4."""
+    """Model receipts, humanized and grounding-filtered, capped at 4.
+
+    Both halves of a row are checked: the value against the pack numbers
+    and the LABEL against the canonical allowed set. The label check is
+    the one that was missing: the eval scorer scans receipt labels, and
+    a count riding a label ("Top 5 target share", "Keeper 1 value")
+    shipped unchecked while its value was grounded (live eval round 2:
+    m1 invented '5', kp1 invented '1' and '2', prose fully clean).
+    """
+    allowed_canon = {_canon(t) for t in allowed}
     receipts = []
     for r in (data.get("receipts") or [])[:6]:
         if not isinstance(r, dict):
@@ -1630,13 +1685,73 @@ def _final_receipts(data: dict, allowed: set[str]) -> list:
         value = _humanize_receipt_value(r.get("value"))
         if value is None:
             continue
-        if _receipt_grounded(value, allowed):
-            receipts.append({"label": label, "value": value})
-        else:
+        if not _receipt_grounded(value, allowed):
             logger.info("[assistant] dropped ungrounded receipt %s=%s", label, value)
+        elif _canon_numbers(label) - allowed_canon:
+            logger.info("[assistant] dropped receipt with ungrounded label %s=%s",
+                        label, value)
+        else:
+            receipts.append({"label": label, "value": value})
         if len(receipts) >= 4:
             break
     return receipts
+
+
+def _enforce_grounding(answer: dict, intent: str, pack: dict, question: str) -> dict:
+    """Final parity gate: no number the eval scorer would call invented
+    ships on ANY reader-visible surface of the finished answer.
+
+    The draft-time checks scan verdict/text/caveat/follow-ups and filter
+    receipt values, but surfaces assembled after the draft (receipt
+    labels, injected rows, action rows) historically escaped every
+    check; live eval round 2 shipped invented numbers there with the
+    prose fully clean. This gate re-checks the complete answer under
+    the scorer's own rule (canonical numbers vs the pack plus the
+    question) and resolves deterministically: prose loses offending
+    sentences, verdict and caveat lose offending tokens, and
+    follow-ups, receipts, and actions carrying an offending number are
+    dropped whole. A clean answer passes through untouched.
+    """
+    allowed_canon = _allowed_canon(pack, question)
+
+    def _bad(text) -> bool:
+        return bool(_canon_numbers(text) - allowed_canon)
+
+    out = dict(answer)
+    prose_bad = any(_bad(out.get(k)) for k in ("verdict", "text", "caveat")) or \
+        any(_bad(t) for f in (out.get("followups") or [])
+            for t in _followup_texts(f))
+    if prose_bad:
+        # The stripper's norm-based check is a superset of the canonical
+        # one (same numeric values, stricter spelling), so it always
+        # resolves what this gate flags.
+        stripped = _strip_ungrounded(
+            {"verdict": out.get("verdict"), "text": out.get("text"),
+             "caveat": out.get("caveat"),
+             "followups": out.get("followups") or []},
+            _ground_set(pack, question))
+        for k in ("verdict", "text", "caveat", "followups"):
+            out[k] = stripped.get(k)
+        logger.info("[assistant] final grounding gate stripped prose numbers")
+    receipts = []
+    for r in (out.get("receipts") or []):
+        if isinstance(r, dict) and (_bad(r.get("label")) or _bad(r.get("value"))):
+            logger.info("[assistant] final grounding gate dropped receipt %s",
+                        r.get("label"))
+            continue
+        receipts.append(r)
+    out["receipts"] = receipts
+    actions = []
+    for a in (out.get("actions") or []):
+        if isinstance(a, dict) and (_bad(a.get("headline")) or _bad(a.get("detail"))):
+            logger.info("[assistant] final grounding gate dropped action %s",
+                        a.get("headline"))
+            continue
+        actions.append(a)
+    out["actions"] = actions
+    if not out.get("followups"):
+        out["followups"] = _clean_followups(intent, [])
+    return out
 
 
 # Appended to SYSTEM only when the caller carries a confirmed risk
@@ -1654,14 +1769,14 @@ _PROFILE_SUFFIX = (
 def compose_answer(intent: str, question: str, pack: dict, *, preferences=None, assumed_context=None, history=None, risk_profile=None) -> dict:
     """Compose an answer dict from an evidence pack. Pure eval seam."""
     if isinstance(pack, dict) and pack.get("gated"):
-        return gated_answer(pack)
+        return _enforce_grounding(gated_answer(pack), intent, pack, question)
     if isinstance(pack, dict) and pack.get("available") is False:
-        return no_data_answer(pack)
+        return _enforce_grounding(no_data_answer(pack), intent, pack, question)
     if intent == "trade_finding" and isinstance(pack, dict) and pack.get("no_fit") \
             and not pack.get("findings"):
         # The scan found no clean fit: the answer is code-composed so the
         # closest miss can never be dressed up as a recommendation.
-        return _no_fit_answer(pack)
+        return _enforce_grounding(_no_fit_answer(pack), intent, pack, question)
     if intent == "leaderboard":
         return _compose_leaderboard(question, pack, preferences=preferences,
                                     assumed_context=assumed_context, history=history)
@@ -1764,7 +1879,7 @@ def compose_answer(intent: str, question: str, pack: dict, *, preferences=None, 
     margin_thin = bool(((pack or {}).get("margin") or {}).get("thin"))
     if caveat and not margin_thin and not (pack or {}).get("stale"):
         caveat = None
-    return {
+    return _enforce_grounding({
         "verdict": verdict,
         "text": data.get("text") or "",
         "receipts": receipts,
@@ -1773,7 +1888,7 @@ def compose_answer(intent: str, question: str, pack: dict, *, preferences=None, 
         "act_link": _resolve_act_link(intent, pack),
         "actions": actions,
         "mentions": _mentions(intent, pack),
-    }
+    }, intent, pack, question)
 
 
 def numbers_shown_from(receipts) -> dict:

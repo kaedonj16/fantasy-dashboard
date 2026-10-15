@@ -387,6 +387,166 @@ def test_trade_answer_names_every_pick_by_its_canonical_label(monkeypatch):
     assert pick_rows and pick_rows[0]["value"] == "780"
 
 
+# -- live eval 2026-10-15 round 2: grounding parity + required mentions --------
+# Round 1's seven fixes held live; round 2 shipped three invented numbers
+# with the prose fully clean. Diagnosis: they rode receipt LABELS, the one
+# surface the scorer scans (label + value) that production never checked:
+# _ungrounded_numbers covers verdict/text/caveat/follow-ups, and
+# _final_receipts grounded only receipt values. The gate in compose now
+# re-checks every surface under the scorer's canonical rule before ship.
+
+def _grounding_score(q, answer):
+    from assistant_eval.scorer import score_answer
+    return score_answer(q, answer)
+
+
+def test_metric_answer_drops_receipt_whose_label_carries_a_count(monkeypatch):
+    # m1 round 2: invented '5' with clean prose; the count rode the label
+    # of a receipt whose value was grounded.
+    q = _frozen("m1")
+    _canned(monkeypatch, {"verdict": "Ja'Marr Chase",
+                          "text": "Target share is the share of team pass attempts "
+                                  "thrown to a player. Chase leads at 0.31, and "
+                                  "your Rome Odunze sits at 0.24.",
+                          "receipts": [{"label": "Top 5 target share leader",
+                                        "value": "0.31"},
+                                       {"label": "Odunze target share",
+                                        "value": "0.24"}],
+                          "caveat": None,
+                          "followups": [{"label": "What is snap share?",
+                                         "ask": "What is snap share?"}],
+                          "act_link": None})
+    answer = compose_answer("metric", q["question"], q["evidence_pack"])
+    score = _grounding_score(q, answer)
+    assert score["invented"] == [] and score["grounding_ok"]
+    assert all("Top 5" not in r["label"] for r in answer["receipts"])
+    values = [r["value"] for r in answer["receipts"]]
+    assert "0.31" in values and "0.24" in values
+
+
+def test_keeper_answer_drops_slot_numbered_receipt_labels(monkeypatch):
+    # kp1 round 2: invented '1' and '2' from slot-numbered keeper receipt
+    # labels ("Keeper 1 value", "Keeper 2 value"); the values were pack
+    # numbers and the prose was clean.
+    q = _frozen("kp1")
+    _canned(monkeypatch, {"verdict": "Rome Odunze",
+                          "text": "Odunze is the clear top keeper at a round 6 "
+                                  "cost with a value of 4850. Addison follows "
+                                  "at a round 9 cost and a value of 3920.",
+                          "receipts": [{"label": "Keeper 1 value", "value": "4850"},
+                                       {"label": "Keeper 2 value", "value": "3920"}],
+                          "caveat": None,
+                          "followups": [{"label": "Who is first on my cut line?",
+                                         "ask": "Who is first on my cut line?"}],
+                          "act_link": None})
+    answer = compose_answer("keeper", q["question"], q["evidence_pack"])
+    score = _grounding_score(q, answer)
+    assert score["invented"] == [] and score["grounding_ok"]
+    labels = [r["label"] for r in answer["receipts"]]
+    assert not any(lbl.startswith("Keeper 1") or lbl.startswith("Keeper 2")
+                   for lbl in labels)
+    values = [r["value"] for r in answer["receipts"]]
+    assert "4850" in values and "3920" in values
+
+
+def test_final_grounding_gate_covers_every_surface():
+    # The parity guarantee, exercised directly: a 999 (not in the pack)
+    # planted on each reader-visible surface in turn can never ship,
+    # while grounded content survives untouched.
+    from dashboard_services.assistant.compose import _enforce_grounding
+    base = {"verdict": "START Rome Odunze",
+            "text": "Odunze projects 17.9 points against 11.0 for Mooney.",
+            "receipts": [{"label": "Odunze projection", "value": "17.9"}],
+            "caveat": None,
+            "followups": [{"label": "What about next week?",
+                           "ask": "What about next week?"}],
+            "act_link": None,
+            "actions": [{"tag": "start", "headline": "Start Odunze",
+                         "detail": "Projects 17.9", "href": "/x",
+                         "cta_label": "View", "key_number": None}],
+            "mentions": []}
+    planted = [
+        ("verdict", "START Rome Odunze by 999"),
+        ("text", "Odunze projects 17.9 points. The edge is 999 points."),
+        ("caveat", "Within 999 points this is a coin flip."),
+        ("receipt label", None),
+        ("receipt value", None),
+        ("followup label", None),
+        ("followup ask", None),
+        ("action headline", None),
+        ("action detail", None),
+    ]
+    import copy
+    for surface, text_value in planted:
+        ans = copy.deepcopy(base)
+        if surface in ("verdict", "text", "caveat"):
+            ans[surface] = text_value
+        elif surface == "receipt label":
+            ans["receipts"] = [{"label": "Top 999 projection", "value": "17.9"}]
+        elif surface == "receipt value":
+            ans["receipts"] = [{"label": "Odunze projection", "value": "999"}]
+        elif surface == "followup label":
+            ans["followups"] = [{"label": "Top 999 plays?",
+                                  "ask": "What about next week?"}]
+        elif surface == "followup ask":
+            ans["followups"] = [{"label": "What about next week?",
+                                  "ask": "Who are the top 999 plays?"}]
+        elif surface == "action headline":
+            ans["actions"][0]["headline"] = "Start Odunze over 999 others"
+        elif surface == "action detail":
+            ans["actions"][0]["detail"] = "Projects 999"
+        gated = _enforce_grounding(ans, "start_sit", PACK,
+                                   "Start Odunze or Mooney?")
+        from assistant_eval.scorer import answer_numbers
+        assert "999" not in answer_numbers(gated), surface
+        if surface in ("receipt label", "receipt value"):
+            # The planted row was the only receipt; dropping it whole is
+            # the resolution.
+            assert gated["receipts"] == [], surface
+        else:
+            # Grounded content on the other surfaces survives untouched.
+            assert gated["receipts"] == base["receipts"], surface
+
+
+def test_followup_templates_carry_no_numbers():
+    # The gate refills empty follow-ups from the per-intent templates;
+    # that refill is only safe because every template is number-free.
+    from dashboard_services.assistant.compose import (_FOLLOWUP_TEMPLATES,
+                                                      _numbers_in)
+    for intent, pairs in _FOLLOWUP_TEMPLATES.items():
+        for pair in pairs:
+            assert not _numbers_in(pair["label"]), (intent, pair)
+            assert not _numbers_in(pair["ask"]), (intent, pair)
+
+
+def test_playoffs_answer_names_the_subject_team(monkeypatch):
+    # po1 round 2: the odds shipped ("71.5% playoff odds") without naming
+    # the team they belong to. The subject is a required mention, not just
+    # a scenario opponent.
+    q = _frozen("po1")
+    _canned(monkeypatch, {"verdict": "71.5% playoff odds",
+                          "text": "You are in strong shape at 71.5% with "
+                                  "seven weeks to run.",
+                          "receipts": [], "caveat": None, "followups": [],
+                          "act_link": None})
+    answer = compose_answer("playoffs", q["question"], q["evidence_pack"])
+    assert "Caleb's Casting Couch" in answer["text"]
+
+
+def test_cross_league_answer_names_every_league(monkeypatch):
+    # xl2 round 2: the comparison named Blackedraw and dropped the other
+    # league. Every league slice in the pack is a required mention.
+    q = _frozen("xl2")
+    _canned(monkeypatch, {"verdict": "Blackedraw",
+                          "text": "Blackedraw is your strongest team: rank 3 "
+                                  "of 12 at 5-2 with 842.5 points for, well "
+                                  "ahead of your other squad at rank 9.",
+                          "receipts": [], "caveat": None, "followups": [],
+                          "act_link": None})
+    answer = compose_answer("cross_league", q["question"], q["evidence_pack"])
+    assert "Sunday Scaries" in answer["text"]
+
+
 # -- receipt humanization (live screenshot: raw JSON league row, [] actions row) --
 
 def test_receipt_values_humanized_and_empty_rows_dropped(monkeypatch):
