@@ -101,7 +101,8 @@ class TestAdvancedMetrics:
         assert [a["label"] for a in adv] == [
             "Dominator", "Breakout Age", "Yds/Rec",
             "Mkt Share", "TD Share", "Tgt/Gm", "Catch%",
-            "Speed Score", "Efficiency", "Recruiting",
+            "Speed Score", "Efficiency",
+            "Best Dominator", "Career Yds/Rec", "Rec Yds/Gm", "Recruiting",
         ]
         assert adv[0]["raw"] == "38%"
         assert adv[0]["grade"] == 99.9  # 0.38 / 0.267, capped below 100
@@ -162,6 +163,7 @@ class TestAdvancedMetrics:
              "efficiency_score": 90, "production_score": 90})
         assert [a["label"] for a in adv] == [
             "Cmp%", "TD:INT", "Yds/Att", "AY/A",
+            "Rush Yds/Gm", "Yds/Carry", "Rush TDs",
             "Breakout Age", "Efficiency", "Production", "Recruiting",
         ]
         assert adv[0]["raw"] == "67%"
@@ -174,7 +176,7 @@ class TestAdvancedMetrics:
         adv = _build_advanced_metrics(
             "WR", [], {}, {"position": "WR", "age": None,
                            "efficiency_score": None, "production_score": None})
-        assert len(adv) == 10
+        assert len(adv) == 13  # v3.2: + Best Dominator, Career Yds/Rec, Rec Yds/Gm raw-only rows
         assert all(a["raw"] is None and a["grade"] is None for a in adv)
 
     def test_speed_score_derived_from_forty_and_weight(self):
@@ -379,11 +381,11 @@ class TestSeedConsensus:
         assert entry["mock_sources"] == ["seed_consensus"]
         assert entry["is_actual_pick"] is False
 
-    def test_full_seed_has_fourteen_picks(self):
+    def test_full_seed_has_nineteen_picks(self):  # v3.2 V1 coverage: 14 + Mestemaker, Sayin, Green, Carter Jr., Clarke
         from data_building.rookie_pipeline.pipeline import build_seed_consensus
         from data_building.rookie_pipeline.ingestion import get_seed_prospects
         sc = build_seed_consensus(get_seed_prospects(2027))
-        assert len(sc) == 14
+        assert len(sc) == 19
 
 
 class TestCfbdTargets:

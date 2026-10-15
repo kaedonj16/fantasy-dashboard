@@ -16,7 +16,7 @@
    "seasons": [],
    "athleticism": {},
    "source": "seed_2027",
-   "projected_pick": 1
+   "projected_pick": 24
   },
   {
    "player_id": "ROOKIE_2027_dante_moore",
@@ -32,7 +32,7 @@
    "seasons": [],
    "athleticism": {},
    "source": "seed_2027",
-   "projected_pick": 3
+   "projected_pick": 14
   },
   {
    "player_id": "ROOKIE_2027_drew_mestemaker",
@@ -47,6 +47,7 @@
    "early_declare": false,
    "seasons": [],
    "athleticism": {},
+   "projected_pick": 8,
    "source": "seed_2027"
   },
   {
@@ -152,6 +153,7 @@
    "early_declare": false,
    "seasons": [],
    "athleticism": {},
+   "projected_pick": 12,
    "source": "seed_2027"
   },
   {
@@ -259,7 +261,7 @@
    "seasons": [],
    "athleticism": {},
    "source": "seed_2027",
-   "projected_pick": 23
+   "projected_pick": 16
   },
   {
    "player_id": "ROOKIE_2027_ahmad_hardy",
@@ -488,7 +490,7 @@
    "seasons": [],
    "athleticism": {},
    "source": "seed_2027",
-   "projected_pick": 26
+   "projected_pick": 15
   },
   {
    "player_id": "ROOKIE_2027_nick_marsh",
@@ -778,6 +780,7 @@
    "early_declare": false,
    "seasons": [],
    "athleticism": {},
+   "projected_pick": 35,
    "source": "seed_2027"
   },
   {
@@ -793,6 +796,7 @@
    "early_declare": false,
    "seasons": [],
    "athleticism": {},
+   "projected_pick": 54,
    "source": "seed_2027"
   },
   {
@@ -808,6 +812,7 @@
    "early_declare": false,
    "seasons": [],
    "athleticism": {},
+   "projected_pick": 62,
    "source": "seed_2027"
   },
   {

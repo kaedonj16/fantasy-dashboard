@@ -1277,7 +1277,9 @@ def upsert_rankings(scores: List[Dict], values: List[Dict], conn) -> int:
                      rookie_value_8, rookie_value_12, rookie_value_14,
                      rookie_sf_value_8, rookie_sf_value_12, rookie_sf_value_14,
                      tier, tier_label, key_reasons, model_version,
-                     recruiting_score, calculated_at)
+                     recruiting_score, calculated_at,
+                     archetype, archetype_receipt, archetype_confidence,
+                     talent_score, capital_delta)
                 VALUES
                     (%(player_id)s, %(draft_class_year)s, %(overall_rank)s, %(position_rank)s,
                      %(production_score)s, %(efficiency_score)s, %(age_score)s,
@@ -1289,7 +1291,9 @@ def upsert_rankings(scores: List[Dict], values: List[Dict], conn) -> int:
                      %(rookie_value_8)s, %(rookie_value_12)s, %(rookie_value_14)s,
                      %(rookie_sf_value_8)s, %(rookie_sf_value_12)s, %(rookie_sf_value_14)s,
                      %(tier)s, %(tier_label)s, %(key_reasons)s, %(model_version)s,
-                     %(recruiting_score)s, NOW())
+                     %(recruiting_score)s, NOW(),
+                     %(archetype)s, %(archetype_receipt)s, %(archetype_confidence)s,
+                     %(talent_score)s, %(capital_delta)s)
                 ON CONFLICT (player_id, draft_class_year) DO UPDATE SET
                     overall_rank                  = EXCLUDED.overall_rank,
                     position_rank                 = EXCLUDED.position_rank,
@@ -1318,6 +1322,11 @@ def upsert_rankings(scores: List[Dict], values: List[Dict], conn) -> int:
                     key_reasons                   = EXCLUDED.key_reasons,
                     model_version                 = EXCLUDED.model_version,
                     recruiting_score              = EXCLUDED.recruiting_score,
+                    archetype                     = EXCLUDED.archetype,
+                    archetype_receipt             = EXCLUDED.archetype_receipt,
+                    archetype_confidence          = EXCLUDED.archetype_confidence,
+                    talent_score                  = EXCLUDED.talent_score,
+                    capital_delta                 = EXCLUDED.capital_delta,
                     calculated_at                 = NOW()
                 """,
                 {
@@ -1350,6 +1359,11 @@ def upsert_rankings(scores: List[Dict], values: List[Dict], conn) -> int:
                     "key_reasons":                  s.get("key_reasons"),
                     "model_version":                s.get("model_version"),
                     "recruiting_score":             s.get("recruiting_score"),
+                    "archetype":                    s.get("archetype"),
+                    "archetype_receipt":            s.get("archetype_receipt"),
+                    "archetype_confidence":        s.get("archetype_confidence"),
+                    "talent_score":                 s.get("talent_score"),
+                    "capital_delta":                s.get("capital_delta"),
                 },
             )
             saved += 1
@@ -2356,6 +2370,9 @@ def get_rookie_rankings_from_db(draft_year: int, filter_undrafted: bool = False)
                             rr.competition_score, rr.projected_draft_capital_score,
                             rr.confidence_score, rr.calculated_at,
                             rr.recruiting_score, rr.model_version,
+                            rr.archetype, rr.archetype_receipt,
+                            rr.archetype_confidence,
+                            rr.talent_score, rr.capital_delta,
                             rpr.stars AS recruit_stars,
                             rpr.composite_rating AS recruit_composite_rating,
                             rpr.national_rank AS recruit_national_rank,
@@ -2432,6 +2449,11 @@ def _merge_inmemory_result(result: Dict[str, Any]) -> List[Dict[str, Any]]:
             "competition_score":           s.get("competition_score"),
             "projected_draft_capital_score": s.get("projected_draft_capital_score"),
             "confidence_score":            s.get("confidence_score"),
+            "archetype":                   s.get("archetype"),
+            "archetype_receipt":           s.get("archetype_receipt"),
+            "archetype_confidence":        s.get("archetype_confidence"),
+            "talent_score":                s.get("talent_score"),
+            "capital_delta":               s.get("capital_delta"),
             "calculated_at":               None,
             "projected_round":             dc.get("projected_round"),
             "projected_pick":              dc.get("projected_pick"),
