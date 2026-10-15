@@ -63,9 +63,13 @@ python3 scripts/run_assistant_eval.py --mode live
 
 It prints one PASS/FAIL line per question (verdict match, any invented
 numbers named, trap notes), then the summary and a `LIVE BAR: MET` or
-`LIVE BAR: NOT MET` line. Exit 0 = bar met, 1 = bar failed, 2 = could
-not run. Paste that output back into this file as a dated section when
-it has run.
+`LIVE BAR: NOT MET` line, then a comparison against the newest recorded
+outcome per question in this file. Exit 0 = bar met, 1 = bar failed,
+2 = could not run. Add `--record` to the command and the runner prepends
+the run to this file as a dated section itself; without `--record`,
+paste the output back here as a dated section when it has run. To
+recheck only previously failing questions, use
+`--only te2,m1,tw1,tw2` (with `--record` to file the recheck).
 
 Notes:
 

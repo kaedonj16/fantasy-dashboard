@@ -66,7 +66,20 @@ python3 scripts/run_assistant_eval.py --mode mock --poison
 # Live model path on this machine (needs OPENAI_API_KEY + the openai
 # package). Without the key it prints that fact and exits 2.
 python3 scripts/run_assistant_eval.py --mode live
+
+# Subset: run only the named question ids (either mode). A live subset
+# run is judged on its own bar: every selected question passes with zero
+# invented numbers. Unknown ids exit 2 and list the valid ones.
+python3 scripts/run_assistant_eval.py --mode live --only te2,m1,tw1,tw2
 ```
+
+After any live run, the runner prints a comparison against the newest
+recorded outcome per question in `live_results.md` (which questions
+flipped pass/fail). Add `--record` to a live run to prepend the run to
+`live_results.md` as a new dated section in the file's existing format;
+without `--record` the file is never written. Question ids, counts, and
+the verdict bar (90% of the set) all come from `questions.json` at run
+time, so new question families are picked up automatically.
 
 Focused tests:
 
@@ -86,6 +99,13 @@ python3 scripts/run_assistant_eval.py --mode live
 
 Exit 0 means the automated bar was met, 1 means it was not, 2 means the
 run could not happen (missing key or unimportable model stack).
+
+To recheck just the questions that failed last time, and record the
+outcome in this directory's `live_results.md`:
+
+```bash
+python3 scripts/run_assistant_eval.py --mode live --only te2,m1,tw1,tw2 --record
+```
 
 ## Recapturing the packs
 
