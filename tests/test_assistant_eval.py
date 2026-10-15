@@ -191,15 +191,16 @@ def test_no_clean_fit_rejects_forced_trade():
 # -- questions.json schema sanity ------------------------------------------------------
 
 def test_questions_distribution_and_ids():
-    assert len(QUESTIONS) == 73
-    assert len(BY_ID) == 73
+    assert len(QUESTIONS) == 82
+    assert len(BY_ID) == 82
     assert Counter(q["type"] for q in QUESTIONS) == {
-        "start_sit": 4, "trade_eval": 4, "trade_finding": 4, "buy_sell_hold": 5, "player": 3,
-        "metric": 3, "waivers": 2, "this_week": 4, "leaderboard": 13,
+        "start_sit": 4, "trade_eval": 4, "trade_finding": 6, "buy_sell_hold": 5, "player": 3,
+        "metric": 3, "waivers": 5, "this_week": 4, "leaderboard": 13,
         "playoffs": 3, "power_rankings": 2, "standings": 2, "matchup": 6,
         "schedule": 2, "breakout_board": 1, "breakout_track_record": 1,
         "breakout_history": 1, "teams": 2, "pick_ownership": 1,
-        "keeper": 4, "rookie": 3, "cross_league": 3}
+        "keeper": 4, "rookie": 3, "cross_league": 3,
+        "replacement": 2, "handcuff": 2}
 
 
 def test_questions_entry_shape():
@@ -299,7 +300,7 @@ def test_leaderboard_reference_matches_pack_board():
 
 def test_trade_finding_questions_shaped():
     tf = {q["id"]: q for q in QUESTIONS if q["type"] == "trade_finding"}
-    assert set(tf) == {"tf1", "tf2", "tf3", "tf4"}
+    assert set(tf) == {"tf1", "tf2", "tf3", "tf4", "pv1", "sp1"}
     # Findings carry side totals that match their player values, and the
     # gap is receive minus give, like every other trade pack.
     for q in tf.values():
@@ -314,6 +315,15 @@ def test_trade_finding_questions_shaped():
     assert tf["tf1"]["evidence_pack"]["target_position"] == "RB"
     assert tf["tf2"]["evidence_pack"]["mode"] == "sell"
     assert tf["tf2"]["evidence_pack"]["sell_player"]["name"] == "Jordan Addison"
+    # pv1 is the worth-in-picks shape: pick equivalents priced off the sell
+    # player's value; sp1 is the shop-the-pool shape.
+    pv1 = tf["pv1"]["evidence_pack"]
+    assert pv1["mode"] == "sell"
+    assert pv1["pick_equivalents"]["equivalents"]
+    assert pv1["pick_equivalents"]["nearest_single"]["label"] == \
+        pv1["pick_equivalents"]["equivalents"][0]["label"]
+    assert tf["sp1"]["evidence_pack"]["mode"] == "shop"
+    assert tf["sp1"]["evidence_pack"]["shop_candidates"]
     # tf3 is the free-caller gate case: gated, and no suggestion data at all.
     gated = tf["tf3"]["evidence_pack"]
     assert gated["gated"] is True
@@ -443,7 +453,7 @@ def test_league_context_references_match_packs():
 
 # -- mock mode + poison ------------------------------------------------------------------
 
-def test_mock_mode_full_run_passes_73_of_73():
+def test_mock_mode_full_run_passes_82_of_82():
     for q in QUESTIONS:
         score = score_answer(q, compose_mock(q))
         assert score["passed"], f"{q['id']}: {score}"
@@ -452,7 +462,7 @@ def test_mock_mode_full_run_passes_73_of_73():
 def test_runner_mock_mode_exit_zero(capsys):
     assert runner.main(["--mode", "mock"]) == 0
     out = capsys.readouterr().out
-    assert "73/73 answers passed" in out
+    assert "82/82 answers passed" in out
 
 
 def test_runner_poison_is_detected(capsys):

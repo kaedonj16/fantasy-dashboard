@@ -51,6 +51,8 @@ _ACT_LINKS = {
     "keeper": {"href": "/keeper", "label": "View Keeper Optimizer"},
     "rookie": {"href": "/prospects", "label": "View Rookie Rankings"},
     "cross_league": {"href": "/portfolio", "label": "View Portfolio"},
+    "replacement": {"href": "/trade?tab=suggestions", "label": "Open Trade Suggestions"},
+    "handcuff": {"href": "/waivers", "label": "View on Waivers"},
 }
 
 
@@ -173,6 +175,20 @@ def _resolve_act_link(intent, pack):
         base = _league_base(pack)
         return {"href": f"{base}/keeper" if base else "/keeper",
                 "label": "View Keeper Optimizer"}
+    elif intent == "replacement":
+        cands = [c for c in (pack.get("candidates") or []) if isinstance(c, dict)]
+        if cands and cands[0].get("location") == "waivers":
+            return {"href": "/waivers", "label": "View on Waivers"}
+        base = _league_base(pack)
+        return {"href": f"{base}/trade?tab=suggestions" if base else "/trade?tab=suggestions",
+                "label": "Open Trade Suggestions"}
+    elif intent == "handcuff":
+        nxt = pack.get("next_up") or {}
+        if nxt.get("location") == "waivers":
+            return {"href": "/waivers", "label": "View on Waivers"}
+        link = _player_modal_link(nxt) or _player_modal_link(pack.get("subject"))
+        if link:
+            return link
     pack_link = _pack_act_link(intent, pack)
     if pack_link:
         return pack_link
@@ -208,7 +224,24 @@ def _mentions(intent, pack):
     elif intent == "waivers":
         for p in pack.get("candidates") or []:
             _add(p)
+        for p in pack.get("stash_candidates") or []:
+            _add(p)
+        for p in pack.get("streamers") or []:
+            _add(p)
+        for p in pack.get("drop_ranking") or []:
+            _add(p)
         for p in pack.get("cleared_drops") or []:
+            _add(p)
+        _add(pack.get("asked_drop"))
+    elif intent == "replacement":
+        _add(pack.get("subject"))
+        for p in pack.get("candidates") or []:
+            _add(p)
+    elif intent == "handcuff":
+        _add(pack.get("subject"))
+        _add(pack.get("next_up"))
+        _add(pack.get("also_next"))
+        for p in pack.get("my_options") or []:
             _add(p)
     elif intent == "keeper":
         for p in pack.get("my_keepers") or []:
@@ -469,6 +502,50 @@ def _metric(pack):
 def _waivers(pack):
     candidates = pack.get("candidates") or []
     ans = _base("waivers", pack)
+    mode = pack.get("waiver_mode")
+    if mode == "drop" and pack.get("drop_ranking"):
+        top = pack["drop_ranking"][0]
+        receipts = [{"label": f"{top['name']} value", "value": fmt(top.get("value"))}]
+        if len(pack["drop_ranking"]) > 1:
+            nxt = pack["drop_ranking"][1]
+            receipts.append({"label": f"{nxt['name']} value", "value": fmt(nxt.get("value"))})
+        text = (f"{top['name']} is your most droppable player. His value is "
+                f"{fmt(top.get('value'))}, the lowest on your roster, and you hold "
+                f"{fmt(top.get('roster_depth_at_position'))} at {top.get('position')}.")
+        ans.update({"verdict": f"DROP {top['name']}", "text": text, "receipts": receipts[:4],
+                    "followups": [_fu("Who should I add from waivers?"),
+                                  _fu("What should I do with my team this week?")]})
+        return ans
+    if mode == "stash" and pack.get("stash_candidates"):
+        top = pack["stash_candidates"][0]
+        receipts = [{"label": f"{top['name']} value", "value": fmt(top.get("value"))}]
+        if top.get("age") is not None:
+            receipts.append({"label": f"{top['name']} age", "value": fmt(top.get("age"))})
+        if len(pack["stash_candidates"]) > 1:
+            nxt = pack["stash_candidates"][1]
+            receipts.append({"label": f"{nxt['name']} value", "value": fmt(nxt.get("value"))})
+        text = (f"Stash {top['name']}. His value is {fmt(top.get('value'))} at age "
+                f"{fmt(top.get('age'))}, the strongest stash profile on the wire.")
+        ans.update({"verdict": f"STASH {top['name']}", "text": text, "receipts": receipts[:4],
+                    "followups": [_fu("Who should I add from waivers?"),
+                                  _fu("What should I do with my team this week?")]})
+        return ans
+    if mode == "stream" and pack.get("streamers"):
+        top = pack["streamers"][0]
+        receipts = [{"label": f"{top['name']} projection", "value": fmt(top.get("projection"))}]
+        if top.get("value") is not None:
+            receipts.append({"label": f"{top['name']} value", "value": fmt(top.get("value"))})
+        if len(pack["streamers"]) > 1:
+            nxt = pack["streamers"][1]
+            receipts.append({"label": f"{nxt['name']} projection",
+                             "value": fmt(nxt.get("projection"))})
+        text = (f"Stream {top['name']} this week. He projects {fmt(top.get('projection'))} "
+                f"points {top.get('matchup') or ''}, the best available line at "
+                f"{top.get('position')}.").replace("  ", " ")
+        ans.update({"verdict": f"STREAM {top['name']}", "text": text, "receipts": receipts[:4],
+                    "followups": [_fu("Who should I start at FLEX?"),
+                                  _fu("What should I do with my team this week?")]})
+        return ans
     if not candidates:
         ans.update({"verdict": None,
                     "text": "The wire is thin this week: nobody available clears your positional gate.",
@@ -932,6 +1009,25 @@ def _names(players):
 def _trade_finding(pack):
     if pack.get("gated"):
         return gated_answer(pack)
+    equiv = (pack.get("pick_equivalents") or {}).get("equivalents") or []
+    if equiv:
+        sell = pack.get("sell_player") or {}
+        top = equiv[0]
+        receipts = [{"label": f"{sell.get('name')} value", "value": fmt(sell.get("value"))}]
+        for e in equiv[:2]:
+            receipts.append({"label": str(e.get("label") or "Pick"),
+                             "value": fmt(e.get("value"))})
+        text = (f"{sell.get('name')} is valued at {fmt(sell.get('value'))}. That buys "
+                f"about a {top.get('label')} at {fmt(top.get('value'))}")
+        if len(equiv) > 1:
+            text += f", or {equiv[1].get('label')} at {fmt(equiv[1].get('value'))}"
+        text += "."
+        ans = _base("trade_finding", pack)
+        ans.update({"verdict": str(top.get("label") or ""), "text": text,
+                    "receipts": receipts[:4],
+                    "followups": [_fu("Who else could I target?"),
+                                  _fu("What should I do with my team this week?")]})
+        return ans
     findings = pack.get("findings") or []
     ans = _base("trade_finding", pack)
     if findings:
@@ -1252,9 +1348,67 @@ def _cross_league(pack):
     return ans
 
 
+def _replacement(pack):
+    ans = _base("replacement", pack)
+    subject = pack.get("subject") or {}
+    cands = pack.get("candidates") or []
+    top = cands[0] if cands else {}
+    mode = pack.get("mode") or "younger"
+    receipts = []
+    if subject.get("value") is not None:
+        receipts.append({"label": f"{subject.get('name')} value",
+                         "value": fmt(subject.get("value"))})
+    if subject.get("age") is not None:
+        receipts.append({"label": f"{subject.get('name')} age",
+                         "value": fmt(subject.get("age"))})
+    if top.get("value") is not None:
+        receipts.append({"label": f"{top.get('name')} value",
+                         "value": fmt(top.get("value"))})
+    if top.get("age") is not None and len(receipts) < 4:
+        receipts.append({"label": f"{top.get('name')} age",
+                         "value": fmt(top.get("age"))})
+    text = (f"{top.get('name')} is the closest {mode} replacement for "
+            f"{subject.get('name')}. {subject.get('name')} is valued at "
+            f"{fmt(subject.get('value'))} at age {fmt(subject.get('age'))}; "
+            f"{top.get('name')} is valued at {fmt(top.get('value'))} at age "
+            f"{fmt(top.get('age'))} and sits on {top.get('location')}.")
+    ans.update({"verdict": top.get("name"), "text": text, "receipts": receipts[:4],
+                "followups": [_fu("What could I get for him in a trade?"),
+                              _fu("Who is his handcuff?")]})
+    return ans
+
+
+def _handcuff(pack):
+    ans = _base("handcuff", pack)
+    subject = pack.get("subject") or {}
+    nxt = pack.get("next_up") or {}
+    receipts = []
+    if nxt.get("value") is not None:
+        receipts.append({"label": f"{nxt.get('name')} value",
+                         "value": fmt(nxt.get("value"))})
+    if subject.get("value") is not None:
+        receipts.append({"label": f"{subject.get('name')} value",
+                         "value": fmt(subject.get("value"))})
+    mine = pack.get("my_options") or []
+    if mine and mine[0].get("value") is not None and len(receipts) < 4:
+        receipts.append({"label": f"{mine[0].get('name')} value",
+                         "value": fmt(mine[0].get("value"))})
+    text = (f"{nxt.get('name')} is next up behind {subject.get('name')} for "
+            f"{subject.get('team')}. He is valued at {fmt(nxt.get('value'))} and "
+            f"sits on {nxt.get('location')}.")
+    if mine:
+        text += (f" On your roster, {mine[0].get('name')} is your best in-house "
+                 f"option at {fmt(mine[0].get('value'))}.")
+    ans.update({"verdict": nxt.get("name"), "text": text, "receipts": receipts[:4],
+                "followups": [_fu("Who should I start if he is out?"),
+                              _fu("Who is available on waivers?")]})
+    return ans
+
+
 _BUILDERS = {"start_sit": _start_sit, "trade_eval": _trade_eval,
              "buy_sell_hold": _buy_sell_hold, "player": _player, "metric": _metric,
              "leaderboard": _leaderboard, "trade_finding": _trade_finding,
+             "replacement": _replacement, "handcuff": _handcuff,
              "breakout_board": _breakout_board,
              "breakout_track_record": _breakout_track_record,
              "breakout_history": _breakout_history,

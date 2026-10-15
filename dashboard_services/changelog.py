@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-10-15",
+        "tag": "new",
+        "text": "BR Assistant answers more of your questions: ask for a younger, older, or cheaper replacement for any player, who a player's handcuff is, who to stash, who to drop, who to stream, what a player is worth in draft picks, and who you should shop from your roster.",
+        "link": "/"
+    },
+    {
+        "date": "2026-10-15",
         "tag": "fix",
         "text": "Fixed: shared page caches could show another manager's name tag. The Teams page now marks your team in your browser only, career graphs highlight your own team, and power rankings and assistant answers are cached per league.",
         "link": "/teams"

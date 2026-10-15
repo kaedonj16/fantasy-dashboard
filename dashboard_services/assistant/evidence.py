@@ -1583,6 +1583,109 @@ def _target_findings(ctx, bundle, target_entry, owner_roster, values, index):
     return findings, miss, tools, viewer_info.get("needs") or [], viewer_info.get("surplus") or []
 
 
+_ROUND_LABELS = {1: "1st", 2: "2nd", 3: "3rd", 4: "4th"}
+
+
+def _pick_equivalents(bundle, ctx, sell_value, num_teams):
+    """What a player's value buys in next year's picks, priced by the
+    site's own pick value table (dashboard_services.picks, the table the
+    trade calculator prices picks from).
+
+    Returns single picks and two-pick pairs whose table value lands
+    inside the analyzer's fair band around the player's value, closest
+    first, or None when the table cannot price the year.
+    """
+    if not sell_value:
+        return None
+    try:
+        from utils.lineup_slots import is_superflex_lineup
+        from utils.trade_value import fair_value_band
+        table = pick_value_table(
+            league_teams=num_teams or 10,
+            is_sf=is_superflex_lineup(ctx.get("roster_positions") or []))
+    except Exception:
+        return None
+    if not table:
+        return None
+    season = bundle.get("season")
+    if not season:
+        return None
+    year = int(season) + 1
+    band = fair_value_band(float(sell_value))
+    singles = []
+    for rnd in (1, 2, 3, 4):
+        for bucket in ("early", "mid", "late"):
+            v = table.get(f"{year}_{rnd}_{bucket}")
+            if v:
+                singles.append({"label": f"{year} {bucket} {_ROUND_LABELS[rnd]}",
+                                "value": round(float(v), 1), "kind": "single",
+                                "round": rnd})
+    if not singles:
+        try:
+            from utils.draft import pick_value_from_table
+            for rnd in (1, 2, 3, 4):
+                v = pick_value_from_table(table, year, rnd, num_teams=num_teams)
+                if v:
+                    singles.append({"label": f"{year} {_ROUND_LABELS[rnd]}",
+                                    "value": round(float(v), 1), "kind": "single",
+                                    "round": rnd})
+        except Exception:
+            singles = []
+    if not singles:
+        return None
+    singles.sort(key=lambda s: abs(s["value"] - sell_value))
+    in_band = [s for s in singles if abs(s["value"] - sell_value) <= band]
+    pairs = []
+    for i, s1 in enumerate(singles):
+        for s2 in singles[i + 1:]:
+            if s2["round"] <= s1["round"]:
+                continue
+            total = round(s1["value"] + s2["value"], 1)
+            if abs(total - sell_value) <= band:
+                pairs.append({"label": f"{s1['label']} + {s2['label']}",
+                              "value": total, "kind": "pair"})
+    pairs.sort(key=lambda p: abs(p["value"] - sell_value))
+    equivalents = (in_band[:3] + pairs[:2])[:4]
+    return {"year": year, "equivalents": equivalents,
+            "nearest_single": singles[0]}
+
+
+def _shop_findings(ctx, bundle, values, index):
+    """Shop-the-pool: my most valuable player at a surplus position (the
+    league fit's own surplus read), with real sell findings for him.
+
+    Returns None when I hold no surplus-position player worth shopping,
+    so the caller falls back to need mode instead of inventing a shop
+    candidate.
+    """
+    rosters = ctx.get("rosters") or []
+    roster = bundle.get("roster") or {}
+    try:
+        fit = _league_fit(ctx, rosters, values, index)
+    except Exception:
+        return None
+    by_roster = (fit or {}).get("by_roster") or {}
+    viewer = by_roster.get(str(roster.get("roster_id"))) or {}
+    surplus = viewer.get("surplus") or []
+    if not surplus:
+        return None
+    mine = []
+    for pid in roster.get("players") or []:
+        entry = _finding_player({**(values.get(str(pid)) or {}),
+                                 "player_id": str(pid)}, index)
+        if entry.get("value") and entry.get("position") in surplus:
+            mine.append(entry)
+    if not mine:
+        return None
+    mine.sort(key=lambda e: -e["value"])
+    sell_entry = mine[0]
+    findings, miss, tools, needs, surplus_out = _sell_findings(
+        ctx, bundle, sell_entry, values, index)
+    return {"findings": findings, "miss": miss, "tools": tools,
+            "needs": needs, "surplus": surplus_out,
+            "sell_player": sell_entry, "shop_candidates": mine[:3]}
+
+
 def build_trade_finding(bundle, entities, player_ids) -> tuple[dict, list[str]]:
     """Trade FINDING pack: ranked packages computed by the site's suggestion
     machinery, behind the same PRO gate as the site's Suggestions surface.
@@ -1643,7 +1746,20 @@ def build_trade_finding(bundle, entities, player_ids) -> tuple[dict, list[str]]:
                 if pid in {str(p) for p in (r.get("players") or [])}:
                     owner_roster = r
                     break
-    if named_entry and named[0] in my_ids:
+    shop_done = False
+    if (entities or {}).get("shop_pool") and not named:
+        shop = _shop_findings(ctx, bundle, values, index)
+        if shop is not None:
+            findings, miss, used, needs, surplus = (
+                shop["findings"], shop["miss"], shop["tools"],
+                shop["needs"], shop["surplus"])
+            pack["mode"] = "shop"
+            pack["sell_player"] = shop["sell_player"]
+            pack["shop_candidates"] = shop["shop_candidates"]
+            shop_done = True
+    if shop_done:
+        pass
+    elif named_entry and named[0] in my_ids:
         pack["mode"] = "sell"
         pack["sell_player"] = named_entry
         findings, miss, used, needs, surplus = _sell_findings(
@@ -1663,6 +1779,16 @@ def build_trade_finding(bundle, entities, player_ids) -> tuple[dict, list[str]]:
         findings, miss, used, needs, surplus = _need_findings(
             ctx, bundle, target_position, index)
     tools += used
+    # Worth in picks: price the sell player's value against next year's
+    # pick table and carry the equivalents the answer may cite.
+    if (entities or {}).get("value_in_picks") and pack["mode"] == "sell" \
+            and pack.get("sell_player"):
+        equiv = _pick_equivalents(bundle, ctx,
+                                  float(pack["sell_player"].get("value") or 0),
+                                  len(rosters))
+        if equiv:
+            pack["pick_equivalents"] = equiv
+            tools.append("dashboard_services.picks.load_pick_value_table")
     pack["viewer_needs"] = needs
     pack["viewer_surplus"] = surplus
     pack["findings"] = findings[:3]
@@ -1735,6 +1861,226 @@ def build_buy_sell_hold(bundle, entities, player_ids) -> tuple[dict, list[str]]:
     if delta is not None:
         pack["signal"] = "buy" if delta >= 5 else ("sell" if delta <= -5 else "hold")
         pack["margin"] = {"thin": bool(abs(delta) < 8)}
+    return pack, tools
+
+
+# -- replacement / succession ---------------------------------------------------
+
+def _player_age(pid, index=None):
+    """Age from the players index entry (the same field the waiver FAAB
+    path reads), as a float, or None when the index carries none."""
+    index = index if index is not None else _index()
+    entry = {}
+    if isinstance(index, dict):
+        entry = index.get(str(pid)) or index.get(pid) or {}
+    if not isinstance(entry, dict):
+        return None
+    try:
+        age = float(entry.get("age"))
+    except (TypeError, ValueError):
+        return None
+    return age if age > 0 else None
+
+
+def _owner_by_pid(ctx):
+    """pid -> owning team's display name, from the league ctx rosters."""
+    out = {}
+    users = {str(u.get("user_id")): u for u in (ctx.get("users") or [])
+             if isinstance(u, dict)}
+    for r in ctx.get("rosters") or []:
+        if not isinstance(r, dict):
+            continue
+        team = _team_name(ctx, r, users)
+        for pid in r.get("players") or []:
+            out[str(pid)] = team
+    return out
+
+
+def _located(entry, pid, owners, my_ids):
+    """A player entry plus where he lives: my roster, another named
+    roster, or the waiver wire."""
+    out = dict(entry)
+    if str(pid) in my_ids:
+        out["location"] = "your roster"
+        out["on_my_roster"] = True
+    elif str(pid) in owners:
+        out["location"] = owners[str(pid)]
+        out["owner_team"] = owners[str(pid)]
+        out["on_my_roster"] = False
+    else:
+        out["location"] = "waivers"
+        out["on_my_roster"] = False
+    return out
+
+
+def build_replacement(bundle, entities, player_ids) -> tuple[dict, list[str]]:
+    """Succession pack: same-position players in a comparable value band
+    with a real age gap in the asked direction (or, for cheaper, a real
+    value gap), each tagged with where he is rostered.
+
+    Ages and values are the site's own (players index age, model value
+    table); the band is the comparability rule, not a new metric: a
+    replacement must be within 0.35x to 1.5x of the subject's value and
+    at least 2 years younger/older, or at most 0.65x of his value when
+    the ask is cheaper.
+    """
+    pack = _base_pack("replacement", bundle)
+    tools: list[str] = []
+    pid = player_ids[0] if player_ids else None
+    if not pid:
+        pack["available"] = False
+        pack["missing"] = "no resolved player"
+        return pack, tools
+    mode = str((entities or {}).get("replace_mode") or "younger").lower()
+    if mode not in ("younger", "older", "cheaper"):
+        mode = "younger"
+    pack["mode"] = mode
+    index = _index()
+    values = _value_rows()
+    if values:
+        tools.append("model_value_table")
+    info = _player_info(pid, index)
+    subject_value = _row_value(values.get(str(pid)))
+    subject_age = _player_age(pid, index)
+    subject = {**info, "value": subject_value, "age": subject_age}
+    pack["subject"] = subject
+    if subject_value is None:
+        pack["available"] = False
+        pack["missing"] = f"no model value for {info.get('name') or 'that player'}"
+        return pack, tools
+    if mode in ("younger", "older") and subject_age is None:
+        pack["available"] = False
+        pack["missing"] = f"no age on file for {info.get('name') or 'that player'}"
+        return pack, tools
+    ctx = bundle.get("ctx") or {}
+    owners = _owner_by_pid(ctx)
+    my_ids = {str(p) for p in ((bundle.get("roster") or {}).get("players") or [])}
+    if not my_ids:
+        my_ids = {str(p) for p in (bundle.get("roster_player_ids") or set())}
+    position = info.get("position")
+    pool = []
+    for pid2, row in values.items():
+        if str(pid2) == str(pid):
+            continue
+        info2 = _player_info(pid2, index)
+        if position and info2.get("position") != position:
+            continue
+        v2 = _row_value(row)
+        if v2 is None or v2 <= 0:
+            continue
+        age2 = _player_age(pid2, index)
+        entry = {**info2, "value": v2, "age": age2}
+        if age2 is not None and subject_age is not None:
+            entry["age_delta"] = round(abs(subject_age - age2), 1)
+        pool.append(entry)
+    if mode == "younger":
+        cands = [e for e in pool if e["age"] is not None
+                 and e["age"] <= subject_age - 2.0
+                 and 0.35 * subject_value <= e["value"] <= 1.5 * subject_value]
+        cands.sort(key=lambda e: (abs(e["value"] - subject_value), e["age"]))
+    elif mode == "older":
+        cands = [e for e in pool if e["age"] is not None
+                 and e["age"] >= subject_age + 2.0
+                 and 0.35 * subject_value <= e["value"] <= 1.5 * subject_value]
+        cands.sort(key=lambda e: (abs(e["value"] - subject_value), -e["age"]))
+    else:  # cheaper: a real value gap down, production band implied by value
+        cands = [e for e in pool
+                 if 0.15 * subject_value <= e["value"] <= 0.65 * subject_value]
+        cands.sort(key=lambda e: -e["value"])
+    pack["candidates"] = [_located(e, e["player_id"], owners, my_ids)
+                          for e in cands[:4]]
+    if not pack["candidates"]:
+        pack["available"] = False
+        pack["missing"] = (f"no {mode} replacement for {info.get('name')} in a "
+                           "comparable value band")
+    return pack, tools
+
+
+# -- handcuff / next up ---------------------------------------------------------
+
+def build_handcuff(bundle, entities, player_ids) -> tuple[dict, list[str]]:
+    """Next-up pack: who sits behind a named player on his own NFL team's
+    depth chart, and what the viewer already holds at that position.
+
+    Depth order is the Sleeper depth chart carried in the players index
+    (utils.waivers.build_depth_index, the waiver engine's own grouping).
+    When the index carries no depth order for the room, the room is
+    ordered by model value and the pack says so (depth_basis), so the
+    answer never claims a chart it did not read.
+    """
+    pack = _base_pack("handcuff", bundle)
+    tools: list[str] = []
+    pid = player_ids[0] if player_ids else None
+    if not pid:
+        pack["available"] = False
+        pack["missing"] = "no resolved player"
+        return pack, tools
+    index = _index()
+    values = _value_rows()
+    if values:
+        tools.append("model_value_table")
+    info = _player_info(pid, index)
+    subject = {**info, "value": _row_value(values.get(str(pid))),
+               "age": _player_age(pid, index)}
+    pack["subject"] = subject
+    team = str(info.get("team") or "").upper()
+    position = str(info.get("position") or "").upper()
+    ctx = bundle.get("ctx") or {}
+    owners = _owner_by_pid(ctx)
+    my_ids = {str(p) for p in ((bundle.get("roster") or {}).get("players") or [])}
+    if not my_ids:
+        my_ids = {str(p) for p in (bundle.get("roster_player_ids") or set())}
+
+    room: list[dict] = []
+    basis = "value"
+    if team and position:
+        try:
+            from utils.waivers import build_depth_index
+            group = (build_depth_index(index) or {}).get((team, position)) or []
+            tools.append("waivers.build_depth_index")
+        except Exception:
+            group = []
+        ordered = [g for g in group if g.get("depth_order") is not None]
+        if group and ordered:
+            basis = "depth_chart"
+            group = sorted(group, key=lambda g: (g.get("depth_order") is None,
+                                                 g.get("depth_order") or 99))
+            room = [str(g.get("pid")) for g in group]
+    if basis != "depth_chart":
+        # Value-ordered room: everyone on the same NFL team at the position
+        # with a model value, best first; the subject's place in it is his
+        # value rank, so "next" is the next value down.
+        room = [str(p2) for p2, row in values.items()
+                if str(_player_info(p2, index).get("team") or "").upper() == team
+                and str(_player_info(p2, index).get("position") or "").upper() == position
+                and _row_value(row) is not None]
+        room.sort(key=lambda p2: -(_row_value(values.get(p2)) or 0))
+    pack["depth_basis"] = basis
+    next_ups = []
+    if str(pid) in room:
+        behind = room[room.index(str(pid)) + 1:]
+        for p2 in behind[:2]:
+            e = {**_player_info(p2, index),
+                 "value": _row_value(values.get(p2)),
+                 "age": _player_age(p2, index)}
+            next_ups.append(_located(e, p2, owners, my_ids))
+    pack["next_up"] = next_ups[0] if next_ups else None
+    pack["also_next"] = next_ups[1] if len(next_ups) > 1 else None
+    my_options = []
+    for p2 in my_ids:
+        if str(p2) == str(pid):
+            continue
+        info2 = _player_info(p2, index)
+        if position and str(info2.get("position") or "").upper() != position:
+            continue
+        my_options.append({**info2, "value": _row_value(values.get(p2)),
+                           "age": _player_age(p2, index)})
+    my_options.sort(key=lambda e: -(e["value"] or 0))
+    pack["my_options"] = my_options[:3]
+    if not next_ups and not my_options:
+        pack["available"] = False
+        pack["missing"] = (f"no one behind {info.get('name') or 'that player'} "
+                           f"on the {team} depth chart")
     return pack, tools
 
 
@@ -2997,13 +3343,141 @@ def build_waivers(bundle, entities, player_ids=None) -> tuple[dict, list[str]]:
             passes = v > bar["value"] * 1.05
             receipt = f"candidate value {v} vs your worst {pos} {bar['name']} value {bar['value']}"
         candidates.append({**info, "value": v, "passes_gate": passes, "gate_receipt": receipt})
+    # Ask shape: a position filter ("best available RB") narrows the gate
+    # list to that position, and the mode decides which extra ranking the
+    # pack carries (stash score, drop ranking, this-week streamers).
+    ent = entities or {}
+    pack["waiver_mode"] = (str(ent.get("waiver_mode") or "").lower()
+                           if str(ent.get("waiver_mode") or "").lower()
+                           in ("stash", "drop", "stream") else None)
+    pos_filter = None
+    for key in ("position", "position_hint", "target_position"):
+        raw = str(ent.get(key) or "").upper()
+        if raw in ("QB", "RB", "WR", "TE"):
+            pos_filter = raw
+            break
+    pack["position_filter"] = pos_filter
+    if pos_filter:
+        candidates = [c for c in candidates if c.get("position") == pos_filter]
     candidates.sort(key=lambda c: c["value"], reverse=True)
     pack["candidates"] = [c for c in candidates if c["passes_gate"]][:8] or candidates[:0]
     pack["gate_passing_count"] = len([c for c in candidates if c["passes_gate"]])
-    pack["cleared_drops"] = [
-        {**_player_info(pid, index), "value": _row_value(values.get(pid))}
-        for pid in roster_ids if pid not in protected
-    ][:8]
+    # Drops ranked weakest first: the drop question is answered off this
+    # order, and the do-not-drop list is the only protection. (This list
+    # was previously an unordered slice of the roster set, so "most
+    # droppable" had no grounded answer.)
+    cleared = []
+    for pid in roster_ids:
+        if pid in protected:
+            continue
+        v = _row_value(values.get(pid))
+        if v is None:
+            continue
+        cleared.append({**_player_info(pid, index), "value": v})
+    cleared.sort(key=lambda c: c["value"])
+    pack["cleared_drops"] = cleared[:8]
+    depth_at_pos: dict[str, int] = {}
+    for pid in roster_ids:
+        p = _player_info(pid, index).get("position")
+        if p:
+            depth_at_pos[p] = depth_at_pos.get(p, 0) + 1
+    pack["drop_ranking"] = [
+        {**c, "roster_depth_at_position": depth_at_pos.get(c.get("position"), 0)}
+        for c in cleared[:5]
+    ]
+    # A named drop candidate ("can I drop X"): where he sits in the
+    # ranking and whether he is protected, instead of a generic list.
+    named = [str(p) for p in (player_ids or []) if p]
+    if named:
+        target = named[0]
+        tinfo = _player_info(target, index)
+        asked = {**tinfo, "value": _row_value(values.get(target)),
+                 "on_my_roster": target in roster_ids,
+                 "protected": target in protected, "drop_rank": None}
+        for i, c in enumerate(cleared):
+            if c["player_id"] == target:
+                asked["drop_rank"] = i + 1
+                break
+        pack["asked_drop"] = asked
+    # Stash ranking: the waiver engine's own pickup score under its stash
+    # horizon weights (utils.waivers), over the free-agent pool. Stashes
+    # do not need to clear the add gate; that is the point of a stash.
+    if pack["waiver_mode"] == "stash":
+        try:
+            from utils.waivers import horizon_weights, waiver_pickup_score
+            weights = horizon_weights("stash", dynasty=not _league_is_redraft(ctx))
+        except Exception:
+            weights = None
+        stash_pool = []
+        for pid, row in values.items():
+            if pid in owned:
+                continue
+            v = _row_value(row)
+            if v is None or v <= 0:
+                continue
+            info = _player_info(pid, index)
+            if info.get("position") not in ("QB", "RB", "WR", "TE"):
+                continue
+            if pos_filter and info.get("position") != pos_filter:
+                continue
+            age = _player_age(pid, index)
+            score = v
+            if weights is not None:
+                try:
+                    score = float(waiver_pickup_score(
+                        {"value": v, "age": age, "position": info.get("position"),
+                         "player_id": pid}, {}, w=weights))
+                except Exception:
+                    score = v
+            stash_pool.append({**info, "value": v, "age": age,
+                               "stash_score": round(score, 2)})
+        stash_pool.sort(key=lambda c: -c["stash_score"])
+        pack["stash_candidates"] = stash_pool[:5]
+        if stash_pool:
+            tools.append("waivers.waiver_pickup_score")
+    # Streamers: free agents at the asked position ranked by THIS week's
+    # projection (the start/sit evidence source), not by season value.
+    if pack["waiver_mode"] == "stream":
+        season, week = bundle.get("season"), bundle.get("week")
+        streamers = []
+        if season and week:
+            try:
+                week_map = load_week_projection(int(season), int(week))
+            except Exception:
+                week_map = None
+            if week_map:
+                tools.append("utils.load_week_projection")
+                scoring = _scoring(bundle)
+                games = _schedule_games(season, week)
+                try:
+                    from utils.fantasy_scoring import weekly_projection_points
+                except Exception:
+                    weekly_projection_points = None
+                for pid, row in values.items():
+                    if weekly_projection_points is None:
+                        break
+                    if pid in owned:
+                        continue
+                    info = _player_info(pid, index)
+                    pos = info.get("position")
+                    if pos not in ("QB", "RB", "WR", "TE"):
+                        continue
+                    if pos_filter and pos != pos_filter:
+                        continue
+                    try:
+                        pts = weekly_projection_points(week_map, str(pid), scoring, pos)
+                    except Exception:
+                        pts = None
+                    if pts is None or float(pts) <= 0:
+                        continue
+                    opp, label, on_bye = _opponent_for(info.get("team"), games)
+                    if on_bye:
+                        continue
+                    streamers.append({**info, "value": _row_value(row),
+                                      "projection": round(float(pts), 1),
+                                      "opponent": opp, "matchup": label})
+                streamers.sort(key=lambda c: -c["projection"])
+        pack["streamers"] = streamers[:4]
     if not pack["candidates"]:
         pack["wire_thin"] = True
     # Trending adds (Sleeper's league-wide most-added feed, the same source
@@ -4509,4 +4983,6 @@ BUILDERS = {
     "keeper": build_keeper,
     "rookie": build_rookie,
     "cross_league": build_cross_league,
+    "replacement": build_replacement,
+    "handcuff": build_handcuff,
 }

@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 INTENTS = ["start_sit", "trade_eval", "trade_finding", "buy_sell_hold", "player", "metric", "leaderboard", "waivers", "this_week",
            "playoffs", "power_rankings", "standings", "matchup", "schedule",
            "breakout_board", "breakout_track_record", "breakout_history", "teams", "pick_ownership",
-           "keeper", "rookie", "cross_league",
+           "keeper", "rookie", "cross_league", "replacement", "handcuff",
            "remember", "out_of_scope"]
 
 SCHEMA = {
@@ -44,8 +44,12 @@ SCHEMA = {
         "team": {"type": ["string", "null"]},
         "window_weeks": {"type": ["integer", "null"]},
         "direction": {"type": ["string", "null"], "enum": ["risers", "fallers", None]},
+        "replace_mode": {"type": ["string", "null"], "enum": ["younger", "older", "cheaper", None]},
+        "waiver_mode": {"type": ["string", "null"], "enum": ["stash", "drop", "stream", None]},
+        "value_in_picks": {"type": ["boolean", "null"]},
+        "shop_pool": {"type": ["boolean", "null"]},
     },
-    "required": ["intent", "player_names", "give_player_names", "receive_player_names", "picks", "give_picks", "receive_picks", "other_team_hint", "team_names", "metric_hint", "target_position", "position_hint", "teams_mode", "week", "draft_year", "preference_text", "board_kind", "second_metric_hint", "top_n", "position", "team", "window_weeks", "direction"],
+    "required": ["intent", "player_names", "give_player_names", "receive_player_names", "picks", "give_picks", "receive_picks", "other_team_hint", "team_names", "metric_hint", "target_position", "position_hint", "teams_mode", "week", "draft_year", "preference_text", "board_kind", "second_metric_hint", "top_n", "position", "team", "window_weeks", "direction", "replace_mode", "waiver_mode", "value_in_picks", "shop_pool"],
     "additionalProperties": False,
 }
 
@@ -58,6 +62,9 @@ SYSTEM = (
     "target, what can I get for X, I need a running back, who is gettable). For trade_finding, put a "
     "named player (theirs to move, or a specific target on another team) in player_names and a wanted "
     "position in target_position (QB, RB, WR, TE), else null. "
+    "If the user asks what a named player is worth in picks, or what picks they could get for him, "
+    "it is trade_finding with value_in_picks true and the player in player_names. If the user asks "
+    "who they should trade away or shop with no player named, it is trade_finding with shop_pool true. "
     "Draft picks go in give_picks or receive_picks by side when the side is clear, else in picks. "
     "buy_sell_hold: buy/sell/hold on a NAMED player (is X a buy low, should I buy X, "
     "sell or hold X). A buy or sell question that names no player is a leaderboard "
@@ -76,7 +83,11 @@ SYSTEM = (
     "position is the offensive position). For leaderboard also extract top_n when a "
     "count is stated, position (QB/RB/WR/TE) and team (NFL abbreviation) filters when "
     "stated, and window_weeks when a last-N-weeks window is stated. "
-    "waivers: adds, drops, or FAAB. this_week: a plan or actions question, what to do with my "
+    "waivers: adds, drops, FAAB, stashes, or streaming a position for this week. waiver_mode is "
+    "stash for stash questions (who should I stash, best stash), drop for who-to-drop questions "
+    "(who should I drop, my most droppable player, who do I cut), stream for streaming questions "
+    "(who should I stream at TE), else null; position is the position filter when one is stated. "
+    "this_week: a plan or actions question, what to do with my "
     "team this week; NOT whether the user will win this week's game (that is matchup, even "
     "when the question says 'this week'). "
     "playoffs: playoff odds, clinching, elimination, or what a team needs to make the playoffs. "
@@ -106,8 +117,14 @@ SYSTEM = (
     "draft_year is the class year when stated and position the position filter when stated. "
     "A named player who is already in the NFL, asked about as a player, is player, "
     "buy_sell_hold, or start_sit as usual; rookie needs the prospect or draft-class framing. "
+    "replacement: a succession or comparable-player question about ONE named player (a younger "
+    "replacement for X, who can replace X long term, an older win-now version of X, a cheaper "
+    "version of X). The named player goes in player_names; replace_mode is younger, older, or "
+    "cheaper. It is not a trade offer and not a general player question. "
+    "handcuff: who is next up behind one named player (his handcuff, who benefits if he gets "
+    "hurt, who is next up behind him, who replaces him if he is out). The named player goes in "
+    "player_names. "
     "cross_league: questions that explicitly span the user's leagues (across my leagues, "
-    "all my leagues, which of my teams). A question about one league stays with its "
     "normal intent even if the user has other leagues. "
     "remember: the user asks you to remember a preference (preference_text is the preference). "
     "out_of_scope: anything else (trivia, real-game talk, other leagues). "
@@ -212,6 +229,7 @@ _FINDING_RE = re.compile(
     r"\bfind (me |us )?(a |the )?trade\b|\bfind me\b"
     r"|\bwhat (can|could|would) i get for\b"
     r"|\bwho (should|can|could) i target\b|\bwho to target\b"
+    r"|\bwho (should|can|could) i trade for\b"
     r"|\btrade targets?\b|\bgettable\b"
     r"|\btrade for (a |an |the )?(qb|rb|wr|te|quarterback|running ?back|wide ?receiver|wideout|tight ?end)\b"
     r"|\bi need (a |an |the )?(qb|rb|wr|te|quarterback|running ?back|wide ?receiver|wideout|tight ?end)\b")
@@ -265,11 +283,13 @@ _DEADLINE_RE = re.compile(
 # capitalized tokens in a row, or one capitalized token in the name slot
 # after did/is/was/about ("did Chase score"). Calendar words and
 # sentence-initial filler never count.
-_NAME_TOKEN = r"[A-Z][a-z]+(?:'[A-Za-z]+)?"
+# Internal capitals ride along (McCaffrey, McBride, DeVonta): a bare
+# [A-Z][a-z]+ token stops at the second capital and loses the name.
+_NAME_TOKEN = r"[A-Z][a-z]+(?:[A-Z][a-z]+)?(?:'[A-Za-z]+)?"
 _PAIR_STARTERS = {"How", "What", "Who", "Whom", "Is", "Are", "Was", "Were",
                   "Did", "Does", "Do", "Tell", "Show", "Give", "The", "This",
                   "That", "When", "Why", "Can", "Could", "Should", "Would",
-                  "Has", "Have", "Will", "Am"}
+                  "Has", "Have", "Will", "Am", "If", "My"}
 # A name pair may not START with a question word: in "Is Josh Allen
 # healthy?" the pair is "Josh Allen", not "Is Josh Allen".
 _PROPER_NAME_RE = re.compile(
@@ -288,7 +308,7 @@ def _player_name_in(message: str) -> str | None:
     capitalization is the signal, so the lowered copy cannot be used."""
     text = message or ""
     pair = _PROPER_NAME_RE.search(text)
-    if pair:
+    if pair and pair.group(0).split()[0] not in _NAME_STOPWORDS:
         return pair.group(0).removesuffix("'s")
     single = _SINGLE_NAME_RE.search(text)
     if single and single.group(1) not in _NAME_STOPWORDS:
@@ -303,6 +323,8 @@ def _keyword_route(message: str) -> dict:
             "other_team_hint": None, "team_names": [], "metric_hint": None, "target_position": None,
             "position_hint": None, "teams_mode": None, "week": None,
             "draft_year": None, "position": None,
+            "replace_mode": None, "waiver_mode": None,
+            "value_in_picks": None, "shop_pool": None,
             "preference_text": None, **_BOARD_ENTITY_DEFAULTS}
     if re.search(r"\bremember\b|\bdon'?t forget\b|\bkeep in mind\b", m):
         return {**base, "intent": "remember", "preference_text": message.strip()}
@@ -341,11 +363,48 @@ def _keyword_route(message: str) -> dict:
         if re.search(r"\bwas\b|\bdid\b|has .* been|call for|call on", m):
             return {**base, "intent": "breakout_history"}
         return {**base, "intent": "breakout_board"}
-    if re.search(r"\bwaiver|add\b|drop\b|faab|pick up\b", m):
-        return {**base, "intent": "waivers"}
+    # Waiver family: adds, drops, stashes, streamers, and the free-agent
+    # pool itself. The mode rides along so the pack can rank for the ask
+    # (a stash is not an add, a drop question wants the drop ranking, a
+    # streamer is ranked by this week's projection, not season value).
+    wmode = None
+    if re.search(r"\bstash", m):
+        wmode = "stash"
+    elif re.search(r"\bstream", m):
+        wmode = "stream"
+    elif re.search(r"\bmost droppable\b|\bdroppable\b", m):
+        wmode = "drop"
+    if (re.search(r"\bwaiver|\badd\b|\bdrop\b|\bfaab\b|\bpick up\b|\bfree agents?\b", m)
+            or wmode is not None):
+        if wmode is None and re.search(r"\bdrop\b|\bcut\b", m):
+            wmode = "drop"
+        return {**base, "intent": "waivers", "waiver_mode": wmode,
+                "position": _target_position(m)}
     board = _keyword_board(message, m)
     if board is not None:
         return {**base, **board}
+    # Player-anchored succession questions (checked before start/sit and
+    # the trade anchors: "if X is out, who do I start" carries a start
+    # anchor but asks who is next up, and "a cheaper version of X" is not
+    # a deal). The name must be present; without one these fall through.
+    subj_name = _player_name_in(message)
+    if subj_name:
+        if (re.search(r"\bhandcuff\b|\bnext (up|man up)\b|\bbenefits if\b"
+                      r"|\bdepth chart\b|\bwho (steps up|takes over|replaces)\b", m)
+                or re.search(r"\bif\b.+\b(gets? hurt|is hurt|gets? injured|"
+                             r"is injured|is out|misses time)\b", m)):
+            return {**base, "intent": "handcuff", "player_names": [subj_name]}
+        rmode = None
+        if re.search(r"\bcheaper\b|\bcheapest\b|\bbudget version\b", m):
+            rmode = "cheaper"
+        elif re.search(r"\bolder\b|\bwin[- ]now\b|\bveteran version\b", m):
+            rmode = "older"
+        elif re.search(r"\byounger\b|\blong[- ]term\b|\breplacement\b|"
+                       r"\bversion of\b", m):
+            rmode = "younger"
+        if rmode is not None:
+            return {**base, "intent": "replacement",
+                    "player_names": [subj_name], "replace_mode": rmode}
     if re.search(r"\bstart\b|\bsit\b|\bflex\b|\bbench\b|who (should|do) i play", m):
         return {**base, "intent": "start_sit"}
     if _FINDING_RE.search(m):
@@ -356,6 +415,20 @@ def _keyword_route(message: str) -> dict:
         # after the finding rule so "target before the trade deadline"
         # still finds a trade.
         return {**base, "intent": "out_of_scope"}
+    # Worth-in-picks: a named player plus a pick-value phrasing is a
+    # finding question (what his value buys in picks), not an evaluation
+    # of a deal and not a metric. Placed before the trade anchor so
+    # "what picks could I get for X" is not read as trade_eval, and the
+    # metric tail below never sees "what is X worth in picks".
+    pick_name = _player_name_in(message)
+    if (pick_name and re.search(r"\bpicks?\b", m)
+            and re.search(r"\bworth\b|\bget for\b|\bcould i get\b|\bcan i get\b", m)):
+        return {**base, "intent": "trade_finding",
+                "player_names": [pick_name], "value_in_picks": True}
+    # Shop-the-pool: who of mine should move, with nobody named.
+    if re.search(r"\bwho (should|can|could) i (trade away|shop|move|sell)\b"
+                 r"|\btrade away\b", m):
+        return {**base, "intent": "trade_finding", "shop_pool": True}
     if re.search(r"\btrad(?:e|es|ed|ing)\b|\bswap\b"
                  r"|\bshould i accept\b|\baccept (this|the) (trade|deal|offer)\b", m):
         return {**base, "intent": "trade_eval"}
@@ -432,6 +505,10 @@ def classify(question: str, context: dict | None = None, history: list | None = 
             "team": data.get("team"),
             "window_weeks": data.get("window_weeks"),
             "direction": data.get("direction"),
+            "replace_mode": data.get("replace_mode"),
+            "waiver_mode": data.get("waiver_mode"),
+            "value_in_picks": data.get("value_in_picks"),
+            "shop_pool": data.get("shop_pool"),
         }
         return {"intent": intent, "entities": entities, "preference_text": data.get("preference_text"), "router_model": "model", "prompt_version": ROUTER_PROMPT_VERSION}
     except Exception as exc:  # model down (rate limit / unavailable): keyword fallback
