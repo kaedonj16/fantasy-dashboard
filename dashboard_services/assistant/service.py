@@ -10,7 +10,7 @@ from dashboard_services.ai.client import AIUnavailableError, AIRateLimitError
 from dashboard_services.ai.cache import build_ai_cache_key, load_cached_ai_text, save_cached_ai_text
 from dashboard_services.assistant import PROMPT_VERSION
 from dashboard_services.assistant import context as ctx_mod
-from dashboard_services.assistant import store
+from dashboard_services.assistant import infer, store
 from dashboard_services.assistant.compose import compose_answer, numbers_shown_from
 from dashboard_services.assistant.evidence import BUILDERS
 from dashboard_services.assistant.model import last_usage
@@ -375,7 +375,12 @@ def ask(account_key: str, message: str, *, platform=None, league_id=None, season
             answer = None
     if answer is None:
         try:
-            answer = compose_answer(intent, message, pack, preferences=preferences, assumed_context=assumed, history=history)
+            # The confirmed risk profile rides along only when one exists,
+            # so profile-less asks compose exactly as before.
+            profile = infer.profile_from_preferences(preferences)
+            answer = compose_answer(intent, message, pack, preferences=preferences,
+                                    assumed_context=assumed, history=history,
+                                    **({"risk_profile": profile} if profile else {}))
         except AIRateLimitError as exc:
             raise AIUnavailableError(str(exc)) from exc
         if cache_key and answer:
@@ -553,6 +558,47 @@ def get_log(log_id, account_key):
 
 def list_preferences(account_key):
     return store.list_preferences(account_key)
+
+
+def preference_panel(account_key) -> dict:
+    """Everything the "What BR remembers about you" view renders:
+    stored preferences, the confirmed risk profile in plain language,
+    and fresh inferred-preference proposals.
+
+    Proposals are computed here, when the panel is opened: a cheap
+    deterministic pass over the account's own recent advice log, synced
+    into pending proposal rows (confirm/dismiss state persists there).
+    Fail-soft by design: a proposal problem never breaks the panel.
+    """
+    prefs = store.list_preferences(account_key)
+    profile = infer.profile_from_preferences(prefs)
+    proposals = []
+    try:
+        rows = store.list_log_for_inference(account_key)
+        candidates = infer.candidates_from_log(rows)
+        proposals = store.sync_proposals(account_key, candidates)
+    except Exception:
+        logger.debug("[assistant] proposal computation failed", exc_info=True)
+        proposals = []
+    return {"preferences": prefs, "proposals": proposals,
+            "risk_profile": profile, "profile_lines": infer.profile_lines(profile)}
+
+
+def confirm_proposal(account_key, proposal_id):
+    """Confirm a proposal into a stored preference; returns the fresh
+    panel payload (without recomputing proposals), or None."""
+    pref = store.confirm_proposal(account_key, proposal_id)
+    if pref is None:
+        return None
+    prefs = store.list_preferences(account_key)
+    profile = infer.profile_from_preferences(prefs)
+    return {"preference": pref, "preferences": prefs,
+            "proposals": store.list_proposals(account_key, "pending"),
+            "risk_profile": profile, "profile_lines": infer.profile_lines(profile)}
+
+
+def dismiss_proposal(account_key, proposal_id) -> bool:
+    return store.dismiss_proposal(account_key, proposal_id)
 
 
 def add_preference(account_key, text, league_id=None):

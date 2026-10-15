@@ -50513,6 +50513,59 @@ em.gneg { background: var(--loss); }
     color: var(--text-muted);
     line-height: 1.5;
 }
+.br-asst-profile,
+.br-asst-props {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.br-asst-profile[hidden],
+.br-asst-props[hidden] {
+    display: none;
+}
+.br-asst-section-head {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-top: 4px;
+}
+.br-asst-profile-line {
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--text);
+}
+.br-asst-prop-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    border: 1px solid var(--border);
+    background: var(--row);
+    border-radius: var(--radius);
+    padding: 9px 10px;
+}
+.br-asst-prop-actions {
+    display: flex;
+    gap: 6px;
+    flex: 0 0 auto;
+}
+.br-asst-prop-btn {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--on-accent);
+    background: var(--accent);
+    padding: 6px 10px;
+    border: 0;
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-family: inherit;
+}
+.br-asst-prop-btn-dismiss {
+    color: var(--text-muted);
+    background: var(--bg);
+    border: 1px solid var(--border);
+}
 .br-asst-add-row {
     display: flex;
     gap: 8px;

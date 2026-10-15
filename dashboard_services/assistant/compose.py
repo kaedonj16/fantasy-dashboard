@@ -1303,7 +1303,19 @@ def _final_receipts(data: dict, allowed: set[str]) -> list:
     return receipts
 
 
-def compose_answer(intent: str, question: str, pack: dict, *, preferences=None, assumed_context=None, history=None) -> dict:
+# Appended to SYSTEM only when the caller carries a confirmed risk
+# profile, so profile-less requests stay byte-identical to before. The
+# profile shapes framing and tie-break language inside close calls; it
+# never changes a number, a receipt, or a verdict the data decides.
+_PROFILE_SUFFIX = (
+    " The payload risk_profile holds stances this user has confirmed about how they play. "
+    "Use a stance only to shape framing and tie-break language when the call is close "
+    "(margin.thin true). It never overrides a clear margin and never adds a number. "
+    "When a stance shapes the answer, name it in the text."
+)
+
+
+def compose_answer(intent: str, question: str, pack: dict, *, preferences=None, assumed_context=None, history=None, risk_profile=None) -> dict:
     """Compose an answer dict from an evidence pack. Pure eval seam."""
     if isinstance(pack, dict) and pack.get("gated"):
         return gated_answer(pack)
@@ -1355,15 +1367,17 @@ def compose_answer(intent: str, question: str, pack: dict, *, preferences=None, 
         "question": question,
         "evidence_pack": pack,
         "preferences": [p.get("text") if isinstance(p, dict) else str(p) for p in (preferences or [])],
+        "risk_profile": dict(risk_profile) if risk_profile else {},
         "assumed_context": assumed_context or {},
         "history": (history or [])[-3:],
         "prompt_version": PROMPT_VERSION,
     }
+    system = SYSTEM + _PROFILE_SUFFIX if risk_profile else SYSTEM
     fixed_verdict = _trade_verdict(pack) if intent == "trade_eval" else None
     if fixed_verdict:
         payload["fixed_verdict"] = fixed_verdict
     allowed = _ground_set(pack, question)
-    data = _draft(SYSTEM, payload, allowed)
+    data = _draft(system, payload, allowed)
     # Quality pass: key-number citation + internal language. One combined
     # regeneration naming both defects, then deterministic fallbacks below.
     missing = _missing_key_numbers(intent, pack, data, actions)
@@ -1379,7 +1393,7 @@ def compose_answer(intent: str, question: str, pack: dict, *, preferences=None, 
                            "Do not use the banned terms. Follow-ups are questions in the user's voice.",
         }
         try:
-            data = _draft(SYSTEM + _QUALITY_SUFFIX, retry_payload, allowed)
+            data = _draft(system + _QUALITY_SUFFIX, retry_payload, allowed)
         except Exception:
             logger.info("[assistant] quality retry failed; keeping first draft", exc_info=True)
         missing = _missing_key_numbers(intent, pack, data, actions)

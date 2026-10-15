@@ -103,6 +103,39 @@ def _init_tables():
                 )
                 """
             )
+            # Stage 2: confirmed inferences are preference rows too, marked
+            # with source/kind so the risk profile can be rebuilt from them.
+            conn.execute(
+                "ALTER TABLE assistant_preferences ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'explicit'"
+            )
+            conn.execute(
+                "ALTER TABLE assistant_preferences ADD COLUMN IF NOT EXISTS kind TEXT"
+            )
+            # Inferred-preference proposals: computed from the advice log,
+            # never saved as preferences until the user confirms. Dismissed
+            # rows are kept so the same evidence cannot resurface them.
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS assistant_preference_proposals (
+                    id BIGSERIAL PRIMARY KEY,
+                    account_key TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    dimension TEXT,
+                    value TEXT,
+                    text TEXT NOT NULL,
+                    evidence JSONB NOT NULL DEFAULT '{}'::jsonb,
+                    evidence_key TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    preference_id BIGINT,
+                    league_id TEXT,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_assistant_proposals_account ON assistant_preference_proposals (account_key, status)"
+            )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_assistant_log_account ON assistant_advice_log (account_key, created_at)"
             )
@@ -442,10 +475,18 @@ def _pref_dict(row) -> dict:
     if isinstance(row, dict):
         d = dict(row)
     else:
-        d = {"id": row[0], "account_key": row[1], "text": row[2], "league_id": row[3], "created_at": row[4] if len(row) > 4 else None}
+        d = {"id": row[0], "account_key": row[1], "text": row[2], "league_id": row[3],
+             "created_at": row[4] if len(row) > 4 else None,
+             "source": row[5] if len(row) > 5 else None,
+             "kind": row[6] if len(row) > 6 else None}
     if d.get("created_at") is not None and not isinstance(d["created_at"], str):
         d["created_at"] = str(d["created_at"])
-    return {"id": d.get("id"), "text": d.get("text"), "league_id": d.get("league_id"), "created_at": d.get("created_at")}
+    return {"id": d.get("id"), "text": d.get("text"), "league_id": d.get("league_id"),
+            "created_at": d.get("created_at"),
+            "source": d.get("source") or "explicit", "kind": d.get("kind")}
+
+
+_PREF_COLS = "id, account_key, text, league_id, created_at, source, kind"
 
 
 def list_preferences(account_key: str) -> list[dict]:
@@ -453,7 +494,7 @@ def list_preferences(account_key: str) -> list[dict]:
     try:
         with get_conn() as conn:
             rows = conn.execute(
-                "SELECT id, account_key, text, league_id, created_at FROM assistant_preferences WHERE account_key = %s ORDER BY id ASC",
+                f"SELECT {_PREF_COLS} FROM assistant_preferences WHERE account_key = %s ORDER BY id ASC",
                 (account_key,),
             ).fetchall()
         return [_pref_dict(r) for r in (rows or [])]
@@ -461,15 +502,16 @@ def list_preferences(account_key: str) -> list[dict]:
         return []
 
 
-def add_preference(account_key: str, text: str, league_id=None) -> dict:
+def add_preference(account_key: str, text: str, league_id=None, *, source: str = "explicit", kind: str | None = None) -> dict:
     _init_tables()
     with get_conn() as conn:
         row = conn.execute(
-            "INSERT INTO assistant_preferences (account_key, text, league_id) VALUES (%s, %s, %s) RETURNING id, account_key, text, league_id, created_at",
-            (account_key, text, league_id),
+            f"INSERT INTO assistant_preferences (account_key, text, league_id, source, kind) VALUES (%s, %s, %s, %s, %s) RETURNING {_PREF_COLS}",
+            (account_key, text, league_id, source, kind),
         ).fetchone()
         conn.commit()
-    return _pref_dict(row) if row else {"id": None, "text": text, "league_id": league_id, "created_at": None}
+    return _pref_dict(row) if row else {"id": None, "text": text, "league_id": league_id,
+                                        "created_at": None, "source": source, "kind": kind}
 
 
 def delete_preference(account_key: str, pref_id) -> bool:
@@ -480,6 +522,19 @@ def delete_preference(account_key: str, pref_id) -> bool:
             (int(pref_id), account_key),
         )
         conn.commit()
+    # If the deleted row came from a confirmed inference, retire its
+    # proposal as dismissed so the same evidence does not instantly
+    # re-propose what the user just removed. Auxiliary: never fail the
+    # delete over it.
+    try:
+        with get_conn() as conn:
+            conn.execute(
+                "UPDATE assistant_preference_proposals SET status = 'dismissed', updated_at = NOW() WHERE preference_id = %s AND account_key = %s AND status = 'confirmed'",
+                (int(pref_id), account_key),
+            )
+            conn.commit()
+    except Exception:
+        logger.debug("[assistant] proposal retire after pref delete failed", exc_info=True)
     return True
 
 
@@ -488,4 +543,200 @@ def delete_all_preferences(account_key: str) -> bool:
     with get_conn() as conn:
         conn.execute("DELETE FROM assistant_preferences WHERE account_key = %s", (account_key,))
         conn.commit()
+    # Forget-everything is a full memory reset: proposals (pending,
+    # confirmed, and dismissed alike) go with the preferences.
+    try:
+        with get_conn() as conn:
+            conn.execute("DELETE FROM assistant_preference_proposals WHERE account_key = %s", (account_key,))
+            conn.commit()
+    except Exception:
+        logger.debug("[assistant] proposal wipe on forget-all failed", exc_info=True)
     return True
+
+
+# -- inferred-preference proposals ----------------------------------------------
+
+_INFERENCE_COLS = ("log_id", "created_at", "intent", "question_text", "thumb", "verdict", "evidence_pack")
+
+
+def list_log_for_inference(account_key: str, limit: int = 200) -> list[dict]:
+    """The account's own recent asked answers, newest first: the only
+    input the inference pass ever sees. Keyed by account_key in SQL, so
+    one account's proposals can never draw on another account's log."""
+    _init_tables()
+    try:
+        with get_conn() as conn:
+            rows = conn.execute(
+                f"SELECT {', '.join(_INFERENCE_COLS)} FROM assistant_advice_log WHERE account_key = %s AND proactive = FALSE ORDER BY log_id DESC LIMIT %s",
+                (account_key, int(limit)),
+            ).fetchall()
+        out = []
+        for r in rows or []:
+            d = dict(r) if isinstance(r, dict) else dict(zip(_INFERENCE_COLS, r))
+            for col in ("verdict", "evidence_pack"):
+                if isinstance(d.get(col), str):
+                    try:
+                        d[col] = json.loads(d[col])
+                    except Exception:
+                        d[col] = {}
+            out.append(d)
+        return out
+    except Exception:
+        return []
+
+
+def _proposal_dict(row) -> dict:
+    cols = ("id", "account_key", "kind", "dimension", "value", "text", "evidence",
+            "evidence_key", "status", "preference_id", "league_id", "created_at", "updated_at")
+    d = dict(row) if isinstance(row, dict) else dict(zip(cols, row))
+    evidence = d.get("evidence")
+    if isinstance(evidence, str):
+        try:
+            evidence = json.loads(evidence)
+        except Exception:
+            evidence = {}
+    return {"id": d.get("id"), "kind": d.get("kind"), "dimension": d.get("dimension"),
+            "value": d.get("value"), "text": d.get("text"),
+            "evidence": evidence if isinstance(evidence, dict) else {},
+            "evidence_key": d.get("evidence_key"),
+            "status": d.get("status"), "created_at": str(d.get("created_at")) if d.get("created_at") is not None else None}
+
+
+_PROPOSAL_COLS = ("id, account_key, kind, dimension, value, text, evidence, "
+                  "evidence_key, status, preference_id, league_id, created_at, updated_at")
+
+
+def list_proposals(account_key: str, status: str = "pending") -> list[dict]:
+    _init_tables()
+    try:
+        with get_conn() as conn:
+            rows = conn.execute(
+                f"SELECT {_PROPOSAL_COLS} FROM assistant_preference_proposals WHERE account_key = %s AND status = %s ORDER BY id ASC",
+                (account_key, status),
+            ).fetchall()
+        return [_proposal_dict(r) for r in (rows or [])]
+    except Exception:
+        return []
+
+
+def sync_proposals(account_key: str, candidates: list[dict]) -> list[dict]:
+    """Persist freshly computed candidates as pending proposals.
+
+    Suppression rules: a kind already confirmed into a preference is not
+    proposed again; a (kind, evidence_key) the user dismissed is not
+    proposed again from the same evidence; a candidate whose text is
+    already a stored preference is skipped. Pending rows the fresh pass
+    no longer supports are dropped. Fail-soft: any DB trouble returns
+    whatever pending rows can be read, else an empty list, because the
+    memory view must never break over proposals.
+    """
+    _init_tables()
+    try:
+        with get_conn() as conn:
+            rows = conn.execute(
+                f"SELECT {_PROPOSAL_COLS} FROM assistant_preference_proposals WHERE account_key = %s",
+                (account_key,),
+            ).fetchall()
+        existing = [_proposal_dict(r) for r in (rows or [])]
+    except Exception:
+        return []
+    dismissed = set()
+    confirmed_kinds = set()
+    pending = {}
+    for p in existing:
+        if p["status"] == "dismissed":
+            dismissed.add((p["kind"], p.get("evidence_key")))
+        elif p["status"] == "confirmed":
+            confirmed_kinds.add(p["kind"])
+        elif p["status"] == "pending":
+            pending[p["id"]] = p
+    known_texts = {str(p.get("text") or "") for p in list_preferences(account_key)}
+    fresh_keys = set()
+    try:
+        with get_conn() as conn:
+            for cand in candidates or []:
+                kind = cand.get("kind")
+                ekey = cand.get("evidence_key")
+                if not kind or not ekey:
+                    continue
+                if kind in confirmed_kinds or (kind, ekey) in dismissed:
+                    continue
+                if str(cand.get("text") or "") in known_texts:
+                    continue
+                fresh_keys.add((kind, ekey))
+                match = next((p for p in pending.values()
+                              if p["kind"] == kind and p.get("evidence_key") == ekey), None)
+                if match is not None:
+                    conn.execute(
+                        "UPDATE assistant_preference_proposals SET text = %s, evidence = %s::jsonb, dimension = %s, value = %s, updated_at = NOW() WHERE id = %s AND account_key = %s",
+                        (cand.get("text"), _j(cand.get("evidence") or {}), cand.get("dimension"),
+                         cand.get("value"), match["id"], account_key),
+                    )
+                else:
+                    conn.execute(
+                        "INSERT INTO assistant_preference_proposals (account_key, kind, dimension, value, text, evidence, evidence_key, status) VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s, 'pending')",
+                        (account_key, kind, cand.get("dimension"), cand.get("value"),
+                         cand.get("text"), _j(cand.get("evidence") or {}), ekey),
+                    )
+            for p in pending.values():
+                if (p["kind"], p.get("evidence_key")) not in fresh_keys:
+                    conn.execute(
+                        "DELETE FROM assistant_preference_proposals WHERE id = %s AND account_key = %s AND status = 'pending'",
+                        (p["id"], account_key),
+                    )
+            conn.commit()
+    except Exception:
+        logger.debug("[assistant] proposal sync failed", exc_info=True)
+        return [p for p in existing if p["status"] == "pending"]
+    return list_proposals(account_key, "pending")
+
+
+def confirm_proposal(account_key: str, proposal_id) -> dict | None:
+    """Confirm a pending proposal: it becomes a real preference row
+    (source='inferred', kind set) and the proposal is marked confirmed
+    with the link. Returns the created preference, or None when the
+    proposal is not the caller's pending proposal."""
+    _init_tables()
+    try:
+        with get_conn() as conn:
+            row = conn.execute(
+                f"SELECT {_PROPOSAL_COLS} FROM assistant_preference_proposals WHERE id = %s AND account_key = %s AND status = 'pending'",
+                (int(proposal_id), account_key),
+            ).fetchone()
+    except Exception:
+        return None
+    if not row:
+        return None
+    proposal = _proposal_dict(row)
+    pref = add_preference(account_key, proposal["text"], league_id=None,
+                          source="inferred", kind=proposal["kind"])
+    try:
+        with get_conn() as conn:
+            conn.execute(
+                "UPDATE assistant_preference_proposals SET status = 'confirmed', preference_id = %s, updated_at = NOW() WHERE id = %s AND account_key = %s",
+                (pref.get("id"), int(proposal_id), account_key),
+            )
+            conn.commit()
+    except Exception:
+        logger.debug("[assistant] proposal confirm mark failed", exc_info=True)
+    return pref
+
+
+def dismiss_proposal(account_key: str, proposal_id) -> bool:
+    _init_tables()
+    try:
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT id FROM assistant_preference_proposals WHERE id = %s AND account_key = %s AND status = 'pending'",
+                (int(proposal_id), account_key),
+            ).fetchone()
+            if not row:
+                return False
+            conn.execute(
+                "UPDATE assistant_preference_proposals SET status = 'dismissed', updated_at = NOW() WHERE id = %s AND account_key = %s",
+                (int(proposal_id), account_key),
+            )
+            conn.commit()
+        return True
+    except Exception:
+        return False
