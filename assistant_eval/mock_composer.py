@@ -88,7 +88,14 @@ def _start_sit(pack):
 def _trade_eval(pack):
     gap = float(pack.get("fairness_gap") or 0)
     thin = bool((pack.get("margin") or {}).get("thin"))
-    verdict = "FAIR" if thin or gap == 0 else ("ACCEPT" if gap > 0 else "DECLINE")
+    # Mirror of the backend's pinned verdict: utils.trade_value
+    # .fair_value_band, the trade analyzer's shared fairness definition
+    # (fair within max(7% of the larger side's total, 25.0)). Reimplemented
+    # here so mock mode never imports the backend stack.
+    give_t0 = (pack.get("give") or {}).get("total_value") or 0
+    recv_t0 = (pack.get("receive") or {}).get("total_value") or 0
+    band = max(max(float(give_t0), float(recv_t0), 1.0) * 0.07, 25.0)
+    verdict = "FAIR" if abs(gap) <= band else ("ACCEPT" if gap > 0 else "DECLINE")
     give_t = (pack.get("give") or {}).get("total_value")
     recv_t = (pack.get("receive") or {}).get("total_value")
     receipts = [{"label": "You give (total value)", "value": fmt(give_t)},

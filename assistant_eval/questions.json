@@ -601,7 +601,7 @@
       },
       "reference": {
         "verdict_kind": "trade_verdict",
-        "pick": "FAIR",
+        "pick": "ACCEPT",
         "key_numbers": [
           5120,
           4680,

@@ -1,24 +1,55 @@
 # Live eval run record
 
-## 2026-10-14 (fix pass): NOT RUN locally
+## 2026-10-14 (live run, Render web shell): LIVE BAR NOT MET
 
-The live run was attempted on the development VM and could not run:
-`OPENAI_API_KEY` is not set in this environment. Verified two ways:
+Run by Kaedon in the Render web shell against the deployed stage-1 code
+(main `c96a95f7`, PRs #2606/#2607):
 
-- `os.environ` contains no `OPENAI_API_KEY` entry at all.
-- `python3 scripts/run_assistant_eval.py --mode live` prints
-  "OPENAI_API_KEY is not set" and exits 2 (its cannot-run code).
+```bash
+python3 scripts/run_assistant_eval.py --mode live
+```
 
-No live scores exist for this pass, and none are recorded here: inventing
-them would defeat the eval. The deterministic mock run, which validates
-the harness, scorer, and frozen packs (not model quality), was run the
-same day against the refreshed backend:
+Summary: **16/20 answers passed; verdicts matched 16/20; invented
+numbers total 0; traps handled: True.**
 
-- `python3 scripts/run_assistant_eval.py --mode mock`:
-  20/20 answers passed; verdicts matched 20/20; invented numbers total 0;
-  traps handled: True.
-- `python3 scripts/run_assistant_eval.py --mode mock --poison`:
-  poison detected (ss1 failed with invented number 9999 named).
+Pass bar: zero invented numbers across all 20, both traps handled, at
+least 18 of 20 verdicts matching the reference. The bar was NOT met.
+All four failures are composition failures, not grounding failures:
+the model chose a trade verdict the analyzer's numbers contradict,
+and on three questions it never cited the pack's key numbers.
+
+Per question:
+
+- PASS ss1, ss2, ss3 (start_sit)
+- PASS ss4 (start_sit; namesake trap, outcome `pick:Bijan Robinson`)
+- PASS te1, te3 (trade_eval)
+- FAIL te2 (trade_eval): model verdict `FAIR`, reference `DECLINE`;
+  must_mention `Flowers` missing
+- PASS bsh1, bsh2, bsh3 (buy_sell_hold)
+- PASS pl1, pl2, pl3 (player)
+- FAIL m1 (metric): key number 0.24 not cited
+- PASS m2, m3 (metric; m3 is the missing-stat trap)
+- PASS w1, w2 (waivers)
+- FAIL tw1 (this_week): key numbers 13.8, 2380 not cited
+- FAIL tw2 (this_week): key numbers 12.4, 1560 not cited
+
+Raw runner lines for the failures:
+
+```text
+[FAIL] te2 (trade_eval) verdict='DECLINE' | trade verdict 'FAIR' != reference 'DECLINE' | must_mention missing: 'Flowers'
+[FAIL] m1 (metric) verdict="Ja'Marr Chase" | key numbers not cited: 0.24
+[FAIL] tw1 (this_week) verdict='Start Rome Odunze at flex' | key numbers not cited: 13.8, 2380
+[FAIL] tw2 (this_week) verdict='Start Woody Marks at flex' | key numbers not cited: 12.4, 1560
+16/20 answers passed; verdicts matched 16/20; invented numbers total 0; traps handled: True
+LIVE BAR: NOT MET
+```
+
+(The `verdict=` shown on the FAIL lines is the reference call the scorer
+compared against; the model's own call is in the note text.)
+
+This supersedes the earlier same-day note that the live run could not
+run locally (no `OPENAI_API_KEY` on the dev VM). No scores were recorded
+until the real run above happened.
 
 ## To run it live (Render)
 

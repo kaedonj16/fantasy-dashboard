@@ -170,6 +170,61 @@ def test_waivers_trending_and_faab_wired(base, monkeypatch):
     assert "waiver_score.faab_recommendation" in tools
 
 
+def test_trade_eval_pack_carries_analyzer_band_verdict(base, monkeypatch):
+    # te2's shape: give 7770, receive 4680. The shared fair band is
+    # max(7% of 7770, 25) = 543.9, so a 3090 loss is a code-set DECLINE.
+    monkeypatch.setattr(evidence, "get_players_index_global", lambda *a, **k: {
+        "g1": {"name": "Brian Thomas Jr.", "team": "JAX", "position": "WR"},
+        "g2": {"name": "Woody Marks", "team": "HOU", "position": "RB"},
+        "r1": {"name": "Zay Flowers", "team": "BAL", "position": "WR"},
+    })
+    monkeypatch.setattr(evidence, "get_model_value_table_cached", lambda *a, **k: [
+        {"id": "g1", "value": 5120}, {"id": "g2", "value": 2650}, {"id": "r1", "value": 4680},
+    ])
+    entities = {"give_player_ids": ["g1", "g2"], "receive_player_ids": ["r1"]}
+    pack, tools = evidence.build_trade_eval(_bundle(), entities, ["g1", "g2", "r1"])
+    assert pack["fairness_gap"] == -3090.0
+    assert pack["trade_verdict"] == "DECLINE"
+    assert "utils.trade_value.fairness_label" in tools
+
+
+# -- this week: the dashboard's Next Steps queue is the source ---------------------
+
+def test_this_week_actions_come_from_dashboard_next_steps_queue(base, monkeypatch):
+    # In the queue's own ranked order (the shim sorts by score, like the site).
+    queue = [
+        {"priority": "high", "tag": "Lineup", "kind": "lineup",
+         "action": "Start Rome Odunze over Jordan Addison",
+         "why": "Odunze projects 15.7 vs Addison's 13.8.",
+         "impact": "+1.9 projected points", "cta_label": "Fix lineup",
+         "cta_url": "/waivers?tab=startsit", "score": 101.9},
+        {"priority": "med", "tag": "Waivers", "kind": "waiver",
+         "action": "Claim Rashid Shaheed", "why": "Shaheed clears your gate.",
+         "impact": None, "cta_label": "Claim now", "cta_url": "/waivers?player=9",
+         "score": 55},
+    ]
+    monkeypatch.setattr(evidence, "next_steps_actions", lambda ctx, rid, rows: list(queue))
+    bundle = _bundle(ctx={"rosters": []}, roster={"roster_id": 1, "players": ["1"]})
+    pack, tools = evidence.build_this_week(bundle, {}, [])
+    assert "app.next_steps_queue" in tools
+    assert [a["headline"] for a in pack["actions"]] == [
+        "Start Rome Odunze over Jordan Addison", "Claim Rashid Shaheed"]
+    swap = pack["actions"][0]
+    assert swap["tag"] == "Lineup"
+    assert swap["detail"] == "Odunze projects 15.7 vs Addison's 13.8."
+    assert swap["key_number"] == "+1.9 projected points"
+    assert swap["act_link"] == "/waivers?tab=startsit"
+    assert swap["cta_label"] == "Fix lineup"
+
+
+def test_this_week_without_roster_id_gives_empty_actions(base, monkeypatch):
+    monkeypatch.setattr(evidence, "next_steps_actions",
+                        lambda ctx, rid, rows: (_ for _ in ()).throw(AssertionError("must not be called")))
+    pack, tools = evidence.build_this_week(_bundle(roster={}), {}, [])
+    assert pack["actions"] == []
+    assert pack["available"] is True
+
+
 def test_waivers_no_faab_when_league_does_not_use_it(base, monkeypatch):
     monkeypatch.setattr(evidence, "sleeper_trending_adds", lambda limit=25: [])
     monkeypatch.setattr(evidence, "waiver_faab_context",
