@@ -26,10 +26,10 @@ class CapReached(Exception):
         self.caps = caps
 
 
-def _is_paid(account_key: str) -> bool:
-    """Paid tier check.
+def _active_plan(account_key: str):
+    """The caller's active personal plan row, or None.
 
-    Canonical check used: dashboard_services.subscriptions.find_active_personal_plan,
+    Canonical lookup used: dashboard_services.subscriptions.find_active_personal_plan,
     which queries user_subscriptions for active, unexpired rows keyed by the
     caller's identities (acct:<id> and the bare account id). It fails closed
     (returns None on DB errors), so any failure here defaults to free.
@@ -40,24 +40,175 @@ def _is_paid(account_key: str) -> bool:
         keys = [account_key]
         if account_id is not None:
             keys.append(str(account_id))
-        return find_active_personal_plan(keys) is not None
+        return find_active_personal_plan(keys)
+    except Exception:
+        return None
+
+
+def _is_paid(account_key: str) -> bool:
+    """Paid tier check (any active personal plan)."""
+    return _active_plan(account_key) is not None
+
+
+# Assistant monthly chat caps by pass tier. The purchasable catalog lives in
+# routes/billing_bp.py (_STRIPE_PRICES: starter / all_pro / hall_of_fame).
+# Grandfathered plan keys fold into the tier at their level: 'single_league'
+# was the old entry tier (starter), 'league' sits at all_pro, and 'user' /
+# 'combo' are unlimited personal PRO like hall_of_fame. Any other paid plan
+# key lands on starter, which keeps the pre-ladder behavior where every paid
+# account shared the single 250 cap (ASSISTANT_PAID_MONTHLY_CAP still works
+# as the starter override). hall_of_fame is positioned as unlimited in the
+# catalog, so it gets a very high cap rather than no cap: usage still counts
+# and the meter still renders.
+TIER_ORDER = ("free", "starter", "all_pro", "hall_of_fame")
+TIER_LABELS = {
+    "free": "Free",
+    "starter": "Starter",
+    "all_pro": "All-Pro",
+    "hall_of_fame": "Hall of Fame",
+}
+_TIER_BY_PLAN = {
+    "starter": "starter", "single_league": "starter",
+    "all_pro": "all_pro", "league": "all_pro",
+    "hall_of_fame": "hall_of_fame", "user": "hall_of_fame", "combo": "hall_of_fame",
+}
+_TIER_CAP_DEFAULTS = {"free": 25, "starter": 250, "all_pro": 1000, "hall_of_fame": 10000}
+_TIER_CAP_ENV = {
+    "free": ("ASSISTANT_FREE_MONTHLY_CAP",),
+    "starter": ("ASSISTANT_STARTER_MONTHLY_CAP", "ASSISTANT_PAID_MONTHLY_CAP"),
+    "all_pro": ("ASSISTANT_ALL_PRO_MONTHLY_CAP",),
+    "hall_of_fame": ("ASSISTANT_HALL_OF_FAME_MONTHLY_CAP",),
+}
+
+
+def _tier_cap(tier: str) -> int:
+    for env_name in _TIER_CAP_ENV[tier]:
+        raw = os.getenv(env_name)
+        if raw is None:
+            continue
+        try:
+            return int(raw)
+        except Exception:
+            continue
+    return _TIER_CAP_DEFAULTS[tier]
+
+
+def _is_exempt() -> bool:
+    """Owner exemption: an admin session is never capped.
+
+    Uses the codebase's existing admin check (dashboard_services.admin_auth):
+    a browser session marked admin by the ADMIN_KEY flow or the /admin/login
+    password, the same signal analytics uses to self-exclude the operator.
+    Usage still counts toward the meter; only enforcement is skipped.
+    Outside a request context (background work) nobody is exempt.
+    See _is_account_exempt for the account-identity list, which applies in
+    any browser, admin session or not.
+    """
+    try:
+        from flask import has_request_context
+        if not has_request_context():
+            return False
+        from dashboard_services.admin_auth import is_admin
+        return bool(is_admin())
+    except Exception:
+        return False
+
+
+def _exempt_account_ids() -> frozenset:
+    """Account ids exempt from assistant caps (ASSISTANT_EXEMPT_ACCOUNT_KEYS).
+
+    Comma-separated account keys in the identity forms the assistant already
+    uses: "acct:<id>" entries and bare account ids are both accepted and
+    normalized to the bare id (the same normalization the subscription
+    lookup applies to caller identities). Parsing mirrors the
+    ANALYTICS_EXCLUDE_ACCOUNT_IDS pattern in dashboard_services/analytics.py:
+    tolerant of blanks and bad values, and a malformed entry exempts nobody.
+    Read per call, like the tier caps above.
+    """
+    raw = os.getenv("ASSISTANT_EXEMPT_ACCOUNT_KEYS") or ""
+    ids = set()
+    for part in raw.split(","):
+        part = part.strip()
+        if part.lower().startswith("acct:"):
+            part = part[5:].strip()
+        if part.isdigit():
+            ids.add(int(part))
+    return frozenset(ids)
+
+
+def _exempt_emails() -> frozenset:
+    """Emails exempt from assistant caps (ASSISTANT_EXEMPT_EMAILS), lowercased."""
+    raw = os.getenv("ASSISTANT_EXEMPT_EMAILS") or ""
+    return frozenset(p.strip().lower() for p in raw.split(",") if p.strip())
+
+
+def _account_id_from_key(account_key):
+    """The bare account id behind an "acct:<id>" key (or a bare id), or None."""
+    if not account_key:
+        return None
+    text = str(account_key).strip()
+    if text.lower().startswith("acct:"):
+        text = text[5:].strip()
+    try:
+        return int(text)
+    except Exception:
+        return None
+
+
+def _account_email(account_id: int):
+    """The account's stored email (accounts.email, set at Google sign-in)."""
+    try:
+        with store.get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT email FROM accounts WHERE id = %s", (account_id,))
+                row = cur.fetchone()
+        if not row:
+            return None
+        email = row.get("email") if isinstance(row, dict) else row[0]
+        return (str(email).strip().lower() or None) if email else None
+    except Exception:
+        return None
+
+
+def _is_account_exempt(account_key: str) -> bool:
+    """Account-identity exemption: the account itself is never capped.
+
+    Complements the admin-session check (_is_exempt): an account whose id is
+    listed in ASSISTANT_EXEMPT_ACCOUNT_KEYS, or whose stored account email is
+    listed in ASSISTANT_EXEMPT_EMAILS, is exempt in any browser, including a
+    normal Google sign-in with no admin session (the owner's phone). Usage
+    still counts toward the meter; only enforcement is skipped. Fail-closed:
+    any lookup error means not exempt.
+    """
+    try:
+        account_id = _account_id_from_key(account_key)
+        if account_id is None:
+            return False
+        if account_id in _exempt_account_ids():
+            return True
+        emails = _exempt_emails()
+        if emails:
+            return _account_email(account_id) in emails
+        return False
     except Exception:
         return False
 
 
 def caps_for(account_key: str) -> dict:
-    paid = _is_paid(account_key)
-    try:
-        free_cap = int(os.getenv("ASSISTANT_FREE_MONTHLY_CAP", "25"))
-    except Exception:
-        free_cap = 25
-    try:
-        paid_cap = int(os.getenv("ASSISTANT_PAID_MONTHLY_CAP", "250"))
-    except Exception:
-        paid_cap = 250
-    limit = paid_cap if paid else free_cap
-    used = store.count_monthly_asked(account_key)
-    return {"used": used, "limit": limit, "tier": "paid" if paid else "free"}
+    plan = _active_plan(account_key)
+    plan_key = None
+    if plan is not None:
+        plan_key = str(plan.get("plan_key") or "").strip().lower() or None
+    if plan_key is None:
+        tier = "free"
+    else:
+        tier = _TIER_BY_PLAN.get(plan_key, "starter")
+    tiers = [{"key": key, "label": TIER_LABELS[key], "limit": _tier_cap(key),
+              "current": key == tier} for key in TIER_ORDER]
+    return {"used": store.count_monthly_asked(account_key),
+            "limit": _tier_cap(tier), "tier": tier, "tier_label": TIER_LABELS[tier],
+            "plan_key": plan_key, "exempt": _is_exempt() or _is_account_exempt(account_key),
+            "tiers": tiers}
 
 
 def _history_for(thread: dict) -> tuple[list, dict]:
@@ -117,7 +268,7 @@ def _log_common(bundle, account_key):
 def ask(account_key: str, message: str, *, platform=None, league_id=None, season=None, thread_id=None, player_id_hint=None) -> dict:
     started = time.time()
     caps = caps_for(account_key)
-    if caps["used"] >= caps["limit"]:
+    if not caps["exempt"] and caps["used"] >= caps["limit"]:
         raise CapReached(caps)
     bundle = ctx_mod.resolve_league(account_key, platform=platform, league_id=league_id, season=season)
     thread = store.get_or_create_thread(account_key, thread_id, platform=bundle.get("platform"), league_id=bundle.get("league_id"), season=bundle.get("season"))

@@ -4723,7 +4723,13 @@ function showLoginGate(target, opts) {
         '</span></div></div>' +
         '<div class="br-asst-body" id="brAsstThread"></div>' +
         '<div class="br-asst-memory" id="brAsstMemory" hidden></div>' +
+        '<div class="br-asst-plans" id="brAsstPlans" hidden></div>' +
         '<div class="br-asst-foot" id="brAsstFoot">' +
+        '<div class="br-asst-meter" id="brAsstMeter" hidden>' +
+        '<button type="button" class="br-asst-meter-main" id="brAsstMeterMain" aria-label="See assistant plans">' +
+        '<span class="br-asst-meter-label" id="brAsstMeterLabel"></span>' +
+        '<span class="br-asst-meter-bar" id="brAsstMeterBar"><span class="br-asst-meter-fill" id="brAsstMeterFill"></span></span>' +
+        '</button></div>' +
         '<div class="br-asst-composer">' +
         '<textarea class="br-asst-input" id="brAsstInput" rows="1" placeholder="Ask about your team..." aria-label="Ask about your team"></textarea>' +
         '<button type="button" class="br-asst-send" id="brAsstSend" aria-label="Send">' + SVG_SEND + '</button>' +
@@ -4741,6 +4747,12 @@ function showLoginGate(target, opts) {
 
       var threadEl = popup.querySelector('#brAsstThread');
       var memoryEl = popup.querySelector('#brAsstMemory');
+      var plansEl = popup.querySelector('#brAsstPlans');
+      var meterEl = popup.querySelector('#brAsstMeter');
+      var meterMain = popup.querySelector('#brAsstMeterMain');
+      var meterLabel = popup.querySelector('#brAsstMeterLabel');
+      var meterBar = popup.querySelector('#brAsstMeterBar');
+      var meterFill = popup.querySelector('#brAsstMeterFill');
       var footEl = popup.querySelector('#brAsstFoot');
       var inputEl = popup.querySelector('#brAsstInput');
       var sendBtn = popup.querySelector('#brAsstSend');
@@ -4858,6 +4870,81 @@ function showLoginGate(target, opts) {
       // thread itself while an answer loads and is removed the moment
       // the answer (or an error) lands.
       var typingEl = null;
+
+      // Usage meter + plans panel. The caps payload (context + every chat
+      // response) carries used/limit/tier/exempt plus the full tier ladder,
+      // so the meter re-renders from state.caps with no extra requests.
+      var TIER_RANK = { free: 0, starter: 1, all_pro: 2, hall_of_fame: 3 };
+      function pricingUrl() {
+        var lg = state.league || {};
+        var platform = lg.platform || (params && params.platform);
+        var season = lg.season || (params && params.season);
+        var leagueId = lg.league_id || (params && params.league_id);
+        if (platform && season && leagueId) {
+          return '/' + platform + '/' + season + '/' + leagueId + '/pricing';
+        }
+        return '/pricing';
+      }
+      function renderMeter() {
+        var caps = state.caps;
+        if (!caps || !meterEl) return;
+        meterEl.hidden = false;
+        var used = Number(caps.used) || 0;
+        var limit = Number(caps.limit) || 0;
+        meterEl.classList.remove('br-asst-meter-warn');
+        meterEl.classList.remove('br-asst-meter-full');
+        if (caps.exempt) {
+          meterLabel.textContent = 'Assistant chats: unlimited';
+          meterBar.hidden = true;
+          return;
+        }
+        meterBar.hidden = false;
+        meterLabel.textContent = used + ' of ' + limit + ' chats used this month';
+        var ratio = limit > 0 ? used / limit : 1;
+        meterFill.style.width = Math.min(100, Math.round(ratio * 100)) + '%';
+        if (used >= limit) meterEl.classList.add('br-asst-meter-full');
+        else if (ratio >= 0.8) meterEl.classList.add('br-asst-meter-warn');
+      }
+      function showPlans() {
+        state.view = 'plans';
+        threadEl.hidden = true;
+        footEl.hidden = true;
+        memoryEl.hidden = true;
+        plansEl.hidden = false;
+        backBtn.hidden = false;
+        memoryBtn.hidden = true;
+        renderPlans();
+      }
+      function renderPlans() {
+        var caps = state.caps || {};
+        var tiers = caps.tiers || [];
+        plansEl.innerHTML = '';
+        plansEl.appendChild(el('div', 'br-asst-memory-intro', 'Assistant chats by plan'));
+        var note = 'Chat counts reset each month.';
+        if (caps.tier_label) note = 'Your plan: ' + caps.tier_label + '. ' + note;
+        if (!caps.exempt && caps.limit != null && (Number(caps.used) || 0) >= Number(caps.limit)) {
+          note = 'You have used all your chats for this month. ' + note;
+        }
+        plansEl.appendChild(el('div', 'br-asst-plans-note', note));
+        var myRank = TIER_RANK[caps.tier] != null ? TIER_RANK[caps.tier] : 0;
+        tiers.forEach(function (t) {
+          var row = el('div', 'br-asst-plan-row' + (t.current ? ' br-asst-plan-current' : ''));
+          var main = el('div', 'br-asst-pref-main');
+          main.appendChild(el('div', 'br-asst-plan-name', String(t.label || '')));
+          main.appendChild(el('div', 'br-asst-pref-scope', Number(t.limit).toLocaleString() + ' assistant chats a month'));
+          row.appendChild(main);
+          if (t.current) {
+            row.appendChild(el('span', 'br-asst-plan-badge', 'Current plan'));
+          } else if ((TIER_RANK[t.key] != null ? TIER_RANK[t.key] : -1) > myRank) {
+            var up = el('a', 'br-asst-add-btn br-asst-plan-btn', 'Upgrade');
+            up.href = pricingUrl();
+            row.appendChild(up);
+          }
+          plansEl.appendChild(row);
+        });
+      }
+      meterMain.addEventListener('click', showPlans);
+
       function setBusy(on) {
         state.busy = on;
         sendBtn.disabled = on;
@@ -5120,11 +5207,13 @@ function showLoginGate(target, opts) {
           setBusy(false);
           var data = res.data || {};
           if (data.caps) state.caps = data.caps;
+          renderMeter();
           if (res.status === 200 && data.answer) {
             if (data.thread_id) state.threadId = data.thread_id;
             renderAnswer(data.answer, data.log_id);
           } else if (res.status === 429) {
-            appendSystem(data.message || 'You have hit your message limit for now.', null);
+            // At cap: land on the plans panel, not a dead-end message.
+            showPlans();
           } else if (res.status === 503) {
             appendSystem(data.message || 'The assistant is unavailable right now.', function () {
               sendMessage(msg, playerId, true);
@@ -5184,6 +5273,7 @@ function showLoginGate(target, opts) {
         state.view = 'memory';
         threadEl.hidden = true;
         footEl.hidden = true;
+        plansEl.hidden = true;
         memoryEl.hidden = false;
         backBtn.hidden = false;
         memoryBtn.hidden = true;
@@ -5192,6 +5282,7 @@ function showLoginGate(target, opts) {
       function showThread() {
         state.view = 'thread';
         memoryEl.hidden = true;
+        plansEl.hidden = true;
         threadEl.hidden = false;
         footEl.hidden = false;
         backBtn.hidden = true;
@@ -5277,6 +5368,8 @@ function showLoginGate(target, opts) {
         row.appendChild(del);
         return row;
       }
+
+      renderMeter();
     }
   }
 

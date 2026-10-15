@@ -49,6 +49,12 @@ def test_assistant_css_selectors_exist():
         ".br-asst-pref-row",
         ".br-asst-starters",
         ".br-asst-starters-label",
+        ".br-asst-meter",
+        ".br-asst-meter-fill",
+        ".br-asst-plans",
+        ".br-asst-plan-row",
+        ".br-asst-plan-current",
+        ".br-asst-plan-badge",
     ):
         assert selector in ASSISTANT_CSS, f"missing assistant CSS for {selector}"
 
@@ -201,6 +207,41 @@ def test_panel_motion_and_typing_indicator():
     # The old foot-of-panel "Thinking..." text is gone.
     assert "brAsstThinking" not in ASSISTANT_JS
     assert "br-asst-thinking" not in ASSISTANT_CSS
+
+
+def test_usage_meter_and_plans_panel():
+    # Meter: rendered from the caps payload for every user type, updated
+    # after each send, and tappable into the plans panel.
+    for needle in (
+        "brAsstMeter",
+        "brAsstMeterLabel",
+        "brAsstMeterFill",
+        "renderMeter",
+        "chats used this month",
+        # Owner/exempt state: a label, no depleting bar math.
+        "caps.exempt",
+        "Assistant chats: unlimited",
+        # Plans panel: the tier ladder from the caps payload, the caller's
+        # tier marked, upgrade into the existing pricing flow.
+        "brAsstPlans",
+        "showPlans",
+        "renderPlans",
+        "caps.tiers",
+        "Assistant chats by plan",
+        "Current plan",
+        "Upgrade",
+        "assistant chats a month",
+        "/pricing",
+    ):
+        assert needle in ASSISTANT_JS, f"missing meter/plans piece {needle}"
+    # The meter refreshes from the chat response caps (no extra polling).
+    assert "if (data.caps) state.caps = data.caps;" in ASSISTANT_JS
+    # At cap the chat lands on the plans panel instead of a dead-end note.
+    cap_branch = ASSISTANT_JS[ASSISTANT_JS.index("res.status === 429"):]
+    assert "showPlans();" in cap_branch[:200]
+    # Near-cap and at-cap tones exist on the meter.
+    assert ".br-asst-meter-warn" in ASSISTANT_CSS
+    assert ".br-asst-meter-full" in ASSISTANT_CSS
 
 
 def test_no_banned_values_in_new_sections():
