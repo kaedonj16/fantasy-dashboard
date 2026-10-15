@@ -34,6 +34,7 @@ SCHEMA = {
         "position_hint": {"type": ["string", "null"]},
         "teams_mode": {"type": ["string", "null"], "enum": ["dynasty", "this_season", None]},
         "week": {"type": ["integer", "null"]},
+        "season": {"type": ["integer", "null"]},
         "draft_year": {"type": ["integer", "null"]},
         "position": {"type": ["string", "null"]},
         "preference_text": {"type": ["string", "null"]},
@@ -55,7 +56,7 @@ SCHEMA = {
         "slot": {"type": ["string", "null"]},
         "start_mode": {"type": ["string", "null"], "enum": ["start", "sit", None]},
     },
-    "required": ["intent", "player_names", "give_player_names", "receive_player_names", "picks", "give_picks", "receive_picks", "other_team_hint", "team_names", "metric_hint", "target_position", "position_hint", "teams_mode", "week", "draft_year", "preference_text", "board_kind", "family", "second_metric_hint", "top_n", "position", "team", "window_weeks", "direction", "replace_mode", "waiver_mode", "value_in_picks", "shop_pool", "slot", "start_mode", "max_age", "pool", "finish_n"],
+    "required": ["intent", "player_names", "give_player_names", "receive_player_names", "picks", "give_picks", "receive_picks", "other_team_hint", "team_names", "metric_hint", "target_position", "position_hint", "teams_mode", "week", "season", "draft_year", "preference_text", "board_kind", "family", "second_metric_hint", "top_n", "position", "team", "window_weeks", "direction", "replace_mode", "waiver_mode", "value_in_picks", "shop_pool", "slot", "start_mode", "max_age", "pool", "finish_n"],
     "additionalProperties": False,
 }
 
@@ -116,7 +117,9 @@ SYSTEM = (
     "this_week: a plan or actions question, what to do with my "
     "team this week; NOT whether the user will win this week's game (that is matchup, even "
     "when the question says 'this week'). "
-    "playoffs: playoff odds, clinching, elimination, or what a team needs to make the playoffs. "
+    "playoffs: playoff odds, clinching, elimination, what a team needs to make the playoffs, "
+    "or how the odds have moved over the season (how have my odds moved, odds movement, "
+    "biggest odds risers or fallers). "
     "power_rankings: the power rankings, who is strongest, or the team to beat; a ranking of team "
     "strength, NOT the win-loss standings table. "
     "standings: the standings table itself, records, points for, seeds, or division races; the "
@@ -178,6 +181,9 @@ SYSTEM = (
     "trade_eval, keeper) always win over open. "
     "out_of_scope: anything that is NOT about fantasy football, the user's leagues, or the "
     "site's data (weather, news, other sports, general trivia). "
+    "season: the NFL season year a leaderboard, metric, or playoffs question is about when it "
+    "names a past season (in 2024, the 2024 season, during 2023); 'last season' is one year "
+    "before the context season. Null when the question is about the current season. "
     "Use thread history only to resolve short follow-ups. Return JSON only. No em dashes."
 )
 
@@ -185,6 +191,24 @@ _BOARD_ENTITY_DEFAULTS = {"board_kind": None, "family": None, "second_metric_hin
                           "position": None, "team": None, "window_weeks": None,
                           "direction": None, "max_age": None, "pool": None,
                           "finish_n": None}
+
+
+_SEASON_YEAR_RE = re.compile(r"\b(20(?:1[5-9]|2[0-9]))\b")
+
+
+def _season_in(m: str):
+    """The season a board/metric/playoffs question names, if any: an
+    explicit year (2015-2029), or the -1 sentinel for 'last season /
+    last year' (the builders resolve it against the bundle's season,
+    which the keyword path never sees). A year glued to 'class' belongs
+    to the rookie rule, not a season board."""
+    if re.search(r"\blast (season|year)\b", m):
+        return -1
+    for match in _SEASON_YEAR_RE.finditer(m):
+        if m[match.end():match.end() + 6].strip().startswith("class"):
+            continue
+        return int(match.group(1))
+    return None
 
 
 _METRIC_PHRASES = ("yards per route run", "air yards share", "target share",
@@ -292,6 +316,7 @@ def _keyword_board(message: str, m: str) -> dict | None:
             "team": None,
             "window_weeks": int(window.group(1)) if window else None,
             "direction": None,
+            "season": _season_in(m),
         }
     # Detailed-question boards and board filters: value ranks, game-log
     # finishes / floors / ceilings, schedule slates, within-team gaps,
@@ -384,6 +409,7 @@ def _keyword_board(message: str, m: str) -> dict | None:
         "max_age": max_age,
         "pool": pool,
         "finish_n": finish_n,
+        "season": _season_in(m),
     }
 
 
@@ -520,7 +546,7 @@ def _keyword_route(message: str) -> dict:
     base = {"player_names": [], "give_player_names": [], "receive_player_names": [], "picks": [],
             "give_picks": [], "receive_picks": [],
             "other_team_hint": None, "team_names": [], "metric_hint": None, "target_position": None,
-            "position_hint": None, "teams_mode": None, "week": None,
+            "position_hint": None, "teams_mode": None, "week": None, "season": None,
             "draft_year": None, "position": None,
             "replace_mode": None, "waiver_mode": None,
             "value_in_picks": None, "shop_pool": None,
@@ -545,7 +571,7 @@ def _keyword_route(message: str) -> dict:
         # odds question; it is the one phrase that outranks the playoff rule.
         return {**base, "intent": "schedule"}
     if re.search(r"playoff|postseason|clinch|eliminat", m):
-        return {**base, "intent": "playoffs"}
+        return {**base, "intent": "playoffs", "season": _season_in(m)}
     if re.search(r"power ranking|power rank|team to beat|strongest team", m):
         return {**base, "intent": "power_rankings"}
     if re.search(r"standings|division|most points|points leader|highest scoring|"
@@ -693,7 +719,8 @@ def _keyword_route(message: str) -> dict:
             if cand in m:
                 hint = cand
                 break
-        return {**base, "intent": "metric", "metric_hint": hint}
+        return {**base, "intent": "metric", "metric_hint": hint,
+                "season": _season_in(m)}
     # Player fallthrough: a question-shaped message carrying a player
     # name belongs to the player intent even with no other anchor. The
     # extracted name rides along so the resolver can confirm it (or ask
@@ -729,6 +756,7 @@ def classify(question: str, context: dict | None = None, history: list | None = 
             "position_hint": data.get("position_hint"),
             "teams_mode": data.get("teams_mode"),
             "week": data.get("week"),
+            "season": data.get("season"),
             "draft_year": data.get("draft_year"),
             "board_kind": data.get("board_kind"),
             "family": data.get("family"),

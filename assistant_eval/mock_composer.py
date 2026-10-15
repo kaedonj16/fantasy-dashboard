@@ -1137,6 +1137,10 @@ def _playoffs(pack):
     receipts = []
     if me.get("playoff_pct") is not None:
         receipts.append({"label": "Your playoff odds (%)", "value": fmt(me["playoff_pct"])})
+    traj = pack.get("odds_trajectory") or {}
+    if traj.get("start_pct") is not None and traj.get("start_week") is not None:
+        receipts.append({"label": f"Your playoff odds in Week {traj['start_week']} (%)",
+                         "value": fmt(traj["start_pct"])})
     if scen.get("wins_to_clinch") is not None:
         receipts.append({"label": "Wins to clinch", "value": fmt(scen["wins_to_clinch"])})
     elif me.get("wins_still_needed") is not None:
@@ -1167,13 +1171,25 @@ def _playoffs(pack):
                     "followups": [_fu("What are my odds of a first-round bye?"),
                                   _fu("How hard is my remaining schedule?")]})
         return ans
+    text = (f"{me.get('team_name')} sits at {me.get('record')} with "
+            f"{fmt(pack.get('weeks_remaining'))} weeks left. Your projected finish is "
+            f"{fmt(me.get('avg_final_wins'))} wins against a projected cut line of "
+            f"{fmt(pack.get('projected_cut_wins'))} wins, so the math says about "
+            f"{fmt(me.get('wins_still_needed'))} more wins gets you in.")
+    if traj.get("delta") is not None:
+        text += (f" Your odds have moved from {fmt(traj.get('start_pct'))} percent in Week "
+                 f"{traj.get('start_week')} to {fmt(traj.get('current_pct'))} percent in "
+                 f"Week {traj.get('current_week')}.")
+        movers = pack.get("odds_movers") or {}
+        risers = movers.get("risers") or []
+        if risers:
+            top_riser = risers[0]
+            text += (f" The biggest riser in the league is {top_riser.get('team_name')}, "
+                     f"up from {fmt(top_riser.get('start_pct'))} to "
+                     f"{fmt(top_riser.get('current_pct'))} percent.")
     ans.update({
         "verdict": f"{fmt(me.get('playoff_pct'))}% playoff odds",
-        "text": (f"{me.get('team_name')} sits at {me.get('record')} with "
-                 f"{fmt(pack.get('weeks_remaining'))} weeks left. Your projected finish is "
-                 f"{fmt(me.get('avg_final_wins'))} wins against a projected cut line of "
-                 f"{fmt(pack.get('projected_cut_wins'))} wins, so the math says about "
-                 f"{fmt(me.get('wins_still_needed'))} more wins gets you in."),
+        "text": text,
         "receipts": receipts[:4],
         "followups": [_fu("What are my odds of a first-round bye?"), _fu("Who is on the bubble?")],
     })
