@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "description": "Frozen assistant eval set: 68 questions with golden evidence packs for the BR Fantasy assistant (workshop section 5 core 20, the deep-cuts leaderboard family lb1-lb6, and the section 9 P1 league-context types: playoffs, power rankings, standings, matchup, schedule) plus the P1 trade-finding family tf1-tf4, and the P1 breakout board, Teams, and pick-ownership families bo1-bo3, tm1-tm2, pk1 (renamed from the branch po1, which collided with the playoffs po1), with te4 an extra trade_eval. The win-outcome family mu4-mu6 pins the game-outcome phrasings (will I win / what are my chances / will I lose) to matchup packs: a decisive favorite, a close game, and a decisive underdog. The buy/sell board family bl1/sh1 pins pool-wide buy-low and sell-high asks (no named player) to leaderboard value boards, with bsh4/bsh5 as the named-player controls that must stay single-player buy_sell_hold.",
+    "description": "Frozen assistant eval set: 73 questions with golden evidence packs for the BR Fantasy assistant (workshop section 5 core 20, the deep-cuts leaderboard family lb1-lb6, and the section 9 P1 league-context types: playoffs, power rankings, standings, matchup, schedule) plus the P1 trade-finding family tf1-tf4, and the P1 breakout board, Teams, and pick-ownership families bo1-bo3, tm1-tm2, pk1 (renamed from the branch po1, which collided with the playoffs po1), with te4 an extra trade_eval. The win-outcome family mu4-mu6 pins the game-outcome phrasings (will I win / what are my chances / will I lose) to matchup packs: a decisive favorite, a close game, and a decisive underdog. The buy/sell board family bl1/sh1 pins pool-wide buy-low and sell-high asks (no named player) to leaderboard value boards, with bsh4/bsh5 as the named-player controls that must stay single-player buy_sell_hold.",
     "scenario": "Kaedon's league Blackedraw, her team Caleb's Casting Couch, Week 7 of the 2026 season.",
     "packs": "Each evidence_pack mirrors, field for field, the dict the matching builder in dashboard_services/assistant/evidence.py returns. Values inside a pack are the only numbers an answer may cite.",
     "recapture": "These packs are frozen fixtures. Before any launch decision, recapture them from the live tools with: python3 scripts/run_assistant_eval.py --capture (writes assistant_eval/captured_questions.json; it never overwrites this file). A launch call made on stale fixtures is not a launch call.",
@@ -8019,6 +8019,603 @@
         "no_data": false,
         "must_mention": [
           "Mooney"
+        ]
+      }
+    },
+    {
+      "id": "bl2",
+      "type": "leaderboard",
+      "question": "Who should I buy low at RB?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "leaderboard",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "board_kind": "buy_low",
+        "requested_n": 10,
+        "position_filter": "RB",
+        "team_filter": null,
+        "value_days": 7,
+        "direction": "fallers",
+        "label": "Buy-low candidates",
+        "movers_basis": "value_window",
+        "window": {
+          "kind": "value",
+          "days": 7,
+          "applied": true
+        },
+        "dynasty": true,
+        "movers_examined": 6,
+        "pool_size": 2,
+        "board": [
+          {
+            "rank": 1,
+            "player_id": "legit-back",
+            "name": "Legit Back",
+            "team": "BUF",
+            "position": "RB",
+            "value": 2100.0,
+            "games": 6,
+            "on_my_roster": false,
+            "delta": -260.0,
+            "baseline_value": 2360.0,
+            "ppg": 12.8,
+            "expected_ppg": 12.5,
+            "over_expected": 0.3,
+            "rel_move_pct": -11.0,
+            "recent_ppg": 11.9,
+            "recent_expected_ppg": 13.1,
+            "recent_over_expected": -1.2,
+            "recent_games": 4,
+            "opp_ratio": 1.06,
+            "td_over_expected_recent": 0.1,
+            "age": 25,
+            "injury_status": null,
+            "mechanism": "opportunity holding while production lags it",
+            "score": 0.1221
+          },
+          {
+            "rank": 2,
+            "player_id": "steady-back",
+            "name": "Steady Back",
+            "team": "DEN",
+            "position": "RB",
+            "value": 1950.0,
+            "games": 6,
+            "on_my_roster": false,
+            "delta": -150.0,
+            "baseline_value": 2100.0,
+            "ppg": 12.5,
+            "expected_ppg": 12.4,
+            "over_expected": 0.1,
+            "rel_move_pct": -7.1,
+            "recent_ppg": 12.5,
+            "recent_expected_ppg": 12.4,
+            "recent_over_expected": 0.1,
+            "recent_games": 4,
+            "opp_ratio": 1.0,
+            "td_over_expected_recent": 0.0,
+            "age": 27,
+            "injury_status": null,
+            "mechanism": "still producing at or over expectation at a lower price",
+            "score": 0.0605
+          }
+        ],
+        "board_count": 2,
+        "qualification_text": "Value movement over the last 7 days from the site's value history; ranked by mispricing against the recent production and opportunity line (last 4 played weeks), peer prices at the position, and slate and age context; falling knives (production and opportunity both falling) and season-ending injuries are excluded. 2 of 6 fallers qualify."
+      },
+      "reference": {
+        "verdict_kind": "board",
+        "pick": "Legit Back",
+        "key_numbers": [
+          2100,
+          11.9,
+          1950
+        ],
+        "close_call": false
+      },
+      "trap": {
+        "kind": "excluded_player",
+        "name": "Falling Knife Back"
+      },
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Legit Back"
+        ]
+      }
+    },
+    {
+      "id": "bl3",
+      "type": "leaderboard",
+      "question": "Who should I buy low?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "leaderboard",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "board_kind": "buy_low",
+        "requested_n": 10,
+        "position_filter": null,
+        "team_filter": null,
+        "value_days": 7,
+        "direction": "fallers",
+        "label": "Buy-low candidates",
+        "movers_basis": "value_window",
+        "window": {
+          "kind": "value",
+          "days": 7,
+          "applied": true
+        },
+        "dynasty": true,
+        "movers_examined": 9,
+        "pool_size": 2,
+        "board": [
+          {
+            "rank": 1,
+            "player_id": "peer-match-wideout",
+            "name": "Peer Match Wideout",
+            "team": "HOU",
+            "position": "WR",
+            "value": 2400.0,
+            "games": 6,
+            "on_my_roster": false,
+            "delta": -265.0,
+            "baseline_value": 2665.0,
+            "ppg": 16.5,
+            "expected_ppg": 16.4,
+            "over_expected": 0.1,
+            "rel_move_pct": -9.9,
+            "recent_ppg": 16.6,
+            "recent_expected_ppg": 16.4,
+            "recent_over_expected": 0.2,
+            "recent_games": 4,
+            "opp_ratio": 1.0,
+            "td_over_expected_recent": 0.0,
+            "age": 24,
+            "injury_status": null,
+            "mechanism": "still producing at or over expectation at a lower price",
+            "peer_median_value": 4600.0,
+            "peer_gap_pct": 47.8,
+            "peer_count": 2,
+            "peer_anchor_name": "Star Wideout",
+            "peer_anchor_value": 4900.0,
+            "peer_anchor_gap_pct": 51.0,
+            "score": 0.4167
+          },
+          {
+            "rank": 2,
+            "player_id": "deep-dip-wideout",
+            "name": "Deep Dip Wideout",
+            "team": "NYJ",
+            "position": "WR",
+            "value": 2400.0,
+            "games": 6,
+            "on_my_roster": false,
+            "delta": -600.0,
+            "baseline_value": 3000.0,
+            "ppg": 9.0,
+            "expected_ppg": 10.0,
+            "over_expected": -1.0,
+            "rel_move_pct": -20.0,
+            "recent_ppg": 9.0,
+            "recent_expected_ppg": 10.0,
+            "recent_over_expected": -1.0,
+            "recent_games": 4,
+            "opp_ratio": 1.0,
+            "td_over_expected_recent": 0.0,
+            "age": 28,
+            "injury_status": null,
+            "mechanism": "opportunity holding while production lags it",
+            "score": 0.187
+          }
+        ],
+        "board_count": 2,
+        "qualification_text": "Value movement over the last 7 days from the site's value history; ranked by mispricing against the recent production and opportunity line (last 4 played weeks), peer prices at the position, and slate and age context; falling knives (production and opportunity both falling) and season-ending injuries are excluded. 2 of 9 fallers qualify."
+      },
+      "reference": {
+        "verdict_kind": "board",
+        "pick": "Peer Match Wideout",
+        "key_numbers": [
+          2400,
+          16.6,
+          4600
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Peer Match Wideout",
+          "Star Wideout"
+        ]
+      }
+    },
+    {
+      "id": "bl4",
+      "type": "leaderboard",
+      "question": "Who should I buy low?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "leaderboard",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "board_kind": "buy_low",
+        "requested_n": 10,
+        "position_filter": null,
+        "team_filter": null,
+        "value_days": 7,
+        "direction": "fallers",
+        "label": "Buy-low candidates",
+        "movers_basis": "value_window",
+        "window": {
+          "kind": "value",
+          "days": 7,
+          "applied": true
+        },
+        "dynasty": true,
+        "movers_examined": 7,
+        "pool_size": 2,
+        "board": [
+          {
+            "rank": 1,
+            "player_id": "rising-role-back",
+            "name": "Rising Role Back",
+            "team": "SEA",
+            "position": "RB",
+            "value": 1760.0,
+            "games": 6,
+            "on_my_roster": false,
+            "delta": -240.0,
+            "baseline_value": 2000.0,
+            "ppg": 12.0,
+            "expected_ppg": 12.6,
+            "over_expected": -0.6,
+            "rel_move_pct": -12.0,
+            "recent_ppg": 9.75,
+            "recent_expected_ppg": 13.0,
+            "recent_over_expected": -3.25,
+            "recent_games": 4,
+            "opp_ratio": 1.11,
+            "td_over_expected_recent": 0.0,
+            "age": 25,
+            "injury_status": null,
+            "mechanism": "role rising while production lags the opportunity",
+            "score": 0.1534
+          },
+          {
+            "rank": 2,
+            "player_id": "flat-faller-back",
+            "name": "Flat Faller Back",
+            "team": "LV",
+            "position": "RB",
+            "value": 1720.0,
+            "games": 6,
+            "on_my_roster": false,
+            "delta": -280.0,
+            "baseline_value": 2000.0,
+            "ppg": 12.2,
+            "expected_ppg": 12.1,
+            "over_expected": 0.1,
+            "rel_move_pct": -14.0,
+            "recent_ppg": 12.2,
+            "recent_expected_ppg": 12.1,
+            "recent_over_expected": 0.1,
+            "recent_games": 4,
+            "opp_ratio": 1.0,
+            "td_over_expected_recent": 0.0,
+            "age": 26,
+            "injury_status": null,
+            "mechanism": "still producing at or over expectation at a lower price",
+            "score": 0.1185
+          }
+        ],
+        "board_count": 2,
+        "qualification_text": "Value movement over the last 7 days from the site's value history; ranked by mispricing against the recent production and opportunity line (last 4 played weeks), peer prices at the position, and slate and age context; falling knives (production and opportunity both falling) and season-ending injuries are excluded. 2 of 7 fallers qualify."
+      },
+      "reference": {
+        "verdict_kind": "board",
+        "pick": "Rising Role Back",
+        "key_numbers": [
+          1760,
+          9.75,
+          1720
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Rising Role Back"
+        ]
+      }
+    },
+    {
+      "id": "sh2",
+      "type": "leaderboard",
+      "question": "Who should I sell high?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "leaderboard",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "board_kind": "sell_high",
+        "requested_n": 10,
+        "position_filter": null,
+        "team_filter": null,
+        "value_days": 7,
+        "direction": "risers",
+        "label": "Sell-high candidates",
+        "movers_basis": "value_window",
+        "window": {
+          "kind": "value",
+          "days": 7,
+          "applied": true
+        },
+        "dynasty": true,
+        "movers_examined": 8,
+        "pool_size": 2,
+        "board": [
+          {
+            "rank": 1,
+            "player_id": "touchdown-propped-back",
+            "name": "Touchdown Propped Back",
+            "team": "GB",
+            "position": "RB",
+            "value": 2300.0,
+            "games": 6,
+            "on_my_roster": false,
+            "delta": 380.0,
+            "baseline_value": 1920.0,
+            "ppg": 11.4,
+            "expected_ppg": 11.9,
+            "over_expected": -0.5,
+            "rel_move_pct": 19.8,
+            "recent_ppg": 13.4,
+            "recent_expected_ppg": 11.2,
+            "recent_over_expected": 2.2,
+            "recent_games": 4,
+            "opp_ratio": 1.01,
+            "td_over_expected_recent": 2.3,
+            "age": 27,
+            "injury_status": null,
+            "mechanism": "scoring propped by touchdowns over expectation",
+            "score": 0.2601
+          },
+          {
+            "rank": 2,
+            "player_id": "quiet-riser-back",
+            "name": "Quiet Riser Back",
+            "team": "ARI",
+            "position": "RB",
+            "value": 2600.0,
+            "games": 6,
+            "on_my_roster": false,
+            "delta": 300.0,
+            "baseline_value": 2300.0,
+            "ppg": 10.2,
+            "expected_ppg": 11.0,
+            "over_expected": -0.8,
+            "rel_move_pct": 13.0,
+            "recent_ppg": 10.6,
+            "recent_expected_ppg": 11.3,
+            "recent_over_expected": -0.7,
+            "recent_games": 4,
+            "opp_ratio": 0.98,
+            "td_over_expected_recent": 0.1,
+            "age": 25,
+            "injury_status": null,
+            "mechanism": "price ran ahead of the production line",
+            "score": 0.131
+          }
+        ],
+        "board_count": 2,
+        "qualification_text": "Value movement over the last 7 days from the site's value history; ranked by mispricing against the recent production and opportunity line (last 4 played weeks), peer prices at the position, and slate and age context; rises earned by real opportunity growth are excluded. 2 of 8 risers qualify."
+      },
+      "reference": {
+        "verdict_kind": "board",
+        "pick": "Touchdown Propped Back",
+        "key_numbers": [
+          2300,
+          13.4,
+          2600
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Touchdown Propped Back"
+        ]
+      }
+    },
+    {
+      "id": "sh3",
+      "type": "leaderboard",
+      "question": "Who should I sell high?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "leaderboard",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "board_kind": "sell_high",
+        "requested_n": 10,
+        "position_filter": null,
+        "team_filter": null,
+        "value_days": 7,
+        "direction": "risers",
+        "label": "Sell-high candidates",
+        "movers_basis": "value_window",
+        "window": {
+          "kind": "value",
+          "days": 7,
+          "applied": true
+        },
+        "dynasty": true,
+        "movers_examined": 9,
+        "pool_size": 2,
+        "board": [
+          {
+            "rank": 1,
+            "player_id": "star-priced-wideout",
+            "name": "Star Priced Wideout",
+            "team": "DAL",
+            "position": "WR",
+            "value": 4300.0,
+            "games": 6,
+            "on_my_roster": false,
+            "delta": 420.0,
+            "baseline_value": 3880.0,
+            "ppg": 12.1,
+            "expected_ppg": 12.6,
+            "over_expected": -0.5,
+            "rel_move_pct": 10.8,
+            "recent_ppg": 12.3,
+            "recent_expected_ppg": 12.5,
+            "recent_over_expected": -0.2,
+            "recent_games": 4,
+            "opp_ratio": 1.02,
+            "td_over_expected_recent": 0.1,
+            "age": 26,
+            "injury_status": null,
+            "mechanism": "price ran ahead of the production line",
+            "peer_median_value": 3100.0,
+            "peer_gap_pct": 38.7,
+            "peer_count": 3,
+            "peer_anchor_name": "Mid Wideout",
+            "peer_anchor_value": 2350.0,
+            "peer_anchor_gap_pct": 83.0,
+            "score": 0.3399
+          },
+          {
+            "rank": 2,
+            "player_id": "plain-riser-wideout",
+            "name": "Plain Riser Wideout",
+            "team": "TB",
+            "position": "WR",
+            "value": 2100.0,
+            "games": 6,
+            "on_my_roster": false,
+            "delta": 260.0,
+            "baseline_value": 1840.0,
+            "ppg": 9.6,
+            "expected_ppg": 10.4,
+            "over_expected": -0.8,
+            "rel_move_pct": 14.1,
+            "recent_ppg": 9.9,
+            "recent_expected_ppg": 10.6,
+            "recent_over_expected": -0.7,
+            "recent_games": 4,
+            "opp_ratio": 0.97,
+            "td_over_expected_recent": 0.0,
+            "age": 25,
+            "injury_status": null,
+            "mechanism": "price ran ahead of the production line",
+            "score": 0.1422
+          }
+        ],
+        "board_count": 2,
+        "qualification_text": "Value movement over the last 7 days from the site's value history; ranked by mispricing against the recent production and opportunity line (last 4 played weeks), peer prices at the position, and slate and age context; rises earned by real opportunity growth are excluded. 2 of 9 risers qualify."
+      },
+      "reference": {
+        "verdict_kind": "board",
+        "pick": "Star Priced Wideout",
+        "key_numbers": [
+          4300,
+          12.3,
+          3100
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Star Priced Wideout",
+          "Mid Wideout"
         ]
       }
     }

@@ -604,6 +604,38 @@ def _board_verdict(pack):
     return f"{top.get('name')} leads {label}"
 
 
+def _value_stats(row):
+    """Mirror of compose._value_stats."""
+    if row.get("recent_ppg") is not None:
+        return (f"{fmt(row.get('recent_ppg'))} PPG vs "
+                f"{fmt(row.get('recent_expected_ppg'))} expected over "
+                f"the last {row.get('recent_games')}")
+    return (f"{fmt(row.get('ppg'))} PPG vs "
+            f"{fmt(row.get('expected_ppg'))} expected")
+
+
+def _value_fragments(row, pack):
+    """Mirror of compose._value_fragments."""
+    parts = []
+    if row.get("mechanism"):
+        parts.append(str(row["mechanism"]))
+    anchor = row.get("peer_anchor_name")
+    gap = row.get("peer_anchor_gap_pct")
+    if anchor and gap is not None:
+        window = (f"over the last {row.get('recent_games')}"
+                  if row.get("recent_games") else "this season")
+        if pack.get("board_kind") == "buy_low":
+            parts.append(f"producing like {anchor} {window}, priced "
+                         f"{fmt(gap)}% below him")
+        else:
+            parts.append(f"producing like {anchor} {window}, priced "
+                         f"{fmt(gap)}% above him")
+    if row.get("slate_note"):
+        parts.append(f"{row['slate_note']} (avg matchup rank "
+                     f"{fmt(row.get('slate_avg_rank'))})")
+    return "; ".join(parts)
+
+
 def _board_line(row, pack):
     kind = pack.get("board_kind")
     rank = row.get("rank")
@@ -620,10 +652,13 @@ def _board_line(row, pack):
                     f"(was {fmt(row.get('baseline_value'))})")
         return f"{head}: {value} {pack.get('label')}"
     if kind in ("buy_low", "sell_high") and row.get("delta") is not None:
-        return (f"{head}: value {_fmt_delta(row['delta'])} to {value} "
+        line = (f"{head}: value {_fmt_delta(row['delta'])} to {value} "
                 f"(was {fmt(row.get('baseline_value'))}), "
-                f"{fmt(row.get('ppg'))} PPG vs "
-                f"{fmt(row.get('expected_ppg'))} expected")
+                f"{_value_stats(row)}")
+        frag = _value_fragments(row, pack)
+        if frag:
+            line += "; " + frag
+        return line
     if kind == "intersection":
         sec = row.get("secondary") or {}
         return (f"{head}: {value} {pack.get('label')}, "
@@ -646,10 +681,18 @@ def _board_receipt(row, pack):
     if kind == "movers" and row.get("delta") is not None:
         return {"label": label, "value": f"{_fmt_delta(row['delta'])} (now {value})"}
     if kind in ("buy_low", "sell_high") and row.get("delta") is not None:
-        return {"label": label,
-                "value": (f"value {_fmt_delta(row['delta'])} (now {value}); "
-                          f"{fmt(row.get('ppg'))} PPG "
-                          f"({_fmt_delta(row.get('over_expected'))} vs expected)")}
+        if row.get("recent_ppg") is not None:
+            stats = (f"{fmt(row.get('recent_ppg'))} PPG last "
+                     f"{row.get('recent_games')} "
+                     f"({_fmt_delta(row.get('recent_over_expected'))} "
+                     f"vs expected)")
+        else:
+            stats = (f"{fmt(row.get('ppg'))} PPG "
+                     f"({_fmt_delta(row.get('over_expected'))} vs expected)")
+        text = f"value {_fmt_delta(row['delta'])} (now {value}); {stats}"
+        if row.get("peer_median_value") is not None:
+            text += f"; peer median {fmt(row.get('peer_median_value'))}"
+        return {"label": label, "value": text}
     if kind == "intersection":
         sec = row.get("secondary") or {}
         return {"label": label,
@@ -684,10 +727,16 @@ def _board_intro_template(pack):
         return f"{top.get('name')} leads the {label} board at {value}."
     if kind in ("buy_low", "sell_high") and top.get("delta") is not None:
         word = "buy-low" if kind == "buy_low" else "sell-high"
+        if top.get("recent_ppg") is not None:
+            scoring = (f"{fmt(top.get('recent_ppg'))} PPG against "
+                       f"{fmt(top.get('recent_expected_ppg'))} expected "
+                       f"over the last {top.get('recent_games')}")
+        else:
+            scoring = (f"{fmt(top.get('ppg'))} PPG against "
+                       f"{fmt(top.get('expected_ppg'))} expected")
         return (f"{top.get('name')} tops the {word} board: value "
                 f"{_fmt_delta(top['delta'])} to {value} while scoring "
-                f"{fmt(top.get('ppg'))} PPG against "
-                f"{fmt(top.get('expected_ppg'))} expected.")
+                f"{scoring}.")
     return (f"{top.get('name')} leads {label} at {value} across "
             f"{pack.get('pool_size')} qualified players.")
 

@@ -322,6 +322,12 @@ def score_answer(question: dict, answer: dict) -> dict:
             and not _in_actions and grounding_ok
         if not trap_ok:
             notes.append("unneeded-qb-claim trap failed: the covered QB must not be recommended")
+    elif trap.get("kind") == "excluded_player":
+        # A screened-out player (a falling knife on a value board) was
+        # examined but must not surface anywhere in the answer.
+        trap_ok = str(trap.get("name") or "").lower() not in full.lower()
+        if not trap_ok:
+            notes.append("excluded-player trap failed: the screened-out player was named")
 
     # Structure
     if no_data_expected or clarify or gated_expected:
