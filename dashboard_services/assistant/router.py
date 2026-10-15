@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 INTENTS = ["start_sit", "trade_eval", "trade_finding", "buy_sell_hold", "player", "metric", "leaderboard", "waivers", "this_week",
            "playoffs", "power_rankings", "standings", "matchup", "schedule",
            "breakout_board", "breakout_track_record", "breakout_history", "teams", "pick_ownership",
-           "keeper", "rookie", "cross_league", "replacement", "handcuff",
+           "keeper", "rookie", "cross_league", "replacement", "handcuff", "activity",
            "remember", "out_of_scope"]
 
 SCHEMA = {
@@ -126,6 +126,10 @@ SYSTEM = (
     "player_names. "
     "cross_league: questions that explicitly span the user's leagues (across my leagues, "
     "normal intent even if the user has other leagues. "
+    "activity: what has already happened in the user's league: completed trades, "
+    "waiver moves that were made, and injury headlines (what trades went down, "
+    "league activity, recent transactions, who traded). Past events only: advice "
+    "about what to do next is waivers, trade_finding, or this_week, never activity. "
     "remember: the user asks you to remember a preference (preference_text is the preference). "
     "out_of_scope: anything else (trivia, real-game talk, other leagues). "
     "Use thread history only to resolve short follow-ups. Return JSON only. No em dashes."
@@ -380,6 +384,15 @@ def _keyword_route(message: str) -> dict:
             wmode = "drop"
         return {**base, "intent": "waivers", "waiver_mode": wmode,
                 "position": _target_position(m)}
+    # League activity: what already happened (completed trades, made waiver
+    # moves, injury headlines). Feed or past-tense framing is required, so
+    # advice questions ("what waiver moves should I make") keep the intents
+    # below.
+    if re.search(r"league activity|activity feed|\btransactions?\b|what happened in my league|"
+                 r"what'?s happening in my league|what trades\b|who traded\b|recent trades\b|"
+                 r"latest trade\b|trades? (went down|gone down|go down|happened)|"
+                 r"(moves|claims) (went down|happened|so far)\b", m):
+        return {**base, "intent": "activity"}
     board = _keyword_board(message, m)
     if board is not None:
         return {**base, **board}

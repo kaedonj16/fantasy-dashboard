@@ -33,6 +33,7 @@ _INTENT_LABELS = {
     "standings": "standings answer", "matchup": "matchup answer", "schedule": "schedule answer",
     "keeper": "keeper answer", "rookie": "rookie answer",
     "cross_league": "cross-league answer",
+    "activity": "league activity answer",
 }
 
 
