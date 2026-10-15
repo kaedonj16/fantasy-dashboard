@@ -36,6 +36,7 @@ _ACT_LINKS = {
     "leaderboard": {"href": "/metrics", "label": "View on Advanced Metrics"},
     "waivers": {"href": "/waivers", "label": "View on Waivers"},
     "this_week": {"href": "/", "label": "View dashboard"},
+    "trade_finding": {"href": "/trade?tab=suggestions", "label": "Open Trade Suggestions"},
 }
 
 
@@ -436,8 +437,46 @@ def _cta_label(action):
 
 # -- leaderboard: mirrors of compose's deterministic board rendering -------------
 
+def _finding_link(pack, finding):
+    """Mirror of compose._finding_link (same URL shape, pack ids only)."""
+    league = pack.get("league") or {}
+    if not league.get("season") or not league.get("league_id"):
+        return None
+    recv = [str(p.get("player_id")) for p in finding.get("receive") or []
+            if isinstance(p, dict) and p.get("player_id")]
+    give = [str(p.get("player_id")) for p in finding.get("give") or []
+            if isinstance(p, dict) and p.get("player_id")]
+    if not recv or not give:
+        return None
+    return {"href": f"/{league.get('platform') or 'sleeper'}/{league['season']}/{league['league_id']}"
+                    f"/trade?a={','.join(recv)}&b={','.join(give)}",
+            "label": "Open in Trade Calculator"}
+
+def _gated_trade_finding_answer(pack):
+    """Mirror of compose._gated_trade_finding_answer (same strings)."""
+    league = pack.get("league") or {}
+    if league.get("season") and league.get("league_id"):
+        pricing = (f"/{league.get('platform') or 'sleeper'}/{league['season']}"
+                   f"/{league['league_id']}/pricing")
+    else:
+        pricing = "/pricing"
+    return {
+        "verdict": "Trade finding is a PRO feature",
+        "text": ("Finding trades is part of PRO on BR Fantasy. The scan checks every roster in "
+                 "your league for a partner whose needs line up with yours, and your plan does "
+                 "not include it, so I cannot run it here. With PRO you can ask me to find a "
+                 "trade and I will rank real packages from your league with values on both sides."),
+        "receipts": [], "caveat": None,
+        "followups": ["What should I do with my team this week?",
+                      "Should I accept a trade I was offered?"],
+        "act_link": {"href": pricing, "label": "See PRO plans"},
+        "actions": [],
+    }
+
 def gated_answer(pack: dict) -> dict:
     """Mirror of compose.gated_answer (same strings, same shape)."""
+    if (pack or {}).get("type") == "trade_finding":
+        return _gated_trade_finding_answer(pack)
     label = pack.get("label") or "That metric"
     text = (f"{label} is a PRO metric on BR Fantasy, so its board is not included "
             "on the free tier. Free boards I can pull right now include target share, "
@@ -722,9 +761,63 @@ def _schedule(pack):
     return ans
 
 
+def _side_receipts(f):
+    return [{"label": "You receive (total value)", "value": fmt(f.get("receive_total"))},
+            {"label": "You give (total value)", "value": fmt(f.get("give_total"))},
+            {"label": "Fairness gap", "value": fmt(f.get("fairness_gap"))}]
+
+
+def _names(players):
+    return " and ".join(p["name"] for p in players or [])
+
+
+def _trade_finding(pack):
+    if pack.get("gated"):
+        return gated_answer(pack)
+    findings = pack.get("findings") or []
+    ans = _base("trade_finding", pack)
+    if findings:
+        top = findings[0]
+        link = _finding_link(pack, top)
+        if link:
+            ans["act_link"] = link
+        recv, give = top.get("receive") or [], top.get("give") or []
+        ans.update({
+            "verdict": f"Trade target: {_names(recv[:1])} from {top.get('partner_team')}",
+            "text": (f"{top.get('partner_team')} fits on both sides. You receive {_names(recv)} "
+                     f"worth {fmt(top.get('receive_total'))}; you send {_names(give)} worth "
+                     f"{fmt(top.get('give_total'))}, a fairness gap of "
+                     f"{fmt(abs(float(top.get('fairness_gap') or 0)))}."),
+            "receipts": _side_receipts(top),
+            "followups": ["Who else could I target?", "What can I get for my spare players?"],
+        })
+        return ans
+    miss = pack.get("closest_miss") or {}
+    if miss:
+        ans.update({
+            "verdict": "No clean fit right now",
+            "text": (f"No clean fit right now. The closest miss is {miss.get('partner_team')}: "
+                     f"{_names(miss.get('receive') or [])} for {_names(miss.get('give') or [])} "
+                     f"totals {fmt(miss.get('receive_total'))} against "
+                     f"{fmt(miss.get('give_total'))}, a fairness gap of "
+                     f"{fmt(abs(float(miss.get('fairness_gap') or 0)))}, outside the fair band. "
+                     "The nearest alternative is the waiver wire."),
+            "receipts": _side_receipts(miss),
+            "followups": ["Who is available on waivers?", "What should I do with my team this week?"],
+        })
+        return ans
+    ans.update({
+        "verdict": "No clean fit right now",
+        "text": ("No clean fit right now: no roster in your league lines up on both sides "
+                 "inside the fair band. The nearest alternative is the waiver wire."),
+        "receipts": [],
+        "followups": ["Who is available on waivers?", "What should I do with my team this week?"],
+    })
+    return ans
+
 _BUILDERS = {"start_sit": _start_sit, "trade_eval": _trade_eval,
              "buy_sell_hold": _buy_sell_hold, "player": _player, "metric": _metric,
-             "leaderboard": _leaderboard,
+             "leaderboard": _leaderboard, "trade_finding": _trade_finding,
              "waivers": _waivers, "this_week": _this_week,
              "playoffs": _playoffs, "power_rankings": _power_rankings,
              "standings": _standings, "matchup": _matchup, "schedule": _schedule}

@@ -203,6 +203,7 @@ def score_answer(question: dict, answer: dict) -> dict:
     full = _full_text(answer)
     verdict_text = str((answer or {}).get("verdict") or "")
     no_data_expected = bool(expect.get("no_data")) or (isinstance(pack, dict) and pack.get("available") is False)
+    gated_expected = isinstance(pack, dict) and bool(pack.get("gated"))
     clarify = _is_clarify(answer)
 
     # Verdict
@@ -218,6 +219,12 @@ def score_answer(question: dict, answer: dict) -> dict:
         verdict_ok = not verdict_text.strip() and "pro" in full.lower()
         if not verdict_ok:
             notes.append("expected the PRO-gated answer shape (no verdict, PRO named)")
+    elif gated_expected:
+        # A PRO-gated pack carries no findings by construction: the answer
+        # passes only if it states the gate and shows no receipts/findings.
+        verdict_ok = "pro" in full.lower() and not (answer or {}).get("receipts")
+        if not verdict_ok:
+            notes.append("gated pack: the answer must state the PRO gate and carry no receipts")
     elif no_data_expected:
         verdict_ok = _no_data_shape(answer)
         if not verdict_ok:
@@ -290,9 +297,16 @@ def score_answer(question: dict, answer: dict) -> dict:
         trap_ok = verdict_ok and grounding_ok
         if not trap_ok:
             notes.append("pro-gate trap failed: needs the gated shape and zero invented numbers")
+    elif trap.get("kind") == "no_clean_fit":
+        # The trade-finding trap: no partner fits inside the fairness band.
+        # The answer must say so plainly (the key-number citation in the
+        # verdict check above is what proves the closest miss was named).
+        trap_ok = verdict_ok and "no clean fit" in full.lower()
+        if not trap_ok:
+            notes.append("no-fit trap failed: the answer must say there is no clean fit")
 
     # Structure
-    if no_data_expected or clarify:
+    if no_data_expected or clarify or gated_expected:
         structure_ok = bool((answer or {}).get("text"))
         if not structure_ok:
             notes.append("no-data/clarify answer has no text")

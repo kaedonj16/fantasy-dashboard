@@ -1,10 +1,10 @@
 {
   "_meta": {
-    "description": "Frozen assistant eval set: 38 questions with golden evidence packs for the BR Fantasy assistant (workshop section 5 core 20, the deep-cuts leaderboard family lb1-lb6, and the section 9 P1 league-context types: playoffs, power rankings, standings, matchup, schedule).",
+    "description": "Frozen assistant eval set: 42 questions with golden evidence packs for the BR Fantasy assistant (workshop section 5 core 20, the deep-cuts leaderboard family lb1-lb6, and the section 9 P1 league-context types: playoffs, power rankings, standings, matchup, schedule) plus the P1 trade-finding family tf1-tf4.",
     "scenario": "Kaedon's league Blackedraw, her team Caleb's Casting Couch, Week 7 of the 2026 season.",
     "packs": "Each evidence_pack mirrors, field for field, the dict the matching builder in dashboard_services/assistant/evidence.py returns. Values inside a pack are the only numbers an answer may cite.",
     "recapture": "These packs are frozen fixtures. Before any launch decision, recapture them from the live tools with: python3 scripts/run_assistant_eval.py --capture (writes assistant_eval/captured_questions.json; it never overwrites this file). A launch call made on stale fixtures is not a launch call.",
-    "pass_bar": "Zero invented numbers across all 38; every trap handled; at least 35 of 38 verdicts match the reference (90 percent, workshop section 5). The blind head-to-head preference bar is human-scored and is not part of the automated runner."
+    "pass_bar": "Zero invented numbers across all 42; every trap handled; at least 35 of 42 verdicts match the reference (90 percent, workshop section 5). The blind head-to-head preference bar is human-scored and is not part of the automated runner."
   },
   "questions": [
     {
@@ -4924,6 +4924,476 @@
         "no_data": false,
         "must_mention": [
           "Pittsburgh Pilots"
+        ]
+      }
+    },
+    {
+      "id": "tf1",
+      "type": "trade_finding",
+      "question": "Find me a trade for a running back.",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "trade_finding",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "mode": "need",
+        "target_position": "RB",
+        "sell_player": null,
+        "target_player": null,
+        "viewer_needs": [
+          "RB"
+        ],
+        "viewer_surplus": [
+          "WR"
+        ],
+        "findings": [
+          {
+            "partner_roster_id": "2",
+            "partner_team": "Pittsburgh Pilots",
+            "give": [
+              {
+                "player_id": "jordan-addison",
+                "name": "Jordan Addison",
+                "team": "MIN",
+                "position": "WR",
+                "value": 3920.0
+              }
+            ],
+            "receive": [
+              {
+                "player_id": "woody-marks",
+                "name": "Woody Marks",
+                "team": "HOU",
+                "position": "RB",
+                "value": 2400.0
+              },
+              {
+                "player_id": "darnell-mooney",
+                "name": "Darnell Mooney",
+                "team": "ATL",
+                "position": "WR",
+                "value": 1500.0
+              }
+            ],
+            "give_total": 3920.0,
+            "receive_total": 3900.0,
+            "fairness_gap": -20.0,
+            "fairness": 0.99,
+            "acceptance_rate": 0.62,
+            "partner_needs": [
+              "WR"
+            ],
+            "partner_surplus": [
+              "RB"
+            ],
+            "you_fill": [
+              "WR"
+            ],
+            "they_fill": [
+              "RB"
+            ]
+          },
+          {
+            "partner_roster_id": "5",
+            "partner_team": "Gridiron Gurus",
+            "give": [
+              {
+                "player_id": "zay-flowers",
+                "name": "Zay Flowers",
+                "team": "BAL",
+                "position": "WR",
+                "value": 3850.0
+              }
+            ],
+            "receive": [
+              {
+                "player_id": "tony-pollard",
+                "name": "Tony Pollard",
+                "team": "TEN",
+                "position": "RB",
+                "value": 2100.0
+              },
+              {
+                "player_id": "calvin-ridley",
+                "name": "Calvin Ridley",
+                "team": "TEN",
+                "position": "WR",
+                "value": 1750.0
+              }
+            ],
+            "give_total": 3850.0,
+            "receive_total": 3850.0,
+            "fairness_gap": 0.0,
+            "fairness": 1.0,
+            "acceptance_rate": 0.5,
+            "partner_needs": [
+              "WR"
+            ],
+            "partner_surplus": [
+              "RB"
+            ],
+            "you_fill": [
+              "WR"
+            ],
+            "they_fill": [
+              "RB"
+            ]
+          }
+        ],
+        "no_fit": false,
+        "closest_miss": null,
+        "margin": {
+          "thin": false
+        }
+      },
+      "reference": {
+        "verdict_kind": "findings",
+        "pick": "Woody Marks",
+        "key_numbers": [
+          3900,
+          3920,
+          20
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Pittsburgh Pilots",
+          "Woody Marks"
+        ]
+      }
+    },
+    {
+      "id": "tf2",
+      "type": "trade_finding",
+      "question": "What can I get for Jordan Addison?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "trade_finding",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "mode": "sell",
+        "target_position": null,
+        "sell_player": {
+          "player_id": "jordan-addison",
+          "name": "Jordan Addison",
+          "team": "MIN",
+          "position": "WR",
+          "value": 3920.0
+        },
+        "target_player": null,
+        "viewer_needs": [
+          "RB"
+        ],
+        "viewer_surplus": [
+          "WR"
+        ],
+        "findings": [
+          {
+            "partner_roster_id": "2",
+            "partner_team": "Pittsburgh Pilots",
+            "give": [
+              {
+                "player_id": "jordan-addison",
+                "name": "Jordan Addison",
+                "team": "MIN",
+                "position": "WR",
+                "value": 3920.0
+              }
+            ],
+            "receive": [
+              {
+                "player_id": "woody-marks",
+                "name": "Woody Marks",
+                "team": "HOU",
+                "position": "RB",
+                "value": 2400.0
+              },
+              {
+                "player_id": "darnell-mooney",
+                "name": "Darnell Mooney",
+                "team": "ATL",
+                "position": "WR",
+                "value": 1500.0
+              }
+            ],
+            "give_total": 3920.0,
+            "receive_total": 3900.0,
+            "fairness_gap": -20.0,
+            "fairness": null,
+            "acceptance_rate": null,
+            "partner_needs": [
+              "WR"
+            ],
+            "partner_surplus": [
+              "RB"
+            ],
+            "you_fill": [
+              "WR"
+            ],
+            "they_fill": [
+              "RB"
+            ]
+          },
+          {
+            "partner_roster_id": "7",
+            "partner_team": "Waiver Wire Wizards",
+            "give": [
+              {
+                "player_id": "jordan-addison",
+                "name": "Jordan Addison",
+                "team": "MIN",
+                "position": "WR",
+                "value": 3920.0
+              }
+            ],
+            "receive": [
+              {
+                "player_id": "tony-pollard",
+                "name": "Tony Pollard",
+                "team": "TEN",
+                "position": "RB",
+                "value": 2100.0
+              },
+              {
+                "player_id": "calvin-ridley",
+                "name": "Calvin Ridley",
+                "team": "TEN",
+                "position": "WR",
+                "value": 1750.0
+              }
+            ],
+            "give_total": 3920.0,
+            "receive_total": 3850.0,
+            "fairness_gap": -70.0,
+            "fairness": null,
+            "acceptance_rate": null,
+            "partner_needs": [
+              "WR"
+            ],
+            "partner_surplus": [
+              "RB",
+              "WR"
+            ],
+            "you_fill": [
+              "WR"
+            ],
+            "they_fill": [
+              "RB"
+            ]
+          }
+        ],
+        "no_fit": false,
+        "closest_miss": null,
+        "margin": {
+          "thin": false
+        }
+      },
+      "reference": {
+        "verdict_kind": "findings",
+        "pick": "Woody Marks",
+        "key_numbers": [
+          3900,
+          3920,
+          20
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Pittsburgh Pilots",
+          "Woody Marks"
+        ]
+      }
+    },
+    {
+      "id": "tf3",
+      "type": "trade_finding",
+      "question": "Find me a trade for a wide receiver.",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "trade_finding",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "mode": null,
+        "target_position": null,
+        "sell_player": null,
+        "target_player": null,
+        "viewer_needs": [],
+        "viewer_surplus": [],
+        "findings": [],
+        "no_fit": false,
+        "closest_miss": null,
+        "margin": {
+          "thin": false
+        },
+        "gated": true
+      },
+      "reference": {
+        "verdict_kind": "gated",
+        "pick": "PRO required",
+        "key_numbers": [],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "PRO"
+        ]
+      }
+    },
+    {
+      "id": "tf4",
+      "type": "trade_finding",
+      "question": "Find me a trade for a tight end.",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "trade_finding",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "mode": "need",
+        "target_position": "TE",
+        "sell_player": null,
+        "target_player": null,
+        "viewer_needs": [
+          "TE"
+        ],
+        "viewer_surplus": [
+          "WR"
+        ],
+        "findings": [],
+        "no_fit": true,
+        "closest_miss": {
+          "partner_roster_id": "2",
+          "partner_team": "Pittsburgh Pilots",
+          "give": [
+            {
+              "player_id": "jordan-addison",
+              "name": "Jordan Addison",
+              "team": "MIN",
+              "position": "WR",
+              "value": 3920.0
+            }
+          ],
+          "receive": [
+            {
+              "player_id": "david-njoku",
+              "name": "David Njoku",
+              "team": "CLE",
+              "position": "TE",
+              "value": 2900.0
+            }
+          ],
+          "give_total": 3920.0,
+          "receive_total": 2900.0,
+          "fairness_gap": -1020.0,
+          "fairness": 0.74,
+          "acceptance_rate": 0.18,
+          "partner_needs": [
+            "WR"
+          ],
+          "partner_surplus": [
+            "RB"
+          ],
+          "you_fill": [
+            "WR"
+          ],
+          "they_fill": [
+            "TE"
+          ]
+        },
+        "margin": {
+          "thin": false
+        },
+        "nearest_alternative": "waivers"
+      },
+      "reference": {
+        "verdict_kind": "no_fit",
+        "pick": "No clean fit",
+        "key_numbers": [
+          2900,
+          3920,
+          1020
+        ],
+        "close_call": false
+      },
+      "trap": {
+        "kind": "no_clean_fit"
+      },
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Pittsburgh Pilots",
+          "Njoku"
         ]
       }
     }

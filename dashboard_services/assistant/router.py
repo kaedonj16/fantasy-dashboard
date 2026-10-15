@@ -11,7 +11,7 @@ from dashboard_services.assistant.model import call_model_json
 
 logger = logging.getLogger(__name__)
 
-INTENTS = ["start_sit", "trade_eval", "buy_sell_hold", "player", "metric", "leaderboard", "waivers", "this_week",
+INTENTS = ["start_sit", "trade_eval", "trade_finding", "buy_sell_hold", "player", "metric", "leaderboard", "waivers", "this_week",
            "playoffs", "power_rankings", "standings", "matchup", "schedule",
            "remember", "out_of_scope"]
 
@@ -26,6 +26,7 @@ SCHEMA = {
         "other_team_hint": {"type": ["string", "null"]},
         "team_names": {"type": "array", "items": {"type": "string"}},
         "metric_hint": {"type": ["string", "null"]},
+        "target_position": {"type": ["string", "null"]},
         "week": {"type": ["integer", "null"]},
         "preference_text": {"type": ["string", "null"]},
         "board_kind": {"type": ["string", "null"], "enum": ["board", "intersection", "dual", "movers", "matchup", None]},
@@ -36,14 +37,19 @@ SCHEMA = {
         "window_weeks": {"type": ["integer", "null"]},
         "direction": {"type": ["string", "null"], "enum": ["risers", "fallers", None]},
     },
-    "required": ["intent", "player_names", "give_player_names", "receive_player_names", "picks", "other_team_hint", "team_names", "metric_hint", "week", "preference_text", "board_kind", "second_metric_hint", "top_n", "position", "team", "window_weeks", "direction"],
+    "required": ["intent", "player_names", "give_player_names", "receive_player_names", "picks", "other_team_hint", "team_names", "metric_hint", "target_position", "week", "preference_text", "board_kind", "second_metric_hint", "top_n", "position", "team", "window_weeks", "direction"],
     "additionalProperties": False,
 }
 
 SYSTEM = (
     "You route fantasy football questions for the BR Fantasy assistant. "
     "Classify into exactly one intent and extract entities verbatim from the message. "
-    "start_sit: who to start. trade_eval: a proposed trade with give and receive sides. "
+    "start_sit: who to start. trade_eval: a proposed trade with give and receive sides, or whether to "
+    "accept a specific deal (should I trade X for Y is trade_eval). "
+    "trade_finding: the user wants you to FIND or propose a trade (find me a trade, who should I "
+    "target, what can I get for X, I need a running back, who is gettable). For trade_finding, put a "
+    "named player (theirs to move, or a specific target on another team) in player_names and a wanted "
+    "position in target_position (QB, RB, WR, TE), else null. "
     "buy_sell_hold: buy/sell/hold on a player. player: a general player question. "
     "metric: a question about one named player and a metric, or a metric definition "
     "(metric_hint is the metric name). "
@@ -128,10 +134,34 @@ def _keyword_board(message: str, m: str) -> dict | None:
     }
 
 
+# Finding vs evaluating, for the keyword fallback: finding asks the
+# assistant to go find a deal; evaluating judges a deal already on the table.
+_FINDING_RE = re.compile(
+    r"\bfind (me |us )?(a |the )?trade\b|\bfind me\b"
+    r"|\bwhat (can|could|would) i get for\b"
+    r"|\bwho (should|can|could) i target\b|\bwho to target\b"
+    r"|\btrade targets?\b|\bgettable\b"
+    r"|\btrade for (a |an |the )?(qb|rb|wr|te|quarterback|running ?back|wide ?receiver|wideout|tight ?end)\b"
+    r"|\bi need (a |an |the )?(qb|rb|wr|te|quarterback|running ?back|wide ?receiver|wideout|tight ?end)\b")
+
+_POSITION_PATTERNS = (
+    (r"\bquarterback\b|\bqb\b", "QB"),
+    (r"\brunning ?back\b|\brb\b", "RB"),
+    (r"\bwide ?receiver\b|\bwideout\b|\bwr\b", "WR"),
+    (r"\btight ?end\b|\bte\b", "TE"),
+)
+
+
+def _target_position(m: str):
+    for pattern, pos in _POSITION_PATTERNS:
+        if re.search(pattern, m):
+            return pos
+    return None
+
 def _keyword_route(message: str) -> dict:
     m = (message or "").lower()
     base = {"player_names": [], "give_player_names": [], "receive_player_names": [], "picks": [],
-            "other_team_hint": None, "team_names": [], "metric_hint": None, "week": None,
+            "other_team_hint": None, "team_names": [], "metric_hint": None, "target_position": None, "week": None,
             "preference_text": None, **_BOARD_ENTITY_DEFAULTS}
     if re.search(r"\bremember\b|\bdon'?t forget\b|\bkeep in mind\b", m):
         return {**base, "intent": "remember", "preference_text": message.strip()}
@@ -163,6 +193,8 @@ def _keyword_route(message: str) -> dict:
         return {**base, **board}
     if re.search(r"\bstart\b|\bsit\b|\bflex\b", m):
         return {**base, "intent": "start_sit"}
+    if _FINDING_RE.search(m):
+        return {**base, "intent": "trade_finding", "target_position": _target_position(m)}
     if re.search(r"\btrade\b|\bswap\b", m):
         return {**base, "intent": "trade_eval"}
     if re.search(r"\bbuy\b|\bsell\b|\bhold\b", m):
@@ -197,6 +229,7 @@ def classify(question: str, context: dict | None = None, history: list | None = 
             "other_team_hint": data.get("other_team_hint"),
             "team_names": data.get("team_names") or [],
             "metric_hint": data.get("metric_hint"),
+            "target_position": data.get("target_position"),
             "week": data.get("week"),
             "board_kind": data.get("board_kind"),
             "second_metric_hint": data.get("second_metric_hint"),
