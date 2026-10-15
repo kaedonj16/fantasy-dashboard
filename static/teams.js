@@ -10,7 +10,11 @@
     var _season = _cfg.season;
     var _leagueType = _cfg.leagueType;
     var _leagueSize = _cfg.leagueSize;
-    var _viewerRosterId = _cfg.viewerRosterId;
+    // The cached Teams body is league-generic and carries no viewer id in
+    // its cfg (Class A audit); fall back to the per-request, session-injected
+    // window._viewerRid, the same source the card float uses.
+    var _viewerRosterId = _cfg.viewerRosterId
+        || (window._viewerRid != null && window._viewerRid !== '' ? String(window._viewerRid) : '');
     var _offseasonMode = _cfg.offseasonMode;
     var _draftEnded = _cfg.draftEnded;
     var _loaded = {};
@@ -30,7 +34,8 @@
         _season = next.season;
         _leagueType = next.leagueType;
         _leagueSize = next.leagueSize;
-        _viewerRosterId = next.viewerRosterId;
+        _viewerRosterId = next.viewerRosterId
+            || (window._viewerRid != null && window._viewerRid !== '' ? String(window._viewerRid) : '');
         _offseasonMode = next.offseasonMode;
         _draftEnded = next.draftEnded;
         _loaded = {};
@@ -625,8 +630,13 @@
 
     function openTeamDrawer(rid) {
         var payload = _drawerPayload();
-        var t = payload[String(rid)];
-        if (!t) return;
+        var raw = payload[String(rid)];
+        if (!raw) return;
+        // is_viewer is NOT taken from the cached drawer payload (the body is
+        // league-generic); derive it here from the session roster id.
+        var t = Object.assign({}, raw, {
+            is_viewer: !!_viewerRosterId && String(rid) === String(_viewerRosterId),
+        });
         var drawer = document.getElementById('teamDrawer');
         var scrim = document.getElementById('teamDrawerScrim');
         if (!drawer || !scrim) return;

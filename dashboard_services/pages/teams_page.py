@@ -176,8 +176,18 @@ def build_teams_body(ctx: dict) -> str:
     except Exception:
         logger.debug("teams: pick value table failed", exc_info=True)
     
-    viewer = ctx.get("viewer") or {}
-    viewer_roster_id = viewer.get("viewer_roster_id")
+    # Cache-safety (Class A audit): this body is stored in the per-league
+    # page_html cache (store_page_html "teams", 30 min, shared across
+    # workers via /tmp) and served to every viewer of the league, and the
+    # background builder runs with no request session at all. Baking the
+    # building viewer's identity in here (the YOU pill, data-viewer, the
+    # drawer is_viewer flag, the teams.js viewerRosterId) therefore served
+    # one manager's personalization to every other manager, or nobody's.
+    # Same pattern as the activity page: emit league-generic markup only
+    # and let the client personalize from the per-request, session-injected
+    # window._viewerRid (card float + YOU pill inline below; the drawer
+    # is_viewer flag is derived in teams.js at open time).
+    viewer_roster_id = None
 
     # ----------------- Load value table -----------------
     # Expected rows like {id, name, position, team, value, search_name}
@@ -1015,6 +1025,23 @@ def build_teams_body(ctx: dict) -> str:
         var viewer = grid.querySelector('.team-strength-card[data-roster-id="' + rid + '"]');
         if (viewer && grid.firstChild !== viewer) grid.insertBefore(viewer, grid.firstChild);
       }}
+      // The cached body is league-generic (see build_teams_body): apply the
+      // viewer's YOU pill + data-viewer marker client-side, in both grading
+      // grids, from the session-injected roster id. Idempotent.
+      function markViewer() {{
+        var rid = (window._viewerRid || '').toString().trim();
+        if (!rid) return;
+        document.querySelectorAll('.team-strength-card[data-roster-id="' + rid + '"]').forEach(function(card) {{
+          card.setAttribute('data-viewer', '1');
+          var row = card.querySelector('.tsc-namerow');
+          if (row && !row.querySelector('.tsc-you')) {{
+            var pill = document.createElement('span');
+            pill.className = 'tsc-you';
+            pill.textContent = 'YOU';
+            row.appendChild(pill);
+          }}
+        }});
+      }}
       function _setSortLabel(text) {{
         var lbl = document.getElementById('teamsSortLabel');
         if (!lbl) return;
@@ -1107,6 +1134,7 @@ def build_teams_body(ctx: dict) -> str:
       }});
       // Default: float the viewer's card to the top using the session-injected _viewerRid
       (function() {{
+        markViewer();
         floatViewer();
       }})();
 

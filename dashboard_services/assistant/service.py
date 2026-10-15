@@ -361,12 +361,23 @@ def ask(account_key: str, message: str, *, platform=None, league_id=None, season
 
     preferences = store.list_preferences(account_key)
 
-    # Answer caching: user-independent factual answers only.
+    # Answer caching: user-independent factual answers only. The key must
+    # still scope everything the composed answer actually depends on
+    # (Class A audit): the act link is built from the pack's league, the
+    # metric receipts order by the viewer's own roster (on_my_roster), and
+    # a player answer's recent-form points use the league's scoring
+    # settings. An intent/entities/week-only key served one league's (and
+    # one manager's) answer to another.
     answer = None
     cacheable = intent == "metric" or (intent == "player" and not bundle.get("roster"))
     cache_key = None
     if cacheable:
-        cache_key = build_ai_cache_key("assistant", {"intent": intent, "entities": resolved_entities, "week": bundle.get("week")}, PROMPT_VERSION)
+        cache_key = build_ai_cache_key("assistant", {
+            "intent": intent, "entities": resolved_entities, "week": bundle.get("week"),
+            "platform": bundle.get("platform"), "league_id": bundle.get("league_id"),
+            "season": bundle.get("season"),
+            "roster": sorted(str(p) for p in (bundle.get("roster_player_ids") or set())),
+        }, PROMPT_VERSION)
         try:
             cached = load_cached_ai_text(cache_key)
             if cached:

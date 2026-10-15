@@ -825,6 +825,12 @@ def _power_rankings_cheap_key(ctx: dict) -> str | None:
         return build_ai_cache_key(
             "power_rankings",
             {
+                # League identity is part of the key (Class A audit): roster
+                # ids are 1..N in nearly every league, so a week/season/teams
+                # key alone served one league's cached rankings HTML to a
+                # different league with the same roster-id set.
+                "league_id": str(ctx.get("league_id") or ""),
+                "platform": str(ctx.get("platform") or ""),
                 "week": ctx.get("week") or ctx.get("current_week"),
                 "season": ctx.get("season"),
                 "teams": team_ids,
@@ -849,7 +855,7 @@ def get_power_rankings_html(ctx: dict) -> str:
     if not teams:
         return _emit_ai_html("<p>Not enough data for power rankings.</p>")
 
-    cache_key = build_ai_cache_key("power_rankings", {"week": rankings_ctx.get("week"), "season": rankings_ctx.get("season"), "teams": [t["roster_id"] for t in teams]}, "v6")
+    cache_key = build_ai_cache_key("power_rankings", {"league_id": str(ctx.get("league_id") or ""), "platform": str(ctx.get("platform") or ""), "week": rankings_ctx.get("week"), "season": rankings_ctx.get("season"), "teams": [t["roster_id"] for t in teams]}, "v6")
     cached = load_cached_ai_text(cache_key)
     if cached:
         return _emit_ai_html(cached)

@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-10-15",
         "tag": "fix",
+        "text": "Fixed: shared page caches could show another manager's name tag. The Teams page now marks your team in your browser only, career graphs highlight your own team, and power rankings and assistant answers are cached per league.",
+        "link": "/teams"
+    },
+    {
+        "date": "2026-10-15",
+        "tag": "fix",
         "text": "Fixed: the dashboard could ask signed-in managers to link their team again, even with the league already linked. Your weekly actions now load from your linked team on every visit.",
         "link": "/"
     },
