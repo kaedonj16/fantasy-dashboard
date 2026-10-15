@@ -191,11 +191,11 @@ def test_no_clean_fit_rejects_forced_trade():
 # -- questions.json schema sanity ------------------------------------------------------
 
 def test_questions_distribution_and_ids():
-    assert len(QUESTIONS) == 62
-    assert len(BY_ID) == 62
+    assert len(QUESTIONS) == 64
+    assert len(BY_ID) == 64
     assert Counter(q["type"] for q in QUESTIONS) == {
         "start_sit": 4, "trade_eval": 4, "trade_finding": 4, "buy_sell_hold": 3, "player": 3,
-        "metric": 3, "waivers": 2, "this_week": 2, "leaderboard": 6,
+        "metric": 3, "waivers": 2, "this_week": 4, "leaderboard": 6,
         "playoffs": 3, "power_rankings": 2, "standings": 2, "matchup": 6,
         "schedule": 2, "breakout_board": 1, "breakout_track_record": 1,
         "breakout_history": 1, "teams": 2, "pick_ownership": 1,
@@ -219,7 +219,19 @@ def test_traps_present_and_shaped():
     traps = {q["id"]: q for q in QUESTIONS if q["trap"]}
     assert {q["trap"]["kind"] for q in traps.values()} == {
         "missing_stat", "namesake", "pro_gate", "early_season", "no_clean_fit",
-        "no_scheduled_matchup", "no_keeper_settings", "missing_league"}
+        "no_scheduled_matchup", "no_keeper_settings", "missing_league",
+        "unneeded_qb_claim"}
+    tw3 = BY_ID["tw3"]
+    assert tw3["trap"]["kind"] == "unneeded_qb_claim"
+    assert tw3["trap"]["player"] == "Baker Mayfield"
+    assert tw3["context"]["format"] == "dynasty 1QB half PPR"
+    tw3_heads = [a["headline"] for a in tw3["evidence_pack"]["actions"]]
+    assert not any("Mayfield" in h for h in tw3_heads)
+    assert any("Rising Back" in h for h in tw3_heads)
+    tw4 = BY_ID["tw4"]
+    assert tw4["trap"] is None
+    tw4_heads = [a["headline"] for a in tw4["evidence_pack"]["actions"]]
+    assert tw4_heads[0] == "Claim Baker Mayfield"
     po2 = BY_ID["po2"]
     assert po2["trap"]["kind"] == "early_season"
     assert po2["evidence_pack"]["odds_soft"] is True
@@ -426,7 +438,7 @@ def test_league_context_references_match_packs():
 
 # -- mock mode + poison ------------------------------------------------------------------
 
-def test_mock_mode_full_run_passes_62_of_62():
+def test_mock_mode_full_run_passes_64_of_64():
     for q in QUESTIONS:
         score = score_answer(q, compose_mock(q))
         assert score["passed"], f"{q['id']}: {score}"
@@ -435,7 +447,7 @@ def test_mock_mode_full_run_passes_62_of_62():
 def test_runner_mock_mode_exit_zero(capsys):
     assert runner.main(["--mode", "mock"]) == 0
     out = capsys.readouterr().out
-    assert "62/62 answers passed" in out
+    assert "64/64 answers passed" in out
 
 
 def test_runner_poison_is_detected(capsys):

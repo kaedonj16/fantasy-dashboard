@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "description": "Frozen assistant eval set: 62 questions with golden evidence packs for the BR Fantasy assistant (workshop section 5 core 20, the deep-cuts leaderboard family lb1-lb6, and the section 9 P1 league-context types: playoffs, power rankings, standings, matchup, schedule) plus the P1 trade-finding family tf1-tf4, and the P1 breakout board, Teams, and pick-ownership families bo1-bo3, tm1-tm2, pk1 (renamed from the branch po1, which collided with the playoffs po1), with te4 an extra trade_eval. The win-outcome family mu4-mu6 pins the game-outcome phrasings (will I win / what are my chances / will I lose) to matchup packs: a decisive favorite, a close game, and a decisive underdog.",
+    "description": "Frozen assistant eval set: 64 questions with golden evidence packs for the BR Fantasy assistant (workshop section 5 core 20, the deep-cuts leaderboard family lb1-lb6, and the section 9 P1 league-context types: playoffs, power rankings, standings, matchup, schedule) plus the P1 trade-finding family tf1-tf4, and the P1 breakout board, Teams, and pick-ownership families bo1-bo3, tm1-tm2, pk1 (renamed from the branch po1, which collided with the playoffs po1), with te4 an extra trade_eval. The win-outcome family mu4-mu6 pins the game-outcome phrasings (will I win / what are my chances / will I lose) to matchup packs: a decisive favorite, a close game, and a decisive underdog. The waiver-gate pair tw3-tw4 (2026-10-15) pins the team-fit waiver gate in a 1-QB league: tw3 is the trap (a value-rising QB on the wire, a covered QB room, no QB claim in the pack, golden pack actions produced by the fixed selector path) and tw4 is the positive control (starter on bye, backup out, the QB claim does surface).",
     "scenario": "Kaedon's league Blackedraw, her team Caleb's Casting Couch, Week 7 of the 2026 season.",
     "packs": "Each evidence_pack mirrors, field for field, the dict the matching builder in dashboard_services/assistant/evidence.py returns. Values inside a pack are the only numbers an answer may cite.",
     "recapture": "These packs are frozen fixtures. Before any launch decision, recapture them from the live tools with: python3 scripts/run_assistant_eval.py --capture (writes assistant_eval/captured_questions.json; it never overwrites this file). A launch call made on stale fixtures is not a launch call.",
@@ -7534,6 +7534,127 @@
         "must_mention": [
           "Office League",
           "Blackedraw"
+        ]
+      }
+    },
+    {
+      "id": "tw3",
+      "type": "this_week",
+      "question": "What should I do with my team this week?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty 1QB half PPR"
+      },
+      "evidence_pack": {
+        "type": "this_week",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "actions": [
+          {
+            "tag": "lineup",
+            "headline": "Start Puka Nacua at flex over Courtland Sutton",
+            "detail": "Nacua has the higher Week 7 projection of the two.",
+            "key_number": 12.5,
+            "act_link": "/waivers?tab=startsit"
+          },
+          {
+            "tag": "Waivers",
+            "headline": "Claim Rising Back",
+            "detail": "+4.5 lineup pts this week. +18 lineup pts over the next 4 weeks.",
+            "key_number": 4.5,
+            "act_link": "/waivers"
+          }
+        ]
+      },
+      "reference": {
+        "verdict_kind": "digest",
+        "pick": "Start Puka Nacua at flex",
+        "key_numbers": [
+          12.5,
+          4.5
+        ],
+        "close_call": false
+      },
+      "trap": {
+        "kind": "unneeded_qb_claim",
+        "player": "Baker Mayfield"
+      },
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Rising Back"
+        ]
+      }
+    },
+    {
+      "id": "tw4",
+      "type": "this_week",
+      "question": "What should I do with my team this week?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty 1QB half PPR"
+      },
+      "evidence_pack": {
+        "type": "this_week",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "actions": [
+          {
+            "tag": "Waivers",
+            "headline": "Claim Baker Mayfield",
+            "detail": "+20.5 lineup pts this week. Covers your QB hole in Week 7.",
+            "key_number": 20.5,
+            "act_link": "/waivers"
+          },
+          {
+            "tag": "Waivers",
+            "headline": "Claim Rising Back",
+            "detail": "+4.5 lineup pts this week. +18 lineup pts over the next 4 weeks.",
+            "key_number": 4.5,
+            "act_link": "/waivers"
+          }
+        ]
+      },
+      "reference": {
+        "verdict_kind": "digest",
+        "pick": "Claim Baker Mayfield",
+        "key_numbers": [
+          20.5,
+          4.5
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Mayfield"
         ]
       }
     }
