@@ -1566,6 +1566,71 @@ _UNRESOLVED_PLAYER_TEXT = {
 }
 
 
+# Internal `missing` markers that are NOT sentences: fragments and
+# shorthand the builders write for logs and tests. Each maps to the
+# plain sentence the user reads. (The old generic wrapper quoted the
+# marker verbatim: "That is not available: no buy-low candidates right
+# now.", live 2026-10-15.)
+_MISSING_TEXT = {
+    "your roster in this league": (
+        "I could not find your roster in this league, so that check "
+        "cannot run here."),
+    "no league context loaded": (
+        "I do not have a league loaded for this chat yet. Open the "
+        "assistant from one of your league pages and I can use its "
+        "context."),
+    "no league context": (
+        "I do not have a league loaded for this chat yet. Open the "
+        "assistant from one of your league pages and I can use its "
+        "context."),
+    "pro_only": "That board is part of PRO on BR Fantasy.",
+    "routes not tracked": (
+        "Routes not tracked on the site, so I cannot build that board."),
+    "metric not available": "That metric is not available right now.",
+    "that data is not tracked": "That data is not tracked on the site.",
+    "that metric is not tracked": "That metric is not tracked on the site.",
+    "a position to rank defenses against": (
+        "Tell me a position and I will rank the defenses against it."),
+    "which pick (season and round) you mean": (
+        "I could not tell which pick you mean. Name the season and the "
+        "round and I will price it."),
+    "no signed-in account for this chat": (
+        "That needs a signed-in account. Sign in and ask again."),
+}
+
+
+def _missing_text(missing) -> str:
+    """Translate a builder's internal `missing` marker into the plain
+    sentence the user reads. Exact map first, then the f-string families,
+    then sentence-shaped markers pass through as themselves (capitalized,
+    punctuated); anything left falls back to a plain sentence and is
+    logged, so no raw marker can reach the user."""
+    m = str(missing or "").strip()
+    if m in _MISSING_TEXT:
+        return _MISSING_TEXT[m]
+    if m.startswith("no model value for "):
+        name = m[len("no model value for "):].strip()
+        return f"{name} does not have a model value yet, so I cannot price him."
+    if m.startswith("no age on file for "):
+        name = m[len("no age on file for "):].strip()
+        return f"I do not have an age on file for {name}."
+    if m.startswith("no one behind "):
+        rest = m[len("no one behind "):].strip()
+        return f"There is no one behind {rest}."
+    repl = re.match(r"no (\w+) replacement for (.+?) in a ", m)
+    if repl:
+        return (f"No {repl.group(1)} replacement for {repl.group(2)} "
+                "turned up in a comparable value band.")
+    words = m.split()
+    if len(words) >= 4 and "_" not in m and "{" not in m and "}" not in m:
+        text = m[0].upper() + m[1:]
+        if not text.endswith((".", "!", "?")):
+            text += "."
+        return text
+    logger.warning("[assistant] untranslated missing marker: %r", m)
+    return "I do not have that on the site yet."
+
+
 def no_data_answer(pack: dict) -> dict:
     missing = pack.get("missing") or "that data is not tracked"
     nearest = pack.get("nearest") or []
@@ -1576,7 +1641,7 @@ def no_data_answer(pack: dict) -> dict:
             "I will pull the numbers.")
         nearest = []
     else:
-        text = f"That is not available: {missing}."
+        text = _missing_text(missing)
     if nearest:
         text += f" The nearest tracked options are {', '.join(str(n) for n in nearest[:3])}. Ask about one of those and I can pull the live numbers."
     # The link names the surface the question was about: league-context
@@ -1697,6 +1762,43 @@ def _no_fit_answer(pack: dict) -> dict:
                           followup_pair("What should I do with my team this week?")],
             "act_link": _resolve_act_link("trade_finding", pack),
             "actions": [], "mentions": _mentions("trade_finding", pack)}
+
+def _empty_value_board_answer(pack: dict) -> dict:
+    """Deterministic answer for a genuinely empty buy-low / sell-high
+    board (the tf4 no-fit pattern): plain copy, no model call, and the
+    closest miss named with the gate he failed, so an honest empty can
+    never be dressed up as a recommendation or leak the builder's
+    internal marker. Every number comes from the pack's closest_miss."""
+    kind = (pack or {}).get("board_kind")
+    word = "buy-low" if kind == "buy_low" else "sell-high"
+    miss = (pack or {}).get("closest_miss") or {}
+    receipts = []
+    if miss.get("name"):
+        reason = miss.get("reason_text") or "he does not clear the screen"
+        text = (f"No {word} candidate clears the screen right now. "
+                f"The closest miss is {miss['name']}: {reason}.")
+        if (miss.get("delta") is not None
+                and miss.get("baseline_value") is not None
+                and miss.get("value") is not None):
+            receipts = [{
+                "label": f"{miss['name']} value move",
+                "value": (f"{_fmt_delta(miss.get('delta'))} "
+                          f"({_fmt_num(miss.get('baseline_value'))} to "
+                          f"{_fmt_num(miss.get('value'))})"),
+            }]
+    else:
+        text = (f"No {word} candidate clears the screen right now: no "
+                "mover this week pairs a real price move with a "
+                "verifiable production line.")
+    other = ("Who should I sell high?" if kind == "buy_low"
+             else "Who should I buy low?")
+    return {"verdict": f"No {word} clears the screen right now",
+            "text": text, "receipts": receipts, "caveat": None,
+            "followups": [followup_pair("Who are the biggest movers this week?"),
+                          followup_pair(other)],
+            "act_link": _board_link(pack) or dict(_ACT_LINKS["leaderboard"]),
+            "actions": [], "mentions": []}
+
 
 def gated_answer(pack: dict) -> dict:
     """The honest PRO-gated answer: parity with the AM surfaces, which show
@@ -2105,6 +2207,12 @@ def compose_answer(intent: str, question: str, pack: dict, *, preferences=None, 
     """Compose an answer dict from an evidence pack. Pure eval seam."""
     if isinstance(pack, dict) and pack.get("gated"):
         return _enforce_grounding(gated_answer(pack), intent, pack, question)
+    if isinstance(pack, dict) and pack.get("available") is False \
+            and pack.get("type") == "leaderboard" \
+            and pack.get("board_kind") in ("buy_low", "sell_high"):
+        # A genuinely empty value board gets the plain no-fit treatment
+        # (closest miss named), never the generic no-data wrapper.
+        return _enforce_grounding(_empty_value_board_answer(pack), intent, pack, question)
     if isinstance(pack, dict) and pack.get("available") is False:
         return _enforce_grounding(no_data_answer(pack), intent, pack, question)
     if intent == "trade_finding" and isinstance(pack, dict) and pack.get("no_fit") \

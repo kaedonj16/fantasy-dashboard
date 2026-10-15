@@ -8381,6 +8381,74 @@
       }
     },
     {
+      "id": "bl5",
+      "type": "leaderboard",
+      "question": "Which player is a buy-low right now?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "leaderboard",
+        "available": false,
+        "missing": "no buy-low candidates right now",
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "board_kind": "buy_low",
+        "requested_n": 10,
+        "position_filter": null,
+        "team_filter": null,
+        "value_days": 7,
+        "direction": "fallers",
+        "label": "Buy-low candidates",
+        "movers_basis": "value_window",
+        "window": {
+          "kind": "value",
+          "days": 7,
+          "applied": true
+        },
+        "movers_examined": 6,
+        "pool_size": 0,
+        "closest_miss": {
+          "name": "Marvin Harrison Jr.",
+          "position": "WR",
+          "team": "ARI",
+          "delta": -500.0,
+          "baseline_value": 6100.0,
+          "value": 5600.0,
+          "rel_move_pct": -8.2,
+          "games": 6,
+          "reason": "falling_knife",
+          "reason_text": "his production and his opportunity are both falling"
+        }
+      },
+      "reference": {
+        "verdict_kind": "no_data",
+        "pick": null,
+        "key_numbers": [],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": true,
+        "must_mention": [
+          "Marvin Harrison Jr."
+        ]
+      }
+    },
+    {
       "id": "sh2",
       "type": "leaderboard",
       "question": "Who should I sell high?",

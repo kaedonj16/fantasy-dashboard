@@ -176,15 +176,21 @@ def _metric_hints_in(m: str) -> list[str]:
 # "Should I buy X?") never matches and keeps the buy_sell_hold anchor below.
 _BUY_LOW_RE = re.compile(
     r"\bwho (should|can|could) i buy\b"
+    r"|\bwhich players? (should|can|could) i buy\b"
     r"|\bbuy[ -]?low candidates?\b|\bcandidates? to buy\b"
     r"|\bwho (is|are) (a |the )?(best )?buy[ -]?low\b"
+    r"|\bwhich players? (is|are) (a |the )?(best )?buy[ -]?low\b"
     r"|\bwho (is|are) (the )?(most )?undervalued\b"
+    r"|\bwhich players? (is|are) (the )?(most )?undervalued\b"
     r"|\bbuy[ -]?lows\b")
 _SELL_HIGH_RE = re.compile(
     r"\bwho (should|can|could) i sell\b"
+    r"|\bwhich players? (should|can|could) i sell\b"
     r"|\bsell[ -]?high candidates?\b|\bcandidates? to sell\b"
     r"|\bwho (is|are) (a |the )?(best )?sell[ -]?high\b"
-    r"|\bwho (is|are) (the )?(most )?overvalued\b")
+    r"|\bwhich players? (is|are) (a |the )?(best )?sell[ -]?high\b"
+    r"|\bwho (is|are) (the )?(most )?overvalued\b"
+    r"|\bwhich players? (is|are) (the )?(most )?overvalued\b")
 
 
 def _keyword_board(message: str, m: str) -> dict | None:

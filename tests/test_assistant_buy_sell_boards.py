@@ -44,6 +44,14 @@ def _bundle(**over):
     ("Who is overvalued right now?", "sell_high"),
     ("Who should I buy?", "buy_low"),
     ("Top 5 buy-low candidates", "buy_low"),
+    # The live phrasing of 2026-10-15: "which player" framed asks fell
+    # through to buy_sell_hold in the keyword fallback while the model
+    # router sent them to the board.
+    ("Which player is a buy-low right now?", "buy_low"),
+    ("Which player is a sell-high right now?", "sell_high"),
+    ("Which players are undervalued?", "buy_low"),
+    ("Which players are overvalued?", "sell_high"),
+    ("Which player should I sell?", "sell_high"),
 ])
 def test_keyword_pool_buy_sell_is_a_value_board(message, kind):
     r = _keyword_route(message)
@@ -427,3 +435,171 @@ def test_unresolved_buy_sell_hold_decline_via_compose_answer():
                                      pack)
     assert "buy, sell, or hold call" in ans["text"]
     assert "no resolved player" not in ans["text"]
+
+
+# -- the live empty board (2026-10-15): adapter shape, not filter shape ------
+#
+# The board shipped answering "no buy-low candidates right now" for every
+# real ask while every unit test passed: the tests stubbed _metrics_for
+# with the per-game keys the adapter promises, but the metrics table
+# stores season TOTALS (expected_ppr, ppr_over_expected) and the per-game
+# line exists only as serve-time computed SQL. The fixtures below stub
+# only the outer data seams with the REAL stored shapes and let the real
+# _metrics_for run.
+
+_POS_BY_PID = {row["player_id"]: row["position"]
+               for rows in MOVERS.values() if isinstance(rows, list)
+               for row in rows}
+
+
+def _raw_metrics_row(pid, season=None):
+    """A player_advanced_metrics row exactly as SELECT * returns it."""
+    line = PRODUCTION.get(pid) or {}
+    if not line:
+        return {}
+    games = line["games"]
+    return {"player_id": pid, "season": 2026,
+            "position": _POS_BY_PID.get(pid), "nfl_team": "T",
+            "games": games,
+            "expected_ppr": line["expected_ppr_per_game"] * games,
+            "ppr_over_expected": (line["ppg"] - line["expected_ppr_per_game"]) * games,
+            "snap_share": 0.8, "as_of_date": "2026-10-13"}
+
+
+@pytest.fixture()
+def live_shaped_env(monkeypatch):
+    import data_building.advanced_metrics as adv
+    monkeypatch.setattr(adv, "get_player_metrics_by_season", _raw_metrics_row)
+    monkeypatch.setattr(adv, "get_player_metrics", _raw_metrics_row)
+    monkeypatch.setattr(evidence, "get_top_movers",
+                        lambda **kwargs: dict(MOVERS))
+    monkeypatch.setattr(evidence, "get_model_value_table_cached", list)
+    monkeypatch.setattr(
+        evidence, "get_player_weekly_adv_series",
+        lambda pid, season=None: [dict(r) for r in SERIES.get(pid, [])])
+    monkeypatch.setattr(evidence, "_index", dict)
+    monkeypatch.setattr(evidence, "_upcoming_schedule",
+                        lambda bundle, team, count=4: [])
+    return adv
+
+
+def test_metrics_for_derives_per_game_line_from_stored_totals(live_shaped_env):
+    keep, _tools = evidence._metrics_for("f1", 2026)
+    assert keep["games"] == 6
+    assert keep["expected_ppr_per_game"] == pytest.approx(12.9)
+    assert keep["ppg"] == pytest.approx(13.8)
+
+
+def test_metrics_for_stored_per_game_column_wins(monkeypatch):
+    import data_building.advanced_metrics as adv
+    row = {"player_id": "x1", "games": 6, "expected_ppr": 60.0,
+           "ppr_over_expected": 6.0, "ppg": 99.0}
+    monkeypatch.setattr(adv, "get_player_metrics_by_season",
+                        lambda pid, season=None: dict(row))
+    monkeypatch.setattr(adv, "get_player_metrics",
+                        lambda pid: dict(row))
+    keep, _tools = evidence._metrics_for("x1", 2026)
+    assert keep["ppg"] == 99.0
+    assert keep["expected_ppr_per_game"] == pytest.approx(10.0)
+
+
+def test_value_board_live_shaped_pool_yields_candidates(live_shaped_env):
+    # Stage counts with every seam in its production shape: 4 fallers
+    # examined, f2 screened as a falling knife, f3 has no stored line,
+    # 2 qualify. Before the adapter fix this was 4 examined, 0 qualified.
+    pack, _tools = evidence.build_leaderboard(
+        _bundle(), {"board_kind": "buy_low"})
+    assert pack["available"] is True
+    assert pack["movers_examined"] == 4 and pack["pool_size"] == 2
+    assert [r["name"] for r in pack["board"]] == ["Faller One", "Faller Four"]
+    top = pack["board"][0]
+    assert top["ppg"] == 13.8 and top["expected_ppg"] == 12.9
+    sell, _tools = evidence.build_leaderboard(
+        _bundle(), {"board_kind": "sell_high"})
+    assert sell["available"] is True
+    assert [r["name"] for r in sell["board"]] == ["Riser One"]
+
+
+def test_empty_board_names_closest_miss_with_reason(monkeypatch):
+    movers = {"used_days": 7, "risers": [],
+              "fallers": [_mover("k1", "Knife One", "WR", -500.0, 2900.0, 2400.0)]}
+    _custom_env(monkeypatch, movers,
+                {"k1": {"ppg": 8.0, "expected_ppr_per_game": 10.5, "games": 6}},
+                {"k1": SERIES["f2"]})
+    pack, _tools = evidence.build_leaderboard(
+        _bundle(), {"board_kind": "buy_low"})
+    assert pack["available"] is False
+    miss = pack["closest_miss"]
+    assert miss["name"] == "Knife One" and miss["reason"] == "falling_knife"
+    ans = compose_mod.compose_answer("leaderboard", "Who should I buy low?",
+                                     pack)
+    assert ans["verdict"] == "No buy-low clears the screen right now"
+    assert "Knife One" in ans["text"] and "falling" in ans["text"]
+    assert "That is not available" not in ans["text"]
+    assert "no buy-low candidates right now" not in ans["text"]
+    assert ans["act_link"] == {"href": "/top-movers",
+                               "label": "View on Top Movers"}
+    from assistant_eval.scorer import score_answer
+    q = {"id": "blx", "type": "leaderboard",
+         "question": "Who should I buy low?", "evidence_pack": pack,
+         "reference": {"verdict_kind": "no_data", "pick": None,
+                       "key_numbers": [], "close_call": False},
+         "trap": None, "expect": {"no_data": True,
+                                  "must_mention": ["Knife One"]}}
+    assert score_answer(q, ans)["passed"]
+
+
+def test_no_line_empty_board_closest_miss_is_biggest_mover(value_env,
+                                                           monkeypatch):
+    monkeypatch.setattr(evidence, "_metrics_for",
+                        lambda pid, season=None: ({}, []))
+    pack, _tools = evidence.build_leaderboard(
+        _bundle(), {"board_kind": "buy_low"})
+    assert pack["available"] is False
+    # f2 owns the largest relative move (-500 on 2900) among the fallers.
+    assert pack["closest_miss"]["name"] == "Faller Two"
+    assert pack["closest_miss"]["reason"] == "no_line"
+    ans = compose_mod.compose_answer("leaderboard", "Who should I buy low?",
+                                     pack)
+    assert "Faller Two" in ans["text"]
+    assert "That is not available" not in ans["text"]
+
+
+# -- the missing-marker sweep -------------------------------------------------
+
+@pytest.mark.parametrize("missing,fragment", [
+    ("your roster in this league", "could not find your roster"),
+    ("no league context loaded", "do not have a league loaded"),
+    ("no league context", "do not have a league loaded"),
+    ("pro_only", "PRO"),
+    ("routes not tracked", "Routes not tracked"),
+    ("metric not available", "not available right now"),
+    ("a position to rank defenses against", "Tell me a position"),
+    ("which pick (season and round) you mean", "which pick you mean"),
+    ("no signed-in account for this chat", "signed-in account"),
+    ("no model value for Brian Thomas Jr.", "does not have a model value yet"),
+    ("no age on file for Brian Thomas Jr.", "age on file"),
+    ("no one behind Christian McCaffrey on the SF depth chart",
+     "no one behind Christian McCaffrey"),
+    ("no younger replacement for Travis Kelce in a comparable value band",
+     "No younger replacement for Travis Kelce"),
+    ("playoff odds are not available for this league yet",
+     "Playoff odds are not available for this league yet."),
+    ("no qualified players match those filters",
+     "No qualified players match those filters."),
+    ("no scheduled matchup for Week 18", "No scheduled matchup for Week 18."),
+])
+def test_missing_markers_render_as_natural_sentences(missing, fragment):
+    ans = compose_mod.no_data_answer(
+        {"type": "metric", "available": False, "missing": missing,
+         "league": {}})
+    assert "That is not available" not in ans["text"]
+    assert fragment in ans["text"]
+
+
+def test_unrecognized_marker_falls_back_without_leaking():
+    ans = compose_mod.no_data_answer(
+        {"type": "metric", "available": False,
+         "missing": "zzz_internal_thing", "league": {}})
+    assert ans["text"] == "I do not have that on the site yet."
+    assert "zzz_internal_thing" not in ans["text"]

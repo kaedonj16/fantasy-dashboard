@@ -355,6 +355,6 @@ def test_compose_league_context_contract(monkeypatch, qid, href_part, label, key
 def test_compose_matchup_no_data_links_weekly_page():
     answer = compose_mod.no_data_answer(_frozen_pack("mu3"))
     assert answer["verdict"] is None
-    assert "no scheduled matchup" in answer["text"]
+    assert "No scheduled matchup" in answer["text"]
     assert answer["act_link"]["href"] == "/sleeper/2026/blackedraw/weekly"
     assert answer["act_link"]["label"] == "View Matchups"
