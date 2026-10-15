@@ -156,6 +156,21 @@ Reality notes vs the workshop tool map (verified in this repo):
   its own words. The pack sits behind the same PRO gate /api/gm-memo
   applies (subscriptions.has_premium_for_viewer with the session viewer
   identity) before any report data is built.
+- Detailed-question boards (leaderboard kinds finishes / floor / ceiling /
+  value / slate / gap / rank_movers) compose two or more site computations
+  into one ranked answer: weekly finish counts, floors, and ceilings come
+  from the week-stat cache scored by week_stat_points under league
+  settings (the recent-form rule); the value board ranks the model value
+  table with the value boards' SF-aware displayed value; slate re-ranks a
+  metric's top pool by the matchup-rank table over upcoming schedules;
+  gap ranks the No. 1 minus No. 2 spread inside each NFL team on a season
+  board; rank_movers compares positional ranks by value against the
+  player_value_history snapshot a window back (get_values_as_of).
+  max_age and pool (waivers / roster) entities filter the board,
+  intersection, dual, stat, and value boards before ranking. The Teams
+  pack also carries roster breadth (top-24 counts per team) and, when a
+  second team is named, a category sweep the composer renders
+  deterministically.
 """
 from __future__ import annotations
 
@@ -210,6 +225,17 @@ def weekly_range_leaderboard(*args, **kwargs):
 
 def get_top_movers(*args, **kwargs):
     from data_building.player_value_history import get_top_movers as _fn
+    return _fn(*args, **kwargs)
+
+
+def values_as_of(*args, **kwargs):
+    from dashboard_services.player_value_history import get_values_as_of as _fn
+    return _fn(*args, **kwargs)
+
+
+def latest_snapshot_date(*args, **kwargs):
+    from dashboard_services.player_value_history import (
+        get_latest_snapshot_date as _fn)
     return _fn(*args, **kwargs)
 
 
@@ -2716,13 +2742,17 @@ def player_stat_line(bundle, pid) -> dict:
 
 
 def _build_stat_board(pack, bundle, tools, resolution, position, team,
-                      top_n, roster_ids):
+                      top_n, roster_ids, ent=None):
     """A leaderboard pack over raw season totals ("top 5 in receiving
     yards"): same board shape as the metric boards, ranked by the total
     the user named, family stats riding on each row."""
+    keep, keep_notes = _board_keep(bundle, ent or {})
     rows, completed = stat_board_rows(
-        bundle, resolution["key"], position, team, limit=max(top_n, 25))
+        bundle, resolution["key"], position, team,
+        limit=500 if keep else max(top_n, 25))
     tools.append("utils.load_sleeper_week_stats")
+    if keep:
+        rows = [r for r in rows if keep(str(r.get("player_id") or ""))]
     if not rows:
         return _no_board(pack, "no recorded games yet for that stat", []), tools
     pack["stat_board"] = True
@@ -2743,6 +2773,9 @@ def _build_stat_board(pack, bundle, tools, resolution, position, team,
         f"Season totals through Week {completed}, ranked by "
         f"{resolution['label'].lower()}. {len(rows)} players have a "
         f"recorded total.")
+    if keep_notes:
+        pack["qualification_text"] += (
+            " Showing only " + " and ".join(keep_notes) + ".")
     return pack, tools
 
 
@@ -3542,7 +3575,8 @@ def build_leaderboard(bundle, entities, player_ids=None) -> tuple[dict, list[str
     ent = entities or {}
     kind = str(ent.get("board_kind") or "board").strip().lower()
     if kind not in ("board", "intersection", "dual", "movers", "matchup",
-                    "buy_low", "sell_high", "breadth"):
+                    "buy_low", "sell_high", "breadth", "finishes", "floor",
+                    "ceiling", "value", "slate", "gap", "rank_movers"):
         kind = "board"
     pack["board_kind"] = kind
     try:
@@ -3571,11 +3605,27 @@ def build_leaderboard(bundle, entities, player_ids=None) -> tuple[dict, list[str
         return _build_breadth_board(pack, bundle, tools, ent, position, team,
                                     top_n, roster_ids)
 
+    if kind in ("finishes", "floor", "ceiling"):
+        return _build_gamelog_board(pack, bundle, tools, kind, position,
+                                    team, top_n, roster_ids, ent)
+
+    if kind == "value":
+        return _build_value_rank_board(pack, bundle, tools, position, team,
+                                       top_n, roster_ids, ent)
+
+    if kind == "rank_movers":
+        return _build_rank_movers_board(pack, bundle, tools, position,
+                                        top_n, roster_ids, ent)
+
     try:
         config = _metric_config()
     except Exception:
         config = {}
     hint = str(ent.get("metric_hint") or "").strip().lower().replace(" ", "_")
+    if kind == "gap" and not hint:
+        hint = "target_share"
+    if kind == "slate" and not hint and "opportunity_share" in config:
+        hint = "opportunity_share"
     pack["metric_hint"] = hint or None
     key = _resolve_metric_key(hint, config)
     trend_default = False
@@ -3591,7 +3641,7 @@ def build_leaderboard(bundle, entities, player_ids=None) -> tuple[dict, list[str
         resolution = aliases.resolve_phrase(hint.replace("_", " "))
         if resolution and resolution.get("kind") == "stat":
             return _build_stat_board(pack, bundle, tools, resolution,
-                                     position, team, top_n, roster_ids)
+                                     position, team, top_n, roster_ids, ent)
     if not key:
         missing_note, nearest = KNOWN_MISSING.get(hint, ("that metric is not tracked", []))
         if not nearest:
@@ -3606,6 +3656,14 @@ def build_leaderboard(bundle, entities, player_ids=None) -> tuple[dict, list[str
         return _gated_pack(pack, key, pack["label"]), tools
     if gate == "unavailable":
         return _no_board(pack, "metric not available", []), tools
+
+    if kind == "slate":
+        return _build_slate_board(pack, bundle, tools, key, spec, position,
+                                  top_n, roster_ids)
+
+    if kind == "gap":
+        return _build_gap_board(pack, bundle, tools, key, spec, position,
+                                top_n, roster_ids)
 
     second_key = None
     second_spec = None
@@ -3674,6 +3732,20 @@ def build_leaderboard(bundle, entities, player_ids=None) -> tuple[dict, list[str
     pack["window"] = window
     pack["pool_size"] = pool_size
     pack["qualification_text"] = qual_text
+
+    keep, keep_notes = _board_keep(bundle, ent)
+    if keep:
+        def _kept(rs):
+            if not rs:
+                return rs
+            return [r for r in rs if isinstance(r, dict)
+                    and keep(str(r.get("player_id") or r.get("id") or ""))]
+
+        rows = _kept(rows)
+        second_rows = _kept(second_rows)
+        pack["pool_size"] = len(rows)
+        pack["qualification_text"] += (
+            " Showing only " + " and ".join(keep_notes) + ".")
 
     def _filtered(rs):
         if not team:
@@ -3962,6 +4034,510 @@ def _build_movers(pack, bundle, tools, key, spec, trend_default, direction,
         return _no_board(pack, "no qualified players match those filters", []), tools
     pack["board"] = board
     pack["board_count"] = len(board)
+    return pack, tools
+
+
+# -- detailed-question boards ---------------------------------------------------
+#
+# Multi-step analytical boards: each composes two or more site
+# computations into one ranked answer (the audit's detailed-question
+# class). Game-log boards score the week-stat cache with the league's
+# settings (the recent-form rule); the value board ranks the model value
+# table by the displayed value the value boards use (SF-aware); slate
+# and gap build on the season-board and matchup-rank machinery;
+# rank_movers reads the value-history snapshots. All return the standard
+# board pack shape, so the deterministic board composer renders them.
+
+_FINISH_MIN_GAMES = 3
+_FLOOR_MIN_GAMES = 4
+_SLATE_WEEKS = 4
+_SLATE_POOL = 24
+_BREADTH_N = 24
+
+
+def _displayed_values(bundle):
+    """(pid -> displayed model value, flavor): the value boards' map
+    (superflex values in a superflex league, else the 1QB values)."""
+    ctx = bundle.get("ctx") or {}
+    is_sf = False
+    try:
+        from utils.lineup_slots import is_superflex_lineup
+        is_sf = bool(is_superflex_lineup(ctx.get("roster_positions") or []))
+    except Exception:
+        is_sf = False
+    out = {}
+    for pid, row in _value_rows().items():
+        raw = row.get("sf_value") if is_sf else row.get("value")
+        try:
+            v = float(raw) if raw is not None else None
+        except (TypeError, ValueError):
+            v = None
+        if v is None:
+            v = _row_value(row)
+        if v:
+            out[str(pid)] = v
+    return out, ("sf" if is_sf else "1qb")
+
+
+def _player_age(pid, index, row=None):
+    raw = None
+    if isinstance(row, dict):
+        raw = row.get("age")
+    if raw is None and isinstance(index, dict):
+        raw = (index.get(str(pid)) or {}).get("age")
+    return _fnum(raw)
+
+
+def _board_keep(bundle, ent):
+    """(keep_fn, notes) for the max_age / pool board filters, or
+    (None, []) when neither entity is set. Age comes from the players
+    index (or the value row); pool is read off the league's rosters:
+    waivers = unrostered in this league, roster = the viewer's own."""
+    try:
+        max_age = int((ent or {}).get("max_age") or 0)
+    except (TypeError, ValueError):
+        max_age = 0
+    pool = str((ent or {}).get("pool") or "").strip().lower()
+    if pool not in ("waivers", "roster"):
+        pool = None
+    if not max_age and not pool:
+        return None, []
+    index = _index()
+    rows = _value_rows()
+    rostered: set = set()
+    if pool == "waivers":
+        for r in (bundle.get("ctx") or {}).get("rosters") or []:
+            if isinstance(r, dict):
+                rostered.update(str(p) for p in r.get("players") or [])
+    mine = bundle.get("roster_player_ids") or set()
+
+    def keep(pid):
+        pid = str(pid)
+        if max_age:
+            age = _player_age(pid, index, rows.get(pid))
+            if age is None or age > max_age:
+                return False
+        if pool == "waivers" and pid in rostered:
+            return False
+        if pool == "roster" and pid not in mine:
+            return False
+        return True
+
+    notes = []
+    if max_age:
+        notes.append(f"players aged {max_age} or younger")
+    if pool == "waivers":
+        notes.append("players on waivers in your league")
+    if pool == "roster":
+        notes.append("players on your roster")
+    return keep, notes
+
+
+def _weekly_scored(bundle):
+    """Per-week scored lines for completed weeks: [{pid: (points,
+    position)}], plus the completed-week count. One pass over the
+    week-stat cache, scored by week_stat_points under the league's
+    settings (the recent-form rule), so the lines agree with the player
+    modal's game logs."""
+    season, week = bundle.get("season"), bundle.get("week")
+    if not season or not week:
+        return [], 0
+    completed = max(int(week) - 1, 0)
+    scoring = _scoring(bundle)
+    index = _index()
+    weeks = []
+    try:
+        from utils.projections import week_stat_points
+    except Exception:
+        return [], completed
+    for w in range(1, completed + 1):
+        try:
+            stats = load_sleeper_week_stats(int(season), w) or {}
+        except Exception:
+            stats = {}
+        lines = {}
+        if isinstance(stats, dict):
+            for pid, line in stats.items():
+                if not isinstance(line, dict):
+                    continue
+                info = _player_info(pid, index)
+                pos = str(info.get("position") or "").upper()
+                pts = week_stat_points(line, scoring, pos)
+                lines[str(pid)] = (round(float(pts), 1), pos)
+        weeks.append(lines)
+    return weeks, completed
+
+
+def _build_gamelog_board(pack, bundle, tools, kind, position, team, top_n,
+                         roster_ids, ent):
+    """finishes / floor / ceiling boards from weekly game logs.
+
+    finishes: how many weeks a player finished inside the top N at his
+    position (N = finish_n, default 12). floor: his worst week (a real
+    sample only, minimum games). ceiling: his best week."""
+    weeks, completed = _weekly_scored(bundle)
+    tools.append("utils.load_sleeper_week_stats")
+    if not weeks or completed < 1:
+        return _no_board(pack, "no completed games yet this season", []), tools
+    try:
+        finish_n = int((ent or {}).get("finish_n") or 12)
+    except (TypeError, ValueError):
+        finish_n = 12
+    finish_n = max(1, min(36, finish_n))
+    pack["finish_n"] = finish_n
+    finishes: dict[str, int] = {}
+    if kind == "finishes":
+        for lines in weeks:
+            by_pos: dict[str, list] = {}
+            for pid, (pts, pos) in lines.items():
+                if position and pos != position:
+                    continue
+                by_pos.setdefault(pos, []).append((pid, pts))
+            for _pos, group in by_pos.items():
+                group.sort(key=lambda t: (-t[1], t[0]))
+                for pid, _pts in group[:finish_n]:
+                    finishes[pid] = finishes.get(pid, 0) + 1
+    index = _index()
+    by_pid: dict[str, list] = {}
+    for lines in weeks:
+        for pid, (pts, _pos) in lines.items():
+            by_pid.setdefault(pid, []).append(pts)
+    rows = []
+    for pid, pts_list in by_pid.items():
+        info = _player_info(pid, index)
+        pos = str(info.get("position") or "").upper()
+        if position and pos != position:
+            continue
+        if team and str(info.get("team") or "").upper() != team:
+            continue
+        games = len(pts_list)
+        if not games:
+            continue
+        base = {"player_id": pid, "name": info.get("name"),
+                "team": info.get("team") or "", "position": pos,
+                "games": games,
+                "ppg": round(sum(pts_list) / games, 1),
+                "floor": min(pts_list), "ceiling": max(pts_list)}
+        if kind == "finishes":
+            if games < _FINISH_MIN_GAMES or not finishes.get(pid):
+                continue
+            base.update({"value": finishes[pid], "finishes": finishes[pid]})
+        elif kind == "floor":
+            if games < _FLOOR_MIN_GAMES:
+                continue
+            base["value"] = min(pts_list)
+        else:  # ceiling
+            base["value"] = max(pts_list)
+        rows.append(base)
+    rows.sort(key=lambda r: (-r["value"], -r["ppg"], str(r["name"])))
+    if not rows:
+        return _no_board(pack, "no qualified players match those filters",
+                         []), tools
+    if kind == "finishes":
+        pack["label"] = f"Top-{finish_n} weekly finishes"
+        basis = (f"Weekly finishes inside the top {finish_n} at the "
+                 f"position, weeks 1 to {completed}, scored with your "
+                 f"league's settings. Minimum {_FINISH_MIN_GAMES} games.")
+    elif kind == "floor":
+        pack["label"] = "Highest floor"
+        basis = (f"Worst single week, weeks 1 to {completed}, scored with "
+                 f"your league's settings. Minimum {_FLOOR_MIN_GAMES} "
+                 f"games, so a floor is a real sample, not one week.")
+    else:
+        pack["label"] = "Highest ceiling"
+        basis = (f"Best single week, weeks 1 to {completed}, scored with "
+                 f"your league's settings.")
+    pack["pool_size"] = len(rows)
+    board = []
+    for i, r in enumerate(rows[:top_n]):
+        row = _board_row(i + 1, r, roster_ids, value=r["value"])
+        for k in ("games", "ppg", "floor", "ceiling", "finishes"):
+            if r.get(k) is not None:
+                row[k] = r[k]
+        board.append(row)
+    pack["board"] = board
+    pack["board_count"] = len(board)
+    pack["qualification_text"] = basis + f" {len(rows)} players qualify."
+    return pack, tools
+
+
+def _build_value_rank_board(pack, bundle, tools, position, team, top_n,
+                            roster_ids, ent):
+    """Top-N by model trade value (the value chart as a board), with the
+    max_age / pool filters applied before ranking."""
+    values, flavor = _displayed_values(bundle)
+    tools.append("model_value_table")
+    if not values:
+        return _no_board(pack, "player values are not available yet", []), tools
+    index = _index()
+    rows_map = _value_rows()
+    keep, notes = _board_keep(bundle, ent)
+    rows = []
+    for pid, v in values.items():
+        info = _player_info(pid, index)
+        pos = str(info.get("position")
+                  or (rows_map.get(pid) or {}).get("position") or "").upper()
+        if position and pos != position:
+            continue
+        if team and str(info.get("team") or "").upper() != team:
+            continue
+        if keep and not keep(pid):
+            continue
+        rows.append({"player_id": pid, "name": info.get("name"),
+                     "team": info.get("team") or "", "position": pos,
+                     "value": _r3(v),
+                     "age": _player_age(pid, index, rows_map.get(pid))})
+    rows.sort(key=lambda r: (-(r["value"] or 0), str(r["name"])))
+    if not rows:
+        return _no_board(pack, "no qualified players match those filters",
+                         []), tools
+    pack["label"] = "Trade Value"
+    pack["pool_size"] = len(rows)
+    board = []
+    for i, r in enumerate(rows[:top_n]):
+        row = _board_row(i + 1, r, roster_ids, value=r["value"])
+        if r.get("age") is not None:
+            row["age"] = r["age"]
+        board.append(row)
+    pack["board"] = board
+    pack["board_count"] = len(board)
+    text = (f"Ranked by the site's model trade values "
+            f"({'superflex' if flavor == 'sf' else '1QB'} values).")
+    if notes:
+        text += " Showing only " + " and ".join(notes) + "."
+    text += f" {len(rows)} players carry a value."
+    pack["qualification_text"] = text
+    return pack, tools
+
+
+def _row_metric_value(r, key):
+    v = r.get("value")
+    if v is None:
+        v = r.get(key)
+    return _r3(v)
+
+
+def _build_slate_board(pack, bundle, tools, key, spec, position, top_n,
+                       roster_ids):
+    """A metric's top pool re-ranked by upcoming schedule ease: the
+    average matchup rank of each player's next scheduled opponents at
+    his position (rank 1 = easiest defense), the value boards' slate
+    computation promoted to the ranking itself."""
+    season = bundle.get("season")
+    rows, qual = _season_board(key, spec, season, position)
+    tools.append("advanced_metrics.get_metric_leaderboard")
+    pack["qualification"] = qual
+    pool = [r for r in rows if isinstance(r, dict)][:_SLATE_POOL]
+    if not pool:
+        return _no_board(pack, "no qualified players match those filters",
+                         []), tools
+    index = _index()
+    rank_tables: dict = {}
+    scored = []
+    for r in pool:
+        pid = str(r.get("player_id") or r.get("id") or "")
+        info = _player_info(pid, index) if pid else {}
+        pos = str(r.get("position") or info.get("position") or "").upper()
+        team_ab = str(r.get("team") or info.get("team") or "").upper()
+        if not pos or not team_ab or not season:
+            continue
+        ranks = []
+        try:
+            if pos not in rank_tables:
+                table = matchup_rank_table(int(season), pos)
+                rank_tables[pos] = table[0] or {}
+                if "app._matchup_rank_table" not in tools:
+                    tools.append("app._matchup_rank_table")
+            rmap = rank_tables[pos]
+            games = [g for g in _upcoming_schedule(bundle, team_ab,
+                                                    _SLATE_WEEKS + 2)
+                     if not g.get("bye") and g.get("opponent")]
+            ranks = [rmap[g["opponent"]] for g in games
+                     if rmap.get(g["opponent"]) is not None][:_SLATE_WEEKS]
+        except Exception:
+            logger.debug("[assistant] slate board failed", exc_info=True)
+            ranks = []
+        if len(ranks) < 2:
+            continue
+        entry = dict(r)
+        entry["_slate_avg"] = round(sum(ranks) / len(ranks), 1)
+        entry["_slate_games"] = len(ranks)
+        scored.append(entry)
+    if not scored:
+        return _no_board(pack, "upcoming schedules are not available yet",
+                         []), tools
+    scored.sort(key=lambda r: (r["_slate_avg"],
+                               -(_row_metric_value(r, key) or 0)))
+    pack["pool_size"] = len(scored)
+    pack["slate_weeks"] = _SLATE_WEEKS
+    board = []
+    for i, r in enumerate(scored[:top_n]):
+        row = _board_row(i + 1, r, roster_ids)
+        row["slate_avg_rank"] = r["_slate_avg"]
+        row["slate_games"] = r["_slate_games"]
+        board.append(row)
+    pack["board"] = board
+    pack["board_count"] = len(board)
+    pack["qualification_text"] = (
+        f"The top {_SLATE_POOL} by {pack['label']}"
+        f"{' at ' + position if position else ''}, re-ranked by the "
+        f"average matchup rank of their next {_SLATE_WEEKS} opponents "
+        f"(rank 1 is the easiest defense for the position). "
+        f"{len(scored)} have at least two ranked games in the window.")
+    return pack, tools
+
+
+def _build_gap_board(pack, bundle, tools, key, spec, position, top_n,
+                     roster_ids):
+    """Within-team dominance: for every NFL team, the gap between its
+    No. 1 and No. 2 in the metric on the qualified season board;
+    players ranked by the gap they hold over their own team's No. 2."""
+    season = bundle.get("season")
+    rows, qual = _season_board(key, spec, season, position)
+    tools.append("advanced_metrics.get_metric_leaderboard")
+    pack["qualification"] = qual
+    lower_better = bool((spec or {}).get("lower_is_better"))
+    by_team: dict[str, list] = {}
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        team_ab = str(r.get("team") or "").upper()
+        v = _row_metric_value(r, key)
+        if not team_ab or v is None:
+            continue
+        by_team.setdefault(team_ab, []).append((r, v))
+    gaps = []
+    for _team_ab, lines in by_team.items():
+        if len(lines) < 2:
+            continue
+        (r1, v1), (r2, v2) = lines[0], lines[1]
+        gap = round((v2 - v1) if lower_better else (v1 - v2), 3)
+        if gap < 0:
+            continue
+        gaps.append((gap, r1, v1, r2, v2))
+    gaps.sort(key=lambda t: (-t[0], -(t[2] or 0), str(t[1].get("name") or "")))
+    if not gaps:
+        return _no_board(
+            pack, "no team has two qualified players in that metric",
+            []), tools
+    pack["pool_size"] = len(gaps)
+    board = []
+    for i, (gap, r1, v1, r2, v2) in enumerate(gaps[:top_n]):
+        row = _board_row(i + 1, r1, roster_ids, value=v1)
+        row["gap"] = gap
+        row["second_name"] = r2.get("name")
+        row["second_value"] = _r3(v2)
+        row["second_player_id"] = str(r2.get("player_id") or r2.get("id")
+                                      or "")
+        board.append(row)
+    pack["board"] = board
+    pack["board_count"] = len(board)
+    pack["qualification_text"] = (
+        f"For every NFL team, the gap between its No. 1 and No. 2 "
+        f"qualified player in {pack['label']}; ranked by the gap. "
+        f"{len(gaps)} teams have two qualified players.")
+    return pack, tools
+
+
+def _build_rank_movers_board(pack, bundle, tools, position, top_n,
+                             roster_ids, ent):
+    """Positional-rank trajectory: rank by displayed value inside the
+    position now vs the value-history snapshot a window back (30 days,
+    or window_weeks x 7). Climbers only, ranked by spots climbed."""
+    try:
+        weeks = int((ent or {}).get("window_weeks") or 0)
+    except (TypeError, ValueError):
+        weeks = 0
+    days = weeks * 7 if weeks else 30
+    pack["window_days"] = days
+    current, flavor = _displayed_values(bundle)
+    tools.append("model_value_table")
+    if not current:
+        return _no_board(pack, "player values are not available yet", []), tools
+    old: dict = {}
+    latest = None
+    try:
+        latest = latest_snapshot_date()
+    except Exception:
+        latest = None
+    if latest:
+        try:
+            from datetime import date, timedelta
+            as_of = (date.fromisoformat(str(latest)[:10])
+                     - timedelta(days=days)).isoformat()
+            n_teams = len((bundle.get("ctx") or {}).get("rosters") or [])
+            size = n_teams if n_teams in (8, 10, 12, 14) else 10
+            old = values_as_of(as_of, league_type=flavor,
+                               league_size=size) or {}
+            tools.append("player_value_history.get_values_as_of")
+            pack["as_of_date"] = as_of
+        except Exception:
+            logger.debug("[assistant] rank movers snapshot failed",
+                         exc_info=True)
+            old = {}
+    if not old:
+        return _no_board(
+            pack, f"value history is not available {days} days back",
+            []), tools
+    index = _index()
+    rows_map = _value_rows()
+
+    def _ranks(values):
+        by_pos: dict[str, list] = {}
+        for pid, v in values.items():
+            info = _player_info(pid, index)
+            pos = str(info.get("position")
+                      or (rows_map.get(str(pid)) or {}).get("position")
+                      or "").upper()
+            if pos not in CORE_POS or not v:
+                continue
+            by_pos.setdefault(pos, []).append((str(pid), float(v)))
+        ranks = {}
+        for pos, lines in by_pos.items():
+            lines.sort(key=lambda t: (-t[1], t[0]))
+            for i, (pid, _v) in enumerate(lines):
+                ranks[pid] = (i + 1, pos)
+        return ranks
+
+    now_ranks = _ranks(current)
+    old_ranks = _ranks(old)
+    rows = []
+    for pid, (new_rank, pos) in now_ranks.items():
+        if position and pos != position:
+            continue
+        hit = old_ranks.get(pid)
+        if not hit:
+            continue
+        climb = hit[0] - new_rank
+        if climb <= 0:
+            continue
+        info = _player_info(pid, index)
+        rows.append({"player_id": pid, "name": info.get("name"),
+                     "team": info.get("team") or "", "position": pos,
+                     "value": climb, "climb": climb,
+                     "old_rank": hit[0], "new_rank": new_rank,
+                     "current_value": _r3(current.get(pid)),
+                     "baseline_value": _r3(old.get(pid))})
+    rows.sort(key=lambda r: (-r["climb"], r["new_rank"], str(r["name"])))
+    if not rows:
+        return _no_board(
+            pack, "no player climbed in positional rank over that window",
+            []), tools
+    pack["label"] = "Positional rank climb"
+    pack["pool_size"] = len(rows)
+    board = []
+    for i, r in enumerate(rows[:top_n]):
+        row = _board_row(i + 1, r, roster_ids, value=r["value"])
+        for k in ("climb", "old_rank", "new_rank", "current_value",
+                  "baseline_value"):
+            row[k] = r[k]
+        board.append(row)
+    pack["board"] = board
+    pack["board_count"] = len(board)
+    pack["qualification_text"] = (
+        f"Positional ranks by model value, {pack.get('as_of_date')} vs "
+        f"today ({days} days). {len(rows)} players climbed at least one "
+        f"spot at their position.")
     return pack, tools
 
 
@@ -5182,6 +5758,138 @@ def _position_focus(entities) -> str | None:
     return None
 
 
+def _team_breadth(bundle, ctx, rosters, data, mode, entities):
+    """Per-team roster breadth: how many of each roster's players sit
+    inside their position's top N by value (the mode's values, the
+    Teams page's own numbers). Returns {"rows", "n"} or None when no
+    values exist to count from."""
+    try:
+        n = int((entities or {}).get("top_n") or _BREADTH_N)
+    except (TypeError, ValueError):
+        n = _BREADTH_N
+    n = max(4, min(48, n))
+    by_id = _mode_values(ctx, mode)
+    if not by_id:
+        by_id = {pid: {"value": _row_value(row),
+                       "position": (row or {}).get("position")}
+                 for pid, row in _value_rows().items()}
+    by_pos: dict[str, list] = {}
+    for pid, row in by_id.items():
+        if not isinstance(row, dict):
+            continue
+        pos = str(row.get("position") or row.get("pos") or "").upper()
+        try:
+            v = float(row.get("value") or 0)
+        except (TypeError, ValueError):
+            v = 0.0
+        if pos in CORE_POS and v > 0:
+            by_pos.setdefault(pos, []).append((str(pid), v))
+    top_sets = {}
+    for pos, lines in by_pos.items():
+        lines.sort(key=lambda t: (-t[1], t[0]))
+        top_sets[pos] = {pid for pid, _v in lines[:n]}
+    if not top_sets:
+        return None
+    viewer_rid = str((bundle.get("roster") or {}).get("roster_id") or "")
+    names = data["team_names"]
+    rows = []
+    for r in rosters:
+        rid = str(r.get("roster_id"))
+        counts = {pos: 0 for pos in CORE_POS}
+        for pid in r.get("players") or []:
+            spid = str(pid)
+            for pos, members in top_sets.items():
+                if spid in members:
+                    counts[pos] += 1
+                    break
+        rows.append({"roster_id": rid, "team_name": names.get(rid),
+                     "is_viewer": rid == viewer_rid,
+                     "count": sum(counts.values()), "by_position": counts})
+    rows.sort(key=lambda t: (-t["count"], str(t["team_name"] or "")))
+    return {"rows": rows, "n": n}
+
+
+def _team_sweep(bundle, ctx, rosters, data, entities, viewer_rid):
+    """Pairwise category sweep between two league teams: QB/RB/WR/TE
+    room strengths, roster grade, and total roster value from the
+    Teams machinery, winner named per category. Needs a second team in
+    the entities (team_names or other_team_hint); the viewer is the
+    default first side. Returns None when no pairing resolves."""
+    ent = entities or {}
+    wanted = [str(t) for t in (ent.get("team_names") or []) if str(t).strip()]
+    hint = str(ent.get("other_team_hint") or "").strip()
+    if hint:
+        wanted.append(hint)
+    if not wanted:
+        return None
+    names = data["team_names"]
+
+    def _match(text):
+        t = text.strip().lower()
+        for rid, name in names.items():
+            if name and str(name).lower() == t:
+                return rid
+        for rid, name in names.items():
+            if name and (t in str(name).lower()
+                         or str(name).lower() in t):
+                return rid
+        return None
+
+    matched = []
+    for w in wanted:
+        rid = _match(w)
+        if rid and rid not in matched:
+            matched.append(rid)
+    if not matched:
+        return None
+    if len(matched) >= 2:
+        a_rid, b_rid = matched[0], matched[1]
+    elif matched[0] == viewer_rid:
+        return None
+    else:
+        a_rid, b_rid = viewer_rid, matched[0]
+    if (not a_rid or a_rid == b_rid or a_rid not in names
+            or b_rid not in names):
+        return None
+    strengths = data["strengths"]
+    grades = data.get("grades") or {}
+    vals = data["vals_by_roster"]
+
+    def _cat(category, av, bv):
+        if av is None or bv is None:
+            return None
+        winner = "a" if av > bv else ("b" if bv > av else "tie")
+        return {"category": category, "a_value": av, "b_value": bv,
+                "winner": winner}
+
+    cats = []
+    for pos in CORE_POS:
+        c = _cat(f"{pos} room", (strengths.get(a_rid) or {}).get(pos),
+                 (strengths.get(b_rid) or {}).get(pos))
+        if c:
+            cats.append(c)
+    c = _cat("Roster grade", _fnum((grades.get(a_rid) or {}).get("score")),
+             _fnum((grades.get(b_rid) or {}).get("score")))
+    if c:
+        cats.append(c)
+    ta = sum(sum(v) for v in (vals.get(a_rid) or {}).values())
+    tb = sum(sum(v) for v in (vals.get(b_rid) or {}).values())
+    c = _cat("Total roster value", round(ta) if ta else None,
+             round(tb) if tb else None)
+    if c:
+        cats.append(c)
+    if len(cats) < 3:
+        return None
+    return {"team_a": {"roster_id": a_rid, "team_name": names.get(a_rid),
+                       "is_viewer": a_rid == viewer_rid},
+            "team_b": {"roster_id": b_rid, "team_name": names.get(b_rid),
+                       "is_viewer": b_rid == viewer_rid},
+            "categories": cats,
+            "a_wins": sum(1 for c in cats if c["winner"] == "a"),
+            "b_wins": sum(1 for c in cats if c["winner"] == "b"),
+            "ties": sum(1 for c in cats if c["winner"] == "tie")}
+
+
 def build_teams(bundle, entities, player_ids=None) -> tuple[dict, list[str]]:
     """League-wide roster strength: every team's grade and per-position
     strength and rank, from the Teams page machinery, in the mode the
@@ -5242,6 +5950,19 @@ def build_teams(bundle, entities, player_ids=None) -> tuple[dict, list[str]]:
                         "strength": (last["pos_strength"] or {}).get(pos)},
         }
     pack["by_position"] = by_position
+    breadth = _team_breadth(bundle, ctx, rosters, data, mode, entities)
+    if breadth:
+        pack["breadth"] = breadth["rows"]
+        pack["breadth_n"] = breadth["n"]
+        if breadth["rows"] and breadth["rows"][0]["count"] > 0:
+            top_b = breadth["rows"][0]
+            pack["most_top_players"] = {
+                "team_name": top_b["team_name"], "count": top_b["count"],
+                "by_position": top_b["by_position"],
+                "is_viewer": top_b["is_viewer"]}
+    sweep = _team_sweep(bundle, ctx, rosters, data, entities, viewer_rid)
+    if sweep:
+        pack["sweep"] = sweep
     focus = _position_focus(entities)
     if focus:
         pack["position_focus"] = focus

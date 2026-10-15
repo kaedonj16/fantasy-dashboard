@@ -986,6 +986,11 @@ def _required_receipts(intent: str, pack: dict) -> list[dict]:
             rows.append({"label": "Current breakout score",
                          "value": _fmt_num(current["breakout_score"])})
     elif intent == "teams":
+        breadth_top = pack.get("most_top_players") or {}
+        if breadth_top.get("count") is not None:
+            rows.append({"label": (f"Most top-{pack.get('breadth_n') or 24} "
+                                   f"players ({breadth_top.get('team_name')})"),
+                         "value": _fmt_num(breadth_top["count"])})
         ranking = pack.get("position_ranking") or []
         focus = pack.get("position_focus")
         if focus and ranking:
@@ -1938,6 +1943,23 @@ def _board_verdict(pack: dict) -> str | None:
         word = pack.get("family_word") or ""
         return (f"{top.get('name')} has the most top-{n} "
                 f"{word + ' ' if word else ''}finishes")
+    if kind == "finishes":
+        return (f"{top.get('name')} has the most top-{pack.get('finish_n') or 12} "
+                f"finishes")
+    if kind == "floor":
+        return f"{top.get('name')} has the highest floor"
+    if kind == "ceiling":
+        return f"{top.get('name')} has the highest ceiling"
+    if kind == "value":
+        pos = pack.get("position_filter")
+        return (f"{top.get('name')} is the most valuable {pos}"
+                if pos else f"{top.get('name')} is the most valuable player")
+    if kind == "slate":
+        return f"{top.get('name')} has the easiest upcoming slate"
+    if kind == "gap":
+        return f"{top.get('name')} laps his team's No. 2 by the most"
+    if kind == "rank_movers":
+        return f"{top.get('name')} climbed the most in positional rank"
     return f"{top.get('name')} leads {label}"
 
 
@@ -2048,6 +2070,35 @@ def _board_line(row: dict, pack: dict) -> str:
         n = pack.get("breadth_top_n") or pack.get("requested_n") or 10
         return (f"{head}: top {n} in {value} metrics: "
                 f"{_breadth_finishes_text(row)}")
+    if kind == "finishes":
+        return (f"{head}: {value} top-{pack.get('finish_n') or 12} finishes "
+                f"in {row.get('games')} games ({_fmt_num(row.get('ppg'))} PPG)")
+    if kind == "floor":
+        return (f"{head}: floor {_fmt_num(row.get('floor'))} points "
+                f"(ceiling {_fmt_num(row.get('ceiling'))}, "
+                f"{_fmt_num(row.get('ppg'))} PPG over {row.get('games')} games)")
+    if kind == "ceiling":
+        return (f"{head}: ceiling {_fmt_num(row.get('ceiling'))} points "
+                f"(floor {_fmt_num(row.get('floor'))}, "
+                f"{_fmt_num(row.get('ppg'))} PPG over {row.get('games')} games)")
+    if kind == "value":
+        line = f"{head}: {value} value"
+        if row.get("age") is not None:
+            line += f", age {_fmt_num(row.get('age'))}"
+        return line
+    if kind == "slate":
+        return (f"{head}: {value} {pack.get('label')}, slate avg rank "
+                f"{_fmt_num(row.get('slate_avg_rank'))} over the next "
+                f"{row.get('slate_games')} games")
+    if kind == "gap":
+        return (f"{head}: {value} {pack.get('label')} vs "
+                f"{_fmt_num(row.get('second_value'))} for "
+                f"{row.get('second_name')} (gap {_fmt_num(row.get('gap'))})")
+    if kind == "rank_movers":
+        return (f"{head}: now #{row.get('new_rank')} at "
+                f"{row.get('position')} (was #{row.get('old_rank')}, up "
+                f"{row.get('climb')}), value "
+                f"{_fmt_num(row.get('current_value'))}")
     line = f"{head}: {value}"
     if kind == "dual":
         sec = row.get("secondary")
@@ -2089,6 +2140,33 @@ def _board_receipt(row: dict, pack: dict) -> dict:
         return {"label": label,
                 "value": (f"top {n} in {value} metrics: "
                           f"{_breadth_finishes_text(row)}")}
+    if kind == "finishes":
+        return {"label": label,
+                "value": f"{value} finishes ({_fmt_num(row.get('ppg'))} PPG)"}
+    if kind == "floor":
+        return {"label": label,
+                "value": f"floor {value} (ceiling {_fmt_num(row.get('ceiling'))})"}
+    if kind == "ceiling":
+        return {"label": label,
+                "value": f"ceiling {value} (floor {_fmt_num(row.get('floor'))})"}
+    if kind == "value":
+        text = value
+        if row.get("age") is not None:
+            text += f" (age {_fmt_num(row.get('age'))})"
+        return {"label": label, "value": text}
+    if kind == "slate":
+        return {"label": label,
+                "value": (f"{value} - slate avg rank "
+                          f"{_fmt_num(row.get('slate_avg_rank'))}")}
+    if kind == "gap":
+        return {"label": label,
+                "value": (f"{value} vs {_fmt_num(row.get('second_value'))} "
+                          f"({row.get('second_name')})")}
+    if kind == "rank_movers":
+        return {"label": label,
+                "value": (f"#{row.get('old_rank')} to #{row.get('new_rank')} "
+                          f"(up {row.get('climb')}, value "
+                          f"{_fmt_num(row.get('current_value'))})")}
     if kind == "dual":
         sec = row.get("secondary")
         if sec:
@@ -2138,6 +2216,28 @@ def _board_intro_template(pack: dict) -> str:
         return (f"{top.get('name')} tops the {word} board: value "
                 f"{_fmt_delta(top['delta'])} to {value} while scoring "
                 f"{scoring}.")
+    if kind == "finishes":
+        return (f"{top.get('name')} owns the most top-{pack.get('finish_n') or 12} "
+                f"weekly finishes with {value} of them.")
+    if kind == "floor":
+        return (f"{top.get('name')} has the highest floor at "
+                f"{_fmt_num(top.get('floor'))} points in his worst week.")
+    if kind == "ceiling":
+        return (f"{top.get('name')} has the highest ceiling at "
+                f"{_fmt_num(top.get('ceiling'))} points in his best week.")
+    if kind == "slate":
+        return (f"{top.get('name')} has the easiest next-{pack.get('slate_weeks') or 4} "
+                f"slate among the {label} leaders, an average matchup rank "
+                f"of {_fmt_num(top.get('slate_avg_rank'))}.")
+    if kind == "gap":
+        return (f"{top.get('name')} beats his own team's No. 2 option by "
+                f"{_fmt_num(top.get('gap'))} in {label}, the widest gap on "
+                "any team.")
+    if kind == "rank_movers":
+        return (f"{top.get('name')} climbed {value} spots at "
+                f"{top.get('position')} over the last "
+                f"{pack.get('window_days') or 30} days, to "
+                f"#{top.get('new_rank')}.")
     return (f"{top.get('name')} leads {label} at {value} across "
             f"{pack.get('pool_size')} qualified players.")
 
@@ -2342,6 +2442,47 @@ _PROFILE_SUFFIX = (
 )
 
 
+def _compose_sweep(pack: dict) -> dict:
+    """Deterministic category-sweep answer (Teams pack with a sweep):
+    the categories and their winners are computed in the pack, so the
+    text and receipts only render them; no model draft can miscount a
+    category."""
+    s = pack.get("sweep") or {}
+    a, b = s.get("team_a") or {}, s.get("team_b") or {}
+    an, bn = a.get("team_name") or "Team A", b.get("team_name") or "Team B"
+    aw, bw = s.get("a_wins") or 0, s.get("b_wins") or 0
+    if aw > bw:
+        verdict = f"{an} wins the category sweep {aw}-{bw}"
+        lead = f"{an} takes the sweep {aw} categories to {bw}"
+    elif bw > aw:
+        verdict = f"{bn} wins the category sweep {bw}-{aw}"
+        lead = f"{bn} takes the sweep {bw} categories to {aw}"
+    else:
+        verdict = f"Dead even across categories at {aw}-{bw}"
+        lead = f"It is dead even at {aw} categories apiece"
+    if s.get("ties"):
+        lead += f", with {s['ties']} tied"
+    lines = [lead + "."]
+    receipts = []
+    for c in s.get("categories") or []:
+        winner = {"a": an, "b": bn}.get(c.get("winner"), "Tied")
+        lines.append(f"{c.get('category')}: {an} "
+                     f"{_fmt_num(c.get('a_value'))} vs {bn} "
+                     f"{_fmt_num(c.get('b_value'))} ({winner})")
+        if len(receipts) < 4:
+            receipts.append({
+                "label": f"{c.get('category')} ({an} vs {bn})",
+                "value": (f"{_fmt_num(c.get('a_value'))} to "
+                          f"{_fmt_num(c.get('b_value'))}")})
+    return {"verdict": verdict, "text": "\n".join(lines),
+            "receipts": receipts, "caveat": None,
+            "followups": [followup_pair("Grade every team's WR room"),
+                          followup_pair("Who has the strongest roster?")],
+            "act_link": _pack_act_link("teams", pack)
+            or {"href": "/teams", "label": "View on Teams"},
+            "actions": [], "mentions": []}
+
+
 def compose_answer(intent: str, question: str, pack: dict, *, preferences=None, assumed_context=None, history=None, risk_profile=None) -> dict:
     """Compose an answer dict from an evidence pack. Pure eval seam."""
     if intent == "open":
@@ -2371,6 +2512,10 @@ def compose_answer(intent: str, question: str, pack: dict, *, preferences=None, 
     if intent == "leaderboard":
         return _compose_leaderboard(question, pack, preferences=preferences,
                                     assumed_context=assumed_context, history=history)
+    if intent == "teams" and isinstance(pack, dict) and pack.get("sweep"):
+        # A category sweep is fully computed in the pack; render it
+        # deterministically instead of letting a draft count categories.
+        return _enforce_grounding(_compose_sweep(pack), intent, pack, question)
     # This-week actions are deterministic from the pack; build them first so
     # the citation check sees the same surfaces the scorer will.
     actions = []

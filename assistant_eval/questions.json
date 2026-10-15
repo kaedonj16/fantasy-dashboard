@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "description": "Frozen assistant eval set: 114 questions with golden evidence packs for the BR Fantasy assistant (workshop section 5 core 20, the deep-cuts leaderboard family lb1-lb6, and the section 9 P1 league-context types: playoffs, power rankings, standings, matchup, schedule) plus the P1 trade-finding family tf1-tf4, and the P1 breakout board, Teams, and pick-ownership families bo1-bo3, tm1-tm2, pk1 (renamed from the branch po1, which collided with the playoffs po1), with te4 an extra trade_eval. The win-outcome family mu4-mu6 pins the game-outcome phrasings (will I win / what are my chances / will I lose) to matchup packs: a decisive favorite, a close game, and a decisive underdog. The buy/sell board family bl1/sh1 pins pool-wide buy-low and sell-high asks (no named player) to leaderboard value boards, with bsh4/bsh5 as the named-player controls that must stay single-player buy_sell_hold. The roster start/sit family ss5-ss7 pins slot questions that name no players (start at FLEX, start at RB, sit at FLEX) to roster-scoped packs built from the asking user's own lineup: the FLEX occupant is benched for the bench challenger who out-projects him, and the RB question is a keep-the-starter call. The open-layer wild set ow1-ow19 freezes tool evidence (production tool-entry shape) instead of builder packs: ungoverned phrasings, a follow-up chain (ow5-ow7), a two-part question (ow8), a non-default team (ow9), a PRO gate through the open layer (ow18), and an off-site decline (ow19). The breadth family lb7-lb9 pins cross-metric breadth boards (top-N finishes counted across a metric family: lb7 receiving in Kaedon's exact phrasing, lb8 rushing) and the players-only receiving-yards stat board (the team-row regression: the live board once ranked TEAM_LAR first).",
+    "description": "Frozen assistant eval set: 125 questions with golden evidence packs for the BR Fantasy assistant (workshop section 5 core 20, the deep-cuts leaderboard family lb1-lb6, and the section 9 P1 league-context types: playoffs, power rankings, standings, matchup, schedule) plus the P1 trade-finding family tf1-tf4, and the P1 breakout board, Teams, and pick-ownership families bo1-bo3, tm1-tm2, pk1 (renamed from the branch po1, which collided with the playoffs po1), with te4 an extra trade_eval. The win-outcome family mu4-mu6 pins the game-outcome phrasings (will I win / what are my chances / will I lose) to matchup packs: a decisive favorite, a close game, and a decisive underdog. The buy/sell board family bl1/sh1 pins pool-wide buy-low and sell-high asks (no named player) to leaderboard value boards, with bsh4/bsh5 as the named-player controls that must stay single-player buy_sell_hold. The roster start/sit family ss5-ss7 pins slot questions that name no players (start at FLEX, start at RB, sit at FLEX) to roster-scoped packs built from the asking user's own lineup: the FLEX occupant is benched for the bench challenger who out-projects him, and the RB question is a keep-the-starter call. The open-layer wild set ow1-ow19 freezes tool evidence (production tool-entry shape) instead of builder packs: ungoverned phrasings, a follow-up chain (ow5-ow7), a two-part question (ow8), a non-default team (ow9), a PRO gate through the open layer (ow18), and an off-site decline (ow19). The breadth family lb7-lb9 pins cross-metric breadth boards (top-N finishes counted across a metric family: lb7 receiving in Kaedon's exact phrasing, lb8 rushing) and the players-only receiving-yards stat board (the team-row regression: the live board once ranked TEAM_LAR first). The detailed-question family dq1-dq11 pins the composed boards: weekly-finish breadth, floor, and ceiling from game logs (dq1-dq3), the value board under an age ceiling (dq4), a metric board restricted to the waiver pool (dq5), opportunity leaders re-ranked by upcoming schedule (dq6), the within-team No. 1 vs No. 2 gap (dq7), positional-rank climbers from value history (dq8), Teams roster breadth (dq9), a category sweep (dq10), and the no-history trap for rank trajectory (dq11).",
     "scenario": "Kaedon's league Blackedraw, her team Caleb's Casting Couch, Week 7 of the 2026 season.",
     "packs": "Each evidence_pack mirrors, field for field, the dict the matching builder in dashboard_services/assistant/evidence.py returns. Values inside a pack are the only numbers an answer may cite.",
     "recapture": "These packs are frozen fixtures. Before any launch decision, recapture them from the live tools with: python3 scripts/run_assistant_eval.py --capture (writes assistant_eval/captured_questions.json; it never overwrites this file). A launch call made on stale fixtures is not a launch call.",
@@ -13606,6 +13606,1301 @@
           "Ja'Marr Chase",
           "Receiving yards"
         ]
+      }
+    },
+    {
+      "id": "dq1",
+      "type": "leaderboard",
+      "question": "Which RB has the most top-12 weeks this season?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "leaderboard",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "board_kind": "finishes",
+        "requested_n": 10,
+        "position_filter": "RB",
+        "team_filter": null,
+        "metric_hint": null,
+        "metric_key": null,
+        "label": "Top-12 weekly finishes",
+        "pool_size": 41,
+        "qualification_text": "Weekly finishes inside the top 12 at the position, weeks 1 to 6, scored with your league's settings. Minimum 3 games. 41 players qualify.",
+        "board_count": 4,
+        "board": [
+          {
+            "rank": 1,
+            "player_id": "breece-hall",
+            "name": "Breece Hall",
+            "team": "NYJ",
+            "position": "RB",
+            "value": 6,
+            "on_my_roster": true,
+            "games": 6,
+            "finishes": 6,
+            "ppg": 19.8,
+            "floor": 12.4,
+            "ceiling": 28.6
+          },
+          {
+            "rank": 2,
+            "player_id": "bijan-robinson",
+            "name": "Bijan Robinson",
+            "team": "ATL",
+            "position": "RB",
+            "value": 5,
+            "on_my_roster": false,
+            "games": 6,
+            "finishes": 5,
+            "ppg": 18.9,
+            "floor": 11.2,
+            "ceiling": 26.1
+          },
+          {
+            "rank": 3,
+            "player_id": "jahmyr-gibbs",
+            "name": "Jahmyr Gibbs",
+            "team": "DET",
+            "position": "RB",
+            "value": 5,
+            "on_my_roster": false,
+            "games": 6,
+            "finishes": 5,
+            "ppg": 19.4,
+            "floor": 9.8,
+            "ceiling": 31.2
+          },
+          {
+            "rank": 4,
+            "player_id": "christian-mccaffrey",
+            "name": "Christian McCaffrey",
+            "team": "SF",
+            "position": "RB",
+            "value": 4,
+            "on_my_roster": false,
+            "games": 6,
+            "finishes": 4,
+            "ppg": 17.6,
+            "floor": 10.5,
+            "ceiling": 24.3
+          }
+        ],
+        "finish_n": 12
+      },
+      "reference": {
+        "verdict_kind": "board",
+        "pick": "Breece Hall",
+        "key_numbers": [
+          6,
+          19.8,
+          5,
+          19.4,
+          4
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": []
+      }
+    },
+    {
+      "id": "dq2",
+      "type": "leaderboard",
+      "question": "Who has the highest floor at WR?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "leaderboard",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "board_kind": "floor",
+        "requested_n": 10,
+        "position_filter": "WR",
+        "team_filter": null,
+        "metric_hint": null,
+        "metric_key": null,
+        "label": "Highest floor",
+        "pool_size": 58,
+        "qualification_text": "Worst single week, weeks 1 to 6, scored with your league's settings. Minimum 4 games, so a floor is a real sample, not one week. 58 players qualify.",
+        "board_count": 3,
+        "board": [
+          {
+            "rank": 1,
+            "player_id": "amon-ra-st-brown",
+            "name": "Amon-Ra St. Brown",
+            "team": "DET",
+            "position": "WR",
+            "value": 13.8,
+            "on_my_roster": false,
+            "games": 6,
+            "floor": 13.8,
+            "ceiling": 27.4,
+            "ppg": 19.1
+          },
+          {
+            "rank": 2,
+            "player_id": "puka-nacua",
+            "name": "Puka Nacua",
+            "team": "LAR",
+            "position": "WR",
+            "value": 12.9,
+            "on_my_roster": false,
+            "games": 6,
+            "floor": 12.9,
+            "ceiling": 30.2,
+            "ppg": 19.8
+          },
+          {
+            "rank": 3,
+            "player_id": "jamarr-chase",
+            "name": "Ja'Marr Chase",
+            "team": "CIN",
+            "position": "WR",
+            "value": 11.5,
+            "on_my_roster": false,
+            "games": 6,
+            "floor": 11.5,
+            "ceiling": 34.6,
+            "ppg": 20.4
+          }
+        ]
+      },
+      "reference": {
+        "verdict_kind": "board",
+        "pick": "Amon-Ra St. Brown",
+        "key_numbers": [
+          13.8,
+          27.4,
+          12.9,
+          11.5
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": []
+      }
+    },
+    {
+      "id": "dq3",
+      "type": "leaderboard",
+      "question": "Which RB has the highest ceiling?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "leaderboard",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "board_kind": "ceiling",
+        "requested_n": 10,
+        "position_filter": "RB",
+        "team_filter": null,
+        "metric_hint": null,
+        "metric_key": null,
+        "label": "Highest ceiling",
+        "pool_size": 44,
+        "qualification_text": "Best single week, weeks 1 to 6, scored with your league's settings. 44 players qualify.",
+        "board_count": 3,
+        "board": [
+          {
+            "rank": 1,
+            "player_id": "jahmyr-gibbs",
+            "name": "Jahmyr Gibbs",
+            "team": "DET",
+            "position": "RB",
+            "value": 38.2,
+            "on_my_roster": false,
+            "games": 6,
+            "floor": 9.8,
+            "ceiling": 38.2,
+            "ppg": 19.4
+          },
+          {
+            "rank": 2,
+            "player_id": "devon-achane",
+            "name": "De'Von Achane",
+            "team": "MIA",
+            "position": "RB",
+            "value": 35.7,
+            "on_my_roster": false,
+            "games": 6,
+            "floor": 8.4,
+            "ceiling": 35.7,
+            "ppg": 17.9
+          },
+          {
+            "rank": 3,
+            "player_id": "breece-hall",
+            "name": "Breece Hall",
+            "team": "NYJ",
+            "position": "RB",
+            "value": 28.6,
+            "on_my_roster": true,
+            "games": 6,
+            "floor": 12.4,
+            "ceiling": 28.6,
+            "ppg": 19.8
+          }
+        ]
+      },
+      "reference": {
+        "verdict_kind": "board",
+        "pick": "Jahmyr Gibbs",
+        "key_numbers": [
+          38.2,
+          9.8,
+          35.7,
+          28.6
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": []
+      }
+    },
+    {
+      "id": "dq4",
+      "type": "leaderboard",
+      "question": "Top RBs under 25 by value",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "leaderboard",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "board_kind": "value",
+        "requested_n": 10,
+        "position_filter": "RB",
+        "team_filter": null,
+        "metric_hint": null,
+        "metric_key": null,
+        "label": "Trade Value",
+        "pool_size": 9,
+        "qualification_text": "Ranked by the site's model trade values (superflex values). Showing only players aged 24 or younger. 9 players carry a value.",
+        "board_count": 4,
+        "board": [
+          {
+            "rank": 1,
+            "player_id": "jahmyr-gibbs",
+            "name": "Jahmyr Gibbs",
+            "team": "DET",
+            "position": "RB",
+            "value": 6840,
+            "on_my_roster": false,
+            "age": 24
+          },
+          {
+            "rank": 2,
+            "player_id": "bijan-robinson",
+            "name": "Bijan Robinson",
+            "team": "ATL",
+            "position": "RB",
+            "value": 6720,
+            "on_my_roster": false,
+            "age": 23
+          },
+          {
+            "rank": 3,
+            "player_id": "breece-hall",
+            "name": "Breece Hall",
+            "team": "NYJ",
+            "position": "RB",
+            "value": 5910,
+            "on_my_roster": true,
+            "age": 24
+          },
+          {
+            "rank": 4,
+            "player_id": "devon-achane",
+            "name": "De'Von Achane",
+            "team": "MIA",
+            "position": "RB",
+            "value": 5480,
+            "on_my_roster": false,
+            "age": 24
+          }
+        ]
+      },
+      "reference": {
+        "verdict_kind": "board",
+        "pick": "Jahmyr Gibbs",
+        "key_numbers": [
+          6840,
+          24,
+          6720,
+          5910
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": []
+      }
+    },
+    {
+      "id": "dq5",
+      "type": "leaderboard",
+      "question": "Top receivers on waivers by target share",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "leaderboard",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "board_kind": "board",
+        "requested_n": 10,
+        "position_filter": "WR",
+        "team_filter": null,
+        "metric_hint": "target share",
+        "metric_key": "target_share",
+        "label": "Target Share",
+        "pool_size": 12,
+        "qualification_text": "Qualified pool: 12 players, minimum 4 games. Showing only players on waivers in your league.",
+        "board_count": 3,
+        "board": [
+          {
+            "rank": 1,
+            "player_id": "rashid-shaheed",
+            "name": "Rashid Shaheed",
+            "team": "NO",
+            "position": "WR",
+            "value": 0.24,
+            "on_my_roster": false,
+            "games": 6
+          },
+          {
+            "rank": 2,
+            "player_id": "wandale-robinson",
+            "name": "Wan'Dale Robinson",
+            "team": "NYG",
+            "position": "WR",
+            "value": 0.23,
+            "on_my_roster": false,
+            "games": 6
+          },
+          {
+            "rank": 3,
+            "player_id": "keon-coleman",
+            "name": "Keon Coleman",
+            "team": "BUF",
+            "position": "WR",
+            "value": 0.21,
+            "on_my_roster": false,
+            "games": 5
+          }
+        ],
+        "definition": "Share of a team's pass attempts that are thrown to the player."
+      },
+      "reference": {
+        "verdict_kind": "board",
+        "pick": "Rashid Shaheed",
+        "key_numbers": [
+          0.24,
+          0.23,
+          0.21
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": []
+      }
+    },
+    {
+      "id": "dq6",
+      "type": "leaderboard",
+      "question": "Top RBs by opportunity share with the easiest upcoming schedules",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "leaderboard",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "board_kind": "slate",
+        "requested_n": 10,
+        "position_filter": "RB",
+        "team_filter": null,
+        "metric_hint": "opportunity share",
+        "metric_key": "opportunity_share",
+        "label": "Opportunity Share",
+        "pool_size": 18,
+        "qualification_text": "The top 24 by Opportunity Share at RB, re-ranked by the average matchup rank of their next 4 opponents (rank 1 is the easiest defense for the position). 18 have at least two ranked games in the window.",
+        "board_count": 3,
+        "board": [
+          {
+            "rank": 1,
+            "player_id": "kenneth-walker",
+            "name": "Kenneth Walker III",
+            "team": "SEA",
+            "position": "RB",
+            "value": 0.24,
+            "on_my_roster": false,
+            "games": 6,
+            "slate_avg_rank": 4.5,
+            "slate_games": 4
+          },
+          {
+            "rank": 2,
+            "player_id": "kyren-williams",
+            "name": "Kyren Williams",
+            "team": "LAR",
+            "position": "RB",
+            "value": 0.27,
+            "on_my_roster": false,
+            "games": 6,
+            "slate_avg_rank": 6.0,
+            "slate_games": 4
+          },
+          {
+            "rank": 3,
+            "player_id": "james-cook",
+            "name": "James Cook",
+            "team": "BUF",
+            "position": "RB",
+            "value": 0.26,
+            "on_my_roster": false,
+            "games": 6,
+            "slate_avg_rank": 7.5,
+            "slate_games": 4
+          }
+        ],
+        "slate_weeks": 4,
+        "definition": "Share of a team's carries plus targets."
+      },
+      "reference": {
+        "verdict_kind": "board",
+        "pick": "Kenneth Walker III",
+        "key_numbers": [
+          4.5,
+          0.24,
+          6.0,
+          7.5
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": []
+      }
+    },
+    {
+      "id": "dq7",
+      "type": "leaderboard",
+      "question": "Who beats his team's No. 2 by the most target share?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "leaderboard",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "board_kind": "gap",
+        "requested_n": 10,
+        "position_filter": null,
+        "team_filter": null,
+        "metric_hint": "target share",
+        "metric_key": "target_share",
+        "label": "Target Share",
+        "pool_size": 24,
+        "qualification_text": "For every NFL team, the gap between its No. 1 and No. 2 qualified player in Target Share; ranked by the gap. 24 teams have two qualified players.",
+        "board_count": 3,
+        "board": [
+          {
+            "rank": 1,
+            "player_id": "jamarr-chase",
+            "name": "Ja'Marr Chase",
+            "team": "CIN",
+            "position": "WR",
+            "value": 0.31,
+            "on_my_roster": false,
+            "games": 6,
+            "gap": 0.09,
+            "second_name": "Tee Higgins",
+            "second_value": 0.22,
+            "second_player_id": "tee-higgins"
+          },
+          {
+            "rank": 2,
+            "player_id": "justin-jefferson",
+            "name": "Justin Jefferson",
+            "team": "MIN",
+            "position": "WR",
+            "value": 0.29,
+            "on_my_roster": false,
+            "games": 6,
+            "gap": 0.07,
+            "second_name": "Jordan Addison",
+            "second_value": 0.22,
+            "second_player_id": "jordan-addison"
+          },
+          {
+            "rank": 3,
+            "player_id": "amon-ra-st-brown",
+            "name": "Amon-Ra St. Brown",
+            "team": "DET",
+            "position": "WR",
+            "value": 0.27,
+            "on_my_roster": false,
+            "games": 6,
+            "gap": 0.05,
+            "second_name": "Jameson Williams",
+            "second_value": 0.22,
+            "second_player_id": "jameson-williams"
+          }
+        ],
+        "definition": "Share of a team's pass attempts that are thrown to the player."
+      },
+      "reference": {
+        "verdict_kind": "board",
+        "pick": "Ja'Marr Chase",
+        "key_numbers": [
+          0.31,
+          0.22,
+          0.09,
+          0.29,
+          0.07
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": []
+      }
+    },
+    {
+      "id": "dq8",
+      "type": "leaderboard",
+      "question": "Who climbed the most in positional rank this month?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "leaderboard",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "board_kind": "rank_movers",
+        "requested_n": 10,
+        "position_filter": null,
+        "team_filter": null,
+        "metric_hint": null,
+        "metric_key": null,
+        "label": "Positional rank climb",
+        "pool_size": 23,
+        "qualification_text": "Positional ranks by model value, 2026-09-16 vs today (30 days). 23 players climbed at least one spot at their position.",
+        "board_count": 3,
+        "board": [
+          {
+            "rank": 1,
+            "player_id": "rome-odunze",
+            "name": "Rome Odunze",
+            "team": "CHI",
+            "position": "WR",
+            "value": 9,
+            "on_my_roster": true,
+            "climb": 9,
+            "old_rank": 14,
+            "new_rank": 5,
+            "current_value": 4230,
+            "baseline_value": 2610
+          },
+          {
+            "rank": 2,
+            "player_id": "tucker-kraft",
+            "name": "Tucker Kraft",
+            "team": "GB",
+            "position": "TE",
+            "value": 7,
+            "on_my_roster": false,
+            "climb": 7,
+            "old_rank": 11,
+            "new_rank": 4,
+            "current_value": 3580,
+            "baseline_value": 2140
+          },
+          {
+            "rank": 3,
+            "player_id": "quinshon-judkins",
+            "name": "Quinshon Judkins",
+            "team": "CLE",
+            "position": "RB",
+            "value": 6,
+            "on_my_roster": false,
+            "climb": 6,
+            "old_rank": 19,
+            "new_rank": 13,
+            "current_value": 3120,
+            "baseline_value": 1980
+          }
+        ],
+        "window_days": 30,
+        "as_of_date": "2026-09-16"
+      },
+      "reference": {
+        "verdict_kind": "board",
+        "pick": "Rome Odunze",
+        "key_numbers": [
+          9,
+          14,
+          5,
+          4230,
+          7
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": []
+      }
+    },
+    {
+      "id": "dq9",
+      "type": "teams",
+      "question": "Which team has the most top-24 players?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "teams",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "mode": "dynasty",
+        "mode_label": "Dynasty",
+        "teams": [
+          {
+            "roster_id": "1",
+            "team_name": "Pittsburgh Pilots",
+            "is_viewer": false,
+            "grade": "A",
+            "grade_score": 91.4,
+            "win_window": "Contender",
+            "pos_strength": {
+              "QB": 6010.0,
+              "RB": 5540.0,
+              "WR": 6890.0,
+              "TE": 3010.0
+            },
+            "pos_rank": {
+              "QB": 1,
+              "RB": 2,
+              "WR": 2,
+              "TE": 1
+            }
+          },
+          {
+            "roster_id": "2",
+            "team_name": "Caleb's Casting Couch",
+            "is_viewer": true,
+            "grade": "A-",
+            "grade_score": 86.2,
+            "win_window": "Contender",
+            "pos_strength": {
+              "QB": 5120.0,
+              "RB": 6010.5,
+              "WR": 7230.0,
+              "TE": 2140.0
+            },
+            "pos_rank": {
+              "QB": 2,
+              "RB": 1,
+              "WR": 1,
+              "TE": 2
+            }
+          },
+          {
+            "roster_id": "3",
+            "team_name": "Gridiron Goblins",
+            "is_viewer": false,
+            "grade": "B",
+            "grade_score": 74.8,
+            "win_window": "Bubble",
+            "pos_strength": {
+              "QB": 4020.0,
+              "RB": 4980.0,
+              "WR": 5410.0,
+              "TE": 1980.0
+            },
+            "pos_rank": {
+              "QB": 3,
+              "RB": 3,
+              "WR": 3,
+              "TE": 3
+            }
+          },
+          {
+            "roster_id": "4",
+            "team_name": "Sacko Squad",
+            "is_viewer": false,
+            "grade": "C-",
+            "grade_score": 55.3,
+            "win_window": "Rebuilding",
+            "pos_strength": {
+              "QB": 3010.0,
+              "RB": 3650.0,
+              "WR": 4020.0,
+              "TE": 1240.0
+            },
+            "pos_rank": {
+              "QB": 4,
+              "RB": 4,
+              "WR": 4,
+              "TE": 4
+            }
+          }
+        ],
+        "strongest": {
+          "team_name": "Pittsburgh Pilots",
+          "grade": "A",
+          "grade_score": 91.4
+        },
+        "weakest": {
+          "team_name": "Sacko Squad",
+          "grade": "C-",
+          "grade_score": 55.3
+        },
+        "by_position": {
+          "QB": {
+            "strongest": {
+              "team_name": "Pittsburgh Pilots",
+              "strength": 6010.0
+            },
+            "weakest": {
+              "team_name": "Sacko Squad",
+              "strength": 3010.0
+            }
+          },
+          "RB": {
+            "strongest": {
+              "team_name": "Caleb's Casting Couch",
+              "strength": 6010.5
+            },
+            "weakest": {
+              "team_name": "Sacko Squad",
+              "strength": 3650.0
+            }
+          },
+          "WR": {
+            "strongest": {
+              "team_name": "Caleb's Casting Couch",
+              "strength": 7230.0
+            },
+            "weakest": {
+              "team_name": "Sacko Squad",
+              "strength": 4020.0
+            }
+          },
+          "TE": {
+            "strongest": {
+              "team_name": "Pittsburgh Pilots",
+              "strength": 3010.0
+            },
+            "weakest": {
+              "team_name": "Sacko Squad",
+              "strength": 1240.0
+            }
+          }
+        },
+        "breadth": [
+          {
+            "roster_id": "1",
+            "team_name": "Pittsburgh Pilots",
+            "is_viewer": false,
+            "count": 7,
+            "by_position": {
+              "QB": 1,
+              "RB": 3,
+              "WR": 2,
+              "TE": 1
+            }
+          },
+          {
+            "roster_id": "2",
+            "team_name": "Caleb's Casting Couch",
+            "is_viewer": true,
+            "count": 6,
+            "by_position": {
+              "QB": 1,
+              "RB": 2,
+              "WR": 2,
+              "TE": 1
+            }
+          },
+          {
+            "roster_id": "3",
+            "team_name": "Gridiron Goblins",
+            "is_viewer": false,
+            "count": 4,
+            "by_position": {
+              "QB": 1,
+              "RB": 1,
+              "WR": 1,
+              "TE": 1
+            }
+          },
+          {
+            "roster_id": "4",
+            "team_name": "Sacko Squad",
+            "is_viewer": false,
+            "count": 2,
+            "by_position": {
+              "QB": 0,
+              "RB": 1,
+              "WR": 1,
+              "TE": 0
+            }
+          }
+        ],
+        "breadth_n": 24,
+        "most_top_players": {
+          "team_name": "Pittsburgh Pilots",
+          "count": 7,
+          "by_position": {
+            "QB": 1,
+            "RB": 3,
+            "WR": 2,
+            "TE": 1
+          },
+          "is_viewer": false
+        }
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": "Pittsburgh Pilots",
+        "key_numbers": [
+          7,
+          91.4
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": []
+      }
+    },
+    {
+      "id": "dq10",
+      "type": "teams",
+      "question": "Compare my team vs the Pilots across every category, who wins more?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "teams",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "mode": "dynasty",
+        "mode_label": "Dynasty",
+        "teams": [
+          {
+            "roster_id": "1",
+            "team_name": "Pittsburgh Pilots",
+            "is_viewer": false,
+            "grade": "A",
+            "grade_score": 91.4,
+            "win_window": "Contender",
+            "pos_strength": {
+              "QB": 6010.0,
+              "RB": 5540.0,
+              "WR": 6890.0,
+              "TE": 3010.0
+            },
+            "pos_rank": {
+              "QB": 1,
+              "RB": 2,
+              "WR": 2,
+              "TE": 1
+            }
+          },
+          {
+            "roster_id": "2",
+            "team_name": "Caleb's Casting Couch",
+            "is_viewer": true,
+            "grade": "A-",
+            "grade_score": 86.2,
+            "win_window": "Contender",
+            "pos_strength": {
+              "QB": 5120.0,
+              "RB": 6010.5,
+              "WR": 7230.0,
+              "TE": 2140.0
+            },
+            "pos_rank": {
+              "QB": 2,
+              "RB": 1,
+              "WR": 1,
+              "TE": 2
+            }
+          },
+          {
+            "roster_id": "3",
+            "team_name": "Gridiron Goblins",
+            "is_viewer": false,
+            "grade": "B",
+            "grade_score": 74.8,
+            "win_window": "Bubble",
+            "pos_strength": {
+              "QB": 4020.0,
+              "RB": 4980.0,
+              "WR": 5410.0,
+              "TE": 1980.0
+            },
+            "pos_rank": {
+              "QB": 3,
+              "RB": 3,
+              "WR": 3,
+              "TE": 3
+            }
+          },
+          {
+            "roster_id": "4",
+            "team_name": "Sacko Squad",
+            "is_viewer": false,
+            "grade": "C-",
+            "grade_score": 55.3,
+            "win_window": "Rebuilding",
+            "pos_strength": {
+              "QB": 3010.0,
+              "RB": 3650.0,
+              "WR": 4020.0,
+              "TE": 1240.0
+            },
+            "pos_rank": {
+              "QB": 4,
+              "RB": 4,
+              "WR": 4,
+              "TE": 4
+            }
+          }
+        ],
+        "strongest": {
+          "team_name": "Pittsburgh Pilots",
+          "grade": "A",
+          "grade_score": 91.4
+        },
+        "weakest": {
+          "team_name": "Sacko Squad",
+          "grade": "C-",
+          "grade_score": 55.3
+        },
+        "by_position": {
+          "QB": {
+            "strongest": {
+              "team_name": "Pittsburgh Pilots",
+              "strength": 6010.0
+            },
+            "weakest": {
+              "team_name": "Sacko Squad",
+              "strength": 3010.0
+            }
+          },
+          "RB": {
+            "strongest": {
+              "team_name": "Caleb's Casting Couch",
+              "strength": 6010.5
+            },
+            "weakest": {
+              "team_name": "Sacko Squad",
+              "strength": 3650.0
+            }
+          },
+          "WR": {
+            "strongest": {
+              "team_name": "Caleb's Casting Couch",
+              "strength": 7230.0
+            },
+            "weakest": {
+              "team_name": "Sacko Squad",
+              "strength": 4020.0
+            }
+          },
+          "TE": {
+            "strongest": {
+              "team_name": "Pittsburgh Pilots",
+              "strength": 3010.0
+            },
+            "weakest": {
+              "team_name": "Sacko Squad",
+              "strength": 1240.0
+            }
+          }
+        },
+        "sweep": {
+          "team_a": {
+            "roster_id": "2",
+            "team_name": "Caleb's Casting Couch",
+            "is_viewer": true
+          },
+          "team_b": {
+            "roster_id": "1",
+            "team_name": "Pittsburgh Pilots",
+            "is_viewer": false
+          },
+          "categories": [
+            {
+              "category": "QB room",
+              "a_value": 5120.0,
+              "b_value": 6010.0,
+              "winner": "b"
+            },
+            {
+              "category": "RB room",
+              "a_value": 6010.5,
+              "b_value": 5540.0,
+              "winner": "a"
+            },
+            {
+              "category": "WR room",
+              "a_value": 7230.0,
+              "b_value": 6890.0,
+              "winner": "a"
+            },
+            {
+              "category": "TE room",
+              "a_value": 2140.0,
+              "b_value": 3010.0,
+              "winner": "b"
+            },
+            {
+              "category": "Roster grade",
+              "a_value": 86.2,
+              "b_value": 91.4,
+              "winner": "b"
+            },
+            {
+              "category": "Total roster value",
+              "a_value": 21480,
+              "b_value": 22430,
+              "winner": "b"
+            }
+          ],
+          "a_wins": 2,
+          "b_wins": 4,
+          "ties": 0
+        }
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": "Pittsburgh Pilots",
+        "key_numbers": [
+          4,
+          6010,
+          7230
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": []
+      }
+    },
+    {
+      "id": "dq11",
+      "type": "leaderboard",
+      "question": "Who climbed the most in positional rank over the last month?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "leaderboard",
+        "available": false,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "board_kind": "rank_movers",
+        "requested_n": 10,
+        "position_filter": null,
+        "team_filter": null,
+        "metric_hint": null,
+        "label": null,
+        "window_days": 30,
+        "missing": "value history is not available 30 days back",
+        "nearest": [],
+        "board": [],
+        "board_count": 0
+      },
+      "reference": {
+        "verdict_kind": "no_data",
+        "pick": null,
+        "key_numbers": [],
+        "close_call": false
+      },
+      "trap": {
+        "kind": "missing_stat",
+        "note": "Value history does not reach back 30 days, so no positional-rank trajectory exists yet. A correct answer states the history is unavailable and invents no climbers or rank changes."
+      },
+      "expect": {
+        "no_data": true,
+        "must_mention": []
       }
     }
   ]
