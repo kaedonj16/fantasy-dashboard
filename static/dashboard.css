@@ -20915,6 +20915,12 @@ img, svg, canvas {
     .ns-card.ns-frame-single .ns-list:not(.ns-hidden) .ns-item .ns-why {
         grid-column: 1;
     }
+    /* In the grid body the base .ns-tag's align-self only sets the
+       vertical axis, so the tag box stretches the full column width;
+       pin it to its text width horizontally, like the mobile rows. */
+    .ns-card.ns-frame-single .ns-list:not(.ns-hidden) .ns-item .ns-tag {
+        justify-self: start;
+    }
     .ns-card.ns-frame-single .ns-list:not(.ns-hidden) .ns-item .ns-why {
         max-width: 560px;
         margin-bottom: 0;

@@ -204,6 +204,11 @@ def test_next_steps_fit_frame_css():
     assert "grid-template-columns: minmax(0, 1fr) auto" in flat
     assert "grid-template-rows: repeat(3, auto)" in flat
     assert "grid-column: 2" in flat
+    # The grid body stretches grid items by default, so the tag must
+    # pin itself to its text width instead of stretching full width.
+    tag_rule = flat[flat.find(".ns-item .ns-tag {"):]
+    tag_rule = tag_rule[:tag_rule.find("}")]
+    assert "justify-self: start" in tag_rule
 
 
 def test_bench_check_thresholds_agree():
