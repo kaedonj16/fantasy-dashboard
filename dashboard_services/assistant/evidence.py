@@ -58,6 +58,21 @@ Reality notes vs the workshop tool map (verified in this repo):
   utils.trade_value.fairness_label / fair_value_band: the shared fairness
   definition the trade calculator (api_trade_eval) and the trade outcome
   analyzer use, so the assistant cannot contradict the calculator.
+- Trade FINDING runs the site's own suggestion machinery behind the site's
+  own PRO gate: subscriptions.has_premium_for_viewer with the same
+  arguments /api/trade-suggestions passes (that route 403s before building
+  anything). Need mode reads ai.context_builders
+  .build_trade_suggestions_context, the data path behind
+  get_trade_suggestions_html, whose top_partners are complementary fits
+  (partner needs x viewer surplus), fairness-checked and depth-checked in
+  that builder. Sell and specific-target modes match packages with
+  trade_acquire_packages.value_matched_acquire_packages (the matcher the
+  Trade Hub targets flow uses) and judge plausibility with _league_fit
+  needs/surplus plus the fair_value_band above.
+  archetype_engine.get_archetype_suggestions was verified but is NOT wired
+  into this synchronous path: it is a Monte Carlo strategy-slate pipeline
+  (the Trade Hub itself loads it progressively, slate then sim phases)
+  keyed by strategy archetypes, not a per-question partner scan.
 """
 from __future__ import annotations
 
@@ -174,6 +189,25 @@ def _caller_has_pro(bundle) -> bool:
     if isinstance(bundle, dict) and bundle.get("has_pro") is not None:
         return bool(bundle["has_pro"])
     return request_has_pro(bundle or {})
+
+
+def has_premium_for_viewer(*args, **kwargs):
+    from dashboard_services.subscriptions import has_premium_for_viewer as _fn
+    return _fn(*args, **kwargs)
+
+
+def build_trade_suggestions_context(*args, **kwargs):
+    from dashboard_services.ai.context_builders import (
+        build_trade_suggestions_context as _fn,
+    )
+    return _fn(*args, **kwargs)
+
+
+def value_matched_acquire_packages(*args, **kwargs):
+    from dashboard_services.trade_acquire_packages import (
+        value_matched_acquire_packages as _fn,
+    )
+    return _fn(*args, **kwargs)
 
 
 def sleeper_trending_adds(*args, **kwargs):
@@ -720,6 +754,294 @@ def _balancing_asset(gap, partner, fit, values, index, give_ids, recv_ids, viewe
     player = best[1]
     return {"side": side, "player": player,
             "closes_gap_to": round(float(gap) + (player["value"] if side == "partner_adds" else -player["value"]), 1)}
+
+
+# -- trade finding -------------------------------------------------------------
+
+def _finding_player(row, index):
+    """Slim a value-table row or matcher asset to the finding player shape."""
+    pid = str(row.get("player_id") or row.get("id") or "")
+    info = _player_info(pid, index) if pid else {}
+    return {
+        "player_id": pid,
+        "name": row.get("name") or info.get("name") or pid,
+        "team": row.get("team") or info.get("team") or "",
+        "position": row.get("position") or info.get("position") or "",
+        "value": _row_value(row),
+    }
+
+
+def _asset_pool(roster, values, index):
+    """A roster's priced players in the shape value_matched_acquire_packages
+    consumes (and returns as package assets), plus per-position counts."""
+    pool, counts = [], {}
+    for pid in (roster or {}).get("players") or []:
+        pid = str(pid)
+        entry = _finding_player({**(values.get(pid) or {}), "player_id": pid}, index)
+        if not entry["value"]:
+            continue
+        pool.append({"player_id": pid, "id": pid, "name": entry["name"],
+                     "position": entry["position"], "value": entry["value"]})
+        counts[entry["position"]] = counts.get(entry["position"], 0) + 1
+    return pool, counts
+
+
+def _finding(partner_roster_id, partner_team, give, receive, partner_info,
+             viewer_needs, fairness=None, acceptance_rate=None):
+    give_total = round(sum(p["value"] or 0 for p in give), 1)
+    receive_total = round(sum(p["value"] or 0 for p in receive), 1)
+    partner_needs = (partner_info or {}).get("needs") or []
+    partner_surplus = (partner_info or {}).get("surplus") or []
+    return {
+        "partner_roster_id": str(partner_roster_id),
+        "partner_team": partner_team,
+        "give": give, "receive": receive,
+        "give_total": give_total, "receive_total": receive_total,
+        "fairness_gap": round(receive_total - give_total, 1),
+        "fairness": fairness,
+        "acceptance_rate": acceptance_rate,
+        "partner_needs": partner_needs, "partner_surplus": partner_surplus,
+        "you_fill": sorted({p["position"] for p in give if p.get("position")}
+                           & set(partner_needs)),
+        "they_fill": sorted({p["position"] for p in receive if p.get("position")}
+                            & set(viewer_needs or [])),
+    }
+
+
+def _need_findings(ctx, bundle, target_position, index):
+    """Need mode: the Suggestions engine's own computed partner packages."""
+    tools = ["ai.context_builders.build_trade_suggestions_context"]
+    try:
+        sugg = build_trade_suggestions_context(ctx, str(bundle["roster"]["roster_id"]))
+    except Exception:
+        sugg = None
+    if not sugg:
+        return [], None, tools, [], []
+    viewer_needs = sugg.get("viewer_needs") or []
+    viewer_surplus = sugg.get("viewer_surplus") or []
+    roster_map = ctx.get("roster_map") or {}
+
+    def _shape(p):
+        give = [_finding_player(t, index) for t in (p.get("targets_viewer_sends") or [])]
+        receive = [_finding_player(t, index) for t in (p.get("targets_they_have") or [])]
+        f = _finding(p.get("roster_id"), p.get("team_name") or roster_map.get(str(p.get("roster_id"))),
+                     give, receive,
+                     {"needs": p.get("partner_needs") or [],
+                      "surplus": p.get("partner_surplus") or []},
+                     viewer_needs, fairness=p.get("fairness"),
+                     acceptance_rate=p.get("acceptance_rate"))
+        # The engine's own side totals are the analyzer's numbers; they can
+        # differ from a re-sum when it priced a piece the slim row dropped.
+        if p.get("value_you_give") is not None:
+            f["give_total"] = float(p["value_you_give"])
+        if p.get("value_you_get") is not None:
+            f["receive_total"] = float(p["value_you_get"])
+        f["fairness_gap"] = round(f["receive_total"] - f["give_total"], 1)
+        return f
+
+    partners = [p for p in (sugg.get("top_partners") or [])
+                if (p.get("targets_they_have") or []) and (p.get("targets_viewer_sends") or [])]
+    shaped = [_shape(p) for p in partners]
+    if not target_position:
+        return shaped, None, tools, viewer_needs, viewer_surplus
+    wanted = {"RB", "WR", "TE"} if target_position == "FLEX" else {target_position}
+    matched = [f for f in shaped
+               if any(p.get("position") in wanted for p in f["receive"])]
+    miss = shaped[0] if (not matched and shaped) else None
+    return matched, miss, tools, viewer_needs, viewer_surplus
+
+
+def _sell_findings(ctx, bundle, sell_entry, values, index):
+    """Sell mode: what each team that needs the player's position could send
+    back, value-matched by the acquire-package matcher and held to the
+    analyzer's fairness band."""
+    from utils.trade_value import fair_value_band
+    tools = ["trade_acquire_packages.value_matched_acquire_packages",
+             "utils.trade.classify_position_needs",
+             "utils.trade.detect_surplus_positions",
+             "utils.trade_value.fair_value_band"]
+    rosters = ctx.get("rosters") or []
+    fit = _league_fit(ctx, rosters, values, index)
+    by_roster = fit.get("by_roster") or {}
+    viewer_rid = str((bundle.get("roster") or {}).get("roster_id"))
+    viewer_info = by_roster.get(viewer_rid) or {}
+    sell_value = float(sell_entry.get("value") or 0)
+    sell_pos = sell_entry.get("position")
+    if not sell_value or not sell_pos:
+        return [], None, tools, viewer_info.get("needs") or [], viewer_info.get("surplus") or []
+    findings, miss = [], None
+    for r in rosters:
+        rid = str(r.get("roster_id"))
+        if rid == viewer_rid:
+            continue
+        info = by_roster.get(rid) or {}
+        if sell_pos not in (info.get("needs") or []):
+            continue
+        pool, counts = _asset_pool(r, values, index)
+        if not pool:
+            continue
+        try:
+            pkgs = value_matched_acquire_packages(
+                sell_value, pool, [], max_options=4,
+                league_size=fit.get("num_teams") or 12, min_results=1) or []
+        except Exception:
+            pkgs = []
+        for pkg in pkgs:
+            assets = [a for a in (pkg.get("assets") or []) if not a.get("is_pick")]
+            if not assets or len(assets) != len(pkg.get("assets") or []):
+                continue
+            # Never strip the partner's only player at a position.
+            if any(counts.get(a.get("position"), 0) < 2 for a in assets):
+                continue
+            receive = [_finding_player(a, index) for a in assets]
+            f = _finding(rid, info.get("team_name"), [sell_entry], receive, info,
+                         viewer_info.get("needs") or [])
+            if abs(f["fairness_gap"]) <= fair_value_band(
+                    max(f["receive_total"], f["give_total"])):
+                findings.append(f)
+                break
+            if miss is None or abs(f["fairness_gap"]) < abs(miss["fairness_gap"]):
+                miss = f
+    findings.sort(key=lambda f: abs(f["fairness_gap"]))
+    return findings, miss, tools, viewer_info.get("needs") or [], viewer_info.get("surplus") or []
+
+
+def _target_findings(ctx, bundle, target_entry, owner_roster, values, index):
+    """Specific-target mode: value-matched offers from the viewer's own
+    roster for one named player, surfaced only when the owner's needs or
+    surplus make the deal plausible for them too."""
+    from utils.trade_value import fair_value_band
+    tools = ["trade_acquire_packages.value_matched_acquire_packages",
+             "utils.trade.classify_position_needs",
+             "utils.trade.detect_surplus_positions",
+             "utils.trade_value.fair_value_band"]
+    rosters = ctx.get("rosters") or []
+    fit = _league_fit(ctx, rosters, values, index)
+    by_roster = fit.get("by_roster") or {}
+    viewer_rid = str((bundle.get("roster") or {}).get("roster_id"))
+    viewer_info = by_roster.get(viewer_rid) or {}
+    owner_info = by_roster.get(str(owner_roster.get("roster_id"))) or {}
+    focus = float(target_entry.get("value") or 0)
+    if not focus:
+        return [], None, tools, viewer_info.get("needs") or [], viewer_info.get("surplus") or []
+    pool, _counts = _asset_pool(bundle.get("roster") or {}, values, index)
+    pool = [p for p in pool if p["player_id"] != target_entry.get("player_id")]
+    if not pool:
+        return [], None, tools, viewer_info.get("needs") or [], viewer_info.get("surplus") or []
+    try:
+        pkgs = value_matched_acquire_packages(
+            focus, pool, [], max_options=6,
+            league_size=fit.get("num_teams") or 12, min_results=1) or []
+    except Exception:
+        pkgs = []
+    owner_needs = set(owner_info.get("needs") or [])
+    spare = target_entry.get("position") in set(owner_info.get("surplus") or [])
+    findings, miss = [], None
+    for pkg in pkgs:
+        assets = [a for a in (pkg.get("assets") or []) if not a.get("is_pick")]
+        if not assets or len(assets) != len(pkg.get("assets") or []):
+            continue
+        give = [_finding_player(a, index) for a in assets]
+        f = _finding(owner_roster.get("roster_id"), owner_info.get("team_name"),
+                     give, [target_entry], owner_info, viewer_info.get("needs") or [])
+        plausible = spare or any(p["position"] in owner_needs for p in give)
+        if plausible and abs(f["fairness_gap"]) <= fair_value_band(
+                max(f["receive_total"], f["give_total"])):
+            findings.append(f)
+        elif miss is None or abs(f["fairness_gap"]) < abs(miss["fairness_gap"]):
+            miss = f
+    findings.sort(key=lambda f: abs(f["fairness_gap"]))
+    return findings, miss, tools, viewer_info.get("needs") or [], viewer_info.get("surplus") or []
+
+
+def build_trade_finding(bundle, entities, player_ids) -> tuple[dict, list[str]]:
+    """Trade FINDING pack: ranked packages computed by the site's suggestion
+    machinery, behind the same PRO gate as the site's Suggestions surface.
+
+    Gate first: /api/trade-suggestions calls has_premium_for_viewer with the
+    session viewer identity and returns a 403 paywall before any suggestion
+    is built. The same call runs here before any scan, and a caller the site
+    would paywall gets a gated pack with no findings and no scan numbers.
+    """
+    pack = _base_pack("trade_finding", bundle)
+    tools: list[str] = []
+    pack.update({"mode": None, "target_position": None, "sell_player": None,
+                 "target_player": None, "viewer_needs": [], "viewer_surplus": [],
+                 "findings": [], "no_fit": False, "closest_miss": None,
+                 "margin": {"thin": False}})
+    ctx = bundle.get("ctx") or {}
+    roster = bundle.get("roster") or {}
+    if not ctx or roster.get("roster_id") is None:
+        pack["available"] = False
+        pack["missing"] = "your roster in this league"
+        pack["nearest"] = []
+        return pack, tools
+
+    tools.append("subscriptions.has_premium_for_viewer")
+    viewer = bundle.get("viewer") or {}
+    try:
+        premium = bool(has_premium_for_viewer(
+            viewer.get("viewer_username") or viewer.get("username"),
+            viewer.get("viewer_user_id") or viewer.get("user_id"),
+            bundle.get("league_id"), bundle.get("platform") or "sleeper",
+            bundle.get("season")))
+    except Exception:
+        premium = False
+    if not premium:
+        pack["gated"] = True
+        return pack, tools
+
+    entities = entities or {}
+    target_position = str(entities.get("target_position") or "").upper() or None
+    if target_position not in ("QB", "RB", "WR", "TE", "FLEX"):
+        target_position = None
+    pack["target_position"] = target_position
+    index = _index()
+    values = _value_rows()
+    my_ids = {str(p) for p in (roster.get("players") or [])}
+    named = [str(pid) for pid in (player_ids or []) if pid]
+    rosters = ctx.get("rosters") or []
+
+    # A named player decides the mode: mine to move is a sell, another
+    # team's player is a specific target, an unrostered player is a waiver
+    # add rather than a trade.
+    named_entry, owner_roster = None, None
+    if named:
+        pid = named[0]
+        named_entry = _finding_player({**(values.get(pid) or {}), "player_id": pid}, index)
+        if pid not in my_ids:
+            for r in rosters:
+                if pid in {str(p) for p in (r.get("players") or [])}:
+                    owner_roster = r
+                    break
+    if named_entry and named[0] in my_ids:
+        pack["mode"] = "sell"
+        pack["sell_player"] = named_entry
+        findings, miss, used, needs, surplus = _sell_findings(
+            ctx, bundle, named_entry, values, index)
+    elif named_entry and owner_roster is not None:
+        pack["mode"] = "target"
+        pack["target_player"] = named_entry
+        findings, miss, used, needs, surplus = _target_findings(
+            ctx, bundle, named_entry, owner_roster, values, index)
+    elif named_entry:
+        pack["mode"] = "target"
+        pack["target_player"] = named_entry
+        pack["target_unrostered"] = True
+        findings, miss, used, needs, surplus = [], None, [], [], []
+    else:
+        pack["mode"] = "need"
+        findings, miss, used, needs, surplus = _need_findings(
+            ctx, bundle, target_position, index)
+    tools += used
+    pack["viewer_needs"] = needs
+    pack["viewer_surplus"] = surplus
+    pack["findings"] = findings[:3]
+    pack["no_fit"] = not pack["findings"]
+    pack["closest_miss"] = miss if pack["no_fit"] else None
+    if pack["no_fit"]:
+        pack["nearest_alternative"] = "waivers"
+    return pack, tools
 
 
 # -- buy / sell / hold -------------------------------------------------------------
@@ -2326,6 +2648,7 @@ def build_schedule(bundle, entities=None, player_ids=None) -> tuple[dict, list[s
 BUILDERS = {
     "start_sit": build_start_sit,
     "trade_eval": build_trade_eval,
+    "trade_finding": build_trade_finding,
     "buy_sell_hold": build_buy_sell_hold,
     "player": build_player,
     "metric": build_metric,

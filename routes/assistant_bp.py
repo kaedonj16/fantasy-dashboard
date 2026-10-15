@@ -25,7 +25,8 @@ _CORRECTION_LABELS = {
     "other": "your correction",
 }
 _INTENT_LABELS = {
-    "start_sit": "start/sit call", "trade_eval": "trade call", "buy_sell_hold": "buy/sell/hold call",
+    "start_sit": "start/sit call", "trade_eval": "trade call", "trade_finding": "trade finding",
+    "buy_sell_hold": "buy/sell/hold call",
     "player": "player answer", "metric": "metric answer", "leaderboard": "leaderboard answer", "waivers": "waiver answer",
     "this_week": "this-week answer", "clarify": "answer", "out_of_scope": "answer", "remember": "answer",
     "playoffs": "playoff answer", "power_rankings": "power rankings answer",

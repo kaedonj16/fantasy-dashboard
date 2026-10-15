@@ -164,13 +164,37 @@ def test_namesake_wrong_robinson_fails():
     assert score["passed"] is False
 
 
+def test_gated_question_rejects_leaked_findings():
+    q = BY_ID["tf3"]  # free caller: the pack is gated and carries no findings
+    ans = {"verdict": "Trade target: Woody Marks",
+           "text": "Trade target from Pittsburgh Pilots.",
+           "receipts": [{"label": "You receive (total value)", "value": "3900"}],
+           "caveat": None, "followups": [], "act_link": None, "actions": []}
+    score = score_answer(q, ans)
+    assert score["verdict_ok"] is False
+    assert score["passed"] is False
+
+
+def test_no_clean_fit_rejects_forced_trade():
+    q = BY_ID["tf4"]
+    ans = {"verdict": "Trade target: David Njoku",
+           "text": "Take Njoku from Pittsburgh Pilots.",
+           "receipts": [{"label": "You receive (total value)", "value": "2900"},
+                        {"label": "You give (total value)", "value": "3920"},
+                        {"label": "Fairness gap", "value": "1020"}],
+           "caveat": None, "followups": [], "act_link": None, "actions": []}
+    score = score_answer(q, ans)
+    assert score["trap_ok"] is False
+    assert score["passed"] is False
+
+
 # -- questions.json schema sanity ------------------------------------------------------
 
 def test_questions_distribution_and_ids():
-    assert len(QUESTIONS) == 38
-    assert len(BY_ID) == 38
+    assert len(QUESTIONS) == 42
+    assert len(BY_ID) == 42
     assert Counter(q["type"] for q in QUESTIONS) == {
-        "start_sit": 4, "trade_eval": 3, "buy_sell_hold": 3, "player": 3,
+        "start_sit": 4, "trade_eval": 3, "trade_finding": 4, "buy_sell_hold": 3, "player": 3,
         "metric": 3, "waivers": 2, "this_week": 2, "leaderboard": 6,
         "playoffs": 3, "power_rankings": 2, "standings": 2, "matchup": 3,
         "schedule": 2}
@@ -192,7 +216,7 @@ def test_questions_entry_shape():
 def test_traps_present_and_shaped():
     traps = {q["id"]: q for q in QUESTIONS if q["trap"]}
     assert {q["trap"]["kind"] for q in traps.values()} == {
-        "missing_stat", "namesake", "pro_gate", "early_season",
+        "missing_stat", "namesake", "pro_gate", "early_season", "no_clean_fit",
         "no_scheduled_matchup"}
     po2 = BY_ID["po2"]
     assert po2["trap"]["kind"] == "early_season"
@@ -247,6 +271,34 @@ def test_leaderboard_reference_matches_pack_board():
             for r in board:
                 assert r["secondary"]["value"] is not None, q["id"]
                 assert 1 <= r["secondary"]["rank"] <= pack["requested_n"], q["id"]
+    tf4 = BY_ID["tf4"]
+    assert tf4["trap"]["kind"] == "no_clean_fit"
+    assert tf4["evidence_pack"]["no_fit"] is True
+    assert tf4["evidence_pack"]["findings"] == []
+    assert tf4["evidence_pack"]["closest_miss"]
+
+
+def test_trade_finding_questions_shaped():
+    tf = {q["id"]: q for q in QUESTIONS if q["type"] == "trade_finding"}
+    assert set(tf) == {"tf1", "tf2", "tf3", "tf4"}
+    # Findings carry side totals that match their player values, and the
+    # gap is receive minus give, like every other trade pack.
+    for q in tf.values():
+        pack = q["evidence_pack"]
+        for f in (pack.get("findings") or []) + (
+                [pack["closest_miss"]] if pack.get("closest_miss") else []):
+            assert f["give_total"] == round(sum(p["value"] for p in f["give"]), 1)
+            assert f["receive_total"] == round(sum(p["value"] for p in f["receive"]), 1)
+            assert f["fairness_gap"] == round(f["receive_total"] - f["give_total"], 1)
+    # tf1 is a positional need, tf2 a sell-side question.
+    assert tf["tf1"]["evidence_pack"]["mode"] == "need"
+    assert tf["tf1"]["evidence_pack"]["target_position"] == "RB"
+    assert tf["tf2"]["evidence_pack"]["mode"] == "sell"
+    assert tf["tf2"]["evidence_pack"]["sell_player"]["name"] == "Jordan Addison"
+    # tf3 is the free-caller gate case: gated, and no suggestion data at all.
+    gated = tf["tf3"]["evidence_pack"]
+    assert gated["gated"] is True
+    assert gated["findings"] == [] and gated["closest_miss"] is None
 
 
 def test_start_sit_reference_matches_pack_mechanically():
@@ -347,7 +399,7 @@ def test_league_context_references_match_packs():
 
 # -- mock mode + poison ------------------------------------------------------------------
 
-def test_mock_mode_full_run_passes_38_of_38():
+def test_mock_mode_full_run_passes_42_of_42():
     for q in QUESTIONS:
         score = score_answer(q, compose_mock(q))
         assert score["passed"], f"{q['id']}: {score}"
@@ -356,7 +408,7 @@ def test_mock_mode_full_run_passes_38_of_38():
 def test_runner_mock_mode_exit_zero(capsys):
     assert runner.main(["--mode", "mock"]) == 0
     out = capsys.readouterr().out
-    assert "38/38 answers passed" in out
+    assert "42/42 answers passed" in out
 
 
 def test_runner_poison_is_detected(capsys):

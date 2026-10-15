@@ -79,13 +79,18 @@ SYSTEM = (
     "You are the BR Fantasy assistant. Answer from the evidence pack ONLY. "
     "Verdict first, in the verdict field. Every number you state must appear verbatim in the pack; "
     "never use a number from memory. Receipts: 2 to 4 entries, each a label and the pack value as a string. "
-    "Cite the key numbers: for a trade, both side totals and the fairness gap; for a metric, the leader "
+    "Cite the key numbers: for a trade, both side totals and the fairness gap; for trade finding, the "
+    "top finding's receive total, give total, and fairness gap; for a metric, the leader "
     "and any of the user's own players on the board; for the weekly digest, each action's key number; "
     "for waivers, the top candidate's value and the user's weakest starter at that position; "
     "for playoffs, the odds and the wins still needed; for standings and power rankings, the user's "
     "own seed or rank and the leader; for a matchup, the win probability and both projected totals; "
     "for schedule, the user's opponent strength index and the easiest team's. "
     "If the pack flags odds_soft, say the odds are soft this early and lead with the wins math. "
+    "For trade finding, present only the findings in the evidence: never invent a partner, a package, "
+    "or a player swap, and order by mutual fit, not by how much the user wins. When the evidence marks "
+    "no_fit, say plainly that there is no clean fit right now, name the closest miss if one is given, "
+    "and point at the nearest alternative instead of forcing a bad trade. "
     "If fixed_verdict is present in the payload, the verdict field must be exactly that value; "
     "it is set by the site's trade fairness band and is not yours to change. "
     "Caveat only when the pack marks margin.thin true or data stale, otherwise null. "
@@ -109,6 +114,7 @@ _ACT_LINKS = {
     "leaderboard": {"href": "/metrics", "label": "View on Advanced Metrics"},
     "waivers": {"href": "/waivers", "label": "View on Waivers"},
     "this_week": {"href": "/", "label": "View dashboard"},
+    "trade_finding": {"href": "/trade?tab=suggestions", "label": "Open Trade Suggestions"},
 }
 
 
@@ -234,6 +240,40 @@ def _start_sit_link(pack: dict) -> dict | None:
     return {"href": href, "label": "Open head-to-head"}
 
 
+def _finding_link(pack: dict, finding: dict) -> dict | None:
+    """Stage one finding in the trade calculator, the way the calculator's
+    own share links do: /{platform}/{season}/{league_id}/trade?a=<ids the
+    viewer receives>&b=<ids the viewer gives>. Built from pack ids only."""
+    league = (pack or {}).get("league") or {}
+    season, league_id = league.get("season"), league.get("league_id")
+    if not season or not league_id or not isinstance(finding, dict):
+        return None
+    recv = [str(p.get("player_id")) for p in finding.get("receive") or []
+            if isinstance(p, dict) and p.get("player_id")]
+    give = [str(p.get("player_id")) for p in finding.get("give") or []
+            if isinstance(p, dict) and p.get("player_id")]
+    if not recv or not give:
+        return None
+    return {"href": f"/{league.get('platform') or 'sleeper'}/{season}/{league_id}"
+                    f"/trade?a={','.join(recv)}&b={','.join(give)}",
+            "label": "Open in Trade Calculator"}
+
+
+def _finding_act_link(pack: dict) -> dict | None:
+    """Answer-level link for trade finding: the top finding staged in the
+    calculator, else the league's Suggestions tab."""
+    findings = (pack or {}).get("findings") or []
+    if findings:
+        link = _finding_link(pack, findings[0])
+        if link:
+            return link
+    league = (pack or {}).get("league") or {}
+    if league.get("season") and league.get("league_id"):
+        return {"href": f"/{league.get('platform') or 'sleeper'}/{league['season']}"
+                        f"/{league['league_id']}/trade?tab=suggestions",
+                "label": "Open Trade Suggestions"}
+    return None
+
 def _resolve_act_link(intent: str, pack: dict) -> dict | None:
     """The answer's act link: a state-staging deep link when the pack has
     what the target tool needs, else the static per-intent fallback."""
@@ -255,6 +295,10 @@ def _resolve_act_link(intent: str, pack: dict) -> dict | None:
             return link
     elif intent == "start_sit":
         link = _start_sit_link(pack)
+        if link:
+            return link
+    elif intent == "trade_finding":
+        link = _finding_act_link(pack)
         if link:
             return link
     league_link = _league_link(intent, pack)
@@ -530,6 +574,14 @@ def _required_receipts(intent: str, pack: dict) -> list[dict]:
             rows.append({"label": "You receive (total value)", "value": _fmt_num(receive)})
         if gap is not None:
             rows.append({"label": "Fairness gap", "value": _fmt_num(gap)})
+    elif intent == "trade_finding":
+        top = (pack.get("findings") or [None])[0] or pack.get("closest_miss") or {}
+        if top.get("receive_total") is not None:
+            rows.append({"label": "You receive (total value)", "value": _fmt_num(top["receive_total"])})
+        if top.get("give_total") is not None:
+            rows.append({"label": "You give (total value)", "value": _fmt_num(top["give_total"])})
+        if top.get("fairness_gap") is not None:
+            rows.append({"label": "Fairness gap", "value": _fmt_num(top["fairness_gap"])})
     elif intent == "metric":
         top = [e for e in (pack.get("leaderboard_top5") or [])
                if isinstance(e, dict) and e.get("value") is not None]
@@ -751,6 +803,8 @@ _SYSTEM_ASK_RE = re.compile(r"^\s*(send|provide|share|upload|paste)\b", re.IGNOR
 _FOLLOWUP_TEMPLATES = {
     "start_sit": ["What about next week?", "Who else is on my bench?"],
     "trade_eval": ["What would balance this trade?", "Who else could I ask for?"],
+    "trade_finding": ["Who else could I target?", "What can I get for my spare players?",
+                      "What should I do with my team this week?"],
     "buy_sell_hold": ["Who could I trade him for?", "What is his role right now?"],
     "player": ["Buy, sell, or hold on him?", "How is his upcoming schedule?"],
     "metric": ["Who is moving up?", "What is snap share?"],
@@ -902,10 +956,40 @@ def no_data_answer(pack: dict) -> dict:
             "act_link": link, "actions": [], "mentions": []}
 
 
+def _gated_trade_finding_answer(pack: dict) -> dict:
+    """Deterministic answer for a PRO-gated trade-finding pack.
+
+    Mirrors the site: /api/trade-suggestions returns a 403 paywall before
+    any suggestion is built, so a gated pack carries no scan data and this
+    answer is produced without a model call. Nothing to ground, nothing to
+    leak.
+    """
+    league = (pack or {}).get("league") or {}
+    if league.get("season") and league.get("league_id"):
+        pricing = (f"/{league.get('platform') or 'sleeper'}/{league['season']}"
+                   f"/{league['league_id']}/pricing")
+    else:
+        pricing = "/pricing"
+    return {
+        "verdict": "Trade finding is a PRO feature",
+        "text": ("Finding trades is part of PRO on BR Fantasy. The scan checks every roster in "
+                 "your league for a partner whose needs line up with yours, and your plan does "
+                 "not include it, so I cannot run it here. With PRO you can ask me to find a "
+                 "trade and I will rank real packages from your league with values on both sides."),
+        "receipts": [], "caveat": None,
+        "followups": ["What should I do with my team this week?",
+                      "Should I accept a trade I was offered?"],
+        "act_link": {"href": pricing, "label": "See PRO plans"},
+        "actions": [],
+    }
+
 def gated_answer(pack: dict) -> dict:
     """The honest PRO-gated answer: parity with the AM surfaces, which show
     the metric exists but withhold its numbers on the free tier. No board
-    numbers anywhere in this answer."""
+    numbers anywhere in this answer. Trade-finding packs carry their own
+    gated answer (the Suggestions paywall)."""
+    if (pack or {}).get("type") == "trade_finding":
+        return _gated_trade_finding_answer(pack)
     label = pack.get("label") or "That metric"
     text = (f"{label} is a PRO metric on BR Fantasy, so its board is not included "
             "on the free tier. Free boards I can pull right now include target share, "
@@ -1157,6 +1241,30 @@ def compose_answer(intent: str, question: str, pack: dict, *, preferences=None, 
     # This-week actions are deterministic from the pack; build them first so
     # the citation check sees the same surfaces the scorer will.
     actions = []
+    if intent == "trade_finding":
+        # One action row per finding, staged in the trade calculator: the
+        # row is the finding, one tap from a staged deal the user sends.
+        for f in ((pack or {}).get("findings") or [])[:3]:
+            if not isinstance(f, dict):
+                continue
+            link = _finding_link(pack, f)
+            recv_names = ", ".join(str(p.get("name")) for p in f.get("receive") or []
+                                    if isinstance(p, dict) and p.get("name"))
+            give_names = ", ".join(str(p.get("name")) for p in f.get("give") or []
+                                    if isinstance(p, dict) and p.get("name"))
+            gap = f.get("fairness_gap")
+            key_number = None
+            if isinstance(gap, (int, float)):
+                key_number = {"value": ("+" if gap > 0 else "") + _fmt_num(gap),
+                              "label": "value gap"}
+            actions.append({
+                "tag": "trade",
+                "headline": f"Get {recv_names} from {f.get('partner_team') or 'another roster'}",
+                "detail": f"You send {give_names}" if give_names else "",
+                "href": (link or {}).get("href") or "/trade?tab=suggestions",
+                "cta_label": "Open in Trade Calculator",
+                "key_number": key_number,
+            })
     if intent == "this_week":
         default_href = (_ACT_LINKS.get("this_week") or {}).get("href")
         for a in (pack or {}).get("actions") or []:

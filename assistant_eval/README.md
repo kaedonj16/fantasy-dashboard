@@ -7,9 +7,10 @@ how that is measured without live calls during scoring.
 
 ## What is here
 
-- `questions.json`: exactly 26 frozen questions (start_sit 4, trade_eval 3,
-  buy_sell_hold 3, player 3, metric 3, waivers 2, this_week 2, leaderboard 6),
-  written
+- `questions.json`: exactly 42 frozen questions (start_sit 4,
+  trade_eval 3, trade_finding 4, buy_sell_hold 3, player 3, metric 3,
+  waivers 2, this_week 2, leaderboard 6, playoffs 3, power_rankings 2,
+  standings 2, matchup 3, schedule 2), written
   against Kaedon's league Blackedraw, her team Caleb's Casting Couch,
   Week 7 of the 2026 season. Each entry carries a golden evidence pack that
   mirrors, field for field, what the matching builder in
@@ -34,7 +35,7 @@ how that is measured without live calls during scoring.
   checks (including mechanical reference-vs-pack consistency), the mock
   full run, and the poison check.
 
-## The three traps
+## The traps
 
 - `m3` (metric): asks for yards per route run. The feed carries no route
   data, so the pack is the backend's real no-data shape
@@ -59,10 +60,18 @@ an intersection of two top-10 boards (lb2), a movers board over a recent
 window against a prior baseline (lb3), a matchup board of defenses
 against a position (lb4), the PRO gate (lb5), and the no-data trap (lb6).
 
+- `tf4` (trade_finding): asks for a tight end in a league state with no
+  clean fit (the trade-finding trap from workshop section 5). The pack
+  carries `no_fit: true` and a `closest_miss` outside the fairness band.
+  A correct answer says there is no clean fit, cites the closest miss,
+  and never forces the bad trade. `tf3` is the companion gate case: a
+  free caller's pack is `gated: true` with no findings, and the answer
+  must state the PRO gate and show no suggestion data.
+
 ## Pass bar (automated part)
 
-Zero invented numbers across all 26, all traps handled, and at least
-24 of 26 verdicts matching the reference. The workshop's fourth bar
+Zero invented numbers across all 42, all traps handled, and at least
+90% of verdicts matching the reference. The workshop's fourth bar
 (blind head-to-head preference, at least 60%) is human-scored and is not
 part of this runner.
 
@@ -71,7 +80,7 @@ part of this runner.
 From the app root:
 
 ```bash
-# Deterministic harness check (no key, no model). All 26 must pass.
+# Deterministic harness check (no key, no model). All 42 must pass.
 python3 scripts/run_assistant_eval.py --mode mock
 
 # Poison check: injects one invented number (9999) into ss1 and verifies
