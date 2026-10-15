@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 INTENTS = ["start_sit", "trade_eval", "trade_finding", "buy_sell_hold", "player", "metric", "leaderboard", "waivers", "this_week",
            "playoffs", "power_rankings", "standings", "matchup", "schedule",
            "breakout_board", "breakout_track_record", "breakout_history", "teams", "pick_ownership",
-           "keeper", "rookie", "cross_league", "replacement", "handcuff", "activity", "watchlist",
+           "keeper", "rookie", "cross_league", "replacement", "handcuff", "activity", "watchlist", "front_office",
            "remember", "out_of_scope"]
 
 SCHEMA = {
@@ -134,6 +134,10 @@ SYSTEM = (
     "my watchlist, what is happening with my watchlist, any watchlist alerts): which "
     "watched players are moving in value or carrying an injury designation. Read-only: "
     "adding or removing players happens in the Watchlist tool, never in chat. "
+    "front_office: the Front Office (GM) report for the user's team (my front office "
+    "report, GM memo, front office top moves): its computed direction, playoff odds, "
+    "weakest positions, top moves, trade and waiver targets, and cut candidates. A "
+    "general what-should-I-do question without the report named stays with this_week. "
     "remember: the user asks you to remember a preference (preference_text is the preference). "
     "out_of_scope: anything else (trivia, real-game talk, other leagues). "
     "Use thread history only to resolve short follow-ups. Return JSON only. No em dashes."
@@ -340,6 +344,8 @@ def _keyword_route(message: str) -> dict:
         return {**base, "intent": "cross_league"}
     if re.search(r"watch ?list|starred players|players? i'?m watching|players? i starred", m):
         return {**base, "intent": "watchlist"}
+    if re.search(r"front office|\bgm (report|memo)\b|general manager", m):
+        return {**base, "intent": "front_office"}
     # League-context intents run before the player/team-week rules below:
     # their phrasings overlap ("this week", "my team", "who leads"), so the
     # specific subject wins. Disambiguation: power rankings need the word

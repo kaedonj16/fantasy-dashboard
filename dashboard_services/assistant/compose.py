@@ -126,6 +126,10 @@ SYSTEM = (
     "For the watchlist, cite the biggest 7-day mover's current value and 7-day move, and name "
     "any watched player carrying an injury designation. The watchlist is read-only in chat: "
     "never say you added, removed, or starred a player. "
+    "For front office answers, cite the playoff odds and the top trade target's two side "
+    "totals, and present the computed top moves, targets, and cut candidates as the site's "
+    "data in your own words; the report's written memo is not in your evidence, so never "
+    "quote or invent memo language. "
     "If fixed_verdict is present in the payload, the verdict field must be exactly that value; "
     "it is set by the site's trade fairness band and is not yours to change. "
     "Caveat only when the pack marks margin.thin true or data stale, otherwise null. "
@@ -460,6 +464,7 @@ _LEAGUE_LINKS = {
     "matchup": ("weekly", "View Matchups"),
     "schedule": ("schedule", "Open in Schedule Assistant"),
     "activity": ("activity", "View Activity"),
+    "front_office": ("dashboard", "View Front Office"),
 }
 
 
@@ -1049,6 +1054,17 @@ def _required_receipts(intent: str, pack: dict) -> list[dict]:
         if not rows and pack.get("count") is not None:
             rows.append({"label": "Players on your watchlist",
                          "value": _fmt_num(pack["count"])})
+    elif intent == "front_office":
+        if pack.get("playoff_pct") is not None:
+            rows.append({"label": "Playoff odds (%)",
+                         "value": _fmt_num(pack["playoff_pct"])})
+        top = (pack.get("trade_targets") or [None])[0]
+        if top and top.get("get_total") is not None:
+            rows.append({"label": f"{top.get('partner')} trade: you receive (total value)",
+                         "value": _fmt_num(top["get_total"])})
+        if top and top.get("give_total") is not None and len(rows) < 4:
+            rows.append({"label": f"{top.get('partner')} trade: you give (total value)",
+                         "value": _fmt_num(top["give_total"])})
     elif intent == "cross_league":
         for s in (pack.get("leagues") or []):
             if len(rows) >= 4:
@@ -1229,6 +1245,7 @@ _FOLLOWUP_TEMPLATES = {
     "handcuff": [followup_pair("Who should I start if he is out?"), followup_pair("Who is available on waivers?")],
     "activity": [followup_pair("Who should I add from waivers?"), followup_pair("What should I do with my team this week?")],
     "watchlist": [followup_pair("Who should I add from waivers?"), followup_pair("What should I do with my team this week?")],
+    "front_office": [followup_pair("Find me a trade"), followup_pair("Who should I add from waivers?")],
 }
 
 
@@ -1449,6 +1466,10 @@ def _required_mentions(intent: str, pack: dict) -> list[tuple[str, str]]:
         top = pack.get("top_mover") or {}
         if top.get("name"):
             out.append((str(top["name"]), "watchlist"))
+    elif intent == "front_office":
+        top = (pack.get("trade_targets") or [None])[0]
+        if top and top.get("partner"):
+            out.append((str(top["partner"]), "front_office"))
     return out
 
 
@@ -1490,6 +1511,8 @@ def _ensure_required_mentions(intent: str, pack: dict, data: dict, receipts: lis
                                  + f" and {names[-1]}.")
         elif kind == "watchlist":
             sentences.append(f"The biggest move on your watchlist is {names[0]}.")
+        elif kind == "front_office":
+            sentences.append(f"The top front office trade target is with {names[0]}.")
         elif kind == "league":
             sentences.append(f"That comparison also includes {_join_names(names)}.")
         elif len(names) == 1:
@@ -1573,6 +1596,34 @@ def _gated_trade_finding_answer(pack: dict) -> dict:
         "actions": [],
     }
 
+
+def _gated_front_office_answer(pack: dict) -> dict:
+    """Deterministic answer for a PRO-gated front office pack.
+
+    Mirrors the site: /api/gm-memo returns a 403 paywall before any report
+    data is built, so a gated pack carries no report data and this answer
+    is produced without a model call. Nothing to ground, nothing to leak.
+    """
+    league = (pack or {}).get("league") or {}
+    if league.get("season") and league.get("league_id"):
+        pricing = (f"/{league.get('platform') or 'sleeper'}/{league['season']}"
+                   f"/{league['league_id']}/pricing")
+    else:
+        pricing = "/pricing"
+    return {
+        "verdict": "The Front Office report is a PRO feature",
+        "text": ("The Front Office report is part of PRO on BR Fantasy. It computes your "
+                 "team's direction, playoff odds, top moves, trade targets, and cut "
+                 "candidates, and your plan does not include it, so I cannot pull it here. "
+                 "With PRO you can ask me what your front office says and I will walk "
+                 "through its computed data."),
+        "receipts": [], "caveat": None,
+        "followups": [followup_pair("What should I do with my team this week?"),
+                      followup_pair("Who should I add from waivers?")],
+        "act_link": {"href": pricing, "label": "See PRO plans"},
+        "actions": [],
+    }
+
 def _join_asset_names(players) -> str:
     names = [str(p.get("name")) for p in players or []
              if isinstance(p, dict) and p.get("name")]
@@ -1633,6 +1684,8 @@ def gated_answer(pack: dict) -> dict:
     gated answer (the Suggestions paywall)."""
     if (pack or {}).get("type") == "trade_finding":
         return _gated_trade_finding_answer(pack)
+    if (pack or {}).get("type") == "front_office":
+        return _gated_front_office_answer(pack)
     label = pack.get("label") or "That metric"
     text = (f"{label} is a PRO metric on BR Fantasy, so its board is not included "
             "on the free tier. Free boards I can pull right now include target share, "
