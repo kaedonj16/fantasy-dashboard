@@ -37,7 +37,7 @@ SCHEMA = {
         "draft_year": {"type": ["integer", "null"]},
         "position": {"type": ["string", "null"]},
         "preference_text": {"type": ["string", "null"]},
-        "board_kind": {"type": ["string", "null"], "enum": ["board", "intersection", "dual", "movers", "matchup", None]},
+        "board_kind": {"type": ["string", "null"], "enum": ["board", "intersection", "dual", "movers", "matchup", "buy_low", "sell_high", None]},
         "second_metric_hint": {"type": ["string", "null"]},
         "top_n": {"type": ["integer", "null"]},
         "position": {"type": ["string", "null"]},
@@ -59,7 +59,9 @@ SYSTEM = (
     "named player (theirs to move, or a specific target on another team) in player_names and a wanted "
     "position in target_position (QB, RB, WR, TE), else null. "
     "Draft picks go in give_picks or receive_picks by side when the side is clear, else in picks. "
-    "buy_sell_hold: buy/sell/hold on a player. player: a general player question. "
+    "buy_sell_hold: buy/sell/hold on a NAMED player (is X a buy low, should I buy X, "
+    "sell or hold X). A buy or sell question that names no player is a leaderboard "
+    "board instead (see below). player: a general player question. "
     "metric: a question about one named player and a metric, or a metric definition "
     "(metric_hint is the metric name). "
     "leaderboard: a pool-wide ranking question with no single player as the subject: "
@@ -67,7 +69,10 @@ SYSTEM = (
     "top N of two metrics (board_kind intersection, second_metric_hint is the second "
     "metric), one metric ranked with a second metric shown alongside (board_kind dual), "
     "biggest risers or fallers in a metric (board_kind movers, direction risers or "
-    "fallers), or which defenses give up the most to a position (board_kind matchup, "
+    "fallers), pool-wide buy or sell questions that name no player (who should I buy "
+    "low, buy-low candidates, who is undervalued: board_kind buy_low; who should I "
+    "sell high, sell-high candidates, who is overvalued: board_kind sell_high), "
+    "or which defenses give up the most to a position (board_kind matchup, "
     "position is the offensive position). For leaderboard also extract top_n when a "
     "count is stated, position (QB/RB/WR/TE) and team (NFL abbreviation) filters when "
     "stated, and window_weeks when a last-N-weeks window is stated. "
@@ -129,6 +134,24 @@ def _metric_hints_in(m: str) -> list[str]:
     return sorted((cand for cand in _METRIC_PHRASES if cand in m), key=m.find)
 
 
+# Pool-wide buy/sell: a buy or sell question that names no player is a
+# candidate board, not a single-player buy_sell_hold (which would decline
+# with no resolved player). Every pattern is pool-shaped (who-questions,
+# "candidates", the plural noun), so a named control ("Is X a buy low?",
+# "Should I buy X?") never matches and keeps the buy_sell_hold anchor below.
+_BUY_LOW_RE = re.compile(
+    r"\bwho (should|can|could) i buy\b"
+    r"|\bbuy[ -]?low candidates?\b|\bcandidates? to buy\b"
+    r"|\bwho (is|are) (a |the )?(best )?buy[ -]?low\b"
+    r"|\bwho (is|are) (the )?(most )?undervalued\b"
+    r"|\bbuy[ -]?lows\b")
+_SELL_HIGH_RE = re.compile(
+    r"\bwho (should|can|could) i sell\b"
+    r"|\bsell[ -]?high candidates?\b|\bcandidates? to sell\b"
+    r"|\bwho (is|are) (a |the )?(best )?sell[ -]?high\b"
+    r"|\bwho (is|are) (the )?(most )?overvalued\b")
+
+
 def _keyword_board(message: str, m: str) -> dict | None:
     """Pool-wide ranking phrasings -> the leaderboard intent (or None)."""
     hints = _metric_hints_in(m)
@@ -139,6 +162,23 @@ def _keyword_board(message: str, m: str) -> dict | None:
         if word in m:
             position = pos
             break
+    value_kind = None
+    if _BUY_LOW_RE.search(m):
+        value_kind = "buy_low"
+    elif _SELL_HIGH_RE.search(m):
+        value_kind = "sell_high"
+    if value_kind:
+        return {
+            "intent": "leaderboard",
+            "metric_hint": None,
+            "second_metric_hint": None,
+            "board_kind": value_kind,
+            "top_n": int(top.group(1)) if top else None,
+            "position": position,
+            "team": None,
+            "window_weeks": int(window.group(1)) if window else None,
+            "direction": None,
+        }
     kind = None
     direction = None
     if re.search(r"gives? up the most|allow(s|ed)? the most|worst defenses?|easiest defenses?", m):

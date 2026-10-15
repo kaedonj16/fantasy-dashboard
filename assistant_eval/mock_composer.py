@@ -258,11 +258,35 @@ def _league_link(intent, pack):
             "label": label}
 
 
+# Mirror of compose's unresolved-player decline (same strings).
+_UNRESOLVED_PLAYER_MISSING = {"no resolved player", "no resolved players"}
+
+_UNRESOLVED_PLAYER_TEXT = {
+    "buy_sell_hold": ("I could not tell which player you mean. Name the player "
+                      "and I will make the buy, sell, or hold call from their "
+                      "value trend and production."),
+    "start_sit": ("I could not tell which players you mean. Name the players "
+                  "and I will make the start or sit call."),
+    "player": ("I could not tell which player you mean. Name the player and "
+               "I will pull their numbers."),
+    "breakout_history": ("I could not tell which player you mean. Name the "
+                         "player and I will check whether they were a "
+                         "breakout call."),
+}
+
+
 def no_data_answer(pack: dict) -> dict:
     """Mirror of compose.no_data_answer (same strings, same shape)."""
     missing = pack.get("missing") or "that data is not tracked"
     nearest = pack.get("nearest") or []
-    text = f"That is not available: {missing}."
+    if missing in _UNRESOLVED_PLAYER_MISSING:
+        text = _UNRESOLVED_PLAYER_TEXT.get(
+            (pack or {}).get("type"),
+            "I could not tell which player you mean. Name the player and "
+            "I will pull the numbers.")
+        nearest = []
+    else:
+        text = f"That is not available: {missing}."
     if nearest:
         text += f" The nearest tracked options are {', '.join(str(n) for n in nearest[:3])}. Ask about one of those and I can pull the live numbers."
     # The link names the surface the question was about: league-context
@@ -278,6 +302,8 @@ def no_data_answer(pack: dict) -> dict:
 
 def _board_link(pack):
     """Mirror of compose._board_link: the leaderboard preset link shape."""
+    if (pack or {}).get("board_kind") in ("buy_low", "sell_high"):
+        return {"href": "/top-movers", "label": "View on Top Movers"}
     key = (pack or {}).get("metric_key")
     if not key:
         return None
@@ -571,6 +597,10 @@ def _board_verdict(pack):
     if kind == "movers":
         word = "faller" if pack.get("direction") == "fallers" else "riser"
         return f"{top.get('name')} is the biggest {word} in {label}"
+    if kind == "buy_low":
+        return f"{top.get('name')} is the top buy-low"
+    if kind == "sell_high":
+        return f"{top.get('name')} is the top sell-high"
     return f"{top.get('name')} leads {label}"
 
 
@@ -589,6 +619,11 @@ def _board_line(row, pack):
             return (f"{head}: {_fmt_delta(row['delta'])} to {value} "
                     f"(was {fmt(row.get('baseline_value'))})")
         return f"{head}: {value} {pack.get('label')}"
+    if kind in ("buy_low", "sell_high") and row.get("delta") is not None:
+        return (f"{head}: value {_fmt_delta(row['delta'])} to {value} "
+                f"(was {fmt(row.get('baseline_value'))}), "
+                f"{fmt(row.get('ppg'))} PPG vs "
+                f"{fmt(row.get('expected_ppg'))} expected")
     if kind == "intersection":
         sec = row.get("secondary") or {}
         return (f"{head}: {value} {pack.get('label')}, "
@@ -610,6 +645,11 @@ def _board_receipt(row, pack):
     value = fmt(row.get("value")) if row.get("value") is not None else ""
     if kind == "movers" and row.get("delta") is not None:
         return {"label": label, "value": f"{_fmt_delta(row['delta'])} (now {value})"}
+    if kind in ("buy_low", "sell_high") and row.get("delta") is not None:
+        return {"label": label,
+                "value": (f"value {_fmt_delta(row['delta'])} (now {value}); "
+                          f"{fmt(row.get('ppg'))} PPG "
+                          f"({_fmt_delta(row.get('over_expected'))} vs expected)")}
     if kind == "intersection":
         sec = row.get("secondary") or {}
         return {"label": label,
@@ -642,6 +682,12 @@ def _board_intro_template(pack):
             return (f"{top.get('name')} moved the most in {label} over the "
                     f"recent window, {_fmt_delta(top['delta'])} to {value}.")
         return f"{top.get('name')} leads the {label} board at {value}."
+    if kind in ("buy_low", "sell_high") and top.get("delta") is not None:
+        word = "buy-low" if kind == "buy_low" else "sell-high"
+        return (f"{top.get('name')} tops the {word} board: value "
+                f"{_fmt_delta(top['delta'])} to {value} while scoring "
+                f"{fmt(top.get('ppg'))} PPG against "
+                f"{fmt(top.get('expected_ppg'))} expected.")
     return (f"{top.get('name')} leads {label} at {value} across "
             f"{pack.get('pool_size')} qualified players.")
 

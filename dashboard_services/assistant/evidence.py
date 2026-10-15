@@ -104,6 +104,13 @@ Reality notes vs the workshop tool map (verified in this repo):
   _get_prospect_detail for one prospect's college seasons): scores are
   never recomputed or rescaled, and the pack carries the rows'
   model_version as score_version so the stored set is identifiable.
+- Buy-low / sell-high boards (leaderboard kinds buy_low / sell_high) run
+  the site's own movers computation (player_value_history.get_top_movers,
+  the /api/value-movers source, with that route's displayed-value screen)
+  and keep only movers whose production supports the move: PPG vs
+  expected PPG from the same per-player metrics the buy/sell pack ships.
+  A pool-wide buy/sell question names no player, so it is a board, never
+  a single-player buy_sell_hold decline.
 - Cross-league answers fan out over the account's leagues with the
   portfolio page's own builder (portfolio_summary.build_league_summary,
   fed by accounts.list_user_leagues and the assistant's league ctx
@@ -157,6 +164,11 @@ def metric_leaderboard(*args, **kwargs):
 
 def weekly_range_leaderboard(*args, **kwargs):
     from data_building.advanced_metrics import get_weekly_range_leaderboard as _fn
+    return _fn(*args, **kwargs)
+
+
+def get_top_movers(*args, **kwargs):
+    from data_building.player_value_history import get_top_movers as _fn
     return _fn(*args, **kwargs)
 
 
@@ -1985,7 +1997,7 @@ def build_metric(bundle, entities, player_ids=None) -> tuple[dict, list[str]]:
     # Resolve hint to a config key by key, label, or substring.
     key = _resolve_metric_key(hint, config)
     if not key:
-        missing_note, nearest = KNOWN_MISSING.get(hint, ("metric not in the site config", []))
+        missing_note, nearest = KNOWN_MISSING.get(hint, ("that metric is not tracked", []))
         if not nearest:
             nearest = [k for k in list(config.keys())[:5]]
         pack["available"] = False
@@ -2097,6 +2109,140 @@ def _build_matchup_board(pack, bundle, position, top_n, tools):
     return pack, tools
 
 
+def _build_value_board(pack, bundle, tools, kind, position, team, top_n,
+                       roster_ids):
+    """Buy-low / sell-high candidate boards ("who should I buy low?").
+
+    The value screen is the site's own movers computation
+    (player_value_history.get_top_movers, the /api/value-movers source,
+    called with that route's arguments, including its displayed-value map
+    so a player the site renders at ~0 never surfaces off a stale history
+    row). The production screen is the same per-player line the
+    single-player buy/sell pack ships (PPG vs expected PPG from
+    _metrics_for): buy-low keeps fallers still producing at or above
+    expectation, sell-high keeps risers producing below it. Value movement
+    is a free signal and both production fields are ungated; the PRO-gated
+    ppr_over_expected leaderboard is not read.
+    """
+    season = bundle.get("season")
+    ctx = bundle.get("ctx") or {}
+    is_sf = False
+    try:
+        from utils.lineup_slots import is_superflex_lineup
+        is_sf = bool(is_superflex_lineup(ctx.get("roster_positions") or []))
+    except Exception:
+        is_sf = False
+    league_type = "sf" if is_sf else "1qb"
+    num_teams = len(ctx.get("rosters") or [])
+    league_size = num_teams if num_teams in (8, 10, 12, 14) else 10
+    current_values = {}
+    for pid, row in _value_rows().items():
+        raw = row.get("sf_value") if is_sf else row.get("value")
+        try:
+            current_values[pid] = float(raw or 0)
+        except (TypeError, ValueError):
+            current_values[pid] = 0.0
+    payload = {}
+    try:
+        payload = get_top_movers(
+            days=7, limit=60, league_type=league_type, league_size=league_size,
+            min_baseline_value=10, min_current_value=20.0,
+            current_values=current_values) or {}
+        tools.append("player_value_history.get_top_movers")
+    except Exception:
+        logger.debug("[assistant] value movers failed", exc_info=True)
+        payload = {}
+    if isinstance(payload, list):
+        risers = [r for r in payload
+                  if isinstance(r, dict) and float(r.get("delta") or 0) > 0]
+        fallers = [r for r in payload
+                   if isinstance(r, dict) and float(r.get("delta") or 0) < 0]
+        used_days = None
+    else:
+        risers = payload.get("risers") or []
+        fallers = payload.get("fallers") or []
+        used_days = payload.get("used_days")
+    pack["value_days"] = int(used_days) if used_days else 7
+    pack["direction"] = "fallers" if kind == "buy_low" else "risers"
+    pack["label"] = ("Buy-low candidates" if kind == "buy_low"
+                     else "Sell-high candidates")
+    pack["movers_basis"] = "value_window"
+    pack["window"] = {"kind": "value", "days": pack["value_days"],
+                      "applied": True}
+    source = fallers if kind == "buy_low" else risers
+    pack["movers_examined"] = len(source)
+    qualified = []
+    for r in source:
+        if not isinstance(r, dict):
+            continue
+        pid = str(r.get("player_id") or r.get("id") or "")
+        if not pid:
+            continue
+        if position and str(r.get("position") or "").upper() != position:
+            continue
+        if team and str(r.get("team") or "").upper() != team:
+            continue
+        try:
+            delta = float(r.get("delta"))
+        except (TypeError, ValueError):
+            continue
+        if kind == "buy_low" and delta >= 0:
+            continue
+        if kind == "sell_high" and delta <= 0:
+            continue
+        metrics, mtools = _metrics_for(pid, season)
+        for t in mtools:
+            if t not in tools:
+                tools.append(t)
+        ppg = metrics.get("ppg")
+        xppg = metrics.get("expected_ppr_per_game")
+        games = metrics.get("games")
+        if ppg is None or xppg is None:
+            continue  # no verifiable production line, no candidacy
+        if games is not None and games < 3:
+            continue
+        over = round(float(ppg) - float(xppg), 2)
+        if kind == "buy_low" and over < 0:
+            continue
+        if kind == "sell_high" and over >= 0:
+            continue
+        row = _board_row(len(qualified) + 1, r, roster_ids,
+                         value=r.get("new_value"))
+        row["delta"] = _r3(delta)
+        row["baseline_value"] = _r3(r.get("old_value"))
+        row["ppg"] = _r3(ppg)
+        row["expected_ppg"] = _r3(xppg)
+        row["over_expected"] = over
+        row["games"] = games
+        qualified.append(row)
+    qualified.sort(key=lambda row: row["delta"],
+                   reverse=(kind == "sell_high"))
+    for i, row in enumerate(qualified):
+        row["rank"] = i + 1
+    pack["pool_size"] = len(qualified)
+    board = qualified[:top_n]
+    if not board:
+        return _no_board(
+            pack,
+            "no buy-low candidates right now" if kind == "buy_low"
+            else "no sell-high candidates right now", []), tools
+    pack["board"] = board
+    pack["board_count"] = len(board)
+    if kind == "buy_low":
+        rule = ("value fell while production held at or above expectation "
+                "(PPG vs expected PPG)")
+        moved = "fallers"
+    else:
+        rule = ("value rose while production sits below expectation "
+                "(PPG vs expected PPG)")
+        moved = "risers"
+    pack["qualification_text"] = (
+        f"Value movement over the last {pack['value_days']} days from the "
+        f"site's value history; {rule}. {len(qualified)} of "
+        f"{pack['movers_examined']} {moved} qualify.")
+    return pack, tools
+
+
 def build_leaderboard(bundle, entities, player_ids=None) -> tuple[dict, list[str]]:
     """Pool-wide boards ("deep cuts"): leaderboards, intersections and dual
     ranks, movers, and matchup boards. Every rank and value is computed here
@@ -2107,7 +2253,8 @@ def build_leaderboard(bundle, entities, player_ids=None) -> tuple[dict, list[str
     tools: list[str] = ["advanced_metrics.config"]
     ent = entities or {}
     kind = str(ent.get("board_kind") or "board").strip().lower()
-    if kind not in ("board", "intersection", "dual", "movers", "matchup"):
+    if kind not in ("board", "intersection", "dual", "movers", "matchup",
+                    "buy_low", "sell_high"):
         kind = "board"
     pack["board_kind"] = kind
     try:
@@ -2128,6 +2275,10 @@ def build_leaderboard(bundle, entities, player_ids=None) -> tuple[dict, list[str
     if kind == "matchup":
         return _build_matchup_board(pack, bundle, position, top_n, tools)
 
+    if kind in ("buy_low", "sell_high"):
+        return _build_value_board(pack, bundle, tools, kind, position, team,
+                                  top_n, roster_ids)
+
     try:
         config = _metric_config()
     except Exception:
@@ -2142,7 +2293,7 @@ def build_leaderboard(bundle, entities, player_ids=None) -> tuple[dict, list[str
         key = "opportunity_trend" if "opportunity_trend" in config else None
         trend_default = bool(key)
     if not key:
-        missing_note, nearest = KNOWN_MISSING.get(hint, ("metric not in the site config", []))
+        missing_note, nearest = KNOWN_MISSING.get(hint, ("that metric is not tracked", []))
         if not nearest:
             nearest = [k for k in list(config.keys())[:5]]
         return _no_board(pack, missing_note, nearest), tools
