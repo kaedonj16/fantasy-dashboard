@@ -12204,11 +12204,300 @@ def _next_steps_lineup_actions(ctx: dict, viewer_roster_id) -> list:
     return actions
 
 
+def _next_steps_waiver_claims(ctx: dict, viewer_roster_id, model_value_table: list,
+                              limit: int = 3) -> tuple:
+    """Team-fit waiver claims for the viewer's roster, from the shared v2
+    selector (utils.waivers.rank_team_waiver_suggestions) with the full
+    opportunity inputs the Waivers page path supplies:
+
+      * real per-week projection maps for the next four weeks, so the
+        lineup-gain classification judges true multi-week starter totals
+        (bench production never counts as a gain);
+      * weekly availability / calendar need over the same window (byes and
+        serious injuries), so a claim can fill a dated hole;
+      * the roster's per-position drop bars and starter gaps, so a claim
+        must beat the rostered player it would actually displace.
+
+    Returns (results, names_by_pid, calendar_need): the selector's enriched
+    dicts in selector order, a name lookup for drop/replacement players,
+    and the calendar-need map used for reason text. Empty results when
+    the gate clears nobody; callers then surface no claim (hide-if-empty).
+    """
+    from utils.digest import (
+        _calendar_need_from_availability,
+        _waiver_need_context,
+        waiver_add_clears_quality_bar,
+        waiver_drop_bar_value,
+    )
+    from utils.waivers import (
+        rank_team_waiver_suggestions,
+        weekly_availability_from_roster,
+    )
+
+    rosters = ctx.get("rosters") or []
+    players_index = ctx.get("players_index") or {}
+    roster_positions = ctx.get("roster_positions") or []
+    vrid = str(viewer_roster_id or "")
+    viewer_roster = next(
+        (r for r in rosters if str(r.get("roster_id")) == vrid), None)
+    if viewer_roster is None:
+        return [], {}, {}
+    roster_pids = [str(p) for p in (viewer_roster.get("players") or [])]
+    if not roster_pids or not model_value_table:
+        return [], {}, {}
+
+    rostered_ids = {
+        str(pid) for r in rosters for pid in (r.get("players") or [])
+    }
+
+    # Rookie-class eligibility, identical to the Waiver Wire Targets card:
+    # this year's rookies join the pool only once a classmate is rostered
+    # (i.e. the rookie draft has happened).
+    _rookie_sids: set = set()
+    try:
+        from data_building.rookie_pipeline.pipeline import get_active_rookie_class as _arc
+        _ry = _arc()
+        from dashboard_services.db import get_conn as _gc_ns
+        with _gc_ns() as _wc:
+            _rr = _wc.execute(
+                "SELECT sleeper_id FROM rookie_prospects WHERE draft_class_year = %s AND sleeper_id IS NOT NULL",
+                (_ry,),
+            ).fetchall()
+        _rookie_sids = {str(r["sleeper_id"]) for r in _rr if r["sleeper_id"]}
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
+    _rookie_draft_done = bool(
+        _rookie_sids and any(sid in rostered_ids for sid in _rookie_sids))
+
+    _tep_ns = te_premium_from_settings(ctx.get("scoring_settings"))
+    _vkey_ns, _vfb_ns = _waiver_value_keys(ctx)
+    _rk_ns = _waiver_rank_label_key(ctx)
+
+    value_by_pid: dict = {}
+    names_by_pid: dict = {}
+    positions_by_pid: dict = {}
+    for row in model_value_table:
+        if not isinstance(row, dict):
+            continue
+        pid = str(row.get("id") or "")
+        if not pid:
+            continue
+        try:
+            _v = float(row.get(_vkey_ns) or row.get(_vfb_ns) or 0.0)
+        except Exception:
+            _v = 0.0
+        _rpos = str(row.get("position") or row.get("pos") or "").upper()
+        value_by_pid[pid] = apply_te_premium(_v, _rpos, _tep_ns)
+        if _rpos:
+            positions_by_pid[pid] = _rpos
+        _nm = row.get("name") or row.get("full_name")
+        if _nm:
+            names_by_pid[pid] = str(_nm)
+    for _pid, _meta in players_index.items():
+        if not isinstance(_meta, dict):
+            continue
+        _pid = str(_pid)
+        _mpos = str(_meta.get("position") or _meta.get("pos") or "").upper()
+        if _mpos and _pid not in positions_by_pid:
+            positions_by_pid[_pid] = _mpos
+        if _pid not in names_by_pid:
+            _nm = _meta.get("full_name") or _meta.get("name")
+            if _nm:
+                names_by_pid[_pid] = str(_nm)
+
+    # Candidate pool: unrostered league-wide, on an NFL team, skill
+    # positions, above the shared value floor. This is the same pool the
+    # Waiver Wire Targets card builds; the v2 gate below replaces its
+    # risers-based ranking and its value-only roster check.
+    pool = []
+    for row in model_value_table:
+        if not isinstance(row, dict):
+            continue
+        pid = str(row.get("id") or "")
+        pos = str(row.get("position") or row.get("pos") or "").upper()
+        team = str(row.get("team")
+                   or (players_index.get(pid) or {}).get("team") or "").strip().upper()
+        if not pid or pid in rostered_ids:
+            continue
+        if team in ("", "FA", "FREE AGENT"):
+            continue
+        if pos not in {"QB", "RB", "WR", "TE"}:
+            continue
+        if pid in _rookie_sids and not _rookie_draft_done:
+            continue
+        val = value_by_pid.get(pid, 0.0)
+        if val < WEIGHTS.min_value:
+            continue
+        try:
+            age = float(row.get("age") or 0)
+        except Exception:
+            age = 0.0
+        pool.append({
+            "player_id": pid,
+            "name": names_by_pid.get(pid) or f"Player {pid}",
+            "position": pos,
+            "team": row.get("team") or (players_index.get(pid) or {}).get("team") or "",
+            "value": val,
+            "age": age,
+            "pos_rank_label": row.get(_rk_ns) or row.get("pos_rank_label") or "",
+            "rank_change_7d": row.get("rank_change_7d"),
+            "injury_status": str((players_index.get(pid) or {}).get("injury_status") or ""),
+        })
+    if not pool:
+        return [], names_by_pid, {}
+    pool.sort(key=lambda c: -(c.get("value") or 0.0))
+
+    # Breakout scores aligned with the Breakout Engine page: the selector's
+    # speculative-upside input for the stash classification.
+    waiver_breakout: dict = {}
+    try:
+        _db_url = os.getenv("DATABASE_URL", "").strip()
+        if _db_url and not any(t in _db_url for t in ("USER", "PASSWORD", "HOST")):
+            from dashboard_services.breakout_api import aligned_breakout_scores as _abs_ns
+            _bo_season = ctx.get("season") or ctx.get("current_season")
+            waiver_breakout = _abs_ns(
+                [c["player_id"] for c in pool[:100]],
+                int(_bo_season) if _bo_season else None,
+            ) or {}
+    except Exception:
+        logger.debug("suppressed exception", exc_info=True)
+
+    # Bound the evaluated pool like the Waivers page does (top values plus
+    # any strong breakout) so the lineup solver stays cheap.
+    eval_pool = pool[:48]
+    _eval_ids = {c["player_id"] for c in eval_pool}
+    for c in pool[48:]:
+        try:
+            _bs = float((waiver_breakout or {}).get(c["player_id"]) or 0.0)
+        except (TypeError, ValueError):
+            _bs = 0.0
+        if _bs >= 50.0 and c["player_id"] not in _eval_ids:
+            eval_pool.append(c)
+            _eval_ids.add(c["player_id"])
+
+    injured_by_pid = {
+        str(pid): str(meta.get("injury_status") or "")
+        for pid, meta in players_index.items()
+        if isinstance(meta, dict) and meta.get("injury_status")
+    }
+    _roster_injured = {pid: injured_by_pid.get(pid, "") for pid in roster_pids}
+    drop_bars = waiver_drop_bar_value(
+        roster_pids, value_by_pid, _roster_injured, players_index)
+    try:
+        need_mults, starter_gaps = _waiver_need_context(
+            roster_pids, roster_positions, players_index)
+    except Exception:
+        need_mults, starter_gaps = {}, {}
+
+    # ---- Opportunity inputs: per-week projections + calendar need. ----
+    season = ctx.get("current_season") or ctx.get("season")
+    try:
+        week = int(ctx.get("current_week") or 0)
+    except (TypeError, ValueError):
+        week = 0
+    weekly_maps = None
+    forward_pts: dict = {}
+    calendar_need: dict = {}
+    if season and week:
+        try:
+            from utils import utils as _uu_ns
+            from utils.projections import weekly_projection_points as _wpp_ns
+            raw_scoring = ctx.get("raw_scoring_settings") or {}
+            watch_pids = list(roster_pids) + [c["player_id"] for c in eval_pool]
+            week_pts: list = []
+            playing_by_week: list = []
+            for off in range(4):
+                proj = _uu_ns.load_week_projection(int(season), week + off) or {}
+                pts = {}
+                for pid in watch_pids:
+                    _p = _wpp_ns(proj, pid, raw_scoring,
+                                 positions_by_pid.get(pid, ""))
+                    if _p is not None:
+                        pts[pid] = max(0.0, float(_p))
+                week_pts.append(pts)
+                playing = set()
+                for _g in (_uu_ns.load_week_schedule(int(season), week + off) or []):
+                    if isinstance(_g, dict):
+                        for _side in ("away", "home"):
+                            _t = str(_g.get(_side) or "").upper()
+                            if _t:
+                                playing.add(_t)
+                playing_by_week.append(playing)
+            if any(week_pts):
+                weekly_maps = []
+                for pts in week_pts:
+                    _rmap = {pid: pts[pid] for pid in roster_pids if pid in pts}
+                    weekly_maps.append({"pts_map": _rmap, "covered": bool(_rmap)})
+                for c in eval_pool:
+                    c["weekly_pts"] = [
+                        week_pts[i].get(c["player_id"]) for i in range(4)]
+                    _vals = [v for v in c["weekly_pts"] if v is not None]
+                    if _vals:
+                        c["ros_ppg"] = round(sum(_vals) / len(_vals), 2)
+                for pid in watch_pids:
+                    _vals = [week_pts[i][pid] for i in range(4)
+                             if pid in week_pts[i]]
+                    if _vals:
+                        forward_pts[pid] = round(sum(_vals) / len(_vals), 2)
+            # Bye weeks inside the window, from the schedules themselves:
+            # a team absent one week but playing in another window week.
+            _all_teams = {
+                str(meta.get("team") or "").upper()
+                for meta in players_index.values() if isinstance(meta, dict)
+            }
+            _all_teams.discard("")
+            bye_by_team: dict = {}
+            for _team in _all_teams:
+                _plays = [_team in wk for wk in playing_by_week]
+                if any(_plays) and not all(_plays):
+                    bye_by_team[_team] = week + _plays.index(False)
+            _avail = weekly_availability_from_roster(
+                roster_pids, players_index, current_week=week, weeks=4,
+                bye_week_by_team=bye_by_team,
+                injured_by_pid=_roster_injured,
+            )
+            calendar_need = _calendar_need_from_availability(
+                _avail, roster_positions) or {}
+        except Exception:
+            logger.debug("next-steps waiver opportunity inputs failed", exc_info=True)
+            weekly_maps = None
+            calendar_need = {}
+
+    results = rank_team_waiver_suggestions(
+        eval_pool,
+        owned_ids=rostered_ids,
+        roster_pids=roster_pids,
+        roster_positions=roster_positions,
+        positions_by_pid=positions_by_pid,
+        roster_values_by_pid=value_by_pid,
+        injured_by_pid=injured_by_pid,
+        drop_bars=drop_bars,
+        starter_gaps=starter_gaps,
+        need_mults=need_mults,
+        calendar_need=calendar_need or None,
+        is_redraft=_league_is_redraft(ctx),
+        is_sf=_is_superflex_lineup(roster_positions),
+        n_teams=len(rosters) or 12,
+        breakout_by_pid=waiver_breakout,
+        quality_bar_fn=waiver_add_clears_quality_bar,
+        weekly_maps=weekly_maps,
+        forward_pts_by_pid=forward_pts or None,
+        require_team=True,
+        hard_exclude_serious=True,
+        limit=limit,
+    )
+    return results, names_by_pid, calendar_need
+
+
 def _next_steps_waiver_actions(ctx: dict, viewer_roster_id, model_value_table: list) -> list:
     """Collect waiver actions for the unified Next steps queue.
 
-    Reuses _build_waiver_targets_rows data via a lightweight parse: takes the
-    top candidates and rebuilds action dicts with the same why-line logic.
+    Claims come from the shared waiver-suggestions v2 selector via
+    _next_steps_waiver_claims: a claim surfaces only when the gate says
+    it helps THIS roster (lineup gain, a calendar hole, or an upside
+    stash), and the why-line is the gate's reason. Value movement is
+    never the reason and never the ranking key. When the gate clears
+    nobody the list is empty and no claim renders (hide-if-empty).
     """
     actions = []
     if not viewer_roster_id:
@@ -12221,61 +12510,65 @@ def _next_steps_waiver_actions(ctx: dict, viewer_roster_id, model_value_table: l
         platform = ctx.get("platform", "sleeper")
         season = ctx.get("current_season") or ctx.get("season")
         league_id = ctx.get("league_id", "")
-        _wv_url = url_for(
-            "league_pages.page_waivers", platform=platform, season=season, league_id=league_id,
-        )
+        _wv_url = f"/{platform}/{season}/{league_id}/waivers"
 
-        # Reuse the candidate ranking from the shared builder by parsing its
-        # HTML rows. Simpler and keeps ranking identical to the waiver page.
-        rows_html, _ = _build_waiver_targets_rows(ctx, model_value_table, limit=3)
-        if not rows_html:
-            return actions
-
-        import re as _re
-        # Each row: name, subline, why-line, signal chip, value.
-        _row_pat = _re.compile(
-            r'data-player-id=\'([^\']+)\'[^>]*>([^<]+)</span>.*?'
-            r'<div class="os-waiver-sub"[^>]*>([^<]*)</div>\s*'
-            r'(?:<div class="os-waiver-why">([^<]*)</div>)?',
-            _re.DOTALL,
-        )
-        for m in _row_pat.finditer(rows_html):
-            _pid, _name, _sub, _why = m.groups()
-            _name = html.unescape(_name or "").strip()
-            _why = html.unescape(_why or "").strip()
-            if not _name:
+        results, names_by_pid, calendar_need = _next_steps_waiver_claims(
+            ctx, viewer_roster_id, model_value_table, limit=3)
+        from urllib.parse import quote as _qp
+        for res in results:
+            _pid = str(res.get("player_id") or "")
+            _name = str(res.get("name") or names_by_pid.get(_pid) or "").strip()
+            if not _pid or not _name:
                 continue
-            # Priority: breakout/role signals rank higher.
-            _priority = "med"
-            _score = 55
-            _impact = None
+            _pos = str(res.get("position") or "").upper()
+            _outcome = res.get("outcome")
+            _gain = float(res.get("lineup_gain") or 0)
+            _hgain = float(res.get("lineup_gain_4wk") or 0)
+            _gap = float(res.get("starter_gap") or 0)
+            _gap_weeks = ((calendar_need or {}).get(_pos) or {}).get("gap_weeks") or []
+
+            # The why-line is built only from gate outcomes.
+            _bits = []
+            if _outcome in ("add", "add_drop"):
+                if _gain:
+                    _bits.append(f"+{_gain:g} lineup pts this week")
+                if _hgain and _hgain > _gain:
+                    _bits.append(f"+{_hgain:g} lineup pts over the next 4 weeks")
+                if _gap_weeks and _gap > 0:
+                    _bits.append(f"Covers your {_pos} hole in Week {_gap_weeks[0]}")
+            elif _outcome == "stash":
+                _bits.append("Stash only, no lineup gain yet")
+            else:
+                if _gap_weeks and _gap > 0:
+                    _bits.append(f"Covers your {_pos} hole in Week {_gap_weeks[0]}")
+                elif _gap > 0:
+                    _bits.append(f"Fills your {_pos} starter hole")
+                else:
+                    _bits.append(f"Clears your positional gate at {_pos}")
+            # The drop candidate is deliberately not named here: the
+            # shared evaluator costs a drop on this week's points alone,
+            # which can point at a bye-week starter. The Waivers page
+            # shows the full add/drop picture; this why-line sticks to
+            # the gate's reasons (gain, calendar hole, stash).
+            _why = ". ".join(_bits)
             if _why:
-                _wl = _why.lower()
-                if "breakout" in _wl:
-                    _priority = "high"
-                    _score = 80
-                    # Extract "breakout score 78" style impact for the badge,
-                    # then strip it from the why line so it doesn't show twice.
-                    _bm = _re.search(r"breakout score (\d+)", _wl)
-                    if _bm:
-                        _impact = f"Breakout score {_bm.group(1)}"
-                        _why = _re.sub(
-                            r"\s*breakout score \d+\s*(?:\u00b7\s*)?",
-                            "", _why, flags=_re.IGNORECASE,
-                        ).strip(" \u00b7")
-                        _why = _re.sub(
-                            r"(?:\s*\u00b7\s*)?breakout score \d+\s*$",
-                            "", _why, flags=_re.IGNORECASE,
-                        ).strip(" \u00b7")
-                        _wl = _why.lower()
-                    else:
-                        _impact = _why.split("\u00b7")[0].strip().title() if "\u00b7" in _why else None
-                elif "injury" in _wl or "starting role" in _wl:
-                    _priority = "high"
-                    _score = 78
-                elif "up " in _wl and "spots" in _wl:
-                    _score = 62
-            from urllib.parse import quote as _qp
+                _why += "."
+
+            _impact = None
+            if _gain:
+                _impact = f"+{_gain:g} projected points"
+            elif _hgain:
+                _impact = f"+{_hgain:g} over 4 weeks"
+
+            if _outcome in ("add", "add_drop"):
+                _priority, _score = "high", 80
+            elif _gap > 0:
+                _priority, _score = "high", 74
+            elif _outcome == "stash":
+                _priority, _score = "med", 58
+            else:
+                _priority, _score = "med", 64
+
             actions.append({
                 "priority": _priority,
                 "tag": "Waivers",
@@ -12284,17 +12577,18 @@ def _next_steps_waiver_actions(ctx: dict, viewer_roster_id, model_value_table: l
                 # same "wv:<player_id>" key for its add of this player, so a
                 # dismissal on either surface hides it on both.
                 "dismiss_key": f"wv:{_pid}",
-                "action": f"Claim {_name}",
-                "why": _why or _sub,
+                "action": f"Stash {_name}" if _outcome == "stash" else f"Claim {_name}",
+                "why": _why,
                 "impact": _impact,
                 "cta_label": "Claim now",
                 "cta_url": f"{_wv_url}?player={_pid}&player_name={_qp(_name)}",
                 "score": _score,
+                "player_id": _pid,
+                "outcome": _outcome,
             })
     except Exception:
         logger.debug("next-steps waiver actions failed", exc_info=True)
     return actions
-
 
 def _next_steps_trade_actions(ctx: dict, viewer_roster_id) -> list:
     """Collect trade actions for the unified Next steps queue.

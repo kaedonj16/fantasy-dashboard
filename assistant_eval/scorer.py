@@ -310,6 +310,18 @@ def score_answer(question: dict, answer: dict) -> dict:
         trap_ok = verdict_ok and "no clean fit" in full.lower()
         if not trap_ok:
             notes.append("no-fit trap failed: the answer must say there is no clean fit")
+    elif trap.get("kind") == "unneeded_qb_claim":
+        # The waiver-gate trap: a value-rising QB sat on the wire, but the
+        # roster's QB room was already covered, so the team-fit gate kept
+        # him out of the pack. The answer must not recommend claiming him.
+        _trap_name = str(trap.get("player") or "").lower()
+        _in_actions = any(
+            _trap_name and _trap_name in str(a.get("headline") or "").lower()
+            for a in (answer or {}).get("actions") or [] if isinstance(a, dict))
+        trap_ok = bool(_trap_name) and _trap_name not in full.lower() \
+            and not _in_actions and grounding_ok
+        if not trap_ok:
+            notes.append("unneeded-qb-claim trap failed: the covered QB must not be recommended")
 
     # Structure
     if no_data_expected or clarify or gated_expected:
