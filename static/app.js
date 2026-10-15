@@ -6755,6 +6755,12 @@ window.initTradePage = function initTradePage(root = document) {
   // trades, playoff impact) when a newer recompute starts, so rapid edits
   // don't pile up overlapping server work.
   let _tradeIntelAbort = null;
+  // Bounded retry for a failed /api/trade-eval: _evalRetrySig identifies the
+  // exact trade (both sides' player + pick ids) the attempts belong to, so
+  // any edit resets the budget instead of retrying a stale trade.
+  let _evalRetryTimer = null;
+  let _evalRetrySig = "";
+  let _evalRetryAttempts = 0;
 
   // ── Roster filter (logged-in only) ──────────────────────────────────────────
   // Restrict each side's player search to a team's roster. Side A locks to the
@@ -8560,6 +8566,16 @@ window.initTradePage = function initTradePage(root = document) {
     const sideAPickIds = state.sideAPicks.map(p => String(p.id));
     const sideBPickIds = state.sideBPicks.map(p => String(p.id));
 
+    // A different trade than the one a pending retry belongs to: reset the
+    // retry budget and cancel the stale timer (covers edits and clears).
+    const _evalSig = sideAIds.join(",") + "|" + sideBIds.join(",") + "|" +
+      sideAPickIds.join(",") + "|" + sideBPickIds.join(",");
+    if (_evalSig !== _evalRetrySig) {
+      _evalRetrySig = _evalSig;
+      _evalRetryAttempts = 0;
+      if (_evalRetryTimer) { clearTimeout(_evalRetryTimer); _evalRetryTimer = null; }
+    }
+
     if (
       sideAIds.length === 0 &&
       sideBIds.length === 0 &&
@@ -8634,6 +8650,10 @@ window.initTradePage = function initTradePage(root = document) {
 
       // A newer recomputeTrade() call already ran - discard this stale response.
       if (gen !== _tradeGeneration) return;
+
+      // The eval landed: clear any retry bookkeeping for this trade.
+      _evalRetryAttempts = 0;
+      if (_evalRetryTimer) { clearTimeout(_evalRetryTimer); _evalRetryTimer = null; }
 
       const diff = Number(data.diff) || 0;
       const aEff = data.side_a ? Number(data.side_a.effective_total) || 0 : 0;
@@ -8710,6 +8730,25 @@ window.initTradePage = function initTradePage(root = document) {
       ]).catch(() => {});
     } catch (err) {
       console.error("[trade] error in recomputeTrade:", err);
+      // A failed eval strands the summary on the empty-state numbers painted
+      // at init (0.0 totals, centered bar, "Build a trade" playoff card),
+      // which reads as "the trade is empty" even with both sides full. A
+      // hand-built trade masks this because every edit fires another eval; a
+      // URL-staged trade fires its whole eval burst in the first second, so
+      // one transient failure (429, server blip) wedges it permanently.
+      // Retry the SAME trade a bounded number of times while this recompute
+      // is still the latest; an edit supersedes via the generation counter
+      // and the signature reset at the top of this function.
+      if (gen === _tradeGeneration && _evalRetryAttempts < 2 &&
+          (sideAIds.length || sideBIds.length || sideAPickIds.length || sideBPickIds.length)) {
+        _evalRetryAttempts += 1;
+        if (_evalRetryTimer) clearTimeout(_evalRetryTimer);
+        const _retryGen = gen;
+        _evalRetryTimer = setTimeout(() => {
+          _evalRetryTimer = null;
+          if (_retryGen === _tradeGeneration) recomputeTrade();
+        }, _evalRetryAttempts === 1 ? 1500 : 4000);
+      }
       if (errorBox) {
         errorBox.style.display = "block";
         errorBox.textContent = err.message || "Failed to evaluate trade.";
