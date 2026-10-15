@@ -50,9 +50,11 @@ def test_cache_name_bumped_for_blank_screen_fix():
     # fixes (compare, trade intel panels, history sections, teams
     # panels, modal trends); v41 ships the picker Enter-select
     # fixes in app.js; v42 ships the desktop single-action Next
-    # steps tag width fix in dashboard.css.
+    # steps tag width fix in dashboard.css; v43 ships the assistant
+    # 'View player' modal action (opens the player modal in place,
+    # no navigation).
     # Assert the current version, not a stale pin.
-    assert "br-fantasy-v42" in SW
+    assert "br-fantasy-v43" in SW
 
 
 def test_nav_timeout_always_races_even_without_cache():

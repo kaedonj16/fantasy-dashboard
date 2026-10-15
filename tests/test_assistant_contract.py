@@ -7,7 +7,9 @@ static/app.js initAssistant consumes:
   answer.followups[]                             {label, ask} pairs: label is
                                                   the chip text, ask is the
                                                   message the chip sends
-  answer.act_link                                {href, label} object or None
+  answer.act_link                                {href, label} link object,
+                                                  {player_id, player_name,
+                                                  label} modal action, or None
   answer.actions[]  (this_week)                  {tag, headline, detail,
                                                   href, cta_label, key_number}
   answer.mentions[]                              {player_id, name} pack players
@@ -68,8 +70,14 @@ def _assert_ui_shape(answer):
     link = answer["act_link"]
     assert link is None or (
         isinstance(link, dict)
-        and isinstance(link["href"], str) and link["href"].startswith("/")
         and isinstance(link["label"], str) and link["label"]
+        and (
+            # Navigation link: an in-site href.
+            (isinstance(link.get("href"), str) and link["href"].startswith("/"))
+            # Modal action ('View player'): ids only, no href, no navigation.
+            or (isinstance(link.get("player_id"), str) and link["player_id"]
+                and "href" not in link)
+        )
     )
     for m in answer["mentions"]:
         assert isinstance(m["player_id"], str) and m["player_id"]

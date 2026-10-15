@@ -11,8 +11,11 @@ model never supplies a URL) and stage state in the site's own tools:
                So the pack's receive side goes in a, its give side in b.
   start_sit    Compare, which prefills both pickers from ?p1=&p2=.
   metric       Advanced Metrics, which reads ?metric= and ?pos= on load.
-  player /     the player modal, which app.js auto-opens on any page when
-  buy_sell     the URL carries ?player=<id>&player_name=<name>.
+  player /     the player modal, opened in place: the act link is a modal
+  buy_sell     action {player_id, player_name, label} and the UI calls
+               openPlayerModal, exactly like the answer's player mentions.
+               No navigation, and never the rankings page; a pack with no
+               resolved player yields no act link at all.
 
 The round-trip tests resolve a generated link through a faithful mirror of
 the calculator's load semantics (split the params, resolve ids against the
@@ -193,8 +196,9 @@ def test_player_answer_opens_the_modal(monkeypatch):
     _canned(monkeypatch, {"verdict": "Rome Odunze update", "text": "Odunze is rolling.",
                           "receipts": [], "caveat": None, "followups": [], "act_link": None})
     answer = compose_answer("player", "How is Odunze doing?", pack)
-    assert answer["act_link"] == {"href": "/?player=p9&player_name=Rome+Odunze",
+    assert answer["act_link"] == {"player_id": "p9", "player_name": "Rome Odunze",
                                   "label": "View player"}
+    assert "href" not in answer["act_link"]
     assert answer["mentions"] == [{"player_id": "p9", "name": "Rome Odunze"}]
 
 
@@ -205,7 +209,19 @@ def test_buy_sell_hold_opens_the_subjects_modal(monkeypatch):
     _canned(monkeypatch, {"verdict": "BUY", "text": "Marks is trending up.",
                           "receipts": [], "caveat": None, "followups": [], "act_link": None})
     answer = compose_answer("buy_sell_hold", "Buy or sell Marks?", pack)
-    assert answer["act_link"]["href"] == "/?player=p4&player_name=Woody+Marks"
+    assert answer["act_link"] == {"player_id": "p4", "player_name": "Woody Marks",
+                                  "label": "View player"}
+    assert "href" not in answer["act_link"]
+
+
+@pytest.mark.parametrize("intent", ["player", "buy_sell_hold"])
+def test_player_intent_without_a_player_has_no_act_link(intent):
+    # No resolved player: no 'View player' button at all. The old fallback
+    # sent the click to /players (the rankings page), which is the bug
+    # Kaedon reported on 2026-10-15.
+    from dashboard_services.assistant.compose import _resolve_act_link
+    assert _resolve_act_link(intent, {"type": intent, "available": True}) is None
+    assert _resolve_act_link(intent, {"type": intent, "player": {}}) is None
 
 
 def test_metric_answer_presets_advanced_metrics(monkeypatch):

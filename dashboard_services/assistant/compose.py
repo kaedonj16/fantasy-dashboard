@@ -44,15 +44,16 @@ never raw JSON), and rows with empty values ([], {}, None, blank) are
 omitted entirely. No data, no row.
 
 The answer dict is the UI contract (static/app.js initAssistant): act_link is
-an object {href, label} (or None) assigned deterministically in code, never
-by the model; this-week actions carry href, cta_label, and the pack's
+an object assigned deterministically in code, never by the model: either a
+link {href, label} or a player-modal action {player_id, player_name, label}
+(or None). This-week actions carry href, cta_label, and the pack's
 key_number so the UI can render them as Next Steps rows.
 
 Act links stage state in the site's own tools where a real mechanism exists:
 trade answers open the calculator with the pack's deal prefilled (its native
 ?a=&b= id params), start/sit stages the pair in Compare (?p1=&p2=), metric
 answers preset Advanced Metrics (?metric=&pos=), and player answers open the
-player modal (?player=). The answer also carries `mentions` (players the
+player modal in place (the UI calls openPlayerModal, no navigation). The answer also carries `mentions` (players the
 pack resolved, with ids) so the UI can open the modal from a name in the
 text instead of rendering it as plain text.
 """
@@ -61,7 +62,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from urllib.parse import quote, quote_plus
+from urllib.parse import quote
 
 from dashboard_services.assistant import PROMPT_VERSION
 from dashboard_services.assistant.model import call_model_json
@@ -136,11 +137,12 @@ SYSTEM = (
 # Deterministic act links per intent (UI contract: {href, label} or None).
 # These are the fallbacks; _resolve_act_link upgrades most intents to a
 # deep link that stages state in the target tool (see the builders below).
+# player / buy_sell_hold have NO static fallback on purpose: their act link
+# is the modal action from _player_modal_link, and with no resolved player
+# there is no button at all (never a trip to the rankings page).
 _ACT_LINKS = {
     "start_sit": {"href": "/waivers?tab=startsit", "label": "View in Start/Sit"},
     "trade_eval": {"href": "/trade", "label": "Open in Trade Calculator"},
-    "buy_sell_hold": {"href": "/players", "label": "View player"},
-    "player": {"href": "/players", "label": "View player"},
     "metric": {"href": "/metrics", "label": "View on Advanced Metrics"},
     "leaderboard": {"href": "/metrics", "label": "View on Advanced Metrics"},
     "waivers": {"href": "/waivers", "label": "View on Waivers"},
@@ -210,14 +212,15 @@ def _trade_calc_link(pack: dict) -> dict | None:
 
 
 def _player_modal_link(player) -> dict | None:
-    """Open the player modal directly: app.js auto-opens it on any page when
-    the URL carries ?player=<id>&player_name=<name>."""
+    """The 'View player' act link as a modal action, not an href: the UI
+    renders it as a button that calls openPlayerModal in place (the same
+    path the answer's player mentions use), so the popup stays open behind
+    the modal and nothing navigates, least of all to the rankings page."""
     if not isinstance(player, dict) or not player.get("player_id"):
         return None
-    href = "/?player=" + quote(str(player["player_id"]), safe="")
-    if player.get("name"):
-        href += "&player_name=" + quote_plus(str(player["name"]))
-    return {"href": href, "label": "View player"}
+    return {"player_id": str(player["player_id"]),
+            "player_name": str(player.get("name") or ""),
+            "label": "View player"}
 
 
 def _metric_link(pack: dict) -> dict | None:
@@ -329,9 +332,9 @@ def _resolve_act_link(intent: str, pack: dict) -> dict | None:
         return {"href": f"{base}/trade" if base else "/trade",
                 "label": "Open in Trade Calculator"}
     if intent in ("player", "buy_sell_hold"):
-        link = _player_modal_link(pack.get("player"))
-        if link:
-            return link
+        # Terminal: the modal action when the pack resolved a player, else
+        # no act link at all. Never fall through to a page navigation.
+        return _player_modal_link(pack.get("player"))
     elif intent == "keeper":
         base = _league_base(pack)
         return {"href": f"{base}/keeper" if base else "/keeper",
