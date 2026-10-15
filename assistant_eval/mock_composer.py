@@ -359,7 +359,53 @@ def _base(intent, pack):
             "mentions": _mentions(intent, pack)}
 
 
+def _start_sit_roster(pack):
+    # Mirror of the roster-scoped start/sit pack: the verdict names the
+    # recommended starter at the slot; the comparison player is the slot's
+    # current occupant, or the best bench challenger when the pick already
+    # holds the slot.
+    players = pack.get("players") or []
+    pick = next((p for p in players if p.get("player_id") == pack.get("pick_player_id")), players[0])
+    occupant = next((p for p in players if p.get("slot_occupant")), None)
+    bench = next((p for p in players if p is not pick and not p.get("current_starter")), None)
+    other = occupant if occupant is not None and occupant is not pick else (bench or pick)
+    slot = pack.get("slot_label") or pack.get("slot") or "that slot"
+    receipts = []
+    for pl in (pick, other):
+        if pl.get("projection") is not None and all(r["label"] != f"{pl['name']} projection" for r in receipts):
+            receipts.append({"label": f"{pl['name']} projection", "value": fmt(pl["projection"])})
+    for pl in (pick, other):
+        ppg = (pl.get("role") or {}).get("ppg")
+        if ppg is not None and len(receipts) < 4 and all(r["label"] != f"{pl['name']} points per game" for r in receipts):
+            receipts.append({"label": f"{pl['name']} points per game", "value": fmt(ppg)})
+    ans = _base("start_sit", pack)
+    if pack.get("question_mode") == "sit" and pack.get("sit_player_id"):
+        sit = next((p for p in players if p.get("player_id") == pack.get("sit_player_id")), other)
+        text = (f"Sit {sit['name']} at {slot}. Start {pick['name']} in his place: "
+                f"{pick['name']} projects {fmt(pick.get('projection'))} points against "
+                f"{fmt(sit.get('projection'))} for {sit['name']}.")
+    elif occupant is not None and occupant.get("player_id") == pick.get("player_id"):
+        text = (f"Keep {pick['name']} at {slot}. {pick['name']} projects "
+                f"{fmt(pick.get('projection'))} points, clear of {other['name']} at "
+                f"{fmt(other.get('projection'))} on your bench.")
+    else:
+        text = (f"Start {pick['name']} at {slot}. {pick['name']} projects "
+                f"{fmt(pick.get('projection'))} points against {fmt(other.get('projection'))} "
+                f"for {other['name']}, who holds the slot now.")
+    ans.update({
+        "verdict": f"START {pick['name']}",
+        "text": text,
+        "receipts": receipts[:4],
+        "followups": [_fu("What about next week?"), _fu("Who else is on my bench?")],
+    })
+    if (pack.get("margin") or {}).get("thin"):
+        ans["caveat"] = "Close call: the margin here is thin."
+    return ans
+
+
 def _start_sit(pack):
+    if pack.get("roster_mode"):
+        return _start_sit_roster(pack)
     players = pack.get("players") or []
     pick = next((p for p in players if p.get("player_id") == pack.get("pick_player_id")), players[0])
     other = next((p for p in players if p is not pick), pick)

@@ -48,15 +48,21 @@ SCHEMA = {
         "waiver_mode": {"type": ["string", "null"], "enum": ["stash", "drop", "stream", None]},
         "value_in_picks": {"type": ["boolean", "null"]},
         "shop_pool": {"type": ["boolean", "null"]},
+        "slot": {"type": ["string", "null"]},
+        "start_mode": {"type": ["string", "null"], "enum": ["start", "sit", None]},
     },
-    "required": ["intent", "player_names", "give_player_names", "receive_player_names", "picks", "give_picks", "receive_picks", "other_team_hint", "team_names", "metric_hint", "target_position", "position_hint", "teams_mode", "week", "draft_year", "preference_text", "board_kind", "second_metric_hint", "top_n", "position", "team", "window_weeks", "direction", "replace_mode", "waiver_mode", "value_in_picks", "shop_pool"],
+    "required": ["intent", "player_names", "give_player_names", "receive_player_names", "picks", "give_picks", "receive_picks", "other_team_hint", "team_names", "metric_hint", "target_position", "position_hint", "teams_mode", "week", "draft_year", "preference_text", "board_kind", "second_metric_hint", "top_n", "position", "team", "window_weeks", "direction", "replace_mode", "waiver_mode", "value_in_picks", "shop_pool", "slot", "start_mode"],
     "additionalProperties": False,
 }
 
 SYSTEM = (
     "You route fantasy football questions for the BR Fantasy assistant. "
     "Classify into exactly one intent and extract entities verbatim from the message. "
-    "start_sit: who to start. trade_eval: a proposed trade with give and receive sides, or whether to "
+    "start_sit: who to start, including a roster slot question that names no players "
+    "(who should I start at FLEX this week, who should I start at RB2, who should I sit): "
+    "slot is the lineup slot or position named, in caps (FLEX, SUPER_FLEX, QB, RB, RB2, "
+    "WR, WR3, TE, K, DEF), else null; start_mode is sit for who-to-sit or who-to-bench "
+    "questions, else start. trade_eval: a proposed trade with give and receive sides, or whether to "
     "accept a specific deal (should I trade X for Y is trade_eval). "
     "trade_finding: the user wants you to FIND or propose a trade (find me a trade, who should I "
     "target, what can I get for X, I need a running back, who is gettable). For trade_finding, put a "
@@ -328,6 +334,41 @@ def _player_name_in(message: str) -> str | None:
     return None
 
 
+_SLOT_NUM_RE = re.compile(r"\b(qb|rb|wr|te|k|def|dst)([1-4])?\b")
+_SLOT_WORDS = (("quarterback", "QB"), ("running back", "RB"),
+               ("wide receiver", "WR"), ("wideout", "WR"),
+               ("tight end", "TE"), ("kicker", "K"), ("defense", "DEF"))
+
+
+def _slot_in(m: str):
+    """The lineup slot a start/sit question names, if any: FLEX and
+    SUPER_FLEX first (a flex ask is about the slot, not the position of
+    the player who might fill it), then numbered or plain positions
+    (RB2, WR, tight end)."""
+    if re.search(r"super ?flex", m):
+        return "SUPER_FLEX"
+    if re.search(r"\bflex\b", m):
+        return "FLEX"
+    num = _SLOT_NUM_RE.search(m)
+    if num:
+        pos = "DEF" if num.group(1) == "dst" else num.group(1).upper()
+        return pos + (num.group(2) or "")
+    for word, pos in _SLOT_WORDS:
+        if word in m:
+            return pos
+    return None
+
+
+def _start_mode_in(m: str) -> str:
+    """'sit' when the sit/bench verb leads the start verb, else 'start'."""
+    sit = re.search(r"\b(sit|bench)\b", m)
+    if sit:
+        start = re.search(r"\bstart\b", m)
+        if start is None or sit.start() < start.start():
+            return "sit"
+    return "start"
+
+
 def _keyword_route(message: str) -> dict:
     m = (message or "").lower()
     base = {"player_names": [], "give_player_names": [], "receive_player_names": [], "picks": [],
@@ -337,6 +378,7 @@ def _keyword_route(message: str) -> dict:
             "draft_year": None, "position": None,
             "replace_mode": None, "waiver_mode": None,
             "value_in_picks": None, "shop_pool": None,
+            "slot": None, "start_mode": None,
             "preference_text": None, **_BOARD_ENTITY_DEFAULTS}
     if re.search(r"\bremember\b|\bdon'?t forget\b|\bkeep in mind\b", m):
         return {**base, "intent": "remember", "preference_text": message.strip()}
@@ -431,7 +473,8 @@ def _keyword_route(message: str) -> dict:
             return {**base, "intent": "replacement",
                     "player_names": [subj_name], "replace_mode": rmode}
     if re.search(r"\bstart\b|\bsit\b|\bflex\b|\bbench\b|who (should|do) i play", m):
-        return {**base, "intent": "start_sit"}
+        return {**base, "intent": "start_sit",
+                "slot": _slot_in(m), "start_mode": _start_mode_in(m)}
     if _FINDING_RE.search(m):
         return {**base, "intent": "trade_finding", "target_position": _target_position(m)}
     if _DEADLINE_RE.search(m):
@@ -534,6 +577,8 @@ def classify(question: str, context: dict | None = None, history: list | None = 
             "waiver_mode": data.get("waiver_mode"),
             "value_in_picks": data.get("value_in_picks"),
             "shop_pool": data.get("shop_pool"),
+            "slot": data.get("slot"),
+            "start_mode": data.get("start_mode"),
         }
         return {"intent": intent, "entities": entities, "preference_text": data.get("preference_text"), "router_model": "model", "prompt_version": ROUTER_PROMPT_VERSION}
     except Exception as exc:  # model down (rate limit / unavailable): keyword fallback
