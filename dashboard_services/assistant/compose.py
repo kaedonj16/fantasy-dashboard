@@ -1,13 +1,39 @@
 """Answer composition: pack in, answer out. This is the eval seam.
 
 Pure with respect to tools: it only calls the model (via model.call_model_json,
-monkeypatched in tests) and post-checks grounding in code. Grounding is
-enforced on EVERY surface, not just receipts: numbers in the verdict, prose,
-caveat, and follow-ups must all appear in the evidence pack (or the question
-itself). A draft that states an unverifiable number is regenerated once with
-a stricter instruction; if the retry still fails, the offending sentences and
-numbers are stripped rather than shipped. Receipts whose numbers do not all
-appear in the pack JSON are dropped.
+monkeypatched in tests) and post-checks quality in code.
+
+Grounding is enforced on EVERY surface, not just receipts: numbers in the
+verdict, prose, caveat, and follow-ups must all appear in the evidence pack
+(or the question itself). A draft that states an unverifiable number is
+regenerated once with a stricter instruction; if the retry still fails, the
+offending sentences and numbers are stripped rather than shipped. Receipts
+whose numbers do not all appear in the pack JSON are dropped.
+
+Citation is a contract, not a hope (live eval 2026-10-14: m1/tw1/tw2 failed
+because the model never cited the pack's key numbers). Each intent has
+deterministic required receipt rows derived from the pack (side totals and
+the fairness gap for trades, the leader and the user's own players for
+metrics, each action's key number for the digest, the top candidate and the
+user's weakest starter for waivers). If a required number is missing from
+every answer surface, the draft is regenerated once with the missing numbers
+named; if it is still missing, the deterministic row is injected.
+
+Trade verdicts are pinned in code to the trade analyzer's shared fairness
+band (utils.trade_value.fair_value_band, the definition api_trade_eval and
+the outcome analyzer share), so the assistant can never contradict the
+calculator: the model writes prose around the code-set verdict and every
+player in the deal is guaranteed to be named.
+
+Internal language never reaches the user: the words "pack" / "evidence pack"
+and follow-ups phrased as instructions to send or provide data are treated
+as draft defects (one regeneration, then deterministic cleanup: offending
+sentences stripped, follow-ups replaced with user-voiced templates).
+
+Receipt values are humanized: a value the model pasted as a serialized
+object renders as its friendly label (a league renders as its team name,
+never raw JSON), and rows with empty values ([], {}, None, blank) are
+omitted entirely. No data, no row.
 
 The answer dict is the UI contract (static/app.js initAssistant): act_link is
 an object {href, label} (or None) assigned deterministically in code, never
@@ -44,9 +70,17 @@ SYSTEM = (
     "You are the BR Fantasy assistant. Answer from the evidence pack ONLY. "
     "Verdict first, in the verdict field. Every number you state must appear verbatim in the pack; "
     "never use a number from memory. Receipts: 2 to 4 entries, each a label and the pack value as a string. "
+    "Cite the key numbers: for a trade, both side totals and the fairness gap; for a metric, the leader "
+    "and any of the user's own players on the board; for the weekly digest, each action's key number; "
+    "for waivers, the top candidate's value and the user's weakest starter at that position. "
+    "If fixed_verdict is present in the payload, the verdict field must be exactly that value; "
+    "it is set by the site's trade fairness band and is not yours to change. "
     "Caveat only when the pack marks margin.thin true or data stale, otherwise null. "
     "If assumed_context.assumed_league_uncertain is true, state the assumed league in the text. "
     "If a stored preference shapes the answer, name that preference in the text. "
+    "Never mention the pack, evidence, tools, or any internal data structure; call it your league data. "
+    "Follow-ups must be short questions in the user's voice that they would tap, never instructions "
+    "to send, provide, or share anything. "
     "No em dashes. Use plain hyphens. Short, direct sentences. Return JSON only."
 )
 
@@ -88,6 +122,29 @@ def _numbers_in(text: str) -> list[str]:
 
 def _norm_num(token: str) -> str:
     return str(token).replace("$", "").replace(",", "").rstrip("%").strip()
+
+
+def _canon(token: str) -> str:
+    """Scorer-style canonical number: sign dropped, 17.90 -> 17.9, 2380.0 -> 2380."""
+    s = _norm_num(token)
+    try:
+        f = abs(float(s))
+    except (TypeError, ValueError):
+        return s
+    return str(int(f)) if f == int(f) else str(f)
+
+
+def _canon_numbers(text) -> set[str]:
+    return {_canon(n) for n in _numbers_in(str(text or ""))}
+
+
+def _fmt_num(value) -> str:
+    """Render a pack number the way prose would: 4850.0 -> '4850', 0.24 -> '0.24'."""
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    return str(int(f)) if f == int(f) else str(f)
 
 
 def _pack_numbers(pack) -> set[str]:
@@ -176,6 +233,334 @@ def _strip_ungrounded(data: dict, allowed: set[str]) -> dict:
     return out
 
 
+# -- receipt values: human-readable or omitted ---------------------------------
+
+_RECEIPT_FRIENDLY_KEYS = ("team_name", "league_name", "name", "label", "title")
+
+
+def _humanize_receipt_value(raw) -> str | None:
+    """Render a receipt value as a human-readable string, or None to drop it.
+
+    A model sometimes pastes a whole pack object into a receipt value (the
+    league dict arrived as raw JSON in a live answer) or an empty container
+    for a field with no data. Dicts render as their friendly label field, so
+    a league renders as its team or league name, never serialized JSON.
+    Empty containers, nulls, and blank strings return None and the row is
+    omitted entirely: no data, no row.
+    """
+    if raw is None:
+        return None
+    obj = raw
+    if isinstance(raw, str):
+        s = raw.strip()
+        if s in ("", "[]", "{}", "null", "None"):
+            return None
+        if s[:1] in ("{", "["):
+            try:
+                obj = json.loads(s)
+            except Exception:
+                return s
+            if isinstance(obj, str):
+                return obj.strip() or None
+            if obj is None:
+                return None
+        else:
+            return s
+    if isinstance(obj, dict):
+        for key in _RECEIPT_FRIENDLY_KEYS:
+            v = obj.get(key)
+            if v not in (None, ""):
+                return str(v)
+        return None
+    if isinstance(obj, (list, tuple)):
+        parts = []
+        for item in obj[:3]:
+            h = _humanize_receipt_value(item)
+            if h:
+                parts.append(h)
+        return ", ".join(parts) if parts else None
+    return str(obj)
+
+
+# -- the citation contract: deterministic required receipt rows ------------------
+
+def _required_receipts(intent: str, pack: dict) -> list[dict]:
+    """Receipt rows an answer to this intent must carry, derived from the pack.
+
+    These are the numbers the eval scorer (and any reader) checks for. They
+    are built from pack fields only, so they are grounded by construction.
+    """
+    rows: list[dict] = []
+    pack = pack or {}
+    if intent == "trade_eval":
+        give = (pack.get("give") or {}).get("total_value")
+        receive = (pack.get("receive") or {}).get("total_value")
+        gap = pack.get("fairness_gap")
+        if give is not None:
+            rows.append({"label": "You give (total value)", "value": _fmt_num(give)})
+        if receive is not None:
+            rows.append({"label": "You receive (total value)", "value": _fmt_num(receive)})
+        if gap is not None:
+            rows.append({"label": "Fairness gap", "value": _fmt_num(gap)})
+    elif intent == "metric":
+        top = [e for e in (pack.get("leaderboard_top5") or [])
+               if isinstance(e, dict) and e.get("value") is not None]
+        if top:
+            ordered = top[:1] + [e for e in top[1:] if e.get("on_my_roster")] \
+                + [e for e in top[1:] if not e.get("on_my_roster")]
+            for e in ordered[:4]:
+                rows.append({"label": str(e.get("name") or "Leader"),
+                             "value": _fmt_num(e["value"])})
+    elif intent == "this_week":
+        for a in (pack.get("actions") or []):
+            if not isinstance(a, dict):
+                continue
+            kn = a.get("key_number")
+            if isinstance(kn, dict):
+                kn = kn.get("value")
+            if kn is None or kn == "":
+                continue
+            value = _fmt_num(kn) if isinstance(kn, (int, float)) else str(kn)
+            rows.append({"label": str(a.get("tag") or "action"), "value": value})
+            if len(rows) >= 4:
+                break
+    elif intent == "waivers":
+        cands = [c for c in (pack.get("candidates") or []) if isinstance(c, dict)]
+        if cands:
+            top = cands[0]
+            if top.get("value") is not None:
+                rows.append({"label": f"{top.get('name')} value",
+                             "value": _fmt_num(top["value"])})
+            worst = (pack.get("my_worst_by_position") or {}).get(top.get("position")) or {}
+            if worst.get("value") is not None:
+                rows.append({"label": f"Your worst {top.get('position')} ({worst.get('name')}) value",
+                             "value": _fmt_num(worst["value"])})
+            if len(cands) > 1 and cands[1].get("value") is not None:
+                rows.append({"label": f"{cands[1].get('name')} value",
+                             "value": _fmt_num(cands[1]["value"])})
+    elif intent == "player":
+        role = pack.get("role") or {}
+        for key, label in (("target_share", "Target share"),
+                           ("touches_per_game", "Touches per game"),
+                           ("ppg", "Points per game"),
+                           ("snap_share", "Snap share")):
+            if role.get(key) is not None and len(rows) < 4:
+                rows.append({"label": label, "value": _fmt_num(role[key])})
+        player = pack.get("player") or {}
+        if player.get("value") is not None and len(rows) < 4:
+            rows.append({"label": "Value", "value": _fmt_num(player["value"])})
+    return rows[:4]
+
+
+def _required_numbers(intent: str, pack: dict) -> set[str]:
+    out: set[str] = set()
+    for row in _required_receipts(intent, pack):
+        out |= _canon_numbers(row["value"])
+    return out
+
+
+def _surface_numbers(data: dict, actions: list) -> set[str]:
+    """Every number a reader can see, mirroring the eval scorer's surfaces."""
+    out: set[str] = set()
+    texts = [data.get("verdict") or "", data.get("text") or "", data.get("caveat") or ""]
+    for r in (data.get("receipts") or []):
+        if isinstance(r, dict):
+            texts += [str(r.get("label") or ""), str(r.get("value") or "")]
+    texts += [str(f) for f in (data.get("followups") or [])]
+    for a in actions or []:
+        if isinstance(a, dict):
+            texts += [str(a.get("headline") or ""), str(a.get("detail") or "")]
+    for t in texts:
+        out |= _canon_numbers(t)
+    return out
+
+
+def _missing_key_numbers(intent: str, pack: dict, data: dict, actions: list) -> list[str]:
+    required = _required_numbers(intent, pack)
+    if not required:
+        return []
+    missing = required - _surface_numbers(data, actions)
+
+    def _key(s):
+        try:
+            return (0, float(s))
+        except (TypeError, ValueError):
+            return (1, 0.0)
+
+    return sorted(missing, key=_key)
+
+
+def _ensure_required_receipts(intent: str, pack: dict, receipts: list) -> list:
+    """Inject any required receipt rows the final answer still lacks.
+
+    Model receipts are kept first; a missing required row is appended while
+    there is room (receipts cap at 4), otherwise it replaces the last
+    receipt that is not itself a required row.
+    """
+    required = _required_receipts(intent, pack)
+    if not required:
+        return receipts
+    out = list(receipts)
+    have: set[str] = set()
+    for r in out:
+        have |= _canon_numbers(r.get("value"))
+    req_canons: set[str] = set()
+    for row in required:
+        req_canons |= _canon_numbers(row["value"])
+    for row in required:
+        nums = _canon_numbers(row["value"])
+        if nums & have:
+            continue
+        if len(out) < 4:
+            out.append(row)
+            have |= nums
+            continue
+        for i in range(len(out) - 1, -1, -1):
+            if not (_canon_numbers(out[i].get("value")) & req_canons):
+                out[i] = row
+                have |= nums
+                break
+    return out
+
+
+# -- internal language and follow-up voice ---------------------------------------
+
+_INTERNAL_RE = re.compile(r"evidence[\s_-]*pack|\bpack\b", re.IGNORECASE)
+
+# Follow-ups phrased as instructions to the user to supply data. The
+# assistant fetches its own data; a follow-up is a question the user taps.
+_SYSTEM_ASK_RE = re.compile(r"^\s*(send|provide|share|upload|paste)\b", re.IGNORECASE)
+
+_FOLLOWUP_TEMPLATES = {
+    "start_sit": ["What about next week?", "Who else is on my bench?"],
+    "trade_eval": ["What would balance this trade?", "Who else could I ask for?"],
+    "buy_sell_hold": ["Who could I trade him for?", "What is his role right now?"],
+    "player": ["Buy, sell, or hold on him?", "How is his upcoming schedule?"],
+    "metric": ["Who is moving up?", "What is snap share?"],
+    "waivers": ["Who else is available?", "What should I do with my team this week?"],
+    "this_week": ["Who should I start at FLEX?", "Who is the best waiver add?",
+                  "Any buy-lows I should target?"],
+}
+
+
+def _internal_hits(data: dict) -> list[str]:
+    texts = [data.get("verdict") or "", data.get("text") or "", data.get("caveat") or ""]
+    texts += [str(f) for f in (data.get("followups") or [])]
+    return [str(t) for t in texts if t and _INTERNAL_RE.search(str(t))]
+
+
+def _strip_internal_language(data: dict) -> dict:
+    """Remove internal terms deterministically when a retry still leaks them.
+
+    Prose loses the offending sentences; a verdict or caveat carrying one is
+    dropped whole (they are too short to redact safely); follow-ups carrying
+    one are dropped and the template fallback in _clean_followups refills.
+    """
+    out = dict(data)
+    text = str(out.get("text") or "")
+    if text:
+        sentences = re.split(r"(?<=[.!?])\s+", text)
+        kept = [s for s in sentences if not _INTERNAL_RE.search(s)]
+        out["text"] = " ".join(kept).strip()
+        if not out["text"]:
+            out["text"] = "See the receipts below for the numbers behind this call."
+    for field in ("verdict", "caveat"):
+        value = out.get(field)
+        if value and _INTERNAL_RE.search(str(value)):
+            out[field] = None
+    out["followups"] = [f for f in (out.get("followups") or [])
+                        if not _INTERNAL_RE.search(str(f))]
+    return out
+
+
+def _clean_followups(intent: str, followups) -> list[str]:
+    """Keep only user-voiced follow-ups; fall back to per-intent templates.
+
+    A follow-up the user taps is a question in their voice ("Who should I
+    start at FLEX?"). Anything that reads as system language (internal
+    terms) or as an instruction to send/provide data is rejected; when
+    nothing survives, the intent's templates are used instead.
+    """
+    kept = []
+    for f in followups or []:
+        s = str(f).strip()
+        if not s or len(s) > 100:
+            continue
+        if _INTERNAL_RE.search(s) or _SYSTEM_ASK_RE.search(s):
+            continue
+        kept.append(s)
+    if not kept:
+        kept = list(_FOLLOWUP_TEMPLATES.get(intent) or [])
+    return kept[:3]
+
+
+# -- trade verdict: pinned to the analyzer's fairness band ------------------------
+
+def _trade_verdict(pack: dict) -> str | None:
+    """The trade call, derived from the pack totals by the shared fair band.
+
+    utils.trade_value.fair_value_band is the definition the trade calculator
+    (api_trade_eval) and the trade outcome analyzer share: fair within
+    max(7% of the larger side's total, 25.0). ACCEPT when the user gains
+    more than the band, DECLINE when they lose more than the band, FAIR
+    inside it. The model never chooses this verdict.
+    """
+    try:
+        give = float(((pack or {}).get("give") or {}).get("total_value") or 0)
+        receive = float(((pack or {}).get("receive") or {}).get("total_value") or 0)
+    except (TypeError, ValueError):
+        return None
+    if give <= 0 and receive <= 0:
+        return None
+    try:
+        from utils.trade_value import fair_value_band
+        band = fair_value_band(max(give, receive, 1.0))
+    except Exception:
+        return None
+    gap = receive - give
+    if abs(gap) <= band:
+        return "FAIR"
+    return "ACCEPT" if gap > 0 else "DECLINE"
+
+
+def _ensure_deal_names(pack: dict, data: dict) -> dict:
+    """Guarantee every player in the deal is named somewhere in the answer.
+
+    If the model's prose dropped a side's player, a deterministic summary
+    sentence built from the pack is prepended (names only, no numbers, so
+    it cannot break grounding).
+    """
+    sides: dict[str, list[str]] = {}
+    for side in ("give", "receive"):
+        sides[side] = [str(p.get("name")) for p in ((pack.get(side) or {}).get("players") or [])
+                       if isinstance(p, dict) and p.get("name")]
+    all_names = sides["give"] + sides["receive"]
+    if not all_names:
+        return data
+    full = " ".join([str(data.get("verdict") or ""), str(data.get("text") or "")] +
+                    [f"{r.get('label')} {r.get('value')}"
+                     for r in (data.get("receipts") or []) if isinstance(r, dict)])
+    if all(n.lower() in full.lower() for n in all_names):
+        return data
+
+    def _join(names):
+        if len(names) <= 2:
+            return " and ".join(names)
+        return ", ".join(names[:-1]) + " and " + names[-1]
+
+    parts = []
+    if sides["give"]:
+        parts.append(f"You give {_join(sides['give'])}")
+    if sides["receive"]:
+        parts.append(f"You receive {_join(sides['receive'])}")
+    if not parts:
+        return data
+    out = dict(data)
+    sentence = ". ".join(parts) + "."
+    out["text"] = (sentence + " " + str(out.get("text") or "")).strip()
+    return out
+
+
 def no_data_answer(pack: dict) -> dict:
     missing = pack.get("missing") or "that data is not tracked"
     nearest = pack.get("nearest") or []
@@ -193,58 +578,73 @@ _STRICT_SUFFIX = (
     "If a number you want is not in the pack, leave the number out entirely."
 )
 
+_QUALITY_SUFFIX = (
+    " QUALITY MODE: your previous draft failed checks. "
+    "Cite every key number named in the quality_retry note, in the text or the receipts. "
+    "Never use the words pack or evidence pack; call it your league data. "
+    "Follow-ups must be short questions in the user's voice, never instructions to send or provide anything."
+)
+
+
+def _draft(system: str, payload: dict, allowed: set[str]) -> dict:
+    """One model call plus the grounding enforcement pass.
+
+    An ungrounded draft is regenerated once under the strict suffix; a
+    still-ungrounded retry is stripped deterministically. Never returns
+    None: a draft with invented numbers never ships as-is.
+    """
+    data = call_model_json(system, json.dumps(payload, default=str), SCHEMA, "assistant_answer")
+    bad = _ungrounded_numbers(data, allowed)
+    if not bad:
+        return data
+    logger.info("[assistant] ungrounded prose numbers, regenerating once: %s", bad)
+    retry_payload = dict(payload)
+    retry_payload["grounding_retry"] = {
+        "banned_numbers": bad,
+        "instruction": "Your previous draft used numbers that are not in the evidence pack. "
+                       "Do not use them. Restate the answer using only pack numbers.",
+    }
+    retry = None
+    try:
+        retry = call_model_json(system + _STRICT_SUFFIX, json.dumps(retry_payload, default=str),
+                                SCHEMA, "assistant_answer")
+    except Exception:
+        retry = None
+    if retry is not None and not _ungrounded_numbers(retry, allowed):
+        return retry
+    if retry is not None:
+        data = retry
+    data = _strip_ungrounded(data, allowed)
+    logger.info("[assistant] stripped ungrounded prose numbers: %s",
+                _ungrounded_numbers(data, allowed) or bad)
+    return data
+
+
+def _final_receipts(data: dict, allowed: set[str]) -> list:
+    """Model receipts, humanized and grounding-filtered, capped at 4."""
+    receipts = []
+    for r in (data.get("receipts") or [])[:6]:
+        if not isinstance(r, dict):
+            continue
+        label = str(r.get("label") or "")
+        value = _humanize_receipt_value(r.get("value"))
+        if value is None:
+            continue
+        if _receipt_grounded(value, allowed):
+            receipts.append({"label": label, "value": value})
+        else:
+            logger.info("[assistant] dropped ungrounded receipt %s=%s", label, value)
+        if len(receipts) >= 4:
+            break
+    return receipts
+
 
 def compose_answer(intent: str, question: str, pack: dict, *, preferences=None, assumed_context=None, history=None) -> dict:
     """Compose an answer dict from an evidence pack. Pure eval seam."""
     if isinstance(pack, dict) and pack.get("available") is False:
         return no_data_answer(pack)
-    payload = {
-        "intent": intent,
-        "question": question,
-        "evidence_pack": pack,
-        "preferences": [p.get("text") if isinstance(p, dict) else str(p) for p in (preferences or [])],
-        "assumed_context": assumed_context or {},
-        "history": (history or [])[-3:],
-        "prompt_version": PROMPT_VERSION,
-    }
-    allowed = _ground_set(pack, question)
-    data = call_model_json(SYSTEM, json.dumps(payload, default=str), SCHEMA, "assistant_answer")
-    bad = _ungrounded_numbers(data, allowed)
-    if bad:
-        logger.info("[assistant] ungrounded prose numbers, regenerating once: %s", bad)
-        retry_payload = dict(payload)
-        retry_payload["grounding_retry"] = {
-            "banned_numbers": bad,
-            "instruction": "Your previous draft used numbers that are not in the evidence pack. "
-                           "Do not use them. Restate the answer using only pack numbers.",
-        }
-        try:
-            retry = call_model_json(SYSTEM + _STRICT_SUFFIX, json.dumps(retry_payload, default=str),
-                                    SCHEMA, "assistant_answer")
-        except Exception:
-            retry = None
-        if retry is not None and not _ungrounded_numbers(retry, allowed):
-            data = retry
-        else:
-            if retry is not None:
-                data = retry
-            data = _strip_ungrounded(data, allowed)
-            logger.info("[assistant] stripped ungrounded prose numbers: %s",
-                        _ungrounded_numbers(data, allowed) or bad)
-    receipts = []
-    for r in (data.get("receipts") or [])[:4]:
-        if not isinstance(r, dict):
-            continue
-        label = str(r.get("label") or "")
-        value = str(r.get("value") or "")
-        if _receipt_grounded(value, allowed):
-            receipts.append({"label": label, "value": value})
-        else:
-            logger.info("[assistant] dropped ungrounded receipt %s=%s", label, value)
-    caveat = data.get("caveat")
-    margin_thin = bool(((pack or {}).get("margin") or {}).get("thin"))
-    if caveat and not margin_thin and not (pack or {}).get("stale"):
-        caveat = None
+    # This-week actions are deterministic from the pack; build them first so
+    # the citation check sees the same surfaces the scorer will.
     actions = []
     if intent == "this_week":
         default_href = (_ACT_LINKS.get("this_week") or {}).get("href")
@@ -257,13 +657,59 @@ def compose_answer(intent: str, question: str, pack: dict, *, preferences=None, 
                     "cta_label": _cta_label(a),
                     "key_number": a.get("key_number"),
                 })
+    payload = {
+        "intent": intent,
+        "question": question,
+        "evidence_pack": pack,
+        "preferences": [p.get("text") if isinstance(p, dict) else str(p) for p in (preferences or [])],
+        "assumed_context": assumed_context or {},
+        "history": (history or [])[-3:],
+        "prompt_version": PROMPT_VERSION,
+    }
+    fixed_verdict = _trade_verdict(pack) if intent == "trade_eval" else None
+    if fixed_verdict:
+        payload["fixed_verdict"] = fixed_verdict
+    allowed = _ground_set(pack, question)
+    data = _draft(SYSTEM, payload, allowed)
+    # Quality pass: key-number citation + internal language. One combined
+    # regeneration naming both defects, then deterministic fallbacks below.
+    missing = _missing_key_numbers(intent, pack, data, actions)
+    internal = _internal_hits(data)
+    if missing or internal:
+        logger.info("[assistant] quality defects (missing=%s, internal=%s), regenerating once",
+                    missing, bool(internal))
+        retry_payload = dict(payload)
+        retry_payload["quality_retry"] = {
+            "missing_key_numbers": missing,
+            "banned_terms": ["pack", "evidence pack"],
+            "instruction": "Cite every missing key number in the text or receipts. "
+                           "Do not use the banned terms. Follow-ups are questions in the user's voice.",
+        }
+        try:
+            data = _draft(SYSTEM + _QUALITY_SUFFIX, retry_payload, allowed)
+        except Exception:
+            logger.info("[assistant] quality retry failed; keeping first draft", exc_info=True)
+        missing = _missing_key_numbers(intent, pack, data, actions)
+        internal = _internal_hits(data)
+    if internal:
+        data = _strip_internal_language(data)
+    receipts = _ensure_required_receipts(intent, pack, _final_receipts(data, allowed))
+    if intent == "trade_eval":
+        data = _ensure_deal_names(pack, data)
+        if fixed_verdict:
+            data = dict(data)
+            data["verdict"] = fixed_verdict
+    caveat = data.get("caveat")
+    margin_thin = bool(((pack or {}).get("margin") or {}).get("thin"))
+    if caveat and not margin_thin and not (pack or {}).get("stale"):
+        caveat = None
     act_link = _ACT_LINKS.get(intent)
     return {
         "verdict": data.get("verdict"),
         "text": data.get("text") or "",
         "receipts": receipts,
         "caveat": caveat,
-        "followups": (data.get("followups") or [])[:3],
+        "followups": _clean_followups(intent, data.get("followups")),
         "act_link": dict(act_link) if act_link else None,
         "actions": actions,
     }

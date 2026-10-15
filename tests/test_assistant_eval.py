@@ -230,6 +230,23 @@ def test_trade_reference_matches_pack_totals():
             pack["receive"]["total_value"] - pack["give"]["total_value"], 1)
 
 
+def test_trade_reference_matches_analyzer_band():
+    # The reference verdict must be what the trade analyzer's shared
+    # fairness band derives from the pack totals: fair within
+    # max(7% of the larger side, 25.0) (utils.trade_value.fair_value_band,
+    # reimplemented here so this module stays free of backend imports).
+    for q in QUESTIONS:
+        if q["type"] != "trade_eval":
+            continue
+        pack = q["evidence_pack"]
+        give = pack["give"]["total_value"]
+        receive = pack["receive"]["total_value"]
+        gap = float(pack["fairness_gap"])
+        band = max(max(give, receive, 1.0) * 0.07, 25.0)
+        expected = "FAIR" if abs(gap) <= band else ("ACCEPT" if gap > 0 else "DECLINE")
+        assert q["reference"]["pick"] == expected, q["id"]
+
+
 def test_buy_sell_hold_reference_matches_pack_trend():
     for q in QUESTIONS:
         if q["type"] != "buy_sell_hold":

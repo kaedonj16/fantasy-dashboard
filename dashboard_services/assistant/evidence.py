@@ -47,6 +47,17 @@ Reality notes vs the workshop tool map (verified in this repo):
   .waiver_pickup_score computed from the candidate's own value and
   rest-of-season PPG, gated on routes.waiver_bp._waiver_faab_context
   confirming the league actually uses FAAB.
+- The this-week digest draws from the dashboard's own Next Steps queue
+  (the _next_steps_*_actions builders in app.py over the live league ctx),
+  the same source of truth the site renders. It previously called
+  utils.digest.gather_digest_action_items (the weekly EMAIL digest) with
+  almost none of that function's enrichment inputs, and mapped fields the
+  digest items do not carry (headline/tag), so waiver and injury items
+  were silently dropped and a real team got an empty digest.
+- The trade pack carries trade_verdict, derived from the side totals via
+  utils.trade_value.fairness_label / fair_value_band: the shared fairness
+  definition the trade calculator (api_trade_eval) and the trade outcome
+  analyzer use, so the assistant cannot contradict the calculator.
 """
 from __future__ import annotations
 
@@ -95,6 +106,30 @@ def sleeper_trending_adds(*args, **kwargs):
 def waiver_faab_context(*args, **kwargs):
     from routes.waiver_bp import _waiver_faab_context as _fn
     return _fn(*args, **kwargs)
+
+
+def next_steps_actions(ctx, roster_id, model_rows):
+    """The dashboard's Next Steps queue, aggregated like _render_next_steps_queue.
+
+    Same builders (app.py), same ctx, same score-ranked order as the queue
+    the site renders under the hero. Each builder is best-effort internally.
+    """
+    from app import (
+        _next_steps_bench_check_actions,
+        _next_steps_lineup_actions,
+        _next_steps_roster_actions,
+        _next_steps_trade_actions,
+        _next_steps_waiver_actions,
+    )
+    actions: list[dict] = []
+    actions.extend(_next_steps_lineup_actions(ctx, roster_id) or [])
+    actions.extend(_next_steps_waiver_actions(ctx, roster_id, model_rows or []) or [])
+    actions.extend(_next_steps_trade_actions(ctx, roster_id) or [])
+    actions.extend(_next_steps_roster_actions(ctx, roster_id) or [])
+    actions.extend(_next_steps_bench_check_actions(
+        ctx, roster_id, (ctx or {}).get("last_final_week")) or [])
+    actions.sort(key=lambda a: -(a.get("score") or 0))
+    return actions
 
 
 def _index():
@@ -477,6 +512,18 @@ def build_trade_eval(bundle, entities, resolved_ids) -> tuple[dict, list[str]]:
                     tools.append("utils.trade.balancing_asset")
     base = max(give_total, recv_total, 1.0)
     pack["margin"] = {"thin": bool(abs(pack["fairness_gap"]) / base < 0.10)}
+    # The verdict is code-derived from the totals via the trade analyzer's
+    # shared fairness band (utils.trade_value), never left to the model:
+    # strong_win/strong_loss are from the viewer's side of the delta
+    # (fairness_gap is receive minus give).
+    try:
+        from utils.trade_value import fairness_label
+        label = fairness_label(pack["fairness_gap"], base)
+        pack["trade_verdict"] = {"strong_win": "ACCEPT", "strong_loss": "DECLINE",
+                                 "fair": "FAIR"}[label]
+        tools.append("utils.trade_value.fairness_label")
+    except Exception:
+        logger.debug("[assistant] trade verdict failed", exc_info=True)
     return pack, tools
 
 
@@ -934,56 +981,47 @@ def build_waivers(bundle, entities, player_ids=None) -> tuple[dict, list[str]]:
 # -- this week ----------------------------------------------------------------------------
 
 def build_this_week(bundle, entities=None, player_ids=None) -> tuple[dict, list[str]]:
+    """The weekly digest: the dashboard's own Next Steps queue, as a pack.
+
+    The bundle already carries the live league ctx and the viewer's roster,
+    which is exactly what the site's queue builders read. Each queue action
+    maps onto the pack's action shape: tag, headline (the queue's action
+    text), detail (its why line), key_number (its impact string, e.g.
+    "+1.9 projected points", or None), act_link (its CTA url), and the
+    CTA label it ships with.
+    """
     pack = _base_pack("this_week", bundle)
     tools: list[str] = []
     actions: list[dict] = []
     ctx = bundle.get("ctx") or {}
     roster = bundle.get("roster") or {}
-    # Lineup issues target (utils/lineup_issues.py -> utils.lineups).
-    try:
-        from utils.lineup_issues import find_lineup_issues
-        index = _index()
-        starters = [str(p) for p in (roster.get("starters") or [])]
-        info = {pid: _player_info(pid, index) for pid in starters}
-        issues = find_lineup_issues(starters, info) or []
-        tools.append("utils.lineup_issues.find_lineup_issues")
-        for iss in issues[:4]:
-            if isinstance(iss, dict):
-                actions.append({
-                    "tag": "lineup", "headline": iss.get("detail") or f"Lineup issue: {iss.get('name') or iss.get('pid')}",
-                    "detail": iss.get("detail") or "", "key_number": None,
-                    "act_link": "/waivers?tab=startsit",
-                })
-    except Exception:
-        logger.debug("[assistant] lineup issues failed", exc_info=True)
-    # Digest action items: gather_digest_action_items needs roster + pidx and
-    # many optional inputs; call it with what ctx provides, best-effort.
-    try:
-        from utils.digest import gather_digest_action_items
-        items = gather_digest_action_items(
-            platform=bundle.get("platform") or "sleeper",
-            season=int(bundle.get("season") or 0),
-            league_id=str(bundle.get("league_id") or ""),
-            roster=roster or {},
-            pidx=_index(),
-            base_url="",
-            nfl_state={"week": bundle.get("week"), "season": bundle.get("season"), "season_type": "reg"} if bundle.get("week") else None,
-        ) or []
-        tools.append("utils.digest.gather_digest_action_items")
-        for item in items[:6]:
-            if isinstance(item, dict):
-                headline = item.get("headline") or item.get("title") or item.get("tag") or ""
-                if not headline and item.get("html"):
-                    continue  # HTML-only items are not renderable as action rows
-                if headline:
-                    actions.append({
-                        "tag": item.get("tag") or "digest", "headline": str(headline),
-                        "detail": str(item.get("detail") or ""), "key_number": item.get("key_number"),
-                        "act_link": item.get("act_link") or item.get("href") or "/",
-                    })
-    except Exception:
-        logger.debug("[assistant] digest items failed", exc_info=True)
-    pack["actions"] = actions[:6]
+    roster_id = roster.get("roster_id")
+    if ctx and roster_id is not None:
+        try:
+            model_rows = get_model_value_table_cached() or []
+        except Exception:
+            model_rows = []
+        try:
+            queue = next_steps_actions(ctx, roster_id, model_rows)
+            tools.append("app.next_steps_queue")
+        except Exception:
+            logger.debug("[assistant] next steps queue failed", exc_info=True)
+            queue = []
+        for a in queue[:6]:
+            if not isinstance(a, dict):
+                continue
+            headline = str(a.get("action") or "").strip()
+            if not headline:
+                continue
+            actions.append({
+                "tag": a.get("tag") or a.get("kind") or "action",
+                "headline": headline,
+                "detail": str(a.get("why") or ""),
+                "key_number": a.get("impact"),
+                "act_link": a.get("cta_url") or "/",
+                "cta_label": a.get("cta_label"),
+            })
+    pack["actions"] = actions
     pack["available"] = True
     return pack, tools
 

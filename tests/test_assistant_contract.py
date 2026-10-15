@@ -146,3 +146,157 @@ def test_invented_receipt_still_dropped_and_percent_grounds(monkeypatch):
     answer = compose_answer("start_sit", "Start Odunze or Mooney?", PACK)
     assert answer["receipts"] == [{"label": "Odunze projection", "value": "17.9"},
                                   {"label": "Odunze target share", "value": "17.9%"}]
+
+
+# -- key-number citation contract (live eval failures m1 / tw1 / tw2) -----------
+
+METRIC_PACK = {
+    "type": "metric", "available": True, "week": 7, "metric_key": "target_share",
+    "label": "Target Share", "definition": "Share of team pass attempts.",
+    "leaderboard_top5": [
+        {"player_id": "jc", "name": "Ja'Marr Chase", "team": "CIN", "position": "WR",
+         "value": 0.31, "on_my_roster": False},
+        {"player_id": "ro", "name": "Rome Odunze", "team": "CHI", "position": "WR",
+         "value": 0.24, "on_my_roster": True},
+    ],
+    "margin": {"thin": False}, "as_of": {"week": 7},
+}
+
+THIS_WEEK_PACK = {
+    "type": "this_week", "available": True, "week": 7, "as_of": {"week": 7},
+    "actions": [
+        {"tag": "lineup", "headline": "Start Rome Odunze at flex over Jordan Addison",
+         "detail": "Odunze has the higher Week 7 projection of the two.",
+         "key_number": 13.8, "act_link": "/waivers?tab=startsit"},
+        {"tag": "waiver", "headline": "Add Rashid Shaheed from waivers",
+         "detail": "Shaheed clears your positional gate at wide receiver.",
+         "key_number": 2380.0, "act_link": "/waivers"},
+        {"tag": "injury", "headline": "Monitor Brian Thomas Jr. practice reports",
+         "detail": "Thomas was limited in practice this week.",
+         "key_number": None, "act_link": "/players"},
+    ],
+}
+
+
+def test_missing_key_number_triggers_regeneration_then_cites(monkeypatch):
+    omits = {"verdict": "Target Share: Ja'Marr Chase leads",
+             "text": "Chase leads at 0.31.",
+             "receipts": [{"label": "Ja'Marr Chase", "value": "0.31"}],
+             "caveat": None, "followups": ["Who is moving up?"], "act_link": None}
+    cites = dict(omits)
+    cites["text"] = "Chase leads at 0.31. Your Rome Odunze sits at 0.24."
+    cites["receipts"] = [{"label": "Ja'Marr Chase", "value": "0.31"},
+                         {"label": "Rome Odunze", "value": "0.24"}]
+    calls = _canned(monkeypatch, omits, cites)
+    answer = compose_answer("metric", "What is target share and who leads?", METRIC_PACK)
+    assert calls["n"] == 2  # one quality regeneration naming the missing number
+    assert "0.24" in answer["text"]
+    assert {"label": "Rome Odunze", "value": "0.24"} in answer["receipts"]
+
+
+def test_missing_key_numbers_injected_as_receipts_when_retry_still_omits(monkeypatch):
+    draft = {"verdict": "Start Rome Odunze at flex",
+             "text": "Odunze has the higher projection of the two, and Shaheed is the add.",
+             "receipts": [], "caveat": None, "followups": [], "act_link": None}
+    _canned(monkeypatch, draft)
+    answer = compose_answer("this_week", "What should I do with my team this week?", THIS_WEEK_PACK)
+    values = [r["value"] for r in answer["receipts"]]
+    assert "13.8" in values and "2380" in values
+
+
+# -- trade verdict pinning (live eval failure te2) --------------------------------
+
+TE2_PACK = {
+    "type": "trade_eval", "available": True, "week": 7,
+    "give": {"players": [
+        {"player_id": "btj", "name": "Brian Thomas Jr.", "team": "JAX", "position": "WR", "value": 5120.0},
+        {"player_id": "wm", "name": "Woody Marks", "team": "HOU", "position": "RB", "value": 2650.0}],
+        "total_value": 7770.0},
+    "receive": {"players": [
+        {"player_id": "zf", "name": "Zay Flowers", "team": "BAL", "position": "WR", "value": 4680.0}],
+        "total_value": 4680.0},
+    "fairness_gap": -3090.0, "unpriced": [], "margin": {"thin": False},
+    "as_of": {"week": 7},
+}
+
+
+def test_trade_verdict_pinned_by_analyzer_band_and_names_every_player(monkeypatch):
+    # The model calls it FAIR and drops Flowers entirely: both defects the
+    # live eval caught. The band (max(7% of 7770, 25) = 543.9) makes a 3090
+    # loss a DECLINE, and the missing name is restored deterministically.
+    draft = {"verdict": "FAIR",
+             "text": "Brian Thomas Jr. and Woody Marks for the other side. "
+                     "Your side totals 7770 against 4680 coming back.",
+             "receipts": [{"label": "You give (total value)", "value": "7770"}],
+             "caveat": None, "followups": ["What would balance this trade?"], "act_link": None}
+    _canned(monkeypatch, draft)
+    answer = compose_answer("trade_eval", "Is this fair: I give Brian Thomas Jr. and Woody Marks, I get Zay Flowers?", TE2_PACK)
+    assert answer["verdict"] == "DECLINE"
+    assert "Flowers" in answer["text"]
+    assert "Brian Thomas Jr." in answer["text"] and "Woody Marks" in answer["text"]
+    assert "-3090" in [r["value"] for r in answer["receipts"]]
+
+
+def test_trade_verdict_band_edges(monkeypatch):
+    def pack(give_total, receive_total):
+        return {"type": "trade_eval", "available": True, "week": 7,
+                "give": {"players": [{"player_id": "a", "name": "Alpha", "value": give_total}],
+                         "total_value": give_total},
+                "receive": {"players": [{"player_id": "b", "name": "Beta", "value": receive_total}],
+                            "total_value": receive_total},
+                "fairness_gap": float(receive_total - give_total), "unpriced": [],
+                "margin": {"thin": False}, "as_of": {"week": 7}}
+
+    def draft(verdict):
+        return {"verdict": verdict, "text": "Alpha for Beta.", "receipts": [],
+                "caveat": None, "followups": [], "act_link": None}
+
+    # Gap 440 on a 5120 baseline: outside the 7% band (358.4), so ACCEPT
+    # even though the model said FAIR (the frozen te3 shape).
+    _canned(monkeypatch, draft("FAIR"))
+    answer = compose_answer("trade_eval", "Fair?", pack(4680.0, 5120.0))
+    assert answer["verdict"] == "ACCEPT"
+    # Gap 100 on a 5100 baseline: inside the band, so FAIR even though the
+    # model said ACCEPT.
+    _canned(monkeypatch, draft("ACCEPT"))
+    answer = compose_answer("trade_eval", "Fair?", pack(5000.0, 5100.0))
+    assert answer["verdict"] == "FAIR"
+
+
+# -- receipt humanization (live screenshot: raw JSON league row, [] actions row) --
+
+def test_receipt_values_humanized_and_empty_rows_dropped(monkeypatch):
+    draft = dict(CLEAN)
+    draft["receipts"] = [
+        {"label": "league",
+         "value": '{"platform": "sleeper", "league_id": "1312067280816832512", '
+                  '"team_name": "Caleb\'s Casting Couch"}'},
+        {"label": "actions", "value": "[]"},
+        {"label": "settings", "value": "{}"},
+        {"label": "Odunze projection", "value": "17.9"},
+    ]
+    _canned(monkeypatch, draft)
+    answer = compose_answer("start_sit", "Start Odunze or Mooney?", PACK)
+    assert answer["receipts"] == [
+        {"label": "league", "value": "Caleb's Casting Couch"},
+        {"label": "Odunze projection", "value": "17.9"},
+    ]
+
+
+# -- internal language purge + follow-up voice (live screenshot leaks) -------------
+
+def test_internal_language_and_system_followup_never_ship(monkeypatch):
+    draft = {"verdict": "Start Rome Odunze at flex",
+             "text": "Week 7 has no recommended moves in the pack. "
+                     "Your Sleeper team in Blackedraw has no actions listed.",
+             "receipts": [], "caveat": None,
+             "followups": ["Send the latest evidence pack if you want a start-sit, "
+                           "waiver, or trade recommendation."],
+             "act_link": None}
+    _canned(monkeypatch, draft)
+    answer = compose_answer("this_week", "What should I do with my team this week?", THIS_WEEK_PACK)
+    assert not compose_mod._INTERNAL_RE.search(answer["text"])
+    assert "no recommended moves" not in answer["text"]
+    # The system-voiced follow-up is replaced by user-voiced templates.
+    assert answer["followups"] == compose_mod._FOLLOWUP_TEMPLATES["this_week"]
+    assert all("pack" not in f.lower() for f in answer["followups"])
