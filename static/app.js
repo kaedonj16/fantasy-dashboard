@@ -6894,6 +6894,18 @@ window.initTradePage = function initTradePage(root = document) {
   let _evalRetryTimer = null;
   let _evalRetrySig = "";
   let _evalRetryAttempts = 0;
+  // Same bounded-retry pattern for the two intel fetches recomputeTrade
+  // fans out to: playoff impact (keyed to give/get ids + roster) and trade
+  // intel (keyed to the traded player ids). Their failures are independent
+  // of the eval POST, so the eval retry above never re-fires them; without
+  // their own budget a transient 429 strands their panels until the next
+  // manual edit, which a URL-staged trade never makes.
+  let _piRetryTimer = null;
+  let _piRetrySig = "";
+  let _piRetryAttempts = 0;
+  let _tiRetryTimer = null;
+  let _tiRetrySig = "";
+  let _tiRetryAttempts = 0;
 
   // ── Roster filter (logged-in only) ──────────────────────────────────────────
   // Restrict each side's player search to a team's roster. Side A locks to the
@@ -8978,7 +8990,7 @@ window.initTradePage = function initTradePage(root = document) {
     } catch (e) {
       // Aborted by a newer recompute, or superseded: stay quiet.
       if ((signal && signal.aborted) || (gen !== undefined && gen !== _tradeGeneration)) return;
-      if (listEl) window.brErrorState(listEl, 'Trade data unavailable.', null, { compact: true, title: 'Couldn’t load' });
+      if (listEl) window.brErrorState(listEl, 'Trade data unavailable.', () => fetchSimilarTrades(_tradeGeneration, null), { compact: true, title: 'Couldn’t load' });
     }
   }
 
@@ -9106,7 +9118,15 @@ window.initTradePage = function initTradePage(root = document) {
         );
         return;
       }
-      const data = res.ok ? await res.json() : null;
+      // A non-200 (429, server blip) is a failure, not "not available":
+      // treating it as data=null painted the terminal "season may be
+      // complete" message for a transient error, with no recovery.
+      if (!res.ok) throw new Error("Playoff impact failed (" + res.status + ")");
+      const data = await res.json();
+
+      // The sim landed: clear any retry bookkeeping for this trade.
+      _piRetryAttempts = 0;
+      if (_piRetryTimer) { clearTimeout(_piRetryTimer); _piRetryTimer = null; }
 
       // Stash for share-card inclusion
       if (data && data.available) state._lastPiData = data;
@@ -9285,6 +9305,26 @@ window.initTradePage = function initTradePage(root = document) {
     } catch (e) {
       // Aborted by a newer recompute, or superseded: stay quiet.
       if ((signal && signal.aborted) || (gen !== undefined && gen !== _tradeGeneration)) return;
+      // Retry the SAME trade a bounded number of times while this call is
+      // still the latest generation (mirrors the trade-eval retry): the
+      // eval POST succeeding does not re-fire this fetch, so without a
+      // budget of its own one transient failure strands the card on the
+      // error message until the user happens to edit the trade.
+      const _piSig = giveIds.join(",") + "|" + getIds.join(",") + "|" + rosterId;
+      if (_piSig !== _piRetrySig) {
+        _piRetrySig = _piSig;
+        _piRetryAttempts = 0;
+        if (_piRetryTimer) { clearTimeout(_piRetryTimer); _piRetryTimer = null; }
+      }
+      if (gen === _tradeGeneration && _piRetryAttempts < 2) {
+        _piRetryAttempts += 1;
+        if (_piRetryTimer) clearTimeout(_piRetryTimer);
+        const _piRetryGen = gen;
+        _piRetryTimer = setTimeout(() => {
+          _piRetryTimer = null;
+          if (_piRetryGen === _tradeGeneration) fetchPlayoffImpact(_piRetryGen, null);
+        }, _piRetryAttempts === 1 ? 1500 : 4000);
+      }
       body.innerHTML = _piMessage(
         "fa-triangle-exclamation",
         "Couldn't simulate",
@@ -9332,6 +9372,32 @@ window.initTradePage = function initTradePage(root = document) {
 
     // Aborted by a newer recompute, or superseded: leave the panel alone.
     if ((signal && signal.aborted) || (gen !== undefined && gen !== _tradeGeneration)) return;
+
+    // Every per-player request failed (each catch above resolves null):
+    // that is a transient outage, not "no market data". Retry the same
+    // player set a bounded number of times before giving up and hiding
+    // the panel; a partial result renders what landed and resets the budget.
+    if (results.length && results.every(r => r === null)) {
+      const _tiSig = playerIds.map(p => p.id).join(",");
+      if (_tiSig !== _tiRetrySig) {
+        _tiRetrySig = _tiSig;
+        _tiRetryAttempts = 0;
+        if (_tiRetryTimer) { clearTimeout(_tiRetryTimer); _tiRetryTimer = null; }
+      }
+      if (gen === _tradeGeneration && _tiRetryAttempts < 2) {
+        _tiRetryAttempts += 1;
+        if (_tiRetryTimer) clearTimeout(_tiRetryTimer);
+        const _tiRetryGen = gen;
+        _tiRetryTimer = setTimeout(() => {
+          _tiRetryTimer = null;
+          if (_tiRetryGen === _tradeGeneration) fetchTradeIntel(_tiRetryGen, null);
+        }, _tiRetryAttempts === 1 ? 1500 : 4000);
+        return;
+      }
+    } else {
+      _tiRetryAttempts = 0;
+      if (_tiRetryTimer) { clearTimeout(_tiRetryTimer); _tiRetryTimer = null; }
+    }
 
     const valid = results.filter(r => r && r.trade_count_all > 0);
     if (valid.length === 0) {
@@ -9511,7 +9577,7 @@ window.initTradePage = function initTradePage(root = document) {
         }
       });
     } catch (e) {
-      body.innerHTML = `<div style="font-size:12px;color:var(--text-muted);">Could not load targets.</div>`;
+      window.brErrorState(body, 'Could not load targets.', () => loadTradeTargets(containerEl), { compact: true });
     }
   }
 
@@ -10222,6 +10288,10 @@ window.initTradePage = function initTradePage(root = document) {
           </div>`;
           return;
         }
+        // Any other non-200 is a failure, not an empty result: the server's
+        // error JSON has no packages, so falling through painted the false
+        // "No trade data yet" empty state for a 429/500.
+        if (!res.ok) throw new Error("Packages request failed (" + res.status + ")");
 
         const data = await res.json();
 
@@ -10333,6 +10403,9 @@ window.initTradePage = function initTradePage(root = document) {
           </div>`;
           return;
         }
+        // Same false-empty guard as fetchPackages: a non-200 error body has
+        // no options, so falling through painted "No matching returns".
+        if (!res.ok) throw new Error("Send packages request failed (" + res.status + ")");
 
         const data    = await res.json();
         const options = data.options || [];
@@ -17289,6 +17362,10 @@ document.addEventListener('DOMContentLoaded', function() {
       const awardsContent = document.getElementById('historyAwardsContent');
       const standingsContent = document.getElementById('historyStandingsContent');
       const chartContent = document.getElementById('historyChartContent');
+      // Named so the failure state can re-run the whole load: this fetch
+      // fires exactly once at page init, so a transient failure used to
+      // strand all three sections on error cards with no retry.
+      const loadHistorySections = () => {
       fetch(`/api/history/${platform}/${season}/${leagueId}/sections?history_season=${historySeason}`)
         .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
         .then(data => {
@@ -17362,10 +17439,12 @@ document.addEventListener('DOMContentLoaded', function() {
         })
         .catch(err => {
           console.error('Error loading history sections:', err);
-          if (awardsContent) window.brErrorState(awardsContent, 'Error loading season awards.', null, { compact: true });
-          if (standingsContent) window.brErrorState(standingsContent, 'Error loading standings.', null, { compact: true });
-          if (chartContent) window.brErrorState(chartContent, 'Error loading season chart.', null, { compact: true });
+          if (awardsContent) window.brErrorState(awardsContent, 'Error loading season awards.', loadHistorySections, { compact: true });
+          if (standingsContent) window.brErrorState(standingsContent, 'Error loading standings.', loadHistorySections, { compact: true });
+          if (chartContent) window.brErrorState(chartContent, 'Error loading season chart.', loadHistorySections, { compact: true });
         });
+      };
+      loadHistorySections();
     }
   }
 });
@@ -19297,7 +19376,7 @@ function initComparePage() {
     }
     Promise.all(picks.map(c => _fetchDetails(c.player_id)))
       .then(ds => { triple ? _openForTriple(ds[0], ds[1], ds[2]) : _openFor(ds[0], ds[1]); })
-      .catch(() => { if (resultEl) window.brErrorState(resultEl, 'Could not load one of the players.', null, { compact: true }); });
+      .catch(() => { if (resultEl) window.brErrorState(resultEl, 'Could not load one of the players.', () => _maybeCompare(), { compact: true }); });
   }
 
   // The optional third slot stays hidden until the user asks for it (via the
@@ -19646,15 +19725,21 @@ function initComparePage() {
         if (emptyEl) emptyEl.hidden = true;
         _renderCompareSkeleton(resultEl, qs.map(() => ({})));
       }
-      Promise.all(qs.map(q => _fetchDetails(q))).then(ds => {
-        ds.forEach((d, i) => {
-          const slot = i + 1;
-          chosen[slot] = { player_id: String(d.player_id || qs[i]), name: d.name || d.full_name || '', position: d.position || '', team: d.team || '' };
-          const inp = document.getElementById('cmpPick' + slot); if (inp) inp.value = chosen[slot].name;
-        });
-        _syncClears();
-        if (q3) { _revealThird(false); _openForTriple(ds[0], ds[1], ds[2]); } else _openFor(ds[0], ds[1]);
-      }).catch(() => { if (resultEl) window.brErrorState(resultEl, 'Could not load that comparison.', null, { compact: true }); });
+      // A deep link fires this load exactly once, so a transient failure
+      // (429, server blip) must not strand the skeleton on an error card
+      // with no way back: the retry re-runs the whole deep-link load.
+      const _loadDeepLink = () => {
+        Promise.all(qs.map(q => _fetchDetails(q))).then(ds => {
+          ds.forEach((d, i) => {
+            const slot = i + 1;
+            chosen[slot] = { player_id: String(d.player_id || qs[i]), name: d.name || d.full_name || '', position: d.position || '', team: d.team || '' };
+            const inp = document.getElementById('cmpPick' + slot); if (inp) inp.value = chosen[slot].name;
+          });
+          _syncClears();
+          if (q3) { _revealThird(false); _openForTriple(ds[0], ds[1], ds[2]); } else _openFor(ds[0], ds[1]);
+        }).catch(() => { if (resultEl) window.brErrorState(resultEl, 'Could not load that comparison.', _loadDeepLink, { compact: true }); });
+      };
+      _loadDeepLink();
     } else if (q1) {
       _fetchDetails(q1).then(d => {
         chosen[1] = { player_id: String(d.player_id || q1), name: d.name || d.full_name || '', position: d.position || '', team: d.team || '' };
@@ -20892,7 +20977,7 @@ async function _cmpFetchSideUncached(side) {
     const advP = _cmpAdvCache[advKey]
       ? Promise.resolve(_cmpAdvCache[advKey])
       : _advFetch(`/api/player-advanced-metrics/${side.pid}?season=${seasonParam}${_lp}`, 12000)
-          .then(r => r.json()).catch(() => ({}));
+          .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
     const [advData, rk] = await Promise.all([
       advP, _cmpFetchRanks(side.pid, side.season, null, null),
     ]);
@@ -20905,7 +20990,11 @@ async function _cmpFetchSideUncached(side) {
 
   let advData = _cmpAdvCache[advKey];
   if (!advData) {
-    try { advData = await _advFetch(`/api/player-advanced-metrics/${side.pid}?season=${seasonParam}${_lp}`, 12000).then(r => r.json()); } catch (_) { advData = {}; }
+    // A failed fetch must throw, not cache {}: caching the failure poisoned
+    // _cmpAdvCache/_cmpSideResultCache for the whole session, so the metrics
+    // table rendered empty forever with no way to re-fetch.
+    advData = await _advFetch(`/api/player-advanced-metrics/${side.pid}?season=${seasonParam}${_lp}`, 12000)
+      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
     _cmpAdvCache[advKey] = advData;
   }
   side.seasons = advData.available_seasons || side.seasons || [];
@@ -20914,8 +21003,9 @@ async function _cmpFetchSideUncached(side) {
   const cacheKey = side.pid + '_' + side.season;
   let weeks = _cmpWeeklyCache[cacheKey];
   if (!weeks) {
-    try { weeks = (await _advFetch(`/api/player-weekly-metrics/${side.pid}?season=${side.season}`, 12000).then(r => r.json())).weeks || []; }
-    catch (_) { weeks = []; }
+    // Same no-cache-on-failure rule as the advanced-metrics fetch above.
+    weeks = (await _advFetch(`/api/player-weekly-metrics/${side.pid}?season=${side.season}`, 12000)
+      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })).weeks || [];
     _cmpWeeklyCache[cacheKey] = weeks;
   }
   const [a, b] = _cmpRangeBounds(side, weeks);
@@ -21061,7 +21151,7 @@ function cmpRenderMetrics() {
   }).catch(() => {
     if (token !== _cmpRenderToken) return;
     metricsDiv.innerHTML = selectors() + '<div id="compareMetricsRows"></div>';
-    window.brErrorState('compareMetricsRows', 'Could not load advanced metrics.', null, { compact: true });
+    window.brErrorState('compareMetricsRows', 'Could not load advanced metrics.', () => cmpRenderMetrics(), { compact: true });
     _cmpInitWkBars();
   });
 }
@@ -21082,8 +21172,15 @@ async function cmpRenderWeekly(which) {
   const cacheKey = side.pid + '_' + season;
   let weeks = _cmpWeeklyCache[cacheKey];
   if (!weeks) {
-    try { weeks = (await fetch(`/api/player-weekly-metrics/${side.pid}?season=${season}`).then(r => r.json())).weeks || []; }
-    catch (_) { weeks = []; }
+    try {
+      weeks = (await fetch(`/api/player-weekly-metrics/${side.pid}?season=${season}`)
+        .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })).weeks || [];
+    } catch (_) {
+      // Do not cache the failure: an empty cache entry stranded the trends
+      // panel on blank rows for the rest of the session.
+      if (el.isConnected) window.brErrorState(el, 'Could not load weekly trends.', () => cmpRenderWeekly(which), { compact: true });
+      return;
+    }
     _cmpWeeklyCache[cacheKey] = weeks;
   }
   let shown = weeks;

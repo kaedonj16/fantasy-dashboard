@@ -46,9 +46,11 @@ def test_cache_name_bumped_for_blank_screen_fix():
     # unseen-answer indicators, the corrected minimize chevron); v38
     # ships the Class A shared-cache viewer fixes (client-side viewer
     # marking in teams.js); v39 ships the staged deep-link parity
-    # fixes in app.js.
+    # fixes in app.js; v40 ships the Class B stranded-UI recovery
+    # fixes (compare, trade intel panels, history sections, teams
+    # panels, modal trends).
     # Assert the current version, not a stale pin.
-    assert "br-fantasy-v39" in SW
+    assert "br-fantasy-v40" in SW
 
 
 def test_nav_timeout_always_races_even_without_cache():

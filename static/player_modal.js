@@ -6198,7 +6198,7 @@ function pmToggleWeeklyTrends(playerId) {
   var _weeksPromise = _cachedWeeks
     ? Promise.resolve({ weeks: _cachedWeeks })
     : fetch('/api/player-weekly-metrics/' + encodeURIComponent(playerId) + seasonParam)
-        .then(function(r) { return r.json(); });
+        .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
   _weeksPromise
     .then(function(d) {
       wrap._weeklyData = d.weeks || [];
@@ -6243,7 +6243,15 @@ function pmToggleWeeklyTrends(playerId) {
       pmWtRender(wrap, wrapPosition);
     })
     .catch(function() {
-      window.brErrorState(body, 'Could not load trends.', null, { compact: true });
+      // Clear the loaded guard before showing the error: it was set before
+      // the fetch, so leaving it meant closing/reopening the Trends panel
+      // returned early forever and the error card could never recover.
+      // The retry re-runs the whole toggle load (close, then reopen).
+      wrap.dataset.loaded = '';
+      window.brErrorState(body, 'Could not load trends.', function() {
+        body.style.display = 'none';
+        pmToggleWeeklyTrends(playerId);
+      }, { compact: true });
     });
 }
 
