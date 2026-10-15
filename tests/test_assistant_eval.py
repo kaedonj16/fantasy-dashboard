@@ -167,11 +167,13 @@ def test_namesake_wrong_robinson_fails():
 # -- questions.json schema sanity ------------------------------------------------------
 
 def test_questions_distribution_and_ids():
-    assert len(QUESTIONS) == 26
-    assert len(BY_ID) == 26
+    assert len(QUESTIONS) == 38
+    assert len(BY_ID) == 38
     assert Counter(q["type"] for q in QUESTIONS) == {
         "start_sit": 4, "trade_eval": 3, "buy_sell_hold": 3, "player": 3,
-        "metric": 3, "waivers": 2, "this_week": 2, "leaderboard": 6}
+        "metric": 3, "waivers": 2, "this_week": 2, "leaderboard": 6,
+        "playoffs": 3, "power_rankings": 2, "standings": 2, "matchup": 3,
+        "schedule": 2}
 
 
 def test_questions_entry_shape():
@@ -182,14 +184,23 @@ def test_questions_entry_shape():
         pack = q["evidence_pack"]
         assert pack["type"] == q["type"]
         assert set(pack["league"]) == {"platform", "league_id", "season", "league_name", "team_name"}
-        assert pack["week"] == q["context"]["week"] == 7
+        assert pack["week"] == q["context"]["week"]
         assert set(q["reference"]) == {"verdict_kind", "pick", "key_numbers", "close_call"}
         assert set(q["expect"]) >= {"no_data", "must_mention"}
 
 
-def test_both_traps_present_and_shaped():
+def test_traps_present_and_shaped():
     traps = {q["id"]: q for q in QUESTIONS if q["trap"]}
-    assert {q["trap"]["kind"] for q in traps.values()} == {"missing_stat", "namesake", "pro_gate"}
+    assert {q["trap"]["kind"] for q in traps.values()} == {
+        "missing_stat", "namesake", "pro_gate", "early_season",
+        "no_scheduled_matchup"}
+    po2 = BY_ID["po2"]
+    assert po2["trap"]["kind"] == "early_season"
+    assert po2["evidence_pack"]["odds_soft"] is True
+    mu3 = BY_ID["mu3"]
+    assert mu3["trap"]["kind"] == "no_scheduled_matchup"
+    assert mu3["evidence_pack"]["available"] is False
+    assert mu3["expect"]["no_data"] is True
     m3 = BY_ID["m3"]
     assert m3["trap"]["kind"] == "missing_stat"
     assert m3["evidence_pack"]["available"] is False
@@ -295,9 +306,48 @@ def test_buy_sell_hold_reference_matches_pack_trend():
         assert q["reference"]["pick"] == signal.upper()
 
 
+def test_league_context_references_match_packs():
+    # The P1 league-context questions (workshop section 9): every reference
+    # key number must be citable from the frozen pack, and the pack's own
+    # ordering fields must agree with each other.
+    for q in QUESTIONS:
+        if q["type"] not in ("playoffs", "power_rankings", "standings", "matchup", "schedule"):
+            continue
+        pack = q["evidence_pack"]
+        nums = pack_numbers(pack)
+        for kn in q["reference"]["key_numbers"]:
+            c = extract_numbers(str(kn))
+            assert c and c[0] in nums, f"{q['id']}: key number {kn} not in pack"
+    for q in QUESTIONS:
+        pack = q["evidence_pack"]
+        if q["type"] == "power_rankings":
+            ranks = [t["rank"] for t in pack["teams"]]
+            assert ranks == sorted(ranks) and pack["leader"]["rank"] == 1
+            assert pack["me"]["is_me"] is True
+        elif q["type"] == "standings":
+            seeds = [t["seed"] for t in pack["teams"]]
+            assert seeds == sorted(seeds)
+            top_pf = max(pack["teams"], key=lambda t: t["pf"])
+            assert pack["points_leader"]["team_name"] == top_pf["team_name"]
+        elif q["type"] == "playoffs" and pack.get("available"):
+            pcts = [t["playoff_pct"] for t in pack["field"]]
+            assert pcts == sorted(pcts, reverse=True)
+            cut = pack["field"][pack["playoff_teams"] - 1]
+            assert pack["projected_cut_wins"] == cut["avg_final_wins"]
+        elif q["type"] == "schedule":
+            idx = [t["opp_index"] for t in pack["teams"]]
+            assert idx == sorted(idx)  # easiest first, ease_rank ascending
+            assert pack["easiest"]["opp_index"] == idx[0]
+            assert pack["hardest"]["opp_index"] == idx[-1]
+        elif q["type"] == "matchup" and pack.get("available"):
+            m = pack["matchup"]
+            total = m["team_a"]["win_prob_pct"] + m["team_b"]["win_prob_pct"]
+            assert abs(total - 100.0) < 0.2
+
+
 # -- mock mode + poison ------------------------------------------------------------------
 
-def test_mock_mode_full_run_passes_26_of_26():
+def test_mock_mode_full_run_passes_38_of_38():
     for q in QUESTIONS:
         score = score_answer(q, compose_mock(q))
         assert score["passed"], f"{q['id']}: {score}"
@@ -306,7 +356,7 @@ def test_mock_mode_full_run_passes_26_of_26():
 def test_runner_mock_mode_exit_zero(capsys):
     assert runner.main(["--mode", "mock"]) == 0
     out = capsys.readouterr().out
-    assert "26/26 answers passed" in out
+    assert "38/38 answers passed" in out
 
 
 def test_runner_poison_is_detected(capsys):

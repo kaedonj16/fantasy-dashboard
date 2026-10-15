@@ -1621,6 +1621,708 @@ def build_this_week(bundle, entities=None, player_ids=None) -> tuple[dict, list[
     return pack, tools
 
 
+# -- league context: playoffs / power / standings / matchup / schedule ---------
+#
+# These five builders wire the site's league-context surfaces (workshop
+# section 9, P1): the playoff odds sim and exact scenarios, the power
+# rankings context builder, the standings machinery (finalize_team_stats via
+# build_standings_as_of_week, so median-match and division rules are the
+# site's own, never recomputed here), the matchup preview + win probability
+# model, and remaining schedule strength. Numbers are computed by those
+# engines; the packs only carry what an answer may cite.
+
+def playoff_sim_cached(ctx, platform):
+    """The app's TTL-cached playoff sim (shared with the odds API)."""
+    from app import _playoff_sim_cached as _fn
+    return _fn(ctx, platform)
+
+
+def power_rankings_context(ctx):
+    from dashboard_services.ai.context_builders import build_power_rankings_context as _fn
+    return _fn(ctx)
+
+
+def standings_as_of_week(ctx, week):
+    from app import build_standings_as_of_week as _fn
+    return _fn(ctx, week)
+
+
+def live_matchups(platform, league_id, season, week, ctx):
+    """(matchups, status_by_pid, proj_map) via the portfolio card's builder."""
+    from routes.user_pages_bp import _build_live_matchups as _fn
+    return _fn(platform, league_id, season, week, ctx)
+
+
+def projected_starter_avgs(rosters, ctx, season, current_week):
+    from routes.schedule_api_bp import _projected_starter_avgs as _fn
+    return _fn(rosters, ctx, season, current_week)
+
+
+def _f(value, nd=1):
+    """Rounded float, or None for missing/NaN (packs never carry NaN)."""
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return None
+    if f != f:  # NaN
+        return None
+    return round(f, nd)
+
+
+def _f0(value, nd=1):
+    out = _f(value, nd)
+    return 0.0 if out is None else out
+
+
+def _record_str(wins, losses, ties=0):
+    rec = f"{int(wins or 0)}-{int(losses or 0)}"
+    if ties:
+        rec += f"-{int(ties)}"
+    return rec
+
+
+def _team_names(ctx) -> dict:
+    """roster_id (str) -> team name, from the ctx roster_map."""
+    out = {}
+    for rid, name in ((ctx or {}).get("roster_map") or {}).items():
+        if name:
+            out[str(rid)] = str(name)
+    return out
+
+
+def _viewer_rid(bundle) -> str:
+    return str((bundle.get("roster") or {}).get("roster_id") or "")
+
+
+def _finalized_weeks(ctx) -> list:
+    """Ascending finalized weeks in the ctx weekly frame (duck-typed)."""
+    df = (ctx or {}).get("df_weekly")
+    if df is None:
+        return []
+    try:
+        if getattr(df, "empty", True):
+            return []
+        fin = df[df["finalized"] == True]
+        return sorted({int(w) for w in fin["week"].tolist()})
+    except Exception:
+        return []
+
+
+def build_playoffs(bundle, entities=None, player_ids=None) -> tuple[dict, list[str]]:
+    """Playoff path: Monte Carlo odds (the app's cached sim) plus, inside
+    the end-of-season window, the exact clinch/elimination scenarios.
+
+    Early in the season the odds are soft (workshop section 4: unstable
+    before the stretch): the pack flags odds_soft and carries the
+    wins-needed math (the projected cut line) so the answer can lead with
+    that instead of false precision.
+    """
+    pack = _base_pack("playoffs", bundle)
+    tools: list[str] = []
+    ctx = bundle.get("ctx") or {}
+    if not ctx:
+        pack["available"] = False
+        pack["missing"] = "no league context loaded"
+        return pack, tools
+    try:
+        odds = playoff_sim_cached(ctx, bundle.get("platform") or "sleeper") or []
+        tools.append("simulate_playoff_odds.simulate_playoff_odds")
+    except Exception:
+        logger.debug("[assistant] playoff sim failed", exc_info=True)
+        odds = []
+    if not odds:
+        pack["available"] = False
+        pack["missing"] = "playoff odds are not available for this league yet"
+        return pack, tools
+    settings = ctx.get("league_settings") or {}
+    try:
+        playoff_teams = int(settings.get("playoff_teams") or 6)
+    except (TypeError, ValueError):
+        playoff_teams = 6
+    try:
+        playoff_week_start = int(settings.get("playoff_week_start") or 15)
+    except (TypeError, ValueError):
+        playoff_week_start = 15
+    current_week = int(bundle.get("week") or ctx.get("current_week") or 0)
+    names = _team_names(ctx)
+    rows = []
+    for row in odds:
+        if not isinstance(row, dict) or row.get("roster_id") is None:
+            continue
+        rid = str(row["roster_id"])
+        rows.append({
+            "roster_id": rid,
+            "team_name": names.get(rid) or row.get("team_name") or f"Roster {rid}",
+            "wins": int(row.get("wins") or 0), "losses": int(row.get("losses") or 0),
+            "ties": int(row.get("ties") or 0),
+            "record": _record_str(row.get("wins"), row.get("losses"), row.get("ties")),
+            "playoff_pct": _f0(row.get("playoff_pct")),
+            "bye_pct": _f0(row.get("bye_pct")),
+            "avg_final_wins": _f(row.get("avg_final_wins")),
+        })
+    rows.sort(key=lambda r: r["playoff_pct"], reverse=True)
+    pack["field"] = rows
+    pack["playoff_teams"] = playoff_teams
+    pack["playoff_week_start"] = playoff_week_start
+    pack["current_week"] = current_week
+    pack["is_complete"] = bool(odds[0].get("is_complete")) if odds else False
+    weeks_remaining = None
+    try:
+        from data_building.simulate_playoff_odds import remaining_regular_season_weeks
+        weeks_remaining = int(remaining_regular_season_weeks(
+            odds, playoff_week_start, current_week=current_week))
+    except Exception:
+        played = max((r["wins"] + r["losses"] + r["ties"] for r in rows), default=0)
+        weeks_remaining = max(0, playoff_week_start - 1 - played)
+    pack["weeks_remaining"] = weeks_remaining
+    cut = rows[playoff_teams - 1] if len(rows) >= playoff_teams else None
+    first_out = rows[playoff_teams] if len(rows) > playoff_teams else None
+    cut_line = {}
+    if cut:
+        cut_line["last_in"] = {"team_name": cut["team_name"],
+                               "playoff_pct": cut["playoff_pct"],
+                               "avg_final_wins": cut["avg_final_wins"]}
+    if first_out:
+        cut_line["first_out"] = {"team_name": first_out["team_name"],
+                                 "playoff_pct": first_out["playoff_pct"],
+                                 "avg_final_wins": first_out["avg_final_wins"]}
+    pack["cut_line"] = cut_line
+    projected_cut_wins = cut["avg_final_wins"] if cut else None
+    pack["projected_cut_wins"] = projected_cut_wins
+    me = next((r for r in rows if r["roster_id"] == _viewer_rid(bundle)), None)
+    if me is not None:
+        me = dict(me)
+        if projected_cut_wins is not None:
+            me["wins_still_needed"] = round(max(0.0, projected_cut_wins - me["wins"]), 1)
+        pack["me"] = me
+    # Soft-odds window: with 8+ regular-season weeks left the sim is mostly
+    # projection noise, so the answer must say so and lean on wins math.
+    pack["odds_soft"] = bool(weeks_remaining is not None and weeks_remaining >= 8)
+    pack["margin"] = {"thin": bool(pack["odds_soft"] or (me and 20.0 <= me["playoff_pct"] <= 80.0))}
+    # Exact scenarios (clinch / elimination / magic numbers), the same
+    # assembly /api/playoff-scenarios serves. Only surfaces inside its
+    # end-of-season window (compute_scenarios returns show=False earlier).
+    pack["scenario"] = None
+    try:
+        from data_building.playoff_scenarios import compute_scenarios, scenario_summary
+        from data_building.simulate_playoff_odds import _n_byes, build_sim_state
+        state = build_sim_state(ctx, bundle.get("platform") or "sleeper")
+        if state:
+            divisions = int(settings.get("divisions") or 0) >= 2
+            division_map: dict = {}
+            if divisions:
+                for r in ctx.get("rosters") or []:
+                    if isinstance(r, dict) and r.get("roster_id") is not None:
+                        try:
+                            div = int((r.get("settings") or {}).get("division") or 0)
+                        except (TypeError, ValueError):
+                            div = 0
+                        if div:
+                            division_map[int(r["roster_id"])] = div
+            sim_teams = state.get("teams") or []
+            scen_teams = [
+                {"roster_id": t["roster_id"], "wins": t.get("wins", 0),
+                 "ties": t.get("ties", 0), "pf": t.get("pf", 0.0),
+                 "division": division_map.get(int(t["roster_id"]))}
+                for t in sim_teams
+            ]
+            scen = compute_scenarios(
+                scen_teams, state.get("matchups") or {},
+                int(state.get("playoff_teams") or playoff_teams),
+                n_byes=_n_byes(int(state.get("playoff_teams") or playoff_teams)),
+                divisions=divisions,
+            )
+            tools.append("playoff_scenarios.compute_scenarios")
+            if scen.get("show"):
+                name_by_rid = {int(t["roster_id"]): t.get("name") for t in sim_teams}
+                entry = None
+                for rid_key, e in (scen.get("teams") or {}).items():
+                    if str(rid_key) == _viewer_rid(bundle):
+                        entry = e
+                        break
+                if entry:
+                    scenario = {
+                        "status": entry.get("status"),
+                        "summary": scenario_summary(entry),
+                        "controls_destiny": bool(entry.get("controls_destiny")),
+                        "wins_to_clinch": entry.get("wins_to_clinch"),
+                        "clinch_if_win_next": bool(entry.get("clinch_if_win_next")),
+                        "out_if_lose_next": bool(entry.get("out_if_lose_next")),
+                        "needs_help": bool(entry.get("needs_help")),
+                        "best_seed": entry.get("best_seed"),
+                        "worst_seed": entry.get("worst_seed"),
+                    }
+                    nxt = entry.get("next_game") or {}
+                    if nxt.get("opp") is not None:
+                        scenario["next_opponent"] = name_by_rid.get(int(nxt["opp"]))
+                    pack["scenario"] = scenario
+    except Exception:
+        logger.debug("[assistant] playoff scenarios failed", exc_info=True)
+    return pack, tools
+
+
+def build_power_rankings(bundle, entities=None, player_ids=None) -> tuple[dict, list[str]]:
+    """Power rankings from build_power_rankings_context (the standings
+    page's own builder; PowerScore from blended_team_scores). Movement is
+    the standings page's method: last finalized week's ranking recomputed
+    from the week-capped ctx and diffed by roster id."""
+    pack = _base_pack("power_rankings", bundle)
+    tools: list[str] = []
+    ctx = bundle.get("ctx") or {}
+    if not ctx:
+        pack["available"] = False
+        pack["missing"] = "no league context loaded"
+        return pack, tools
+    try:
+        pr = power_rankings_context(ctx) or {}
+        tools.append("ai.context_builders.build_power_rankings_context")
+    except Exception:
+        logger.debug("[assistant] power rankings failed", exc_info=True)
+        pr = {}
+    teams = [t for t in (pr.get("teams") or []) if isinstance(t, dict)]
+    if not teams:
+        pack["available"] = False
+        pack["missing"] = "power rankings are not available for this league yet"
+        return pack, tools
+
+    def _row(t, rank):
+        return {
+            "rank": rank,
+            "roster_id": str(t.get("roster_id")),
+            "team_name": t.get("team_name") or f"Roster {t.get('roster_id')}",
+            "power_score": _f(t.get("power_score")),
+            "wins": int(t.get("wins") or 0), "losses": int(t.get("losses") or 0),
+            "record": _record_str(t.get("wins"), t.get("losses")),
+            "ppg": _f(t.get("avg")),
+            "all_play_pct": _f(t.get("all_play_pct"), 3),
+            "playoff_pct": _f(t.get("playoff_pct")),
+            "momentum_label": t.get("momentum_label"),
+            "is_me": str(t.get("roster_id")) == _viewer_rid(bundle),
+        }
+
+    ordered = sorted(teams, key=lambda t: (t.get("rank") is None, t.get("rank") or 0,
+                                           -(t.get("power_score") or 0)))
+    rows = [_row(t, int(t.get("rank") or (i + 1))) for i, t in enumerate(ordered)]
+    rows.sort(key=lambda r: r["rank"])
+    # Week-over-week movement, best effort (same method as the standings page).
+    try:
+        weeks = _finalized_weeks(ctx)
+        if len(weeks) >= 2:
+            capped = standings_as_of_week(ctx, weeks[-2])
+            prev = power_rankings_context(capped) or {}
+            prev_ranks = {str(t.get("roster_id")): int(t.get("rank") or (i + 1))
+                          for i, t in enumerate(prev.get("teams") or [])
+                          if isinstance(t, dict) and t.get("roster_id") is not None}
+            if prev_ranks:
+                tools.append("app.build_standings_as_of_week")
+                for r in rows:
+                    if r["roster_id"] in prev_ranks:
+                        r["rank_change"] = prev_ranks[r["roster_id"]] - r["rank"]
+    except Exception:
+        logger.debug("[assistant] power movement failed", exc_info=True)
+    pack["teams"] = rows
+    pack["leader"] = rows[0] if rows else None
+    pack["me"] = next((r for r in rows if r["is_me"]), None)
+    pack["season_phase"] = pr.get("season_phase")
+    return pack, tools
+
+
+def build_standings(bundle, entities=None, player_ids=None) -> tuple[dict, list[str]]:
+    """Standings from the site's own machinery: team_stats recomputed
+    through the last finalized week by build_standings_as_of_week (which
+    runs finalize_team_stats with the league's median-match setting), and
+    seeds from build_standings_map (division winners first, then wild
+    cards). Records are never recomputed in the assistant."""
+    pack = _base_pack("standings", bundle)
+    tools: list[str] = []
+    ctx = bundle.get("ctx") or {}
+    if not ctx:
+        pack["available"] = False
+        pack["missing"] = "no league context loaded"
+        return pack, tools
+    team_stats = None
+    weeks = _finalized_weeks(ctx)
+    if weeks:
+        try:
+            capped = standings_as_of_week(ctx, weeks[-1]) or {}
+            team_stats = capped.get("team_stats")
+            if team_stats is not None:
+                tools.append("app.build_standings_as_of_week")
+        except Exception:
+            logger.debug("[assistant] standings cap failed", exc_info=True)
+            team_stats = None
+    if team_stats is None:
+        team_stats = ctx.get("team_stats")
+    if team_stats is None:
+        pack["available"] = False
+        pack["missing"] = "standings are not available for this league yet"
+        return pack, tools
+    tools.append("service.finalize_team_stats")
+    roster_map = ctx.get("roster_map") or {}
+    owner_to_rid = {}
+    for rid, owner in roster_map.items():
+        if owner is not None:
+            owner_to_rid[str(owner)] = rid
+            owner_to_rid[str(owner).strip()] = rid
+    names = _team_names(ctx)
+    div_by_rid: dict = {}
+    div_records = None
+    try:
+        from utils.standings import division_records_for_ctx, roster_division_map
+        div_by_rid = roster_division_map(
+            ctx.get("rosters") or [],
+            settings=ctx.get("league_settings") or (ctx.get("league") or {}).get("settings") or {},
+        ) or {}
+        div_records = division_records_for_ctx(ctx)
+    except Exception:
+        logger.debug("[assistant] standings divisions failed", exc_info=True)
+        div_by_rid, div_records = {}, None
+    seeds: dict = {}
+    try:
+        from dashboard_services.service import build_standings_map
+        seeds = build_standings_map(
+            team_stats, roster_map,
+            division_by_rid=div_by_rid or None,
+            division_records_by_rid=div_records,
+        ) or {}
+        if seeds:
+            tools.append("service.build_standings_map")
+    except Exception:
+        logger.debug("[assistant] standings seeds failed", exc_info=True)
+        seeds = {}
+    raw_rows = []
+    if hasattr(team_stats, "iterrows"):
+        raw_rows = [dict(r) for _, r in team_stats.iterrows()]
+    elif isinstance(team_stats, (list, tuple)):
+        raw_rows = [dict(r) for r in team_stats if isinstance(r, dict)]
+    rows = []
+    for row in raw_rows:
+        owner = row.get("owner")
+        rid = owner_to_rid.get(str(owner)) if owner is not None else None
+        if rid is None and owner is not None:
+            rid = owner_to_rid.get(str(owner).strip())
+        rid_s = str(rid) if rid is not None else None
+        wins, losses, ties = (int(_f0(row.get("Wins"), 0)), int(_f0(row.get("Losses"), 0)),
+                              int(_f0(row.get("Ties"), 0)))
+        div_rec = None
+        if div_records and rid_s is not None:
+            rec = div_records.get(int(rid)) if str(rid).isdigit() else div_records.get(rid)
+            if rec:
+                div_rec = _record_str(rec[0], rec[1], rec[2] if len(rec) > 2 else 0)
+        rows.append({
+            "seed": None,
+            "roster_id": rid_s,
+            "team_name": (names.get(rid_s) if rid_s else None) or (str(owner) if owner else "Team"),
+            "wins": wins, "losses": losses, "ties": ties,
+            "record": _record_str(wins, losses, ties),
+            "pf": _f0(row.get("PF")), "pa": _f0(row.get("PA")),
+            "ppg": _f(row.get("AVG")),
+            "streak": (str(row.get("Streak")) if row.get("Streak") else None),
+            "division": (div_by_rid.get(int(rid)) if rid is not None and str(rid).isdigit()
+                         else div_by_rid.get(rid)) if div_by_rid else None,
+            "division_record": div_rec,
+            "is_me": bool(rid_s and rid_s == _viewer_rid(bundle)),
+        })
+    if not rows:
+        pack["available"] = False
+        pack["missing"] = "standings are not available for this league yet"
+        return pack, tools
+    for r in rows:
+        seed = None
+        if r["roster_id"] is not None:
+            seed = seeds.get(int(r["roster_id"])) if r["roster_id"].isdigit() else seeds.get(r["roster_id"])
+            if seed is None:
+                seed = seeds.get(r["roster_id"])
+        r["seed"] = int(seed) if seed is not None else None
+    if all(r["seed"] is not None for r in rows):
+        rows.sort(key=lambda r: r["seed"])
+    else:
+        rows.sort(key=lambda r: (-r["wins"], -r["pf"]))
+        for i, r in enumerate(rows):
+            r["seed"] = i + 1
+    pack["teams"] = rows
+    pack["me"] = next((r for r in rows if r["is_me"]), None)
+    leader_pf = max(rows, key=lambda r: r["pf"])
+    pack["points_leader"] = {"team_name": leader_pf["team_name"], "pf": leader_pf["pf"]}
+    pack["has_divisions"] = len({r["division"] for r in rows if r["division"]}) >= 2
+    pack["division_leaders"] = []
+    if pack["has_divisions"]:
+        for div in sorted({r["division"] for r in rows if r["division"]}):
+            top = next(r for r in rows if r["division"] == div)
+            pack["division_leaders"].append({
+                "division": div, "team_name": top["team_name"], "record": top["record"],
+                "pf": top["pf"],
+            })
+    return pack, tools
+
+
+def build_matchup(bundle, entities=None, player_ids=None) -> tuple[dict, list[str]]:
+    """Head-to-head for one week: build_matchup_preview pairings, live
+    totals and compute_win_prob, assembled exactly like the portfolio
+    matchup card (_build_live_matchups). Any pairing in the league can be
+    targeted with team_names; the default target is the caller's game."""
+    pack = _base_pack("matchup", bundle)
+    tools: list[str] = []
+    ctx = bundle.get("ctx") or {}
+    if not ctx:
+        pack["available"] = False
+        pack["missing"] = "no league context loaded"
+        return pack, tools
+    entities = entities or {}
+    try:
+        week = int(entities.get("week") or bundle.get("week") or 0)
+    except (TypeError, ValueError):
+        week = int(bundle.get("week") or 0)
+    pack["week"] = week
+    league_id = str(ctx.get("resolved_league_id") or bundle.get("league_id") or "")
+    try:
+        matchups, status_by_pid, proj_map = live_matchups(
+            bundle.get("platform") or "sleeper", league_id,
+            bundle.get("season"), week, ctx)
+        tools.append("matchups.build_matchup_preview")
+    except Exception:
+        logger.debug("[assistant] matchup preview failed", exc_info=True)
+        matchups, status_by_pid, proj_map = [], {}, {}
+    if not matchups:
+        pack["available"] = False
+        pack["missing"] = f"no scheduled matchup for Week {week}"
+        pack["nearest"] = []
+        return pack, tools
+    try:
+        from dashboard_services.matchups import (
+            _proj_value_for_pid, compute_win_prob, team_live_totals)
+    except Exception:
+        logger.debug("[assistant] matchup model import failed", exc_info=True)
+        pack["available"] = False
+        pack["missing"] = "matchup data is not available right now"
+        return pack, tools
+
+    def _side(team, win_pct):
+        actual, proj = team_live_totals(team, status_by_pid, proj_map)
+        starters = []
+        for p in (team.get("starters") or []):
+            if not p:
+                continue
+            try:
+                pproj = _proj_value_for_pid(proj_map, p.get("pid"), pos=p.get("pos") or "")
+            except Exception:
+                pproj = 0.0
+            starters.append({"name": p.get("name"), "position": p.get("pos"),
+                             "projection": _f(pproj)})
+        starters.sort(key=lambda s: -(s["projection"] or 0))
+        return {
+            "roster_id": str(team.get("roster_id")),
+            "team_name": team.get("name") or f"Roster {team.get('roster_id')}",
+            "record": team.get("record"),
+            "current_points": _f(actual),
+            "projected": _f(proj),
+            "win_prob_pct": win_pct,
+            "top_starters": starters[:3],
+        }
+
+    def _pair(m):
+        left, right = m.get("left") or {}, m.get("right") or {}
+        wp = None
+        try:
+            raw = compute_win_prob(left, right, status_by_pid, proj_map)
+            if raw is not None:
+                wp = round(float(raw) * 100.0, 1)
+        except Exception:
+            wp = None
+        a = _side(left, wp)
+        b = _side(right, (round(100.0 - wp, 1) if wp is not None else None))
+        return a, b
+
+    pairs = []
+    for m in matchups:
+        if isinstance(m, dict):
+            pairs.append((m, *_pair(m)))
+    tools.append("matchups.compute_win_prob")
+    pack["board"] = [
+        {"team_a": a["team_name"], "team_b": b["team_name"],
+         "a_projected": a["projected"], "b_projected": b["projected"],
+         "a_win_prob_pct": a["win_prob_pct"]}
+        for _m, a, b in pairs
+    ]
+    wanted = [str(t).strip().lower() for t in (entities.get("team_names") or []) if str(t).strip()]
+    hint = str(entities.get("other_team_hint") or "").strip().lower()
+    if hint and hint not in wanted:
+        wanted.append(hint)
+
+    def _matches(team_name, want):
+        n = str(team_name or "").lower()
+        return bool(n) and (want in n or n in want)
+
+    target = None
+    if len(wanted) >= 2:
+        for _m, a, b in pairs:
+            if ((_matches(a["team_name"], wanted[0]) and _matches(b["team_name"], wanted[1]))
+                    or (_matches(a["team_name"], wanted[1]) and _matches(b["team_name"], wanted[0]))):
+                target = (a, b)
+                break
+    if target is None and wanted:
+        for _m, a, b in pairs:
+            if _matches(a["team_name"], wanted[0]) or _matches(b["team_name"], wanted[0]):
+                target = (a, b)
+                break
+    viewer = _viewer_rid(bundle)
+    is_mine = False
+    if target is None:
+        for _m, a, b in pairs:
+            if viewer and viewer in (a["roster_id"], b["roster_id"]):
+                target = (a, b) if a["roster_id"] == viewer else (b, a)
+                is_mine = True
+                break
+    if target is None and pairs:
+        target = (pairs[0][1], pairs[0][2])
+    elif target is not None and viewer and viewer in (target[0]["roster_id"], target[1]["roster_id"]):
+        is_mine = True
+        if target[1]["roster_id"] == viewer:
+            target = (target[1], target[0])
+    a, b = target
+    pack["matchup"] = {"week": week, "is_mine": is_mine, "team_a": a, "team_b": b}
+    wp = a.get("win_prob_pct")
+    pack["margin"] = {"thin": bool(wp is not None and 45.0 <= wp <= 55.0)}
+    return pack, tools
+
+
+def build_schedule(bundle, entities=None, player_ids=None) -> tuple[dict, list[str]]:
+    """Remaining schedule strength from service.remaining_schedule_strength
+    (the Schedule Assistant / schedule-rankings machinery): opponent
+    strength indexed to 100 = league average, higher is a tougher slate.
+    The playoff stretch re-runs the same function windowed to the playoff
+    weeks, so both numbers come from one definition."""
+    pack = _base_pack("schedule", bundle)
+    tools: list[str] = []
+    ctx = bundle.get("ctx") or {}
+    if not ctx:
+        pack["available"] = False
+        pack["missing"] = "no league context loaded"
+        return pack, tools
+    rosters = [r for r in (ctx.get("rosters") or []) if isinstance(r, dict)]
+    if not rosters:
+        pack["available"] = False
+        pack["missing"] = "schedule data is not available for this league yet"
+        return pack, tools
+    try:
+        from dashboard_services.service import (
+            regular_season_length, remaining_schedule_strength)
+    except Exception:
+        pack["available"] = False
+        pack["missing"] = "schedule data is not available for this league yet"
+        return pack, tools
+    settings = ctx.get("league_settings") or (ctx.get("league") or {}).get("settings") or {}
+    try:
+        reg_weeks = int(regular_season_length(settings))
+    except Exception:
+        reg_weeks = 14
+    try:
+        playoff_week_start = int(settings.get("playoff_week_start") or reg_weeks + 1)
+    except (TypeError, ValueError):
+        playoff_week_start = reg_weeks + 1
+    stretch_end = min(playoff_week_start + 2, 18)
+    current_week = int(bundle.get("week") or ctx.get("current_week") or 0)
+    matchups_by_week = ctx.get("matchups_by_week") or {}
+    if not matchups_by_week:
+        try:
+            from dashboard_services.platform_api import get_matchups as _pf_matchups
+            matchups_by_week = {}
+            for w in range(1, max(reg_weeks, stretch_end) + 1):
+                try:
+                    matchups_by_week[w] = _pf_matchups(
+                        bundle.get("platform") or "sleeper", bundle.get("league_id"),
+                        w, bundle.get("season")) or []
+                except Exception:
+                    matchups_by_week[w] = []
+        except Exception:
+            matchups_by_week = {}
+    names = _team_names(ctx)
+    proj = None
+    try:
+        proj = projected_starter_avgs(rosters, ctx, bundle.get("season"), current_week) or None
+    except Exception:
+        proj = None
+
+    def _rows(current, reg):
+        results, source = remaining_schedule_strength(
+            rosters, matchups_by_week, current_week=current,
+            regular_season_weeks=reg, roster_names=names,
+            projected_avg_by_rid=proj)
+        out = []
+        for r in results or []:
+            if not isinstance(r, dict):
+                continue
+            out.append({
+                "roster_id": str(r.get("roster_id")),
+                "team_name": r.get("team_name") or names.get(str(r.get("roster_id"))) or "",
+                "opp_index": _f(r.get("avg_opp_points")),
+                "games_remaining": int(r.get("games_remaining") or 0),
+                "my_avg_points": _f(r.get("my_avg_points")),
+                "is_me": str(r.get("roster_id")) == _viewer_rid(bundle),
+            })
+        out.sort(key=lambda r: (r["opp_index"] is None, r["opp_index"]))
+        for i, r in enumerate(out):
+            r["ease_rank"] = i + 1  # 1 = easiest remaining slate
+        return out, source
+
+    try:
+        rows, source = _rows(current_week, reg_weeks)
+        tools.append("service.remaining_schedule_strength")
+    except Exception:
+        logger.debug("[assistant] schedule strength failed", exc_info=True)
+        rows, source = [], None
+    if not rows:
+        pack["available"] = False
+        pack["missing"] = "schedule data is not available for this league yet"
+        return pack, tools
+    pack["teams"] = rows
+    pack["source"] = source
+    pack["easiest"] = rows[0]
+    pack["hardest"] = rows[-1]
+    pack["me"] = next((r for r in rows if r["is_me"]), None)
+    pack["weeks_remaining"] = max((r["games_remaining"] for r in rows), default=0)
+    # Playoff stretch: the same machinery windowed to the playoff weeks.
+    pack["playoff_stretch"] = None
+    if playoff_week_start > current_week:
+        try:
+            srows, _src = _rows(playoff_week_start - 1, stretch_end)
+            sme = next((r for r in srows if r["is_me"]), None)
+            if sme and sme["games_remaining"] > 0:
+                by_rid = {r["roster_id"]: r for r in srows}
+                opponents = []
+                viewer = _viewer_rid(bundle)
+                for w in range(playoff_week_start, stretch_end + 1):
+                    pair = {}
+                    for m in (matchups_by_week.get(w) or []):
+                        if not isinstance(m, dict):
+                            continue
+                        mid = m.get("matchup_id")
+                        rid = str(m.get("roster_id"))
+                        if mid is not None and rid:
+                            pair.setdefault(mid, []).append(rid)
+                    for rids in pair.values():
+                        if viewer in rids and len(rids) == 2:
+                            opp = next(x for x in rids if x != viewer)
+                            opponents.append({
+                                "week": w,
+                                "opponent": names.get(opp) or f"Roster {opp}",
+                                "opp_index": (by_rid.get(opp) or {}).get("opp_index"),
+                            })
+                pack["playoff_stretch"] = {
+                    "weeks": [playoff_week_start, stretch_end],
+                    "me": {"opp_index": sme["opp_index"], "ease_rank": sme["ease_rank"],
+                           "opponents": opponents},
+                    "easiest": {"team_name": srows[0]["team_name"],
+                                "opp_index": srows[0]["opp_index"]},
+                    "hardest": {"team_name": srows[-1]["team_name"],
+                                "opp_index": srows[-1]["opp_index"]},
+                }
+        except Exception:
+            logger.debug("[assistant] playoff stretch failed", exc_info=True)
+            pack["playoff_stretch"] = None
+    return pack, tools
+
+
 BUILDERS = {
     "start_sit": build_start_sit,
     "trade_eval": build_trade_eval,
@@ -1630,4 +2332,9 @@ BUILDERS = {
     "leaderboard": build_leaderboard,
     "waivers": build_waivers,
     "this_week": build_this_week,
+    "playoffs": build_playoffs,
+    "power_rankings": build_power_rankings,
+    "standings": build_standings,
+    "matchup": build_matchup,
+    "schedule": build_schedule,
 }

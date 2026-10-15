@@ -81,7 +81,11 @@ SYSTEM = (
     "never use a number from memory. Receipts: 2 to 4 entries, each a label and the pack value as a string. "
     "Cite the key numbers: for a trade, both side totals and the fairness gap; for a metric, the leader "
     "and any of the user's own players on the board; for the weekly digest, each action's key number; "
-    "for waivers, the top candidate's value and the user's weakest starter at that position. "
+    "for waivers, the top candidate's value and the user's weakest starter at that position; "
+    "for playoffs, the odds and the wins still needed; for standings and power rankings, the user's "
+    "own seed or rank and the leader; for a matchup, the win probability and both projected totals; "
+    "for schedule, the user's opponent strength index and the easiest team's. "
+    "If the pack flags odds_soft, say the odds are soft this early and lead with the wins math. "
     "If fixed_verdict is present in the payload, the verdict field must be exactly that value; "
     "it is set by the site's trade fairness band and is not yours to change. "
     "Caveat only when the pack marks margin.thin true or data stale, otherwise null. "
@@ -253,6 +257,9 @@ def _resolve_act_link(intent: str, pack: dict) -> dict | None:
         link = _start_sit_link(pack)
         if link:
             return link
+    league_link = _league_link(intent, pack)
+    if league_link:
+        return league_link
     static = _ACT_LINKS.get(intent)
     return dict(static) if static else None
 
@@ -292,6 +299,29 @@ def _mentions(intent: str, pack: dict) -> list[dict]:
         for p in pack.get("cleared_drops") or []:
             _add(p)
     return found[:8]
+
+# League-context intents link at the league surface for the subject: the
+# playoff odds tab lives on the league dashboard, power rankings on the
+# standings page, matchups on the weekly hub, schedule strength on the
+# Schedule Assistant. The href is built from the pack's league fields.
+_LEAGUE_LINKS = {
+    "playoffs": ("dashboard", "View Playoff Odds"),
+    "power_rankings": ("standings", "View Power Rankings"),
+    "standings": ("standings", "View standings"),
+    "matchup": ("weekly", "View Matchups"),
+    "schedule": ("schedule", "Open in Schedule Assistant"),
+}
+
+
+def _league_link(intent: str, pack: dict) -> dict | None:
+    spec = _LEAGUE_LINKS.get(intent or "")
+    league = (pack or {}).get("league") or {}
+    if not spec or not league.get("platform") or not league.get("season") or not league.get("league_id"):
+        return None
+    page, label = spec
+    return {"href": f"/{league['platform']}/{league['season']}/{league['league_id']}/{page}",
+            "label": label}
+
 
 # CTA labels for this-week action rows, keyed by the pack action's tag; the
 # digest vocabulary (lineup / waiver / trade) matches the site's own rows.
@@ -550,6 +580,59 @@ def _required_receipts(intent: str, pack: dict) -> list[dict]:
         player = pack.get("player") or {}
         if player.get("value") is not None and len(rows) < 4:
             rows.append({"label": "Value", "value": _fmt_num(player["value"])})
+    elif intent == "playoffs":
+        me = pack.get("me") or {}
+        scen = pack.get("scenario") or {}
+        if me.get("playoff_pct") is not None:
+            rows.append({"label": "Your playoff odds (%)", "value": _fmt_num(me["playoff_pct"])})
+        if scen.get("wins_to_clinch") is not None:
+            rows.append({"label": "Wins to clinch", "value": _fmt_num(scen["wins_to_clinch"])})
+        elif me.get("wins_still_needed") is not None:
+            rows.append({"label": "Wins still needed (projected)", "value": _fmt_num(me["wins_still_needed"])})
+        if pack.get("weeks_remaining") is not None:
+            rows.append({"label": "Weeks remaining", "value": _fmt_num(pack["weeks_remaining"])})
+    elif intent == "power_rankings":
+        me = pack.get("me") or {}
+        leader = pack.get("leader") or {}
+        if me.get("rank") is not None:
+            rows.append({"label": "Your power rank", "value": _fmt_num(me["rank"])})
+        if me.get("power_score") is not None:
+            rows.append({"label": "Your power score", "value": _fmt_num(me["power_score"])})
+        if leader.get("power_score") is not None and leader.get("roster_id") != me.get("roster_id"):
+            rows.append({"label": f"{leader.get('team_name')} power score",
+                         "value": _fmt_num(leader["power_score"])})
+    elif intent == "standings":
+        me = pack.get("me") or {}
+        leader = pack.get("points_leader") or {}
+        if me.get("seed") is not None:
+            rows.append({"label": "Your seed", "value": _fmt_num(me["seed"])})
+        if me.get("pf") is not None:
+            rows.append({"label": "Your points for", "value": _fmt_num(me["pf"])})
+        if leader.get("pf") is not None and leader.get("team_name") != me.get("team_name"):
+            rows.append({"label": f"{leader.get('team_name')} points for",
+                         "value": _fmt_num(leader["pf"])})
+    elif intent == "matchup":
+        m = pack.get("matchup") or {}
+        a, b = m.get("team_a") or {}, m.get("team_b") or {}
+        if a.get("win_prob_pct") is not None:
+            rows.append({"label": f"{a.get('team_name')} win probability (%)",
+                         "value": _fmt_num(a["win_prob_pct"])})
+        if a.get("projected") is not None:
+            rows.append({"label": f"{a.get('team_name')} projected", "value": _fmt_num(a["projected"])})
+        if b.get("projected") is not None:
+            rows.append({"label": f"{b.get('team_name')} projected", "value": _fmt_num(b["projected"])})
+    elif intent == "schedule":
+        me = pack.get("me") or {}
+        easiest = pack.get("easiest") or {}
+        stretch = (pack.get("playoff_stretch") or {}).get("me") or {}
+        if stretch.get("opp_index") is not None:
+            rows.append({"label": "Your playoff stretch opponent index",
+                         "value": _fmt_num(stretch["opp_index"])})
+        if me.get("opp_index") is not None:
+            rows.append({"label": "Your remaining opponent index", "value": _fmt_num(me["opp_index"])})
+        if easiest.get("opp_index") is not None and easiest.get("roster_id") != me.get("roster_id"):
+            rows.append({"label": f"{easiest.get('team_name')} opponent index",
+                         "value": _fmt_num(easiest["opp_index"])})
     return rows[:4]
 
 
@@ -676,6 +759,16 @@ _FOLLOWUP_TEMPLATES = {
     "waivers": ["Who else is available?", "What should I do with my team this week?"],
     "this_week": ["Who should I start at FLEX?", "Who is the best waiver add?",
                   "Any buy-lows I should target?"],
+    "playoffs": ["What are my odds of a first-round bye?", "Who is on the bubble?",
+                 "How hard is my remaining schedule?"],
+    "power_rankings": ["What do the standings look like?", "What are my playoff odds?",
+                       "Break down my matchup"],
+    "standings": ["Where am I in the power rankings?", "Who has the most points for?",
+                  "What are my playoff odds?"],
+    "matchup": ["Who should I start at FLEX?", "How hard is my remaining schedule?",
+                "What are my playoff odds?"],
+    "schedule": ["What are my playoff odds?", "Break down my matchup",
+                 "Who has the hardest remaining schedule?"],
 }
 
 
@@ -803,9 +896,10 @@ def no_data_answer(pack: dict) -> dict:
     text = f"That is not available: {missing}."
     if nearest:
         text += f" The nearest tracked options are {', '.join(str(n) for n in nearest[:3])}. Ask about one of those and I can pull the live numbers."
+    link = _league_link((pack or {}).get("type"), pack) or dict(_ACT_LINKS["metric"])
     return {"verdict": None, "text": text, "receipts": [], "caveat": None,
             "followups": [f"What is {n}?" for n in nearest[:2]],
-            "act_link": dict(_ACT_LINKS["metric"]), "actions": [], "mentions": []}
+            "act_link": link, "actions": [], "mentions": []}
 
 
 def gated_answer(pack: dict) -> dict:

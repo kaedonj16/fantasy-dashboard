@@ -28,6 +28,8 @@ _INTENT_LABELS = {
     "start_sit": "start/sit call", "trade_eval": "trade call", "buy_sell_hold": "buy/sell/hold call",
     "player": "player answer", "metric": "metric answer", "leaderboard": "leaderboard answer", "waivers": "waiver answer",
     "this_week": "this-week answer", "clarify": "answer", "out_of_scope": "answer", "remember": "answer",
+    "playoffs": "playoff answer", "power_rankings": "power rankings answer",
+    "standings": "standings answer", "matchup": "matchup answer", "schedule": "schedule answer",
 }
 
 
