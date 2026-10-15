@@ -2300,7 +2300,9 @@ function wvInitGuestsFromUrl() {{
     input.addEventListener('blur', function() {{
       setTimeout(function() {{
         var box = document.getElementById('wvGuestResults');
-        if (box) box.hidden = true;
+        // Tabbing into the results moves focus inside the box; hiding it
+        // then would strand a keyboard user mid-pick.
+        if (box && !box.contains(document.activeElement)) box.hidden = true;
       }}, 180);
     }});
   }}
@@ -2321,7 +2323,7 @@ function wvGuestSearch(q) {{
         return;
       }}
       box.innerHTML = players.map(function(p) {{
-        return '<button type="button" class="wv-guest-result" onmousedown="wvGuestPick(this)"'
+        return '<button type="button" class="wv-guest-result" onmousedown="wvGuestPick(this)" onclick="wvGuestPick(this)"'
           + ' data-pid="' + wvEsc(p.player_id) + '" data-name="' + wvEsc(p.name || '') + '"'
           + ' data-pos="' + wvEsc(p.position || '') + '" data-team="' + wvEsc(p.team || '') + '">'
           + '<span class="wv-guest-rpos">' + wvEsc(p.position || '') + '</span>'

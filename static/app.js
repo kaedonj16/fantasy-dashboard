@@ -10149,6 +10149,15 @@ window.initTradePage = function initTradePage(root = document) {
       debouncedSuggSearch();
     });
 
+    // Enter selects the top match (same keyboard contract as the nav
+    // search and compare pickers); the dropdown items are not focusable,
+    // so without this a keyboard user cannot run a search from here.
+    playerInput.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      const first = playerDropdown.querySelector(".otc-sugg-dropdown-item");
+      if (first) { e.preventDefault(); first.click(); }
+    });
+
     playerDropdown.addEventListener("click", e => {
       const item = e.target.closest(".otc-sugg-dropdown-item");
       if (!item) return;
@@ -12868,6 +12877,14 @@ window.initTradePage = function initTradePage(root = document) {
 
     var debouncedRenderSide = debounce(function () { renderSide(input.value); }, 180);
     input.addEventListener("input", debouncedRenderSide);
+    // Enter selects the top match, matching the nav search and the compare
+    // page pickers: both act on Enter instead of leaving a keyboard user
+    // with no way to pick (the dropdown items are not focusable).
+    input.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      const first = dropdown.querySelector(".otc-dropdown-item");
+      if (first) { e.preventDefault(); first.click(); }
+    });
     // Clicking into an empty search box opens the browse list.
     input.addEventListener("focus", () => { if (!input.value.trim()) renderSide(""); });
 
@@ -19908,6 +19925,15 @@ function openCompareSearch(player1Data) {
     const q = input.value.trim();
     if (!q || q.length < 2) { resultsBox.innerHTML = ''; return; }
     _debounce = setTimeout(() => doSearch(q), 250);
+  });
+
+  // Enter selects the top result, matching the standalone compare page
+  // picker (whose _select runs on Enter); the result items here are not
+  // focusable, so a keyboard user otherwise has no way to pick one.
+  input.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    const first = resultsBox.querySelector('.compare-search-result-item');
+    if (first) { e.preventDefault(); first.click(); }
   });
 }
 
