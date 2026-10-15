@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "description": "Frozen assistant eval set: 84 questions with golden evidence packs for the BR Fantasy assistant (workshop section 5 core 20, the deep-cuts leaderboard family lb1-lb6, and the section 9 P1 league-context types: playoffs, power rankings, standings, matchup, schedule) plus the P1 trade-finding family tf1-tf4, and the P1 breakout board, Teams, and pick-ownership families bo1-bo3, tm1-tm2, pk1 (renamed from the branch po1, which collided with the playoffs po1), with te4 an extra trade_eval. The win-outcome family mu4-mu6 pins the game-outcome phrasings (will I win / what are my chances / will I lose) to matchup packs: a decisive favorite, a close game, and a decisive underdog. The buy/sell board family bl1/sh1 pins pool-wide buy-low and sell-high asks (no named player) to leaderboard value boards, with bsh4/bsh5 as the named-player controls that must stay single-player buy_sell_hold.",
+    "description": "Frozen assistant eval set: 86 questions with golden evidence packs for the BR Fantasy assistant (workshop section 5 core 20, the deep-cuts leaderboard family lb1-lb6, and the section 9 P1 league-context types: playoffs, power rankings, standings, matchup, schedule) plus the P1 trade-finding family tf1-tf4, and the P1 breakout board, Teams, and pick-ownership families bo1-bo3, tm1-tm2, pk1 (renamed from the branch po1, which collided with the playoffs po1), with te4 an extra trade_eval. The win-outcome family mu4-mu6 pins the game-outcome phrasings (will I win / what are my chances / will I lose) to matchup packs: a decisive favorite, a close game, and a decisive underdog. The buy/sell board family bl1/sh1 pins pool-wide buy-low and sell-high asks (no named player) to leaderboard value boards, with bsh4/bsh5 as the named-player controls that must stay single-player buy_sell_hold.",
     "scenario": "Kaedon's league Blackedraw, her team Caleb's Casting Couch, Week 7 of the 2026 season.",
     "packs": "Each evidence_pack mirrors, field for field, the dict the matching builder in dashboard_services/assistant/evidence.py returns. Values inside a pack are the only numbers an answer may cite.",
     "recapture": "These packs are frozen fixtures. Before any launch decision, recapture them from the live tools with: python3 scripts/run_assistant_eval.py --capture (writes assistant_eval/captured_questions.json; it never overwrites this file). A launch call made on stale fixtures is not a launch call.",
@@ -10237,6 +10237,240 @@
         "must_mention": [
           "Zay Flowers",
           "Woody Marks"
+        ]
+      }
+    },
+    {
+      "id": "wl1",
+      "type": "watchlist",
+      "question": "What's happening with my watchlist?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "watchlist",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "count": 4,
+        "players": [
+          {
+            "player_id": "a5",
+            "name": "Zay Flowers",
+            "position": "WR",
+            "team": "BAL",
+            "note": "",
+            "value": 4680.0,
+            "delta7": 620.0,
+            "injury_status": null,
+            "alert": true,
+            "on_my_roster": false,
+            "rostered": true
+          },
+          {
+            "player_id": "w1",
+            "name": "Kaleb Johnson",
+            "position": "RB",
+            "team": "PIT",
+            "note": "stash target",
+            "value": 900.0,
+            "delta7": 240.0,
+            "injury_status": null,
+            "alert": true,
+            "on_my_roster": false,
+            "rostered": false
+          },
+          {
+            "player_id": "i1",
+            "name": "Drake London",
+            "position": "WR",
+            "team": "ATL",
+            "note": "",
+            "value": 3900.0,
+            "delta7": 120.0,
+            "injury_status": "Out",
+            "alert": true,
+            "on_my_roster": false,
+            "rostered": true
+          },
+          {
+            "player_id": "b2",
+            "name": "Woody Marks",
+            "position": "RB",
+            "team": "HOU",
+            "note": "",
+            "value": 3400.0,
+            "delta7": -180.0,
+            "injury_status": null,
+            "alert": false,
+            "on_my_roster": true,
+            "rostered": true
+          }
+        ],
+        "alerts": [
+          "Zay Flowers",
+          "Kaleb Johnson",
+          "Drake London"
+        ],
+        "top_mover": {
+          "player_id": "a5",
+          "name": "Zay Flowers",
+          "position": "WR",
+          "team": "BAL",
+          "note": "",
+          "value": 4680.0,
+          "delta7": 620.0,
+          "injury_status": null,
+          "alert": true,
+          "on_my_roster": false,
+          "rostered": true
+        }
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": "Zay Flowers",
+        "key_numbers": [
+          4680,
+          620
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Zay Flowers",
+          "Drake London"
+        ]
+      }
+    },
+    {
+      "id": "wl2",
+      "type": "watchlist",
+      "question": "Who is on my watchlist?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "watchlist",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "count": 4,
+        "players": [
+          {
+            "player_id": "a5",
+            "name": "Zay Flowers",
+            "position": "WR",
+            "team": "BAL",
+            "note": "",
+            "value": 4680.0,
+            "delta7": 620.0,
+            "injury_status": null,
+            "alert": true,
+            "on_my_roster": false,
+            "rostered": true
+          },
+          {
+            "player_id": "w1",
+            "name": "Kaleb Johnson",
+            "position": "RB",
+            "team": "PIT",
+            "note": "stash target",
+            "value": 900.0,
+            "delta7": 240.0,
+            "injury_status": null,
+            "alert": true,
+            "on_my_roster": false,
+            "rostered": false
+          },
+          {
+            "player_id": "i1",
+            "name": "Drake London",
+            "position": "WR",
+            "team": "ATL",
+            "note": "",
+            "value": 3900.0,
+            "delta7": 120.0,
+            "injury_status": "Out",
+            "alert": true,
+            "on_my_roster": false,
+            "rostered": true
+          },
+          {
+            "player_id": "b2",
+            "name": "Woody Marks",
+            "position": "RB",
+            "team": "HOU",
+            "note": "",
+            "value": 3400.0,
+            "delta7": -180.0,
+            "injury_status": null,
+            "alert": false,
+            "on_my_roster": true,
+            "rostered": true
+          }
+        ],
+        "alerts": [
+          "Zay Flowers",
+          "Kaleb Johnson",
+          "Drake London"
+        ],
+        "top_mover": {
+          "player_id": "a5",
+          "name": "Zay Flowers",
+          "position": "WR",
+          "team": "BAL",
+          "note": "",
+          "value": 4680.0,
+          "delta7": 620.0,
+          "injury_status": null,
+          "alert": true,
+          "on_my_roster": false,
+          "rostered": true
+        }
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": "Zay Flowers",
+        "key_numbers": [
+          4680,
+          620
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Woody Marks",
+          "Kaleb Johnson"
         ]
       }
     }

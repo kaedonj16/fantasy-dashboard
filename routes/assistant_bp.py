@@ -34,6 +34,7 @@ _INTENT_LABELS = {
     "keeper": "keeper answer", "rookie": "rookie answer",
     "cross_league": "cross-league answer",
     "activity": "league activity answer",
+    "watchlist": "watchlist answer",
 }
 
 

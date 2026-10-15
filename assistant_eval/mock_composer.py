@@ -52,6 +52,7 @@ _ACT_LINKS = {
     "cross_league": {"href": "/portfolio", "label": "View Portfolio"},
     "replacement": {"href": "/trade?tab=suggestions", "label": "Open Trade Suggestions"},
     "handcuff": {"href": "/waivers", "label": "View on Waivers"},
+    "watchlist": {"href": "/watchlist", "label": "View Watchlist"},
 }
 
 
@@ -245,6 +246,9 @@ def _mentions(intent, pack):
             _add(p)
         _add(pack.get("asked_player"))
         for p in pack.get("roster_core") or []:
+            _add(p)
+    elif intent == "watchlist":
+        for p in pack.get("players") or []:
             _add(p)
     elif intent == "rookie":
         prospect = pack.get("prospect") or {}
@@ -1456,6 +1460,45 @@ def _activity(pack):
     return ans
 
 
+def _watchlist(pack):
+    players = pack.get("players") or []
+    top = pack.get("top_mover") or {}
+    receipts = []
+    if top.get("value") is not None:
+        receipts.append({"label": f"{top.get('name')} value", "value": fmt(top["value"])})
+    if top.get("delta7") is not None and len(receipts) < 4:
+        receipts.append({"label": f"{top.get('name')} 7-day move", "value": fmt(top["delta7"])})
+    if not receipts and pack.get("count") is not None:
+        receipts.append({"label": "Players on your watchlist", "value": fmt(pack["count"])})
+    ans = _base("watchlist", pack)
+    followups = [_fu("Who should I add from waivers?"),
+                 _fu("What should I do with my team this week?")]
+    if not players:
+        ans.update({"verdict": "Your watchlist is empty",
+                    "text": "You have no players on your watchlist yet. Star a player "
+                            "and he will show up here with his value moves and injury status.",
+                    "receipts": receipts, "followups": followups})
+        return ans
+    lines = []
+    if top:
+        lines.append(f"The biggest move on your watchlist is {top.get('name')}, "
+                     f"{fmt(top.get('delta7'))} over the last 7 days to {fmt(top.get('value'))}.")
+    for p in players:
+        line = f"{p.get('name')}: value {fmt(p.get('value'))}"
+        if p.get("delta7") is not None:
+            line += f", 7-day move {fmt(p['delta7'])}"
+        if p.get("injury_status"):
+            line += f", injury status {p['injury_status']}"
+        if p.get("alert"):
+            line += " (alert)"
+        lines.append(line + ".")
+    verdict = (f"{top.get('name')} is moving on your watchlist" if top
+               else f"{fmt(pack.get('count'))} players on your watchlist")
+    ans.update({"verdict": verdict, "text": " ".join(lines),
+                "receipts": receipts, "followups": followups})
+    return ans
+
+
 _BUILDERS = {"start_sit": _start_sit, "trade_eval": _trade_eval,
              "buy_sell_hold": _buy_sell_hold, "player": _player, "metric": _metric,
              "leaderboard": _leaderboard, "trade_finding": _trade_finding,
@@ -1468,7 +1511,7 @@ _BUILDERS = {"start_sit": _start_sit, "trade_eval": _trade_eval,
              "playoffs": _playoffs, "power_rankings": _power_rankings,
              "standings": _standings, "matchup": _matchup, "schedule": _schedule,
              "keeper": _keeper, "rookie": _rookie, "cross_league": _cross_league,
-             "activity": _activity}
+             "activity": _activity, "watchlist": _watchlist}
 
 
 def compose_mock(question: dict) -> dict:
