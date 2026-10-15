@@ -309,6 +309,8 @@ def build_front_office_prompt_payload(data: dict) -> dict:
                 "injury": w.get("injury") or None,
                 "urgent_need": w.get("urgent_reason") or None,
                 "stash_only": bool(w.get("stash_only")),
+                "claim_guidance": w.get("claim_guidance") or None,
+                "horizon": w.get("horizon") or None,
             }
             for w in (data.get("waiver_targets") or [])
         ],

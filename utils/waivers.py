@@ -1014,7 +1014,8 @@ def faab_recommendation(pickup_score, *, budget_total=None, budget_remaining=Non
         "pct_denominator": denom_label or "season_budget",
         "low": dollars["low"], "target": dollars["target"], "high": dollars["high"],
         "budget_basis": denom_label,
-        "claim_guidance": None,
+        "claim_guidance": claim_guidance_for(
+            pickup_score, need_mult=need_mult)["label"],
         "rationale": rationale,
         "heuristic": True,
     }
@@ -1387,6 +1388,641 @@ def passes_candidate_floor(c: dict, waiver_breakout: dict = None,
     if val >= floor:
         return True
     return credible_opportunity(c, waiver_breakout, w)
+
+
+"""Waiver suggestions v2: horizon choice, calendar need, claim economics,
+opportunity-aware shared selector (items 1-6, 2026-10-14).
+
+These helpers are the single implementation the team-suggestion surfaces
+(digest ``select_waiver_add`` / ``recommend_waivers`` and Front Office
+``_waiver_targets``) share, so the surfaces cannot diverge again. Gate order
+inside ``rank_team_waiver_suggestions``:
+
+  availability / serious injury -> quality bar + rank ceiling (supplied by
+  the caller, which owns the format tables, so no import cycle) -> x1.05
+  drop bar (with a QB-coverage rule) -> lineup-gain classification via
+  ``evaluate_pickup`` when projections are supplied -> horizon-weighted
+  pickup score -> claim guidance.
+
+Everything fails open: when projections or roster data are missing the
+selector falls back to the value logic it replaced, and
+``cannot_evaluate`` never suppresses a suggestion on its own.
+"""
+
+_TEAM_SUGGESTION_POSITIONS = ("QB", "RB", "WR", "TE")
+
+_RICH_CANDIDATE_KEYS = (
+    "ros_ppg", "own_proj_ppg", "trend_windows", "usage_stat", "usage_delta",
+    "injured_ahead", "vacated", "healthy_ahead", "vacated_volume_weight",
+    "injury_freshness", "schedule_ease_rank", "schedule_total",
+    "self_status", "waiver_surprise", "scarcity_mult", "big_game_pts",
+    "verified_role_change", "big_game_priority", "handcuff_upside",
+)
+
+
+def _norm_playoff_pct(playoff_pct):
+    """Playoff odds as 0..100. Values <= 1 are treated as fractions."""
+    if playoff_pct is None:
+        return None
+    try:
+        pct = float(playoff_pct)
+    except (TypeError, ValueError):
+        return None
+    if 0.0 <= pct <= 1.0:
+        pct *= 100.0
+    return pct
+
+
+def choose_suggestion_horizon(fmt=None, *, direction=None, playoff_pct=None,
+                              record=None, is_redraft=None, is_dynasty=None) -> str:
+    """Pick the scoring horizon for a team's waiver suggestions (item 3).
+
+    * redraft contender / bubble (playoff odds roughly 25-90, or a
+      contender/bubble direction): ``this_week``
+    * redraft locked in (>90): ``four_week`` (stash lean comes from the
+      caller's sorting; the horizon itself stops chasing one-week points)
+    * dynasty rebuilder (rebuild direction or odds < 25): ``stash``
+    * dynasty contender / bubble: ``four_week``
+    * no signal: ``four_week`` (the previous default behaviour)
+    """
+    fmt_d = fmt if isinstance(fmt, dict) else {}
+    if isinstance(fmt, str):
+        low = fmt.lower()
+        if "redraft" in low or "keeper" in low:
+            is_redraft = True
+        elif "dynasty" in low:
+            is_dynasty = True
+    direction = direction or fmt_d.get("direction") or fmt_d.get("team_direction")
+    if playoff_pct is None:
+        playoff_pct = fmt_d.get("playoff_pct", fmt_d.get("playoff_odds"))
+    if is_redraft is None and is_dynasty is None:
+        if fmt_d.get("is_redraft") or fmt_d.get("is_keeper"):
+            is_redraft = True
+        elif fmt_d.get("is_dynasty"):
+            is_dynasty = True
+    pct = _norm_playoff_pct(playoff_pct)
+    d = str(direction or "").strip().lower()
+    is_rebuild = d.startswith("rebuild") or d in ("rebuilder", "tank", "tanking", "sell", "seller")
+    is_contend = d.startswith("contend") or d in ("competing", "buy", "buyer", "win_now", "win-now")
+    is_bubble = d in ("bubble", "fringe", "in_the_hunt", "in the hunt")
+    if record and pct is None and not d:
+        # A bare losing record with no odds/direction: dynasty leans stash,
+        # redraft still needs wins now. Only used as a weak tiebreak.
+        try:
+            wins, losses = (int(x) for x in str(record).split("-")[:2])
+            if wins + losses:
+                pct = 100.0 * wins / float(wins + losses)
+        except (TypeError, ValueError):
+            pass
+    redraft = bool(is_redraft) or (not is_dynasty and not fmt_d.get("is_dynasty"))
+    if fmt_d.get("is_dynasty") or is_dynasty:
+        redraft = False
+    if not redraft:
+        if is_rebuild or (pct is not None and pct < 25.0):
+            return "stash"
+        return "four_week"
+    if pct is not None and pct > 90.0:
+        return "four_week"
+    if is_contend or is_bubble or (pct is not None and 25.0 <= pct <= 90.0):
+        return "this_week"
+    if is_rebuild:
+        return "four_week"
+    return "four_week"
+
+
+def claim_guidance_for(pickup_score, *, adds_count=None, trending_adds=None,
+                       competing_holes=0, waiver_type: str = "faab",
+                       budget_remaining=None, budget_total=None,
+                       need_mult: float = 1.0) -> dict:
+    """Short claim-economics label + reason (item 4). Heuristic only.
+
+    Never claims to know a remaining budget or priority the caller did not
+    supply: budget inputs only shape the reason text when present.
+    """
+    try:
+        score = float(pickup_score or 0.0)
+    except (TypeError, ValueError):
+        score = 0.0
+    adds = adds_count if adds_count is not None else trending_adds
+    try:
+        adds = float(adds or 0)
+    except (TypeError, ValueError):
+        adds = 0.0
+    try:
+        holes = int(competing_holes or 0)
+    except (TypeError, ValueError):
+        holes = 0
+    wtype = str(waiver_type or "faab").lower()
+    intensity = _clamp01((score - FAAB_SCORE_LOW) / (FAAB_SCORE_HIGH - FAAB_SCORE_LOW))
+    if adds >= 100000:
+        intensity += 0.25
+        demand = "heavy league-wide demand"
+    elif adds >= 10000:
+        intensity += 0.12
+        demand = "real league-wide demand"
+    elif adds >= 1000:
+        intensity += 0.05
+        demand = "some league-wide demand"
+    else:
+        demand = "little league-wide demand"
+    intensity = _clamp01(intensity)
+    if intensity >= 0.65:
+        tier = "top"
+        label = "Top claim: spend up" if wtype != "free_agent" else "Top claim: add him now"
+    elif intensity >= 0.3:
+        tier = "mid"
+        label = "Worth a claim"
+    else:
+        tier = "low"
+        if wtype == "faab":
+            label = "Likely clears: save the FAAB"
+        elif wtype in ("priority", "waiver_priority", "rolling_priority"):
+            label = "Likely clears: save the claim"
+        else:
+            label = "Likely clears: wait for free agency"
+    bits = [f"score {score:.0f}", demand]
+    if holes >= 2:
+        bits.append(f"{holes} roster holes compete for the same budget, so do not blow it all on one add")
+    if budget_remaining is not None:
+        bits.append(f"guidance is capped by the ${float(budget_remaining):.0f} budget you have left")
+    elif budget_total is not None:
+        bits.append(f"budget shown is your ${float(budget_total):.0f} season budget, not what is left")
+    return {
+        "label": label,
+        "claim_guidance": label,
+        "tier": tier,
+        "reason": "; ".join(bits),
+        "heuristic": True,
+    }
+
+
+def weekly_availability_from_roster(roster_players, pidx, *, current_week=None,
+                                    weeks: int = 4, bye_week_by_team=None,
+                                    injured_by_pid=None) -> list:
+    """Per-week roster availability for ``calendar_need_by_position``.
+
+    A rostered player is unavailable in a week when his team's bye falls
+    that week (``bye_week_by_team`` or a bye field on his pidx row) or he
+    carries a serious injury status. Pure: all data is supplied.
+    """
+    pidx = pidx or {}
+    bye_map = {str(k).upper(): v for k, v in (bye_week_by_team or {}).items()}
+    inj_map = injured_by_pid or {}
+    out = []
+    n_weeks = max(1, int(weeks or 4))
+    for offset in range(n_weeks):
+        week_no = (int(current_week) + offset) if current_week is not None else offset + 1
+        counts: dict = {}
+        for pid in roster_players or []:
+            pid = str(pid)
+            meta = pidx.get(pid) or {}
+            pos = str(meta.get("position") or meta.get("pos") or "").upper()
+            if pos not in _TEAM_SUGGESTION_POSITIONS:
+                continue
+            status = str(inj_map.get(pid) or meta.get("injury_status") or "").upper()
+            if status in SERIOUS_INJURY_STATUSES:
+                continue
+            team = str(meta.get("team") or "").upper()
+            bye = bye_map.get(team)
+            if bye is None:
+                bye = meta.get("bye_week", meta.get("byeWeek", meta.get("bye")))
+            try:
+                bye = int(bye) if bye is not None else None
+            except (TypeError, ValueError):
+                bye = None
+            if bye is not None and bye == week_no:
+                continue
+            counts[pos] = counts.get(pos, 0) + 1
+        out.append({"week": week_no, "available_by_pos": counts})
+    return out
+
+
+def calendar_need_by_position(weekly_availability, dedicated_slots, *,
+                              starter_bars=None, w: WaiverWeights = WEIGHTS) -> dict:
+    """Per-position calendar need over the supplied future weeks (item 2).
+
+    ``weekly_availability`` is a list of week dicts, each either
+    ``{"week": n, "available_by_pos": {pos: healthy_startable_count}}`` or
+    ``{"week": n, "players": [{position, bye, injury_status/status,
+    value, proj_pts}]}`` (players shape: bye weeks and serious injuries
+    count as unavailable, and a ``starter_bars`` value floor applies when
+    supplied). A week is a gap week for a position when its healthy
+    startable bodies fall below the dedicated starter slots.
+
+    Returns ``{pos: {"gap_weeks": [...], "starter_gap": float,
+    "need_mult": float, "weeks_checked": int}}``.
+    """
+    slots_by_pos = {str(k).upper(): float(v or 0) for k, v in (dedicated_slots or {}).items()}
+    bars = {str(k).upper(): float(v) for k, v in (starter_bars or {}).items()}
+    weeks_list = list(weekly_availability or [])
+    # Also accept {pos: [count_per_week, ...]}.
+    if isinstance(weekly_availability, dict):
+        weeks_list = []
+        max_len = max((len(v) for v in weekly_availability.values()), default=0)
+        for i in range(max_len):
+            weeks_list.append({
+                "week": i + 1,
+                "available_by_pos": {
+                    str(pos).upper(): (counts[i] if i < len(counts) else 0)
+                    for pos, counts in weekly_availability.items()
+                },
+            })
+    positions = set(slots_by_pos)
+    for wk in weeks_list:
+        if isinstance(wk, dict):
+            positions.update(str(k).upper() for k in (wk.get("available_by_pos") or wk.get("counts") or {}))
+            for pl in wk.get("players") or []:
+                if isinstance(pl, dict):
+                    positions.add(str(pl.get("position") or pl.get("pos") or "").upper())
+    positions.discard("")
+    gap_weeks: dict = {pos: [] for pos in positions}
+    shortfall: dict = {pos: 0.0 for pos in positions}
+    for idx, wk in enumerate(weeks_list):
+        if not isinstance(wk, dict):
+            continue
+        week_label = wk.get("week", idx + 1)
+        counts = {}
+        if wk.get("available_by_pos") or wk.get("counts"):
+            counts = {str(k).upper(): float(v or 0)
+                      for k, v in (wk.get("available_by_pos") or wk.get("counts") or {}).items()}
+        elif wk.get("players") is not None:
+            for pl in wk.get("players") or []:
+                if not isinstance(pl, dict):
+                    continue
+                pos = str(pl.get("position") or pl.get("pos") or "").upper()
+                if not pos:
+                    continue
+                if pl.get("bye"):
+                    continue
+                status = str(pl.get("injury_status") or pl.get("status") or "").upper()
+                if status in SERIOUS_INJURY_STATUSES:
+                    continue
+                bar = bars.get(pos)
+                if bar is not None:
+                    try:
+                        if float(pl.get("value") or 0) < bar:
+                            continue
+                    except (TypeError, ValueError):
+                        pass
+                counts[pos] = counts.get(pos, 0.0) + 1.0
+        for pos in positions:
+            need_n = slots_by_pos.get(pos, 0.0)
+            if need_n <= 0:
+                continue
+            have = counts.get(pos, 0.0)
+            if have < need_n:
+                gap_weeks[pos].append(week_label)
+                shortfall[pos] = max(shortfall[pos], need_n - have)
+    out = {}
+    n_checked = len(weeks_list)
+    for pos in sorted(positions):
+        gaps = gap_weeks.get(pos) or []
+        if gaps:
+            frac = len(gaps) / float(n_checked or 1)
+            need_mult = 1.0 + w.need_max_bonus * max(frac, 0.6)
+        else:
+            need_mult = 1.0
+        out[pos] = {
+            "gap_weeks": gaps,
+            "starter_gap": float(shortfall.get(pos) or 0.0),
+            "need_mult": round(float(need_mult), 4),
+            "weeks_checked": n_checked,
+        }
+    return out
+
+
+def _selector_weekly_maps(pid, cand, roster_pids, positions_by_pid,
+                          weekly_maps, forward_pts_by_pid):
+    """Normalise caller projections into evaluate_pickup weekly dicts."""
+    def _cand_pts(idx):
+        wp = cand.get("weekly_pts") or cand.get("weekly_projections")
+        if isinstance(wp, (list, tuple)) and idx < len(wp):
+            try:
+                return float(wp[idx])
+            except (TypeError, ValueError):
+                return None
+        if isinstance(wp, dict) and idx in wp:
+            try:
+                return float(wp[idx])
+            except (TypeError, ValueError):
+                return None
+        if forward_pts_by_pid and pid in forward_pts_by_pid:
+            try:
+                return float(forward_pts_by_pid[pid])
+            except (TypeError, ValueError):
+                return None
+        for key in ("ros_ppg", "own_proj_ppg"):
+            if cand.get(key) is not None:
+                try:
+                    return float(cand[key])
+                except (TypeError, ValueError):
+                    return None
+        return None
+
+    weekly = []
+    if weekly_maps:
+        for idx, wm in enumerate(weekly_maps):
+            if isinstance(wm, dict) and "pts_map" in wm:
+                base = dict(wm.get("pts_map") or {})
+                covered = bool(wm.get("covered", True))
+                bye = bool(wm.get("bye", False))
+            elif isinstance(wm, dict):
+                base = dict(wm)
+                covered = True
+                bye = False
+            else:
+                continue
+            cp = _cand_pts(idx)
+            if cp is None:
+                # No candidate projection this week: cannot evaluate honestly.
+                weekly.append({"pts_map": {}, "covered": False, "bye": bye})
+                continue
+            base[str(pid)] = max(0.0, cp)
+            weekly.append({"pts_map": base, "covered": covered, "bye": bye})
+        return weekly
+    if forward_pts_by_pid:
+        base = {}
+        for rpid in roster_pids or []:
+            if str(rpid) in forward_pts_by_pid:
+                try:
+                    base[str(rpid)] = max(0.0, float(forward_pts_by_pid[str(rpid)]))
+                except (TypeError, ValueError):
+                    pass
+        cp = _cand_pts(0)
+        if cp is None or not base:
+            return []
+        base[str(pid)] = max(0.0, cp)
+        return [{"pts_map": base, "covered": True}]
+    return []
+
+
+def rank_team_waiver_suggestions(candidates, *, owned_ids=None, roster_pids=None,
+                                 roster_positions=None, positions_by_pid=None,
+                                 roster_values_by_pid=None, injured_by_pid=None,
+                                 drop_bars=None, starter_gaps=None, need_mults=None,
+                                 calendar_need=None, is_redraft=False, is_sf=False,
+                                 n_teams=12, min_value=25.0, min_score=0.0,
+                                 breakout_by_pid=None, quality_bar_fn=None,
+                                 horizon=None, direction=None, playoff_pct=None,
+                                 weekly_maps=None, forward_pts_by_pid=None,
+                                 waiver_type: str = "faab", budget_total=None,
+                                 budget_remaining=None, competing_holes=None,
+                                 limit=None, require_team=False,
+                                 hard_exclude_serious=False) -> list:
+    """The shared team-waiver selector (item 6). See module note above for
+    the gate order. ``quality_bar_fn`` is the caller's format bar
+    (digest/FO own the tables); when it is absent a value floor plus
+    ``passes_candidate_floor`` is the gate. Returns enriched dicts sorted
+    with real adds first, then stashes, each by horizon-weighted score.
+    """
+    owned = {str(p) for p in (owned_ids or set())}
+    roster_pids = [str(p) for p in (roster_pids or [])]
+    positions_by_pid = {str(k): str(v or "").upper() for k, v in (positions_by_pid or {}).items()}
+    roster_values = {str(k): float(v or 0) for k, v in (roster_values_by_pid or {}).items()}
+    injured_by_pid = injured_by_pid or {}
+    breakout = {}
+    for k, v in (breakout_by_pid or {}).items():
+        try:
+            breakout[str(k)] = float(v.get("score") if isinstance(v, dict) else v or 0)
+        except (TypeError, ValueError):
+            continue
+    horizon_name = horizon or choose_suggestion_horizon(
+        {"is_redraft": is_redraft, "is_dynasty": not is_redraft},
+        direction=direction, playoff_pct=playoff_pct)
+    weights = horizon_weights(horizon_name, dynasty=not is_redraft)
+    # Dedicated QB slots for the coverage rule.
+    qb_slots = 1
+    try:
+        from utils.lineups import count_lineup_slots
+        _slots = count_lineup_slots(roster_positions or [])
+        qb_slots = max(1, int(_slots.get("QB") or 0) + int(_slots.get("SUPER_FLEX") or 0))
+    except Exception:
+        qb_slots = 2 if is_sf else 1
+    healthy_qbs = 0
+    for rpid in roster_pids:
+        if positions_by_pid.get(rpid) != "QB":
+            continue
+        st = str(injured_by_pid.get(rpid) or "").upper()
+        if st not in SERIOUS_INJURY_STATUSES and st != "QUESTIONABLE":
+            healthy_qbs += 1
+        elif st == "QUESTIONABLE":
+            healthy_qbs += 1  # a game-time call still covers the room this week
+    # Drop bars: caller-supplied, else worst rostered value per position.
+    bars = dict(drop_bars or {})
+    if not bars and roster_values:
+        for rpid in roster_pids:
+            pos = positions_by_pid.get(rpid)
+            if pos not in _TEAM_SUGGESTION_POSITIONS:
+                continue
+            st = str(injured_by_pid.get(rpid) or "").upper()
+            if st in SERIOUS_INJURY_STATUSES:
+                continue
+            val = roster_values.get(rpid, 0.0)
+            if pos not in bars or val < bars[pos]:
+                bars[pos] = val
+    gaps = {str(k).upper(): float(v or 0) for k, v in (starter_gaps or {}).items()}
+    needs = {str(k).upper(): float(v or 1.0) for k, v in (need_mults or {}).items()}
+    for pos, info in (calendar_need or {}).items():
+        if not isinstance(info, dict):
+            continue
+        p = str(pos).upper()
+        if float(info.get("starter_gap") or 0) > 0:
+            gaps[p] = max(gaps.get(p, 0.0), float(info["starter_gap"]))
+        if float(info.get("need_mult") or 1.0) > needs.get(p, 1.0):
+            needs[p] = float(info["need_mult"])
+    if competing_holes is None:
+        competing_holes = sum(1 for v in gaps.values() if v > 0)
+    results = []
+    for raw in candidates or []:
+        if not isinstance(raw, dict):
+            continue
+        pid = str(raw.get("player_id") or raw.get("id") or "").strip()
+        if not pid or pid in owned:
+            continue
+        pos = str(raw.get("position") or raw.get("pos") or positions_by_pid.get(pid) or "").upper()
+        if pos not in _TEAM_SUGGESTION_POSITIONS:
+            continue
+        if require_team:
+            team = str(raw.get("team") or "").upper()
+            if team in ("", "FA", "FREE AGENT", "N/A"):
+                continue
+        try:
+            val = float(raw.get("value") or 0)
+        except (TypeError, ValueError):
+            val = 0.0
+        try:
+            age = float(raw.get("age") or 0)
+        except (TypeError, ValueError):
+            age = 0.0
+        self_status = str(raw.get("self_status") or raw.get("injury_status")
+                          or injured_by_pid.get(pid) or "").upper()
+        if hard_exclude_serious and self_status in SERIOUS_INJURY_STATUSES:
+            continue
+        try:
+            rk = int(raw.get("pos_rank")) if raw.get("pos_rank") not in (None, "") else None
+        except (TypeError, ValueError):
+            rk = None
+        if rk is None and raw.get("pos_rank_label"):
+            import re as _re
+            _m = _re.search(r"(\d+)\s*$", str(raw.get("pos_rank_label")))
+            rk = int(_m.group(1)) if _m else None
+        gap = gaps.get(pos, 0.0)
+        cand = {
+            "player_id": pid, "value": val, "age": age, "position": pos,
+            "rank_change_7d": raw.get("rank_change_7d") or 0,
+            "need_mult": needs.get(pos, 1.0), "pos_rank": rk,
+            "self_status": self_status,
+        }
+        for key in _RICH_CANDIDATE_KEYS:
+            if raw.get(key) is not None:
+                cand[key] = raw[key]
+        if raw.get("trend_windows") is None and raw.get("rank_change_7d") is not None:
+            cand["rank_change_7d"] = raw["rank_change_7d"]
+        # Quality bar + rank ceiling (caller's), with credible opportunity
+        # as the low-value admission path (item 5): retry with a floor the
+        # candidate's value clears, keeping every other gate intact.
+        if quality_bar_fn is not None:
+            try:
+                ok = quality_bar_fn(pos=pos, pos_rank=rk, value=val,
+                                    is_redraft=is_redraft, is_sf=is_sf,
+                                    n_teams=n_teams, age=age, starter_gap=gap,
+                                    min_value=min_value)
+            except TypeError:
+                ok = quality_bar_fn(pos, rk, val)
+            if not ok and credible_opportunity(cand, breakout):
+                try:
+                    ok = quality_bar_fn(pos=pos, pos_rank=rk, value=val,
+                                        is_redraft=is_redraft, is_sf=is_sf,
+                                        n_teams=n_teams, age=age, starter_gap=gap,
+                                        min_value=max(1.0, val / 2.4))
+                except Exception:
+                    ok = False
+            if not ok:
+                continue
+        else:
+            if not passes_candidate_floor(cand, breakout, min_value=min_value):
+                continue
+        # x1.05 drop bar, plus the QB coverage rule: a covered QB room
+        # (healthy QBs at/above the QB slots) only yields to a claim that
+        # beats the worst rostered QB by the margin, or a calendar hole.
+        bar = bars.get(pos)
+        beats_bar = bar is None or val > float(bar) * 1.05
+        if gap <= 0 and not beats_bar:
+            continue
+        if pos == "QB" and gap <= 0 and healthy_qbs >= qb_slots and not beats_bar:
+            continue
+        try:
+            score = float(waiver_pickup_score(cand, breakout, w=weights))
+        except Exception:
+            score = val
+        # Playoff-schedule nudge (weeks 15-17) only from data already on
+        # the row; never invented.
+        po_ease = raw.get("playoff_schedule_ease_rank") or raw.get("playoff_ease_rank")
+        if po_ease is not None and horizon_name in ("stash", "four_week"):
+            try:
+                score += schedule_bonus(po_ease, raw.get("playoff_schedule_total") or 32, weights)
+            except Exception:
+                pass
+        if score < float(min_score or 0):
+            continue
+        # Lineup-gain classification (item 1), failing open.
+        outcome = None
+        lineup_gain = None
+        horizon_gain = None
+        drop_pid = None
+        replaces_pid = None
+        weekly = _selector_weekly_maps(pid, {**raw, **cand}, roster_pids,
+                                       positions_by_pid, weekly_maps,
+                                       forward_pts_by_pid)
+        if weekly and roster_pids and roster_positions:
+            try:
+                bscore = breakout.get(pid, 0.0)
+                spec = min(1.0, bscore / 80.0)
+                if credible_opportunity(cand, breakout):
+                    spec = max(spec, 0.6)
+                ev = evaluate_pickup(
+                    pid, pos, roster_pids, weekly,
+                    {**positions_by_pid, pid: pos}, list(roster_positions),
+                    droppable_pids=list(roster_pids),
+                    speculative_upside=spec)
+                outcome = ev.outcome
+                if outcome == "hold":
+                    continue
+                if outcome in ("add", "add_drop"):
+                    lineup_gain = round(float(ev.week_gain), 2)
+                    horizon_gain = round(float(ev.horizon_gain), 2)
+                    drop_pid = ev.drop_pid
+                    replaces_pid = ev.replaces_pid
+                elif outcome == "stash":
+                    lineup_gain = 0.0
+                    horizon_gain = round(float(ev.horizon_gain), 2)
+            except Exception:
+                outcome = "cannot_evaluate"
+        adds_count = raw.get("adds_count", raw.get("trending_adds", raw.get("adds_48h")))
+        guidance = claim_guidance_for(
+            score, adds_count=adds_count, competing_holes=competing_holes,
+            waiver_type=waiver_type, budget_remaining=budget_remaining,
+            budget_total=budget_total, need_mult=needs.get(pos, 1.0))
+        try:
+            faab = faab_recommendation(
+                score, budget_total=budget_total, budget_remaining=budget_remaining,
+                waiver_type=waiver_type, need_mult=needs.get(pos, 1.0))
+        except Exception:
+            faab = {}
+        results.append({
+            "player_id": pid, "id": pid,
+            "name": str(raw.get("name") or raw.get("full_name") or raw.get("player") or ""),
+            "position": pos, "pos": pos,
+            "team": raw.get("team"),
+            "value": val, "age": age, "score": score,
+            "pos_rank": rk, "pos_rank_label": raw.get("pos_rank_label") or "",
+            "outcome": outcome,
+            "lineup_gain": lineup_gain,
+            "lineup_gain_horizon": horizon_gain,
+            "lineup_gain_4wk": horizon_gain,
+            "drop_pid": drop_pid, "replaces_pid": replaces_pid,
+            "starter_gap": gap, "need_mult": needs.get(pos, 1.0),
+            "horizon": horizon_name,
+            "claim_guidance": guidance["label"],
+            "claim_guidance_reason": guidance["reason"],
+            "faab": faab,
+        })
+    _order = {"add": 0, "add_drop": 0, "cannot_evaluate": 1, None: 1, "stash": 2}
+    results.sort(key=lambda r: (_order.get(r.get("outcome"), 1), -float(r.get("score") or 0)))
+    if limit is not None:
+        results = results[:max(0, int(limit))]
+    return results
+
+
+
+
+
+def weekly_maps_from_per_week_points(roster_pids, candidate_pid,
+                                     roster_pts_by_week, candidate_pts_by_week,
+                                     candidate_bye_weeks=None) -> list:
+    """Build ``evaluate_pickup`` weekly dicts from real per-week points.
+
+    ``roster_pts_by_week``: list of {pid: projected pts} per week.
+    ``candidate_pts_by_week``: aligned list of the candidate's projected
+    pts per week (None = no usable projection that week, marked
+    uncovered rather than scored as zero). ``candidate_bye_weeks``:
+    aligned booleans; a bye week is flagged so the evaluator skips it
+    instead of treating it as a missed game.
+    """
+    weekly = []
+    byes = list(candidate_bye_weeks or [])
+    for idx, roster_map in enumerate(roster_pts_by_week or []):
+        pts_map = {str(k): float(v or 0) for k, v in (roster_map or {}).items()}
+        cand_pts = None
+        if candidate_pts_by_week is not None and idx < len(candidate_pts_by_week):
+            cand_pts = candidate_pts_by_week[idx]
+        bye = bool(byes[idx]) if idx < len(byes) else False
+        if cand_pts is None:
+            weekly.append({"pts_map": {}, "covered": False, "bye": bye})
+            continue
+        pts_map[str(candidate_pid)] = max(0.0, float(cand_pts))
+        weekly.append({"pts_map": pts_map, "covered": True, "bye": bye})
+    return weekly
 
 
 # ======================================================================

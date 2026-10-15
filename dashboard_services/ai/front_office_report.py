@@ -671,7 +671,9 @@ def _potential_trade_targets(ctx: dict, viewer_roster_id: str,
 def _waiver_targets(ctx: dict, viewer_roster_id: str, model_value_lookup: dict,
                    scoring_type: str, weakest: list[str],
                    qb_add_allowed: bool = True,
-                   hole_positions: list[str] | None = None) -> list[dict]:
+                   hole_positions: list[str] | None = None,
+                   direction: str | None = None,
+                   playoff_pct=None) -> list[dict]:
     """Best free agents, gated by the existing waiver quality bar.
 
     Two rework gates on top of the quality bar:
@@ -682,6 +684,17 @@ def _waiver_targets(ctx: dict, viewer_roster_id: str, model_value_lookup: dict,
       lineup hole (fewer healthy startable players than dedicated
       slots), not merely a weak positional grade. A weak grade alone no
       longer waives the 1QB streamer bar or the startable-rank ceilings.
+
+    Waiver v2 (item 6): the gate ORDER here matches the shared selector
+    ``utils.waivers.rank_team_waiver_suggestions`` (availability/injury,
+    then this quality bar, then the x1.05 drop bar in
+    ``_waiver_bar_filter``, then hurt exclusion). Front Office keeps its
+    own gate implementation because its inputs are report-shaped
+    (roster_rows, model_value_lookup, QB context), but scoring, horizon
+    choice and claim guidance all come from the shared helpers in
+    utils.waivers, so the surfaces cannot drift on ranking or economics.
+    Candidates are re-scored with horizon weights chosen from the team's
+    direction / playoff odds (item 3) instead of weakest-then-value only.
     """
     try:
         from utils.cross_league_actions import waiver_add_clears_quality_bar
@@ -727,7 +740,7 @@ def _waiver_targets(ctx: dict, viewer_roster_id: str, model_value_lookup: dict,
             continue
         if not ok:
             continue
-        cands.append({
+        cand = {
             "id": pid,
             "name": _safe_str(row.get("name")),
             "position": pos,
@@ -735,10 +748,59 @@ def _waiver_targets(ctx: dict, viewer_roster_id: str, model_value_lookup: dict,
             "age": row.get("age"),
             "value": round(val, 1),
             "pos_rank_label": _safe_str(row.get("pos_rank_label") or ""),
-        })
-    # Prefer weakest positions first, then value.
+        }
+        # Rich opportunity fields ride along when the model table has them
+        # (item 5), so the shared scorer sees the same inputs as the
+        # Waivers page instead of value alone.
+        for _k in ("ros_ppg", "own_proj_ppg", "trend_windows", "usage_stat",
+                   "usage_delta", "injured_ahead", "vacated", "healthy_ahead",
+                   "schedule_ease_rank", "schedule_total", "waiver_surprise",
+                   "adds_count", "trending_adds", "adds_48h"):
+            if row.get(_k) is not None:
+                cand[_k] = row[_k]
+        cands.append(cand)
+    # Horizon-weighted re-score (items 3, 4, 6): weakest rooms keep a small
+    # need bump inside the shared score, then claim guidance is attached.
     weak_set = set(weakest)
-    cands.sort(key=lambda c: (0 if c["position"] in weak_set else 1, -c["value"]))
+    try:
+        from utils.waivers import (
+            choose_suggestion_horizon as _choose_horizon,
+            claim_guidance_for as _claim_guidance_for,
+            faab_recommendation as _faab_rec,
+            horizon_weights as _horizon_weights,
+            waiver_pickup_score as _pickup_score,
+        )
+        _horizon = _choose_horizon(
+            {"is_redraft": is_redraft, "is_dynasty": not is_redraft},
+            direction=direction, playoff_pct=playoff_pct)
+        _weights = _horizon_weights(_horizon, dynasty=not is_redraft)
+        _holes_n = len(holes)
+        for cand in cands:
+            _score_c = {
+                "player_id": cand["id"], "value": cand["value"],
+                "age": safe_float(cand.get("age")), "position": cand["position"],
+                "need_mult": 1.15 if cand["position"] in weak_set else 1.0,
+            }
+            for _k in ("ros_ppg", "own_proj_ppg", "trend_windows", "usage_stat",
+                       "usage_delta", "injured_ahead", "vacated", "healthy_ahead",
+                       "schedule_ease_rank", "schedule_total", "waiver_surprise"):
+                if cand.get(_k) is not None:
+                    _score_c[_k] = cand[_k]
+            try:
+                cand["score"] = round(float(_pickup_score(_score_c, {}, w=_weights)), 2)
+            except Exception:
+                cand["score"] = cand["value"]
+            cand["horizon"] = _horizon
+            _adds = cand.get("adds_count", cand.get("trending_adds", cand.get("adds_48h")))
+            _g = _claim_guidance_for(cand["score"], adds_count=_adds,
+                                     competing_holes=_holes_n)
+            cand["claim_guidance"] = _g["label"]
+            cand["faab"] = _faab_rec(cand["score"], need_mult=_score_c["need_mult"])
+        cands.sort(key=lambda c: (0 if c["position"] in weak_set else 1,
+                                  -float(c.get("score") or 0), -c["value"]))
+    except Exception:
+        logger.debug("[front-office] waiver horizon scoring skipped", exc_info=True)
+        cands.sort(key=lambda c: (0 if c["position"] in weak_set else 1, -c["value"]))
     return cands[:4]
 
 
@@ -1496,6 +1558,9 @@ def _drop_add_pairs(cut_candidates: list[dict],
                 "name": _safe_str(w.get("name")),
                 "position": _safe_str(w.get("position")),
                 "value": w.get("value"),
+                "claim_guidance": w.get("claim_guidance"),
+                "faab": w.get("faab"),
+                "horizon": w.get("horizon"),
             },
         })
     return pairs
@@ -1566,7 +1631,9 @@ def build_front_office_data(ctx: dict, viewer_roster_id: str) -> dict | None:
     waiver_targets = _waiver_targets(ctx, viewer_roster_id, model_value_lookup,
                                      scoring_type, weakest,
                                      qb_add_allowed=qb_ctx["add_allowed"],
-                                     hole_positions=hole_positions)
+                                     hole_positions=hole_positions,
+                                     direction=team_ctx.get("direction"),
+                                     playoff_pct=team_ctx.get("playoff_pct"))
     cut_candidates = _cut_candidates(roster_rows)
     urgent_needs = _urgent_needs(ctx, roster, roster_rows, week)
     _apply_urgency(trade_targets, waiver_targets, urgent_needs)
@@ -2341,6 +2408,10 @@ def _waivers_cuts_html(data: dict, ai: dict) -> str:
             if w.get("stash_only") else ""
         )
         note_html = f"<div class='for-pick-note'>{note}</div>" if note else ""
+        if w.get("claim_guidance"):
+            note_html += (
+                f"<div class='for-pick-note'>{html.escape(str(w['claim_guidance']))}</div>"
+            )
         urgent_html = ""
         if w.get("urgent"):
             urgent_html = (
