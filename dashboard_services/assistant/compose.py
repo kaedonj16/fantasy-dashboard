@@ -904,6 +904,10 @@ def _required_receipts(intent: str, pack: dict) -> list[dict]:
         scen = pack.get("scenario") or {}
         if me.get("playoff_pct") is not None:
             rows.append({"label": "Your playoff odds (%)", "value": _fmt_num(me["playoff_pct"])})
+        traj = pack.get("odds_trajectory") or {}
+        if traj.get("start_pct") is not None and traj.get("start_week") is not None:
+            rows.append({"label": f"Your playoff odds in Week {traj['start_week']} (%)",
+                         "value": _fmt_num(traj["start_pct"])})
         if scen.get("wins_to_clinch") is not None:
             rows.append({"label": "Wins to clinch", "value": _fmt_num(scen["wins_to_clinch"])})
         elif me.get("wins_still_needed") is not None:
@@ -2498,9 +2502,12 @@ def compose_answer(intent: str, question: str, pack: dict, *, preferences=None, 
         return _enforce_grounding(gated_answer(pack), intent, pack, question)
     if isinstance(pack, dict) and pack.get("available") is False \
             and pack.get("type") == "leaderboard" \
-            and pack.get("board_kind") in ("buy_low", "sell_high"):
+            and pack.get("board_kind") in ("buy_low", "sell_high") \
+            and not pack.get("historical"):
         # A genuinely empty value board gets the plain no-fit treatment
-        # (closest miss named), never the generic no-data wrapper.
+        # (closest miss named), never the generic no-data wrapper. A
+        # historical ask is different: value boards have no past-season
+        # form at all, so it takes the plain no-data shape.
         return _enforce_grounding(_empty_value_board_answer(pack), intent, pack, question)
     if isinstance(pack, dict) and pack.get("available") is False:
         return _enforce_grounding(no_data_answer(pack), intent, pack, question)

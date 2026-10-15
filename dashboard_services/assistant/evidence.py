@@ -2776,6 +2776,9 @@ def _build_stat_board(pack, bundle, tools, resolution, position, team,
     if keep_notes:
         pack["qualification_text"] += (
             " Showing only " + " and ".join(keep_notes) + ".")
+    if pack.get("historical"):
+        pack["qualification_text"] += (
+            f" Final {pack.get('target_season')} season board.")
     return pack, tools
 
 
@@ -2859,9 +2862,21 @@ def build_metric(bundle, entities, player_ids=None) -> tuple[dict, list[str]]:
     pack["definition"] = spec.get("desc") or spec.get("label") or key
     pack["label"] = spec.get("label") or key
     pack["positions"] = spec.get("positions") or []
+    season, historical = _target_season(bundle, entities)
+    pack["target_season"] = season if historical else None
+    pack["historical"] = bool(historical)
+    try:
+        _current_season = int(bundle.get("season") or 0)
+    except (TypeError, ValueError):
+        _current_season = 0
+    if season and _current_season and int(season) > _current_season:
+        pack["available"] = False
+        pack["missing"] = "that season has not been played yet"
+        pack["nearest"] = []
+        return pack, tools
     try:
         from data_building.advanced_metrics import get_metric_leaderboard
-        rows = get_metric_leaderboard(key, season=bundle.get("season")) or []
+        rows = get_metric_leaderboard(key, season=season) or []
         tools.append("advanced_metrics.get_metric_leaderboard")
         top = []
         index = _index()
@@ -2875,7 +2890,7 @@ def build_metric(bundle, entities, player_ids=None) -> tuple[dict, list[str]]:
                         "position": r.get("position") or info.get("position") or "",
                         "value": r.get("value") if r.get("value") is not None else r.get(key)})
         pack["leaderboard_top5"] = top
-        roster_ids = bundle.get("roster_player_ids") or set()
+        roster_ids = set() if historical else (bundle.get("roster_player_ids") or set())
         pack["leaderboard_top5"] = [
             {**t, "on_my_roster": bool(t["player_id"] in roster_ids)} for t in top
         ]
@@ -2886,7 +2901,7 @@ def build_metric(bundle, entities, player_ids=None) -> tuple[dict, list[str]]:
     # raw list above.
     if player_ids:
         try:
-            qrows, _qual = _season_board(key, spec, bundle.get("season"), None)
+            qrows, _qual = _season_board(key, spec, season, None)
             pack["pool_size"] = len(qrows)
             target = str(player_ids[0])
             for i, r in enumerate(qrows):
@@ -2906,6 +2921,55 @@ def build_metric(bundle, entities, player_ids=None) -> tuple[dict, list[str]]:
 
 
 # -- leaderboard (deep cuts) ------------------------------------------------------------
+
+def _target_season(bundle, entities) -> tuple[int | None, bool]:
+    """(season, is_historical) for a board/metric ask.
+
+    The router's season entity is a real year from the model path, or
+    the keyword fallback's -1 sentinel for 'last season' (resolved here
+    against the bundle's season, the only place that knows it). A named
+    season at or after the bundle's season is the current board (a
+    future season is declined by the caller); anything older is a
+    historical board and must be built from that season's own data,
+    never from the current season's.
+    """
+    current = bundle.get("season")
+    try:
+        current = int(current) if current else None
+    except (TypeError, ValueError):
+        current = None
+    raw = (entities or {}).get("season")
+    try:
+        raw = int(raw) if raw is not None else None
+    except (TypeError, ValueError):
+        raw = None
+    if raw is None or current is None:
+        return current, False
+    if raw == -1:
+        raw = current - 1
+    if raw >= current:
+        return raw, False
+    return raw, True
+
+
+def _completed_weeks_for(bundle, season) -> int:
+    """Completed weeks in `season`: the bundle's own progress for the
+    current season; for a past season, the last week the week-stat
+    cache actually carries (a finished season's own length, probed from
+    its data rather than assumed)."""
+    current = bundle.get("season")
+    if season == current:
+        week = bundle.get("week")
+        return max(int(week) - 1, 0) if week else 0
+    for w in range(18, 0, -1):
+        try:
+            stats = load_sleeper_week_stats(int(season), w) or {}
+        except Exception:
+            continue
+        if isinstance(stats, dict) and stats:
+            return w
+    return 0
+
 
 def _no_board(pack, missing, nearest):
     pack["available"] = False
@@ -3591,8 +3655,56 @@ def build_leaderboard(bundle, entities, player_ids=None) -> tuple[dict, list[str
     pack["position_filter"] = position
     team = str(ent.get("team") or "").strip().upper() or None
     pack["team_filter"] = team
-    season = bundle.get("season")
-    roster_ids = bundle.get("roster_player_ids") or set()
+    season, historical = _target_season(bundle, ent)
+    pack["target_season"] = season if historical else None
+    pack["historical"] = bool(historical)
+    if historical:
+        # A past season's board never borrows the current roster's
+        # membership: nobody is "on my roster" in a finished season.
+        roster_ids = set()
+    else:
+        roster_ids = bundle.get("roster_player_ids") or set()
+    try:
+        _current_season = int(bundle.get("season") or 0)
+    except (TypeError, ValueError):
+        _current_season = 0
+    if season and _current_season and int(season) > _current_season:
+        # A season that has not been played has no board; never fall
+        # back to the current season's numbers for it.
+        return _no_board(pack, "that season has not been played yet", []), tools
+    if historical and kind == "matchup":
+        # Matchup ratings are only kept for the current season.
+        return _no_board(
+            pack, "matchup ratings are only kept for the current season", []), tools
+    if historical and kind in ("buy_low", "sell_high"):
+        # Value movement is measured against today; there is no
+        # historical form of the board to answer from.
+        return _no_board(
+            pack, "buy low and sell high boards only cover the current season",
+            []), tools
+    if historical and kind == "slate":
+        # A slate board re-ranks by the upcoming schedule; a finished
+        # season has no upcoming schedule.
+        return _no_board(
+            pack, "slate boards rank by upcoming schedule and only cover "
+                  "the current season", []), tools
+    if historical and kind == "rank_movers":
+        # Rank movement is measured from today back a short window; it
+        # has no past-season form.
+        return _no_board(
+            pack, "rank movement boards only cover the current season",
+            []), tools
+
+    # The season-shaped detailed boards (breadth over the AM season
+    # snapshots, game-log finishes/floor/ceiling over the week-stat
+    # cache, within-team gaps over the season board) read their season
+    # from the bundle: a historical ask hands them that season's own
+    # bundle view, full season length, no current roster.
+    hist_bundle = bundle
+    if historical:
+        hist_bundle = {**bundle, "season": season,
+                       "week": _completed_weeks_for(bundle, season) + 1,
+                       "roster_player_ids": set(), "roster": {}}
 
     if kind == "matchup":
         return _build_matchup_board(pack, bundle, position, top_n, tools)
@@ -3602,14 +3714,28 @@ def build_leaderboard(bundle, entities, player_ids=None) -> tuple[dict, list[str
                                   top_n, roster_ids)
 
     if kind == "breadth":
-        return _build_breadth_board(pack, bundle, tools, ent, position, team,
-                                    top_n, roster_ids)
+        pack, tools = _build_breadth_board(pack, hist_bundle, tools, ent,
+                                           position, team, top_n, roster_ids)
+        if historical and pack.get("available") is not False:
+            pack["qualification_text"] = (
+                (pack.get("qualification_text") or "")
+                + f" Final {season} season board.").strip()
+        return pack, tools
 
     if kind in ("finishes", "floor", "ceiling"):
-        return _build_gamelog_board(pack, bundle, tools, kind, position,
-                                    team, top_n, roster_ids, ent)
+        pack, tools = _build_gamelog_board(pack, hist_bundle, tools, kind,
+                                           position, team, top_n, roster_ids,
+                                           ent)
+        if historical and pack.get("available") is not False:
+            pack["qualification_text"] = (
+                (pack.get("qualification_text") or "")
+                + f" Final {season} season board.").strip()
+        return pack, tools
 
     if kind == "value":
+        if historical:
+            return _build_value_rank_board_hist(
+                pack, bundle, tools, position, team, top_n, season)
         return _build_value_rank_board(pack, bundle, tools, position, team,
                                        top_n, roster_ids, ent)
 
@@ -3640,7 +3766,14 @@ def build_leaderboard(bundle, entities, player_ids=None) -> tuple[dict, list[str
         # metrics; the alias map resolves the phrase semantically.
         resolution = aliases.resolve_phrase(hint.replace("_", " "))
         if resolution and resolution.get("kind") == "stat":
-            return _build_stat_board(pack, bundle, tools, resolution,
+            stat_bundle = bundle
+            if historical:
+                # The week-stat cache is per-season: a past season's
+                # totals board reads that season's own weeks in full.
+                stat_bundle = {**bundle, "season": season,
+                               "week": _completed_weeks_for(bundle, season) + 1,
+                               "roster_player_ids": set()}
+            return _build_stat_board(pack, stat_bundle, tools, resolution,
                                      position, team, top_n, roster_ids, ent)
     if not key:
         missing_note, nearest = KNOWN_MISSING.get(hint, ("that metric is not tracked", []))
@@ -3662,8 +3795,13 @@ def build_leaderboard(bundle, entities, player_ids=None) -> tuple[dict, list[str
                                   top_n, roster_ids)
 
     if kind == "gap":
-        return _build_gap_board(pack, bundle, tools, key, spec, position,
-                                top_n, roster_ids)
+        pack, tools = _build_gap_board(pack, hist_bundle, tools, key, spec,
+                                       position, top_n, roster_ids)
+        if historical and pack.get("available") is not False:
+            pack["qualification_text"] = (
+                (pack.get("qualification_text") or "")
+                + f" Final {season} season board.").strip()
+        return pack, tools
 
     second_key = None
     second_spec = None
@@ -3690,7 +3828,10 @@ def build_leaderboard(bundle, entities, player_ids=None) -> tuple[dict, list[str
     except (TypeError, ValueError):
         window_weeks = 0
     week = bundle.get("week")
-    completed = (int(week) - 1) if week else 0
+    if historical:
+        completed = _completed_weeks_for(bundle, season)
+    else:
+        completed = (int(week) - 1) if week else 0
     direction = str(ent.get("direction") or "risers").strip().lower()
     if direction not in ("risers", "fallers"):
         direction = "risers"
@@ -3698,7 +3839,7 @@ def build_leaderboard(bundle, entities, player_ids=None) -> tuple[dict, list[str
     if kind == "movers":
         return _build_movers(pack, bundle, tools, key, spec, trend_default,
                              direction, window_weeks, completed, position,
-                             team, top_n, roster_ids)
+                             team, top_n, roster_ids, season)
 
     # -- season or windowed boards (board / intersection / dual) ----------------
     window = {"kind": "season", "applied": False,
@@ -3731,6 +3872,8 @@ def build_leaderboard(bundle, entities, player_ids=None) -> tuple[dict, list[str
         qual_text = _season_qual_text(qual, pool_size, position, team)
     pack["window"] = window
     pack["pool_size"] = pool_size
+    if historical:
+        qual_text += f" Final {season} season board."
     pack["qualification_text"] = qual_text
 
     keep, keep_notes = _board_keep(bundle, ent)
@@ -3954,8 +4097,10 @@ def _build_breadth_board(pack, bundle, tools, ent, position, team, top_n,
 
 
 def _build_movers(pack, bundle, tools, key, spec, trend_default, direction,
-                  window_weeks, completed, position, team, top_n, roster_ids):
-    season = bundle.get("season")
+                  window_weeks, completed, position, team, top_n, roster_ids,
+                  season=None):
+    if season is None:
+        season = bundle.get("season")
     label = pack["label"]
     if trend_default:
         # The Usage Trend board itself is the movement ranking: its value is
@@ -3979,6 +4124,8 @@ def _build_movers(pack, bundle, tools, key, spec, trend_default, direction,
             return _no_board(pack, "no qualified players match those filters", []), tools
         pack["board"] = board
         pack["board_count"] = len(board)
+        if pack.get("historical"):
+            pack["qualification_text"] += f" Final {season} season board."
         return pack, tools
     if not _range_capable(key):
         nearest = [k for k in ("target_share", "snap_share") if k != key]
@@ -4034,6 +4181,8 @@ def _build_movers(pack, bundle, tools, key, spec, trend_default, direction,
         return _no_board(pack, "no qualified players match those filters", []), tools
     pack["board"] = board
     pack["board_count"] = len(board)
+    if pack.get("historical"):
+        pack["qualification_text"] += f" Final {season} season board."
     return pack, tools
 
 
@@ -4307,6 +4456,71 @@ def _build_value_rank_board(pack, bundle, tools, position, team, top_n,
         text += " Showing only " + " and ".join(notes) + "."
     text += f" {len(rows)} players carry a value."
     pack["qualification_text"] = text
+    return pack, tools
+
+
+def _build_value_rank_board_hist(pack, bundle, tools, position, team,
+                                 top_n, season):
+    """Past-season value board: values as of that season's end, read
+    from the value-history snapshot store (get_values_as_of), never
+    today's table. When no recorded snapshot reaches back that far the
+    board declines honestly. Age and pool filters are today's concepts
+    (current ages, current rosters), so they do not apply here."""
+    from dashboard_services.player_value_history import get_values_as_of
+    ctx = bundle.get("ctx") or {}
+    is_sf = False
+    try:
+        from utils.lineup_slots import is_superflex_lineup
+        is_sf = bool(is_superflex_lineup(ctx.get("roster_positions") or []))
+    except Exception:
+        is_sf = False
+    league_size = len([r for r in (ctx.get("rosters") or [])
+                       if isinstance(r, dict)]) or 12
+    as_of = f"{int(season) + 1}-02-15"
+    try:
+        values = get_values_as_of(as_of, league_type="sf" if is_sf else "1qb",
+                                  league_size=league_size) or {}
+        tools.append("player_value_history.get_values_as_of")
+    except Exception:
+        logger.debug("[assistant] historical values failed", exc_info=True)
+        values = {}
+    if not values:
+        return _no_board(
+            pack, "no recorded values reach back to that season", []), tools
+    index = _index()
+    rows_map = _value_rows()
+    rows = []
+    for pid, v in values.items():
+        pid = str(pid)
+        try:
+            v = float(v)
+        except (TypeError, ValueError):
+            continue
+        info = _player_info(pid, index)
+        pos = str(info.get("position")
+                  or (rows_map.get(pid) or {}).get("position") or "").upper()
+        if position and pos != position:
+            continue
+        if team and str(info.get("team") or "").upper() != team:
+            continue
+        rows.append({"player_id": pid, "name": info.get("name"),
+                     "team": info.get("team") or "", "position": pos,
+                     "value": _r3(v)})
+    rows.sort(key=lambda r: (-(r["value"] or 0), str(r["name"])))
+    if not rows:
+        return _no_board(pack, "no qualified players match those filters",
+                         []), tools
+    pack["label"] = "Trade Value"
+    pack["pool_size"] = len(rows)
+    board = [_board_row(i + 1, r, set(), value=r["value"])
+             for i, r in enumerate(rows[:top_n])]
+    pack["board"] = board
+    pack["board_count"] = len(board)
+    pack["qualification_text"] = (
+        f"Values as of the end of the {season} season, from the recorded "
+        f"value snapshot nearest mid-February {int(season) + 1}. "
+        f"{len(rows)} players carry a recorded value. "
+        f"Final {season} season board.")
     return pack, tools
 
 
@@ -4874,6 +5088,12 @@ def playoff_sim_cached(ctx, platform):
     return _fn(ctx, platform)
 
 
+def playoff_odds_series(league_id, season, roster_id):
+    """Recorded weekly playoff-odds snapshots for one roster."""
+    from dashboard_services.playoff_odds_history import get_series as _fn
+    return _fn(league_id, season, roster_id)
+
+
 def power_rankings_context(ctx):
     from dashboard_services.ai.context_builders import build_power_rankings_context as _fn
     return _fn(ctx)
@@ -5047,6 +5267,57 @@ def build_playoffs(bundle, entities=None, player_ids=None) -> tuple[dict, list[s
         if projected_cut_wins is not None:
             me["wins_still_needed"] = round(max(0.0, projected_cut_wins - me["wins"]), 1)
         pack["me"] = me
+    # Odds trajectory: the recorded weekly snapshots (the same series
+    # the odds page charts) so "how have my odds moved" and the league's
+    # biggest movers answer from recorded history, not a re-simulation.
+    # The viewer's series rides in full; movers are start-to-current
+    # deltas over the recorded window.
+    pack["odds_trajectory"] = None
+    pack["odds_movers"] = None
+    try:
+        league_id = str(ctx.get("resolved_league_id") or bundle.get("league_id") or "")
+        movements = []
+        viewer_entry = None
+        for r in rows:
+            got = playoff_odds_series(league_id, bundle.get("season"),
+                                      r["roster_id"]) or {}
+            points = [p for p in (got.get("series") or [])
+                      if isinstance(p, dict) and p.get("pct") is not None]
+            if not points:
+                continue
+            entry = {
+                "roster_id": r["roster_id"], "team_name": r["team_name"],
+                "series": [{"week": p.get("week"), "pct": _f0(p.get("pct"))}
+                           for p in points],
+                "start_pct": _f0(points[0].get("pct")),
+                "start_week": points[0].get("week"),
+                "current_pct": _f0(points[-1].get("pct")),
+                "current_week": points[-1].get("week"),
+                "weeks_recorded": len(points),
+            }
+            if len(points) >= 2:
+                entry["delta"] = round(
+                    entry["current_pct"] - entry["start_pct"], 1)
+                movements.append(entry)
+            if me is not None and r["roster_id"] == me["roster_id"]:
+                viewer_entry = entry
+        if viewer_entry is not None:
+            pack["odds_trajectory"] = viewer_entry
+            tools.append("playoff_odds_history.get_series")
+        if movements:
+            def _slim(mv):
+                return {"team_name": mv["team_name"],
+                        "start_pct": mv["start_pct"],
+                        "current_pct": mv["current_pct"],
+                        "delta": mv["delta"]}
+            risers = sorted((m for m in movements if m["delta"] > 0),
+                            key=lambda m: -m["delta"])[:3]
+            fallers = sorted((m for m in movements if m["delta"] < 0),
+                             key=lambda m: m["delta"])[:3]
+            pack["odds_movers"] = {"risers": [_slim(m) for m in risers],
+                                   "fallers": [_slim(m) for m in fallers]}
+    except Exception:
+        logger.debug("[assistant] playoff odds trajectory failed", exc_info=True)
     # Soft-odds window: with 8+ regular-season weeks left the sim is mostly
     # projection noise, so the answer must say so and lean on wins math.
     pack["odds_soft"] = bool(weeks_remaining is not None and weeks_remaining >= 8)
