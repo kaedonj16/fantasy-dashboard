@@ -85,7 +85,7 @@
 
         function renderBtm(data, days) {
             if (data.error) {
-                _panelEmpty(panel, 'Couldn’t load', data.error, {error: true, icon: 'error'});
+                _panelEmpty(panel, 'Couldn’t load', data.error, {error: true, icon: 'error', retry: function () { fetchBtm(days); }});
                 return;
             }
             var rows = data.rosters || [];
@@ -192,7 +192,9 @@
                     renderBtm(data, days);
                 })
                 .catch(function () {
-                    _panelError(panel, 'Could not load data.');
+                    // _panelError without a retry stranded this panel: _loaded.btm
+                    // is already set, so re-clicking the tab never re-ran the load.
+                    _panelError(panel, 'Could not load data.', function () { fetchBtm(days); });
                 });
         }
 
@@ -233,7 +235,8 @@
 
     function renderSos(panel, data) {
         if (data.error) {
-            _panelEmpty(panel, 'Couldn’t load', data.error, {error: true, icon: 'error'});
+            delete _loaded.sos;
+            _panelEmpty(panel, 'Couldn’t load', data.error, {error: true, icon: 'error', retry: function () { loadSos(); }});
             return;
         }
         var teams = data.teams || [];
@@ -323,7 +326,11 @@
                 renderSos(panel, data);
             })
             .catch(function () {
-                _panelError(panel, 'Could not load data.');
+                // Clear the lazy-load flag so the retry (and any later tab
+                // re-click) genuinely re-runs the load instead of returning
+                // early on _loaded.sos.
+                delete _loaded.sos;
+                _panelError(panel, 'Could not load data.', function () { loadSos(); });
             });
     }
 
@@ -408,6 +415,14 @@
                         return r.json();
                     });
                 });
+            // A rejected shared promise must not be cached: every later
+            // caller (the sidebar panel AND the team drawer) would inherit
+            // the same rejection for the rest of the session. Drop it so
+            // the next call genuinely refetches.
+            var _riP = _riDataPromise;
+            _riP.catch(function () {
+                if (_riDataPromise === _riP) { _riDataPromise = null; _riDataKey = ''; }
+            });
         }
         return _riDataPromise;
     }
@@ -682,7 +697,8 @@
         _riFetchData()
             .then(function (data) {
                 if (data.error) {
-                    _panelEmpty(panel, 'Couldn’t load', data.error, {error: true, icon: 'error'});
+                    delete _loaded.rosterIntel;
+                    _panelEmpty(panel, 'Couldn’t load', data.error, {error: true, icon: 'error', retry: function () { loadRosterIntel(); }});
                     return;
                 }
                 var teams = data.teams || [];
@@ -805,7 +821,8 @@
             })
             .catch(function (err) {
                 console.warn('[roster-intel]', err);
-                _panelError(panel, 'Could not load roster intel.');
+                delete _loaded.rosterIntel;
+                _panelError(panel, 'Could not load roster intel.', function () { loadRosterIntel(); });
             });
     }
 

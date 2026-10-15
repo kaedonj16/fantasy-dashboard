@@ -2102,6 +2102,7 @@ _AM_JS = r"""
                   prevData: {},         // player_id -> previous-season value (for YoY trend)
                   showTrends: false,    // weekly usage trend column toggle
                   trendsBySeason: {},   // seasonKey -> { player_id -> trend obj }
+                  trendsFailed: {},     // seasonKey -> true after a failed trends fetch (retried on toggle)
                   ageMin: '', ageMax: '',
                   comboFilters: [],     // [{key, op, val}]
                   filterColKeys: new Set(), // keys auto-shown as compact cols when used in filters
@@ -2858,11 +2859,25 @@ _AM_JS = r"""
     fetch('/api/weekly-trends' + q)
       .then(r => r.ok ? r.json() : null)
       .then(d => {
-        state.trendsBySeason[trendSeasonKey()] = (d && d.players) || {};
+        // A non-OK response resolves null here: mark it failed instead of
+        // caching it as an empty season, which stranded the trends column
+        // on dashes with no refetch for that season.
+        if (!d) {
+          state.trendsBySeason[trendSeasonKey()] = {};
+          state.trendsFailed[trendSeasonKey()] = true;
+          syncTrendHeader(); render();
+          return;
+        }
+        state.trendsBySeason[trendSeasonKey()] = d.players || {};
+        delete state.trendsFailed[trendSeasonKey()];
         syncTrendHeader();  // header label reflects how many weeks exist
         render();
       })
-      .catch(() => { state.trendsBySeason[trendSeasonKey()] = {}; syncTrendHeader(); render(); });
+      .catch(() => {
+        state.trendsBySeason[trendSeasonKey()] = {};
+        state.trendsFailed[trendSeasonKey()] = true;
+        syncTrendHeader(); render();
+      });
   }
   function sparkline(series, color) {
     if (!series || series.length < 2) return '';
@@ -6166,7 +6181,7 @@ _AM_JS = r"""
     trendChk.addEventListener('change', () => {
       state.showTrends = trendChk.checked;
       syncTrendHeader();
-      if (state.showTrends && !state.trendsBySeason[trendSeasonKey()]) fetchTrends();
+      if (state.showTrends && (!state.trendsBySeason[trendSeasonKey()] || state.trendsFailed[trendSeasonKey()])) fetchTrends();
       amRefreshFilterBadge();
       render();
     });
