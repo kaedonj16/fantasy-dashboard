@@ -4,7 +4,9 @@ Contract: the answer dict compose_answer returns is exactly what
 static/app.js initAssistant consumes:
   answer.verdict / answer.text / answer.caveat   (strings or None)
   answer.receipts[]                              {label, value} strings
-  answer.followups[]                             strings
+  answer.followups[]                             {label, ask} pairs: label is
+                                                  the chip text, ask is the
+                                                  message the chip sends
   answer.act_link                                {href, label} object or None
   answer.actions[]  (this_week)                  {tag, headline, detail,
                                                   href, cta_label, key_number}
@@ -60,7 +62,9 @@ def _assert_ui_shape(answer):
     for r in answer["receipts"]:
         assert isinstance(r["label"], str) and isinstance(r["value"], str)
     for f in answer["followups"]:
-        assert isinstance(f, str)
+        assert isinstance(f, dict)
+        assert isinstance(f["label"], str) and f["label"]
+        assert isinstance(f["ask"], str) and f["ask"]
     link = answer["act_link"]
     assert link is None or (
         isinstance(link, dict)
@@ -178,7 +182,7 @@ def test_poisoned_prose_number_is_stripped_when_retry_still_poisoned(monkeypatch
     # follow-up carrying it dropped, receipts were already pack-clean.
     assert "31.4" not in answer["text"]
     assert "17.9" in answer["text"]
-    assert all("31.4" not in f for f in answer["followups"])
+    assert all("31.4" not in f["label"] and "31.4" not in f["ask"] for f in answer["followups"])
     assert all("31.4" not in r["value"] for r in answer["receipts"])
 
 
@@ -345,4 +349,5 @@ def test_internal_language_and_system_followup_never_ship(monkeypatch):
     assert "no recommended moves" not in answer["text"]
     # The system-voiced follow-up is replaced by user-voiced templates.
     assert answer["followups"] == compose_mod._FOLLOWUP_TEMPLATES["this_week"]
-    assert all("pack" not in f.lower() for f in answer["followups"])
+    assert all("pack" not in f["label"].lower() and "pack" not in f["ask"].lower()
+               for f in answer["followups"])

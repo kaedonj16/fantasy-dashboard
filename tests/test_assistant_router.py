@@ -82,6 +82,41 @@ def test_keyword_teams_does_not_steal_digest_or_metric(keyword):
     assert _intent(keyword, "Start Odunze or Addison at flex?")["intent"] == "start_sit"
 
 
+# -- win/lose outcome questions are matchup, never the digest -------------------
+# Kaedon's live transcript: "Will I win this week?" routed to this_week,
+# whose pack has no win probability, so the answer honestly reported no
+# read and padded with digest waiver actions. The matchup builder has
+# the number (build_matchup_preview + compute_win_prob); routing was
+# the failure, in the keyword fallback AND the model prompt's wording.
+
+def test_keyword_win_outcome_questions_route_to_matchup(keyword):
+    for q in ("Will I win this week?", "Will I win?", "Am I going to win this week?",
+              "Do I beat Trustfund QBs this week?", "What are my chances this week?",
+              "Am I projected to win?", "Will I lose this week?", "Will I win my matchup?"):
+        assert _intent(keyword, q)["intent"] == "matchup", q
+
+
+def test_keyword_plan_questions_stay_this_week(keyword):
+    # The hard constraint: the digest ask that works today must not move.
+    for q in ("What should I do with my team", "What should I do this week?",
+              "What should I do with my team this week?"):
+        assert _intent(keyword, q)["intent"] == "this_week", q
+
+
+def test_keyword_outcome_rule_does_not_steal_neighbors(keyword):
+    assert _intent(keyword, "What are my chances of making the playoffs?")["intent"] == "playoffs"
+    assert _intent(keyword, "Who should I add from waivers to win this week?")["intent"] == "waivers"
+    assert _intent(keyword, "Break down my matchup")["intent"] == "matchup"
+
+
+def test_router_prompt_carries_the_outcome_precedence():
+    # The model path gets the same rule in words: outcome questions are
+    # matchup even when they say "this week"; this_week is plan/actions.
+    assert "will I win" in router.SYSTEM
+    assert "Outcome questions are matchup" in router.SYSTEM
+    assert "NOT whether the user will win" in router.SYSTEM
+
+
 # -- model path: entity passthrough ----------------------------------------------------
 
 def test_model_entities_carry_new_fields(monkeypatch):

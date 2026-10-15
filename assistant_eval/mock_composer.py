@@ -25,6 +25,14 @@ def fmt(value) -> str:
     return str(f)
 
 
+def _fu(text: str) -> dict:
+    """Mirror of compose.followup_pair: follow-ups are {label, ask}
+    pairs. Every string the mock emits is already the user's own
+    question, so the label (chip text) and the ask (the message sent
+    when the chip is tapped) are the same string."""
+    return {"label": text, "ask": text}
+
+
 # Mirror of compose._ACT_LINKS: act_link is a {href, label} object (or None),
 # assigned deterministically, never a bare string.
 _ACT_LINKS = {
@@ -264,7 +272,7 @@ def no_data_answer(pack: dict) -> dict:
             or _resolve_act_link(str((pack or {}).get("type") or "metric"), pack)
             or dict(_ACT_LINKS["metric"]))
     return {"verdict": None, "text": text, "receipts": [], "caveat": None,
-            "followups": [f"What is {n}?" for n in nearest[:2]],
+            "followups": [_fu(f"What is {n}?") for n in nearest[:2]],
             "act_link": link, "actions": [], "mentions": []}
 
 
@@ -308,7 +316,7 @@ def _start_sit(pack):
                  f"{pick['name']} projects {fmt(pick.get('projection'))} points against "
                  f"{fmt(other.get('projection'))} for {other['name']}."),
         "receipts": receipts[:4],
-        "followups": ["What about next week?", "Who else is on my bench?"],
+        "followups": [_fu("What about next week?"), _fu("Who else is on my bench?")],
     })
     if (pack.get("margin") or {}).get("thin"):
         ans["caveat"] = "Close call: the margin here is thin."
@@ -351,7 +359,7 @@ def _trade_eval(pack):
         text += f" One piece is unpriced: {unpriced[0]}. The rest is judged on the priced players."
     ans = _base("trade_eval", pack)
     ans.update({"verdict": verdict, "text": text, "receipts": receipts,
-                "followups": ["What would balance it?", "Who else could I ask for?"]})
+                "followups": [_fu("What would balance it?"), _fu("Who else could I ask for?")]})
     if thin:
         ans["caveat"] = "Close call: the values are nearly even."
     return ans
@@ -378,7 +386,7 @@ def _buy_sell_hold(pack):
                  f"{fmt(trend.get('delta_pct'))} percent, with current value at "
                  f"{fmt(trend.get('current'))}."),
         "receipts": receipts[:4],
-        "followups": ["What is his role right now?", "Who could I trade him for?"],
+        "followups": [_fu("What is his role right now?"), _fu("Who could I trade him for?")],
     })
     if (pack.get("margin") or {}).get("thin"):
         ans["caveat"] = "Close call: the trend is small either way."
@@ -402,7 +410,7 @@ def _player(pack):
                  f"with a target share of {fmt(role.get('target_share'))} for the "
                  f"{player.get('team')} at {player.get('position')}."),
         "receipts": receipts,
-        "followups": ["Buy, sell, or hold on him?", "What about next week?"],
+        "followups": [_fu("Buy, sell, or hold on him?"), _fu("What about next week?")],
     })
     return ans
 
@@ -428,7 +436,7 @@ def _metric(pack):
         text += f" Your {mine['name']} sits at {fmt(mine.get('value'))}."
     ans = _base("metric", pack)
     ans.update({"verdict": f"{pack.get('label')}: {top['name']} leads", "text": text,
-                "receipts": receipts, "followups": ["Who is moving up?", "What is snap share?"]})
+                "receipts": receipts, "followups": [_fu("Who is moving up?"), _fu("What is snap share?")]})
     return ans
 
 
@@ -438,7 +446,7 @@ def _waivers(pack):
     if not candidates:
         ans.update({"verdict": None,
                     "text": "The wire is thin this week: nobody available clears your positional gate.",
-                    "receipts": [], "followups": ["What should I do with my team this week?"]})
+                    "receipts": [], "followups": [_fu("What should I do with my team this week?")]})
         return ans
     top = candidates[0]
     worst = (pack.get("my_worst_by_position") or {}).get(top.get("position")) or {}
@@ -455,7 +463,7 @@ def _waivers(pack):
     if drops:
         text += f" {drops[0]['name']} is a cleared drop if you need the spot."
     ans.update({"verdict": f"ADD {top['name']}", "text": text, "receipts": receipts[:4],
-                "followups": ["Who else is available?", "What should I do with my team this week?"]})
+                "followups": [_fu("Who else is available?"), _fu("What should I do with my team this week?")]})
     return ans
 
 
@@ -469,7 +477,7 @@ def _this_week(pack):
         "verdict": actions[0]["headline"] if actions else "Your team is set",
         "text": text or "Your team is set for the week.",
         "receipts": receipts,
-        "followups": ["Who should I add from waivers?"],
+        "followups": [_fu("Who should I add from waivers?")],
         # Mirror of the composer's action mapping: href + cta_label + key_number.
         "actions": [{"tag": a.get("tag"), "headline": a.get("headline"),
                      "detail": a.get("detail"),
@@ -522,8 +530,8 @@ def _gated_trade_finding_answer(pack):
                  "not include it, so I cannot run it here. With PRO you can ask me to find a "
                  "trade and I will rank real packages from your league with values on both sides."),
         "receipts": [], "caveat": None,
-        "followups": ["What should I do with my team this week?",
-                      "Should I accept a trade I was offered?"],
+        "followups": [_fu("What should I do with my team this week?"),
+                      _fu("Should I accept a trade I was offered?")],
         "act_link": {"href": pricing, "label": "See PRO plans"},
         "actions": [],
     }
@@ -537,7 +545,7 @@ def gated_answer(pack: dict) -> dict:
             "on the free tier. Free boards I can pull right now include target share, "
             "air yards share, and snap share.")
     return {"verdict": None, "text": text, "receipts": [], "caveat": None,
-            "followups": ["Who leads in target share?", "Who leads in snap share?"],
+            "followups": [_fu("Who leads in target share?"), _fu("Who leads in snap share?")],
             "act_link": _board_link(pack) or dict(_ACT_LINKS["leaderboard"]),
             "actions": []}
 
@@ -652,8 +660,8 @@ def _leaderboard(pack):
     ans["act_link"] = _board_link(pack) or ans["act_link"]
     ans.update({"verdict": _board_verdict(pack), "text": body,
                 "receipts": [_board_receipt(r, pack) for r in board],
-                "followups": ["Who is rising in target share?",
-                              "Who leads in air yards share?"]})
+                "followups": [_fu("Who is rising in target share?"),
+                              _fu("Who leads in air yards share?")]})
     return ans
 
 
@@ -680,7 +688,7 @@ def _playoffs(pack):
                      f"the projected cut line is {fmt(pack.get('projected_cut_wins'))} wins, so "
                      f"you need about {fmt(me.get('wins_still_needed'))} more wins from here."),
             "receipts": receipts[:4],
-            "followups": ["What are my odds of a first-round bye?", "Who is on the bubble?"],
+            "followups": [_fu("What are my odds of a first-round bye?"), _fu("Who is on the bubble?")],
         })
         return ans
     if scen:
@@ -690,8 +698,8 @@ def _playoffs(pack):
             text += f" Your next game is against {scen['next_opponent']}."
         ans.update({"verdict": scen.get("summary") or "Alive", "text": text,
                     "receipts": receipts[:4],
-                    "followups": ["What are my odds of a first-round bye?",
-                                  "How hard is my remaining schedule?"]})
+                    "followups": [_fu("What are my odds of a first-round bye?"),
+                                  _fu("How hard is my remaining schedule?")]})
         return ans
     ans.update({
         "verdict": f"{fmt(me.get('playoff_pct'))}% playoff odds",
@@ -701,7 +709,7 @@ def _playoffs(pack):
                  f"{fmt(pack.get('projected_cut_wins'))} wins, so the math says about "
                  f"{fmt(me.get('wins_still_needed'))} more wins gets you in."),
         "receipts": receipts[:4],
-        "followups": ["What are my odds of a first-round bye?", "Who is on the bubble?"],
+        "followups": [_fu("What are my odds of a first-round bye?"), _fu("Who is on the bubble?")],
     })
     return ans
 
@@ -732,7 +740,7 @@ def _power_rankings(pack):
             f"You sit at number {fmt(me.get('rank'))} with a power score of "
             f"{fmt(me.get('power_score'))} and a {me.get('record')} record.")
     ans.update({"verdict": verdict, "text": text, "receipts": receipts[:4],
-                "followups": ["What do the standings look like?", "What are my playoff odds?"]})
+                "followups": [_fu("What do the standings look like?"), _fu("What are my playoff odds?")]})
     return ans
 
 
@@ -758,7 +766,7 @@ def _standings(pack):
     ans = _base("standings", pack)
     ans.update({"verdict": f"Seed {fmt(me.get('seed'))} at {me.get('record')}", "text": text,
                 "receipts": receipts[:4],
-                "followups": ["Where am I in the power rankings?", "What are my playoff odds?"]})
+                "followups": [_fu("Where am I in the power rankings?"), _fu("What are my playoff odds?")]})
     return ans
 
 
@@ -781,7 +789,7 @@ def _matchup(pack):
     ans = _base("matchup", pack)
     ans.update({"verdict": f"{favored.get('team_name')} favored", "text": text,
                 "receipts": receipts[:4],
-                "followups": ["Who should I start at FLEX?", "What are my playoff odds?"]})
+                "followups": [_fu("Who should I start at FLEX?"), _fu("What are my playoff odds?")]})
     if (pack.get("margin") or {}).get("thin"):
         ans["caveat"] = "Close call: the win probability is nearly even."
     return ans
@@ -812,7 +820,7 @@ def _schedule(pack):
     ans = _base("schedule", pack)
     ans.update({"verdict": f"{easiest.get('team_name')} has the easiest remaining schedule",
                 "text": text, "receipts": receipts[:4],
-                "followups": ["What are my playoff odds?", "Break down my matchup"]})
+                "followups": [_fu("What are my playoff odds?"), _fu("Break down my matchup")]})
     return ans
 
 
@@ -844,7 +852,7 @@ def _trade_finding(pack):
                      f"{fmt(top.get('give_total'))}, a fairness gap of "
                      f"{fmt(abs(float(top.get('fairness_gap') or 0)))}."),
             "receipts": _side_receipts(top),
-            "followups": ["Who else could I target?", "What can I get for my spare players?"],
+            "followups": [_fu("Who else could I target?"), _fu("What can I get for my spare players?")],
         })
         return ans
     miss = pack.get("closest_miss") or {}
@@ -858,7 +866,7 @@ def _trade_finding(pack):
                      f"{fmt(abs(float(miss.get('fairness_gap') or 0)))}, outside the fair band. "
                      "The nearest alternative is the waiver wire."),
             "receipts": _side_receipts(miss),
-            "followups": ["Who is available on waivers?", "What should I do with my team this week?"],
+            "followups": [_fu("Who is available on waivers?"), _fu("What should I do with my team this week?")],
         })
         return ans
     ans.update({
@@ -866,7 +874,7 @@ def _trade_finding(pack):
         "text": ("No clean fit right now: no roster in your league lines up on both sides "
                  "inside the fair band. The nearest alternative is the waiver wire."),
         "receipts": [],
-        "followups": ["Who is available on waivers?", "What should I do with my team this week?"],
+        "followups": [_fu("Who is available on waivers?"), _fu("What should I do with my team this week?")],
     })
     return ans
 
@@ -884,7 +892,7 @@ def _breakout_board(pack):
     ans = _base("breakout_board", pack)
     ans.update({"verdict": f"{pack.get('week_label')} breakout calls", "text": text,
                 "receipts": receipts[:4],
-                "followups": ["How good is BR at breakout calls?"]})
+                "followups": [_fu("How good is BR at breakout calls?")]})
     return ans
 
 
@@ -900,7 +908,7 @@ def _breakout_track_record(pack):
     ans = _base("breakout_track_record", pack)
     ans.update({"verdict": f"Hit rate {fmt(o.get('hit_rate_pct'))} percent", "text": text,
                 "receipts": receipts,
-                "followups": ["Who are this week's breakout calls?"]})
+                "followups": [_fu("Who are this week's breakout calls?")]})
     return ans
 
 
@@ -918,11 +926,11 @@ def _breakout_history(pack):
             receipts.append({"label": "Breakout score", "value": fmt(earliest["breakout_score"])})
         ans.update({"verdict": f"YES, {name} was a breakout call", "text": text,
                     "receipts": receipts,
-                    "followups": ["Who are this week's breakout calls?"]})
+                    "followups": [_fu("Who are this week's breakout calls?")]})
     else:
         ans.update({"verdict": f"NO, {name} was not a breakout call",
                     "text": f"No. {name} has not been surfaced as a breakout call this season.",
-                    "receipts": [], "followups": ["Who are this week's breakout calls?"]})
+                    "receipts": [], "followups": [_fu("Who are this week's breakout calls?")]})
     return ans
 
 
@@ -941,7 +949,7 @@ def _teams(pack):
                 f"strongest at {fmt(first.get('strength'))}.")
         ans.update({"verdict": f"Weakest {focus} room: {last.get('team_name')}",
                     "text": text, "receipts": receipts,
-                    "followups": ["Whose roster is strongest?"]})
+                    "followups": [_fu("Whose roster is strongest?")]})
         return ans
     s = pack.get("strongest") or {}
     w = pack.get("weakest") or {}
@@ -956,7 +964,7 @@ def _teams(pack):
     text = (f"{s.get('team_name')} has the strongest roster in {pack.get('mode_label')} "
             f"mode with a grade score of {fmt(s.get('grade_score'))}.")
     ans.update({"verdict": f"Strongest roster: {s.get('team_name')}", "text": text,
-                "receipts": receipts[:4], "followups": ["Who is weakest at TE?"]})
+                "receipts": receipts[:4], "followups": [_fu("Who is weakest at TE?")]})
     return ans
 
 
@@ -971,11 +979,11 @@ def _pick_ownership(pack):
     if pack.get("owned_by_me"):
         ans.update({"verdict": f"You own the {pick.get('label')}",
                     "text": f"You still own your {pick.get('label')}.",
-                    "receipts": receipts, "followups": ["What other picks do I own?"]})
+                    "receipts": receipts, "followups": [_fu("What other picks do I own?")]})
     else:
         ans.update({"verdict": f"{owner} owns the {pick.get('label')}",
                     "text": f"Your {pick.get('label')} now belongs to {owner}.",
-                    "receipts": receipts, "followups": ["What other picks do I own?"]})
+                    "receipts": receipts, "followups": [_fu("What other picks do I own?")]})
     return ans
 
 
@@ -1016,7 +1024,7 @@ def _keeper(pack):
                 f"age is {fmt(pack.get('roster_avg_age'))}.")
         ans.update({"verdict": "Dynasty: the whole roster carries over",
                     "text": text, "receipts": _keeper_receipts(pack),
-                    "followups": ["Who is first on my cut line?"]})
+                    "followups": [_fu("Who is first on my cut line?")]})
         return ans
     keepers = pack.get("my_keepers") or []
     asked = pack.get("asked_player") or {}
@@ -1040,7 +1048,7 @@ def _keeper(pack):
             text = (f"No. {asked['name']} (value {fmt(asked.get('value'))}) sits "
                     f"outside your projected keepers. " + text)
     ans.update({"verdict": verdict, "text": text, "receipts": _keeper_receipts(pack),
-                "followups": ["Who is first on my cut line?"]})
+                "followups": [_fu("Who is first on my cut line?")]})
     return ans
 
 
@@ -1096,7 +1104,7 @@ def _rookie(pack):
         ans.update({"verdict": f"{prospect['name']}: {prospect.get('position')}"
                                f"{fmt(prospect.get('position_rank'))} in the {year} class",
                     "text": text, "receipts": _rookie_receipts(pack),
-                    "followups": ["Who are the top quarterbacks in the class?"]})
+                    "followups": [_fu("Who are the top quarterbacks in the class?")]})
         return ans
     board = pack.get("prospects") or []
     top = board[0] if board else {}
@@ -1109,7 +1117,7 @@ def _rookie(pack):
     ans.update({"verdict": verdict,
                 "text": f"The board: {listing}.",
                 "receipts": _rookie_receipts(pack),
-                "followups": ["Who are the top quarterbacks in the class?"]})
+                "followups": [_fu("Who are the top quarterbacks in the class?")]})
     return ans
 
 
@@ -1145,7 +1153,7 @@ def _cross_league(pack):
         best = min(ranked, key=lambda s: s["rank"] / s["total_teams"])
         verdict = f"Strongest: {best.get('league_name')}"
     ans.update({"verdict": verdict, "text": " ".join(lines), "receipts": rows,
-                "followups": ["Which of my teams is strongest?"]})
+                "followups": [_fu("Which of my teams is strongest?")]})
     return ans
 
 

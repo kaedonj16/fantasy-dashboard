@@ -30,6 +30,14 @@ and follow-ups phrased as instructions to send or provide data are treated
 as draft defects (one regeneration, then deterministic cleanup: offending
 sentences stripped, follow-ups replaced with user-voiced templates).
 
+Follow-ups are {label, ask} pairs, never bare strings: the label is the
+chip text the user sees (an inviting offer is fine there), the ask is the
+exact message the chip sends, so the ask must read as the user's own
+question. Clicking a chip that says "Want the cheapest buy-in for Zay
+Flowers?" sends "What is the cheapest way to buy Zay Flowers?", never the
+label. An offer-style string with no ask is rejected, not reworded; the
+deterministic templates (also pairs) refill instead.
+
 Receipt values are humanized: a value the model pasted as a serialized
 object renders as its friendly label (a league renders as its team name,
 never raw JSON), and rows with empty values ([], {}, None, blank) are
@@ -68,7 +76,9 @@ SCHEMA = {
         "receipts": {"type": "array", "items": {"type": "object", "properties": {
             "label": {"type": "string"}, "value": {"type": "string"}}, "required": ["label", "value"], "additionalProperties": False}},
         "caveat": {"type": ["string", "null"]},
-        "followups": {"type": "array", "items": {"type": "string"}},
+        "followups": {"type": "array", "items": {"type": "object", "properties": {
+            "label": {"type": "string"}, "ask": {"type": "string"}},
+            "required": ["label", "ask"], "additionalProperties": False}},
         "act_link": {"type": ["string", "null"]},
     },
     "required": ["verdict", "text", "receipts", "caveat", "followups", "act_link"],
@@ -84,7 +94,10 @@ SYSTEM = (
     "and any of the user's own players on the board; for the weekly digest, each action's key number; "
     "for waivers, the top candidate's value and the user's weakest starter at that position; "
     "for playoffs, the odds and the wins still needed; for standings and power rankings, the user's "
-    "own seed or rank and the leader; for a matchup, the win probability and both projected totals; "
+    "own seed or rank and the leader; for a matchup, the win probability and both projected "
+    "totals (a matchup answer is only about the matchup: the verdict leads with the win "
+    "probability and the projected score, and it never carries waiver targets or weekly "
+    "digest actions); "
     "for schedule, the user's opponent strength index and the easiest team's. "
     "If the pack flags odds_soft, say the odds are soft this early and lead with the wins math. "
     "For trade finding, present only the findings in the evidence: never invent a partner, a package, "
@@ -105,8 +118,11 @@ SYSTEM = (
     "If assumed_context.assumed_league_uncertain is true, state the assumed league in the text. "
     "If a stored preference shapes the answer, name that preference in the text. "
     "Never mention the pack, evidence, tools, or any internal data structure; call it your league data. "
-    "Follow-ups must be short questions in the user's voice that they would tap, never instructions "
-    "to send, provide, or share anything. "
+    "Follow-ups are objects with a label and an ask. The label is the short chip text the user "
+    "sees; it may be phrased as an inviting offer, like 'Want the cheapest buy-in for Zay Flowers?'. "
+    "The ask is the exact message sent when the chip is tapped, so write it as a natural question "
+    "in the user's own voice, like 'What is the cheapest way to buy Zay Flowers?'. An ask is never "
+    "an offer from you and never an instruction to send, provide, or share anything. "
     "No em dashes. Use plain hyphens. Short, direct sentences. Return JSON only."
 )
 
@@ -511,7 +527,8 @@ def _receipt_grounded(receipt_value: str, allowed: set[str]) -> bool:
 def _ungrounded_numbers(data: dict, allowed: set[str]) -> list[str]:
     """Numbers stated in verdict/prose/caveat/follow-ups that are not allowed."""
     texts = [data.get("verdict") or "", data.get("text") or "", data.get("caveat") or ""]
-    texts += [str(f) for f in (data.get("followups") or [])]
+    for f in (data.get("followups") or []):
+        texts += _followup_texts(f)
     bad: list[str] = []
     for text in texts:
         for token in _numbers_in(str(text)):
@@ -546,7 +563,8 @@ def _strip_ungrounded(data: dict, allowed: set[str]) -> dict:
             out[field] = cleaned or None
     out["followups"] = [
         f for f in (out.get("followups") or [])
-        if all(_norm_num(n) in allowed for n in _numbers_in(str(f)))
+        if all(_norm_num(n) in allowed
+               for t in _followup_texts(f) for n in _numbers_in(t))
     ]
     return out
 
@@ -879,7 +897,8 @@ def _surface_numbers(data: dict, actions: list) -> set[str]:
     for r in (data.get("receipts") or []):
         if isinstance(r, dict):
             texts += [str(r.get("label") or ""), str(r.get("value") or "")]
-    texts += [str(f) for f in (data.get("followups") or [])]
+    for f in (data.get("followups") or []):
+        texts += _followup_texts(f)
     for a in actions or []:
         if isinstance(a, dict):
             texts += [str(a.get("headline") or ""), str(a.get("detail") or "")]
@@ -944,44 +963,69 @@ _INTERNAL_RE = re.compile(r"evidence[\s_-]*pack|\bpack\b", re.IGNORECASE)
 # assistant fetches its own data; a follow-up is a question the user taps.
 _SYSTEM_ASK_RE = re.compile(r"^\s*(send|provide|share|upload|paste)\b", re.IGNORECASE)
 
+def followup_pair(label: str, ask: str | None = None) -> dict:
+    """One follow-up chip: {label, ask}.
+
+    The label is the chip text the user sees; the ask is the exact message
+    sent when the chip is tapped. Most chips read as the user's own
+    question, so the ask defaults to the label; an offer-style label
+    ("Want the cheapest buy-in for Zay Flowers?") must carry a hand-written
+    user-voice ask ("What is the cheapest way to buy Zay Flowers?").
+    """
+    label = str(label)
+    return {"label": label, "ask": label if ask is None else str(ask)}
+
+
+# Deterministic per-intent fallbacks. Every entry is a pair; the strings
+# below are already phrased as the user's own questions, so each label is
+# also its ask (followup_pair defaults the ask to the label).
 _FOLLOWUP_TEMPLATES = {
-    "start_sit": ["What about next week?", "Who else is on my bench?"],
-    "trade_eval": ["What would balance this trade?", "Who else could I ask for?"],
-    "trade_finding": ["Who else could I target?", "What can I get for my spare players?",
-                      "What should I do with my team this week?"],
-    "buy_sell_hold": ["Who could I trade him for?", "What is his role right now?"],
-    "player": ["Buy, sell, or hold on him?", "How is his upcoming schedule?"],
-    "metric": ["Who is moving up?", "What is snap share?"],
-    "leaderboard": ["Who is rising in target share?", "Who leads in air yards share?",
-                    "Which defenses give up the most to tight ends?"],
-    "waivers": ["Who else is available?", "What should I do with my team this week?"],
-    "this_week": ["Who should I start at FLEX?", "Who is the best waiver add?",
-                  "Any buy-lows I should target?"],
-    "playoffs": ["What are my odds of a first-round bye?", "Who is on the bubble?",
-                 "How hard is my remaining schedule?"],
-    "power_rankings": ["What do the standings look like?", "What are my playoff odds?",
-                       "Break down my matchup"],
-    "standings": ["Where am I in the power rankings?", "Who has the most points for?",
-                  "What are my playoff odds?"],
-    "matchup": ["Who should I start at FLEX?", "How hard is my remaining schedule?",
-                "What are my playoff odds?"],
-    "schedule": ["What are my playoff odds?", "Break down my matchup",
-                 "Who has the hardest remaining schedule?"],
-    "breakout_board": ["How good is BR at breakout calls?", "Who are the breakout calls at RB?"],
-    "breakout_track_record": ["Who are this week's breakout calls?", "Who was the biggest breakout hit?"],
-    "breakout_history": ["Who are this week's breakout calls?", "How good is BR at breakout calls?"],
-    "teams": ["Who is weakest at TE?", "Grade every team's WR room"],
-    "pick_ownership": ["What other picks do I own?", "Who has the most draft capital?"],
-    "keeper": ["Who is first on my cut line?", "What does my last keeper spot come down to?"],
-    "rookie": ["Who are the top quarterbacks in the class?", "Who is the top prospect?",
-               "What about the running backs?"],
-    "cross_league": ["Which of my teams is strongest?", "What should I do with my team this week?"],
+    "start_sit": [followup_pair("What about next week?"), followup_pair("Who else is on my bench?")],
+    "trade_eval": [followup_pair("What would balance this trade?"), followup_pair("Who else could I ask for?")],
+    "trade_finding": [followup_pair("Who else could I target?"), followup_pair("What can I get for my spare players?"),
+                      followup_pair("What should I do with my team this week?")],
+    "buy_sell_hold": [followup_pair("Who could I trade him for?"), followup_pair("What is his role right now?")],
+    "player": [followup_pair("Buy, sell, or hold on him?"), followup_pair("How is his upcoming schedule?")],
+    "metric": [followup_pair("Who is moving up?"), followup_pair("What is snap share?")],
+    "leaderboard": [followup_pair("Who is rising in target share?"), followup_pair("Who leads in air yards share?"),
+                    followup_pair("Which defenses give up the most to tight ends?")],
+    "waivers": [followup_pair("Who else is available?"), followup_pair("What should I do with my team this week?")],
+    "this_week": [followup_pair("Who should I start at FLEX?"), followup_pair("Who is the best waiver add?"),
+                  followup_pair("Any buy-lows I should target?")],
+    "playoffs": [followup_pair("What are my odds of a first-round bye?"), followup_pair("Who is on the bubble?"),
+                 followup_pair("How hard is my remaining schedule?")],
+    "power_rankings": [followup_pair("What do the standings look like?"), followup_pair("What are my playoff odds?"),
+                       followup_pair("Break down my matchup")],
+    "standings": [followup_pair("Where am I in the power rankings?"), followup_pair("Who has the most points for?"),
+                  followup_pair("What are my playoff odds?")],
+    "matchup": [followup_pair("Who should I start at FLEX?"), followup_pair("How hard is my remaining schedule?"),
+                followup_pair("What are my playoff odds?")],
+    "schedule": [followup_pair("What are my playoff odds?"), followup_pair("Break down my matchup"),
+                 followup_pair("Who has the hardest remaining schedule?")],
+    "breakout_board": [followup_pair("How good is BR at breakout calls?"), followup_pair("Who are the breakout calls at RB?")],
+    "breakout_track_record": [followup_pair("Who are this week's breakout calls?"), followup_pair("Who was the biggest breakout hit?")],
+    "breakout_history": [followup_pair("Who are this week's breakout calls?"), followup_pair("How good is BR at breakout calls?")],
+    "teams": [followup_pair("Who is weakest at TE?"), followup_pair("Grade every team's WR room")],
+    "pick_ownership": [followup_pair("What other picks do I own?"), followup_pair("Who has the most draft capital?")],
+    "keeper": [followup_pair("Who is first on my cut line?"), followup_pair("What does my last keeper spot come down to?")],
+    "rookie": [followup_pair("Who are the top quarterbacks in the class?"), followup_pair("Who is the top prospect?"),
+               followup_pair("What about the running backs?")],
+    "cross_league": [followup_pair("Which of my teams is strongest?"), followup_pair("What should I do with my team this week?")],
 }
+
+
+def _followup_texts(f) -> list[str]:
+    """Every reader-visible string of one follow-up: label + ask for a
+    pair, the string itself for a legacy bare-string follow-up."""
+    if isinstance(f, dict):
+        return [str(f.get("label") or ""), str(f.get("ask") or "")]
+    return [str(f or "")]
 
 
 def _internal_hits(data: dict) -> list[str]:
     texts = [data.get("verdict") or "", data.get("text") or "", data.get("caveat") or ""]
-    texts += [str(f) for f in (data.get("followups") or [])]
+    for f in (data.get("followups") or []):
+        texts += _followup_texts(f)
     return [str(t) for t in texts if t and _INTERNAL_RE.search(str(t))]
 
 
@@ -1005,28 +1049,62 @@ def _strip_internal_language(data: dict) -> dict:
         if value and _INTERNAL_RE.search(str(value)):
             out[field] = None
     out["followups"] = [f for f in (out.get("followups") or [])
-                        if not _INTERNAL_RE.search(str(f))]
+                        if not any(_INTERNAL_RE.search(t) for t in _followup_texts(f))]
     return out
 
 
-def _clean_followups(intent: str, followups) -> list[str]:
-    """Keep only user-voiced follow-ups; fall back to per-intent templates.
+# A follow-up phrased as an offer FROM the assistant ("Want the cheapest
+# buy-in for ...?", "Want me to ...?") is the assistant's voice, not the
+# user's. As a pair it is fine as a label, because the ask field is what
+# gets sent; as a bare string there is no user-voiced ask, so it is
+# rejected rather than reworded.
+_OFFER_RE = re.compile(r"^\s*want\b", re.IGNORECASE)
 
-    A follow-up the user taps is a question in their voice ("Who should I
-    start at FLEX?"). Anything that reads as system language (internal
-    terms) or as an instruction to send/provide data is rejected; when
-    nothing survives, the intent's templates are used instead.
+
+def _pair_followup(f) -> dict | None:
+    """Normalize one follow-up to a {label, ask} pair, or None to drop it.
+
+    Dict pairs keep their label verbatim (an inviting offer is fine
+    there) and are kept when the ask is a clean user-voiced question. A
+    bare string becomes a pair with ask == label only when it already
+    reads as the user's own question; offer-style and system-style
+    strings are dropped, never reworded.
+    """
+    if isinstance(f, dict):
+        label = str(f.get("label") or "").strip()
+        ask = str(f.get("ask") or "").strip()
+    elif isinstance(f, str):
+        label = ask = f.strip()
+    else:
+        return None
+    if not label or not ask or len(label) > 100 or len(ask) > 100:
+        return None
+    if _INTERNAL_RE.search(label) or _INTERNAL_RE.search(ask):
+        return None
+    if _SYSTEM_ASK_RE.search(label) or _SYSTEM_ASK_RE.search(ask):
+        return None
+    if _OFFER_RE.search(ask):
+        return None
+    return {"label": label, "ask": ask}
+
+
+def _clean_followups(intent: str, followups) -> list[dict]:
+    """Keep only follow-ups whose ask is in the user's voice; fall back
+    to per-intent templates.
+
+    A follow-up chip sends its ask, and the ask is a question in the
+    user's voice ("Who should I start at FLEX?"). Anything whose ask
+    reads as system language (internal terms), as an instruction to
+    send/provide data, or as an offer from the assistant is rejected;
+    when nothing survives, the intent's templates are used instead.
     """
     kept = []
     for f in followups or []:
-        s = str(f).strip()
-        if not s or len(s) > 100:
-            continue
-        if _INTERNAL_RE.search(s) or _SYSTEM_ASK_RE.search(s):
-            continue
-        kept.append(s)
+        pair = _pair_followup(f)
+        if pair is not None:
+            kept.append(pair)
     if not kept:
-        kept = list(_FOLLOWUP_TEMPLATES.get(intent) or [])
+        kept = [dict(p) for p in (_FOLLOWUP_TEMPLATES.get(intent) or [])]
     return kept[:3]
 
 
@@ -1110,7 +1188,7 @@ def no_data_answer(pack: dict) -> dict:
             or _resolve_act_link(str((pack or {}).get("type") or "metric"), pack)
             or dict(_ACT_LINKS["metric"]))
     return {"verdict": None, "text": text, "receipts": [], "caveat": None,
-            "followups": [f"What is {n}?" for n in nearest[:2]],
+            "followups": [followup_pair(f"What is {n}?") for n in nearest[:2]],
             "act_link": link, "actions": [], "mentions": []}
 
 
@@ -1135,8 +1213,8 @@ def _gated_trade_finding_answer(pack: dict) -> dict:
                  "not include it, so I cannot run it here. With PRO you can ask me to find a "
                  "trade and I will rank real packages from your league with values on both sides."),
         "receipts": [], "caveat": None,
-        "followups": ["What should I do with my team this week?",
-                      "Should I accept a trade I was offered?"],
+        "followups": [followup_pair("What should I do with my team this week?"),
+                      followup_pair("Should I accept a trade I was offered?")],
         "act_link": {"href": pricing, "label": "See PRO plans"},
         "actions": [],
     }
@@ -1153,7 +1231,7 @@ def gated_answer(pack: dict) -> dict:
             "on the free tier. Free boards I can pull right now include target share, "
             "air yards share, and snap share.")
     return {"verdict": None, "text": text, "receipts": [], "caveat": None,
-            "followups": ["Who leads in target share?", "Who leads in snap share?"],
+            "followups": [followup_pair("Who leads in target share?"), followup_pair("Who leads in snap share?")],
             "act_link": _board_link(pack) or dict(_ACT_LINKS["leaderboard"]),
             "actions": []}
 
@@ -1165,7 +1243,8 @@ _BOARD_SYSTEM = (
     "in the evidence pack; it is rendered separately and must not be reproduced, "
     "reordered, or extended. Write ONE short intro sentence that frames the question "
     "WITHOUT naming any player or team and without restating any rank; then give 2 to 3 "
-    "follow-up questions in the user's voice. Every number you state must appear "
+    "follow-ups as label/ask objects: the label is the short chip text, the ask is the "
+    "question in the user's own voice that is sent when the chip is tapped. Every number you state must appear "
     "verbatim in the pack. Never mention the pack or evidence. No em dashes. "
     "Return JSON only."
 )
@@ -1474,7 +1553,8 @@ def compose_answer(intent: str, question: str, pack: dict, *, preferences=None, 
             "missing_key_numbers": missing,
             "banned_terms": ["pack", "evidence pack"],
             "instruction": "Cite every missing key number in the text or receipts. "
-                           "Do not use the banned terms. Follow-ups are questions in the user's voice.",
+                           "Do not use the banned terms. Follow-ups are label/ask objects; "
+                           "each ask is a question in the user's voice.",
         }
         try:
             data = _draft(system + _QUALITY_SUFFIX, retry_payload, allowed)

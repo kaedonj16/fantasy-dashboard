@@ -49775,6 +49775,26 @@ em.gneg { background: var(--loss); }
     background: var(--gold);
     border: 2px solid var(--bg-alt);
 }
+/* In-flight indicator on the launcher itself: the thread typing dots,
+   small and white on the accent button, shown only while an answer is
+   loading and the popup is not open. */
+.br-asst-launcher-typing {
+    position: absolute;
+    left: 50%;
+    bottom: 5px;
+    transform: translateX(-50%);
+    display: inline-flex;
+    gap: 2px;
+    pointer-events: none;
+}
+.br-asst-launcher-typing[hidden] {
+    display: none !important;
+}
+.br-asst-launcher-typing .br-asst-dot-anim {
+    width: 4px;
+    height: 4px;
+    background: #fff;
+}
 /* Slim single-line prompt: mark, one line of text, chevron, and a
    small dismiss. No card stack, no CTA button. */
 .br-asst-teaser {

@@ -41,7 +41,9 @@ def test_cache_name_bumped_for_blank_screen_fix():
     # Assistant and purges pre-assistant shells that paint without it;
     # v35 ships the keyboard-aware assistant sheet and purges v34
     # shells whose composer hides behind the iOS keyboard; v36 ships
-    # the global JS error hook in app.js.
+    # the global JS error hook in app.js; v37 ships the assistant
+    # continuity build (cross-page thread restore, launcher typing and
+    # unseen-answer indicators, the corrected minimize chevron).
     # Assert the current version, not a stale pin.
     assert "br-fantasy-v37" in SW
 

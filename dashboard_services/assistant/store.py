@@ -228,6 +228,76 @@ _LOG_COLS = [
 _JSON_COLS = {"entities", "assumed_context", "tools_called", "evidence_pack", "evidence_as_of", "verdict", "numbers_shown"}
 
 
+def get_thread_row(thread_id: str) -> dict | None:
+    """Read-only thread lookup (never creates a row)."""
+    _init_tables()
+    try:
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT thread_id, account_key, platform, league_id, season "
+                "FROM assistant_threads WHERE thread_id = %s",
+                (str(thread_id),),
+            ).fetchone()
+    except Exception:
+        logger.debug("[assistant] thread lookup failed", exc_info=True)
+        return None
+    if not row:
+        return None
+    if isinstance(row, dict):
+        return row
+    return {"thread_id": row[0], "account_key": row[1], "platform": row[2],
+            "league_id": row[3], "season": row[4]}
+
+
+def _json_col(value):
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except Exception:
+            return {}
+    return value if isinstance(value, dict) else {}
+
+
+def list_thread_messages(account_key: str, thread_id: str, limit: int = 50) -> list[dict]:
+    """Chat turns of one of the account's threads, oldest first, shaped
+    for history restore: the user's question plus the answer surfaces
+    that were persisted with the log row (verdict call, prose text, and
+    the receipt numbers). The account filter is in the query itself, so
+    another account's thread id returns nothing."""
+    _init_tables()
+    try:
+        with get_conn() as conn:
+            rows = conn.execute(
+                "SELECT log_id, question_text, intent, verdict, answer_text, numbers_shown "
+                "FROM assistant_advice_log "
+                "WHERE thread_id = %s AND account_key = %s AND proactive = FALSE "
+                "ORDER BY log_id DESC LIMIT %s",
+                (str(thread_id), account_key, int(limit)),
+            ).fetchall()
+    except Exception:
+        logger.debug("[assistant] thread history read failed", exc_info=True)
+        return []
+    messages = []
+    for row in reversed(list(rows or [])):
+        if isinstance(row, dict):
+            d = row
+        else:
+            d = {"log_id": row[0], "question_text": row[1], "intent": row[2],
+                 "verdict": row[3], "answer_text": row[4], "numbers_shown": row[5]}
+        verdict = _json_col(d.get("verdict"))
+        numbers = _json_col(d.get("numbers_shown"))
+        answer = {"verdict": verdict.get("call"), "text": d.get("answer_text") or "",
+                  "receipts": [{"label": str(k), "value": str(v)}
+                                for k, v in numbers.items()],
+                  "caveat": None, "followups": [], "act_link": None,
+                  "actions": [], "mentions": []}
+        if not answer["text"] and not answer["verdict"]:
+            continue
+        messages.append({"log_id": d.get("log_id"), "question": d.get("question_text"),
+                         "intent": d.get("intent"), "answer": answer})
+    return messages
+
+
 def write_log(**fields) -> int | None:
     """Insert one advice-log row; returns log_id or None on failure."""
     _init_tables()
