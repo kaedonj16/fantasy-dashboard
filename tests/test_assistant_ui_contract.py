@@ -422,6 +422,64 @@ def test_teaser_is_a_slim_single_line():
     assert "white-space: nowrap" in line
 
 
+def test_intro_bubble_for_never_opened_users():
+    # The one-time intro bubble lives in the teaser's slot with the
+    # teaser's card treatment: bold lead, one muted line, one example
+    # chip, a speech tail over the launcher, and the plain bold slate
+    # dismiss on a 28px target.
+    for selector in (
+        ".br-asst-bubble",
+        ".br-asst-bubble-main",
+        ".br-asst-bubble-lead",
+        ".br-asst-bubble-line",
+        ".br-asst-bubble-chiprow",
+        ".br-asst-bubble-dismiss",
+    ):
+        _rule(ASSISTANT_CSS, selector)
+    bubble = _rule(ASSISTANT_CSS, ".br-asst-bubble")
+    assert "bottom: 136px" in bubble  # teaser's slot: 14px above the launcher
+    assert "width: 326px" in bubble
+    tail = _rule(ASSISTANT_CSS, ".br-asst-bubble::after")
+    assert "transform: rotate(45deg)" in tail
+    dismiss = _rule(ASSISTANT_CSS, ".br-asst-bubble-dismiss")
+    assert "width: 28px" in dismiss and "height: 28px" in dismiss
+    assert "color: #334155" in dismiss
+    media = ASSISTANT_CSS[ASSISTANT_CSS.index("@media (max-width: 768px)"):]
+    mobile = _rule(media, ".br-asst-bubble")
+    assert "bottom: calc(var(--dock-safe-bottom) + 14px + 56px + 14px)" in mobile
+    # Copy and structure in the JS build.
+    for needle in (
+        "el('aside', 'br-asst-bubble')",
+        "introEl.id = 'brAsstIntro'",
+        "el('span', 'br-asst-bubble-lead', 'New: BR Assistant')",
+        "'Ask me anything about your league.'",
+        "el('button', 'br-asst-chip', 'Who should I start at FLEX this week?')",
+        "el('button', 'br-asst-bubble-dismiss', '×')",
+    ):
+        assert needle in ASSISTANT_JS, f"missing intro bubble piece {needle}"
+    # The chip behaves like the starter chips: it sends on tap through
+    # sendMessage after opening the sheet.
+    chip = _slice("bchip.addEventListener('click'", "});")
+    assert "openPopup(false);" in chip
+    assert "sendMessage('Who should I start at FLEX this week?', null, false);" in chip
+    # The main body opens the sheet; the dismiss retires without opening.
+    assert "bmain.addEventListener('click', function () { openPopup(false); });" in ASSISTANT_JS
+    assert "bdismiss.addEventListener('click', function () { retireIntro(); });" in ASSISTANT_JS
+    # Retirement persists in localStorage (no server-backed opened
+    # flag exists), is set by dismiss and by ANY open path, and prior
+    # use on the browser (restored thread, asks on the meter) also
+    # counts as opened so veterans never see it.
+    assert "var INTRO_KEY = 'brAsstIntroSeen';" in ASSISTANT_JS
+    assert "localStorage.getItem(INTRO_KEY) === '1'" in ASSISTANT_JS
+    assert "localStorage.setItem(INTRO_KEY, '1')" in ASSISTANT_JS
+    assert "savedAtLoad && savedAtLoad.thread_id" in ASSISTANT_JS
+    assert "state.caps && state.caps.used > 0" in ASSISTANT_JS
+    opening = _slice("function openPopup(fromTeaser)", "state.popupState = 'open';")
+    assert "retireIntro();" in opening
+    # While the bubble holds the slot the digest teaser stays down.
+    assert "if (!introEl && state.teaser && !dismissed) {" in ASSISTANT_JS
+
+
 def test_grab_bar_drags_sheet_to_minimize():
     # The grab handle (and header strip) actually drags: pointer
     # capture, the sheet follows via translateY, past 120px or a fast

@@ -49886,6 +49886,83 @@ em.gneg { background: var(--loss); }
     cursor: pointer;
     font-family: inherit;
 }
+/* One-time intro bubble for users who have never opened the sheet:
+   same slot, card surface and shadow as the teaser, with a bold
+   lead, one muted line, one example chip, and a speech tail over
+   the launcher. Retires permanently on first open or dismiss. */
+.br-asst-bubble {
+    position: fixed;
+    right: 16px;
+    bottom: 136px;
+    z-index: 9994;
+    width: 326px;
+    max-width: calc(100vw - 32px);
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, .2);
+    padding: 12px 14px;
+}
+.br-asst-bubble::after {
+    content: "";
+    position: absolute;
+    right: 22px;
+    bottom: -6px;
+    width: 12px;
+    height: 12px;
+    background: var(--card);
+    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    transform: rotate(45deg);
+}
+.br-asst-bubble-main {
+    display: block;
+    width: 100%;
+    padding: 0 26px 0 0;
+    border: 0;
+    background: transparent;
+    font-family: inherit;
+    color: var(--text);
+    cursor: pointer;
+    text-align: left;
+}
+.br-asst-bubble-lead {
+    display: block;
+    font-size: 14px;
+    font-weight: 800;
+    line-height: 1.25;
+}
+.br-asst-bubble-line {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.35;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+.br-asst-bubble-chiprow {
+    margin-top: 10px;
+}
+.br-asst-bubble-dismiss {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    font-size: 17px;
+    font-weight: 700;
+    line-height: 1;
+    color: #334155;
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+    font-family: inherit;
+    z-index: 1;
+}
 .br-asst-scrim {
     display: none;
 }
@@ -50643,6 +50720,12 @@ button.br-asst-actlink {
         bottom: calc(var(--dock-safe-bottom) + 14px);
     }
     .br-asst-teaser {
+        left: 16px;
+        right: 16px;
+        width: auto;
+        bottom: calc(var(--dock-safe-bottom) + 14px + 56px + 14px);
+    }
+    .br-asst-bubble {
         left: 16px;
         right: 16px;
         width: auto;
