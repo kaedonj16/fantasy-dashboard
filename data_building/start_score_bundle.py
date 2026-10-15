@@ -26,6 +26,12 @@ Injury status is deliberately NOT trusted from the bundle: Q tags change
 intraday, so the request always overlays the live status from the player map
 before calling ``compute_start_score``. The bundle stores the batch-time status
 for reference only.
+
+Form/usage inputs follow the 2026-10 rating rework: only PLAYED weeks count
+(a stat row carrying a points line), recent form is the last 3 played weeks,
+and usage is the absolute per-game delta of opportunities (RB) or targets
+(WR/TE). ``derive_start_sit_inputs`` is the one derivation behind both this
+bundle and the Start/Sit page's live fallback.
 """
 from __future__ import annotations
 
@@ -236,15 +242,100 @@ def _variant_week_points(season: int, scoring: dict):
     return weekstat, weekly
 
 
-def _season_ppg_recent(weekstat: dict, pid: str):
-    """(season_ppg, recent_ppg) exactly as the Start/Sit page derives them."""
-    rec = weekstat.get(str(pid))
-    if not rec or not rec.get("n"):
-        return 0.0, 0.0
-    season_ppg = round(rec["sum"] / rec["n"], 1)
-    vals = [v for v in (rec.get("last4") or []) if v is not None]
-    recent_ppg = round(sum(vals) / len(vals), 1) if vals else 0.0
-    return season_ppg, recent_ppg
+_DERIVE_CACHE: Dict = {}
+_DERIVE_CACHE_MAX = 16
+
+
+def derive_start_sit_inputs(season: int, scoring_settings: dict) -> Dict[str, dict]:
+    """Per-player form/usage inputs for the start/sit rating, derived from
+    the cached weekly stat files under ``scoring_settings``.
+
+    A week counts as PLAYED only when the player's stat row carries a points
+    line (``pts_ppr`` present): Sleeper rows with ``gp`` set but no points
+    line are phantom weeks (a few snaps, no production) and never enter any
+    average. Points are scored with ``week_stat_points`` (the same scorer
+    the Start/Sit page's live path uses), recent form is the last 3 played
+    weeks, and the usage delta is the absolute per-game change of the
+    position's volume metric (see ``utils.start_sit.form_usage_inputs``).
+
+    This is the single derivation the bundle build and the Start/Sit page's
+    live fallback share, so both paths feed ``compute_start_score`` identical
+    inputs. Cached per (season, scoring signature, newest stat-file mtime).
+    Never raises: {} on failure.
+    """
+    import hashlib
+
+    try:
+        files = sorted(_stat_files(int(season)), key=_week_num)
+    except Exception:
+        return {}
+    newest = 0.0
+    for path in files:
+        try:
+            newest = max(newest, os.path.getmtime(path))
+        except OSError:
+            pass
+    sig = hashlib.md5(
+        json.dumps(scoring_settings or {}, sort_keys=True, default=str).encode()
+    ).hexdigest()[:10]
+    key = (int(season), sig, newest)
+    hit = _DERIVE_CACHE.get(key)
+    if hit is not None:
+        return hit
+    out: Dict[str, dict] = {}
+    try:
+        from utils.fantasy_scoring import week_stat_points
+        from utils.start_sit_score import form_usage_inputs, usage_value_from_stats
+        from utils.utils import load_players_index
+
+        try:
+            index = load_players_index() or {}
+        except Exception:
+            index = {}
+        positions = {
+            str(pid): str((meta or {}).get("pos") or (meta or {}).get("position") or "")
+            for pid, meta in index.items()
+        }
+        played_points: Dict[str, list] = {}
+        played_usage: Dict[str, list] = {}
+        for path in files:
+            try:
+                with open(path) as fh:
+                    payload = json.load(fh)
+            except Exception:
+                continue
+            if not isinstance(payload, dict):
+                continue
+            for pid, st in payload.items():
+                if not isinstance(st, dict):
+                    continue
+                if st.get("pts_ppr") is None:
+                    continue  # not a played week (phantom row / did not play)
+                pid = str(pid)
+                try:
+                    pts = float(week_stat_points(st, scoring_settings, ""))
+                except Exception:
+                    continue
+                pos = positions.get(pid) or str(st.get("position") or st.get("pos") or "")
+                played_points.setdefault(pid, []).append(pts)
+                played_usage.setdefault(pid, []).append(
+                    usage_value_from_stats(st, pos))
+        out = {
+            pid: form_usage_inputs(pts, played_usage.get(pid))
+            for pid, pts in played_points.items()
+        }
+    except Exception:
+        logger.debug("start_score_bundle input derivation failed", exc_info=True)
+        out = {}
+    if len(_DERIVE_CACHE) >= _DERIVE_CACHE_MAX:
+        _DERIVE_CACHE.clear()
+    _DERIVE_CACHE[key] = out
+    return out
+
+
+def _week_num(path: str) -> int:
+    m = re.search(r"_w(\d+)\.json$", str(path))
+    return int(m.group(1)) if m else 0
 
 
 def _oline_index_for(season: int, ratings: dict, team: str, pos: str) -> Optional[float]:
@@ -434,6 +525,9 @@ def build_start_score_bundles(season: int = None, week: int = None) -> dict:
             per_variant[variant] = {
                 "scoring": scoring, "weekstat": weekstat, "weekly": weekly,
                 "prior_weekly": prior_weekly,
+                # Played-week form/usage inputs for the rating (shared with
+                # the Start/Sit page's live fallback derivation).
+                "derived": derive_start_sit_inputs(season, scoring),
             }
 
         # ── Assemble bundles ────────────────────────────────────────────────
@@ -474,7 +568,9 @@ def build_start_score_bundles(season: int = None, week: int = None) -> dict:
                         proj_pts = float(_wk_pts)
                 except Exception:
                     proj_pts = 0.0
-                season_ppg, recent_ppg = _season_ppg_recent(pv["weekstat"], pid)
+                _inp = (pv.get("derived") or {}).get(pid) or {}
+                season_ppg = round(float(_inp.get("season_ppg") or 0.0), 1)
+                recent_ppg = round(float(_inp.get("recent_ppg") or 0.0), 1)
                 bust_rate = None
                 try:
                     cur = pv["weekly"].get(pid) or []
@@ -495,8 +591,17 @@ def build_start_score_bundles(season: int = None, week: int = None) -> dict:
                     "recent_ppg": recent_ppg,
                     "season_ppg": season_ppg,
                     "bust_rate": bust_rate,
-                    "usage_delta": ut.get("delta"),
-                    "usage_season_avg": ut.get("season_avg"),
+                    # Rating inputs from the played-week derivation (NOT the
+                    # weekly_metrics trend, which still feeds role confidence
+                    # above): absolute per-game delta of opportunities (RB)
+                    # or targets (WR/TE); None for QB/K/DEF.
+                    "usage_delta": (
+                        round(float(_inp["usage_delta"]), 1)
+                        if _inp.get("usage_delta") is not None else None),
+                    "usage_season_avg": (
+                        round(float(_inp["usage_season_avg"]), 1)
+                        if _inp.get("usage_season_avg") is not None else None),
+                    "played_games": int(_inp.get("played_games") or 0),
                     "implied_total": implied_total,
                     "low_total_team": team in low_total_teams,
                     "weather_kind": weather_kind,

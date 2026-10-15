@@ -93,11 +93,51 @@ def test_variant_week_points_matches_live_scorers(tmp_path, monkeypatch):
         score_stats(_line(rush_yd=0, rec=0, rec_yd=0), scoring, "RB"),
     ])
 
-    s_ppg, r_ppg = ssb._season_ppg_recent(weekstat, "1")
-    pos_vals = [e for e in (exp1, exp2, exp3) if e > 0]
-    assert s_ppg == round(sum(pos_vals) / len(pos_vals), 1)
-    assert r_ppg == round(sum(pos_vals) / len(pos_vals), 1)
-    assert ssb._season_ppg_recent(weekstat, "nope") == (0.0, 0.0)
+    # weekstat itself is unchanged (it still feeds nothing but its own
+    # contract); the rating's form/usage inputs come from
+    # derive_start_sit_inputs, covered by its own test below.
+
+
+def test_derive_start_sit_inputs_played_weeks(tmp_path, monkeypatch):
+    """Phantom rows (gp set, no points line) never count as played; recent
+    form is the last 3 PLAYED weeks; usage is the absolute per-game delta of
+    opportunities (RB) / targets (WR) from the raw stat rows."""
+    from utils.fantasy_scoring import week_stat_points
+
+    season = 2026
+    scoring = dict(ssb.VARIANT_SCORING["ppr"])
+    rb = "101"
+    # w2 is a phantom week for the RB: dressed, 3 snaps, no points line.
+    rows = {
+        1: {rb: {"position": "RB", "pts_ppr": 10.0, "rush_att": 8, "rec_tgt": 2,
+                 "rush_yd": 100, "rec": 0, "rec_yd": 0}},
+        2: {rb: {"position": "RB", "gp": 1, "off_snp": 3}},
+        3: {rb: {"position": "RB", "pts_ppr": 20.0, "rush_att": 10, "rec_tgt": 4,
+                 "rush_yd": 200, "rec": 0, "rec_yd": 0}},
+        4: {rb: {"position": "RB", "pts_ppr": 30.0, "rush_att": 14, "rec_tgt": 4,
+                 "rush_yd": 300, "rec": 0, "rec_yd": 0}},
+        5: {rb: {"position": "RB", "pts_ppr": 40.0, "rush_att": 18, "rec_tgt": 4,
+                 "rush_yd": 400, "rec": 0, "rec_yd": 0}},
+    }
+    for w, payload in rows.items():
+        _write_stat_file(tmp_path, season, w, payload)
+    monkeypatch.setattr(ssb, "_stat_files",
+                        lambda s: [str(tmp_path / f"sleeper_stats_s{s}_w{w}.json")
+                                   for w in (1, 2, 3, 4, 5)])
+    monkeypatch.setattr("utils.utils.load_players_index",
+                        lambda: {rb: {"pos": "RB", "team": "DET"}})
+    ssb._DERIVE_CACHE.clear()
+
+    out = ssb.derive_start_sit_inputs(season, scoring)
+    inp = out[rb]
+    scored = [week_stat_points(rows[w][rb], scoring, "") for w in (1, 3, 4, 5)]
+    assert inp["played_games"] == 4  # the phantom week is not a game
+    assert inp["season_ppg"] == pytest.approx(sum(scored) / 4)
+    assert inp["recent_ppg"] == pytest.approx(sum(scored[-3:]) / 3)
+    # Opportunities per played week: 10, 14, 18, 22.
+    assert inp["usage_season_avg"] == pytest.approx(16.0)
+    assert inp["usage_delta"] == pytest.approx(2.0)
+    ssb._DERIVE_CACHE.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -220,6 +260,11 @@ def _patch_build_deps(monkeypatch, tmp_path):
                         lambda season, scoring: ({"1": {"sum": 40.0, "n": 4,
                                                        "last4": [10.0, 10.0, 10.0, 10.0]}},
                                                 {"1": [10.0, 10.0, 10.0, 10.0]}))
+    monkeypatch.setattr(ssb, "derive_start_sit_inputs",
+                        lambda season, scoring: {
+                            "1": {"season_ppg": 10.0, "recent_ppg": 10.0,
+                                  "usage_delta": 2.5, "usage_season_avg": 18.0,
+                                  "played_games": 4}})
     import utils.consistency as cons
     monkeypatch.setattr(cons, "blended_consistency_profile",
                         lambda cur, prior, pos="", **kw: {"bust_rate": 0.25})
@@ -265,6 +310,7 @@ def test_build_writes_bundles_for_all_variants(tmp_path, monkeypatch):
     assert ppr["bust_rate"] == 0.25
     assert ppr["usage_delta"] == 2.5
     assert ppr["usage_season_avg"] == 18.0
+    assert ppr["played_games"] == 4
     assert ppr["implied_total"] == 24.5
     assert ppr["weather_kind"] == "wind"
     assert ppr["oline_index"] == 70.0
@@ -425,11 +471,13 @@ def test_bundle_score_matches_live_score():
 
 
 def test_live_injury_overlay_beats_batch_status():
-    """A Q tag reported after the batch ran must still move the score."""
+    """The request still overlays the live status: a Q tag reported after
+    the batch ran must surface as the row's tag. Since the 2026-10 rework
+    the Q tag is display-only, so the score itself no longer moves."""
     kwargs = dict(proj_pts=14.2, recent_ppg=11.0, season_ppg=10.5,
                   position="RB")
     healthy, _, _ = compute_start_score(injury_status=None, **kwargs)
     # Batch saw him healthy (injury_status=""), live map now says Q.
     live_q, _, dem = compute_start_score(injury_status="Questionable", **kwargs)
     assert dem == "questionable"
-    assert live_q < healthy
+    assert live_q == healthy
