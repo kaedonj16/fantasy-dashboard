@@ -78,8 +78,8 @@ def test_context_happy_path_and_teaser_generated_once(app, state, monkeypatch):
     assert caps["tier_label"] == "Free" and caps["plan_key"] is None
     assert caps["exempt"] is False
     assert [(t["key"], t["limit"], t["current"]) for t in caps["tiers"]] == [
-        ("free", 25, True), ("starter", 250, False),
-        ("all_pro", 1000, False), ("hall_of_fame", 10000, False),
+        ("free", 25, True), ("starter", 100, False),
+        ("all_pro", 250, False), ("hall_of_fame", 1000, False),
     ]
     assert body["teaser"]["kind"] == "digest"
     assert body["teaser"]["title"] == "Your Week 7 moves are ready"
@@ -100,7 +100,7 @@ def test_context_caps_reflect_paid_tier(app, state, monkeypatch):
     body = c.get("/api/assistant/context").get_json()
     caps = body["caps"]
     assert caps["tier"] == "all_pro" and caps["tier_label"] == "All-Pro"
-    assert caps["limit"] == 1000 and caps["plan_key"] == "all_pro"
+    assert caps["limit"] == 250 and caps["plan_key"] == "all_pro"
     assert caps["exempt"] is False
     assert [t["current"] for t in caps["tiers"]] == [False, False, True, False]
     assert body["teaser"] is None  # empty digest: marker row only, no teaser

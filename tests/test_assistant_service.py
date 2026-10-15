@@ -201,15 +201,15 @@ def test_caps_tier_ladder_by_plan(env, monkeypatch):
     assert caps["tier"] == "free" and caps["limit"] == 25 and caps["plan_key"] is None
     assert caps["exempt"] is False
     assert [t["key"] for t in caps["tiers"]] == ["free", "starter", "all_pro", "hall_of_fame"]
-    assert [t["limit"] for t in caps["tiers"]] == [25, 250, 1000, 10000]
+    assert [t["limit"] for t in caps["tiers"]] == [25, 100, 250, 1000]
     assert [t["current"] for t in caps["tiers"]] == [True, False, False, False]
 
     cases = [
-        ("starter", "starter", 250), ("single_league", "starter", 250),
-        ("all_pro", "all_pro", 1000), ("league", "all_pro", 1000),
-        ("hall_of_fame", "hall_of_fame", 10000), ("user", "hall_of_fame", 10000),
-        ("combo", "hall_of_fame", 10000),
-        ("some_future_plan", "starter", 250),  # unknown paid keys keep the old paid cap
+        ("starter", "starter", 100), ("single_league", "starter", 100),
+        ("all_pro", "all_pro", 250), ("league", "all_pro", 250),
+        ("hall_of_fame", "hall_of_fame", 1000), ("user", "hall_of_fame", 1000),
+        ("combo", "hall_of_fame", 1000),
+        ("some_future_plan", "starter", 100),  # unknown paid keys land on the starter cap
     ]
     for plan_key, tier, limit in cases:
         monkeypatch.setattr(service, "_active_plan", lambda key, pk=plan_key: {"plan_key": pk})
@@ -226,7 +226,7 @@ def test_caps_env_overrides(env, monkeypatch):
     monkeypatch.setenv("ASSISTANT_ALL_PRO_MONTHLY_CAP", "2000")
     caps = service.caps_for("acct:42")
     assert caps["limit"] == 5
-    assert [t["limit"] for t in caps["tiers"]] == [5, 300, 2000, 10000]
+    assert [t["limit"] for t in caps["tiers"]] == [5, 300, 2000, 1000]
 
 
 def test_owner_exempt_never_capped_but_usage_counts(env, monkeypatch):

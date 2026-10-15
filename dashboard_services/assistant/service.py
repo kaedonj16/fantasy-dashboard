@@ -55,11 +55,10 @@ def _is_paid(account_key: str) -> bool:
 # Grandfathered plan keys fold into the tier at their level: 'single_league'
 # was the old entry tier (starter), 'league' sits at all_pro, and 'user' /
 # 'combo' are unlimited personal PRO like hall_of_fame. Any other paid plan
-# key lands on starter, which keeps the pre-ladder behavior where every paid
-# account shared the single 250 cap (ASSISTANT_PAID_MONTHLY_CAP still works
-# as the starter override). hall_of_fame is positioned as unlimited in the
-# catalog, so it gets a very high cap rather than no cap: usage still counts
-# and the meter still renders.
+# key lands on starter (ASSISTANT_PAID_MONTHLY_CAP still works as the
+# starter override). hall_of_fame is positioned as unlimited in the
+# catalog, so it gets a high but finite cap (1000) rather than no cap:
+# usage still counts and the meter still renders.
 TIER_ORDER = ("free", "starter", "all_pro", "hall_of_fame")
 TIER_LABELS = {
     "free": "Free",
@@ -72,7 +71,7 @@ _TIER_BY_PLAN = {
     "all_pro": "all_pro", "league": "all_pro",
     "hall_of_fame": "hall_of_fame", "user": "hall_of_fame", "combo": "hall_of_fame",
 }
-_TIER_CAP_DEFAULTS = {"free": 25, "starter": 250, "all_pro": 1000, "hall_of_fame": 10000}
+_TIER_CAP_DEFAULTS = {"free": 25, "starter": 100, "all_pro": 250, "hall_of_fame": 1000}
 _TIER_CAP_ENV = {
     "free": ("ASSISTANT_FREE_MONTHLY_CAP",),
     "starter": ("ASSISTANT_STARTER_MONTHLY_CAP", "ASSISTANT_PAID_MONTHLY_CAP"),
