@@ -191,7 +191,9 @@ def test_actions_source_is_the_v2_selector():
     end = src.index("def _next_steps_trade_actions", start)
     body = src[start:end]
     assert "rank_team_waiver_suggestions" in body
-    assert "weekly_availability_from_roster" in body
+    # Opportunity inputs (per-week maps + weekly availability) come from
+    # the one shared construction every selector caller uses.
+    assert "selector_opportunity_inputs" in body
     actions_start = body.index("def _next_steps_waiver_actions")
     actions_body = body[actions_start:]
     assert "_next_steps_waiver_claims" in actions_body

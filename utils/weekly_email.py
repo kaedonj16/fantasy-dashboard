@@ -1072,6 +1072,8 @@ def _collect_league_digest(
             teams_playing=cache.teams_playing, proj_map=cache.week_proj,
             roster_positions=list(league.get("roster_positions") or []),
             breakout_by_pid=cache.breakouts,
+            raw_scoring_settings=(league.get("scoring_settings")
+                                  if isinstance(league, dict) else None),
         )
     except Exception:
         logger.debug("[weekly-email] action sections failed", exc_info=True)

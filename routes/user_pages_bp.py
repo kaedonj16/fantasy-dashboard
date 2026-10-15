@@ -885,6 +885,54 @@ def api_portfolio_actions():
                     for k, v in (nfl_players or {}).items()
                     if isinstance(v, dict) and v.get("injury_status")
                 }
+                # Selector opportunity inputs (item 2 parity): the same
+                # per-week maps + weekly availability the Waivers page path
+                # builds, from the one shared construction, so calendar
+                # need and the lineup-gain classification finally run on
+                # this path too.
+                _opp = {}
+                try:
+                    from utils.waivers import selector_opportunity_inputs
+                    _pos_by_pid = {
+                        str(_k): str((_v or {}).get("position")
+                                     or (_v or {}).get("pos") or "").upper()
+                        for _k, _v in players_index.items()
+                    }
+                    _cand_rows = []
+                    for _row in model_value_table:
+                        if not isinstance(_row, dict):
+                            continue
+                        _cpid = str(_row.get("id") or "")
+                        _cpos = str(_row.get("position")
+                                    or _row.get("pos") or "").upper()
+                        if not _cpid or _cpid in rostered_ids:
+                            continue
+                        if _cpos not in {"QB", "RB", "WR", "TE"}:
+                            continue
+                        _pos_by_pid.setdefault(_cpid, _cpos)
+                        _cand_rows.append(_row)
+
+                    def _row_value(_r):
+                        try:
+                            return float(_r.get(vf) or _r.get(vfb) or 0.0)
+                        except (TypeError, ValueError):
+                            return 0.0
+
+                    _cand_rows.sort(key=lambda r: -_row_value(r))
+                    _opp = selector_opportunity_inputs(
+                        season=lg_season, week=week,
+                        roster_pids=[str(p) for p in
+                                     (viewer_roster.get("players") or [])],
+                        candidate_pids=[str(r.get("id") or "")
+                                        for r in _cand_rows[:96]],
+                        positions_by_pid=_pos_by_pid,
+                        players_index=players_index,
+                        raw_scoring_settings=lctx.get("raw_scoring_settings") or {},
+                    )
+                except Exception:
+                    logger.debug("[portfolio-actions] waiver opportunity inputs failed",
+                                 exc_info=True)
+                    _opp = {}
                 hit = select_waiver_add(
                     model_value_table, rostered_ids,
                     value_key=vf, fallback_key=vfb,
@@ -896,6 +944,10 @@ def api_portfolio_actions():
                     pidx=players_index,
                     min_value=_waiver_base_min,
                     injured_status_by_pid=inj_by_pid,
+                    weekly_availability=_opp.get("weekly_availability") or None,
+                    lineup_weekly=_opp.get("weekly_maps"),
+                    weekly_pts_by_pid=_opp.get("weekly_pts_by_pid"),
+                    forward_pts_by_pid=_opp.get("forward_pts_by_pid") or None,
                 )
                 if hit:
                     actions.append(waiver_pickup_action(

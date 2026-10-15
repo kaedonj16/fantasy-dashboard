@@ -1691,6 +1691,122 @@ def calendar_need_by_position(weekly_availability, dedicated_slots, *,
     return out
 
 
+def selector_opportunity_inputs(*, season, week, roster_pids,
+                                candidate_pids=(), positions_by_pid=None,
+                                players_index=None, raw_scoring_settings=None,
+                                weeks: int = 4) -> dict:
+    """The v2 selector's opportunity inputs, built once for every caller.
+
+    Shared construction for the Waivers page inputs: real per-week
+    projection maps for the next ``weeks`` weeks (so the lineup-gain
+    classification judges true multi-week starter totals and bench
+    production never counts), weekly availability from the schedules
+    themselves (a team absent one window week but playing in another is
+    on bye) plus serious injuries, for calendar need.
+
+    Returns a dict with:
+      ``weekly_maps``: [{"pts_map": {roster_pid: pts}, "covered": bool}]
+        in selector shape, or None when no week produced points;
+      ``forward_pts_by_pid``: {pid: mean points across the window};
+      ``weekly_pts_by_pid``: {pid: [points-or-None per week]} for the
+        roster and candidate pids;
+      ``weekly_availability``: ``weekly_availability_from_roster`` output
+        (empty list when it cannot be built).
+    Every piece degrades independently and nothing raises: a missing
+    feed yields empty pieces and the selector then behaves exactly as
+    it does for a caller that supplies no inputs.
+    """
+    out = {"weekly_maps": None, "forward_pts_by_pid": {},
+           "weekly_pts_by_pid": {}, "weekly_availability": []}
+    roster_pids = [str(p) for p in (roster_pids or [])]
+    positions_by_pid = positions_by_pid or {}
+    players_index = players_index or {}
+    try:
+        season_i = int(season)
+        week_i = int(week)
+    except (TypeError, ValueError):
+        return out
+    if not season_i or not week_i or not roster_pids:
+        return out
+    n_weeks = max(1, int(weeks or 4))
+    watch = list(roster_pids)
+    _seen = set(watch)
+    for pid in candidate_pids or []:
+        pid = str(pid)
+        if pid and pid not in _seen:
+            _seen.add(pid)
+            watch.append(pid)
+    try:
+        from utils import utils as _uu
+        from utils.projections import weekly_projection_points as _wpp
+        raw_scoring = raw_scoring_settings or {}
+        week_pts: list = []
+        playing_by_week: list = []
+        for off in range(n_weeks):
+            proj = _uu.load_week_projection(season_i, week_i + off) or {}
+            pts = {}
+            for pid in watch:
+                _p = _wpp(proj, pid, raw_scoring,
+                          positions_by_pid.get(pid, ""))
+                if _p is not None:
+                    pts[pid] = max(0.0, float(_p))
+            week_pts.append(pts)
+            playing = set()
+            for _g in (_uu.load_week_schedule(season_i, week_i + off) or []):
+                if isinstance(_g, dict):
+                    for _side in ("away", "home"):
+                        _t = str(_g.get(_side) or "").upper()
+                        if _t:
+                            playing.add(_t)
+            playing_by_week.append(playing)
+    except Exception:
+        logger.debug("selector opportunity inputs failed", exc_info=True)
+        return out
+    if any(week_pts):
+        weekly_maps = []
+        for pts in week_pts:
+            _rmap = {pid: pts[pid] for pid in roster_pids if pid in pts}
+            weekly_maps.append({"pts_map": _rmap, "covered": bool(_rmap)})
+        out["weekly_maps"] = weekly_maps
+        weekly_pts_by_pid: dict = {}
+        forward: dict = {}
+        for pid in watch:
+            _vals = [week_pts[i].get(pid) for i in range(n_weeks)]
+            weekly_pts_by_pid[pid] = _vals
+            _have = [v for v in _vals if v is not None]
+            if _have:
+                forward[pid] = round(sum(_have) / len(_have), 2)
+        out["weekly_pts_by_pid"] = weekly_pts_by_pid
+        out["forward_pts_by_pid"] = forward
+    # Bye weeks inside the window, from the schedules themselves: a team
+    # absent one week but playing in another window week.
+    _all_teams = {
+        str(meta.get("team") or "").upper()
+        for meta in players_index.values() if isinstance(meta, dict)
+    }
+    _all_teams.discard("")
+    bye_by_team: dict = {}
+    for _team in _all_teams:
+        _plays = [_team in wk for wk in playing_by_week]
+        if any(_plays) and not all(_plays):
+            bye_by_team[_team] = week_i + _plays.index(False)
+    injured_by_pid = {
+        str(pid): str(meta.get("injury_status") or "")
+        for pid, meta in players_index.items()
+        if isinstance(meta, dict) and meta.get("injury_status")
+    }
+    _roster_injured = {pid: injured_by_pid.get(pid, "") for pid in roster_pids}
+    try:
+        out["weekly_availability"] = weekly_availability_from_roster(
+            roster_pids, players_index, current_week=week_i, weeks=n_weeks,
+            bye_week_by_team=bye_by_team,
+            injured_by_pid=_roster_injured,
+        )
+    except Exception:
+        logger.debug("selector opportunity availability failed", exc_info=True)
+    return out
+
+
 def _selector_weekly_maps(pid, cand, roster_pids, positions_by_pid,
                           weekly_maps, forward_pts_by_pid):
     """Normalise caller projections into evaluate_pickup weekly dicts."""
@@ -2291,6 +2407,107 @@ def _bench_slots(roster_positions: Iterable) -> Optional[int]:
 # Multi-week evaluation + outcome classification (items 1, 2, 3)
 # ---------------------------------------------------------------------------
 
+def _horizon_drop_costing(candidate_pid: str,
+                          candidate_pos: str,
+                          roster_pids: List[str],
+                          weekly: List[dict],
+                          covered: List[dict],
+                          positions: Dict[str, str],
+                          roster_positions: Iterable,
+                          droppable_pids: Optional[Iterable],
+                          locked_starter_pids: Optional[Iterable],
+                          ):
+    """Choose the drop whose cost is lowest across the evaluated horizon.
+
+    The week-0 evaluation alone costs a drop on this week's points only,
+    so for a claim whose value lands in a later week (the classic
+    bye-week cover) it can name the very starter being covered: he
+    projects ~0 in his bye week and loses every week-0 tie-break while
+    being one of the roster's most valuable players over the window.
+
+    Here each legal drop is costed by the total starting-lineup points
+    it leaves over ALL evaluated weeks (week 0 plus every covered week,
+    the same drop all window: one transaction). Ties break toward the
+    better week-0 lineup, then toward cutting the player whose own
+    points across the window are lowest. Removing a player who does not
+    start in a week's post-add lineup cannot change that week's total,
+    so only drops who crack a week's lineup need a fresh solve there.
+
+    Returns (drop_pid, horizon_gain, weeks_covered, wk0_res) with
+    ``wk0_res`` re-evaluated with the chosen drop fixed, or None when
+    there is no legal drop to cost.
+    """
+    candidate_pid = str(candidate_pid)
+    roster_pids = [str(p) for p in roster_pids]
+    positions = dict(positions)
+    positions.setdefault(candidate_pid, str(candidate_pos or "").upper())
+    locked = {str(p) for p in (locked_starter_pids or [])}
+    pool = [str(p) for p in (droppable_pids
+                            if droppable_pids is not None else roster_pids)]
+    pool = [p for p in pool if p != candidate_pid and p not in locked]
+    if not pool:
+        return None
+    wk0 = weekly[0]
+    covered_ids = {id(w) for w in covered if w.get("pts_map")}
+    cost_weeks: List[dict] = []
+    if wk0.get("pts_map"):
+        cost_weeks.append(wk0)
+    for w in covered:
+        if w is not wk0 and w.get("pts_map"):
+            cost_weeks.append(w)
+    if not cost_weeks:
+        return None
+
+    totals = {d: 0.0 for d in pool}       # lineup points left, all costed weeks
+    own = {d: 0.0 for d in pool}          # the drop's own points, costed weeks
+    gain_after = {d: 0.0 for d in pool}   # lineup points left, gain weeks only
+    wk0_after: Dict[str, float] = {}
+    gain_before = 0.0
+    weeks_covered = 0
+    for w in cost_weeks:
+        pm = w.get("pts_map") or {}
+        _s, before = optimal_starters_and_points(
+            pm, positions, roster_positions, roster_pids, locked_starter_pids)
+        starters_after, total_after = optimal_starters_and_points(
+            pm, positions, roster_positions, roster_pids + [candidate_pid],
+            locked_starter_pids)
+        is_gain_week = id(w) in covered_ids
+        if is_gain_week:
+            weeks_covered += 1
+            gain_before += before
+        for d in pool:
+            if d in starters_after:
+                _s2, after_d = optimal_starters_and_points(
+                    pm, positions, roster_positions,
+                    [p for p in roster_pids if p != d] + [candidate_pid],
+                    [p for p in (locked_starter_pids or []) if p != d])
+            else:
+                after_d = total_after
+            totals[d] += after_d
+            own[d] += float(pm.get(d) or 0)
+            if w is wk0:
+                wk0_after[d] = after_d
+            if is_gain_week:
+                gain_after[d] += after_d
+
+    best_pid = None
+    best_key = None
+    for d in pool:  # pool order: the first maximum wins exact ties
+        key = (totals[d], wk0_after.get(d, float("-inf")), -own[d])
+        if best_key is None or key > best_key:
+            best_key = key
+            best_pid = d
+
+    wk0_res = evaluate_pickup_week(
+        candidate_pid, candidate_pos, roster_pids, wk0.get("pts_map") or {},
+        positions, roster_positions,
+        droppable_pids=[best_pid], locked_starter_pids=locked_starter_pids)
+    if wk0_res["best_after"] is None:
+        return None
+    horizon_gain = gain_after[best_pid] - gain_before
+    return best_pid, horizon_gain, weeks_covered, wk0_res
+
+
 def evaluate_pickup(candidate_pid: str,
                     candidate_pos: str,
                     roster_pids: Iterable,
@@ -2338,26 +2555,36 @@ def evaluate_pickup(candidate_pid: str,
         return PickupEvaluation("cannot_evaluate", 0.0, 0.0, 0, len(missing),
                                 False, detail={"reason": "no_drop_or_slot"})
 
-    week_gain = float(wk0_res["best_after"]) - float(wk0_res["before"])
     drop_pid = wk0_res["drop_pid"]
-
-    # Horizon: re-evaluate each covered week using the SAME drop chosen for week 0
-    # (a consistent transaction), so we measure the real multi-week effect rather
-    # than cherry-picking a different cut each week.
     horizon_gain = 0.0
     weeks_covered = 0
-    for w in covered:
-        pm = w.get("pts_map") or {}
-        if not pm:
-            continue
-        res = evaluate_pickup_week(
-            candidate_pid, candidate_pos, roster_pids, pm, positions, roster_positions,
-            droppable_pids=[drop_pid] if drop_pid else droppable_pids,
-            locked_starter_pids=locked_starter_pids)
-        if res["best_after"] is None:
-            continue
-        horizon_gain += float(res["best_after"]) - float(res["before"])
-        weeks_covered += 1
+    costed = None
+    if drop_pid is not None:
+        # A drop is required: choose it by its cost across the whole
+        # evaluated horizon, not week 0 alone (see _horizon_drop_costing).
+        costed = _horizon_drop_costing(
+            candidate_pid, candidate_pos, roster_pids, weekly, covered,
+            positions, roster_positions, droppable_pids, locked_starter_pids)
+    if costed is not None:
+        drop_pid, horizon_gain, weeks_covered, wk0_res = costed
+    else:
+        # Horizon: re-evaluate each covered week using the SAME drop chosen
+        # for week 0 (a consistent transaction), so we measure the real
+        # multi-week effect rather than cherry-picking a different cut
+        # each week.
+        for w in covered:
+            pm = w.get("pts_map") or {}
+            if not pm:
+                continue
+            res = evaluate_pickup_week(
+                candidate_pid, candidate_pos, roster_pids, pm, positions, roster_positions,
+                droppable_pids=[drop_pid] if drop_pid else droppable_pids,
+                locked_starter_pids=locked_starter_pids)
+            if res["best_after"] is None:
+                continue
+            horizon_gain += float(res["best_after"]) - float(res["before"])
+            weeks_covered += 1
+    week_gain = float(wk0_res["best_after"]) - float(wk0_res["before"])
 
     starts_now = bool(wk0_res["starts_now"])
     outcome = _classify_outcome(week_gain, horizon_gain, starts_now,
