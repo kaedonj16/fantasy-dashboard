@@ -55,6 +55,7 @@ def test_assistant_css_selectors_exist():
         ".br-asst-plan-row",
         ".br-asst-plan-current",
         ".br-asst-plan-badge",
+        ".br-asst-mention",
     ):
         assert selector in ASSISTANT_CSS, f"missing assistant CSS for {selector}"
 
@@ -159,6 +160,11 @@ def test_answer_contract_fields_consumed():
         "action.href",
         "action.cta_label",
         "action.key_number",
+        # Mentions: pack player ids ride the answer so a name in the text
+        # opens the player modal instead of rendering as plain text.
+        "answer.mentions",
+        "br-asst-mention",
+        "openPlayerModal",
     ):
         assert needle in ASSISTANT_JS, f"UI does not consume contract field {needle}"
 

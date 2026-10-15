@@ -4988,6 +4988,44 @@ function showLoginGate(target, opts) {
         return 'trade-ai-verdict';
       }
 
+      // Answer text with player mentions: the first occurrence of each
+      // pack-resolved name (answer.mentions carries the ids) becomes a
+      // button that opens the player modal, instead of inert plain text.
+      // Built from text nodes only, like the rest of the answer rendering.
+      function mentionText(text, mentions) {
+        var p = el('p', 'br-asst-text');
+        var names = (mentions || []).filter(function (m) {
+          return m && m.name && m.player_id;
+        }).slice().sort(function (a, b) {
+          return String(b.name).length - String(a.name).length;
+        });
+        if (!names.length) { p.textContent = String(text || ''); return p; }
+        var linked = {};
+        var rest = String(text || '');
+        while (rest) {
+          var bestIdx = -1;
+          var best = null;
+          names.forEach(function (m) {
+            if (linked[m.player_id]) return;
+            var idx = rest.indexOf(String(m.name));
+            if (idx !== -1 && (bestIdx === -1 || idx < bestIdx)) { bestIdx = idx; best = m; }
+          });
+          if (!best) { p.appendChild(document.createTextNode(rest)); break; }
+          if (bestIdx > 0) p.appendChild(document.createTextNode(rest.slice(0, bestIdx)));
+          var btn = el('button', 'br-asst-mention', String(best.name));
+          btn.type = 'button';
+          (function (m) {
+            btn.addEventListener('click', function () {
+              if (typeof openPlayerModal === 'function') openPlayerModal(m.player_id, m.name);
+            });
+          })(best);
+          p.appendChild(btn);
+          linked[best.player_id] = true;
+          rest = rest.slice(bestIdx + String(best.name).length);
+        }
+        return p;
+      }
+
       function renderAnswer(answer, logId) {
         if (!answer) return;
         var wrap = el('div', 'br-asst-msg');
@@ -4996,7 +5034,7 @@ function showLoginGate(target, opts) {
           vrow.appendChild(el('span', verdictClass(answer.verdict), String(answer.verdict)));
           wrap.appendChild(vrow);
         }
-        if (answer.text) wrap.appendChild(el('p', 'br-asst-text', answer.text));
+        if (answer.text) wrap.appendChild(mentionText(answer.text, answer.mentions));
         var candidates = answer.candidates || [];
         if (candidates.length) {
           var crow = el('div', 'br-asst-chip-row');

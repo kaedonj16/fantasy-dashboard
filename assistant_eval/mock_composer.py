@@ -29,13 +29,161 @@ def fmt(value) -> str:
 # assigned deterministically, never a bare string.
 _ACT_LINKS = {
     "start_sit": {"href": "/waivers?tab=startsit", "label": "Open Start/Sit"},
-    "trade_eval": {"href": "/trade-hub", "label": "Open in Trade Hub"},
+    "trade_eval": {"href": "/trade", "label": "Open in Trade Calculator"},
     "buy_sell_hold": {"href": "/players", "label": "View player"},
     "player": {"href": "/players", "label": "View player"},
-    "metric": {"href": "/advanced-metrics", "label": "Open Advanced Metrics"},
+    "metric": {"href": "/metrics", "label": "Open Advanced Metrics"},
     "waivers": {"href": "/waivers", "label": "Open Waivers"},
     "this_week": {"href": "/", "label": "Open dashboard"},
 }
+
+
+# ── Mirrors of compose's deep-link builders ────────────────────────────────
+# Same rules as dashboard_services/assistant/compose.py: trade answers stage
+# the pack's deal in the calculator (a = receive side, b = give side, the
+# params its own share flow mints), start/sit stages the pair in Compare,
+# metric presets Advanced Metrics, player answers open the modal. Mentions
+# carry pack player ids through to the UI.
+from urllib.parse import quote, quote_plus
+
+
+def _league_base(pack):
+    league = (pack or {}).get("league") or {}
+    platform, season, league_id = league.get("platform"), league.get("season"), league.get("league_id")
+    if platform and season and league_id:
+        return f"/{platform}/{season}/{league_id}"
+    return None
+
+
+def _side_ids(players):
+    return [str(p["player_id"]) for p in (players or [])
+            if isinstance(p, dict) and p.get("player_id")]
+
+
+def _trade_calc_link(pack):
+    pack = pack or {}
+    give = _side_ids((pack.get("give") or {}).get("players"))
+    recv = _side_ids((pack.get("receive") or {}).get("players"))
+    if not give and not recv:
+        return None
+    base = _league_base(pack)
+    path = f"{base}/trade" if base else "/trade"
+    params = []
+    if recv:
+        params.append("a=" + ",".join(quote(pid, safe="") for pid in recv))
+    if give:
+        params.append("b=" + ",".join(quote(pid, safe="") for pid in give))
+    for key, param in (("receive_picks", "ap"), ("give_picks", "bp")):
+        ids = [str(p.get("pick_id")) for p in (pack.get(key) or [])
+               if isinstance(p, dict) and p.get("pick_id")]
+        if ids:
+            params.append(param + "=" + ",".join(quote(i, safe="") for i in ids))
+    return {"href": path + "?" + "&".join(params), "label": "Open in Trade Calculator"}
+
+
+def _player_modal_link(player):
+    if not isinstance(player, dict) or not player.get("player_id"):
+        return None
+    href = "/?player=" + quote(str(player["player_id"]), safe="")
+    if player.get("name"):
+        href += "&player_name=" + quote_plus(str(player["name"]))
+    return {"href": href, "label": "View player"}
+
+
+def _metric_link(pack):
+    key = (pack or {}).get("metric_key")
+    if not key:
+        return None
+    base = _league_base(pack)
+    href = (f"{base}/metrics" if base else "/metrics") + "?metric=" + quote(str(key), safe="")
+    positions = [str(p) for p in (pack.get("positions") or []) if p]
+    if len(positions) == 1:
+        href += "&pos=" + quote(positions[0], safe="")
+    return {"href": href, "label": "Open Advanced Metrics"}
+
+
+def _start_sit_link(pack):
+    players = [p for p in ((pack or {}).get("players") or [])
+               if isinstance(p, dict) and p.get("player_id")]
+    if len(players) < 2:
+        return None
+    pick_id = str(pack.get("pick_player_id") or players[0]["player_id"])
+    pick = next((p for p in players if str(p["player_id"]) == pick_id), players[0])
+    others = [p for p in players if p is not pick]
+
+    def _rank(p):
+        for field in ("start_score", "projection", "value"):
+            if p.get(field) is not None:
+                try:
+                    return float(p[field])
+                except Exception:
+                    return 0.0
+        return 0.0
+
+    other = max(others, key=_rank)
+    base = _league_base(pack)
+    href = (f"{base}/compare" if base else "/compare")
+    href += "?p1=" + quote(str(pick["player_id"]), safe="")
+    href += "&p2=" + quote(str(other["player_id"]), safe="")
+    return {"href": href, "label": "Open head-to-head"}
+
+
+def _resolve_act_link(intent, pack):
+    pack = pack or {}
+    if intent == "trade_eval":
+        link = _trade_calc_link(pack)
+        if link:
+            return link
+        base = _league_base(pack)
+        return {"href": f"{base}/trade" if base else "/trade",
+                "label": "Open in Trade Calculator"}
+    if intent in ("player", "buy_sell_hold"):
+        link = _player_modal_link(pack.get("player"))
+        if link:
+            return link
+    elif intent == "metric":
+        link = _metric_link(pack)
+        if link:
+            return link
+    elif intent == "start_sit":
+        link = _start_sit_link(pack)
+        if link:
+            return link
+    static = _ACT_LINKS.get(intent)
+    return dict(static) if static else None
+
+
+def _mentions(intent, pack):
+    pack = pack or {}
+    found, seen = [], set()
+
+    def _add(entry):
+        if not isinstance(entry, dict):
+            return
+        pid = entry.get("player_id") or entry.get("id")
+        name = entry.get("name")
+        if pid and name and str(pid) not in seen:
+            seen.add(str(pid))
+            found.append({"player_id": str(pid), "name": str(name)})
+
+    if intent == "trade_eval":
+        for side in ("give", "receive"):
+            for p in ((pack.get(side) or {}).get("players") or []):
+                _add(p)
+    elif intent == "start_sit":
+        for p in pack.get("players") or []:
+            _add(p)
+    elif intent in ("player", "buy_sell_hold"):
+        _add(pack.get("player"))
+    elif intent == "metric":
+        for p in pack.get("leaderboard_top5") or []:
+            _add(p)
+    elif intent == "waivers":
+        for p in pack.get("candidates") or []:
+            _add(p)
+        for p in pack.get("cleared_drops") or []:
+            _add(p)
+    return found[:8]
 
 _CTA_LABELS = {"lineup": "Set lineup", "waiver": "View waivers",
                "waivers": "View waivers", "trade": "Build offer"}
@@ -50,13 +198,13 @@ def no_data_answer(pack: dict) -> dict:
         text += f" The nearest tracked options are {', '.join(str(n) for n in nearest[:3])}. Ask about one of those and I can pull the live numbers."
     return {"verdict": None, "text": text, "receipts": [], "caveat": None,
             "followups": [f"What is {n}?" for n in nearest[:2]],
-            "act_link": dict(_ACT_LINKS["metric"]), "actions": []}
+            "act_link": dict(_ACT_LINKS["metric"]), "actions": [], "mentions": []}
 
 
-def _base(intent):
-    link = _ACT_LINKS.get(intent)
+def _base(intent, pack):
     return {"caveat": None, "followups": [],
-            "act_link": dict(link) if link else None, "actions": []}
+            "act_link": _resolve_act_link(intent, pack), "actions": [],
+            "mentions": _mentions(intent, pack)}
 
 
 def _start_sit(pack):
@@ -71,7 +219,7 @@ def _start_sit(pack):
         ppg = (pl.get("role") or {}).get("ppg")
         if ppg is not None and len(receipts) < 4:
             receipts.append({"label": f"{pl['name']} points per game", "value": fmt(ppg)})
-    ans = _base("start_sit")
+    ans = _base("start_sit", pack)
     ans.update({
         "verdict": f"START {pick['name']}",
         "text": (f"Start {pick['name']} over {other['name']}. "
@@ -108,7 +256,7 @@ def _trade_eval(pack):
     unpriced = pack.get("unpriced") or []
     if unpriced:
         text += f" One piece is unpriced: {unpriced[0]}. The rest is judged on the priced players."
-    ans = _base("trade_eval")
+    ans = _base("trade_eval", pack)
     ans.update({"verdict": verdict, "text": text, "receipts": receipts,
                 "followups": ["What would balance it?", "Who else could I ask for?"]})
     if thin:
@@ -130,7 +278,7 @@ def _buy_sell_hold(pack):
         receipts.append({"label": "Points per game", "value": fmt(role["ppg"])})
     if role.get("target_share") is not None and len(receipts) < 4:
         receipts.append({"label": "Target share", "value": fmt(role["target_share"])})
-    ans = _base("buy_sell_hold")
+    ans = _base("buy_sell_hold", pack)
     ans.update({
         "verdict": verdict,
         "text": (f"{verdict} on {player.get('name')}. The recent value trend is "
@@ -154,7 +302,7 @@ def _player(pack):
             receipts.append({"label": label, "value": fmt(role[key])})
     if player.get("value") is not None and len(receipts) < 4:
         receipts.append({"label": "Value", "value": fmt(player["value"])})
-    ans = _base("player")
+    ans = _base("player", pack)
     ans.update({
         "verdict": f"{player.get('name')} update",
         "text": (f"{player.get('name')} is scoring {fmt(role.get('ppg'))} points per game "
@@ -169,7 +317,7 @@ def _player(pack):
 def _metric(pack):
     top5 = pack.get("leaderboard_top5") or []
     if not top5:
-        ans = _base("metric")
+        ans = _base("metric", pack)
         ans.update({"verdict": pack.get("label"), "text": pack.get("definition") or "",
                     "receipts": [], "followups": []})
         return ans
@@ -185,7 +333,7 @@ def _metric(pack):
     mine = next((e for e in top5 if e.get("on_my_roster") and e is not top), None)
     if mine:
         text += f" Your {mine['name']} sits at {fmt(mine.get('value'))}."
-    ans = _base("metric")
+    ans = _base("metric", pack)
     ans.update({"verdict": f"{pack.get('label')}: {top['name']} leads", "text": text,
                 "receipts": receipts, "followups": ["Who is moving up?", "What is snap share?"]})
     return ans
@@ -193,7 +341,7 @@ def _metric(pack):
 
 def _waivers(pack):
     candidates = pack.get("candidates") or []
-    ans = _base("waivers")
+    ans = _base("waivers", pack)
     if not candidates:
         ans.update({"verdict": None,
                     "text": "The wire is thin this week: nobody available clears your positional gate.",
@@ -223,7 +371,7 @@ def _this_week(pack):
     receipts = [{"label": a.get("tag") or "action", "value": fmt(a["key_number"])}
                 for a in actions if isinstance(a, dict) and a.get("key_number") is not None][:4]
     text = " ".join(f"{a.get('headline')}. {a.get('detail')}" for a in actions if isinstance(a, dict))
-    ans = _base("this_week")
+    ans = _base("this_week", pack)
     ans.update({
         "verdict": actions[0]["headline"] if actions else "Your team is set",
         "text": text or "Your team is set for the week.",
