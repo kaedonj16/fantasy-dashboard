@@ -345,6 +345,104 @@ def _fmt1(v):
     return ("%g" % round(f, 1))
 
 
+def _season_shares(s):
+    """(dominator, yard_share, td_share) for one stored season row.
+
+    Dominator prefers the stored rating; when absent it is derived with
+    the pipeline's own definition: 0.65 * yard share + 0.35 * TD share.
+    """
+    ys = _safe_float(s.get("market_share_yards"))
+    ts = _safe_float(s.get("market_share_tds"))
+    dom = _safe_float(s.get("dominator_rating"))
+    if dom is None and ys is not None and ts is not None:
+        dom = 0.65 * ys + 0.35 * ts
+    return dom, ys, ts
+
+
+def _advanced_season_rows(seasons):
+    """Per-season advanced rows for the detail payload (v3.2).
+
+    Shares are fractions (0-1); per-game rates use the season's own games
+    played so partial seasons stay honest.
+    """
+    out = []
+    for s in sorted(seasons or [], key=lambda x: _safe_float(x.get("season"), 0) or 0):
+        dom, ys, ts = _season_shares(s)
+        gp = _safe_float(s.get("games_played"))
+
+        def _pg(v, gp=gp):
+            return round(v / gp, 2) if (v is not None and gp) else None
+
+        out.append({
+            "season": s.get("season"),
+            "dominator": round(dom, 4) if dom is not None else None,
+            "yard_share": round(ys, 4) if ys is not None else None,
+            "td_share": round(ts, 4) if ts is not None else None,
+            "yds_per_reception": _safe_float(s.get("yds_per_reception")),
+            "receptions_per_game": _pg(_safe_float(s.get("receptions"))),
+            "rec_yards_per_game": _pg(_safe_float(s.get("receiving_yards"))),
+            "rec_tds_per_game": _pg(_safe_float(s.get("receiving_tds"))),
+        })
+    return out
+
+
+def _advanced_marks(seasons):
+    """Best/career marks for the detail payload (v3.2).
+
+    Career shares are the mean of the season shares; career dominator is
+    recomposed from them (0.65 yard + 0.35 TD). Career Yds/Rec is total
+    receiving yards over total receptions. Latest rates come from the
+    most recent season. Shares are fractions; the TD-over-yard gap is in
+    percentage points.
+    """
+    marks = {
+        "best_dominator": None,
+        "career_dominator": None,
+        "career_yds_per_rec": None,
+        "latest_rec_yards_per_game": None,
+        "latest_rec_tds_per_game": None,
+        "td_share_over_yard_share_pts": None,
+    }
+    rows = [s for s in (seasons or [])]
+    if not rows:
+        return marks
+    doms, yss, tss = [], [], []
+    tot_rec, tot_yds = 0.0, 0.0
+    for s in rows:
+        dom, ys, ts = _season_shares(s)
+        if dom is not None:
+            doms.append(dom)
+        if ys is not None:
+            yss.append(ys)
+        if ts is not None:
+            tss.append(ts)
+        rec = _safe_float(s.get("receptions"))
+        yds = _safe_float(s.get("receiving_yards"))
+        if rec is not None and yds is not None:
+            tot_rec += rec
+            tot_yds += yds
+    if doms:
+        marks["best_dominator"] = round(max(doms), 4)
+    if yss and tss:
+        marks["career_dominator"] = round(
+            0.65 * (sum(yss) / len(yss)) + 0.35 * (sum(tss) / len(tss)), 4)
+    if tot_rec > 0:
+        marks["career_yds_per_rec"] = round(tot_yds / tot_rec, 2)
+    latest = max(rows, key=lambda x: _safe_float(x.get("season"), 0) or 0)
+    gp = _safe_float(latest.get("games_played"))
+    if gp:
+        ry = _safe_float(latest.get("receiving_yards"))
+        rt = _safe_float(latest.get("receiving_tds"))
+        if ry is not None:
+            marks["latest_rec_yards_per_game"] = round(ry / gp, 2)
+        if rt is not None:
+            marks["latest_rec_tds_per_game"] = round(rt / gp, 2)
+    _, lys, lts = _season_shares(latest)
+    if lys is not None and lts is not None:
+        marks["td_share_over_yard_share_pts"] = round((lts - lys) * 100.0, 1)
+    return marks
+
+
 def _build_advanced_metrics(position, seasons, athleticism, row, wepa_score=None):
     """Position-correct advanced metric sets: [{label, raw, grade}]."""
     pos = (position or "").upper()
@@ -353,7 +451,7 @@ def _build_advanced_metrics(position, seasons, athleticism, row, wepa_score=None
         for k in ("dominator_rating", "market_share_yards", "market_share_tds",
                   "yds_per_reception",
                   "yds_per_carry", "completion_pct", "td_int_ratio", "yds_per_attempt",
-                  "targets", "receptions"):
+                  "targets", "receptions", "rush_tds"):
             try:
                 v = float(s.get(k)) if s.get(k) is not None else None
             except (TypeError, ValueError):
@@ -368,13 +466,20 @@ def _build_advanced_metrics(position, seasons, athleticism, row, wepa_score=None
                          float(s.get("receiving_yards") or 0)) / gp
                 if "scrimmage_per_game" not in best or scrim > best["scrimmage_per_game"]:
                     best["scrimmage_per_game"] = scrim
-                # Targets per game and catch rate (WR/TE opportunity metrics)
+                # QB rushing per game (v3.2 advanced rows)
+                rpg = float(s.get("rush_yards") or 0) / gp
+                if "rush_yards_per_game" not in best or rpg > best["rush_yards_per_game"]:
+                    best["rush_yards_per_game"] = rpg
+                # Targets per game and catch rate (WR/TE opportunity metrics).
+                # A stored targets value below receptions is a pipeline
+                # failure, not data: skip the season so Tgt/Gm and Catch%
+                # stay hidden instead of printing a garbage ratio.
                 tgt = float(s.get("targets") or 0)
-                if tgt > 0:
+                rec = float(s.get("receptions") or 0)
+                if tgt > 0 and tgt >= rec:
                     tpg = tgt / gp
                     if "targets_per_game" not in best or tpg > best["targets_per_game"]:
                         best["targets_per_game"] = tpg
-                    rec = float(s.get("receptions") or 0)
                     catch_rate = rec / tgt if tgt > 0 else None
                     if catch_rate is not None and ("catch_rate" not in best or catch_rate > best["catch_rate"]):
                         best["catch_rate"] = catch_rate
@@ -422,6 +527,7 @@ def _build_advanced_metrics(position, seasons, athleticism, row, wepa_score=None
         wepa = None
     wepa_row = (("WEPA", _fmt1(wepa), _rescale_mid_to_c(wepa))
                 if wepa is not None else None)
+    marks = _advanced_marks(seasons)
     metrics = []
     if pos == "QB":
         metrics = [
@@ -430,6 +536,11 @@ def _build_advanced_metrics(position, seasons, athleticism, row, wepa_score=None
             ("TD:INT", _fmt1(best.get("td_int_ratio")), _grade_td_int(best.get("td_int_ratio"))),
             ("Yds/Att", _fmt1(best.get("yds_per_attempt")), _grade_ypa(best.get("yds_per_attempt"))),
             ("AY/A", _fmt1(best.get("aya")), _grade_aya(best.get("aya"))),
+            # v3.2: QB rushing rows. No display-grade helper exists for
+            # rush yds/g or rush TDs, so those two are raw-only.
+            ("Rush Yds/Gm", _fmt1(best.get("rush_yards_per_game")), None),
+            ("Yds/Carry", _fmt1(best.get("yds_per_carry")), _grade_ypc(best.get("yds_per_carry"))),
+            ("Rush TDs", str(int(best["rush_tds"])) if best.get("rush_tds") is not None else None, None),
             ("Breakout Age", _fmt1(breakout_age), _grade_breakout_age(breakout_age, pos)),
             ("Efficiency", _fmt1(eff), _rescale_mid_to_c(eff)),
             ("Production", _fmt1(prod), _rescale_mid_to_c(prod)),
@@ -463,9 +574,19 @@ def _build_advanced_metrics(position, seasons, athleticism, row, wepa_score=None
             ("Tgt/Gm", _fmt1(best.get("targets_per_game")), _grade_tpg(best.get("targets_per_game"))),
             ("Catch%", _fmt_pct1(best.get("catch_rate")), _grade_catch_rate(best.get("catch_rate"))),
             ("Speed Score", _fmt1(speed), _grade_speed_score(speed)),
-            ("Efficiency", _fmt1(eff), _rescale_mid_to_c(eff)),
-            ("Recruiting", recruit_raw, recruit_grade),
         ]
+        # v3.2 fix: the WEPA row was built above but never appended in
+        # this branch, so WR/TE prospects could never show it.
+        if wepa_row:
+            metrics.append(wepa_row)
+        metrics.extend([
+            ("Efficiency", _fmt1(eff), _rescale_mid_to_c(eff)),
+            # v3.2: raw-only best/career marks (no display grades defined).
+            ("Best Dominator", _fmt_pct1(marks.get("best_dominator")), None),
+            ("Career Yds/Rec", _fmt1(marks.get("career_yds_per_rec")), None),
+            ("Rec Yds/Gm", _fmt1(marks.get("latest_rec_yards_per_game")), None),
+            ("Recruiting", recruit_raw, recruit_grade),
+        ])
     out = []
     for label, raw, grade in metrics:
         out.append({"label": label, "raw": raw,
@@ -550,6 +671,13 @@ def _get_prospect_detail(player_id: str, row: dict) -> dict:
         "breakout_age": None,
         "mock_trend": None,
         "advanced": [],
+        "advanced_seasons": [],
+        "advanced_marks": {},
+        "archetype": None,
+        "archetype_receipt": None,
+        "archetype_confidence": None,
+        "talent_score": None,
+        "capital_delta": None,
         "composite_stars": None,
     }
     seasons: list[dict[str, Any]] = []
@@ -655,6 +783,39 @@ def _get_prospect_detail(player_id: str, row: dict) -> dict:
             wepa_score=detail.get("wepa_score"))
     except Exception:
         detail["advanced"] = []
+    # v3.2: per-season advanced rows + best/career marks from stored rows.
+    try:
+        detail["advanced_seasons"] = _advanced_season_rows(seasons)
+        detail["advanced_marks"] = _advanced_marks(seasons)
+    except Exception:
+        detail["advanced_seasons"] = []
+        detail["advanced_marks"] = {}
+    # v3.2 transparent capital: stored with the score at grading time.
+    detail["talent_score"] = _safe_float(row.get("talent_score"))
+    detail["capital_delta"] = _safe_float(row.get("capital_delta"))
+    # v3.2 archetype: the stored label wins; rows graded before v3.2 are
+    # classified live from their season lines so the chip still resolves.
+    detail["archetype"] = row.get("archetype")
+    detail["archetype_receipt"] = row.get("archetype_receipt")
+    detail["archetype_confidence"] = row.get("archetype_confidence")
+    if not detail["archetype"] and seasons:
+        try:
+            from data_building.rookie_pipeline.prospect_archetypes import (
+                classify_archetype,
+            )
+            _arch_profile = {
+                "weight_lbs": row.get("weight_lbs"),
+                "forty_yard": (athleticism or {}).get("forty_yard"),
+                "projected_pick": row.get("projected_pick"),
+                "age": row.get("age"),
+            }
+            _arch = classify_archetype(
+                row.get("position") or "", seasons, profile=_arch_profile)
+            detail["archetype"] = _arch.get("archetype")
+            detail["archetype_receipt"] = _arch.get("archetype_receipt")
+            detail["archetype_confidence"] = _arch.get("archetype_confidence")
+        except Exception:
+            pass
     return detail
 
 
