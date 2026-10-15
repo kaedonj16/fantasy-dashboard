@@ -749,6 +749,15 @@ def page_trade_database(platform: str, season: int, league_id: str):
           }}, 250);
         }});
 
+        // Enter selects the top match, matching the nav search and compare
+        // pickers; the dropdown items are not focusable, so a keyboard user
+        // otherwise has no way to pick one.
+        input.addEventListener('keydown', (e) => {{
+          if (e.key !== 'Enter') return;
+          const first = drop.querySelector('.tdb-dropdown-item');
+          if (first) {{ e.preventDefault(); first.click(); }}
+        }});
+
         input.addEventListener('blur', () => {{
           setTimeout(() => {{ drop.style.display = 'none'; }}, 150);
         }});
