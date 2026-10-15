@@ -93,6 +93,12 @@ SYSTEM = (
     "and point at the nearest alternative instead of forcing a bad trade. "
     "for breakout calls, the top candidates and their scores; for team grades, the strongest and "
     "weakest teams and their grade scores; for a draft pick, its value and who owns it. "
+    "For keepers, cite each kept player's cost round and value, and the first player on the cut line. "
+    "For rookies, cite the stored prospect score and the overall and position ranks exactly as given; "
+    "mention the score version only if the user asks about it. "
+    "For cross-league answers, attach the league name to every number you state and compare teams only "
+    "by their standing inside their own league (record, rank, positional ranks); never compare raw "
+    "points or values across leagues, and name any league whose data is unavailable. "
     "If fixed_verdict is present in the payload, the verdict field must be exactly that value; "
     "it is set by the site's trade fairness band and is not yours to change. "
     "Caveat only when the pack marks margin.thin true or data stale, otherwise null. "
@@ -120,6 +126,9 @@ _ACT_LINKS = {
     "breakout_board": {"href": "/breakouts", "label": "View breakout board"},
     "breakout_track_record": {"href": "/breakouts", "label": "View breakout board"},
     "breakout_history": {"href": "/breakouts", "label": "View breakout board"},
+    "keeper": {"href": "/keeper", "label": "View Keeper Optimizer"},
+    "rookie": {"href": "/prospects", "label": "View Rookie Rankings"},
+    "cross_league": {"href": "/portfolio", "label": "View Portfolio"},
 }
 
 
@@ -294,6 +303,10 @@ def _resolve_act_link(intent: str, pack: dict) -> dict | None:
         link = _player_modal_link(pack.get("player"))
         if link:
             return link
+    elif intent == "keeper":
+        base = _league_base(pack)
+        return {"href": f"{base}/keeper" if base else "/keeper",
+                "label": "View Keeper Optimizer"}
     elif intent == "metric":
         link = _metric_link(pack)
         if link:
@@ -350,6 +363,18 @@ def _mentions(intent: str, pack: dict) -> list[dict]:
             _add(p)
         for p in pack.get("cleared_drops") or []:
             _add(p)
+    elif intent == "keeper":
+        for p in pack.get("my_keepers") or []:
+            _add(p)
+        _add(pack.get("asked_player"))
+        for p in pack.get("roster_core") or []:
+            _add(p)
+    elif intent == "rookie":
+        # Prospect ids are pipeline ids, not NFL ids: only a prospect who
+        # already has a Sleeper id can open the player modal.
+        prospect = pack.get("prospect") or {}
+        if prospect.get("sleeper_id") and prospect.get("name"):
+            _add({"player_id": prospect["sleeper_id"], "name": prospect["name"]})
     return found[:8]
 
 # League-context intents link at the league surface for the subject: the
@@ -754,6 +779,56 @@ def _required_receipts(intent: str, pack: dict) -> list[dict]:
         pick = pack.get("pick") or {}
         if pick.get("value") is not None:
             rows.append({"label": f"{pick.get('label')} value", "value": _fmt_num(pick["value"])})
+    elif intent == "keeper":
+        if (pack.get("mode") or "") == "dynasty":
+            for p in (pack.get("roster_core") or [])[:2]:
+                if p.get("value") is not None:
+                    rows.append({"label": f"{p.get('name')} value",
+                                 "value": _fmt_num(p["value"])})
+            if pack.get("roster_value_total") is not None and len(rows) < 4:
+                rows.append({"label": "Roster value total",
+                             "value": _fmt_num(pack["roster_value_total"])})
+        else:
+            for p in (pack.get("my_keepers") or [])[:2]:
+                if p.get("value") is not None:
+                    rows.append({"label": f"{p.get('name')} value",
+                                 "value": _fmt_num(p["value"])})
+                if p.get("cost_round") is not None and len(rows) < 4:
+                    rows.append({"label": f"{p.get('name')} keeper cost (round)",
+                                 "value": _fmt_num(p["cost_round"])})
+            asked = pack.get("asked_player") or {}
+            if asked.get("value") is not None and len(rows) < 4:
+                rows.append({"label": f"{asked.get('name')} value",
+                             "value": _fmt_num(asked["value"])})
+    elif intent == "rookie":
+        prospect = pack.get("prospect") or {}
+        board = [prospect] if prospect else (pack.get("prospects") or [])
+        for p in board[:2]:
+            if p.get("prospect_score") is not None:
+                rows.append({"label": f"{p.get('name')} prospect score",
+                             "value": _fmt_num(p["prospect_score"])})
+        if prospect and prospect.get("projected_pick") is not None and len(rows) < 4:
+            rows.append({"label": "Projected draft pick",
+                         "value": _fmt_num(prospect["projected_pick"])})
+        line = prospect.get("college_latest") or {}
+        for key, label in (("receiving_yards", "Receiving yards (latest college season)"),
+                           ("rush_yards", "Rushing yards (latest college season)"),
+                           ("pass_yards", "Passing yards (latest college season)")):
+            if line.get(key) is not None and len(rows) < 4:
+                rows.append({"label": label, "value": _fmt_num(line[key])})
+                break
+    elif intent == "cross_league":
+        for s in (pack.get("leagues") or []):
+            if len(rows) >= 4:
+                break
+            if not isinstance(s, dict) or s.get("rank") is None:
+                continue
+            if s.get("record"):
+                rows.append({"label": f"{s.get('league_name')} record",
+                             "value": str(s["record"])})
+            if len(rows) < 4:
+                rows.append({"label": f"{s.get('league_name')} rank",
+                             "value": _fmt_num(s["rank"])})
     return rows[:4]
 
 
@@ -897,6 +972,10 @@ _FOLLOWUP_TEMPLATES = {
     "breakout_history": ["Who are this week's breakout calls?", "How good is BR at breakout calls?"],
     "teams": ["Who is weakest at TE?", "Grade every team's WR room"],
     "pick_ownership": ["What other picks do I own?", "Who has the most draft capital?"],
+    "keeper": ["Who is first on my cut line?", "What does my last keeper spot come down to?"],
+    "rookie": ["Who are the top quarterbacks in the class?", "Who is the top prospect?",
+               "What about the running backs?"],
+    "cross_league": ["Which of my teams is strongest?", "What should I do with my team this week?"],
 }
 
 
@@ -1024,7 +1103,12 @@ def no_data_answer(pack: dict) -> dict:
     text = f"That is not available: {missing}."
     if nearest:
         text += f" The nearest tracked options are {', '.join(str(n) for n in nearest[:3])}. Ask about one of those and I can pull the live numbers."
-    link = _league_link((pack or {}).get("type"), pack) or dict(_ACT_LINKS["metric"])
+    # The link names the surface the question was about: league-context
+    # intents use their league link, everything else resolves normally
+    # (a keeper no-data lands on the Keeper Optimizer, not Advanced Metrics).
+    link = (_league_link((pack or {}).get("type"), pack)
+            or _resolve_act_link(str((pack or {}).get("type") or "metric"), pack)
+            or dict(_ACT_LINKS["metric"]))
     return {"verdict": None, "text": text, "receipts": [], "caveat": None,
             "followups": [f"What is {n}?" for n in nearest[:2]],
             "act_link": link, "actions": [], "mentions": []}
