@@ -55,7 +55,7 @@ _PLANNER_SYSTEM = (
 )
 
 _PLAN_ARG_FIELDS = ("player", "player_a", "player_b", "stat", "metric",
-                    "position", "team", "kind", "top_n")
+                    "position", "team", "kind", "top_n", "family")
 
 _PLAN_SCHEMA = {
     "type": "object",

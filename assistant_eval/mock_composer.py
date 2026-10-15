@@ -843,7 +843,23 @@ def _board_verdict(pack):
         return f"{top.get('name')} is the top buy-low"
     if kind == "sell_high":
         return f"{top.get('name')} is the top sell-high"
+    if kind == "breadth":
+        n = pack.get("breadth_top_n") or pack.get("requested_n") or 10
+        word = pack.get("family_word") or ""
+        return (f"{top.get('name')} has the most top-{n} "
+                f"{word + ' ' if word else ''}finishes")
     return f"{top.get('name')} leads {label}"
+
+
+def _breadth_finishes_text(row):
+    """Mirror of compose._breadth_finishes_text."""
+    fins = row.get("top_finishes") or []
+    parts = [f"{f.get('label')} #{f.get('rank')} ({fmt(f.get('value'))})"
+             for f in fins[:5]]
+    text = ", ".join(parts)
+    if len(fins) > len(parts):
+        text += ", and more"
+    return text
 
 
 def _value_stats(row):
@@ -905,6 +921,10 @@ def _board_line(row, pack):
         sec = row.get("secondary") or {}
         return (f"{head}: {value} {pack.get('label')}, "
                 f"{fmt(sec.get('value'))} {pack.get('second_label')}")
+    if kind == "breadth":
+        n = pack.get("breadth_top_n") or pack.get("requested_n") or 10
+        return (f"{head}: top {n} in {value} metrics: "
+                f"{_breadth_finishes_text(row)}")
     line = f"{head}: {value}"
     if kind == "dual":
         sec = row.get("secondary")
@@ -939,6 +959,11 @@ def _board_receipt(row, pack):
         sec = row.get("secondary") or {}
         return {"label": label,
                 "value": f"{value} - {pack.get('second_label')} {fmt(sec.get('value'))}"}
+    if kind == "breadth":
+        n = pack.get("breadth_top_n") or pack.get("requested_n") or 10
+        return {"label": label,
+                "value": (f"top {n} in {value} metrics: "
+                          f"{_breadth_finishes_text(row)}")}
     if kind == "dual":
         sec = row.get("secondary")
         if sec:
@@ -967,6 +992,15 @@ def _board_intro_template(pack):
             return (f"{top.get('name')} moved the most in {label} over the "
                     f"recent window, {_fmt_delta(top['delta'])} to {value}.")
         return f"{top.get('name')} leads the {label} board at {value}."
+    if kind == "breadth":
+        n = pack.get("breadth_top_n") or pack.get("requested_n") or 10
+        word = pack.get("family_word") or ""
+        pos = pack.get("position_filter")
+        who = f"any other {pos}" if pos else "any other player"
+        return (f"{top.get('name')} finishes in the top {n} of {value} of "
+                f"the {pack.get('metric_count')} "
+                f"{word + ' ' if word else ''}metrics counted here, more "
+                f"than {who}.")
     if kind in ("buy_low", "sell_high") and top.get("delta") is not None:
         word = "buy-low" if kind == "buy_low" else "sell-high"
         if top.get("recent_ppg") is not None:

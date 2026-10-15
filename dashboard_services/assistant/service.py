@@ -324,7 +324,7 @@ def ask(account_key: str, message: str, *, platform=None, league_id=None, season
         if intent == "out_of_scope":
             intent = "leaderboard"
         if intent == "leaderboard":
-            for _f in ("metric_hint", "second_metric_hint", "board_kind"):
+            for _f in ("metric_hint", "second_metric_hint", "board_kind", "family"):
                 if not entities.get(_f) and last_entities.get(_f):
                     entities[_f] = last_entities[_f]
 
