@@ -115,6 +115,46 @@ def test_deferred_shell_scripts_are_in_head(offline_client):
     assert not re.search(r'<script[^>]+src="/static/paywall[^"]*" defer', body)
 
 
+def test_signed_in_first_paint_bundle_weight_budget(offline_client):
+    """Weight budget for the deferred first-paint bundles in the page head.
+
+    Measured 2026-10-14 on a signed-in /compare render in the full-stack
+    environment, where the boot minifiers run: the deferred head scripts
+    (app bundle + paywall.js) plus the head stylesheets (dashboard bundle
+    + paywall.css) totalled 1,839,121 bytes served. Where the minifiers
+    are unavailable the same four source files total 2,699,989 bytes, so
+    the cap covers that unminified fallback: 2,699,989 plus 10%, rounded
+    to 2,970,000 bytes. A change that pushes first-paint weight past the
+    cap fails here on purpose: shrink the bundle or raise the cap
+    deliberately with a new measurement.
+    """
+    import re
+
+    with offline_client.session_transaction() as sess:
+        sess["viewer_username"] = "tester"
+        sess["viewer_user_id"] = "u1"
+
+    r = offline_client.get("/compare")
+    assert r.status_code == 200
+    head = _head_html(r.get_data(as_text=True))
+    urls = set(re.findall(r'<script[^>]+src="(/static/[^"]+)"[^>]*\bdefer\b', head))
+    urls |= set(
+        re.findall(r'<link[^>]+rel="stylesheet"[^>]+href="(/static/[^"]+)"', head)
+    )
+    assert urls, "signed-in head should carry deferred JS and CSS bundles"
+    total = 0
+    for url in urls:
+        name = url.split("?")[0].rsplit("/", 1)[-1]
+        served = STATIC / name
+        assert served.exists(), name
+        total += served.stat().st_size
+    cap = 2_970_000
+    assert total <= cap, (
+        f"deferred first-paint bundles total {total} bytes, over the "
+        f"{cap} byte budget (see measurement note in this test)"
+    )
+
+
 def test_ensure_features_loads_player_modal_url():
     src = (STATIC / "app.js").read_text(encoding="utf-8")
     assert "window.__FEATURES_JS || window.__PLAYER_MODAL_JS" in src
