@@ -107,6 +107,13 @@ SYSTEM = (
     "for breakout calls, the top candidates and their scores; for team grades, the strongest and "
     "weakest teams and their grade scores; for a draft pick, its value and who owns it. "
     "For keepers, cite each kept player's cost round and value, and the first player on the cut line. "
+    "For a replacement, cite the subject's value and age and the top candidate's value, age, and "
+    "where he is rostered; name every candidate's location (your roster, the team that rosters "
+    "him, or waivers). For a handcuff, cite the next man up and his value, and say whether he is "
+    "claimable on waivers or rostered, and by whom. For a stash, cite the top stash candidate's "
+    "value and age. For a drop, cite the most droppable player's value and the depth you hold at "
+    "his position. For a streamer, cite his projection for this week and his matchup. For worth "
+    "in picks, cite the player's value and the closest pick equivalent's label and value. "
     "For rookies, cite the stored prospect score and the overall and position ranks exactly as given; "
     "mention the score version only if the user asks about it. "
     "For cross-league answers, attach the league name to every number you state and compare teams only "
@@ -145,6 +152,8 @@ _ACT_LINKS = {
     "keeper": {"href": "/keeper", "label": "View Keeper Optimizer"},
     "rookie": {"href": "/prospects", "label": "View Rookie Rankings"},
     "cross_league": {"href": "/portfolio", "label": "View Portfolio"},
+    "replacement": {"href": "/trade?tab=suggestions", "label": "Open Trade Suggestions"},
+    "handcuff": {"href": "/waivers", "label": "View on Waivers"},
 }
 
 
@@ -339,6 +348,22 @@ def _resolve_act_link(intent: str, pack: dict) -> dict | None:
         link = _finding_act_link(pack)
         if link:
             return link
+    elif intent == "replacement":
+        # The next step depends on where the top candidate lives: a free
+        # agent is a waiver claim, another roster's player is a trade.
+        cands = [c for c in (pack.get("candidates") or []) if isinstance(c, dict)]
+        if cands and cands[0].get("location") == "waivers":
+            return {"href": "/waivers", "label": "View on Waivers"}
+        base = _league_base(pack)
+        return {"href": f"{base}/trade?tab=suggestions" if base else "/trade?tab=suggestions",
+                "label": "Open Trade Suggestions"}
+    elif intent == "handcuff":
+        nxt = pack.get("next_up") or {}
+        if nxt.get("location") == "waivers":
+            return {"href": "/waivers", "label": "View on Waivers"}
+        link = _player_modal_link(nxt) or _player_modal_link(pack.get("subject"))
+        if link:
+            return link
     pack_link = _pack_act_link(intent, pack)
     if pack_link:
         return pack_link
@@ -381,7 +406,24 @@ def _mentions(intent: str, pack: dict) -> list[dict]:
     elif intent == "waivers":
         for p in pack.get("candidates") or []:
             _add(p)
+        for p in pack.get("stash_candidates") or []:
+            _add(p)
+        for p in pack.get("streamers") or []:
+            _add(p)
+        for p in pack.get("drop_ranking") or []:
+            _add(p)
         for p in pack.get("cleared_drops") or []:
+            _add(p)
+        _add(pack.get("asked_drop"))
+    elif intent == "replacement":
+        _add(pack.get("subject"))
+        for p in pack.get("candidates") or []:
+            _add(p)
+    elif intent == "handcuff":
+        _add(pack.get("subject"))
+        _add(pack.get("next_up"))
+        _add(pack.get("also_next"))
+        for p in pack.get("my_options") or []:
             _add(p)
     elif intent == "keeper":
         for p in pack.get("my_keepers") or []:
@@ -703,12 +745,22 @@ def _required_receipts(intent: str, pack: dict) -> list[dict]:
                                        if side in ("give", "receive") else label),
                              "value": _fmt_num(pick["value"])})
     elif intent == "trade_finding":
+        equiv = pack.get("pick_equivalents") or {}
+        if equiv.get("equivalents"):
+            sell = pack.get("sell_player") or {}
+            if sell.get("value") is not None:
+                rows.append({"label": f"{sell.get('name')} value",
+                             "value": _fmt_num(sell["value"])})
+            for e in equiv["equivalents"][:2]:
+                if e.get("value") is not None and len(rows) < 4:
+                    rows.append({"label": str(e.get("label") or "Pick"),
+                                 "value": _fmt_num(e["value"])})
         top = (pack.get("findings") or [None])[0] or pack.get("closest_miss") or {}
-        if top.get("receive_total") is not None:
+        if top.get("receive_total") is not None and len(rows) < 4:
             rows.append({"label": "You receive (total value)", "value": _fmt_num(top["receive_total"])})
-        if top.get("give_total") is not None:
+        if top.get("give_total") is not None and len(rows) < 4:
             rows.append({"label": "You give (total value)", "value": _fmt_num(top["give_total"])})
-        if top.get("fairness_gap") is not None:
+        if top.get("fairness_gap") is not None and len(rows) < 4:
             rows.append({"label": "Fairness gap", "value": _fmt_num(top["fairness_gap"])})
     elif intent == "metric":
         top = [e for e in (pack.get("leaderboard_top5") or [])
@@ -736,19 +788,69 @@ def _required_receipts(intent: str, pack: dict) -> list[dict]:
             if len(rows) >= 4:
                 break
     elif intent == "waivers":
+        mode = pack.get("waiver_mode")
+        if mode == "drop":
+            for c in (pack.get("drop_ranking") or [])[:2]:
+                if isinstance(c, dict) and c.get("value") is not None:
+                    rows.append({"label": f"{c.get('name')} value",
+                                 "value": _fmt_num(c["value"])})
+        elif mode == "stash":
+            for c in (pack.get("stash_candidates") or [])[:1]:
+                if isinstance(c, dict) and c.get("value") is not None:
+                    rows.append({"label": f"{c.get('name')} value",
+                                 "value": _fmt_num(c["value"])})
+                if isinstance(c, dict) and c.get("age") is not None and len(rows) < 4:
+                    rows.append({"label": f"{c.get('name')} age",
+                                 "value": _fmt_num(c["age"])})
+        elif mode == "stream":
+            for c in (pack.get("streamers") or [])[:1]:
+                if isinstance(c, dict) and c.get("projection") is not None:
+                    rows.append({"label": f"{c.get('name')} projection",
+                                 "value": _fmt_num(c["projection"])})
+                if isinstance(c, dict) and c.get("value") is not None and len(rows) < 4:
+                    rows.append({"label": f"{c.get('name')} value",
+                                 "value": _fmt_num(c["value"])})
         cands = [c for c in (pack.get("candidates") or []) if isinstance(c, dict)]
-        if cands:
+        if cands and len(rows) < 4:
             top = cands[0]
             if top.get("value") is not None:
                 rows.append({"label": f"{top.get('name')} value",
                              "value": _fmt_num(top["value"])})
             worst = (pack.get("my_worst_by_position") or {}).get(top.get("position")) or {}
-            if worst.get("value") is not None:
+            if worst.get("value") is not None and len(rows) < 4:
                 rows.append({"label": f"Your worst {top.get('position')} ({worst.get('name')}) value",
                              "value": _fmt_num(worst["value"])})
-            if len(cands) > 1 and cands[1].get("value") is not None:
+            if len(cands) > 1 and cands[1].get("value") is not None and len(rows) < 4:
                 rows.append({"label": f"{cands[1].get('name')} value",
                              "value": _fmt_num(cands[1]["value"])})
+    elif intent == "replacement":
+        subject = pack.get("subject") or {}
+        if subject.get("value") is not None:
+            rows.append({"label": f"{subject.get('name')} value",
+                         "value": _fmt_num(subject["value"])})
+        if subject.get("age") is not None and len(rows) < 4:
+            rows.append({"label": f"{subject.get('name')} age",
+                         "value": _fmt_num(subject["age"])})
+        for c in (pack.get("candidates") or [])[:1]:
+            if isinstance(c, dict) and c.get("value") is not None and len(rows) < 4:
+                rows.append({"label": f"{c.get('name')} value",
+                             "value": _fmt_num(c["value"])})
+            if isinstance(c, dict) and c.get("age") is not None and len(rows) < 4:
+                rows.append({"label": f"{c.get('name')} age",
+                             "value": _fmt_num(c["age"])})
+    elif intent == "handcuff":
+        nxt = pack.get("next_up") or {}
+        if nxt.get("value") is not None:
+            rows.append({"label": f"{nxt.get('name')} value",
+                         "value": _fmt_num(nxt["value"])})
+        subject = pack.get("subject") or {}
+        if subject.get("value") is not None and len(rows) < 4:
+            rows.append({"label": f"{subject.get('name')} value",
+                         "value": _fmt_num(subject["value"])})
+        for c in (pack.get("my_options") or [])[:1]:
+            if isinstance(c, dict) and c.get("value") is not None and len(rows) < 4:
+                rows.append({"label": f"{c.get('name')} value",
+                             "value": _fmt_num(c["value"])})
     elif intent == "player":
         role = pack.get("role") or {}
         for key, label in (("target_share", "Target share"),
@@ -1087,6 +1189,8 @@ _FOLLOWUP_TEMPLATES = {
     "rookie": [followup_pair("Who are the top quarterbacks in the class?"), followup_pair("Who is the top prospect?"),
                followup_pair("What about the running backs?")],
     "cross_league": [followup_pair("Which of my teams is strongest?"), followup_pair("What should I do with my team this week?")],
+    "replacement": [followup_pair("What could I get for him in a trade?"), followup_pair("Who is his handcuff?")],
+    "handcuff": [followup_pair("Who should I start if he is out?"), followup_pair("Who is available on waivers?")],
 }
 
 
@@ -1875,7 +1979,7 @@ def compose_answer(intent: str, question: str, pack: dict, *, preferences=None, 
     if isinstance(pack, dict) and pack.get("available") is False:
         return _enforce_grounding(no_data_answer(pack), intent, pack, question)
     if intent == "trade_finding" and isinstance(pack, dict) and pack.get("no_fit") \
-            and not pack.get("findings"):
+            and not pack.get("findings") and not pack.get("pick_equivalents"):
         # The scan found no clean fit: the answer is code-composed so the
         # closest miss can never be dressed up as a recommendation.
         return _enforce_grounding(_no_fit_answer(pack), intent, pack, question)
