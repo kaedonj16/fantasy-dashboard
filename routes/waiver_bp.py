@@ -942,6 +942,25 @@ def api_waiver_candidates():
             _roster_pos[_rpid] = _brief(_rpid)["position"]
     _drop_by_id = {d["player_id"]: d for d in _drop_pool}
 
+    # Real per-week points for the next 4 weeks (item 2): the scalar
+    # forward-PPG map above made horizon_gain a copy of the week gain.
+    # Roster maps are built once (bounded: viewer roster x 4 weeks);
+    # candidate points are scored per week inside _lineup_eval_for.
+    _weekly_roster_pts: list = []
+    try:
+        for _wm in (_future_week_projs_wv or [])[:4]:
+            if not _wm:
+                _weekly_roster_pts.append({})
+                continue
+            _weekly_roster_pts.append({
+                _rpid: (lambda _v: max(0.0, float(_v)) if _v is not None else 0.0)(
+                    _week_pts_wv(_wm, _rpid))
+                for _rpid in _viewer_active
+            })
+    except Exception:
+        logger.debug("per-week roster points failed", exc_info=True)
+        _weekly_roster_pts = []
+
     def _lineup_eval_for(_c, _bscore=0.0):
         """PickupEvaluation for the viewer's roster, or None if not evaluable."""
         if not _viewer_active or not _roster_pts:
@@ -969,9 +988,30 @@ def api_waiver_candidates():
             _spec = max(_spec, 0.8)
         try:
             from utils.waiver_lineup import evaluate_pickup as _eval_pickup
+            _weekly = None
+            if _weekly_roster_pts and any(_weekly_roster_pts):
+                try:
+                    from utils.waivers import weekly_maps_from_per_week_points as _wk_maps
+                    _cand_team = str(_c.get("team") or "").upper()
+                    _cand_pts_wk = []
+                    _cand_byes = []
+                    for _wi, _wm in enumerate((_future_week_projs_wv or [])[:4]):
+                        _cand_pts_wk.append(
+                            _week_pts_wv(_wm, cid) if _wm else None)
+                        _tset = (_future_week_teams_wv[_wi]
+                                 if _wi < len(_future_week_teams_wv) else set())
+                        _cand_byes.append(bool(
+                            _tset and _cand_team and _cand_team not in _tset))
+                    if _cand_pts_wk and _cand_pts_wk[0] is not None:
+                        _weekly = _wk_maps(
+                            _viewer_active, cid, _weekly_roster_pts,
+                            _cand_pts_wk, _cand_byes)
+                except Exception:
+                    logger.debug("per-week eval build failed for %s", cid, exc_info=True)
+                    _weekly = None
             return _eval_pickup(
                 cid, _c.get("position"), _viewer_active,
-                [{"pts_map": pm, "covered": True}], pos, _rp_wv,
+                _weekly or [{"pts_map": pm, "covered": True}], pos, _rp_wv,
                 droppable_pids=[d["player_id"] for d in _drop_pool],
                 speculative_upside=_spec,
             )

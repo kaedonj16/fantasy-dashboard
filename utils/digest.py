@@ -188,6 +188,60 @@ def value_keys_for_format(fmt: dict) -> tuple[str, str]:
     )
 
 
+def _calendar_need_from_availability(weekly_availability, roster_positions):
+    """Calendar need (item 2) from caller-supplied weekly availability."""
+    if not weekly_availability:
+        return None
+    try:
+        from utils.lineups import count_lineup_slots
+        from utils.waivers import calendar_need_by_position
+        slots = count_lineup_slots(roster_positions or [])
+        dedicated = {
+            "QB": max(1, int(slots.get("QB") or 0) + int(slots.get("SUPER_FLEX") or 0)),
+            "RB": max(1, int(slots.get("RB") or 0)),
+            "WR": max(1, int(slots.get("WR") or 0)),
+            "TE": max(1, int(slots.get("TE") or 0)),
+        }
+        return calendar_need_by_position(weekly_availability, dedicated)
+    except Exception:
+        logger.debug("[digest] calendar need skipped", exc_info=True)
+        return None
+
+
+def _rich_candidate(row, pid, pos, val, age_f, rk, need_mult, delta_by_pid=None,
+                    trending_adds_by_pid=None, meta=None):
+    """Normalized candidate for the shared selector, carrying every rich
+    opportunity field the row already has (item 5)."""
+    meta = meta or {}
+    cand = {
+        "player_id": pid,
+        "name": (row.get("name") or row.get("full_name") or row.get("player")
+                 or meta.get("full_name") or meta.get("name") or ""),
+        "position": pos,
+        "team": row.get("team") or meta.get("team") or "",
+        "value": val,
+        "age": age_f,
+        "pos_rank": rk,
+        "pos_rank_label": row.get("pos_rank_label") or "",
+        "rank_change_7d": (delta_by_pid or {}).get(pid, row.get("rank_change_7d") or 0),
+        "need_mult": need_mult,
+    }
+    for key in ("ros_ppg", "own_proj_ppg", "trend_windows", "usage_stat",
+                "usage_delta", "injured_ahead", "vacated", "healthy_ahead",
+                "vacated_volume_weight", "injury_freshness", "schedule_ease_rank",
+                "schedule_total", "self_status", "waiver_surprise", "scarcity_mult",
+                "big_game_pts", "verified_role_change", "big_game_priority",
+                "weekly_pts", "playoff_schedule_ease_rank", "playoff_ease_rank",
+                "adds_count", "trending_adds", "adds_48h"):
+        if row.get(key) is not None:
+            cand[key] = row[key]
+        elif meta.get(key) is not None:
+            cand[key] = meta[key]
+    if (trending_adds_by_pid or {}).get(pid) is not None:
+        cand["adds_count"] = trending_adds_by_pid[pid]
+    return cand
+
+
 def recommend_waivers(
     model_rows: list[dict],
     owned_ids: set[str],
@@ -200,11 +254,24 @@ def recommend_waivers(
     fmt: Optional[dict] = None,
     limit: int = 3,
     min_score: float = 35.0,
+    calendar_need: Optional[dict] = None,
+    weekly_availability: Optional[list] = None,
+    lineup_weekly: Optional[list] = None,
+    forward_pts_by_pid: Optional[dict] = None,
+    direction: Optional[str] = None,
+    playoff_pct=None,
+    waiver_type: str = "faab",
+    budget_total=None,
+    budget_remaining=None,
+    trending_adds_by_pid: Optional[dict] = None,
 ) -> list[dict[str, Any]]:
-    """Rank unowned players with ``waiver_pickup_score`` (canonical model).
+    """Rank unowned players via the shared selector (item 6).
 
-    Returns up to ``limit`` actionable targets. Empty when nothing clears the
-    floor. Does not call the waiver HTTP API.
+    Gates, horizon weighting, opportunity inputs, lineup-gain classification
+    and claim guidance all live in
+    ``utils.waivers.rank_team_waiver_suggestions``; this wrapper only adapts
+    digest inputs/outputs. Returns up to ``limit`` actionable targets.
+    Empty when nothing clears the floor. Does not call the waiver HTTP API.
     """
     fmt = fmt or {}
     pidx = pidx or {}
@@ -252,7 +319,7 @@ def recommend_waivers(
             continue
 
     try:
-        from utils.waivers import WEIGHTS, waiver_pickup_score, waiver_signal
+        from utils.waivers import WEIGHTS, rank_team_waiver_suggestions, waiver_signal
     except Exception:
         return []
 
@@ -264,21 +331,39 @@ def recommend_waivers(
         n_teams = 12
     min_val = float(getattr(WEIGHTS, "min_value", 25.0) or 25.0)
 
-    scored: list[tuple[float, dict]] = []
+    if calendar_need is None:
+        calendar_need = _calendar_need_from_availability(weekly_availability, roster_positions)
+    # Starter gaps: the old approximation (a meaningful need bump = a hole),
+    # merged with the true body-count gaps so either signal counts.
+    _, _ctx_gaps = _waiver_need_context(roster_players, roster_positions, pidx)
+    gap_by_pos = {
+        pos: max(1.0 if (need_mults.get(pos, 1.0) or 1.0) >= 1.12 else 0.0,
+                 float(_ctx_gaps.get(pos, 0.0) or 0.0))
+        for pos in ("QB", "RB", "WR", "TE")
+    }
+    positions_by_pid = {}
+    for pid, meta in (pidx or {}).items():
+        _p = str((meta or {}).get("position") or (meta or {}).get("pos") or "").upper()
+        if _p:
+            positions_by_pid[str(pid)] = _p
+    roster_values: dict[str, float] = {}
+    candidates: list[dict] = []
+    cand_by_pid: dict[str, dict] = {}
     for row in model_rows or []:
         if not isinstance(row, dict):
             continue
         pid = str(row.get("id") or row.get("player_id") or "").strip()
-        if not pid or pid in owned:
+        if not pid:
+            continue
+        try:
+            _rv = float(row.get(primary) or row.get(fallback) or row.get("value") or 0)
+        except (TypeError, ValueError):
+            _rv = 0.0
+        roster_values[pid] = _rv
+        if pid in owned:
             continue
         pos = str(row.get("pos") or row.get("position") or "").upper()
         if pos in ("K", "DEF", "DST") or not pos:
-            continue
-        try:
-            val = float(row.get(primary) or row.get(fallback) or row.get("value") or 0)
-        except (TypeError, ValueError):
-            val = 0.0
-        if val < min_val:
             continue
         age = row.get("age")
         try:
@@ -286,37 +371,42 @@ def recommend_waivers(
         except (TypeError, ValueError):
             age_f = 0.0
         rk = parse_pos_rank(row.get("pos_rank"), str(row.get("pos_rank_label") or ""))
-        # extra_depth=1 need_mult > 1 is "thin", not a starter hole. Approximate
-        # a hole when the position still wants a meaningful need bump.
-        gap = 1.0 if (need_mults.get(pos, 1.0) or 1.0) >= 1.12 else 0.0
-        if not waiver_add_clears_quality_bar(
-            pos=pos, pos_rank=rk, value=val, is_redraft=is_rd, is_sf=is_sf,
-            n_teams=n_teams, age=age_f, starter_gap=gap, min_value=min_val,
-        ):
-            continue
-        cand = {
-            "player_id": pid,
-            "value": val,
-            "age": age_f,
-            "position": pos,
-            "rank_change_7d": delta_by_pid.get(pid, 0.0),
-            "need_mult": need_mults.get(pos, 1.0),
-        }
-        try:
-            score = float(waiver_pickup_score(cand, waiver_breakout))
-        except Exception:
-            continue
-        if score < min_score:
-            continue
-        name = (
-            row.get("name") or row.get("full_name") or row.get("player")
-            or (pidx.get(pid) or {}).get("full_name")
-            or (pidx.get(pid) or {}).get("name")
-            or ""
-        )
-        name = str(name).strip()
+        cand = _rich_candidate(row, pid, pos, _rv, age_f, rk,
+                               need_mults.get(pos, 1.0), delta_by_pid,
+                               trending_adds_by_pid, pidx.get(pid) or {})
+        name = str(cand.get("name") or "").strip()
         if not name or name == pid:
             continue
+        cand["name"] = name
+        candidates.append(cand)
+        cand_by_pid[pid] = cand
+
+    results = rank_team_waiver_suggestions(
+        candidates,
+        owned_ids=owned,
+        roster_pids=[str(p) for p in (roster_players or [])],
+        roster_positions=roster_positions,
+        positions_by_pid=positions_by_pid,
+        roster_values_by_pid=roster_values,
+        starter_gaps=gap_by_pos,
+        need_mults=need_mults,
+        calendar_need=calendar_need,
+        is_redraft=is_rd, is_sf=is_sf, n_teams=n_teams,
+        min_value=min_val, min_score=min_score,
+        breakout_by_pid=waiver_breakout,
+        quality_bar_fn=waiver_add_clears_quality_bar,
+        direction=direction or fmt.get("direction"),
+        playoff_pct=playoff_pct if playoff_pct is not None else fmt.get("playoff_pct"),
+        weekly_maps=lineup_weekly,
+        forward_pts_by_pid=forward_pts_by_pid,
+        waiver_type=waiver_type, budget_total=budget_total,
+        budget_remaining=budget_remaining,
+    )
+    scored: list[dict] = []
+    for res in results:
+        pid = res["player_id"]
+        cand = cand_by_pid.get(pid) or {}
+        pos = res["position"]
         badge = ""
         try:
             _cls, label = waiver_signal(cand, waiver_breakout)
@@ -324,22 +414,36 @@ def recommend_waivers(
         except Exception:
             badge = ""
         reason_bits = []
-        if cand["need_mult"] and cand["need_mult"] > 1.05:
+        if (cand.get("need_mult") or 1.0) > 1.05:
             reason_bits.append(f"{pos} need")
         if badge and badge.lower() not in ("target", ""):
             reason_bits.append(badge)
-        elif val >= 40:
-            reason_bits.append(f"value {int(round(val))}")
-        scored.append((score, {
+        elif res["value"] >= 40:
+            reason_bits.append(f"value {int(round(res['value']))}")
+        if res.get("outcome") == "stash":
+            reason_bits.append("Stash only, no lineup gain yet")
+        elif res.get("lineup_gain"):
+            reason_bits.append(f"+{res['lineup_gain']:g} lineup pts")
+        if res.get("claim_guidance"):
+            reason_bits.append(str(res["claim_guidance"]))
+        scored.append({
             "player_id": pid,
-            "name": name,
+            "name": res["name"],
             "pos": pos,
-            "value": val,
-            "score": score,
+            "value": res["value"],
+            "score": res["score"],
             "reason": ", ".join(reason_bits),
-        }))
-    scored.sort(key=lambda t: t[0], reverse=True)
-    return unique_waiver_targets([row for _s, row in scored], limit=limit)
+            "outcome": res.get("outcome"),
+            "lineup_gain": res.get("lineup_gain"),
+            "lineup_gain_4wk": res.get("lineup_gain_4wk"),
+            "drop_pid": res.get("drop_pid"),
+            "replaces_pid": res.get("replaces_pid"),
+            "claim_guidance": res.get("claim_guidance"),
+            "faab": res.get("faab"),
+            "horizon": res.get("horizon"),
+            "starter_gap": res.get("starter_gap"),
+        })
+    return unique_waiver_targets(scored, limit=limit)
 
 
 def unique_waiver_targets(targets: list, *, limit: int = 3) -> list:
@@ -602,6 +706,9 @@ def gather_digest_action_items(
             roster_positions=positions,
             pidx=pidx, movers=movers, breakout_by_pid=breakout_by_pid,
             fmt=fmt, limit=3,
+            forward_pts_by_pid=proj_map or None,
+            direction=(fmt or {}).get("direction"),
+            playoff_pct=(fmt or {}).get("playoff_pct"),
         )
         if targets:
             html = waiver_html(targets, href=waivers_url)
@@ -2560,24 +2667,35 @@ def select_waiver_add(
     pidx: Optional[dict] = None,
     min_value: float = 25.0,
     injured_status_by_pid: Optional[dict] = None,
+    breakout_by_pid: Optional[dict] = None,
+    calendar_need: Optional[dict] = None,
+    weekly_availability: Optional[list] = None,
+    lineup_weekly: Optional[list] = None,
+    forward_pts_by_pid: Optional[dict] = None,
+    direction: Optional[str] = None,
+    playoff_pct=None,
+    waiver_type: str = "faab",
+    budget_total=None,
+    budget_remaining=None,
+    trending_adds_by_pid: Optional[dict] = None,
 ) -> Optional[dict]:
     """Pick one actually-worth-adding free agent, or None.
 
-    Ranks eligible names with ``waiver_pickup_score`` (value, age, roster need,
-    trend) after the quality bar drops leftover RB35s / streamer QBs / aging
-    dynasty depth. Empty when the wire has nobody worth a cross-league nudge.
+    All gates and scoring live in the shared selector
+    ``utils.waivers.rank_team_waiver_suggestions`` (item 6): quality bar,
+    x1.05 drop bar, QB coverage, calendar need, horizon weighting,
+    opportunity inputs, lineup-gain classification and claim guidance.
+    Empty when the wire has nobody worth a cross-league nudge.
     """
-    from utils.waivers import waiver_pickup_score
+    from utils.waivers import rank_team_waiver_suggestions
 
     owned = {str(p) for p in (rostered_ids or set())}
     pidx = pidx or {}
     inj_map = injured_status_by_pid or {}
     need_mults, gaps = _waiver_need_context(roster_players, roster_positions, pidx)
+    if calendar_need is None:
+        calendar_need = _calendar_need_from_availability(weekly_availability, roster_positions)
 
-    # Roster gate: only surface claims that beat the worst healthy rostered
-    # player at the candidate's own position (or fill a starter hole there).
-    # An empty bar dict fails open, so callers without roster_players keep
-    # old behavior.
     value_by_pid: dict[str, float] = {}
     for row in rows or []:
         if not isinstance(row, dict):
@@ -2592,9 +2710,14 @@ def select_waiver_add(
             value_by_pid[_vpid] = 0.0
     drop_bars = waiver_drop_bar_value(
         [str(p) for p in (roster_players or [])], value_by_pid, inj_map, pidx)
+    positions_by_pid = {}
+    for pid, meta in (pidx or {}).items():
+        _p = str((meta or {}).get("position") or (meta or {}).get("pos") or "").upper()
+        if _p:
+            positions_by_pid[str(pid)] = _p
+    name_by_pid: dict[str, str] = {}
 
-    best: Optional[dict] = None
-    best_score = -1.0
+    candidates: list[dict] = []
     for row in rows or []:
         if not isinstance(row, dict):
             continue
@@ -2605,12 +2728,8 @@ def select_waiver_add(
         if pos not in _SKILL_POS:
             continue
         meta = pidx.get(pid) or {}
-        team = str(row.get("team") or meta.get("team") or "").upper()
-        if team in _FA_TEAMS:
-            continue
-        inj = str(inj_map.get(pid) or meta.get("injury_status") or "").upper()
-        if inj in _OUT_STATUS:
-            continue
+        if meta.get("position") or meta.get("pos"):
+            positions_by_pid.setdefault(pid, pos)
         try:
             val = float(row.get(value_key) or row.get(fallback_key) or row.get("value") or 0.0)
         except (TypeError, ValueError):
@@ -2621,61 +2740,99 @@ def select_waiver_add(
             age = float(row.get("age") or meta.get("age") or 0)
         except (TypeError, ValueError):
             age = 0.0
-        gap = gaps.get(pos, 0.0)
-        if not waiver_add_clears_quality_bar(
-            pos=pos, pos_rank=rk, value=val, is_redraft=is_redraft,
-            is_sf=is_sf, n_teams=n_teams, age=age, starter_gap=gap,
-            min_value=min_value,
-        ):
-            continue
-        if not waiver_claim_beats_roster(val, drop_bars.get(pos), gap):
-            continue
-        name = (
-            row.get("name") or row.get("full_name") or row.get("player")
-            or meta.get("name") or meta.get("full_name") or ""
-        )
-        name = str(name).strip()
+        cand = _rich_candidate(row, pid, pos, val, age, rk,
+                               need_mults.get(pos, 1.0), None,
+                               trending_adds_by_pid, meta)
+        cand["pos_rank_label"] = label
+        inj = str(inj_map.get(pid) or meta.get("injury_status") or "").upper()
+        if inj:
+            cand["self_status"] = inj
+        name = str(cand.get("name") or "").strip()
         if not name or name == pid:
             continue
-        try:
-            chg = float(row.get("rank_change_7d") or 0)
-        except (TypeError, ValueError):
-            chg = 0.0
-        cand = {
-            "player_id": pid,
-            "value": val,
-            "age": age,
-            "position": pos,
-            "rank_change_7d": chg,
-            "need_mult": need_mults.get(pos, 1.0),
-            "pos_rank": rk,
-            "self_status": inj,
-        }
-        try:
-            score = float(waiver_pickup_score(cand, {}))
-        except Exception:
-            score = val
-        if score <= best_score:
-            continue
-        best_score = score
-        rank_t = 0.0 if not rk else max(0.0, 1.0 - (rk / 40.0))
-        need_t = min(1.0, max(0.0, gap) / 2.0)
-        severity = 0.35 + 0.35 * rank_t + 0.30 * need_t
-        best = {
-            "player_id": pid,
-            "name": name,
-            "position": pos,
-            "pos_rank_label": label,
-            "pos_rank": rk,
-            "value": val,
-            "score": score,
-            "starter_gap": gap,
-            "severity": severity,
-            "reason": waiver_add_detail(
-                pos_rank_label=label, position=pos, is_redraft=is_redraft,
-                starter_gap=gap, pos_rank=rk, is_sf=is_sf, n_teams=n_teams,
-            ),
-        }
+        cand["name"] = name
+        name_by_pid[pid] = name
+        candidates.append(cand)
+    for _rpid in roster_players or []:
+        _m = pidx.get(str(_rpid)) or {}
+        _n = str(_m.get("full_name") or _m.get("name") or "").strip()
+        if _n:
+            name_by_pid[str(_rpid)] = _n
+
+    results = rank_team_waiver_suggestions(
+        candidates,
+        owned_ids=owned,
+        roster_pids=[str(p) for p in (roster_players or [])],
+        roster_positions=roster_positions,
+        positions_by_pid=positions_by_pid,
+        roster_values_by_pid=value_by_pid,
+        injured_by_pid=inj_map,
+        drop_bars=drop_bars,
+        starter_gaps=gaps,
+        need_mults=need_mults,
+        calendar_need=calendar_need,
+        is_redraft=is_redraft, is_sf=is_sf, n_teams=n_teams,
+        min_value=min_value, min_score=0.0,
+        breakout_by_pid=breakout_by_pid,
+        quality_bar_fn=waiver_add_clears_quality_bar,
+        direction=direction, playoff_pct=playoff_pct,
+        weekly_maps=lineup_weekly,
+        forward_pts_by_pid=forward_pts_by_pid,
+        waiver_type=waiver_type, budget_total=budget_total,
+        budget_remaining=budget_remaining,
+        require_team=True,
+        hard_exclude_serious=True,
+    )
+    if not results:
+        return None
+    res = results[0]
+    pos = res["position"]
+    rk = res.get("pos_rank")
+    gap = float(res.get("starter_gap") or 0.0)
+    rank_t = 0.0 if not rk else max(0.0, 1.0 - (rk / 40.0))
+    need_t = min(1.0, max(0.0, gap) / 2.0)
+    severity = 0.35 + 0.35 * rank_t + 0.30 * need_t
+    if res.get("outcome") == "stash":
+        severity *= 0.6
+    reason = waiver_add_detail(
+        pos_rank_label=res.get("pos_rank_label") or "", position=pos,
+        is_redraft=is_redraft, starter_gap=gap, pos_rank=rk,
+        is_sf=is_sf, n_teams=n_teams)
+    extra = []
+    if res.get("outcome") == "stash":
+        extra.append("Stash only, no lineup gain yet")
+    elif res.get("lineup_gain"):
+        extra.append(f"+{res['lineup_gain']:g} lineup pts")
+    if res.get("claim_guidance"):
+        extra.append(str(res["claim_guidance"]))
+    if extra:
+        reason = f"{reason} · " + " · ".join(extra)
+    best = {
+        "player_id": res["player_id"],
+        "name": res["name"],
+        "position": pos,
+        "pos_rank_label": res.get("pos_rank_label") or "",
+        "pos_rank": rk,
+        "value": res["value"],
+        "score": res["score"],
+        "starter_gap": gap,
+        "severity": severity,
+        "reason": reason,
+        "outcome": res.get("outcome"),
+        "lineup_gain": res.get("lineup_gain"),
+        "lineup_gain_4wk": res.get("lineup_gain_4wk"),
+        "drop_pid": res.get("drop_pid"),
+        "replaces_pid": res.get("replaces_pid"),
+        "drop": ({"player_id": res["drop_pid"], "name": name_by_pid.get(str(res["drop_pid"]), ""),
+                  "position": positions_by_pid.get(str(res["drop_pid"]), "")}
+                 if res.get("drop_pid") else None),
+        "replaces": ({"player_id": res["replaces_pid"], "name": name_by_pid.get(str(res["replaces_pid"]), ""),
+                      "position": positions_by_pid.get(str(res["replaces_pid"]), "")}
+                     if res.get("replaces_pid") else None),
+        "claim_guidance": res.get("claim_guidance"),
+        "faab": res.get("faab"),
+        "horizon": res.get("horizon"),
+    }
     return best
 
 
@@ -2697,15 +2854,32 @@ def waiver_pickup_action(
     is_sf: bool = False,
     n_teams: int = 12,
     player_id: str = "",
+    outcome: str = "",
+    lineup_gain=None,
+    claim_guidance: str = "",
 ) -> dict:
     """A waiver add that already cleared ``select_waiver_add``'s quality bar."""
     pos = str(position or "").upper()
     name = str(player_name or "").strip() or "a free agent"
     title = f"Add {name}" + (f" ({pos})" if pos else "")
+    if outcome == "stash":
+        title = f"Stash {name}" + (f" ({pos})" if pos else "")
     detail = str(reason or "").strip() or waiver_add_detail(
         pos_rank_label=pos_rank_label, position=pos, is_redraft=is_redraft,
         starter_gap=starter_gap, pos_rank=pos_rank, is_sf=is_sf, n_teams=n_teams,
     )
+    _extra = []
+    if outcome == "stash":
+        _extra.append("Stash only, no lineup gain yet")
+    elif lineup_gain:
+        try:
+            _extra.append(f"+{float(lineup_gain):g} lineup pts")
+        except (TypeError, ValueError):
+            pass
+    if claim_guidance:
+        _extra.append(str(claim_guidance))
+    if _extra:
+        detail = f"{detail} · " + " · ".join(_extra)
     try:
         sev = float(severity or 0)
     except (TypeError, ValueError):
