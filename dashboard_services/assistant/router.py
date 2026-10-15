@@ -37,8 +37,11 @@ SCHEMA = {
         "draft_year": {"type": ["integer", "null"]},
         "position": {"type": ["string", "null"]},
         "preference_text": {"type": ["string", "null"]},
-        "board_kind": {"type": ["string", "null"], "enum": ["board", "intersection", "dual", "movers", "matchup", "buy_low", "sell_high", "breadth", None]},
+        "board_kind": {"type": ["string", "null"], "enum": ["board", "intersection", "dual", "movers", "matchup", "buy_low", "sell_high", "breadth", "finishes", "floor", "ceiling", "value", "slate", "gap", "rank_movers", None]},
         "family": {"type": ["string", "null"], "enum": ["receiving", "rushing", "passing", "fantasy", None]},
+        "max_age": {"type": ["integer", "null"]},
+        "pool": {"type": ["string", "null"], "enum": ["waivers", "roster", None]},
+        "finish_n": {"type": ["integer", "null"]},
         "second_metric_hint": {"type": ["string", "null"]},
         "top_n": {"type": ["integer", "null"]},
         "position": {"type": ["string", "null"]},
@@ -52,7 +55,7 @@ SCHEMA = {
         "slot": {"type": ["string", "null"]},
         "start_mode": {"type": ["string", "null"], "enum": ["start", "sit", None]},
     },
-    "required": ["intent", "player_names", "give_player_names", "receive_player_names", "picks", "give_picks", "receive_picks", "other_team_hint", "team_names", "metric_hint", "target_position", "position_hint", "teams_mode", "week", "draft_year", "preference_text", "board_kind", "family", "second_metric_hint", "top_n", "position", "team", "window_weeks", "direction", "replace_mode", "waiver_mode", "value_in_picks", "shop_pool", "slot", "start_mode"],
+    "required": ["intent", "player_names", "give_player_names", "receive_player_names", "picks", "give_picks", "receive_picks", "other_team_hint", "team_names", "metric_hint", "target_position", "position_hint", "teams_mode", "week", "draft_year", "preference_text", "board_kind", "family", "second_metric_hint", "top_n", "position", "team", "window_weeks", "direction", "replace_mode", "waiver_mode", "value_in_picks", "shop_pool", "slot", "start_mode", "max_age", "pool", "finish_n"],
     "additionalProperties": False,
 }
 
@@ -92,7 +95,18 @@ SYSTEM = (
     "top-10 finishes, ranked in the most categories: board_kind breadth, family "
     "is receiving, rushing, passing, or fantasy for overall, top_n is the N in "
     "top N, position when a position is stated). A top-N question about ONE "
-    "named metric stays board_kind board. For leaderboard also extract top_n when a "
+    "named metric stays board_kind board. Detailed boards: players ranked by trade "
+    "value (board_kind value); who has the most top-N weekly finishes at a position "
+    "(board_kind finishes, finish_n is the finish line, 12 when unstated); the "
+    "highest floor or ceiling from weekly game logs (board_kind floor or ceiling); "
+    "a metric's leaders re-ranked by the easiest upcoming schedule (board_kind "
+    "slate); who beats his own team's number 2 option by the most in a metric "
+    "(board_kind gap); who climbed the most in positional rank by value over the "
+    "last month or a stated window (board_kind rank_movers). max_age is an age "
+    "ceiling stated in the question (under 25 means max_age 24, 25 or younger "
+    "means 25); pool is waivers when the question restricts to waiver-wire or "
+    "unrostered players, roster when it restricts to the user's own roster. For "
+    "leaderboard also extract top_n when a "
     "count is stated, position (QB/RB/WR/TE) and team (NFL abbreviation) filters when "
     "stated, and window_weeks when a last-N-weeks window is stated. "
     "waivers: adds, drops, FAAB, stashes, or streaming a position for this week. waiver_mode is "
@@ -119,6 +133,9 @@ SYSTEM = (
     "breakout_history: whether a specific named player was a breakout call (the player goes in player_names). "
     "teams: roster strength or grades across the league's teams (position_hint is a position room like TE or WR when one is named; "
     "teams_mode is this_season when they ask about this season or right now, otherwise dynasty). "
+    "Teams also covers which team rosters the most top-24 players at their positions, and a "
+    "category sweep comparing two teams across every category (my team vs the Pilots "
+    "across every category, who wins more): team_names holds the teams named. "
     "pick_ownership: who owns a draft pick (the pick text goes in picks). "
     "keeper: deciding which players to keep into next season, keeper costs or rounds, "
     "or keeping a player versus a draft pick. If a trade offer with two sides is on the "
@@ -166,7 +183,8 @@ SYSTEM = (
 
 _BOARD_ENTITY_DEFAULTS = {"board_kind": None, "family": None, "second_metric_hint": None, "top_n": None,
                           "position": None, "team": None, "window_weeks": None,
-                          "direction": None}
+                          "direction": None, "max_age": None, "pool": None,
+                          "finish_n": None}
 
 
 _METRIC_PHRASES = ("yards per route run", "air yards share", "target share",
@@ -275,6 +293,69 @@ def _keyword_board(message: str, m: str) -> dict | None:
             "window_weeks": int(window.group(1)) if window else None,
             "direction": None,
         }
+    # Detailed-question boards and board filters: value ranks, game-log
+    # finishes / floors / ceilings, schedule slates, within-team gaps,
+    # positional-rank climbs, plus the age ceiling and pool restrictions
+    # any board can carry.
+    pool = None
+    if re.search(r"\bwaivers?\b|\bunrostered\b|\bavailable players?\b", m):
+        pool = "waivers"
+    elif re.search(r"\bon my (roster|team)\b", m):
+        pool = "roster"
+    max_age = None
+    age_m = re.search(r"\bunder\s+(\d{2})\b", m)
+    if age_m:
+        max_age = int(age_m.group(1)) - 1
+    else:
+        age_m = re.search(r"\b(\d{2})\s+or younger\b", m)
+        if age_m:
+            max_age = int(age_m.group(1))
+    detail = None
+    finish_n = None
+    fin = re.search(r"\btop[- ]?(\d{1,2}) (weeks?|finishes)\b", m)
+    if (re.search(r"\bmost top[- ]?\d+ weeks?\b|\bmost (weekly )?finishes\b"
+                  r"|\btop[- ]?\d+ finishes\b|\bboom weeks?\b", m) or fin):
+        detail = "finishes"
+        if fin:
+            finish_n = int(fin.group(1))
+        elif "boom" in m:
+            finish_n = 6
+    elif re.search(r"\bhighest floor\b|\bbest floor\b|\bsafest floor\b"
+                   r"|\bmost consistent\b", m):
+        detail = "floor"
+    elif re.search(r"\bhighest ceiling\b|\bbest ceiling\b"
+                   r"|\bbiggest ceiling\b", m):
+        detail = "ceiling"
+    elif re.search(r"\beasiest (upcoming |next )?(slate|schedule)\b"
+                   r"|\bsoftest upcoming\b|\bbest upcoming slate\b", m) \
+            and (hints or position):
+        detail = "slate"
+    elif re.search(r"\bbeats? (his|their|the) team'?s\b"
+                   r"|\bteam'?s (no\.?\s?2|number 2|second option)\b"
+                   r"|\bbiggest gap\b.{0,40}\bteam\b", m):
+        detail = "gap"
+    elif re.search(r"\bclimbed? (the )?most\b"
+                   r"|\bbiggest (climb|riser) in (positional )?rank\b"
+                   r"|\bpositional rank\b.{0,30}\b(climb|ris|mov)", m):
+        detail = "rank_movers"
+    elif re.search(r"\bmost valuable\b|\bby (trade )?value\b"
+                   r"|\bhighest (trade )?value\b|\branked by value\b", m):
+        detail = "value"
+    if detail:
+        return {
+            "intent": "leaderboard",
+            "metric_hint": hints[0] if hints else None,
+            "second_metric_hint": hints[1] if len(hints) > 1 else None,
+            "board_kind": detail,
+            "top_n": int(top.group(1)) if top else None,
+            "position": position,
+            "team": None,
+            "window_weeks": int(window.group(1)) if window else None,
+            "direction": None,
+            "max_age": max_age,
+            "pool": pool,
+            "finish_n": finish_n,
+        }
     kind = None
     direction = None
     if re.search(r"gives? up the most|allow(s|ed)? the most|worst defenses?|easiest defenses?", m):
@@ -285,7 +366,8 @@ def _keyword_board(message: str, m: str) -> dict | None:
         kind, direction = "movers", "fallers"
     elif len(hints) >= 2 and top:
         kind = "intersection"
-    elif hints and (top or re.search(r"\bwho (leads|has)\b|\bleaderboard\b|\branked\b|\bmost\b|\bbest\b", m)):
+    elif hints and (top or pool is not None
+                    or re.search(r"\bwho (leads|has)\b|\bleaderboard\b|\branked\b|\bmost\b|\bbest\b", m)):
         kind = "board"
     if kind is None:
         return None
@@ -299,6 +381,9 @@ def _keyword_board(message: str, m: str) -> dict | None:
         "team": None,
         "window_weeks": int(window.group(1)) if window else None,
         "direction": direction,
+        "max_age": max_age,
+        "pool": pool,
+        "finish_n": finish_n,
     }
 
 
@@ -482,6 +567,15 @@ def _keyword_route(message: str) -> dict:
         if re.search(r"\bwas\b|\bdid\b|has .* been|call for|call on", m):
             return {**base, "intent": "breakout_history"}
         return {**base, "intent": "breakout_board"}
+    # A ranked board restricted to the waiver pool ("top receivers on
+    # waivers by target share") is a leaderboard with a pool filter, not
+    # waiver advice: it carries a ranking anchor and no add/drop verb.
+    if (re.search(r"\bon (the )?waivers?\b|\bon the waiver wire\b", m)
+            and re.search(r"\btop\s+\d|\branked\b|\bmost\b|\bbest\b|\bby [a-z ]+share\b", m)
+            and not re.search(r"\badd\b|\bdrop\b|\bclaim\b|\bpick up\b|\bfaab\b", m)):
+        board = _keyword_board(message, m)
+        if board is not None:
+            return {**base, **board}
     # Waiver family: adds, drops, stashes, streamers, and the free-agent
     # pool itself. The mode rides along so the pack can rank for the ask
     # (a stash is not an add, a drop question wants the drop ranking, a
@@ -563,6 +657,15 @@ def _keyword_route(message: str) -> dict:
         return {**base, "intent": "trade_eval"}
     if re.search(r"\bbuy\b|\bsell\b|\bhold\b", m):
         return {**base, "intent": "buy_sell_hold"}
+    # Teams breadth and category sweeps ride the teams intent: the pack
+    # counts top-N players per roster, and a named second team turns the
+    # pack into a sweep the composer renders deterministically.
+    if re.search(r"across every categor|category sweep|who wins more|"
+                 r"most top[- ]?\d+ players|most players in the top", m):
+        tn = re.search(r"top[- ](\d{1,2})\b", m)
+        mode = "this_season" if re.search(r"this season|right now|this year", m) else None
+        return {**base, "intent": "teams", "teams_mode": mode,
+                "top_n": int(tn.group(1)) if tn else None}
     # League-wide roster strength/grades, before the this_week catch below
     # ("grade my team's WR room" is a Teams question, not a digest ask).
     if re.search(r"strongest roster|strongest team|roster is strongest|team is strongest|"
@@ -635,6 +738,9 @@ def classify(question: str, context: dict | None = None, history: list | None = 
             "team": data.get("team"),
             "window_weeks": data.get("window_weeks"),
             "direction": data.get("direction"),
+            "max_age": data.get("max_age"),
+            "pool": data.get("pool"),
+            "finish_n": data.get("finish_n"),
             "replace_mode": data.get("replace_mode"),
             "waiver_mode": data.get("waiver_mode"),
             "value_in_picks": data.get("value_in_picks"),

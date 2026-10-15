@@ -55,7 +55,8 @@ _PLANNER_SYSTEM = (
 )
 
 _PLAN_ARG_FIELDS = ("player", "player_a", "player_b", "stat", "metric",
-                    "position", "team", "kind", "top_n", "family")
+                    "position", "team", "kind", "top_n", "family",
+                    "max_age", "pool")
 
 _PLAN_SCHEMA = {
     "type": "object",
@@ -66,8 +67,9 @@ _PLAN_SCHEMA = {
                 "tool": {"type": "string",
                          "enum": [t["name"] for t in tools_mod.TOOL_CATALOG]},
                 **{f: {"type": ["string", "null"]} for f in _PLAN_ARG_FIELDS
-                   if f != "top_n"},
+                   if f not in ("top_n", "max_age")},
                 "top_n": {"type": ["integer", "null"]},
+                "max_age": {"type": ["integer", "null"]},
             },
             "required": ["tool", *_PLAN_ARG_FIELDS],
             "additionalProperties": False}},

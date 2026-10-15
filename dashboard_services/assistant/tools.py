@@ -371,6 +371,77 @@ def _tool_breadth_board(bundle, args) -> dict:
     return out
 
 
+_DEEP_BOARD_FIELDS = ("games", "ppg", "floor", "ceiling", "finishes",
+                      "delta", "baseline_value", "slate_avg_rank",
+                      "slate_games", "gap", "second_name", "second_value",
+                      "climb", "old_rank", "new_rank", "current_value",
+                      "age")
+
+
+def _tool_deep_board(bundle, args) -> dict:
+    """Detailed-question boards: one call into the leaderboard builder
+    with a composed kind (finishes / floor / ceiling / value / slate /
+    gap / rank_movers), distilled to the ranked rows, their basis, and
+    receipts. PRO gating happens inside the builder, exactly as the
+    fixed leaderboard path does it."""
+    out = _base("deep_board")
+    kind = str(args.get("kind") or "").strip().lower()
+    if kind not in ("finishes", "floor", "ceiling", "value", "slate",
+                    "gap", "rank_movers"):
+        out.update({"ok": False, "missing": "unknown board kind"})
+        return out
+    phrase = str(args.get("stat") or args.get("metric") or "").strip()
+    position = str(args.get("position") or "").strip().upper() or None
+    if position not in _POSITIONS:
+        position = None
+    try:
+        top_n = int(args.get("top_n") or 5)
+    except (TypeError, ValueError):
+        top_n = 5
+    top_n = max(1, min(10, top_n))
+    try:
+        max_age = int(args.get("max_age") or 0) or None
+    except (TypeError, ValueError):
+        max_age = None
+    pool = str(args.get("pool") or "").strip().lower()
+    if pool not in ("waivers", "roster"):
+        pool = None
+    ent = {"board_kind": kind, "top_n": top_n, "position": position,
+           "metric_hint": phrase or None, "max_age": max_age, "pool": pool}
+    pack, _used = ev.build_leaderboard(bundle, ent, [])
+    if pack.get("gated"):
+        out.update({"gated": True, "label": pack.get("label"),
+                    "metric_key": pack.get("metric_key")})
+        return out
+    board = []
+    for r in pack.get("board") or []:
+        row = {"rank": r.get("rank"), "player_id": r.get("player_id"),
+               "name": r.get("name"), "team": r.get("team"),
+               "position": r.get("position"), "value": r.get("value"),
+               "on_my_roster": bool(r.get("on_my_roster"))}
+        for fk in _DEEP_BOARD_FIELDS:
+            if r.get(fk) is not None:
+                row[fk] = r[fk]
+        board.append(row)
+    if not board:
+        entry = {"ok": False,
+                 "missing": pack.get("missing") or "no qualified players for that board"}
+        if pack.get("nearest"):
+            entry["nearest"] = pack["nearest"]
+        out.update(entry)
+        return out
+    out.update({"board": board, "label": pack.get("label"),
+                "board_kind": kind,
+                "basis": pack.get("qualification_text")})
+    out["players"] = [{"player_id": r["player_id"], "name": r["name"]}
+                      for r in board if r.get("player_id")]
+    for r in board[:3]:
+        out["receipts"].append({"label": f"{r['rank']}. {r['name']}",
+                                "value": str(_n(r["value"]))})
+    out["link"] = {"href": "/metrics", "label": "View on Advanced Metrics"}
+    return out
+
+
 def _tool_metric_definition(bundle, args) -> dict:
     out = _base("metric_definition")
     phrase = str(args.get("metric") or args.get("stat") or "").strip()
@@ -742,6 +813,7 @@ TOOL_FUNCS = {
     "player_metrics": _tool_player_metrics,
     "top_board": _tool_top_board,
     "breadth_board": _tool_breadth_board,
+    "deep_board": _tool_deep_board,
     "team_roster": _tool_team_roster,
     "league_lookup": _tool_league_lookup,
     "compare_players": _tool_compare_players,
@@ -770,6 +842,14 @@ TOOL_CATALOG = [
      "args": {"family": "receiving | rushing | passing | fantasy",
               "position": "QB/RB/WR/TE or null",
               "top_n": "the N in top N (default 10)"}},
+    {"name": "deep_board",
+     "description": "A composed analytical board: kind finishes (most top-12 weekly finishes at a position), floor (highest worst week), ceiling (highest best week), value (ranked by trade value, optional max_age or pool filter), slate (a metric's leaders re-ranked by easiest upcoming schedule), gap (who beats his own team's No. 2 by the most in a metric), rank_movers (biggest positional-rank climbers by value over the last month).",
+     "args": {"kind": "finishes | floor | ceiling | value | slate | gap | rank_movers",
+              "stat": "the metric phrase for slate/gap kinds, else null",
+              "position": "QB/RB/WR/TE or null",
+              "top_n": "how many rows (default 5)",
+              "max_age": "age ceiling or null",
+              "pool": "waivers | roster | null"}},
     {"name": "team_roster",
      "description": "A fantasy team's roster in this league: starters and bench with values, injuries, roster value total, and its standing line. team is a team name, or 'mine' for the user's own team.",
      "args": {"team": "team name or 'mine'"}},
