@@ -157,8 +157,8 @@ def build_prospects_body(is_admin: bool = False) -> str:
      display:none;align-items:center;justify-content:center;padding:20px;
      background:rgba(15,23,42,0.7);backdrop-filter:blur(4px);">
   <div id="rkModalContent"
-    style="background:var(--card);border-radius:16px;max-width:920px;width:100%;
-           max-height:90vh;overflow-y:auto;
+    style="background:var(--card);border-radius:16px;max-width:900px;width:100%;
+           max-height:90vh;display:flex;flex-direction:column;overflow:hidden;
            box-shadow:0 24px 48px rgba(15,23,42,0.25);">
     <!-- filled by JS -->
   </div>
@@ -248,6 +248,13 @@ def build_prospects_body(is_admin: bool = False) -> str:
     .rk-tbar { flex: 1 1 0; min-width: 0; }
     .rk-ttrack { width: 100%; justify-content: center; }
     .rk-tfill { width: 100%; max-width: 64px; }
+  }
+  /* Player-modal-style prospect modal: initials tile for the headshot slot
+     when a prospect has no photo (mirrors the player modal fallback). */
+  .rk-hs-initials { width: 160px; height: 135px; background: var(--accent-soft); color: var(--accent);
+    display: flex; align-items: center; justify-content: center; font-size: 40px; font-weight: 800; letter-spacing: .02em; }
+  @media (max-width: 768px) {
+    .rk-hs-initials { width: 88px; height: 100%; min-height: 96px; font-size: 26px; align-self: stretch; }
   }
   /* Prospects card-header: override global 50px height, allow vertical stacking */
   .rk-card-header {
@@ -821,13 +828,21 @@ def build_prospects_body(is_admin: bool = False) -> str:
     for (var i = 0; i < s.length; i++) hsh = (hsh * 31 + s.charCodeAt(i)) >>> 0;
     return RK_DISC_COLORS[hsh % RK_DISC_COLORS.length];
   }
-  function rkHeadshot(r, cls) {
+  function rkHeadshot(r) {
     var url = r.headshot_url || r.espnHeadshot;
     if (url) {
-      return '<div class="' + cls + ' rk-hs-img">' +
-        '<img src="' + rkEsc(url) + '" alt="" loading="lazy" onerror="this.remove()"></div>';
+      return '<img class="player-modal-headshot" src="' + rkEsc(url) +
+        '" alt="" loading="lazy" data-initials="' + rkEsc(rkInitials(r.name)) +
+        '" onerror="rkHsFallback(this)">';
     }
-    return '<div class="' + cls + ' rk-hs-empty"></div>';
+    return '<div class="rk-hs-initials">' + rkEsc(rkInitials(r.name)) + '</div>';
+  }
+  // Photo failed to load: swap in the initials tile (player-modal fallback).
+  function rkHsFallback(img) {
+    var d = document.createElement('div');
+    d.className = 'rk-hs-initials';
+    d.textContent = img.getAttribute('data-initials') || '';
+    if (img.parentNode) img.parentNode.replaceChild(d, img);
   }
   function rkStarSVG() {
     return '<svg viewBox="0 0 24 24"><path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4 6.1 20.5l1.2-6.5L2.5 9.4l6.6-.9z"/></svg>';
@@ -881,10 +896,13 @@ def build_prospects_body(is_admin: bool = False) -> str:
     'Yds/Rec': 'YDS/R', 'Scrim Yds/Gm': 'SCRIM', 'Mkt Share': 'MKT SH',
     'TD Share': 'TD SH', 'Speed Score': 'SPEED', 'Efficiency': 'EFF',
     'Production': 'PROD', 'Recruiting': 'REC', 'WEPA': 'WEPA',
-    'Cmp%': 'CMP%', 'TD:INT': 'TD:INT', 'Yds/Att': 'YDS/A', 'AY/A': 'AY/A'
+    'Cmp%': 'CMP%', 'TD:INT': 'TD:INT', 'Yds/Att': 'YDS/A', 'AY/A': 'AY/A',
+    'Rush Yds/Gm': 'RUSH/G', 'Rush TDs': 'R TD'
   };
-  function rkRadarSVG(labels, values, color) {
-    var size = 220, cx = 110, cy = 112, R = 68, n = labels.length;
+  // Radar in the player modal's blue treatment, 340x236 geometry: full rail
+  // width on Overview (fixed=false), fixed size on the Advanced tab.
+  function rkRadarSVG(labels, values, fixed) {
+    var W = 340, H = 236, cx = 170, cy = 118, R = 80, n = labels.length;
     if (!n) return '';
     function pt(k, r) {
       var a = (-90 + k * 360 / n) * Math.PI / 180;
@@ -893,25 +911,26 @@ def build_prospects_body(is_admin: bool = False) -> str:
     function pts(k, r) { var q = pt(k, r); return q[0].toFixed(1) + ',' + q[1].toFixed(1); }
     var grid = [25, 50, 75, 100].map(function(g) {
       var pp = []; for (var k = 0; k < n; k++) pp.push(pts(k, R * g / 100));
-      return '<polygon points="' + pp.join(' ') + '" fill="none" style="stroke:var(--border)" stroke-width="1"/>';
+      return '<polygon points="' + pp.join(' ') + '" fill="none" stroke="var(--border)" stroke-width="1"/>';
     }).join('');
     var axes = '';
     for (var k = 0; k < n; k++) {
       var e = pt(k, R);
-      axes += '<line x1="' + cx + '" y1="' + cy + '" x2="' + e[0].toFixed(1) + '" y2="' + e[1].toFixed(1) + '" style="stroke:var(--border)" stroke-width="1"/>';
+      axes += '<line x1="' + cx + '" y1="' + cy + '" x2="' + e[0].toFixed(1) + '" y2="' + e[1].toFixed(1) + '" stroke="var(--border)" stroke-width="1"/>';
     }
     var vp = [];
     for (var k = 0; k < n; k++) vp.push(pts(k, R * Math.max(0, Math.min(100, values[k] || 0)) / 100));
-    var poly = '<polygon points="' + vp.join(' ') + '" fill="' + color + '33" stroke="' + color + '" stroke-width="2"/>';
-    var dots = vp.map(function(s) { var xy = s.split(','); return '<circle cx="' + xy[0] + '" cy="' + xy[1] + '" r="2.5" fill="' + color + '"/>'; }).join('');
+    var poly = '<polygon points="' + vp.join(' ') + '" fill="rgba(59,130,246,.16)" stroke="#3b82f6" stroke-width="1.6"/>';
+    var dots = vp.map(function(s) { var xy = s.split(','); return '<circle cx="' + xy[0] + '" cy="' + xy[1] + '" r="2.4" fill="#3b82f6"/>'; }).join('');
     var labs = labels.map(function(l, k) {
       var a = (-90 + k * 360 / n) * Math.PI / 180;
-      var lx = cx + (R + 20) * Math.cos(a), ly = cy + (R + 20) * Math.sin(a);
+      var lx = cx + (R + 17) * Math.cos(a), ly = cy + (R + 17) * Math.sin(a);
       var anchor = Math.abs(Math.cos(a)) < 0.35 ? 'middle' : (Math.cos(a) > 0 ? 'start' : 'end');
       var txt = RK_RADAR_ABBR[l] || String(l).toUpperCase();
-      return '<text x="' + lx.toFixed(1) + '" y="' + (ly + 3).toFixed(1) + '" text-anchor="' + anchor + '" font-size="9" font-weight="700" style="fill:var(--text-muted)">' + rkEsc(txt) + '</text>';
+      return '<text x="' + lx.toFixed(1) + '" y="' + (ly + 3).toFixed(1) + '" text-anchor="' + anchor + '" font-size="11" font-weight="700" fill="var(--text-muted)">' + rkEsc(txt) + '</text>';
     }).join('');
-    return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size + '" style="overflow:visible" role="img">' + grid + axes + poly + dots + labs + '</svg>';
+    var sizeAttrs = fixed ? 'width="340" height="236"' : 'width="100%"';
+    return '<svg ' + sizeAttrs + ' viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Advanced metrics radar">' + grid + axes + poly + dots + labs + '</svg>';
   }
 
   // Sort dropdown: choosing a key resets to that key's default direction.
@@ -981,7 +1000,14 @@ def build_prospects_body(is_admin: bool = False) -> str:
   // Sync the open modal's star + nudge row after a watchlist change.
   function rkSyncModalWatch(card, pid, name) {
     var on = !!rkWatch[pid];
-    card.querySelectorAll('.rk-star').forEach(function(s) { s.classList.toggle('watching', on); });
+    card.querySelectorAll('.rk-star').forEach(function(s) {
+      s.classList.toggle('watching', on);
+      if (s.classList.contains('player-modal-watchlist-btn')) {
+        s.classList.toggle('player-modal-watchlist-btn--active', on);
+        s.setAttribute('aria-pressed', on ? 'true' : 'false');
+        s.title = on ? 'Remove from watchlist' : 'Add to watchlist';
+      }
+    });
     var n = card.querySelector('.m-nudge');
     if (n) {
       n.classList.toggle('on', on);
@@ -1308,13 +1334,602 @@ def build_prospects_body(is_admin: bool = False) -> str:
     return '<div class="rk-detail-loading"><div class="loading-spinner" style="width:12px;height:12px;flex-shrink:0;"></div>Loading\u2026</div>';
   }
 
-  function rkToggleMoreComps() {
-    var d = document.getElementById('rkMoreComps');
-    var btn = document.getElementById('rkMoreCompsBtn');
-    if (!d || !btn) return;
-    var open = d.style.display === 'none';
-    d.style.display = open ? 'block' : 'none';
-    btn.textContent = open ? 'Show fewer components' : 'Show all components';
+  // ── Player-modal-style prospect modal ─────────────────────────────────────
+  // Presentation mirrors static/player_modal.js (pm-* classes from
+  // dashboard.css); every field renders only when the API returns it.
+  function rkFmtNum(v) {
+    if (v == null || v === '') return '-';
+    var n = Number(v);
+    if (isNaN(n)) return '-';
+    return n >= 1000 ? n.toLocaleString() : String(Math.round(n));
+  }
+
+  function rkSwitchTab(tab) {
+    var content = document.getElementById('rkModalContent');
+    if (!content) return;
+    content.querySelectorAll('[data-rk-tab]').forEach(function(b) {
+      var on = b.getAttribute('data-rk-tab') === tab;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    content.querySelectorAll('[data-rk-panel]').forEach(function(p) {
+      p.classList.toggle('pm-panel-active', p.getAttribute('data-rk-panel') === tab);
+    });
+    var body = document.getElementById('rkModalBody');
+    if (body) body.scrollTop = 0;
+  }
+
+  // Trend classification ported from player_modal.js classifyTrend so the
+  // trajectory pill uses the same language as the Value History block.
+  var RK_TREND_META = {
+    rising:     { icon: '↑', label: 'Rising',      color: 'var(--win)' },
+    recovering: { icon: '↗', label: 'Recovering',  color: '#3b82f6' },
+    peaked:     { icon: '↘', label: 'Cooling off', color: '#f59e0b' },
+    declining:  { icon: '↓', label: 'Declining',   color: 'var(--loss)' },
+    stable:     { icon: '→', label: 'Stable',      color: 'var(--text-muted)' }
+  };
+  function rkClassifyTrend(vals) {
+    var n = vals.length;
+    if (n < 2) return null;
+    var first = vals[0], last = vals[n - 1];
+    var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+    var pct = first ? (last - first) / first : 0;
+    if (Math.abs(pct) < 0.03) return RK_TREND_META.stable;
+    if (pct > 0) {
+      return (lo < last * 0.92 && last < hi * 0.995)
+        ? RK_TREND_META.recovering : RK_TREND_META.rising;
+    }
+    return (hi > last * 1.08 && last > lo * 1.02)
+      ? RK_TREND_META.peaked : RK_TREND_META.declining;
+  }
+
+  function rkGradedAdv(d) {
+    return ((d && d.advanced) || []).filter(function(a) {
+      return a.raw != null && a.grade != null;
+    });
+  }
+  function rkAdvRaw(d, label) {
+    var found = null;
+    ((d && d.advanced) || []).forEach(function(a) {
+      if (a.label === label) found = a;
+    });
+    return found && found.raw != null ? String(found.raw) : null;
+  }
+  // Season attribution for the marks rows (best-dominator season, latest).
+  function rkMarkSeasons(d) {
+    var rows = (d && d.advanced_seasons) || [];
+    var latest = null, bestSeason = null, bestDom = null;
+    rows.forEach(function(s) {
+      if (s.season != null && (latest == null || s.season > latest)) latest = s.season;
+      if (s.dominator != null && (bestDom == null || s.dominator > bestDom)) {
+        bestDom = s.dominator;
+        bestSeason = s.season;
+      }
+    });
+    return { latest: latest, bestSeason: bestSeason };
+  }
+  function rkSeasonSuffix(season) {
+    return season != null
+      ? ' <span style="font-size:11px;color:var(--text-subtle);">· ' + rkEsc(season) + '</span>'
+      : '';
+  }
+
+  function rkApplyArchetype(r, d) {
+    var arch = (d && d.archetype) || r.archetype || null;
+    var receipt = (d && d.archetype_receipt) || r.archetype_receipt || '';
+    var chip = document.getElementById('rkArchChip');
+    if (chip) {
+      if (arch) {
+        chip.textContent = arch;
+        chip.title = receipt || '';
+        chip.style.display = '';
+      } else {
+        chip.style.display = 'none';
+      }
+    }
+    var card = document.getElementById('rkHeroArch');
+    if (arch && !card) {
+      var row = document.getElementById('rkHeroRow');
+      if (row) {
+        card = document.createElement('div');
+        card.className = 'pm-hero-stat';
+        card.id = 'rkHeroArch';
+        card.innerHTML =
+          '<div class="pm-hero-label">Archetype</div>' +
+          '<div class="pm-hero-val" id="rkHeroArchVal"></div>' +
+          '<div class="pm-hero-sub" id="rkHeroArchSub"></div>';
+        row.appendChild(card);
+      }
+    }
+    if (card) {
+      if (arch) {
+        card.style.display = '';
+        var v = document.getElementById('rkHeroArchVal');
+        if (v) v.textContent = arch;
+        var s = document.getElementById('rkHeroArchSub');
+        if (s) s.textContent = receipt || '';
+      } else {
+        card.style.display = 'none';
+      }
+    }
+  }
+
+  function rkRenderBreakdown(r, d) {
+    var body = document.getElementById('rkBreakdownBody');
+    if (!body) return;
+    d = d || {};
+    var pos = (r.position || '').toUpperCase();
+    var posColor = RK_POS_COLORS[pos] || '#94a3b8';
+    var ath = d.athleticism || {};
+    var domRaw = rkAdvRaw(d, 'Dominator');
+    var effRaw = null, effUnit = '';
+    [['Yds/Rec', 'yds/rec'], ['Yds/Carry', 'yds/carry'], ['Yds/Att', 'yds/att']]
+      .some(function(pair) {
+        var v = rkAdvRaw(d, pair[0]);
+        if (v) { effRaw = v; effUnit = pair[1]; return true; }
+        return false;
+      });
+    var conf = null;
+    (d.seasons || []).forEach(function(s) { if (s.conference) conf = s.conference; });
+    // Capital rows exist only when a pick (or its stored delta) exists: with
+    // no pick the model redistributes the weight, so there is no capital
+    // component to show.
+    var hasCapital = d.capital_delta != null || r.projected_pick != null;
+    var rows = [];
+    rows.push({ label: 'Production', val: r.production_score,
+                receipt: domRaw ? domRaw + ' dominator' : '' });
+    if (r.athleticism_score != null) {
+      rows.push({ label: 'Athleticism', val: r.athleticism_score,
+        receipt: ath.forty_yard != null ? Number(ath.forty_yard).toFixed(2) + ' forty'
+          : (ath.ras_score != null ? Number(ath.ras_score).toFixed(1) + ' RAS' : '') });
+    }
+    if (hasCapital) {
+      rows.push({ label: 'Draft Capital', val: r.projected_draft_capital_score,
+        receipt: r.projected_pick != null
+          ? 'Mock pick ' + Math.round(parseFloat(r.projected_pick)) : '' });
+    }
+    rows.push({ label: 'Efficiency', val: r.efficiency_score,
+                receipt: effRaw ? effRaw + ' ' + effUnit : '' });
+    rows.push({ label: 'Breakout', val: r.breakout_profile_score,
+                receipt: d.breakout_age != null
+                  ? 'Age ' + Number(d.breakout_age).toFixed(1) : '' });
+    rows.push({ label: 'Competition', val: r.competition_score, receipt: conf || '' });
+    rows.push({ label: 'Recruiting', val: r.recruiting_score, receipt: '' });
+    rows = rows.filter(function(x) { return x.val != null; });
+    var html = rows.map(function(x) {
+      return '<div class="pm-ov-kv"><span>' + x.label +
+        (x.receipt
+          ? ' <span style="font-size:11px;color:var(--text-subtle);">· ' +
+            rkEsc(x.receipt) + '</span>'
+          : '') +
+        '</span><b>' + rkScore1(x.val) + '</b></div>' +
+        '<div class="pm-ov-sharebar"><i style="width:' +
+        Math.min(100, Math.max(0, rkScoreNum(x.val))) + '%;background:' +
+        posColor + '"></i></div>';
+    }).join('');
+    // Transparent capital split (PR 1): grade before capital + its delta.
+    if (d.talent_score != null && d.capital_delta != null) {
+      var cd = parseFloat(d.capital_delta);
+      html += '<div class="pm-ov-kv" style="border-top:2px solid var(--border);margin-top:6px;">' +
+        '<span>Grade before draft capital</span><b>' + rkScore1(d.talent_score) + '</b></div>' +
+        '<div class="pm-ov-kv"><span>Draft capital</span><b>' +
+        (cd > 0 ? '+' : '') + cd.toFixed(1) + '</b></div>';
+    }
+    body.innerHTML = html;
+    var card = document.getElementById('rkBreakdownCard');
+    if (card) card.style.display = html ? '' : 'none';
+  }
+
+  function rkTrajSVG(pts, upperLbl) {
+    var vals = pts.map(function(p) { return p.pg; });
+    var mn = Math.min.apply(null, vals), mx = Math.max.apply(null, vals);
+    var steps = [5, 10, 20, 25, 50, 100, 200];
+    var step = steps[steps.length - 1];
+    for (var i = 0; i < steps.length; i++) {
+      if ((mx - mn) / steps[i] <= 4) { step = steps[i]; break; }
+    }
+    var dmin = Math.floor(mn / step) * step;
+    var intervals = Math.max(1, Math.ceil((mx - dmin) / step));
+    if ((dmin + intervals * step) - mx < step * 0.2) intervals++;
+    var dmax = dmin + intervals * step;
+    function y(v) { return 236 - (v - dmin) / (dmax - dmin) * 192; }
+    var grid = '';
+    for (var gv = dmin; gv < dmax; gv += step) {
+      var gy = y(gv);
+      grid += '<line x1="40" y1="' + gy.toFixed(1) + '" x2="528" y2="' + gy.toFixed(1) +
+        '" stroke="var(--grid)" stroke-width="1"/>' +
+        '<text x="34" y="' + (gy + 3).toFixed(1) + '" font-size="9.5" fill="var(--text-subtle)" text-anchor="end">' +
+        gv + '</text>';
+    }
+    var n = pts.length;
+    var xs = pts.map(function(p, i) {
+      return n === 1 ? 292 : 84 + i * (416 / (n - 1));
+    });
+    var poly = pts.map(function(p, i) {
+      return xs[i].toFixed(1) + ',' + y(p.pg).toFixed(1);
+    }).join(' ');
+    var marks = pts.map(function(p, i) {
+      var py = y(p.pg);
+      return '<circle cx="' + xs[i].toFixed(1) + '" cy="' + py.toFixed(1) +
+        '" r="4" fill="#3b82f6" stroke="#fff" stroke-width="2"/>' +
+        '<text x="' + xs[i].toFixed(1) + '" y="' + (py - 12).toFixed(1) +
+        '" font-size="13" font-weight="700" fill="var(--text)" text-anchor="middle">' +
+        p.pg.toFixed(1) + '</text>' +
+        '<text x="' + xs[i].toFixed(1) + '" y="296" font-size="10.5" font-weight="700" fill="var(--text-muted)" text-anchor="middle">' +
+        p.season + ' · ' + upperLbl + '</text>';
+    }).join('');
+    return '<svg width="100%" viewBox="0 0 560 312" role="img" aria-label="Production trajectory by season">' +
+      grid +
+      '<polyline fill="none" stroke="#3b82f6" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" points="' +
+      poly + '"/>' + marks + '</svg>';
+  }
+
+  function rkRenderTraj(r, d) {
+    var body = document.getElementById('rkTrajBody');
+    var section = document.getElementById('rkTrajSection');
+    if (!body) return;
+    var pos = (r.position || '').toUpperCase();
+    var metric = pos === 'QB'
+      ? { fields: ['pass_yards'], lbl: 'Pass yds/g', upper: 'PASS YDS/G' }
+      : pos === 'RB'
+        ? { fields: ['rush_yards', 'receiving_yards'], lbl: 'Scrim yds/g', upper: 'SCRIM YDS/G' }
+        : { fields: ['receiving_yards'], lbl: 'Rec yds/g', upper: 'REC YDS/G' };
+    var pts = [];
+    ((d && d.seasons) || []).slice(-3).forEach(function(s) {
+      var gp = Number(s.games_played) || 0;
+      if (!gp) return;
+      var yds = metric.fields.reduce(function(t, f) {
+        return t + (Number(s[f]) || 0);
+      }, 0);
+      pts.push({ season: s.season, pg: yds / gp });
+    });
+    if (!pts.length) {
+      if (section) section.style.display = 'none';
+      body.innerHTML = '';
+      return;
+    }
+    var vals = pts.map(function(p) { return p.pg; });
+    var first = vals[0], last = vals[vals.length - 1];
+    var peak = Math.max.apply(null, vals), floor = Math.min.apply(null, vals);
+    var html = '<div class="pm-vh-summary">' +
+      '<div class="pm-vh-now"><span class="pm-vh-now-lbl">' + metric.lbl + '</span>' +
+      '<span class="pm-vh-now-val">' + last.toFixed(1) + '</span></div>';
+    if (vals.length >= 2) {
+      var diff = last - first;
+      var pct = first ? diff / first * 100 : 0;
+      var dir = pct > 0.5 ? 'up' : (pct < -0.5 ? 'down' : 'flat');
+      var arrow = dir === 'up' ? '▲' : (dir === 'down' ? '▼' : '→');
+      var sign = diff > 0 ? '+' : (diff < 0 ? '-' : '');
+      var t = rkClassifyTrend(vals);
+      html += '<div class="pm-vh-move"><div class="pm-vh-move-row">' +
+        '<span class="pm-vh-delta ' + dir + '">' + arrow + ' ' + sign +
+        Math.abs(diff).toFixed(1) + ' · ' + sign + Math.abs(pct).toFixed(1) + '%</span>' +
+        (t ? '<span class="pm-vh-trend" style="color:' + t.color +
+          ';background:color-mix(in srgb, ' + t.color + ' 14%, transparent);">' +
+          t.icon + ' ' + t.label + '</span>' : '') +
+        '</div><span class="pm-vh-range">over ' + vals.length + ' seasons</span></div>';
+    }
+    html += '<div class="pm-vh-extremes">' +
+      '<div class="pm-vh-ext"><span class="pm-vh-ext-k">Peak</span>' +
+      '<span class="pm-vh-ext-v">' + peak.toFixed(1) + '</span></div>' +
+      '<div class="pm-vh-ext"><span class="pm-vh-ext-k">Floor</span>' +
+      '<span class="pm-vh-ext-v">' + floor.toFixed(1) + '</span></div></div></div>' +
+      '<div class="player-modal-chart-container" style="min-height:200px;">' +
+      rkTrajSVG(pts, metric.upper) + '</div>';
+    body.innerHTML = html;
+  }
+
+  function rkRenderOvAdv(r, d) {
+    var body = document.getElementById('rkOvAdvBody');
+    var section = document.getElementById('rkOvAdvSection');
+    if (!body) return;
+    var html = ((d && d.advanced) || []).filter(function(a) {
+      return a.raw != null;
+    }).map(function(a) {
+      return '<tr><td>' + rkEsc(a.label) + '</td>' +
+        '<td><b style="color:var(--text);">' + rkEsc(a.raw) + '</b></td><td>' +
+        (a.grade != null
+          ? '<b style="color:var(--text);">' + Number(a.grade).toFixed(1) + '</b>'
+          : '') + '</td></tr>';
+    });
+    var marks = (d && d.advanced_marks) || {};
+    var ms = rkMarkSeasons(d || {});
+    if (marks.best_dominator != null) {
+      html.push('<tr><td>Best Dominator' + rkSeasonSuffix(ms.bestSeason) + '</td>' +
+        '<td><b style="color:var(--text);">' + Math.round(marks.best_dominator * 100) +
+        '%</b></td><td></td></tr>');
+    }
+    if (marks.career_yds_per_rec != null) {
+      html.push('<tr><td>Career Yds/Rec</td>' +
+        '<td><b style="color:var(--text);">' + Number(marks.career_yds_per_rec).toFixed(1) +
+        '</b></td><td></td></tr>');
+    }
+    if (marks.latest_rec_yards_per_game != null) {
+      html.push('<tr><td>Rec Yds/G' + rkSeasonSuffix(ms.latest) + '</td>' +
+        '<td><b style="color:var(--text);">' +
+        Number(marks.latest_rec_yards_per_game).toFixed(1) + '</b></td><td></td></tr>');
+    }
+    if (!html.length) {
+      if (section) section.style.display = 'none';
+      body.innerHTML = '';
+      return;
+    }
+    body.innerHTML = '<div class="table-wrap"><table class="game-log-table">' +
+      '<thead><tr><th>Metric</th><th>Raw</th><th>Percentile</th></tr></thead><tbody>' +
+      html.join('') + '</tbody></table></div>';
+  }
+
+  function rkRenderRadar(r, d) {
+    var adv = rkGradedAdv(d);
+    var labels = adv.map(function(a) { return a.label; });
+    var values = adv.map(function(a) { return a.grade; });
+    var rail = document.getElementById('rkRadarBody');
+    var card = document.getElementById('rkRadarCard');
+    var big = document.getElementById('rkAdvRadarBody');
+    if (rail) rail.innerHTML = adv.length ? rkRadarSVG(labels, values, false) : '';
+    if (card) card.style.display = adv.length ? '' : 'none';
+    if (big) big.innerHTML = adv.length ? rkRadarSVG(labels, values, true) : '';
+  }
+
+  function rkRenderAdvPct(d) {
+    var body = document.getElementById('rkAdvPctBody');
+    var card = document.getElementById('rkAdvPctCard');
+    if (!body) return;
+    var adv = rkGradedAdv(d);
+    if (!adv.length) {
+      if (card) card.style.display = 'none';
+      body.innerHTML = '';
+      return;
+    }
+    body.innerHTML = adv.map(function(a) {
+      var pct = Math.min(100, Math.max(0, parseFloat(a.grade) || 0));
+      return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:9px;">' +
+        '<div style="width:150px;flex-shrink:0;font-size:13px;color:var(--text);">' +
+        rkEsc(a.label) + ' <span style="color:var(--text-muted);">· ' +
+        rkEsc(a.raw) + '</span></div>' +
+        '<div style="flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden;">' +
+        '<div style="height:100%;width:' + pct + '%;background:#3b82f6;border-radius:3px;"></div></div>' +
+        '<div style="width:34px;text-align:right;font-size:13px;font-weight:700;color:var(--text);">' +
+        pct.toFixed(1) + '</div></div>';
+    }).join('');
+  }
+
+  function rkRenderAdvSeasons(r, d) {
+    var body = document.getElementById('rkAdvSeasonsBody');
+    var section = document.getElementById('rkAdvSeasonsSection');
+    if (!body) return;
+    function pct(v) { return v == null ? '-' : Math.round(Number(v) * 100) + '%'; }
+    function f1(v) { return v == null ? '-' : Number(v).toFixed(1); }
+    function f2(v) { return v == null ? '-' : Number(v).toFixed(2); }
+    var rows = ((d && d.advanced_seasons) || []).filter(function(s) {
+      return [s.dominator, s.yard_share, s.td_share, s.yds_per_reception,
+              s.receptions_per_game, s.rec_yards_per_game, s.rec_tds_per_game]
+        .some(function(v) { return v != null; });
+    });
+    if (!rows.length) {
+      if (section) section.style.display = 'none';
+      body.innerHTML = '';
+      return;
+    }
+    var html = rows.map(function(s) {
+      return '<tr><td>' + rkEsc(s.season) + '</td><td>' + pct(s.dominator) + '</td><td>' +
+        pct(s.yard_share) + '</td><td>' + pct(s.td_share) + '</td><td>' +
+        f1(s.yds_per_reception) + '</td><td>' + f1(s.receptions_per_game) + '</td><td>' +
+        f1(s.rec_yards_per_game) + '</td><td>' + f2(s.rec_tds_per_game) + '</td></tr>';
+    }).join('');
+    // Career row: marks carry career dominator + Yds/Rec; career shares are
+    // the mean of the season shares (the API's own definition).
+    var marks = (d && d.advanced_marks) || {};
+    function meanOf(key) {
+      var vs = rows.map(function(s) { return s[key]; })
+        .filter(function(v) { return v != null; });
+      return vs.length
+        ? vs.reduce(function(t, v) { return t + Number(v); }, 0) / vs.length
+        : null;
+    }
+    var t = { gp: 0, rec: 0, ry: 0, rtd: 0 };
+    ((d && d.seasons) || []).forEach(function(s) {
+      t.gp += Number(s.games_played) || 0;
+      t.rec += Number(s.receptions) || 0;
+      t.ry += Number(s.receiving_yards) || 0;
+      t.rtd += Number(s.receiving_tds) || 0;
+    });
+    var foot = '';
+    if (marks.career_dominator != null || marks.career_yds_per_rec != null || t.gp) {
+      foot = '<tfoot><tr><td>Career</td><td>' + pct(marks.career_dominator) + '</td><td>' +
+        pct(meanOf('yard_share')) + '</td><td>' + pct(meanOf('td_share')) + '</td><td>' +
+        f1(marks.career_yds_per_rec) + '</td><td>' +
+        (t.gp ? (t.rec / t.gp).toFixed(1) : '-') + '</td><td>' +
+        (t.gp ? (t.ry / t.gp).toFixed(1) : '-') + '</td><td>' +
+        (t.gp ? (t.rtd / t.gp).toFixed(2) : '-') + '</td></tr></tfoot>';
+    }
+    body.innerHTML = '<div class="table-wrap"><table class="game-log-table">' +
+      '<thead><tr><th>Season</th><th>Dominator</th><th>Yard Share</th><th>TD Share</th>' +
+      '<th>Yds/Rec</th><th>Rec/G</th><th>Yds/G</th><th>TD/G</th></tr></thead><tbody>' +
+      html + '</tbody>' + foot + '</table></div>';
+  }
+
+  function rkRenderMarks(d) {
+    var body = document.getElementById('rkMarksBody');
+    var card = document.getElementById('rkMarksCard');
+    if (!body) return;
+    var marks = (d && d.advanced_marks) || {};
+    var ms = rkMarkSeasons(d || {});
+    function pct(v) { return Math.round(Number(v) * 100) + '%'; }
+    var rows = [];
+    if (marks.best_dominator != null) {
+      rows.push(['Best Season Dominator', rkSeasonSuffix(ms.bestSeason),
+                 pct(marks.best_dominator)]);
+    }
+    if (marks.career_dominator != null) {
+      rows.push(['Career Dominator', '', pct(marks.career_dominator)]);
+    }
+    if (marks.career_yds_per_rec != null) {
+      rows.push(['Career Yds/Rec', '', Number(marks.career_yds_per_rec).toFixed(1)]);
+    }
+    if (marks.latest_rec_yards_per_game != null) {
+      rows.push(['Latest Rec Yds/G', rkSeasonSuffix(ms.latest),
+                 Number(marks.latest_rec_yards_per_game).toFixed(1)]);
+    }
+    if (marks.latest_rec_tds_per_game != null) {
+      rows.push(['Latest TD/G', rkSeasonSuffix(ms.latest),
+                 Number(marks.latest_rec_tds_per_game).toFixed(2)]);
+    }
+    if (marks.td_share_over_yard_share_pts != null) {
+      var gap = parseFloat(marks.td_share_over_yard_share_pts);
+      rows.push(['TD Share over Yard Share', rkSeasonSuffix(ms.latest),
+                 (gap > 0 ? '+' : '') + gap.toFixed(1) + ' pts']);
+    }
+    if (!rows.length) {
+      if (card) card.style.display = 'none';
+      body.innerHTML = '';
+      return;
+    }
+    body.innerHTML = rows.map(function(x) {
+      return '<div class="pm-rk-kv"><span>' + x[0] + x[1] + '</span><b>' +
+        x[2] + '</b></div>';
+    }).join('');
+  }
+
+  function rkRenderProduction(r, d) {
+    var body = document.getElementById('rkProdBody');
+    if (!body) return;
+    var pos = (r.position || '').toUpperCase();
+    var seasons = (d && d.seasons) || [];
+    if (!seasons.length) {
+      body.innerHTML = '<span style="font-size:13px;color:var(--text-muted);">No season data available.</span>';
+      return;
+    }
+    // Career totals (counting stats summed; rates re-derived from totals).
+    var t = { gp: 0, att: 0, yds: 0, rtd: 0, rec: 0, ry: 0, rectd: 0,
+              cmp: 0, patt: 0, pint: 0, py: 0, ptd: 0, dom: 0, domN: 0 };
+    seasons.forEach(function(s) {
+      t.gp += Number(s.games_played) || 0;
+      t.att += Number(s.rush_attempts) || 0;
+      t.yds += Number(s.rush_yards) || 0;
+      t.rtd += Number(s.rush_tds) || 0;
+      t.rec += Number(s.receptions) || 0;
+      t.ry += Number(s.receiving_yards) || 0;
+      t.rectd += Number(s.receiving_tds) || 0;
+      t.cmp += Number(s.completions) || 0;
+      t.patt += Number(s.pass_attempts) || 0;
+      t.pint += Number(s.interceptions) || 0;
+      t.py += Number(s.pass_yards) || 0;
+      t.ptd += Number(s.pass_tds) || 0;
+      if (s.dominator_rating != null) { t.dom += Number(s.dominator_rating); t.domN++; }
+    });
+    var avgDom = t.domN ? Math.round(t.dom / t.domN * 100) + '%' : '-';
+    function stripCell(lbl, val) {
+      return '<div class="pm-strip-cell"><span class="pm-strip-label">' + lbl +
+        '</span><span class="pm-strip-val">' + val + '</span></div>';
+    }
+    function pgOf(v) { return t.gp ? (v / t.gp).toFixed(1) : '-'; }
+    var strip = '<div class="pm-stats-strip">' +
+      stripCell('Seasons', seasons.length) + stripCell('Games', t.gp);
+    if (pos === 'QB') {
+      strip += stripCell('Pass Yds', rkFmtNum(t.py)) + stripCell('Pass TD', t.ptd) +
+        stripCell('INT', t.pint) + stripCell('Yds/G', pgOf(t.py));
+    } else if (pos === 'RB') {
+      strip += stripCell('Carries', rkFmtNum(t.att)) + stripCell('Rush Yds', rkFmtNum(t.yds)) +
+        stripCell('TD', t.rtd + t.rectd) + stripCell('Scrim Yds/G', pgOf(t.yds + t.ry));
+    } else {
+      strip += stripCell('Receptions', rkFmtNum(t.rec)) + stripCell('Yards', rkFmtNum(t.ry)) +
+        stripCell('TD', t.rectd) + stripCell('Rec Yds/G', pgOf(t.ry));
+    }
+    strip += '</div>';
+
+    // Season table (position-correct columns, per-game group with deltas).
+    function rkPgVal(val, gp) {
+      var v = Number(val), g = Number(gp);
+      return (val != null && isFinite(v) && g > 0) ? v / g : null;
+    }
+    function rkPgCell(cur, prev, grp, dec) {
+      var dd = dec || 1;
+      var disp = (cur != null && isFinite(cur)) ? cur.toFixed(dd) : '-';
+      var arrow = '';
+      if (cur != null && isFinite(cur) && prev != null && isFinite(prev)) {
+        if (cur > prev) arrow = ' <span class="delta">&#9650;</span>';
+        else if (cur < prev) arrow = ' <span class="delta delta-down">&#9660;</span>';
+      }
+      return '<td class="pg' + (grp ? ' grp' : '') + '">' + disp + arrow + '</td>';
+    }
+    function rkCell(v, cls) {
+      var disp = (v == null || v === '') ? '-' : v;
+      return '<td' + (cls ? ' class="' + cls + '"' : '') + '>' +
+        rkEsc(String(disp)) + '</td>';
+    }
+    var cols = RK_SEASON_COLS[pos] || RK_SEASON_COLS.WR;
+    var grpIdx = RK_SEASON_GRP[pos] || RK_SEASON_GRP.WR;
+    var rowsHtml = seasons.map(function(s, idx) {
+      var prev = idx > 0 ? seasons[idx - 1] : null;
+      var gp = Number(s.games_played) || 0;
+      var pgp = prev ? (Number(prev.games_played) || 0) : 0;
+      var html;
+      if (pos === 'QB') {
+        html = rkCell(s.season, 'yr') + rkCell(rkFmtNum(s.games_played)) +
+          rkCell(s.completion_pct != null ? Number(s.completion_pct).toFixed(1) + '%' : '-') +
+          rkCell(rkFmtNum(s.pass_yards)) +
+          rkCell(s.yds_per_attempt != null ? Number(s.yds_per_attempt).toFixed(1) : '-') +
+          rkCell(s.pass_tds) + rkCell(s.interceptions) +
+          rkPgCell(rkPgVal(s.pass_yards, gp), rkPgVal(prev && prev.pass_yards, pgp), true) +
+          rkPgCell(rkPgVal(s.pass_tds, gp), rkPgVal(prev && prev.pass_tds, pgp), false, 2) +
+          rkCell(rkDomCell(s), 'grp');
+      } else if (pos === 'RB') {
+        html = rkCell(s.season, 'yr') + rkCell(rkFmtNum(s.games_played)) +
+          rkCell(rkFmtNum(s.rush_attempts)) + rkCell(rkFmtNum(s.rush_yards)) + rkCell(s.rush_tds) +
+          rkPgCell(rkPgVal(s.rush_attempts, gp), rkPgVal(prev && prev.rush_attempts, pgp), true) +
+          rkPgCell(rkPgVal(s.rush_yards, gp), rkPgVal(prev && prev.rush_yards, pgp), false) +
+          rkPgCell(rkPgVal(s.rush_tds, gp), rkPgVal(prev && prev.rush_tds, pgp), false, 2) +
+          rkCell(s.yds_per_carry != null ? Number(s.yds_per_carry).toFixed(1) : '-', 'grp') +
+          rkCell(rkDomCell(s));
+      } else {
+        html = rkCell(s.season, 'yr') + rkCell(rkFmtNum(s.games_played)) +
+          rkCell(rkFmtNum(s.receptions)) + rkCell(rkFmtNum(s.receiving_yards)) + rkCell(s.receiving_tds) +
+          rkPgCell(rkPgVal(s.receptions, gp), rkPgVal(prev && prev.receptions, pgp), true) +
+          rkPgCell(rkPgVal(s.receiving_yards, gp), rkPgVal(prev && prev.receiving_yards, pgp), false) +
+          rkPgCell(rkPgVal(s.receiving_tds, gp), rkPgVal(prev && prev.receiving_tds, pgp), false, 2) +
+          rkCell(s.yds_per_reception != null ? Number(s.yds_per_reception).toFixed(1) : '-', 'grp') +
+          rkCell(rkDomCell(s));
+      }
+      return '<tr>' + html + '</tr>';
+    }).join('');
+    var cHtml;
+    if (pos === 'QB') {
+      cHtml = rkCell('Career', 'yr') + rkCell(t.gp) +
+        rkCell(t.patt ? (100 * t.cmp / t.patt).toFixed(1) + '%' : '-') +
+        rkCell(rkFmtNum(t.py)) + rkCell(t.patt ? (t.py / t.patt).toFixed(1) : '-') +
+        rkCell(t.ptd) + rkCell(t.pint) +
+        rkPgCell(rkPgVal(t.py, t.gp), null, true) +
+        rkPgCell(rkPgVal(t.ptd, t.gp), null, false, 2) +
+        rkCell(avgDom, 'grp');
+    } else if (pos === 'RB') {
+      cHtml = rkCell('Career', 'yr') + rkCell(t.gp) +
+        rkCell(rkFmtNum(t.att)) + rkCell(rkFmtNum(t.yds)) + rkCell(t.rtd + t.rectd) +
+        rkPgCell(rkPgVal(t.att, t.gp), null, true) +
+        rkPgCell(rkPgVal(t.yds, t.gp), null, false) +
+        rkPgCell(rkPgVal(t.rtd + t.rectd, t.gp), null, false, 2) +
+        rkCell(t.att ? (t.yds / t.att).toFixed(1) : '-', 'grp') +
+        rkCell(avgDom);
+    } else {
+      cHtml = rkCell('Career', 'yr') + rkCell(t.gp) +
+        rkCell(rkFmtNum(t.rec)) + rkCell(rkFmtNum(t.ry)) + rkCell(t.rectd) +
+        rkPgCell(rkPgVal(t.rec, t.gp), null, true) +
+        rkPgCell(rkPgVal(t.ry, t.gp), null, false) +
+        rkPgCell(rkPgVal(t.rectd, t.gp), null, false, 2) +
+        rkCell(t.rec ? (t.ry / t.rec).toFixed(1) : '-', 'grp') +
+        rkCell(avgDom);
+    }
+    body.innerHTML = strip +
+      '<div class="player-modal-section">' +
+      '<div class="pm-section-header"><span class="pm-section-label">College Production</span>' +
+      '<span style="font-size:11px;color:var(--text-muted);">' +
+      (r.school ? rkEsc(r.school) + ' · ' : '') + 'Includes postseason</span></div>' +
+      '<div class="table-wrap"><table class="game-log-table"><thead><tr>' +
+      cols.map(function(c, k) {
+        return '<th' + (grpIdx.indexOf(k) >= 0 ? ' class="grp"' : '') + '>' + c + '</th>';
+      }).join('') +
+      '</tr></thead><tbody>' + rowsHtml + '</tbody>' +
+      '<tfoot><tr>' + cHtml + '</tr></tfoot></table></div></div>';
   }
 
   function rkOpenModal(r) {
@@ -1323,106 +1938,179 @@ def build_prospects_body(is_admin: bool = False) -> str:
     var pid  = r.player_id || '';
     var name = r.name || 'Unknown';
     var pos  = (r.position || '').toUpperCase();
-    var posColor = RK_POS_COLORS[pos] || '#94a3b8';
-    var tc   = RK_TIER_COLORS[r.tier] || '#9ca3af';
     var score = parseFloat(r.prospect_score || 0);
-    var conf  = parseFloat(r.confidence_score || 0);
-    var age   = r.age != null ? parseFloat(r.age).toFixed(1) : '-';
-    var mockPick = r.projected_pick != null ? Math.round(parseFloat(r.projected_pick)) : null;
     var on = !!rkWatch[pid];
-    var rankNum = r.overall_rank ? String(r.overall_rank) : '-';
+    var mockPick = r.projected_pick != null ? Math.round(parseFloat(r.projected_pick)) : null;
 
-    var reasons = String(r.key_reasons || '').split('\\n').filter(function(l){ return l.trim(); });
-    var notesHtml = reasons.length
-      ? '<div class="m-notes">' + reasons.map(function(l){ return '<div>&middot; ' + rkEsc(l.trim().replace(/^[·\\-•*]\\s*/, '')) + '</div>'; }).join('') + '</div>'
-      : '<div class="m-notes">No scouting notes yet.</div>';
-
-    var compDefs = [
-      { label: 'Production',   val: r.production_score,              color: RK_COMP_COLORS[0], rawId: 'rkRawProd' },
-      { label: 'Draft Capital', val: r.projected_draft_capital_score, color: RK_COMP_COLORS[2], rawId: 'rkRawDc' }
-    ];
-    // Only show Athleticism when we have real data (hide when null)
-    if (r.athleticism_score != null) {
-      compDefs.splice(1, 0,
-        { label: 'Athleticism', val: r.athleticism_score, color: RK_COMP_COLORS[1], rawId: 'rkRawAth' });
+    // Header meta line (mock treatment: dot-separated, rank first and bold).
+    var metaParts = [];
+    if (r.position_rank != null && r.position_rank !== '') {
+      metaParts.push('<span style="font-weight:600;color:var(--text);">' +
+        rkEsc(pos + r.position_rank) + '</span>');
+    } else if (r.overall_rank != null) {
+      metaParts.push('<span style="font-weight:600;color:var(--text);">#' +
+        r.overall_rank + '</span>');
     }
-    var compsHtml = compDefs.map(function(c) {
-      var v = rkScoreNum(c.val), disp = rkScore1(c.val);
-      return '<div class="m-comp-row">' +
-        '<div class="m-comp-label">' + c.label + '</div>' +
-        '<div class="rk-meter-bar"><div style="width:' + v + '%;background:' + c.color + '"></div></div>' +
-        '<div class="rk-meter-val" style="color:' + c.color + '">' + disp + '</div>' +
-        '<div class="m-comp-raw" id="' + c.rawId + '"></div></div>';
-    }).join('');
+    if (r.school) metaParts.push('<span>' + rkEsc(r.school) + '</span>');
+    var ageNum = parseFloat(r.age);
+    if (r.age != null && !isNaN(ageNum)) {
+      metaParts.push('<span>' + ageNum.toFixed(1) + ' yrs</span>');
+    }
+    if (r.draft_class_year) {
+      metaParts.push('<span>' + r.draft_class_year + ' Class</span>');
+    }
+    if (mockPick != null) metaParts.push('<span>Mock Pick ' + mockPick + '</span>');
+    var ht = rkHeightStr(r), wt = rkWeightStr(r);
+    if (ht) metaParts.push('<span>' + rkEsc(ht) + '</span>');
+    if (wt) metaParts.push('<span>' + rkEsc(wt) + '</span>');
+    var metaHtml = '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:0;">' +
+      metaParts.join('<span style="opacity:.35;margin:0 3px;">·</span>') + '</div>';
+
+    // Hero cards (Overview). Cards with no data are omitted outright.
+    var tierName = RK_TIER_NAMES[r.tier] || r.tier_label || '';
+    var scoreSub = [tierName, r.tier ? 'Tier ' + r.tier : '']
+      .filter(Boolean).join(' · ');
+    var heroHtml =
+      '<div class="pm-hero-stat pm-hero-primary">' +
+        '<div class="pm-hero-label">Prospect Score</div>' +
+        '<div class="pm-hero-val" style="color:#3b82f6;">' + rkScore1(score) + '</div>' +
+        (scoreSub ? '<div class="pm-hero-sub">' + rkEsc(scoreSub) + '</div>' : '') +
+      '</div>';
+    if (r.position_rank != null || r.overall_rank != null) {
+      var crVal = (r.position_rank != null && r.position_rank !== '')
+        ? pos + r.position_rank : '#' + r.overall_rank;
+      var crSub = [r.overall_rank != null ? '#' + r.overall_rank + ' overall' : '',
+                   r.draft_class_year ? r.draft_class_year + ' class' : '']
+        .filter(Boolean).join(' · ');
+      heroHtml += '<div class="pm-hero-stat">' +
+        '<div class="pm-hero-label">Class Rank</div>' +
+        '<div class="pm-hero-val">' + rkEsc(crVal) + '</div>' +
+        (crSub ? '<div class="pm-hero-sub">' + rkEsc(crSub) + '</div>' : '') + '</div>';
+    }
+    if (mockPick != null) {
+      var round = r.projected_round != null && r.projected_round !== ''
+        ? parseInt(r.projected_round, 10) : Math.ceil(mockPick / 32);
+      heroHtml += '<div class="pm-hero-stat">' +
+        '<div class="pm-hero-label">Mock Pick</div>' +
+        '<div class="pm-hero-val">' + mockPick + '</div>' +
+        '<div class="pm-hero-sub">Round ' + round + '</div></div>';
+    }
+    if (r.archetype) {
+      heroHtml += '<div class="pm-hero-stat" id="rkHeroArch">' +
+        '<div class="pm-hero-label">Archetype</div>' +
+        '<div class="pm-hero-val" id="rkHeroArchVal"></div>' +
+        '<div class="pm-hero-sub" id="rkHeroArchSub"></div></div>';
+    }
+
+    // Scouting notes (pm-rk-scout treatment); the card hides when empty.
+    var reasons = String(r.key_reasons || '').split('\\n')
+      .filter(function(l) { return l.trim(); });
+    var notesHtml = reasons.length
+      ? '<div class="pm-rk-card pm-rk-scout">' +
+          '<div class="pm-rk-card-h">Scouting notes</div>' +
+          '<ul style="margin:0;padding:0;list-style:none;">' +
+          reasons.map(function(l) {
+            return '<li style="font-size:13px;color:var(--text-muted);padding:3px 0 3px 14px;position:relative;line-height:1.5;">' +
+              '<span style="position:absolute;left:0;color:var(--accent);">·</span>' +
+              rkEsc(l.trim().replace(/^[·\\-•*]\\s*/, '')) + '</li>';
+          }).join('') + '</ul></div>'
+      : '';
 
     content.innerHTML =
-      '<div class="rk-modal-header"><div style="min-width:0;flex:1;">' +
-        '<div class="m-title-row" style="display:flex;align-items:center;gap:10px;">' +
-          '<span class="rk-rank-chip" style="font-family:ui-monospace,Menlo,monospace;font-size:12px;font-weight:700;color:var(--text-muted);border:1px solid var(--border);border-radius:6px;padding:3px 8px;white-space:nowrap;">#' + rankNum + '</span>' +
-          rkHeadshot(r, 'm-headshot') +
-          '<span class="m-name">' + rkEsc(name) + '</span>' +
-          '<span class="rk-pos" style="--pc:' + posColor + ';display:inline-flex;align-items:center;justify-content:center;min-width:34px;height:20px;padding:0 8px;border-radius:6px;font-size:10.5px;font-weight:800;color:#fff;letter-spacing:.04em;background:' + posColor + '">' + rkEsc(pos) + '</span>' +
-          '<span class="m-tier" style="background:' + tc + '22;color:' + tc + ';border:1px solid ' + tc + '44;">T' + (r.tier || '?') + '</span>' +
-          (r.early_declare ? '<span class="m-early">EARLY</span>' : '') +
+      '<div class="player-modal-header">' +
+        '<div class="player-modal-headshot-container">' + rkHeadshot(r) + '</div>' +
+        '<div class="player-modal-title-section"><div class="player-modal-title-text">' +
+          '<h2 class="player-modal-name" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+            '<span>' + rkEsc(name) + '</span>' +
+            '<span class="pos-badge ' + rkEsc(pos) + '">' + rkEsc(pos) + '</span>' +
+            '<span class="player-badge player-badge-elite" id="rkArchChip" style="display:none"></span>' +
+            (r.early_declare ? '<span class="player-badge player-badge-prospect">EARLY</span>' : '') +
+          '</h2>' +
+          '<div class="player-modal-meta">' + metaHtml + '</div>' +
+        '</div></div>' +
+        '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">' +
+          '<button class="player-modal-watchlist-btn rk-star' +
+            (on ? ' watching player-modal-watchlist-btn--active' : '') +
+            '" data-rk-star="1" title="' + (on ? 'Remove from watchlist' : 'Add to watchlist') +
+            '" aria-pressed="' + (on ? 'true' : 'false') + '" aria-label="Watch ' +
+            rkEsc(name) + '"><span class="wl-star-glyph" aria-hidden="true">☆</span></button>' +
+          '<button class="player-modal-close" onclick="rkCloseModal()" aria-label="Close">×</button>' +
         '</div>' +
-        '<div class="m-meta">' + rkDelta(r.rank_delta) +
-          (r.school ? '<span>' + rkEsc(r.school) + '</span>' : '') +
-          '<span id="rkMetaConf"></span>' +
-          '<span>Age <b>' + age + '</b></span>' +
-          (r.draft_class_year ? '<span>Class <b>' + r.draft_class_year + '</b></span>' : '') +
-          (mockPick != null ? '<span>Mock <b>Pick ' + mockPick + '</b></span>' : '') + '</div>' +
-        '<div class="m-recruit" id="rkMetaStars"></div>' +
-        (r.transfer_history ? '<div class="m-transfer">Transfer: ' + rkEsc(r.transfer_history) + '</div>' : '') +
+      '</div>' +
+      '<div class="pm-tab-bar" role="tablist" aria-label="Prospect details">' +
+        '<button type="button" class="pm-tab active" role="tab" aria-selected="true" data-rk-tab="overview">Overview</button>' +
+        '<button type="button" class="pm-tab" role="tab" aria-selected="false" data-rk-tab="production">Production</button>' +
+        '<button type="button" class="pm-tab" role="tab" aria-selected="false" data-rk-tab="advanced">Advanced</button>' +
+      '</div>' +
+      '<div class="player-modal-body" id="rkModalBody">' +
+        '<div class="pm-panel pm-panel-active" data-rk-panel="overview">' +
+          '<div class="pm-hero-row" id="rkHeroRow" style="grid-template-columns:repeat(4,1fr);">' +
+            heroHtml + '</div>' +
+          '<div class="pm-ov-cols">' +
+            '<div class="pm-ov-main">' +
+              '<div class="pm-ov-value" id="rkTrajSection">' +
+                '<div class="pm-section-header"><span class="pm-section-label">Production Trajectory</span>' +
+                '<span style="font-size:11px;color:var(--text-muted);">Per-game rates</span></div>' +
+                '<div id="rkTrajBody">' + rkLoadingHtml() + '</div>' +
+              '</div>' +
+              '<div class="pm-ov-recent" id="rkOvAdvSection">' +
+                '<hr class="pm-section-divider">' +
+                '<div class="pm-section-header"><span class="pm-section-label">Advanced Metrics</span></div>' +
+                '<div id="rkOvAdvBody">' + rkLoadingHtml() + '</div>' +
+              '</div>' +
+            '</div>' +
+            '<div class="pm-ov-rail">' +
+              '<div class="pm-ov-role" id="rkBreakdownCard">' +
+                '<div class="pm-section-header"><span class="pm-section-label">Grade Breakdown</span></div>' +
+                '<div id="rkBreakdownBody"></div>' +
+              '</div>' +
+              '<div class="pm-rk-card pm-ov-inleague" id="rkRadarCard" style="margin-bottom:12px;">' +
+                '<div class="pm-rk-card-h">Radar</div>' +
+                '<div id="rkRadarBody">' + rkLoadingHtml() + '</div>' +
+              '</div>' +
+              '<div class="pm-rk-card pm-ov-news">' +
+                '<div class="pm-rk-card-h">Comparables</div>' +
+                '<div id="rkComparablesBody">' + rkLoadingHtml() + '</div>' +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+          notesHtml +
         '</div>' +
-        '<button class="rk-star' + (on ? ' watching' : '') + '" data-rk-star="1" aria-label="Watch ' + rkEsc(name) + '" style="flex:none;">' + rkStarSVG() + '</button>' +
-        '<button class="rk-modal-close" onclick="rkCloseModal()" aria-label="Close">\u2715</button></div>' +
-      '<div class="rk-modal-body">' +
-        '<div class="rk-sec-head" style="margin-bottom:10px;"><span class="m-sec-label">Prospect score</span><span class="m-sec-hint" id="rkScoreHint"></span></div>' +
-        '<div class="rk-dense-score-row">' +
-          '<div class="rk-dense-score"><div class="rk-dense-score-val" style="color:' + tc + ';">' + rkScore1(score) + '</div>' +
-          '<div class="rk-dense-score-lbl">Prospect Score</div>' +
-          '<div class="rk-dense-score-sub">' + rkEsc(RK_TIER_NAMES[r.tier] || r.tier_label || '') + '</div></div>' +
-          '<div class="rk-dense-comps" id="rkDenseComps"></div>' +
+        '<div class="pm-panel" data-rk-panel="production">' +
+          '<div id="rkProdBody">' + rkLoadingHtml() + '</div>' +
         '</div>' +
-'<hr class="rk-section-divider">' +
-        '<div class="m-sec-head"><span class="m-sec-label">Production trajectory</span><span class="m-sec-hint">Per-game rates, not season totals</span></div>' +
-        '<div id="rkTrajBody">' + rkLoadingHtml() + '</div>' +
-        '<hr class="rk-section-divider">' +
-        '<div class="m-sec-head"><span class="m-sec-label">Advanced metrics</span><span class="m-sec-hint" style="font-size:11px;color:var(--text-subtle);margin-left:auto;">Only metrics with data</span></div>' +
-        '<div id="rkAdvBody">' + rkLoadingHtml() + '</div>' +
-        '<div class="m-cols">' +
-          '<div class="m-col">' +
-            '<hr class="rk-section-divider">' +
-            '<div class="m-sec-label">Combine &amp; measurables</div><div class="rk-meas-grid" id="rkCombineBody">' + rkLoadingHtml() + '</div>' +
+        '<div class="pm-panel" data-rk-panel="advanced">' +
+          '<div class="pm-section-header"><span class="pm-section-label">Advanced Metrics</span></div>' +
+          '<div id="rkAdvRadarBody" style="text-align:center;padding:2px 0 6px;"></div>' +
+          '<div class="pm-rk-card" id="rkAdvPctCard">' +
+            '<div class="pm-rk-card-h">Metric Percentiles</div>' +
+            '<div id="rkAdvPctBody">' + rkLoadingHtml() + '</div>' +
           '</div>' +
-          '<div class="m-col">' +
-            '<hr class="rk-section-divider">' +
-            '<div class="m-sec-head"><span class="m-sec-label">College production</span><span class="m-sec-hint">Includes postseason</span></div><div class="rk-stblwrap"><div id="rkSeasonsBody">' + rkLoadingHtml() + '</div></div>' +
+          '<div id="rkAdvSeasonsSection">' +
+            '<div class="pm-section-header" style="margin-top:18px;"><span class="pm-section-label">Advanced by Season</span></div>' +
+            '<div id="rkAdvSeasonsBody"></div>' +
           '</div>' +
-          '<div class="m-col">' +
-            '<hr class="rk-section-divider">' +
-            '<div class="m-sec-label">Scouting notes</div>' + notesHtml +
-          '</div>' +
-          '<div class="m-col">' +
-            '<hr class="rk-section-divider">' +
-            '<div class="m-sec-label">Historical comparables</div>' +
-            '<div id="rkComparablesBody">' + rkLoadingHtml() + '</div>' +
+          '<div class="pm-rk-card" id="rkMarksCard" style="margin-top:12px;">' +
+            '<div class="pm-rk-card-h">Best &amp; Career Marks</div>' +
+            '<div id="rkMarksBody"></div>' +
           '</div>' +
         '</div>' +
-        '<div class="m-nudge' + (on ? ' on' : '') + '" data-rk-nudge="1">' +
-          '<button class="rk-star' + (on ? ' watching' : '') + '" style="pointer-events:none" tabindex="-1">' + rkStarSVG() + '</button>' +
-          '<span>' + (on ? 'You will be nudged if ' + rkEsc(name) + ' changes tiers.'
-                          : 'Get nudged if ' + rkEsc(name) + ' changes tiers.') + '</span></div>' +
       '</div>';
 
-    // Wire the star + nudge (direct binding, no inline handlers).
+    // Wire the tabs + watchlist star (direct binding, no inline handlers).
+    content.querySelectorAll('[data-rk-tab]').forEach(function(b) {
+      b.addEventListener('click', function() {
+        rkSwitchTab(b.getAttribute('data-rk-tab'));
+      });
+    });
     var starBtn = content.querySelector('[data-rk-star]');
-    if (starBtn) starBtn.addEventListener('click', function(ev) { rkToggleWatchModal(ev, pid, name); });
-    var nudge = content.querySelector('[data-rk-nudge]');
-    if (nudge) nudge.addEventListener('click', function(ev) { rkToggleWatchModal(ev, pid, name); });
+    if (starBtn) starBtn.addEventListener('click', function(ev) {
+      rkToggleWatchModal(ev, pid, name);
+    });
+    rkRenderBreakdown(r, {});
+    rkApplyArchetype(r, {});
 
     modal.style.display = 'flex';
-    content.style.borderTop = '3px solid ' + tc;
     document.body.style.overflow = 'hidden';
 
     // Auto-link to Sleeper ID silently in background
@@ -1430,16 +2118,22 @@ def build_prospects_body(is_admin: bool = False) -> str:
       fetch('/api/prospects/auto-link/' + encodeURIComponent(pid)).catch(function(){});
     }
 
-    // Detail bundle: advanced metrics, combine, seasons, extras
+    // Detail bundle: advanced metrics, seasons, archetype, capital split
     var yearQ = r.draft_class_year || rkDraftYear || '';
     fetch('/api/prospects/player/' + encodeURIComponent(pid) + '?year=' + encodeURIComponent(yearQ))
       .then(function(res){ return res.json(); })
       .then(function(d) { rkFillDetail(r, d || {}); })
       .catch(function() {
-        ['rkAdvBody', 'rkCombineBody', 'rkSeasonsBody'].forEach(function(id) {
+        ['rkTrajBody', 'rkOvAdvBody', 'rkAdvPctBody', 'rkProdBody'].forEach(function(id) {
           var el = document.getElementById(id);
           if (el) el.innerHTML = '<span style="font-size:13px;color:var(--text-muted);">Details unavailable.</span>';
         });
+        ['rkRadarCard', 'rkAdvSeasonsSection', 'rkMarksCard'].forEach(function(id) {
+          var el = document.getElementById(id);
+          if (el) el.style.display = 'none';
+        });
+        var rb = document.getElementById('rkAdvRadarBody');
+        if (rb) rb.innerHTML = '';
       });
 
     // Historical comparables from real past draft classes
@@ -1450,14 +2144,14 @@ def build_prospects_body(is_admin: bool = False) -> str:
         if (!cb) return;
         var comps = cd.comparables || [];
         if (!comps.length) {
-          cb.innerHTML = '<span style="font-size:13px;color:var(--text-muted);">No close historical comps found.</span>';
+          cb.innerHTML = '<div style="font-size:13px;color:var(--text-muted);">No close historical comps found.</div>';
           return;
         }
         cb.innerHTML = comps.map(function(c) {
           var ctc = RK_TIER_COLORS[c.tier] || '#9ca3af';
           var meta = [c.draft_class_year,
                       c.actual_pick ? 'Pick ' + c.actual_pick : null,
-                      c.school].filter(Boolean).join(' \u00b7 ');
+                      c.school].filter(Boolean).join(' · ');
           var discColor = rkDiscColor(c.player_id);
           var disc = '<div class="m-sim-disc" style="--pc:' + discColor + '">' + rkInitials(c.name) +
             (c.headshot_url
@@ -1477,318 +2171,15 @@ def build_prospects_body(is_admin: bool = False) -> str:
   }
 
   function rkFillDetail(r, d) {
-    function fmtNum(v) {
-      if (v == null || v === '') return '-';
-      var n = Number(v);
-      if (isNaN(n)) return '-';
-      return n >= 1000 ? n.toLocaleString() : String(Math.round(n));
-    }
-    // Conference from the latest season with one recorded
-    var mc = document.getElementById('rkMetaConf');
-    if (mc) {
-      var conf = null;
-      (d.seasons || []).forEach(function(s) {
-        if (s.conference) conf = s.conference;
-      });
-      mc.innerHTML = conf ? '<span>' + rkEsc(conf) + '</span>' : '';
-    }
-    // Composite stars + recruiting details (parallel data track; hidden until present)
-    var ms = document.getElementById('rkMetaStars');
-    if (ms) {
-      var st = (d.composite_stars != null && d.composite_stars !== '')
-        ? parseInt(d.composite_stars, 10) : null;
-      if (st == null && r.recruit_stars != null && r.recruit_stars !== '')
-        st = parseInt(r.recruit_stars, 10);
-      if (st) {
-        var det = '';
-        if (r.recruit_composite_rating != null)
-          det += Number(r.recruit_composite_rating).toFixed(4);
-        if (r.recruit_national_rank != null && r.recruit_national_rank !== '')
-          det += (det ? ' · ' : '') + '#' + r.recruit_national_rank + ' nationally';
-        // Skip position rank if missing to avoid "#1 undefined"
-        ms.innerHTML = st + '-star recruit' +
-          (det ? ' <span class="m-recruit-det">(' + rkEsc(det) + ')</span>' : '');
-      } else {
-        ms.innerHTML = '';
-      }
-    }
-    // Score section hint: model version + confidence (like mock)
-    var sh = document.getElementById('rkScoreHint');
-    if (sh) {
-      var mv = r.model_version || '3.1';
-      sh.textContent = 'Model v' + mv + ' \u00b7 confidence ' + Math.round(parseFloat(r.confidence_score || 0));
-    }
-    // Breakout age hero
-    var hb = document.getElementById('rkHeroBreakout');
-    if (hb) hb.textContent = d.breakout_age != null ? Number(d.breakout_age).toFixed(1) : '-';
-    // Dense component vertical bars (same as table columns)
-    var dcEl = document.getElementById('rkDenseComps');
-    if (dcEl) {
-      var dPos = (r.position || '').toUpperCase();
-      var dPc = RK_POS_COLORS[dPos] || '#94a3b8';
-      var dComps = [
-        ['PROD', r.production_score], ['DC', r.projected_draft_capital_score],
-        ['AGE', r.age_score], ['BO', r.breakout_profile_score],
-        ['EFF', r.efficiency_score], ['DUR', r.durability_score],
-        ['COMP', r.competition_score], ['UTIL', r.utilization_score || d.utilization_score]
-      ];
-      // Hide athleticism when null (pre-combine); show if present
-      if (r.athleticism_score != null) dComps.splice(1, 0, ['ATH', r.athleticism_score]);
-      dcEl.innerHTML = dComps.map(function(c) {
-        if (c[1] == null) return '<span class="rk-dcomp"><span class="rk-dcomp-lbl">' + c[0] + '</span><span style="color:var(--text-muted);font-size:10px;">-</span></span>';
-        return '<span class="rk-dcomp" title="' + c[0] + ' ' + rkScore1(c[1]) + '">' +
-          '<span class="rk-dcomp-bar"><span class="rk-dcomp-fill" style="height:' +
-          Math.max(2, Math.round(rkScoreNum(c[1]) * 0.5)) + 'px;background:' + dPc + ';opacity:' +
-          (rkScoreNum(c[1]) >= 80 ? 0.95 : (rkScoreNum(c[1]) >= 60 ? 0.7 : 0.45)) + '"></span></span>' +
-          '<span class="rk-dcomp-lbl">' + c[0] + '</span>' +
-          '<span class="rk-dcomp-val">' + rkScore1(c[1]) + '</span></span>';
-      }).join('');
-    }
-    // Per-game production trajectory (hero visual)
-    var trajEl = document.getElementById('rkTrajBody');
-    if (trajEl) {
-      var seasons = d.seasons || [];
-      var tPos = (r.position || '').toUpperCase();
-      if (!seasons.length) {
-        trajEl.innerHTML = '<span style="font-size:13px;color:var(--text-muted);">No season data available.</span>';
-      } else {
-        var tData = seasons.slice(-3).map(function(s) {
-          var gp = s.games_played || 0;
-          var yds = tPos === 'QB' ? (s.pass_yards || 0) : (tPos === 'RB' ? (s.rush_yards || 0) : (s.receiving_yards || 0));
-          var pg = gp ? (yds / gp) : 0;
-          var lbl = tPos === 'QB' ? 'pass yds/g' : (tPos === 'RB' ? 'rush yds/g' : 'rec yds/g');
-          return { season: s.season, pg: pg, gp: gp, lbl: lbl, yds: yds };
-        });
-        var tMax = Math.max.apply(null, tData.map(function(x){ return x.pg; })) || 1;
-        var tBars = tData.map(function(x, i) {
-          var isLast = i === tData.length - 1;
-          var isLive = isLast && x.season === 2026;
-          var h = Math.max(8, Math.round((x.pg / tMax) * 90));
-          return '<div class="rk-tbar' + (isLive ? ' live' : '') + '">' +
-            (isLive ? '<span class="rk-live-tag">LIVE</span>' : '') +
-            '<div class="rk-ttrack"><div class="rk-tfill" style="height:' + h + 'px' +
-            (isLive ? ';background:#2563eb' : '') + '"></div></div>' +
-            '<div class="rk-tpg">' + x.pg.toFixed(1) + '</div>' +
-            '<div class="rk-tyr">' + x.season + ' &middot; ' + x.lbl + '</div></div>';
-        }).join('');
-        var tFirst = tData[0].pg, tLast = tData[tData.length-1].pg;
-        var tPct = tFirst ? Math.round((tLast - tFirst) / tFirst * 100) : 0;
-        trajEl.innerHTML = '<div class="rk-traj">' + tBars + '</div>' +
-          '<div class="rk-trend-note">' + (tPct >= 0 ? rkUpTri() : rkDnTri()) +
-          ' <b>' + (tPct >= 0 ? '+' : '') + tPct + '%</b> per-game vs ' + tData[0].season + '</div>';
-      }
-    }
-    // Mock draft sub: round + positional rank + month trend
-    var ht = document.getElementById('rkHeroTrend');
-    if (ht) {
-      var bits = [];
-      var _pos = (r.position || '').toUpperCase();
-      if (r.projected_round != null && r.projected_round !== '')
-        bits.push('Rd ' + r.projected_round);
-      if (r.position_rank != null && r.position_rank !== '' && _pos)
-        bits.push(_pos + ' #' + r.position_rank);
-      var t = d.mock_trend, trendHtml = '';
-      if (t != null && t !== '') {
-        if (t > 0) trendHtml = '<span class="dvt-change dvt-change-up">&#9650;' + t + ' this month</span>';
-        else if (t < 0) trendHtml = '<span class="dvt-change dvt-change-down">&#9660;' + Math.abs(t) + ' this month</span>';
-        else trendHtml = '<span class="dvt-change dvt-change-flat">no move this month</span>';
-      }
-      ht.innerHTML = rkEsc(bits.join(' · ')) + (trendHtml ? (bits.length ? ' &middot; ' : '') + trendHtml : '');
-    }
-    // Raw context lines under the three main components
-    function advRaw(label) {
-      var found = null;
-      (d.advanced || []).forEach(function(a){ if (a.label === label) found = a; });
-      return found && found.raw ? found.raw : null;
-    }
-    function setRaw(id, txt) {
-      var el = document.getElementById(id);
-      if (el && txt) el.textContent = txt;
-    }
-    var domRaw = advRaw('Dominator');
-    setRaw('rkRawProd', domRaw ? domRaw + ' dominator' : null);
-    var ath = d.athleticism || {};
-    setRaw('rkRawAth', ath.forty_yard != null ? Number(ath.forty_yard).toFixed(2) + ' forty'
-      : (ath.ras_score != null ? Number(ath.ras_score).toFixed(1) + ' RAS' : null));
-    setRaw('rkRawDc', r.projected_pick != null ? 'mock pick ' + Math.round(parseFloat(r.projected_pick)) : null);
-
-    // "Show all components" expander: utilization / efficiency / durability /
-    // experience / competition (competition carries the SP+ SOS context)
-    var more = document.getElementById('rkMoreComps');
-    if (more) {
-      var sosRaw = d.sp_sos != null ? 'SP+ SOS ' + Number(d.sp_sos).toFixed(2) : '';
-      var vals = [d.utilization_score, r.efficiency_score, r.durability_score,
-                  d.experience_score, r.competition_score];
-      var raws = ['', '', '', '', sosRaw];
-      more.innerHTML = vals.map(function(v, k) {
-        var n = rkScoreNum(v), disp = rkScore1(v);
-        var dd = RK_XCOMP[k];
-        return '<div class="m-comp-row">' +
-          '<div class="m-comp-label">' + dd[0] + '</div>' +
-          '<div class="rk-meter-bar"><div style="width:' + n + '%;background:' + dd[1] + '"></div></div>' +
-          '<div class="rk-meter-val" style="color:' + dd[1] + '">' + disp + '</div>' +
-          '<div class="m-comp-raw">' + rkEsc(raws[k]) + '</div></div>';
-      }).join('');
-    }
-
-    // Advanced metrics rows + radar
-    var advBody = document.getElementById('rkAdvBody');
-    var radarBody = document.getElementById('rkRadarBody');
-    var adv = (d.advanced || []).filter(function(a){ return a.raw != null && a.grade != null; });
-    if (advBody) {
-      advBody.innerHTML = adv.length ? '<table class="rk-adv-tbl"><thead><tr><th>Metric</th><th class="r">Raw</th><th class="r">Percentile</th></tr></thead><tbody>' +
-        adv.map(function(a) {
-        var pct = Math.min(100, Math.max(0, parseFloat(a.grade) || 0));
-        var barColor = pct >= 80 ? '#16a34a' : (pct >= 50 ? '#d97706' : '#94a3b8');
-        return '<tr><td class="rk-adv-name">' + rkEsc(a.label) + '</td>' +
-          '<td class="r rk-adv-raw">' + rkEsc(a.raw) + '</td>' +
-          '<td class="r"><span class="rk-pbar"><i style="width:' + pct + '%;background:' + barColor + '"></i></span>' +
-          '<span class="rk-pctl"><b>' + pct.toFixed(1) + '</b></span></td></tr>';
-      }).join('') + '</tbody></table>' : '<span style="font-size:13px;color:var(--text-muted);">No advanced metrics available.</span>';
-    }
-    if (radarBody) {
-      var tc = RK_TIER_COLORS[r.tier] || '#9ca3af';
-      radarBody.innerHTML = adv.length
-        ? rkRadarSVG(adv.map(function(a){ return a.label; }), adv.map(function(a){ return a.grade; }), tc) : '';
-    }
-
-    // Combine grid
-    var cb = document.getElementById('rkCombineBody');
-    if (cb) {
-      var bi = parseInt(ath.broad_jump_in, 10);
-      var broad = isNaN(bi) ? '-' : Math.floor(bi / 12) + "'" + (bi % 12) + '"';
-      var cells = [
-        ['Height', rkHeightStr(r) || '-'],
-        ['Weight', rkWeightStr(r) || '-'],
-        ['40 Dash', ath.forty_yard != null ? Number(ath.forty_yard).toFixed(2) + 's' : '-'],
-        ['Vertical', ath.vertical_inches != null ? Number(ath.vertical_inches).toFixed(0) + '"' : '-'],
-        ['Broad Jump', broad],
-        ['3-Cone', ath.three_cone != null ? Number(ath.three_cone).toFixed(2) : '-'],
-        ['Shuttle', ath.short_shuttle != null ? Number(ath.short_shuttle).toFixed(2) : '-'],
-        ['Bench', ath.bench_reps != null ? String(ath.bench_reps) : '-'],
-        ['RAS', ath.ras_score != null ? Number(ath.ras_score).toFixed(1) : '-']
-      ];
-      cb.innerHTML = cells.map(function(c) {
-        return '<div class="rk-meas-cell"><div class="rk-meas-label">' + c[0] + '</div>' +
-               '<div class="rk-meas-val">' + rkEsc(c[1]) + '</div></div>';
-      }).join('');
-    }
-
-    // Season-by-season production table (position-correct columns)
-    var sb = document.getElementById('rkSeasonsBody');
-    if (sb) {
-      var pos = (r.position || '').toUpperCase();
-      var cols = RK_SEASON_COLS[pos] || RK_SEASON_COLS.WR;
-      var seasons = d.seasons || [];
-      if (!seasons.length) {
-        sb.innerHTML = '<span style="font-size:13px;color:var(--text-muted);">No season data available.</span>';
-      } else {
-        // Per-game helpers: value/gp, and mock-style ▲/▼ vs previous season
-        function rkPgVal(val, gp) {
-          var v = Number(val), g = Number(gp);
-          return (val != null && isFinite(v) && g > 0) ? v / g : null;
-        }
-        function rkPgCell(cur, prev, grp, dec) {
-          var d = dec || 1;
-          var disp = (cur != null && isFinite(cur)) ? cur.toFixed(d) : '-';
-          var arrow = '';
-          if (cur != null && isFinite(cur) && prev != null && isFinite(prev)) {
-            if (cur > prev) arrow = ' <span class="delta">&#9650;</span>';
-            else if (cur < prev) arrow = ' <span class="delta delta-down">&#9660;</span>';
-          }
-          return '<td class="pg' + (grp ? ' grp' : '') + '">' + disp + arrow + '</td>';
-        }
-        function rkCell(v, cls) {
-          var disp = (v == null || v === '') ? '-' : v;
-          return '<td' + (cls ? ' class="' + cls + '"' : '') + '>' + rkEsc(String(disp)) + '</td>';
-        }
-        var rowsHtml = seasons.map(function(s, idx) {
-          var prev = idx > 0 ? seasons[idx - 1] : null;
-          var gp = Number(s.games_played) || 0;
-          var pgp = prev ? (Number(prev.games_played) || 0) : 0;
-          var html;
-          if (pos === 'QB') {
-            html = rkCell(s.season, 'yr') + rkCell(fmtNum(s.games_played)) +
-              rkCell(s.completion_pct != null ? Number(s.completion_pct).toFixed(1) + '%' : '-') +
-              rkCell(fmtNum(s.pass_yards)) +
-              rkCell(s.yds_per_attempt != null ? Number(s.yds_per_attempt).toFixed(1) : '-') +
-              rkCell(s.pass_tds) + rkCell(s.interceptions) +
-              rkPgCell(rkPgVal(s.pass_yards, gp), rkPgVal(prev && prev.pass_yards, pgp), true) +
-              rkPgCell(rkPgVal(s.pass_tds, gp), rkPgVal(prev && prev.pass_tds, pgp), false, 2) +
-              rkCell(rkDomCell(s), 'grp');
-          } else if (pos === 'RB') {
-            html = rkCell(s.season, 'yr') + rkCell(fmtNum(s.games_played)) +
-              rkCell(fmtNum(s.rush_attempts)) + rkCell(fmtNum(s.rush_yards)) + rkCell(s.rush_tds) +
-              rkPgCell(rkPgVal(s.rush_attempts, gp), rkPgVal(prev && prev.rush_attempts, pgp), true) +
-              rkPgCell(rkPgVal(s.rush_yards, gp), rkPgVal(prev && prev.rush_yards, pgp), false) +
-              rkPgCell(rkPgVal(s.rush_tds, gp), rkPgVal(prev && prev.rush_tds, pgp), false, 2) +
-              rkCell(s.yds_per_carry != null ? Number(s.yds_per_carry).toFixed(1) : '-', 'grp') +
-              rkCell(rkDomCell(s));
-          } else {
-            html = rkCell(s.season, 'yr') + rkCell(fmtNum(s.games_played)) +
-              rkCell(fmtNum(s.receptions)) + rkCell(fmtNum(s.receiving_yards)) + rkCell(s.receiving_tds) +
-              rkPgCell(rkPgVal(s.receptions, gp), rkPgVal(prev && prev.receptions, pgp), true) +
-              rkPgCell(rkPgVal(s.receiving_yards, gp), rkPgVal(prev && prev.receiving_yards, pgp), false) +
-              rkPgCell(rkPgVal(s.receiving_tds, gp), rkPgVal(prev && prev.receiving_tds, pgp), false, 2) +
-              rkCell(s.yds_per_reception != null ? Number(s.yds_per_reception).toFixed(1) : '-', 'grp') +
-              rkCell(rkDomCell(s));
-          }
-          return '<tr>' + html + '</tr>';
-        }).join('');
-        // Career totals row (counting stats summed, efficiency re-weighted)
-        (function() {
-          var t = {gp:0, att:0, yds:0, td:0, cmp:0, patt:0, pint:0, rec:0, ry:0, dom:0, domN:0};
-          seasons.forEach(function(s) {
-            t.gp += Number(s.games_played) || 0;
-            t.att += Number(s.rush_attempts) || 0;
-            t.yds += Number(s.rush_yards) || 0;
-            t.td += (Number(s.rush_tds) || 0) + (Number(s.receiving_tds) || 0);
-            t.rec += Number(s.receptions) || 0;
-            t.ry += Number(s.receiving_yards) || 0;
-            t.cmp += Number(s.completions) || 0;
-            t.patt += Number(s.pass_attempts) || 0;
-            t.pint += Number(s.interceptions) || 0;
-            t.py = (t.py || 0) + (Number(s.pass_yards) || 0);
-            t.ptd = (t.ptd || 0) + (Number(s.pass_tds) || 0);
-            if (s.dominator_rating != null) { t.dom += Number(s.dominator_rating); t.domN++; }
-          });
-          var avgDom = t.domN ? Math.round(t.dom / t.domN * 100) + '%' : '-';
-          var cHtml;
-          if (pos === 'QB') {
-            cHtml = rkCell('Career', 'yr') + rkCell(t.gp) +
-              rkCell(t.patt ? (100 * t.cmp / t.patt).toFixed(1) + '%' : '-') +
-              rkCell(fmtNum(t.py)) + rkCell(t.patt ? (t.py / t.patt).toFixed(1) : '-') +
-              rkCell(t.ptd) + rkCell(t.pint) +
-              rkPgCell(rkPgVal(t.py, t.gp), null, true) +
-              rkPgCell(rkPgVal(t.ptd, t.gp), null, false, 2) +
-              rkCell(avgDom, 'grp');
-          } else if (pos === 'RB') {
-            cHtml = rkCell('Career', 'yr') + rkCell(t.gp) +
-              rkCell(fmtNum(t.att)) + rkCell(fmtNum(t.yds)) + rkCell(t.td) +
-              rkPgCell(rkPgVal(t.att, t.gp), null, true) +
-              rkPgCell(rkPgVal(t.yds, t.gp), null, false) +
-              rkPgCell(rkPgVal(t.td, t.gp), null, false, 2) +
-              rkCell(t.att ? (t.yds / t.att).toFixed(1) : '-', 'grp') +
-              rkCell(avgDom);
-          } else {
-            var rtd = 0;
-            seasons.forEach(function(s){ rtd += Number(s.receiving_tds) || 0; });
-            cHtml = rkCell('Career', 'yr') + rkCell(t.gp) +
-              rkCell(fmtNum(t.rec)) + rkCell(fmtNum(t.ry)) + rkCell(rtd) +
-              rkPgCell(rkPgVal(t.rec, t.gp), null, true) +
-              rkPgCell(rkPgVal(t.ry, t.gp), null, false) +
-              rkPgCell(rkPgVal(rtd, t.gp), null, false, 2) +
-              rkCell(t.rec ? (t.ry / t.rec).toFixed(1) : '-', 'grp') +
-              rkCell(avgDom);
-          }
-          rowsHtml += '<tr class="rk-career-row">' + cHtml + '</tr>';
-        })();
-        var grpIdx = RK_SEASON_GRP[pos] || RK_SEASON_GRP.WR;
-        sb.innerHTML = '<table class="m-season-table"><thead><tr>' +
-          cols.map(function(c, k){ return '<th' + (grpIdx.indexOf(k) >= 0 ? ' class="grp"' : '') + '>' + c + '</th>'; }).join('') +
-          '</tr></thead><tbody>' + rowsHtml + '</tbody></table>';
-      }
-    }
+    rkApplyArchetype(r, d);
+    rkRenderBreakdown(r, d);
+    rkRenderTraj(r, d);
+    rkRenderOvAdv(r, d);
+    rkRenderRadar(r, d);
+    rkRenderAdvPct(d);
+    rkRenderAdvSeasons(r, d);
+    rkRenderMarks(d);
+    rkRenderProduction(r, d);
   }
 
   function rkCloseModal() {
