@@ -15,6 +15,7 @@ INTENTS = ["start_sit", "trade_eval", "trade_finding", "buy_sell_hold", "player"
            "playoffs", "power_rankings", "standings", "matchup", "schedule",
            "breakout_board", "breakout_track_record", "breakout_history", "teams", "pick_ownership",
            "keeper", "rookie", "cross_league", "replacement", "handcuff", "activity", "watchlist", "front_office",
+           "live", "draft",
            "open", "remember", "out_of_scope"]
 
 SCHEMA = {
@@ -35,6 +36,7 @@ SCHEMA = {
         "teams_mode": {"type": ["string", "null"], "enum": ["dynasty", "this_season", None]},
         "week": {"type": ["integer", "null"]},
         "season": {"type": ["integer", "null"]},
+        "draft_slot": {"type": ["string", "null"]},
         "draft_year": {"type": ["integer", "null"]},
         "position": {"type": ["string", "null"]},
         "preference_text": {"type": ["string", "null"]},
@@ -56,7 +58,7 @@ SCHEMA = {
         "slot": {"type": ["string", "null"]},
         "start_mode": {"type": ["string", "null"], "enum": ["start", "sit", None]},
     },
-    "required": ["intent", "player_names", "give_player_names", "receive_player_names", "picks", "give_picks", "receive_picks", "other_team_hint", "team_names", "metric_hint", "target_position", "position_hint", "teams_mode", "week", "season", "draft_year", "preference_text", "board_kind", "family", "second_metric_hint", "top_n", "position", "team", "window_weeks", "direction", "replace_mode", "waiver_mode", "value_in_picks", "shop_pool", "slot", "start_mode", "max_age", "pool", "finish_n"],
+    "required": ["intent", "player_names", "give_player_names", "receive_player_names", "picks", "give_picks", "receive_picks", "other_team_hint", "team_names", "metric_hint", "target_position", "position_hint", "teams_mode", "week", "season", "draft_slot", "draft_year", "preference_text", "board_kind", "family", "second_metric_hint", "top_n", "position", "team", "window_weeks", "direction", "replace_mode", "waiver_mode", "value_in_picks", "shop_pool", "slot", "start_mode", "max_age", "pool", "finish_n"],
     "additionalProperties": False,
 }
 
@@ -170,6 +172,13 @@ SYSTEM = (
     "report, GM memo, front office top moves): its computed direction, playoff odds, "
     "weakest positions, top moves, trade and waiver targets, and cut candidates. A "
     "general what-should-I-do question without the report named stays with this_week. "
+    "live: a game happening right now or earlier today: who is winning right now, the live "
+    "score, what a team needs tonight, or how a player is doing today. NOT a pregame preview "
+    "or a win probability before kickoff (that is matchup). "
+    "draft: a fantasy draft question: who is on the clock, the best player still available, "
+    "my next pick, who should I draft, my roster's needs in the draft, or draft prep (who "
+    "should I target at a pick like 1.03; draft_slot carries that pick as 'R.S'). NOT who "
+    "owns a future pick (pick_ownership) and NOT prospect rankings on their own (rookie). "
     "remember: the user asks you to remember a preference (preference_text is the preference). "
     "open: a question about the user's league, players, teams, stats, metrics, or site data "
     "that fits NONE of the fixed intents above, however it is phrased: raw counting stats "
@@ -547,6 +556,7 @@ def _keyword_route(message: str) -> dict:
             "give_picks": [], "receive_picks": [],
             "other_team_hint": None, "team_names": [], "metric_hint": None, "target_position": None,
             "position_hint": None, "teams_mode": None, "week": None, "season": None,
+            "draft_slot": None,
             "draft_year": None, "position": None,
             "replace_mode": None, "waiver_mode": None,
             "value_in_picks": None, "shop_pool": None,
@@ -577,6 +587,12 @@ def _keyword_route(message: str) -> dict:
     if re.search(r"standings|division|most points|points leader|highest scoring|"
                  r"\bseed\b|first place|what place am i", m):
         return {**base, "intent": "standings"}
+    if re.search(r"who(?:'s| is) (winning|losing)|winning (right now|now)|"
+                 r"losing (right now|now)|live score|score right now|"
+                 r"what do i need tonight|need tonight to win|"
+                 r"how (is|am) .{0,40} doing (right now|today|tonight|so far)",
+                 m):
+        return {**base, "intent": "live"}
     if re.search(r"\bmatchup\b|who wins between|win probability|win prob\b", m) or _OUTCOME_RE.search(m):
         return {**base, "intent": "matchup"}
     if re.search(r"remaining schedule|schedule strength|easiest schedule|hardest schedule|"
@@ -628,6 +644,15 @@ def _keyword_route(message: str) -> dict:
                  r"latest trade\b|trades? (went down|gone down|go down|happened)|"
                  r"(moves|claims) (went down|happened|so far)\b", m):
         return {**base, "intent": "activity"}
+    _slot = re.search(r"\b(\d{1,2})\.(\d{1,2})\b", m)
+    _slot_text = f"{_slot.group(1)}.{_slot.group(2)}" if _slot else None
+    if re.search(r"\bdraft\b", m) and re.search(
+            r"best available|on the clock|my (next )?pick|who should (i|we)|"
+            r"who do i take|still available|up next|available|needs?|target", m):
+        return {**base, "intent": "draft", "draft_slot": _slot_text}
+    if _slot_text and re.search(r"target at|pick at|take at|sitting at|"
+                                r"who should i target", m):
+        return {**base, "intent": "draft", "draft_slot": _slot_text}
     board = _keyword_board(message, m)
     if board is not None:
         return {**base, **board}
@@ -757,6 +782,7 @@ def classify(question: str, context: dict | None = None, history: list | None = 
             "teams_mode": data.get("teams_mode"),
             "week": data.get("week"),
             "season": data.get("season"),
+            "draft_slot": data.get("draft_slot"),
             "draft_year": data.get("draft_year"),
             "board_kind": data.get("board_kind"),
             "family": data.get("family"),

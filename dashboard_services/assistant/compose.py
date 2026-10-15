@@ -471,6 +471,8 @@ _LEAGUE_LINKS = {
     "schedule": ("schedule", "Open in Schedule Assistant"),
     "activity": ("activity", "View Activity"),
     "front_office": ("dashboard", "View Front Office"),
+    "live": ("scorezone", "Open ScoreZone"),
+    "draft": ("draft", "Open Draft Room"),
 }
 
 
@@ -1095,6 +1097,40 @@ def _required_receipts(intent: str, pack: dict) -> list[dict]:
         if top and top.get("give_total") is not None and len(rows) < 4:
             rows.append({"label": f"{top.get('partner')} trade: you give (total value)",
                          "value": _fmt_num(top["give_total"])})
+    elif intent == "live":
+        mu = pack.get("matchup") or {}
+        a, b = mu.get("team_a") or {}, mu.get("team_b") or {}
+        if a.get("current_points") is not None:
+            rows.append({"label": f"{a.get('team_name')} points so far",
+                         "value": _fmt_num(a["current_points"])})
+        if b.get("current_points") is not None:
+            rows.append({"label": f"{b.get('team_name')} points so far",
+                         "value": _fmt_num(b["current_points"])})
+        if a.get("win_prob_pct") is not None and len(rows) < 4:
+            rows.append({"label": f"{a.get('team_name')} win probability (%)",
+                         "value": _fmt_num(a["win_prob_pct"])})
+        if a.get("projected") is not None and len(rows) < 4:
+            rows.append({"label": f"{a.get('team_name')} projected final",
+                         "value": _fmt_num(a["projected"])})
+    elif intent == "draft":
+        cur = pack.get("current_pick") or {}
+        if cur.get("pick_no") is not None:
+            rows.append({"label": "Current pick", "value": _fmt_num(cur["pick_no"])})
+        nxt = pack.get("my_next_pick") or {}
+        if nxt.get("pick_no") is not None and len(rows) < 4:
+            rows.append({"label": "Your next pick",
+                         "value": _fmt_num(nxt["pick_no"])})
+        best = (pack.get("best_available") or [None])[0]
+        if best and best.get("value") is not None and len(rows) < 4:
+            rows.append({"label": f"{best.get('name')} value",
+                         "value": _fmt_num(best["value"])})
+        prep = pack.get("prep") or {}
+        top_cand = (prep.get("candidates") or [None])[0]
+        if top_cand and top_cand.get("score") is not None and len(rows) < 4:
+            rows.append({"label": f"{top_cand.get('name')} prospect score",
+                         "value": _fmt_num(top_cand["score"])})
+        if not rows and pack.get("picks_made") is not None:
+            rows.append({"label": "Picks made", "value": _fmt_num(pack["picks_made"])})
     elif intent == "cross_league":
         for s in (pack.get("leagues") or []):
             if len(rows) >= 4:
@@ -1276,6 +1312,10 @@ _FOLLOWUP_TEMPLATES = {
     "activity": [followup_pair("Who should I add from waivers?"), followup_pair("What should I do with my team this week?")],
     "watchlist": [followup_pair("Who should I add from waivers?"), followup_pair("What should I do with my team this week?")],
     "front_office": [followup_pair("Find me a trade"), followup_pair("Who should I add from waivers?")],
+    "live": [followup_pair("What do I need tonight?"), followup_pair("Break down my matchup"),
+             followup_pair("Who should I start at FLEX?")],
+    "draft": [followup_pair("Who is on the clock?"), followup_pair("What does my roster still need?"),
+              followup_pair("Who is the best rookie available?")],
     "open": [followup_pair("What should I do with my team this week?"), followup_pair("Who should I start at FLEX?"),
              followup_pair("Any buy-lows I should target?")],
 }
@@ -1515,6 +1555,19 @@ def _required_mentions(intent: str, pack: dict) -> list[tuple[str, str]]:
         top = pack.get("top_mover") or {}
         if top.get("name"):
             out.append((str(top["name"]), "watchlist"))
+    elif intent == "live":
+        mu = pack.get("matchup") or {}
+        for side in ("team_a", "team_b"):
+            name = (mu.get(side) or {}).get("team_name")
+            if name:
+                out.append((str(name), "live_team"))
+    elif intent == "draft":
+        cur = pack.get("current_pick") or {}
+        if cur.get("team_name"):
+            out.append((str(cur["team_name"]), "draft_clock"))
+        best = (pack.get("best_available") or [None])[0]
+        if best and best.get("name"):
+            out.append((str(best["name"]), "draft_best"))
     elif intent == "front_office":
         top = (pack.get("trade_targets") or [None])[0]
         if top and top.get("partner"):
@@ -2631,6 +2684,31 @@ def compose_answer(intent: str, question: str, pack: dict, *, preferences=None, 
                     break
         if top:
             verdict = str(top)
+    if intent == "live" and not (verdict and str(verdict).strip()):
+        # Same empty-verdict failure class: the fallback is the score
+        # line itself, from the pack's target pairing.
+        mu = (pack or {}).get("matchup") or {}
+        a, b = mu.get("team_a") or {}, mu.get("team_b") or {}
+        if a.get("team_name") and b.get("team_name"):
+            mine = bool(mu.get("is_mine"))
+            lead = (a.get("current_points") or 0) >= (b.get("current_points") or 0)
+            if mine:
+                verdict = (f"You {'lead' if lead else 'trail'} "
+                           f"{_fmt_num(a.get('current_points'))} to "
+                           f"{_fmt_num(b.get('current_points'))}")
+            else:
+                verdict = (f"{a['team_name']} {('leads' if lead else 'trails')} "
+                           f"{_fmt_num(a.get('current_points'))} to "
+                           f"{_fmt_num(b.get('current_points'))}")
+    if intent == "draft" and not (verdict and str(verdict).strip()):
+        # Same failure class: the fallback is the best player still
+        # available, else the prep window's top candidate.
+        best = ((pack or {}).get("best_available") or [None])[0]
+        cand = (((pack or {}).get("prep") or {}).get("candidates") or [None])[0]
+        if best and best.get("name"):
+            verdict = str(best["name"])
+        elif cand and cand.get("name"):
+            verdict = str(cand["name"])
     caveat = data.get("caveat")
     margin_thin = bool(((pack or {}).get("margin") or {}).get("thin"))
     if caveat and not margin_thin and not (pack or {}).get("stale"):
