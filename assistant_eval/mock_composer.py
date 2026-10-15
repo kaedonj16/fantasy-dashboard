@@ -28,14 +28,14 @@ def fmt(value) -> str:
 # Mirror of compose._ACT_LINKS: act_link is a {href, label} object (or None),
 # assigned deterministically, never a bare string.
 _ACT_LINKS = {
-    "start_sit": {"href": "/waivers?tab=startsit", "label": "Open Start/Sit"},
+    "start_sit": {"href": "/waivers?tab=startsit", "label": "View in Start/Sit"},
     "trade_eval": {"href": "/trade", "label": "Open in Trade Calculator"},
     "buy_sell_hold": {"href": "/players", "label": "View player"},
     "player": {"href": "/players", "label": "View player"},
-    "metric": {"href": "/metrics", "label": "Open Advanced Metrics"},
-    "leaderboard": {"href": "/metrics", "label": "Open Advanced Metrics"},
-    "waivers": {"href": "/waivers", "label": "Open Waivers"},
-    "this_week": {"href": "/", "label": "Open dashboard"},
+    "metric": {"href": "/metrics", "label": "View on Advanced Metrics"},
+    "leaderboard": {"href": "/metrics", "label": "View on Advanced Metrics"},
+    "waivers": {"href": "/waivers", "label": "View on Waivers"},
+    "this_week": {"href": "/", "label": "View dashboard"},
 }
 
 
@@ -384,7 +384,7 @@ def _waivers(pack):
 
 def _this_week(pack):
     actions = pack.get("actions") or []
-    receipts = [{"label": a.get("tag") or "action", "value": fmt(a["key_number"])}
+    receipts = [{"label": a.get("headline") or a.get("tag") or "action", "value": fmt(a["key_number"])}
                 for a in actions if isinstance(a, dict) and a.get("key_number") is not None][:4]
     text = " ".join(f"{a.get('headline')}. {a.get('detail')}" for a in actions if isinstance(a, dict))
     ans = _base("this_week", pack)

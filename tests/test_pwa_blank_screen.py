@@ -38,9 +38,11 @@ def test_cache_name_bumped_for_blank_screen_fix():
     # v31 was the blank-screen fix version; v32 adds the live-game 60s
     # timeout for league pages; v33 adds the viewer-state marker comparison
     # (and purges guest-painted shells cached by v32); v34 ships the BR
-    # Assistant and purges pre-assistant shells that paint without it.
+    # Assistant and purges pre-assistant shells that paint without it;
+    # v35 ships the keyboard-aware assistant sheet and purges v34
+    # shells whose composer hides behind the iOS keyboard.
     # Assert the current version, not a stale pin.
-    assert "br-fantasy-v34" in SW
+    assert "br-fantasy-v35" in SW
 
 
 def test_nav_timeout_always_races_even_without_cache():

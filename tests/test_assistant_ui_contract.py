@@ -13,6 +13,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CSS = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
 JS = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+COMPOSE = (ROOT / "dashboard_services" / "assistant" / "compose.py").read_text(encoding="utf-8")
 
 _CSS_START = CSS.index("BR ASSISTANT (Stage 1 popup chat)")
 _CSS_END = CSS.index("/* == BR ASSISTANT END == */")
@@ -56,6 +57,12 @@ def test_assistant_css_selectors_exist():
         ".br-asst-plan-current",
         ".br-asst-plan-badge",
         ".br-asst-mention",
+        ".br-asst-list",
+        ".br-asst-list-item",
+        ".br-asst-receipt-toggle",
+        ".br-asst-receipt-rows",
+        ".br-asst-teaser-main",
+        ".br-asst-teaser-line",
     ):
         assert selector in ASSISTANT_CSS, f"missing assistant CSS for {selector}"
 
@@ -90,12 +97,67 @@ def test_mobile_sheet_uses_dock_safe_token():
     # Sheet: dock-safe + 8px, which resolves to 80px at the default value.
     popup = _rule(media, ".br-asst-popup")
     assert "bottom: calc(var(--dock-safe-bottom) + 8px)" in popup
-    assert "height: 452px" in popup
+    # Tall sheet: viewport height minus the dock line minus 48px (the
+    # 8px dock gap plus a 40px scrim sliver at the top), capped so
+    # very tall screens still read as a sheet.
+    assert "height: calc(100dvh - var(--dock-safe-bottom) - 48px)" in popup
+    assert "max-height: 880px" in popup
+    assert "452px" not in ASSISTANT_CSS
     assert "left: 8px" in popup
     assert "right: 8px" in popup
     # Scrim stops at the dock-safe line so the dock is never dimmed.
     scrim = _rule(media, ".br-asst-scrim")
     assert "bottom: var(--dock-safe-bottom)" in scrim
+
+
+def test_keyboard_aware_mobile_sheet():
+    # iOS does not shrink the layout viewport for fixed elements when
+    # the keyboard opens, so the dock-parked sheet kept its geometry
+    # and the composer sat behind the keyboard. The JS must track the
+    # visual viewport: publish the keyboard inset as --br-asst-kb on
+    # the root, flag the popup while the keyboard is up, listen only
+    # while the sheet is open, and tear down on collapse (the path
+    # both minimize and close take).
+    for needle in (
+        "window.visualViewport",
+        "function syncKbInset()",
+        "function kbListen(on)",
+        "setProperty('--br-asst-kb'",
+        "br-asst-kb-open",
+        "vv.addEventListener('resize', syncKbInset)",
+        "vv.addEventListener('scroll', syncKbInset)",
+        "vv.removeEventListener('resize', syncKbInset)",
+        "vv.removeEventListener('scroll', syncKbInset)",
+        "kbListen(true)",
+        "kbListen(false)",
+    ):
+        assert needle in ASSISTANT_JS, f"missing keyboard-sheet piece {needle}"
+    # Listeners attach on open and detach on collapse, not at build.
+    assert ASSISTANT_JS.index("kbListen(true)") > ASSISTANT_JS.index("function openPopup")
+    assert ASSISTANT_JS.index("kbListen(false)") > ASSISTANT_JS.index("function collapsePopup")
+    # The inset is consumed only inside the mobile media query: the
+    # desktop popup rules never reference it, so desktop geometry is
+    # pixel-unchanged.
+    media_at = ASSISTANT_CSS.index("@media (max-width: 768px)")
+    desktop_css = ASSISTANT_CSS[:media_at]
+    assert "--br-asst-kb" not in desktop_css
+    assert "br-asst-kb-open" not in desktop_css
+    media = ASSISTANT_CSS[media_at:]
+    kb_rule = _rule(media, ".br-asst-popup.br-asst-kb-open")
+    # Bottom edge sits directly on the keyboard top; the sheet
+    # stretches from near the screen top (top + bottom, auto height)
+    # instead of keeping the fixed 452px dock-parked height.
+    assert "bottom: var(--br-asst-kb, 0px)" in kb_rule
+    assert "top: 8px" in kb_rule
+    assert "height: auto" in kb_rule
+    assert "max-height: none" in kb_rule
+    # Opening the sheet must not summon the keyboard on sheet widths:
+    # the composer focus on open is gated to non-sheet layouts. (The
+    # starter fill chips still focus on an explicit tap; that is a
+    # user gesture, not the open path.)
+    assert "if (state.view === 'thread' && !sheetLayout()) inputEl.focus();" in ASSISTANT_JS
+    assert "function sheetLayout()" in ASSISTANT_JS
+    assert "'(max-width: 768px)'" in ASSISTANT_JS
 
 
 def test_assistant_js_endpoints_and_wiring():
@@ -119,11 +181,8 @@ def test_assistant_js_renders_contract_pieces():
     for needle in (
         "trade-ai-verdict-accept",
         "trade-ai-verdict-decline",
-        "ns-item",
-        "ns-priority gold",
         "bo-receipt",
         "bo-rc-row",
-        "See the plan",
         "What BR remembers about you",
         "What was wrong?",
         "Wrong player data",
@@ -151,14 +210,17 @@ def test_assistant_js_renders_contract_pieces():
 
 
 def test_answer_contract_fields_consumed():
-    # The backend composer contract (tests/test_assistant_contract.py on the
-    # backend branch pins the producing side): act_link is an OBJECT with
-    # href/label, and this-week actions carry href + cta_label + key_number.
+    # The backend composer contract (tests/test_assistant_contract.py
+    # pins the producing side): act_link is an OBJECT with href/label.
+    # This-week actions still CARRY href/cta_label/key_number in the
+    # payload, but the thread renders them as bullets, so the UI
+    # consumes the who (headline) and the why (detail, key_number as
+    # the fallback why) instead of building cards with CTA buttons.
     for needle in (
         "answer.act_link.href",
         "answer.act_link.label",
-        "action.href",
-        "action.cta_label",
+        "action.headline",
+        "action.detail",
         "action.key_number",
         # Mentions: pack player ids ride the answer so a name in the text
         # opens the player modal instead of rendering as plain text.
@@ -255,6 +317,115 @@ def test_no_banned_values_in_new_sections():
     assert "999px" not in ASSISTANT_JS
     assert "\u2014" not in ASSISTANT_CSS  # em dash
     assert "\u2014" not in ASSISTANT_JS  # em dash
+
+
+def test_answers_render_light_no_cards():
+    # Kaedon's presentation rule: no big card components inside an
+    # answer. No Next Steps items, no per-action CTA buttons, no big
+    # number blocks anywhere in the assistant renderer.
+    for banned in ("ns-item", "ns-cta", "ns-priority", "br-asst-actions", "br-asst-num"):
+        assert banned not in ASSISTANT_JS, f"card remnant {banned} in assistant JS"
+        assert banned not in ASSISTANT_CSS, f"card remnant {banned} in assistant CSS"
+    # Actions are a bulleted list: who (headline) plus why (detail).
+    assert "el('ul', 'br-asst-list')" in ASSISTANT_JS
+    assert "br-asst-list-item" in ASSISTANT_JS
+    list_rule = _rule(ASSISTANT_CSS, ".br-asst-list")
+    assert "list-style: disc" in list_rule
+    # The light pieces stay: verdict pill, chips, receipts, mentions.
+    assert "trade-ai-verdict" in ASSISTANT_JS
+    assert "br-asst-chip" in ASSISTANT_JS
+
+
+def test_new_answers_anchor_to_their_top():
+    # A fresh answer must land scrolled to its TOP (verdict first),
+    # not at its receipts. renderAnswer ends by anchoring the new
+    # message; the minimize restore path keeps using savedScroll.
+    assert "function scrollToAnswer(node)" in ASSISTANT_JS
+    render = ASSISTANT_JS[ASSISTANT_JS.index("function renderAnswer"):]
+    render = render[:render.index("function buildFeedback")]
+    assert "threadEl.appendChild(wrap);" in render
+    assert "scrollToAnswer(wrap);" in render
+    assert "scrollThread();" not in render
+    # User and system lines keep the bottom anchor.
+    assert "function appendUser" in ASSISTANT_JS
+    assert "state.savedScroll = threadEl.scrollTop" in ASSISTANT_JS
+
+
+def test_receipts_start_collapsed_behind_toggle():
+    # Every answer's receipts render collapsed: the toggle row says
+    # Receipts, starts aria-expanded=false, and the rows are in the
+    # DOM inside the animated wrapper, expandable per answer.
+    assert "br-asst-receipt-toggle" in ASSISTANT_JS
+    assert "'Receipts'" in ASSISTANT_JS
+    assert "recToggle.setAttribute('aria-expanded', 'false')" in ASSISTANT_JS
+    assert "br-asst-collapsed" in ASSISTANT_JS
+    assert "rec.classList.toggle('br-asst-collapsed')" in ASSISTANT_JS
+    assert "br-asst-receipt-rows" in ASSISTANT_JS
+    assert "br-asst-receipt-inner" in ASSISTANT_JS
+    collapsed = _rule(ASSISTANT_CSS, ".br-asst-receipts.br-asst-collapsed .br-asst-receipt-rows")
+    assert "grid-template-rows: 0fr" in collapsed
+    rows = _rule(ASSISTANT_CSS, ".br-asst-receipt-rows")
+    assert "cubic-bezier(0.22, 1, 0.36, 1)" in rows
+    toggle = _rule(ASSISTANT_CSS, ".br-asst-receipt-toggle")
+    assert "background: transparent" in toggle  # a text row, not a card
+
+
+def test_act_link_is_a_destination_labeled_pill():
+    # One small link-button under the answer, labeled with where it
+    # goes. Labels are fixed at the source in compose.py.
+    assert '"label": "View dashboard"' in COMPOSE
+    assert "Open dashboard" not in COMPOSE
+    assert '"label": "View on Advanced Metrics"' in COMPOSE
+    assert '"label": "View on Waivers"' in COMPOSE
+    assert '"label": "View in Start/Sit"' in COMPOSE
+    # Client treatment: bordered pill with an arrow, not a filled CTA.
+    link = _rule(ASSISTANT_CSS, ".br-asst-actlink")
+    assert "border: 1px solid var(--border)" in link
+    assert "border-radius: var(--radius-pill)" in link
+    assert "display: inline-flex" in link
+    assert "br-asst-actlink-arrow" in ASSISTANT_JS
+    assert "SVG_ARROW" in ASSISTANT_JS
+
+
+def test_teaser_is_a_slim_single_line():
+    # The closed-state teaser is one line (mark + top action + chevron
+    # + dismiss), not a card with a CTA button.
+    assert "See the plan" not in ASSISTANT_JS
+    assert "br-asst-teaser-head" not in ASSISTANT_JS
+    assert "br-asst-teaser-title" not in ASSISTANT_JS
+    assert "br-asst-teaser-main" in ASSISTANT_JS
+    assert "br-asst-teaser-line" in ASSISTANT_JS
+    assert "SVG_CHEVRON_RIGHT" in ASSISTANT_JS
+    line = _rule(ASSISTANT_CSS, ".br-asst-teaser-line")
+    assert "text-overflow: ellipsis" in line
+    assert "white-space: nowrap" in line
+
+
+def test_grab_bar_drags_sheet_to_minimize():
+    # The grab handle (and header strip) actually drags: pointer
+    # capture, the sheet follows via translateY, past 120px or a fast
+    # flick it minimizes with minimize semantics, otherwise it springs
+    # back on the glide curve. Sheet widths only; buttons in the
+    # header are never hijacked.
+    for needle in (
+        "addEventListener('pointerdown', dragStart)",
+        "addEventListener('pointermove', dragMove)",
+        "addEventListener('pointerup', dragEnd)",
+        "setPointerCapture",
+        "'translateY(' + dragState.dy + 'px)'",
+        "dy > 120",
+        "vel > 0.5",
+        "e.target.closest('button')",
+    ):
+        assert needle in ASSISTANT_JS, f"missing grab-drag piece {needle}"
+    drag = ASSISTANT_JS[ASSISTANT_JS.index("function dragStart"):]
+    drag = drag[:drag.index("node.addEventListener('pointerdown'")]
+    assert "minimizePopup();" in drag
+    assert "cubic-bezier(0.22, 1, 0.36, 1)" in drag  # spring-back curve
+    assert "sheetLayout()" in drag  # inert on desktop widths
+    media = ASSISTANT_CSS[ASSISTANT_CSS.index("@media (max-width: 768px)"):]
+    grab = _rule(media, ".br-asst-grab")
+    assert "touch-action: none" in grab
 
 
 def test_server_text_is_not_injected_as_html():

@@ -118,6 +118,44 @@ def test_this_week_actions_carry_href_cta_and_key_number(monkeypatch):
     assert trade["key_number"] is None
 
 
+def test_this_week_receipts_name_the_action_not_the_tag(monkeypatch):
+    pack = {"type": "this_week", "available": True, "week": 7, "as_of": {},
+            "actions": [
+                {"tag": "waiver", "headline": "Claim Kaleb Johnson",
+                 "detail": "up 106 spots this week",
+                 "key_number": "85%", "act_link": "/waivers"},
+            ]}
+    _canned(monkeypatch, {"verdict": "Claim Kaleb Johnson", "text": "One move.",
+                          "receipts": [], "caveat": None, "followups": [], "act_link": None})
+    answer = compose_answer("this_week", "What should I do this week?", pack)
+    labels = [r["label"] for r in answer["receipts"]]
+    # The receipt names the player in the headline, never the bare tag.
+    assert "Claim Kaleb Johnson" in labels
+    assert "waiver" not in labels
+    # The digest deep link names its destination.
+    assert answer["act_link"] == {"href": "/", "label": "View dashboard"}
+
+
+def test_waiver_receipts_name_the_player(monkeypatch):
+    pack = {"type": "waivers", "available": True, "week": 7, "as_of": {},
+            "candidates": [
+                {"name": "Kaleb Johnson", "position": "RB", "value": 812.0},
+                {"name": "Woody Marks", "position": "RB", "value": 640.0},
+            ],
+            "my_worst_by_position": {"RB": {"name": "Old Back", "value": 300.0}}}
+    _canned(monkeypatch, {"verdict": "ADD Kaleb Johnson", "text": "Add Kaleb Johnson.",
+                          "receipts": [{"label": "Top waiver candidate", "value": "812"},
+                                       {"label": "Second waiver option", "value": "640"}],
+                          "caveat": None, "followups": [], "act_link": None})
+    answer = compose_answer("waivers", "Who should I add?", pack)
+    labels = [r["label"] for r in answer["receipts"]]
+    # Rank-only model labels are rewritten to name their candidate.
+    assert "Kaleb Johnson value" in labels
+    assert "Woody Marks value" in labels
+    assert "Top waiver candidate" not in labels
+    assert "Second waiver option" not in labels
+
+
 def test_poisoned_prose_number_is_regenerated_then_clean(monkeypatch):
     poisoned = dict(CLEAN)
     poisoned["text"] = "Odunze projects 17.9 points and averages 31.4 yards per route."
