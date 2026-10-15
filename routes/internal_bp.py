@@ -998,6 +998,24 @@ def _assistant_html(summary) -> str:
         ["Question type", "Chats"],
         [(r["intent"], r["chats"]) for r in summary["by_intent"]],
     )
+    grading = summary.get("grading") or {}
+    grade_lines = []
+    for intent in sorted(grading):
+        g = grading[intent]
+        if not g.get("graded") and not g.get("backlog"):
+            continue
+        rate = "n/a" if g.get("hit_rate") is None else "%s%%" % round(g["hit_rate"] * 100)
+        grade_lines.append((
+            "Grades: %s" % intent,
+            "%s graded (%s hit, %s partial, %s miss), hit rate %s, %s awaiting grade" % (
+                format(g["graded"], ","), format(g["hit"], ","),
+                format(g["partial"], ","), format(g["miss"], ","),
+                rate, format(g["backlog"], ",")),
+        ))
+    grading_html = (
+        '<h3 class="subhead">Outcome grades (all time)</h3>' + _stat_table(grade_lines)
+        if grade_lines else ""
+    )
     if summary["top_users"]:
         trs = "".join(
             "<tr><th scope='row'>%s</th><td>%s</td><td>%s</td></tr>"
@@ -1015,6 +1033,7 @@ def _assistant_html(summary) -> str:
     return (
         stats
         + '<h3 class="subhead">Chats by question type</h3>' + intent_table
+        + grading_html
         + '<h3 class="subhead">Top users by chats</h3>' + top_table
     )
 
