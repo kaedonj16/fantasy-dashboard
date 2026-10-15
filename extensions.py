@@ -21,8 +21,9 @@ def _limiter_storage_uri() -> str:
     (socket_timeout=None). The limiter runs before every rate-limited view,
     so a hung Redis would permanently wedge gunicorn request threads --
     exactly the failure mode that took the trade endpoints down. Fail fast
-    instead: the storage call raises, the request 500s, and the thread is
-    freed for the next request.
+    instead: the bounded timeout makes the storage call raise quickly, the
+    thread is freed for the next request, and (see swallow_errors below)
+    the request itself proceeds unrated rather than 500ing.
     """
     if not _redis_url:
         return "memory://"
@@ -49,6 +50,17 @@ try:
         get_remote_address,
         default_limits=[],
         storage_uri=_limiter_storage,
+        # Fail open on storage errors. Flask-Limiter 3.11 defaults
+        # swallow_errors to False (extension.py: the constructor arg falls
+        # back to RATELIMIT_SWALLOW_ERRORS, default False), so a Redis blip
+        # raised out of Limiter._check_request_limit and 500ed EVERY
+        # rate-limited endpoint at once, even though each endpoint has its
+        # own per-endpoint bucket. With swallow_errors=True the storage
+        # exception is logged and the view still runs; when storage is
+        # healthy the limits trip exactly as before. Rate limiting is
+        # abuse protection, not a correctness gate, so a storage outage
+        # must degrade to "unrated" rather than "site down".
+        swallow_errors=True,
     )
     LIMITER_BACKEND = "redis" if _redis_url else "memory (set REDIS_URL for multi-worker)"
 except ImportError:  # flask_limiter missing → decorators become no-ops
