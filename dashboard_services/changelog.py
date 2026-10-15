@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-10-15",
+        "tag": "fix",
+        "text": "Fixed: the dashboard could ask signed-in managers to link their team again, even with the league already linked. Your weekly actions now load from your linked team on every visit.",
+        "link": "/"
+    },
+    {
         "date": "2026-10-14",
         "tag": "new",
         "text": "Meet your BR Assistant: tap the BR button in the corner of your dashboard and ask about your team. Start or sit, trade checks, buy, sell or hold, waiver targets and a plan for the week, every answer built from your league data with the numbers to back it up.",
