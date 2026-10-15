@@ -37,9 +37,10 @@ def test_cache_name_bumped_for_blank_screen_fix():
     # Cache name is bumped so poisoned entries from older SWs are purged.
     # v31 was the blank-screen fix version; v32 adds the live-game 60s
     # timeout for league pages; v33 adds the viewer-state marker comparison
-    # (and purges guest-painted shells cached by v32). Assert the current
-    # version, not a stale pin.
-    assert "br-fantasy-v33" in SW
+    # (and purges guest-painted shells cached by v32); v34 ships the BR
+    # Assistant and purges pre-assistant shells that paint without it.
+    # Assert the current version, not a stale pin.
+    assert "br-fantasy-v34" in SW
 
 
 def test_nav_timeout_always_races_even_without_cache():
