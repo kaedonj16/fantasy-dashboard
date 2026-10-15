@@ -311,6 +311,97 @@ _UNRESOLVED_PLAYER_TEXT = {
 }
 
 
+# Mirror of compose._MISSING_TEXT: internal markers that are not
+# sentences, each mapped to the plain sentence the user reads.
+_MISSING_TEXT = {
+    "your roster in this league": (
+        "I could not find your roster in this league, so that check "
+        "cannot run here."),
+    "no league context loaded": (
+        "I do not have a league loaded for this chat yet. Open the "
+        "assistant from one of your league pages and I can use its "
+        "context."),
+    "no league context": (
+        "I do not have a league loaded for this chat yet. Open the "
+        "assistant from one of your league pages and I can use its "
+        "context."),
+    "pro_only": "That board is part of PRO on BR Fantasy.",
+    "routes not tracked": (
+        "Routes not tracked on the site, so I cannot build that board."),
+    "metric not available": "That metric is not available right now.",
+    "that data is not tracked": "That data is not tracked on the site.",
+    "that metric is not tracked": "That metric is not tracked on the site.",
+    "a position to rank defenses against": (
+        "Tell me a position and I will rank the defenses against it."),
+    "which pick (season and round) you mean": (
+        "I could not tell which pick you mean. Name the season and the "
+        "round and I will price it."),
+    "no signed-in account for this chat": (
+        "That needs a signed-in account. Sign in and ask again."),
+}
+
+
+def _missing_text(missing) -> str:
+    """Mirror of compose._missing_text (same strings, same shape)."""
+    import re as _re
+    m = str(missing or "").strip()
+    if m in _MISSING_TEXT:
+        return _MISSING_TEXT[m]
+    if m.startswith("no model value for "):
+        name = m[len("no model value for "):].strip()
+        return f"{name} does not have a model value yet, so I cannot price him."
+    if m.startswith("no age on file for "):
+        name = m[len("no age on file for "):].strip()
+        return f"I do not have an age on file for {name}."
+    if m.startswith("no one behind "):
+        rest = m[len("no one behind "):].strip()
+        return f"There is no one behind {rest}."
+    repl = _re.match(r"no (\w+) replacement for (.+?) in a ", m)
+    if repl:
+        return (f"No {repl.group(1)} replacement for {repl.group(2)} "
+                "turned up in a comparable value band.")
+    words = m.split()
+    if len(words) >= 4 and "_" not in m and "{" not in m and "}" not in m:
+        text = m[0].upper() + m[1:]
+        if not text.endswith((".", "!", "?")):
+            text += "."
+        return text
+    return "I do not have that on the site yet."
+
+
+def _empty_value_board_answer(pack: dict) -> dict:
+    """Mirror of compose._empty_value_board_answer (same strings)."""
+    kind = (pack or {}).get("board_kind")
+    word = "buy-low" if kind == "buy_low" else "sell-high"
+    miss = (pack or {}).get("closest_miss") or {}
+    receipts = []
+    if miss.get("name"):
+        reason = miss.get("reason_text") or "he does not clear the screen"
+        text = (f"No {word} candidate clears the screen right now. "
+                f"The closest miss is {miss['name']}: {reason}.")
+        if (miss.get("delta") is not None
+                and miss.get("baseline_value") is not None
+                and miss.get("value") is not None):
+            receipts = [{
+                "label": f"{miss['name']} value move",
+                "value": (f"{_fmt_delta(miss.get('delta'))} "
+                          f"({fmt(miss.get('baseline_value'))} to "
+                          f"{fmt(miss.get('value'))})"),
+            }]
+    else:
+        text = (f"No {word} candidate clears the screen right now: no "
+                "mover this week pairs a real price move with a "
+                "verifiable production line.")
+    other = ("Who should I sell high?" if kind == "buy_low"
+             else "Who should I buy low?")
+    return {"verdict": f"No {word} clears the screen right now",
+            "text": text, "receipts": receipts, "caveat": None,
+            "followups": [_fu("Who are the biggest movers this week?"),
+                          _fu(other)],
+            "act_link": _board_link(pack) or dict(_ACT_LINKS["leaderboard"]),
+            "actions": [], "mentions": []}
+
+
 def no_data_answer(pack: dict) -> dict:
     """Mirror of compose.no_data_answer (same strings, same shape)."""
     missing = pack.get("missing") or "that data is not tracked"
@@ -322,7 +413,7 @@ def no_data_answer(pack: dict) -> dict:
             "I will pull the numbers.")
         nearest = []
     else:
-        text = f"That is not available: {missing}."
+        text = _missing_text(missing)
     if nearest:
         text += f" The nearest tracked options are {', '.join(str(n) for n in nearest[:3])}. Ask about one of those and I can pull the live numbers."
     # The link names the surface the question was about: league-context
@@ -1634,6 +1725,10 @@ def compose_mock(question: dict) -> dict:
     pack = question.get("evidence_pack") or {}
     if isinstance(pack, dict) and pack.get("gated"):
         return gated_answer(pack)
+    if isinstance(pack, dict) and pack.get("available") is False \
+            and pack.get("type") == "leaderboard" \
+            and pack.get("board_kind") in ("buy_low", "sell_high"):
+        return _empty_value_board_answer(pack)
     if isinstance(pack, dict) and pack.get("available") is False:
         return no_data_answer(pack)
     builder = _BUILDERS[question["type"]]

@@ -338,7 +338,7 @@ def test_metric_no_data_pack_returns_no_data_shape(env, monkeypatch):
                                           "nearest": ["target_share"]}, ["advanced_metrics.config"]))
     out = service.ask("acct:42", "Who leads in route rate?")
     assert out["intent"] == "metric"
-    assert "routes not tracked" in out["answer"]["text"]
+    assert "Routes not tracked" in out["answer"]["text"]
     assert out["answer"]["receipts"] == []
     assert env["logs"][-1]["intent"] == "metric"
 

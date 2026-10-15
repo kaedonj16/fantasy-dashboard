@@ -167,12 +167,34 @@ def _namesake_outcome(question: dict, answer: dict) -> str | None:
     return None
 
 
+# The unavailability declarations compose._missing_text and the
+# decline texts can emit: an honest no-data answer states one of these
+# with no verdict. The list mirrors the production translations; when a
+# new translation lands, its declaration joins this list.
+_UNAVAILABILITY_PHRASES = (
+    "not available", "not tracked", "could not", "cannot", "do not have",
+    "does not have", "no scheduled", "do not apply", "not enough",
+    "signed-in", "no one behind",
+)
+
+
 def _no_data_shape(answer: dict) -> bool:
-    """The backend's no-data pattern (compose.no_data_answer)."""
+    """The backend's no-data patterns (compose.no_data_answer and the
+    deterministic empty value board). Grounding is enforced separately
+    on every answer, so accepting a shape here never lets an invented
+    number through; this only recognizes the honest-empty forms."""
     if not isinstance(answer, dict):
         return False
     text = (answer.get("text") or "").lower()
-    return answer.get("verdict") in (None, "") and ("not available" in text or "not tracked" in text)
+    if answer.get("verdict") in (None, "") and any(
+            phrase in text for phrase in _UNAVAILABILITY_PHRASES):
+        return True
+    # Empty buy-low / sell-high board (compose._empty_value_board_answer):
+    # a "No ..." verdict stating the board is empty, prose that says no
+    # candidate clears the screen and names the closest miss. This shape
+    # is only reachable when the pack itself says no data.
+    verdict = (answer.get("verdict") or "").lower()
+    return verdict.startswith("no ") and "clears the screen" in text
 
 
 def _meaningful_pack_numbers(question: dict) -> set[str]:

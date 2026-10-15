@@ -514,6 +514,34 @@ def _metrics_for(pid, season=None):
                 "opportunity_share", "expected_ppr_per_game", "ppg", "games",
                 "team", "position", "as_of_date",
             ) if m.get(k) is not None}
+            # The metrics table stores season TOTALS only (expected_ppr,
+            # ppr_over_expected); the per-game line exists on the site
+            # solely as serve-time computed SQL (expected_ppr / games in
+            # the AM leaderboard). Derive the same line here from the
+            # totals, using the identity the weekly series itself uses
+            # (actual = expected + over-expected). Without this the keys
+            # above never exist on a real row and every consumer that
+            # requires a per-game line (the value boards' production
+            # screen above all) silently reads an empty line. A stored
+            # per-game column, if one ever lands, wins over the derivation.
+            try:
+                games = float(m.get("games") or 0)
+            except (TypeError, ValueError):
+                games = 0.0
+            if games > 0:
+                exp_total = m.get("expected_ppr")
+                if exp_total is not None and keep.get("expected_ppr_per_game") is None:
+                    try:
+                        keep["expected_ppr_per_game"] = float(exp_total) / games
+                    except (TypeError, ValueError):
+                        pass
+                over_total = m.get("ppr_over_expected")
+                if (exp_total is not None and over_total is not None
+                        and keep.get("ppg") is None):
+                    try:
+                        keep["ppg"] = (float(exp_total) + float(over_total)) / games
+                    except (TypeError, ValueError):
+                        pass
             return keep, ["advanced_metrics.get_player_metrics"]
     except Exception:
         logger.debug("[assistant] metrics lookup failed", exc_info=True)
@@ -3048,6 +3076,37 @@ def _build_value_board(pack, bundle, tools, kind, position, team, top_n,
     rank_tables: dict = {}
     qualified = []
     want = "fallers" if kind == "buy_low" else "risers"
+    # Closest-miss tracking for the empty board: when nobody clears, the
+    # answer names the biggest mover who failed and the gate he failed
+    # (the tf4 no-fit pattern), so every screened entry records its first
+    # failing gate. Selection: the largest relative move wins.
+    misses: list[dict] = []
+
+    def _note_miss(entry, r, reason, reason_text):
+        try:
+            d = float(r.get("delta"))
+        except (TypeError, ValueError):
+            d = None
+        try:
+            b = float(r.get("old_value"))
+        except (TypeError, ValueError):
+            b = None
+        rel = (d / b) if (d is not None and b) else None
+        misses.append({
+            "name": r.get("name") or entry.get("name"),
+            "position": entry.get("position"),
+            "team": r.get("team"),
+            "delta": _r3(d) if d is not None else None,
+            "baseline_value": _r3(b) if b is not None else None,
+            "value": _r3(r.get("new_value")),
+            "rel_move_pct": round(rel * 100, 1) if rel is not None else None,
+            "games": (entry.get("metrics") or {}).get("games"),
+            "reason": reason,
+            "reason_text": reason_text,
+            "_sel": (abs(rel) if rel is not None else 0.0,
+                     abs(d) if d is not None else 0.0),
+        })
+
     for entry in pool.values():
         r = entry["row"]
         if entry["direction"] != want:
@@ -3057,30 +3116,50 @@ def _build_value_board(pack, bundle, tools, kind, position, team, top_n,
         ppg, xppg, games = (metrics.get("ppg"), metrics.get("expected_ppr_per_game"),
                             metrics.get("games"))
         if ppg is None or xppg is None:
-            continue  # no verifiable production line, no candidacy
+            # No verifiable production line, no candidacy.
+            _note_miss(entry, r, "no_line",
+                       "there is no verifiable production line for him yet")
+            continue
         if games is not None and games < 3:
+            _note_miss(entry, r, "few_games",
+                       f"he has only {games} games in so far")
             continue
         try:
             delta = float(r.get("delta"))
             baseline = float(r.get("old_value"))
         except (TypeError, ValueError):
+            _note_miss(entry, r, "no_value_history",
+                       "there is no usable value history for him this week")
             continue
         if baseline <= 0:
+            _note_miss(entry, r, "no_value_history",
+                       "there is no usable value history for him this week")
             continue
         rel_move = delta / baseline
         if kind == "buy_low" and (delta >= 0 or -rel_move < _VALUE_MIN_MOVE_PCT):
+            _note_miss(entry, r, "small_move",
+                       "his price barely moved this week, well under the "
+                       "screen for this board")
             continue
         if kind == "sell_high" and (delta <= 0 or rel_move < _VALUE_MIN_MOVE_PCT):
+            _note_miss(entry, r, "small_move",
+                       "his price barely moved this week, well under the "
+                       "screen for this board")
             continue
         status = str(entry["injury_status"] or "").strip().upper()
         if status in _VALUE_SEASON_ENDING:
-            continue  # out long-term: never a candidate on either board
+            # Out long-term: never a candidate on either board.
+            _note_miss(entry, r, "injury",
+                       f"he is out long term ({status})")
+            continue
         weekly, recent = entry["weekly"], entry["recent"]
         if recent:
             g_ppg, g_xppg = recent["ppg"], recent["xppg"]
         else:
             g_ppg, g_xppg = float(ppg), float(xppg)
         if not g_xppg:
+            _note_miss(entry, r, "no_line",
+                       "there is no verifiable production line for him yet")
             continue
         over_gov = g_ppg - g_xppg
         fair_gap = -over_gov / g_xppg
@@ -3092,10 +3171,15 @@ def _build_value_board(pack, bundle, tools, kind, position, team, top_n,
             # The exclusion is supreme: no peer gap or discount rescues it.
             if (opp_ratio is not None and opp_ratio <= _VALUE_KNIFE_OPP_RATIO
                     and over_gov < 0):
+                _note_miss(entry, r, "falling_knife",
+                           "his production and his opportunity are both "
+                           "falling")
                 continue
             if (recent and float(ppg) > 0
                     and recent["ppg"] <= 0.55 * float(ppg)
                     and (opp_ratio is None or opp_ratio < 1.0)):
+                _note_miss(entry, r, "collapse",
+                           "his recent production has fallen off sharply")
                 continue
             discount = -rel_move
             score = (discount * (1 + _clamp(fair_gap, 0.0, 0.6))
@@ -3107,6 +3191,8 @@ def _build_value_board(pack, bundle, tools, kind, position, team, top_n,
             # or over the line is not mispricing, unless TDs prop it.
             if (opp_ratio is not None and opp_ratio >= _VALUE_EARNED_OPP_RATIO
                     and over_gov >= 0 and not td_propped):
+                _note_miss(entry, r, "earned_rise",
+                           "his rise is earned by real opportunity growth")
                 continue
             premium = rel_move
             score = premium * (1 + _clamp(-fair_gap, 0.0, 0.6))
@@ -3176,6 +3262,14 @@ def _build_value_board(pack, bundle, tools, kind, position, team, top_n,
         row["score"] = round(score, 4)
         row["_opp_sort"] = opp_ratio
         qualified.append(row)
+
+    if misses:
+        best_miss = max(misses, key=lambda m: m["_sel"])
+        for m in misses:
+            m.pop("_sel", None)
+        pack["closest_miss"] = best_miss
+    else:
+        pack["closest_miss"] = None
 
     if kind == "buy_low":
         qualified.sort(key=lambda row: (
