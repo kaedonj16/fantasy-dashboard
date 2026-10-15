@@ -37,6 +37,9 @@ _ACT_LINKS = {
     "waivers": {"href": "/waivers", "label": "View on Waivers"},
     "this_week": {"href": "/", "label": "View dashboard"},
     "trade_finding": {"href": "/trade?tab=suggestions", "label": "Open Trade Suggestions"},
+    "breakout_board": {"href": "/breakouts", "label": "View breakout board"},
+    "breakout_track_record": {"href": "/breakouts", "label": "View breakout board"},
+    "breakout_history": {"href": "/breakouts", "label": "View breakout board"},
 }
 
 
@@ -151,6 +154,9 @@ def _resolve_act_link(intent, pack):
         link = _start_sit_link(pack)
         if link:
             return link
+    pack_link = _pack_act_link(intent, pack)
+    if pack_link:
+        return pack_link
     static = _ACT_LINKS.get(intent)
     return dict(static) if static else None
 
@@ -186,6 +192,18 @@ def _mentions(intent, pack):
         for p in pack.get("cleared_drops") or []:
             _add(p)
     return found[:8]
+
+
+
+def _pack_act_link(intent, pack):
+    """Mirror of compose._pack_act_link (league-scoped Teams path)."""
+    if intent not in ("teams", "pick_ownership") or not isinstance(pack, dict):
+        return None
+    league = pack.get("league") or {}
+    if league.get("platform") and league.get("season") and league.get("league_id"):
+        return {"href": f"/{league['platform']}/{league['season']}/{league['league_id']}/teams",
+                "label": "View on Teams"}
+    return None
 
 _CTA_LABELS = {"lineup": "Set lineup", "waiver": "View waivers",
                "waivers": "View waivers", "trade": "Build offer"}
@@ -291,6 +309,17 @@ def _trade_eval(pack):
     recv_names = ", ".join(p["name"] for p in (pack.get("receive") or {}).get("players") or [])
     text = (f"{give_names} for {recv_names}. Your side totals {fmt(give_t)} against "
             f"{fmt(recv_t)} coming back, a fairness gap of {fmt(gap)}.")
+    for key, side in (("give_picks", "You give"), ("receive_picks", "You receive")):
+        for p in pack.get(key) or []:
+            if not isinstance(p, dict):
+                continue
+            owner = p.get("original_owner_team")
+            text += f" {side} the {p.get('label')} pick"
+            if owner:
+                text += f" (originally {owner}'s pick)"
+            if p.get("value") is not None:
+                text += f" worth {fmt(p.get('value'))}"
+            text += "."
     unpriced = pack.get("unpriced") or []
     if unpriced:
         text += f" One piece is unpriced: {unpriced[0]}. The rest is judged on the priced players."
@@ -815,9 +844,123 @@ def _trade_finding(pack):
     })
     return ans
 
+def _breakout_board(pack):
+    cands = pack.get("candidates") or []
+    receipts = [{"label": c["name"], "value": fmt(c.get("breakout_score"))}
+                for c in cands[:3] if c.get("breakout_score") is not None]
+    top = cands[0] if cands else {}
+    text = (f"{top.get('name')} leads the {pack.get('week_label')} breakout calls "
+            f"at {fmt(top.get('breakout_score'))}.")
+    if len(cands) > 1:
+        text += f" {cands[1].get('name')} is next at {fmt(cands[1].get('breakout_score'))}."
+    if pack.get("preview") and pack.get("locked_count"):
+        text += f" {fmt(pack.get('locked_count'))} more calls are on the full board."
+    ans = _base("breakout_board", pack)
+    ans.update({"verdict": f"{pack.get('week_label')} breakout calls", "text": text,
+                "receipts": receipts[:4],
+                "followups": ["How good is BR at breakout calls?"]})
+    return ans
+
+
+def _breakout_track_record(pack):
+    o = pack.get("overall") or {}
+    receipts = [{"label": "Graded calls", "value": fmt(o.get("graded"))},
+                {"label": "Hit rate (percent)", "value": fmt(o.get("hit_rate_pct"))},
+                {"label": "Hits", "value": fmt(o.get("hit"))},
+                {"label": "Misses", "value": fmt(o.get("miss"))}]
+    text = (f"BR has graded {fmt(o.get('graded'))} of {fmt(o.get('calls'))} breakout calls "
+            f"this season, with {fmt(o.get('hit'))} hits and a hit rate of "
+            f"{fmt(o.get('hit_rate_pct'))} percent.")
+    ans = _base("breakout_track_record", pack)
+    ans.update({"verdict": f"Hit rate {fmt(o.get('hit_rate_pct'))} percent", "text": text,
+                "receipts": receipts,
+                "followups": ["Who are this week's breakout calls?"]})
+    return ans
+
+
+def _breakout_history(pack):
+    player = pack.get("player") or {}
+    name = player.get("name")
+    ans = _base("breakout_history", pack)
+    if pack.get("was_call"):
+        earliest = pack.get("earliest_call") or {}
+        text = f"Yes. {name} was first surfaced as a breakout call for {earliest.get('label')}."
+        if pack.get("grade"):
+            text += f" That call graded as a {pack['grade']}."
+        receipts = [{"label": "First breakout call", "value": str(earliest.get("label"))}]
+        if earliest.get("breakout_score") is not None:
+            receipts.append({"label": "Breakout score", "value": fmt(earliest["breakout_score"])})
+        ans.update({"verdict": f"YES, {name} was a breakout call", "text": text,
+                    "receipts": receipts,
+                    "followups": ["Who are this week's breakout calls?"]})
+    else:
+        ans.update({"verdict": f"NO, {name} was not a breakout call",
+                    "text": f"No. {name} has not been surfaced as a breakout call this season.",
+                    "receipts": [], "followups": ["Who are this week's breakout calls?"]})
+    return ans
+
+
+def _teams(pack):
+    focus = pack.get("position_focus")
+    ranking = pack.get("position_ranking") or []
+    ans = _base("teams", pack)
+    if focus and ranking:
+        first, last = ranking[0], ranking[-1]
+        receipts = [{"label": f"Best {focus} room ({first.get('team_name')})",
+                     "value": fmt(first.get("strength"))},
+                    {"label": f"Weakest {focus} room ({last.get('team_name')})",
+                     "value": fmt(last.get("strength"))}]
+        text = (f"{last.get('team_name')} has the weakest {focus} room at "
+                f"{fmt(last.get('strength'))}. {first.get('team_name')} has the "
+                f"strongest at {fmt(first.get('strength'))}.")
+        ans.update({"verdict": f"Weakest {focus} room: {last.get('team_name')}",
+                    "text": text, "receipts": receipts,
+                    "followups": ["Whose roster is strongest?"]})
+        return ans
+    s = pack.get("strongest") or {}
+    w = pack.get("weakest") or {}
+    mine = next((t for t in pack.get("teams") or [] if t.get("is_viewer")), {})
+    receipts = [{"label": f"Strongest roster ({s.get('team_name')}) grade score",
+                 "value": fmt(s.get("grade_score"))}]
+    if mine.get("grade_score") is not None:
+        receipts.append({"label": "Your grade score", "value": fmt(mine["grade_score"])})
+    if w.get("grade_score") is not None:
+        receipts.append({"label": f"Weakest roster ({w.get('team_name')}) grade score",
+                         "value": fmt(w.get("grade_score"))})
+    text = (f"{s.get('team_name')} has the strongest roster in {pack.get('mode_label')} "
+            f"mode with a grade score of {fmt(s.get('grade_score'))}.")
+    ans.update({"verdict": f"Strongest roster: {s.get('team_name')}", "text": text,
+                "receipts": receipts[:4], "followups": ["Who is weakest at TE?"]})
+    return ans
+
+
+def _pick_ownership(pack):
+    pick = pack.get("pick") or {}
+    owner = pack.get("current_owner_team")
+    receipts = []
+    if pick.get("value") is not None:
+        receipts.append({"label": f"{pick.get('label')} value", "value": fmt(pick["value"])})
+    receipts.append({"label": "Pick", "value": str(pick.get("label"))})
+    ans = _base("pick_ownership", pack)
+    if pack.get("owned_by_me"):
+        ans.update({"verdict": f"You own the {pick.get('label')}",
+                    "text": f"You still own your {pick.get('label')}.",
+                    "receipts": receipts, "followups": ["What other picks do I own?"]})
+    else:
+        ans.update({"verdict": f"{owner} owns the {pick.get('label')}",
+                    "text": f"Your {pick.get('label')} now belongs to {owner}.",
+                    "receipts": receipts, "followups": ["What other picks do I own?"]})
+    return ans
+
+
+
 _BUILDERS = {"start_sit": _start_sit, "trade_eval": _trade_eval,
              "buy_sell_hold": _buy_sell_hold, "player": _player, "metric": _metric,
              "leaderboard": _leaderboard, "trade_finding": _trade_finding,
+             "breakout_board": _breakout_board,
+             "breakout_track_record": _breakout_track_record,
+             "breakout_history": _breakout_history,
+             "teams": _teams, "pick_ownership": _pick_ownership,
              "waivers": _waivers, "this_week": _this_week,
              "playoffs": _playoffs, "power_rankings": _power_rankings,
              "standings": _standings, "matchup": _matchup, "schedule": _schedule}

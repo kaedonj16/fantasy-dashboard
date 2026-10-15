@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "description": "Frozen assistant eval set: 42 questions with golden evidence packs for the BR Fantasy assistant (workshop section 5 core 20, the deep-cuts leaderboard family lb1-lb6, and the section 9 P1 league-context types: playoffs, power rankings, standings, matchup, schedule) plus the P1 trade-finding family tf1-tf4.",
+    "description": "Frozen assistant eval set: 49 questions with golden evidence packs for the BR Fantasy assistant (workshop section 5 core 20, the deep-cuts leaderboard family lb1-lb6, and the section 9 P1 league-context types: playoffs, power rankings, standings, matchup, schedule) plus the P1 trade-finding family tf1-tf4, and the P1 breakout board, Teams, and pick-ownership families bo1-bo3, tm1-tm2, pk1 (renamed from the branch po1, which collided with the playoffs po1), with te4 an extra trade_eval.",
     "scenario": "Kaedon's league Blackedraw, her team Caleb's Casting Couch, Week 7 of the 2026 season.",
     "packs": "Each evidence_pack mirrors, field for field, the dict the matching builder in dashboard_services/assistant/evidence.py returns. Values inside a pack are the only numbers an answer may cite.",
     "recapture": "These packs are frozen fixtures. Before any launch decision, recapture them from the live tools with: python3 scripts/run_assistant_eval.py --capture (writes assistant_eval/captured_questions.json; it never overwrites this file). A launch call made on stale fixtures is not a launch call.",
@@ -5394,6 +5394,822 @@
         "must_mention": [
           "Pittsburgh Pilots",
           "Njoku"
+        ]
+      }
+    },
+    {
+      "id": "bo1",
+      "type": "breakout_board",
+      "question": "Who are this week's breakout calls?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "breakout_board",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "as_of_week": 6,
+        "week_label": "Week 7",
+        "total_calls": 5,
+        "preview": false,
+        "candidates": [
+          {
+            "rank": 1,
+            "player_id": "dontayvion-wicks",
+            "name": "Dontayvion Wicks",
+            "team": "GB",
+            "position": "WR",
+            "breakout_score": 88.4,
+            "classification_label": "Breakout Call",
+            "confidence": 71.0
+          },
+          {
+            "rank": 2,
+            "player_id": "troy-franklin",
+            "name": "Troy Franklin",
+            "team": "DEN",
+            "position": "WR",
+            "breakout_score": 84.2,
+            "classification_label": "Breakout Call",
+            "confidence": 66.5
+          },
+          {
+            "rank": 3,
+            "player_id": "elic-ayomanor",
+            "name": "Elic Ayomanor",
+            "team": "TEN",
+            "position": "WR",
+            "breakout_score": 79.8,
+            "classification_label": "Breakout Call",
+            "confidence": 61.0
+          },
+          {
+            "rank": 4,
+            "player_id": "tank-bigsby",
+            "name": "Tank Bigsby",
+            "team": "PHI",
+            "position": "RB",
+            "breakout_score": 74.3,
+            "classification_label": "Rising Role",
+            "confidence": 58.2
+          },
+          {
+            "rank": 5,
+            "player_id": "chimere-dike",
+            "name": "Chimere Dike",
+            "team": "TEN",
+            "position": "WR",
+            "breakout_score": 70.1,
+            "classification_label": "Rising Role",
+            "confidence": 55.0
+          }
+        ]
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": "Dontayvion Wicks",
+        "key_numbers": [
+          88.4,
+          84.2
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Dontayvion Wicks"
+        ]
+      }
+    },
+    {
+      "id": "bo2",
+      "type": "breakout_track_record",
+      "question": "How good is BR at breakout calls?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "breakout_track_record",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "scoring_version": "weekly-v6",
+        "overall": {
+          "calls": 14,
+          "graded": 11,
+          "hit": 6,
+          "partial": 1,
+          "miss": 4,
+          "hit_rate": 0.5455,
+          "hit_rate_pct": 54.5
+        },
+        "pending": false,
+        "by_week": [
+          {
+            "week": 1,
+            "calls": 3,
+            "graded": 3,
+            "hit": 2,
+            "partial": 1,
+            "miss": 0,
+            "hit_rate": 0.6667,
+            "hit_rate_pct": 66.7
+          },
+          {
+            "week": 2,
+            "calls": 11,
+            "graded": 8,
+            "hit": 4,
+            "partial": 0,
+            "miss": 4,
+            "hit_rate": 0.5,
+            "hit_rate_pct": 50.0
+          }
+        ],
+        "biggest_hits": [
+          {
+            "name": "Troy Franklin",
+            "week": 2,
+            "label": "Breakout Call"
+          }
+        ],
+        "biggest_misses": [
+          {
+            "name": "Tank Bigsby",
+            "week": 2,
+            "label": "Breakout Call"
+          }
+        ]
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": null,
+        "key_numbers": [
+          11,
+          54.5,
+          6,
+          4
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": []
+      }
+    },
+    {
+      "id": "bo3",
+      "type": "breakout_history",
+      "question": "Was Rome Odunze a breakout call?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "breakout_history",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "player": {
+          "player_id": "rome-odunze",
+          "name": "Rome Odunze",
+          "team": "CHI",
+          "position": "WR",
+          "injury_status": null
+        },
+        "on_current_board": false,
+        "was_call": true,
+        "earliest_call": {
+          "as_of_week": 4,
+          "label": "Week 5",
+          "season": 2026,
+          "breakout_score": 82.3
+        },
+        "grade": "hit"
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": "Rome Odunze",
+        "key_numbers": [
+          82.3
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Rome Odunze",
+          "Week 5"
+        ]
+      }
+    },
+    {
+      "id": "tm1",
+      "type": "teams",
+      "question": "Whose roster is strongest?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "teams",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "mode": "dynasty",
+        "mode_label": "Dynasty",
+        "teams": [
+          {
+            "roster_id": "1",
+            "team_name": "Pittsburgh Pilots",
+            "is_viewer": false,
+            "grade": "A",
+            "grade_score": 91.4,
+            "win_window": "Contender",
+            "pos_strength": {
+              "QB": 6010.0,
+              "RB": 5540.0,
+              "WR": 6890.0,
+              "TE": 3010.0
+            },
+            "pos_rank": {
+              "QB": 1,
+              "RB": 2,
+              "WR": 2,
+              "TE": 1
+            }
+          },
+          {
+            "roster_id": "2",
+            "team_name": "Caleb's Casting Couch",
+            "is_viewer": true,
+            "grade": "A-",
+            "grade_score": 86.2,
+            "win_window": "Contender",
+            "pos_strength": {
+              "QB": 5120.0,
+              "RB": 6010.5,
+              "WR": 7230.0,
+              "TE": 2140.0
+            },
+            "pos_rank": {
+              "QB": 2,
+              "RB": 1,
+              "WR": 1,
+              "TE": 2
+            }
+          },
+          {
+            "roster_id": "3",
+            "team_name": "Gridiron Goblins",
+            "is_viewer": false,
+            "grade": "B",
+            "grade_score": 74.8,
+            "win_window": "Bubble",
+            "pos_strength": {
+              "QB": 4020.0,
+              "RB": 4980.0,
+              "WR": 5410.0,
+              "TE": 1980.0
+            },
+            "pos_rank": {
+              "QB": 3,
+              "RB": 3,
+              "WR": 3,
+              "TE": 3
+            }
+          },
+          {
+            "roster_id": "4",
+            "team_name": "Sacko Squad",
+            "is_viewer": false,
+            "grade": "C-",
+            "grade_score": 55.3,
+            "win_window": "Rebuilding",
+            "pos_strength": {
+              "QB": 3010.0,
+              "RB": 3650.0,
+              "WR": 4020.0,
+              "TE": 1240.0
+            },
+            "pos_rank": {
+              "QB": 4,
+              "RB": 4,
+              "WR": 4,
+              "TE": 4
+            }
+          }
+        ],
+        "strongest": {
+          "team_name": "Pittsburgh Pilots",
+          "grade": "A",
+          "grade_score": 91.4
+        },
+        "weakest": {
+          "team_name": "Sacko Squad",
+          "grade": "C-",
+          "grade_score": 55.3
+        },
+        "by_position": {
+          "QB": {
+            "strongest": {
+              "team_name": "Pittsburgh Pilots",
+              "strength": 6010.0
+            },
+            "weakest": {
+              "team_name": "Sacko Squad",
+              "strength": 3010.0
+            }
+          },
+          "RB": {
+            "strongest": {
+              "team_name": "Caleb's Casting Couch",
+              "strength": 6010.5
+            },
+            "weakest": {
+              "team_name": "Sacko Squad",
+              "strength": 3650.0
+            }
+          },
+          "WR": {
+            "strongest": {
+              "team_name": "Caleb's Casting Couch",
+              "strength": 7230.0
+            },
+            "weakest": {
+              "team_name": "Sacko Squad",
+              "strength": 4020.0
+            }
+          },
+          "TE": {
+            "strongest": {
+              "team_name": "Pittsburgh Pilots",
+              "strength": 3010.0
+            },
+            "weakest": {
+              "team_name": "Sacko Squad",
+              "strength": 1240.0
+            }
+          }
+        }
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": "Pittsburgh Pilots",
+        "key_numbers": [
+          91.4,
+          86.2
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Pittsburgh Pilots"
+        ]
+      }
+    },
+    {
+      "id": "tm2",
+      "type": "teams",
+      "question": "Who is weakest at TE?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "teams",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "mode": "dynasty",
+        "mode_label": "Dynasty",
+        "teams": [
+          {
+            "roster_id": "1",
+            "team_name": "Pittsburgh Pilots",
+            "is_viewer": false,
+            "grade": "A",
+            "grade_score": 91.4,
+            "win_window": "Contender",
+            "pos_strength": {
+              "QB": 6010.0,
+              "RB": 5540.0,
+              "WR": 6890.0,
+              "TE": 3010.0
+            },
+            "pos_rank": {
+              "QB": 1,
+              "RB": 2,
+              "WR": 2,
+              "TE": 1
+            }
+          },
+          {
+            "roster_id": "2",
+            "team_name": "Caleb's Casting Couch",
+            "is_viewer": true,
+            "grade": "A-",
+            "grade_score": 86.2,
+            "win_window": "Contender",
+            "pos_strength": {
+              "QB": 5120.0,
+              "RB": 6010.5,
+              "WR": 7230.0,
+              "TE": 2140.0
+            },
+            "pos_rank": {
+              "QB": 2,
+              "RB": 1,
+              "WR": 1,
+              "TE": 2
+            }
+          },
+          {
+            "roster_id": "3",
+            "team_name": "Gridiron Goblins",
+            "is_viewer": false,
+            "grade": "B",
+            "grade_score": 74.8,
+            "win_window": "Bubble",
+            "pos_strength": {
+              "QB": 4020.0,
+              "RB": 4980.0,
+              "WR": 5410.0,
+              "TE": 1980.0
+            },
+            "pos_rank": {
+              "QB": 3,
+              "RB": 3,
+              "WR": 3,
+              "TE": 3
+            }
+          },
+          {
+            "roster_id": "4",
+            "team_name": "Sacko Squad",
+            "is_viewer": false,
+            "grade": "C-",
+            "grade_score": 55.3,
+            "win_window": "Rebuilding",
+            "pos_strength": {
+              "QB": 3010.0,
+              "RB": 3650.0,
+              "WR": 4020.0,
+              "TE": 1240.0
+            },
+            "pos_rank": {
+              "QB": 4,
+              "RB": 4,
+              "WR": 4,
+              "TE": 4
+            }
+          }
+        ],
+        "strongest": {
+          "team_name": "Pittsburgh Pilots",
+          "grade": "A",
+          "grade_score": 91.4
+        },
+        "weakest": {
+          "team_name": "Sacko Squad",
+          "grade": "C-",
+          "grade_score": 55.3
+        },
+        "by_position": {
+          "QB": {
+            "strongest": {
+              "team_name": "Pittsburgh Pilots",
+              "strength": 6010.0
+            },
+            "weakest": {
+              "team_name": "Sacko Squad",
+              "strength": 3010.0
+            }
+          },
+          "RB": {
+            "strongest": {
+              "team_name": "Caleb's Casting Couch",
+              "strength": 6010.5
+            },
+            "weakest": {
+              "team_name": "Sacko Squad",
+              "strength": 3650.0
+            }
+          },
+          "WR": {
+            "strongest": {
+              "team_name": "Caleb's Casting Couch",
+              "strength": 7230.0
+            },
+            "weakest": {
+              "team_name": "Sacko Squad",
+              "strength": 4020.0
+            }
+          },
+          "TE": {
+            "strongest": {
+              "team_name": "Pittsburgh Pilots",
+              "strength": 3010.0
+            },
+            "weakest": {
+              "team_name": "Sacko Squad",
+              "strength": 1240.0
+            }
+          }
+        },
+        "position_focus": "TE",
+        "position_ranking": [
+          {
+            "rank": 1,
+            "team_name": "Pittsburgh Pilots",
+            "strength": 3010.0
+          },
+          {
+            "rank": 2,
+            "team_name": "Caleb's Casting Couch",
+            "strength": 2140.0
+          },
+          {
+            "rank": 3,
+            "team_name": "Gridiron Goblins",
+            "strength": 1980.0
+          },
+          {
+            "rank": 4,
+            "team_name": "Sacko Squad",
+            "strength": 1240.0
+          }
+        ]
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": "Sacko Squad",
+        "key_numbers": [
+          1240,
+          3010
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Sacko Squad"
+        ]
+      }
+    },
+    {
+      "id": "te4",
+      "type": "trade_eval",
+      "question": "Should I trade my 2027 1st and Woody Marks for Zay Flowers?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "trade_eval",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "give": {
+          "players": [
+            {
+              "player_id": "woody-marks",
+              "name": "Woody Marks",
+              "team": "HOU",
+              "position": "RB",
+              "injury_status": null,
+              "value": 2650.0
+            }
+          ],
+          "total_value": 3430.0
+        },
+        "receive": {
+          "players": [
+            {
+              "player_id": "zay-flowers",
+              "name": "Zay Flowers",
+              "team": "BAL",
+              "position": "WR",
+              "injury_status": null,
+              "value": 4680.0
+            }
+          ],
+          "total_value": 4680.0
+        },
+        "fairness_gap": 1250.0,
+        "unpriced": [],
+        "give_picks": [
+          {
+            "pick_id": "2027_1_11",
+            "label": "2027 1.11",
+            "season": 2027,
+            "round": 1,
+            "slot": 11,
+            "side": "give",
+            "original_owner_team": "Caleb's Casting Couch",
+            "current_owner_team": "Caleb's Casting Couch",
+            "value": 780.0,
+            "priced": true
+          }
+        ],
+        "receive_picks": [],
+        "picks": [
+          {
+            "pick_id": "2027_1_11",
+            "label": "2027 1.11",
+            "season": 2027,
+            "round": 1,
+            "slot": 11,
+            "side": "give",
+            "original_owner_team": "Caleb's Casting Couch",
+            "current_owner_team": "Caleb's Casting Couch",
+            "value": 780.0,
+            "priced": true
+          }
+        ],
+        "roster_fit": {
+          "surplus_positions": [
+            "RB"
+          ],
+          "needed_positions": [
+            "TE"
+          ],
+          "grade": "A-",
+          "grade_score": 86.2,
+          "grade_mode": "dynasty"
+        },
+        "partner": {
+          "team_name": "Pittsburgh Pilots",
+          "needed_positions": [
+            "RB"
+          ],
+          "surplus_positions": [
+            "WR"
+          ],
+          "grade": "A",
+          "grade_score": 91.4
+        },
+        "margin": {
+          "thin": false
+        },
+        "trade_verdict": "ACCEPT"
+      },
+      "reference": {
+        "verdict_kind": "verdict",
+        "pick": "ACCEPT",
+        "key_numbers": [
+          3430,
+          4680,
+          1250
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "2027 1.11",
+          "Woody Marks",
+          "Zay Flowers"
+        ]
+      }
+    },
+    {
+      "id": "pk1",
+      "type": "pick_ownership",
+      "question": "Who owns my 2027 first?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "pick_ownership",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "pick": {
+          "pick_id": "2027_1_10",
+          "label": "2027 1.10",
+          "season": 2027,
+          "round": 1,
+          "slot": 10,
+          "side": null,
+          "original_owner_team": "Caleb's Casting Couch",
+          "current_owner_team": "Pittsburgh Pilots",
+          "value": 815.0,
+          "priced": true
+        },
+        "tracked": true,
+        "owned_by_me": false,
+        "original_owner_team": "Caleb's Casting Couch",
+        "current_owner_team": "Pittsburgh Pilots"
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": "Pittsburgh Pilots",
+        "key_numbers": [
+          815
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Pittsburgh Pilots"
         ]
       }
     }

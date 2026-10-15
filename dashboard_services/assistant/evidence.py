@@ -73,6 +73,24 @@ Reality notes vs the workshop tool map (verified in this repo):
   into this synchronous path: it is a Monte Carlo strategy-slate pipeline
   (the Trade Hub itself loads it progressively, slate then sim phases)
   keyed by strategy archetypes, not a per-question partner scan.
+- League fit is the Teams page machinery, not a local mirror: positional
+  strengths and ranks come from utils.trade.rank_rosters_by_position over
+  league_format_value_lookup values (the same lookup My Leagues and the
+  Teams page share), and roster grades come from
+  dashboard_services.ai.context_builders.calculate_roster_grade with the
+  same percentile inputs the Teams page passes. Needs/surplus still come
+  from utils.trade.classify_position_needs / detect_surplus_positions.
+- Draft picks are priced AND attributed: ownership comes from the league
+  ctx's picks_by_roster (built by app.py from the provider's traded picks;
+  platform_api.get_traded_picks is the fallback source), slots follow the
+  site convention (original owner's standings order, worst record picks
+  first), and values come from dashboard_services.picks
+  .load_pick_value_table via utils.draft.pick_value_from_table. Pack picks
+  carry canonical pick ids (2027_1_03) per side as give_picks /
+  receive_picks, the shape the trade calculator's deep link stages.
+- The breakout board builder mirrors the board route's non-premium
+  preview rule exactly: a caller without a paid plan sees the first 3
+  candidates plus the locked count, never the names beyond the preview.
 """
 from __future__ import annotations
 
@@ -242,6 +260,53 @@ def next_steps_actions(ctx, roster_id, model_rows):
         ctx, roster_id, (ctx or {}).get("last_final_week")) or [])
     actions.sort(key=lambda a: -(a.get("score") or 0))
     return actions
+
+
+def breakout_board_candidates(*args, **kwargs):
+    from dashboard_services.breakout_api import get_breakout_board_candidates as _fn
+    return _fn(*args, **kwargs)
+
+
+def breakout_track_record_data(*args, **kwargs):
+    from dashboard_services.breakout_api import get_breakout_track_record as _fn
+    return _fn(*args, **kwargs)
+
+
+def breakout_call_history_for(*args, **kwargs):
+    from dashboard_services.breakout_api import breakout_call_history as _fn
+    return _fn(*args, **kwargs)
+
+
+def breakout_week_detail(*args, **kwargs):
+    from dashboard_services.breakout_api import get_historical_weekly_breakout_detail as _fn
+    return _fn(*args, **kwargs)
+
+
+def pick_value_table(*args, **kwargs):
+    from dashboard_services.picks import load_pick_value_table as _fn
+    return _fn(*args, **kwargs)
+
+
+def traded_picks_for(*args, **kwargs):
+    from dashboard_services.platform_api import get_traded_picks as _fn
+    return _fn(*args, **kwargs)
+
+
+def league_format_values(ctx, force_scoring_type=None):
+    from dashboard_services.ai.context_builders import league_format_value_lookup as _fn
+    return _fn(ctx, force_scoring_type=force_scoring_type)
+
+
+def roster_grade(players, future_picks, **kwargs):
+    from dashboard_services.ai.context_builders import calculate_roster_grade as _fn
+    return _fn(players, future_picks, **kwargs)
+
+
+def rank_positions(team_pos_values, slot_counts, positions=None):
+    from utils.trade import rank_rosters_by_position as _fn
+    if positions:
+        return _fn(team_pos_values, slot_counts, positions=positions)
+    return _fn(team_pos_values, slot_counts)
 
 
 def _index():
@@ -540,7 +605,460 @@ def build_start_sit(bundle, entities, player_ids) -> tuple[dict, list[str]]:
     return pack, tools
 
 
+# -- league machinery: the Teams page's strengths, ranks, and grades -----------
+
+CORE_POS = ("QB", "RB", "WR", "TE")
+
+
+def _team_name(ctx, roster, users=None):
+    """Team display name: ctx roster_map, then roster metadata, then owner."""
+    rid = roster.get("roster_id")
+    rmap = (ctx or {}).get("roster_map") or {}
+    name = rmap.get(str(rid)) or rmap.get(rid)
+    if name:
+        return str(name)
+    name = str((roster.get("metadata") or {}).get("team_name") or "")
+    if name:
+        return name
+    if users is None:
+        users = {str(u.get("user_id")): u for u in (ctx.get("users") or []) if isinstance(u, dict)}
+    user = users.get(str(roster.get("owner_id") or "")) or {}
+    return str(user.get("display_name") or user.get("username") or "") or f"Roster {rid}"
+
+
+def _slot_counts(ctx):
+    counts: dict[str, int] = {}
+    for slot in (ctx or {}).get("roster_positions") or []:
+        s = str(slot)
+        counts[s] = counts.get(s, 0) + 1
+    return counts
+
+
+def _league_is_redraft(ctx) -> bool:
+    try:
+        from dashboard_services.ai.context_builders import ctx_scoring_type
+        return ctx_scoring_type(ctx or {}) == "redraft"
+    except Exception:
+        return False
+
+
+def _resolve_mode(ctx, requested) -> str:
+    """Teams grading mode: a redraft league has only This Season; a dynasty
+    league defaults to Dynasty (the Teams page's default tab)."""
+    if _league_is_redraft(ctx):
+        return "this_season"
+    return "this_season" if requested == "this_season" else "dynasty"
+
+
+def _mode_values(ctx, mode):
+    """pid -> value row for one Teams mode, via league_format_value_lookup.
+
+    Dynasty mode is the lookup's natural output for a dynasty league; This
+    Season forces redraft values, exactly like the Teams page toggle. Falls
+    back to the app value-table cache when the ctx carries no table.
+    """
+    eff = dict(ctx or {})
+    if not eff.get("model_value_table"):
+        rows = list(_value_rows().values())
+        if rows:
+            eff["model_value_table"] = rows
+    if not eff.get("model_value_table"):
+        return {}
+    force = "redraft" if mode == "this_season" else None
+    try:
+        return league_format_values(eff, force_scoring_type=force) or {}
+    except Exception:
+        logger.debug("[assistant] league format values failed", exc_info=True)
+        return {}
+
+
+def _league_position_data(ctx, rosters, mode, values=None, index=None):
+    """Positional strengths, ranks, and roster grades for every roster.
+
+    The Teams page pipeline: per-roster position value lists from the
+    mode's league-format values, strengths and ranks from
+    rank_rosters_by_position, grades from calculate_roster_grade with the
+    page's percentile inputs (top-8 dynasty/redraft totals, top-10
+    dynasty/redraft ratio). When the league-format lookup is unavailable
+    (no model table anywhere), strengths and ranks fall back to the raw
+    value rows the caller passed, and grades are omitted rather than
+    computed from partial inputs.
+    """
+    ctx = ctx or {}
+    num_teams = len(rosters or [])
+    if not num_teams:
+        return None
+    users = {str(u.get("user_id")): u for u in (ctx.get("users") or []) if isinstance(u, dict)}
+    team_names = {str(r.get("roster_id")): _team_name(ctx, r, users) for r in rosters}
+    slot_counts = _slot_counts(ctx)
+    by_id = _mode_values(ctx, mode)
+    source = "league_format" if by_id else "raw_values"
+    vals_by_roster: dict[str, dict[str, list[float]]] = {}
+    flat_by_roster: dict[str, list[dict]] = {}
+    for r in rosters:
+        rid = str(r.get("roster_id"))
+        vals: dict[str, list[float]] = {pos: [] for pos in CORE_POS}
+        flat: list[dict] = []
+        for pid in r.get("players") or []:
+            spid = str(pid)
+            if by_id:
+                row = by_id.get(spid) or {}
+                pos = str(row.get("position") or row.get("pos") or "").upper()
+                if not pos:
+                    pos = str(_player_info(spid, index if index is not None else _index()).get("position") or "").upper()
+                try:
+                    v = float(row.get("value") or 0)
+                except (TypeError, ValueError):
+                    v = 0.0
+                age = row.get("age")
+            else:
+                info = _player_info(spid, index if index is not None else _index())
+                pos = str(info.get("position") or "").upper()
+                v = _row_value((values or {}).get(spid)) or 0.0
+                age = None
+            if pos in CORE_POS and v > 0:
+                vals[pos].append(v)
+                flat.append({"position": pos, "value": v, "age": age})
+        flat.sort(key=lambda x: x["value"], reverse=True)
+        vals_by_roster[rid] = vals
+        flat_by_roster[rid] = flat
+    try:
+        strengths_raw, ranks_raw = rank_positions(vals_by_roster, slot_counts, positions=list(CORE_POS))
+        strengths = {str(rid): {pos: round(float((per or {}).get(pos) or 0), 1)
+                                for pos in CORE_POS}
+                     for rid, per in (strengths_raw or {}).items()}
+        ranks = {pos: {str(rid): int(rk) for rid, rk in (per or {}).items()}
+                 for pos, per in (ranks_raw or {}).items()}
+    except Exception:
+        logger.debug("[assistant] position ranks failed", exc_info=True)
+        return None
+    grades: dict[str, dict] = {}
+    if source == "league_format":
+        try:
+            grades = _roster_grades(ctx, rosters, by_id, flat_by_roster, ranks, mode, num_teams)
+        except Exception:
+            logger.debug("[assistant] roster grades failed", exc_info=True)
+            grades = {}
+    return {"team_names": team_names, "strengths": strengths, "ranks": ranks,
+            "vals_by_roster": vals_by_roster, "grades": grades, "mode": mode,
+            "source": source, "num_teams": num_teams}
+
+
+def _roster_grades(ctx, rosters, by_id, flat_by_roster, ranks, mode, num_teams):
+    """calculate_roster_grade per roster with the Teams page's inputs.
+
+    Percentile totals are computed from the league's natural (dynasty)
+    values in both modes, exactly as teams_page does; only the graded
+    player values, the position ranks, and the scoring_type follow the
+    mode. This Season grades carry no draft capital, like the page.
+    """
+    from utils.lineup_slots import is_superflex_lineup
+    roster_positions = (ctx or {}).get("roster_positions") or []
+    is_sf = is_superflex_lineup(roster_positions)
+    redraft_key = "redraft_value_sf" if is_sf else "redraft_value_1qb"
+    natural = by_id if mode == "dynasty" else _mode_values(ctx, "dynasty")
+    dyn_totals: dict[str, float] = {}
+    red_totals: dict[str, float] = {}
+    dr_ratios: dict[str, float] = {}
+    for r in rosters:
+        rid = str(r.get("roster_id"))
+        pairs = []
+        for pid in r.get("players") or []:
+            row = (natural or {}).get(str(pid)) or {}
+            pos = str(row.get("position") or row.get("pos") or "").upper()
+            if pos not in CORE_POS:
+                continue
+            try:
+                dval = float(row.get("value") or 0)
+                rval = float(row.get(redraft_key) or 0)
+            except (TypeError, ValueError):
+                continue
+            pairs.append((dval, rval))
+        pairs.sort(reverse=True)
+        dyn_totals[rid] = sum(d for d, _ in pairs[:8])
+        red_totals[rid] = sum(rv for _, rv in pairs[:8])
+        ratios = [d / max(rv, 1) for d, rv in pairs[:10] if d > 50 or rv > 50]
+        dr_ratios[rid] = round(sum(ratios) / len(ratios), 3) if ratios else 1.0
+
+    def _pct(totals, rid):
+        vals = sorted(totals.values())
+        denom = max(len(vals) - 1, 1)
+        return sum(1 for v in vals if v < totals.get(rid, 0.0)) / denom
+
+    picks_by_roster = (ctx or {}).get("picks_by_roster") or {}
+    league_redraft = _league_is_redraft(ctx)
+    grades: dict[str, dict] = {}
+    for r in rosters:
+        rid = str(r.get("roster_id"))
+        picks = [] if (mode == "this_season" or league_redraft) else picks_by_roster.get(rid, [])
+        p_ranks = {pos: (ranks.get(pos) or {}).get(rid, num_teams) for pos in CORE_POS}
+        g = roster_grade(
+            flat_by_roster.get(rid, []), picks,
+            position_ranks=p_ranks, num_teams=num_teams,
+            dynasty_pct_val=_pct(dyn_totals, rid), redraft_pct_val=_pct(red_totals, rid),
+            dr_ratio=dr_ratios.get(rid, 1.0),
+            scoring_type="redraft" if (mode == "this_season" or league_redraft) else "dynasty",
+        )
+        if isinstance(g, dict) and g.get("grade") is not None:
+            grades[rid] = {"grade": g.get("grade"),
+                           "score": round(float(g.get("score") or 0), 1),
+                           "win_window": g.get("win_window"),
+                           "formula_id": g.get("formula_id")}
+    return grades
+
+
 # -- trade evaluation ------------------------------------------------------------
+
+_ROUND_WORDS = {"first": 1, "1st": 1, "second": 2, "2nd": 2, "third": 3, "3rd": 3,
+                "fourth": 4, "4th": 4, "fifth": 5, "5th": 5}
+
+
+def _parse_pick_text(text):
+    """Parse a pick mention into {season, round, slot} or None.
+
+    Handles "2027 1st", "my 2027 first-round pick", "2027 1.03", and the
+    canonical id form "2027_1_03" / "2027_1_early". Slot stays None unless
+    the text itself carries one (canonical id or 1.03 style).
+    """
+    import re as _re
+    s = str(text or "").strip().lower()
+    if not s:
+        return None
+    slot = None
+    m = _re.search(r"(20\d{2})_(\d{1,2})_(\d{1,2}|early|mid|late)", s)
+    if m:
+        third = m.group(3)
+        return {"season": int(m.group(1)), "round": int(m.group(2)),
+                "slot": int(third) if third.isdigit() else None}
+    m = _re.search(r"(20\d{2})", s)
+    if not m:
+        return None
+    season = int(m.group(1))
+    rnd = None
+    m2 = _re.search(r"\b(\d)\.(\d{1,2})\b", s)
+    if m2:
+        rnd, slot = int(m2.group(1)), int(m2.group(2))
+    else:
+        m3 = _re.search(r"\bround\s*(\d)\b", s) or _re.search(r"\b(\d)(?:st|nd|rd|th)\b", s)
+        if m3:
+            rnd = int(m3.group(1))
+        else:
+            for word, num in _ROUND_WORDS.items():
+                if _re.search(rf"\b{word}\b", s):
+                    rnd = num
+                    break
+    if rnd is None:
+        return None
+    return {"season": season, "round": rnd, "slot": slot}
+
+
+def _pick_ownership(bundle):
+    """Draft-pick ownership for the bundle's league, or None.
+
+    Primary source: the ctx's picks_by_roster (app.py builds it from the
+    provider's traded picks, so it already reflects every trade). Fallback:
+    platform_api.get_traded_picks fed through build_picks_by_roster, the
+    same builder app.py uses. Returns {by_pick, owned, team_names,
+    num_teams, source}: by_pick maps (season, round, original_roster_id)
+    to the current owner's roster id; owned maps an owner roster id to its
+    pick entries {season, round, original_owner}.
+    """
+    ctx = bundle.get("ctx") or {}
+    pbr = ctx.get("picks_by_roster") or {}
+    source = "ctx.picks_by_roster"
+    if not pbr and bundle.get("league_id"):
+        try:
+            traded = traded_picks_for(bundle.get("platform"), bundle.get("league_id"),
+                                      bundle.get("season")) or []
+            if traded:
+                from dashboard_services.service import build_picks_by_roster
+                league = ctx.get("league") or {"season": bundle.get("season")}
+                pbr = build_picks_by_roster(
+                    num_future_seasons=3, league=league,
+                    rosters=ctx.get("rosters") or [], traded=traded,
+                    draft_ended=bool(bundle.get("week"))) or {}
+                source = "platform_api.get_traded_picks"
+        except Exception:
+            logger.debug("[assistant] traded picks fallback failed", exc_info=True)
+            pbr = {}
+    if not pbr:
+        return None
+    rosters = [r for r in (ctx.get("rosters") or []) if isinstance(r, dict)]
+    users = {str(u.get("user_id")): u for u in (ctx.get("users") or []) if isinstance(u, dict)}
+    team_names = {str(r.get("roster_id")): _team_name(ctx, r, users) for r in rosters}
+    by_pick: dict = {}
+    owned: dict[str, list[dict]] = {}
+    for owner_rid, plist in pbr.items():
+        for pk in plist or []:
+            if not isinstance(pk, dict):
+                continue
+            try:
+                season, rnd = int(pk.get("season") or 0), int(pk.get("round") or 0)
+            except (TypeError, ValueError):
+                continue
+            if not season or not rnd:
+                continue
+            original = str(pk.get("original_owner") or "")
+            by_pick[(season, rnd, original)] = str(owner_rid)
+            owned.setdefault(str(owner_rid), []).append(
+                {"season": season, "round": rnd, "original_owner": original})
+    if not by_pick:
+        return None
+    return {"by_pick": by_pick, "owned": owned, "team_names": team_names,
+            "num_teams": len(rosters) or len(pbr), "source": source}
+
+
+def _pick_slots(ctx, ownership, season, rnd):
+    """{original_roster_id: slot} for one season + round.
+
+    The site convention (Front Office pick projection): original owners
+    ordered by record, worst record picks first (slot 1). Records come
+    from roster settings; the standings seed map is the fallback (seed 1
+    is the best team). Ties break by roster id so the order is stable.
+    """
+    originals = {orig for (s, r, orig) in (ownership or {}).get("by_pick") or {}
+                 if s == season and r == rnd and orig}
+    if not originals:
+        return {}
+    ctx = ctx or {}
+    settings = {str(r.get("roster_id")): (r.get("settings") or {})
+                for r in (ctx.get("rosters") or []) if isinstance(r, dict)}
+    standings = ctx.get("standings_map") or {}
+    n = max(len(originals), 1)
+
+    def _win_pct(rid):
+        st = settings.get(str(rid)) or {}
+        try:
+            w, l = float(st.get("wins") or 0), float(st.get("losses") or 0)
+        except (TypeError, ValueError):
+            w, l = 0.0, 0.0
+        if w + l > 0:
+            return w / (w + l)
+        seed = standings.get(str(rid))
+        if seed is None and str(rid).isdigit():
+            seed = standings.get(int(rid))
+        if isinstance(seed, (int, float)) and seed:
+            return (n - float(seed)) / n
+        return 0.5
+
+    ordered = sorted(originals, key=lambda rid: (_win_pct(rid), str(rid)))
+    return {rid: i + 1 for i, rid in enumerate(ordered)}
+
+
+def _pick_entry(bundle, ownership, table, parsed, *, side, current_owner_rid, original_rid):
+    """One attributed, priced pick for a pack.
+
+    The canonical pick id carries the ORIGINAL owner's slot (the site
+    convention); when no slot can be derived the id uses the mid bucket,
+    the same default the site's pick_label falls back to. Value comes from
+    the pick value table via pick_value_from_table (exact slot, then
+    bucket, then round average). Unpriced picks stay in the pack with
+    priced False and value None, never an invented number.
+    """
+    from utils.draft import pick_label, pick_value_from_table
+    season, rnd = parsed["season"], parsed["round"]
+    ctx = bundle.get("ctx") or {}
+    slot = parsed.get("slot")
+    if slot is None and ownership and original_rid:
+        slot = _pick_slots(ctx, ownership, season, rnd).get(str(original_rid))
+    num_teams = (ownership or {}).get("num_teams") or len(ctx.get("rosters") or []) or 10
+    pick_id = f"{season}_{rnd}_{int(slot):02d}" if slot else f"{season}_{rnd}_mid"
+    value = None
+    if table:
+        try:
+            v = pick_value_from_table(table, season, rnd, slot, num_teams=num_teams)
+            if v:
+                value = round(float(v), 1)
+        except Exception:
+            value = None
+    team_names = (ownership or {}).get("team_names") or {}
+    return {
+        "pick_id": pick_id, "label": pick_label(season, rnd, slot),
+        "season": season, "round": rnd, "slot": slot, "side": side,
+        "original_owner_team": team_names.get(str(original_rid)) if original_rid else None,
+        "current_owner_team": team_names.get(str(current_owner_rid)) if current_owner_rid else None,
+        "value": value, "priced": value is not None,
+    }
+
+
+def _attribute_pick(bundle, ownership, parsed, text, *, side, viewer_rid, partner_rid):
+    """Resolve (original_rid, current_owner_rid) for one mentioned pick.
+
+    Current owner is definitional for a proposed deal: give-side picks are
+    the viewer's, receive-side picks are the partner's. Original owner: a
+    team named in the mention wins; otherwise the current owner's holdings
+    for that season and round decide (their own pick preferred when they
+    hold several); with no holdings data the pick is the current owner's
+    own. Without ownership data at all, only the side's owner is known.
+    """
+    low = str(text or "").lower()
+    current = viewer_rid if side == "give" else partner_rid
+    if not ownership:
+        return current, current
+    team_names = ownership.get("team_names") or {}
+    for rid, name in team_names.items():
+        if name and len(name) >= 3 and name.lower() in low:
+            return rid, current
+    if current:
+        holdings = [p for p in (ownership.get("owned") or {}).get(str(current), [])
+                    if p["season"] == parsed["season"] and p["round"] == parsed["round"]]
+        if len(holdings) == 1:
+            return holdings[0]["original_owner"] or current, current
+        if len(holdings) > 1:
+            own = [p for p in holdings if p["original_owner"] == str(current)]
+            chosen = (own or holdings)[0]
+            return chosen["original_owner"] or current, current
+        return current, current
+    # No current owner (receive side, partner unknown): a lone league-wide
+    # candidate for that season and round is still attributable.
+    cands = [orig for (s, r, orig) in ownership.get("by_pick") or {}
+             if s == parsed["season"] and r == parsed["round"] and orig]
+    if len(cands) == 1:
+        return cands[0], (ownership.get("by_pick") or {}).get(
+            (parsed["season"], parsed["round"], cands[0]))
+    return None, None
+
+
+def _side_picks(bundle, entities, ownership, table, *, viewer_rid, partner_rid, partner_name):
+    """Attributed pick entries per side for a trade pack.
+
+    Router give_picks / receive_picks come first; un-sided mentions in the
+    flat picks list are attributed by phrasing ("my" gives, "his/their" or
+    the partner's name receives, otherwise the give side, where pick
+    mentions in a proposal normally sit). Unparseable mentions are
+    returned as unpriced labels so the answer can flag them, never priced.
+    """
+    import re as _re
+    ent = entities or {}
+    plan: dict[str, list[str]] = {"give": list(ent.get("give_picks") or []),
+                                  "receive": list(ent.get("receive_picks") or [])}
+    for text in ent.get("picks") or []:
+        low = str(text or "").lower()
+        if _re.search(r"\bmy\b", low):
+            plan["give"].append(text)
+        elif partner_rid and (_re.search(r"\bhis\b|\bher\b|\btheir\b|\bhim\b", low)
+                              or (partner_name and partner_name.lower() in low)):
+            plan["receive"].append(text)
+        else:
+            plan["give"].append(text)
+    out: dict[str, list[dict]] = {"give": [], "receive": []}
+    unpriced_labels: list[str] = []
+    for side in ("give", "receive"):
+        for text in plan[side]:
+            parsed = _parse_pick_text(text)
+            if parsed is None:
+                unpriced_labels.append(str(text))
+                continue
+            original, current = _attribute_pick(
+                bundle, ownership, parsed, text, side=side,
+                viewer_rid=viewer_rid, partner_rid=partner_rid)
+            entry = _pick_entry(bundle, ownership, table, parsed, side=side,
+                                current_owner_rid=current, original_rid=original)
+            out[side].append(entry)
+            if not entry["priced"]:
+                unpriced_labels.append(entry["label"])
+    return out, unpriced_labels
+
 
 def build_trade_eval(bundle, entities, resolved_ids) -> tuple[dict, list[str]]:
     pack = _base_pack("trade_eval", bundle)
@@ -570,23 +1088,6 @@ def build_trade_eval(bundle, entities, resolved_ids) -> tuple[dict, list[str]]:
     pack["receive"] = {"players": recv, "total_value": recv_total}
     pack["fairness_gap"] = round(recv_total - give_total, 1)
     pack["unpriced"] = give_un + recv_un
-    # Picks: value table rows with position PICK carry values in this repo
-    # (get_model_value_table_cached explicitly keeps PICK rows). Anything not
-    # found there is marked unpriced, never invented.
-    picks = (entities or {}).get("picks") or []
-    if picks:
-        pick_rows = []
-        for pk in picks:
-            found = None
-            for pid, row in values.items():
-                if str(row.get("position") or "").upper() == "PICK" and (str(pk).lower() in str(row.get("name") or "").lower() or str(pk) == str(pid)):
-                    found = _row_value(row)
-                    break
-            pick_rows.append({"pick": pk, "value": found, "priced": found is not None})
-            if found is None and pk not in pack["unpriced"]:
-                pack["unpriced"].append(str(pk))
-        pack["picks"] = pick_rows
-        tools.append("model_value_table.picks")
     # Roster fit, partner fit, and a balancing asset, all from the trade
     # targets machinery (utils.trade): league position ranks from weighted
     # position strength, thresholds/floors derived from the league's own
@@ -594,6 +1095,10 @@ def build_trade_eval(bundle, entities, resolved_ids) -> tuple[dict, list[str]]:
     ctx = bundle.get("ctx") or {}
     roster = bundle.get("roster") or {}
     rosters = [r for r in (ctx.get("rosters") or []) if isinstance(r, dict)]
+    viewer_rid = str(roster.get("roster_id") or "")
+    partner = None
+    partner_rid = None
+    fit = None
     if rosters:
         try:
             fit = _league_fit(ctx, rosters, values, index)
@@ -602,26 +1107,74 @@ def build_trade_eval(bundle, entities, resolved_ids) -> tuple[dict, list[str]]:
             fit = None
         if fit:
             tools.append("utils.trade.roster_fit")
-            viewer_rid = str(roster.get("roster_id") or "")
             if viewer_rid in fit["by_roster"]:
                 mine = fit["by_roster"][viewer_rid]
                 pack["roster_fit"] = {
                     "surplus_positions": mine["surplus"],
                     "needed_positions": mine["needs"],
                 }
+                if mine.get("grade") is not None:
+                    pack["roster_fit"]["grade"] = mine["grade"]
+                    pack["roster_fit"]["grade_score"] = mine["grade_score"]
+                    pack["roster_fit"]["grade_mode"] = mine.get("grade_mode")
             partner = _identify_partner(bundle, entities, fit, give_ids, recv_ids)
             if partner is not None:
+                partner_rid = next((rid for rid, e in fit["by_roster"].items() if e is partner), None)
                 pack["partner"] = {
                     "team_name": partner["team_name"],
                     "needed_positions": partner["needs"],
                     "surplus_positions": partner["surplus"],
                 }
+                if partner.get("grade") is not None:
+                    pack["partner"]["grade"] = partner["grade"]
+                    pack["partner"]["grade_score"] = partner["grade_score"]
                 tools.append("utils.trade.partner_fit")
-                balancing = _balancing_asset(pack["fairness_gap"], partner, fit,
-                                             values, index, give_ids, recv_ids, viewer_rid)
-                if balancing:
-                    pack["balancing_asset"] = balancing
-                    tools.append("utils.trade.balancing_asset")
+    # Picks: priced AND attributed. Ownership (whose pick it originally is,
+    # who holds it now) comes from the league's pick ownership data; values
+    # from the pick value table. Priced pick values count in the side
+    # totals, so the fairness verdict sees the whole deal. The per-side
+    # lists carry canonical pick ids: the exact shape the trade
+    # calculator's deep link stages (receive_picks -> ap, give_picks -> bp).
+    ent = entities or {}
+    if ent.get("picks") or ent.get("give_picks") or ent.get("receive_picks"):
+        try:
+            ownership = _pick_ownership(bundle)
+        except Exception:
+            logger.debug("[assistant] pick ownership failed", exc_info=True)
+            ownership = None
+        table = None
+        try:
+            from utils.lineup_slots import is_superflex_lineup
+            table = pick_value_table(league_teams=len(rosters) or 10,
+                                     is_sf=is_superflex_lineup(ctx.get("roster_positions") or []))
+            if table:
+                tools.append("dashboard_services.picks.load_pick_value_table")
+        except Exception:
+            logger.debug("[assistant] pick value table failed", exc_info=True)
+            table = None
+        if ownership:
+            tools.append(ownership["source"])
+        side_picks, unpriced_pick_labels = _side_picks(
+            bundle, ent, ownership, table, viewer_rid=viewer_rid or None,
+            partner_rid=partner_rid, partner_name=(partner or {}).get("team_name"))
+        pack["give_picks"] = side_picks["give"]
+        pack["receive_picks"] = side_picks["receive"]
+        pack["picks"] = side_picks["give"] + side_picks["receive"]
+        for label in unpriced_pick_labels:
+            if label not in pack["unpriced"]:
+                pack["unpriced"].append(label)
+        give_total = round(give_total + sum(p["value"] for p in side_picks["give"] if p["value"]), 1)
+        recv_total = round(recv_total + sum(p["value"] for p in side_picks["receive"] if p["value"]), 1)
+        pack["give"]["total_value"] = give_total
+        pack["receive"]["total_value"] = recv_total
+        pack["fairness_gap"] = round(recv_total - give_total, 1)
+    # The balancing asset is computed last, on the final gap (picks included).
+    if partner is not None and fit:
+        balancing = _balancing_asset(pack["fairness_gap"], partner, fit,
+                                     values, index, give_ids, recv_ids, viewer_rid)
+        if balancing:
+            pack["balancing_asset"] = balancing
+            tools.append("utils.trade.balancing_asset")
     base = max(give_total, recv_total, 1.0)
     pack["margin"] = {"thin": bool(abs(pack["fairness_gap"]) / base < 0.10)}
     # The verdict is code-derived from the totals via the trade analyzer's
@@ -640,55 +1193,46 @@ def build_trade_eval(bundle, entities, resolved_ids) -> tuple[dict, list[str]]:
 
 
 def _league_fit(ctx, rosters, values, index):
-    """Per-roster needs/surplus plus raw inputs, mirroring the trade targets
-    view: position ranks across the league from weighted_pos_strength,
-    thresholds/floors from derive_league_thresholds on the league settings."""
+    """Per-roster needs/surplus plus grades, from the Teams machinery.
+
+    Strengths and ranks come from _league_position_data
+    (rank_rosters_by_position over league-format values); needs/surplus are
+    classified from those ranks with thresholds/floors from
+    derive_league_thresholds on the league settings, as before. Roster
+    grades (calculate_roster_grade) ride along when the league-format
+    values are available.
+    """
     from utils.trade import (
         POSITIONS, classify_position_needs, derive_league_thresholds,
-        detect_surplus_positions, weighted_pos_strength,
+        detect_surplus_positions,
     )
     roster_positions = [str(s) for s in (ctx.get("roster_positions") or [])]
-    slot_counts: dict[str, int] = {}
-    for slot in roster_positions:
-        slot_counts[slot] = slot_counts.get(slot, 0) + 1
     is_sf = any("SUPER" in slot.upper() for slot in roster_positions)
     num_teams = len(rosters)
     thresholds, floors = derive_league_thresholds(roster_positions, num_teams, is_sf=is_sf)
-    users = {str(u.get("user_id")): u for u in (ctx.get("users") or []) if isinstance(u, dict)}
-    vals_by_roster: dict[str, dict[str, list[float]]] = {}
-    strength: dict[str, dict[str, float]] = {}
-    team_names: dict[str, str] = {}
+    mode = _resolve_mode(ctx, None)
+    data = _league_position_data(ctx, rosters, mode, values=values, index=index)
+    if data is None:
+        return None
+    by_roster: dict[str, dict] = {}
     for r in rosters:
         rid = str(r.get("roster_id"))
-        vals: dict[str, list[float]] = {pos: [] for pos in POSITIONS}
-        for pid in r.get("players") or []:
-            info = _player_info(pid, index)
-            v = _row_value(values.get(str(pid)))
-            if info.get("position") in POSITIONS and v is not None:
-                vals[info["position"]].append(v)
-        vals_by_roster[rid] = vals
-        strength[rid] = {pos: weighted_pos_strength(vals[pos], pos, slot_counts) for pos in POSITIONS}
-        name = str((r.get("metadata") or {}).get("team_name") or "")
-        if not name:
-            user = users.get(str(r.get("owner_id") or "")) or {}
-            name = str(user.get("display_name") or user.get("username") or "")
-        team_names[rid] = name or f"Roster {rid}"
-    by_roster: dict[str, dict] = {}
-    for rid in vals_by_roster:
-        ranks = {}
-        for pos in POSITIONS:
-            order = sorted(strength, key=lambda other: strength[other][pos], reverse=True)
-            ranks[pos] = order.index(rid) + 1 if rid in order else num_teams
-        by_roster[rid] = {
-            "team_name": team_names[rid],
+        ranks = {pos: (data["ranks"].get(pos) or {}).get(rid, num_teams) for pos in POSITIONS}
+        entry = {
+            "team_name": data["team_names"].get(rid) or f"Roster {rid}",
             "needs": [pos for pos, _kind in classify_position_needs(
-                ranks, vals_by_roster[rid], num_teams, thresholds, floors)],
+                ranks, data["vals_by_roster"][rid], num_teams, thresholds, floors)],
             "surplus": detect_surplus_positions(
-                ranks, vals_by_roster[rid], num_teams, thresholds, floors),
-            "player_ids": [str(p) for p in next(
-                (r.get("players") or [] for r in rosters if str(r.get("roster_id")) == rid), [])],
+                ranks, data["vals_by_roster"][rid], num_teams, thresholds, floors),
+            "player_ids": [str(p) for p in (r.get("players") or [])],
         }
-    return {"by_roster": by_roster, "num_teams": num_teams}
+        grade = (data.get("grades") or {}).get(rid)
+        if grade:
+            entry["grade"] = grade["grade"]
+            entry["grade_score"] = grade["score"]
+            entry["grade_mode"] = mode
+        by_roster[rid] = entry
+    return {"by_roster": by_roster, "num_teams": num_teams, "grade_mode": mode}
 
 
 def _identify_partner(bundle, entities, fit, give_ids, recv_ids):
@@ -2645,6 +3189,329 @@ def build_schedule(bundle, entities=None, player_ids=None) -> tuple[dict, list[s
     return pack, tools
 
 
+# -- breakout board / track record / call history --------------------------------
+
+def _board_candidate(c, rank):
+    return {
+        "rank": rank,
+        "player_id": str(c.get("player_id") or ""),
+        "name": c.get("player_name") or c.get("name") or str(c.get("player_id") or ""),
+        "team": c.get("team") or "",
+        "position": c.get("position") or "",
+        "breakout_score": c.get("breakout_score") if c.get("breakout_score") is not None else c.get("score"),
+        "classification_label": c.get("classification_label"),
+        "confidence": c.get("confidence"),
+    }
+
+
+def build_breakout_board(bundle, entities, player_ids=None) -> tuple[dict, list[str]]:
+    """This week's breakout calls, from the board's own candidate pipeline.
+
+    The non-premium preview rule is mirrored from the board route exactly:
+    a caller without a paid plan gets the first 3 candidates plus the
+    locked count, and the pack carries nothing beyond the preview, so no
+    answer can cite a name a free user could not see.
+    """
+    pack = _base_pack("breakout_board", bundle)
+    tools: list[str] = []
+    try:
+        board = breakout_board_candidates(bundle.get("season")) or {}
+        tools.append("breakout_api.get_breakout_board_candidates")
+    except Exception:
+        logger.debug("[assistant] breakout board failed", exc_info=True)
+        board = {}
+    if not board or board.get("data_available") is False:
+        pack["available"] = False
+        pack["missing"] = "the breakout board is not available right now"
+        return pack, tools
+    cands = [c for c in (board.get("candidates") or []) if isinstance(c, dict)]
+    as_of = board.get("as_of_week")
+    pack["as_of_week"] = as_of
+    if isinstance(as_of, int):
+        pack["week_label"] = f"Week {as_of + 1}"
+    pack["total_calls"] = len(cands)
+    preview = not bundle.get("is_paid")
+    pack["preview"] = preview
+    shown = cands[:3] if preview else cands
+    if preview:
+        pack["locked_count"] = max(0, len(cands) - 3)
+    pack["candidates"] = [_board_candidate(c, i + 1) for i, c in enumerate(shown)]
+    return pack, tools
+
+
+def build_breakout_track_record(bundle, entities, player_ids=None) -> tuple[dict, list[str]]:
+    """How good BR's breakout calls have been, from the board's own track
+    record payload: the same surfaced-calls pool, graded calls, hit rate,
+    and by-week split the breakout page sidebar renders."""
+    pack = _base_pack("breakout_track_record", bundle)
+    tools: list[str] = []
+    try:
+        tr = breakout_track_record_data(bundle.get("season")) or {}
+        tools.append("breakout_api.get_breakout_track_record")
+    except Exception:
+        logger.debug("[assistant] breakout track record failed", exc_info=True)
+        tr = {}
+    weekly = tr.get("weekly") or {}
+    overall = weekly.get("overall") or {}
+    if not weekly.get("available") or not overall:
+        pack["available"] = False
+        pack["missing"] = "no breakout track record yet"
+        return pack, tools
+    pack["scoring_version"] = weekly.get("scoring_version")
+    pack["overall"] = {k: overall.get(k) for k in ("calls", "graded", "hit", "partial", "miss")}
+    hr = overall.get("hit_rate")
+    pack["overall"]["hit_rate"] = hr
+    pack["overall"]["hit_rate_pct"] = round(float(hr) * 100, 1) if hr is not None else None
+    pack["pending"] = not overall.get("graded")
+    by_week = []
+    for w in tr.get("by_week") or []:
+        if not isinstance(w, dict):
+            continue
+        row = {k: w.get(k) for k in ("week", "as_of_week", "calls", "graded", "hit", "partial", "miss", "hit_rate")
+               if w.get(k) is not None}
+        if row.get("hit_rate") is not None:
+            row["hit_rate_pct"] = round(float(row["hit_rate"]) * 100, 1)
+        by_week.append(row)
+    pack["by_week"] = by_week
+
+    def _slim(entries):
+        out = []
+        for e in entries or []:
+            if not isinstance(e, dict):
+                continue
+            out.append({"name": e.get("player_name") or e.get("name"),
+                        "week": e.get("as_of_week") or e.get("week"),
+                        "label": e.get("label")})
+        return out[:3]
+
+    pack["biggest_hits"] = _slim(tr.get("hits"))
+    pack["biggest_misses"] = _slim(tr.get("misses"))
+    return pack, tools
+
+
+def build_breakout_history(bundle, entities, player_ids) -> tuple[dict, list[str]]:
+    """Was this player ever a breakout call? The earliest surfaced call
+    (the same history the player modal's Breakout tab serves) plus that
+    call's finished grade when one exists."""
+    pack = _base_pack("breakout_history", bundle)
+    tools: list[str] = []
+    pid = player_ids[0] if player_ids else None
+    if not pid:
+        pack["available"] = False
+        pack["missing"] = "no resolved player"
+        return pack, tools
+    index = _index()
+    pack["player"] = _player_info(pid, index)
+    season = bundle.get("season")
+    history = None
+    try:
+        history = breakout_call_history_for(pid, season)
+        tools.append("breakout_api.breakout_call_history")
+    except Exception:
+        logger.debug("[assistant] breakout history failed", exc_info=True)
+        history = None
+    current = None
+    board_week = None
+    try:
+        board = breakout_board_candidates(season) or {}
+        board_week = board.get("as_of_week")
+        for i, c in enumerate(board.get("candidates") or []):
+            if isinstance(c, dict) and str(c.get("player_id")) == str(pid):
+                current = _board_candidate(c, i + 1)
+                break
+        if board:
+            tools.append("breakout_api.get_breakout_board_candidates")
+    except Exception:
+        logger.debug("[assistant] breakout board (history) failed", exc_info=True)
+    pack["on_current_board"] = current is not None
+    if current is not None:
+        pack["current_call"] = current
+    if history:
+        pack["was_call"] = True
+        earliest = {"as_of_week": history.get("as_of_week"),
+                    "label": history.get("label"),
+                    "season": history.get("season")}
+        pack["earliest_call"] = earliest
+        try:
+            detail = breakout_week_detail(str(pid), history.get("season") or season,
+                                          history.get("as_of_week")) or {}
+            tools.append("breakout_api.get_historical_weekly_breakout_detail")
+            if detail.get("grade"):
+                pack["grade"] = detail["grade"]
+            if detail.get("breakout_score") is not None:
+                earliest["breakout_score"] = detail["breakout_score"]
+        except Exception:
+            logger.debug("[assistant] breakout week detail failed", exc_info=True)
+    elif current is not None:
+        pack["was_call"] = True
+        pack["earliest_call"] = {
+            "as_of_week": board_week,
+            "label": f"Week {board_week + 1}" if isinstance(board_week, int) else None,
+            "season": season,
+            "breakout_score": current.get("breakout_score"),
+        }
+    else:
+        pack["was_call"] = False
+    return pack, tools
+
+
+# -- teams (league roster strength and grades) -------------------------------------
+
+_POS_HINTS = {"QB": "QB", "QUARTERBACK": "QB", "RB": "RB", "RUNNING BACK": "RB",
+              "WR": "WR", "WIDE RECEIVER": "WR", "WIDEOUT": "WR",
+              "TE": "TE", "TIGHT END": "TE"}
+
+
+def _position_focus(entities) -> str | None:
+    hint = str((entities or {}).get("position_hint") or "").strip().upper()
+    if hint in CORE_POS:
+        return hint
+    for word, pos in _POS_HINTS.items():
+        if word in hint:
+            return pos
+    return None
+
+
+def build_teams(bundle, entities, player_ids=None) -> tuple[dict, list[str]]:
+    """League-wide roster strength: every team's grade and per-position
+    strength and rank, from the Teams page machinery, in the mode the
+    question asks for (Dynasty by default, This Season on redraft values)."""
+    pack = _base_pack("teams", bundle)
+    tools: list[str] = []
+    ctx = bundle.get("ctx") or {}
+    rosters = [r for r in (ctx.get("rosters") or []) if isinstance(r, dict)]
+    if not ctx or not rosters:
+        pack["available"] = False
+        pack["missing"] = "no league context"
+        return pack, tools
+    mode = _resolve_mode(ctx, (entities or {}).get("teams_mode"))
+    pack["mode"] = mode
+    pack["mode_label"] = "This Season" if mode == "this_season" else "Dynasty"
+    data = _league_position_data(ctx, rosters, mode)
+    if data is None:
+        pack["available"] = False
+        pack["missing"] = "team strengths are not available for this league"
+        return pack, tools
+    tools.append("utils.trade.rank_rosters_by_position")
+    if data.get("grades"):
+        tools.append("context_builders.calculate_roster_grade")
+    viewer_rid = str((bundle.get("roster") or {}).get("roster_id") or "")
+    teams = []
+    for r in rosters:
+        rid = str(r.get("roster_id"))
+        g = (data.get("grades") or {}).get(rid) or {}
+        teams.append({
+            "roster_id": rid,
+            "team_name": data["team_names"].get(rid),
+            "is_viewer": rid == viewer_rid,
+            "grade": g.get("grade"), "grade_score": g.get("score"),
+            "win_window": g.get("win_window"),
+            "pos_strength": data["strengths"].get(rid),
+            "pos_rank": {pos: (data["ranks"].get(pos) or {}).get(rid) for pos in CORE_POS},
+        })
+    teams.sort(key=lambda t: (t["grade_score"] is None, -(t["grade_score"] or 0),
+                              t["team_name"] or ""))
+    pack["teams"] = teams
+    graded = [t for t in teams if t["grade_score"] is not None]
+    if graded:
+        top, bottom = graded[0], graded[-1]
+        pack["strongest"] = {"team_name": top["team_name"], "grade": top["grade"],
+                             "grade_score": top["grade_score"]}
+        pack["weakest"] = {"team_name": bottom["team_name"], "grade": bottom["grade"],
+                           "grade_score": bottom["grade_score"]}
+    by_position = {}
+    for pos in CORE_POS:
+        ranked = sorted(teams, key=lambda t: (t["pos_rank"].get(pos) or 999))
+        if not ranked:
+            continue
+        first, last = ranked[0], ranked[-1]
+        by_position[pos] = {
+            "strongest": {"team_name": first["team_name"],
+                          "strength": (first["pos_strength"] or {}).get(pos)},
+            "weakest": {"team_name": last["team_name"],
+                        "strength": (last["pos_strength"] or {}).get(pos)},
+        }
+    pack["by_position"] = by_position
+    focus = _position_focus(entities)
+    if focus:
+        pack["position_focus"] = focus
+        ranked = sorted(teams, key=lambda t: (t["pos_rank"].get(focus) or 999))
+        pack["position_ranking"] = [
+            {"rank": t["pos_rank"].get(focus), "team_name": t["team_name"],
+             "strength": (t["pos_strength"] or {}).get(focus)} for t in ranked]
+    return pack, tools
+
+
+# -- pick ownership ------------------------------------------------------------------
+
+def build_pick_ownership(bundle, entities, player_ids=None) -> tuple[dict, list[str]]:
+    """Who owns a given draft pick: the pick's original owner, its current
+    owner after every trade, its canonical id, and its value."""
+    pack = _base_pack("pick_ownership", bundle)
+    tools: list[str] = []
+    ent = entities or {}
+    texts = list(ent.get("picks") or []) + list(ent.get("give_picks") or []) \
+        + list(ent.get("receive_picks") or [])
+    parsed, raw_text = None, None
+    for t in texts:
+        parsed = _parse_pick_text(t)
+        if parsed is not None:
+            raw_text = t
+            break
+    if parsed is None:
+        pack["available"] = False
+        pack["missing"] = "which pick (season and round) you mean"
+        return pack, tools
+    try:
+        ownership = _pick_ownership(bundle)
+    except Exception:
+        logger.debug("[assistant] pick ownership failed", exc_info=True)
+        ownership = None
+    if not ownership:
+        pack["available"] = False
+        pack["missing"] = "pick ownership is not tracked for this league"
+        return pack, tools
+    tools.append(ownership["source"])
+    viewer_rid = str((bundle.get("roster") or {}).get("roster_id") or "")
+    team_names = ownership.get("team_names") or {}
+    original = None
+    low = str(raw_text or "").lower()
+    for rid, name in team_names.items():
+        if name and len(name) >= 3 and name.lower() in low:
+            original = rid
+            break
+    if original is None and ent.get("other_team_hint"):
+        hint = str(ent["other_team_hint"]).lower()
+        for rid, name in team_names.items():
+            if name and (hint in name.lower() or name.lower() in hint):
+                original = rid
+                break
+    if original is None:
+        original = viewer_rid or None
+    current = None
+    if original:
+        current = (ownership.get("by_pick") or {}).get(
+            (parsed["season"], parsed["round"], str(original)))
+    table = None
+    try:
+        from utils.lineup_slots import is_superflex_lineup
+        ctx = bundle.get("ctx") or {}
+        table = pick_value_table(league_teams=ownership.get("num_teams") or 10,
+                                 is_sf=is_superflex_lineup(ctx.get("roster_positions") or []))
+        if table:
+            tools.append("dashboard_services.picks.load_pick_value_table")
+    except Exception:
+        table = None
+    entry = _pick_entry(bundle, ownership, table, parsed, side=None,
+                        current_owner_rid=current, original_rid=original)
+    pack["pick"] = entry
+    pack["tracked"] = current is not None
+    pack["owned_by_me"] = bool(current and viewer_rid and str(current) == viewer_rid)
+    pack["original_owner_team"] = entry["original_owner_team"]
+    pack["current_owner_team"] = entry["current_owner_team"]
+    return pack, tools
+
+
 BUILDERS = {
     "start_sit": build_start_sit,
     "trade_eval": build_trade_eval,
@@ -2660,4 +3527,9 @@ BUILDERS = {
     "standings": build_standings,
     "matchup": build_matchup,
     "schedule": build_schedule,
+    "breakout_board": build_breakout_board,
+    "breakout_track_record": build_breakout_track_record,
+    "breakout_history": build_breakout_history,
+    "teams": build_teams,
+    "pick_ownership": build_pick_ownership,
 }

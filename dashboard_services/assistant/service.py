@@ -270,6 +270,10 @@ def ask(account_key: str, message: str, *, platform=None, league_id=None, season
     if not caps["exempt"] and caps["used"] >= caps["limit"]:
         raise CapReached(caps)
     bundle = ctx_mod.resolve_league(account_key, platform=platform, league_id=league_id, season=season)
+    # Builders with a paywall mirror (the breakout board preview) read the
+    # caller's paid status from the bundle; caps_for already resolved it
+    # (any tier above free is a paid plan).
+    bundle["is_paid"] = caps.get("tier") not in (None, "free")
     thread = store.get_or_create_thread(account_key, thread_id, platform=bundle.get("platform"), league_id=bundle.get("league_id"), season=bundle.get("season"))
     tid = thread["thread_id"]
     turn_index = int(thread.get("turn_count") or 0) + 1
