@@ -1540,3 +1540,143 @@ def test_cohort_heatmap_future_weeks_are_none_not_zero(monkeypatch):
     assert row["w2"] == 50.0
     assert row["w3"] is None
     assert row["w5"] is None
+
+
+# ── Assistant summary (admin page section) ────────────────────────────────────
+
+def _assistant_fake_fetchall(totals, intents, users, captured=None):
+    def fake(sql, args=()):
+        if captured is not None:
+            captured.append(sql)
+        if "GROUP BY account_key" in sql:
+            return users
+        if "COALESCE(intent" in sql:
+            return intents
+        return [totals]
+
+    return fake
+
+
+def test_assistant_summary_aggregates_month(monkeypatch):
+    from decimal import Decimal
+
+    monkeypatch.delenv("ASSISTANT_FREE_MONTHLY_CAP", raising=False)
+    monkeypatch.delenv("ASSISTANT_PAID_MONTHLY_CAP", raising=False)
+    totals = {
+        "chats": 58, "users": 3, "proactive_answers": 4, "total_rows": 62,
+        "cost_rows": 60, "est_cost_usd": Decimal("1.2345"),
+        "thumbs_up": 10, "thumbs_down": 2, "corrections": 1,
+        "input_tokens": 1000, "output_tokens": 2000,
+    }
+    intents = [
+        {"intent": "start_sit", "chats": 30},
+        {"intent": "trade_eval", "chats": 28},
+    ]
+    users = [
+        {"account_key": "acct:7", "chats": 30},
+        {"account_key": "acct:9", "chats": 25},
+        {"account_key": "acct:11", "chats": 3},
+    ]
+    captured = []
+    monkeypatch.setattr(
+        "dashboard_services.analytics._fetchall",
+        _assistant_fake_fetchall(totals, intents, users, captured),
+    )
+    # Only acct:7 holds an active personal plan.
+    monkeypatch.setattr(
+        "dashboard_services.subscriptions.find_active_personal_plan",
+        lambda keys: {"plan_key": "pro"} if "acct:7" in keys else None,
+    )
+    out = analytics.assistant_summary()
+    assert out["chats"] == 58
+    assert out["users"] == 3
+    assert out["proactive_answers"] == 4
+    assert out["est_cost_usd"] == 1.2345
+    assert out["cost_rows"] == 60 and out["total_rows"] == 62
+    assert out["thumbs_up"] == 10 and out["thumbs_down"] == 2
+    assert out["corrections"] == 1
+    assert out["by_intent"] == [
+        {"intent": "start_sit", "chats": 30},
+        {"intent": "trade_eval", "chats": 28},
+    ]
+    # Paid user (30 chats, cap 250) vs free users (25 at cap 25, 3 chats).
+    assert out["by_tier"] == {
+        "free": {"users": 2, "chats": 28},
+        "paid": {"users": 1, "chats": 30},
+    }
+    assert out["users_at_cap"] == 1
+    assert out["top_users"] == [
+        {"account_key": "acct:7", "chats": 30, "tier": "paid"},
+        {"account_key": "acct:9", "chats": 25, "tier": "free"},
+        {"account_key": "acct:11", "chats": 3, "tier": "free"},
+    ]
+    # Every query uses the caps' own month window on the advice log.
+    assert len(captured) == 3
+    for sql in captured:
+        assert "assistant_advice_log" in sql
+        assert "date_trunc('month', now())" in sql
+
+
+def test_assistant_summary_paid_lookup_failure_reads_free(monkeypatch):
+    totals = {
+        "chats": 1, "users": 1, "proactive_answers": 0, "total_rows": 1,
+        "cost_rows": 1, "est_cost_usd": 0, "thumbs_up": 0, "thumbs_down": 0,
+        "corrections": 0, "input_tokens": 0, "output_tokens": 0,
+    }
+    monkeypatch.setattr(
+        "dashboard_services.analytics._fetchall",
+        _assistant_fake_fetchall(totals, [], [{"account_key": "acct:5", "chats": 1}]),
+    )
+
+    def boom(keys):
+        raise RuntimeError("subscriptions down")
+
+    monkeypatch.setattr(
+        "dashboard_services.subscriptions.find_active_personal_plan", boom
+    )
+    out = analytics.assistant_summary()
+    assert out["top_users"] == [{"account_key": "acct:5", "chats": 1, "tier": "free"}]
+    assert out["by_tier"]["paid"] == {"users": 0, "chats": 0}
+
+
+def test_admin_page_renders_assistant_section(monkeypatch):
+    client = _make_admin_client(monkeypatch, admin=True)
+    monkeypatch.setattr(
+        "dashboard_services.analytics.assistant_summary",
+        lambda: {
+            "chats": 58, "users": 3, "proactive_answers": 4, "total_rows": 62,
+            "cost_rows": 60, "est_cost_usd": 1.2345, "input_tokens": 1000,
+            "output_tokens": 2000, "thumbs_up": 10, "thumbs_down": 2,
+            "corrections": 1,
+            "by_intent": [{"intent": "start_sit", "chats": 30}],
+            "by_tier": {"free": {"users": 2, "chats": 28},
+                        "paid": {"users": 1, "chats": 30}},
+            "users_at_cap": 1, "free_cap": 25, "paid_cap": 250,
+            "top_users": [{"account_key": "acct:7", "chats": 30, "tier": "paid"}],
+        },
+    )
+    resp = client.get("/admin/analytics")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "Assistant" in body
+    assert "Chats (asked questions)" in body
+    assert "recorded on 60 of 62 answers this month" in body
+    assert "Chats by question type" in body
+    assert "start_sit" in body
+    assert "Top users by chats" in body
+    assert "acct:7" in body
+
+
+def test_admin_page_assistant_failure_still_renders(monkeypatch):
+    client = _make_admin_client(monkeypatch, admin=True)
+    from dashboard_services import analytics as _svc
+
+    def boom():
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(_svc, "assistant_summary", boom)
+    resp = client.get("/admin/analytics")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "Assistant data unavailable." in body
+    assert "Daily active users" in body

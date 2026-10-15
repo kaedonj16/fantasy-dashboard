@@ -959,6 +959,66 @@ def _revenue_html(rev) -> str:
     ])
 
 
+def _assistant_html(summary) -> str:
+    """BR Assistant usage for the current month (assistant_summary data).
+
+    Cost is the advice log's own recorded estimate, never a recomputation;
+    the coverage line says how many of the month's answers carry one.
+    """
+    if summary is None:
+        return "<p class='muted'>Assistant data unavailable.</p>"
+    cost = summary["est_cost_usd"]
+    cost_str = "$%s" % (format(cost, ",.2f") if cost >= 1 else "%.4f" % cost)
+    if summary["cost_rows"] >= summary["total_rows"]:
+        coverage = "recorded on every answer this month"
+    else:
+        coverage = "recorded on %s of %s answers this month" % (
+            format(summary["cost_rows"], ","), format(summary["total_rows"], ","))
+    stats = _stat_table([
+        ("Chats (asked questions)", format(summary["chats"], ",")),
+        ("Distinct users", format(summary["users"], ",")),
+        ("Proactive answers (digests)", format(summary["proactive_answers"], ",")),
+        ("Estimated model cost", "%s (%s)" % (cost_str, coverage)),
+        ("Tokens (in / out)", "%s / %s" % (
+            format(summary["input_tokens"], ","), format(summary["output_tokens"], ","))),
+        ("Free tier", "%s users, %s chats (cap %s/mo)" % (
+            format(summary["by_tier"]["free"]["users"], ","),
+            format(summary["by_tier"]["free"]["chats"], ","),
+            format(summary["free_cap"], ","))),
+        ("Paid tier", "%s users, %s chats (cap %s/mo)" % (
+            format(summary["by_tier"]["paid"]["users"], ","),
+            format(summary["by_tier"]["paid"]["chats"], ","),
+            format(summary["paid_cap"], ","))),
+        ("Users at their cap now", format(summary["users_at_cap"], ",")),
+        ("Thumbs up / down", "%s / %s" % (
+            format(summary["thumbs_up"], ","), format(summary["thumbs_down"], ","))),
+        ("Corrections filed", format(summary["corrections"], ",")),
+    ])
+    intent_table = _rank_table(
+        ["Question type", "Chats"],
+        [(r["intent"], r["chats"]) for r in summary["by_intent"]],
+    )
+    if summary["top_users"]:
+        trs = "".join(
+            "<tr><th scope='row'>%s</th><td>%s</td><td>%s</td></tr>"
+            % (html.escape(u["account_key"]), format(u["chats"], ","),
+               html.escape(u["tier"]))
+            for u in summary["top_users"]
+        )
+        top_table = (
+            '<div class="tablewrap"><table><thead><tr>'
+            "<th>Account</th><th>Chats</th><th>Tier</th>"
+            "</tr></thead><tbody>%s</tbody></table></div>" % trs
+        )
+    else:
+        top_table = "<p class='muted'>No assistant chats yet this month.</p>"
+    return (
+        stats
+        + '<h3 class="subhead">Chats by question type</h3>' + intent_table
+        + '<h3 class="subhead">Top users by chats</h3>' + top_table
+    )
+
+
 def _feature_ranking_table(rankings) -> str:
     if rankings is None:
         return "<p class='muted'>Feature ranking unavailable.</p>"
@@ -1548,6 +1608,11 @@ def admin_analytics():
     except Exception:
         logger.exception("[analytics] cohort heatmap failed")
         signup_heatmap = None
+    try:
+        assistant = _a.assistant_summary()
+    except Exception:
+        logger.exception("[analytics] assistant summary failed")
+        assistant = None
 
     empty_note = (
         "Event collection just started, so these charts fill in over the coming days. "
@@ -1654,6 +1719,13 @@ def admin_analytics():
                  else '<p class="muted">Signed-in retention unavailable.</p>',
                  "Same return rate for signed-in accounts only (no anonymous "
                  "sessions), New York weeks, last 9 weeks."),
+        _section("Assistant", _assistant_html(assistant),
+                 "BR Assistant for the current calendar month, the same "
+                 "window the monthly chat caps use. Chats count asked "
+                 "questions only; proactive digests are counted separately. "
+                 "Cost is the sum of the estimates recorded in the advice "
+                 "log, and users at their cap are counted right now because "
+                 "a rejected ask is never logged."),
     ])
     tab_revenue = "".join([
         _section("Funnel: visitor to PRO", _funnel_viz(funnel),

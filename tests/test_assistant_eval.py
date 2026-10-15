@@ -295,3 +295,123 @@ def test_live_mode_runs_when_key_present():
     pytest.importorskip("openai")
     # Exit code is the bar verdict (0 met, 1 not met); either way it must run.
     assert runner.main(["--mode", "live"]) in (0, 1)
+
+
+# -- subset mode (--only) -----------------------------------------------------------
+
+def test_runner_mock_subset_runs_only_named_questions(capsys):
+    assert runner.main(["--mode", "mock", "--only", "te2,m1,tw1,tw2"]) == 0
+    out = capsys.readouterr().out
+    assert "4/4 answers passed" in out
+    assert "[PASS] te2" in out and "[PASS] m1" in out
+    assert "[PASS] ss1" not in out and "[PASS] w2" not in out
+
+
+def test_runner_only_unknown_id_exits_2(capsys):
+    assert runner.main(["--mode", "mock", "--only", "ss1,zz9"]) == 2
+    out = capsys.readouterr().out
+    assert "zz9" in out
+    assert "ss1" in out  # the valid ids are listed for the operator
+
+
+def test_runner_only_empty_list_exits_2(capsys):
+    assert runner.main(["--mode", "mock", "--only", " , "]) == 2
+    assert "no question ids" in capsys.readouterr().out
+
+
+def test_runner_poison_outside_subset_exits_2(capsys):
+    assert runner.main(["--mode", "mock", "--poison", "--only", "te2"]) == 2
+    assert "ss1" in capsys.readouterr().out
+
+
+def test_runner_live_subset_without_api_key_exits_2(monkeypatch, capsys):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    assert runner.main(["--mode", "live", "--only", "te2"]) == 2
+    assert "OPENAI_API_KEY is not set" in capsys.readouterr().out
+
+
+def test_runner_record_requires_live_mode(capsys):
+    assert runner.main(["--mode", "mock", "--record"]) == 2
+    assert "--record" in capsys.readouterr().out
+
+
+def test_filter_questions_keeps_questions_json_order():
+    selected, err = runner.filter_questions(QUESTIONS, "tw2,ss1")
+    assert err is None
+    assert [q["id"] for q in selected] == ["ss1", "tw2"]
+
+
+def test_verdict_bar_scales_with_the_set():
+    assert runner.verdict_bar(20) == 18
+    assert runner.verdict_bar(10) == 9
+    assert runner.verdict_bar(26) == 23
+
+
+# -- recorded results: parse, compare, record ---------------------------------------
+
+def _fake_score(passed=True, verdict_ok=True, invented=None, notes=None):
+    return {"passed": passed, "verdict_ok": verdict_ok,
+            "invented": invented or [], "notes": notes or [], "trap_ok": True}
+
+
+def test_parse_recorded_results_reads_the_real_file():
+    text = (ROOT / "assistant_eval" / "live_results.md").read_text()
+    recorded = runner.parse_recorded_results(text, set(BY_ID))
+    # The recorded 2026-10-14 run: 16 pass, te2/m1/tw1/tw2 fail.
+    assert recorded["ss1"] is True
+    assert recorded["ss4"] is True
+    assert recorded["m3"] is True
+    assert recorded["te2"] is False
+    assert recorded["m1"] is False
+    assert recorded["tw1"] is False
+    assert recorded["tw2"] is False
+    assert len(recorded) == 20
+
+
+def test_parse_recorded_results_newest_mention_wins():
+    text = ("# Live eval run record\n\n"
+            "## 2026-10-15 (live subset recheck: te2): SUBSET BAR MET\n\n"
+            "Per question:\n\n"
+            "- PASS te2 (trade_eval)\n\n"
+            "## 2026-10-14 (live run, Render web shell): LIVE BAR NOT MET\n\n"
+            "Per question:\n\n"
+            "- FAIL te2 (trade_eval): model verdict FAIR\n"
+            "- PASS ss1, ss2, ss3 (start_sit)\n")
+    recorded = runner.parse_recorded_results(text, {"te2", "ss1", "ss2", "ss3"})
+    assert recorded == {"te2": True, "ss1": True, "ss2": True, "ss3": True}
+
+
+def test_compare_lines_reports_flips_and_new_questions():
+    results = [
+        (BY_ID["te2"], _fake_score(passed=True)),
+        (BY_ID["ss1"], _fake_score(passed=False)),
+        (BY_ID["tw1"], _fake_score(passed=False)),
+    ]
+    lines = runner.compare_lines(results, {"te2": False, "ss1": True})
+    assert "te2: flipped FAIL -> PASS" in lines
+    assert "ss1: flipped PASS -> FAIL" in lines
+    assert "tw1: no recorded result yet" in lines
+    same = runner.compare_lines([(BY_ID["tw1"], _fake_score(passed=False))],
+                                {"tw1": False})
+    assert same == ["tw1: unchanged (FAIL)"]
+
+
+def test_record_round_trip_on_a_temp_copy(monkeypatch, tmp_path):
+    target = tmp_path / "live_results.md"
+    target.write_text((ROOT / "assistant_eval" / "live_results.md").read_text())
+    monkeypatch.setattr(runner, "RESULTS_PATH", target)
+    results = [
+        (BY_ID["te2"], _fake_score(passed=True)),
+        (BY_ID["m1"], _fake_score(passed=False, notes=["key number 0.24 not cited"])),
+    ]
+    runner.record_results(results, subset_ids=["te2", "m1"], bar_met=False,
+                          when="2026-10-15")
+    text = target.read_text()
+    # New section sits at the top, ahead of the 2026-10-14 record.
+    assert text.index("2026-10-15") < text.index("2026-10-14")
+    assert "live subset recheck: te2, m1" in text
+    recorded = runner.parse_recorded_results(text, set(BY_ID))
+    assert recorded["te2"] is True   # the recheck supersedes the recorded FAIL
+    assert recorded["m1"] is False
+    assert recorded["ss1"] is True   # older outcomes still readable
+    assert recorded["tw2"] is False

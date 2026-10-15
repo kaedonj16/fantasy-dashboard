@@ -1230,6 +1230,134 @@ def feature_usage_ranking(days: int = 30) -> List[Dict[str, Any]]:
     ]
 
 
+# ── Assistant usage (admin page) ────────────────────────────────────────────
+
+_ASSISTANT_MONTH = "created_at >= date_trunc('month', now())"
+
+
+def _assistant_is_paid(account_key: str) -> bool:
+    """Paid check for an arbitrary assistant account key.
+
+    Mirrors assistant service._is_paid (which is session-bound): the same
+    find_active_personal_plan lookup keyed by the account key itself plus
+    its bare account id when the key carries the acct: prefix. Fails
+    closed (free) on any error.
+    """
+    try:
+        from dashboard_services.subscriptions import find_active_personal_plan
+
+        keys = [account_key]
+        if account_key.startswith("acct:"):
+            keys.append(account_key[len("acct:"):])
+        return find_active_personal_plan(keys) is not None
+    except Exception:
+        return False
+
+
+def _assistant_caps() -> tuple:
+    """(free, paid) monthly chat caps, same env/defaults as the assistant
+    service's caps_for."""
+    import os
+
+    try:
+        free_cap = int(os.getenv("ASSISTANT_FREE_MONTHLY_CAP", "25"))
+    except (TypeError, ValueError):
+        free_cap = 25
+    try:
+        paid_cap = int(os.getenv("ASSISTANT_PAID_MONTHLY_CAP", "250"))
+    except (TypeError, ValueError):
+        paid_cap = 250
+    return free_cap, paid_cap
+
+
+def assistant_summary() -> Dict[str, Any]:
+    """BR Assistant usage for the current calendar month, from the
+    assistant_advice_log table.
+
+    The window matches the monthly caps counter (date_trunc('month',
+    now())), and "chats" uses the same counting rule as the caps:
+    proactive = FALSE rows only. Proactive answers (weekly digests) are
+    reported separately. Cost is the SUM of the log's own est_cost_usd
+    column; rows without a recorded cost contribute nothing, and
+    cost_rows vs total_rows says how much of the month that sum covers.
+    Cap hits are not logged (a rejected ask writes no row), so
+    users_at_cap counts users whose counted chats this month have
+    reached their tier's cap right now.
+    """
+    totals_rows = _fetchall(
+        f"""
+        SELECT COUNT(*) FILTER (WHERE proactive = FALSE) AS chats,
+               COUNT(DISTINCT account_key) FILTER (WHERE proactive = FALSE) AS users,
+               COUNT(*) FILTER (WHERE proactive = TRUE) AS proactive_answers,
+               COUNT(*) AS total_rows,
+               COUNT(*) FILTER (WHERE est_cost_usd IS NOT NULL) AS cost_rows,
+               COALESCE(SUM(est_cost_usd), 0) AS est_cost_usd,
+               COUNT(*) FILTER (WHERE thumb = 'up') AS thumbs_up,
+               COUNT(*) FILTER (WHERE thumb = 'down') AS thumbs_down,
+               COUNT(*) FILTER (WHERE correction_category IS NOT NULL) AS corrections,
+               COALESCE(SUM(input_tokens), 0) AS input_tokens,
+               COALESCE(SUM(output_tokens), 0) AS output_tokens
+        FROM assistant_advice_log
+        WHERE {_ASSISTANT_MONTH}
+        """
+    )
+    t = totals_rows[0] if totals_rows else {}
+    intent_rows = _fetchall(
+        f"""
+        SELECT COALESCE(intent, 'unknown') AS intent, COUNT(*) AS chats
+        FROM assistant_advice_log
+        WHERE {_ASSISTANT_MONTH} AND proactive = FALSE
+        GROUP BY 1 ORDER BY chats DESC, intent
+        """
+    )
+    user_rows = _fetchall(
+        f"""
+        SELECT account_key, COUNT(*) AS chats
+        FROM assistant_advice_log
+        WHERE {_ASSISTANT_MONTH} AND proactive = FALSE
+        GROUP BY account_key ORDER BY chats DESC, account_key
+        """
+    )
+
+    free_cap, paid_cap = _assistant_caps()
+    by_tier = {"free": {"users": 0, "chats": 0}, "paid": {"users": 0, "chats": 0}}
+    users_at_cap = 0
+    top_users = []
+    for r in user_rows:
+        key = str(r["account_key"])
+        chats = int(r["chats"])
+        paid = _assistant_is_paid(key)
+        tier = "paid" if paid else "free"
+        by_tier[tier]["users"] += 1
+        by_tier[tier]["chats"] += chats
+        if chats >= (paid_cap if paid else free_cap):
+            users_at_cap += 1
+        if len(top_users) < 10:
+            top_users.append({"account_key": key, "chats": chats, "tier": tier})
+
+    return {
+        "chats": int(t.get("chats") or 0),
+        "users": int(t.get("users") or 0),
+        "proactive_answers": int(t.get("proactive_answers") or 0),
+        "total_rows": int(t.get("total_rows") or 0),
+        "cost_rows": int(t.get("cost_rows") or 0),
+        "est_cost_usd": float(t.get("est_cost_usd") or 0),
+        "input_tokens": int(t.get("input_tokens") or 0),
+        "output_tokens": int(t.get("output_tokens") or 0),
+        "thumbs_up": int(t.get("thumbs_up") or 0),
+        "thumbs_down": int(t.get("thumbs_down") or 0),
+        "corrections": int(t.get("corrections") or 0),
+        "by_intent": [
+            {"intent": str(r["intent"]), "chats": int(r["chats"])} for r in intent_rows
+        ],
+        "by_tier": by_tier,
+        "users_at_cap": users_at_cap,
+        "free_cap": free_cap,
+        "paid_cap": paid_cap,
+        "top_users": top_users,
+    }
+
+
 # ── Gap filling (continuous axes for the charts) ────────────────────────────
 
 def _utc_today() -> _dt.date:
