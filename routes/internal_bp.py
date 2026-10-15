@@ -668,6 +668,80 @@ def _bars_svg(pairs, width=680, height=190, bar_color="#4f8ff7", max_bar_w=48):
     return "".join(parts)
 
 
+def _stacked_bars_svg(pairs, width=680, height=190, bar_color="#3b82f6",
+                      dark_color="#1d4ed8", max_bar_w=48):
+    """pairs: list of (label, total, signed_in, anonymous). Same geometry
+    as _bars_svg, but each bar is a stack: signed-in as the darker bottom
+    segment, anonymous on top in bar_color, total labeled above the bar.
+    A bar with only one component renders as a single segment; zero days
+    render empty."""
+    if not pairs:
+        return '<p class="muted">No data yet.</p>'
+    maxv = max(t for _, t, _, _ in pairs) or 1
+    n = len(pairs)
+    rotate = n > 15
+    pad_l, pad_r, pad_t, pad_b = 34, 10, 24, 58 if rotate else 30
+    plot_w = width - pad_l - pad_r
+    plot_h = height - pad_t - pad_b
+    slot = plot_w / n
+    bw = min(slot * 0.64, max_bar_w)
+    base = pad_t + plot_h
+    parts = ['<svg viewBox="0 0 %d %d" class="chart" role="img">' % (width, height)]
+    for frac in (0.0, 0.5, 1.0):
+        gy = pad_t + plot_h * (1 - frac)
+        cls = "grid base" if frac == 0.0 else "grid"
+        parts.append(
+            '<line x1="%d" y1="%.1f" x2="%d" y2="%.1f" class="%s"/>'
+            % (pad_l, gy, width - pad_r, gy, cls)
+        )
+        parts.append(
+            '<text x="%d" y="%.1f" text-anchor="end" class="ytick">%d</text>'
+            % (pad_l - 5, gy + 3.5, round(maxv * frac))
+        )
+    step = 1 if rotate else max(1, n // 12)
+    for i, (label, total, signed_in, anonymous) in enumerate(pairs):
+        x = pad_l + i * slot + (slot - bw) / 2
+        if total:
+            bh = max((total / maxv) * plot_h, 2)
+            h_signed = bh * signed_in / total if signed_in else 0.0
+            h_anon = bh - h_signed
+            if signed_in:
+                # A lone signed-in segment is the whole bar: round its top.
+                rx = ' rx="2"' if not anonymous else ""
+                parts.append(
+                    '<rect x="%.1f" y="%.1f" width="%.1f" height="%.1f"%s fill="%s">'
+                    '<title>%s: %s signed in</title></rect>'
+                    % (x, base - h_signed, bw, h_signed, rx, dark_color,
+                       html.escape(str(label)), signed_in)
+                )
+            if anonymous:
+                parts.append(
+                    '<rect x="%.1f" y="%.1f" width="%.1f" height="%.1f" rx="2" fill="%s">'
+                    '<title>%s: %s anonymous</title></rect>'
+                    % (x, base - bh, bw, h_anon, bar_color,
+                       html.escape(str(label)), anonymous)
+                )
+            parts.append(
+                '<text x="%.1f" y="%.1f" text-anchor="middle" class="vallab">%s</text>'
+                % (x + bw / 2, base - bh - 5, total)
+            )
+        if i % step == 0 or i == n - 1:
+            cx = x + bw / 2
+            if rotate:
+                parts.append(
+                    '<text x="%.1f" y="%d" text-anchor="end" class="axis" '
+                    'transform="rotate(-45 %.1f %d)">%s</text>'
+                    % (cx, height - 8, cx, height - 8, html.escape(str(label)))
+                )
+            else:
+                parts.append(
+                    '<text x="%.1f" y="%d" text-anchor="middle" class="axis">%s</text>'
+                    % (cx, height - 10, html.escape(str(label)))
+                )
+    parts.append("</svg>")
+    return "".join(parts)
+
+
 def _pct(a, b):
     """Conversion percent a/b as a short string; 'n/a' when b is 0."""
     if not b:
@@ -1074,17 +1148,53 @@ def _chart_json(pairs) -> str:
     )
 
 
+def _chart_json_split(pairs) -> str:
+    """Serialize split chart rows (label, total, signed_in, anonymous) for
+    the embedded JSON payload (XSS-safe)."""
+    return json.dumps(
+        [
+            [str(label), int(total), int(signed_in), int(anonymous)]
+            for label, total, signed_in, anonymous in pairs
+        ]
+    ).replace("</", "<\\/")
+
+
 def _chart_card(chart_id, title, note, pairs, bar_color="#3b82f6",
                 ranges=(14, 30), range_suffix="d", allow_line=False,
-                unit="") -> str:
+                unit="", split=False, split_dark_color="#1d4ed8") -> str:
     """Interactive chart card.
 
     Server-renders the static SVG (initial paint and no-JS fallback; the
     existing _bars_svg behavior Kaedon approved) plus the data as embedded
     JSON. Client JS hydrates it: hover tooltips, range buttons, and an
     optional bar/line toggle.
+
+    With split=True, pairs are (label, total, signed_in, anonymous) rows:
+    bars stack signed-in (split_dark_color, bottom) under anonymous
+    (bar_color, top), a legend sits under the note, and line mode draws
+    the signed-in and total series.
     """
-    static = _bars_svg(pairs, bar_color=bar_color)
+    if split:
+        static = _stacked_bars_svg(
+            pairs, bar_color=bar_color, dark_color=split_dark_color
+        )
+        payload = _chart_json_split(pairs)
+        split_attrs = ' data-split="1" data-color-dark="%s"' % html.escape(
+            split_dark_color
+        )
+        legend = (
+            '<div class="anx-legend">'
+            '<span class="anx-leg"><span class="anx-swatch" style="background:%s">'
+            "</span>Signed in</span>"
+            '<span class="anx-leg"><span class="anx-swatch" style="background:%s">'
+            "</span>Anonymous (2+ views)</span></div>"
+            % (html.escape(split_dark_color), html.escape(bar_color))
+        )
+    else:
+        static = _bars_svg(pairs, bar_color=bar_color)
+        payload = _chart_json(pairs)
+        split_attrs = ""
+        legend = ""
     range_btns = "".join(
         '<button type="button" data-range="%d"%s>%d%s</button>'
         % (r, ' class="on"' if r == ranges[-1] else "", r, range_suffix)
@@ -1104,14 +1214,14 @@ def _chart_card(chart_id, title, note, pairs, bar_color="#3b82f6",
     )
     return (
         '<section class="card anx-card"><div class="anx-card-head"><h2>%s</h2>%s</div>'
-        '<p class="muted">%s</p>'
-        '<div class="anx-chart-wrap" data-chart="%s" data-color="%s" data-unit="%s">%s'
+        '<p class="muted">%s</p>%s'
+        '<div class="anx-chart-wrap" data-chart="%s" data-color="%s" data-unit="%s"%s>%s'
         '<script type="application/json" class="anx-chart-data">%s</script>'
         '<div class="anx-tip" hidden></div></div></section>'
         % (
-            html.escape(title), controls, html.escape(note),
+            html.escape(title), controls, html.escape(note), legend,
             html.escape(chart_id), html.escape(bar_color), html.escape(unit),
-            static, _chart_json(pairs),
+            split_attrs, static, payload,
         )
     )
 
@@ -1336,6 +1446,9 @@ _ANX_CSS = """
 .anx-chart-wrap .chart line.grid.base { stroke: var(--border); }
 .anx-chart-wrap .chart .anx-zone { cursor: crosshair; }
 .anx-tip { position: absolute; pointer-events: none; background: var(--tooltip-bg); color: var(--tooltip-fg); border: 1px solid var(--tooltip-border); border-radius: var(--tooltip-radius); padding: var(--tooltip-pad); font-size: var(--tooltip-fs); line-height: var(--tooltip-lh); box-shadow: var(--tooltip-shadow); white-space: nowrap; z-index: 5; transform: translate(-50%, -115%); }
+.anx-legend { display: flex; gap: var(--space-4); flex-wrap: wrap; margin: var(--space-2) 0; font-size: var(--text-sm); color: var(--text-muted); }
+.anx-leg { display: inline-flex; align-items: center; gap: 6px; }
+.anx-swatch { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
 /* Tables */
 .anx-tablewrap { overflow-x: auto; }
 .anx table { border-collapse: collapse; width: 100%; font-size: var(--text-base); }
@@ -1404,6 +1517,8 @@ _ANX_JS = """
   /* Interactive charts: hover tooltips, range buttons, bar/line toggle. */
   function renderChart(wrap, data, state) {
     var color = wrap.getAttribute("data-color") || "#3b82f6";
+    var dark = wrap.getAttribute("data-color-dark") || color;
+    var split = wrap.getAttribute("data-split") === "1";
     var unit = wrap.getAttribute("data-unit") || "";
     var n = data.length;
     var W = 680, H = 190;
@@ -1423,13 +1538,21 @@ _ANX_JS = """
     function cx(i) { return padL + i * slot + slot / 2; }
     function cy(v) { return padT + plotH - (v / maxv) * plotH; }
     if (state.type === "line") {
-      var pts = data.map(function (d, i) { return cx(i).toFixed(1) + "," + cy(d[1]).toFixed(1); });
-      s += '<polyline points="' + pts.join(" ") + '" fill="none" stroke="' + color +
-        '" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';
-      data.forEach(function (d, i) {
-        s += '<circle cx="' + cx(i).toFixed(1) + '" cy="' + cy(d[1]).toFixed(1) +
-          '" r="3.5" fill="' + color + '"/>';
-      });
+      function lineFor(idx, stroke) {
+        var pts = data.map(function (d, i) { return cx(i).toFixed(1) + "," + cy(d[idx]).toFixed(1); });
+        s += '<polyline points="' + pts.join(" ") + '" fill="none" stroke="' + stroke +
+          '" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';
+        data.forEach(function (d, i) {
+          s += '<circle cx="' + cx(i).toFixed(1) + '" cy="' + cy(d[idx]).toFixed(1) +
+            '" r="3.5" fill="' + stroke + '"/>';
+        });
+      }
+      if (split) {
+        lineFor(2, dark);
+        lineFor(1, color);
+      } else {
+        lineFor(1, color);
+      }
     } else {
       var bw = Math.min(slot * 0.64, 48);
       data.forEach(function (d, i) {
@@ -1437,8 +1560,25 @@ _ANX_JS = """
         var bh = Math.max((v / maxv) * plotH, v ? 2 : 0);
         var x = padL + i * slot + (slot - bw) / 2;
         var y = padT + plotH - bh;
-        s += '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + bw.toFixed(1) +
-          '" height="' + bh.toFixed(1) + '" rx="3" fill="' + color + '"/>';
+        if (split) {
+          var si = d[2], anon = d[3];
+          var hSigned = v ? bh * si / v : 0;
+          var base = padT + plotH;
+          var rxSigned = anon ? "" : ' rx="3"';
+          if (si) {
+            s += '<rect x="' + x.toFixed(1) + '" y="' + (base - hSigned).toFixed(1) +
+              '" width="' + bw.toFixed(1) + '" height="' + hSigned.toFixed(1) + '"' +
+              rxSigned + ' fill="' + dark + '"/>';
+          }
+          if (anon) {
+            s += '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) +
+              '" width="' + bw.toFixed(1) + '" height="' + (bh - hSigned).toFixed(1) +
+              '" rx="3" fill="' + color + '"/>';
+          }
+        } else {
+          s += '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + bw.toFixed(1) +
+            '" height="' + bh.toFixed(1) + '" rx="3" fill="' + color + '"/>';
+        }
         if (v) {
           s += '<text x="' + (x + bw / 2).toFixed(1) + '" y="' + (y - 6).toFixed(1) +
             '" text-anchor="middle" class="vallab">' + fmt(v) + "</text>";
@@ -1508,7 +1648,12 @@ _ANX_JS = """
       var data = wrap._anxData || current();
       var d = data[parseInt(zone.getAttribute("data-i"), 10)];
       if (!d) { tip.hidden = true; return; }
-      tip.textContent = d[0] + ": " + fmt(d[1]) + (wrap._anxUnit ? " " + wrap._anxUnit : "");
+      if (d.length > 3) {
+        tip.textContent = d[0] + ": " + fmt(d[1]) + (wrap._anxUnit ? " " + wrap._anxUnit : "") +
+          " · " + fmt(d[2]) + " signed in · " + fmt(d[3]) + " anonymous";
+      } else {
+        tip.textContent = d[0] + ": " + fmt(d[1]) + (wrap._anxUnit ? " " + wrap._anxUnit : "");
+      }
       var rect = wrap.getBoundingClientRect();
       tip.style.left = (e.clientX - rect.left) + "px";
       tip.style.top = (e.clientY - rect.top) + "px";
@@ -1574,7 +1719,7 @@ def admin_analytics():
             status=500, mimetype="text/html",
         )
 
-    dau_pairs = _a.fill_daily_gaps(dau, "date", "users", 30, today=_a.ny_today())
+    dau_pairs = _a.fill_daily_dau(dau, 30, today=_a.ny_today())
     wau_pairs = _a.fill_weekly_gaps(wau, "week", "users", 12, today=_a.ny_today())
     signup_pairs = _a.fill_daily_gaps(signups, "date", "signups", 30)
 
@@ -1686,7 +1831,7 @@ def admin_analytics():
                     "Signed-in accounts plus anonymous visitors with 2+ pages, "
                     "New York day. Hover for values; switch range or chart type.",
                     dau_pairs, bar_color="#3b82f6", ranges=(14, 30),
-                    allow_line=True, unit="users"),
+                    allow_line=True, unit="users", split=True),
         _section("DAU breakdown: today",
                  _breakdown_html(breakdown, breakdown_paths),
                  "What today's DAU is made of. The chart above uses the "

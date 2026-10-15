@@ -188,12 +188,50 @@ def test_dau_parses_rows(monkeypatch):
 
     # Rows mirror psycopg's dict_row (what get_conn() really returns):
     # dicts keyed by column name, never tuples.
-    _patch_fetchall(monkeypatch, [{"d": datetime.date(2026, 9, 28), "users": 12}, {"d": datetime.date(2026, 9, 29), "users": 34}])
+    _patch_fetchall(monkeypatch, [
+        {"d": datetime.date(2026, 9, 28), "users": 12, "signed_in": 5, "anonymous": 7},
+        {"d": datetime.date(2026, 9, 29), "users": 34, "signed_in": 34, "anonymous": 0},
+    ])
     out = analytics.dau_last_30_days()
     assert out == [
-        {"date": "2026-09-28", "users": 12},
-        {"date": "2026-09-29", "users": 34},
+        {"date": "2026-09-28", "users": 12, "signed_in": 5, "anonymous": 7},
+        {"date": "2026-09-29", "users": 34, "signed_in": 34, "anonymous": 0},
     ]
+
+
+def test_dau_split_components_sum_to_total(monkeypatch):
+    import datetime
+
+    # Signed-in-only day, anonymous-only day, and a mixed day: the two
+    # components always sum to the headline total.
+    _patch_fetchall(monkeypatch, [
+        {"d": datetime.date(2026, 9, 27), "users": 9, "signed_in": 9, "anonymous": 0},
+        {"d": datetime.date(2026, 9, 28), "users": 4, "signed_in": 0, "anonymous": 4},
+        {"d": datetime.date(2026, 9, 29), "users": 20, "signed_in": 13, "anonymous": 7},
+    ])
+    out = analytics.dau_last_30_days()
+    assert [(r["signed_in"], r["anonymous"], r["users"]) for r in out] == [
+        (9, 0, 9),
+        (0, 4, 4),
+        (13, 7, 20),
+    ]
+
+
+def test_dau_split_columns_come_from_the_same_ctes(monkeypatch, reset_tables_ready):
+    conn = _FakeConn(fetchall_result=[])
+    _patch_conn(monkeypatch, conn)
+    analytics.dau_last_30_days()
+    sql = " ".join(w[0] for w in conn.writes if "SELECT" in w[0])
+    # No second counting path: the split columns are the existing per_day
+    # signed-in count and the existing engaged CTE, selected alongside the
+    # unchanged total expression.
+    assert "p.signed_in AS signed_in" in sql
+    assert "COALESCE(e.engaged, 0) AS anonymous" in sql
+    assert "p.signed_in + COALESCE(e.engaged, 0) AS users" in sql
+    # The anonymous component is only sessions that never signed in that
+    # day (acct_views = 0) with 2+ anonymous pageviews.
+    assert "acct_views = 0 AND anon_views >= 2" in sql
+    assert sql.count("FROM analytics_events") == 1
 
 
 def test_dau_sql_targets_pageviews(monkeypatch, reset_tables_ready):
@@ -460,7 +498,7 @@ def _make_admin_client(monkeypatch, admin=True):
     monkeypatch.setattr(_bp_mod, "is_admin", lambda: admin)
     monkeypatch.setattr(
         "dashboard_services.analytics.dau_last_30_days",
-        lambda: [{"date": "2026-09-29", "users": 10}],
+        lambda: [{"date": "2026-09-29", "users": 10, "signed_in": 6, "anonymous": 4}],
     )
     monkeypatch.setattr(
         "dashboard_services.analytics.wau_last_12_weeks",
@@ -626,6 +664,24 @@ def test_admin_page_breakdown_failure_still_renders(monkeypatch):
     assert "DAU breakdown: today" in body
     assert "Breakdown unavailable." in body
     assert "Daily active users" in body
+
+
+def test_admin_page_dau_chart_carries_the_split(monkeypatch):
+    import re
+
+    client = _make_admin_client(monkeypatch, admin=True)
+    resp = client.get("/admin/analytics")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    # Only the DAU chart is split; the other charts keep 2-wide payloads.
+    assert body.count('data-split="1"') == 1
+    dau_wrap = re.search(r'data-chart="dau"[^>]*', body).group(0)
+    assert 'data-color-dark="#1d4ed8"' in dau_wrap
+    assert "Signed in" in body
+    assert "Anonymous (2+ views)" in body
+    # The embedded DAU payload ends with the stubbed day's split row
+    # (label MM-DD depends on the real NY today, so match the values).
+    assert re.search(r'\["\d{2}-\d{2}", 10, 6, 4\]', body)
 
 
 def test_admin_page_404_for_non_admin(monkeypatch):
@@ -843,6 +899,7 @@ def test_admin_route_passes_ny_today_to_gap_fills(monkeypatch):
 
     real_daily = analytics.fill_daily_gaps
     real_weekly = analytics.fill_weekly_gaps
+    real_dau_fill = analytics.fill_daily_dau
 
     def spy_daily(rows, date_key, value_key, days=30, today=None):
         seen.setdefault("daily_todays", []).append(today)
@@ -852,15 +909,20 @@ def test_admin_route_passes_ny_today_to_gap_fills(monkeypatch):
         seen.setdefault("weekly_todays", []).append(today)
         return real_weekly(rows, date_key, value_key, weeks, today=today)
 
+    def spy_dau_fill(rows, days=30, today=None):
+        seen.setdefault("dau_todays", []).append(today)
+        return real_dau_fill(rows, days, today=today)
+
     monkeypatch.setattr("dashboard_services.analytics.fill_daily_gaps", spy_daily)
     monkeypatch.setattr("dashboard_services.analytics.fill_weekly_gaps", spy_weekly)
+    monkeypatch.setattr("dashboard_services.analytics.fill_daily_dau", spy_dau_fill)
     resp = client.get("/admin/analytics")
     assert resp.status_code == 200
-    # DAU (daily) and WAU (weekly) fills are aligned to the NY day; the
-    # signups daily fill is deliberately left as-is (no NY today).
-    assert seen["daily_todays"][0] == sentinel
+    # DAU (split fill) and WAU (weekly) fills are aligned to the NY day;
+    # the signups daily fill is deliberately left as-is (no NY today).
+    assert seen["dau_todays"] == [sentinel]
     assert seen["weekly_todays"] == [sentinel]
-    assert seen["daily_todays"][1] is None
+    assert seen["daily_todays"] == [None]
 
 
 def test_fill_daily_gaps_zero_fills():
@@ -869,6 +931,41 @@ def test_fill_daily_gaps_zero_fills():
     rows = [{"date": "2026-09-27", "users": 5}, {"date": "2026-09-29", "users": 3}]
     out = analytics.fill_daily_gaps(rows, "date", "users", 5, today=datetime.date(2026, 9, 29))
     assert out == [("09-25", 0), ("09-26", 0), ("09-27", 5), ("09-28", 0), ("09-29", 3)]
+
+
+def test_fill_daily_dau_split_rows_and_zero_fill():
+    import datetime
+
+    rows = [
+        # signed-in-only day
+        {"date": "2026-09-27", "users": 5, "signed_in": 5, "anonymous": 0},
+        # anonymous-only day
+        {"date": "2026-09-28", "users": 3, "signed_in": 0, "anonymous": 3},
+        # mixed day
+        {"date": "2026-09-29", "users": 20, "signed_in": 13, "anonymous": 7},
+    ]
+    out = analytics.fill_daily_dau(rows, 5, today=datetime.date(2026, 9, 29))
+    assert out == [
+        ("09-25", 0, 0, 0),
+        ("09-26", 0, 0, 0),
+        ("09-27", 5, 5, 0),
+        ("09-28", 3, 0, 3),
+        ("09-29", 20, 13, 7),
+    ]
+
+
+def test_fill_daily_dau_window_lengths_for_14d_and_30d():
+    import datetime
+
+    rows = [{"date": "2026-09-29", "users": 8, "signed_in": 6, "anonymous": 2}]
+    out14 = analytics.fill_daily_dau(rows, 14, today=datetime.date(2026, 9, 29))
+    out30 = analytics.fill_daily_dau(rows, 30, today=datetime.date(2026, 9, 29))
+    assert len(out14) == 14
+    assert len(out30) == 30
+    # The 14d range is the tail of the same 30d series the page embeds.
+    assert out14 == out30[-14:]
+    assert out14[-1] == ("09-29", 8, 6, 2)
+    assert out30[0] == ("08-31", 0, 0, 0)
 
 
 def test_fill_weekly_gaps_monday_anchored():
@@ -916,6 +1013,59 @@ def test_bars_svg_dense_series_labels_every_day_and_yticks():
     # sparse series keeps horizontal labels
     svg2 = abp._bars_svg([("09-28", 0), ("09-29", 12)])
     assert "rotate(-45" not in svg2
+
+
+def test_stacked_bars_svg_segments_and_single_segment_days():
+    pytest.importorskip("flask")
+    from routes import internal_bp as abp
+
+    svg = abp._stacked_bars_svg(
+        [
+            ("09-27", 5, 5, 0),    # signed-in only: one dark segment
+            ("09-28", 3, 0, 3),    # anonymous only: one light segment
+            ("09-29", 20, 13, 7),  # mixed: two stacked segments
+            ("09-30", 0, 0, 0),    # zero day: no segments, no label
+        ],
+        bar_color="#3b82f6", dark_color="#1d4ed8",
+    )
+    assert svg.count('fill="#1d4ed8"') == 2  # signed-in segments only
+    assert svg.count('fill="#3b82f6"') == 2  # anonymous segments only
+    # Totals label each nonzero bar; segment titles name the components.
+    assert 'class="vallab">20<' in svg
+    assert svg.count('class="vallab"') == 3
+    assert "09-29: 13 signed in" in svg
+    assert "09-29: 7 anonymous" in svg
+
+
+def test_chart_card_split_payload_legend_and_attrs():
+    pytest.importorskip("flask")
+    from routes import internal_bp as abp
+
+    card = abp._chart_card(
+        "dau", "Daily active users", "note",
+        [("09-29", 20, 13, 7)], ranges=(14, 30), allow_line=True,
+        unit="users", split=True,
+    )
+    assert 'data-split="1"' in card
+    assert 'data-color-dark="#1d4ed8"' in card
+    # Legend under the caption, darker swatch first.
+    assert card.index("Signed in") < card.index("Anonymous (2+ views)")
+    assert 'style="background:#1d4ed8"' in card
+    assert 'style="background:#3b82f6"' in card
+    # Payload rows carry (label, total, signed_in, anonymous).
+    assert '[["09-29", 20, 13, 7]]' in card
+
+
+def test_chart_card_without_split_is_unchanged():
+    pytest.importorskip("flask")
+    from routes import internal_bp as abp
+
+    card = abp._chart_card(
+        "signups", "Signups per day", "note", [("09-29", 4)], ranges=(14, 30),
+    )
+    assert "data-split" not in card
+    assert "anx-legend" not in card
+    assert '[["09-29", 4]]' in card
 
 
 def test_analytics_page_shows_exclusion_status(monkeypatch):

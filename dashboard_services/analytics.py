@@ -321,6 +321,11 @@ def dau_last_30_days() -> List[Dict[str, Any]]:
     never signed in that day. Sessions that also signed in are counted
     only via their account, so nobody is double-counted. One-and-done
     anonymous sessions (the bulk of bot / bounce traffic) are excluded.
+
+    Each row carries the split as well as the total: signed_in (the
+    per_day count), anonymous (the engaged count) and users (their sum),
+    all from the same CTEs, so the chart can stack the two components
+    without a second counting path.
     """
     rows = _fetchall(
         f"""
@@ -350,13 +355,23 @@ def dau_last_30_days() -> List[Dict[str, Any]]:
             WHERE acct_views = 0 AND anon_views >= 2
             GROUP BY 1
         )
-        SELECT p.d AS d, p.signed_in + COALESCE(e.engaged, 0) AS users
+        SELECT p.d AS d, p.signed_in AS signed_in,
+               COALESCE(e.engaged, 0) AS anonymous,
+               p.signed_in + COALESCE(e.engaged, 0) AS users
         FROM per_day p
         LEFT JOIN engaged e ON e.d = p.d
         ORDER BY 1
         """
     )
-    return [{"date": str(r["d"]), "users": int(r["users"])} for r in rows]
+    return [
+        {
+            "date": str(r["d"]),
+            "users": int(r["users"]),
+            "signed_in": int(r["signed_in"]),
+            "anonymous": int(r["anonymous"]),
+        }
+        for r in rows
+    ]
 
 
 # ── DAU breakdown (reconciliation view for the headline DAU) ────────────────
@@ -1420,6 +1435,32 @@ def fill_daily_gaps(
         d = day - _dt.timedelta(days=i)
         iso = d.isoformat()
         out.append((iso[5:], int(by_date.get(iso, 0))))
+    return out
+
+
+def fill_daily_dau(
+    rows: List[Dict[str, Any]],
+    days: int = 30,
+    today: Optional[_dt.date] = None,
+) -> List[tuple]:
+    """rows from dau_last_30_days() -> [(label 'MM-DD', total, signed_in,
+    anonymous)] covering every day of the trailing `days`-day window,
+    zeros filled. The client slices this one series for the 14d and 30d
+    ranges, so both ranges share the same shaped rows."""
+    day = today or _utc_today()
+    by_date = {str(r["date"]): r for r in rows}
+    out = []
+    for i in range(days - 1, -1, -1):
+        d = day - _dt.timedelta(days=i)
+        iso = d.isoformat()
+        r = by_date.get(iso) or {}
+        total = int(r.get("users") or 0)
+        signed_in = int(r.get("signed_in") or 0)
+        anonymous = r.get("anonymous")
+        anonymous = (
+            int(anonymous) if anonymous is not None else max(total - signed_in, 0)
+        )
+        out.append((iso[5:], total, signed_in, anonymous))
     return out
 
 
