@@ -124,6 +124,14 @@ Reality notes vs the workshop tool map (verified in this repo):
   from the same model value table the trade packs use, and the fairness
   call uses utils.trade.fairness_label over the shared fair_value_band,
   so an activity recap can never contradict the calculator.
+- Watchlist answers are read-only over the Watchlist tool's own storage:
+  routes.watchlist_bp._rows_for under the same acct:<id> key the tool
+  uses (its _user_key reads the same session), with 7-day deltas from
+  the same movers board /api/watchlist-alerts reads
+  (player_value_history.get_top_movers) and the alert call made by
+  utils.watchlist_alerts.is_value_alert, the threshold the in-app and
+  push alerts share, plus any real injury designation from the players
+  index. The assistant never adds or removes a watched player.
 """
 from __future__ import annotations
 
@@ -279,6 +287,18 @@ def sleeper_trending_adds(*args, **kwargs):
 
 def ensure_activity_bits(*args, **kwargs):
     from app import ensure_activity_bits as _fn
+def watchlist_user_key(*args, **kwargs):
+    from routes.watchlist_bp import _user_key as _fn
+    return _fn(*args, **kwargs)
+
+
+def watchlist_rows(*args, **kwargs):
+    from routes.watchlist_bp import _rows_for as _fn
+    return _fn(*args, **kwargs)
+
+
+def watchlist_top_movers(*args, **kwargs):
+    from dashboard_services.player_value_history import get_top_movers as _fn
     return _fn(*args, **kwargs)
 
 
@@ -5086,6 +5106,89 @@ def build_activity(bundle, entities=None, player_ids=None) -> tuple[dict, list[s
     return pack, tools
 
 
+def build_watchlist(bundle, entities=None, player_ids=None) -> tuple[dict, list[str]]:
+    """The user's watchlist, read-only: each watched player with his current
+    value, 7-day move, alert state (the shared watchlist_alerts threshold
+    or a real injury designation), and roster state in this league."""
+    tools: list[str] = []
+    pack = _base_pack("watchlist", bundle)
+    try:
+        user_key = watchlist_user_key()
+    except Exception:
+        user_key = None
+    if not user_key:
+        pack["available"] = False
+        pack["missing"] = "no signed-in account for this chat"
+        return pack, tools
+    try:
+        rows = watchlist_rows(user_key) or []
+        tools.append("watchlist_bp._rows_for")
+    except Exception:
+        logger.debug("[assistant] watchlist rows failed", exc_info=True)
+        pack["available"] = False
+        pack["missing"] = "your watchlist could not be loaded"
+        return pack, tools
+    values = _value_rows()
+    if values:
+        tools.append("model_value_table")
+    index = _index()
+    delta_map: dict = {}
+    try:
+        movers = watchlist_top_movers(days=7, limit=2000) or {}
+        tools.append("player_value_history.get_top_movers")
+        for p in (movers.get("risers") or []) + (movers.get("fallers") or []):
+            if not isinstance(p, dict):
+                continue
+            pid = str(p.get("player_id") or p.get("id") or "")
+            if pid and p.get("delta") is not None:
+                try:
+                    delta_map[pid] = round(float(p["delta"]), 1)
+                except (TypeError, ValueError):
+                    continue
+    except Exception:
+        logger.debug("[assistant] watchlist movers failed", exc_info=True)
+    from utils.watchlist_alerts import is_value_alert
+    ctx = bundle.get("ctx") or {}
+    rostered: set = set()
+    for r in ctx.get("rosters") or []:
+        if isinstance(r, dict):
+            rostered.update(str(p) for p in (r.get("players") or []))
+    mine = {str(p) for p in (bundle.get("roster_player_ids") or set())}
+    players = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        pid = str(row.get("player_id") or "")
+        if not pid:
+            continue
+        info = _player_info(pid, index)
+        value = _row_value(values.get(pid))
+        delta = delta_map.get(pid)
+        injury = info.get("injury_status")
+        injury_active = bool(injury) and str(injury).upper() not in ("ACTIVE", "HEALTHY", "NA")
+        players.append({
+            "player_id": pid,
+            "name": row.get("name") or info.get("name") or pid,
+            "position": row.get("position") or info.get("position") or "",
+            "team": row.get("team") or info.get("team") or "",
+            "note": row.get("note") or "",
+            "value": value,
+            "delta7": delta,
+            "injury_status": injury if injury_active else None,
+            "alert": bool(is_value_alert(delta, value) or injury_active),
+            "on_my_roster": pid in mine,
+            "rostered": pid in rostered,
+        })
+    players.sort(key=lambda p: (not p["alert"],
+                                -(abs(p["delta7"]) if p["delta7"] is not None else 0.0)))
+    pack["count"] = len(players)
+    pack["players"] = players[:12]
+    pack["alerts"] = [p["name"] for p in players if p["alert"]]
+    movers_only = [p for p in players if p["delta7"] is not None]
+    pack["top_mover"] = max(movers_only, key=lambda p: abs(p["delta7"])) if movers_only else None
+    return pack, tools
+
+
 BUILDERS = {
     "start_sit": build_start_sit,
     "trade_eval": build_trade_eval,
@@ -5112,4 +5215,5 @@ BUILDERS = {
     "replacement": build_replacement,
     "handcuff": build_handcuff,
     "activity": build_activity,
+    "watchlist": build_watchlist,
 }

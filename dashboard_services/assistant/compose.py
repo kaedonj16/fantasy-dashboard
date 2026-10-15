@@ -123,6 +123,9 @@ SYSTEM = (
     "For cross-league answers, attach the league name to every number you state and compare teams only "
     "by their standing inside their own league (record, rank, positional ranks); never compare raw "
     "points or values across leagues, and name any league whose data is unavailable. "
+    "For the watchlist, cite the biggest 7-day mover's current value and 7-day move, and name "
+    "any watched player carrying an injury designation. The watchlist is read-only in chat: "
+    "never say you added, removed, or starred a player. "
     "If fixed_verdict is present in the payload, the verdict field must be exactly that value; "
     "it is set by the site's trade fairness band and is not yours to change. "
     "Caveat only when the pack marks margin.thin true or data stale, otherwise null. "
@@ -159,6 +162,7 @@ _ACT_LINKS = {
     "cross_league": {"href": "/portfolio", "label": "View Portfolio"},
     "replacement": {"href": "/trade?tab=suggestions", "label": "Open Trade Suggestions"},
     "handcuff": {"href": "/waivers", "label": "View on Waivers"},
+    "watchlist": {"href": "/watchlist", "label": "View Watchlist"},
 }
 
 
@@ -1035,6 +1039,16 @@ def _required_receipts(intent: str, pack: dict) -> list[dict]:
             if counts.get("waiver_adds") is not None and len(rows) < 4:
                 rows.append({"label": "Waiver adds this season",
                              "value": _fmt_num(counts["waiver_adds"])})
+    elif intent == "watchlist":
+        top = pack.get("top_mover") or {}
+        if top.get("value") is not None:
+            rows.append({"label": f"{top.get('name')} value", "value": _fmt_num(top["value"])})
+        if top.get("delta7") is not None and len(rows) < 4:
+            rows.append({"label": f"{top.get('name')} 7-day move",
+                         "value": _fmt_num(top["delta7"])})
+        if not rows and pack.get("count") is not None:
+            rows.append({"label": "Players on your watchlist",
+                         "value": _fmt_num(pack["count"])})
     elif intent == "cross_league":
         for s in (pack.get("leagues") or []):
             if len(rows) >= 4:
@@ -1214,6 +1228,7 @@ _FOLLOWUP_TEMPLATES = {
     "replacement": [followup_pair("What could I get for him in a trade?"), followup_pair("Who is his handcuff?")],
     "handcuff": [followup_pair("Who should I start if he is out?"), followup_pair("Who is available on waivers?")],
     "activity": [followup_pair("Who should I add from waivers?"), followup_pair("What should I do with my team this week?")],
+    "watchlist": [followup_pair("Who should I add from waivers?"), followup_pair("What should I do with my team this week?")],
 }
 
 
@@ -1430,6 +1445,10 @@ def _required_mentions(intent: str, pack: dict) -> list[tuple[str, str]]:
         out += [(str(t["team_name"]), "activity")
                 for t in (latest.get("teams") or [])
                 if isinstance(t, dict) and t.get("team_name")]
+    elif intent == "watchlist":
+        top = pack.get("top_mover") or {}
+        if top.get("name"):
+            out.append((str(top["name"]), "watchlist"))
     return out
 
 
@@ -1469,6 +1488,8 @@ def _ensure_required_mentions(intent: str, pack: dict, data: dict, receipts: lis
             else:
                 sentences.append("That deal was between " + ", ".join(names[:-1])
                                  + f" and {names[-1]}.")
+        elif kind == "watchlist":
+            sentences.append(f"The biggest move on your watchlist is {names[0]}.")
         elif kind == "league":
             sentences.append(f"That comparison also includes {_join_names(names)}.")
         elif len(names) == 1:

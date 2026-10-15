@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 INTENTS = ["start_sit", "trade_eval", "trade_finding", "buy_sell_hold", "player", "metric", "leaderboard", "waivers", "this_week",
            "playoffs", "power_rankings", "standings", "matchup", "schedule",
            "breakout_board", "breakout_track_record", "breakout_history", "teams", "pick_ownership",
-           "keeper", "rookie", "cross_league", "replacement", "handcuff", "activity",
+           "keeper", "rookie", "cross_league", "replacement", "handcuff", "activity", "watchlist",
            "remember", "out_of_scope"]
 
 SCHEMA = {
@@ -130,6 +130,10 @@ SYSTEM = (
     "waiver moves that were made, and injury headlines (what trades went down, "
     "league activity, recent transactions, who traded). Past events only: advice "
     "about what to do next is waivers, trade_finding, or this_week, never activity. "
+    "watchlist: the user's own watchlist of starred players (show my watchlist, who is on "
+    "my watchlist, what is happening with my watchlist, any watchlist alerts): which "
+    "watched players are moving in value or carrying an injury designation. Read-only: "
+    "adding or removing players happens in the Watchlist tool, never in chat. "
     "remember: the user asks you to remember a preference (preference_text is the preference). "
     "out_of_scope: anything else (trivia, real-game talk, other leagues). "
     "Use thread history only to resolve short follow-ups. Return JSON only. No em dashes."
@@ -334,6 +338,8 @@ def _keyword_route(message: str) -> dict:
         return {**base, "intent": "remember", "preference_text": message.strip()}
     if re.search(r"across (all )?my leagues|all my leagues|my other leagues|which of my teams|in my leagues\b", m):
         return {**base, "intent": "cross_league"}
+    if re.search(r"watch ?list|starred players|players? i'?m watching|players? i starred", m):
+        return {**base, "intent": "watchlist"}
     # League-context intents run before the player/team-week rules below:
     # their phrasings overlap ("this week", "my team", "who leads"), so the
     # specific subject wins. Disambiguation: power rankings need the word
