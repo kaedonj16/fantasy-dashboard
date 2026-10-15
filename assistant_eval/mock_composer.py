@@ -1705,6 +1705,242 @@ def _front_office(pack):
     return ans
 
 
+_OPEN_STAT_WORDS = (("rec_yd", "receiving yards"), ("rec", "receptions"),
+                    ("rec_tgt", "targets"), ("rec_td", "receiving TDs"),
+                    ("rush_yd", "rushing yards"), ("rush_att", "carries"),
+                    ("rush_td", "rushing TDs"), ("pass_yd", "passing yards"),
+                    ("pass_cmp", "completions"), ("pass_att", "attempts"),
+                    ("pass_td", "passing TDs"))
+
+
+def _open_board_line(row, entry):
+    meta = ", ".join(x for x in (row.get("team"), row.get("position")) if x)
+    head = f"{row.get('rank')}. {row.get('name')}" + (f" ({meta})" if meta else "")
+    line = f"{head}: {fmt(row.get('value'))}"
+    if entry.get("stat_board"):
+        line += f" {(entry.get('label') or '').lower()}"
+        parts = []
+        for key, word in _OPEN_STAT_WORDS:
+            if key == entry.get("stat_key"):
+                continue
+            if row.get(key) is not None:
+                parts.append(f"{fmt(row[key])} {word}")
+            if len(parts) >= 3:
+                break
+        if parts:
+            line += f" ({', '.join(parts)})"
+    return line
+
+
+def _open(pack, question):
+    """Mirror of the open answering path over frozen tool evidence.
+
+    The frozen pack carries tool entries (production shape); the mock
+    derives the verdict, lines, and receipts from the evidence alone,
+    the same discipline the live composer runs under: gated evidence
+    gets the gated answer, empty evidence the honest decline, and every
+    number comes from an evidence field.
+    """
+    evidence = [e for e in (pack.get("evidence") or []) if isinstance(e, dict)]
+    usable = [e for e in evidence if e.get("ok", True) and not e.get("gated")]
+    ask = (question or {}).get("question") or ""
+    followups = [_fu("What should I do with my team this week?"),
+                 _fu("Who should I start at FLEX?")]
+    if not usable:
+        gated = next((e for e in evidence if e.get("gated")), None)
+        if gated is not None:
+            label = gated.get("label") or "That metric"
+            return {"verdict": None,
+                    "text": (f"{label} is a PRO metric on BR Fantasy, so its numbers are not "
+                             "included on the free tier. Free boards I can pull right now "
+                             "include target share, air yards share, and snap share."),
+                    "receipts": [], "caveat": None,
+                    "followups": [_fu("Who leads in target share?"),
+                                  _fu("Who leads in snap share?")],
+                    "act_link": {"href": "/metrics", "label": "View on Advanced Metrics"},
+                    "actions": [], "mentions": []}
+        nearest = []
+        for e in evidence:
+            for n in e.get("nearest") or []:
+                if n not in nearest:
+                    nearest.append(n)
+        text = "That is not available from your league data."
+        if nearest:
+            text += (f" The nearest tracked options are {', '.join(nearest[:3])}. "
+                     "Ask about one of those and I can pull the live numbers.")
+        return {"verdict": None, "text": text, "receipts": [], "caveat": None,
+                "followups": followups, "act_link": None, "actions": [],
+                "mentions": []}
+    verdict = None
+    lines: list = []
+    receipts: list = []
+    link = None
+    mentions: list = []
+    seen_mentions = set()
+    for e in usable:
+        for r in e.get("receipts") or []:
+            if len(receipts) < 4:
+                receipts.append({"label": str(r.get("label")),
+                                 "value": str(r.get("value"))})
+        if link is None and e.get("link"):
+            link = e["link"]
+        for p in e.get("players") or []:
+            if p.get("player_id") and p.get("name") \
+                    and str(p["player_id"]) not in seen_mentions:
+                seen_mentions.add(str(p["player_id"]))
+                mentions.append({"player_id": str(p["player_id"]),
+                                 "name": str(p["name"])})
+        tool = e.get("tool")
+        if tool == "top_board":
+            board = e.get("board") or []
+            if board:
+                top = board[0]
+                if verdict is None:
+                    verdict = f"{top.get('name')} leads {e.get('label')}"
+                lines.append(f"{top.get('name')} leads {e.get('label')} at "
+                             f"{fmt(top.get('value'))}.")
+                if e.get("basis"):
+                    lines.append(f"{e['basis']}.")
+                lines.extend(_open_board_line(r, e) for r in board)
+        elif tool == "metric_definition":
+            if verdict is None:
+                verdict = e.get("label")
+            lines.append(f"{e.get('label')}: {e.get('definition')}")
+            leader = e.get("leader") or {}
+            if leader.get("name"):
+                lines.append(f"{leader['name']} leads it at {fmt(leader.get('value'))}.")
+            if e.get("gated_board"):
+                lines.append(f"The {e.get('label')} board itself is PRO on BR "
+                             "Fantasy, so its numbers are not shown on the free tier.")
+        elif tool == "player_profile":
+            p = e.get("player") or {}
+            if verdict is None and p.get("name"):
+                verdict = f"{p['name']} update"
+            head = f"{p.get('name')} ({p.get('team')}, {p.get('position')})"
+            if p.get("value") is not None:
+                head += f" is valued at {fmt(p['value'])}"
+            lines.append(head + ".")
+            role = e.get("role") or {}
+            if role.get("ppg") is not None:
+                lines.append(f"He scores {fmt(role['ppg'])} points per game with a "
+                             f"{fmt(role.get('target_share'))} target share.")
+            if e.get("owner_team"):
+                lines.append(f"He is rostered by {e['owner_team']}.")
+        elif tool == "player_stats":
+            p = e.get("player") or {}
+            totals = e.get("totals") or {}
+            if verdict is None and p.get("name"):
+                verdict = f"{p['name']} update"
+            lines.append(f"{p.get('name')} has {fmt(totals.get('fantasy_points'))} "
+                         f"fantasy points in {totals.get('games')} games.")
+            for key, word in _OPEN_STAT_WORDS:
+                if totals.get(key) is not None:
+                    lines.append(f"{word.capitalize()}: {fmt(totals[key])}.")
+            for g in e.get("recent_games") or []:
+                lines.append(f"Week {g.get('week')}: {fmt(g.get('points'))} points.")
+            if e.get("best_week_points") is not None:
+                lines.append(f"Best week: {fmt(e['best_week_points'])} points. "
+                             f"Worst week: {fmt(e.get('worst_week_points'))} points.")
+        elif tool == "player_metrics":
+            p = e.get("player") or {}
+            if verdict is None and p.get("name"):
+                verdict = f"{p['name']} update"
+            for r in (e.get("metric_ranks") or [])[:3]:
+                lines.append(f"{r.get('label')}: {fmt(r.get('value'))} "
+                             f"(rank {r.get('rank')}).")
+            if e.get("gated_metrics"):
+                lines.append("Some of his advanced metrics are PRO on BR "
+                             "Fantasy and are not shown on the free tier.")
+        elif tool == "team_roster":
+            team = e.get("team") or {}
+            injuries = e.get("injuries") or []
+            if verdict is None:
+                if injuries:
+                    verdict = (f"{injuries[0]['name']} is "
+                               f"{str(injuries[0].get('injury_status') or '').lower()}")
+                elif team.get("team_name"):
+                    verdict = f"{team['team_name']} rundown"
+            lines.append(f"{team.get('team_name')} roster:")
+            for p in (e.get("starters") or [])[:5]:
+                lines.append(f"{p.get('name')} ({p.get('position')}): "
+                             f"{fmt(p.get('value'))}.")
+            st = e.get("standing") or {}
+            if st:
+                lines.append(f"Record {st.get('wins')}-{st.get('losses')} with "
+                             f"{fmt(st.get('pf'))} points for.")
+            for inj in injuries:
+                lines.append(f"{inj['name']} is listed as {inj.get('injury_status')}.")
+        elif tool == "league_lookup":
+            leader = e.get("points_leader") or e.get("leader") or {}
+            me = e.get("me") or {}
+            if verdict is None:
+                if leader.get("team_name"):
+                    verdict = f"{leader['team_name']} on top"
+                elif me.get("team_name"):
+                    verdict = f"{me['team_name']} check-in"
+            if leader.get("team_name"):
+                lines.append(f"{leader['team_name']} leads with "
+                             f"{fmt(leader.get('pf'))} points for.")
+            if me:
+                lines.append(f"Your team is {me.get('wins')}-{me.get('losses')} with "
+                             f"{fmt(me.get('pf'))} points for, seed {me.get('seed')}.")
+            for row in (e.get("table") or [])[:3]:
+                lines.append(f"{row.get('team_name')}: {row.get('wins')}-"
+                             f"{row.get('losses')}, {fmt(row.get('pf'))} points for.")
+        elif tool == "compare_players":
+            detail = e.get("players_detail") or []
+            if len(detail) == 2:
+                a, b = detail
+                hi = a if (a.get("value") or 0) >= (b.get("value") or 0) else b
+                lo = b if hi is a else a
+                if verdict is None:
+                    verdict = f"{hi['name']} over {lo['name']}"
+                for p in detail:
+                    lines.append(f"{p['name']}: value {fmt(p.get('value'))}, "
+                                 f"{fmt(p.get('ppg'))} points per game, "
+                                 f"{fmt(p.get('target_share'))} target share.")
+        elif tool == "value_lookup":
+            if e.get("player"):
+                p = e["player"]
+                move = e.get("move_7d") or {}
+                if verdict is None:
+                    verdict = f"{p['name']} value check"
+                lines.append(f"{p['name']} is valued at {fmt(p.get('value'))}.")
+                if move.get("delta") is not None:
+                    lines.append(f"His value moved {fmt(move['delta'])} over "
+                                 "the last 7 days.")
+            else:
+                risers = e.get("risers") or []
+                fallers = e.get("fallers") or []
+                if verdict is None:
+                    if "buy" in ask.lower() and fallers:
+                        verdict = f"{fallers[0]['name']} is the buy-low"
+                    elif risers:
+                        verdict = f"{risers[0]['name']} is rising"
+                for r in risers[:2]:
+                    lines.append(f"{r['name']} is up {fmt(r.get('delta'))} to "
+                                 f"{fmt(r.get('value'))} this week.")
+                for r in fallers[:2]:
+                    lines.append(f"{r['name']} is down {fmt(abs(r.get('delta') or 0))} "
+                                 f"to {fmt(r.get('value'))} this week.")
+        elif tool == "next_up":
+            sub = e.get("subject") or {}
+            nxt = e.get("next_up") or {}
+            if verdict is None and nxt.get("name"):
+                verdict = f"{nxt['name']} is next up"
+            lines.append(f"If {sub.get('name')} misses time, {nxt.get('name')} "
+                         f"is next up for the {nxt.get('team')}.")
+            if nxt.get("value") is not None:
+                lines.append(f"{nxt['name']} is valued at {fmt(nxt['value'])} and "
+                             f"sits on {nxt.get('location') or 'waivers'}.")
+            if sub.get("value") is not None and len(receipts) < 4:
+                receipts.append({"label": f"{sub.get('name')} value",
+                                 "value": fmt(sub["value"])})
+    return {"verdict": verdict, "text": " ".join(lines), "receipts": receipts,
+            "caveat": None, "followups": followups, "act_link": link,
+            "actions": [], "mentions": mentions[:8]}
+
+
 _BUILDERS = {"start_sit": _start_sit, "trade_eval": _trade_eval,
              "buy_sell_hold": _buy_sell_hold, "player": _player, "metric": _metric,
              "leaderboard": _leaderboard, "trade_finding": _trade_finding,
@@ -1731,5 +1967,7 @@ def compose_mock(question: dict) -> dict:
         return _empty_value_board_answer(pack)
     if isinstance(pack, dict) and pack.get("available") is False:
         return no_data_answer(pack)
+    if question["type"] == "open":
+        return _open(pack, question)
     builder = _BUILDERS[question["type"]]
     return builder(pack)
