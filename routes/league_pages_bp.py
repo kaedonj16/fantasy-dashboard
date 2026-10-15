@@ -373,10 +373,25 @@ def page_graphs(platform: str, season: int, league_id: str):
     # app-level accessor as a parameter (see render_graphs_html).
     graphs_base_url = url_for("league_pages.page_graphs", platform=platform, season=season, league_id=league_id)
 
+    # The career body is viewer-personalized (the viewer's team is
+    # highlighted in every chart and the insights read "You rank ..."), but
+    # it is built in a background thread with no session and cached under a
+    # league-only key (Class A audit) -- so the cached copy baked an empty
+    # viewer and served it to everyone. Capture this request's viewer here,
+    # re-apply it inside _render, and scope the cache key by it. v3
+    # invalidates the v2 entries baked without a viewer.
+    viewer_snapshot = dict(ctx.get("viewer") or {})
+    viewer_rid = str(viewer_snapshot.get("viewer_roster_id") or "")
+
     def _render(v: str, m: str, t: str) -> str:
+        render_ctx = get_league_ctx_from_cache(platform, league_id, season)
+        if viewer_snapshot:
+            # Shallow copy: never mutate the shared cached ctx from a
+            # background thread with one request's viewer.
+            render_ctx = {**render_ctx, "viewer": viewer_snapshot}
         return render_graphs_html(
             platform, season, league_id, v, m,
-            ctx=get_league_ctx_from_cache(platform, league_id, season),
+            ctx=render_ctx,
             available_seasons=get_available_history_seasons(platform, league_id, season),
             get_ctx=get_league_ctx_from_cache,
             model_value_table=get_model_value_table_cached() or [],
@@ -391,7 +406,7 @@ def page_graphs(platform: str, season: int, league_id: str):
         return _serve_cached_or_background(
             # v2 invalidates HTML built before career rows were keyed by stable
             # provider owner ids rather than mutable team display names.
-            platform, season, league_id, f"graphs:career:v2:{members}",
+            platform, season, league_id, f"graphs:career:v3:{members}:vwr{viewer_rid or 'anon'}",
             "BR Fantasy Graphs", "graphs",
             lambda: _render("career", members, tab),
             "Building career graphs",
