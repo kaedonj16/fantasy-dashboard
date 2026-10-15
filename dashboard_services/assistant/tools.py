@@ -805,6 +805,87 @@ def _tool_next_up(bundle, args) -> dict:
     return out
 
 
+# -- live + draft tools ------------------------------------------------------------
+
+def _tool_live_state(bundle, args) -> dict:
+    out = _base("live_state")
+    entities = {}
+    if args.get("team"):
+        entities["team_names"] = [str(args["team"])]
+    pack, _tools = ev.build_live(bundle, entities, [])
+    if pack.get("available") is False:
+        out.update({"ok": False,
+                    "missing": pack.get("missing") or "no live data right now"})
+        return out
+    mu = pack.get("matchup") or {}
+    a, b = mu.get("team_a") or {}, mu.get("team_b") or {}
+    side_keys = ("team_name", "current_points", "projected", "win_prob_pct")
+    out["state"] = pack.get("state")
+    out["matchup"] = {"team_a": _scalars(a, side_keys),
+                      "team_b": _scalars(b, side_keys),
+                      "is_mine": bool(mu.get("is_mine"))}
+    top_lines = sorted((a.get("players") or []) + (b.get("players") or []),
+                       key=lambda p: -(p.get("points") or 0))[:4]
+    out["top_scorers"] = [_scalars(p, ("name", "position", "points", "status"))
+                          for p in top_lines]
+    need = pack.get("need") or {}
+    if need:
+        out["need"] = {"deficit": need.get("deficit"), "lead": need.get("lead"),
+                       "my_remaining": need.get("my_remaining"),
+                       "opp_remaining": need.get("opp_remaining")}
+    if a.get("current_points") is not None:
+        out["receipts"].append({"label": f"{a.get('team_name')} points so far",
+                                "value": str(_n(a["current_points"]))})
+    if b.get("current_points") is not None:
+        out["receipts"].append({"label": f"{b.get('team_name')} points so far",
+                                "value": str(_n(b["current_points"]))})
+    if bundle.get("platform") and bundle.get("season") and bundle.get("league_id"):
+        out["link"] = {"href": f"/{bundle['platform']}/{bundle['season']}"
+                               f"/{bundle['league_id']}/scorezone",
+                       "label": "Open ScoreZone"}
+    return out
+
+
+def _tool_draft_state(bundle, args) -> dict:
+    out = _base("draft_state")
+    entities = {}
+    if args.get("pick"):
+        entities["draft_slot"] = str(args["pick"])
+    pack, _tools = ev.build_draft(bundle, entities, [])
+    if pack.get("available") is False:
+        out.update({"ok": False,
+                    "missing": pack.get("missing") or "no draft found for this league"})
+        return out
+    out["status"] = pack.get("status")
+    out["draft_kind"] = pack.get("draft_kind")
+    out["picks_made"] = pack.get("picks_made")
+    cur = pack.get("current_pick") or {}
+    if cur:
+        out["on_the_clock"] = _scalars(cur, ("team_name", "pick_no", "round"))
+    nxt = pack.get("my_next_pick") or {}
+    if nxt:
+        out["my_next_pick"] = _scalars(nxt, ("pick_no", "round"))
+    best = pack.get("best_available") or []
+    out["best_available"] = [_scalars(r, ("name", "position", "team", "value"))
+                             for r in best[:5]]
+    out["players"] = [{"player_id": str(r.get("player_id")), "name": r.get("name")}
+                      for r in best[:5] if r.get("player_id")]
+    needs = [n for n in (pack.get("my_needs") or []) if n.get("open_slots")]
+    if needs:
+        out["my_needs"] = needs
+    prep = pack.get("prep") or {}
+    if prep:
+        out["prep"] = prep
+    if best and best[0].get("value") is not None:
+        out["receipts"].append({"label": f"{best[0].get('name')} value",
+                                "value": str(_n(best[0]["value"]))})
+    if bundle.get("platform") and bundle.get("season") and bundle.get("league_id"):
+        out["link"] = {"href": f"/{bundle['platform']}/{bundle['season']}"
+                               f"/{bundle['league_id']}/draft",
+                       "label": "Open Draft Room"}
+    return out
+
+
 # -- registry ------------------------------------------------------------------------
 
 TOOL_FUNCS = {
@@ -820,6 +901,8 @@ TOOL_FUNCS = {
     "value_lookup": _tool_value_lookup,
     "metric_definition": _tool_metric_definition,
     "next_up": _tool_next_up,
+    "live_state": _tool_live_state,
+    "draft_state": _tool_draft_state,
 }
 
 # The planner-facing catalog: name, what it fetches, its arguments.
@@ -868,6 +951,12 @@ TOOL_CATALOG = [
     {"name": "next_up",
      "description": "Who is next up behind a player on his NFL team's depth chart (his handcuff), where that player is rostered, and what the user already holds at the position.",
      "args": {"player": "player name"}},
+    {"name": "live_state",
+     "description": "Live state of this week's games in the user's league: current scores, win probability, top scorers so far, and what the user still needs (remaining players on each side).",
+     "args": {"team": "a team name, or null for the user's own game"}},
+    {"name": "draft_state",
+     "description": "The league's draft: status, who is on the clock, the best players still available by site value, the user's next pick and positional needs, and prep candidates around a named pick like 1.03.",
+     "args": {"pick": "a draft slot like '1.03', or null"}},
 ]
 
 

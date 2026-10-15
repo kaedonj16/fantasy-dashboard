@@ -6914,6 +6914,513 @@ def build_front_office(bundle, entities=None, player_ids=None) -> tuple[dict, li
     return pack, tools
 
 
+# -- live in-game -----------------------------------------------------------------
+
+def build_live(bundle, entities=None, player_ids=None) -> tuple[dict, list[str]]:
+    """Live state for this week's games, from the same TTL-cached path
+    the portfolio matchup card reads (build_matchup_preview + per-player
+    game statuses + projections). No new polling: the assistant reads
+    what the site's live surfaces already fetched. Per-player lines are
+    the matchup's starters with points banked so far; win probability
+    is the site's own compute_win_prob."""
+    pack = _base_pack("live", bundle)
+    tools: list[str] = []
+    ctx = bundle.get("ctx") or {}
+    if not ctx:
+        pack["available"] = False
+        pack["missing"] = "no league context loaded"
+        return pack, tools
+    entities = entities or {}
+    try:
+        week = int(entities.get("week") or bundle.get("week") or 0)
+    except (TypeError, ValueError):
+        week = int(bundle.get("week") or 0)
+    pack["week"] = week
+    league_id = str(ctx.get("resolved_league_id") or bundle.get("league_id") or "")
+    try:
+        matchups, status_by_pid, proj_map = live_matchups(
+            bundle.get("platform") or "sleeper", league_id,
+            bundle.get("season"), week, ctx)
+        tools.append("matchups.build_matchup_preview")
+    except Exception:
+        logger.debug("[assistant] live matchups failed", exc_info=True)
+        matchups, status_by_pid, proj_map = [], {}, {}
+    if not matchups:
+        pack["available"] = False
+        pack["missing"] = f"no scheduled matchup for Week {week}"
+        pack["nearest"] = []
+        return pack, tools
+    try:
+        from dashboard_services.matchups import (
+            _proj_value_for_pid, compute_win_prob, team_live_totals)
+    except Exception:
+        logger.debug("[assistant] live model import failed", exc_info=True)
+        pack["available"] = False
+        pack["missing"] = "live data is not available right now"
+        return pack, tools
+
+    def _side(team, win_pct):
+        actual, proj = team_live_totals(team, status_by_pid, proj_map)
+        players = []
+        remaining = []
+        for p in (team.get("starters") or []):
+            if not p:
+                continue
+            pid = str(p.get("pid") or "")
+            status = status_by_pid.get(pid) or status_by_pid.get(p.get("pid")) \
+                or "not_started"
+            try:
+                pproj = _proj_value_for_pid(proj_map, p.get("pid"),
+                                            pos=p.get("pos") or "")
+            except Exception:
+                pproj = 0.0
+            pts = p.get("pts")
+            line = {"name": p.get("name"), "position": p.get("pos"),
+                    "points": _f(pts) if isinstance(pts, (int, float)) else 0.0,
+                    "projection": _f(pproj), "status": status}
+            players.append(line)
+            if status == "not_started":
+                remaining.append({"name": line["name"],
+                                    "position": line["position"],
+                                    "projection": line["projection"]})
+        players.sort(key=lambda s: -(s["points"] or 0))
+        return {
+            "roster_id": str(team.get("roster_id")),
+            "team_name": team.get("name") or f"Roster {team.get('roster_id')}",
+            "record": team.get("record"),
+            "current_points": _f(actual),
+            "projected": _f(proj),
+            "win_prob_pct": win_pct,
+            "players": players,
+            "remaining": remaining,
+            "remaining_projection": _f(sum(r["projection"] or 0
+                                           for r in remaining)),
+        }
+
+    def _pair(m):
+        left, right = m.get("left") or {}, m.get("right") or {}
+        wp = None
+        try:
+            raw = compute_win_prob(left, right, status_by_pid, proj_map)
+            if raw is not None:
+                wp = round(float(raw) * 100.0, 1)
+        except Exception:
+            wp = None
+        a = _side(left, wp)
+        b = _side(right, (round(100.0 - wp, 1) if wp is not None else None))
+        return a, b
+
+    pairs = []
+    for m in matchups:
+        if isinstance(m, dict):
+            pairs.append((m, *_pair(m)))
+    tools.append("matchups.compute_win_prob")
+    statuses = [p["status"] for _m, a, b in pairs for p in a["players"] + b["players"]]
+    if statuses and all(s == "final" for s in statuses):
+        state = "final"
+    elif any(s in ("in_progress", "final") for s in statuses):
+        state = "live"
+    else:
+        state = "pregame"
+    pack["state"] = state
+    pack["board"] = [
+        {"team_a": a["team_name"], "team_b": b["team_name"],
+         "a_points": a["current_points"], "b_points": b["current_points"],
+         "a_win_prob_pct": a["win_prob_pct"]}
+        for _m, a, b in pairs
+    ]
+    wanted = [str(t).strip().lower()
+              for t in (entities.get("team_names") or []) if str(t).strip()]
+    hint = str(entities.get("other_team_hint") or "").strip().lower()
+    if hint and hint not in wanted:
+        wanted.append(hint)
+
+    def _matches(team_name, want):
+        n = str(team_name or "").lower()
+        return bool(n) and (want in n or n in want)
+
+    target = None
+    if len(wanted) >= 2:
+        for _m, a, b in pairs:
+            if ((_matches(a["team_name"], wanted[0]) and _matches(b["team_name"], wanted[1]))
+                    or (_matches(a["team_name"], wanted[1]) and _matches(b["team_name"], wanted[0]))):
+                target = (a, b)
+                break
+    if target is None and wanted:
+        for _m, a, b in pairs:
+            if _matches(a["team_name"], wanted[0]) or _matches(b["team_name"], wanted[0]):
+                target = (a, b)
+                break
+    viewer = _viewer_rid(bundle)
+    is_mine = False
+    if target is None:
+        for _m, a, b in pairs:
+            if viewer and viewer in (a["roster_id"], b["roster_id"]):
+                target = (a, b) if a["roster_id"] == viewer else (b, a)
+                is_mine = True
+                break
+    if target is None and pairs:
+        target = (pairs[0][1], pairs[0][2])
+    elif target is not None and viewer and viewer in (target[0]["roster_id"], target[1]["roster_id"]):
+        is_mine = True
+        if target[1]["roster_id"] == viewer:
+            target = (target[1], target[0])
+    a, b = target
+    pack["matchup"] = {"week": week, "is_mine": is_mine, "team_a": a, "team_b": b}
+    if is_mine:
+        pack["need"] = {
+            "deficit": _f(max(0.0, (b["current_points"] or 0) - (a["current_points"] or 0))),
+            "lead": _f(max(0.0, (a["current_points"] or 0) - (b["current_points"] or 0))),
+            "my_remaining": a["remaining"],
+            "opp_remaining": b["remaining"],
+            "my_remaining_projection": a["remaining_projection"],
+            "opp_remaining_projection": b["remaining_projection"],
+        }
+    wp = a.get("win_prob_pct")
+    pack["margin"] = {"thin": bool(wp is not None and 45.0 <= wp <= 55.0)}
+    return pack, tools
+
+
+# -- draft help -------------------------------------------------------------------
+
+def league_drafts(platform, league_id, season):
+    """The league's drafts (status + schedule) via the platform layer."""
+    from dashboard_services.platform_api import get_drafts as _fn
+    return _fn(platform, league_id, season)
+
+
+def draft_detail(draft_id):
+    """Sleeper draft metadata (settings, slot order)."""
+    from dashboard_services.api import get_draft as _fn
+    return _fn(draft_id)
+
+
+def draft_picks_live(draft_id):
+    """Picks made so far in a Sleeper draft (1s-TTL read, same as the
+    Draft Room's live poll)."""
+    from dashboard_services.api import get_draft_picks as _fn
+    return _fn(draft_id)
+
+
+def draft_picks_for(platform, league_id, season, draft_id=None):
+    """Picks made so far, for platforms without the per-draft endpoint."""
+    from dashboard_services.platform_api import get_draft_picks as _fn
+    return _fn(platform, league_id, season, draft_id=draft_id)
+
+
+def league_traded_picks(league_id):
+    from dashboard_services.api import get_traded_picks as _fn
+    return _fn(league_id)
+
+
+def build_draft(bundle, entities=None, player_ids=None) -> tuple[dict, list[str]]:
+    """Draft help from the league's real draft state, the same reads the
+    Draft Room's /api/draft/live serves (draft list, draft detail, picks
+    with a 1-second TTL): who is on the clock, the best players still
+    available by the site's own values, the viewer's next pick and
+    positional needs, and prep candidates for a named slot from the
+    rookie rankings. The manual Draft Room's local board state is
+    client-side and out of scope; this answers from the league's
+    Sleeper draft itself."""
+    pack = _base_pack("draft", bundle)
+    tools: list[str] = []
+    entities = entities or {}
+    ctx = bundle.get("ctx") or {}
+    platform = str(bundle.get("platform") or "sleeper").lower()
+    league_id = str(bundle.get("league_id") or "")
+    season = bundle.get("season")
+    if not league_id:
+        pack["available"] = False
+        pack["missing"] = "no league context loaded"
+        return pack, tools
+    try:
+        drafts = league_drafts(platform, league_id, season) or []
+        tools.append("platform_api.get_drafts")
+    except Exception:
+        logger.debug("[assistant] draft list failed", exc_info=True)
+        drafts = []
+    drafts = [d for d in drafts if isinstance(d, dict)]
+    if not drafts:
+        pack["available"] = False
+        pack["missing"] = "no draft found for this league"
+        pack["nearest"] = []
+        return pack, tools
+
+    def _dseason(d):
+        try:
+            return int(d.get("season") or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    chosen = None
+    for status in ("drafting", "pre_draft", "complete"):
+        cands = [d for d in drafts if str(d.get("status") or "") == status]
+        if cands:
+            chosen = max(cands, key=_dseason)
+            break
+    if chosen is None:
+        chosen = max(drafts, key=_dseason)
+    draft_id = str(chosen.get("draft_id") or "")
+    detail = {}
+    if platform == "sleeper" and draft_id:
+        try:
+            detail = draft_detail(draft_id) or {}
+            tools.append("api.get_draft")
+        except Exception:
+            logger.debug("[assistant] draft detail failed", exc_info=True)
+            detail = {}
+    src = detail or chosen
+    settings = src.get("settings") or {}
+    status = str(src.get("status") or chosen.get("status") or "")
+    try:
+        rounds = int(settings.get("rounds") or 0)
+    except (TypeError, ValueError):
+        rounds = 0
+    names = _team_names(ctx)
+    rosters = [r for r in (ctx.get("rosters") or []) if isinstance(r, dict)]
+    try:
+        teams = int(settings.get("teams") or 0) or len(rosters) or 12
+    except (TypeError, ValueError):
+        teams = len(rosters) or 12
+    if not rounds:
+        rounds = 5 if status != "complete" else 15
+    pack["status"] = status
+    pack["draft_season"] = _dseason(src) or season
+    pack["rounds"] = rounds
+    pack["league_size"] = teams
+    # Draft kind by the Draft Room's own rule (short draft = rookie draft).
+    pack["draft_kind"] = ("rookie" if 0 < rounds <= 5 else "full")
+    order_format = "snake"
+    dtype = str(src.get("type") or "snake").lower()
+    if dtype == "linear":
+        order_format = "linear"
+    else:
+        try:
+            if int(settings.get("reversal_round") or 0) == 3:
+                order_format = "3rr"
+        except (TypeError, ValueError):
+            pass
+    pack["order_format"] = order_format
+
+    slot_to_roster = {}
+    for slot, rid in (src.get("slot_to_roster_id") or {}).items():
+        if rid is not None:
+            slot_to_roster[str(slot)] = str(rid)
+    if not slot_to_roster:
+        for r in rosters:
+            rid = str(r.get("roster_id"))
+            slot_to_roster.setdefault(rid, rid)
+
+    picks_raw = []
+    if draft_id:
+        try:
+            if platform == "sleeper":
+                picks_raw = draft_picks_live(draft_id) or []
+                tools.append("api.get_draft_picks")
+            else:
+                picks_raw = draft_picks_for(platform, league_id, season,
+                                            draft_id) or []
+                tools.append("platform_api.get_draft_picks")
+        except Exception:
+            logger.debug("[assistant] draft picks failed", exc_info=True)
+            picks_raw = []
+    picks = []
+    for p in picks_raw:
+        if not isinstance(p, dict):
+            continue
+        pid = str(p.get("player_id") or "").strip()
+        if not pid or pid in ("0", "None"):
+            continue
+        meta = p.get("metadata") or {}
+        nm = ((str(meta.get("first_name") or "") + " "
+               + str(meta.get("last_name") or "")).strip()
+              or meta.get("player_name") or "")
+        picks.append({
+            "pick_no": p.get("pick_no"), "round": p.get("round"),
+            "roster_id": str(p.get("roster_id") or ""),
+            "player_id": pid,
+            "name": nm or pid,
+            "position": str(meta.get("position") or "").upper(),
+            "team": meta.get("team") or "",
+        })
+    picks.sort(key=lambda p: int(p.get("pick_no") or 0))
+    pack["picks_made"] = len(picks)
+    pack["total_picks"] = rounds * teams
+    drafted_ids = {p["player_id"] for p in picks}
+
+    traded = {}
+    if platform == "sleeper":
+        try:
+            for tp in league_traded_picks(league_id) or []:
+                if not isinstance(tp, dict):
+                    continue
+                if _dseason(tp) != int(pack["draft_season"] or 0):
+                    continue
+                key = (int(tp.get("round") or 0), str(tp.get("roster_id") or ""))
+                if key[0] and key[1]:
+                    traded[key] = str(tp.get("owner_id") or key[1])
+            if traded:
+                tools.append("api.get_traded_picks")
+        except Exception:
+            logger.debug("[assistant] traded picks failed", exc_info=True)
+            traded = {}
+
+    def _owner_of(pick_no):
+        rnd = (pick_no - 1) // teams + 1
+        idx = (pick_no - 1) % teams
+        if order_format == "linear":
+            rev = False
+        elif order_format == "3rr":
+            rev = rnd >= 3 and rnd % 2 == 1
+        else:
+            rev = rnd % 2 == 0
+        slot = teams - idx if rev else idx + 1
+        base = slot_to_roster.get(str(slot))
+        if base is None:
+            return None, rnd, slot
+        return traded.get((rnd, base), base), rnd, slot
+
+    viewer = _viewer_rid(bundle)
+    my_picks = [p for p in picks if viewer and p["roster_id"] == viewer]
+    pack["my_picks"] = [{"pick_no": p["pick_no"], "name": p["name"],
+                         "position": p["position"]} for p in my_picks]
+    pack["current_pick"] = None
+    pack["my_next_pick"] = None
+    if status == "drafting":
+        nxt = len(picks) + 1
+        if nxt <= rounds * teams:
+            owner, rnd, slot = _owner_of(nxt)
+            pack["current_pick"] = {
+                "pick_no": nxt, "round": rnd, "slot": slot,
+                "roster_id": owner,
+                "team_name": (names.get(owner) if owner else None)
+                             or (f"Roster {owner}" if owner else None),
+                "is_mine": bool(viewer and owner == viewer),
+            }
+            for pn in range(nxt, rounds * teams + 1):
+                o2, r2, s2 = _owner_of(pn)
+                if viewer and o2 == viewer:
+                    pack["my_next_pick"] = {"pick_no": pn, "round": r2,
+                                            "slot": s2, "picks_away": pn - nxt}
+                    break
+
+    index = _index()
+    values = _value_rows()
+    available = []
+    for pid, row in values.items():
+        if pid in drafted_ids:
+            continue
+        v = _row_value(row)
+        if v is None:
+            continue
+        info = _player_info(pid, index)
+        available.append({"player_id": pid, "name": info["name"],
+                          "position": info["position"], "team": info["team"],
+                          "value": _f(v, 0)})
+    available.sort(key=lambda r: -(r["value"] or 0))
+    pack["best_available"] = available[:10] if status != "complete" else []
+    by_pos = {}
+    for r in available:
+        pos = r["position"]
+        if pos in ("QB", "RB", "WR", "TE"):
+            by_pos.setdefault(pos, [])
+            if len(by_pos[pos]) < 3:
+                by_pos[pos].append({"name": r["name"], "value": r["value"]})
+    pack["best_available_by_position"] = by_pos if status != "complete" else {}
+
+    rookies = []
+    class_year = None
+    try:
+        class_year = active_rookie_class()
+    except Exception:
+        class_year = None
+    if not class_year and season:
+        class_year = int(season) + 1
+    rookie_rows = []
+    if class_year:
+        try:
+            rookie_rows = rookie_rankings(int(class_year)) or []
+            tools.append("rookie_api._get_rankings")
+        except Exception:
+            logger.debug("[assistant] draft rookie rankings failed", exc_info=True)
+            rookie_rows = []
+    rookie_rows = [r for r in rookie_rows if isinstance(r, dict)]
+    drafted_names = {str(p["name"]).strip().lower() for p in picks}
+    for r in rookie_rows:
+        nm = str(r.get("name") or "")
+        if not nm or nm.strip().lower() in drafted_names:
+            continue
+        sid = str(r.get("sleeper_id") or r.get("player_id") or "")
+        if sid and sid in drafted_ids:
+            continue
+        rookies.append({"name": nm, "position": r.get("position") or "",
+                        "school": r.get("school") or "",
+                        "score": _f(r.get("prospect_score"), 1),
+                        "rank": len(rookies) + 1})
+        if len(rookies) >= 10:
+            break
+    pack["rookie_class_year"] = int(class_year) if class_year else None
+    pack["best_available_rookies"] = (
+        rookies if (pack["draft_kind"] == "rookie" or entities.get("draft_slot"))
+        else [])
+
+    # Positional needs from the viewer's roster construction: existing
+    # roster (keeper/redraft context) plus this draft's picks so far,
+    # against the league's starting slots.
+    roster_positions = []
+    league_obj = ctx.get("league") or {}
+    roster_positions = (league_obj.get("roster_positions")
+                        or settings.get("roster_positions") or [])
+    starters_needed = {}
+    for slot_name in roster_positions:
+        s = str(slot_name).upper()
+        if s in ("QB", "RB", "WR", "TE"):
+            starters_needed[s] = starters_needed.get(s, 0) + 1
+        elif s == "SUPER_FLEX":
+            starters_needed["QB"] = starters_needed.get("QB", 0) + 1
+    if not starters_needed:
+        starters_needed = {"QB": 1, "RB": 2, "WR": 2, "TE": 1}
+    have = {}
+    my_roster = bundle.get("roster") or {}
+    for pid in (my_roster.get("players") or []):
+        pos = _player_info(str(pid), index)["position"]
+        if pos:
+            have[pos] = have.get(pos, 0) + 1
+    for p in my_picks:
+        if p["position"]:
+            have[p["position"]] = have.get(p["position"], 0) + 1
+    needs = []
+    for pos in ("QB", "RB", "WR", "TE"):
+        need = starters_needed.get(pos, 0)
+        got = have.get(pos, 0)
+        needs.append({"position": pos, "have": got, "starters_needed": need,
+                      "open_slots": max(0, need - got)})
+    needs.sort(key=lambda n: (-n["open_slots"], n["position"]))
+    pack["my_needs"] = needs
+
+    slot_text = str(entities.get("draft_slot") or "").strip()
+    pack["prep"] = None
+    if slot_text and rookie_rows:
+        try:
+            rnd_s, pick_s = slot_text.split(".")
+            overall = (int(rnd_s) - 1) * teams + int(pick_s)
+        except (TypeError, ValueError):
+            overall = None
+        if overall:
+            window = []
+            for i, r in enumerate(rookie_rows):
+                rank = i + 1
+                if overall - 2 <= rank <= overall + 2:
+                    window.append({"rank": rank, "name": r.get("name"),
+                                   "position": r.get("position") or "",
+                                   "school": r.get("school") or "",
+                                   "score": _f(r.get("prospect_score"), 1)})
+            pack["prep"] = {"slot": slot_text, "overall_pick": overall,
+                            "class_year": int(class_year) if class_year else None,
+                            "candidates": window}
+    return pack, tools
+
+
 BUILDERS = {
     "start_sit": build_start_sit,
     "trade_eval": build_trade_eval,
@@ -6942,4 +7449,6 @@ BUILDERS = {
     "activity": build_activity,
     "watchlist": build_watchlist,
     "front_office": build_front_office,
+    "live": build_live,
+    "draft": build_draft,
 }

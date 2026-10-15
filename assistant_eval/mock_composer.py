@@ -281,6 +281,8 @@ _LEAGUE_LINKS = {
     "schedule": ("schedule", "Open in Schedule Assistant"),
     "activity": ("activity", "View Activity"),
     "front_office": ("dashboard", "View Front Office"),
+    "live": ("scorezone", "Open ScoreZone"),
+    "draft": ("draft", "Open Draft Room"),
 }
 
 
@@ -2133,6 +2135,115 @@ def _open(pack, question):
             "actions": [], "mentions": mentions[:8]}
 
 
+def _live(pack):
+    mu = pack.get("matchup") or {}
+    a, b = mu.get("team_a") or {}, mu.get("team_b") or {}
+    receipts = []
+    if a.get("current_points") is not None:
+        receipts.append({"label": f"{a.get('team_name')} points so far",
+                         "value": fmt(a["current_points"])})
+    if b.get("current_points") is not None:
+        receipts.append({"label": f"{b.get('team_name')} points so far",
+                         "value": fmt(b["current_points"])})
+    if a.get("win_prob_pct") is not None and len(receipts) < 4:
+        receipts.append({"label": f"{a.get('team_name')} win probability (%)",
+                         "value": fmt(a["win_prob_pct"])})
+    if a.get("projected") is not None and len(receipts) < 4:
+        receipts.append({"label": f"{a.get('team_name')} projected final",
+                         "value": fmt(a["projected"])})
+    state = pack.get("state")
+    mine = bool(mu.get("is_mine"))
+    lead = (a.get("current_points") or 0) >= (b.get("current_points") or 0)
+    if state == "pregame":
+        verdict = "No games have started yet"
+        text = (f"No games have kicked off for Week {pack.get('week')} yet. "
+                f"The projection has {a.get('team_name')} at {fmt(a.get('projected'))} "
+                f"and {b.get('team_name')} at {fmt(b.get('projected'))}.")
+    else:
+        if mine:
+            verdict = (f"You {'lead' if lead else 'trail'} "
+                       f"{fmt(a.get('current_points'))} to {fmt(b.get('current_points'))}")
+        else:
+            verdict = (f"{a.get('team_name')} {'leads' if lead else 'trails'} "
+                       f"{fmt(a.get('current_points'))} to {fmt(b.get('current_points'))}")
+        text = (f"{a.get('team_name')} has {fmt(a.get('current_points'))} points so far "
+                f"against {fmt(b.get('current_points'))} for {b.get('team_name')}, with a "
+                f"live projection of {fmt(a.get('projected'))} to {fmt(b.get('projected'))} "
+                f"and a win probability of {fmt(a.get('win_prob_pct'))} percent.")
+        need = pack.get("need") or {}
+        rem = need.get("my_remaining") or []
+        if mine and rem:
+            names = ", ".join(f"{r.get('name')} ({fmt(r.get('projection'))} projected)"
+                              for r in rem)
+            text += f" You still have {names} to play."
+        if mine and (need.get("deficit") or 0) > 0:
+            text += (f" You need at least {fmt(need.get('deficit'))} more points "
+                     f"than {b.get('team_name')} the rest of the way.")
+    ans = _base("live", pack)
+    ans.update({"verdict": verdict, "text": text, "receipts": receipts[:4],
+                "followups": [_fu("What do I need tonight?"), _fu("Break down my matchup")]})
+    return ans
+
+
+def _draft(pack):
+    receipts = []
+    cur = pack.get("current_pick") or {}
+    if cur.get("pick_no") is not None:
+        receipts.append({"label": "Current pick", "value": fmt(cur["pick_no"])})
+    nxt = pack.get("my_next_pick") or {}
+    if nxt.get("pick_no") is not None and len(receipts) < 4:
+        receipts.append({"label": "Your next pick", "value": fmt(nxt["pick_no"])})
+    best = (pack.get("best_available") or [None])[0]
+    if best and best.get("value") is not None and len(receipts) < 4:
+        receipts.append({"label": f"{best.get('name')} value", "value": fmt(best["value"])})
+    prep = pack.get("prep") or {}
+    top_cand = (prep.get("candidates") or [None])[0]
+    if top_cand and top_cand.get("score") is not None and len(receipts) < 4:
+        receipts.append({"label": f"{top_cand.get('name')} prospect score",
+                         "value": fmt(top_cand["score"])})
+    if not receipts and pack.get("picks_made") is not None:
+        receipts.append({"label": "Picks made", "value": fmt(pack["picks_made"])})
+    status = pack.get("status")
+    if prep:
+        cands = prep.get("candidates") or []
+        names = ", ".join(str(c.get("name")) for c in cands)
+        at_pick = next((c for c in cands
+                        if c.get("rank") == prep.get("overall_pick")), None)
+        verdict = (str(at_pick.get("name")) if at_pick
+                   else (str(cands[0].get("name")) if cands else "Draft prep"))
+        text = (f"At the {prep.get('slot')} (pick {fmt(prep.get('overall_pick'))} of the "
+                f"{fmt(prep.get('class_year'))} class), the board runs {names}.")
+        if at_pick:
+            text += (f" The player sitting at that slot is {at_pick.get('name')} "
+                     f"({at_pick.get('position')}, prospect score "
+                     f"{fmt(at_pick.get('score'))}).")
+    elif status == "drafting" and best:
+        verdict = str(best.get("name"))
+        text = (f"{cur.get('team_name')} is on the clock at pick {fmt(cur.get('pick_no'))} "
+                f"of round {fmt(cur.get('round'))}. The best player still available is "
+                f"{best.get('name')} ({best.get('position')}, {best.get('team')}), "
+                f"valued at {fmt(best.get('value'))}.")
+        if nxt:
+            text += f" Your next pick is {fmt(nxt.get('pick_no'))}."
+    elif status == "pre_draft" and best:
+        verdict = str(best.get("name"))
+        text = (f"The draft has not started. On current values the best player "
+                f"available is {best.get('name')} ({best.get('position')}), "
+                f"valued at {fmt(best.get('value'))}.")
+    else:
+        verdict = "Draft complete"
+        mine = pack.get("my_picks") or []
+        names = ", ".join(str(p.get("name")) for p in mine)
+        text = (f"The draft is complete with {fmt(pack.get('picks_made'))} picks made.")
+        if names:
+            text += f" Your picks: {names}."
+    ans = _base("draft", pack)
+    ans.update({"verdict": verdict, "text": text, "receipts": receipts[:4],
+                "followups": [_fu("Who is on the clock?"),
+                              _fu("What does my roster still need?")]})
+    return ans
+
+
 _BUILDERS = {"start_sit": _start_sit, "trade_eval": _trade_eval,
              "buy_sell_hold": _buy_sell_hold, "player": _player, "metric": _metric,
              "leaderboard": _leaderboard, "trade_finding": _trade_finding,
@@ -2145,7 +2256,8 @@ _BUILDERS = {"start_sit": _start_sit, "trade_eval": _trade_eval,
              "playoffs": _playoffs, "power_rankings": _power_rankings,
              "standings": _standings, "matchup": _matchup, "schedule": _schedule,
              "keeper": _keeper, "rookie": _rookie, "cross_league": _cross_league,
-             "activity": _activity, "watchlist": _watchlist, "front_office": _front_office}
+             "activity": _activity, "watchlist": _watchlist, "front_office": _front_office,
+             "live": _live, "draft": _draft}
 
 
 def compose_mock(question: dict) -> dict:

@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "description": "Frozen assistant eval set: 125 questions with golden evidence packs for the BR Fantasy assistant (workshop section 5 core 20, the deep-cuts leaderboard family lb1-lb6, and the section 9 P1 league-context types: playoffs, power rankings, standings, matchup, schedule) plus the P1 trade-finding family tf1-tf4, and the P1 breakout board, Teams, and pick-ownership families bo1-bo3, tm1-tm2, pk1 (renamed from the branch po1, which collided with the playoffs po1), with te4 an extra trade_eval. The win-outcome family mu4-mu6 pins the game-outcome phrasings (will I win / what are my chances / will I lose) to matchup packs: a decisive favorite, a close game, and a decisive underdog. The buy/sell board family bl1/sh1 pins pool-wide buy-low and sell-high asks (no named player) to leaderboard value boards, with bsh4/bsh5 as the named-player controls that must stay single-player buy_sell_hold. The roster start/sit family ss5-ss7 pins slot questions that name no players (start at FLEX, start at RB, sit at FLEX) to roster-scoped packs built from the asking user's own lineup: the FLEX occupant is benched for the bench challenger who out-projects him, and the RB question is a keep-the-starter call. The open-layer wild set ow1-ow19 freezes tool evidence (production tool-entry shape) instead of builder packs: ungoverned phrasings, a follow-up chain (ow5-ow7), a two-part question (ow8), a non-default team (ow9), a PRO gate through the open layer (ow18), and an off-site decline (ow19). The breadth family lb7-lb9 pins cross-metric breadth boards (top-N finishes counted across a metric family: lb7 receiving in Kaedon's exact phrasing, lb8 rushing) and the players-only receiving-yards stat board (the team-row regression: the live board once ranked TEAM_LAR first). The detailed-question family dq1-dq11 pins the composed boards: weekly-finish breadth, floor, and ceiling from game logs (dq1-dq3), the value board under an age ceiling (dq4), a metric board restricted to the waiver pool (dq5), opportunity leaders re-ranked by upcoming schedule (dq6), the within-team No. 1 vs No. 2 gap (dq7), positional-rank climbers from value history (dq8), Teams roster breadth (dq9), a category sweep (dq10), and the no-history trap for rank trajectory (dq11). The history family hs1-hs4 adds past-season boards (metric, raw stat, and movers boards for 2024, plus the no-historical-form trap for value boards), and po4 adds the playoff-odds trajectory.",
+    "description": "Frozen assistant eval set: 125 questions with golden evidence packs for the BR Fantasy assistant (workshop section 5 core 20, the deep-cuts leaderboard family lb1-lb6, and the section 9 P1 league-context types: playoffs, power rankings, standings, matchup, schedule) plus the P1 trade-finding family tf1-tf4, and the P1 breakout board, Teams, and pick-ownership families bo1-bo3, tm1-tm2, pk1 (renamed from the branch po1, which collided with the playoffs po1), with te4 an extra trade_eval. The win-outcome family mu4-mu6 pins the game-outcome phrasings (will I win / what are my chances / will I lose) to matchup packs: a decisive favorite, a close game, and a decisive underdog. The buy/sell board family bl1/sh1 pins pool-wide buy-low and sell-high asks (no named player) to leaderboard value boards, with bsh4/bsh5 as the named-player controls that must stay single-player buy_sell_hold. The roster start/sit family ss5-ss7 pins slot questions that name no players (start at FLEX, start at RB, sit at FLEX) to roster-scoped packs built from the asking user's own lineup: the FLEX occupant is benched for the bench challenger who out-projects him, and the RB question is a keep-the-starter call. The open-layer wild set ow1-ow19 freezes tool evidence (production tool-entry shape) instead of builder packs: ungoverned phrasings, a follow-up chain (ow5-ow7), a two-part question (ow8), a non-default team (ow9), a PRO gate through the open layer (ow18), and an off-site decline (ow19). The breadth family lb7-lb9 pins cross-metric breadth boards (top-N finishes counted across a metric family: lb7 receiving in Kaedon's exact phrasing, lb8 rushing) and the players-only receiving-yards stat board (the team-row regression: the live board once ranked TEAM_LAR first). The detailed-question family dq1-dq11 pins the composed boards: weekly-finish breadth, floor, and ceiling from game logs (dq1-dq3), the value board under an age ceiling (dq4), a metric board restricted to the waiver pool (dq5), opportunity leaders re-ranked by upcoming schedule (dq6), the within-team No. 1 vs No. 2 gap (dq7), positional-rank climbers from value history (dq8), Teams roster breadth (dq9), a category sweep (dq10), and the no-history trap for rank trajectory (dq11). The history family hs1-hs4 adds past-season boards (metric, raw stat, and movers boards for 2024, plus the no-historical-form trap for value boards), and po4 adds the playoff-odds trajectory. The live family lv1-lv2 adds in-game questions over fixture live state, and the draft family dr1-dr2 adds live draft help (best available and a 1.03 prep window).",
     "scenario": "Kaedon's league Blackedraw, her team Caleb's Casting Couch, Week 7 of the 2026 season.",
     "packs": "Each evidence_pack mirrors, field for field, the dict the matching builder in dashboard_services/assistant/evidence.py returns. Values inside a pack are the only numbers an answer may cite.",
     "recapture": "These packs are frozen fixtures. Before any launch decision, recapture them from the live tools with: python3 scripts/run_assistant_eval.py --capture (writes assistant_eval/captured_questions.json; it never overwrites this file). A launch call made on stale fixtures is not a launch call.",
@@ -15747,6 +15747,718 @@
         "must_mention": [
           "Caleb's Casting Couch",
           "Week 2"
+        ]
+      }
+    },
+    {
+      "id": "lv1",
+      "type": "live",
+      "question": "Who is winning my game right now?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "live",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "state": "live",
+        "board": [
+          {
+            "team_a": "Caleb's Casting Couch",
+            "team_b": "Bijan Mustard",
+            "a_points": 84.5,
+            "b_points": 79.2,
+            "a_win_prob_pct": 62.0
+          }
+        ],
+        "matchup": {
+          "week": 7,
+          "is_mine": true,
+          "team_a": {
+            "roster_id": "3",
+            "team_name": "Caleb's Casting Couch",
+            "record": "5-2",
+            "current_points": 84.5,
+            "projected": 121.4,
+            "win_prob_pct": 62.0,
+            "players": [
+              {
+                "name": "Josh Allen",
+                "position": "QB",
+                "points": 31.4,
+                "projection": 28.6,
+                "status": "final"
+              },
+              {
+                "name": "Ja'Marr Chase",
+                "position": "WR",
+                "points": 27.8,
+                "projection": 19.4,
+                "status": "final"
+              },
+              {
+                "name": "Bijan Robinson",
+                "position": "RB",
+                "points": 18.6,
+                "projection": 17.9,
+                "status": "in_progress"
+              },
+              {
+                "name": "Malik Nabers",
+                "position": "WR",
+                "points": 6.7,
+                "projection": 14.2,
+                "status": "in_progress"
+              },
+              {
+                "name": "Sam LaPorta",
+                "position": "TE",
+                "points": 0.0,
+                "projection": 9.8,
+                "status": "not_started"
+              }
+            ],
+            "remaining": [
+              {
+                "name": "Sam LaPorta",
+                "position": "TE",
+                "projection": 9.8
+              }
+            ],
+            "remaining_projection": 9.8
+          },
+          "team_b": {
+            "roster_id": "5",
+            "team_name": "Bijan Mustard",
+            "record": "4-3",
+            "current_points": 79.2,
+            "projected": 118.9,
+            "win_prob_pct": 38.0,
+            "players": [
+              {
+                "name": "Jalen Hurts",
+                "position": "QB",
+                "points": 26.2,
+                "projection": 25.1,
+                "status": "final"
+              },
+              {
+                "name": "Saquon Barkley",
+                "position": "RB",
+                "points": 22.4,
+                "projection": 18.8,
+                "status": "final"
+              },
+              {
+                "name": "Amon-Ra St. Brown",
+                "position": "WR",
+                "points": 19.9,
+                "projection": 16.2,
+                "status": "in_progress"
+              },
+              {
+                "name": "Derrick Henry",
+                "position": "RB",
+                "points": 10.7,
+                "projection": 15.6,
+                "status": "in_progress"
+              },
+              {
+                "name": "Mark Andrews",
+                "position": "TE",
+                "points": 0.0,
+                "projection": 8.4,
+                "status": "not_started"
+              }
+            ],
+            "remaining": [
+              {
+                "name": "Mark Andrews",
+                "position": "TE",
+                "projection": 8.4
+              }
+            ],
+            "remaining_projection": 8.4
+          }
+        },
+        "need": {
+          "deficit": 0.0,
+          "lead": 5.3,
+          "my_remaining": [
+            {
+              "name": "Sam LaPorta",
+              "position": "TE",
+              "projection": 9.8
+            }
+          ],
+          "opp_remaining": [
+            {
+              "name": "Mark Andrews",
+              "position": "TE",
+              "projection": 8.4
+            }
+          ],
+          "my_remaining_projection": 9.8,
+          "opp_remaining_projection": 8.4
+        },
+        "margin": {
+          "thin": false
+        }
+      },
+      "reference": {
+        "verdict_kind": "live_score",
+        "pick": "You lead 84.5 to 79.2",
+        "key_numbers": [
+          84.5,
+          79.2,
+          62.0
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Caleb's Casting Couch",
+          "Bijan Mustard"
+        ]
+      }
+    },
+    {
+      "id": "lv2",
+      "type": "live",
+      "question": "What do I need tonight to win?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "live",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "state": "live",
+        "board": [
+          {
+            "team_a": "Caleb's Casting Couch",
+            "team_b": "Bijan Mustard",
+            "a_points": 79.2,
+            "b_points": 84.5,
+            "a_win_prob_pct": 41.0
+          }
+        ],
+        "matchup": {
+          "week": 7,
+          "is_mine": true,
+          "team_a": {
+            "roster_id": "3",
+            "team_name": "Caleb's Casting Couch",
+            "record": "5-2",
+            "current_points": 79.2,
+            "projected": 117.6,
+            "win_prob_pct": 41.0,
+            "players": [
+              {
+                "name": "Josh Allen",
+                "position": "QB",
+                "points": 24.1,
+                "projection": 28.6,
+                "status": "final"
+              },
+              {
+                "name": "Ja'Marr Chase",
+                "position": "WR",
+                "points": 27.8,
+                "projection": 19.4,
+                "status": "final"
+              },
+              {
+                "name": "Bijan Robinson",
+                "position": "RB",
+                "points": 18.6,
+                "projection": 17.9,
+                "status": "final"
+              },
+              {
+                "name": "Sam LaPorta",
+                "position": "TE",
+                "points": 8.7,
+                "projection": 9.8,
+                "status": "final"
+              },
+              {
+                "name": "Malik Nabers",
+                "position": "WR",
+                "points": 0.0,
+                "projection": 14.2,
+                "status": "not_started"
+              }
+            ],
+            "remaining": [
+              {
+                "name": "Malik Nabers",
+                "position": "WR",
+                "projection": 14.2
+              }
+            ],
+            "remaining_projection": 14.2
+          },
+          "team_b": {
+            "roster_id": "5",
+            "team_name": "Bijan Mustard",
+            "record": "4-3",
+            "current_points": 84.5,
+            "projected": 109.3,
+            "win_prob_pct": 59.0,
+            "players": [
+              {
+                "name": "Jalen Hurts",
+                "position": "QB",
+                "points": 26.2,
+                "projection": 25.1,
+                "status": "final"
+              },
+              {
+                "name": "Saquon Barkley",
+                "position": "RB",
+                "points": 22.4,
+                "projection": 18.8,
+                "status": "final"
+              },
+              {
+                "name": "Amon-Ra St. Brown",
+                "position": "WR",
+                "points": 19.9,
+                "projection": 16.2,
+                "status": "final"
+              },
+              {
+                "name": "Derrick Henry",
+                "position": "RB",
+                "points": 16.0,
+                "projection": 15.6,
+                "status": "final"
+              },
+              {
+                "name": "Mark Andrews",
+                "position": "TE",
+                "points": 0.0,
+                "projection": 8.4,
+                "status": "not_started"
+              }
+            ],
+            "remaining": [
+              {
+                "name": "Mark Andrews",
+                "position": "TE",
+                "projection": 8.4
+              }
+            ],
+            "remaining_projection": 8.4
+          }
+        },
+        "need": {
+          "deficit": 5.3,
+          "lead": 0.0,
+          "my_remaining": [
+            {
+              "name": "Malik Nabers",
+              "position": "WR",
+              "projection": 14.2
+            }
+          ],
+          "opp_remaining": [
+            {
+              "name": "Mark Andrews",
+              "position": "TE",
+              "projection": 8.4
+            }
+          ],
+          "my_remaining_projection": 14.2,
+          "opp_remaining_projection": 8.4
+        },
+        "margin": {
+          "thin": false
+        }
+      },
+      "reference": {
+        "verdict_kind": "live_score",
+        "pick": "You trail 79.2 to 84.5",
+        "key_numbers": [
+          79.2,
+          84.5,
+          5.3,
+          14.2
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Malik Nabers",
+          "Bijan Mustard"
+        ]
+      }
+    },
+    {
+      "id": "dr1",
+      "type": "draft",
+      "question": "Who is the best available in my draft?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "draft",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "status": "drafting",
+        "draft_season": 2026,
+        "rounds": 15,
+        "league_size": 12,
+        "draft_kind": "full",
+        "order_format": "snake",
+        "picks_made": 24,
+        "total_picks": 180,
+        "my_picks": [
+          {
+            "pick_no": 3,
+            "name": "Ja'Marr Chase",
+            "position": "WR"
+          },
+          {
+            "pick_no": 22,
+            "name": "Saquon Barkley",
+            "position": "RB"
+          }
+        ],
+        "current_pick": {
+          "pick_no": 25,
+          "round": 3,
+          "slot": 1,
+          "roster_id": "7",
+          "team_name": "Hurts So Good",
+          "is_mine": false
+        },
+        "my_next_pick": {
+          "pick_no": 27,
+          "round": 3,
+          "slot": 3,
+          "picks_away": 2
+        },
+        "best_available": [
+          {
+            "player_id": "bijan-robinson",
+            "name": "Bijan Robinson",
+            "position": "RB",
+            "team": "ATL",
+            "value": 7450.0
+          },
+          {
+            "player_id": "josh-allen",
+            "name": "Josh Allen",
+            "position": "QB",
+            "team": "BUF",
+            "value": 7300.0
+          },
+          {
+            "player_id": "jahmyr-gibbs",
+            "name": "Jahmyr Gibbs",
+            "position": "RB",
+            "team": "DET",
+            "value": 7100.0
+          },
+          {
+            "player_id": "puka-nacua",
+            "name": "Puka Nacua",
+            "position": "WR",
+            "team": "LAR",
+            "value": 6950.0
+          }
+        ],
+        "best_available_by_position": {
+          "QB": [
+            {
+              "name": "Josh Allen",
+              "value": 7300.0
+            }
+          ],
+          "RB": [
+            {
+              "name": "Bijan Robinson",
+              "value": 7450.0
+            }
+          ],
+          "WR": [
+            {
+              "name": "Puka Nacua",
+              "value": 6950.0
+            }
+          ],
+          "TE": [
+            {
+              "name": "Brock Bowers",
+              "value": 5400.0
+            }
+          ]
+        },
+        "rookie_class_year": 2027,
+        "best_available_rookies": [],
+        "my_needs": [
+          {
+            "position": "TE",
+            "have": 0,
+            "starters_needed": 1,
+            "open_slots": 1
+          },
+          {
+            "position": "QB",
+            "have": 0,
+            "starters_needed": 2,
+            "open_slots": 2
+          },
+          {
+            "position": "RB",
+            "have": 1,
+            "starters_needed": 2,
+            "open_slots": 1
+          },
+          {
+            "position": "WR",
+            "have": 1,
+            "starters_needed": 2,
+            "open_slots": 1
+          }
+        ],
+        "prep": null
+      },
+      "reference": {
+        "verdict_kind": "best_available",
+        "pick": "Bijan Robinson",
+        "key_numbers": [
+          25,
+          27,
+          7450
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Bijan Robinson",
+          "Hurts So Good"
+        ]
+      }
+    },
+    {
+      "id": "dr2",
+      "type": "draft",
+      "question": "Who should I target at 1.03 in my rookie draft?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "draft",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "status": "pre_draft",
+        "draft_season": 2027,
+        "rounds": 4,
+        "league_size": 12,
+        "draft_kind": "rookie",
+        "order_format": "linear",
+        "picks_made": 0,
+        "total_picks": 48,
+        "my_picks": [],
+        "current_pick": null,
+        "my_next_pick": null,
+        "best_available": [
+          {
+            "player_id": "justin-jefferson",
+            "name": "Justin Jefferson",
+            "position": "WR",
+            "team": "MIN",
+            "value": 9200.0
+          }
+        ],
+        "best_available_by_position": {},
+        "rookie_class_year": 2027,
+        "best_available_rookies": [
+          {
+            "rank": 1,
+            "name": "Jeremiah Smith",
+            "position": "WR",
+            "school": "Ohio State",
+            "score": 96.2
+          },
+          {
+            "rank": 2,
+            "name": "Julian Sayin",
+            "position": "QB",
+            "school": "Ohio State",
+            "score": 94.0
+          },
+          {
+            "rank": 3,
+            "name": "Jeremiyah Love",
+            "position": "RB",
+            "school": "Notre Dame",
+            "score": 93.1
+          },
+          {
+            "rank": 4,
+            "name": "Dante Moore",
+            "position": "QB",
+            "school": "Oregon",
+            "score": 91.8
+          },
+          {
+            "rank": 5,
+            "name": "Ahmad Hardy",
+            "position": "RB",
+            "school": "Missouri",
+            "score": 91.0
+          }
+        ],
+        "my_needs": [
+          {
+            "position": "RB",
+            "have": 2,
+            "starters_needed": 2,
+            "open_slots": 0
+          },
+          {
+            "position": "WR",
+            "have": 3,
+            "starters_needed": 2,
+            "open_slots": 0
+          },
+          {
+            "position": "QB",
+            "have": 2,
+            "starters_needed": 2,
+            "open_slots": 0
+          },
+          {
+            "position": "TE",
+            "have": 1,
+            "starters_needed": 1,
+            "open_slots": 0
+          }
+        ],
+        "prep": {
+          "slot": "1.03",
+          "overall_pick": 3,
+          "class_year": 2027,
+          "candidates": [
+            {
+              "rank": 1,
+              "name": "Jeremiah Smith",
+              "position": "WR",
+              "school": "Ohio State",
+              "score": 96.2
+            },
+            {
+              "rank": 2,
+              "name": "Julian Sayin",
+              "position": "QB",
+              "school": "Ohio State",
+              "score": 94.0
+            },
+            {
+              "rank": 3,
+              "name": "Jeremiyah Love",
+              "position": "RB",
+              "school": "Notre Dame",
+              "score": 93.1
+            },
+            {
+              "rank": 4,
+              "name": "Dante Moore",
+              "position": "QB",
+              "school": "Oregon",
+              "score": 91.8
+            },
+            {
+              "rank": 5,
+              "name": "Ahmad Hardy",
+              "position": "RB",
+              "school": "Missouri",
+              "score": 91.0
+            }
+          ]
+        }
+      },
+      "reference": {
+        "verdict_kind": "draft_prep",
+        "pick": "Jeremiyah Love",
+        "key_numbers": [
+          3,
+          93.1
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Jeremiyah Love",
+          "1.03"
         ]
       }
     }
