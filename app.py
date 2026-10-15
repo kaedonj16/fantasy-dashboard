@@ -23458,7 +23458,12 @@ def api_trade_outcome():
 
 
 @app.route("/api/trade-eval", methods=["POST"])
-@limiter.limit("30 per minute")
+# 90/min, not 30: one documented user action costs up to 3 eval POSTs in
+# static/app.js (renderChips("A") and renderChips("B") each end in
+# recomputeTrade(), and suggestion/sample flows then call analyzeTrade()),
+# so 30/min was only 10 real actions per minute and normal trade browsing
+# self-429ed. 90/min restores 30 actions/min while keeping a hard ceiling.
+@limiter.limit("90 per minute")
 def api_trade_eval():
     try:
         payload = request.get_json(force=True) or {}
@@ -23842,7 +23847,12 @@ from utils.json_sanitize import sanitize_for_json as _sanitize_for_json  # noqa:
 
 
 @app.route("/api/trade-eval/playoff-impact", methods=["POST"])
-@limiter.limit("20 per minute")
+# 60/min, not 20: every successful recomputeTrade() spawns one
+# playoff-impact POST, and the renderChips("A") + renderChips("B") pair in
+# one user action spawns 2, so 20/min was only 10 real actions per minute
+# and tripped BEFORE trade-eval did. 60/min matches the 30 actions/min
+# budget the trade-eval cap now allows.
+@limiter.limit("60 per minute")
 def api_trade_eval_playoff_impact():
     """
     Return before/after playoff odds and win projections for a proposed trade.
