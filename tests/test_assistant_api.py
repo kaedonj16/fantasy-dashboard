@@ -18,7 +18,7 @@ def state(monkeypatch):
     conn = FakeConn(st)
     monkeypatch.setattr(store, "_TABLE_READY", False)
     monkeypatch.setattr(store, "get_conn", lambda *a, **k: conn)
-    monkeypatch.setattr(service, "_is_paid", lambda key: False)
+    monkeypatch.setattr(service, "_active_plan", lambda key: None)
     monkeypatch.setattr(service.ctx_mod, "resolve_league", lambda key, **kw: dict(BUNDLE))
     return st
 
@@ -73,7 +73,14 @@ def test_context_happy_path_and_teaser_generated_once(app, state, monkeypatch):
     body = r1.get_json()
     assert body["ok"] is True
     assert body["league"]["league_name"] == "Blackedraw"
-    assert body["caps"] == {"used": 0, "limit": 25, "tier": "free"}
+    caps = body["caps"]
+    assert caps["used"] == 0 and caps["limit"] == 25 and caps["tier"] == "free"
+    assert caps["tier_label"] == "Free" and caps["plan_key"] is None
+    assert caps["exempt"] is False
+    assert [(t["key"], t["limit"], t["current"]) for t in caps["tiers"]] == [
+        ("free", 25, True), ("starter", 250, False),
+        ("all_pro", 1000, False), ("hall_of_fame", 10000, False),
+    ]
     assert body["teaser"]["kind"] == "digest"
     assert body["teaser"]["title"] == "Your Week 7 moves are ready"
     assert body["teaser"]["lead"] == "Start Odunze"
@@ -82,6 +89,21 @@ def test_context_happy_path_and_teaser_generated_once(app, state, monkeypatch):
     r2 = c.get("/api/assistant/context")
     assert r2.get_json()["teaser"]["lead"] == "Start Odunze"
     assert calls["n"] == 1  # second fetch served from the stored proactive row
+
+
+def test_context_caps_reflect_paid_tier(app, state, monkeypatch):
+    monkeypatch.setattr(service, "_active_plan", lambda key: {"plan_key": "all_pro"})
+    monkeypatch.setitem(service.BUILDERS, "this_week",
+                        lambda bundle, entities, player_ids=None:
+                        ({"type": "this_week", "available": True, "actions": [], "as_of": {}}, []))
+    c = _client(app)
+    body = c.get("/api/assistant/context").get_json()
+    caps = body["caps"]
+    assert caps["tier"] == "all_pro" and caps["tier_label"] == "All-Pro"
+    assert caps["limit"] == 1000 and caps["plan_key"] == "all_pro"
+    assert caps["exempt"] is False
+    assert [t["current"] for t in caps["tiers"]] == [False, False, True, False]
+    assert body["teaser"] is None  # empty digest: marker row only, no teaser
 
 
 def test_chat_happy_and_cap_429(app, state, monkeypatch):
@@ -104,6 +126,10 @@ def test_chat_happy_and_cap_429(app, state, monkeypatch):
     r2 = c.post("/api/assistant/chat", json={"message": "Start Odunze?"})
     assert r2.status_code == 429
     assert r2.get_json()["error"] == "cap_reached"
+    # The 429 carries the full usage payload so the UI can open the plans panel.
+    caps429 = r2.get_json()["caps"]
+    assert caps429["used"] == 1 and caps429["limit"] == 1 and caps429["exempt"] is False
+    assert [t["key"] for t in caps429["tiers"]] == ["free", "starter", "all_pro", "hall_of_fame"]
 
 
 def test_chat_clarify_shape(app, state, monkeypatch):

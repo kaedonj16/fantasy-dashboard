@@ -141,7 +141,7 @@ def env(monkeypatch):
     conn = FakeConn(state)
     monkeypatch.setattr(store, "_TABLE_READY", False)
     monkeypatch.setattr(store, "get_conn", lambda *a, **k: conn)
-    monkeypatch.setattr(service, "_is_paid", lambda key: False)
+    monkeypatch.setattr(service, "_active_plan", lambda key: None)
     monkeypatch.setattr(service.ctx_mod, "resolve_league", lambda key, **kw: dict(BUNDLE))
     monkeypatch.setattr(service, "resolve_player",
                         lambda name, roster_player_ids=None: _real_resolve(name, index=INDEX, roster_player_ids=roster_player_ids))
@@ -193,6 +193,113 @@ def test_cap_reached(env, monkeypatch):
     store.write_log(account_key="acct:42", proactive=False, intent="player")
     with pytest.raises(service.CapReached):
         service.ask("acct:42", "Start Odunze or Mooney?")
+
+
+def test_caps_tier_ladder_by_plan(env, monkeypatch):
+    # Free: no active plan row.
+    caps = service.caps_for("acct:42")
+    assert caps["tier"] == "free" and caps["limit"] == 25 and caps["plan_key"] is None
+    assert caps["exempt"] is False
+    assert [t["key"] for t in caps["tiers"]] == ["free", "starter", "all_pro", "hall_of_fame"]
+    assert [t["limit"] for t in caps["tiers"]] == [25, 250, 1000, 10000]
+    assert [t["current"] for t in caps["tiers"]] == [True, False, False, False]
+
+    cases = [
+        ("starter", "starter", 250), ("single_league", "starter", 250),
+        ("all_pro", "all_pro", 1000), ("league", "all_pro", 1000),
+        ("hall_of_fame", "hall_of_fame", 10000), ("user", "hall_of_fame", 10000),
+        ("combo", "hall_of_fame", 10000),
+        ("some_future_plan", "starter", 250),  # unknown paid keys keep the old paid cap
+    ]
+    for plan_key, tier, limit in cases:
+        monkeypatch.setattr(service, "_active_plan", lambda key, pk=plan_key: {"plan_key": pk})
+        caps = service.caps_for("acct:42")
+        assert caps["tier"] == tier and caps["limit"] == limit, plan_key
+        assert caps["plan_key"] == plan_key
+        assert caps["tier_label"] == service.TIER_LABELS[tier]
+        assert [t["current"] for t in caps["tiers"]] == [t["key"] == tier for t in caps["tiers"]]
+
+
+def test_caps_env_overrides(env, monkeypatch):
+    monkeypatch.setenv("ASSISTANT_FREE_MONTHLY_CAP", "5")
+    monkeypatch.setenv("ASSISTANT_PAID_MONTHLY_CAP", "300")  # legacy knob: starter tier
+    monkeypatch.setenv("ASSISTANT_ALL_PRO_MONTHLY_CAP", "2000")
+    caps = service.caps_for("acct:42")
+    assert caps["limit"] == 5
+    assert [t["limit"] for t in caps["tiers"]] == [5, 300, 2000, 10000]
+
+
+def test_owner_exempt_never_capped_but_usage_counts(env, monkeypatch):
+    monkeypatch.setenv("ASSISTANT_FREE_MONTHLY_CAP", "1")
+    monkeypatch.setattr(service, "_is_exempt", lambda: True)
+    monkeypatch.setattr(service, "classify", _route("start_sit", player_names=["Rome Odunze", "Darnell Mooney"]))
+    monkeypatch.setitem(service.BUILDERS, "start_sit", _start_sit_pack)
+    monkeypatch.setattr(compose_mod, "call_model_json",
+                        lambda system, user, schema, name: {
+                            "verdict": "START Rome Odunze", "text": "Start Odunze.",
+                            "receipts": [], "caveat": None, "followups": [], "act_link": None})
+    # Two prior asks this month: already past the free cap of 1.
+    store.write_log(account_key="acct:42", proactive=False, intent="player")
+    store.write_log(account_key="acct:42", proactive=False, intent="player")
+    out = service.ask("acct:42", "Start Odunze or Mooney?")
+    assert out["caps"]["exempt"] is True
+    assert out["caps"]["used"] == 3  # the exempt ask still counted
+    # A non-owner at the same usage is capped (see also test_cap_reached).
+    monkeypatch.setattr(service, "_is_exempt", lambda: False)
+    with pytest.raises(service.CapReached):
+        service.ask("acct:42", "Start Odunze or Mooney?")
+
+
+def test_env_listed_account_exempt_without_admin_session(env, monkeypatch):
+    # No admin session exists in the test environment (the _is_exempt admin
+    # path is False outside a request context); the env list alone exempts.
+    monkeypatch.setenv("ASSISTANT_EXEMPT_ACCOUNT_KEYS", "acct:42")
+    assert service.caps_for("acct:42")["exempt"] is True
+    assert service.caps_for("acct:7")["exempt"] is False
+    # Bare ids, blanks, and messy spacing normalize the same way.
+    monkeypatch.setenv("ASSISTANT_EXEMPT_ACCOUNT_KEYS", " 7 , acct:9 ,")
+    assert service.caps_for("acct:42")["exempt"] is False
+    assert service.caps_for("acct:7")["exempt"] is True
+    assert service.caps_for("acct:9")["exempt"] is True
+
+
+def test_env_listed_account_never_capped_but_usage_counts(env, monkeypatch):
+    monkeypatch.setenv("ASSISTANT_FREE_MONTHLY_CAP", "1")
+    monkeypatch.setenv("ASSISTANT_EXEMPT_ACCOUNT_KEYS", "42")
+    monkeypatch.setattr(service, "classify", _route("start_sit", player_names=["Rome Odunze", "Darnell Mooney"]))
+    monkeypatch.setitem(service.BUILDERS, "start_sit", _start_sit_pack)
+    monkeypatch.setattr(compose_mod, "call_model_json",
+                        lambda system, user, schema, name: {
+                            "verdict": "START Rome Odunze", "text": "Start Odunze.",
+                            "receipts": [], "caveat": None, "followups": [], "act_link": None})
+    # Two prior asks this month for both accounts: past the free cap of 1.
+    for key in ("acct:42", "acct:7"):
+        store.write_log(account_key=key, proactive=False, intent="player")
+        store.write_log(account_key=key, proactive=False, intent="player")
+    out = service.ask("acct:42", "Start Odunze or Mooney?")
+    assert out["caps"]["exempt"] is True
+    assert out["caps"]["used"] == 3  # the exempt ask still counted
+    # An account not on the list, at the same usage, is capped.
+    with pytest.raises(service.CapReached):
+        service.ask("acct:7", "Start Odunze or Mooney?")
+
+
+def test_malformed_exempt_env_exempts_nobody(env, monkeypatch):
+    for raw in ("", "   ", "banana", "acct:", "acct:abc", "acct:-1", ",", "acct:4.2"):
+        monkeypatch.setenv("ASSISTANT_EXEMPT_ACCOUNT_KEYS", raw)
+        assert service._exempt_account_ids() == frozenset(), raw
+        assert service.caps_for("acct:42")["exempt"] is False, raw
+
+
+def test_env_listed_email_exempt(env, monkeypatch):
+    monkeypatch.setattr(service, "_account_email",
+                        lambda aid: "owner@example.com" if aid == 42 else None)
+    # Matching is case-insensitive against the stored account email.
+    monkeypatch.setenv("ASSISTANT_EXEMPT_EMAILS", "Owner@Example.com")
+    assert service.caps_for("acct:42")["exempt"] is True
+    assert service.caps_for("acct:7")["exempt"] is False
+    monkeypatch.setenv("ASSISTANT_EXEMPT_EMAILS", "someoneelse@example.com")
+    assert service.caps_for("acct:42")["exempt"] is False
 
 
 def test_clarify_on_ambiguous_name(env, monkeypatch):
