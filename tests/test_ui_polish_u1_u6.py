@@ -59,7 +59,7 @@ def test_u5_trade_chips_and_waiver_rows_expose_full_name_title():
     assert "nameEl.title = p.name || \"Unknown\"" in APP_JS
     assert "nameEl.title = pk.display || pk.id || \"Pick\"" in APP_JS
     app_py = (ROOT / "app.py").read_text(encoding="utf-8")
-    assert 'title="{html.escape(p[\'name\'], quote=True)}"' in app_py
+    assert 'title="{html.escape(name, quote=True)}"' in app_py
     assert 'title="{html.escape(subline, quote=True)}"' in app_py
     # Trending strip already titles full name (waivers page).
     wv = (ROOT / "dashboard_services" / "pages" / "waivers_page.py").read_text(encoding="utf-8")

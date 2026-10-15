@@ -242,6 +242,25 @@ def _rich_candidate(row, pid, pos, val, age_f, rk, need_mult, delta_by_pid=None,
     return cand
 
 
+def _stamp_weekly_points(cand: dict, weekly_pts_by_pid: Optional[dict]) -> None:
+    """Attach caller-built per-week points to a selector candidate.
+
+    The selector's lineup-gain classification reads ``weekly_pts`` first;
+    without it a candidate is judged on a flat forward average and bye /
+    injury weeks are invisible. ``ros_ppg`` is derived from the same
+    weeks when the row does not already carry one.
+    """
+    if not weekly_pts_by_pid:
+        return
+    _wp = weekly_pts_by_pid.get(str(cand.get("player_id") or ""))
+    if not _wp:
+        return
+    cand["weekly_pts"] = list(_wp)
+    _vals = [float(v) for v in _wp if v is not None]
+    if _vals and not cand.get("ros_ppg"):
+        cand["ros_ppg"] = round(sum(_vals) / len(_vals), 2)
+
+
 def recommend_waivers(
     model_rows: list[dict],
     owned_ids: set[str],
@@ -258,6 +277,7 @@ def recommend_waivers(
     weekly_availability: Optional[list] = None,
     lineup_weekly: Optional[list] = None,
     forward_pts_by_pid: Optional[dict] = None,
+    weekly_pts_by_pid: Optional[dict] = None,
     direction: Optional[str] = None,
     playoff_pct=None,
     waiver_type: str = "faab",
@@ -374,6 +394,7 @@ def recommend_waivers(
         cand = _rich_candidate(row, pid, pos, _rv, age_f, rk,
                                need_mults.get(pos, 1.0), delta_by_pid,
                                trending_adds_by_pid, pidx.get(pid) or {})
+        _stamp_weekly_points(cand, weekly_pts_by_pid)
         name = str(cand.get("name") or "").strip()
         if not name or name == pid:
             continue
@@ -567,6 +588,7 @@ def gather_digest_actions(
     proj_map: Optional[dict] = None,
     roster_positions: Optional[list] = None,
     breakout_by_pid: Optional[dict] = None,
+    raw_scoring_settings: Optional[dict] = None,
 ) -> list[str]:
     """Best-effort HTML action sections for one digest recipient.
 
@@ -578,6 +600,7 @@ def gather_digest_actions(
         model_rows=model_rows, movers=movers, nfl_state=nfl_state,
         nfl_players=nfl_players, teams_playing=teams_playing, proj_map=proj_map,
         roster_positions=roster_positions, breakout_by_pid=breakout_by_pid,
+        raw_scoring_settings=raw_scoring_settings,
     )
     out: list[str] = []
     for item in items:
@@ -605,6 +628,7 @@ def gather_digest_action_items(
     proj_map: Optional[dict] = None,
     roster_positions: Optional[list] = None,
     breakout_by_pid: Optional[dict] = None,
+    raw_scoring_settings: Optional[dict] = None,
 ) -> list[dict]:
     """Structured action items (start/sit, waiver, injury) plus pre-rendered HTML."""
     out: list[dict] = []
@@ -700,6 +724,57 @@ def gather_digest_action_items(
             if not positions:
                 positions = list(ctx.get("roster_positions") or [])
         league_owned = set(owned)
+        # Selector opportunity inputs (item 2 parity): weekly availability
+        # always (it needs only schedules + the players index, so calendar
+        # need finally activates on this path); the per-week projection
+        # maps join when the league's raw scoring settings are known --
+        # supplied by the caller, or already on the dashboard-cache ctx
+        # this function loaded above -- because points scored under the
+        # wrong scoring rules would misjudge the lineup math.
+        _scoring = raw_scoring_settings or (ctx.get("raw_scoring_settings") if ctx else None)
+        _opp = {}
+        if in_season and rows:
+            try:
+                from utils.waivers import selector_opportunity_inputs
+                _roster_pids = [str(p) for p in (roster.get("players") or [])]
+                _pos_by_pid = {
+                    str(_pid): str((_meta or {}).get("position")
+                                   or (_meta or {}).get("pos") or "").upper()
+                    for _pid, _meta in (pidx or {}).items()
+                }
+                _cand_rows = []
+                for _row in rows:
+                    if not isinstance(_row, dict):
+                        continue
+                    _cpid = str(_row.get("id") or _row.get("player_id") or "")
+                    _cpos = str(_row.get("position") or _row.get("pos") or "").upper()
+                    if not _cpid or _cpid in league_owned or _cpos not in _SKILL_POS:
+                        continue
+                    _pos_by_pid.setdefault(_cpid, _cpos)
+                    _cand_rows.append(_row)
+                _pk, _fk = value_keys_for_format(fmt)
+
+                def _rough_value(_r):
+                    try:
+                        return float(_r.get(_pk) or _r.get(_fk)
+                                     or _r.get("value") or 0.0)
+                    except (TypeError, ValueError):
+                        return 0.0
+
+                _cand_rows.sort(key=lambda r: -_rough_value(r))
+                _opp = selector_opportunity_inputs(
+                    season=int(nfl.get("season") or season), week=week,
+                    roster_pids=_roster_pids,
+                    candidate_pids=[str(r.get("id") or r.get("player_id") or "")
+                                    for r in _cand_rows[:96]],
+                    positions_by_pid=_pos_by_pid,
+                    players_index=pidx,
+                    raw_scoring_settings=_scoring or {},
+                )
+            except Exception:
+                logger.debug("[digest-actions] waiver opportunity inputs failed",
+                             exc_info=True)
+                _opp = {}
         targets = recommend_waivers(
             rows, league_owned,
             roster_players=list(roster.get("players") or []),
@@ -707,6 +782,9 @@ def gather_digest_action_items(
             pidx=pidx, movers=movers, breakout_by_pid=breakout_by_pid,
             fmt=fmt, limit=3,
             forward_pts_by_pid=proj_map or None,
+            weekly_availability=_opp.get("weekly_availability") or None,
+            lineup_weekly=_opp.get("weekly_maps") if _scoring else None,
+            weekly_pts_by_pid=_opp.get("weekly_pts_by_pid") if _scoring else None,
             direction=(fmt or {}).get("direction"),
             playoff_pct=(fmt or {}).get("playoff_pct"),
         )
@@ -2672,6 +2750,7 @@ def select_waiver_add(
     weekly_availability: Optional[list] = None,
     lineup_weekly: Optional[list] = None,
     forward_pts_by_pid: Optional[dict] = None,
+    weekly_pts_by_pid: Optional[dict] = None,
     direction: Optional[str] = None,
     playoff_pct=None,
     waiver_type: str = "faab",
@@ -2743,6 +2822,7 @@ def select_waiver_add(
         cand = _rich_candidate(row, pid, pos, val, age, rk,
                                need_mults.get(pos, 1.0), None,
                                trending_adds_by_pid, meta)
+        _stamp_weekly_points(cand, weekly_pts_by_pid)
         cand["pos_rank_label"] = label
         inj = str(inj_map.get(pid) or meta.get("injury_status") or "").upper()
         if inj:
