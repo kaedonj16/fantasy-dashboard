@@ -172,6 +172,12 @@ def get_top_movers(*args, **kwargs):
     return _fn(*args, **kwargs)
 
 
+def get_player_weekly_adv_series(*args, **kwargs):
+    from data_building.advanced_metrics import (
+        get_player_weekly_adv_series as _fn)
+    return _fn(*args, **kwargs)
+
+
 def adv_weekly_range_leaderboard(*args, **kwargs):
     from data_building.advanced_metrics import get_adv_weekly_range_leaderboard as _fn
     return _fn(*args, **kwargs)
@@ -2109,20 +2115,236 @@ def _build_matchup_board(pack, bundle, position, top_n, tools):
     return pack, tools
 
 
+# -- buy-low / sell-high boards ---------------------------------------------
+#
+# The v1 screen ranked the site's value movers by raw delta behind a
+# one-dimensional season test (buy-low: season PPG at or over expected;
+# sell-high: season PPG under it). That admits falling knives (value and
+# role collapsing together), cannot tell a TD-propped spike from an
+# earned rise, and ranks a 5% dip on a star over a 25% dip on a mid-tier
+# player. The v2 logic ranks by MISPRICING: how far the price moved
+# against what the player's recent production and opportunity line, his
+# same-position peers, and his context say it should have.
+#
+# Signals (all from data the site already computes; no new metrics):
+# - price: player_value_history.get_top_movers (the /api/value-movers
+#   source, called with that route's arguments), scored as the RELATIVE
+#   move delta / baseline value, never the raw delta.
+# - recent line: the last 4 PLAYED weeks of the weekly advanced-metrics
+#   series. expected_ppr is that week's opportunity-based expectation
+#   and actual points = expected_ppr + ppr_over_expected, so the pair is
+#   internally consistent. Season PPG vs expected PPG (the _metrics_for
+#   line the single-player pack ships) is context and the fallback when
+#   the series cannot verify a recent window.
+# - opportunity: weekly volume weights from the same series (targets +
+#   carries per game; pass attempts + carries for QBs), recent vs season
+#   pace (opp_ratio). Production down WITH opportunity down is a falling
+#   knife and is excluded from buy-low no matter how far value fell;
+#   production down with opportunity holding or rising is the regression
+#   buy-low. A rise backed by real opportunity growth is earned and is
+#   excluded from sell-high, unless the surplus is TD-propped
+#   (td_over_expected over the window), which is not role growth.
+# - peers: same-position players in the examined mover pool whose
+#   governing production and opportunity per game sit within a tolerance
+#   band of the candidate's; the candidate's price is measured against
+#   the peer median value (peer_gap). Production at peer level priced
+#   well under the peer median is the cleanest buy-low; the mirror is
+#   the cleanest sell-high.
+# - context: injury status from the player index (the long-term
+#   designations IR / PUP / NFI are excluded outright: an out-for-season
+#   player is never a buy-low; a short absence explains a dip instead of
+#   a role loss), the upcoming slate's average matchup rank from the
+#   site's rank table as a why-line signal, and in dynasty leagues an
+#   age weighting on the score (utils.waivers.WAIVER_PRIME_MAX cliffs).
+#
+# PRO gating: expected points and the volume weights are free fields.
+# The PRO-gated derived metrics that summarize some of the same ideas
+# (ppr_over_expected_per_game, opportunity_trend, xfp_trend) are NOT
+# read; every signal below is computed from the free components.
+#
+# Score (so the board order is explainable from the pack):
+#   rel_move = delta / baseline_value (signed)
+#   fair_gap = (governing xPPG - governing PPG) / governing xPPG
+#              (+ = production running under the opportunity line)
+#   buy-low   score = discount * (1 + headroom) * (1 - 0.5 * over)
+#                     + 0.03 * clamp(opp_ratio - 1, -1, 1) + 0.6 * peer_gap
+#     discount = -rel_move; headroom = clamp(fair_gap, 0, 0.6);
+#     over = clamp(-fair_gap, 0, 0.6): production over the line tempers
+#     the discount, because part of that fall is justified;
+#     peer_gap = (peer_median - value) / peer_median.
+#   sell-high score = premium * (1 + propped)
+#                     + 0.03 * clamp(1 - opp_ratio, -1, 1) + 0.6 * peer_gap
+#     premium = rel_move; propped = clamp(-fair_gap, 0, 0.6);
+#     peer_gap = (value - peer_median) / peer_median.
+#   Sort: score desc, then opportunity ratio (buy-low desc, sell-high
+#   asc), then |delta| desc. Dynasty age weighting multiplies the score
+#   last: buy-low x1.08 at 24 or younger, x0.85 at the position's prime
+#   cliff, x0.72 three years past it; sell-high inverts the cliff terms
+#   (past-cliff spikes are the ones to cash out).
+
+_VALUE_RECENT_WEEKS = 4
+_VALUE_MIN_MOVE_PCT = 0.04
+_VALUE_KNIFE_OPP_RATIO = 0.80
+_VALUE_EARNED_OPP_RATIO = 1.15
+_VALUE_TD_PROPPED_MIN = 0.75
+_VALUE_SEASON_ENDING = {"IR", "PUP", "NFI"}
+_VALUE_SIDELINED = {"O", "OUT", "D", "DOUBTFUL"}
+_VALUE_PEER_MIN = 2
+_VALUE_PEER_PROD_TOL = 0.25
+_VALUE_PEER_OPP_TOL = 0.30
+_VALUE_PEER_GAP_NAMED = 0.15
+
+
+def _clamp(x, lo, hi):
+    return max(lo, min(hi, x))
+
+
+def _weekly_line(pid, season, position):
+    """Recent-window line from the weekly advanced-metrics series.
+
+    Played weeks are the rows carrying an expected_ppr (a DNP or bye
+    week has no expectation row). Returns {} when the series has no
+    played weeks; individual fields stay None when unverifiable so the
+    caller can fall back to the season line without inventing a trend.
+    """
+    if not season:
+        return {}
+    try:
+        rows = get_player_weekly_adv_series(str(pid), int(season)) or []
+    except Exception:
+        logger.debug("[assistant] weekly series failed", exc_info=True)
+        return {}
+    played = [r for r in rows
+              if isinstance(r, dict) and r.get("expected_ppr") is not None]
+    if not played:
+        return {}
+    played.sort(key=lambda r: r.get("week") or 0)
+
+    def _opp(r):
+        keys = (("w_pass_att", "w_carries") if position == "QB"
+                else ("w_targets", "w_carries"))
+        tot, seen = 0.0, False
+        for k in keys:
+            if r.get(k) is not None:
+                tot += float(r[k])
+                seen = True
+        return tot if seen else None
+
+    def _line(sub):
+        n = len(sub)
+        xppg = sum(float(r["expected_ppr"]) for r in sub) / n
+        ppg = sum(float(r["expected_ppr"])
+                  + float(r.get("ppr_over_expected") or 0.0)
+                  for r in sub) / n
+        opps = [o for o in (_opp(r) for r in sub) if o is not None]
+        return {"games": n, "ppg": ppg, "xppg": xppg,
+                "opp_pg": (sum(opps) / len(opps)) if opps else None,
+                "opp_weeks": len(opps)}
+
+    season_line = _line(played)
+    recent_rows = played[-_VALUE_RECENT_WEEKS:]
+    recent_line = _line(recent_rows) if len(recent_rows) >= 2 else None
+    opp_ratio = None
+    if (recent_line and recent_line["opp_pg"] is not None
+            and recent_line["opp_weeks"] >= 2
+            and season_line["opp_pg"] and season_line["opp_weeks"] >= 3):
+        opp_ratio = recent_line["opp_pg"] / season_line["opp_pg"]
+    td_over = None
+    tds = [float(r["td_over_expected"]) for r in recent_rows
+           if r.get("td_over_expected") is not None]
+    if tds:
+        td_over = sum(tds)
+    return {"season": season_line, "recent": recent_line,
+            "opp_ratio": opp_ratio, "td_over_recent": td_over,
+            "last_played_week": played[-1].get("week")}
+
+
+def _peer_context(cand, pool, kind):
+    """Peer-relative pricing for one candidate, or None.
+
+    Peers are same-position players from the examined mover pool whose
+    governing production AND opportunity per game sit within the
+    tolerance band of the candidate's. Returns the peer median value,
+    the signed gap to it (fraction), and the anchor peer the why-line
+    names: the most expensive peer for buy-low (the star whose line the
+    candidate matches), the cheapest peer for sell-high (the same
+    production available for far less).
+    """
+    cp, co = cand.get("_prod"), cand.get("_opp")
+    if not cp or not co or cp <= 0 or co <= 0:
+        return None
+    peers = []
+    for o in pool:
+        if o["pid"] == cand["pid"] or o.get("position") != cand.get("position"):
+            continue
+        op, oo, ov = o.get("_prod"), o.get("_opp"), o.get("value")
+        if not op or not oo or not ov:
+            continue
+        if (abs(op - cp) <= _VALUE_PEER_PROD_TOL * cp
+                and abs(oo - co) <= _VALUE_PEER_OPP_TOL * co):
+            peers.append(o)
+    if len(peers) < _VALUE_PEER_MIN:
+        return None
+    values = sorted(float(p["value"]) for p in peers)
+    mid = len(values) // 2
+    median = (values[mid] if len(values) % 2
+              else (values[mid - 1] + values[mid]) / 2.0)
+    if median <= 0:
+        return None
+    value = float(cand["value"])
+    if kind == "buy_low":
+        gap = (median - value) / median
+        anchor = max(peers, key=lambda p: float(p["value"]))
+    else:
+        gap = (value - median) / median
+        anchor = min(peers, key=lambda p: float(p["value"]))
+    anchor_value = float(anchor["value"])
+    anchor_gap = None
+    if anchor_value > 0 and value > 0:
+        anchor_gap = ((anchor_value - value) / anchor_value if kind == "buy_low"
+                      else (value - anchor_value) / anchor_value)
+    return {"median": median, "gap": gap, "count": len(peers),
+            "anchor_name": anchor.get("name"), "anchor_value": anchor_value,
+            "anchor_gap": anchor_gap}
+
+
+def _value_age_factor(kind, dynasty, age, position):
+    """Dynasty age weighting on the mispricing score (1.0 in redraft,
+    in keeper formats, without an age, or inside the prime window).
+    Cliffs are the site's own WAIVER_PRIME_MAX ages."""
+    if not dynasty or age is None:
+        return 1.0
+    try:
+        from utils.waivers import WAIVER_PRIME_MAX
+        prime = WAIVER_PRIME_MAX.get(position or "")
+    except Exception:
+        prime = None
+    if not prime:
+        return 1.0
+    if kind == "buy_low":
+        if age <= 24:
+            return 1.08
+        if age >= prime + 3:
+            return 0.72
+        if age >= prime:
+            return 0.85
+        return 1.0
+    if age >= prime:
+        return 1.10
+    if age <= 24:
+        return 0.95
+    return 1.0
+
+
 def _build_value_board(pack, bundle, tools, kind, position, team, top_n,
                        roster_ids):
     """Buy-low / sell-high candidate boards ("who should I buy low?").
 
-    The value screen is the site's own movers computation
-    (player_value_history.get_top_movers, the /api/value-movers source,
-    called with that route's arguments, including its displayed-value map
-    so a player the site renders at ~0 never surfaces off a stale history
-    row). The production screen is the same per-player line the
-    single-player buy/sell pack ships (PPG vs expected PPG from
-    _metrics_for): buy-low keeps fallers still producing at or above
-    expectation, sell-high keeps risers producing below it. Value movement
-    is a free signal and both production fields are ungated; the PRO-gated
-    ppr_over_expected leaderboard is not read.
+    Candidates are the site's own value movers (see the design note
+    above _weekly_line): the price move is scored against the recent
+    production and opportunity line, the same-position peer median,
+    slate and age context, with falling knives and season-ending
+    injuries excluded before scoring.
     """
     season = bundle.get("season")
     ctx = bundle.get("ctx") or {}
@@ -2135,6 +2357,11 @@ def _build_value_board(pack, bundle, tools, kind, position, team, top_n,
     league_type = "sf" if is_sf else "1qb"
     num_teams = len(ctx.get("rosters") or [])
     league_size = num_teams if num_teams in (8, 10, 12, 14) else 10
+    try:
+        dynasty = bool(dynasty_without_keepers(ctx))
+    except Exception:
+        dynasty = False
+    pack["dynasty"] = dynasty
     current_values = {}
     for pid, row in _value_rows().items():
         raw = row.get("sf_value") if is_sf else row.get("value")
@@ -2171,54 +2398,234 @@ def _build_value_board(pack, bundle, tools, kind, position, team, top_n,
                       "applied": True}
     source = fallers if kind == "buy_low" else risers
     pack["movers_examined"] = len(source)
+
+    # Pass 1: a verified line for every examined mover (both directions:
+    # peers are drawn from the whole pool, not just this board's side).
+    index = {}
+    try:
+        index = _index()
+    except Exception:
+        index = {}
+    pool = {}
+    for direction, moved_rows in (("fallers", fallers), ("risers", risers)):
+        for r in moved_rows:
+            if not isinstance(r, dict):
+                continue
+            pid = str(r.get("player_id") or r.get("id") or "")
+            if not pid or pid in pool:
+                continue
+            pos = str(r.get("position") or "").upper()
+            if position and pos != position:
+                continue
+            if team and str(r.get("team") or "").upper() != team:
+                continue
+            metrics, mtools = _metrics_for(pid, season)
+            for t in mtools:
+                if t not in tools:
+                    tools.append(t)
+            weekly = _weekly_line(pid, season, pos)
+            if weekly and ("advanced_metrics.get_player_weekly_adv_series"
+                           not in tools):
+                tools.append("advanced_metrics.get_player_weekly_adv_series")
+            recent = weekly.get("recent") if weekly else None
+            prod = None
+            if recent:
+                prod = recent["ppg"]
+            elif metrics.get("ppg") is not None:
+                prod = float(metrics["ppg"])
+            opp = None
+            if weekly:
+                opp = (recent["opp_pg"] if recent and recent.get("opp_pg")
+                       is not None else weekly["season"]["opp_pg"])
+            info = _player_info(pid, index) if pid else {}
+            pool[pid] = {
+                "pid": pid, "row": r, "direction": direction,
+                "name": r.get("name"), "position": pos, "metrics": metrics,
+                "weekly": weekly, "recent": recent, "value": None,
+                "_prod": prod, "_opp": opp,
+                "injury_status": info.get("injury_status"),
+                "age": _fnum((index.get(pid) or {}).get("age")),
+            }
+            try:
+                pool[pid]["value"] = float(r.get("new_value"))
+            except (TypeError, ValueError):
+                pool[pid]["value"] = current_values.get(pid)
+
+    # Pass 2: gates, then the mispricing score.
+    week = bundle.get("week")
+    rank_tables: dict = {}
     qualified = []
-    for r in source:
-        if not isinstance(r, dict):
+    want = "fallers" if kind == "buy_low" else "risers"
+    for entry in pool.values():
+        r = entry["row"]
+        if entry["direction"] != want:
             continue
-        pid = str(r.get("player_id") or r.get("id") or "")
-        if not pid:
-            continue
-        if position and str(r.get("position") or "").upper() != position:
-            continue
-        if team and str(r.get("team") or "").upper() != team:
-            continue
-        try:
-            delta = float(r.get("delta"))
-        except (TypeError, ValueError):
-            continue
-        if kind == "buy_low" and delta >= 0:
-            continue
-        if kind == "sell_high" and delta <= 0:
-            continue
-        metrics, mtools = _metrics_for(pid, season)
-        for t in mtools:
-            if t not in tools:
-                tools.append(t)
-        ppg = metrics.get("ppg")
-        xppg = metrics.get("expected_ppr_per_game")
-        games = metrics.get("games")
+        pid = entry["pid"]
+        metrics = entry["metrics"]
+        ppg, xppg, games = (metrics.get("ppg"), metrics.get("expected_ppr_per_game"),
+                            metrics.get("games"))
         if ppg is None or xppg is None:
             continue  # no verifiable production line, no candidacy
         if games is not None and games < 3:
             continue
-        over = round(float(ppg) - float(xppg), 2)
-        if kind == "buy_low" and over < 0:
+        try:
+            delta = float(r.get("delta"))
+            baseline = float(r.get("old_value"))
+        except (TypeError, ValueError):
             continue
-        if kind == "sell_high" and over >= 0:
+        if baseline <= 0:
             continue
+        rel_move = delta / baseline
+        if kind == "buy_low" and (delta >= 0 or -rel_move < _VALUE_MIN_MOVE_PCT):
+            continue
+        if kind == "sell_high" and (delta <= 0 or rel_move < _VALUE_MIN_MOVE_PCT):
+            continue
+        status = str(entry["injury_status"] or "").strip().upper()
+        if status in _VALUE_SEASON_ENDING:
+            continue  # out long-term: never a candidate on either board
+        weekly, recent = entry["weekly"], entry["recent"]
+        if recent:
+            g_ppg, g_xppg = recent["ppg"], recent["xppg"]
+        else:
+            g_ppg, g_xppg = float(ppg), float(xppg)
+        if not g_xppg:
+            continue
+        over_gov = g_ppg - g_xppg
+        fair_gap = -over_gov / g_xppg
+        opp_ratio = weekly.get("opp_ratio") if weekly else None
+        td_over = weekly.get("td_over_recent") if weekly else None
+        td_propped = bool(td_over is not None and td_over >= _VALUE_TD_PROPPED_MIN)
+        if kind == "buy_low":
+            # Falling knife: production AND opportunity falling together.
+            # The exclusion is supreme: no peer gap or discount rescues it.
+            if (opp_ratio is not None and opp_ratio <= _VALUE_KNIFE_OPP_RATIO
+                    and over_gov < 0):
+                continue
+            if (recent and float(ppg) > 0
+                    and recent["ppg"] <= 0.55 * float(ppg)
+                    and (opp_ratio is None or opp_ratio < 1.0)):
+                continue
+            discount = -rel_move
+            score = (discount * (1 + _clamp(fair_gap, 0.0, 0.6))
+                     * (1 - 0.5 * _clamp(-fair_gap, 0.0, 0.6)))
+            if opp_ratio is not None:
+                score += 0.03 * _clamp(opp_ratio - 1.0, -1.0, 1.0)
+        else:
+            # Earned rise: real opportunity growth behind production at
+            # or over the line is not mispricing, unless TDs prop it.
+            if (opp_ratio is not None and opp_ratio >= _VALUE_EARNED_OPP_RATIO
+                    and over_gov >= 0 and not td_propped):
+                continue
+            premium = rel_move
+            score = premium * (1 + _clamp(-fair_gap, 0.0, 0.6))
+            if opp_ratio is not None:
+                score += 0.03 * _clamp(1.0 - opp_ratio, -1.0, 1.0)
+        peers = _peer_context(entry, list(pool.values()), kind)
+        if peers:
+            score += 0.6 * peers["gap"]
+        score *= _value_age_factor(kind, dynasty, entry["age"],
+                                   entry["position"])
+        entry["_score"] = score
+        entry["_opp_ratio"] = opp_ratio
+
+        # Mechanism: the why-line names the driver, in gate order.
+        missed = None
+        if week and weekly and weekly.get("last_played_week"):
+            missed = (int(week) - 1) - int(weekly["last_played_week"])
+        if kind == "buy_low":
+            if status in _VALUE_SIDELINED:
+                mechanism = "priced down while sidelined short term"
+            elif missed is not None and missed >= 2:
+                mechanism = "priced down during a short absence, now back"
+            elif opp_ratio is not None and opp_ratio >= 1.10 and over_gov < 0:
+                mechanism = "role rising while production lags the opportunity"
+            elif over_gov < 0:
+                mechanism = "opportunity holding while production lags it"
+            else:
+                mechanism = "still producing at or over expectation at a lower price"
+        else:
+            if td_propped:
+                mechanism = "scoring propped by touchdowns over expectation"
+            elif over_gov > 0:
+                mechanism = "production running over his opportunity line"
+            else:
+                mechanism = "price ran ahead of the production line"
+
         row = _board_row(len(qualified) + 1, r, roster_ids,
                          value=r.get("new_value"))
         row["delta"] = _r3(delta)
         row["baseline_value"] = _r3(r.get("old_value"))
         row["ppg"] = _r3(ppg)
         row["expected_ppg"] = _r3(xppg)
-        row["over_expected"] = over
+        row["over_expected"] = round(float(ppg) - float(xppg), 2)
         row["games"] = games
+        row["rel_move_pct"] = round(rel_move * 100, 1)
+        if recent:
+            row["recent_ppg"] = _r3(recent["ppg"])
+            row["recent_expected_ppg"] = _r3(recent["xppg"])
+            row["recent_over_expected"] = round(over_gov, 2)
+            row["recent_games"] = recent["games"]
+        if opp_ratio is not None:
+            row["opp_ratio"] = round(opp_ratio, 2)
+        if td_over is not None:
+            row["td_over_expected_recent"] = _r3(td_over)
+        row["age"] = entry["age"]
+        row["injury_status"] = entry["injury_status"]
+        row["mechanism"] = mechanism
+        if peers:
+            row["peer_median_value"] = _r3(peers["median"])
+            row["peer_gap_pct"] = round(peers["gap"] * 100, 1)
+            row["peer_count"] = peers["count"]
+            if (peers["anchor_gap"] is not None
+                    and peers["anchor_gap"] >= _VALUE_PEER_GAP_NAMED):
+                row["peer_anchor_name"] = peers["anchor_name"]
+                row["peer_anchor_value"] = _r3(peers["anchor_value"])
+                row["peer_anchor_gap_pct"] = round(peers["anchor_gap"] * 100, 1)
+        row["score"] = round(score, 4)
+        row["_opp_sort"] = opp_ratio
         qualified.append(row)
-    qualified.sort(key=lambda row: row["delta"],
-                   reverse=(kind == "sell_high"))
+
+    if kind == "buy_low":
+        qualified.sort(key=lambda row: (
+            -row["score"],
+            -(row["_opp_sort"] if row["_opp_sort"] is not None else 1.0),
+            -abs(row["delta"])))
+    else:
+        qualified.sort(key=lambda row: (
+            -row["score"],
+            (row["_opp_sort"] if row["_opp_sort"] is not None else 1.0),
+            -abs(row["delta"])))
     for i, row in enumerate(qualified):
         row["rank"] = i + 1
+        # Slate context for the why-line: the average matchup rank of
+        # the next few opponents (rank 1 = easiest defense for the
+        # position), from the same rank table the start/sit path uses.
+        try:
+            games_ahead = _upcoming_schedule(bundle, row.get("team"), 3)
+            opps = [g for g in games_ahead
+                    if not g.get("bye") and g.get("opponent")]
+            pos = row.get("position")
+            if opps and pos and season:
+                if pos not in rank_tables:
+                    table = matchup_rank_table(int(season), pos)
+                    rank_tables[pos] = table[0] or {}
+                    if "app._matchup_rank_table" not in tools:
+                        tools.append("app._matchup_rank_table")
+                rmap = rank_tables[pos]
+                ranks = [rmap[o["opponent"]] for o in opps
+                         if rmap.get(o["opponent"]) is not None]
+                if ranks:
+                    avg = sum(ranks) / len(ranks)
+                    row["slate_avg_rank"] = round(avg, 1)
+                    row["slate_games"] = len(ranks)
+                    if avg <= 11:
+                        row["slate_note"] = "soft slate ahead"
+                    elif avg >= 22:
+                        row["slate_note"] = "tough slate ahead"
+        except Exception:
+            logger.debug("[assistant] value board slate failed",
+                         exc_info=True)
+        row.pop("_opp_sort", None)
     pack["pool_size"] = len(qualified)
     board = qualified[:top_n]
     if not board:
@@ -2229,12 +2636,17 @@ def _build_value_board(pack, bundle, tools, kind, position, team, top_n,
     pack["board"] = board
     pack["board_count"] = len(board)
     if kind == "buy_low":
-        rule = ("value fell while production held at or above expectation "
-                "(PPG vs expected PPG)")
+        rule = ("ranked by mispricing against the recent production and "
+                "opportunity line (last 4 played weeks), peer prices at "
+                "the position, and slate and age context; falling knives "
+                "(production and opportunity both falling) and "
+                "season-ending injuries are excluded")
         moved = "fallers"
     else:
-        rule = ("value rose while production sits below expectation "
-                "(PPG vs expected PPG)")
+        rule = ("ranked by mispricing against the recent production and "
+                "opportunity line (last 4 played weeks), peer prices at "
+                "the position, and slate and age context; rises earned by "
+                "real opportunity growth are excluded")
         moved = "risers"
     pack["qualification_text"] = (
         f"Value movement over the last {pack['value_days']} days from the "
