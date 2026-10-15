@@ -1480,11 +1480,28 @@ def _required_mentions(intent: str, pack: dict) -> list[tuple[str, str]]:
         out += [(str(s["league_name"]), "league")
                 for s in (pack.get("leagues") or [])
                 if isinstance(s, dict) and s.get("league_name")]
+    elif intent == "matchup":
+        m = pack.get("matchup") or {}
+        a = (m.get("team_a") or {}).get("team_name")
+        b = (m.get("team_b") or {}).get("team_name")
+        if a:
+            out.append((str(a), "matchup_a"))
+        if b:
+            out.append((str(b), "matchup_b"))
     elif intent == "activity":
         latest = pack.get("latest_trade") or {}
         out += [(str(t["team_name"]), "activity")
                 for t in (latest.get("teams") or [])
                 if isinstance(t, dict) and t.get("team_name")]
+        moved: list[str] = []
+        for t in (latest.get("teams") or []):
+            if not isinstance(t, dict):
+                continue
+            for p in (t.get("gets") or []):
+                if isinstance(p, dict) and p.get("name") \
+                        and str(p["name"]) not in moved:
+                    moved.append(str(p["name"]))
+        out += [(n, "activity_player") for n in moved]
     elif intent == "watchlist":
         top = pack.get("top_mover") or {}
         if top.get("name"):
@@ -1493,6 +1510,39 @@ def _required_mentions(intent: str, pack: dict) -> list[tuple[str, str]]:
         top = (pack.get("trade_targets") or [None])[0]
         if top and top.get("partner"):
             out.append((str(top["partner"]), "front_office"))
+    elif intent == "open":
+        # The open path has no fixed pack subject; the teams its tool
+        # evidence is about are the required mentions (live eval ow12:
+        # a record answer that named neither the user's team nor the
+        # comparison team). Sources: a team_roster entry's team, and a
+        # league_lookup entry's own team plus its headline comparison
+        # team (leader / points leader / top table row).
+        seen: set[str] = set()
+        for entry in (pack.get("evidence") or []):
+            if not isinstance(entry, dict):
+                continue
+            names: list[str] = []
+            if entry.get("tool") == "team_roster":
+                n = (entry.get("team") or {}).get("team_name")
+                if n:
+                    names.append(str(n))
+            elif entry.get("tool") == "league_lookup":
+                me = (entry.get("me") or {}).get("team_name")
+                if me:
+                    names.append(str(me))
+                for field in ("leader", "points_leader"):
+                    n = (entry.get(field) or {}).get("team_name")
+                    if n:
+                        names.append(str(n))
+                table = entry.get("table") or []
+                if table and isinstance(table[0], dict) \
+                        and table[0].get("team_name"):
+                    names.append(str(table[0]["team_name"]))
+            for n in names:
+                if n not in seen:
+                    seen.add(n)
+                    out.append((n, "open_team"))
+        out = out[:3]
     return out
 
 
@@ -1521,11 +1571,31 @@ def _ensure_required_mentions(intent: str, pack: dict, data: dict, receipts: lis
     if not missing:
         return data
     sentences = []
+    if "matchup_a" in missing or "matchup_b" in missing:
+        # A matchup answer names the pairing, not either side alone:
+        # one sentence carrying both full names covers either omission.
+        pair = [name for name, kind in required
+                if kind in ("matchup_a", "matchup_b")]
+        if len(pair) == 2:
+            sentences.append(f"The matchup is {pair[0]} against {pair[1]}.")
+            missing.pop("matchup_a", None)
+            missing.pop("matchup_b", None)
     for kind, names in missing.items():
         if kind == "subject":
             sentences.append(f"These are the playoff odds for {names[0]}.")
         elif kind == "opponent":
             sentences.append(f"Your next matchup is against {names[0]}.")
+        elif kind == "matchup_a":
+            sentences.append(f"One side of the matchup is {names[0]}.")
+        elif kind == "matchup_b":
+            sentences.append(f"The other side of the matchup is {names[0]}.")
+        elif kind == "activity_player":
+            sentences.append(f"That deal moved {_join_names(names)}.")
+        elif kind == "open_team":
+            if len(names) == 1:
+                sentences.append(f"That is the picture for {names[0]}.")
+            else:
+                sentences.append(f"That covers {_join_names(names)}.")
         elif kind == "activity":
             if len(names) == 1:
                 sentences.append(f"That deal involved {names[0]}.")
@@ -2359,6 +2429,19 @@ def compose_answer(intent: str, question: str, pack: dict, *, preferences=None, 
         subject = ((pack or {}).get("player") or {}).get("name")
         if subject:
             verdict = f"{subject} update"
+    if intent == "watchlist" and not (verdict and str(verdict).strip()):
+        # Same failure class as pl2/pl3, one intent over (live eval
+        # round 3 wl1): the model returned no verdict for a watchlist
+        # answer. The fallback is the pack's top entry by name: the
+        # biggest mover, else the first watched player.
+        top = ((pack or {}).get("top_mover") or {}).get("name")
+        if not top:
+            for p in (pack or {}).get("players") or []:
+                if isinstance(p, dict) and p.get("name"):
+                    top = p["name"]
+                    break
+        if top:
+            verdict = str(top)
     caveat = data.get("caveat")
     margin_thin = bool(((pack or {}).get("margin") or {}).get("thin"))
     if caveat and not margin_thin and not (pack or {}).get("stale"):

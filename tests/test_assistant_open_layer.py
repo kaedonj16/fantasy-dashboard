@@ -342,6 +342,121 @@ def test_compose_answer_open_seam_with_frozen_pack(base, monkeypatch):
     assert answer["act_link"]["label"] == "View on Advanced Metrics"
 
 
+# -- citation completion (live eval round 3: ow4/ow9/ow13/ow15/ow17) --------------
+
+def _stats_pack(receipt_rows, **fields):
+    entry = {"tool": "player_stats", "ok": True,
+             "player": {"player_id": "p1", "name": "Alpha Receiver"},
+             "players": [{"player_id": "p1", "name": "Alpha Receiver"}],
+             "receipts": receipt_rows, "link": None}
+    entry.update(fields)
+    return {"type": "open", "available": True, "league": {}, "week": 7,
+            "as_of": {"week": 7, "season": 2026}, "evidence": [entry],
+            "tools_called": ["player_stats"]}
+
+
+def test_open_citation_completion_backs_every_stated_number(monkeypatch):
+    # The draft states three evidence numbers but its own receipt picks
+    # carry only one; completion must source rows for all three.
+    pack = _stats_pack(
+        [{"label": "Fantasy points", "value": "123.8"},
+         {"label": "Receiving yards", "value": "612"},
+         {"label": "Receptions", "value": "59"}],
+        totals={"fantasy_points": 123.8, "rec_yd": 612, "rec": 59})
+    fake = _FakeModel(plans=[], draft={
+        "verdict": "Alpha Receiver",
+        "text": "Alpha Receiver has 612 receiving yards on 59 catches, "
+                "good for 123.8 fantasy points.",
+        "receipts": [{"label": "Receiving yards", "value": "612"}],
+        "caveat": None, "followups": [], "actions": []})
+    monkeypatch.setattr(compose_mod, "call_model_json", fake)
+    answer = compose_mod.compose_answer(
+        "open", "How is Alpha Receiver doing?", pack)
+    assert {r["value"] for r in answer["receipts"]} == {"123.8", "612", "59"}
+    labels = {r["value"]: r["label"] for r in answer["receipts"]}
+    assert labels["123.8"] == "Fantasy points"
+    assert labels["59"] == "Receptions"
+
+
+def test_open_citation_completion_matches_percent_citation(monkeypatch):
+    # A share stored as 0.29 in the evidence is stated as 29% in prose;
+    # the receipt must still land, carrying the evidence's own value.
+    pack = {"type": "open", "available": True, "league": {}, "week": 7,
+            "as_of": {"week": 7, "season": 2026},
+            "evidence": [{"tool": "metric_definition", "ok": True,
+                          "label": "Target Share",
+                          "leader": {"name": "Puka Nacua", "value": 0.29},
+                          "players": [{"player_id": "p9", "name": "Puka Nacua"}],
+                          "receipts": [{"label": "Puka Nacua Target Share",
+                                        "value": "0.29"}],
+                          "link": None}],
+            "tools_called": ["metric_definition"]}
+    fake = _FakeModel(plans=[], draft={
+        "verdict": "Target Share",
+        "text": "Target share is the slice of team targets a player earns. "
+                "The leader sits at 29%.",
+        "receipts": [], "caveat": None, "followups": [], "actions": []})
+    monkeypatch.setattr(compose_mod, "call_model_json", fake)
+    answer = compose_mod.compose_answer(
+        "open", "What is target share?", pack)
+    assert {"label": "Puka Nacua Target Share", "value": "0.29"} \
+        in answer["receipts"]
+
+
+def test_open_citation_completion_never_invents_a_receipt(monkeypatch):
+    # A stated number with no evidence source: the grounding gate
+    # strips it from the prose and completion adds no row for it.
+    pack = _stats_pack(
+        [{"label": "Receiving yards", "value": "612"}],
+        totals={"rec_yd": 612})
+    fake = _FakeModel(plans=[], draft={
+        "verdict": "Alpha Receiver",
+        "text": "Alpha Receiver has 612 receiving yards and 9999 targets.",
+        "receipts": [], "caveat": None, "followups": [], "actions": []})
+    monkeypatch.setattr(compose_mod, "call_model_json", fake)
+    answer = compose_mod.compose_answer(
+        "open", "How many yards does Alpha Receiver have?", pack)
+    assert "9999" not in json.dumps(answer)
+    assert {r["value"] for r in answer["receipts"]} == {"612"}
+
+
+def test_open_citation_completion_cap_prioritizes_stated_numbers(monkeypatch):
+    rows = [{"label": f"Stat {i}", "value": str(v)}
+            for i, v in enumerate((10, 20, 30, 40, 50), start=1)]
+    pack = _stats_pack(rows, totals={"a": 10, "b": 20, "c": 30, "d": 40,
+                                     "e": 50, "f": 60})
+    fake = _FakeModel(plans=[], draft={
+        "verdict": "Alpha Receiver",
+        "text": "The stated ones are 40 and 50.",
+        "receipts": [{"label": "Other stat", "value": "60"}],
+        "caveat": None, "followups": [], "actions": []})
+    monkeypatch.setattr(compose_mod, "call_model_json", fake)
+    answer = compose_mod.compose_answer("open", "Numbers?", pack)
+    values = [r["value"] for r in answer["receipts"]]
+    assert len(values) == 4
+    assert values[:2] == ["40", "50"]  # stated numbers first
+    assert "60" in values  # the model's own grounded receipt survives
+
+
+def test_open_required_mentions_names_evidence_teams(monkeypatch):
+    # Live eval round 3 ow12: the draft answered the record question
+    # without naming the user's team or the comparison team in the
+    # fetched standings evidence; both must be injected.
+    data = json.load(open("assistant_eval/questions.json"))
+    q = next(x for x in data["questions"] if x["id"] == "ow12")
+    fake = _FakeModel(plans=[], draft={
+        "verdict": "Seed 3 at 4-3",
+        "text": "You are 4-3 with 745.2 points for so far.",
+        "receipts": [{"label": "Your points for", "value": "745.2"}],
+        "caveat": None, "followups": [], "actions": []})
+    monkeypatch.setattr(compose_mod, "call_model_json", fake)
+    answer = compose_mod.compose_answer("open", q["question"],
+                                        q["evidence_pack"])
+    assert "Caleb's Casting Couch" in answer["text"]
+    assert "Pittsburgh Pilots" in answer["text"]
+    assert "745.2" in {r["value"] for r in answer["receipts"]}
+
+
 # -- router ------------------------------------------------------------------------
 
 @pytest.fixture()

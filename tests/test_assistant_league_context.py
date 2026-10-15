@@ -358,3 +358,21 @@ def test_compose_matchup_no_data_links_weekly_page():
     assert "No scheduled matchup" in answer["text"]
     assert answer["act_link"]["href"] == "/sleeper/2026/blackedraw/weekly"
     assert answer["act_link"]["label"] == "View Matchups"
+
+
+# -- matchup required mentions (live eval round 3: mu4) ---------------------------
+
+def test_matchup_required_mentions_name_both_teams():
+    assert compose_mod._required_mentions("matchup", _frozen_pack("mu4")) == [
+        ("Caleb's Casting Couch", "matchup_a"), ("Gibbs and Take", "matchup_b")]
+
+
+def test_matchup_mention_injected_when_draft_skips_the_opponent():
+    data = {"verdict": "Caleb's Casting Couch favored",
+            "text": "Caleb's Casting Couch projects 156.7 against 96.7.",
+            "caveat": None, "receipts": [], "followups": []}
+    out = compose_mod._ensure_required_mentions(
+        "matchup", _frozen_pack("mu4"), data, [])
+    assert "Gibbs and Take" in out["text"]
+    assert "The matchup is Caleb's Casting Couch against Gibbs and Take." \
+        in out["text"]
