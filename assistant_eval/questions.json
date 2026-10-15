@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "description": "Frozen assistant eval set: 82 questions with golden evidence packs for the BR Fantasy assistant (workshop section 5 core 20, the deep-cuts leaderboard family lb1-lb6, and the section 9 P1 league-context types: playoffs, power rankings, standings, matchup, schedule) plus the P1 trade-finding family tf1-tf4, and the P1 breakout board, Teams, and pick-ownership families bo1-bo3, tm1-tm2, pk1 (renamed from the branch po1, which collided with the playoffs po1), with te4 an extra trade_eval. The win-outcome family mu4-mu6 pins the game-outcome phrasings (will I win / what are my chances / will I lose) to matchup packs: a decisive favorite, a close game, and a decisive underdog. The buy/sell board family bl1/sh1 pins pool-wide buy-low and sell-high asks (no named player) to leaderboard value boards, with bsh4/bsh5 as the named-player controls that must stay single-player buy_sell_hold.",
+    "description": "Frozen assistant eval set: 84 questions with golden evidence packs for the BR Fantasy assistant (workshop section 5 core 20, the deep-cuts leaderboard family lb1-lb6, and the section 9 P1 league-context types: playoffs, power rankings, standings, matchup, schedule) plus the P1 trade-finding family tf1-tf4, and the P1 breakout board, Teams, and pick-ownership families bo1-bo3, tm1-tm2, pk1 (renamed from the branch po1, which collided with the playoffs po1), with te4 an extra trade_eval. The win-outcome family mu4-mu6 pins the game-outcome phrasings (will I win / what are my chances / will I lose) to matchup packs: a decisive favorite, a close game, and a decisive underdog. The buy/sell board family bl1/sh1 pins pool-wide buy-low and sell-high asks (no named player) to leaderboard value boards, with bsh4/bsh5 as the named-player controls that must stay single-player buy_sell_hold.",
     "scenario": "Kaedon's league Blackedraw, her team Caleb's Casting Couch, Week 7 of the 2026 season.",
     "packs": "Each evidence_pack mirrors, field for field, the dict the matching builder in dashboard_services/assistant/evidence.py returns. Values inside a pack are the only numbers an answer may cite.",
     "recapture": "These packs are frozen fixtures. Before any launch decision, recapture them from the live tools with: python3 scripts/run_assistant_eval.py --capture (writes assistant_eval/captured_questions.json; it never overwrites this file). A launch call made on stale fixtures is not a launch call.",
@@ -9735,6 +9735,508 @@
         "no_data": false,
         "must_mention": [
           "Sanders"
+        ]
+      }
+    },
+    {
+      "id": "ac1",
+      "type": "activity",
+      "question": "What trades have gone down in my league recently?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "activity",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "counts": {
+          "trades": 6,
+          "trades_this_week": 1,
+          "waiver_adds": 23,
+          "injuries": 1
+        },
+        "recent_trades": [
+          {
+            "week": 7,
+            "teams": [
+              {
+                "team_name": "Pittsburgh Pilots",
+                "roster_id": "1",
+                "involves_you": false,
+                "gets": [
+                  {
+                    "name": "Zay Flowers",
+                    "position": "WR",
+                    "value": 4680.0
+                  }
+                ],
+                "sends": [
+                  {
+                    "name": "Woody Marks",
+                    "position": "RB",
+                    "value": 3400.0
+                  },
+                  {
+                    "name": "Jordan Addison",
+                    "position": "WR",
+                    "value": 1350.0
+                  }
+                ],
+                "gets_value": 4680.0,
+                "sends_value": 4750.0,
+                "unpriced": 0
+              },
+              {
+                "team_name": "Caleb's Casting Couch",
+                "roster_id": "2",
+                "involves_you": true,
+                "gets": [
+                  {
+                    "name": "Woody Marks",
+                    "position": "RB",
+                    "value": 3400.0
+                  },
+                  {
+                    "name": "Jordan Addison",
+                    "position": "WR",
+                    "value": 1350.0
+                  }
+                ],
+                "sends": [
+                  {
+                    "name": "Zay Flowers",
+                    "position": "WR",
+                    "value": 4680.0
+                  }
+                ],
+                "gets_value": 4750.0,
+                "sends_value": 4680.0,
+                "unpriced": 0
+              }
+            ],
+            "picks_moved": 0,
+            "value_gap": 70.0,
+            "ahead_team": "Caleb's Casting Couch",
+            "fairness": "fair"
+          },
+          {
+            "week": 5,
+            "teams": [
+              {
+                "team_name": "Gridiron Goblins",
+                "roster_id": "3",
+                "involves_you": false,
+                "gets": [
+                  {
+                    "name": "David Montgomery",
+                    "position": "RB",
+                    "value": 2100.0
+                  }
+                ],
+                "sends": [
+                  {
+                    "name": "Chuba Hubbard",
+                    "position": "RB",
+                    "value": 1980.0
+                  }
+                ],
+                "gets_value": 2100.0,
+                "sends_value": 1980.0,
+                "unpriced": 0
+              },
+              {
+                "team_name": "Sacko Squad",
+                "roster_id": "4",
+                "involves_you": false,
+                "gets": [
+                  {
+                    "name": "Chuba Hubbard",
+                    "position": "RB",
+                    "value": 1980.0
+                  }
+                ],
+                "sends": [
+                  {
+                    "name": "David Montgomery",
+                    "position": "RB",
+                    "value": 2100.0
+                  }
+                ],
+                "gets_value": 1980.0,
+                "sends_value": 2100.0,
+                "unpriced": 0
+              }
+            ],
+            "picks_moved": 0,
+            "value_gap": 120.0,
+            "ahead_team": "Gridiron Goblins",
+            "fairness": "fair"
+          }
+        ],
+        "latest_trade": {
+          "week": 7,
+          "teams": [
+            {
+              "team_name": "Pittsburgh Pilots",
+              "roster_id": "1",
+              "involves_you": false,
+              "gets": [
+                {
+                  "name": "Zay Flowers",
+                  "position": "WR",
+                  "value": 4680.0
+                }
+              ],
+              "sends": [
+                {
+                  "name": "Woody Marks",
+                  "position": "RB",
+                  "value": 3400.0
+                },
+                {
+                  "name": "Jordan Addison",
+                  "position": "WR",
+                  "value": 1350.0
+                }
+              ],
+              "gets_value": 4680.0,
+              "sends_value": 4750.0,
+              "unpriced": 0
+            },
+            {
+              "team_name": "Caleb's Casting Couch",
+              "roster_id": "2",
+              "involves_you": true,
+              "gets": [
+                {
+                  "name": "Woody Marks",
+                  "position": "RB",
+                  "value": 3400.0
+                },
+                {
+                  "name": "Jordan Addison",
+                  "position": "WR",
+                  "value": 1350.0
+                }
+              ],
+              "sends": [
+                {
+                  "name": "Zay Flowers",
+                  "position": "WR",
+                  "value": 4680.0
+                }
+              ],
+              "gets_value": 4750.0,
+              "sends_value": 4680.0,
+              "unpriced": 0
+            }
+          ],
+          "picks_moved": 0,
+          "value_gap": 70.0,
+          "ahead_team": "Caleb's Casting Couch",
+          "fairness": "fair"
+        },
+        "recent_adds": [
+          {
+            "week": 7,
+            "team_name": "Gridiron Goblins",
+            "adds": [
+              "Kaleb Johnson"
+            ],
+            "drops": [
+              "Tank Bigsby"
+            ]
+          }
+        ],
+        "injuries": [
+          {
+            "player": "Drake London",
+            "status": "OUT",
+            "team_name": "Sacko Squad"
+          }
+        ]
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": "Pittsburgh Pilots and Caleb's Casting Couch",
+        "key_numbers": [
+          4680,
+          4750,
+          70
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Pittsburgh Pilots",
+          "Caleb's Casting Couch"
+        ]
+      }
+    },
+    {
+      "id": "ac2",
+      "type": "activity",
+      "question": "What happened in my league this week?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "activity",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "counts": {
+          "trades": 6,
+          "trades_this_week": 1,
+          "waiver_adds": 23,
+          "injuries": 1
+        },
+        "recent_trades": [
+          {
+            "week": 7,
+            "teams": [
+              {
+                "team_name": "Pittsburgh Pilots",
+                "roster_id": "1",
+                "involves_you": false,
+                "gets": [
+                  {
+                    "name": "Zay Flowers",
+                    "position": "WR",
+                    "value": 4680.0
+                  }
+                ],
+                "sends": [
+                  {
+                    "name": "Woody Marks",
+                    "position": "RB",
+                    "value": 3400.0
+                  },
+                  {
+                    "name": "Jordan Addison",
+                    "position": "WR",
+                    "value": 1350.0
+                  }
+                ],
+                "gets_value": 4680.0,
+                "sends_value": 4750.0,
+                "unpriced": 0
+              },
+              {
+                "team_name": "Caleb's Casting Couch",
+                "roster_id": "2",
+                "involves_you": true,
+                "gets": [
+                  {
+                    "name": "Woody Marks",
+                    "position": "RB",
+                    "value": 3400.0
+                  },
+                  {
+                    "name": "Jordan Addison",
+                    "position": "WR",
+                    "value": 1350.0
+                  }
+                ],
+                "sends": [
+                  {
+                    "name": "Zay Flowers",
+                    "position": "WR",
+                    "value": 4680.0
+                  }
+                ],
+                "gets_value": 4750.0,
+                "sends_value": 4680.0,
+                "unpriced": 0
+              }
+            ],
+            "picks_moved": 0,
+            "value_gap": 70.0,
+            "ahead_team": "Caleb's Casting Couch",
+            "fairness": "fair"
+          },
+          {
+            "week": 5,
+            "teams": [
+              {
+                "team_name": "Gridiron Goblins",
+                "roster_id": "3",
+                "involves_you": false,
+                "gets": [
+                  {
+                    "name": "David Montgomery",
+                    "position": "RB",
+                    "value": 2100.0
+                  }
+                ],
+                "sends": [
+                  {
+                    "name": "Chuba Hubbard",
+                    "position": "RB",
+                    "value": 1980.0
+                  }
+                ],
+                "gets_value": 2100.0,
+                "sends_value": 1980.0,
+                "unpriced": 0
+              },
+              {
+                "team_name": "Sacko Squad",
+                "roster_id": "4",
+                "involves_you": false,
+                "gets": [
+                  {
+                    "name": "Chuba Hubbard",
+                    "position": "RB",
+                    "value": 1980.0
+                  }
+                ],
+                "sends": [
+                  {
+                    "name": "David Montgomery",
+                    "position": "RB",
+                    "value": 2100.0
+                  }
+                ],
+                "gets_value": 1980.0,
+                "sends_value": 2100.0,
+                "unpriced": 0
+              }
+            ],
+            "picks_moved": 0,
+            "value_gap": 120.0,
+            "ahead_team": "Gridiron Goblins",
+            "fairness": "fair"
+          }
+        ],
+        "latest_trade": {
+          "week": 7,
+          "teams": [
+            {
+              "team_name": "Pittsburgh Pilots",
+              "roster_id": "1",
+              "involves_you": false,
+              "gets": [
+                {
+                  "name": "Zay Flowers",
+                  "position": "WR",
+                  "value": 4680.0
+                }
+              ],
+              "sends": [
+                {
+                  "name": "Woody Marks",
+                  "position": "RB",
+                  "value": 3400.0
+                },
+                {
+                  "name": "Jordan Addison",
+                  "position": "WR",
+                  "value": 1350.0
+                }
+              ],
+              "gets_value": 4680.0,
+              "sends_value": 4750.0,
+              "unpriced": 0
+            },
+            {
+              "team_name": "Caleb's Casting Couch",
+              "roster_id": "2",
+              "involves_you": true,
+              "gets": [
+                {
+                  "name": "Woody Marks",
+                  "position": "RB",
+                  "value": 3400.0
+                },
+                {
+                  "name": "Jordan Addison",
+                  "position": "WR",
+                  "value": 1350.0
+                }
+              ],
+              "sends": [
+                {
+                  "name": "Zay Flowers",
+                  "position": "WR",
+                  "value": 4680.0
+                }
+              ],
+              "gets_value": 4750.0,
+              "sends_value": 4680.0,
+              "unpriced": 0
+            }
+          ],
+          "picks_moved": 0,
+          "value_gap": 70.0,
+          "ahead_team": "Caleb's Casting Couch",
+          "fairness": "fair"
+        },
+        "recent_adds": [
+          {
+            "week": 7,
+            "team_name": "Gridiron Goblins",
+            "adds": [
+              "Kaleb Johnson"
+            ],
+            "drops": [
+              "Tank Bigsby"
+            ]
+          }
+        ],
+        "injuries": [
+          {
+            "player": "Drake London",
+            "status": "OUT",
+            "team_name": "Sacko Squad"
+          }
+        ]
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": "Pittsburgh Pilots and Caleb's Casting Couch",
+        "key_numbers": [
+          4680,
+          4750,
+          70
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Zay Flowers",
+          "Woody Marks"
         ]
       }
     }

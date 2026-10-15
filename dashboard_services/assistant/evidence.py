@@ -117,6 +117,13 @@ Reality notes vs the workshop tool map (verified in this repo):
   loader). Each league is a labeled slice with its own numbers; nothing
   is blended across leagues. The fan-out runs inside one ask(), so the
   turn still counts once against the monthly cap.
+- League activity answers read the Activity page's own data: the ctx
+  activity frame that app.ensure_activity_bits populates from
+  dashboard_services.service.build_week_activity (trades, waiver adds,
+  and serious-injury rows, newest first). Trade side totals are priced
+  from the same model value table the trade packs use, and the fairness
+  call uses utils.trade.fairness_label over the shared fair_value_band,
+  so an activity recap can never contradict the calculator.
 """
 from __future__ import annotations
 
@@ -267,6 +274,11 @@ def value_matched_acquire_packages(*args, **kwargs):
 
 def sleeper_trending_adds(*args, **kwargs):
     from routes.waiver_bp import _sleeper_trending_adds as _fn
+    return _fn(*args, **kwargs)
+
+
+def ensure_activity_bits(*args, **kwargs):
+    from app import ensure_activity_bits as _fn
     return _fn(*args, **kwargs)
 
 
@@ -4960,6 +4972,120 @@ def build_cross_league(bundle, entities=None, player_ids=None) -> tuple[dict, li
     return pack, tools
 
 
+def _activity_players(players, values):
+    """Activity-frame player entries -> pack lines priced from the value table."""
+    out, total, unpriced = [], 0.0, 0
+    for p in players or []:
+        if not isinstance(p, dict):
+            continue
+        pid = str(p.get("pid") or p.get("player_id") or "")
+        v = _row_value(values.get(pid)) if pid else None
+        if v is None:
+            unpriced += 1
+        else:
+            total += v
+        out.append({"name": p.get("name") or pid, "position": p.get("pos") or p.get("position") or "",
+                    "value": v})
+    return out, round(total, 1), unpriced
+
+
+def build_activity(bundle, entities=None, player_ids=None) -> tuple[dict, list[str]]:
+    """League activity: the Activity page's own frame (trades, waiver adds,
+    serious injuries), newest first, with completed trades priced from the
+    model value table and judged by the shared fairness band."""
+    tools: list[str] = []
+    pack = _base_pack("activity", bundle)
+    ctx = bundle.get("ctx") or {}
+    if not ctx:
+        pack["available"] = False
+        pack["missing"] = "no league context"
+        return pack, tools
+    try:
+        ensure_activity_bits(ctx)
+        tools.append("app.ensure_activity_bits")
+    except Exception:
+        logger.debug("[assistant] ensure_activity_bits failed", exc_info=True)
+    df = ctx.get("activity_df")
+    if df is None:
+        pack["available"] = False
+        pack["missing"] = "activity is not available for this league yet"
+        return pack, tools
+    tools.append("service.build_week_activity")
+    try:
+        records = df.to_dict("records") if hasattr(df, "to_dict") else list(df)
+    except Exception:
+        records = []
+    values = _value_rows()
+    if values:
+        tools.append("model_value_table")
+    from utils.trade import fairness_label
+    viewer_rid = str((bundle.get("roster") or {}).get("roster_id") or "")
+    week_now = bundle.get("week")
+    trades, adds, injuries = [], [], []
+    counts = {"trades": 0, "trades_this_week": 0, "waiver_adds": 0, "injuries": 0}
+    for row in records:
+        if not isinstance(row, dict):
+            continue
+        kind = row.get("kind")
+        data = row.get("data") or {}
+        wk = row.get("week")
+        if kind == "trade":
+            counts["trades"] += 1
+            if week_now is not None and wk == week_now:
+                counts["trades_this_week"] += 1
+            if len(trades) >= 5:
+                continue
+            teams, totals = [], []
+            for t in data.get("teams") or []:
+                if not isinstance(t, dict):
+                    continue
+                gets, gets_total, gets_un = _activity_players(t.get("gets"), values)
+                sends, sends_total, sends_un = _activity_players(t.get("sends"), values)
+                rid = str(t.get("roster_id") or t.get("rid") or "")
+                teams.append({
+                    "team_name": t.get("name") or f"Roster {rid}",
+                    "roster_id": rid,
+                    "involves_you": bool(viewer_rid and rid == viewer_rid),
+                    "gets": gets, "sends": sends,
+                    "gets_value": gets_total if gets else None,
+                    "sends_value": sends_total if sends else None,
+                    "unpriced": gets_un + sends_un,
+                })
+                totals.append(gets_total if gets else None)
+            entry = {"week": wk, "teams": teams,
+                     "picks_moved": len(data.get("draft_picks") or [])}
+            priced = [x for x in totals if x is not None]
+            if len(teams) == 2 and len(priced) == 2:
+                gap = round(abs(priced[0] - priced[1]), 1)
+                entry["value_gap"] = gap
+                entry["ahead_team"] = teams[0]["team_name"] if priced[0] >= priced[1] \
+                    else teams[1]["team_name"]
+                entry["fairness"] = "fair" if fairness_label(
+                    priced[0] - priced[1], max(priced)) == "fair" else "lopsided"
+            trades.append(entry)
+        elif kind == "waiver":
+            adds_players, _t, _u = _activity_players(data.get("adds"), values)
+            drops_players, _t2, _u2 = _activity_players(data.get("drops"), values)
+            counts["waiver_adds"] += len(adds_players)
+            if len(adds) < 8 and (adds_players or drops_players):
+                adds.append({"week": wk, "team_name": data.get("name") or "",
+                             "adds": [p["name"] for p in adds_players],
+                             "drops": [p["name"] for p in drops_players]})
+        elif kind == "injury":
+            counts["injuries"] += 1
+            if len(injuries) < 8:
+                pl = data.get("player") or {}
+                injuries.append({"player": pl.get("name") or "",
+                                 "status": data.get("status") or "",
+                                 "team_name": data.get("team_name") or ""})
+    pack["counts"] = counts
+    pack["recent_trades"] = trades
+    pack["latest_trade"] = trades[0] if trades else None
+    pack["recent_adds"] = adds
+    pack["injuries"] = injuries
+    return pack, tools
+
+
 BUILDERS = {
     "start_sit": build_start_sit,
     "trade_eval": build_trade_eval,
@@ -4985,4 +5111,5 @@ BUILDERS = {
     "cross_league": build_cross_league,
     "replacement": build_replacement,
     "handcuff": build_handcuff,
+    "activity": build_activity,
 }

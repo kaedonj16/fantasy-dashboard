@@ -100,6 +100,9 @@ SYSTEM = (
     "probability and the projected score, and it never carries waiver targets or weekly "
     "digest actions); "
     "for schedule, the user's opponent strength index and the easiest team's. "
+    "For league activity, cite the most recent trade's two received totals and the fairness "
+    "gap, and say plainly whether that deal was fair or lopsided; an activity answer reports "
+    "what already happened in the league and never recommends a move. "
     "If the pack flags odds_soft, say the odds are soft this early and lead with the wins math. "
     "For trade finding, present only the findings in the evidence: never invent a partner, a package, "
     "or a player swap, and order by mutual fit, not by how much the user wins. When the evidence marks "
@@ -452,6 +455,7 @@ _LEAGUE_LINKS = {
     "standings": ("standings", "View standings"),
     "matchup": ("weekly", "View Matchups"),
     "schedule": ("schedule", "Open in Schedule Assistant"),
+    "activity": ("activity", "View Activity"),
 }
 
 
@@ -1016,6 +1020,21 @@ def _required_receipts(intent: str, pack: dict) -> list[dict]:
             if line.get(key) is not None and len(rows) < 4:
                 rows.append({"label": label, "value": _fmt_num(line[key])})
                 break
+    elif intent == "activity":
+        latest = pack.get("latest_trade") or {}
+        for t in (latest.get("teams") or [])[:2]:
+            if isinstance(t, dict) and t.get("gets_value") is not None:
+                rows.append({"label": f"{t.get('team_name')} received (total value)",
+                             "value": _fmt_num(t["gets_value"])})
+        if latest.get("value_gap") is not None and len(rows) < 4:
+            rows.append({"label": "Fairness gap", "value": _fmt_num(latest["value_gap"])})
+        if not rows:
+            counts = pack.get("counts") or {}
+            if counts.get("trades") is not None:
+                rows.append({"label": "Trades this season", "value": _fmt_num(counts["trades"])})
+            if counts.get("waiver_adds") is not None and len(rows) < 4:
+                rows.append({"label": "Waiver adds this season",
+                             "value": _fmt_num(counts["waiver_adds"])})
     elif intent == "cross_league":
         for s in (pack.get("leagues") or []):
             if len(rows) >= 4:
@@ -1194,6 +1213,7 @@ _FOLLOWUP_TEMPLATES = {
     "cross_league": [followup_pair("Which of my teams is strongest?"), followup_pair("What should I do with my team this week?")],
     "replacement": [followup_pair("What could I get for him in a trade?"), followup_pair("Who is his handcuff?")],
     "handcuff": [followup_pair("Who should I start if he is out?"), followup_pair("Who is available on waivers?")],
+    "activity": [followup_pair("Who should I add from waivers?"), followup_pair("What should I do with my team this week?")],
 }
 
 
@@ -1405,6 +1425,11 @@ def _required_mentions(intent: str, pack: dict) -> list[tuple[str, str]]:
         out += [(str(s["league_name"]), "league")
                 for s in (pack.get("leagues") or [])
                 if isinstance(s, dict) and s.get("league_name")]
+    elif intent == "activity":
+        latest = pack.get("latest_trade") or {}
+        out += [(str(t["team_name"]), "activity")
+                for t in (latest.get("teams") or [])
+                if isinstance(t, dict) and t.get("team_name")]
     return out
 
 
@@ -1438,6 +1463,12 @@ def _ensure_required_mentions(intent: str, pack: dict, data: dict, receipts: lis
             sentences.append(f"These are the playoff odds for {names[0]}.")
         elif kind == "opponent":
             sentences.append(f"Your next matchup is against {names[0]}.")
+        elif kind == "activity":
+            if len(names) == 1:
+                sentences.append(f"That deal involved {names[0]}.")
+            else:
+                sentences.append("That deal was between " + ", ".join(names[:-1])
+                                 + f" and {names[-1]}.")
         elif kind == "league":
             sentences.append(f"That comparison also includes {_join_names(names)}.")
         elif len(names) == 1:

@@ -275,6 +275,7 @@ _LEAGUE_LINKS = {
     "standings": ("standings", "View standings"),
     "matchup": ("weekly", "View Matchups"),
     "schedule": ("schedule", "Open in Schedule Assistant"),
+    "activity": ("activity", "View Activity"),
 }
 
 
@@ -1402,6 +1403,59 @@ def _handcuff(pack):
     return ans
 
 
+def _activity(pack):
+    counts = pack.get("counts") or {}
+    latest = pack.get("latest_trade") or {}
+    teams = [t for t in (latest.get("teams") or []) if isinstance(t, dict)]
+    receipts = []
+    for t in teams[:2]:
+        if t.get("gets_value") is not None:
+            receipts.append({"label": f"{t.get('team_name')} received (total value)",
+                             "value": fmt(t["gets_value"])})
+    if latest.get("value_gap") is not None and len(receipts) < 4:
+        receipts.append({"label": "Fairness gap", "value": fmt(latest["value_gap"])})
+    if not receipts:
+        if counts.get("trades") is not None:
+            receipts.append({"label": "Trades this season", "value": fmt(counts["trades"])})
+        if counts.get("waiver_adds") is not None and len(receipts) < 4:
+            receipts.append({"label": "Waiver adds this season",
+                             "value": fmt(counts["waiver_adds"])})
+    ans = _base("activity", pack)
+    ans["act_link"] = _league_link("activity", pack) or ans["act_link"]
+    followups = [_fu("Who should I add from waivers?"),
+                 _fu("What should I do with my team this week?")]
+    if len(teams) < 2:
+        ans.update({"verdict": "No trades yet this season",
+                    "text": (f"Your league data shows {fmt(counts.get('trades'))} trades and "
+                             f"{fmt(counts.get('waiver_adds'))} waiver adds so far this season."),
+                    "receipts": receipts, "followups": followups})
+        return ans
+    a, b = teams[0], teams[1]
+    a_gets = ", ".join(p.get("name") or "" for p in a.get("gets") or [])
+    b_gets = ", ".join(p.get("name") or "" for p in b.get("gets") or [])
+    lines = [f"The latest deal, in Week {fmt(latest.get('week'))}: "
+             f"{a.get('team_name')} received {a_gets} ({fmt(a.get('gets_value'))} in value), "
+             f"and {b.get('team_name')} received {b_gets} ({fmt(b.get('gets_value'))} in value)."]
+    if latest.get("value_gap") is not None and latest.get("fairness"):
+        lines.append(f"The fairness gap is {fmt(latest['value_gap'])}, so the deal reads "
+                     f"{latest['fairness']} on value, with {latest.get('ahead_team')} ahead.")
+    lines.append(f"There have been {fmt(counts.get('trades'))} trades this season and "
+                 f"{fmt(counts.get('trades_this_week'))} this week.")
+    adds = pack.get("recent_adds") or []
+    if adds:
+        first = adds[0]
+        lines.append(f"Latest waiver move: {first.get('team_name')} added "
+                     f"{', '.join(first.get('adds') or [])}.")
+    injuries = pack.get("injuries") or []
+    if injuries:
+        first = injuries[0]
+        lines.append(f"Injury headline: {first.get('player')} ({first.get('status')}) "
+                     f"on {first.get('team_name')}.")
+    ans.update({"verdict": f"Latest trade: {a.get('team_name')} and {b.get('team_name')}",
+                "text": " ".join(lines), "receipts": receipts, "followups": followups})
+    return ans
+
+
 _BUILDERS = {"start_sit": _start_sit, "trade_eval": _trade_eval,
              "buy_sell_hold": _buy_sell_hold, "player": _player, "metric": _metric,
              "leaderboard": _leaderboard, "trade_finding": _trade_finding,
@@ -1413,7 +1467,8 @@ _BUILDERS = {"start_sit": _start_sit, "trade_eval": _trade_eval,
              "waivers": _waivers, "this_week": _this_week,
              "playoffs": _playoffs, "power_rankings": _power_rankings,
              "standings": _standings, "matchup": _matchup, "schedule": _schedule,
-             "keeper": _keeper, "rookie": _rookie, "cross_league": _cross_league}
+             "keeper": _keeper, "rookie": _rookie, "cross_league": _cross_league,
+             "activity": _activity}
 
 
 def compose_mock(question: dict) -> dict:
