@@ -15,7 +15,7 @@ INTENTS = ["start_sit", "trade_eval", "trade_finding", "buy_sell_hold", "player"
            "playoffs", "power_rankings", "standings", "matchup", "schedule",
            "breakout_board", "breakout_track_record", "breakout_history", "teams", "pick_ownership",
            "keeper", "rookie", "cross_league", "replacement", "handcuff", "activity", "watchlist", "front_office",
-           "remember", "out_of_scope"]
+           "open", "remember", "out_of_scope"]
 
 SCHEMA = {
     "type": "object",
@@ -145,7 +145,16 @@ SYSTEM = (
     "weakest positions, top moves, trade and waiver targets, and cut candidates. A "
     "general what-should-I-do question without the report named stays with this_week. "
     "remember: the user asks you to remember a preference (preference_text is the preference). "
-    "out_of_scope: anything else (trivia, real-game talk, other leagues). "
+    "open: a question about the user's league, players, teams, stats, metrics, or site data "
+    "that fits NONE of the fixed intents above, however it is phrased: raw counting stats "
+    "asked loosely (top 5 in receiving stats, who has the most catches), a player rundown "
+    "or season stats, a team's roster or injuries, a metric definition (what is WOPR), a "
+    "two-part question spanning two data sets, or a follow-up that continues an earlier "
+    "answer (what about his handcuff, how does he compare to X) when no fixed intent owns "
+    "it. Prefer a fixed intent whenever one clearly fits: pinned verdicts (start_sit, "
+    "trade_eval, keeper) always win over open. "
+    "out_of_scope: anything that is NOT about fantasy football, the user's leagues, or the "
+    "site's data (weather, news, other sports, general trivia). "
     "Use thread history only to resolve short follow-ups. Return JSON only. No em dashes."
 )
 
@@ -196,6 +205,17 @@ _SELL_HIGH_RE = re.compile(
 def _keyword_board(message: str, m: str) -> dict | None:
     """Pool-wide ranking phrasings -> the leaderboard intent (or None)."""
     hints = _metric_hints_in(m)
+    if not hints:
+        # Raw counting stats and loose family phrasings ("top 5 in
+        # receiving stats", "most catches") resolve semantically via the
+        # alias map; the builder turns the hint into a season-total
+        # board. Only ranking-shaped questions qualify, so a single
+        # player's stat question keeps its player/metric path.
+        from dashboard_services.assistant import aliases
+        resolved = aliases.resolve_phrase(m)
+        if resolved and re.search(
+                r"\btop\s+\d|\bmost\b|\bleads?\b|\bleading\b|\bbest\b|\branked\b", m):
+            hints = [resolved["phrase"]]
     top = re.search(r"\btop\s+(\d{1,2})\b", m)
     window = re.search(r"\blast\s+(\d{1,2})\s+weeks?\b", m)
     position = None
@@ -230,7 +250,7 @@ def _keyword_board(message: str, m: str) -> dict | None:
         kind, direction = "movers", "fallers"
     elif len(hints) >= 2 and top:
         kind = "intersection"
-    elif hints and (top or re.search(r"\bwho (leads|has)\b|\bleaderboard\b|\branked\b|\bmost\b.{0,30}\bshare\b", m)):
+    elif hints and (top or re.search(r"\bwho (leads|has)\b|\bleaderboard\b|\branked\b|\bmost\b|\bbest\b", m)):
         kind = "board"
     if kind is None:
         return None

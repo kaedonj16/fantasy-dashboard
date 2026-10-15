@@ -161,6 +161,8 @@ from __future__ import annotations
 
 import logging
 
+from dashboard_services.assistant import aliases
+
 logger = logging.getLogger(__name__)
 
 
@@ -2451,12 +2453,20 @@ def _metric_config():
 
 def _resolve_metric_key(hint, config) -> str | None:
     """Resolve a free-text metric hint to a LEADERBOARD_METRICS key: exact
-    key, then label or substring match (the build_metric resolution rule,
-    shared by the leaderboard builder)."""
+    key, then the semantic phrase map (aliases: "fantasy points" is
+    ppr_pts, "receiving yards per game" is rec_yards_per_game), then
+    label or substring match (the build_metric resolution rule, shared
+    by the leaderboard builder). Raw-stat phrases ("receiving yards")
+    deliberately do NOT resolve here: they are season-total boards, and
+    the callers route them to _build_stat_board via aliases instead."""
     if not hint:
         return None
     if hint in config:
         return hint
+    resolved = aliases.resolve_phrase(str(hint).replace("_", " "))
+    if resolved and resolved.get("kind") == "metric" \
+            and resolved.get("key") in config:
+        return resolved["key"]
     for k, spec in config.items():
         label = str(spec.get("label") or "").lower().replace(" ", "_")
         if hint in (k, label) or hint in k or hint in label:
@@ -2559,6 +2569,170 @@ def _range_board(key, spec, season, position, week_start, week_end):
     return rows or []
 
 
+# -- raw counting-stat boards (season totals) --------------------------------
+#
+# The AM catalog ranks rates and per-game stats; the counting totals users
+# ask for by name ("receiving yards", "targets", "carries") are summed
+# here from the same Sleeper week-stat cache the player packs read, over
+# completed weeks only. No scoring is applied: these are the raw totals
+# the site's player pages show.
+
+_ALL_STAT_KEYS = tuple({k for spec in aliases.STAT_DEFS.values()
+                        for k in spec["sleeper_keys"]})
+
+
+def _num(value):
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return None
+    return int(f) if f == int(f) else round(f, 1)
+
+
+def season_stat_totals(bundle) -> tuple[dict, int]:
+    """({pid: {stat: total, "games": n}}, completed_weeks) for the season.
+
+    A week counts toward a player's games when the cache carries a stat
+    line for him that week. Never raises: a missing week file just
+    shortens the window, and the completed count says how far it got.
+    """
+    season, week = bundle.get("season"), bundle.get("week")
+    if not season or not week:
+        return {}, 0
+    completed = max(int(week) - 1, 0)
+    totals: dict[str, dict] = {}
+    for w in range(1, completed + 1):
+        try:
+            stats = load_sleeper_week_stats(int(season), w) or {}
+        except Exception:
+            continue
+        if not isinstance(stats, dict):
+            continue
+        for pid, line in stats.items():
+            if not isinstance(line, dict):
+                continue
+            entry = totals.setdefault(str(pid), {"games": 0})
+            entry["games"] += 1
+            for key in _ALL_STAT_KEYS:
+                v = line.get(key)
+                if isinstance(v, (int, float)):
+                    entry[key] = entry.get(key, 0) + v
+    return totals, completed
+
+
+def stat_board_rows(bundle, stat_key, position=None, team=None, limit=25):
+    """Ranked season-total rows for one raw stat (aliases.STAT_DEFS key).
+
+    Rows carry the whole stat family (a receiving-yards row also carries
+    receptions, targets, and receiving TDs) so answers and receipts can
+    show the line, not just the ranked number. Sorted by the stat, ties
+    by name. Returns (rows, completed_weeks).
+    """
+    spec = aliases.STAT_DEFS.get(stat_key) or {}
+    totals, completed = season_stat_totals(bundle)
+    if not totals:
+        return [], completed
+    index = _index()
+    fam_keys = aliases.FAMILIES.get(spec.get("family") or "", {}).get("stats", ())
+    rows = []
+    for pid, entry in totals.items():
+        v = entry.get(stat_key)
+        if v is None or v <= 0:
+            continue
+        info = _player_info(pid, index)
+        pos = str(info.get("position") or "").upper()
+        if position and pos != position:
+            continue
+        if team and str(info.get("team") or "").upper() != team:
+            continue
+        row = {"player_id": pid, "name": info.get("name"),
+               "team": info.get("team"), "position": pos,
+               "value": _num(v), "games": entry.get("games")}
+        for fk in fam_keys:
+            if entry.get(fk) is not None:
+                row[fk] = _num(entry[fk])
+        rows.append(row)
+    rows.sort(key=lambda r: (-(r["value"] or 0), str(r.get("name") or "")))
+    return rows[:limit], completed
+
+
+def player_stat_line(bundle, pid) -> dict:
+    """One player's season totals + game log from the week-stat cache.
+
+    Points are the site's own week_stat_points under the league's
+    scoring settings (the recent-form rule), so the totals and the log
+    agree with what the player modal shows.
+    """
+    totals, completed = season_stat_totals(bundle)
+    entry = totals.get(str(pid)) or {}
+    index = _index()
+    info = _player_info(pid, index)
+    scoring = _scoring(bundle)
+    log = []
+    points_total = 0.0
+    try:
+        from utils.projections import week_stat_points
+        season, week = bundle.get("season"), bundle.get("week")
+        for w in range(1, completed + 1):
+            try:
+                stats = load_sleeper_week_stats(int(season), w) or {}
+            except Exception:
+                continue
+            line = stats.get(str(pid)) if isinstance(stats, dict) else None
+            if not isinstance(line, dict):
+                continue
+            pts = round(float(week_stat_points(line, scoring,
+                                               info.get("position") or "")), 1)
+            points_total += pts
+            opp, label, _bye = _opponent_for(info.get("team"),
+                                             _schedule_games(season, w))
+            row = {"week": w, "points": pts, "opponent": opp, "matchup": label}
+            for key in _ALL_STAT_KEYS:
+                if line.get(key) is not None:
+                    row[key] = _num(line[key])
+            log.append(row)
+    except Exception:
+        logger.debug("[assistant] player stat line failed", exc_info=True)
+    out = {"games": entry.get("games") or len(log),
+           "fantasy_points": round(points_total, 1) if log else None,
+           "game_log": log}
+    for key in _ALL_STAT_KEYS:
+        if entry.get(key) is not None:
+            out[key] = _num(entry[key])
+    return out
+
+
+def _build_stat_board(pack, bundle, tools, resolution, position, team,
+                      top_n, roster_ids):
+    """A leaderboard pack over raw season totals ("top 5 in receiving
+    yards"): same board shape as the metric boards, ranked by the total
+    the user named, family stats riding on each row."""
+    rows, completed = stat_board_rows(
+        bundle, resolution["key"], position, team, limit=max(top_n, 25))
+    tools.append("utils.load_sleeper_week_stats")
+    if not rows:
+        return _no_board(pack, "no recorded games yet for that stat", []), tools
+    pack["stat_board"] = True
+    pack["stat_key"] = resolution["key"]
+    pack["label"] = resolution["label"]
+    pack["pool_size"] = len(rows)
+    board = []
+    for i, r in enumerate(rows[:top_n]):
+        row = _board_row(i + 1, r, roster_ids, value=r.get("value"))
+        for fk in aliases.FAMILIES.get(resolution.get("family") or "",
+                                       {}).get("stats", ()):
+            if r.get(fk) is not None:
+                row[fk] = r[fk]
+        board.append(row)
+    pack["board"] = board
+    pack["board_count"] = len(board)
+    pack["qualification_text"] = (
+        f"Season totals through Week {completed}, ranked by "
+        f"{resolution['label'].lower()}. {len(rows)} players have a "
+        f"recorded total.")
+    return pack, tools
+
+
 def _gate_for(bundle, key) -> str | None:
     """PRO/PREMIUM gating with parity to routes/advanced_metrics_bp.py:
     premium metrics that are not exposed answer 'metric not available';
@@ -2625,7 +2799,10 @@ def build_metric(bundle, entities, player_ids=None) -> tuple[dict, list[str]]:
     if not key:
         missing_note, nearest = KNOWN_MISSING.get(hint, ("that metric is not tracked", []))
         if not nearest:
-            nearest = [k for k in list(config.keys())[:5]]
+            # Semantic neighbors only (the stat family the user named);
+            # the old fallback offered the catalog's first keys, which
+            # suggested vorp/war for a receiving question.
+            nearest = aliases.neighbors_for(hint)
         pack["available"] = False
         pack["missing"] = missing_note
         pack["nearest"] = nearest
@@ -3390,10 +3567,18 @@ def build_leaderboard(bundle, entities, player_ids=None) -> tuple[dict, list[str
         # strip: the Usage Trend board (PRO-gated, like the strip itself).
         key = "opportunity_trend" if "opportunity_trend" in config else None
         trend_default = bool(key)
+    if not key and kind == "board":
+        # Raw counting stats ("top 5 in receiving yards", "most targets")
+        # are season-total boards over the week-stat cache, not catalog
+        # metrics; the alias map resolves the phrase semantically.
+        resolution = aliases.resolve_phrase(hint.replace("_", " "))
+        if resolution and resolution.get("kind") == "stat":
+            return _build_stat_board(pack, bundle, tools, resolution,
+                                     position, team, top_n, roster_ids)
     if not key:
         missing_note, nearest = KNOWN_MISSING.get(hint, ("that metric is not tracked", []))
         if not nearest:
-            nearest = [k for k in list(config.keys())[:5]]
+            nearest = aliases.neighbors_for(hint)
         return _no_board(pack, missing_note, nearest), tools
     spec = config.get(key) or {}
     pack["metric_key"] = key

@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "description": "Frozen assistant eval set: 91 questions with golden evidence packs for the BR Fantasy assistant (workshop section 5 core 20, the deep-cuts leaderboard family lb1-lb6, and the section 9 P1 league-context types: playoffs, power rankings, standings, matchup, schedule) plus the P1 trade-finding family tf1-tf4, and the P1 breakout board, Teams, and pick-ownership families bo1-bo3, tm1-tm2, pk1 (renamed from the branch po1, which collided with the playoffs po1), with te4 an extra trade_eval. The win-outcome family mu4-mu6 pins the game-outcome phrasings (will I win / what are my chances / will I lose) to matchup packs: a decisive favorite, a close game, and a decisive underdog. The buy/sell board family bl1/sh1 pins pool-wide buy-low and sell-high asks (no named player) to leaderboard value boards, with bsh4/bsh5 as the named-player controls that must stay single-player buy_sell_hold. The roster start/sit family ss5-ss7 pins slot questions that name no players (start at FLEX, start at RB, sit at FLEX) to roster-scoped packs built from the asking user's own lineup: the FLEX occupant is benched for the bench challenger who out-projects him, and the RB question is a keep-the-starter call.",
+    "description": "Frozen assistant eval set: 111 questions with golden evidence packs for the BR Fantasy assistant (workshop section 5 core 20, the deep-cuts leaderboard family lb1-lb6, and the section 9 P1 league-context types: playoffs, power rankings, standings, matchup, schedule) plus the P1 trade-finding family tf1-tf4, and the P1 breakout board, Teams, and pick-ownership families bo1-bo3, tm1-tm2, pk1 (renamed from the branch po1, which collided with the playoffs po1), with te4 an extra trade_eval. The win-outcome family mu4-mu6 pins the game-outcome phrasings (will I win / what are my chances / will I lose) to matchup packs: a decisive favorite, a close game, and a decisive underdog. The buy/sell board family bl1/sh1 pins pool-wide buy-low and sell-high asks (no named player) to leaderboard value boards, with bsh4/bsh5 as the named-player controls that must stay single-player buy_sell_hold. The roster start/sit family ss5-ss7 pins slot questions that name no players (start at FLEX, start at RB, sit at FLEX) to roster-scoped packs built from the asking user's own lineup: the FLEX occupant is benched for the bench challenger who out-projects him, and the RB question is a keep-the-starter call. The open-layer wild set ow1-ow19 freezes tool evidence (production tool-entry shape) instead of builder packs: ungoverned phrasings, a follow-up chain (ow5-ow7), a two-part question (ow8), a non-default team (ow9), a PRO gate through the open layer (ow18), and an off-site decline (ow19).",
     "scenario": "Kaedon's league Blackedraw, her team Caleb's Casting Couch, Week 7 of the 2026 season.",
     "packs": "Each evidence_pack mirrors, field for field, the dict the matching builder in dashboard_services/assistant/evidence.py returns. Values inside a pack are the only numbers an answer may cite.",
     "recapture": "These packs are frozen fixtures. Before any launch decision, recapture them from the live tools with: python3 scripts/run_assistant_eval.py --capture (writes assistant_eval/captured_questions.json; it never overwrites this file). A launch call made on stale fixtures is not a launch call.",
@@ -11027,6 +11027,2209 @@
         ]
       },
       "trap": null
+    },
+    {
+      "id": "ow1",
+      "type": "open",
+      "question": "Which player is a buy-low right now?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "open",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "evidence": [
+          {
+            "tool": "value_lookup",
+            "ok": true,
+            "risers": [
+              {
+                "player_id": "drake-london",
+                "name": "Drake London",
+                "team": "ATL",
+                "position": "WR",
+                "value": 4600,
+                "delta": 420,
+                "baseline_value": 4180
+              }
+            ],
+            "fallers": [
+              {
+                "player_id": "brian-thomas-jr",
+                "name": "Brian Thomas Jr.",
+                "team": "JAX",
+                "position": "WR",
+                "value": 3210,
+                "delta": -450,
+                "baseline_value": 3660
+              },
+              {
+                "player_id": "jaylen-waddle",
+                "name": "Jaylen Waddle",
+                "team": "MIA",
+                "position": "WR",
+                "value": 3980,
+                "delta": -310,
+                "baseline_value": 4290
+              }
+            ],
+            "players": [
+              {
+                "player_id": "drake-london",
+                "name": "Drake London"
+              },
+              {
+                "player_id": "brian-thomas-jr",
+                "name": "Brian Thomas Jr."
+              },
+              {
+                "player_id": "jaylen-waddle",
+                "name": "Jaylen Waddle"
+              }
+            ],
+            "receipts": [
+              {
+                "label": "Drake London 7-day move",
+                "value": "420"
+              },
+              {
+                "label": "Brian Thomas Jr. 7-day move",
+                "value": "-450"
+              }
+            ],
+            "link": {
+              "href": "/top-movers",
+              "label": "View on Top Movers"
+            }
+          }
+        ],
+        "tools_called": [
+          "value_lookup"
+        ]
+      },
+      "reference": {
+        "verdict_kind": "board",
+        "pick": "Brian Thomas Jr.",
+        "key_numbers": [
+          -450
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Brian Thomas Jr."
+        ]
+      }
+    },
+    {
+      "id": "ow2",
+      "type": "open",
+      "question": "who is top 5 in the most receiving stats",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "open",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "evidence": [
+          {
+            "tool": "top_board",
+            "ok": true,
+            "board": [
+              {
+                "rank": 1,
+                "player_id": "jamarr-chase",
+                "name": "Ja'Marr Chase",
+                "team": "CIN",
+                "position": "WR",
+                "value": 612,
+                "games": 6,
+                "on_my_roster": false,
+                "rec": 59,
+                "rec_tgt": 82,
+                "rec_td": 7
+              },
+              {
+                "rank": 2,
+                "player_id": "justin-jefferson",
+                "name": "Justin Jefferson",
+                "team": "MIN",
+                "position": "WR",
+                "value": 598,
+                "games": 6,
+                "on_my_roster": false,
+                "rec": 55,
+                "rec_tgt": 79,
+                "rec_td": 4
+              },
+              {
+                "rank": 3,
+                "player_id": "ceedee-lamb",
+                "name": "CeeDee Lamb",
+                "team": "DAL",
+                "position": "WR",
+                "value": 571,
+                "games": 6,
+                "on_my_roster": false,
+                "rec": 52,
+                "rec_tgt": 74,
+                "rec_td": 5
+              },
+              {
+                "rank": 4,
+                "player_id": "amon-ra-st-brown",
+                "name": "Amon-Ra St. Brown",
+                "team": "DET",
+                "position": "WR",
+                "value": 548,
+                "games": 6,
+                "on_my_roster": false,
+                "rec": 57,
+                "rec_tgt": 71,
+                "rec_td": 6
+              },
+              {
+                "rank": 5,
+                "player_id": "tyreek-hill",
+                "name": "Tyreek Hill",
+                "team": "MIA",
+                "position": "WR",
+                "value": 533,
+                "games": 6,
+                "on_my_roster": false,
+                "rec": 48,
+                "rec_tgt": 68,
+                "rec_td": 4
+              }
+            ],
+            "label": "Receiving yards",
+            "stat_key": "rec_yd",
+            "stat_board": true,
+            "basis": "Season totals through Week 6",
+            "players": [
+              {
+                "player_id": "jamarr-chase",
+                "name": "Ja'Marr Chase"
+              },
+              {
+                "player_id": "justin-jefferson",
+                "name": "Justin Jefferson"
+              },
+              {
+                "player_id": "ceedee-lamb",
+                "name": "CeeDee Lamb"
+              },
+              {
+                "player_id": "amon-ra-st-brown",
+                "name": "Amon-Ra St. Brown"
+              },
+              {
+                "player_id": "tyreek-hill",
+                "name": "Tyreek Hill"
+              }
+            ],
+            "receipts": [
+              {
+                "label": "1. Ja'Marr Chase",
+                "value": "612"
+              },
+              {
+                "label": "2. Justin Jefferson",
+                "value": "598"
+              },
+              {
+                "label": "3. CeeDee Lamb",
+                "value": "571"
+              }
+            ],
+            "link": {
+              "href": "/metrics",
+              "label": "View on Advanced Metrics"
+            }
+          }
+        ],
+        "tools_called": [
+          "top_board"
+        ]
+      },
+      "reference": {
+        "verdict_kind": "board",
+        "pick": "Ja'Marr Chase",
+        "key_numbers": [
+          612,
+          598,
+          571
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Ja'Marr Chase",
+          "Receiving yards"
+        ]
+      }
+    },
+    {
+      "id": "ow3",
+      "type": "open",
+      "question": "What is WOPR?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "open",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "evidence": [
+          {
+            "tool": "metric_definition",
+            "ok": true,
+            "metric_key": "wopr",
+            "label": "WOPR",
+            "definition": "Weighted Opportunity Rating. It blends a player's target share and air yards share into one number for how valuable his usage is.",
+            "positions": [
+              "RB",
+              "WR",
+              "TE"
+            ],
+            "pro": true,
+            "leader": {
+              "name": "Ja'Marr Chase",
+              "value": 0.41
+            },
+            "players": [
+              {
+                "player_id": "jamarr-chase",
+                "name": "Ja'Marr Chase"
+              }
+            ],
+            "receipts": [
+              {
+                "label": "Ja'Marr Chase WOPR",
+                "value": "0.41"
+              }
+            ],
+            "link": {
+              "href": "/metrics?metric=wopr",
+              "label": "Open Advanced Metrics"
+            }
+          }
+        ],
+        "tools_called": [
+          "metric_definition"
+        ]
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": "WOPR",
+        "key_numbers": [
+          0.41
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "WOPR",
+          "Ja'Marr Chase"
+        ]
+      }
+    },
+    {
+      "id": "ow4",
+      "type": "open",
+      "question": "How many receiving yards does Ja'Marr Chase have this season?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "open",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "evidence": [
+          {
+            "tool": "player_stats",
+            "ok": true,
+            "player": {
+              "player_id": "jamarr-chase",
+              "name": "Ja'Marr Chase",
+              "team": "CIN",
+              "position": "WR"
+            },
+            "totals": {
+              "games": 6,
+              "fantasy_points": 123.8,
+              "rec_yd": 612,
+              "rec": 59,
+              "rec_tgt": 82,
+              "rec_td": 7
+            },
+            "recent_games": [
+              {
+                "week": 3,
+                "points": 31.2,
+                "opponent": "MIN",
+                "matchup": "at MIN",
+                "rec_yd": 141,
+                "rec": 13,
+                "rec_tgt": 18,
+                "rec_td": 2
+              },
+              {
+                "week": 4,
+                "points": 9.8,
+                "opponent": "DEN",
+                "matchup": "at DEN",
+                "rec_yd": 52,
+                "rec": 6,
+                "rec_tgt": 9,
+                "rec_td": 0
+              },
+              {
+                "week": 5,
+                "points": 27.5,
+                "opponent": "DET",
+                "matchup": "vs DET",
+                "rec_yd": 128,
+                "rec": 12,
+                "rec_tgt": 16,
+                "rec_td": 2
+              },
+              {
+                "week": 6,
+                "points": 18.3,
+                "opponent": "GB",
+                "matchup": "at GB",
+                "rec_yd": 115,
+                "rec": 10,
+                "rec_tgt": 14,
+                "rec_td": 1
+              }
+            ],
+            "best_week_points": 31.2,
+            "worst_week_points": 9.8,
+            "players": [
+              {
+                "player_id": "jamarr-chase",
+                "name": "Ja'Marr Chase"
+              }
+            ],
+            "receipts": [
+              {
+                "label": "Fantasy points (your scoring)",
+                "value": "123.8"
+              },
+              {
+                "label": "Receiving yards",
+                "value": "612"
+              }
+            ],
+            "link": {
+              "player_id": "jamarr-chase",
+              "player_name": "Ja'Marr Chase",
+              "label": "View player"
+            }
+          }
+        ],
+        "tools_called": [
+          "player_stats"
+        ]
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": "Ja'Marr Chase",
+        "key_numbers": [
+          612,
+          123.8
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Ja'Marr Chase"
+        ]
+      }
+    },
+    {
+      "id": "ow5",
+      "type": "open",
+      "question": "Tell me about Puka Nacua",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "open",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "evidence": [
+          {
+            "tool": "player_profile",
+            "ok": true,
+            "player": {
+              "player_id": "puka-nacua",
+              "name": "Puka Nacua",
+              "team": "LAR",
+              "position": "WR",
+              "value": 5200
+            },
+            "role": {
+              "ppg": 17.2,
+              "target_share": 0.29,
+              "snap_share": 0.88,
+              "targets_per_game": 10.2,
+              "games": 6
+            },
+            "top_metric_ranks": [
+              {
+                "metric": "target_share",
+                "label": "Target Share",
+                "value": 0.29,
+                "rank": 4
+              }
+            ],
+            "recent_ppg": 19.4,
+            "recent_form": [
+              {
+                "week": 5,
+                "points": 21.4,
+                "matchup": "vs SF"
+              },
+              {
+                "week": 6,
+                "points": 24.1,
+                "matchup": "at BAL"
+              }
+            ],
+            "owner_team": "Caleb's Casting Couch",
+            "players": [
+              {
+                "player_id": "puka-nacua",
+                "name": "Puka Nacua"
+              }
+            ],
+            "receipts": [
+              {
+                "label": "Puka Nacua value",
+                "value": "5200"
+              },
+              {
+                "label": "Points per game",
+                "value": "17.2"
+              }
+            ],
+            "link": {
+              "player_id": "puka-nacua",
+              "player_name": "Puka Nacua",
+              "label": "View player"
+            }
+          }
+        ],
+        "tools_called": [
+          "player_profile"
+        ]
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": "Puka Nacua",
+        "key_numbers": [
+          5200,
+          17.2
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Puka Nacua",
+          "Caleb's Casting Couch"
+        ]
+      }
+    },
+    {
+      "id": "ow6",
+      "type": "open",
+      "question": "what about his handcuff?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "open",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "evidence": [
+          {
+            "tool": "next_up",
+            "ok": true,
+            "depth_basis": "sleeper_depth_chart",
+            "subject": {
+              "player_id": "puka-nacua",
+              "name": "Puka Nacua",
+              "team": "LAR",
+              "position": "WR",
+              "value": 5200,
+              "location": "your roster"
+            },
+            "next_up": {
+              "player_id": "jordan-whittington",
+              "name": "Jordan Whittington",
+              "team": "LAR",
+              "position": "WR",
+              "value": 240,
+              "location": "waivers"
+            },
+            "players": [
+              {
+                "player_id": "puka-nacua",
+                "name": "Puka Nacua"
+              },
+              {
+                "player_id": "jordan-whittington",
+                "name": "Jordan Whittington"
+              }
+            ],
+            "receipts": [
+              {
+                "label": "Jordan Whittington value",
+                "value": "240"
+              }
+            ],
+            "link": {
+              "href": "/waivers",
+              "label": "View on Waivers"
+            }
+          }
+        ],
+        "tools_called": [
+          "next_up"
+        ]
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": "Jordan Whittington",
+        "key_numbers": [
+          240
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Puka Nacua",
+          "Jordan Whittington"
+        ]
+      }
+    },
+    {
+      "id": "ow7",
+      "type": "open",
+      "question": "and how does he compare to Jordan Addison?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "open",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "evidence": [
+          {
+            "tool": "compare_players",
+            "ok": true,
+            "players_detail": [
+              {
+                "player_id": "puka-nacua",
+                "name": "Puka Nacua",
+                "team": "LAR",
+                "position": "WR",
+                "value": 5200,
+                "ppg": 17.2,
+                "expected_ppg": 15.8,
+                "target_share": 0.29,
+                "snap_share": 0.88,
+                "touches_per_game": 9.4,
+                "games": 6,
+                "recent_ppg": 19.4
+              },
+              {
+                "player_id": "jordan-addison",
+                "name": "Jordan Addison",
+                "team": "MIN",
+                "position": "WR",
+                "value": 3900,
+                "ppg": 13.1,
+                "expected_ppg": 13.9,
+                "target_share": 0.21,
+                "snap_share": 0.79,
+                "touches_per_game": 6.8,
+                "games": 6,
+                "recent_ppg": 11.2
+              }
+            ],
+            "players": [
+              {
+                "player_id": "puka-nacua",
+                "name": "Puka Nacua"
+              },
+              {
+                "player_id": "jordan-addison",
+                "name": "Jordan Addison"
+              }
+            ],
+            "receipts": [
+              {
+                "label": "Puka Nacua value",
+                "value": "5200"
+              },
+              {
+                "label": "Jordan Addison value",
+                "value": "3900"
+              },
+              {
+                "label": "Puka Nacua points per game",
+                "value": "17.2"
+              },
+              {
+                "label": "Jordan Addison points per game",
+                "value": "13.1"
+              }
+            ],
+            "link": {
+              "href": "/sleeper/2026/blackedraw/compare?p1=puka-nacua&p2=jordan-addison",
+              "label": "View head-to-head in Compare"
+            }
+          }
+        ],
+        "tools_called": [
+          "compare_players"
+        ]
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": "Puka Nacua",
+        "key_numbers": [
+          5200,
+          3900,
+          17.2,
+          13.1
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Puka Nacua",
+          "Jordan Addison"
+        ]
+      }
+    },
+    {
+      "id": "ow8",
+      "type": "open",
+      "question": "Who leads the league in points, and who is the biggest buy-low right now?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "open",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "evidence": [
+          {
+            "tool": "league_lookup",
+            "ok": true,
+            "kind": "standings",
+            "me": {
+              "team_name": "Caleb's Casting Couch",
+              "seed": 3,
+              "wins": 4,
+              "losses": 3,
+              "pf": 745.2
+            },
+            "points_leader": {
+              "team_name": "Pittsburgh Pilots",
+              "pf": 812.4
+            },
+            "table": [
+              {
+                "team_name": "Pittsburgh Pilots",
+                "seed": 1,
+                "wins": 6,
+                "losses": 1,
+                "pf": 812.4
+              },
+              {
+                "team_name": "Sunday Scaries",
+                "seed": 2,
+                "wins": 5,
+                "losses": 2,
+                "pf": 780.5
+              },
+              {
+                "team_name": "Caleb's Casting Couch",
+                "seed": 3,
+                "wins": 4,
+                "losses": 3,
+                "pf": 745.2
+              }
+            ],
+            "players": [],
+            "receipts": [
+              {
+                "label": "Your seed",
+                "value": "3"
+              },
+              {
+                "label": "Pittsburgh Pilots headline",
+                "value": "812.4"
+              }
+            ],
+            "link": {
+              "href": "/sleeper/2026/blackedraw/standings",
+              "label": "View in your league"
+            }
+          },
+          {
+            "tool": "value_lookup",
+            "ok": true,
+            "risers": [
+              {
+                "player_id": "drake-london",
+                "name": "Drake London",
+                "team": "ATL",
+                "position": "WR",
+                "value": 4600,
+                "delta": 420,
+                "baseline_value": 4180
+              }
+            ],
+            "fallers": [
+              {
+                "player_id": "brian-thomas-jr",
+                "name": "Brian Thomas Jr.",
+                "team": "JAX",
+                "position": "WR",
+                "value": 3210,
+                "delta": -450,
+                "baseline_value": 3660
+              },
+              {
+                "player_id": "jaylen-waddle",
+                "name": "Jaylen Waddle",
+                "team": "MIA",
+                "position": "WR",
+                "value": 3980,
+                "delta": -310,
+                "baseline_value": 4290
+              }
+            ],
+            "players": [
+              {
+                "player_id": "drake-london",
+                "name": "Drake London"
+              },
+              {
+                "player_id": "brian-thomas-jr",
+                "name": "Brian Thomas Jr."
+              },
+              {
+                "player_id": "jaylen-waddle",
+                "name": "Jaylen Waddle"
+              }
+            ],
+            "receipts": [
+              {
+                "label": "Drake London 7-day move",
+                "value": "420"
+              },
+              {
+                "label": "Brian Thomas Jr. 7-day move",
+                "value": "-450"
+              }
+            ],
+            "link": {
+              "href": "/top-movers",
+              "label": "View on Top Movers"
+            }
+          }
+        ],
+        "tools_called": [
+          "league_lookup",
+          "value_lookup"
+        ]
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": "Pittsburgh Pilots",
+        "key_numbers": [
+          812.4,
+          420,
+          -450
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Pittsburgh Pilots",
+          "Brian Thomas Jr."
+        ]
+      }
+    },
+    {
+      "id": "ow9",
+      "type": "open",
+      "question": "Show me the Pittsburgh Pilots roster",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "open",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "evidence": [
+          {
+            "tool": "team_roster",
+            "ok": true,
+            "team": {
+              "team_name": "Pittsburgh Pilots",
+              "roster_id": 2,
+              "is_mine": false
+            },
+            "starters": [
+              {
+                "player_id": "josh-allen",
+                "name": "Josh Allen",
+                "team": "BUF",
+                "position": "QB",
+                "value": 3900
+              },
+              {
+                "player_id": "saquon-barkley",
+                "name": "Saquon Barkley",
+                "team": "PHI",
+                "position": "RB",
+                "value": 6100
+              },
+              {
+                "player_id": "justin-jefferson",
+                "name": "Justin Jefferson",
+                "team": "MIN",
+                "position": "WR",
+                "value": 6600
+              },
+              {
+                "player_id": "trey-mcbride",
+                "name": "Trey McBride",
+                "team": "ARI",
+                "position": "TE",
+                "value": 3400
+              }
+            ],
+            "bench": [
+              {
+                "player_id": "jaylen-waddle",
+                "name": "Jaylen Waddle",
+                "team": "MIA",
+                "position": "WR",
+                "value": 3980
+              }
+            ],
+            "roster_value_total": 23980,
+            "standing": {
+              "seed": 1,
+              "wins": 6,
+              "losses": 1,
+              "pf": 812.4
+            },
+            "players": [
+              {
+                "player_id": "justin-jefferson",
+                "name": "Justin Jefferson"
+              },
+              {
+                "player_id": "saquon-barkley",
+                "name": "Saquon Barkley"
+              },
+              {
+                "player_id": "jaylen-waddle",
+                "name": "Jaylen Waddle"
+              },
+              {
+                "player_id": "josh-allen",
+                "name": "Josh Allen"
+              },
+              {
+                "player_id": "trey-mcbride",
+                "name": "Trey McBride"
+              }
+            ],
+            "receipts": [
+              {
+                "label": "Saquon Barkley value",
+                "value": "6100"
+              },
+              {
+                "label": "Pittsburgh Pilots points for",
+                "value": "812.4"
+              }
+            ],
+            "link": {
+              "href": "/sleeper/2026/blackedraw/teams",
+              "label": "View on Teams"
+            }
+          }
+        ],
+        "tools_called": [
+          "team_roster"
+        ]
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": "Pittsburgh Pilots",
+        "key_numbers": [
+          6100,
+          812.4
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Pittsburgh Pilots",
+          "Saquon Barkley",
+          "Justin Jefferson"
+        ]
+      }
+    },
+    {
+      "id": "ow10",
+      "type": "open",
+      "question": "Who are the biggest risers in value this week?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "open",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "evidence": [
+          {
+            "tool": "value_lookup",
+            "ok": true,
+            "risers": [
+              {
+                "player_id": "drake-london",
+                "name": "Drake London",
+                "team": "ATL",
+                "position": "WR",
+                "value": 4600,
+                "delta": 420,
+                "baseline_value": 4180
+              }
+            ],
+            "fallers": [
+              {
+                "player_id": "brian-thomas-jr",
+                "name": "Brian Thomas Jr.",
+                "team": "JAX",
+                "position": "WR",
+                "value": 3210,
+                "delta": -450,
+                "baseline_value": 3660
+              },
+              {
+                "player_id": "jaylen-waddle",
+                "name": "Jaylen Waddle",
+                "team": "MIA",
+                "position": "WR",
+                "value": 3980,
+                "delta": -310,
+                "baseline_value": 4290
+              }
+            ],
+            "players": [
+              {
+                "player_id": "drake-london",
+                "name": "Drake London"
+              },
+              {
+                "player_id": "brian-thomas-jr",
+                "name": "Brian Thomas Jr."
+              },
+              {
+                "player_id": "jaylen-waddle",
+                "name": "Jaylen Waddle"
+              }
+            ],
+            "receipts": [
+              {
+                "label": "Drake London 7-day move",
+                "value": "420"
+              },
+              {
+                "label": "Brian Thomas Jr. 7-day move",
+                "value": "-450"
+              }
+            ],
+            "link": {
+              "href": "/top-movers",
+              "label": "View on Top Movers"
+            }
+          }
+        ],
+        "tools_called": [
+          "value_lookup"
+        ]
+      },
+      "reference": {
+        "verdict_kind": "board",
+        "pick": "Drake London",
+        "key_numbers": [
+          420,
+          -450
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Drake London",
+          "Brian Thomas Jr."
+        ]
+      }
+    },
+    {
+      "id": "ow11",
+      "type": "open",
+      "question": "How has Rome Odunze looked the last few games?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "open",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "evidence": [
+          {
+            "tool": "player_stats",
+            "ok": true,
+            "player": {
+              "player_id": "rome-odunze",
+              "name": "Rome Odunze",
+              "team": "CHI",
+              "position": "WR"
+            },
+            "totals": {
+              "games": 6,
+              "fantasy_points": 88.4,
+              "rec_yd": 402,
+              "rec": 31,
+              "rec_tgt": 45,
+              "rec_td": 3
+            },
+            "recent_games": [
+              {
+                "week": 3,
+                "points": 16.2,
+                "opponent": "DAL",
+                "matchup": "vs DAL",
+                "rec_yd": 84,
+                "rec": 6,
+                "rec_tgt": 8,
+                "rec_td": 1
+              },
+              {
+                "week": 4,
+                "points": 8.4,
+                "opponent": "LV",
+                "matchup": "at LV",
+                "rec_yd": 41,
+                "rec": 3,
+                "rec_tgt": 6,
+                "rec_td": 0
+              },
+              {
+                "week": 5,
+                "points": 21.7,
+                "opponent": "WAS",
+                "matchup": "at WAS",
+                "rec_yd": 108,
+                "rec": 7,
+                "rec_tgt": 10,
+                "rec_td": 1
+              },
+              {
+                "week": 6,
+                "points": 13.9,
+                "opponent": "JAX",
+                "matchup": "vs JAX",
+                "rec_yd": 63,
+                "rec": 5,
+                "rec_tgt": 7,
+                "rec_td": 0
+              }
+            ],
+            "best_week_points": 21.7,
+            "worst_week_points": 8.4,
+            "players": [
+              {
+                "player_id": "rome-odunze",
+                "name": "Rome Odunze"
+              }
+            ],
+            "receipts": [
+              {
+                "label": "Fantasy points (your scoring)",
+                "value": "88.4"
+              },
+              {
+                "label": "Receiving yards",
+                "value": "402"
+              }
+            ],
+            "link": {
+              "player_id": "rome-odunze",
+              "player_name": "Rome Odunze",
+              "label": "View player"
+            }
+          }
+        ],
+        "tools_called": [
+          "player_stats"
+        ]
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": "Rome Odunze",
+        "key_numbers": [
+          88.4,
+          402
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Rome Odunze"
+        ]
+      }
+    },
+    {
+      "id": "ow12",
+      "type": "open",
+      "question": "What is my record and how many points have I scored?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "open",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "evidence": [
+          {
+            "tool": "league_lookup",
+            "ok": true,
+            "kind": "standings",
+            "me": {
+              "team_name": "Caleb's Casting Couch",
+              "seed": 3,
+              "wins": 4,
+              "losses": 3,
+              "pf": 745.2
+            },
+            "table": [
+              {
+                "team_name": "Pittsburgh Pilots",
+                "seed": 1,
+                "wins": 6,
+                "losses": 1,
+                "pf": 812.4
+              },
+              {
+                "team_name": "Sunday Scaries",
+                "seed": 2,
+                "wins": 5,
+                "losses": 2,
+                "pf": 780.5
+              },
+              {
+                "team_name": "Caleb's Casting Couch",
+                "seed": 3,
+                "wins": 4,
+                "losses": 3,
+                "pf": 745.2
+              }
+            ],
+            "players": [],
+            "receipts": [
+              {
+                "label": "Your seed",
+                "value": "3"
+              },
+              {
+                "label": "Your points for",
+                "value": "745.2"
+              }
+            ],
+            "link": {
+              "href": "/sleeper/2026/blackedraw/standings",
+              "label": "View in your league"
+            }
+          }
+        ],
+        "tools_called": [
+          "league_lookup"
+        ]
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": "Caleb's Casting Couch",
+        "key_numbers": [
+          745.2,
+          3
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Caleb's Casting Couch",
+          "Pittsburgh Pilots"
+        ]
+      }
+    },
+    {
+      "id": "ow13",
+      "type": "open",
+      "question": "What is the difference between target share and WOPR?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "open",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "evidence": [
+          {
+            "tool": "metric_definition",
+            "ok": true,
+            "metric_key": "target_share",
+            "label": "Target Share",
+            "definition": "The percentage of his team's pass attempts that target one player.",
+            "positions": [
+              "RB",
+              "WR",
+              "TE"
+            ],
+            "pro": false,
+            "leader": {
+              "name": "Puka Nacua",
+              "value": 0.29
+            },
+            "players": [
+              {
+                "player_id": "puka-nacua",
+                "name": "Puka Nacua"
+              }
+            ],
+            "receipts": [
+              {
+                "label": "Puka Nacua Target Share",
+                "value": "0.29"
+              }
+            ],
+            "link": {
+              "href": "/metrics?metric=target_share",
+              "label": "Open Advanced Metrics"
+            }
+          },
+          {
+            "tool": "metric_definition",
+            "ok": true,
+            "metric_key": "wopr",
+            "label": "WOPR",
+            "definition": "Weighted Opportunity Rating. It blends target share and air yards share into one number for how valuable a player's usage is.",
+            "positions": [
+              "RB",
+              "WR",
+              "TE"
+            ],
+            "pro": true,
+            "gated_board": true,
+            "players": [],
+            "receipts": [],
+            "link": {
+              "href": "/metrics?metric=wopr",
+              "label": "Open Advanced Metrics"
+            }
+          }
+        ],
+        "tools_called": [
+          "metric_definition",
+          "metric_definition"
+        ]
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": "Target Share",
+        "key_numbers": [
+          0.29
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Target Share",
+          "WOPR",
+          "PRO"
+        ]
+      }
+    },
+    {
+      "id": "ow14",
+      "type": "open",
+      "question": "Who leads the league in rushing touchdowns?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "open",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "evidence": [
+          {
+            "tool": "top_board",
+            "ok": true,
+            "board": [
+              {
+                "rank": 1,
+                "player_id": "jonathan-taylor",
+                "name": "Jonathan Taylor",
+                "team": "IND",
+                "position": "RB",
+                "value": 9,
+                "games": 6,
+                "on_my_roster": false,
+                "rush_att": 118,
+                "rush_yd": 640
+              },
+              {
+                "rank": 2,
+                "player_id": "derrick-henry",
+                "name": "Derrick Henry",
+                "team": "BAL",
+                "position": "RB",
+                "value": 8,
+                "games": 6,
+                "on_my_roster": false,
+                "rush_att": 112,
+                "rush_yd": 598
+              },
+              {
+                "rank": 3,
+                "player_id": "kyren-williams",
+                "name": "Kyren Williams",
+                "team": "LAR",
+                "position": "RB",
+                "value": 7,
+                "games": 6,
+                "on_my_roster": false,
+                "rush_att": 105,
+                "rush_yd": 540
+              }
+            ],
+            "label": "Rushing touchdowns",
+            "stat_key": "rush_td",
+            "stat_board": true,
+            "basis": "Season totals through Week 6",
+            "players": [
+              {
+                "player_id": "jonathan-taylor",
+                "name": "Jonathan Taylor"
+              },
+              {
+                "player_id": "derrick-henry",
+                "name": "Derrick Henry"
+              },
+              {
+                "player_id": "kyren-williams",
+                "name": "Kyren Williams"
+              }
+            ],
+            "receipts": [
+              {
+                "label": "1. Jonathan Taylor",
+                "value": "9"
+              },
+              {
+                "label": "2. Derrick Henry",
+                "value": "8"
+              },
+              {
+                "label": "3. Kyren Williams",
+                "value": "7"
+              }
+            ],
+            "link": {
+              "href": "/metrics",
+              "label": "View on Advanced Metrics"
+            }
+          }
+        ],
+        "tools_called": [
+          "top_board"
+        ]
+      },
+      "reference": {
+        "verdict_kind": "board",
+        "pick": "Jonathan Taylor",
+        "key_numbers": [
+          9,
+          8
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Jonathan Taylor",
+          "Rushing touchdowns"
+        ]
+      }
+    },
+    {
+      "id": "ow15",
+      "type": "open",
+      "question": "Is Ja'Marr Chase consistent week to week?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "open",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "evidence": [
+          {
+            "tool": "player_stats",
+            "ok": true,
+            "player": {
+              "player_id": "jamarr-chase",
+              "name": "Ja'Marr Chase",
+              "team": "CIN",
+              "position": "WR"
+            },
+            "totals": {
+              "games": 6,
+              "fantasy_points": 123.8,
+              "rec_yd": 612,
+              "rec": 59,
+              "rec_tgt": 82,
+              "rec_td": 7
+            },
+            "recent_games": [
+              {
+                "week": 3,
+                "points": 31.2,
+                "opponent": "MIN",
+                "matchup": "at MIN",
+                "rec_yd": 141,
+                "rec": 13,
+                "rec_tgt": 18,
+                "rec_td": 2
+              },
+              {
+                "week": 4,
+                "points": 9.8,
+                "opponent": "DEN",
+                "matchup": "at DEN",
+                "rec_yd": 52,
+                "rec": 6,
+                "rec_tgt": 9,
+                "rec_td": 0
+              },
+              {
+                "week": 5,
+                "points": 27.5,
+                "opponent": "DET",
+                "matchup": "vs DET",
+                "rec_yd": 128,
+                "rec": 12,
+                "rec_tgt": 16,
+                "rec_td": 2
+              },
+              {
+                "week": 6,
+                "points": 18.3,
+                "opponent": "GB",
+                "matchup": "at GB",
+                "rec_yd": 115,
+                "rec": 10,
+                "rec_tgt": 14,
+                "rec_td": 1
+              }
+            ],
+            "best_week_points": 31.2,
+            "worst_week_points": 9.8,
+            "players": [
+              {
+                "player_id": "jamarr-chase",
+                "name": "Ja'Marr Chase"
+              }
+            ],
+            "receipts": [
+              {
+                "label": "Fantasy points (your scoring)",
+                "value": "123.8"
+              },
+              {
+                "label": "Receiving yards",
+                "value": "612"
+              }
+            ],
+            "link": {
+              "player_id": "jamarr-chase",
+              "player_name": "Ja'Marr Chase",
+              "label": "View player"
+            }
+          }
+        ],
+        "tools_called": [
+          "player_stats"
+        ]
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": "Ja'Marr Chase",
+        "key_numbers": [
+          123.8,
+          612
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Ja'Marr Chase"
+        ]
+      }
+    },
+    {
+      "id": "ow16",
+      "type": "open",
+      "question": "Give me the rundown on my team",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "open",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "evidence": [
+          {
+            "tool": "team_roster",
+            "ok": true,
+            "team": {
+              "team_name": "Caleb's Casting Couch",
+              "roster_id": 1,
+              "is_mine": true
+            },
+            "starters": [
+              {
+                "player_id": "baker-mayfield",
+                "name": "Baker Mayfield",
+                "team": "TB",
+                "position": "QB",
+                "value": 2100
+              },
+              {
+                "player_id": "puka-nacua",
+                "name": "Puka Nacua",
+                "team": "LAR",
+                "position": "WR",
+                "value": 5200
+              },
+              {
+                "player_id": "rome-odunze",
+                "name": "Rome Odunze",
+                "team": "CHI",
+                "position": "WR",
+                "value": 4300
+              },
+              {
+                "player_id": "bijan-robinson",
+                "name": "Bijan Robinson",
+                "team": "ATL",
+                "position": "RB",
+                "value": 5900
+              }
+            ],
+            "bench": [
+              {
+                "player_id": "jordan-addison",
+                "name": "Jordan Addison",
+                "team": "MIN",
+                "position": "WR",
+                "value": 3900
+              }
+            ],
+            "roster_value_total": 21400,
+            "standing": {
+              "seed": 3,
+              "wins": 4,
+              "losses": 3,
+              "pf": 745.2
+            },
+            "players": [
+              {
+                "player_id": "bijan-robinson",
+                "name": "Bijan Robinson"
+              },
+              {
+                "player_id": "puka-nacua",
+                "name": "Puka Nacua"
+              },
+              {
+                "player_id": "rome-odunze",
+                "name": "Rome Odunze"
+              },
+              {
+                "player_id": "jordan-addison",
+                "name": "Jordan Addison"
+              },
+              {
+                "player_id": "baker-mayfield",
+                "name": "Baker Mayfield"
+              }
+            ],
+            "receipts": [
+              {
+                "label": "Bijan Robinson value",
+                "value": "5900"
+              },
+              {
+                "label": "Caleb's Casting Couch points for",
+                "value": "745.2"
+              }
+            ],
+            "link": {
+              "href": "/sleeper/2026/blackedraw/teams",
+              "label": "View on Teams"
+            }
+          }
+        ],
+        "tools_called": [
+          "team_roster"
+        ]
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": "Caleb's Casting Couch",
+        "key_numbers": [
+          5900,
+          745.2
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Caleb's Casting Couch",
+          "Puka Nacua"
+        ]
+      }
+    },
+    {
+      "id": "ow17",
+      "type": "open",
+      "question": "Who is hurt on my team right now?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "open",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "evidence": [
+          {
+            "tool": "team_roster",
+            "ok": true,
+            "team": {
+              "team_name": "Caleb's Casting Couch",
+              "roster_id": 1,
+              "is_mine": true
+            },
+            "starters": [
+              {
+                "player_id": "baker-mayfield",
+                "name": "Baker Mayfield",
+                "team": "TB",
+                "position": "QB",
+                "value": 2100
+              },
+              {
+                "player_id": "puka-nacua",
+                "name": "Puka Nacua",
+                "team": "LAR",
+                "position": "WR",
+                "value": 5200,
+                "injury_status": "Questionable"
+              },
+              {
+                "player_id": "rome-odunze",
+                "name": "Rome Odunze",
+                "team": "CHI",
+                "position": "WR",
+                "value": 4300
+              },
+              {
+                "player_id": "bijan-robinson",
+                "name": "Bijan Robinson",
+                "team": "ATL",
+                "position": "RB",
+                "value": 5900
+              }
+            ],
+            "bench": [
+              {
+                "player_id": "jordan-addison",
+                "name": "Jordan Addison",
+                "team": "MIN",
+                "position": "WR",
+                "value": 3900
+              }
+            ],
+            "roster_value_total": 21400,
+            "standing": {
+              "seed": 3,
+              "wins": 4,
+              "losses": 3,
+              "pf": 745.2
+            },
+            "players": [
+              {
+                "player_id": "bijan-robinson",
+                "name": "Bijan Robinson"
+              },
+              {
+                "player_id": "puka-nacua",
+                "name": "Puka Nacua"
+              },
+              {
+                "player_id": "rome-odunze",
+                "name": "Rome Odunze"
+              },
+              {
+                "player_id": "jordan-addison",
+                "name": "Jordan Addison"
+              },
+              {
+                "player_id": "baker-mayfield",
+                "name": "Baker Mayfield"
+              }
+            ],
+            "receipts": [
+              {
+                "label": "Bijan Robinson value",
+                "value": "5900"
+              },
+              {
+                "label": "Caleb's Casting Couch points for",
+                "value": "745.2"
+              }
+            ],
+            "link": {
+              "href": "/sleeper/2026/blackedraw/teams",
+              "label": "View on Teams"
+            },
+            "injuries": [
+              {
+                "name": "Puka Nacua",
+                "injury_status": "Questionable"
+              }
+            ]
+          }
+        ],
+        "tools_called": [
+          "team_roster"
+        ]
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": "Puka Nacua",
+        "key_numbers": [
+          5900,
+          745.2
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Puka Nacua",
+          "Questionable"
+        ]
+      }
+    },
+    {
+      "id": "ow18",
+      "type": "open",
+      "question": "Who leads the league in WOPR?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "open",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "evidence": [
+          {
+            "tool": "top_board",
+            "ok": true,
+            "gated": true,
+            "label": "WOPR",
+            "metric_key": "wopr",
+            "players": [],
+            "receipts": [],
+            "link": null
+          }
+        ],
+        "tools_called": [
+          "top_board"
+        ],
+        "gated": true,
+        "label": "WOPR",
+        "metric_key": "wopr"
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": null,
+        "key_numbers": [],
+        "close_call": false
+      },
+      "trap": {
+        "kind": "pro_gate"
+      },
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "WOPR",
+          "PRO"
+        ]
+      }
+    },
+    {
+      "id": "ow19",
+      "type": "open",
+      "question": "What is the weather in Green Bay this weekend?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "open",
+        "available": false,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "evidence": [],
+        "tools_called": []
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": null,
+        "key_numbers": [],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": true,
+        "must_mention": []
+      }
     }
   ]
 }

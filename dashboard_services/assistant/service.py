@@ -264,6 +264,32 @@ def _log_common(bundle, account_key):
     }
 
 
+def _open_turn(account_key, message, bundle, entities, last_entities,
+               history, assumed, preferences=None):
+    """Run one open answering turn (plan, fetch tools, compose from the
+    evidence). Returns (answer, pack, tools_called, names): names are the
+    players the evidence resolved, which the caller folds into the
+    thread entities so the next turn's follow-ups inherit them."""
+    from dashboard_services.assistant import open_layer
+    if preferences is None:
+        preferences = store.list_preferences(account_key)
+    context_names: list[str] = []
+    for src in (entities.get("player_names"),
+                (last_entities or {}).get("player_names")):
+        for n in (src or []):
+            if n and str(n) not in context_names:
+                context_names.append(str(n))
+    thread = {
+        "context_players": context_names,
+        "last_intent": (last_entities or {}).get("_intent"),
+        "last_answer": ((history or [{}])[0].get("answer") if history else None),
+    }
+    answer, pack, tools_called, names = open_layer.answer_open(
+        message, bundle, thread=thread, history=history,
+        preferences=preferences, assumed_context=assumed)
+    return answer, pack, tools_called, names
+
+
 def ask(account_key: str, message: str, *, platform=None, league_id=None, season=None, thread_id=None, player_id_hint=None) -> dict:
     started = time.time()
     caps = caps_for(account_key)
@@ -333,8 +359,21 @@ def ask(account_key: str, message: str, *, platform=None, league_id=None, season
                   "followups": [], "act_link": None, "actions": [], "mentions": [], "preference": pref}
         return _finish(answer, log_intent="remember")
 
-    # out of scope
+    # out of scope: before declining, probe for site-data anchors (a
+    # resolved player, a league team, a stat phrase, a catalog metric).
+    # Anchored questions the fixed router did not claim go to the open
+    # path; only anchor-less questions keep the canned decline, so plain
+    # trivia never spends a model call.
     if intent == "out_of_scope":
+        from dashboard_services.assistant import open_layer
+        if open_layer.probe(message, bundle, last_entities).get("anchors"):
+            answer, pack, otools, names = _open_turn(
+                account_key, message, bundle, entities, last_entities,
+                history, assumed)
+            if names:
+                entities["player_names"] = names
+            return _finish(answer, log_intent="open", pack=pack, tools=otools,
+                           entities_out=dict(entities))
         answer = {"verdict": None,
                   "text": "That is outside what I can answer from your league data. I can help with start/sit, trades, buy/sell/hold, player questions, metrics, waivers, or what to do this week.",
                   "receipts": [], "caveat": None,
@@ -348,6 +387,18 @@ def ask(account_key: str, message: str, *, platform=None, league_id=None, season
                   "followups": [], "act_link": None, "actions": [], "mentions": [], "candidates": ambiguous.get("candidates") or []}
         return _finish(answer, log_intent="clarify", entities_out=resolved_entities)
 
+    # open: the router committed to the open path (no fixed intent owns
+    # the question). Plan and fetch tools, then compose from the evidence.
+    if intent == "open":
+        answer, pack, otools, names = _open_turn(
+            account_key, message, bundle, resolved_entities, last_entities,
+            history, assumed)
+        if names:
+            resolved_entities["player_names"] = names
+            entities["player_names"] = names
+        return _finish(answer, log_intent="open", pack=pack, tools=otools,
+                       entities_out=resolved_entities)
+
     builder = BUILDERS.get(intent)
     if builder is None:
         answer = {"verdict": None, "text": "I cannot answer that type of question yet.", "receipts": [],
@@ -360,6 +411,28 @@ def ask(account_key: str, message: str, *, platform=None, league_id=None, season
     pack, tools = builder(bundle, resolved_entities, player_ids)
 
     preferences = store.list_preferences(account_key)
+
+    # Pack dead end: the fixed metric/leaderboard builders could not
+    # place the phrasing at all (the generic "that metric is not
+    # tracked" decline: a stat the catalog does not key under that name).
+    # Give the open path one shot with full tool access before the
+    # no-data answer ships. Curated declines keep their pinned shape:
+    # KNOWN_MISSING stats (route rate and friends) name their neighbors
+    # on purpose, gated packs keep their gated answer, and data-absent
+    # declines have no better source for the open path to fetch.
+    if intent in ("metric", "leaderboard") and isinstance(pack, dict) \
+            and pack.get("available") is False and not pack.get("gated") \
+            and pack.get("missing") in (None, "that metric is not tracked"):
+        answer, opack, otools, names = _open_turn(
+            account_key, message, bundle, resolved_entities, last_entities,
+            history, assumed, preferences=preferences)
+        opack_evidence = (opack or {}).get("evidence") or []
+        if any(e.get("ok", True) and not e.get("gated") for e in opack_evidence):
+            if names:
+                resolved_entities["player_names"] = names
+                entities["player_names"] = names
+            return _finish(answer, log_intent="open", pack=opack, tools=otools,
+                           entities_out=resolved_entities)
 
     # Answer caching: user-independent factual answers only. The key must
     # still scope everything the composed answer actually depends on

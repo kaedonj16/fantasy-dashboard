@@ -1267,6 +1267,8 @@ _FOLLOWUP_TEMPLATES = {
     "activity": [followup_pair("Who should I add from waivers?"), followup_pair("What should I do with my team this week?")],
     "watchlist": [followup_pair("Who should I add from waivers?"), followup_pair("What should I do with my team this week?")],
     "front_office": [followup_pair("Find me a trade"), followup_pair("Who should I add from waivers?")],
+    "open": [followup_pair("What should I do with my team this week?"), followup_pair("Who should I start at FLEX?"),
+             followup_pair("Any buy-lows I should target?")],
 }
 
 
@@ -1898,6 +1900,31 @@ def _value_fragments(row: dict, pack: dict) -> str:
     return "; ".join(parts)
 
 
+_STAT_EXTRA_WORDS = (("rec_yd", "receiving yards"), ("rec", "receptions"),
+                     ("rec_tgt", "targets"), ("rec_td", "receiving TDs"),
+                     ("rush_yd", "rushing yards"), ("rush_att", "carries"),
+                     ("rush_td", "rushing TDs"), ("pass_yd", "passing yards"),
+                     ("pass_cmp", "completions"), ("pass_att", "attempts"),
+                     ("pass_td", "passing TDs"))
+
+
+def _stat_extras(row: dict, pack: dict) -> str:
+    """The rest of a stat-board row's family line, in parentheses: a
+    receiving-yards row also shows his receptions, targets, and TDs.
+    The ranked stat itself is skipped (the line already leads with it)."""
+    if not (pack or {}).get("stat_board"):
+        return ""
+    parts = []
+    for key, word in _STAT_EXTRA_WORDS:
+        if key == pack.get("stat_key"):
+            continue
+        if row.get(key) is not None:
+            parts.append(f"{_fmt_num(row[key])} {word}")
+        if len(parts) >= 3:
+            break
+    return f" ({', '.join(parts)})" if parts else ""
+
+
 def _board_line(row: dict, pack: dict) -> str:
     kind = pack.get("board_kind")
     rank = row.get("rank")
@@ -1905,6 +1932,9 @@ def _board_line(row: dict, pack: dict) -> str:
     meta = ", ".join(x for x in (row.get("team"), row.get("position")) if x)
     head = f"{rank}. {name}" + (f" ({meta})" if meta else "")
     value = _fmt_num(row.get("value")) if row.get("value") is not None else ""
+    if pack.get("stat_board"):
+        return f"{head}: {value} {(pack.get('label') or '').lower()}" \
+               f"{_stat_extras(row, pack)}"
     if kind == "matchup":
         return (f"{rank}. {row.get('team')}: {value} fantasy points allowed "
                 f"per game to {pack.get('position_filter')}")
@@ -1940,6 +1970,8 @@ def _board_receipt(row: dict, pack: dict) -> dict:
     kind = pack.get("board_kind")
     label = f"{row.get('rank')}. {row.get('name') or row.get('team')}"
     value = _fmt_num(row.get("value")) if row.get("value") is not None else ""
+    if pack.get("stat_board"):
+        return {"label": label, "value": f"{value}{_stat_extras(row, pack)}"}
     if kind == "movers" and row.get("delta") is not None:
         return {"label": label, "value": f"{_fmt_delta(row['delta'])} (now {value})"}
     if kind in ("buy_low", "sell_high") and row.get("delta") is not None:
@@ -2205,6 +2237,15 @@ _PROFILE_SUFFIX = (
 
 def compose_answer(intent: str, question: str, pack: dict, *, preferences=None, assumed_context=None, history=None, risk_profile=None) -> dict:
     """Compose an answer dict from an evidence pack. Pure eval seam."""
+    if intent == "open":
+        # The open path composes from fetched tool evidence: the service
+        # plans and fetches first; the eval seam passes frozen evidence
+        # straight through in the pack. Its own gating, ambiguity, and
+        # decline handling lives in open_layer (entry-level, not pack-level).
+        from dashboard_services.assistant import open_layer
+        return open_layer.compose_open_answer(
+            question, pack, history=history, preferences=preferences,
+            assumed_context=assumed_context)
     if isinstance(pack, dict) and pack.get("gated"):
         return _enforce_grounding(gated_answer(pack), intent, pack, question)
     if isinstance(pack, dict) and pack.get("available") is False \
