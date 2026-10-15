@@ -33,13 +33,12 @@ def _fu(text: str) -> dict:
     return {"label": text, "ask": text}
 
 
-# Mirror of compose._ACT_LINKS: act_link is a {href, label} object (or None),
-# assigned deterministically, never a bare string.
+# Mirror of compose._ACT_LINKS: act_link is a {href, label} link object, a
+# {player_id, player_name, label} modal action (player / buy_sell_hold), or
+# None; assigned deterministically, never a bare string.
 _ACT_LINKS = {
     "start_sit": {"href": "/waivers?tab=startsit", "label": "View in Start/Sit"},
     "trade_eval": {"href": "/trade", "label": "Open in Trade Calculator"},
-    "buy_sell_hold": {"href": "/players", "label": "View player"},
-    "player": {"href": "/players", "label": "View player"},
     "metric": {"href": "/metrics", "label": "View on Advanced Metrics"},
     "leaderboard": {"href": "/metrics", "label": "View on Advanced Metrics"},
     "waivers": {"href": "/waivers", "label": "View on Waivers"},
@@ -62,7 +61,7 @@ _ACT_LINKS = {
 # params its own share flow mints), start/sit stages the pair in Compare,
 # metric presets Advanced Metrics, player answers open the modal. Mentions
 # carry pack player ids through to the UI.
-from urllib.parse import quote, quote_plus
+from urllib.parse import quote
 
 
 def _league_base(pack):
@@ -102,10 +101,9 @@ def _trade_calc_link(pack):
 def _player_modal_link(player):
     if not isinstance(player, dict) or not player.get("player_id"):
         return None
-    href = "/?player=" + quote(str(player["player_id"]), safe="")
-    if player.get("name"):
-        href += "&player_name=" + quote_plus(str(player["name"]))
-    return {"href": href, "label": "View player"}
+    return {"player_id": str(player["player_id"]),
+            "player_name": str(player.get("name") or ""),
+            "label": "View player"}
 
 
 def _metric_link(pack):
@@ -156,9 +154,8 @@ def _resolve_act_link(intent, pack):
         return {"href": f"{base}/trade" if base else "/trade",
                 "label": "Open in Trade Calculator"}
     if intent in ("player", "buy_sell_hold"):
-        link = _player_modal_link(pack.get("player"))
-        if link:
-            return link
+        # Terminal, mirroring compose: modal action or no link at all.
+        return _player_modal_link(pack.get("player"))
     elif intent == "keeper":
         base = _league_base(pack)
         return {"href": f"{base}/keeper" if base else "/keeper",

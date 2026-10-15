@@ -387,6 +387,27 @@ def test_act_link_is_a_destination_labeled_pill():
     assert "SVG_ARROW" in ASSISTANT_JS
 
 
+def test_view_player_act_link_opens_the_modal_in_place():
+    # Kaedon's report (2026-10-15): the 'View player' button navigated to
+    # the player rankings page. Player / buy-sell answers now carry a modal
+    # action ({player_id, player_name, label}) instead of an href, and the
+    # renderer turns it into a BUTTON that opens the modal in place via
+    # the same openPlayerModal call the answer's mentions use: no anchor,
+    # no navigation, no REOPEN_KEY (the popup stays open behind the modal).
+    modal = _slice("answer.act_link && answer.act_link.player_id",
+                   "answer.act_link && safeHref(answer.act_link.href)")
+    assert "el('button', 'br-asst-actlink'" in modal
+    assert "openPlayerModal(al.player_id, al.player_name || '')" in modal
+    assert "setItem(REOPEN_KEY" not in modal
+    assert "link.href" not in modal
+    # Producing side: the modal action is built in compose, and no intent
+    # maps to the rankings page anymore.
+    assert '"label": "View player"' in COMPOSE
+    assert '"/players"' not in COMPOSE
+    # The button form of the pill strips UA button chrome in CSS.
+    assert "button.br-asst-actlink" in ASSISTANT_CSS
+
+
 def test_teaser_is_a_slim_single_line():
     # The closed-state teaser is one line (mark + top action + chevron
     # + dismiss), not a card with a CTA button.

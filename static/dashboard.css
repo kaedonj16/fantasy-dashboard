@@ -50314,6 +50314,13 @@ em.gneg { background: var(--loss); }
     padding: 6px 11px;
     background: var(--card);
 }
+/* The modal-action form of the act link renders as a <button>
+   ('View player'): strip the UA button chrome so it matches the
+   anchor pill exactly. */
+button.br-asst-actlink {
+    font-family: inherit;
+    cursor: pointer;
+}
 .br-asst-actlink-arrow {
     display: inline-flex;
 }

@@ -5325,7 +5325,23 @@ function showLoginGate(target, opts) {
           wrap.appendChild(rec);
         }
         if (answer.caveat) wrap.appendChild(el('div', 'br-asst-caveat', answer.caveat));
-        if (answer.act_link && safeHref(answer.act_link.href)) {
+        if (answer.act_link && answer.act_link.player_id) {
+          // 'View player' is a modal action, not a link: it opens the
+          // player modal in place (the same call the answer's mentions
+          // use), the popup stays open behind it, and nothing navigates,
+          // so no REOPEN_KEY flag is set.
+          var modalBtn = el('button', 'br-asst-actlink', answer.act_link.label || 'View player');
+          modalBtn.type = 'button';
+          (function (al) {
+            modalBtn.addEventListener('click', function () {
+              if (typeof openPlayerModal === 'function') openPlayerModal(al.player_id, al.player_name || '');
+            });
+          })(answer.act_link);
+          var modalArrow = el('span', 'br-asst-actlink-arrow');
+          modalArrow.innerHTML = SVG_ARROW;
+          modalBtn.appendChild(modalArrow);
+          wrap.appendChild(modalBtn);
+        } else if (answer.act_link && safeHref(answer.act_link.href)) {
           var link = el('a', 'br-asst-actlink', answer.act_link.label || 'Open');
           link.href = safeHref(answer.act_link.href);
           // Following an assistant link navigates away; the flag makes
