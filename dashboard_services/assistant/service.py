@@ -317,7 +317,7 @@ def ask(account_key: str, message: str, *, platform=None, league_id=None, season
         # store the preference text the router extracted, else the raw message.
         pref = store.add_preference(account_key, text, league_id=bundle.get("league_id"))
         answer = {"verdict": None, "text": f"Remembered: {text}", "receipts": [], "caveat": None,
-                  "followups": [], "act_link": None, "actions": [], "preference": pref}
+                  "followups": [], "act_link": None, "actions": [], "mentions": [], "preference": pref}
         return _finish(answer, log_intent="remember")
 
     # out of scope
@@ -325,20 +325,20 @@ def ask(account_key: str, message: str, *, platform=None, league_id=None, season
         answer = {"verdict": None,
                   "text": "That is outside what I can answer from your league data. I can help with start/sit, trades, buy/sell/hold, player questions, metrics, waivers, or what to do this week.",
                   "receipts": [], "caveat": None,
-                  "followups": ["What should I do with my team this week?"], "act_link": None, "actions": []}
+                  "followups": ["What should I do with my team this week?"], "act_link": None, "actions": [], "mentions": []}
         return _finish(answer, log_intent="out_of_scope")
 
     # entity resolution (clarify short-circuit)
     resolved_entities, ambiguous = _resolve_all(entities, bundle, player_id_hint=player_id_hint)
     if ambiguous is not None:
         answer = {"verdict": None, "text": "Which player do you mean?", "receipts": [], "caveat": None,
-                  "followups": [], "act_link": None, "actions": [], "candidates": ambiguous.get("candidates") or []}
+                  "followups": [], "act_link": None, "actions": [], "mentions": [], "candidates": ambiguous.get("candidates") or []}
         return _finish(answer, log_intent="clarify", entities_out=resolved_entities)
 
     builder = BUILDERS.get(intent)
     if builder is None:
         answer = {"verdict": None, "text": "I cannot answer that type of question yet.", "receipts": [],
-                  "caveat": None, "followups": [], "act_link": None, "actions": []}
+                  "caveat": None, "followups": [], "act_link": None, "actions": [], "mentions": []}
         return _finish(answer, log_intent="out_of_scope", entities_out=resolved_entities)
 
     player_ids = list(resolved_entities.get("player_ids") or []) + list(resolved_entities.get("give_player_ids") or []) + list(resolved_entities.get("receive_player_ids") or [])

@@ -39,12 +39,21 @@ The answer dict is the UI contract (static/app.js initAssistant): act_link is
 an object {href, label} (or None) assigned deterministically in code, never
 by the model; this-week actions carry href, cta_label, and the pack's
 key_number so the UI can render them as Next Steps rows.
+
+Act links stage state in the site's own tools where a real mechanism exists:
+trade answers open the calculator with the pack's deal prefilled (its native
+?a=&b= id params), start/sit stages the pair in Compare (?p1=&p2=), metric
+answers preset Advanced Metrics (?metric=&pos=), and player answers open the
+player modal (?player=). The answer also carries `mentions` (players the
+pack resolved, with ids) so the UI can open the modal from a name in the
+text instead of rendering it as plain text.
 """
 from __future__ import annotations
 
 import json
 import logging
 import re
+from urllib.parse import quote, quote_plus
 
 from dashboard_services.assistant import PROMPT_VERSION
 from dashboard_services.assistant.model import call_model_json
@@ -85,15 +94,184 @@ SYSTEM = (
 )
 
 # Deterministic act links per intent (UI contract: {href, label} or None).
+# These are the fallbacks; _resolve_act_link upgrades most intents to a
+# deep link that stages state in the target tool (see the builders below).
 _ACT_LINKS = {
     "start_sit": {"href": "/waivers?tab=startsit", "label": "Open Start/Sit"},
-    "trade_eval": {"href": "/trade-hub", "label": "Open in Trade Hub"},
+    "trade_eval": {"href": "/trade", "label": "Open in Trade Calculator"},
     "buy_sell_hold": {"href": "/players", "label": "View player"},
     "player": {"href": "/players", "label": "View player"},
-    "metric": {"href": "/advanced-metrics", "label": "Open Advanced Metrics"},
+    "metric": {"href": "/metrics", "label": "Open Advanced Metrics"},
     "waivers": {"href": "/waivers", "label": "Open Waivers"},
     "this_week": {"href": "/", "label": "Open dashboard"},
 }
+
+
+def _league_base(pack: dict) -> str | None:
+    """League page prefix (/{platform}/{season}/{league_id}) from the pack."""
+    league = (pack or {}).get("league") or {}
+    platform, season, league_id = league.get("platform"), league.get("season"), league.get("league_id")
+    if platform and season and league_id:
+        return f"/{platform}/{season}/{league_id}"
+    return None
+
+
+def _side_ids(players) -> list[str]:
+    return [str(p["player_id"]) for p in (players or [])
+            if isinstance(p, dict) and p.get("player_id")]
+
+
+def _trade_calc_link(pack: dict) -> dict | None:
+    """Open the trade calculator with this pack's deal staged.
+
+    The calculator loads a deal from id params (loadTradeFromURL in
+    static/app.js, the same params its own share flow mints): a/b are
+    comma-separated player ids, ap/bp pick ids, and a side's list is what
+    that side RECEIVES (side A is the viewer's side). So the pack's receive
+    side goes in a, its give side in b. The league URL form opens the
+    calculator in the league's own context (its scoring, format, and value
+    mode), the same form the Front Office Build around links use. Built in
+    code from pack ids only, never from model output. Ids the calculator
+    cannot resolve are dropped by its loader, so a stale id degrades to a
+    partial deal, never an error.
+    """
+    pack = pack or {}
+    give = _side_ids((pack.get("give") or {}).get("players"))
+    recv = _side_ids((pack.get("receive") or {}).get("players"))
+    if not give and not recv:
+        return None
+    base = _league_base(pack)
+    path = f"{base}/trade" if base else "/trade"
+    params = []
+    if recv:
+        params.append("a=" + ",".join(quote(pid, safe="") for pid in recv))
+    if give:
+        params.append("b=" + ",".join(quote(pid, safe="") for pid in give))
+    # Picks: the calculator takes canonical pick ids (2027_1_03) per side in
+    # ap/bp, but today's packs carry picks as side-less free text, so there
+    # is nothing honest to stage yet. Side-attributed canonical picks land
+    # here if the pack ever carries them.
+    for key, param in (("receive_picks", "ap"), ("give_picks", "bp")):
+        ids = [str(p.get("pick_id")) for p in (pack.get(key) or [])
+               if isinstance(p, dict) and p.get("pick_id")]
+        if ids:
+            params.append(param + "=" + ",".join(quote(i, safe="") for i in ids))
+    return {"href": path + "?" + "&".join(params), "label": "Open in Trade Calculator"}
+
+
+def _player_modal_link(player) -> dict | None:
+    """Open the player modal directly: app.js auto-opens it on any page when
+    the URL carries ?player=<id>&player_name=<name>."""
+    if not isinstance(player, dict) or not player.get("player_id"):
+        return None
+    href = "/?player=" + quote(str(player["player_id"]), safe="")
+    if player.get("name"):
+        href += "&player_name=" + quote_plus(str(player["name"]))
+    return {"href": href, "label": "View player"}
+
+
+def _metric_link(pack: dict) -> dict | None:
+    """Preset Advanced Metrics: its page reads ?metric= and ?pos= on load."""
+    key = (pack or {}).get("metric_key")
+    if not key:
+        return None
+    base = _league_base(pack)
+    href = (f"{base}/metrics" if base else "/metrics") + "?metric=" + quote(str(key), safe="")
+    positions = [str(p) for p in (pack.get("positions") or []) if p]
+    if len(positions) == 1:
+        href += "&pos=" + quote(positions[0], safe="")
+    return {"href": href, "label": "Open Advanced Metrics"}
+
+
+def _start_sit_link(pack: dict) -> dict | None:
+    """Stage the decision pair in Compare, which prefills from ?p1=&p2=."""
+    players = [p for p in ((pack or {}).get("players") or [])
+               if isinstance(p, dict) and p.get("player_id")]
+    if len(players) < 2:
+        return None
+    pick_id = str(pack.get("pick_player_id") or players[0]["player_id"])
+    pick = next((p for p in players if str(p["player_id"]) == pick_id), players[0])
+    others = [p for p in players if p is not pick]
+
+    def _rank(p):
+        for field in ("start_score", "projection", "value"):
+            if p.get(field) is not None:
+                try:
+                    return float(p[field])
+                except Exception:
+                    return 0.0
+        return 0.0
+
+    other = max(others, key=_rank)
+    base = _league_base(pack)
+    href = (f"{base}/compare" if base else "/compare")
+    href += "?p1=" + quote(str(pick["player_id"]), safe="")
+    href += "&p2=" + quote(str(other["player_id"]), safe="")
+    return {"href": href, "label": "Open head-to-head"}
+
+
+def _resolve_act_link(intent: str, pack: dict) -> dict | None:
+    """The answer's act link: a state-staging deep link when the pack has
+    what the target tool needs, else the static per-intent fallback."""
+    pack = pack or {}
+    if intent == "trade_eval":
+        link = _trade_calc_link(pack)
+        if link:
+            return link
+        base = _league_base(pack)
+        return {"href": f"{base}/trade" if base else "/trade",
+                "label": "Open in Trade Calculator"}
+    if intent in ("player", "buy_sell_hold"):
+        link = _player_modal_link(pack.get("player"))
+        if link:
+            return link
+    elif intent == "metric":
+        link = _metric_link(pack)
+        if link:
+            return link
+    elif intent == "start_sit":
+        link = _start_sit_link(pack)
+        if link:
+            return link
+    static = _ACT_LINKS.get(intent)
+    return dict(static) if static else None
+
+
+def _mentions(intent: str, pack: dict) -> list[dict]:
+    """Players the answer names, with ids, so the UI can open the player
+    modal from a name instead of rendering it as plain text. Deterministic
+    from the pack; only players the pack actually resolved."""
+    pack = pack or {}
+    found: list[dict] = []
+    seen: set[str] = set()
+
+    def _add(entry):
+        if not isinstance(entry, dict):
+            return
+        pid = entry.get("player_id") or entry.get("id")
+        name = entry.get("name")
+        if pid and name and str(pid) not in seen:
+            seen.add(str(pid))
+            found.append({"player_id": str(pid), "name": str(name)})
+
+    if intent == "trade_eval":
+        for side in ("give", "receive"):
+            for p in ((pack.get(side) or {}).get("players") or []):
+                _add(p)
+    elif intent == "start_sit":
+        for p in pack.get("players") or []:
+            _add(p)
+    elif intent in ("player", "buy_sell_hold"):
+        _add(pack.get("player"))
+    elif intent == "metric":
+        for p in pack.get("leaderboard_top5") or []:
+            _add(p)
+    elif intent == "waivers":
+        for p in pack.get("candidates") or []:
+            _add(p)
+        for p in pack.get("cleared_drops") or []:
+            _add(p)
+    return found[:8]
 
 # CTA labels for this-week action rows, keyed by the pack action's tag; the
 # digest vocabulary (lineup / waiver / trade) matches the site's own rows.
@@ -569,7 +747,7 @@ def no_data_answer(pack: dict) -> dict:
         text += f" The nearest tracked options are {', '.join(str(n) for n in nearest[:3])}. Ask about one of those and I can pull the live numbers."
     return {"verdict": None, "text": text, "receipts": [], "caveat": None,
             "followups": [f"What is {n}?" for n in nearest[:2]],
-            "act_link": dict(_ACT_LINKS["metric"]), "actions": []}
+            "act_link": dict(_ACT_LINKS["metric"]), "actions": [], "mentions": []}
 
 
 _STRICT_SUFFIX = (
@@ -703,15 +881,15 @@ def compose_answer(intent: str, question: str, pack: dict, *, preferences=None, 
     margin_thin = bool(((pack or {}).get("margin") or {}).get("thin"))
     if caveat and not margin_thin and not (pack or {}).get("stale"):
         caveat = None
-    act_link = _ACT_LINKS.get(intent)
     return {
         "verdict": data.get("verdict"),
         "text": data.get("text") or "",
         "receipts": receipts,
         "caveat": caveat,
         "followups": _clean_followups(intent, data.get("followups")),
-        "act_link": dict(act_link) if act_link else None,
+        "act_link": _resolve_act_link(intent, pack),
         "actions": actions,
+        "mentions": _mentions(intent, pack),
     }
 
 

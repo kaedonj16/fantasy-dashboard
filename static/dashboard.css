@@ -50258,6 +50258,17 @@ em.gneg { background: var(--loss); }
     font-weight: 600;
     color: var(--accent);
 }
+.br-asst-mention {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    font-weight: 700;
+    color: var(--accent);
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
 .br-asst-follow-label {
     font-size: 11px;
     font-weight: 800;

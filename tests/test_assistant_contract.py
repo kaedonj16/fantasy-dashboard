@@ -8,6 +8,8 @@ static/app.js initAssistant consumes:
   answer.act_link                                {href, label} object or None
   answer.actions[]  (this_week)                  {tag, headline, detail,
                                                   href, cta_label, key_number}
+  answer.mentions[]                              {player_id, name} pack players
+                                                  the UI linkifies in the text
   answer.candidates[] (clarify, service-level)   {name, position, team, player_id}
 
 Grounding: numbers stated in prose (verdict, text, caveat, follow-ups) are
@@ -65,6 +67,9 @@ def _assert_ui_shape(answer):
         and isinstance(link["href"], str) and link["href"].startswith("/")
         and isinstance(link["label"], str) and link["label"]
     )
+    for m in answer["mentions"]:
+        assert isinstance(m["player_id"], str) and m["player_id"]
+        assert isinstance(m["name"], str) and m["name"]
     for a in answer["actions"]:
         assert set(("tag", "headline", "detail", "href", "cta_label", "key_number")) <= set(a)
         assert isinstance(a["href"], str) and a["href"].startswith("/")
@@ -76,14 +81,17 @@ def test_act_link_is_object_with_deterministic_target(monkeypatch):
     answer = compose_answer("start_sit", "Start Odunze or Mooney?", PACK)
     _assert_ui_shape(answer)
     # The model's own act_link (None here) never wins: the link is code-assigned.
-    assert answer["act_link"] == {"href": "/waivers?tab=startsit", "label": "Open Start/Sit"}
+    # Two resolved players stage the pair in Compare (?p1=&p2= deep link).
+    assert answer["act_link"] == {"href": "/compare?p1=1&p2=2", "label": "Open head-to-head"}
+    assert answer["mentions"] == [{"player_id": "1", "name": "Rome Odunze"},
+                                  {"player_id": "2", "name": "Darnell Mooney"}]
 
 
 def test_no_data_answer_matches_contract():
     answer = no_data_answer({"available": False, "missing": "routes not tracked",
                              "nearest": ["target_share"]})
     _assert_ui_shape(answer)
-    assert answer["act_link"]["href"] == "/advanced-metrics"
+    assert answer["act_link"]["href"] == "/metrics"
 
 
 def test_this_week_actions_carry_href_cta_and_key_number(monkeypatch):
