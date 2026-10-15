@@ -322,6 +322,7 @@ def _neutral_factors(proj: float) -> dict:
     return {
         "proj": proj,
         "form": 1.0,
+        "form_usage": 1.0,
         "matchup": 1.0,
         "usage": 1.0,
         "avail": 1.0,
@@ -402,6 +403,90 @@ def bottom_teams_by_implied_total(game_conditions: dict, n: int = 8) -> set:
     return {team for _, team in ranked[:max(n, 0)]}
 
 
+# ---------------------------------------------------------------------------
+# Start/sit rating inputs (2026-10 rework: backtested Weeks 2-5, approved)
+#
+# A week counts as PLAYED only when the player's stat row carries a points
+# line (``pts_ppr`` present). Sleeper rows with ``gp`` set but no points line
+# (a handful of snaps, no recorded production) are not games and never enter
+# any average. Recent form is the last 3 PLAYED weeks; the season baseline is
+# all played weeks. Form is an ABSOLUTE per-game PPG delta (recent - season)
+# scaled per position, and usage is an ABSOLUTE per-game delta of the
+# position's volume metric (opportunities for RB, targets for WR/TE; QB
+# usage is dropped, neutral 1.0). Both deviations from 1.0 are shrunk by
+# played / (played + 4) so small samples regress toward the projection
+# instead of swinging the score.
+# ---------------------------------------------------------------------------
+
+#: Position scale for the absolute form delta (PPG points per game).
+FORM_SCALES = {"QB": 5.5, "RB": 4.0, "WR": 4.0, "TE": 4.0}
+#: Position scale for the absolute usage delta (metric units per game).
+USAGE_SCALES = {"RB": 3.0, "WR": 2.0, "TE": 2.0}
+#: Sleeper stat keys summed into the usage metric, by position. QB is
+#: intentionally absent: QB usage is neutral in the rating.
+USAGE_STAT_KEYS = {
+    "RB": ("rush_att", "rec_tgt"),
+    "WR": ("rec_tgt",),
+    "TE": ("rec_tgt",),
+}
+#: Injury statuses removed from ranked start/sit pools before ranking (the
+#: board backfills). Questionable and Doubtful stay, with their tags.
+START_SIT_POOL_EXCLUDED_STATUSES = ("IR", "OUT", "PUP", "NFI")
+
+
+def start_sit_pool_excluded(injury_status) -> bool:
+    """True when a player must be removed from a ranked start/sit pool
+    (IR / Out / PUP / NFI). Questionable and Doubtful are NOT excluded."""
+    status = str(injury_status or "").upper()
+    return any(k in status for k in START_SIT_POOL_EXCLUDED_STATUSES)
+
+
+def usage_value_from_stats(stats, position) -> Optional[float]:
+    """The position's usage metric from one week's raw stat row (RB: rush
+    attempts + targets; WR/TE: targets). None for positions with no usage
+    metric in the rating (QB/K/DEF) or a missing row."""
+    keys = USAGE_STAT_KEYS.get(str(position or "").upper().strip())
+    if not keys or not isinstance(stats, dict):
+        return None
+    total = 0.0
+    for key in keys:
+        try:
+            total += float(stats.get(key) or 0)
+        except (TypeError, ValueError):
+            return None
+    return total
+
+
+def form_usage_inputs(played_points, played_usage=None) -> dict:
+    """Derive the rating's form/usage inputs from PLAYED weeks only.
+
+    ``played_points`` is the player's fantasy points for each played week,
+    chronological (callers include a week only when its stat row carried a
+    points line). ``played_usage`` is the aligned per-week usage metric (see
+    :func:`usage_value_from_stats`); entries may be None.
+
+    Returns season PPG (all played weeks), recent PPG (last 3 played
+    weeks), the absolute usage delta (recent - season, per game), the
+    season usage average, and the played-game count the shrinkage uses.
+    """
+    pts = [float(p) for p in (played_points or [])]
+    n = len(pts)
+    out = {"season_ppg": 0.0, "recent_ppg": 0.0, "usage_delta": None,
+           "usage_season_avg": None, "played_games": n}
+    if not n:
+        return out
+    recent_pts = pts[-3:]
+    out["season_ppg"] = sum(pts) / n
+    out["recent_ppg"] = sum(recent_pts) / len(recent_pts)
+    usage = [u for u in (played_usage or []) if u is not None]
+    if usage:
+        season_avg = sum(usage) / len(usage)
+        recent_usage = usage[-3:]
+        out["usage_season_avg"] = season_avg
+        out["usage_delta"] = sum(recent_usage) / len(recent_usage) - season_avg
+    return out
+
+
 def compute_start_score(
     proj_pts: float,
     *,
@@ -424,11 +509,34 @@ def compute_start_score(
     role_confidence: Optional[float] = None,
     defensive_injury_impact: Optional[float] = None,
     low_total_team: bool = False,
+    played_games: Optional[int] = None,
 ) -> tuple[float, dict, Optional[str]]:
     """Return ``(score, score_factors, demotion)``.
 
-    Factors: proj, form, matchup, usage, avail, vegas, floor, weather, oline.
-    Bye and OUT/IR zero the score. Non-projection signals are capped multipliers.
+    Factors: proj, form, form_usage, matchup, usage, avail, vegas, floor,
+    weather, oline. Bye and OUT/IR zero the score. Non-projection signals are
+    capped multipliers.
+
+    The core rating is ``proj * clamp(form * usage, 0.90, 1.10) * avail``:
+
+    * ``form`` — absolute PPG delta (``recent_ppg`` over the last 3 played
+      weeks minus ``season_ppg`` over all played weeks), scaled per position
+      (``FORM_SCALES``), worth up to ±8%.
+    * ``usage`` — absolute per-game delta of the position's volume metric
+      (``usage_delta``, from :func:`form_usage_inputs`): opportunities for
+      RB, targets for WR/TE, worth up to ±5%. A delta under 1.0 per game is
+      a dead zone (neutral 1.0), and QB usage is dropped entirely.
+    * Both deviations from 1.0 are shrunk by ``played_games / (played_games
+      + 4)`` when ``played_games`` is given; omit it to skip shrinkage
+      (legacy/ad-hoc callers).
+    * ``avail`` — Questionable is display-only (factor 1.0, tag kept as the
+      "questionable" demotion). Doubtful and Suspended no longer zero the
+      score: ranked pools remove IR / Out / PUP / NFI before ranking (see
+      :func:`start_sit_pool_excluded`), and the OUT/IR zeroing kept here is
+      only a backstop for surfaces that score a single player directly.
+
+    ``usage_season_avg`` is accepted for caller compatibility and display;
+    the usage factor no longer scales by it.
 
     ``oline_index`` is the player's position-relevant 0-100 O-line rating (run
     block for RB, pass block for QB/WR/TE, composite otherwise); 50 is neutral.
@@ -461,28 +569,49 @@ def compute_start_score(
         season = float(season_ppg or 0)
     except (TypeError, ValueError):
         season = 0.0
-    if recent > 0 and season > 0:
-        # Mild form nudge — projections often already react to hot/cold streaks.
-        form = min(1.08, max(0.92, recent / season))
+
+    pos = (position or "").upper().strip()
+    # Sample-size shrinkage for the form/usage deviations: a 2-game sample
+    # moves the score a third as much as the raw delta implies. Callers that
+    # cannot supply a played-game count keep the unshrunk factors.
+    shrink = 1.0
+    if played_games is not None:
+        try:
+            played = max(0, int(played_games))
+            shrink = played / (played + 4.0)
+        except (TypeError, ValueError):
+            shrink = 1.0
+
+    if recent or season:
+        # Absolute PPG delta, position-scaled (the old recent/season ratio
+        # saturated its clamps for most of the pool and let one spike week
+        # outweigh a projection gap).
+        form_scale = FORM_SCALES.get(pos, 4.0)
+        form = 1.0 + min(1.0, max(-1.0, (recent - season) / form_scale)) * 0.08 * shrink
 
     if apply_matchup and def_rank and def_total and def_total > 1:
         ease = (float(def_total) - float(def_rank)) / (float(def_total) - 1)
         # Residual only (±3%): even matchup-neutral feeds shouldn't swing hard.
         mu = 0.97 + ease * 0.06
 
-    if usage_delta is not None and usage_season_avg:
-        rel = float(usage_delta) / max(float(usage_season_avg), 1.0)
-        usage = min(1.05, max(0.95, 1.0 + rel * 0.25))
+    usage_scale = USAGE_SCALES.get(pos)
+    if usage_delta is not None and usage_scale:
+        try:
+            delta = float(usage_delta)
+        except (TypeError, ValueError):
+            delta = 0.0
+        # Dead zone: sub-1.0 per-game movement is noise, not a role change.
+        if abs(delta) >= 1.0:
+            usage = 1.0 + min(1.0, max(-1.0, delta / usage_scale)) * 0.05 * shrink
 
     status = (injury_status or "").upper()
-    if any(k in status for k in ("OUT", "IR", "SUSP", "DOUBT", "PUP", "DNP")):
+    if any(k in status for k in ("OUT", "IR", "PUP", "NFI", "DNP")):
         avail = 0.0
         demotion = "out"
     elif "QUESTION" in status or status in ("GTD", "Q"):
-        # Soft residual only (−5%). Questionable players usually play, starting
-        # them is normally fine, and weekly projections often already bake in
-        # some risk — a 15% haircut was flipping too many start/sit calls.
-        avail = 0.95
+        # Display-only: no haircut. Projections already price in most
+        # questionable risk, and the tag stays visible via the demotion.
+        avail = 1.0
         demotion = "questionable"
 
     if implied_total is not None:
@@ -544,10 +673,15 @@ def compute_start_score(
         except (TypeError, ValueError):
             def_inj = 1.0
 
-    score = proj * form * mu * usage * avail * vegas * floor * weather * oline * plays * role * def_inj
+    # The form x usage product is capped as a unit: hot form and a rising
+    # role describe much of the same signal, so together they may move the
+    # score at most +/-10% no matter how extreme each factor is alone.
+    form_usage = min(1.10, max(0.90, form * usage))
+    score = proj * form_usage * mu * avail * vegas * floor * weather * oline * plays * role * def_inj
     return score, {
         "proj": proj,
         "form": round(form, 3),
+        "form_usage": round(form_usage, 3),
         "matchup": round(mu, 3),
         "usage": round(usage, 3),
         "avail": round(avail, 3),

@@ -3407,12 +3407,25 @@ def start_score_pool_scores(season, week, scoring_settings=None) -> dict:
             bundles = _pool_load(
                 int(season), int(week), variant, list(index.keys())) or {}
             if len(bundles) >= _SS_POOL_MIN_BUNDLES:
+                from utils.start_sit_score import (
+                    start_sit_pool_excluded as _pool_excluded,
+                )
                 by_pos: dict = {}
-                for bundle in bundles.values():
+                for _pid, bundle in bundles.items():
                     if not isinstance(bundle, dict):
                         continue
                     pos = str(bundle.get("pos") or "").upper()
                     if pos not in _SS_TIER_BANDS:
+                        continue
+                    # Pool-level exclusion (2026-10 rating rework): IR / Out
+                    # / PUP / NFI players are removed before ranking and the
+                    # pool backfills, instead of sitting at the bottom with a
+                    # zeroed score. Live status wins over the batch-time one.
+                    _live_status = (
+                        (index.get(str(_pid)) or {}).get("injury_status")
+                        if isinstance(index.get(str(_pid)), dict) else None
+                    )
+                    if _pool_excluded(_live_status or bundle.get("injury_status")):
                         continue
                     try:
                         score, _, _ = _pool_score(
@@ -3423,6 +3436,7 @@ def start_score_pool_scores(season, week, scoring_settings=None) -> dict:
                             usage_delta=bundle.get("usage_delta"),
                             usage_season_avg=bundle.get("usage_season_avg"),
                             injury_status=bundle.get("injury_status"),
+                            played_games=bundle.get("played_games"),
                             implied_total=bundle.get("implied_total"),
                             bust_rate=bundle.get("bust_rate"),
                             weather_kind=bundle.get("weather_kind"),
@@ -3458,12 +3472,20 @@ def start_score_pool_scores(season, week, scoring_settings=None) -> dict:
 
             proj_map = _pool_swp(int(season), int(week)) or {}
             index = get_players_index_global() or {}
+            from utils.start_sit_score import (
+                start_sit_pool_excluded as _pool_excluded_fb,
+            )
             by_pos = {}
             for pid in proj_map.keys():
                 meta = index.get(str(pid)) or index.get(pid) or {}
                 pos = _pool_ssp(
                     (meta.get("pos") or meta.get("position") or ""))
                 if not pos or pos not in _SS_TIER_BANDS:
+                    continue
+                # Same pool exclusion as the bundle path: IR / Out / PUP /
+                # NFI never enter the ranked pool (feeds sometimes keep a
+                # stale projection line for them).
+                if _pool_excluded_fb(meta.get("injury_status")):
                     continue
                 try:
                     pts = _pool_wpp(proj_map, pid, scoring_settings, pos)
@@ -14766,7 +14788,7 @@ def _startsit_compare_extras(pid, pos, team, season, week, scoring_settings, *,
                              absences=None):
     """Start/Sit compare fields the player-details response does not already
     carry, matched to what the Waivers start/sit compare shows: projected
-    points, last-4-week form, blended consistency (floor/ceiling + boom/bust
+    points, last-3-played-week form, blended consistency (floor/ceiling + boom/bust
     profile), opponent, defense-vs-position rank and points allowed, the Vegas
     implied total, and the venue chip.
 
@@ -14808,21 +14830,21 @@ def _startsit_compare_extras(pid, pos, team, season, week, scoring_settings, *,
         "absences": absences or {"teammates": [], "opponents": []},
     }
 
-    # Last-4-week PPG scored with this league's settings (not hardcoded PPR).
-    # Served from the shared per-(season, scoring, TE-flag) weekstat cache so
-    # the modal doesn't re-read and re-parse the weekly stat files on every
-    # open. Identical inputs to the inline version this replaces (same files,
-    # same week_stat_points scorer, same >0 filter, last-4 files only).
+    # Recent-form PPG scored with this league's settings (not hardcoded
+    # PPR): the played-week derivation shared with the bundle build and the
+    # Start/Sit page (last 3 played weeks; a week counts only when its stat
+    # row carries a points line). The same derivation supplies the rating's
+    # usage delta and played-game count for the modal's start score.
     try:
-        _ws_pids, _ws_flat = _season_weekstat_points(int(season), scoring_settings, pos) or ((), ())
-        _vals = []
-        for _i, _p in enumerate(_ws_pids):
-            if str(_p) == str(pid):
-                _base = _i * _WEEKSTAT_NCOLS
-                _vals = [_v for _v in _ws_flat[_base + 2:_base + 6] if _v == _v]
-                break
-        if _vals:
-            out["recent_ppg"] = round(sum(_vals) / len(_vals), 1)
+        from data_building.start_score_bundle import (
+            derive_start_sit_inputs as _derive_ss_extras,
+        )
+        _din = (_derive_ss_extras(int(season), scoring_settings) or {}).get(str(pid)) or {}
+        if _din.get("played_games"):
+            out["recent_ppg"] = round(_din["recent_ppg"], 1)
+        out["usage_delta"] = _din.get("usage_delta")
+        out["usage_season_avg"] = _din.get("usage_season_avg")
+        out["played_games"] = _din.get("played_games")
     except Exception:
         logger.debug("[startsit extras] recent_ppg failed", exc_info=True)
 
@@ -15276,26 +15298,26 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
             return 0.0
 
     # ── Season-long and recent-form PPG scored with this league's settings ──
-    # Served from the shared per-(season, scoring) cache so the page doesn't
-    # re-read and re-parse the weekly stat files on every load. Identical
-    # inputs to the inline loop this replaces (same files in the same order,
-    # same week_stat_points scorer, same >0 filter, last-4 files for recent).
-    # Skipped when precomputed bundles cover the roster (ppg comes from the
-    # bundle instead).
+    # Played-week derivation shared with the daily bundle build
+    # (data_building.start_score_bundle.derive_start_sit_inputs): a week
+    # counts only when its stat row carries a points line, season PPG is all
+    # played weeks, recent PPG is the last 3 played weeks. The same
+    # derivation supplies the rating's usage delta and played-game count.
+    # Skipped when precomputed bundles cover the roster (the inputs come
+    # from the bundle instead).
     season_ppg: dict = {}
-    recent_ppg_map: dict = {}  # last 4 weeks
+    recent_ppg_map: dict = {}  # last 3 played weeks
+    _ss_derived: dict = {}
     if not _ss_use_bundles:
         try:
-            _ws_pids, _ws_flat = _season_weekstat_points(season, _ss_scoring) or ((), ())
-            for _i, _pid in enumerate(_ws_pids):
-                _pid = str(_pid)
-                _base = _i * _WEEKSTAT_NCOLS
-                _n = _ws_flat[_base + 1]
-                if _n > 0:
-                    season_ppg[_pid] = round(_ws_flat[_base] / _n, 1)
-                _rvals = [_v for _v in _ws_flat[_base + 2:_base + 6] if _v == _v]
-                if _rvals:
-                    recent_ppg_map[_pid] = round(sum(_rvals) / len(_rvals), 1)
+            from data_building.start_score_bundle import (
+                derive_start_sit_inputs as _derive_ss_inputs,
+            )
+            _ss_derived = _derive_ss_inputs(season, _ss_scoring) or {}
+            for _pid, _inp in _ss_derived.items():
+                if _inp.get("played_games"):
+                    season_ppg[str(_pid)] = round(_inp["season_ppg"], 1)
+                    recent_ppg_map[str(_pid)] = round(_inp["recent_ppg"], 1)
         except Exception:
             logger.debug("suppressed exception", exc_info=True)
 
@@ -15471,9 +15493,18 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
             _ut_ss = {"delta": _bun.get("usage_delta"),
                       "season_avg": _bun.get("usage_season_avg")}
             _role_conf_ss = _bun.get("role_confidence")
+            _played_ss = _bun.get("played_games")
         else:
             _ut_ss = _ss_usage_trends.get(pid) or {}
             _role_conf_ss = role_confidence_from_trend(_ut_ss)
+            # Scoring inputs come from the played-week derivation (the same
+            # one the bundle build uses); the weekly_metrics trend above
+            # still drives role confidence and the usage-stat label.
+            _din_ss = _ss_derived.get(pid) or _ss_derived.get(str(pid)) or {}
+            _ut_ss = {**_ut_ss,
+                      "delta": _din_ss.get("usage_delta"),
+                      "season_avg": _din_ss.get("usage_season_avg")}
+            _played_ss = _din_ss.get("played_games")
         usage_delta = _ut_ss.get("delta")
         # The bundle path never resolves consistency; keep it per-row so a
         # bundle row can never inherit the previous player's value.
@@ -15506,6 +15537,7 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
             expected_team_plays=_pace_ss.get("expected_team_plays"),
             league_average_plays=_pace_ss.get("league_average_plays"),
             role_confidence=_role_conf_ss,
+            played_games=_played_ss,
             low_total_team=bool(_bun.get("low_total_team")) if _bun is not None else (team in _ss_low_total_teams),
         )
         _form = _factors["form"]
@@ -27974,15 +28006,10 @@ def api_player_details(player_id: str):
                 _ss_cons = _ssp.get("consistency") or {}
                 _ss_bust = (_ss_cons.get("bust_rate")
                             if _ss_cons and not _ss_cons.get("small_sample") else None)
-                # Usage trend (last-3 vs season), same source as the Start/Sit page.
-                _ss_ud = _ss_usa = None
-                try:
-                    from data_building.weekly_metrics import get_usage_trends as _ss_gut
-                    _ss_ut = (_ss_gut(int(season)) or {}).get(str(player_id)) or {}
-                    _ss_ud = _ss_ut.get("delta")
-                    _ss_usa = _ss_ut.get("season_avg")
-                except Exception:
-                    logger.debug("[api_player_details] usage trend skipped", exc_info=True)
+                # Rating usage inputs ride along with the compare payload
+                # (played-week derivation, same as the Start/Sit page).
+                _ss_ud = _ssp.get("usage_delta")
+                _ss_usa = _ssp.get("usage_season_avg")
                 # Reuse the O-line context the payload already resolved, so the
                 # modal start score gets the same small residual as the page.
                 _ss_ol = _ssp.get("oline") or _oline_for_player(season, _ss_team or player_team, _ss_pos)
@@ -28004,6 +28031,7 @@ def api_player_details(player_id: str):
                     expected_team_plays=(_ssp.get("pace") or {}).get("expected_team_plays"),
                     league_average_plays=(_ssp.get("pace") or {}).get("league_average_plays"),
                     role_confidence=_ssp.get("role_confidence"),
+                    played_games=_ssp.get("played_games"),
                     low_total_team=(_ss_team in _ss_low_total_teams),
                 )
                 _start_score = round(float(_ss_val), 2)

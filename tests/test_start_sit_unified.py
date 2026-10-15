@@ -57,10 +57,18 @@ def test_start_sit_api_scores_proj_and_form_with_league_settings():
     body = src[start:end]
     extras = src[src.find("def _startsit_compare_extras"):start]
     assert "weekly_projection_points" in body
-    assert "week_stat_points" in body
+    # Form/usage inputs come from the shared played-week derivation, which
+    # scores each week with the league's settings (week_stat_points) instead
+    # of trusting Sleeper's published totals; pts_ppr is only the
+    # played-week marker inside the derivation, never the points source.
+    assert "derive_start_sit_inputs" in body
     assert 'stats.get("pts_ppr")' not in body
-    assert "week_stat_points" in extras
+    assert "derive_start_sit_inputs" in extras
     assert '_st.get("pts_ppr")' not in extras
+    bundle_src = Path("data_building/start_score_bundle.py").read_text(
+        encoding="utf-8")
+    derive = bundle_src[bundle_src.find("def derive_start_sit_inputs"):]
+    assert "week_stat_points" in derive
 
 
 def test_faab_toggle_hidden_attribute_beats_inline_flex():
