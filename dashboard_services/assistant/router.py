@@ -322,6 +322,7 @@ def _keyword_board(message: str, m: str) -> dict | None:
             "team": None,
             "window_weeks": None,
             "direction": None,
+            "season": _season_in(m),
         }
     value_kind = None
     if _BUY_LOW_RE.search(m):
@@ -403,6 +404,7 @@ def _keyword_board(message: str, m: str) -> dict | None:
             "max_age": max_age,
             "pool": pool,
             "finish_n": finish_n,
+            "season": _season_in(m),
         }
     kind = None
     direction = None

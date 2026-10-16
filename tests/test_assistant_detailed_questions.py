@@ -53,6 +53,16 @@ GAME_LOGS = {  # week -> pid -> points (scored by the fake below)
     4: {"rb1": 24.0, "rb2": 12.0, "rb3": 11.0, "rb4": 20.0},
 }
 
+# The chasing pack: nine more RBs a few points back every week, so the
+# default top-12 finish line is a real contest (a 5-man field would make
+# every finish automatic). Their points stay below every named back's
+# weekly top-2, floor, and ceiling expectations in the tests below.
+for _i in range(6, 15):
+    _pid = f"rb{_i}"
+    INDEX[_pid] = _p(f"Pack Back {_i}", "NYJ", "RB", 25)
+    for _w in (1, 2, 3, 4):
+        GAME_LOGS[_w][_pid] = 9.0 - ((_i + _w) % 5)
+
 VALUE_ROWS = {
     "rb1": {"value": 5000, "sf_value": 5200, "position": "RB", "age": 24},
     "rb2": {"value": 4500, "sf_value": 4600, "position": "RB", "age": 26},
@@ -401,3 +411,138 @@ def test_deep_board_tool_finishes(world):
 def test_deep_board_tool_rejects_unknown_kind(world):
     entry = tools.run_tool("deep_board", {"kind": "nope"}, _bundle())
     assert entry["ok"] is False
+
+
+# -- finishes pool regression (the live Sydney Brown board) ----------------------
+#
+# The real week-stat feed carries a line for every player who recorded
+# any stat, and the players index lists every position: safeties, edge
+# rushers, long snappers, punters, offensive linemen. Under a
+# skill-position scoring map those lines score ~0, and the old board
+# grouped finishes by raw index position, so an all-zero LS group
+# "finished top 5" every week on player-id tiebreaks (live answer:
+# Sydney Brown, a long snapper, and a punter atop the 2025 board).
+
+DIRTY_INDEX = {
+    "rb1": _p("Alpha Back", "NYJ", "RB", 24),
+    "rb2": _p("Bravo Back", "MIA", "RB", 26),
+    "rb3": _p("Charlie Back", "BUF", "RB", 23),
+    "rb4": _p("Delta Back", "KC", "RB", 29),
+    "rb5": _p("Echo Back", "DAL", "RB", 25),
+    "rb6": _p("Foxtrot Back", "DAL", "RB", 25),
+    "rb7": _p("Zero Back", "NYJ", "RB", 25),
+    "rb8": _p("Golf Back", "MIA", "RB", 26),
+    "s1": _p("Sydney Safety", "ATL", "S", 25),
+    "de1": _p("Edge Rusher", "NYJ", "DE", 26),
+    "dt1": _p("Nose Tackle", "BUF", "DT", 28),
+    "lb1": _p("Mike Linebacker", "KC", "LB", 27),
+    "ot1": _p("Blindside Tackle", "DAL", "OT", 29),
+    "g1": _p("Pulling Guard", "NYJ", "G", 27),
+    "ls1": _p("Long Snapper", "ARI", "LS", 30),
+    "ls2": _p("Other Snapper", "SEA", "LS", 31),
+    "p1": _p("Punter", "DAL", "P", 28),
+    "k1": _p("Kicker", "KC", "K", 29),
+}
+
+_EXOTICS = ("s1", "de1", "dt1", "lb1", "ot1", "g1", "ls1", "ls2", "p1", "k1")
+
+DIRTY_LOGS = {  # week -> pid -> points; exotics ride along at ~0
+    1: {"rb1": 20.0, "rb2": 25.0, "rb3": 10.0, "rb4": 15.0, "rb5": 30.0,
+        "rb6": 8.0, "rb8": 4.0},
+    2: {"rb1": 22.0, "rb2": 21.0, "rb3": 19.0, "rb4": 5.0, "rb5": 28.0,
+        "rb6": 9.0, "rb8": 4.0, "s1": 1.6},
+    3: {"rb1": 18.0, "rb2": 16.0, "rb3": 17.0, "rb4": 14.0, "rb6": 7.0,
+        "rb8": 13.0},
+    4: {"rb1": 24.0, "rb2": 12.0, "rb3": 11.0, "rb4": 20.0, "rb6": 6.0,
+        "rb8": 10.0},
+}
+for _week in DIRTY_LOGS.values():
+    for _pid in _EXOTICS:
+        _week.setdefault(_pid, 0.0)
+    _week["rb7"] = 0.0  # a skill player whose weeks all score zero
+
+
+@pytest.fixture()
+def dirty_world(monkeypatch):
+    monkeypatch.setattr(evidence, "get_players_index_global",
+                        lambda: dict(DIRTY_INDEX))
+    monkeypatch.setattr(
+        evidence, "load_sleeper_week_stats",
+        lambda season, week: {pid: {"pts": pts}
+                              for pid, pts in
+                              DIRTY_LOGS.get(week, {}).items()})
+    import utils.projections as proj
+    monkeypatch.setattr(proj, "week_stat_points",
+                        lambda line, scoring, pos: float(line.get("pts", 0.0)))
+    monkeypatch.setattr(evidence, "_value_rows", lambda: {})
+    return monkeypatch
+
+
+def test_finishes_board_never_surfaces_non_skill_positions(dirty_world):
+    pack, _t = evidence.build_leaderboard(
+        _bundle(), {"board_kind": "finishes", "finish_n": 5})
+    assert pack["available"] is True
+    board = pack["board"]
+    assert board, "expected a finishes board"
+    assert all(r["position"] in ("QB", "RB", "WR", "TE") for r in board)
+    names = {r["name"] for r in board}
+    assert not names & {DIRTY_INDEX[p]["full_name"] for p in _EXOTICS}
+    # The three lead backs each own 4 top-5 finishes; rb5 has the games
+    # minimum against him (2 games) despite owning 2 finishes himself.
+    assert [r["name"] for r in board] == [
+        "Alpha Back", "Bravo Back", "Charlie Back", "Delta Back",
+        "Golf Back", "Foxtrot Back"]
+    assert [r["finishes"] for r in board] == [4, 4, 4, 3, 2, 1]
+    assert pack["pool_size"] == 6
+    assert "6 players qualify" in pack["qualification_text"]
+
+
+def test_zero_point_weeks_never_count_as_finishes(dirty_world):
+    pack, _t = evidence.build_leaderboard(
+        _bundle(), {"board_kind": "finishes", "finish_n": 5})
+    names = {r["name"] for r in pack["board"]}
+    # Zero Back is a real RB with a stat line every week; all four weeks
+    # scored 0, so he owns no finishes and no board row.
+    assert "Zero Back" not in names
+    assert all(r["ppg"] > 0 for r in pack["board"])
+
+
+def test_floor_and_ceiling_boards_use_the_same_pool(dirty_world):
+    pack, _t = evidence.build_leaderboard(
+        _bundle(), {"board_kind": "ceiling"})
+    assert all(r["position"] in ("QB", "RB", "WR", "TE")
+               for r in pack["board"])
+    assert pack["board"][0]["name"] == "Echo Back"  # 30.0, a real score
+    pack, _t = evidence.build_leaderboard(
+        _bundle(), {"board_kind": "floor"})
+    assert all(r["position"] in ("QB", "RB", "WR", "TE")
+               for r in pack["board"])
+    assert pack["board"][0]["name"] == "Alpha Back"  # 18.0, the real floor
+
+
+def test_degenerate_position_week_mints_no_finishes(monkeypatch):
+    # Four tight ends, all scoring, with a top-5 line: the eligible
+    # field (4) is no bigger than the finish line (5), so nobody can
+    # beat anybody for the last slot and the week mints nothing.
+    index = {f"te{i}": _p(f"Tight {i}", "NYJ", "TE", 25) for i in range(1, 5)}
+    logs = {w: {f"te{i}": 20.0 - i for i in range(1, 5)} for w in (1, 2, 3, 4)}
+    monkeypatch.setattr(evidence, "get_players_index_global", lambda: index)
+    monkeypatch.setattr(
+        evidence, "load_sleeper_week_stats",
+        lambda season, week: {pid: {"pts": pts}
+                              for pid, pts in logs.get(week, {}).items()})
+    import utils.projections as proj
+    monkeypatch.setattr(proj, "week_stat_points",
+                        lambda line, scoring, pos: float(line.get("pts", 0.0)))
+    pack, _t = evidence.build_leaderboard(
+        _bundle(), {"board_kind": "finishes", "position": "TE",
+                    "finish_n": 5})
+    assert pack["available"] is False
+
+
+def test_keyword_route_keeps_season_for_top5_weeks_question():
+    r = _keyword_route("Who had the most top-5 weeks last season?")
+    assert r["intent"] == "leaderboard"
+    assert r["board_kind"] == "finishes"
+    assert r["finish_n"] == 5
+    assert r["season"] == -1

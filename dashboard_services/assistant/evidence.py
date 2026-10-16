@@ -4341,7 +4341,9 @@ def _build_gamelog_board(pack, bundle, tools, kind, position, team, top_n,
 
     finishes: how many weeks a player finished inside the top N at his
     position (N = finish_n, default 12). floor: his worst week (a real
-    sample only, minimum games). ceiling: his best week."""
+    sample only, minimum games). ceiling: his best week. All three rank
+    the CORE_POS pool only, and a finish additionally requires a
+    positive score in a genuinely contested position-week."""
     weeks, completed = _weekly_scored(bundle)
     tools.append("utils.load_sleeper_week_stats")
     if not weeks or completed < 1:
@@ -4357,10 +4359,29 @@ def _build_gamelog_board(pack, bundle, tools, kind, position, team, top_n,
         for lines in weeks:
             by_pos: dict[str, list] = {}
             for pid, (pts, pos) in lines.items():
+                # The pool is the site's fantasy positions only. The
+                # week-stat feed carries a line for every player who
+                # recorded any stat (IDP, offensive line, long snappers,
+                # punters); under a skill-position scoring map those
+                # lines score ~0, and a top-N slice of an all-zero group
+                # is a tie broken by player id, so the same five ids
+                # "finished top 5" every single week.
+                if pos not in CORE_POS:
+                    continue
                 if position and pos != position:
+                    continue
+                # A finish must be earned with real points: a 0-point
+                # week never counts, however thin the field.
+                if pts <= 0:
                     continue
                 by_pos.setdefault(pos, []).append((pid, pts))
             for _pos, group in by_pos.items():
+                # A finish means beating somebody for the last slot:
+                # when the eligible field is no bigger than the finish
+                # line itself, the week mints no finishes at that
+                # position (degenerate or partial data).
+                if len(group) <= finish_n:
+                    continue
                 group.sort(key=lambda t: (-t[1], t[0]))
                 for pid, _pts in group[:finish_n]:
                     finishes[pid] = finishes.get(pid, 0) + 1
@@ -4373,6 +4394,11 @@ def _build_gamelog_board(pack, bundle, tools, kind, position, team, top_n,
     for pid, pts_list in by_pid.items():
         info = _player_info(pid, index)
         pos = str(info.get("position") or "").upper()
+        # Same pool rule as the finishes count: floor / ceiling boards
+        # rank the site's fantasy positions only, never the IDP / OL /
+        # special-teams lines the raw feed also carries.
+        if pos not in CORE_POS:
+            continue
         if position and pos != position:
             continue
         if team and str(info.get("team") or "").upper() != team:

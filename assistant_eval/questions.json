@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "description": "Frozen assistant eval set: 125 questions with golden evidence packs for the BR Fantasy assistant (workshop section 5 core 20, the deep-cuts leaderboard family lb1-lb6, and the section 9 P1 league-context types: playoffs, power rankings, standings, matchup, schedule) plus the P1 trade-finding family tf1-tf4, and the P1 breakout board, Teams, and pick-ownership families bo1-bo3, tm1-tm2, pk1 (renamed from the branch po1, which collided with the playoffs po1), with te4 an extra trade_eval. The win-outcome family mu4-mu6 pins the game-outcome phrasings (will I win / what are my chances / will I lose) to matchup packs: a decisive favorite, a close game, and a decisive underdog. The buy/sell board family bl1/sh1 pins pool-wide buy-low and sell-high asks (no named player) to leaderboard value boards, with bsh4/bsh5 as the named-player controls that must stay single-player buy_sell_hold. The roster start/sit family ss5-ss7 pins slot questions that name no players (start at FLEX, start at RB, sit at FLEX) to roster-scoped packs built from the asking user's own lineup: the FLEX occupant is benched for the bench challenger who out-projects him, and the RB question is a keep-the-starter call. The open-layer wild set ow1-ow19 freezes tool evidence (production tool-entry shape) instead of builder packs: ungoverned phrasings, a follow-up chain (ow5-ow7), a two-part question (ow8), a non-default team (ow9), a PRO gate through the open layer (ow18), and an off-site decline (ow19). The breadth family lb7-lb9 pins cross-metric breadth boards (top-N finishes counted across a metric family: lb7 receiving in Kaedon's exact phrasing, lb8 rushing) and the players-only receiving-yards stat board (the team-row regression: the live board once ranked TEAM_LAR first). The detailed-question family dq1-dq11 pins the composed boards: weekly-finish breadth, floor, and ceiling from game logs (dq1-dq3), the value board under an age ceiling (dq4), a metric board restricted to the waiver pool (dq5), opportunity leaders re-ranked by upcoming schedule (dq6), the within-team No. 1 vs No. 2 gap (dq7), positional-rank climbers from value history (dq8), Teams roster breadth (dq9), a category sweep (dq10), and the no-history trap for rank trajectory (dq11). The history family hs1-hs4 adds past-season boards (metric, raw stat, and movers boards for 2024, plus the no-historical-form trap for value boards), and po4 adds the playoff-odds trajectory. The live family lv1-lv2 adds in-game questions over fixture live state, and the draft family dr1-dr2 adds live draft help (best available and a 1.03 prep window). The nfl_schedule family ns1-ns6 pins real NFL fixture questions (tonight's game, the Sunday slate, a named team's game, Monday night, the full week) to NFL schedule packs: a bare 'who plays tonight' answers the NFL game and never the fantasy matchup (ns1 carries the excluded-name trap for the user's own fantasy team), while ns5 is the possessive trap pair ('who am I playing this week') that stays a matchup question.",
+    "description": "Frozen assistant eval set: 125 questions with golden evidence packs for the BR Fantasy assistant (workshop section 5 core 20, the deep-cuts leaderboard family lb1-lb6, and the section 9 P1 league-context types: playoffs, power rankings, standings, matchup, schedule) plus the P1 trade-finding family tf1-tf4, and the P1 breakout board, Teams, and pick-ownership families bo1-bo3, tm1-tm2, pk1 (renamed from the branch po1, which collided with the playoffs po1), with te4 an extra trade_eval. The win-outcome family mu4-mu6 pins the game-outcome phrasings (will I win / what are my chances / will I lose) to matchup packs: a decisive favorite, a close game, and a decisive underdog. The buy/sell board family bl1/sh1 pins pool-wide buy-low and sell-high asks (no named player) to leaderboard value boards, with bsh4/bsh5 as the named-player controls that must stay single-player buy_sell_hold. The roster start/sit family ss5-ss7 pins slot questions that name no players (start at FLEX, start at RB, sit at FLEX) to roster-scoped packs built from the asking user's own lineup: the FLEX occupant is benched for the bench challenger who out-projects him, and the RB question is a keep-the-starter call. The open-layer wild set ow1-ow19 freezes tool evidence (production tool-entry shape) instead of builder packs: ungoverned phrasings, a follow-up chain (ow5-ow7), a two-part question (ow8), a non-default team (ow9), a PRO gate through the open layer (ow18), and an off-site decline (ow19). The breadth family lb7-lb9 pins cross-metric breadth boards (top-N finishes counted across a metric family: lb7 receiving in Kaedon's exact phrasing, lb8 rushing) and the players-only receiving-yards stat board (the team-row regression: the live board once ranked TEAM_LAR first). The detailed-question family dq1-dq11 pins the composed boards: weekly-finish breadth, floor, and ceiling from game logs (dq1-dq3), the value board under an age ceiling (dq4), a metric board restricted to the waiver pool (dq5), opportunity leaders re-ranked by upcoming schedule (dq6), the within-team No. 1 vs No. 2 gap (dq7), positional-rank climbers from value history (dq8), Teams roster breadth (dq9), a category sweep (dq10), and the no-history trap for rank trajectory (dq11). The history family hs1-hs4 adds past-season boards (metric, raw stat, and movers boards for 2024, plus the no-historical-form trap for value boards), and po4 adds the playoff-odds trajectory. hs5 adds the past-season weekly-finishes board in Kaedon's exact phrasing (the live answer once topped it with a long snapper at 0 PPG); its golden pack is the fixed builder's output over the real 2025 game logs and ranks skill positions only. The live family lv1-lv2 adds in-game questions over fixture live state, and the draft family dr1-dr2 adds live draft help (best available and a 1.03 prep window). The nfl_schedule family ns1-ns6 pins real NFL fixture questions (tonight's game, the Sunday slate, a named team's game, Monday night, the full week) to NFL schedule packs: a bare 'who plays tonight' answers the NFL game and never the fantasy matchup (ns1 carries the excluded-name trap for the user's own fantasy team), while ns5 is the possessive trap pair ('who am I playing this week') that stays a matchup question.",
     "scenario": "Kaedon's league Blackedraw, her team Caleb's Casting Couch, Week 7 of the 2026 season.",
     "packs": "Each evidence_pack mirrors, field for field, the dict the matching builder in dashboard_services/assistant/evidence.py returns. Values inside a pack are the only numbers an answer may cite.",
     "recapture": "These packs are frozen fixtures. Before any launch decision, recapture them from the live tools with: python3 scripts/run_assistant_eval.py --capture (writes assistant_eval/captured_questions.json; it never overwrites this file). A launch call made on stale fixtures is not a launch call.",
@@ -15475,6 +15475,203 @@
           "Target Share",
           "2024"
         ]
+      }
+    },
+    {
+      "id": "hs5",
+      "type": "leaderboard",
+      "question": "Who had the most top-5 weeks last season?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "leaderboard",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "board_kind": "finishes",
+        "requested_n": 10,
+        "position_filter": null,
+        "team_filter": null,
+        "target_season": 2025,
+        "historical": true,
+        "finish_n": 5,
+        "label": "Top-5 weekly finishes",
+        "pool_size": 150,
+        "board": [
+          {
+            "rank": 1,
+            "player_id": "4034",
+            "name": "Christian McCaffrey",
+            "team": "SF",
+            "position": "RB",
+            "value": 9.0,
+            "games": 17,
+            "on_my_roster": false,
+            "ppg": 24.5,
+            "floor": 9.8,
+            "ceiling": 39.1,
+            "finishes": 9
+          },
+          {
+            "rank": 2,
+            "player_id": "9493",
+            "name": "Puka Nacua",
+            "team": "LAR",
+            "position": "WR",
+            "value": 9.0,
+            "games": 16,
+            "on_my_roster": false,
+            "ppg": 23.4,
+            "floor": 4.8,
+            "ceiling": 46.5,
+            "finishes": 9
+          },
+          {
+            "rank": 3,
+            "player_id": "9509",
+            "name": "Bijan Robinson",
+            "team": "ATL",
+            "position": "RB",
+            "value": 9.0,
+            "games": 17,
+            "on_my_roster": false,
+            "ppg": 21.8,
+            "floor": 5.8,
+            "ceiling": 39.9,
+            "finishes": 9
+          },
+          {
+            "rank": 4,
+            "player_id": "8130",
+            "name": "Trey McBride",
+            "team": "ARI",
+            "position": "TE",
+            "value": 9.0,
+            "games": 17,
+            "on_my_roster": false,
+            "ppg": 18.6,
+            "floor": 6.7,
+            "ceiling": 37.4,
+            "finishes": 9
+          },
+          {
+            "rank": 5,
+            "player_id": "421",
+            "name": "Matthew Stafford",
+            "team": "LAR",
+            "position": "QB",
+            "value": 7.0,
+            "games": 17,
+            "on_my_roster": false,
+            "ppg": 21.1,
+            "floor": 9.3,
+            "ceiling": 30.9,
+            "finishes": 7
+          },
+          {
+            "rank": 6,
+            "player_id": "7564",
+            "name": "Ja'Marr Chase",
+            "team": "CIN",
+            "position": "WR",
+            "value": 7.0,
+            "games": 17,
+            "on_my_roster": false,
+            "ppg": 18.4,
+            "floor": 0.0,
+            "ceiling": 38.1,
+            "finishes": 7
+          },
+          {
+            "rank": 7,
+            "player_id": "9221",
+            "name": "Jahmyr Gibbs",
+            "team": "DET",
+            "position": "RB",
+            "value": 6.0,
+            "games": 17,
+            "on_my_roster": false,
+            "ppg": 21.6,
+            "floor": 5.8,
+            "ceiling": 55.4,
+            "finishes": 6
+          },
+          {
+            "rank": 8,
+            "player_id": "6813",
+            "name": "Jonathan Taylor",
+            "team": "IND",
+            "position": "RB",
+            "value": 6.0,
+            "games": 17,
+            "on_my_roster": false,
+            "ppg": 21.3,
+            "floor": 5.9,
+            "ceiling": 49.6,
+            "finishes": 6
+          },
+          {
+            "rank": 9,
+            "player_id": "7523",
+            "name": "Trevor Lawrence",
+            "team": "JAX",
+            "position": "QB",
+            "value": 6.0,
+            "games": 17,
+            "on_my_roster": false,
+            "ppg": 20.6,
+            "floor": 8.8,
+            "ceiling": 44.3,
+            "finishes": 6
+          },
+          {
+            "rank": 10,
+            "player_id": "4046",
+            "name": "Patrick Mahomes",
+            "team": "KC",
+            "position": "QB",
+            "value": 6.0,
+            "games": 17,
+            "on_my_roster": false,
+            "ppg": 17.5,
+            "floor": 0.0,
+            "ceiling": 31.5,
+            "finishes": 6
+          }
+        ],
+        "board_count": 10,
+        "qualification_text": "Weekly finishes inside the top 5 at the position, weeks 1 to 18, scored with your league's settings. Minimum 3 games. 150 players qualify. Final 2025 season board."
+      },
+      "reference": {
+        "verdict_kind": "board",
+        "pick": "Christian McCaffrey",
+        "key_numbers": [
+          9,
+          24.5,
+          9,
+          18.6,
+          6
+        ],
+        "close_call": true
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": []
       }
     },
     {
