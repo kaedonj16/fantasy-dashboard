@@ -2037,6 +2037,12 @@ def _board_verdict(pack: dict) -> str | None:
         return f"{top.get('name')} laps his team's No. 2 by the most"
     if kind == "rank_movers":
         return f"{top.get('name')} climbed the most in positional rank"
+    if kind == "defenses":
+        focus = pack.get("focus") or {}
+        if focus:
+            return (f"{focus.get('name')} defense is #{focus.get('rank')} of "
+                    f"{focus.get('pool_size')} by fantasy points")
+        return f"{top.get('name')} is the top defense by fantasy points"
     return f"{top.get('name')} leads {label}"
 
 
@@ -2176,6 +2182,9 @@ def _board_line(row: dict, pack: dict) -> str:
                 f"{row.get('position')} (was #{row.get('old_rank')}, up "
                 f"{row.get('climb')}), value "
                 f"{_fmt_num(row.get('current_value'))}")
+    if kind == "defenses":
+        return (f"{head}: {value} points in {row.get('games')} games "
+                f"({_fmt_num(row.get('ppg'))} PPG)")
     line = f"{head}: {value}"
     if kind == "dual":
         sec = row.get("secondary")
@@ -2244,6 +2253,9 @@ def _board_receipt(row: dict, pack: dict) -> dict:
                 "value": (f"#{row.get('old_rank')} to #{row.get('new_rank')} "
                           f"(up {row.get('climb')}, value "
                           f"{_fmt_num(row.get('current_value'))})")}
+    if kind == "defenses":
+        return {"label": label,
+                "value": f"{value} points ({_fmt_num(row.get('ppg'))} PPG)"}
     if kind == "dual":
         sec = row.get("secondary")
         if sec:
@@ -2315,6 +2327,23 @@ def _board_intro_template(pack: dict) -> str:
                 f"{top.get('position')} over the last "
                 f"{pack.get('window_days') or 30} days, to "
                 f"#{top.get('new_rank')}.")
+    if kind == "defenses":
+        focus = pack.get("focus") or {}
+        period = (f"in {pack.get('target_season')}"
+                  if pack.get("historical") else "this season")
+        if focus:
+            text = (f"The {focus.get('name')} defense ranks "
+                    f"#{focus.get('rank')} of {focus.get('pool_size')} by "
+                    f"fantasy points {period}: {_fmt_num(focus.get('value'))} "
+                    f"points in {focus.get('games')} games "
+                    f"({_fmt_num(focus.get('ppg'))} per game).")
+            if focus.get("value_rank"):
+                text += (f" By model trade value it ranks "
+                         f"#{focus.get('value_rank')} of "
+                         f"{focus.get('value_pool')} defenses.")
+            return text
+        return (f"{top.get('name')} leads all defenses {period} at {value} "
+                f"fantasy points ({_fmt_num(top.get('ppg'))} per game).")
     return (f"{top.get('name')} leads {label} at {value} across "
             f"{pack.get('pool_size')} qualified players.")
 

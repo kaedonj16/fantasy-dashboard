@@ -441,19 +441,20 @@ _DEEP_BOARD_FIELDS = ("games", "ppg", "floor", "ceiling", "finishes",
 def _tool_deep_board(bundle, args) -> dict:
     """Detailed-question boards: one call into the leaderboard builder
     with a composed kind (finishes / floor / ceiling / value / slate /
-    gap / rank_movers), distilled to the ranked rows, their basis, and
-    receipts. PRO gating happens inside the builder, exactly as the
-    fixed leaderboard path does it."""
+    gap / rank_movers / defenses), distilled to the ranked rows, their
+    basis, and receipts. PRO gating happens inside the builder, exactly
+    as the fixed leaderboard path does it."""
     out = _base("deep_board")
     kind = str(args.get("kind") or "").strip().lower()
     if kind not in ("finishes", "floor", "ceiling", "value", "slate",
-                    "gap", "rank_movers"):
+                    "gap", "rank_movers", "defenses"):
         out.update({"ok": False, "missing": "unknown board kind"})
         return out
     phrase = str(args.get("stat") or args.get("metric") or "").strip()
     position = str(args.get("position") or "").strip().upper() or None
     if position not in _POSITIONS:
         position = None
+    team = str(args.get("team") or "").strip().upper() or None
     try:
         top_n = int(args.get("top_n") or 5)
     except (TypeError, ValueError):
@@ -469,7 +470,7 @@ def _tool_deep_board(bundle, args) -> dict:
     season_arg, _hist = _tool_season(bundle, args)
     ent = {"board_kind": kind, "top_n": top_n, "position": position,
            "metric_hint": phrase or None, "max_age": max_age, "pool": pool,
-           "season": season_arg}
+           "season": season_arg, "team": team}
     pack, _used = ev.build_leaderboard(bundle, ent, [])
     if pack.get("gated"):
         out.update({"gated": True, "label": pack.get("label"),
@@ -495,6 +496,11 @@ def _tool_deep_board(bundle, args) -> dict:
     out.update({"board": board, "label": pack.get("label"),
                 "board_kind": kind,
                 "basis": pack.get("qualification_text")})
+    if pack.get("focus"):
+        # A named subject the board was built around (a team defense):
+        # its rank and line ride along even when it sits below the
+        # returned rows, so the composer can answer for it directly.
+        out["focus"] = pack["focus"]
     out["players"] = [{"player_id": r["player_id"], "name": r["name"]}
                       for r in board if r.get("player_id")]
     for r in board[:3]:
@@ -1058,10 +1064,11 @@ TOOL_CATALOG = [
               "position": "QB/RB/WR/TE or null",
               "top_n": "the N in top N (default 10)"}},
     {"name": "deep_board",
-     "description": "A composed analytical board: kind finishes (most top-12 weekly finishes at a position), floor (highest worst week), ceiling (highest best week), value (ranked by trade value, optional max_age or pool filter), slate (a metric's leaders re-ranked by easiest upcoming schedule), gap (who beats his own team's No. 2 by the most in a metric), rank_movers (biggest positional-rank climbers by value over the last month).",
-     "args": {"kind": "finishes | floor | ceiling | value | slate | gap | rank_movers",
+     "description": "A composed analytical board: kind finishes (most top-12 weekly finishes at a position), floor (highest worst week), ceiling (highest best week), value (ranked by trade value, optional max_age or pool filter), slate (a metric's leaders re-ranked by easiest upcoming schedule), gap (who beats his own team's No. 2 by the most in a metric), rank_movers (biggest positional-rank climbers by value over the last month), defenses (team defenses ranked by season fantasy points; team is the defense's NFL abbreviation like DEN when one defense is named).",
+     "args": {"kind": "finishes | floor | ceiling | value | slate | gap | rank_movers | defenses",
               "stat": "the metric phrase for slate/gap kinds, else null",
               "position": "QB/RB/WR/TE or null",
+              "team": "NFL team abbreviation for the defenses kind, else null",
               "top_n": "how many rows (default 5)",
               "max_age": "age ceiling or null",
               "pool": "waivers | roster | null"}},
