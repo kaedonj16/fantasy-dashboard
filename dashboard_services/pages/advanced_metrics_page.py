@@ -534,6 +534,8 @@ def build_advanced_metrics_body(
               <span id="amGraphCtrlLabel">Settings</span>
               <span id="amGraphCtrlChev">&#9660;</span>
             </button>
+            <div class="am-graph-body">
+            <div class="am-graph-rail">
             <div class="am-graph-controls">
               <div class="am-gctrl"><label id="amGraphXLabel">X axis</label>
                 <div class="am-metric-picker am-graph-picker" id="amGraphXWrap">
@@ -592,7 +594,8 @@ def build_advanced_metrics_body(
                 </div>
               </div>
               <div class="am-gctrl am-graph-actions">
-                <div class="am-graph-actions-row">
+                <label class="am-graph-view-label">View</label>
+                <div class="am-graph-actions-row am-graph-view-row">
                   <button type="button" id="amGraphThemeBtn" class="am-add-stat-btn" onclick="amToggleGraphTheme()" title="Toggle light / dark"></button>
                   <button type="button" id="amGraphLabelAxisBtn" class="am-add-stat-btn" onclick="amToggleGraphLabelAxis()" title="Flip star labels between X and Y values">X vals</button>
                   <button type="button" id="amGraphQuadrantsBtn" class="am-add-stat-btn am-active" onclick="amToggleGraphQuadrants()" title="Show quadrant dividers and labels">Quadrants</button>
@@ -600,6 +603,8 @@ def build_advanced_metrics_body(
                     <button type="button" id="amGraphModeSimple" class="am-add-stat-btn am-active" onclick="amSetGraphMode('simple')" title="Consumer-friendly: bigger dots, no quadrant clutter">Simple</button>
                     <button type="button" id="amGraphModeDetailed" class="am-add-stat-btn" onclick="amSetGraphMode('detailed')" title="Full analyst view: quadrants, trend strength, more labels">Detailed</button>
                   </span>
+                </div>
+                <div class="am-graph-actions-row am-graph-file-row">
                   <button type="button" id="amGraphDownloadBtn" class="am-add-stat-btn" onclick="amDownloadGraph()" title="Download image">
                     <svg width="13" height="13" viewBox="0 0 16 16" fill="none" style="vertical-align:-1px"><path d="M8 1.5v8M8 9.5 5.5 7M8 9.5 10.5 7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 11v3.5h10V11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                     Download
@@ -611,6 +616,7 @@ def build_advanced_metrics_body(
                 </div>
               </div>
             </div>
+            </div>
             <div class="am-graph-plot-wrap">
               <div class="am-graph-zoom" role="group" aria-label="Graph zoom">
                 <button type="button" id="amGraphZoomOut" class="am-graph-zoom-btn" onclick="amZoomGraph(0.7)" title="Zoom out" aria-label="Zoom out">&minus;</button>
@@ -621,6 +627,7 @@ def build_advanced_metrics_body(
               <div id="amGraphPlot"><div class="am-graph-empty">Pick two metrics to plot.</div></div>
               <div id="amGraphHover" class="am-graph-hover"></div>
               <div id="amGraphTip" class="am-graph-tip"></div>
+            </div>
             </div>
           </div>
         </div>
@@ -1291,7 +1298,13 @@ def build_advanced_metrics_body(
         border-radius:8px; padding:6px 12px; margin-bottom:10px;
       }
       /* Graph (scatter) modal */
-      .am-graph-card { max-width:880px; max-height:97vh; }
+      .am-graph-card { max-width:1140px; max-height:97vh; }
+      /* Body wraps the plot + the controls rail. Mobile (and the base
+         layout) stacks them in a column, controls first; the desktop
+         min-width:601px block below flips it to plot-left / rail-right. */
+      .am-graph-body { display:flex; flex-direction:column; flex:1 1 auto; min-height:0; }
+      .am-graph-rail { display:flex; flex-direction:column; min-height:0; }
+      .am-graph-view-label { display:none; }
       .am-graph-controls {
         display:flex; flex-wrap:wrap; gap:10px 12px; align-items:flex-end;
         padding:12px 18px; border-bottom:1px solid var(--border);
@@ -1405,6 +1418,58 @@ def build_advanced_metrics_body(
         .am-graph-actions .am-add-stat-btn { flex:1 1 0; justify-content:center; padding:8px 10px; }
         .am-graph-plot-wrap { padding:10px 10px 12px; }
         .am-graph-dot { stroke-width:1.25; }
+        /* Mobile keeps the pre-rail layout exactly: the View and file rows
+           dissolve (display:contents) so every action button shares one
+           wrapping row, as it did when the actions were a single row. The
+           two-class selector is required: .am-graph-controls .am-gctrl
+           (also two classes) sets flex-direction:column on the container. */
+        .am-graph-controls .am-graph-actions { display:flex; flex-direction:row; flex-wrap:wrap; gap:6px; }
+        .am-graph-actions-row { display:contents; }
+      }
+      /* Desktop rail layout (Kaedon 2026-10-15): the top-stacked controls
+         ate ~180px and forced scrolling to see the whole graph. On desktop
+         the plot takes the left and every control moves into a 238px right
+         rail; the SVG is height-constrained so the full graph fits the
+         card with no plot scrolling. The metric picker panels are pinned
+         position:fixed by amInitSearchPicker when open, so the rail's
+         overflow-y:auto cannot clip them. */
+      @media (min-width:601px) {
+        .am-graph-body { flex-direction:row; }
+        .am-graph-rail {
+          order:2; width:238px; flex:0 0 238px; min-height:0;
+          border-left:1px solid var(--border); background:var(--card);
+        }
+        .am-graph-plot-wrap {
+          order:1; flex:1 1 auto; min-width:0; overflow:hidden;
+          display:flex; flex-direction:column;
+        }
+        #amGraphPlot {
+          flex:1 1 auto; min-height:0; width:100%;
+          display:flex; align-items:center; justify-content:center;
+        }
+        .am-graph-svg { width:100%; height:100%; max-height:100%; }
+        .am-graph-controls {
+          flex-direction:column; flex-wrap:nowrap; align-items:stretch;
+          flex:1 1 auto; min-height:0; overflow-y:auto;
+          border-bottom:none; padding:14px 16px 16px; gap:13px;
+        }
+        .am-graph-controls .am-gctrl { flex:0 0 auto; width:100%; }
+        .am-graph-controls .am-gctrl-sm { flex:0 0 auto !important; min-width:0 !important; }
+        .am-graph-pos-ctrl { flex:0 0 auto !important; }
+        .am-graph-pos-bar { flex-wrap:wrap; }
+        .am-graph-actions {
+          flex:1 1 auto !important; display:flex; flex-direction:column; gap:6px;
+          border-top:1px solid var(--border); padding-top:12px; margin-top:2px;
+        }
+        .am-graph-view-label { display:block; }
+        .am-graph-view-row { width:100%; }
+        .am-graph-mode { flex:1 1 100%; }
+        .am-graph-mode .am-add-stat-btn { flex:1 1 0; justify-content:center; }
+        .am-graph-file-row {
+          margin-top:auto; padding-top:12px; flex-direction:column;
+          align-items:stretch; flex-wrap:nowrap; width:100%;
+        }
+        .am-graph-file-row .am-add-stat-btn { justify-content:center; }
       }
       .am-graph-svg { width:100%; height:auto; display:block; touch-action:none; }
       .am-graph-empty { text-align:center; color:var(--text-muted); font-size:13px; padding:48px 0; }
@@ -1483,8 +1548,9 @@ def build_advanced_metrics_body(
         background:transparent !important; display:flex !important; flex-direction:column !important;
       }
       html.og-render .am-legend-head, html.og-render .am-graph-controls,
-      html.og-render .am-graph-zoom,
+      html.og-render .am-graph-zoom, html.og-render .am-graph-rail,
       html.og-render #amGraphHover, html.og-render #amGraphTip { display:none !important; }
+      html.og-render .am-graph-body { display:block !important; }
       html.og-render .am-graph-plot-wrap {
         flex:1 1 auto !important; display:flex !important; align-items:center !important; justify-content:center !important;
         padding:18px !important; overflow:hidden !important;
@@ -4812,6 +4878,7 @@ _AM_JS = r"""
       'air_yards_per_game': ['Downfield volume', 'No downfield'],
       'air_yards_share': ['Commands air yards', 'Few air yards'],
       'avg_depth_of_target': ['Deep threat', 'Short-area'],
+      'avoided_tackles': ['Broken tackles', 'Goes down easy'],
       'blitz_rate_faced': ['Blitzed often', 'Rarely blitzed'],
       'boom_rate': ['Boom weeks', 'No ceiling'],
       'breakaway_percentage': ['Home-run hitter', 'Grinder'],
@@ -4837,6 +4904,7 @@ _AM_JS = r"""
       'expected_tds': ['TDs coming', 'No TDs expected'],
       'explosive_pass_rate': ['Explosive passes', 'Dink and dunk'],
       'explosive_run_rate': ['Explosive runs', 'No explosives'],
+      'explosive_runs_10_plus': ['Explosive runs', 'No explosives'],
       'first_downs_per_game': ['Chain mover', 'No first downs'],
       'first_read_pct': ['First read or designed', 'Later reads'],
       'first_read_share': ['First-look throws', 'Rest of team'],
@@ -4859,11 +4927,13 @@ _AM_JS = r"""
       'ngs_avg_yac_above_expectation': ['YAC over expected', 'YAC below expected'],
       'ngs_avg_sep_score': ['Gets open', 'Blanketed'],
       'ngs_percent_attempts_gte_eight_defenders': ['Faces stacked boxes', 'Light boxes'],
+      'ngs_rush_yards_over_expected': ['Creates yards', 'Leaves yards'],
       'ngs_rush_yards_over_expected_per_att': ['Creates yards', 'Leaves yards'],
       'opportunity_share': ['Workhorse', 'Limited role'],
       'opportunity_trend': ['Role growing', 'Role shrinking'],
       'out_of_pocket_rate': ['Out of pocket', 'In pocket'],
       'pass_tds_per_game': ['TD passer', 'No pass TDs'],
+      'pass_yards_per_game': ['Pass yards', 'No pass yards'],
       'passing_epa': ['Adds value', 'Hurts offense'],
       'play_action_epa': ['PA efficient', 'PA hurts'],
       'play_action_rate': ['Heavy play-action', 'No play-action'],
@@ -4873,6 +4943,7 @@ _AM_JS = r"""
       'pressure_rate_faced': ['Under siege', 'Clean pocket'],
       'qb_hit_rate': ['Gets hit', 'Stays clean'],
       'qb_rating_when_targeted': ['QB cooks', 'QB struggles'],
+      'racr': ['Cashing air yards', 'Empty air yards'],
       'rec_broken_tackles_per_reception': ['Breaks tackles', 'Goes down easy'],
       'rec_first_down_rate': ['Moves the chains', 'No first downs'],
       'rec_tds_per_game': ['Scores', 'No TDs'],
@@ -4889,7 +4960,9 @@ _AM_JS = r"""
       'rushing_epa_per_att': ['EPA per carry', 'Negative EPA'],
       'rushing_success_rate': ['Successful runs', 'Failed runs'],
       'rz_opp_share': ['Goal-line role', 'No goal-line role'],
+      'rz_opps_per_game': ['Red zone role', 'No RZ role'],
       'rz_target_share': ['Red zone weapon', 'Not a RZ factor'],
+      'rz_touches': ['Red zone touches', 'No RZ touches'],
       'sack_rate': ['Sack-prone', 'Avoids sacks'],
       'schedule_ease': ['Soft schedule', 'Brutal schedule'],
       'scramble_rate': ['Scrambler', 'Statue'],
@@ -4907,6 +4980,8 @@ _AM_JS = r"""
       'td_share': ['Team TD hog', 'No TD share'],
       'third_down_conv_rate': ['Money on 3rd', '3rd-down liability'],
       'total_pass_yards': ['Pass yards', 'No pass yards'],
+      'total_rec_yards': ['Receiving yards', 'No receiving yards'],
+      'total_rush_yards': ['Rush yards', 'No rush yards'],
       'total_tds_per_game': ['Finding paint', 'No TDs'],
       'total_yards': ['Yardage machine', 'No yards'],
       'touches_per_game': ['Heavy usage', 'Light usage'],
@@ -4921,6 +4996,8 @@ _AM_JS = r"""
       'xfp_trend': ['Usage rising', 'Usage falling'],
       'xtd_per_game': ['TD chances', 'No TD chances'],
       'yac_per_carry': ['YAC machine', 'Goes down on contact'],
+      'yards_after_contact': ['After-contact yards', 'No after-contact yards'],
+      'yards_before_contact': ['Before-contact yards', 'Met at the line'],
       'yards_after_catch': ['YAC monster', 'Goes down easy'],
       'yards_after_catch_per_reception': ['YAC per catch', 'No YAC'],
       'yards_per_attempt': ['Pushes downfield', 'Dinks and dunks'],

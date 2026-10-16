@@ -109,9 +109,111 @@ def test_graph_controls_css_fixes():
     assert "text-overflow:ellipsis" in css
     # Actions wrap on their own row; the card is wide enough for the rows.
     assert ".am-graph-actions-row" in css and "flex-wrap:wrap" in css
-    assert ".am-graph-card { max-width:880px;" in css
+    assert ".am-graph-card { max-width:1140px;" in css
     # Selects and picker buttons share one height so rows align.
     assert "height:32px" in css
+
+
+# ---------------------------------------------------------------------------
+# 1b. Desktop right rail (2026-10-15): controls move out of the plot's way
+# ---------------------------------------------------------------------------
+
+def _desktop_block(css):
+    start = css.index("@media (min-width:601px)")
+    end = css.index(".am-graph-svg { width:100%; height:auto;", start)
+    return css[start:end]
+
+
+def _mobile_block(css):
+    # The graph modal's own mobile block follows the ctrl-hidden rules;
+    # other max-width:600px blocks exist elsewhere in the page CSS.
+    anchor = css.index(".am-graph-pos-bar.am-ctrl-hidden")
+    start = css.index("@media (max-width:600px)", anchor)
+    end = css.index("@media (min-width:601px)", start)
+    return css[start:end]
+
+
+def test_controls_live_in_a_right_rail_beside_the_plot():
+    parser = _Tree()
+    parser.feed(_html())
+    body = _find(parser.root, lambda n: _has_class(n, "am-graph-body"))
+    assert body is not None
+    rail = _find(body, lambda n: _has_class(n, "am-graph-rail"))
+    plot = _find(body, lambda n: _has_class(n, "am-graph-plot-wrap"))
+    assert rail is not None and plot is not None
+    # Both are direct children of the body; the rail carries the controls,
+    # the plot wrap carries the plot, and neither nests inside the other.
+    assert rail in body[2] and plot in body[2]
+    assert _find(rail, lambda n: _has_class(n, "am-graph-controls")) is not None
+    assert _find(plot, lambda n: _has_class(n, "am-graph-controls")) is None
+    assert _find(rail, lambda n: n[1].get("id") == "amGraphPlot") is None
+    assert _find(plot, lambda n: n[1].get("id") == "amGraphPlot") is not None
+    # Download + Copy link sit in their own file row inside the actions block.
+    actions = _find(rail, lambda n: _has_class(n, "am-graph-actions"))
+    file_row = _find(actions, lambda n: _has_class(n, "am-graph-file-row"))
+    view_row = _find(actions, lambda n: _has_class(n, "am-graph-view-row"))
+    assert file_row is not None and view_row is not None
+    assert _find(file_row, lambda n: n[1].get("id") == "amGraphDownloadBtn") is not None
+    assert _find(file_row, lambda n: n[1].get("id") == "amGraphCopyBtn") is not None
+    assert _find(view_row, lambda n: n[1].get("id") == "amGraphThemeBtn") is not None
+    assert _find(view_row, lambda n: n[1].get("id") == "amGraphModeDetailed") is not None
+
+
+def test_desktop_rail_css():
+    css = _style(_html())
+    desk = _desktop_block(css)
+    # Rail on the RIGHT: body becomes a row, rail is ordered after the plot
+    # and pinned at 238px with a left border; it scrolls on its own.
+    assert ".am-graph-body { flex-direction:row; }" in desk
+    rail_rule = desk.split(".am-graph-rail {", 1)[1].split("}", 1)[0]
+    assert "order:2" in rail_rule and "width:238px" in rail_rule
+    assert "border-left:1px solid var(--border)" in rail_rule
+    plot_rule = desk.split(".am-graph-plot-wrap {", 1)[1].split("}", 1)[0]
+    assert "order:1" in plot_rule and "overflow:hidden" in plot_rule
+    # No plot scrolling on desktop: the SVG is height-constrained.
+    svg_rule = desk.split(".am-graph-svg {", 1)[1].split("}", 1)[0]
+    assert "height:100%" in svg_rule and "max-height:100%" in svg_rule
+    # Controls stack vertically inside the rail and scroll independently.
+    ctrl_rule = desk.split(".am-graph-controls {", 1)[1].split("}", 1)[0]
+    assert "flex-direction:column" in ctrl_rule and "overflow-y:auto" in ctrl_rule
+    # Download / Copy link pinned at the rail bottom.
+    file_rule = desk.split(".am-graph-file-row {", 1)[1].split("}", 1)[0]
+    assert "margin-top:auto" in file_rule
+
+
+def test_mobile_keeps_top_controls_layout():
+    html = _html()
+    css = _style(html)
+    mob = _mobile_block(css)
+    # The Settings toggle still shows on mobile and hides the controls.
+    assert ".am-graph-ctrl-toggle { display:flex; }" in mob
+    assert 'id="amGraphCtrlToggle"' in html
+    assert "onclick=\"amToggleGraphControls()\"" in html
+    # The View/file split dissolves on mobile so the action buttons share
+    # one wrapping row exactly as before the rail. The actions container
+    # must out-specify the .am-gctrl column rule or the buttons stack.
+    assert ".am-graph-actions-row { display:contents; }" in mob
+    assert ".am-graph-controls .am-graph-actions { display:flex; flex-direction:row;" in mob
+    # No rail border/width leaks into the mobile layout.
+    assert ".am-graph-rail" not in mob
+
+
+def test_og_render_hides_the_rail():
+    css = _style(_html())
+    assert "html.og-render .am-graph-rail" in css
+    og = css[css.index("html.og-render .am-graph-body"):]
+    assert "display:block !important" in og.split("}", 1)[0]
+    # The 1200x630 export sizing still wins for the plot itself.
+    assert "html.og-render .am-graph-svg { width:auto !important; height:594px !important;" in css
+
+
+def test_graph_picker_panels_pin_fixed_so_rail_overflow_cannot_clip():
+    # amInitSearchPicker.positionPanel pins the open panel position:fixed
+    # relative to its button; the graph X/Y/Z pickers share that builder,
+    # so the rail's overflow-y:auto never clips the metric dropdowns.
+    assert "panel.style.position = 'fixed'" in _AM_JS
+    assert "function amInitGraphPickers()" in _AM_JS
+    assert _AM_JS.count("amInitSearchPicker({") >= 4  # primary + X + Y + Z
 
 
 # ---------------------------------------------------------------------------

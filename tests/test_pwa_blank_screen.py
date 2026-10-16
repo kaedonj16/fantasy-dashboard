@@ -52,9 +52,11 @@ def test_cache_name_bumped_for_blank_screen_fix():
     # fixes in app.js; v42 ships the desktop single-action Next
     # steps tag width fix in dashboard.css; v43 ships the assistant
     # 'View player' modal action (opens the player modal in place,
-    # no navigation).
+    # no navigation); v44 ships the prospect modal v3.2 build; v45
+    # ships the assistant intro bubble; v46 ships the Graph Metrics
+    # desktop right rail.
     # Assert the current version, not a stale pin.
-    assert "br-fantasy-v45" in SW
+    assert "br-fantasy-v46" in SW
 
 
 def test_nav_timeout_always_races_even_without_cache():

@@ -28,7 +28,8 @@ EXPECTED_BASIC = {
     "td_over_expected", "breakout_trend_score",
     # Passing
     "yards_per_attempt", "completion_pct", "cpoe", "nfl_passer_rating",
-    "epa_per_play", "pass_tds_per_game", "int_rate", "turnover_worthy_rate",
+    "epa_per_play", "pass_tds_per_game", "pass_yards_per_game", "int_rate",
+    "turnover_worthy_rate",
     # Rushing
     "carries_per_game", "rush_yards_per_game", "yards_per_carry",
     "rushing_success_rate", "ngs_rush_yards_over_expected_per_att",

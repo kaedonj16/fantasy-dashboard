@@ -12,6 +12,12 @@ points at metrics that exist.
 Exception: out_of_pocket_rate was restored to the catalog on 2026-10-14 at
 Kaedon's request (it anchors the QB Charting preset), so it is no longer in
 REMOVED_KEYS below; the other 25 removals stay pinned.
+
+Exception 2: total_rec_yards, total_rush_yards, explosive_runs_10_plus and
+avoided_tackles were restored on 2026-10-15 at Kaedon's request: every
+per-X rate should expose its season total, and these four are the stored
+or derived numerators of live rates. The TD and volume season totals stay
+removed: their per-game twins survive, which is where Kaedon reads them.
 """
 import pytest
 
@@ -44,10 +50,11 @@ REMOVED_KEYS = (
     "total_receptions",
     "total_touches",
     "total_tds",
-    "total_rec_yards",
-    "total_rush_yards",
-    "explosive_runs_10_plus",
-    "avoided_tackles",
+    # Restored 2026-10-15 at Kaedon's request (totals behind per-X rates):
+    # total_rec_yards, total_rush_yards, explosive_runs_10_plus,
+    # avoided_tackles. They are the numerators of Yards / Reception,
+    # Yards / Carry, Explosive Run % and Broken Tackles/Carry, so they are
+    # no longer pinned as removed.
     # Red-zone per-game counts; the share metrics survive.
     "rz_targets_pg",
     "rz_carries_pg",
@@ -55,7 +62,8 @@ REMOVED_KEYS = (
     "ngs_max_completed_air_distance",
     "ngs_avg_time_to_los",
     "pacr",
-    "racr",
+    # "racr" restored 2026-10-15 (Kaedon, curated easy-metrics cut on the
+    # graph-rail PR): receiving yards per air yard from the stored PBP column.
     "ngs_avg_air_yards_differential",
     "red_zone_usage",
 )
