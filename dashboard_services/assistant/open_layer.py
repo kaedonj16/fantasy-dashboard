@@ -43,7 +43,10 @@ _PLANNER_SYSTEM = (
     "You plan data fetches for the BR Fantasy assistant. The user asked a "
     "question the fixed question types did not claim. Choose the smallest "
     "set of tool calls that fetches everything needed to answer it from "
-    "the site's own data. The payload lists the available tools with "
+    "the site's own data. When the question names a season (in 2024, "
+    "last season), pass that season to the board tools; a board fetched "
+    "without a season covers the current season only and must never be "
+    "presented as another season's. The payload lists the available tools with "
     "their arguments, the league context, and thread_context: players "
     "already resolved earlier in this conversation. When the question "
     "says him, his, he, or them, it refers to those thread players. A "
@@ -56,7 +59,7 @@ _PLANNER_SYSTEM = (
 
 _PLAN_ARG_FIELDS = ("player", "player_a", "player_b", "stat", "metric",
                     "position", "team", "kind", "top_n", "family",
-                    "max_age", "pool")
+                    "max_age", "pool", "season")
 
 _PLAN_SCHEMA = {
     "type": "object",

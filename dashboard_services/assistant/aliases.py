@@ -103,6 +103,21 @@ _FAMILY_PHRASES = {
 METRIC_PHRASES = {
     "fantasy points": "ppr_pts", "ppr points": "ppr_pts",
     "points scored": "ppr_pts",
+    # Scoring superlatives are the season-total PPR points board: "top
+    # scorer" names no other stat, and a season's scoring leader is a
+    # points total, never a rate. "most points" alone is here for the
+    # board builders; the router keeps bare "most points" (no season
+    # named) on the standings path, where it means team points-for.
+    "top scorer": "ppr_pts", "top scorers": "ppr_pts",
+    "highest scorer": "ppr_pts", "leading scorer": "ppr_pts",
+    "best scorer": "ppr_pts",
+    "top scoring player": "ppr_pts", "highest scoring player": "ppr_pts",
+    "most points scored": "ppr_pts", "most fantasy points scored": "ppr_pts",
+    "scored the most points": "ppr_pts", "scored the most": "ppr_pts",
+    "led the league in scoring": "ppr_pts",
+    "leads the league in scoring": "ppr_pts",
+    "lead the league in scoring": "ppr_pts",
+    "most points": "ppr_pts",
     "fantasy points per game": "ppr_pts_per_game",
     "points per game": "ppr_pts_per_game", "ppg": "ppr_pts_per_game",
     "receiving yards per game": "rec_yards_per_game",

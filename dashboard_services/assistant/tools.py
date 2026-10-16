@@ -227,6 +227,33 @@ def _tool_player_metrics(bundle, args) -> dict:
 
 # -- board tools ------------------------------------------------------------------
 
+def _tool_season(bundle, args):
+    """(season, historical) a board tool was asked for: an explicit
+    season arg (a year, or 'last') resolved against the bundle's current
+    season. (None, False) is the current-season board. A season at or
+    after the current one is not historical here; a future season comes
+    back as (season, False) with season > current so the caller can
+    decline it instead of silently serving the current board."""
+    current = bundle.get("season")
+    try:
+        current = int(current) if current else None
+    except (TypeError, ValueError):
+        current = None
+    raw = args.get("season")
+    if raw is None:
+        return None, False
+    if isinstance(raw, str) and raw.strip().lower() in (
+            "last", "last season", "previous", "previous season"):
+        return (current - 1 if current else None), True
+    try:
+        season = int(raw)
+    except (TypeError, ValueError):
+        return None, False
+    if current is not None and season < current:
+        return season, True
+    return season, False
+
+
 def _tool_top_board(bundle, args) -> dict:
     out = _base("top_board")
     phrase = str(args.get("stat") or args.get("metric") or "").strip()
@@ -238,13 +265,23 @@ def _tool_top_board(bundle, args) -> dict:
     except (TypeError, ValueError):
         top_n = 5
     top_n = max(1, min(10, top_n))
+    season_arg, historical = _tool_season(bundle, args)
+    current = bundle.get("season")
+    if season_arg is not None and current and season_arg > int(current):
+        out.update({"ok": False,
+                    "missing": "that season has not been played yet"})
+        return out
+    board_season = season_arg if season_arg is not None else current
     resolution = aliases.resolve_phrase(phrase) if phrase else None
     config = {}
     try:
         config = ev._metric_config()
     except Exception:
         config = {}
-    roster_ids = bundle.get("roster_player_ids") or set()
+    # A past season's board never borrows the current roster's
+    # membership: nobody is "on my roster" in a finished season.
+    roster_ids = set() if historical else (
+        bundle.get("roster_player_ids") or set())
     if resolution is None and phrase:
         key = ev._resolve_metric_key(phrase.lower().replace(" ", "_"), config)
         if key:
@@ -258,7 +295,15 @@ def _tool_top_board(bundle, args) -> dict:
     if resolution.get("position") and not position:
         position = resolution["position"]
     if resolution["kind"] == "stat":
-        rows, completed = ev.stat_board_rows(bundle, resolution["key"],
+        stat_bundle = bundle
+        if historical:
+            # The week-stat cache is per-season: a past season's totals
+            # read that season's own weeks in full.
+            stat_bundle = {**bundle, "season": season_arg,
+                           "week": ev._completed_weeks_for(
+                               bundle, season_arg) + 1,
+                           "roster_player_ids": set()}
+        rows, completed = ev.stat_board_rows(stat_bundle, resolution["key"],
                                              position, None,
                                              limit=max(top_n, 10))
         if not rows:
@@ -278,7 +323,9 @@ def _tool_top_board(bundle, args) -> dict:
             board.append(row)
         out.update({"board": board, "label": resolution["label"],
                     "stat_key": resolution["key"], "stat_board": True,
-                    "basis": f"Season totals through Week {completed}"})
+                    "season": board_season,
+                    "basis": (f"Final {season_arg} season totals" if historical
+                              else f"Season totals through Week {completed}")})
         out["players"] = [{"player_id": r["player_id"], "name": r["name"]}
                           for r in board if r.get("player_id")]
         for r in board[:3]:
@@ -296,15 +343,17 @@ def _tool_top_board(bundle, args) -> dict:
     if gate == "unavailable":
         out.update({"ok": False, "missing": "metric not available"})
         return out
-    rows, _qual = ev._season_board(key, spec, bundle.get("season"), position)
+    rows, _qual = ev._season_board(key, spec, board_season, position)
     board = [ev._board_row(i + 1, r, roster_ids)
              for i, r in enumerate(rows[:top_n]) if isinstance(r, dict)]
     if not board:
         out.update({"ok": False, "missing": "no qualified players for that board"})
         return out
     out.update({"board": board, "label": spec.get("label") or key,
-                "metric_key": key,
-                "basis": f"Season board, {len(rows)} qualified players"})
+                "metric_key": key, "season": board_season,
+                "basis": (f"Final {season_arg} season board, "
+                          f"{len(rows)} qualified players" if historical
+                          else f"Season board, {len(rows)} qualified players")})
     out["players"] = [{"player_id": r["player_id"], "name": r["name"]}
                       for r in board if r.get("player_id")]
     for r in board[:3]:
@@ -337,9 +386,11 @@ def _tool_breadth_board(bundle, args) -> dict:
     except (TypeError, ValueError):
         top_n = 10
     top_n = max(1, min(25, top_n))
+    season_arg, _hist = _tool_season(bundle, args)
     pack, _tools = ev.build_leaderboard(
         bundle, {"board_kind": "breadth", "family": family,
-                 "position": position, "top_n": top_n}, [])
+                 "position": position, "top_n": top_n,
+                 "season": season_arg}, [])
     if pack.get("available") is False:
         out.update({"ok": False,
                     "missing": pack.get("missing") or "no qualified players"})
@@ -406,8 +457,10 @@ def _tool_deep_board(bundle, args) -> dict:
     pool = str(args.get("pool") or "").strip().lower()
     if pool not in ("waivers", "roster"):
         pool = None
+    season_arg, _hist = _tool_season(bundle, args)
     ent = {"board_kind": kind, "top_n": top_n, "position": position,
-           "metric_hint": phrase or None, "max_age": max_age, "pool": pool}
+           "metric_hint": phrase or None, "max_age": max_age, "pool": pool,
+           "season": season_arg}
     pack, _used = ev.build_leaderboard(bundle, ent, [])
     if pack.get("gated"):
         out.update({"gated": True, "label": pack.get("label"),
@@ -954,7 +1007,8 @@ TOOL_CATALOG = [
     {"name": "top_board",
      "description": "A ranked top-N board by any tracked metric or raw stat (receiving yards, targets, carries, passing yards, fantasy points, target share, any Advanced Metrics stat). Counting-stat phrases resolve to season totals; per-game phrases to the per-game board.",
      "args": {"stat": "the stat or metric phrase", "position": "QB/RB/WR/TE or null",
-              "top_n": "how many rows (default 5)"}},
+              "top_n": "how many rows (default 5)",
+              "season": "a season year like 2024 when the question names one, else null"}},
     {"name": "breadth_board",
      "description": "Which players place in the top N of the MOST metrics in one family (receiving, rushing, passing, or overall fantasy): counts each player's top-N finishes across the family's Advanced Metrics boards and ranks by that count, with each player's finishes listed. Use for 'top 10 in the most receiving metrics', 'most top-10 finishes', 'ranked in the most categories'.",
      "args": {"family": "receiving | rushing | passing | fantasy",

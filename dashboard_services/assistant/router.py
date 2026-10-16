@@ -86,6 +86,9 @@ SYSTEM = (
     "metric: a question about one named player and a metric, or a metric definition "
     "(metric_hint is the metric name). "
     "leaderboard: a pool-wide ranking question with no single player as the subject: "
+    "the top scorer, highest scorer, who scored the most points, or who led the league "
+    "in scoring is a leaderboard board with metric_hint 'fantasy points' (season-total "
+    "PPR points), with the season extracted when one is named; "
     "top N in a metric, who leads a metric, players ranked by a metric, players in the "
     "top N of two metrics (board_kind intersection, second_metric_hint is the second "
     "metric), one metric ranked with a second metric shown alongside (board_kind dual), "
@@ -283,6 +286,20 @@ _BREADTH_RE = re.compile(
     r"|\btop[ -]?\d+\s+finishes\b")
 
 
+# Player-scoring superlatives: the season-total PPR points board, never
+# the standings table (whose "most points" is team points-for). The
+# standings branch below owns bare "most points"; the scorer forms are
+# claimed before it, and "most points" joins them only when a season is
+# named (a bare "most points" with no season stays a standings ask).
+_SCORER_RE = re.compile(
+    r"\b(?:top|highest|leading|best) scorers?\b"
+    r"|\b(?:top|highest) scoring players?\b"
+    r"|\bscored the most\b|\bmost points scored\b"
+    r"|\bmost fantasy points scored\b"
+    r"|\b(?:led|leads|lead) the league in scoring\b"
+    r"|\bscoring title\b")
+
+
 def _keyword_board(message: str, m: str) -> dict | None:
     """Pool-wide ranking phrasings -> the leaderboard intent (or None)."""
     hints = _metric_hints_in(m)
@@ -295,7 +312,8 @@ def _keyword_board(message: str, m: str) -> dict | None:
         from dashboard_services.assistant import aliases
         resolved = aliases.resolve_phrase(m)
         if resolved and re.search(
-                r"\btop\s+\d|\bmost\b|\bleads?\b|\bleading\b|\bbest\b|\branked\b", m):
+                r"\btop\s+\d|\bmost\b|\bleads?\b|\bled\b|\bleading\b|\bbest\b|\branked\b"
+                r"|\bscorers?\b|\bscoring\b", m):
             hints = [resolved["phrase"]]
     top = re.search(r"\btop\s+(\d{1,2})\b", m)
     window = re.search(r"\blast\s+(\d{1,2})\s+weeks?\b", m)
@@ -415,7 +433,7 @@ def _keyword_board(message: str, m: str) -> dict | None:
     elif len(hints) >= 2 and top:
         kind = "intersection"
     elif hints and (top or pool is not None
-                    or re.search(r"\bwho (leads|has)\b|\bleaderboard\b|\branked\b|\bmost\b|\bbest\b", m)):
+                    or re.search(r"\bwho (leads|has)\b|\bleaderboard\b|\branked\b|\bmost\b|\bbest\b|\bscorers?\b|\bscoring\b", m)):
         kind = "board"
     if kind is None:
         return None
@@ -702,6 +720,25 @@ def _keyword_route(message: str) -> dict:
         return {**base, "intent": "playoffs", "season": _season_in(m)}
     if re.search(r"power ranking|power rank|team to beat|strongest team", m):
         return {**base, "intent": "power_rankings"}
+    # Player-scoring superlatives ("top scorer", "scored the most
+    # points", "led the league in scoring") are the season PPR-points
+    # board. Claimed before standings, whose regex would otherwise eat
+    # the "most points" forms; a team subject ("highest scoring team")
+    # and "points for" stay with standings, as does a bare "most
+    # points" that names no season. A league frame with no season
+    # named ("scored the most points in the league") is also the
+    # standings table (the pinned team points-for reading); a named
+    # season can only be the player board, since standings are
+    # current-season only.
+    _season_named = _season_in(m) is not None
+    if not re.search(r"\bteam\b|\bpoints for\b", m) and (
+            _SCORER_RE.search(m)
+            or (re.search(r"\bmost points\b", m) and _season_named)) and (
+            _season_named
+            or not re.search(r"\bin (the|my) league\b", m)):
+        board = _keyword_board(message, m)
+        if board is not None:
+            return {**base, **board}
     if re.search(r"standings|division|most points|points leader|highest scoring|"
                  r"\bseed\b|first place|what place am i", m):
         return {**base, "intent": "standings"}
