@@ -31,6 +31,13 @@ var ppr = {{rec: 1, rec_yd: .1, rec_td: 6, bonus_rec_te: .5}};
 var half = {{rec: .5, rec_yd: .1}};
 var standard = {{rec: 0, rec_yd: .1}};
 var kicking = {{fgm: 3, fgm_50p: 5, xpm: 1}};
+// Split-bucket league (Blackedraw's live Sleeper shape): every kicking key is
+// published, unused categories at an explicit 0 -- fgm_50p and fgm stay 0 while
+// the split buckets carry the real rates. The 0s must not shadow them.
+var split = {{fgm: 0, fgm_0_19: 3, fgm_20_29: 3, fgm_30_39: 3, fgm_40_49: 4,
+  fgm_50_59: 5, fgm_50p: 0, fgm_60p: 6, fgm_yds: 0, xpm: 1}};
+// Aggregate league, inverse shape: only fgm_50p is real, fgm_60p sits at 0.
+var agg = {{fgm_50p: 5, fgm_60p: 0, xpm: 1}};
 // Per-yard FG league: no flat fgm, no distance bucket -- points per made-FG yard.
 var perYd = {{fgm_yds: 0.1, xpm: 1}};
 console.log(JSON.stringify({{
@@ -50,7 +57,16 @@ console.log(JSON.stringify({{
   // fg_long for a single kick, so that path must score too.
   perYdWithTotal: parseFloat(_lineToPts({{fgm: 1, fg_yds: 58}}, perYd, 'K').toFixed(2)),
   perYdFromLong: parseFloat(_lineToPts({{fgm: 1, fg_long: 58}}, perYd, 'K').toFixed(2)),
-  perYdXp: _lineToPts({{xpm: 1}}, perYd, 'K')
+  perYdXp: _lineToPts({{xpm: 1}}, perYd, 'K'),
+  // The reported live bug: a 55-yard FG in the split-bucket league scored 0
+  // because the present-but-zero fgm_50p key shadowed fgm_50_59.
+  split55: _lineToPts({{fgm: 1, fg_yds: 55, fgm_50_59: 1}}, split, 'K'),
+  split62: _lineToPts({{fgm: 1, fg_yds: 62, fgm_60p: 1}}, split, 'K'),
+  split45: _lineToPts({{fgm: 1, fg_yds: 45, fgm_40_49: 1}}, split, 'K'),
+  splitXp: _lineToPts({{xpm: 1}}, split, 'K'),
+  aggLong: _lineToPts({{fgm: 1, fg_yds: 62}}, agg, 'K'),
+  zeroK: _lineToPts({{fgm: 1, fg_yds: 55, fgm_50_59: 1}},
+                     {{fgm: 0, fgm_50p: 0, fgm_50_59: 0, xpm: 1}}, 'K')
 }}));
 """
     out = json.loads(subprocess.check_output(["node", "-e", script], text=True))
@@ -59,6 +75,8 @@ console.log(JSON.stringify({{
         "made56": 5, "missed52": 0, "xp": 1, "recIncrement": 1.5,
         "fgIncrement": 5, "noDouble": 5,
         "perYdWithTotal": 5.8, "perYdFromLong": 5.8, "perYdXp": 1,
+        "split55": 5, "split62": 6, "split45": 4, "splitXp": 1,
+        "aggLong": 5, "zeroK": 0,
     }
 
 
@@ -74,15 +92,23 @@ def test_player_modal_summary_scores_fgs_by_distance_and_per_yard():
 var bucket = {{fgm_50p: 5, xpm: 1}};       // distance-bucket league
 var perYd = {{fgm_yds: 0.1, xpm: 1}};      // per-yard league (no flat fgm)
 var flat = {{fgm: 3, xpm: 1}};             // flat per-make league
+// Split-bucket league (Blackedraw's live Sleeper shape): fgm_50p / fgm are
+// published at 0 and must not shadow the split buckets that carry the rates.
+var split = {{fgm: 0, fgm_40_49: 4, fgm_50_59: 5, fgm_50p: 0, fgm_60p: 6, xpm: 1}};
+var agg = {{fgm_50p: 5, fgm_60p: 0, xpm: 1}};  // aggregate-only, inverse shape
 console.log(JSON.stringify({{
   bucket58: _rzFgPts({{fgm: 1, fg_long: 58}}, bucket),
   perYd58: parseFloat(_rzFgPts({{fgm: 1, fg_long: 58}}, perYd).toFixed(2)),
   flat: _rzFgPts({{fgm: 1, fg_long: 58}}, flat),
-  noKickerScoring: _rzFgPts({{fgm: 1, fg_long: 58}}, {{xpm: 1}})
+  noKickerScoring: _rzFgPts({{fgm: 1, fg_long: 58}}, {{xpm: 1}}),
+  split55: _rzFgPts({{fgm: 1, fg_long: 55}}, split),
+  split62: _rzFgPts({{fgm: 1, fg_long: 62}}, split),
+  aggLong: _rzFgPts({{fgm: 1, fg_long: 62}}, agg)
 }}));
 """
     out = json.loads(subprocess.check_output(["node", "-e", script], text=True))
-    assert out == {"bucket58": 5, "perYd58": 5.8, "flat": 3, "noKickerScoring": 0}
+    assert out == {"bucket58": 5, "perYd58": 5.8, "flat": 3, "noKickerScoring": 0,
+                   "split55": 5, "split62": 6, "aggLong": 5}
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="Node.js not available")

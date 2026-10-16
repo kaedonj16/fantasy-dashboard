@@ -625,20 +625,30 @@
   // Per-made-FG rate for a league. Leagues that score by distance define
   // buckets (Sleeper fgm_0_19..fgm_50p; ESPN fgm_0_39/fgm_40_49/fgm_50p); pick
   // the tightest bucket the league actually defines, else the flat fgm/fg rate.
+  // Providers publish every kicking key with unused categories at an explicit
+  // 0 (Sleeper keeps fgm_50p at 0 in leagues that score the split fgm_50_59 /
+  // fgm_60p buckets, and fgm itself at 0), so a present-but-zero key must not
+  // shadow the league's real rate further down the chain -- that scored every
+  // 50-59 yard FG as 0 in exactly those leagues. The granular bucket for the
+  // distance is checked before its aggregate, and the first nonzero rate wins.
   function _fgRate(yds, s) {
     yds = _n(yds);
     var order;
     if (yds >= 60) order = ['fgm_60p', 'fgm_50p', 'fgm_40_49', 'fgm_0_39', 'fgm', 'fg'];
-    else if (yds >= 50) order = ['fgm_50p', 'fgm_50_59', 'fgm_40_49', 'fgm_0_39', 'fgm', 'fg'];
+    else if (yds >= 50) order = ['fgm_50_59', 'fgm_50p', 'fgm_40_49', 'fgm_0_39', 'fgm', 'fg'];
     else if (yds >= 40) order = ['fgm_40_49', 'fgm_0_39', 'fgm', 'fg'];
     else if (yds >= 30) order = ['fgm_30_39', 'fgm_0_39', 'fgm', 'fg'];
     else if (yds >= 20) order = ['fgm_20_29', 'fgm_0_39', 'fgm', 'fg'];
     else if (yds > 0)   order = ['fgm_0_19', 'fgm_0_39', 'fgm', 'fg'];
     else order = ['fgm', 'fg']; // unknown distance (e.g. cumulative box line)
+    var firstPresent = null;
     for (var i = 0; i < order.length; i++) {
-      if (s[order[i]] != null) return _n(s[order[i]]);
+      if (s[order[i]] == null) continue;
+      var rate = _n(s[order[i]]);
+      if (firstPresent === null) firstPresent = rate;
+      if (rate !== 0) return rate;
     }
-    return 0;
+    return firstPresent || 0;
   }
   function _fgPts(L, s) {
     // PBP normalizers retain distance buckets for each *made* kick.  Prefer
