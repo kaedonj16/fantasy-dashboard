@@ -444,7 +444,12 @@ def _advanced_marks(seasons):
 
 
 def _build_advanced_metrics(position, seasons, athleticism, row, wepa_score=None):
-    """Position-correct advanced metric sets: [{label, raw, grade}]."""
+    """Position-correct advanced metric sets: [{label, raw, grade}].
+
+    Efficiency's grade is the component score itself (no mid-to-C rescale),
+    so the advanced table and the Grade Breakdown bar show one number for
+    the component. Production keeps the rescale.
+    """
     pos = (position or "").upper()
     best = {}
     for s in seasons or []:
@@ -510,16 +515,8 @@ def _build_advanced_metrics(position, seasons, athleticism, row, wepa_score=None
     prod = _safe_float(row.get("production_score"))
     breakout_age = _compute_breakout_age(
         seasons, row.get("age"), pos)
-    # Recruiting pedigree (model v2.0): rescale the 0-100 model score
-    # (50 = average 3-star) so display grade shows C, not F.
-    recruit_grade = _rescale_mid_to_c(row.get("recruiting_score"))
-    recruit_raw = None
-    try:
-        rs = row.get("recruit_stars")
-        if rs is not None:
-            recruit_raw = "%d-star" % int(float(rs))
-    except (TypeError, ValueError):
-        pass
+    # No Recruiting row here (Kaedon's 2026-10-11 ruling): recruiting is a
+    # model component shown in the Grade Breakdown, not an advanced metric.
     # WEPA opponent-adjusted efficiency (Patreon-tier CFBD; None when unavailable).
     try:
         wepa = float(wepa_score) if wepa_score is not None else None
@@ -542,12 +539,11 @@ def _build_advanced_metrics(position, seasons, athleticism, row, wepa_score=None
             ("Yds/Carry", _fmt1(best.get("yds_per_carry")), _grade_ypc(best.get("yds_per_carry"))),
             ("Rush TDs", str(int(best["rush_tds"])) if best.get("rush_tds") is not None else None, None),
             ("Breakout Age", _fmt1(breakout_age), _grade_breakout_age(breakout_age, pos)),
-            ("Efficiency", _fmt1(eff), _rescale_mid_to_c(eff)),
+            ("Efficiency", _fmt1(eff), _clip100(eff)),
             ("Production", _fmt1(prod), _rescale_mid_to_c(prod)),
         ]
         if wepa_row:
             metrics.append(wepa_row)
-        metrics.append(("Recruiting", recruit_raw, recruit_grade))
     elif pos == "RB":
         metrics = [
             ("Dominator", _fmt_pct1(best.get("dominator_rating")), _grade_dominator(best.get("dominator_rating"))),
@@ -561,8 +557,7 @@ def _build_advanced_metrics(position, seasons, athleticism, row, wepa_score=None
         if wepa_row:
             metrics.append(wepa_row)
         metrics.extend([
-            ("Efficiency", _fmt1(eff), _rescale_mid_to_c(eff)),
-            ("Recruiting", recruit_raw, recruit_grade),
+            ("Efficiency", _fmt1(eff), _clip100(eff)),
         ])
     else:  # WR / TE
         metrics = [
@@ -580,12 +575,16 @@ def _build_advanced_metrics(position, seasons, athleticism, row, wepa_score=None
         if wepa_row:
             metrics.append(wepa_row)
         metrics.extend([
-            ("Efficiency", _fmt1(eff), _rescale_mid_to_c(eff)),
-            # v3.2: raw-only best/career marks (no display grades defined).
-            ("Best Dominator", _fmt_pct1(marks.get("best_dominator")), None),
-            ("Career Yds/Rec", _fmt1(marks.get("career_yds_per_rec")), None),
-            ("Rec Yds/Gm", _fmt1(marks.get("latest_rec_yards_per_game")), None),
-            ("Recruiting", recruit_raw, recruit_grade),
+            ("Efficiency", _fmt1(eff), _clip100(eff)),
+            # Best/career marks, graded with the same-stat display formulas
+            # already used above: dominator, Yds/Rec, and the yards-per-game
+            # grade (the Scrim Yds/Gm formula). No new anchors invented.
+            ("Best Dominator", _fmt_pct1(marks.get("best_dominator")),
+             _grade_dominator(marks.get("best_dominator"))),
+            ("Career Yds/Rec", _fmt1(marks.get("career_yds_per_rec")),
+             _grade_ypr(marks.get("career_yds_per_rec"))),
+            ("Rec Yds/Gm", _fmt1(marks.get("latest_rec_yards_per_game")),
+             _grade_scrim(marks.get("latest_rec_yards_per_game"))),
         ])
     out = []
     for label, raw, grade in metrics:

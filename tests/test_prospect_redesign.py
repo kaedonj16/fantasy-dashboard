@@ -102,7 +102,7 @@ class TestAdvancedMetrics:
             "Dominator", "Breakout Age", "Yds/Rec",
             "Mkt Share", "TD Share", "Tgt/Gm", "Catch%",
             "Speed Score", "Efficiency",
-            "Best Dominator", "Career Yds/Rec", "Rec Yds/Gm", "Recruiting",
+            "Best Dominator", "Career Yds/Rec", "Rec Yds/Gm",
         ]
         assert adv[0]["raw"] == "38%"
         assert adv[0]["grade"] == 99.9  # 0.38 / 0.267, capped below 100
@@ -110,6 +110,14 @@ class TestAdvancedMetrics:
         assert adv[7]["raw"] == "112"
         assert adv[4]["raw"] == "28%"
         assert adv[4]["grade"] == 99.9  # 0.28 / 0.20, capped below 100
+        # Efficiency grade is the component score itself (84), not the
+        # mid-to-C rescale, so it matches the Grade Breakdown bar.
+        eff = next(a for a in adv if a["label"] == "Efficiency")
+        assert eff["raw"] == "84"
+        assert eff["grade"] == 84.0
+        # Best Dominator is the same stat as Dominator: same formula, same grade.
+        bd = next(a for a in adv if a["label"] == "Best Dominator")
+        assert bd["grade"] == adv[0]["grade"]
 
     def test_decimal_inputs_from_psycopg(self):
         # Regression: psycopg returns NUMERIC columns as Decimal. A Decimal
@@ -130,8 +138,9 @@ class TestAdvancedMetrics:
         assert by_label["Dominator"]["raw"] == "32%"
         assert by_label["Dominator"]["grade"] is not None
         assert by_label["Mkt Share"]["raw"] == "30%"
-        assert by_label["Recruiting"]["raw"] == "5-star"
-        assert by_label["Recruiting"]["grade"] is not None
+        # Recruiting is a Grade Breakdown component, never an advanced row,
+        # even when the rankings row carries recruiting data.
+        assert "Recruiting" not in by_label
 
     def test_te_uses_wr_set(self):
         adv = _build_advanced_metrics("TE", [], {}, self._row("TE"))
@@ -145,7 +154,7 @@ class TestAdvancedMetrics:
                                       self._row("RB"))
         assert [a["label"] for a in adv] == [
             "Dominator", "Breakout Age", "Yds/Carry", "Scrim Yds/Gm",
-            "Mkt Share", "TD Share", "Speed Score", "Efficiency", "Recruiting",
+            "Mkt Share", "TD Share", "Speed Score", "Efficiency",
         ]
         assert adv[2]["raw"] == "6.8"
         scrim = next(a for a in adv if a["label"] == "Scrim Yds/Gm")
@@ -164,19 +173,25 @@ class TestAdvancedMetrics:
         assert [a["label"] for a in adv] == [
             "Cmp%", "TD:INT", "Yds/Att", "AY/A",
             "Rush Yds/Gm", "Yds/Carry", "Rush TDs",
-            "Breakout Age", "Efficiency", "Production", "Recruiting",
+            "Breakout Age", "Efficiency", "Production",
         ]
         assert adv[0]["raw"] == "67%"
         assert adv[1]["raw"] == "3.1"
         aya = next(a for a in adv if a["label"] == "AY/A")
         assert aya["raw"] == "9.3"  # (3500 + 600 - 360) / 400
         assert aya["grade"] == 89.0  # 9.35 / 10.5
+        # Efficiency shows the component score itself; Production (also a
+        # component) keeps the mid-to-C rescale by design.
+        eff = next(a for a in adv if a["label"] == "Efficiency")
+        assert eff["grade"] == 90.0
+        prod = next(a for a in adv if a["label"] == "Production")
+        assert prod["grade"] == 70.0  # 50 + (90 - 50) * 0.5
 
     def test_missing_data_degrades_to_nulls(self):
         adv = _build_advanced_metrics(
             "WR", [], {}, {"position": "WR", "age": None,
                            "efficiency_score": None, "production_score": None})
-        assert len(adv) == 13  # v3.2: + Best Dominator, Career Yds/Rec, Rec Yds/Gm raw-only rows
+        assert len(adv) == 12  # v3.2 marks rows in, Recruiting row out
         assert all(a["raw"] is None and a["grade"] is None for a in adv)
 
     def test_speed_score_derived_from_forty_and_weight(self):
@@ -191,15 +206,15 @@ class TestAdvancedMetrics:
         assert speed["raw"] == "92.6"
         assert speed["grade"] == 77.2
 
-    def test_recruiting_metric_present_when_scored(self):
+    def test_recruiting_metric_absent_even_when_scored(self):
+        # Kaedon's ruling: Recruiting is not an advanced-metrics row. It
+        # stays a Grade Breakdown component only, even with data present.
         adv = _build_advanced_metrics(
             "WR", [], {},
             {"position": "WR", "age": None, "efficiency_score": None,
              "production_score": None, "recruiting_score": 85,
              "recruit_stars": 4})
-        rec = next(a for a in adv if a["label"] == "Recruiting")
-        assert rec["raw"] == "4-star"
-        assert rec["grade"] == 67.5  # rescaled: 50 + (85-50)*0.5
+        assert "Recruiting" not in [a["label"] for a in adv]
 
 
 class TestPageBuilder:
