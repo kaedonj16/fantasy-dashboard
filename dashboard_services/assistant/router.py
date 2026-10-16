@@ -41,7 +41,7 @@ SCHEMA = {
         "day_hint": {"type": ["string", "null"], "enum": ["tonight", "today", "tomorrow", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "this_week", None]},
         "position": {"type": ["string", "null"]},
         "preference_text": {"type": ["string", "null"]},
-        "board_kind": {"type": ["string", "null"], "enum": ["board", "intersection", "dual", "movers", "matchup", "buy_low", "sell_high", "breadth", "finishes", "floor", "ceiling", "value", "slate", "gap", "rank_movers", None]},
+        "board_kind": {"type": ["string", "null"], "enum": ["board", "intersection", "dual", "movers", "matchup", "buy_low", "sell_high", "breadth", "finishes", "floor", "ceiling", "value", "slate", "gap", "rank_movers", "defenses", None]},
         "family": {"type": ["string", "null"], "enum": ["receiving", "rushing", "passing", "fantasy", None]},
         "max_age": {"type": ["integer", "null"]},
         "pool": {"type": ["string", "null"], "enum": ["waivers", "roster", None]},
@@ -97,7 +97,12 @@ SYSTEM = (
     "low, buy-low candidates, who is undervalued: board_kind buy_low; who should I "
     "sell high, sell-high candidates, who is overvalued: board_kind sell_high), "
     "or which defenses give up the most to a position (board_kind matchup, "
-    "position is the offensive position), or players ranked by how many metrics "
+    "position is the offensive position), or a team-defense ranking question "
+    "(what is Denver's defense ranked, how good is the Chiefs defense, rank "
+    "the defenses, the best defenses: board_kind defenses, team is the NFL "
+    "abbreviation of the defense named, DEN for Denver, or null when no "
+    "single defense is named; a team defense is never a player_name), "
+    "or players ranked by how many metrics "
     "they finish in the top N of (top 10 in the most receiving metrics, the most "
     "top-10 finishes, ranked in the most categories: board_kind breadth, family "
     "is receiving, rushing, passing, or fantasy for overall, top_n is the N in "
@@ -718,6 +723,47 @@ def _keyword_nfl_schedule(message: str, m: str) -> dict | None:
     return None
 
 
+# Team-defense ranking questions ("what is Denver's defense ranked",
+# "how good is the Chiefs defense", "rank the defenses"). Team defenses
+# are Sleeper pseudo-players keyed by abbreviation, and the defenses
+# board ranks them by season fantasy points. The guards keep lineup
+# (start/sit/stream), trade, and matchup ("which defenses give up the
+# most to a position") phrasings on their own paths.
+_DEFENSE_WORD_RE = re.compile(r"\bdefen[cs]es?\b|\bdst\b|\bd/st\b")
+_DEFENSE_RANK_ANCHOR_RE = re.compile(
+    r"\brank\w*\b|\bbest\b|\bworst\b|\btop\b|\belite\b|\bgood\b"
+    r"|\bstrong(?:est)?\b|\bweak(?:est)?\b|\bhow is\b|\bpoints\b")
+_DEFENSE_GUARD_RE = re.compile(
+    r"\bstart|\bsit\b|\bbench|\bstream|\btrade\b|\bswap\b|\bbuy\b"
+    r"|\bsell\b|\bpick up\b|\bgive up\b|\bgives up\b|\ballow\w*\b"
+    r"|\bagainst\b|\bversus\b|\bvs\b|\bmatchup\b")
+
+
+def _keyword_defense(message: str, m: str) -> dict | None:
+    """Team-defense ranking phrasings -> the defenses board (or None).
+
+    A single named defense (city, nickname, or abbreviation via the NFL
+    schedule rule's team vocabulary) rides as the board's focus; the
+    board form (no team named) needs the plural, a rankings phrase, or
+    a superlative directly on the word defense."""
+    if not _DEFENSE_WORD_RE.search(m):
+        return None
+    if _DEFENSE_GUARD_RE.search(m):
+        return None
+    if not _DEFENSE_RANK_ANCHOR_RE.search(m):
+        return None
+    team = _nfl_team_in(m, message)
+    if team is None and not re.search(
+            r"\bdefen[cs]es\b|\bdefen[cs]e rankings?\b|\bwhich defen[cs]e\b"
+            r"|\b(?:best|worst|top) defen[cs]e\b", m):
+        return None
+    top = re.search(r"\btop\s+(\d{1,2})\b", m)
+    return {"intent": "leaderboard", "board_kind": "defenses",
+            "team": team,
+            "top_n": int(top.group(1)) if top else None,
+            "season": _season_in(m)}
+
+
 def _keyword_route(message: str) -> dict:
     m = (message or "").lower()
     base = {"player_names": [], "give_player_names": [], "receive_player_names": [], "picks": [],
@@ -850,6 +896,9 @@ def _keyword_route(message: str) -> dict:
     if _slot_text and re.search(r"target at|pick at|take at|sitting at|"
                                 r"who should i target", m):
         return {**base, "intent": "draft", "draft_slot": _slot_text}
+    defense = _keyword_defense(message, m)
+    if defense is not None:
+        return {**base, **defense}
     board = _keyword_board(message, m)
     if board is not None:
         return {**base, **board}

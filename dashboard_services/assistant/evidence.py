@@ -3673,7 +3673,8 @@ def build_leaderboard(bundle, entities, player_ids=None) -> tuple[dict, list[str
     kind = str(ent.get("board_kind") or "board").strip().lower()
     if kind not in ("board", "intersection", "dual", "movers", "matchup",
                     "buy_low", "sell_high", "breadth", "finishes", "floor",
-                    "ceiling", "value", "slate", "gap", "rank_movers"):
+                    "ceiling", "value", "slate", "gap", "rank_movers",
+                    "defenses"):
         kind = "board"
     pack["board_kind"] = kind
     try:
@@ -3771,6 +3772,17 @@ def build_leaderboard(bundle, entities, player_ids=None) -> tuple[dict, list[str
                 pack, bundle, tools, position, team, top_n, season)
         return _build_value_rank_board(pack, bundle, tools, position, team,
                                        top_n, roster_ids, ent)
+
+    if kind == "defenses":
+        # Same season shape as the game-log boards: a past season reads
+        # that season's own week-stat cache at full length.
+        pack, tools = _build_defense_board(pack, hist_bundle, tools, team,
+                                           top_n, roster_ids)
+        if historical and pack.get("available") is not False:
+            pack["qualification_text"] = (
+                (pack.get("qualification_text") or "")
+                + f" Final {season} season board.").strip()
+        return pack, tools
 
     if kind == "rank_movers":
         return _build_rank_movers_board(pack, bundle, tools, position,
@@ -4466,6 +4478,121 @@ def _build_gamelog_board(pack, bundle, tools, kind, position, team, top_n,
     pack["board"] = board
     pack["board_count"] = len(board)
     pack["qualification_text"] = basis + f" {len(rows)} players qualify."
+    return pack, tools
+
+
+# Team defenses are Sleeper pseudo-players: the week-stat feed keys each
+# defense's line by its team abbreviation (DEN, KC, ...), and the value
+# table keys its DEF rows the same way. The players index is not the
+# universe here (its trimmed forms can omit the DEF entries entirely);
+# the abbreviation set is. WSH is a lookup alias for WAS, never a
+# separate defense.
+_DEFENSE_TEAMS = frozenset({
+    "ARI", "ATL", "BAL", "BUF", "CAR", "CHI", "CIN", "CLE", "DAL", "DEN",
+    "DET", "GB", "HOU", "IND", "JAX", "KC", "LV", "LAC", "LAR", "MIA",
+    "MIN", "NE", "NO", "NYG", "NYJ", "PHI", "PIT", "SF", "SEA", "TB",
+    "TEN", "WAS",
+})
+
+
+def _defense_name(abbr, index):
+    """Display name for a team defense: the players index's own name
+    when it carries one (the Sleeper entry, 'Denver Broncos'), else the
+    site's canonical team-name table."""
+    info = _player_info(abbr, index)
+    name = str(info.get("name") or "").strip()
+    if name and name.upper() != abbr:
+        return name
+    try:
+        from utils.nfl import get_team_full_name
+        return get_team_full_name(abbr) or abbr
+    except Exception:
+        return abbr
+
+
+def _defense_value_rank(bundle, abbr):
+    """The defense's rank among defenses in the model value table, or
+    None when the table carries no usable DEF values. A value basis is
+    only ever reported when it exists in the table; it is never derived
+    from the points board."""
+    values, _flavor = _displayed_values(bundle)
+    defs = {str(pid).upper(): v for pid, v in values.items()
+            if str(pid).upper() in _DEFENSE_TEAMS}
+    if abbr not in defs or len(defs) < 2:
+        return None
+    ranked = sorted(defs.items(), key=lambda kv: (-kv[1], kv[0]))
+    for i, (pid, v) in enumerate(ranked, 1):
+        if pid == abbr:
+            return {"value_rank": i, "value_pool": len(ranked),
+                    "model_value": _r3(v)}
+    return None
+
+
+def _build_defense_board(pack, bundle, tools, team, top_n, roster_ids):
+    """Team defenses ranked by season fantasy points: each defense's
+    weekly lines from the week-stat store, scored by week_stat_points
+    under the league's settings (the same rule as recent form and the
+    game-log boards). A named team rides along as the pack's focus: its
+    rank, line, and (when the value table carries DEF rows) its rank
+    among defenses by model trade value, each basis labeled."""
+    weeks, completed = _weekly_scored(bundle)
+    tools.append("utils.load_sleeper_week_stats")
+    if not weeks or completed < 1:
+        return _no_board(pack, "no completed games yet this season",
+                         []), tools
+    totals: dict[str, float] = {}
+    games: dict[str, int] = {}
+    for lines in weeks:
+        for abbr in _DEFENSE_TEAMS:
+            line = lines.get(abbr)
+            if line is None:
+                continue
+            totals[abbr] = totals.get(abbr, 0.0) + float(line[0])
+            games[abbr] = games.get(abbr, 0) + 1
+    if not totals:
+        return _no_board(pack, "no team defense scoring is available yet",
+                         []), tools
+    index = _index()
+    rows = []
+    for abbr, total in totals.items():
+        g = games.get(abbr) or 0
+        if not g:
+            continue
+        total = round(total, 1)
+        rows.append({"player_id": abbr,
+                     "name": _defense_name(abbr, index),
+                     "team": abbr, "position": "DEF",
+                     "value": total, "games": g,
+                     "ppg": round(total / g, 1)})
+    rows.sort(key=lambda r: (-r["value"], -r["ppg"], str(r["name"])))
+    pack["label"] = "Team defense fantasy points"
+    pack["pool_size"] = len(rows)
+    board = []
+    for i, r in enumerate(rows[:top_n]):
+        row = _board_row(i + 1, r, roster_ids, value=r["value"])
+        row["ppg"] = r["ppg"]
+        board.append(row)
+    pack["board"] = board
+    pack["board_count"] = len(board)
+    pack["qualification_text"] = (
+        f"Ranked by total fantasy points scored by each team defense "
+        f"this season under your league's scoring settings, weeks 1 to "
+        f"{completed}. {len(rows)} defenses have played.")
+    if team:
+        for i, r in enumerate(rows, 1):
+            if r["player_id"] != team:
+                continue
+            focus = {"player_id": team, "name": r["name"], "team": team,
+                     "rank": i, "pool_size": len(rows),
+                     "value": r["value"], "ppg": r["ppg"],
+                     "games": r["games"],
+                     "on_my_roster": bool(team in roster_ids)}
+            vr = _defense_value_rank(bundle, team)
+            if vr:
+                focus.update(vr)
+                tools.append("model_value_table")
+            pack["focus"] = focus
+            break
     return pack, tools
 
 
