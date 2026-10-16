@@ -547,14 +547,24 @@ class TestAdvancedMetricsApi:
         assert rows[-1]["rec_yards_per_game"] == pytest.approx(916 / 7, abs=0.01)
         assert rows[-1]["dominator"] == pytest.approx(0.36)
 
-    def test_raw_only_mark_rows_present_for_wr(self):
+    def test_mark_rows_graded_with_same_stat_formulas(self):
         api = self._api()
         rows = {m["label"]: m for m in api._build_advanced_metrics(
             "WR", SMITH["seasons"], {}, {})}
+        marks = api._advanced_marks(SMITH["seasons"])
         for label in ("Best Dominator", "Career Yds/Rec", "Rec Yds/Gm"):
             assert label in rows
-            assert rows[label]["grade"] is None
             assert rows[label]["raw"] is not None
+            assert rows[label]["grade"] is not None
+        # Each mark is graded by the display formula of the same stat:
+        # dominator, Yds/Rec, and the yards-per-game (Scrim Yds/Gm) formula.
+        assert rows["Best Dominator"]["grade"] == api._grade_dominator(
+            marks["best_dominator"])
+        assert rows["Best Dominator"]["grade"] == rows["Dominator"]["grade"]
+        assert rows["Career Yds/Rec"]["grade"] == api._grade_ypr(
+            marks["career_yds_per_rec"])
+        assert rows["Rec Yds/Gm"]["grade"] == api._grade_scrim(
+            marks["latest_rec_yards_per_game"])
 
 
 class TestReasonsWithNoDurabilityData:

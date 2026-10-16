@@ -1623,32 +1623,17 @@ def build_prospects_body(is_admin: bool = False) -> str:
     var body = document.getElementById('rkOvAdvBody');
     var section = document.getElementById('rkOvAdvSection');
     if (!body) return;
+    // Overview lists the API's advanced rows once, graded rows only: a row
+    // with no display grade never renders an empty percentile cell here.
+    // Best/career marks live in the Advanced tab's marks card, not here.
     var html = ((d && d.advanced) || []).filter(function(a) {
-      return a.raw != null;
+      return a.raw != null && a.grade != null;
     }).map(function(a) {
       return '<tr><td>' + rkEsc(a.label) + '</td>' +
         '<td><b style="color:var(--text);">' + rkEsc(a.raw) + '</b></td><td>' +
-        (a.grade != null
-          ? '<b style="color:var(--text);">' + Number(a.grade).toFixed(1) + '</b>'
-          : '') + '</td></tr>';
+        '<b style="color:var(--text);">' + Number(a.grade).toFixed(1) + '</b>' +
+        '</td></tr>';
     });
-    var marks = (d && d.advanced_marks) || {};
-    var ms = rkMarkSeasons(d || {});
-    if (marks.best_dominator != null) {
-      html.push('<tr><td>Best Dominator' + rkSeasonSuffix(ms.bestSeason) + '</td>' +
-        '<td><b style="color:var(--text);">' + Math.round(marks.best_dominator * 100) +
-        '%</b></td><td></td></tr>');
-    }
-    if (marks.career_yds_per_rec != null) {
-      html.push('<tr><td>Career Yds/Rec</td>' +
-        '<td><b style="color:var(--text);">' + Number(marks.career_yds_per_rec).toFixed(1) +
-        '</b></td><td></td></tr>');
-    }
-    if (marks.latest_rec_yards_per_game != null) {
-      html.push('<tr><td>Rec Yds/G' + rkSeasonSuffix(ms.latest) + '</td>' +
-        '<td><b style="color:var(--text);">' +
-        Number(marks.latest_rec_yards_per_game).toFixed(1) + '</b></td><td></td></tr>');
-    }
     if (!html.length) {
       if (section) section.style.display = 'none';
       body.innerHTML = '';
