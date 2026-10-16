@@ -812,6 +812,148 @@ window.brUndoToast = function (message, onUndo, duration) {
   });
 })();
 
+/**
+ * Guest BR Assistant teaser (guest homepage only, logged-out visitors).
+ *
+ * The signed-in assistant chrome (initAssistant/buildChrome) only mounts
+ * after /api/assistant/context returns a league, which 401s for guests,
+ * so logged-out visitors never saw the assistant exists. This mount is
+ * the static counterpart: the shipped launcher + intro bubble rendered
+ * with NO fetch, purely so guests can see the feature. Every tap leads
+ * to the sign-in modal (window.brOpenSignin); there is no guest chat.
+ *
+ * Gates: homepage only (the shell's data-page), only when the page
+ * rendered logged-out (window._isSignedIn / window.__brctx, both set by
+ * the shell), and never when a league context exists. Retirement uses
+ * the same localStorage key as the signed-in intro bubble, so a guest
+ * who dismisses or taps through does not get the bubble again after
+ * signing in. Sign-in itself is a full navigation (Google OAuth), and
+ * the mount also refuses to render if the real chrome is already up,
+ * so the two launchers can never coexist.
+ */
+(function initGuestAssistantTeaser() {
+  var INTRO_KEY = 'brAsstIntroSeen';
+  function isSignedInOrLeagued() {
+    if (window._isSignedIn) return true;
+    var ctx = window.__brctx;
+    return !!(ctx && (ctx.is_logged_in || ctx.leagueId));
+  }
+  function mount() {
+    if (isSignedInOrLeagued()) return;
+    var shell = document.querySelector('.page-shell');
+    if (!shell || shell.getAttribute('data-page') !== 'home') return;
+    if (document.getElementById('brAsstLauncher')) return;
+    if (!document.body) return;
+
+    var launcher = document.createElement('button');
+    launcher.type = 'button';
+    launcher.className = 'br-asst-launcher';
+    launcher.id = 'brAsstLauncher';
+    launcher.setAttribute('aria-label', 'Ask BR Assistant');
+    var mark = document.createElement('img');
+    mark.src = '/static/BR_Mark_dark.png';
+    mark.alt = '';
+    launcher.appendChild(mark);
+    var dot = document.createElement('span');
+    dot.className = 'br-asst-dot';
+    dot.id = 'brAsstDot';
+    dot.hidden = true;
+    launcher.appendChild(dot);
+    var typing = document.createElement('span');
+    typing.className = 'br-asst-launcher-typing';
+    typing.id = 'brAsstLauncherTyping';
+    typing.hidden = true;
+    typing.setAttribute('aria-hidden', 'true');
+    for (var tdi = 0; tdi < 3; tdi++) {
+      var tdot = document.createElement('span');
+      tdot.className = 'br-asst-dot-anim';
+      typing.appendChild(tdot);
+    }
+    launcher.appendChild(typing);
+    document.body.appendChild(launcher);
+
+    var bubble = null;
+    function retire() {
+      try { localStorage.setItem(INTRO_KEY, '1'); } catch (e) {}
+      if (bubble) { bubble.remove(); bubble = null; }
+    }
+    function tapToSignin() {
+      retire();
+      if (window.brOpenSignin) window.brOpenSignin();
+    }
+    launcher.addEventListener('click', tapToSignin);
+
+    var seen = false;
+    try { seen = localStorage.getItem(INTRO_KEY) === '1'; } catch (e) {}
+    if (seen) return;
+
+    bubble = document.createElement('aside');
+    bubble.className = 'br-asst-bubble';
+    bubble.id = 'brAsstGuestIntro';
+    bubble.setAttribute('aria-label', 'BR Assistant introduction');
+    var bmain = document.createElement('button');
+    bmain.type = 'button';
+    bmain.className = 'br-asst-bubble-main';
+    var blead = document.createElement('span');
+    blead.className = 'br-asst-bubble-lead';
+    blead.textContent = 'Meet BR Assistant';
+    var bline = document.createElement('span');
+    bline.className = 'br-asst-bubble-line';
+    bline.textContent = "Connect your league and ask anything: start/sit calls, trade values, waiver pickups, all from your league's data.";
+    bmain.appendChild(blead);
+    bmain.appendChild(bline);
+    bubble.appendChild(bmain);
+    var brow = document.createElement('div');
+    brow.className = 'br-asst-bubble-chiprow';
+    var bchip = document.createElement('button');
+    bchip.type = 'button';
+    bchip.className = 'br-asst-chip';
+    bchip.textContent = 'Who should I start at FLEX this week?';
+    brow.appendChild(bchip);
+    bubble.appendChild(brow);
+    var signin = document.createElement('a');
+    signin.className = 'br-asst-bubble-signin';
+    signin.id = 'brAsstBubbleSignin';
+    signin.href = '#';
+    signin.textContent = 'Sign in free to try it';
+    bubble.appendChild(signin);
+    var bdismiss = document.createElement('button');
+    bdismiss.type = 'button';
+    bdismiss.className = 'br-asst-bubble-dismiss';
+    bdismiss.setAttribute('aria-label', 'Dismiss');
+    bdismiss.textContent = '×';
+    bubble.appendChild(bdismiss);
+    document.body.appendChild(bubble);
+
+    bdismiss.addEventListener('click', retire);
+    bmain.addEventListener('click', tapToSignin);
+    bchip.addEventListener('click', tapToSignin);
+    signin.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      tapToSignin();
+    });
+
+    // Entrance: ease in once the page has settled (immediately under
+    // prefers-reduced-motion); the launcher is present from first paint.
+    var reduceMotion = false;
+    try {
+      reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    } catch (e) {}
+    if (reduceMotion) {
+      bubble.classList.add('br-asst-bubble-in');
+    } else {
+      window.setTimeout(function () {
+        if (bubble) bubble.classList.add('br-asst-bubble-in');
+      }, 900);
+    }
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', mount);
+  } else {
+    mount();
+  }
+})();
+
 // Surface a friendly message when a Yahoo OAuth attempt bounced back with
 // ?yahoo_error=..., then strip the param so a refresh doesn't repeat it. Without
 // this the user just lands on the home page with a cryptic URL and no feedback.

@@ -5484,6 +5484,33 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             "</div>"
         )
 
+        # The league nav below ships the sign-in modal, but this league-less
+        # return is what public pages get, so core JS that opens the modal
+        # by id (window.brOpenSignin -- and the guest BR Assistant teaser,
+        # whose every tap routes there) had nothing to open on the
+        # homepage. Ship the account variant there, same markup/copy as
+        # the league nav's no-league-context modal; other public pages
+        # keep their direct Google links and stay modal-free.
+        guest_signin_modal = ""
+        if active == "home":
+            from urllib.parse import quote as _url_quote
+            _guest_next = _url_quote(
+                request.path + ("?" + request.query_string.decode()
+                                if request.query_string else ""), safe="")
+            guest_signin_modal = (
+                "<div id='signinModal' class='signin-modal-overlay' role='dialog' aria-modal='true' aria-labelledby='signinModalTitle' aria-hidden='true'>"
+                "  <div class='signin-modal-box'>"
+                "    <h3 class='signin-modal-title' id='signinModalTitle'>Sign in</h3>"
+                "    <p class='signin-modal-sub'>Sign in to access your saved leagues and personalized features.</p>"
+                f"    <a class='google-continue-btn' href='/auth/google?intent=login&amp;next={_guest_next}'><span class='google-button-title'>Continue with Google</span></a>"
+                "    <div class='signin-modal-actions'>"
+                "      <button class='signin-modal-cancel' type='button'"
+                "              onclick='window.brCloseSignin && window.brCloseSignin()'>Cancel</button>"
+                "    </div>"
+                "  </div>"
+                "</div>"
+            )
+
         # On phones the guest dock (_mobile_nav_guest) is the primary nav on every
         # public page (including the landing page), so slim this bar to the logo
         # (br-mnav), exactly as the league nav does. Search/settings still live
@@ -5502,6 +5529,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             f"    {home_utility_bar}"
             "  </div>"
             "</nav>"
+            f"{guest_signin_modal}"
             f"{season_active_flag}"
         )
 

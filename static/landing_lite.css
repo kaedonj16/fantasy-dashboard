@@ -4041,3 +4041,289 @@ input[type="search"] {
   .br-sheet-back:focus-visible,.br-sheet-category:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 }
 @media (prefers-reduced-motion:reduce){.br-sheet-panel-enter,.br-sheet-going-back .br-sheet-panel-enter{animation:none!important}}
+
+/* ============================================================
+   BR Assistant guest teaser (guest homepage, logged-out only).
+   The launcher/bubble rules below are the shipped .br-asst-*
+   rules from dashboard.css, copied so the lite sheet guests
+   actually load can style the teaser mount in app.js
+   (initGuestAssistantTeaser). dashboard.css keeps its own copy
+   for signed-in pages; edit both together. The tokens the
+   launcher and the sign-in modal reference are defined here
+   because this sheet does not carry them (nothing else in this
+   sheet uses them). The sign-in modal rules at the end of the
+   block style the modal build_nav now ships on the guest home.
+   ============================================================ */
+:root {
+    --accent-strong: #0f2747;
+    --gold: #ca8a04;
+    --z-modal-top: 10001;
+}
+:root[data-theme="dark"] {
+    --accent-strong: #0b1220;
+    --gold: #fbbf24;
+}
+.br-asst-launcher {
+    position: fixed;
+    right: 16px;
+    bottom: 66px;
+    z-index: 9995;
+    width: 56px;
+    height: 56px;
+    padding: 0;
+    border: 1px solid var(--accent-strong);
+    border-radius: var(--radius);
+    background: var(--accent);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, .2);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+.br-asst-launcher img {
+    width: 44px;
+    height: 22px;
+    object-fit: contain;
+    display: block;
+}
+.br-asst-dot {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    background: var(--gold);
+    border: 2px solid var(--bg-alt);
+}
+.br-asst-launcher-typing {
+    position: absolute;
+    left: 50%;
+    bottom: 5px;
+    transform: translateX(-50%);
+    display: inline-flex;
+    gap: 2px;
+    pointer-events: none;
+}
+.br-asst-launcher-typing[hidden] {
+    display: none !important;
+}
+.br-asst-launcher-typing .br-asst-dot-anim {
+    width: 4px;
+    height: 4px;
+    background: #fff;
+}
+.br-asst-dot-anim {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    animation: br-asst-typing-dot 1.2s ease-in-out infinite;
+}
+.br-asst-dot-anim:nth-child(2) {
+    animation-delay: .15s;
+}
+.br-asst-dot-anim:nth-child(3) {
+    animation-delay: .3s;
+}
+@keyframes br-asst-typing-dot {
+    0%, 60%, 100% { transform: translateY(0); opacity: .45; }
+    30% { transform: translateY(-4px); opacity: 1; }
+}
+.br-asst-bubble {
+    position: fixed;
+    right: 16px;
+    bottom: 136px;
+    z-index: 9994;
+    width: 326px;
+    max-width: calc(100vw - 32px);
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, .2);
+    padding: 12px 14px;
+}
+.br-asst-bubble::after {
+    content: "";
+    position: absolute;
+    right: 22px;
+    bottom: -6px;
+    width: 12px;
+    height: 12px;
+    background: var(--card);
+    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    transform: rotate(45deg);
+}
+.br-asst-bubble-main {
+    display: block;
+    width: 100%;
+    padding: 0 26px 0 0;
+    border: 0;
+    background: transparent;
+    font-family: inherit;
+    color: var(--text);
+    cursor: pointer;
+    text-align: left;
+}
+.br-asst-bubble-lead {
+    display: block;
+    font-size: 14px;
+    font-weight: 800;
+    line-height: 1.25;
+}
+.br-asst-bubble-line {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.35;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+.br-asst-bubble-chiprow {
+    margin-top: 10px;
+}
+.br-asst-bubble-dismiss {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    font-size: 17px;
+    font-weight: 700;
+    line-height: 1;
+    color: #334155;
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+    font-family: inherit;
+    z-index: 1;
+}
+.br-asst-chip {
+    border: 1px solid var(--border);
+    background: var(--bg);
+    border-radius: var(--radius-pill);
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--accent);
+    padding: 7px 10px;
+    cursor: pointer;
+    font-family: inherit;
+    text-align: left;
+}
+@media (max-width: 768px) {
+    .br-asst-launcher {
+        right: 16px;
+        bottom: calc(var(--dock-safe-bottom) + 14px);
+    }
+    .br-asst-bubble {
+        left: 16px;
+        right: 16px;
+        width: auto;
+        bottom: calc(var(--dock-safe-bottom) + 14px + 56px + 14px);
+    }
+}
+/* Guest-only pieces: the sign-in text link under the chip, the
+   entrance treatment, and the desktop parking spot. On desktop the
+   shipped bottom-right slot would cover the Get Started card, so
+   the guest bubble parks left of it (right edge at viewport center
+   + 140px) with its bottom on the 16px chrome offset. */
+.br-asst-bubble-signin {
+    display: inline-block;
+    margin-top: 10px;
+    font-size: 13px;
+    font-weight: 800;
+    color: var(--accent);
+    text-decoration: none;
+}
+.br-asst-bubble-signin:hover { text-decoration: underline; }
+#brAsstGuestIntro {
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(12px) scale(.98);
+    pointer-events: none;
+}
+#brAsstGuestIntro.br-asst-bubble-in {
+    opacity: 1;
+    visibility: visible;
+    transform: none;
+    pointer-events: auto;
+    transition: opacity .45s cubic-bezier(0.22, 1, 0.36, 1),
+                transform .45s cubic-bezier(0.22, 1, 0.36, 1),
+                visibility 0s;
+}
+@media (min-width: 769px) {
+    #brAsstGuestIntro {
+        right: calc(50vw - 140px);
+        bottom: 16px;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    #brAsstGuestIntro.br-asst-bubble-in {
+        transition: none;
+    }
+}
+/* Sign-in modal (account variant): build_nav ships this markup on
+   the guest home so window.brOpenSignin has a modal to open (the
+   teaser taps route there). Rules copied from dashboard.css; the
+   lite sheet only had descendant hooks for the box before. */
+.signin-modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.72);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    z-index: var(--z-modal-top);
+    align-items: center;
+    justify-content: center;
+}
+.signin-modal-box {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 32px 28px 28px;
+    width: 360px;
+    max-width: 92vw;
+    box-shadow: 0 24px 48px rgba(15, 23, 42, 0.25);
+    animation: scaleIn 0.22s ease forwards;
+}
+@keyframes scaleIn {
+    to {
+        transform: scale(1);
+    }
+}
+.signin-modal-title {
+    margin: 0 0 6px;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text);
+}
+.signin-modal-sub {
+    margin: 0 0 20px;
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+.signin-modal-actions {
+    display: flex;
+    gap: 10px;
+}
+.signin-modal-cancel {
+    flex: 1;
+    padding: 10px;
+    border-radius: var(--radius);
+    border: 1.5px solid var(--border);
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 15px;
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.signin-modal-cancel:hover {
+    background: var(--accent-soft);
+}

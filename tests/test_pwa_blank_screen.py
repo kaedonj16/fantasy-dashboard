@@ -56,7 +56,7 @@ def test_cache_name_bumped_for_blank_screen_fix():
     # ships the assistant intro bubble; v46 ships the Graph Metrics
     # desktop right rail.
     # Assert the current version, not a stale pin.
-    assert "br-fantasy-v46" in SW
+    assert "br-fantasy-v47" in SW
 
 
 def test_nav_timeout_always_races_even_without_cache():
