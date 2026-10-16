@@ -2880,6 +2880,21 @@ def build_metric(bundle, entities, player_ids=None) -> tuple[dict, list[str]]:
     pack["definition"] = spec.get("desc") or spec.get("label") or key
     pack["label"] = spec.get("label") or key
     pack["positions"] = spec.get("positions") or []
+    # Concept families ("missed tackles" is the broken-tackles family):
+    # the hint names a family, not one board, so the pack carries every
+    # member and the definition answers with the whole family. The
+    # headline key keeps the board above.
+    family = aliases.metric_family_for(hint.replace("_", " "))
+    if family and key in family["keys"]:
+        pack["family_metrics"] = [
+            {"metric_key": fk,
+             "label": (config.get(fk) or {}).get("label") or fk,
+             "definition": (config.get(fk) or {}).get("desc") or "",
+             "positions": (config.get(fk) or {}).get("positions") or []}
+            for fk in family["keys"]]
+        names = " and ".join(e["label"] for e in pack["family_metrics"])
+        pack["definition"] = (
+            f"{family['blurb']} The site tracks these as: {names}.")
     season, historical = _target_season(bundle, entities)
     pack["target_season"] = season if historical else None
     pack["historical"] = bool(historical)

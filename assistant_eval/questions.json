@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "description": "Frozen assistant eval set: 125 questions with golden evidence packs for the BR Fantasy assistant (workshop section 5 core 20, the deep-cuts leaderboard family lb1-lb6, and the section 9 P1 league-context types: playoffs, power rankings, standings, matchup, schedule) plus the P1 trade-finding family tf1-tf4, and the P1 breakout board, Teams, and pick-ownership families bo1-bo3, tm1-tm2, pk1 (renamed from the branch po1, which collided with the playoffs po1), with te4 an extra trade_eval. The win-outcome family mu4-mu6 pins the game-outcome phrasings (will I win / what are my chances / will I lose) to matchup packs: a decisive favorite, a close game, and a decisive underdog. The buy/sell board family bl1/sh1 pins pool-wide buy-low and sell-high asks (no named player) to leaderboard value boards, with bsh4/bsh5 as the named-player controls that must stay single-player buy_sell_hold. The roster start/sit family ss5-ss7 pins slot questions that name no players (start at FLEX, start at RB, sit at FLEX) to roster-scoped packs built from the asking user's own lineup: the FLEX occupant is benched for the bench challenger who out-projects him, and the RB question is a keep-the-starter call. The open-layer wild set ow1-ow19 freezes tool evidence (production tool-entry shape) instead of builder packs: ungoverned phrasings, a follow-up chain (ow5-ow7), a two-part question (ow8), a non-default team (ow9), a PRO gate through the open layer (ow18), and an off-site decline (ow19). The breadth family lb7-lb9 pins cross-metric breadth boards (top-N finishes counted across a metric family: lb7 receiving in Kaedon's exact phrasing, lb8 rushing) and the players-only receiving-yards stat board (the team-row regression: the live board once ranked TEAM_LAR first). The detailed-question family dq1-dq11 pins the composed boards: weekly-finish breadth, floor, and ceiling from game logs (dq1-dq3), the value board under an age ceiling (dq4), a metric board restricted to the waiver pool (dq5), opportunity leaders re-ranked by upcoming schedule (dq6), the within-team No. 1 vs No. 2 gap (dq7), positional-rank climbers from value history (dq8), Teams roster breadth (dq9), a category sweep (dq10), and the no-history trap for rank trajectory (dq11). The history family hs1-hs4 adds past-season boards (metric, raw stat, and movers boards for 2024, plus the no-historical-form trap for value boards), and po4 adds the playoff-odds trajectory. The live family lv1-lv2 adds in-game questions over fixture live state, and the draft family dr1-dr2 adds live draft help (best available and a 1.03 prep window). The nfl_schedule family ns1-ns6 pins real NFL fixture questions (tonight's game, the Sunday slate, a named team's game, Monday night, the full week) to NFL schedule packs: a bare 'who plays tonight' answers the NFL game and never the fantasy matchup (ns1 carries the excluded-name trap for the user's own fantasy team), while ns5 is the possessive trap pair ('who am I playing this week') that stays a matchup question.",
+    "description": "Frozen assistant eval set: 125 questions with golden evidence packs for the BR Fantasy assistant (workshop section 5 core 20, the deep-cuts leaderboard family lb1-lb6, and the section 9 P1 league-context types: playoffs, power rankings, standings, matchup, schedule) plus the P1 trade-finding family tf1-tf4, and the P1 breakout board, Teams, and pick-ownership families bo1-bo3, tm1-tm2, pk1 (renamed from the branch po1, which collided with the playoffs po1), with te4 an extra trade_eval. The win-outcome family mu4-mu6 pins the game-outcome phrasings (will I win / what are my chances / will I lose) to matchup packs: a decisive favorite, a close game, and a decisive underdog. The buy/sell board family bl1/sh1 pins pool-wide buy-low and sell-high asks (no named player) to leaderboard value boards, with bsh4/bsh5 as the named-player controls that must stay single-player buy_sell_hold. The roster start/sit family ss5-ss7 pins slot questions that name no players (start at FLEX, start at RB, sit at FLEX) to roster-scoped packs built from the asking user's own lineup: the FLEX occupant is benched for the bench challenger who out-projects him, and the RB question is a keep-the-starter call. The open-layer wild set ow1-ow19 freezes tool evidence (production tool-entry shape) instead of builder packs: ungoverned phrasings, a follow-up chain (ow5-ow7), a two-part question (ow8), a non-default team (ow9), a PRO gate through the open layer (ow18), and an off-site decline (ow19). The breadth family lb7-lb9 pins cross-metric breadth boards (top-N finishes counted across a metric family: lb7 receiving in Kaedon's exact phrasing, lb8 rushing) and the players-only receiving-yards stat board (the team-row regression: the live board once ranked TEAM_LAR first). The detailed-question family dq1-dq11 pins the composed boards: weekly-finish breadth, floor, and ceiling from game logs (dq1-dq3), the value board under an age ceiling (dq4), a metric board restricted to the waiver pool (dq5), opportunity leaders re-ranked by upcoming schedule (dq6), the within-team No. 1 vs No. 2 gap (dq7), positional-rank climbers from value history (dq8), Teams roster breadth (dq9), a category sweep (dq10), and the no-history trap for rank trajectory (dq11). The history family hs1-hs4 adds past-season boards (metric, raw stat, and movers boards for 2024, plus the no-historical-form trap for value boards), and po4 adds the playoff-odds trajectory. The live family lv1-lv2 adds in-game questions over fixture live state, and the draft family dr1-dr2 adds live draft help (best available and a 1.03 prep window). The nfl_schedule family ns1-ns6 pins real NFL fixture questions (tonight's game, the Sunday slate, a named team's game, Monday night, the full week) to NFL schedule packs: a bare 'who plays tonight' answers the NFL game and never the fantasy matchup (ns1 carries the excluded-name trap for the user's own fantasy team), while ns5 is the possessive trap pair ('who am I playing this week') that stays a matchup question. The missed-tackle question mt1 pins the broken-tackles family in Kaedon's exact phrasing: 'what missed tackle metrics do I have' answers with both tracked rates (Broken Tackles/Carry and Broken Tackles / Catch, the site's missed-tackles-forced data) instead of the not-tracked decline the live assistant once gave.",
     "scenario": "Kaedon's league Blackedraw, her team Caleb's Casting Couch, Week 7 of the 2026 season.",
     "packs": "Each evidence_pack mirrors, field for field, the dict the matching builder in dashboard_services/assistant/evidence.py returns. Values inside a pack are the only numbers an answer may cite.",
     "recapture": "These packs are frozen fixtures. Before any launch decision, recapture them from the live tools with: python3 scripts/run_assistant_eval.py --capture (writes assistant_eval/captured_questions.json; it never overwrites this file). A launch call made on stale fixtures is not a launch call.",
@@ -17307,6 +17307,120 @@
           "Seattle Seahawks",
           "Dallas Cowboys",
           "San Francisco 49ers"
+        ]
+      }
+    },
+    {
+      "id": "mt1",
+      "type": "metric",
+      "question": "what missed tackle metrics do I have?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "metric",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "metric_key": "avoided_tackles_per_carry",
+        "definition": "Broken tackles are missed tackles forced by the ball carrier (Pro Football Reference charting). The site tracks these as: Broken Tackles/Carry and Broken Tackles / Catch.",
+        "label": "Broken Tackles/Carry",
+        "positions": [
+          "RB"
+        ],
+        "family_metrics": [
+          {
+            "metric_key": "avoided_tackles_per_carry",
+            "label": "Broken Tackles/Carry",
+            "definition": "Broken tackles per carry on rush attempts (PFR charting via nflverse).",
+            "positions": [
+              "RB"
+            ]
+          },
+          {
+            "metric_key": "rec_broken_tackles_per_reception",
+            "label": "Broken Tackles / Catch",
+            "definition": "Broken tackles per reception on receiving plays only (Pro Football Reference charting): PFR receiving broken tackles over receptions. Two decimals, not a percentage. Distinct from the combined rush plus rec broken tackle rates.",
+            "positions": [
+              "WR",
+              "RB",
+              "TE"
+            ]
+          }
+        ],
+        "target_season": null,
+        "historical": false,
+        "leaderboard_top5": [
+          {
+            "player_id": "jahmyr-gibbs",
+            "name": "Jahmyr Gibbs",
+            "team": "DET",
+            "position": "RB",
+            "value": 0.19,
+            "on_my_roster": false
+          },
+          {
+            "player_id": "bucky-irving",
+            "name": "Bucky Irving",
+            "team": "TB",
+            "position": "RB",
+            "value": 0.18,
+            "on_my_roster": false
+          },
+          {
+            "player_id": "james-conner",
+            "name": "James Conner",
+            "team": "ARI",
+            "position": "RB",
+            "value": 0.17,
+            "on_my_roster": false
+          },
+          {
+            "player_id": "bijan-robinson",
+            "name": "Bijan Robinson",
+            "team": "ATL",
+            "position": "RB",
+            "value": 0.16,
+            "on_my_roster": false
+          },
+          {
+            "player_id": "derrick-henry",
+            "name": "Derrick Henry",
+            "team": "BAL",
+            "position": "RB",
+            "value": 0.15,
+            "on_my_roster": false
+          }
+        ]
+      },
+      "reference": {
+        "verdict_kind": "leader",
+        "pick": "Jahmyr Gibbs",
+        "key_numbers": [
+          0.19
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Broken Tackles/Carry",
+          "Broken Tackles / Catch",
+          "Gibbs"
         ]
       }
     }

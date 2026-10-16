@@ -868,6 +868,15 @@ def _keyword_route(message: str) -> dict:
             if cand in m:
                 hint = cand
                 break
+        if hint is None:
+            # Semantic metric phrases ("missed tackles", "fantasy points
+            # per game") name the metric even when the four literals
+            # above miss; raw-stat phrases stay out (kind stat boards
+            # route elsewhere).
+            from dashboard_services.assistant import aliases as _aliases
+            _resolved = _aliases.resolve_phrase(m)
+            if _resolved and _resolved.get("kind") == "metric":
+                hint = _resolved["phrase"]
         return {**base, "intent": "metric", "metric_hint": hint,
                 "season": _season_in(m)}
     # Player fallthrough: a question-shaped message carrying a player

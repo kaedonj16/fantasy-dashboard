@@ -485,6 +485,40 @@ def _tool_metric_definition(bundle, args) -> dict:
                                      else top.get(key))}
         out["receipts"].append({"label": f"{out['leader']['name']} {out['label']}",
                                 "value": str(out["leader"]["value"])})
+    # Concept families ("missed tackles" is the broken-tackles family):
+    # the phrase names a family, so the entry also carries every sibling
+    # metric with its own definition and leader; the answer can then
+    # enumerate what the site tracks instead of naming one rate.
+    family = aliases.metric_family_for(phrase)
+    if family and key in family["keys"]:
+        out["concept"] = family["blurb"]
+        also = []
+        for fk in family["keys"]:
+            if fk == key or fk not in config:
+                continue
+            fspec = config[fk] or {}
+            entry = {"metric_key": fk, "label": fspec.get("label") or fk,
+                     "definition": fspec.get("desc") or fspec.get("label") or fk,
+                     "positions": fspec.get("positions") or []}
+            if ev._gate_for(bundle, fk) != "gated":
+                try:
+                    frows, _fq = ev._season_board(fk, fspec,
+                                                  bundle.get("season"), None)
+                except Exception:
+                    frows = []
+                if frows:
+                    ftop = frows[0]
+                    entry["leader"] = {
+                        "name": ftop.get("name"),
+                        "value": _n(ftop.get("value")
+                                    if ftop.get("value") is not None
+                                    else ftop.get(fk))}
+                    out["receipts"].append(
+                        {"label": f"{entry['leader']['name']} {entry['label']}",
+                         "value": str(entry["leader"]["value"])})
+            also.append(entry)
+        if also:
+            out["also_tracked"] = also
     out["link"] = {"href": f"/metrics?metric={key}",
                    "label": "Open Advanced Metrics"}
     return out
