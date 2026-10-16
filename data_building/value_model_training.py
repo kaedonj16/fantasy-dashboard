@@ -720,6 +720,26 @@ def build_inference_dataframe() -> pd.DataFrame:
 # Rewrite usage table with model outputs
 # ------------------------------------------------
 
+def _daily_move_cap() -> float:
+    """Max fractional day-over-day move for a board value.
+
+    Defaults to ±10%/day (raised from ±2%/day on 2026-10-16, Kaedon's call:
+    at 2%/day the board took weeks to converge to the fresh market blend
+    after a shock). VALUE_MOVE_CAP_OVERRIDE lets a one-off run bypass the
+    clamp for an intentional board reset (set e.g. "50" ≈ unclamped for one
+    run, then unset). Kept in lock-step with
+    trade_value_model.DAILY_MOVE_CAP, which reads the same env var.
+    """
+    return float(os.environ.get("VALUE_MOVE_CAP_OVERRIDE", "0.10"))
+
+
+def _clamp_board_value(cur: float, old: float, cap: float) -> float:
+    """Bound a new board value to ±cap of yesterday's stored value."""
+    _lo = old * (1.0 - cap)
+    _hi = old * (1.0 + cap)
+    return round(min(max(float(cur), _lo), _hi), 1)
+
+
 def rewrite_value_table_with_model() -> Path:
     source_path = DATA_DIR / "usage_table.json"
     if not source_path.exists():
@@ -797,18 +817,14 @@ def rewrite_value_table_with_model() -> Path:
     # player). A player simply missing from a source counts as a low signal.
     _OVERMARKET_TRIGGER = 2.5    # model must be >= 2.5x the external consensus to act
     _OVERMARKET_MIN_GAP = 100.0  # ...and at least this many points above it (skip low-stakes)
-    # Max day-over-day move per player (the only smoothing). 0.02 = ±2%/day,
-    # which caps a player mid-re-rating at ~+15%/week instead of the ~+40%/week
-    # that ±5%/day allowed - real dynasty values don't swing that fast. Only binds
-    # on players the model is re-rating hard; normal day-to-day moves are smaller.
-    # Kept in lock-step with trade_value_model.DAILY_MOVE_CAP so the model board
-    # and the served calibrated track move at the same rate.
-    #
-    # VALUE_MOVE_CAP_OVERRIDE lets a one-off run bypass the clamp so an intentional
-    # model change lands immediately instead of easing in at 2%/day over ~weeks.
-    # Set it (e.g. "50" ≈ unclamped) for a single reset run, then unset it so the
-    # normal 2%/day smoothing resumes. Same var gates the WLS calibrated track.
-    _MAX_DAILY_MOVE = float(os.environ.get("VALUE_MOVE_CAP_OVERRIDE", "0.02"))
+    # Max day-over-day move per player (the only smoothing on this board).
+    # ±10%/day: a player mid-re-rating converges to the fresh blend in ~a week
+    # instead of the ~7 weeks ±2%/day took after a shock, while still bounding
+    # any single day's swing. Kept in lock-step with
+    # trade_value_model.DAILY_MOVE_CAP so the model board and the served
+    # calibrated track move at the same rate. VALUE_MOVE_CAP_OVERRIDE (read by
+    # _daily_move_cap) bypasses the clamp for a one-off reset run.
+    _MAX_DAILY_MOVE = _daily_move_cap()
 
     # CRITICAL FIX: Load vendor values to use directly when available
     fc_df = load_fantasycalc_df()
@@ -1264,9 +1280,7 @@ def rewrite_value_table_with_model() -> Path:
                 _old = float(_old)
                 if _old <= 0:
                     continue
-                _lo = _old * (1.0 - _MAX_DAILY_MOVE)
-                _hi = _old * (1.0 + _MAX_DAILY_MOVE)
-                _a[_k] = round(min(max(float(_cur), _lo), _hi), 1)
+                _a[_k] = _clamp_board_value(_cur, _old, _MAX_DAILY_MOVE)
 
     pos_to_indices: dict[str, list[int]] = {}
 
