@@ -103,6 +103,21 @@ _FAMILY_PHRASES = {
 METRIC_PHRASES = {
     "fantasy points": "ppr_pts", "ppr points": "ppr_pts",
     "points scored": "ppr_pts",
+    # Scoring superlatives are the season-total PPR points board: "top
+    # scorer" names no other stat, and a season's scoring leader is a
+    # points total, never a rate. "most points" alone is here for the
+    # board builders; the router keeps bare "most points" (no season
+    # named) on the standings path, where it means team points-for.
+    "top scorer": "ppr_pts", "top scorers": "ppr_pts",
+    "highest scorer": "ppr_pts", "leading scorer": "ppr_pts",
+    "best scorer": "ppr_pts",
+    "top scoring player": "ppr_pts", "highest scoring player": "ppr_pts",
+    "most points scored": "ppr_pts", "most fantasy points scored": "ppr_pts",
+    "scored the most points": "ppr_pts", "scored the most": "ppr_pts",
+    "led the league in scoring": "ppr_pts",
+    "leads the league in scoring": "ppr_pts",
+    "lead the league in scoring": "ppr_pts",
+    "most points": "ppr_pts",
     "fantasy points per game": "ppr_pts_per_game",
     "points per game": "ppr_pts_per_game", "ppg": "ppr_pts_per_game",
     "receiving yards per game": "rec_yards_per_game",
@@ -113,7 +128,61 @@ METRIC_PHRASES = {
     "total yards": "total_yards",
     "target share": "target_share", "snap share": "snap_share",
     "air yards share": "air_yards_share",
+    # Broken tackles ARE missed tackles: the tackles a ball carrier
+    # forces defenders to miss (PFR charting). Users ask for them as
+    # "missed tackles" or "elusiveness" far more often than by the
+    # catalog's "Broken Tackles" labels, and the concept names a family
+    # (see METRIC_FAMILIES): the per-carry rate is the headline key.
+    "broken tackles per carry": "avoided_tackles_per_carry",
+    "broken tackles per catch": "rec_broken_tackles_per_reception",
+    "broken tackles per reception": "rec_broken_tackles_per_reception",
+    "missed tackles": "avoided_tackles_per_carry",
+    "missed tackle": "avoided_tackles_per_carry",
+    "missed tackles forced": "avoided_tackles_per_carry",
+    "broken tackles": "avoided_tackles_per_carry",
+    "broken tackle": "avoided_tackles_per_carry",
+    "elusiveness": "avoided_tackles_per_carry",
+    "most elusive": "avoided_tackles_per_carry",
 }
+
+# Metric concepts that name a FAMILY of tracked metrics, not one board:
+# a "what missed tackle metrics do I have" question is only answered
+# honestly by naming every member. The headline key (first in "keys")
+# carries the board; builders attach the whole family to the pack so
+# the answer can enumerate it. Phrases map to family ids.
+METRIC_FAMILIES = {
+    "broken_tackles": {
+        "keys": ("avoided_tackles_per_carry",
+                 "rec_broken_tackles_per_reception"),
+        "blurb": ("Broken tackles are missed tackles forced by the ball "
+                  "carrier (Pro Football Reference charting)."),
+    },
+}
+
+_CONCEPT_FAMILY_PHRASES = {
+    "missed tackles": "broken_tackles",
+    "missed tackle": "broken_tackles",
+    "missed tackles forced": "broken_tackles",
+    "broken tackles": "broken_tackles",
+    "broken tackle": "broken_tackles",
+    "elusiveness": "broken_tackles",
+}
+
+
+def metric_family_for(text: str) -> dict | None:
+    """The tracked-metric family a concept phrase names, else None.
+
+    Returns {"id", "keys", "blurb"}: the family's catalog keys in
+    headline-first order and the one-line concept explanation.
+    """
+    norm = _norm(str(text or "").replace("_", " "))
+    if not norm:
+        return None
+    hit = _find_phrase(norm, _CONCEPT_FAMILY_PHRASES)
+    if not hit:
+        return None
+    family = METRIC_FAMILIES[hit[1]]
+    return {"id": hit[1], "keys": family["keys"], "blurb": family["blurb"]}
 
 # "Best receiver" and friends: a superlative over a position means the
 # fantasy-points board for that position, basis stated, never a guess at

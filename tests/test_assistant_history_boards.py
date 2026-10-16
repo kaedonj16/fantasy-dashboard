@@ -204,17 +204,36 @@ def test_stat_board_reads_the_named_seasons_weeks(monkeypatch):
 
 
 def test_historical_finishes_board_reads_that_seasons_game_logs(monkeypatch):
-    weeks = [{"p1": (30.0, "WR"), "p2": (10.0, "WR")}] * 10
+    # A real-shaped WR field (14 deep, so a top-12 finish is a genuine
+    # contest), plus the raw feed's non-skill lines riding along: a long
+    # snapper and a safety whose lines score 0 every week. Neither may
+    # ever surface on the board.
+    field = {"p1": 30.0, "p2": 10.0}
+    for i in range(3, 15):
+        field[f"w{i}"] = 12.0 - i * 0.5
+    week = {pid: (pts, "WR") for pid, pts in field.items()}
+    week["ls1"] = (0.0, "LS")
+    week["s1"] = (0.0, "S")
+    weeks = [dict(week) for _ in range(10)]
     monkeypatch.setattr(evidence, "_weekly_scored",
                         lambda bundle: (weeks, bundle["week"] - 1))
-    monkeypatch.setattr(evidence, "_index", lambda: {
-        "p1": {"full_name": "Hist One", "position": "WR", "team": "BUF"},
-        "p2": {"full_name": "Hist Two", "position": "WR", "team": "MIA"}})
+    index = {pid: {"full_name": f"Wide {pid}", "position": "WR",
+                   "team": "BUF"} for pid in field}
+    index["p1"] = {"full_name": "Hist One", "position": "WR", "team": "BUF"}
+    index["p2"] = {"full_name": "Hist Two", "position": "WR", "team": "MIA"}
+    index["ls1"] = {"full_name": "Snapper Sam", "position": "LS",
+                    "team": "BUF"}
+    index["s1"] = {"full_name": "Safety Sal", "position": "S", "team": "MIA"}
+    monkeypatch.setattr(evidence, "_index", lambda: index)
     pack, _tools = evidence.build_leaderboard(
         _bundle(), {"board_kind": "finishes", "season": 2024})
     assert pack["available"] is True
     assert pack["board"][0]["name"] == "Hist One"
     assert pack["board"][0]["value"] == 10
+    names = {r["name"] for r in pack["board"]}
+    assert "Snapper Sam" not in names and "Safety Sal" not in names
+    assert all(r["position"] in ("QB", "RB", "WR", "TE")
+               for r in pack["board"])
     assert "2024" in pack["qualification_text"]
 
 

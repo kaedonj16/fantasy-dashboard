@@ -1037,6 +1037,52 @@ def test_stacked_bars_svg_segments_and_single_segment_days():
     assert "09-29: 7 anonymous" in svg
 
 
+def test_stacked_bars_svg_segments_meet_flush_with_one_sided_rounding():
+    import re
+
+    pytest.importorskip("flask")
+    from routes import internal_bp as abp
+
+    svg = abp._stacked_bars_svg([("09-29", 20, 13, 7)],
+                                bar_color="#3b82f6", dark_color="#1d4ed8")
+    # Segments are paths, never rx rects: an SVG rect rx rounds all four
+    # corners and clamps to half the segment height, which rendered short
+    # segments as pills floating over a white seam gap.
+    assert "rx=" not in svg
+    paths = re.findall(r'<path d="([^"]+)" fill="(#[0-9a-f]+)"', svg)
+    assert [fill for _, fill in paths] == ["#1d4ed8", "#3b82f6"]
+    signed_d, anon_d = paths[0][0], paths[1][0]
+    # Flush seam: the signed segment's top edge is the anonymous segment's
+    # bottom edge, at the same y.
+    seam_top = float(re.match(r"M[\d.]+ ([\d.]+)", signed_d).group(1))
+    seam_bot = float(re.search(r"L[\d.]+ ([\d.]+)Z$", anon_d).group(1))
+    assert seam_top == seam_bot
+    # Rounding only at the outer ends: two arcs each (the bottom pair on
+    # the signed segment, the top pair on the anonymous one), none at the
+    # seam where they meet.
+    assert signed_d.count("A") == 2
+    assert anon_d.count("A") == 2
+    # A lone segment rounds both ends (four arcs); a zero day draws nothing.
+    for pairs in ([("09-27", 5, 5, 0)], [("09-28", 3, 0, 3)]):
+        lone = abp._stacked_bars_svg(pairs, bar_color="#3b82f6",
+                                     dark_color="#1d4ed8")
+        (d,) = re.findall(r'<path d="([^"]+)"', lone)
+        assert d.count("A") == 4
+    empty = abp._stacked_bars_svg([("09-30", 0, 0, 0)])
+    assert "<path" not in empty
+
+
+def test_anx_js_stacked_segments_use_one_sided_paths():
+    pytest.importorskip("flask")
+    from routes import internal_bp as abp
+
+    # The hydrated renderer mirrors the server: split segments are paths
+    # rounded only at the outer end, not rx rects.
+    assert "function segPath(" in abp._ANX_JS
+    assert "rxSigned" not in abp._ANX_JS
+    assert "segPath(x, base - hSigned" in abp._ANX_JS
+
+
 def test_chart_card_split_payload_legend_and_attrs():
     pytest.importorskip("flask")
     from routes import internal_bp as abp

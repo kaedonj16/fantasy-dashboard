@@ -668,6 +668,30 @@ def _bars_svg(pairs, width=680, height=190, bar_color="#4f8ff7", max_bar_w=48):
     return "".join(parts)
 
 
+def _seg_path(x, y, w, h, r_top, r_bot):
+    """SVG path for one bar segment: a rect rounded only at the requested
+    end (r_top rounds the top corners, r_bot the bottom corners; 0 keeps
+    that end square). Radii clamp to the segment, so a short segment can
+    never balloon into a pill the way a plain rect rx does (an SVG rect's
+    rx rounds all four corners and clamps to half the segment height)."""
+    rt = max(0.0, min(r_top, w / 2.0, h))
+    rb = max(0.0, min(r_bot, w / 2.0, h - rt))
+    parts = ["M%.1f %.1f" % (x, y + rt)]
+    if rt:
+        parts.append("A%.1f %.1f 0 0 1 %.1f %.1f" % (rt, rt, x + rt, y))
+    parts.append("L%.1f %.1f" % (x + w - rt, y))
+    if rt:
+        parts.append("A%.1f %.1f 0 0 1 %.1f %.1f" % (rt, rt, x + w, y + rt))
+    parts.append("L%.1f %.1f" % (x + w, y + h - rb))
+    if rb:
+        parts.append("A%.1f %.1f 0 0 1 %.1f %.1f" % (rb, rb, x + w - rb, y + h))
+    parts.append("L%.1f %.1f" % (x + rb, y + h))
+    if rb:
+        parts.append("A%.1f %.1f 0 0 1 %.1f %.1f" % (rb, rb, x, y + h - rb))
+    parts.append("Z")
+    return "".join(parts)
+
+
 def _stacked_bars_svg(pairs, width=680, height=190, bar_color="#3b82f6",
                       dark_color="#1d4ed8", max_bar_w=48):
     """pairs: list of (label, total, signed_in, anonymous). Same geometry
@@ -705,21 +729,24 @@ def _stacked_bars_svg(pairs, width=680, height=190, bar_color="#3b82f6",
             bh = max((total / maxv) * plot_h, 2)
             h_signed = bh * signed_in / total if signed_in else 0.0
             h_anon = bh - h_signed
-            if signed_in:
-                # A lone signed-in segment is the whole bar: round its top.
-                rx = ' rx="2"' if not anonymous else ""
+            # Segments meet flush at the seam: the bottom segment rounds
+            # only at the baseline, the top segment only at the top, and a
+            # lone segment rounds both ends.
+            if signed_in and h_signed > 0:
                 parts.append(
-                    '<rect x="%.1f" y="%.1f" width="%.1f" height="%.1f"%s fill="%s">'
-                    '<title>%s: %s signed in</title></rect>'
-                    % (x, base - h_signed, bw, h_signed, rx, dark_color,
-                       html.escape(str(label)), signed_in)
+                    '<path d="%s" fill="%s">'
+                    '<title>%s: %s signed in</title></path>'
+                    % (_seg_path(x, base - h_signed, bw, h_signed,
+                                 0 if anonymous else 2, 2),
+                       dark_color, html.escape(str(label)), signed_in)
                 )
-            if anonymous:
+            if anonymous and h_anon > 0:
                 parts.append(
-                    '<rect x="%.1f" y="%.1f" width="%.1f" height="%.1f" rx="2" fill="%s">'
-                    '<title>%s: %s anonymous</title></rect>'
-                    % (x, base - bh, bw, h_anon, bar_color,
-                       html.escape(str(label)), anonymous)
+                    '<path d="%s" fill="%s">'
+                    '<title>%s: %s anonymous</title></path>'
+                    % (_seg_path(x, base - bh, bw, h_anon,
+                                 2, 0 if signed_in else 2),
+                       bar_color, html.escape(str(label)), anonymous)
                 )
             parts.append(
                 '<text x="%.1f" y="%.1f" text-anchor="middle" class="vallab">%s</text>'
@@ -1515,6 +1542,24 @@ _ANX_JS = """
   }
 
   /* Interactive charts: hover tooltips, range buttons, bar/line toggle. */
+  /* One stacked-bar segment as a path, rounded only at the requested end
+     (a rect's rx rounds all four corners and clamps to half the segment
+     height, which turned short segments into floating pills). Radii clamp
+     to the segment, mirroring _seg_path in the server renderer. */
+  function segPath(x, y, w, h, rTop, rBot) {
+    var rt = Math.max(0, Math.min(rTop, w / 2, h));
+    var rb = Math.max(0, Math.min(rBot, w / 2, h - rt));
+    var p = "M" + x.toFixed(1) + " " + (y + rt).toFixed(1);
+    if (rt) p += "A" + rt.toFixed(1) + " " + rt.toFixed(1) + " 0 0 1 " + (x + rt).toFixed(1) + " " + y.toFixed(1);
+    p += "L" + (x + w - rt).toFixed(1) + " " + y.toFixed(1);
+    if (rt) p += "A" + rt.toFixed(1) + " " + rt.toFixed(1) + " 0 0 1 " + (x + w).toFixed(1) + " " + (y + rt).toFixed(1);
+    p += "L" + (x + w).toFixed(1) + " " + (y + h - rb).toFixed(1);
+    if (rb) p += "A" + rb.toFixed(1) + " " + rb.toFixed(1) + " 0 0 1 " + (x + w - rb).toFixed(1) + " " + (y + h).toFixed(1);
+    p += "L" + (x + rb).toFixed(1) + " " + (y + h).toFixed(1);
+    if (rb) p += "A" + rb.toFixed(1) + " " + rb.toFixed(1) + " 0 0 1 " + x.toFixed(1) + " " + (y + h - rb).toFixed(1);
+    return p + "Z";
+  }
+
   function renderChart(wrap, data, state) {
     var color = wrap.getAttribute("data-color") || "#3b82f6";
     var dark = wrap.getAttribute("data-color-dark") || color;
@@ -1563,17 +1608,18 @@ _ANX_JS = """
         if (split) {
           var si = d[2], anon = d[3];
           var hSigned = v ? bh * si / v : 0;
+          var hAnon = bh - hSigned;
           var base = padT + plotH;
-          var rxSigned = anon ? "" : ' rx="3"';
-          if (si) {
-            s += '<rect x="' + x.toFixed(1) + '" y="' + (base - hSigned).toFixed(1) +
-              '" width="' + bw.toFixed(1) + '" height="' + hSigned.toFixed(1) + '"' +
-              rxSigned + ' fill="' + dark + '"/>';
+          /* Segments meet flush at the seam: bottom segment rounds only
+             at the baseline, top segment only at the top, a lone segment
+             rounds both ends. Zero-height segments draw nothing. */
+          if (si && hSigned > 0) {
+            s += '<path d="' + segPath(x, base - hSigned, bw, hSigned, anon ? 0 : 3, 3) +
+              '" fill="' + dark + '"/>';
           }
-          if (anon) {
-            s += '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) +
-              '" width="' + bw.toFixed(1) + '" height="' + (bh - hSigned).toFixed(1) +
-              '" rx="3" fill="' + color + '"/>';
+          if (anon && hAnon > 0) {
+            s += '<path d="' + segPath(x, y, bw, hAnon, 3, si ? 0 : 3) +
+              '" fill="' + color + '"/>';
           }
         } else {
           s += '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + bw.toFixed(1) +

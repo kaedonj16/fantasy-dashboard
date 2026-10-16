@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "description": "Frozen assistant eval set: 125 questions with golden evidence packs for the BR Fantasy assistant (workshop section 5 core 20, the deep-cuts leaderboard family lb1-lb6, and the section 9 P1 league-context types: playoffs, power rankings, standings, matchup, schedule) plus the P1 trade-finding family tf1-tf4, and the P1 breakout board, Teams, and pick-ownership families bo1-bo3, tm1-tm2, pk1 (renamed from the branch po1, which collided with the playoffs po1), with te4 an extra trade_eval. The win-outcome family mu4-mu6 pins the game-outcome phrasings (will I win / what are my chances / will I lose) to matchup packs: a decisive favorite, a close game, and a decisive underdog. The buy/sell board family bl1/sh1 pins pool-wide buy-low and sell-high asks (no named player) to leaderboard value boards, with bsh4/bsh5 as the named-player controls that must stay single-player buy_sell_hold. The roster start/sit family ss5-ss7 pins slot questions that name no players (start at FLEX, start at RB, sit at FLEX) to roster-scoped packs built from the asking user's own lineup: the FLEX occupant is benched for the bench challenger who out-projects him, and the RB question is a keep-the-starter call. The open-layer wild set ow1-ow19 freezes tool evidence (production tool-entry shape) instead of builder packs: ungoverned phrasings, a follow-up chain (ow5-ow7), a two-part question (ow8), a non-default team (ow9), a PRO gate through the open layer (ow18), and an off-site decline (ow19). The breadth family lb7-lb9 pins cross-metric breadth boards (top-N finishes counted across a metric family: lb7 receiving in Kaedon's exact phrasing, lb8 rushing) and the players-only receiving-yards stat board (the team-row regression: the live board once ranked TEAM_LAR first). The detailed-question family dq1-dq11 pins the composed boards: weekly-finish breadth, floor, and ceiling from game logs (dq1-dq3), the value board under an age ceiling (dq4), a metric board restricted to the waiver pool (dq5), opportunity leaders re-ranked by upcoming schedule (dq6), the within-team No. 1 vs No. 2 gap (dq7), positional-rank climbers from value history (dq8), Teams roster breadth (dq9), a category sweep (dq10), and the no-history trap for rank trajectory (dq11). The history family hs1-hs4 adds past-season boards (metric, raw stat, and movers boards for 2024, plus the no-historical-form trap for value boards), and po4 adds the playoff-odds trajectory. The live family lv1-lv2 adds in-game questions over fixture live state, and the draft family dr1-dr2 adds live draft help (best available and a 1.03 prep window). The nfl_schedule family ns1-ns6 pins real NFL fixture questions (tonight's game, the Sunday slate, a named team's game, Monday night, the full week) to NFL schedule packs: a bare 'who plays tonight' answers the NFL game and never the fantasy matchup (ns1 carries the excluded-name trap for the user's own fantasy team), while ns5 is the possessive trap pair ('who am I playing this week') that stays a matchup question.",
+    "description": "Frozen assistant eval set: 148 questions with golden evidence packs for the BR Fantasy assistant (workshop section 5 core 20, the deep-cuts leaderboard family lb1-lb6, and the section 9 P1 league-context types: playoffs, power rankings, standings, matchup, schedule) plus the P1 trade-finding family tf1-tf4, and the P1 breakout board, Teams, and pick-ownership families bo1-bo3, tm1-tm2, pk1 (renamed from the branch po1, which collided with the playoffs po1), with te4 an extra trade_eval. The win-outcome family mu4-mu6 pins the game-outcome phrasings (will I win / what are my chances / will I lose) to matchup packs: a decisive favorite, a close game, and a decisive underdog. The buy/sell board family bl1/sh1 pins pool-wide buy-low and sell-high asks (no named player) to leaderboard value boards, with bsh4/bsh5 as the named-player controls that must stay single-player buy_sell_hold. The roster start/sit family ss5-ss7 pins slot questions that name no players (start at FLEX, start at RB, sit at FLEX) to roster-scoped packs built from the asking user's own lineup: the FLEX occupant is benched for the bench challenger who out-projects him, and the RB question is a keep-the-starter call. The open-layer wild set ow1-ow19 freezes tool evidence (production tool-entry shape) instead of builder packs: ungoverned phrasings, a follow-up chain (ow5-ow7), a two-part question (ow8), a non-default team (ow9), a PRO gate through the open layer (ow18), and an off-site decline (ow19). The breadth family lb7-lb9 pins cross-metric breadth boards (top-N finishes counted across a metric family: lb7 receiving in Kaedon's exact phrasing, lb8 rushing) and the players-only receiving-yards stat board (the team-row regression: the live board once ranked TEAM_LAR first). The detailed-question family dq1-dq11 pins the composed boards: weekly-finish breadth, floor, and ceiling from game logs (dq1-dq3), the value board under an age ceiling (dq4), a metric board restricted to the waiver pool (dq5), opportunity leaders re-ranked by upcoming schedule (dq6), the within-team No. 1 vs No. 2 gap (dq7), positional-rank climbers from value history (dq8), Teams roster breadth (dq9), a category sweep (dq10), and the no-history trap for rank trajectory (dq11). The history family hs1-hs5 adds past-season boards (metric, raw stat, and movers boards for 2024, plus the no-historical-form trap for value boards, and hs5 the top-scorer freeze: Kaedon's exact 'Who was the top scorer in 2024?', whose live answer once served the current season's board leader and total instead of 2024's), and po4 adds the playoff-odds trajectory. hs6 adds the past-season weekly-finishes board in Kaedon's exact phrasing (the live answer once topped it with a long snapper at 0 PPG); its golden pack is the fixed builder's output over the real 2025 game logs and ranks skill positions only. The live family lv1-lv2 adds in-game questions over fixture live state, and the draft family dr1-dr2 adds live draft help (best available and a 1.03 prep window), and dr3-dr5 pin pick-slotted prep targets: dr3 is Kaedon's exact 'Who should I target at 1.03?' with the class headliner demoted to faller-only (the faller_not_target trap), dr4 the 1.01 control where the target IS the top name with no faller line, and dr5 a 2.03 mid-round case. The nfl_schedule family ns1-ns6 pins real NFL fixture questions (tonight's game, the Sunday slate, a named team's game, Monday night, the full week) to NFL schedule packs: a bare 'who plays tonight' answers the NFL game and never the fantasy matchup (ns1 carries the excluded-name trap for the user's own fantasy team), while ns5 is the possessive trap pair ('who am I playing this week') that stays a matchup question. ow20-ow21 freeze the 2026-10-15 compare entity-resolution cases: 'Compare Ja'Marr Chase and Justin Jefferson' (the WR/LB namesake must resolve silently to the WR, receipts are the WR's) and 'Compare Ja'Marr Chase and Jaxson Smith Njigba' (Kaedon's spelling, no hyphen and an extra s, must resolve to Jaxon Smith-Njigba and compare). The missed-tackle question mt1 pins the broken-tackles family in Kaedon's exact phrasing: 'what missed tackle metrics do I have' answers with both tracked rates (Broken Tackles/Carry and Broken Tackles / Catch, the site's missed-tackles-forced data) instead of the not-tracked decline the live assistant once gave.",
     "scenario": "Kaedon's league Blackedraw, her team Caleb's Casting Couch, Week 7 of the 2026 season.",
     "packs": "Each evidence_pack mirrors, field for field, the dict the matching builder in dashboard_services/assistant/evidence.py returns. Values inside a pack are the only numbers an answer may cite.",
     "recapture": "These packs are frozen fixtures. Before any launch decision, recapture them from the live tools with: python3 scripts/run_assistant_eval.py --capture (writes assistant_eval/captured_questions.json; it never overwrites this file). A launch call made on stale fixtures is not a launch call.",
@@ -13232,6 +13232,240 @@
       }
     },
     {
+      "id": "ow20",
+      "type": "open",
+      "question": "Compare Ja'Marr Chase and Justin Jefferson",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "open",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "evidence": [
+          {
+            "tool": "compare_players",
+            "ok": true,
+            "players_detail": [
+              {
+                "player_id": "jamarr-chase",
+                "name": "Ja'Marr Chase",
+                "team": "CIN",
+                "position": "WR",
+                "value": 9800,
+                "ppg": 22.4,
+                "expected_ppg": 20.9,
+                "target_share": 0.31,
+                "snap_share": 0.91,
+                "touches_per_game": 11.2,
+                "games": 6,
+                "recent_ppg": 24.6
+              },
+              {
+                "player_id": "justin-jefferson",
+                "name": "Justin Jefferson",
+                "team": "MIN",
+                "position": "WR",
+                "value": 7500,
+                "ppg": 15.4,
+                "expected_ppg": 16.2,
+                "target_share": 0.27,
+                "snap_share": 0.86,
+                "touches_per_game": 8.1,
+                "games": 5,
+                "recent_ppg": 8.1
+              }
+            ],
+            "players": [
+              {
+                "player_id": "jamarr-chase",
+                "name": "Ja'Marr Chase"
+              },
+              {
+                "player_id": "justin-jefferson",
+                "name": "Justin Jefferson"
+              }
+            ],
+            "receipts": [
+              {
+                "label": "Ja'Marr Chase value",
+                "value": "9800"
+              },
+              {
+                "label": "Justin Jefferson value",
+                "value": "7500"
+              },
+              {
+                "label": "Ja'Marr Chase points per game",
+                "value": "22.4"
+              },
+              {
+                "label": "Justin Jefferson points per game",
+                "value": "15.4"
+              }
+            ],
+            "link": {
+              "href": "/sleeper/2026/blackedraw/compare?p1=jamarr-chase&p2=justin-jefferson",
+              "label": "View head-to-head in Compare"
+            }
+          }
+        ],
+        "tools_called": [
+          "compare_players"
+        ]
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": "Ja'Marr Chase",
+        "key_numbers": [
+          9800,
+          7500,
+          22.4,
+          15.4
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Ja'Marr Chase",
+          "Justin Jefferson"
+        ]
+      }
+    },
+    {
+      "id": "ow21",
+      "type": "open",
+      "question": "Compare Ja'Marr Chase and Jaxson Smith Njigba",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "open",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "evidence": [
+          {
+            "tool": "compare_players",
+            "ok": true,
+            "players_detail": [
+              {
+                "player_id": "jamarr-chase",
+                "name": "Ja'Marr Chase",
+                "team": "CIN",
+                "position": "WR",
+                "value": 9800,
+                "ppg": 22.4,
+                "expected_ppg": 20.9,
+                "target_share": 0.31,
+                "snap_share": 0.91,
+                "touches_per_game": 11.2,
+                "games": 6,
+                "recent_ppg": 24.6
+              },
+              {
+                "player_id": "jaxon-smith-njigba",
+                "name": "Jaxon Smith-Njigba",
+                "team": "SEA",
+                "position": "WR",
+                "value": 9600,
+                "ppg": 19.6,
+                "expected_ppg": 18.4,
+                "target_share": 0.28,
+                "snap_share": 0.89,
+                "touches_per_game": 9.8,
+                "games": 6,
+                "recent_ppg": 21.3
+              }
+            ],
+            "players": [
+              {
+                "player_id": "jamarr-chase",
+                "name": "Ja'Marr Chase"
+              },
+              {
+                "player_id": "jaxon-smith-njigba",
+                "name": "Jaxon Smith-Njigba"
+              }
+            ],
+            "receipts": [
+              {
+                "label": "Ja'Marr Chase value",
+                "value": "9800"
+              },
+              {
+                "label": "Jaxon Smith-Njigba value",
+                "value": "9600"
+              },
+              {
+                "label": "Ja'Marr Chase points per game",
+                "value": "22.4"
+              },
+              {
+                "label": "Jaxon Smith-Njigba points per game",
+                "value": "19.6"
+              }
+            ],
+            "link": {
+              "href": "/sleeper/2026/blackedraw/compare?p1=jamarr-chase&p2=jaxon-smith-njigba",
+              "label": "View head-to-head in Compare"
+            }
+          }
+        ],
+        "tools_called": [
+          "compare_players"
+        ]
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": "Ja'Marr Chase",
+        "key_numbers": [
+          9800,
+          9600,
+          22.4,
+          19.6
+        ],
+        "close_call": true
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Ja'Marr Chase",
+          "Jaxon Smith-Njigba"
+        ]
+      }
+    },
+    {
       "id": "lb7",
       "type": "leaderboard",
       "question": "who is rated in the top 10 of the most receiving metrics?",
@@ -15478,6 +15712,383 @@
       }
     },
     {
+      "id": "hs5",
+      "type": "leaderboard",
+      "question": "Who was the top scorer in 2024?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "leaderboard",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "board_kind": "board",
+        "requested_n": 10,
+        "position_filter": null,
+        "team_filter": null,
+        "metric_hint": "top scorer",
+        "metric_key": "ppr_pts",
+        "label": "PPR Points",
+        "definition": "Total fantasy points for the period using full-PPR scoring.",
+        "pool_size": 512,
+        "qualification": {
+          "vol_col": "games",
+          "vol_label": "games",
+          "min_vol": 4,
+          "games_min": 4,
+          "provisional": false
+        },
+        "qualification_text": "Qualified pool: 512 players, minimum 4 games. Final 2024 season board.",
+        "window": {
+          "kind": "season",
+          "applied": false,
+          "requested_weeks": null
+        },
+        "board_count": 10,
+        "board": [
+          {
+            "rank": 1,
+            "player_id": "lamar-jackson",
+            "name": "Lamar Jackson",
+            "team": "BAL",
+            "position": "QB",
+            "value": 434.4,
+            "games": 17,
+            "on_my_roster": false
+          },
+          {
+            "rank": 2,
+            "player_id": "jamarr-chase",
+            "name": "Ja'Marr Chase",
+            "team": "CIN",
+            "position": "WR",
+            "value": 403.0,
+            "games": 17,
+            "on_my_roster": false
+          },
+          {
+            "rank": 3,
+            "player_id": "josh-allen",
+            "name": "Josh Allen",
+            "team": "BUF",
+            "position": "QB",
+            "value": 385.0,
+            "games": 16,
+            "on_my_roster": false
+          },
+          {
+            "rank": 4,
+            "player_id": "joe-burrow",
+            "name": "Joe Burrow",
+            "team": "CIN",
+            "position": "QB",
+            "value": 381.8,
+            "games": 17,
+            "on_my_roster": false
+          },
+          {
+            "rank": 5,
+            "player_id": "baker-mayfield",
+            "name": "Baker Mayfield",
+            "team": "TB",
+            "position": "QB",
+            "value": 381.8,
+            "games": 17,
+            "on_my_roster": false
+          },
+          {
+            "rank": 6,
+            "player_id": "jayden-daniels",
+            "name": "Jayden Daniels",
+            "team": "WAS",
+            "position": "QB",
+            "value": 364.8,
+            "games": 17,
+            "on_my_roster": false
+          },
+          {
+            "rank": 7,
+            "player_id": "jahmyr-gibbs",
+            "name": "Jahmyr Gibbs",
+            "team": "DET",
+            "position": "RB",
+            "value": 362.9,
+            "games": 17,
+            "on_my_roster": false
+          },
+          {
+            "rank": 8,
+            "player_id": "saquon-barkley",
+            "name": "Saquon Barkley",
+            "team": "PHI",
+            "position": "RB",
+            "value": 355.3,
+            "games": 16,
+            "on_my_roster": false
+          },
+          {
+            "rank": 9,
+            "player_id": "bijan-robinson",
+            "name": "Bijan Robinson",
+            "team": "ATL",
+            "position": "RB",
+            "value": 341.7,
+            "games": 17,
+            "on_my_roster": false
+          },
+          {
+            "rank": 10,
+            "player_id": "jared-goff",
+            "name": "Jared Goff",
+            "team": "DET",
+            "position": "QB",
+            "value": 336.5,
+            "games": 17,
+            "on_my_roster": false
+          }
+        ],
+        "target_season": 2024,
+        "historical": true
+      },
+      "reference": {
+        "verdict_kind": "board",
+        "pick": "Lamar Jackson",
+        "key_numbers": [
+          434.4,
+          403.0,
+          385.0,
+          381.8,
+          381.8,
+          364.8,
+          362.9,
+          355.3,
+          341.7,
+          336.5
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Lamar Jackson",
+          "PPR Points",
+          "2024"
+        ]
+      }
+    },
+    {
+      "id": "hs6",
+      "type": "leaderboard",
+      "question": "Who had the most top-5 weeks last season?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "leaderboard",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "board_kind": "finishes",
+        "requested_n": 10,
+        "position_filter": null,
+        "team_filter": null,
+        "target_season": 2025,
+        "historical": true,
+        "finish_n": 5,
+        "label": "Top-5 weekly finishes",
+        "pool_size": 150,
+        "board": [
+          {
+            "rank": 1,
+            "player_id": "4034",
+            "name": "Christian McCaffrey",
+            "team": "SF",
+            "position": "RB",
+            "value": 9.0,
+            "games": 17,
+            "on_my_roster": false,
+            "ppg": 24.5,
+            "floor": 9.8,
+            "ceiling": 39.1,
+            "finishes": 9
+          },
+          {
+            "rank": 2,
+            "player_id": "9493",
+            "name": "Puka Nacua",
+            "team": "LAR",
+            "position": "WR",
+            "value": 9.0,
+            "games": 16,
+            "on_my_roster": false,
+            "ppg": 23.4,
+            "floor": 4.8,
+            "ceiling": 46.5,
+            "finishes": 9
+          },
+          {
+            "rank": 3,
+            "player_id": "9509",
+            "name": "Bijan Robinson",
+            "team": "ATL",
+            "position": "RB",
+            "value": 9.0,
+            "games": 17,
+            "on_my_roster": false,
+            "ppg": 21.8,
+            "floor": 5.8,
+            "ceiling": 39.9,
+            "finishes": 9
+          },
+          {
+            "rank": 4,
+            "player_id": "8130",
+            "name": "Trey McBride",
+            "team": "ARI",
+            "position": "TE",
+            "value": 9.0,
+            "games": 17,
+            "on_my_roster": false,
+            "ppg": 18.6,
+            "floor": 6.7,
+            "ceiling": 37.4,
+            "finishes": 9
+          },
+          {
+            "rank": 5,
+            "player_id": "421",
+            "name": "Matthew Stafford",
+            "team": "LAR",
+            "position": "QB",
+            "value": 7.0,
+            "games": 17,
+            "on_my_roster": false,
+            "ppg": 21.1,
+            "floor": 9.3,
+            "ceiling": 30.9,
+            "finishes": 7
+          },
+          {
+            "rank": 6,
+            "player_id": "7564",
+            "name": "Ja'Marr Chase",
+            "team": "CIN",
+            "position": "WR",
+            "value": 7.0,
+            "games": 17,
+            "on_my_roster": false,
+            "ppg": 18.4,
+            "floor": 0.0,
+            "ceiling": 38.1,
+            "finishes": 7
+          },
+          {
+            "rank": 7,
+            "player_id": "9221",
+            "name": "Jahmyr Gibbs",
+            "team": "DET",
+            "position": "RB",
+            "value": 6.0,
+            "games": 17,
+            "on_my_roster": false,
+            "ppg": 21.6,
+            "floor": 5.8,
+            "ceiling": 55.4,
+            "finishes": 6
+          },
+          {
+            "rank": 8,
+            "player_id": "6813",
+            "name": "Jonathan Taylor",
+            "team": "IND",
+            "position": "RB",
+            "value": 6.0,
+            "games": 17,
+            "on_my_roster": false,
+            "ppg": 21.3,
+            "floor": 5.9,
+            "ceiling": 49.6,
+            "finishes": 6
+          },
+          {
+            "rank": 9,
+            "player_id": "7523",
+            "name": "Trevor Lawrence",
+            "team": "JAX",
+            "position": "QB",
+            "value": 6.0,
+            "games": 17,
+            "on_my_roster": false,
+            "ppg": 20.6,
+            "floor": 8.8,
+            "ceiling": 44.3,
+            "finishes": 6
+          },
+          {
+            "rank": 10,
+            "player_id": "4046",
+            "name": "Patrick Mahomes",
+            "team": "KC",
+            "position": "QB",
+            "value": 6.0,
+            "games": 17,
+            "on_my_roster": false,
+            "ppg": 17.5,
+            "floor": 0.0,
+            "ceiling": 31.5,
+            "finishes": 6
+          }
+        ],
+        "board_count": 10,
+        "qualification_text": "Weekly finishes inside the top 5 at the position, weeks 1 to 18, scored with your league's settings. Minimum 3 games. 150 players qualify. Final 2025 season board."
+      },
+      "reference": {
+        "verdict_kind": "board",
+        "pick": "Christian McCaffrey",
+        "key_numbers": [
+          9,
+          24.5,
+          9,
+          18.6,
+          6
+        ],
+        "close_call": true
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": []
+      }
+    },
+    {
       "id": "po4",
       "type": "playoffs",
       "question": "How have my playoff odds moved this season?",
@@ -16405,28 +17016,18 @@
           "slot": "1.03",
           "overall_pick": 3,
           "class_year": 2027,
-          "candidates": [
-            {
-              "rank": 1,
-              "name": "Jeremiah Smith",
-              "position": "WR",
-              "school": "Ohio State",
-              "score": 96.2
-            },
-            {
-              "rank": 2,
-              "name": "Julian Sayin",
-              "position": "QB",
-              "school": "Ohio State",
-              "score": 94.0
-            },
-            {
-              "rank": 3,
-              "name": "Jeremiyah Love",
-              "position": "RB",
-              "school": "Notre Dame",
-              "score": 93.1
-            },
+          "league_size": 12,
+          "board_size": 5,
+          "presumed_taken_count": 2,
+          "assumption": "Targets assume the board goes in order (chalk): everyone ranked above this pick is presumed taken.",
+          "target": {
+            "rank": 3,
+            "name": "Jeremiyah Love",
+            "position": "RB",
+            "school": "Notre Dame",
+            "score": 93.1
+          },
+          "next_up": [
             {
               "rank": 4,
               "name": "Dante Moore",
@@ -16440,6 +17041,22 @@
               "position": "RB",
               "school": "Missouri",
               "score": 91.0
+            }
+          ],
+          "fallers": [
+            {
+              "rank": 1,
+              "name": "Jeremiah Smith",
+              "position": "WR",
+              "school": "Ohio State",
+              "score": 96.2
+            },
+            {
+              "rank": 2,
+              "name": "Julian Sayin",
+              "position": "QB",
+              "school": "Ohio State",
+              "score": 94.0
             }
           ]
         }
@@ -16458,7 +17075,542 @@
         "no_data": false,
         "must_mention": [
           "Jeremiyah Love",
+          "1.03",
+          "Jeremiah Smith"
+        ]
+      }
+    },
+    {
+      "id": "dr3",
+      "type": "draft",
+      "question": "Who should I target at 1.03?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "draft",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "status": "pre_draft",
+        "draft_season": 2027,
+        "rounds": 4,
+        "league_size": 12,
+        "draft_kind": "rookie",
+        "order_format": "linear",
+        "picks_made": 0,
+        "total_picks": 48,
+        "my_picks": [],
+        "current_pick": null,
+        "my_next_pick": null,
+        "best_available": [],
+        "best_available_by_position": {},
+        "rookie_class_year": 2027,
+        "best_available_rookies": [
+          {
+            "rank": 1,
+            "name": "Jeremiah Smith",
+            "position": "WR",
+            "school": "Ohio State",
+            "score": 95.0
+          },
+          {
+            "rank": 2,
+            "name": "Ahmad Hardy",
+            "position": "RB",
+            "school": "Missouri",
+            "score": 85.1
+          },
+          {
+            "rank": 3,
+            "name": "Dante Moore",
+            "position": "QB",
+            "school": "Oregon",
+            "score": 84.6
+          },
+          {
+            "rank": 4,
+            "name": "Kewan Lacy",
+            "position": "RB",
+            "school": "Ole Miss",
+            "score": 77.4
+          },
+          {
+            "rank": 5,
+            "name": "Cam Coleman",
+            "position": "WR",
+            "school": "Auburn",
+            "score": 67.4
+          }
+        ],
+        "my_needs": [
+          {
+            "position": "RB",
+            "have": 2,
+            "starters_needed": 2,
+            "open_slots": 0
+          },
+          {
+            "position": "WR",
+            "have": 3,
+            "starters_needed": 2,
+            "open_slots": 0
+          },
+          {
+            "position": "QB",
+            "have": 2,
+            "starters_needed": 2,
+            "open_slots": 0
+          },
+          {
+            "position": "TE",
+            "have": 1,
+            "starters_needed": 1,
+            "open_slots": 0
+          }
+        ],
+        "prep": {
+          "slot": "1.03",
+          "overall_pick": 3,
+          "class_year": 2027,
+          "league_size": 12,
+          "board_size": 5,
+          "presumed_taken_count": 2,
+          "assumption": "Targets assume the board goes in order (chalk): everyone ranked above this pick is presumed taken.",
+          "target": {
+            "rank": 3,
+            "name": "Dante Moore",
+            "position": "QB",
+            "school": "Oregon",
+            "score": 84.6
+          },
+          "next_up": [
+            {
+              "rank": 4,
+              "name": "Kewan Lacy",
+              "position": "RB",
+              "school": "Ole Miss",
+              "score": 77.4
+            },
+            {
+              "rank": 5,
+              "name": "Cam Coleman",
+              "position": "WR",
+              "school": "Auburn",
+              "score": 67.4
+            }
+          ],
+          "fallers": [
+            {
+              "rank": 1,
+              "name": "Jeremiah Smith",
+              "position": "WR",
+              "school": "Ohio State",
+              "score": 95.0
+            },
+            {
+              "rank": 2,
+              "name": "Ahmad Hardy",
+              "position": "RB",
+              "school": "Missouri",
+              "score": 85.1
+            }
+          ]
+        }
+      },
+      "reference": {
+        "verdict_kind": "draft_prep",
+        "pick": "Dante Moore",
+        "key_numbers": [
+          3,
+          84.6
+        ],
+        "close_call": false
+      },
+      "trap": {
+        "kind": "faller_not_target",
+        "name": "Jeremiah Smith"
+      },
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Dante Moore",
+          "Jeremiah Smith",
           "1.03"
+        ]
+      }
+    },
+    {
+      "id": "dr4",
+      "type": "draft",
+      "question": "Who should I target at 1.01?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "draft",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "status": "pre_draft",
+        "draft_season": 2027,
+        "rounds": 4,
+        "league_size": 12,
+        "draft_kind": "rookie",
+        "order_format": "linear",
+        "picks_made": 0,
+        "total_picks": 48,
+        "my_picks": [],
+        "current_pick": null,
+        "my_next_pick": null,
+        "best_available": [],
+        "best_available_by_position": {},
+        "rookie_class_year": 2027,
+        "best_available_rookies": [
+          {
+            "rank": 1,
+            "name": "Jeremiah Smith",
+            "position": "WR",
+            "school": "Ohio State",
+            "score": 95.0
+          },
+          {
+            "rank": 2,
+            "name": "Ahmad Hardy",
+            "position": "RB",
+            "school": "Missouri",
+            "score": 85.1
+          },
+          {
+            "rank": 3,
+            "name": "Dante Moore",
+            "position": "QB",
+            "school": "Oregon",
+            "score": 84.6
+          },
+          {
+            "rank": 4,
+            "name": "Kewan Lacy",
+            "position": "RB",
+            "school": "Ole Miss",
+            "score": 77.4
+          },
+          {
+            "rank": 5,
+            "name": "Cam Coleman",
+            "position": "WR",
+            "school": "Auburn",
+            "score": 67.4
+          }
+        ],
+        "my_needs": [
+          {
+            "position": "RB",
+            "have": 2,
+            "starters_needed": 2,
+            "open_slots": 0
+          },
+          {
+            "position": "WR",
+            "have": 3,
+            "starters_needed": 2,
+            "open_slots": 0
+          },
+          {
+            "position": "QB",
+            "have": 2,
+            "starters_needed": 2,
+            "open_slots": 0
+          },
+          {
+            "position": "TE",
+            "have": 1,
+            "starters_needed": 1,
+            "open_slots": 0
+          }
+        ],
+        "prep": {
+          "slot": "1.01",
+          "overall_pick": 1,
+          "class_year": 2027,
+          "league_size": 12,
+          "board_size": 5,
+          "presumed_taken_count": 0,
+          "assumption": "This is the top pick: nobody is presumed taken ahead of it.",
+          "target": {
+            "rank": 1,
+            "name": "Jeremiah Smith",
+            "position": "WR",
+            "school": "Ohio State",
+            "score": 95.0
+          },
+          "next_up": [
+            {
+              "rank": 2,
+              "name": "Ahmad Hardy",
+              "position": "RB",
+              "school": "Missouri",
+              "score": 85.1
+            },
+            {
+              "rank": 3,
+              "name": "Dante Moore",
+              "position": "QB",
+              "school": "Oregon",
+              "score": 84.6
+            }
+          ],
+          "fallers": []
+        }
+      },
+      "reference": {
+        "verdict_kind": "draft_prep",
+        "pick": "Jeremiah Smith",
+        "key_numbers": [
+          1,
+          95.0
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Jeremiah Smith",
+          "1.01"
+        ]
+      }
+    },
+    {
+      "id": "dr5",
+      "type": "draft",
+      "question": "Who should I target at 2.03 in my rookie draft?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "draft",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "status": "pre_draft",
+        "draft_season": 2027,
+        "rounds": 4,
+        "league_size": 12,
+        "draft_kind": "rookie",
+        "order_format": "linear",
+        "picks_made": 0,
+        "total_picks": 48,
+        "my_picks": [],
+        "current_pick": null,
+        "my_next_pick": null,
+        "best_available": [],
+        "best_available_by_position": {},
+        "rookie_class_year": 2027,
+        "best_available_rookies": [
+          {
+            "rank": 1,
+            "name": "Jeremiah Smith",
+            "position": "WR",
+            "school": "Ohio State",
+            "score": 95.0
+          },
+          {
+            "rank": 2,
+            "name": "Ahmad Hardy",
+            "position": "RB",
+            "school": "Missouri",
+            "score": 85.1
+          },
+          {
+            "rank": 3,
+            "name": "Dante Moore",
+            "position": "QB",
+            "school": "Oregon",
+            "score": 84.6
+          },
+          {
+            "rank": 4,
+            "name": "Kewan Lacy",
+            "position": "RB",
+            "school": "Ole Miss",
+            "score": 77.4
+          },
+          {
+            "rank": 5,
+            "name": "Cam Coleman",
+            "position": "WR",
+            "school": "Auburn",
+            "score": 67.4
+          },
+          {
+            "rank": 6,
+            "name": "Jadan Baugh",
+            "position": "RB",
+            "school": "Florida",
+            "score": 67.1
+          },
+          {
+            "rank": 7,
+            "name": "Arch Manning",
+            "position": "QB",
+            "school": "Texas",
+            "score": 66.0
+          },
+          {
+            "rank": 8,
+            "name": "LaNorris Sellers",
+            "position": "QB",
+            "school": "South Carolina",
+            "score": 64.8
+          },
+          {
+            "rank": 9,
+            "name": "Julian Sayin",
+            "position": "QB",
+            "school": "Ohio State",
+            "score": 63.9
+          },
+          {
+            "rank": 10,
+            "name": "Justice Haynes",
+            "position": "RB",
+            "school": "Georgia Tech",
+            "score": 62.7
+          }
+        ],
+        "my_needs": [
+          {
+            "position": "RB",
+            "have": 2,
+            "starters_needed": 2,
+            "open_slots": 0
+          },
+          {
+            "position": "WR",
+            "have": 3,
+            "starters_needed": 2,
+            "open_slots": 0
+          },
+          {
+            "position": "QB",
+            "have": 2,
+            "starters_needed": 2,
+            "open_slots": 0
+          },
+          {
+            "position": "TE",
+            "have": 1,
+            "starters_needed": 1,
+            "open_slots": 0
+          }
+        ],
+        "prep": {
+          "slot": "2.03",
+          "overall_pick": 15,
+          "class_year": 2027,
+          "league_size": 12,
+          "board_size": 18,
+          "presumed_taken_count": 14,
+          "assumption": "Targets assume the board goes in order (chalk): everyone ranked above this pick is presumed taken.",
+          "target": {
+            "rank": 15,
+            "name": "Drew Mestemaker",
+            "position": "QB",
+            "school": "Oklahoma State",
+            "score": 57.9
+          },
+          "next_up": [
+            {
+              "rank": 16,
+              "name": "Mark Fletcher Jr.",
+              "position": "RB",
+              "school": "Miami",
+              "score": 57.1
+            },
+            {
+              "rank": 17,
+              "name": "Trinidad Chambliss",
+              "position": "QB",
+              "school": "Ole Miss",
+              "score": 56.3
+            }
+          ],
+          "fallers": [
+            {
+              "rank": 1,
+              "name": "Jeremiah Smith",
+              "position": "WR",
+              "school": "Ohio State",
+              "score": 95.0
+            },
+            {
+              "rank": 14,
+              "name": "Isaac Brown",
+              "position": "RB",
+              "school": "Louisville",
+              "score": 58.8
+            }
+          ]
+        }
+      },
+      "reference": {
+        "verdict_kind": "draft_prep",
+        "pick": "Drew Mestemaker",
+        "key_numbers": [
+          15,
+          57.9
+        ],
+        "close_call": false
+      },
+      "trap": {
+        "kind": "faller_not_target",
+        "name": "Jeremiah Smith"
+      },
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Drew Mestemaker",
+          "2.03"
         ]
       }
     },
@@ -17307,6 +18459,120 @@
           "Seattle Seahawks",
           "Dallas Cowboys",
           "San Francisco 49ers"
+        ]
+      }
+    },
+    {
+      "id": "mt1",
+      "type": "metric",
+      "question": "what missed tackle metrics do I have?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "metric",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "metric_key": "avoided_tackles_per_carry",
+        "definition": "Broken tackles are missed tackles forced by the ball carrier (Pro Football Reference charting). The site tracks these as: Broken Tackles/Carry and Broken Tackles / Catch.",
+        "label": "Broken Tackles/Carry",
+        "positions": [
+          "RB"
+        ],
+        "family_metrics": [
+          {
+            "metric_key": "avoided_tackles_per_carry",
+            "label": "Broken Tackles/Carry",
+            "definition": "Broken tackles per carry on rush attempts (PFR charting via nflverse).",
+            "positions": [
+              "RB"
+            ]
+          },
+          {
+            "metric_key": "rec_broken_tackles_per_reception",
+            "label": "Broken Tackles / Catch",
+            "definition": "Broken tackles per reception on receiving plays only (Pro Football Reference charting): PFR receiving broken tackles over receptions. Two decimals, not a percentage. Distinct from the combined rush plus rec broken tackle rates.",
+            "positions": [
+              "WR",
+              "RB",
+              "TE"
+            ]
+          }
+        ],
+        "target_season": null,
+        "historical": false,
+        "leaderboard_top5": [
+          {
+            "player_id": "jahmyr-gibbs",
+            "name": "Jahmyr Gibbs",
+            "team": "DET",
+            "position": "RB",
+            "value": 0.19,
+            "on_my_roster": false
+          },
+          {
+            "player_id": "bucky-irving",
+            "name": "Bucky Irving",
+            "team": "TB",
+            "position": "RB",
+            "value": 0.18,
+            "on_my_roster": false
+          },
+          {
+            "player_id": "james-conner",
+            "name": "James Conner",
+            "team": "ARI",
+            "position": "RB",
+            "value": 0.17,
+            "on_my_roster": false
+          },
+          {
+            "player_id": "bijan-robinson",
+            "name": "Bijan Robinson",
+            "team": "ATL",
+            "position": "RB",
+            "value": 0.16,
+            "on_my_roster": false
+          },
+          {
+            "player_id": "derrick-henry",
+            "name": "Derrick Henry",
+            "team": "BAL",
+            "position": "RB",
+            "value": 0.15,
+            "on_my_roster": false
+          }
+        ]
+      },
+      "reference": {
+        "verdict_kind": "leader",
+        "pick": "Jahmyr Gibbs",
+        "key_numbers": [
+          0.19
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Broken Tackles/Carry",
+          "Broken Tackles / Catch",
+          "Gibbs"
         ]
       }
     }
