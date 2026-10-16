@@ -473,6 +473,7 @@ _LEAGUE_LINKS = {
     "front_office": ("dashboard", "View Front Office"),
     "live": ("scorezone", "Open ScoreZone"),
     "draft": ("draft", "Open Draft Room"),
+    "nfl_schedule": ("scorezone", "Open ScoreZone"),
 }
 
 
@@ -2540,6 +2541,179 @@ def _compose_sweep(pack: dict) -> dict:
             "actions": [], "mentions": []}
 
 
+def _nfl_game_line(g: dict) -> str:
+    line = (f"{g.get('away_name')} at {g.get('home_name')} "
+            f"({g.get('kickoff_label')}")
+    if g.get("network"):
+        line += f", {g['network']}"
+    line += ")"
+    if g.get("status") == "live":
+        line += " (in progress)"
+    elif g.get("status") == "final" and g.get("away_score") is not None \
+            and g.get("home_score") is not None:
+        line += (f", final: {g.get('away_name')} {g.get('away_score')}, "
+                 f"{g.get('home_name')} {g.get('home_score')}")
+    return line
+
+
+def _nfl_kickoff_receipt(g: dict) -> dict:
+    return {"label": f"{g.get('away_name')} at {g.get('home_name')} kickoff",
+            "value": f"{g.get('date_label')}, {g.get('kickoff_label')}"}
+
+
+def _nfl_bucket(g: dict) -> str:
+    m = re.search(r"(\d{1,2}):(\d{2})\s*(AM|PM)",
+                  str(g.get("kickoff_label") or ""))
+    if not m:
+        return "Early"
+    mins = (int(m.group(1)) % 12) * 60 + int(m.group(2)) \
+        + (720 if m.group(3) == "PM" else 0)
+    if mins < 720:
+        return "Morning"
+    if mins < 960:
+        return "Early"
+    if mins < 1200:
+        return "Late"
+    return "Primetime"
+
+
+def _compose_nfl_schedule(pack: dict) -> dict:
+    """Deterministic NFL-schedule answer: the games, days, kickoff times
+    and networks are computed in the pack, so the text only renders
+    them; no draft can move a kickoff, invent a network, or answer a
+    bare schedule question with the user's fantasy matchup."""
+    games = [g for g in (pack.get("games") or []) if isinstance(g, dict)]
+    scope = pack.get("scope")
+    nxt = pack.get("next_game") if isinstance(pack.get("next_game"), dict) \
+        else None
+    week = pack.get("week")
+
+    def _single_receipts(g):
+        rows = [_nfl_kickoff_receipt(g)]
+        if g.get("network"):
+            rows.append({"label": "Network", "value": g["network"]})
+        else:
+            rows.append({"label": "Game day", "value": g.get("date_long")})
+        return rows
+
+    def _next_sentence():
+        if not nxt:
+            return ""
+        net = f" on {nxt['network']}" if nxt.get("network") else ""
+        return (f" The next game is {nxt.get('away_name')} at "
+                f"{nxt.get('home_name')} on {nxt.get('date_long')} at "
+                f"{nxt.get('kickoff_label')}{net}.")
+
+    if scope == "team":
+        team = pack.get("team") or {}
+        name = team.get("name") or team.get("abbr") or "That team"
+        followups = [followup_pair("Who plays tonight?"),
+                     followup_pair("What games are on Sunday?")]
+        if games:
+            g = games[0]
+            home = g.get("home") == team.get("abbr")
+            opp = g.get("home_name") if not home else g.get("away_name")
+            verb = "host" if home else "visit"
+            net = f" on {g['network']}" if g.get("network") else ""
+            verdict = f"{name} play {g.get('date_label')}"
+            text = (f"The {name} {verb} the {opp} on "
+                    f"{g.get('date_long')} at {g.get('kickoff_label')}"
+                    f"{net}.")
+            receipts = _single_receipts(g)
+        elif pack.get("bye"):
+            verdict = f"{name} are on a bye in Week {week}"
+            text = (f"The {name} are on a bye in Week {week}."
+                    + _next_sentence())
+            if nxt:
+                receipts = [
+                    {"label": "Next game kickoff",
+                     "value": f"{nxt.get('date_label')}, "
+                              f"{nxt.get('kickoff_label')}"},
+                    {"label": "Next game",
+                     "value": f"{nxt.get('away_name')} at "
+                              f"{nxt.get('home_name')}"}]
+            else:
+                receipts = [{"label": "Bye week", "value": f"Week {week}"}]
+        else:
+            verdict = f"No {name} game on the loaded schedule"
+            text = (f"The {name} have no game in the schedule loaded "
+                    f"for this week or next.")
+            receipts = []
+        return {"verdict": verdict, "text": text, "receipts": receipts,
+                "caveat": None, "followups": followups,
+                "act_link": _league_link("nfl_schedule", pack),
+                "actions": [], "mentions": []}
+
+    if scope == "week":
+        verdict = f"Week {week} NFL schedule"
+        by_day: dict[str, list] = {}
+        for g in games:
+            by_day.setdefault(g.get("date_label") or "", []).append(g)
+        lines = [f"Week {week} NFL schedule:"]
+        for day_label, rows in by_day.items():
+            lines.append(f"{day_label}: "
+                         + "; ".join(_nfl_game_line(g) for g in rows))
+        receipts = [_nfl_kickoff_receipt(g) for g in games[:4]]
+        followups = [followup_pair("Who plays tonight?"),
+                     followup_pair("What do I need tonight to win?")]
+        return {"verdict": verdict, "text": "\n".join(lines),
+                "receipts": receipts, "caveat": None,
+                "followups": followups,
+                "act_link": _league_link("nfl_schedule", pack),
+                "actions": [], "mentions": []}
+
+    # Day scopes: tonight / today / tomorrow / a named weekday.
+    day_name = pack.get("day_name") or ""
+    rel = {"tonight": "tonight", "today": "today",
+           "tomorrow": "tomorrow"}.get(scope)
+    followups = [followup_pair("Who plays this week?"),
+                 followup_pair("What do I need tonight to win?")]
+    if not games:
+        if rel:
+            verdict = f"No NFL game {rel}"
+            text = f"There is no NFL game {rel}."
+        else:
+            verdict = f"No NFL games on {day_name}"
+            text = (f"There are no NFL games on {day_name} in the "
+                    f"schedule loaded for this week.")
+        text += _next_sentence()
+        receipts = [{"label": f"Games {rel or 'on ' + day_name}",
+                     "value": "0"}]
+        if nxt:
+            receipts.append(_nfl_kickoff_receipt(nxt))
+        return {"verdict": verdict, "text": text, "receipts": receipts,
+                "caveat": None, "followups": followups,
+                "act_link": _league_link("nfl_schedule", pack),
+                "actions": [], "mentions": []}
+    if len(games) == 1:
+        g = games[0]
+        lead = {"tonight": "Tonight's game", "today": "Today's game",
+                "tomorrow": "Tomorrow's game"}.get(scope) \
+            or f"{day_name}'s game"
+        verdict = (f"{g.get('away_name')} at {g.get('home_name')} "
+                   f"{rel}" if rel else
+                   f"{g.get('away_name')} at {g.get('home_name')} "
+                   f"on {day_name}")
+        text = f"{lead}: {_nfl_game_line(g)}."
+        receipts = _single_receipts(g)
+        return {"verdict": verdict, "text": text, "receipts": receipts,
+                "caveat": None, "followups": followups,
+                "act_link": _league_link("nfl_schedule", pack),
+                "actions": [], "mentions": []}
+    verdict = f"{len(games)} games on {day_name}"
+    lines = [f"{day_name}'s NFL games:"]
+    for bucket in ("Morning", "Early", "Late", "Primetime"):
+        rows = [g for g in games if _nfl_bucket(g) == bucket]
+        if rows:
+            lines.append(f"{bucket}: "
+                         + "; ".join(_nfl_game_line(g) for g in rows))
+    receipts = [_nfl_kickoff_receipt(g) for g in games[:4]]
+    return {"verdict": verdict, "text": "\n".join(lines),
+            "receipts": receipts, "caveat": None, "followups": followups,
+            "act_link": _league_link("nfl_schedule", pack),
+            "actions": [], "mentions": []}
+
+
 def compose_answer(intent: str, question: str, pack: dict, *, preferences=None, assumed_context=None, history=None, risk_profile=None) -> dict:
     """Compose an answer dict from an evidence pack. Pure eval seam."""
     if intent == "open":
@@ -2576,6 +2750,12 @@ def compose_answer(intent: str, question: str, pack: dict, *, preferences=None, 
         # A category sweep is fully computed in the pack; render it
         # deterministically instead of letting a draft count categories.
         return _enforce_grounding(_compose_sweep(pack), intent, pack, question)
+    if intent == "nfl_schedule":
+        # The NFL fixture list is fully computed in the pack (games,
+        # kickoffs, networks); render it deterministically so a bare
+        # schedule question can never be answered with fantasy
+        # projections or a moved kickoff.
+        return _enforce_grounding(_compose_nfl_schedule(pack), intent, pack, question)
     # This-week actions are deterministic from the pack; build them first so
     # the citation check sees the same surfaces the scorer will.
     actions = []

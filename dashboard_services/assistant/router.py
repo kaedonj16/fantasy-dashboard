@@ -15,7 +15,7 @@ INTENTS = ["start_sit", "trade_eval", "trade_finding", "buy_sell_hold", "player"
            "playoffs", "power_rankings", "standings", "matchup", "schedule",
            "breakout_board", "breakout_track_record", "breakout_history", "teams", "pick_ownership",
            "keeper", "rookie", "cross_league", "replacement", "handcuff", "activity", "watchlist", "front_office",
-           "live", "draft",
+           "live", "draft", "nfl_schedule",
            "open", "remember", "out_of_scope"]
 
 SCHEMA = {
@@ -38,6 +38,7 @@ SCHEMA = {
         "season": {"type": ["integer", "null"]},
         "draft_slot": {"type": ["string", "null"]},
         "draft_year": {"type": ["integer", "null"]},
+        "day_hint": {"type": ["string", "null"], "enum": ["tonight", "today", "tomorrow", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "this_week", None]},
         "position": {"type": ["string", "null"]},
         "preference_text": {"type": ["string", "null"]},
         "board_kind": {"type": ["string", "null"], "enum": ["board", "intersection", "dual", "movers", "matchup", "buy_low", "sell_high", "breadth", "finishes", "floor", "ceiling", "value", "slate", "gap", "rank_movers", None]},
@@ -58,7 +59,7 @@ SCHEMA = {
         "slot": {"type": ["string", "null"]},
         "start_mode": {"type": ["string", "null"], "enum": ["start", "sit", None]},
     },
-    "required": ["intent", "player_names", "give_player_names", "receive_player_names", "picks", "give_picks", "receive_picks", "other_team_hint", "team_names", "metric_hint", "target_position", "position_hint", "teams_mode", "week", "season", "draft_slot", "draft_year", "preference_text", "board_kind", "family", "second_metric_hint", "top_n", "position", "team", "window_weeks", "direction", "replace_mode", "waiver_mode", "value_in_picks", "shop_pool", "slot", "start_mode", "max_age", "pool", "finish_n"],
+    "required": ["intent", "player_names", "give_player_names", "receive_player_names", "picks", "give_picks", "receive_picks", "other_team_hint", "team_names", "metric_hint", "target_position", "position_hint", "teams_mode", "week", "season", "draft_slot", "draft_year", "day_hint", "preference_text", "board_kind", "family", "second_metric_hint", "top_n", "position", "team", "window_weeks", "direction", "replace_mode", "waiver_mode", "value_in_picks", "shop_pool", "slot", "start_mode", "max_age", "pool", "finish_n"],
     "additionalProperties": False,
 }
 
@@ -130,9 +131,13 @@ SYSTEM = (
     "or ANY question about the outcome of the user's own game this week: will I win, am I "
     "going to win, do I beat X, what are my chances, am I projected to win, will I lose. "
     "Outcome questions are matchup even when they name no team and even when they say "
-    "'this week'; team_names holds any team names mentioned. "
+    "'this week'; team_names holds any team names mentioned. A bare question about which "
+    "NFL teams play, with no fantasy team named and no possessive cue, is nfl_schedule, "
+    "not matchup. "
     "schedule: remaining schedule strength, the easiest or hardest remaining schedule, or how "
     "hard a specific stretch of weeks is (a playoff stretch question is schedule, not playoffs). "
+    "The real NFL fixture list (who plays tonight, kickoff times, TV networks) is "
+    "nfl_schedule, not schedule. "
     "breakout_board: this week's breakout calls or the breakout board. "
     "breakout_track_record: how good or accurate BR's breakout calls have been. "
     "breakout_history: whether a specific named player was a breakout call (the player goes in player_names). "
@@ -174,11 +179,20 @@ SYSTEM = (
     "general what-should-I-do question without the report named stays with this_week. "
     "live: a game happening right now or earlier today: who is winning right now, the live "
     "score, what a team needs tonight, or how a player is doing today. NOT a pregame preview "
-    "or a win probability before kickoff (that is matchup). "
+    "or a win probability before kickoff (that is matchup), and NOT which NFL teams play "
+    "tonight (that is nfl_schedule). "
     "draft: a fantasy draft question: who is on the clock, the best player still available, "
     "my next pick, who should I draft, my roster's needs in the draft, or draft prep (who "
     "should I target at a pick like 1.03; draft_slot carries that pick as 'R.S'). NOT who "
     "owns a future pick (pick_ownership) and NOT prospect rankings on their own (rookie). "
+    "nfl_schedule: the real NFL schedule: which NFL teams play tonight, today, tomorrow, "
+    "on a named day, or this week; when a named NFL team plays; kickoff times and TV "
+    "networks. A bare 'who plays tonight' with no possessive or league cue is nfl_schedule "
+    "even in a league context. Possessive fantasy forms (who am I playing, who does my "
+    "team play, what do I need tonight) are matchup or live, never nfl_schedule. team is "
+    "the NFL team abbreviation when a team is named (the Chiefs is KC, the Seahawks is "
+    "SEA); day_hint is tonight, today, tomorrow, the lowercase weekday named, or "
+    "this_week. "
     "remember: the user asks you to remember a preference (preference_text is the preference). "
     "open: a question about the user's league, players, teams, stats, metrics, or site data "
     "that fits NONE of the fixed intents above, however it is phrased: raw counting stats "
@@ -550,6 +564,110 @@ def _start_mode_in(m: str) -> str:
     return "start"
 
 
+# NFL fixture questions ("who plays tonight", "when do the Chiefs
+# play"): the real NFL schedule, not the user's fantasy matchup. The
+# keyword rule is deliberately narrow and guarded: possessive fantasy
+# forms (my team, my players, am I playing) and start/sit anchors never
+# reach it, so real matchup questions keep their intents.
+_NFL_TEAM_WORDS = (
+    ("kansas city", "KC"), ("chiefs", "KC"),
+    ("seattle", "SEA"), ("seahawks", "SEA"),
+    ("denver", "DEN"), ("broncos", "DEN"),
+    ("new england", "NE"), ("patriots", "NE"), ("pats", "NE"),
+    ("new york giants", "NYG"), ("giants", "NYG"),
+    ("new york jets", "NYJ"), ("jets", "NYJ"),
+    ("los angeles rams", "LAR"), ("rams", "LAR"),
+    ("los angeles chargers", "LAC"), ("chargers", "LAC"),
+    ("las vegas", "LV"), ("raiders", "LV"),
+    ("san francisco", "SF"), ("49ers", "SF"), ("niners", "SF"),
+    ("tampa bay", "TB"), ("buccaneers", "TB"), ("bucs", "TB"),
+    ("green bay", "GB"), ("packers", "GB"),
+    ("new orleans", "NO"), ("saints", "NO"),
+    ("arizona", "ARI"), ("cardinals", "ARI"),
+    ("atlanta", "ATL"), ("falcons", "ATL"),
+    ("baltimore", "BAL"), ("ravens", "BAL"),
+    ("buffalo", "BUF"), ("bills", "BUF"),
+    ("carolina", "CAR"), ("panthers", "CAR"),
+    ("chicago", "CHI"), ("bears", "CHI"),
+    ("cincinnati", "CIN"), ("bengals", "CIN"),
+    ("cleveland", "CLE"), ("browns", "CLE"),
+    ("dallas", "DAL"), ("cowboys", "DAL"),
+    ("detroit", "DET"), ("lions", "DET"),
+    ("houston", "HOU"), ("texans", "HOU"),
+    ("indianapolis", "IND"), ("colts", "IND"),
+    ("jacksonville", "JAX"), ("jaguars", "JAX"), ("jags", "JAX"),
+    ("miami", "MIA"), ("dolphins", "MIA"),
+    ("minnesota", "MIN"), ("vikings", "MIN"),
+    ("philadelphia", "PHI"), ("eagles", "PHI"),
+    ("pittsburgh", "PIT"), ("steelers", "PIT"),
+    ("tennessee", "TEN"), ("titans", "TEN"),
+    ("washington", "WAS"), ("commanders", "WAS"),
+)
+_NFL_TEAM_WORDS_BY_LEN = sorted(_NFL_TEAM_WORDS, key=lambda p: -len(p[0]))
+_NFL_ABBR_RE = re.compile(
+    r"\b(KC|SEA|DEN|DAL|BUF|MIA|PHI|PIT|BAL|CIN|CLE|HOU|JAX|NYG|NYJ|CHI|"
+    r"DET|GB|ATL|ARI|LAR|LAC|SF|LV|NE|TB)\b")
+_WEEKDAY_HINTS = ("monday", "tuesday", "wednesday", "thursday", "friday",
+                  "saturday", "sunday")
+_NFL_SLATE_RE = re.compile(
+    r"\bwho (plays|is playing)\b|\bwho'?s playing\b"
+    r"|\bwhat games\b|\bgames (are |be )?on\b"
+    r"|\bgames (tonight|today|tomorrow)\b|\bany games\b"
+    r"|\ba game (tonight|today|tomorrow|on)\b"
+    r"|\b(sunday|monday|thursday) night\b"
+    r"|\bnfl schedule\b|\bgames this week\b|\bthis week'?s games\b")
+
+
+def _nfl_team_in(m: str, raw: str):
+    """The NFL team a message names (city, nickname, or abbreviation)."""
+    for phrase, abbr in _NFL_TEAM_WORDS_BY_LEN:
+        if re.search(rf"\b{re.escape(phrase)}\b", m):
+            return abbr
+    hit = _NFL_ABBR_RE.search(raw or "")
+    return hit.group(1) if hit else None
+
+
+def _nfl_day_hint(m: str):
+    if "tonight" in m:
+        return "tonight"
+    if "tomorrow" in m:
+        return "tomorrow"
+    for day in _WEEKDAY_HINTS:
+        if re.search(rf"\b{day}\b", m):
+            return day
+    if "today" in m:
+        return "today"
+    if re.search(r"this week|this weekend", m):
+        return "this_week"
+    return None
+
+
+def _keyword_nfl_schedule(message: str, m: str) -> dict | None:
+    """Bare NFL-fixture phrasings -> the nfl_schedule intent (or None)."""
+    if re.search(r"\bwho (wins|will win|won)\b", m):
+        return None  # real-game outcome trivia stays out_of_scope
+    if re.search(r"\bmy (team|players?|game|matchup|roster|league)\b"
+                 r"|\bam i playing\b|\bdo i play\b|\bi play\b", m):
+        # Possessive fantasy forms never reach the NFL schedule; the
+        # play-verb forms are the this_week opponent question, exactly
+        # as the model prompt routes them. A "should I play" form is a
+        # lineup question and keeps falling to the start_sit backstop.
+        if re.search(r"\bplay(s|ing)?\b|\bfac(e|ing)\b", m) \
+                and not re.search(r"\bshould\b", m):
+            return {"intent": "this_week"}
+        return None
+    if re.search(r"\bstart\b|\bsit\b|\bbench\b|\bflex\b", m):
+        return None  # lineup anchors keep the start_sit path
+    team = _nfl_team_in(m, message)
+    day = _nfl_day_hint(m)
+    if team and re.search(r"\bwhen\b|\bwhat time\b|\bplay(s|ing)?\b"
+                          r"|\bgame\b|\bkickoff\b", m):
+        return {"intent": "nfl_schedule", "team": team, "day_hint": day}
+    if _NFL_SLATE_RE.search(m):
+        return {"intent": "nfl_schedule", "team": team, "day_hint": day}
+    return None
+
+
 def _keyword_route(message: str) -> dict:
     m = (message or "").lower()
     base = {"player_names": [], "give_player_names": [], "receive_player_names": [], "picks": [],
@@ -557,7 +675,7 @@ def _keyword_route(message: str) -> dict:
             "other_team_hint": None, "team_names": [], "metric_hint": None, "target_position": None,
             "position_hint": None, "teams_mode": None, "week": None, "season": None,
             "draft_slot": None,
-            "draft_year": None, "position": None,
+            "draft_year": None, "day_hint": None, "position": None,
             "replace_mode": None, "waiver_mode": None,
             "value_in_picks": None, "shop_pool": None,
             "slot": None, "start_mode": None,
@@ -587,6 +705,12 @@ def _keyword_route(message: str) -> dict:
     if re.search(r"standings|division|most points|points leader|highest scoring|"
                  r"\bseed\b|first place|what place am i", m):
         return {**base, "intent": "standings"}
+    # Bare NFL-fixture questions ("who plays tonight") answer the real
+    # NFL game, never the fantasy matchup or the live pack; the helper's
+    # guards keep possessive and lineup phrasings on their own paths.
+    nfl_sched = _keyword_nfl_schedule(message, m)
+    if nfl_sched is not None:
+        return {**base, **nfl_sched}
     if re.search(r"who(?:'s| is) (winning|losing)|winning (right now|now)|"
                  r"losing (right now|now)|live score|score right now|"
                  r"what do i need tonight|need tonight to win|"
@@ -784,6 +908,7 @@ def classify(question: str, context: dict | None = None, history: list | None = 
             "season": data.get("season"),
             "draft_slot": data.get("draft_slot"),
             "draft_year": data.get("draft_year"),
+            "day_hint": data.get("day_hint"),
             "board_kind": data.get("board_kind"),
             "family": data.get("family"),
             "second_metric_hint": data.get("second_metric_hint"),

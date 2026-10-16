@@ -171,6 +171,14 @@ Reality notes vs the workshop tool map (verified in this repo):
   pack also carries roster breadth (top-24 counts per team) and, when a
   second team is named, a category sweep the composer renders
   deterministically.
+- The NFL schedule pack reads the same week-schedule store the matchup
+  page and start/sit use (utils.data_cache.load_week_schedule over the
+  ESPN-fed week files, both the Tank01-shaped disk rows and the
+  ESPN-normalized shape): real NFL fixtures with kickoff times in
+  Eastern and the TV network only when the row carries one (the ESPN
+  scoreboard normalizer passes broadcasts through as `network`). It is
+  league-independent, so a bare "who plays tonight" answers the NFL
+  game even with no league context loaded.
 """
 from __future__ import annotations
 
@@ -200,6 +208,16 @@ def load_week_projection(*args, **kwargs):
 
 def load_week_sched(*args, **kwargs):
     from utils.utils import load_week_sched as _fn
+    return _fn(*args, **kwargs)
+
+
+def load_week_schedule(*args, **kwargs):
+    from utils.data_cache import load_week_schedule as _fn
+    return _fn(*args, **kwargs)
+
+
+def nfl_state(*args, **kwargs):
+    from dashboard_services.api import get_nfl_state as _fn
     return _fn(*args, **kwargs)
 
 
@@ -7421,6 +7439,289 @@ def build_draft(bundle, entities=None, player_ids=None) -> tuple[dict, list[str]
     return pack, tools
 
 
+# -- NFL schedule ---------------------------------------------------------------
+
+_NFL_TEAM_NAMES = {
+    "ARI": "Arizona Cardinals", "ATL": "Atlanta Falcons",
+    "BAL": "Baltimore Ravens", "BUF": "Buffalo Bills",
+    "CAR": "Carolina Panthers", "CHI": "Chicago Bears",
+    "CIN": "Cincinnati Bengals", "CLE": "Cleveland Browns",
+    "DAL": "Dallas Cowboys", "DEN": "Denver Broncos",
+    "DET": "Detroit Lions", "GB": "Green Bay Packers",
+    "HOU": "Houston Texans", "IND": "Indianapolis Colts",
+    "JAX": "Jacksonville Jaguars", "KC": "Kansas City Chiefs",
+    "LV": "Las Vegas Raiders", "LAC": "Los Angeles Chargers",
+    "LAR": "Los Angeles Rams", "MIA": "Miami Dolphins",
+    "MIN": "Minnesota Vikings", "NE": "New England Patriots",
+    "NO": "New Orleans Saints", "NYG": "New York Giants",
+    "NYJ": "New York Jets", "PHI": "Philadelphia Eagles",
+    "PIT": "Pittsburgh Steelers", "SEA": "Seattle Seahawks",
+    "SF": "San Francisco 49ers", "TB": "Tampa Bay Buccaneers",
+    "TEN": "Tennessee Titans", "WAS": "Washington Commanders",
+}
+
+_NFL_TEAM_ALIASES = {"WSH": "WAS", "JAC": "JAX", "LA": "LAR", "ARZ": "ARI"}
+
+_WEEKDAY_NAMES = ("monday", "tuesday", "wednesday", "thursday", "friday",
+                  "saturday", "sunday")
+
+
+def _canon_nfl_team(value):
+    t = str(value or "").strip().upper()
+    return _NFL_TEAM_ALIASES.get(t, t)
+
+
+def _et_now():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    return datetime.now(ZoneInfo("America/New_York"))
+
+
+def _nfl_game_from_row(row, default_week):
+    """One normalized NFL game from a week-schedule row, or None.
+
+    Rows arrive in two shapes: the Tank01-shaped disk cache the site
+    writes (gameDate + "8:15p" gameTime + string gameTime_epoch) and the
+    ESPN-normalized shape (ISO gameTime + int epoch + normalized_status).
+    Kickoff resolves from the epoch when present, else from the ET wall
+    time the row carries (Tank01 gameTime is an Eastern wall clock; an
+    ISO gameTime's clock half is UTC, so only its date is reused there).
+    """
+    import re
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    if not isinstance(row, dict):
+        return None
+    away = _canon_nfl_team(row.get("away"))
+    home = _canon_nfl_team(row.get("home"))
+    if not away or not home:
+        return None
+    et = ZoneInfo("America/New_York")
+    epoch = None
+    for key in ("gameTime_epoch", "gameTimeEpoch"):
+        raw = row.get(key)
+        if raw not in (None, ""):
+            try:
+                epoch = float(raw)
+            except (TypeError, ValueError):
+                epoch = None
+        if epoch:
+            break
+    if not epoch:
+        date_raw = str(row.get("gameDate") or "")
+        wall = re.search(r"(\d{1,2}):(\d{2})\s*([aApP])",
+                         str(row.get("gameTime") or ""))
+        if len(date_raw) == 8 and date_raw.isdigit() and wall:
+            hour = int(wall.group(1)) % 12
+            if wall.group(3).lower() == "p":
+                hour += 12
+            try:
+                epoch = datetime(int(date_raw[:4]), int(date_raw[4:6]),
+                                 int(date_raw[6:8]), hour,
+                                 int(wall.group(2)), tzinfo=et).timestamp()
+            except ValueError:
+                epoch = None
+        if not epoch:
+            try:
+                epoch = datetime.fromisoformat(
+                    str(row.get("gameTime") or "").replace("Z", "+00:00")
+                ).timestamp()
+            except (ValueError, TypeError):
+                epoch = None
+    if not epoch:
+        return None
+    kickoff = datetime.fromtimestamp(epoch, et)
+    status = str(row.get("normalized_status") or "").lower()
+    if status not in ("pregame", "live", "final"):
+        code = str(row.get("gameStatusCode") or "")
+        label = str(row.get("gameStatus") or "").lower()
+        if code == "2" or "final" in label:
+            status = "final"
+        elif code == "1" or "progress" in label or "live" in label:
+            status = "live"
+        else:
+            status = "pregame"
+    network = row.get("network")
+    if not network and isinstance(row.get("broadcasts"), list):
+        names: list[str] = []
+        for entry in row["broadcasts"]:
+            if isinstance(entry, dict):
+                for name in entry.get("names") or []:
+                    name = str(name or "").strip()
+                    if name and name not in names:
+                        names.append(name)
+        network = " / ".join(names) if names else None
+
+    def _score(*keys):
+        if status != "final":
+            return None
+        for key in keys:
+            raw = row.get(key)
+            if raw not in (None, ""):
+                try:
+                    return int(float(raw))
+                except (TypeError, ValueError):
+                    continue
+        return None
+
+    week = row.get("week")
+    if not isinstance(week, int):
+        wm = re.search(r"(\d{1,2})", str(row.get("gameWeek") or ""))
+        week = int(wm.group(1)) if wm else default_week
+    hour = kickoff.strftime("%I").lstrip("0") or "12"
+    return {
+        "away": away, "home": home,
+        "away_name": _NFL_TEAM_NAMES.get(away, away),
+        "home_name": _NFL_TEAM_NAMES.get(home, home),
+        "week": week,
+        "date_label": f"{kickoff:%a}, {kickoff:%b} {kickoff.day}",
+        "date_long": f"{kickoff:%A}, {kickoff:%B} {kickoff.day}",
+        "day_name": f"{kickoff:%A}",
+        "kickoff_label": f"{hour}:{kickoff:%M %p} ET",
+        "kickoff_epoch": int(epoch),
+        "network": str(network) if network else None,
+        "status": status,
+        "away_score": _score("awayPts", "awayScore", "away_score"),
+        "home_score": _score("homePts", "homeScore", "home_score"),
+    }
+
+
+def build_nfl_schedule(bundle, entities=None, player_ids=None) -> tuple[dict, list[str]]:
+    """The real NFL schedule: which NFL teams play tonight, today,
+    tomorrow, on a named day, or this week, and when one named team
+    plays. Rows come from the same week-schedule store the matchup page
+    and start/sit read (utils.data_cache.load_week_schedule over the
+    ESPN-fed week files), spanning the current week and the next so a
+    Tuesday question still finds Thursday's game. Days resolve against
+    America/New_York today. No league context is required: the NFL
+    fixture list is league-independent."""
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    pack = _base_pack("nfl_schedule", bundle)
+    tools: list[str] = []
+    entities = entities or {}
+    season = bundle.get("season")
+    try:
+        week = int(entities.get("week") or bundle.get("week") or 0)
+    except (TypeError, ValueError):
+        week = 0
+    if not season or not week:
+        try:
+            state = nfl_state() or {}
+        except Exception:
+            state = {}
+        season = season or state.get("season")
+        if not week:
+            try:
+                week = int(state.get("week") or state.get("display_week") or 0)
+            except (TypeError, ValueError):
+                week = 0
+    if week:
+        pack["week"] = week
+    games: list[dict] = []
+    seen: set = set()
+    if season and week:
+        for w in (week, week + 1):
+            if w > 18:
+                continue
+            try:
+                rows = load_week_schedule(int(season), int(w)) or []
+            except Exception:
+                logger.debug("[assistant] nfl schedule load failed",
+                             exc_info=True)
+                rows = []
+            if rows and "data_cache.load_week_schedule" not in tools:
+                tools.append("data_cache.load_week_schedule")
+            for row in rows:
+                g = _nfl_game_from_row(row, w)
+                if g is None:
+                    continue
+                key = (g["kickoff_epoch"], g["away"], g["home"])
+                if key in seen:
+                    continue
+                seen.add(key)
+                games.append(g)
+        games.sort(key=lambda g: g["kickoff_epoch"])
+    if not games:
+        pack["available"] = False
+        pack["missing"] = "the NFL schedule is not available right now"
+        pack["nearest"] = []
+        return pack, tools
+    et = ZoneInfo("America/New_York")
+    today = _et_now().date()
+    pack["today"] = today.isoformat()
+
+    def _date_of(g):
+        return datetime.fromtimestamp(g["kickoff_epoch"], et).date()
+
+    team_abbr = _canon_nfl_team(entities.get("team")) \
+        if entities.get("team") else None
+    if team_abbr and team_abbr not in _NFL_TEAM_NAMES:
+        # A name the router read as a team but the schedule cannot
+        # place: fall through to the slate scopes rather than decline.
+        team_abbr = None
+    day_hint = str(entities.get("day_hint") or "").strip().lower() or None
+    if team_abbr:
+        pack["scope"] = "team"
+        pack["team"] = {"abbr": team_abbr,
+                        "name": _NFL_TEAM_NAMES[team_abbr]}
+        mine = [g for g in games if team_abbr in (g["away"], g["home"])]
+        this_week = [g for g in mine if g["week"] == week]
+        if this_week:
+            pack["games"] = this_week[:1]
+            pack["bye"] = False
+            pack["next_game"] = None
+        else:
+            pack["games"] = []
+            pack["bye"] = True
+            upcoming = [g for g in mine if _date_of(g) >= today]
+            pack["next_game"] = (upcoming or mine or [None])[0]
+    elif day_hint in ("tonight", "today", "tomorrow") \
+            or day_hint in _WEEKDAY_NAMES:
+        target = None
+        if day_hint == "tonight":
+            pack["scope"], target = "tonight", today
+        elif day_hint == "today":
+            pack["scope"], target = "today", today
+        elif day_hint == "tomorrow":
+            pack["scope"], target = "tomorrow", today + timedelta(days=1)
+        else:
+            pack["scope"] = "day"
+            dates = sorted({_date_of(g) for g in games
+                            if g["day_name"].lower() == day_hint})
+            for d in dates:
+                if any(g["week"] == week and _date_of(g) == d
+                       for g in games):
+                    target = d
+                    break
+            if target is None and dates:
+                future = [d for d in dates if d >= today]
+                target = future[0] if future else dates[-1]
+        if target is None:
+            # A weekday with no game in either loaded week (a Friday in
+            # most weeks): answer the day honestly and point at the next
+            # game instead of declining.
+            pack["day_name"] = str(day_hint).title()
+            pack["day_label"] = str(day_hint).title()
+            pack["games"] = []
+            upcoming = [g for g in games if _date_of(g) >= today]
+            pack["next_game"] = (upcoming or [None])[0]
+        else:
+            pack["day_name"] = f"{target:%A}"
+            pack["day_label"] = f"{target:%A}, {target:%B} {target.day}"
+            pack["games"] = [g for g in games if _date_of(g) == target]
+            if not pack["games"]:
+                later = [g for g in games if _date_of(g) > target]
+                pack["next_game"] = later[0] if later else None
+    else:
+        pack["scope"] = "week"
+        pack["games"] = [g for g in games if g["week"] == week]
+    pack["game_count"] = len(pack.get("games") or [])
+    return pack, tools
+
+
 BUILDERS = {
     "start_sit": build_start_sit,
     "trade_eval": build_trade_eval,
@@ -7451,4 +7752,5 @@ BUILDERS = {
     "front_office": build_front_office,
     "live": build_live,
     "draft": build_draft,
+    "nfl_schedule": build_nfl_schedule,
 }

@@ -886,6 +886,40 @@ def _tool_draft_state(bundle, args) -> dict:
     return out
 
 
+def _tool_nfl_schedule(bundle, args) -> dict:
+    out = _base("nfl_schedule")
+    entities = {}
+    if args.get("day"):
+        entities["day_hint"] = str(args["day"])
+    if args.get("team"):
+        entities["team"] = str(args["team"])
+    pack, _tools = ev.build_nfl_schedule(bundle, entities, [])
+    if pack.get("available") is False:
+        out.update({"ok": False,
+                    "missing": pack.get("missing") or "the NFL schedule is not loaded"})
+        return out
+    out["scope"] = pack.get("scope")
+    game_keys = ("away_name", "home_name", "date_label", "kickoff_label",
+                 "network", "status")
+    out["games"] = [_scalars(g, game_keys)
+                    for g in (pack.get("games") or [])[:8]]
+    if pack.get("team"):
+        out["team"] = pack["team"]
+        out["bye"] = bool(pack.get("bye"))
+    nxt = pack.get("next_game") or {}
+    if nxt:
+        out["next_game"] = _scalars(nxt, game_keys)
+    for g in (pack.get("games") or [])[:4]:
+        out["receipts"].append({
+            "label": f"{g.get('away_name')} at {g.get('home_name')} kickoff",
+            "value": f"{g.get('date_label')}, {g.get('kickoff_label')}"})
+    if bundle.get("platform") and bundle.get("season") and bundle.get("league_id"):
+        out["link"] = {"href": f"/{bundle['platform']}/{bundle['season']}"
+                               f"/{bundle['league_id']}/scorezone",
+                       "label": "Open ScoreZone"}
+    return out
+
+
 # -- registry ------------------------------------------------------------------------
 
 TOOL_FUNCS = {
@@ -903,6 +937,7 @@ TOOL_FUNCS = {
     "next_up": _tool_next_up,
     "live_state": _tool_live_state,
     "draft_state": _tool_draft_state,
+    "nfl_schedule": _tool_nfl_schedule,
 }
 
 # The planner-facing catalog: name, what it fetches, its arguments.
@@ -957,6 +992,10 @@ TOOL_CATALOG = [
     {"name": "draft_state",
      "description": "The league's draft: status, who is on the clock, the best players still available by site value, the user's next pick and positional needs, and prep candidates around a named pick like 1.03.",
      "args": {"pick": "a draft slot like '1.03', or null"}},
+    {"name": "nfl_schedule",
+     "description": "The real NFL schedule: which NFL teams play tonight, today, tomorrow, on a named weekday, or this week; when a named NFL team plays; kickoff times in Eastern and the TV network when the schedule carries one. Use for NFL fixture questions, never for the user's fantasy matchup.",
+     "args": {"day": "tonight | today | tomorrow | a lowercase weekday | this_week, or null",
+              "team": "an NFL team abbreviation like KC, or null"}},
 ]
 
 
