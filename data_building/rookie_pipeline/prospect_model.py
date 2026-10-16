@@ -2701,7 +2701,7 @@ def _build_reasons(
                 )
 
     # ── Durability ────────────────────────────────────────────────────────────
-    if dur_sc <= 40:
+    if dur_sc is not None and dur_sc <= 40:
         recent_gp = _safe(ls.get("games_played"))
         if recent_gp and recent_gp < 10:
             bullets.append(f"Durability concern: only {int(recent_gp)} games in most recent season")
