@@ -40696,11 +40696,27 @@ def trade_outcome_card_og_image(share_id: str):
 # _push_broadcast is imported lazily by _notify_changelog_on_startup.
 
 
+def _changelog_entry_key(entry):
+    """Stable content key for a changelog entry: its date + text, hashed.
+
+    The startup push used to dedupe on the entry's date alone, so only
+    the first entry deployed on a calendar date could ever push and a
+    second same-day entry was silently suppressed forever. The text is
+    part of the key, so editing an entry's copy counts as a new entry
+    and pushes once.
+    """
+    import hashlib
+
+    raw = f"{entry.get('date', '')}\n{entry.get('text', '')}"
+    return "entry-" + hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
+
+
 def _notify_changelog_on_startup():
     """Send a push notification when a new changelog entry is deployed.
 
-    Stores the last-notified entry date in the DB so this fires at most
-    once per changelog entry, even across restarts on the same deploy.
+    Stores the last-notified entry's content key (see
+    _changelog_entry_key) in the DB so this fires at most once per
+    changelog entry, even across restarts on the same deploy.
     """
     try:
         from dashboard_services.changelog import CHANGELOG
@@ -40710,6 +40726,7 @@ def _notify_changelog_on_startup():
         latest_date = latest.get("date", "")
         if not latest_date:
             return
+        latest_key = _changelog_entry_key(latest)
 
         from dashboard_services.db import get_conn
         with get_conn() as conn:
@@ -40726,8 +40743,24 @@ def _notify_changelog_on_startup():
             # get_conn() returns dict rows; index by column name, not position.
             last_pushed = (row["value"] if row else None)
 
-        if last_pushed == latest_date:
+        if last_pushed == latest_key:
+            logger.info(
+                "[changelog-push] already notified for entry %s (%s); skipping",
+                latest_date, latest_key,
+            )
             return  # already notified for this entry
+
+        # Migration: markers written before the content-key change are
+        # bare dates (e.g. "2026-10-15"). A bare date cannot say WHICH
+        # of that date's entries was pushed, so it never matches a
+        # content key: the current entry is treated as unpushed, fires
+        # once below, and the marker is rewritten in the new format.
+        if last_pushed and not last_pushed.startswith("entry-"):
+            logger.info(
+                "[changelog-push] legacy date marker %r found; "
+                "treating entry %s (%s) as unpushed",
+                last_pushed, latest_date, latest_key,
+            )
 
         tag = latest.get("tag", "update")
         text = latest.get("text", "")
@@ -40751,17 +40784,32 @@ def _notify_changelog_on_startup():
 
         from routes.push_bp import _push_broadcast
         # _push_broadcast returns a plain (dict, status) tuple, so this is safe to
-        # call at import time with no Flask app context.
-        result, _status = _push_broadcast(title=title, body=body, url=link, tag=f"changelog-{latest_date}")
+        # call at import time with no Flask app context. The tag carries the
+        # content key so two distinct same-day entries do not collapse
+        # into one notification slot on the device.
+        result, _status = _push_broadcast(title=title, body=body, url=link, tag=f"changelog-{latest_key}")
+        errored = not isinstance(result, dict) or "error" in result
         sent = result.get("sent", 0) if isinstance(result, dict) else 0
-        logger.info("[changelog-push] sent %d notifications for entry %s", sent, latest_date)
+        if errored:
+            # Do NOT burn the marker on a failed broadcast: the next
+            # boot retries this entry. (The old code marked the date
+            # regardless, so one bad boot silenced an entry forever.)
+            logger.warning(
+                "[changelog-push] broadcast failed for entry %s (%s): %s; "
+                "marker not written, will retry on next boot",
+                latest_date, latest_key,
+                result.get("error") if isinstance(result, dict) else result,
+            )
+            return
+        logger.info("[changelog-push] sent %d notifications for entry %s (%s)", sent, latest_date, latest_key)
 
-        # Mark this date as notified regardless of send count
+        # Mark this entry as notified. A broadcast that reached zero
+        # subscribers without erroring still counts as fired.
         with get_conn() as conn:
             conn.execute(
                 "INSERT INTO app_state (key, value) VALUES ('changelog_last_pushed', %s) "
                 "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
-                (latest_date,),
+                (latest_key,),
             )
             conn.commit()
     except Exception as exc:
