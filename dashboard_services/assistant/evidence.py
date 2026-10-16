@@ -3011,12 +3011,12 @@ def _no_board(pack, missing, nearest):
     return pack
 
 
-def _build_matchup_board(pack, bundle, position, top_n, tools):
-    """Defenses ranked by the site's matchup ratings (the same
-    app._matchup_rank_table the start/sit path uses): rank 1 is the easiest
-    matchup; the value shown is raw fantasy points allowed per game."""
-    if not position:
-        return _no_board(pack, "a position to rank defenses against", []), tools
+def _matchup_rows(bundle, position, tools):
+    """One position's defense rows from the site's matchup ratings (the
+    same app._matchup_rank_table the start/sit path uses): rank 1 is the
+    easiest matchup; the value shown is raw fantasy points allowed per
+    game. Returns (rows, pool_size); rows is empty when the table has
+    nothing usable for the position."""
     season = bundle.get("season")
     rows = []
     total = 0
@@ -3041,17 +3041,77 @@ def _build_matchup_board(pack, bundle, position, top_n, tools):
         except Exception:
             logger.debug("[assistant] matchup board failed", exc_info=True)
             rows = []
-    if not rows:
-        return _no_board(pack, "matchup ratings are not available yet", []), tools
-    pack["board"] = rows[:top_n]
-    pack["board_count"] = len(pack["board"])
-    pack["pool_size"] = int(total) if total else len(rows)
+    return rows, (int(total) if total else len(rows))
+
+
+def _build_matchup_board(pack, bundle, positions, top_n, tools, team=None):
+    """Defenses ranked by the site's matchup ratings, for one position
+    or several: rank 1 is the easiest matchup; the value shown is raw
+    fantasy points allowed per game. A single position keeps the
+    original pack shape; several positions add one sub-board per
+    position under pack["boards"] (pack["board"] stays the first
+    position's rows). A named defense (the thread's focus) rides as
+    pack["focus"] with its rank against each position, read from the
+    full table, not just the shown rows."""
+    positions = [p for p in (positions or []) if p in ("QB", "RB", "WR", "TE")]
+    if not positions:
+        return _no_board(pack, "a position to rank defenses against", []), tools
+    built = []
+    for position in positions:
+        rows, total = _matchup_rows(bundle, position, tools)
+        if not rows:
+            return _no_board(pack, "matchup ratings are not available yet",
+                             []), tools
+        built.append((position, rows, total))
     pack["metric_key"] = "defense_points_allowed"
-    pack["label"] = f"Fantasy points allowed to {position}"
-    pack["qualification_text"] = (
-        f"All {pack['pool_size']} defenses, ranked easiest to hardest by the "
-        f"site's opponent-adjusted matchup ratings. Values are raw fantasy "
-        f"points allowed per game to {position}.")
+
+    def _sub(position, rows, total):
+        return {"position": position,
+                "label": f"Fantasy points allowed to {position}",
+                "board": rows[:top_n],
+                "board_count": len(rows[:top_n]),
+                "pool_size": total,
+                "qualification_text": (
+                    f"All {total} defenses, ranked easiest to hardest by "
+                    f"the site's opponent-adjusted matchup ratings. Values "
+                    f"are raw fantasy points allowed per game to {position}.")}
+
+    focus = None
+    if team:
+        ranks = []
+        for position, rows, total in built:
+            for r in rows:
+                if r["team"] == team:
+                    ranks.append({"position": position, "rank": r["rank"],
+                                  "pool_size": total, "value": r["value"]})
+                    break
+        if ranks:
+            focus = {"team": team, "name": _defense_name(team, _index()),
+                     "position": ranks[0]["position"],
+                     "rank": ranks[0]["rank"],
+                     "pool_size": ranks[0]["pool_size"],
+                     "value": ranks[0]["value"],
+                     "ranks": ranks}
+    if len(built) == 1:
+        sub = _sub(*built[0])
+        pack["board"] = sub["board"]
+        pack["board_count"] = sub["board_count"]
+        pack["pool_size"] = sub["pool_size"]
+        pack["label"] = sub["label"]
+        pack["qualification_text"] = sub["qualification_text"]
+        if focus:
+            pack["focus"] = focus
+        return pack, tools
+    subs = [_sub(position, rows, total) for position, rows, total in built]
+    pack["positions"] = [position for position, _rows, _total in built]
+    pack["boards"] = subs
+    pack["board"] = subs[0]["board"]
+    pack["board_count"] = subs[0]["board_count"]
+    pack["pool_size"] = subs[0]["pool_size"]
+    pack["label"] = ("Fantasy points allowed to "
+                     + " and ".join(pack["positions"]))
+    if focus:
+        pack["focus"] = focus
     return pack, tools
 
 
@@ -3686,6 +3746,13 @@ def build_leaderboard(bundle, entities, player_ids=None) -> tuple[dict, list[str
     position = str(ent.get("position") or "").strip().upper() or None
     if position not in ("QB", "RB", "WR", "TE"):
         position = None
+    positions: list[str] = []
+    for _p in (ent.get("positions") or []):
+        _p = str(_p or "").strip().upper()
+        if _p in ("QB", "RB", "WR", "TE") and _p not in positions:
+            positions.append(_p)
+    if positions and position is None:
+        position = positions[0]
     pack["position_filter"] = position
     team = str(ent.get("team") or "").strip().upper() or None
     pack["team_filter"] = team
@@ -3741,7 +3808,9 @@ def build_leaderboard(bundle, entities, player_ids=None) -> tuple[dict, list[str
                        "roster_player_ids": set(), "roster": {}}
 
     if kind == "matchup":
-        return _build_matchup_board(pack, bundle, position, top_n, tools)
+        return _build_matchup_board(pack, bundle,
+                                    positions or ([position] if position else []),
+                                    top_n, tools, team)
 
     if kind in ("buy_low", "sell_high"):
         return _build_value_board(pack, bundle, tools, kind, position, team,

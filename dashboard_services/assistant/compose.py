@@ -1997,6 +1997,19 @@ def _fmt_delta(value) -> str:
     return ("+" if f > 0 else "-") + _fmt_num(abs(f))
 
 
+def _join_and(parts: list[str]) -> str:
+    parts = [p for p in parts if p]
+    if len(parts) <= 1:
+        return "".join(parts)
+    if len(parts) == 2:
+        return " and ".join(parts)
+    return ", ".join(parts[:-1]) + ", and " + parts[-1]
+
+
+def _matchup_focus_ranks(focus: dict) -> list[dict]:
+    return focus.get("ranks") or []
+
+
 def _board_verdict(pack: dict) -> str | None:
     board = pack.get("board") or []
     if not board:
@@ -2005,6 +2018,27 @@ def _board_verdict(pack: dict) -> str | None:
     kind = pack.get("board_kind")
     label = pack.get("label") or ""
     if kind == "matchup":
+        focus = pack.get("focus") or {}
+        ranks = _matchup_focus_ranks(focus)
+        if len(ranks) > 1:
+            listed = _join_and(
+                [f"#{r.get('rank')} of {r.get('pool_size')} against "
+                 f"{r.get('position')}s" for r in ranks])
+            return f"{focus.get('name')} defense is {listed}"
+        if ranks:
+            r = ranks[0]
+            return (f"{focus.get('name')} defense is #{r.get('rank')} of "
+                    f"{r.get('pool_size')} against {r.get('position')}s")
+        boards = pack.get("boards") or []
+        if len(boards) > 1:
+            parts = []
+            for sub in boards:
+                sub_board = sub.get("board") or []
+                if sub_board:
+                    parts.append(f"{sub_board[0].get('team')} gives up the "
+                                 f"most to {sub.get('position')}s")
+            if parts:
+                return "; ".join(parts)
         return f"{top.get('team')} gives up the most to {pack.get('position_filter')}s"
     if kind == "intersection":
         return f"{top.get('name')} tops both boards"
@@ -2119,7 +2153,7 @@ def _stat_extras(row: dict, pack: dict) -> str:
     return f" ({', '.join(parts)})" if parts else ""
 
 
-def _board_line(row: dict, pack: dict) -> str:
+def _board_line(row: dict, pack: dict, position: str | None = None) -> str:
     kind = pack.get("board_kind")
     rank = row.get("rank")
     name = row.get("name") or ""
@@ -2131,7 +2165,7 @@ def _board_line(row: dict, pack: dict) -> str:
                f"{_stat_extras(row, pack)}"
     if kind == "matchup":
         return (f"{rank}. {row.get('team')}: {value} fantasy points allowed "
-                f"per game to {pack.get('position_filter')}")
+                f"per game to {position or pack.get('position_filter')}")
     if kind == "movers":
         if row.get("delta") is not None:
             return (f"{head}: {_fmt_delta(row['delta'])} to {value} "
@@ -2196,12 +2230,16 @@ def _board_line(row: dict, pack: dict) -> str:
     return line
 
 
-def _board_receipt(row: dict, pack: dict) -> dict:
+def _board_receipt(row: dict, pack: dict, position: str | None = None) -> dict:
     kind = pack.get("board_kind")
     label = f"{row.get('rank')}. {row.get('name') or row.get('team')}"
     value = _fmt_num(row.get("value")) if row.get("value") is not None else ""
     if pack.get("stat_board"):
         return {"label": label, "value": f"{value}{_stat_extras(row, pack)}"}
+    if kind == "matchup" and position:
+        # One receipt list serves every sub-board of a multi-position
+        # answer; the position keeps same-rank labels distinct.
+        return {"label": f"{label} vs {position}", "value": value}
     if kind == "movers" and row.get("delta") is not None:
         return {"label": label, "value": f"{_fmt_delta(row['delta'])} (now {value})"}
     if kind in ("buy_low", "sell_high") and row.get("delta") is not None:
@@ -2272,9 +2310,40 @@ def _board_intro_template(pack: dict) -> str:
     label = pack.get("label") or ""
     value = _fmt_num(top.get("value")) if top.get("value") is not None else ""
     if kind == "matchup":
-        return (f"{top.get('team')} is the softest matchup for "
+        sentences = []
+        focus = pack.get("focus") or {}
+        ranks = _matchup_focus_ranks(focus)
+        if len(ranks) > 1:
+            listed = _join_and(
+                [f"#{r.get('rank')} of {r.get('pool_size')} against "
+                 f"{r.get('position')}s ({_fmt_num(r.get('value'))} fantasy "
+                 "points allowed per game)" for r in ranks])
+            sentences.append(
+                f"The {focus.get('name')} defense ranks {listed}.")
+        elif ranks:
+            r = ranks[0]
+            sentences.append(
+                f"The {focus.get('name')} defense ranks #{r.get('rank')} of "
+                f"{r.get('pool_size')} against {r.get('position')}s, allowing "
+                f"{_fmt_num(r.get('value'))} fantasy points per game to "
+                f"{r.get('position')}s.")
+        boards = pack.get("boards") or []
+        if len(boards) > 1:
+            for sub in boards:
+                sub_board = sub.get("board") or []
+                if sub_board:
+                    stop = sub_board[0]
+                    sentences.append(
+                        f"{stop.get('team')} is the softest matchup for "
+                        f"{sub.get('position')}s at "
+                        f"{_fmt_num(stop.get('value'))} fantasy points "
+                        "allowed per game.")
+        else:
+            sentences.append(
+                f"{top.get('team')} is the softest matchup for "
                 f"{pack.get('position_filter')}s at {value} fantasy points "
                 "allowed per game.")
+        return " ".join(sentences)
     if kind == "intersection":
         return (f"{pack.get('board_count')} players sit in the top "
                 f"{pack.get('requested_n')} of both {label} and "
@@ -2386,13 +2455,32 @@ def _compose_leaderboard(question: str, pack: dict, *, preferences=None,
                     exc_info=True)
     if not intro:
         intro = _board_intro_template(pack)
-    body = "\n".join([intro] + [_board_line(r, pack) for r in board])
-    qual = pack.get("qualification_text")
-    if qual:
-        body += "\n" + qual
+    boards = pack.get("boards") or []
+    if len(boards) > 1:
+        # Multi-board pack (defenses vs several positions): one headed
+        # section per sub-board, each with its own basis line; receipts
+        # run across the sub-boards in order, position-tagged.
+        lines = [intro]
+        receipts = []
+        for sub in boards:
+            pos = sub.get("position")
+            lines.append(f"Fantasy points allowed to {pos}s:")
+            lines += [_board_line(r, pack, pos)
+                      for r in sub.get("board") or []]
+            if sub.get("qualification_text"):
+                lines.append(sub["qualification_text"])
+            receipts += [_board_receipt(r, pack, pos)
+                         for r in sub.get("board") or []]
+        body = "\n".join(lines)
+    else:
+        body = "\n".join([intro] + [_board_line(r, pack) for r in board])
+        qual = pack.get("qualification_text")
+        if qual:
+            body += "\n" + qual
+        receipts = [_board_receipt(r, pack) for r in board]
     return _enforce_grounding(
         {"verdict": _board_verdict(pack), "text": body,
-         "receipts": [_board_receipt(r, pack) for r in board],
+         "receipts": receipts,
          "caveat": None,
          "followups": _clean_followups("leaderboard", followups),
          "act_link": _board_link(pack) or dict(_ACT_LINKS["leaderboard"]),

@@ -15,7 +15,7 @@ from dashboard_services.assistant.compose import compose_answer, followup_pair, 
 from dashboard_services.assistant.evidence import BUILDERS
 from dashboard_services.assistant.model import last_usage
 from dashboard_services.assistant.resolve import _normalize, resolve_player
-from dashboard_services.assistant.router import classify
+from dashboard_services.assistant.router import classify, positions_reply
 
 logger = logging.getLogger(__name__)
 
@@ -460,6 +460,11 @@ def ask(account_key: str, message: str, *, platform=None, league_id=None, season
     pending_clarify = (last_entities or {}).get("pending_clarify")
     if not isinstance(pending_clarify, dict):
         pending_clarify = None
+    # A pending slot clarification: the last turn's answer was itself a
+    # question (a pack that dead-ended asking for one missing entity).
+    pending_slot = (last_entities or {}).get("pending_slot")
+    if not isinstance(pending_slot, dict):
+        pending_slot = None
     assumed = {
         "league_id": bundle.get("league_id"), "league_name": bundle.get("league_name"),
         "platform": bundle.get("platform"), "season": bundle.get("season"),
@@ -494,7 +499,39 @@ def ask(account_key: str, message: str, *, platform=None, league_id=None, season
             resumed = True
     if forced_ids:
         bundle["forced_player_ids"] = forced_ids
-    if not resumed:
+    # Slot-clarification resume: the last turn's answer asked for the one
+    # entity its pack was missing ("Tell me a position and I will rank
+    # the defenses against it."). A reply that is only position(s) fills
+    # the slot and re-runs the pending request with its focus intact,
+    # instead of routing cold (a bare "wr and rb" otherwise degrades
+    # into an unrelated board). Any other reply lets the slot lapse:
+    # thread state is rebuilt every turn, so an unregistered slot is
+    # gone after one turn.
+    slot_resumed = False
+    if pending_slot and not resumed:
+        reply_positions = positions_reply(message)
+        if reply_positions:
+            intent = pending_slot.get("intent") or intent
+            entities = dict(pending_slot.get("entities") or {})
+            entities["positions"] = reply_positions
+            entities["position"] = reply_positions[0]
+            if pending_slot.get("team") and not entities.get("team"):
+                entities["team"] = pending_slot["team"]
+            # The turn answers the pending question, not the bare reply:
+            # compose and the log both key off the message.
+            message = pending_slot.get("question") or message
+            slot_resumed = True
+    if not resumed and not slot_resumed:
+        # Defense follow-ups keep the thread's defense in focus: a
+        # matchup/defenses board that names no team inherits the team
+        # the thread was just discussing. Scoped to the defense board
+        # kinds: on any other board a team is a player filter, never a
+        # focus, so a plain board question after a defense answer keeps
+        # its own (teamless) meaning.
+        if intent == "leaderboard" and not entities.get("team") \
+                and entities.get("board_kind") in ("matchup", "defenses") \
+                and (last_entities or {}).get("team"):
+            entities["team"] = last_entities["team"]
         # Follow-ups: short/elliptical messages inherit the thread's last entities.
         if not entities.get("player_names") and last_entities.get("player_names") and len((message or "").split()) <= 6:
             entities["player_names"] = last_entities.get("player_names") or []
@@ -511,7 +548,7 @@ def ask(account_key: str, message: str, *, platform=None, league_id=None, season
                     if not entities.get(_f) and last_entities.get(_f):
                         entities[_f] = last_entities[_f]
 
-    def _finish(answer, *, log_intent, pack=None, tools=None, verdict=None, entities_out=None, pending=None):
+    def _finish(answer, *, log_intent, pack=None, tools=None, verdict=None, entities_out=None, pending=None, pending_slot=None):
         usage = last_usage()
         log_id = store.write_log(
             **_log_common(bundle, account_key),
@@ -532,6 +569,8 @@ def ask(account_key: str, message: str, *, platform=None, league_id=None, season
                            "resolved_names": resolved_names}
         if pending is not None:
             thread_entities["pending_clarify"] = pending
+        if pending_slot is not None:
+            thread_entities["pending_slot"] = pending_slot
         store.update_thread(tid, last_entities=thread_entities, turn_count=turn_index)
         return {"thread_id": tid, "log_id": log_id, "intent": log_intent, "answer": answer,
                 "caps": {**caps, "used": caps["used"] + 1}}
@@ -678,7 +717,24 @@ def ask(account_key: str, message: str, *, platform=None, league_id=None, season
                 save_cached_ai_text(cache_key, json.dumps(answer))
             except Exception:
                 pass
-    return _finish(answer, log_intent=intent, pack=pack, tools=tools, entities_out=resolved_entities)
+    # A pack that dead-ends asking for its missing slot registers a
+    # pending slot, so the user's bare position reply resumes this exact
+    # request (focus team included) instead of routing cold. Only the
+    # matchup board's position ask exists today; the record is generic
+    # (pending intent + entities + focus) so the next slot kind reuses it.
+    pending_slot_out = None
+    if isinstance(pack, dict) and pack.get("available") is False \
+            and pack.get("missing") == "a position to rank defenses against":
+        pending_slot_out = {
+            "kind": "matchup_position",
+            "question": message,
+            "intent": "leaderboard",
+            "entities": {**entities, "board_kind": "matchup"},
+            "team": entities.get("team"),
+        }
+    return _finish(answer, log_intent=intent, pack=pack, tools=tools,
+                   entities_out=resolved_entities,
+                   pending_slot=pending_slot_out)
 
 
 def _parse_json_col(value):

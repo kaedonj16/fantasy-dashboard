@@ -2,6 +2,6 @@
 from __future__ import annotations
 
 PROMPT_VERSION = "assistant-v17"
-ROUTER_PROMPT_VERSION = "assistant-router-v16"
+ROUTER_PROMPT_VERSION = "assistant-router-v17"
 
 __all__ = ["PROMPT_VERSION", "ROUTER_PROMPT_VERSION"]

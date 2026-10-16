@@ -49,6 +49,7 @@ SCHEMA = {
         "second_metric_hint": {"type": ["string", "null"]},
         "top_n": {"type": ["integer", "null"]},
         "position": {"type": ["string", "null"]},
+        "positions": {"type": ["array", "null"], "items": {"type": "string", "enum": ["QB", "RB", "WR", "TE"]}},
         "team": {"type": ["string", "null"]},
         "window_weeks": {"type": ["integer", "null"]},
         "direction": {"type": ["string", "null"], "enum": ["risers", "fallers", None]},
@@ -59,7 +60,7 @@ SCHEMA = {
         "slot": {"type": ["string", "null"]},
         "start_mode": {"type": ["string", "null"], "enum": ["start", "sit", None]},
     },
-    "required": ["intent", "player_names", "give_player_names", "receive_player_names", "picks", "give_picks", "receive_picks", "other_team_hint", "team_names", "metric_hint", "target_position", "position_hint", "teams_mode", "week", "season", "draft_slot", "draft_year", "day_hint", "preference_text", "board_kind", "family", "second_metric_hint", "top_n", "position", "team", "window_weeks", "direction", "replace_mode", "waiver_mode", "value_in_picks", "shop_pool", "slot", "start_mode", "max_age", "pool", "finish_n"],
+    "required": ["intent", "player_names", "give_player_names", "receive_player_names", "picks", "give_picks", "receive_picks", "other_team_hint", "team_names", "metric_hint", "target_position", "position_hint", "teams_mode", "week", "season", "draft_slot", "draft_year", "day_hint", "preference_text", "board_kind", "family", "second_metric_hint", "top_n", "position", "positions", "team", "window_weeks", "direction", "replace_mode", "waiver_mode", "value_in_picks", "shop_pool", "slot", "start_mode", "max_age", "pool", "finish_n"],
     "additionalProperties": False,
 }
 
@@ -97,7 +98,9 @@ SYSTEM = (
     "low, buy-low candidates, who is undervalued: board_kind buy_low; who should I "
     "sell high, sell-high candidates, who is overvalued: board_kind sell_high), "
     "or which defenses give up the most to a position (board_kind matchup, "
-    "position is the offensive position), or a team-defense ranking question "
+    "position is the offensive position; when more than one position is named, "
+    "positions lists all of them in the order named and position is the first), "
+    "or a team-defense ranking question "
     "(what is Denver's defense ranked, how good is the Chiefs defense, rank "
     "the defenses, the best defenses: board_kind defenses, team is the NFL "
     "abbreviation of the defense named, DEN for Denver, or null when no "
@@ -217,11 +220,14 @@ SYSTEM = (
     "season: the NFL season year a leaderboard, metric, or playoffs question is about when it "
     "names a past season (in 2024, the 2024 season, during 2023); 'last season' is one year "
     "before the context season. Null when the question is about the current season. "
+    "A reply that is only a position or positions (wr, tight ends, wr and rb) after a "
+    "defenses-against-position question the assistant asked to clarify is that same "
+    "leaderboard question with board_kind matchup and the position(s) filled in. "
     "Use thread history only to resolve short follow-ups. Return JSON only. No em dashes."
 )
 
 _BOARD_ENTITY_DEFAULTS = {"board_kind": None, "family": None, "second_metric_hint": None, "top_n": None,
-                          "position": None, "team": None, "window_weeks": None,
+                          "position": None, "positions": None, "team": None, "window_weeks": None,
                           "direction": None, "max_age": None, "pool": None,
                           "finish_n": None}
 
@@ -252,6 +258,51 @@ _POSITION_WORDS = (("quarterback", "QB"), ("running back", "RB"),
                    ("wide receiver", "WR"), ("tight end", "TE"),
                    (" qbs", "QB"), (" rbs", "RB"), (" wrs", "WR"), (" tes", "TE"),
                    (" qb", "QB"), (" rb", "RB"), (" wr", "WR"), (" te", "TE"))
+
+
+def _positions_in(m: str) -> list[str]:
+    """Every offensive position a message names, in text order (the
+    first named is the primary, the same rule _metric_hints_in uses)."""
+    earliest: dict[str, int] = {}
+    for word, pos in _POSITION_WORDS:
+        idx = m.find(word)
+        if idx >= 0 and (pos not in earliest or idx < earliest[pos]):
+            earliest[pos] = idx
+    return [pos for pos, _idx in sorted(earliest.items(), key=lambda kv: kv[1])]
+
+
+# A bare position reply ("wr", "tight ends", "wr and rb"): the whole
+# message is position phrases plus connectors. Such a reply answers a
+# pending "which position?" clarification; it is never a fresh question.
+_REPLY_POSITION_PHRASES = (
+    ("quarterbacks", "QB"), ("quarterback", "QB"), ("qbs", "QB"), ("qb", "QB"),
+    ("running backs", "RB"), ("running back", "RB"), ("rbs", "RB"), ("rb", "RB"),
+    ("wide receivers", "WR"), ("wide receiver", "WR"), ("wrs", "WR"), ("wr", "WR"),
+    ("tight ends", "TE"), ("tight end", "TE"), ("tes", "TE"), ("te", "TE"))
+_REPLY_POSITION_RE = re.compile(
+    r"\b(" + "|".join(p for p, _ in _REPLY_POSITION_PHRASES) + r")\b")
+_REPLY_POSITION_MAP = dict(_REPLY_POSITION_PHRASES)
+_REPLY_FILLER = {"and", "both", "the", "&"}
+
+
+def positions_reply(message: str) -> list[str] | None:
+    """The positions a bare position reply names, in order, or None
+    when the message says anything more than positions + connectors."""
+    text = re.sub(r"[^a-z&\s]", " ", (message or "").lower())
+    found: list[str] = []
+
+    def _take(match):
+        pos = _REPLY_POSITION_MAP[match.group(1)]
+        if pos not in found:
+            found.append(pos)
+        return " "
+
+    rest = _REPLY_POSITION_RE.sub(_take, text)
+    if not found:
+        return None
+    if any(tok not in _REPLY_FILLER for tok in rest.split()):
+        return None
+    return found
 
 
 def _metric_hints_in(m: str) -> list[str]:
@@ -324,11 +375,8 @@ def _keyword_board(message: str, m: str) -> dict | None:
             hints = [resolved["phrase"]]
     top = re.search(r"\btop\s+(\d{1,2})\b", m)
     window = re.search(r"\blast\s+(\d{1,2})\s+weeks?\b", m)
-    position = None
-    for word, pos in _POSITION_WORDS:
-        if word in m:
-            position = pos
-            break
+    positions = _positions_in(m)
+    position = positions[0] if positions else None
     if _BREADTH_RE.search(m):
         family = "fantasy"
         for word, fam in (("receiv", "receiving"), ("rush", "rushing"),
@@ -453,6 +501,7 @@ def _keyword_board(message: str, m: str) -> dict | None:
         "board_kind": kind,
         "top_n": int(top.group(1)) if top else None,
         "position": position,
+        "positions": positions if kind == "matchup" else None,
         "team": None,
         "window_weeks": int(window.group(1)) if window else None,
         "direction": direction,
@@ -1045,6 +1094,7 @@ def classify(question: str, context: dict | None = None, history: list | None = 
             "second_metric_hint": data.get("second_metric_hint"),
             "top_n": data.get("top_n"),
             "position": data.get("position"),
+            "positions": data.get("positions"),
             "team": data.get("team"),
             "window_weeks": data.get("window_weeks"),
             "direction": data.get("direction"),
