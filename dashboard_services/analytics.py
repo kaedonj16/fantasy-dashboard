@@ -220,18 +220,84 @@ def account_id_from_session() -> Optional[int]:
         return None
 
 
-def ensure_anon_session_id() -> Optional[str]:
-    """Stable per-browser id for signed-out guests, stored in the session."""
-    try:
-        from flask import session
+# Anonymous identity: a uuid4 hex carried in a persistent first-party
+# cookie (one year), so a signed-out visitor keeps one identity across
+# browser restarts. Before this cookie existed the id lived only in the
+# Flask session cookie, which is a browser-session cookie for guests
+# (session.permanent is set at login), so every return visit minted a
+# fresh id and inflated the anonymous DAU counts.
+ANON_COOKIE_NAME = "_analytics_sid"
+ANON_COOKIE_MAX_AGE = 365 * 24 * 60 * 60  # seconds; one year
 
-        sid = session.get("_analytics_sid")
+
+def _valid_anon_sid(value: Any) -> Optional[str]:
+    """Return value if it looks like an anon id we mint (uuid4 hex)."""
+    if isinstance(value, str) and len(value) == 32:
+        try:
+            int(value, 16)
+            return value
+        except ValueError:
+            return None
+    return None
+
+
+def ensure_anon_session_id() -> Optional[str]:
+    """Stable per-browser id for signed-out guests.
+
+    Resolution order: the persistent ``_analytics_sid`` cookie wins;
+    otherwise a sid already carried by the Flask session is adopted
+    (the pageview hook persists it into the cookie via
+    :func:`stamp_anon_cookie`, so a visitor active at the switch keeps
+    one identity); otherwise a fresh uuid is minted. The resolved value
+    is mirrored into the session, where it has always lived.
+    """
+    try:
+        from flask import request, session
+
+        sid = _valid_anon_sid(request.cookies.get(ANON_COOKIE_NAME))
+        if not sid:
+            sid = session.get("_analytics_sid")
         if not sid:
             sid = uuid.uuid4().hex
+        if session.get("_analytics_sid") != sid:
             session["_analytics_sid"] = sid
         return sid
     except Exception:
         return None
+
+
+def stamp_anon_cookie(response: Any, secure: bool = False,
+                      domain: Optional[str] = None) -> None:
+    """Persist the resolved anon id on a pageview response.
+
+    Called only from app.py's pageview hook (a logged HTML pageview),
+    never for API/static/admin traffic. No-op when the request already
+    carried the cookie with the resolved value, so repeat responses are
+    not re-stamped. Attributes mirror the session cookie's conventions:
+    HttpOnly, SameSite=Lax, Path=/, Secure as configured for the site,
+    and the session cookie's domain when one is configured (shared
+    across apex/www). Never raises.
+    """
+    try:
+        from flask import request
+
+        sid = ensure_anon_session_id()
+        if not sid:
+            return
+        if _valid_anon_sid(request.cookies.get(ANON_COOKIE_NAME)) == sid:
+            return
+        response.set_cookie(
+            ANON_COOKIE_NAME,
+            sid,
+            max_age=ANON_COOKIE_MAX_AGE,
+            path="/",
+            samesite="Lax",
+            httponly=True,
+            secure=secure,
+            domain=domain,
+        )
+    except Exception:
+        logger.debug("[analytics] stamp_anon_cookie failed", exc_info=True)
 
 
 def account_id_from_subscriber_token(token: Any) -> Optional[int]:
