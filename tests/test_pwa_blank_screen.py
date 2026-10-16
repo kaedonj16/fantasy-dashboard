@@ -54,7 +54,7 @@ def test_cache_name_bumped_for_blank_screen_fix():
     # 'View player' modal action (opens the player modal in place,
     # no navigation).
     # Assert the current version, not a stale pin.
-    assert "br-fantasy-v44" in SW
+    assert "br-fantasy-v45" in SW
 
 
 def test_nav_timeout_always_races_even_without_cache():

@@ -4741,14 +4741,66 @@ function showLoginGate(target, opts) {
         dot.hidden = true;
       }
 
-      // Teaser card
+      // Intro bubble: a one-time "New: BR Assistant" card in the
+      // teaser slot, shown only to users who have never opened the
+      // sheet. There is no server-backed opened flag in the teaser
+      // system, so retirement persists in localStorage, the most
+      // durable store the assistant UI has. Prior use visible on this
+      // browser (a restored thread, asks on this month's meter) also
+      // counts as opened and retires it silently.
+      var INTRO_KEY = 'brAsstIntroSeen';
+      var introSeen = false;
+      try { introSeen = localStorage.getItem(INTRO_KEY) === '1'; } catch (e) {}
+      if (!introSeen && ((savedAtLoad && savedAtLoad.thread_id) ||
+          (state.caps && state.caps.used > 0))) {
+        introSeen = true;
+        try { localStorage.setItem(INTRO_KEY, '1'); } catch (e) {}
+      }
+      var introEl = null;
+      function retireIntro() {
+        try { localStorage.setItem(INTRO_KEY, '1'); } catch (e) {}
+        if (introEl) { introEl.remove(); introEl = null; }
+      }
+      if (!introSeen) {
+        introEl = el('aside', 'br-asst-bubble');
+        introEl.id = 'brAsstIntro';
+        introEl.setAttribute('aria-label', 'BR Assistant introduction');
+        var bmain = el('button', 'br-asst-bubble-main');
+        bmain.type = 'button';
+        bmain.appendChild(el('span', 'br-asst-bubble-lead', 'New: BR Assistant'));
+        bmain.appendChild(el('span', 'br-asst-bubble-line',
+          'Ask me anything about your league.'));
+        introEl.appendChild(bmain);
+        var brow = el('div', 'br-asst-bubble-chiprow');
+        var bchip = el('button', 'br-asst-chip', 'Who should I start at FLEX this week?');
+        bchip.type = 'button';
+        brow.appendChild(bchip);
+        introEl.appendChild(brow);
+        var bdismiss = el('button', 'br-asst-bubble-dismiss', '×');
+        bdismiss.type = 'button';
+        bdismiss.setAttribute('aria-label', 'Dismiss');
+        introEl.appendChild(bdismiss);
+        document.body.appendChild(introEl);
+        bdismiss.addEventListener('click', function () { retireIntro(); });
+        bmain.addEventListener('click', function () { openPopup(false); });
+        bchip.addEventListener('click', function () {
+          // Chips in this UI send on tap (the starter-chip path): open
+          // the sheet and send the example question through it.
+          openPopup(false);
+          sendMessage('Who should I start at FLEX this week?', null, false);
+        });
+      }
+
+      // Teaser card. While the intro bubble holds the slot, the
+      // digest teaser stays down; it resumes on later loads once the
+      // bubble has retired (first open retires it for good).
       var teaserEl = null;
       var dismissed = false;
       try {
         dismissed = state.teaser &&
           sessionStorage.getItem('brAsstTeaserDismissed') === String(state.teaser.log_id);
       } catch (e) {}
-      if (state.teaser && !dismissed) {
+      if (!introEl && state.teaser && !dismissed) {
         // Slim single-line prompt (no card, no CTA button): the BR
         // mark, the top action as one line of text, a chevron. The
         // whole line opens the sheet with the digest answer in it.
@@ -4920,6 +4972,9 @@ function showLoginGate(target, opts) {
           scrim.classList.add('br-asst-enter');
         }
         if (teaserEl) { teaserEl.remove(); teaserEl = null; }
+        // Any open path (launcher, teaser, bubble, session restore,
+        // deep link) is the first open: the intro bubble retires.
+        retireIntro();
         state.popupState = 'open';
         launcherTyping.hidden = true;
         markSeen(state.lastLogId);
