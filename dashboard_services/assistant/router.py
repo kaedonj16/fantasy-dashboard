@@ -183,7 +183,9 @@ SYSTEM = (
     "tonight (that is nfl_schedule). "
     "draft: a fantasy draft question: who is on the clock, the best player still available, "
     "my next pick, who should I draft, my roster's needs in the draft, or draft prep (who "
-    "should I target at a pick like 1.03; draft_slot carries that pick as 'R.S'). NOT who "
+    "should I target at a pick like 1.03; draft_slot carries that pick as 'R.S', and an "
+    "overall pick named without a round ('pick 3', 'third overall') is a round-1 pick, so "
+    "draft_slot is its '1.NN' form). NOT who "
     "owns a future pick (pick_ownership) and NOT prospect rankings on their own (rookie). "
     "nfl_schedule: the real NFL schedule: which NFL teams play tonight, today, tomorrow, "
     "on a named day, or this week; when a named NFL team plays; kickoff times and TV "
@@ -564,6 +566,34 @@ def _start_mode_in(m: str) -> str:
     return "start"
 
 
+_ORDINAL_WORDS = {
+    "first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5,
+    "sixth": 6, "seventh": 7, "eighth": 8, "ninth": 9, "tenth": 10,
+    "eleventh": 11, "twelfth": 12, "thirteenth": 13, "fourteenth": 14,
+    "fifteenth": 15, "sixteenth": 16, "seventeenth": 17,
+    "eighteenth": 18, "nineteenth": 19, "twentieth": 20,
+}
+
+
+def _overall_pick_in(m: str):
+    """An overall pick named without the R.S form: "pick 3", "3rd
+    overall", "the third overall pick", "the 3rd pick". Round 1 pick N
+    is overall N in every draft format, so the caller renders it as the
+    round-1 slot '1.NN' and the builder's overall math stays exact.
+    Returns the overall number or None."""
+    hit = re.search(r"\bpick\s+(\d{1,2})\b", m)
+    if hit:
+        return int(hit.group(1))
+    hit = re.search(r"\b(\d{1,2})(?:st|nd|rd|th)\s+(?:overall|pick)\b", m)
+    if hit:
+        return int(hit.group(1))
+    hit = re.search(r"\b(" + "|".join(_ORDINAL_WORDS) + r")\s+"
+                    r"(?:overall|pick)\b", m)
+    if hit:
+        return _ORDINAL_WORDS[hit.group(1)]
+    return None
+
+
 # NFL fixture questions ("who plays tonight", "when do the Chiefs
 # play"): the real NFL schedule, not the user's fantasy matchup. The
 # keyword rule is deliberately narrow and guarded: possessive fantasy
@@ -770,6 +800,10 @@ def _keyword_route(message: str) -> dict:
         return {**base, "intent": "activity"}
     _slot = re.search(r"\b(\d{1,2})\.(\d{1,2})\b", m)
     _slot_text = f"{_slot.group(1)}.{_slot.group(2)}" if _slot else None
+    if _slot_text is None:
+        _overall = _overall_pick_in(m)
+        if _overall is not None:
+            _slot_text = f"1.{_overall:02d}"
     if re.search(r"\bdraft\b", m) and re.search(
             r"best available|on the clock|my (next )?pick|who should (i|we)|"
             r"who do i take|still available|up next|available|needs?|target", m):

@@ -2198,26 +2198,44 @@ def _draft(pack):
     if best and best.get("value") is not None and len(receipts) < 4:
         receipts.append({"label": f"{best.get('name')} value", "value": fmt(best["value"])})
     prep = pack.get("prep") or {}
-    top_cand = (prep.get("candidates") or [None])[0]
-    if top_cand and top_cand.get("score") is not None and len(receipts) < 4:
-        receipts.append({"label": f"{top_cand.get('name')} prospect score",
-                         "value": fmt(top_cand["score"])})
+    for cand in ([prep.get("target")] + list(prep.get("next_up") or [])
+                 + list(prep.get("fallers") or [])):
+        if len(receipts) >= 4:
+            break
+        if cand and cand.get("score") is not None:
+            receipts.append({"label": f"{cand.get('name')} prospect score",
+                             "value": fmt(cand["score"])})
     if not receipts and pack.get("picks_made") is not None:
         receipts.append({"label": "Picks made", "value": fmt(pack["picks_made"])})
     status = pack.get("status")
     if prep:
-        cands = prep.get("candidates") or []
-        names = ", ".join(str(c.get("name")) for c in cands)
-        at_pick = next((c for c in cands
-                        if c.get("rank") == prep.get("overall_pick")), None)
-        verdict = (str(at_pick.get("name")) if at_pick
-                   else (str(cands[0].get("name")) if cands else "Draft prep"))
-        text = (f"At the {prep.get('slot')} (pick {fmt(prep.get('overall_pick'))} of the "
-                f"{fmt(prep.get('class_year'))} class), the board runs {names}.")
-        if at_pick:
-            text += (f" The player sitting at that slot is {at_pick.get('name')} "
-                     f"({at_pick.get('position')}, prospect score "
-                     f"{fmt(at_pick.get('score'))}).")
+        target = prep.get("target") or {}
+        if target.get("name"):
+            verdict = f"Target {target.get('name')} at {prep.get('slot')}"
+            text = (f"At the {prep.get('slot')} (pick {fmt(prep.get('overall_pick'))} of the "
+                    f"{fmt(prep.get('class_year'))} class), the target is "
+                    f"{target.get('name')} ({target.get('position')}, "
+                    f"{target.get('school')}, prospect score "
+                    f"{fmt(target.get('score'))}).")
+            nxt = prep.get("next_up") or []
+            if nxt:
+                cluster = ", ".join(
+                    f"{c.get('name')} ({fmt(c.get('score'))})" for c in nxt)
+                text += f" Next in the cluster: {cluster}."
+            fallers = prep.get("fallers") or []
+            if fallers:
+                names = " or ".join(str(c.get("name")) for c in fallers)
+                if len(fallers) > 2:
+                    names = "any of " + names
+                text += (f" If {names} somehow falls to the "
+                         f"{prep.get('slot')}, take him instead.")
+            if prep.get("assumption"):
+                text += f" {prep['assumption']}"
+        else:
+            verdict = "Draft prep"
+            text = (f"The rookie board tracks {fmt(prep.get('board_size'))} names, "
+                    f"so nobody is slotted at pick {fmt(prep.get('overall_pick'))} "
+                    f"of the {fmt(prep.get('class_year'))} class.")
     elif status == "drafting" and best:
         verdict = str(best.get("name"))
         text = (f"{cur.get('team_name')} is on the clock at pick {fmt(cur.get('pick_no'))} "

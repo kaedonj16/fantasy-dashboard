@@ -990,7 +990,7 @@ TOOL_CATALOG = [
      "description": "Live state of this week's games in the user's league: current scores, win probability, top scorers so far, and what the user still needs (remaining players on each side).",
      "args": {"team": "a team name, or null for the user's own game"}},
     {"name": "draft_state",
-     "description": "The league's draft: status, who is on the clock, the best players still available by site value, the user's next pick and positional needs, and prep candidates around a named pick like 1.03.",
+     "description": "The league's draft: status, who is on the clock, the best players still available by site value, the user's next pick and positional needs, and for a named pick like 1.03 a prep target slotted to that pick (the highest-ranked rookie presumed still available there, assuming the board goes in order, plus the next names behind him and the headliner above the slot who is worth taking if he falls).",
      "args": {"pick": "a draft slot like '1.03', or null"}},
     {"name": "nfl_schedule",
      "description": "The real NFL schedule: which NFL teams play tonight, today, tomorrow, on a named weekday, or this week; when a named NFL team plays; kickoff times in Eastern and the TV network when the schedule carries one. Use for NFL fixture questions, never for the user's fantasy matchup.",

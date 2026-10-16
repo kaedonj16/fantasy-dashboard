@@ -261,10 +261,74 @@ def test_draft_prep_window_for_a_named_slot(monkeypatch):
         {"draft_slot": "1.03"}, [])
     prep = pack["prep"]
     assert prep["overall_pick"] == 3
-    assert [c["rank"] for c in prep["candidates"]] == [1, 2, 3, 4, 5]
-    at_pick = next(c for c in prep["candidates"] if c["rank"] == 3)
-    assert at_pick["name"] == "Jeremiyah Love"
-    assert at_pick["score"] == 93.1
+    assert prep["presumed_taken_count"] == 2
+    # The target is the rookie slotted AT the pick, not the board's top:
+    # Smith (rank 1) and Sayin (rank 2) are presumed gone by 1.03.
+    assert prep["target"]["rank"] == 3
+    assert prep["target"]["name"] == "Jeremiyah Love"
+    assert prep["target"]["score"] == 93.1
+    assert [c["name"] for c in prep["next_up"]] == ["Dante Moore",
+                                                    "Ahmad Hardy"]
+    assert [c["name"] for c in prep["fallers"]] == ["Jeremiah Smith",
+                                                    "Julian Sayin"]
+    assert "in order (chalk)" in prep["assumption"]
+
+
+def test_draft_prep_at_101_targets_the_top_name(monkeypatch):
+    pack, _tools = evidence.build_draft(
+        _stub_draft(monkeypatch, status="pre_draft", picks=[]),
+        {"draft_slot": "1.01"}, [])
+    prep = pack["prep"]
+    assert prep["target"]["name"] == "Jeremiah Smith"
+    assert prep["presumed_taken_count"] == 0
+    assert prep["fallers"] == []
+    assert [c["name"] for c in prep["next_up"]] == ["Julian Sayin",
+                                                    "Jeremiyah Love"]
+
+
+def test_draft_prep_late_first_round_slot(monkeypatch):
+    pack, _tools = evidence.build_draft(
+        _stub_draft(monkeypatch, status="pre_draft", picks=[]),
+        {"draft_slot": "1.05"}, [])
+    prep = pack["prep"]
+    assert prep["overall_pick"] == 5
+    assert prep["target"]["name"] == "Ahmad Hardy"
+    assert prep["next_up"] == []
+    # Fallers: the class headliner plus the name immediately above.
+    assert [c["name"] for c in prep["fallers"]] == ["Jeremiah Smith",
+                                                    "Dante Moore"]
+
+
+def test_keyword_draft_overall_pick_forms():
+    for message in ("Who should I target at pick 3?",
+                    "Who should I target with the third overall pick?",
+                    "Who do I take at 3rd overall?",
+                    "Who should I target at 1.03?"):
+        r = _keyword_route(message)
+        assert r["intent"] == "draft", message
+        assert r["draft_slot"] == "1.03", message
+
+
+def test_draft_prep_verdict_is_pinned_to_the_target():
+    pack = {"type": "draft",
+            "prep": {"slot": "1.03",
+                     "target": {"name": "Jeremiyah Love", "score": 93.1}}}
+    assert compose_mod._draft_prep_verdict(pack) == \
+        "Target Jeremiyah Love at 1.03"
+    assert compose_mod._draft_prep_verdict({"type": "draft"}) is None
+
+
+def test_draft_prep_receipts_pin_the_target_score():
+    pack = {"type": "draft",
+            "prep": {"slot": "1.03",
+                     "target": {"name": "Jeremiyah Love", "score": 93.1},
+                     "next_up": [{"name": "Dante Moore", "score": 91.8}],
+                     "fallers": [{"name": "Jeremiah Smith",
+                                  "score": 96.2}]}}
+    rows = compose_mod._required_receipts("draft", pack)
+    assert [r["label"] for r in rows] == [
+        "Jeremiyah Love prospect score", "Dante Moore prospect score",
+        "Jeremiah Smith prospect score"]
 
 
 def test_draft_complete_has_no_best_available(monkeypatch):

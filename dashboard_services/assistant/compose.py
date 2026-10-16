@@ -1126,10 +1126,15 @@ def _required_receipts(intent: str, pack: dict) -> list[dict]:
             rows.append({"label": f"{best.get('name')} value",
                          "value": _fmt_num(best["value"])})
         prep = pack.get("prep") or {}
-        top_cand = (prep.get("candidates") or [None])[0]
-        if top_cand and top_cand.get("score") is not None and len(rows) < 4:
-            rows.append({"label": f"{top_cand.get('name')} prospect score",
-                         "value": _fmt_num(top_cand["score"])})
+        # Prep receipts pin the slotted target first, then the cluster
+        # behind him and the headliner above the slot (the faller).
+        for cand in ([prep.get("target")] + list(prep.get("next_up") or [])
+                     + list(prep.get("fallers") or [])):
+            if len(rows) >= 4:
+                break
+            if cand and cand.get("score") is not None:
+                rows.append({"label": f"{cand.get('name')} prospect score",
+                             "value": _fmt_num(cand["score"])})
         if not rows and pack.get("picks_made") is not None:
             rows.append({"label": "Picks made", "value": _fmt_num(pack["picks_made"])})
     elif intent == "cross_league":
@@ -1417,6 +1422,20 @@ def _clean_followups(intent: str, followups) -> list[dict]:
 
 
 # -- trade verdict: pinned to the analyzer's fairness band ------------------------
+
+def _draft_prep_verdict(pack: dict) -> str | None:
+    """The draft-prep call, pinned like the trade verdict: the pack's
+    slotting already decided who the target at the named pick is (the
+    highest-ranked rookie presumed still available there), so the model
+    never chooses this verdict. Without the pin, a prep answer named
+    the board's No. 1 player as the target at 1.03 (live report
+    2026-10-15): he will be gone two picks earlier."""
+    prep = (pack or {}).get("prep") or {}
+    target = prep.get("target") or {}
+    if target.get("name") and prep.get("slot"):
+        return f"Target {target['name']} at {prep['slot']}"
+    return None
+
 
 def _trade_verdict(pack: dict) -> str | None:
     """The trade call, derived from the pack totals by the shared fair band.
@@ -2805,7 +2824,11 @@ def compose_answer(intent: str, question: str, pack: dict, *, preferences=None, 
         "prompt_version": PROMPT_VERSION,
     }
     system = SYSTEM + _PROFILE_SUFFIX if risk_profile else SYSTEM
-    fixed_verdict = _trade_verdict(pack) if intent == "trade_eval" else None
+    fixed_verdict = None
+    if intent == "trade_eval":
+        fixed_verdict = _trade_verdict(pack)
+    elif intent == "draft":
+        fixed_verdict = _draft_prep_verdict(pack)
     if fixed_verdict:
         payload["fixed_verdict"] = fixed_verdict
     allowed = _ground_set(pack, question)
@@ -2841,6 +2864,24 @@ def compose_answer(intent: str, question: str, pack: dict, *, preferences=None, 
         if fixed_verdict:
             data = dict(data)
             data["verdict"] = fixed_verdict
+    if intent == "draft" and fixed_verdict:
+        data = dict(data)
+        data["verdict"] = fixed_verdict
+    if intent == "draft":
+        # A prep answer states its availability assumption (the board
+        # goes in order, chalk) or the target reads as a guarantee the
+        # site never made. The pack carries the sentence; append it
+        # verbatim when the draft skipped it. It carries no numerals,
+        # so it can never break grounding.
+        assumption = ((pack or {}).get("prep") or {}).get("assumption")
+        if assumption:
+            prose = (str(data.get("verdict") or "") + " "
+                     + str(data.get("text") or "")).lower()
+            if ("in order" not in prose and "chalk" not in prose
+                    and "presumed taken" not in prose):
+                data = dict(data)
+                data["text"] = (str(data.get("text") or "").rstrip()
+                                + " " + assumption).strip()
     data = _ensure_required_mentions(intent, pack, data, receipts)
     verdict = data.get("verdict")
     if intent == "player" and not (verdict and str(verdict).strip()):
@@ -2882,13 +2923,13 @@ def compose_answer(intent: str, question: str, pack: dict, *, preferences=None, 
                            f"{_fmt_num(b.get('current_points'))}")
     if intent == "draft" and not (verdict and str(verdict).strip()):
         # Same failure class: the fallback is the best player still
-        # available, else the prep window's top candidate.
+        # available, else the prep target at the named slot.
         best = ((pack or {}).get("best_available") or [None])[0]
-        cand = (((pack or {}).get("prep") or {}).get("candidates") or [None])[0]
-        if best and best.get("name"):
-            verdict = str(best["name"])
-        elif cand and cand.get("name"):
+        cand = ((pack or {}).get("prep") or {}).get("target") or {}
+        if cand and cand.get("name"):
             verdict = str(cand["name"])
+        elif best and best.get("name"):
+            verdict = str(best["name"])
     caveat = data.get("caveat")
     margin_thin = bool(((pack or {}).get("margin") or {}).get("thin"))
     if caveat and not margin_thin and not (pack or {}).get("stale"):

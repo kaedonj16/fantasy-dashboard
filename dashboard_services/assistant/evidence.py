@@ -7136,8 +7136,8 @@ def build_draft(bundle, entities=None, player_ids=None) -> tuple[dict, list[str]
     Draft Room's /api/draft/live serves (draft list, draft detail, picks
     with a 1-second TTL): who is on the clock, the best players still
     available by the site's own values, the viewer's next pick and
-    positional needs, and prep candidates for a named slot from the
-    rookie rankings. The manual Draft Room's local board state is
+    positional needs, and a pick-slotted prep target for a named slot
+    from the rookie rankings. The manual Draft Room's local board state is
     client-side and out of scope; this answers from the league's
     Sleeper draft itself."""
     pack = _base_pack("draft", bundle)
@@ -7364,6 +7364,12 @@ def build_draft(bundle, entities=None, player_ids=None) -> tuple[dict, list[str]
             rookie_rows = []
     rookie_rows = [r for r in rookie_rows if isinstance(r, dict)]
     drafted_names = {str(p["name"]).strip().lower() for p in picks}
+    # The full available board in the rankings' own order (the site's
+    # rookie board order is the only availability presumption the prep
+    # slotting below is allowed to make; there is no mock-draft ADP on
+    # the site to presume from). best_available_rookies caps the display
+    # list at 10 as before; the prep window reads the whole board.
+    board = []
     for r in rookie_rows:
         nm = str(r.get("name") or "")
         if not nm or nm.strip().lower() in drafted_names:
@@ -7371,12 +7377,11 @@ def build_draft(bundle, entities=None, player_ids=None) -> tuple[dict, list[str]
         sid = str(r.get("sleeper_id") or r.get("player_id") or "")
         if sid and sid in drafted_ids:
             continue
-        rookies.append({"name": nm, "position": r.get("position") or "",
-                        "school": r.get("school") or "",
-                        "score": _f(r.get("prospect_score"), 1),
-                        "rank": len(rookies) + 1})
-        if len(rookies) >= 10:
-            break
+        board.append({"name": nm, "position": r.get("position") or "",
+                      "school": r.get("school") or "",
+                      "score": _f(r.get("prospect_score"), 1),
+                      "rank": len(board) + 1})
+    rookies = board[:10]
     pack["rookie_class_year"] = int(class_year) if class_year else None
     pack["best_available_rookies"] = (
         rookies if (pack["draft_kind"] == "rookie" or entities.get("draft_slot"))
@@ -7418,25 +7423,65 @@ def build_draft(bundle, entities=None, player_ids=None) -> tuple[dict, list[str]
 
     slot_text = str(entities.get("draft_slot") or "").strip()
     pack["prep"] = None
-    if slot_text and rookie_rows:
+    if slot_text and board:
         try:
             rnd_s, pick_s = slot_text.split(".")
             overall = (int(rnd_s) - 1) * teams + int(pick_s)
         except (TypeError, ValueError):
             overall = None
         if overall:
-            window = []
-            for i, r in enumerate(rookie_rows):
-                rank = i + 1
-                if overall - 2 <= rank <= overall + 2:
-                    window.append({"rank": rank, "name": r.get("name"),
-                                   "position": r.get("position") or "",
-                                   "school": r.get("school") or "",
-                                   "score": _f(r.get("prospect_score"), 1)})
-            pack["prep"] = {"slot": slot_text, "overall_pick": overall,
-                            "class_year": int(class_year) if class_year else None,
-                            "candidates": window}
+            pack["prep"] = _draft_prep(slot_text, overall, board,
+                                       int(class_year) if class_year else None,
+                                       teams)
     return pack, tools
+
+
+def _draft_prep(slot_text, overall, board, class_year, teams):
+    """Pick-slotted draft prep: who to target AT a named pick.
+
+    The old prep window listed the board ranks around the pick
+    (overall-2 .. overall+2) and the answer named the window's top, so
+    "who should I target at 1.03" recommended the class's No. 1 player,
+    who will be gone by then (live report 2026-10-15). The slotting
+    here presumes the board goes in order (chalk): every rookie ranked
+    above the pick is presumed taken, the TARGET is the highest-ranked
+    rookie still available at the slot (rank == overall), next_up is
+    the cluster right behind him, and fallers are the headliners above
+    the slot worth taking instead if one somehow falls (the class's
+    No. 1 and the player ranked immediately above the pick). The
+    presumption order is the site's own rookie board order; the pack
+    states the assumption so the answer can state it too. No ADP or
+    mock-draft data is invented: the site has none.
+    """
+    def _entry(row):
+        return {"rank": row["rank"], "name": row["name"],
+                "position": row["position"], "school": row["school"],
+                "score": row["score"]}
+
+    by_rank = {row["rank"]: row for row in board}
+    target = by_rank.get(overall)
+    next_up = [_entry(by_rank[r]) for r in (overall + 1, overall + 2)
+               if r in by_rank]
+    faller_ranks = []
+    if overall > 1:
+        faller_ranks.append(1)
+    if overall > 2:
+        faller_ranks.append(overall - 1)
+    fallers = [_entry(by_rank[r]) for r in faller_ranks if r in by_rank]
+    if overall > 1:
+        assumption = ("Targets assume the board goes in order (chalk): "
+                      "everyone ranked above this pick is presumed taken.")
+    else:
+        assumption = ("This is the top pick: nobody is presumed taken "
+                      "ahead of it.")
+    return {"slot": slot_text, "overall_pick": overall,
+            "class_year": class_year, "league_size": teams,
+            "board_size": len(board),
+            "presumed_taken_count": overall - 1,
+            "assumption": assumption,
+            "target": _entry(target) if target else None,
+            "next_up": next_up,
+            "fallers": fallers}
 
 
 # -- NFL schedule ---------------------------------------------------------------
