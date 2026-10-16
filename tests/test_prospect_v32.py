@@ -555,3 +555,49 @@ class TestAdvancedMetricsApi:
             assert label in rows
             assert rows[label]["grade"] is None
             assert rows[label]["raw"] is not None
+
+
+class TestReasonsWithNoDurabilityData:
+    """Regression: _build_reasons crashed with TypeError when durability
+    was None (prospect with no games_played anywhere, e.g. the backtest's
+    college-stats fetch, which skips the games-played lookup). The weighted
+    sum already treats a None durability as missing and redistributes; the
+    reasons builder must do the same instead of comparing None <= 40.
+    """
+
+    def _no_gp_prospect(self):
+        p = copy.deepcopy(SMITH)
+        for s in p["seasons"]:
+            s.pop("games_played", None)
+        return p
+
+    def test_durability_is_none_without_any_gp(self):
+        p = self._no_gp_prospect()
+        assert pm.calc_durability_score(p["seasons"]) is None
+
+    def test_score_prospect_without_gp_returns_score_and_reasons(self):
+        r = _score(self._no_gp_prospect(), _dc("WR", 2))
+        assert r["durability_score"] is None
+        assert isinstance(r["prospect_score"], (int, float))
+        assert isinstance(r["key_reasons"], str) and r["key_reasons"]
+        assert "Durability concern" not in r["key_reasons"]
+
+    def test_build_reasons_with_none_durability(self):
+        p = self._no_gp_prospect()
+        reasons = pm._build_reasons(
+            p, "WR", p["seasons"],
+            80.0, 75.0, 80.0, 50.0, 50.0, None, 80.0,
+            None, None, 90.0, None,
+        )
+        assert isinstance(reasons, str)
+        assert "Durability concern" not in reasons
+
+    def test_build_reasons_low_durability_still_flags(self):
+        # Control: a real low durability score still emits the bullet.
+        p = self._no_gp_prospect()
+        reasons = pm._build_reasons(
+            p, "WR", p["seasons"],
+            80.0, 75.0, 80.0, 50.0, 50.0, None, 80.0,
+            None, 30.0, 90.0, None,
+        )
+        assert "Durability concern" in reasons
