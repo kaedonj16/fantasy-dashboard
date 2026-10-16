@@ -2,7 +2,7 @@
 // Caches static assets and key pages for offline/fast repeat loads.
 // Handles Web Push notifications.
 
-const CACHE_NAME = 'br-fantasy-v45';
+const CACHE_NAME = 'br-fantasy-v46';
 
 // How long to wait on the network for a page before painting a cached /
 // offline fallback. This is what kills the blank white screen on PWA launch:
