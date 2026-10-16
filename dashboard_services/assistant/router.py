@@ -86,6 +86,9 @@ SYSTEM = (
     "metric: a question about one named player and a metric, or a metric definition "
     "(metric_hint is the metric name). "
     "leaderboard: a pool-wide ranking question with no single player as the subject: "
+    "the top scorer, highest scorer, who scored the most points, or who led the league "
+    "in scoring is a leaderboard board with metric_hint 'fantasy points' (season-total "
+    "PPR points), with the season extracted when one is named; "
     "top N in a metric, who leads a metric, players ranked by a metric, players in the "
     "top N of two metrics (board_kind intersection, second_metric_hint is the second "
     "metric), one metric ranked with a second metric shown alongside (board_kind dual), "
@@ -183,7 +186,9 @@ SYSTEM = (
     "tonight (that is nfl_schedule). "
     "draft: a fantasy draft question: who is on the clock, the best player still available, "
     "my next pick, who should I draft, my roster's needs in the draft, or draft prep (who "
-    "should I target at a pick like 1.03; draft_slot carries that pick as 'R.S'). NOT who "
+    "should I target at a pick like 1.03; draft_slot carries that pick as 'R.S', and an "
+    "overall pick named without a round ('pick 3', 'third overall') is a round-1 pick, so "
+    "draft_slot is its '1.NN' form). NOT who "
     "owns a future pick (pick_ownership) and NOT prospect rankings on their own (rookie). "
     "nfl_schedule: the real NFL schedule: which NFL teams play tonight, today, tomorrow, "
     "on a named day, or this week; when a named NFL team plays; kickoff times and TV "
@@ -283,6 +288,20 @@ _BREADTH_RE = re.compile(
     r"|\btop[ -]?\d+\s+finishes\b")
 
 
+# Player-scoring superlatives: the season-total PPR points board, never
+# the standings table (whose "most points" is team points-for). The
+# standings branch below owns bare "most points"; the scorer forms are
+# claimed before it, and "most points" joins them only when a season is
+# named (a bare "most points" with no season stays a standings ask).
+_SCORER_RE = re.compile(
+    r"\b(?:top|highest|leading|best) scorers?\b"
+    r"|\b(?:top|highest) scoring players?\b"
+    r"|\bscored the most\b|\bmost points scored\b"
+    r"|\bmost fantasy points scored\b"
+    r"|\b(?:led|leads|lead) the league in scoring\b"
+    r"|\bscoring title\b")
+
+
 def _keyword_board(message: str, m: str) -> dict | None:
     """Pool-wide ranking phrasings -> the leaderboard intent (or None)."""
     hints = _metric_hints_in(m)
@@ -295,7 +314,8 @@ def _keyword_board(message: str, m: str) -> dict | None:
         from dashboard_services.assistant import aliases
         resolved = aliases.resolve_phrase(m)
         if resolved and re.search(
-                r"\btop\s+\d|\bmost\b|\bleads?\b|\bleading\b|\bbest\b|\branked\b", m):
+                r"\btop\s+\d|\bmost\b|\bleads?\b|\bled\b|\bleading\b|\bbest\b|\branked\b"
+                r"|\bscorers?\b|\bscoring\b", m):
             hints = [resolved["phrase"]]
     top = re.search(r"\btop\s+(\d{1,2})\b", m)
     window = re.search(r"\blast\s+(\d{1,2})\s+weeks?\b", m)
@@ -322,6 +342,7 @@ def _keyword_board(message: str, m: str) -> dict | None:
             "team": None,
             "window_weeks": None,
             "direction": None,
+            "season": _season_in(m),
         }
     value_kind = None
     if _BUY_LOW_RE.search(m):
@@ -403,6 +424,7 @@ def _keyword_board(message: str, m: str) -> dict | None:
             "max_age": max_age,
             "pool": pool,
             "finish_n": finish_n,
+            "season": _season_in(m),
         }
     kind = None
     direction = None
@@ -415,7 +437,7 @@ def _keyword_board(message: str, m: str) -> dict | None:
     elif len(hints) >= 2 and top:
         kind = "intersection"
     elif hints and (top or pool is not None
-                    or re.search(r"\bwho (leads|has)\b|\bleaderboard\b|\branked\b|\bmost\b|\bbest\b", m)):
+                    or re.search(r"\bwho (leads|has)\b|\bleaderboard\b|\branked\b|\bmost\b|\bbest\b|\bscorers?\b|\bscoring\b", m)):
         kind = "board"
     if kind is None:
         return None
@@ -564,6 +586,34 @@ def _start_mode_in(m: str) -> str:
     return "start"
 
 
+_ORDINAL_WORDS = {
+    "first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5,
+    "sixth": 6, "seventh": 7, "eighth": 8, "ninth": 9, "tenth": 10,
+    "eleventh": 11, "twelfth": 12, "thirteenth": 13, "fourteenth": 14,
+    "fifteenth": 15, "sixteenth": 16, "seventeenth": 17,
+    "eighteenth": 18, "nineteenth": 19, "twentieth": 20,
+}
+
+
+def _overall_pick_in(m: str):
+    """An overall pick named without the R.S form: "pick 3", "3rd
+    overall", "the third overall pick", "the 3rd pick". Round 1 pick N
+    is overall N in every draft format, so the caller renders it as the
+    round-1 slot '1.NN' and the builder's overall math stays exact.
+    Returns the overall number or None."""
+    hit = re.search(r"\bpick\s+(\d{1,2})\b", m)
+    if hit:
+        return int(hit.group(1))
+    hit = re.search(r"\b(\d{1,2})(?:st|nd|rd|th)\s+(?:overall|pick)\b", m)
+    if hit:
+        return int(hit.group(1))
+    hit = re.search(r"\b(" + "|".join(_ORDINAL_WORDS) + r")\s+"
+                    r"(?:overall|pick)\b", m)
+    if hit:
+        return _ORDINAL_WORDS[hit.group(1)]
+    return None
+
+
 # NFL fixture questions ("who plays tonight", "when do the Chiefs
 # play"): the real NFL schedule, not the user's fantasy matchup. The
 # keyword rule is deliberately narrow and guarded: possessive fantasy
@@ -702,6 +752,25 @@ def _keyword_route(message: str) -> dict:
         return {**base, "intent": "playoffs", "season": _season_in(m)}
     if re.search(r"power ranking|power rank|team to beat|strongest team", m):
         return {**base, "intent": "power_rankings"}
+    # Player-scoring superlatives ("top scorer", "scored the most
+    # points", "led the league in scoring") are the season PPR-points
+    # board. Claimed before standings, whose regex would otherwise eat
+    # the "most points" forms; a team subject ("highest scoring team")
+    # and "points for" stay with standings, as does a bare "most
+    # points" that names no season. A league frame with no season
+    # named ("scored the most points in the league") is also the
+    # standings table (the pinned team points-for reading); a named
+    # season can only be the player board, since standings are
+    # current-season only.
+    _season_named = _season_in(m) is not None
+    if not re.search(r"\bteam\b|\bpoints for\b", m) and (
+            _SCORER_RE.search(m)
+            or (re.search(r"\bmost points\b", m) and _season_named)) and (
+            _season_named
+            or not re.search(r"\bin (the|my) league\b", m)):
+        board = _keyword_board(message, m)
+        if board is not None:
+            return {**base, **board}
     if re.search(r"standings|division|most points|points leader|highest scoring|"
                  r"\bseed\b|first place|what place am i", m):
         return {**base, "intent": "standings"}
@@ -770,6 +839,10 @@ def _keyword_route(message: str) -> dict:
         return {**base, "intent": "activity"}
     _slot = re.search(r"\b(\d{1,2})\.(\d{1,2})\b", m)
     _slot_text = f"{_slot.group(1)}.{_slot.group(2)}" if _slot else None
+    if _slot_text is None:
+        _overall = _overall_pick_in(m)
+        if _overall is not None:
+            _slot_text = f"1.{_overall:02d}"
     if re.search(r"\bdraft\b", m) and re.search(
             r"best available|on the clock|my (next )?pick|who should (i|we)|"
             r"who do i take|still available|up next|available|needs?|target", m):
@@ -868,6 +941,15 @@ def _keyword_route(message: str) -> dict:
             if cand in m:
                 hint = cand
                 break
+        if hint is None:
+            # Semantic metric phrases ("missed tackles", "fantasy points
+            # per game") name the metric even when the four literals
+            # above miss; raw-stat phrases stay out (kind stat boards
+            # route elsewhere).
+            from dashboard_services.assistant import aliases as _aliases
+            _resolved = _aliases.resolve_phrase(m)
+            if _resolved and _resolved.get("kind") == "metric":
+                hint = _resolved["phrase"]
         return {**base, "intent": "metric", "metric_hint": hint,
                 "season": _season_in(m)}
     # Player fallthrough: a question-shaped message carrying a player

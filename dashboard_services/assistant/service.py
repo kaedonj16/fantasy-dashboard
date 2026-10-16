@@ -14,7 +14,7 @@ from dashboard_services.assistant import infer, store
 from dashboard_services.assistant.compose import compose_answer, followup_pair, numbers_shown_from
 from dashboard_services.assistant.evidence import BUILDERS
 from dashboard_services.assistant.model import last_usage
-from dashboard_services.assistant.resolve import resolve_player
+from dashboard_services.assistant.resolve import _normalize, resolve_player
 from dashboard_services.assistant.router import classify
 
 logger = logging.getLogger(__name__)
@@ -326,9 +326,17 @@ def _history_for(thread: dict) -> tuple[list, dict]:
     return history, last_entities
 
 
-def _resolve_all(entities: dict, bundle: dict, player_id_hint=None):
-    """Resolve every named player; returns (ids_by_name, ambiguous_result)."""
+def _resolve_all(entities: dict, bundle: dict, player_id_hint=None, forced_ids=None):
+    """Resolve every named player.
+
+    Returns (resolved_entities, ambiguous_result, ambiguous_name); the
+    first element is the partial ids dict when an ambiguity stops the
+    walk. forced_ids maps normalized names to player ids the thread has
+    already settled (a clarification pick, remembered on the thread):
+    those names resolve to the settled id without asking again.
+    """
     roster_ids = bundle.get("roster_player_ids") or set()
+    forced = {_normalize(k): str(v) for k, v in (forced_ids or {}).items()}
     ids: dict[str, str] = {}
     groups = {
         "player_names": list(entities.get("player_names") or []),
@@ -337,19 +345,60 @@ def _resolve_all(entities: dict, bundle: dict, player_id_hint=None):
     }
     all_names = groups["player_names"] + groups["give_player_names"] + groups["receive_player_names"]
     for i, name in enumerate(all_names):
+        settled = forced.get(_normalize(name))
+        if settled:
+            ids[name] = settled
+            continue
         if player_id_hint and i == 0:
             ids[name] = str(player_id_hint)
             continue
         r = resolve_player(name, roster_player_ids=roster_ids)
         if r["status"] == "ambiguous":
-            return ids, r
+            return ids, r, name
         if r["status"] == "resolved":
             ids[name] = r["player_id"]
     resolved_entities = dict(entities)
     resolved_entities["player_ids"] = [ids[n] for n in groups["player_names"] if n in ids]
     resolved_entities["give_player_ids"] = [ids[n] for n in groups["give_player_names"] if n in ids]
     resolved_entities["receive_player_ids"] = [ids[n] for n in groups["receive_player_names"] if n in ids]
-    return resolved_entities, None
+    return resolved_entities, None, None
+
+
+def _pending_from_answer(answer, *, intent, entities, question):
+    """The pending-clarification record for an answer that came back
+    with candidates (the open path's clarify shape), or None. The next
+    turn's pick resumes this request instead of starting over."""
+    candidates = (answer or {}).get("candidates") or []
+    if not candidates:
+        return None
+    return {"question": question, "intent": intent, "entities": entities,
+            "ambiguous_name": None, "candidates": candidates}
+
+
+def _pending_pick(pending: dict, message, player_id_hint):
+    """The candidate a follow-up turn picked for a pending clarification,
+    as (player_id, candidate), or None when the turn is not a pick.
+
+    Picks arrive as a candidate chip tap (the message is the candidate's
+    name and the player id rides along as the hint) or as a typed name.
+    A typed name only picks when it matches exactly one candidate: when
+    the namesakes share the name itself, the bare name is not a pick
+    and the clarification stands rather than guessing.
+    """
+    candidates = [c for c in (pending.get("candidates") or []) if isinstance(c, dict)]
+    if not candidates:
+        return None
+    if player_id_hint:
+        for c in candidates:
+            if str(c.get("player_id")) == str(player_id_hint):
+                return str(player_id_hint), c
+    msg_norm = _normalize(message or "")
+    if msg_norm:
+        named = [c for c in candidates
+                 if c.get("name") and _normalize(c["name"]) == msg_norm]
+        if len(named) == 1:
+            return str(named[0].get("player_id")), named[0]
+    return None
 
 
 def _log_common(bundle, account_key):
@@ -400,6 +449,17 @@ def ask(account_key: str, message: str, *, platform=None, league_id=None, season
     tid = thread["thread_id"]
     turn_index = int(thread.get("turn_count") or 0) + 1
     history, last_entities = _history_for(thread)
+    # Thread name memory: names a clarification already settled on this
+    # thread (normalized name -> player id), plus the pending
+    # clarification awaiting a pick, if the last turn asked one.
+    resolved_names: dict[str, str] = {}
+    _stored_names = (last_entities or {}).get("resolved_names")
+    if isinstance(_stored_names, dict):
+        resolved_names = {_normalize(k): str(v) for k, v in _stored_names.items()
+                          if k and v}
+    pending_clarify = (last_entities or {}).get("pending_clarify")
+    if not isinstance(pending_clarify, dict):
+        pending_clarify = None
     assumed = {
         "league_id": bundle.get("league_id"), "league_name": bundle.get("league_name"),
         "platform": bundle.get("platform"), "season": bundle.get("season"),
@@ -408,23 +468,50 @@ def ask(account_key: str, message: str, *, platform=None, league_id=None, season
     routed = classify(message, {"league_name": bundle.get("league_name"), "team_name": bundle.get("team_name"), "week": bundle.get("week"), "season": bundle.get("season")}, history)
     intent = routed["intent"]
     entities = dict(routed.get("entities") or {})
-    # Follow-ups: short/elliptical messages inherit the thread's last entities.
-    if not entities.get("player_names") and last_entities.get("player_names") and len((message or "").split()) <= 6:
-        entities["player_names"] = last_entities.get("player_names") or []
-        if intent in ("out_of_scope",):
-            intent = last_entities.get("_intent") or intent
-    # Board follow-ups ("WRs only", "last 4 weeks"): a short message after a
-    # leaderboard answer continues the board, inheriting the metric(s) it
-    # does not restate; a fresh board question carries its own metric.
-    if last_entities.get("_intent") == "leaderboard" and len((message or "").split()) <= 6:
-        if intent == "out_of_scope":
-            intent = "leaderboard"
-        if intent == "leaderboard":
-            for _f in ("metric_hint", "second_metric_hint", "board_kind", "family"):
-                if not entities.get(_f) and last_entities.get(_f):
-                    entities[_f] = last_entities[_f]
+    # Clarification resume: the last turn asked "which player do you
+    # mean?" and this turn is the pick (a candidate chip tap or a typed
+    # name). Restore the pending request wholesale: its intent and its
+    # entities, with the picked player settled for the ambiguous name,
+    # so the original question executes instead of the pick degrading
+    # into a bare player mention. The pick is also remembered on the
+    # thread, so re-asking the original question never re-clarifies.
+    forced_ids = dict(resolved_names)
+    resumed = False
+    if pending_clarify:
+        pick = _pending_pick(pending_clarify, message, player_id_hint)
+        if pick is not None:
+            picked_id, picked = pick
+            intent = pending_clarify.get("intent") or intent
+            entities = dict(pending_clarify.get("entities") or {})
+            # The turn answers the original question, not the bare pick:
+            # compose and the log both key off the message.
+            message = pending_clarify.get("question") or message
+            amb_name = pending_clarify.get("ambiguous_name") or picked.get("name")
+            for nm in (amb_name, picked.get("name")):
+                if nm:
+                    forced_ids[_normalize(nm)] = picked_id
+                    resolved_names[_normalize(nm)] = picked_id
+            resumed = True
+    if forced_ids:
+        bundle["forced_player_ids"] = forced_ids
+    if not resumed:
+        # Follow-ups: short/elliptical messages inherit the thread's last entities.
+        if not entities.get("player_names") and last_entities.get("player_names") and len((message or "").split()) <= 6:
+            entities["player_names"] = last_entities.get("player_names") or []
+            if intent in ("out_of_scope",):
+                intent = last_entities.get("_intent") or intent
+        # Board follow-ups ("WRs only", "last 4 weeks"): a short message after a
+        # leaderboard answer continues the board, inheriting the metric(s) it
+        # does not restate; a fresh board question carries its own metric.
+        if last_entities.get("_intent") == "leaderboard" and len((message or "").split()) <= 6:
+            if intent == "out_of_scope":
+                intent = "leaderboard"
+            if intent == "leaderboard":
+                for _f in ("metric_hint", "second_metric_hint", "board_kind", "family"):
+                    if not entities.get(_f) and last_entities.get(_f):
+                        entities[_f] = last_entities[_f]
 
-    def _finish(answer, *, log_intent, pack=None, tools=None, verdict=None, entities_out=None):
+    def _finish(answer, *, log_intent, pack=None, tools=None, verdict=None, entities_out=None, pending=None):
         usage = last_usage()
         log_id = store.write_log(
             **_log_common(bundle, account_key),
@@ -441,7 +528,11 @@ def ask(account_key: str, message: str, *, platform=None, league_id=None, season
             cached_tokens=usage.get("cached_tokens"), est_cost_usd=usage.get("est_cost_usd"),
             latency_ms=int((time.time() - started) * 1000),
         )
-        store.update_thread(tid, last_entities={**entities, "_intent": log_intent}, turn_count=turn_index)
+        thread_entities = {**entities, "_intent": log_intent,
+                           "resolved_names": resolved_names}
+        if pending is not None:
+            thread_entities["pending_clarify"] = pending
+        store.update_thread(tid, last_entities=thread_entities, turn_count=turn_index)
         return {"thread_id": tid, "log_id": log_id, "intent": log_intent, "answer": answer,
                 "caps": {**caps, "used": caps["used"] + 1}}
 
@@ -469,19 +560,32 @@ def ask(account_key: str, message: str, *, platform=None, league_id=None, season
             if names:
                 entities["player_names"] = names
             return _finish(answer, log_intent="open", pack=pack, tools=otools,
-                           entities_out=dict(entities))
+                           entities_out=dict(entities),
+                           pending=_pending_from_answer(
+                               answer, intent="open", entities=dict(entities),
+                               question=message))
         answer = {"verdict": None,
                   "text": "That is outside what I can answer from your league data. I can help with start/sit, trades, buy/sell/hold, player questions, metrics, waivers, or what to do this week.",
                   "receipts": [], "caveat": None,
                   "followups": [followup_pair("What should I do with my team this week?")], "act_link": None, "actions": [], "mentions": []}
         return _finish(answer, log_intent="out_of_scope")
 
-    # entity resolution (clarify short-circuit)
-    resolved_entities, ambiguous = _resolve_all(entities, bundle, player_id_hint=player_id_hint)
+    # entity resolution (clarify short-circuit). On a resumed turn the
+    # forced map carries the pick; the bare hint would otherwise be
+    # stamped onto the first name in the list, which may not be the
+    # name that was ambiguous.
+    resolved_entities, ambiguous, ambiguous_name = _resolve_all(
+        entities, bundle,
+        player_id_hint=None if resumed else player_id_hint,
+        forced_ids=forced_ids)
     if ambiguous is not None:
         answer = {"verdict": None, "text": "Which player do you mean?", "receipts": [], "caveat": None,
                   "followups": [], "act_link": None, "actions": [], "mentions": [], "candidates": ambiguous.get("candidates") or []}
-        return _finish(answer, log_intent="clarify", entities_out=resolved_entities)
+        pending = {"question": message, "intent": intent, "entities": entities,
+                   "ambiguous_name": ambiguous_name,
+                   "candidates": ambiguous.get("candidates") or []}
+        return _finish(answer, log_intent="clarify", entities_out=resolved_entities,
+                       pending=pending)
 
     # open: the router committed to the open path (no fixed intent owns
     # the question). Plan and fetch tools, then compose from the evidence.
@@ -493,7 +597,10 @@ def ask(account_key: str, message: str, *, platform=None, league_id=None, season
             resolved_entities["player_names"] = names
             entities["player_names"] = names
         return _finish(answer, log_intent="open", pack=pack, tools=otools,
-                       entities_out=resolved_entities)
+                       entities_out=resolved_entities,
+                       pending=_pending_from_answer(
+                           answer, intent="open", entities=resolved_entities,
+                           question=message))
 
     builder = BUILDERS.get(intent)
     if builder is None:
@@ -528,7 +635,10 @@ def ask(account_key: str, message: str, *, platform=None, league_id=None, season
                 resolved_entities["player_names"] = names
                 entities["player_names"] = names
             return _finish(answer, log_intent="open", pack=opack, tools=otools,
-                           entities_out=resolved_entities)
+                           entities_out=resolved_entities,
+                           pending=_pending_from_answer(
+                               answer, intent="open", entities=resolved_entities,
+                               question=message))
 
     # Answer caching: user-independent factual answers only. The key must
     # still scope everything the composed answer actually depends on

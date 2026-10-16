@@ -311,6 +311,179 @@ def test_clarify_on_ambiguous_name(env, monkeypatch):
     assert env["logs"][-1]["intent"] == "clarify"
 
 
+def _canned_model(monkeypatch):
+    monkeypatch.setattr(compose_mod, "call_model_json",
+                        lambda system, user, schema, name: {
+                            "verdict": "START Rome Odunze", "text": "Start Odunze.",
+                            "receipts": [{"label": "Odunze value", "value": "100"}],
+                            "caveat": None, "followups": [], "act_link": None})
+
+
+def test_clarification_pick_resumes_original_intent(env, monkeypatch):
+    # Turn 1: a genuine ambiguity (two Chris Smiths, both fantasy-pool
+    # positions, no footprint to separate them) clarifies.
+    routes = iter([
+        _route("start_sit", player_names=["Chris Smith", "Rome Odunze"])("q", None, None),
+        _route("player", player_names=["Chris Smith"])("q", None, None),
+        _route("start_sit", player_names=["Chris Smith", "Rome Odunze"])("q", None, None),
+    ])
+    monkeypatch.setattr(service, "classify", lambda q, c, h: next(routes))
+    seen = {}
+
+    def pack(bundle, entities, player_ids):
+        seen["player_ids"] = list(player_ids)
+        return _start_sit_pack(bundle, entities, player_ids)
+    monkeypatch.setitem(service.BUILDERS, "start_sit", pack)
+    _canned_model(monkeypatch)
+
+    out1 = service.ask("acct:42", "Start Chris Smith or Rome Odunze?")
+    assert out1["intent"] == "clarify"
+    assert {c["player_id"] for c in out1["answer"]["candidates"]} == {"3", "4"}
+
+    # Turn 2: the candidate chip tap sends the bare name plus the player
+    # id. The pick must resume the pending start/sit request (with the
+    # OTHER resolved player intact), not degrade into a player profile.
+    out2 = service.ask("acct:42", "Chris Smith", thread_id=out1["thread_id"],
+                       player_id_hint="3")
+    assert out2["intent"] == "start_sit"
+    assert seen["player_ids"] == ["3", "1"]
+    assert env["logs"][-1]["intent"] == "start_sit"
+    assert json.loads(env["logs"][-1]["entities"])["player_ids"] == ["3", "1"]
+
+    # Turn 3: re-asking the original question in the same thread never
+    # re-clarifies; the settled name resolves from the thread memory.
+    out3 = service.ask("acct:42", "Start Chris Smith or Rome Odunze?",
+                       thread_id=out1["thread_id"])
+    assert out3["intent"] == "start_sit"
+    assert seen["player_ids"] == ["3", "1"]
+
+
+def test_clarification_bare_typed_name_does_not_guess(env, monkeypatch):
+    routes = iter([
+        _route("start_sit", player_names=["Chris Smith", "Rome Odunze"])("q", None, None),
+        _route("player", player_names=["Chris Smith"])("q", None, None),
+    ])
+    monkeypatch.setattr(service, "classify", lambda q, c, h: next(routes))
+    monkeypatch.setitem(service.BUILDERS, "start_sit", _start_sit_pack)
+    _canned_model(monkeypatch)
+
+    out1 = service.ask("acct:42", "Start Chris Smith or Rome Odunze?")
+    assert out1["intent"] == "clarify"
+    # No hint, and both candidates are named "Chris Smith": the bare
+    # typed name cannot pick between them, so the service asks again
+    # rather than guessing.
+    out2 = service.ask("acct:42", "Chris Smith", thread_id=out1["thread_id"])
+    assert out2["intent"] == "clarify"
+
+
+def test_clarification_unique_typed_name_resumes(env, monkeypatch):
+    # Candidates with distinct names ("Robinson" -> Bijan Robinson /
+    # Brian Robinson Jr.): typing one full name is a real pick.
+    robinson_index = {
+        "10": {"name": "Bijan Robinson", "team": "ATL", "position": "RB"},
+        "11": {"name": "Brian Robinson Jr.", "team": "WAS", "position": "RB"},
+        "1": {"name": "Rome Odunze", "team": "CHI", "position": "WR"},
+    }
+    monkeypatch.setattr(service, "resolve_player",
+                        lambda name, roster_player_ids=None: _real_resolve(
+                            name, index=robinson_index,
+                            roster_player_ids=roster_player_ids))
+    routes = iter([
+        _route("start_sit", player_names=["Robinson", "Rome Odunze"])("q", None, None),
+        _route("player", player_names=["Bijan Robinson"])("q", None, None),
+    ])
+    monkeypatch.setattr(service, "classify", lambda q, c, h: next(routes))
+    seen = {}
+
+    def pack(bundle, entities, player_ids):
+        seen["player_ids"] = list(player_ids)
+        return _start_sit_pack(bundle, entities, player_ids)
+    monkeypatch.setitem(service.BUILDERS, "start_sit", pack)
+    _canned_model(monkeypatch)
+
+    out1 = service.ask("acct:42", "Start Robinson or Rome Odunze?")
+    assert out1["intent"] == "clarify"
+    assert {c["player_id"] for c in out1["answer"]["candidates"]} == {"10", "11"}
+    out2 = service.ask("acct:42", "Bijan Robinson", thread_id=out1["thread_id"])
+    assert out2["intent"] == "start_sit"
+    assert seen["player_ids"] == ["10", "1"]
+
+
+def test_open_clarification_pick_resumes_with_forced_pick(env, monkeypatch):
+    from dashboard_services.assistant import open_layer
+    monkeypatch.setattr(service, "classify",
+                        _route("open", player_names=[]))
+    calls = []
+
+    def fake_open(question, bundle, thread=None, history=None,
+                  preferences=None, assumed_context=None):
+        calls.append({"question": question,
+                      "forced": dict(bundle.get("forced_player_ids") or {})})
+        if len(calls) == 1:
+            return ({"verdict": None, "text": "Which player do you mean?",
+                     "receipts": [], "caveat": None, "followups": [],
+                     "act_link": None, "actions": [], "mentions": [],
+                     "candidates": [
+                         {"player_id": "6794", "name": "Justin Jefferson",
+                          "team": "MIN", "position": "WR"},
+                         {"player_id": "9001", "name": "Justin Jefferson",
+                          "team": "BUF", "position": "WR"}]},
+                    {"type": "open", "evidence": []}, ["compare_players"], [])
+        return ({"verdict": "Ja'Marr Chase over Justin Jefferson",
+                 "text": "Chase, on value.", "receipts": [], "caveat": None,
+                 "followups": [], "act_link": None, "actions": [], "mentions": []},
+                {"type": "open", "evidence": []}, ["compare_players"],
+                ["Ja'Marr Chase", "Justin Jefferson"])
+    monkeypatch.setattr(open_layer, "answer_open", fake_open)
+
+    out1 = service.ask("acct:42", "Compare Ja'Marr Chase and Justin Jefferson")
+    assert out1["intent"] == "open"
+    assert len(out1["answer"]["candidates"]) == 2
+
+    # The chip tap resumes the pending open request: the open turn runs
+    # against the ORIGINAL question with the pick forced into the tools.
+    monkeypatch.setattr(service, "classify",
+                        _route("player", player_names=["Justin Jefferson"]))
+    out2 = service.ask("acct:42", "Justin Jefferson",
+                       thread_id=out1["thread_id"], player_id_hint="6794")
+    assert out2["intent"] == "open"
+    assert out2["answer"]["verdict"] == "Ja'Marr Chase over Justin Jefferson"
+    assert calls[1]["question"] == "Compare Ja'Marr Chase and Justin Jefferson"
+    assert calls[1]["forced"] == {"justin jefferson": "6794"}
+
+
+def test_namesake_policy_flows_through_service_resolution(env, monkeypatch):
+    # The Jefferson pair at service level: with the value footprint
+    # naming only the WR, the name resolves directly, no clarify turn.
+    jeff_index = {
+        "6794": {"name": "Justin Jefferson", "team": "MIN", "position": "WR"},
+        "13524": {"name": "Justin Jefferson", "team": "CLE", "position": "LB"},
+    }
+    monkeypatch.setattr(service, "resolve_player",
+                        lambda name, roster_player_ids=None: _real_resolve(
+                            name, index=jeff_index,
+                            roster_player_ids=roster_player_ids,
+                            footprint_ids={"6794"}))
+    monkeypatch.setattr(service, "classify",
+                        _route("player", player_names=["Justin Jefferson"]))
+    seen = {}
+
+    def pack(bundle, entities, player_ids):
+        seen["player_ids"] = list(player_ids)
+        return ({"type": "player", "available": True,
+                 "player": {"player_id": "6794", "name": "Justin Jefferson"},
+                 "as_of": {}}, ["fake_tool"])
+    monkeypatch.setitem(service.BUILDERS, "player", pack)
+    monkeypatch.setattr(service, "compose_answer",
+                        lambda intent, q, p, *, preferences, assumed_context, history=None:
+                        {"verdict": "Justin Jefferson update", "text": "ok",
+                         "receipts": [], "caveat": None, "followups": [],
+                         "act_link": None, "actions": []})
+    out = service.ask("acct:42", "How is Justin Jefferson doing?")
+    assert out["intent"] == "player"
+    assert seen["player_ids"] == ["6794"]
+
+
 def test_remember_stores_preference_and_next_answer_uses_it(env, monkeypatch):
     monkeypatch.setattr(service, "classify",
                         _route("remember", preference_text="I prefer upside at flex"))

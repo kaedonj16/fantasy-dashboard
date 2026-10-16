@@ -191,17 +191,17 @@ def test_no_clean_fit_rejects_forced_trade():
 # -- questions.json schema sanity ------------------------------------------------------
 
 def test_questions_distribution_and_ids():
-    assert len(QUESTIONS) == 140
-    assert len(BY_ID) == 140
+    assert len(QUESTIONS) == 148
+    assert len(BY_ID) == 148
     assert Counter(q["type"] for q in QUESTIONS) == {
         "start_sit": 7, "trade_eval": 4, "trade_finding": 6, "buy_sell_hold": 5, "player": 3,
-        "metric": 3, "waivers": 5, "this_week": 4, "leaderboard": 30,
+        "metric": 4, "waivers": 5, "this_week": 4, "leaderboard": 32,
         "playoffs": 4, "power_rankings": 2, "standings": 2, "matchup": 7,
         "schedule": 2, "breakout_board": 1, "breakout_track_record": 1,
         "breakout_history": 1, "teams": 4, "pick_ownership": 1,
         "keeper": 4, "rookie": 3, "cross_league": 3,
         "replacement": 2, "handcuff": 2, "activity": 2, "watchlist": 2, "front_office": 2,
-        "open": 19, "live": 2, "draft": 2, "nfl_schedule": 5}
+        "open": 21, "live": 2, "draft": 5, "nfl_schedule": 5}
 
 
 def test_questions_entry_shape():
@@ -222,7 +222,8 @@ def test_traps_present_and_shaped():
     assert {q["trap"]["kind"] for q in traps.values()} == {
         "missing_stat", "namesake", "pro_gate", "early_season", "no_clean_fit",
         "no_scheduled_matchup", "no_keeper_settings", "missing_league",
-        "unneeded_qb_claim", "excluded_player", "no_historical_form"}
+        "unneeded_qb_claim", "excluded_player", "no_historical_form",
+        "faller_not_target"}
     tw3 = BY_ID["tw3"]
     assert tw3["trap"]["kind"] == "unneeded_qb_claim"
     assert tw3["trap"]["player"] == "Baker Mayfield"
@@ -454,7 +455,7 @@ def test_league_context_references_match_packs():
 
 # -- mock mode + poison ------------------------------------------------------------------
 
-def test_mock_mode_full_run_passes_140_of_140():
+def test_mock_mode_full_run_passes_148_of_148():
     for q in QUESTIONS:
         score = score_answer(q, compose_mock(q))
         assert score["passed"], f"{q['id']}: {score}"
@@ -463,7 +464,7 @@ def test_mock_mode_full_run_passes_140_of_140():
 def test_runner_mock_mode_exit_zero(capsys):
     assert runner.main(["--mode", "mock"]) == 0
     out = capsys.readouterr().out
-    assert "140/140 answers passed" in out
+    assert "148/148 answers passed" in out
 
 
 def test_runner_poison_is_detected(capsys):

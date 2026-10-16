@@ -350,6 +350,17 @@ def score_answer(question: dict, answer: dict) -> dict:
         trap_ok = str(trap.get("name") or "").lower() not in full.lower()
         if not trap_ok:
             notes.append("excluded-player trap failed: the screened-out player was named")
+    elif trap.get("kind") == "faller_not_target":
+        # The draft-slotting trap: the class headliner ranked above the
+        # named pick is presumed taken, so he may surface only as the
+        # faller (take him if he somehow drops), never as the target:
+        # his name must be in the prose but NOT in the verdict.
+        _faller = str(trap.get("name") or "").lower()
+        trap_ok = bool(_faller) and _faller not in verdict_text.lower() \
+            and _faller in full.lower()
+        if not trap_ok:
+            notes.append("faller trap failed: the headliner must appear only "
+                         "as the faller, never as the target")
 
     # Structure
     if no_data_expected or clarify or gated_expected:
