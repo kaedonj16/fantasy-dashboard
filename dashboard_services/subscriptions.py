@@ -194,6 +194,48 @@ def _account_user_keys(account_id: int) -> List[str]:
     return [f"acct:{account_id}", str(account_id)]
 
 
+def linked_identity_keys(account_id: int):
+    """(keys, platforms) an account's subscription rows may be stored under.
+
+    account_identities links the Google account to its platform identities
+    (platform_user_id and handle, per platform). Checkout stamps grants
+    with the platform identity first and the admin grant script's default
+    form keys rows by Sleeper id/username too, so entitlement reads for a
+    signed-in account must include these keys alongside the acct: keys --
+    has_premium_access's account branch resolves the same rows by joining
+    user_subscriptions through this table. Fails closed: any error yields
+    no keys.
+    """
+    keys: List[str] = []
+    platforms: List[str] = []
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT platform, platform_user_id, handle "
+                    "FROM account_identities WHERE account_id = %s",
+                    (int(account_id),),
+                )
+                rows = cur.fetchall() or []
+        for row in rows:
+            if isinstance(row, dict):
+                platform = row.get("platform")
+                user_id = row.get("platform_user_id")
+                handle = row.get("handle")
+            else:
+                platform, user_id, handle = row[0], row[1], row[2]
+            for value in (user_id, handle):
+                value = str(value or "").strip()
+                if value and value not in keys:
+                    keys.append(value)
+            platform = str(platform or "").strip().lower()
+            if platform and platform not in platforms:
+                platforms.append(platform)
+    except Exception:
+        return [], []
+    return keys, platforms
+
+
 def has_user_league_subscription(
     user_id: Optional[str],
     league_id: Optional[str],

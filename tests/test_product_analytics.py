@@ -1592,7 +1592,7 @@ def test_assistant_summary_aggregates_month(monkeypatch):
     # Only acct:7 holds an active personal plan.
     monkeypatch.setattr(
         "dashboard_services.subscriptions.find_active_personal_plan",
-        lambda keys: {"plan_key": "pro"} if "acct:7" in keys else None,
+        lambda keys, platform="sleeper": {"plan_key": "pro"} if "acct:7" in keys else None,
     )
     out = analytics.assistant_summary()
     assert out["chats"] == 58
@@ -1644,7 +1644,7 @@ def test_assistant_summary_paid_lookup_failure_reads_free(monkeypatch):
         _assistant_fake_fetchall(totals, [], [{"account_key": "acct:5", "chats": 1}]),
     )
 
-    def boom(keys):
+    def boom(keys, platform="sleeper"):
         raise RuntimeError("subscriptions down")
 
     monkeypatch.setattr(

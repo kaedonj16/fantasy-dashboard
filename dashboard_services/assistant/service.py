@@ -26,21 +26,113 @@ class CapReached(Exception):
         self.caps = caps
 
 
+def _linked_identity_keys(account_id: int):
+    """(keys, platforms) a subscription row may be stored under for an account.
+
+    Delegates to subscriptions.linked_identity_keys: the platform identities
+    linked to the account in account_identities (Sleeper user id, handle,
+    ...). Checkout stamps grants with the platform identity first
+    (routes/billing_bp.py's checkout user id is the session's viewer id,
+    then the username, and only falls back to acct:<id>), and the admin
+    grant script's default form keys rows by Sleeper id/username too. The
+    canonical gate (subscriptions.has_premium_access) reaches those rows by
+    joining user_subscriptions through this table; a lookup keyed only by
+    acct:<id> never sees them. Fails closed: any error yields no keys.
+    """
+    try:
+        from dashboard_services.subscriptions import linked_identity_keys
+        return linked_identity_keys(account_id)
+    except Exception:
+        return [], []
+
+
+def _plan_lookup_keys(account_key: str):
+    """Every identity key this caller's plan may be stored under, plus the
+    platforms those identities span.
+
+    The full set the rest of the site resolves through: the account keys
+    (acct:<id> and the bare id), the session's viewer identity (checkout
+    prefers it when present), and every platform identity linked to the
+    account. Order does not matter: find_active_personal_plan matches
+    user_id = ANY(keys) and ranks the rows it finds.
+    """
+    keys: list = []
+
+    def _add(value):
+        value = str(value or "").strip()
+        if value and value not in keys:
+            keys.append(value)
+
+    _add(account_key)
+    account_id = ctx_mod.resolve_account_id()
+    if account_id is None:
+        account_id = _account_id_from_key(account_key)
+    if account_id is not None:
+        _add(f"acct:{account_id}")
+        _add(str(account_id))
+    try:
+        from flask import has_request_context, session
+        if has_request_context():
+            _add(session.get("viewer_user_id"))
+            _add(session.get("viewer_username"))
+    except Exception:
+        pass
+    platforms = ["sleeper"]
+    if account_id is not None:
+        linked_keys, linked_platforms = _linked_identity_keys(account_id)
+        for key in linked_keys:
+            _add(key)
+        for platform in linked_platforms:
+            if platform not in platforms:
+                platforms.append(platform)
+    return keys, platforms
+
+
+def _tier_rank(plan) -> int:
+    """Rank of a plan row's assistant tier (higher wins across platforms)."""
+    plan_key = str((plan or {}).get("plan_key") or "").strip().lower()
+    tier = _TIER_BY_PLAN.get(plan_key, "starter") if plan_key else "free"
+    return TIER_ORDER.index(tier)
+
+
 def _active_plan(account_key: str):
     """The caller's active personal plan row, or None.
 
-    Canonical lookup used: dashboard_services.subscriptions.find_active_personal_plan,
-    which queries user_subscriptions for active, unexpired rows keyed by the
-    caller's identities (acct:<id> and the bare account id). It fails closed
-    (returns None on DB errors), so any failure here defaults to free.
+    Resolves through the same source of truth as the rest of the site:
+    dashboard_services.subscriptions.find_active_personal_plan over the
+    caller's full identity key set (see _plan_lookup_keys), across every
+    platform the account holds identities on, keeping the best tier found.
+    Two account-scoped representations that lookup cannot see are folded in
+    after it, mirroring the canonical gate (subscriptions.has_premium_access):
+    grandfathered single_league rows live in user_league_subscriptions, not
+    user_subscriptions (fold-in decided 2026-10-14: starter), and an active
+    PRO free trial grants full PRO while it runs. It fails closed (returns
+    None on DB errors), so any failure here defaults to free.
     """
     try:
-        from dashboard_services.subscriptions import find_active_personal_plan
+        from dashboard_services.subscriptions import (
+            find_active_personal_plan,
+            has_any_user_league_subscription,
+            trial_active_for_keys,
+        )
+        keys, platforms = _plan_lookup_keys(account_key)
+        best = None
+        for platform in platforms:
+            plan = find_active_personal_plan(keys, platform)
+            if plan is not None and (best is None or _tier_rank(plan) > _tier_rank(best)):
+                best = plan
+        if best is not None:
+            return best
         account_id = ctx_mod.resolve_account_id()
-        keys = [account_key]
-        if account_id is not None:
-            keys.append(str(account_id))
-        return find_active_personal_plan(keys)
+        if account_id is None:
+            account_id = _account_id_from_key(account_key)
+        if has_any_user_league_subscription(
+            None, account_id=account_id, user_keys=keys,
+        ):
+            return {"plan_key": "single_league"}
+        if trial_active_for_keys(keys):
+            return {"plan_key": "trial"}
+        return None
     except Exception:
         return None
 
@@ -70,6 +162,10 @@ _TIER_BY_PLAN = {
     "starter": "starter", "single_league": "starter",
     "all_pro": "all_pro", "league": "all_pro",
     "hall_of_fame": "hall_of_fame", "user": "hall_of_fame", "combo": "hall_of_fame",
+    # An active PRO free trial is full PRO in the canonical gate (the same
+    # scope as the grandfathered 'user' plan), so it tiers as hall_of_fame
+    # while it runs.
+    "trial": "hall_of_fame",
 }
 _TIER_CAP_DEFAULTS = {"free": 25, "starter": 100, "all_pro": 250, "hall_of_fame": 1000}
 _TIER_CAP_ENV = {

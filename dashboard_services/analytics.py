@@ -1238,18 +1238,41 @@ _ASSISTANT_MONTH = "created_at >= date_trunc('month', now())"
 def _assistant_is_paid(account_key: str) -> bool:
     """Paid check for an arbitrary assistant account key.
 
-    Mirrors assistant service._is_paid (which is session-bound): the same
-    find_active_personal_plan lookup keyed by the account key itself plus
-    its bare account id when the key carries the acct: prefix. Fails
-    closed (free) on any error.
+    Mirrors assistant service._active_plan (which is session-bound): the
+    same find_active_personal_plan lookup over every identity key the
+    account's plan may be stored under -- the account keys plus the
+    platform identities linked in account_identities (checkout and the
+    grant script key rows by platform identity, not acct:<id>). No
+    session exists here, so session viewer keys cannot be added; the
+    linked identities cover the same stored rows. Fails closed (free)
+    on any error.
     """
     try:
         from dashboard_services.subscriptions import find_active_personal_plan
 
         keys = [account_key]
+        account_id = None
         if account_key.startswith("acct:"):
             keys.append(account_key[len("acct:"):])
-        return find_active_personal_plan(keys) is not None
+            try:
+                account_id = int(account_key[len("acct:"):])
+            except (TypeError, ValueError):
+                account_id = None
+        platforms = ["sleeper"]
+        if account_id is not None:
+            from dashboard_services.subscriptions import linked_identity_keys
+
+            linked_keys, linked_platforms = linked_identity_keys(account_id)
+            for key in linked_keys:
+                if key not in keys:
+                    keys.append(key)
+            for platform in linked_platforms:
+                if platform not in platforms:
+                    platforms.append(platform)
+        return any(
+            find_active_personal_plan(keys, platform) is not None
+            for platform in platforms
+        )
     except Exception:
         return False
 
