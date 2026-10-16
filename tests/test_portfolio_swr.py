@@ -1,9 +1,9 @@
 """Stale-while-revalidate for /portfolio.
 
-Account users are served from the Postgres portfolio_summary_cache when the
-entry is fresh; a miss or stale entry renders a hydratable shell and kicks a
-bounded background refresh instead of blocking the page on summary
-computation. Sleeper-only sessions (no account_id) keep the inline path.
+Account users are served from the Postgres portfolio_summary_cache: a fresh
+entry renders as-is, a stale full entry also renders (last-good) and kicks a
+bounded background refresh, and only a miss renders a hydratable shell.
+Sleeper-only sessions (no account_id) keep the inline path.
 """
 from datetime import datetime, timedelta, timezone
 
@@ -117,7 +117,11 @@ def test_cache_miss_renders_shell_and_kicks_refresh(offline_client, monkeypatch)
     assert kicked == [(7, "L1")]
 
 
-def test_stale_cache_renders_shell_and_kicks_refresh(offline_client, monkeypatch):
+def test_stale_cache_renders_last_good_card_and_kicks_refresh(offline_client, monkeypatch):
+    """True SWR: a stale full summary still renders (the user sees last-good
+    data instantly) while a background refresh revalidates it. The old
+    stale->shell behavior blanked every card at once on TTL expiry, since
+    all leagues' summaries are generated together."""
     old = _summary(generated_at=(
         datetime.now(timezone.utc) - timedelta(hours=2)).isoformat())
     pages, kicked = _setup(
@@ -126,8 +130,9 @@ def test_stale_cache_renders_shell_and_kicks_refresh(offline_client, monkeypatch
 
     resp = offline_client.get("/portfolio")
     assert resp.status_code == 200
-    assert b"Record loading" in resp.data
-    assert b"7-4" not in resp.data
+    assert b"Record loading" not in resp.data
+    assert b"7-4" in resp.data
+    assert b"Player One" in resp.data
     assert kicked == [(7, "L1")]
 
 
@@ -136,13 +141,14 @@ def test_game_day_uses_shorter_ttl(offline_client, monkeypatch):
     thirty_min_ago = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
     key = ("sleeper", "L1", 2026)
 
-    # Game day: 30-minute-old entry is stale -> shell + refresh.
+    # Game day: 30-minute-old entry is stale -> last-good card + refresh.
     pages, kicked = _setup(
         monkeypatch, [_membership()],
         {key: _summary(generated_at=thirty_min_ago)}, game_day=True)
     _signed_in(offline_client, account_id=7, account_email="a@example.com")
     resp = offline_client.get("/portfolio")
-    assert b"Record loading" in resp.data
+    assert b"7-4" in resp.data
+    assert b"Record loading" not in resp.data
     assert kicked == [(7, "L1")]
 
     # Not a game day: same entry is fresh -> full card, no refresh.

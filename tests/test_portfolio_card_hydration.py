@@ -38,6 +38,56 @@ def test_cold_card_returns_last_good_while_warming(offline_client, monkeypatch):
     assert response.json["matchup"]["pending"] is True
 
 
+def _wire_card(monkeypatch, cached):
+    import routes.user_pages_bp as pages
+    monkeypatch.setattr("dashboard_services.accounts.resolve_account_leagues",
+                        lambda *a, **k: [_membership()])
+    monkeypatch.setattr("dashboard_services.portfolio_summary.get_cached_summary",
+                        lambda *a: cached)
+    monkeypatch.setattr(pages, "get_league_ctx_from_cache",
+                        lambda *a, **k: {"rosters": [], "league": {}})
+    monkeypatch.setattr(pages, "get_nfl_state", lambda: {"season": 2026, "week": 3})
+    monkeypatch.setattr(pages, "_games_scheduled_today", lambda season, week: False)
+    monkeypatch.setattr(pages, "api_portfolio_matchup",
+                        lambda: {"live": False, "applicable": False})
+    return pages
+
+
+def test_card_serves_fresh_cached_summary_without_rebuild(offline_client, monkeypatch):
+    """A fresh cached ready summary is what build_league_summary would
+    re-derive; the card endpoint must not pay that compute per card."""
+    from datetime import datetime, timezone
+    fresh = {"state": "ready", "record": "8-2", "league_id": "L1",
+             "generated_at": datetime.now(timezone.utc).isoformat()}
+    _wire_card(monkeypatch, fresh)
+
+    def _no_build(*a, **k):
+        raise AssertionError("fresh cached summary must not be rebuilt")
+
+    monkeypatch.setattr("dashboard_services.portfolio_summary.build_league_summary",
+                        _no_build)
+    with offline_client.session_transaction() as sess:
+        sess["account_id"] = 7
+    response = offline_client.get("/api/portfolio/card?platform=sleeper&league_id=L1&season=2026")
+    assert response.status_code == 200
+    assert response.json["summary"]["record"] == "8-2"
+    assert response.json["state"] == "ready"
+
+
+def test_card_rebuilds_when_cached_summary_is_stale(offline_client, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    stale = {"state": "ready", "record": "8-2", "league_id": "L1",
+             "generated_at": (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()}
+    _wire_card(monkeypatch, stale)
+    monkeypatch.setattr("dashboard_services.portfolio_summary.build_league_summary",
+                        lambda *a, **k: {"state": "ready", "record": "9-1"})
+    with offline_client.session_transaction() as sess:
+        sess["account_id"] = 7
+    response = offline_client.get("/api/portfolio/card?platform=sleeper&league_id=L1&season=2026")
+    assert response.status_code == 200
+    assert response.json["summary"]["record"] == "9-1"
+
+
 def test_card_rejects_unlinked_league(offline_client, monkeypatch):
     monkeypatch.setattr("dashboard_services.accounts.resolve_account_leagues", lambda *a, **k: [])
     with offline_client.session_transaction() as sess:

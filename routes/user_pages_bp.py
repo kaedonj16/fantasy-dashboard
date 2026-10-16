@@ -110,9 +110,12 @@ def _games_scheduled_today(*args, **kwargs):
 # (value lookups, positional rankings, streaks). On NFL game days that pinned
 # workers and the page "took forever to load". Summaries are now served from
 # the Postgres portfolio_summary_cache (populated by /api/portfolio/summary
-# and /api/portfolio/card via build_league_summary); a miss or stale entry
-# renders a hydratable shell and kicks a bounded background refresh instead of
-# blocking the render.
+# and /api/portfolio/card via build_league_summary). A fresh entry renders
+# as-is; a STALE entry also renders (marked stale) while a bounded background
+# refresh revalidates it -- serving last-good is the point of SWR, and the
+# previous stale->shell behavior blanked every card at once each time the
+# TTL expired, since all leagues' summaries are generated together. Only a
+# true cache miss renders a hydratable shell.
 
 _PORTFOLIO_SWR_GAME_DAY_TTL_S = 15 * 60
 _PORTFOLIO_SWR_TTL_S = 60 * 60
@@ -130,12 +133,16 @@ def _portfolio_refresh_pool():
         return _refresh_pool
 
 
-def _kick_summary_refresh(account_id, membership):
+def _kick_summary_refresh(account_id, membership, _attempt=0):
     """Rebuild one league's cached portfolio summary without blocking the page.
 
     Fire-and-forget: failures are swallowed so a broken provider can never
-    take down /portfolio. A cold league context also kicks its own background
-    warm inside get_league_ctx_from_cache, so the next attempt has data.
+    take down /portfolio. A cold league context kicks its own background warm
+    inside get_league_ctx_from_cache and build_league_summary raises
+    ContextPending; the refresh re-kicks itself on a timer until the warm
+    lands (up to ~30s) instead of dropping the rebuild on the floor, which
+    previously left the summary cache stale until a client happened to drive
+    a successful /api/portfolio/card for that league.
     """
     try:
         pool = _portfolio_refresh_pool()
@@ -146,11 +153,22 @@ def _kick_summary_refresh(account_id, membership):
 
     def _run():
         try:
-            from dashboard_services.portfolio_summary import build_league_summary
+            from dashboard_services.portfolio_summary import (
+                ContextPending, build_league_summary,
+            )
             build_league_summary(
                 account_id, dict(membership or {}),
                 lambda p, i, s: get_league_ctx_from_cache(p, i, s, allow_build=False),
             )
+        except ContextPending:
+            if _attempt < 10:
+                timer = threading.Timer(
+                    3.0, _kick_summary_refresh,
+                    args=(account_id, membership),
+                    kwargs={"_attempt": _attempt + 1},
+                )
+                timer.daemon = True
+                timer.start()
         except Exception:
             logger.debug("portfolio background refresh failed league=%s", lid,
                          exc_info=True)
@@ -173,6 +191,16 @@ def _cached_summary_fresh(cached, ttl_s):
         gen = gen.replace(tzinfo=timezone.utc)
     age_s = (datetime.now(timezone.utc) - gen).total_seconds()
     return 0 <= age_s <= ttl_s
+
+
+def _portfolio_swr_ttl_s(season, week):
+    """SWR freshness window for portfolio summaries: 15 min on game days."""
+    try:
+        game_day = bool(_games_scheduled_today(season, week))
+    except Exception:
+        logger.debug("portfolio game-day check failed", exc_info=True)
+        game_day = False
+    return _PORTFOLIO_SWR_GAME_DAY_TTL_S if game_day else _PORTFOLIO_SWR_TTL_S
 
 
 @user_pages_bp.route("/portfolio")
@@ -437,19 +465,15 @@ def page_portfolio():
         }
 
     # Stale-while-revalidate: serve each league's card from the Postgres
-    # portfolio summary cache when fresh -- 15 minutes on game days (scores
-    # move fast), 1 hour otherwise. A miss or stale entry renders a hydratable
-    # shell (the client fills it via /api/portfolio/card) and kicks a bounded
-    # background refresh, so the page never blocks on summary computation.
+    # portfolio summary cache -- 15 minutes fresh on game days (scores move
+    # fast), 1 hour otherwise. A stale full card still renders (marked stale)
+    # and kicks a bounded background refresh; only a miss renders a hydratable
+    # shell, so the page never blocks on summary computation and a TTL expiry
+    # never blanks the whole portfolio at once.
     # Sleeper-only sessions have no account_id (and therefore no cache); they
     # keep the inline _league_summary path.
     week = int(nfl_state.get("week") or 0)
-    try:
-        _game_day = bool(_games_scheduled_today(season, week))
-    except Exception:
-        logger.debug("portfolio game-day check failed", exc_info=True)
-        _game_day = False
-    _swr_ttl_s = _PORTFOLIO_SWR_GAME_DAY_TTL_S if _game_day else _PORTFOLIO_SWR_TTL_S
+    _swr_ttl_s = _portfolio_swr_ttl_s(season, week)
 
     def _league_card(lg):
         if not account_id:
@@ -472,26 +496,40 @@ def page_portfolio():
             logger.debug("portfolio summary cache read failed league=%s", lid,
                          exc_info=True)
             cached = None
-        if _cached_summary_fresh(cached, _swr_ttl_s):
+        if isinstance(cached, dict) and cached:
             state = cached.get("state")
+            fresh = _cached_summary_fresh(cached, _swr_ttl_s)
             base = {"league_id": lid,
                     "name": cached.get("name") or lg.get("name") or "Unknown",
                     "platform": lg_platform, "season": lg_season,
                     "is_favorite": is_fav}
             if state == "team_not_linked":
-                return {**base, "pending": True, "predraft": False,
-                        "reason": "Team not linked yet"}
-            if state == "reconnect_required":
-                return {**base, "error": True}
-            # "ready" / "partial" (or legacy entries without a state): full
-            # card. pos_user_vals / pos_league_avgs only feed the archetype
-            # badge, which degrades to "Balanced" when absent.
-            card = dict(cached)
-            card.update(base)
-            card.setdefault("pos_user_vals", {})
-            card.setdefault("pos_league_avgs", {})
-            return card
-        # Cache miss or stale: shell now, refresh in the background.
+                if fresh:
+                    return {**base, "pending": True, "predraft": False,
+                            "reason": "Team not linked yet"}
+            elif state == "reconnect_required":
+                if fresh:
+                    return {**base, "error": True}
+            else:
+                # "ready" / "partial" (or legacy entries without a state):
+                # full card, fresh OR stale. A stale card is marked so the
+                # client still hydrates it, but the user sees last-good
+                # record/standing/players instantly instead of a loading
+                # shell -- and the cross-league aggregates, which only count
+                # non-loading cards, stay populated. pos_user_vals /
+                # pos_league_avgs only feed the archetype badge, which
+                # degrades to "Balanced" when absent.
+                card = dict(cached)
+                card.update(base)
+                card.setdefault("pos_user_vals", {})
+                card.setdefault("pos_league_avgs", {})
+                if fresh:
+                    return card
+                card["stale"] = True
+                _kick_summary_refresh(account_id, lg)
+                return card
+        # Cache miss (or a stale non-card state): shell now, refresh in the
+        # background.
         _kick_summary_refresh(account_id, lg)
         return _shell()
 
@@ -1344,11 +1382,30 @@ def api_portfolio_card():
         state, pending, warm_scheduled = "pending", True, True
     else:
         summary_started = clock()
-        try:
-            summary = build_league_summary(account_id, membership, lambda *_a, **_k: ctx)
-        except Exception:
-            logger.warning("portfolio card summary failed for %s:%s", platform, league_id, exc_info=True)
-            summary = stale_summary
+        # Fast path: a fresh cached "ready" summary IS what
+        # build_league_summary would re-derive from this context (value
+        # lookup over every roster + positional rankings). The client
+        # hydrates every card on every page load through a 2-wide queue, so
+        # re-deriving it per card made the last leagues wait on redundant
+        # compute and pinned request threads. Serve the fresh cache and
+        # spend the request on the matchup, which is not cached.
+        summary = None
+        if isinstance(stale_summary, dict) and stale_summary.get("state") == "ready":
+            try:
+                _nfl = get_nfl_state() or {}
+                _ttl = _portfolio_swr_ttl_s(
+                    int(_nfl.get("season") or season), int(_nfl.get("week") or 0))
+                if _cached_summary_fresh(stale_summary, _ttl):
+                    summary = stale_summary
+            except Exception:
+                logger.debug("portfolio card freshness check failed", exc_info=True)
+                summary = None
+        if summary is None:
+            try:
+                summary = build_league_summary(account_id, membership, lambda *_a, **_k: ctx)
+            except Exception:
+                logger.warning("portfolio card summary failed for %s:%s", platform, league_id, exc_info=True)
+                summary = stale_summary
         summary_ms = round((clock() - summary_started) * 1000)
         matchup_started = clock()
         # Reuse the existing matchup calculation without another membership or
