@@ -3,7 +3,7 @@ Prospect evaluation model - position-aware, multi-factor scoring.
 
 Each component score is 0-100.  Final prospect_score is a weighted sum.
 
-Model version: 3.2 (see MODEL_VERSION)
+Model version: 3.3 (see MODEL_VERSION)
   v1.x: baseline components below.
   v2.0: adds recruiting-pedigree component (247 Composite via CFBD),
         WEPA opponent-adjusted efficiency blend (QB/RB), and SP+/Team Talent
@@ -38,7 +38,7 @@ from typing import Any, Dict, List, Optional
 
 
 # Grading-model version. Bump on ANY change to scoring logic or weights.
-MODEL_VERSION = "3.2"
+MODEL_VERSION = "3.3"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -621,7 +621,7 @@ def calc_efficiency_score(
     if pos == "WR":
         ypr = _safe(ls.get("yds_per_reception"), 10.0)
         ms  = _safe(ls.get("market_share_yards"))
-        eff = _scale(ypr, 8.5, 17.0) * 0.50 + _scale(ms, 0.08, 0.40) * 0.50  # v3.2 V4 corrected in beta: base sums to 1.00
+        eff = _scale(ypr, 8.5, 17.0) * 0.50 + _scale(ms, 0.08, 0.30) * 0.50  # v3.3 F2: MS anchor 0.30 (0.40 sat ~52% beyond the best recorded WR season, DeVonta Smith 2020 at 0.264)
 
         # Real PFF YPRR - centered adjustment: 2.0 = neutral, 2.8 = +8, 1.2 = -8
         yprr = _eval_metric_value(eval_metrics, "yprr", min_confidence=0.75)
@@ -889,7 +889,16 @@ def calc_breakout_score(seasons: List[Dict], age: Optional[float], position: str
     elif thresh is None:
         dom_score = 50.0  # unknown position
     elif dom > 0:
-        dom_score = min(100, max(0, (dom / thresh - 1) * 50 + 60))
+        _ratio = dom / thresh
+        if _ratio > 1:
+            # v3.3 F3: above-threshold saturation. WR saturates at 1.4x the
+            # threshold (a 0.35 dominator, just beyond recorded WR seasons);
+            # RB/TE keep 1.8x, which is algebraically identical to the old
+            # linear curve (40 / 0.8 = 50 points per unit of ratio).
+            _sat = 1.4 if pos == "WR" else 1.8
+            dom_score = min(100, 60 + 40 * min((_ratio - 1) / (_sat - 1), 1))
+        else:
+            dom_score = min(100, max(0, (_ratio - 1) * 50 + 60))
     else:
         dom_score = 30.0
 
@@ -906,7 +915,17 @@ def calc_breakout_score(seasons: List[Dict], age: Optional[float], position: str
         else:
             _a, _b = sorted_s[0], _peak_s
         if _pg(_a) > 0:
-            _growth = (_pg(_b) - _pg(_a)) / _pg(_a)
+            # v3.3 V-A: when the peak season's per-game rate is at least 90%
+            # of the first season's rate, the rate was maintained, so score
+            # trajectory on TOTAL production growth into the peak season
+            # instead of per-game growth (a short first season otherwise
+            # reads as decline when only the workload grew).
+            def _tot(_s):
+                return _safe(_s.get("receiving_yards", 0)) + _safe(_s.get("rush_yards", 0)) + _safe(_s.get("pass_yards", 0)) * 0.5
+            if _pg(_b) >= 0.9 * _pg(_a) and _tot(_a) > 0:
+                _growth = (_tot(_b) - _tot(_a)) / _tot(_a)
+            else:
+                _growth = (_pg(_b) - _pg(_a)) / _pg(_a)
             traj_score = _clip(_scale(_growth, -0.20, 0.60))
 
     # Adjusted breakout age - continuous scale calibrated by position.
@@ -1039,6 +1058,75 @@ _ATH_WEIGHTS: Dict[str, Dict[str, float]] = {
 _ATH_DATA_CAPS = {1: 74, 2: 82, 3: 96}   # n_metrics_present → cap
 
 
+# ── Knot-anchored combine subscales (v3.3) ─────────────────────────────────
+# Every combine leg except RAS is scored against recorded marks at
+# performance tiers of drafted players at the position (nflverse combine
+# data, drafted only, classes 2000-2025): piecewise-linear through the tier
+# marks below, listed in tier order worst / p1 / p5 / p10 / p25 / p50 / p75 /
+# p90 / p97 / p99 / best and priced by _KNOT_SCORES. The marks are fixed
+# recorded constants, so the scale stays absolute across years. RAS has no
+# drafted-tester distribution in that source and stays on its linear
+# 4.0-10.0 scale.
+_KNOT_SCORES = [0, 5, 12, 22, 38, 56, 77, 88, 93, 96, 100]
+
+_KNOT_MARKS = {
+    "QB": {
+        "forty": [5.37, 5.266, 5.102, 5.004, 4.9, 4.81, 4.69, 4.58, 4.511, 4.411, 4.33],
+        "vertical": [21.5, 24.51, 26.5, 27.05, 29.5, 31.5, 33.875, 36.0, 37.5, 38.5, 40.5],
+        "broad": [96.0, 99.0, 100.0, 103.0, 107.0, 112.0, 116.0, 121.0, 125.0, 127.0, 129.0],
+        "speed": [53.39, 57.64, 67.61, 70.65, 77.27, 84.53, 92.7, 99.65, 110.59, 118.15, 126.88],
+        "cone": [7.8, 7.713, 7.517, 7.408, 7.22, 7.11, 6.96, 6.856, 6.762, 6.729, 6.65],
+        "shuttle": [4.78, 4.654, 4.55, 4.52, 4.42, 4.295, 4.18, 4.09, 4.026, 3.952, 3.87],
+    },
+    "RB": {
+        "forty": [4.83, 4.758, 4.67, 4.644, 4.58, 4.51, 4.45, 4.39, 4.355, 4.33, 4.24],
+        "vertical": [26.5, 28.325, 30.0, 30.5, 33.0, 35.0, 37.0, 39.5, 41.0, 41.5, 43.0],
+        "broad": [103.0, 106.53, 111.0, 113.0, 117.0, 120.0, 123.75, 127.0, 130.0, 132.94, 137.0],
+        "speed": [82.9, 83.92, 88.18, 91.64, 97.16, 103.49, 109.23, 116.11, 121.84, 124.46, 129.55],
+        "cone": [7.68, 7.556, 7.39, 7.27, 7.15, 7.01, 6.89, 6.81, 6.7, 6.654, 6.5],
+        "shuttle": [4.67, 4.62, 4.508, 4.44, 4.348, 4.235, 4.143, 4.07, 3.995, 3.935, 3.93],
+    },
+    "WR": {
+        "forty": [4.79, 4.711, 4.62, 4.59, 4.54, 4.47, 4.41, 4.35, 4.31, 4.279, 4.21],
+        "vertical": [26.0, 28.5, 31.0, 32.5, 34.0, 36.0, 38.0, 39.5, 41.5, 42.575, 45.0],
+        "broad": [105.0, 110.0, 114.0, 115.0, 118.0, 122.0, 126.0, 130.0, 134.0, 136.0, 140.0],
+        "speed": [73.34, 78.76, 84.92, 87.59, 94.17, 100.27, 106.84, 112.51, 118.97, 122.78, 133.5],
+        "cone": [7.54, 7.409, 7.31, 7.19, 7.07, 6.94, 6.8, 6.675, 6.612, 6.561, 6.5],
+        "shuttle": [4.77, 4.57, 4.45, 4.39, 4.31, 4.2, 4.11, 4.02, 3.946, 3.886, 3.73],
+    },
+    "TE": {
+        "forty": [5.09, 5.023, 4.93, 4.885, 4.81, 4.73, 4.64, 4.545, 4.481, 4.417, 4.37],
+        "vertical": [26.5, 27.22, 29.0, 30.0, 31.5, 33.5, 35.5, 37.5, 39.5, 41.78, 43.5],
+        "broad": [102.0, 104.68, 109.0, 110.0, 113.0, 116.0, 120.5, 124.0, 129.0, 131.66, 134.0],
+        "speed": [78.07, 83.05, 87.04, 89.81, 94.91, 102.1, 108.03, 116.0, 122.7, 127.54, 138.03],
+        "cone": [7.95, 7.652, 7.511, 7.44, 7.302, 7.12, 6.99, 6.88, 6.81, 6.76, 6.72],
+        "shuttle": [4.82, 4.698, 4.57, 4.53, 4.45, 4.34, 4.25, 4.145, 4.09, 4.011, 3.98],
+    },
+}
+
+
+def _knot_score(value, pos, leg):
+    """Piecewise-linear score for one combine mark against the recorded
+    drafted-tester tier marks at the position. Marks pair with scores in
+    performance order, so lower-is-better legs (forty, cone, shuttle) price
+    correctly once the pairs are sorted by mark value. Returns None when
+    the position/leg has no recorded tier table."""
+    marks = _KNOT_MARKS.get(pos, {}).get(leg)
+    if not marks:
+        return None
+    pts = sorted(zip(marks, _KNOT_SCORES))
+    if value <= pts[0][0]:
+        return float(pts[0][1])
+    if value >= pts[-1][0]:
+        return float(pts[-1][1])
+    for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+        if x0 <= value <= x1:
+            if x1 == x0:
+                return float(y1)
+            return y0 + (y1 - y0) * (value - x0) / (x1 - x0)
+    return float(pts[-1][1])
+
+
 def calc_athleticism_score(athleticism: Dict[str, Any], position: str) -> float:
     """
     Combine / pro-day metrics.  Falls back gracefully to positional median (55)
@@ -1061,47 +1149,51 @@ def calc_athleticism_score(athleticism: Dict[str, Any], position: str) -> float:
     if ras is not None:
         metric_scores["ras"] = _scale(_safe(ras), 4.0, 10.0)
 
-    # 40-yard dash (position-specific thresholds, inverted: faster = higher score)
+    # 40-yard dash: knot-anchored to recorded drafted-tester tiers at the
+    # position (v3.3). Faster = higher score via the tier pairing.
     forty_raw = athleticism.get("forty_yard")
     if forty_raw:
-        forty = _safe(forty_raw)
-        thresholds = {
-            "WR":  (4.25, 4.65),
-            "RB":  (4.30, 4.65),
-            "QB":  (4.40, 5.00),
-            "TE":  (4.45, 4.90),
-        }
-        lo, hi = thresholds.get(pos, (4.30, 4.90))
-        metric_scores["forty"] = _scale(hi - forty, 0.0, hi - lo)
+        _s = _knot_score(_safe(forty_raw), pos, "forty")
+        if _s is not None:
+            metric_scores["forty"] = _s
 
     # Vertical jump
     vert = athleticism.get("vertical_inches")
     if vert:
-        metric_scores["vertical"] = _scale(_safe(vert), 28.0, 44.0)
+        _s = _knot_score(_safe(vert), pos, "vertical")
+        if _s is not None:
+            metric_scores["vertical"] = _s
 
     # Broad jump
     broad = athleticism.get("broad_jump_in")
     if broad:
-        metric_scores["broad"] = _scale(_safe(broad), 100, 140)
+        _s = _knot_score(_safe(broad), pos, "broad")
+        if _s is not None:
+            metric_scores["broad"] = _s
 
     # Speed score = weight * (40^4)^-1 * normalisation constant
     weight_lbs = athleticism.get("weight_lbs")
     if forty_raw and weight_lbs:
         ss_raw = (_safe(weight_lbs) * 200) / (_safe(forty_raw) ** 4)
-        # Elite ~115+, average ~100
-        metric_scores["speed_score"] = _scale(ss_raw, 80.0, 130.0)
+        _s = _knot_score(ss_raw, pos, "speed")
+        if _s is not None:
+            metric_scores["speed_score"] = _s
 
     # Agility / change-of-direction (three_cone and short_shuttle).
-    # Inverted: lower time = higher score.
+    # Lower time = higher score. v3.3 F0: the old _scale calls passed
+    # (hi, lo) inverted, which made _scale return a constant 50.0 for every
+    # player; the knot tiers price these legs correctly.
     three_cone = athleticism.get("three_cone")
     if three_cone:
-        # Elite ~6.45s, average ~7.0s, poor ~7.4s
-        metric_scores["three_cone"] = _scale(_safe(three_cone), 7.40, 6.45)
+        _s = _knot_score(_safe(three_cone), pos, "cone")
+        if _s is not None:
+            metric_scores["three_cone"] = _s
 
     shuttle = athleticism.get("short_shuttle")
     if shuttle:
-        # Elite ~3.95s, average ~4.25s, poor ~4.55s
-        metric_scores["shuttle"] = _scale(_safe(shuttle), 4.55, 3.95)
+        _s = _knot_score(_safe(shuttle), pos, "shuttle")
+        if _s is not None:
+            metric_scores["shuttle"] = _s
 
     if not metric_scores:
         return None
@@ -1170,11 +1262,16 @@ def calc_utilization_score(seasons: List[Dict], position: str) -> float:
     elif pos == "RB":
         carries  = _safe(ls.get("rush_attempts")) / gp
         rec_tgts = _safe(ls.get("targets"))
-        rec_pg   = (rec_tgts / gp) if rec_tgts > 0 else (_safe(ls.get("receptions")) / gp)
+        _tgt_present = rec_tgts > 0
+        rec_pg   = (rec_tgts / gp) if _tgt_present else (_safe(ls.get("receptions")) / gp)
         # Combines rush volume + receiving involvement
         # Elite: 20+ carries + 4+ targets; average: 12 carries + 2 targets
         rush_util = _scale(carries, 8.0, 22.0)
-        recv_util = _scale(rec_pg,  1.0,  5.0)
+        # v3.3 V-C: when targets are missing, receptions per game is read on
+        # a receptions scale (0.5 to 3.5), not the targets scale (1.0 to
+        # 5.0): 1.6 receptions/g is not 1.6 targets/g, and the old read
+        # under-credited every back graded without target data.
+        recv_util = _scale(rec_pg,  1.0,  5.0) if _tgt_present else _scale(rec_pg, 0.5, 3.5)
         # Dynasty: pass-catching usage is more stable and more valued than rush volume
         return _clip(rush_util * 0.55 + recv_util * 0.45)
 
@@ -2108,19 +2205,29 @@ def score_prospect(
         breakout_score = _clip(breakout_score * bk_adj)
 
     athleticism_score   = calc_athleticism_score(ath, pos)
-    # v3.2 R5-QB: compress TESTED QB athleticism toward the QB mean. An
-    # untested QB is excused entirely (weight redistributes), so a tested
-    # pocket passer must not score 4/100 against him: QB athleticism is a
-    # threshold trait, not a linear one. Halve the distance from 50.
-    if pos == "QB" and athleticism_score is not None:
-        athleticism_score = 50.0 + (athleticism_score - 50.0) * 0.25  # v3.2 R7-A3: threshold trait, quarter distance
+    # v3.3 three-zone athleticism transform (class-wide; supersedes the
+    # v3.2 R7-A3 tested-QB-only compression, which is removed so nothing
+    # double-applies). Testing is a red-flag check, not a gate: the raw
+    # component stands at full strength at and below 60, the competent-to-
+    # very-good range is compressed (slope 0.70 from 60 to 85), and
+    # exceptional testing keeps a bounded toe above 85 (slope 0.90 from the
+    # 77.5 intercept, so a perfect raw 100 lands at 91.0).
+    if athleticism_score is not None:
+        _r = athleticism_score
+        if _r <= 60.0:
+            pass
+        elif _r <= 85.0:
+            athleticism_score = 60.0 + (_r - 60.0) * 0.70
+        else:
+            athleticism_score = 77.5 + (_r - 85.0) * 0.90
     # v3.0 R6: Production-implied athleticism floor. Elite producers are
     # almost certainly functional athletes; don't leave the athleticism
-    # weight on the table pre-combine. 70.0 is solid-not-elite.
+    # weight on the table pre-combine. The v3.2 constant (70.0) is passed
+    # through the v3.3 transform, which re-denominates it to 67.0.
     _athleticism_projected = False
     if (athleticism_score is None and production_score >= 90.0
             and breakout_score >= 75.0):
-        athleticism_score = 70.0
+        athleticism_score = 67.0
         _athleticism_projected = True
     competition_score   = calc_competition_score(
         seasons, team_context=prospect.get("team_context"),
