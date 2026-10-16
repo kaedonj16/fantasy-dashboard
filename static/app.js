@@ -26685,16 +26685,23 @@ function _rzFgRate(yds, s) {
   yds = parseFloat(yds || 0) || 0;
   var order;
   if (yds >= 60) order = ['fgm_60p', 'fgm_50p', 'fgm_40_49', 'fgm_0_39', 'fgm', 'fg'];
-  else if (yds >= 50) order = ['fgm_50p', 'fgm_50_59', 'fgm_40_49', 'fgm_0_39', 'fgm', 'fg'];
+  else if (yds >= 50) order = ['fgm_50_59', 'fgm_50p', 'fgm_40_49', 'fgm_0_39', 'fgm', 'fg'];
   else if (yds >= 40) order = ['fgm_40_49', 'fgm_0_39', 'fgm', 'fg'];
   else if (yds >= 30) order = ['fgm_30_39', 'fgm_0_39', 'fgm', 'fg'];
   else if (yds >= 20) order = ['fgm_20_29', 'fgm_0_39', 'fgm', 'fg'];
   else if (yds > 0)   order = ['fgm_0_19', 'fgm_0_39', 'fgm', 'fg'];
   else order = ['fgm', 'fg'];
+  // Mirrors scorezone.js _fgRate: providers publish unused kicking keys at an
+  // explicit 0 (Sleeper fgm_50p / fgm in split-bucket leagues), so a zero must
+  // not shadow the league's real nonzero rate further down the chain.
+  var firstPresent = null;
   for (var i = 0; i < order.length; i++) {
-    if (s[order[i]] != null) return parseFloat(s[order[i]] || 0) || 0;
+    if (s[order[i]] == null) continue;
+    var rate = parseFloat(s[order[i]] || 0) || 0;
+    if (firstPresent === null) firstPresent = rate;
+    if (rate !== 0) return rate;
   }
-  return 0;
+  return firstPresent || 0;
 }
 function _rzFgPts(sl, s) {
   var n = function(x) { return parseFloat(x || 0) || 0; };
