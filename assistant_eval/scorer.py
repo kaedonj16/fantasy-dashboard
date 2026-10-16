@@ -368,12 +368,19 @@ def score_answer(question: dict, answer: dict) -> dict:
         if not structure_ok:
             notes.append("no-data/clarify answer has no text")
     elif qtype == "leaderboard":
-        # A board answer carries exactly one receipt per board row.
-        board = pack.get("board") or []
+        # A board answer carries exactly one receipt per board row; a
+        # multi-board pack (defenses vs several positions) counts the
+        # rows of every sub-board it carries.
+        boards = pack.get("boards") or []
+        if len(boards) > 1:
+            n_rows = sum(len(b.get("board") or []) for b in boards
+                         if isinstance(b, dict))
+        else:
+            n_rows = len(pack.get("board") or [])
         receipts = (answer or {}).get("receipts") or []
-        structure_ok = bool(verdict_text.strip()) and len(receipts) == len(board)
+        structure_ok = bool(verdict_text.strip()) and len(receipts) == n_rows
         if not structure_ok:
-            notes.append(f"board answer needs a verdict and {len(board)} receipts "
+            notes.append(f"board answer needs a verdict and {n_rows} receipts "
                          f"(one per row), got {len(receipts)}")
     else:
         receipts = (answer or {}).get("receipts") or []

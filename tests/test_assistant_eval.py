@@ -191,11 +191,11 @@ def test_no_clean_fit_rejects_forced_trade():
 # -- questions.json schema sanity ------------------------------------------------------
 
 def test_questions_distribution_and_ids():
-    assert len(QUESTIONS) == 150
-    assert len(BY_ID) == 150
+    assert len(QUESTIONS) == 151
+    assert len(BY_ID) == 151
     assert Counter(q["type"] for q in QUESTIONS) == {
         "start_sit": 7, "trade_eval": 4, "trade_finding": 6, "buy_sell_hold": 5, "player": 3,
-        "metric": 4, "waivers": 5, "this_week": 4, "leaderboard": 34,
+        "metric": 4, "waivers": 5, "this_week": 4, "leaderboard": 35,
         "playoffs": 4, "power_rankings": 2, "standings": 2, "matchup": 7,
         "schedule": 2, "breakout_board": 1, "breakout_track_record": 1,
         "breakout_history": 1, "teams": 4, "pick_ownership": 1,
@@ -455,7 +455,7 @@ def test_league_context_references_match_packs():
 
 # -- mock mode + poison ------------------------------------------------------------------
 
-def test_mock_mode_full_run_passes_150_of_150():
+def test_mock_mode_full_run_passes_151_of_151():
     for q in QUESTIONS:
         score = score_answer(q, compose_mock(q))
         assert score["passed"], f"{q['id']}: {score}"
@@ -464,7 +464,7 @@ def test_mock_mode_full_run_passes_150_of_150():
 def test_runner_mock_mode_exit_zero(capsys):
     assert runner.main(["--mode", "mock"]) == 0
     out = capsys.readouterr().out
-    assert "150/150 answers passed" in out
+    assert "151/151 answers passed" in out
 
 
 def test_runner_poison_is_detected(capsys):

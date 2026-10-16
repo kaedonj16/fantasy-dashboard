@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "description": "Frozen assistant eval set: 150 questions with golden evidence packs for the BR Fantasy assistant (workshop section 5 core 20, the deep-cuts leaderboard family lb1-lb6, and the section 9 P1 league-context types: playoffs, power rankings, standings, matchup, schedule) plus the P1 trade-finding family tf1-tf4, and the P1 breakout board, Teams, and pick-ownership families bo1-bo3, tm1-tm2, pk1 (renamed from the branch po1, which collided with the playoffs po1), with te4 an extra trade_eval. The win-outcome family mu4-mu6 pins the game-outcome phrasings (will I win / what are my chances / will I lose) to matchup packs: a decisive favorite, a close game, and a decisive underdog. The buy/sell board family bl1/sh1 pins pool-wide buy-low and sell-high asks (no named player) to leaderboard value boards, with bsh4/bsh5 as the named-player controls that must stay single-player buy_sell_hold. The roster start/sit family ss5-ss7 pins slot questions that name no players (start at FLEX, start at RB, sit at FLEX) to roster-scoped packs built from the asking user's own lineup: the FLEX occupant is benched for the bench challenger who out-projects him, and the RB question is a keep-the-starter call. The open-layer wild set ow1-ow19 freezes tool evidence (production tool-entry shape) instead of builder packs: ungoverned phrasings, a follow-up chain (ow5-ow7), a two-part question (ow8), a non-default team (ow9), a PRO gate through the open layer (ow18), and an off-site decline (ow19). The breadth family lb7-lb9 pins cross-metric breadth boards (top-N finishes counted across a metric family: lb7 receiving in Kaedon's exact phrasing, lb8 rushing) and the players-only receiving-yards stat board (the team-row regression: the live board once ranked TEAM_LAR first). The detailed-question family dq1-dq11 pins the composed boards: weekly-finish breadth, floor, and ceiling from game logs (dq1-dq3), the value board under an age ceiling (dq4), a metric board restricted to the waiver pool (dq5), opportunity leaders re-ranked by upcoming schedule (dq6), the within-team No. 1 vs No. 2 gap (dq7), positional-rank climbers from value history (dq8), Teams roster breadth (dq9), a category sweep (dq10), and the no-history trap for rank trajectory (dq11). The history family hs1-hs5 adds past-season boards (metric, raw stat, and movers boards for 2024, plus the no-historical-form trap for value boards, and hs5 the top-scorer freeze: Kaedon's exact 'Who was the top scorer in 2024?', whose live answer once served the current season's board leader and total instead of 2024's), and po4 adds the playoff-odds trajectory. hs6 adds the past-season weekly-finishes board in Kaedon's exact phrasing (the live answer once topped it with a long snapper at 0 PPG); its golden pack is the fixed builder's output over the real 2025 game logs and ranks skill positions only. The live family lv1-lv2 adds in-game questions over fixture live state, and the draft family dr1-dr2 adds live draft help (best available and a 1.03 prep window), and dr3-dr5 pin pick-slotted prep targets: dr3 is Kaedon's exact 'Who should I target at 1.03?' with the class headliner demoted to faller-only (the faller_not_target trap), dr4 the 1.01 control where the target IS the top name with no faller line, and dr5 a 2.03 mid-round case. The nfl_schedule family ns1-ns6 pins real NFL fixture questions (tonight's game, the Sunday slate, a named team's game, Monday night, the full week) to NFL schedule packs: a bare 'who plays tonight' answers the NFL game and never the fantasy matchup (ns1 carries the excluded-name trap for the user's own fantasy team), while ns5 is the possessive trap pair ('who am I playing this week') that stays a matchup question. ow20-ow21 freeze the 2026-10-15 compare entity-resolution cases: 'Compare Ja'Marr Chase and Justin Jefferson' (the WR/LB namesake must resolve silently to the WR, receipts are the WR's) and 'Compare Ja'Marr Chase and Jaxson Smith Njigba' (Kaedon's spelling, no hyphen and an extra s, must resolve to Jaxon Smith-Njigba and compare). The missed-tackle question mt1 pins the broken-tackles family in Kaedon's exact phrasing: 'what missed tackle metrics do I have' answers with both tracked rates (Broken Tackles/Carry and Broken Tackles / Catch, the site's missed-tackles-forced data) instead of the not-tracked decline the live assistant once gave. The defense family df1-df2 pins team-defense ranking questions to the defenses board (season fantasy points from the week-stat store under the league's scoring, a named defense as the pack focus with its model-value rank among defenses when the value table carries DEF rows): df1 is Kaedon's exact 'what is denver's defense ranked', whose live answer was once the not-available decline, and df2 the 'how good is the chiefs defense' sibling.",
+    "description": "Frozen assistant eval set: 151 questions with golden evidence packs for the BR Fantasy assistant (workshop section 5 core 20, the deep-cuts leaderboard family lb1-lb6, and the section 9 P1 league-context types: playoffs, power rankings, standings, matchup, schedule) plus the P1 trade-finding family tf1-tf4, and the P1 breakout board, Teams, and pick-ownership families bo1-bo3, tm1-tm2, pk1 (renamed from the branch po1, which collided with the playoffs po1), with te4 an extra trade_eval. The win-outcome family mu4-mu6 pins the game-outcome phrasings (will I win / what are my chances / will I lose) to matchup packs: a decisive favorite, a close game, and a decisive underdog. The buy/sell board family bl1/sh1 pins pool-wide buy-low and sell-high asks (no named player) to leaderboard value boards, with bsh4/bsh5 as the named-player controls that must stay single-player buy_sell_hold. The roster start/sit family ss5-ss7 pins slot questions that name no players (start at FLEX, start at RB, sit at FLEX) to roster-scoped packs built from the asking user's own lineup: the FLEX occupant is benched for the bench challenger who out-projects him, and the RB question is a keep-the-starter call. The open-layer wild set ow1-ow19 freezes tool evidence (production tool-entry shape) instead of builder packs: ungoverned phrasings, a follow-up chain (ow5-ow7), a two-part question (ow8), a non-default team (ow9), a PRO gate through the open layer (ow18), and an off-site decline (ow19). The breadth family lb7-lb9 pins cross-metric breadth boards (top-N finishes counted across a metric family: lb7 receiving in Kaedon's exact phrasing, lb8 rushing) and the players-only receiving-yards stat board (the team-row regression: the live board once ranked TEAM_LAR first). The detailed-question family dq1-dq11 pins the composed boards: weekly-finish breadth, floor, and ceiling from game logs (dq1-dq3), the value board under an age ceiling (dq4), a metric board restricted to the waiver pool (dq5), opportunity leaders re-ranked by upcoming schedule (dq6), the within-team No. 1 vs No. 2 gap (dq7), positional-rank climbers from value history (dq8), Teams roster breadth (dq9), a category sweep (dq10), and the no-history trap for rank trajectory (dq11). The history family hs1-hs5 adds past-season boards (metric, raw stat, and movers boards for 2024, plus the no-historical-form trap for value boards, and hs5 the top-scorer freeze: Kaedon's exact 'Who was the top scorer in 2024?', whose live answer once served the current season's board leader and total instead of 2024's), and po4 adds the playoff-odds trajectory. hs6 adds the past-season weekly-finishes board in Kaedon's exact phrasing (the live answer once topped it with a long snapper at 0 PPG); its golden pack is the fixed builder's output over the real 2025 game logs and ranks skill positions only. The live family lv1-lv2 adds in-game questions over fixture live state, and the draft family dr1-dr2 adds live draft help (best available and a 1.03 prep window), and dr3-dr5 pin pick-slotted prep targets: dr3 is Kaedon's exact 'Who should I target at 1.03?' with the class headliner demoted to faller-only (the faller_not_target trap), dr4 the 1.01 control where the target IS the top name with no faller line, and dr5 a 2.03 mid-round case. The nfl_schedule family ns1-ns6 pins real NFL fixture questions (tonight's game, the Sunday slate, a named team's game, Monday night, the full week) to NFL schedule packs: a bare 'who plays tonight' answers the NFL game and never the fantasy matchup (ns1 carries the excluded-name trap for the user's own fantasy team), while ns5 is the possessive trap pair ('who am I playing this week') that stays a matchup question. ow20-ow21 freeze the 2026-10-15 compare entity-resolution cases: 'Compare Ja'Marr Chase and Justin Jefferson' (the WR/LB namesake must resolve silently to the WR, receipts are the WR's) and 'Compare Ja'Marr Chase and Jaxson Smith Njigba' (Kaedon's spelling, no hyphen and an extra s, must resolve to Jaxon Smith-Njigba and compare). The missed-tackle question mt1 pins the broken-tackles family in Kaedon's exact phrasing: 'what missed tackle metrics do I have' answers with both tracked rates (Broken Tackles/Carry and Broken Tackles / Catch, the site's missed-tackles-forced data) instead of the not-tracked decline the live assistant once gave. The defense family df1-df2 pins team-defense ranking questions to the defenses board (season fantasy points from the week-stat store under the league's scoring, a named defense as the pack focus with its model-value rank among defenses when the value table carries DEF rows): df1 is Kaedon's exact 'what is denver's defense ranked', whose live answer was once the not-available decline, and df2 the 'how good is the chiefs defense' sibling. df3 pins the cold multi-position matchup board: 'which defenses give up the most to wrs and rbs' builds one defenses-vs-position board per named position in a single answer (the pack carries one sub-board per position under boards), where the live thread once clarified for a position and then answered a bare 'wr and rb' reply with unrelated season breadth leaders.",
     "scenario": "Kaedon's league Blackedraw, her team Caleb's Casting Couch, Week 7 of the 2026 season.",
     "packs": "Each evidence_pack mirrors, field for field, the dict the matching builder in dashboard_services/assistant/evidence.py returns. Values inside a pack are the only numbers an answer may cite.",
     "recapture": "These packs are frozen fixtures. Before any launch decision, recapture them from the live tools with: python3 scripts/run_assistant_eval.py --capture (writes assistant_eval/captured_questions.json; it never overwrites this file). A launch call made on stale fixtures is not a launch call.",
@@ -18932,6 +18932,359 @@
         "no_data": false,
         "must_mention": [
           "Kansas City Chiefs"
+        ]
+      }
+    },
+    {
+      "id": "df3",
+      "type": "leaderboard",
+      "question": "which defenses give up the most to wrs and rbs",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "leaderboard",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "board_kind": "matchup",
+        "requested_n": 10,
+        "position_filter": "WR",
+        "team_filter": null,
+        "target_season": null,
+        "historical": false,
+        "metric_key": "defense_points_allowed",
+        "positions": [
+          "WR",
+          "RB"
+        ],
+        "boards": [
+          {
+            "position": "WR",
+            "label": "Fantasy points allowed to WR",
+            "board": [
+              {
+                "rank": 1,
+                "team": "CIN",
+                "name": "CIN",
+                "player_id": "",
+                "position": "",
+                "value": 41.2,
+                "on_my_roster": false
+              },
+              {
+                "rank": 2,
+                "team": "LV",
+                "name": "LV",
+                "player_id": "",
+                "position": "",
+                "value": 39.8,
+                "on_my_roster": false
+              },
+              {
+                "rank": 3,
+                "team": "NYJ",
+                "name": "NYJ",
+                "player_id": "",
+                "position": "",
+                "value": 38.4,
+                "on_my_roster": false
+              },
+              {
+                "rank": 4,
+                "team": "JAX",
+                "name": "JAX",
+                "player_id": "",
+                "position": "",
+                "value": 37.9,
+                "on_my_roster": false
+              },
+              {
+                "rank": 5,
+                "team": "SF",
+                "name": "SF",
+                "player_id": "",
+                "position": "",
+                "value": 36.8,
+                "on_my_roster": false
+              },
+              {
+                "rank": 6,
+                "team": "SEA",
+                "name": "SEA",
+                "player_id": "",
+                "position": "",
+                "value": 36.1,
+                "on_my_roster": false
+              },
+              {
+                "rank": 7,
+                "team": "DEN",
+                "name": "DEN",
+                "player_id": "",
+                "position": "",
+                "value": 35.4,
+                "on_my_roster": false
+              },
+              {
+                "rank": 8,
+                "team": "PIT",
+                "name": "PIT",
+                "player_id": "",
+                "position": "",
+                "value": 34.9,
+                "on_my_roster": false
+              },
+              {
+                "rank": 9,
+                "team": "NE",
+                "name": "NE",
+                "player_id": "",
+                "position": "",
+                "value": 34.2,
+                "on_my_roster": false
+              },
+              {
+                "rank": 10,
+                "team": "MIN",
+                "name": "MIN",
+                "player_id": "",
+                "position": "",
+                "value": 33.6,
+                "on_my_roster": false
+              }
+            ],
+            "board_count": 10,
+            "pool_size": 32,
+            "qualification_text": "All 32 defenses, ranked easiest to hardest by the site's opponent-adjusted matchup ratings. Values are raw fantasy points allowed per game to WR."
+          },
+          {
+            "position": "RB",
+            "label": "Fantasy points allowed to RB",
+            "board": [
+              {
+                "rank": 1,
+                "team": "JAX",
+                "name": "JAX",
+                "player_id": "",
+                "position": "",
+                "value": 29.4,
+                "on_my_roster": false
+              },
+              {
+                "rank": 2,
+                "team": "TEN",
+                "name": "TEN",
+                "player_id": "",
+                "position": "",
+                "value": 28.7,
+                "on_my_roster": false
+              },
+              {
+                "rank": 3,
+                "team": "MIA",
+                "name": "MIA",
+                "player_id": "",
+                "position": "",
+                "value": 27.9,
+                "on_my_roster": false
+              },
+              {
+                "rank": 4,
+                "team": "NYG",
+                "name": "NYG",
+                "player_id": "",
+                "position": "",
+                "value": 27.2,
+                "on_my_roster": false
+              },
+              {
+                "rank": 5,
+                "team": "CAR",
+                "name": "CAR",
+                "player_id": "",
+                "position": "",
+                "value": 26.6,
+                "on_my_roster": false
+              },
+              {
+                "rank": 6,
+                "team": "NO",
+                "name": "NO",
+                "player_id": "",
+                "position": "",
+                "value": 26.0,
+                "on_my_roster": false
+              },
+              {
+                "rank": 7,
+                "team": "ARI",
+                "name": "ARI",
+                "player_id": "",
+                "position": "",
+                "value": 25.5,
+                "on_my_roster": false
+              },
+              {
+                "rank": 8,
+                "team": "LV",
+                "name": "LV",
+                "player_id": "",
+                "position": "",
+                "value": 24.9,
+                "on_my_roster": false
+              },
+              {
+                "rank": 9,
+                "team": "CIN",
+                "name": "CIN",
+                "player_id": "",
+                "position": "",
+                "value": 24.3,
+                "on_my_roster": false
+              },
+              {
+                "rank": 10,
+                "team": "ATL",
+                "name": "ATL",
+                "player_id": "",
+                "position": "",
+                "value": 23.8,
+                "on_my_roster": false
+              }
+            ],
+            "board_count": 10,
+            "pool_size": 32,
+            "qualification_text": "All 32 defenses, ranked easiest to hardest by the site's opponent-adjusted matchup ratings. Values are raw fantasy points allowed per game to RB."
+          }
+        ],
+        "board": [
+          {
+            "rank": 1,
+            "team": "CIN",
+            "name": "CIN",
+            "player_id": "",
+            "position": "",
+            "value": 41.2,
+            "on_my_roster": false
+          },
+          {
+            "rank": 2,
+            "team": "LV",
+            "name": "LV",
+            "player_id": "",
+            "position": "",
+            "value": 39.8,
+            "on_my_roster": false
+          },
+          {
+            "rank": 3,
+            "team": "NYJ",
+            "name": "NYJ",
+            "player_id": "",
+            "position": "",
+            "value": 38.4,
+            "on_my_roster": false
+          },
+          {
+            "rank": 4,
+            "team": "JAX",
+            "name": "JAX",
+            "player_id": "",
+            "position": "",
+            "value": 37.9,
+            "on_my_roster": false
+          },
+          {
+            "rank": 5,
+            "team": "SF",
+            "name": "SF",
+            "player_id": "",
+            "position": "",
+            "value": 36.8,
+            "on_my_roster": false
+          },
+          {
+            "rank": 6,
+            "team": "SEA",
+            "name": "SEA",
+            "player_id": "",
+            "position": "",
+            "value": 36.1,
+            "on_my_roster": false
+          },
+          {
+            "rank": 7,
+            "team": "DEN",
+            "name": "DEN",
+            "player_id": "",
+            "position": "",
+            "value": 35.4,
+            "on_my_roster": false
+          },
+          {
+            "rank": 8,
+            "team": "PIT",
+            "name": "PIT",
+            "player_id": "",
+            "position": "",
+            "value": 34.9,
+            "on_my_roster": false
+          },
+          {
+            "rank": 9,
+            "team": "NE",
+            "name": "NE",
+            "player_id": "",
+            "position": "",
+            "value": 34.2,
+            "on_my_roster": false
+          },
+          {
+            "rank": 10,
+            "team": "MIN",
+            "name": "MIN",
+            "player_id": "",
+            "position": "",
+            "value": 33.6,
+            "on_my_roster": false
+          }
+        ],
+        "board_count": 10,
+        "pool_size": 32,
+        "label": "Fantasy points allowed to WR and RB"
+      },
+      "reference": {
+        "verdict_kind": "board",
+        "pick": "CIN",
+        "key_numbers": [
+          41.2,
+          29.4,
+          35.4
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "CIN",
+          "JAX",
+          "Fantasy points allowed to WRs",
+          "Fantasy points allowed to RBs"
         ]
       }
     }
