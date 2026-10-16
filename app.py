@@ -979,6 +979,15 @@ def _analytics_pageview(response):
                 path=request.path,
                 props=_pageview_props,
             )
+            # Persist the anon id in its own long-lived cookie so a
+            # signed-out visitor keeps one identity across browser
+            # restarts; only on logged pageviews (this branch), never
+            # on API/static/admin responses.
+            _analytics.stamp_anon_cookie(
+                response,
+                secure=bool(app.config.get("SESSION_COOKIE_SECURE")),
+                domain=app.config.get("SESSION_COOKIE_DOMAIN"),
+            )
     except Exception:
         logger.debug("[analytics] pageview hook failed", exc_info=True)
     return response

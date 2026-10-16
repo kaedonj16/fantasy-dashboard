@@ -744,6 +744,85 @@ def test_ensure_anon_session_id_stable():
         assert flask.session["_analytics_sid"] == sid1
 
 
+def test_ensure_anon_session_id_cookie_wins_over_session():
+    flask = pytest.importorskip("flask")
+    app = flask.Flask(__name__)
+    app.secret_key = "test-secret"
+    cookie_sid = "a" * 32
+    headers = {"Cookie": f"_analytics_sid={cookie_sid}"}
+    with app.test_request_context("/", headers=headers):
+        flask.session["_analytics_sid"] = "b" * 32
+        assert analytics.ensure_anon_session_id() == cookie_sid
+        # The winning value is mirrored into the session.
+        assert flask.session["_analytics_sid"] == cookie_sid
+
+
+def test_ensure_anon_session_id_adopts_session_without_cookie():
+    flask = pytest.importorskip("flask")
+    app = flask.Flask(__name__)
+    app.secret_key = "test-secret"
+    with app.test_request_context("/"):
+        flask.session["_analytics_sid"] = "c" * 32
+        assert analytics.ensure_anon_session_id() == "c" * 32
+
+
+def test_ensure_anon_session_id_ignores_malformed_cookie():
+    flask = pytest.importorskip("flask")
+    app = flask.Flask(__name__)
+    app.secret_key = "test-secret"
+    headers = {"Cookie": "_analytics_sid=not-a-real-id"}
+    with app.test_request_context("/", headers=headers):
+        sid = analytics.ensure_anon_session_id()
+        assert sid != "not-a-real-id"
+        assert sid and len(sid) == 32
+
+
+def _stamp(headers=None, session_sid=None, **kwargs):
+    flask = pytest.importorskip("flask")
+    app = flask.Flask(__name__)
+    app.secret_key = "test-secret"
+    with app.test_request_context("/", headers=headers or {}):
+        if session_sid:
+            flask.session["_analytics_sid"] = session_sid
+        resp = flask.Response("ok")
+        analytics.stamp_anon_cookie(resp, **kwargs)
+        return [h for h in resp.headers.getlist("Set-Cookie")
+                if h.startswith("_analytics_sid=")]
+
+
+def test_stamp_anon_cookie_sets_persistent_cookie():
+    cookies = _stamp()
+    assert len(cookies) == 1
+    header = cookies[0]
+    value = header.split(";", 1)[0].split("=", 1)[1]
+    assert len(value) == 32
+    assert "Max-Age=31536000" in header
+    assert "Path=/" in header
+    assert "SameSite=Lax" in header
+    assert "HttpOnly" in header
+    assert "Secure" not in header
+
+
+def test_stamp_anon_cookie_adopts_session_sid():
+    cookies = _stamp(session_sid="d" * 32)
+    assert len(cookies) == 1
+    assert cookies[0].split(";", 1)[0] == "_analytics_sid=" + "d" * 32
+
+
+def test_stamp_anon_cookie_noop_when_cookie_matches():
+    sid = "e" * 32
+    cookies = _stamp(headers={"Cookie": f"_analytics_sid={sid}"},
+                     session_sid=sid)
+    assert cookies == []
+
+
+def test_stamp_anon_cookie_secure_and_domain_passthrough():
+    cookies = _stamp(secure=True, domain="example.com")
+    assert len(cookies) == 1
+    assert "Secure" in cookies[0]
+    assert "Domain=example.com" in cookies[0]
+
+
 # ── Self-exclusion ────────────────────────────────────────────────────────────
 
 @pytest.fixture()
