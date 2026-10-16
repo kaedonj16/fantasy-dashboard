@@ -40,6 +40,15 @@ def _resolve(bundle, name):
     """(pid, info, ambiguous_candidates) for a player name."""
     if not name:
         return None, {}, None
+    # A name the thread already settled (a clarification pick, carried
+    # on the bundle by the service) resolves to the settled player
+    # without re-asking.
+    forced = (bundle or {}).get("forced_player_ids") or {}
+    if forced:
+        from dashboard_services.assistant.resolve import _normalize
+        pid = forced.get(_normalize(str(name)))
+        if pid:
+            return str(pid), ev._player_info(str(pid), ev._index()), None
     r = resolve_player(str(name),
                        roster_player_ids=bundle.get("roster_player_ids") or set())
     if r["status"] == "ambiguous":

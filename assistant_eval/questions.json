@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "description": "Frozen assistant eval set: 125 questions with golden evidence packs for the BR Fantasy assistant (workshop section 5 core 20, the deep-cuts leaderboard family lb1-lb6, and the section 9 P1 league-context types: playoffs, power rankings, standings, matchup, schedule) plus the P1 trade-finding family tf1-tf4, and the P1 breakout board, Teams, and pick-ownership families bo1-bo3, tm1-tm2, pk1 (renamed from the branch po1, which collided with the playoffs po1), with te4 an extra trade_eval. The win-outcome family mu4-mu6 pins the game-outcome phrasings (will I win / what are my chances / will I lose) to matchup packs: a decisive favorite, a close game, and a decisive underdog. The buy/sell board family bl1/sh1 pins pool-wide buy-low and sell-high asks (no named player) to leaderboard value boards, with bsh4/bsh5 as the named-player controls that must stay single-player buy_sell_hold. The roster start/sit family ss5-ss7 pins slot questions that name no players (start at FLEX, start at RB, sit at FLEX) to roster-scoped packs built from the asking user's own lineup: the FLEX occupant is benched for the bench challenger who out-projects him, and the RB question is a keep-the-starter call. The open-layer wild set ow1-ow19 freezes tool evidence (production tool-entry shape) instead of builder packs: ungoverned phrasings, a follow-up chain (ow5-ow7), a two-part question (ow8), a non-default team (ow9), a PRO gate through the open layer (ow18), and an off-site decline (ow19). The breadth family lb7-lb9 pins cross-metric breadth boards (top-N finishes counted across a metric family: lb7 receiving in Kaedon's exact phrasing, lb8 rushing) and the players-only receiving-yards stat board (the team-row regression: the live board once ranked TEAM_LAR first). The detailed-question family dq1-dq11 pins the composed boards: weekly-finish breadth, floor, and ceiling from game logs (dq1-dq3), the value board under an age ceiling (dq4), a metric board restricted to the waiver pool (dq5), opportunity leaders re-ranked by upcoming schedule (dq6), the within-team No. 1 vs No. 2 gap (dq7), positional-rank climbers from value history (dq8), Teams roster breadth (dq9), a category sweep (dq10), and the no-history trap for rank trajectory (dq11). The history family hs1-hs4 adds past-season boards (metric, raw stat, and movers boards for 2024, plus the no-historical-form trap for value boards), and po4 adds the playoff-odds trajectory. The live family lv1-lv2 adds in-game questions over fixture live state, and the draft family dr1-dr2 adds live draft help (best available and a 1.03 prep window). The nfl_schedule family ns1-ns6 pins real NFL fixture questions (tonight's game, the Sunday slate, a named team's game, Monday night, the full week) to NFL schedule packs: a bare 'who plays tonight' answers the NFL game and never the fantasy matchup (ns1 carries the excluded-name trap for the user's own fantasy team), while ns5 is the possessive trap pair ('who am I playing this week') that stays a matchup question.",
+    "description": "Frozen assistant eval set: 142 questions with golden evidence packs for the BR Fantasy assistant (workshop section 5 core 20, the deep-cuts leaderboard family lb1-lb6, and the section 9 P1 league-context types: playoffs, power rankings, standings, matchup, schedule) plus the P1 trade-finding family tf1-tf4, and the P1 breakout board, Teams, and pick-ownership families bo1-bo3, tm1-tm2, pk1 (renamed from the branch po1, which collided with the playoffs po1), with te4 an extra trade_eval. The win-outcome family mu4-mu6 pins the game-outcome phrasings (will I win / what are my chances / will I lose) to matchup packs: a decisive favorite, a close game, and a decisive underdog. The buy/sell board family bl1/sh1 pins pool-wide buy-low and sell-high asks (no named player) to leaderboard value boards, with bsh4/bsh5 as the named-player controls that must stay single-player buy_sell_hold. The roster start/sit family ss5-ss7 pins slot questions that name no players (start at FLEX, start at RB, sit at FLEX) to roster-scoped packs built from the asking user's own lineup: the FLEX occupant is benched for the bench challenger who out-projects him, and the RB question is a keep-the-starter call. The open-layer wild set ow1-ow19 freezes tool evidence (production tool-entry shape) instead of builder packs: ungoverned phrasings, a follow-up chain (ow5-ow7), a two-part question (ow8), a non-default team (ow9), a PRO gate through the open layer (ow18), and an off-site decline (ow19). The breadth family lb7-lb9 pins cross-metric breadth boards (top-N finishes counted across a metric family: lb7 receiving in Kaedon's exact phrasing, lb8 rushing) and the players-only receiving-yards stat board (the team-row regression: the live board once ranked TEAM_LAR first). The detailed-question family dq1-dq11 pins the composed boards: weekly-finish breadth, floor, and ceiling from game logs (dq1-dq3), the value board under an age ceiling (dq4), a metric board restricted to the waiver pool (dq5), opportunity leaders re-ranked by upcoming schedule (dq6), the within-team No. 1 vs No. 2 gap (dq7), positional-rank climbers from value history (dq8), Teams roster breadth (dq9), a category sweep (dq10), and the no-history trap for rank trajectory (dq11). The history family hs1-hs4 adds past-season boards (metric, raw stat, and movers boards for 2024, plus the no-historical-form trap for value boards), and po4 adds the playoff-odds trajectory. The live family lv1-lv2 adds in-game questions over fixture live state, and the draft family dr1-dr2 adds live draft help (best available and a 1.03 prep window). The nfl_schedule family ns1-ns6 pins real NFL fixture questions (tonight's game, the Sunday slate, a named team's game, Monday night, the full week) to NFL schedule packs: a bare 'who plays tonight' answers the NFL game and never the fantasy matchup (ns1 carries the excluded-name trap for the user's own fantasy team), while ns5 is the possessive trap pair ('who am I playing this week') that stays a matchup question. ow20-ow21 freeze the 2026-10-15 compare entity-resolution cases: 'Compare Ja'Marr Chase and Justin Jefferson' (the WR/LB namesake must resolve silently to the WR, receipts are the WR's) and 'Compare Ja'Marr Chase and Jaxson Smith Njigba' (Kaedon's spelling, no hyphen and an extra s, must resolve to Jaxon Smith-Njigba and compare).",
     "scenario": "Kaedon's league Blackedraw, her team Caleb's Casting Couch, Week 7 of the 2026 season.",
     "packs": "Each evidence_pack mirrors, field for field, the dict the matching builder in dashboard_services/assistant/evidence.py returns. Values inside a pack are the only numbers an answer may cite.",
     "recapture": "These packs are frozen fixtures. Before any launch decision, recapture them from the live tools with: python3 scripts/run_assistant_eval.py --capture (writes assistant_eval/captured_questions.json; it never overwrites this file). A launch call made on stale fixtures is not a launch call.",
@@ -13229,6 +13229,240 @@
       "expect": {
         "no_data": true,
         "must_mention": []
+      }
+    },
+    {
+      "id": "ow20",
+      "type": "open",
+      "question": "Compare Ja'Marr Chase and Justin Jefferson",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "open",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "evidence": [
+          {
+            "tool": "compare_players",
+            "ok": true,
+            "players_detail": [
+              {
+                "player_id": "jamarr-chase",
+                "name": "Ja'Marr Chase",
+                "team": "CIN",
+                "position": "WR",
+                "value": 9800,
+                "ppg": 22.4,
+                "expected_ppg": 20.9,
+                "target_share": 0.31,
+                "snap_share": 0.91,
+                "touches_per_game": 11.2,
+                "games": 6,
+                "recent_ppg": 24.6
+              },
+              {
+                "player_id": "justin-jefferson",
+                "name": "Justin Jefferson",
+                "team": "MIN",
+                "position": "WR",
+                "value": 7500,
+                "ppg": 15.4,
+                "expected_ppg": 16.2,
+                "target_share": 0.27,
+                "snap_share": 0.86,
+                "touches_per_game": 8.1,
+                "games": 5,
+                "recent_ppg": 8.1
+              }
+            ],
+            "players": [
+              {
+                "player_id": "jamarr-chase",
+                "name": "Ja'Marr Chase"
+              },
+              {
+                "player_id": "justin-jefferson",
+                "name": "Justin Jefferson"
+              }
+            ],
+            "receipts": [
+              {
+                "label": "Ja'Marr Chase value",
+                "value": "9800"
+              },
+              {
+                "label": "Justin Jefferson value",
+                "value": "7500"
+              },
+              {
+                "label": "Ja'Marr Chase points per game",
+                "value": "22.4"
+              },
+              {
+                "label": "Justin Jefferson points per game",
+                "value": "15.4"
+              }
+            ],
+            "link": {
+              "href": "/sleeper/2026/blackedraw/compare?p1=jamarr-chase&p2=justin-jefferson",
+              "label": "View head-to-head in Compare"
+            }
+          }
+        ],
+        "tools_called": [
+          "compare_players"
+        ]
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": "Ja'Marr Chase",
+        "key_numbers": [
+          9800,
+          7500,
+          22.4,
+          15.4
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Ja'Marr Chase",
+          "Justin Jefferson"
+        ]
+      }
+    },
+    {
+      "id": "ow21",
+      "type": "open",
+      "question": "Compare Ja'Marr Chase and Jaxson Smith Njigba",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "open",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "evidence": [
+          {
+            "tool": "compare_players",
+            "ok": true,
+            "players_detail": [
+              {
+                "player_id": "jamarr-chase",
+                "name": "Ja'Marr Chase",
+                "team": "CIN",
+                "position": "WR",
+                "value": 9800,
+                "ppg": 22.4,
+                "expected_ppg": 20.9,
+                "target_share": 0.31,
+                "snap_share": 0.91,
+                "touches_per_game": 11.2,
+                "games": 6,
+                "recent_ppg": 24.6
+              },
+              {
+                "player_id": "jaxon-smith-njigba",
+                "name": "Jaxon Smith-Njigba",
+                "team": "SEA",
+                "position": "WR",
+                "value": 9600,
+                "ppg": 19.6,
+                "expected_ppg": 18.4,
+                "target_share": 0.28,
+                "snap_share": 0.89,
+                "touches_per_game": 9.8,
+                "games": 6,
+                "recent_ppg": 21.3
+              }
+            ],
+            "players": [
+              {
+                "player_id": "jamarr-chase",
+                "name": "Ja'Marr Chase"
+              },
+              {
+                "player_id": "jaxon-smith-njigba",
+                "name": "Jaxon Smith-Njigba"
+              }
+            ],
+            "receipts": [
+              {
+                "label": "Ja'Marr Chase value",
+                "value": "9800"
+              },
+              {
+                "label": "Jaxon Smith-Njigba value",
+                "value": "9600"
+              },
+              {
+                "label": "Ja'Marr Chase points per game",
+                "value": "22.4"
+              },
+              {
+                "label": "Jaxon Smith-Njigba points per game",
+                "value": "19.6"
+              }
+            ],
+            "link": {
+              "href": "/sleeper/2026/blackedraw/compare?p1=jamarr-chase&p2=jaxon-smith-njigba",
+              "label": "View head-to-head in Compare"
+            }
+          }
+        ],
+        "tools_called": [
+          "compare_players"
+        ]
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": "Ja'Marr Chase",
+        "key_numbers": [
+          9800,
+          9600,
+          22.4,
+          19.6
+        ],
+        "close_call": true
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Ja'Marr Chase",
+          "Jaxon Smith-Njigba"
+        ]
       }
     },
     {
