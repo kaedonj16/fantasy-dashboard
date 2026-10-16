@@ -52,13 +52,28 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 import requests
 def normalize_name(name: str) -> str:
-    _SUFFIXES = {"jr", "jr.", "sr", "sr.", "ii", "iii", "iv", "v"}
+    """
+    THE canonical player-name key for name joins in this pipeline.
+
+    Lowercases; unifies punctuation variants (periods and apostrophes are
+    dropped, hyphens and any other punctuation become spaces); collapses
+    whitespace; drops generational suffix tokens (Jr./Sr./II/III/IV/V); and
+    collapses spaced single-letter initials ("K C" -> "KC").  Both sides of
+    a join must pass through here so spelling variants of one player land
+    on the same key: "C.J. Carr" == "CJ Carr", "Trey'Dez Green" ==
+    "Treydez Green", "Ryan Coleman-Williams" == "Ryan Coleman Williams".
+    """
+    _SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v"}
     if not name:
         return ""
-    import re as _re
-    s = _re.sub(r"\.", "", name.lower())
-    s = _re.sub(r"\s+", " ", s).strip()
-    return " ".join(p for p in s.split(" ") if p not in _SUFFIXES)
+    s = str(name).lower()
+    s = s.replace(".", "").replace("'", "").replace("\u2019", "")
+    s = re.sub(r"[^a-z0-9]+", " ", s)
+    parts = [p for p in s.split() if p not in _SUFFIXES]
+    s = " ".join(parts)
+    # Collapse spaced single-letter initials: "k c concepcion" -> "kc concepcion"
+    s = re.sub(r"\b([a-z])\s([a-z])\b", r"\1\2", s)
+    return s.strip()
 from .sagarin import get_team_rating as _sagarin_get_team_rating
 
 # Suppress urllib3 SSL warning for LibreSSL compatibility
@@ -1137,9 +1152,63 @@ def _get_current_year():
 # Name mapping: {cfbd_name: desired_display_name}
 CFBD_NAME_MAPPINGS = {
     "kevin concepcion": "K.C. Concepcion",
+    # Alabama WR is seeded under his full name; listings and CFBD often
+    # carry the shortened form.  Stats under either spelling are his.
+    "ryan williams": "Ryan Coleman-Williams",
     # Add more mappings as needed
     # "cfbd_name": "Display Name"
 }
+
+
+_ALIAS_TO_CANONICAL: Optional[Dict[str, str]] = None
+
+
+def _alias_to_canonical() -> Dict[str, str]:
+    """
+    {normalized alias: normalized canonical name} built from
+    CFBD_NAME_MAPPINGS in both directions, so a name resolves to the same
+    key whether it arrives in the CFBD spelling or the display spelling.
+    """
+    global _ALIAS_TO_CANONICAL
+    if _ALIAS_TO_CANONICAL is None:
+        table: Dict[str, str] = {}
+        for cfbd_name, display_name in CFBD_NAME_MAPPINGS.items():
+            canonical = normalize_name(display_name)
+            table[normalize_name(cfbd_name)] = canonical
+            table[canonical] = canonical
+        _ALIAS_TO_CANONICAL = table
+    return _ALIAS_TO_CANONICAL
+
+
+def canonical_prospect_key(name: str) -> str:
+    """
+    The join key for a prospect's stats: normalize_name plus alias
+    resolution from CFBD_NAME_MAPPINGS.  "Ryan Williams" and
+    "Ryan Coleman-Williams" share one key, so seasons filed under either
+    spelling attach to the same (seeded) prospect instead of splitting
+    across a duplicate row.
+    """
+    key = normalize_name(name)
+    return _alias_to_canonical().get(key, key)
+
+
+def _rekey_by_canonical(mapping: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Re-key a {name: {year: ...}} side map (games played, PPA, targets)
+    through canonical_prospect_key so it joins against canonical stat
+    keys.  When two raw spellings land on one canonical key, their year
+    dicts are merged instead of one overwriting the other.
+    """
+    out: Dict[str, Any] = {}
+    for raw_key, value in (mapping or {}).items():
+        ck = canonical_prospect_key(raw_key)
+        if ck in out and isinstance(out[ck], dict) and isinstance(value, dict):
+            merged = dict(out[ck])
+            merged.update(value)
+            out[ck] = merged
+        else:
+            out[ck] = value
+    return out
 
 
 def fetch_cfbd_player_ppa(draft_year: int) -> Dict[str, Dict[int, Dict[str, float]]]:
@@ -1426,40 +1495,74 @@ def fetch_cfbd_team_context(draft_year: int) -> Dict[Tuple[str, int], Dict[str, 
     return context
 
 
-def _filter_years_needing_fetch(all_years: List[int], draft_year: int) -> List[int]:
+def _filter_years_needing_fetch(
+    all_years: List[int],
+    draft_year: int,
+    player_ids: Optional[List[str]] = None,
+) -> List[int]:
     """
-    Incremental fetch logic: past seasons only need to be fetched once.
-    Returns the subset of all_years that actually need API calls:
+    Incremental fetch logic: past seasons only need to be fetched once -
+    but for the WHOLE class, per player.  Returns the subset of all_years
+    that actually need API calls:
     - Always includes the current season (all_years[0]) for fresh data
-    - Includes past seasons only if they have no data in the DB yet
+    - Includes a past season when ANY player in the run lacks a stored row
+      for it.  (The old gate was class-wide: one player's missed season
+      stayed missing forever because his teammates had rows for that year.)
+    - Skips a past season only when every player in the run has it stored.
+
+    player_ids: the current run's prospect ids.  When omitted, the class
+    roster is read from rookie_prospects.  When coverage cannot be
+    determined (no roster on record, DB error), falls back to fetching
+    everything (safe).
     """
     if not all_years:
         return []
 
     current_season = all_years[0]
     past_seasons = all_years[1:]
+    if not past_seasons:
+        return [current_season]
 
-    # Check which past seasons already have data.  The source table keys on
-    # player_id (ROOKIE_<draft_year>_...); it has no draft_class_year column.
     try:
         from dashboard_services.db import get_conn
         with get_conn() as conn:
             with conn.cursor() as cur:
-                cur.execute("""
-                    SELECT DISTINCT season FROM rookie_prospect_source_data
-                    WHERE player_id LIKE %s AND season = ANY(%s)
-                """, (_player_id_prefix(draft_year) + "%", past_seasons))
-                existing = {row["season"] for row in cur.fetchall()}
+                roster = [pid for pid in (player_ids or []) if pid]
+                if not roster:
+                    cur.execute(
+                        "SELECT player_id FROM rookie_prospects "
+                        "WHERE draft_class_year = %s",
+                        (draft_year,),
+                    )
+                    roster = [row["player_id"] for row in cur.fetchall()]
+                if not roster:
+                    # No roster to check coverage against: fetch all (safe).
+                    return sorted(all_years)
+                # The source table keys on player_id (ROOKIE_<draft_year>_...);
+                # it has no draft_class_year column.
+                cur.execute(
+                    """
+                    SELECT player_id, season FROM rookie_prospect_source_data
+                    WHERE player_id = ANY(%s) AND season = ANY(%s)
+                    """,
+                    (roster, past_seasons),
+                )
+                have: Dict[str, Set[int]] = {}
+                for row in cur.fetchall():
+                    have.setdefault(row["player_id"], set()).add(row["season"])
     except Exception:
         # If DB check fails, fall back to fetching everything (safe)
-        existing = set()
+        return sorted(all_years)
 
     needed = [current_season]  # Always refresh current season
     for yr in past_seasons:
-        if yr not in existing:
+        missing = [pid for pid in roster if yr not in have.get(pid, set())]
+        if missing:
+            print(f"[cfbd] Fetching {yr} - {len(missing)} of {len(roster)} "
+                  f"prospects lack stored data for it")
             needed.append(yr)
         else:
-            print(f"[cfbd] Skipping {yr} - already in DB")
+            print(f"[cfbd] Skipping {yr} - all {len(roster)} prospects have it in DB")
 
     return sorted(needed)
 
@@ -1468,10 +1571,12 @@ def fetch_cfbd_college_stats(
     draft_year: int,
     fetch_games_played: bool = False,
     skip_sagarin: bool = False,
+    player_ids: Optional[List[str]] = None,
 ) -> Dict[str, List[Dict]]:
     """
     Fetch college stats from CFBD for the 3 seasons before `draft_year`.
-    Returns {player_name_lower: [season_dict, ...]} sorted oldest→newest.
+    Returns {canonical_prospect_key: [season_dict, ...]} sorted
+    oldest→newest; look seasons up with canonical_prospect_key(name).
     Requires CFBD_API_KEY env var; returns {} silently if not set.
 
     Args:
@@ -1486,10 +1591,10 @@ def fetch_cfbd_college_stats(
         return {}
 
     all_years = [draft_year - 1, draft_year - 2, draft_year - 3, draft_year - 4]
-    # Incremental fetch: only get past seasons on first ingestion.
-    # After that, only refresh the current season (all_years[0]).
-    # Old data doesn't change, so don't waste API calls re-fetching it.
-    years = _filter_years_needing_fetch(all_years, draft_year)
+    # Incremental fetch: past seasons are fetched until EVERY player in
+    # the run has them stored (per-player gate), then skipped.  Old data
+    # doesn't change, so don't waste API calls re-fetching covered years.
+    years = _filter_years_needing_fetch(all_years, draft_year, player_ids=player_ids)
 
     try:
         # Team season totals for market share / dominator calculation
@@ -1543,7 +1648,7 @@ def fetch_cfbd_college_stats(
                 bn: Dict[str, List] = {}
                 bi: Dict[int, List] = {}
                 for row in data:
-                    n  = (row.get("player") or "").lower()
+                    n  = canonical_prospect_key(row.get("player") or "")
                     pid = _safe_int(row.get("playerId"))
                     position = (row.get("position") or "").upper()
                     
@@ -1578,7 +1683,12 @@ def fetch_cfbd_college_stats(
             print(f"[cfbd] WARNING: PPA fetch failed ({exc}), continuing without PPA")
             ppa_map = {}
 
-        # Collapse into per-player season lists keyed by lowercase name
+        # Collapse into per-player season lists keyed by canonical name.
+        # The GP / PPA side maps arrive keyed by their own raw name
+        # spellings, so re-key them through the same canonical function
+        # before joining.
+        gp_by_key = _rekey_by_canonical(games_played_map)
+        ppa_by_key = _rekey_by_canonical(ppa_map)
         print("[cfbd] Building player season summaries")
         all_names: set = set()
         for yr in years:
@@ -1593,14 +1703,14 @@ def fetch_cfbd_college_stats(
                     if not rows:
                         continue
                     try:
-                        gp = (games_played_map.get(name) or {}).get(yr)
+                        gp = (gp_by_key.get(name) or {}).get(yr)
                         season_dict = _build_cfbd_season(rows, team_stats.get(yr, {}), yr, gp,
                                                          skip_sagarin=skip_sagarin)
                         dr_info = depth_ranks.get((name, yr), {})
                         season_dict["depth_rank"] = dr_info.get("depth_rank")
                         season_dict["position_group_size"] = dr_info.get("position_group_size")
                         # Merge PPA data (free replacement for PFF film grades)
-                        ppa_info = (ppa_map.get(name) or {}).get(yr, {})
+                        ppa_info = (ppa_by_key.get(name) or {}).get(yr, {})
                         if ppa_info:
                             season_dict["cfbd_passing_ppa"] = ppa_info.get("passing_ppa")
                             season_dict["cfbd_rushing_ppa"] = ppa_info.get("rushing_ppa")
@@ -1611,16 +1721,10 @@ def fetch_cfbd_college_stats(
                         print(f"[cfbd] ERROR building season for '{name}' year {yr} - {type(exc).__name__}: {exc}")
                 if seasons:
                     seasons.sort(key=lambda s: s["season"])
-                    
-                    # Apply name mapping - use mapped name as key if available
-                    final_name = name
-                    for cfbd_name, display_name in CFBD_NAME_MAPPINGS.items():
-                        if name == cfbd_name:
-                            final_name = normalize_name(display_name)
-                            print(f"[cfbd] Remapped '{name}' to '{final_name}' for database storage")
-                            break
-                    
-                    result[final_name] = seasons
+                    # `name` is already the canonical key (by_name was
+                    # keyed through canonical_prospect_key, which applies
+                    # CFBD_NAME_MAPPINGS), so it is the storage key as-is.
+                    result[name] = seasons
             except Exception as exc:
                 print(f"[cfbd] ERROR processing player '{name}' - {type(exc).__name__}: {exc}")
 
@@ -1648,9 +1752,10 @@ def fetch_cfbd_college_stats(
             teams_by_year = {yr: sorted(teams) for yr, teams in teams_by_year.items()}
             targets_map = fetch_cfbd_targets_from_plays(draft_year, teams_by_year)
             if targets_map:
+                targets_by_key = _rekey_by_canonical(targets_map)
                 merged = 0
                 for name, seasons in result.items():
-                    t_by_year = targets_map.get(name)
+                    t_by_year = targets_by_key.get(name)
                     if not t_by_year:
                         continue
                     for s in seasons:
@@ -3087,11 +3192,47 @@ def backfill_cfbd_targets(draft_year: int) -> Dict[str, int]:
     return {"updated": updated, "teams": total_teams}
 
 
+_ROSTER_YEAR_TO_EXPERIENCE = {1: "FR", 2: "SO", 3: "JR", 4: "SR", 5: "SR"}
+
+
+def _age_from_roster_row(row: Dict[str, Any], draft_year: int) -> Tuple[Optional[float], bool]:
+    """
+    (age at the draft, is_estimate) from a CFBD /roster row; age is None
+    when the row carries nothing usable.
+
+    The roster payload as used in this codebase (see the fixtures in
+    tests/test_prospect_data_sources.py) carries height, weight,
+    position and academic `year` - it does NOT carry a date of birth.
+    If a DOB field is ever present it wins (exact age at the April 25
+    draft reference date, the ESPN convention); otherwise the existing
+    experience-estimate channel is driven by the roster's academic year
+    and the result is flagged as an estimate, so a stored exact age can
+    still override it downstream.
+    """
+    dob_raw = row.get("dateOfBirth") or row.get("date_of_birth") or row.get("dob")
+    if dob_raw:
+        try:
+            from .espn_scraper import parse_dob_and_calculate_age
+            _iso, age = parse_dob_and_calculate_age(
+                str(dob_raw), ref_date=datetime.date(draft_year, 4, 25)
+            )
+            if age is not None:
+                return age, False
+        except Exception:
+            pass
+    experience = _ROSTER_YEAR_TO_EXPERIENCE.get(_safe_int(row.get("year")))
+    if experience:
+        return _estimate_age(experience, draft_year), True
+    return None, False
+
+
 def _enrich_bio_from_cfbd_roster(prospects: List[Dict[str, Any]], draft_year: int) -> List[Dict[str, Any]]:
     """
     Free replacement for Sportradar bio measurements: fill missing
-    height_inches/weight_lbs from the CFBD roster endpoint (no extra key).
-    Matches by player name; only fills fields that are currently empty.
+    height_inches/weight_lbs (and age, via _age_from_roster_row) from the
+    CFBD roster endpoint (no extra key).  Matches by canonical player
+    name; only fills fields that are currently empty - a present age is
+    never overwritten.
     """
     if not CFBD_KEY or not prospects:
         return prospects
@@ -3103,24 +3244,36 @@ def _enrich_bio_from_cfbd_roster(prospects: List[Dict[str, Any]], draft_year: in
         return prospects
     by_name: Dict[str, Dict[str, Any]] = {}
     for row in data:
-        name = f"{row.get('firstName') or ''} {row.get('lastName') or ''}".strip().lower()
+        name = normalize_name(f"{row.get('firstName') or ''} {row.get('lastName') or ''}")
         if name and name not in by_name:
             by_name[name] = row
     filled = 0
+    ages_filled = 0
     for p in prospects:
-        if p.get("height_inches") and p.get("weight_lbs"):
-            continue
-        row = by_name.get((p.get("name") or "").lower())
+        row = by_name.get(normalize_name(p.get("name") or ""))
         if not row:
             continue
-        h = _safe_int(row.get("height"))
-        w = _safe_int(row.get("weight"))
-        if h and not p.get("height_inches"):
-            p["height_inches"] = h
-            filled += 1
-        if w and not p.get("weight_lbs"):
-            p["weight_lbs"] = w
+        if not (p.get("height_inches") and p.get("weight_lbs")):
+            h = _safe_int(row.get("height"))
+            w = _safe_int(row.get("weight"))
+            if h and not p.get("height_inches"):
+                p["height_inches"] = h
+                filled += 1
+            if w and not p.get("weight_lbs"):
+                p["weight_lbs"] = w
+        if not p.get("age"):
+            age, is_estimate = _age_from_roster_row(row, draft_year)
+            if age is not None:
+                p["age"] = age
+                ages_filled += 1
+                if is_estimate:
+                    p["_age_estimated"] = True
+                    experience = _ROSTER_YEAR_TO_EXPERIENCE.get(_safe_int(row.get("year")))
+                    if experience and not p.get("_experience"):
+                        p["_experience"] = experience
     print(f"[cfbd] roster bio filled measurements for {filled} prospects ({season_year} rosters)")
+    if ages_filled:
+        print(f"[cfbd] roster bio filled ages for {ages_filled} prospects ({season_year} rosters)")
     return prospects
 
 
@@ -3459,7 +3612,7 @@ def load_prospects_for_year(draft_year: int) -> List[Dict[str, Any]]:
             name_key = sr["name"].lower()
             seed_p   = seed_by_name.get(name_key)
             nflv     = combine_data.get(name_key, {})
-            cfbd_seasons = cfbd_stats.get(name_key)
+            cfbd_seasons = cfbd_stats.get(canonical_prospect_key(sr["name"]))
 
             # Start with Sportradar bio
             p: Dict[str, Any] = {
@@ -3544,7 +3697,7 @@ def load_prospects_for_year(draft_year: int) -> List[Dict[str, Any]]:
     final = enriched + seed_only
     print(
         f"[ingestion] COMPLETE: {len(final)} total prospects for {draft_year}  "
-        f"(Sportradar: {len(enriched)} | combine: {sum(1 for p in enriched if p.get('athleticism'))} matched | CFBD stats: {sum(1 for p in enriched if cfbd_stats.get(p['name'].lower()))} matched | seed-only: {len(seed_only)} | enrichment errors: {enrichment_errors})"
+        f"(Sportradar: {len(enriched)} | combine: {sum(1 for p in enriched if p.get('athleticism'))} matched | CFBD stats: {sum(1 for p in enriched if cfbd_stats.get(canonical_prospect_key(p['name'])))} matched | seed-only: {len(seed_only)} | enrichment errors: {enrichment_errors})"
     )
     
     try:

@@ -253,15 +253,35 @@ def upsert_prospect_source_data(prospects: List[Dict], cfbd_stats: Dict, draft_y
 
     Args:
         prospects: List of prospect dicts with player_id
-        cfbd_stats: Dict of {name_lower: [season_dicts]}
+        cfbd_stats: Dict of {name_key: [season_dicts]}.  Keys are
+            re-keyed through ingestion.canonical_prospect_key here, and
+            each prospect is looked up by the same key, so stats attach
+            regardless of which spelling variant produced them
+            ("Ryan Williams" stats land on the seeded
+            "Ryan Coleman-Williams" row; "C.J. Carr" == "CJ Carr").
         draft_year: Draft year
         conn: Database connection
     """
+    from .ingestion import canonical_prospect_key
+
+    # Canonical view of the stats dict; season lists that arrive under
+    # two spellings of one player are merged by season year.
+    stats_by_key: Dict[str, List] = {}
+    for raw_key, seasons_in in (cfbd_stats or {}).items():
+        ck = canonical_prospect_key(raw_key)
+        if ck in stats_by_key:
+            have = {s.get("season") for s in stats_by_key[ck]}
+            stats_by_key[ck] = stats_by_key[ck] + [
+                s for s in seasons_in if s.get("season") not in have
+            ]
+        else:
+            stats_by_key[ck] = list(seasons_in)
+
     saved = 0
     with conn.cursor() as cur:
         for prospect in prospects:
-            name_key = prospect["name"].lower()
-            seasons = cfbd_stats.get(name_key, [])
+            name_key = canonical_prospect_key(prospect["name"])
+            seasons = stats_by_key.get(name_key, [])
 
             for season_data in seasons:
                 try:
@@ -1395,6 +1415,67 @@ def upsert_rankings(scores: List[Dict], values: List[Dict], conn) -> int:
     return saved
 
 
+# A class run may sweep stale rankings rows only when it graded a sane
+# share of its universe; a degenerate run must never wipe the board.
+_SWEEP_MIN_GRADED = 20
+_SWEEP_MIN_SHARE = 0.6
+
+
+def sweep_stale_rankings(
+    draft_year: int,
+    scored_player_ids,
+    universe_size: int,
+    conn,
+) -> int:
+    """
+    Delete rookie_rankings rows for `draft_year` whose player was NOT
+    scored in this run.  upsert_rankings only ever inserts/updates, so a
+    player who leaves the prospect universe keeps his last row - with
+    its fossil overall_rank and old model_version - on the board
+    forever (the stale 2.0 rows that presented a 47.02 as the #1 2027
+    prospect).  This sweep is the reconciliation pass.
+
+    Guard: runs only when the run graded at least _SWEEP_MIN_GRADED
+    players AND at least _SWEEP_MIN_SHARE of the loaded universe, so a
+    broken partial run can never delete the board.  Returns rows deleted.
+    """
+    keep = sorted({pid for pid in scored_player_ids if pid})
+    if len(keep) < _SWEEP_MIN_GRADED:
+        print(f"[pipeline] Stale-rankings sweep skipped for {draft_year}: "
+              f"only {len(keep)} graded (< {_SWEEP_MIN_GRADED})")
+        return 0
+    if universe_size and len(keep) < _SWEEP_MIN_SHARE * universe_size:
+        print(f"[pipeline] Stale-rankings sweep skipped for {draft_year}: "
+              f"graded {len(keep)} of {universe_size} universe "
+              f"(< {int(_SWEEP_MIN_SHARE * 100)}%)")
+        return 0
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            DELETE FROM rookie_rankings
+            WHERE draft_class_year = %s AND NOT (player_id = ANY(%s))
+            """,
+            (draft_year, keep),
+        )
+        deleted = cur.rowcount or 0
+    print(f"[pipeline] Stale-rankings sweep for {draft_year}: "
+          f"deleted {deleted} rows not scored in this run")
+    return deleted
+
+
+def _print_age_coverage(prospects: List[Dict[str, Any]], draft_year: int):
+    """
+    Print the class age-coverage line (x of y prospects with an age) so
+    missing ages are visible in run logs instead of silently printing as
+    the model's neutral 50.0 age score.  Returns (with_age, total).
+    """
+    total = len(prospects)
+    with_age = sum(1 for p in prospects if p.get("age"))
+    print(f"[pipeline] Age coverage: {with_age} of {total} prospects "
+          f"in the {draft_year} class have an age")
+    return with_age, total
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Public API - in-memory path (no DB required)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1424,14 +1505,19 @@ def _norm_name(name: str) -> str:
 def _deduplicate_prospects(prospects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Remove duplicate prospects that have name variations.
-    
-    Keeps the most complete record (with more data fields) when duplicates are found.
+
+    Grouping uses ingestion.canonical_prospect_key, so alias variants
+    merge too: a discovered "Ryan Williams" row folds into the seeded
+    "Ryan Coleman-Williams" row instead of grading as a second player.
+    The merge keeps the canonical record (seed data / draft capital wins)
+    and fills its gaps, including seasons, from the duplicates.
     """
-        
-    # Group prospects by normalized name
+    from .ingestion import canonical_prospect_key
+
+    # Group prospects by canonical name key
     groups: Dict[str, List[Dict[str, Any]]] = {}
     for prospect in prospects:
-        norm_name = _norm_name(prospect.get("name", ""))
+        norm_name = canonical_prospect_key(prospect.get("name", ""))
         if not norm_name:
             continue
         groups.setdefault(norm_name, []).append(prospect)
@@ -1456,23 +1542,30 @@ def _deduplicate_prospects(prospects: List[Dict[str, Any]]) -> List[Dict[str, An
 def _merge_duplicate_prospects(duplicates: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     Merge multiple prospect records for the same player.
-    
-    Strategy: Keep the record with the most complete data, then fill in missing fields
-    from other records.
+
+    Strategy: the canonical record wins - an entry carrying draft capital
+    (projected_pick) first, then a seeded entry, then the most complete
+    record - and missing fields (including seasons) are filled in from
+    the other records.  Deterministic: the sort is stable, so ties keep
+    input order (seed entries precede discovered ones in the run list).
     """
     if not duplicates:
         return {}
-    
-    # Sort by completeness (more non-None fields = more complete)
+
     def completeness_score(p: Dict[str, Any]) -> int:
         score = 0
         for key, value in p.items():
             if value is not None and value != "" and value != []:
                 score += 1
         return score
-    
-    sorted_duplicates = sorted(duplicates, key=completeness_score, reverse=True)
-    merged = dict(sorted_duplicates[0])  # Start with most complete record
+
+    def canonical_priority(p: Dict[str, Any]):
+        has_capital = 1 if p.get("projected_pick") else 0
+        is_seed = 1 if str(p.get("source") or "").startswith("seed") else 0
+        return (has_capital, is_seed, completeness_score(p))
+
+    sorted_duplicates = sorted(duplicates, key=canonical_priority, reverse=True)
+    merged = dict(sorted_duplicates[0])  # Start with the canonical record
     
     # Fill in missing fields from other records
     for other in sorted_duplicates[1:]:
@@ -1819,6 +1912,12 @@ def _score_from_db(
 
     with get_conn_fn() as conn:
         n_rankings = upsert_rankings(scores, values, conn)
+        sweep_stale_rankings(
+            draft_year,
+            [s["player_id"] for s in scores],
+            len(existing_prospects),
+            conn,
+        )
     print(f"[pipeline] STAGE 6 COMPLETE: Saved {n_rankings} rankings to rookie_rankings")
 
     print("[pipeline] ====== DB-ONLY SCORING COMPLETE ======")
@@ -1963,10 +2062,14 @@ def run_rookie_pipeline_staged(
 
     _preloaded = 0
     for p in sr_prospects:
-        if not p.get("age"):
+        # A stored exact age also overrides a roster-year ESTIMATE filled
+        # by _enrich_bio_from_cfbd_roster (flagged _age_estimated); the
+        # estimate only stands when no exact age is on record.
+        if not p.get("age") or p.get("_age_estimated"):
             db_age = _db_ages.get(p["name"].lower().strip())
             if db_age is not None:
                 p["age"] = db_age
+                p.pop("_age_estimated", None)
                 _preloaded += 1
     print(f"[pipeline] Pre-loaded {_preloaded} ages from DB ({len(_db_ages)} total on record)")
 
@@ -1991,6 +2094,7 @@ def run_rookie_pipeline_staged(
 
     ages_total = sum(1 for p in sr_prospects if p.get("age"))
     print(f"[pipeline] Total prospects with age set: {ages_total}/{len(sr_prospects)}")
+    _print_age_coverage(sr_prospects, draft_year)
 
     # Headshots: ESPN college headshots (Sleeper CDN only has NFL players).
     # Only fetches for prospects missing one in the DB.
@@ -2070,7 +2174,11 @@ def run_rookie_pipeline_staged(
         # fetch_games_played=True: exact games-played counts via /games/players
         # (~51 API calls) so per-game rates are accurate mid-season instead of
         # defaulting to 12 games.
-        cfbd_stats = fetch_cfbd_college_stats(draft_year, fetch_games_played=True)
+        cfbd_stats = fetch_cfbd_college_stats(
+            draft_year,
+            fetch_games_played=True,
+            player_ids=[p["player_id"] for p in sr_prospects],
+        )
         print(f"[pipeline] Fetched stats for {len(cfbd_stats)} players")
 
         with get_conn() as conn:
@@ -2278,6 +2386,12 @@ def run_rookie_pipeline_staged(
     # Save rankings to DB
     with get_conn() as conn:
         n_rankings = upsert_rankings(scores, values, conn)
+        sweep_stale_rankings(
+            draft_year,
+            [s["player_id"] for s in scores],
+            len(complete_prospects),
+            conn,
+        )
 
     print(f"[pipeline] STAGE 6 COMPLETE: Saved {n_rankings} rankings to rookie_rankings")
 
@@ -2390,7 +2504,7 @@ def get_rookie_rankings_from_db(draft_year: int, filter_undrafted: bool = False)
                         LEFT   JOIN player_values pv ON pv.player_id = rp.sleeper_id
                         WHERE  rr.draft_class_year = %s
                           AND  (%s = FALSE OR rp.draft_confirmed = TRUE)
-                        ORDER  BY rr.overall_rank
+                        ORDER  BY rr.prospect_score DESC NULLS LAST, rr.overall_rank ASC
                         """,
                         (draft_year, filter_undrafted),
                     )
