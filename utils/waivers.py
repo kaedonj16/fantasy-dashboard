@@ -1400,13 +1400,27 @@ inside ``rank_team_waiver_suggestions``:
 
   availability / serious injury -> quality bar + rank ceiling (supplied by
   the caller, which owns the format tables, so no import cycle) -> x1.05
-  drop bar (with a QB-coverage rule) -> lineup-gain classification via
+  drop bar -> QB coverage rule -> lineup-gain classification via
   ``evaluate_pickup`` when projections are supplied -> horizon-weighted
   pickup score -> claim guidance.
 
-Everything fails open: when projections or roster data are missing the
-selector falls back to the value logic it replaced, and
-``cannot_evaluate`` never suppresses a suggestion on its own.
+Two deliberate fail-closed rules (2026-10-16, the covered-QB regression):
+
+  * QB coverage (1QB formats): with healthy rostered QBs at/above the
+    single QB slot and no starter/calendar hole, a QB claim is
+    suppressed outright: no value margin and no spot-week projection
+    edge revives it. Only a real hole (gap > 0) reopens the position.
+    Multi-QB formats (superflex, 2QB) keep the bar + classification
+    semantics: QB depth past the slots is startable and tradeable
+    there, and the stacked-room great-claim case is pinned behavior.
+  * No-classification claims: in team-fit mode (a roster was supplied) a
+    candidate whose lineup-gain classification could not run at all (the
+    caller passed no per-week points and no forward points) is not
+    surfaced on value gates alone; a caller/calendar-attested starter
+    hole (gap > 0) is the only value-only pass. Callers must build the
+    projection maps (as the Waivers page does) or accept hole-only
+    output. ``cannot_evaluate`` (partial data) still never suppresses a
+    suggestion on its own, and roster-less ranking calls are unchanged.
 """
 
 _TEAM_SUGGESTION_POSITIONS = ("QB", "RB", "WR", "TE")
@@ -1595,6 +1609,62 @@ def weekly_availability_from_roster(roster_players, pidx, *, current_week=None,
             counts[pos] = counts.get(pos, 0) + 1
         out.append({"week": week_no, "available_by_pos": counts})
     return out
+
+
+def qb_coverage_detail(roster_pids, positions_by_pid, injured_by_pid=None,
+                       roster_positions=None, *, is_sf=False,
+                       weekly_availability=None) -> dict:
+    """QB-room coverage for the claim gate (2026-10-16).
+
+    Returns ``{"covered": bool, "healthy_qbs": int, "qb_slots": int,
+    "hole": bool}``. The room is covered when the league starts ONE QB
+    (``qb_slots == 1``), healthy rostered QBs (a QUESTIONABLE starter
+    still counts; serious designations do not) meet that slot, AND no
+    week in ``weekly_availability``
+    (``weekly_availability_from_roster`` shape) leaves fewer available
+    QBs than slots: a same-week bye-plus-injury hole is the one state
+    that reopens QB claims for a covered room. Multi-QB formats never
+    report covered: depth past the slots is startable there, so their
+    callers keep the value-bar + classification gates.
+
+    Shared by the surfaces that gate QB claims outside the selector (the
+    assistant's waiver evidence pack, the Waivers page) so the rule is
+    identical everywhere; the selector applies the same test inline.
+    """
+    positions_by_pid = {str(k): str(v or "").upper()
+                        for k, v in (positions_by_pid or {}).items()}
+    injured_by_pid = injured_by_pid or {}
+    qb_slots = 1
+    try:
+        from utils.lineups import count_lineup_slots
+        _slots = count_lineup_slots(roster_positions or [])
+        qb_slots = max(1, int(_slots.get("QB") or 0)
+                       + int(_slots.get("SUPER_FLEX") or 0))
+    except Exception:
+        qb_slots = 2 if is_sf else 1
+    healthy_qbs = 0
+    for rpid in roster_pids or []:
+        rpid = str(rpid)
+        if positions_by_pid.get(rpid) != "QB":
+            continue
+        st = str(injured_by_pid.get(rpid) or "").upper()
+        if st not in SERIOUS_INJURY_STATUSES:
+            healthy_qbs += 1
+    hole = False
+    for wk in weekly_availability or []:
+        if not isinstance(wk, dict):
+            continue
+        avail = wk.get("available_by_pos") or {}
+        try:
+            n = float(avail.get("QB", 0) or 0)
+        except (TypeError, ValueError):
+            n = 0.0
+        if n < qb_slots:
+            hole = True
+            break
+    return {"covered": bool(qb_slots == 1 and healthy_qbs >= qb_slots
+                            and not hole),
+            "healthy_qbs": healthy_qbs, "qb_slots": qb_slots, "hole": hole}
 
 
 def calendar_need_by_position(weekly_availability, dedicated_slots, *,
@@ -2018,14 +2088,28 @@ def rank_team_waiver_suggestions(candidates, *, owned_ids=None, roster_pids=None
         else:
             if not passes_candidate_floor(cand, breakout, min_value=min_value):
                 continue
-        # x1.05 drop bar, plus the QB coverage rule: a covered QB room
-        # (healthy QBs at/above the QB slots) only yields to a claim that
-        # beats the worst rostered QB by the margin, or a calendar hole.
+        # x1.05 drop bar. A real starter/calendar hole bypasses it;
+        # nothing else does.
         bar = bars.get(pos)
         beats_bar = bar is None or val > float(bar) * 1.05
         if gap <= 0 and not beats_bar:
             continue
-        if pos == "QB" and gap <= 0 and healthy_qbs >= qb_slots and not beats_bar:
+        # QB coverage rule (2026-10-16): in a 1QB format, a covered QB
+        # room yields NO QB claim. When healthy rostered QBs meet the QB
+        # slot and there is no starter/calendar hole, the claim is
+        # suppressed regardless of the value margin over the worst
+        # rostered QB and regardless of any single-week projection edge:
+        # a fourth QB in a 1QB league is bench weight, not an upgrade.
+        # The previous rule only fired when the candidate ALSO failed the
+        # drop bar, a case the gate above had already handled, so it
+        # never suppressed anything (Kaedon, rostering Williams, Nix and
+        # Purdy in 1QB, was told to add Mayfield because his value beat
+        # Purdy x 1.05). A real hole (gap > 0: bye plus injury leaving
+        # fewer available QBs than slots in some week) reopens the
+        # position. Multi-QB formats (qb_slots > 1) are exempt: starting
+        # two QBs makes depth past the slots genuinely startable, and
+        # the stacked-room great-claim pass is pinned there.
+        if pos == "QB" and qb_slots == 1 and gap <= 0 and healthy_qbs >= qb_slots:
             continue
         try:
             score = float(waiver_pickup_score(cand, breakout, w=weights))
@@ -2074,6 +2158,15 @@ def rank_team_waiver_suggestions(candidates, *, owned_ids=None, roster_pids=None
                     horizon_gain = round(float(ev.horizon_gain), 2)
             except Exception:
                 outcome = "cannot_evaluate"
+        if outcome is None and roster_pids and roster_positions and gap <= 0:
+            # Fail closed when classification could not run (2026-10-16):
+            # the caller supplied a roster to judge fit against but no
+            # per-week points and no forward points, so this claim would
+            # surface on value gates alone. Team-fit claims need the
+            # lineup-gain classification; the only value-only pass is a
+            # caller/calendar-attested starter hole (gap > 0). Roster-less
+            # ranking calls (no roster to judge) are unaffected.
+            continue
         adds_count = raw.get("adds_count", raw.get("trending_adds", raw.get("adds_48h")))
         guidance = claim_guidance_for(
             score, adds_count=adds_count, competing_holes=competing_holes,

@@ -191,11 +191,11 @@ def test_no_clean_fit_rejects_forced_trade():
 # -- questions.json schema sanity ------------------------------------------------------
 
 def test_questions_distribution_and_ids():
-    assert len(QUESTIONS) == 151
-    assert len(BY_ID) == 151
+    assert len(QUESTIONS) == 152
+    assert len(BY_ID) == 152
     assert Counter(q["type"] for q in QUESTIONS) == {
         "start_sit": 7, "trade_eval": 4, "trade_finding": 6, "buy_sell_hold": 5, "player": 3,
-        "metric": 4, "waivers": 5, "this_week": 4, "leaderboard": 35,
+        "metric": 4, "waivers": 6, "this_week": 4, "leaderboard": 35,
         "playoffs": 4, "power_rankings": 2, "standings": 2, "matchup": 7,
         "schedule": 2, "breakout_board": 1, "breakout_track_record": 1,
         "breakout_history": 1, "teams": 4, "pick_ownership": 1,
@@ -231,6 +231,21 @@ def test_traps_present_and_shaped():
     tw3_heads = [a["headline"] for a in tw3["evidence_pack"]["actions"]]
     assert not any("Mayfield" in h for h in tw3_heads)
     assert any("Rising Back" in h for h in tw3_heads)
+    # w3 (2026-10-16): the same trap on the waivers intent itself, in
+    # Kaedon's exact shape: Williams, Nix and Purdy rostered in 1QB,
+    # Mayfield the top wire QB by value, and the pack's qb_coverage
+    # state kept him out of the candidates (build_waivers' own gate
+    # waved him in on value vs worst-QB x 1.05 before the fix).
+    w3 = BY_ID["w3"]
+    assert w3["type"] == "waivers"
+    assert w3["trap"]["kind"] == "unneeded_qb_claim"
+    assert w3["trap"]["player"] == "Baker Mayfield"
+    assert w3["context"]["format"] == "dynasty 1QB half PPR"
+    assert w3["evidence_pack"]["qb_coverage"]["covered"] is True
+    assert w3["evidence_pack"]["qb_coverage"]["healthy_qbs"] == 3
+    w3_names = [c["name"] for c in w3["evidence_pack"]["candidates"]]
+    assert "Baker Mayfield" not in w3_names
+    assert "Rising Back" in w3_names
     tw4 = BY_ID["tw4"]
     assert tw4["trap"] is None
     tw4_heads = [a["headline"] for a in tw4["evidence_pack"]["actions"]]
@@ -455,7 +470,7 @@ def test_league_context_references_match_packs():
 
 # -- mock mode + poison ------------------------------------------------------------------
 
-def test_mock_mode_full_run_passes_151_of_151():
+def test_mock_mode_full_run_passes_152_of_152():
     for q in QUESTIONS:
         score = score_answer(q, compose_mock(q))
         assert score["passed"], f"{q['id']}: {score}"
@@ -464,7 +479,7 @@ def test_mock_mode_full_run_passes_151_of_151():
 def test_runner_mock_mode_exit_zero(capsys):
     assert runner.main(["--mode", "mock"]) == 0
     out = capsys.readouterr().out
-    assert "151/151 answers passed" in out
+    assert "152/152 answers passed" in out
 
 
 def test_runner_poison_is_detected(capsys):

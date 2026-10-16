@@ -73,7 +73,7 @@ def _sf_rows(roster_values, candidate_value):
     return rows, pidx, roster_positions
 
 
-def _select(rows, pidx, roster_positions, roster_pids):
+def _select(rows, pidx, roster_positions, roster_pids, **kw):
     return select_waiver_add(
         rows,
         {str(p) for p in roster_pids},
@@ -86,6 +86,7 @@ def _select(rows, pidx, roster_positions, roster_pids):
         roster_positions=roster_positions,
         pidx=pidx,
         min_value=10.0,
+        **kw,
     )
 
 
@@ -99,9 +100,16 @@ def test_stacked_qb_room_filters_backup_qb():
 
 def test_great_claim_beats_stacked_room():
     # Same room, but a claim at 95 clears the worst-QB bar with margin.
+    # Superflex is exempt from the 1QB absolute-coverage rule (depth is
+    # startable there), but since 2026-10-16 a team-fit claim still has
+    # to earn it through the lineup-gain classification: the claim also
+    # projects as the room's best QB this week, so he starts.
     roster_values = {"dak": 100.0, "tua": 95.0, "darnold": 90.0, "lawrence": 85.0}
     rows, pidx, positions = _sf_rows(roster_values, candidate_value=95.0)
-    hit = _select(rows, pidx, positions, list(roster_values))
+    hit = _select(rows, pidx, positions, list(roster_values),
+                  forward_pts_by_pid={"dak": 20.0, "tua": 19.0,
+                                      "darnold": 18.0, "lawrence": 17.0,
+                                      "rattler": 22.0})
     assert hit is not None
     assert hit["player_id"] == "rattler"
 

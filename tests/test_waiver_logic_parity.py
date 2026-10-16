@@ -270,14 +270,18 @@ def test_recommend_waivers_covered_room_stays_quiet_with_inputs(monkeypatch):
     ids = {t["player_id"] for t in targets}
     assert "mayf" not in ids
     assert "wrb" in ids
-    # Control: the same call WITHOUT the opportunity inputs still waves
-    # the covered-room QB in on value gates alone (the old parity gap).
+    # Control (flipped 2026-10-16): the same call WITHOUT the opportunity
+    # inputs used to wave the covered-room QB in on value gates alone,
+    # and that fail-open pass is what reached Kaedon live. The selector
+    # now fails closed in team-fit mode: no classification inputs and no
+    # starter hole means no claim, for the QB or anyone else.
     bare = recommend_waivers(
         rows, OWNED, roster_players=ROSTER,
         roster_positions=ROSTER_POSITIONS, pidx=ctx["players_index"],
         fmt={}, limit=3, min_score=0.0,
     )
-    assert "mayf" in {t["player_id"] for t in bare}
+    assert "mayf" not in {t["player_id"] for t in bare}
+    assert bare == []
 
 
 def test_gather_digest_actions_builds_the_inputs(monkeypatch):

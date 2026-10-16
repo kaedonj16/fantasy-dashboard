@@ -5048,6 +5048,28 @@ def build_waivers(bundle, entities, player_ids=None) -> tuple[dict, list[str]]:
     except Exception:
         holes = []
     pack["roster_holes"] = holes
+    # QB coverage (2026-10-16): the shared selector's coverage rule,
+    # applied to this pack's own gate. This builder does not call the
+    # selector, and its value-only gate waved Baker Mayfield in over
+    # Kaedon's Williams/Nix/Purdy room in a 1QB league because his value
+    # beat her worst QB x 1.05. With the QB room covered in a 1QB format
+    # (healthy QBs at/above the QB slot, no calendar hole), no QB claim
+    # passes this gate, joins the stash pool, or streams: the same rule,
+    # via the shared helper, that utils.waivers applies in the selector.
+    qb_cov = {"covered": False, "healthy_qbs": 0, "qb_slots": 1, "hole": False}
+    try:
+        from utils.waivers import qb_coverage_detail
+        _pos_by, _inj_by = {}, {}
+        for pid in roster_ids:
+            _i = _player_info(pid, index)
+            _pos_by[pid] = _i.get("position") or ""
+            _inj_by[pid] = _i.get("injury_status") or ""
+        qb_cov = qb_coverage_detail(
+            roster_ids, _pos_by, _inj_by, ctx.get("roster_positions") or [])
+        tools.append("utils.waivers.qb_coverage_detail")
+    except Exception:
+        qb_cov = {"covered": False, "healthy_qbs": 0, "qb_slots": 1, "hole": False}
+    pack["qb_coverage"] = qb_cov
     # Do-not-drop protected ids (cleared drops are rostered players NOT in it).
     protected = set()
     try:
@@ -5078,6 +5100,10 @@ def build_waivers(bundle, entities, player_ids=None) -> tuple[dict, list[str]]:
         elif bar is not None:
             passes = v > bar["value"] * 1.05
             receipt = f"candidate value {v} vs your worst {pos} {bar['name']} value {bar['value']}"
+        if pos == "QB" and qb_cov.get("covered"):
+            passes = False
+            receipt = (f"QB room covered: {qb_cov.get('healthy_qbs', 0)} healthy QBs rostered "
+                       f"for {qb_cov.get('qb_slots', 1)} QB slot(s), so no QB claim surfaces")
         candidates.append({**info, "value": v, "passes_gate": passes, "gate_receipt": receipt})
     # Ask shape: a position filter ("best available RB") narrows the gate
     # list to that position, and the mode decides which extra ranking the
@@ -5154,6 +5180,8 @@ def build_waivers(bundle, entities, player_ids=None) -> tuple[dict, list[str]]:
             info = _player_info(pid, index)
             if info.get("position") not in ("QB", "RB", "WR", "TE"):
                 continue
+            if info.get("position") == "QB" and qb_cov.get("covered"):
+                continue  # a covered QB room yields no QB stash either
             if pos_filter and info.get("position") != pos_filter:
                 continue
             age = _player_age(pid, index)
@@ -5185,6 +5213,29 @@ def build_waivers(bundle, entities, player_ids=None) -> tuple[dict, list[str]]:
                 tools.append("utils.load_week_projection")
                 scoring = _scoring(bundle)
                 games = _schedule_games(season, week)
+                # QB streamers obey the same coverage rule (2026-10-16):
+                # offer one only when the rostered QBs who can actually
+                # play this week (team playing, not seriously hurt) fall
+                # below the QB slots. Unknown schedule = do not block.
+                qb_stream_blocked = False
+                if qb_cov.get("covered"):
+                    try:
+                        from utils.waivers import is_seriously_hurt as _ish
+                        _playing = set()
+                        for g in games or []:
+                            _playing.add(str(g.get("home") or "").upper())
+                            _playing.add(str(g.get("away") or "").upper())
+                        _avail_qb = 0
+                        for _rpid in roster_ids:
+                            _ri = _player_info(_rpid, index)
+                            if (_ri.get("position") == "QB"
+                                    and str(_ri.get("team") or "").upper() in _playing
+                                    and not _ish(_ri.get("injury_status"))):
+                                _avail_qb += 1
+                        qb_stream_blocked = bool(
+                            _playing and _avail_qb >= int(qb_cov.get("qb_slots") or 1))
+                    except Exception:
+                        qb_stream_blocked = False
                 try:
                     from utils.fantasy_scoring import weekly_projection_points
                 except Exception:
@@ -5197,6 +5248,8 @@ def build_waivers(bundle, entities, player_ids=None) -> tuple[dict, list[str]]:
                     info = _player_info(pid, index)
                     pos = info.get("position")
                     if pos not in ("QB", "RB", "WR", "TE"):
+                        continue
+                    if pos == "QB" and qb_stream_blocked:
                         continue
                     if pos_filter and pos != pos_filter:
                         continue

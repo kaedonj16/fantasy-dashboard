@@ -1052,6 +1052,50 @@ def api_waiver_candidates():
             "injury_note": _waiver_injury_note(status, body, weeks),
         }
 
+    # QB coverage (2026-10-16): the shared rule from utils.waivers. When
+    # the viewer's QB room is covered in a 1QB format (healthy QBs
+    # at/above the QB slot and no week in the horizon leaves fewer
+    # available QBs than slots), a QB candidate's add outcome is
+    # downgraded to a
+    # hold below: the row stays browsable, but it cannot carry a lineup
+    # gain, a drop suggestion, or the "Top move" group verdict. Without
+    # this, a spot-week projection edge over the starter (Mayfield over
+    # Williams) rendered as a claim recommendation for a fourth QB in a
+    # 1QB league.
+    _qb_covered_wv = False
+    try:
+        if _viewer_active:
+            from utils.waivers import qb_coverage_detail as _qbc_wv
+            from utils.waivers import is_seriously_hurt as _ish_wv
+            _wv_pos = {str(p): str(_roster_pos.get(p) or "") for p in _viewer_active}
+            _wv_inj = {}
+            for _p in _viewer_active:
+                _m = _full_players_wv.get(str(_p)) or {}
+                _wv_inj[str(_p)] = _m.get("injury_status") or _m.get("status") or ""
+            _wv_avail = []
+            for _wi, _tset in enumerate((_future_week_teams_wv or [])[:4]):
+                _n = 0
+                for _p in _viewer_active:
+                    if _wv_pos.get(str(_p)) != "QB":
+                        continue
+                    _m = _full_players_wv.get(str(_p)) or {}
+                    _team = str(_m.get("team")
+                                or (players_index.get(str(_p)) or {}).get("team")
+                                or "").upper()
+                    if _ish_wv(_wv_inj.get(str(_p))):
+                        continue
+                    if _tset and _team and _team not in _tset:
+                        continue  # on bye that week
+                    _n += 1
+                _wv_avail.append({"week": _wi + 1,
+                                  "available_by_pos": {"QB": _n}})
+            _qb_covered_wv = bool(_qbc_wv(
+                [str(p) for p in _viewer_active], _wv_pos, _wv_inj, _rp_wv,
+                weekly_availability=_wv_avail)["covered"])
+    except Exception:
+        logger.debug("[waiver-candidates] QB coverage check failed", exc_info=True)
+        _qb_covered_wv = False
+
     for c in _shown:
         try:
             sig_cls, sig_label = _waiver_signal(
@@ -1076,6 +1120,14 @@ def api_waiver_candidates():
                     _drop = {"player_id": _drop["player_id"], "name": _drop["name"],
                              "position": _drop["position"], "value": round(_drop["value"])}
                 _replaces = _brief(_le.replaces_pid) if _le.replaces_pid else None
+                if (_qb_covered_wv and str(c.get("position") or "").upper() == "QB"
+                        and _outcome in ("add", "add_drop")):
+                    # Covered QB room: kill the claim, keep the row.
+                    _outcome = "hold"
+                    _lineup_gain = None
+                    _lineup_gain_4wk = None
+                    _drop = None
+                    _replaces = None
             else:
                 # No identifiable viewer roster -> league-wide guidance, no claim of
                 # personalized lineup improvement.
