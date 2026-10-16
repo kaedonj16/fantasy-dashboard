@@ -234,6 +234,22 @@ def _event_sides(event: dict) -> tuple[dict, str, str, str, str]:
     return comp, home, away, home_score, away_score
 
 
+def _network(comp: dict) -> str | None:
+    """The TV network(s) carrying a game, from the competition's ESPN
+    broadcast entries (names like "ESPN", "Prime Video", "NBC"). None when
+    the payload carries none: consumers must omit the network rather than
+    guess one."""
+    names: list[str] = []
+    for entry in (comp or {}).get("broadcasts") or []:
+        if not isinstance(entry, dict):
+            continue
+        for name in entry.get("names") or []:
+            name = str(name or "").strip()
+            if name and name not in names:
+                names.append(name)
+    return " / ".join(names) if names else None
+
+
 def normalize_scoreboard(payload: dict, *, stale: bool = False) -> list[dict]:
     events = payload.get("events") or ((payload.get("content") or {}).get("sbData") or {}).get("events") or []
     out = []
@@ -253,6 +269,7 @@ def normalize_scoreboard(payload: dict, *, stale: bool = False) -> list[dict]:
             "gameID": game_id, "internal_game_id": game_id, "espn_event_id": str(event.get("id") or ""),
             "season": season.get("year"), "season_type": season.get("type"), "week": week.get("number"),
             "gameTime": iso, "gameTime_epoch": _iso_epoch(iso), "home": home, "away": away,
+            "network": _network(comp),
             "homePts": hp, "awayPts": ap, "gameStatusCode": code,
             "gameStatus": typ.get("shortDetail") or typ.get("description") or status,
             "normalized_status": status, "gameClock": raw_status.get("displayClock") or "",

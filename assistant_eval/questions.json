@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "description": "Frozen assistant eval set: 125 questions with golden evidence packs for the BR Fantasy assistant (workshop section 5 core 20, the deep-cuts leaderboard family lb1-lb6, and the section 9 P1 league-context types: playoffs, power rankings, standings, matchup, schedule) plus the P1 trade-finding family tf1-tf4, and the P1 breakout board, Teams, and pick-ownership families bo1-bo3, tm1-tm2, pk1 (renamed from the branch po1, which collided with the playoffs po1), with te4 an extra trade_eval. The win-outcome family mu4-mu6 pins the game-outcome phrasings (will I win / what are my chances / will I lose) to matchup packs: a decisive favorite, a close game, and a decisive underdog. The buy/sell board family bl1/sh1 pins pool-wide buy-low and sell-high asks (no named player) to leaderboard value boards, with bsh4/bsh5 as the named-player controls that must stay single-player buy_sell_hold. The roster start/sit family ss5-ss7 pins slot questions that name no players (start at FLEX, start at RB, sit at FLEX) to roster-scoped packs built from the asking user's own lineup: the FLEX occupant is benched for the bench challenger who out-projects him, and the RB question is a keep-the-starter call. The open-layer wild set ow1-ow19 freezes tool evidence (production tool-entry shape) instead of builder packs: ungoverned phrasings, a follow-up chain (ow5-ow7), a two-part question (ow8), a non-default team (ow9), a PRO gate through the open layer (ow18), and an off-site decline (ow19). The breadth family lb7-lb9 pins cross-metric breadth boards (top-N finishes counted across a metric family: lb7 receiving in Kaedon's exact phrasing, lb8 rushing) and the players-only receiving-yards stat board (the team-row regression: the live board once ranked TEAM_LAR first). The detailed-question family dq1-dq11 pins the composed boards: weekly-finish breadth, floor, and ceiling from game logs (dq1-dq3), the value board under an age ceiling (dq4), a metric board restricted to the waiver pool (dq5), opportunity leaders re-ranked by upcoming schedule (dq6), the within-team No. 1 vs No. 2 gap (dq7), positional-rank climbers from value history (dq8), Teams roster breadth (dq9), a category sweep (dq10), and the no-history trap for rank trajectory (dq11). The history family hs1-hs4 adds past-season boards (metric, raw stat, and movers boards for 2024, plus the no-historical-form trap for value boards), and po4 adds the playoff-odds trajectory. The live family lv1-lv2 adds in-game questions over fixture live state, and the draft family dr1-dr2 adds live draft help (best available and a 1.03 prep window).",
+    "description": "Frozen assistant eval set: 125 questions with golden evidence packs for the BR Fantasy assistant (workshop section 5 core 20, the deep-cuts leaderboard family lb1-lb6, and the section 9 P1 league-context types: playoffs, power rankings, standings, matchup, schedule) plus the P1 trade-finding family tf1-tf4, and the P1 breakout board, Teams, and pick-ownership families bo1-bo3, tm1-tm2, pk1 (renamed from the branch po1, which collided with the playoffs po1), with te4 an extra trade_eval. The win-outcome family mu4-mu6 pins the game-outcome phrasings (will I win / what are my chances / will I lose) to matchup packs: a decisive favorite, a close game, and a decisive underdog. The buy/sell board family bl1/sh1 pins pool-wide buy-low and sell-high asks (no named player) to leaderboard value boards, with bsh4/bsh5 as the named-player controls that must stay single-player buy_sell_hold. The roster start/sit family ss5-ss7 pins slot questions that name no players (start at FLEX, start at RB, sit at FLEX) to roster-scoped packs built from the asking user's own lineup: the FLEX occupant is benched for the bench challenger who out-projects him, and the RB question is a keep-the-starter call. The open-layer wild set ow1-ow19 freezes tool evidence (production tool-entry shape) instead of builder packs: ungoverned phrasings, a follow-up chain (ow5-ow7), a two-part question (ow8), a non-default team (ow9), a PRO gate through the open layer (ow18), and an off-site decline (ow19). The breadth family lb7-lb9 pins cross-metric breadth boards (top-N finishes counted across a metric family: lb7 receiving in Kaedon's exact phrasing, lb8 rushing) and the players-only receiving-yards stat board (the team-row regression: the live board once ranked TEAM_LAR first). The detailed-question family dq1-dq11 pins the composed boards: weekly-finish breadth, floor, and ceiling from game logs (dq1-dq3), the value board under an age ceiling (dq4), a metric board restricted to the waiver pool (dq5), opportunity leaders re-ranked by upcoming schedule (dq6), the within-team No. 1 vs No. 2 gap (dq7), positional-rank climbers from value history (dq8), Teams roster breadth (dq9), a category sweep (dq10), and the no-history trap for rank trajectory (dq11). The history family hs1-hs4 adds past-season boards (metric, raw stat, and movers boards for 2024, plus the no-historical-form trap for value boards), and po4 adds the playoff-odds trajectory. The live family lv1-lv2 adds in-game questions over fixture live state, and the draft family dr1-dr2 adds live draft help (best available and a 1.03 prep window). The nfl_schedule family ns1-ns6 pins real NFL fixture questions (tonight's game, the Sunday slate, a named team's game, Monday night, the full week) to NFL schedule packs: a bare 'who plays tonight' answers the NFL game and never the fantasy matchup (ns1 carries the excluded-name trap for the user's own fantasy team), while ns5 is the possessive trap pair ('who am I playing this week') that stays a matchup question.",
     "scenario": "Kaedon's league Blackedraw, her team Caleb's Casting Couch, Week 7 of the 2026 season.",
     "packs": "Each evidence_pack mirrors, field for field, the dict the matching builder in dashboard_services/assistant/evidence.py returns. Values inside a pack are the only numbers an answer may cite.",
     "recapture": "These packs are frozen fixtures. Before any launch decision, recapture them from the live tools with: python3 scripts/run_assistant_eval.py --capture (writes assistant_eval/captured_questions.json; it never overwrites this file). A launch call made on stale fixtures is not a launch call.",
@@ -16459,6 +16459,854 @@
         "must_mention": [
           "Jeremiyah Love",
           "1.03"
+        ]
+      }
+    },
+    {
+      "id": "ns1",
+      "type": "nfl_schedule",
+      "question": "Who plays tonight?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 6,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "nfl_schedule",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 6,
+        "as_of": {
+          "week": 6,
+          "season": 2026
+        },
+        "today": "2026-10-15",
+        "team": null,
+        "next_game": null,
+        "scope": "tonight",
+        "day_name": "Thursday",
+        "day_label": "Thursday, October 15",
+        "games": [
+          {
+            "away": "SEA",
+            "home": "DEN",
+            "away_name": "Seattle Seahawks",
+            "home_name": "Denver Broncos",
+            "week": 6,
+            "date_label": "Thu, Oct 15",
+            "date_long": "Thursday, October 15",
+            "day_name": "Thursday",
+            "kickoff_label": "8:15 PM ET",
+            "kickoff_epoch": 1792109700,
+            "network": "Prime Video",
+            "status": "pregame",
+            "away_score": null,
+            "home_score": null
+          }
+        ],
+        "game_count": 1
+      },
+      "reference": {
+        "verdict_kind": "nfl_schedule",
+        "pick": "Seattle Seahawks at Denver Broncos tonight",
+        "key_numbers": [
+          15
+        ],
+        "close_call": false
+      },
+      "trap": {
+        "kind": "excluded_player",
+        "name": "Caleb's Casting Couch"
+      },
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Seattle Seahawks",
+          "Denver Broncos"
+        ]
+      }
+    },
+    {
+      "id": "ns2",
+      "type": "nfl_schedule",
+      "question": "What games are on Sunday?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 6,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "nfl_schedule",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 6,
+        "as_of": {
+          "week": 6,
+          "season": 2026
+        },
+        "today": "2026-10-15",
+        "team": null,
+        "next_game": null,
+        "scope": "day",
+        "day_name": "Sunday",
+        "day_label": "Sunday, October 18",
+        "games": [
+          {
+            "away": "HOU",
+            "home": "JAX",
+            "away_name": "Houston Texans",
+            "home_name": "Jacksonville Jaguars",
+            "week": 6,
+            "date_label": "Sun, Oct 18",
+            "date_long": "Sunday, October 18",
+            "day_name": "Sunday",
+            "kickoff_label": "9:30 AM ET",
+            "kickoff_epoch": 1792330200,
+            "network": null,
+            "status": "pregame",
+            "away_score": null,
+            "home_score": null
+          },
+          {
+            "away": "BAL",
+            "home": "CLE",
+            "away_name": "Baltimore Ravens",
+            "home_name": "Cleveland Browns",
+            "week": 6,
+            "date_label": "Sun, Oct 18",
+            "date_long": "Sunday, October 18",
+            "day_name": "Sunday",
+            "kickoff_label": "1:00 PM ET",
+            "kickoff_epoch": 1792342800,
+            "network": null,
+            "status": "pregame",
+            "away_score": null,
+            "home_score": null
+          },
+          {
+            "away": "CAR",
+            "home": "PHI",
+            "away_name": "Carolina Panthers",
+            "home_name": "Philadelphia Eagles",
+            "week": 6,
+            "date_label": "Sun, Oct 18",
+            "date_long": "Sunday, October 18",
+            "day_name": "Sunday",
+            "kickoff_label": "1:00 PM ET",
+            "kickoff_epoch": 1792342800,
+            "network": null,
+            "status": "pregame",
+            "away_score": null,
+            "home_score": null
+          },
+          {
+            "away": "CHI",
+            "home": "ATL",
+            "away_name": "Chicago Bears",
+            "home_name": "Atlanta Falcons",
+            "week": 6,
+            "date_label": "Sun, Oct 18",
+            "date_long": "Sunday, October 18",
+            "day_name": "Sunday",
+            "kickoff_label": "1:00 PM ET",
+            "kickoff_epoch": 1792342800,
+            "network": null,
+            "status": "pregame",
+            "away_score": null,
+            "home_score": null
+          },
+          {
+            "away": "NO",
+            "home": "NYG",
+            "away_name": "New Orleans Saints",
+            "home_name": "New York Giants",
+            "week": 6,
+            "date_label": "Sun, Oct 18",
+            "date_long": "Sunday, October 18",
+            "day_name": "Sunday",
+            "kickoff_label": "1:00 PM ET",
+            "kickoff_epoch": 1792342800,
+            "network": null,
+            "status": "pregame",
+            "away_score": null,
+            "home_score": null
+          },
+          {
+            "away": "NYJ",
+            "home": "NE",
+            "away_name": "New York Jets",
+            "home_name": "New England Patriots",
+            "week": 6,
+            "date_label": "Sun, Oct 18",
+            "date_long": "Sunday, October 18",
+            "day_name": "Sunday",
+            "kickoff_label": "1:00 PM ET",
+            "kickoff_epoch": 1792342800,
+            "network": null,
+            "status": "pregame",
+            "away_score": null,
+            "home_score": null
+          },
+          {
+            "away": "PIT",
+            "home": "TB",
+            "away_name": "Pittsburgh Steelers",
+            "home_name": "Tampa Bay Buccaneers",
+            "week": 6,
+            "date_label": "Sun, Oct 18",
+            "date_long": "Sunday, October 18",
+            "day_name": "Sunday",
+            "kickoff_label": "1:00 PM ET",
+            "kickoff_epoch": 1792342800,
+            "network": null,
+            "status": "pregame",
+            "away_score": null,
+            "home_score": null
+          },
+          {
+            "away": "TEN",
+            "home": "IND",
+            "away_name": "Tennessee Titans",
+            "home_name": "Indianapolis Colts",
+            "week": 6,
+            "date_label": "Sun, Oct 18",
+            "date_long": "Sunday, October 18",
+            "day_name": "Sunday",
+            "kickoff_label": "1:00 PM ET",
+            "kickoff_epoch": 1792342800,
+            "network": null,
+            "status": "pregame",
+            "away_score": null,
+            "home_score": null
+          },
+          {
+            "away": "ARI",
+            "home": "LAR",
+            "away_name": "Arizona Cardinals",
+            "home_name": "Los Angeles Rams",
+            "week": 6,
+            "date_label": "Sun, Oct 18",
+            "date_long": "Sunday, October 18",
+            "day_name": "Sunday",
+            "kickoff_label": "4:05 PM ET",
+            "kickoff_epoch": 1792353900,
+            "network": null,
+            "status": "pregame",
+            "away_score": null,
+            "home_score": null
+          },
+          {
+            "away": "BUF",
+            "home": "LV",
+            "away_name": "Buffalo Bills",
+            "home_name": "Las Vegas Raiders",
+            "week": 6,
+            "date_label": "Sun, Oct 18",
+            "date_long": "Sunday, October 18",
+            "day_name": "Sunday",
+            "kickoff_label": "4:25 PM ET",
+            "kickoff_epoch": 1792355100,
+            "network": null,
+            "status": "pregame",
+            "away_score": null,
+            "home_score": null
+          },
+          {
+            "away": "LAC",
+            "home": "KC",
+            "away_name": "Los Angeles Chargers",
+            "home_name": "Kansas City Chiefs",
+            "week": 6,
+            "date_label": "Sun, Oct 18",
+            "date_long": "Sunday, October 18",
+            "day_name": "Sunday",
+            "kickoff_label": "4:25 PM ET",
+            "kickoff_epoch": 1792355100,
+            "network": null,
+            "status": "pregame",
+            "away_score": null,
+            "home_score": null
+          },
+          {
+            "away": "DAL",
+            "home": "GB",
+            "away_name": "Dallas Cowboys",
+            "home_name": "Green Bay Packers",
+            "week": 6,
+            "date_label": "Sun, Oct 18",
+            "date_long": "Sunday, October 18",
+            "day_name": "Sunday",
+            "kickoff_label": "8:20 PM ET",
+            "kickoff_epoch": 1792369200,
+            "network": "NBC",
+            "status": "pregame",
+            "away_score": null,
+            "home_score": null
+          }
+        ],
+        "game_count": 12
+      },
+      "reference": {
+        "verdict_kind": "nfl_schedule",
+        "pick": "12 games on Sunday",
+        "key_numbers": [
+          12,
+          18
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Houston Texans",
+          "Kansas City Chiefs",
+          "Dallas Cowboys",
+          "Green Bay Packers"
+        ]
+      }
+    },
+    {
+      "id": "ns3",
+      "type": "nfl_schedule",
+      "question": "When do the Chiefs play?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 6,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "nfl_schedule",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 6,
+        "as_of": {
+          "week": 6,
+          "season": 2026
+        },
+        "today": "2026-10-15",
+        "team": {
+          "abbr": "KC",
+          "name": "Kansas City Chiefs"
+        },
+        "next_game": null,
+        "scope": "team",
+        "bye": false,
+        "games": [
+          {
+            "away": "LAC",
+            "home": "KC",
+            "away_name": "Los Angeles Chargers",
+            "home_name": "Kansas City Chiefs",
+            "week": 6,
+            "date_label": "Sun, Oct 18",
+            "date_long": "Sunday, October 18",
+            "day_name": "Sunday",
+            "kickoff_label": "4:25 PM ET",
+            "kickoff_epoch": 1792355100,
+            "network": null,
+            "status": "pregame",
+            "away_score": null,
+            "home_score": null
+          }
+        ],
+        "game_count": 1
+      },
+      "reference": {
+        "verdict_kind": "nfl_schedule",
+        "pick": "Kansas City Chiefs play Sun, Oct 18",
+        "key_numbers": [
+          18
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Kansas City Chiefs",
+          "Los Angeles Chargers"
+        ]
+      }
+    },
+    {
+      "id": "ns4",
+      "type": "nfl_schedule",
+      "question": "Who is on Monday night?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 6,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "nfl_schedule",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 6,
+        "as_of": {
+          "week": 6,
+          "season": 2026
+        },
+        "today": "2026-10-15",
+        "team": null,
+        "next_game": null,
+        "scope": "day",
+        "day_name": "Monday",
+        "day_label": "Monday, October 19",
+        "games": [
+          {
+            "away": "WAS",
+            "home": "SF",
+            "away_name": "Washington Commanders",
+            "home_name": "San Francisco 49ers",
+            "week": 6,
+            "date_label": "Mon, Oct 19",
+            "date_long": "Monday, October 19",
+            "day_name": "Monday",
+            "kickoff_label": "8:15 PM ET",
+            "kickoff_epoch": 1792455300,
+            "network": "ESPN",
+            "status": "pregame",
+            "away_score": null,
+            "home_score": null
+          }
+        ],
+        "game_count": 1
+      },
+      "reference": {
+        "verdict_kind": "nfl_schedule",
+        "pick": "Washington Commanders at San Francisco 49ers on Monday",
+        "key_numbers": [
+          19
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Washington Commanders",
+          "San Francisco 49ers"
+        ]
+      }
+    },
+    {
+      "id": "ns5",
+      "type": "matchup",
+      "question": "Who am I playing this week?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 6,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "matchup",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 6,
+        "as_of": {
+          "week": 6,
+          "season": 2026
+        },
+        "margin": {
+          "thin": false
+        },
+        "matchup": {
+          "week": 6,
+          "is_mine": true,
+          "team_a": {
+            "roster_id": "3",
+            "team_name": "Caleb's Casting Couch",
+            "record": "5-1",
+            "current_points": 0.0,
+            "projected": 156.3,
+            "win_prob_pct": 95.4,
+            "top_starters": [
+              {
+                "name": "Josh Allen",
+                "position": "QB",
+                "projection": 24.1
+              },
+              {
+                "name": "Ja'Marr Chase",
+                "position": "WR",
+                "projection": 21.3
+              },
+              {
+                "name": "Jahmyr Gibbs",
+                "position": "RB",
+                "projection": 19.8
+              }
+            ]
+          },
+          "team_b": {
+            "roster_id": "9",
+            "team_name": "Never (Jamar) Chase a Ho!",
+            "record": "2-4",
+            "current_points": 0.0,
+            "projected": 94.8,
+            "win_prob_pct": 4.6,
+            "top_starters": [
+              {
+                "name": "Jalen Hurts",
+                "position": "QB",
+                "projection": 18.9
+              },
+              {
+                "name": "Saquon Barkley",
+                "position": "RB",
+                "projection": 15.2
+              },
+              {
+                "name": "Amon-Ra St. Brown",
+                "position": "WR",
+                "projection": 14.6
+              }
+            ]
+          }
+        },
+        "board": [
+          {
+            "team_a": "Caleb's Casting Couch",
+            "team_b": "Never (Jamar) Chase a Ho!",
+            "a_projected": 156.3,
+            "b_projected": 94.8,
+            "a_win_prob_pct": 95.4
+          },
+          {
+            "team_a": "Pittsburgh Pilots",
+            "team_b": "Burrowed Time",
+            "a_projected": 121.3,
+            "b_projected": 92.8,
+            "a_win_prob_pct": 76.6
+          }
+        ]
+      },
+      "reference": {
+        "verdict_kind": "matchup",
+        "pick": "Caleb's Casting Couch favored",
+        "key_numbers": [
+          95.4,
+          156.3,
+          94.8
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Never (Jamar) Chase a Ho!"
+        ]
+      }
+    },
+    {
+      "id": "ns6",
+      "type": "nfl_schedule",
+      "question": "Who plays this week?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 6,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "nfl_schedule",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 6,
+        "as_of": {
+          "week": 6,
+          "season": 2026
+        },
+        "today": "2026-10-15",
+        "team": null,
+        "next_game": null,
+        "scope": "week",
+        "games": [
+          {
+            "away": "SEA",
+            "home": "DEN",
+            "away_name": "Seattle Seahawks",
+            "home_name": "Denver Broncos",
+            "week": 6,
+            "date_label": "Thu, Oct 15",
+            "date_long": "Thursday, October 15",
+            "day_name": "Thursday",
+            "kickoff_label": "8:15 PM ET",
+            "kickoff_epoch": 1792109700,
+            "network": "Prime Video",
+            "status": "pregame",
+            "away_score": null,
+            "home_score": null
+          },
+          {
+            "away": "HOU",
+            "home": "JAX",
+            "away_name": "Houston Texans",
+            "home_name": "Jacksonville Jaguars",
+            "week": 6,
+            "date_label": "Sun, Oct 18",
+            "date_long": "Sunday, October 18",
+            "day_name": "Sunday",
+            "kickoff_label": "9:30 AM ET",
+            "kickoff_epoch": 1792330200,
+            "network": null,
+            "status": "pregame",
+            "away_score": null,
+            "home_score": null
+          },
+          {
+            "away": "BAL",
+            "home": "CLE",
+            "away_name": "Baltimore Ravens",
+            "home_name": "Cleveland Browns",
+            "week": 6,
+            "date_label": "Sun, Oct 18",
+            "date_long": "Sunday, October 18",
+            "day_name": "Sunday",
+            "kickoff_label": "1:00 PM ET",
+            "kickoff_epoch": 1792342800,
+            "network": null,
+            "status": "pregame",
+            "away_score": null,
+            "home_score": null
+          },
+          {
+            "away": "CAR",
+            "home": "PHI",
+            "away_name": "Carolina Panthers",
+            "home_name": "Philadelphia Eagles",
+            "week": 6,
+            "date_label": "Sun, Oct 18",
+            "date_long": "Sunday, October 18",
+            "day_name": "Sunday",
+            "kickoff_label": "1:00 PM ET",
+            "kickoff_epoch": 1792342800,
+            "network": null,
+            "status": "pregame",
+            "away_score": null,
+            "home_score": null
+          },
+          {
+            "away": "CHI",
+            "home": "ATL",
+            "away_name": "Chicago Bears",
+            "home_name": "Atlanta Falcons",
+            "week": 6,
+            "date_label": "Sun, Oct 18",
+            "date_long": "Sunday, October 18",
+            "day_name": "Sunday",
+            "kickoff_label": "1:00 PM ET",
+            "kickoff_epoch": 1792342800,
+            "network": null,
+            "status": "pregame",
+            "away_score": null,
+            "home_score": null
+          },
+          {
+            "away": "NO",
+            "home": "NYG",
+            "away_name": "New Orleans Saints",
+            "home_name": "New York Giants",
+            "week": 6,
+            "date_label": "Sun, Oct 18",
+            "date_long": "Sunday, October 18",
+            "day_name": "Sunday",
+            "kickoff_label": "1:00 PM ET",
+            "kickoff_epoch": 1792342800,
+            "network": null,
+            "status": "pregame",
+            "away_score": null,
+            "home_score": null
+          },
+          {
+            "away": "NYJ",
+            "home": "NE",
+            "away_name": "New York Jets",
+            "home_name": "New England Patriots",
+            "week": 6,
+            "date_label": "Sun, Oct 18",
+            "date_long": "Sunday, October 18",
+            "day_name": "Sunday",
+            "kickoff_label": "1:00 PM ET",
+            "kickoff_epoch": 1792342800,
+            "network": null,
+            "status": "pregame",
+            "away_score": null,
+            "home_score": null
+          },
+          {
+            "away": "PIT",
+            "home": "TB",
+            "away_name": "Pittsburgh Steelers",
+            "home_name": "Tampa Bay Buccaneers",
+            "week": 6,
+            "date_label": "Sun, Oct 18",
+            "date_long": "Sunday, October 18",
+            "day_name": "Sunday",
+            "kickoff_label": "1:00 PM ET",
+            "kickoff_epoch": 1792342800,
+            "network": null,
+            "status": "pregame",
+            "away_score": null,
+            "home_score": null
+          },
+          {
+            "away": "TEN",
+            "home": "IND",
+            "away_name": "Tennessee Titans",
+            "home_name": "Indianapolis Colts",
+            "week": 6,
+            "date_label": "Sun, Oct 18",
+            "date_long": "Sunday, October 18",
+            "day_name": "Sunday",
+            "kickoff_label": "1:00 PM ET",
+            "kickoff_epoch": 1792342800,
+            "network": null,
+            "status": "pregame",
+            "away_score": null,
+            "home_score": null
+          },
+          {
+            "away": "ARI",
+            "home": "LAR",
+            "away_name": "Arizona Cardinals",
+            "home_name": "Los Angeles Rams",
+            "week": 6,
+            "date_label": "Sun, Oct 18",
+            "date_long": "Sunday, October 18",
+            "day_name": "Sunday",
+            "kickoff_label": "4:05 PM ET",
+            "kickoff_epoch": 1792353900,
+            "network": null,
+            "status": "pregame",
+            "away_score": null,
+            "home_score": null
+          },
+          {
+            "away": "BUF",
+            "home": "LV",
+            "away_name": "Buffalo Bills",
+            "home_name": "Las Vegas Raiders",
+            "week": 6,
+            "date_label": "Sun, Oct 18",
+            "date_long": "Sunday, October 18",
+            "day_name": "Sunday",
+            "kickoff_label": "4:25 PM ET",
+            "kickoff_epoch": 1792355100,
+            "network": null,
+            "status": "pregame",
+            "away_score": null,
+            "home_score": null
+          },
+          {
+            "away": "LAC",
+            "home": "KC",
+            "away_name": "Los Angeles Chargers",
+            "home_name": "Kansas City Chiefs",
+            "week": 6,
+            "date_label": "Sun, Oct 18",
+            "date_long": "Sunday, October 18",
+            "day_name": "Sunday",
+            "kickoff_label": "4:25 PM ET",
+            "kickoff_epoch": 1792355100,
+            "network": null,
+            "status": "pregame",
+            "away_score": null,
+            "home_score": null
+          },
+          {
+            "away": "DAL",
+            "home": "GB",
+            "away_name": "Dallas Cowboys",
+            "home_name": "Green Bay Packers",
+            "week": 6,
+            "date_label": "Sun, Oct 18",
+            "date_long": "Sunday, October 18",
+            "day_name": "Sunday",
+            "kickoff_label": "8:20 PM ET",
+            "kickoff_epoch": 1792369200,
+            "network": "NBC",
+            "status": "pregame",
+            "away_score": null,
+            "home_score": null
+          },
+          {
+            "away": "WAS",
+            "home": "SF",
+            "away_name": "Washington Commanders",
+            "home_name": "San Francisco 49ers",
+            "week": 6,
+            "date_label": "Mon, Oct 19",
+            "date_long": "Monday, October 19",
+            "day_name": "Monday",
+            "kickoff_label": "8:15 PM ET",
+            "kickoff_epoch": 1792455300,
+            "network": "ESPN",
+            "status": "pregame",
+            "away_score": null,
+            "home_score": null
+          }
+        ],
+        "game_count": 14
+      },
+      "reference": {
+        "verdict_kind": "nfl_schedule",
+        "pick": "Week 6 NFL schedule",
+        "key_numbers": [
+          6
+        ],
+        "close_call": false
+      },
+      "trap": null,
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Seattle Seahawks",
+          "Dallas Cowboys",
+          "San Francisco 49ers"
         ]
       }
     }
