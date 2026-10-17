@@ -201,6 +201,51 @@ def resolve_player(name: str, *, index=None, roster_player_ids=None, footprint_i
     return {"status": "ambiguous", "candidates": [_public(e) for e in offered[:6]]}
 
 
+def nearest_names(name: str, *, index=None, limit: int = 2) -> list[str]:
+    """Closest real player names for a name that did NOT resolve.
+
+    Powers the "could not find X; the closest match is Y" answer: only
+    genuine near misses qualify (a shared surname, a surname within one
+    edit, or a full name within three edits), so the offer is the
+    player the asker almost certainly meant, never a random name.
+    """
+    if index is None:
+        try:
+            from dashboard_services.assistant.context import get_players_index_global
+            index = get_players_index_global()
+        except Exception:
+            index = {}
+    target = _normalize(name)
+    if not target:
+        return []
+    target_last = target.split()[-1]
+    scored = []
+    for e in _index_entries(index or {}):
+        norm = e["_norm"]
+        if not norm:
+            continue
+        last = norm.split()[-1]
+        # Length guard first: _lev caps far pairs at 3, which must not
+        # read as a genuine distance-3 near miss.
+        d = _lev(target, norm) if abs(len(target) - len(norm)) <= 2 else 99
+        if last == target_last:
+            d = min(d, 2)
+        elif len(target_last) >= 4 and _lev(target_last, last) <= 1:
+            d = min(d, 3)
+        if d <= 3:
+            scored.append((d, e["name"]))
+    scored.sort(key=lambda t: (t[0], t[1]))
+    out: list[str] = []
+    seen: set = set()
+    for _d, nm in scored:
+        if nm not in seen:
+            seen.add(nm)
+            out.append(nm)
+        if len(out) >= max(1, limit):
+            break
+    return out
+
+
 def resolve_names(names, *, index=None, roster_player_ids=None, footprint_ids=None) -> dict:
     """Resolve a list; returns {resolved: {name: result}, first_ambiguous, any_missing}."""
     out = {}

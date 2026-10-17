@@ -523,6 +523,21 @@ def _cta_label(action: dict) -> str:
 # to letters or codes (WR1, W7, 2026season) are labels, not numeric claims.
 _NUM_RE = re.compile(r"(?<![A-Za-z0-9])\$?-?\d[\d,]*(?:\.\d+)?%?(?![A-Za-z0-9])")
 
+# A cited number with 6+ decimal digits is raw float arithmetic leaking
+# through a pack (17.279999999999998 for 17.28): no surface of this site
+# presents a number that way. The final grounding gate rewrites grounded
+# artifacts to the house 1-decimal form instead of shipping them.
+_FLOAT_ARTIFACT_RE = re.compile(r"\d+\.\d{6,}")
+
+
+def _rounded_token(token: str) -> str:
+    """The house rendering of a float-artifact token: 1 decimal at most."""
+    try:
+        f = round(float(token), 1)
+    except (TypeError, ValueError):
+        return token
+    return str(int(f)) if f == int(f) else str(f)
+
 
 def _numbers_in(text: str) -> list[str]:
     return _NUM_RE.findall(text or "")
@@ -2695,11 +2710,61 @@ def _enforce_grounding(answer: dict, intent: str, pack: dict, question: str) -> 
     dropped whole. A clean answer passes through untouched.
     """
     allowed_canon = _allowed_canon(pack, question)
+    out = dict(answer)
+
+    # Float-artifact pass: rewrite any 6+-decimal token that IS a pack
+    # number to its rounded form, on every reader-visible surface, and
+    # ground the rounded form for the checks below. An artifact that is
+    # not a pack number is left alone here; the grounding strip treats
+    # it like any other invented number.
+    artifact_tokens: set[str] = set()
+    for surface in (out.get("verdict"), out.get("text"), out.get("caveat")):
+        artifact_tokens.update(_FLOAT_ARTIFACT_RE.findall(surface or ""))
+    for f in (out.get("followups") or []):
+        for t in _followup_texts(f):
+            artifact_tokens.update(_FLOAT_ARTIFACT_RE.findall(t or ""))
+    for r in (out.get("receipts") or []):
+        if isinstance(r, dict):
+            artifact_tokens.update(
+                _FLOAT_ARTIFACT_RE.findall(str(r.get("value") or "")))
+            artifact_tokens.update(
+                _FLOAT_ARTIFACT_RE.findall(str(r.get("label") or "")))
+    for a in (out.get("actions") or []):
+        if isinstance(a, dict):
+            for k in ("headline", "detail"):
+                artifact_tokens.update(
+                    _FLOAT_ARTIFACT_RE.findall(str(a.get(k) or "")))
+    grounded_artifacts = {t for t in artifact_tokens
+                          if _canon(t) in allowed_canon}
+    if grounded_artifacts:
+        def _fix(text):
+            if not isinstance(text, str):
+                return text
+            for t in grounded_artifacts:
+                if t in text:
+                    text = text.replace(t, _rounded_token(t))
+            return text
+
+        for k in ("verdict", "text", "caveat"):
+            out[k] = _fix(out.get(k))
+        out["followups"] = [
+            {**f, **{k: _fix(f[k]) for k in ("label", "ask") if k in f}}
+            if isinstance(f, dict) else f
+            for f in (out.get("followups") or [])]
+        out["receipts"] = [
+            {k: _fix(v) for k, v in r.items()} if isinstance(r, dict) else r
+            for r in (out.get("receipts") or [])]
+        out["actions"] = [
+            {**a, **{k: _fix(a[k]) for k in ("headline", "detail") if k in a}}
+            if isinstance(a, dict) else a
+            for a in (out.get("actions") or [])]
+        for t in grounded_artifacts:
+            allowed_canon.add(_canon(_rounded_token(t)))
+        logger.info("[assistant] rewrote float artifacts in answer: %s",
+                    sorted(grounded_artifacts))
 
     def _bad(text) -> bool:
         return bool(_canon_numbers(text) - allowed_canon)
-
-    out = dict(answer)
     prose_bad = any(_bad(out.get(k)) for k in ("verdict", "text", "caveat")) or \
         any(_bad(t) for f in (out.get("followups") or [])
             for t in _followup_texts(f))

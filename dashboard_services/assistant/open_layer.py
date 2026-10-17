@@ -94,6 +94,11 @@ _OPEN_SYSTEM = (
     "PRO metric on BR Fantasy and give no numbers for it; answer the "
     "rest from what is there. If the evidence answers only part of the "
     "question, answer that part and say plainly what is not in the data. "
+    "In a compare entry, a player's missing_metrics list names the "
+    "numbers the data does not have for him: compare the two players on "
+    "the metrics both of them have and name the missing ones for that "
+    "player; never drop a player, or the comparison, over a missing "
+    "metric. "
     "Verdict: a short headline when the evidence supports one, else "
     "null. Never mention tools, evidence, or any internal data "
     "structure; call it your league data or the site's numbers. "
@@ -170,6 +175,46 @@ def _frozen_lookup(frozen: list, used: set, tool: str) -> dict:
             "players": [], "receipts": [], "link": None}
 
 
+def _deterministic_compare_entry(bundle: dict, question: str) -> dict | None:
+    """The compare_players entry for a two-player compare shape, or None.
+
+    A compare shape (router.compare_player_names) whose two spans are
+    both player-like (resolvable, ambiguous, or a near miss of a real
+    name) is fetched deterministically, before the planner: the planner
+    is a model and can fetch a single-player profile instead, collapsing
+    the side-by-side into a one-sided answer (the live failure this
+    seam closes). Any other shape returns None and the planner runs as
+    usual, so pronoun follow-ups ("how does he compare to X") keep
+    their thread-context path.
+    """
+    try:
+        from dashboard_services.assistant.router import compare_player_names
+    except Exception:
+        return None
+    spans = compare_player_names(question or "")
+    if not spans:
+        return None
+
+    def _player_like(span: str) -> bool:
+        pid, _info, ambiguous = tools_mod._resolve(bundle, span)
+        if pid or ambiguous:
+            return True
+        try:
+            from dashboard_services.assistant.resolve import nearest_names
+            return bool(nearest_names(span, limit=1))
+        except Exception:
+            return False
+
+    if not (_player_like(spans[0]) and _player_like(spans[1])):
+        return None
+    entry = tools_mod.run_tool("compare_players",
+                               {"player_a": spans[0], "player_b": spans[1]},
+                               bundle)
+    if entry.get("ok") or entry.get("ambiguous") or entry.get("not_found"):
+        return entry
+    return None
+
+
 def plan_and_fetch(question: str, bundle: dict, thread: dict | None = None,
                    frozen_evidence: list | None = None) -> tuple[dict, list[str]]:
     """Run the planner loop and build the open evidence pack.
@@ -188,6 +233,19 @@ def plan_and_fetch(question: str, bundle: dict, thread: dict | None = None,
     seen_calls: set[str] = set()
     frozen_used: set[int] = set()
     declined = False
+    if frozen_evidence is None:
+        # A two-player compare shape fetches compare_players
+        # deterministically and that entry IS the evidence: a resolved
+        # pair compares side-by-side, an ambiguous name clarifies, and
+        # a near miss declines by name with the closest match offered.
+        compare_entry = _deterministic_compare_entry(bundle, question)
+        if compare_entry is not None:
+            pack["evidence"] = [compare_entry]
+            pack["tools_called"] = ["compare_players"]
+            pack["context_players"] = thread.get("context_players") or []
+            if not compare_entry.get("ok"):
+                pack["available"] = False
+            return pack, ["compare_players"]
     payload_base = {
         "question": question,
         "league": {"name": bundle.get("league_name"),
@@ -408,6 +466,31 @@ def compose_open_answer(question: str, pack: dict, *, history=None,
                     "receipts": [], "caveat": None, "followups": [],
                     "act_link": None, "actions": [], "mentions": [],
                     "candidates": ambiguous.get("ambiguous") or []}
+        not_found = next((e for e in evidence if e.get("not_found")), None)
+        if not_found is not None:
+            # A named player could not be found: say so BY NAME and
+            # offer the closest real match as a ready-made re-ask,
+            # instead of the generic decline (or, worse, an answer about
+            # only the player who did resolve).
+            asked = str(not_found.get("not_found") or "").strip()
+            near = [str(n) for n in (not_found.get("nearest") or []) if n]
+            found_name = str((not_found.get("found") or {}).get("name")
+                             or "").strip()
+            text = (f"I could not find {asked} in the player pool."
+                    if asked else
+                    "I could not find one of those players in the player pool.")
+            follow = []
+            if near:
+                text += f" The closest match is {near[0]}."
+                if found_name:
+                    ask = f"Compare {found_name} and {near[0]}"
+                    follow.append(compose_mod.followup_pair(ask, ask))
+            return compose_mod._enforce_grounding({
+                "verdict": None, "text": text, "receipts": [],
+                "caveat": None,
+                "followups": compose_mod._clean_followups("open", follow),
+                "act_link": None, "actions": [], "mentions": [],
+            }, "open", pack, question)
         nearest = []
         for e in evidence:
             for n in e.get("nearest") or []:

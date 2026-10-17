@@ -2152,6 +2152,20 @@ def _open(pack, question):
                                   _fu("Who leads in snap share?")],
                     "act_link": {"href": "/metrics", "label": "View on Advanced Metrics"},
                     "actions": [], "mentions": []}
+        not_found = next((e for e in evidence if e.get("not_found")), None)
+        if not_found is not None:
+            asked = str(not_found.get("not_found") or "")
+            near = [str(n) for n in (not_found.get("nearest") or []) if n]
+            found = str((not_found.get("found") or {}).get("name") or "")
+            text = f"I could not find {asked} in the player pool."
+            followups_nf = []
+            if near:
+                text += f" The closest match is {near[0]}."
+                if found:
+                    followups_nf.append(_fu(f"Compare {found} and {near[0]}"))
+            return {"verdict": None, "text": text, "receipts": [],
+                    "caveat": None, "followups": followups_nf,
+                    "act_link": None, "actions": [], "mentions": []}
         nearest = []
         for e in evidence:
             for n in e.get("nearest") or []:
@@ -2289,9 +2303,16 @@ def _open(pack, question):
                 if verdict is None:
                     verdict = f"{hi['name']} over {lo['name']}"
                 for p in detail:
-                    lines.append(f"{p['name']}: value {fmt(p.get('value'))}, "
-                                 f"{fmt(p.get('ppg'))} points per game, "
-                                 f"{fmt(p.get('target_share'))} target share.")
+                    bits = [f"{p['name']}: value {fmt(p.get('value'))}"]
+                    if p.get("ppg") is not None:
+                        bits.append(f"{fmt(p.get('ppg'))} points per game")
+                    if p.get("target_share") is not None:
+                        bits.append(f"{fmt(p.get('target_share'))} target share")
+                    if p.get("snap_share") is not None:
+                        bits.append(f"{fmt(p.get('snap_share'))} snap share")
+                    lines.append(", ".join(bits) + ".")
+                    for gap in (p.get("missing_metrics") or []):
+                        lines.append(f"No {gap} for {p['name']} in the data yet.")
         elif tool == "value_lookup":
             if e.get("player"):
                 p = e["player"]
@@ -2647,6 +2668,10 @@ def compose_mock(question: dict) -> dict:
     pack = question.get("evidence_pack") or {}
     if isinstance(pack, dict) and pack.get("gated"):
         return gated_answer(pack)
+    if isinstance(pack, dict) and any(
+            isinstance(e, dict) and e.get("not_found")
+            for e in (pack.get("evidence") or [])):
+        return _open(pack, question)
     if isinstance(pack, dict) and pack.get("available") is False \
             and pack.get("type") == "leaderboard" \
             and pack.get("board_kind") in ("buy_low", "sell_high"):
