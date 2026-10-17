@@ -1887,6 +1887,497 @@ def _sell_findings(ctx, bundle, sell_entry, values, index):
     return findings, miss, tools, viewer_info.get("needs") or [], viewer_info.get("surplus") or []
 
 
+def _room_by_position(roster, values, index, exclude_pid=None):
+    """A roster's priced skill players grouped by position, best first,
+    in the finding player shape."""
+    room: dict[str, list] = {}
+    for pid in (roster or {}).get("players") or []:
+        pid = str(pid)
+        if exclude_pid and pid == str(exclude_pid):
+            continue
+        entry = _finding_player({**(values.get(pid) or {}), "player_id": pid}, index)
+        if entry.get("position") in ("QB", "RB", "WR", "TE") and entry.get("value"):
+            room.setdefault(entry["position"], []).append(entry)
+    for entries in room.values():
+        entries.sort(key=lambda e: -e["value"])
+    return room
+
+
+def _appeal_context(ctx, rosters, owner_roster, values, index, target_entry):
+    """The partner's actual room, graded with the site's own machinery:
+    starter thresholds and starting-slot floors from
+    utils.trade.derive_league_thresholds (the starter-gap model the
+    Suggestions engine uses), and positional ranks from
+    utils.trade.positional_ranks over the whole value table."""
+    from utils.trade import derive_league_thresholds, positional_ranks
+    roster_positions = [str(s) for s in (ctx.get("roster_positions") or [])]
+    is_sf = any("SUPER" in s.upper() for s in roster_positions)
+    thresholds, floors = derive_league_thresholds(
+        roster_positions, len(rosters) or 12, is_sf=is_sf)
+    enriched = {}
+    ages = {}
+    for pid, row in (values or {}).items():
+        v = _row_value(row)
+        if not v:
+            continue
+        info = _player_info(pid, index)
+        pos = str((row or {}).get("position") or info.get("position") or "").upper()
+        if pos in ("QB", "RB", "WR", "TE"):
+            enriched[str(pid)] = {"value": v, "position": pos}
+        age = (row or {}).get("age")
+        if age is None:
+            age = (index.get(str(pid)) or {}).get("age")
+        try:
+            if age is not None:
+                ages[str(pid)] = float(age)
+        except (TypeError, ValueError):
+            pass
+    room = _room_by_position(owner_roster, values, index,
+                             exclude_pid=target_entry.get("player_id"))
+    # Partner profile beyond position labels: his contention window from
+    # the site's own direction read (detect_team_direction, the same
+    # function the Suggestions engine runs per partner), and a depth
+    # read derived from the graded room: a position is thin when he can
+    # exactly fill his starting slots there with no startable reserve.
+    profile = {"direction": "balanced", "thin_positions": [], "depth_poor": False}
+    try:
+        from dashboard_services.ai.context_builders import detect_team_direction
+        players = [{"age": ages.get(str(pid)), "value": _row_value(values.get(str(pid)))}
+                   for pid in (owner_roster.get("players") or [])
+                   if _row_value(values.get(str(pid)))]
+        picks = (ctx.get("picks_by_roster") or {}).get(
+            str(owner_roster.get("roster_id"))) or []
+        profile["direction"] = detect_team_direction(
+            players, picks,
+            scoring_type="redraft" if _league_is_redraft(ctx) else "dynasty")
+    except Exception:
+        logger.debug("[assistant] partner direction failed", exc_info=True)
+    thin = []
+    for pos, entries in room.items():
+        thr = float(thresholds.get(pos) or 0)
+        floor_n = int(floors.get(pos) or 1)
+        starters = [e for e in entries if e["value"] >= thr]
+        # Depth bites only where the league fields more than one starter
+        # at the position: a second QB in 1QB (or a second TE) is bench
+        # insurance, not a depth need, and must not manufacture appeal.
+        if floor_n >= 2 and len(starters) == floor_n:
+            thin.append(pos)
+    profile["thin_positions"] = thin
+    profile["depth_poor"] = len(thin) >= 2
+    return {"thresholds": thresholds, "floors": floors,
+            "ranks": positional_ranks(enriched), "ages": ages,
+            "room": room, "profile": profile}
+
+
+# The trade-target ranker's own hole-fill bar (utils.trade._HOLE_FILL_FRAC):
+# clearing half the starter bar counts as filling a genuine hole.
+_HOLE_FILL_FRAC = 0.5
+
+
+def _piece_appeal(piece, actx):
+    """Does this give piece plausibly matter to the partner's roster?
+
+    Appeal is graded against the partner's ACTUAL room at the piece's
+    position (the target already removed), never against a needs label
+    alone: the piece fills a genuine starting hole, upgrades the
+    partner's weakest starter at the position, or is an elite asset at
+    the position (the site's ELITE rank cutoffs) the partner does not
+    already hold. A QB sent to a team set at QB and a TE ranked deep at
+    the position sent to a team with an established TE both fail, which
+    is the Wilson-package failure: raw parity, no acceptance story.
+    """
+    from utils.trade import ELITE_RANK_CUTOFFS
+    pos = piece.get("position")
+    value = float(piece.get("value") or 0)
+    out = {"player_id": piece.get("player_id"), "name": piece.get("name"),
+           "position": pos, "appeal": False, "reason": ""}
+    profile = actx.get("profile") or {}
+    direction = profile.get("direction") or "balanced"
+    rebuild = direction in ("rebuild", "retool")
+    contend = direction in ("contender", "contend")
+    if pos == "PICK":
+        # A pick's appeal is window-relative: a rebuilding team values
+        # futures, a win-now team discounts them.
+        rnd = int(piece.get("round") or 0)
+        if rebuild and rnd and rnd <= 2:
+            out.update(appeal=True,
+                       reason=f"a future {_ROUND_LABELS.get(rnd, '')} for a rebuilding team".replace("  ", " "))
+        elif contend:
+            out["reason"] = "a win-now team discounts a future pick"
+        elif rnd == 1:
+            out.update(appeal=True, reason="a future 1st")
+        else:
+            out["reason"] = "not enough on its own"
+        return out
+    if pos not in ("QB", "RB", "WR", "TE") or value <= 0:
+        out["reason"] = "not a skill-position piece"
+        return out
+    thr = float(actx["thresholds"].get(pos) or 0)
+    floor_n = int(actx["floors"].get(pos) or 1)
+    room = actx["room"].get(pos) or []
+    starters = [e["value"] for e in room if e["value"] >= thr]
+    if len(starters) < floor_n and value >= thr * _HOLE_FILL_FRAC:
+        out.update(appeal=True, reason=f"fills their {pos} hole")
+    elif starters and value >= thr and value > starters[min(floor_n, len(starters)) - 1]:
+        out.update(appeal=True, reason=f"upgrades their {pos} starter")
+    else:
+        rank = actx["ranks"].get(str(piece.get("player_id")))
+        cutoff = ELITE_RANK_CUTOFFS.get(pos, 3)
+        if rank and rank <= cutoff and value >= thr * _HOLE_FILL_FRAC:
+            partner_elite = any(
+                (actx["ranks"].get(str(e["player_id"])) or 999) <= cutoff for e in room)
+            if not partner_elite:
+                out.update(appeal=True, reason=f"elite {pos} asset")
+    # Profile adjustments: the same piece is a different offer to a
+    # different team situation.
+    age = (actx.get("ages") or {}).get(str(piece.get("player_id")))
+    if out["appeal"] and rebuild and age is not None and age >= 29 \
+            and "elite" not in out["reason"]:
+        # A 31-year-old veteran headlines for a contender and is a
+        # non-starter for a rebuilder.
+        out.update(appeal=False, reason="too old for a rebuilding roster")
+    if not out["appeal"]:
+        # Depth appeal is a profile read, not a per-position accident:
+        # it counts only when the partner is thin at two or more
+        # positions (genuinely depth-poor), where an extra startable
+        # body is a real reason to take a deal.
+        if profile.get("depth_poor") and pos in (profile.get("thin_positions") or []) \
+                and value >= thr:
+            out.update(appeal=True, reason=f"adds startable depth at {pos}")
+        elif rebuild and age is not None and age <= 24 \
+                and value >= thr * _HOLE_FILL_FRAC:
+            out.update(appeal=True, reason=f"a young {pos} for a rebuilding roster")
+    if not out["appeal"] and not out["reason"]:
+        if len(starters) >= floor_n:
+            out["reason"] = f"they are set at {pos}"
+        elif room:
+            out["reason"] = f"does not upgrade their {pos}"
+        else:
+            out["reason"] = f"does not fill their {pos} hole"
+    return out
+
+
+def _starter_line(entries, thresholds, floors, pos):
+    """The value of a roster's weakest starter at a position (its
+    floor-th best starter-caliber player), or None when the roster
+    cannot fill its starting slots there (a genuine hole)."""
+    thr = float((thresholds or {}).get(pos) or 0)
+    floor_n = int((floors or {}).get(pos) or 1)
+    starters = [e["value"] for e in (entries or []) if e["value"] >= thr]
+    if len(starters) < floor_n:
+        return None
+    return starters[floor_n - 1]
+
+
+# A partner-side downgrade slot in a counter construction may trail the
+# player it replaces by at most this fraction of that player's value.
+_COUNTER_DOWNGRADE_CAP = 0.25
+
+
+def _priced_picks(ctx, roster_id, num_teams):
+    """A roster's own future picks (rounds 1-2) priced by the site's
+    pick value table, in the asset shape findings carry. Mid-bucket
+    pricing, the table's neutral slot projection."""
+    try:
+        from utils.lineup_slots import is_superflex_lineup
+        table = pick_value_table(
+            league_teams=num_teams or 10,
+            is_sf=is_superflex_lineup(ctx.get("roster_positions") or []))
+    except Exception:
+        return []
+    if not table:
+        return []
+    out = []
+    for pk in (ctx.get("picks_by_roster") or {}).get(str(roster_id)) or []:
+        try:
+            season, rnd = int(pk.get("season")), int(pk.get("round"))
+        except (TypeError, ValueError):
+            continue
+        if rnd not in (1, 2):
+            continue
+        v = table.get(f"{season}_{rnd}_mid")
+        if not v:
+            continue
+        out.append({"player_id": "", "name": f"{season} mid {_ROUND_LABELS[rnd]}",
+                    "team": "", "position": "PICK",
+                    "value": round(float(v), 1), "round": rnd, "season": season})
+    return out
+
+
+def _counter_construction(ctx, bundle, target_entry, owner_roster, values,
+                          index, actx, owner_info, viewer_needs):
+    """A complementary construction when the straight packages fail
+    partner plausibility, searched over the engine's package vocabulary
+    (2-for-2, 3-for-2, 2-for-3, player-plus-pick, pick coming back,
+    pick-led) rather than one hard-coded shape. The defining property
+    never changes: EACH team takes at least one genuine upgrade slot
+    and at least one genuine downgrade slot across the deal, graded per
+    slot by the incoming piece against the receiving team's current
+    starter line at that position (a pick in place of a player grades
+    as the downgrade at that slot when it is worth less than the player
+    sent there). Bounds: the give side is at most 3 assets (the
+    matcher's own cap), the return side is the target plus at most 2
+    partner assets drawn from his second-at-position and surplus
+    players, and every downgrade slot is a startable player or a real
+    (rounds 1-2) pick. Totals stay inside the analyzer's fair band.
+
+    Slots: X, a give piece passing the same partner-appeal test as any
+    headline piece, is his upgrade. A is a partner asset below her
+    starter line at its position: her downgrade. In the paired shapes
+    she also sends Y, startable but below A at the same position (his
+    downgrade, capped at a modest 25% of A). Z must upgrade her starter
+    line at his position (or fill her hole there): her upgrade.
+
+    Ranking: constructions shaped to his profile first (a depth-poor
+    partner receives more pieces than he sends; a rebuilding partner
+    is led with a pick or a young piece), then closest to fair.
+    """
+    from utils.trade_value import fair_value_band
+    thr, floors = actx["thresholds"], actx["floors"]
+    profile = actx.get("profile") or {}
+    direction = profile.get("direction") or "balanced"
+    rebuild = direction in ("rebuild", "retool")
+    viewer_room = _room_by_position(bundle.get("roster") or {}, values, index)
+    partner_room = _room_by_position(owner_roster, values, index)
+    z = target_entry
+    zpos = z.get("position")
+    zval = float(z.get("value") or 0)
+    if zpos not in ("QB", "RB", "WR", "TE") or not zval:
+        return None
+    vline = _starter_line(viewer_room.get(zpos), thr, floors, zpos)
+    if vline is None:
+        if zval < float(thr.get(zpos) or 0) * _HOLE_FILL_FRAC:
+            return None
+    elif zval <= vline:
+        return None
+
+    def her_line(pos):
+        return _starter_line(viewer_room.get(pos), thr, floors, pos)
+
+    def his_line(pos):
+        return _starter_line(actx["room"].get(pos), thr, floors, pos)
+
+    xs = []
+    for entries in viewer_room.values():
+        for e in entries:
+            if e["player_id"] == z.get("player_id"):
+                continue
+            appeal = _piece_appeal(e, actx)
+            if appeal["appeal"]:
+                xs.append((e, appeal))
+    num_teams = len(ctx.get("rosters") or []) or 12
+    viewer_picks = _priced_picks(ctx, (bundle.get("roster") or {}).get("roster_id"),
+                                 num_teams)
+    partner_picks = _priced_picks(ctx, owner_roster.get("roster_id"), num_teams)
+    # His extra assets: second at each position, plus his top two at
+    # surplus positions (the target excluded, startable only).
+    surplus_pos = set(owner_info.get("surplus") or [])
+    a_cands: dict[str, dict] = {}
+    for pos, entries in partner_room.items():
+        pool = list(entries[1:2])
+        if pos in surplus_pos:
+            pool += entries[:2]
+        for e in pool:
+            if e["player_id"] == z.get("player_id"):
+                continue
+            if e["value"] >= float(thr.get(pos) or 0):
+                a_cands[e["player_id"]] = e
+    a_list = sorted(a_cands.values(), key=lambda e: -e["value"])
+
+    def her_downgrade(a):
+        line = her_line(a["position"])
+        return line is not None and a["value"] < line
+
+    candidates = []
+
+    def _add(family, give, receive, slots, appeal):
+        give_total = round(sum(p["value"] or 0 for p in give), 1)
+        receive_total = round(sum(p["value"] or 0 for p in receive), 1)
+        if abs(receive_total - give_total) > fair_value_band(
+                max(receive_total, give_total)):
+            return
+        headline = max(give, key=lambda p: p.get("value") or 0)
+        fit = 1
+        if profile.get("depth_poor") and len(give) > len(receive):
+            fit = 0
+        if rebuild and (headline.get("position") == "PICK"
+                        or ((actx.get("ages") or {}).get(str(headline.get("player_id"))) or 99) <= 24):
+            fit = 0
+        if direction in ("contender", "contend") and headline.get("position") != "PICK":
+            fit = 0
+        f = _finding(owner_roster.get("roster_id"), owner_info.get("team_name"),
+                     give, receive, owner_info, viewer_needs)
+        f["counter"] = True
+        f["partner_appeal"] = appeal
+        f["slots"] = slots
+        candidates.append(((fit, abs(f["fairness_gap"]), len(give) + len(receive),
+                            family), f))
+
+    def _slots(a, pu, pd):
+        return {"viewer_upgrade": {"position": zpos, "player": z.get("name")},
+                "viewer_downgrade": {"position": a["position"],
+                                     "player": a.get("name")},
+                "partner_upgrade": pu, "partner_downgrade": pd}
+
+    # Paired shapes around his second player at a position (A) and her
+    # second player there (Y): 2-for-2, and with an extra startable
+    # piece on either side, 3-for-2 and 2-for-3.
+    pairs = []
+    for py in sorted(partner_room):
+        if py == zpos or len(partner_room[py]) < 2:
+            continue
+        ventries = viewer_room.get(py) or []
+        if len(ventries) < 2:
+            continue
+        a_piece = partner_room[py][1]
+        if a_piece["player_id"] == z.get("player_id"):
+            continue
+        if a_piece["value"] < float(thr.get(py) or 0):
+            continue  # A must be startable, not a scrub throw-in.
+        if not her_downgrade(a_piece):
+            continue  # A below her starter line: her downgrade slot.
+        for y_piece in ventries[1:]:
+            if y_piece["value"] < float(thr.get(py) or 0):
+                continue  # Y startable too: a modest downgrade, not a fleecing.
+            if not y_piece["value"] < a_piece["value"]:
+                continue
+            if a_piece["value"] - y_piece["value"] > _COUNTER_DOWNGRADE_CAP * a_piece["value"]:
+                continue
+            for x_piece, x_appeal in xs:
+                if x_piece["player_id"] == y_piece["player_id"]:
+                    continue
+                if x_piece["position"] == py:
+                    continue
+                slots = _slots(a_piece,
+                               {"position": x_piece["position"],
+                                "player": x_piece.get("name")},
+                               {"position": py, "player": y_piece.get("name")})
+                _add(1, [x_piece, y_piece], [z, a_piece], slots, [x_appeal])
+                pairs.append((x_piece, y_piece, a_piece, slots, x_appeal))
+    for x_piece, y_piece, a_piece, slots, x_appeal in pairs:
+        used = {x_piece["player_id"], y_piece["player_id"]}
+        for entries in viewer_room.values():
+            for w in entries:
+                if w["player_id"] in used or w["player_id"] == z.get("player_id"):
+                    continue
+                if w["value"] < float(thr.get(w["position"]) or 0):
+                    continue  # W startable: no scrub-stacking.
+                _add(3, [x_piece, y_piece, w], [z, a_piece], slots, [x_appeal])
+        for b_piece in a_list:
+            if b_piece["player_id"] == a_piece["player_id"]:
+                continue
+            if b_piece["position"] == a_piece["position"]:
+                continue
+            _add(4, [x_piece, y_piece], [z, a_piece, b_piece], slots, [x_appeal])
+
+    # Player-plus-pick: her pick stands in his downgrade slot (a pick in
+    # place of the player he sends), worth less than that player.
+    for a_piece in a_list:
+        if not her_downgrade(a_piece):
+            continue
+        for pick in viewer_picks:
+            if not pick["value"] < a_piece["value"]:
+                continue
+            for x_piece, x_appeal in xs:
+                if x_piece["position"] == a_piece["position"]:
+                    continue
+                _add(2, [x_piece, pick], [z, a_piece],
+                     _slots(a_piece,
+                            {"position": x_piece["position"],
+                             "player": x_piece.get("name")},
+                            {"position": "PICK", "player": pick["name"]}),
+                     [x_appeal])
+
+    # Pick coming back: his pick is her downgrade slot (worth less than
+    # the player she sends at that slot); her Y is his downgrade,
+    # graded below his own starter line at its position.
+    for pick in partner_picks:
+        for entries in viewer_room.values():
+            for y_piece in entries:
+                if y_piece["player_id"] == z.get("player_id"):
+                    continue
+                if y_piece["value"] < float(thr.get(y_piece["position"]) or 0):
+                    continue
+                if not pick["value"] < y_piece["value"]:
+                    continue
+                line = his_line(y_piece["position"])
+                if line is None or not y_piece["value"] < line:
+                    continue
+                for x_piece, x_appeal in xs:
+                    if x_piece["player_id"] == y_piece["player_id"]:
+                        continue
+                    if x_piece["position"] == y_piece["position"]:
+                        continue
+                    _add(5, [x_piece, y_piece], [z, pick],
+                         {"viewer_upgrade": {"position": zpos, "player": z.get("name")},
+                          "viewer_downgrade": {"position": "PICK",
+                                               "player": pick["name"]},
+                          "partner_upgrade": {"position": x_piece["position"],
+                                              "player": x_piece.get("name")},
+                          "partner_downgrade": {"position": y_piece["position"],
+                                                 "player": y_piece.get("name")}},
+                         [x_appeal])
+
+    # Pick-led: for a partner whose window values futures, her pick is
+    # the headline appeal piece, with a startable player who grades as
+    # his downgrade slot below his starter line.
+    for pick in viewer_picks:
+        pick_appeal = _piece_appeal(pick, actx)
+        if not pick_appeal["appeal"]:
+            continue
+        for a_piece in a_list:
+            if not her_downgrade(a_piece):
+                continue
+            for entries in viewer_room.values():
+                for w in entries:
+                    if w["player_id"] == z.get("player_id"):
+                        continue
+                    if w["position"] == a_piece["position"]:
+                        continue
+                    if w["value"] < float(thr.get(w["position"]) or 0):
+                        continue
+                    line = his_line(w["position"])
+                    if line is None or not w["value"] < line:
+                        continue
+                    _add(6, [pick, w], [z, a_piece],
+                         _slots(a_piece,
+                                {"position": "PICK", "player": pick["name"]},
+                                {"position": w["position"],
+                                 "player": w.get("name")}),
+                         [pick_appeal])
+
+    if not candidates:
+        return None
+    candidates.sort(key=lambda t: t[0])
+    best = candidates[0][1]
+    # The plain-language profile read, when his situation shaped this:
+    # name the window and/or the depth need and how the shape answers.
+    give = best.get("give") or []
+    headline = max(give, key=lambda p: p.get("value") or 0)
+    clauses = []
+    if rebuild:
+        clauses.append("He is rebuilding")
+    elif direction in ("contender", "contend"):
+        clauses.append("He is win-now")
+    if profile.get("depth_poor"):
+        clauses.append("short on depth" if clauses else "He is short on depth")
+    shape = None
+    if headline.get("position") == "PICK":
+        shape = f"this leads with your {headline.get('name')}"
+    elif rebuild and ((actx.get("ages") or {}).get(str(headline.get("player_id"))) or 99) <= 24:
+        shape = f"this leads with {headline.get('name')}, a young piece who fits his window"
+    elif profile.get("depth_poor") and len(give) > len(best.get("receive") or []):
+        shape = "this sends him more startable pieces than he gives up"
+    if clauses or shape:
+        text = ", ".join(clauses)
+        if shape:
+            text = f"{text}, so {shape}" if text else f"This is shaped for him: {shape}"
+        best["profile_read"] = text + "."
+    return best
+
+
+
+
 def _target_findings(ctx, bundle, target_entry, owner_roster, values, index,
                      give_position=None):
     """Specific-target mode: value-matched offers from the viewer's own
@@ -1913,11 +2404,13 @@ def _target_findings(ctx, bundle, target_entry, owner_roster, values, index,
     owner_info = by_roster.get(str(owner_roster.get("roster_id"))) or {}
     focus = float(target_entry.get("value") or 0)
     if not focus:
-        return [], None, tools, viewer_info.get("needs") or [], viewer_info.get("surplus") or [], None
+        return ([], None, tools, viewer_info.get("needs") or [],
+                viewer_info.get("surplus") or [], None, None, None)
     pool, _counts = _asset_pool(bundle.get("roster") or {}, values, index)
     pool = [p for p in pool if p["player_id"] != target_entry.get("player_id")]
     if not pool:
-        return [], None, tools, viewer_info.get("needs") or [], viewer_info.get("surplus") or [], None
+        return ([], None, tools, viewer_info.get("needs") or [],
+                viewer_info.get("surplus") or [], None, None, None)
     try:
         pkgs = value_matched_acquire_packages(
             focus, pool, [], max_options=12 if give_position else 6,
@@ -1926,7 +2419,19 @@ def _target_findings(ctx, bundle, target_entry, owner_roster, values, index,
         pkgs = []
     owner_needs = set(owner_info.get("needs") or [])
     spare = target_entry.get("position") in set(owner_info.get("surplus") or [])
-    findings, miss = [], None
+    # Partner-side acceptance layer: the label gate above (a give piece's
+    # position in the owner's needs, or the target in their surplus) is
+    # too coarse to pitch on alone, so every in-band package is re-graded
+    # against the partner's actual room. Fail open when the room cannot
+    # be graded at all, rather than nuking every suggestion.
+    try:
+        actx = _appeal_context(ctx, rosters, owner_roster, values, index, target_entry)
+        tools += ["utils.trade.derive_league_thresholds",
+                  "utils.trade.positional_ranks"]
+    except Exception:
+        logger.debug("[assistant] partner appeal context failed", exc_info=True)
+        actx = None
+    findings, miss, blocked = [], None, None
     for pkg in pkgs:
         assets = [a for a in (pkg.get("assets") or []) if not a.get("is_pick")]
         if not assets or len(assets) != len(pkg.get("assets") or []):
@@ -1935,17 +2440,58 @@ def _target_findings(ctx, bundle, target_entry, owner_roster, values, index,
         f = _finding(owner_roster.get("roster_id"), owner_info.get("team_name"),
                      give, [target_entry], owner_info, viewer_info.get("needs") or [])
         plausible = spare or any(p["position"] in owner_needs for p in give)
-        if plausible and abs(f["fairness_gap"]) <= fair_value_band(
-                max(f["receive_total"], f["give_total"])):
-            findings.append(f)
-        elif miss is None or abs(f["fairness_gap"]) < abs(miss["fairness_gap"]):
-            miss = f
+        if not (plausible and abs(f["fairness_gap"]) <= fair_value_band(
+                max(f["receive_total"], f["give_total"]))):
+            if miss is None or abs(f["fairness_gap"]) < abs(miss["fairness_gap"]):
+                miss = f
+            continue
+        if actx is not None:
+            appeal = [_piece_appeal(p, actx) for p in give]
+            f["partner_appeal"] = appeal
+            headline = max(give, key=lambda p: p.get("value") or 0)
+            headline_appeal = next(
+                a for a in appeal if a["player_id"] == headline.get("player_id"))
+            if not headline_appeal["appeal"]:
+                # Raw parity is not an acceptance story: the package's
+                # headline piece does nothing for the partner, so it is
+                # never pitched. It is remembered as the blocked shape
+                # the honest decline (or the counter) is built from.
+                if blocked is None or abs(f["fairness_gap"]) < abs(blocked["fairness_gap"]):
+                    blocked = f
+                continue
+        findings.append(f)
     findings.sort(key=lambda f: abs(f["fairness_gap"]))
-    if not give_position:
-        return findings, miss, tools, viewer_info.get("needs") or [], viewer_info.get("surplus") or [], None
-    constrained = [f for f in findings if _give_anchor_ok(f, give_position)]
-    fallback = findings[0] if (findings and not constrained) else None
-    return constrained, miss, tools, viewer_info.get("needs") or [], viewer_info.get("surplus") or [], fallback
+    if give_position:
+        constrained = [f for f in findings if _give_anchor_ok(f, give_position)]
+        if constrained:
+            return (constrained, miss, tools, viewer_info.get("needs") or [],
+                    viewer_info.get("surplus") or [], None, None, None)
+        # The constraint, not the market, emptied the findings: the
+        # composer declines the position framing with the best
+        # overall fit as the labeled fallback. No counter is offered
+        # here: a construction outside the requested position would
+        # repeat the original failure.
+        fallback = findings[0] if findings else None
+        return ([], miss, tools, viewer_info.get("needs") or [],
+                viewer_info.get("surplus") or [], fallback, None, None)
+    if findings:
+        blocked = None
+    counter = None
+    if not findings and blocked is not None and actx is not None:
+        # No straight package he would take: try the complementary
+        # construction before declining outright.
+        try:
+            counter = _counter_construction(
+                ctx, bundle, target_entry, owner_roster, values, index,
+                actx, owner_info, viewer_info.get("needs") or [])
+            if counter is not None:
+                tools.append("assistant.counter_construction")
+        except Exception:
+            logger.debug("[assistant] counter construction failed", exc_info=True)
+            counter = None
+        miss = None
+    return (findings, miss, tools, viewer_info.get("needs") or [],
+            viewer_info.get("surplus") or [], None, blocked, counter)
 
 
 _ROUND_LABELS = {1: "1st", 2: "2nd", 3: "3rd", 4: "4th"}
@@ -2068,6 +2614,7 @@ def build_trade_finding(bundle, entities, player_ids) -> tuple[dict, list[str]]:
                  "findings": [], "no_fit": False, "closest_miss": None,
                  "position_no_fit": False, "fallback_finding": None,
                  "partner_scoped": False, "partner_team": None,
+                 "partner_blocked": None, "counter": None,
                  "margin": {"thin": False}})
     ctx = bundle.get("ctx") or {}
     roster = bundle.get("roster") or {}
@@ -2142,9 +2689,11 @@ def build_trade_finding(bundle, entities, player_ids) -> tuple[dict, list[str]]:
     elif named_entry and owner_roster is not None:
         pack["mode"] = "target"
         pack["target_player"] = named_entry
-        findings, miss, used, needs, surplus, fallback = _target_findings(
+        findings, miss, used, needs, surplus, fallback, blocked, counter = _target_findings(
             ctx, bundle, named_entry, owner_roster, values, index,
             give_position=give_position)
+        pack["partner_blocked"] = blocked
+        pack["counter"] = counter
     elif named_entry:
         pack["mode"] = "target"
         pack["target_player"] = named_entry

@@ -310,6 +310,267 @@ def test_unrostered_target_is_not_a_trade(base, monkeypatch):
     assert pack["findings"] == [] and pack["no_fit"] is True
 
 
+# -- target mode: partner acceptance (the Wilson shape) -------------------------
+# Trustfund QBs is set at QB (an elite starter) and established at TE, with
+# a WR surplus that makes Garrett Wilson spare: the old label gate calls a
+# Williams + Ferguson offer plausible on that surplus alone. Williams is
+# only the league's ninth QB by value and Ferguson its 24th TE, so neither
+# piece does anything for that room: raw parity, no acceptance story.
+
+def _wilson_world(partner_extra=("pt2",)):
+    index = {
+        "cw": {"name": "Caleb Williams", "team": "CHI", "position": "QB"},
+        "qb2": {"name": "My QB Two", "team": "BUF", "position": "QB"},
+        "qb3": {"name": "My QB Three", "team": "MIA", "position": "QB"},
+        "tf": {"name": "Terrance Ferguson", "team": "LAR", "position": "TE"},
+        "rb1": {"name": "My RB One", "team": "NYJ", "position": "RB"},
+        "rb2": {"name": "My RB Two", "team": "DAL", "position": "RB"},
+        "rbb": {"name": "My Bench RB", "team": "SEA", "position": "RB"},
+        "wr1": {"name": "My WR One", "team": "CIN", "position": "WR"},
+        "wr2": {"name": "My WR Two", "team": "PHI", "position": "WR"},
+        "wr3": {"name": "My WR Three", "team": "HOU", "position": "WR"},
+        "wb": {"name": "My Bench WR", "team": "GB", "position": "WR"},
+        "te1": {"name": "My TE One", "team": "KC", "position": "TE"},
+        "te2": {"name": "My TE Two", "team": "JAX", "position": "TE"},
+        "pq": {"name": "His Elite QB", "team": "BUF", "position": "QB"},
+        "gw": {"name": "Garrett Wilson", "team": "NYJ", "position": "WR"},
+        "pw2": {"name": "His WR Two", "team": "DAL", "position": "WR"},
+        "pw3": {"name": "His WR Three", "team": "SF", "position": "WR"},
+        "pw4": {"name": "His WR Four", "team": "TB", "position": "WR"},
+        "pt1": {"name": "His TE One", "team": "BAL", "position": "TE"},
+        "pt2": {"name": "His TE Two", "team": "CHI", "position": "TE"},
+        "pr1": {"name": "His RB One", "team": "DEN", "position": "RB"},
+        "pr2": {"name": "His RB Two", "team": "LV", "position": "RB"},
+    }
+    values = {
+        "cw": 2855.0, "qb2": 2900.0, "qb3": 2700.0, "tf": 324.0,
+        "rb1": 3000.0, "rb2": 2900.0, "rbb": 1750.0,
+        "wr1": 3200.0, "wr2": 3100.0, "wr3": 2800.0, "wb": 1300.0,
+        "te1": 2000.0, "te2": 1400.0,
+        "pq": 4000.0, "gw": 3165.0, "pw2": 2500.0, "pw3": 2400.0,
+        "pw4": 2300.0, "pt1": 2400.0, "pt2": 1500.0,
+        "pr1": 500.0, "pr2": 400.0,
+    }
+    # Unrostered value-table rows pin the positional ranks the appeal test
+    # reads: Williams is QB9 and Ferguson TE24 league-wide, not elite.
+    for i in range(7):
+        pid = f"dq{i}"
+        index[pid] = {"name": f"Dummy QB {i + 1}", "team": "FA", "position": "QB"}
+        values[pid] = 2950.0 + 150.0 * i
+    for i in range(19):
+        pid = f"dt{i}"
+        index[pid] = {"name": f"Dummy TE {i + 1}", "team": "FA", "position": "TE"}
+        values[pid] = 400.0 + 50.0 * i
+    mine = ["cw", "qb2", "qb3", "tf", "rb1", "rb2", "rbb",
+            "wr1", "wr2", "wr3", "wb", "te1", "te2"]
+    his = ["pq", "gw", "pw2", "pw3", "pw4", "pt1", "pr1", "pr2"]
+    his += [p for p in partner_extra if p not in his]
+    ctx = {
+        "rosters": [
+            {"roster_id": 1, "owner_id": "me", "players": mine,
+             "metadata": {"team_name": "My Team"}},
+            {"roster_id": 2, "owner_id": "him", "players": his,
+             "metadata": {"team_name": "Trustfund QBs"}},
+        ],
+        "users": [{"user_id": "me", "display_name": "Me"},
+                  {"user_id": "him", "display_name": "Him"}],
+        "roster_positions": ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX"],
+    }
+    return index, values, ctx, mine
+
+
+def _wilson_bundle(monkeypatch, packages, partner_extra=("pt2",)):
+    index, values, ctx, mine = _wilson_world(partner_extra)
+    monkeypatch.setattr(evidence, "get_players_index_global", lambda *a, **k: index)
+    monkeypatch.setattr(evidence, "get_model_value_table_cached",
+                        lambda *a, **k: [{"id": pid, "value": v}
+                                         for pid, v in values.items()])
+
+    def wasset(pid):
+        return {"player_id": pid, "id": pid, "name": index[pid]["name"],
+                "position": index[pid]["position"], "value": values[pid]}
+
+    monkeypatch.setattr(
+        evidence, "value_matched_acquire_packages",
+        lambda focus, players, picks, **kw: [
+            {"assets": [wasset(p) for p in pkg],
+             "send_value": sum(values[p] for p in pkg)} for pkg in packages])
+    return _bundle(ctx=ctx, roster={"roster_id": 1, "players": mine})
+
+
+def test_target_mode_wilson_package_blocked_and_counter_offered(base, monkeypatch):
+    _gate(monkeypatch, True)
+    bundle = _wilson_bundle(monkeypatch, [["cw", "tf"]])
+    pack, _tools = evidence.build_trade_finding(bundle, {}, ["gw"])
+    assert pack["mode"] == "target"
+    # The straight package is never pitched, and it is not dressed up as
+    # a fair-band miss either: it is the blocked shape.
+    assert pack["findings"] == [] and pack["no_fit"] is True
+    assert pack["closest_miss"] is None
+    blocked = pack["partner_blocked"]
+    assert blocked["partner_team"] == "Trustfund QBs"
+    assert [p["player_id"] for p in blocked["give"]] == ["cw", "tf"]
+    assert blocked["give_total"] == 3179.0 and blocked["receive_total"] == 3165.0
+    appeal = {a["player_id"]: a for a in blocked["partner_appeal"]}
+    assert appeal["cw"]["appeal"] is False
+    assert appeal["cw"]["reason"] == "they are set at QB"
+    assert appeal["tf"]["appeal"] is False
+    assert appeal["tf"]["reason"] == "they are set at TE"
+    # Instead, a complementary 2-for-2: each side takes one upgrade and
+    # one downgrade slot, totals inside the fair band.
+    counter = pack["counter"]
+    assert counter is not None and counter["counter"] is True
+    assert [p["player_id"] for p in counter["give"]] == ["wr1", "te2"]
+    assert [p["player_id"] for p in counter["receive"]] == ["gw", "pt2"]
+    assert counter["give_total"] == 4600.0 and counter["receive_total"] == 4665.0
+    assert abs(counter["fairness_gap"]) <= 0.07 * 4665.0
+    slots = counter["slots"]
+    assert slots["viewer_upgrade"] == {"position": "WR", "player": "Garrett Wilson"}
+    assert slots["viewer_downgrade"]["position"] == "TE"
+    assert slots["partner_upgrade"]["position"] == "WR"
+    assert slots["partner_downgrade"]["position"] == "TE"
+    # The appeal piece of the counter passed the same headline test.
+    assert counter["partner_appeal"][0]["appeal"] is True
+
+
+def test_target_mode_wilson_blocked_plain_decline_without_counter(base, monkeypatch):
+    _gate(monkeypatch, True)
+    # No second TE on his roster: no complementary swap exists either.
+    bundle = _wilson_bundle(monkeypatch, [["cw", "tf"]], partner_extra=())
+    pack, _tools = evidence.build_trade_finding(bundle, {}, ["gw"])
+    assert pack["findings"] == [] and pack["no_fit"] is True
+    assert pack["closest_miss"] is None
+    assert pack["partner_blocked"]["partner_team"] == "Trustfund QBs"
+    assert pack["counter"] is None
+
+
+def test_target_mode_cleaner_package_pitches_instead(base, monkeypatch):
+    _gate(monkeypatch, True)
+    # The matcher also finds a single RB who fills his genuine RB hole:
+    # that package has an acceptance story and pitches; the blocked
+    # shape disappears entirely.
+    bundle = _wilson_bundle(monkeypatch, [["cw", "tf"], ["rb1"]])
+    pack, _tools = evidence.build_trade_finding(bundle, {}, ["gw"])
+    assert pack["no_fit"] is False and len(pack["findings"]) == 1
+    f = pack["findings"][0]
+    assert [p["player_id"] for p in f["give"]] == ["rb1"]
+    assert f["partner_appeal"][0]["appeal"] is True
+    assert f["partner_appeal"][0]["reason"] == "fills their RB hole"
+    assert pack["partner_blocked"] is None and pack["counter"] is None
+
+
+def test_target_mode_positive_control_bench_two_for_one_pitches(base, monkeypatch):
+    _gate(monkeypatch, True)
+    # Bench assets 2-for-1 for the starter: the headline bench RB fills
+    # his RB hole, so the consolidation still pitches.
+    bundle = _wilson_bundle(monkeypatch, [["rbb", "wb"]])
+    pack, _tools = evidence.build_trade_finding(bundle, {}, ["gw"])
+    assert pack["no_fit"] is False and len(pack["findings"]) == 1
+    f = pack["findings"][0]
+    assert [p["player_id"] for p in f["give"]] == ["rbb", "wb"]
+    assert pack["partner_blocked"] is None and pack["counter"] is None
+
+
+def test_target_mode_pick_construction_when_no_pair_exists(base, monkeypatch):
+    _gate(monkeypatch, True)
+    # Same no-counter world as the plain decline, except she holds a
+    # future 1st: the only working construction is player-plus-pick,
+    # where the pick stands in his downgrade slot (worth less than the
+    # player he sends back).
+    bundle = _wilson_bundle(monkeypatch, [["cw", "tf"]], partner_extra=())
+    bundle["ctx"]["picks_by_roster"] = {
+        "1": [{"season": 2027, "round": 1, "original_owner": "1"}]}
+    monkeypatch.setattr(evidence, "pick_value_table",
+                        lambda **kw: {"2027_1_mid": 2400.0})
+    pack, _tools = evidence.build_trade_finding(bundle, {}, ["gw"])
+    assert pack["findings"] == [] and pack["partner_blocked"] is not None
+    counter = pack["counter"]
+    assert counter is not None
+    assert [p["position"] for p in counter["give"]] == ["RB", "PICK"]
+    assert counter["give"][1]["name"] == "2027 mid 1st"
+    assert [p["player_id"] for p in counter["receive"]] == ["gw", "pw2"]
+    assert counter["slots"]["partner_upgrade"]["position"] == "RB"
+    assert counter["slots"]["partner_downgrade"] == {
+        "position": "PICK", "player": "2027 mid 1st"}
+    assert counter["slots"]["viewer_downgrade"]["position"] == "WR"
+
+
+def test_target_mode_rebuilding_partner_voids_veteran_headline(base, monkeypatch):
+    _gate(monkeypatch, True)
+    # A rebuilding partner (young roster, three future 1sts, per the
+    # site's own direction read): a 31-year-old RB who would headline
+    # for a contender is a non-starter for him, so the in-band straight
+    # package is blocked on age profile alone.
+    index = {
+        "old": {"name": "Old Vet RB", "team": "SF", "position": "RB"},
+        "yw": {"name": "Young WR", "team": "HOU", "position": "WR"},
+        "yq": {"name": "Young QB", "team": "HOU", "position": "QB"},
+        "tw": {"name": "His Target WR", "team": "NYJ", "position": "WR"},
+        "hq": {"name": "His QB", "team": "MIA", "position": "QB"},
+        "hr": {"name": "His RB", "team": "DEN", "position": "RB"},
+        "hr2": {"name": "His RB Two", "team": "DEN", "position": "RB"},
+        "hw": {"name": "His WR Two", "team": "DAL", "position": "WR"},
+        "ht": {"name": "His TE", "team": "BAL", "position": "TE"},
+    }
+    rows = [
+        {"id": "old", "value": 800.0, "age": 31}, {"id": "yw", "value": 300.0, "age": 23},
+        {"id": "yq", "value": 200.0, "age": 24},
+        {"id": "tw", "value": 750.0, "age": 24}, {"id": "hq", "value": 300.0, "age": 25},
+        {"id": "hr", "value": 350.0, "age": 23}, {"id": "hr2", "value": 200.0, "age": 26},
+        {"id": "hw", "value": 300.0, "age": 22}, {"id": "ht", "value": 250.0, "age": 24},
+    ]
+    ctx = {
+        "rosters": [
+            {"roster_id": 1, "owner_id": "me", "players": ["old", "yw", "yq"],
+             "metadata": {"team_name": "My Team"}},
+            {"roster_id": 2, "owner_id": "him",
+             "players": ["tw", "hq", "hr", "hr2", "hw", "ht"],
+             "metadata": {"team_name": "Rebuild U"}},
+        ],
+        "users": [{"user_id": "me", "display_name": "Me"},
+                  {"user_id": "him", "display_name": "Him"}],
+        "roster_positions": ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX"],
+        "picks_by_roster": {"2": [
+            {"season": 2027, "round": 1, "display": "2027 1.03"},
+            {"season": 2027, "round": 1, "display": "2027 1.07"},
+            {"season": 2028, "round": 1, "display": "2028 1.05"}]},
+    }
+    monkeypatch.setattr(evidence, "get_players_index_global", lambda *a, **k: index)
+    monkeypatch.setattr(evidence, "get_model_value_table_cached", lambda *a, **k: rows)
+    monkeypatch.setattr(
+        evidence, "value_matched_acquire_packages",
+        lambda focus, players, picks, **kw: [
+            {"assets": [{"player_id": "old", "id": "old", "name": "Old Vet RB",
+                         "position": "RB", "value": 800.0}], "send_value": 800.0}])
+    bundle = _bundle(ctx=ctx, roster={"roster_id": 1, "players": ["old", "yw", "yq"]})
+    pack, _tools = evidence.build_trade_finding(bundle, {}, ["tw"])
+    assert pack["findings"] == [] and pack["no_fit"] is True
+    blocked = pack["partner_blocked"]
+    assert blocked["partner_team"] == "Rebuild U"
+    assert blocked["partner_appeal"][0]["appeal"] is False
+    assert blocked["partner_appeal"][0]["reason"] == "too old for a rebuilding roster"
+    assert pack["counter"] is None
+
+
+def test_counter_answer_leads_with_the_pass_and_offers_the_swap(base, monkeypatch):
+    _gate(monkeypatch, True)
+    bundle = _wilson_bundle(monkeypatch, [["cw", "tf"]])
+    pack, _tools = evidence.build_trade_finding(bundle, {}, ["gw"])
+
+    def boom(*a, **k):
+        raise AssertionError("model called for a blocked pack")
+    monkeypatch.setattr(compose_mod, "call_model_json", boom)
+    answer = compose_answer("trade_finding", "How can I get Garrett Wilson?", pack)
+    assert answer["verdict"] == "No clean fit right now"
+    assert "would likely pass on the straight package" in answer["text"]
+    assert "You could try My WR One and My TE Two for Garrett Wilson and His TE Two" \
+        in answer["text"]
+    assert "upgrade at WR" in answer["text"]
+    assert "downgrade at TE" in answer["text"]
+    assert {r["value"] for r in answer["receipts"]} >= {"4665", "4600", "65"}
+    assert answer["act_link"]["href"].endswith("/trade?a=gw,pt2&b=wr1,te2")
+
+
 # -- composer -------------------------------------------------------------------------------
 
 LEAGUE = {"platform": "sleeper", "league_id": "blackedraw", "season": 2026,
@@ -495,7 +756,13 @@ def test_partner_want_reply_matrix():
 # anchor (max-value piece) is the position under test. Target r2 (3300):
 # the QB package totals 3200 (gap 100), the RB package 3100 (gap 200),
 # both inside the fairness band.
-_CONSTRAINED_VALUES = {"q1": 2600, "r1": 2500, "w1": 600}
+_CONSTRAINED_VALUES = {"q1": 2600, "r1": 2500, "w1": 600,
+                       # His QB is a genuine hole in this world (below the
+                       # starter threshold), so the partner-acceptance layer
+                       # passes the QB headline piece: these tests grade
+                       # constraint mechanics, not acceptance. The set-QB
+                       # partner shape lives in the guard tests below.
+                       "q2": 400}
 
 
 def _constrained_asset(vals, pid):

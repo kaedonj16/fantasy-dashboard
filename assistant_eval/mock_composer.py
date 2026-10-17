@@ -1501,6 +1501,62 @@ def _trade_finding(pack):
             "followups": [_fu("Who else could I target?"), _fu("What can I get for my spare players?")],
         })
         return ans
+    blocked = pack.get("partner_blocked") or {}
+    if blocked:
+        partner = blocked.get("partner_team") or "That team"
+        target = (pack.get("target_player") or {}).get("name") or "that target"
+        bits = "; ".join(
+            f"{a.get('name')}: {a.get('reason')}"
+            for a in blocked.get("partner_appeal") or [] if not a.get("appeal"))
+        reason = f", because {bits}" if bits else ""
+        lead = (f"No clean fit right now. The packages that reach {target} are not ones "
+                f"{partner} would take. {partner} would likely pass on the straight "
+                f"package: {_names(blocked.get('receive') or [])} for "
+                f"{_names(blocked.get('give') or [])} totals "
+                f"{fmt(blocked.get('receive_total'))} against "
+                f"{fmt(blocked.get('give_total'))}{reason}.")
+        counter = pack.get("counter") or {}
+        if counter:
+            slots = counter.get("slots") or {}
+            vu, vd = slots.get("viewer_upgrade") or {}, slots.get("viewer_downgrade") or {}
+            pu, pd = slots.get("partner_upgrade") or {}, slots.get("partner_downgrade") or {}
+            vd_s = (f"the {vd.get('player')} is a downgrade, a pick in place of a player"
+                    if vd.get("position") == "PICK" else
+                    f"{vd.get('player')} is a downgrade at {vd.get('position')}, a step "
+                    f"below your current starter there")
+            pu_s = (f"your {pu.get('player')} is the upgrade, a future pick for his window"
+                    if pu.get("position") == "PICK" else
+                    f"{pu.get('player')} is the upgrade at {pu.get('position')}")
+            pd_s = (f"the {pd.get('player')} is the downgrade, a pick in place of a player"
+                    if pd.get("position") == "PICK" else
+                    f"{pd.get('player')} is the downgrade at {pd.get('position')}, a "
+                    f"startable piece a step below the one they send back")
+            read = counter.get("profile_read")
+            text = (lead
+                    + f" You could try {_names(counter.get('give') or [])} for "
+                      f"{_names(counter.get('receive') or [])} instead: totals "
+                      f"{fmt(counter.get('receive_total'))} against "
+                      f"{fmt(counter.get('give_total'))}, a fairness gap of "
+                      f"{fmt(abs(float(counter.get('fairness_gap') or 0)))}."
+                    + (f" {read}" if read else "")
+                    + f" For you, {vu.get('player')} is the upgrade at {vu.get('position')}; "
+                      f"{vd_s}. For {partner}, {pu_s}; {pd_s}.")
+            ans.update({
+                "verdict": "No clean fit right now", "text": text,
+                "receipts": _side_receipts(counter),
+                "followups": [_fu("Who is available on waivers?"),
+                              _fu("What should I do with my team this week?")],
+            })
+            return ans
+        ans.update({
+            "verdict": "No clean fit right now",
+            "text": (lead + f" Nothing in range is built from pieces {partner} needs. "
+                     "The nearest alternative is the waiver wire."),
+            "receipts": _side_receipts(blocked),
+            "followups": [_fu("Who is available on waivers?"),
+                          _fu("What should I do with my team this week?")],
+        })
+        return ans
     miss = pack.get("closest_miss") or {}
     if miss:
         ans.update({
