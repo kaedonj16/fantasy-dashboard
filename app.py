@@ -12185,6 +12185,7 @@ def _next_steps_waiver_claims(ctx: dict, viewer_roster_id, model_value_table: li
     value_by_pid: dict = {}
     names_by_pid: dict = {}
     positions_by_pid: dict = {}
+    teams_by_pid: dict = {}
     for row in model_value_table:
         if not isinstance(row, dict):
             continue
@@ -12199,6 +12200,9 @@ def _next_steps_waiver_claims(ctx: dict, viewer_roster_id, model_value_table: li
         value_by_pid[pid] = apply_te_premium(_v, _rpos, _tep_ns)
         if _rpos:
             positions_by_pid[pid] = _rpos
+        _tm = str(row.get("team") or "").strip().upper()
+        if _tm:
+            teams_by_pid[pid] = _tm
         _nm = row.get("name") or row.get("full_name")
         if _nm:
             names_by_pid[pid] = str(_nm)
@@ -12209,6 +12213,10 @@ def _next_steps_waiver_claims(ctx: dict, viewer_roster_id, model_value_table: li
         _mpos = str(_meta.get("position") or _meta.get("pos") or "").upper()
         if _mpos and _pid not in positions_by_pid:
             positions_by_pid[_pid] = _mpos
+        if _pid not in teams_by_pid:
+            _tm = str(_meta.get("team") or "").strip().upper()
+            if _tm:
+                teams_by_pid[_pid] = _tm
         if _pid not in names_by_pid:
             _nm = _meta.get("full_name") or _meta.get("name")
             if _nm:
@@ -12338,6 +12346,7 @@ def _next_steps_waiver_claims(ctx: dict, viewer_roster_id, model_value_table: li
         positions_by_pid=positions_by_pid,
         roster_values_by_pid=value_by_pid,
         injured_by_pid=injured_by_pid,
+        teams_by_pid=teams_by_pid,
         drop_bars=drop_bars,
         starter_gaps=starter_gaps,
         need_mults=need_mults,

@@ -362,10 +362,14 @@ def recommend_waivers(
         for pos in ("QB", "RB", "WR", "TE")
     }
     positions_by_pid = {}
+    teams_by_pid = {}
     for pid, meta in (pidx or {}).items():
         _p = str((meta or {}).get("position") or (meta or {}).get("pos") or "").upper()
         if _p:
             positions_by_pid[str(pid)] = _p
+        _t = str((meta or {}).get("team") or "").upper()
+        if _t:
+            teams_by_pid[str(pid)] = _t
     roster_values: dict[str, float] = {}
     candidates: list[dict] = []
     cand_by_pid: dict[str, dict] = {}
@@ -408,6 +412,7 @@ def recommend_waivers(
         roster_pids=[str(p) for p in (roster_players or [])],
         roster_positions=roster_positions,
         positions_by_pid=positions_by_pid,
+        teams_by_pid=teams_by_pid,
         roster_values_by_pid=roster_values,
         starter_gaps=gap_by_pos,
         need_mults=need_mults,
@@ -2790,10 +2795,14 @@ def select_waiver_add(
     drop_bars = waiver_drop_bar_value(
         [str(p) for p in (roster_players or [])], value_by_pid, inj_map, pidx)
     positions_by_pid = {}
+    teams_by_pid = {}
     for pid, meta in (pidx or {}).items():
         _p = str((meta or {}).get("position") or (meta or {}).get("pos") or "").upper()
         if _p:
             positions_by_pid[str(pid)] = _p
+        _t = str((meta or {}).get("team") or "").upper()
+        if _t:
+            teams_by_pid[str(pid)] = _t
     name_by_pid: dict[str, str] = {}
 
     candidates: list[dict] = []
@@ -2845,6 +2854,7 @@ def select_waiver_add(
         roster_pids=[str(p) for p in (roster_players or [])],
         roster_positions=roster_positions,
         positions_by_pid=positions_by_pid,
+        teams_by_pid=teams_by_pid,
         roster_values_by_pid=value_by_pid,
         injured_by_pid=inj_map,
         drop_bars=drop_bars,

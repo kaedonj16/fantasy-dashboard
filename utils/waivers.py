@@ -1419,8 +1419,26 @@ Two deliberate fail-closed rules (2026-10-16, the covered-QB regression):
     surfaced on value gates alone; a caller/calendar-attested starter
     hole (gap > 0) is the only value-only pass. Callers must build the
     projection maps (as the Waivers page does) or accept hole-only
-    output. ``cannot_evaluate`` (partial data) still never suppresses a
-    suggestion on its own, and roster-less ranking calls are unchanged.
+    output. Roster-less ranking calls are unchanged.
+
+Three more team-fit rules (2026-10-17, the Mafah / Hunt claims on a
+contender roster deep at RB):
+
+  * ``cannot_evaluate`` fails closed the same way: when the evaluator
+    itself returns cannot_evaluate (the candidate has no usable week-0
+    projection in the supplied maps), the claim is suppressed in
+    team-fit mode unless gap > 0. A zero-production deep stash is not
+    surfaced on value gates alone either.
+  * ``add_drop`` value confirmation: the evaluator costs the drop on
+    projected points only, so the candidate must ALSO clear the x1.05
+    margin over the actual drop candidate's roster value when values
+    were supplied. Cutting a more valuable player for a spot-window
+    projection edge is a downgrade, not a claim.
+  * ``stash`` rationale (non-QB positions): a no-gain stash surfaces
+    only when tied to the roster - an attested hole, a startable-count
+    deficit at the position (``position_room_detail``: healthy bodies
+    below dedicated + flex requirement), a handcuff to the room's own
+    starter, or a value that clears the room's weakest starter.
 """
 
 _TEAM_SUGGESTION_POSITIONS = ("QB", "RB", "WR", "TE")
@@ -1665,6 +1683,96 @@ def qb_coverage_detail(roster_pids, positions_by_pid, injured_by_pid=None,
     return {"covered": bool(qb_slots == 1 and healthy_qbs >= qb_slots
                             and not hole),
             "healthy_qbs": healthy_qbs, "qb_slots": qb_slots, "hole": hole}
+
+
+def position_room_detail(roster_pids, positions_by_pid, injured_by_pid=None,
+                         roster_positions=None, position=None,
+                         values_by_pid=None, teams_by_pid=None) -> dict:
+    """Room fit for one position on the viewer's roster (2026-10-17).
+
+    The multi-slot companion to ``qb_coverage_detail``: where the QB rule
+    asks "is the room covered", this reports the facts the claim gate
+    needs for RB / WR / TE (and QB, for reporting callers):
+
+      ``required``: startable bodies the lineup asks of the position:
+        its dedicated slots plus every flex-type slot the position is
+        eligible to fill (an RB room that cannot cover RB + FLEX is
+        short even with both dedicated slots manned).
+      ``healthy``: rostered players at the position who are not
+        seriously hurt (a QUESTIONABLE player still counts, mirroring
+        the selector's healthy-QB treatment).
+      ``deficit``: ``healthy < required``.
+      ``weakest_starter_value``: the lowest value among the room's
+        starters by value (the ``dedicated``-th highest healthy value),
+        or None when the room cannot fill its dedicated slots or no
+        values were supplied. This is the line a future-starter stash
+        must clear, as opposed to the worst bench body the x1.05 drop
+        bar compares against.
+      ``starter_team``: NFL team of the room's most valuable healthy
+        player at the position (the handcuff anchor), when teams and
+        values were supplied.
+
+    Pure reporting: callers decide what the facts suppress.
+    """
+    pos = str(position or "").upper()
+    positions_by_pid = {str(k): str(v or "").upper()
+                        for k, v in (positions_by_pid or {}).items()}
+    injured_by_pid = injured_by_pid or {}
+    values_by_pid = values_by_pid or {}
+    teams_by_pid = {str(k): str(v or "").upper()
+                    for k, v in (teams_by_pid or {}).items()}
+    dedicated = 0
+    flex = 0
+    try:
+        from utils.lineups import count_lineup_slots, slot_eligible_positions
+        _slots = count_lineup_slots(roster_positions or [])
+        dedicated = int(_slots.get(pos) or 0)
+        if pos == "QB":
+            dedicated += int(_slots.get("SUPER_FLEX") or 0)
+        for _slot, _n in _slots.items():
+            if _slot in ("FLEX", "RB_WR", "WR_TE", "RB_TE") \
+                    and pos in slot_eligible_positions(_slot):
+                flex += int(_n or 0)
+    except Exception:
+        dedicated = {"QB": 1, "RB": 2, "WR": 2, "TE": 1}.get(pos, 0)
+        flex = 0
+    healthy_pids = []
+    for rpid in roster_pids or []:
+        rpid = str(rpid)
+        if positions_by_pid.get(rpid) != pos:
+            continue
+        st = str(injured_by_pid.get(rpid) or "").upper()
+        if st in SERIOUS_INJURY_STATUSES:
+            continue
+        healthy_pids.append(rpid)
+    healthy_vals = []
+    for rpid in healthy_pids:
+        try:
+            healthy_vals.append(float(values_by_pid.get(rpid) or 0.0))
+        except (TypeError, ValueError):
+            continue
+    healthy_vals.sort(reverse=True)
+    weakest_starter = None
+    if dedicated > 0 and len(healthy_vals) >= dedicated:
+        weakest_starter = healthy_vals[dedicated - 1]
+    starter_team = None
+    if teams_by_pid and healthy_pids:
+        _ranked = sorted(
+            healthy_pids,
+            key=lambda p: float(values_by_pid.get(p) or 0.0), reverse=True)
+        if _ranked:
+            starter_team = teams_by_pid.get(_ranked[0]) or None
+    required = dedicated + flex
+    return {
+        "position": pos,
+        "dedicated_slots": dedicated,
+        "flex_slots": flex,
+        "required": required,
+        "healthy": len(healthy_pids),
+        "deficit": bool(len(healthy_pids) < required),
+        "weakest_starter_value": weakest_starter,
+        "starter_team": starter_team,
+    }
 
 
 def calendar_need_by_position(weekly_availability, dedicated_slots, *,
@@ -1945,6 +2053,7 @@ def _selector_weekly_maps(pid, cand, roster_pids, positions_by_pid,
 def rank_team_waiver_suggestions(candidates, *, owned_ids=None, roster_pids=None,
                                  roster_positions=None, positions_by_pid=None,
                                  roster_values_by_pid=None, injured_by_pid=None,
+                                 teams_by_pid=None,
                                  drop_bars=None, starter_gaps=None, need_mults=None,
                                  calendar_need=None, is_redraft=False, is_sf=False,
                                  n_teams=12, min_value=25.0, min_score=0.0,
@@ -1964,6 +2073,7 @@ def rank_team_waiver_suggestions(candidates, *, owned_ids=None, roster_pids=None
     owned = {str(p) for p in (owned_ids or set())}
     roster_pids = [str(p) for p in (roster_pids or [])]
     positions_by_pid = {str(k): str(v or "").upper() for k, v in (positions_by_pid or {}).items()}
+    teams_by_pid = {str(k): str(v or "").upper() for k, v in (teams_by_pid or {}).items()}
     roster_values = {str(k): float(v or 0) for k, v in (roster_values_by_pid or {}).items()}
     injured_by_pid = injured_by_pid or {}
     breakout = {}
@@ -2018,6 +2128,7 @@ def rank_team_waiver_suggestions(candidates, *, owned_ids=None, roster_pids=None
             needs[p] = float(info["need_mult"])
     if competing_holes is None:
         competing_holes = sum(1 for v in gaps.values() if v > 0)
+    _room_cache: dict = {}
     results = []
     for raw in candidates or []:
         if not isinstance(raw, dict):
@@ -2167,6 +2278,66 @@ def rank_team_waiver_suggestions(candidates, *, owned_ids=None, roster_pids=None
             # caller/calendar-attested starter hole (gap > 0). Roster-less
             # ranking calls (no roster to judge) are unaffected.
             continue
+        if outcome == "cannot_evaluate" and roster_pids and roster_positions \
+                and gap <= 0:
+            # Fail closed on the evaluator's own verdict too (2026-10-17):
+            # evaluate_pickup returns cannot_evaluate when the candidate
+            # has no usable week-0 projection, and that verdict used to be
+            # emitted as a claim because only the no-maps case above was
+            # closed. The live case was a deep-stash rookie RB with ~zero
+            # current production (Phil Mafah) pitched to a contender
+            # whose RB room was deep and healthy: the maps held no points
+            # for him, so nothing had ever judged his fit. A candidate the
+            # maps cannot score is the same evidentiary hole as no maps
+            # at all and gets the same treatment; the attested-hole
+            # exception (gap > 0) is unchanged.
+            continue
+        if outcome == "add_drop" and drop_pid and roster_values:
+            # Value confirmation against the ACTUAL drop (2026-10-17):
+            # the evaluator costs a drop on projected points alone, so a
+            # spot-window projection edge can name a far more valuable
+            # player as the cut - the classic case is a starter who is
+            # out for the whole window, projects ~0, and loses every
+            # points tie-break (the Kareem Hunt claim: his value was a
+            # fraction of the injured starter the math cut). The x1.05
+            # position bar only ever compared the candidate against the
+            # worst rostered body. A claim must clear the same margin
+            # over the player it actually cuts, or it is a downgrade
+            # wearing a projection edge.
+            _drop_val = roster_values.get(str(drop_pid))
+            if _drop_val is not None and not (val > float(_drop_val) * 1.05):
+                continue
+        if outcome == "stash" and pos != "QB" and roster_pids \
+                and roster_positions:
+            # Stash rationale (2026-10-17): a no-lineup-gain stash must
+            # be tied to THIS roster - an attested hole (gap > 0), a
+            # startable-count deficit at the position (healthy bodies
+            # below the dedicated + flex requirement the lineup asks of
+            # it), a handcuff to the room's own starter (same NFL team
+            # as its top healthy player), or the candidate's own value
+            # clearing the room's weakest STARTER (a genuine future
+            # starter, not a body who merely beats the worst bench
+            # value). Anything else is bench weight on a covered room.
+            # QB stashes keep the coverage rule's semantics: depth past
+            # the slots is startable in multi-QB formats, and the 1QB
+            # covered room already suppressed every QB claim above.
+            if pos not in _room_cache:
+                _room_cache[pos] = position_room_detail(
+                    roster_pids, positions_by_pid, injured_by_pid,
+                    roster_positions, position=pos,
+                    values_by_pid=roster_values, teams_by_pid=teams_by_pid)
+            _room = _room_cache[pos]
+            _cand_team = str(raw.get("team") or "").upper()
+            _stash_ok = (
+                gap > 0
+                or _room["deficit"]
+                or (_room["weakest_starter_value"] is not None
+                    and val > _room["weakest_starter_value"] * 1.05)
+                or (bool(_cand_team) and _room["starter_team"] is not None
+                    and _cand_team == _room["starter_team"])
+            )
+            if not _stash_ok:
+                continue
         adds_count = raw.get("adds_count", raw.get("trending_adds", raw.get("adds_48h")))
         guidance = claim_guidance_for(
             score, adds_count=adds_count, competing_holes=competing_holes,
