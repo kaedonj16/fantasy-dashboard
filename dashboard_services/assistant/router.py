@@ -32,6 +32,7 @@ SCHEMA = {
         "team_names": {"type": "array", "items": {"type": "string"}},
         "metric_hint": {"type": ["string", "null"]},
         "target_position": {"type": ["string", "null"]},
+        "give_position": {"type": ["string", "null"]},
         "position_hint": {"type": ["string", "null"]},
         "teams_mode": {"type": ["string", "null"], "enum": ["dynasty", "this_season", None]},
         "week": {"type": ["integer", "null"]},
@@ -60,7 +61,7 @@ SCHEMA = {
         "slot": {"type": ["string", "null"]},
         "start_mode": {"type": ["string", "null"], "enum": ["start", "sit", None]},
     },
-    "required": ["intent", "player_names", "give_player_names", "receive_player_names", "picks", "give_picks", "receive_picks", "other_team_hint", "team_names", "metric_hint", "target_position", "position_hint", "teams_mode", "week", "season", "draft_slot", "draft_year", "day_hint", "preference_text", "board_kind", "family", "second_metric_hint", "top_n", "position", "positions", "team", "window_weeks", "direction", "replace_mode", "waiver_mode", "value_in_picks", "shop_pool", "slot", "start_mode", "max_age", "pool", "finish_n"],
+    "required": ["intent", "player_names", "give_player_names", "receive_player_names", "picks", "give_picks", "receive_picks", "other_team_hint", "team_names", "metric_hint", "target_position", "give_position", "position_hint", "teams_mode", "week", "season", "draft_slot", "draft_year", "day_hint", "preference_text", "board_kind", "family", "second_metric_hint", "top_n", "position", "positions", "team", "window_weeks", "direction", "replace_mode", "waiver_mode", "value_in_picks", "shop_pool", "slot", "start_mode", "max_age", "pool", "finish_n"],
     "additionalProperties": False,
 }
 
@@ -76,7 +77,13 @@ SYSTEM = (
     "trade_finding: the user wants you to FIND or propose a trade (find me a trade, who should I "
     "target, what can I get for X, I need a running back, who is gettable). For trade_finding, put a "
     "named player (theirs to move, or a specific target on another team) in player_names and a wanted "
-    "position in target_position (QB, RB, WR, TE), else null. "
+    "position in target_position (QB, RB, WR, TE), else null. target_position is what comes BACK to "
+    "the user. When the position named is the one the user would SEND, not the one they want back "
+    "(what rb can I trade for A.J. Brown, which running back could I give up for Chase, what wr gets "
+    "me Jefferson, any te deal for Kelce), put that position in give_position instead and leave "
+    "target_position null: give_position is the user's outgoing side. A position attached to a named "
+    "player of theirs (what can I get for my rb Josh Jacobs) is neither field: the player goes in "
+    "player_names and both positions stay null. "
     "If the user asks what a named player is worth in picks, or what picks they could get for him, "
     "it is trade_finding with value_in_picks true and the player in player_names. If the user asks "
     "who they should trade away or shop with no player named, it is trade_finding with shop_pool true. "
@@ -303,6 +310,37 @@ def positions_reply(message: str) -> list[str] | None:
     if any(tok not in _REPLY_FILLER for tok in rest.split()):
         return None
     return found
+
+
+# A partner-want reply after a trade-target answer: "he wants a rb",
+# "he needs a wr", "they want a qb back". The position names what the
+# OTHER manager wants back, which is the user's outgoing side; the
+# service applies it as the give constraint on the pending trade
+# question (same target, same partner). The whole message must be the
+# want: anything longer routes on its own.
+_PARTNER_WANT_RE = re.compile(
+    r"^(?:(?:he|she|they|the owner|that team|that manager)\s+)?"
+    r"(?:wants?|needs?|is asking for|asking for)\s+(?:an?\s+)?"
+    r"(quarterbacks?|qbs?|running\s*backs?|rbs?|wide\s*receivers?|wrs?|"
+    r"receivers?|tight\s*ends?|tes?)"
+    r"(?:\s+back)?[.!?]*$")
+
+
+def partner_want_reply(message: str) -> str | None:
+    """The position a partner-want reply names, or None when the
+    message is not exactly a partner want ("he wants a rb"). First
+    person is excluded on purpose: "i want a rb" is the user naming a
+    target side, which routes as its own question."""
+    m = _PARTNER_WANT_RE.match((message or "").strip().lower())
+    if not m:
+        return None
+    word = re.sub(r"\s+", " ", m.group(1)).strip()
+    if word in ("receiver", "receivers"):
+        return "WR"
+    for phrase, pos in _REPLY_POSITION_PHRASES:
+        if word == phrase:
+            return pos
+    return None
 
 
 def _metric_hints_in(m: str) -> list[str]:
@@ -536,6 +574,32 @@ def _target_position(m: str):
         if re.search(pattern, m):
             return pos
     return None
+
+
+# Outgoing-position trade shapes: the position named is what the user
+# would SEND, not what they want back ("what rb can I trade for A.J.
+# Brown", "which running back could I give up for Chase", "what wr gets
+# me Jefferson", "any te deal for Kelce"). The position word sits inside
+# the matched span, so _target_position on the span reads it without
+# picking up a position named anywhere else in the message. Shapes that
+# attach the position to a named player of theirs ("what can I get for
+# my rb Josh Jacobs") deliberately do not match: that is a sell question
+# about the player, not a position constraint.
+_GIVE_POSITION_RE = re.compile(
+    r"\b(?:what|which) (?:qb|rb|wr|te|quarterback|running ?back|wide ?receiver|wideout|tight ?end) "
+    r"(?:can|could|should) i (?:trade|send|give up|give|offer|move|deal)\b"
+    r"|\b(?:what|which) (?:qb|rb|wr|te|quarterback|running ?back|wide ?receiver|wideout|tight ?end) "
+    r"(?:gets|would get|will get) me\b"
+    r"|\bany (?:qb|rb|wr|te|quarterback|running ?back|wide ?receiver|wideout|tight ?end) "
+    r"(?:deal|package|trade) for\b"
+    r"|\bgive up (?:my )?(?:a |an )?(?:qb|rb|wr|te|quarterback|running ?back|wide ?receiver|wideout|tight ?end) for\b")
+
+
+def _give_position_in(message: str):
+    match = _GIVE_POSITION_RE.search((message or "").lower())
+    if not match:
+        return None
+    return _target_position(match.group(0))
 
 # Outcome-of-the-game questions: whether the user wins or loses this
 # week's matchup. They outrank the this_week catch-all below ("this week"
@@ -818,6 +882,7 @@ def _keyword_route(message: str) -> dict:
     base = {"player_names": [], "give_player_names": [], "receive_player_names": [], "picks": [],
             "give_picks": [], "receive_picks": [],
             "other_team_hint": None, "team_names": [], "metric_hint": None, "target_position": None,
+            "give_position": None,
             "position_hint": None, "teams_mode": None, "week": None, "season": None,
             "draft_slot": None,
             "draft_year": None, "day_hint": None, "position": None,
@@ -976,6 +1041,14 @@ def _keyword_route(message: str) -> dict:
     if re.search(r"\bstart\b|\bsit\b|\bflex\b|\bbench\b|who (should|do) i play", m):
         return {**base, "intent": "start_sit",
                 "slot": _slot_in(m), "start_mode": _start_mode_in(m)}
+    give_pos = _give_position_in(m)
+    if give_pos:
+        # The outgoing-position shapes are finding questions in their own
+        # right, and _FINDING_RE does not match them ("what rb can I trade
+        # for X" is neither "who can I trade for" nor "what can I get
+        # for"). The named target, when there is one, resolves downstream
+        # from the message like every other keyword finding route.
+        return {**base, "intent": "trade_finding", "give_position": give_pos}
     if _FINDING_RE.search(m):
         return {**base, "intent": "trade_finding", "target_position": _target_position(m)}
     if _DEADLINE_RE.search(m):
@@ -1082,6 +1155,7 @@ def classify(question: str, context: dict | None = None, history: list | None = 
             "team_names": data.get("team_names") or [],
             "metric_hint": data.get("metric_hint"),
             "target_position": data.get("target_position"),
+            "give_position": data.get("give_position"),
             "position_hint": data.get("position_hint"),
             "teams_mode": data.get("teams_mode"),
             "week": data.get("week"),
@@ -1108,6 +1182,20 @@ def classify(question: str, context: dict | None = None, history: list | None = 
             "slot": data.get("slot"),
             "start_mode": data.get("start_mode"),
         }
+        if intent == "trade_finding":
+            # The outgoing-position shapes are unambiguous finding
+            # language, and the model has misread the position as the
+            # wanted side before (live: "what rb can I trade for aj
+            # brown" answered with a QB deal). The deterministic read
+            # wins when it fires; when the model also parked the same
+            # position in target_position next to a named target, that
+            # was the same misread, so the wanted side clears.
+            give_pos = _give_position_in(question)
+            if give_pos:
+                entities["give_position"] = give_pos
+                if entities.get("target_position") == give_pos \
+                        and entities.get("player_names"):
+                    entities["target_position"] = None
         return {"intent": intent, "entities": entities, "preference_text": data.get("preference_text"), "router_model": "model", "prompt_version": ROUTER_PROMPT_VERSION}
     except Exception as exc:  # model down (rate limit / unavailable): keyword fallback
         logger.debug("[assistant] router model failed, keyword fallback: %s", exc)

@@ -1750,22 +1750,43 @@ def _finding(partner_roster_id, partner_team, give, receive, partner_info,
         "fairness": fairness,
         "acceptance_rate": acceptance_rate,
         "partner_needs": partner_needs, "partner_surplus": partner_surplus,
-        "you_fill": sorted({p["position"] for p in give if p.get("position")}
-                           & set(partner_needs)),
-        "they_fill": sorted({p["position"] for p in receive if p.get("position")}
-                            & set(viewer_needs or [])),
+        # Named for the reader (the composer sees the raw pack): the give
+        # side fills the PARTNER's needs, the receive side fills the
+        # viewer's. The old "you_fill" key read backwards in answers
+        # ("You fill QB" for a deal where she sends the QB away).
+        "fills_partner_needs": sorted({p["position"] for p in give if p.get("position")}
+                                      & set(partner_needs)),
+        "fills_your_needs": sorted({p["position"] for p in receive if p.get("position")}
+                                   & set(viewer_needs or [])),
     }
 
 
-def _need_findings(ctx, bundle, target_position, index):
-    """Need mode: the Suggestions engine's own computed partner packages."""
+def _give_anchor_ok(finding, give_position):
+    """True when a finding's outgoing side is anchored at give_position:
+    the give piece carrying the most value plays that position. Smaller
+    throw-ins keep the trade engine's package shapes; the anchor is the
+    headline piece the user asked to build the deal from."""
+    give = (finding or {}).get("give") or []
+    if not give or not give_position:
+        return False
+    anchor = max(give, key=lambda p: float(p.get("value") or 0))
+    return str(anchor.get("position") or "").upper() == give_position
+
+
+def _need_findings(ctx, bundle, target_position, index, give_position=None):
+    """Need mode: the Suggestions engine's own computed partner packages.
+
+    Returns (findings, miss, tools, needs, surplus, fallback). fallback is
+    the best finding that ignores an outgoing-position constraint, set
+    only when the constraint is what emptied the findings (see
+    _target_findings for the same contract)."""
     tools = ["ai.context_builders.build_trade_suggestions_context"]
     try:
         sugg = build_trade_suggestions_context(ctx, str(bundle["roster"]["roster_id"]))
     except Exception:
         sugg = None
     if not sugg:
-        return [], None, tools, [], []
+        return [], None, tools, [], [], None
     viewer_needs = sugg.get("viewer_needs") or []
     viewer_surplus = sugg.get("viewer_surplus") or []
     roster_map = ctx.get("roster_map") or {}
@@ -1791,13 +1812,24 @@ def _need_findings(ctx, bundle, target_position, index):
     partners = [p for p in (sugg.get("top_partners") or [])
                 if (p.get("targets_they_have") or []) and (p.get("targets_viewer_sends") or [])]
     shaped = [_shape(p) for p in partners]
-    if not target_position:
-        return shaped, None, tools, viewer_needs, viewer_surplus
-    wanted = {"RB", "WR", "TE"} if target_position == "FLEX" else {target_position}
-    matched = [f for f in shaped
-               if any(p.get("position") in wanted for p in f["receive"])]
+    if target_position:
+        wanted = {"RB", "WR", "TE"} if target_position == "FLEX" else {target_position}
+        matched = [f for f in shaped
+                   if any(p.get("position") in wanted for p in f["receive"])]
+    else:
+        matched = shaped
     miss = shaped[0] if (not matched and shaped) else None
-    return matched, miss, tools, viewer_needs, viewer_surplus
+    if not give_position:
+        return matched, miss, tools, viewer_needs, viewer_surplus, None
+    constrained = [f for f in matched if _give_anchor_ok(f, give_position)]
+    if constrained:
+        return constrained, None, tools, viewer_needs, viewer_surplus, None
+    if matched:
+        # The receive side had fits; the outgoing-position constraint is
+        # what emptied the list, so the best of those fits rides back as
+        # the labeled fallback rather than a closest miss.
+        return [], None, tools, viewer_needs, viewer_surplus, matched[0]
+    return [], miss, tools, viewer_needs, viewer_surplus, None
 
 
 def _sell_findings(ctx, bundle, sell_entry, values, index):
@@ -1855,10 +1887,19 @@ def _sell_findings(ctx, bundle, sell_entry, values, index):
     return findings, miss, tools, viewer_info.get("needs") or [], viewer_info.get("surplus") or []
 
 
-def _target_findings(ctx, bundle, target_entry, owner_roster, values, index):
+def _target_findings(ctx, bundle, target_entry, owner_roster, values, index,
+                     give_position=None):
     """Specific-target mode: value-matched offers from the viewer's own
     roster for one named player, surfaced only when the owner's needs or
-    surplus make the deal plausible for them too."""
+    surplus make the deal plausible for them too.
+
+    Returns (findings, miss, tools, needs, surplus, fallback). When the
+    user constrained the outgoing side to a position ("what rb can I
+    trade for X"), findings are only the packages anchored at that
+    position; if none of them is plausible and in band, fallback is the
+    best unconstrained finding, so the answer can decline the position
+    framing and label the overall fit as a fallback instead of silently
+    presenting another position's deal as the answer."""
     from utils.trade_value import fair_value_band
     tools = ["trade_acquire_packages.value_matched_acquire_packages",
              "utils.trade.classify_position_needs",
@@ -1872,14 +1913,14 @@ def _target_findings(ctx, bundle, target_entry, owner_roster, values, index):
     owner_info = by_roster.get(str(owner_roster.get("roster_id"))) or {}
     focus = float(target_entry.get("value") or 0)
     if not focus:
-        return [], None, tools, viewer_info.get("needs") or [], viewer_info.get("surplus") or []
+        return [], None, tools, viewer_info.get("needs") or [], viewer_info.get("surplus") or [], None
     pool, _counts = _asset_pool(bundle.get("roster") or {}, values, index)
     pool = [p for p in pool if p["player_id"] != target_entry.get("player_id")]
     if not pool:
-        return [], None, tools, viewer_info.get("needs") or [], viewer_info.get("surplus") or []
+        return [], None, tools, viewer_info.get("needs") or [], viewer_info.get("surplus") or [], None
     try:
         pkgs = value_matched_acquire_packages(
-            focus, pool, [], max_options=6,
+            focus, pool, [], max_options=12 if give_position else 6,
             league_size=fit.get("num_teams") or 12, min_results=1) or []
     except Exception:
         pkgs = []
@@ -1900,7 +1941,11 @@ def _target_findings(ctx, bundle, target_entry, owner_roster, values, index):
         elif miss is None or abs(f["fairness_gap"]) < abs(miss["fairness_gap"]):
             miss = f
     findings.sort(key=lambda f: abs(f["fairness_gap"]))
-    return findings, miss, tools, viewer_info.get("needs") or [], viewer_info.get("surplus") or []
+    if not give_position:
+        return findings, miss, tools, viewer_info.get("needs") or [], viewer_info.get("surplus") or [], None
+    constrained = [f for f in findings if _give_anchor_ok(f, give_position)]
+    fallback = findings[0] if (findings and not constrained) else None
+    return constrained, miss, tools, viewer_info.get("needs") or [], viewer_info.get("surplus") or [], fallback
 
 
 _ROUND_LABELS = {1: "1st", 2: "2nd", 3: "3rd", 4: "4th"}
@@ -2017,9 +2062,12 @@ def build_trade_finding(bundle, entities, player_ids) -> tuple[dict, list[str]]:
     """
     pack = _base_pack("trade_finding", bundle)
     tools: list[str] = []
-    pack.update({"mode": None, "target_position": None, "sell_player": None,
+    pack.update({"mode": None, "target_position": None, "give_position": None,
+                 "sell_player": None,
                  "target_player": None, "viewer_needs": [], "viewer_surplus": [],
                  "findings": [], "no_fit": False, "closest_miss": None,
+                 "position_no_fit": False, "fallback_finding": None,
+                 "partner_scoped": False, "partner_team": None,
                  "margin": {"thin": False}})
     ctx = bundle.get("ctx") or {}
     roster = bundle.get("roster") or {}
@@ -2048,6 +2096,12 @@ def build_trade_finding(bundle, entities, player_ids) -> tuple[dict, list[str]]:
     if target_position not in ("QB", "RB", "WR", "TE", "FLEX"):
         target_position = None
     pack["target_position"] = target_position
+    # The outgoing-side constraint ("what rb can I trade for X"): the
+    # anchor position of HER side of the deal. FLEX is not an anchor.
+    give_position = str(entities.get("give_position") or "").upper() or None
+    if give_position not in ("QB", "RB", "WR", "TE"):
+        give_position = None
+    pack["give_position"] = give_position
     index = _index()
     values = _value_rows()
     my_ids = {str(p) for p in (roster.get("players") or [])}
@@ -2066,6 +2120,7 @@ def build_trade_finding(bundle, entities, player_ids) -> tuple[dict, list[str]]:
                 if pid in {str(p) for p in (r.get("players") or [])}:
                     owner_roster = r
                     break
+    fallback = None
     shop_done = False
     if (entities or {}).get("shop_pool") and not named:
         shop = _shop_findings(ctx, bundle, values, index)
@@ -2087,8 +2142,9 @@ def build_trade_finding(bundle, entities, player_ids) -> tuple[dict, list[str]]:
     elif named_entry and owner_roster is not None:
         pack["mode"] = "target"
         pack["target_player"] = named_entry
-        findings, miss, used, needs, surplus = _target_findings(
-            ctx, bundle, named_entry, owner_roster, values, index)
+        findings, miss, used, needs, surplus, fallback = _target_findings(
+            ctx, bundle, named_entry, owner_roster, values, index,
+            give_position=give_position)
     elif named_entry:
         pack["mode"] = "target"
         pack["target_player"] = named_entry
@@ -2096,9 +2152,15 @@ def build_trade_finding(bundle, entities, player_ids) -> tuple[dict, list[str]]:
         findings, miss, used, needs, surplus = [], None, [], [], []
     else:
         pack["mode"] = "need"
-        findings, miss, used, needs, surplus = _need_findings(
-            ctx, bundle, target_position, index)
+        findings, miss, used, needs, surplus, fallback = _need_findings(
+            ctx, bundle, target_position, index, give_position=give_position)
     tools += used
+    if fallback is not None:
+        # The outgoing-position constraint, not the market, emptied the
+        # findings: the composer declines the position framing and may
+        # offer this best overall fit as a labeled fallback.
+        pack["position_no_fit"] = True
+        pack["fallback_finding"] = fallback
     # Worth in picks: price the sell player's value against next year's
     # pick table and carry the equivalents the answer may cite.
     if (entities or {}).get("value_in_picks") and pack["mode"] == "sell" \
@@ -2109,6 +2171,14 @@ def build_trade_finding(bundle, entities, player_ids) -> tuple[dict, list[str]]:
         if equiv:
             pack["pick_equivalents"] = equiv
             tools.append("dashboard_services.picks.load_pick_value_table")
+    # A partner-want follow-up turn ("he wants a rb") scopes the
+    # constraint to the partner from the previous answer; the composer
+    # names that partner in the decline before any widening.
+    pack["partner_scoped"] = bool((entities or {}).get("partner_scoped"))
+    if pack["mode"] == "target":
+        _lead = findings[0] if findings else fallback
+        if _lead:
+            pack["partner_team"] = _lead.get("partner_team")
     pack["viewer_needs"] = needs
     pack["viewer_surplus"] = surplus
     pack["findings"] = findings[:3]

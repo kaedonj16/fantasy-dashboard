@@ -191,10 +191,10 @@ def test_no_clean_fit_rejects_forced_trade():
 # -- questions.json schema sanity ------------------------------------------------------
 
 def test_questions_distribution_and_ids():
-    assert len(QUESTIONS) == 152
-    assert len(BY_ID) == 152
+    assert len(QUESTIONS) == 157
+    assert len(BY_ID) == 157
     assert Counter(q["type"] for q in QUESTIONS) == {
-        "start_sit": 7, "trade_eval": 4, "trade_finding": 6, "buy_sell_hold": 5, "player": 3,
+        "start_sit": 7, "trade_eval": 4, "trade_finding": 11, "buy_sell_hold": 5, "player": 3,
         "metric": 4, "waivers": 6, "this_week": 4, "leaderboard": 35,
         "playoffs": 4, "power_rankings": 2, "standings": 2, "matchup": 7,
         "schedule": 2, "breakout_board": 1, "breakout_track_record": 1,
@@ -223,7 +223,7 @@ def test_traps_present_and_shaped():
         "missing_stat", "namesake", "pro_gate", "early_season", "no_clean_fit",
         "no_scheduled_matchup", "no_keeper_settings", "missing_league",
         "unneeded_qb_claim", "excluded_player", "no_historical_form",
-        "faller_not_target"}
+        "faller_not_target", "position_constraint_ignored"}
     tw3 = BY_ID["tw3"]
     assert tw3["trap"]["kind"] == "unneeded_qb_claim"
     assert tw3["trap"]["player"] == "Baker Mayfield"
@@ -317,7 +317,8 @@ def test_leaderboard_reference_matches_pack_board():
 
 def test_trade_finding_questions_shaped():
     tf = {q["id"]: q for q in QUESTIONS if q["type"] == "trade_finding"}
-    assert set(tf) == {"tf1", "tf2", "tf3", "tf4", "pv1", "sp1"}
+    assert set(tf) == {"tf1", "tf2", "tf3", "tf4", "tf5", "tf6", "tf7",
+                       "tf8", "tf9", "pv1", "sp1"}
     # Findings carry side totals that match their player values, and the
     # gap is receive minus give, like every other trade pack.
     for q in tf.values():
@@ -470,7 +471,7 @@ def test_league_context_references_match_packs():
 
 # -- mock mode + poison ------------------------------------------------------------------
 
-def test_mock_mode_full_run_passes_152_of_152():
+def test_mock_mode_full_run_passes_157_of_157():
     for q in QUESTIONS:
         score = score_answer(q, compose_mock(q))
         assert score["passed"], f"{q['id']}: {score}"
@@ -479,7 +480,7 @@ def test_mock_mode_full_run_passes_152_of_152():
 def test_runner_mock_mode_exit_zero(capsys):
     assert runner.main(["--mode", "mock"]) == 0
     out = capsys.readouterr().out
-    assert "152/152 answers passed" in out
+    assert "157/157 answers passed" in out
 
 
 def test_runner_poison_is_detected(capsys):
