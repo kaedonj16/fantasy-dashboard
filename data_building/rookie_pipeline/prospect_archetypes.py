@@ -22,7 +22,10 @@ Design rules:
 - Basis season: the demonstrated peak profile. Among seasons with 8+
   games (all seasons if none qualify), the best per-game production rate
   discounted by min(1, games/12); seasons within 3% of the best are
-  tie-broken by share (market share WR/TE, dominator RB, TD:INT QB).
+  tie-broken by share (market share WR/TE, dominator RB, TD:INT QB). The
+  latest season is ALWAYS a candidate, even under 8 games: the scorer
+  grades from the latest season (in-progress included), so a basis pool
+  that excludes it makes the label silently lag the grade by a season.
 - Draft capital is a supporting input only (the NFL's own role
   projection): capped weights, never the sole driver, and Developmental
   uses it as a veto, never as a positive case for a role.
@@ -415,10 +418,20 @@ def _season_rate(pos: str, s: Dict) -> Optional[float]:
 
 
 def _pick_basis(pos: str, seasons: List[Dict]):
-    """v2 basis season: discounted peak rate, share tie-break (spec 2.2)."""
+    """v2 basis season: discounted peak rate, share tie-break (spec 2.2).
+
+    The candidate pool is the 8+ game seasons (all seasons if none
+    qualify) PLUS always the latest season with a rate. The 8+ rule
+    keeps a short old season from becoming the demonstrated peak, but
+    applied to the latest season it contradicts the grade in the same
+    modal: scoring keys on the latest season (in-progress included),
+    so an in-progress breakout under 8 games could never become the
+    basis and the label lagged a full season (Reynolds, 2026-10-17:
+    71.8 rec yds/g in 2026 priced off his 21.4 in 2025, "Blocking TE"
+    beside a 91.6 Production component). The min(1, games/12)
+    discount still prices the partial sample honestly.
+    """
     ordered = sorted(seasons, key=lambda s: _num(s.get("season")) or 0)
-    full = [s for s in ordered if (_num(s.get("games_played")) or 0) >= 8]
-    pool = full if full else ordered
 
     def discounted(s):
         r = _season_rate(pos, s)
@@ -436,12 +449,18 @@ def _pick_basis(pos: str, seasons: List[Dict]):
             v = _num(s.get("market_share_yards"))
         return v if v is not None else -1.0
 
-    scored = [(discounted(s), s) for s in pool]
+    scored = [(discounted(s), s) for s in ordered]
     scored = [(d, s) for d, s in scored if d is not None]
     if not scored:
         return None, None
-    best = max(d for d, _ in scored)
-    cands = [s for d, s in scored if d >= 0.97 * best]
+    full = [(d, s) for d, s in scored
+            if (_num(s.get("games_played")) or 0) >= 8]
+    pool = full if full else list(scored)
+    latest = scored[-1][1]
+    if not any(s is latest for _d, s in pool):
+        pool = pool + [scored[-1]]
+    best = max(d for d, _ in pool)
+    cands = [s for d, s in pool if d >= 0.97 * best]
     basis = max(cands, key=tiebreak)
     idx = ordered.index(basis)
     growth = None
