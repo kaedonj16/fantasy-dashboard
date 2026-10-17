@@ -391,6 +391,30 @@ def score_answer(question: dict, answer: dict) -> dict:
         trap_ok = str(trap.get("name") or "").lower() not in full.lower()
         if not trap_ok:
             notes.append("excluded-player trap failed: the screened-out player was named")
+    elif trap.get("kind") == "subset_ranking":
+        # The rank-a-named-set trap: the ranking must cover the whole
+        # named set in the computed order. A ranking composed from a
+        # subset (or in mention order when the computed order differs)
+        # fails: every expected name must appear, in order.
+        _order = [str(n).lower() for n in trap.get("order") or []]
+        _pos = [full.lower().find(n) for n in _order]
+        trap_ok = bool(_order) and all(p >= 0 for p in _pos) \
+            and _pos == sorted(_pos)
+        if not trap_ok:
+            notes.append("subset-ranking trap failed: the answer must rank "
+                         "the full named set in the computed order")
+    elif trap.get("kind") == "unresolved_named":
+        # The rank gap trap: one named player could not be resolved.
+        # The answer must name him as typed, offer the nearest real
+        # match, and rank only the resolved players (their key numbers
+        # are enforced by the verdict check above).
+        _asked = str(trap.get("asked") or "").lower()
+        _near = str(trap.get("nearest") or "").lower()
+        trap_ok = bool(_asked) and _asked in full.lower() \
+            and (not _near or _near in full.lower())
+        if not trap_ok:
+            notes.append("unresolved-name trap failed: the answer must name "
+                         "the unresolved player and offer the nearest match")
     elif trap.get("kind") == "faller_not_target":
         # The draft-slotting trap: the class headliner ranked above the
         # named pick is presumed taken, so he may surface only as the

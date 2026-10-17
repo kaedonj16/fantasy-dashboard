@@ -831,6 +831,122 @@ def _tool_compare_players(bundle, args) -> dict:
     return out
 
 
+# Ranking keys the profile sources already carry, so ordering by any of
+# them needs no new data plumbing: canonical key -> (profile field,
+# answer label). Anything a user states outside this map is NOT
+# substituted silently: the router carries it as an unsupported key and
+# the entry names it.
+RANK_KEYS = {
+    "value": ("value", "value"),
+    "ppg": ("ppg", "points per game"),
+    "recent_ppg": ("recent_ppg", "recent points per game"),
+    "expected_ppg": ("expected_ppg", "expected points per game"),
+    "touches_per_game": ("touches_per_game", "touches per game"),
+}
+
+
+def _rank_names_arg(args) -> list:
+    raw = (args or {}).get("players")
+    if isinstance(raw, (list, tuple)):
+        names = [str(n).strip() for n in raw if str(n or "").strip()]
+    elif raw:
+        names = [n.strip() for n in str(raw).split(",") if n.strip()]
+    else:
+        names = []
+    if not names:
+        for field in ("player_a", "player_b", "player"):
+            if (args or {}).get(field):
+                names.append(str(args[field]).strip())
+    out, seen = [], set()
+    for n in names:
+        if n.lower() not in seen:
+            seen.add(n.lower())
+            out.append(n)
+    return out[:8]
+
+
+def _tool_rank_players(bundle, args) -> dict:
+    """Rank an explicit named set, ordered by code from fetched numbers.
+
+    Every named player is resolved against the full player universe
+    (the same machinery as compare_players) and profiled from the same
+    sources; the ranking is the sort of those profiles on the ranking
+    key, computed here, never by the composing model. A name that does
+    not resolve is carried in "unresolved" BY NAME (with the nearest
+    real match, or the ambiguity candidates) so the answer states the
+    gap instead of presenting a subset ranking as complete. Fewer than
+    two resolved players is not a ranking: ok=False with the same
+    named-gap detail for the decline.
+    """
+    out = _base("rank_players")
+    names = _rank_names_arg(args)
+    key = str((args or {}).get("key") or "value")
+    if key not in RANK_KEYS:
+        key = "value"
+    field, label = RANK_KEYS[key]
+    out["key"] = key
+    out["key_label"] = label
+    unsupported = str((args or {}).get("unsupported_key") or "").strip()
+    if unsupported:
+        out["unsupported_key"] = unsupported
+    rows, unresolved = [], []
+    for name in names:
+        pid, info, ambiguous = _resolve(bundle, name)
+        if ambiguous:
+            unresolved.append({"asked": name, "reason": "ambiguous",
+                               "candidates": ambiguous})
+            continue
+        if not pid:
+            try:
+                from dashboard_services.assistant.resolve import nearest_names
+                near = nearest_names(name)
+            except Exception:
+                near = []
+            unresolved.append({"asked": name, "reason": "not_found",
+                               "nearest": near})
+            continue
+        prof = _profile_lite(bundle, pid)
+        rows.append({"player_id": str(pid),
+                     "name": prof.get("name") or info.get("name"),
+                     "team": prof.get("team"), "position": prof.get("position"),
+                     "key_value": prof.get(field),
+                     "value": prof.get("value"), "ppg": prof.get("ppg"),
+                     "recent_ppg": prof.get("recent_ppg")})
+    keyed = [r for r in rows if r["key_value"] is not None]
+    unkeyed = [r for r in rows if r["key_value"] is None]
+    keyed.sort(key=lambda r: (-float(r["key_value"]),
+                              -float(r["value"] or 0),
+                              str(r["name"] or "")))
+    ranking = keyed + unkeyed
+    for i, r in enumerate(ranking):
+        r["rank"] = i + 1 if r["key_value"] is not None else None
+        if r["key_value"] is None:
+            r["missing_key"] = True
+    out["ranking"] = ranking
+    out["unresolved"] = unresolved
+    out["players"] = [{"player_id": r["player_id"], "name": r["name"]}
+                      for r in ranking]
+    for r in ranking:
+        if r["key_value"] is not None:
+            out["receipts"].append({"label": f"{r['name']} {label}",
+                                    "value": str(r["key_value"])})
+    if len(rows) < 2:
+        out["ok"] = False
+        out["missing"] = "fewer than two of the named players resolved"
+        first_missing = next((u for u in unresolved
+                              if u["reason"] == "not_found"), None)
+        if first_missing:
+            out["not_found"] = first_missing["asked"]
+        near_all = []
+        for u in unresolved:
+            for n in u.get("nearest") or []:
+                if n not in near_all:
+                    near_all.append(n)
+        if near_all:
+            out["nearest"] = near_all
+    return out
+
+
 def _mover_row(r):
     return {"player_id": str(r.get("player_id") or r.get("id") or ""),
             "name": r.get("name"), "team": r.get("team"),
@@ -1066,6 +1182,7 @@ TOOL_FUNCS = {
     "team_roster": _tool_team_roster,
     "league_lookup": _tool_league_lookup,
     "compare_players": _tool_compare_players,
+    "rank_players": _tool_rank_players,
     "value_lookup": _tool_value_lookup,
     "metric_definition": _tool_metric_definition,
     "next_up": _tool_next_up,
@@ -1113,6 +1230,10 @@ TOOL_CATALOG = [
     {"name": "compare_players",
      "description": "Two players side by side: value, PPG vs expected, target share, snap share, recent form.",
      "args": {"player_a": "first player name", "player_b": "second player name"}},
+    {"name": "rank_players",
+     "description": "Rank an explicit named set of players (2 or more) by one key: resolves EVERY named player against the full player universe and orders them by code from their profile numbers. Use only when the question names the set to rank; league-wide boards belong to top_board/deep_board.",
+     "args": {"players": "comma-separated player names",
+              "key": "value | ppg | recent_ppg | expected_ppg | touches_per_game"}},
     {"name": "value_lookup",
      "description": "Trade values and 7-day value movement. With a player: his value and his 7-day move. Without: the top risers and fallers in value this week.",
      "args": {"player": "player name or null"}},

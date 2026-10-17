@@ -59,7 +59,8 @@ _PLANNER_SYSTEM = (
 
 _PLAN_ARG_FIELDS = ("player", "player_a", "player_b", "stat", "metric",
                     "position", "team", "kind", "top_n", "family",
-                    "max_age", "pool", "season")
+                    "max_age", "pool", "season", "players", "key",
+                    "unsupported_key")
 
 _PLAN_SCHEMA = {
     "type": "object",
@@ -99,6 +100,14 @@ _OPEN_SYSTEM = (
     "the metrics both of them have and name the missing ones for that "
     "player; never drop a player, or the comparison, over a missing "
     "metric. "
+    "A rank_players entry carries a ranking computed by code: present "
+    "the players in exactly that order, each with his ranking-key "
+    "number, and never reorder them. A name in the entry's unresolved "
+    "list was NOT ranked: say so by name (not found, offering the "
+    "closest match when one is listed, or ambiguous between the listed "
+    "candidates), and if the entry carries an unsupported_key, say "
+    "plainly that the ranking is by value because that key is not "
+    "tracked here. "
     "Verdict: a short headline when the evidence supports one, else "
     "null. Never mention tools, evidence, or any internal data "
     "structure; call it your league data or the site's numbers. "
@@ -215,6 +224,45 @@ def _deterministic_compare_entry(bundle: dict, question: str) -> dict | None:
     return None
 
 
+def _deterministic_rank_entry(bundle: dict, question: str) -> dict | None:
+    """The rank_players entry for a rank-a-named-set shape, or None.
+
+    A rank shape (router.rank_shape) whose spans are player-like (at
+    least two resolve, are ambiguous, or near-miss a real name) is
+    fetched deterministically, before the planner: the planner is a
+    model and can fetch one player's numbers and let the composer
+    assert a ranking of the whole set from that subset (the collapse
+    audit failure this seam closes). The entry is returned even when
+    fewer than two names resolve, because it carries the named-gap
+    detail the decline answers from. Any other shape returns None and
+    the planner runs as usual.
+    """
+    try:
+        from dashboard_services.assistant.router import rank_shape
+    except Exception:
+        return None
+    shape = rank_shape(question or "")
+    if not shape:
+        return None
+
+    def _player_like(span: str) -> bool:
+        pid, _info, ambiguous = tools_mod._resolve(bundle, span)
+        if pid or ambiguous:
+            return True
+        try:
+            from dashboard_services.assistant.resolve import nearest_names
+            return bool(nearest_names(span, limit=1))
+        except Exception:
+            return False
+
+    if sum(1 for n in shape["names"] if _player_like(n)) < 2:
+        return None
+    return tools_mod.run_tool(
+        "rank_players",
+        {"players": list(shape["names"]), "key": shape["key"],
+         "unsupported_key": shape.get("unsupported_key")}, bundle)
+
+
 def plan_and_fetch(question: str, bundle: dict, thread: dict | None = None,
                    frozen_evidence: list | None = None) -> tuple[dict, list[str]]:
     """Run the planner loop and build the open evidence pack.
@@ -246,6 +294,18 @@ def plan_and_fetch(question: str, bundle: dict, thread: dict | None = None,
             if not compare_entry.get("ok"):
                 pack["available"] = False
             return pack, ["compare_players"]
+        # A rank-a-named-set shape fetches rank_players deterministically
+        # and that entry IS the evidence: every named player resolved and
+        # ordered by code, or a named-gap decline when fewer than two
+        # resolve. The planner never improvises the set.
+        rank_entry = _deterministic_rank_entry(bundle, question)
+        if rank_entry is not None:
+            pack["evidence"] = [rank_entry]
+            pack["tools_called"] = ["rank_players"]
+            pack["context_players"] = thread.get("context_players") or []
+            if not rank_entry.get("ok"):
+                pack["available"] = False
+            return pack, ["rank_players"]
     payload_base = {
         "question": question,
         "league": {"name": bundle.get("league_name"),
@@ -351,7 +411,60 @@ def _gated_open_answer(entry: dict) -> dict:
             "actions": [], "mentions": []}
 
 
+def _rank_decline_answer(entry: dict) -> dict:
+    """Named decline for a rank ask where fewer than two players resolved.
+
+    Every unresolved name is answered BY NAME (not found, with the
+    closest real match offered; or ambiguous between named candidates),
+    and the resolved side is stated, so the asker can re-ask with the
+    right name. A generic decline here would hide which name failed,
+    and a one-player "ranking" would be the subset failure again.
+    """
+    ranking = entry.get("ranking") or []
+    resolved = [str(r.get("name")) for r in ranking if r.get("name")]
+    parts = []
+    follow = []
+    for u in entry.get("unresolved") or []:
+        asked = str(u.get("asked") or "").strip()
+        if not asked:
+            continue
+        if u.get("reason") == "ambiguous":
+            cands = ", ".join(str(c.get("name")) for c in
+                              (u.get("candidates") or []) if c.get("name"))
+            parts.append(f"{asked} matches more than one player"
+                         + (f" ({cands})" if cands else "")
+                         + ", so I cannot tell which one you mean.")
+            continue
+        parts.append(f"I could not find {asked} in the player pool.")
+        near = [str(n) for n in (u.get("nearest") or []) if n]
+        if near:
+            parts.append(f"The closest match is {near[0]}.")
+            if resolved and len(entry.get("unresolved") or []) == 1:
+                ask = (f"Rank {', '.join(resolved + [near[0]])} by "
+                       f"{entry.get('key_label') or 'value'}")
+                follow.append(compose_mod.followup_pair(ask, ask))
+    if len(resolved) == 1:
+        parts.append(f"Only {resolved[0]} resolved, so there is no "
+                     "ranking to make from this set.")
+    elif not resolved:
+        parts.append("None of those names resolved to a player in the "
+                     "pool, so there is no ranking to make.")
+    if entry.get("unsupported_key"):
+        parts.append(f"{entry['unsupported_key']} is not a tracked "
+                     "ranking key here, so rankings run by value.")
+    return {"verdict": None, "text": " ".join(parts), "receipts": [],
+            "caveat": None,
+            "followups": compose_mod._clean_followups("open", follow),
+            "act_link": None, "actions": [], "mentions": []}
+
+
 def _fallback_verdict(evidence: list) -> str | None:
+    for entry in evidence:
+        ranking = entry.get("ranking") or []
+        if entry.get("tool") == "rank_players" and ranking \
+                and ranking[0].get("name"):
+            return (f"{ranking[0]['name']} tops this group by "
+                    f"{entry.get('key_label') or 'value'}")
     for entry in evidence:
         board = entry.get("board") or []
         if board and board[0].get("name"):
@@ -466,6 +579,14 @@ def compose_open_answer(question: str, pack: dict, *, history=None,
                     "receipts": [], "caveat": None, "followups": [],
                     "act_link": None, "actions": [], "mentions": [],
                     "candidates": ambiguous.get("ambiguous") or []}
+        rank_entry = next((e for e in evidence
+                           if e.get("tool") == "rank_players"), None)
+        if rank_entry is not None:
+            # A rank ask where fewer than two named players resolved:
+            # decline BY NAME from the entry's gap detail instead of
+            # the generic decline (or a one-player pseudo-ranking).
+            return compose_mod._enforce_grounding(
+                _rank_decline_answer(rank_entry), "open", pack, question)
         not_found = next((e for e in evidence if e.get("not_found")), None)
         if not_found is not None:
             # A named player could not be found: say so BY NAME and

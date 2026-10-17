@@ -191,17 +191,17 @@ def test_no_clean_fit_rejects_forced_trade():
 # -- questions.json schema sanity ------------------------------------------------------
 
 def test_questions_distribution_and_ids():
-    assert len(QUESTIONS) == 173
-    assert len(BY_ID) == 173
+    assert len(QUESTIONS) == 177
+    assert len(BY_ID) == 177
     assert Counter(q["type"] for q in QUESTIONS) == {
         "start_sit": 7, "trade_eval": 4, "trade_finding": 17, "buy_sell_hold": 6, "player": 4,
-        "metric": 5, "waivers": 6, "this_week": 4, "leaderboard": 35,
+        "metric": 5, "waivers": 6, "this_week": 4, "leaderboard": 36,
         "playoffs": 4, "power_rankings": 2, "standings": 2, "matchup": 7,
         "schedule": 2, "breakout_board": 1, "breakout_track_record": 1,
         "breakout_history": 2, "teams": 4, "pick_ownership": 1,
         "keeper": 4, "rookie": 3, "cross_league": 3,
         "replacement": 3, "handcuff": 3, "activity": 2, "watchlist": 2, "front_office": 2,
-        "open": 25, "live": 2, "draft": 5, "nfl_schedule": 5}
+        "open": 28, "live": 2, "draft": 5, "nfl_schedule": 5}
 
 
 def test_questions_entry_shape():
@@ -224,7 +224,7 @@ def test_traps_present_and_shaped():
         "no_scheduled_matchup", "no_keeper_settings", "missing_league",
         "unneeded_qb_claim", "excluded_player", "no_historical_form",
         "faller_not_target", "position_constraint_ignored",
-        "dropped_second_name"}
+        "dropped_second_name", "subset_ranking", "unresolved_named"}
     tw3 = BY_ID["tw3"]
     assert tw3["trap"]["kind"] == "unneeded_qb_claim"
     assert tw3["trap"]["player"] == "Baker Mayfield"
@@ -474,7 +474,7 @@ def test_league_context_references_match_packs():
 
 # -- mock mode + poison ------------------------------------------------------------------
 
-def test_mock_mode_full_run_passes_173_of_173():
+def test_mock_mode_full_run_passes_177_of_177():
     for q in QUESTIONS:
         score = score_answer(q, compose_mock(q))
         assert score["passed"], f"{q['id']}: {score}"
@@ -504,7 +504,7 @@ def test_no_float_artifacts_in_any_mock_answer():
 def test_runner_mock_mode_exit_zero(capsys):
     assert runner.main(["--mode", "mock"]) == 0
     out = capsys.readouterr().out
-    assert "173/173 answers passed" in out
+    assert "177/177 answers passed" in out
 
 
 def test_runner_poison_is_detected(capsys):
