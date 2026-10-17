@@ -105,9 +105,15 @@ def test_mobile_sheet_uses_dock_safe_token():
     assert "452px" not in ASSISTANT_CSS
     assert "left: 8px" in popup
     assert "right: 8px" in popup
-    # Scrim stops at the dock-safe line so the dock is never dimmed.
+    # Scrim runs the full viewport height (Kaedon, 2026-10-16):
+    # bottom: 0 leaves no bright gap behind or below the dock, but
+    # its z-index stays below the tabbar's --z-chrome (9999), so the
+    # dock is never covered and stays tappable on top of the dim.
     scrim = _rule(media, ".br-asst-scrim")
-    assert "bottom: var(--dock-safe-bottom)" in scrim
+    assert "bottom: 0" in scrim
+    assert "z-index: 9994" in scrim
+    assert "z-index: var(--z-modal)" not in scrim
+    assert "z-index: var(--z-modal-top)" not in popup
 
 
 def test_keyboard_aware_mobile_sheet():
