@@ -830,6 +830,16 @@ def _required_receipts(intent: str, pack: dict) -> list[dict]:
             for e in ordered[:4]:
                 rows.append({"label": str(e.get("name") or "Leader"),
                              "value": _fmt_num(e["value"])})
+        # Every NAMED player gets a row, including one outside the top
+        # 5 (his rank framing rides in player_ranks).
+        labeled = {r["label"] for r in rows}
+        for e in (pack.get("player_ranks") or []):
+            if not isinstance(e, dict) or len(rows) >= 4:
+                break
+            name = e.get("name")
+            if name and name not in labeled and e.get("value") is not None:
+                rows.append({"label": str(name), "value": _fmt_num(e["value"])})
+                labeled.add(name)
     elif intent == "this_week":
         for a in (pack.get("actions") or []):
             if not isinstance(a, dict):
@@ -921,6 +931,15 @@ def _required_receipts(intent: str, pack: dict) -> list[dict]:
         player = pack.get("player") or {}
         if player.get("value") is not None and len(rows) < 4:
             rows.append({"label": "Value", "value": _fmt_num(player["value"])})
+        # Players named after the subject (two-name questions) get a
+        # receipt row too, so the second name is visible in the answer
+        # even when the prose leads with the subject.
+        for e in (pack.get("also_named") or []):
+            if not isinstance(e, dict) or len(rows) >= 4:
+                break
+            if e.get("value") is not None:
+                rows.append({"label": f"{e.get('name')} value",
+                             "value": _fmt_num(e["value"])})
     elif intent == "playoffs":
         me = pack.get("me") or {}
         scen = pack.get("scenario") or {}
@@ -1817,6 +1836,12 @@ def no_data_answer(pack: dict) -> dict:
         text = _missing_text(missing)
     if nearest:
         text += f" The nearest tracked options are {', '.join(str(n) for n in nearest[:3])}. Ask about one of those and I can pull the live numbers."
+    # A no-data answer for the subject still names any other player the
+    # question asked about, so a two-name question never reads as if
+    # only one player was asked about.
+    for _line in _multi_name_lines(str((pack or {}).get("type") or ""),
+                                    pack, None, text):
+        text += f" {_line}"
     # The link names the surface the question was about: league-context
     # intents use their league link, everything else resolves normally
     # (a keeper no-data lands on the Keeper Optimizer, not Advanced Metrics).
@@ -2798,6 +2823,21 @@ def _enforce_grounding(answer: dict, intent: str, pack: dict, question: str) -> 
     out["actions"] = actions
     if not out.get("followups"):
         out["followups"] = _clean_followups(intent, [])
+    # Multi-name coverage, last: deterministic answers that return
+    # before the draft hook (no-fit, gated, no-data) still name every
+    # player the question named. The lines render pack numbers only,
+    # and the mention check makes this idempotent with the earlier
+    # append points.
+    if isinstance(pack, dict) and (pack.get("also_named")
+                                   or pack.get("player_ranks")
+                                   or pack.get("unanswered_names")):
+        _lines = _multi_name_lines(intent, pack, out.get("verdict"),
+                                   out.get("text"))
+        if _lines:
+            _t = str(out.get("text") or "").rstrip()
+            for _line in _lines:
+                _t = f"{_t} {_line}" if _t else _line
+            out["text"] = _t
     return out
 
 
@@ -3027,6 +3067,81 @@ def _compose_nfl_schedule(pack: dict) -> dict:
             "actions": [], "mentions": []}
 
 
+def _surname_mentioned(name, haystack: str) -> bool:
+    if not name:
+        return False
+    parts = str(name).split()
+    token = parts[-1] if parts else str(name)
+    return bool(token) and token in (haystack or "")
+
+
+def _multi_name_lines(intent: str, pack: dict, verdict, text) -> list[str]:
+    """Deterministic coverage lines for the players a question named
+    after the subject. Single-subject packs carry them explicitly
+    (also_named lite profiles, player_ranks, unanswered_names); when
+    the draft skipped one, the answer still names him, with his pack
+    numbers or an honest pointer, instead of reading as if the
+    question named one player (the compare-collapse family)."""
+    lines: list[str] = []
+    hay = f"{verdict or ''} {text or ''}"
+    if intent in ("player", "buy_sell_hold"):
+        for e in (pack.get("also_named") or []):
+            if not isinstance(e, dict) or not e.get("name"):
+                continue
+            if _surname_mentioned(e["name"], hay):
+                continue
+            bits = []
+            if e.get("ppg") is not None:
+                bits.append(f"scoring {_fmt_num(e['ppg'])} points per game")
+            if e.get("target_share") is not None:
+                bits.append(f"a target share of {_fmt_num(e['target_share'])}")
+            if e.get("delta_pct") is not None:
+                bits.append(f"a value trend of {_fmt_num(e['delta_pct'])} percent over the last month")
+            if e.get("value") is not None:
+                bits.append(f"a value of {_fmt_num(e['value'])}")
+            lines.append(f"Also asked: {e['name']} is at {', '.join(bits)}."
+                         if bits else f"Also asked: {e['name']}.")
+    elif intent == "breakout_history":
+        for e in (pack.get("also_named") or []):
+            if not isinstance(e, dict) or not e.get("name"):
+                continue
+            if _surname_mentioned(e["name"], hay):
+                continue
+            if e.get("was_call"):
+                label = (e.get("earliest_call") or {}).get("label")
+                lines.append(f"{e['name']} was a breakout call"
+                             + (f" ({label})." if label else "."))
+            else:
+                lines.append(f"{e['name']} was not a breakout call.")
+    elif intent == "metric":
+        subject_rank = pack.get("player_rank") or {}
+        for e in (pack.get("player_ranks") or []):
+            if not isinstance(e, dict):
+                continue
+            if str(e.get("player_id")) == str(subject_rank.get("player_id")):
+                continue
+            name = e.get("name")
+            if not name or _surname_mentioned(name, hay):
+                continue
+            if e.get("rank") is None or e.get("value") is None:
+                continue
+            lines.append(f"{name} ranks {_fmt_num(e['rank'])} of "
+                         f"{_fmt_num(e.get('pool_size'))} at {_fmt_num(e['value'])}.")
+    unanswered = [n for n in (pack.get("unanswered_names") or []) if n]
+    if unanswered:
+        subject = ((pack.get("subject") or {}).get("name")
+                   or (pack.get("prospect") or {}).get("name")
+                   or (pack.get("player") or {}).get("name")
+                   or (pack.get("sell_player") or {}).get("name")
+                   or (pack.get("target_player") or {}).get("name"))
+        for name in unanswered:
+            if _surname_mentioned(name, hay):
+                continue
+            lines.append(f"That covers {subject or 'the first player'}; "
+                         f"ask about {name} for the same check on him.")
+    return lines
+
+
 def compose_answer(intent: str, question: str, pack: dict, *, preferences=None, assumed_context=None, history=None, risk_profile=None) -> dict:
     """Compose an answer dict from an evidence pack. Pure eval seam."""
     if intent == "open":
@@ -3182,6 +3297,17 @@ def compose_answer(intent: str, question: str, pack: dict, *, preferences=None, 
                 data = dict(data)
                 data["text"] = (str(data.get("text") or "").rstrip()
                                 + " " + assumption).strip()
+    # Multi-name coverage: any player the question named whom the
+    # draft still has not mentioned gets his deterministic line before
+    # the mention/grounding passes re-read the text.
+    _extra_lines = _multi_name_lines(intent, pack, data.get("verdict"),
+                                      data.get("text"))
+    if _extra_lines:
+        data = dict(data)
+        _t = str(data.get("text") or "").rstrip()
+        for _line in _extra_lines:
+            _t = f"{_t} {_line}" if _t else _line
+        data["text"] = _t
     data = _ensure_required_mentions(intent, pack, data, receipts)
     verdict = data.get("verdict")
     if intent == "player" and not (verdict and str(verdict).strip()):

@@ -2753,10 +2753,92 @@ def build_trade_finding(bundle, entities, player_ids) -> tuple[dict, list[str]]:
     pack["closest_miss"] = miss if pack["no_fit"] else None
     if pack["no_fit"]:
         pack["nearest_alternative"] = "waivers"
+    # The named mode runs for ONE named player (the first): a question
+    # naming two ("what can I get for Waddle and Olave?", "trade for
+    # Wilson or Collins?") records the rest so the answer names them
+    # instead of dropping them. Defined below with the other
+    # multi-name helpers; resolved at call time.
+    if len(named) > 1:
+        extra_names = _unanswered_names(player_ids, index)
+        if extra_names:
+            pack["unanswered_names"] = extra_names
     return pack, tools
 
 
 # -- buy / sell / hold -------------------------------------------------------------
+
+def _lite_named(player_ids, index, values, season):
+    """Lite profiles for the players named AFTER the first in a
+    single-subject question. The single-subject builders read
+    player_ids[0] as their subject; before this, every other resolved
+    name vanished without a trace in the pack, so a two-name question
+    ("how are Garrett Wilson and Nico Collins doing") answered for the
+    first name alone and read as a complete answer (the compare-collapse
+    family). The lite rows carry the subject's headline numbers (value,
+    PPG, shares) so the composer can answer for every named player.
+    Numbers are normalized here to the house one-decimal form, with
+    snap_share as a percent: _metrics_for reports it as a 0-1 fraction
+    beside target_share as a percent, and the verbatim-citation rule
+    would print the raw mix."""
+    out = []
+    for pid in (player_ids or [])[1:4]:
+        pid = str(pid)
+        info = _player_info(pid, index)
+        row = {"player_id": pid, "name": info.get("name"),
+               "team": info.get("team"), "position": info.get("position"),
+               "value": _row_value(values.get(pid))}
+        try:
+            metrics, _mtools = _metrics_for(pid, season)
+        except Exception:
+            metrics = {}
+        for key in ("ppg", "target_share"):
+            v = (metrics or {}).get(key)
+            if isinstance(v, (int, float)):
+                row[key] = round(float(v), 1)
+        snap = (metrics or {}).get("snap_share")
+        if isinstance(snap, (int, float)):
+            snap = float(snap)
+            row["snap_share"] = (round(snap * 100.0, 1) if snap <= 1.5
+                                 else round(snap, 1))
+        out.append(row)
+    return out
+
+
+def _trend_delta_pct(pid):
+    """30-day value trend (percent) for one player, or None. The same
+    history read build_buy_sell_hold runs for its subject."""
+    try:
+        from dashboard_services.player_value_history import get_player_value_history
+        hist = get_player_value_history(str(pid), days=30) or []
+    except Exception:
+        return None
+    vals = []
+    for row in hist:
+        if isinstance(row, dict):
+            for k in ("value", "sf_value", "model_value"):
+                if row.get(k) is not None:
+                    try:
+                        vals.append(float(row[k]))
+                    except Exception:
+                        pass
+                    break
+    if len(vals) >= 2 and vals[0]:
+        return round((vals[-1] - vals[0]) / abs(vals[0]) * 100, 1)
+    return None
+
+
+def _unanswered_names(player_ids, index):
+    """Names of the resolved players a single-subject builder did not
+    run for (everyone past player_ids[0]). Recorded on the pack so the
+    composer names the gap instead of letting the second half of the
+    question disappear silently."""
+    out = []
+    for pid in (player_ids or [])[1:4]:
+        name = _player_info(str(pid), index).get("name")
+        if name:
+            out.append(name)
+    return out
+
 
 def build_buy_sell_hold(bundle, entities, player_ids) -> tuple[dict, list[str]]:
     pack = _base_pack("buy_sell_hold", bundle)
@@ -2818,6 +2900,17 @@ def build_buy_sell_hold(bundle, entities, player_ids) -> tuple[dict, list[str]]:
     if delta is not None:
         pack["signal"] = "buy" if delta >= 5 else ("sell" if delta <= -5 else "hold")
         pack["margin"] = {"thin": bool(abs(delta) < 8)}
+    # A buy/sell question can name two players ("buy Wilson or sell
+    # Collins?"): the signal above covers the first; the rest ride as
+    # lite profiles with their own trend, never dropped silently.
+    if len(player_ids or []) > 1:
+        extras = _lite_named(player_ids, index, values, bundle.get("season"))
+        for e in extras:
+            d = _trend_delta_pct(e["player_id"])
+            if d is not None:
+                e["delta_pct"] = d
+        if extras:
+            pack["also_named"] = extras
     return pack, tools
 
 
@@ -2901,6 +2994,13 @@ def build_replacement(bundle, entities, player_ids) -> tuple[dict, list[str]]:
     subject_age = _player_age(pid, index)
     subject = {**info, "value": subject_value, "age": subject_age}
     pack["subject"] = subject
+    # A replacement search runs per subject; a second named subject is
+    # recorded on every exit path so the answer names him instead of
+    # dropping him.
+    if len(player_ids or []) > 1:
+        extra_names = _unanswered_names(player_ids, index)
+        if extra_names:
+            pack["unanswered_names"] = extra_names
     if subject_value is None:
         pack["available"] = False
         pack["missing"] = f"no model value for {info.get('name') or 'that player'}"
@@ -2980,6 +3080,12 @@ def build_handcuff(bundle, entities, player_ids) -> tuple[dict, list[str]]:
     subject = {**info, "value": _row_value(values.get(str(pid))),
                "age": _player_age(pid, index)}
     pack["subject"] = subject
+    # Next-up is per subject; a second named player is recorded on
+    # every exit path so the answer names him instead of dropping him.
+    if len(player_ids or []) > 1:
+        extra_names = _unanswered_names(player_ids, index)
+        if extra_names:
+            pack["unanswered_names"] = extra_names
     team = str(info.get("team") or "").upper()
     position = str(info.get("position") or "").upper()
     ctx = bundle.get("ctx") or {}
@@ -3115,6 +3221,13 @@ def build_player(bundle, entities, player_ids) -> tuple[dict, list[str]]:
     if upcoming:
         pack["upcoming_schedule"] = upcoming
         tools.append("utils.load_week_sched")
+    # "How are X and Y doing?" resolves both names; the subject above is
+    # the first. The rest ride as lite profiles so the answer covers
+    # every named player instead of silently answering for one.
+    if len(player_ids or []) > 1:
+        extras = _lite_named(player_ids, index, values, bundle.get("season"))
+        if extras:
+            pack["also_named"] = extras
     return pack, tools
 
 
@@ -3573,18 +3686,35 @@ def build_metric(bundle, entities, player_ids=None) -> tuple[dict, list[str]]:
         try:
             qrows, _qual = _season_board(key, spec, season, None)
             pack["pool_size"] = len(qrows)
-            target = str(player_ids[0])
+            pool = len(qrows)
+            # Rank framing for EVERY named player, not just the first:
+            # a two-name metric question ("Wilson and Collins target
+            # shares") whose second name sat outside the carried top 5
+            # used to lose his number from the pack entirely, so the
+            # answer covered one name and read as complete.
+            wanted = [str(p) for p in player_ids[:4]]
+            ranks = []
             for i, r in enumerate(qrows):
-                if isinstance(r, dict) and str(r.get("player_id") or r.get("id") or "") == target:
-                    pool = len(qrows)
-                    rank = i + 1
-                    pack["player_rank"] = {
-                        "player_id": target, "rank": rank, "pool_size": pool,
-                        "percentile": (round(100 * (pool - rank) / max(pool - 1, 1))
-                                       if pool > 1 else 100),
-                        "value": _r3(r.get("value") if r.get("value") is not None else r.get(key)),
-                    }
+                if not isinstance(r, dict):
+                    continue
+                rid = str(r.get("player_id") or r.get("id") or "")
+                if rid not in wanted:
+                    continue
+                rank = i + 1
+                ranks.append({
+                    "player_id": rid, "name": r.get("name"), "rank": rank,
+                    "pool_size": pool,
+                    "percentile": (round(100 * (pool - rank) / max(pool - 1, 1))
+                                   if pool > 1 else 100),
+                    "value": _r3(r.get("value") if r.get("value") is not None else r.get(key)),
+                })
+                if len(ranks) >= len(wanted):
                     break
+            ranks.sort(key=lambda e: wanted.index(e["player_id"]))
+            if ranks:
+                pack["player_rank"] = ranks[0]
+                if len(ranks) > 1:
+                    pack["player_ranks"] = ranks
         except Exception:
             logger.debug("[assistant] metric pool framing failed", exc_info=True)
     return pack, tools
@@ -6914,6 +7044,7 @@ def build_breakout_history(bundle, entities, player_ids) -> tuple[dict, list[str
         history = None
     current = None
     board_week = None
+    board = {}
     try:
         board = breakout_board_candidates(season) or {}
         board_week = board.get("as_of_week")
@@ -6954,6 +7085,40 @@ def build_breakout_history(bundle, entities, player_ids) -> tuple[dict, list[str
         }
     else:
         pack["was_call"] = False
+    # A second named player gets his own call status: "were Wilson and
+    # Collins breakout calls?" used to answer for Wilson alone.
+    if len(player_ids or []) > 1:
+        extras = []
+        try:
+            board_rows = (board.get("candidates") or []) if isinstance(board, dict) else []
+        except Exception:
+            board_rows = []
+        for pid2 in player_ids[1:4]:
+            pid2 = str(pid2)
+            info2 = _player_info(pid2, index)
+            entry = {"player_id": pid2, "name": info2.get("name"),
+                     "was_call": False}
+            try:
+                h2 = breakout_call_history_for(pid2, season)
+            except Exception:
+                h2 = None
+            on_board2 = any(isinstance(c, dict)
+                            and str(c.get("player_id")) == pid2
+                            for c in board_rows)
+            if h2:
+                entry["was_call"] = True
+                entry["earliest_call"] = {"as_of_week": h2.get("as_of_week"),
+                                          "label": h2.get("label"),
+                                          "season": h2.get("season")}
+            elif on_board2:
+                entry["was_call"] = True
+                entry["earliest_call"] = {
+                    "as_of_week": board_week,
+                    "label": f"Week {board_week + 1}" if isinstance(board_week, int) else None,
+                    "season": season}
+            extras.append(entry)
+        if extras:
+            pack["also_named"] = extras
     return pack, tools
 
 
@@ -7499,6 +7664,21 @@ def build_rookie(bundle, entities=None, player_ids=None) -> tuple[dict, list[str
             out["key_reasons"] = [str(r) for r in reasons[:3]]
         pack["prospect"] = out
         pack["position_filter"] = None
+        # The detail profile covers one named prospect; when the
+        # question named more, record the rest so the answer names the
+        # gap instead of dropping them (their board rows still ride in
+        # a board answer, but this early return skips the board).
+        if len(id_set) > 1:
+            others = []
+            for r in rows:
+                if r is named or not isinstance(r, dict):
+                    continue
+                if (r.get("sleeper_id") and str(r["sleeper_id"]) in id_set) \
+                        or str(r.get("player_id")) in id_set:
+                    if r.get("name"):
+                        others.append(str(r["name"]))
+            if others:
+                pack["unanswered_names"] = others[:3]
         return pack, tools
 
     pos = str(entities.get("position") or "").upper() or None
