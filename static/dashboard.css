@@ -50736,7 +50736,13 @@ button.br-asst-actlink {
         left: 0;
         right: 0;
         top: 0;
-        bottom: var(--dock-safe-bottom);
+        /* Full viewport height (Kaedon, 2026-10-16): the dim runs the
+           full screen height, top to bottom, so there is no bright
+           gap behind or below the dock where it used to stop at the
+           dock line. It still renders UNDER the tabbar (--z-chrome
+           9999): the dock itself is not covered or dimmed out and
+           stays tappable on top of the dim. */
+        bottom: 0;
         background: rgba(18, 45, 75, 0.30);
         z-index: 9994;
     }
