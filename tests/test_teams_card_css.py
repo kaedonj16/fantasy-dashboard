@@ -137,5 +137,26 @@ def test_drawer_goes_full_width_on_mobile():
     ), "drawer must be full-width on small phones"
 
 
+def test_teams_page_mobile_side_padding_is_slim():
+    """Phones: the stacked #page-root (12px) + .teams-page (20px) insets made
+    cards sit 32px in per side. The <=640px rule must cut both layers for the
+    teams page only (4px root + 8px page), leaving desktop padding alone."""
+    block = re.search(
+        r"@media\s*\(max-width:\s*640px\)\s*\{(?:[^{}]|\{[^{}]*\})*?"
+        r"#page-root:has\(\.page-shell\[data-page=\"teams\"\]\)",
+        CSS,
+    )
+    assert block, "missing mobile #page-root slimming for the teams page"
+    page = re.search(
+        r"@media\s*\(max-width:\s*640px\)\s*\{(?:[^{}]|\{[^{}]*\})*?"
+        r"\.teams-page\s*\{\s*padding:\s*0 8px 40px",
+        CSS,
+    )
+    assert page, "missing mobile .teams-page side padding reduction"
+    # The base (desktop) rule keeps its 20px side padding.
+    base = re.search(r"^\.teams-page\s*\{[^}]*padding:\s*0 20px 40px", CSS, re.M)
+    assert base, "desktop .teams-page padding must stay 0 20px 40px"
+
+
 def test_no_stadium_pills_in_teams_css():
     assert "border-radius: 999px" not in CSS

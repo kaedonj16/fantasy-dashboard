@@ -48965,6 +48965,14 @@ em.gneg { background: var(--loss); }
     .teams-ptabs button { padding: 8px 14px; font-size: 12px; }
     .teams-page #btmPanel,
     .teams-page #sosPanel { max-width: 760px; }
+    /* Phones: slim the stacked side insets on this page only. #page-root adds
+       12px and .teams-page added 20px, so cards sat 32px in from each edge;
+       now 4px + 8px = 12px. Desktop/tablet padding is unchanged. */
+    #page-root:has(.page-shell[data-page="teams"]) {
+        padding-left: 4px !important;
+        padding-right: 4px !important;
+    }
+    .teams-page { padding: 0 8px 40px; }
 }
 
 /* ============================================================
