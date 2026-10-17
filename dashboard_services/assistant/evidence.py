@@ -588,6 +588,24 @@ def _metrics_for(pid, season=None):
                         keep["ppg"] = (float(exp_total) + float(over_total)) / games
                     except (TypeError, ValueError):
                         pass
+            # Presentation contract for every pack this dict feeds:
+            # numbers ship the way the site presents them. The
+            # derivations above divide season totals by games in raw
+            # float arithmetic, which leaks artifacts like
+            # 17.279999999999998 into answers (the composer cites pack
+            # values verbatim; live, 2026-10-16), and the metrics store
+            # mixes share scales: snap_share is a 0-1 fraction
+            # (avg_off_snap_pct) while target_share is already a
+            # percent. Round every numeric to the house 1-decimal form
+            # and put snap_share on the percent scale so the two shares
+            # read alike everywhere a pack cites them.
+            snap = keep.get("snap_share")
+            if isinstance(snap, (int, float)) and not isinstance(snap, bool) \
+                    and 0 < snap <= 1:
+                keep["snap_share"] = snap * 100.0
+            for key, val in list(keep.items()):
+                if isinstance(val, (int, float)) and not isinstance(val, bool):
+                    keep[key] = _num(val)
             return keep, ["advanced_metrics.get_player_metrics"]
     except Exception:
         logger.debug("[assistant] metrics lookup failed", exc_info=True)

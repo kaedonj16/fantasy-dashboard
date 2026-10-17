@@ -191,8 +191,8 @@ def test_no_clean_fit_rejects_forced_trade():
 # -- questions.json schema sanity ------------------------------------------------------
 
 def test_questions_distribution_and_ids():
-    assert len(QUESTIONS) == 162
-    assert len(BY_ID) == 162
+    assert len(QUESTIONS) == 166
+    assert len(BY_ID) == 166
     assert Counter(q["type"] for q in QUESTIONS) == {
         "start_sit": 7, "trade_eval": 4, "trade_finding": 16, "buy_sell_hold": 5, "player": 3,
         "metric": 4, "waivers": 6, "this_week": 4, "leaderboard": 35,
@@ -201,7 +201,7 @@ def test_questions_distribution_and_ids():
         "breakout_history": 1, "teams": 4, "pick_ownership": 1,
         "keeper": 4, "rookie": 3, "cross_league": 3,
         "replacement": 2, "handcuff": 2, "activity": 2, "watchlist": 2, "front_office": 2,
-        "open": 21, "live": 2, "draft": 5, "nfl_schedule": 5}
+        "open": 25, "live": 2, "draft": 5, "nfl_schedule": 5}
 
 
 def test_questions_entry_shape():
@@ -473,16 +473,37 @@ def test_league_context_references_match_packs():
 
 # -- mock mode + poison ------------------------------------------------------------------
 
-def test_mock_mode_full_run_passes_162_of_162():
+def test_mock_mode_full_run_passes_166_of_166():
     for q in QUESTIONS:
         score = score_answer(q, compose_mock(q))
         assert score["passed"], f"{q['id']}: {score}"
 
 
+def test_no_float_artifacts_in_any_mock_answer():
+    # A cited number with 6+ decimal digits is raw float arithmetic
+    # leaking into prose (live, 2026-10-16: "17.279999999999998 points
+    # per game" in a player answer). No composed answer, on any
+    # reader-visible surface, may carry one.
+    import re
+    artifact = re.compile(r"\d+\.\d{6,}")
+    for q in QUESTIONS:
+        ans = compose_mock(q)
+        surfaces = [str(ans.get("verdict") or ""), str(ans.get("text") or ""),
+                    str(ans.get("caveat") or "")]
+        for r in ans.get("receipts") or []:
+            if isinstance(r, dict):
+                surfaces += [str(r.get("label") or ""), str(r.get("value") or "")]
+        for a in ans.get("actions") or []:
+            if isinstance(a, dict):
+                surfaces += [str(a.get("headline") or ""), str(a.get("detail") or "")]
+        for s in surfaces:
+            assert not artifact.search(s), f"{q['id']}: float artifact in {s!r}"
+
+
 def test_runner_mock_mode_exit_zero(capsys):
     assert runner.main(["--mode", "mock"]) == 0
     out = capsys.readouterr().out
-    assert "162/162 answers passed" in out
+    assert "166/166 answers passed" in out
 
 
 def test_runner_poison_is_detected(capsys):

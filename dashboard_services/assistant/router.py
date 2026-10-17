@@ -220,7 +220,9 @@ SYSTEM = (
     "or season stats, a team's roster or injuries, a metric definition (what is WOPR), a "
     "two-part question spanning two data sets, or a follow-up that continues an earlier "
     "answer (what about his handcuff, how does he compare to X) when no fixed intent owns "
-    "it. Prefer a fixed intent whenever one clearly fits: pinned verdicts (start_sit, "
+    "it. A head-to-head comparison of two named players (compare X and Y, X vs Y, how does "
+    "X compare to Y) is open, never player: the compare tool builds the side-by-side. "
+    "Prefer a fixed intent whenever one clearly fits: pinned verdicts (start_sit, "
     "trade_eval, keeper) always win over open. "
     "out_of_scope: anything that is NOT about fantasy football, the user's leagues, or the "
     "site's data (weather, news, other sports, general trivia). "
@@ -667,6 +669,85 @@ def _player_name_in(message: str) -> str | None:
     if single and single.group(1) not in _NAME_STOPWORDS:
         return single.group(1).removesuffix("'s")
     return None
+
+
+# -- deterministic two-player compare shape -----------------------------------
+#
+# A head-to-head compare has no fixed intent of its own: it belongs to
+# the open layer's compare_players tool, which resolves BOTH names
+# against the full player universe. Before this seam existed the model
+# router bucketed "compare X and Y" as a single-player question, the
+# player builder kept only the first resolved name, and the answer
+# silently degraded into a one-sided "{name} update" (Kaedon live,
+# 2026-10-16: "compare garrett wilson and nico collins"). The shape is
+# extracted deterministically here; classify() forces the open intent
+# with both names, and the open layer runs the same extraction to fetch
+# compare_players before the planner, so neither model can collapse it.
+
+_COMPARE_ANCHORS = ("start", "sit", "bench", "flex", "trade", "accept",
+                    "counter", "keeper", "drop", "pick up", "waiver")
+_COMPARE_TRAILING = (" this week", " today", " please", " now",
+                     " rest of season", " this season")
+_COMPARE_PRONOUNS = {"he", "him", "his", "she", "her", "they", "them",
+                     "that guy", "this guy", "the rookie", "the vet"}
+
+
+def _compare_span(text: str) -> str:
+    span = " ".join(str(text or "").split()).strip(" .?!,")
+    low = span.lower()
+    for tail in _COMPARE_TRAILING:
+        if low.endswith(tail):
+            span = span[: -len(tail)].rstrip(" .?!,")
+            low = span.lower()
+    if low.startswith("the "):
+        span = span[4:]
+    return span.strip()
+
+
+_COMPARE_NON_NAMES = {"who", "what", "when", "where", "why", "how",
+                      "did", "does", "do", "is", "are", "was", "were",
+                      "won", "will", "should", "can", "could", "would"}
+
+
+def _compare_span_ok(span: str) -> bool:
+    if not span or span.lower() in _COMPARE_PRONOUNS:
+        return False
+    toks = span.replace(".", " ").replace("'", "").split()
+    if not 1 <= len(toks) <= 4:
+        return False
+    if toks[0].lower() in _COMPARE_NON_NAMES:
+        return False
+    return all(t.isalpha() or "-" in t for t in toks)
+
+
+def compare_player_names(message: str):
+    """(name_a, name_b) when the message is a two-player compare shape.
+
+    Conservative on purpose: the literal compare verb or a versus
+    construction, two name-like spans, and no start/sit/trade anchor
+    (those intents own their two-player questions: "should I start X or
+    Y" and "should I trade X for Y" never reach this shape). Spans come
+    from the lowered message; resolution downstream is case-insensitive
+    and validates them against the player universe.
+    """
+    raw = " ".join(str(message or "").split()).strip().rstrip("?").strip()
+    low = raw.lower()
+    if any(a in low for a in _COMPARE_ANCHORS):
+        return None
+    m = re.match(r"(?:please\s+)?(?:compare|comparing)\s+(.+?)\s+"
+                 r"(?:and|to|with|vs\.?|versus)\s+(.+)$", low)
+    if not m:
+        m = re.match(r"how\s+does\s+(.+?)\s+compare\s+(?:to|with)\s+(.+)$", low)
+    if not m:
+        m = re.match(r"(.+?)\s+(?:vs\.?|versus)\s+(.+)$", low)
+    if not m:
+        return None
+    a, b = _compare_span(m.group(1)), _compare_span(m.group(2))
+    if not (_compare_span_ok(a) and _compare_span_ok(b)):
+        return None
+    if a.lower() == b.lower():
+        return None
+    return a, b
 
 
 _SLOT_NUM_RE = re.compile(r"\b(qb|rb|wr|te|k|def|dst)([1-4])?\b")
@@ -1123,6 +1204,14 @@ def _keyword_route(message: str) -> dict:
                 hint = _resolved["phrase"]
         return {**base, "intent": "metric", "metric_hint": hint,
                 "season": _season_in(m)}
+    # Two-player compare shape: the open compare tool owns it (the
+    # generic player extraction below would swallow "Compare" into a
+    # single mangled name span, and lowercase asks extract no name at
+    # all). Checked before the player fallthrough on purpose.
+    compare_names = compare_player_names(message)
+    if compare_names:
+        return {**base, "intent": "open",
+                "player_names": [compare_names[0], compare_names[1]]}
     # Player fallthrough: a question-shaped message carrying a player
     # name belongs to the player intent even with no other anchor. The
     # extracted name rides along so the resolver can confirm it (or ask
@@ -1196,6 +1285,17 @@ def classify(question: str, context: dict | None = None, history: list | None = 
                 if entities.get("target_position") == give_pos \
                         and entities.get("player_names"):
                     entities["target_position"] = None
+        # A two-player compare belongs to the open compare tool, never
+        # to the single-player builder (which keeps only the FIRST
+        # resolved name and silently drops the second; live:
+        # "compare garrett wilson and nico collins" answered as a
+        # Wilson-only update). Deterministic, like the give_position
+        # correction above: the shape names both players, so both names
+        # ride as entities and the intent is open.
+        compare_names = compare_player_names(question)
+        if compare_names and intent not in ("trade_eval", "start_sit"):
+            intent = "open"
+            entities["player_names"] = [compare_names[0], compare_names[1]]
         return {"intent": intent, "entities": entities, "preference_text": data.get("preference_text"), "router_model": "model", "prompt_version": ROUTER_PROMPT_VERSION}
     except Exception as exc:  # model down (rate limit / unavailable): keyword fallback
         logger.debug("[assistant] router model failed, keyword fallback: %s", exc)

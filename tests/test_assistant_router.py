@@ -216,3 +216,57 @@ def test_new_intents_registered_with_builders():
                    "teams", "pick_ownership"):
         assert intent in router.INTENTS
         assert intent in BUILDERS
+
+
+# -- two-player compare ownership -------------------------------------------------
+#
+# "compare X and Y" belongs to the open compare tool. Before this seam,
+# the model router bucketed it as a single-player question and the
+# player builder silently dropped the second resolved name (Kaedon
+# live, 2026-10-16: "compare garrett wilson and nico collins" answered
+# as a Wilson-only "Garrett Wilson update").
+
+def test_compare_shape_extraction():
+    f = router.compare_player_names
+    assert f("compare garrett wilson and nico collins") == (
+        "garrett wilson", "nico collins")
+    assert f("Compare Garrett Wilson and Nico Collins") == (
+        "garrett wilson", "nico collins")
+    assert f("Garrett Wilson vs Nico Collins") == (
+        "garrett wilson", "nico collins")
+    assert f("how does garrett wilson compare to nico collins") == (
+        "garrett wilson", "nico collins")
+    assert f("compare wilson and collins") == ("wilson", "collins")
+    # Pinned two-player intents keep their questions.
+    assert f("should I start garrett wilson or nico collins") is None
+    assert f("should I trade garrett wilson for nico collins") is None
+    assert f("compare garrett wilson and nico collins for my flex spot") is None
+    # Not compares: a game question, a pronoun follow-up, a single name.
+    assert f("who won the chiefs vs bills game") is None
+    assert f("how does he compare to nico collins") is None
+    assert f("compare garrett wilson") is None
+
+
+def test_keyword_route_compare_goes_open(keyword):
+    out = _intent(keyword, "compare garrett wilson and nico collins")
+    assert out["intent"] == "open"
+    assert out["entities"]["player_names"] == ["garrett wilson", "nico collins"]
+
+
+def test_model_player_intent_corrected_to_open_compare(monkeypatch):
+    def _fake(system, payload, schema, name):
+        return {"intent": "player",
+                "player_names": ["Garrett Wilson", "Nico Collins"],
+                "give_player_names": [], "receive_player_names": [],
+                "picks": [], "give_picks": [], "receive_picks": [],
+                "other_team_hint": None, "metric_hint": None,
+                "position_hint": None, "teams_mode": None, "week": None,
+                "preference_text": None}
+    monkeypatch.setattr(router, "call_model_json", _fake)
+    out = router.classify("compare garrett wilson and nico collins", {}, None)
+    assert out["intent"] == "open"
+    assert out["entities"]["player_names"] == ["garrett wilson", "nico collins"]
+
+
+def test_router_prompt_names_compare_as_open():
+    assert "is open, never player" in router.SYSTEM

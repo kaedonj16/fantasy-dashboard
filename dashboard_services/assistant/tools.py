@@ -752,17 +752,28 @@ def _profile_lite(bundle, pid):
                            limit=4)
     recent_ppg = (round(sum(f["points"] for f in form) / len(form), 1)
                   if form else None)
-    return {"player_id": str(pid), "name": info.get("name"),
+    prof = {"player_id": str(pid), "name": info.get("name"),
             "team": info.get("team"), "position": info.get("position"),
             "injury_status": info.get("injury_status"),
             "value": _n(ev._row_value(values.get(str(pid)))),
             "ppg": _n(metrics.get("ppg")),
             "expected_ppg": _n(metrics.get("expected_ppr_per_game")),
-            "target_share": metrics.get("target_share"),
-            "snap_share": metrics.get("snap_share"),
+            "target_share": _n(metrics.get("target_share")),
+            "snap_share": _n(metrics.get("snap_share")),
             "touches_per_game": _n(metrics.get("touches_per_game")),
             "games": metrics.get("games"),
             "recent_ppg": recent_ppg}
+    # A partial profile still compares: name the shared-metric gaps for
+    # THIS player so the answer compares on what both players have and
+    # says what is missing, instead of dropping the player (or the whole
+    # comparison) over one absent metric.
+    missing = [label for key, label in (
+        ("value", "value"), ("ppg", "points per game"),
+        ("target_share", "target share"), ("snap_share", "snap share"))
+        if prof.get(key) is None]
+    if missing:
+        prof["missing_metrics"] = missing
+    return prof
 
 
 def _tool_compare_players(bundle, args) -> dict:
@@ -775,7 +786,28 @@ def _tool_compare_players(bundle, args) -> dict:
                     "missing": "more than one player matches that name"})
         return out
     if not pid_a or not pid_b:
-        out.update({"ok": False, "missing": "no resolved player"})
+        # Name the side that did not resolve and offer the closest real
+        # name, so the answer can say who could not be found instead of
+        # collapsing into a one-sided answer about the found player or
+        # a generic dead end. The side that DID resolve rides along as
+        # "found" so the offer can be a ready-made re-ask.
+        asked = str(args.get("player_a") if not pid_a
+                    else args.get("player_b") or "").strip()
+        out.update({"ok": False, "missing": f"no player found for '{asked}'",
+                    "not_found": asked})
+        pid_found, info_found = (pid_a, info_a) if pid_a else (pid_b, info_b)
+        if pid_found:
+            found = {"player_id": str(pid_found),
+                     "name": info_found.get("name") or ""}
+            out["found"] = found
+            out["players"] = [found]
+        try:
+            from dashboard_services.assistant.resolve import nearest_names
+            near = nearest_names(asked)
+        except Exception:
+            near = []
+        if near:
+            out["nearest"] = near
         return out
     a, b = _profile_lite(bundle, pid_a), _profile_lite(bundle, pid_b)
     out["players_detail"] = [a, b]
