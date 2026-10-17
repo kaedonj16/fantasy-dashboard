@@ -254,7 +254,11 @@ def build_prospects_body(is_admin: bool = False) -> str:
   .rk-hs-initials { width: 160px; height: 135px; background: var(--accent-soft); color: var(--accent);
     display: flex; align-items: center; justify-content: center; font-size: 40px; font-weight: 800; letter-spacing: .02em; }
   @media (max-width: 768px) {
-    .rk-hs-initials { width: 88px; height: 100%; min-height: 96px; font-size: 26px; align-self: stretch; }
+    /* Compact tile beside the name on phones. The full-height treatment is
+       for real headshot photos (dashboard.css .player-modal-headshot); an
+       initials fallback stretched to the wrapped header's height becomes a
+       tall empty column that eats the title section's width. */
+    .rk-hs-initials { width: 64px; height: 64px; min-height: 0; font-size: 22px; align-self: flex-start; flex: none; }
   }
   /* Prospects card-header: override global 50px height, allow vertical stacking */
   .rk-card-header {
@@ -720,7 +724,19 @@ def build_prospects_body(is_admin: bool = False) -> str:
       max-width: calc(100% - 8px) !important;
       border-radius: var(--radius, 16px) !important;
       margin: auto;
+      /* The sheet itself never scrolls sideways; wide inner tables keep
+         their own scroll wrappers. */
+      overflow-x: hidden;
     }
+
+    /* Header meta on phones: the dot separators are separate flex items and
+       strand at line ends when the line wraps. Drop them and let the flex
+       gap separate the parts instead. */
+    #rkModalContent .rk-meta-line { gap: 2px 10px !important; }
+    #rkModalContent .rk-meta-sep { display: none; }
+
+    /* The fixed-size radar (340px) must shrink into the stacked rail card. */
+    #rkRadarBody svg, #rkAdvRadarBody svg { max-width: 100%; height: auto; }
     .rk-modal-header { padding: 16px 16px 0; }
     .rk-modal-body { padding: 12px 16px 24px; }
     .rk-modal-close { width: 36px; height: 36px; }
@@ -748,6 +764,22 @@ def build_prospects_body(is_admin: bool = False) -> str:
 
     /* Scouting notes: comfortable reading size */
     .m-notes { font-size: 13px; line-height: 1.6; }
+  }
+
+  /* Phone fit for the Overview hero cards: tracks size to the screen, never
+     to the longest word. Without minmax(0, 1fr) tracks + min-width: 0 cards,
+     the Archetype card's value and receipt (the longest content in the row)
+     set the column's min-content width and push the whole row, Class Rank
+     card included, past the right edge. Scoped to #rkModalContent so the
+     NFL player modal sharing the pm- classes is untouched. */
+  @media (max-width: 640px) {
+    #rkHeroRow { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+    #rkModalContent .pm-hero-stat { min-width: 0; }
+    #rkModalContent .pm-hero-val { overflow-wrap: break-word; }
+    #rkModalContent .pm-hero-sub {
+      white-space: normal; overflow: visible; text-overflow: clip;
+      overflow-wrap: break-word;
+    }
   }
 
   /* Very small screens: further tightening */
@@ -1948,8 +1980,8 @@ def build_prospects_body(is_admin: bool = False) -> str:
     var ht = rkHeightStr(r), wt = rkWeightStr(r);
     if (ht) metaParts.push('<span>' + rkEsc(ht) + '</span>');
     if (wt) metaParts.push('<span>' + rkEsc(wt) + '</span>');
-    var metaHtml = '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:0;">' +
-      metaParts.join('<span style="opacity:.35;margin:0 3px;">·</span>') + '</div>';
+    var metaHtml = '<div class="rk-meta-line" style="display:flex;align-items:center;flex-wrap:wrap;gap:0;">' +
+      metaParts.join('<span class="rk-meta-sep" style="opacity:.35;margin:0 3px;">·</span>') + '</div>';
 
     // Hero cards (Overview). Cards with no data are omitted outright.
     var tierName = RK_TIER_NAMES[r.tier] || r.tier_label || '';
