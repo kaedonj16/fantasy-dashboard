@@ -783,7 +783,8 @@ def _required_receipts(intent: str, pack: dict) -> list[dict]:
                 if e.get("value") is not None and len(rows) < 4:
                     rows.append({"label": str(e.get("label") or "Pick"),
                                  "value": _fmt_num(e["value"])})
-        top = (pack.get("findings") or [None])[0] or pack.get("closest_miss") or {}
+        top = (pack.get("findings") or [None])[0] or pack.get("counter") \
+            or pack.get("closest_miss") or pack.get("partner_blocked") or {}
         if top.get("receive_total") is not None and len(rows) < 4:
             rows.append({"label": "You receive (total value)", "value": _fmt_num(top["receive_total"])})
         if top.get("give_total") is not None and len(rows) < 4:
@@ -1941,6 +1942,67 @@ def _no_fit_answer(pack: dict) -> dict:
         alt_sentence = f" The nearest alternative is {alt}."
     else:
         alt_sentence = ""
+    blocked = (pack or {}).get("partner_blocked") or {}
+    if blocked:
+        # The scan found in-band packages, but the acceptance layer
+        # graded their headline pieces as doing nothing for the partner:
+        # raw parity is not a package he would take. Say that plainly,
+        # and offer the complementary 2-for-2 when the builder found one.
+        partner = blocked.get("partner_team") or "That team"
+        target = ((pack or {}).get("target_player") or {}).get("name") or "that target"
+        bits = "; ".join(
+            f"{a.get('name')}: {a.get('reason')}"
+            for a in blocked.get("partner_appeal") or [] if not a.get("appeal"))
+        reason = f", because {bits}" if bits else ""
+        lead = (f"No clean fit right now. The packages that reach {target} are not ones "
+                f"{partner} would take. {partner} would likely pass on the straight "
+                f"package: {_join_asset_names(blocked.get('receive'))} for "
+                f"{_join_asset_names(blocked.get('give'))} totals "
+                f"{_fmt_num(blocked.get('receive_total'))} against "
+                f"{_fmt_num(blocked.get('give_total'))}{reason}.")
+        counter = (pack or {}).get("counter") or {}
+        if counter:
+            slots = counter.get("slots") or {}
+            vu, vd = slots.get("viewer_upgrade") or {}, slots.get("viewer_downgrade") or {}
+            pu, pd = slots.get("partner_upgrade") or {}, slots.get("partner_downgrade") or {}
+            vd_s = (f"the {vd.get('player')} is a downgrade, a pick in place of a player"
+                    if vd.get("position") == "PICK" else
+                    f"{vd.get('player')} is a downgrade at {vd.get('position')}, a step "
+                    f"below your current starter there")
+            pu_s = (f"your {pu.get('player')} is the upgrade, a future pick for his window"
+                    if pu.get("position") == "PICK" else
+                    f"{pu.get('player')} is the upgrade at {pu.get('position')}")
+            pd_s = (f"the {pd.get('player')} is the downgrade, a pick in place of a player"
+                    if pd.get("position") == "PICK" else
+                    f"{pd.get('player')} is the downgrade at {pd.get('position')}, a "
+                    f"startable piece a step below the one they send back")
+            read = counter.get("profile_read")
+            text = (lead
+                    + f" You could try {_join_asset_names(counter.get('give'))} for "
+                      f"{_join_asset_names(counter.get('receive'))} instead: totals "
+                      f"{_fmt_num(counter.get('receive_total'))} against "
+                      f"{_fmt_num(counter.get('give_total'))}, a fairness gap of "
+                      f"{_fmt_num(abs(float(counter.get('fairness_gap') or 0)))}."
+                    + (f" {read}" if read else "")
+                    + f" For you, {vu.get('player')} is the upgrade at {vu.get('position')}; "
+                      f"{vd_s}. For {partner}, {pu_s}; {pd_s}.")
+            return {"verdict": "No clean fit right now", "text": text,
+                    "receipts": _required_receipts("trade_finding", pack),
+                    "caveat": None,
+                    "followups": [followup_pair("Who is available on waivers?"),
+                                  followup_pair("What should I do with my team this week?")],
+                    "act_link": _finding_link(pack, counter)
+                                or _resolve_act_link("trade_finding", pack),
+                    "actions": [], "mentions": _mentions("trade_finding", pack)}
+        text = (lead + f" Nothing in range is built from pieces {partner} needs."
+                + alt_sentence)
+        return {"verdict": "No clean fit right now", "text": text,
+                "receipts": _required_receipts("trade_finding", pack),
+                "caveat": None,
+                "followups": [followup_pair("Who is available on waivers?"),
+                              followup_pair("What should I do with my team this week?")],
+                "act_link": _resolve_act_link("trade_finding", pack),
+                "actions": [], "mentions": _mentions("trade_finding", pack)}
     if miss and miss.get("receive_total") is not None and miss.get("give_total") is not None:
         gap = miss.get("fairness_gap")
         gap_clause = ""

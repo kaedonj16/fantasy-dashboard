@@ -191,10 +191,10 @@ def test_no_clean_fit_rejects_forced_trade():
 # -- questions.json schema sanity ------------------------------------------------------
 
 def test_questions_distribution_and_ids():
-    assert len(QUESTIONS) == 157
-    assert len(BY_ID) == 157
+    assert len(QUESTIONS) == 162
+    assert len(BY_ID) == 162
     assert Counter(q["type"] for q in QUESTIONS) == {
-        "start_sit": 7, "trade_eval": 4, "trade_finding": 11, "buy_sell_hold": 5, "player": 3,
+        "start_sit": 7, "trade_eval": 4, "trade_finding": 16, "buy_sell_hold": 5, "player": 3,
         "metric": 4, "waivers": 6, "this_week": 4, "leaderboard": 35,
         "playoffs": 4, "power_rankings": 2, "standings": 2, "matchup": 7,
         "schedule": 2, "breakout_board": 1, "breakout_track_record": 1,
@@ -318,13 +318,15 @@ def test_leaderboard_reference_matches_pack_board():
 def test_trade_finding_questions_shaped():
     tf = {q["id"]: q for q in QUESTIONS if q["type"] == "trade_finding"}
     assert set(tf) == {"tf1", "tf2", "tf3", "tf4", "tf5", "tf6", "tf7",
-                       "tf8", "tf9", "pv1", "sp1"}
+                       "tf8", "tf9", "tf10", "tf11", "tf12", "tf13", "tf14",
+                       "pv1", "sp1"}
     # Findings carry side totals that match their player values, and the
     # gap is receive minus give, like every other trade pack.
     for q in tf.values():
         pack = q["evidence_pack"]
-        for f in (pack.get("findings") or []) + (
-                [pack["closest_miss"]] if pack.get("closest_miss") else []):
+        extras = [pack[k] for k in ("closest_miss", "partner_blocked", "counter")
+                  if pack.get(k)]
+        for f in (pack.get("findings") or []) + extras:
             assert f["give_total"] == round(sum(p["value"] for p in f["give"]), 1)
             assert f["receive_total"] == round(sum(p["value"] for p in f["receive"]), 1)
             assert f["fairness_gap"] == round(f["receive_total"] - f["give_total"], 1)
@@ -471,7 +473,7 @@ def test_league_context_references_match_packs():
 
 # -- mock mode + poison ------------------------------------------------------------------
 
-def test_mock_mode_full_run_passes_157_of_157():
+def test_mock_mode_full_run_passes_162_of_162():
     for q in QUESTIONS:
         score = score_answer(q, compose_mock(q))
         assert score["passed"], f"{q['id']}: {score}"
@@ -480,7 +482,7 @@ def test_mock_mode_full_run_passes_157_of_157():
 def test_runner_mock_mode_exit_zero(capsys):
     assert runner.main(["--mode", "mock"]) == 0
     out = capsys.readouterr().out
-    assert "157/157 answers passed" in out
+    assert "162/162 answers passed" in out
 
 
 def test_runner_poison_is_detected(capsys):
