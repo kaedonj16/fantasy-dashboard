@@ -419,6 +419,10 @@ def no_data_answer(pack: dict) -> dict:
         text = _missing_text(missing)
     if nearest:
         text += f" The nearest tracked options are {', '.join(str(n) for n in nearest[:3])}. Ask about one of those and I can pull the live numbers."
+    # Mirror of compose.no_data_answer: a no-data answer still names
+    # any other player the question asked about.
+    text += _multi_name_suffix(str((pack or {}).get("type") or ""), pack,
+                               None, text)
     # The link names the surface the question was about: league-context
     # intents use their league link, everything else resolves normally
     # (a keeper no-data lands on the Keeper Optimizer, not Advanced Metrics).
@@ -567,6 +571,75 @@ def _trade_eval(pack):
     return ans
 
 
+def _multi_name_suffix(intent, pack, verdict, text):
+    """Mirror of compose._multi_name_lines: coverage lines for the
+    players a question named after the subject (also_named lite
+    profiles, player_ranks, unanswered_names), appended when the
+    composed text has not mentioned them."""
+    hay = f"{verdict or ''} {text or ''}"
+    lines = []
+
+    def mentioned(name):
+        if not name:
+            return True
+        parts = str(name).split()
+        token = parts[-1] if parts else str(name)
+        return bool(token) and token in hay
+
+    if intent in ("player", "buy_sell_hold"):
+        for e in (pack.get("also_named") or []):
+            if not isinstance(e, dict) or not e.get("name") or mentioned(e["name"]):
+                continue
+            bits = []
+            if e.get("ppg") is not None:
+                bits.append(f"scoring {fmt(e['ppg'])} points per game")
+            if e.get("target_share") is not None:
+                bits.append(f"a target share of {fmt(e['target_share'])}")
+            if e.get("delta_pct") is not None:
+                bits.append(f"a value trend of {fmt(e['delta_pct'])} percent over the last month")
+            if e.get("value") is not None:
+                bits.append(f"a value of {fmt(e['value'])}")
+            lines.append(f"Also asked: {e['name']} is at {', '.join(bits)}."
+                         if bits else f"Also asked: {e['name']}.")
+    elif intent == "breakout_history":
+        for e in (pack.get("also_named") or []):
+            if not isinstance(e, dict) or not e.get("name") or mentioned(e["name"]):
+                continue
+            if e.get("was_call"):
+                label = (e.get("earliest_call") or {}).get("label")
+                lines.append(f"{e['name']} was a breakout call"
+                             + (f" ({label})." if label else "."))
+            else:
+                lines.append(f"{e['name']} was not a breakout call.")
+    elif intent == "metric":
+        subject_rank = pack.get("player_rank") or {}
+        for e in (pack.get("player_ranks") or []):
+            if not isinstance(e, dict):
+                continue
+            if str(e.get("player_id")) == str(subject_rank.get("player_id")):
+                continue
+            name = e.get("name")
+            if not name or mentioned(name):
+                continue
+            if e.get("rank") is None or e.get("value") is None:
+                continue
+            lines.append(f"{name} ranks {fmt(e['rank'])} of "
+                         f"{fmt(e.get('pool_size'))} at {fmt(e['value'])}.")
+    unanswered = [n for n in (pack.get("unanswered_names") or []) if n]
+    if unanswered:
+        subject = ((pack.get("subject") or {}).get("name")
+                   or (pack.get("prospect") or {}).get("name")
+                   or (pack.get("player") or {}).get("name")
+                   or (pack.get("sell_player") or {}).get("name")
+                   or (pack.get("target_player") or {}).get("name"))
+        for name in unanswered:
+            if mentioned(name):
+                continue
+            lines.append(f"That covers {subject or 'the first player'}; "
+                         f"ask about {name} for the same check on him.")
+    return (" " + " ".join(lines)) if lines else ""
+
+
 def _buy_sell_hold(pack):
     player = pack.get("player") or {}
     trend = pack.get("value_trend_30d") or {}
@@ -581,12 +654,14 @@ def _buy_sell_hold(pack):
         receipts.append({"label": "Points per game", "value": fmt(role["ppg"])})
     if role.get("target_share") is not None and len(receipts) < 4:
         receipts.append({"label": "Target share", "value": fmt(role["target_share"])})
+    text = (f"{verdict} on {player.get('name')}. The recent value trend is "
+            f"{fmt(trend.get('delta_pct'))} percent, with current value at "
+            f"{fmt(trend.get('current'))}.")
+    text += _multi_name_suffix("buy_sell_hold", pack, verdict, text)
     ans = _base("buy_sell_hold", pack)
     ans.update({
         "verdict": verdict,
-        "text": (f"{verdict} on {player.get('name')}. The recent value trend is "
-                 f"{fmt(trend.get('delta_pct'))} percent, with current value at "
-                 f"{fmt(trend.get('current'))}."),
+        "text": text,
         "receipts": receipts[:4],
         "followups": [_fu("What is his role right now?"), _fu("Who could I trade him for?")],
     })
@@ -605,12 +680,20 @@ def _player(pack):
             receipts.append({"label": label, "value": fmt(role[key])})
     if player.get("value") is not None and len(receipts) < 4:
         receipts.append({"label": "Value", "value": fmt(player["value"])})
+    for e in (pack.get("also_named") or []):
+        if not isinstance(e, dict) or len(receipts) >= 4:
+            break
+        if e.get("value") is not None:
+            receipts.append({"label": f"{e.get('name')} value",
+                             "value": fmt(e["value"])})
+    text = (f"{player.get('name')} is scoring {fmt(role.get('ppg'))} points per game "
+            f"with a target share of {fmt(role.get('target_share'))} for the "
+            f"{player.get('team')} at {player.get('position')}.")
+    text += _multi_name_suffix("player", pack, f"{player.get('name')} update", text)
     ans = _base("player", pack)
     ans.update({
         "verdict": f"{player.get('name')} update",
-        "text": (f"{player.get('name')} is scoring {fmt(role.get('ppg'))} points per game "
-                 f"with a target share of {fmt(role.get('target_share'))} for the "
-                 f"{player.get('team')} at {player.get('position')}."),
+        "text": text,
         "receipts": receipts,
         "followups": [_fu("Buy, sell, or hold on him?"), _fu("What about next week?")],
     })
@@ -621,7 +704,9 @@ def _metric(pack):
     top5 = pack.get("leaderboard_top5") or []
     if not top5:
         ans = _base("metric", pack)
-        ans.update({"verdict": pack.get("label"), "text": pack.get("definition") or "",
+        text = pack.get("definition") or ""
+        text += _multi_name_suffix("metric", pack, pack.get("label"), text)
+        ans.update({"verdict": pack.get("label"), "text": text,
                     "receipts": [], "followups": []})
         return ans
     chosen, seen = [], set()
@@ -631,11 +716,19 @@ def _metric(pack):
             chosen.append(e)
             seen.add(e["player_id"])
     receipts = [{"label": e["name"], "value": fmt(e.get("value"))} for e in chosen]
+    labeled = {r["label"] for r in receipts}
+    for e in (pack.get("player_ranks") or []):
+        if not isinstance(e, dict) or len(receipts) >= 4:
+            break
+        if e.get("name") and e["name"] not in labeled and e.get("value") is not None:
+            receipts.append({"label": e["name"], "value": fmt(e["value"])})
+            labeled.add(e["name"])
     top = top5[0]
     text = f"{pack.get('definition')} {top['name']} leads at {fmt(top.get('value'))}."
     mine = next((e for e in top5 if e.get("on_my_roster") and e is not top), None)
     if mine:
         text += f" Your {mine['name']} sits at {fmt(mine.get('value'))}."
+    text += _multi_name_suffix("metric", pack, pack.get("label"), text)
     ans = _base("metric", pack)
     ans.update({"verdict": f"{pack.get('label')}: {top['name']} leads", "text": text,
                 "receipts": receipts, "followups": [_fu("Who is moving up?"), _fu("What is snap share?")]})
@@ -1633,6 +1726,8 @@ def _breakout_history(pack):
         ans.update({"verdict": f"NO, {name} was not a breakout call",
                     "text": f"No. {name} has not been surfaced as a breakout call this season.",
                     "receipts": [], "followups": [_fu("Who are this week's breakout calls?")]})
+    ans["text"] += _multi_name_suffix("breakout_history", pack,
+                                      ans.get("verdict"), ans.get("text"))
     return ans
 
 
@@ -1850,6 +1945,7 @@ def _rookie(pack):
             text += (f" Latest college season at {prospect.get('school')}: "
                      f"{fmt(line.get('games_played'))} games, "
                      + " and ".join(segs) + ".")
+        text += _multi_name_suffix("rookie", pack, prospect.get("name"), text)
         ans.update({"verdict": f"{prospect['name']}: {prospect.get('position')}"
                                f"{fmt(prospect.get('position_rank'))} in the {year} class",
                     "text": text, "receipts": _rookie_receipts(pack),
@@ -1930,6 +2026,7 @@ def _replacement(pack):
             f"{fmt(subject.get('value'))} at age {fmt(subject.get('age'))}; "
             f"{top.get('name')} is valued at {fmt(top.get('value'))} at age "
             f"{fmt(top.get('age'))} and sits on {top.get('location')}.")
+    text += _multi_name_suffix("replacement", pack, top.get("name"), text)
     ans.update({"verdict": top.get("name"), "text": text, "receipts": receipts[:4],
                 "followups": [_fu("What could I get for him in a trade?"),
                               _fu("Who is his handcuff?")]})
@@ -1957,6 +2054,7 @@ def _handcuff(pack):
     if mine:
         text += (f" On your roster, {mine[0].get('name')} is your best in-house "
                  f"option at {fmt(mine[0].get('value'))}.")
+    text += _multi_name_suffix("handcuff", pack, nxt.get("name"), text)
     ans.update({"verdict": nxt.get("name"), "text": text, "receipts": receipts[:4],
                 "followups": [_fu("Who should I start if he is out?"),
                               _fu("Who is available on waivers?")]})
@@ -2681,4 +2779,18 @@ def compose_mock(question: dict) -> dict:
     if question["type"] == "open":
         return _open(pack, question)
     builder = _BUILDERS[question["type"]]
-    return builder(pack)
+    ans = builder(pack)
+    # Mirror of compose._enforce_grounding's final multi-name append:
+    # deterministic builder paths that return before their own suffix
+    # point (trade_finding no-fit among them) still name every player
+    # the question named. Mention-checked, so builders that already
+    # appended are untouched.
+    if isinstance(pack, dict) and (pack.get("also_named")
+                                   or pack.get("player_ranks")
+                                   or pack.get("unanswered_names")):
+        ans = dict(ans)
+        ans["text"] = (str(ans.get("text") or "")
+                       + _multi_name_suffix(question["type"], pack,
+                                            ans.get("verdict"),
+                                            ans.get("text")))
+    return ans

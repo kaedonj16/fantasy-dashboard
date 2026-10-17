@@ -321,6 +321,17 @@ def score_answer(question: dict, answer: dict) -> dict:
             notes.append("missing-stat trap failed: needs the no-data shape and zero invented numbers")
     elif trap.get("kind") == "namesake":
         trap_ok = verdict_ok  # the accept-list check above IS the trap check
+    elif trap.get("kind") == "dropped_second_name":
+        # The multi-name trap: the question named a second player (or
+        # subject) whom a single-subject builder used to drop from the
+        # pack entirely, so the answer covered the first name alone and
+        # read as complete. The answer must name him: his lite line,
+        # his rank line, or the named-gap pointer.
+        _dropped = str(trap.get("player") or "").lower()
+        trap_ok = bool(_dropped) and _dropped in full.lower() and grounding_ok
+        if not trap_ok:
+            notes.append("dropped-name trap failed: the second named player "
+                         "was not named in the answer")
     elif trap.get("kind") == "pro_gate":
         trap_ok = verdict_ok and grounding_ok
         if not trap_ok:

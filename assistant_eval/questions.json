@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "description": "Frozen assistant eval set: 162 questions with golden evidence packs for the BR Fantasy assistant (workshop section 5 core 20, the deep-cuts leaderboard family lb1-lb6, and the section 9 P1 league-context types: playoffs, power rankings, standings, matchup, schedule) plus the P1 trade-finding family tf1-tf4, and the P1 breakout board, Teams, and pick-ownership families bo1-bo3, tm1-tm2, pk1 (renamed from the branch po1, which collided with the playoffs po1), with te4 an extra trade_eval. The win-outcome family mu4-mu6 pins the game-outcome phrasings (will I win / what are my chances / will I lose) to matchup packs: a decisive favorite, a close game, and a decisive underdog. The buy/sell board family bl1/sh1 pins pool-wide buy-low and sell-high asks (no named player) to leaderboard value boards, with bsh4/bsh5 as the named-player controls that must stay single-player buy_sell_hold. The roster start/sit family ss5-ss7 pins slot questions that name no players (start at FLEX, start at RB, sit at FLEX) to roster-scoped packs built from the asking user's own lineup: the FLEX occupant is benched for the bench challenger who out-projects him, and the RB question is a keep-the-starter call. The open-layer wild set ow1-ow19 freezes tool evidence (production tool-entry shape) instead of builder packs: ungoverned phrasings, a follow-up chain (ow5-ow7), a two-part question (ow8), a non-default team (ow9), a PRO gate through the open layer (ow18), and an off-site decline (ow19). The breadth family lb7-lb9 pins cross-metric breadth boards (top-N finishes counted across a metric family: lb7 receiving in Kaedon's exact phrasing, lb8 rushing) and the players-only receiving-yards stat board (the team-row regression: the live board once ranked TEAM_LAR first). The detailed-question family dq1-dq11 pins the composed boards: weekly-finish breadth, floor, and ceiling from game logs (dq1-dq3), the value board under an age ceiling (dq4), a metric board restricted to the waiver pool (dq5), opportunity leaders re-ranked by upcoming schedule (dq6), the within-team No. 1 vs No. 2 gap (dq7), positional-rank climbers from value history (dq8), Teams roster breadth (dq9), a category sweep (dq10), and the no-history trap for rank trajectory (dq11). The history family hs1-hs5 adds past-season boards (metric, raw stat, and movers boards for 2024, plus the no-historical-form trap for value boards, and hs5 the top-scorer freeze: Kaedon's exact 'Who was the top scorer in 2024?', whose live answer once served the current season's board leader and total instead of 2024's), and po4 adds the playoff-odds trajectory. hs6 adds the past-season weekly-finishes board in Kaedon's exact phrasing (the live answer once topped it with a long snapper at 0 PPG); its golden pack is the fixed builder's output over the real 2025 game logs and ranks skill positions only. The live family lv1-lv2 adds in-game questions over fixture live state, and the draft family dr1-dr2 adds live draft help (best available and a 1.03 prep window), and dr3-dr5 pin pick-slotted prep targets: dr3 is Kaedon's exact 'Who should I target at 1.03?' with the class headliner demoted to faller-only (the faller_not_target trap), dr4 the 1.01 control where the target IS the top name with no faller line, and dr5 a 2.03 mid-round case. The nfl_schedule family ns1-ns6 pins real NFL fixture questions (tonight's game, the Sunday slate, a named team's game, Monday night, the full week) to NFL schedule packs: a bare 'who plays tonight' answers the NFL game and never the fantasy matchup (ns1 carries the excluded-name trap for the user's own fantasy team), while ns5 is the possessive trap pair ('who am I playing this week') that stays a matchup question. ow20-ow21 freeze the 2026-10-15 compare entity-resolution cases: 'Compare Ja'Marr Chase and Justin Jefferson' (the WR/LB namesake must resolve silently to the WR, receipts are the WR's) and 'Compare Ja'Marr Chase and Jaxson Smith Njigba' (Kaedon's spelling, no hyphen and an extra s, must resolve to Jaxon Smith-Njigba and compare). The missed-tackle question mt1 pins the broken-tackles family in Kaedon's exact phrasing: 'what missed tackle metrics do I have' answers with both tracked rates (Broken Tackles/Carry and Broken Tackles / Catch, the site's missed-tackles-forced data) instead of the not-tracked decline the live assistant once gave. The defense family df1-df2 pins team-defense ranking questions to the defenses board (season fantasy points from the week-stat store under the league's scoring, a named defense as the pack focus with its model-value rank among defenses when the value table carries DEF rows): df1 is Kaedon's exact 'what is denver's defense ranked', whose live answer was once the not-available decline, and df2 the 'how good is the chiefs defense' sibling. df3 pins the cold multi-position matchup board: 'which defenses give up the most to wrs and rbs' builds one defenses-vs-position board per named position in a single answer (the pack carries one sub-board per position under boards), where the live thread once clarified for a position and then answered a bare 'wr and rb' reply with unrelated season breadth leaders. The w3 trap (2026-10-16) pins the covered-QB regression on the waivers intent itself: Williams, Nix and Purdy rostered in 1QB, Mayfield the top wire QB by value, and the pack's qb_coverage state keeps him out of the candidates entirely. The tf5-tf7 family pins the outgoing-position constraint on trade-finding target mode (Kaedon's live question 'what rb can I trade for aj brown'): a viable RB deal must be the answer while the unconstrained QB best fit stays out, a world with no RB deal in range must decline the RB framing and label the overall fit as a fallback, and the unconstrained question keeps returning the overall best fit. tf8-tf9 freeze the in-thread follow-up shape: turn 1 unconstrained returns a QB deal, turn 2 'he wants a rb' applies the constraint scoped to that partner (tf8 answered with the RB deal, tf9 declines at that partner before the labeled fallback). The partner-acceptance family tf10-tf12 pins the Wilson shape: tf10's straight packages fail partner plausibility but a complementary 2-for-2 counter exists and is offered with the would-likely-pass framing, tf11 is the bench-assets positive control that still pitches, and tf12 declines plainly when no counter exists either. tf13's only working construction in the Wilson world is player-plus-pick (the pick stands in his downgrade slot), and tf14's deciding factor is profile, not position: a rebuilding partner voids a 29-year-old veteran headline and the counter leads with a future 1st and a 22-year-old back. ow22-ow25 (compare ownership): her exact live compare (ow22, side-by-side, rounded numbers), an unrostered second player (ow23), a partial-data compare naming the gap (ow24), and an unresolvable name answered by name with the closest match offered (ow25).",
+    "description": "Frozen assistant eval set: 173 questions with golden evidence packs for the BR Fantasy assistant (workshop section 5 core 20, the deep-cuts leaderboard family lb1-lb6, and the section 9 P1 league-context types: playoffs, power rankings, standings, matchup, schedule) plus the P1 trade-finding family tf1-tf4, and the P1 breakout board, Teams, and pick-ownership families bo1-bo3, tm1-tm2, pk1 (renamed from the branch po1, which collided with the playoffs po1), with te4 an extra trade_eval. The win-outcome family mu4-mu6 pins the game-outcome phrasings (will I win / what are my chances / will I lose) to matchup packs: a decisive favorite, a close game, and a decisive underdog. The buy/sell board family bl1/sh1 pins pool-wide buy-low and sell-high asks (no named player) to leaderboard value boards, with bsh4/bsh5 as the named-player controls that must stay single-player buy_sell_hold. The roster start/sit family ss5-ss7 pins slot questions that name no players (start at FLEX, start at RB, sit at FLEX) to roster-scoped packs built from the asking user's own lineup: the FLEX occupant is benched for the bench challenger who out-projects him, and the RB question is a keep-the-starter call. The open-layer wild set ow1-ow19 freezes tool evidence (production tool-entry shape) instead of builder packs: ungoverned phrasings, a follow-up chain (ow5-ow7), a two-part question (ow8), a non-default team (ow9), a PRO gate through the open layer (ow18), and an off-site decline (ow19). The breadth family lb7-lb9 pins cross-metric breadth boards (top-N finishes counted across a metric family: lb7 receiving in Kaedon's exact phrasing, lb8 rushing) and the players-only receiving-yards stat board (the team-row regression: the live board once ranked TEAM_LAR first). The detailed-question family dq1-dq11 pins the composed boards: weekly-finish breadth, floor, and ceiling from game logs (dq1-dq3), the value board under an age ceiling (dq4), a metric board restricted to the waiver pool (dq5), opportunity leaders re-ranked by upcoming schedule (dq6), the within-team No. 1 vs No. 2 gap (dq7), positional-rank climbers from value history (dq8), Teams roster breadth (dq9), a category sweep (dq10), and the no-history trap for rank trajectory (dq11). The history family hs1-hs5 adds past-season boards (metric, raw stat, and movers boards for 2024, plus the no-historical-form trap for value boards, and hs5 the top-scorer freeze: Kaedon's exact 'Who was the top scorer in 2024?', whose live answer once served the current season's board leader and total instead of 2024's), and po4 adds the playoff-odds trajectory. hs6 adds the past-season weekly-finishes board in Kaedon's exact phrasing (the live answer once topped it with a long snapper at 0 PPG); its golden pack is the fixed builder's output over the real 2025 game logs and ranks skill positions only. The live family lv1-lv2 adds in-game questions over fixture live state, and the draft family dr1-dr2 adds live draft help (best available and a 1.03 prep window), and dr3-dr5 pin pick-slotted prep targets: dr3 is Kaedon's exact 'Who should I target at 1.03?' with the class headliner demoted to faller-only (the faller_not_target trap), dr4 the 1.01 control where the target IS the top name with no faller line, and dr5 a 2.03 mid-round case. The nfl_schedule family ns1-ns6 pins real NFL fixture questions (tonight's game, the Sunday slate, a named team's game, Monday night, the full week) to NFL schedule packs: a bare 'who plays tonight' answers the NFL game and never the fantasy matchup (ns1 carries the excluded-name trap for the user's own fantasy team), while ns5 is the possessive trap pair ('who am I playing this week') that stays a matchup question. ow20-ow21 freeze the 2026-10-15 compare entity-resolution cases: 'Compare Ja'Marr Chase and Justin Jefferson' (the WR/LB namesake must resolve silently to the WR, receipts are the WR's) and 'Compare Ja'Marr Chase and Jaxson Smith Njigba' (Kaedon's spelling, no hyphen and an extra s, must resolve to Jaxon Smith-Njigba and compare). The missed-tackle question mt1 pins the broken-tackles family in Kaedon's exact phrasing: 'what missed tackle metrics do I have' answers with both tracked rates (Broken Tackles/Carry and Broken Tackles / Catch, the site's missed-tackles-forced data) instead of the not-tracked decline the live assistant once gave. The defense family df1-df2 pins team-defense ranking questions to the defenses board (season fantasy points from the week-stat store under the league's scoring, a named defense as the pack focus with its model-value rank among defenses when the value table carries DEF rows): df1 is Kaedon's exact 'what is denver's defense ranked', whose live answer was once the not-available decline, and df2 the 'how good is the chiefs defense' sibling. df3 pins the cold multi-position matchup board: 'which defenses give up the most to wrs and rbs' builds one defenses-vs-position board per named position in a single answer (the pack carries one sub-board per position under boards), where the live thread once clarified for a position and then answered a bare 'wr and rb' reply with unrelated season breadth leaders. The w3 trap (2026-10-16) pins the covered-QB regression on the waivers intent itself: Williams, Nix and Purdy rostered in 1QB, Mayfield the top wire QB by value, and the pack's qb_coverage state keeps him out of the candidates entirely. The tf5-tf7 family pins the outgoing-position constraint on trade-finding target mode (Kaedon's live question 'what rb can I trade for aj brown'): a viable RB deal must be the answer while the unconstrained QB best fit stays out, a world with no RB deal in range must decline the RB framing and label the overall fit as a fallback, and the unconstrained question keeps returning the overall best fit. tf8-tf9 freeze the in-thread follow-up shape: turn 1 unconstrained returns a QB deal, turn 2 'he wants a rb' applies the constraint scoped to that partner (tf8 answered with the RB deal, tf9 declines at that partner before the labeled fallback). The partner-acceptance family tf10-tf12 pins the Wilson shape: tf10's straight packages fail partner plausibility but a complementary 2-for-2 counter exists and is offered with the would-likely-pass framing, tf11 is the bench-assets positive control that still pitches, and tf12 declines plainly when no counter exists either. tf13's only working construction in the Wilson world is player-plus-pick (the pick stands in his downgrade slot), and tf14's deciding factor is profile, not position: a rebuilding partner voids a 29-year-old veteran headline and the counter leads with a future 1st and a 22-year-old back. The multi-name family pl4/bsh6/m4/rp3/hc3/bo4 pins the compare-collapse siblings: a second named player or subject is carried in the pack (also_named, player_ranks, unanswered_names) and named in the answer, never silently dropped; tf15 extends the family to trade_finding named mode. ow22-ow25 (compare ownership): her exact live compare (ow22, side-by-side, rounded numbers), an unrostered second player (ow23), a partial-data compare naming the gap (ow24), and an unresolvable name answered by name with the closest match offered (ow25).",
     "scenario": "Kaedon's league Blackedraw, her team Caleb's Casting Couch, Week 7 of the 2026 season.",
     "packs": "Each evidence_pack mirrors, field for field, the dict the matching builder in dashboard_services/assistant/evidence.py returns. Values inside a pack are the only numbers an answer may cite.",
     "recapture": "These packs are frozen fixtures. Before any launch decision, recapture them from the live tools with: python3 scripts/run_assistant_eval.py --capture (writes assistant_eval/captured_questions.json; it never overwrites this file). A launch call made on stale fixtures is not a launch call.",
@@ -21292,6 +21292,750 @@
           "Brian Thomas Jr.",
           "2027 1st",
           "rebuilding"
+        ]
+      }
+    },
+    {
+      "id": "pl4",
+      "type": "player",
+      "question": "How are Rome Odunze and Ja'Marr Chase doing?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "player",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "player": {
+          "player_id": "rome-odunze",
+          "name": "Rome Odunze",
+          "team": "CHI",
+          "position": "WR",
+          "injury_status": null,
+          "value": 4850.0
+        },
+        "role": {
+          "snap_share": 0.82,
+          "target_share": 0.24,
+          "targets_per_game": 7.2,
+          "touches_per_game": 7.4,
+          "opportunity_share": 0.21,
+          "expected_ppr_per_game": 12.6,
+          "ppg": 12.9,
+          "games": 6
+        },
+        "metric_ranks": {
+          "target_share": 12,
+          "targets_per_game": 15,
+          "ppg": 19
+        },
+        "news": [
+          {
+            "title": "Odunze draws praise for route running in practice"
+          }
+        ],
+        "also_named": [
+          {
+            "player_id": "jamarr-chase",
+            "name": "Ja'Marr Chase",
+            "team": "CIN",
+            "position": "WR",
+            "value": 6200.0,
+            "ppg": 19.8,
+            "target_share": 31.0,
+            "snap_share": 91.0
+          }
+        ]
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": "Rome Odunze",
+        "key_numbers": [
+          0.24,
+          12.9,
+          19.8,
+          6200
+        ],
+        "close_call": false
+      },
+      "trap": {
+        "kind": "dropped_second_name",
+        "note": "multi-name player question: before the also_named fix the pack dropped the second resolved player and the answer covered Odunze alone while reading as complete",
+        "player": "Ja'Marr Chase"
+      },
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Odunze",
+          "Chase"
+        ]
+      }
+    },
+    {
+      "id": "bsh6",
+      "type": "buy_sell_hold",
+      "question": "Should I buy Rome Odunze or sell Ja'Marr Chase?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "buy_sell_hold",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026,
+          "value_history_points": 12
+        },
+        "player": {
+          "player_id": "rome-odunze",
+          "name": "Rome Odunze",
+          "team": "CHI",
+          "position": "WR",
+          "injury_status": null,
+          "value": 4850.0
+        },
+        "value_trend_30d": {
+          "start": 4100.0,
+          "current": 4850.0,
+          "delta_pct": 18.3
+        },
+        "role": {
+          "snap_share": 0.82,
+          "target_share": 0.24,
+          "targets_per_game": 7.2,
+          "touches_per_game": 7.4,
+          "opportunity_share": 0.21,
+          "expected_ppr_per_game": 12.6,
+          "ppg": 12.9,
+          "games": 6
+        },
+        "breakout_board": {
+          "member": true
+        },
+        "signal": "buy",
+        "margin": {
+          "thin": false
+        },
+        "also_named": [
+          {
+            "player_id": "jamarr-chase",
+            "name": "Ja'Marr Chase",
+            "team": "CIN",
+            "position": "WR",
+            "value": 6200.0,
+            "ppg": 19.8,
+            "target_share": 31.0,
+            "snap_share": 91.0,
+            "delta_pct": -12.4
+          }
+        ]
+      },
+      "reference": {
+        "verdict_kind": "buy_sell_hold_call",
+        "pick": "BUY",
+        "key_numbers": [
+          18.3,
+          4850,
+          19.8,
+          -12.4,
+          6200
+        ],
+        "close_call": false
+      },
+      "trap": {
+        "kind": "dropped_second_name",
+        "note": "two-name buy/sell question: the signal covered the first name only and the second was silently dropped",
+        "player": "Ja'Marr Chase"
+      },
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Odunze",
+          "Chase"
+        ]
+      }
+    },
+    {
+      "id": "m4",
+      "type": "metric",
+      "question": "What are Ja'Marr Chase and CeeDee Lamb's target shares?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "metric",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "metric_key": "target_share",
+        "definition": "Share of a team's pass attempts that are thrown to the player.",
+        "label": "Target Share",
+        "positions": [
+          "WR",
+          "TE",
+          "RB"
+        ],
+        "leaderboard_top5": [
+          {
+            "player_id": "jamarr-chase",
+            "name": "Ja'Marr Chase",
+            "team": "CIN",
+            "position": "WR",
+            "value": 0.31,
+            "on_my_roster": false
+          },
+          {
+            "player_id": "malik-nabers",
+            "name": "Malik Nabers",
+            "team": "NYG",
+            "position": "WR",
+            "value": 0.29,
+            "on_my_roster": false
+          },
+          {
+            "player_id": "puka-nacua",
+            "name": "Puka Nacua",
+            "team": "LAR",
+            "position": "WR",
+            "value": 0.28,
+            "on_my_roster": false
+          },
+          {
+            "player_id": "justin-jefferson",
+            "name": "Justin Jefferson",
+            "team": "MIN",
+            "position": "WR",
+            "value": 0.27,
+            "on_my_roster": false
+          },
+          {
+            "player_id": "rome-odunze",
+            "name": "Rome Odunze",
+            "team": "CHI",
+            "position": "WR",
+            "value": 0.24,
+            "on_my_roster": true
+          }
+        ],
+        "player_rank": {
+          "player_id": "jamarr-chase",
+          "name": "Ja'Marr Chase",
+          "rank": 1,
+          "pool_size": 132,
+          "percentile": 99,
+          "value": 0.31
+        },
+        "player_ranks": [
+          {
+            "player_id": "jamarr-chase",
+            "name": "Ja'Marr Chase",
+            "rank": 1,
+            "pool_size": 132,
+            "percentile": 99,
+            "value": 0.31
+          },
+          {
+            "player_id": "ceedee-lamb",
+            "name": "CeeDee Lamb",
+            "rank": 9,
+            "pool_size": 132,
+            "percentile": 94,
+            "value": 0.24
+          }
+        ],
+        "pool_size": 132
+      },
+      "reference": {
+        "verdict_kind": "leader",
+        "pick": "Ja'Marr Chase",
+        "key_numbers": [
+          0.31,
+          0.24
+        ],
+        "close_call": false
+      },
+      "trap": {
+        "kind": "dropped_second_name",
+        "note": "second named player ranks outside the carried top 5: before player_ranks his number was not in the pack at all",
+        "player": "CeeDee Lamb"
+      },
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Chase",
+          "Lamb"
+        ]
+      }
+    },
+    {
+      "id": "rp3",
+      "type": "replacement",
+      "question": "Who is a younger replacement for Derrick Henry and Saquon Barkley?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "replacement",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "mode": "younger",
+        "subject": {
+          "player_id": "derrick-henry",
+          "name": "Derrick Henry",
+          "team": "TEN",
+          "position": "RB",
+          "injury_status": null,
+          "value": 2980.0,
+          "age": 32.8
+        },
+        "candidates": [
+          {
+            "player_id": "woody-marks",
+            "name": "Woody Marks",
+            "team": "HOU",
+            "position": "RB",
+            "injury_status": null,
+            "value": 2400.0,
+            "age": 25.9,
+            "age_delta": 6.9,
+            "location": "Pittsburgh Pilots",
+            "owner_team": "Pittsburgh Pilots",
+            "on_my_roster": false
+          },
+          {
+            "player_id": "brian-robinson-jr",
+            "name": "Brian Robinson Jr.",
+            "team": "SF",
+            "position": "RB",
+            "injury_status": null,
+            "value": 1740.0,
+            "age": 27.5,
+            "age_delta": 5.3,
+            "location": "your roster",
+            "on_my_roster": true
+          },
+          {
+            "player_id": "kaleb-johnson",
+            "name": "Kaleb Johnson",
+            "team": "PIT",
+            "position": "RB",
+            "injury_status": null,
+            "value": 1240.0,
+            "age": 23.1,
+            "age_delta": 9.7,
+            "location": "waivers",
+            "on_my_roster": false
+          }
+        ],
+        "unanswered_names": [
+          "Saquon Barkley"
+        ]
+      },
+      "reference": {
+        "verdict_kind": "replacement",
+        "pick": "Woody Marks",
+        "key_numbers": [
+          2980,
+          2400
+        ],
+        "close_call": false
+      },
+      "trap": {
+        "kind": "dropped_second_name",
+        "note": "two-subject replacement question: the search runs per subject; the second subject must be named, not dropped",
+        "player": "Saquon Barkley"
+      },
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Woody Marks",
+          "Pittsburgh Pilots",
+          "Barkley"
+        ]
+      }
+    },
+    {
+      "id": "hc3",
+      "type": "handcuff",
+      "question": "Who are the handcuffs for Derrick Henry and Saquon Barkley?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "handcuff",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "subject": {
+          "player_id": "derrick-henry",
+          "name": "Derrick Henry",
+          "team": "TEN",
+          "position": "RB",
+          "injury_status": null,
+          "value": 2980.0,
+          "age": 32.8
+        },
+        "depth_basis": "depth_chart",
+        "next_up": {
+          "player_id": "tyjae-spears",
+          "name": "Tyjae Spears",
+          "team": "TEN",
+          "position": "RB",
+          "injury_status": null,
+          "value": 890.0,
+          "age": 25.4,
+          "location": "waivers",
+          "on_my_roster": false
+        },
+        "also_next": null,
+        "my_options": [
+          {
+            "player_id": "bijan-robinson",
+            "name": "Bijan Robinson",
+            "team": "ATL",
+            "position": "RB",
+            "injury_status": null,
+            "value": 9800.0,
+            "age": 24.6
+          },
+          {
+            "player_id": "brian-robinson-jr",
+            "name": "Brian Robinson Jr.",
+            "team": "SF",
+            "position": "RB",
+            "injury_status": null,
+            "value": 1740.0,
+            "age": 27.5
+          }
+        ],
+        "unanswered_names": [
+          "Saquon Barkley"
+        ]
+      },
+      "reference": {
+        "verdict_kind": "handcuff",
+        "pick": "Tyjae Spears",
+        "key_numbers": [
+          890,
+          2980
+        ],
+        "close_call": false
+      },
+      "trap": {
+        "kind": "dropped_second_name",
+        "note": "two-subject handcuff question: next-up is per subject; the second subject must be named, not dropped",
+        "player": "Saquon Barkley"
+      },
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Spears",
+          "Barkley"
+        ]
+      }
+    },
+    {
+      "id": "bo4",
+      "type": "breakout_history",
+      "question": "Were Rome Odunze and Ja'Marr Chase breakout calls?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "breakout_history",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "player": {
+          "player_id": "rome-odunze",
+          "name": "Rome Odunze",
+          "team": "CHI",
+          "position": "WR",
+          "injury_status": null
+        },
+        "on_current_board": false,
+        "was_call": true,
+        "earliest_call": {
+          "as_of_week": 4,
+          "label": "Week 5",
+          "season": 2026,
+          "breakout_score": 82.3
+        },
+        "grade": "hit",
+        "also_named": [
+          {
+            "player_id": "jamarr-chase",
+            "name": "Ja'Marr Chase",
+            "was_call": false
+          }
+        ]
+      },
+      "reference": {
+        "verdict_kind": "info",
+        "pick": "Rome Odunze",
+        "key_numbers": [
+          82.3
+        ],
+        "close_call": false
+      },
+      "trap": {
+        "kind": "dropped_second_name",
+        "note": "two-name breakout history: the verdict covered the first name only and the second was silently dropped",
+        "player": "Ja'Marr Chase"
+      },
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Rome Odunze",
+          "Week 5",
+          "Chase"
+        ]
+      }
+    },
+    {
+      "id": "tf15",
+      "type": "trade_finding",
+      "question": "What can I get for Jordan Addison and Justin Jefferson?",
+      "context": {
+        "league_name": "Blackedraw",
+        "team_name": "Caleb's Casting Couch",
+        "week": 7,
+        "format": "dynasty superflex half PPR"
+      },
+      "evidence_pack": {
+        "type": "trade_finding",
+        "available": true,
+        "league": {
+          "platform": "sleeper",
+          "league_id": "blackedraw",
+          "season": 2026,
+          "league_name": "Blackedraw",
+          "team_name": "Caleb's Casting Couch"
+        },
+        "week": 7,
+        "as_of": {
+          "week": 7,
+          "season": 2026
+        },
+        "mode": "sell",
+        "target_position": null,
+        "sell_player": {
+          "player_id": "jordan-addison",
+          "name": "Jordan Addison",
+          "team": "MIN",
+          "position": "WR",
+          "value": 3920.0
+        },
+        "target_player": null,
+        "viewer_needs": [
+          "RB"
+        ],
+        "viewer_surplus": [
+          "WR"
+        ],
+        "findings": [
+          {
+            "partner_roster_id": "2",
+            "partner_team": "Pittsburgh Pilots",
+            "give": [
+              {
+                "player_id": "jordan-addison",
+                "name": "Jordan Addison",
+                "team": "MIN",
+                "position": "WR",
+                "value": 3920.0
+              }
+            ],
+            "receive": [
+              {
+                "player_id": "woody-marks",
+                "name": "Woody Marks",
+                "team": "HOU",
+                "position": "RB",
+                "value": 2400.0
+              },
+              {
+                "player_id": "darnell-mooney",
+                "name": "Darnell Mooney",
+                "team": "ATL",
+                "position": "WR",
+                "value": 1500.0
+              }
+            ],
+            "give_total": 3920.0,
+            "receive_total": 3900.0,
+            "fairness_gap": -20.0,
+            "fairness": null,
+            "acceptance_rate": null,
+            "partner_needs": [
+              "WR"
+            ],
+            "partner_surplus": [
+              "RB"
+            ],
+            "fills_partner_needs": [
+              "WR"
+            ],
+            "fills_your_needs": [
+              "RB"
+            ]
+          },
+          {
+            "partner_roster_id": "7",
+            "partner_team": "Waiver Wire Wizards",
+            "give": [
+              {
+                "player_id": "jordan-addison",
+                "name": "Jordan Addison",
+                "team": "MIN",
+                "position": "WR",
+                "value": 3920.0
+              }
+            ],
+            "receive": [
+              {
+                "player_id": "tony-pollard",
+                "name": "Tony Pollard",
+                "team": "TEN",
+                "position": "RB",
+                "value": 2100.0
+              },
+              {
+                "player_id": "calvin-ridley",
+                "name": "Calvin Ridley",
+                "team": "TEN",
+                "position": "WR",
+                "value": 1750.0
+              }
+            ],
+            "give_total": 3920.0,
+            "receive_total": 3850.0,
+            "fairness_gap": -70.0,
+            "fairness": null,
+            "acceptance_rate": null,
+            "partner_needs": [
+              "WR"
+            ],
+            "partner_surplus": [
+              "RB",
+              "WR"
+            ],
+            "fills_partner_needs": [
+              "WR"
+            ],
+            "fills_your_needs": [
+              "RB"
+            ]
+          }
+        ],
+        "no_fit": false,
+        "closest_miss": null,
+        "margin": {
+          "thin": false
+        },
+        "unanswered_names": [
+          "Justin Jefferson"
+        ]
+      },
+      "reference": {
+        "verdict_kind": "findings",
+        "pick": "Woody Marks",
+        "key_numbers": [
+          3900,
+          3920,
+          20
+        ],
+        "close_call": false
+      },
+      "trap": {
+        "kind": "dropped_second_name",
+        "player": "Justin Jefferson",
+        "note": "two-name sell question: the named mode runs for the first named player only; the second must be named in the answer, not dropped"
+      },
+      "expect": {
+        "no_data": false,
+        "must_mention": [
+          "Pittsburgh Pilots",
+          "Woody Marks",
+          "Jefferson"
         ]
       }
     }
