@@ -145,6 +145,22 @@ def test_covered_qb_room_gets_no_qb_claim(monkeypatch):
     assert "spots" not in blob
 
 
+def test_covered_qb_room_gets_no_claim_even_with_projection_edge(monkeypatch):
+    # Regression (2026-10-16): same covered room, but now Mayfield
+    # out-projects the starter every week (25.5 vs 24.0). The lineup-gain
+    # classification calls that a gain; QB coverage must still suppress
+    # the claim: a fourth QB in a 1QB league is bench weight, and Kaedon
+    # was told to add him on exactly this arithmetic.
+    monkeypatch.setitem(PROJ, "mayf", 25.5)
+    ctx, rows = _fixture(monkeypatch)
+    actions = app_module._next_steps_waiver_actions(ctx, 1, rows)
+    blob = " ".join(f"{a['action']} {a['why']}" for a in actions)
+    assert "Mayfield" not in blob
+    assert not any(a["action"].startswith("Claim Baker") for a in actions)
+    # The genuine RB gain is unaffected.
+    assert any(a["player_id"] == "wrb" for a in actions)
+
+
 def test_real_lineup_gain_claim_still_surfaces(monkeypatch):
     ctx, rows = _fixture(monkeypatch)
     actions = app_module._next_steps_waiver_actions(ctx, 1, rows)
