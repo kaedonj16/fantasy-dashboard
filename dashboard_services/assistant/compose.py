@@ -107,7 +107,10 @@ SYSTEM = (
     "For trade finding, present only the findings in the evidence: never invent a partner, a package, "
     "or a player swap, and order by mutual fit, not by how much the user wins. When the evidence marks "
     "no_fit, say plainly that there is no clean fit right now, name the closest miss if one is given, "
-    "and point at the nearest alternative instead of forcing a bad trade. "
+    "and point at the nearest alternative instead of forcing a bad trade. When the evidence carries "
+    "give_position, the findings already honor it (the user's outgoing side is anchored at that "
+    "position): present the top finding as the answer to that ask, and never substitute a deal "
+    "built on another position. "
     "for breakout calls, the top candidates and their scores; for team grades, the strongest and "
     "weakest teams and their grade scores; for a draft pick, its value and who owns it. "
     "For keepers, cite each kept player's cost round and value, and the first player on the cut line. "
@@ -1872,6 +1875,53 @@ def _join_asset_names(players) -> str:
     return ", ".join(names[:-1]) + " and " + names[-1]
 
 
+def _position_no_fit_answer(pack: dict) -> dict:
+    """Deterministic answer when an outgoing-position constraint found no
+    deal: the user asked which of HER players at one position lands the
+    target ("what rb can I trade for A.J. Brown") and no package anchored
+    at that position is plausible and in band. Code-composed like the
+    no-fit answer so another position's deal can never be dressed up as
+    the answer: the text declines the position framing plainly, then
+    offers the best overall fit as a labeled fallback. Every number comes
+    from the pack's fallback_finding."""
+    pos = str((pack or {}).get("give_position") or "").upper()
+    target = ((pack or {}).get("target_player") or {}).get("name") or "that player"
+    fb = (pack or {}).get("fallback_finding") or {}
+    text = f"No {pos} package on your roster gets within range of {target}."
+    if (pack or {}).get("partner_scoped") and (pack or {}).get("partner_team"):
+        # The constraint arrived as a partner-want follow-up ("he wants
+        # a rb"): the decline is scoped to that partner first, and only
+        # the labeled fallback below widens past it.
+        text = (f"No {pos} package on your roster gets you {target} from "
+                f"{pack['partner_team']}.")
+    receipts: list[dict] = []
+    if fb and fb.get("receive_total") is not None and fb.get("give_total") is not None:
+        give = fb.get("give") or []
+        anchor = max(give, key=lambda p: float(p.get("value") or 0)) if give else {}
+        fb_pos = str(anchor.get("position") or "").upper()
+        gap = fb.get("fairness_gap")
+        gap_clause = ""
+        if isinstance(gap, (int, float)):
+            gap_clause = f", a fairness gap of {_fmt_num(abs(float(gap)))}"
+        text += (f" Closest deal overall is a {fb_pos} deal: you send "
+                 f"{_join_asset_names(give)} to {fb.get('partner_team')} for "
+                 f"{target}, totals {_fmt_num(fb.get('receive_total'))} against "
+                 f"{_fmt_num(fb.get('give_total'))}{gap_clause}.")
+        receipts = [
+            {"label": "You receive (total value)", "value": _fmt_num(fb.get("receive_total"))},
+            {"label": "You give (total value)", "value": _fmt_num(fb.get("give_total"))},
+        ]
+        if isinstance(gap, (int, float)):
+            receipts.append({"label": "Fairness gap", "value": _fmt_num(gap)})
+    return {"verdict": f"No {pos} deal for {target}", "text": text,
+            "receipts": receipts,
+            "caveat": None,
+            "followups": [followup_pair(f"Who can I trade for {target}?"),
+                          followup_pair("What should I do with my team this week?")],
+            "act_link": _resolve_act_link("trade_finding", pack),
+            "actions": [], "mentions": _mentions("trade_finding", pack)}
+
+
 def _no_fit_answer(pack: dict) -> dict:
     """Deterministic answer for a trade-finding pack with no clean fit.
 
@@ -2874,6 +2924,12 @@ def compose_answer(intent: str, question: str, pack: dict, *, preferences=None, 
         return _enforce_grounding(_empty_value_board_answer(pack), intent, pack, question)
     if isinstance(pack, dict) and pack.get("available") is False:
         return _enforce_grounding(no_data_answer(pack), intent, pack, question)
+    if intent == "trade_finding" and isinstance(pack, dict) \
+            and pack.get("position_no_fit"):
+        # The outgoing-position constraint emptied the findings while an
+        # overall fit exists: the answer is code-composed so the fallback
+        # deal can never be presented as if it answered the position ask.
+        return _enforce_grounding(_position_no_fit_answer(pack), intent, pack, question)
     if intent == "trade_finding" and isinstance(pack, dict) and pack.get("no_fit") \
             and not pack.get("findings") and not pack.get("pick_equivalents"):
         # The scan found no clean fit: the answer is code-composed so the

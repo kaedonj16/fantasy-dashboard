@@ -202,7 +202,7 @@ def test_need_mode_filters_to_requested_position(base, monkeypatch):
     # The engine's own totals are the pack's numbers.
     assert f["receive_total"] == 3300.0 and f["give_total"] == 3400.0
     assert f["fairness_gap"] == -100.0
-    assert f["you_fill"] == ["WR"] and f["they_fill"] == ["RB"]
+    assert f["fills_partner_needs"] == ["WR"] and f["fills_your_needs"] == ["RB"]
     assert "ai.context_builders.build_trade_suggestions_context" in tools
 
 
@@ -324,7 +324,7 @@ FINDING = {
     "give_total": 3920.0, "receive_total": 3900.0, "fairness_gap": -20.0,
     "fairness": 0.99, "acceptance_rate": 0.62,
     "partner_needs": ["WR"], "partner_surplus": ["RB"],
-    "you_fill": ["WR"], "they_fill": ["RB"],
+    "fills_partner_needs": ["WR"], "fills_your_needs": ["RB"],
 }
 
 
@@ -406,6 +406,276 @@ def test_no_fit_answer_is_code_composed_and_names_the_miss(monkeypatch):
     assert answer["actions"] == []
     assert answer["act_link"]["href"].endswith("/trade?tab=suggestions")
     assert answer["followups"]
+
+
+# -- outgoing-position constraint ("what rb can I trade for X") --------------------
+#
+# Kaedon's live exchange (2026-10-16): "what rb can I trade for aj brown"
+# returned the unconstrained best fit (a QB deal), because no layer
+# carried the outgoing position: the router had no entity for it, the
+# target search ranked the whole roster, and the composer only ever
+# saw the top unconstrained fit.
+
+def test_keyword_give_position_shapes(monkeypatch):
+    cases = [
+        ("what rb can I trade for aj brown", "RB"),
+        ("which running back could I give up for ja'marr chase", "RB"),
+        ("what wr gets me justin jefferson", "WR"),
+        ("any te deal for travis kelce", "TE"),
+        ("what qb can I trade for ceedee lamb", "QB"),
+        ("which rb could I send for aj brown", "RB"),
+    ]
+    for message, pos in cases:
+        r = _keyword_route(monkeypatch, message)
+        assert r["intent"] == "trade_finding", message
+        assert r["entities"]["give_position"] == pos, message
+
+
+def test_keyword_give_position_reverse_and_unconstrained_untouched(monkeypatch):
+    # The reverse phrasing names HER player at a position: a sell
+    # question, not an outgoing-position constraint.
+    r = _keyword_route(monkeypatch, "What can I get for my rb Josh Jacobs?")
+    assert r["intent"] == "trade_finding"
+    assert r["entities"]["give_position"] is None
+    # The plain unconstrained question carries no constraint either.
+    r = _keyword_route(monkeypatch, "who can I trade for aj brown")
+    assert r["entities"]["give_position"] is None
+
+
+def _model_route(monkeypatch, payload):
+    monkeypatch.setattr(router, "call_model_json", lambda *a, **k: dict(payload))
+    return router.classify("what rb can I trade for aj brown", {}, None)
+
+
+def _route_payload(**over):
+    base = {"intent": "trade_finding", "player_names": ["A.J. Brown"],
+            "give_player_names": [], "receive_player_names": [], "picks": [],
+            "other_team_hint": None, "metric_hint": None,
+            "target_position": None, "give_position": None, "week": None,
+            "preference_text": None}
+    base.update(over)
+    return base
+
+
+def test_model_route_give_position_carried(monkeypatch):
+    r = _model_route(monkeypatch, _route_payload(give_position="RB"))
+    assert r["intent"] == "trade_finding"
+    assert r["entities"]["give_position"] == "RB"
+    assert r["entities"]["target_position"] is None
+
+
+def test_model_route_misparked_target_position_is_corrected(monkeypatch):
+    # The live failure shape: the model parked the requested RB on the
+    # incoming side (or dropped it). The deterministic correction moves
+    # it to the outgoing side and clears the bogus target position.
+    r = _model_route(monkeypatch, _route_payload(target_position="RB"))
+    assert r["entities"]["give_position"] == "RB"
+    assert r["entities"]["target_position"] is None
+
+
+def test_partner_want_reply_matrix():
+    assert router.partner_want_reply("he wants a rb") == "RB"
+    assert router.partner_want_reply("he needs a wr") == "WR"
+    assert router.partner_want_reply("they want a qb back") == "QB"
+    assert router.partner_want_reply("she wants a tight end") == "TE"
+    assert router.partner_want_reply("wants a rb") == "RB"
+    assert router.partner_want_reply("he wants an rb back") == "RB"
+    assert router.partner_want_reply("they need a receiver") == "WR"
+    # Not partner wants: first person, wants without a position, and
+    # full questions all route on their own.
+    assert router.partner_want_reply("i want a rb") is None
+    assert router.partner_want_reply("he wants too much") is None
+    assert router.partner_want_reply("he wants a first round pick") is None
+    assert router.partner_want_reply("who can I trade for aj brown") is None
+    assert router.partner_want_reply("") is None
+
+
+# Builder world for the constraint: Other Guys needs a WR (the base
+# world's _league_fit), so both packages carry a small WR piece; the
+# anchor (max-value piece) is the position under test. Target r2 (3300):
+# the QB package totals 3200 (gap 100), the RB package 3100 (gap 200),
+# both inside the fairness band.
+_CONSTRAINED_VALUES = {"q1": 2600, "r1": 2500, "w1": 600}
+
+
+def _constrained_asset(vals, pid):
+    row = next(v for v in vals if v["id"] == pid)
+    return {"player_id": pid, "id": pid, "name": INDEX[pid]["name"],
+            "position": INDEX[pid]["position"], "value": float(row["value"])}
+
+
+def _constrained_world(monkeypatch, packages):
+    _gate(monkeypatch, True)
+    vals = [dict(v, value=_CONSTRAINED_VALUES[v["id"]])
+            if v["id"] in _CONSTRAINED_VALUES else dict(v) for v in VALUES]
+    monkeypatch.setattr(evidence, "get_model_value_table_cached",
+                        lambda *a, **k: vals)
+    built = [[_constrained_asset(vals, pid) for pid in pkg] for pkg in packages]
+    monkeypatch.setattr(
+        evidence, "value_matched_acquire_packages",
+        lambda focus, players, picks, **kw: [
+            {"assets": assets,
+             "send_value": sum(a["value"] for a in assets)} for assets in built])
+    return vals
+
+
+def test_target_mode_unconstrained_ranks_qb_package_first(base, monkeypatch):
+    _constrained_world(monkeypatch, [["q1", "w1"], ["r1", "w1"]])
+    pack, _tools = evidence.build_trade_finding(_bundle(), {}, ["r2"])
+    assert pack["mode"] == "target" and pack["give_position"] is None
+    assert pack["position_no_fit"] is False
+    assert [[p["player_id"] for p in f["give"]] for f in pack["findings"]] == [
+        ["q1", "w1"], ["r1", "w1"]]
+
+
+def test_target_mode_rb_constraint_returns_only_the_rb_package(base, monkeypatch):
+    _constrained_world(monkeypatch, [["q1", "w1"], ["r1", "w1"]])
+    pack, _tools = evidence.build_trade_finding(
+        _bundle(), {"give_position": "RB"}, ["r2"])
+    assert pack["give_position"] == "RB" and pack["position_no_fit"] is False
+    assert len(pack["findings"]) == 1
+    f = pack["findings"][0]
+    assert [p["player_id"] for p in f["give"]] == ["r1", "w1"]
+    assert f["partner_team"] == "Other Guys"
+    assert pack["partner_team"] == "Other Guys"
+
+
+def test_target_mode_rb_constraint_no_rb_package_sets_fallback(base, monkeypatch):
+    _constrained_world(monkeypatch, [["q1", "w1"]])
+    pack, _tools = evidence.build_trade_finding(
+        _bundle(), {"give_position": "RB"}, ["r2"])
+    assert pack["findings"] == [] and pack["no_fit"] is True
+    assert pack["position_no_fit"] is True
+    fb = pack["fallback_finding"]
+    assert [p["player_id"] for p in fb["give"]] == ["q1", "w1"]
+    assert fb["partner_team"] == "Other Guys"
+    assert pack["partner_team"] == "Other Guys"
+
+
+def test_need_mode_give_position_constraint(base, monkeypatch):
+    _gate(monkeypatch, True)
+    monkeypatch.setattr(evidence, "build_trade_suggestions_context",
+                        lambda ctx, rid: _sugg_ctx())
+    pack, _tools = evidence.build_trade_finding(
+        _bundle(), {"give_position": "RB"}, [])
+    assert pack["mode"] == "need" and pack["position_no_fit"] is False
+    assert len(pack["findings"]) == 1
+    assert [p["player_id"] for p in pack["findings"][0]["give"]] == ["r1"]
+    pack, _tools = evidence.build_trade_finding(
+        _bundle(), {"give_position": "QB"}, [])
+    assert pack["findings"] == [] and pack["position_no_fit"] is True
+    # The fallback is the engine's own top partner (its order), the
+    # WR-anchored package.
+    assert [p["player_id"] for p in pack["fallback_finding"]["give"]] == ["w1"]
+
+
+# -- composer: the constrained decline is code-composed -----------------------------
+
+def _eval_pack(qid):
+    import json
+    from pathlib import Path
+    doc = json.loads((Path(__file__).resolve().parent.parent
+                      / "assistant_eval" / "questions.json").read_text())
+    return next(q for q in doc["questions"] if q["id"] == qid)
+
+
+def test_position_no_fit_answer_declines_then_labels_fallback(monkeypatch):
+    def boom(*a, **k):
+        raise AssertionError("model called for a position no-fit pack")
+    monkeypatch.setattr(compose_mod, "call_model_json", boom)
+    q = _eval_pack("tf6")
+    answer = compose_answer("trade_finding", q["question"], q["evidence_pack"])
+    assert answer["verdict"] == "No RB deal for A.J. Brown"
+    assert "No RB package on your roster gets within range of A.J. Brown." \
+        in answer["text"]
+    assert "Closest deal overall is a QB deal" in answer["text"]
+    assert "Brock Purdy" in answer["text"]
+    assert {r["value"] for r in answer["receipts"]} == {"3179", "3165", "14"}
+    assert answer["actions"] == []
+
+
+def test_position_no_fit_answer_partner_scoped_declines_at_the_partner(monkeypatch):
+    def boom(*a, **k):
+        raise AssertionError("model called for a position no-fit pack")
+    monkeypatch.setattr(compose_mod, "call_model_json", boom)
+    q = _eval_pack("tf9")
+    answer = compose_answer("trade_finding", q["question"], q["evidence_pack"])
+    assert answer["verdict"] == "No RB deal for A.J. Brown"
+    assert ("No RB package on your roster gets you A.J. Brown from "
+            "Jeremiah pls save us.") in answer["text"]
+    assert "Closest deal overall is a QB deal" in answer["text"]
+    assert answer["actions"] == []
+
+
+# -- service: the two-turn live thread ------------------------------------------------
+
+def _svc_route(q, c, h):
+    m = (q or "").lower()
+    base = {"player_names": [], "give_player_names": [],
+            "receive_player_names": [], "picks": [], "give_picks": [],
+            "receive_picks": [], "other_team_hint": None, "team_names": [],
+            "metric_hint": None, "target_position": None,
+            "give_position": None, "week": None, "season": None}
+    if "who can i trade" in m:
+        return {"intent": "trade_finding",
+                "entities": {**base, "player_names": ["His RB"]},
+                "preference_text": None, "router_model": "fake"}
+    # The follow-up routes cold to nothing, exactly as live: the
+    # partner-want resume, not the router, must save it.
+    return {"intent": "out_of_scope", "entities": base,
+            "preference_text": None, "router_model": "fake"}
+
+
+@pytest.fixture()
+def svc_env(monkeypatch):
+    st = {"threads": {}, "logs": [], "prefs": [], "log_seq": 0, "pref_seq": 0}
+    conn = FakeConn(st)
+    monkeypatch.setattr(store, "_TABLE_READY", False)
+    monkeypatch.setattr(store, "get_conn", lambda *a, **k: conn)
+    monkeypatch.setattr(service, "_active_plan", lambda key: None)
+    monkeypatch.setattr(service.ctx_mod, "resolve_league",
+                        lambda key, **kw: _bundle(assumed_league_uncertain=False))
+    by_name = {v["name"]: pid for pid, v in INDEX.items()}
+    monkeypatch.setattr(
+        service, "resolve_player",
+        lambda name, roster_player_ids=None: (
+            {"status": "resolved", "player_id": by_name[name]}
+            if name in by_name else {"status": "missing"}))
+    monkeypatch.setattr(service, "classify", _svc_route)
+    _canned(monkeypatch, {"verdict": "Trade target: His RB",
+                          "text": "Other Guys fits on both sides.",
+                          "receipts": [], "caveat": None, "followups": [],
+                          "act_link": None})
+    return st
+
+
+def test_partner_want_followup_reruns_the_trade_with_the_constraint(
+        base, svc_env, monkeypatch):
+    _constrained_world(monkeypatch, [["q1", "w1"], ["r1", "w1"]])
+    out1 = service.ask("acct:42", "who can I trade for His RB")
+    assert out1["intent"] == "trade_finding"
+    # Turn 1 is unconstrained: the QB-anchored package is the best fit
+    # and the staged calculator link sends the QB.
+    assert "b=q1" in out1["answer"]["actions"][0]["href"]
+    out2 = service.ask("acct:42", "he wants a rb",
+                       thread_id=out1["thread_id"])
+    assert out2["intent"] == "trade_finding"
+    # The re-run is constrained: the staged deal now sends the RB, and
+    # the QB package from turn 1 is not re-served.
+    href = out2["answer"]["actions"][0]["href"]
+    assert "b=r1" in href and "q1" not in href
+    import json
+    logged = json.loads(svc_env["logs"][-1]["entities"])
+    assert logged["give_position"] == "RB"
+    assert logged["partner_scoped"] is True
+    assert logged["player_names"] == ["His RB"]
+
+
+def test_partner_want_shape_without_a_trade_thread_routes_cold(
+        base, svc_env, monkeypatch):
+    _constrained_world(monkeypatch, [["q1", "w1"], ["r1", "w1"]])
+    out = service.ask("acct:42", "he wants a rb")
+    assert out["intent"] == "out_of_scope"
 
 
 # -- end to end through the API --------------------------------------------------------------

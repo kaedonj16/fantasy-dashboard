@@ -1428,9 +1428,42 @@ def _names(players):
     return " and ".join(p["name"] for p in players or [])
 
 
+def _position_no_fit_answer(pack):
+    """Mirror of compose._position_no_fit_answer (same strings)."""
+    pos = str((pack or {}).get("give_position") or "").upper()
+    target = ((pack or {}).get("target_player") or {}).get("name") or "that player"
+    fb = (pack or {}).get("fallback_finding") or {}
+    text = f"No {pos} package on your roster gets within range of {target}."
+    if (pack or {}).get("partner_scoped") and (pack or {}).get("partner_team"):
+        text = (f"No {pos} package on your roster gets you {target} from "
+                f"{pack['partner_team']}.")
+    receipts = []
+    if fb and fb.get("receive_total") is not None and fb.get("give_total") is not None:
+        give = fb.get("give") or []
+        anchor = max(give, key=lambda p: float(p.get("value") or 0)) if give else {}
+        fb_pos = str(anchor.get("position") or "").upper()
+        gap = fb.get("fairness_gap")
+        gap_clause = ""
+        if isinstance(gap, (int, float)):
+            gap_clause = f", a fairness gap of {fmt(abs(float(gap)))}"
+        text += (f" Closest deal overall is a {fb_pos} deal: you send "
+                 f"{_names(give)} to {fb.get('partner_team')} for "
+                 f"{target}, totals {fmt(fb.get('receive_total'))} against "
+                 f"{fmt(fb.get('give_total'))}{gap_clause}.")
+        receipts = _side_receipts(fb)
+    ans = _base("trade_finding", pack)
+    ans.update({"verdict": f"No {pos} deal for {target}", "text": text,
+                "receipts": receipts,
+                "followups": [_fu(f"Who can I trade for {target}?"),
+                              _fu("What should I do with my team this week?")]})
+    return ans
+
+
 def _trade_finding(pack):
     if pack.get("gated"):
         return gated_answer(pack)
+    if pack.get("position_no_fit"):
+        return _position_no_fit_answer(pack)
     equiv = (pack.get("pick_equivalents") or {}).get("equivalents") or []
     if equiv:
         sell = pack.get("sell_player") or {}

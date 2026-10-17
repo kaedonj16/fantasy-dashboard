@@ -332,6 +332,36 @@ def score_answer(question: dict, answer: dict) -> dict:
         trap_ok = verdict_ok and "no clean fit" in full.lower()
         if not trap_ok:
             notes.append("no-fit trap failed: the answer must say there is no clean fit")
+    elif trap.get("kind") == "position_constraint_ignored":
+        # The trade-finding position trap: the user constrained the
+        # OUTGOING side to one position ("what rb can I trade for X") and
+        # the unconstrained best fit is another position's deal (the trap
+        # player). In "answered" mode a viable constrained deal exists, so
+        # the trap player must not surface anywhere, prose or action rows.
+        # In "declined" mode no constrained deal is in range: the answer
+        # must decline the position framing, and the trap player may
+        # appear only inside the labeled overall fallback, never as the
+        # verdict.
+        _pos = str(trap.get("position") or "").upper()
+        _player = str(trap.get("player") or "").lower()
+        _in_actions = any(
+            _player and _player in str(a.get("headline") or "").lower()
+            for a in (answer or {}).get("actions") or [])
+        if trap.get("mode") == "declined":
+            trap_ok = bool(_pos) \
+                and f"no {_pos.lower()} package" in full.lower() \
+                and "closest deal overall" in full.lower() \
+                and _player not in verdict_text.lower() \
+                and not _in_actions
+            if not trap_ok:
+                notes.append("position trap failed: the answer must decline the "
+                             "position framing and offer the overall fit only "
+                             "as a labeled fallback")
+        else:
+            trap_ok = bool(_player) and _player not in full.lower() and not _in_actions
+            if not trap_ok:
+                notes.append("position trap failed: the unconstrained best fit "
+                             "was presented instead of the constrained deal")
     elif trap.get("kind") == "unneeded_qb_claim":
         # The waiver-gate trap: a value-rising QB sat on the wire, but the
         # roster's QB room was already covered, so the team-fit gate kept

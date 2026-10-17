@@ -15,7 +15,7 @@ from dashboard_services.assistant.compose import compose_answer, followup_pair, 
 from dashboard_services.assistant.evidence import BUILDERS
 from dashboard_services.assistant.model import last_usage
 from dashboard_services.assistant.resolve import _normalize, resolve_player
-from dashboard_services.assistant.router import classify, positions_reply
+from dashboard_services.assistant.router import classify, partner_want_reply, positions_reply
 
 logger = logging.getLogger(__name__)
 
@@ -521,7 +521,27 @@ def ask(account_key: str, message: str, *, platform=None, league_id=None, season
             # compose and the log both key off the message.
             message = pending_slot.get("question") or message
             slot_resumed = True
-    if not resumed and not slot_resumed:
+    # Partner-want resume: right after a trade-target answer, a reply
+    # like "he wants a rb" names what the other manager wants back,
+    # which is the user's outgoing side. Re-run the pending trade
+    # question with that position as the give constraint; the target
+    # (and with it the partner, the target's owner) rides in from the
+    # last turn's entities, and the pack is marked partner-scoped so a
+    # constrained no-fit declines at that partner before any widening.
+    partner_resumed = False
+    if not resumed and not slot_resumed \
+            and (last_entities or {}).get("_intent") == "trade_finding" \
+            and (last_entities or {}).get("player_names") \
+            and not (last_entities or {}).get("give_player_names"):
+        want_pos = partner_want_reply(message)
+        if want_pos:
+            intent = "trade_finding"
+            entities = {"player_names": list(last_entities["player_names"]),
+                        "target_position": last_entities.get("target_position"),
+                        "give_position": want_pos,
+                        "partner_scoped": True}
+            partner_resumed = True
+    if not resumed and not slot_resumed and not partner_resumed:
         # Defense follow-ups keep the thread's defense in focus: a
         # matchup/defenses board that names no team inherits the team
         # the thread was just discussing. Scoped to the defense board
