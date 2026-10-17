@@ -222,6 +222,10 @@ SYSTEM = (
     "answer (what about his handcuff, how does he compare to X) when no fixed intent owns "
     "it. A head-to-head comparison of two named players (compare X and Y, X vs Y, how does "
     "X compare to Y) is open, never player: the compare tool builds the side-by-side. "
+    "A request to rank or order a named set of players (rank X, Y and Z by value) is "
+    "open, never leaderboard or player: the rank tool resolves every named player and "
+    "orders the set by code. League-wide boards that name no set (rank the WRs, top WRs "
+    "by value) stay leaderboard. "
     "Prefer a fixed intent whenever one clearly fits: pinned verdicts (start_sit, "
     "trade_eval, keeper) always win over open. "
     "out_of_scope: anything that is NOT about fantasy football, the user's leagues, or the "
@@ -750,6 +754,173 @@ def compare_player_names(message: str):
     return a, b
 
 
+# -- deterministic rank-a-named-set shape -------------------------------------
+#
+# Ranking an arbitrary NAMED set of players ("rank Garrett Wilson, Nico
+# Collins and Justin Jefferson by value") has no governed intent: the
+# leaderboard boards rank the whole pool, and no builder ranks just the
+# named players. Before this seam existed the question fell to the open
+# planner, which fetched ONE player's numbers and let the composer
+# assert a ranking of all three from that subset (collapse audit,
+# 2026-10-16: the most valuable player, named last, "trailed"). The
+# shape is extracted deterministically here; classify() forces the open
+# intent with every name and the parsed ranking key, and the open layer
+# runs the same extraction to fetch the rank_players tool before the
+# planner, so the order is computed by code from every named player's
+# numbers, never improvised from a subset.
+
+# Governed anchors: any of these words means another intent owns the
+# question (start/sit "start X or Y", trade and keeper asks), however
+# the sentence is framed.
+_RANK_ANCHOR_RE = re.compile(
+    r"\b(start|starts|sit|sits|bench|flex|play|trade|trading|swap|accept|"
+    r"keeper|keepers|keep|drop|add|adds|waiver|waivers|draft|compare|"
+    r"buy|sell|hold|handcuff|pick ?up)\b")
+
+# Spans that name a pool, not a person: league-wide boards phrase the
+# pool as the whole span ("the wrs", "top wrs by value"), so an exact
+# pool phrase (after the leading article / top-N is stripped) rejects
+# the shape and the board keeps its question.
+_RANK_POOL_SPANS = {
+    "wr", "wrs", "rb", "rbs", "qb", "qbs", "te", "tes", "wide receiver",
+    "wide receivers", "wideout", "wideouts", "running back",
+    "running backs", "quarterback", "quarterbacks", "tight end",
+    "tight ends", "receivers", "backs", "defense", "defenses", "dst",
+    "kicker", "kickers", "teams", "players", "rookies", "prospects",
+    "waiver wire", "free agents", "my team", "my roster", "the league",
+    "everyone", "them", "all", "draft class", "power rankings",
+}
+
+_RANK_NON_NAMES = {"who", "what", "when", "where", "why", "how",
+                   "did", "does", "do", "is", "are", "was", "were",
+                   "won", "will", "should", "can", "could", "would"}
+_RANK_PRONOUNS = {"he", "him", "his", "she", "her", "they", "them",
+                  "that guy", "this guy", "the rookie", "the vet"}
+
+_RANK_TRAILING = (" from best to worst", " best to worst",
+                  " from worst to best", " worst to best",
+                  " this week", " today", " please", " now",
+                  " rest of season", " this season", " for me",
+                  " in dynasty", " for dynasty", " in my league")
+
+
+def _rank_key_for(phrase: str) -> str | None:
+    """Canonical ranking key for a stated 'by ...' phrase, or None."""
+    p = " ".join(str(phrase or "").split()).strip(" .?!,")
+    for lead in ("their ", "his ", "her ", "the "):
+        if p.startswith(lead):
+            p = p[len(lead):]
+            break
+    if not p:
+        return None
+    if "recent" in p and ("ppg" in p or "points" in p or "form" in p):
+        return "recent_ppg"
+    if "expected" in p and ("ppg" in p or "points" in p):
+        return "expected_ppg"
+    if "ppg" in p or p in ("points", "points per game", "fantasy points"):
+        return "ppg"
+    if "touches" in p:
+        return "touches_per_game"
+    if "value" in p:
+        return "value"
+    return None
+
+
+def _rank_span(text: str) -> str:
+    span = " ".join(str(text or "").split()).strip(" .?!,:")
+    low = span.lower()
+    for tail in _RANK_TRAILING:
+        if low.endswith(tail):
+            span = span[: -len(tail)].rstrip(" .?!,:")
+            low = span.lower()
+    if low.startswith("the "):
+        span = span[4:]
+    return span.strip()
+
+
+def _rank_span_ok(span: str) -> bool:
+    if not span or span.lower() in _RANK_PRONOUNS:
+        return False
+    if span.lower() in _RANK_POOL_SPANS:
+        return False
+    if any(ch.isdigit() for ch in span):
+        return False
+    toks = span.replace(".", " ").replace("'", "").split()
+    if not 1 <= len(toks) <= 4:
+        return False
+    if toks[0].lower() in _RANK_NON_NAMES or toks[0].lower() == "top":
+        return False
+    return all(t.isalpha() or "-" in t for t in toks)
+
+
+def rank_shape(message: str):
+    """{names, key, unsupported_key} for a rank-a-named-set ask, or None.
+
+    Grammar: a rank/order/sort verb (or a worth-more ask) leading a list
+    of 2+ player-name spans separated by commas, "and", "or", "&", or a
+    versus joiner, with an optional trailing "by <key>" phrase. The key
+    defaults to value; a stated phrase that maps to no tracked key rides
+    along as unsupported_key so the answer can say the ranking is by
+    value instead, never substitute silently. Conservative on purpose:
+    governed anchors, a draft slot, a single name, or any pool-phrased
+    span all return None and the question keeps its usual route.
+    """
+    raw = " ".join(str(message or "").split()).strip().rstrip("?").strip()
+    low = raw.lower()
+    if _RANK_ANCHOR_RE.search(low) or re.search(r"\b\d\.\d{2}\b", low):
+        return None
+    lead = re.sub(r"^(?:please\s+)?(?:how\s+(?:would|do|should)\s+you\s+|"
+                  r"(?:can|could|would|will)\s+you\s+(?:please\s+)?)", "", low)
+    m = re.match(r"(?:rank|order|sort)\b[:\s]+(.+)$", lead)
+    if m:
+        region = m.group(1)
+    else:
+        m = re.match(r"(?:who|which)(?:'s| is) worth more\b[:,]?\s*(.+)$", lead) \
+            or re.match(r"who has more value\b[:,]?\s*(.+)$", lead)
+        if not m:
+            return None
+        region = m.group(1)
+    region = re.sub(r"^(?:the\s+)?following(?:\s+players?)?[:\s]+", "", region)
+    region = re.sub(r"^(?:the|these|those|my)\s+", "", region)
+    for tail in _RANK_TRAILING:
+        if region.endswith(tail):
+            region = region[: -len(tail)].rstrip(" ,")
+            break
+    key = "value"
+    unsupported = None
+    km = re.match(r"^(.*)\bby\s+(.+)$", region)
+    if km and len(km.group(2).split()) <= 4:
+        phrase = " ".join(km.group(2).split()).strip(" .?!,")
+        if phrase == "the way":
+            phrase = ""
+        for lead_word in ("their ", "his ", "her ", "the "):
+            if phrase.startswith(lead_word):
+                phrase = phrase[len(lead_word):]
+                break
+        if phrase:
+            canonical = _rank_key_for(phrase)
+            region = km.group(1).rstrip(" ,")
+            if canonical:
+                key = canonical
+            else:
+                unsupported = phrase
+    spans = re.split(r",|\s+and\s+|\s*&\s*|\s+or\s+|\s+vs\.?\s+|\s+versus\s+",
+                     region)
+    names: list[str] = []
+    seen: set = set()
+    for span in spans:
+        name = _rank_span(span)
+        if name.lower() in seen:
+            continue
+        if not _rank_span_ok(name):
+            return None
+        seen.add(name.lower())
+        names.append(name)
+    if not 2 <= len(names) <= 8:
+        return None
+    return {"names": names, "key": key, "unsupported_key": unsupported}
+
+
 _SLOT_NUM_RE = re.compile(r"\b(qb|rb|wr|te|k|def|dst)([1-4])?\b")
 _SLOT_WORDS = (("quarterback", "QB"), ("running back", "RB"),
                ("wide receiver", "WR"), ("wideout", "WR"),
@@ -1094,6 +1265,16 @@ def _keyword_route(message: str) -> dict:
     defense = _keyword_defense(message, m)
     if defense is not None:
         return {**base, **defense}
+    # Rank-a-named-set: checked before the pool boards, whose "by
+    # value" detail would otherwise claim the question and drop the
+    # named set entirely. The shape's own guards keep league-wide
+    # boards ("rank the wrs by value") and every anchored intent out.
+    shape = rank_shape(message)
+    if shape:
+        return {**base, "intent": "open",
+                "player_names": list(shape["names"]),
+                "rank_key": shape["key"],
+                "rank_key_unsupported": shape.get("unsupported_key")}
     board = _keyword_board(message, m)
     if board is not None:
         return {**base, **board}
@@ -1270,6 +1451,8 @@ def classify(question: str, context: dict | None = None, history: list | None = 
             "shop_pool": data.get("shop_pool"),
             "slot": data.get("slot"),
             "start_mode": data.get("start_mode"),
+            "rank_key": None,
+            "rank_key_unsupported": None,
         }
         if intent == "trade_finding":
             # The outgoing-position shapes are unambiguous finding
@@ -1296,6 +1479,19 @@ def classify(question: str, context: dict | None = None, history: list | None = 
         if compare_names and intent not in ("trade_eval", "start_sit"):
             intent = "open"
             entities["player_names"] = [compare_names[0], compare_names[1]]
+        # A rank-a-named-set ask belongs to the open rank tool, never
+        # to a pool-wide board (which drops the named set) or the
+        # single-player builder (which keeps only the first name).
+        # Deterministic, like the corrections above: the shape's own
+        # guards keep governed anchors out, so when it fires, every
+        # name and the ranking key ride as entities and the intent is
+        # open.
+        shape = rank_shape(question)
+        if shape:
+            intent = "open"
+            entities["player_names"] = list(shape["names"])
+            entities["rank_key"] = shape["key"]
+            entities["rank_key_unsupported"] = shape.get("unsupported_key")
         return {"intent": intent, "entities": entities, "preference_text": data.get("preference_text"), "router_model": "model", "prompt_version": ROUTER_PROMPT_VERSION}
     except Exception as exc:  # model down (rate limit / unavailable): keyword fallback
         logger.debug("[assistant] router model failed, keyword fallback: %s", exc)

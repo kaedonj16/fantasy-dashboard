@@ -2411,6 +2411,34 @@ def _open(pack, question):
                     lines.append(", ".join(bits) + ".")
                     for gap in (p.get("missing_metrics") or []):
                         lines.append(f"No {gap} for {p['name']} in the data yet.")
+        elif tool == "rank_players":
+            ranking = e.get("ranking") or []
+            label = e.get("key_label") or "value"
+            if ranking and verdict is None:
+                verdict = (f"{ranking[0]['name']} tops the ranking "
+                           f"by {label}")
+            for r in ranking:
+                if r.get("key_value") is None:
+                    lines.append(f"{r['name']} has no {label} number in "
+                                 "the data, so he is not ordered.")
+                else:
+                    lines.append(f"{r.get('rank')}. {r['name']}: "
+                                 f"{fmt(r.get('key_value'))} {label}.")
+            for u in e.get("unresolved") or []:
+                if u.get("reason") == "ambiguous":
+                    lines.append(f"{u['asked']} matches more than one "
+                                 "player, so he is not ranked.")
+                else:
+                    line = (f"I could not find {u['asked']} in the "
+                            "player pool, so he is not ranked.")
+                    near = u.get("nearest") or []
+                    if near:
+                        line += f" The closest match is {near[0]}."
+                    lines.append(line)
+            if e.get("unsupported_key"):
+                lines.append(f"{e['unsupported_key']} is not a tracked "
+                             "ranking key here, so this ranking is "
+                             "by value.")
         elif tool == "value_lookup":
             if e.get("player"):
                 p = e["player"]
