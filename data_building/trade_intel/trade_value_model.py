@@ -65,15 +65,19 @@ ANCHOR_BASKET_N    = 5     # anchor the top-N basket MEAN (not a single #1) to M
                            # one player's day-to-day WLS solve can't drag the whole board
 TRADES_LOOKBACK_DAYS = 120 # only load trades from the last N days; >60d = weight 0.08
 MIN_REDRAFT_NATIVE_TRADES = int(os.environ.get("MIN_REDRAFT_NATIVE_TRADES", "500"))
-# max fractional day-over-day change in a calibrated value. 0.02 = ±2%/day, so a
-# player mid-re-rating tops out near +15%/week instead of the ~+40%/week ±5%/day
-# allowed. The displayed value is COALESCE(calibrated, raw) - i.e. the calibrated
-# track is what shows whenever it exists - so capping the calibrated daily move
-# directly bounds how far a player's shown value can swing per run. Kept in
-# lock-step with the model board's _MAX_DAILY_MOVE via the SAME env override:
-# VALUE_MOVE_CAP_OVERRIDE bypasses both clamps for a one-off board reset (set e.g.
-# "50" ≈ unclamped for one run, then unset to resume the normal 2%/day smoothing).
-DAILY_MOVE_CAP     = float(os.environ.get("VALUE_MOVE_CAP_OVERRIDE", "0.02"))
+# max fractional day-over-day change in a calibrated value. 0.10 = ±10%/day, so a
+# player mid-re-rating tops out near +95%/week. Raised from ±2%/day on
+# 2026-10-16 (Kaedon's call): at 2%/day the board took ~7 weeks to converge to
+# the fresh market blend after a shock (an injured player's stale price drained
+# at the max legal speed for ~51 days), while 10%/day still bounds any single
+# run's swing. The displayed value is COALESCE(calibrated, raw) - i.e. the
+# calibrated track is what shows whenever it exists - so capping the calibrated
+# daily move directly bounds how far a player's shown value can swing per run.
+# Kept in lock-step with the model board's _MAX_DAILY_MOVE via the SAME env
+# override: VALUE_MOVE_CAP_OVERRIDE bypasses both clamps for a one-off board
+# reset (set e.g. "50" ≈ unclamped for one run, then unset to resume the normal
+# 10%/day smoothing).
+DAILY_MOVE_CAP     = float(os.environ.get("VALUE_MOVE_CAP_OVERRIDE", "0.10"))
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 
