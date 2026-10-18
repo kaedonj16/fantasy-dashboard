@@ -1083,6 +1083,23 @@ def api_portfolio_actions():
 # same league -- does not hammer the provider APIs.
 _LIVE_MATCHUP_CACHE: dict = {}
 _LIVE_MATCHUP_TTL = 30.0  # seconds
+# Past the TTL, an entry may still be served while another thread is already
+# rebuilding it (up to this grace), so concurrent card requests coalesce onto
+# one provider build instead of every request re-paying the build in parallel
+# -- the game-day pattern that pinned workers and left card previews stuck on
+# their loading skeleton past the client's abort.
+_LIVE_MATCHUP_STALE_GRACE = 300.0  # seconds
+_LIVE_MATCHUP_LOCKS: dict = {}
+_LIVE_MATCHUP_LOCKS_GUARD = threading.Lock()
+
+
+def _live_matchup_lock(key):
+    with _LIVE_MATCHUP_LOCKS_GUARD:
+        lock = _LIVE_MATCHUP_LOCKS.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _LIVE_MATCHUP_LOCKS[key] = lock
+        return lock
 
 
 def _matchup_status_label(status_by_pid: dict, pids: list) -> str:
@@ -1142,34 +1159,63 @@ def _build_live_matchups(platform, resolved_league_id, season, week, ctx):
     if hit and (_time.time() - hit[0]) < _LIVE_MATCHUP_TTL:
         return hit[1]
 
-    from dashboard_services.matchups import build_matchup_preview
-    from utils.utils import build_status_for_week
+    lock = _live_matchup_lock(key)
+    if not lock.acquire(blocking=False):
+        # Another thread is already rebuilding this league/week. Serve the
+        # last-good entry inside the grace window instead of queueing behind
+        # (or duplicating) a provider build that can outlast the card's
+        # client abort; with nothing usable cached, wait for the builder.
+        if hit and (_time.time() - hit[0]) < _LIVE_MATCHUP_TTL + _LIVE_MATCHUP_STALE_GRACE:
+            return hit[1]
+        lock.acquire()
+        try:
+            hit = _LIVE_MATCHUP_CACHE.get(key)
+            if hit:
+                return hit[1]
+        finally:
+            lock.release()
+        # The builder finished without storing (it raised): take the lock
+        # and build on this thread below.
+        lock.acquire()
+    try:
+        # Re-check under the lock: the previous builder may have just stored.
+        hit = _LIVE_MATCHUP_CACHE.get(key)
+        if hit and (_time.time() - hit[0]) < _LIVE_MATCHUP_TTL:
+            return hit[1]
 
-    matchups = build_matchup_preview(
-        league_id=resolved_league_id,
-        week=week,
-        roster_map=ctx.get("roster_map") or {},
-        players_map=ctx.get("players") or {},
-        season=season,
-        platform=platform,
-    ) or []
-    status_by_pid = build_status_for_week(
-        season, week, ctx.get("players_index") or {}, ctx.get("teams_index") or {},
-    ) or {}
-    proj_bundle = build_projections_by_week(
-        season, week, ctx.get("raw_scoring_settings"),
-    ) or {}
-    proj_map = (proj_bundle.get(week) or {}).get("projections") or {}
+        from dashboard_services.matchups import build_matchup_preview
+        from utils.utils import build_status_for_week
 
-    result = (matchups, status_by_pid, proj_map)
-    _LIVE_MATCHUP_CACHE[key] = (_time.time(), result)
-    # Bound the cache: it is keyed per league/week, so it stays small, but prune
-    # stale entries opportunistically so it never grows without limit.
-    if len(_LIVE_MATCHUP_CACHE) > 200:
-        cutoff = _time.time() - _LIVE_MATCHUP_TTL
-        for k in [k for k, v in _LIVE_MATCHUP_CACHE.items() if v[0] < cutoff]:
-            _LIVE_MATCHUP_CACHE.pop(k, None)
-    return result
+        matchups = build_matchup_preview(
+            league_id=resolved_league_id,
+            week=week,
+            roster_map=ctx.get("roster_map") or {},
+            players_map=ctx.get("players") or {},
+            season=season,
+            platform=platform,
+        ) or []
+        status_by_pid = build_status_for_week(
+            season, week, ctx.get("players_index") or {}, ctx.get("teams_index") or {},
+        ) or {}
+        proj_bundle = build_projections_by_week(
+            season, week, ctx.get("raw_scoring_settings"),
+        ) or {}
+        proj_map = (proj_bundle.get(week) or {}).get("projections") or {}
+
+        result = (matchups, status_by_pid, proj_map)
+        _LIVE_MATCHUP_CACHE[key] = (_time.time(), result)
+        # Bound the cache: it is keyed per league/week, so it stays small, but prune
+        # stale entries opportunistically so it never grows without limit.
+        if len(_LIVE_MATCHUP_CACHE) > 200:
+            cutoff = _time.time() - _LIVE_MATCHUP_TTL
+            for k in [k for k, v in _LIVE_MATCHUP_CACHE.items() if v[0] < cutoff]:
+                _LIVE_MATCHUP_CACHE.pop(k, None)
+                _lk = _LIVE_MATCHUP_LOCKS.get(k)
+                if _lk is not None and not _lk.locked():
+                    _LIVE_MATCHUP_LOCKS.pop(k, None)
+        return result
+    finally:
+        lock.release()
 
 
 @user_pages_bp.route("/api/portfolio/summary")
