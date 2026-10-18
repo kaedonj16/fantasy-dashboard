@@ -262,29 +262,29 @@ def _rescale_mid_to_c(v):
     return _clip100(50.0 + (v - 50.0) * 0.5)
 
 
-def _compute_breakout_age(seasons, age, position):
-    """Age in the first season the player hit the dominator breakout threshold.
+def _compute_breakout(seasons, age, position):
+    """(breakout_age, breakout_season) for the first breakout season.
 
     Mirrors the model's breakout-age logic (prospect_model). QBs use the
     pass-yard share proxy (>= 60% of team yards) since receiving dominator is
-    meaningless for them. Returns None when the player never broke out.
+    meaningless for them. (None, None) when the player never broke out.
     """
     if not seasons or age is None:
-        return None
+        return None, None
     pos = (position or "").upper()
     try:
         cur_age = float(age)
     except (TypeError, ValueError):
-        return None
+        return None, None
     ordered = sorted(seasons, key=lambda s: s.get("season") or 0)
     if not ordered:
-        return None
+        return None, None
     try:
         current_year = int(ordered[-1].get("season") or 0)
     except (TypeError, ValueError):
-        return None
+        return None, None
     if current_year <= 0:
-        return None
+        return None, None
     for s in ordered:
         try:
             s_year = int(s.get("season") or 0)
@@ -306,8 +306,13 @@ def _compute_breakout_age(seasons, age, position):
             except (TypeError, ValueError):
                 broke_out = False
         if broke_out:
-            return round(cur_age - (current_year - s_year), 1)
-    return None
+            return round(cur_age - (current_year - s_year), 1), s_year
+    return None, None
+
+
+def _compute_breakout_age(seasons, age, position):
+    """Age in the first season the player hit the breakout threshold."""
+    return _compute_breakout(seasons, age, position)[0]
 
 
 def _composite_col(conn) -> Any:
@@ -586,11 +591,320 @@ def _build_advanced_metrics(position, seasons, athleticism, row, wepa_score=None
             ("Rec Yds/Gm", _fmt1(marks.get("latest_rec_yards_per_game")),
              _grade_scrim(marks.get("latest_rec_yards_per_game"))),
         ])
+    # Numeric value behind each row, for the population percentiles the
+    # modal's Advanced tab renders. The Efficiency/Production rows are
+    # component scores, not stored-stat metrics: flagged "component" so
+    # percentile-only surfaces exclude them (the percentile design
+    # supersedes the old advanced-grade cell for Efficiency).
+    _value_of = {
+        "Cmp%": best.get("completion_pct"),
+        "TD:INT": best.get("td_int_ratio"),
+        "Yds/Att": best.get("yds_per_attempt"),
+        "AY/A": best.get("aya"),
+        "Rush Yds/Gm": best.get("rush_yards_per_game"),
+        "Yds/Carry": best.get("yds_per_carry"),
+        "Rush TDs": best.get("rush_tds"),
+        "Breakout Age": breakout_age,
+        "Dominator": best.get("dominator_rating"),
+        "Scrim Yds/Gm": best.get("scrimmage_per_game"),
+        "Mkt Share": best.get("market_share_yards"),
+        "TD Share": best.get("market_share_tds"),
+        "Speed Score": speed,
+        "WEPA": wepa,
+        "Yds/Rec": best.get("yds_per_reception"),
+        "Tgt/Gm": best.get("targets_per_game"),
+        "Catch%": best.get("catch_rate"),
+        "Best Dominator": marks.get("best_dominator"),
+        "Career Yds/Rec": marks.get("career_yds_per_rec"),
+        "Rec Yds/Gm": marks.get("latest_rec_yards_per_game"),
+    }
     out = []
     for label, raw, grade in metrics:
         out.append({"label": label, "raw": raw,
-                    "grade": grade if grade is not None else None})
+                    "grade": grade if grade is not None else None,
+                    "value": _value_of.get(label),
+                    "component": label in ("Efficiency", "Production")})
     return out
+
+
+# ── Percentile distributions for the modal's Advanced / Production /
+# Testing surfaces. All three are computed against the same graded
+# reference population as the component percentiles (current model
+# versions, grouped by position) and reuse the <30 hide rule. Cached per
+# position for the life of the process, like _population_cache.
+
+_ADV_LOWER_BETTER = {"Breakout Age"}
+_advanced_dist_cache: dict[str, dict] = {}
+_season_rate_cache: dict[str, list] = {}
+_testing_dist_cache: dict[str, dict] = {}
+
+
+def _season_cols_sql():
+    return ", ".join(_SEASON_COLS)
+
+
+def _percentile_of(value, values, lower_better=False):
+    """component_percentile with an inverted direction for lower-is-better
+    metrics (breakout age, timed tests): the percentile is the share of
+    the pool the player beats."""
+    if value is None:
+        return None
+    if lower_better:
+        return component_percentile(
+            -float(value), sorted(-float(v) for v in values))
+    return component_percentile(value, values)
+
+
+def _population_player_rows(position):
+    """Rankings rows for the graded reference population at a position,
+    with the bio fields _build_advanced_metrics needs (age, weight)."""
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            rows = conn.execute(
+                """SELECT rr.player_id, rp.age, rp.weight_lbs,
+                          rr.production_score, rr.efficiency_score
+                   FROM rookie_rankings rr
+                   JOIN rookie_prospects rp ON rp.player_id = rr.player_id
+                   WHERE rp.position = %s
+                     AND rr.model_version = ANY(%s)""",
+                (position, list(_PCT_MODEL_VERSIONS)),
+            ).fetchall()
+        return [dict(r) for r in rows]
+    except Exception:
+        return []
+
+
+def _advanced_distributions(position):
+    """{metric label: sorted [values]} across the reference population.
+
+    Built by running _build_advanced_metrics itself over every population
+    player, so the player's row and the pool can never drift apart.
+    Component-score rows are excluded by construction."""
+    pos = (position or "").upper()
+    if pos in _advanced_dist_cache:
+        return _advanced_dist_cache[pos]
+    dist: dict[str, list] = {}
+    rows = _population_player_rows(pos)
+    if rows:
+        ids = [r["player_id"] for r in rows if r.get("player_id")]
+        season_rows, ath_rows, wepa_rows = [], [], []
+        try:
+            from dashboard_services.db import get_conn
+            with get_conn() as conn:
+                season_rows = conn.execute(
+                    f"SELECT player_id, {_season_cols_sql()} "
+                    "FROM rookie_prospect_source_data "
+                    "WHERE player_id = ANY(%s)",
+                    (ids,),
+                ).fetchall()
+                ath_rows = conn.execute(
+                    "SELECT player_id, forty_yard, ras_score, speed_score "
+                    "FROM rookie_prospect_athleticism "
+                    "WHERE player_id = ANY(%s)",
+                    (ids,),
+                ).fetchall()
+                wepa_rows = conn.execute(
+                    "SELECT player_id, MAX(adj_efficiency_score) AS wepa "
+                    "FROM rookie_prospect_wepa WHERE player_id = ANY(%s) "
+                    "GROUP BY player_id",
+                    (ids,),
+                ).fetchall()
+        except Exception:
+            season_rows, ath_rows, wepa_rows = [], [], []
+        seasons_by: dict[str, list] = {}
+        for s in season_rows:
+            seasons_by.setdefault(s["player_id"], []).append(dict(s))
+        ath_by = {a["player_id"]: dict(a) for a in ath_rows}
+        wepa_by = {w["player_id"]: _safe_float(w.get("wepa"))
+                   for w in wepa_rows}
+        for r in rows:
+            pid = r.get("player_id")
+            for a in _build_advanced_metrics(
+                    pos, seasons_by.get(pid, []), ath_by.get(pid, {}),
+                    r, wepa_by.get(pid)):
+                if a.get("component") or a.get("value") is None:
+                    continue
+                dist.setdefault(a["label"], []).append(float(a["value"]))
+        for vals in dist.values():
+            vals.sort()
+    _advanced_dist_cache[pos] = dist
+    return dist
+
+
+def _season_primary_rate(position, s):
+    """The position's headline per-game rate for one stored season."""
+    gp = _safe_float(s.get("games_played"))
+    if not gp:
+        return None
+    pos = (position or "").upper()
+    if pos == "QB":
+        v = _safe_float(s.get("pass_yards"))
+    elif pos == "RB":
+        ry = _safe_float(s.get("rush_yards"))
+        cy = _safe_float(s.get("receiving_yards"))
+        v = (ry or 0.0) + (cy or 0.0) if (ry is not None or cy is not None) else None
+    else:
+        v = _safe_float(s.get("receiving_yards"))
+    return round(v / gp, 1) if v is not None else None
+
+
+_RATE_LABEL = {"QB": ("Pass Yds/G", "pass yds/g"),
+               "RB": ("Scrim Yds/G", "scrim yds/g")}
+_RATE_LABEL_DEFAULT = ("Rec Yds/G", "rec yds/g")
+# A season needs a real sample before its rate can anchor a percentile.
+_SEASON_MIN_GP = 4
+
+
+def _season_rate_distributions(position):
+    """Sorted primary per-game rates of completed population seasons."""
+    pos = (position or "").upper()
+    if pos in _season_rate_cache:
+        return _season_rate_cache[pos]
+    values: list[float] = []
+    rows = _population_player_rows(pos)
+    if rows:
+        ids = [r["player_id"] for r in rows if r.get("player_id")]
+        try:
+            from dashboard_services.db import get_conn
+            with get_conn() as conn:
+                season_rows = conn.execute(
+                    f"SELECT player_id, {_season_cols_sql()} "
+                    "FROM rookie_prospect_source_data "
+                    "WHERE player_id = ANY(%s)",
+                    (ids,),
+                ).fetchall()
+        except Exception:
+            season_rows = []
+        for s in season_rows:
+            gp = _safe_float(s.get("games_played"))
+            if not gp or gp < _SEASON_MIN_GP:
+                continue
+            if is_in_season(s.get("season"), gp):
+                continue
+            rate = _season_primary_rate(pos, s)
+            if rate is not None:
+                values.append(rate)
+        values.sort()
+    _season_rate_cache[pos] = values
+    return values
+
+
+def _season_lines(position, seasons):
+    """Season-line rows for the modal: per-game rate, in-progress state,
+    and a percentile for completed seasons only (an in-progress season
+    never prints one)."""
+    pos = (position or "").upper()
+    label, unit = _RATE_LABEL.get(pos, _RATE_LABEL_DEFAULT)
+    dist = _season_rate_distributions(pos)
+    lines = []
+    for s in sorted(seasons or [],
+                    key=lambda x: _safe_float(x.get("season"), 0) or 0):
+        gp = _safe_float(s.get("games_played"))
+        rate = _season_primary_rate(pos, s)
+        in_prog = is_in_season(s.get("season"), gp)
+        pct = None
+        if not in_prog and gp and gp >= _SEASON_MIN_GP and rate is not None:
+            pct = component_percentile(rate, dist)
+        lines.append({
+            "season": s.get("season"),
+            "team": s.get("team"),
+            "gp": int(gp) if gp else None,
+            "rate": rate,
+            "rate_label": label,
+            "rate_unit": unit,
+            "in_progress": bool(in_prog),
+            "percentile": pct,
+        })
+    return lines
+
+
+def _fmt_broad_jump(v):
+    total = round(v)
+    return f"{total // 12}'{total % 12}\""
+
+
+_TEST_SPECS = (
+    ("forty_yard", "40-Yard Dash", True, lambda v: f"{v:.2f}"),
+    ("vertical_inches", "Vertical Jump", False, lambda v: f"{v:.1f}\""),
+    ("broad_jump_in", "Broad Jump", False, _fmt_broad_jump),
+    ("three_cone", "Three-Cone", True, lambda v: f"{v:.2f}"),
+    ("short_shuttle", "Short Shuttle", True, lambda v: f"{v:.2f}"),
+    ("bench_reps", "Bench Reps", False, lambda v: f"{int(v)}"),
+    ("speed_score", "Speed Score", False, lambda v: f"{v:.1f}"),
+    ("ras_score", "RAS", False, lambda v: f"{v:.2f}"),
+)
+
+
+def _testing_distributions(position):
+    """{test field: sorted [values]} from tested population players only."""
+    pos = (position or "").upper()
+    if pos in _testing_dist_cache:
+        return _testing_dist_cache[pos]
+    dist: dict[str, list] = {}
+    rows = _population_player_rows(pos)
+    if rows:
+        ids = [r["player_id"] for r in rows if r.get("player_id")]
+        try:
+            from dashboard_services.db import get_conn
+            with get_conn() as conn:
+                ath_rows = conn.execute(
+                    "SELECT * FROM rookie_prospect_athleticism "
+                    "WHERE player_id = ANY(%s)",
+                    (ids,),
+                ).fetchall()
+        except Exception:
+            ath_rows = []
+        for a in ath_rows:
+            for field, _label, _lower, _fmt in _TEST_SPECS:
+                v = _safe_float(a.get(field))
+                if v is not None:
+                    dist.setdefault(field, []).append(v)
+        for vals in dist.values():
+            vals.sort()
+    _testing_dist_cache[pos] = dist
+    return dist
+
+
+def _testing_rows(athleticism, position):
+    """Testing table rows for one player: only tests he actually has a
+    stored result for; percentile only where the tested pool supports
+    one (>= 30 tested at the position), else None (the UI prints a dash)."""
+    if not athleticism:
+        return []
+    dist = _testing_distributions(position)
+    rows = []
+    for field, label, lower, fmt in _TEST_SPECS:
+        v = _safe_float(athleticism.get(field))
+        if v is None:
+            continue
+        rows.append({
+            "label": label,
+            "result": fmt(v),
+            "percentile": _percentile_of(v, dist.get(field, []), lower),
+        })
+    return rows
+
+
+def _breakout_phrase(seasons, breakout_season, breakout_age):
+    """Plain-language breakout line from which stored season he broke out
+    in ('Broke out as a true freshman' etc.)."""
+    if breakout_season is None or breakout_age is None:
+        return None
+    years = sorted({s.get("season") for s in (seasons or [])
+                    if s.get("season")})
+    try:
+        idx = years.index(breakout_season)
+    except ValueError:
+        return None
+    if idx == 0:
+        return ("Broke out as a true freshman" if breakout_age <= 19.0
+                else "Broke out in his first season")
+    if idx == 1:
+        return "Broke out as a sophomore"
+    if idx == 2:
+        return "Broke out as a junior"
+    return "Broke out as a senior"
 
 
 def _get_rank_deltas(year) -> dict[str, int]:
@@ -646,8 +960,334 @@ def _get_mock_trend(player_id: str) -> Any:
     return None
 
 
+# ── Percentile display model (prospect page rework, 2026-10-17) ─────────────
+# The board and modal show NO numeric prospect grade. Each player shows his
+# rank (still the internal prospect_score order; the score itself stays in
+# the payload for downstream consumers like rookie values), a band tag from
+# the internal score, and component percentiles. Percentiles are display
+# language only: they never feed the grade or the rank.
+#
+# A component percentile is computed within position against a reference
+# population of graded prospects: the player's share of that population at
+# or below his stored component score, x100, rounded. The population source
+# is reference_population() alone, so the v4 anchor table can replace it
+# later without touching display code. A percentile is omitted (hidden,
+# never faked) when the population at the position is thinner than
+# PCT_MIN_POPULATION or the player's component score is missing.
+
+PCT_COMPONENTS = ("production", "efficiency", "breakout", "competition",
+                  "athleticism")
+_PCT_SCORE_FIELD = {
+    "production": "production_score",
+    "efficiency": "efficiency_score",
+    "breakout": "breakout_profile_score",
+    "competition": "competition_score",
+    "athleticism": "athleticism_score",
+}
+PCT_MIN_POPULATION = 30
+# Only model versions whose component scores are on a comparable scale.
+_PCT_MODEL_VERSIONS = ("3.2", "3.3")
+
+_population_cache: dict = {}
+
+
+def reference_population(position, rows=None):
+    """Reference population for percentile computation at one position.
+
+    Returns {"values": {component: sorted [scores]}, "classes": [years],
+    "n": int}. `rows` may be injected (tests); otherwise every stored
+    rookie_rankings row at the position graded by a comparable model
+    version (3.2/3.3), across every draft class stored, is used. The
+    athleticism value list only includes players with recorded testing
+    (a forty time or RAS on file), so untested players, whose stored
+    athleticism score is a floor, never anchor the athleticism scale.
+    Fail-soft: an empty population on any DB error.
+    """
+    pos = (position or "").upper()
+    injected = rows is not None
+    if rows is None:
+        if pos in _population_cache:
+            return _population_cache[pos]
+        rows = []
+        try:
+            from dashboard_services.db import get_conn
+            with get_conn() as conn:
+                rows = conn.execute(
+                    """SELECT rr.draft_class_year, rr.production_score,
+                              rr.efficiency_score, rr.breakout_profile_score,
+                              rr.competition_score, rr.athleticism_score,
+                              (rpa.forty_yard IS NOT NULL
+                               OR rpa.ras_score IS NOT NULL) AS tested
+                       FROM rookie_rankings rr
+                       JOIN rookie_prospects rp ON rp.player_id = rr.player_id
+                       LEFT JOIN rookie_prospect_athleticism rpa
+                         ON rpa.player_id = rr.player_id
+                       WHERE UPPER(rp.position) = %s
+                         AND rr.model_version IN ('3.2', '3.3')""",
+                    (pos,),
+                ).fetchall() or []
+        except Exception:
+            log.debug("[rookie_api] reference population failed for %s",
+                      pos, exc_info=True)
+            rows = []
+    values: dict = {c: [] for c in PCT_COMPONENTS}
+    classes: set = set()
+    for r in rows:
+        for comp, field in _PCT_SCORE_FIELD.items():
+            if comp == "athleticism" and not r.get("tested"):
+                continue
+            v = _safe_float(r.get(field))
+            if v is not None:
+                values[comp].append(v)
+        yr = r.get("draft_class_year")
+        if yr is not None:
+            try:
+                classes.add(int(yr))
+            except (TypeError, ValueError):
+                pass
+    pop = {
+        "values": {c: sorted(v) for c, v in values.items()},
+        "classes": sorted(classes),
+        "n": len(rows),
+    }
+    if not injected and rows:
+        _population_cache[pos] = pop
+    return pop
+
+
+def component_percentile(value, values):
+    """Share of the population at or below `value`, x100, rounded half up.
+
+    None when the value is missing or the population is too thin to print
+    (fewer than PCT_MIN_POPULATION players): the percentile is hidden
+    rather than faked.
+    """
+    import bisect
+    import math
+    if value is None or not values or len(values) < PCT_MIN_POPULATION:
+        return None
+    v = _safe_float(value)
+    if v is None:
+        return None
+    share = bisect.bisect_right(values, v) / len(values) * 100.0
+    return int(math.floor(share + 0.5))
+
+
+def player_has_testing(row) -> bool:
+    """True when the player has recorded testing (forty time or RAS).
+
+    The stored athleticism_score alone cannot say this: untested players
+    carry a floor score in v3.x, so the gate reads the testing fields.
+    """
+    return (row.get("forty_yard") is not None
+            or row.get("ras_score") is not None)
+
+
+def component_percentiles(row, population) -> dict:
+    """Full percentile panel for one player against his position population.
+
+    The athleticism percentile is present only when the player has testing
+    data; it is omitted entirely otherwise (never a placeholder).
+    """
+    out: dict = {}
+    tested = player_has_testing(row)
+    for comp, field in _PCT_SCORE_FIELD.items():
+        if comp == "athleticism" and not tested:
+            out[comp] = None
+            continue
+        out[comp] = component_percentile(
+            row.get(field), population["values"].get(comp))
+    return out
+
+
+def percentile_pool_line(positions=("QB", "RB", "WR", "TE")):
+    """Board header line describing the reference population actually used.
+
+    Exact format: "Percentiles vs graded prospects at the position,
+    classes 2025-2027" (span computed from the classes really present).
+    None when no population exists at all.
+    """
+    classes: set = set()
+    for pos in positions:
+        classes.update(reference_population(pos)["classes"])
+    if not classes:
+        return None
+    yrs = sorted(classes)
+    span = f"{yrs[0]}-{yrs[-1]}" if len(yrs) > 1 else str(yrs[0])
+    return f"Percentiles vs graded prospects at the position, classes {span}"
+
+
+def prospect_tag(score):
+    """Band tag from the internal prospect_score (v4 band language).
+
+    92+ Elite Prospect, 80-92 Great Prospect, 70-80 Average Prospect,
+    below 70 Day 3. The bands describe what the internal number means;
+    they are not buckets and nothing is forced into one. Returns
+    {"label", "band"} or None when there is no score.
+    """
+    s = _safe_float(score)
+    if s is None:
+        return None
+    if s >= 92:
+        return {"label": "Elite Prospect", "band": "elite"}
+    if s >= 80:
+        return {"label": "Great Prospect", "band": "great"}
+    if s >= 70:
+        return {"label": "Average Prospect", "band": "average"}
+    return {"label": "Day 3", "band": "day3"}
+
+
+def current_college_season(today=None):
+    """The college season in progress (or most recently played) for a date.
+
+    College seasons are named by their fall year and run August through
+    mid-January, so January still belongs to the previous fall's season.
+    """
+    from datetime import date as _date
+    today = today or _date.today()
+    return today.year if today.month >= 8 else today.year - 1
+
+
+def is_in_season(latest_season, games_played, today=None) -> bool:
+    """Data-state check for the In-Season chip.
+
+    PR #2691's stored in_season flag is not on this branch, so the chip is
+    driven by data state instead: the player's latest stored season IS
+    the current college season and it is still partial (1-11 games
+    played). A completed season (12+ games) or an older latest season
+    never reads as in-season.
+    """
+    if latest_season is None or games_played is None:
+        return False
+    try:
+        season = int(latest_season)
+        gp = int(games_played)
+    except (TypeError, ValueError):
+        return False
+    return season == current_college_season(today) and 1 <= gp <= 11
+
+
+def _get_latest_season_map(player_ids) -> dict:
+    """{player_id: (season, games_played)} for each player's latest stored
+    season. Fail-soft: {} on any error (In-Season chips simply do not
+    render)."""
+    if not player_ids:
+        return {}
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            rows = conn.execute(
+                """SELECT DISTINCT ON (player_id) player_id, season,
+                          games_played
+                   FROM rookie_prospect_source_data
+                   WHERE player_id = ANY(%s)
+                   ORDER BY player_id, season DESC""",
+                (list(player_ids),),
+            ).fetchall() or []
+        return {r["player_id"]: (r.get("season"), r.get("games_played"))
+                for r in rows if r.get("player_id")}
+    except Exception:
+        log.debug("[rookie_api] latest-season map failed", exc_info=True)
+        return {}
+
+
+def _ordinal(n: int) -> str:
+    if 10 <= n % 100 <= 20:
+        suffix = "th"
+    else:
+        suffix = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
+
+
+_PCT_LABEL = {
+    "production": "production",
+    "efficiency": "efficiency",
+    "breakout": "breakout",
+    "competition": "competition",
+    "athleticism": "athleticism",
+}
+
+
+def strongest_evidence_receipt(position, seasons, athleticism, percentiles,
+                               sp_sos=None):
+    """Strongest-evidence line for the modal's Prospect Tag card.
+
+    Names the player's best component percentile and the stored stat line
+    behind it, e.g. "99th percentile production: 1,315 receiving yards in
+    2024." Every number comes from stored season or athleticism rows;
+    returns None when no candidate can be stated honestly.
+    """
+    if not percentiles:
+        return None
+    pos = (position or "").upper()
+    seasons = [s for s in (seasons or []) if s]
+    athleticism = athleticism or {}
+    # (percentile, tie-break order, component, stat line)
+    candidates: list = []
+
+    def _best_season(field, min_gp=1):
+        best = None
+        for s in seasons:
+            v = _safe_float(s.get(field))
+            gp = s.get("games_played") or 0
+            if v is None or gp < min_gp:
+                continue
+            if best is None or v > _safe_float(best.get(field)):
+                best = s
+        return best
+
+    p = percentiles.get("production")
+    if p is not None:
+        field = {"QB": "pass_yards", "RB": "rush_yards"}.get(
+            pos, "receiving_yards")
+        label = {"QB": "passing yards", "RB": "rushing yards"}.get(
+            pos, "receiving yards")
+        s = _best_season(field)
+        if s is not None:
+            candidates.append((p, 0, "production",
+                               f"{int(_safe_float(s.get(field))):,} {label} "
+                               f"in {s.get('season')}"))
+    p = percentiles.get("efficiency")
+    if p is not None:
+        field = {"QB": "yds_per_attempt", "RB": "yds_per_carry"}.get(
+            pos, "yds_per_reception")
+        label = {"QB": "yards per attempt", "RB": "yards per carry"}.get(
+            pos, "yards per reception")
+        s = _best_season(field, min_gp=5)
+        if s is not None:
+            candidates.append((p, 1, "efficiency",
+                               f"{_safe_float(s.get(field)):.1f} {label} "
+                               f"in {s.get('season')}"))
+    p = percentiles.get("breakout")
+    if p is not None:
+        s = _best_season("dominator_rating")
+        if s is not None:
+            candidates.append((p, 2, "breakout",
+                               f"{round(_safe_float(s.get('dominator_rating')) * 100):.0f}% "
+                               f"dominator rating in {s.get('season')}"))
+    p = percentiles.get("athleticism")
+    if p is not None:
+        forty = _safe_float(athleticism.get("forty_yard"))
+        ras = _safe_float(athleticism.get("ras_score"))
+        if forty is not None:
+            candidates.append((p, 3, "athleticism",
+                               f"{forty:.2f} forty-yard dash"))
+        elif ras is not None:
+            candidates.append((p, 3, "athleticism", f"{ras:.1f} RAS"))
+    p = percentiles.get("competition")
+    if p is not None and sp_sos is not None and seasons:
+        latest = max(seasons, key=lambda s: s.get("season") or 0)
+        candidates.append((p, 4, "competition",
+                           f"{_safe_float(sp_sos):.1f} SP+ strength of "
+                           f"schedule in {latest.get('season')}"))
+    if not candidates:
+        return None
+    pct, _order, comp, stat = max(candidates, key=lambda c: (c[0], -c[1]))
+    return f"{_ordinal(pct)} percentile {_PCT_LABEL[comp]}: {stat}."
+
+
 _SEASON_COLS = (
-    "season", "games_played", "team",
+    "season", "games_played", "team", "conference",
     "pass_yards", "pass_tds", "pass_attempts", "completions", "interceptions",
     "rush_attempts", "rush_yards", "rush_tds",
     "receptions", "targets", "receiving_yards", "receiving_tds",
@@ -668,6 +1308,10 @@ def _get_prospect_detail(player_id: str, row: dict) -> dict:
         "utilization_score": None,
         "experience_score": None,
         "breakout_age": None,
+        "breakout_season": None,
+        "breakout_phrase": None,
+        "season_lines": [],
+        "testing": [],
         "mock_trend": None,
         "advanced": [],
         "advanced_seasons": [],
@@ -768,10 +1412,14 @@ def _get_prospect_detail(player_id: str, row: dict) -> dict:
     except Exception:
         pass
     try:
-        detail["breakout_age"] = _compute_breakout_age(
+        detail["breakout_age"], detail["breakout_season"] = _compute_breakout(
             seasons, row.get("age"), row.get("position"))
+        detail["breakout_phrase"] = _breakout_phrase(
+            seasons, detail["breakout_season"], detail["breakout_age"])
     except Exception:
         detail["breakout_age"] = None
+        detail["breakout_season"] = None
+        detail["breakout_phrase"] = None
     try:
         detail["mock_trend"] = _get_mock_trend(player_id)
     except Exception:
@@ -782,6 +1430,22 @@ def _get_prospect_detail(player_id: str, row: dict) -> dict:
             wepa_score=detail.get("wepa_score"))
     except Exception:
         detail["advanced"] = []
+    # True population percentiles for the Advanced tab (percentile-only
+    # presentation): each stored-stat row gets the share of the graded
+    # population at the position at or below its value. Component-score
+    # rows never get one; a thin pool (< 30) leaves it None (dash).
+    try:
+        _adv_dist = _advanced_distributions(row.get("position"))
+        for _a in detail["advanced"]:
+            _a["percentile"] = None
+            if _a.get("component") or _a.get("value") is None:
+                continue
+            _a["percentile"] = _percentile_of(
+                _a["value"], _adv_dist.get(_a["label"]) or [],
+                _a["label"] in _ADV_LOWER_BETTER)
+    except Exception:
+        for _a in detail.get("advanced") or []:
+            _a.setdefault("percentile", None)
     # v3.2: per-season advanced rows + best/career marks from stored rows.
     try:
         detail["advanced_seasons"] = _advanced_season_rows(seasons)
@@ -815,6 +1479,34 @@ def _get_prospect_detail(player_id: str, row: dict) -> dict:
             detail["archetype_confidence"] = _arch.get("archetype_confidence")
         except Exception:
             pass
+    # Percentile display model: full panel, band tag, in-season state and
+    # the strongest-evidence receipt for the Tag card. Testing presence is
+    # read off the athleticism row itself (forty/RAS), never the stored
+    # score, so an untested player gets no athleticism percentile.
+    _pct_row = dict(row)
+    _pct_row["forty_yard"] = (athleticism or {}).get("forty_yard")
+    _pct_row["ras_score"] = (athleticism or {}).get("ras_score")
+    _pcts = component_percentiles(
+        _pct_row, reference_population(row.get("position")))
+    detail["percentiles"] = _pcts
+    detail["tag"] = prospect_tag(row.get("prospect_score"))
+    _latest = (max(seasons, key=lambda s: s.get("season") or 0)
+               if seasons else None)
+    detail["in_season"] = bool(_latest) and is_in_season(
+        _latest.get("season"), _latest.get("games_played"))
+    detail["evidence_receipt"] = strongest_evidence_receipt(
+        row.get("position"), seasons, athleticism, _pcts,
+        sp_sos=detail.get("sp_sos"))
+    # Season lines (rate + completed-season percentile) and the Testing
+    # table rows for the modal's Production / Overview surfaces.
+    try:
+        detail["season_lines"] = _season_lines(row.get("position"), seasons)
+    except Exception:
+        detail["season_lines"] = []
+    try:
+        detail["testing"] = _testing_rows(athleticism, row.get("position"))
+    except Exception:
+        detail["testing"] = []
     return detail
 
 
@@ -927,6 +1619,26 @@ def rankings():
         except Exception:
             for d in result:
                 d.setdefault("rank_delta", None)
+
+        # Percentile display model (board rework): band tag, component
+        # percentiles within position, and the In-Season data-state chip.
+        # The internal prospect_score stays in the payload (it ranks the
+        # board and feeds rookie values); it is simply never rendered.
+        try:
+            _pops: dict = {}
+            _season_map = _get_latest_season_map(
+                [d.get("player_id") for d in result])
+            for d in result:
+                _pos = (d.get("position") or "").upper()
+                if _pos not in _pops:
+                    _pops[_pos] = reference_population(_pos)
+                d["percentiles"] = component_percentiles(d, _pops[_pos])
+                d["tag"] = prospect_tag(d.get("prospect_score"))
+                _ls = _season_map.get(d.get("player_id"))
+                d["in_season"] = bool(_ls) and is_in_season(_ls[0], _ls[1])
+        except Exception:
+            log.debug("[rookie_api] percentile enrichment skipped",
+                      exc_info=True)
 
         # Overlay dynasty rookie ADP - read directly from dated cache files,
         # no DB connection required. Falls back to adp_service chain if files absent.
@@ -1061,6 +1773,12 @@ def rankings():
             "rankings": result,
             "paused": paused,
         }
+        # Pool line for the board header, generated from the reference
+        # population actually used for the percentiles above.
+        try:
+            payload["percentile_pool"] = percentile_pool_line()
+        except Exception:
+            payload["percentile_pool"] = None
         as_of = None
         for row in result:
             lu = row.get("last_updated")
@@ -1324,6 +2042,7 @@ def comparables(player_id: str):
                     "draft_class_year": r["draft_class_year"],
                     "school":           r["school"],
                     "prospect_score":   float(r["prospect_score"] or 0),
+                    "tag":              prospect_tag(r["prospect_score"]),
                     "tier":             r["tier"],
                     "tier_label":       r["tier_label"],
                     "overall_rank":     r["overall_rank"],

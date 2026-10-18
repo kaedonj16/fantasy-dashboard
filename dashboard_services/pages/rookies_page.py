@@ -4,6 +4,14 @@ Rookies page HTML builder.
 Returns the full body HTML for the /<platform>/<season>/<league_id>/rookies route.
 Data is loaded client-side from /api/prospects/rankings so the page is fast and
 the filters/sorts are instant without round-trips.
+
+Display model (2026-10-17): the board and modal show NO numeric grade.
+They show rank (ordered by the internal grade), a band tag, and component
+percentiles computed within position against the graded reference
+population. The board uses the native players-board grammar (card shell,
+two-row filter bar, pr-grid rows, tier dividers); the modal follows the
+approved native mock set (band-tinted hero, percentile panel with raw
+stat sub-lines, class-context strip, season lines, testing table).
 """
 from __future__ import annotations
 
@@ -12,11 +20,11 @@ def build_prospects_body(is_admin: bool = False) -> str:
     admin_flag = "true" if is_admin else "false"
     return f"""<script>window.RK_IS_ADMIN = {admin_flag};</script>""" + """
 <div class="card central" id="prospectsCard">
-  <div class="card-header rk-card-header">
+  <div class="card-header" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
     <div>
       <h2 id="rookiesTitle">Rookie Prospects</h2>
       <div style="font-size: 15px; color: var(--text-muted); margin-top: 4px;">
-        Dynasty prospect rankings - production, athleticism, and draft capital combined
+        <span id="rkPoolLine">Dynasty prospect rankings - production, athleticism, and draft capital combined</span>
       </div>
       <div id="rkPausedBanner" style="display:none;margin-top:10px;padding:8px 12px;border-radius:8px;
            border:1px solid color-mix(in srgb,#b45309 35%,var(--border));background:color-mix(in srgb,#b45309 12%,transparent);
@@ -25,6 +33,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
         <span id="rkPausedAsOf"></span>.
       </div>
     </div>
+    <button type="button" class="btn btn-ghost btn-sm" onclick="rkExportCSV()" title="Export CSV" aria-label="Export CSV"><img src="/static/images/download-solid.png" alt="" style="width:14px;height:14px;vertical-align:-2px;opacity:.75;"> Export</button>
   </div>
 
   <!-- Rankings panel -->
@@ -32,16 +41,12 @@ def build_prospects_body(is_admin: bool = False) -> str:
 
     <!-- Controls -->
     <div class="filter-controls-container">
-      <!-- Row 1: Search + pills + settings -->
+      <!-- Row 1: Search + pills -->
       <div class="filter-row filter-row-primary">
         <div class="filter-search">
-          <input id="rookieSearch" type="text" placeholder="Search prospects…" autocomplete="off"
-            style="width:100%;padding:8px 32px 8px 34px;border-radius:8px;
-                   border:1px solid var(--border);background:var(--card-bg);
-                   color:var(--text);font-size:13px;outline:none;box-sizing:border-box;">
-          <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);
-                       color:var(--text-muted);font-size:15px;pointer-events:none;"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i></span>
-          <button id="rookieSearchClear" onclick="rkClearSearch()"
+          <input id="rookieSearch" type="text" placeholder="Search prospects…" autocomplete="off">
+          <span class="mag"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i></span>
+          <button id="rookieSearchClear" onclick="rkClearSearch()" aria-label="Clear search"
             style="display:none;position:absolute;right:8px;top:50%;transform:translateY(-50%);
                    background:none;border:none;cursor:pointer;color:var(--text-muted);
                    font-size:15px;padding:2px;">&#x2715;</button>
@@ -56,58 +61,38 @@ def build_prospects_body(is_admin: bool = False) -> str:
       </div>
 
       <!-- Row 2: Active setting tags + sort -->
-      <div class="filter-row filter-row-secondary" style="justify-content:flex-end;">
-        <div class="filter-sort">
-          <label class="filter-label">Sort by</label>
-          <select id="rkSort" onchange="rkSetSortKey(this.value)"
-            style="padding:7px 10px;border-radius:8px;border:1px solid var(--border);
-                   background:var(--card-bg);color:var(--text);font-size:13px;
-                   cursor:pointer;outline:none;min-height:34px;width:140px;">
-            <option value="rank">Overall Rank</option>
-            <option value="score">Prospect Score</option>
-            <option value="mock">Mock Draft</option>
-            <option value="age">Age</option>
-            <option value="name">Name (A-Z)</option>
-          </select>
+      <div class="filter-row filter-row-secondary">
+        <div class="active-settings-indicator" id="rkActiveSettings" style="display:none">
+          <span class="active-setting-tag" id="rkClassTag"></span>
+          <span class="active-setting-tag" id="rkSeasonTag" style="display:none">In-Season</span>
+        </div>
+        <div class="filter-sort-group">
+          <div class="filter-sort">
+            <label class="filter-label" for="rkSort">Sort</label>
+            <select id="rkSort" onchange="rkSetSortKey(this.value)">
+              <option value="rank">Rank</option>
+              <option value="prod">Production %</option>
+              <option value="eff">Efficiency %</option>
+              <option value="brk">Breakout %</option>
+              <option value="name">Name</option>
+            </select>
+          </div>
         </div>
       </div>
     </div>
 
     <!-- Count -->
-    <div id="rkCount" style="font-size:13px;color:var(--text-muted);margin-bottom:8px;display:none;"></div>
+    <div id="rkCount" style="display:none;"></div>
 
-    <!-- Dense table header -->
-    <div id="rkDenseWrap" style="display:none;overflow-x:auto;-webkit-overflow-scrolling:touch;">
-    <table id="rkDenseTable" class="rk-dense-table">
-      <thead><tr>
-        <th class="l" data-rk-sort-col="rank" role="button" tabindex="0" title="Sort by overall rank">RK</th>
-        <th class="l rk-sticky-col" data-rk-sort-col="name" role="button" tabindex="0" title="Sort by prospect name">PLAYER</th>
-        <th data-rk-sort-col="pos" role="button" tabindex="0" title="Sort by position">POS</th>
-        <th data-rk-sort-col="score" role="button" tabindex="0" title="Sort by prospect score">SCORE</th>
-        <th title="Production">PROD</th>
-        <th title="Draft Capital">DC</th>
-        <th title="Age">AGE</th>
-        <th title="Breakout">BO</th>
-        <th title="Efficiency">EFF</th>
-        <th title="Durability">DUR</th>
-        <th title="Competition">COMP</th>
-        <th title="Utilization">UTIL</th>
-        <th title="Per-game production trajectory">3-YR /G TREND</th>
-        <th></th>
-      </tr></thead>
-      <tbody id="rkDenseBody"></tbody>
-    </table>
-    </div>
-    <!-- Legacy header (hidden, kept for sort header sync) -->
-    <div id="rkHeader" class="rk-grid-row rk-header" style="display:none;">
-      <span data-rk-sort-col="rank" role="button" tabindex="0" title="Sort by overall rank" style="text-align:center;">Rank</span>
-      <span data-rk-sort-col="name" role="button" tabindex="0" title="Sort by prospect name">Prospect</span>
-      <span><span class="hdot" style="background:#10b981"></span>Prod</span>
-      <span><span class="hdot" style="background:#3b82f6"></span>Ath</span>
-      <span><span class="hdot" style="background:#8b5cf6"></span>DC</span>
-      <span data-rk-sort-col="score" role="button" tabindex="0" title="Sort by prospect score" style="text-align:right;">Score</span>
-      <span data-rk-sort-col="mock" role="button" tabindex="0" title="Sort by expected draft spot" style="text-align:center;" class="rk-mock-h">Mock</span>
-      <span></span>
+    <!-- Column header (native board grammar; shown by rkRender) -->
+    <div id="rkTableHeader" class="pr-grid-row" style="display:none">
+      <span>#</span>
+      <span data-pr-sort-col="player">Player</span>
+      <span class="th-r" id="rkSchoolHeader">School</span>
+      <span class="th-r" data-pr-sort-col="prod">Prod</span>
+      <span class="th-r" id="rkEffHeader" data-pr-sort-col="eff">Eff</span>
+      <span class="th-r" id="rkBrkHeader" data-pr-sort-col="brk">Brk</span>
+      <span class="th-r">Tag</span>
     </div>
 
     <!-- Loading -->
@@ -132,22 +117,6 @@ def build_prospects_body(is_admin: bool = False) -> str:
       </div>
     </div>
 
-    <!-- Pagination -->
-    <div id="rkPagination" class="pagination" style="display:none;">
-      <div class="pagination-info">
-        <span id="rkPaginationText">Showing 1-20 of 100 prospects</span>
-      </div>
-      <div class="pagination-controls">
-        <button id="rkPrevBtn" class="pagination-btn" onclick="rkLoadPage('prev')" disabled>
-          <i class="fa-solid fa-chevron-left"></i> Previous
-        </button>
-        <div id="rkPageNumbers" class="pagination-pages"></div>
-        <button id="rkNextBtn" class="pagination-btn" onclick="rkLoadPage('next')" disabled>
-          Next <i class="fa-solid fa-chevron-right"></i>
-        </button>
-      </div>
-    </div>
-
   </div><!-- end rk-panel-rankings -->
 
 </div>
@@ -163,458 +132,227 @@ def build_prospects_body(is_admin: bool = False) -> str:
     <!-- filled by JS -->
   </div>
 </div>
-
+""" + """
 <style>
-  /* ===== Dense prospect table (Bloomberg-style) ===== */
-  .rk-dense-table { border-collapse: collapse; width: 100%; min-width: 900px; font-size: 11.5px; }
-  .rk-dense-table thead th {
-    position: sticky; top: 0; background: var(--card); z-index: 5;
-    text-align: center; font-size: 10px; font-weight: 700; letter-spacing: .06em;
-    color: var(--text-muted); padding: 8px 6px; border-bottom: 1px solid var(--border);
-    white-space: nowrap; cursor: pointer; user-select: none;
+  /* ===== Card: native board geometry (players-board grammar) ===== */
+  #prospectsCard { max-width: 1180px; overflow: visible; }
+
+  /* ===== Filter controls: players-board two-row bar ===== */
+  .filter-controls-container { display: flex; flex-direction: column; gap: 10px; padding: 14px 0 12px; border-bottom: 1px solid var(--border); margin-bottom: 10px; }
+  .filter-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: space-between; }
+  .filter-row-primary { gap: 12px; }
+  .filter-row-secondary { padding-top: 2px; flex-wrap: nowrap; align-items: center; }
+  .filter-search { position: relative; flex: 1; min-width: 200px; }
+  .filter-search input { width: 100%; height: 36px; padding: 8px 32px 8px 34px; border-radius: 8px; border: 1px solid var(--border); background: var(--card-bg); color: var(--text); font-size: 13px; outline: none; box-sizing: border-box; font-family: inherit; }
+  .filter-search .mag { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 13px; pointer-events: none; }
+  .filter-positions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .active-settings-indicator { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; flex: 1; min-width: 0; }
+  .active-setting-tag { display: inline-flex; align-items: center; height: 24px; padding: 0 10px; line-height: 1; border-radius: var(--radius-pill, 8px); background: var(--accent-soft); color: var(--accent); font-size: 11px; font-weight: 600; white-space: nowrap; }
+  .filter-sort-group { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+  .filter-sort { display: flex; align-items: center; gap: 8px; }
+  .filter-label { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; }
+  .filter-sort select { padding: 7px 30px 7px 11px; border-radius: 9px; border: 1px solid var(--border); background: var(--card-bg); color: var(--text); font-size: 13px; font-weight: 600; cursor: pointer; outline: none; min-height: 36px; min-width: 128px; font-family: inherit; -webkit-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 11px center; }
+  .filter-sort select:hover { border-color: var(--accent); }
+
+  /* ===== Board: pr-grid rows ===== */
+  #rkCount { font-size: 13px; color: var(--text-muted); margin: 0 0 10px; }
+  .pr-grid-row { display: grid; grid-template-columns: 88px minmax(0,1fr) 168px 60px 60px 60px 140px; align-items: center; column-gap: 14px; }
+  #rkTableHeader { display: grid; padding: 7px 12px; border-radius: 6px; background: var(--accent-soft); font-size: 11px; font-weight: 700; color: var(--accent); letter-spacing: .04em; text-transform: uppercase; position: sticky; top: 60px; z-index: 20; box-shadow: 0 -8px 0 0 var(--card), 0 10px 14px -12px rgba(0,0,0,.4); margin-bottom: 4px; }
+  #rkTableHeader [data-pr-sort-col] { cursor: pointer; user-select: none; }
+  #rkTableHeader [data-pr-sort-col]:hover { color: var(--text); }
+  #rkTableHeader .th-r { text-align: right; }
+  .pr-player-row { padding: 10px 12px; cursor: pointer; transition: background .12s ease; }
+  .pr-player-row:hover { background: color-mix(in srgb, var(--accent-soft) 70%, transparent); }
+  .pr-player-row + .pr-player-row { border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent); }
+  .pr-player-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .pr-rank { display: flex; align-items: baseline; gap: 6px; justify-content: flex-start; white-space: nowrap; padding-left: 2px; }
+  .pr-rank-num { font-size: 15px; font-weight: 800; line-height: 1; color: var(--text); font-variant-numeric: tabular-nums; }
+  .pr-rank-num.top { color: var(--gold); }
+  .pr-rank-delta { font-size: 11px; font-weight: 800; line-height: 1; white-space: nowrap; }
+  .pr-rank-delta.up { color: var(--win); }
+  .pr-rank-delta.down { color: var(--loss); }
+  .pr-name { font-size: 13px; font-weight: 600; color: var(--text); display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; min-width: 0; }
+  .pr-nm { min-width: 0; line-height: 1.3; }
+  /* Player-name hover contract (site-wide): names dim, never underline. */
+  .pr-nm:hover { opacity: 0.72; }
+  .pr-wl-star { color: var(--gold); font-size: 12px; line-height: 1; margin-left: 5px; }
+  .pr-meta { display: none; }
+  .pr-meta-txt b { color: var(--text); font-weight: 600; }
+  .pr-school { text-align: right; font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pr-school b { color: var(--text); font-weight: 600; }
+  .pr-sep { margin: 0 7px; color: var(--text-subtle); font-weight: 400; }
+  .pr-stat { text-align: right; }
+  .pr-stat-val { display: block; font-size: 14px; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; color: var(--text); }
+  .pr-stat-val.sv-lo { color: var(--text-muted); font-weight: 600; }
+  .rk-scbar { display: block; height: 3px; background: color-mix(in srgb, var(--text-muted) 14%, transparent); border-radius: 999px; margin-top: 4px; overflow: hidden; }
+  .rk-scbar i { display: block; height: 100%; border-radius: 999px; opacity: .92; }
+  .pr-tagcell { text-align: right; }
+  .pr-tier-divider { display: flex; align-items: center; gap: 8px; padding: 7px 12px 5px; pointer-events: none; }
+  .pr-tier-divider-line { flex: 1; height: 1px; opacity: .35; }
+  .pr-tier-divider-label { display: inline-block; font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; padding: 2px 7px; border-radius: var(--radius-sm); line-height: 1.3; white-space: nowrap; }
+  .td-elite { background: rgba(251,191,36,.15); color: var(--gold); }
+  .td-great { background: rgba(16,185,129,.15); color: #34d399; }
+  .td-avg { background: rgba(148,163,184,.12); color: #94a3b8; }
+  .td-day3 { background: rgba(100,116,139,.15); color: #94a3b8; }
+
+  /* Position chip: tint in the position color */
+  .rk-pos { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 5px; background: color-mix(in srgb, var(--pc, var(--accent)) 16%, transparent); color: var(--pc, var(--accent)); vertical-align: middle; }
+  /* Tag chips: one geometry, equal tint/border alpha across the bands */
+  .m-tier { display: inline-block; padding: 4px 9px; border-radius: 6px; font-size: 11px; font-weight: 700; line-height: 1.25; white-space: nowrap; text-align: center; min-width: 118px; }
+  .tag-chip { display: inline-flex; align-items: center; white-space: nowrap; font-size: 11px; font-weight: 700; letter-spacing: .02em; padding: 4px 9px; border-radius: var(--radius-pill); border: 1px solid var(--border); color: var(--text); }
+  .tag-chip.tag-mini { font-size: 10px; padding: 2px 7px; }
+  .tag-elite { background: rgba(251,191,36,.14); color: var(--gold); border: 1px solid rgba(251,191,36,.30); }
+  .tag-great { background: rgba(16,185,129,.14); color: #34d399; border: 1px solid rgba(16,185,129,.30); }
+  .tag-average { background: rgba(148,163,184,.14); color: #94a3b8; border: 1px solid rgba(148,163,184,.30); }
+  .tag-day3 { background: rgba(100,116,139,.14); color: #94a3b8; border: 1px solid rgba(100,116,139,.30); }
+  .m-tier.tag-elite, .m-tier.tag-great, .m-tier.tag-average, .m-tier.tag-day3 { border-width: 1px; }
+  /* In-season chip: quieter wash than the position chip */
+  .m-early { display: inline-block; padding: 2px 6px; border-radius: 5px; font-size: 10px; font-weight: 600; background: color-mix(in srgb, var(--text-muted) 10%, transparent); color: var(--text-muted); white-space: nowrap; }
+  .state-chip { display: inline-block; padding: 3px 7px; border-radius: 5px; font-size: 10px; font-weight: 600; background: color-mix(in srgb, var(--text-muted) 10%, transparent); color: var(--text-muted); white-space: nowrap; }
+
+  @media (max-width: 1100px) {
+    #prospectsCard .pr-grid-row { grid-template-columns: 84px minmax(0,1fr) 156px 56px 56px 56px 132px; column-gap: 12px; }
   }
-  .rk-dense-table thead th.l, .rk-dense-table tbody td.l { text-align: left; }
-  .rk-dense-table tbody td {
-    padding: 6px; border-bottom: 1px solid var(--hair, #edf1f6);
-    text-align: center; font-family: ui-monospace, "SF Mono", Menlo, monospace;
-    white-space: nowrap; vertical-align: bottom;
+  @media (max-width: 768px) {
+    .filter-row-primary { flex-direction: column; align-items: stretch; }
+    .filter-search { max-width: 100%; }
+    .filter-positions { justify-content: flex-start; gap: 6px; }
+    .filter-row-secondary { flex-wrap: wrap; gap: 8px; }
+    .active-settings-indicator { justify-content: center; order: -1; width: 100%; }
+    .filter-sort-group { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0,1fr); gap: 10px; width: 100%; }
+    .filter-sort { min-width: 0; flex-direction: column; align-items: stretch; gap: 5px; }
+    .filter-sort select { width: 100%; min-width: 0; }
+    /* board: school and breakout columns yield first, like Age on the players board
+       (scoped to #prospectsCard: dashboard.css carries global players-board
+       .pr-grid-row phone rules that must not leak into this board) */
+    #prospectsCard .pr-grid-row { grid-template-columns: 72px minmax(0,1fr) 54px 54px 130px !important; column-gap: 10px; }
+    .pr-school, .pr-brk, #rkSchoolHeader, #rkBrkHeader { display: none !important; }
   }
-  .rk-dense-table tbody td:nth-child(-n+4) { vertical-align: middle; }
-  .rk-dense-table tbody tr:nth-child(even) { background: rgba(18,45,75,.022); }
-  .rk-dense-table tbody tr:hover { background: rgba(59,130,246,.06); cursor: pointer; }
-  .rk-dense-table tbody tr:last-child td { border-bottom: none; }
-  .rk-dense-table .rk-rk { font-weight: 700; color: var(--text-subtle, #94a3b8); }
-  .rk-dense-table .rk-nm { font-family: Archivo, Inter, system-ui, sans-serif; font-weight: 700; font-size: 11px; line-height: 1.25; max-width: 150px; }
-  .rk-dense-table .rk-nm small { display: block; font-weight: 500; color: var(--text-muted); font-size: 9px; line-height: 1.3; white-space: normal; }
-  .rk-dense-table .rk-pos-chip {
-    display: inline-flex; align-items: center; justify-content: center;
-    min-width: 34px; height: 20px; padding: 0 8px; border-radius: 6px;
-    font-size: 10.5px; font-weight: 800; color: #fff; letter-spacing: .04em;
-    font-family: Archivo, Inter, system-ui, sans-serif;
+  @media (max-width: 600px) {
+    .filter-row-primary { display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto auto; gap: 8px; }
+    .filter-search { grid-column: 1 / -1; min-width: 0; }
+    .filter-positions { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; min-width: 0; align-items: center; }
+    .filter-positions::-webkit-scrollbar { display: none; }
+    #prospectsCard .pr-grid-row { grid-template-columns: 56px minmax(0,1fr) 46px 46px 120px !important; column-gap: 9px; }
+    .pr-player-row { grid-template-areas: "rank name prod eff tag" "rank meta meta meta tag"; grid-template-rows: auto auto; row-gap: 3px; }
+    .pr-name { display: contents; }
+    .pr-rank { grid-area: rank; }
+    .pr-nm { grid-area: name; align-self: center; }
+    .pr-meta { grid-area: meta; }
+    .pr-player-row > .pr-stat:not(.pr-eff):not(.pr-brk) { grid-area: prod; }
+    .pr-eff { grid-area: eff; }
+    .pr-tagcell { grid-area: tag; }
+    .pr-player-row { padding: 11px 10px; }
+    .pr-tier-divider { padding: 7px 10px 5px; }
+    #rkTableHeader { padding: 7px 10px; }
+    .pr-name { flex-direction: column; align-items: flex-start; flex-wrap: nowrap; gap: 4px; }
+    .pr-nm { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pr-name > .rk-pos { display: none; }
+    .m-early { display: none; }
+    .pr-meta { display: inline-flex; align-items: center; gap: 6px; line-height: 1; max-width: 100%; font-size: 10.5px; font-weight: 500; color: var(--text-muted); }
+    .pr-meta .rk-pos { font-size: 9.5px; padding: 1px 5px; }
+    .pr-meta-txt { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .m-tier { width: 116px; min-width: 116px; }
   }
-  .rk-dense-table .rk-sc { font-weight: 800; font-size: 13px; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
-  .rk-dense-table .rk-scbar { height: 3px; background: var(--hair, #edf1f6); border-radius: 2px; margin-top: 3px; overflow: hidden; }
-  .rk-dense-table .rk-scbar i { display: block; height: 100%; border-radius: 2px; }
-  .rk-dense-table .rk-vbar { display: inline-flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 56px; }
-  .rk-dense-table .rk-vbar .vv { font-size: 8px; font-weight: 700; color: var(--text-muted); font-family: ui-monospace, Menlo, monospace; line-height: 1.2; }
-  .rk-dense-table .rk-vbar .track { position: relative; width: 14px; height: 34px; background: var(--hair, #edf1f6); border-radius: 3px; overflow: hidden; }
-  .rk-dense-table .rk-vbar .fill { position: absolute; bottom: 0; left: 0; right: 0; border-radius: 3px; }
-  .rk-dense-table .rk-trcell {
-    display: inline-flex; align-items: center; gap: 7px; justify-content: center;
-    background: var(--card-soft, #f6f8fb); border: 1px solid var(--hair, #edf1f6);
-    border-radius: 8px; padding: 4px 8px; text-align: center;
+  @media (max-width: 480px) {
+    /* phone: rank | player | production | tag, like rank | name | ppg | value on players */
+    #prospectsCard .pr-grid-row { grid-template-columns: 39px minmax(0,1fr) 33px 92px !important; column-gap: 8px; }
+    .pr-player-row { grid-template-areas: "rank name prod tag" "rank meta meta tag"; }
+    .pr-eff, #rkEffHeader { display: none !important; }
+    .pr-rank-num { font-size: 14px; }
+    .pr-rank { gap: 4px; padding-left: 0; }
+    .pr-name { font-size: 12px; }
+    .pr-wl-star { font-size: 11px; margin-left: 4px; }
+    .m-tier { width: 92px; min-width: 92px; font-size: 9.5px; padding: 3px 3px; }
+    .pr-meta { font-size: 10px; }
+    .pr-meta .pr-sep { margin: 0 5px; }
+    .pr-player-row { padding: 11px 8px; }
+    #rkTableHeader { padding: 7px 8px; }
+    .pr-tier-divider { padding: 7px 8px 5px; }
   }
-  .rk-dense-table .rk-trstat { display: block; font-size: 8.5px; font-weight: 700; letter-spacing: .04em; color: var(--text-muted); text-transform: uppercase; margin-bottom: 2px; font-family: Archivo, Inter, sans-serif; }
-  .rk-dense-table .rk-trpct { font-size: 10px; font-weight: 800; font-family: ui-monospace, Menlo, monospace; }
-  .rk-dense-table .rk-trpct.up { color: #16a34a; } .rk-dense-table .rk-trpct.dn { color: #dc2626; }
-  .rk-dense-table td:last-child { text-align: center; vertical-align: middle; }
-  @media (max-width: 720px) {
-    .rk-dense-table thead th:nth-child(2), .rk-dense-table tbody td:nth-child(2) {
-      position: sticky; left: 0; z-index: 2; background: var(--card);
-      box-shadow: 1px 0 0 var(--border);
-    }
-    .rk-dense-table thead th:nth-child(2) { z-index: 6; }
-    .rk-dense-table tbody tr:nth-child(even) td:nth-child(2) { background: #fafbfd; }
-  }
-  /* ===== Dense modal styles ===== */
-  .rk-dense-score-row { display: flex; align-items: stretch; gap: 18px; margin: 4px 0 10px; }
-  .rk-dense-score { flex: none; display: flex; flex-direction: column; justify-content: center; align-items: flex-start; padding-right: 18px; border-right: 1px solid var(--border); }
-  .rk-dense-score-val { font-family: ui-monospace, Menlo, monospace; font-size: 38px; font-weight: 800; letter-spacing: -.03em; line-height: 1; font-variant-numeric: tabular-nums; }
-  .rk-dense-score-lbl { font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .1em; color: var(--text-muted); margin-top: 4px; }
-  .rk-dense-score-sub { font-size: 10.5px; color: var(--text-muted); margin-top: 2px; }
-  .rk-dense-comps { flex: 1; display: flex; justify-content: space-between; align-items: flex-end; gap: 4px; min-width: 0; }
-  .rk-dcomp { display: inline-flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 2px; flex: 1 1 0; min-width: 0; }
-  .rk-dcomp-bar { display: flex; align-items: flex-end; height: 64px; }
-  .rk-dcomp-fill { display: block; width: 20px; border-radius: 4px; }
-  .rk-dcomp-lbl { font-size: 8px; font-weight: 800; letter-spacing: .05em; color: var(--text-muted); margin-top: 2px; }
-  .rk-dcomp-val { font-size: 9.5px; font-weight: 700; font-family: ui-monospace, Menlo, monospace; }
-  .rk-dense-meta-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-muted); flex-wrap: wrap; margin-bottom: 4px; }
-  .rk-dense-meta-row b { color: var(--text); }
+
+  /* ===== Modal ===== */
+  /* Band tint: one variable drives the top border and the Tag card. */
+  #rkModalContent { --band: #94a3b8; --band-ink: #94a3b8; border-top: 3px solid var(--band); }
+  #rkModalContent.rk-band-elite { --band: #fbbf24; --band-ink: #fbbf24; }
+  #rkModalContent.rk-band-great { --band: #34d399; --band-ink: #34d399; }
+  #rkModalContent.rk-band-average { --band: #94a3b8; --band-ink: #94a3b8; }
+  #rkModalContent.rk-band-day3 { --band: #64748b; --band-ink: #94a3b8; }
+  #rkModalContent .pm-hero-primary { background: color-mix(in srgb, var(--band) 10%, var(--card)); border-color: color-mix(in srgb, var(--band) 38%, transparent); }
+  #rkModalContent .pm-hero-primary .pm-hero-label { color: var(--band-ink); }
+  #rkModalContent .rk-hero-tagval { font-size: 19px; font-weight: 800; line-height: 1.15; color: var(--text); }
+  #rkModalContent .rk-hero-receipt { white-space: normal; overflow: visible; font-size: 12px; line-height: 1.4; }
+  #rkModalContent .tag-chip, #rkModalContent .state-chip { font-size: 11px; }
+
+  /* Player-modal-style prospect modal: initials tile for the headshot slot
+     when a prospect has no photo (mirrors the player modal fallback). */
+  .rk-hs-initials { width: 160px; height: 135px; background: var(--accent-soft); color: var(--accent);
+    display: flex; align-items: center; justify-content: center; font-size: 40px; font-weight: 800; letter-spacing: .02em; }
+
+  .m-sec-hint { font-size: 11px; color: var(--text-subtle); margin-left: auto; }
+
+  /* Class context strip */
+  .ctx-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 7px; background: var(--bg-alt); border: 1px solid var(--border); border-radius: var(--radius); padding: 9px 12px; font-size: 12px; color: var(--text-muted); margin-bottom: 2px; }
+  .ctx-strip .stand { font-weight: 700; color: var(--text); }
+  .ctx-strip .who { font-weight: 700; color: var(--text); }
+  .ctx-sep { opacity: .35; }
+
+  /* Percentile panel: number-first read, railed bar, raw-stat sub-line */
+  .pct-item { display: grid; grid-template-columns: 112px 1fr 38px; column-gap: 12px; align-items: center; margin-top: 13px; }
+  .pct-label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
+  .pct-track { display: block; height: 7px; background: color-mix(in srgb, var(--text-muted) 14%, transparent); border-radius: 999px; overflow: hidden; }
+  .pct-fill { display: block; height: 100%; border-radius: 999px; opacity: .92; }
+  .pct-val { font-size: 14px; font-weight: 700; text-align: right; color: var(--text); font-variant-numeric: tabular-nums; line-height: 1; }
+  .pct-sub { grid-column: 2; font-size: 11px; color: var(--text-subtle); margin-top: 4px; line-height: 1.35; }
+
+  /* Season table (modal dialect) */
+  .m-season-table { width: 100%; border-collapse: collapse; font-size: 11.5px; font-family: ui-monospace, Menlo, monospace; color: var(--text); }
+  .m-season-table th { text-align: right; font-weight: 700; color: var(--text-muted); padding: 7px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  .m-season-table th:first-child, .m-season-table td:first-child { text-align: left; }
+  .m-season-table td { text-align: right; padding: 7px 8px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+  .m-season-table tr:last-child td { border-bottom: none; }
+  .m-season-table td.yr { font-weight: 700; color: var(--text-muted); }
+  .m-season-table td.pg { font-weight: 700; }
+  .m-season-table td.team { text-align: left; font-family: var(--font-sans); font-size: 12px; }
+  .m-season-table th.team { text-align: left; }
+  .m-season-table td.tst { text-align: left; font-family: var(--font-sans); font-size: 12px; font-weight: 600; }
+  .m-season-table th.tst { text-align: left; }
+  .inprog { display: inline-block; margin-left: 8px; padding: 2px 6px; border-radius: 5px; font-size: 9.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; font-family: var(--font-sans); background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); vertical-align: 1px; white-space: nowrap; }
+  /* Testing table percentile cell: mini railed bar + value */
+  .tpct { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+  .tpct .pct-track { width: 64px; flex: none; }
+  .tpct .n { font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  .tpct .none { color: var(--text-subtle); }
+  /* Season-line percentile cell */
+  .pct-mini { display: inline-flex; align-items: center; gap: 7px; justify-content: flex-end; }
+  .pct-mini .pct-track { width: 52px; height: 5px; flex: none; }
+  .pct-mini b { font-weight: 700; color: var(--text); }
+  .pct-mini-none { color: var(--text-subtle); }
+
+  /* Production trajectory bars (live treatment) */
   .rk-traj { display: flex; gap: 14px; align-items: flex-end; margin: 8px 0; width: 100%; }
   .rk-tbar { position: relative; display: flex; flex-direction: column; align-items: center; flex: 1 1 0; min-width: 0; }
   .rk-ttrack { display: flex; align-items: flex-end; justify-content: center; height: 110px; width: 100%; }
   .rk-tfill { width: 100%; border-radius: 6px 6px 0 0; background: var(--text-muted); opacity: .82; }
   .rk-tbar.live .rk-tfill { opacity: 1; }
   .rk-tpg { font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; margin-top: 6px; }
-  .rk-tyr { font-size: 10.5px; color: var(--text-muted); font-weight: 700; margin-top: 1px; }
+  .rk-tyr { font-size: 10.5px; color: var(--text-muted); font-weight: 700; margin-top: 1px; text-align: center; }
   .rk-live-tag { position: absolute; top: -8px; left: 50%; transform: translateX(-50%); font-size: 8.5px; font-weight: 800; letter-spacing: .08em; color: #fff; background: #2563eb; border-radius: 4px; padding: 2px 6px; white-space: nowrap; z-index: 2; }
-  .rk-trend-note { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-muted); margin-top: 10px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 9px 12px; }
+  .rk-trend-note { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-muted); margin-top: 10px; background: var(--bg-alt); border: 1px solid var(--border); border-radius: 8px; padding: 9px 12px; }
   .rk-trend-note b { color: var(--text); }
-  @media (max-width: 600px) {
-    .rk-dense-score-row { flex-direction: column; gap: 12px; }
-    .rk-dense-score { border-right: none; padding-right: 0; }
-    .rk-dense-score-val { font-size: 32px; }
-    .rk-traj { gap: 8px; width: 100%; }
-    .rk-tbar { flex: 1 1 0; min-width: 0; }
-    .rk-ttrack { width: 100%; justify-content: center; }
-    .rk-tfill { width: 100%; max-width: 64px; }
-  }
-  /* Player-modal-style prospect modal: initials tile for the headshot slot
-     when a prospect has no photo (mirrors the player modal fallback). */
-  .rk-hs-initials { width: 160px; height: 135px; background: var(--accent-soft); color: var(--accent);
-    display: flex; align-items: center; justify-content: center; font-size: 40px; font-weight: 800; letter-spacing: .02em; }
-  @media (max-width: 768px) {
-    /* Compact tile beside the name on phones. The full-height treatment is
-       for real headshot photos (dashboard.css .player-modal-headshot); an
-       initials fallback stretched to the wrapped header's height becomes a
-       tall empty column that eats the title section's width. */
-    .rk-hs-initials { width: 64px; height: 64px; min-height: 0; font-size: 22px; align-self: flex-start; flex: none; }
-  }
-  /* Prospects card-header: override global 50px height, allow vertical stacking */
-  .rk-card-header {
-    height: auto !important;
-    min-height: 50px;
-    align-items: flex-start;
-    flex-wrap: wrap;
-    padding: 14px 0 0;
-    gap: 10px;
-  }
-  @media (max-width: 600px) {
-    .rk-card-header {
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 10px;
-    }
-  }
 
-  /* Filter Controls */
-  .filter-controls-container {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    padding: 16px 0 14px;
-    border-bottom: 1px solid var(--border);
-    margin-bottom: 12px;
-  }
-  .filter-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-wrap: wrap;
-    justify-content: space-between;
-  }
-  .filter-row-primary {
-    gap: 12px;
-  }
-  .filter-row-secondary {
-    padding-top: 4px;
-    flex-wrap: nowrap;
-    align-items: center;
-  }
-  .filter-row-secondary .active-settings-indicator {
-    flex: 1;
-    min-width: 0;
-    overflow-x: auto;
-    scrollbar-width: none;
-    flex-wrap: nowrap;
-  }
-  .filter-row-secondary .active-settings-indicator::-webkit-scrollbar { display: none; }
-  .filter-row-secondary .filter-sort { flex-shrink: 0; }
-  .filter-search {
-    position: relative;
-    flex: 1;
-    min-width: 200px;
-  }
-  .filter-positions {
-    display: flex;
-    gap: 6px;
-    overflow-x: auto;
-    flex-wrap: nowrap;
-    scrollbar-width: none;
-    -webkit-overflow-scrolling: touch;
-  }
-  .filter-positions::-webkit-scrollbar { display: none; }
-  .active-setting-tag {
-    padding: 4px 10px;
-    border-radius: var(--radius-pill, 8px);
-    background: var(--accent-soft);
-    color: var(--accent);
-    font-size: 11px;
-    font-weight: 600;
-  }
-  .filter-sort {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .filter-label {
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-
-  /* Mobile responsive */
-  @media (max-width: 600px) {
-    .filter-row-primary {
-      display: grid;
-      grid-template-columns: 1fr auto;
-      grid-template-rows: auto auto;
-      gap: 8px;
-    }
-    .filter-search {
-      grid-column: 1 / -1;
-      min-width: 0;
-    }
-    .filter-positions {
-      min-width: 0;
-    }
-    .filter-row-secondary { gap: 8px; }
-    .manager-pills-row .manager-pill:not(.active) { display: none; }
-    .manager-pills-row { justify-content: center; }
-  }
-
-  /* Table grid: Rank | Player | Prod | Ath | DC | Score | Mock | star */
-  .rk-grid-row {
-    display: grid;
-    grid-template-columns: 64px minmax(0,1fr) 96px 96px 96px 60px 56px 40px;
-    align-items: center;
-    gap: 8px;
-  }
-  .rk-header {
-    padding: 12px 12px 8px;
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--text-muted);
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-  }
-  .hdot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; }
-  /* Clickable sort headers (AM-table pattern): pointer + arrow on active */
-  #rkHeader [data-rk-sort-col] {
-    cursor: pointer;
-    user-select: none;
-    -webkit-tap-highlight-color: transparent;
-  }
-  #rkHeader [data-rk-sort-col]:hover { color: var(--text); }
-  #rkHeader [data-rk-sort-col]:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
-  }
-  .rk-row {
-    padding: 10px 12px;
-    cursor: pointer;
-    transition: background 0.12s;
-    border-top: 1px solid var(--border);
-  }
-  .rk-row:hover { background: var(--accent-soft); }
-
-  .rk-rank { display: flex; align-items: center; justify-content: center; gap: 7px; }
-  .rk-rank-num { font-size: 14px; font-weight: 700; color: var(--text-muted); }
-  .rk-pcell { min-width: 0; }
-  .rk-pplayer { display: flex; align-items: center; gap: 10px; min-width: 0; }
-  .rk-headshot {
-    width: 38px; height: 38px; border-radius: 50%; flex-shrink: 0;
-    position: relative; overflow: hidden;
-    background: transparent; border: none;
-  }
-  .rk-headshot.rk-hs-empty { display: none; }
-  .rk-headshot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-  .rk-name { font-size: 13.5px; font-weight: 600; color: var(--text); }
-  .rk-name:hover { opacity: 0.72; }
-  .rk-meta { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
-  .rk-pos {
-    display: inline-block; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 4px;
-    background: color-mix(in srgb, var(--pc, var(--accent)) 15%, transparent);
-    color: var(--pc, var(--accent));
-    margin-left: 6px; vertical-align: middle;
-  }
-  .rk-comps3 { display: contents; }
-  .rk-compcol { min-width: 0; }
-  .rk-compcol-label { display: none; }
-  .rk-compcol-row { display: flex; align-items: center; gap: 6px; }
-  .rk-meter-bar { flex: 1; height: 5px; border-radius: 3px; background: color-mix(in srgb, var(--text-muted) 14%, transparent); overflow: hidden; }
-  .rk-meter-bar > div { height: 100%; border-radius: 3px; }
-  .rk-meter-val { font-size: 11.5px; font-weight: 800; }
-  .rk-score { text-align: right; font-size: 14px; font-weight: 700; color: var(--text); }
-  .rk-mock { text-align: center; font-size: 12.5px; color: var(--text-muted); }
-  .rk-star { background: none; border: none; cursor: pointer; padding: 6px; display: flex; }
-  .rk-star svg { width: 17px; height: 17px; fill: none; stroke: var(--text-subtle); stroke-width: 1.8; }
-  .rk-star.watching svg { fill: var(--gold); stroke: var(--gold); }
-
-  /* Modal */
-  #rkModalContent { border-top: 3px solid transparent; }
-  .rk-modal-header {
-    padding: 14px 18px 12px;
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 12px;
-    border-bottom: 1px solid var(--border);
-  }
-  .rk-modal-close {
-    background: var(--card-bg);
-    border: 1px solid var(--border);
-    width: 30px; height: 30px;
-    border-radius: 50%;
-    cursor: pointer;
-    color: var(--text-muted);
-    font-size: 13px;
-    flex-shrink: 0;
-    display: flex; align-items: center; justify-content: center;
-    margin-left: auto;
-    line-height: 1;
-  }
-  .rk-modal-body { padding: 14px 18px 20px; }
-  .m-headwrap { display: flex; gap: 12px; align-items: center; min-width: 0; }
-  .m-headshot {
-    width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
-    position: relative; overflow: hidden;
-    background: transparent; border: none;
-  }
-  .m-headshot.rk-hs-empty { display: none; }
-  .m-headshot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-  .m-title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .m-name { font-size: 19px; font-weight: 900; letter-spacing: -.02em; color: var(--text); white-space: nowrap; }
-  .m-tier { padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; }
-  .m-early {
-    padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700;
-    background: color-mix(in srgb, var(--text-muted) 12%, transparent); color: var(--text-muted);
-  }
-  .m-meta { font-size: 11.5px; color: var(--text-muted); margin-top: 7px; display: flex; gap: 4px 14px; flex-wrap: wrap; align-items: center; }
-  .m-meta b { color: var(--text); font-weight: 700; }
-  .m-recruit { font-size: 11px; color: var(--text-subtle, #94a3b8); margin-top: 4px; }
-  .m-recruit-det { color: var(--text-muted); }
-  .m-meta .m-rank { font-weight: 700; color: var(--text); }
-  .m-transfer { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
-
-  /* Hero row */
-  .rk-hero-row {
-    display: grid;
-    grid-template-columns: 1.2fr 1fr 1fr;
-    gap: 8px;
-    margin: 14px 0 4px;
-  }
-  .rk-hero-stat {
-    background: var(--card-bg);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 12px 14px;
-    text-align: center;
-  }
-  .rk-hero-label {
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    margin-bottom: 4px;
-  }
-  .rk-hero-val {
-    font-size: 26px;
-    font-weight: 700;
-    color: var(--text);
-    line-height: 1;
-  }
-  .rk-hero-sub {
-    font-size: 11px;
-    color: var(--text-muted);
-    margin-top: 4px;
-  }
-
-  /* Dense modal sections (matches mock) */
-  .rk-sec { padding: 14px 18px; border-bottom: 1px solid var(--border); }
-  .rk-sec:last-child { border-bottom: none; }
-  .rk-sec-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
-  .m-sec-hint { font-size: 11px; color: var(--text-subtle); margin-left: auto; }
-
-  /* Section divider */
-  .rk-section-divider {
-    border: none;
-    border-top: 1px solid var(--border);
-    margin: 14px 0;
-  }
-  .m-sec-label { font-size: 10.5px; font-weight: 800; color: var(--text-muted); text-transform: uppercase; letter-spacing: .1em; margin-bottom: 10px; }
-  .m-sec-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 2px; }
-  .m-conf { font-size: 11px; color: var(--text-muted); }
-  .m-conf b { color: var(--text); }
-  .m-comp-row { display: grid; grid-template-columns: 96px 1fr 38px auto; gap: 10px; align-items: center; margin-top: 12px; }
-  .m-comp-label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
-  .m-comp-row .rk-meter-bar { height: 7px; flex: none; }
-  .m-comp-row .rk-meter-val { font-size: 13px; }
-  .m-comp-raw { font-size: 12px; color: var(--text-subtle); }
-  .m-more-btn {
-    background: none; border: none; color: var(--accent); font-size: 12.5px;
-    font-weight: 700; cursor: pointer; padding: 10px 0 0;
-  }
-
-  /* Advanced metrics: dense table (matches mock) */
+  /* Advanced metrics: percentile-only table */
   .rk-adv-tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
   .rk-adv-tbl th { text-align: left; font-size: 9.5px; font-weight: 800; letter-spacing: .08em; color: var(--text-subtle); text-transform: uppercase; padding: 5px 8px; border-bottom: 1px solid var(--border); }
   .rk-adv-tbl th.r, .rk-adv-tbl td.r { text-align: right; }
   .rk-adv-tbl td { padding: 7px 8px; border-bottom: 1px solid var(--border); font-family: ui-monospace, Menlo, monospace; }
   .rk-adv-tbl tr:last-child td { border-bottom: none; }
-  .rk-adv-tbl td.rk-adv-name { font-family: Archivo, Inter, system-ui, sans-serif; font-weight: 600; color: var(--text); }
+  .rk-adv-tbl td.rk-adv-name { font-family: var(--font-sans); font-weight: 600; color: var(--text); }
   .rk-adv-raw { font-weight: 800; font-size: 13px; }
-  .rk-pbar { display: inline-block; width: 72px; height: 5px; background: var(--border); border-radius: 3px; vertical-align: middle; margin-right: 8px; overflow: hidden; }
+  .rk-pbar { display: inline-block; width: 72px; height: 5px; background: color-mix(in srgb, var(--text-muted) 14%, transparent); border-radius: 3px; vertical-align: middle; margin-right: 8px; overflow: hidden; }
   .rk-pbar i { display: block; height: 100%; border-radius: 3px; }
   .rk-pctl { font-weight: 700; color: var(--text-muted); font-size: 11.5px; }
   .rk-pctl b { color: var(--text); }
-
-  /* Advanced metrics (legacy) */
-  .m-adv-grid { display: grid; grid-template-columns: 1fr 230px; gap: 20px; align-items: center; margin-top: 10px; }
-  .m-adv-row { display: grid; grid-template-columns: 104px 1fr 52px 30px; gap: 10px; align-items: center; margin-top: 9px; }
-  .m-adv-label { font-size: 12px; font-weight: 600; color: var(--text-muted); }
-  .m-adv-row .rk-meter-bar { height: 7px; flex: none; }
-  .m-adv-score { font-size: 13px; font-weight: 700; text-align: right; color: var(--text); }
-  .m-adv-grade { font-size: 13px; font-weight: 800; text-align: right; }
-  .m-adv-radar { display: flex; justify-content: center; padding: 10px 14px; }
-
-  /* Two-column modal layout */
-  .m-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 28px; align-items: start; }
-  .m-col { min-width: 0; }
-  .m-col .m-season-table { font-size: 12px; }
-  .m-col .m-season-table th, .m-col .m-season-table td { padding: 6px 6px; }
-
-  /* Combine grid */
-  .rk-meas-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
-  .rk-meas-cell {
-    background: var(--card-bg);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 10px 8px;
-    text-align: center;
-  }
-  .rk-meas-label {
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    margin-bottom: 4px;
-  }
-  .rk-meas-val {
-    font-size: 15px;
-    font-weight: 700;
-    color: var(--text);
-  }
-
-  /* Season table wrapper (matches mock) */
-  .rk-stblwrap { overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--border); border-radius: 8px; }
-
-  /* Season table */
-  .m-season-table { width: 100%; min-width: 560px; border-collapse: collapse; font-size: 11.5px; font-family: ui-monospace, Menlo, monospace; color: var(--text); }
-  .m-season-table th {
-    text-align: right; font-size: 9.5px; font-weight: 800; text-transform: uppercase;
-    letter-spacing: .07em; color: var(--text-muted); padding: 7px 8px; border-bottom: 1px solid var(--border);
-    white-space: nowrap;
-  }
-  .m-season-table th:first-child, .m-season-table td:first-child { text-align: left; }
-  .m-season-table td { text-align: right; padding: 7px 8px; border-bottom: 1px solid var(--border); }
-  .m-season-table tr:last-child td { border-bottom: none; }
-  .m-season-table td.yr { font-weight: 700; color: var(--text-muted); }
-  .m-season-table tr.rk-career-row td { border-top: 2px solid var(--border); font-weight: 700; }
-  .m-season-table td.pg { font-weight: 700; }
-  .m-season-table th.grp, .m-season-table td.grp { border-left: 1px solid var(--border); }
-  .m-season-table th.grp { color: var(--text-subtle); }
-  .delta { font-size: 10px; font-weight: 700; color: #16a34a; }
-  .delta-down { color: #dc2626; }
-  .m-season-table tr.rk-career-row td.yr { color: var(--text); }
-
-  /* Scouting notes */
-  .m-notes { font-size: 13px; color: var(--text-muted); line-height: 1.7; margin-top: 8px; }
-  .m-notes div { padding: 2px 0; }
 
   /* Historical comparables */
   .m-sim-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); }
@@ -632,85 +370,12 @@ def build_prospects_body(is_admin: bool = False) -> str:
   .m-sim-name { font-size: 13px; font-weight: 600; color: var(--text); }
   .m-sim-meta { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
   .m-sim-right { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-  .m-sim-score { font-size: 13px; font-weight: 700; color: var(--text); }
-  .m-sim-tier { padding: 2px 7px; border-radius: 5px; font-size: 11px; font-weight: 700; }
-
-  /* Tier-change nudge */
-  .m-nudge {
-    display: flex; align-items: center; gap: 8px; margin-top: 14px; padding: 10px 12px;
-    border: 1px dashed var(--border); border-radius: 10px; font-size: 13px; color: var(--text-muted);
-    cursor: pointer;
-  }
-  .m-nudge.on { border-style: solid; border-color: color-mix(in srgb, var(--gold) 45%, var(--border)); color: var(--text); }
-  .m-nudge .rk-star { padding: 0; }
 
   /* Detail loading shimmer */
   .rk-detail-loading { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-muted); padding: 12px 0; }
 
-  /* Mobile: hide Mock column, stack component bars under the row */
   @media (max-width: 768px) {
-    /* !important: rkRender sets an inline display:grid that would override this */
-    #rkHeader { display: none !important; }
-    .rk-grid-row { grid-template-columns: 44px minmax(0,1fr) auto 36px; gap: 8px; }
-    #rkHeader .rk-mock-h, .rk-row .rk-mock { display: none; }
-
-    /* Explicit placement: score belongs on the top row (rank | player | score | star),
-       bars strip on row 2. Without this, grid auto-placement drops the score below
-       the bars after the full-width .rk-comps3 strip. */
-    .rk-rank { grid-column: 1; grid-row: 1; }
-    .rk-pcell { grid-column: 2; grid-row: 1; }
-    .rk-score { grid-column: 3; grid-row: 1; align-self: center; }
-    .rk-star { grid-column: 4; grid-row: 1; align-self: center; }
-    .rk-comps3 { grid-row: 2; }
-
-    /* Row: tighter, card-like */
-    .rk-row {
-      padding: 10px 12px 8px;
-      border-top: 1px solid var(--border);
-    }
-    .rk-rank { gap: 4px; }
-    .rk-rank-num { font-size: 13px; }
-    .rk-pplayer { gap: 9px; }
-    .rk-headshot { width: 36px; height: 36px; font-size: 12px; }
-    .rk-name { font-size: 13px; line-height: 1.25; }
-    .rk-meta { font-size: 10.5px; margin-top: 2px; }
-    .rk-pos { font-size: 9px; padding: 1px 5px; margin-left: 5px; }
-    .rk-score { font-size: 15px; }
-    .rk-star { padding: 8px 4px; }
-    .rk-star svg { width: 18px; height: 18px; }
-
-    /* Component bars: single compact strip, tighter */
-    .rk-comps3 {
-      display: grid;
-      grid-column: 1 / -1;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 12px;
-      margin-top: 8px;
-      padding-top: 8px;
-      border-top: 1px dashed color-mix(in srgb, var(--border) 60%, transparent);
-    }
-    .rk-compcol-label {
-      display: block;
-      font-size: 8.5px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: var(--text-subtle);
-      margin-bottom: 3px;
-    }
-    .rk-compcol-row { gap: 5px; }
-    .rk-meter-bar { height: 4px; }
-    .rk-meter-val { font-size: 10px; font-weight: 700; }
-
-    .m-comp-row { grid-template-columns: 96px 1fr 38px; }
-    .m-comp-raw { display: none; }
-    .m-name { font-size: 19px; }
-    .rk-dense-score-val { font-size: 32px; }
-    .rk-dcomp-bar { height: 54px; }
-    .rk-dcomp-fill { width: 16px; }
-    .m-cols { grid-template-columns: 1fr; }
-    .m-adv-grid { grid-template-columns: 1fr; }
-    .rk-meas-grid { grid-template-columns: repeat(3, 1fr); }
+    .rk-hs-initials { width: 64px; height: 64px; min-height: 0; font-size: 22px; align-self: flex-start; flex: none; }
 
     /* Modal: same centered-card treatment as the standard player modal on mobile */
     #rkModal { padding: 16px 4px !important; align-items: center !important; }
@@ -735,73 +400,35 @@ def build_prospects_body(is_admin: bool = False) -> str:
     #rkModalContent .rk-meta-line { gap: 2px 10px !important; }
     #rkModalContent .rk-meta-sep { display: none; }
 
-    /* The fixed-size radar (340px) must shrink into the stacked rail card. */
-    #rkRadarBody svg, #rkAdvRadarBody svg { max-width: 100%; height: auto; }
-    .rk-modal-header { padding: 16px 16px 0; }
-    .rk-modal-body { padding: 12px 16px 24px; }
-    .rk-modal-close { width: 36px; height: 36px; }
-
-    /* Hero row: tighter on mobile */
-    .rk-hero-row { gap: 6px; margin: 12px 0 2px; }
-    .rk-hero-stat { padding: 10px 8px; }
-    .rk-hero-val { font-size: 22px; }
-    .rk-hero-label { font-size: 10px; }
-
-    /* Season table: horizontal scroll on mobile */
-    .m-season-table { font-size: 11.5px; }
+    /* Season table: compact padding */
     .m-season-table th, .m-season-table td { padding: 6px 5px; }
-    .m-col { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-    .m-col .m-season-table { min-width: 460px; }
-
-    /* Advanced metrics rows: tighter labels */
-    .m-adv-row { grid-template-columns: 88px 1fr 48px 28px; gap: 8px; }
-    .m-adv-label { font-size: 11px; }
-    .m-adv-radar { padding: 6px 0; }
+    .pct-item { grid-template-columns: 96px 1fr 34px; column-gap: 10px; }
+    .pct-mini .pct-track { width: 38px; }
+    .rk-pbar { width: 52px; margin-right: 6px; }
+    .rk-adv-tbl td { padding: 7px 5px; }
+    .rk-adv-tbl th { padding: 5px 5px; }
+    .rk-traj { gap: 8px; }
+    .rk-tfill { max-width: 64px; }
 
     /* Comparables: tighter */
     .m-sim-row { gap: 8px; padding: 7px 0; }
     .m-sim-disc { width: 28px; height: 28px; font-size: 10px; }
-
-    /* Scouting notes: comfortable reading size */
-    .m-notes { font-size: 13px; line-height: 1.6; }
   }
 
   /* Phone fit for the Overview hero cards: tracks size to the screen, never
-     to the longest word. Without minmax(0, 1fr) tracks + min-width: 0 cards,
-     the Archetype card's value and receipt (the longest content in the row)
-     set the column's min-content width and push the whole row, Class Rank
-     card included, past the right edge. Scoped to #rkModalContent so the
-     NFL player modal sharing the pm- classes is untouched. */
+     to the longest word. Scoped to #rkModalContent so the NFL player modal
+     sharing the pm- classes is untouched. */
   @media (max-width: 640px) {
     #rkHeroRow { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
     #rkModalContent .pm-hero-stat { min-width: 0; }
-    #rkModalContent .pm-hero-val { overflow-wrap: break-word; }
+    #rkModalContent .pm-hero-val, #rkModalContent .rk-hero-tagval { overflow-wrap: break-word; }
     #rkModalContent .pm-hero-sub {
       white-space: normal; overflow: visible; text-overflow: clip;
       overflow-wrap: break-word;
     }
   }
-
-  /* Very small screens: further tightening */
-  @media (max-width: 480px) {
-    .rk-grid-row { grid-template-columns: 40px minmax(0,1fr) 44px 28px; gap: 6px; }
-    .rk-row { padding: 10px 10px; }
-    .rk-rank-num { font-size: 13px; }
-    .rk-score { font-size: 13px; }
-    .rk-comps3 { gap: 8px; }
-    .m-headwrap { gap: 10px; }
-    .m-headshot { width: 44px; height: 44px; font-size: 14px; }
-    .m-name { font-size: 17px; }
-    .m-meta { font-size: 12px; }
-    .rk-hero-val { font-size: 20px; }
-    .rk-meas-grid { grid-template-columns: repeat(2, 1fr); }
-    .rk-meas-val { font-size: 14px; }
-    .filter-controls-container { padding: 12px 0 10px; gap: 10px; }
-  }
-
-  /* Pagination uses the universal .pagination component in dashboard.css */
 </style>
-
+""" + """
 <script>
   var rkAllPlayers = [];   // full unfiltered list - never replaced after load
   var rkPosFilters = new Set();
@@ -810,12 +437,10 @@ def build_prospects_body(is_admin: bool = False) -> str:
   var rkPipelinePaused = false;
   var rkDraftYear = null;
   var rkDraftComplete = false;
-  var rkCurrentPage = 1;
-  var RK_PER_PAGE = 50;
   var rkSortKey = 'rank';  // active sort key (mirrors the #rkSort dropdown)
   var rkSortDir = 'asc';   // 'asc' | 'desc' -- flipped by clicking a column header
-  // Default direction when a sort key is first chosen (AM-table convention).
-  var RK_SORT_DIRS = { rank: 'asc', score: 'desc', mock: 'asc', age: 'asc', name: 'asc' };
+  // Default direction when a sort key is first chosen.
+  var RK_SORT_DIRS = { rank: 'asc', prod: 'desc', eff: 'desc', brk: 'desc', name: 'asc' };
 
   // Watchlist (localStorage-backed) with the shared undo toast.
   var rkWatch = {};
@@ -827,25 +452,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
   }
 
   var RK_POS_COLORS = { QB: '#3b82f6', RB: '#22c55e', WR: '#f59e0b', TE: '#8b5cf6' };
-  var RK_TIER_COLORS = ['', '#10b981', '#22d3ee', '#3b82f6', '#8b5cf6', '#a855f7', '#f59e0b', '#f97316', '#94a3b8', '#64748b'];
-  var RK_TIER_NAMES = { 1: 'ELITE', 2: 'GREAT', 3: 'GOOD' };
-  var RK_COMP_NAMES = ['Production', 'Athleticism', 'Draft Capital'];
-  var RK_COMP_SHORT = ['Prod', 'Ath', 'DC'];
-  var RK_COMP_COLORS = ['#10b981', '#3b82f6', '#8b5cf6'];
   var RK_DISC_COLORS = ['#10b981','#3b82f6','#8b5cf6','#f59e0b','#ef4444','#06b6d4','#f97316','#84cc16'];
-  var RK_XCOMP = [['Utilization','#06b6d4'],['Efficiency','#818cf8'],['Durability','#f97316'],['Experience','#84cc16'],['Competition','#f472b6']];
-  var RK_SEASON_COLS = {
-    QB: ['Year','GP','Cmp%','Yds','Y/A','TD','INT','Yds/G','TD/G','Dom'],
-    RB: ['Year','GP','Att','Yds','TD','Att/G','Yds/G','TD/G','YPC','Dom'],
-    WR: ['Year','GP','Rec','Yds','TD','Rec/G','Yds/G','TD/G','YPR','Dom'],
-    TE: ['Year','GP','Rec','Yds','TD','Rec/G','Yds/G','TD/G','YPR','Dom']
-  };
-  // Column indexes that start a visual group (left divider), matching the mock
-  var RK_SEASON_GRP = { QB: [7, 9], RB: [5, 8], WR: [5, 8], TE: [5, 8] };
-  function rkDomCell(s) {
-    return s.dominator_rating != null ? Math.round(Number(s.dominator_rating) * 100) + '%' : '-';
-  }
-
   function rkEsc(s) {
     return String(s == null ? '' : s)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;')
@@ -876,17 +483,31 @@ def build_prospects_body(is_admin: bool = False) -> str:
     d.textContent = img.getAttribute('data-initials') || '';
     if (img.parentNode) img.parentNode.replaceChild(d, img);
   }
-  function rkStarSVG() {
-    return '<svg viewBox="0 0 24 24"><path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4 6.1 20.5l1.2-6.5L2.5 9.4l6.6-.9z"/></svg>';
+
+  // ── Percentile display ─────────────────────────────────────────────────
+  // No numeric prospect grade is rendered anywhere. Percentile values come
+  // from the API (computed within position against the graded reference
+  // population); a null percentile renders nothing, never a placeholder.
+  var RK_PCT_BOARD = [
+    { key: 'production', label: 'Production', color: '#10b981' },
+    { key: 'efficiency', label: 'Efficiency', color: '#3b82f6' },
+    { key: 'breakout', label: 'Breakout', color: '#f59e0b' }
+  ];
+  var RK_PCT_PANEL = RK_PCT_BOARD.concat([
+    { key: 'competition', label: 'Competition', color: '#2dd4bf' },
+    { key: 'athleticism', label: 'Athleticism', color: '#8b5cf6' }
+  ]);
+  var RK_TAG_CLASS = { elite: 'tag-elite', great: 'tag-great', average: 'tag-average', day3: 'tag-day3' };
+  var RK_BAND_COLORS = { elite: '#fbbf24', great: '#34d399', average: '#94a3b8', day3: '#64748b' };
+  var RK_BAND_SHORT = { elite: 'Elite', great: 'Great', average: 'Average', day3: 'Day 3' };
+  var RK_BAND_TD = { elite: 'td-elite', great: 'td-great', average: 'td-avg', day3: 'td-day3' };
+  function rkTagChip(tag, mini) {
+    if (!tag || !tag.label) return '';
+    return '<span class="tag-chip' + (mini ? ' tag-mini' : '') + ' ' +
+      (RK_TAG_CLASS[tag.band] || '') + '">' + rkEsc(tag.label) + '</span>';
   }
-  // Rank movement arrow. Positive delta = moved up the board.
-  function rkDelta(delta) {
-    if (delta == null || delta === '') return '';
-    delta = parseInt(delta, 10);
-    if (isNaN(delta)) return '';
-    if (delta > 0) return '<span class="dvt-change dvt-change-up">&#9650;' + delta + '</span>';
-    if (delta < 0) return '<span class="dvt-change dvt-change-down">&#9660;' + Math.abs(delta) + '</span>';
-    return '<span class="dvt-change dvt-change-flat">-</span>';
+  function rkPosRankLabel(r) {
+    return (r.position && r.position_rank) ? String(r.position).toUpperCase() + r.position_rank : '';
   }
   function rkHeightStr(r) {
     var ht = parseInt(r.height_inches, 10);
@@ -896,139 +517,239 @@ def build_prospects_body(is_admin: bool = False) -> str:
   function rkWeightStr(r) {
     return r.weight_lbs ? r.weight_lbs + ' lbs' : '';
   }
-  function rkLetterGrade(v) {
-    if (v >= 97) return ['A+', '#10b981'];
-    if (v >= 93) return ['A', '#10b981'];
-    if (v >= 90) return ['A-', '#34d399'];
-    if (v >= 87) return ['B+', '#34d399'];
-    if (v >= 83) return ['B', '#6ee7b7'];
-    if (v >= 80) return ['B-', '#6ee7b7'];
-    if (v >= 77) return ['C+', '#f59e0b'];
-    if (v >= 73) return ['C', '#f59e0b'];
-    if (v >= 70) return ['C-', '#fbbf24'];
-    if (v >= 65) return ['D+', '#f87171'];
-    if (v >= 60) return ['D', '#f87171'];
-    return ['F', '#ef4444'];
-  }
-  // Score display: one decimal, never rounded to whole, never 100.
-  function rkScore1(v) {
-    var n = parseFloat(v);
-    if (isNaN(n)) return '-';
-    n = Math.min(n, 99.9);
-    return (Math.round(n * 10) / 10).toFixed(1);
-  }
-  function rkScoreNum(v) {
-    var n = parseFloat(v);
-    if (isNaN(n)) return 0;
-    return Math.min(n, 99.9);
-  }
-  // Radar label abbreviations: full names live in the rows beside it.
-  var RK_RADAR_ABBR = {
-    'Dominator': 'DOM', 'Breakout Age': 'BO AGE', 'Yds/Carry': 'YDS/C',
-    'Yds/Rec': 'YDS/R', 'Scrim Yds/Gm': 'SCRIM', 'Mkt Share': 'MKT SH',
-    'TD Share': 'TD SH', 'Speed Score': 'SPEED', 'Efficiency': 'EFF',
-    'Production': 'PROD', 'Recruiting': 'REC', 'WEPA': 'WEPA',
-    'Cmp%': 'CMP%', 'TD:INT': 'TD:INT', 'Yds/Att': 'YDS/A', 'AY/A': 'AY/A',
-    'Rush Yds/Gm': 'RUSH/G', 'Rush TDs': 'R TD'
-  };
-  // Radar in the player modal's blue treatment, 340x236 geometry: full rail
-  // width on Overview (fixed=false), fixed size on the Advanced tab.
-  function rkRadarSVG(labels, values, fixed) {
-    var W = 340, H = 236, cx = 170, cy = 118, R = 80, n = labels.length;
-    if (!n) return '';
-    function pt(k, r) {
-      var a = (-90 + k * 360 / n) * Math.PI / 180;
-      return [cx + r * Math.cos(a), cy + r * Math.sin(a)];
-    }
-    function pts(k, r) { var q = pt(k, r); return q[0].toFixed(1) + ',' + q[1].toFixed(1); }
-    var grid = [25, 50, 75, 100].map(function(g) {
-      var pp = []; for (var k = 0; k < n; k++) pp.push(pts(k, R * g / 100));
-      return '<polygon points="' + pp.join(' ') + '" fill="none" stroke="var(--border)" stroke-width="1"/>';
-    }).join('');
-    var axes = '';
-    for (var k = 0; k < n; k++) {
-      var e = pt(k, R);
-      axes += '<line x1="' + cx + '" y1="' + cy + '" x2="' + e[0].toFixed(1) + '" y2="' + e[1].toFixed(1) + '" stroke="var(--border)" stroke-width="1"/>';
-    }
-    var vp = [];
-    for (var k = 0; k < n; k++) vp.push(pts(k, R * Math.max(0, Math.min(100, values[k] || 0)) / 100));
-    var poly = '<polygon points="' + vp.join(' ') + '" fill="rgba(59,130,246,.16)" stroke="#3b82f6" stroke-width="1.6"/>';
-    var dots = vp.map(function(s) { var xy = s.split(','); return '<circle cx="' + xy[0] + '" cy="' + xy[1] + '" r="2.4" fill="#3b82f6"/>'; }).join('');
-    var labs = labels.map(function(l, k) {
-      var a = (-90 + k * 360 / n) * Math.PI / 180;
-      var lx = cx + (R + 17) * Math.cos(a), ly = cy + (R + 17) * Math.sin(a);
-      var anchor = Math.abs(Math.cos(a)) < 0.35 ? 'middle' : (Math.cos(a) > 0 ? 'start' : 'end');
-      var txt = RK_RADAR_ABBR[l] || String(l).toUpperCase();
-      return '<text x="' + lx.toFixed(1) + '" y="' + (ly + 3).toFixed(1) + '" text-anchor="' + anchor + '" font-size="11" font-weight="700" fill="var(--text-muted)">' + rkEsc(txt) + '</text>';
-    }).join('');
-    var sizeAttrs = fixed ? 'width="340" height="236"' : 'width="100%"';
-    return '<svg ' + sizeAttrs + ' viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Advanced metrics radar">' + grid + axes + poly + dots + labs + '</svg>';
+  function rkPctOf(r, key) {
+    var p = r && r.percentiles ? r.percentiles[key] : null;
+    if (p == null || p === '' || isNaN(+p)) return null;
+    return +p;
   }
 
-  // Sort dropdown: choosing a key resets to that key's default direction.
+  // ── Board ──────────────────────────────────────────────────────────────
+  // One percentile stat cell: value over a railed bar. The value prints in
+  // the component color at 90+, plain at 60-89, muted below 60. A missing
+  // percentile renders an empty cell, never a placeholder.
+  function rkStatCell(r, def, extraCls) {
+    var p = rkPctOf(r, def.key);
+    if (p === null) return '<span class="pr-stat ' + extraCls + '"></span>';
+    var cls = p >= 90 ? '' : (p < 60 ? ' sv-lo' : '');
+    var style = p >= 90 ? ' style="color:' + def.color + '"' : '';
+    return '<span class="pr-stat ' + extraCls + '"><span class="pr-stat-val' + cls + '"' +
+      style + '>' + p + '</span>' +
+      '<span class="rk-scbar"><i style="width:' + p + '%;background:' + def.color + '"></i></span></span>';
+  }
+
+  // One board row (native pr-grid grammar): rank + movement triangles,
+  // name with baseline position chip, school column, percentile stats,
+  // band tag chip. No numeric grade is rendered.
+  function rkBoardRow(r) {
+    var pid = r.player_id || '';
+    var pos = (r.position || '').toUpperCase();
+    var posColor = RK_POS_COLORS[pos] || '#94a3b8';
+    var rank = r.overall_rank != null && r.overall_rank !== '' ? +r.overall_rank : null;
+    var delta = '';
+    var d = r.rank_delta == null || r.rank_delta === '' ? null : parseInt(r.rank_delta, 10);
+    if (d !== null && !isNaN(d) && d !== 0) {
+      delta = '<span class="pr-rank-delta ' + (d > 0 ? 'up' : 'down') + '" title="' +
+        Math.abs(d) + ' spot' + (Math.abs(d) === 1 ? '' : 's') + ' overall">' +
+        (d > 0 ? '&#9650;' : '&#9660;') + Math.abs(d) + '</span>';
+    }
+    var star = rkWatch[pid]
+      ? '<span class="pr-wl-star" title="On your watchlist">&#9733;</span>' : '';
+    var posRank = rkPosRankLabel(r);
+    var schoolBit = '';
+    if (posRank && r.school) schoolBit = '<b>' + rkEsc(posRank) + '</b><span class="pr-sep">&middot;</span>' + rkEsc(r.school);
+    else if (posRank) schoolBit = '<b>' + rkEsc(posRank) + '</b>';
+    else if (r.school) schoolBit = rkEsc(r.school);
+    var metaTxt = schoolBit;
+    var tag = r.tag && r.tag.label
+      ? '<span class="m-tier ' + (RK_TAG_CLASS[r.tag.band] || '') + '">' + rkEsc(r.tag.label) + '</span>' : '';
+    return '<div class="pr-player-row pr-grid-row" data-pid="' + rkEsc(pid) + '" role="button" tabindex="0" aria-label="' + rkEsc(r.name || '') + '">' +
+      '<span class="pr-rank"><span class="pr-rank-num' + (rank === 1 ? ' top' : '') + '">' +
+        (rank !== null && !isNaN(rank) ? rank : '-') + '</span>' + delta + '</span>' +
+      '<span class="pr-name"><span class="pr-nm">' + rkEsc(r.name || 'Unknown') + star + '</span>' +
+        (pos ? '<span class="rk-pos" style="--pc:' + posColor + '">' + rkEsc(pos) + '</span>' : '') +
+        (r.in_season ? '<span class="m-early">In-Season</span>' : '') +
+        '<span class="pr-meta">' +
+          (pos ? '<span class="rk-pos" style="--pc:' + posColor + '">' + rkEsc(pos) + '</span>' : '') +
+          (metaTxt ? '<span class="pr-meta-txt">' + metaTxt + '</span>' : '') +
+        '</span>' +
+      '</span>' +
+      '<span class="pr-school">' + schoolBit + '</span>' +
+      rkStatCell(r, RK_PCT_BOARD[0], '') +
+      rkStatCell(r, RK_PCT_BOARD[1], 'pr-eff') +
+      rkStatCell(r, RK_PCT_BOARD[2], 'pr-brk') +
+      '<span class="pr-tagcell">' + tag + '</span>' +
+    '</div>';
+  }
+
+  // Divider between tag bands on the default board order (short band name
+  // in the band hue). Never printed above the first group.
+  function rkBandDivider(band) {
+    var color = RK_BAND_COLORS[band] || '#94a3b8';
+    var label = RK_BAND_SHORT[band] || '';
+    return '<div class="pr-tier-divider"><div class="pr-tier-divider-line" style="background:' +
+      color + '"></div><span class="pr-tier-divider-label ' + (RK_BAND_TD[band] || '') + '">' +
+      rkEsc(label) + '</span><div class="pr-tier-divider-line" style="background:' +
+      color + '"></div></div>';
+  }
+
+  // Filtered + sorted view of the board (shared by render and CSV export).
+  function rkVisiblePlayers() {
+    var players = rkAllPlayers.slice();
+    if (rkPosFilters.size > 0) {
+      players = players.filter(function(r) {
+        return rkPosFilters.has((r.position || '').toUpperCase());
+      });
+    }
+    if (rkSearch.length > 0) {
+      var q = rkSearch;
+      return players
+        .map(function(r) { return { r: r, s: rkFuzzy(r.name, q) }; })
+        .filter(function(x) { return x.s > 0; })
+        .sort(function(a, b) {
+          return b.s - a.s ||
+            (parseFloat(b.r.prospect_score || 0) - parseFloat(a.r.prospect_score || 0));
+        })
+        .map(function(x) { return x.r; });
+    }
+    var sortBy = rkSortKey;
+    var rkDirMult = rkSortDir === 'asc' ? 1 : -1;
+    players.sort(function(a, b) {
+      if (sortBy === 'prod' || sortBy === 'eff' || sortBy === 'brk') {
+        var ck = sortBy === 'prod' ? 'production' : (sortBy === 'eff' ? 'efficiency' : 'breakout');
+        var av = rkPctOf(a, ck), bv = rkPctOf(b, ck);
+        if (av === null && bv === null) return 0;
+        if (av === null) return 1;   // missing percentiles always last
+        if (bv === null) return -1;
+        return (av - bv) * rkDirMult;
+      }
+      if (sortBy === 'name') {
+        return String(a.name || '').localeCompare(String(b.name || '')) * rkDirMult;
+      }
+      var ar = a.overall_rank > 0 ? +a.overall_rank : null;
+      var br = b.overall_rank > 0 ? +b.overall_rank : null;
+      if (ar === null && br === null) return 0;
+      if (ar === null) return 1;
+      if (br === null) return -1;
+      return (ar - br) * rkDirMult;
+    });
+    return players;
+  }
+
+  function rkRender() {
+    if (!rkLoaded) return;
+    var listEl = document.getElementById('rkList');
+    var emptyEl = document.getElementById('rkEmpty');
+    var countEl = document.getElementById('rkCount');
+    var headEl = document.getElementById('rkTableHeader');
+    if (!listEl) return;
+    var list = rkVisiblePlayers();
+
+    if (!list.length) {
+      listEl.innerHTML = '';
+      if (emptyEl) {
+        emptyEl.style.display = 'block';
+        var emptyTitle = emptyEl.querySelector('.empty-state-title');
+        var emptyMsg = emptyEl.querySelector('.empty-state-msg');
+        var pausedEmpty = rkPipelinePaused && rkAllPlayers.length === 0 &&
+          rkPosFilters.size === 0 && !rkSearch;
+        if (emptyTitle) {
+          emptyTitle.textContent = pausedEmpty ? 'Prospect rankings paused' : 'No prospects match';
+        }
+        if (emptyMsg) {
+          emptyMsg.textContent = pausedEmpty
+            ? 'The rookie pipeline is paused until the next draft cycle. Rankings will return when the class is rebuilt.'
+            : 'Try clearing a filter or widening your position and tier selections.';
+        }
+      }
+      if (headEl) headEl.style.display = 'none';
+      if (countEl) countEl.style.display = 'none';
+      return;
+    }
+
+    if (emptyEl) emptyEl.style.display = 'none';
+    if (headEl) headEl.style.display = '';
+    if (countEl) {
+      countEl.textContent = 'Showing ' + list.length + ' of ' + rkAllPlayers.length + ' prospects';
+      countEl.style.display = '';
+    }
+
+    // Band dividers only make sense on the default board order: all
+    // positions, no search, sorted by overall rank ascending.
+    var showDividers = rkPosFilters.size === 0 && !rkSearch &&
+                       rkSortKey === 'rank' && rkSortDir === 'asc';
+    var byPid = {};
+    list.forEach(function(r) { byPid[r.player_id || ''] = r; });
+    var html = '', lastBand = null, firstGroup = true;
+    list.forEach(function(r) {
+      var band = r.tag ? r.tag.band : null;
+      if (showDividers && band && band !== lastBand) {
+        if (!firstGroup) html += rkBandDivider(band);
+        firstGroup = false;
+        lastBand = band;
+      }
+      html += rkBoardRow(r);
+    });
+    listEl.innerHTML = html;
+    listEl.querySelectorAll('.pr-player-row').forEach(function(rowEl) {
+      var r = byPid[rowEl.getAttribute('data-pid')];
+      if (!r) return;
+      rowEl.addEventListener('click', function() { rkOpenModal(r); });
+      rowEl.addEventListener('keydown', function(ev) {
+        if (ev.key === 'Enter' || ev.key === ' ') {
+          ev.preventDefault();
+          rkOpenModal(r);
+        }
+      });
+    });
+  }
+
+  // Export the current (filtered, sorted) board as CSV.
+  function rkExportCSV() {
+    var rows = [['Rank', 'Player', 'Position', 'School', 'Pos Rank',
+                 'Production Pct', 'Efficiency Pct', 'Breakout Pct', 'Tag']];
+    rkVisiblePlayers().forEach(function(r) {
+      rows.push([
+        r.overall_rank != null ? r.overall_rank : '',
+        r.name || '', (r.position || '').toUpperCase(), r.school || '',
+        rkPosRankLabel(r),
+        rkPctOf(r, 'production') !== null ? rkPctOf(r, 'production') : '',
+        rkPctOf(r, 'efficiency') !== null ? rkPctOf(r, 'efficiency') : '',
+        rkPctOf(r, 'breakout') !== null ? rkPctOf(r, 'breakout') : '',
+        r.tag && r.tag.label ? r.tag.label : ''
+      ]);
+    });
+    var csv = rows.map(function(row) {
+      return row.map(function(c) {
+        var s = String(c == null ? '' : c);
+        return /[",\\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+      }).join(',');
+    }).join('\\n');
+    var blob = new Blob([csv], { type: 'text/csv' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'rookie-prospects-' + (rkDraftYear || 'class') + '.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function() { URL.revokeObjectURL(a.href); }, 1000);
+  }
+
   function rkSetSortKey(key) {
     rkSortKey = key;
     rkSortDir = RK_SORT_DIRS[key] || 'desc';
-    rkCurrentPage = 1;
     rkRender();
   }
-  // Clickable column headers (AM-table pattern): clicking the active key flips
-  // direction, clicking a new key takes its default direction. The dropdown is
-  // kept in sync so both controls always agree.
+  // Clickable column headers: clicking the active key flips direction,
+  // clicking a new key takes its default direction. The dropdown is kept
+  // in sync so both controls always agree.
   function rkHeaderSort(key) {
     if (rkSortKey === key) rkSortDir = (rkSortDir === 'desc' ? 'asc' : 'desc');
     else { rkSortKey = key; rkSortDir = RK_SORT_DIRS[key] || 'desc'; }
     var sel = document.getElementById('rkSort');
     if (sel) sel.value = rkSortKey;
-    rkCurrentPage = 1;
     rkRender();
   }
-  // Arrow on the active sort header (AM-table pattern).
-  function rkUpdateSortHeaders() {
-    // Dense table header (primary) + legacy header (hidden, kept for compat)
-    ['rkDenseTable', 'rkHeader'].forEach(function(hid) {
-      var header = document.getElementById(hid);
-      if (!header) return;
-      var col = rkSortKey;
-      header.querySelectorAll('[data-rk-sort-col]').forEach(function(el) {
-        var on = el.getAttribute('data-rk-sort-col') === col;
-        el.classList.toggle('sorted-asc', on && rkSortDir === 'asc');
-        el.classList.toggle('sorted-desc', on && rkSortDir === 'desc');
-        if (on) el.setAttribute('aria-sort', rkSortDir === 'asc' ? 'ascending' : 'descending');
-        else el.removeAttribute('aria-sort');
-      });
-    });
-  }
-  // Wire sort clicks on the dense table header (delegated, survives re-render)
-  document.addEventListener('click', function(ev) {
-    var th = ev.target.closest ? ev.target.closest('#rkDenseTable [data-rk-sort-col]') : null;
-    if (!th) return;
-    var key = th.getAttribute('data-rk-sort-col');
-    if (key) rkSetSortKey(key);
-  });
 
-  // Watchlist toggle with the shared undo toast.
-  function rkToggleWatch(ev, pid, name) {
-    ev.stopPropagation();
-    if (rkWatch[pid]) {
-      delete rkWatch[pid];
-      rkSaveWatch();
-      rkRender();
-      return;
-    }
-    rkWatch[pid] = true;
-    rkSaveWatch();
-    rkRender();
-    if (window.brUndoToast) {
-      window.brUndoToast('Watching ' + name + '.', function() {
-        delete rkWatch[pid];
-        rkSaveWatch();
-        rkRender();
-        var card = document.getElementById('rkModalContent');
-        if (card) rkSyncModalWatch(card, pid, name);
-      });
-    }
-  }
   // Sync the open modal's star + nudge row after a watchlist change.
   function rkSyncModalWatch(card, pid, name) {
     var on = !!rkWatch[pid];
@@ -1082,7 +803,6 @@ def build_prospects_body(is_admin: bool = False) -> str:
       var p = b.getAttribute('data-pos');
       b.classList.toggle('active', p === 'ALL' ? rkPosFilters.size === 0 : rkPosFilters.has(p));
     });
-    rkCurrentPage = 1;
     rkRender();
   }
 
@@ -1090,7 +810,6 @@ def build_prospects_body(is_admin: bool = False) -> str:
     document.getElementById('rookieSearch').value = '';
     rkSearch = '';
     document.getElementById('rookieSearchClear').style.display = 'none';
-    rkCurrentPage = 1;
     rkRender();
   }
 
@@ -1102,268 +821,12 @@ def build_prospects_body(is_admin: bool = False) -> str:
     if (nw.some(function(w){ return w.startsWith(qL); })) return 60;
     return 0;
   }
+</script>
+""" + """
+<script>
 
-  // Missing sort values always sort last, in either direction.
-  function rkSortIsNull(r, sortBy) {
-    switch (sortBy) {
-      case 'score': return !(parseFloat(r.prospect_score||0) > 0);
-      case 'mock':  return r.projected_pick == null;
-      case 'age':   return r.age == null;
-      case 'name':  return false;
-      default:      return !(r.overall_rank > 0); // 'rank'
-    }
-  }
-  function rkMockSortVal(r) {
-    return r.projected_pick != null ? parseFloat(r.projected_pick) : 999;
-  }
-  // ===== Dense table helpers =====
-  // Vertical bar for a component score (0-100), tinted by position
-  function rkVBar(val, posColor) {
-    var n = rkScoreNum(val), disp = rkScore1(val);
-    var h = Math.max(2, Math.round(n * 0.34)); // 34px max
-    var op = n >= 80 ? 0.95 : (n >= 60 ? 0.7 : (n >= 40 ? 0.45 : 0.28));
-    var bg = posColor || '#94a3b8';
-    // Use hex alpha if bg is hex, else rgba fallback
-    var fill = bg;
-    return '<span class="rk-vbar"><span class="track"><span class="fill" style="height:' + h +
-      'px;background:' + fill + ';opacity:' + op + '"></span></span>' +
-      '<span class="vv">' + disp + '</span></span>';
-  }
-  // SVG sparkline for trajectory values
-  function rkSpark(vals, w, h, color) {
-    w = w || 88; h = h || 30; color = color || '#94a3b8';
-    if (!vals || vals.length < 2) return '';
-    var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
-    var rng = (max - min) || 1;
-    var pts = vals.map(function(v, i) {
-      var x = (i / (vals.length - 1)) * (w - 4) + 2;
-      var y = h - 3 - ((v - min) / rng) * (h - 8);
-      return x.toFixed(1) + ',' + y.toFixed(1);
-    }).join(' ');
-    var last = pts.split(' ').pop().split(',');
-    return '<svg class="spark" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">' +
-      '<polyline points="' + pts + '" fill="none" stroke="' + color + '" stroke-width="1.8" ' +
-      'stroke-linecap="round" stroke-linejoin="round"/>' +
-      '<circle cx="' + last[0] + '" cy="' + last[1] + '" r="2.5" fill="' + color + '"/></svg>';
-  }
-  function rkUpTri() {
-    return '<svg width="8" height="8" viewBox="0 0 8 8"><path d="M4 1L7.5 7H0.5Z" fill="#16a34a"/></svg>';
-  }
-  function rkDnTri() {
-    return '<svg width="8" height="8" viewBox="0 0 8 8"><path d="M4 7L0.5 1H7.5Z" fill="#dc2626"/></svg>';
-  }
-  // Trajectory cell: stat label + sparkline + % change
-  function rkTrendCell(r) {
-    var t = r.trajectory;
-    if (!t || !t.values || t.values.length < 2) {
-      return '<span style="color:var(--text-muted);font-size:11px;">-</span>';
-    }
-    var vals = t.values, first = vals[0], last = vals[vals.length - 1];
-    var pct = first ? ((last - first) / first * 100) : 0;
-    var up = pct >= 0;
-    var pos = (r.position || '').toUpperCase();
-    var pc = RK_POS_COLORS[pos] || '#94a3b8';
-    var lbl = (t.label || 'yds/g').toUpperCase();
-    return '<span class="rk-trcell">' +
-      '<span><span class="rk-trstat">' + rkEsc(lbl) + '</span>' +
-      rkSpark(vals, 88, 30, pc) + '</span>' +
-      '<span class="rk-trpct ' + (up ? 'up' : 'dn') + '">' + (up ? '+' : '') + Math.round(pct) + '%</span>' +
-      (up ? rkUpTri() : rkDnTri()) + '</span>';
-  }
-
-  function rkRender() {
-    if (!rkLoaded) return;
-    var sortBy = rkSortKey;
-    rkUpdateSortHeaders();
-
-    // 1. Start with full list
-    var players = rkAllPlayers.slice();
-
-    // 2. Position filter
-    if (rkPosFilters.size > 0) {
-      players = players.filter(function(r) {
-        return rkPosFilters.has((r.position||'').toUpperCase());
-      });
-    }
-
-    // 3. Search filter (fuzzy match on name)
-    if (rkSearch.length > 0) {
-      var q = rkSearch;
-      players = players
-        .map(function(r) { return {r:r, s: rkFuzzy(r.name, q)}; })
-        .filter(function(x) { return x.s > 0; })
-        .sort(function(a,b) { return b.s - a.s || (parseFloat(b.r.prospect_score||0) - parseFloat(a.r.prospect_score||0)); })
-        .map(function(x) { return x.r; });
-    } else {
-      // 4. Sort (only when not searching). Direction-aware: the ascending-base
-      //    comparator is flipped when the header toggle is on 'desc'. Missing
-      //    values always sort last, in either direction.
-      var rkDirMult = rkSortDir === 'asc' ? 1 : -1;
-      players.sort(function(a, b) {
-        var an = rkSortIsNull(a, sortBy), bn = rkSortIsNull(b, sortBy);
-        if (an && bn) return 0;
-        if (an) return 1;
-        if (bn) return -1;
-        switch (sortBy) {
-          case 'score': return (parseFloat(a.prospect_score||0) - parseFloat(b.prospect_score||0)) * rkDirMult;
-          case 'mock':  return (rkMockSortVal(a) - rkMockSortVal(b)) * rkDirMult;
-          case 'age':   return (parseFloat(a.age||99) - parseFloat(b.age||99)) * rkDirMult;
-          case 'name':  return String(a.name||'').localeCompare(String(b.name||'')) * rkDirMult;
-          case 'pos':   return String(a.position||'').localeCompare(String(b.position||'')) * rkDirMult;
-          default:      return ((a.overall_rank||999) - (b.overall_rank||999)) * rkDirMult;
-        }
-      });
-    }
-
-    var totalFiltered = players.length;
-    var totalPages = Math.max(1, Math.ceil(totalFiltered / RK_PER_PAGE));
-
-    // Clamp page
-    if (rkCurrentPage > totalPages) rkCurrentPage = 1;
-
-    // 5. Paginate
-    var offset = (rkCurrentPage - 1) * RK_PER_PAGE;
-    var pageItems = players.slice(offset, offset + RK_PER_PAGE);
-
-    var list   = document.getElementById('rkList');
-    var denseWrap = document.getElementById('rkDenseWrap');
-    var denseBody = document.getElementById('rkDenseBody');
-    var empty  = document.getElementById('rkEmpty');
-    var count  = document.getElementById('rkCount');
-    var header = document.getElementById('rkHeader');
-
-    if (pageItems.length === 0) {
-      list.innerHTML = '';
-      if (denseBody) denseBody.innerHTML = '';
-      if (denseWrap) denseWrap.style.display = 'none';
-      empty.style.display = 'block';
-      header.style.display = 'none';
-      count.style.display  = 'none';
-      document.getElementById('rkPagination').style.display = 'none';
-      var emptyTitle = empty.querySelector('.empty-state-title');
-      var emptyMsg = empty.querySelector('.empty-state-msg');
-      var pausedEmpty = rkPipelinePaused && rkAllPlayers.length === 0 && rkPosFilters.size === 0 && !rkSearch;
-      if (emptyTitle) {
-        emptyTitle.textContent = pausedEmpty ? 'Prospect rankings paused' : 'No prospects match';
-      }
-      if (emptyMsg) {
-        emptyMsg.textContent = pausedEmpty
-          ? 'The rookie pipeline is paused until the next draft cycle. Rankings will return when the class is rebuilt.'
-          : 'Try clearing a filter or widening your position and tier selections.';
-      }
-      return;
-    }
-
-    empty.style.display  = 'none';
-    header.style.display = 'none';
-    if (denseWrap) denseWrap.style.display = 'block';
-    count.style.display  = 'none';
-
-    list.innerHTML = '';
-    if (denseBody) denseBody.innerHTML = '';
-
-    // Tier dividers (player-rankings style) only make sense on the default
-    // board order: all positions, no search, sorted by overall rank.
-    var showDividers = rkPosFilters.size === 0 && !rkSearch &&
-                       rkSortKey === 'rank' && rkSortDir === 'asc';
-    var lastTier = null;
-
-    // Dense table: 8 component vertical bars + per-game trend
-    // Hide columns where ALL values are empty/null/zero
-    var RK_DENSE_COMPS_ALL = [
-      { key: 'production_score', short: 'PROD', name: 'Production' },
-      { key: 'projected_draft_capital_score', short: 'DC', name: 'Draft Capital' },
-      { key: 'age_score', short: 'AGE', name: 'Age' },
-      { key: 'breakout_profile_score', short: 'BO', name: 'Breakout' },
-      { key: 'efficiency_score', short: 'EFF', name: 'Efficiency' },
-      { key: 'durability_score', short: 'DUR', name: 'Durability' },
-      { key: 'competition_score', short: 'COMP', name: 'Competition' },
-      { key: 'utilization_score', short: 'UTIL', name: 'Utilization' }
-    ];
-    var RK_DENSE_COMPS = RK_DENSE_COMPS_ALL.filter(function(c) {
-      return pageItems.some(function(r) {
-        var v = r[c.key];
-        return v != null && v !== '' && Number(v) !== 0;
-      });
-    });
-    // Hide empty column headers
-    (function() {
-      var hideShorts = {};
-      RK_DENSE_COMPS_ALL.forEach(function(c) {
-        if (RK_DENSE_COMPS.indexOf(c) === -1) hideShorts[c.short] = true;
-      });
-      var ths = document.querySelectorAll('#rkDenseTable thead th');
-      ths.forEach(function(th) {
-        var txt = (th.textContent || '').trim();
-        if (hideShorts[txt]) th.style.display = 'none';
-      });
-      // Store for row cell hiding (cells are rendered in order, so we need to skip hidden)
-      window._rkHiddenComps = hideShorts;
-    })();
-    pageItems.forEach(function(r, idx) {
-      var pid = r.player_id || '';
-
-      // Tier break as a full-width table row
-      if (showDividers && r.tier !== lastTier) {
-        lastTier = r.tier;
-        var tc = RK_TIER_COLORS[r.tier] || '#9ca3af';
-        var trow = document.createElement('tr');
-        var _colspan = 6 + RK_DENSE_COMPS.length;
-        trow.innerHTML = '<td colspan="' + _colspan + '" style="padding:0 12px;border:none;background:transparent;line-height:1;">' +
-          '<div class="otc-tier-divider" style="display:flex;align-items:center;gap:6px;height:14px;">' +
-          '<div class="otc-tier-divider-line" style="background:' + tc + ';flex:1;height:1px;opacity:0.5;"></div>' +
-          '<span class="otc-tier-divider-label" style="color:' + tc + ';font-size:9px;font-weight:800;letter-spacing:0.05em;">T' + (r.tier || '?') + '</span>' +
-          '<div class="otc-tier-divider-line" style="background:' + tc + ';flex:1;height:1px;opacity:0.5;"></div></div></td>';
-        if (denseBody) denseBody.appendChild(trow);
-      }
-
-      var score = parseFloat(r.prospect_score||0);
-      var pos = (r.position || '').toUpperCase();
-      var posColor = RK_POS_COLORS[pos] || '#94a3b8';
-      var rankNum = r.overall_rank ? '#' + r.overall_rank : (offset + idx + 1);
-      var ageStr = r.age != null ? parseFloat(r.age).toFixed(1) + ' yrs' : '';
-
-      // 8 component vertical bars
-      var cellsHtml = RK_DENSE_COMPS.map(function(c) {
-        var v = r[c.key];
-        var disp = (v == null) ? '-' : rkScore1(v);
-        var title = c.name + ' ' + disp;
-        if (v == null) {
-          return '<td title="' + rkEsc(title) + '"><span style="color:var(--text-muted);font-size:10px;">-</span></td>';
-        }
-        return '<td title="' + rkEsc(title) + '">' + rkVBar(v, posColor) + '</td>';
-      }).join('');
-
-      var tr = document.createElement('tr');
-      tr.setAttribute('data-pid', pid);
-      tr.innerHTML =
-        '<td class="l"><span class="rk-rk">' + rankNum + '</span>' + rkDelta(r.rank_delta) + '</td>' +
-        '<td class="l rk-sticky-col"><span class="rk-nm">' + rkEsc(r.name || 'Unknown') +
-          '<small>' + rkEsc(r.school || '') + (ageStr ? ' &middot; ' + ageStr : '') + '</small></span></td>' +
-        '<td><span class="rk-pos-chip" style="background:' + posColor + '">' + rkEsc(pos) + '</span></td>' +
-        '<td><span class="rk-sc">' + rkScore1(score) + '</span><div class="rk-scbar"><i style="width:' + Math.min(100, score) + '%;background:' + posColor + '"></i></div></td>' +
-        cellsHtml +
-        '<td>' + rkTrendCell(r) + '</td>' +
-        '<td><button class="rk-star' + (rkWatch[pid] ? ' watching' : '') + '"' +
-          ' aria-label="Watch ' + rkEsc(r.name || '') + '" style="background:none;border:none;cursor:pointer;">' +
-          rkStarSVG() + '</button></td>';
-
-      var starBtn = tr.querySelector('.rk-star');
-      if (starBtn) starBtn.addEventListener('click', function(ev) {
-        ev.stopPropagation();
-        rkToggleWatch(ev, pid, r.name || '');
-      });
-      tr.addEventListener('click', function() { rkOpenModal(r); });
-      if (denseBody) denseBody.appendChild(tr);
-    });
-
-    // 6. Update pagination controls
-    rkUpdatePaginationControls(totalFiltered, totalPages);
-  }
-
-  // ── Modal ─────────────────────────────────────────────────────────────────────
   function rkLoadingHtml() {
-    return '<div class="rk-detail-loading"><div class="loading-spinner" style="width:12px;height:12px;flex-shrink:0;"></div>Loading\u2026</div>';
+    return '<div class="rk-detail-loading"><div class="loading-spinner" style="width:12px;height:12px;flex-shrink:0;"></div>Loading\\u2026</div>';
   }
 
   // ── Player-modal-style prospect modal ─────────────────────────────────────
@@ -1391,74 +854,24 @@ def build_prospects_body(is_admin: bool = False) -> str:
     if (body) body.scrollTop = 0;
   }
 
-  // Trend classification ported from player_modal.js classifyTrend so the
-  // trajectory pill uses the same language as the Value History block.
-  var RK_TREND_META = {
-    rising:     { icon: '↑', label: 'Rising',      color: 'var(--win)' },
-    recovering: { icon: '↗', label: 'Recovering',  color: '#3b82f6' },
-    peaked:     { icon: '↘', label: 'Cooling off', color: '#f59e0b' },
-    declining:  { icon: '↓', label: 'Declining',   color: 'var(--loss)' },
-    stable:     { icon: '→', label: 'Stable',      color: 'var(--text-muted)' }
-  };
-  function rkClassifyTrend(vals) {
-    var n = vals.length;
-    if (n < 2) return null;
-    var first = vals[0], last = vals[n - 1];
-    var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
-    var pct = first ? (last - first) / first : 0;
-    if (Math.abs(pct) < 0.03) return RK_TREND_META.stable;
-    if (pct > 0) {
-      return (lo < last * 0.92 && last < hi * 0.995)
-        ? RK_TREND_META.recovering : RK_TREND_META.rising;
-    }
-    return (hi > last * 1.08 && last > lo * 1.02)
-      ? RK_TREND_META.peaked : RK_TREND_META.declining;
+  function rkOrdinal(n) {
+    var s = ['th', 'st', 'nd', 'rd'], v = n % 100;
+    return n + (s[(v - 20) % 10] || s[v] || s[0]);
   }
 
-  function rkGradedAdv(d) {
-    return ((d && d.advanced) || []).filter(function(a) {
-      return a.raw != null && a.grade != null;
-    });
-  }
-  function rkAdvRaw(d, label) {
-    var found = null;
-    ((d && d.advanced) || []).forEach(function(a) {
-      if (a.label === label) found = a;
-    });
-    return found && found.raw != null ? String(found.raw) : null;
-  }
-  // Season attribution for the marks rows (best-dominator season, latest).
-  function rkMarkSeasons(d) {
-    var rows = (d && d.advanced_seasons) || [];
-    var latest = null, bestSeason = null, bestDom = null;
-    rows.forEach(function(s) {
-      if (s.season != null && (latest == null || s.season > latest)) latest = s.season;
-      if (s.dominator != null && (bestDom == null || s.dominator > bestDom)) {
-        bestDom = s.dominator;
-        bestSeason = s.season;
-      }
-    });
-    return { latest: latest, bestSeason: bestSeason };
-  }
-  function rkSeasonSuffix(season) {
-    return season != null
-      ? ' <span style="font-size:11px;color:var(--text-subtle);">· ' + rkEsc(season) + '</span>'
-      : '';
+  // Band tint: one class on the modal content drives --band (top border +
+  // Tag card). No tag -> the neutral slate default stays.
+  function rkApplyBand(tag) {
+    var content = document.getElementById('rkModalContent');
+    if (!content) return;
+    content.classList.remove('rk-band-elite', 'rk-band-great', 'rk-band-average', 'rk-band-day3');
+    if (tag && tag.band) content.classList.add('rk-band-' + tag.band);
   }
 
   function rkApplyArchetype(r, d) {
     var arch = (d && d.archetype) || r.archetype || null;
     var receipt = (d && d.archetype_receipt) || r.archetype_receipt || '';
-    var chip = document.getElementById('rkArchChip');
-    if (chip) {
-      if (arch) {
-        chip.textContent = arch;
-        chip.title = receipt || '';
-        chip.style.display = '';
-      } else {
-        chip.style.display = 'none';
-      }
-    }
+    var conf = (d && d.archetype_confidence) || r.archetype_confidence || '';
     var card = document.getElementById('rkHeroArch');
     if (arch && !card) {
       var row = document.getElementById('rkHeroRow');
@@ -1471,6 +884,11 @@ def build_prospects_body(is_admin: bool = False) -> str:
           '<div class="pm-hero-val" id="rkHeroArchVal"></div>' +
           '<div class="pm-hero-sub" id="rkHeroArchSub"></div>';
         row.appendChild(card);
+        // Keep the hero grid at one track per visible card.
+        var n = row.children.length;
+        var cols = [];
+        for (var i = 0; i < n; i++) cols.push(i === 0 ? '1.25fr' : '1fr');
+        row.style.gridTemplateColumns = cols.join(' ');
       }
     }
     if (card) {
@@ -1479,487 +897,297 @@ def build_prospects_body(is_admin: bool = False) -> str:
         var v = document.getElementById('rkHeroArchVal');
         if (v) v.textContent = arch;
         var s = document.getElementById('rkHeroArchSub');
-        if (s) s.textContent = receipt || '';
+        if (s) s.textContent = conf ? conf + ' confidence' : (receipt || '');
       } else {
         card.style.display = 'none';
       }
     }
   }
 
-  function rkRenderBreakdown(r, d) {
-    var body = document.getElementById('rkBreakdownBody');
-    if (!body) return;
+  // Rookie Draft hero card value: the site's dynasty rookie ADP for this
+  // class (avg_pick on the board row), formatted as a draft slot on a
+  // 12-team board. No ADP row -> no card, never an invented slot.
+  function rkRookiePickLabel(r) {
+    var ap = r && r.avg_pick != null && r.avg_pick !== '' ? parseFloat(r.avg_pick) : null;
+    if (ap === null || isNaN(ap) || ap <= 0) return '';
+    var pick = Math.round(ap);
+    var round = Math.floor((pick - 1) / 12) + 1;
+    var slot = (pick - 1) % 12 + 1;
+    return round + '.' + (slot < 10 ? '0' : '') + slot;
+  }
+
+  function rkDisplayPercentiles(r, d) {
+    if (d && d.percentiles) return d.percentiles;
+    return (r && r.percentiles) || {};
+  }
+
+  // Raw-stat sub-line under a percentile row, from stored data only. A
+  // component without a sourced driving stat gets no sub-line at all.
+  function rkSubLine(key, r, d) {
     d = d || {};
     var pos = (r.position || '').toUpperCase();
-    var posColor = RK_POS_COLORS[pos] || '#94a3b8';
-    var ath = d.athleticism || {};
-    var domRaw = rkAdvRaw(d, 'Dominator');
-    var effRaw = null, effUnit = '';
-    [['Yds/Rec', 'yds/rec'], ['Yds/Carry', 'yds/carry'], ['Yds/Att', 'yds/att']]
-      .some(function(pair) {
-        var v = rkAdvRaw(d, pair[0]);
-        if (v) { effRaw = v; effUnit = pair[1]; return true; }
-        return false;
-      });
-    var conf = null;
-    (d.seasons || []).forEach(function(s) { if (s.conference) conf = s.conference; });
-    // Capital rows exist only when a pick (or its stored delta) exists: with
-    // no pick the model redistributes the weight, so there is no capital
-    // component to show.
-    var hasCapital = d.capital_delta != null || r.projected_pick != null;
-    var rows = [];
-    rows.push({ label: 'Production', val: r.production_score,
-                receipt: domRaw ? domRaw + ' dominator' : '' });
-    if (r.athleticism_score != null) {
-      rows.push({ label: 'Athleticism', val: r.athleticism_score,
-        receipt: ath.forty_yard != null ? Number(ath.forty_yard).toFixed(2) + ' forty'
-          : (ath.ras_score != null ? Number(ath.ras_score).toFixed(1) + ' RAS' : '') });
+    if (key === 'breakout') {
+      return d.breakout_age != null ? 'Broke out at ' + (+d.breakout_age).toFixed(1) : '';
     }
-    if (hasCapital) {
-      rows.push({ label: 'Draft Capital', val: r.projected_draft_capital_score,
-        receipt: r.projected_pick != null
-          ? 'Mock pick ' + Math.round(parseFloat(r.projected_pick)) : '' });
+    if (key === 'athleticism') {
+      var ath = d.athleticism || {};
+      var forty = ath.forty_yard != null ? +ath.forty_yard : null;
+      var wt = r.weight_lbs ? parseInt(r.weight_lbs, 10) : null;
+      if (forty) return forty.toFixed(2) + ' forty' + (wt ? ' at ' + wt + ' lbs' : '');
+      var ras = ath.ras_score != null ? +ath.ras_score : null;
+      return ras ? ras.toFixed(1) + ' RAS' : '';
     }
-    rows.push({ label: 'Efficiency', val: r.efficiency_score,
-                receipt: effRaw ? effRaw + ' ' + effUnit : '' });
-    rows.push({ label: 'Breakout', val: r.breakout_profile_score,
-                receipt: d.breakout_age != null
-                  ? 'Age ' + Number(d.breakout_age).toFixed(1) : '' });
-    rows.push({ label: 'Competition', val: r.competition_score, receipt: conf || '' });
-    rows.push({ label: 'Recruiting', val: r.recruiting_score, receipt: '' });
-    rows = rows.filter(function(x) { return x.val != null; });
-    var html = rows.map(function(x) {
-      return '<div class="pm-ov-kv"><span>' + x.label +
-        (x.receipt
-          ? ' <span style="font-size:11px;color:var(--text-subtle);">· ' +
-            rkEsc(x.receipt) + '</span>'
-          : '') +
-        '</span><b>' + rkScore1(x.val) + '</b></div>' +
-        '<div class="pm-ov-sharebar"><i style="width:' +
-        Math.min(100, Math.max(0, rkScoreNum(x.val))) + '%;background:' +
-        posColor + '"></i></div>';
-    }).join('');
-    // Transparent capital split (PR 1): grade before capital + its delta.
-    if (d.talent_score != null && d.capital_delta != null) {
-      var cd = parseFloat(d.capital_delta);
-      html += '<div class="pm-ov-kv" style="border-top:2px solid var(--border);margin-top:6px;">' +
-        '<span>Grade before draft capital</span><b>' + rkScore1(d.talent_score) + '</b></div>' +
-        '<div class="pm-ov-kv"><span>Draft capital</span><b>' +
-        (cd > 0 ? '+' : '') + cd.toFixed(1) + '</b></div>';
+    // Production / Efficiency / Competition read one season: the latest
+    // completed season line, else the latest line there is.
+    var lines = d.season_lines || [];
+    var line = null;
+    for (var i = lines.length - 1; i >= 0; i--) {
+      if (!lines[i].in_progress) { line = lines[i]; break; }
     }
-    body.innerHTML = html;
-    var card = document.getElementById('rkBreakdownCard');
-    if (card) card.style.display = html ? '' : 'none';
+    if (!line && lines.length) line = lines[lines.length - 1];
+    if (!line) return '';
+    if (key === 'production') {
+      return line.rate != null ? (+line.rate).toFixed(1) + ' ' + line.rate_unit + ', ' + line.season : '';
+    }
+    var srow = null;
+    (d.seasons || []).forEach(function(s) { if (s.season == line.season) srow = s; });
+    if (!srow) return '';
+    if (key === 'efficiency') {
+      var field = pos === 'QB' ? 'yds_per_attempt' : (pos === 'RB' ? 'yds_per_carry' : 'yds_per_reception');
+      var unit = pos === 'QB' ? 'yds/att' : (pos === 'RB' ? 'yds/carry' : 'yds/rec');
+      var v = srow[field];
+      return v != null ? (+v).toFixed(1) + ' ' + unit + ', ' + line.season : '';
+    }
+    if (key === 'competition') {
+      return srow.conference ? rkEsc(srow.conference) + ', ' + line.season : '';
+    }
+    return '';
   }
 
-  function rkTrajSVG(pts, upperLbl) {
-    var vals = pts.map(function(p) { return p.pg; });
-    var mn = Math.min.apply(null, vals), mx = Math.max.apply(null, vals);
-    var steps = [5, 10, 20, 25, 50, 100, 200];
-    var step = steps[steps.length - 1];
-    for (var i = 0; i < steps.length; i++) {
-      if ((mx - mn) / steps[i] <= 4) { step = steps[i]; break; }
-    }
-    var dmin = Math.floor(mn / step) * step;
-    var intervals = Math.max(1, Math.ceil((mx - dmin) / step));
-    if ((dmin + intervals * step) - mx < step * 0.2) intervals++;
-    var dmax = dmin + intervals * step;
-    function y(v) { return 236 - (v - dmin) / (dmax - dmin) * 192; }
-    var grid = '';
-    for (var gv = dmin; gv < dmax; gv += step) {
-      var gy = y(gv);
-      grid += '<line x1="40" y1="' + gy.toFixed(1) + '" x2="528" y2="' + gy.toFixed(1) +
-        '" stroke="var(--grid)" stroke-width="1"/>' +
-        '<text x="34" y="' + (gy + 3).toFixed(1) + '" font-size="9.5" fill="var(--text-subtle)" text-anchor="end">' +
-        gv + '</text>';
-    }
-    var n = pts.length;
-    var xs = pts.map(function(p, i) {
-      return n === 1 ? 292 : 84 + i * (416 / (n - 1));
+  // Percentile panel (Overview): full-width rows with railed bars and raw
+  // stat sub-lines. No component or overall grade numeral is rendered.
+  // Athleticism appears only for players with testing data (the API
+  // returns a null percentile otherwise, and the row is omitted).
+  function rkRenderPercentiles(r, d) {
+    var body = document.getElementById('rkBreakdownBody');
+    var section = document.getElementById('rkPctSection');
+    if (!body) return;
+    var hint = document.getElementById('rkPctHint');
+    var pos = (r.position || '').toUpperCase();
+    if (hint) hint.textContent = pos ? 'vs graded ' + pos + 's at the position' : '';
+    var pcts = rkDisplayPercentiles(r, d);
+    var rows = '';
+    RK_PCT_PANEL.forEach(function(def) {
+      var p = pcts[def.key];
+      if (p == null) return;
+      var sub = rkSubLine(def.key, r, d);
+      var valStyle = p >= 90 ? ' style="color:' + def.color + '"' : '';
+      rows += '<div class="pct-item"><span class="pct-label">' + def.label + '</span>' +
+        '<div class="pct-main"><span class="pct-track"><span class="pct-fill" style="width:' +
+          p + '%;background:' + def.color + '"></span></span>' +
+          (sub ? '<div class="pct-sub">' + sub + '</div>' : '') + '</div>' +
+        '<span class="pct-val"' + valStyle + '>' + p + '</span></div>';
     });
-    var poly = pts.map(function(p, i) {
-      return xs[i].toFixed(1) + ',' + y(p.pg).toFixed(1);
-    }).join(' ');
-    var marks = pts.map(function(p, i) {
-      var py = y(p.pg);
-      return '<circle cx="' + xs[i].toFixed(1) + '" cy="' + py.toFixed(1) +
-        '" r="4" fill="#3b82f6" stroke="#fff" stroke-width="2"/>' +
-        '<text x="' + xs[i].toFixed(1) + '" y="' + (py - 12).toFixed(1) +
-        '" font-size="13" font-weight="700" fill="var(--text)" text-anchor="middle">' +
-        p.pg.toFixed(1) + '</text>' +
-        '<text x="' + xs[i].toFixed(1) + '" y="296" font-size="10.5" font-weight="700" fill="var(--text-muted)" text-anchor="middle">' +
-        p.season + ' · ' + upperLbl + '</text>';
-    }).join('');
-    return '<svg width="100%" viewBox="0 0 560 312" role="img" aria-label="Production trajectory by season">' +
-      grid +
-      '<polyline fill="none" stroke="#3b82f6" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" points="' +
-      poly + '"/>' + marks + '</svg>';
+    body.innerHTML = rows;
+    if (section) section.style.display = rows ? '' : 'none';
   }
 
+  // Class context strip: positional standing in the class plus the
+  // adjacent players at the position (board order), with their tags. A
+  // side that does not exist is omitted, never faked.
+  function rkRenderCtxStrip(r) {
+    var el = document.getElementById('rkCtxStrip');
+    if (!el) return;
+    el.style.display = 'none';
+    el.innerHTML = '';
+    if (!r || !r.position || !rkAllPlayers.length) return;
+    var pos = (r.position || '').toUpperCase();
+    var peers = rkAllPlayers.filter(function(x) {
+      return (x.position || '').toUpperCase() === pos;
+    });
+    if (peers.length < 2) return;
+    peers.sort(function(a, b) {
+      var ar = a.position_rank > 0 ? +a.position_rank : (a.overall_rank > 0 ? +a.overall_rank : 9999);
+      var br = b.position_rank > 0 ? +b.position_rank : (b.overall_rank > 0 ? +b.overall_rank : 9999);
+      return ar - br;
+    });
+    var idx = -1;
+    for (var i = 0; i < peers.length; i++) {
+      if (peers[i].player_id === r.player_id) { idx = i; break; }
+    }
+    if (idx < 0) return;
+    var standing = pos + (r.position_rank > 0 ? +r.position_rank : idx + 1);
+    var html = '<span class="stand">' + rkEsc(standing) + ' of ' + peers.length + '</span>';
+    function side(label, p) {
+      return '<span class="ctx-sep">&middot;</span><span>' + label +
+        ' <span class="who">' + rkEsc(p.name || '') + '</span></span>' +
+        rkTagChip(p.tag, true);
+    }
+    if (idx > 0) html += side('Chasing', peers[idx - 1]);
+    if (idx < peers.length - 1) html += side('Chased by', peers[idx + 1]);
+    el.innerHTML = html;
+    el.style.display = '';
+  }
+
+  // Testing table (Overview, tested players only): stored results with a
+  // percentile only where the tested-only pool supports one, else a dash.
+  function rkRenderTesting(d) {
+    var sec = document.getElementById('rkTestingSection');
+    var host = document.getElementById('rkTestingBody');
+    if (!sec || !host) return;
+    var rows = (d && d.testing) || [];
+    if (!rows.length) { sec.style.display = 'none'; host.innerHTML = ''; return; }
+    var html = '<table class="m-season-table"><thead><tr><th class="tst">Test</th><th>Result</th><th>Percentile</th></tr></thead><tbody>';
+    rows.forEach(function(t) {
+      var cell = t.percentile != null
+        ? '<span class="tpct"><span class="pct-track"><span class="pct-fill" style="width:' +
+            t.percentile + '%;background:#8b5cf6"></span></span><span class="n">' + t.percentile + '</span></span>'
+        : '<span class="tpct"><span class="none">-</span></span>';
+      html += '<tr><td class="tst">' + rkEsc(t.label) + '</td><td class="pg">' +
+        rkEsc(t.result) + '</td><td>' + cell + '</td></tr>';
+    });
+    host.innerHTML = html + '</tbody></table>';
+    sec.style.display = '';
+  }
+
+  // Season lines table shared by Overview (no percentile column) and the
+  // Production tab (percentile for completed seasons only; an in-progress
+  // season shows the chip and a dash, never a percentile).
+  function rkSeasonLinesTable(lines, pos, withPct) {
+    var label = lines.length ? (lines[0].rate_label || '') : '';
+    var html = '<table class="m-season-table"><thead><tr><th>Season</th>' +
+      (pos === 'QB' ? '<th class="team">Team</th>' : '') +
+      '<th>GP</th><th>' + rkEsc(label) + '</th>' +
+      (withPct ? '<th>Percentile</th>' : '') + '</tr></thead><tbody>';
+    lines.forEach(function(l) {
+      html += '<tr><td class="yr">' + l.season +
+        (l.in_progress ? ' <span class="inprog">In progress</span>' : '') + '</td>' +
+        (pos === 'QB' ? '<td class="team">' + rkEsc(l.team || '') + '</td>' : '') +
+        '<td class="pg">' + (l.gp != null ? l.gp : '-') + '</td>' +
+        '<td>' + (l.rate != null ? (+l.rate).toFixed(1) : '-') + '</td>' +
+        (withPct ? '<td>' + (l.percentile != null
+          ? '<span class="pct-mini"><span class="pct-track"><span class="pct-fill" style="width:' +
+              l.percentile + '%;background:#10b981"></span></span><b>' + l.percentile + '</b></span>'
+          : '<span class="pct-mini-none">-</span>') + '</td>' : '') +
+        '</tr>';
+    });
+    return html + '</tbody></table>';
+  }
+
+  function rkRenderSeasonLines(r, d) {
+    var lines = (d && d.season_lines) || [];
+    var pos = (r.position || '').toUpperCase();
+    var hint = document.getElementById('rkProdHint');
+    if (hint) hint.textContent = pos ? 'Percentile vs graded ' + pos + 's' : '';
+    var ovSec = document.getElementById('rkSeasonLinesSection');
+    var ov = document.getElementById('rkSeasonLinesBody');
+    var pr = document.getElementById('rkProdLinesBody');
+    if (!lines.length) {
+      if (ovSec) ovSec.style.display = 'none';
+      if (pr) pr.innerHTML = '<div style="font-size:13px;color:var(--text-muted);">No season lines yet.</div>';
+      return;
+    }
+    if (ov) ov.innerHTML = rkSeasonLinesTable(lines, pos, false);
+    if (pr) pr.innerHTML = rkSeasonLinesTable(lines, pos, true);
+  }
+
+  // Production trajectory: per-game rate bars for the last three seasons,
+  // scaled to the peak rate; the in-progress season's bar is blue + LIVE.
   function rkRenderTraj(r, d) {
-    var body = document.getElementById('rkTrajBody');
-    var section = document.getElementById('rkTrajSection');
-    if (!body) return;
+    var host = document.getElementById('rkTrajBody');
+    if (!host) return;
+    var lines = ((d && d.season_lines) || []).filter(function(l) { return l.rate != null; });
+    var shown = lines.slice(-3);
+    if (!shown.length) {
+      host.innerHTML = '<div style="font-size:13px;color:var(--text-muted);">No season rates yet.</div>';
+      return;
+    }
+    var peak = 0;
+    shown.forEach(function(l) { if (+l.rate > peak) peak = +l.rate; });
+    var html = '<div class="rk-traj">';
+    shown.forEach(function(l) {
+      var h = peak > 0 ? Math.max(6, Math.round((+l.rate) / peak * 90)) : 6;
+      html += '<div class="rk-tbar' + (l.in_progress ? ' live' : '') + '">' +
+        (l.in_progress ? '<span class="rk-live-tag" style="top:' + (110 - h - 20) + 'px">LIVE</span>' : '') +
+        '<div class="rk-ttrack"><div class="rk-tfill" style="height:' + h + 'px' +
+          (l.in_progress ? ';background:#2563eb' : '') + '"></div></div>' +
+        '<div class="rk-tpg">' + (+l.rate).toFixed(1) + '</div>' +
+        '<div class="rk-tyr">' + l.season + ' &middot; ' + rkEsc(l.rate_unit || '') + '</div></div>';
+    });
+    html += '</div>';
+    if (shown.length >= 2) {
+      var first = shown[0], last = shown[shown.length - 1];
+      if (+first.rate > 0) {
+        var chg = Math.round(((+last.rate) - (+first.rate)) / (+first.rate) * 100);
+        if (Math.abs(chg) >= 1) {
+          var up = chg > 0;
+          var col = up ? '#16a34a' : '#dc2626';
+          html += '<div class="rk-trend-note"><svg width="11" height="9" viewBox="0 0 8 7" fill="' +
+            col + '" aria-hidden="true"><path d="' + (up ? 'M4 0L8 7H0Z' : 'M4 7L0 0H8Z') +
+            '"/></svg><span><b style="color:' + col + '">' + (up ? '+' : '') + chg +
+            '%</b> per-game vs ' + first.season + '</span></div>';
+        }
+      }
+    }
+    host.innerHTML = html;
+  }
+
+  // Breakout card (Production tab): hero-receipt treatment, full width.
+  function rkRenderBreakout(r, d) {
+    var wrap = document.getElementById('rkBreakoutWrap');
+    if (!wrap) return;
+    var phrase = d && d.breakout_phrase;
+    var age = d && d.breakout_age;
+    if (!phrase || age == null) { wrap.innerHTML = ''; return; }
     var pos = (r.position || '').toUpperCase();
-    var metric = pos === 'QB'
-      ? { fields: ['pass_yards'], lbl: 'Pass yds/g', upper: 'PASS YDS/G' }
-      : pos === 'RB'
-        ? { fields: ['rush_yards', 'receiving_yards'], lbl: 'Scrim yds/g', upper: 'SCRIM YDS/G' }
-        : { fields: ['receiving_yards'], lbl: 'Rec yds/g', upper: 'REC YDS/G' };
-    var pts = [];
-    ((d && d.seasons) || []).slice(-3).forEach(function(s) {
-      var gp = Number(s.games_played) || 0;
-      if (!gp) return;
-      var yds = metric.fields.reduce(function(t, f) {
-        return t + (Number(s[f]) || 0);
-      }, 0);
-      pts.push({ season: s.season, pg: yds / gp });
-    });
-    if (!pts.length) {
-      if (section) section.style.display = 'none';
-      body.innerHTML = '';
-      return;
-    }
-    var vals = pts.map(function(p) { return p.pg; });
-    var first = vals[0], last = vals[vals.length - 1];
-    var peak = Math.max.apply(null, vals), floor = Math.min.apply(null, vals);
-    var html = '<div class="pm-vh-summary">' +
-      '<div class="pm-vh-now"><span class="pm-vh-now-lbl">' + metric.lbl + '</span>' +
-      '<span class="pm-vh-now-val">' + last.toFixed(1) + '</span></div>';
-    if (vals.length >= 2) {
-      var diff = last - first;
-      var pct = first ? diff / first * 100 : 0;
-      var dir = pct > 0.5 ? 'up' : (pct < -0.5 ? 'down' : 'flat');
-      var arrow = dir === 'up' ? '▲' : (dir === 'down' ? '▼' : '→');
-      var sign = diff > 0 ? '+' : (diff < 0 ? '-' : '');
-      var t = rkClassifyTrend(vals);
-      html += '<div class="pm-vh-move"><div class="pm-vh-move-row">' +
-        '<span class="pm-vh-delta ' + dir + '">' + arrow + ' ' + sign +
-        Math.abs(diff).toFixed(1) + ' · ' + sign + Math.abs(pct).toFixed(1) + '%</span>' +
-        (t ? '<span class="pm-vh-trend" style="color:' + t.color +
-          ';background:color-mix(in srgb, ' + t.color + ' 14%, transparent);">' +
-          t.icon + ' ' + t.label + '</span>' : '') +
-        '</div><span class="pm-vh-range">over ' + vals.length + ' seasons</span></div>';
-    }
-    html += '<div class="pm-vh-extremes">' +
-      '<div class="pm-vh-ext"><span class="pm-vh-ext-k">Peak</span>' +
-      '<span class="pm-vh-ext-v">' + peak.toFixed(1) + '</span></div>' +
-      '<div class="pm-vh-ext"><span class="pm-vh-ext-k">Floor</span>' +
-      '<span class="pm-vh-ext-v">' + floor.toFixed(1) + '</span></div></div></div>' +
-      '<div class="player-modal-chart-container" style="min-height:200px;">' +
-      rkTrajSVG(pts, metric.upper) + '</div>';
-    body.innerHTML = html;
+    var bp = rkDisplayPercentiles(r, d).breakout;
+    var receipt = 'Breakout Age ' + (+age).toFixed(1) +
+      (bp != null ? ' &middot; ' + rkOrdinal(bp) + ' percentile breakout vs graded ' + pos + 's' : '') + '.';
+    wrap.innerHTML = '<hr class="pm-section-divider">' +
+      '<div class="pm-hero-stat" style="text-align:left">' +
+        '<div class="pm-hero-label">Breakout</div>' +
+        '<div class="rk-hero-tagval" style="text-align:left">' + rkEsc(phrase) + '</div>' +
+        '<div class="rk-hero-receipt">' + receipt + '</div></div>';
   }
 
-  function rkRenderOvAdv(r, d) {
-    var body = document.getElementById('rkOvAdvBody');
-    var section = document.getElementById('rkOvAdvSection');
-    if (!body) return;
-    // Overview lists the API's advanced rows once, graded rows only: a row
-    // with no display grade never renders an empty percentile cell here.
-    // Best/career marks live in the Advanced tab's marks card, not here.
-    var html = ((d && d.advanced) || []).filter(function(a) {
-      return a.raw != null && a.grade != null;
-    }).map(function(a) {
-      return '<tr><td>' + rkEsc(a.label) + '</td>' +
-        '<td><b style="color:var(--text);">' + rkEsc(a.raw) + '</b></td><td>' +
-        '<b style="color:var(--text);">' + Number(a.grade).toFixed(1) + '</b>' +
-        '</td></tr>';
-    });
-    if (!html.length) {
-      if (section) section.style.display = 'none';
-      body.innerHTML = '';
-      return;
-    }
-    body.innerHTML = '<div class="table-wrap"><table class="game-log-table">' +
-      '<thead><tr><th>Metric</th><th>Raw</th><th>Percentile</th></tr></thead><tbody>' +
-      html.join('') + '</tbody></table></div>';
-  }
-
-  function rkRenderRadar(r, d) {
-    var adv = rkGradedAdv(d);
-    var labels = adv.map(function(a) { return a.label; });
-    var values = adv.map(function(a) { return a.grade; });
-    var rail = document.getElementById('rkRadarBody');
-    var card = document.getElementById('rkRadarCard');
-    var big = document.getElementById('rkAdvRadarBody');
-    if (rail) rail.innerHTML = adv.length ? rkRadarSVG(labels, values, false) : '';
-    if (card) card.style.display = adv.length ? '' : 'none';
-    if (big) big.innerHTML = adv.length ? rkRadarSVG(labels, values, true) : '';
-  }
-
-  function rkRenderAdvPct(d) {
-    var body = document.getElementById('rkAdvPctBody');
-    var card = document.getElementById('rkAdvPctCard');
-    if (!body) return;
-    var adv = rkGradedAdv(d);
-    if (!adv.length) {
-      if (card) card.style.display = 'none';
-      body.innerHTML = '';
-      return;
-    }
-    body.innerHTML = adv.map(function(a) {
-      var pct = Math.min(100, Math.max(0, parseFloat(a.grade) || 0));
-      return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:9px;">' +
-        '<div style="width:150px;flex-shrink:0;font-size:13px;color:var(--text);">' +
-        rkEsc(a.label) + ' <span style="color:var(--text-muted);">· ' +
-        rkEsc(a.raw) + '</span></div>' +
-        '<div style="flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden;">' +
-        '<div style="height:100%;width:' + pct + '%;background:#3b82f6;border-radius:3px;"></div></div>' +
-        '<div style="width:34px;text-align:right;font-size:13px;font-weight:700;color:var(--text);">' +
-        pct.toFixed(1) + '</div></div>';
-    }).join('');
-  }
-
-  function rkRenderAdvSeasons(r, d) {
-    var body = document.getElementById('rkAdvSeasonsBody');
-    var section = document.getElementById('rkAdvSeasonsSection');
-    if (!body) return;
-    function pct(v) { return v == null ? '-' : Math.round(Number(v) * 100) + '%'; }
-    function f1(v) { return v == null ? '-' : Number(v).toFixed(1); }
-    function f2(v) { return v == null ? '-' : Number(v).toFixed(2); }
-    var rows = ((d && d.advanced_seasons) || []).filter(function(s) {
-      return [s.dominator, s.yard_share, s.td_share, s.yds_per_reception,
-              s.receptions_per_game, s.rec_yards_per_game, s.rec_tds_per_game]
-        .some(function(v) { return v != null; });
+  // Advanced tab: percentile-only table. Component-score rows (Efficiency,
+  // Production) never render here; a metric whose pool cannot support a
+  // percentile shows a dash.
+  function rkRenderAdv(r, d) {
+    var host = document.getElementById('rkAdvPctBody');
+    if (!host) return;
+    var rows = ((d && d.advanced) || []).filter(function(a) {
+      return a && a.raw != null && !a.component;
     });
     if (!rows.length) {
-      if (section) section.style.display = 'none';
-      body.innerHTML = '';
+      host.innerHTML = '<div style="font-size:13px;color:var(--text-muted);">No advanced metrics stored for this player.</div>';
       return;
     }
-    var html = rows.map(function(s) {
-      return '<tr><td>' + rkEsc(s.season) + '</td><td>' + pct(s.dominator) + '</td><td>' +
-        pct(s.yard_share) + '</td><td>' + pct(s.td_share) + '</td><td>' +
-        f1(s.yds_per_reception) + '</td><td>' + f1(s.receptions_per_game) + '</td><td>' +
-        f1(s.rec_yards_per_game) + '</td><td>' + f2(s.rec_tds_per_game) + '</td></tr>';
-    }).join('');
-    // Career row: marks carry career dominator + Yds/Rec; career shares are
-    // the mean of the season shares (the API's own definition).
-    var marks = (d && d.advanced_marks) || {};
-    function meanOf(key) {
-      var vs = rows.map(function(s) { return s[key]; })
-        .filter(function(v) { return v != null; });
-      return vs.length
-        ? vs.reduce(function(t, v) { return t + Number(v); }, 0) / vs.length
-        : null;
-    }
-    var t = { gp: 0, rec: 0, ry: 0, rtd: 0 };
-    ((d && d.seasons) || []).forEach(function(s) {
-      t.gp += Number(s.games_played) || 0;
-      t.rec += Number(s.receptions) || 0;
-      t.ry += Number(s.receiving_yards) || 0;
-      t.rtd += Number(s.receiving_tds) || 0;
+    var html = '<table class="rk-adv-tbl"><thead><tr><th>Metric</th><th class="r">Value</th><th class="r">Percentile</th></tr></thead><tbody>';
+    rows.forEach(function(a) {
+      var cell = a.percentile != null
+        ? '<span class="rk-pbar"><i style="width:' + a.percentile + '%;background:#16a34a"></i></span><span class="rk-pctl"><b>' + a.percentile + '</b></span>'
+        : '<span class="rk-pctl">-</span>';
+      html += '<tr><td class="rk-adv-name">' + rkEsc(a.label) + '</td>' +
+        '<td class="r rk-adv-raw">' + rkEsc(a.raw) + '</td>' +
+        '<td class="r">' + cell + '</td></tr>';
     });
-    var foot = '';
-    if (marks.career_dominator != null || marks.career_yds_per_rec != null || t.gp) {
-      foot = '<tfoot><tr><td>Career</td><td>' + pct(marks.career_dominator) + '</td><td>' +
-        pct(meanOf('yard_share')) + '</td><td>' + pct(meanOf('td_share')) + '</td><td>' +
-        f1(marks.career_yds_per_rec) + '</td><td>' +
-        (t.gp ? (t.rec / t.gp).toFixed(1) : '-') + '</td><td>' +
-        (t.gp ? (t.ry / t.gp).toFixed(1) : '-') + '</td><td>' +
-        (t.gp ? (t.rtd / t.gp).toFixed(2) : '-') + '</td></tr></tfoot>';
-    }
-    body.innerHTML = '<div class="table-wrap"><table class="game-log-table">' +
-      '<thead><tr><th>Season</th><th>Dominator</th><th>Yard Share</th><th>TD Share</th>' +
-      '<th>Yds/Rec</th><th>Rec/G</th><th>Yds/G</th><th>TD/G</th></tr></thead><tbody>' +
-      html + '</tbody>' + foot + '</table></div>';
+    host.innerHTML = html + '</tbody></table>';
   }
-
-  function rkRenderMarks(d) {
-    var body = document.getElementById('rkMarksBody');
-    var card = document.getElementById('rkMarksCard');
-    if (!body) return;
-    var marks = (d && d.advanced_marks) || {};
-    var ms = rkMarkSeasons(d || {});
-    function pct(v) { return Math.round(Number(v) * 100) + '%'; }
-    var rows = [];
-    if (marks.best_dominator != null) {
-      rows.push(['Best Season Dominator', rkSeasonSuffix(ms.bestSeason),
-                 pct(marks.best_dominator)]);
-    }
-    if (marks.career_dominator != null) {
-      rows.push(['Career Dominator', '', pct(marks.career_dominator)]);
-    }
-    if (marks.career_yds_per_rec != null) {
-      rows.push(['Career Yds/Rec', '', Number(marks.career_yds_per_rec).toFixed(1)]);
-    }
-    if (marks.latest_rec_yards_per_game != null) {
-      rows.push(['Latest Rec Yds/G', rkSeasonSuffix(ms.latest),
-                 Number(marks.latest_rec_yards_per_game).toFixed(1)]);
-    }
-    if (marks.latest_rec_tds_per_game != null) {
-      rows.push(['Latest TD/G', rkSeasonSuffix(ms.latest),
-                 Number(marks.latest_rec_tds_per_game).toFixed(2)]);
-    }
-    if (marks.td_share_over_yard_share_pts != null) {
-      var gap = parseFloat(marks.td_share_over_yard_share_pts);
-      rows.push(['TD Share over Yard Share', rkSeasonSuffix(ms.latest),
-                 (gap > 0 ? '+' : '') + gap.toFixed(1) + ' pts']);
-    }
-    if (!rows.length) {
-      if (card) card.style.display = 'none';
-      body.innerHTML = '';
-      return;
-    }
-    body.innerHTML = rows.map(function(x) {
-      return '<div class="pm-rk-kv"><span>' + x[0] + x[1] + '</span><b>' +
-        x[2] + '</b></div>';
-    }).join('');
-  }
-
-  function rkRenderProduction(r, d) {
-    var body = document.getElementById('rkProdBody');
-    if (!body) return;
-    var pos = (r.position || '').toUpperCase();
-    var seasons = (d && d.seasons) || [];
-    if (!seasons.length) {
-      body.innerHTML = '<span style="font-size:13px;color:var(--text-muted);">No season data available.</span>';
-      return;
-    }
-    // Career totals (counting stats summed; rates re-derived from totals).
-    var t = { gp: 0, att: 0, yds: 0, rtd: 0, rec: 0, ry: 0, rectd: 0,
-              cmp: 0, patt: 0, pint: 0, py: 0, ptd: 0, dom: 0, domN: 0 };
-    seasons.forEach(function(s) {
-      t.gp += Number(s.games_played) || 0;
-      t.att += Number(s.rush_attempts) || 0;
-      t.yds += Number(s.rush_yards) || 0;
-      t.rtd += Number(s.rush_tds) || 0;
-      t.rec += Number(s.receptions) || 0;
-      t.ry += Number(s.receiving_yards) || 0;
-      t.rectd += Number(s.receiving_tds) || 0;
-      t.cmp += Number(s.completions) || 0;
-      t.patt += Number(s.pass_attempts) || 0;
-      t.pint += Number(s.interceptions) || 0;
-      t.py += Number(s.pass_yards) || 0;
-      t.ptd += Number(s.pass_tds) || 0;
-      if (s.dominator_rating != null) { t.dom += Number(s.dominator_rating); t.domN++; }
-    });
-    var avgDom = t.domN ? Math.round(t.dom / t.domN * 100) + '%' : '-';
-    function stripCell(lbl, val) {
-      return '<div class="pm-strip-cell"><span class="pm-strip-label">' + lbl +
-        '</span><span class="pm-strip-val">' + val + '</span></div>';
-    }
-    function pgOf(v) { return t.gp ? (v / t.gp).toFixed(1) : '-'; }
-    var strip = '<div class="pm-stats-strip">' +
-      stripCell('Seasons', seasons.length) + stripCell('Games', t.gp);
-    if (pos === 'QB') {
-      strip += stripCell('Pass Yds', rkFmtNum(t.py)) + stripCell('Pass TD', t.ptd) +
-        stripCell('INT', t.pint) + stripCell('Yds/G', pgOf(t.py));
-    } else if (pos === 'RB') {
-      strip += stripCell('Carries', rkFmtNum(t.att)) + stripCell('Rush Yds', rkFmtNum(t.yds)) +
-        stripCell('TD', t.rtd + t.rectd) + stripCell('Scrim Yds/G', pgOf(t.yds + t.ry));
-    } else {
-      strip += stripCell('Receptions', rkFmtNum(t.rec)) + stripCell('Yards', rkFmtNum(t.ry)) +
-        stripCell('TD', t.rectd) + stripCell('Rec Yds/G', pgOf(t.ry));
-    }
-    strip += '</div>';
-
-    // Season table (position-correct columns, per-game group with deltas).
-    function rkPgVal(val, gp) {
-      var v = Number(val), g = Number(gp);
-      return (val != null && isFinite(v) && g > 0) ? v / g : null;
-    }
-    function rkPgCell(cur, prev, grp, dec) {
-      var dd = dec || 1;
-      var disp = (cur != null && isFinite(cur)) ? cur.toFixed(dd) : '-';
-      var arrow = '';
-      if (cur != null && isFinite(cur) && prev != null && isFinite(prev)) {
-        if (cur > prev) arrow = ' <span class="delta">&#9650;</span>';
-        else if (cur < prev) arrow = ' <span class="delta delta-down">&#9660;</span>';
-      }
-      return '<td class="pg' + (grp ? ' grp' : '') + '">' + disp + arrow + '</td>';
-    }
-    function rkCell(v, cls) {
-      var disp = (v == null || v === '') ? '-' : v;
-      return '<td' + (cls ? ' class="' + cls + '"' : '') + '>' +
-        rkEsc(String(disp)) + '</td>';
-    }
-    var cols = RK_SEASON_COLS[pos] || RK_SEASON_COLS.WR;
-    var grpIdx = RK_SEASON_GRP[pos] || RK_SEASON_GRP.WR;
-    var rowsHtml = seasons.map(function(s, idx) {
-      var prev = idx > 0 ? seasons[idx - 1] : null;
-      var gp = Number(s.games_played) || 0;
-      var pgp = prev ? (Number(prev.games_played) || 0) : 0;
-      var html;
-      if (pos === 'QB') {
-        html = rkCell(s.season, 'yr') + rkCell(rkFmtNum(s.games_played)) +
-          rkCell(s.completion_pct != null ? Number(s.completion_pct).toFixed(1) + '%' : '-') +
-          rkCell(rkFmtNum(s.pass_yards)) +
-          rkCell(s.yds_per_attempt != null ? Number(s.yds_per_attempt).toFixed(1) : '-') +
-          rkCell(s.pass_tds) + rkCell(s.interceptions) +
-          rkPgCell(rkPgVal(s.pass_yards, gp), rkPgVal(prev && prev.pass_yards, pgp), true) +
-          rkPgCell(rkPgVal(s.pass_tds, gp), rkPgVal(prev && prev.pass_tds, pgp), false, 2) +
-          rkCell(rkDomCell(s), 'grp');
-      } else if (pos === 'RB') {
-        html = rkCell(s.season, 'yr') + rkCell(rkFmtNum(s.games_played)) +
-          rkCell(rkFmtNum(s.rush_attempts)) + rkCell(rkFmtNum(s.rush_yards)) + rkCell(s.rush_tds) +
-          rkPgCell(rkPgVal(s.rush_attempts, gp), rkPgVal(prev && prev.rush_attempts, pgp), true) +
-          rkPgCell(rkPgVal(s.rush_yards, gp), rkPgVal(prev && prev.rush_yards, pgp), false) +
-          rkPgCell(rkPgVal(s.rush_tds, gp), rkPgVal(prev && prev.rush_tds, pgp), false, 2) +
-          rkCell(s.yds_per_carry != null ? Number(s.yds_per_carry).toFixed(1) : '-', 'grp') +
-          rkCell(rkDomCell(s));
-      } else {
-        html = rkCell(s.season, 'yr') + rkCell(rkFmtNum(s.games_played)) +
-          rkCell(rkFmtNum(s.receptions)) + rkCell(rkFmtNum(s.receiving_yards)) + rkCell(s.receiving_tds) +
-          rkPgCell(rkPgVal(s.receptions, gp), rkPgVal(prev && prev.receptions, pgp), true) +
-          rkPgCell(rkPgVal(s.receiving_yards, gp), rkPgVal(prev && prev.receiving_yards, pgp), false) +
-          rkPgCell(rkPgVal(s.receiving_tds, gp), rkPgVal(prev && prev.receiving_tds, pgp), false, 2) +
-          rkCell(s.yds_per_reception != null ? Number(s.yds_per_reception).toFixed(1) : '-', 'grp') +
-          rkCell(rkDomCell(s));
-      }
-      return '<tr>' + html + '</tr>';
-    }).join('');
-    var cHtml;
-    if (pos === 'QB') {
-      cHtml = rkCell('Career', 'yr') + rkCell(t.gp) +
-        rkCell(t.patt ? (100 * t.cmp / t.patt).toFixed(1) + '%' : '-') +
-        rkCell(rkFmtNum(t.py)) + rkCell(t.patt ? (t.py / t.patt).toFixed(1) : '-') +
-        rkCell(t.ptd) + rkCell(t.pint) +
-        rkPgCell(rkPgVal(t.py, t.gp), null, true) +
-        rkPgCell(rkPgVal(t.ptd, t.gp), null, false, 2) +
-        rkCell(avgDom, 'grp');
-    } else if (pos === 'RB') {
-      cHtml = rkCell('Career', 'yr') + rkCell(t.gp) +
-        rkCell(rkFmtNum(t.att)) + rkCell(rkFmtNum(t.yds)) + rkCell(t.rtd + t.rectd) +
-        rkPgCell(rkPgVal(t.att, t.gp), null, true) +
-        rkPgCell(rkPgVal(t.yds, t.gp), null, false) +
-        rkPgCell(rkPgVal(t.rtd + t.rectd, t.gp), null, false, 2) +
-        rkCell(t.att ? (t.yds / t.att).toFixed(1) : '-', 'grp') +
-        rkCell(avgDom);
-    } else {
-      cHtml = rkCell('Career', 'yr') + rkCell(t.gp) +
-        rkCell(rkFmtNum(t.rec)) + rkCell(rkFmtNum(t.ry)) + rkCell(t.rectd) +
-        rkPgCell(rkPgVal(t.rec, t.gp), null, true) +
-        rkPgCell(rkPgVal(t.ry, t.gp), null, false) +
-        rkPgCell(rkPgVal(t.rectd, t.gp), null, false, 2) +
-        rkCell(t.rec ? (t.ry / t.rec).toFixed(1) : '-', 'grp') +
-        rkCell(avgDom);
-    }
-    body.innerHTML = strip +
-      '<div class="player-modal-section">' +
-      '<div class="pm-section-header"><span class="pm-section-label">College Production</span>' +
-      '<span style="font-size:11px;color:var(--text-muted);">' +
-      (r.school ? rkEsc(r.school) + ' · ' : '') + 'Includes postseason</span></div>' +
-      '<div class="table-wrap"><table class="game-log-table"><thead><tr>' +
-      cols.map(function(c, k) {
-        return '<th' + (grpIdx.indexOf(k) >= 0 ? ' class="grp"' : '') + '>' + c + '</th>';
-      }).join('') +
-      '</tr></thead><tbody>' + rowsHtml + '</tbody>' +
-      '<tfoot><tr>' + cHtml + '</tr></tfoot></table></div></div>';
-  }
-
+</script>
+""" + """
+<script>
   function rkOpenModal(r) {
     var modal   = document.getElementById('rkModal');
     var content = document.getElementById('rkModalContent');
     var pid  = r.player_id || '';
     var name = r.name || 'Unknown';
     var pos  = (r.position || '').toUpperCase();
-    var score = parseFloat(r.prospect_score || 0);
     var on = !!rkWatch[pid];
     var mockPick = r.projected_pick != null ? Math.round(parseFloat(r.projected_pick)) : null;
 
-    // Header meta line (mock treatment: dot-separated, rank first and bold).
+    // Header meta line (mock treatment: dot-separated, rank first and bold;
+    // the evidence-weight receipt is appended by rkFillMetaEvidence).
     var metaParts = [];
     if (r.position_rank != null && r.position_rank !== '') {
       metaParts.push('<span style="font-weight:600;color:var(--text);">' +
@@ -1981,43 +1209,54 @@ def build_prospects_body(is_admin: bool = False) -> str:
     if (ht) metaParts.push('<span>' + rkEsc(ht) + '</span>');
     if (wt) metaParts.push('<span>' + rkEsc(wt) + '</span>');
     var metaHtml = '<div class="rk-meta-line" style="display:flex;align-items:center;flex-wrap:wrap;gap:0;">' +
-      metaParts.join('<span class="rk-meta-sep" style="opacity:.35;margin:0 3px;">·</span>') + '</div>';
+      metaParts.join('<span class="rk-meta-sep" style="opacity:.35;margin:0 3px;">·</span>') +
+      '<span id="rkMetaEvidence"></span></div>';
 
-    // Hero cards (Overview). Cards with no data are omitted outright.
-    var tierName = RK_TIER_NAMES[r.tier] || r.tier_label || '';
-    var scoreSub = [tierName, r.tier ? 'Tier ' + r.tier : '']
-      .filter(Boolean).join(' · ');
-    var heroHtml =
+    // Hero cards (Overview). No numeric grade: the primary card is the
+    // band Tag, its sub-line the strongest-evidence receipt (filled in by
+    // rkFillDetail from the detail bundle). Cards with no data are omitted
+    // outright.
+    var tagLabel = (r.tag && r.tag.label) || '';
+    var heroCards = [{ fr: '1.25fr', html:
       '<div class="pm-hero-stat pm-hero-primary">' +
-        '<div class="pm-hero-label">Prospect Score</div>' +
-        '<div class="pm-hero-val" style="color:#3b82f6;">' + rkScore1(score) + '</div>' +
-        (scoreSub ? '<div class="pm-hero-sub">' + rkEsc(scoreSub) + '</div>' : '') +
-      '</div>';
+        '<div class="pm-hero-label">Prospect Tag</div>' +
+        '<div class="rk-hero-tagval">' + rkEsc(tagLabel) + '</div>' +
+        '<div class="pm-hero-sub rk-hero-receipt" id="rkHeroReceipt" style="display:none;"></div>' +
+      '</div>' }];
     if (r.position_rank != null || r.overall_rank != null) {
       var crVal = (r.position_rank != null && r.position_rank !== '')
         ? pos + r.position_rank : '#' + r.overall_rank;
       var crSub = [r.overall_rank != null ? '#' + r.overall_rank + ' overall' : '',
                    r.draft_class_year ? r.draft_class_year + ' class' : '']
         .filter(Boolean).join(' · ');
-      heroHtml += '<div class="pm-hero-stat">' +
+      heroCards.push({ fr: '1fr', html: '<div class="pm-hero-stat">' +
         '<div class="pm-hero-label">Class Rank</div>' +
         '<div class="pm-hero-val">' + rkEsc(crVal) + '</div>' +
-        (crSub ? '<div class="pm-hero-sub">' + rkEsc(crSub) + '</div>' : '') + '</div>';
+        (crSub ? '<div class="pm-hero-sub">' + rkEsc(crSub) + '</div>' : '') + '</div>' });
     }
     if (mockPick != null) {
       var round = r.projected_round != null && r.projected_round !== ''
         ? parseInt(r.projected_round, 10) : Math.ceil(mockPick / 32);
-      heroHtml += '<div class="pm-hero-stat">' +
+      heroCards.push({ fr: '1fr', html: '<div class="pm-hero-stat">' +
         '<div class="pm-hero-label">Mock Pick</div>' +
         '<div class="pm-hero-val">' + mockPick + '</div>' +
-        '<div class="pm-hero-sub">Round ' + round + '</div></div>';
+        '<div class="pm-hero-sub">Round ' + round + '</div></div>' });
+    }
+    var rookiePick = rkRookiePickLabel(r);
+    if (rookiePick) {
+      heroCards.push({ fr: '1fr', html: '<div class="pm-hero-stat">' +
+        '<div class="pm-hero-label">Rookie Draft</div>' +
+        '<div class="pm-hero-val">' + rookiePick + '</div>' +
+        '<div class="pm-hero-sub">Dynasty rookie draft</div></div>' });
     }
     if (r.archetype) {
-      heroHtml += '<div class="pm-hero-stat" id="rkHeroArch">' +
+      heroCards.push({ fr: '1fr', html: '<div class="pm-hero-stat" id="rkHeroArch">' +
         '<div class="pm-hero-label">Archetype</div>' +
         '<div class="pm-hero-val" id="rkHeroArchVal"></div>' +
-        '<div class="pm-hero-sub" id="rkHeroArchSub"></div></div>';
+        '<div class="pm-hero-sub" id="rkHeroArchSub"></div></div>' });
     }
+    var heroHtml = heroCards.map(function(c) { return c.html; }).join('');
+    var heroCols = heroCards.map(function(c) { return c.fr; }).join(' ');
 
     // Scouting notes (pm-rk-scout treatment); the card hides when empty.
     var reasons = String(r.key_reasons || '').split('\\n')
@@ -2040,8 +1279,8 @@ def build_prospects_body(is_admin: bool = False) -> str:
           '<h2 class="player-modal-name" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
             '<span>' + rkEsc(name) + '</span>' +
             '<span class="pos-badge ' + rkEsc(pos) + '">' + rkEsc(pos) + '</span>' +
-            '<span class="player-badge player-badge-elite" id="rkArchChip" style="display:none"></span>' +
-            (r.early_declare ? '<span class="player-badge player-badge-prospect">EARLY</span>' : '') +
+            (tagLabel ? '<span class="tag-chip ' + (RK_TAG_CLASS[r.tag.band] || '') + '" id="rkTagChip">' + rkEsc(tagLabel) + '</span>' : '') +
+            (r.in_season ? '<span class="state-chip" id="rkStateChip">In-Season</span>' : '') +
           '</h2>' +
           '<div class="player-modal-meta">' + metaHtml + '</div>' +
         '</div></div>' +
@@ -2061,56 +1300,41 @@ def build_prospects_body(is_admin: bool = False) -> str:
       '</div>' +
       '<div class="player-modal-body" id="rkModalBody">' +
         '<div class="pm-panel pm-panel-active" data-rk-panel="overview">' +
-          '<div class="pm-hero-row" id="rkHeroRow" style="grid-template-columns:repeat(4,1fr);">' +
+          '<div class="pm-hero-row" id="rkHeroRow" style="grid-template-columns:' + heroCols + ';">' +
             heroHtml + '</div>' +
-          '<div class="pm-ov-cols">' +
-            '<div class="pm-ov-main">' +
-              '<div class="pm-ov-value" id="rkTrajSection">' +
-                '<div class="pm-section-header"><span class="pm-section-label">Production Trajectory</span>' +
-                '<span style="font-size:11px;color:var(--text-muted);">Per-game rates</span></div>' +
-                '<div id="rkTrajBody">' + rkLoadingHtml() + '</div>' +
-              '</div>' +
-              '<div class="pm-ov-recent" id="rkOvAdvSection">' +
-                '<hr class="pm-section-divider">' +
-                '<div class="pm-section-header"><span class="pm-section-label">Advanced Metrics</span></div>' +
-                '<div id="rkOvAdvBody">' + rkLoadingHtml() + '</div>' +
-              '</div>' +
-            '</div>' +
-            '<div class="pm-ov-rail">' +
-              '<div class="pm-ov-role" id="rkBreakdownCard">' +
-                '<div class="pm-section-header"><span class="pm-section-label">Grade Breakdown</span></div>' +
-                '<div id="rkBreakdownBody"></div>' +
-              '</div>' +
-              '<div class="pm-rk-card pm-ov-inleague" id="rkRadarCard" style="margin-bottom:12px;">' +
-                '<div class="pm-rk-card-h">Radar</div>' +
-                '<div id="rkRadarBody">' + rkLoadingHtml() + '</div>' +
-              '</div>' +
-              '<div class="pm-rk-card pm-ov-news">' +
-                '<div class="pm-rk-card-h">Comparables</div>' +
-                '<div id="rkComparablesBody">' + rkLoadingHtml() + '</div>' +
-              '</div>' +
-            '</div>' +
+          '<div class="ctx-strip" id="rkCtxStrip" style="display:none"></div>' +
+          '<div id="rkPctSection">' +
+            '<hr class="pm-section-divider">' +
+            '<div class="pm-section-header"><span class="pm-section-label">Percentiles</span><span class="m-sec-hint" id="rkPctHint"></span></div>' +
+            '<div id="rkBreakdownBody"></div>' +
+          '</div>' +
+          '<div id="rkTestingSection" style="display:none">' +
+            '<hr class="pm-section-divider">' +
+            '<div class="pm-section-header"><span class="pm-section-label">Testing</span></div>' +
+            '<div id="rkTestingBody"></div>' +
+          '</div>' +
+          '<div id="rkSeasonLinesSection">' +
+            '<hr class="pm-section-divider">' +
+            '<div class="pm-section-header"><span class="pm-section-label">Season Lines</span><span class="m-sec-hint">Per-game rates</span></div>' +
+            '<div id="rkSeasonLinesBody">' + rkLoadingHtml() + '</div>' +
           '</div>' +
           notesHtml +
+          '<div class="pm-rk-card" style="margin-top:12px;">' +
+            '<div class="pm-rk-card-h">Comparables</div>' +
+            '<div id="rkComparablesBody">' + rkLoadingHtml() + '</div>' +
+          '</div>' +
         '</div>' +
         '<div class="pm-panel" data-rk-panel="production">' +
-          '<div id="rkProdBody">' + rkLoadingHtml() + '</div>' +
+          '<div class="pm-section-header"><span class="pm-section-label">Production Trajectory</span><span class="m-sec-hint">Per-game rates, not season totals</span></div>' +
+          '<div id="rkTrajBody">' + rkLoadingHtml() + '</div>' +
+          '<hr class="pm-section-divider">' +
+          '<div class="pm-section-header"><span class="pm-section-label">Season Lines</span><span class="m-sec-hint" id="rkProdHint"></span></div>' +
+          '<div id="rkProdLinesBody">' + rkLoadingHtml() + '</div>' +
+          '<div id="rkBreakoutWrap"></div>' +
         '</div>' +
         '<div class="pm-panel" data-rk-panel="advanced">' +
-          '<div class="pm-section-header"><span class="pm-section-label">Advanced Metrics</span></div>' +
-          '<div id="rkAdvRadarBody" style="text-align:center;padding:2px 0 6px;"></div>' +
-          '<div class="pm-rk-card" id="rkAdvPctCard">' +
-            '<div class="pm-rk-card-h">Metric Percentiles</div>' +
-            '<div id="rkAdvPctBody">' + rkLoadingHtml() + '</div>' +
-          '</div>' +
-          '<div id="rkAdvSeasonsSection">' +
-            '<div class="pm-section-header" style="margin-top:18px;"><span class="pm-section-label">Advanced by Season</span></div>' +
-            '<div id="rkAdvSeasonsBody"></div>' +
-          '</div>' +
-          '<div class="pm-rk-card" id="rkMarksCard" style="margin-top:12px;">' +
-            '<div class="pm-rk-card-h">Best &amp; Career Marks</div>' +
-            '<div id="rkMarksBody"></div>' +
-          '</div>' +
+          '<div class="pm-section-header"><span class="pm-section-label">Advanced Metrics</span><span class="m-sec-hint">Only metrics with data</span></div>' +
+          '<div id="rkAdvPctBody">' + rkLoadingHtml() + '</div>' +
         '</div>' +
       '</div>';
 
@@ -2124,8 +1348,11 @@ def build_prospects_body(is_admin: bool = False) -> str:
     if (starBtn) starBtn.addEventListener('click', function(ev) {
       rkToggleWatchModal(ev, pid, name);
     });
-    rkRenderBreakdown(r, {});
+    rkRenderPercentiles(r, {});
     rkApplyArchetype(r, {});
+    rkRenderCtxStrip(r);
+    // Modal band tint follows the player's band (one --band variable).
+    rkApplyBand(r.tag);
 
     modal.style.display = 'flex';
     document.body.style.overflow = 'hidden';
@@ -2141,16 +1368,10 @@ def build_prospects_body(is_admin: bool = False) -> str:
       .then(function(res){ return res.json(); })
       .then(function(d) { rkFillDetail(r, d || {}); })
       .catch(function() {
-        ['rkTrajBody', 'rkOvAdvBody', 'rkAdvPctBody', 'rkProdBody'].forEach(function(id) {
+        ['rkTrajBody', 'rkProdLinesBody', 'rkAdvPctBody', 'rkSeasonLinesBody'].forEach(function(id) {
           var el = document.getElementById(id);
           if (el) el.innerHTML = '<span style="font-size:13px;color:var(--text-muted);">Details unavailable.</span>';
         });
-        ['rkRadarCard', 'rkAdvSeasonsSection', 'rkMarksCard'].forEach(function(id) {
-          var el = document.getElementById(id);
-          if (el) el.style.display = 'none';
-        });
-        var rb = document.getElementById('rkAdvRadarBody');
-        if (rb) rb.innerHTML = '';
       });
 
     // Historical comparables from real past draft classes
@@ -2165,7 +1386,6 @@ def build_prospects_body(is_admin: bool = False) -> str:
           return;
         }
         cb.innerHTML = comps.map(function(c) {
-          var ctc = RK_TIER_COLORS[c.tier] || '#9ca3af';
           var meta = [c.draft_class_year,
                       c.actual_pick ? 'Pick ' + c.actual_pick : null,
                       c.school].filter(Boolean).join(' · ');
@@ -2177,8 +1397,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
           return '<div class="m-sim-row">' + disc +
             '<div><div class="m-sim-name">' + rkEsc(c.name) + '</div>' +
             '<div class="m-sim-meta">' + rkEsc(meta) + '</div></div>' +
-            '<div class="m-sim-right"><span class="m-sim-score">' + rkScore1(c.prospect_score) + '</span>' +
-            '<span class="m-sim-tier" style="background:' + ctc + '22;color:' + ctc + ';border:1px solid ' + ctc + '44;">T' + c.tier + '</span></div></div>';
+            '<div class="m-sim-right">' + rkTagChip(c.tag) + '</div></div>';
         }).join('');
       })
       .catch(function() {
@@ -2187,16 +1406,53 @@ def build_prospects_body(is_admin: bool = False) -> str:
       });
   }
 
+  // Strongest-evidence receipt under the Prospect Tag (detail bundle).
+  // Hidden until a real receipt exists; never a placeholder.
+  function rkFillReceipt(d) {
+    var el = document.getElementById('rkHeroReceipt');
+    if (!el) return;
+    var rec = (d && d.evidence_receipt) || '';
+    if (rec) {
+      el.textContent = rec;
+      el.style.display = '';
+    }
+  }
+
+  // Evidence-weight receipt at the end of the meta line, from the stored
+  // seasons in the detail bundle ("3 seasons · 34 games").
+  function rkFillMetaEvidence(d) {
+    var el = document.getElementById('rkMetaEvidence');
+    if (!el) return;
+    var seasons = (d && d.seasons) || [];
+    if (!seasons.length) return;
+    var games = 0;
+    seasons.forEach(function(s) { games += parseInt(s.games_played, 10) || 0; });
+    var line = el.parentNode;
+    var sep = line && line.children.length > 1
+      ? '<span class="rk-meta-sep" style="opacity:.35;margin:0 3px;">·</span>' : '';
+    el.innerHTML = sep + '<span>' + seasons.length +
+      (seasons.length === 1 ? ' season' : ' seasons') + ' · ' + games + ' games</span>';
+  }
+
   function rkFillDetail(r, d) {
+    // The detail bundle's tag wins over the board row's when present.
+    if (d && d.tag) {
+      rkApplyBand(d.tag);
+      var chip = document.getElementById('rkTagChip');
+      if (chip && d.tag.label) {
+        chip.textContent = d.tag.label;
+        chip.className = 'tag-chip ' + (RK_TAG_CLASS[d.tag.band] || '');
+      }
+    }
     rkApplyArchetype(r, d);
-    rkRenderBreakdown(r, d);
+    rkFillReceipt(d);
+    rkFillMetaEvidence(d);
+    rkRenderPercentiles(r, d);
+    rkRenderTesting(d);
+    rkRenderSeasonLines(r, d);
     rkRenderTraj(r, d);
-    rkRenderOvAdv(r, d);
-    rkRenderRadar(r, d);
-    rkRenderAdvPct(d);
-    rkRenderAdvSeasons(r, d);
-    rkRenderMarks(d);
-    rkRenderProduction(r, d);
+    rkRenderBreakout(r, d);
+    rkRenderAdv(r, d);
   }
 
   function rkCloseModal() {
@@ -2216,27 +1472,26 @@ def build_prospects_body(is_admin: bool = False) -> str:
     inp.addEventListener('input', function() {
       rkSearch = inp.value.trim();
       clr.style.display = rkSearch.length > 0 ? 'block' : 'none';
-      rkCurrentPage = 1;
       rkRender();
     });
   })();
 
-  // Clickable sort headers (AM-table pattern): click a column to sort by it,
-  // click again to flip direction. Bound once; targets resolve at event time
-  // so soft-nav re-renders keep working.
+  // Clickable column headers (native board pattern): click a column to
+  // sort by it, click again to flip direction. Bound once; targets resolve
+  // at event time so soft-nav re-renders keep working.
   if (!window.__rkSortBound) {
     window.__rkSortBound = true;
     (function() {
       function rkHeaderCell(e) {
-        var cell = e.target && e.target.closest ? e.target.closest('#rkHeader [data-rk-sort-col]') : null;
+        var cell = e.target && e.target.closest ? e.target.closest('#rkTableHeader [data-pr-sort-col]') : null;
         return cell || null;
       }
       function rkHeaderKey(cell) {
-        var col = cell.getAttribute('data-rk-sort-col');
-        if (col === 'name') return 'name';
-        if (col === 'rank') return 'rank';
-        if (col === 'score') return 'score';
-        if (col === 'mock') return 'mock';
+        var col = cell.getAttribute('data-pr-sort-col');
+        if (col === 'player') return 'name';
+        if (col === 'prod') return 'prod';
+        if (col === 'eff') return 'eff';
+        if (col === 'brk') return 'brk';
         return rkSortKey;
       }
       document.addEventListener('click', function(e) {
@@ -2257,8 +1512,6 @@ def build_prospects_body(is_admin: bool = False) -> str:
     .then(function(r){ return r.json(); })
     .then(function(d) {
       rkDraftYear = d.draft_class_year || new Date().getFullYear();
-      document.getElementById('rookiesTitle').textContent = rkDraftYear + ' Prospect Rankings';
-      
       // Fetch draft status
       return fetch('/api/prospects/draft-status?year=' + rkDraftYear);
     })
@@ -2273,6 +1526,22 @@ def build_prospects_body(is_admin: bool = False) -> str:
       rkAllPlayers = data.rankings || [];
       rkLoaded = true;
       rkPipelinePaused = !!data.paused;
+      // Subtitle slot: draft class + the pool line generated server-side
+      // from the reference population actually used for the percentiles.
+      var poolEl = document.getElementById('rkPoolLine');
+      if (poolEl && data.percentile_pool) {
+        poolEl.textContent = (rkDraftYear ? rkDraftYear + ' draft class. ' : '') +
+          data.percentile_pool + '.';
+      }
+      // Active-setting tags: the class on show, plus the In-Season tag
+      // while any player on the board is mid-season.
+      var settingsEl = document.getElementById('rkActiveSettings');
+      if (settingsEl && rkDraftYear) {
+        document.getElementById('rkClassTag').textContent = rkDraftYear + ' Class';
+        var anyInSeason = rkAllPlayers.some(function(p) { return p.in_season; });
+        document.getElementById('rkSeasonTag').style.display = anyInSeason ? '' : 'none';
+        settingsEl.style.display = '';
+      }
       var pausedBanner = document.getElementById('rkPausedBanner');
       if (pausedBanner) {
         if (rkPipelinePaused && rkAllPlayers.length) {
@@ -2290,52 +1559,5 @@ def build_prospects_body(is_admin: bool = False) -> str:
       document.getElementById('rkLoading').innerHTML =
         '<div style="color:var(--loss);">Failed to load rookie data. Please refresh.</div>';
     });
-
-  function rkLoadPage(page) {
-    if (page === 'prev') page = rkCurrentPage - 1;
-    else if (page === 'next') page = rkCurrentPage + 1;
-    if (page < 1) return;
-    rkCurrentPage = page;
-    rkRender();
-    window.scrollTo({top: 0, behavior: 'smooth'});
-  }
-
-  function rkUpdatePaginationControls(totalFiltered, totalPages) {
-    var prevBtn      = document.getElementById('rkPrevBtn');
-    var nextBtn      = document.getElementById('rkNextBtn');
-    var pageNumbers  = document.getElementById('rkPageNumbers');
-    var paginationText = document.getElementById('rkPaginationText');
-    var pagination   = document.getElementById('rkPagination');
-
-    if (totalPages <= 1) {
-      pagination.style.display = 'none';
-      return;
-    }
-
-    prevBtn.disabled = rkCurrentPage <= 1;
-    nextBtn.disabled = rkCurrentPage >= totalPages;
-
-    var start = (rkCurrentPage - 1) * RK_PER_PAGE + 1;
-    var end   = Math.min(rkCurrentPage * RK_PER_PAGE, totalFiltered);
-    paginationText.textContent = 'Showing ' + start + '–' + end + ' of ' + totalFiltered + ' prospects';
-
-    pageNumbers.innerHTML = '';
-    var maxPages  = 5;
-    var startPage = Math.max(1, rkCurrentPage - Math.floor(maxPages / 2));
-    var endPage   = Math.min(totalPages, startPage + maxPages - 1);
-    if (endPage - startPage < maxPages - 1) startPage = Math.max(1, endPage - maxPages + 1);
-
-    for (var i = startPage; i <= endPage; i++) {
-      (function(pageNum) {
-        var btn = document.createElement('button');
-        btn.className = 'pagination-page' + (pageNum === rkCurrentPage ? ' active' : '');
-        btn.textContent = pageNum;
-        btn.onclick = function() { rkLoadPage(pageNum); };
-        pageNumbers.appendChild(btn);
-      })(i);
-    }
-
-    pagination.style.display = 'flex';
-  }
 </script>
 """
