@@ -735,3 +735,22 @@ def test_poll_once_quiet_when_no_games_outside_window(monkeypatch, caplog):
         stats = rs.poll_once()
     assert stats == {"games": 0, "plays": 0}
     assert "0 live/final games" not in caplog.text
+
+
+def test_upsert_reversal_replaces_payload_not_appends(store_db):
+    """A provider revision re-upserted under the same (play_id, pid) key
+    replaces the stored payload wholesale: the corrected text supersedes
+    the original ruling's text rather than concatenating with it."""
+    conn, now = store_db
+    v1 = _play("p9", 9, text="FUMBLES, recovered by KC-Ca.Jones at LAC 41")
+    v1["pid"] = "10004"
+    rs.upsert_plays(2026, "g", [v1])
+    now[0] += 60
+    v2 = _play("p9", 9, text="FUMBLES, RECOVERED by LAC-C.Murphy at LAC 41")
+    v2["pid"] = "10004"
+    v2["stat_line"] = {"fum_rec": 1}
+    rs.upsert_plays(2026, "g", [v2])
+    rows = [p for p in rs.get_plays(2026, ["g"])["g"] if p["play_id"] == "p9"]
+    assert len(rows) == 1
+    assert rows[0]["play_text"] == "FUMBLES, RECOVERED by LAC-C.Murphy at LAC 41"
+    assert rows[0]["stat_line"] == {"fum_rec": 1}
