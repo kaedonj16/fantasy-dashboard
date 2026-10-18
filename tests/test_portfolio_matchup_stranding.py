@@ -1,0 +1,176 @@
+"""Portfolio matchup previews stuck on their loading skeleton.
+
+Kaedon (2026-10-18, Sunday ~19:20 ET): the score/result band on My Leagues
+cards "often struggles to load or doesn't load at all" while the rest of
+each card (record / standing / streak / position strength, all
+server-rendered) is already populated.
+
+Verified stranding paths behind that symptom:
+
+Client (static/app.js portfolio card owner):
+  * The success path only retried on pending or a failed SUMMARY. A card
+    whose summary loaded but whose matchup came back incomplete reset its
+    retry budget to 0 and scheduled nothing -- only the 45s poller could
+    ever revisit it.
+  * renderMatchup's incomplete shape ({live: false} with no applicable /
+    error state) left the skeleton in place and set no state: no error, no
+    Retry button, ever.
+  * A never-loaded card stuck in the pending shape kept its skeleton
+    forever; the ~90s escape existed only for the has-last-good note.
+  * Timed-out card requests were misclassified: brFetchWithTimeout aborts
+    with a TimeoutError DOMException, but the catch only treated AbortError
+    as a transient timeout, so a real timeout fell into the generic error
+    path and fabricated a summary payload that overwrote the
+    server-rendered record row.
+
+Server (routes/user_pages_bp.py _build_live_matchups):
+  * The 30s TTL cache had no single-flight or stale serve. On game day,
+    once an entry expired, every concurrent card request for that league
+    re-paid the full provider build in parallel, pinning request threads;
+    builds could outlast the client's 25s abort, so from the client's
+    side the preview never landed.
+"""
+
+import threading
+import time
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+# ── Client contracts ─────────────────────────────────────────────────────────
+
+def _portfolio_client():
+    source = (ROOT / "static" / "app.js").read_text()
+    return source.split("/* Portfolio cards: one generation owns requests")[1]
+
+
+def test_card_retries_when_matchup_fails_even_if_summary_loaded():
+    client = _portfolio_client()
+    # The retry decision is summary OR matchup, not summary alone.
+    assert "else if (!result.summary || !result.matchup)" in client
+
+
+def test_card_timeout_is_transient_not_a_fabricated_summary_error():
+    client = _portfolio_client()
+    # brFetchWithTimeout aborts with a TimeoutError DOMException; the catch
+    # must treat it like AbortError (quiet bounded retry), not fall through
+    # to the generic error path that overwrites the record row.
+    assert "error.name === 'AbortError' || error.name === 'TimeoutError'" in client
+
+
+def test_render_matchup_incomplete_shape_shows_retry_not_skeleton():
+    client = _portfolio_client()
+    incomplete = client.split("if (!data.live || !data.you)")[1].split("return true;")[0]
+    # With no last-good score, an incomplete answer renders the recovery
+    # state (with Retry) instead of leaving the skeleton up forever.
+    assert "data-matchup-retry" in incomplete
+    assert "Matchup temporarily unavailable" in incomplete
+    # The has-last-good behavior is unchanged: keep showing the last score.
+    assert "showing last score" in incomplete
+
+
+def test_render_matchup_pending_eventually_surfaces_slow_state():
+    client = _portfolio_client()
+    pending = client.split("if (data.pending)")[1].split("delete slot.dataset.pendingSince;")[0]
+    # A never-loaded card stamps when its pending stretch began and, past
+    # ~90s, swaps the skeleton for an honest slow state with a Retry button.
+    assert "pendingSince" in pending
+    assert "90000" in pending
+    assert "data-matchup-retry" in pending
+    # A later non-pending render clears the stamp so the next pending
+    # stretch is timed from its own start.
+    assert "delete slot.dataset.pendingSince;" in client
+
+
+# ── Server: live-matchup build coalescing ────────────────────────────────────
+
+CTX = {}
+
+
+@pytest.fixture()
+def live_matchup_env(monkeypatch):
+    pytest.importorskip("flask")
+    import routes.user_pages_bp as pages
+
+    pages._LIVE_MATCHUP_CACHE.clear()
+    getattr(pages, "_LIVE_MATCHUP_LOCKS", {}).clear()
+    calls = {"build": 0}
+
+    def _preview(**_kwargs):
+        calls["build"] += 1
+        return [{"left": {"roster_id": "1"}, "right": {"roster_id": "2"}}]
+
+    monkeypatch.setattr(
+        "dashboard_services.matchups.build_matchup_preview", _preview)
+    monkeypatch.setattr(
+        "utils.utils.build_status_for_week", lambda *a, **k: {})
+    monkeypatch.setattr(
+        pages, "build_projections_by_week",
+        lambda season, week, _settings=None: {week: {"projections": {}}})
+    return pages, calls
+
+
+def _key():
+    return ("sleeper", "L1", 2026, 6)
+
+
+def test_live_matchup_build_caches_within_ttl(live_matchup_env):
+    pages, calls = live_matchup_env
+    first = pages._build_live_matchups("sleeper", "L1", 2026, 6, CTX)
+    second = pages._build_live_matchups("sleeper", "L1", 2026, 6, CTX)
+    assert first is second
+    assert calls["build"] == 1
+
+
+def test_live_matchup_serves_stale_while_rebuild_in_flight(live_matchup_env):
+    pages, calls = live_matchup_env
+    stale = ([{"stale": True}], {}, {})
+    # Past the 30s TTL but inside the stale grace window.
+    pages._LIVE_MATCHUP_CACHE[_key()] = (time.time() - 60, stale)
+    lock = pages._live_matchup_lock(_key())
+    assert lock.acquire(blocking=False)
+    try:
+        served = pages._build_live_matchups("sleeper", "L1", 2026, 6, CTX)
+    finally:
+        lock.release()
+    # The request coalesced onto the in-flight rebuild: it served last-good
+    # immediately instead of paying a second parallel provider build.
+    assert served is stale
+    assert calls["build"] == 0
+
+
+def test_live_matchup_waits_for_builder_when_nothing_cached(live_matchup_env):
+    pages, calls = live_matchup_env
+    fresh = ([{"fresh": True}], {}, {})
+    lock = pages._live_matchup_lock(_key())
+    assert lock.acquire(blocking=False)
+
+    def _builder():
+        time.sleep(0.3)
+        pages._LIVE_MATCHUP_CACHE[_key()] = (time.time(), fresh)
+        lock.release()
+
+    threading.Thread(target=_builder).start()
+    served = pages._build_live_matchups("sleeper", "L1", 2026, 6, CTX)
+    # No stale entry to serve: the caller waited for the builder and used
+    # its result rather than starting a duplicate build.
+    assert served is fresh
+    assert calls["build"] == 0
+
+
+def test_live_matchup_builds_itself_when_builder_stored_nothing(live_matchup_env):
+    pages, calls = live_matchup_env
+    lock = pages._live_matchup_lock(_key())
+    assert lock.acquire(blocking=False)
+
+    def _failed_builder():
+        time.sleep(0.2)
+        lock.release()  # finished without storing (it raised)
+
+    threading.Thread(target=_failed_builder).start()
+    served = pages._build_live_matchups("sleeper", "L1", 2026, 6, CTX)
+    assert served[0]  # built on this thread after the failed builder
+    assert calls["build"] == 1

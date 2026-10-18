@@ -27859,6 +27859,7 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     if (!slot || !data) return false;
     if (data.pending) {
       slot.hidden = false; slot.setAttribute('aria-busy', 'true');
+      if (!slot.dataset.pendingSince) slot.dataset.pendingSince = String(Date.now());
       if (slot.dataset.matchupGood === 'true') {
         var note = stateNote(slot, 'Updating matchup…', 'stale');
         // The retry loop re-renders on every poll, so a healthy refresh clears
@@ -27866,9 +27867,18 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
         // churn after worker recycles), the note would sit next to populated
         // scores forever; drop it after ~90s and let last good stand alone.
         if (Date.now() - Number(note.dataset.noteSince || 0) > 90000) note.remove();
+      } else if (Date.now() - Number(slot.dataset.pendingSince || 0) > 90000
+          && slot.querySelector('.pf-live-skel')) {
+        // A card that has never loaded has no last-good score to fall back
+        // on: past ~90s of pending the skeleton alone reads as "broken
+        // forever", so swap it for an honest slow state with a Retry button.
+        // The pending retry loop keeps running underneath, and a success
+        // overwrites this via the success path below.
+        slot.innerHTML = '<div class="pf-live-unavailable">Matchup is taking longer than usual <button type="button" data-matchup-retry>Retry</button></div>';
       }
       return false;
     }
+    delete slot.dataset.pendingSince;
     if (data.failed || data.state === 'error' || data.state === 'unavailable' && data.applicable !== false) {
       slot.hidden = false; slot.removeAttribute('aria-busy');
       if (slot.dataset.matchupGood === 'true') stateNote(slot, data.message || 'Matchup update failed · showing last score', 'stale');
@@ -27882,6 +27892,12 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     if (!data.live || !data.you) {
       slot.hidden = false; slot.removeAttribute('aria-busy');
       if (slot.dataset.matchupGood === 'true') stateNote(slot, 'Matchup response incomplete · showing last score', 'stale');
+      // No last-good score: an answer with no matchup and no not-applicable
+      // flag is a failed load, not a loading state. Leaving the skeleton in
+      // place here stranded the band on a shimmer forever (no error, no
+      // Retry, and the caller's success path scheduled no retry), so render
+      // the same recovery state as an explicit failure.
+      else slot.innerHTML = '<div class="pf-live-unavailable">Matchup temporarily unavailable <button type="button" data-matchup-retry>Retry</button></div>';
       return false;
     }
     slot.innerHTML = matchupHtml(data); slot.hidden = false; slot.removeAttribute('aria-busy');
@@ -27945,15 +27961,23 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
       // suggested retry delay.
       if (result.pending) {
         schedule(owner, card, Math.max(body.retry_after_ms || 0, 3000));
-      } else if (!result.summary) {
+      } else if (!result.summary || !result.matchup) {
+        // A failed matchup is as transient as a failed summary: retry it on
+        // the same bounded ladder instead of resetting the budget and
+        // leaving the band stranded until the 45s poller (or forever, when
+        // the server keeps returning the same incomplete shape).
         card._pfAttempts = (card._pfAttempts || 0) + 1;
         if (card._pfAttempts <= RETRY_DELAYS.length) schedule(owner, card, RETRY_DELAYS[card._pfAttempts - 1]);
       } else card._pfAttempts = 0;
     }).catch(function (error) {
       if (!owner.alive()) return;
-      // A timeout (AbortError) is transient, especially on game day. Schedule
-      // a retry instead of silently giving up.
-      if (error && error.name === 'AbortError') {
+      // A timeout is transient, especially on game day. Schedule a retry
+      // instead of silently giving up. brFetchWithTimeout aborts with a
+      // TimeoutError DOMException, so check that name as well as AbortError:
+      // checking AbortError alone let real timeouts fall into the generic
+      // error path below, which fabricates a summary payload and overwrites
+      // the server-rendered record row with the error text.
+      if (error && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
         card._pfAttempts = (card._pfAttempts || 0) + 1;
         if (card._pfAttempts <= RETRY_DELAYS.length) schedule(owner, card, RETRY_DELAYS[card._pfAttempts - 1]);
         return;
