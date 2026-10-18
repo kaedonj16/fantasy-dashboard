@@ -930,3 +930,150 @@ def test_espn_extract_dedupes_current_drive_repeated_in_previous():
     judkins = [p for p in plays if p["pid"] == "judkins1"]
     assert [p["play_id"] for p in judkins] == ["p-run", "p-td"]
     assert judkins[-1]["cume"] == {"rush_yds": 5, "carries": 2, "rush_td": 1}
+
+
+# ── 2026-10-18 live report: reversed punt headlined by a defender ──────────
+# A reviewed punt return (LAC vs KC, Week 6) rendered as a giant 0-point
+# card headlined "Caleb Murphy" with the full booth text as its body. The
+# stat parser models no part of a punt / return / fumble-recovery play, so
+# every resolved mention (punter, returner, the penalized tight end, the
+# recovering defender) was emitted as a stat-less player row, and the
+# client headlined one of them with the raw text as the description.
+
+_REVERSED_PUNT_TEXT = (
+    "(4:34) J.Scott punts 35 yards to LAC 37, Center-J.Harris. "
+    "N.Remigio to LAC 41 for -4 yards (T.Dye). "
+    "FUMBLES (T.Dye), recovered by KC-Ca.Jones at LAC 41. "
+    "PENALTY on KC-J.Briningstool, Illegal Block Above the Waist, 10 yards, "
+    "enforced at LAC 41. "
+    "Los Angeles Chargers challenged the loose ball recovery ruling, and the "
+    "play was REVERSED. "
+    "J.Scott punts 35 yards to LAC 37, Center-J.Harris. "
+    "N.Remigio to LAC 41 for -4 yards (T.Dye). "
+    "FUMBLES (T.Dye), RECOVERED by LAC-C.Murphy at LAC 41. "
+    "Penalty on KC-J.Briningstool, Illegal Block Above the Waist, declined."
+)
+
+_PUNT_PLAYERS = {
+    "jk scott": "10001", "nikko remigio": "10002", "troy dye": "10003",
+    "caleb murphy": "10004", "josh harris": "10005", "cam jones": "10006",
+    "jake briningstool": "10007",
+}
+_PUNT_META = {
+    "10001": {"name": "JK Scott", "team": "LAC", "position": "P"},
+    "10002": {"name": "Nikko Remigio", "team": "LAC", "position": "WR"},
+    "10003": {"name": "Troy Dye", "team": "LAC", "position": "LB"},
+    "10004": {"name": "Caleb Murphy", "team": "LAC", "position": "DE"},
+    "10005": {"name": "Josh Harris", "team": "LAC", "position": "LS"},
+    "10006": {"name": "Cam Jones", "team": "KC", "position": "LB"},
+    "10007": {"name": "Jake Briningstool", "team": "KC", "position": "TE"},
+}
+
+
+def _espn_single_play(text, *, scoring=False, ptype="Punt"):
+    return {"gamepackageJSON": {"drives": {"previous": [{
+        "team": {"abbreviation": "LAC"},
+        "plays": [{
+            "id": "4017729991234", "sequenceNumber": "212", "text": text,
+            "type": {"text": ptype}, "scoringPlay": scoring,
+            "period": {"number": 3}, "clock": {"displayValue": "4:34"},
+            "start": {"down": 4, "distance": 9, "possessionText": "LAC 2"},
+            "end": {"possessionText": "LAC 41"},
+        }],
+    }]}}}
+
+
+def test_espn_reversed_punt_fumble_emits_no_player_rows():
+    plays = extract_espn_pbp_plays(
+        _espn_single_play(_REVERSED_PUNT_TEXT), "20261018_KC@LAC",
+        name_to_pid=_PUNT_PLAYERS, player_meta_by_pid=_PUNT_META,
+    )
+    assert plays == []
+
+
+def test_espn_plain_punt_emits_no_player_rows():
+    # The same gap without any review: a punt/return is an unmodeled play
+    # type, so the punter and returner must not become stat-less rows.
+    text = ("(9:12) J.Scott punts 41 yards to KC 25, Center-J.Harris. "
+            "N.Remigio to KC 29 for 4 yards (T.Dye).")
+    plays = extract_espn_pbp_plays(
+        _espn_single_play(text), "20261018_KC@LAC",
+        name_to_pid=_PUNT_PLAYERS, player_meta_by_pid=_PUNT_META,
+    )
+    assert plays == []
+
+
+def test_espn_modeled_run_still_emits_its_row():
+    # Control (the compact card directly under the Murphy card in the same
+    # feed): a modeled play keeps its per-player row, tackler excluded.
+    plays = extract_espn_pbp_plays(
+        _espn_single_play(
+            "(8:01) O.Hampton up the middle to KC 40 for 1 yard (C.Jones).",
+            ptype="Rush",
+        ),
+        "20261018_KC@LAC",
+        name_to_pid={**_PUNT_PLAYERS, "omarion hampton": "10009",
+                     "chris jones": "10010"},
+        player_meta_by_pid={**_PUNT_META,
+                            "10009": {"name": "Omarion Hampton", "team": "LAC",
+                                      "position": "RB"},
+                            "10010": {"name": "Chris Jones", "team": "KC",
+                                      "position": "DT"}},
+    )
+    assert [p["pid"] for p in plays] == ["10009"]
+    assert plays[0]["stat_line"] == {"rush_yds": 1, "carries": 1}
+
+
+def test_espn_reversal_parses_only_the_corrected_segment():
+    # Spot review: the superseded segment credits 12 yards, the corrected
+    # restatement credits 8. Only the corrected segment may be parsed; the
+    # stored play_text stays the source text verbatim.
+    text = ("(5:02) B.Hall up the middle to KC 40 for 12 yards (J.Chenal). "
+            "New York Jets challenged the spot ruling, and the play was "
+            "REVERSED. B.Hall up the middle to KC 44 for 8 yards (J.Chenal).")
+    plays = extract_espn_pbp_plays(
+        _espn_single_play(text, ptype="Rush"), "20261018_NYJ@KC",
+        name_to_pid={"breece hall": "20001", "leo chenal": "20002"},
+        player_meta_by_pid={
+            "20001": {"name": "Breece Hall", "team": "NYJ", "position": "RB"},
+            "20002": {"name": "Leo Chenal", "team": "KC", "position": "LB"},
+        },
+    )
+    assert [p["pid"] for p in plays] == ["20001"]
+    assert plays[0]["stat_line"] == {"rush_yds": 8, "carries": 1}
+    assert plays[0]["play_text"] == text
+
+
+def test_espn_reversed_td_catch_scores_as_incompletion():
+    text = ("(1:15) J.Herbert pass deep left to Q.Johnston for 30 yards, "
+            "TOUCHDOWN. Los Angeles Chargers challenged the scoring ruling, "
+            "and the play was REVERSED. J.Herbert pass incomplete deep left "
+            "to Q.Johnston.")
+    plays = extract_espn_pbp_plays(
+        _espn_single_play(text, scoring=True, ptype="Pass"),
+        "20261018_KC@LAC",
+        name_to_pid={"justin herbert": "30001", "quentin johnston": "30002"},
+        player_meta_by_pid={
+            "30001": {"name": "Justin Herbert", "team": "LAC", "position": "QB"},
+            "30002": {"name": "Quentin Johnston", "team": "LAC", "position": "WR"},
+        },
+    )
+    by_pid = {p["pid"]: p for p in plays}
+    assert by_pid["30001"]["stat_line"] == {"pass_att": 1}
+    assert by_pid["30002"]["stat_line"] == {"targets": 1}
+    assert not any(p["is_td"] for p in plays)
+
+
+def test_espn_scoring_play_keeps_mention_rows_when_parser_credits_nobody():
+    # The documented exception (see _row_inherits_td): a scoring play whose
+    # scorer the parser missed must still surface its mention rows.
+    text = ("(3:00) FUMBLES (T.Dye), RECOVERED by LAC-C.Murphy at LAC 41. "
+            "C.Murphy for a TOUCHDOWN.")
+    plays = extract_espn_pbp_plays(
+        _espn_single_play(text, scoring=True, ptype="Fumble Recovery"),
+        "20261018_KC@LAC",
+        name_to_pid=_PUNT_PLAYERS, player_meta_by_pid=_PUNT_META,
+    )
+    murphy = [p for p in plays if p["pid"] == "10004"]
+    assert len(murphy) == 1
+    assert murphy[0]["is_td"] is True

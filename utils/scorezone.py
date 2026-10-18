@@ -2276,6 +2276,38 @@ def _espn_skip_play(play: dict) -> bool:
     return any(s in text for s in skip)
 
 
+_REVERSED_SPLIT_RE = re.compile(r"\bplay was reversed\.\s*", re.IGNORECASE)
+
+# Kick-play language (punt / kickoff). The stat parser models no part of
+# these plays, so a stat-less kick play's resolved mentions are never
+# fantasy contributions. "kicks <distance>" covers kickoffs ("kicks 65
+# yards from KC 35"); made FG/XP texts credit the kicker in the parser,
+# so they never reach the stat-less branch this gates.
+_KICK_PLAY_RE = re.compile(r"\b(?:punts|kickoff|kicks off|kicks \d)", re.IGNORECASE)
+
+
+def _post_reversal_text(text: str) -> str:
+    """Return the corrected segment of an ESPN replay-review play text.
+
+    ESPN serves a challenged play as one combined string: the original
+    ruling's description, the challenge sentence ("... challenged ..., and
+    the play was REVERSED."), then the corrected description restated in
+    full. Only the corrected segment describes the official result, so
+    stat-line and mention parsing must read that segment alone -- parsing
+    the combined text credits actors from the superseded ruling (e.g. the
+    player originally credited with a fumble recovery that review took
+    away). The stored ``play_text`` keeps the source text verbatim; this
+    only narrows what gets parsed. Texts without the restated segment
+    (the reversal sentence is the tail, or a different phrasing) are
+    returned unchanged.
+    """
+    m = _REVERSED_SPLIT_RE.search(text or "")
+    if not m:
+        return text
+    rest = (text[m.end():] or "").strip()
+    return rest if len(rest) >= 20 else text
+
+
 def extract_espn_pbp_plays(
     espn_payload: dict,
     game_id: str,
@@ -2321,6 +2353,12 @@ def extract_espn_pbp_plays(
             text = _s(play.get("text"))
             if not text:
                 continue
+            # A reviewed play's combined text keeps the superseded ruling in
+            # its first half; everything derived from the text (TD flag,
+            # no-play detection, stat lines, mentions) must read only the
+            # corrected segment. The stored play_text stays verbatim.
+            # See _post_reversal_text.
+            parse_text = _post_reversal_text(text)
             start = play.get("start") or {}
             end = play.get("end") or {}
             clock = ""
@@ -2342,8 +2380,8 @@ def extract_espn_pbp_plays(
             seen_play_ids.add(play_id)
             is_td = bool(play.get("scoringPlay")) and (
                 "touchdown" in _s((play.get("type") or {}).get("text")).lower()
-                or "touchdown" in text.lower()
-                or " TD" in text
+                or "touchdown" in parse_text.lower()
+                or " TD" in parse_text
             )
             base = {
                 "play_id": play_id,
@@ -2361,13 +2399,13 @@ def extract_espn_pbp_plays(
                 "source": "espn",
             }
             seq += 1
-            is_no_play = bool(re.search(r"\bno play\b", text, re.IGNORECASE))
+            is_no_play = bool(re.search(r"\bno play\b", parse_text, re.IGNORECASE))
             if is_no_play:
                 out.append({**base, "pid": "", "name": "", "team": drive_team,
                             "is_no_play": True, "play_state": "NO_PLAY"})
                 continue
             stat_by_pid = _stat_lines_by_pid(
-                text, abbrev_idx, team=drive_team,
+                parse_text, abbrev_idx, team=drive_team,
                 player_meta_by_pid=player_meta_by_pid, play_id=play_id,
             )
             # Resolve mentioned players from the action clause only -- never the
@@ -2375,7 +2413,7 @@ def extract_espn_pbp_plays(
             # stop does not become a standalone card headlining the ball
             # carrier's run. Also strip the two-point conversion / PAT portion:
             # a player mentioned only there must not inherit the TD flag.
-            _td_text, _ = _two_point_segments(text)
+            _td_text, _ = _two_point_segments(parse_text)
             pids = pids_mentioned_in_text(
                 _text_without_credits(_td_text),
                 full_index=full_idx,
@@ -2387,7 +2425,20 @@ def extract_espn_pbp_plays(
             for pid in stat_by_pid:
                 if pid not in pids:
                     pids.append(pid)
-            if pids:
+            # Mention-only rows are the feed's contract for modeled plays
+            # whose subject the stat parser does not credit (the sacked QB
+            # keeps his row). A punt / kickoff is different: the stat parser
+            # models no part of the play, so EVERY resolved mention -- the
+            # punter, the returner, the player flagged for a penalty, a
+            # defender who recovered a fumble -- becomes a standalone
+            # 0-point card, and the client headlines an arbitrary one of
+            # them with the raw booth text as the card body (2026-10-18: a
+            # reviewed punt return headlined the recovering defender).
+            # Suppress per-player rows for stat-less, non-scoring kick
+            # plays. Scoring plays stay exempt: a return TD whose scorer
+            # the parser missed must still surface (see _row_inherits_td).
+            if pids and (stat_by_pid or is_td or play.get("scoringPlay")
+                         or not _KICK_PLAY_RE.search(parse_text)):
                 for pid in pids:
                     sl = stat_by_pid.get(pid, {})
                     # Only the actual TD scorer keeps the play's TD flag: a
