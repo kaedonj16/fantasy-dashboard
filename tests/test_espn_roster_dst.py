@@ -81,3 +81,32 @@ def test_get_rosters_includes_dst(monkeypatch):
     assert "JAX" in r["starters"]
     assert r["metadata"].get("team_name") == "Trilogy"
     assert r["owner_id"] == "{AAA}"
+    assert r["co_owners"] is None
+
+
+def test_get_rosters_surfaces_co_owners(monkeypatch):
+    # ESPN teams can list several member ids in `owners`; only owners[0]
+    # becomes owner_id, so the rest must ride along as co_owners or
+    # per-owner notifications can never reach a co-manager's device.
+    team = SimpleNamespace(
+        team_id=2,
+        team_name="Co-managed",
+        name="Co-managed",
+        owners=[{"id": "{AAA}", "displayName": "primary"},
+                {"id": "{BBB}", "displayName": "co-manager"}],
+        wins=0,
+        losses=1,
+        ties=0,
+        outcomes=["L"],
+        points_for=50.0,
+        points_against=60.0,
+        roster=[],
+    )
+    lg = SimpleNamespace(teams=[team])
+
+    monkeypatch.setattr(E, "_league", lambda season, league_id: lg)
+    monkeypatch.setattr(E, "_espn_to_canon_cached", lambda: {})
+
+    rosters = E.get_rosters(2025, "1")
+    assert rosters[0]["owner_id"] == "{AAA}"
+    assert rosters[0]["co_owners"] == ["{BBB}"]

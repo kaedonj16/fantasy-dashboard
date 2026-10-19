@@ -54,7 +54,7 @@ class _FakeConn:
 
 
 def _setup(monkeypatch, *, espn_rows, schedule, last_seen, sub_rows,
-           rosters=None, league_name="Blackedraw", now_utc=None):
+           rosters=None, league_name="Blackedraw", now_utc=None, leagues=None):
     import json as _json
 
     import dashboard_services.api as api
@@ -87,7 +87,10 @@ def _setup(monkeypatch, *, espn_rows, schedule, last_seen, sub_rows,
         papi, "get_league",
         lambda platform, league_id, season: {"name": league_name},
     )
-    monkeypatch.setattr(pn, "_get_subscribed_leagues", lambda: [("L1", "sleeper")])
+    monkeypatch.setattr(
+        pn, "_get_subscribed_leagues",
+        lambda: leagues if leagues is not None else [("L1", "sleeper")],
+    )
     monkeypatch.setattr(db, "get_conn", lambda: _FakeConn(sub_rows))
     pn._league_name_cache.clear()
 
@@ -265,6 +268,121 @@ def test_owner_alias_helper():
         {"owner_id": "", "roster_id": 3},
     ]
     assert pn._owner_alias_for_rosters(rosters) == {"7": "guid-abc"}
+
+
+# ── Per-platform roster shapes ──────────────────────────────────────────────
+# Roster dicts below mirror each provider adapter's get_rosters output:
+# every platform canonicalizes player ids (Sleeper natively; ESPN via
+# resolve_espn_player_id; Yahoo via _yahoo_player_canonical; MFL and
+# Fleaflicker via their name/id crosswalks), and unmapped players are
+# dropped by the adapters, so the feed map (canonical keys, PR #2699 shape)
+# is fed the canonical pid "12518" in every case.
+
+_CANON_FEED = {"12518": {"status": "Out", "team": "DET", "name": "Tyler Warren"}}
+
+
+def _platform_case(monkeypatch, *, leagues, rosters, stored_owner):
+    sent, _ = _setup(
+        monkeypatch,
+        espn_rows=_CANON_FEED,
+        schedule=_games(KICKOFF_FUTURE),
+        last_seen={"L1:12518": ""},
+        sub_rows=[_sub_row(owner_id=stored_owner)],
+        rosters=rosters,
+        leagues=leagues,
+    )
+    return pn.notify_injury_flip(), sent
+
+
+def test_espn_swid_without_braces_still_matches(monkeypatch):
+    # ESPN roster owner_id is owners[0].id in braced SWID form; a
+    # subscription persisted from the cookie/link flow can hold the same
+    # SWID without braces. _broadcast_owner matches those variants; the
+    # flip sender must too.
+    rosters = [{"owner_id": "{AAAA-1111-BBBB}", "roster_id": 3,
+                "starters": ["12518"], "players": ["12518"]}]
+    n, sent = _platform_case(
+        monkeypatch, leagues=[("L1", "espn")], rosters=rosters,
+        stored_owner="AAAA-1111-BBBB",
+    )
+    assert n == 1
+    assert sent[0]["title"] == "Starter injury alert"
+
+
+def test_espn_team_id_subscription_matches_via_alias(monkeypatch):
+    # Bulk subscribe stores the ESPN team_id; the alias maps it to the
+    # roster's member id.
+    rosters = [{"owner_id": "{AAAA-1111-BBBB}", "roster_id": 3,
+                "starters": ["12518"], "players": ["12518"]}]
+    n, _ = _platform_case(
+        monkeypatch, leagues=[("L1", "espn")], rosters=rosters,
+        stored_owner="3",
+    )
+    assert n == 1
+
+
+def test_co_owner_subscriptions_match_on_every_platform(monkeypatch):
+    # A co-manager's device subscribes under their own id, which is NOT
+    # the roster owner_id on any platform. Rosters that surface
+    # co_owners (Sleeper natively; ESPN/Yahoo via their adapters) must
+    # still route the flip to that device.
+    cases = [
+        ("sleeper", {"owner_id": "u-primary", "roster_id": 1,
+                     "co_owners": ["u-co"],
+                     "starters": ["12518"], "players": ["12518"]}, "u-co"),
+        ("espn", {"owner_id": "{OWN-1}", "roster_id": 3,
+                  "co_owners": ["{CO-2}"],
+                  "starters": ["12518"], "players": ["12518"]}, "{CO-2}"),
+        ("yahoo", {"owner_id": "guid-first", "roster_id": 7,
+                   "co_owners": ["guid-second"],
+                   "starters": ["12518"], "players": ["12518"]}, "guid-second"),
+    ]
+    for platform, roster, stored in cases:
+        n, sent = _platform_case(
+            monkeypatch, leagues=[("L1", platform)], rosters=[roster],
+            stored_owner=stored,
+        )
+        assert n == 1, f"{platform} co-owner flip did not alert"
+        assert len(sent) == 1
+
+
+def test_yahoo_second_manager_without_co_owners_misses(monkeypatch):
+    # Documents the pre-fix adapter gap: Yahoo rosters used to hardcode
+    # co_owners=None, discarding every manager after the first, so a
+    # second manager's subscription could not match. (The adapter now
+    # populates co_owners -- see test_yahoo_co_owner_ids.py.)
+    rosters = [{"owner_id": "guid-first", "roster_id": 7, "co_owners": None,
+                "starters": ["12518"], "players": ["12518"]}]
+    n, sent = _platform_case(
+        monkeypatch, leagues=[("L1", "yahoo")], rosters=rosters,
+        stored_owner="guid-second",
+    )
+    assert n == 0
+    assert sent == []
+
+
+def test_mfl_zero_padded_owner_matches(monkeypatch):
+    # MFL roster owner_id is the raw franchise id string ("0001") while
+    # roster_id is its int form; subscriptions may hold either spelling.
+    rosters = [{"owner_id": "0001", "roster_id": 1,
+                "starters": ["12518"], "players": ["12518"]}]
+    for stored in ("0001", "1"):
+        n, _ = _platform_case(
+            monkeypatch, leagues=[("L1", "mfl")], rosters=rosters,
+            stored_owner=stored,
+        )
+        assert n == 1, f"MFL stored owner {stored!r} did not match"
+
+
+def test_fleaflicker_team_id_owner_matches(monkeypatch):
+    # Fleaflicker roster owner_id IS the team id (roster_id is its int).
+    rosters = [{"owner_id": "12345", "roster_id": 12345,
+                "starters": ["12518"], "players": ["12518"]}]
+    n, _ = _platform_case(
+        monkeypatch, leagues=[("L1", "fleaflicker")], rosters=rosters,
+        stored_owner="12345",
+    )
+    assert n == 1
 
 
 def test_not_a_game_day_is_cheap_exit(monkeypatch):

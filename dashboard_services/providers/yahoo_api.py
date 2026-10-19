@@ -1391,6 +1391,23 @@ def _yahoo_owner_id(team_list: List, team_id: Any) -> str:
     return str(team_id)
 
 
+def _yahoo_co_owner_ids(team_list: List) -> List[str]:
+    """Manager guids beyond the primary manager (co-managers), listed order.
+
+    The roster owner_id is only the FIRST manager's guid, so without this a
+    subscriber who co-manages a team (listed second) could never match a
+    per-owner notification for their own roster.
+    """
+    primary = _yahoo_primary_manager(team_list)
+    primary_guid = str(primary.get("guid") or primary.get("manager_id") or "")
+    out: List[str] = []
+    for entry in _yahoo_manager_entries(team_list):
+        guid = str(entry.get("guid") or entry.get("manager_id") or "")
+        if guid and guid != primary_guid and guid not in out:
+            out.append(guid)
+    return out
+
+
 def _team_managers(team_list: List) -> List[Dict[str, Any]]:
     """Normalize Yahoo ``managers`` nodes to ``[{"manager": ...}, ...]``."""
     return [{"manager": m} for m in _yahoo_manager_entries(team_list)]
@@ -1816,7 +1833,7 @@ def get_rosters(season: int, league_id: str, access_token: str) -> List[Dict[str
         fpa_dec    = int(round((pts_ag - fpa_whole) * 100))
 
         out.append({
-            "co_owners":  None,
+            "co_owners":  _yahoo_co_owner_ids(t) or None,
             "keepers":    None,
             "league_id":  str(league_id),
             "metadata":   {"team_name": team_name, "avatar": logo_url},

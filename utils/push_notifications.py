@@ -1424,8 +1424,24 @@ def notify_injury_flip():
                 if not isinstance(roster, dict):
                     continue
                 owner_id = str(roster.get("owner_id") or "")
-                if not owner_id:
+                co_owner_ids = [
+                    str(c).strip() for c in (roster.get("co_owners") or [])
+                    if str(c or "").strip()
+                ]
+                if not owner_id and not co_owner_ids:
                     continue
+                # Alertable stored owner_ids for this roster: the primary
+                # owner plus any co-owners the adapter surfaced (Sleeper
+                # rosters carry co_owners natively; ESPN/Yahoo adapters now
+                # populate them from their secondary owners/managers). ESPN
+                # SWIDs may be persisted with or without braces, so match
+                # spelling variants like _broadcast_owner does -- the old
+                # verbatim-only match silently missed those devices.
+                target_ids = set()
+                for oid in [owner_id, *co_owner_ids]:
+                    if oid:
+                        target_ids.add(oid)
+                        target_ids |= set(owner_id_variants(oid))
                 starters = {str(p) for p in (roster.get("starters") or [])}
                 players = [
                     str(p) for p in (roster.get("players") or [])
@@ -1457,7 +1473,8 @@ def notify_injury_flip():
                     url = f"/{platform}/{season}/{league_id}/waivers?tab=startsit"
                     orows = [
                         r for r in rows
-                        if alias.get(str(r["owner_id"] or ""), str(r["owner_id"] or "")) == owner_id
+                        if str(r["owner_id"] or "") in target_ids
+                        or alias.get(str(r["owner_id"] or ""), str(r["owner_id"] or "")) in target_ids
                     ]
                     if not orows:
                         continue
