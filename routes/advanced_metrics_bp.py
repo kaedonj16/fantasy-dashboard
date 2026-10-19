@@ -349,13 +349,18 @@ def api_advanced_metrics_movers():
     """What-changed strip for the Advanced Metrics page, in one call.
 
     Returns {heating, cooling, outliers, note}:
-    - heating: top usage-trend risers, with xFP-trend leaders folded in
-    - cooling: bottom usage-trend fallers
-    - outliers: biggest |PPR over expected| (sign kept; + = overperforming)
-    Each item: {player_id, name, team, position, value, metric}.
+    - heating: top usage-trend (opportunity_trend) risers, value >= 0.15
+    - cooling: the true bottom of the same usage-trend leaderboard (fetched
+      with a large limit so the descending cap cannot slice off the real
+      fallers), value <= -0.15, most-negative first
+    - outliers: biggest |PPR over expected| among players whose expected
+      PPR/G is at least 5.0, so a tiny-sample outlier cannot top the list
+    Each item: {player_id, name, team, position, value, metric} with RAW
+    values (trend values are fractions; formatting is the client's job).
+    One metric per group: xFP trend is never folded into heating.
     Volume minimums mirror the leaderboard route (scaled by season progress),
-    so early-season lists are honest about small samples; empty lists mean the
-    season is too young for trends and the client hides the strip.
+    so early-season lists are honest about small samples; empty lists mean
+    the season is too young for trends and the client hides the strip.
     """
     from data_building.advanced_metrics import get_metric_leaderboard, LEADERBOARD_METRICS
     from utils.season_qualification import qualification_policy
@@ -400,30 +405,39 @@ def api_advanced_metrics_movers():
         return out
 
     try:
+        # Large limit: cooling reads the bottom of this same descending
+        # list, so the cap must not slice the real fallers off the end.
         usage = get_metric_leaderboard(
-            "opportunity_trend", season=season, limit=200,
+            "opportunity_trend", season=season, limit=2000,
             min_vol=_default_min_vol("opportunity_trend")) or []
-        xfp = get_metric_leaderboard(
-            "xfp_trend", season=season, limit=60,
-            min_vol=_default_min_vol("xfp_trend")) or []
         fpoe = get_metric_leaderboard(
             "ppr_over_expected_per_game", season=season, limit=200,
             min_vol=_default_min_vol("ppr_over_expected_per_game")) or []
+        xfpg = get_metric_leaderboard(
+            "expected_ppr_per_game", season=season, limit=500,
+            min_vol=_default_min_vol("expected_ppr_per_game")) or []
     except Exception:
         logger.exception("[api/advanced-metrics/movers] leaderboard fetch failed")
         return jsonify({"heating": [], "cooling": [], "outliers": [], "note": ""})
 
-    heating = _slim(usage, "opportunity_trend", 5)
-    seen = {m["player_id"] for m in heating}
-    for m in _slim(xfp, "xfp_trend", 5):
-        if m["player_id"] not in seen and len(heating) < 8:
-            heating.append(m)
-            seen.add(m["player_id"])
-    cooling = _slim(list(reversed(usage)), "opportunity_trend", 5)
-    outliers = sorted(
-        _slim(fpoe, "ppr_over_expected_per_game", 200),
-        key=lambda m: abs(m["value"]), reverse=True,
-    )[:6]
+    usage_rows = _slim(usage, "opportunity_trend", len(usage))
+    # Magnitude gates: a trend that rounds to nothing (Goff's -0.04) is not
+    # heating up or cooling off, whatever its sign.
+    heating = [m for m in usage_rows if m["value"] >= 0.15][:8]
+    cooling = [m for m in reversed(usage_rows) if m["value"] <= -0.15][:5]
+    xfp_by_pid = {}
+    for r in xfpg:
+        try:
+            xfp_by_pid[r.get("player_id")] = float(r.get("value"))
+        except (TypeError, ValueError):
+            continue
+    outliers = [
+        m for m in sorted(
+            _slim(fpoe, "ppr_over_expected_per_game", 200),
+            key=lambda m: abs(m["value"]), reverse=True,
+        )
+        if xfp_by_pid.get(m["player_id"], 0.0) >= 5.0
+    ][:6]
     note = ""
     if not heating and not cooling and not outliers:
         note = "Trends need a few games of volume. Check back soon."

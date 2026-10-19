@@ -768,6 +768,7 @@ def build_advanced_metrics_body(
       .am-movers-ghead.up { color:#2e9e5b; }
       .am-movers-ghead.down { color:#d64545; }
       .am-movers-ghead.out { color:var(--accent); }
+      .am-movers-gunit { font-weight:600; text-transform:none; letter-spacing:0; color:var(--text-muted); font-size:11px; }
       /* When only one group has data, show chips in a wrapped grid so it doesn't look sparse. */
       .am-movers-groups.single { display:block; }
       .am-movers-groups.single .am-movers-group { min-width:0; display:flex; flex-wrap:wrap; gap:8px; }
@@ -2478,6 +2479,18 @@ _AM_JS = r"""
     if (sel && sel.length === 1) return sel[0];
     return (cfg.seasons && cfg.seasons[0]) || '';
   }
+  // Movers values are metric-shaped: trend metrics are fractions
+  // (0.9 = +90% usage), FPOE is points per game. Format by metric so a
+  // fraction never prints as if it were points.
+  function _moverValText(m) {
+    const v = Number(m.value);
+    if (!isFinite(v)) return '—';
+    if (m.metric === 'opportunity_trend') {
+      const p = Math.round(v * 100);
+      return (p > 0 ? '+' : '') + p + '%';
+    }
+    return (v >= 0 ? '+' : '') + v.toFixed(1);
+  }
   function _moverChip(m, cls) {
     const b = document.createElement('button');
     b.type = 'button'; b.className = 'am-mover-chip'; b.title = 'Filter table to ' + m.name;
@@ -2485,8 +2498,7 @@ _AM_JS = r"""
     const meta = document.createElement('span'); meta.className = 'am-mover-meta';
     meta.textContent = [m.team, m.position].filter(Boolean).join(' · ');
     const val = document.createElement('span'); val.className = 'am-mover-val ' + cls;
-    const v = Number(m.value);
-    val.textContent = (isFinite(v) ? ((v >= 0 ? '+' : '') + v.toFixed(1)) : '—');
+    val.textContent = _moverValText(m);
     b.appendChild(nm); b.appendChild(meta); b.appendChild(val);
     b.addEventListener('click', function() {
       if (!searchEl) return;
@@ -2496,9 +2508,13 @@ _AM_JS = r"""
     });
     return b;
   }
-  function _moverGroup(titleHtml, cls, items, valCls) {
+  function _moverGroup(titleHtml, cls, items, valCls, unit) {
     const g = document.createElement('div'); g.className = 'am-movers-group';
     const h = document.createElement('div'); h.className = 'am-movers-ghead ' + cls; h.innerHTML = titleHtml;
+    if (unit) {
+      const u = document.createElement('span'); u.className = 'am-movers-gunit'; u.textContent = unit;
+      h.appendChild(u);
+    }
     g.appendChild(h);
     items.forEach(function(m) { g.appendChild(_moverChip(m, valCls)); });
     return g;
@@ -2566,17 +2582,20 @@ _AM_JS = r"""
       .then(function(d) {
         groups.innerHTML = '';
         if (!d) { host.style.display = 'none'; return; }
-        // Filter out zero-value items — they mean "not enough data", not "no change".
-        // This keeps the section from showing a wall of +0.0s early in the season.
-        function _nonzero(items) {
+        // Display-magnitude guard: drop anything whose DISPLAYED value
+        // rounds to zero. A stored -0.04 trend is not exactly 0, but it
+        // renders as "-0%" / "-0.0", which reads as a bug, not a mover.
+        function _displayable(items) {
           return (items || []).filter(function(m) {
             const v = Number(m.value);
-            return isFinite(v) && v !== 0;
+            if (!isFinite(v)) return false;
+            if (m.metric === 'opportunity_trend') return Math.round(v * 100) !== 0;
+            return Number(v.toFixed(1)) !== 0;
           });
         }
-        const heating = _nonzero(d.heating);
-        const cooling = _nonzero(d.cooling);
-        const outliers = _nonzero(d.outliers);
+        const heating = _displayable(d.heating);
+        const cooling = _displayable(d.cooling);
+        const outliers = _displayable(d.outliers);
         if (!heating.length && !cooling.length && !outliers.length) {
           host.style.display = 'none'; return;
         }
@@ -2586,9 +2605,9 @@ _AM_JS = r"""
         const _groupCount = (heating.length ? 1 : 0) + (cooling.length ? 1 : 0) + (outliers.length ? 1 : 0);
         // Single group gets a wrapped grid layout so it doesn't look sparse in the wide container.
         groups.classList.toggle('single', _groupCount === 1);
-        if (heating.length) groups.appendChild(_moverGroup(_UP_SVG + '<span>Heating up</span>', 'up', heating, 'up'));
-        if (cooling.length) groups.appendChild(_moverGroup(_DOWN_SVG + '<span>Cooling off</span>', 'down', cooling, 'down'));
-        if (outliers.length) groups.appendChild(_moverGroup(_BOLT_SVG + '<span>Efficiency outliers</span>', 'out', outliers, ''));
+        if (heating.length) groups.appendChild(_moverGroup(_UP_SVG + '<span>Heating up</span>', 'up', heating, 'up', 'Usage Trend, last 3 vs prior'));
+        if (cooling.length) groups.appendChild(_moverGroup(_DOWN_SVG + '<span>Cooling off</span>', 'down', cooling, 'down', 'Usage Trend, last 3 vs prior'));
+        if (outliers.length) groups.appendChild(_moverGroup(_BOLT_SVG + '<span>Efficiency outliers</span>', 'out', outliers, '', 'PPR pts/g vs expected · min 5 xFP/g'));
         const sub = document.getElementById('amMoversSub');
         if (sub) sub.textContent = d.note || '';
         // Slim banner summary shown while collapsed.
