@@ -727,3 +727,98 @@ def test_build_teams_overview_shows_yahoo_bench_and_ir():
     assert "Starters" in card and "Patrick Mahomes" in card
     assert "Bench" in card and "Travis Kelce" in card
     assert "IR" in card and "Isiah Pacheco" in card
+
+
+def _viewer_first_team(team_id, owner_guid, *, owned=False, extra_guids=()):
+    """Yahoo's viewer-personalized shape: the API caller's own manager
+    entry (is_current_login=1) leads EVERY team's managers list."""
+    managers = [{"manager": {"manager_id": "1", "guid": "VIEWER-GUID",
+                             "nickname": "Viewer", "is_current_login": "1"}}]
+    if owned:
+        managers += [{"manager": {"guid": g, "nickname": f"Co {g}"}}
+                     for g in extra_guids]
+    else:
+        managers.append({"manager": {"manager_id": str(team_id),
+                                     "guid": owner_guid,
+                                     "nickname": f"Owner {team_id}"}})
+        managers += [{"manager": {"guid": g, "nickname": f"Co {g}"}}
+                     for g in extra_guids]
+    return [[
+        {"team_key": f"449.l.99.t.{team_id}"},
+        {"team_id": str(team_id)},
+        {"name": f"Team {team_id}"},
+        {"is_owned_by_current_login": 1 if owned else 0},
+        {"managers": managers},
+    ]]
+
+
+def test_get_rosters_distinct_owners_when_viewer_entry_leads_managers(monkeypatch):
+    """Regression: league 1307110 printed owner_id = the viewer's guid for
+    all 10 teams, so every starter's TD in the league pushed to her. The
+    viewer's entry must only own the team she actually owns."""
+    teams = [
+        _viewer_first_team(1, "VIEWER-GUID", owned=True, extra_guids=("CO-GUID",)),
+        _viewer_first_team(2, "GUID-2"),
+        _viewer_first_team(3, "GUID-3", extra_guids=("CO-GUID",)),
+    ]
+    payload = _teams_payload(teams)
+    monkeypatch.setattr(yahoo_api, "_yahoo_get", lambda *a, **k: payload)
+    monkeypatch.setattr(yahoo_api, "_league_key_for_season", lambda *a, **k: "449.l.99")
+    rosters = yahoo_api.get_rosters(2026, "99", "tok")
+    assert [r["owner_id"] for r in rosters] == ["VIEWER-GUID", "GUID-2", "GUID-3"]
+    assert rosters[0]["co_owners"] == ["CO-GUID"]
+    assert rosters[1]["co_owners"] is None
+    assert rosters[2]["co_owners"] == ["CO-GUID"]
+
+
+def test_get_users_distinct_owners_when_viewer_entry_leads_managers(monkeypatch):
+    teams = [
+        _viewer_first_team(1, "VIEWER-GUID", owned=True),
+        _viewer_first_team(2, "GUID-2"),
+        _viewer_first_team(3, "GUID-3"),
+    ]
+    payload = _teams_payload(teams)
+    monkeypatch.setattr(yahoo_api, "_yahoo_get", lambda *a, **k: payload)
+    monkeypatch.setattr(yahoo_api, "_league_key_for_season", lambda *a, **k: "449.l.99")
+    users = yahoo_api.get_users(2026, "99", "tok")
+    assert [u["user_id"] for u in users] == ["VIEWER-GUID", "GUID-2", "GUID-3"]
+
+
+def test_multi_manager_team_resolves_to_its_own_manager():
+    """Co-managed team without viewer personalization: first entry owns,
+    the rest are co-owners (pre-existing contract, must not regress)."""
+    team = [[
+        {"team_key": "449.l.99.t.2"},
+        {"team_id": "2"},
+        {"name": "CoManaged"},
+        {"managers": [
+            {"manager": {"guid": "OWNER-2", "nickname": "Owner Two"}},
+            {"manager": {"guid": "CO-2", "nickname": "Co Two"}},
+        ]},
+    ]]
+    assert yahoo_api._yahoo_owner_id(team, "2") == "OWNER-2"
+    assert yahoo_api._yahoo_primary_manager(team).get("nickname") == "Owner Two"
+    assert yahoo_api._yahoo_co_owner_ids(team) == ["CO-2"]
+
+
+def test_owner_id_empty_when_managers_undeterminable():
+    """No managers node, or only the caller's flagged entry on a team she
+    does not own: owner is "" -- never the team id, never the caller's."""
+    no_managers = [[
+        {"team_key": "449.l.99.t.5"},
+        {"team_id": "5"},
+        {"name": "NoManagers"},
+    ]]
+    assert yahoo_api._yahoo_owner_id(no_managers, "5") == ""
+
+    only_viewer = [[
+        {"team_key": "449.l.99.t.6"},
+        {"team_id": "6"},
+        {"name": "OnlyViewer"},
+        {"is_owned_by_current_login": 0},
+        {"managers": [
+            {"manager": {"guid": "VIEWER-GUID", "is_current_login": "1"}},
+        ]},
+    ]]
+    assert yahoo_api._yahoo_owner_id(only_viewer, "6") == ""
+    assert yahoo_api._yahoo_co_owner_ids(only_viewer) == []

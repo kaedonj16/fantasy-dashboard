@@ -1378,33 +1378,94 @@ def _yahoo_manager_entries(team_list: List) -> List[Dict[str, Any]]:
     return out
 
 
-def _yahoo_primary_manager(team_list: List) -> Dict[str, Any]:
+def _yahoo_flag_truthy(value: Any) -> bool:
+    """Yahoo boolean-ish fields arrive as 1/0, "1"/"0", or real bools."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value == 1
+    return str(value or "").strip().lower() in ("1", "true", "yes")
+
+
+def _yahoo_entry_guid(entry: Dict[str, Any]) -> str:
+    return str(entry.get("guid") or entry.get("manager_id") or "")
+
+
+def _yahoo_is_owned_by_login(team_list: List) -> bool:
+    """True when this team node is the API caller's own team."""
+    return _yahoo_flag_truthy(_team_attr(team_list, "is_owned_by_current_login"))
+
+
+def _yahoo_owner_entry(team_list: List) -> Dict[str, Any]:
+    """The manager entry that OWNS this team -- NOT simply ``entries[0]``.
+
+    Yahoo's league-teams payload is viewer-personalized: the API caller's
+    own manager entry (flagged ``is_current_login=1``) can lead EVERY
+    team's managers list. Taking the first entry unconditionally hoisted
+    the caller's guid onto all 10 rosters of Kaedon's Yahoo league
+    (verified live 2026-10-18: every roster's owner_id printed as hers),
+    so any starter's TD in that league matched her push subscription.
+
+    Selection, using Yahoo's own flags:
+    - on the caller's own team (``is_owned_by_current_login``), the owner
+      is the entry flagged ``is_current_login=1`` (fallback: first entry);
+    - on any other team, the owner is the first entry NOT flagged
+      ``is_current_login=1`` -- a flagged entry there is the caller's,
+      surfaced by the personalized payload, and must never become another
+      team's owner. If every entry is the caller's, the owner cannot be
+      determined from this node and {} is returned;
+    - payloads carrying no flags at all keep the historical first-entry
+      pick (single-manager and ordinary co-managed shapes).
+    """
     entries = _yahoo_manager_entries(team_list)
-    return entries[0] if entries else {}
+    if not entries:
+        return {}
+    flagged = [e for e in entries if _yahoo_flag_truthy(e.get("is_current_login"))]
+    if _yahoo_is_owned_by_login(team_list):
+        return flagged[0] if flagged else entries[0]
+    if flagged:
+        flagged_objs = {id(e) for e in flagged}
+        for entry in entries:
+            if id(entry) not in flagged_objs:
+                return entry
+        return {}
+    return entries[0]
+
+
+def _yahoo_primary_manager(team_list: List) -> Dict[str, Any]:
+    return _yahoo_owner_entry(team_list)
 
 
 def _yahoo_owner_id(team_list: List, team_id: Any) -> str:
-    mgr = _yahoo_primary_manager(team_list)
-    guid = mgr.get("guid") or mgr.get("manager_id")
-    if guid:
-        return str(guid)
-    return str(team_id)
+    """This team's owner's guid, or "" when it cannot be determined.
+
+    Never falls back to the team id or to the API caller's guid: an empty
+    owner_id makes per-owner push matching a no-send, while a wrong guid
+    mis-targets alerts at a real person.
+    """
+    return _yahoo_entry_guid(_yahoo_owner_entry(team_list))
 
 
 def _yahoo_co_owner_ids(team_list: List) -> List[str]:
-    """Manager guids beyond the primary manager (co-managers), listed order.
+    """Manager guids beyond the team owner (genuine co-managers).
 
-    The roster owner_id is only the FIRST manager's guid, so without this a
-    subscriber who co-manages a team (listed second) could never match a
-    per-owner notification for their own roster.
+    The roster owner_id is only the owner's guid, so without this a
+    subscriber who co-manages a team could never match a per-owner
+    notification for their own roster. The API caller's own entry is
+    excluded on teams the caller does not own: Yahoo's personalized
+    payload can list it on every team, and counting it as a co-owner
+    would target the caller with alerts for rosters they do not manage.
     """
-    primary = _yahoo_primary_manager(team_list)
-    primary_guid = str(primary.get("guid") or primary.get("manager_id") or "")
+    owner_guid = _yahoo_entry_guid(_yahoo_owner_entry(team_list))
+    owned = _yahoo_is_owned_by_login(team_list)
     out: List[str] = []
     for entry in _yahoo_manager_entries(team_list):
-        guid = str(entry.get("guid") or entry.get("manager_id") or "")
-        if guid and guid != primary_guid and guid not in out:
-            out.append(guid)
+        guid = _yahoo_entry_guid(entry)
+        if not guid or guid == owner_guid or guid in out:
+            continue
+        if not owned and _yahoo_flag_truthy(entry.get("is_current_login")):
+            continue
+        out.append(guid)
     return out
 
 
