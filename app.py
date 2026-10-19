@@ -22545,6 +22545,15 @@ def _touch_value_cache_bust():
 # ~25 keeps roughly the top ~300 (rosterable) DP players; tune if needed.
 _DP_MIN_VALUE = 25.0
 
+# FantasyCalc lists ~457 players, but its tail is priced at essentially
+# nothing too (rank ~350 is ~1% of the top value, ~95 raw). Bare FC
+# membership shielded phantom board values from the presence filter below
+# (Phil Mafah: FC value 95, RB102, DP value 3 — the board served 330 and he
+# was never zeroed because "FC tracks him"). Mirror the DP floor on the FC
+# side: ~750 raw keeps roughly the top ~300 FC players, the same rosterable
+# cut as _DP_MIN_VALUE; a player under both floors has no meaningful market.
+_FC_MIN_VALUE = 750.0
+
 
 def _external_market_sets():
     """(FantasyCalc sleeper-ids, DynastyProcess normalized names) -- the players
@@ -22553,8 +22562,9 @@ def _external_market_sets():
     than surface the ML index's guess for it (that guess is the "leak" the
     presence filter removes, and it's also what rookie_value re-imports because
     the pipeline seeds rookie_value from the pre-filter model board -- e.g. an
-    untracked deep prospect showing a startable ~548). DP membership alone isn't
-    enough; the player must clear _DP_MIN_VALUE (see above)."""
+    untracked deep prospect showing a startable ~548). Bare membership in
+    either source isn't enough; the player must clear _DP_MIN_VALUE on the DP
+    side or _FC_MIN_VALUE on the FC side (see above)."""
     fc: set = set()
     dp: set = set()
     try:
@@ -22564,7 +22574,13 @@ def _external_market_sets():
         from utils.utils import normalize_name as _nn
         for _r in (load_fantasycalc_api_values() or []):
             _sid = str(_r.get("sleeper_id") or "").strip()
-            if _sid:
+            if not _sid:
+                continue
+            try:
+                _fv = float(_r.get("value") or 0)
+            except (TypeError, ValueError):
+                _fv = 0.0
+            if _fv >= _FC_MIN_VALUE:
                 fc.add(_sid)
         for _r in (load_dynastyprocess_values() or []):
             _nm = str(_r.get("player") or "").strip()

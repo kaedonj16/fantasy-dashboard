@@ -41,16 +41,46 @@ def overmarket_capped(
     0–999.9 scale (0 or falsy = the source doesn't cover the player, which counts
     as a low signal). The consensus is ``max(fc_val, dp_val)`` so a player either
     source rates decently is left alone — only when both are far below the model
-    is it pulled down (to ``trigger`` × the consensus). Returns the value
-    unchanged when no external covers the player or the divergence isn't extreme.
+    is it pulled down (to ``trigger`` × the consensus). When NEITHER source
+    covers the player, a value at/above ``min_gap`` is a phantom and is zeroed;
+    smaller uncovered values are left alone (low-stakes data gap).
     """
     if value is None or value <= 0:
         return value
     fc = fc_val or 0.0
     dp = dp_val or 0.0
     if fc <= 0 and dp <= 0:
-        return value  # no external coverage at all → don't touch
+        # No external coverage at all: there is no market to be "over", so a
+        # small value is a harmless data gap — but a value at/above the
+        # min-gap stake has no market behind it whatsoever and cannot stand.
+        # That was the Phil Mafah case: neither source priced him (FC tail
+        # ~9 normalized, DP 3 raw) while the board served 330, and this
+        # exemption let the phantom through every run.
+        return 0.0 if value >= min_gap else value
     market_ref = max(fc, dp)
     if value >= trigger * max(market_ref, 1.0) and (value - market_ref) >= min_gap:
         return max(market_ref * trigger, market_ref)
     return value
+
+
+def blend_wls_value(market_value: float, wls_value, backing,
+                    *, k: float = 6.0) -> float:
+    """Confidence-weighted blend of a market value toward a WLS trade value.
+
+    WLS may only ADJUST a price a market actually set. When the market blend
+    is 0 (neither external source covers the player) the WLS value is NOT
+    adopted outright: the old outright adoption made a stale/phantom WLS row
+    the player's entire value for exactly the players no market could check,
+    and the WLS prior is itself derived from the model board, so the two
+    sides re-anchored each other with no external signal in the loop (the
+    Phil Mafah case: vendor blend ~6, served 330). ``backing`` is the
+    decayed trade weight; at ``backing == k`` the blend is 50/50.
+    """
+    market = float(market_value or 0.0)
+    if wls_value is None or float(wls_value) <= 0:
+        return market
+    if market <= 0:
+        return market
+    b = float(backing or 0.0)
+    conf = b / (b + k) if b > 0 else 0.0
+    return conf * float(wls_value) + (1.0 - conf) * market
