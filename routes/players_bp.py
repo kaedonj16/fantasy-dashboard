@@ -751,12 +751,28 @@ def api_player_availability():
         leagues = []
 
     def _ctx_getter(platform: str, league_id: str, season: int):
-        # allow_build=False: serve the cached context or nothing, and let
-        # the cache layer warm the league in the background for next time.
-        # A synchronous build here could stall the modal for 7-28s.
+        # Reads only - never a synchronous provider build (7-28s would stall
+        # the modal). Order: this worker's cache, then the shared Redis copy
+        # every successful build persists. The local cache holds only a few
+        # league contexts at once (DASHBOARD_CACHE_MAX defaults to 4), so a
+        # full league set is never resident locally; Redis is what makes
+        # all of the viewer's leagues answerable. A miss in both reports
+        # unknown, and the cache layer warms the league in the background
+        # for the client's next poll.
         from app import get_league_ctx_from_cache
 
-        return get_league_ctx_from_cache(platform, league_id, season, allow_build=False)
+        ctx = get_league_ctx_from_cache(platform, league_id, season, allow_build=False)
+        if ctx and ctx.get("rosters"):
+            return ctx
+        try:
+            from app import _league_ctx_redis_load
+
+            redis_ctx = _league_ctx_redis_load(platform, league_id, season)
+            if redis_ctx and redis_ctx.get("rosters"):
+                return redis_ctx
+        except Exception:
+            logger.debug("[player-availability] redis ctx load failed", exc_info=True)
+        return ctx
 
     try:
         from concurrent.futures import ThreadPoolExecutor
@@ -785,6 +801,31 @@ def api_player_availability():
             with ThreadPoolExecutor(max_workers=4) as pool:
                 for key, ctx in pool.map(_fetch, league_list):
                     ctx_by_key[key] = ctx
+
+        # The pool threads run without a request/session context, so the
+        # viewer baked into a fetched ctx is routinely the empty one a
+        # background warm stored. "Mine" must come from THIS request's
+        # session, so re-resolve the viewer per league here, on the request
+        # thread, and hand the service shallow copies - the cached ctxs
+        # themselves stay untouched.
+        if ctx_by_key:
+            try:
+                from app import get_viewer_session_for_league
+
+                for key, ctx in list(ctx_by_key.items()):
+                    if not ctx or not ctx.get("rosters"):
+                        continue
+                    try:
+                        viewer = get_viewer_session_for_league(
+                            ctx.get("users") or [], ctx.get("rosters") or [],
+                            key[0], key[1], key[2],
+                        )
+                    except Exception:
+                        viewer = None
+                    if viewer:
+                        ctx_by_key[key] = {**ctx, "viewer": viewer}
+            except Exception:
+                logger.debug("[player-availability] viewer resolve failed", exc_info=True)
 
         def _getter(platform: str, league_id: str, season: int):
             return ctx_by_key.get((platform, league_id, season))
