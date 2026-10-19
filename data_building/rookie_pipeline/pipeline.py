@@ -1299,7 +1299,7 @@ def upsert_rankings(scores: List[Dict], values: List[Dict], conn) -> int:
                      tier, tier_label, key_reasons, model_version,
                      recruiting_score, calculated_at,
                      archetype, archetype_receipt, archetype_confidence,
-                     talent_score, capital_delta)
+                     talent_score, capital_delta, in_season)
                 VALUES
                     (%(player_id)s, %(draft_class_year)s, %(overall_rank)s, %(position_rank)s,
                      %(production_score)s, %(efficiency_score)s, %(age_score)s,
@@ -1313,7 +1313,7 @@ def upsert_rankings(scores: List[Dict], values: List[Dict], conn) -> int:
                      %(tier)s, %(tier_label)s, %(key_reasons)s, %(model_version)s,
                      %(recruiting_score)s, NOW(),
                      %(archetype)s, %(archetype_receipt)s, %(archetype_confidence)s,
-                     %(talent_score)s, %(capital_delta)s)
+                     %(talent_score)s, %(capital_delta)s, %(in_season)s)
                 ON CONFLICT (player_id, draft_class_year) DO UPDATE SET
                     overall_rank                  = EXCLUDED.overall_rank,
                     position_rank                 = EXCLUDED.position_rank,
@@ -1347,6 +1347,7 @@ def upsert_rankings(scores: List[Dict], values: List[Dict], conn) -> int:
                     archetype_confidence          = EXCLUDED.archetype_confidence,
                     talent_score                  = EXCLUDED.talent_score,
                     capital_delta                 = EXCLUDED.capital_delta,
+                    in_season                     = EXCLUDED.in_season,
                     calculated_at                 = NOW()
                 """,
                 {
@@ -1384,6 +1385,7 @@ def upsert_rankings(scores: List[Dict], values: List[Dict], conn) -> int:
                     "archetype_confidence":        s.get("archetype_confidence"),
                     "talent_score":                 s.get("talent_score"),
                     "capital_delta":                s.get("capital_delta"),
+                    "in_season":                    bool(s.get("in_season")),
                 },
             )
             saved += 1
@@ -1858,7 +1860,7 @@ def _score_from_db(
       5. Build mock-draft consensus from existing rookie_mock_draft_entries
       6. Load prospects + eval metrics → score → translate → upsert rankings
     """
-    from .prospect_model import score_all_prospects
+    from .prospect_model import active_season_year_for_run, score_all_prospects
     from .value_translation import translate_all
 
     print("[pipeline] ====== DB-ONLY SCORING: checking existing prospects ======")
@@ -1900,10 +1902,14 @@ def _score_from_db(
 
     # Stage 6: score + translate + save rankings
     print("[pipeline] ====== STAGE 6: Calculate Rookie Values ======")
+    # v3.4: the active season year comes from the RUN CALENDAR, computed
+    # once per run (never derived from a player's class; see
+    # prospect_model.active_season_year_for_run).
     scores = score_all_prospects(
         existing_prospects,
         consensus_map,
         position_weights_override=position_weights_override,
+        active_season_year=active_season_year_for_run(),
     )
     print(f"[pipeline] Scored {len(scores)} prospects")
 
@@ -1956,7 +1962,7 @@ def run_rookie_pipeline_staged(
     )
     from .sagarin import get_team_rating as _sagarin_get_team_rating
     from .mock_draft_scraper import scrape_consensus_mock_draft, scrape_individual_mocks
-    from .prospect_model import score_all_prospects
+    from .prospect_model import active_season_year_for_run, score_all_prospects
     from .value_translation import translate_all
 
     if draft_year is None:
@@ -2372,10 +2378,12 @@ def run_rookie_pipeline_staged(
         print("[pipeline] WARNING: No eval metrics in DB. Run evaluation pipeline first to populate them.")
 
     # Score prospects
+    # v3.4: active season year from the run calendar, once per run.
     scores = score_all_prospects(
         complete_prospects,
         consensus_map,
         position_weights_override=position_weights_override,
+        active_season_year=active_season_year_for_run(),
     )
     print(f"[pipeline] Scored {len(scores)} prospects")
 
@@ -2487,6 +2495,7 @@ def get_rookie_rankings_from_db(draft_year: int, filter_undrafted: bool = False)
                             rr.archetype, rr.archetype_receipt,
                             rr.archetype_confidence,
                             rr.talent_score, rr.capital_delta,
+                            rr.in_season,
                             rpr.stars AS recruit_stars,
                             rpr.composite_rating AS recruit_composite_rating,
                             rpr.national_rank AS recruit_national_rank,
@@ -2568,6 +2577,7 @@ def _merge_inmemory_result(result: Dict[str, Any]) -> List[Dict[str, Any]]:
             "archetype_confidence":        s.get("archetype_confidence"),
             "talent_score":                s.get("talent_score"),
             "capital_delta":               s.get("capital_delta"),
+            "in_season":                   bool(s.get("in_season")),
             "calculated_at":               None,
             "projected_round":             dc.get("projected_round"),
             "projected_pick":              dc.get("projected_pick"),

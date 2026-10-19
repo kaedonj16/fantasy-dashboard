@@ -3,13 +3,24 @@ Prospect evaluation model - position-aware, multi-factor scoring.
 
 Each component score is 0-100.  Final prospect_score is a weighted sum.
 
-Model version: 3.3 (see MODEL_VERSION)
+Model version: 3.4 (see MODEL_VERSION)
   v1.x: baseline components below.
   v2.0: adds recruiting-pedigree component (247 Composite via CFBD),
         WEPA opponent-adjusted efficiency blend (QB/RB), and SP+/Team Talent
         inputs to the competition adjustment.  Per Kaedon's rule, grading
         changes are version-bumped, never silently tweaked: the version is
         persisted per row in rookie_rankings.model_version.
+  v3.4: two-mode grading. COMPLETE mode is v3.3. IN-SEASON mode (the run
+        supplies the active season year and the player's latest season is
+        that year at 1-11 stored games) grades on prior complete seasons
+        plus the partial season at per-game rates with paced counting
+        gates; untested athleticism is missing data (weight redistributed),
+        never the projected 67.0 floor; confidence is discounted by the
+        partial sample. Also: durability only counts seasons where the
+        player held a real role (usage thresholds), so backup seasons no
+        longer read as injury seasons in either mode; the WR/TE red-zone
+        proxy thresholds are recalibrated to the recorded TD-rate
+        distribution (they could never fire at the old 5.5-10.0 levels).
 
 Component weights (v2.0 - recruiting takes 5%, others rescaled proportionally):
     projected_draft_capital_score 27-28%  NFL draft position (position-weighted)
@@ -38,7 +49,31 @@ from typing import Any, Dict, List, Optional
 
 
 # Grading-model version. Bump on ANY change to scoring logic or weights.
-MODEL_VERSION = "3.3"
+MODEL_VERSION = "3.4"
+
+
+def active_season_year_for_run(today=None) -> Optional[int]:
+    """The college season in progress on the run date, else None.
+
+    The season runs from Aug 25 (the durability function's own season-
+    start convention) through mid-January (the national championship
+    window): Aug 25 to Dec 31 of year Y is season Y, and Jan 1 to Jan 20
+    of year Y is still season Y-1. Outside that window no season is in
+    progress and every profile grades in COMPLETE mode.
+
+    Callers pass the result to score_prospect / score_all_prospects as
+    the active season year. It must come from the RUN CALENDAR, never
+    from a player's draft class: deriving it per player would flip
+    historical final seasons of 11 or fewer games into in-season mode
+    and silently move the backtest (round 14 of the iteration log).
+    """
+    from datetime import date as _d
+    today = today or _d.today()
+    if today.month >= 8:
+        return today.year if today >= _d(today.year, 8, 25) else None
+    if today.month == 1 and today.day <= 20:
+        return today.year - 1
+    return None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -206,15 +241,23 @@ def _sagarin_dom_adj(rating: Optional[float], conference: Optional[str] = None) 
 # Component scorers
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _score_production_season(season: Dict, pos: str, skip_sagarin: bool = False) -> float:
+def _score_production_season(season: Dict, pos: str, skip_sagarin: bool = False,
+                             _partial: bool = False) -> float:
     """
     Compute the raw production score (pre-transfer-penalty) for a single season.
     Returns the weighted component score (0-100).
+
+    v3.4 (round 14): _partial marks the in-progress season in in-season
+    mode. Counting-stat gates inside the season score (red-zone yardage
+    gates, QB dual-threat TD gates) are paced by min(1, GP/12) so a partial
+    season is not held to full-season counting thresholds. All rate legs
+    are untouched.
     """
     # Guard against bad games-played values (0/1) that can explode per-game rates
     # and incorrectly saturate production to 100.
     gp_raw = _safe(season.get("games_played"), 12)
     gp = gp_raw if gp_raw >= 4 else 12
+    _pace = min(1.0, gp / 12.0) if _partial else 1.0
 
     if pos == "WR":
         rec_yds_pg    = _safe(season.get("receiving_yards")) / gp
@@ -246,11 +289,18 @@ def _score_production_season(season: Dict, pos: str, skip_sagarin: bool = False)
             prod = _clip(prod * 1.10)
         elif yac >= 5.5:
             prod = _clip(prod * 1.05)
-        # Red zone proxy: TDs per 100 receiving yards - rewards goal-line separators
-        if total_rec_yds >= 200:
+        # Red zone proxy: TDs per 100 receiving yards - rewards goal-line
+        # separators. v3.4 recalibration: the old thresholds (8.0 / 5.5)
+        # sat 3-6x above the best recorded mark, so the bonus could NEVER
+        # fire. Across the recorded fixture + panel seasons at 200+
+        # receiving yards, the rate runs 0.00-1.62 with a median near
+        # 0.93; the new tiers sit at the recorded distribution's top
+        # quarter (1.15) and elite edge (1.5: Pitts 2020 scored 1.56,
+        # Green 2025 1.62).
+        if total_rec_yds >= 200 * _pace:
             rz_rate = total_rec_tds / total_rec_yds * 100
-            if rz_rate >= 8.0:   prod = _clip(prod * 1.06)
-            elif rz_rate >= 5.5: prod = _clip(prod * 1.03)
+            if rz_rate >= 1.5:   prod = _clip(prod * 1.06)
+            elif rz_rate >= 1.15: prod = _clip(prod * 1.03)
         # v3.0: G5 production discount REMOVED. Competition quality is already
         # captured by calc_competition_score, so the additional production cut
         # (up to -25%) was double-jeopardy. One mechanism, not two.
@@ -301,7 +351,7 @@ def _score_production_season(season: Dict, pos: str, skip_sagarin: bool = False)
         # Realistic benchmarks for RBs: 1.0–2.5 range for elite scorers.
         total_yds = _safe(season.get("rush_yards")) + _safe(season.get("receiving_yards"))
         total_tds = _safe(season.get("rush_tds"))   + _safe(season.get("receiving_tds"))
-        if total_yds >= 300:
+        if total_yds >= 300 * _pace:
             rz_rate = total_tds / total_yds * 100
             if rz_rate >= 2.0:
                 mult += 0.03
@@ -343,9 +393,12 @@ def _score_production_season(season: Dict, pos: str, skip_sagarin: bool = False)
         prod = _clip(max(pass_comp, pass_comp * 0.85 + rush_comp * 0.15))
 
         # Extra multiplier for elite rushing + TDs (dual-threat upside)
-        if rush_yds_pg >= 70 and rush_tds_season >= 8:
+        # v3.4: in-season, the season TD total is paced to a 12-game
+        # equivalent before it is compared to the counting thresholds.
+        _rush_tds_cmp = rush_tds_season / _pace if _pace > 0 else rush_tds_season
+        if rush_yds_pg >= 70 and _rush_tds_cmp >= 8:
             prod = _clip(prod * 1.06)
-        elif rush_yds_pg >= 50 and rush_tds_season >= 5:
+        elif rush_yds_pg >= 50 and _rush_tds_cmp >= 5:
             prod = _clip(prod * 1.03)
         return prod
 
@@ -388,12 +441,15 @@ def _score_production_season(season: Dict, pos: str, skip_sagarin: bool = False)
             prod = _clip(prod * 1.08)
         elif te_yac >= 3.5:
             prod = _clip(prod * 1.04)
-        # Red zone proxy: TE goal-line usage is extremely valuable in NFL
-        if total_rec_yds >= 200:
+        # Red zone proxy: TE goal-line usage is extremely valuable in
+        # NFL. v3.4 recalibration: same defect and same recorded
+        # distribution as the WR proxy (old thresholds 10.0 / 7.0 could
+        # never fire; recorded rates top out at 1.62).
+        if total_rec_yds >= 200 * _pace:
             rz_rate = total_rec_tds / total_rec_yds * 100
-            if rz_rate >= 10.0:
+            if rz_rate >= 1.5:
                 prod = _clip(prod * 1.05)
-            elif rz_rate >= 7.0:
+            elif rz_rate >= 1.15:
                 prod = _clip(prod * 1.02)
         return prod
 
@@ -439,6 +495,7 @@ def calc_production_score(
     position: str,
     eval_metrics: Optional[Dict] = None,
     skip_sagarin: bool = False,
+    _inseason_year: Optional[int] = None,
 ) -> float:
     """
     Per-game production vs position-specific elite thresholds.
@@ -498,17 +555,37 @@ def calc_production_score(
 
     # With only one season there is nothing to blend - just score it directly.
     if len(seasons) == 1:
-        return _clip(_score_production_season(ls, pos, skip_sagarin) * transfer_penalty)
+        return _clip(_score_production_season(
+            ls, pos, skip_sagarin,
+            _partial=(_inseason_year is not None
+                      and ls.get("season") == _inseason_year)) * transfer_penalty)
 
     # Score latest season and best individual season; blend to reward peak while
     # still weighting recent output (NFL analysts evaluate both)
-    latest_score = _score_production_season(ls, pos, skip_sagarin)
+    latest_score = _score_production_season(
+        ls, pos, skip_sagarin,
+        _partial=(_inseason_year is not None
+                  and ls.get("season") == _inseason_year))
 
     # Find best season by primary volume metric per position
     _PEAK_KEY = {"WR": "receiving_yards", "RB": "rush_yards", "QB": "pass_yards", "TE": "receiving_yards"}
     peak_key = _PEAK_KEY[pos]
-    peak_season = max(seasons, key=lambda s: _safe(s.get(peak_key)), default=ls)
-    best_score = _score_production_season(peak_season, pos, skip_sagarin)
+    if _inseason_year is not None:
+        # v3.4: in-season peak selection uses the 12-game-equivalent
+        # rate (totals / max(GP, 12)) instead of raw totals, so a partial
+        # season's calendar-bound totals cannot lose the peak slot to a
+        # longer complete season on volume alone, and vice versa.
+        def _peak_key_fn(s):
+            _g = _safe(s.get("games_played"), 12)
+            _g = _g if _g >= 4 else 12
+            return _safe(s.get(peak_key)) / max(_g, 12)
+        peak_season = max(seasons, key=_peak_key_fn, default=ls)
+    else:
+        peak_season = max(seasons, key=lambda s: _safe(s.get(peak_key)), default=ls)
+    best_score = _score_production_season(
+        peak_season, pos, skip_sagarin,
+        _partial=(_inseason_year is not None
+                  and peak_season.get("season") == _inseason_year))
 
     # 85% weight on whichever is higher (recent or peak), 15% on the other
     prod = max(latest_score, best_score) * 0.85 + min(latest_score, best_score) * 0.15
@@ -595,6 +672,7 @@ def calc_efficiency_score(
     position: str,
     eval_metrics: Optional[Dict] = None,
     wepa: Optional[Dict] = None,
+    _inseason_year: Optional[int] = None,
 ) -> float:
     """
     Per-attempt / per-target efficiency.  Rewards quality over quantity.
@@ -705,7 +783,16 @@ def calc_efficiency_score(
         # v3.2 Q4: one bad partial season should not overwrite a full elite
         # season. Blend 70% latest with 30% best (by pass yards).
         if len(seasons) >= 2:
-            _best_qb = max(seasons, key=lambda s: _safe(s.get("pass_yards")))
+            if _inseason_year is not None:
+                # v3.4: same 12-game-equivalent rate key as production,
+                # so the peak slot is not decided by raw totals mid-season.
+                def _qb_peak_fn(s):
+                    _g = _safe(s.get("games_played"), 12)
+                    _g = _g if _g >= 4 else 12
+                    return _safe(s.get("pass_yards")) / max(_g, 12)
+                _best_qb = max(seasons, key=_qb_peak_fn)
+            else:
+                _best_qb = max(seasons, key=lambda s: _safe(s.get("pass_yards")))
             if _best_qb is not ls:
                 _b_eff = (
                     _scale(_safe(_best_qb.get("yds_per_attempt"), 7.0), 6.5, 9.5) * 0.45 +
@@ -843,7 +930,8 @@ def calc_age_score(age: Optional[float], draft_year: int, position: str) -> floa
     return _clip(score, 20, 100)
 
 
-def calc_breakout_score(seasons: List[Dict], age: Optional[float], position: str) -> float:
+def calc_breakout_score(seasons: List[Dict], age: Optional[float], position: str,
+                        _inseason_year: Optional[int] = None) -> float:
     """
     Rewards early-career dominance and upward trajectory.
 
@@ -922,7 +1010,14 @@ def calc_breakout_score(seasons: List[Dict], age: Optional[float], position: str
             # reads as decline when only the workload grew).
             def _tot(_s):
                 return _safe(_s.get("receiving_yards", 0)) + _safe(_s.get("rush_yards", 0)) + _safe(_s.get("pass_yards", 0)) * 0.5
-            if _pg(_b) >= 0.9 * _pg(_a) and _tot(_a) > 0:
+            # v3.4: the totals-growth switch must not fire when the peak
+            # season is the in-progress one; a partial season's totals are
+            # calendar-bound, so trajectory stays on per-game rates.
+            _peak_partial = (
+                _inseason_year is not None
+                and _b.get("season") == _inseason_year
+            )
+            if _pg(_b) >= 0.9 * _pg(_a) and _tot(_a) > 0 and not _peak_partial:
                 _growth = (_tot(_b) - _tot(_a)) / _tot(_a)
             else:
                 _growth = (_pg(_b) - _pg(_a)) / _pg(_a)
@@ -995,18 +1090,30 @@ def calc_breakout_score(seasons: List[Dict], age: Optional[float], position: str
             s_age = age - (current_year - s_year)
             if s_age > 20:
                 continue
+            # v3.4: for the in-progress season, the yardage gates are
+            # counting thresholds, so the season's yards are paced to a
+            # 12-game equivalent before they are compared (and before the
+            # floor value is computed from them).
+            _gp_r = _safe(s.get("games_played"), 0)
+            _paced = (
+                _inseason_year is not None and s_year == _inseason_year
+                and 0 < _gp_r < 12
+            )
+            def _y_of(key, _s=s):
+                _v = _safe(_s.get(key, 0))
+                return _v * (12.0 / _gp_r) if _paced else _v
             # v3.2 V6a: ramp the floor (70 at the low end, 85 at the old cliff)
             _floor = None
             if pos in ("WR", "TE"):
-                _y = _safe(s.get("receiving_yards", 0))
+                _y = _y_of("receiving_yards")
                 if _y >= 1000:
                     _floor = 70.0 + min(1.0, (_y - 1000.0) / 200.0) * 15.0
             elif pos == "RB":
-                _y = _safe(s.get("rush_yards", 0))
+                _y = _y_of("rush_yards")
                 if _y >= 1000:
                     _floor = 70.0 + min(1.0, (_y - 1000.0) / 200.0) * 15.0
             elif pos == "QB":
-                _y = _safe(s.get("pass_yards", 0))
+                _y = _y_of("pass_yards")
                 if _y >= 3000:
                     _floor = 70.0 + min(1.0, (_y - 3000.0) / 500.0) * 15.0
             if _floor is not None:
@@ -1432,7 +1539,50 @@ def calc_environment_adjustment(seasons: List[Dict], position: str) -> float:
     return _clip(base)
 
 
-def calc_durability_score(seasons: List[Dict]) -> Optional[float]:
+def _season_has_role(season: Dict, position: Optional[str]) -> bool:
+    """
+    v3.4: did the player hold a real role in this season?
+
+    Stored games_played counts APPEARANCES, so a backup's 2-game season
+    and an injured starter's 2-game season look identical on GP alone.
+    Usage separates them: a season only counts as missed time when the
+    player was actually in the rotation. Thresholds sit in the empty
+    bands of the recorded distributions (panel + fixtures):
+    - QB pass attempts >= 75: recorded backup seasons top out at 41
+      (Mestemaker 2024; Sayin 2024 is 12, Moore 2024 is 8); the lightest
+      recorded starter season is 99 (Moore's 4-game 2026). ~3 games of
+      starting volume.
+    - RB touches (carries + receptions) >= 60: recorded mop-up/rotation
+      partials top out at 43 (Lacy 2026); recorded starter partials run
+      110+ (Baugh 2026: 117). A starter lost at midseason runs ~90-120.
+    - WR targets >= 20 or receptions >= 12; TE targets >= 15 or
+      receptions >= 10: recorded non-role seasons top out at 9
+      receptions (Evans 2024, Reynolds 2024); the lightest recorded role
+      seasons are 13 (Green 2024). Targets are OR-ed with receptions
+      because the targets feed is a separate step that can lag.
+    With no position given, any position's test passing is enough (the
+    usage fields are position-specific in practice).
+    """
+    att = _safe(season.get("pass_attempts"))
+    touches = _safe(season.get("rush_attempts")) + _safe(season.get("receptions"))
+    tgt = season.get("targets")
+    tgt = _safe(tgt) if tgt is not None else 0.0
+    rec = _safe(season.get("receptions"))
+    pos = (position or "").upper()
+    if pos == "QB":
+        return att >= 75
+    if pos == "RB":
+        return touches >= 60
+    if pos == "WR":
+        return tgt >= 20 or rec >= 12
+    if pos == "TE":
+        return tgt >= 15 or rec >= 10
+    return att >= 75 or touches >= 60 or tgt >= 20 or rec >= 12
+
+
+def calc_durability_score(seasons: List[Dict],
+                          position: Optional[str] = None,
+                          _inseason_year: Optional[int] = None) -> Optional[float]:
     """
     Durability: how often the player is available when the team plays.
 
@@ -1449,6 +1599,28 @@ def calc_durability_score(seasons: List[Dict]) -> Optional[float]:
       risk. Scaled: 8 games = small ding, 4 games = major red flag.
     - In-progress seasons never trigger penalties, only contribute positively
       to the average if the player has been available.
+
+    v3.4 role rule (both modes): a season under the 12-game full-season
+    bar counts only when the player held a real role in it (see
+    _season_has_role). Backup and mop-up seasons are excluded entirely,
+    neither as availability nor as missed time; before this, Sayin's
+    4-game backup season priced 44.07 and Mestemaker's 2-game backup
+    season priced 6.01. A 12+ game season is availability-proven by
+    itself and always counts, whatever the usage (a blocking TE who
+    dressed 16 times was available 16 times). If no counted season has
+    GP data, durability is missing and its weight redistributes. (A
+    season-ending injury in a player's first 1-2 starts is
+    indistinguishable from backup work in stored data and is forgiven
+    with it; that is the accepted cost of the rule.)
+
+    v3.4 in-season variant: the in-progress season is NOT blanket-
+    excluded. It counts when it is a role season, with absences measured
+    against a bye-adjusted calendar floor (current week minus 2: FBS
+    teams carry at most 2 byes, so a shortfall beyond that is certainly
+    real missed time, while a starter who has played every team game is
+    never charged for byes). Non-role partial seasons stay excluded,
+    like any non-role season. The partial season never triggers the
+    completed-season missed-games penalty.
 
     Returns None if no GP data (weight redistributed, like athleticism).
     """
@@ -1471,16 +1643,26 @@ def calc_durability_score(seasons: List[Dict]) -> Optional[float]:
         if gp is None:
             continue
         gp = _safe(gp)
+        if gp < FULL_SEASON_GAMES and not _season_has_role(s, position):
+            continue
         season_year = s.get("season", 0)
+        is_partial = (_inseason_year is not None
+                      and season_year == _inseason_year)
 
         if season_year == current_year:
-            # In-progress: available = weeks played so far
-            pct = min(gp / current_week, 1.0) if current_week > 0 else 1.0
+            # In-progress: available = weeks played so far. In-season
+            # mode measures absences against the bye-adjusted floor so
+            # a healthy starter is not charged for his team's byes.
+            if is_partial:
+                denom = max(current_week - 2, 1)
+            else:
+                denom = current_week
+            pct = min(gp / denom, 1.0) if denom > 0 else 1.0
             scored.append((pct, False, gp))
         elif season_year < current_year:
             # Completed: 12+ games = 100%, scale below that
             pct = min(gp / FULL_SEASON_GAMES, 1.0)
-            scored.append((pct, True, gp))
+            scored.append((pct, not is_partial, gp))
 
     if not scored:
         return None
@@ -2133,6 +2315,7 @@ def score_prospect(
     skip_sagarin: bool = False,
     position_weights_override: Optional[Dict[str, Dict[str, float]]] = None,
     _exclude_capital: bool = False,
+    _active_season_year: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Run all component scorers and produce a final prospect_score.
@@ -2155,8 +2338,28 @@ def score_prospect(
     # the evaluation pipeline has run first.  Shape: {metric_name: metric_payload}.
     eval_metrics: Optional[Dict] = prospect.get("_eval_metrics") or None
 
+    # v3.4: two-mode grading (round 14 of the iteration log). A player is
+    # IN-SEASON iff the run supplies an active season year, his latest
+    # season IS that year, and its stored games played show a partial
+    # season (1 to 11 games; 12 is the model's own FULL_SEASON_GAMES
+    # constant, and a missing GP is not evidence of partiality). Otherwise
+    # COMPLETE mode: every in-season branch below is gated on _inseason,
+    # and with no active year supplied the grading is the complete-mode
+    # path end to end (this is what keeps the backtest on final profiles
+    # reproducible).
+    _ls_mode = _latest_season(seasons) or {}
+    _gp_mode = _ls_mode.get("games_played")
+    _inseason = (
+        _active_season_year is not None
+        and _ls_mode.get("season") == _active_season_year
+        and _gp_mode is not None
+        and 1 <= _safe(_gp_mode) <= 11
+    )
+    _inseason_year = int(_active_season_year) if _inseason else None
+
     production_score    = calc_production_score(seasons, pos, eval_metrics=eval_metrics,
-                                                skip_sagarin=skip_sagarin)
+                                                skip_sagarin=skip_sagarin,
+                                                _inseason_year=_inseason_year)
     
     # Apply crowded-room bonus: prefer data-driven depth rank when available,
     # fall back to manually curated loaded_roster list when depth data is absent.
@@ -2186,6 +2389,7 @@ def score_prospect(
     efficiency_score    = calc_efficiency_score(
         seasons, pos, eval_metrics=eval_metrics,
         wepa=prospect.get("wepa"),
+        _inseason_year=_inseason_year,
     )
     # Efficiency blends per-touch quality (ypr, ypc - unaffected by depth) with
     # market_share_yards (~35% of WR/TE base, ~15% of RB base - suppressed by depth).
@@ -2196,7 +2400,8 @@ def score_prospect(
         efficiency_score = _clip(efficiency_score * eff_adj)
 
     age_score           = calc_age_score(age, dy, pos)
-    breakout_score      = calc_breakout_score(seasons, age, pos)
+    breakout_score      = calc_breakout_score(seasons, age, pos,
+                                              _inseason_year=_inseason_year)
     # Dominator rating (primary breakout signal) is directly suppressed in loaded rooms.
     # Apply ~35% of the bonus so backed-up players who still show early-breakout patterns
     # get appropriate credit.
@@ -2225,7 +2430,12 @@ def score_prospect(
     # weight on the table pre-combine. The v3.2 constant (70.0) is passed
     # through the v3.3 transform, which re-denominates it to 67.0.
     _athleticism_projected = False
-    if (athleticism_score is None and production_score >= 90.0
+    # v3.4: in-season, untested athleticism is MISSING data, not a
+    # projected 67.0. The floor is suppressed and the existing missing-
+    # athleticism redistribution below carries the weight. Tested players
+    # are unaffected (the floor only ever applies when score is None).
+    if (not _inseason
+            and athleticism_score is None and production_score >= 90.0
             and breakout_score >= 75.0):
         athleticism_score = 67.0
         _athleticism_projected = True
@@ -2234,7 +2444,8 @@ def score_prospect(
     )
     recruiting_score    = calc_recruiting_score(prospect.get("recruiting"))
     environment_score   = calc_environment_adjustment(seasons, pos)
-    durability_score    = calc_durability_score(seasons)
+    durability_score    = calc_durability_score(seasons, position=pos,
+                                                _inseason_year=_inseason_year)
 
     # v3.2: draft capital is present only when a projected pick exists from
     # some source (mock consensus, actual pick, or the seed fallback). No
@@ -2482,6 +2693,7 @@ def score_prospect(
             skip_sagarin=skip_sagarin,
             position_weights_override=position_weights_override,
             _exclude_capital=True,
+            _active_season_year=_active_season_year,
         )
         talent_score = _talent["prospect_score"]
         capital_delta = round(prospect_score - talent_score, 2)
@@ -2513,6 +2725,15 @@ def score_prospect(
         if n_mocks >= 5:
             conf_points += 5.0   # consensus from multiple analysts
     confidence_score = round(_clip(conf_points), 1)
+    # v3.4: in-season confidence reflects the thinner evidence. The
+    # partial season's sample discount is 20 points at the limit, scaled
+    # by the same min(1, GP/12) idiom the model uses elsewhere: a 6-game
+    # latest season costs 10 points, an 11-game season costs about 2.
+    if _inseason:
+        _gp_conf = _safe(_gp_mode, 12)
+        confidence_score = round(_clip(
+            confidence_score
+            - round(20.0 * (1.0 - min(1.0, _gp_conf / 12.0)))), 1)
 
     fantasy_translation = round(
         POSITION_FANTASY_MULT.get(pos, 1.0) * prospect_score, 2
@@ -2558,6 +2779,8 @@ def score_prospect(
         "durability_score":             None if durability_score is None else round(durability_score, 2),
         "recruiting_score":             round(recruiting_score, 2),
         "model_version":                MODEL_VERSION,
+        "in_season":                    _inseason,
+        "grading_mode":                 "in_season" if _inseason else "complete",
         "projected_draft_capital_score":None if _capital_missing else round(dc_score_adjusted, 2),
         "talent_score":                 talent_score,
         "capital_delta":                capital_delta,
@@ -2831,13 +3054,18 @@ def score_all_prospects(
     consensus_map: Optional[Dict[str, Dict]] = None,
     skip_sagarin: bool = False,
     position_weights_override: Optional[Dict[str, Dict[str, float]]] = None,
+    active_season_year: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """
     Score a list of prospects and add overall_rank / position_rank.
 
     Args:
-        prospects:     List of normalised prospect dicts
-        consensus_map: {player_id: consensus_dict}
+        prospects:          List of normalised prospect dicts
+        consensus_map:      {player_id: consensus_dict}
+        active_season_year: The college season in progress on the run
+            date (see active_season_year_for_run), enabling v3.4
+            in-season mode per player. None (the default, and what the
+            backtest passes) grades every profile in COMPLETE mode.
 
     Returns:
         List of score dicts, sorted by prospect_score descending.
@@ -2854,6 +3082,7 @@ def score_all_prospects(
                 dc,
                 skip_sagarin=skip_sagarin,
                 position_weights_override=position_weights_override,
+                _active_season_year=active_season_year,
             )
         )
 
