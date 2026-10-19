@@ -276,7 +276,7 @@ def test_modal_section_markup_and_lazy_loader():
     assert "pm-avail-toggle" in js  # opts out of the global accent button fill
     assert 'id="pmAvailBody" hidden' in js
     # Lazy: fetch fires only from the toggle path's loader.
-    assert "if (_pmAvailOpen && !body.dataset.loaded) _pmLoadAvail();" in js
+    assert "if (_pmAvailOpen && !body.dataset.loaded)" in js
     assert "'/api/player-availability?player_id='" in js or \
         '"/api/player-availability?player_id="' in js or \
         "/api/player-availability?player_id=" in js
@@ -285,8 +285,21 @@ def test_modal_section_markup_and_lazy_loader():
     assert "brErrorState" in js
     # Guests and draft picks never render the section.
     assert "_pmAvailSignedIn()" in js
-    # Unknown leagues render honestly, never as available.
-    assert "League not loaded yet" in js
+
+
+def test_modal_unknown_leagues_are_loading_rows_not_values():
+    js = _read("static/player_modal.js")
+    css = _read("static/dashboard.css")
+    # An unknown league renders as a loading row (skeleton), never a status.
+    assert "pm-avail-row loading" in js
+    assert "pm-avail-status unk" not in js
+    assert ".pm-avail-status.unk" not in css
+    assert "League not loaded yet" not in js
+    # The header summary stays unpopulated while any league is unknown,
+    # and the section re-checks on a bounded poll as leagues warm.
+    assert "Checking your leagues" in js
+    assert "_PM_AVAIL_MAX_POLLS" in js
+    assert "_pmAvailRender(entry)" in js
 
 
 def test_nav_search_bits_lazy_fill():
@@ -301,6 +314,17 @@ def test_nav_search_bits_lazy_fill():
     assert "Available in " in js and "Rostered in all " in js
 
 
+def test_nav_search_bit_waits_until_every_league_known():
+    js = _read("static/app.js")
+    # The completeness gate: no value populates from a partial summary.
+    assert "_availComplete" in js
+    assert "s.checked === s.total" in js
+    # The old partial-claim copy is gone.
+    assert "Rostered in ' + s.checked" not in js
+    # One delayed retry for warming leagues, then no bit rather than a guess.
+    assert "_scheduleAvailRetry" in js
+
+
 def test_availability_css_present():
     css = _read("static/dashboard.css")
     for sel in (".pm-avail-list", ".pm-avail-row", ".pm-avail-status.avail",
@@ -309,7 +333,5 @@ def test_availability_css_present():
 
 
 def test_service_worker_bumped():
-    # Authored at v61 (PR #2725); PR #2724's merge stepped the cache to
-    # v62. Invariant: bumped past v60.
     sw = _read("static/sw.js")
-    assert "br-fantasy-v61" in sw or "br-fantasy-v62" in sw
+    assert "br-fantasy-v63" in sw

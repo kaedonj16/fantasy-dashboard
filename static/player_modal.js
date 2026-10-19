@@ -1913,11 +1913,22 @@ function _pmRenderInLeague(el, events) {
 // Availability across the viewer's leagues, on the Overview rail above
 // "In this league": collapsed at start, lazy-loaded on first expand with a
 // content-shaped skeleton. Nothing is fetched while collapsed, a failure
-// lands as an in-section error + Retry, and leagues whose context is not
-// loaded yet say so instead of posing as available or rostered. Guests
-// never see the section - there is no league set to check against.
+// lands as an in-section error + Retry, and a league whose context is not
+// loaded yet shows a loading row - never a value - while the section
+// quietly re-checks as the league warms in the background. The header
+// summary likewise stays unpopulated until every league is known.
+// Guests never see the section - there is no league set to check against.
 let _pmAvailPid = null;
 let _pmAvailOpen = false;
+let _pmAvailPolls = 0;
+let _pmAvailTimer = null;
+let _pmAvailLoading = false;
+const _PM_AVAIL_POLL_MS = 5000;
+const _PM_AVAIL_MAX_POLLS = 12;
+
+function _pmAvailStopPolling() {
+  if (_pmAvailTimer) { clearTimeout(_pmAvailTimer); _pmAvailTimer = null; }
+}
 
 function _pmAvailSignedIn() {
   if (window._isSignedIn) return true;
@@ -1936,8 +1947,11 @@ function _pmAvailSummaryText(s) {
 function _pmSetupAvail(playerId, data) {
   const el = document.getElementById('pmAvail');
   if (!el) return;
+  _pmAvailStopPolling();
   _pmAvailPid = String(playerId);
   _pmAvailOpen = false;
+  _pmAvailPolls = 0;
+  _pmAvailLoading = false;
   const pos = String((data && data.position) || '').toUpperCase();
   if (!_pmAvailSignedIn() || pos === 'PICK') { el.hidden = true; el.innerHTML = ''; return; }
   el.hidden = false;
@@ -1971,7 +1985,12 @@ function _pmToggleAvail() {
   const hint = btn.querySelector('.pm-collapse-hint');
   if (hint) hint.textContent = _pmAvailOpen ? 'Hide details' : 'Show details';
   body.hidden = !_pmAvailOpen;
-  if (_pmAvailOpen && !body.dataset.loaded) _pmLoadAvail();
+  if (_pmAvailOpen && !body.dataset.loaded) {
+    // Rows already rendered (some still loading): refresh softly so the
+    // resolved leagues never blank back to a skeleton. First open loads.
+    if (body.querySelector('.pm-avail-list')) _pmAvailRetry();
+    else _pmLoadAvail();
+  }
 }
 
 function _pmAvailRowHtml(r) {
@@ -1992,46 +2011,106 @@ function _pmAvailRowHtml(r) {
       '<span class="pm-avail-detail">' + detail + '</span>' +
       '<span class="pm-avail-status rost">Rostered</span></a>';
   }
-  return '<div class="pm-avail-row unknown">' + league +
-    '<span class="pm-avail-detail">League not loaded yet</span>' +
-    '<span class="pm-avail-status unk">Unknown</span></div>';
+  // Not known yet: a loading row, not a value. The league name and format
+  // are real; everything that would state a status stays skeleton.
+  return '<div class="pm-avail-row loading" aria-label="Loading league">' + league +
+    '<span class="pm-avail-detail"><span class="skeleton pm-avail-skline" style="width:90px"></span></span>' +
+    '<span class="skeleton pm-avail-skpill"></span></div>';
 }
 
-function _pmAvailFailed() {
+function _pmAvailFailed(soft) {
   const body = document.getElementById('pmAvailBody');
   if (!body) return;
+  _pmAvailStopPolling();
+  if (soft && body.querySelector('.pm-avail-list')) {
+    // A background re-check failed: keep the rows already on screen and
+    // just offer the retry; never blank resolved leagues back to an error.
+    _pmAvailShowRetry(body);
+    return;
+  }
   if (window.brErrorState) {
-    window.brErrorState(body, 'Could not load availability.', function () { _pmLoadAvail(); }, { compact: true });
+    window.brErrorState(body, 'Could not load availability.', function () { _pmAvailRetry(); }, { compact: true });
   } else {
-    body.innerHTML = '<div class="pm-avail-error">Couldn\'t load availability. <button type="button" class="pm-avail-retry" onclick="_pmLoadAvail()">Retry</button></div>';
+    body.innerHTML = '<div class="pm-avail-error">Couldn\'t load availability. <button type="button" class="pm-avail-retry" onclick="_pmAvailRetry()">Retry</button></div>';
   }
 }
 
-function _pmLoadAvail() {
+function _pmAvailShowRetry(body) {
+  if (body.querySelector('.pm-avail-retry')) return;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'pm-avail-retry';
+  btn.textContent = 'Retry unloaded leagues';
+  btn.addEventListener('click', _pmAvailRetry);
+  body.appendChild(btn);
+}
+
+function _pmAvailRetry() {
+  _pmAvailPolls = 0;
+  _pmLoadAvail(true);
+}
+
+function _pmAvailRender(entry) {
   const body = document.getElementById('pmAvailBody');
-  if (!body || !_pmAvailPid) return;
+  if (!body) return;
+  const rows = (entry.leagues || []).map(_pmAvailRowHtml).join('');
+  const hasUnknown = (entry.leagues || []).some(function (r) { return r.status === 'unknown'; });
+  body.innerHTML = '<div class="pm-avail-list">' + rows + '</div>';
+  const note = document.getElementById('pmAvailNote');
+  if (!hasUnknown) {
+    _pmAvailStopPolling();
+    body.dataset.loaded = '1';
+    if (note) {
+      note.textContent = _pmAvailSummaryText(entry.summary);
+      note.classList.toggle('has-avail', !!(entry.summary && entry.summary.available > 0));
+    }
+    return;
+  }
+  // Some leagues still unknown: no summary value yet, and keep checking
+  // while the poll budget lasts - the endpoint warms cold leagues in the
+  // background, so unknowns resolve on their own.
+  if (note) { note.textContent = 'Checking your leagues'; note.classList.remove('has-avail'); }
+  if (_pmAvailPolls < _PM_AVAIL_MAX_POLLS) {
+    _pmAvailStopPolling();
+    const pid = _pmAvailPid;
+    _pmAvailTimer = setTimeout(function () {
+      _pmAvailTimer = null;
+      if (_pmAvailPid !== pid) return;
+      if (!document.getElementById('pmAvailBody')) return;
+      _pmAvailPolls += 1;
+      _pmLoadAvail(true);
+    }, _PM_AVAIL_POLL_MS);
+  } else {
+    // Budget exhausted: surface the confirmed counts (floors, never an
+    // "all" claim the unknowns could contradict) and hand over to Retry.
+    if (note) note.textContent = _pmAvailSummaryText(entry.summary);
+    _pmAvailShowRetry(body);
+  }
+}
+
+function _pmLoadAvail(soft) {
+  const body = document.getElementById('pmAvailBody');
+  if (!body || !_pmAvailPid || _pmAvailLoading) return;
   const pid = _pmAvailPid;
-  body.innerHTML = _pmAvailSkeleton();
+  if (!soft) {
+    _pmAvailStopPolling();
+    _pmAvailPolls = 0;
+    body.innerHTML = _pmAvailSkeleton();
+  }
+  _pmAvailLoading = true;
   _pmFetch('/api/player-availability?player_id=' + encodeURIComponent(pid), 15000)
     .then(function (r) { return r && r.ok ? r.json() : null; })
     .then(function (d) {
+      _pmAvailLoading = false;
       if (_pmAvailPid !== pid) return; // modal moved on to another player
-      const b = document.getElementById('pmAvailBody');
-      if (!b) return;
       const entry = d && d.ok && d.players ? d.players[pid] : null;
-      if (!entry) { _pmAvailFailed(); return; }
-      b.dataset.loaded = '1';
-      const rows = (entry.leagues || []).map(_pmAvailRowHtml).join('');
-      const hasUnknown = (entry.leagues || []).some(function (r) { return r.status === 'unknown'; });
-      b.innerHTML = '<div class="pm-avail-list">' + rows + '</div>' +
-        (hasUnknown ? '<button type="button" class="pm-avail-retry" onclick="_pmLoadAvail()">Retry unloaded leagues</button>' : '');
-      const note = document.getElementById('pmAvailNote');
-      if (note) {
-        note.textContent = _pmAvailSummaryText(entry.summary);
-        note.classList.toggle('has-avail', !!(entry.summary && entry.summary.available > 0));
-      }
+      if (!entry) { _pmAvailFailed(soft); return; }
+      _pmAvailRender(entry);
     })
-    .catch(function () { if (_pmAvailPid === pid) _pmAvailFailed(); });
+    .catch(function () {
+      _pmAvailLoading = false;
+      if (_pmAvailPid === pid) _pmAvailFailed(soft);
+    });
 }
 
 function _pmLoadStartSitStrip(playerId, data, leagueId, platform, season) {

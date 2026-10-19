@@ -26481,22 +26481,30 @@ function setupFunAwardsGrid() {
   // window-level cache; guests skip it entirely (no league set to check).
   const _availCache = window.__brAvailCache || (window.__brAvailCache = {});
   const _availInflight = {};
+  const _availRetried = {};
+  let _availRetryTimer = null;
   let _availDisabled = false;
   function _availSignedIn() {
     if (window._isSignedIn) return true;
     const c = window.__brctx || {};
     return !!c.is_logged_in;
   }
+  // A summary is only a value once EVERY league is known. While any league
+  // is still loading, the bit stays a skeleton - a partial count would be
+  // a claim the unchecked leagues could contradict.
+  function _availComplete(s) {
+    return !!s && s.total > 0 && s.checked === s.total;
+  }
   function _availBitHtml(s) {
-    if (!s || !s.total || !s.checked) return '';
+    if (!_availComplete(s)) return '';
     if (s.available > 0) return '<span class="nav-search-avail-bit">Available in ' + s.available + ' of ' + s.total + '</span>';
-    if (s.checked === s.total) return '<span class="nav-search-avail-bit none">Rostered in all ' + s.total + (s.mine ? ' - yours in ' + s.mine : '') + '</span>';
-    return '<span class="nav-search-avail-bit none">Rostered in ' + s.checked + ' of ' + s.total + '</span>';
+    return '<span class="nav-search-avail-bit none">Rostered in all ' + s.total + (s.mine ? ' - yours in ' + s.mine : '') + '</span>';
   }
   function _availMetaSuffix(p) {
     if (_availDisabled || !_availSignedIn()) return '';
     const hit = _availCache[p.id];
-    if (hit) { const h = _availBitHtml(hit); return h ? ' - ' + h : ''; }
+    if (_availComplete(hit)) { const h = _availBitHtml(hit); return h ? ' - ' + h : ''; }
+    if (hit && _availRetried[p.id]) return '';
     return ' - <span class="nav-search-avail-slot" data-avail-pid="' + p.id + '"><span class="skeleton nav-search-avail-sk"></span></span>';
   }
   function _clearAvailSlots(pids) {
@@ -26504,40 +26512,63 @@ function setupFunAwardsGrid() {
       dropdown.querySelectorAll('.nav-search-avail-slot[data-avail-pid="' + pid + '"]').forEach(function (s) { s.remove(); });
     });
   }
-  function _fillAvailBits() {
-    if (_availDisabled) return;
-    const slots = Array.from(dropdown.querySelectorAll('.nav-search-avail-slot'));
-    if (!slots.length) return;
-    const need = [];
-    slots.forEach(function (slot) {
-      const pid = slot.getAttribute('data-avail-pid');
-      const hit = pid ? _availCache[pid] : null;
-      if (hit) {
-        const h = _availBitHtml(hit);
-        if (h) slot.outerHTML = h; else slot.remove();
-      } else if (pid && !_availInflight[pid]) {
-        _availInflight[pid] = true;
-        need.push(pid);
-      }
-    });
-    if (!need.length) return;
-    fetch('/api/player-availability?player_ids=' + need.map(encodeURIComponent).join(','))
+  function _fetchAvail(pids) {
+    pids.forEach(function (pid) { _availInflight[pid] = true; });
+    fetch('/api/player-availability?player_ids=' + pids.map(encodeURIComponent).join(','))
       .then(function (r) { return r && r.ok ? r.json() : null; })
       .then(function (d) {
-        need.forEach(function (pid) { delete _availInflight[pid]; });
+        pids.forEach(function (pid) { delete _availInflight[pid]; });
         if (d && d.signed_in === false) {
           _availDisabled = true;
           dropdown.querySelectorAll('.nav-search-avail-slot').forEach(function (s) { s.remove(); });
           return;
         }
-        if (!d || !d.ok || !d.players) { _clearAvailSlots(need); return; }
+        if (!d || !d.ok || !d.players) { _clearAvailSlots(pids); return; }
         Object.keys(d.players).forEach(function (pid) { _availCache[pid] = d.players[pid].summary; });
         _fillAvailBits();
       })
       .catch(function () {
-        need.forEach(function (pid) { delete _availInflight[pid]; });
-        _clearAvailSlots(need);
+        pids.forEach(function (pid) { delete _availInflight[pid]; });
+        _clearAvailSlots(pids);
       });
+  }
+  function _scheduleAvailRetry(pids) {
+    pids.forEach(function (pid) { _availRetried[pid] = true; });
+    if (_availRetryTimer) return;
+    _availRetryTimer = setTimeout(function () {
+      _availRetryTimer = null;
+      // One delayed second look for the players still on screen whose
+      // leagues were warming; after that, no bit rather than a guess.
+      const pending = Array.from(dropdown.querySelectorAll('.nav-search-avail-slot'))
+        .map(function (s) { return s.getAttribute('data-avail-pid'); })
+        .filter(function (pid) { return pid && !_availComplete(_availCache[pid]) && !_availInflight[pid]; });
+      if (pending.length) _fetchAvail(pending);
+      else _fillAvailBits();
+    }, 6000);
+  }
+  function _fillAvailBits() {
+    if (_availDisabled) return;
+    const slots = Array.from(dropdown.querySelectorAll('.nav-search-avail-slot'));
+    if (!slots.length) return;
+    const need = [];
+    const partial = [];
+    slots.forEach(function (slot) {
+      const pid = slot.getAttribute('data-avail-pid');
+      const hit = pid ? _availCache[pid] : null;
+      if (_availComplete(hit)) {
+        const h = _availBitHtml(hit);
+        if (h) slot.outerHTML = h; else slot.remove();
+      } else if (hit) {
+        // Known to be partial: skeleton until the one retry lands, then
+        // the slot goes away quietly if the leagues are still not known.
+        if (_availRetried[pid]) slot.remove();
+        else partial.push(pid);
+      } else if (pid && !_availInflight[pid]) {
+        need.push(pid);
+      }
+    });
+    if (partial.length) _scheduleAvailRetry(partial);
+    if (need.length) _fetchAvail(need);
   }
 
   let _players = null;
