@@ -869,7 +869,8 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
   .recap-team .team-clickable {{ border-radius:6px; }}
   .rc-pos-wrap {{ margin-top:14px; }}
   .rc-pos-label {{ font-size:11px; font-weight:800; letter-spacing:.07em; text-transform:uppercase; color:var(--muted); margin-bottom:8px; }}
-  .rc-pos-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(165px,1fr)); gap:10px; }}
+  .rc-pos-grid {{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }}
+  @media (max-width:640px) {{ .rc-pos-grid {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} }}
   .rc-pos-col {{ border:1px solid var(--border); border-radius:10px; padding:9px 10px; display:flex; flex-direction:column; gap:6px; min-width:0; }}
   .rc-pos-head {{ display:flex; align-items:center; gap:7px; }}
   .rc-pos-title {{ font-size:11px; font-weight:700; color:var(--muted); }}

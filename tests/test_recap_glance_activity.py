@@ -160,6 +160,10 @@ def test_recap_source_contracts_for_new_sections():
     # Week at a Glance carries the per-position top scorers.
     assert "Top scorers by position" in page
     assert "{pos_scorers_html}</section>" in page
+    # Top scorers fit a 3x2 grid (3 columns, 2 rows for the six positions),
+    # dropping to 2 columns on phones so names/points stay readable.
+    assert ".rc-pos-grid {{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }}" in page
+    assert "@media (max-width:640px) {{ .rc-pos-grid {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} }}" in page
     # Injury report: canonical lazy fill, gated to the latest week because
     # the underlying report is a current snapshot.
     assert "ensure_injury_bits" in page and "ensure_activity_bits" in page
