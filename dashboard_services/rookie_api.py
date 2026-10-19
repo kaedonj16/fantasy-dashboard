@@ -1151,11 +1151,12 @@ def current_college_season(today=None):
 def is_in_season(latest_season, games_played, today=None) -> bool:
     """Data-state check for the In-Season chip.
 
-    PR #2691's stored in_season flag is not on this branch, so the chip is
-    driven by data state instead: the player's latest stored season IS
-    the current college season and it is still partial (1-11 games
+    The chip is driven by data state: the player's latest stored season
+    IS the current college season and it is still partial (1-11 games
     played). A completed season (12+ games) or an older latest season
-    never reads as in-season.
+    never reads as in-season. (The v3.4 stored in_season flag records the
+    grading mode at grading time; the display chip stays data-state
+    driven, per the native board/modal build.)
     """
     if latest_season is None or games_played is None:
         return False
@@ -1322,6 +1323,7 @@ def _get_prospect_detail(player_id: str, row: dict) -> dict:
         "talent_score": None,
         "capital_delta": None,
         "composite_stars": None,
+        "in_season": False,
     }
     seasons: list[dict[str, Any]] = []
     athleticism: dict[str, Any] = {}
@@ -1456,6 +1458,8 @@ def _get_prospect_detail(player_id: str, row: dict) -> dict:
     # v3.2 transparent capital: stored with the score at grading time.
     detail["talent_score"] = _safe_float(row.get("talent_score"))
     detail["capital_delta"] = _safe_float(row.get("capital_delta"))
+    # v3.4: the row's grading mode, stored with the score at grading time.
+    detail["in_season"] = bool(row.get("in_season"))
     # v3.2 archetype: the stored label wins; rows graded before v3.2 are
     # classified live from their season lines so the chip still resolves.
     detail["archetype"] = row.get("archetype")
@@ -1872,7 +1876,10 @@ def add_prospects():
             return jsonify({"error": "No prospects provided"}), 400
 
         from data_building.rookie_pipeline.ingestion import normalize_prospect
-        from data_building.rookie_pipeline.prospect_model import score_prospect
+        from data_building.rookie_pipeline.prospect_model import (
+            active_season_year_for_run,
+            score_prospect,
+        )
         from data_building.rookie_pipeline.mock_draft_consensus import build_mock_draft_consensus
         from data_building.rookie_pipeline.value_translation import translate_score_to_value, format_draft_capital
         from data_building.rookie_pipeline.pipeline import get_active_rookie_class
@@ -1901,8 +1908,12 @@ def add_prospects():
             consensus_map = build_mock_draft_consensus(draft_year)
             dc = consensus_map.get(prospect["player_id"])
 
-            # Score and translate to dynasty values
-            scores = score_prospect(prospect, dc)
+            # Score and translate to dynasty values. v3.4: live regrades
+            # use the same run-calendar active season year as the pipeline.
+            scores = score_prospect(
+                prospect, dc,
+                _active_season_year=active_season_year_for_run(),
+            )
             values = translate_score_to_value(scores, prospect, dc)
 
             # Build a flat row matching the shape returned by _merge_inmemory_result
@@ -1943,6 +1954,7 @@ def add_prospects():
                 "projected_draft_capital_score": scores.get("projected_draft_capital_score"),
                 "fantasy_translation_score":     scores.get("fantasy_translation_score"),
                 "confidence_score":              scores.get("confidence_score"),
+                "in_season":                     bool(scores.get("in_season")),
                 "calculated_at":                 None,
                 "projected_round":               dc.get("projected_round") if dc else None,
                 "projected_pick":                dc.get("projected_pick") if dc else None,
