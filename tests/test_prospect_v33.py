@@ -86,7 +86,7 @@ def _qb_prospect(athleticism):
 
 class TestVersion:
     def test_model_version_is_33(self):
-        assert pm.MODEL_VERSION == "3.4"
+        assert pm.MODEL_VERSION == "3.4.1"
 
 
 class TestKnotPricing:

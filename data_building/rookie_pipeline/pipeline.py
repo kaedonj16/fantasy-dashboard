@@ -68,6 +68,8 @@ def _db_available() -> bool:
 
 
 def upsert_prospects(prospects: List[Dict], conn) -> int:
+    from .ingestion import derive_season_dominator as _derive_season_dominator
+
     saved = 0
     with conn.cursor() as cur:
         for p in prospects:
@@ -118,6 +120,11 @@ def upsert_prospects(prospects: List[Dict], conn) -> int:
 
             # Source data (seasons)
             for s in p.get("seasons") or []:
+                # Repair on write: a season dict carrying its inputs
+                # (player lines + team totals) but no dominator gets
+                # the rating derived before it is persisted, so the
+                # stored row never lacks a computable dominator.
+                _derive_season_dominator(s)
                 cur.execute(
                     """
                     INSERT INTO rookie_prospect_source_data
@@ -155,7 +162,7 @@ def upsert_prospects(prospects: List[Dict], conn) -> int:
                         targets              = COALESCE(EXCLUDED.targets, rookie_prospect_source_data.targets),
                         receiving_yards      = EXCLUDED.receiving_yards,
                         receiving_tds        = EXCLUDED.receiving_tds,
-                        dominator_rating     = EXCLUDED.dominator_rating,
+                        dominator_rating     = COALESCE(EXCLUDED.dominator_rating, rookie_prospect_source_data.dominator_rating),
                         market_share_yards   = EXCLUDED.market_share_yards,
                         market_share_tds     = EXCLUDED.market_share_tds,
                         yds_per_carry        = EXCLUDED.yds_per_carry,
@@ -166,8 +173,8 @@ def upsert_prospects(prospects: List[Dict], conn) -> int:
                         team_pass_rate       = EXCLUDED.team_pass_rate,
                         team                 = EXCLUDED.team,
                         conference           = EXCLUDED.conference,
-                        team_total_yards     = EXCLUDED.team_total_yards,
-                        team_total_tds       = EXCLUDED.team_total_tds,
+                        team_total_yards     = COALESCE(NULLIF(EXCLUDED.team_total_yards, 0), rookie_prospect_source_data.team_total_yards),
+                        team_total_tds       = COALESCE(NULLIF(EXCLUDED.team_total_tds, 0), rookie_prospect_source_data.team_total_tds),
                         team_pass_yards      = EXCLUDED.team_pass_yards,
                         sagarin_team_rating  = EXCLUDED.sagarin_team_rating
                     """,
@@ -262,7 +269,7 @@ def upsert_prospect_source_data(prospects: List[Dict], cfbd_stats: Dict, draft_y
         draft_year: Draft year
         conn: Database connection
     """
-    from .ingestion import canonical_prospect_key
+    from .ingestion import canonical_prospect_key, derive_season_dominator
 
     # Canonical view of the stats dict; season lists that arrive under
     # two spellings of one player are merged by season year.
@@ -284,6 +291,9 @@ def upsert_prospect_source_data(prospects: List[Dict], cfbd_stats: Dict, draft_y
             seasons = stats_by_key.get(name_key, [])
 
             for season_data in seasons:
+                # Repair on write (see upsert_prospects): derive the
+                # dominator from the season's own inputs when missing.
+                derive_season_dominator(season_data)
                 try:
                     # Use savepoint to allow rollback on individual errors
                     cur.execute("SAVEPOINT save_stats")
@@ -322,7 +332,7 @@ def upsert_prospect_source_data(prospects: List[Dict], cfbd_stats: Dict, draft_y
                             targets             = COALESCE(EXCLUDED.targets, rookie_prospect_source_data.targets),
                             receiving_yards     = EXCLUDED.receiving_yards,
                             receiving_tds       = EXCLUDED.receiving_tds,
-                            dominator_rating    = EXCLUDED.dominator_rating,
+                            dominator_rating    = COALESCE(EXCLUDED.dominator_rating, rookie_prospect_source_data.dominator_rating),
                             market_share_yards  = EXCLUDED.market_share_yards,
                             market_share_tds    = EXCLUDED.market_share_tds,
                             yds_per_carry       = EXCLUDED.yds_per_carry,
@@ -333,8 +343,8 @@ def upsert_prospect_source_data(prospects: List[Dict], cfbd_stats: Dict, draft_y
                             team                = EXCLUDED.team,
                             conference          = EXCLUDED.conference,
                             team_pass_rate      = EXCLUDED.team_pass_rate,
-                            team_total_yards    = EXCLUDED.team_total_yards,
-                            team_total_tds      = EXCLUDED.team_total_tds,
+                            team_total_yards    = COALESCE(NULLIF(EXCLUDED.team_total_yards, 0), rookie_prospect_source_data.team_total_yards),
+                            team_total_tds      = COALESCE(NULLIF(EXCLUDED.team_total_tds, 0), rookie_prospect_source_data.team_total_tds),
                             team_pass_yards     = EXCLUDED.team_pass_yards,
                             sagarin_team_rating = EXCLUDED.sagarin_team_rating
                         """,
@@ -1672,6 +1682,7 @@ def load_prospects_from_db(draft_year: int, conn) -> List[Dict[str, Any]]:
                    yds_per_carry, yds_per_reception, yds_per_attempt,
                    completion_pct, td_int_ratio, team, conference, team_pass_rate,
                    team_pass_yards, sagarin_team_rating,
+                   team_total_yards, team_total_tds,
                    eval_snap_counts,
                    yards_after_catch, yards_after_catch_per_reception,
                    avg_depth_of_target, contested_catch_rate, avoided_tackles,

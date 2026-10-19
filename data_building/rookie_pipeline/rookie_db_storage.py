@@ -151,6 +151,7 @@ def save_rookie_evaluation_to_db(
         return {"db_metrics_rows": 0, "db_profiles_rows": 0, "db_runs_rows": 0}
 
     from dashboard_services.db import get_conn
+    from data_building.rookie_pipeline.ingestion import derive_season_dominator
 
     metrics_rows = 0
     profile_rows = 0
@@ -170,6 +171,12 @@ def save_rookie_evaluation_to_db(
                 for season, metrics in (seasons or {}).items():
                     missing_metrics = missing_by_player.get(player_id) or {}
                     raw = (raw_seasons_by_player or {}).get(player_id, {}).get(season, {})
+                    # Repair on write: derive a missing dominator from
+                    # the raw season's own inputs before persisting, so
+                    # the EXCLUDED value below carries it whenever the
+                    # inputs exist (the COALESCE keeps a stored value
+                    # when this record cannot supply one).
+                    derive_season_dominator(raw)
                     cur.execute(
                         """
                         INSERT INTO rookie_prospect_source_data
