@@ -363,7 +363,11 @@ function openPlayerModal(playerId, playerName, opts) {
   const _modalController = (typeof AbortController !== 'undefined') ? new AbortController() : null;
   overlay._pmRequestController = _modalController;
   if (typeof window.pmPromotePlayerWarmup === 'function') window.pmPromotePlayerWarmup(playerId, opts);
-  const _fetchPromise = window.pmPlayerDetails.load(playerId, opts);
+  // The details load is a named step so the error state's Try again can
+  // re-run it IN PLACE (see _pmLoadDetails below). The old retry closed and
+  // reopened the modal: closePlayerModal() defers to history.back(), and the
+  // pending popstate then tore down the freshly reopened modal, so Try again
+  // read as "close" to the user.
 
   const contextBreakoutCandidate = opts.isBreakoutCandidate === true && opts.breakoutCandidate
     ? opts.breakoutCandidate
@@ -373,7 +377,8 @@ function openPlayerModal(playerId, playerName, opts) {
 
   // Details and eligibility intentionally have separate lifecycles. A slow or
   // unavailable Breakout service must never hold the useful player profile.
-  _fetchPromise.then(data => {
+  function _pmLoadDetails() {
+  window.pmPlayerDetails.load(playerId, opts).then(data => {
       const breakoutData = contextBreakoutCandidate;
 
       const modalBody = document.getElementById('playerModalBody');
@@ -387,8 +392,8 @@ function openPlayerModal(playerId, playerName, opts) {
       if (data.error) {
         if (window.brErrorState) {
           window.brErrorState(modalBody, data.error, function () {
-            closePlayerModal();
-            openPlayerModal(playerId, playerName, opts);
+            _pmShowDetailsLoading();
+            _pmLoadDetails();
           });
         } else {
           modalBody.innerHTML = `
@@ -1414,16 +1419,29 @@ function openPlayerModal(playerId, playerName, opts) {
       }
 
       // ── Lazy-load news into Overview panel ────────────────────────────────
-      if (data.position && data.position !== 'PICK') {
+      // The load is a named step with its own in-section error + Retry: a
+      // failed or timed-out news fetch (the small-fetch layer is bounded
+      // now) must never leave this section on "Loading..." or take down
+      // the rest of the modal.
+      function _pmNewsLoadFailed() {
+        const nb = document.getElementById('pmNewsBody');
+        if (!nb) return;
+        if (window.brErrorState) {
+          window.brErrorState(nb, 'Could not load news.', function () {
+            nb.innerHTML = '<div class="loading-spinner" style="width:14px;height:14px;flex-shrink:0;"></div>Loading…';
+            _pmLoadNews();
+          }, { compact: true });
+        } else {
+          nb.innerHTML = '<span style="color:var(--text-muted);font-size:13px;">Couldn\'t load news right now.</span>';
+        }
+      }
+      function _pmLoadNews() {
         const _newsSrcName = s => ({espn: 'ESPN', reddit: 'Reddit', gnews: 'Google News', espn_injuries: 'ESPN injuries', sleeper: 'Sleeper', rotoballer: 'RotoBaller', pft: 'ProFootballTalk', all: 'all sources'}[s] || s);
         _pmSmallFetch('news:' + playerId, `/api/player-news/${encodeURIComponent(playerId)}`)
           .then(nd => {
             const nb = document.getElementById('pmNewsBody');
             if (!nb) return;
-            if (!nd) {
-              nb.innerHTML = '<span style="color:var(--text-muted);font-size:13px;">Couldn\'t load news right now.</span>';
-              return;
-            }
+            if (!nd) { _pmNewsLoadFailed(); return; }
             const items = (nd.news || []).concat(nd.blurbs || []);
             const failed = nd.sources_failed || [];
             const warn = failed.length
@@ -1465,11 +1483,9 @@ function openPlayerModal(playerId, playerName, opts) {
               </div>
             `).join('');
           })
-          .catch(() => {
-            const nb = document.getElementById('pmNewsBody');
-            if (nb) nb.innerHTML = '<span style="color:var(--text-muted);font-size:13px;">Couldn\'t load news right now.</span>';
-          });
+          .catch(() => { _pmNewsLoadFailed(); });
       }
+      if (data.position && data.position !== 'PICK') _pmLoadNews();
 
       // Stash this player's value history so the Trades tab can show the
       // player's value change since each trade (client-side, no extra fetch).
@@ -1579,7 +1595,9 @@ function openPlayerModal(playerId, playerName, opts) {
               </div>`;
           }
 
+          let _vhLastHistory = fullHistory;
           function renderChart(history) {
+            _vhLastHistory = history;
             updateSummary(history);
             const n = history.length;
             const xIdx  = history.map((_, i) => i);            // numeric x for clean tick control
@@ -1730,20 +1748,38 @@ function openPlayerModal(playerId, playerName, opts) {
               hovermode: 'closest',
             };
 
-            if (window.ensurePlotly) window.ensurePlotly().then(function () {
-              // Pin the container to the chart height before drawing. With
-              // responsive: true Plotly runs autosize, so any later resize
-              // (tab switch, window resize) re-derives the plot height from
-              // the container's current box, padding included, and a
-              // first-open drawing could come out at the wrong height with
-              // the x labels pushed below the card. A pinned height makes
-              // the draw and every later resize measure the same height.
-              chartDiv.style.height = chartHeight + 'px';
-              Plotly.newPlot('playerValueChart', traces, layout, {
-                displayModeBar: false,
-                responsive: true
-              });
-            }).catch(function () {});
+            // A failed draw must never leave a silent grey box: the lazy
+            // Plotly load can reject (CDN stall) or be absent, and newPlot
+            // itself can throw on a degenerate container. Every failure
+            // path lands on a compact in-section error + Retry that
+            // redraws, and a resolved draw is verified to have actually
+            // produced a plot before it counts as success.
+            const _vhDrawFailed = function () {
+              if (!chartDiv.isConnected) return;
+              if (window.brErrorState) {
+                window.brErrorState(chartDiv, 'Could not load value history.', function () { renderChart(_vhLastHistory); }, { compact: true });
+              }
+            };
+            if (window.ensurePlotly) {
+              window.ensurePlotly().then(function () {
+                // Pin the container to the chart height before drawing. With
+                // responsive: true Plotly runs autosize, so any later resize
+                // (tab switch, window resize) re-derives the plot height from
+                // the container's current box, padding included, and a
+                // first-open drawing could come out at the wrong height with
+                // the x labels pushed below the card. A pinned height makes
+                // the draw and every later resize measure the same height.
+                chartDiv.style.height = chartHeight + 'px';
+                return Plotly.newPlot('playerValueChart', traces, layout, {
+                  displayModeBar: false,
+                  responsive: true
+                });
+              }).then(function () {
+                if (!chartDiv.querySelector('.main-svg') && !chartDiv._fullLayout) _vhDrawFailed();
+              }).catch(_vhDrawFailed);
+            } else {
+              _vhDrawFailed();
+            }
           }
 
           // Time-range filter -- only show ranges the data actually spans (e.g. a
@@ -1785,8 +1821,8 @@ function openPlayerModal(playerId, playerName, opts) {
       if (!b) return;
       if (window.brErrorState) {
         window.brErrorState(b, 'Please try again.', function () {
-          closePlayerModal();
-          openPlayerModal(playerId, playerName, opts);
+          _pmShowDetailsLoading();
+          _pmLoadDetails();
         });
       } else {
         b.innerHTML = `
@@ -1797,6 +1833,13 @@ function openPlayerModal(playerId, playerName, opts) {
         `;
       }
     });
+  }
+  function _pmShowDetailsLoading() {
+    const b = document.getElementById('playerModalBody');
+    if (!b) return;
+    b.innerHTML = '<div class="player-modal-loading" style="padding:32px 0;"><div class="loading-spinner"></div><div>Loading...</div></div>';
+  }
+  _pmLoadDetails();
 }
 
 function pmLeaguePath(suffix) {

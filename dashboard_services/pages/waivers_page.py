@@ -2209,11 +2209,21 @@ function wvLoadCandidates() {{
     candTimedOut = true;
     if (wvCandidateController) {{ try {{ wvCandidateController.abort(); }} catch (_) {{}} }}
   }}, 20000);
+  // DOM failsafe, matching the sibling sections: if the skeleton is somehow
+  // still up at 25s (the abort did not reject the fetch, r.json() hung),
+  // force the error state. A late success for this same load still renders
+  // over it, and a superseding load's seq check keeps this quiet.
+  const candFailsafe = setTimeout(() => {{
+    if (requestSeq !== wvCandidateRequestSeq) return;
+    const list = document.getElementById('wvWaiverList');
+    if (list && list.querySelector('.skeleton')) window.brErrorState('wvWaiverList', 'Unable to load waiver data.', wvLoadCandidates);
+  }}, 25000);
   fetch(`/api/waiver-candidates?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}${{_wvRid}}${{_h}}${{_pos}}`,
         wvCandidateController ? {{ signal: wvCandidateController.signal }} : {{}})
     .then(r => r.json().then(d => ({{ ok: r.ok, d }})))
     .then(({{ ok, d }}) => {{
       clearTimeout(candTimer);
+      clearTimeout(candFailsafe);
       if (requestSeq !== wvCandidateRequestSeq || requestedHorizon !== wvHorizon || requestedPos !== wvCurrentPos || requestedContext !== `${{WV_PLATFORM}}:${{WV_SEASON}}:${{WV_LEAGUE_ID}}`) return;
       if (!ok || d.error) {{
         window.brErrorState('wvWaiverList', (d && d.error) || 'Unable to load waiver data.', wvLoadCandidates);
@@ -2242,6 +2252,7 @@ function wvLoadCandidates() {{
     }})
     .catch(err => {{
       clearTimeout(candTimer);
+      clearTimeout(candFailsafe);
       if (requestSeq !== wvCandidateRequestSeq) return;
       // A superseding load aborts this one: stay quiet. A timeout abort is
       // a real failure for this request: fall into the retry state.
