@@ -22,6 +22,18 @@ own ingestion, the same source and season format the model grades):
       CURRENT model (v3.3); per position, the recorded distribution
       of production / efficiency / breakout / athleticism component
       scores, as percentile anchor tables for display + receipts.
+  (a2) ADVANCED-METRIC PERCENTILE TABLES: per position, the recorded
+      distribution of the modal Advanced tab's metrics (Dominator,
+      Breakout Age, Mkt Share, TD Share, Tgt/Gm, Catch%, Rec Yds/Gm,
+      Yds/Rec, Career Yds/Rec, Best Dominator, and every other
+      non-component row), valued by the API's own builder
+      (dashboard_services.rookie_api._build_advanced_metrics) over
+      each population player, so the recorded distribution and the
+      displayed row can never drift apart. Lower-is-better metrics
+      (Breakout Age) are recorded in advanced_lower_better. Nothing
+      consumes these tables yet; they land with the artifact so the
+      Advanced tab's percentiles can move from the thin current-class
+      pool to the recorded drafted pool.
   (b) LEG KNOT MARKS: per position, the 11 tier marks (worst / p1 /
       p5 / p10 / p25 / p50 / p75 / p90 / p97 / p99 / best) for every
       season-stat leg input in the round 15 pre-registered design
@@ -59,7 +71,7 @@ sys.path.insert(0, _REPO_ROOT)
 sys.path.insert(0, os.path.join(_REPO_ROOT, "scripts"))
 sys.path.insert(0, os.path.join(_REPO_ROOT, "tests"))
 
-SCRIPT_VERSION = "1.0"
+SCRIPT_VERSION = "1.1"
 POPULATION_DEFINITION = (
     "Drafted skill-position players (QB/RB/WR/TE), classes {classes}, "
     "from the nflverse draft list; college seasons from CFBD via the "
@@ -129,6 +141,7 @@ def build_reference(population: List[Dict[str, Any]],
         "players_by_position": {},
         "season_legs": {}, "breakout": {}, "components": {},
         "age": {}, "recruiting": {}, "competition": {},
+        "advanced": {},
     }
 
     by_pos: Dict[str, List[Dict[str, Any]]] = {p: [] for p in POSITIONS}
@@ -151,6 +164,42 @@ def build_reference(population: List[Dict[str, Any]],
             if table is not None:
                 percentiles[pos][field] = table
             populations["components"][pos][field] = len(vals)
+
+    # (a2) advanced-metric percentile tables, from the API's own
+    # advanced-metrics builder run over every population player (the
+    # same construction the live _advanced_distributions uses against
+    # the current-class pool). Component-score rows are excluded by
+    # their flag; a metric enters the pool only when the builder
+    # produced a value for that player.
+    from dashboard_services.rookie_api import (
+        _ADV_LOWER_BETTER, _build_advanced_metrics)
+    advanced: Dict[str, Dict[str, List[List[float]]]] = {
+        p: {} for p in POSITIONS}
+    advanced_lower: Dict[str, List[str]] = {p: [] for p in POSITIONS}
+    for pos, rows in by_pos.items():
+        populations["advanced"][pos] = {}
+        vals_by_label: Dict[str, List[float]] = {}
+        for prospect in rows:
+            comp = component_rows.get(prospect["player_id"], {})
+            brow = {"age": prospect.get("age"),
+                    "weight_lbs": prospect.get("weight_lbs"),
+                    "efficiency_score": comp.get("efficiency_score"),
+                    "production_score": comp.get("production_score")}
+            for a in _build_advanced_metrics(
+                    pos, prospect.get("seasons") or [],
+                    prospect.get("athleticism") or {}, brow, None):
+                if a.get("component") or a.get("value") is None:
+                    continue
+                vals_by_label.setdefault(a["label"], []).append(
+                    float(a["value"]))
+        for label, vals in vals_by_label.items():
+            table = percentile_table(vals)
+            if table is not None:
+                advanced[pos][label] = table
+            populations["advanced"][pos][label] = len(vals)
+        advanced_lower[pos] = sorted(
+            label for label in vals_by_label
+            if label in _ADV_LOWER_BETTER)
 
     # (b) season-leg pools (GP >= 4), breakout pools (per-player peak),
     # age, recruiting, competition index
@@ -222,6 +271,8 @@ def build_reference(population: List[Dict[str, Any]],
         "populations": populations,
         "anchors": anchors,
         "percentiles": percentiles,
+        "advanced": advanced,
+        "advanced_lower_better": advanced_lower,
         "athleticism": athleticism_marks,
     }
 
@@ -240,6 +291,13 @@ def print_summary(artifact: Dict[str, Any], out_path: str) -> None:
                 if n < 30]
         if thin:
             print(f"      thin season-leg pools (n<30): {thin}")
+        adv = artifact.get("advanced", {}).get(pos, {})
+        print(f"      advanced tables: {len(adv)} "
+              f"({', '.join(sorted(adv))})")
+        thin_adv = [k for k, n in pops["advanced"].get(pos, {}).items()
+                    if n < 30]
+        if thin_adv:
+            print(f"      thin advanced pools (n<30): {thin_adv}")
     prov = artifact["provenance"]
     print(f"  provenance: {prov.get('source')}")
 

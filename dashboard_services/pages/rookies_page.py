@@ -305,7 +305,11 @@ def build_prospects_body(is_admin: bool = False) -> str:
   .pct-val { font-size: 14px; font-weight: 700; text-align: right; color: var(--text); font-variant-numeric: tabular-nums; line-height: 1; }
   .pct-sub { grid-column: 2; font-size: 11px; color: var(--text-subtle); margin-top: 4px; line-height: 1.35; }
 
-  /* Season table (modal dialect) */
+  /* Season table (modal dialect). The scroll wrapper is the site's
+     table treatment: the full per-season stat set scrolls inside its
+     own container; the modal/page never overflows horizontally. */
+  .rk-table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; }
+  .rk-table-scroll .m-season-table { min-width: 100%; }
   .m-season-table { width: 100%; border-collapse: collapse; font-size: 11.5px; font-family: ui-monospace, Menlo, monospace; color: var(--text); }
   .m-season-table th { text-align: right; font-weight: 700; color: var(--text-muted); padding: 7px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
   .m-season-table th:first-child, .m-season-table td:first-child { text-align: left; }
@@ -1050,32 +1054,47 @@ def build_prospects_body(is_admin: bool = False) -> str:
     sec.style.display = '';
   }
 
-  // Season lines table shared by Overview (no percentile column) and the
-  // Production tab (percentile for completed seasons only; an in-progress
-  // season shows the chip and a dash, never a percentile).
-  function rkSeasonLinesTable(lines, pos, withPct) {
-    var label = lines.length ? (lines[0].rate_label || '') : '';
-    var html = '<table class="m-season-table"><thead><tr><th>Season</th>' +
+  // Season lines table shared by Overview (no percentile column, the
+  // ov subset of stat columns) and the Production tab (the full
+  // per-season stat set plus a percentile for completed seasons only;
+  // an in-progress season shows the chip and a dash, never a
+  // percentile). Every cell is a per-game rate (or stored per-play
+  // rate) from the API's season_line_columns/cells; a cell whose
+  // source field is not stored for that season dashes. The table
+  // scrolls inside its own container when the full set is wider than
+  // the modal; the modal itself never overflows.
+  function rkSeasonLinesTable(lines, pos, withPct, cols) {
+    if (!cols || !cols.length) {
+      var label = lines.length ? (lines[0].rate_label || '') : '';
+      cols = [{ key: '__rate', label: label, ov: true, dp: 1 }];
+    }
+    var useCols = withPct ? cols : cols.filter(function(c) { return c.ov; });
+    var html = '<div class="rk-table-scroll"><table class="m-season-table"><thead><tr><th>Season</th>' +
       (pos === 'QB' ? '<th class="team">Team</th>' : '') +
-      '<th>GP</th><th>' + rkEsc(label) + '</th>' +
+      '<th>GP</th>' +
+      useCols.map(function(c) { return '<th>' + rkEsc(c.label) + '</th>'; }).join('') +
       (withPct ? '<th>Percentile</th>' : '') + '</tr></thead><tbody>';
     lines.forEach(function(l) {
       html += '<tr><td class="yr">' + l.season +
         (l.in_progress ? ' <span class="inprog">In progress</span>' : '') + '</td>' +
         (pos === 'QB' ? '<td class="team">' + rkEsc(l.team || '') + '</td>' : '') +
         '<td class="pg">' + (l.gp != null ? l.gp : '-') + '</td>' +
-        '<td>' + (l.rate != null ? (+l.rate).toFixed(1) : '-') + '</td>' +
+        useCols.map(function(c) {
+          var v = c.key === '__rate' ? l.rate : (l.cells || {})[c.key];
+          return '<td>' + (v != null ? (+v).toFixed(c.dp || 1) : '-') + '</td>';
+        }).join('') +
         (withPct ? '<td>' + (l.percentile != null
           ? '<span class="pct-mini"><span class="pct-track"><span class="pct-fill" style="width:' +
               l.percentile + '%;background:#10b981"></span></span><b>' + l.percentile + '</b></span>'
           : '<span class="pct-mini-none">-</span>') + '</td>' : '') +
         '</tr>';
     });
-    return html + '</tbody></table>';
+    return html + '</tbody></table></div>';
   }
 
   function rkRenderSeasonLines(r, d) {
     var lines = (d && d.season_lines) || [];
+    var cols = (d && d.season_line_columns) || [];
     var pos = (r.position || '').toUpperCase();
     var hint = document.getElementById('rkProdHint');
     if (hint) hint.textContent = pos ? 'Percentile vs graded ' + pos + 's' : '';
@@ -1087,8 +1106,8 @@ def build_prospects_body(is_admin: bool = False) -> str:
       if (pr) pr.innerHTML = '<div style="font-size:13px;color:var(--text-muted);">No season lines yet.</div>';
       return;
     }
-    if (ov) ov.innerHTML = rkSeasonLinesTable(lines, pos, false);
-    if (pr) pr.innerHTML = rkSeasonLinesTable(lines, pos, true);
+    if (ov) ov.innerHTML = rkSeasonLinesTable(lines, pos, false, cols);
+    if (pr) pr.innerHTML = rkSeasonLinesTable(lines, pos, true, cols);
   }
 
   // Production trajectory: per-game rate bars for the last three seasons,

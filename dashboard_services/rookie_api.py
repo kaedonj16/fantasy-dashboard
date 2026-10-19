@@ -790,12 +790,134 @@ def _season_rate_distributions(position):
     return values
 
 
+def _div_or_none(num, den):
+    """num / den rounded for the payload; None when either side is
+    unusable (missing field, zero denominator)."""
+    if num is None or not den:
+        return None
+    return round(num / den, 3)
+
+
+def _cell_tgt_g(s, gp):
+    tgt = _safe_float(s.get("targets"))
+    rec = _safe_float(s.get("receptions"))
+    # A stored targets value at/below zero, or below receptions, is a
+    # pipeline failure, not data (the same rule _build_advanced_metrics
+    # applies to Tgt/Gm): the cell dashes instead of printing a
+    # garbage rate.
+    if tgt is None or tgt <= 0 or (rec is not None and tgt < rec):
+        return None
+    return round(tgt / gp, 3)
+
+
+def _cell_yds_rec(s, gp):
+    v = _safe_float(s.get("yds_per_reception"))
+    if v is not None:
+        return round(v, 3)
+    return _div_or_none(_safe_float(s.get("receiving_yards")),
+                        _safe_float(s.get("receptions")))
+
+
+def _cell_yds_carry(s, gp):
+    v = _safe_float(s.get("yds_per_carry"))
+    if v is not None:
+        return round(v, 3)
+    return _div_or_none(_safe_float(s.get("rush_yards")),
+                        _safe_float(s.get("rush_attempts")))
+
+
+def _cell_rb_td_g(s, gp):
+    rt = _safe_float(s.get("rush_tds"))
+    ct = _safe_float(s.get("receiving_tds"))
+    if rt is None and ct is None:
+        return None
+    return round(((rt or 0.0) + (ct or 0.0)) / gp, 3)
+
+
+def _cell_cmp_pct(s, gp):
+    # completion_pct is stored on a 0-100 scale (see the Cmp% row in
+    # _build_advanced_metrics); derive from completions/attempts when
+    # the stored rate is absent.
+    v = _safe_float(s.get("completion_pct"))
+    if v is not None:
+        return round(v, 3)
+    att = _safe_float(s.get("pass_attempts"))
+    comp = _safe_float(s.get("completions"))
+    if att and comp is not None:
+        return round(comp / att * 100.0, 3)
+    return None
+
+
+def _cell_td_int(s, gp):
+    v = _safe_float(s.get("td_int_ratio"))
+    if v is not None:
+        return round(v, 3)
+    td = _safe_float(s.get("pass_tds"))
+    inter = _safe_float(s.get("interceptions"))
+    if td is not None and inter:
+        return round(td / inter, 3)
+    # A ratio against zero interceptions is undefined, not infinite:
+    # dash rather than invent a number.
+    return None
+
+
+def _per_game(field):
+    def _cell(s, gp):
+        return _div_or_none(_safe_float(s.get(field)), gp)
+    return _cell
+
+
+# Season-line stat columns per position: (key, label, on_overview,
+# decimals, extractor). Every value is a per-game rate (or a stored
+# per-play rate) derived from the season's stored fields only; an
+# extractor returns None when its source fields are not stored for
+# that season, and the modal dashes the cell. The Production tab
+# carries the full set; Overview carries the ov=True subset.
+_REC_LINE_SPECS = [
+    ("tgt_g", "Tgt/G", True, 1, _cell_tgt_g),
+    ("rec_g", "Rec/G", True, 1, _per_game("receptions")),
+    ("rec_yds_g", "Rec Yds/G", True, 1, _per_game("receiving_yards")),
+    ("yds_rec", "Yds/Rec", True, 1, _cell_yds_rec),
+    ("rec_td_g", "Rec TD/G", False, 2, _per_game("receiving_tds")),
+]
+_SEASON_LINE_SPECS = {
+    "WR": _REC_LINE_SPECS,
+    "TE": _REC_LINE_SPECS,
+    "RB": [
+        ("rush_att_g", "Rush Att/G", False, 1, _per_game("rush_attempts")),
+        ("rush_yds_g", "Rush Yds/G", True, 1, _per_game("rush_yards")),
+        ("yds_carry", "Yds/Carry", True, 1, _cell_yds_carry),
+        ("rec_g", "Rec/G", True, 1, _per_game("receptions")),
+        ("rec_yds_g", "Rec Yds/G", True, 1, _per_game("receiving_yards")),
+        ("td_g", "TD/G", False, 2, _cell_rb_td_g),
+    ],
+    "QB": [
+        ("att_g", "Att/G", True, 1, _per_game("pass_attempts")),
+        ("cmp_pct", "Cmp%", False, 1, _cell_cmp_pct),
+        ("pass_yds_g", "Pass Yds/G", True, 1, _per_game("pass_yards")),
+        ("td_int", "TD:INT", True, 1, _cell_td_int),
+        ("rush_yds_g", "Rush Yds/G", False, 1, _per_game("rush_yards")),
+    ],
+}
+
+
+def _season_line_columns(position):
+    """Column descriptors for the modal's season-line tables, shared
+    by the Overview and Production renderings of one player's lines."""
+    specs = _SEASON_LINE_SPECS.get((position or "").upper(),
+                                   _REC_LINE_SPECS)
+    return [{"key": key, "label": label, "ov": ov, "dp": dp}
+            for key, label, ov, dp, _fn in specs]
+
+
 def _season_lines(position, seasons):
     """Season-line rows for the modal: per-game rate, in-progress state,
-    and a percentile for completed seasons only (an in-progress season
-    never prints one)."""
+    a percentile for completed seasons only (an in-progress season
+    never prints one), and the rich per-season stat cells (see
+    _SEASON_LINE_SPECS)."""
     pos = (position or "").upper()
     label, unit = _RATE_LABEL.get(pos, _RATE_LABEL_DEFAULT)
+    specs = _SEASON_LINE_SPECS.get(pos, _REC_LINE_SPECS)
     dist = _season_rate_distributions(pos)
     lines = []
     for s in sorted(seasons or [],
@@ -806,6 +928,9 @@ def _season_lines(position, seasons):
         pct = None
         if not in_prog and gp and gp >= _SEASON_MIN_GP and rate is not None:
             pct = component_percentile(rate, dist)
+        cells = {}
+        for key, _label, _ov, _dp, fn in specs:
+            cells[key] = fn(s, gp) if gp else None
         lines.append({
             "season": s.get("season"),
             "team": s.get("team"),
@@ -815,6 +940,7 @@ def _season_lines(position, seasons):
             "rate_unit": unit,
             "in_progress": bool(in_prog),
             "percentile": pct,
+            "cells": cells,
         })
     return lines
 
@@ -1326,6 +1452,7 @@ def _get_prospect_detail(player_id: str, row: dict) -> dict:
         "breakout_season": None,
         "breakout_phrase": None,
         "season_lines": [],
+        "season_line_columns": [],
         "testing": [],
         "mock_trend": None,
         "advanced": [],
@@ -1524,8 +1651,11 @@ def _get_prospect_detail(player_id: str, row: dict) -> dict:
     # table rows for the modal's Production / Overview surfaces.
     try:
         detail["season_lines"] = _season_lines(row.get("position"), seasons)
+        detail["season_line_columns"] = _season_line_columns(
+            row.get("position"))
     except Exception:
         detail["season_lines"] = []
+        detail["season_line_columns"] = []
     try:
         detail["testing"] = _testing_rows(athleticism, row.get("position"))
     except Exception:
