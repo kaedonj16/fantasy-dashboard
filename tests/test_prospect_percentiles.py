@@ -155,6 +155,30 @@ class TestInSeason:
         assert ra.is_in_season(2026, 0, today=date(2026, 10, 17)) is False
 
 
+class TestChipInSeasonSuccession:
+    """v3.4: the stored grading-mode flag succeeds the data-state check."""
+
+    def test_flag_true_wins_over_completed_data_state(self):
+        # Graded in-season; the stored line later filled to 13 GP without
+        # a re-grade. The grading record wins.
+        assert ra.chip_in_season(True, 2026, 13,
+                                 today=date(2026, 10, 17)) is True
+
+    def test_flag_false_wins_over_partial_data_state(self):
+        # Graded complete-mode (e.g. a February re-grade); the chip must
+        # not resurrect from a partial-looking stored line.
+        assert ra.chip_in_season(False, 2026, 7,
+                                 today=date(2026, 10, 17)) is False
+
+    def test_no_flag_falls_back_to_data_state(self):
+        assert ra.chip_in_season(None, 2026, 7,
+                                 today=date(2026, 10, 17)) is True
+        assert ra.chip_in_season(None, 2026, 13,
+                                 today=date(2026, 10, 17)) is False
+        assert ra.chip_in_season(None, None, None,
+                                 today=date(2026, 10, 17)) is False
+
+
 class TestPoolLine:
     def test_generated_from_actual_classes(self, monkeypatch):
         pops = {
