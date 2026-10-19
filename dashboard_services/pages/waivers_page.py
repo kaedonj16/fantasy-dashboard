@@ -785,6 +785,7 @@ var wvLabOppDraws = null; // opponent team totals per sim
 var wvLabOppStats = null; // {{median, p10, p90}}
 var wvLabResult = null;   // last evaluate() output
 var wvLabLoading = false;
+var wvLabLoadSeq = 0;      // increments per wvLoadLab; guards stale settles
 var wvLabPrefetch = null;  // {{key, promise}}: background Lab payload fetch
 var wvLabOpenSlots = {{}};   // slot index -> true while its bench sheet is expanded
 var wvLabLastChanges = []; // change records (slot idx, out name, in name) from the last action
@@ -1188,8 +1189,24 @@ function wvLabSkeleton() {{
 
 function wvLoadLab() {{
   wvLabLoading = true;
+  var labSeq = ++wvLabLoadSeq;
   var body = document.getElementById('wvLabBody');
   if (body) body.innerHTML = wvLabSkeleton();
+  // DOM failsafe like wvLoadStartSit: the Lab fetch has no abort signal
+  // (it may be the shared prefetch promise), so if the skeleton is still
+  // up after 25s, surface the same unavailable + Try again state the
+  // catch renders instead of simulating forever. A late success for this
+  // same load still renders over it (self-heals, same as the player
+  // modal's ADP reveal); a newer load supersedes via labSeq.
+  var labFailsafe = setTimeout(function() {{
+    if (labSeq !== wvLabLoadSeq) return;
+    var b = document.getElementById('wvLabBody');
+    if (b && b.querySelector('.wv-lab-loading')) {{
+      wvLabLoading = false;
+      b.innerHTML = '<div class="wv-lab-skel">The Lab is unavailable right now. '
+        + '<button type="button" class="wv-lab-btn" onclick="wvLabData=null;wvLoadLab()">Try again</button></div>';
+    }}
+  }}, 25000);
   // Consume the background prefetch when it is for this league/season/week;
   // a different week (or no prefetch) fetches fresh, exactly as before.
   var req;
@@ -1201,6 +1218,8 @@ function wvLoadLab() {{
     req = fetch(url).then(function(r) {{ return r.json(); }});
   }}
   req.then(function(data) {{
+    if (labSeq !== wvLabLoadSeq) return;
+    clearTimeout(labFailsafe);
     wvLabLoading = false;
     if (!data || data.state !== 'loaded' || !data.you || !data.you.lineup) {{
       if (body) body.innerHTML = '<div class="wv-lab-skel">'
@@ -1284,6 +1303,8 @@ function wvLoadLab() {{
     wvLabResult = wvLabEvaluate(wvLabLineup);
     wvRenderLab();
   }}).catch(function() {{
+    if (labSeq !== wvLabLoadSeq) return;
+    clearTimeout(labFailsafe);
     wvLabLoading = false;
     if (body) body.innerHTML = '<div class="wv-lab-skel">The Lab is unavailable right now. '
       + '<button type="button" class="wv-lab-btn" onclick="wvLabData=null;wvLoadLab()">Try again</button></div>';
@@ -2178,10 +2199,21 @@ function wvLoadCandidates() {{
   const bm = document.getElementById('wvBestMovesTitle');
   if (bm) bm.textContent = window._viewerRid ? 'Best moves for your team' : 'Top available players';
   window.brLoadingState('wvWaiverList', {{ rows: 4, compact: true, message: 'Loading ' + requestedHorizon.replace('_', ' ') + ' recommendations' }});
+  // Bound the wait like wvLoadStartSit / wvLoadBigGames on this page: the
+  // controller existed but nothing ever timed it out, so a hung backend
+  // left the loading skeleton up forever. Abort at 20s; the catch below
+  // treats a timeout abort (unlike a superseding load's abort) as the
+  // error state with a retry.
+  let candTimedOut = false;
+  const candTimer = setTimeout(() => {{
+    candTimedOut = true;
+    if (wvCandidateController) {{ try {{ wvCandidateController.abort(); }} catch (_) {{}} }}
+  }}, 20000);
   fetch(`/api/waiver-candidates?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}${{_wvRid}}${{_h}}${{_pos}}`,
         wvCandidateController ? {{ signal: wvCandidateController.signal }} : {{}})
     .then(r => r.json().then(d => ({{ ok: r.ok, d }})))
     .then(({{ ok, d }}) => {{
+      clearTimeout(candTimer);
       if (requestSeq !== wvCandidateRequestSeq || requestedHorizon !== wvHorizon || requestedPos !== wvCurrentPos || requestedContext !== `${{WV_PLATFORM}}:${{WV_SEASON}}:${{WV_LEAGUE_ID}}`) return;
       if (!ok || d.error) {{
         window.brErrorState('wvWaiverList', (d && d.error) || 'Unable to load waiver data.', wvLoadCandidates);
@@ -2209,7 +2241,11 @@ function wvLoadCandidates() {{
       wvRenderWaivers();
     }})
     .catch(err => {{
-      if (requestSeq !== wvCandidateRequestSeq || (err && err.name === 'AbortError')) return;
+      clearTimeout(candTimer);
+      if (requestSeq !== wvCandidateRequestSeq) return;
+      // A superseding load aborts this one: stay quiet. A timeout abort is
+      // a real failure for this request: fall into the retry state.
+      if (err && err.name === 'AbortError' && !candTimedOut) return;
       window.brErrorState('wvWaiverList', 'Unable to load waiver data.', wvLoadCandidates);
     }});
 }}

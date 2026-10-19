@@ -42,7 +42,7 @@ def test_skeleton_shown_up_front_and_rehidden_without_data():
     body = _loader_body()
     # Skeleton goes in before the fetch starts.
     assert "el.innerHTML = _pmRecentFormSkeleton();" in body
-    assert body.index("_pmRecentFormSkeleton()") < body.index("fetch(logsUrl)")
+    assert body.index("_pmRecentFormSkeleton()") < body.index("_pmFetch(logsUrl)")
     # No logs / no real games / failure all re-hide the card.
     assert "if (!Array.isArray(logs) || !logs.length) { el.hidden = true; return; }" in body
     assert "if (!real.length) { el.hidden = true; return; }" in body

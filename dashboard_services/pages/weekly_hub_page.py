@@ -581,6 +581,18 @@ def build_weekly_hub_body(ctx: dict) -> str:
     var mySeq = ++requestSeq;
     showLoading();
 
+    // Bound the wait: the controller was only ever aborted by the NEXT
+    // week change, so a hung request left the loading overlay up and the
+    // selector disabled forever (.finally only runs when fetch settles).
+    // A timeout abort is not a user abort: it rolls the selector back via
+    // failWeekChange below instead of being swallowed by the AbortError
+    // early return.
+    var weekTimedOut = false;
+    var weekTimer = setTimeout(function() {{
+      weekTimedOut = true;
+      if (controller) {{ try {{ controller.abort(); }} catch (e) {{}} }}
+    }}, 25000);
+
     var url =
       '/api/weekly-week?platform=' + encodeURIComponent(platform) +
       '&season=' + encodeURIComponent(season) +
@@ -656,11 +668,12 @@ def build_weekly_hub_body(ctx: dict) -> str:
         lastGoodWeek = w;
       }})
       .catch(function(err) {{
-        if (err && err.name === 'AbortError') return;
+        if (err && err.name === 'AbortError' && !weekTimedOut) return;
         console.error('Error fetching week', w, err);
         failWeekChange(w, mySeq);
       }})
       .finally(function() {{
+        clearTimeout(weekTimer);
         if (mySeq === requestSeq) hideLoading();
       }});
   }});
