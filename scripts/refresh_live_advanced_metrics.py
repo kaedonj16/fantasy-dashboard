@@ -43,10 +43,13 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 import time
 from datetime import date, datetime
 from pathlib import Path
 from typing import List, Optional
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from dashboard_services.api import get_nfl_state
 from utils.paths import CACHE_DIR

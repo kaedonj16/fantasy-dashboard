@@ -27,8 +27,12 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import sys
 from datetime import date
+from pathlib import Path
 from typing import Iterable, List, Optional
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from dashboard_services.api import get_nfl_state
 from dashboard_services.db import get_conn

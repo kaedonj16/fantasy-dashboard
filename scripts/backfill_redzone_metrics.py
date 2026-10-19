@@ -4,6 +4,11 @@ Run with ``python -m scripts.backfill_redzone_metrics``. Other metrics and older
 point-in-time snapshots are untouched. Re-running is safe, including after a
 partial failure. Weekly rows missing the new columns repair during daily builds.
 """
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from data_building.advanced_metrics import init_advanced_metrics_db
 from data_building.external_data.sleeper_usage import build_usage_map_for_season
 from dashboard_services.db import get_conn
