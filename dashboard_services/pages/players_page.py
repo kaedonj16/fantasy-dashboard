@@ -17,12 +17,6 @@ def build_players_shell() -> str:
             <span id="prSubtitle">All players ranked by dynasty value.</span>
           </div>
         </div>
-        <button type="button" onclick="prExportCSV()" title="Download current list as CSV"
-          style="margin-top:4px;padding:7px 14px;border-radius:8px;border:1px solid var(--border);
-                 background:var(--surface);color:var(--text);font-size:13px;font-weight:600;
-                 cursor:pointer;display:flex;align-items:center;gap:6px;white-space:nowrap;">
-          <img src="/static/images/download-solid.png" style="width:13px;height:13px;vertical-align:middle;opacity:0.8;" alt="" aria-hidden="true"> Export CSV
-        </button>
       </div>
       <div class="card-body" style="padding-top:0;">
 
@@ -145,8 +139,17 @@ def build_players_shell() -> str:
           <div class="sk-card-row"><div class="skeleton sk-av"></div><div class="sk-lines"><div class="skeleton skeleton-line w-60"></div><div class="skeleton skeleton-line w-40"></div></div><div class="skeleton sk-chip"></div></div>
         </div>
 
-        <!-- Player count -->
-        <div id="prCount" style="font-size:13px;color:var(--text-muted);margin-bottom:8px;display:none;"></div>
+        <!-- Player count + CSV export (one row, per the approved mobile mock;
+             app.py's SSR pass swaps this exact string to reveal the row) -->
+        <div id="prCountRow" style="display:none;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;">
+          <span id="prCount" style="font-size:13px;color:var(--text-muted);"></span>
+          <button type="button" onclick="prExportCSV()" title="Download current list as CSV"
+            style="padding:5px 10px;border-radius:8px;border:1px solid var(--border);
+                   background:var(--surface);color:var(--text);font-size:12px;font-weight:600;
+                   cursor:pointer;display:flex;align-items:center;gap:6px;white-space:nowrap;">
+            <img src="/static/images/download-solid.png" style="width:12px;height:12px;vertical-align:middle;opacity:0.8;" alt="" aria-hidden="true"> Export CSV
+          </button>
+        </div>
 
         <div id="prTableScroll">
         <!-- Table header -->
@@ -257,10 +260,29 @@ def build_players_shell() -> str:
         font-weight: 600;
         color: var(--text);
         display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        justify-content: center;
+        gap: 2px;
+        min-width: 0;
+      }
+      .pr-name-main {
+        display: flex;
         align-items: center;
         gap: 5px;
         flex-wrap: wrap;
         min-width: 0;
+      }
+      /* Phone-only subline under the name (sparkline + pos rank + team); the
+         separate spark/pos/team columns take over above the phone breakpoint. */
+      .pr-sub {
+        display: none;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--text-muted);
+        white-space: nowrap;
       }
       .pr-pos-cell {
         text-align: center;
@@ -576,38 +598,42 @@ def build_players_shell() -> str:
         .filter-label {
           white-space: nowrap;
         }
-        .active-settings-indicator {
-          justify-content: center;
-          order: -1;
-          width: 100%;
-        }
+        /* Approved mobile mock: Row 2 stays ONE row -- the setting tags
+           scroll on the left and Sort by sits compact on the right (inline
+           label, slim select). The old stacked layout put the tags centered
+           on their own line and Sort by full-width underneath, pushing the
+           list ~70px down the phone. */
         .filter-row-secondary {
-          flex-wrap: wrap;
+          flex-wrap: nowrap;
           gap: 8px;
         }
-        /* Sort + ADP source sit side by side on their own row, each a tidy
-           field with the label stacked above a full-width select. Grid columns
-           of minmax(0,1fr) keep them equal and never overflow; a hidden ADP
-           source leaves one column, so Sort by fills the row. */
+        .active-settings-indicator {
+          justify-content: flex-start;
+        }
         .filter-sort-group {
-          display: grid;
-          grid-auto-flow: column;
-          grid-auto-columns: minmax(0, 1fr);
-          gap: 10px;
-          width: 100%;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          width: auto;
         }
         .filter-sort {
           min-width: 0;
-          flex-direction: column;
-          align-items: stretch;
-          gap: 5px;
+          flex-direction: row;
+          align-items: center;
+          gap: 6px;
         }
         .filter-sort .filter-label {
-          font-size: 11px;
+          font-size: 10px;
         }
         .filter-sort select {
-          width: 100%;
+          width: auto;
           min-width: 0;
+          max-width: 148px;
+          min-height: 32px;
+          height: 32px;
+          font-size: 12px;
+          padding-top: 0;
+          padding-bottom: 0;
         }
         /* Table: hide Age on tablets - rank | arrow | name | pos | team | ppg | value.
            The ADP-source view (.pr-adp-mode) manages its own columns inline, so
@@ -669,11 +695,38 @@ def build_players_shell() -> str:
           text-overflow: ellipsis;
         }
       }
-      @media (max-width: 480px) {
-        /* Phone: rank | arrow | name | ppg | value - hide pos and team */
-        .pr-grid-row:not(.pr-adp-mode) { grid-template-columns: 76px 36px 1fr 42px 50px !important; }
-        .pr-pos-cell, #prTableHeader:not(.pr-adp-mode) span:nth-child(4) { display: none !important; }
-        .pr-team,     #prTableHeader:not(.pr-adp-mode) span:nth-child(6) { display: none !important; }
+      @media (max-width: 640px) {
+        /* Phone (approved mock): ONE grid for header + rows --
+           rank | player | PPG | Value, 10px gaps. The rank delta stacks
+           under the #, and the sparkline + pos rank + team move into the
+           player subline, so the name gets the width the old separate
+           36px spark column and 76px rank cell used to eat. This page's
+           inline sheet is the ONLY source of phone grid rules for this
+           table (the stale copies in dashboard.css are gone). */
+        .pr-grid-row:not(.pr-adp-mode) {
+          grid-template-columns: 40px minmax(0, 1fr) 46px 70px !important;
+          /* !important: the header carries an inline gap:0, which would
+             otherwise leave its tracks one gap narrower than the rows'. */
+          column-gap: 10px !important;
+        }
+        .pr-arrows, .pr-pos-cell, .pr-age, .pr-team,
+        #prTableHeader:not(.pr-adp-mode) span:nth-child(2),
+        #prTableHeader:not(.pr-adp-mode) span:nth-child(4),
+        #prTableHeader:not(.pr-adp-mode) span:nth-child(5),
+        #prTableHeader:not(.pr-adp-mode) span:nth-child(6) { display: none !important; }
+        .pr-player-row { padding: 10px 12px; }
+        .pr-rank {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 0;
+          font-size: 14px;
+          line-height: 1.25;
+        }
+        .pr-rank-delta { font-size: 10px; }
+        .pr-name { font-size: 14px; }
+        .pr-sub { display: flex; }
+        .pr-ppg { font-size: 14px; }
+        .pr-value { font-size: 15px; }
         /* ADP-source view on phones: compact header labels so "Sleeper" /
            "BR Fantasy" / "Consensus" read clearly in the scrollable pane. */
         #prTableHeader.pr-adp-mode .pr-adp-head {
