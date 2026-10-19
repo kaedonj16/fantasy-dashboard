@@ -22935,6 +22935,198 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
     color: var(--text-muted);
 }
 
+/* ── Mobile week picker (Advanced tab) ──────────────────────────────────────
+   Desktop keeps the inline week bar. On phones the Weeks group swaps the bar
+   for a compact field the height of the season pills; tapping it floats a
+   panel over the tab content (no scrim, nothing reflows) hosting a second
+   instance of the shared week bar - restyled with round thumbs and week
+   bubbles - plus the range presets. */
+.adv-time-wrap {
+    position: relative;
+}
+
+.adv-wk-field,
+.adv-wk-panel {
+    display: none;
+}
+
+@media (max-width: 640px) {
+    .adv-time-group .adv-week-bar-row {
+        display: none;
+    }
+
+    .adv-wk-field {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        width: 100%;
+        padding: 4px 12px;
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-pill);
+        background: transparent;
+        color: var(--text);
+        font-size: 13px;
+        font-weight: 700;
+        line-height: 1.5;
+        cursor: pointer;
+        text-align: left;
+    }
+
+    .adv-wk-field.open {
+        border-color: var(--brand-blue);
+    }
+
+    .adv-wk-field-chev {
+        color: var(--text-muted);
+        font-weight: 400;
+        transition: transform 0.15s;
+    }
+
+    .adv-wk-field.open .adv-wk-field-chev {
+        transform: rotate(-90deg);
+    }
+
+    .adv-wk-panel:not([hidden]) {
+        display: block;
+        position: absolute;
+        top: calc(100% + 6px);
+        left: 0;
+        right: 0;
+        z-index: 30;
+        background: var(--card);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        box-shadow: 0 14px 34px rgba(15, 23, 42, 0.18);
+        padding: 13px 14px 11px;
+    }
+
+    .adv-wk-presets {
+        display: flex;
+        gap: 7px;
+    }
+
+    .adv-wk-preset {
+        padding: 6px 11px;
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-pill);
+        background: transparent;
+        color: var(--text-muted);
+        font-size: 12.5px;
+        font-weight: 600;
+        cursor: pointer;
+    }
+
+    .adv-wk-preset.active {
+        background: var(--brand-blue);
+        border-color: var(--brand-blue);
+        color: #fff;
+    }
+
+    /* Room above the track for the thumb bubbles. */
+    .adv-wk-panel-bar {
+        padding-top: 30px;
+    }
+
+    .adv-wk-panel .wk-bar-track {
+        margin: 0 15px;
+    }
+
+    .adv-wk-panel .wk-bar-ticks {
+        margin: 2px 15px 0;
+    }
+
+    /* Thin track + solid selected segment between the thumbs (the desktop
+       bar keeps its boxed selection outline). Track is 34px tall at this
+       breakpoint, so top/bottom 14px centres a 6px band on it. */
+    .adv-wk-panel .wk-bar-bg {
+        top: 14px;
+        bottom: 14px;
+        border-radius: 3px;
+    }
+
+    .adv-wk-panel .wk-bar-sel {
+        top: 14px;
+        bottom: 14px;
+        border: none;
+        border-radius: 3px;
+        background: var(--brand-blue);
+        min-width: 30px;
+    }
+
+    .adv-wk-panel .wk-bar-grip {
+        position: relative;
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        background: var(--brand-blue);
+        border: 2.5px solid #fff;
+        box-shadow: 0 1px 5px rgba(15, 23, 42, 0.35);
+    }
+
+    .adv-wk-panel .wk-bar-grip-l {
+        margin-left: -15px;
+    }
+
+    .adv-wk-panel .wk-bar-grip-r {
+        margin-right: -15px;
+    }
+
+    .adv-wk-panel .wk-bar-grip span {
+        display: none;
+    }
+
+    /* Week bubble above each thumb. The shared bar's paint() keeps
+       aria-valuenow live during drags, so the label tracks with no extra JS.
+       Theme-var colours keep it readable in dark mode too. */
+    .adv-wk-panel .wk-bar-grip::after {
+        content: 'W' attr(aria-valuenow);
+        position: absolute;
+        left: 50%;
+        bottom: calc(100% + 10px);
+        transform: translateX(-50%);
+        background: var(--text);
+        color: var(--bg);
+        font-size: 11.5px;
+        font-weight: 700;
+        line-height: 1.2;
+        padding: 3px 8px;
+        border-radius: 6px;
+        white-space: nowrap;
+        pointer-events: none;
+    }
+
+    .adv-wk-panel .wk-bar-grip::before {
+        content: '';
+        position: absolute;
+        left: 50%;
+        bottom: calc(100% + 2px);
+        transform: translateX(-50%);
+        border: 4px solid transparent;
+        border-top-color: var(--text);
+        pointer-events: none;
+    }
+
+    .adv-wk-panel-foot {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-top: 10px;
+        font-size: 12px;
+        color: var(--text-muted);
+    }
+
+    .adv-wk-done {
+        padding: 4px 2px;
+        border: none;
+        background: none;
+        color: var(--brand-blue);
+        font-size: 13.5px;
+        font-weight: 800;
+        cursor: pointer;
+    }
+}
+
 .cmp-week-bar-wrap {
     margin-top: 6px;
     width: 100%;
