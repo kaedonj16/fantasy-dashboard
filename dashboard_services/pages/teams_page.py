@@ -598,6 +598,7 @@ def build_teams_body(ctx: dict) -> str:
         # per-position chip colors used across the reworked cards.
         _WINDOW_COLORS = {
             "Contend": "#22c55e", "Bubble": "#f59e0b", "Out": "#94a3b8",
+            "Long Shot": "#94a3b8",
             "Contender": "#22c55e", "Win-Now": "#f59e0b", "Aging Contender": "#84cc16",
             "Contender Window": "#3b82f6", "2-3 Year Window": "#6366f1", "Rising": "#8b5cf6",
             "Holding Pattern": "#94a3b8", "Retooling": "#f97316", "Rebuilding": "#ef4444",
