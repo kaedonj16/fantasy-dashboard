@@ -27292,12 +27292,12 @@ def _compute_compare_baselines():
 # platform, league, season, league type/size, account, value-table version),
 # yet the build re-runs per-player league trades, eligibility, weekly-points
 # and start/sit work on every open (~0.4s warm, several seconds cold). The
-# client already caches each payload for 5 minutes per browser; 120s here
-# stays strictly fresher than that while making repeat opens (a reopened
+# client already caches each payload for 5 minutes per browser; the TTL
+# here matches that 5 minutes while making repeat opens (a reopened
 # modal, a second viewer of the same league) near-instant.
 _PLAYER_DETAILS_CACHE: dict = {}  # key -> (ts, payload)
-_PLAYER_DETAILS_TTL = 120  # seconds
-_PLAYER_DETAILS_MAX = 24  # ~4KB payloads, mirroring the client cache bound
+_PLAYER_DETAILS_TTL = 300  # seconds, matching the client's 5-minute cache
+_PLAYER_DETAILS_MAX = 64  # ~4KB payloads, mirroring the client cache bound
 
 
 def _player_details_cache_active() -> bool:
@@ -27358,6 +27358,12 @@ def api_player_details(player_id: str):
         # Get league context
         league_id = request.args.get("league_id")
         platform = request.args.get("platform", "sleeper")
+        # Slim mode (the player modal's open path): skip the start/sit
+        # computation and the league trades/acquisition folds, whose data
+        # the modal never reads from this payload (its start/sit strip and
+        # In-this-league section lazy-load their own endpoints). Compare
+        # does NOT pass slim and keeps the full payload unchanged.
+        _slim = str(request.args.get("slim") or "").strip() == "1"
         season = int(request.args.get("season", datetime.now().year))
         _modal_lt = str(request.args.get("league_type", "1qb")).strip().lower()
         try:
@@ -27381,7 +27387,7 @@ def api_player_details(player_id: str):
             _pd_cache_key = (
                 str(player_id), platform, str(league_id or ""), season,
                 _modal_lt, _modal_ls, str(session.get("account_id") or ""),
-                _MODEL_VALUE_CACHE_TS,
+                _MODEL_VALUE_CACHE_TS, _slim,
             )
             _pd_cached = _player_details_cache_get(_pd_cache_key)
             if _pd_cached is not None:
@@ -27798,201 +27804,210 @@ def api_player_details(player_id: str):
         except Exception:
             logger.debug("[api_player_details] injury lookup skipped", exc_info=True)
 
-        # Unified start/sit score (same formula as Waivers START badges) so
-        # Compare can show a real number instead of a decorative dash. The
-        # per-factor multipliers and demotion reason ride along so the Compare
-        # Start/Sit tab can explain what moved the score, not just show it.
+        # Slim mode leaves every start/sit key None in the payload: the
+        # modal never reads them from here (its strip lazy-loads its own
+        # endpoint), and Compare (non-slim) keeps the full computation.
         _start_score = None
         _start_score_pct = None
         _start_factors = None
         _start_demotion = None
         _start_sit_payload = None
-        try:
-            from utils.start_sit_score import bottom_teams_by_implied_total, compute_start_score
-            from dashboard_services.api import get_nfl_state as _ss_nfl_state
-            _ss_state = _ss_nfl_state() or {}
-            _ss_week = int(_ss_state.get("week") or 0)
-            _ss_proj = 0.0
-            if _ss_week:
-                from utils.utils import load_week_projection as _ss_load_wp
-                from utils.fantasy_scoring import weekly_projection_points as _ss_wpp
-                _ss_map = _ss_load_wp(int(season), int(_ss_week)) or {}
-                # Same scoring resolution as the matchups/start-sit page: trust
-                # Sleeper's published total for plain leagues, recompute for
-                # custom scoring.
-                _ss_proj = float(_ss_wpp(
-                    _ss_map, player_id, scoring_settings,
-                    (player_meta.get("pos") or "").upper(),
-                ) or 0.0)
-            _ss_bye = False
-            _ss_team = str(player_meta.get("team") or "").upper()
-            if _ss_team and _ss_week:
-                try:
-                    _ss_bye = int((_team_bye_map(int(season)) or {}).get(_ss_team) or 0) == int(_ss_week)
-                except Exception:
-                    _ss_bye = False
-            _ss_inj = (injury or {}).get("status") if injury else None
-            _ss_pos = str(player_meta.get("pos") or "").upper()
-            _ss_imp = None
-            _ss_wx_kind = None
-            _ss_wx = None
-            _ss_opp = ""
-            _ss_home = ""
-            _ss_low_total_teams = set()
-            # Best-effort Vegas/weather so Compare matches the Start/Sit page.
-            if _ss_team and _ss_week and not _ss_bye:
-                try:
-                    from utils.utils import load_week_sched as _ss_lsched
-                    from utils.game_conditions import build_week_conditions as _ss_bwc
-                    _ss_games = []
-                    for _g in (_ss_lsched(int(season), int(_ss_week)) or []):
-                        _h = str(_g.get("home") or "").upper()
-                        _a = str(_g.get("away") or "").upper()
-                        if _h and _a:
-                            _ss_games.append((_h, _a, str(_g.get("gameDate") or "")))
-                            # This player's opponent and the game's home team, for
-                            # the compare "Opponent" and venue rows.
-                            if _ss_team == _h:
-                                _ss_opp, _ss_home = _a, _h
-                            elif _ss_team == _a:
-                                _ss_opp, _ss_home = _h, _h
-                    if _ss_games:
-                        _ss_all_conds = _ss_bwc(int(season), int(_ss_week), _ss_games) or {}
-                        _ss_cond = _ss_all_conds.get(_ss_team) or {}
-                        _ss_low_total_teams = bottom_teams_by_implied_total(_ss_all_conds)
-                        _ss_imp = _ss_cond.get("implied_total")
-                        _ss_wx = _ss_cond.get("weather") or {}
-                        if isinstance(_ss_wx, dict):
-                            _ss_wx_kind = _ss_wx.get("kind")
-                except Exception:
-                    logger.debug("[api_player_details] start_score conditions skipped", exc_info=True)
-            if _ss_proj > 0 or _ss_inj or _ss_bye:
-                # Build the Waivers-parity payload FIRST so the score can use the
-                # same form / usage / floor signals the Start/Sit page feeds in.
-                # Without them the compare score ignored recent form, usage trend
-                # and consistency and collapsed to raw projection whenever Vegas
-                # and weather were absent.
-                # Display-only absence notes (teammate / opponent injuries).
-                # Built from the cached Sleeper players feed; never scored.
-                _ss_absences = {"teammates": [], "opponents": []}
-                if _ss_team and _ss_opp and not _ss_bye:
+        if not _slim:
+            # Unified start/sit score (same formula as Waivers START badges) so
+            # Compare can show a real number instead of a decorative dash. The
+            # per-factor multipliers and demotion reason ride along so the Compare
+            # Start/Sit tab can explain what moved the score, not just show it.
+            _start_score = None
+            _start_score_pct = None
+            _start_factors = None
+            _start_demotion = None
+            _start_sit_payload = None
+            try:
+                from utils.start_sit_score import bottom_teams_by_implied_total, compute_start_score
+                from dashboard_services.api import get_nfl_state as _ss_nfl_state
+                _ss_state = _ss_nfl_state() or {}
+                _ss_week = int(_ss_state.get("week") or 0)
+                _ss_proj = 0.0
+                if _ss_week:
+                    from utils.utils import load_week_projection as _ss_load_wp
+                    from utils.fantasy_scoring import weekly_projection_points as _ss_wpp
+                    _ss_map = _ss_load_wp(int(season), int(_ss_week)) or {}
+                    # Same scoring resolution as the matchups/start-sit page: trust
+                    # Sleeper's published total for plain leagues, recompute for
+                    # custom scoring.
+                    _ss_proj = float(_ss_wpp(
+                        _ss_map, player_id, scoring_settings,
+                        (player_meta.get("pos") or "").upper(),
+                    ) or 0.0)
+                _ss_bye = False
+                _ss_team = str(player_meta.get("team") or "").upper()
+                if _ss_team and _ss_week:
                     try:
-                        from utils.start_sit_context import (
-                            absence_notes as _ss_abs_notes,
-                            build_absence_index as _ss_abs_idx,
-                        )
-                        # Same productive-producer gate as the Start/Sit
-                        # page: pooled weekly points under this scope's
-                        # (stamped) scoring settings. Best-effort.
-                        _ss_productive = None
-                        try:
-                            from utils.league_scoring import (
-                                stamp_scoring_aliases as _ss_stamp_pd,
-                            )
-                            from utils.start_sit_context import (
-                                productive_pids_from_weekly_points as _ss_prod_pd,
-                            )
-                            _eff_pd = _ss_stamp_pd(scoring_settings) if scoring_settings else {}
-                            _ss_productive = _ss_prod_pd(
-                                _load_season_weekly_points(int(season), _eff_pd),
-                                _load_season_weekly_points(int(season) - 1, _eff_pd),
-                            )
-                        except Exception:
-                            _ss_productive = None
-                        # Starting linemen via pooled snap share, same as
-                        # the Start/Sit page. Best-effort: none on failure.
-                        _ss_linemen = None
-                        _pd_players: dict = {}
-                        try:
-                            from utils.start_sit_context import (
-                                starting_lineman_pids as _ss_line_pd,
-                            )
-                            _pd_players = get_players_global() or {}
-                            _ss_linemen = _ss_line_pd(
-                                [_load_season_snap_totals(int(season)),
-                                 _load_season_snap_totals(int(season) - 1)],
-                                {str(_pid): str(_p.get("position") or _p.get("pos") or "")
-                                 for _pid, _p in _pd_players.items()
-                                 if isinstance(_p, dict)},
-                            )
-                        except Exception:
-                            _ss_linemen = None
-                            _pd_players = {}
-                        _ss_absences = _ss_abs_notes(
-                            _ss_abs_idx(_pd_players or get_players_global() or {},
-                                        productive_pids=_ss_productive,
-                                        starting_linemen=_ss_linemen),
-                            _ss_team, _ss_opp, exclude_pid=player_id,
-                        ) or _ss_absences
+                        _ss_bye = int((_team_bye_map(int(season)) or {}).get(_ss_team) or 0) == int(_ss_week)
                     except Exception:
-                        logger.debug("[api_player_details] absence notes skipped",
-                                     exc_info=True)
-                try:
-                    _start_sit_payload = _startsit_compare_extras(
-                        player_id, _ss_pos, _ss_team, season, _ss_week, scoring_settings,
-                        proj_pts=_ss_proj, on_bye=_ss_bye, opponent=_ss_opp,
-                        home_team=_ss_home, implied_total=_ss_imp, weather=_ss_wx,
-                        absences=_ss_absences,
+                        _ss_bye = False
+                _ss_inj = (injury or {}).get("status") if injury else None
+                _ss_pos = str(player_meta.get("pos") or "").upper()
+                _ss_imp = None
+                _ss_wx_kind = None
+                _ss_wx = None
+                _ss_opp = ""
+                _ss_home = ""
+                _ss_low_total_teams = set()
+                # Best-effort Vegas/weather so Compare matches the Start/Sit page.
+                if _ss_team and _ss_week and not _ss_bye:
+                    try:
+                        from utils.utils import load_week_sched as _ss_lsched
+                        from utils.game_conditions import build_week_conditions as _ss_bwc
+                        _ss_games = []
+                        for _g in (_ss_lsched(int(season), int(_ss_week)) or []):
+                            _h = str(_g.get("home") or "").upper()
+                            _a = str(_g.get("away") or "").upper()
+                            if _h and _a:
+                                _ss_games.append((_h, _a, str(_g.get("gameDate") or "")))
+                                # This player's opponent and the game's home team, for
+                                # the compare "Opponent" and venue rows.
+                                if _ss_team == _h:
+                                    _ss_opp, _ss_home = _a, _h
+                                elif _ss_team == _a:
+                                    _ss_opp, _ss_home = _h, _h
+                        if _ss_games:
+                            _ss_all_conds = _ss_bwc(int(season), int(_ss_week), _ss_games) or {}
+                            _ss_cond = _ss_all_conds.get(_ss_team) or {}
+                            _ss_low_total_teams = bottom_teams_by_implied_total(_ss_all_conds)
+                            _ss_imp = _ss_cond.get("implied_total")
+                            _ss_wx = _ss_cond.get("weather") or {}
+                            if isinstance(_ss_wx, dict):
+                                _ss_wx_kind = _ss_wx.get("kind")
+                    except Exception:
+                        logger.debug("[api_player_details] start_score conditions skipped", exc_info=True)
+                if _ss_proj > 0 or _ss_inj or _ss_bye:
+                    # Build the Waivers-parity payload FIRST so the score can use the
+                    # same form / usage / floor signals the Start/Sit page feeds in.
+                    # Without them the compare score ignored recent form, usage trend
+                    # and consistency and collapsed to raw projection whenever Vegas
+                    # and weather were absent.
+                    # Display-only absence notes (teammate / opponent injuries).
+                    # Built from the cached Sleeper players feed; never scored.
+                    _ss_absences = {"teammates": [], "opponents": []}
+                    if _ss_team and _ss_opp and not _ss_bye:
+                        try:
+                            from utils.start_sit_context import (
+                                absence_notes as _ss_abs_notes,
+                                build_absence_index as _ss_abs_idx,
+                            )
+                            # Same productive-producer gate as the Start/Sit
+                            # page: pooled weekly points under this scope's
+                            # (stamped) scoring settings. Best-effort.
+                            _ss_productive = None
+                            try:
+                                from utils.league_scoring import (
+                                    stamp_scoring_aliases as _ss_stamp_pd,
+                                )
+                                from utils.start_sit_context import (
+                                    productive_pids_from_weekly_points as _ss_prod_pd,
+                                )
+                                _eff_pd = _ss_stamp_pd(scoring_settings) if scoring_settings else {}
+                                _ss_productive = _ss_prod_pd(
+                                    _load_season_weekly_points(int(season), _eff_pd),
+                                    _load_season_weekly_points(int(season) - 1, _eff_pd),
+                                )
+                            except Exception:
+                                _ss_productive = None
+                            # Starting linemen via pooled snap share, same as
+                            # the Start/Sit page. Best-effort: none on failure.
+                            _ss_linemen = None
+                            _pd_players: dict = {}
+                            try:
+                                from utils.start_sit_context import (
+                                    starting_lineman_pids as _ss_line_pd,
+                                )
+                                _pd_players = get_players_global() or {}
+                                _ss_linemen = _ss_line_pd(
+                                    [_load_season_snap_totals(int(season)),
+                                     _load_season_snap_totals(int(season) - 1)],
+                                    {str(_pid): str(_p.get("position") or _p.get("pos") or "")
+                                     for _pid, _p in _pd_players.items()
+                                     if isinstance(_p, dict)},
+                                )
+                            except Exception:
+                                _ss_linemen = None
+                                _pd_players = {}
+                            _ss_absences = _ss_abs_notes(
+                                _ss_abs_idx(_pd_players or get_players_global() or {},
+                                            productive_pids=_ss_productive,
+                                            starting_linemen=_ss_linemen),
+                                _ss_team, _ss_opp, exclude_pid=player_id,
+                            ) or _ss_absences
+                        except Exception:
+                            logger.debug("[api_player_details] absence notes skipped",
+                                         exc_info=True)
+                    try:
+                        _start_sit_payload = _startsit_compare_extras(
+                            player_id, _ss_pos, _ss_team, season, _ss_week, scoring_settings,
+                            proj_pts=_ss_proj, on_bye=_ss_bye, opponent=_ss_opp,
+                            home_team=_ss_home, implied_total=_ss_imp, weather=_ss_wx,
+                            absences=_ss_absences,
+                        )
+                    except Exception:
+                        logger.debug("[api_player_details] start_sit payload skipped", exc_info=True)
+                    _ssp = _start_sit_payload or {}
+                    _ss_recent = _ssp.get("recent_ppg") or 0.0
+                    _ss_cons = _ssp.get("consistency") or {}
+                    _ss_bust = (_ss_cons.get("bust_rate")
+                                if _ss_cons and not _ss_cons.get("small_sample") else None)
+                    # Rating usage inputs ride along with the compare payload
+                    # (played-week derivation, same as the Start/Sit page).
+                    _ss_ud = _ssp.get("usage_delta")
+                    _ss_usa = _ssp.get("usage_season_avg")
+                    # Reuse the O-line context the payload already resolved, so the
+                    # modal start score gets the same small residual as the page.
+                    _ss_ol = _ssp.get("oline") or _oline_for_player(season, _ss_team or player_team, _ss_pos)
+                    _ss_val, _ss_fac, _ss_dem = compute_start_score(
+                        _ss_proj,
+                        on_bye=_ss_bye,
+                        recent_ppg=_ss_recent,
+                        season_ppg=float(_ppg or 0),
+                        def_rank=_ssp.get("def_rank"),
+                        def_total=_ssp.get("def_total") or 32,
+                        usage_delta=_ss_ud,
+                        usage_season_avg=_ss_usa,
+                        injury_status=_ss_inj,
+                        implied_total=_ss_imp,
+                        bust_rate=_ss_bust,
+                        weather_kind=_ss_wx_kind,
+                        position=_ss_pos,
+                        oline_index=(_ss_ol or {}).get("primary_value"),
+                        expected_team_plays=(_ssp.get("pace") or {}).get("expected_team_plays"),
+                        league_average_plays=(_ssp.get("pace") or {}).get("league_average_plays"),
+                        role_confidence=_ssp.get("role_confidence"),
+                        played_games=_ssp.get("played_games"),
+                        low_total_team=(_ss_team in _ss_low_total_teams),
                     )
-                except Exception:
-                    logger.debug("[api_player_details] start_sit payload skipped", exc_info=True)
-                _ssp = _start_sit_payload or {}
-                _ss_recent = _ssp.get("recent_ppg") or 0.0
-                _ss_cons = _ssp.get("consistency") or {}
-                _ss_bust = (_ss_cons.get("bust_rate")
-                            if _ss_cons and not _ss_cons.get("small_sample") else None)
-                # Rating usage inputs ride along with the compare payload
-                # (played-week derivation, same as the Start/Sit page).
-                _ss_ud = _ssp.get("usage_delta")
-                _ss_usa = _ssp.get("usage_season_avg")
-                # Reuse the O-line context the payload already resolved, so the
-                # modal start score gets the same small residual as the page.
-                _ss_ol = _ssp.get("oline") or _oline_for_player(season, _ss_team or player_team, _ss_pos)
-                _ss_val, _ss_fac, _ss_dem = compute_start_score(
-                    _ss_proj,
-                    on_bye=_ss_bye,
-                    recent_ppg=_ss_recent,
-                    season_ppg=float(_ppg or 0),
-                    def_rank=_ssp.get("def_rank"),
-                    def_total=_ssp.get("def_total") or 32,
-                    usage_delta=_ss_ud,
-                    usage_season_avg=_ss_usa,
-                    injury_status=_ss_inj,
-                    implied_total=_ss_imp,
-                    bust_rate=_ss_bust,
-                    weather_kind=_ss_wx_kind,
-                    position=_ss_pos,
-                    oline_index=(_ss_ol or {}).get("primary_value"),
-                    expected_team_plays=(_ssp.get("pace") or {}).get("expected_team_plays"),
-                    league_average_plays=(_ssp.get("pace") or {}).get("league_average_plays"),
-                    role_confidence=_ssp.get("role_confidence"),
-                    played_games=_ssp.get("played_games"),
-                    low_total_team=(_ss_team in _ss_low_total_teams),
-                )
-                _start_score = round(float(_ss_val), 2)
-                _start_factors = _ss_fac
-                _start_demotion = _ss_dem
-                # Tier-anchored 0-100 index from the player's LEAGUE-WIDE
-                # rank at their position: the same index the Start/Sit page
-                # shows, so Compare and the page can never disagree. The
-                # anchor pct (share of the top projection) remains only as
-                # a fallback when no league-wide pool can be built.
-                try:
-                    _start_score_pct = start_score_league_index(
-                        int(season), _ss_week, scoring_settings,
-                        _start_sit_pos(_ss_pos), _ss_val, _ss_proj)
-                    if _start_score_pct is None:
-                        _ss_anchor = (start_score_pos_anchors(
-                            int(season), _ss_week, scoring_settings
-                        ) or {}).get(_start_sit_pos(_ss_pos))
-                        if _ss_anchor and _ss_anchor > 0:
-                            _start_score_pct = int(max(0, min(100, round(
-                                100.0 * float(_ss_val) / float(_ss_anchor)
-                            ))))
-                except Exception:
-                    logger.debug("[api_player_details] start_score_pct skipped", exc_info=True)
-        except Exception:
-            logger.debug("[api_player_details] start_score skipped", exc_info=True)
+                    _start_score = round(float(_ss_val), 2)
+                    _start_factors = _ss_fac
+                    _start_demotion = _ss_dem
+                    # Tier-anchored 0-100 index from the player's LEAGUE-WIDE
+                    # rank at their position: the same index the Start/Sit page
+                    # shows, so Compare and the page can never disagree. The
+                    # anchor pct (share of the top projection) remains only as
+                    # a fallback when no league-wide pool can be built.
+                    try:
+                        _start_score_pct = start_score_league_index(
+                            int(season), _ss_week, scoring_settings,
+                            _start_sit_pos(_ss_pos), _ss_val, _ss_proj)
+                        if _start_score_pct is None:
+                            _ss_anchor = (start_score_pos_anchors(
+                                int(season), _ss_week, scoring_settings
+                            ) or {}).get(_start_sit_pos(_ss_pos))
+                            if _ss_anchor and _ss_anchor > 0:
+                                _start_score_pct = int(max(0, min(100, round(
+                                    100.0 * float(_ss_val) / float(_ss_anchor)
+                                ))))
+                    except Exception:
+                        logger.debug("[api_player_details] start_score_pct skipped", exc_info=True)
+            except Exception:
+                logger.debug("[api_player_details] start_score skipped", exc_info=True)
 
         # ── Playoff strength-of-schedule (fantasy weeks 15-17) ───────────────
         # A rest-of-season buy/sell cue: how the player's team ranks for their
@@ -28164,10 +28179,12 @@ def api_player_details(player_id: str):
 
         # Fold in league-context data (replaces 2 separate round-trips).
         # Best-effort: failures leave the keys as None and the client falls
-        # back to the standalone endpoints.
+        # back to the standalone endpoints. Slim mode skips both chain scans
+        # entirely and omits the keys below, so the modal always takes its
+        # standalone-fetch fallback for the In-this-league section.
         _pd_league_trades = None
         _pd_acquisition_events = None
-        if league_id:
+        if league_id and not _slim:
             try:
                 from dashboard_services.player_league_trades import (
                     get_player_acquisition_events,
@@ -28300,6 +28317,12 @@ def api_player_details(player_id: str):
             "league_trades": _pd_league_trades,
             "acquisition_events": _pd_acquisition_events,
         }
+        if _slim:
+            # Absent (not None) so the modal client's !== undefined check
+            # routes it to the standalone /api/player-league-trades and
+            # /api/player-acquisition fetches.
+            del response["league_trades"]
+            del response["acquisition_events"]
 
         # Never pin an unresolved-ownership payload: a cold league context
         # must not mask the resolved ownership for the whole TTL window.
