@@ -319,9 +319,15 @@ def build_advanced_metrics_body(
             <span class="am-legend-btn-label">CSV</span>
           </button>
         </div>
-      </div>
-      <div id="amSearchRow" class="am-search-row" hidden>
-        <input id="amSearch" type="text" autocomplete="off" placeholder="Search players…" class="am-search" aria-label="Search players">
+        <div id="amSearchRow" class="am-search-row" hidden>
+          <div class="nav-search-wrapper am-player-search" id="amPlayerSearch">
+            <div class="nav-search-inner am-player-search-inner">
+              <svg class="nav-search-icon" width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.6"/><path d="M11 11l3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+              <input id="amSearch" type="text" autocomplete="off" spellcheck="false" placeholder="Search players…" class="nav-search-input am-player-search-input" aria-label="Search players">
+              <button type="button" class="nav-search-clear" id="amSearchClear" aria-label="Clear search">×</button>
+            </div>
+          </div>
+        </div>
       </div>
 
         <!-- Filter sheet: every secondary control, grouped. Bottom sheet on
@@ -1583,9 +1589,9 @@ def build_advanced_metrics_body(
         .am-cmd-title { font-size:15px; }
         .am-more-menu .am-legend-btn { padding:10px 12px; }
         .am-more-menu .am-legend-btn svg { width:16px; height:16px; }
-        /* 2. Search row (toggled from the strip) spans full width. */
-        #amSearchRow { margin:8px 0 0; }
-        #amSearchRow .am-search { font-size:15px; }
+        /* 2. Search popover (toggled from the strip) floats under the bar. */
+        #amSearchRow { top:calc(100% + 6px); }
+        #amSearchRow .am-player-search-input { font-size:15px; }
         /* 3. + Metric: solid outlined button matching the position pills,
            not the near-invisible dashed ghost. 8px radius per --radius-pill. */
         #amAddStatBtn {
@@ -1821,9 +1827,31 @@ def build_advanced_metrics_body(
         color:var(--text); font-size:13px; font-weight:600; cursor:pointer; text-align:left;
       }
       .am-more-menu .am-legend-btn:hover { background:var(--row,rgba(0,0,0,.05)); }
-      .am-search-row { margin:4px 0 0; }
+      /* Player search is a floating popover under the command bar, not a
+         full-width row in the page flow. The shared nav-search classes
+         supply the pill chrome; these rules only keep the AM instance
+         expanded inside its popover. */
+      .am-search-row {
+        position:absolute; top:calc(100% + 6px); right:0; z-index:90;
+        width:min(430px, calc(100vw - 32px));
+      }
       .am-search-row[hidden] { display:none; }
-      .am-search-row .am-search { width:100%; box-sizing:border-box; }
+      .am-search-row .am-player-search { width:100%; }
+      .am-search-row .am-player-search .nav-search-inner {
+        width:100%; height:auto; padding:7px 11px; gap:6px;
+        justify-content:flex-start; background:var(--card);
+        border:1px solid var(--border); border-radius:var(--radius, 10px);
+        cursor:text; overflow:visible;
+      }
+      .am-search-row .am-player-search:focus-within .nav-search-inner {
+        border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft);
+      }
+      .am-search-row .am-player-search .nav-search-icon {
+        position:relative; left:auto; top:auto; transform:none; flex-shrink:0;
+      }
+      .am-search-row .am-player-search .nav-search-input {
+        width:100%; min-width:0; opacity:1; pointer-events:auto; font-size:14px;
+      }
       /* Positions as one segmented unit; the buttons keep .otc-day-filter so the
          existing active-state JS keeps working untouched. */
       .am-positions.am-segmented {
@@ -2018,6 +2046,7 @@ _AM_JS = r"""
   const metricSel = document.getElementById('amMetric');
   const posWrap   = document.getElementById('amPositions');
   const searchEl  = document.getElementById('amSearch');
+  const searchClear = document.getElementById('amSearchClear');
   const sortBtn   = document.getElementById('amSortBtn');
   const seasonSel = document.getElementById('amSeason');
   const seasonCtrl= document.getElementById('amSeasonMulti');
@@ -2502,7 +2531,7 @@ _AM_JS = r"""
     b.appendChild(nm); b.appendChild(meta); b.appendChild(val);
     b.addEventListener('click', function() {
       if (!searchEl) return;
-      searchEl.value = m.name; state.search = m.name; state.page = 0; render();
+      searchEl.value = m.name; state.search = m.name; state.page = 0; _amSyncSearchClear(); render();
       const t = document.getElementById('amTable');
       if (t && t.scrollIntoView) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
@@ -6011,7 +6040,49 @@ _AM_JS = r"""
     state.page = 0;
     updatePosButtons(); syncURL(); render();
   });
-  searchEl.addEventListener('input', () => { state.search = searchEl.value.trim(); state.page = 0; render(); });
+  // ── Player search: a plain name filter in a floating popover ───────────
+  // The presentation borrows the nav search's pill styling, but the
+  // behaviour is this page's own filter, unchanged from the old in-flow
+  // input: typing sets state.search and render() substring-filters the
+  // leaderboard's rows by name, live. There is no results dropdown, no
+  // pick-a-result step, and no player payload fetch. The What-changed
+  // mover chips and the ?search= deep link drive the same state.search.
+  function _amSyncSearchClear() {
+    if (searchClear) searchClear.style.display = (searchEl && searchEl.value) ? 'block' : 'none';
+  }
+  function amCloseSearchPopover() {
+    const row = document.getElementById('amSearchRow');
+    if (!row || row.hidden) return;
+    row.hidden = true;
+    const tgl = document.getElementById('amSearchToggle');
+    if (tgl) tgl.setAttribute('aria-expanded', 'false');
+  }
+  if (searchEl) {
+    searchEl.addEventListener('input', () => {
+      state.search = searchEl.value.trim(); state.page = 0; _amSyncSearchClear(); render();
+    });
+    searchEl.addEventListener('keydown', e => {
+      if (e.key === 'Escape') { amCloseSearchPopover(); searchEl.blur(); }
+    });
+  }
+  if (searchClear) {
+    searchClear.addEventListener('click', () => {
+      if (!searchEl) return;
+      searchEl.value = '';
+      state.search = '';
+      state.page = 0;
+      _amSyncSearchClear();
+      render();
+      searchEl.focus();
+    });
+  }
+  document.addEventListener('click', e => {
+    const row = document.getElementById('amSearchRow');
+    if (!row || row.hidden) return;
+    const tgl = document.getElementById('amSearchToggle');
+    if (row.contains(e.target) || (tgl && tgl.contains(e.target))) return;
+    amCloseSearchPopover();
+  });
   sortBtn.addEventListener('click', () => {
     state.sortBy = state.metric;
     state.sortDir = state.sortDir === 'desc' ? 'asc' : 'desc'; state.page = 0;
@@ -6307,7 +6378,7 @@ _AM_JS = r"""
   // adding a comparison metric never needs the filter sheet.
   const sheetBackdrop = document.getElementById('amSheetBackdrop');
   if (sheetBackdrop) sheetBackdrop.addEventListener('click', () => amToggleSheet(false));
-  // Search icon toggles the row holding the existing #amSearch input.
+  // Search icon toggles the floating search popover.
   const searchToggle = document.getElementById('amSearchToggle');
   const searchRow = document.getElementById('amSearchRow');
   if (searchToggle && searchRow) {
@@ -6514,7 +6585,11 @@ _AM_JS = r"""
 
   state.minVol = _initParams.get('minvol') || defaultVol(state.metric);
   const _searchInit = _initParams.get('search') || '';
-  if (_searchInit && searchEl) { searchEl.value = _searchInit; state.search = _searchInit; }
+  if (_searchInit && searchEl) {
+    searchEl.value = _searchInit;
+    state.search = _searchInit;
+    if (searchClear) searchClear.style.display = 'block';
+  }
   const _presetInit = _initParams.get('preset') || '';
   const _isProPreset = function(id) { return (cfg.proPresets || []).indexOf(id) !== -1; };
   let _presetLoaded = false;
