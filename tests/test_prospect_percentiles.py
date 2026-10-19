@@ -407,6 +407,157 @@ class TestSeasonLines:
         assert ra._season_primary_rate("WR", {"games_played": 0}) is None
 
 
+class TestSeasonLineCells:
+    """Rich per-season stat cells: per-game rates derived from stored
+    totals / GP only. A cell whose source field is not stored for that
+    season is None (the page dashes it); nothing is ever derived from
+    an unrelated field."""
+
+    RATES = [float(x) for x in range(40, 140, 2)]  # 50 completed rates
+
+    def _lines(self, monkeypatch, pos, seasons):
+        monkeypatch.setattr(
+            ra, "_season_rate_distributions", lambda p: list(self.RATES))
+        return ra._season_lines(pos, seasons)
+
+    def test_wr_cells_math(self, monkeypatch):
+        lines = self._lines(monkeypatch, "WR", [
+            {"season": 2025, "games_played": 10, "targets": 80,
+             "receptions": 60, "receiving_yards": 900,
+             "receiving_tds": 8, "yds_per_reception": 15.0},
+        ])
+        cells = lines[0]["cells"]
+        assert cells["tgt_g"] == 8.0
+        assert cells["rec_g"] == 6.0
+        assert cells["rec_yds_g"] == 90.0
+        assert cells["yds_rec"] == 15.0
+        assert cells["rec_td_g"] == 0.8
+
+    def test_wr_targets_dash_when_not_stored(self, monkeypatch):
+        lines = self._lines(monkeypatch, "WR", [
+            {"season": 2024, "games_played": 16, "receptions": 76,
+             "receiving_yards": 1315, "receiving_tds": 15,
+             "yds_per_reception": 17.3},
+        ])
+        cells = lines[0]["cells"]
+        assert cells["tgt_g"] is None
+        assert cells["rec_g"] == 4.75
+        assert cells["rec_yds_g"] == 82.188
+
+    def test_wr_targets_below_receptions_is_not_data(self, monkeypatch):
+        # The stored-targets pipeline failure (targets < receptions):
+        # the cell dashes, exactly as _build_advanced_metrics treats it.
+        lines = self._lines(monkeypatch, "WR", [
+            {"season": 2026, "games_played": 7, "targets": 18,
+             "receptions": 48, "receiving_yards": 916,
+             "receiving_tds": 9},
+        ])
+        assert lines[0]["cells"]["tgt_g"] is None
+
+    def test_wr_yds_rec_derived_from_totals(self, monkeypatch):
+        lines = self._lines(monkeypatch, "WR", [
+            {"season": 2025, "games_played": 13, "receptions": 90,
+             "receiving_yards": 1500, "receiving_tds": 12},
+        ])
+        assert lines[0]["cells"]["yds_rec"] == 16.667
+
+    def test_te_uses_receiving_columns(self, monkeypatch):
+        cols = ra._season_line_columns("TE")
+        assert [c["key"] for c in cols] == [
+            "tgt_g", "rec_g", "rec_yds_g", "yds_rec", "rec_td_g"]
+
+    def test_rb_cells(self, monkeypatch):
+        lines = self._lines(monkeypatch, "RB", [
+            {"season": 2025, "games_played": 10, "rush_attempts": 180,
+             "rush_yards": 900, "rush_tds": 9, "receptions": 40,
+             "receiving_yards": 320, "receiving_tds": 2},
+        ])
+        cells = lines[0]["cells"]
+        assert cells["rush_att_g"] == 18.0
+        assert cells["rush_yds_g"] == 90.0
+        assert cells["yds_carry"] == 5.0  # derived: no stored rate
+        assert cells["rec_g"] == 4.0
+        assert cells["rec_yds_g"] == 32.0
+        assert cells["td_g"] == 1.1  # (9 rush + 2 rec) / 10 GP
+
+    def test_rb_td_g_dash_when_no_tds_stored(self, monkeypatch):
+        lines = self._lines(monkeypatch, "RB", [
+            {"season": 2025, "games_played": 10, "rush_attempts": 100,
+             "rush_yards": 450},
+        ])
+        assert lines[0]["cells"]["td_g"] is None
+
+    def test_qb_cells(self, monkeypatch):
+        lines = self._lines(monkeypatch, "QB", [
+            {"season": 2025, "games_played": 12, "pass_attempts": 420,
+             "completions": 294, "pass_yards": 3600, "pass_tds": 30,
+             "interceptions": 10, "rush_yards": 240, "team": "State"},
+        ])
+        cells = lines[0]["cells"]
+        assert cells["att_g"] == 35.0
+        assert cells["cmp_pct"] == 70.0  # derived from comp/att
+        assert cells["pass_yds_g"] == 300.0
+        assert cells["td_int"] == 3.0
+        assert cells["rush_yds_g"] == 20.0
+
+    def test_qb_cmp_pct_prefers_stored_rate(self, monkeypatch):
+        lines = self._lines(monkeypatch, "QB", [
+            {"season": 2025, "games_played": 12, "pass_attempts": 420,
+             "completions": 294, "completion_pct": 68.4,
+             "pass_yards": 3600},
+        ])
+        assert lines[0]["cells"]["cmp_pct"] == 68.4
+
+    def test_qb_td_int_dash_against_zero_interceptions(self, monkeypatch):
+        lines = self._lines(monkeypatch, "QB", [
+            {"season": 2025, "games_played": 12, "pass_attempts": 420,
+             "pass_yards": 3600, "pass_tds": 30, "interceptions": 0},
+        ])
+        assert lines[0]["cells"]["td_int"] is None
+        # A stored ratio still wins when one exists.
+        lines = self._lines(monkeypatch, "QB", [
+            {"season": 2025, "games_played": 12, "pass_attempts": 420,
+             "pass_yards": 3600, "pass_tds": 30, "interceptions": 0,
+             "td_int_ratio": 30.0},
+        ])
+        assert lines[0]["cells"]["td_int"] == 30.0
+
+    def test_columns_shape_and_overview_subset(self):
+        cols = ra._season_line_columns("WR")
+        assert [c["key"] for c in cols] == [
+            "tgt_g", "rec_g", "rec_yds_g", "yds_rec", "rec_td_g"]
+        ov = [c["key"] for c in cols if c["ov"]]
+        assert ov == ["tgt_g", "rec_g", "rec_yds_g", "yds_rec"]
+        qb = {c["key"]: c for c in ra._season_line_columns("QB")}
+        assert qb["cmp_pct"]["ov"] is False
+        assert qb["td_int"]["ov"] is True
+        rb = {c["key"]: c for c in ra._season_line_columns("RB")}
+        assert rb["td_g"]["dp"] == 2
+        assert rb["rush_att_g"]["ov"] is False
+
+    def test_in_progress_season_cells_present_percentile_none(
+            self, monkeypatch):
+        cur = ra.current_college_season()
+        lines = self._lines(monkeypatch, "WR", [
+            {"season": cur, "games_played": 7, "targets": 70,
+             "receptions": 48, "receiving_yards": 916,
+             "receiving_tds": 9},
+        ])
+        line = lines[0]
+        assert line["in_progress"] is True
+        assert line["percentile"] is None
+        # Rates still print for the live season; only the percentile
+        # and any totals stay out.
+        assert line["cells"]["rec_yds_g"] == 130.857
+        assert line["cells"]["tgt_g"] == 10.0
+
+    def test_season_tables_render_from_api_columns(self):
+        html = build_prospects_body(False)
+        assert "season_line_columns" in html
+        assert "rk-table-scroll" in html
+        assert "c.ov" in html  # Overview renders the ov subset only
+
+
 class TestTestingRows:
     """Testing percentiles come from the tested-only pool; a thin pool
     yields a dash (None), and timed tests invert (lower is better)."""

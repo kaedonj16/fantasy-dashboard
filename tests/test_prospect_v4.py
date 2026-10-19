@@ -390,3 +390,77 @@ class TestReferenceSample:
         # The QB recruiting pool is empty in the fixtures (Mestemaker
         # has no recruiting data): no table may be invented for it.
         assert "recruiting_composite" not in artifact["anchors"]["QB"]
+
+    def test_sample_carries_advanced_tables(self):
+        with open(SAMPLE_PATH, "r", encoding="utf-8") as fh:
+            artifact = json.load(fh)
+        adv = artifact["advanced"]["WR"]
+        # Percentile anchor tables: 12 [percentile, mark] rows each.
+        assert len(adv["Dominator"]) == 12
+        assert adv["Dominator"][0][0] == 0
+        assert adv["Dominator"][-1][0] == 100
+        for label in ("Breakout Age", "Mkt Share", "Yds/Rec",
+                      "Best Dominator", "Career Yds/Rec", "Rec Yds/Gm"):
+            assert label in adv
+        assert artifact["populations"]["advanced"]["WR"]["Dominator"] == 1
+        assert artifact["advanced_lower_better"]["WR"] == ["Breakout Age"]
+
+
+def _load_derive():
+    sys.path.insert(0, os.path.join(_REPO, "scripts"))
+    import derive_v4_reference as drv
+    return drv
+
+
+def _synthetic_wr(pid, dom):
+    return {
+        "player_id": pid, "position": "WR", "age": 21.0,
+        "weight_lbs": 200, "athleticism": {}, "recruiting": {},
+        "seasons": [{
+            "season": 2022, "games_played": 12, "team": "State",
+            "dominator_rating": dom, "market_share_yards": 0.30,
+            "market_share_tds": 0.28, "receptions": 60, "targets": 90,
+            "receiving_yards": 900, "receiving_tds": 8,
+            "yds_per_reception": 15.0,
+        }],
+    }
+
+
+class TestDeriveAdvancedDistributions:
+    """The reference run also emits Advanced-tab metric distributions,
+    valued by the API's own builder (build_reference section a2)."""
+
+    def test_build_reference_emits_advanced_tables(self):
+        drv = _load_derive()
+        population = [_synthetic_wr("A", 0.20), _synthetic_wr("B", 0.32),
+                      _synthetic_wr("C", 0.41)]
+        artifact = drv.build_reference(
+            population, {}, {}, {"fixture_sample": True})
+        adv = artifact["advanced"]["WR"]
+        for label in ("Dominator", "Breakout Age", "Mkt Share",
+                      "TD Share", "Tgt/Gm", "Catch%", "Yds/Rec",
+                      "Best Dominator", "Career Yds/Rec", "Rec Yds/Gm"):
+            assert label in adv, label
+            assert len(adv[label]) == 12
+        pops = artifact["populations"]["advanced"]["WR"]
+        assert pops["Dominator"] == 3
+        assert pops["Tgt/Gm"] == 3
+        # Component-score rows never enter the advanced pools.
+        assert "Efficiency" not in adv
+        assert "Production" not in adv
+        assert artifact["advanced_lower_better"]["WR"] == ["Breakout Age"]
+        # Marks are the recorded values in ascending order.
+        dom_marks = [m for _p, m in adv["Dominator"]]
+        assert dom_marks == sorted(dom_marks)
+        assert dom_marks[0] == 0.20 and dom_marks[-1] == 0.41
+
+    def test_dry_run_covers_advanced_section(self, tmp_path):
+        drv = _load_derive()
+        out = str(tmp_path / "v4_reference_dry.json")
+        artifact = drv.run_dry(out)
+        assert artifact["provenance"]["fixture_sample"] is True
+        assert "Dominator" in artifact["advanced"]["WR"]
+        assert "Breakout Age" in artifact["advanced"]["QB"]
+        with open(out, "r", encoding="utf-8") as fh:
+            written = json.load(fh)
+        assert written["advanced"] == artifact["advanced"]
