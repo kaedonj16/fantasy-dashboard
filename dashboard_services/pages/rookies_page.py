@@ -22,7 +22,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
 <div class="card central" id="prospectsCard">
   <div class="card-header" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
     <div>
-      <h2 id="rookiesTitle">Rookie Prospects</h2>
+      <h1 id="rookiesTitle">Rookie Prospects</h1>
       <div style="font-size: 15px; color: var(--text-muted); margin-top: 4px;">
         <span id="rkPoolLine">Dynasty prospect rankings - production, athleticism, and draft capital combined</span>
       </div>
@@ -136,6 +136,9 @@ def build_prospects_body(is_admin: bool = False) -> str:
 <style>
   /* ===== Card: native board geometry (players-board grammar) ===== */
   #prospectsCard { max-width: 1180px; overflow: visible; }
+  /* Real h1 (was h2) with the exact specified values the h2 rendered with,
+     so the swap changes semantics only, not the layout. */
+  #rookiesTitle { font-size: 18px; font-weight: 700; margin: 0; text-align: left; }
 
   /* ===== Filter controls: players-board two-row bar ===== */
   .filter-controls-container { display: flex; flex-direction: column; gap: 10px; padding: 14px 0 12px; border-bottom: 1px solid var(--border); margin-bottom: 10px; }
@@ -214,6 +217,9 @@ def build_prospects_body(is_admin: bool = False) -> str:
     #prospectsCard .pr-grid-row { grid-template-columns: 84px minmax(0,1fr) 156px 56px 56px 56px 132px; column-gap: 12px; }
   }
   @media (max-width: 768px) {
+    /* GUI audit Fix 3: 11px floor for board tag/chip labels on mobile
+       (position chip and In-Season chip were 10px at this width). */
+    .rk-pos, .m-early { font-size: 11px; }
     .filter-row-primary { flex-direction: column; align-items: stretch; }
     .filter-search { max-width: 100%; }
     .filter-positions { justify-content: flex-start; gap: 6px; }
@@ -250,7 +256,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
     .pr-name > .rk-pos { display: none; }
     .m-early { display: none; }
     .pr-meta { display: inline-flex; align-items: center; gap: 6px; line-height: 1; max-width: 100%; font-size: 10.5px; font-weight: 500; color: var(--text-muted); }
-    .pr-meta .rk-pos { font-size: 9.5px; padding: 1px 5px; }
+    .pr-meta .rk-pos { font-size: 11px; padding: 1px 5px; }
     .pr-meta-txt { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .m-tier { width: 116px; min-width: 116px; }
   }
@@ -263,7 +269,9 @@ def build_prospects_body(is_admin: bool = False) -> str:
     .pr-rank { gap: 4px; padding-left: 0; }
     .pr-name { font-size: 12px; }
     .pr-wl-star { font-size: 11px; margin-left: 4px; }
-    .m-tier { width: 92px; min-width: 92px; font-size: 9.5px; padding: 3px 3px; }
+    /* 11px floor (was 9.5px); width goes auto so the longest label
+       ("Average Prospect") grows the pill instead of clipping. */
+    .m-tier { width: auto; min-width: 92px; font-size: 11px; padding: 3px 3px; }
     .pr-meta { font-size: 10px; }
     .pr-meta .pr-sep { margin: 0 5px; }
     .pr-player-row { padding: 11px 8px; }

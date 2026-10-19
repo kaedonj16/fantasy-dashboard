@@ -1438,6 +1438,18 @@ table, .standings-table {
     transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
+/* GUI audit Fix 4 (mobile): filter chips get a 40px minimum tap height.
+   The box grows via min-height; the 11px label size is untouched. */
+@media (max-width: 768px) {
+.otc-day-filter,
+    .otc-filter-chip,
+    .pos-pill,
+    .dvt-pos-btn,
+    .filter-pill {
+        min-height: 40px;
+    }
+}
+
 .otc-day-filter:hover,
 .otc-filter-chip:hover,
 .breakout-filter-btn:hover,
@@ -3782,7 +3794,8 @@ input[type="search"] {
 
 @media (max-width: 768px) {
 .home-page {
-        padding: 20px max(16px, env(safe-area-inset-left)) calc(48px + var(--dock-safe-bottom)) max(16px, env(safe-area-inset-right));
+        /* GUI audit Fix 5: no extra top padding above the hero on phones. */
+        padding: 0 max(16px, env(safe-area-inset-left)) calc(48px + var(--dock-safe-bottom)) max(16px, env(safe-area-inset-right));
         gap: 28px;
     }
 .home-hero {

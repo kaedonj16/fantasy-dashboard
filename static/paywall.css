@@ -452,7 +452,9 @@
 }
 .pricing-trial-card h2 { margin:0 0 6px; font-size:20px; }
 .pricing-trial-card p { margin:0; color:var(--text-muted); font-size:14px; line-height:1.5; }
-.pricing-trial-card .btn { flex-shrink:0; }
+/* GUI audit Fix 4: the trial CTA rendered 20px tall (no padding rule
+   reached it); make it a proper 40px tappable bar at every width. */
+.pricing-trial-card .btn { flex-shrink:0; min-height:40px; display:inline-flex; align-items:center; justify-content:center; padding:10px 22px; box-sizing:border-box; }
 .pricing-trial-active { border-top-color:#16a34a; }
 .pricing-trial-count { font-size:28px; font-weight:800; color:var(--brand-blue, #2563eb); flex-shrink:0; }
 /* Paywall modal: feature name is the headline, "Premium Feature" is the eyebrow */

@@ -6664,9 +6664,12 @@ def _discord_banner() -> str:
            style="width:16px;height:16px;opacity:.9;filter:brightness(0) saturate(100%) invert(40%) sepia(80%) saturate(600%) hue-rotate(210deg) brightness(110%);">
       <span style="font-size:15px;font-weight:700;color:var(--text);">Join the Discord</span>
     </div>
+    <!-- Close glyph keeps its visual size; padding grows the hit area to
+         32x32 and the negative margins restore the layout box so the
+         glyph does not move (GUI audit Fix 4; was an 18x10 target). -->
     <button id="discordBannerClose"
             style="background:none;border:none;color:var(--muted);font-size:18px;line-height:1;
-                   cursor:pointer;padding:0;flex-shrink:0;"
+                   cursor:pointer;padding:7px 11px;margin:-7px -11px -7px 0;flex-shrink:0;"
             aria-label="Dismiss">&times;</button>
   </div>
   <p style="margin:0;font-size:13px;color:var(--muted);line-height:1.45;">

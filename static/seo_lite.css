@@ -1428,6 +1428,18 @@ table, .standings-table {
     transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
+/* GUI audit Fix 4 (mobile): filter chips get a 40px minimum tap height.
+   The box grows via min-height; the 11px label size is untouched. */
+@media (max-width: 768px) {
+.otc-day-filter,
+    .otc-filter-chip,
+    .pos-pill,
+    .dvt-pos-btn,
+    .filter-pill {
+        min-height: 40px;
+    }
+}
+
 .otc-day-filter:hover,
 .otc-filter-chip:hover,
 .breakout-filter-btn:hover,
