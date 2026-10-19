@@ -14636,6 +14636,28 @@ def _ss_qb_situation(team: "Optional[str]", depth_index: dict,
         return None
 
 
+def _ss_news_signal(player_name: "Optional[str]", team: "Optional[str]",
+                    full_player: dict) -> "Optional[dict]":
+    """Top free-news signal chip for a start/sit row, or None.
+
+    Signal-only, like the QB chip: it never alters compute_start_score.
+    Derived from the single cached bulk ESPN injuries fetch inside
+    dashboard_services.news_signals plus this row's own Sleeper feed
+    entry (injury / practice fields) - no per-row network fetch. Only
+    players carrying an injury or practice flag pay the lookup; healthy
+    rows short-circuit to None.
+    """
+    try:
+        fp = full_player or {}
+        if not (fp.get("injury_status") or fp.get("practice_participation")):
+            return None
+        from dashboard_services.news_signals import top_chip_for_player
+        return top_chip_for_player(player_name or "", sleeper_feed_rec=fp,
+                                   team=team or "")
+    except Exception:
+        return None
+
+
 def _startsit_compare_extras(pid, pos, team, season, week, scoring_settings, *,
                              proj_pts=None, on_bye=False, opponent="",
                              home_team="", implied_total=None, weather=None,
@@ -15444,6 +15466,8 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
             "game_env": _ss_game_env(home_team_of.get(team), current_week) if not on_bye else None,
             "qb_situation": (_ss_qb_situation(team, _ss_depth_index, players_full)
                              if (pos in ("WR", "TE", "RB") and not on_bye) else None),
+            "news_signal": (_ss_news_signal(player_name, team, full_player)
+                            if not on_bye else None),
             "implied_total": _imp_ss,
             "weather": _wx_ss,
             "consistency": _cons,

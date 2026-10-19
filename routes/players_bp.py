@@ -669,15 +669,41 @@ def api_player_news(player_id: str):
         )
 
         result = get_player_news(player_name=name, espn_headshot=headshot, limit=8)
+
+        # Structured free news layer (ESPN injuries + Sleeper practice +
+        # RotoBaller/PFT blurbs). Fail-soft and additive: the modal renders
+        # `signals` as chips above the headline list; `news` is unchanged
+        # for any other consumer.
+        signals: list = []
+        blurbs: list = []
+        sig_failed: list = []
+        try:
+            from dashboard_services.news_signals import get_player_news_signals
+
+            sig = get_player_news_signals(
+                player_name=name,
+                team=str(meta.get("team") or ""),
+                sleeper_id=str(player_id),
+            )
+            signals = sig.get("signals") or []
+            blurbs = sig.get("blurbs") or []
+            sig_failed = sig.get("sources_failed") or []
+        except Exception:
+            logger.exception("[player-news] signals layer failed")
+
         return jsonify({
             "player_id": player_id,
             "name": name,
             "news": result["news"],
-            "sources_failed": result["sources_failed"],
+            "signals": signals,
+            "blurbs": blurbs,
+            "sources_failed": list(dict.fromkeys(
+                (result["sources_failed"] or []) + sig_failed)),
         })
     except Exception:
         logger.exception("[player-news] error")
-        return jsonify({"player_id": player_id, "news": [], "sources_failed": ["all"]}), 200
+        return jsonify({"player_id": player_id, "news": [], "signals": [],
+                        "blurbs": [], "sources_failed": ["all"]}), 200
 
 
 # ── /api/nfl-news ─────────────────────────────────────────────────────────────

@@ -23344,6 +23344,39 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
     border-bottom: 1px solid var(--border);
 }
 
+/* Structured news signals (free layer): chips above the headline list.
+   Tones mirror the Start/Sit QB chip: amber warn, red bad, blue info,
+   green good. */
+.pm-news-signals {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+.pm-signal-chip {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 6px;
+}
+
+.pm-signal-warn { background: rgba(245, 158, 11, .16); color: #b45309; }
+.pm-signal-bad { background: rgba(239, 68, 68, .14); color: #b91c1c; }
+.pm-signal-info { background: rgba(59, 130, 246, .14); color: #1d4ed8; }
+.pm-signal-good { background: rgba(34, 197, 94, .14); color: #15803d; }
+[data-theme="dark"] .pm-signal-warn { background: rgba(245, 158, 11, .22); color: #fbbf24; }
+[data-theme="dark"] .pm-signal-bad { background: rgba(239, 68, 68, .20); color: #f87171; }
+[data-theme="dark"] .pm-signal-info { background: rgba(59, 130, 246, .22); color: #93c5fd; }
+[data-theme="dark"] .pm-signal-good { background: rgba(34, 197, 94, .20); color: #4ade80; }
+
+.pm-news-risk {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.45;
+    margin-bottom: 8px;
+}
+
 .pm-news-warn {
     padding: 6px 10px;
     margin-bottom: 6px;

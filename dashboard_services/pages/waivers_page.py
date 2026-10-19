@@ -474,6 +474,16 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-ss-qb-qb3 { background: rgba(239,68,68,.14); color: #b91c1c; }
 [data-theme="dark"] .wv-ss-qb-qb2 { background: rgba(245,158,11,.22); color: #fbbf24; }
 [data-theme="dark"] .wv-ss-qb-qb3 { background: rgba(239,68,68,.20); color: #f87171; }
+/* Free news signal (ESPN injuries / Sleeper practice): same tones as the QB
+   chip - amber for questionable/practice risk, red when unlikely to play,
+   blue for practice-only info. Signal-only; never part of the score. */
+.wv-ss-news { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 6px; align-self: flex-start; }
+.wv-ss-news-warn { background: rgba(245,158,11,.16); color: #b45309; }
+.wv-ss-news-bad { background: rgba(239,68,68,.14); color: #b91c1c; }
+.wv-ss-news-info { background: rgba(59,130,246,.14); color: #1d4ed8; }
+[data-theme="dark"] .wv-ss-news-warn { background: rgba(245,158,11,.22); color: #fbbf24; }
+[data-theme="dark"] .wv-ss-news-bad { background: rgba(239,68,68,.20); color: #f87171; }
+[data-theme="dark"] .wv-ss-news-info { background: rgba(59,130,246,.22); color: #93c5fd; }
 /* Vegas implied team total: green when high, muted when low */
 .wv-ss-total-high { background: color-mix(in srgb, var(--win) 16%, transparent); color: var(--win); }
 .wv-ss-total-mid  { background: rgba(148,163,184,.16); color: var(--text-muted); }
@@ -2003,6 +2013,26 @@ function wvQbChip(p) {{
          q.label + '</span>';
 }}
 
+// Free news signal chip (ESPN injuries + Sleeper practice report): the top
+// availability signal for the player's own week, next to the QB chip.
+// Signal-only - it explains risk, it is not part of the start/sit score.
+// The tooltip carries the detail plus the labelled play probability when
+// one applies.
+function wvNewsChip(p) {{
+  const s = p.news_signal;
+  if (!s || !s.label) return '';
+  const tone = s.kind === 'unavailable' || s.kind === 'doubtful' ? 'bad'
+    : s.kind === 'practice' && /^Limited/.test(s.label) ? 'info'
+    : 'warn';
+  let note = (s.note || '');
+  if (s.play_probability != null && s.play_probability > 0 && s.play_probability < 1) {{
+    note += ' Play probability ~' + Math.round(s.play_probability * 100) + '% (heuristic).';
+  }}
+  note = note.replace(/"/g, '&quot;');
+  return '<span class="wv-ss-news wv-ss-news-' + tone + '" title="' + note + '">' +
+         s.label + '</span>';
+}}
+
 // Vegas implied team total chip.
 function wvVegasChip(p) {{
   if (p.implied_total == null) return '';
@@ -3325,6 +3355,7 @@ function wvRenderStartSit() {{
 
       const injBadge = wvInjBadge(p.injury_status);
       const qbChip = wvQbChip(p);
+      const newsChip = wvNewsChip(p);
       const escName = (p.name || '').replace(/'/g, "\\'");
       const matchup = p.opponent
         ? `${{p.opponent}} ${{wvSsMatchupChip(p.def_rank, p.def_total)}}` : '';
@@ -3364,7 +3395,7 @@ function wvRenderStartSit() {{
               onclick="wvToggleSsRow(this)">
             ${{badge}}
             <span class="wv-cx-main">
-              <span class="wv-cx-name">${{p.name}}${{p.guest ? `<span class="wv-cx-guest">GUEST · ${{wvEsc(p.owner_label || 'Free Agent')}}</span>` : ''}}${{injBadge}}${{qbChip}}</span>
+              <span class="wv-cx-name">${{p.name}}${{p.guest ? `<span class="wv-cx-guest">GUEST · ${{wvEsc(p.owner_label || 'Free Agent')}}</span>` : ''}}${{injBadge}}${{qbChip}}${{newsChip}}</span>
               ${{matchup || demoteChip ? `<span class="wv-cx-why">${{matchup}}${{demoteChip}}</span>` : ''}}
               ${{p.guest && p.guest_note ? `<span class="wv-ss-guest-note">${{wvEsc(p.guest_note)}}</span>` : ''}}
               ${{p.flex_safeguard ? `<span class="wv-cx-why"><span class="wv-cx-k">Flex safeguard</span>Q tag: moved to FLEX so a late scratch can be covered by any RB/WR/TE.</span>` : ''}}
