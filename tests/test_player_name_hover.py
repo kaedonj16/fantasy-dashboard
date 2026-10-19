@@ -91,8 +91,8 @@ def test_focus_visible_styles_untouched():
 
 def test_rookie_names_dim():
     src = _read(_ROOKIES_PATH)
-    assert ".rk-name:hover { opacity: 0.72; }" in src
-    assert ".rk-name:hover { text-decoration: underline; }" not in src
+    assert ".pr-nm:hover { opacity: 0.72; }" in src
+    assert ".pr-nm:hover { text-decoration: underline; }" not in src
 
 
 def test_compare_modal_names_dim():

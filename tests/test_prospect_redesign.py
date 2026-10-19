@@ -219,15 +219,17 @@ class TestAdvancedMetrics:
 
 class TestPageBuilder:
     def test_redesign_markers_present(self):
+        # Markers for the current approved design set (native board +
+        # modal v2 + tabs mocks). The earlier redesign's markers
+        # (otc-tier-divider, rk-mock-h, rkRadarSVG, rkLetterGrade,
+        # m-adv-grid) were superseded by that design and are gone.
         html = build_prospects_body(False)
         for marker in (
-            "otc-tier-divider-line",  # tier breaks reuse player-rankings CSS
-            "rk-mock-h",              # mock draft column header
-            "rkHeadshot",             # headshot discs
-            "rkRadarSVG",             # radar chart
-            "rkLetterGrade",          # letter grades
+            "pr-tier-divider-line",   # tier breaks, native board grammar
+            "data-pr-sort-col",       # sortable native board header
+            "rkHeadshot",             # modal headshot / initials tile
             "brUndoToast",            # shared undo toast for the watchlist
-            "m-adv-grid",             # advanced metrics section
+            "rk-adv-tbl",             # advanced metrics table
             "m-season-table",         # season-by-season table
             "/api/prospects/player/",       # detail bundle endpoint
             "/api/prospects/comparables/",  # historical comparables endpoint
@@ -238,7 +240,12 @@ class TestPageBuilder:
         html = build_prospects_body(False)
         assert '<option value="value">' not in html
         assert '<option value="adp">' not in html
-        assert '<option value="mock">' in html
+        # The approved board has no Mock column or mock sort; sorting is
+        # by rank, the three board percentiles, or name.
+        assert '<option value="mock">' not in html
+        assert '<option value="prod">' in html
+        assert '<option value="eff">' in html
+        assert '<option value="brk">' in html
         assert "rkSettingsPanel" not in html
 
 
