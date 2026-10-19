@@ -94,6 +94,11 @@ function _pmSmallFetch(key, url) {
     const id = String(playerId == null ? '' : playerId).trim();
     const ctx = context(opts);
     const q = new URLSearchParams({ season: ctx.season, league_type: ctx.leagueType, league_size: ctx.leagueSize });
+    // Slim payload: the modal never reads the start/sit build or the folded
+    // league trades/acquisition from player-details (both lazy-load their
+    // own endpoints), so don't pay for them on the open path. Compare uses
+    // its own non-slim URL and is unaffected.
+    q.set('slim', '1');
     if (ctx.leagueId) { q.set('league_id', ctx.leagueId); q.set('platform', ctx.platform); }
     return { id, ctx, key: [id,ctx.platform,ctx.leagueId,ctx.season,ctx.leagueType,ctx.leagueSize,ctx.account].join('|'),
       url: '/api/player-details/' + encodeURIComponent(id) + '?' + q.toString() };
@@ -2179,6 +2184,19 @@ function _pmLoadInLeague(playerId, data, leagueId, platform, season) {
     tradesPromise = Promise.resolve(data.league_trades);
     acqPromise = Promise.resolve(data.acquisition_events);
   } else {
+    // Standalone fetch path (the slim player-details payload always lands
+    // here): show a loading skeleton in the section's own footprint while
+    // the two fetches are in flight instead of a blank rail. The render
+    // below replaces it; empty/failure end states are unchanged (the
+    // ownership line only, or the section hides).
+    el.innerHTML =
+      '<hr class="pm-section-divider">' +
+      '<div class="pm-section-header"><span class="pm-section-label">In this league</span></div>' +
+      '<div class="pm-inleague-list">' +
+      '<div class="pm-inleague-row"><span class="skeleton skeleton-line" style="display:block;width:72%;height:11px;border-radius:5px;"></span></div>' +
+      '<div class="pm-inleague-row"><span class="skeleton skeleton-line" style="display:block;width:54%;height:11px;border-radius:5px;"></span></div>' +
+      '</div>';
+    el.hidden = false;
     const qs = '?platform=' + encodeURIComponent(platform) + '&league_id=' + encodeURIComponent(leagueId) +
       '&season=' + encodeURIComponent(season);
     const tradesUrl = '/api/player-league-trades/' + encodeURIComponent(playerId) + qs + '&limit=10';
