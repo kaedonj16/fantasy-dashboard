@@ -132,7 +132,7 @@ def test_candidates_has_25s_dom_failsafe():
 # ── SW ───────────────────────────────────────────────────────────────────
 
 def test_sw_cache_bumped():
-    assert "br-fantasy-v62" in SW
+    assert "br-fantasy-v63" in SW
 
 
 # ── Behavioral harness ───────────────────────────────────────────────────
