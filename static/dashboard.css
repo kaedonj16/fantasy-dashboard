@@ -48784,6 +48784,31 @@ em.gneg { background: var(--loss); }
     margin-top: 4px;
 }
 .td-contend .td-dot { margin-right: 0; }
+/* Drawer window pill colors: match the team's window tag, using the same
+   palette as the cards (.wt-* accents / .grade-window-label text). The
+   base .td-contend rule above is the Contender green fallback; every
+   other window overrides it, e.g. Bubble amber, Long Shot grey,
+   Rebuilding red. */
+.td-win-contend, .td-win-contender { background: color-mix(in srgb, #22c55e 12%, transparent); color: #16a34a; }
+.td-win-bubble, .td-win-win-now { background: color-mix(in srgb, #f59e0b 14%, transparent); color: #d97706; }
+.td-win-long-shot, .td-win-holding { background: color-mix(in srgb, #94a3b8 18%, transparent); color: #64748b; }
+.td-win-aging-contender { background: color-mix(in srgb, #84cc16 14%, transparent); color: #65a30d; }
+.td-win-contender-window { background: color-mix(in srgb, #3b82f6 12%, transparent); color: #2563eb; }
+.td-win-2yr { background: color-mix(in srgb, #6366f1 12%, transparent); color: #4f46e5; }
+.td-win-rising { background: color-mix(in srgb, #8b5cf6 12%, transparent); color: #7c3aed; }
+.td-win-retooling { background: color-mix(in srgb, #f97316 13%, transparent); color: #ea580c; }
+.td-win-rebuilding { background: color-mix(in srgb, #ef4444 12%, transparent); color: #dc2626; }
+.td-win-full-rebuild { background: color-mix(in srgb, #b91c1c 12%, transparent); color: #b91c1c; }
+[data-theme="dark"] .td-win-contend, [data-theme="dark"] .td-win-contender { color: #4ade80; }
+[data-theme="dark"] .td-win-bubble, [data-theme="dark"] .td-win-win-now { color: #fbbf24; }
+[data-theme="dark"] .td-win-long-shot, [data-theme="dark"] .td-win-holding { color: #94a3b8; }
+[data-theme="dark"] .td-win-aging-contender { color: #a3e635; }
+[data-theme="dark"] .td-win-contender-window { color: #60a5fa; }
+[data-theme="dark"] .td-win-2yr { color: #818cf8; }
+[data-theme="dark"] .td-win-rising { color: #a78bfa; }
+[data-theme="dark"] .td-win-retooling { color: #fb923c; }
+[data-theme="dark"] .td-win-rebuilding { color: #f87171; }
+[data-theme="dark"] .td-win-full-rebuild { color: #ef4444; }
 .td-grade-block { text-align: right; flex: none; }
 .td-grade-kicker {
     font-size: 9.5px;

@@ -83,6 +83,41 @@ def test_roster_intel_fetch_is_shared_and_league_keyed():
     assert "fantasycalc.com" not in head
 
 
+def test_drawer_window_pill_matches_window_color():
+    """The drawer header pill must take the team's window color, not the
+    hard-coded Contender green .td-contend used to carry for every team:
+    Bubble amber, Long Shot grey, Rebuilding red, etc. (same palette as
+    the cards' .grade-window-label rules)."""
+    head = JS[JS.index("function _tdHeadHtml("):]
+    assert "_TD_WIN_CLS[t.window]" in head
+    for label, cls in (
+        ("Contend", "td-win-contend"),
+        ("Bubble", "td-win-bubble"),
+        ("Long Shot", "td-win-long-shot"),
+        ("Contender", "td-win-contender"),
+        ("Win-Now", "td-win-win-now"),
+        ("Aging Contender", "td-win-aging-contender"),
+        ("Contender Window", "td-win-contender-window"),
+        ("2-3 Year Window", "td-win-2yr"),
+        ("Rising", "td-win-rising"),
+        ("Holding Pattern", "td-win-holding"),
+        ("Retooling", "td-win-retooling"),
+        ("Rebuilding", "td-win-rebuilding"),
+        ("Full Rebuild", "td-win-full-rebuild"),
+    ):
+        assert "'%s': '%s'" % (label, cls) in JS, f"missing pill class for {label}"
+        assert re.search(re.escape("." + cls) + r"[,\s\{]", CSS), f"missing CSS for {cls}"
+    # Spot-check the three colors Kaedon named.
+    bubble = re.search(r"\.td-win-bubble[^\{]*\{([^}]*)\}", CSS)
+    assert "#f59e0b" in bubble.group(1) and "#d97706" in bubble.group(1)
+    long_shot = re.search(r"\.td-win-long-shot[^\{]*\{([^}]*)\}", CSS)
+    assert "#94a3b8" in long_shot.group(1) and "#64748b" in long_shot.group(1)
+    rebuilding = re.search(r"\.td-win-rebuilding[^\{]*\{([^}]*)\}", CSS)
+    assert "#ef4444" in rebuilding.group(1) and "#dc2626" in rebuilding.group(1)
+    # Long Shot is an explicit payload color, not just the .get() fallback.
+    assert '"Long Shot": "#94a3b8"' in TEAMS_PAGE
+
+
 def test_no_em_dashes_in_drawer_copy():
     load = JS[JS.index("function _tdLoadIntel("):]
     assert "\u2014" not in load
