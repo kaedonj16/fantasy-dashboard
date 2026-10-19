@@ -23673,8 +23673,14 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
 .m-rivalry b { color: var(--text); }
 
 /* ESPN-style matchup header: badge row, avatar-flanked scores, team info. */
-.m-espn-badges { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px; }
+/* Badge row is a 1fr / auto / 1fr grid, not space-between flex: the H2H
+   centre slot sits at the true middle of the card no matter how wide the
+   GOTW and Divisional badges on either side are. */
+.m-espn-badges { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; margin-bottom: 12px; }
 .m-espn-badges-l, .m-espn-badges-r { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.m-espn-badges-l { justify-self: start; }
+.m-espn-badges-r { justify-self: end; }
+.m-espn-badges-c { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; text-align: center; justify-self: center; }
 .m-espn-badges .m-head-badges { margin-bottom: 0; min-height: 0; }
 .m-espn-score-row { display: grid; grid-template-columns: auto 1fr 1fr auto; gap: 12px; align-items: center; margin-bottom: 12px; }
 .m-espn-av { width: 52px; height: 52px; border-radius: 50%; object-fit: cover; background: var(--card-soft); flex-shrink: 0; }
@@ -23688,8 +23694,17 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
 .m-espn-meta { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
 .m-streak-w { color: #16a34a; font-weight: 700; }
 .m-streak-l { color: #dc2626; font-weight: 700; }
-.m-head-espn .m-rivalry { font-size: 12px; background: var(--card-soft); border-radius: 8px; padding: 6px 10px; margin-top: 8px; }
-.m-head-espn .m-h2h { text-align: center; font-size: 12px; color: var(--text-muted); margin-top: 8px; }
+.m-head-espn .m-rivalry { font-size: 12px; background: var(--card-soft); border-radius: 8px; padding: 6px 10px; margin-top: 0; }
+.m-head-espn .m-h2h { text-align: center; font-size: 12px; color: var(--text-muted); margin-top: 0; }
+/* Phones: the centre H2H slot is capped so the side badges keep their own
+   tracks (no overlap) and the line wraps inside its pill, still centred. */
+@media (max-width: 640px) {
+    .m-espn-badges { gap: 6px; }
+    .m-espn-badges-c { max-width: 144px; }
+    .m-head-espn .m-rivalry { font-size: 11px; padding: 4px 8px; line-height: 1.35; }
+    .m-espn-badges .div-badge { font-size: 10px; padding: 2px 6px; }
+    .m-espn-badges .m-gotw-badge { font-size: 10px; padding: 3px 6px; }
+}
 
 /* Weekly Recap GOTW card: why explanation + deep link. */
 .br-gotw-why { background: color-mix(in srgb, var(--accent) 7%, transparent);
@@ -46341,7 +46356,19 @@ a, button, [role="button"], [role="tab"], summary, label,
 
 /* ---- Compact matchup rows (Kaedon's call): tighter rows, smaller text,
    thinner drive bars, stat line under the drive bar, never truncated. ---- */
-.mb-stat-row { min-width: 0; padding: 2px 9px 0; }
+/* The stat line is its own grid row under the drive-bar slot, so the cell's
+   bottom padding, the row gap and the stat row's own top padding used to
+   stack into an ~18px blank between the scoreline and the stats even when
+   no drive bar rendered. When a stat row (or a filled drive bar) actually
+   follows, drop that stack entirely: no cell bottom padding, no stat-row
+   top padding, and the stat row's negative margin cancels the 3px grid
+   gap, so the only space left is the two lines' own line-height leading --
+   the same rhythm as the name / team / game lines inside the cell. Under
+   a filled drive bar the stat row keeps 1px of the gap (margin -2px). */
+.mb-row:has(> .mb-stat-row) > .mb-cell,
+.mb-row:has(> .mb-fld:not(:empty)) > .mb-cell { padding-bottom: 0; }
+.mb-stat-row { min-width: 0; padding: 0 9px; margin-top: -3px; }
+.mb-row:has(> .mb-fld:not(:empty)) .mb-stat-row { margin-top: -2px; }
 .mb-stat-row .mb-stat {
     display: block;
     font-size: 11px;
@@ -46357,6 +46384,28 @@ a, button, [role="button"], [role="tab"], summary, label,
 .mb-info > .pname { font-size: 13.5px; }
 .mb-a { font-size: 16px; }
 .mb-game { font-size: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+/* The legacy .m-combo .p-game-line rule targets the same span with higher
+   specificity and re-enables wrapping (white-space: normal, flex-wrap),
+   defeating the single-line rule above: a long game line wraps to two
+   lines, that player's cell grows a line taller, and because the stat row
+   is shared across the row, the OTHER player's stats drop that far below
+   their scoreline -- the residual blank under the shorter side. In rows
+   that carry a stat line, pin the game line to one line (final lines fit
+   whole; text-align keeps the right side pinned to its edge now the span
+   is a block, not a flex row). Rows with no stats keep the wrapping
+   segmented pregame lines, untruncated. */
+.mb-row:has(> .mb-stat-row) .mb-game { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Final scorelines never wrap, in any row (Kaedon's call): the server
+   tags final game lines .mb-game--final. No overflow:hidden here -- the
+   line must fit whole, never ellipsize; at phone widths it measures
+   exactly the cell width, and the narrow-phone step-down below keeps
+   it inside the cell (any residual spill lands in the cell padding /
+   grid gap, never on the score). */
+.mb-row .mb-game--final { display: block; white-space: nowrap; }
+@media (max-width: 380px) {
+    /* Specificity must beat the phone .m-combo .meta rule (11px). */
+    .m-combo .mb-game--final { font-size: 8px; }
+}
 .mb-fld-track { height: 12px; }
 .mb-fld-head { font-size: 10px; }
 .mb-fld-def { font-size: 10px; }

@@ -2612,11 +2612,14 @@ def render_matchup_slide(
             game_line = "BYE"
 
         bye_cls = " mb-info--bye" if is_bye else ""
+        # Final scorelines ("Final W 31-23 @ ATL") never wrap: the CSS pins
+        # .mb-game--final to one line in every row, not just stat rows.
+        _final_cls = " mb-game--final" if (status == STATUS_FINAL and not is_bye) else ""
         info_html = (
             f"<div class='mb-info{bye_cls}'>"
             f"<span{clickable_attrs}>{_display_name}</span>"
             f"{team_span}"
-            f"<span class='meta p-game-line mb-game mb-matchup'>{game_line}</span>"
+            f"<span class='meta p-game-line mb-game mb-matchup{_final_cls}'>{game_line}</span>"
             "</div>"
         )
 
@@ -2965,12 +2968,16 @@ def render_matchup_slide(
         )
         moments_mount = "<div class=\"mb-moments\" hidden></div>"
 
-    # ESPN-style badge row: GOTW on the left, DIVISIONAL on the far right.
+    # ESPN-style badge row: GOTW on the left, DIVISIONAL on the far right,
+    # and the head-to-head lines (this-season + the client-filled all-time
+    # rivalry line) in the centre slot, on the same row (Kaedon's call --
+    # they used to sit under the team names at the bottom of the head).
     espn_badges_html = ""
-    if gotw_badge_html or div_badge_html:
+    if gotw_badge_html or div_badge_html or h2h_html:
         espn_badges_html = (
             f"<div class='m-espn-badges'>"
             f"<div class='m-espn-badges-l'>{gotw_badge_html}</div>"
+            f"<div class='m-espn-badges-c'>{h2h_html}</div>"
             f"<div class='m-espn-badges-r'>{div_badge_html}</div>"
             f"</div>"
         )
@@ -2990,7 +2997,6 @@ def render_matchup_slide(
           {_espn_team_info(m['left'], 'left')}
           {_espn_team_info(m['right'], 'right')}
         </div>
-        {h2h_html}
       </div>
       {rzm_hub_html}
       {drama_html}
