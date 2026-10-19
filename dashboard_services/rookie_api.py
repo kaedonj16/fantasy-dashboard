@@ -1149,14 +1149,13 @@ def current_college_season(today=None):
 
 
 def is_in_season(latest_season, games_played, today=None) -> bool:
-    """Data-state check for the In-Season chip.
+    """Data-state check for the In-Season chip (fallback only).
 
-    The chip is driven by data state: the player's latest stored season
+    Data state reads in-season when the player's latest stored season
     IS the current college season and it is still partial (1-11 games
     played). A completed season (12+ games) or an older latest season
-    never reads as in-season. (The v3.4 stored in_season flag records the
-    grading mode at grading time; the display chip stays data-state
-    driven, per the native board/modal build.)
+    never reads as in-season. This is the fallback for rows that carry
+    no stored grading-mode flag; see chip_in_season.
     """
     if latest_season is None or games_played is None:
         return False
@@ -1166,6 +1165,21 @@ def is_in_season(latest_season, games_played, today=None) -> bool:
     except (TypeError, ValueError):
         return False
     return season == current_college_season(today) and 1 <= gp <= 11
+
+
+def chip_in_season(stored_flag, latest_season, games_played, today=None) -> bool:
+    """The In-Season chip state for one graded row.
+
+    The v3.4 stored in_season flag is the record of the mode the row
+    was actually graded in (migration 049: rows graded before v3.4 read
+    FALSE, which is truthful, they were complete-mode grades), so when
+    the row carries the flag it WINS over the data-state check. The
+    data-state check only serves rows with no flag at all (in-memory
+    rows built outside the rankings table, pre-migration payloads).
+    """
+    if stored_flag is not None:
+        return bool(stored_flag)
+    return is_in_season(latest_season, games_played, today=today)
 
 
 def _get_latest_season_map(player_ids) -> dict:
@@ -1496,8 +1510,13 @@ def _get_prospect_detail(player_id: str, row: dict) -> dict:
     detail["tag"] = prospect_tag(row.get("prospect_score"))
     _latest = (max(seasons, key=lambda s: s.get("season") or 0)
                if seasons else None)
-    detail["in_season"] = bool(_latest) and is_in_season(
-        _latest.get("season"), _latest.get("games_played"))
+    # v3.4: the stored grading-mode flag (set at line above from the
+    # rankings row) succeeds the data-state check; the check remains
+    # only as the fallback for rows carrying no flag.
+    detail["in_season"] = chip_in_season(
+        row.get("in_season"),
+        _latest.get("season") if _latest else None,
+        _latest.get("games_played") if _latest else None)
     detail["evidence_receipt"] = strongest_evidence_receipt(
         row.get("position"), seasons, athleticism, _pcts,
         sp_sos=detail.get("sp_sos"))
@@ -1625,9 +1644,12 @@ def rankings():
                 d.setdefault("rank_delta", None)
 
         # Percentile display model (board rework): band tag, component
-        # percentiles within position, and the In-Season data-state chip.
-        # The internal prospect_score stays in the payload (it ranks the
-        # board and feeds rookie values); it is simply never rendered.
+        # percentiles within position, and the In-Season chip. The chip
+        # reads the row's stored v3.4 grading-mode flag when the row
+        # carries one (chip_in_season); the data-state check is the
+        # fallback for flagless rows. The internal prospect_score stays
+        # in the payload (it ranks the board and feeds rookie values);
+        # it is simply never rendered.
         try:
             _pops: dict = {}
             _season_map = _get_latest_season_map(
@@ -1639,7 +1661,9 @@ def rankings():
                 d["percentiles"] = component_percentiles(d, _pops[_pos])
                 d["tag"] = prospect_tag(d.get("prospect_score"))
                 _ls = _season_map.get(d.get("player_id"))
-                d["in_season"] = bool(_ls) and is_in_season(_ls[0], _ls[1])
+                d["in_season"] = chip_in_season(
+                    d.get("in_season"),
+                    _ls[0] if _ls else None, _ls[1] if _ls else None)
         except Exception:
             log.debug("[rookie_api] percentile enrichment skipped",
                       exc_info=True)
