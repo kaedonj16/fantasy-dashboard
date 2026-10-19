@@ -138,12 +138,12 @@ def test_compare_weekly_rows_align_bye_week_and_math():
     assert "Even" in html
     # Summary: Gibbs leads every decided category (13 of 14 rows).
     assert "leads 13 of 14" in html
-    # Walker has NO week-3 point (bye), and no zero is plotted for him:
-    # his W4 snap tip is present, a W3 tip is not.
-    assert "Walker · Wk 4 · 58%" in html
+    # Tips are PAIRED: hovering either player's dot shows both values for
+    # that week. Walker has NO week-3 point (bye) -- his part of the W3 tip
+    # is a dash; his W4 value rides along in the same string as Gibbs's.
+    assert "Wk 4 · Gibbs 85% vs BUF · Walker 58% vs BUF" in html
+    assert "Wk 3 · Gibbs 75% vs BUF · Walker —" in html
     assert "Walker · Wk 3" not in html
-    # Gibbs W3 exists with opponent.
-    assert "Gibbs · Wk 3 · 75% vs BUF" in html
     # LG = last present week: Gibbs snap LG 85 (W4), Walker snap LG 58 (W4,
     # his last present week -- not a W3 zero).
     assert "LG: 85.0%" in html and "LG: 58.0%" in html
@@ -207,6 +207,113 @@ def test_compare_season_rows_merge_and_latest_edge():
     # Latest-value edge on PPG: 19.0 vs 14.0.
     assert "Gibbs +5" in html
     assert "2023&ndash;2024" in html
+    # Season tips are PAIRED too: one string per year on both players' dots,
+    # with a dash where a player has no value that year.
+    assert "2024 · Gibbs 19 · Walker 14" in html
+    assert "2023 · Gibbs — · Walker 55%" in html
+
+
+def _row_html(html, label):
+    """The single .cmp-u-row chunk for a metric label ('' if absent)."""
+    marker = '<div class="cmp-u-metric">' + label + '</div>'
+    for chunk in html.split('<div class="cmp-u-row">')[1:]:
+        if chunk.startswith(marker):
+            return chunk
+    return ""
+
+
+# ── Prod-shape regression: a PLAYED week can carry a null field ────────────
+# Walker (his real 2026 payload shape): rows W1-4 + W6 -- the W5 bye is no
+# row at all. W6 is a PLAYED week (carries 19, target_share '10.3') but
+# snap_pct is null. Gibbs: rows W1-5, his W6 bye is no row. Reading the null
+# snap as 0 used to print Walker avg 59.7, LG 0.0, and a Gibbs +16.9 snap
+# edge; the valued-weeks truth is avg 74.7, LG 75 (W4), edge Gibbs +2.0.
+PROD_GIBBS = [
+    _wk(1, snap_pct=74, targets=5, target_share=15.2),
+    _wk(2, snap_pct=83.1, targets=6, target_share=18.9),
+    _wk(3, snap_pct=69.2, targets=4, target_share=13.8),
+    _wk(4, snap_pct=87.3, targets=7, target_share=20.1),
+    _wk(5, snap_pct=69.7, targets=5, target_share=16.9),
+]
+PROD_WALKER = [
+    _wk(1, snap_pct=68.1, targets=6, target_share=24),
+    _wk(2, snap_pct=82.5, targets=10, target_share=23.3, opponent="SF"),
+    _wk(3, snap_pct=73.1, targets=2, target_share=8.7),
+    _wk(4, snap_pct=75, targets=1, target_share=3.7),
+    _wk(6, snap_pct=None, targets=3, target_share=10.3, carries=19,
+        carry_share=70.4, ppr_pts=27.9, opponent="LAC"),
+]
+
+
+def _prod_html():
+    driver = (
+        "\nconst html = buildCompareWeeklyTrendRows("
+        + json.dumps(PROD_GIBBS) + ", " + json.dumps(PROD_WALKER)
+        + ", 'RB', 'RB', 'Jahmyr Gibbs', 'Kenneth Walker III',"
+        " '#0076b6', '#12284b');\n"
+        "process.stdout.write(JSON.stringify({ html: html }));\n"
+    )
+    return _run_node(driver)["html"]
+
+
+@_node_required
+def test_null_snap_week_is_a_gap_not_a_zero():
+    html = _prod_html()
+    snap = _row_html(html, "Snap %")
+    assert snap
+    # (a) Averages / LG / edge use valued weeks only.
+    assert "76.7%" in snap                    # Gibbs (74+83.1+69.2+87.3+69.7)/5
+    assert "74.7%" in snap                    # Walker (68.1+82.5+73.1+75)/4
+    assert "LG: 75.0%" in snap                # Walker LG = W4, his last valued wk
+    assert "LG: 69.7%" in snap                # Gibbs LG = W5
+    assert "Gibbs +2.0" in snap               # the honest edge, not +16.9
+    assert "59.7" not in html                 # the old null-as-0 average
+    # (b) No zero point for Walker: valued dots are Gibbs 5 + Walker 4, and
+    # each side's line is a single unbroken segment (gaps sit at the end).
+    assert snap.count('class="wk-dot"') == 9
+    assert snap.count("<polyline") == 2
+    # (d) Paired tips: a mid week shows both values; at W5 (Walker's bye)
+    # his part of the tip is the dash.
+    assert "Wk 2 · Gibbs 83.1% vs BUF · Walker 82.5% vs SF" in snap
+    assert "Wk 5 · Gibbs 69.7% vs BUF · Walker —" in snap
+
+
+@_node_required
+def test_null_snap_does_not_touch_target_pct():
+    html = _prod_html()
+    tgt = _row_html(html, "Target %")
+    assert tgt
+    # (c) Target % averages span ALL played weeks, W6 included:
+    # Walker (24+23.3+8.7+3.7+10.3)/5 = 14.0, Gibbs 84.9/5 = 17.0.
+    assert "14.0%" in tgt and "17.0%" in tgt
+    # Walker's W6 target point IS plotted (5 dots a side on this row).
+    assert tgt.count('class="wk-dot"') == 10
+    # (d) The W6 paired tip rides on Walker's dot: Gibbs (bye) is the dash.
+    assert "Wk 6 · Gibbs — · Walker 10.3% vs LAC" in tgt
+
+
+@_node_required
+def test_metric_null_all_weeks_renders_dash_and_leaves_summary():
+    # (e) Gibbs has NO valued snap week at all: his block and the edge are
+    # dashes, Walker still renders, and the row leaves the leads count.
+    a = [dict(w, snap_pct=None) for w in GIBBS]
+    driver = (
+        "\nconst html = buildCompareWeeklyTrendRows("
+        + json.dumps(a) + ", " + json.dumps(WALKER)
+        + ", 'RB', 'RB', 'Jahmyr Gibbs', 'Kenneth Walker III',"
+        " '#0076b6', '#12284b');\n"
+        "process.stdout.write(JSON.stringify({ html: html }));\n"
+    )
+    html = _run_node(driver)["html"]
+    snap = _row_html(html, "Snap %")
+    assert snap
+    assert snap.count("&mdash;") >= 2         # Gibbs value block + edge cell
+    assert "60.0%" in snap and "LG: 58.0%" in snap   # Walker unaffected
+    assert snap.count("LG:") == 1             # no LG line on the empty side
+    assert "NaN" not in html
+    # Snap was a Gibbs lead in the full fixture ("leads 13 of 14"); one-sided
+    # now, it counts for neither side and leaves the total too.
+    assert "leads 12 of 13" in html
 
 
 def test_app_js_single_overlay_panel_contract():

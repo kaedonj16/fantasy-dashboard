@@ -6222,33 +6222,68 @@ function buildWeeklyTrendRows(weeks, position) {
 }
 
 // ── Compare usage overlay: weekly metric specs ─────────────────────────────
-// Spec shape: [label, fn(weekRow) -> Number, suffix]. The per-position sets
-// and order mirror buildWeeklyTrendRows (Target % sits right after Targets
-// for RB/WR/TE; RB adds Carry %/Carries; computed efficiency rows follow the
-// volume rows; PPR Pts last). fn reads the raw weekly row regardless of
-// position, so a WR's carries still plot on the Carries row when the union
-// includes it. A present week always yields a number (missing fields count
-// as 0, exactly like buildWeeklyTrendRows); nulls in an aligned series come
-// only from week alignment (bye / DNP), never from fn.
+// Spec shape: [label, fn(weekRow) -> Number|null, suffix]. The per-position
+// sets and order mirror buildWeeklyTrendRows (Target % sits right after
+// Targets for RB/WR/TE; RB adds Carry %/Carries; computed efficiency rows
+// follow the volume rows; PPR Pts last). fn reads the raw weekly row
+// regardless of position, so a WR's carries still plot on the Carries row
+// when the union includes it.
+//
+// Missing-data semantics (compare only; buildWeeklyTrendRows is unchanged):
+// a null in an aligned series means "no value for that week" and becomes a
+// gap, excluded from that metric's avg / delta / LG / edge. Nulls come from
+// week alignment (bye / DNP: no API row) AND from fn itself:
+//   - Share / percent fields (snap_pct, target_share, carry_share) arrive as
+//     null when the feed had no value that week -- e.g. a PLAYED week with
+//     snap data missing. Null is missing, not 0.
+//   - Computed rates are undefined (null) when their denominator is missing
+//     or 0, instead of plotting a fake 0.
+//   - RZ Touches is null only when BOTH parts are missing.
+// Raw counting stats keep 0-is-0: a present row's 0 is a genuine zero.
 function _cmpWeeklySpecsFor(pos) {
   pos = (pos || '').toUpperCase();
   function K(k) { return function(w) { return Number(w[k] || 0); }; }
+  function KP(k) {
+    return function(w) {
+      var v = w[k];
+      if (v == null || v === '' || isNaN(Number(v))) return null;
+      return Number(v);
+    };
+  }
+  function RATE(numK, denK, scale) {
+    return function(w) {
+      var d = w[denK];
+      if (d == null || d === '' || !(Number(d) > 0)) return null;
+      var r = Number(w[numK] || 0) / Number(d) * (scale || 1);
+      return isFinite(r) ? r : null;
+    };
+  }
   var F = {
-    snap: ['Snap %', K('snap_pct'), '%'],
+    snap: ['Snap %', KP('snap_pct'), '%'],
     targets: ['Targets', K('targets'), ''],
-    targetPct: ['Target %', K('target_share'), '%'],
+    targetPct: ['Target %', KP('target_share'), '%'],
     touches: ['Touches', K('touches'), ''],
-    carryPct: ['Carry %', K('carry_share'), '%'],
+    carryPct: ['Carry %', KP('carry_share'), '%'],
     carries: ['Carries', K('carries'), ''],
     rushYds: ['Rush Yds', K('rush_yards'), ''],
     rec: ['Receptions', K('receptions'), ''],
     recYds: ['Rec Yds', K('rec_yards'), ''],
-    rz: ['RZ Touches', function(w) { return Number(w.rz_targets || 0) + Number(w.rz_carries || 0); }, ''],
-    ypc: ['Yds/Carry', function(w) { var c = Number(w.carries || 0); return c > 0 ? Number(w.rush_yards || 0) / c : 0; }, ''],
-    ypt: ['Yds/Touch', function(w) { var t = Number(w.touches || 0); return t > 0 ? (Number(w.rush_yards || 0) + Number(w.rec_yards || 0)) / t : 0; }, ''],
-    yptgt: ['Yds/Target', function(w) { var t = Number(w.targets || 0); return t > 0 ? Number(w.rec_yards || 0) / t : 0; }, ''],
-    ypr: ['Yds/Rec', function(w) { var r = Number(w.receptions || 0); return r > 0 ? Number(w.rec_yards || 0) / r : 0; }, ''],
-    catchPct: ['Catch %', function(w) { var t = Number(w.targets || 0); return t > 0 ? Number(w.receptions || 0) / t * 100 : 0; }, '%'],
+    rz: ['RZ Touches', function(w) {
+      var a = w.rz_targets, b = w.rz_carries;
+      var aMiss = (a == null || a === ''), bMiss = (b == null || b === '');
+      if (aMiss && bMiss) return null;
+      return (aMiss ? 0 : Number(a) || 0) + (bMiss ? 0 : Number(b) || 0);
+    }, ''],
+    ypc: ['Yds/Carry', RATE('rush_yards', 'carries'), ''],
+    ypt: ['Yds/Touch', function(w) {
+      var t = w.touches;
+      if (t == null || t === '' || !(Number(t) > 0)) return null;
+      var r = (Number(w.rush_yards || 0) + Number(w.rec_yards || 0)) / Number(t);
+      return isFinite(r) ? r : null;
+    }, ''],
+    yptgt: ['Yds/Target', RATE('rec_yards', 'targets'), ''],
+    ypr: ['Yds/Rec', RATE('rec_yards', 'receptions'), ''],
+    catchPct: ['Catch %', RATE('receptions', 'targets', 100), '%'],
     ppr: ['PPR Pts', K('ppr_pts'), ''],
   };
   var order = ['snap', 'targets'];
@@ -6287,8 +6322,16 @@ function _cmpShortName(name) {
 
 // One player's big-number block: season average (player color) + 3-wk-trend
 // delta + "LG:" last-present-week line. Semantics match buildWeeklyTrendRows
-// exactly (delta shown at |delta| >= 0.5, same colors).
+// exactly (delta shown at |delta| >= 0.5, same colors). `series` holds only
+// the player's VALUED points for the metric; when they have none (avg null)
+// the block is a plain dash -- no number, no LG line, never a NaN.
 function _cmpValBlock(avg, series, suffix, color, rightSide) {
+  if (avg == null || !isFinite(avg) || !series || !series.length) {
+    return '<div class="cmp-u-val' + (rightSide ? ' cmp-u-val-r' : '') + '">'
+      + '<div class="cmp-u-val-top">'
+      + '<span class="cmp-u-num" style="color:' + color + '">&mdash;</span>'
+      + '</div></div>';
+  }
   var r3 = series.slice(-3);
   var recentAvg = r3.reduce(function(s, v) { return s + v; }, 0) / r3.length;
   var delta = recentAvg - avg;
@@ -6322,7 +6365,10 @@ function _cmpHeadHtml(name1, name2, color1, color2, summaryHtml) {
 }
 
 function _cmpEdgeHtml(diff, short1, short2, color1, color2, fmtAbs) {
-  if (diff == null || Math.abs(diff) <= 0.05) return '<div class="cmp-u-edge cmp-u-even">Even</div>';
+  // No diff at all (one side has no valued points for the metric) is not a
+  // tie: it renders a dash and stays out of the leads count.
+  if (diff == null || !isFinite(diff)) return '<div class="cmp-u-edge cmp-u-even">&mdash;</div>';
+  if (Math.abs(diff) <= 0.05) return '<div class="cmp-u-edge cmp-u-even">Even</div>';
   var win = diff > 0;
   var txt = (fmtAbs ? fmtAbs(Math.abs(diff)) : Math.abs(diff).toFixed(1));
   return '<div class="cmp-u-edge" style="color:' + (win ? color1 : color2) + '">'
@@ -6342,7 +6388,9 @@ function _cmpSummaryHtml(leadA, leadB, total, name1, name2, color1, color2) {
 // Head-to-head weekly usage rows: one overlaid duo sparkline per metric.
 // Both players align on the sorted union of their week numbers; a week a
 // player has no row for (bye / DNP -- the API only returns weeks with usage)
-// becomes null and breaks that player's line.
+// becomes null and breaks that player's line. A metric can also be null in
+// a played week (missing field / undefined rate, per the spec semantics
+// above) -- same treatment: a gap, out of that metric's avg/delta/LG/edge.
 function buildCompareWeeklyTrendRows(weeks1, weeks2, pos1, pos2, name1, name2, color1, color2) {
   var muted = function(msg) {
     return '<div style="padding:10px 0;color:var(--text-muted);font-size:12px;">' + msg + '</div>';
@@ -6356,7 +6404,6 @@ function buildCompareWeeklyTrendRows(weeks1, weeks2, pos1, pos2, name1, name2, c
     .map(Number).filter(function(v, i, arr) { return arr.indexOf(v) === i; })
     .sort(function(a, b) { return a - b; });
   var short1 = _cmpShortName(name1), short2 = _cmpShortName(name2);
-  var last1 = short1, last2 = short2;
   var rows = '', leadA = 0, leadB = 0, total = 0;
   _cmpWeeklyMetricSpecs(pos1, pos2).forEach(function(sp) {
     var label = sp[0], fn = sp[1], suffix = sp[2] || '';
@@ -6364,30 +6411,40 @@ function buildCompareWeeklyTrendRows(weeks1, weeks2, pos1, pos2, name1, name2, c
       return wkNums.map(function(wk) { return byWk[wk] ? fn(byWk[wk]) : null; });
     }
     var sA = aligned(byWk1), sB = aligned(byWk2);
-    var pA = sA.filter(function(v) { return v != null; });
-    var pB = sB.filter(function(v) { return v != null; });
+    // Valued points only: fn-nulls (missing field / undefined rate) are gaps
+    // for this metric, exactly like a bye week with no row at all.
+    var pA = sA.filter(function(v) { return v != null && isFinite(v); });
+    var pB = sB.filter(function(v) { return v != null && isFinite(v); });
+    if (!pA.length && !pB.length) return;   // no valued points on either side
     var anyPos = pA.some(function(v) { return v > 0; }) || pB.some(function(v) { return v > 0; });
-    if (!anyPos) return;   // metric nobody produced in any present week
-    var avgA = pA.reduce(function(s, v) { return s + v; }, 0) / pA.length;
-    var avgB = pB.reduce(function(s, v) { return s + v; }, 0) / pB.length;
-    function tipsFor(series, byWk, last) {
-      return wkNums.map(function(wk, i) {
-        var v = series[i];
-        if (v == null) return null;
+    if (!anyPos) return;   // metric nobody produced in any valued week
+    var avgA = pA.length ? pA.reduce(function(s, v) { return s + v; }, 0) / pA.length : null;
+    var avgB = pB.length ? pB.reduce(function(s, v) { return s + v; }, 0) / pB.length : null;
+    // ONE paired tip per week, hung on BOTH players' dots: hovering either
+    // line shows both values for that week. A missing value (bye / DNP week
+    // or a null metric) renders as a dash with no opponent.
+    var tips = wkNums.map(function(wk, i) {
+      function part(v, byWk, short) {
+        if (v == null || !isFinite(v)) return short + ' —';
         var w = byWk[wk] || {};
         var num = Math.round(v * 10) / 10;
-        var t = last + ' · Wk ' + wk + ' · ' + num + suffix;
+        var t = short + ' ' + num + suffix;
         if (w.opponent) t += ' vs ' + w.opponent;
         return t;
-      });
+      }
+      return 'Wk ' + wk + ' · ' + part(sA[i], byWk1, short1) + ' · ' + part(sB[i], byWk2, short2);
+    });
+    // A one-sided metric (one player has no valued points) gets no edge and
+    // no vote in the summary strip -- it is not a category either side leads.
+    var diff = (avgA != null && avgB != null) ? avgA - avgB : null;
+    if (diff != null) {
+      if (diff > 0.05) leadA++; else if (diff < -0.05) leadB++;
+      total++;
     }
-    var diff = avgA - avgB;
-    if (diff > 0.05) leadA++; else if (diff < -0.05) leadB++;
-    total++;
     rows += '<div class="cmp-u-row">'
       + '<div class="cmp-u-metric">' + label + '</div>'
       + _cmpValBlock(avgA, pA, suffix, color1, false)
-      + pmSparklineDuo(sA, sB, color1, color2, tipsFor(sA, byWk1, last1), tipsFor(sB, byWk2, last2))
+      + pmSparklineDuo(sA, sB, color1, color2, tips, tips)
       + _cmpValBlock(avgB, pB, suffix, color2, true)
       + _cmpEdgeHtml(diff, short1, short2, color1, color2, null)
       + '</div>';
@@ -6459,12 +6516,14 @@ function buildCompareSeasonTrendRows(opts1, series1, opts2, series2, name1, name
         + '<span class="cmp-u-lg">' + st.first.season + ': ' + pmStFmt(st.first.value, o) + '</span>'
         + '</div>';
     }
-    function tipsFor(series, last) {
-      return years.map(function(yr, i) {
-        var v = series[i];
-        return v == null ? null : (last + ' · ' + yr + ' · ' + pmStFmt(v, o));
-      });
-    }
+    // ONE paired tip per season, hung on BOTH players' dots, so hovering
+    // either line shows both values for that year (missing -> dash).
+    var tips = years.map(function(yr, i) {
+      function part(v, short) {
+        return (v == null || !isFinite(v)) ? (short + ' —') : (short + ' ' + pmStFmt(v, o));
+      }
+      return yr + ' · ' + part(sA[i], short1) + ' · ' + part(sB[i], short2);
+    });
     var diff = (stA && stB) ? (stA.last.value - stB.last.value) : null;
     if (diff != null) {
       if (diff > 0.05) leadA++; else if (diff < -0.05) leadB++;
@@ -6473,7 +6532,7 @@ function buildCompareSeasonTrendRows(opts1, series1, opts2, series2, name1, name
     rows += '<div class="cmp-u-row">'
       + '<div class="cmp-u-metric">' + _pmEsc(o.label) + '</div>'
       + valBlock(stA, color1, false)
-      + pmSparklineDuo(sA, sB, color1, color2, tipsFor(sA, short1), tipsFor(sB, short2))
+      + pmSparklineDuo(sA, sB, color1, color2, tips, tips)
       + valBlock(stB, color2, true)
       + _cmpEdgeHtml(diff, short1, short2, color1, color2, function(x) { return pmStFmt(x, o); })
       + '</div>';
