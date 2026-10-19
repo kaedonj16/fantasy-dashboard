@@ -1294,13 +1294,21 @@ def compute_win_prob(
                 continue  # empty slot placeholder (see _normalize_starter_slots)
             pid = p.get("pid")
             raw_actual = p.get("pts")
-            if (
-                status_by_pid.get(pid, status_by_pid.get(str(pid), STATUS_NOT_STARTED))
-                in (STATUS_FINAL, STATUS_IN_PROGRESS)
-                and not isinstance(raw_actual, (int, float))
-            ):
-                return None
-            actual = float(raw_actual) if isinstance(raw_actual, (int, float)) else 0.0
+            # A starter whose game has started (or finished) but who has not
+            # recorded a stat can legitimately have no points entry at all:
+            # Fleaflicker's boxscore omits him entirely instead of emitting
+            # 0.0 the way Sleeper does. That is 0 banked points, not missing
+            # data -- and his pregame projection still counts toward the
+            # remaining slice below. Returning None here used to void the
+            # whole team's stats, so one stat-less starter (e.g. a WR before
+            # his first target) silently killed the matchup's win probability
+            # and the portfolio card rendered no win bar.
+            actual = (
+                float(raw_actual)
+                if isinstance(raw_actual, (int, float))
+                and not isinstance(raw_actual, bool)
+                else 0.0
+            )
             status = status_by_pid.get(pid, STATUS_NOT_STARTED)
             if pid is not None and status == STATUS_NOT_STARTED:
                 status = status_by_pid.get(str(pid), status)
