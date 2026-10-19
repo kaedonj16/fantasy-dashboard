@@ -3,7 +3,7 @@ Prospect evaluation model - position-aware, multi-factor scoring.
 
 Each component score is 0-100.  Final prospect_score is a weighted sum.
 
-Model version: 3.4.1 (see MODEL_VERSION)
+Model version: 3.5 (see MODEL_VERSION)
   v1.x: baseline components below.
   v2.0: adds recruiting-pedigree component (247 Composite via CFBD),
         WEPA opponent-adjusted efficiency blend (QB/RB), and SP+/Team Talent
@@ -28,6 +28,18 @@ Model version: 3.4.1 (see MODEL_VERSION)
         inputs at write time and via scripts/backfill_stored_dominators.py;
         breakout components rise for players whose early dominators
         were missing. Grades move only for affected players.
+  v3.5: grading-input DEFINITION change. dominator_rating for WR/TE
+        is now receiving share - 0.65 * (receiving yards / team pass
+        yards) + 0.35 * (receiving TDs / team pass TDs) - instead of
+        share of total offense, which structurally taxed pass
+        catchers (their denominator included team rushing production)
+        and sat on a different basis from this model's own breakout
+        anchors (0.35 saturation, 0.4877 recorded best). RB dominator
+        is unchanged (scrimmage share of total offense); QB unchanged.
+        Stored WR/TE rows are recomputed by
+        scripts/recompute_dominators.py (migration 051 adds the
+        team_pass_tds denominator); no weights or thresholds change
+        in this version.
 
 Component weights (v2.0 - recruiting takes 5%, others rescaled proportionally):
     projected_draft_capital_score 27-28%  NFL draft position (position-weighted)
@@ -56,7 +68,7 @@ from typing import Any, Dict, List, Optional
 
 
 # Grading-model version. Bump on ANY change to scoring logic or weights.
-MODEL_VERSION = "3.4.1"
+MODEL_VERSION = "3.5"
 
 
 def active_season_year_for_run(today=None) -> Optional[int]:

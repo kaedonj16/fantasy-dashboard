@@ -1,0 +1,21 @@
+-- 051: team_pass_tds on rookie_prospect_source_data.
+--
+-- Model v3.5 changes the WR/TE dominator_rating definition from share
+-- of TOTAL offense (receiving+rushing over netPassingYards +
+-- rushingYards / passingTDs + rushingTDs) to share of the team's
+-- PASSING production - the conventional receiving-share basis the
+-- model's own breakout anchors are denominated in:
+--   0.65 * (receiving_yards / team_pass_yards)
+-- + 0.35 * (receiving_tds  / team_pass_tds)
+-- team_pass_yards has been stored since 005 ("net passing yards (for
+-- WR/TE dominator)"), but the TD denominator never was, so a stored
+-- row could not be re-derived or recomputed on the receiving basis
+-- from its own inputs. This column closes that gap: ingestion stamps
+-- it at build time (CFBD passingTDs), the pipeline upserts persist
+-- it, and scripts/recompute_dominators.py writes it back alongside
+-- any rating it repairs from fetched totals.
+--
+-- RB dominator is unchanged (scrimmage basis, total-offense totals).
+-- Rollback: alter table rookie_prospect_source_data drop column team_pass_tds;
+
+ALTER TABLE rookie_prospect_source_data ADD COLUMN IF NOT EXISTS team_pass_tds INTEGER;

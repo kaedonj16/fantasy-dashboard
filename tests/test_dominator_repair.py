@@ -21,7 +21,8 @@ Pins here:
 - the pipeline writers derive before persisting;
 - the backfill script's pure planner (stored totals / CFBD totals /
   unrepairable-with-named-input / genuine zero);
-- MODEL_VERSION is "3.4.1".
+- MODEL_VERSION is pinned to the current version (was "3.4.1" when
+  this repair shipped; v3.5's dominator basis change moved it).
 """
 
 import pytest
@@ -277,5 +278,5 @@ class TestBackfillPlanner:
 
 
 class TestModelVersion:
-    def test_version_is_341(self):
-        assert pm.MODEL_VERSION == "3.4.1"
+    def test_version_is_current(self):
+        assert pm.MODEL_VERSION == "3.5"

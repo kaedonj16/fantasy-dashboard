@@ -273,7 +273,7 @@ def upsert_prospects(prospects: List[Dict], conn) -> int:
                 # (player lines + team totals) but no dominator gets
                 # the rating derived before it is persisted, so the
                 # stored row never lacks a computable dominator.
-                _derive_season_dominator(s)
+                _derive_season_dominator(s, p.get("position"))
                 cur.execute(
                     """
                     INSERT INTO rookie_prospect_source_data
@@ -285,7 +285,7 @@ def upsert_prospects(prospects: List[Dict], conn) -> int:
                          yds_per_carry, yds_per_reception, yds_per_attempt,
                          completion_pct, td_int_ratio, team, conference,
                          team_pass_rate, team_total_yards, team_total_tds,
-                         team_pass_yards, sagarin_team_rating, source)
+                         team_pass_yards, team_pass_tds, sagarin_team_rating, source)
                     VALUES
                         (%(player_id)s, %(season)s, %(games_played)s,
                          %(pass_yards)s, %(pass_tds)s, %(pass_attempts)s,
@@ -296,7 +296,7 @@ def upsert_prospects(prospects: List[Dict], conn) -> int:
                          %(yds_per_carry)s, %(yds_per_reception)s, %(yds_per_attempt)s,
                          %(completion_pct)s, %(td_int_ratio)s, %(team)s, %(conference)s,
                          %(team_pass_rate)s, %(team_total_yards)s, %(team_total_tds)s,
-                         %(team_pass_yards)s, %(sagarin_team_rating)s, %(source)s)
+                         %(team_pass_yards)s, %(team_pass_tds)s, %(sagarin_team_rating)s, %(source)s)
                     ON CONFLICT (player_id, season, source) DO UPDATE SET
                         games_played         = COALESCE(EXCLUDED.games_played, rookie_prospect_source_data.games_played),
                         pass_yards           = EXCLUDED.pass_yards,
@@ -325,6 +325,7 @@ def upsert_prospects(prospects: List[Dict], conn) -> int:
                         team_total_yards     = COALESCE(NULLIF(EXCLUDED.team_total_yards, 0), rookie_prospect_source_data.team_total_yards),
                         team_total_tds       = COALESCE(NULLIF(EXCLUDED.team_total_tds, 0), rookie_prospect_source_data.team_total_tds),
                         team_pass_yards      = EXCLUDED.team_pass_yards,
+                        team_pass_tds        = EXCLUDED.team_pass_tds,
                         sagarin_team_rating  = EXCLUDED.sagarin_team_rating
                     """,
                     {
@@ -357,6 +358,7 @@ def upsert_prospects(prospects: List[Dict], conn) -> int:
                         "team_total_yards":    s.get("team_total_yards"),
                         "team_total_tds":      s.get("team_total_tds"),
                         "team_pass_yards":     s.get("team_pass_yards"),
+                        "team_pass_tds":       s.get("team_pass_tds"),
                         "sagarin_team_rating": s.get("sagarin_team_rating"),
                         "source":              s.get("source", "cfbd"),
                     },
@@ -442,7 +444,7 @@ def upsert_prospect_source_data(prospects: List[Dict], cfbd_stats: Dict, draft_y
             for season_data in seasons:
                 # Repair on write (see upsert_prospects): derive the
                 # dominator from the season's own inputs when missing.
-                derive_season_dominator(season_data)
+                derive_season_dominator(season_data, prospect.get("position"))
                 try:
                     # Use savepoint to allow rollback on individual errors
                     cur.execute("SAVEPOINT save_stats")
@@ -456,7 +458,7 @@ def upsert_prospect_source_data(prospects: List[Dict], cfbd_stats: Dict, draft_y
                              yds_per_carry, yds_per_reception, yds_per_attempt,
                              completion_pct, td_int_ratio, team, conference, team_pass_rate,
                              team_total_yards, team_total_tds,
-                             team_pass_yards, sagarin_team_rating, source)
+                             team_pass_yards, team_pass_tds, sagarin_team_rating, source)
                         VALUES
                             (%(player_id)s, %(season)s, %(games_played)s, %(pass_yards)s, %(pass_tds)s,
                              %(pass_attempts)s, %(completions)s, %(interceptions)s, %(rush_attempts)s,
@@ -466,7 +468,7 @@ def upsert_prospect_source_data(prospects: List[Dict], cfbd_stats: Dict, draft_y
                              %(yds_per_reception)s, %(yds_per_attempt)s, %(completion_pct)s,
                              %(td_int_ratio)s, %(team)s, %(conference)s, %(team_pass_rate)s,
                              %(team_total_yards)s, %(team_total_tds)s,
-                             %(team_pass_yards)s, %(sagarin_team_rating)s, %(source)s)
+                             %(team_pass_yards)s, %(team_pass_tds)s, %(sagarin_team_rating)s, %(source)s)
                         ON CONFLICT (player_id, season, source) DO UPDATE SET
                             games_played        = COALESCE(EXCLUDED.games_played, rookie_prospect_source_data.games_played),
                             pass_yards          = EXCLUDED.pass_yards,
@@ -495,6 +497,7 @@ def upsert_prospect_source_data(prospects: List[Dict], cfbd_stats: Dict, draft_y
                             team_total_yards    = COALESCE(NULLIF(EXCLUDED.team_total_yards, 0), rookie_prospect_source_data.team_total_yards),
                             team_total_tds      = COALESCE(NULLIF(EXCLUDED.team_total_tds, 0), rookie_prospect_source_data.team_total_tds),
                             team_pass_yards     = EXCLUDED.team_pass_yards,
+                            team_pass_tds       = EXCLUDED.team_pass_tds,
                             sagarin_team_rating = EXCLUDED.sagarin_team_rating
                         """,
                         {
@@ -527,6 +530,7 @@ def upsert_prospect_source_data(prospects: List[Dict], cfbd_stats: Dict, draft_y
                             "team_total_yards":    season_data.get("team_total_yards"),
                             "team_total_tds":      season_data.get("team_total_tds"),
                             "team_pass_yards":     season_data.get("team_pass_yards"),
+                            "team_pass_tds":       season_data.get("team_pass_tds"),
                             "sagarin_team_rating": season_data.get("sagarin_team_rating"),
                             "source":              "cfbd",
                         }
@@ -1830,7 +1834,7 @@ def load_prospects_from_db(draft_year: int, conn) -> List[Dict[str, Any]]:
                    dominator_rating, market_share_yards, market_share_tds,
                    yds_per_carry, yds_per_reception, yds_per_attempt,
                    completion_pct, td_int_ratio, team, conference, team_pass_rate,
-                   team_pass_yards, sagarin_team_rating,
+                   team_pass_yards, team_pass_tds, sagarin_team_rating,
                    team_total_yards, team_total_tds,
                    eval_snap_counts,
                    yards_after_catch, yards_after_catch_per_reception,
