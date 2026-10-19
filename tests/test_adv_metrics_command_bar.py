@@ -27,8 +27,8 @@ KEY_IDS = (
     "amContextLine",
     "amFilterBadge",
     "amSearch",
-    "amSearchToggle",
-    "amSearchRow",
+    "amSearchExpand",
+    "amSearchClear",
     "amMoreToggle",
     "amMoreMenu",
     "amMetricBtn",
@@ -124,7 +124,7 @@ def test_old_toolbar_layout_is_gone():
 def test_command_strip_structure():
     body = _body(_html())
     assert 'id="amCmdBar"' in body
-    for el_id in ("amSearchToggle", "amFilterToggle", "amMoreToggle"):
+    for el_id in ("amFilterToggle", "amMoreToggle"):
         tag = _tag(body, el_id)
         assert 'aria-expanded="false"' in tag, f"#{el_id} needs aria-expanded"
     # The overflow menu holds the glossary and CSV actions with IDs/handlers
@@ -134,17 +134,19 @@ def test_command_strip_structure():
     assert 'onclick="amOpenGraph()"' in _tag(body, "amGraphBtn")
     actions = body[body.index('class="am-cmd-actions"'):body.index('id="amMoreMenu"')]
     assert 'id="amGraphBtn"' in actions, "#amGraphBtn must live in .am-cmd-actions"
-    menu_span = body[body.index('id="amMoreMenu"'):body.index('id="amSearchRow"')]
+    assert 'id="amSearchExpand"' in actions, "#amSearchExpand must live in .am-cmd-actions"
+    menu_span = body[body.index('id="amMoreMenu"'):body.index('id="amSheetBackdrop"')]
     assert 'id="amGraphBtn"' not in menu_span, "#amGraphBtn must leave the overflow menu"
     for el_id in ("amLegendBtn", "amExportBtn"):
         assert f'id="{el_id}"' in menu_span, f"#{el_id} stays in the overflow menu"
     legend = _tag(body, "amLegendBtn")
     assert "amLegendModal" in legend
     _tag(body, "amExportBtn")  # CSV keeps its id; JS wires the click listener
-    # Sheet + backdrop start hidden; the search row starts hidden too.
+    # Sheet + backdrop start hidden; the search is an in-bar expanding
+    # box now, so no search row exists to hide.
     assert "hidden" in _tag(body, "amFilterSheet")
     assert "hidden" in _tag(body, "amSheetBackdrop")
-    assert "hidden" in _tag(body, "amSearchRow")
+    assert 'id="amSearchRow"' not in body
 
 
 def test_positions_are_a_segmented_control():

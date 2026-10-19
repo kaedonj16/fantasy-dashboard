@@ -1,12 +1,15 @@
 """Advanced Metrics player search: presentation vs behaviour contracts.
 
-The AM page used to reveal a full-width #amSearch input in the page flow.
-PR #2736 kept the input but floated it in a popover under the command bar
-with the nav search's pill styling. Kaedon's correction (2026-10-19): the
-control must NOT work like the nav search's modal picker - no results
-dropdown, no pick-a-result step. It just filters the names in the list,
-exactly as the old in-flow input did: typing sets state.search and
-render() substring-filters the leaderboard rows by name, live.
+The AM page used to reveal a full-width #amSearch input in the page flow;
+PR #2736 floated it in a popover under the command bar. Kaedon's final
+correction (2026-10-19): the search must extend out to the left from its
+icon like the top nav search does. So the control now lives IN the
+command bar as the shared .nav-search-* box - collapsed to a 36px icon
+in .am-cmd-actions, widening under :focus-within while the other bar
+buttons stay pinned right. The behaviour stays this page's own plain
+name filter, exactly as the old in-flow input: typing sets state.search
+and render() substring-filters the leaderboard rows by name, live. No
+popover, no results dropdown, no pick-a-result step.
 """
 import re
 
@@ -36,33 +39,56 @@ def _tag(body, el_id):
     return m.group(0)
 
 
-def test_search_markup_is_a_pill_popover_not_a_full_width_row():
+def test_search_markup_is_the_expanding_bar_box_not_a_popover():
     body = _body(_html())
-    # The bespoke full-width input is gone; the input rides the shared
-    # nav-search pill classes with AM-scoped ids, plus a clear button.
-    assert 'class="am-search"' not in body
-    _tag(body, "amPlayerSearch")
+    # The popover row and its toggle button are gone entirely.
+    for gone in ("amSearchRow", "amSearchToggle", "amPlayerSearch", "am-search-row"):
+        assert gone not in body, f"{gone} should be gone from the AM search"
+    # The input rides the shared nav-search classes inside the expanding
+    # wrapper, with the clear button - same chrome as the top nav search.
+    _tag(body, "amSearchExpand")
     search = _tag(body, "amSearch")
-    assert 'class="nav-search-input am-player-search-input"' in search
+    assert 'class="nav-search-input am-search-input"' in search
     assert 'aria-label="Search players"' in search
     _tag(body, "amSearchClear")
     # No results dropdown element exists at all.
     assert 'id="amSearchDropdown"' not in body
     assert "nav-search-dropdown" not in body
-    # Anchored inside the sticky command bar so the popover tracks the strip.
-    assert body.index('id="amCmdBar"') < body.index('id="amSearchRow"') < body.index('id="amFilterSheet"')
-    assert "hidden" in _tag(body, "amSearchRow")
 
 
-def test_search_popover_floats_above_the_page():
+def test_search_box_sits_in_the_command_bar_actions():
+    body = _body(_html())
+    # The expander is the first control in .am-cmd-actions, so its growth
+    # extends leftward out of the icon while graph / filter / more stay
+    # pinned to the bar's right edge.
+    actions = body[body.index('class="am-cmd-actions"'):body.index('id="amMoreMenu"')]
+    assert 'id="amSearchExpand"' in actions
+    assert actions.index('id="amSearchExpand"') < actions.index('id="amGraphBtn"')
+    assert body.index('id="amCmdBar"') < body.index('id="amSearchExpand"') < body.index('id="amFilterSheet"')
+
+
+def test_search_css_mirrors_the_nav_expansion():
     css = _style(_html())
-    row = re.search(r"\.am-search-row\s*\{([^}]*)\}", css)
-    assert row, ".am-search-row rule missing"
-    assert "position:absolute" in row.group(1)
-    assert "top:calc(100% + 6px)" in row.group(1)
-    assert "width:min(430px, calc(100vw - 32px))" in row.group(1)
-    # The page CSS styles no dropdown for this control any more.
+    # No floating panel geometry remains for this control.
+    assert ".am-search-row" not in css
+    assert "#amSearchRow" not in css
+    # The page only aligns the collapsed box with the .am-cmd-btn
+    # geometry; the :focus-within width transition itself is the shared
+    # dashboard.css .nav-search-* pattern, not re-declared here.
+    inner = re.search(r"\.am-search-expand \.nav-search-inner\s*\{([^}]*)\}", css)
+    assert inner, ".am-search-expand .nav-search-inner rule missing"
+    assert "width:36px" in inner.group(1)
+    assert "height:36px" in inner.group(1)
     assert "nav-search-dropdown" not in css
+    # Mobile keeps the slightly larger input text (anti iOS focus zoom).
+    assert "#amSearchExpand .am-search-input { font-size:15px; }" in css
+
+
+def test_icon_click_expands_and_focuses_the_input():
+    js = _js(_html())
+    inner = js[js.index("searchInner.addEventListener('click'"):]
+    inner = inner[:inner.index("});")]
+    assert "if (document.activeElement !== searchEl) searchEl.focus();" in inner
 
 
 def test_typing_filters_names_live_with_no_pick_a_result_model():
@@ -74,9 +100,9 @@ def test_typing_filters_names_live_with_no_pick_a_result_model():
     # render() applies that as a name substring filter over display rows.
     assert "const q = state.search.toLowerCase();" in js
     assert "displayRows = displayRows.filter(r => (r.name || '').toLowerCase().includes(q));" in js
-    # The whole nav-search selection model is gone: no payload fetch, no
-    # result rows, no group label, no matcher, no apply-on-select path,
-    # no arrow-key selection.
+    # The whole nav-search selection model stays gone: no payload fetch,
+    # no result rows, no group label, no matcher, no apply-on-select
+    # path, no arrow-key selection.
     for gone in (
         "fetch('/api/league-players?view=search')",
         "amSearchDropdown",
@@ -102,16 +128,17 @@ def test_clear_button_restores_the_full_list():
     assert "render();" in clear
 
 
-def test_popover_closes_on_escape_and_outside_tap_without_clearing_the_filter():
+def test_escape_collapses_without_clearing_the_filter():
     js = _js(_html())
-    closer = js[js.index("function amCloseSearchPopover"):js.index("if (searchEl) {")]
-    assert "row.hidden = true;" in closer
-    # Closing the popover never touches the filter: the typed name keeps
-    # filtering the board while the popover is closed, as the old
-    # in-flow input's text did.
-    assert "state.search" not in closer
-    assert "e.key === 'Escape'" in js
-    assert "amCloseSearchPopover();" in js  # outside-tap document listener
+    # Escape just blurs: losing :focus-within collapses the box back to
+    # the icon, exactly like the nav search. The popover closer and its
+    # outside-tap document listener are gone.
+    assert "if (e.key === 'Escape') searchEl.blur();" in js
+    assert "amCloseSearchPopover" not in js
+    assert "row.hidden" not in js
+    # Collapsing never touches the filter: the typed name keeps filtering
+    # the board while the box is collapsed, as the old in-flow input's
+    # text did.
 
 
 def test_mover_chips_and_deep_link_drive_the_same_filter():

@@ -294,9 +294,13 @@ def build_advanced_metrics_body(
       <div class="am-cmdbar" id="amCmdBar">
         <div class="am-cmd-title">Advanced Metrics</div>
         <div class="am-cmd-actions">
-          <button id="amSearchToggle" type="button" class="am-cmd-btn" aria-label="Search players" aria-expanded="false" title="Search players">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="flex-shrink:0"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.6"/><path d="M11 11l3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-          </button>
+          <div class="nav-search-wrapper am-search-expand" id="amSearchExpand">
+            <div class="nav-search-inner am-search-inner" id="amSearchInner">
+              <svg class="nav-search-icon" width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.6"/><path d="M11 11l3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+              <input id="amSearch" type="text" autocomplete="off" spellcheck="false" placeholder="Search players…" class="nav-search-input am-search-input" aria-label="Search players">
+              <button type="button" class="nav-search-clear" id="amSearchClear" aria-label="Clear search">×</button>
+            </div>
+          </div>
           <button id="amGraphBtn" type="button" class="am-cmd-btn" aria-label="Graph Metrics" title="Graph Metrics" onclick="amOpenGraph()">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="flex-shrink:0"><path d="M2 2v10h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="5" cy="9" r="1.3" fill="currentColor"/><circle cx="8" cy="5.5" r="1.3" fill="currentColor"/><circle cx="11" cy="7.5" r="1.3" fill="currentColor"/></svg>
           </button>
@@ -318,15 +322,6 @@ def build_advanced_metrics_body(
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="flex-shrink:0"><path d="M7 1.5v7m0 0 2.3-2.3M7 8.5 4.7 6.2M2.5 10v1.5a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
             <span class="am-legend-btn-label">CSV</span>
           </button>
-        </div>
-        <div id="amSearchRow" class="am-search-row" hidden>
-          <div class="nav-search-wrapper am-player-search" id="amPlayerSearch">
-            <div class="nav-search-inner am-player-search-inner">
-              <svg class="nav-search-icon" width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.6"/><path d="M11 11l3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-              <input id="amSearch" type="text" autocomplete="off" spellcheck="false" placeholder="Search players…" class="nav-search-input am-player-search-input" aria-label="Search players">
-              <button type="button" class="nav-search-clear" id="amSearchClear" aria-label="Clear search">×</button>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -1577,7 +1572,7 @@ def build_advanced_metrics_body(
       html.og-render .am-graph-svg { width:auto !important; height:594px !important; max-width:1164px !important; }
 
       /* ── Advanced Metrics mobile visual rework ──────────────────────────
-         Command strip, toggleable search row, solid + Metric button,
+         Command strip, expanding icon search, solid + Metric button,
          fading preset rail, wrapping chips, collapsible field averages,
          sticky player column. (The old icon-button header and the
          search+season row were replaced by the command-bar rework;
@@ -1589,9 +1584,9 @@ def build_advanced_metrics_body(
         .am-cmd-title { font-size:15px; }
         .am-more-menu .am-legend-btn { padding:10px 12px; }
         .am-more-menu .am-legend-btn svg { width:16px; height:16px; }
-        /* 2. Search popover (toggled from the strip) floats under the bar. */
-        #amSearchRow { top:calc(100% + 6px); }
-        #amSearchRow .am-player-search-input { font-size:15px; }
+        /* 2. Search input rides a touch larger in the expanded bar box
+           so iOS does not zoom on focus. */
+        #amSearchExpand .am-search-input { font-size:15px; }
         /* 3. + Metric: solid outlined button matching the position pills,
            not the near-invisible dashed ghost. 8px radius per --radius-pill. */
         #amAddStatBtn {
@@ -1827,31 +1822,20 @@ def build_advanced_metrics_body(
         color:var(--text); font-size:13px; font-weight:600; cursor:pointer; text-align:left;
       }
       .am-more-menu .am-legend-btn:hover { background:var(--row,rgba(0,0,0,.05)); }
-      /* Player search is a floating popover under the command bar, not a
-         full-width row in the page flow. The shared nav-search classes
-         supply the pill chrome; these rules only keep the AM instance
-         expanded inside its popover. */
-      .am-search-row {
-        position:absolute; top:calc(100% + 6px); right:0; z-index:90;
-        width:min(430px, calc(100vw - 32px));
+      /* Player search lives in the command bar and expands leftward out
+         of its icon, mirroring the top nav search: the shared
+         .nav-search-* classes supply the collapsed icon box and the
+         :focus-within width transition (240px, narrower at small
+         widths). The actions group is pinned to the bar's right edge,
+         so the widening box grows left while the graph / filter / more
+         buttons stay put. These rules only align the collapsed box with
+         the .am-cmd-btn geometry (36px, 10px radius). */
+      .am-search-expand { flex-shrink:0; }
+      .am-search-expand .nav-search-inner {
+        width:36px; height:36px; border:1px solid transparent; border-radius:10px;
       }
-      .am-search-row[hidden] { display:none; }
-      .am-search-row .am-player-search { width:100%; }
-      .am-search-row .am-player-search .nav-search-inner {
-        width:100%; height:auto; padding:7px 11px; gap:6px;
-        justify-content:flex-start; background:var(--card);
-        border:1px solid var(--border); border-radius:var(--radius, 10px);
-        cursor:text; overflow:visible;
-      }
-      .am-search-row .am-player-search:focus-within .nav-search-inner {
-        border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft);
-      }
-      .am-search-row .am-player-search .nav-search-icon {
-        position:relative; left:auto; top:auto; transform:none; flex-shrink:0;
-      }
-      .am-search-row .am-player-search .nav-search-input {
-        width:100%; min-width:0; opacity:1; pointer-events:auto; font-size:14px;
-      }
+      .am-search-expand .nav-search-inner:hover { background:var(--row,rgba(0,0,0,.05)); }
+      .am-search-expand:focus-within .nav-search-inner { border-radius:var(--radius, 10px); }
       /* Positions as one segmented unit; the buttons keep .otc-day-filter so the
          existing active-state JS keeps working untouched. */
       .am-positions.am-segmented {
@@ -6040,30 +6024,36 @@ _AM_JS = r"""
     state.page = 0;
     updatePosButtons(); syncURL(); render();
   });
-  // ── Player search: a plain name filter in a floating popover ───────────
-  // The presentation borrows the nav search's pill styling, but the
-  // behaviour is this page's own filter, unchanged from the old in-flow
-  // input: typing sets state.search and render() substring-filters the
-  // leaderboard's rows by name, live. There is no results dropdown, no
-  // pick-a-result step, and no player payload fetch. The What-changed
-  // mover chips and the ?search= deep link drive the same state.search.
+  // ── Player search: the bar icon expands into a plain name filter ──────
+  // Geometry mirrors the top nav search: the shared .nav-search-inner
+  // sits collapsed as a 36px icon box in .am-cmd-actions and widens
+  // under :focus-within, growing leftward out of the icon while the
+  // other bar buttons stay pinned right. The behaviour is this page's
+  // own filter, unchanged from the old in-flow input: typing sets
+  // state.search and render() substring-filters the leaderboard's rows
+  // by name, live. There is no results dropdown, no pick-a-result step,
+  // and no player payload fetch. Collapsing (blur / Escape) keeps the
+  // text and the filter, as the old in-flow input's value persisted.
+  // The What-changed mover chips and the ?search= deep link drive the
+  // same state.search.
   function _amSyncSearchClear() {
     if (searchClear) searchClear.style.display = (searchEl && searchEl.value) ? 'block' : 'none';
   }
-  function amCloseSearchPopover() {
-    const row = document.getElementById('amSearchRow');
-    if (!row || row.hidden) return;
-    row.hidden = true;
-    const tgl = document.getElementById('amSearchToggle');
-    if (tgl) tgl.setAttribute('aria-expanded', 'false');
+  const searchInner = document.getElementById('amSearchInner');
+  if (searchInner && searchEl) {
+    // Click anywhere on the collapsed box expands and focuses the input.
+    searchInner.addEventListener('click', () => {
+      if (document.activeElement !== searchEl) searchEl.focus();
+    });
   }
   if (searchEl) {
     searchEl.addEventListener('input', () => {
       state.search = searchEl.value.trim(); state.page = 0; _amSyncSearchClear(); render();
     });
     searchEl.addEventListener('keydown', e => {
-      if (e.key === 'Escape') { amCloseSearchPopover(); searchEl.blur(); }
+      if (e.key === 'Escape') searchEl.blur();
     });
+    _amSyncSearchClear();
   }
   if (searchClear) {
     searchClear.addEventListener('click', () => {
@@ -6076,13 +6066,6 @@ _AM_JS = r"""
       searchEl.focus();
     });
   }
-  document.addEventListener('click', e => {
-    const row = document.getElementById('amSearchRow');
-    if (!row || row.hidden) return;
-    const tgl = document.getElementById('amSearchToggle');
-    if (row.contains(e.target) || (tgl && tgl.contains(e.target))) return;
-    amCloseSearchPopover();
-  });
   sortBtn.addEventListener('click', () => {
     state.sortBy = state.metric;
     state.sortDir = state.sortDir === 'desc' ? 'asc' : 'desc'; state.page = 0;
@@ -6378,17 +6361,6 @@ _AM_JS = r"""
   // adding a comparison metric never needs the filter sheet.
   const sheetBackdrop = document.getElementById('amSheetBackdrop');
   if (sheetBackdrop) sheetBackdrop.addEventListener('click', () => amToggleSheet(false));
-  // Search icon toggles the floating search popover.
-  const searchToggle = document.getElementById('amSearchToggle');
-  const searchRow = document.getElementById('amSearchRow');
-  if (searchToggle && searchRow) {
-    searchToggle.addEventListener('click', () => {
-      const opening = searchRow.hidden;
-      searchRow.hidden = !opening;
-      searchToggle.setAttribute('aria-expanded', String(opening));
-      if (opening && searchEl) searchEl.focus();
-    });
-  }
   // Overflow menu: Metric Glossary / CSV. Closes on
   // outside tap or Escape.
   const moreToggle = document.getElementById('amMoreToggle');
