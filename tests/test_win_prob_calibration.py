@@ -15,6 +15,7 @@ models keep their own machinery (analytic erf vs 2,000 sims); this asserts
 they rhyme within 5 points on the same lineup and projections.
 """
 import re
+from math import erf, sqrt
 
 import pytest
 
@@ -137,6 +138,88 @@ def test_in_progress_banks_hot_start():
                              st_pre, proj)
     assert p_pre == pytest.approx(0.5, abs=0.02)
     assert p_live > 0.6
+
+
+# ---------------------------------------------------------------------------
+# Regression: in-progress variance scales with sqrt(frac), not frac
+# ---------------------------------------------------------------------------
+
+def test_in_progress_variance_scales_with_sqrt_frac():
+    # Kickers keep this hand-checkable: sigma is the constant 4.0 and the
+    # pace blend is off for K, so the live finish is actual + proj * frac.
+    # Both kickers are half done (frac 0.5):
+    #   left:  banked 6, remaining 8 * 0.5 = 4, total 10
+    #   right: banked 2, remaining 8 * 0.5 = 4, total 6
+    # Remaining variance per player is frac * sigma_full^2 = 0.5 * 16 = 8
+    # (remaining SD is sqrt(0.5) * 4.0, not 0.5 * 4.0). The floor does not
+    # bind: floor basis per side is 8 * sqrt(0.5), floor var is
+    # (0.20 * 5.66)^2 = 1.28, well under 8.
+    # Expected: Phi((10 - 6) / sqrt(8 + 8)) = Phi(1.0) = 0.8413.
+    # The old linear rule (sigma on the shrunken remaining projection,
+    # times frac) gave var 4.0 per side and Phi(4 / sqrt(8)) = 0.9213.
+    st = {"1": STATUS_IN_PROGRESS, "2": STATUS_IN_PROGRESS}
+    proj = {"1": 8.0, "2": 8.0}
+    left = {"starters": [{"pid": "1", "pos": "K", "pts": 6.0}]}
+    right = {"starters": [{"pid": "2", "pos": "K", "pts": 2.0}]}
+    frac = lambda p: 0.5  # noqa: E731
+    p = compute_win_prob(left, right, st, proj, frac_lookup=frac)
+    combined_var = 0.5 * 4.0 ** 2 + 0.5 * 4.0 ** 2
+    z = (10.0 - 6.0) / (sqrt(combined_var) * sqrt(2.0))
+    expected = 0.5 * (1 + erf(z))
+    assert expected == pytest.approx(0.8413, abs=1e-3)
+    assert p == pytest.approx(expected, abs=1e-9)
+    assert p < 0.90  # the old linear scaling read this as 0.9213
+
+
+def test_pregame_asymmetric_matchup_unchanged():
+    # All not started: floor_basis equals the pending projection on each
+    # side, so the sqrt(frac) rework must leave pregame exactly as the
+    # fitted model already read it.
+    #   QB sigma: left 0.10 * 25 + 5.5 = 8.0 (var 64), right
+    #   0.10 * 15 + 5.5 = 7.0 (var 49). Floors (25) and (9) do not bind.
+    # Expected: Phi((25 - 15) / sqrt(64 + 49)) = Phi(0.941) = 0.8266.
+    st = {"1": STATUS_NOT_STARTED, "2": STATUS_NOT_STARTED}
+    proj = {"1": 25.0, "2": 15.0}
+    p = compute_win_prob(_one_qb_side("1", 0.0), _one_qb_side("2", 0.0),
+                         st, proj)
+    z = (25.0 - 15.0) / (sqrt(64.0 + 49.0) * sqrt(2.0))
+    expected = 0.5 * (1 + erf(z))
+    assert expected == pytest.approx(0.8266, abs=1e-3)
+    assert p == pytest.approx(expected, abs=1e-9)
+
+
+def test_in_progress_floor_scales_with_sqrt_frac():
+    # Nine WRs per side, every game half done, every player exactly on
+    # pace (banked half his projection), so each live total still equals
+    # his full projection: left 165, right 126, margin 39.
+    # The floor binds on both sides under the sqrt rule:
+    #   left per-player var sum: 9 * 0.5 * (0.36 * (165/9) + 2.6)^2 = 380.9
+    #   left floor var: (0.20 * 165 * sqrt(0.5))^2 = 544.5
+    #   right per-player var sum: 9 * 0.5 * (0.36 * 14 + 2.6)^2 = 262.6
+    #   right floor var: (0.20 * 126 * sqrt(0.5))^2 = 317.5
+    # Floor SD is CV * full projection * sqrt(0.5), not CV * the shrunken
+    # remaining projection (82.5 / 63), which is what the old rule used
+    # (floor vars 272.25 / 158.76, combined 431.0, read as 0.9698).
+    # Expected here: Phi(39 / sqrt(544.5 + 317.5)) = Phi(1.328) = 0.9079.
+    def side(prefix, total):
+        per = total / 9
+        return {"starters": [
+            {"pid": "%s%d" % (prefix, i), "pos": "WR", "pts": per * 0.5}
+            for i in range(9)]}
+
+    proj = {"l%d" % i: 165.0 / 9 for i in range(9)}
+    proj.update({"r%d" % i: 126.0 / 9 for i in range(9)})
+    st = {pid: STATUS_IN_PROGRESS for pid in proj}
+    frac = lambda p: 0.5  # noqa: E731
+    p = compute_win_prob(side("l", 165.0), side("r", 126.0),
+                         st, proj, frac_lookup=frac)
+    floor_var = (TEAM_CV_FLOOR * 165.0 * sqrt(0.5)) ** 2 \
+        + (TEAM_CV_FLOOR * 126.0 * sqrt(0.5)) ** 2
+    z = (165.0 - 126.0) / (sqrt(floor_var) * sqrt(2.0))
+    expected = 0.5 * (1 + erf(z))
+    assert expected == pytest.approx(0.9079, abs=1e-3)
+    assert p == pytest.approx(expected, abs=1e-9)
+    assert p < 0.94  # the old linear floor read this as 0.9698
 
 
 # ---------------------------------------------------------------------------
