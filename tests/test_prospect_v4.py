@@ -348,7 +348,7 @@ class TestFixturesEndToEnd:
     def test_fixture_runs(self, sample_ref, fixture, dc):
         result = v4.score_prospect_v4(copy.deepcopy(fixture), dc,
                                       reference=sample_ref)
-        assert result["model_version"] == "4.0-dev"
+        assert result["model_version"] == "4.0"
         assert isinstance(result["prospect_score"], float)
         assert result["band"] in ("elite", "great", "average", "day3")
         assert result["reference_kind"] == "fixture_sample"
