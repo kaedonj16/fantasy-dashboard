@@ -6160,6 +6160,37 @@ function buildWeeklyTrendRows(weeks, position) {
 var _PM_TREND_MIN_WEEKS = 4;
 var _PM_TREND_PCT = 0.15; // |3-wk avg vs season avg| >= 15% counts as moving
 
+// Per-metric baseline floors, in the metric's own units. A percentage is
+// only honest when the baseline it divides by clears the floor: below it,
+// a backup-to-starter jump prints as +4405% (0.35/g -> 15.8/g), which is a
+// NEW ROLE story, not a heating-up percentage. Unlisted metrics: floor 0
+// (any positive baseline qualifies).
+var _PM_TREND_FLOORS = {
+  ppr_pts: 3.0, touches: 4, carries: 4, targets: 2.5, receptions: 2,
+  rush_yards: 15, rec_yards: 15, carry_share: 10, target_share: 8,
+  snap_pct: 20, rz_touches: 1, pass_att: 10,
+};
+
+// Correlated metrics tell one story (a backfield takeover moves touches,
+// carry share, rush yards and PPR together). Cap each cluster at 2 of the
+// final 4 cards so one event cannot fill the whole section. Unlisted keys
+// are their own cluster.
+var _PM_TREND_CLUSTERS = {
+  touches: 'volume', carries: 'volume', targets: 'volume', receptions: 'volume',
+  carry_share: 'share', target_share: 'share', snap_pct: 'share',
+  ppr_pts: 'production', rush_yards: 'production', rec_yards: 'production',
+  rz_touches: 'redzone',
+  yds_per_touch: 'efficiency', yds_per_target: 'efficiency', catch_pct: 'efficiency',
+  pass_att: 'passing',
+};
+
+// A prior week counts toward a baseline only if the player actually played
+// in it (any activity field present on the weekly row).
+function _pmWeekActive(w) {
+  return Number(w.snap_pct || 0) > 0 || Number(w.touches || 0) > 0
+    || Number(w.targets || 0) > 0 || Number(w.pass_att || 0) > 0;
+}
+
 function _pmTrendSeries(weeks, key, fn) {
   var s = weeks.map(function(w) {
     return fn ? fn(w) : Number(w[key] || 0);
@@ -6254,19 +6285,56 @@ function pmComputeTrending(weeks, position) {
     var prior = series.slice(0, n - 3);
     if (!prior.length) return;
     var baseline = prior.reduce(function(s, v) { return s + v; }, 0) / prior.length;
-    if (!(baseline > 0)) return;
     var recentAvg = r3.reduce(function(s, v) { return s + v; }, 0) / r3.length;
-    var pct = (recentAvg - baseline) / baseline;
-    if (Math.abs(pct) < _PM_TREND_PCT) return;
-    var hot = pct > 0;
-    out.push({
+    var floor = _PM_TREND_FLOORS[key] || 0;
+    var activePriors = weeks.slice(0, n - 3).filter(_pmWeekActive).length;
+    var delta = recentAvg - baseline;
+    var item = {
       key: key, label: label, color: spec[2], suffix: spec[3] || '',
-      series: series, pct: pct, hot: hot, recentAvg: recentAvg,
-      callout: _pmTrendCallout(key, hot, recentAvg, spec[3] || ''),
-    });
+      series: series, recentAvg: recentAvg, baseline: baseline, delta: delta,
+      floor: floor, cluster: _PM_TREND_CLUSTERS[key] || key,
+    };
+    if (baseline >= floor && baseline > 0 && activePriors >= 2) {
+      // Established baseline: the percentage is honest here. It still needs
+      // both the relative gate and a real absolute move behind it.
+      var pct = delta / baseline;
+      if (Math.abs(pct) < _PM_TREND_PCT) return;
+      if (Math.abs(delta) < floor * 0.3) return;
+      item.kind = pct > 0 ? 'hot' : 'cold';
+      item.hot = pct > 0;
+      item.pct = pct;
+    } else {
+      // Near-zero baseline or too few active prior weeks: there is no honest
+      // percentage. If the recent level is real on its own, this is an
+      // emergence (a new role), shown as an absolute move off "was X".
+      // Emergence is up-only; a fall from nothing is not a story.
+      if (!(recentAvg >= floor) || !(recentAvg > baseline)) return;
+      if (floor <= 0 && !(baseline > 0)) return;
+      item.kind = 'newrole';
+      item.hot = true;
+      item.pct = null;
+    }
+    item.callout = _pmTrendCallout(key, item.hot, recentAvg, spec[3] || '');
+    out.push(item);
   });
-  out.sort(function(a, b) { return Math.abs(b.pct) - Math.abs(a.pct); });
-  return out.slice(0, 4);
+  // Rank by the size of the absolute move in floor units, not by raw %:
+  // a +40% move on a real baseline outranks +4000% off nothing.
+  out.sort(function(a, b) {
+    var sa = Math.abs(a.delta) / (a.floor || 1);
+    var sb = Math.abs(b.delta) / (b.floor || 1);
+    return sb - sa;
+  });
+  // Cluster cap: at most 2 cards per cluster in the final 4.
+  var picked = [];
+  var perCluster = {};
+  out.forEach(function(t) {
+    if (picked.length >= 4) return;
+    var c = perCluster[t.cluster] || 0;
+    if (c >= 2) return;
+    perCluster[t.cluster] = c + 1;
+    picked.push(t);
+  });
+  return picked;
 }
 
 // Fire-and-forget kick for the TRENDING section. Only single-season views get
@@ -6305,9 +6373,20 @@ function pmRenderTrendingSection(playerId, season, position) {
       + '<span class="pm-trending-dot"></span><span>TRENDING</span></div>'
       + '<div class="pm-trending-grid">';
     trending.forEach(function(t) {
-      var cls = t.hot ? 'hot' : 'cold';
-      var badge = t.hot ? '&#9650; HEATING UP' : '&#9660; COOLING OFF';
-      var pctTxt = (t.pct >= 0 ? '+' : '') + Math.round(t.pct * 100) + '%';
+      var cls = t.kind || (t.hot ? 'hot' : 'cold');
+      var badge = cls === 'newrole' ? '&#9650; NEW ROLE'
+        : (t.hot ? '&#9650; HEATING UP' : '&#9660; COOLING OFF');
+      var sparkColor = cls === 'newrole' ? '#2563eb' : (t.hot ? '#16a34a' : '#dc2626');
+      // Delta leads with the absolute move; the % rides along only when an
+      // established baseline made it honest (never on a NEW ROLE card).
+      var absTxt = t.suffix === '%'
+        ? ((t.delta >= 0 ? '+' : '-') + Math.abs(Math.round(t.delta)) + ' pts')
+        : ((t.delta >= 0 ? '+' : '-') + (Math.round(Math.abs(t.delta) * 10) / 10) + ' /g');
+      var pctTxt = (cls !== 'newrole' && t.pct != null)
+        ? (absTxt + ' &middot; ' + (t.pct >= 0 ? '+' : '') + Math.round(t.pct * 100) + '%')
+        : absTxt;
+      var baseTxt = 'was ' + (Math.round(t.baseline * 10) / 10) + t.suffix
+        + (t.suffix === '%' ? '' : ' /g');
       var valTxt = (Math.round(t.recentAvg * 10) / 10) + t.suffix;
       var tips = t.series.map(function(val, i) {
         var w = ((d && d.weeks) || [])[i] || {};
@@ -6317,12 +6396,13 @@ function pmRenderTrendingSection(playerId, season, position) {
                           : ('Wk ' + (w.week != null ? w.week : (i + 1)) + ' · ' + vTxt);
       });
       html += '<div class="pm-trend-row ' + cls + '">'
-        + '<div class="pm-trend-spark">' + pmSparkline(t.series, t.hot ? '#16a34a' : '#dc2626', tips) + '</div>'
+        + '<div class="pm-trend-spark">' + pmSparkline(t.series, sparkColor, tips) + '</div>'
         + '<div class="pm-trend-info"><span class="pm-trend-badge ' + cls + '">' + badge + '</span>'
         + '<div class="pm-trend-metric">' + t.label + '</div>'
         + '<div class="pm-trend-call">' + t.callout + '</div></div>'
         + '<div class="pm-trend-right"><div class="pm-trend-val">' + valTxt + '</div>'
-        + '<div class="pm-trend-delta ' + cls + '">' + pctTxt + '</div></div>'
+        + '<div class="pm-trend-delta ' + cls + '">' + pctTxt + '</div>'
+        + '<div class="pm-trend-base">' + baseTxt + '</div></div>'
         + '</div>';
     });
     html += '</div></div>';
