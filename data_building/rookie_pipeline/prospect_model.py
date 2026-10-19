@@ -3,7 +3,7 @@ Prospect evaluation model - position-aware, multi-factor scoring.
 
 Each component score is 0-100.  Final prospect_score is a weighted sum.
 
-Model version: 3.4 (see MODEL_VERSION)
+Model version: 3.4.1 (see MODEL_VERSION)
   v1.x: baseline components below.
   v2.0: adds recruiting-pedigree component (247 Composite via CFBD),
         WEPA opponent-adjusted efficiency blend (QB/RB), and SP+/Team Talent
@@ -21,6 +21,13 @@ Model version: 3.4 (see MODEL_VERSION)
         longer read as injury seasons in either mode; the WR/TE red-zone
         proxy thresholds are recalibrated to the recorded TD-rate
         distribution (they could never fire at the old 5.5-10.0 levels).
+  v3.4.1: data repair, no formula change. Stored season rows that
+        were persisted without a dominator_rating (team totals absent
+        from the fetch map at build time, then frozen by the
+        existence-only fetch gate) are derived from their own stored
+        inputs at write time and via scripts/backfill_stored_dominators.py;
+        breakout components rise for players whose early dominators
+        were missing. Grades move only for affected players.
 
 Component weights (v2.0 - recruiting takes 5%, others rescaled proportionally):
     projected_draft_capital_score 27-28%  NFL draft position (position-weighted)
@@ -49,7 +56,7 @@ from typing import Any, Dict, List, Optional
 
 
 # Grading-model version. Bump on ANY change to scoring logic or weights.
-MODEL_VERSION = "3.4"
+MODEL_VERSION = "3.4.1"
 
 
 def active_season_year_for_run(today=None) -> Optional[int]:

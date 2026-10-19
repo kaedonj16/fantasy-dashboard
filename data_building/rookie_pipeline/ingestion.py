@@ -593,6 +593,53 @@ def _compute_depth_ranks(by_name: Dict[int, Dict[str, List]], years: List[int]) 
     return depth_ranks
 
 
+def compute_dominator_rating(rec_yards, rush_yards, rec_tds, rush_tds,
+                             team_total_yards, team_total_tds):
+    """The pipeline's dominator formula, unchanged: 0.65 * (player
+    yards / team yards) + 0.35 * (player TDs / team TDs), each term
+    counted only when its team total is positive. Returns None when
+    neither team total exists - the inputs are missing, which is NOT
+    a zero (a player with team totals present and no production of
+    his own legitimately computes to 0.0)."""
+    t_yds = team_total_yards or 0
+    t_tds = team_total_tds or 0
+    if not (t_yds or t_tds):
+        return None
+    dom = 0.0
+    if t_yds > 0:
+        dom += (((rec_yards or 0) + (rush_yards or 0)) / t_yds) * 0.65
+    if t_tds > 0:
+        dom += (((rec_tds or 0) + (rush_tds or 0)) / t_tds) * 0.35
+    return round(dom, 4)
+
+
+def derive_season_dominator(season: Dict) -> bool:
+    """Fill season["dominator_rating"] from the season's OWN inputs
+    (player receiving/rushing lines + team totals, all carried on the
+    season dict / stored row) when the rating is missing but the
+    inputs are present. Returns True when a value was derived.
+
+    This is the write-path repair for the stored-data defect where a
+    season row was persisted without a dominator (team totals absent
+    from the in-memory fetch map at build time) and then never
+    recomputed: every writer that persists a season row runs the row
+    through here first, so any row whose inputs exist carries the
+    rating. A season whose inputs are genuinely absent keeps
+    dominator None - missing stays missing, never fabricated."""
+    if not isinstance(season, dict):
+        return False
+    if season.get("dominator_rating") is not None:
+        return False
+    dom = compute_dominator_rating(
+        season.get("receiving_yards"), season.get("rush_yards"),
+        season.get("receiving_tds"), season.get("rush_tds"),
+        season.get("team_total_yards"), season.get("team_total_tds"))
+    if dom is None:
+        return False
+    season["dominator_rating"] = dom
+    return True
+
+
 def _build_cfbd_season(raw_stats: List[Dict], team_stats: Dict, season: int,
                        games: Optional[int], skip_sagarin: bool = False) -> Dict:
     """Fold CFBD stat rows for one player-season into a single normalized dict."""
@@ -680,10 +727,8 @@ def _build_cfbd_season(raw_stats: List[Dict], team_stats: Dict, season: int,
     row["sagarin_team_rating"] = (None if skip_sagarin
                                   else _sagarin_get_team_rating(team_name, season))
 
-    dom = 0.0
-    if t_yds > 0: dom += (p_yds / t_yds) * 0.65
-    if t_tds > 0: dom += (p_tds / t_tds) * 0.35
-    row["dominator_rating"] = round(dom, 4) if (t_yds or t_tds) else None
+    row["dominator_rating"] = compute_dominator_rating(
+        rec_yds, rush_yds, rec_tds, rush_tds, t_yds, t_tds)
     return row
 
 
