@@ -50520,6 +50520,89 @@ em.gneg { background: var(--loss); }
 .br-asst-list-item {
     line-height: 1.45;
 }
+/* Two-player compare table: the one structured block inside an
+   answer. Player surnames head the columns, grouped metric rows,
+   the winner's value bold with a small green triangle in the centre
+   gutter pointing at him and the gap beside it. */
+.br-asst-cmp-head, .br-asst-cmp-row {
+    display: grid;
+    grid-template-columns: 1fr 74px 1fr;
+    align-items: center;
+}
+.br-asst-cmp-head {
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+}
+.br-asst-cmp-p1, .br-asst-cmp-p2 {
+    font-size: 13.5px;
+    font-weight: 800;
+    color: var(--text);
+}
+.br-asst-cmp-p2 {
+    text-align: right;
+}
+.br-asst-cmp-edge {
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-align: center;
+    color: var(--text-muted);
+}
+.br-asst-cmp-group {
+    font-size: 10.5px;
+    font-weight: 800;
+    letter-spacing: 0.07em;
+    color: var(--text-muted);
+    margin: 10px 0 2px;
+}
+.br-asst-cmp-row {
+    padding: 5px 0;
+    border-bottom: 1px solid var(--border);
+}
+.br-asst-cmptbl > .br-asst-cmp-row:last-child {
+    border-bottom: none;
+}
+.br-asst-cmp-name {
+    grid-column: 1 / -1;
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-bottom: 1px;
+}
+.br-asst-cmp-v {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+.br-asst-cmp-v.win {
+    font-weight: 800;
+    color: var(--text);
+}
+.br-asst-cmp-v.r {
+    text-align: right;
+}
+.br-asst-cmp-mid {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+}
+.br-asst-cmp-tri {
+    width: 0;
+    height: 0;
+    border-top: 4.5px solid transparent;
+    border-bottom: 4.5px solid transparent;
+}
+.br-asst-cmp-tri.l {
+    border-right: 7px solid #16a34a;
+}
+.br-asst-cmp-tri.r {
+    border-left: 7px solid #16a34a;
+}
+.br-asst-cmp-delta {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-muted);
+}
 /* Receipts: collapsed by default behind the toggle row; the rows
    wrapper animates its grid track on the glide curve. */
 .br-asst-receipt-toggle {

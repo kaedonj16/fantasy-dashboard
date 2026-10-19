@@ -14,6 +14,12 @@ fail it, so prose avoids digits entirely (no "top five", no "30-day").
 """
 from __future__ import annotations
 
+# The compare table block is NOT mirrored: the mock imports the one
+# production builder (a pure function module; the assistant package's
+# __init__ is version constants only, so this stays clear of the model
+# stack) so the eval asserts the exact block the live path ships.
+from dashboard_services.assistant.compare_table import build_compare_table
+
 
 def fmt(value) -> str:
     """Render a pack number the way prose would: 4850.0 -> '4850'."""
@@ -2282,6 +2288,7 @@ def _open(pack, question):
     link = None
     mentions: list = []
     seen_mentions = set()
+    compare_table = None
     for e in usable:
         for r in e.get("receipts") or []:
             if len(receipts) < 4:
@@ -2395,6 +2402,9 @@ def _open(pack, question):
         elif tool == "compare_players":
             detail = e.get("players_detail") or []
             if len(detail) == 2:
+                # Same block the live answer carries (see compare_table.py).
+                if compare_table is None:
+                    compare_table = build_compare_table(detail)
                 a, b = detail
                 hi = a if (a.get("value") or 0) >= (b.get("value") or 0) else b
                 lo = b if hi is a else a
@@ -2476,9 +2486,12 @@ def _open(pack, question):
             if sub.get("value") is not None and len(receipts) < 4:
                 receipts.append({"label": f"{sub.get('name')} value",
                                  "value": fmt(sub["value"])})
-    return {"verdict": verdict, "text": " ".join(lines), "receipts": receipts,
-            "caveat": None, "followups": followups, "act_link": link,
-            "actions": [], "mentions": mentions[:8]}
+    ans = {"verdict": verdict, "text": " ".join(lines), "receipts": receipts,
+           "caveat": None, "followups": followups, "act_link": link,
+           "actions": [], "mentions": mentions[:8]}
+    if compare_table is not None:
+        ans["compare_table"] = compare_table
+    return ans
 
 
 def _live(pack):

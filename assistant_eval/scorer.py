@@ -197,6 +197,84 @@ def _no_data_shape(answer: dict) -> bool:
     return verdict.startswith("no ") and "clears the screen" in text
 
 
+# -- compare table (ow22 family) ------------------------------------------------
+# The expected block is recomputed here from the frozen pack's compare
+# profiles, independently of the production builder: same grouped rows
+# in the same order, house-form values (shares as percents), the winner
+# on each row, and the gap as the delta. A metric missing on either
+# profile must have NO row; a tied row has no winner and no delta.
+
+_COMPARE_GROUPS = (
+    ("PRODUCTION", (
+        ("ppg", "Points per game", "points"),
+        ("recent_ppg", "Recent points per game", "points"),
+        ("expected_ppg", "Expected points per game", "points"),
+    )),
+    ("OPPORTUNITY", (
+        ("touches_per_game", "Touches per game", "points"),
+        ("target_share", "Target share", "share"),
+        ("snap_share", "Snap share", "share"),
+    )),
+    ("VALUE", (
+        ("value", "Dynasty value", "points"),
+    )),
+)
+
+
+def _house(value):
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return None
+    return int(f) if f == int(f) else round(f, 1)
+
+
+def _expected_compare_table(detail):
+    a, b = detail
+    groups = []
+    for group_label, metrics in _COMPARE_GROUPS:
+        rows = []
+        for key, label, kind in metrics:
+            na, nb = _house(a.get(key)), _house(b.get(key))
+            if na is None or nb is None:
+                continue
+            winner, delta = None, None
+            if na != nb:
+                winner = 0 if na > nb else 1
+                delta = "+" + str(_house(abs(na - nb)))
+            rows.append({"key": key, "label": label,
+                         "a": str(na) + ("%" if kind == "share" else ""),
+                         "b": str(nb) + ("%" if kind == "share" else ""),
+                         "winner": winner, "delta": delta})
+        if rows:
+            groups.append({"label": group_label, "rows": rows})
+    return groups
+
+
+def _check_compare_table(question: dict, answer: dict):
+    pack = question.get("evidence_pack") or {}
+    entry = next((e for e in (pack.get("evidence") or [])
+                  if isinstance(e, dict) and e.get("tool") == "compare_players"
+                  and e.get("ok") and len(e.get("players_detail") or []) == 2),
+                 None)
+    if entry is None:
+        return False, ["compare_table expected but the pack has no usable "
+                       "two-player compare entry"]
+    detail = entry["players_detail"]
+    block = (answer or {}).get("compare_table")
+    if not isinstance(block, dict):
+        return False, ["compare_table block missing from the answer"]
+    notes = []
+    names = [str(p.get("name") or "") for p in block.get("players") or []]
+    want_names = [str(p.get("name") or "") for p in detail]
+    if names != want_names:
+        notes.append(f"compare_table players {names} != pack profiles {want_names}")
+    if block.get("groups") != _expected_compare_table(detail):
+        notes.append("compare_table groups do not match the block recomputed "
+                     "from the pack profiles (rows, values, winners, deltas)")
+    return not notes, notes
+
+
 def _meaningful_pack_numbers(question: dict) -> set[str]:
     """Pack numbers minus league/week/season boilerplate."""
     pack = question.get("evidence_pack") or {}
@@ -460,7 +538,17 @@ def score_answer(question: dict, answer: dict) -> dict:
             structure_ok = False
             notes.append(f"receipts count {len(receipts)} over the 4 max")
 
-    passed = bool(grounding_ok and verdict_ok and trap_ok and structure_ok)
+    # Compare table: asserted only on the cases that expect it (ow22
+    # family); the block is code-built, so its check is an exact match
+    # against the recomputation above, not a number scan.
+    table_ok = True
+    if expect.get("compare_table"):
+        table_ok, table_notes = _check_compare_table(question, answer)
+        notes.extend(table_notes)
+
+    passed = bool(grounding_ok and verdict_ok and trap_ok and structure_ok
+                  and table_ok)
     return {"grounding_ok": grounding_ok, "invented": invented,
             "verdict_ok": verdict_ok, "trap_ok": trap_ok,
-            "structure_ok": structure_ok, "passed": passed, "notes": notes}
+            "structure_ok": structure_ok, "compare_table_ok": table_ok,
+            "passed": passed, "notes": notes}
