@@ -11588,6 +11588,7 @@ select:focus {
 }
 .pm-trend-row.hot { border-left-color: #16a34a; }
 .pm-trend-row.cold { border-left-color: #dc2626; }
+.pm-trend-row.newrole { border-left-color: #2563eb; }
 .pm-trend-spark {
     flex: none;
     width: 84px;
@@ -11613,6 +11614,10 @@ select:focus {
     background: #fdeaea;
     color: #dc2626;
 }
+.pm-trend-badge.newrole {
+    background: #e8effc;
+    color: #1d4ed8;
+}
 .pm-trend-metric {
     font-size: 13px;
     font-weight: 700;
@@ -11625,6 +11630,7 @@ select:focus {
 }
 .pm-trend-row.hot .pm-trend-call { color: #15803d; }
 .pm-trend-row.cold .pm-trend-call { color: #dc2626; }
+.pm-trend-row.newrole .pm-trend-call { color: #1d4ed8; }
 .pm-trend-right {
     text-align: right;
     flex: none;
@@ -11641,6 +11647,12 @@ select:focus {
 }
 .pm-trend-delta.hot { color: #15803d; }
 .pm-trend-delta.cold { color: #dc2626; }
+.pm-trend-delta.newrole { color: #1d4ed8; }
+.pm-trend-base {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 1px;
+}
 /* Desktop: 2x2 grid */
 @media (min-width: 641px) {
     .pm-trending-grid {

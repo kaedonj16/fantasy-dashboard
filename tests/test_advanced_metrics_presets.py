@@ -476,6 +476,88 @@ def test_movers_endpoint_is_pro_only(offline_client, monkeypatch):
     assert resp.get_json()["error"] == "pro_only"
 
 
+def _mover_row(pid, name, value, team="KC", position="RB"):
+    return {"player_id": pid, "name": name, "team": team,
+            "position": position, "value": value, "games": 7}
+
+
+def _fake_movers_boards(monkeypatch):
+    """Dict-row leaderboards per metric, shaped like the real function."""
+    import data_building.advanced_metrics as am
+    boards = {
+        # Descending, as get_metric_leaderboard returns it.
+        "opportunity_trend": [
+            _mover_row("r1", "Riser One", 1.0),
+            _mover_row("r2", "Riser Two", 0.9, position="TE"),
+            _mover_row("r3", "Riser Three", 0.2, position="WR"),
+            _mover_row("low", "Barely Up", 0.10),
+            _mover_row("goff", "Jared Goff", -0.04, team="DET", position="QB"),
+            _mover_row("f1", "Faller One", -0.30, position="WR"),
+            _mover_row("f2", "Faller Two", -0.55),
+        ],
+        "ppr_over_expected_per_game": [
+            _mover_row("fringe", "Fringe Tight End", 10.1, team="ARI",
+                       position="TE"),
+            _mover_row("jsn", "Jaxon Smith-Njigba", 7.8, team="SEA",
+                       position="WR"),
+            _mover_row("purdy", "Brock Purdy", 5.9, team="SF", position="QB"),
+        ],
+        "expected_ppr_per_game": [
+            _mover_row("fringe", "Fringe Tight End", 2.0, team="ARI",
+                       position="TE"),
+            _mover_row("jsn", "Jaxon Smith-Njigba", 12.0, team="SEA",
+                       position="WR"),
+            _mover_row("purdy", "Brock Purdy", 20.0, team="SF",
+                       position="QB"),
+        ],
+    }
+    monkeypatch.setattr(
+        am, "get_metric_leaderboard",
+        lambda metric, **kwargs: list(boards.get(metric, [])))
+    return boards
+
+
+def test_movers_heating_is_usage_trend_only_with_magnitude_gate(
+        offline_client, monkeypatch):
+    import routes.advanced_metrics_bp as bp
+    monkeypatch.setattr(bp, "_request_has_premium", lambda season=None: True)
+    _fake_movers_boards(monkeypatch)
+    data = offline_client.get(
+        "/api/advanced-metrics/movers?season=2026").get_json()
+    heating = data["heating"]
+    # xFP trend is never folded in; every item is the one labeled metric.
+    assert heating and all(
+        m["metric"] == "opportunity_trend" for m in heating)
+    # Gate at >= 0.15: the +0.10 riser is not "heating up".
+    assert [m["value"] for m in heating] == [1.0, 0.9, 0.2]
+
+
+def test_movers_cooling_is_true_bottom_most_negative_first(
+        offline_client, monkeypatch):
+    import routes.advanced_metrics_bp as bp
+    monkeypatch.setattr(bp, "_request_has_premium", lambda season=None: True)
+    _fake_movers_boards(monkeypatch)
+    data = offline_client.get(
+        "/api/advanced-metrics/movers?season=2026").get_json()
+    cooling = data["cooling"]
+    assert [m["value"] for m in cooling] == [-0.55, -0.30]
+    # The -0.04 that used to print as "-0.0" never qualifies.
+    assert all(m["player_id"] != "goff" for m in cooling)
+
+
+def test_movers_outliers_require_real_expected_volume(
+        offline_client, monkeypatch):
+    import routes.advanced_metrics_bp as bp
+    monkeypatch.setattr(bp, "_request_has_premium", lambda season=None: True)
+    _fake_movers_boards(monkeypatch)
+    data = offline_client.get(
+        "/api/advanced-metrics/movers?season=2026").get_json()
+    outliers = data["outliers"]
+    # +10.1 on 2.0 expected pts/g is excluded; +7.8 on 12.0 stays on top.
+    assert [m["player_id"] for m in outliers] == ["jsn", "purdy"]
+    assert outliers[0]["value"] == 7.8
+
+
 # --- Trend windows: weeks 2-3 compare last week vs the prior weeks, so an
 # --- early-season sample yields a real signal instead of a forced 0.0 ---
 
