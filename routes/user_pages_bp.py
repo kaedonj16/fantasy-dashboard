@@ -524,6 +524,12 @@ def page_portfolio():
                 card.setdefault("pos_user_vals", {})
                 card.setdefault("pos_league_avgs", {})
                 if fresh:
+                    # Legacy entries cached before build_league_summary
+                    # carried pos_user_vals serve the card but can only ever
+                    # badge "Balanced"; rebuild one in the background so the
+                    # next load badges from real strengths.
+                    if not card.get("pos_user_vals"):
+                        _kick_summary_refresh(account_id, lg)
                     return card
                 card["stale"] = True
                 _kick_summary_refresh(account_id, lg)

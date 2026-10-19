@@ -97,6 +97,63 @@ def test_cached_stale_summary_preserves_underlying_sync_timestamp(monkeypatch):
     assert result["partial"] is True
 
 
+def test_build_summary_carries_archetype_badge_strengths(monkeypatch):
+    """The archetype badge ratios pos_user_vals against pos_league_avgs
+    (league medians). build_league_summary is what populates the SWR cache
+    every account card is served from; when it omitted both fields, every
+    account portfolio card degraded to "Balanced" regardless of roster
+    shape. Single-player rooms make weighted strength == value, so the
+    expected numbers are exact."""
+    import dashboard_services.accounts as accounts
+    import dashboard_services.portfolio_summary as summaries
+
+    monkeypatch.setattr(accounts, "resolve_account_viewer_for_league",
+                        lambda *a, **k: {"viewer_roster_id": "1"})
+    monkeypatch.setattr(
+        "dashboard_services.ai.context_builders.portfolio_record_and_rank",
+        lambda *a: (5, 2, 0, 500.0, 3))
+    values = {
+        "qb1": {"name": "QB One", "position": "QB", "value": 300},
+        "qb2": {"name": "QB Two", "position": "QB", "value": 250},
+        "qb3": {"name": "QB Three", "position": "QB", "value": 200},
+        "te1": {"name": "TE One", "position": "TE", "value": 900},
+        "te2": {"name": "TE Two", "position": "TE", "value": 100},
+        "te3": {"name": "TE Three", "position": "TE", "value": 200},
+    }
+    monkeypatch.setattr(
+        "dashboard_services.ai.context_builders.league_format_value_lookup",
+        lambda ctx, _cache=None: values)
+    stored = []
+    monkeypatch.setattr(summaries, "_store_persistent",
+                        lambda key, value: stored.append(value))
+    ctx = {
+        "rosters": [
+            {"roster_id": 1, "owner_id": "u1", "players": ["qb1", "te1"], "settings": {}},
+            {"roster_id": 2, "owner_id": "u2", "players": ["qb2", "te2"], "settings": {}},
+            {"roster_id": 3, "owner_id": "u3", "players": ["qb3", "te3"], "settings": {}},
+        ],
+        "users": [{"user_id": "u1", "display_name": "My Team"}],
+        "league": {"name": "League"},
+        "players_index": {},
+        "total_rosters": 3,
+    }
+    result = summaries.build_league_summary(
+        7, {"platform": "sleeper", "league_id": "L", "season": 2026},
+        lambda *a: ctx,
+    )
+    assert result["pos_user_vals"] == {"QB": 300.0, "RB": 0.0, "WR": 0.0, "TE": 900.0}
+    # Medians across the three rosters; an all-zero position falls back to 1
+    # (the inline summary's `or 1`), so its ratio can never win the badge.
+    assert result["pos_league_avgs"] == {"QB": 250.0, "RB": 1, "WR": 1, "TE": 200.0}
+    # TE ratio 4.5x the median is the badge winner, not "Balanced".
+    ratios = {p: result["pos_user_vals"][p] / result["pos_league_avgs"][p]
+              for p in ("QB", "RB", "WR", "TE")}
+    assert max(ratios, key=ratios.get) == "TE" and ratios["TE"] > 1.10
+    # The cached copy the portfolio page actually serves carries them too.
+    assert stored and stored[0]["pos_user_vals"] == result["pos_user_vals"]
+    assert stored[0]["pos_league_avgs"] == result["pos_league_avgs"]
+
+
 def test_missing_context_freshness_stays_unknown(monkeypatch):
     import dashboard_services.accounts as accounts
     import dashboard_services.portfolio_summary as summaries
