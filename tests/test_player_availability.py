@@ -309,4 +309,7 @@ def test_availability_css_present():
 
 
 def test_service_worker_bumped():
-    assert "br-fantasy-v61" in _read("static/sw.js")
+    # Authored at v61 (PR #2725); PR #2724's merge stepped the cache to
+    # v62. Invariant: bumped past v60.
+    sw = _read("static/sw.js")
+    assert "br-fantasy-v61" in sw or "br-fantasy-v62" in sw

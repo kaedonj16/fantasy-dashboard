@@ -143,4 +143,4 @@ def test_guest_seo_page_stays_modal_free(offline_client):
 
 
 def test_sw_bumped_for_guest_teaser():
-    assert "br-fantasy-v61" in SW
+    assert "br-fantasy-v62" in SW
