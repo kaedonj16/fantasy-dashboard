@@ -222,6 +222,16 @@ def init_advanced_metrics_db():
                 ADD COLUMN IF NOT EXISTS opportunity_trend NUMERIC;
         """)
 
+        # YPTPA (receiving yards per team pass attempt, games-played
+        # basis) and its denominator. Populated by
+        # finalize_weekly_series_metrics during the snapshot build; older
+        # rows stay NULL and are skipped by the leaderboard gates.
+        conn.execute("""
+            ALTER TABLE player_advanced_metrics
+                ADD COLUMN IF NOT EXISTS yards_per_team_pass_att NUMERIC,
+                ADD COLUMN IF NOT EXISTS team_pass_att_gp        NUMERIC;
+        """)
+
         # Backfill season from as_of_date for any rows that are missing it.
         # Regular season runs Sep–Dec of year Y and Jan of year Y+1, so:
         #   Jan–Feb  → season = year - 1  (e.g. 2026-01 → 2025 season)
@@ -1044,6 +1054,101 @@ def _recent_vs_season_ratio(vals: List[float], recent_n: int = 3) -> Optional[fl
     return _shared_trend_ratio(vals, recent_n)
 
 
+def _pool_team_week_pass_att(
+        series_by_pid: Dict[str, List[Dict[str, Any]]],
+        team_by_pid: Dict[str, str],
+) -> Dict[tuple, float]:
+    """{(team, week): team pass attempts} pooled from a weekly series.
+
+    Every player's stored pass_att counts — the QB's attempts plus any
+    trick-play attempts by WR/RB — which reproduces Sleeper's TEAM_
+    aggregate rows exactly (verified on the 2025 caches: player rows sum
+    to 17,439 attempts, the TEAM_ rows sum to 17,439). Teams come from
+    team_by_pid (the usage_table team), the same pooling basis — and the
+    same mid-season-trade caveat — as the RZ share denominators in
+    finalize_weekly_series_metrics.
+    """
+    out: Dict[tuple, float] = {}
+    for pid, weeks in series_by_pid.items():
+        team = team_by_pid.get(pid) or ""
+        if not team:
+            continue
+        for w in weeks:
+            key = (team, w.get("week"))
+            out[key] = out.get(key, 0.0) + float(w.get("pass_att") or 0)
+    return out
+
+
+def upsert_yptpa_weekly_metrics(
+        season: int,
+        through_week: int,
+        usage_table: List[Dict[str, Any]],
+) -> int:
+    """Write per-week YPTPA rows into player_weekly_advanced_metrics.
+
+    Single source: the Sleeper weekly series (player_weekly_metrics via
+    get_weekly_series_by_player) — never nflverse pbp. Each player-week
+    stores yards_per_team_pass_att = that week's rec_yards / that week's
+    team pass attempts (None when the team attempted no passes) and the
+    weight w_team_pass_att = that week's team attempts, so the adv-weekly
+    range aggregation (SUM(value * w) / SUM(w)) is the exact ratio of
+    sums over any week range.
+
+    Uses the same present-columns + COALESCE upsert shape as
+    scripts/sync_nflverse_metrics.py's weekly writer: only position and
+    this writer's two columns are ever set, so the two writers of
+    player_weekly_advanced_metrics never clobber each other.
+
+    Returns the number of player-week rows written. Raises on failure;
+    the snapshot caller treats it as best-effort, like finalize.
+    """
+    from data_building.weekly_metrics import get_weekly_series_by_player
+
+    series_by_pid = get_weekly_series_by_player(int(season), int(through_week)) or {}
+    if not series_by_pid:
+        return 0
+    team_by_pid = {str(p.get("id")): (p.get("team") or "") for p in usage_table}
+    team_week_att = _pool_team_week_pass_att(series_by_pid, team_by_pid)
+
+    init_weekly_advanced_metrics_db()
+    count = 0
+    with get_conn() as conn:
+        for pid, weeks in series_by_pid.items():
+            team = team_by_pid.get(str(pid)) or ""
+            if not team:
+                continue
+            for w in weeks:
+                pos = (w.get("position") or "").upper() or None
+                if pos not in ("RB", "WR", "TE"):
+                    continue
+                week = w.get("week")
+                if week is None:
+                    continue
+                att = team_week_att.get((team, week), 0.0)
+                rec_yds = float(w.get("rec_yards") or 0)
+                value = (rec_yds / att) if att > 0 else None
+                conn.execute(
+                    """
+                    INSERT INTO player_weekly_advanced_metrics
+                        (player_id, season, week, position,
+                         yards_per_team_pass_att, w_team_pass_att)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (player_id, season, week)
+                    DO UPDATE SET
+                        position = COALESCE(EXCLUDED.position,
+                            player_weekly_advanced_metrics.position),
+                        yards_per_team_pass_att = COALESCE(
+                            EXCLUDED.yards_per_team_pass_att,
+                            player_weekly_advanced_metrics.yards_per_team_pass_att),
+                        w_team_pass_att = COALESCE(EXCLUDED.w_team_pass_att,
+                            player_weekly_advanced_metrics.w_team_pass_att)
+                    """,
+                    (str(pid), int(season), int(week), pos, value, att),
+                )
+                count += 1
+    return count
+
+
 def finalize_weekly_series_metrics(
         metrics_list: List[Dict[str, Any]],
         usage_table: List[Dict[str, Any]],
@@ -1055,7 +1160,8 @@ def finalize_weekly_series_metrics(
     Computes from the box-score weekly series (player_weekly_metrics) and the
     weekly expected-points table (player_weekly_advanced_metrics):
       total_snaps, rz_opp_share, rz_target_share, td_share, boom_rate,
-      bust_rate, fp_cv, xfp_stddev, xfp_trend, opportunity_trend.
+      bust_rate, fp_cv, xfp_stddev, xfp_trend, opportunity_trend,
+      yards_per_team_pass_att, team_pass_att_gp.
 
     Best-effort: any failure (missing tables, weekly source down) leaves the
     keys unset (None) and never raises — the snapshot write must not be gated
@@ -1102,6 +1208,12 @@ def finalize_weekly_series_metrics(
 
     team_by_pid = {str(p.get("id")): (p.get("team") or "") for p in usage_table}
     metrics_by_pid = {str(m.get("player_id")): m for m in metrics_list}
+
+    # Team pass attempts per team-week (YPTPA denominator), pooled from the
+    # same series: every player's pass_att counts, QBs plus trick-play
+    # attempts by WR/RB, which reproduces Sleeper's TEAM_ aggregate rows
+    # exactly (verified on 2025: 17,439 player-summed = 17,439 TEAM_).
+    team_week_att = _pool_team_week_pass_att(series_by_pid, team_by_pid)
 
     # Team RZ denominators from the same weekly series (pooled per team).
     team_rz_targets: Dict[str, float] = {}
@@ -1160,6 +1272,23 @@ def finalize_weekly_series_metrics(
                           + float(w.get("rush_tds") or 0) for w in weeks)
             t_tds = team_off_tds.get(team, 0.0)
             m["td_share"] = (own_tds / t_tds) if t_tds > 0 else None
+
+            # YPTPA: receiving yards per team pass attempt over the weeks
+            # in the player's own series, so bye / inactive weeks (absent
+            # from the series) count in neither the numerator nor the
+            # denominator — the games-played basis. Receiving positions
+            # only; team_pass_att_gp stores the denominator itself so the
+            # basis stays inspectable. Raw float, no rounding.
+            if position in ("RB", "WR", "TE"):
+                rec_yds = sum(float(w.get("rec_yards") or 0) for w in weeks)
+                t_att = sum(team_week_att.get((team, w.get("week")), 0.0)
+                            for w in weeks)
+                m["team_pass_att_gp"] = t_att if t_att > 0 else None
+                m["yards_per_team_pass_att"] = \
+                    (rec_yds / t_att) if t_att > 0 else None
+            else:
+                m["team_pass_att_gp"] = None
+                m["yards_per_team_pass_att"] = None
 
             xfp = xfp_by_pid.get(pid) or []
             m["xfp_stddev"] = _population_stddev(xfp)
@@ -1393,6 +1522,15 @@ def build_advanced_metrics_snapshot(
             finalize_weekly_series_metrics(metrics_list, usage_table, season, completed_week)
         except Exception:
             logger.exception("finalize_weekly_series_metrics failed; continuing without")
+        # Per-week YPTPA rows for week-range leaderboards (weekly-adv
+        # table, Sleeper weekly series as the single source). Best-effort:
+        # never gates the snapshot write.
+        try:
+            _n_yptpa = upsert_yptpa_weekly_metrics(season, completed_week, usage_table)
+            if _n_yptpa:
+                logger.info("wrote YPTPA weekly rows for %d player-weeks", _n_yptpa)
+        except Exception:
+            logger.exception("YPTPA weekly upsert failed; continuing without")
         snapshot_date = as_of_date or _date.today().isoformat()
         inserted, updated = save_metrics_snapshot(
             metrics_list, snapshot_date, season=season, return_counts=True)
@@ -1541,6 +1679,7 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                     target_share, route_participation,
                     total_rush_tds, total_rec_tds, total_pass_tds, total_tds,
                     total_snaps, rz_opp_share, rz_target_share, td_share,
+                    yards_per_team_pass_att, team_pass_att_gp,
                     boom_rate, bust_rate, fp_cv,
                     xfp_stddev, xfp_trend, opportunity_trend,
                     nfl_team, schedule_ease
@@ -1560,6 +1699,7 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                     %s, %s,
                     %s, %s, %s, %s,
                     %s, %s, %s, %s,
+                    %s, %s,
                     %s, %s, %s,
                     %s, %s, %s,
                     %s, %s
@@ -1613,6 +1753,8 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                     rz_opp_share = COALESCE(EXCLUDED.rz_opp_share, player_advanced_metrics.rz_opp_share),
                     rz_target_share = COALESCE(EXCLUDED.rz_target_share, player_advanced_metrics.rz_target_share),
                     td_share = COALESCE(EXCLUDED.td_share, player_advanced_metrics.td_share),
+                    yards_per_team_pass_att = COALESCE(EXCLUDED.yards_per_team_pass_att, player_advanced_metrics.yards_per_team_pass_att),
+                    team_pass_att_gp = COALESCE(EXCLUDED.team_pass_att_gp, player_advanced_metrics.team_pass_att_gp),
                     boom_rate = COALESCE(EXCLUDED.boom_rate, player_advanced_metrics.boom_rate),
                     bust_rate = COALESCE(EXCLUDED.bust_rate, player_advanced_metrics.bust_rate),
                     fp_cv = COALESCE(EXCLUDED.fp_cv, player_advanced_metrics.fp_cv),
@@ -1648,6 +1790,8 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                 metrics.get("total_pass_tds"), metrics.get("total_tds"),
                 metrics.get("total_snaps"), metrics.get("rz_opp_share"),
                 metrics.get("rz_target_share"), metrics.get("td_share"),
+                metrics.get("yards_per_team_pass_att"),
+                metrics.get("team_pass_att_gp"),
                 metrics.get("boom_rate"), metrics.get("bust_rate"),
                 metrics.get("fp_cv"),
                 metrics.get("xfp_stddev"), metrics.get("xfp_trend"),
@@ -2533,7 +2677,7 @@ def get_player_career_metrics(
         'rushing_success_rate', 'receiving_success_rate',
         'rushing_epa_per_att', 'receiving_epa_per_target',
         'qb_hit_rate', 'explosive_pass_rate',
-        'total_snaps', 'rz_opp_share', 'rz_target_share',
+        'total_snaps', 'rz_opp_share', 'rz_target_share', 'yards_per_team_pass_att',
         'boom_rate', 'bust_rate', 'fp_cv',
         'xfp_trend', 'opportunity_trend',
         'expected_tds', 'td_over_expected',
@@ -2828,6 +2972,7 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "rz_target_share":      {"label": "RZ Target Share",     "category": "Receiving", "positions": ["WR", "TE"], "pct": True, "pct_frac": True, "min_vol": _V_GAMES, "desc": "Share of the team's red-zone targets directed at this player; the trusted red-zone receiver in one number."},
     "targets_per_snap":     {"label": "Targets / Snap",      "category": "Receiving", "positions": ["WR", "TE"], "efficiency": True, "min_vol": _V_SNAPS, "desc": "Targets per offensive snap; how often the player is looked at when on the field, independent of snap volume.", "computed_sql": "m.total_targets::float / NULLIF(m.total_snaps, 0)", "computed_null": "m.total_targets IS NOT NULL AND m.total_snaps IS NOT NULL AND m.total_snaps > 0"},
     "yards_per_target":     {"basic": True, "label": "Yards / Target",      "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "min_vol": _V_TARGETS, "desc": "Receiving yards earned per time targeted; measures efficiency on volume."},
+    "yards_per_team_pass_att": {"label": "Yards / Team Pass Att", "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "min_vol": _V_GAMES, "desc": "Receiving yards per pass attempt by the player's team in games he played. Combines target share, efficiency, and team passing volume in one production rate; the closest available stand-in for yards per route run, which needs route data the feed does not carry."},
     "yards_per_reception":  {"label": "Yards / Reception",   "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "min_vol": _V_RECS, "desc": "Average yards gained per catch; higher means a more downfield/explosive role."},
     "catch_rate":           {"basic": True, "label": "Catch Rate",          "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "pct": True, "pct_frac": True, "min_vol": _V_TARGETS, "desc": "Percent of targets caught."},
     "fpts_per_target":      {"label": "FPTs/Target",         "category": "Receiving", "positions": ["WR", "TE", "RB"], "efficiency": True, "min_vol": _V_TARGETS, "desc": "PPR receiving fantasy points per target: (receptions + 0.1 × receiving yards + 6 × receiving TDs) ÷ targets.", "computed_sql": "(m.total_receptions + m.yards_per_reception * m.total_receptions * 0.1 + m.total_rec_tds * 6)::float / NULLIF(m.total_targets, 0)", "computed_null": "m.yards_per_reception IS NOT NULL AND m.total_rec_tds IS NOT NULL AND m.total_receptions IS NOT NULL AND m.total_targets IS NOT NULL"},
@@ -3065,12 +3210,17 @@ WEEKLY_ADV_METRIC_COLS: List[str] = [
     # WOPR (1.5 * target share + 0.7 * air-yards share, Hermsmeyer weighting,
     # same formula as the season snapshot). Feed the player game logs.
     "broken_tackles", "wopr",
+    # YPTPA: that week's receiving yards / his team's pass attempts that
+    # week, from the Sleeper weekly series via upsert_yptpa_weekly_metrics
+    # (NOT nflverse). Weighted by w_team_pass_att so a week range is the
+    # exact ratio of sums.
+    "yards_per_team_pass_att",
 ]
 # Volume weight columns used to weight rate metrics across a week range.
 WEEKLY_ADV_WEIGHT_COLS: List[str] = [
     "w_dropbacks", "w_pass_att", "w_carries", "w_targets", "w_receptions",
     "w_pass_air_yards", "w_rec_air_yards", "w_pressure_opps",
-    "w_third_down_dropbacks", "w_team_gl_opps",
+    "w_third_down_dropbacks", "w_team_gl_opps", "w_team_pass_att",
 ]
 
 _weekly_adv_ready = False
@@ -3403,6 +3553,7 @@ _ADV_WEEKLY_WEIGHTED_METRICS = {
     "yards_after_catch_per_reception": "w_receptions", "ngs_avg_yac": "w_receptions",
     "rec_broken_tackles_per_reception": "w_receptions",
     "ngs_avg_expected_yac": "w_receptions", "ngs_avg_yac_above_expectation": "w_receptions",
+    "yards_per_team_pass_att": "w_team_pass_att",
 }
 
 # Per-game Expected-vs-Actual views are derived from the same weekly PBP rows.
@@ -3459,6 +3610,7 @@ _ADV_WEEKLY_VOL_BY_WEIGHT = {
     "w_pressure_opps":  {"label": "Min Pressure Opps", "opts": [20, 50, 100, 200]},
     "w_third_down_dropbacks": {"label": "Min 3rd-Down Dropbacks", "opts": [10, 20, 40, 60]},
     "w_team_gl_opps":   {"label": "Min Team GL Opps", "opts": [5, 10, 20, 40]},
+    "w_team_pass_att":  {"label": "Min Team Att", "opts": [50, 100, 200, 400]},
 }
 
 
@@ -5493,6 +5645,7 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                 "td_rate_per_opp": ("total_touches", 40),
                 "rz_opp_share": ("games", 4),
                 "rz_target_share": ("games", 4),
+                "yards_per_team_pass_att": ("games", 4),
                 "boom_rate": ("games", 4),
                 "bust_rate": ("games", 4),
                 "fp_cv": ("games", 4),
