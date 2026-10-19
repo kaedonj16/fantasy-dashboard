@@ -1,13 +1,16 @@
 """
-Prospect model v4 - FOUNDATION SKELETON (not production).
+Prospect model v4 - the production prospect grader (go-live flip).
 
 Governing spec: ~/workspace/prospect-model-v4-design.md (Kaedon, 2026-10-17).
 The v2.0/v3.x scoring architecture is scrapped; this module is the clean
-rebuild. MODEL_VERSION is "4.0-dev" so nothing can mistake its output for
-a production grade: the live model remains prospect_model.py (v3.3),
-untouched by this module.
+rebuild. It was built as a "4.0-dev" skeleton behind the incumbent and
+flipped to MODEL_VERSION "4.0" by the go-live PR, whose merge is gated
+on the recorded reference artifact (built on Render by
+scripts/derive_v4_reference.py) being committed and the v4 backtest
+beating the incumbent on the same harness. Production runs load the
+artifact strictly (load_reference_strict): no anchors, no grades.
 
-What this skeleton implements (the design's architecture):
+What this module implements (the design's architecture):
 
 - Scale semantics (design section 1): the grade is an honest valuation
   anchored to real draft quality. 92+ elite prospect, 80-92 great,
@@ -91,7 +94,7 @@ except ImportError:  # direct module import
         _conf_quality, DEFAULT_CONF_QUALITY,
     )
 
-MODEL_VERSION = "4.0-dev"
+MODEL_VERSION = "4.0"
 
 # ─────────────────────────────────────────────────────────────────────
 # Scale semantics (design section 1)
@@ -233,6 +236,53 @@ def load_reference(path: Optional[str] = None) -> Dict[str, Any]:
         return data if isinstance(data, dict) else {}
     except (OSError, ValueError):
         return {}
+
+
+class V4ReferenceError(RuntimeError):
+    """The v4 reference artifact cannot support a production run:
+    absent, unusable, or fixture-provenance. Production callers must
+    let this propagate: grading without recorded anchors, or quietly
+    falling back to another model, is exactly the silent failure the
+    go-live wiring exists to prevent."""
+
+
+def load_reference_strict(path: Optional[str] = None,
+                          allow_fixture: bool = False) -> Dict[str, Any]:
+    """Load the reference artifact for a PRODUCTION v4 run.
+
+    Raises V4ReferenceError when:
+    - the artifact is absent or unreadable (no anchors, no grades:
+      run scripts/derive_v4_reference.py where the CFBD key lives
+      and commit the produced v4_reference.json), or
+    - it carries no anchor tables at all, or
+    - its provenance marks it as the fixture sample and
+      allow_fixture is False (the fixture sample demonstrates the
+      machinery; it is never production data).
+
+    Returns the artifact dict on success."""
+    p = path or _REFERENCE_DEFAULT
+    data = load_reference(p)
+    if not data:
+        raise V4ReferenceError(
+            f"v4 reference artifact not found at {p}. The v4 model "
+            "prices every leg against recorded distributions and "
+            "refuses to grade without them. Run "
+            "scripts/derive_v4_reference.py on Render (CFBD key) and "
+            "commit the produced v4_reference.json, or select the "
+            "incumbent model (PROSPECT_MODEL=v3).")
+    provenance = data.get("provenance") or {}
+    if provenance.get("fixture_sample") and not allow_fixture:
+        raise V4ReferenceError(
+            f"v4 reference artifact at {p} is the FIXTURE SAMPLE "
+            "(provenance.fixture_sample is set). Production runs "
+            "require the recorded artifact produced by "
+            "scripts/derive_v4_reference.py on Render. The fixture "
+            "sample is for tests and machinery checks only.")
+    if not (data.get("anchors") or data.get("athleticism")):
+        raise V4ReferenceError(
+            f"v4 reference artifact at {p} contains no anchor "
+            "tables. Re-derive it with scripts/derive_v4_reference.py.")
+    return data
 
 
 def _anchors(reference: Dict[str, Any], pos: str, leg: str):
@@ -869,6 +919,20 @@ def detect_lifecycle_state(prospect: Dict[str, Any],
 
 # ─────────────────────────────────────────────────────────────────────
 # Weights and the capital layer
+# ─────────────────────────────────────────────────────────────────────
+
+# ─────────────────────────────────────────────────────────────────────
+# CALIBRATION SURFACE. Every number a calibration pass may tune lives
+# in exactly one named table in this module, so calibration is always
+# a one-place diff:
+#   LEG_WEIGHTS        talent-frame leg weights, per position (below)
+#   PRODUCTION_SPECS   production sub-leg weights, per position
+#   EFFICIENCY_SPECS   efficiency sub-leg weights, per position
+#   ATHLETICISM_WEIGHTS testing-metric weights, per position
+#   CAPITAL_WEIGHT     capital's share of the final grade, per position
+# The knot anchors themselves are data (v4_reference.json), never
+# code, and changing them is a reference re-derivation, not a
+# calibration edit.
 # ─────────────────────────────────────────────────────────────────────
 
 # Talent-frame leg weights (skeleton starting weights; the

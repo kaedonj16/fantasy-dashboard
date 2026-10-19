@@ -53,6 +53,13 @@ NFL_LOOKBACK = 4   # seasons of NFL data to collect per player
 # How many top-N players per draft class to show in the table
 TOP_N_PER_CLASS = 10
 
+# Model under test: "v3" (the incumbent; every number this harness has
+# ever printed is this path, and the default run is unchanged) or "v4"
+# (prospect_model_v4 scored against the recorded reference artifact,
+# for the go-live gate comparison). Set by run_backtest / the CLI.
+_MODEL_CHOICE = "v3"
+_V4_REFERENCE: Optional[Dict[str, Any]] = None
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Step 1 – Load nflverse roster data to get draft picks
 # ─────────────────────────────────────────────────────────────────────────────
@@ -392,7 +399,22 @@ def _run_draft_class_backtest(
           f"({'full model' if n_with_stats > 0 else 'draft capital + athleticism only'})")
 
     print(f"[backtest]   Scoring {len(prospects)} prospects…")
-    scores = score_all_prospects(prospects, consensus_map, skip_sagarin=True)
+    if _MODEL_CHOICE == "v4":
+        from data_building.rookie_pipeline.prospect_model_v4 import score_all_v4
+        # Finished classes: an untested player's cycle is over, so a
+        # settled absence keeps the floor treatment (v4 design
+        # requirement 7c) rather than reading as not-yet-available.
+        scores = score_all_v4(prospects, consensus_map,
+                              reference=_V4_REFERENCE, cycle_complete=True)
+        n_unscored = sum(1 for sc in scores
+                         if sc.get("prospect_score") is None)
+        if n_unscored:
+            print(f"[backtest]   {n_unscored} prospects unscored under v4 "
+                  "(no priceable legs); excluded from the metrics")
+            scores = [sc for sc in scores
+                      if sc.get("prospect_score") is not None]
+    else:
+        scores = score_all_prospects(prospects, consensus_map, skip_sagarin=True)
 
     # Build lookup maps
     p_by_id  = {p["player_id"]: p for p in prospects}
@@ -1362,13 +1384,75 @@ def save_grades_to_db(all_rows: List[Dict[str, Any]]) -> Tuple[int, int]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Calibration panel (v4 gate reporting)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# The named-case panel from the v4 design doc: Kaedon's elite
+# reference list (top prospects all-time, as prospects) plus the
+# repo's three surviving test fixtures.
+CALIBRATION_PANEL: List[Tuple[str, str]] = [
+    ("QB", "Trevor Lawrence"), ("QB", "Caleb Williams"),
+    ("QB", "Joe Burrow"), ("QB", "Jameis Winston"), ("QB", "Bryce Young"),
+    ("RB", "Saquon Barkley"), ("RB", "Bijan Robinson"),
+    ("RB", "Ezekiel Elliott"), ("RB", "Leonard Fournette"),
+    ("RB", "Jeremiyah Love"),
+    ("WR", "Marvin Harrison Jr."), ("WR", "Ja'Marr Chase"),
+    ("WR", "Amari Cooper"), ("WR", "Malik Nabers"),
+    ("WR", "DeVonta Smith"),
+    ("TE", "Kyle Pitts"), ("TE", "Brock Bowers"), ("TE", "O.J. Howard"),
+    ("TE", "T.J. Hockenson"), ("TE", "Tyler Warren"),
+    # The fixtures are current-class prospects, not members of the
+    # drafted population, so they print as unscored here; their v4
+    # grades are exercised in tests/test_prospect_v4.py.
+    ("WR", "Jeremiah Smith"), ("TE", "Trey'Dez Green"),
+    ("QB", "Drew Mestemaker"),
+]
+
+
+def _print_calibration_panel(all_rows: List[Dict]) -> None:
+    """Each panel player's grade + band from THIS run's scored
+    population. A player the population cannot score (his class was
+    not run, or he had no priceable legs) prints as unscored; no
+    input is ever fabricated for the panel."""
+    from data_building.rookie_pipeline.prospect_model_v4 import band_for
+    by_key: Dict[Tuple[str, str], Dict] = {}
+    for r in all_rows:
+        by_key.setdefault((r["position"], _normalize_name(r["name"])), r)
+    print(f"\n{'=' * 90}")
+    print("  CALIBRATION PANEL  (grade + band from this run's population)")
+    print(f"{'=' * 90}")
+    for pos, name in CALIBRATION_PANEL:
+        row = by_key.get((pos, _normalize_name(name)))
+        if row is None or row.get("model_score") is None:
+            print(f"  {pos:<3} {name:<22} unscored")
+            continue
+        _key, label = band_for(row["model_score"])
+        print(f"  {pos:<3} {name:<22} {row['model_score']:>6.2f}  {label}"
+              f"  (class of {row['draft_year']})")
+    print()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Main
 # ─────────────────────────────────────────────────────────────────────────────
 
-def run_backtest(draft_years: Optional[List[int]] = None, save_grades: bool = True) -> List[Dict[str, Any]]:
+def run_backtest(draft_years: Optional[List[int]] = None, save_grades: bool = True,
+                 model: str = "v3",
+                 v4_reference: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """
     Run the full backtest. Returns all result rows (one per draftee).
+
+    model="v4" scores the same population through prospect_model_v4
+    against v4_reference (the recorded artifact, already strictly
+    loaded by the caller) and adds the calibration panel to the
+    report. The default (model="v3") is the incumbent harness,
+    unchanged.
     """
+    global _MODEL_CHOICE, _V4_REFERENCE
+    _MODEL_CHOICE = model
+    _V4_REFERENCE = v4_reference
+    if model == "v4" and v4_reference is None:
+        raise ValueError("model='v4' requires the loaded reference artifact")
     if draft_years is None:
         draft_years = DRAFT_YEARS
 
@@ -1396,11 +1480,21 @@ def run_backtest(draft_years: Optional[List[int]] = None, save_grades: bool = Tr
         _print_benchmark_hit_rates(all_rows)
         _print_summary(all_rows)
         _print_all_time_top10(all_rows, top_n=TOP_N_PER_CLASS)
+        if model == "v4":
+            _print_calibration_panel(all_rows)
 
         if save_grades:
-            print(f"\n[backtest] Saving {len(all_rows)} grades to historical_prospect_grades…")
-            written, failed = save_grades_to_db(all_rows)
-            print(f"[backtest] Saved {written} rows" + (f" ({failed} failed)" if failed else "") + ".")
+            if model == "v4":
+                # historical_prospect_grades is the incumbent baseline
+                # record the gate compares against; a v4 run must not
+                # overwrite it.
+                print("\n[backtest] --model v4: grades NOT saved "
+                      "(historical_prospect_grades holds the incumbent "
+                      "baseline).")
+            else:
+                print(f"\n[backtest] Saving {len(all_rows)} grades to historical_prospect_grades…")
+                written, failed = save_grades_to_db(all_rows)
+                print(f"[backtest] Saved {written} rows" + (f" ({failed} failed)" if failed else "") + ".")
 
     return all_rows
 
@@ -1428,7 +1522,42 @@ if __name__ == "__main__":
         action="store_true",
         help="Skip writing grades to historical_prospect_grades table",
     )
+    parser.add_argument(
+        "--model",
+        choices=["v3", "v4"],
+        default="v3",
+        help="Model under test (default: v3, the incumbent; the run is "
+             "unchanged). v4 scores the same population through "
+             "prospect_model_v4 against the recorded reference artifact, "
+             "prints the same gate metrics plus the calibration panel, "
+             "and never writes historical_prospect_grades",
+    )
+    parser.add_argument(
+        "--v4-reference",
+        default=None,
+        help="Path to v4_reference.json (default: the model's artifact "
+             "path, data_building/rookie_pipeline/v4_reference.json)",
+    )
+    parser.add_argument(
+        "--allow-fixture-reference",
+        action="store_true",
+        help="Allow the committed fixture-sample reference (machinery "
+             "checks only; a gate run never passes this)",
+    )
     args = parser.parse_args()
     os.environ["ROOKIE_BENCHMARK_PROFILE"] = args.benchmark_profile
     TOP_N_PER_CLASS = args.top_n
-    run_backtest(args.years, save_grades=not args.no_save_grades)
+    v4_reference = None
+    if args.model == "v4":
+        from data_building.rookie_pipeline.prospect_model_v4 import (
+            V4ReferenceError, load_reference_strict,
+        )
+        try:
+            v4_reference = load_reference_strict(
+                args.v4_reference or None,
+                allow_fixture=args.allow_fixture_reference)
+        except V4ReferenceError as exc:
+            print(f"[backtest] {exc}", file=sys.stderr)
+            sys.exit(2)
+    run_backtest(args.years, save_grades=not args.no_save_grades,
+                 model=args.model, v4_reference=v4_reference)

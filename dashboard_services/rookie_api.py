@@ -1165,7 +1165,7 @@ _PCT_SCORE_FIELD = {
 }
 PCT_MIN_POPULATION = 30
 # Only model versions whose component scores are on a comparable scale.
-_PCT_MODEL_VERSIONS = ("3.2", "3.3", "3.4")
+_PCT_MODEL_VERSIONS = ("3.2", "3.3", "3.4", "4.0")
 
 _population_cache: dict = {}
 _reference_cache: dict = {}
@@ -2164,10 +2164,34 @@ def add_prospects():
 
             # Score and translate to dynasty values. v3.4: live regrades
             # use the same run-calendar active season year as the pipeline.
-            scores = score_prospect(
-                prospect, dc,
-                _active_season_year=active_season_year_for_run(),
+            # v4 go-live: the same model selection switch as the pipeline
+            # decides the scorer; under v4 an unusable recorded reference
+            # is a 503 with the reason, never a silent incumbent grade.
+            from data_building.rookie_pipeline.pipeline import (
+                _adapt_v4_scores, _v4_reference_or_raise,
+                selected_prospect_model,
             )
+            if selected_prospect_model() == "v4":
+                from data_building.rookie_pipeline.prospect_model_v4 import (
+                    V4ReferenceError, score_prospect_v4,
+                )
+                try:
+                    reference = _v4_reference_or_raise()
+                except V4ReferenceError as ref_exc:
+                    return jsonify({"error": str(ref_exc)}), 503
+                scores = score_prospect_v4(
+                    prospect, dc, reference=reference,
+                    active_season_year=active_season_year_for_run(),
+                )
+                scores = _adapt_v4_scores(
+                    [prospect], [scores],
+                    {prospect["player_id"]: dc} if dc else {},
+                    draft_year=draft_year)[0]
+            else:
+                scores = score_prospect(
+                    prospect, dc,
+                    _active_season_year=active_season_year_for_run(),
+                )
             values = translate_score_to_value(scores, prospect, dc)
 
             # Build a flat row matching the shape returned by _merge_inmemory_result

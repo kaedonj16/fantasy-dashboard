@@ -25,6 +25,155 @@ from data_building.rookie_pipeline.mock_draft_consensus import _slug
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Prospect model selection (v4 go-live wiring)
+# ─────────────────────────────────────────────────────────────────────────────
+# One explicit switch decides which model grades a run:
+#   1. the PROSPECT_MODEL environment variable ("v3" or "v4"), else
+#   2. DEFAULT_PROSPECT_MODEL below.
+# v4 is not a silent upgrade path: when v4 is selected, a run refuses
+# to start unless the recorded reference artifact
+# (data_building/rookie_pipeline/v4_reference.json, produced by
+# scripts/derive_v4_reference.py on Render) is present and recorded
+# (never the fixture sample). There is no mid-run fallback to v3:
+# a v4 run that cannot load its anchors fails loudly at startup.
+
+PROSPECT_MODEL_ENV = "PROSPECT_MODEL"
+DEFAULT_PROSPECT_MODEL = "v4"
+
+# Test/dev-only escape hatch: allow the committed fixture sample to
+# satisfy the v4 reference check. Production never sets this.
+_V4_ALLOW_FIXTURE_ENV = "PROSPECT_V4_ALLOW_FIXTURE"
+
+
+def selected_prospect_model() -> str:
+    """The model selected for scoring runs: "v3" (incumbent,
+    prospect_model) or "v4" (prospect_model_v4). Raises ValueError
+    on an unrecognized selection so a typo fails loudly instead of
+    silently grading with the wrong model."""
+    raw = (os.environ.get(PROSPECT_MODEL_ENV)
+           or DEFAULT_PROSPECT_MODEL).strip().lower()
+    if raw in ("v3", "3", "3.4"):
+        return "v3"
+    if raw in ("v4", "4", "4.0"):
+        return "v4"
+    raise ValueError(
+        f"Unrecognized {PROSPECT_MODEL_ENV}={raw!r}: expected 'v3' or 'v4'.")
+
+
+def _v4_reference_or_raise():
+    """The recorded v4 reference artifact, or a loud failure.
+
+    Raises prospect_model_v4.V4ReferenceError when the artifact is
+    missing, anchorless, or fixture-provenance. Called at run
+    startup (assert_scorer_ready) and again at scoring time, so a
+    v4-selected run can never reach grading without its anchors."""
+    from .prospect_model_v4 import load_reference_strict
+    return load_reference_strict(
+        allow_fixture=os.environ.get(_V4_ALLOW_FIXTURE_ENV) == "1")
+
+
+def assert_scorer_ready() -> str:
+    """Validate the selected model can grade, before a run does any
+    ingestion work. Returns the selection ("v3" / "v4"). Under v4
+    this is the hard startup gate: artifact present and recorded,
+    or the run does not start."""
+    model = selected_prospect_model()
+    if model == "v4":
+        _v4_reference_or_raise()
+    return model
+
+
+def _adapt_v4_scores(
+    prospects: List[Dict[str, Any]],
+    scores: List[Dict[str, Any]],
+    consensus_map: Optional[Dict[str, Dict]] = None,
+    draft_year: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    """Stamp the storage/display fields the v4 result does not carry
+    but upsert_rankings and the surfaces expect, mirroring how the
+    incumbent model stamps them inside score_prospect:
+    draft_class_year (upsert requires it), the archetype label set
+    (the archetype module stays; labels only, never grade inputs),
+    key_reasons in the incumbent's bullet-string format, and
+    fantasy_translation_score."""
+    from .prospect_model import POSITION_FANTASY_MULT
+    try:
+        from .prospect_archetypes import classify_archetype
+    except Exception:
+        classify_archetype = None
+    consensus_map = consensus_map or {}
+    by_id = {p.get("player_id"): p for p in prospects}
+    for s in scores:
+        p = by_id.get(s.get("player_id")) or {}
+        pos = (s.get("position") or p.get("position") or "WR").upper()
+        if not s.get("draft_class_year"):
+            s["draft_class_year"] = int(
+                p.get("draft_class_year") or draft_year or 0) or None
+        ath = p.get("athleticism") or {}
+        dc = consensus_map.get(s.get("player_id")) or {}
+        if classify_archetype is not None:
+            try:
+                arch = classify_archetype(
+                    pos, p.get("seasons") or [],
+                    production_score=s.get("production_score"),
+                    profile={
+                        "weight_lbs": ath.get("weight_lbs")
+                        or p.get("weight_lbs"),
+                        "forty_yard": ath.get("forty_yard"),
+                        "projected_pick": dc.get("projected_pick"),
+                        "age": p.get("age"),
+                    })
+            except Exception:
+                arch = {"archetype": None, "archetype_receipt": None,
+                        "archetype_confidence": None}
+        else:
+            arch = {"archetype": None, "archetype_receipt": None,
+                    "archetype_confidence": None}
+        s["archetype"] = arch.get("archetype")
+        s["archetype_receipt"] = arch.get("archetype_receipt")
+        s["archetype_confidence"] = arch.get("archetype_confidence")
+        s["key_reasons"] = "\n".join(f"• {r}" for r in (s.get("reasons") or []))
+        ps = s.get("prospect_score")
+        s["fantasy_translation_score"] = (
+            None if ps is None else round(
+                POSITION_FANTASY_MULT.get(pos, 1.0) * float(ps), 2))
+    return scores
+
+
+def _score_prospects(
+    prospects: List[Dict[str, Any]],
+    consensus_map: Optional[Dict[str, Dict]] = None,
+    position_weights_override: Optional[Dict[str, Dict[str, float]]] = None,
+    active_season_year: Optional[int] = None,
+    draft_year: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    """Score a run's prospects through the SELECTED model.
+
+    The incumbent path is the pre-go-live call, unchanged. The v4
+    path loads the recorded reference strictly (a missing or
+    fixture artifact raises here rather than grading anchorless)
+    and adapts the results for storage. position_weights_override
+    is an incumbent-model calibration input; v4's weights live in
+    prospect_model_v4's calibration tables, so an override passed
+    under v4 is ignored with a printed notice."""
+    if selected_prospect_model() == "v4":
+        from .prospect_model_v4 import score_all_v4
+        if position_weights_override:
+            print("[pipeline] NOTE: position_weights_override ignored "
+                  "under v4 (weights live in prospect_model_v4)")
+        reference = _v4_reference_or_raise()
+        scores = score_all_v4(
+            prospects, consensus_map or {}, reference=reference,
+            active_season_year=active_season_year)
+        return _adapt_v4_scores(prospects, scores, consensus_map, draft_year)
+    from .prospect_model import score_all_prospects
+    return score_all_prospects(
+        prospects, consensus_map,
+        position_weights_override=position_weights_override,
+        active_season_year=active_season_year)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Active class detection
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1871,8 +2020,12 @@ def _score_from_db(
       5. Build mock-draft consensus from existing rookie_mock_draft_entries
       6. Load prospects + eval metrics → score → translate → upsert rankings
     """
-    from .prospect_model import active_season_year_for_run, score_all_prospects
+    from .prospect_model import active_season_year_for_run
     from .value_translation import translate_all
+
+    # v4 go-live gate: a v4-selected run fails here, before any
+    # stage runs, when the recorded reference artifact is unusable.
+    assert_scorer_ready()
 
     print("[pipeline] ====== DB-ONLY SCORING: checking existing prospects ======")
 
@@ -1916,11 +2069,12 @@ def _score_from_db(
     # v3.4: the active season year comes from the RUN CALENDAR, computed
     # once per run (never derived from a player's class; see
     # prospect_model.active_season_year_for_run).
-    scores = score_all_prospects(
+    scores = _score_prospects(
         existing_prospects,
         consensus_map,
         position_weights_override=position_weights_override,
         active_season_year=active_season_year_for_run(),
+        draft_year=draft_year,
     )
     print(f"[pipeline] Scored {len(scores)} prospects")
 
@@ -1973,8 +2127,12 @@ def run_rookie_pipeline_staged(
     )
     from .sagarin import get_team_rating as _sagarin_get_team_rating
     from .mock_draft_scraper import scrape_consensus_mock_draft, scrape_individual_mocks
-    from .prospect_model import active_season_year_for_run, score_all_prospects
+    from .prospect_model import active_season_year_for_run
     from .value_translation import translate_all
+
+    # v4 go-live gate: fail at startup, before any ingestion stage,
+    # when v4 is selected but its recorded reference is unusable.
+    assert_scorer_ready()
 
     if draft_year is None:
         draft_year = get_active_rookie_class()
@@ -2388,13 +2546,15 @@ def run_rookie_pipeline_staged(
     if n_with_eval == 0:
         print("[pipeline] WARNING: No eval metrics in DB. Run evaluation pipeline first to populate them.")
 
-    # Score prospects
+    # Score prospects through the selected model (see the model
+    # selection switch at the top of this module).
     # v3.4: active season year from the run calendar, once per run.
-    scores = score_all_prospects(
+    scores = _score_prospects(
         complete_prospects,
         consensus_map,
         position_weights_override=position_weights_override,
         active_season_year=active_season_year_for_run(),
+        draft_year=draft_year,
     )
     print(f"[pipeline] Scored {len(scores)} prospects")
 

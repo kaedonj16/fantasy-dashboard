@@ -112,7 +112,7 @@ class TestUnionPopulation:
         assert len(pop["values"]["production"]) == 70
 
     def test_version_set_includes_34(self):
-        assert ra._PCT_MODEL_VERSIONS == ("3.2", "3.3", "3.4")
+        assert ra._PCT_MODEL_VERSIONS == ("3.2", "3.3", "3.4", "4.0")
         src = Path(ra.__file__).read_text()
         assert "IN ('3.2', '3.3')" not in src
 
