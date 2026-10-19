@@ -1097,6 +1097,14 @@ def get_rosters(season: int, league_id: str) -> List[Dict[str, Any]]:
         owner_id = None
         if owners and isinstance(owners[0], dict):
             owner_id = str(owners[0].get("id") or "").strip() or None
+        # Secondary owners (co-managers): keep their member ids so
+        # per-owner notifications can reach a co-manager's device too --
+        # the primary owner alone left co-managed teams unalertable.
+        co_owners = [
+            str(o.get("id") or "").strip()
+            for o in owners[1:]
+            if isinstance(o, dict) and str(o.get("id") or "").strip()
+        ] or None
         team_name = getattr(t, "team_name", None) or getattr(t, "name", None)
 
         wins = _safe_int(getattr(t, "wins", None))
@@ -1149,7 +1157,7 @@ def get_rosters(season: int, league_id: str) -> List[Dict[str, Any]]:
             meta["division_name"] = str(div_name)
 
         rosters.append({
-            "co_owners": None,
+            "co_owners": co_owners,
             "keepers": None,
             "league_id": str(league_id),
             "metadata": meta,
