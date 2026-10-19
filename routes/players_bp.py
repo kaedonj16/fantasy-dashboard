@@ -6,6 +6,7 @@ Routes:
     /api/player-news/<player_id>
     /api/nfl-news
     /api/player-value-history/<player_id>
+    /api/player-availability
 
 Extracted from app.py to reduce monolith size.
 Dependencies: dashboard_services.*, data_building.*, utils.* only - no app.py internals.
@@ -704,6 +705,98 @@ def api_player_news(player_id: str):
         logger.exception("[player-news] error")
         return jsonify({"player_id": player_id, "news": [], "signals": [],
                         "blurbs": [], "sources_failed": ["all"]}), 200
+
+
+# ── /api/player-availability ──────────────────────────────────────────────────
+
+@players_bp.route("/api/player-availability")
+def api_player_availability():
+    """Where a player is rostered / available across the viewer's leagues.
+
+    ``?player_id=<pid>`` for one player (the modal) or
+    ``?player_ids=<pid,pid,...>`` for a batch (the nav search dropdown,
+    capped). Reads only cached league contexts: a league whose context
+    is not loaded reports ``unknown`` instead of triggering a build or
+    a guessed status. Guests get ``signed_in: false`` and no data.
+    """
+    raw_ids = (request.args.get("player_ids") or "").strip()
+    single = (request.args.get("player_id") or "").strip()
+    if raw_ids:
+        player_ids = [p.strip() for p in raw_ids.split(",") if p.strip()][:12]
+    elif single:
+        player_ids = [single]
+    else:
+        return jsonify({"ok": False, "error": "player_id required"}), 400
+
+    account_id = session.get("account_id")
+    viewer_user_id = session.get("viewer_user_id")
+    if not account_id and not viewer_user_id:
+        resp = jsonify({"ok": True, "signed_in": False, "players": {}})
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
+
+    try:
+        cur_season = int((get_nfl_state() or {}).get("season") or 0) or None
+    except Exception:
+        cur_season = None
+    try:
+        from dashboard_services.accounts import resolve_my_leagues
+
+        leagues, _season = resolve_my_leagues(
+            viewer_user_id, account_id, cur_season,
+            enrich_live=not bool(account_id),
+        )
+    except Exception:
+        logger.warning("[player-availability] league resolve failed", exc_info=True)
+        leagues = []
+
+    def _ctx_getter(platform: str, league_id: str, season: int):
+        # allow_build=False: serve the cached context or nothing, and let
+        # the cache layer warm the league in the background for next time.
+        # A synchronous build here could stall the modal for 7-28s.
+        from app import get_league_ctx_from_cache
+
+        return get_league_ctx_from_cache(platform, league_id, season, allow_build=False)
+
+    try:
+        from concurrent.futures import ThreadPoolExecutor
+
+        from dashboard_services.availability import build_availability
+
+        league_list = list(leagues or [])
+        # Fetch each league's cached context in parallel; contexts are
+        # process/Redis cache reads, never provider builds (see getter).
+        ctx_by_key: dict = {}
+        if league_list:
+            def _fetch(lg):
+                platform = str(lg.get("platform") or "sleeper").lower()
+                try:
+                    season = int(lg.get("season") or 0)
+                except (TypeError, ValueError):
+                    season = 0
+                key = (platform, str(lg.get("league_id")), season)
+                if not season:
+                    return key, None
+                try:
+                    return key, _ctx_getter(*key)
+                except Exception:
+                    return key, None
+
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                for key, ctx in pool.map(_fetch, league_list):
+                    ctx_by_key[key] = ctx
+
+        def _getter(platform: str, league_id: str, season: int):
+            return ctx_by_key.get((platform, league_id, season))
+
+        players = build_availability(league_list, player_ids, _getter)
+    except Exception:
+        logger.exception("[player-availability] build failed")
+        return jsonify({"ok": False, "error": "availability unavailable"}), 500
+
+    resp = jsonify({"ok": True, "signed_in": True, "players": players})
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 # ── /api/nfl-news ─────────────────────────────────────────────────────────────

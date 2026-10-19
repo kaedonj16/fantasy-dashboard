@@ -1099,6 +1099,7 @@ function openPlayerModal(playerId, playerName, opts) {
           <div class="pm-ov-rail">
             ${playoffCard}
             <div id="pmOvRole" class="pm-ov-role" hidden></div>
+            <div id="pmAvail" class="pm-avail" hidden></div>
             <div id="pmInLeague" class="pm-inleague pm-ov-inleague" hidden></div>
             ${newsBlock}
           </div>
@@ -1498,6 +1499,7 @@ function openPlayerModal(playerId, playerName, opts) {
 
       pmInjectContextActions(playerId, playerName, data, leagueId, platform, season);
       _pmLoadInLeague(playerId, data, leagueId, platform, season);
+      _pmSetupAvail(playerId, data);
       _pmLoadStartSitStrip(playerId, data, leagueId, platform, season);
       _pmLoadRecentForm(playerId, season, (data && data.position) || '');
 
@@ -1906,6 +1908,130 @@ function _pmRenderInLeague(el, events) {
     recent +
     (nowEvent ? row(nowEvent) : '') +
     '</div>';
+}
+
+// Availability across the viewer's leagues, on the Overview rail above
+// "In this league": collapsed at start, lazy-loaded on first expand with a
+// content-shaped skeleton. Nothing is fetched while collapsed, a failure
+// lands as an in-section error + Retry, and leagues whose context is not
+// loaded yet say so instead of posing as available or rostered. Guests
+// never see the section - there is no league set to check against.
+let _pmAvailPid = null;
+let _pmAvailOpen = false;
+
+function _pmAvailSignedIn() {
+  if (window._isSignedIn) return true;
+  const c = window.__brctx || {};
+  return !!c.is_logged_in;
+}
+
+function _pmAvailSummaryText(s) {
+  if (!s || !s.total) return 'No leagues linked';
+  if (!s.checked) return 'Leagues not loaded yet';
+  if (s.available > 0) return 'Available in ' + s.available + ' of ' + s.total + ' leagues';
+  if (s.checked === s.total) return 'Rostered in all ' + s.total + (s.mine ? ' - yours in ' + s.mine : '');
+  return 'Rostered in ' + s.checked + ' of ' + s.total + ' leagues';
+}
+
+function _pmSetupAvail(playerId, data) {
+  const el = document.getElementById('pmAvail');
+  if (!el) return;
+  _pmAvailPid = String(playerId);
+  _pmAvailOpen = false;
+  const pos = String((data && data.position) || '').toUpperCase();
+  if (!_pmAvailSignedIn() || pos === 'PICK') { el.hidden = true; el.innerHTML = ''; return; }
+  el.hidden = false;
+  el.innerHTML =
+    '<hr class="pm-section-divider">' +
+    '<button type="button" class="pm-section-header pm-section-collapsible pm-avail-toggle" id="pmAvailToggle" aria-expanded="false" aria-controls="pmAvailBody">' +
+      '<span class="pm-collapse-chevron" aria-hidden="true">&#9656;</span>' +
+      '<span class="pm-section-label">Availability</span>' +
+      '<span class="pm-avail-secnote" id="pmAvailNote">Your leagues</span>' +
+      '<span class="pm-collapse-hint">Show details</span>' +
+    '</button>' +
+    '<div id="pmAvailBody" hidden></div>';
+  document.getElementById('pmAvailToggle').addEventListener('click', _pmToggleAvail);
+}
+
+function _pmAvailSkeleton() {
+  const widths = ['38%', '30%', '34%', '32%'];
+  return '<div class="pm-avail-list">' + widths.map(function (w) {
+    return '<div class="pm-avail-skrow"><span class="skeleton pm-avail-skline" style="width:' + w + '"></span><span class="skeleton pm-avail-skpill"></span></div>';
+  }).join('') + '</div>';
+}
+
+function _pmToggleAvail() {
+  const body = document.getElementById('pmAvailBody');
+  const btn = document.getElementById('pmAvailToggle');
+  if (!body || !btn) return;
+  _pmAvailOpen = !_pmAvailOpen;
+  btn.setAttribute('aria-expanded', _pmAvailOpen ? 'true' : 'false');
+  const chev = btn.querySelector('.pm-collapse-chevron');
+  if (chev) chev.innerHTML = _pmAvailOpen ? '&#9662;' : '&#9656;';
+  const hint = btn.querySelector('.pm-collapse-hint');
+  if (hint) hint.textContent = _pmAvailOpen ? 'Hide details' : 'Show details';
+  body.hidden = !_pmAvailOpen;
+  if (_pmAvailOpen && !body.dataset.loaded) _pmLoadAvail();
+}
+
+function _pmAvailRowHtml(r) {
+  const league =
+    '<span class="pm-avail-league"><span class="pm-avail-name">' + _pmEsc(r.name) + '</span>' +
+    '<span class="pm-avail-sub">' + _pmEsc(r.sub) + '</span></span>';
+  if (r.status === 'available') {
+    return '<a class="pm-avail-row" href="' + r.href + '">' + league +
+      '<span class="pm-avail-detail"></span>' +
+      '<span class="pm-avail-status avail">Available</span>' +
+      '<span class="pm-avail-action">Waivers &rsaquo;</span></a>';
+  }
+  if (r.status === 'rostered') {
+    const detail = r.mine
+      ? '<span class="pm-avail-owner"><b class="yours">Your team</b> - ' + _pmEsc(r.owner) + '</span> <span class="pm-avail-slot">' + _pmEsc(r.slot) + '</span>'
+      : '<span class="pm-avail-owner"><b>' + _pmEsc(r.owner) + '</b></span> <span class="pm-avail-slot">' + _pmEsc(r.slot) + '</span>';
+    return '<a class="pm-avail-row' + (r.mine ? ' mine' : '') + '" href="' + r.href + '">' + league +
+      '<span class="pm-avail-detail">' + detail + '</span>' +
+      '<span class="pm-avail-status rost">Rostered</span></a>';
+  }
+  return '<div class="pm-avail-row unknown">' + league +
+    '<span class="pm-avail-detail">League not loaded yet</span>' +
+    '<span class="pm-avail-status unk">Unknown</span></div>';
+}
+
+function _pmAvailFailed() {
+  const body = document.getElementById('pmAvailBody');
+  if (!body) return;
+  if (window.brErrorState) {
+    window.brErrorState(body, 'Could not load availability.', function () { _pmLoadAvail(); }, { compact: true });
+  } else {
+    body.innerHTML = '<div class="pm-avail-error">Couldn\'t load availability. <button type="button" class="pm-avail-retry" onclick="_pmLoadAvail()">Retry</button></div>';
+  }
+}
+
+function _pmLoadAvail() {
+  const body = document.getElementById('pmAvailBody');
+  if (!body || !_pmAvailPid) return;
+  const pid = _pmAvailPid;
+  body.innerHTML = _pmAvailSkeleton();
+  _pmFetch('/api/player-availability?player_id=' + encodeURIComponent(pid), 15000)
+    .then(function (r) { return r && r.ok ? r.json() : null; })
+    .then(function (d) {
+      if (_pmAvailPid !== pid) return; // modal moved on to another player
+      const b = document.getElementById('pmAvailBody');
+      if (!b) return;
+      const entry = d && d.ok && d.players ? d.players[pid] : null;
+      if (!entry) { _pmAvailFailed(); return; }
+      b.dataset.loaded = '1';
+      const rows = (entry.leagues || []).map(_pmAvailRowHtml).join('');
+      const hasUnknown = (entry.leagues || []).some(function (r) { return r.status === 'unknown'; });
+      b.innerHTML = '<div class="pm-avail-list">' + rows + '</div>' +
+        (hasUnknown ? '<button type="button" class="pm-avail-retry" onclick="_pmLoadAvail()">Retry unloaded leagues</button>' : '');
+      const note = document.getElementById('pmAvailNote');
+      if (note) {
+        note.textContent = _pmAvailSummaryText(entry.summary);
+        note.classList.toggle('has-avail', !!(entry.summary && entry.summary.available > 0));
+      }
+    })
+    .catch(function () { if (_pmAvailPid === pid) _pmAvailFailed(); });
 }
 
 function _pmLoadStartSitStrip(playerId, data, leagueId, platform, season) {
