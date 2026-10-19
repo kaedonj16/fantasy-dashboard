@@ -6646,6 +6646,19 @@ def _discord_banner() -> str:
   #discordBanner {{
     left:12px !important; right:12px !important; width:auto !important;
     bottom:calc(var(--dock-safe-bottom) + 14px) !important;
+    /* Slim one-line bar on phones (audit Finding 2): the 158px card
+       covered the lower content of every public page. One row, pinned
+       above the dock: title, one truncated line, Join pill, close. */
+    flex-direction:row !important; align-items:center;
+    gap:10px; padding:10px 12px !important;
+  }}
+  #discordBanner .discord-banner-head {{ flex:0 0 auto; }}
+  #discordBanner .discord-banner-copy {{
+    flex:1 1 auto; min-width:0; white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis; font-size:12px !important;
+  }}
+  #discordBanner .discord-banner-link {{
+    flex:0 0 auto; width:auto; padding:6px 12px !important;
   }}
 }}
 </style>
@@ -6658,7 +6671,7 @@ def _discord_banner() -> str:
      border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.22);
      padding:18px 20px;width:300px;
      flex-direction:column;gap:12px;">
-  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
+  <div class="discord-banner-head" style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
     <div style="display:flex;align-items:center;gap:8px;">
       <img src="/static/images/discord-brands-solid.png" alt="Discord"
            style="width:16px;height:16px;opacity:.9;filter:brightness(0) saturate(100%) invert(40%) sepia(80%) saturate(600%) hue-rotate(210deg) brightness(110%);">
@@ -6672,10 +6685,10 @@ def _discord_banner() -> str:
                    cursor:pointer;padding:7px 11px;margin:-7px -11px -7px 0;flex-shrink:0;"
             aria-label="Dismiss">&times;</button>
   </div>
-  <p style="margin:0;font-size:13px;color:var(--muted);line-height:1.45;">
+  <p class="discord-banner-copy" style="margin:0;font-size:13px;color:var(--muted);line-height:1.45;">
     Talk dynasty, get trade advice, and connect with other managers in the BR Fantasy community.
   </p>
-  <a id="discordBannerLink" href="https://discord.gg/7aZrs7qfur" target="_blank" rel="noopener"
+  <a class="discord-banner-link" id="discordBannerLink" href="https://discord.gg/7aZrs7qfur" target="_blank" rel="noopener"
      style="display:block;text-align:center;background:#5865F2;color:#fff;
             font-weight:700;font-size:13px;text-decoration:none;
             padding:9px 0;border-radius:8px;">
@@ -6687,12 +6700,30 @@ def _discord_banner() -> str:
   var key = '{dismiss_key}';
   var el  = document.getElementById('discordBanner');
   if (!el) return;
-  if (!localStorage.getItem(key)) {{
-    el.style.display = 'flex';
+  // Dismissed earlier this week: never show, never enter the queue.
+  if (localStorage.getItem(key)) return;
+  function show() {{ el.style.display = 'flex'; }}
+  function hide() {{ el.style.display = 'none'; }}
+  function arm() {{
+    // Promo queue (audit Finding 2): never render over the assistant
+    // intro/teaser promo. Register with the shared gate in the public
+    // bundle and request the slot; the gate shows this banner when the
+    // slot frees (immediately on pages with no assistant promo). Fail
+    // open if the bundle and its gate failed to load.
+    if (window.brPromoGate) {{
+      window.brPromoGate.register('discord', show, hide);
+      window.brPromoGate.request('discord');
+    }} else {{
+      show();
+    }}
   }}
+  if (document.readyState === 'loading') {{
+    document.addEventListener('DOMContentLoaded', arm);
+  }} else {{ arm(); }}
   document.getElementById('discordBannerClose').addEventListener('click', function() {{
-    el.style.display = 'none';
     localStorage.setItem(key, '1');
+    if (window.brPromoGate) {{ window.brPromoGate.dismiss('discord'); }}
+    else {{ hide(); }}
   }});
   document.getElementById('discordBannerLink').addEventListener('click', function() {{
     localStorage.setItem(key, '1');
