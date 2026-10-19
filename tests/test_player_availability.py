@@ -210,6 +210,21 @@ def _route_client(monkeypatch, ctxs, leagues=_LEAGUES, signed_in=True):
         return ctxs.get((platform, str(league_id), int(season)))
 
     fake_app.get_league_ctx_from_cache = fake_ctx
+
+    fake_app._FAKE_REDIS_CTX = {}
+    # None = the resolver finds no viewer, so baked ctx viewers stand.
+    # Tests set a rid to prove the route's request-thread re-resolution.
+    fake_app._FAKE_VIEWER_RID = [None]
+
+    def _redis_load(platform, league_id, season):
+        return fake_app._FAKE_REDIS_CTX.get((platform, str(league_id), season))
+
+    def _viewer_for(users, rosters, platform, league_id, season):
+        rid = fake_app._FAKE_VIEWER_RID[0]
+        return {"viewer_roster_id": rid} if rid is not None else {}
+
+    fake_app._league_ctx_redis_load = _redis_load
+    fake_app.get_viewer_session_for_league = _viewer_for
     monkeypatch.setitem(sys.modules, "app", fake_app)
     client = app.test_client()
     if signed_in:
@@ -257,6 +272,45 @@ def test_route_batch_capped_at_twelve(monkeypatch):
     resp = client.get(f"/api/player-availability?player_ids={ids}")
     assert resp.status_code == 200
     assert len(resp.json["players"]) == 12
+
+
+def test_route_hydrates_from_redis_when_local_cache_misses(monkeypatch):
+    # The per-worker cache holds only a few league contexts, so a league
+    # can be absent locally while its built ctx sits in shared Redis.
+    # The route must answer from Redis instead of reporting unknown.
+    import sys
+
+    client = _route_client(monkeypatch, {})
+    fake_app = sys.modules["app"]
+    fake_app._FAKE_REDIS_CTX[("sleeper", "L1", 2026)] = _ctx(
+        [_roster(1, ["x"]), _roster(2, ["11647"], starters=["11647"])], viewer_rid=1)
+    resp = client.get("/api/player-availability?player_id=11647")
+    assert resp.status_code == 200
+    entry = resp.json["players"]["11647"]
+    l1 = next(r for r in entry["leagues"] if r["name"] == "Blackedraw")
+    assert l1["status"] == "rostered"
+    assert entry["summary"]["checked"] == 1
+
+
+def test_route_mine_resolved_on_request_thread(monkeypatch):
+    # Pool-thread ctx fetches carry the empty viewer a background warm
+    # baked in. The route re-resolves the viewer from the request session,
+    # so "mine" works even when the fetched ctx's viewer is blank.
+    import sys
+
+    ctxs = {
+        ("sleeper", "L1", 2026): _ctx(
+            [_roster(1, ["11560"]), _roster(2, ["y"])], viewer_rid=None),
+    }
+    client = _route_client(monkeypatch, ctxs)
+    sys.modules["app"]._FAKE_VIEWER_RID[0] = 1
+    resp = client.get("/api/player-availability?player_id=11560")
+    assert resp.status_code == 200
+    entry = resp.json["players"]["11560"]
+    l1 = next(r for r in entry["leagues"] if r["name"] == "Blackedraw")
+    assert l1["status"] == "rostered"
+    assert l1["mine"] is True
+    assert entry["summary"]["mine"] == 1
 
 
 # ── frontend pins ────────────────────────────────────────────────────────────

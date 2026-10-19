@@ -1924,7 +1924,7 @@ let _pmAvailPolls = 0;
 let _pmAvailTimer = null;
 let _pmAvailLoading = false;
 const _PM_AVAIL_POLL_MS = 5000;
-const _PM_AVAIL_MAX_POLLS = 12;
+const _PM_AVAIL_MAX_POLLS = 18;
 
 function _pmAvailStopPolling() {
   if (_pmAvailTimer) { clearTimeout(_pmAvailTimer); _pmAvailTimer = null; }
