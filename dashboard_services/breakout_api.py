@@ -2389,6 +2389,78 @@ def _still_tracking_by_week(board: Dict) -> List[Dict]:
     return out
 
 
+def _mature_ungraded_tracking_rows(season, completed_weeks, by_week,
+                                   still_tracking):
+    """Still-tracking rows for mature weeks whose grades have not landed.
+
+    A weekly call's forecast is read-time and stops the moment the call
+    matures: once the metrics carry its full 3-week outcome window,
+    ``weekly_forecast`` returns None, so the week's board candidates
+    arrive forecast-less and :func:`_still_tracking_by_week` skips them.
+    The grade rows that would move the week into ``by_week`` are only
+    written by the grader on the next snapshot/engine run. Between the
+    window closing in the metrics and that run, the week is in neither
+    list and vanishes from the rail. Weeks in that gap stay visible here
+    with their canonical surfaced-call count and no rate (None renders
+    as 'n/a', the same as a week with no banded forecasts).
+
+    Only completed weeks that are mature, have at least one surfaced
+    call (``weekly_grading.surfaced_player_ids_by_week``, the canonical
+    definition), and appear in neither ``by_week`` nor ``still_tracking``
+    qualify; a week already in ``by_week`` renders from its grade rows
+    even when every row is ungraded/injured. Fails soft to []: any
+    lookup error leaves the payload exactly as computed without it.
+    """
+    try:
+        def _week_set(entries):
+            weeks = set()
+            for entry in entries or []:
+                try:
+                    weeks.add(int(entry.get("week")))
+                except (TypeError, ValueError, AttributeError):
+                    continue
+            return weeks
+
+        seen = _week_set(by_week) | _week_set(still_tracking)
+        gap_weeks = []
+        for row in completed_weeks or []:
+            try:
+                wk = int(row.get("as_of_week"))
+            except (TypeError, ValueError, AttributeError):
+                continue
+            if wk <= 0 or wk in seen or wk in gap_weeks:
+                continue
+            gap_weeks.append(wk)
+        if not gap_weeks:
+            return []
+        from data_building.breakout_engine import weekly_grading as _wg
+
+        through = _wg.default_through_week(season)
+        if through is None:
+            return []
+        surfaced_by_week = _wg.surfaced_player_ids_by_week(int(season)) or {}
+        out = []
+        for wk in gap_weeks:
+            if not _wg.is_mature(wk, through):
+                continue
+            calls = len(surfaced_by_week.get(wk) or set())
+            if calls < 1:
+                continue
+            out.append({
+                "week": wk,
+                "calls": calls,
+                "banded_calls": 0,
+                "tracking_to_hit": 0,
+                "tracking_to_hit_rate": None,
+            })
+        return sorted(out, key=lambda entry: entry["week"], reverse=True)
+    except Exception:
+        logger.warning(
+            "breakout track record: mature-ungraded week lookup failed",
+            exc_info=True)
+        return []
+
+
 def _merged_board_candidates(*boards: Dict) -> Dict:
     """One candidate list across boards, deduped per (player, forecast
     kind); the first board to carry a key wins it. The default board IS
@@ -2600,6 +2672,19 @@ def _compute_breakout_track_record(requested_season: Optional[int] = None) -> Di
     # Still tracking: open calls by week, watchlist/monitored excluded,
     # matching the hits/misses filter. Only actual breakout calls appear.
     payload["still_tracking"] = _still_tracking_by_week(_merged)
+    # A week whose outcome window has closed in the metrics data but
+    # whose grades the grader has not written yet has no forecast (so it
+    # is missing above) and no grade rows (so it is missing from
+    # by_week): keep it visible in Still Tracking with no rate until its
+    # grades land and by_week takes over. The payload watermark covers
+    # grade writes, so the cached entry cannot outlive the grades.
+    _gap_rows = _mature_ungraded_tracking_rows(
+        season, _completed_weeks, payload["by_week"],
+        payload["still_tracking"])
+    if _gap_rows:
+        payload["still_tracking"] = sorted(
+            payload["still_tracking"] + _gap_rows,
+            key=lambda entry: int(entry.get("week") or 0), reverse=True)
     return payload
 
 
