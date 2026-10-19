@@ -75,8 +75,8 @@ def test_control_labels_removed_from_markup_with_aria_names():
 
 
 def test_search_and_season_share_one_mobile_row():
-    # Command-bar rework: the search+season row became a search row toggled
-    # from the strip; the season picker moved into the filter sheet.
+    # Command-bar rework: the search+season row became a search popover
+    # toggled from the strip; the season picker moved into the filter sheet.
     html = _html()
     body = html.split("<style>")[0]
     search_row = _tag(html, "amSearchRow")
@@ -85,8 +85,8 @@ def test_search_and_season_share_one_mobile_row():
     assert 'aria-label="Search players"' in search
     assert 'id="amSearchToggle"' in body
     css = _rework_css(html)
-    assert "#amSearchRow { margin:8px 0 0; }" in css
-    assert "#amSearchRow .am-search { font-size:15px; }" in css
+    assert "#amSearchRow { top:calc(100% + 6px); }" in css
+    assert "#amSearchRow .am-player-search-input { font-size:15px; }" in css
     # Season controls live in the sheet, not the top row.
     assert body.index('id="amSeasonMulti"') > body.index('id="amFilterSheet"')
 
