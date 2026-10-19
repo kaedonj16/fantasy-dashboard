@@ -35,7 +35,7 @@ SHEET_IDS = (
 # Primary controls: always visible, never inside the sheet.
 VISIBLE_IDS = (
     "amMetricBtn",
-    "amSearchToggle",
+    "amSearchExpand",
     "amFilterToggle",
     "amMoreToggle",
     "amPositions",

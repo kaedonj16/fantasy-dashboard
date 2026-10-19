@@ -45,7 +45,7 @@ def test_header_uses_compact_icon_buttons():
     # label spans kept for the menu rows.
     html = _html()
     assert 'id="amCmdBar"' in html
-    for el_id in ("amSearchToggle", "amFilterToggle", "amMoreToggle"):
+    for el_id in ("amFilterToggle", "amMoreToggle"):
         tag = _tag(html, el_id)
         assert 'title="' in tag, f"#{el_id} needs a title for the icon-button state"
     graph = _tag(html, "amGraphBtn")
@@ -74,19 +74,21 @@ def test_control_labels_removed_from_markup_with_aria_names():
     assert 'aria-label="Select seasons"' in season_btn
 
 
-def test_search_and_season_share_one_mobile_row():
-    # Command-bar rework: the search+season row became a search popover
-    # toggled from the strip; the season picker moved into the filter sheet.
+def test_search_expands_inside_the_command_bar():
+    # Final search shape: the icon in the strip expands leftward into
+    # the input (the shared nav-search box), in place in .am-cmd-actions.
+    # The popover row is gone; the season picker lives in the filter sheet.
     html = _html()
     body = html.split("<style>")[0]
-    search_row = _tag(html, "amSearchRow")
-    assert "hidden" in search_row
+    assert 'id="amSearchRow"' not in body
+    assert 'id="amSearchToggle"' not in body
     search = _tag(html, "amSearch")
     assert 'aria-label="Search players"' in search
-    assert 'id="amSearchToggle"' in body
+    actions = body[body.index('class="am-cmd-actions"'):body.index('id="amMoreMenu"')]
+    assert 'id="amSearchExpand"' in actions
     css = _rework_css(html)
-    assert "#amSearchRow { top:calc(100% + 6px); }" in css
-    assert "#amSearchRow .am-player-search-input { font-size:15px; }" in css
+    assert "#amSearchRow" not in css
+    assert "#amSearchExpand .am-search-input { font-size:15px; }" in css
     # Season controls live in the sheet, not the top row.
     assert body.index('id="amSeasonMulti"') > body.index('id="amFilterSheet"')
 

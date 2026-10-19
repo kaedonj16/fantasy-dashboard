@@ -51,7 +51,7 @@ def _tag(html, el_id):
 
 def test_cmdbar_buttons_keep_titles_for_the_bubble():
     html = _html()
-    for el_id in ("amSearchToggle", "amGraphBtn", "amFilterToggle", "amMoreToggle"):
+    for el_id in ("amGraphBtn", "amFilterToggle", "amMoreToggle"):
         tag = _tag(html, el_id)
         assert 'class="am-cmd-btn"' in tag
         assert 'title="' in tag, f"#{el_id} lost the title the tooltip upgrade reads"
