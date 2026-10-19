@@ -95,7 +95,7 @@ def _season_weekly_points(season: int, scoring: dict) -> dict:
 
     out: dict = {}
     try:
-        from utils.fantasy_scoring import score_stats
+        from utils.fantasy_scoring import score_stats, stat_row_is_appearance
         # scout_page.py -> dashboard_services/pages/ -> repo root is parents[2].
         base = Path(__file__).resolve().parents[2] / "cache" / "sleeper_stats"
         pattern = os.path.join(str(base), f"sleeper_stats_s{int(season)}_w*.json")
@@ -110,6 +110,8 @@ def _season_weekly_points(season: int, scoring: dict) -> dict:
             for pid, st in week_stats.items():
                 if not isinstance(st, dict):
                     continue
+                if not stat_row_is_appearance(st):
+                    continue  # DNP row: not a game (twin parity with app.py).
                 try:
                     out.setdefault(str(pid), []).append(
                         round(float(score_stats(st, scoring or {})), 2)

@@ -74,20 +74,27 @@ def test_week_stat_index_old_season_still_correct(stat_index_env):
 
 
 def test_week_stat_index_semantics_preserved(stat_index_env):
-    """Nonzero stats kept (incl. non-display keys), all-zero rows -> None."""
+    """Nonzero stats kept (incl. non-display keys); DNP rows omitted."""
     tmp_path = stat_index_env
     _write_week(
         tmp_path, 2025, 1,
         {
             "7": {"rush_yd": 42, "rush_td": 0, "custom_bonus": 3},
-            "9": {"rush_yd": 0, "rush_td": 0},
+            # Genuine 0.0 game, real feed shape: gp + snaps, no production.
+            "9": {"gp": 1.0, "off_snp": 12, "rush_yd": 0, "rush_td": 0},
+            # DNP, real feed shape: bookkeeping keys only (gms_active +
+            # pos_rank 999 sentinels) -- must not enter the index at all.
+            "10": {"gms_active": 1.0, "pos_rank_ppr": 999.0,
+                   "pos_rank_half_ppr": 999.0, "pos_rank_std": 999.0},
         },
     )
     rows = appmod._week_stat_index_rows(2025, 1)
     # Every nonzero stat is kept, even ones the display layer doesn't know.
     assert rows["7"] == {"rush_yd": 42, "custom_bonus": 3}
-    # Present-but-all-zero row is a genuine 0.0 game, not DNP.
-    assert rows["9"] is None
+    # The played zero game stays, carrying its gp/snap evidence.
+    assert rows["9"] == {"gp": 1.0, "off_snp": 12}
+    # The DNP row is absent: the game log renders that week as DNP.
+    assert "10" not in rows
     # Consumer pattern from _sleeper_stats_by_week still works on interned rows.
     merged = {"rush_yd": 0, "rush_td": 0}
     merged.update(rows["7"])

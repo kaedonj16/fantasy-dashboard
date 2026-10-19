@@ -74,6 +74,45 @@ def completed_points_summary(points: list[float] | tuple[float, ...]) -> dict | 
     return {"games": len(points), "total": total, "ppg": total / len(points)}
 
 
+# Bookkeeping keys Sleeper stamps on EVERY active player's weekly row,
+# played or not: the active flag, the positional-rank sentinels (999 when
+# the player scored nothing) and the TEAM snap totals. None of them is
+# evidence the player himself took the field.
+_NON_APPEARANCE_STAT_KEYS = frozenset({
+    "gms_active",
+    "pos_rank_ppr", "pos_rank_half_ppr", "pos_rank_std",
+    "tm_off_snp", "tm_def_snp", "tm_st_snp",
+})
+
+
+def stat_row_is_appearance(row) -> bool:
+    """Whether a Sleeper weekly stat row is a game the player actually played.
+
+    Sleeper emits a row for every active player each week, including
+    did-not-play games (dressed, zero snaps): those rows carry ONLY the
+    bookkeeping keys above -- no ``gp``, no personal snaps, no stats
+    (real example: Roman Wilson, 2026 week 6, game of 2026-10-18:
+    ``{"gms_active": 1.0, "pos_rank_ppr": 999.0, ...}``). Treating that
+    row's presence as an appearance invents a 0.0 game.
+
+    A row is an appearance when anything outside the bookkeeping keys
+    carries a nonzero value: ``gp``, a personal snap count (``off_snp`` /
+    ``def_snp`` / ``st_snp``), or any recorded stat. Verified against the
+    real feed (2024-2026 weekly files): every played row has such a
+    value, and a genuine 0-point game (played, no production -- Wilson's
+    week 5: ``gp`` 1, ``off_snp`` 20, one target) always carries
+    ``gp``/snaps, so it still counts as a game.
+    """
+    if not isinstance(row, dict):
+        return False
+    for key, value in row.items():
+        if key in _NON_APPEARANCE_STAT_KEYS:
+            continue
+        if value:
+            return True
+    return False
+
+
 def _rate(settings: dict, key: str) -> float:
     """Respect explicit zero scoring; only use defaults when a key is absent."""
     value = settings[key] if key in settings else _DEFAULT_RATES.get(key, 0.0)

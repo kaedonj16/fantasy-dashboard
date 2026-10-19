@@ -6,6 +6,7 @@ New code should import from utils.projections directly.
 from utils.projections import (  # noqa: F401,F403
     _DEFAULT_RATES,
     completed_points_summary,
+    stat_row_is_appearance,
     _rate,
     score_stats,
     _WEEK_STATS_TO_SLEEPER,
@@ -16,7 +17,7 @@ from utils.projections import (  # noqa: F401,F403
     weekly_projection_points,
 )
 
-__all__ = ['_DEFAULT_RATES', 'completed_points_summary', '_rate', 'score_stats', '_WEEK_STATS_TO_SLEEPER', 'week_stats_line_points', '_sleeper_standard_points', 'projection_points', 'week_stat_points', 'weekly_projection_points']
+__all__ = ['_DEFAULT_RATES', 'completed_points_summary', 'stat_row_is_appearance', '_rate', 'score_stats', '_WEEK_STATS_TO_SLEEPER', 'week_stats_line_points', '_sleeper_standard_points', 'projection_points', 'week_stat_points', 'weekly_projection_points']
 
 
 # --- monkeypatch propagation (see utils/_shim.py) ---
