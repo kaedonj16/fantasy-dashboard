@@ -38696,7 +38696,10 @@ def build_portfolio_body(
         "border-radius:4px;letter-spacing:.02em;}"
         ".pf-pos-chip .pc-rank{font-size:15px;font-weight:800;line-height:1;"
         "color:var(--q-ink,var(--text));font-variant-numeric:tabular-nums;}"
-        ".pf-pos-chip .pc-rank sup{font-size:.55em;font-weight:700;}"
+        # Rank ordinal at 13px (signed-in GUI audit fix 7b): at .55em of
+        # the 15px rank it rendered ~8px, the tiny text flagged in the
+        # capture. The digits stay 15px; the suffix now reads at 13px.
+        ".pf-pos-chip .pc-rank sup{font-size:13px;font-weight:700;}"
         ".q-good{--q-fill:color-mix(in srgb,var(--win) 12%,transparent);"
         "--q-line:color-mix(in srgb,var(--win) 34%,transparent);--q-ink:var(--win);}"
         ".q-mid{--q-fill:color-mix(in srgb,var(--text-subtle) 9%,transparent);"

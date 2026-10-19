@@ -49215,6 +49215,12 @@ em.gneg { background: var(--loss); }
   flex: 1;
   font-weight: 600;
   min-width: 0;
+  /* Dashboard standings card only (signed-in GUI audit fix 6): names
+     stay on one line and truncate with an ellipsis, so every row is
+     the same height. The full standings page does not use this class. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .cc-st-mv {
   font-size: 11px;
@@ -49362,7 +49368,9 @@ em.gneg { background: var(--loss); }
     padding: 10px 2px;
   }
   .cc-st-team {
-    overflow-wrap: break-word;
+    /* One line with ellipsis at every width (fix 6); wrapping here
+       would reintroduce the uneven dashboard row heights. */
+    overflow-wrap: normal;
     line-height: 1.35;
   }
   .cc-award {
@@ -49792,17 +49800,17 @@ em.gneg { background: var(--loss); }
   }
 }
 
-/* Scrollable sidebar card bodies: League Activity, League Awards,
-   Injury Watch. Fixed max-height with overflow-y auto; the collapse
-   toggle still wins via max-height: 0 !important. Placed before the
-   MERGED icon blocks so the merge script cannot wipe it. */
+/* Scrollable sidebar card bodies: League Activity and Injury Watch.
+   Fixed max-height with overflow-y auto; the collapse toggle still
+   wins via max-height: 0 !important. Placed before the
+   MERGED icon blocks so the merge script cannot wipe it.
+   League Awards is deliberately NOT in this list (signed-in GUI audit
+   fix 5): its inner scrollbar sat on top of the award values and
+   clipped them at the card's right edge, so the awards body grows to
+   fit its rows and the page scrolls instead. Collapse still works via
+   the base .card-collapsible-body.collapsed rule. */
 .cc-act-card .card-collapsible-body {
   max-height: 300px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-.cc-aw-card .card-collapsible-body {
-  max-height: 340px;
   overflow-y: auto;
   overscroll-behavior: contain;
 }

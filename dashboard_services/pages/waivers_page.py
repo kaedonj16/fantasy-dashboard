@@ -344,14 +344,37 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-trending-strip {
   display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 18px;
   -webkit-overflow-scrolling: touch; scrollbar-width: thin;
+  /* Signed-in GUI audit fix 8a: the right edge fades out, so the 4th
+     chip peeking into view reads as a deliberate scroll affordance
+     instead of an abrupt cut at the panel edge. */
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 32px), transparent);
+  mask-image: linear-gradient(90deg, #000 calc(100% - 32px), transparent);
 }
 .wv-trend-chip {
-  flex: 0 0 auto; display: flex; flex-direction: column; gap: 2px; text-align: left;
+  /* Basis sized against the strip: exactly 3 chips fit the panel and
+     the 4th peeks (3 full + gaps + ~0.4 of the next chip). */
+  flex: 0 0 calc((100% - 24px) / 3.4); max-width: 210px;
+  display: flex; flex-direction: row; align-items: center; gap: 8px; text-align: left;
   padding: 8px 12px; border-radius: 10px; background: var(--card);
-  border: 1px solid var(--border); cursor: pointer; min-width: 120px; max-width: 148px;
+  border: 1px solid var(--border); cursor: pointer;
   transition: border-color .12s;
 }
 .wv-trend-chip:hover { border-color: var(--accent); }
+.wv-trend-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+/* Headshot with the site's initials fallback (fix 8b, mirroring the
+   _face_html pattern from PR #2603): initials sit behind the photo,
+   the photo hides them onload, and onerror removes the img so the
+   initials return. A missing photo never renders an empty grey circle. */
+.wv-trend-face {
+  position: relative; width: 34px; height: 34px; border-radius: 50%;
+  background: var(--row); border: 1px solid var(--border);
+  display: grid; place-items: center; flex: 0 0 auto; overflow: hidden;
+}
+.wv-trend-init { font-size: 12px; font-weight: 800; color: var(--text-muted); }
+.wv-trend-face img {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; border-radius: 50%;
+}
 .wv-trend-adds {
   font-size: 11px; font-weight: 800; color: #f97316;
   display: flex; align-items: center; gap: 4px; font-variant-numeric: tabular-nums;
@@ -2837,12 +2860,25 @@ function wvRenderTrending(items) {{
     const nm = (p.name || '').replace(/'/g, "\\\\'");
     const tipName = (p.name || '').replace(/"/g, '&quot;');
     const tipAdds = wvFmtAdds(p.adds) + ' adds across Sleeper leagues in the last 48h';
+    // Headshot + initials fallback (fix 8b, the _face_html pattern):
+    // initials behind the photo, photo hides them onload, onerror
+    // removes the img so the initials return. Player ids are numeric
+    // Sleeper ids; anything else (team DEF ids) renders initials only.
+    const ini = (p.name || '?').trim().split(/\\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase() || '?';
+    const pid = String(p.player_id || '');
+    const faceImg = /^\\d+$/.test(pid)
+      ? `<img src="https://sleepercdn.com/content/nfl/players/thumb/${{pid}}.jpg" alt="" loading="lazy" decoding="async" onload="if(this.previousElementSibling)this.previousElementSibling.style.display='none'" onerror="this.remove()">`
+      : '';
+    const face = `<span class="wv-trend-face"><span class="wv-trend-init">${{ini}}</span>${{faceImg}}</span>`;
     return `
       <button type="button" class="wv-trend-chip" onclick="openPlayerModal('${{p.player_id}}', '${{nm}}')"
               title="${{tipName}} · ${{tipAdds}}">
-        <span class="wv-trend-adds"><i class="fa-solid fa-fire" aria-hidden="true"></i> ${{wvFmtAdds(p.adds)}}</span>
-        <span class="wv-trend-name">${{p.name || ''}}${{wvInjBadge(p.injury_status)}}</span>
-        <span class="wv-trend-sub">${{sub}}</span>
+        ${{face}}
+        <span class="wv-trend-txt">
+          <span class="wv-trend-adds"><i class="fa-solid fa-fire" aria-hidden="true"></i> ${{wvFmtAdds(p.adds)}}</span>
+          <span class="wv-trend-name">${{p.name || ''}}${{wvInjBadge(p.injury_status)}}</span>
+          <span class="wv-trend-sub">${{sub}}</span>
+        </span>
       </button>`;
   }}).join('');
   wrap.hidden = false;
