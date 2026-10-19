@@ -50,6 +50,66 @@ def test_refresh_skips_network_while_blocked(monkeypatch):
     assert calls["n"] == 0
 
 
+# ── Parser: REAL live payload shape (regression, 2026-10-18) ────────────────
+# The live ESPN injuries payload's athlete object has NO "id" field in any
+# entry; the athlete id lives only in headshot.href / links. The entry's own
+# "id" is a per-report entry id. Fixtures that include athlete.id hid the bug
+# where by_pid was keyed by entry ids and every consumer lookup missed.
+
+def _real_shape_payload():
+    return {"injuries": [{
+        "id": "11",  # IND team group
+        "injuries": [{
+            "id": "643002",  # report-entry id, NOT the athlete id
+            "status": "Out",
+            "athlete": {
+                "displayName": "Tyler Warren",
+                "shortName": "T. Warren",
+                "headshot": {"href": "https://a.espncdn.com/i/headshots/nfl/players/full/4431459.png"},
+                "links": [{"href": "https://www.espn.com/nfl/player/_/id/4431459/tyler-warren"}],
+            },
+            "details": {"type": {"description": "Undisclosed"}},
+        }],
+    }]}
+
+
+def test_parse_real_shape_headshot_id_keys_by_canonical():
+    out = ir.parse_espn_injuries_payload(
+        _real_shape_payload(), {"4431459": "12518"})
+    assert list(out) == ["12518"]
+    assert "643002" not in out
+    row = out["12518"]
+    assert row["espn_id"] == "4431459"
+    assert row["status"] == "Out"
+    assert row["name"] == "Tyler Warren"
+    assert row["team"] == "IND"
+
+
+def test_parse_real_shape_links_id_when_no_headshot():
+    payload = _real_shape_payload()
+    del payload["injuries"][0]["injuries"][0]["athlete"]["headshot"]
+    out = ir.parse_espn_injuries_payload(payload, {"4431459": "12518"})
+    assert list(out) == ["12518"]
+    assert out["12518"]["espn_id"] == "4431459"
+
+
+def test_parse_athlete_id_field_takes_priority_when_present():
+    payload = _real_shape_payload()
+    payload["injuries"][0]["injuries"][0]["athlete"]["id"] = "9999999"
+    out = ir.parse_espn_injuries_payload(payload, {"9999999": "canon9"})
+    assert list(out) == ["canon9"]
+    assert out["canon9"]["espn_id"] == "9999999"
+
+
+def test_parse_skips_entry_with_no_identifiable_athlete():
+    payload = _real_shape_payload()
+    athlete = payload["injuries"][0]["injuries"][0]["athlete"]
+    del athlete["headshot"]
+    del athlete["links"]
+    out = ir.parse_espn_injuries_payload(payload, {"4431459": "12518"})
+    assert out == {}
+
+
 def test_refresh_force_bypasses_block(monkeypatch):
     payload = {"injuries": []}
     calls = {"n": 0}

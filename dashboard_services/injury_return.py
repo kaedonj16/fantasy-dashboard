@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import threading
 import time
 from datetime import date, datetime, timedelta
@@ -87,6 +88,45 @@ def _injury_type_label(raw) -> str:
     return str(raw or "").strip()
 
 
+_HEADSHOT_ID_RE = re.compile(r"/(\d+)\.png")
+_LINK_ID_RE = re.compile(r"/player/_/id/(\d+)")
+
+
+def _href_of(node) -> str:
+    if isinstance(node, dict):
+        return str(node.get("href") or "")
+    return str(node or "")
+
+
+def _espn_athlete_id(athlete: dict, entry: dict) -> str:
+    """ESPN athlete id for one injury-report entry.
+
+    The live injuries payload's athlete object carries NO ``id`` field
+    (verified 2026-10-18: 800/800 entries) - the id lives only in the
+    headshot href (.../players/full/<id>.png) and in links
+    (.../player/_/id/<id>/...). The entry's own ``id`` is a per-report
+    entry id, NOT the athlete id: keying by it made every lookup miss.
+    Never fall back to it; return "" when no athlete id is identifiable.
+    """
+    direct = str(athlete.get("id") or "").strip()
+    if direct:
+        return direct
+    for holder in (athlete, entry):
+        if not isinstance(holder, dict):
+            continue
+        m = _HEADSHOT_ID_RE.search(_href_of(holder.get("headshot")))
+        if m:
+            return m.group(1)
+        links = holder.get("links") or []
+        if isinstance(links, dict):
+            links = [links]
+        for link in links or []:
+            m = _LINK_ID_RE.search(_href_of(link))
+            if m:
+                return m.group(1)
+    return ""
+
+
 def parse_espn_injuries_payload(payload: dict, espn_to_canon: Optional[dict] = None) -> Dict[str, dict]:
     """Flatten ESPN's team-grouped injury report to canonical_id -> row."""
     xwalk = {str(k): str(v) for k, v in (espn_to_canon or {}).items() if k and v}
@@ -107,7 +147,7 @@ def parse_espn_injuries_payload(payload: dict, espn_to_canon: Optional[dict] = N
             athlete = entry.get("athlete") or entry.get("player") or {}
             if not isinstance(athlete, dict):
                 athlete = {}
-            espn_id = str(athlete.get("id") or entry.get("id") or "").strip()
+            espn_id = _espn_athlete_id(athlete, entry)
             details = entry.get("details") if isinstance(entry.get("details"), dict) else {}
             return_raw = (
                 details.get("returnDate")

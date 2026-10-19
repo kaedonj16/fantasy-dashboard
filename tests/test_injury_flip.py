@@ -140,6 +140,44 @@ def test_flip_to_out_alerts_before_kickoff(monkeypatch):
     assert saved["L1:p1"] == "Out"
 
 
+def test_flip_alerts_from_real_shape_parser_output(monkeypatch):
+    """End-to-end: feed built by parse_espn_injuries_payload from the REAL
+    live payload shape (athlete has no id; id only in headshot/links; entry
+    id is a report id). Regression for Tyler Warren, 2026-10-18: the parser
+    keyed by entry id 643002, so by_pid.get('12518') missed and no alert
+    could ever fire."""
+    from dashboard_services.injury_return import parse_espn_injuries_payload
+
+    payload = {"injuries": [{
+        "id": "11",  # IND
+        "injuries": [{
+            "id": "643002",
+            "status": "Out",
+            "athlete": {
+                "displayName": "Tyler Warren",
+                "headshot": {"href": "https://a.espncdn.com/i/headshots/nfl/players/full/4431459.png"},
+                "links": [{"href": "https://www.espn.com/nfl/player/_/id/4431459/tyler-warren"}],
+            },
+        }],
+    }]}
+    espn_rows = parse_espn_injuries_payload(payload, {"4431459": "12518"})
+    assert list(espn_rows) == ["12518"]  # guard: parser must key canonically
+
+    sent, store = _setup(
+        monkeypatch,
+        espn_rows=espn_rows,
+        schedule=[{"home": "IND", "away": "KC", "gameTime_epoch": KICKOFF_FUTURE}],
+        last_seen={"L1:12518": "Questionable"},
+        sub_rows=[_sub_row()],
+        rosters=[{"owner_id": "o1", "roster_id": 1,
+                  "starters": ["12518"], "players": ["12518"]}],
+    )
+    assert pn.notify_injury_flip() == 1
+    assert len(sent) == 1
+    assert sent[0]["title"] == "Starter injury alert"
+    assert "Tyler Warren is now listed Out" in sent[0]["body"]
+
+
 def test_no_realert_when_already_out(monkeypatch):
     sent, _ = _setup(
         monkeypatch,
