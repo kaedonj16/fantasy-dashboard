@@ -13,8 +13,23 @@ pytest.importorskip("pandas")  # data_building package import chain
 from data_building.reset_phantom_values import (
     corrected_values,
     is_phantom,
+    is_pick_row,
     minmax_norm,
 )
+
+
+def test_pick_rows_are_never_in_the_cohort():
+    # Pick rows in player_values carry a NULL position (PICK_2028_2_late)
+    # or the bare year_round id; their value comes from the pick table,
+    # not the player markets. The first dry run on prod listed six of
+    # them for a reset to 0.0 — they must always be excluded.
+    assert is_pick_row("PICK_2028_2_late", None)
+    assert is_pick_row("PICK_2027_3_mid", None)
+    assert is_pick_row("2027_1_early", None)
+    assert is_pick_row("anything", "PICK")
+    assert not is_pick_row("12738", "RB")      # Phil Mafah's sleeper id
+    assert not is_pick_row("9999", "QB")       # bare numeric id, no bucket
+    assert not is_pick_row("11604", None)
 
 
 def test_minmax_norm_endpoints():

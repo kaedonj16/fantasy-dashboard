@@ -23,8 +23,14 @@ Cohort rule (per track, 1QB and SF separately): the SERVED value
 (COALESCE(calibrated, raw)) is >= 100 AND either no external market covers
 the player, or it sits >= 2.5x the normalized market consensus with a gap
 >= 100 — the board's own over-market guardrail criteria, applied to the
-served track the guardrail never sees. A player is reset if EITHER track
-qualifies; both tracks are corrected.
+served track the guardrail never sees. A player enters the cohort if
+EITHER track qualifies, but only the qualifying track is corrected; the
+other keeps its served value (with calibrations still nulled, so the
+phantom track can't re-enter through the calibrated columns). The SF
+consensus is max(FC-SF, DP-2QB) — DP's real superflex price, not its 1QB
+price. Draft picks are NEVER in the cohort: pick rows carry a NULL
+position in player_values (ids like PICK_2028_2_late), and their values
+come from the pick value table, not the player markets.
 
 Dry-run by default; pass --apply to write.
 
@@ -36,6 +42,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import re
 import sys
 from pathlib import Path
 
@@ -55,6 +62,19 @@ SCALE = 999.9
 # SF FC-SF .50 / DP-2QB .30, each renormalized over the sources present.
 _W_1QB = (("fc", 0.40), ("dp", 0.20))
 _W_SF = (("fc", 0.50), ("dp", 0.30))
+
+
+_PICK_ID_RE = re.compile(r"^(PICK_)?\d{4}_\d", re.IGNORECASE)
+
+
+def is_pick_row(player_id, position) -> bool:
+    """Draft picks live in player_values too — under ids like
+    PICK_2028_2_late or 2027_1_early, often with a NULL position. Their
+    values come from the pick value table, never from the player markets,
+    so the cohort scan must never select (or worse, zero) them."""
+    if str(position or "").upper() == "PICK":
+        return True
+    return bool(_PICK_ID_RE.match(str(player_id or "")))
 
 
 def minmax_norm(raw: float, lo: float, hi: float) -> float:
@@ -162,6 +182,8 @@ def find_cohort() -> list[dict]:
     cohort = []
     for r in rows:
         pid = str(r["player_id"])
+        if is_pick_row(pid, r["position"]):
+            continue
         meta = index.get(pid) or {}
         name = meta.get("name") or pid
         dp = dp_by_name.get(normalize_name(name)) or {}
@@ -175,16 +197,21 @@ def find_cohort() -> list[dict]:
         served1 = float(r["calibrated_value_1qb"] or raw1)
         served_sf = float(r["calibrated_value_sf"] or r["value_sf"] or raw1)
 
-        if not (is_phantom(served1, max(fc_n, dp_n))
-                or is_phantom(served_sf, fcs_n)):
+        bad_1qb = is_phantom(served1, max(fc_n, dp_n))
+        bad_sf = is_phantom(served_sf, max(fcs_n, dp2_n))
+        if not (bad_1qb or bad_sf):
             continue
-        corr1, corr_sf = corrected_values(fc_n, dp_n, fcs_n, dp2_n, r["position"])
+        blend1, blend_sf = corrected_values(fc_n, dp_n, fcs_n, dp2_n, r["position"])
+        # Per-track correction: a track that does not meet the phantom
+        # criteria keeps its served value (calibrations are still nulled,
+        # so nothing re-enters through the calibrated columns).
         cohort.append({
             "player_id": pid, "name": name, "position": r["position"],
             "team": r["team"] or meta.get("team"),
             "served_1qb": round(served1, 1), "served_sf": round(served_sf, 1),
             "fc_norm": round(fc_n, 1), "dp_norm": round(dp_n, 1),
-            "corrected_1qb": corr1, "corrected_sf": corr_sf,
+            "corrected_1qb": blend1 if bad_1qb else round(served1, 1),
+            "corrected_sf": blend_sf if bad_sf else round(served_sf, 1),
         })
     return sorted(cohort, key=lambda c: -c["served_1qb"])
 
