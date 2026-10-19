@@ -21,6 +21,9 @@ def _summary(**overrides):
         "streak": ["W", "L", "W"],
         "pos_user_rank": {"QB": 3, "RB": 5, "WR": 2, "TE": 8},
         "pos_user_pctile": {"QB": 70.0, "RB": 55.0, "WR": 85.0, "TE": 30.0},
+        # TE strength 4.5x the league median -> the card badges TE-Premium.
+        "pos_user_vals": {"QB": 100.0, "RB": 100.0, "WR": 100.0, "TE": 900.0},
+        "pos_league_avgs": {"QB": 100.0, "RB": 100.0, "WR": 100.0, "TE": 200.0},
         "all_players": {
             "p1": {"name": "Player One", "position": "WR", "value": 321.0,
                    "pos_rank": "WR12", "nfl_team": "BUF"},
@@ -102,7 +105,28 @@ def test_fresh_cached_summary_used_without_recompute(offline_client, monkeypatch
     assert b"7-4" in resp.data
     assert b"Player One" in resp.data
     assert b"Record loading" not in resp.data
+    # The archetype badge comes from the cached strengths, not the fallback.
+    assert b"TE-Premium" in resp.data
     assert kicked == []
+
+
+def test_fresh_legacy_summary_without_strengths_kicks_refresh(offline_client, monkeypatch):
+    """Entries cached before build_league_summary carried pos_user_vals are
+    fresh by TTL but can only badge "Balanced". The card still renders from
+    cache, and a background refresh is kicked so the next load badges from
+    real strengths instead of waiting out the TTL."""
+    legacy = _summary()
+    legacy.pop("pos_user_vals")
+    legacy.pop("pos_league_avgs")
+    pages, kicked = _setup(
+        monkeypatch, [_membership()], {("sleeper", "L1", 2026): legacy})
+    _signed_in(offline_client, account_id=7, account_email="a@example.com")
+
+    resp = offline_client.get("/portfolio")
+    assert resp.status_code == 200
+    assert b"7-4" in resp.data
+    assert b"Record loading" not in resp.data
+    assert kicked == [(7, "L1")]
 
 
 def test_cache_miss_renders_shell_and_kicks_refresh(offline_client, monkeypatch):

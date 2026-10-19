@@ -59,6 +59,15 @@ def _store_persistent(key, value):
         logger.debug("portfolio SWR write unavailable", exc_info=True)
 
 
+def _median(xs):
+    s = sorted(xs)
+    n = len(s)
+    if not n:
+        return 0.0
+    m = n // 2
+    return s[m] if n % 2 else (s[m - 1] + s[m]) / 2
+
+
 def first_non_null(row, names, default=None):
     """Read aliases without treating a legitimate 0.0 as missing."""
     for name in names:
@@ -193,6 +202,12 @@ def build_league_summary(account_id, membership, context_loader):
         result["last_week_result"] = None
 
     result["pos_user_rank"] = {pos: None for pos in POSITIONS}
+    # The portfolio archetype badge (build_portfolio_body) ratios the user's
+    # weighted positional strength against the league median. Without these
+    # two fields the badge degrades to "Balanced" for every account card --
+    # the inline Sleeper-only summary computes them, this builder must too.
+    result["pos_user_vals"] = {}
+    result["pos_league_avgs"] = {}
     values = {}
     try:
         from dashboard_services.ai.context_builders import league_format_value_lookup
@@ -213,6 +228,10 @@ def build_league_summary(account_id, membership, context_loader):
             league_strengths = [s.get(pos, 0.0) for s in _strengths.values()]
             user_strength = (_strengths.get(rid) or {}).get(pos, 0.0)
             result["pos_user_pctile"][pos] = strength_percentile(user_strength, league_strengths)
+            # Same median basis as the inline summary (the "avgs" name is
+            # historical; the badge's >1.10 ratio is against the median team).
+            result["pos_user_vals"][pos] = user_strength
+            result["pos_league_avgs"][pos] = _median(league_strengths) or 1
         sections["position_rankings"] = {"status": "ready"}
     except Exception:
         sections["position_rankings"] = {"status": "unavailable", "failure_category": "analytics_unavailable"}
