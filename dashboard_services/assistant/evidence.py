@@ -588,6 +588,17 @@ def _metrics_for(pid, season=None):
                         keep["ppg"] = (float(exp_total) + float(over_total)) / games
                     except (TypeError, ValueError):
                         pass
+                # Touches per game is the same shape: the table stores
+                # the total_touches season total and the leaderboard's
+                # computed_sql serves total_touches / games; the stored
+                # key itself never exists on a real row, so derive it
+                # here too (a stored column would win, as above).
+                touches_total = m.get("total_touches")
+                if touches_total is not None and keep.get("touches_per_game") is None:
+                    try:
+                        keep["touches_per_game"] = float(touches_total) / games
+                    except (TypeError, ValueError):
+                        pass
             # Presentation contract for every pack this dict feeds:
             # numbers ship the way the site presents them. The
             # derivations above divide season totals by games in raw

@@ -29,6 +29,7 @@ import logging
 import time
 
 from dashboard_services.assistant import aliases, tools as tools_mod
+from dashboard_services.assistant import compare_table as compare_table_mod
 from dashboard_services.assistant import compose as compose_mod
 from dashboard_services.assistant import evidence as ev
 from dashboard_services.assistant.model import call_model_json
@@ -100,6 +101,10 @@ _OPEN_SYSTEM = (
     "the metrics both of them have and name the missing ones for that "
     "player; never drop a player, or the comparison, over a missing "
     "metric. "
+    "For a two-player compare entry, a side-by-side table of the two "
+    "profiles renders with the answer and carries the numbers: keep the "
+    "text to the basis and one short why paragraph, and do not list each "
+    "player's numbers line by line. "
     "A rank_players entry carries a ranking computed by code: present "
     "the players in exactly that order, each with his ranking-key "
     "number, and never reorder them. A name in the entry's unresolved "
@@ -650,7 +655,7 @@ def compose_open_answer(question: str, pack: dict, *, history=None,
         if entry.get("link"):
             link = entry["link"]
             break
-    return compose_mod._enforce_grounding({
+    answer = compose_mod._enforce_grounding({
         "verdict": verdict,
         "text": text,
         "receipts": receipts,
@@ -660,6 +665,14 @@ def compose_open_answer(question: str, pack: dict, *, history=None,
         "actions": [],
         "mentions": _evidence_mentions(usable),
     }, "open", pack, question)
+    # The compare table rides the same answer dict as the verdict,
+    # receipts and deep link: built deterministically from the compare
+    # entry's profiles (never from the draft), so its numbers are the
+    # pack's own and need no grounding pass.
+    table = compare_table_mod.compare_table_for_evidence(usable)
+    if table is not None:
+        answer["compare_table"] = table
+    return answer
 
 
 def answer_open(question: str, bundle: dict, *, thread: dict | None = None,

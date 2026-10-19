@@ -5549,6 +5549,38 @@ function showLoginGate(target, opts) {
         return p;
       }
 
+      // The two-player compare table: a structured block the answer
+      // carries next to its prose (built server-side from the compare
+      // pack, never from the draft). Grouped rows, the winner's value
+      // bold, a small triangle in the centre gutter pointing at the
+      // winner with the gap beside it; a tied row shows neither.
+      function compareTableEl(table) {
+        var players = table.players || [];
+        var box = el('div', 'br-asst-cmptbl');
+        var head = el('div', 'br-asst-cmp-head');
+        head.appendChild(el('span', 'br-asst-cmp-p1', String((players[0] || {}).short || (players[0] || {}).name || '')));
+        head.appendChild(el('span', 'br-asst-cmp-edge', 'EDGE'));
+        head.appendChild(el('span', 'br-asst-cmp-p2', String((players[1] || {}).short || (players[1] || {}).name || '')));
+        box.appendChild(head);
+        (table.groups || []).forEach(function (group) {
+          box.appendChild(el('div', 'br-asst-cmp-group', String(group.label || '')));
+          (group.rows || []).forEach(function (row) {
+            var r = el('div', 'br-asst-cmp-row');
+            r.appendChild(el('div', 'br-asst-cmp-name', String(row.label || '')));
+            r.appendChild(el('div', 'br-asst-cmp-v' + (row.winner === 0 ? ' win' : ''), String(row.a || '')));
+            var mid = el('div', 'br-asst-cmp-mid');
+            if (row.winner === 0 || row.winner === 1) {
+              mid.appendChild(el('span', 'br-asst-cmp-tri ' + (row.winner === 0 ? 'l' : 'r')));
+              if (row.delta) mid.appendChild(el('span', 'br-asst-cmp-delta', String(row.delta)));
+            }
+            r.appendChild(mid);
+            r.appendChild(el('div', 'br-asst-cmp-v r' + (row.winner === 1 ? ' win' : ''), String(row.b || '')));
+            box.appendChild(r);
+          });
+        });
+        return box;
+      }
+
       function renderAnswer(answer, logId) {
         if (!answer) return;
         var wrap = el('div', 'br-asst-msg');
@@ -5594,6 +5626,10 @@ function showLoginGate(target, opts) {
             list.appendChild(li);
           });
           wrap.appendChild(list);
+        }
+        var cmpTable = answer.compare_table;
+        if (cmpTable && (cmpTable.players || []).length === 2 && (cmpTable.groups || []).length) {
+          wrap.appendChild(compareTableEl(cmpTable));
         }
         var receipts = answer.receipts || [];
         if (receipts.length) {

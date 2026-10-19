@@ -629,6 +629,47 @@ def test_compare_lines_reports_flips_and_new_questions():
     assert same == ["tw1: unchanged (FAIL)"]
 
 
+# -- compare table block (ow22 family) ----------------------------------------------
+
+def test_mock_compare_answers_carry_the_asserted_table():
+    for qid in ("ow22", "ow23", "ow24"):
+        q = BY_ID[qid]
+        result = score_answer(q, compose_mock(q))
+        assert result["compare_table_ok"], result["notes"]
+        assert result["passed"], result["notes"]
+
+
+def test_scorer_rejects_a_tampered_compare_table():
+    q = BY_ID["ow22"]
+    ans = compose_mock(q)
+    row = ans["compare_table"]["groups"][0]["rows"][0]
+    row["winner"] = 1 - row["winner"]
+    result = score_answer(q, ans)
+    assert result["compare_table_ok"] is False
+    assert result["passed"] is False
+
+
+def test_scorer_rejects_a_missing_compare_table():
+    q = BY_ID["ow22"]
+    ans = compose_mock(q)
+    del ans["compare_table"]
+    result = score_answer(q, ans)
+    assert result["compare_table_ok"] is False
+    assert result["passed"] is False
+
+
+def test_mock_compare_table_omits_rows_for_missing_metrics():
+    # ow24: Flowers has no target share, snap share, or touches line,
+    # so those rows must not exist; the shared metrics still compare.
+    ans = compose_mock(BY_ID["ow24"])
+    keys = [r["key"] for g in ans["compare_table"]["groups"]
+            for r in g["rows"]]
+    assert "target_share" not in keys
+    assert "snap_share" not in keys
+    assert "touches_per_game" not in keys
+    assert "ppg" in keys and "expected_ppg" in keys and "value" in keys
+
+
 def test_record_round_trip_on_a_temp_copy(monkeypatch, tmp_path):
     target = tmp_path / "live_results.md"
     target.write_text((ROOT / "assistant_eval" / "live_results.md").read_text())
