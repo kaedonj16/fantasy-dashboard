@@ -1402,7 +1402,7 @@ function openPlayerModal(playerId, playerName, opts) {
 
       // ── Lazy-load news into Overview panel ────────────────────────────────
       if (data.position && data.position !== 'PICK') {
-        const _newsSrcName = s => ({espn: 'ESPN', reddit: 'Reddit', gnews: 'Google News', all: 'all sources'}[s] || s);
+        const _newsSrcName = s => ({espn: 'ESPN', reddit: 'Reddit', gnews: 'Google News', espn_injuries: 'ESPN injuries', sleeper: 'Sleeper', rotoballer: 'RotoBaller', pft: 'ProFootballTalk', all: 'all sources'}[s] || s);
         _pmSmallFetch('news:' + playerId, `/api/player-news/${encodeURIComponent(playerId)}`)
           .then(nd => {
             const nb = document.getElementById('pmNewsBody');
@@ -1411,18 +1411,36 @@ function openPlayerModal(playerId, playerName, opts) {
               nb.innerHTML = '<span style="color:var(--text-muted);font-size:13px;">Couldn\'t load news right now.</span>';
               return;
             }
-            const items = nd.news || [];
+            const items = (nd.news || []).concat(nd.blurbs || []);
             const failed = nd.sources_failed || [];
             const warn = failed.length
               ? `<div class="pm-news-warn" role="alert">Some news sources unavailable (${failed.map(_newsSrcName).join(', ')}).</div>`
               : '';
+            // Structured signals (free layer): chips above the headlines,
+            // plus a labelled play-probability line when one applies. The
+            // probability is a heuristic shown next to the raw projection
+            // story, never folded into any score.
+            const _escAttr = s => String(s == null ? '' : s).replace(/"/g, '&quot;');
+            const signals = nd.signals || [];
+            let sigHtml = '';
+            if (signals.length) {
+              sigHtml = '<div class="pm-news-signals">' + signals.map(s => {
+                const tip = _escAttr([s.detail, s.source ? 'Source: ' + s.source : '', s.age || ''].filter(Boolean).join(' · '));
+                return `<span class="pm-signal-chip pm-signal-${s.tone || 'info'}" title="${tip}">${s.label}</span>`;
+              }).join('') + '</div>';
+              const risk = signals.find(s => s.play_probability != null && s.play_probability > 0 && s.play_probability < 1);
+              if (risk) {
+                const riskTxt = String(risk.detail || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                sigHtml += `<div class="pm-news-risk">Play probability ~${Math.round(risk.play_probability * 100)}% - ${riskTxt}</div>`;
+              }
+            }
             if (!items.length) {
-              nb.innerHTML = warn + (failed.length
+              nb.innerHTML = warn + sigHtml + (failed.length && !signals.length
                 ? '<span style="color:var(--text-muted);font-size:13px;">Couldn\'t load news right now.</span>'
                 : '<span style="color:var(--text-muted);font-size:13px;">No recent news found.</span>');
               return;
             }
-            nb.innerHTML = warn + items.map(n => `
+            nb.innerHTML = warn + sigHtml + items.map(n => `
               <div class="pm-news-item">
                 <div class="pm-news-headline">
                   ${n.url
