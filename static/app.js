@@ -26474,6 +26474,72 @@ function setupFunAwardsGrid() {
   if (!wrapper || !input || !dropdown) return;
 
   const POS_COLORS = { QB: 'qb', RB: 'rb', WR: 'wr', TE: 'te', K: 'k', DEF: 'def' };
+
+  // Cross-league availability bits on player rows: the summary rides on
+  // the existing meta line and lazy-fills from one batch request, so the
+  // results never wait on it. Cached per player for the page session in a
+  // window-level cache; guests skip it entirely (no league set to check).
+  const _availCache = window.__brAvailCache || (window.__brAvailCache = {});
+  const _availInflight = {};
+  let _availDisabled = false;
+  function _availSignedIn() {
+    if (window._isSignedIn) return true;
+    const c = window.__brctx || {};
+    return !!c.is_logged_in;
+  }
+  function _availBitHtml(s) {
+    if (!s || !s.total || !s.checked) return '';
+    if (s.available > 0) return '<span class="nav-search-avail-bit">Available in ' + s.available + ' of ' + s.total + '</span>';
+    if (s.checked === s.total) return '<span class="nav-search-avail-bit none">Rostered in all ' + s.total + (s.mine ? ' - yours in ' + s.mine : '') + '</span>';
+    return '<span class="nav-search-avail-bit none">Rostered in ' + s.checked + ' of ' + s.total + '</span>';
+  }
+  function _availMetaSuffix(p) {
+    if (_availDisabled || !_availSignedIn()) return '';
+    const hit = _availCache[p.id];
+    if (hit) { const h = _availBitHtml(hit); return h ? ' - ' + h : ''; }
+    return ' - <span class="nav-search-avail-slot" data-avail-pid="' + p.id + '"><span class="skeleton nav-search-avail-sk"></span></span>';
+  }
+  function _clearAvailSlots(pids) {
+    pids.forEach(function (pid) {
+      dropdown.querySelectorAll('.nav-search-avail-slot[data-avail-pid="' + pid + '"]').forEach(function (s) { s.remove(); });
+    });
+  }
+  function _fillAvailBits() {
+    if (_availDisabled) return;
+    const slots = Array.from(dropdown.querySelectorAll('.nav-search-avail-slot'));
+    if (!slots.length) return;
+    const need = [];
+    slots.forEach(function (slot) {
+      const pid = slot.getAttribute('data-avail-pid');
+      const hit = pid ? _availCache[pid] : null;
+      if (hit) {
+        const h = _availBitHtml(hit);
+        if (h) slot.outerHTML = h; else slot.remove();
+      } else if (pid && !_availInflight[pid]) {
+        _availInflight[pid] = true;
+        need.push(pid);
+      }
+    });
+    if (!need.length) return;
+    fetch('/api/player-availability?player_ids=' + need.map(encodeURIComponent).join(','))
+      .then(function (r) { return r && r.ok ? r.json() : null; })
+      .then(function (d) {
+        need.forEach(function (pid) { delete _availInflight[pid]; });
+        if (d && d.signed_in === false) {
+          _availDisabled = true;
+          dropdown.querySelectorAll('.nav-search-avail-slot').forEach(function (s) { s.remove(); });
+          return;
+        }
+        if (!d || !d.ok || !d.players) { _clearAvailSlots(need); return; }
+        Object.keys(d.players).forEach(function (pid) { _availCache[pid] = d.players[pid].summary; });
+        _fillAvailBits();
+      })
+      .catch(function () {
+        need.forEach(function (pid) { delete _availInflight[pid]; });
+        _clearAvailSlots(need);
+      });
+  }
+
   let _players = null;
   let _loading = false;
   let _loadFailed = false;
@@ -26561,7 +26627,7 @@ function setupFunAwardsGrid() {
                  onerror="this.style.visibility='hidden'" />
             <div class="nav-search-info">
               <div class="nav-search-name">${p.name}</div>
-              <div class="nav-search-meta">${p.team || '\u2013'}</div>
+              <div class="nav-search-meta">${p.team || '\u2013'}${_availMetaSuffix(p)}</div>
             </div>
             <span class="nav-search-pos nav-search-pos-${posColor(p.pos)}">${p.pos}</span>
           </div>
@@ -26601,6 +26667,7 @@ function setupFunAwardsGrid() {
     _flatResults = Array.from(dropdown.querySelectorAll('[data-ns-kind]'));
     _focusIdx = -1;
     openDropdown();
+    _fillAvailBits();
   }
 
   function openDropdown() { dropdown.classList.add('open'); }
