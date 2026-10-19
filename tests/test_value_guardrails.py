@@ -1,5 +1,5 @@
 """Unit tests for the over-market value guardrail (pure, no DB/deps)."""
-from data_building.value_guardrails import overmarket_capped
+from data_building.value_guardrails import blend_wls_value, overmarket_capped
 
 
 def test_chubb_case_pulled_down():
@@ -20,9 +20,36 @@ def test_one_source_high_keeps_value_even_if_other_low():
     assert overmarket_capped(900.0, fc_val=850.0, dp_val=0.0) == 900.0
 
 
-def test_no_external_coverage_is_noop():
-    # Pure prospect / data gap: neither source covers → never touched.
-    assert overmarket_capped(500.0, fc_val=0.0, dp_val=0.0) == 500.0
+def test_no_external_coverage_phantom_is_zeroed():
+    # Neither source covers the player and the value is at/above the
+    # min-gap stake: a phantom with no market behind it cannot stand
+    # (the Phil Mafah case — board served 330, markets priced ~nothing).
+    assert overmarket_capped(500.0, fc_val=0.0, dp_val=0.0) == 0.0
+    assert overmarket_capped(100.0, fc_val=0.0, dp_val=0.0) == 0.0
+
+
+def test_no_external_coverage_small_value_left_alone():
+    # Low-stakes data gap: a small uncovered value is harmless, keep it.
+    assert overmarket_capped(50.0, fc_val=0.0, dp_val=0.0) == 50.0
+
+
+def test_mafah_case_capped_to_trigger_multiple():
+    # Board 330 vs FC ~8.6 normalized / DP ~0.2: capped to 2.5 x consensus.
+    assert overmarket_capped(329.6, fc_val=8.6, dp_val=0.2) == 21.5
+
+
+def test_wls_never_adopted_outright_without_market():
+    # No market price → WLS cannot create one, whatever its backing.
+    assert blend_wls_value(0.0, 900.0, backing=100.0) == 0.0
+    assert blend_wls_value(0.0, 900.0, backing=0.0) == 0.0
+
+
+def test_wls_blend_confidence_weighting():
+    # No WLS row → market unchanged; zero backing → market unchanged;
+    # backing == k → 50/50 blend.
+    assert blend_wls_value(100.0, None, backing=50.0) == 100.0
+    assert blend_wls_value(100.0, 900.0, backing=0.0) == 100.0
+    assert blend_wls_value(100.0, 300.0, backing=6.0) == 200.0
 
 
 def test_within_band_not_touched():

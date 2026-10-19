@@ -17,7 +17,7 @@ from dashboard_services.api import get_nfl_state
 from dashboard_services.picks import load_pick_value_table
 from data_building.external_data.player_history import load_player_history_df, build_player_history_features
 from data_building.external_data.player_investment import load_player_investment_context
-from data_building.value_guardrails import overmarket_capped, sf_nonqb_floor
+from data_building.value_guardrails import blend_wls_value, overmarket_capped, sf_nonqb_floor
 from utils.paths import DATA_DIR
 from utils.utils import load_teams_index, bucket_for_slot, normalize_name, load_players_index, load_model_value_table
 from utils.coerce import safe_int as _safe_int
@@ -986,6 +986,10 @@ def rewrite_value_table_with_model() -> Path:
             df_by_id[pid] = row
 
     cleaned_assets: list[dict] = []
+    # Per-player external market refs (normalized FC / DP / FC-SF), retained so
+    # the guardrail can be re-applied AFTER the anchor + day-over-day clamp at
+    # the end of the build (see the final market-sanity pass below).
+    _mkt_refs: dict[str, tuple[float, float, float]] = {}
 
     for player in players:
         pid = str(player.get("id"))
@@ -1042,12 +1046,12 @@ def rewrite_value_table_with_model() -> Path:
 
         # Confidence-weighted WLS blend (1QB): lean on the trade market in
         # proportion to how much trade history backs this player. Heavy backing →
-        # ~pure WLS; thin/none → keep the vendor blend.
-        _wls1 = wls_1qb_values.get(pid)
-        if _wls1 is not None and _wls1 > 0:
-            _b1 = wls_backing.get(pid, 0.0)
-            _conf1 = _b1 / (_b1 + _WLS_BLEND_K) if _b1 > 0 else 0.0
-            final_value = (_conf1 * _wls1 + (1.0 - _conf1) * final_value) if final_value > 0 else _wls1
+        # ~pure WLS; thin/none → keep the vendor blend. WLS may only adjust a
+        # market price: with no vendor value it is NOT adopted outright
+        # (see blend_wls_value — the outright adoption was the phantom leak).
+        final_value = blend_wls_value(
+            final_value, wls_1qb_values.get(pid), wls_backing.get(pid, 0.0),
+            k=_WLS_BLEND_K)
 
         # Over-market guardrail (1QB). Reuses the same trusted external reads the
         # blend uses: fc_val (normalized FC) and dp_val (normalized DP, now included
@@ -1063,12 +1067,11 @@ def rewrite_value_table_with_model() -> Path:
 
         position = player.get("position")
         # Confidence-weighted WLS blend (SF): same idea as the 1QB blend, using the
-        # SF-specific trade backing so the SF board is market-driven too.
-        _wlssf = wls_sf_values.get(pid)
-        if _wlssf is not None and _wlssf > 0:
-            _bsf = wls_backing_sf.get(pid, 0.0)
-            _confsf = _bsf / (_bsf + _WLS_BLEND_K) if _bsf > 0 else 0.0
-            sf_value = (_confsf * _wlssf + (1.0 - _confsf) * sf_value) if sf_value > 0 else _wlssf
+        # SF-specific trade backing so the SF board is market-driven too. Same
+        # no-outright-adoption rule as 1QB.
+        sf_value = blend_wls_value(
+            sf_value, wls_sf_values.get(pid), wls_backing_sf.get(pid, 0.0),
+            k=_WLS_BLEND_K)
         # Over-market guardrail (SF), using the FC SF read only — DP's 1QB value
         # understates SF QBs, so applying it here would wrongly tank QBs. Non-QBs
         # are additionally floored to a fraction of the 1QB value just below.
@@ -1082,6 +1085,8 @@ def rewrite_value_table_with_model() -> Path:
         # value (which inverts the market and inflates the SF board).
         if position != "QB":
             sf_value = sf_nonqb_floor(sf_value, final_value)
+
+        _mkt_refs[pid] = (fc_val, dp_val, fc_sf_by_sid.get(pid, 0.0))
 
         age = player.get("age")
         if age is None and row is not None:
@@ -1281,6 +1286,36 @@ def rewrite_value_table_with_model() -> Path:
                 if _old <= 0:
                     continue
                 _a[_k] = _clamp_board_value(_cur, _old, _MAX_DAILY_MOVE)
+
+    # ── Final market-sanity pass (after anchor + clamp) ─────────────────────
+    # The clamp's baseline is yesterday's stored history, which the calibrated
+    # snapshot overwrites nightly — so when the stored value IS the phantom,
+    # the clamp floor resurrects what the guardrail already rejected and the
+    # board can only fall 10%/day for weeks (the Mafah unwind). Re-apply the
+    # guardrail to the finished board so a shipped value never sits
+    # drastically above BOTH external markets, whatever the smoothing did.
+    # Market refs are scaled by the same anchor factors as the board itself;
+    # size variants move with their base value's cap ratio.
+    for _a in cleaned_assets:
+        _refs = _mkt_refs.get(str(_a.get("id") or ""))
+        if _refs is None:
+            continue
+        _fc_r, _dp_r, _fcsf_r = _refs
+        for _base_key, _keys, _fc_x, _dp_x, _scale in (
+            ("value", _1qb_keys, _fc_r, _dp_r, _1qb_scale),
+            ("sf_value", _sf_keys, _fcsf_r, 0.0, _sf_scale),
+        ):
+            _base = _a.get(_base_key)
+            if _base is None or float(_base) <= 0:
+                continue
+            _capped = overmarket_capped(
+                float(_base), _fc_x * _scale, _dp_x * _scale,
+                trigger=_OVERMARKET_TRIGGER, min_gap=_OVERMARKET_MIN_GAP)
+            if _capped < float(_base):
+                _ratio = _capped / float(_base)
+                for _k in _keys:
+                    if _a.get(_k) is not None:
+                        _a[_k] = round(float(_a[_k]) * _ratio, 1)
 
     pos_to_indices: dict[str, list[int]] = {}
 

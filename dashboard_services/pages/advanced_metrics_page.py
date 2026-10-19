@@ -685,8 +685,19 @@ def build_advanced_metrics_body(
 
     style = """
     <style>
-      /* Widen the card on desktop so 7 metric columns fit comfortably */
-      .card.central:has(#amTable) { max-width:1400px; }
+      /* Widen the card on desktop so wide presets (9-12 metric columns)
+         fit without squeezing the bars; phones are unaffected (width:100%
+         under the cap). */
+      .card.central:has(#amTable) { max-width:1920px; transition:max-width .35s ease; }
+      /* One metric does not need the wide card: at 1920px its lone bar
+         stretches across the page while the player name still truncates.
+         Keep single-metric view at a readable 1200px and give Player the
+         first share of that width. Extra metric headers opt back into the
+         full width above. */
+      .card.central:has(#amTable):not(:has(#amTable th.am-extra-header)) { max-width:1200px; }
+      @media (min-width:761px) {
+        .card.central:has(#amTable):not(:has(#amTable th.am-extra-header)) .am-player { width:300px; max-width:300px; }
+      }
       .am-legend-btn {
         flex-shrink:0; display:flex; align-items:center; gap:6px;
         padding:5px 10px; border:1px solid var(--border); border-radius:8px;
@@ -1122,7 +1133,7 @@ def build_advanced_metrics_body(
       .am-lock-ico { display:inline-block; vertical-align:-2px; color:var(--gold, #ca8a04); }
       @media (max-width:600px) { .am-trendcell { min-width:80px; } .am-spark { width:44px; height:14px; } }
       /* Pinned-player comparison modal -- width grows with player count */
-      .am-cmp-card { max-width:min(95vw,1400px); }
+      .am-cmp-card { max-width:min(95vw,1760px); }
       .am-legend-body { overflow-x:auto; }
       .am-cmp-table { width:100%; border-collapse:separate; border-spacing:0; font-size:13px; margin-top:4px; }
       .am-cmp-table th, .am-cmp-table td { padding:10px 12px; border-bottom:1px solid var(--border); text-align:left; vertical-align:top; }
