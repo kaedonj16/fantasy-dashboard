@@ -16190,6 +16190,28 @@ a.signed-home-league:hover {
     text-align: right;
 }
 
+/* Standings value/production shares: freeze the Team column on phones.
+   The table sits in .st-tblscroll (overflow-x: auto) next to the main
+   standings table, whose Seed + Team freeze is above; this shares table
+   was the one standings-family table left without a frozen pane. Only
+   the Team column sticks at left:0 (the # rank column scrolls underneath
+   it, same as .history-table / #dvtTable). Mobile only: on desktop the
+   whole table fits and nothing scrolls. Rows are transparent on the
+   card, so the frozen cells use opaque var(--card). */
+@media (max-width: 768px) {
+    .standings-shares-table thead th.standings-shares-team,
+    .standings-shares-table tbody td.standings-shares-team {
+        position: sticky;
+        left: 0;
+        z-index: 2;
+        background: var(--card);
+        border-right: 1px solid var(--border);
+    }
+    .standings-shares-table thead th.standings-shares-team {
+        z-index: 3;
+    }
+}
+
 .overview-sidebar, .overview-sidebar-left {
     display: flex;
     flex-direction: column;
