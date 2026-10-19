@@ -813,6 +813,83 @@ window.brUndoToast = function (message, onUndo, duration) {
 })();
 
 /**
+ * Floating promo queue (public core, shared by every promo surface).
+ *
+ * The 2026-10-18 GUI audit found the assistant intro bubble and the
+ * Discord banner rendering at the same time on the guest home, physically
+ * overlapping (88px) and covering the bottom 28% of the phone viewport.
+ * Both designs are fine individually; the defect was simultaneity. This
+ * gate is the queue: a promo registers a show/hide pair, requests the
+ * slot, and only becomes visible when it holds the slot. The assistant
+ * promo has priority - its request preempts a lower promo, whose show
+ * is re-queued and runs when the assistant retires. A promo the user
+ * dismissed for good calls dismiss() and is never re-queued; each
+ * promo's own dismissal persistence (localStorage keys) is untouched.
+ * Promos that cannot see the gate (bundle failed) fail open and show as
+ * before, so a broken bundle never silently eats a promo.
+ */
+window.brPromoGate = (function () {
+  var current = null;
+  var entries = {};   // name -> {show, hide}
+  var queue = [];     // names waiting for the slot, FIFO
+  function register(name, show, hide) {
+    entries[name] = { show: show, hide: hide };
+  }
+  function dequeue(name) {
+    var i = queue.indexOf(name);
+    if (i > -1) queue.splice(i, 1);
+  }
+  function showNext() {
+    while (queue.length) {
+      var next = queue.shift();
+      if (entries[next]) {
+        current = next;
+        entries[next].show();
+        return;
+      }
+    }
+  }
+  function request(name) {
+    if (!entries[name] || current === name) return;
+    if (!current) {
+      current = name;
+      entries[name].show();
+      return;
+    }
+    if (name === 'assistant') {
+      // Priority: hide the holder, re-queue it behind the assistant.
+      var prev = current;
+      if (entries[prev]) entries[prev].hide();
+      dequeue(prev);
+      queue.push(prev);
+      current = name;
+      entries[name].show();
+      return;
+    }
+    if (queue.indexOf(name) === -1) queue.push(name);
+  }
+  function release(name) {
+    dequeue(name);
+    if (current !== name) return;
+    current = null;
+    showNext();
+  }
+  function dismiss(name) {
+    // User closed this promo for good: hide it and drop it from the
+    // queue so a later release never resurrects it.
+    if (entries[name]) entries[name].hide();
+    release(name);
+  }
+  return {
+    register: register,
+    request: request,
+    release: release,
+    dismiss: dismiss,
+    current: function () { return current; }
+  };
+})();
+
+/**
  * Guest BR Assistant teaser (guest homepage only, logged-out visitors).
  *
  * The signed-in assistant chrome (initAssistant/buildChrome) only mounts
@@ -876,6 +953,8 @@ window.brUndoToast = function (message, onUndo, duration) {
     function retire() {
       try { localStorage.setItem(INTRO_KEY, '1'); } catch (e) {}
       if (bubble) { bubble.remove(); bubble = null; }
+      // Free the promo slot: the queued Discord promo may show now.
+      if (window.brPromoGate) window.brPromoGate.release('assistant');
     }
     function tapToSignin() {
       retire();
@@ -923,7 +1002,6 @@ window.brUndoToast = function (message, onUndo, duration) {
     bdismiss.setAttribute('aria-label', 'Dismiss');
     bdismiss.textContent = '×';
     bubble.appendChild(bdismiss);
-    document.body.appendChild(bubble);
 
     bdismiss.addEventListener('click', retire);
     bmain.addEventListener('click', tapToSignin);
@@ -935,16 +1013,34 @@ window.brUndoToast = function (message, onUndo, duration) {
 
     // Entrance: ease in once the page has settled (immediately under
     // prefers-reduced-motion); the launcher is present from first paint.
-    var reduceMotion = false;
-    try {
-      reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    } catch (e) {}
-    if (reduceMotion) {
-      bubble.classList.add('br-asst-bubble-in');
+    function showBubble() {
+      if (!bubble || bubble.isConnected) return;
+      document.body.appendChild(bubble);
+      var reduceMotion = false;
+      try {
+        reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      } catch (e) {}
+      if (reduceMotion) {
+        bubble.classList.add('br-asst-bubble-in');
+      } else {
+        window.setTimeout(function () {
+          if (bubble) bubble.classList.add('br-asst-bubble-in');
+        }, 900);
+      }
+    }
+    function hideBubble() {
+      // Preempted by a higher promo: hide WITHOUT retiring, so the
+      // bubble (and its INTRO_KEY state) is untouched.
+      if (bubble) bubble.remove();
+    }
+    // Promo queue (audit Finding 2): the bubble takes the floating
+    // slot first on the guest home; the Discord promo waits for
+    // retire() to release it. Fail open if the gate is missing.
+    if (window.brPromoGate) {
+      window.brPromoGate.register('assistant', showBubble, hideBubble);
+      window.brPromoGate.request('assistant');
     } else {
-      window.setTimeout(function () {
-        if (bubble) bubble.classList.add('br-asst-bubble-in');
-      }, 900);
+      showBubble();
     }
   }
   if (document.readyState === 'loading') {
@@ -4902,6 +4998,8 @@ function showLoginGate(target, opts) {
       function retireIntro() {
         try { localStorage.setItem(INTRO_KEY, '1'); } catch (e) {}
         if (introEl) { introEl.remove(); introEl = null; }
+        // Free the promo slot: a queued Discord promo may show now.
+        if (window.brPromoGate) window.brPromoGate.release('assistant');
       }
       if (!introSeen) {
         introEl = el('aside', 'br-asst-bubble');
@@ -4923,6 +5021,15 @@ function showLoginGate(target, opts) {
         bdismiss.setAttribute('aria-label', 'Dismiss');
         introEl.appendChild(bdismiss);
         document.body.appendChild(introEl);
+        // Promo queue (audit Finding 2): the intro bubble holds the
+        // floating slot ahead of the Discord promo, same as the guest
+        // teaser. Preemption hides it via display without retiring it.
+        if (window.brPromoGate) {
+          window.brPromoGate.register('assistant',
+            function () { if (introEl) introEl.style.display = ''; },
+            function () { if (introEl) introEl.style.display = 'none'; });
+          window.brPromoGate.request('assistant');
+        }
         bdismiss.addEventListener('click', function () { retireIntro(); });
         bmain.addEventListener('click', function () { openPopup(false); });
         bchip.addEventListener('click', function () {
