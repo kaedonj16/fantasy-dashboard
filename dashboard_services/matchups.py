@@ -1271,24 +1271,31 @@ def compute_win_prob(
     below (fit 2026-09-29 from 2023-2025 cached game logs: 774
     player-seasons with >=10 played games, fixed PPR-ish scoring;
     std = a * projection + b per position), and each team's pending
-    variance is floored at (TEAM_CV_FLOOR * remaining projection)^2 so a
+    variance is floored at (TEAM_CV_FLOOR * floor_basis)^2 so a
     full lineup's spread reflects real weekly team-score dispersion
     instead of the far tighter figure the independent per-player sum
-    produces.
+    produces. For a not-yet-started player the floor basis is his full
+    projection; for an in-progress player it is his full projection
+    weighted by sqrt(frac), so a pregame matchup (floor_basis equal to
+    the pending projection) is unchanged.
 
     ``frac_lookup(starter) -> Optional[float]`` supplies the fraction of that
     player's game left to play. When given, an in-progress player banks the
     points already scored and carries only the remaining slice of their
-    projection as pending, with variance that shrinks toward zero as the game
-    ends. Without it, in-progress players are treated as fully locked at their
+    projection as pending. The remaining variance scales with the fraction
+    of the game left, so the remaining standard deviation scales with
+    sqrt(frac): half a game left carries half the variance and about 0.71
+    of the standard deviation, not half of it. Without the lookup,
+    in-progress players are treated as fully locked at their
     current points, the prior behaviour.
     """
-    from math import erf
+    from math import erf, sqrt
 
     def _stats(team: dict):
         locked = 0.0
         pend_proj = 0.0
         pend_var = 0.0
+        floor_basis = 0.0
         for p in (team.get("starters") or []):
             if p is None:
                 continue  # empty slot placeholder (see _normalize_starter_slots)
@@ -1323,20 +1330,27 @@ def compute_win_prob(
                 else:
                     # Bank the points scored; carry the sharpened remaining
                     # (pace-blended) projection as the pending, uncertain slice.
-                    # Sigma scales with the fraction of game left, so it
-                    # matches the pre-game model at frac=1 and shrinks to zero
-                    # at the final whistle, as before.
+                    # Remaining variance scales with the fraction of the game
+                    # left, so the remaining standard deviation is
+                    # sqrt(frac) times the full-game sigma on the full
+                    # pregame projection. At frac=1 this matches the pregame
+                    # model; at frac=0 it is zero. Scaling the sigma itself
+                    # by frac (or by the already-shrunken remaining
+                    # projection) would shrink the variance twice and make
+                    # late-game win probabilities far too extreme.
                     locked += actual
+                    frac = max(0.0, min(1.0, float(frac)))
                     final = live_final_from_frac(actual, proj, frac, pos)
                     remaining_proj = max(0.0, final - actual)
                     pend_proj += remaining_proj
-                    sigma = max(_winprob_sigma_raw(pos, remaining_proj),
-                                _WINPROB_SIGMA_FLOOR) * frac
-                    pend_var += sigma * sigma
+                    sigma_full = _winprob_sigma(pos, proj)
+                    pend_var += frac * sigma_full * sigma_full
+                    floor_basis += proj * sqrt(frac)
             else:
                 pend_proj += proj
                 sigma = _winprob_sigma(pos, proj)
                 pend_var += sigma * sigma
+                floor_basis += proj
         if pend_proj == 0.0 and locked == 0.0:
             try:
                 fallback = float(team.get("proj_total") or 0.0)
@@ -1349,13 +1363,17 @@ def compute_win_prob(
                 # observed ~0.20 team dispersion).
                 pend_proj = fallback
                 pend_var = (TEAM_CV_FLOOR * fallback) ** 2
+                floor_basis = fallback
         # Team-level variance floor. Summing independent per-player variances
         # dilutes a full lineup's spread by ~1/sqrt(n starters); the floor
         # keeps the pending distribution matched to observed team dispersion
-        # (see TEAM_CV_FLOOR). It scales with what is left to play, so it
-        # fades to zero as games finish and near-final blowouts still read
-        # decisively.
-        floor_var = (TEAM_CV_FLOOR * pend_proj) ** 2
+        # (see TEAM_CV_FLOOR). The basis carries each pending player's full
+        # projection weighted by sqrt(frac) for in-progress players, so the
+        # floor variance scales with the fraction of the game left (floor
+        # standard deviation scales with sqrt(frac)) and fades to zero as
+        # games finish. Basing it on the shrunken remaining projection alone
+        # would scale it linearly with frac and understate late variance.
+        floor_var = (TEAM_CV_FLOOR * floor_basis) ** 2
         if floor_var > pend_var:
             pend_var = floor_var
         return locked, pend_proj, pend_var
