@@ -295,7 +295,9 @@ def test_css_scroll_wrapper_allows_horizontal_scroll():
 
 def test_css_mobile_character_cards():
     """Character cards (standings + awards) get intentional mobile rules:
-    tighter headers, wrapping team names (never truncated), comfortable rows."""
+    tighter headers, comfortable rows. Team names stay on one line with
+    ellipsis (signed-in GUI audit fix 6 superseded the old wrap rule:
+    wrapping made the dashboard card's row heights uneven)."""
     head_rules = team_rules = award_rules = None
     for block in _mobile_blocks():
         m = re.search(r"\.cc-st-head,\s*\.cc-aw-head\s*\{([^}]*)\}", block)
@@ -309,7 +311,8 @@ def test_css_mobile_character_cards():
             award_rules = m.group(1)
     assert head_rules, "mobile character-card header rule missing"
     assert "padding: 14px 16px" in head_rules
-    assert team_rules, "mobile team-name wrap rule missing"
-    assert "overflow-wrap: break-word" in team_rules
+    assert team_rules, "mobile team-name rule missing"
+    assert "overflow-wrap: normal" in team_rules
+    assert "overflow-wrap: break-word" not in team_rules
     assert award_rules, "mobile award-value rule missing"
     assert "font-size: 22px" in award_rules
