@@ -2085,7 +2085,7 @@ _AM_JS = r"""
     const extras = (Array.isArray(raw.metrics) ? raw.metrics : []).filter(function(k) {
       if (!cfg.metrics[k] || seen.has(k)) return false; seen.add(k); return true;
     }).slice(0, MAX_COMPARE);
-    return {primary:raw.primary, metrics:extras, position:['ALL','QB','RB','WR','TE'].includes(raw.position) ? raw.position : 'ALL', sort:raw.sort === 'asc' ? 'asc' : 'desc', minVol:raw.minVol == null ? '' : String(raw.minVol)};
+    return {primary:raw.primary, metrics:extras, position:_sanitizePosParam(raw.position), sort:raw.sort === 'asc' ? 'asc' : 'desc', minVol:raw.minVol == null ? '' : String(raw.minVol)};
   }
 
   // Working-view persistence: the board's current view (active preset or
@@ -2132,7 +2132,7 @@ _AM_JS = r"""
       preset: (typeof v.preset === 'string' && _PRESETS[v.preset]) ? v.preset : null,
       metric: v.metric,
       extraMetrics: extras,
-      position: ['ALL', 'QB', 'RB', 'WR', 'TE'].includes(v.position) ? v.position : 'ALL',
+      position: _sanitizePosParam(v.position),
       season: typeof v.season === 'string' ? v.season : '',
       weekRange: (range === 'custom' && (ws == null || we == null)) ? '' : range,
       weekStart: ws, weekEnd: we,
@@ -2142,6 +2142,44 @@ _AM_JS = r"""
   }
 
   const _initParams = new URLSearchParams(window.location.search);
+
+  // Position selection: state.position is 'ALL' or a comma-joined subset
+  // ('RB,WR') - the segmented control toggles membership, so several
+  // positions can be on at once. These helpers keep every consumer
+  // (render, URL, saved views, presets, graph seeding) on one encoding.
+  const _POS_ORDER = ['QB', 'RB', 'WR', 'TE'];
+  function _posList() {
+    if (!state.position || state.position === 'ALL') return [];
+    return state.position.split(',').filter(function(p) { return _POS_ORDER.indexOf(p) >= 0; });
+  }
+  function _posLabel() {
+    const l = _posList();
+    return l.length ? l.join('/') : 'Field';
+  }
+  function _setPositions(list) {
+    const s = _POS_ORDER.filter(function(p) { return (list || []).indexOf(p) >= 0; });
+    state.position = s.length ? s.join(',') : 'ALL';
+  }
+  function _sanitizePosParam(raw) {
+    if (!raw) return 'ALL';
+    const parts = String(raw).split(',');
+    const s = _POS_ORDER.filter(function(p) { return parts.indexOf(p) >= 0; });
+    return s.length ? s.join(',') : 'ALL';
+  }
+  // Drop selected positions the current metric does not cover; if none
+  // survive, fall back to All (the old single-position rule, generalized).
+  function _narrowPositionsToMetric() {
+    const cur = _posList();
+    if (!cur.length) return;
+    const rel = new Set(relevantPositions(state.metric));
+    _setPositions(cur.filter(function(p) { return rel.has(p); }));
+  }
+  // Refresh the custom picker's button label after a programmatic
+  // metricSel.value set (which fires no 'change' event).
+  function _syncMetricPickerLabel() {
+    if (metricSel && metricSel._amSyncLabel) metricSel._amSyncLabel();
+  }
+
   function syncURL() {
     const p = new URLSearchParams();
     if (state.metric) p.set('metric', state.metric);
@@ -2191,6 +2229,9 @@ _AM_JS = r"""
                   pinnedIds: _loadPins() };
   // Seven displayed metrics means six comparisons plus the primary.
   const MAX_COMPARE = Math.max(6, ...Object.values(cfg.presets || {}).map(p => (p.metrics || []).length - 1));
+  // Multi-position subsets ('RB,WR') ride in the same field; normalize
+  // whatever the URL carried before anything reads state.position.
+  state.position = _sanitizePosParam(state.position);
   const _amCmpWeekly = {};  // `${pid}_${season}` -> weekly series (Compare modal week ranges)
   const _amCmpSeason = {};   // `${pid}_${season}` -> season-level metrics (non-page seasons)
   let _amCmpToken = 0;       // guards against overlapping/stale re-renders while dragging
@@ -2346,6 +2387,10 @@ _AM_JS = r"""
     const _primaryChanged = state.metric !== primary;
     state.metric = primary;
     if (metricSel) metricSel.value = primary;
+    // The visible picker button reads the hidden select only on a real
+    // 'change' event, which a programmatic value set never fires: refresh
+    // its label explicitly or the button keeps showing the old metric.
+    _syncMetricPickerLabel();
     state.page = 0;
     state.extraMetrics = extras.slice();
     // A threshold on the old primary has different units and must not leak.
@@ -2355,13 +2400,12 @@ _AM_JS = r"""
     // preset (same primary) is re-applied so an idempotent re-apply does
     // not strip them; fetchData rebuilds them whenever the primary moves.
     if (_primaryChanged) state.prevData = {};
-    const rel = new Set(relevantPositions(state.metric));
-    if (state.position !== 'ALL' && !rel.has(state.position)) state.position = 'ALL';
+    _narrowPositionsToMetric();
     state.sortDir = preset.sort || 'desc';
     state.sortBy = state.metric;
     state.minVol = defaultVol(state.metric);
-    // Position presets auto-filter to their position
-    if (preset.position) state.position = preset.position;
+    // Position presets auto-filter to their (single) position
+    if (preset.position) _setPositions([preset.position]);
     _activePresetId = Object.keys(_PRESETS).find(k => _PRESETS[k] === preset) || String(cat).toLowerCase();
     _showActiveSet(preset.label);
     try { localStorage.setItem('amLastPreset', _activePresetId); } catch (e) {}
@@ -3695,13 +3739,16 @@ _AM_JS = r"""
   }
   function updatePosButtons() {
     const rel = new Set(relevantPositions(state.metric));
+    const sel = _posList();
     posWrap.querySelectorAll('[data-pos]').forEach(b => {
       const p = b.dataset.pos;
       const ok = p === 'ALL' || rel.has(p);
       b.disabled = !ok;
       b.style.opacity = ok ? '' : '0.35';
       b.style.cursor = ok ? 'pointer' : 'not-allowed';
-      b.classList.toggle('active', p === state.position);
+      const on = p === 'ALL' ? !sel.length : sel.indexOf(p) >= 0;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
   }
   // Compact week list -> "1-9" / "1-3, 7-10" for the traded-player tooltip.
@@ -3773,9 +3820,10 @@ _AM_JS = r"""
     const up = v => String(v || '').toUpperCase();
 
     // Sort the full positional set first to establish canonical ranks.
-    const posRows = (state.position === 'ALL'
+    const _selPos = _posList();
+    const posRows = (!_selPos.length
       ? state.rows.filter(r => rel.has(up(r.position)))
-      : state.rows.filter(r => up(r.position) === state.position));
+      : state.rows.filter(r => _selPos.indexOf(up(r.position)) >= 0));
     posRows.sort((a, b) => {
       const desc = state.sortDir === 'desc';
       if (state.sortBy === 'name') {
@@ -3986,7 +4034,7 @@ _AM_JS = r"""
       avgPct = Math.max(0, Math.min(100, _barPct(avg, _primBar)));
       if (avgNote) {
         avgNote.style.display = '';
-        const lbl = state.position !== 'ALL' ? state.position : 'Field';
+        const lbl = _posLabel();
         // One entry per visible metric column: primary first, then extras.
         const parts = [(_mLabel(state.metric))
           + ' ' + fmtVal(avg, state.metric)];
@@ -4115,7 +4163,7 @@ _AM_JS = r"""
         const pct = _barPct(Number(primaryValue), _primBar);
         const avgLbl = (avgPct != null && i === 0) ? '<span class="am-bar-avg-lbl">AVG</span>' : '';
         const avgMark = (avgPct != null)
-          ? '<div class="am-bar-avg" style="left:' + avgPct + '%" title="' + (state.position !== 'ALL' ? state.position : 'Field') + ' average">' + avgLbl + '</div>'
+          ? '<div class="am-bar-avg" style="left:' + avgPct + '%" title="' + _posLabel() + ' average">' + avgLbl + '</div>'
           : '';
         metricCell = '<td class="am-barcell" data-column-id="metric:' + state.metric + '"><div class="am-metric-cell">'
           + '<div class="am-metric-bar"><div class="am-bar-track"><div class="am-bar-fill" style="width:' + pct + '%;background:' + col + '"></div>' + avgMark + '</div></div>'
@@ -4125,7 +4173,7 @@ _AM_JS = r"""
         const pct = _barPct(Number(primaryValue), _primBar);
         const avgLbl2 = (avgPct != null && i === 0) ? '<span class="am-bar-avg-lbl">AVG</span>' : '';
         const avgMark2 = (avgPct != null)
-          ? '<div class="am-bar-avg" style="left:' + avgPct + '%" title="' + (state.position !== 'ALL' ? state.position : 'Field') + ' average">' + avgLbl2 + '</div>'
+          ? '<div class="am-bar-avg" style="left:' + avgPct + '%" title="' + _posLabel() + ' average">' + avgLbl2 + '</div>'
           : '';
         metricCell = '<td class="am-barcell" data-column-id="metric:' + state.metric + '"><div class="am-metric-cell">'
           + '<div class="am-metric-bar"><div class="am-bar-track"><div class="am-bar-fill" style="width:' + pct + '%;background:' + col + '"></div>' + avgMark2 + '</div></div>'
@@ -4542,7 +4590,10 @@ _AM_JS = r"""
     if (cfg.leagueId) p.set('league_id', cfg.leagueId);
     if (state.season) p.set('season', String(state.season));
     if (state.combine && amIsMultiSeason()) p.set('combine', '1');
-    const graphPos = _amGraphPos || (state.position !== 'ALL' ? state.position : null);
+    // The graph's own position filter is single-select: seed it from the
+    // page only when exactly one position is selected there.
+    const _pageSel = _posList();
+    const graphPos = _amGraphPos || (_pageSel.length === 1 ? _pageSel[0] : null);
     if (graphPos) p.set('position', graphPos);
     const vol = isX ? _amGraphMinVol : defaultVol(metricKey);
     if (vol) p.set('min_vol', vol); else p.delete('min_vol');
@@ -4611,7 +4662,7 @@ _AM_JS = r"""
     const note = document.getElementById('amGraphCtxNote');
     if (!modal || !xSel || !ySel || !zSel) return;
     // Initialize the graph-local position filter from the page's current position.
-    _amGraphPos = (state.position && state.position !== 'ALL') ? state.position : null;
+    _amGraphPos = _posList().length === 1 ? _posList()[0] : null;
     _amSyncGraphPosBtns();
     const applic = Object.keys(cfg.metrics).filter(function(k) {
       const m = cfg.metrics[k];
@@ -5752,6 +5803,7 @@ _AM_JS = r"""
           if (typeof window.showPaywall === 'function') window.showPaywall('advanced-metrics-' + state.metric);
           state.metric = 'opportunity_share';
           if (metricSel) metricSel.value = state.metric;
+          _syncMetricPickerLabel();
           state.page = 0; syncURL(); fetchData();
           return;
         }
@@ -5915,8 +5967,7 @@ _AM_JS = r"""
     state.metric = metricSel.value; state.page = 0;
     state.extraMetrics = []; state.extraData = {}; state.extraPrevData = {}; state.prevData = {};
     state.comboFilters = []; state.filterColKeys = new Set();
-    const rel = new Set(relevantPositions(state.metric));
-    if (state.position !== 'ALL' && !rel.has(state.position)) state.position = 'ALL';
+    _narrowPositionsToMetric();
     state.sortDir = (cfg.metrics[state.metric] && cfg.metrics[state.metric].lowerBetter) ? 'asc' : 'desc';
     state.sortBy = state.metric;
     state.minVol = defaultVol(state.metric);
@@ -5929,7 +5980,16 @@ _AM_JS = r"""
   posWrap.addEventListener('click', e => {
     const b = e.target.closest('[data-pos]');
     if (!b || b.disabled) return;
-    state.position = b.dataset.pos; state.page = 0;
+    // Toggle membership: several positions can be on at once (RB + WR);
+    // turning the last one off returns to All, as does the All button.
+    if (b.dataset.pos === 'ALL') _setPositions([]);
+    else {
+      const cur = _posList();
+      const i = cur.indexOf(b.dataset.pos);
+      if (i >= 0) cur.splice(i, 1); else cur.push(b.dataset.pos);
+      _setPositions(cur);
+    }
+    state.page = 0;
     updatePosButtons(); syncURL(); render();
   });
   searchEl.addEventListener('input', () => { state.search = searchEl.value.trim(); state.page = 0; render(); });
@@ -6348,7 +6408,7 @@ _AM_JS = r"""
   if (savedSetEl) savedSetEl.addEventListener('change', function() {
     const name = this.value, saved = _validCustomSet(_loadCustomSets()[name]);
     if (!saved) return;
-    state.metric = saved.primary; metricSel.value = saved.primary;
+    state.metric = saved.primary; metricSel.value = saved.primary; _syncMetricPickerLabel();
     state.extraMetrics = saved.metrics; state.position = saved.position;
     state.sortBy = saved.primary; state.sortDir = saved.sort; state.minVol = saved.minVol;
     state.comboFilters = []; state.filterColKeys = new Set(); state.page = 0; _activePresetId = null; _showActiveSet(name);
@@ -6400,13 +6460,12 @@ _AM_JS = r"""
     // Custom (hand-built) view: apply through the same refresh chain the
     // saved-set loader uses.
     _applyAmViewContext(v);
-    state.metric = v.metric; metricSel.value = v.metric;
+    state.metric = v.metric; metricSel.value = v.metric; _syncMetricPickerLabel();
     state.extraMetrics = v.extraMetrics.slice();
     state.extraData = {}; state.extraPrevData = {}; state.prevData = {};
     state.comboFilters = []; state.filterColKeys = new Set();
     state.position = v.position;
-    const rel = new Set(relevantPositions(state.metric));
-    if (state.position !== 'ALL' && !rel.has(state.position)) state.position = 'ALL';
+    _narrowPositionsToMetric();
     state.sortBy = v.sortBy; state.sortDir = v.sortDir;
     state.minVol = defaultVol(state.metric);
     state.page = 0; _activePresetId = null; _showActiveSet('Custom');
@@ -6561,7 +6620,9 @@ _AM_JS = r"""
 
     function syncLabel() {
       const opt = selEl.options[selEl.selectedIndex];
-      const txt = opt ? opt.textContent : '';
+      // No matching <option> (e.g. a PRO primary on a free picker): use
+      // the shared label resolver instead of blanking the button.
+      const txt = opt ? opt.textContent : _mLabel(selEl.value);
       const isWeekly = showWeekly && opt && new Set(cfg.weeklyMetrics || []).has(opt.value);
       label.innerHTML = txt + (isWeekly
         ? ' <span class="am-sp-weekly-badge" title="Supports week-range filtering">W</span>'
@@ -6598,10 +6659,21 @@ _AM_JS = r"""
       return (inp && inp.value ? inp.value : '').trim().toLowerCase();
     }
 
+    function _normTerm(s) {
+      // Natural phrasing finds the short labels: "rushing yards" must hit
+      // "Rush Yards" / "Rush Yds/G", "receiving yards per game" the Rec
+      // pair. Normalize both sides, then require every word to appear.
+      return String(s || '').toLowerCase()
+        .replace(/rushing/g, 'rush').replace(/receiving/g, 'rec')
+        .replace(/yds/g, 'yards');
+    }
     function optMatches(o, term) {
       if (!term) return true;
-      return (o.text || '').toLowerCase().includes(term)
-        || (o.value || '').toLowerCase().includes(term);
+      if ((o.text || '').toLowerCase().includes(term)
+        || (o.value || '').toLowerCase().includes(term)) return true;
+      const hay = _normTerm(o.text) + ' ' + _normTerm(o.value);
+      return _normTerm(term).split(/\s+/).filter(Boolean)
+        .every(function(t) { return hay.includes(t); });
     }
 
     function metricItemHtml(o) {
@@ -6781,6 +6853,9 @@ _AM_JS = r"""
     }, true);
 
     selEl.addEventListener('change', syncLabel);
+    // Programmatic value sets (preset load, saved-set apply, view restore)
+    // fire no 'change': they call this hook to refresh the button label.
+    selEl._amSyncLabel = syncLabel;
   }
 
   // Primary metric picker.

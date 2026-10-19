@@ -2838,6 +2838,11 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     # efficiency x volume columns (no dedicated yardage column exists) so this
     # stays exactly Rush Yards + Rec Yards + Pass Yards.
     "total_yards":          {"label": "Total Yards",         "category": "General", "positions": ["QB", "RB", "WR", "TE"], "integer": True, "desc": "Total yards produced in the season: rushing + receiving + passing.", "computed_sql": "ROUND(COALESCE(m.yards_per_carry * m.total_carries, 0) + COALESCE(m.yards_per_reception * m.total_receptions, 0) + COALESCE(m.yards_per_attempt * m.total_pass_att, 0))", "computed_null": "((m.yards_per_carry IS NOT NULL AND m.total_carries IS NOT NULL) OR (m.yards_per_reception IS NOT NULL AND m.total_receptions IS NOT NULL) OR (m.yards_per_attempt IS NOT NULL AND m.total_pass_att IS NOT NULL))"},
+    # Scrimmage yards = rushing + receiving (no passing): the combined
+    # yardage behind Rush Yards + Rec Yards, so a mixed RB+WR board has a
+    # single fair sort. Same derived-from-rates construction as Total Yards.
+    "scrimmage_yards":      {"label": "Scrimmage Yards",     "category": "General", "positions": ["QB", "RB", "WR", "TE"], "integer": True, "min_vol": _V_TOUCHES, "desc": "Total scrimmage yards in the season: rushing yards plus receiving yards (no passing).", "computed_sql": "ROUND(COALESCE(m.yards_per_carry * m.total_carries, 0) + COALESCE(m.yards_per_reception * m.total_receptions, 0))", "computed_null": "((m.yards_per_carry IS NOT NULL AND m.total_carries IS NOT NULL) OR (m.yards_per_reception IS NOT NULL AND m.total_receptions IS NOT NULL))"},
+    "scrimmage_yards_per_game": {"label": "Scrimmage Yds/G", "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Scrimmage yards per game: rushing plus receiving yards, averaged over games played.", "computed_sql": "(COALESCE(m.yards_per_carry * m.total_carries, 0) + COALESCE(m.yards_per_reception * m.total_receptions, 0)) / NULLIF(m.games, 0)", "computed_null": "((m.yards_per_carry IS NOT NULL AND m.total_carries IS NOT NULL) OR (m.yards_per_reception IS NOT NULL AND m.total_receptions IS NOT NULL)) AND m.games IS NOT NULL AND m.games > 0"},
     "total_tds_per_game":   {"label": "Total TDs/G",         "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Total touchdowns per game.", "computed_sql": "m.total_tds::float / NULLIF(m.games, 0)", "computed_null": "m.total_tds IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
     "first_downs_per_game": {"label": "First Downs/G",       "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "First downs per game from the player's own plays: as passer plus as rusher plus as receiver, each play counted once (nflverse play-by-play). Chain-moving production, not just scoring.", "computed_sql": "m.total_first_downs::float / NULLIF(m.games, 0)", "computed_null": "m.total_first_downs IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
     "goal_line_opp_share":  {"label": "Goal-Line Opp Share", "category": "General", "positions": ["RB", "WR", "TE"], "pct": True, "min_vol": _V_GAMES, "desc": "Share of the team's goal-line opportunities that went to this player: carries plus targets on plays snapped at or inside the opponent's 5-yard line (nflverse play-by-play)."},
@@ -3027,6 +3032,7 @@ _WEEKLY_METRICS: Dict[str, Any] = {
     "rec_yards_per_game":  {"sql": "AVG(rec_yards)",                                                       "min_col": None,              "min_label": "Min Weeks", "min_opts": []},
     "carries_per_game":    {"sql": "AVG(carries)",                                                         "min_col": None,              "min_label": "Min Weeks", "min_opts": []},
     "rush_yards_per_game": {"sql": "AVG(rush_yards)",                                                      "min_col": "SUM(carries)",    "min_label": "Min Carries","min_opts": [5, 10, 20, 40]},
+    "scrimmage_yards_per_game": {"sql": "AVG(rush_yards + rec_yards)",                                     "min_col": None,              "min_label": "Min Weeks", "min_opts": []},
     "touches_per_game":    {"sql": "AVG(touches)",                                                                                                           "min_col": None,              "min_label": "Min Weeks",   "min_opts": []},
     "fpts_per_carry":      {"sql": "(SUM(rush_yards) * 0.1 + SUM(rush_tds) * 6)::float / NULLIF(SUM(carries), 0)",                                          "min_col": "SUM(carries)",    "min_label": "Min Carries", "min_opts": [5, 10, 20, 40]},
     "fpts_per_target":     {"sql": "(SUM(receptions) + SUM(rec_yards) * 0.1 + SUM(rec_tds) * 6)::float / NULLIF(SUM(targets), 0)",                          "min_col": "SUM(targets)",    "min_label": "Min Targets", "min_opts": [5, 10, 20, 40]},
@@ -3399,6 +3405,9 @@ def _get_player_weekly_usage_range(
     if rush_yards:
         out["total_rush_yards"] = int(rush_yards)
         out["rush_yards_per_game"] = rush_yards / n
+    if rush_yards or rec_yards:
+        out["scrimmage_yards"] = int(rush_yards + rec_yards)
+        out["scrimmage_yards_per_game"] = (rush_yards + rec_yards) / n
     if touches:
         out["total_touches"] = int(touches)
         out["touches_per_game"] = touches / n
@@ -5240,6 +5249,7 @@ _PER_GAME_BOUNDS = {
     "total_tds_per_game": "total_tds",
     "rec_yards_per_game": "total_rec_yards",
     "rush_yards_per_game": "total_rush_yards",
+    "scrimmage_yards_per_game": "scrimmage_yards",
     "ppr_pts_per_game": "ppr_pts",
 }
 
