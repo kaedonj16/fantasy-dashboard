@@ -21123,8 +21123,8 @@ function cmpToggleCatDetails(btn) {
 // ── Compare state: each side has a player, a season, and an optional week range
 var _comparePlayerNames = {};
 var _cmpSides = {
-  1: { pid: null, position: '', season: null, range: 'full', wkStart: null, wkEnd: null, seasons: [] },
-  2: { pid: null, position: '', season: null, range: 'full', wkStart: null, wkEnd: null, seasons: [] }
+  1: { pid: null, position: '', team: '', season: null, range: 'full', wkStart: null, wkEnd: null, seasons: [] },
+  2: { pid: null, position: '', team: '', season: null, range: 'full', wkStart: null, wkEnd: null, seasons: [] }
 };
 var _cmpWeeklyCache = {};  // `${pid}_${season}` -> weeks[]
 var _cmpTrendMode = 'weekly';  // 'weekly' | 'season' -- usage-panel trend view
@@ -21527,9 +21527,8 @@ function cmpRenderMetrics() {
     const rows = renderCompareMetricRows(r1.metrics, r2.metrics, { position: _cmpSides[1].position, name: _cmpSides[1].name }, { position: _cmpSides[2].position, name: _cmpSides[2].name }, cfg, r1.ranks, r2.ranks, r1.counts, r2.counts, r1.bounds, r2.bounds);
     metricsDiv.innerHTML = selectors() + '<div id="compareMetricsRows">' + rows + '</div>';
     _cmpInitWkBars();
-    // #6: keep the trends section in sync with each side (Weekly or Season).
-    cmpRenderTrends(1);
-    cmpRenderTrends(2);
+    // #6: keep the usage panel in sync (one overlaid head-to-head render).
+    cmpRenderTrends();
   }).catch(() => {
     if (token !== _cmpRenderToken) return;
     metricsDiv.innerHTML = selectors() + '<div id="compareMetricsRows"></div>';
@@ -21538,70 +21537,134 @@ function cmpRenderMetrics() {
   });
 }
 
-// #6: render one side's weekly usage trends for its selected season, sliced to
-// the chosen week range so the trends match the split shown above.
-async function cmpRenderWeekly(which) {
-  const el = document.getElementById('compareWeekly' + which);
-  if (!el) return;
-  const side = _cmpSides[which];
-  if (_cmpIsBaseline(side.pid)) {
-    el.innerHTML = '<div class="compare-pick-empty">Weekly usage isn\'t shown for tier averages.</div>';
-    return;
-  }
-  // Career has no single weekly series; fall back to the most recent season.
-  const season = side.season || (side.seasons || []).slice().sort((a, b) => b - a)[0];
-  if (!season) { el.innerHTML = '<div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Pick a season to see weekly trends.</div>'; return; }
-  const cacheKey = side.pid + '_' + season;
-  let weeks = _cmpWeeklyCache[cacheKey];
-  if (!weeks) {
-    try {
-      weeks = (await fetch(`/api/player-weekly-metrics/${side.pid}?season=${season}`)
-        .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })).weeks || [];
-    } catch (_) {
-      // Do not cache the failure: an empty cache entry stranded the trends
-      // panel on blank rows for the rest of the session.
-      if (el.isConnected) window.brErrorState(el, 'Could not load weekly trends.', () => cmpRenderWeekly(which), { compact: true });
-      return;
-    }
-    _cmpWeeklyCache[cacheKey] = weeks;
-  }
-  let shown = weeks;
-  if (side.season && side.range && side.range !== 'full') {
-    const [a, b] = _cmpRangeBounds(side, weeks);
-    shown = weeks.filter(w => { const wk = Number(w.week); return wk >= a && wk <= b; });
-  }
-  el.innerHTML = buildWeeklyTrendRows(shown, side.position);
+// Line color for one compare side in the usage overlay: the player's NFL
+// team primary from BR_TEAM_COLORS, rejecting colors too light to read as a
+// chart line (relative luminance > 0.55, e.g. NO gold / PIT yellow -- those
+// use their secondary when it passes). Side 2 falls back when its resolved
+// color would collide with side 1's.
+function _cmpUsageLuminance(hex) {
+  const h = String(hex || '').replace('#', '');
+  if (h.length < 6) return 1;
+  const r = parseInt(h.slice(0, 2), 16) / 255;
+  const g = parseInt(h.slice(2, 4), 16) / 255;
+  const b = parseInt(h.slice(4, 6), 16) / 255;
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
-
-// One side's SEASON (multi-year) trends, in the same slim rows as the player
-// modal's season view. Mirrors cmpRenderWeekly but pulls the season series.
-async function cmpRenderSeason(which) {
-  const el = document.getElementById('compareWeekly' + which);
-  if (!el) return;
-  const side = _cmpSides[which];
-  if (_cmpIsBaseline(side.pid)) {
-    el.innerHTML = '<div class="compare-pick-empty">Season trends aren\'t shown for tier averages.</div>';
-    return;
-  }
-  el.innerHTML = '<div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Loading…</div>';
+function _cmpUsageColor(side, team, otherColor) {
+  const fallback = (side === _cmpSides[2]) ? '#f97316' : '#3b82f6';
+  let col = null;
   try {
-    const meta = await pmSeasonTrendFetch(side.pid, null);
-    if (!meta || !meta.options || !meta.options.length) {
-      el.innerHTML = '<div style="padding:10px 0;color:var(--text-muted);font-size:12px;">No multi-season data.</div>';
-      return;
+    const pair = (window.BR_TEAM_COLORS && window.brCanonNflTeam)
+      ? window.BR_TEAM_COLORS[window.brCanonNflTeam(team)] : null;
+    if (pair && pair.length) {
+      if (_cmpUsageLuminance(pair[0]) <= 0.55) col = pair[0];
+      else if (pair[1] && _cmpUsageLuminance(pair[1]) <= 0.55) col = pair[1];
     }
-    const keys = meta.options.map(o => o.key);
-    const data = await pmSeasonTrendFetch(side.pid, keys.join(','));
-    if (!data || !data.series) { el.innerHTML = '<div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Couldn\'t load season trends.</div>'; return; }
-    el.innerHTML = buildSeasonTrendRows(meta.options, data.series, data.position);
-  } catch (_) {
-    el.innerHTML = '<div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Couldn\'t load season trends.</div>';
-  }
+  } catch (_) { /* fall through to the side fallback */ }
+  if (!col) col = fallback;
+  if (otherColor && col.toLowerCase() === String(otherColor).toLowerCase()) col = fallback;
+  if (otherColor && col.toLowerCase() === String(otherColor).toLowerCase()) col = '#8b5cf6';
+  return col;
 }
 
-// Render the active trend view (Weekly or Season) for one side.
-function cmpRenderTrends(which) {
-  if (_cmpTrendMode === 'season') cmpRenderSeason(which); else cmpRenderWeekly(which);
+// #6: back-compat wrapper -- the usage panel is now ONE overlaid head-to-head
+// render (cmpRenderTrends), not per-side columns.
+async function cmpRenderWeekly(which) {
+  cmpRenderTrends();
+}
+
+// Render the compare Usage panel: one overlaid head-to-head trend view for
+// BOTH sides. Weekly mode aligns the two weekly series on the union of week
+// numbers (a missing week is a bye / DNP and breaks that player's line);
+// Season mode merges both players' multi-season trend options. `which` is
+// accepted only so legacy retry closures naming cmpRenderWeekly(which) /
+// cmpRenderSeason(which) keep working; a render always covers both sides.
+let _cmpTrendsToken = 0;
+async function cmpRenderTrends(which) {
+  const el = document.getElementById('compareUsagePanel');
+  if (!el) return;
+  const token = ++_cmpTrendsToken;
+  const sides = [_cmpSides[1], _cmpSides[2]];
+  const nameOf = s => _comparePlayerNames[s.pid] || s.name || 'Player';
+
+  // One side's weekly series for its selected season, sliced to the chosen
+  // week range so the trends match the split shown above. Returns null when
+  // the fetch fails (the error state + retry are already in place then).
+  async function _cmpWeeksForSide(side) {
+    // Career has no single weekly series; fall back to the most recent season.
+    const season = side.season || (side.seasons || []).slice().sort((a, b) => b - a)[0];
+    if (!season) return { weeks: [] };
+    const cacheKey = side.pid + '_' + season;
+    let weeks = _cmpWeeklyCache[cacheKey];
+    if (!weeks) {
+      try {
+        weeks = (await fetch(`/api/player-weekly-metrics/${side.pid}?season=${season}`)
+          .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })).weeks || [];
+      } catch (_) {
+        // Do not cache the failure: an empty cache entry stranded the trends
+        // panel on blank rows for the rest of the session.
+        if (el.isConnected) window.brErrorState(el, 'Could not load weekly trends.', () => cmpRenderWeekly(which), { compact: true });
+        return;
+      }
+      _cmpWeeklyCache[cacheKey] = weeks;
+    }
+    let shown = weeks;
+    if (side.season && side.range && side.range !== 'full') {
+      const [a, b] = _cmpRangeBounds(side, weeks);
+      shown = weeks.filter(w => { const wk = Number(w.week); return wk >= a && wk <= b; });
+    }
+    return { weeks: shown };
+  }
+
+  // One side's multi-season trend options + series (empty on any failure;
+  // the builder renders the shared "not enough data" message if neither
+  // side has a qualifying metric).
+  async function _cmpSeasonForSide(side) {
+    try {
+      const meta = await pmSeasonTrendFetch(side.pid, null);
+      if (!meta || !meta.options || !meta.options.length) return { opts: [], series: {} };
+      const keys = meta.options.map(o => o.key);
+      const data = await pmSeasonTrendFetch(side.pid, keys.join(','));
+      if (!data || !data.series) return { opts: [], series: {} };
+      return { opts: meta.options, series: data.series };
+    } catch (_e) {
+      return { opts: [], series: {} };
+    }
+  }
+
+  if (sides.some(s => _cmpIsBaseline(s.pid))) {
+    el.innerHTML = '<div class="compare-pick-empty">Usage trends aren\'t shown for tier averages.</div>';
+    return;
+  }
+
+  if (_cmpTrendMode !== 'season') {
+    const r1 = await _cmpWeeksForSide(sides[0]);
+    if (token !== _cmpTrendsToken || !r1) return;
+    const r2 = await _cmpWeeksForSide(sides[1]);
+    if (token !== _cmpTrendsToken || !r2) return;
+    const teamOf = (side, weeks) => side.team || (weeks.length ? (weeks[weeks.length - 1].team || '') : '');
+    const c1 = _cmpUsageColor(sides[0], teamOf(sides[0], r1.weeks), null);
+    const c2 = _cmpUsageColor(sides[1], teamOf(sides[1], r2.weeks), c1);
+    el.innerHTML = buildCompareWeeklyTrendRows(r1.weeks, r2.weeks,
+      sides[0].position, sides[1].position, nameOf(sides[0]), nameOf(sides[1]), c1, c2);
+    return;
+  }
+
+  el.innerHTML = '<div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Loading…</div>';
+  const d1 = await _cmpSeasonForSide(sides[0]);
+  if (token !== _cmpTrendsToken) return;
+  const d2 = await _cmpSeasonForSide(sides[1]);
+  if (token !== _cmpTrendsToken) return;
+  const c1 = _cmpUsageColor(sides[0], sides[0].team, null);
+  const c2 = _cmpUsageColor(sides[1], sides[1].team, c1);
+  el.innerHTML = buildCompareSeasonTrendRows(d1.opts, d1.series, d2.opts, d2.series,
+    nameOf(sides[0]), nameOf(sides[1]), c1, c2);
+}
+
+// One side's SEASON (multi-year) trends used to render into its own column;
+// now a back-compat wrapper over the single overlaid render.
+async function cmpRenderSeason(which) {
+  cmpRenderTrends();
 }
 
 // Weekly/Season toggle in the compare usage panel (delegated once).
@@ -21614,8 +21677,7 @@ if (typeof document !== 'undefined') {
     _cmpTrendMode = mode;
     const wrap = b.closest('.compare-trends-mode');
     if (wrap) wrap.querySelectorAll('.compare-trends-mode-btn').forEach(x => x.classList.toggle('is-active', x === b));
-    cmpRenderTrends(1);
-    cmpRenderTrends(2);
+    cmpRenderTrends();
   });
 }
 
@@ -22184,16 +22246,7 @@ function _compareBodyHTML(p1, p2, opts) {
           <button type="button" class="compare-trends-mode-btn${_cmpTrendMode === 'season' ? '' : ' is-active'}" data-cmpmode="weekly">Weekly</button>
           <button type="button" class="compare-trends-mode-btn${_cmpTrendMode === 'season' ? ' is-active' : ''}" data-cmpmode="season">Season</button>
         </div>
-        <div class="compare-weekly-section">
-          <div class="compare-weekly-col">
-            <div class="compare-weekly-name">${p1.name || ''}</div>
-            <div id="compareWeekly1"><div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Loading…</div></div>
-          </div>
-          <div class="compare-weekly-col">
-            <div class="compare-weekly-name">${p2.name || ''}</div>
-            <div id="compareWeekly2"><div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Loading…</div></div>
-          </div>
-        </div>
+        <div id="compareUsagePanel"><div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Loading…</div></div>
       </div>
 
       <div class="compare-tab-panel" data-cmppanel="logs" hidden>
@@ -22321,6 +22374,8 @@ function _compareWireView(p1, p2) {
   _cmpSides[2].position = (p2.position || '').toUpperCase();
   _cmpSides[1].name = p1.name || p1.full_name || 'Player 1';
   _cmpSides[2].name = p2.name || p2.full_name || 'Player 2';
+  _cmpSides[1].team = p1.team || '';
+  _cmpSides[2].team = p2.team || '';
 
   // The Stats (game logs) and Advanced Metrics tabs used to fetch for BOTH
   // players the instant the compare view opened, even though they start hidden --

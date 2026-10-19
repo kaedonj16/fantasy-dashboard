@@ -227,4 +227,4 @@ def test_sw_bumped():
     # Authored at v52; the merge sweep carried the cache past it (v53 in
     # PR #2704, v54 with this PR's merge). Invariant: bumped past v51.
     assert "br-fantasy-v51" not in SW
-    assert "br-fantasy-v52" in SW or "br-fantasy-v53" in SW or "br-fantasy-v54" in SW or "br-fantasy-v55" in SW or "br-fantasy-v56" in SW or "br-fantasy-v57" in SW or "br-fantasy-v58" in SW or "br-fantasy-v60" in SW or "br-fantasy-v61" in SW or "br-fantasy-v64" in SW or "br-fantasy-v65" in SW
+    assert "br-fantasy-v52" in SW or "br-fantasy-v53" in SW or "br-fantasy-v54" in SW or "br-fantasy-v55" in SW or "br-fantasy-v56" in SW or "br-fantasy-v57" in SW or "br-fantasy-v58" in SW or "br-fantasy-v60" in SW or "br-fantasy-v61" in SW or "br-fantasy-v64" in SW or "br-fantasy-v66" in SW
