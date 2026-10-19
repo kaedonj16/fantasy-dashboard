@@ -5511,6 +5511,71 @@ function _pmMaybeProFooter(contentEl) {
   } catch (_) { /* never break the metrics tab for a prompt */ }
 }
 
+// ── Mobile week picker (Advanced tab) ──────────────────────────────────────
+// On phones the Weeks group swaps the inline bar for a compact field; the
+// field toggles a floating panel (over the tab content, no scrim) hosting a
+// second instance of the shared week bar (advWkBarM) plus range presets.
+// _advWkPanelKey keeps the panel open across the reload a range change
+// triggers, scoped to the player + season it was opened for; any other state
+// (career, multi-season, another player) renders it closed.
+let _advWkPanelKey = null;
+
+function _advCloseWeekPanel() {
+  _advWkPanelKey = null;
+  const panel = document.getElementById('advWkPanel');
+  if (panel) panel.hidden = true;
+  const field = document.getElementById('advWkField');
+  if (field) {
+    field.classList.remove('open');
+    field.setAttribute('aria-expanded', 'false');
+  }
+}
+
+function _advWireWeekPicker(playerId, leagueId, season, availableWeeks) {
+  const field = document.getElementById('advWkField');
+  const panel = document.getElementById('advWkPanel');
+  if (!field || !panel) return;
+  const key = playerId + '|' + season;
+  field.addEventListener('click', function() {
+    const willOpen = panel.hidden;
+    _advWkPanelKey = willOpen ? key : null;
+    panel.hidden = !willOpen;
+    field.classList.toggle('open', willOpen);
+    field.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+  });
+  const done = document.getElementById('advWkDone');
+  if (done) done.addEventListener('click', _advCloseWeekPanel);
+  panel.querySelectorAll('[data-wk-preset]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      const kind = btn.getAttribute('data-wk-preset');
+      const n = kind === 'last3' ? 3 : (kind === 'last5' ? 5 : 0);
+      if (!n || availableWeeks.length <= n) {
+        // Full season (or a window that covers every available week): the
+        // no-week-args load, same as the desktop Season button.
+        loadAdvancedMetrics(playerId, leagueId, season);
+        return;
+      }
+      loadAdvancedMetrics(playerId, leagueId, season,
+        availableWeeks[availableWeeks.length - n],
+        availableWeeks[availableWeeks.length - 1]);
+    });
+  });
+}
+
+// Close the week panel on any tap outside the time-controls wrap. Registered
+// once; the panel node itself is rebuilt on every Advanced render.
+if (typeof document !== 'undefined' && !window._advWkOutsideWired) {
+  window._advWkOutsideWired = true;
+  document.addEventListener('pointerdown', function(e) {
+    if (!_advWkPanelKey) return;
+    const panel = document.getElementById('advWkPanel');
+    if (!panel || panel.hidden) return;
+    const wrap = panel.closest('.adv-time-wrap');
+    if (wrap && e.target && wrap.contains(e.target)) return;
+    _advCloseWeekPanel();
+  }, true);
+}
+
 function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
   const token = ++_advMetricsToken;
   const contentEl = document.getElementById('advancedMetricsContent');
@@ -5630,7 +5695,7 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
           ? combinedYears
           : ((!isCareer && activeSeason) ? [Number(activeSeason)] : []);
         const lidPick = leagueId ? `'${leagueId}'` : 'null';
-        let pillsHTML = '<div class="adv-time-ctl">';
+        let pillsHTML = '<div class="adv-time-wrap"><div class="adv-time-ctl">';
         pillsHTML += '<div class="adv-time-group"><div class="adv-time-label">Season</div>';
         pillsHTML += '<div class="adv-metrics-season-pills">';
         pillsHTML += `<button type="button" class="adv-season-pill${isCareer ? ' active' : ''}" data-year="career" onclick="advPickSeason('${playerId}', ${lidPick}, 'career')">Career</button>`;
@@ -5644,6 +5709,7 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
         }
         pillsHTML += '</div>';
         // Week-bar: only show when the player has per-week data for this season.
+        let wkPanelHTML = '';
         if (!isCareer && !isMultiSeason && activeSeason && availableWeeks.length > 0) {
           const wkMin = Math.min(...availableWeeks);
           const wkMax = Math.max(...availableWeeks);
@@ -5651,19 +5717,53 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
           const barWE = activeWE != null ? activeWE : (weekEnd != null ? weekEnd : null);
           const isFullRange = (barWS == null);
           const lidExpr2 = leagueId ? ("'" + String(leagueId) + "'") : 'null';
+          // Mobile week picker: a compact field in the Weeks group (CSS swaps
+          // it in for the inline bar on phones) + a floating panel holding a
+          // second instance of the shared bar and the range presets.
+          const effWS = barWS != null ? barWS : wkMin;
+          const effWE = barWE != null ? barWE : wkMax;
+          const wkFieldLabel = isFullRange ? 'Season'
+            : (effWS === effWE ? 'W' + effWS : 'W' + effWS + ' to W' + effWE);
+          const wkPanelOpen = (_advWkPanelKey === playerId + '|' + activeSeason);
+          const lastNStart = n => availableWeeks[Math.max(0, availableWeeks.length - n)];
+          const isLastN = n => !isFullRange && availableWeeks.length > n
+            && effWS === lastNStart(n) && effWE === availableWeeks[availableWeeks.length - 1];
           pillsHTML += '<div class="adv-time-group"><div class="adv-time-label">Weeks</div>'
+            + '<button type="button" class="adv-wk-field' + (wkPanelOpen ? ' open' : '') + '" id="advWkField" aria-haspopup="true" aria-expanded="' + (wkPanelOpen ? 'true' : 'false') + '">'
+            + '<span class="adv-wk-field-val">' + wkFieldLabel + '</span>'
+            + '<span class="adv-wk-field-chev" aria-hidden="true">&#8250;</span></button>'
             + '<div class="adv-week-bar-row">'
             + '<button class="adv-week-full-btn' + (isFullRange ? ' active' : '') + '" onclick="loadAdvancedMetrics(\'' + playerId + '\',' + lidExpr2 + ',' + activeSeason + ')">Season</button>'
             + _wkBarBuild('advWkBar', wkMin, wkMax, barWS, barWE, availableWeeks)
             + '</div></div>';
+          wkPanelHTML = '<div class="adv-wk-panel" id="advWkPanel"' + (wkPanelOpen ? '' : ' hidden') + '>'
+            + '<div class="adv-wk-presets">'
+            + '<button type="button" class="adv-wk-preset' + (isFullRange ? ' active' : '') + '" data-wk-preset="full">Full season</button>'
+            + '<button type="button" class="adv-wk-preset' + (isLastN(3) ? ' active' : '') + '" data-wk-preset="last3">Last 3</button>'
+            + '<button type="button" class="adv-wk-preset' + (isLastN(5) ? ' active' : '') + '" data-wk-preset="last5">Last 5</button>'
+            + '</div>'
+            + '<div class="adv-wk-panel-bar">'
+            + _wkBarBuild('advWkBarM', wkMin, wkMax, barWS, barWE, availableWeeks)
+            + '</div>'
+            + '<div class="adv-wk-panel-foot"><span>Updates as you drag</span>'
+            + '<button type="button" class="adv-wk-done" id="advWkDone">Done</button></div>'
+            + '</div>';
+        } else {
+          // Weeks unavailable in this state: an open panel belongs to a
+          // previous player/season state and must not carry over.
+          _advWkPanelKey = null;
         }
-        pillsHTML += '</div>';
+        pillsHTML += '</div>' + wkPanelHTML + '</div>';
         pillsEl.innerHTML = pillsHTML;
         if (!isCareer && activeSeason && availableWeeks.length > 0) {
           const _wkPid = playerId, _wkLid = leagueId, _wkSeas = activeSeason;
           _wkBarInit('advWkBar', function(ws, we) {
             loadAdvancedMetrics(_wkPid, _wkLid, _wkSeas, ws, we);
           });
+          _wkBarInit('advWkBarM', function(ws, we) {
+            loadAdvancedMetrics(_wkPid, _wkLid, _wkSeas, ws, we);
+          });
+          _advWireWeekPicker(_wkPid, _wkLid, _wkSeas, availableWeeks);
         }
       }
 
