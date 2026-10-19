@@ -726,10 +726,42 @@ def _advanced_distributions(position):
                 if a.get("component") or a.get("value") is None:
                     continue
                 dist.setdefault(a["label"], []).append(float(a["value"]))
-        for vals in dist.values():
-            vals.sort()
+    # Union in the migration-050 reference rows: their advanced marks
+    # were stored at backfill time by this same _build_advanced_metrics
+    # code path (component rows excluded there), so the labels line up
+    # one-to-one and the player's row and the pool can never drift.
+    for r in _reference_rows(pos):
+        marks = _json_obj(r.get("advanced_marks"), {})
+        if not isinstance(marks, dict):
+            continue
+        for label, val in marks.items():
+            v = _safe_float(val)
+            if v is not None:
+                dist.setdefault(label, []).append(v)
+    for vals in dist.values():
+        vals.sort()
     _advanced_dist_cache[pos] = dist
     return dist
+
+
+def _fill_advanced_percentiles(detail, position):
+    """Attach true population percentiles to a detail payload's Advanced
+    rows: each stored-stat row gets the share of the graded population
+    at the position at or below its value. Component-score rows never
+    get one; a metric whose union pool is thin (< 30 values) leaves the
+    percentile None (the UI prints a dash, never a faked number)."""
+    try:
+        dist = _advanced_distributions(position)
+        for a in detail.get("advanced") or []:
+            a["percentile"] = None
+            if a.get("component") or a.get("value") is None:
+                continue
+            a["percentile"] = _percentile_of(
+                a["value"], dist.get(a["label"]) or [],
+                a["label"] in _ADV_LOWER_BETTER)
+    except Exception:
+        for a in detail.get("advanced") or []:
+            a.setdefault("percentile", None)
 
 
 def _season_primary_rate(position, s):
@@ -785,7 +817,18 @@ def _season_rate_distributions(position):
             rate = _season_primary_rate(pos, s)
             if rate is not None:
                 values.append(rate)
-        values.sort()
+    # Union in the migration-050 reference rows' stored completed-season
+    # rates (computed at backfill time by _season_primary_rate itself,
+    # so the definition cannot drift).
+    for r in _reference_rows(pos):
+        rates = _json_obj(r.get("season_rates"), [])
+        if not isinstance(rates, list):
+            continue
+        for v in rates:
+            fv = _safe_float(v)
+            if fv is not None:
+                values.append(fv)
+    values.sort()
     _season_rate_cache[pos] = values
     return values
 
@@ -986,8 +1029,18 @@ def _testing_distributions(position):
                 v = _safe_float(a.get(field))
                 if v is not None:
                     dist.setdefault(field, []).append(v)
-        for vals in dist.values():
-            vals.sort()
+    # Union in the migration-050 reference rows' recorded testing marks
+    # (drafted testers 2016-2024), keyed by the same _TEST_SPECS fields.
+    for r in _reference_rows(pos):
+        marks = _json_obj(r.get("testing_marks"), {})
+        if not isinstance(marks, dict):
+            continue
+        for field, _label, _lower, _fmt in _TEST_SPECS:
+            v = _safe_float(marks.get(field))
+            if v is not None:
+                dist.setdefault(field, []).append(v)
+    for vals in dist.values():
+        vals.sort()
     _testing_dist_cache[pos] = dist
     return dist
 
@@ -1112,26 +1165,83 @@ _PCT_SCORE_FIELD = {
 }
 PCT_MIN_POPULATION = 30
 # Only model versions whose component scores are on a comparable scale.
-_PCT_MODEL_VERSIONS = ("3.2", "3.3")
+_PCT_MODEL_VERSIONS = ("3.2", "3.3", "3.4")
 
 _population_cache: dict = {}
+_reference_cache: dict = {}
 
 
-def reference_population(position, rows=None):
+def _json_obj(v, default):
+    """JSONB cell -> Python object, tolerant of drivers returning text."""
+    if isinstance(v, (dict, list)):
+        return v
+    if isinstance(v, str):
+        try:
+            import json
+            out = json.loads(v)
+            return out if isinstance(out, type(default)) else default
+        except (ValueError, TypeError):
+            return default
+    return default
+
+
+def _reference_rows(position):
+    """Graded reference-population rows (migration 050) at one position.
+
+    Written once by scripts/build_reference_population.py from the
+    drafted classes 2016-2024, graded by the production model. These
+    rows are REFERENCE ONLY: percentile anchors, never prospects, and
+    no board/values/rankings query reads them. Fail-soft: [] on any DB
+    error (including the table not existing yet), so every percentile
+    surface degrades to the stored-prospects pool alone.
+    """
+    pos = (position or "").upper()
+    if pos in _reference_cache:
+        return _reference_cache[pos]
+    rows = []
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            rows = conn.execute(
+                """SELECT player_name, draft_class_year, actual_pick,
+                          production_score, efficiency_score,
+                          breakout_profile_score, competition_score,
+                          athleticism_score, tested, advanced_marks,
+                          season_rates, testing_marks
+                   FROM prospect_reference_population
+                   WHERE position = %s""",
+                (pos,),
+            ).fetchall() or []
+        rows = [dict(r) for r in rows]
+    except Exception:
+        log.debug("[rookie_api] reference rows failed for %s",
+                  pos, exc_info=True)
+        rows = []
+    if rows:
+        _reference_cache[pos] = rows
+    return rows
+
+
+def reference_population(position, rows=None, ref_rows=None):
     """Reference population for percentile computation at one position.
 
     Returns {"values": {component: sorted [scores]}, "classes": [years],
-    "n": int}. `rows` may be injected (tests); otherwise every stored
-    rookie_rankings row at the position graded by a comparable model
-    version (3.2/3.3), across every draft class stored, is used. The
-    athleticism value list only includes players with recorded testing
-    (a forty time or RAS on file), so untested players, whose stored
-    athleticism score is a floor, never anchor the athleticism scale.
-    Fail-soft: an empty population on any DB error.
+    "n": int}. The population is the UNION of two graded sources at the
+    position: (a) every stored rookie_rankings row graded by a
+    comparable model version (_PCT_MODEL_VERSIONS), across every draft
+    class stored, and (b) the migration-050 reference rows (drafted
+    classes 2016-2024 graded by the production model at backfill time).
+    `rows` / `ref_rows` may be injected (tests); injecting either side
+    puts the function in injected mode, where the other side defaults
+    to empty and no DB is read. The athleticism value list only
+    includes players with recorded testing (a forty time or RAS on
+    file), so untested players, whose stored athleticism score is a
+    floor, never anchor the athleticism scale. Fail-soft: an empty
+    population on any DB error.
     """
     pos = (position or "").upper()
-    injected = rows is not None
-    if rows is None:
+    injected = rows is not None or ref_rows is not None
+    if not injected:
         if pos in _population_cache:
             return _population_cache[pos]
         rows = []
@@ -1149,16 +1259,19 @@ def reference_population(position, rows=None):
                        LEFT JOIN rookie_prospect_athleticism rpa
                          ON rpa.player_id = rr.player_id
                        WHERE UPPER(rp.position) = %s
-                         AND rr.model_version IN ('3.2', '3.3')""",
-                    (pos,),
+                         AND rr.model_version = ANY(%s)""",
+                    (pos, list(_PCT_MODEL_VERSIONS)),
                 ).fetchall() or []
         except Exception:
             log.debug("[rookie_api] reference population failed for %s",
                       pos, exc_info=True)
             rows = []
+        ref_rows = _reference_rows(pos)
+    stored = rows or []
+    refs = ref_rows or []
     values: dict = {c: [] for c in PCT_COMPONENTS}
     classes: set = set()
-    for r in rows:
+    for r in list(stored) + list(refs):
         for comp, field in _PCT_SCORE_FIELD.items():
             if comp == "athleticism" and not r.get("tested"):
                 continue
@@ -1174,9 +1287,9 @@ def reference_population(position, rows=None):
     pop = {
         "values": {c: sorted(v) for c, v in values.items()},
         "classes": sorted(classes),
-        "n": len(rows),
+        "n": len(stored) + len(refs),
     }
-    if not injected and rows:
+    if not injected and stored:
         _population_cache[pos] = pop
     return pop
 
@@ -1574,21 +1687,8 @@ def _get_prospect_detail(player_id: str, row: dict) -> dict:
     except Exception:
         detail["advanced"] = []
     # True population percentiles for the Advanced tab (percentile-only
-    # presentation): each stored-stat row gets the share of the graded
-    # population at the position at or below its value. Component-score
-    # rows never get one; a thin pool (< 30) leaves it None (dash).
-    try:
-        _adv_dist = _advanced_distributions(row.get("position"))
-        for _a in detail["advanced"]:
-            _a["percentile"] = None
-            if _a.get("component") or _a.get("value") is None:
-                continue
-            _a["percentile"] = _percentile_of(
-                _a["value"], _adv_dist.get(_a["label"]) or [],
-                _a["label"] in _ADV_LOWER_BETTER)
-    except Exception:
-        for _a in detail.get("advanced") or []:
-            _a.setdefault("percentile", None)
+    # presentation), against the enlarged union population.
+    _fill_advanced_percentiles(detail, row.get("position"))
     # v3.2: per-season advanced rows + best/career marks from stored rows.
     try:
         detail["advanced_seasons"] = _advanced_season_rows(seasons)
