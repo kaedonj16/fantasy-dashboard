@@ -1775,6 +1775,161 @@ def test_track_record_still_tracking_includes_open_historical_weeks(monkeypatch)
     assert tracking[5]["calls"] == 1
 
 
+# ---------------------------------------------------------------------------
+# still tracking: mature weeks whose grades have not landed yet stay visible
+# ---------------------------------------------------------------------------
+
+def _patch_gap_week_scenario(monkeypatch, *, by_week=(), completed=(),
+                             through=6, surfaced=None, forecast_weeks=()):
+    """Track-record payload where the boards for ``forecast_weeks`` carry
+    live forecasts and every other completed week's board candidates are
+    forecast-less (the shape a mature week takes: ``weekly_forecast``
+    returns None for it). Grade rows exist only for ``by_week`` weeks."""
+    api = _patch_track_record(monkeypatch)
+    from data_building.breakout_engine import weekly_store
+
+    monkeypatch.setattr(forecasts, "weekly_track_record", lambda season: {
+        "scoring_version": "weekly-v6", "min_sample": 10,
+        "overall": None, "groups": [], "hits": [], "misses": [],
+        "by_week": [dict(entry) for entry in by_week],
+    })
+    monkeypatch.setattr(weekly_store, "list_completed_weeks",
+                        lambda season: [{"as_of_week": w} for w in completed])
+    monkeypatch.setattr(wg, "default_through_week", lambda season: through)
+    monkeypatch.setattr(wg, "surfaced_player_ids_by_week",
+                        lambda season: surfaced or {})
+
+    def _cand(pid, week, band=None):
+        cand = {"player_id": pid, "player_name": pid,
+                "classification": "emerging_breakout",
+                "classification_label": "Emerging Breakout",
+                "breakout_score": 50.0}
+        if band is not None:
+            cand["forecast"] = {"kind": "weekly", "band": band,
+                                "band_label": "Tracking to hit",
+                                "basis": "stubbed", "call_week": week}
+        return cand
+
+    def _board(season, min_score, limit, week=None):
+        if week == "preseason":
+            return {"view": "preseason", "candidates": []}
+        wk = completed[-1] if week is None else int(week)
+        band = "tracking_to_hit" if wk in forecast_weeks else None
+        return {"as_of_week": wk, "candidates": [_cand(f"w{wk}", wk, band)]}
+
+    monkeypatch.setattr(api, "get_breakout_board_candidates", _board)
+    return api
+
+
+def test_track_record_mature_ungraded_week_stays_in_still_tracking(monkeypatch):
+    # Stored Week 3 (the "Week 4" calls: Flournoy + Wayne) is mature at
+    # through=6 and has surfaced calls, but no grade rows and no
+    # forecasts: it must stay in Still Tracking with its surfaced count
+    # and no rate, instead of vanishing until the grader runs.
+    api = _patch_gap_week_scenario(
+        monkeypatch,
+        by_week=[{"week": 2}, {"week": 1}],
+        completed=[1, 2, 3, 4, 5],
+        through=6,
+        surfaced={3: {"flournoy", "wayne"}, 4: {"x"}, 5: {"y"}},
+        forecast_weeks={4, 5})
+    payload = api.get_breakout_track_record(2026)
+
+    tracking = payload["still_tracking"]
+    assert [t["week"] for t in tracking] == [5, 4, 3]
+    gap = tracking[-1]
+    assert gap == {"week": 3, "calls": 2, "banded_calls": 0,
+                   "tracking_to_hit": 0, "tracking_to_hit_rate": None}
+    # The forecast-bearing weeks keep their real rates.
+    assert tracking[0]["tracking_to_hit_rate"] == pytest.approx(1.0)
+    assert tracking[1]["tracking_to_hit_rate"] == pytest.approx(1.0)
+
+
+def test_track_record_graded_week_not_duplicated_in_still_tracking(monkeypatch):
+    # Week 3 has grade rows (it is in by_week), so even though it is
+    # mature and forecast-less the gap path must not add it again.
+    api = _patch_gap_week_scenario(
+        monkeypatch,
+        by_week=[{"week": 3}, {"week": 2}, {"week": 1}],
+        completed=[1, 2, 3, 4, 5],
+        through=6,
+        surfaced={3: {"a", "b"}},
+        forecast_weeks={4, 5})
+    payload = api.get_breakout_track_record(2026)
+
+    assert [t["week"] for t in payload["still_tracking"]] == [5, 4]
+
+
+def test_track_record_mature_week_with_no_surfaced_calls_absent(monkeypatch):
+    # A mature week nobody was surfaced in is not a call week at all:
+    # the gap path must not invent a zero-call row for it.
+    api = _patch_gap_week_scenario(
+        monkeypatch,
+        by_week=[{"week": 2}, {"week": 1}],
+        completed=[1, 2, 3, 5],
+        through=6,
+        surfaced={3: set()},
+        forecast_weeks={5})
+    payload = api.get_breakout_track_record(2026)
+
+    assert [t["week"] for t in payload["still_tracking"]] == [5]
+
+
+def test_track_record_immature_week_not_force_added(monkeypatch):
+    # Week 4 is not mature at through=5 (its outcome window is still
+    # open), so the gap path leaves it alone even though it has surfaced
+    # calls and, in this stub, no forecast to carry it into tracking.
+    api = _patch_gap_week_scenario(
+        monkeypatch,
+        by_week=[{"week": 1}],
+        completed=[1, 4, 5],
+        through=5,
+        surfaced={4: {"a", "b", "c"}},
+        forecast_weeks={5})
+    payload = api.get_breakout_track_record(2026)
+
+    assert [t["week"] for t in payload["still_tracking"]] == [5]
+
+
+def test_track_record_gap_weeks_keep_newest_first_order(monkeypatch):
+    # Two gap weeks (3 and 4, both mature at through=7) insert behind
+    # the still-forecasting Week 5, newest first.
+    api = _patch_gap_week_scenario(
+        monkeypatch,
+        by_week=[],
+        completed=[3, 4, 5],
+        through=7,
+        surfaced={3: {"a", "b"}, 4: {"c"}},
+        forecast_weeks={5})
+    payload = api.get_breakout_track_record(2026)
+
+    tracking = payload["still_tracking"]
+    assert [t["week"] for t in tracking] == [5, 4, 3]
+    assert tracking[1]["calls"] == 1
+    assert tracking[1]["tracking_to_hit_rate"] is None
+    assert tracking[2]["calls"] == 2
+    assert tracking[2]["tracking_to_hit_rate"] is None
+
+
+def test_track_record_gap_lookup_failure_is_fail_soft(monkeypatch):
+    api = _patch_gap_week_scenario(
+        monkeypatch,
+        by_week=[{"week": 2}, {"week": 1}],
+        completed=[1, 2, 3, 4, 5],
+        through=6,
+        surfaced={3: {"flournoy", "wayne"}},
+        forecast_weeks={4, 5})
+
+    def _boom(season):
+        raise RuntimeError("metrics unavailable")
+
+    monkeypatch.setattr(wg, "default_through_week", _boom)
+    payload = api.get_breakout_track_record(2026)
+
+    # The payload is exactly what it would be without the gap path.
+    assert [t["week"] for t in payload["still_tracking"]] == [5, 4]
+
+
 def test_breakout_rail_hero_reads_singular_hit_field():
     src = (ROOT / "app.py").read_text(encoding="utf-8")
     # The API bucket field is "hit" (weekly_grading._rate_bucket); the
