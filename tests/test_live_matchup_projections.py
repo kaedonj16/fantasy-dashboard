@@ -143,6 +143,51 @@ def test_win_prob_uses_live_remaining_projection():
     assert live_p < frozen_p
 
 
+def test_win_prob_statless_in_progress_starter_banks_zero_keeps_projection():
+    """Fleaflicker's boxscore omits a points entry entirely for a starter
+    who has not recorded a stat yet (Sleeper emits an explicit 0.0). That
+    starter banks 0 -- exactly like an explicit 0.0 -- and his projection
+    still counts toward the remaining slice, instead of voiding the whole
+    matchup's win probability (the portfolio card then showed no win bar).
+    """
+    m = _matchups()
+    status = {"l": m.STATUS_IN_PROGRESS, "r": m.STATUS_FINAL}
+    proj = {"l": 14.0, "r": 18.0}
+    tgl = {"GB": {"gameStatusCode": "1", "lineScore": {"period": "1"}, "gameClock": "7:30"}}
+    frac = m.make_frac_lookup(tgl)
+    right = {"starters": [{"pid": "r", "nfl": "DAL", "pts": 10.0, "pos": "WR"}]}
+
+    def _left(pts):
+        return {"starters": [{"pid": "l", "nfl": "GB", "pts": pts, "pos": "WR"}]}
+
+    p_missing = m.compute_win_prob(_left(None), right, status, proj, frac_lookup=frac)
+    p_zero = m.compute_win_prob(_left(0.0), right, status, proj, frac_lookup=frac)
+    assert p_missing is not None
+    assert p_missing == pytest.approx(p_zero)
+    # Half the game left of a 14.0 projection against 10 banked: a real,
+    # contested probability, not a snap verdict from the 0 banked alone.
+    assert 0.05 < p_missing < 0.95
+
+
+def test_win_prob_statless_final_starter_counts_as_zero():
+    """A starter who finishes with no recorded stat (true zero / DNP) keeps
+    pts=None in a Fleaflicker-shaped feed forever; he must count as the 0 he
+    scored, not void the result."""
+    m = _matchups()
+    status = {"l": m.STATUS_FINAL, "r": m.STATUS_FINAL}
+    proj = {"l": 20.0, "r": 18.0}
+    right = {"starters": [{"pid": "r", "nfl": "DAL", "pts": 10.0, "pos": "WR"}]}
+
+    def _left(pts):
+        return {"starters": [{"pid": "l", "nfl": "GB", "pts": pts, "pos": "WR"}]}
+
+    p_missing = m.compute_win_prob(_left(None), right, status, proj)
+    p_zero = m.compute_win_prob(_left(0.0), right, status, proj)
+    assert p_missing is not None
+    assert p_missing == pytest.approx(p_zero)
+    assert p_missing == 0.0  # 0 banked vs 10 banked, nothing left to play
+
+
 def test_win_prob_floors_team_variance_to_realistic_cv():
     """A full pregame lineup's spread must reflect team-level dispersion
     (CV ~0.20, fit 2026-09-29 from 2023-2025 cached game logs), not the tight
