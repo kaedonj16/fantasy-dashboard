@@ -1560,7 +1560,7 @@ def _pricing_body(league_id: str | None = None, platform: str = "sleeper") -> st
       {trial_notice}
       {portal_banner}
       {winback_banner}
-      {_pricing_manage_card()} (feat(churn): dunning, cancel save flow, trial reminders, win-back)
+      {_pricing_manage_card()}
       <header class="pricing-hero">
         <span class="pricing-eyebrow">BR Fantasy PRO</span>
         <h1>PRO: roster-aware fantasy tools for $10/year.</h1>

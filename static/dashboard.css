@@ -6195,6 +6195,26 @@ strong + .player-badge,
     border-color: var(--accent);
 }
 
+/* GUI audit Fixes 3+4 (mobile): 40px minimum tap height for filter chips,
+   rankings nav chips, and trade page tabs (the box grows via min-height;
+   font sizes are untouched), and an 11px floor for the Top Movers percent
+   sub-labels (.rf-delta small rendered at 9.17px). */
+@media (max-width: 768px) {
+    .otc-day-filter,
+    .otc-filter-chip,
+    .pos-pill,
+    .dvt-pos-btn,
+    .filter-pill,
+    .rnk-nav-btn,
+    .otc-main-tab {
+        min-height: 40px;
+    }
+
+    .rf-delta small {
+        font-size: 11px;
+    }
+}
+
 .otc-filter-row {
     display: flex;
     flex-wrap: wrap;
@@ -18105,7 +18125,9 @@ img, svg, canvas {
 
 @media (max-width: 768px) {
     .home-page {
-        padding: 20px max(16px, env(safe-area-inset-left)) calc(48px + var(--dock-safe-bottom)) max(16px, env(safe-area-inset-right));
+        /* GUI audit Fix 5: no extra top padding above the hero on phones;
+           the hero carries the region's top spacing (28px) on its own. */
+        padding: 0 max(16px, env(safe-area-inset-left)) calc(48px + var(--dock-safe-bottom)) max(16px, env(safe-area-inset-right));
         gap: 28px;
     }
 
@@ -46983,7 +47005,7 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 .home-platform-chip { font-size: 13px; font-weight: 700; border: 1px solid var(--border); background: var(--card); border-radius: var(--radius-pill); padding: 6px 12px; color: var(--text-muted); }
 .home-card-title { font-size: 22px; font-weight: 800; margin: 0 0 6px; }
 .home-account-lead { font-size: 13px; color: var(--text-muted); display: block; margin-bottom: 14px; }
-@media (max-width: 768px) { .home-hero { grid-template-columns: 1fr; padding-top: 44px; } }
+@media (max-width: 768px) { .home-hero { grid-template-columns: 1fr; padding-top: 28px; } }
 
 /* Guest home page: feature preview stack */
 .home-previews { padding: 56px 20px 20px; }
