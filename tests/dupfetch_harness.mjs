@@ -211,7 +211,8 @@ function __brLPWriteLS(key, etag, data) {
 var _pmSmallCache = new Map();
 var _PM_SMALL_TTL = 5 * 60 * 1000, _PM_SMALL_MAX = 40;
 `;
-  const fn = extractBlock(MODAL_SRC, 'function _pmSmallFetch(key, url)');
+  const fn = extractBlock(MODAL_SRC, 'function _pmFetch(url, ms)')
+    + '\n' + extractBlock(MODAL_SRC, 'function _pmSmallFetch(key, url)');
   const clock = makeClock();
   const fakeFetch = makeFetch(clock);
   const scope = { Date: { now: clock.now }, fetch: fakeFetch };

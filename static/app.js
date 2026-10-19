@@ -28198,11 +28198,26 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
       if (!view.isConnected) return;
       // Cold server cache: the API is still building league context.
       // Keep the loading state and retry instead of showing "no matchups".
+      // The pending stretch is bounded like the portfolio cards: stamp
+      // when it began, show a slow note past ~30s, and past ~90s stop
+      // looping and surface the unavailable state with Retry (previously
+      // this re-polled every 3s forever and the skeleton never escaped).
       if (d && d.pending) {
-        view.innerHTML = LS_SKELETON;
+        if (!tabs._lsPendingSince) tabs._lsPendingSince = Date.now();
+        var pendingMs = Date.now() - tabs._lsPendingSince;
+        if (pendingMs > 90000) {
+          delete tabs._lsPendingSince;
+          view.innerHTML = '<div class="ls-empty">League scores are taking longer than usual.'
+            + ' <button type="button" data-ls-retry>Retry</button></div>';
+          return;
+        }
+        view.innerHTML = LS_SKELETON + (pendingMs > 30000
+          ? '<div class="ls-empty">Still building league scores, taking longer than usual.</div>'
+          : '');
         setTimeout(function () { delete tabs._lsLoading; _lsLoad(tabs); }, 3000);
         return;
       }
+      delete tabs._lsPendingSince;
       if (d && d.state === 'error') {
         view.innerHTML = '<div class="ls-empty">' + escapeHtml(d.message || 'League scores temporarily unavailable.')
           + ' <button type="button" data-ls-retry>Retry</button></div>';
@@ -28218,6 +28233,7 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     }
     function fail(status) {
       tabs._lsLoading = false;
+      delete tabs._lsPendingSince;
       if (!view.isConnected) return;
       var msg = status === 401
         ? 'Sign in to see league scores.'
@@ -28254,7 +28270,13 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
       return;
     }
     var url = '/api/matchup/league-scores?platform=' + encodeURIComponent(platform) + '&league_id=' + encodeURIComponent(leagueId) + '&season=' + encodeURIComponent(season) + (week ? '&week=' + encodeURIComponent(week) : '');
-    fetch(url, { credentials: 'same-origin' })
+    // Bounded like every other card fetch: a hung request used to leave
+    // _lsLoading set and the skeleton up forever (the tab's own guard then
+    // blocked any retry). A timeout now lands in fail() with a Retry.
+    var fetcher = (typeof window.brFetchWithTimeout === 'function')
+      ? window.brFetchWithTimeout(url, { credentials: 'same-origin' }, 25000)
+      : fetch(url, { credentials: 'same-origin' });
+    fetcher
       .then(function (r) {
         if (r.status === 401) { fail(401); return null; }
         return r.json();
@@ -28298,7 +28320,7 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
           delete view.dataset.lsLoaded;
           view.innerHTML = LS_SKELETON;
         }
-        if (tabsEl) { delete tabsEl._lsLoading; _lsLoad(tabsEl); }
+        if (tabsEl) { delete tabsEl._lsLoading; delete tabsEl._lsPendingSince; _lsLoad(tabsEl); }
       }
     });
   }

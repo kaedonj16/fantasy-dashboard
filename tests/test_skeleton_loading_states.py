@@ -76,5 +76,8 @@ def test_fade_swap_css_defined_with_reduced_motion_opt_out():
 def test_ls_skeleton_constant_used_for_loading_states():
     src = _read("static/app.js")
     assert "LS_SKELETON" in src
-    assert src.count("view.innerHTML = LS_SKELETON;") == 2  # initial + pending retry
+    assert src.count("view.innerHTML = LS_SKELETON;") == 1  # initial
+    # Pending retry keeps the skeleton and appends the slow note past
+    # ~30s (GUI Fix 1); past ~90s it escapes to unavailable + Retry.
+    assert "view.innerHTML = LS_SKELETON + (pendingMs > 30000" in src
     assert "'<div class=\"ls-loading\">Loading league scores...</div>'" not in src

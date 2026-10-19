@@ -26,6 +26,19 @@ function _pmLastName(full) {
   }
   return parts[parts.length - 1] || '';
 }
+// Bounded fetch for modal tab/panel loaders. Several of these used a raw
+// fetch(): when the origin stalls the promise never settles, the .catch
+// retry card never fires, and the tab spins forever (the Trades tab comment
+// at _pmFetchTradesInto names this exact failure). Route them through the
+// shared brFetchWithTimeout so a hang rejects as a TimeoutError and lands
+// in the loader's existing error/retry state instead.
+function _pmFetch(url, ms) {
+  if (typeof window !== 'undefined' && typeof window.brFetchWithTimeout === 'function') {
+    return window.brFetchWithTimeout(url, {}, ms || 20000);
+  }
+  return fetch(url);
+}
+
 function _pmSmallFetch(key, url) {
   var now = Date.now();
   var hit = _pmSmallCache.get(key);
@@ -38,7 +51,7 @@ function _pmSmallFetch(key, url) {
     _pmSmallCache.delete(key); // expired or failed: fall through and refetch
   }
   var entry = { ts: now, promise: null, data: undefined };
-  entry.promise = fetch(url)
+  entry.promise = _pmFetch(url, 15000)
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (d) { entry.data = d; entry.ts = Date.now(); return d; })
     .catch(function () { _pmSmallCache.delete(key); return null; });
@@ -2025,7 +2038,7 @@ function _pmLoadRecentForm(playerId, season, pos) {
   const _ls = (typeof brLeagueSize === 'function') ? brLeagueSize() : '';
   let logsUrl = `/api/player-game-logs/${encodeURIComponent(playerId)}?season=${_season}&league_type=${_lt}&league_size=${_ls}`;
   if (_leagueId) logsUrl += `&league_id=${_leagueId}&platform=${_platform}`;
-  fetch(logsUrl)
+  _pmFetch(logsUrl)
     .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
     .then(data => {
       // Stale-render guards, same as the neighboring lazy loaders: the
@@ -2493,7 +2506,7 @@ function pmSwitchTab(tab, clickEvent) {
     const _boPlatform = _boMatch ? _boMatch[1] : 'sleeper';
     const _boUrl = `/api/breakout/player/${encodeURIComponent(playerId)}?season=${encodeURIComponent(season)}&league_id=${encodeURIComponent(_boLeague)}&platform=${encodeURIComponent(_boPlatform)}`;
     // Lazy fetch on tab open (panel.dataset.loaded guards against duplicates).
-    const _bkRequest = fetch(_boUrl)
+    const _bkRequest = _pmFetch(_boUrl)
       .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
     _bkRequest
       .then(data => {
@@ -2546,7 +2559,7 @@ function pmSwitchTab(tab, clickEvent) {
     const _ls = brLeagueSize();
     let logsUrl = `/api/player-game-logs/${encodeURIComponent(playerId)}?season=${_season}&league_type=${_lt}&league_size=${_ls}`;
     if (_leagueId) logsUrl += `&league_id=${_leagueId}&platform=${_platform}`;
-    fetch(logsUrl)
+    _pmFetch(logsUrl)
       .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then(data => {
         if (!panel.isConnected) return;
@@ -3157,7 +3170,7 @@ function _pmFetchBoxscore(gameId, seasonType, team, focusPid, gen, force) {
     focus_pid: '',
     season_type: seasonType || 'reg',
   });
-  const p = fetch('/api/player-team-boxscore?' + qs.toString())
+  const p = _pmFetch('/api/player-team-boxscore?' + qs.toString())
     .then(function (r) {
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.json();
@@ -3543,7 +3556,7 @@ function _pmLoadTeamPanel(panel, playerId, viewSeason) {
     return;
   }
   panel.innerHTML = '<div class="player-modal-loading" style="padding:32px 0;"><div class="loading-spinner"></div><div>Loading team...</div></div>';
-  fetch(_teamUrl)
+  _pmFetch(_teamUrl)
     .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
     .then(data => {
       try { localStorage.setItem(_teamKey, JSON.stringify({ ts: Date.now(), data })); } catch (_) {}

@@ -83,7 +83,9 @@ def test_breakout_tab_joins_inflight_prefetch():
     tab = tab.split("// ──", 1)[0]
     # Loaded guard set synchronously before the fetch fires.
     assert "panel.dataset.loaded = '1';" in tab
-    assert "fetch(_boUrl)" in tab
+    # GUI Fix 1 routes the on-demand fetch through the bounded _pmFetch
+    # helper (brFetchWithTimeout) so a stalled origin cannot strand the tab.
+    assert "_pmFetch(_boUrl)" in tab
 
 
 def test_trade_intel_fetches_abortable_per_generation():
