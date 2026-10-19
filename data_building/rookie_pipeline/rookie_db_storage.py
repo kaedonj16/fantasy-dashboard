@@ -167,6 +167,20 @@ def save_rookie_evaluation_to_db(
         }
 
         with conn.cursor() as cur:
+            # Positions decide the dominator basis at derive time
+            # (v3.5: WR/TE receiving share, else scrimmage share);
+            # resolve them once from rookie_prospects.
+            position_by_player: Dict[str, Any] = {}
+            try:
+                cur.execute(
+                    "SELECT player_id, position FROM rookie_prospects "
+                    "WHERE player_id = ANY(%s)",
+                    (list(by_player_metrics.keys()),))
+                position_by_player = {
+                    r["player_id"]: r["position"] for r in cur.fetchall()
+                }
+            except Exception:
+                position_by_player = {}
             for player_id, seasons in by_player_metrics.items():
                 for season, metrics in (seasons or {}).items():
                     missing_metrics = missing_by_player.get(player_id) or {}
@@ -176,7 +190,7 @@ def save_rookie_evaluation_to_db(
                     # the EXCLUDED value below carries it whenever the
                     # inputs exist (the COALESCE keeps a stored value
                     # when this record cannot supply one).
-                    derive_season_dominator(raw)
+                    derive_season_dominator(raw, position_by_player.get(player_id))
                     cur.execute(
                         """
                         INSERT INTO rookie_prospect_source_data

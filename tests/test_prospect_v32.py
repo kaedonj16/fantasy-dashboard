@@ -120,7 +120,7 @@ def _score(prospect, dc):
 
 class TestVersion:
     def test_model_version_bumped(self):
-        assert pm.MODEL_VERSION == "3.4.1"
+        assert pm.MODEL_VERSION == "3.5"
 
 
 class TestMissingCapital:

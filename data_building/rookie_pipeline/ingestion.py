@@ -594,13 +594,41 @@ def _compute_depth_ranks(by_name: Dict[int, Dict[str, List]], years: List[int]) 
 
 
 def compute_dominator_rating(rec_yards, rush_yards, rec_tds, rush_tds,
-                             team_total_yards, team_total_tds):
-    """The pipeline's dominator formula, unchanged: 0.65 * (player
-    yards / team yards) + 0.35 * (player TDs / team TDs), each term
-    counted only when its team total is positive. Returns None when
-    neither team total exists - the inputs are missing, which is NOT
-    a zero (a player with team totals present and no production of
-    his own legitimately computes to 0.0)."""
+                             team_total_yards, team_total_tds,
+                             position=None, team_pass_yards=None,
+                             team_pass_tds=None):
+    """The pipeline's dominator formula: 0.65 * yard share + 0.35 *
+    TD share, each term counted only when its team total is positive.
+    Returns None when neither team total exists - the inputs are
+    missing, which is NOT a zero (a player with team totals present
+    and no production of his own legitimately computes to 0.0).
+
+    The BASIS depends on position (model v3.5):
+    - WR/TE: RECEIVING share - receiving yards/TDs over the team's
+      passing totals (team_pass_yards / team_pass_tds). The total-
+      offense basis structurally taxed pass catchers (their
+      denominator included rushing production they cannot touch):
+      Jeremiah Smith's 2024 stored 0.208 on the old basis vs 0.345
+      on this one, and the model's breakout anchors (0.35 saturation,
+      0.4877 recorded best) were always receiving-basis numbers.
+    - RB (and any call without a position): SCRIMMAGE share -
+      receiving+rushing over total-offense totals, byte-identical to
+      the pre-v3.5 formula.
+    A WR/TE call NEVER falls back to the total-offense totals: mixed
+    bases in one stored column are the defect this change removes.
+    When neither passing total exists the rating is None."""
+    pos = (position or "").upper()
+    if pos in ("WR", "TE"):
+        p_yds = team_pass_yards or 0
+        p_tds = team_pass_tds or 0
+        if not (p_yds or p_tds):
+            return None
+        dom = 0.0
+        if p_yds > 0:
+            dom += ((rec_yards or 0) / p_yds) * 0.65
+        if p_tds > 0:
+            dom += ((rec_tds or 0) / p_tds) * 0.35
+        return round(dom, 4)
     t_yds = team_total_yards or 0
     t_tds = team_total_tds or 0
     if not (t_yds or t_tds):
@@ -613,7 +641,7 @@ def compute_dominator_rating(rec_yards, rush_yards, rec_tds, rush_tds,
     return round(dom, 4)
 
 
-def derive_season_dominator(season: Dict) -> bool:
+def derive_season_dominator(season: Dict, position=None) -> bool:
     """Fill season["dominator_rating"] from the season's OWN inputs
     (player receiving/rushing lines + team totals, all carried on the
     season dict / stored row) when the rating is missing but the
@@ -625,7 +653,13 @@ def derive_season_dominator(season: Dict) -> bool:
     recomputed: every writer that persists a season row runs the row
     through here first, so any row whose inputs exist carries the
     rating. A season whose inputs are genuinely absent keeps
-    dominator None - missing stays missing, never fabricated."""
+    dominator None - missing stays missing, never fabricated.
+
+    The basis follows compute_dominator_rating: the position comes
+    from the explicit argument first, then the season dict's own
+    "position" key when it carries one (WR/TE derive on the receiving
+    basis from team_pass_yards / team_pass_tds; anything else on the
+    scrimmage basis from the total-offense totals)."""
     if not isinstance(season, dict):
         return False
     if season.get("dominator_rating") is not None:
@@ -633,7 +667,10 @@ def derive_season_dominator(season: Dict) -> bool:
     dom = compute_dominator_rating(
         season.get("receiving_yards"), season.get("rush_yards"),
         season.get("receiving_tds"), season.get("rush_tds"),
-        season.get("team_total_yards"), season.get("team_total_tds"))
+        season.get("team_total_yards"), season.get("team_total_tds"),
+        position=position or season.get("position"),
+        team_pass_yards=season.get("team_pass_yards"),
+        team_pass_tds=season.get("team_pass_tds"))
     if dom is None:
         return False
     season["dominator_rating"] = dom
@@ -724,11 +761,23 @@ def _build_cfbd_season(raw_stats: List[Dict], team_stats: Dict, season: int,
     row["team_total_tds"]     = _safe_int(t_tds)
     row["team_pass_rate"]     = ts.get("pass_rate")
     row["team_pass_yards"]    = int(ts.get("netPassingYards") or 0)
+    row["team_pass_tds"]      = int(ts.get("passingTDs") or 0)
     row["sagarin_team_rating"] = (None if skip_sagarin
                                   else _sagarin_get_team_rating(team_name, season))
 
+    # The player's CFBD position rows decide the dominator basis
+    # (v3.5): WR/TE price on receiving share of the passing totals,
+    # everyone else on scrimmage share of total offense.
+    _position = None
+    for _r in raw_stats:
+        if _r.get("position"):
+            _position = str(_r.get("position")).upper()
+            break
     row["dominator_rating"] = compute_dominator_rating(
-        rec_yds, rush_yds, rec_tds, rush_tds, t_yds, t_tds)
+        rec_yds, rush_yds, rec_tds, rush_tds, t_yds, t_tds,
+        position=_position,
+        team_pass_yards=row["team_pass_yards"],
+        team_pass_tds=row["team_pass_tds"])
     return row
 
 
@@ -3519,7 +3568,7 @@ def normalize_prospect(raw: Dict[str, Any]) -> Dict[str, Any]:
                     "yds_per_carry", "yds_per_reception", "yds_per_attempt",
                     "completion_pct", "td_int_ratio", "team_pass_rate",
                     "team_total_yards", "team_total_tds", "team", "conference",
-                    "team_pass_yards", "sagarin_team_rating",
+                    "team_pass_yards", "team_pass_tds", "sagarin_team_rating",
                     "depth_rank", "position_group_size"):
             s.setdefault(fld, None)
 
