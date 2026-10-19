@@ -18039,6 +18039,9 @@ def _rankings_ssr_content(limit: int = 150):
             age = "–"
         _val_v = float(p.get("value") or 0)
         val = f"{_val_v:.1f}" if _val_v > 0 else "-"
+        # Phone subline (pos rank + team), mirroring rankings.js: the team
+        # segment drops out when there is no team to show.
+        _sub = pos_rank + (f" · {team}" if team not in ("", "–") else "")
         _ppg_v = p.get("ppg")
         try:
             ppg = f"{float(_ppg_v):.1f}" if _ppg_v not in (None, "") else "–"
@@ -18048,7 +18051,7 @@ def _rankings_ssr_content(limit: int = 150):
             '<div class="pr-player-row pr-grid-row">'
             f'<span class="pr-rank">#{i}</span>'
             '<span class="pr-arrows"></span>'
-            f'<span class="pr-name player-clickable">{name}</span>'
+            f'<span class="pr-name player-clickable"><span class="pr-name-main">{name}</span><span class="pr-sub">{_sub}</span></span>'
             f'<span class="pr-pos-cell">{pos_rank}</span>'
             f'<span class="pr-age">{age}</span>'
             f'<span class="pr-team">{team}</span>'
@@ -18195,9 +18198,13 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
             '<div id="prTableHeader" style="display:grid;',
         )
         body_html = body_html.replace(
-            '<div id="prCount" style="font-size:13px;color:var(--text-muted);margin-bottom:8px;display:none;"></div>',
-            '<div id="prCount" style="font-size:13px;color:var(--text-muted);margin-bottom:8px;">'
-            'Top dynasty players by trade value</div>',
+            '<div id="prCountRow" style="display:none;',
+            '<div id="prCountRow" style="display:flex;',
+        )
+        body_html = body_html.replace(
+            '<span id="prCount" style="font-size:13px;color:var(--text-muted);"></span>',
+            '<span id="prCount" style="font-size:13px;color:var(--text-muted);">'
+            'Top dynasty players by trade value</span>',
         )
         body_html += "\n" + _ssr_jsonld
 

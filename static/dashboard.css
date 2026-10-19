@@ -21505,39 +21505,11 @@ img, svg, canvas {
         font-size: 13px;
     }
 
-    /* Sort select full width */
-    #prSort {
-        width: 100%;
-    }
-
-    /* Tighter table grid on mobile: hide Team column. Exclude the ADP-source view
-     (.pr-adp-mode), which sets its own inline grid with one column per source --
-     otherwise this !important rule forces a 4-col grid and the extra ADP cell
-     wraps under the rank, and the source headers past #5 get hidden. */
-    .pr-grid-row:not(.pr-adp-mode) {
-        grid-template-columns: 38px 1fr 54px 44px 54px !important;
-    }
-
-    .pr-team {
-        display: none;
-    }
-
-    #prTableHeader:not(.pr-adp-mode) span:nth-child(5) {
-        display: none;
-    }
-
-    .pr-name {
-        font-size: 13px;
-    }
-
-    .pr-value {
-        font-size: 13px;
-    }
-
-    /* Denser list chrome on phones -- more rows, less chrome. */
-    .pr-player-row {
-        padding: 7px 8px;
-    }
+    /* Player-rankings phone/tablet grid rules live ONLY in the page's own
+       inline sheet (dashboard_services/pages/players_page.py). The stale
+       copies that used to sit here fought that sheet (different track
+       counts, header spans hidden by mismatched nth-child rules) and are
+       removed -- do not re-add rankings grid rules here. */
 
     #prControls {
         gap: 8px !important;
@@ -21569,22 +21541,6 @@ img, svg, canvas {
     .wl-page-row {
         padding-top: 8px;
         padding-bottom: 8px;
-    }
-}
-
-@media (max-width: 640px) {
-    /* Even tighter: also hide Age column. Again exclude .pr-adp-mode so the ADP
-     source columns keep their inline grid and every source header shows. */
-    .pr-grid-row:not(.pr-adp-mode) {
-        grid-template-columns: 34px 1fr 52px 52px !important;
-    }
-
-    .pr-age {
-        display: none;
-    }
-
-    #prTableHeader:not(.pr-adp-mode) span:nth-child(4) {
-        display: none;
     }
 }
 

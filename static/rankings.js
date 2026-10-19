@@ -213,10 +213,11 @@ function _prPaintSpark(ctx2d, pts, w, h, progress, col) {
   ctx2d.fill();
 }
 
-function _prDrawSparkline(canvas, data, animate) {
+function _prDrawSparkline(canvas, data, animate, w, h) {
   if (!canvas || !data || data.length < 2) return;
   const dpr = window.devicePixelRatio || 1;
-  const w = PR_SPARK_W, h = PR_SPARK_H;
+  w = w || PR_SPARK_W;
+  h = h || PR_SPARK_H;
   // Size the backing store for the display density so the line is crisp.
   canvas.width  = Math.round(w * dpr);
   canvas.height = Math.round(h * dpr);
@@ -772,6 +773,10 @@ function prRender() {
     const headerMeta0 = (sortBy === 'ppg' || sortBy === 'total_pts') ? PR_SORT_META.rank : sortMeta0;
     const sortHeaderEl = document.getElementById('prSortHeader');
     if (sortHeaderEl) sortHeaderEl.textContent = headerMeta0.label;
+    // Phone (approved mock): sorting by Total Points makes the total the
+    // trailing column's big number (Value drops to a sublabel), so the
+    // header names it. Desktop keeps Value on top and the header on Value.
+    if (sortHeaderEl && isMobile && sortBy === 'total_pts') sortHeaderEl.textContent = 'Total';
     // Hide age col only on mobile when sort=age (shown in sort col instead)
     const ageHeaderEl = document.getElementById('prAgeHeader');
     if (isMobile && ageHeaderEl) ageHeaderEl.style.visibility = sortBy === 'age' ? 'hidden' : '';
@@ -886,13 +891,14 @@ function prRender() {
   const list   = document.getElementById('prList');
   const empty  = document.getElementById('prEmpty');
   const count  = document.getElementById('prCount');
+  const countRow = document.getElementById('prCountRow');
   const header = document.getElementById('prTableHeader');
 
   if (players.length === 0) {
     list.innerHTML = '';
     empty.style.display = 'block';
     header.style.display = 'none';
-    count.style.display = 'none';
+    if (countRow) countRow.style.display = 'none';
     prRenderPagination(0, 0);
     return;
   }
@@ -909,7 +915,7 @@ function prRender() {
 
   empty.style.display = 'none';
   header.style.display = 'grid';
-  count.style.display = 'block';
+  if (countRow) countRow.style.display = 'flex';
   count.textContent = 'Showing ' + (start + 1) + '–' + end + ' of ' + total + ' player' + (total !== 1 ? 's' : '');
 
   const _PR_TIER_COLORS = ['','#10b981','#22d3ee','#3b82f6','#8b5cf6','#a855f7','#f59e0b','#f97316','#94a3b8','#64748b'];
@@ -994,6 +1000,19 @@ function prRender() {
       arrowCell = `<canvas class="pr-sparkline" data-pid="${p.id}" title="7-day value trend"></canvas>`;
     }
 
+    // Phone subline: mini sparkline + pos rank + team, rendered inside the
+    // name cell and shown only at the phone breakpoint, where the separate
+    // spark / pos / team columns are hidden (see players_page.py @640).
+    let sublineHTML = '';
+    if (!isPick) {
+      const _subParts = [posRank, (p.team && p.team !== '–') ? p.team : ''].filter(Boolean).join(' · ');
+      const _subSpark = (sparkData && sparkData.length >= 2)
+        ? `<canvas class="pr-spark-sub-canvas" data-pid="${p.id}" title="7-day value trend"></canvas>` : '';
+      if (_subParts || _subSpark) {
+        sublineHTML = `<span class="pr-sub">${_subSpark}<span>${_subParts}</span></span>`;
+      }
+    }
+
     // Overall rank movement, shown next to the rank number. Only meaningful when
     // the rank IS the overall value board (not the ADP / PPG / age / pos views).
     let rankDeltaHTML = '';
@@ -1007,14 +1026,23 @@ function prRender() {
     const sortDisplay = p.position === 'PICK' && sortBy === 'age' ? '–' : valueMeta.cell(p);
     let sortDisplayHTML;
     if (p.position !== 'PICK' && sortBy === 'total_pts' && p.total_pts != null) {
-      // Value stays the main figure; the total that drives this sort (with
-      // its positional rank) rides underneath as a sublabel.
-      const tRank = p.total_pts_rank ? (p.position + p.total_pts_rank) : '';
-      const tSub = Number(p.total_pts).toFixed(1) + (tRank ? ' ' + tRank : '');
-      sortDisplayHTML = `<span style="display:flex;flex-direction:column;align-items:flex-end;line-height:1.2;">`
-        + `<span>${sortDisplay}</span>`
-        + `<span style="font-size:10px;font-weight:600;color:var(--text-muted);">${tSub}</span>`
-        + `</span>`;
+      if (isMobile) {
+        // Phone (approved mock): the sorted-by metric is the big number --
+        // Total Points on top, Value underneath as a labeled sublabel.
+        sortDisplayHTML = `<span style="display:flex;flex-direction:column;align-items:flex-end;line-height:1.2;">`
+          + `<span>${Number(p.total_pts).toFixed(1)}</span>`
+          + `<span style="font-size:10px;font-weight:600;color:var(--text-muted);">VAL ${sortDisplay}</span>`
+          + `</span>`;
+      } else {
+        // Desktop: Value stays the main figure; the total that drives this
+        // sort (with its positional rank) rides underneath as a sublabel.
+        const tRank = p.total_pts_rank ? (p.position + p.total_pts_rank) : '';
+        const tSub = Number(p.total_pts).toFixed(1) + (tRank ? ' ' + tRank : '');
+        sortDisplayHTML = `<span style="display:flex;flex-direction:column;align-items:flex-end;line-height:1.2;">`
+          + `<span>${sortDisplay}</span>`
+          + `<span style="font-size:10px;font-weight:600;color:var(--text-muted);">${tSub}</span>`
+          + `</span>`;
+      }
     } else {
       sortDisplayHTML = sortDisplay;
     }
@@ -1075,7 +1103,7 @@ function prRender() {
       row.innerHTML =
         '<span class="pr-rank">'  + (displayRank ? '#' + displayRank : '–') + rankDeltaHTML + '</span>' +
         '<span class="pr-arrows">' + arrowCell + '</span>' +
-        '<span class="pr-name' + (isPick ? '' : ' player-clickable') + '">'  + (p.name || 'Unknown') + wlStar + badges + '</span>' +
+        '<span class="pr-name' + (isPick ? '' : ' player-clickable') + '"><span class="pr-name-main">'  + (p.name || 'Unknown') + wlStar + badges + '</span>' + sublineHTML + '</span>' +
         '<span class="pr-pos-cell">' + posRank + '</span>' +
         '<span class="pr-age">'   + (p.position === 'PICK' ? '–' : age) + '</span>' +
         '<span class="pr-team">'  + (p.team || '–') + '</span>' +
@@ -1085,6 +1113,8 @@ function prRender() {
       if (sparkData && sparkData.length >= 2) {
         const cnv = row.querySelector('.pr-sparkline');
         if (cnv) _prDrawSparkline(cnv, sparkData, _prSparkAnimate);
+        const cnvSub = row.querySelector('.pr-spark-sub-canvas');
+        if (cnvSub) _prDrawSparkline(cnvSub, sparkData, _prSparkAnimate, 26, 14);
       }
     }
 
