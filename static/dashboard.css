@@ -11844,6 +11844,174 @@ select:focus {
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
 }
 
+/* ── Compare usage overlay: one overlaid head-to-head panel ──────────────── */
+.cmp-u-summary {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    background: color-mix(in srgb, var(--text-muted) 10%, transparent);
+    border-radius: var(--radius);
+    padding: 10px 14px;
+    margin: 2px 0 10px;
+    font-size: 13px;
+    color: var(--text);
+}
+
+.cmp-u-legend {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    font-size: 11.5px;
+    color: var(--text-muted);
+    padding: 2px 0 4px;
+}
+
+.cmp-u-leg {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 700;
+    color: var(--text);
+}
+
+.cmp-u-leg i {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    flex: none;
+}
+
+.cmp-u-row {
+    display: grid;
+    grid-template-columns: 104px 86px 1fr 86px 96px;
+    grid-template-areas: "metric val1 chart val2 edge";
+    align-items: center;
+    column-gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.cmp-u-row:last-of-type {
+    border-bottom: 0;
+}
+
+.cmp-u-head {
+    padding: 6px 0;
+}
+
+.cmp-u-metric {
+    grid-area: metric;
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.15;
+}
+
+.cmp-u-hname {
+    grid-area: val1;
+    font-size: 12.5px;
+    font-weight: 800;
+    text-align: right;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.cmp-u-hname-r {
+    grid-area: val2;
+    text-align: left;
+}
+
+.cmp-u-hchart {
+    grid-area: chart;
+}
+
+.cmp-u-hedge {
+    grid-area: edge;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    text-align: right;
+}
+
+.cmp-u-val {
+    grid-area: val1;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 1px;
+    min-width: 0;
+}
+
+.cmp-u-val-r {
+    grid-area: val2;
+    align-items: flex-start;
+}
+
+.cmp-u-val-top {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+}
+
+.cmp-u-num {
+    font-size: 15px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.cmp-u-lg {
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+.cmp-u-spark {
+    grid-area: chart;
+    min-width: 0;
+}
+
+.cmp-u-edge {
+    grid-area: edge;
+    font-size: 12.5px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.cmp-u-even {
+    color: var(--text-muted);
+    font-weight: 700;
+}
+
+.cmp-u-footer {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 6px;
+}
+
+@media (max-width: 640px) {
+    .cmp-u-row {
+        grid-template-columns: 64px 1fr 64px;
+        grid-template-areas: "metric metric edge" "val1 chart val2";
+        row-gap: 4px;
+        column-gap: 10px;
+    }
+
+    .cmp-u-head {
+        display: none;
+    }
+
+    .cmp-u-num {
+        font-size: 14px;
+    }
+}
+
 /* Weekly datapoint hover tooltip -- chrome matches .adv-def-tip */
 .wk-tip {
     position: fixed;

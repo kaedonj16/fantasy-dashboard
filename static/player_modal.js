@@ -6001,6 +6001,74 @@ function pmSparkline(series, color, tips) {
   return s;
 }
 
+// ── Compare usage overlay: two series, one shared scale ─────────────────────
+// Like pmSparkline but draws BOTH players on a single scale (both series'
+// non-null values plus both averages) so the lines are honestly comparable.
+// Series are aligned arrays of Number|null: null = bye / DNP / no data for
+// that slot, and it breaks the line (no point drawn, never a zero). Each
+// series gets a dashed average line in its own color. No area fill.
+function pmSparklineDuo(seriesA, seriesB, colorA, colorB, tipsA, tipsB) {
+  var a = seriesA || [], b = seriesB || [];
+  var n = Math.max(a.length, b.length);
+  if (!n) return '<div class="pm-wt-spark"></div>';
+  function _avgOf(s) {
+    var vs = s.filter(function(v) { return v != null && isFinite(v); });
+    return vs.length ? vs.reduce(function(sm, v) { return sm + v; }, 0) / vs.length : null;
+  }
+  var vals = [];
+  a.concat(b).forEach(function(v) { if (v != null && isFinite(v)) vals.push(v); });
+  var avgA = _avgOf(a), avgB = _avgOf(b);
+  if (avgA != null) vals.push(avgA);
+  if (avgB != null) vals.push(avgB);
+  if (!vals.length) return '<div class="pm-wt-spark"></div>';
+  var W = 240, H = 40, padX = 8, padTop = 8, padBot = 8;
+  var iw = W - padX * 2, ih = H - padTop - padBot;
+  var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+  var span = (hi - lo) || Math.abs(hi) || 1, pad = span * 0.18;
+  lo -= pad; hi += pad;
+  var x = function(i) { return n === 1 ? W / 2 : padX + (i / (n - 1)) * iw; };
+  var y = function(v) { return padTop + ih - ((v - lo) / ((hi - lo) || 1)) * ih; };
+  function _seriesSvg(series, color, avg, tips) {
+    var out = '';
+    if (avg != null) {
+      out += '<line x1="' + padX + '" x2="' + (W - padX) + '" y1="' + y(avg).toFixed(1) + '" y2="' + y(avg).toFixed(1)
+        + '" stroke="' + color + '" stroke-width="1" stroke-dasharray="3 3" opacity="0.35"/>';
+    }
+    // Contiguous non-null runs become separate polylines: a gap (bye / DNP)
+    // breaks the line instead of connecting across the missing week.
+    var run = [];
+    function flush() {
+      if (run.length >= 2) {
+        out += '<polyline fill="none" stroke="' + color + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points="' + run.join(' ') + '"/>';
+      }
+      run = [];
+    }
+    series.forEach(function(v, i) {
+      if (v == null || !isFinite(v)) { flush(); return; }
+      run.push(x(i).toFixed(1) + ',' + y(v).toFixed(1));
+    });
+    flush();
+    var lastIdx = -1;
+    series.forEach(function(v, i) { if (v != null && isFinite(v)) lastIdx = i; });
+    series.forEach(function(v, i) {
+      if (v == null || !isFinite(v)) return;
+      var last = i === lastIdx, cx = x(i).toFixed(1), cy = y(v).toFixed(1);
+      if (last) out += '<circle cx="' + cx + '" cy="' + cy + '" r="4.5" fill="' + color + '" opacity="0.20"/>';
+      out += '<circle cx="' + cx + '" cy="' + cy + '" r="' + (last ? 3 : 2.2) + '" fill="' + color + '" stroke="var(--card,#fff)" stroke-width="1"/>';
+      if (tips && tips[i]) {
+        out += '<circle class="wk-dot" cx="' + cx + '" cy="' + cy + '" r="9" fill="transparent" '
+          + 'style="pointer-events:all;cursor:pointer" data-tip="' + String(tips[i]).replace(/"/g, '&quot;') + '"/>';
+      }
+    });
+    return out;
+  }
+  var s = '<div class="pm-wt-spark cmp-u-spark"><svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" style="width:100%;height:auto;display:block;">';
+  s += _seriesSvg(a, colorA, avgA, tipsA);
+  s += _seriesSvg(b, colorB, avgB, tipsB);
+  s += '</svg></div>';
+  return s;
+}
+
 // Weekly datapoint hover tooltip: shows "value + opponent" for the hovered
 // point (delegated once, works for every .wk-dot the sparklines render).
 (function () {
@@ -6151,6 +6219,272 @@ function buildWeeklyTrendRows(weeks, position) {
     + '</div>'
     + '<div class="pm-wt-footer">Wks ' + weeks[0].week + '&ndash;' + weeks[weeks.length - 1].week
     + ' &middot; &#9650;&#9660; = 3-wk trend vs avg</div>';
+}
+
+// ── Compare usage overlay: weekly metric specs ─────────────────────────────
+// Spec shape: [label, fn(weekRow) -> Number, suffix]. The per-position sets
+// and order mirror buildWeeklyTrendRows (Target % sits right after Targets
+// for RB/WR/TE; RB adds Carry %/Carries; computed efficiency rows follow the
+// volume rows; PPR Pts last). fn reads the raw weekly row regardless of
+// position, so a WR's carries still plot on the Carries row when the union
+// includes it. A present week always yields a number (missing fields count
+// as 0, exactly like buildWeeklyTrendRows); nulls in an aligned series come
+// only from week alignment (bye / DNP), never from fn.
+function _cmpWeeklySpecsFor(pos) {
+  pos = (pos || '').toUpperCase();
+  function K(k) { return function(w) { return Number(w[k] || 0); }; }
+  var F = {
+    snap: ['Snap %', K('snap_pct'), '%'],
+    targets: ['Targets', K('targets'), ''],
+    targetPct: ['Target %', K('target_share'), '%'],
+    touches: ['Touches', K('touches'), ''],
+    carryPct: ['Carry %', K('carry_share'), '%'],
+    carries: ['Carries', K('carries'), ''],
+    rushYds: ['Rush Yds', K('rush_yards'), ''],
+    rec: ['Receptions', K('receptions'), ''],
+    recYds: ['Rec Yds', K('rec_yards'), ''],
+    rz: ['RZ Touches', function(w) { return Number(w.rz_targets || 0) + Number(w.rz_carries || 0); }, ''],
+    ypc: ['Yds/Carry', function(w) { var c = Number(w.carries || 0); return c > 0 ? Number(w.rush_yards || 0) / c : 0; }, ''],
+    ypt: ['Yds/Touch', function(w) { var t = Number(w.touches || 0); return t > 0 ? (Number(w.rush_yards || 0) + Number(w.rec_yards || 0)) / t : 0; }, ''],
+    yptgt: ['Yds/Target', function(w) { var t = Number(w.targets || 0); return t > 0 ? Number(w.rec_yards || 0) / t : 0; }, ''],
+    ypr: ['Yds/Rec', function(w) { var r = Number(w.receptions || 0); return r > 0 ? Number(w.rec_yards || 0) / r : 0; }, ''],
+    catchPct: ['Catch %', function(w) { var t = Number(w.targets || 0); return t > 0 ? Number(w.receptions || 0) / t * 100 : 0; }, '%'],
+    ppr: ['PPR Pts', K('ppr_pts'), ''],
+  };
+  var order = ['snap', 'targets'];
+  if (pos === 'RB' || pos === 'WR' || pos === 'TE') order.push('targetPct');
+  order.push('touches');
+  if (pos === 'RB') order.push('carryPct', 'carries');
+  if (pos === 'RB' || pos === 'WR' || pos === 'TE') order.push('rushYds', 'rec', 'recYds');
+  order.push('rz');
+  if (pos === 'RB') order.push('ypc', 'ypt', 'catchPct');
+  if (pos === 'WR' || pos === 'TE') order.push('yptgt', 'ypr', 'catchPct');
+  order.push('ppr');
+  return order.map(function(k) { return F[k]; });
+}
+
+// Union of both players' spec sets, in canonical order.
+var _CMP_SPEC_ORDER = ['Snap %', 'Targets', 'Target %', 'Touches', 'Carry %', 'Carries',
+  'Rush Yds', 'Receptions', 'Rec Yds', 'RZ Touches', 'Yds/Carry', 'Yds/Touch',
+  'Yds/Target', 'Yds/Rec', 'Catch %', 'PPR Pts'];
+function _cmpWeeklyMetricSpecs(pos1, pos2) {
+  var byLabel = {};
+  _cmpWeeklySpecsFor(pos1).concat(_cmpWeeklySpecsFor(pos2)).forEach(function(sp) {
+    if (!byLabel[sp[0]]) byLabel[sp[0]] = sp;
+  });
+  return _CMP_SPEC_ORDER.filter(function(l) { return byLabel[l]; })
+    .map(function(l) { return byLabel[l]; });
+}
+
+function _cmpShortName(name) {
+  var parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return String(name || '');
+  // Generational suffixes are not a surname: "Kenneth Walker III" -> "Walker".
+  var last = parts[parts.length - 1].replace(/\.$/, '');
+  if (parts.length > 1 && /^(jr|sr|ii|iii|iv|v)$/i.test(last)) return parts[parts.length - 2];
+  return parts[parts.length - 1];
+}
+
+// One player's big-number block: season average (player color) + 3-wk-trend
+// delta + "LG:" last-present-week line. Semantics match buildWeeklyTrendRows
+// exactly (delta shown at |delta| >= 0.5, same colors).
+function _cmpValBlock(avg, series, suffix, color, rightSide) {
+  var r3 = series.slice(-3);
+  var recentAvg = r3.reduce(function(s, v) { return s + v; }, 0) / r3.length;
+  var delta = recentAvg - avg;
+  var deltaHtml = '';
+  if (delta >= 0.5) deltaHtml = '<span class="pm-wt-delta" style="color:#10b981">&#9650; +' + delta.toFixed(1) + '</span>';
+  else if (delta <= -0.5) deltaHtml = '<span class="pm-wt-delta" style="color:#ef4444">&#9660; ' + delta.toFixed(1) + '</span>';
+  var lg = series[series.length - 1];
+  return '<div class="cmp-u-val' + (rightSide ? ' cmp-u-val-r' : '') + '">'
+    + '<div class="cmp-u-val-top">'
+    + '<span class="cmp-u-num" style="color:' + color + '">' + avg.toFixed(1) + (suffix || '') + '</span>'
+    + deltaHtml
+    + '</div>'
+    + '<span class="cmp-u-lg">LG: ' + lg.toFixed(1) + (suffix || '') + '</span>'
+    + '</div>';
+}
+
+function _cmpHeadHtml(name1, name2, color1, color2, summaryHtml) {
+  return (summaryHtml ? '<div class="cmp-u-summary">' + summaryHtml + '</div>' : '')
+    + '<div class="cmp-u-legend">'
+    + '<span class="cmp-u-leg"><i style="background:' + color1 + '"></i>' + _pmEsc(name1) + '</span>'
+    + '<span class="cmp-u-leg"><i style="background:' + color2 + '"></i>' + _pmEsc(name2) + '</span>'
+    + '<span class="cmp-u-note">dashed = season avg</span>'
+    + '</div>'
+    + '<div class="cmp-u-row cmp-u-head">'
+    + '<div class="cmp-u-metric"></div>'
+    + '<div class="cmp-u-hname" style="color:' + color1 + '">' + _pmEsc(_cmpShortName(name1)) + '</div>'
+    + '<div class="cmp-u-hchart"></div>'
+    + '<div class="cmp-u-hname cmp-u-hname-r" style="color:' + color2 + '">' + _pmEsc(_cmpShortName(name2)) + '</div>'
+    + '<div class="cmp-u-hedge">EDGE</div>'
+    + '</div>';
+}
+
+function _cmpEdgeHtml(diff, short1, short2, color1, color2, fmtAbs) {
+  if (diff == null || Math.abs(diff) <= 0.05) return '<div class="cmp-u-edge cmp-u-even">Even</div>';
+  var win = diff > 0;
+  var txt = (fmtAbs ? fmtAbs(Math.abs(diff)) : Math.abs(diff).toFixed(1));
+  return '<div class="cmp-u-edge" style="color:' + (win ? color1 : color2) + '">'
+    + _pmEsc(win ? short1 : short2) + ' +' + txt + '</div>';
+}
+
+function _cmpSummaryHtml(leadA, leadB, total, name1, name2, color1, color2) {
+  if (leadA === leadB) {
+    return '<b>Dead even</b><span>across ' + total + ' categories</span>';
+  }
+  var aWins = leadA > leadB;
+  return '<b>Head-to-head</b><span><span style="color:' + (aWins ? color1 : color2) + ';font-weight:700;">'
+    + _pmEsc(aWins ? _cmpShortName(name1) : _cmpShortName(name2)) + '</span> leads '
+    + (aWins ? leadA : leadB) + ' of ' + total + '</span>';
+}
+
+// Head-to-head weekly usage rows: one overlaid duo sparkline per metric.
+// Both players align on the sorted union of their week numbers; a week a
+// player has no row for (bye / DNP -- the API only returns weeks with usage)
+// becomes null and breaks that player's line.
+function buildCompareWeeklyTrendRows(weeks1, weeks2, pos1, pos2, name1, name2, color1, color2) {
+  var muted = function(msg) {
+    return '<div style="padding:10px 0;color:var(--text-muted);font-size:12px;">' + msg + '</div>';
+  };
+  if (!weeks1 || !weeks1.length) return muted('Not enough weekly data for ' + _pmEsc(name1) + ' this season.');
+  if (!weeks2 || !weeks2.length) return muted('Not enough weekly data for ' + _pmEsc(name2) + ' this season.');
+  var byWk1 = {}, byWk2 = {};
+  weeks1.forEach(function(w) { byWk1[Number(w.week)] = w; });
+  weeks2.forEach(function(w) { byWk2[Number(w.week)] = w; });
+  var wkNums = Object.keys(byWk1).concat(Object.keys(byWk2))
+    .map(Number).filter(function(v, i, arr) { return arr.indexOf(v) === i; })
+    .sort(function(a, b) { return a - b; });
+  var short1 = _cmpShortName(name1), short2 = _cmpShortName(name2);
+  var last1 = short1, last2 = short2;
+  var rows = '', leadA = 0, leadB = 0, total = 0;
+  _cmpWeeklyMetricSpecs(pos1, pos2).forEach(function(sp) {
+    var label = sp[0], fn = sp[1], suffix = sp[2] || '';
+    function aligned(byWk) {
+      return wkNums.map(function(wk) { return byWk[wk] ? fn(byWk[wk]) : null; });
+    }
+    var sA = aligned(byWk1), sB = aligned(byWk2);
+    var pA = sA.filter(function(v) { return v != null; });
+    var pB = sB.filter(function(v) { return v != null; });
+    var anyPos = pA.some(function(v) { return v > 0; }) || pB.some(function(v) { return v > 0; });
+    if (!anyPos) return;   // metric nobody produced in any present week
+    var avgA = pA.reduce(function(s, v) { return s + v; }, 0) / pA.length;
+    var avgB = pB.reduce(function(s, v) { return s + v; }, 0) / pB.length;
+    function tipsFor(series, byWk, last) {
+      return wkNums.map(function(wk, i) {
+        var v = series[i];
+        if (v == null) return null;
+        var w = byWk[wk] || {};
+        var num = Math.round(v * 10) / 10;
+        var t = last + ' · Wk ' + wk + ' · ' + num + suffix;
+        if (w.opponent) t += ' vs ' + w.opponent;
+        return t;
+      });
+    }
+    var diff = avgA - avgB;
+    if (diff > 0.05) leadA++; else if (diff < -0.05) leadB++;
+    total++;
+    rows += '<div class="cmp-u-row">'
+      + '<div class="cmp-u-metric">' + label + '</div>'
+      + _cmpValBlock(avgA, pA, suffix, color1, false)
+      + pmSparklineDuo(sA, sB, color1, color2, tipsFor(sA, byWk1, last1), tipsFor(sB, byWk2, last2))
+      + _cmpValBlock(avgB, pB, suffix, color2, true)
+      + _cmpEdgeHtml(diff, short1, short2, color1, color2, null)
+      + '</div>';
+  });
+  if (!rows) return muted('No weekly usage data to compare.');
+  return '<div class="cmp-u">'
+    + _cmpHeadHtml(name1, name2, color1, color2, _cmpSummaryHtml(leadA, leadB, total, name1, name2, color1, color2))
+    + rows
+    + '<div class="cmp-u-footer">Wks ' + wkNums[0] + '&ndash;' + wkNums[wkNums.length - 1]
+    + ' &middot; &#9650;&#9660; = 3-wk trend vs avg &middot; gaps = bye / DNP</div>'
+    + '</div>';
+}
+
+// Head-to-head multi-season rows: same .cmp-u grammar as the weekly overlay.
+// Options merge by key (opts1 order, then opts2 extras); points align on the
+// union of season years. Big number = latest season value; delta =
+// first->latest (arrow/color respect lower_better, like buildSeasonTrendRows).
+// A metric renders when at least one player has 2+ valued seasons; a player
+// with a single season still shows a dot and their latest value.
+function buildCompareSeasonTrendRows(opts1, series1, opts2, series2, name1, name2, color1, color2) {
+  var byKey = {}, order = [];
+  (opts1 || []).forEach(function(o) { if (!byKey[o.key]) { byKey[o.key] = o; order.push(o.key); } });
+  (opts2 || []).forEach(function(o) { if (!byKey[o.key]) { byKey[o.key] = o; order.push(o.key); } });
+  function valued(pts) { return (pts || []).filter(function(p) { return p.value != null; }); }
+  var short1 = _cmpShortName(name1), short2 = _cmpShortName(name2);
+  var rows = '', leadA = 0, leadB = 0, total = 0, minYr = null, maxYr = null;
+  order.forEach(function(key) {
+    var o = byKey[key];
+    var v1 = valued((series1 || {})[key]), v2 = valued((series2 || {})[key]);
+    if (v1.length < 2 && v2.length < 2) return;   // neither side has a trend
+    var yrSet = {};
+    v1.concat(v2).forEach(function(p) { yrSet[p.season] = 1; });
+    var years = Object.keys(yrSet).map(Number).sort(function(a, b) { return a - b; });
+    function aligned(v) {
+      return years.map(function(yr) {
+        var hit = null;
+        v.forEach(function(p) { if (Number(p.season) === yr) hit = p; });
+        return hit ? Number(hit.value) : null;
+      });
+    }
+    var sA = aligned(v1), sB = aligned(v2);
+    function statsOf(v) {
+      if (!v.length) return null;
+      var first = v[0], last = v[v.length - 1];
+      return { first: first, last: last, n: v.length };
+    }
+    var stA = statsOf(v1), stB = statsOf(v2);
+    years.forEach(function(yr) {
+      if (minYr == null || yr < minYr) minYr = yr;
+      if (maxYr == null || yr > maxYr) maxYr = yr;
+    });
+    function valBlock(st, color, rightSide) {
+      if (!st) {
+        return '<div class="cmp-u-val' + (rightSide ? ' cmp-u-val-r' : '') + '">'
+          + '<div class="cmp-u-val-top"><span class="cmp-u-num" style="color:' + color + '">--</span></div></div>';
+      }
+      var deltaHtml = '';
+      if (st.n >= 2 && st.last.value !== st.first.value) {
+        var improved = o.lower_better ? st.last.value < st.first.value : st.last.value > st.first.value;
+        var dTxt = pmStFmt(Math.abs(st.last.value - st.first.value), o);
+        if (improved) deltaHtml = '<span class="pm-wt-delta" style="color:#10b981">&#9650; +' + dTxt + '</span>';
+        else deltaHtml = '<span class="pm-wt-delta" style="color:#ef4444">&#9660; -' + dTxt + '</span>';
+      }
+      return '<div class="cmp-u-val' + (rightSide ? ' cmp-u-val-r' : '') + '">'
+        + '<div class="cmp-u-val-top">'
+        + '<span class="cmp-u-num" style="color:' + color + '">' + pmStFmt(st.last.value, o) + '</span>'
+        + deltaHtml
+        + '</div>'
+        + '<span class="cmp-u-lg">' + st.first.season + ': ' + pmStFmt(st.first.value, o) + '</span>'
+        + '</div>';
+    }
+    function tipsFor(series, last) {
+      return years.map(function(yr, i) {
+        var v = series[i];
+        return v == null ? null : (last + ' · ' + yr + ' · ' + pmStFmt(v, o));
+      });
+    }
+    var diff = (stA && stB) ? (stA.last.value - stB.last.value) : null;
+    if (diff != null) {
+      if (diff > 0.05) leadA++; else if (diff < -0.05) leadB++;
+      total++;
+    }
+    rows += '<div class="cmp-u-row">'
+      + '<div class="cmp-u-metric">' + _pmEsc(o.label) + '</div>'
+      + valBlock(stA, color1, false)
+      + pmSparklineDuo(sA, sB, color1, color2, tipsFor(sA, short1), tipsFor(sB, short2))
+      + valBlock(stB, color2, true)
+      + _cmpEdgeHtml(diff, short1, short2, color1, color2, function(x) { return pmStFmt(x, o); })
+      + '</div>';
+  });
+  if (!rows) return '<div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Not enough multi-season data.</div>';
+  return '<div class="cmp-u">'
+    + _cmpHeadHtml(name1, name2, color1, color2, _cmpSummaryHtml(leadA, leadB, total, name1, name2, color1, color2))
+    + rows
+    + '<div class="cmp-u-footer">' + (minYr != null ? (minYr + '&ndash;' + maxYr + ' &middot; ') : '')
+    + '&#9650;&#9660; = first&rarr;latest season</div>'
+    + '</div>';
 }
 
 // ── Player modal: TRENDING hot/cold section ───────────────────────────────
