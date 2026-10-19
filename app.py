@@ -14330,8 +14330,11 @@ def _load_season_weekly_points(season: int, scoring_settings: dict,
     """{player_id: [weekly fantasy points]} for a season's played games.
 
     Reads the cached Sleeper weekly stat files and scores each with the league's
-    settings. Only weeks a player has a stat line count as games played (byes /
-    inactives are absent). Cached by (season, scoring signature). Never raises.
+    settings. Only weeks a player actually played count as games: byes and
+    inactives are absent from the files, and did-not-play rows (active but
+    zero snaps -- Sleeper still emits a bookkeeping-only row for them) are
+    skipped via stat_row_is_appearance, so a DNP never dilutes PPG as a
+    phantom 0.0 game. Cached by (season, scoring signature). Never raises.
 
     ``weeks`` optionally overrides which week files are read. When omitted, the
     league-wide completed weeks from qualification_policy are used (the whole
@@ -14386,6 +14389,8 @@ def _load_season_weekly_points(season: int, scoring_settings: dict,
             for pid, st in week_stats.items():
                 if not isinstance(st, dict):
                     continue
+                if not _stat_row_is_appearance(st):
+                    continue  # DNP: active but never played -- not a game.
                 try:
                     # Keep full precision until the response display boundary.
                     pos = str(st.get("position") or st.get("pos") or positions.get(str(pid)) or "")
@@ -22778,7 +22783,9 @@ def _ensure_sleeper_week_files(season_year: int) -> None:
 # player's rows. This index parses each (season, week) file once per worker
 # and keeps a compact per-player view: player_id -> {stat_key: value} of the
 # row's NONZERO stats, or None for a present-but-all-zero row (so a 0.0-point
-# game still renders as 0.0, not DNP).
+# game still renders as 0.0, not DNP). Did-not-play rows (Sleeper emits a
+# bookkeeping-only row for active players who never took a snap) are omitted
+# entirely, so the game log renders them as DNP and counts no game for them.
 #
 # The full key set is kept (not just the 12 display keys) because score_stats
 # scores any stat key the league's scoring settings name: truncating to the
@@ -22822,6 +22829,8 @@ def _week_stat_index_rows(season: int, week: int) -> Dict[str, Optional[dict]]:
 
     Returns {player_id: {stat_key: nonzero value}} for players with any stat
     and {player_id: None} for players whose row exists but is all zeros.
+    Did-not-play rows (bookkeeping keys only -- see stat_row_is_appearance)
+    are omitted: presence in this index means the player played that week.
     A file whose mtime changed since the cached parse is re-parsed.
     Never raises; a missing/unreadable file yields {}.
 
@@ -22854,6 +22863,12 @@ def _week_stat_index_rows(season: int, week: int) -> Dict[str, Optional[dict]]:
             _intern = sys.intern
             for pid, s in weekly.items():
                 if not isinstance(s, dict):
+                    continue
+                if not _stat_row_is_appearance(s):
+                    # DNP row: Sleeper stamps gms_active / pos_rank_* (999)
+                    # on active players who never played; those nonzero
+                    # bookkeeping values used to pass the nonzero test below
+                    # and the row rendered as a played 0.0 game.
                     continue
                 # Keep every nonzero stat, not just the display keys: the
                 # game-log points calc (score_stats) scores any stat key the
@@ -22908,6 +22923,9 @@ def _sleeper_stats_by_week(player_id: str, season_year: int) -> dict:
             stored = rows[pid]
             if stored is None:
                 # Present-but-all-zero row: a genuine 0.0 game, not DNP.
+                # (Defensive: appearance rows always carry a nonzero
+                # gp/snap/stat value, so the index stores a dict for them;
+                # DNP rows are absent from the index entirely.)
                 out[week] = {k: 0 for k in _GAMELOG_STAT_KEYS}
             else:
                 # Zero-fill the display keys the endpoint's _stats_dict picks
@@ -22985,6 +23003,7 @@ _PPG_STATS_CACHE_TS = 0.0
 _PPG_STATS_CACHE_TTL = 7200
 
 from utils.fantasy_scoring import score_stats as _score_stats  # noqa: E402
+from utils.fantasy_scoring import stat_row_is_appearance as _stat_row_is_appearance  # noqa: E402
 from utils.consistency import blended_consistency_profile as _blended_consistency  # noqa: E402
 from utils.utils import CACHE_DIR  # noqa: E402  # absolute cache root (see relative-path note)
 

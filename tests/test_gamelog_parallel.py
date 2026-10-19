@@ -32,9 +32,14 @@ import app as appmod
 W1 = {
     "101": {"pass_yd": 312, "pass_td": 3, "pass_att": 38, "pass_cmp": 38,
             "rush_yd": 9, "rec": 0, "fum_lost": 0},
-    "102": {"pass_yd": 0, "pass_td": 0, "pass_att": 0, "pass_cmp": 0,
+    # Genuine 0.0 game in the real feed shape: gp + snaps, all stats zero.
+    "102": {"gp": 1.0, "off_snp": 20,
+            "pass_yd": 0, "pass_td": 0, "pass_att": 0, "pass_cmp": 0,
             "rush_yd": 0, "rec": 0, "fum_lost": 0},
     "103": "not-a-dict-row",
+    # DNP in the real feed shape: bookkeeping keys only.
+    "104": {"gms_active": 1.0, "pos_rank_ppr": 999.0,
+            "pos_rank_half_ppr": 999.0, "pos_rank_std": 999.0},
 }
 W2 = {
     "101": {"pass_yd": 275, "pass_td": 2, "pass_att": 33,
@@ -98,8 +103,10 @@ def test_parallel_weeks_match_sequential(stat_files):
     assert out[1]["pass_cmp"] == 38  # nonzero overlay kept for custom scoring
     assert out[2]["rush_td"] == 1
     zeroed = appmod._sleeper_stats_by_week("102", 2024)
-    assert set(zeroed) == {1}  # all-zero row -> 0.0 game, not DNP
-    assert all(v == 0 for v in zeroed[1].values())
+    assert set(zeroed) == {1}  # played zero game -> 0.0 game, not DNP
+    assert all(zeroed[1][k] == 0 for k in appmod._GAMELOG_STAT_KEYS)
+    # DNP row -> no week at all, so the route renders DNP for it.
+    assert appmod._sleeper_stats_by_week("104", 2024) == {}
 
 
 def test_concurrent_warm_is_consistent(stat_files):

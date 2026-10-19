@@ -183,12 +183,15 @@ def _variant_week_points(season: int, scoring: dict):
       position, so TE premium never applies here).
     - ``weekly``: ``{pid: [pts...]}`` in completed-week order, ``score_stats``
       scorer *with* the stat line's position (the page's
-      ``_load_season_weekly_points``), no ``> 0`` filter — every stat line
-      counts as a game.
+      ``_load_season_weekly_points``), no ``> 0`` filter — every appearance
+      counts as a game, but did-not-play rows (bookkeeping-only Sleeper rows
+      for active players with zero snaps) are skipped, mirroring the page.
 
     Never raises; returns empty maps on failure.
     """
-    from utils.fantasy_scoring import score_stats, week_stat_points
+    from utils.fantasy_scoring import (
+        score_stats, stat_row_is_appearance, week_stat_points,
+    )
     from utils.season_qualification import qualification_policy
 
     weekstat: Dict[str, dict] = {}
@@ -225,7 +228,7 @@ def _variant_week_points(season: int, scoring: dict):
                     rec["n"] += 1
                     if in_last4:
                         rec["last4"][widx] = pts_ws
-                if wnum in completed:
+                if wnum in completed and stat_row_is_appearance(st):
                     try:
                         pts_w = float(score_stats(st, scoring, pos))
                     except Exception:

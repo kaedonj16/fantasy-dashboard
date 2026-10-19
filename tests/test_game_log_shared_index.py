@@ -39,10 +39,17 @@ W1 = {
             "rush_att": 2, "rush_yd": 9, "rush_td": 0,
             "rec": 0, "rec_tgt": 0, "rec_yd": 0, "rec_td": 0, "fum_lost": 0,
             "extra_key_not_needed": "ignored"},
-    "102": {"pass_yd": 0, "pass_td": 0, "pass_int": 0, "pass_att": 0,
+    # Genuine 0.0 game in the real feed shape: gp + snaps, all stats zero.
+    "102": {"gp": 1.0, "off_snp": 20,
+            "pass_yd": 0, "pass_td": 0, "pass_int": 0, "pass_att": 0,
             "rush_att": 0, "rush_yd": 0, "rush_td": 0,
             "rec": 0, "rec_tgt": 0, "rec_yd": 0, "rec_td": 0, "fum_lost": 0},
     "103": "not-a-dict-row",
+    # DNP in the real feed shape: bookkeeping keys only. Excluded from the
+    # parity loop below (the old logic returned it); the dedicated test
+    # after the parity tests pins its exclusion.
+    "104": {"gms_active": 1.0, "pos_rank_ppr": 999.0,
+            "pos_rank_half_ppr": 999.0, "pos_rank_std": 999.0},
 }
 W2 = {
     "101": {"pass_yd": 275, "pass_td": 2, "pass_int": 0, "pass_att": 33,
@@ -157,11 +164,17 @@ def test_each_file_parsed_once_across_players(week_files, monkeypatch):
 
 
 def test_zero_row_preserved_not_dropped(week_files):
-    """A present-but-all-zero row renders as a 0.0 game, not DNP."""
+    """A played-but-scoreless row (gp + snaps, stats zero) is a 0.0 game."""
     out = appmod._sleeper_stats_by_week("102", 2024)
     assert set(out) == {1}
-    assert out[1] == {k: 0 for k in STAT_KEYS}
-    assert all(v == 0 for v in out[1].values())
+    assert all(out[1][k] == 0 for k in STAT_KEYS)
+    assert out[1]["gp"] == 1.0  # the appearance evidence rides along
+
+
+def test_dnp_row_dropped(week_files):
+    """A bookkeeping-only DNP row yields no week, so the route shows DNP."""
+    assert appmod._sleeper_stats_by_week("104", 2024) == {}
+    assert "104" not in appmod._week_stat_index_rows(2024, 1)
 
 
 def test_mtime_change_reparses(week_files):
