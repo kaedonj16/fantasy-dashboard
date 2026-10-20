@@ -6795,7 +6795,12 @@ function initStandingsSort(root = document) {
   if (tbl.__sortInited) return;
   tbl.__sortInited = true;
 
-  const NUMERIC_COLS = new Set([2, 3, 4, 5, 6, 7, 8]);
+  // Column indexes for #stats (see render_standings thead): 0 Seed, 1 Team,
+  // 2 Status, 3 Record, 4 PF, 5 PA, 6 Trend, 7 Form, 8 Luck, 9 Exp. Seed.
+  // Status (2) is text; the numeric set starts at Record. The default sort is
+  // Record desc, then PF desc — it must never point at Status (PR #2743
+  // inserted that column at index 2 and the stale indexes sorted by it).
+  const NUMERIC_COLS = new Set([3, 4, 5, 6, 7, 8, 9]);
 
   const getVal = (cell, idx) => {
     const t = (cell?.textContent || "").trim();
@@ -6804,7 +6809,7 @@ function initStandingsSort(root = document) {
     return Number.isFinite(n) ? n : -Infinity;
   };
 
-  let sortSpec = [{ col: 2, dir: -1 }, { col: 3, dir: -1 }];
+  let sortSpec = [{ col: 3, dir: -1 }, { col: 4, dir: -1 }];
 
   const applySort = () => {
     const tbody = tbl.tBodies[0];

@@ -231,3 +231,20 @@ def test_css_div_subline_style_and_mobile_hide():
     block_start = css.find("Mobile standings scoreboard")
     block = css[block_start:block_start + 20000]
     assert ".st-div-lead {" not in block
+
+
+def test_js_default_sort_targets_record_then_pf_not_status():
+    """initStandingsSort hard-codes column indexes for #stats. With Status
+    inserted at index 2 (PR #2743), the default sort and numeric set must
+    point at Record (3) / PF (4) — pointing at 2 sorts the table by the
+    Status text ("2 GB" > "1 GB" > In/Bubble), which shipped as a bug."""
+    js = Path("static/app.js").read_text()
+    i = js.find("function initStandingsSort")
+    assert i != -1
+    block = js[i:i + 4000]
+    assert "let sortSpec = [{ col: 3, dir: -1 }, { col: 4, dir: -1 }];" in block
+    m = re.search(r"const NUMERIC_COLS = new Set\(\[([0-9, ]+)\]\)", block)
+    assert m, "NUMERIC_COLS not found in initStandingsSort"
+    cols = {int(x) for x in m.group(1).split(",")}
+    assert cols == {3, 4, 5, 6, 7, 8, 9}
+    assert 2 not in cols
