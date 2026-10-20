@@ -206,7 +206,7 @@ def _stub_loaders(monkeypatch, bt, entries, stats):
     monkeypatch.setattr(bt, "_load_draft_class", lambda year: entries)
     monkeypatch.setattr(bt, "_load_combine_athleticism", lambda year: {})
     monkeypatch.setattr(bt, "_load_cfbd_college_stats",
-                        lambda year, dc: stats)
+                        lambda year, dc, fetch_games_played=False: stats)
     monkeypatch.setattr(bt, "_build_nfl_ppr_per_player",
                         lambda ids, year: {})
 

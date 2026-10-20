@@ -72,6 +72,16 @@ with college seasons / prospects in the class) is below 0.50, the
 run prints the starved classes and exits nonzero WITHOUT writing
 the artifact, so a rate-limited fetch can never bake distorted
 distributions into the anchors.
+
+GAMES PLAYED (v1.3): live class loads fetch real games-played
+counts (ingestion's /games/players lookup, fetch_games_played=
+True, ~51 extra CFBD calls per class). v4's season-leg pools gate
+on GP >= 4 and v4 refuses to default GP, so a GP-less load pools
+ZERO legs - the v1.2 artifact shipped with only age/competition
+anchors for exactly this reason. Cache entries record whether
+they were built with games played ("games_played": true); a
+GP-less entry (anything written before v1.3) reads as a miss and
+re-fetches live.
 """
 
 from __future__ import annotations
@@ -92,7 +102,7 @@ sys.path.insert(0, _REPO_ROOT)
 sys.path.insert(0, os.path.join(_REPO_ROOT, "scripts"))
 sys.path.insert(0, os.path.join(_REPO_ROOT, "tests"))
 
-SCRIPT_VERSION = "1.2"
+SCRIPT_VERSION = "1.3"
 POPULATION_DEFINITION = (
     "Drafted skill-position players (QB/RB/WR/TE), classes {classes}, "
     "from the nflverse draft list; college seasons from CFBD via the "
@@ -324,7 +334,7 @@ def print_summary(artifact: Dict[str, Any], out_path: str) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────
-# Per-class derive cache + coverage gate (script v1.2)
+# Per-class derive cache + coverage gate (script v1.2; GP-aware v1.3)
 #
 # The cache holds, per class, exactly the per-player fields
 # build_reference() consumes, JSON-normalized at load time on the
@@ -388,10 +398,12 @@ def _cache_path(cache_dir: str, year: int) -> str:
 
 def _write_class_cache(cache_dir: str, year: int,
                        prospects: List[Dict[str, Any]],
-                       component_rows: Dict[str, Dict[str, Any]]) -> str:
+                       component_rows: Dict[str, Dict[str, Any]],
+                       games_played: bool = True) -> str:
     os.makedirs(cache_dir, exist_ok=True)
     path = _cache_path(cache_dir, year)
     payload = {"cache_version": CACHE_VERSION, "year": year,
+               "games_played": bool(games_played),
                "prospects": prospects, "component_rows": component_rows}
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(payload, fh)
@@ -401,9 +413,13 @@ def _write_class_cache(cache_dir: str, year: int,
 def _read_class_cache(cache_dir: str,
                       year: int) -> Optional[Any]:
     """(prospects, component_rows) for a cached class, else None.
-    A missing, unreadable, stale-version, or sub-floor cache is a
-    miss: sub-floor entries in particular must never short-circuit
-    the coverage gate, so the class re-fetches live instead."""
+    A missing, unreadable, stale-version, sub-floor, or GP-less
+    cache is a miss: sub-floor entries in particular must never
+    short-circuit the coverage gate, so the class re-fetches live
+    instead. GP-less entries (written before script v1.3, when live
+    loads never fetched games played) carry no "games_played"
+    marker; serving one would silently re-derive the empty-leg
+    artifact v1.3 exists to fix."""
     path = _cache_path(cache_dir, year)
     if not os.path.exists(path):
         return None
@@ -414,6 +430,8 @@ def _read_class_cache(cache_dir: str,
         return None
     if (payload.get("cache_version") != CACHE_VERSION
             or payload.get("year") != year):
+        return None
+    if payload.get("games_played") is not True:
         return None
     prospects = payload.get("prospects") or []
     if _matched_fraction(prospects) < COVERAGE_FLOOR:
@@ -477,7 +495,11 @@ def _load_class_live(year: int, bt: Any, pm: Any,
     extracted (cache-shaped) form build_reference() consumes."""
     draft_class = bt._load_draft_class(year)
     athleticism = bt._load_combine_athleticism(year)
-    college_stats = bt._load_cfbd_college_stats(year, draft_class)
+    # Real games-played counts: v4's season-leg pools gate on
+    # GP >= 4 and v4 never defaults GP, so a load without them
+    # pools zero legs (the v1.2 artifact's failure mode).
+    college_stats = bt._load_cfbd_college_stats(
+        year, draft_class, fetch_games_played=True)
     prospects, consensus = bt._build_prospect_dicts(
         draft_class, athleticism, year, college_stats)
     for p in prospects:
@@ -525,7 +547,17 @@ def run_real(classes: List[int], out_path: str, use_cache: bool = True,
             prospects, rows = _load_class_live(year, bt, pm, composites)
             print(f"[{year}] {len(prospects)} prospects scored")
             if _matched_fraction(prospects) >= COVERAGE_FLOOR:
-                _write_class_cache(cache_dir, year, prospects, rows)
+                # Record games-played from the data itself: the GP
+                # lookup fails soft inside ingestion, so a class
+                # whose counts never landed must cache as GP-less
+                # (reads as a miss next run and re-fetches) rather
+                # than masquerade as a GP entry.
+                has_gp = any(
+                    s.get("games_played") is not None
+                    for p in prospects
+                    for s in (p.get("seasons") or []))
+                _write_class_cache(cache_dir, year, prospects, rows,
+                                   games_played=has_gp)
                 print(f"[{year}] derive cache written")
             else:
                 print(f"[{year}] derive cache skipped: stat coverage "
@@ -566,7 +598,14 @@ def run_real(classes: List[int], out_path: str, use_cache: bool = True,
                          f"(cache_version {CACHE_VERSION}); cached "
                          "classes load from disk with zero CFBD calls "
                          "unless --no-cache; classes below the "
-                         "coverage floor are never cached"),
+                         "coverage floor are never cached; entries "
+                         "record games_played=true and GP-less "
+                         "entries (pre-v1.3) read as misses"),
+        "games_played": ("live class loads fetched exact "
+                         "games-played counts via CFBD "
+                         "/games/players (fetch_games_played=True); "
+                         "season-leg pools gate on GP >= 4 and no "
+                         "games-played value is ever defaulted"),
         "coverage_gate": ("artifact refused when any class's "
                           "stat-matched fraction (prospects with "
                           "college seasons / class prospects) is "
