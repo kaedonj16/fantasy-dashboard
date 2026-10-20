@@ -1,0 +1,210 @@
+"""
+Tests for scripts/derive_v4_reference.py v1.2 behavior: the
+play-by-play targets stub, the per-class derive cache, and the
+stat-coverage gate.
+
+No network, no DB, no CFBD key: the backtest machinery and the
+current model's scorer are replaced with fakes via monkeypatch,
+and the recruiting pull is stubbed out. The cache contract under
+test is the one build_reference() defines: per prospect it reads
+player_id / position / age / weight_lbs / seasons / athleticism /
+recruiting, and per component row only the four COMPONENT_FIELDS.
+"""
+
+import copy
+import os
+import sys
+
+import pytest
+
+pytest.importorskip("pandas")
+
+_REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _REPO)
+sys.path.insert(0, os.path.join(_REPO, "tests"))
+sys.path.insert(0, os.path.join(_REPO, "scripts"))
+
+import derive_v4_reference as drv  # noqa: E402
+
+
+def _prospect(pid, pos="WR", with_seasons=True, dom=0.30):
+    seasons = [{
+        "season": 2022, "games_played": 12, "team": "State",
+        "conference": "SEC",
+        "dominator_rating": dom, "market_share_yards": 0.30,
+        "market_share_tds": 0.28, "receptions": 60, "targets": 90,
+        "receiving_yards": 900, "receiving_tds": 8,
+        "yds_per_reception": 15.0,
+        "rush_attempts": 5, "rush_yards": 40, "rush_tds": 0,
+        "pass_attempts": 0, "pass_yards": 0, "pass_tds": 0,
+        "team_pass_yards": 3000, "team_total_yards": 5000,
+    }] if with_seasons else []
+    return {
+        "player_id": pid, "name": pid, "position": pos,
+        "school": "State", "height_inches": 73,
+        "age": 21.5, "weight_lbs": 200,
+        "seasons": seasons,
+        "athleticism": {"forty_yard": 4.45},
+        "recruiting": {"composite_rating": 0.95},
+    }
+
+
+def _score_row(p, base=70.0):
+    return {"player_id": p["player_id"],
+            "production_score": base,
+            "efficiency_score": base - 5,
+            "breakout_profile_score": base - 10,
+            "athleticism_score": base - 15,
+            # Not consumed by build_reference; extraction must drop it.
+            "prospect_score": base + 20}
+
+
+def _install_fake_machinery(monkeypatch, classes_map):
+    """Replace the backtest loaders + model scorer with fakes.
+    classes_map: {year: [prospect dicts]}. Returns a counters dict."""
+    import backtest_prospect_model as bt
+    from data_building.rookie_pipeline import ingestion, prospect_model as pm
+
+    # run_real's targets stub is a deliberate process-global mutation
+    # (harmless in the one-shot Render script). In the shared test
+    # process it must NOT leak: registering the original with
+    # monkeypatch here makes teardown restore it even though
+    # run_real overwrites the attribute mid-test. (Without this,
+    # test_prospect_data_sources.py's targets tests all see {}.)
+    monkeypatch.setattr(ingestion, "fetch_cfbd_targets_from_plays",
+                        ingestion.fetch_cfbd_targets_from_plays)
+
+    counts = {"cfbd_loads": 0}
+
+    def fake_cfbd(year, draft_class):
+        counts["cfbd_loads"] += 1
+        return {}
+
+    def fake_build(draft_class, athleticism, year, college_stats):
+        return ([copy.deepcopy(p) for p in classes_map[year]], {})
+
+    monkeypatch.setattr(bt, "_load_draft_class", lambda year: [{"x": 1}])
+    monkeypatch.setattr(bt, "_load_combine_athleticism", lambda year: {})
+    monkeypatch.setattr(bt, "_load_cfbd_college_stats", fake_cfbd)
+    monkeypatch.setattr(bt, "_build_prospect_dicts", fake_build)
+    monkeypatch.setattr(
+        pm, "score_all_prospects",
+        lambda prospects, consensus, skip_sagarin=True:
+            [_score_row(p) for p in prospects])
+    monkeypatch.setattr(drv, "_pull_recruiting_composites",
+                        lambda years: {})
+    monkeypatch.setenv("CFBD_API_KEY", "test-key")
+    return counts
+
+
+class TestTargetsStub:
+    def test_run_real_stubs_targets_crawl(self, monkeypatch, tmp_path):
+        from data_building.rookie_pipeline import ingestion
+
+        def sentinel(*a, **k):
+            raise AssertionError("targets crawl must never run")
+
+        monkeypatch.setattr(
+            ingestion, "fetch_cfbd_targets_from_plays", sentinel)
+        classes = {2016: [_prospect("A"), _prospect("B")]}
+        _install_fake_machinery(monkeypatch, classes)
+        drv.run_real([2016], str(tmp_path / "v4_reference.json"),
+                     cache_dir=str(tmp_path / "cache"))
+        # run_real replaced the crawl with the {} stub before loading.
+        assert ingestion.fetch_cfbd_targets_from_plays is not sentinel
+        assert ingestion.fetch_cfbd_targets_from_plays(2016, {}) == {}
+
+
+class TestCacheRoundTrip:
+    def test_cache_reload_feeds_identical_leg_inputs(self, tmp_path):
+        prospects = [_prospect("A", dom=0.20), _prospect("B", dom=0.35),
+                     _prospect("C", pos="TE", dom=0.28)]
+        rows = {p["player_id"]: _score_row(p) for p in prospects}
+        live_prospects = [drv._extract_prospect(p) for p in prospects]
+        live_rows = {pid: drv._extract_component_row(r)
+                     for pid, r in rows.items()}
+        # Extraction keeps exactly the consumed fields.
+        assert "school" not in live_prospects[0]
+        assert "prospect_score" not in live_rows["A"]
+
+        cache_dir = str(tmp_path / "cache")
+        drv._write_class_cache(cache_dir, 2016, live_prospects, live_rows)
+        loaded = drv._read_class_cache(cache_dir, 2016)
+        assert loaded is not None
+        c_prospects, c_rows = loaded
+        assert c_prospects == live_prospects
+        assert c_rows == live_rows
+
+        prov = {"fixture_sample": True}
+        art_live = drv.build_reference(
+            live_prospects, live_rows, {}, prov)
+        art_cache = drv.build_reference(c_prospects, c_rows, {}, prov)
+        assert art_cache == art_live
+
+    def test_subfloor_cache_reads_as_miss(self, tmp_path):
+        prospects = [drv._extract_prospect(_prospect("A", with_seasons=False)),
+                     drv._extract_prospect(_prospect("B", with_seasons=False)),
+                     drv._extract_prospect(_prospect("C", with_seasons=True))]
+        cache_dir = str(tmp_path / "cache")
+        drv._write_class_cache(cache_dir, 2016, prospects, {})
+        # 1/3 matched < the 0.50 floor: never served from cache, so
+        # the coverage gate cannot be short-circuited by a stale
+        # starved entry.
+        assert drv._read_class_cache(cache_dir, 2016) is None
+
+
+class TestCoverageGate:
+    def test_starved_class_refuses_and_good_cache_stays(
+            self, monkeypatch, tmp_path):
+        healthy = [_prospect(f"H{i}") for i in range(4)]
+        starved = ([_prospect("S0", with_seasons=True)]
+                   + [_prospect(f"S{i}", with_seasons=False)
+                      for i in range(1, 4)])  # 1/4 = 0.25 matched
+        counts = _install_fake_machinery(
+            monkeypatch, {2016: healthy, 2017: starved})
+        cache_dir = str(tmp_path / "cache")
+        out = str(tmp_path / "v4_reference.json")
+
+        with pytest.raises(SystemExit) as exc:
+            drv.run_real([2016, 2017], out, cache_dir=cache_dir)
+        assert exc.value.code == 1
+        assert not os.path.exists(out)
+        # The healthy class cached; the starved one did not, so a
+        # rerun re-fetches only the starved class.
+        assert os.path.exists(os.path.join(cache_dir, "2016.json"))
+        assert not os.path.exists(os.path.join(cache_dir, "2017.json"))
+
+        counts["cfbd_loads"] = 0
+        with pytest.raises(SystemExit):
+            drv.run_real([2016, 2017], out, cache_dir=cache_dir)
+        assert counts["cfbd_loads"] == 1
+
+    def test_healthy_run_writes_then_serves_from_cache(
+            self, monkeypatch, tmp_path, capsys):
+        classes = {2016: [_prospect(f"P{i}", dom=0.20 + 0.05 * i)
+                          for i in range(4)]}
+        counts = _install_fake_machinery(monkeypatch, classes)
+        cache_dir = str(tmp_path / "cache")
+        out = str(tmp_path / "v4_reference.json")
+
+        artifact = drv.run_real([2016], out, cache_dir=cache_dir)
+        assert os.path.exists(out)
+        assert counts["cfbd_loads"] == 1
+        prov = artifact["provenance"]
+        assert prov["script"].endswith("v1.2")
+        assert prov["class_coverage"] == {"2016": 1.0}
+        assert "derive_cache" in prov and "coverage_gate" in prov
+
+        counts["cfbd_loads"] = 0
+        capsys.readouterr()
+        artifact2 = drv.run_real([2016], out, cache_dir=cache_dir)
+        assert counts["cfbd_loads"] == 0
+        assert ("[2016] from derive cache: 4 prospects"
+                in capsys.readouterr().out)
+        for key in ("anchors", "percentiles", "advanced", "populations"):
+            assert artifact2[key] == artifact[key]
+
+        # --no-cache forces a live reload.
+        counts["cfbd_loads"] = 0
+        drv.run_real([2016], out, cache_dir=cache_dir, use_cache=False)
+        assert counts["cfbd_loads"] == 1

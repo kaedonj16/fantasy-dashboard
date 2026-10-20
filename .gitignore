@@ -17,6 +17,9 @@ data/usage_table.json
 # Rookie sources
 data/cache/rookie_sources
 
+# v4 derive per-class cache (scripts/derive_v4_reference.py)
+derive_cache/
+
 # Python
 __pycache__/
 *.py[cod]
