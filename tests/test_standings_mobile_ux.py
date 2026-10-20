@@ -177,8 +177,9 @@ def test_css_scoreboard_layout_rules():
     assert re.search(r"table#stats[^{]*\{\s*min-width:\s*0", block)
     # Column headers hide in scoreboard mode.
     assert re.search(r"thead\s*\{\s*display:\s*none", block)
-    # Columns 4+ hide; their data lives on line 1 / the sub-line.
-    assert "td:nth-child(n+4)" in block
+    # Status (col 3) and columns 5+ hide; Seed/Team/Record form the grid.
+    assert "td:nth-child(n+5)" in block
+    assert "td:nth-child(3)" in block
     # Seed movement arrows hide in the scoreboard seed column.
     assert ".rank-move" in block
 
@@ -201,8 +202,9 @@ def _mobile_blocks():
 
 
 def test_css_mobile_hides_record_and_streak_columns():
-    # Record (col 3) and Streak (col 7) live in the sub-line on mobile, so the
-    # columns hide in ordinary mode (not in Detailed mode).
+    # Record (col 4) and Form (col 8) live in the sub-line on mobile, so the
+    # columns hide in ordinary mode (not in Detailed mode). (Col 3 is the
+    # Status column; the 768px scoreboard block hides it, not this block.)
     hidden = set()
     for block in _mobile_blocks():
         for m in re.finditer(
@@ -216,8 +218,8 @@ def test_css_mobile_hides_record_and_streak_columns():
                 f"standings column hidden in Detailed mode: {sel.strip()[:80]}")
             for col in re.finditer(r"nth-child\((\d+)\)", sel):
                 hidden.add(int(col.group(1)))
-    assert {3, 7} <= hidden, f"expected cols 3 and 7 hidden, got {hidden}"
-    assert hidden <= {3, 7}, f"unexpected standings columns hidden: {hidden}"
+    assert {4, 8} <= hidden, f"expected cols 4 and 8 hidden, got {hidden}"
+    assert hidden <= {4, 8}, f"unexpected standings columns hidden: {hidden}"
 
 
 def test_css_mobile_sub_line_shown_non_detail_only():

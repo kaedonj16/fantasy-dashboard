@@ -4579,8 +4579,8 @@ button:hover {
 
     /* Mobile standings: Sleeper-style readability. The team name wraps to two
        lines instead of truncating, with a "3-0 (1-0) · ▲ 3W" sub-line under it
-       (record + streak move out of their own columns, so cols 3 and 7 hide
-       here). Data columns get bigger type and breathing room; everything stays
+       (record + streak move out of their own columns, so cols 4 and 8 hide
+       here; col 3 is Status, hidden by the scoreboard block). Data columns get bigger type and breathing room; everything stays
        reachable via horizontal scroll with Seed/Team frozen. The Team cell
        keeps its 50vw max-width clamp: Blink ignores max-width:0 on table cells
        in auto layout, which let long names blow the table out (~715px); 50vw
@@ -4589,10 +4589,10 @@ button:hover {
        layout stays.) Scoped to .st-tblscroll so the compact rail is untouched,
        and skipped when .show-detail is on (the toggle keeps its wide layout
        with all columns and no sub-line). */
-    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) th:nth-child(3),
-    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) td:nth-child(3),
-    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) th:nth-child(7),
-    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) td:nth-child(7) {
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) th:nth-child(4),
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) td:nth-child(4),
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) th:nth-child(8),
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) td:nth-child(8) {
         display: none;
     }
     .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) td.team {
@@ -4695,8 +4695,7 @@ button:hover {
    standings table reads as two-line scoreboard rows: seed + team name + the
    record big and right-aligned on line 1, and the .st-team-sub line inside
    the team cell carrying division record, streak, PF and PA. Division
-   headers become quiet small-caps labels with a rule, and division leaders
-   keep the slim navy accent on the leading cell. Every rule is gated on
+   headers become quiet small-caps labels with a rule. Every rule is gated on
    :not(.show-detail): Detailed mode keeps the wide scrollable table exactly
    as it works today, and desktop never enters this block. */
 @media (max-width: 768px) {
@@ -4723,7 +4722,10 @@ button:hover {
         border-top: none;
         text-align: left;
     }
-    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) tbody tr:not(.st-div-row):not(.pp-scnrow):not(.pp-cutrow) td:nth-child(n+4) {
+    /* Status (col 3) hides in scoreboard mode, as do columns 5+; the grid
+       shows exactly Seed (1), Team (2) and Record (4). */
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) tbody tr:not(.st-div-row):not(.pp-scnrow):not(.pp-cutrow) td:nth-child(3),
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) tbody tr:not(.st-div-row):not(.pp-scnrow):not(.pp-cutrow) td:nth-child(n+5) {
         display: none;
     }
     /* Seed: one bare numeral treatment for every row; gold only for seed 1. */
@@ -4757,7 +4759,8 @@ button:hover {
     .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) tbody tr:not(.st-div-row):not(.pp-scnrow):not(.pp-cutrow) td:nth-child(1) .rank-move {
         display: none;
     }
-    /* Team: name at scoreboard weight, DIV chip inline after the name. */
+    /* Team: name at scoreboard weight; the desktop "Division leader"
+       subline hides here (the .st-team-sub line carries the detail). */
     .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) tbody tr:not(.st-div-row):not(.pp-scnrow):not(.pp-cutrow) td.team {
         width: auto;
         max-width: none;
@@ -4776,22 +4779,12 @@ button:hover {
         font-weight: 800;
         line-height: 1.2;
     }
-    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) .st-div-lead {
-        display: inline-block;
-        vertical-align: 2px;
-        margin-left: 7px;
-        padding: 2px 6px 1px;
-        border: 1px solid #c7d3e4;
-        border-radius: var(--radius-pill);
-        background: var(--accent-soft-2);
-        color: var(--accent);
-        font-size: 9.5px;
-        font-weight: 800;
-        letter-spacing: .09em;
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) .st-div-sub {
+        display: none;
     }
     /* Record: big, right-aligned on line 1; its division part moves to the
        sub-line, so the parenthesized span hides here. */
-    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) tbody tr:not(.st-div-row):not(.pp-scnrow):not(.pp-cutrow) td:nth-child(3) {
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) tbody tr:not(.st-div-row):not(.pp-scnrow):not(.pp-cutrow) td:nth-child(4) {
         padding-left: 10px;
         text-align: right;
         font-size: 17px;
@@ -4800,7 +4793,7 @@ button:hover {
         font-variant-numeric: tabular-nums;
         white-space: nowrap;
     }
-    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) tbody tr:not(.st-div-row):not(.pp-scnrow):not(.pp-cutrow) td:nth-child(3) .st-div-rec {
+    .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) tbody tr:not(.st-div-row):not(.pp-scnrow):not(.pp-cutrow) td:nth-child(4) .st-div-rec {
         display: none;
     }
     /* Sub-line: division record, streak, PF, PA under the name. */
@@ -4823,8 +4816,7 @@ button:hover {
     .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) .st-streak-dir.down {
         color: var(--loss);
     }
-    /* Leader rows: no tint wash in scoreboard mode; the leading cell keeps
-       the slim navy inset accent from the base leader rule. */
+    /* Leader rows: no tint wash in scoreboard mode. */
     .st-tblscroll .standings-table[data-page="standings"]:not(.show-detail):not(.standings-compact) tbody tr.st-div-leader td {
         background: transparent;
     }
@@ -4939,6 +4931,56 @@ button:hover {
 }
 
 .pp-d-out {
+    background: var(--text-subtle);
+}
+
+/* Playoff status column (standings page): a dot + word cell that carries
+   the status the old left bars / team-cell chips used to encode. */
+.standings-table td.pp-status-cell {
+    white-space: nowrap;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.pp-status-cell .pp-sdot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 7px;
+    vertical-align: 1px;
+    background: var(--text-subtle);
+}
+
+td.pp-status-bye {
+    color: var(--pp-bye);
+}
+
+td.pp-status-bye .pp-sdot {
+    background: var(--pp-bye);
+}
+
+td.pp-status-in {
+    color: var(--win);
+}
+
+td.pp-status-in .pp-sdot {
+    background: var(--win);
+}
+
+td.pp-status-bub {
+    color: color-mix(in srgb, var(--warning) 88%, var(--text));
+}
+
+td.pp-status-bub .pp-sdot {
+    background: var(--warning);
+}
+
+td.pp-status-out {
+    color: var(--text-subtle);
+}
+
+td.pp-status-out .pp-sdot {
     background: var(--text-subtle);
 }
 
@@ -12771,30 +12813,29 @@ select:focus {
     max-width: 100%;
 }
 
-/* Standings Luck / Exp. Seed column chips */
+/* Standings Luck / Exp. Seed values: plain tabular text, no pill.
+   Color + weight carry the signal (amber = lucky, blue = unlucky). */
 .luck-chip {
     display: inline-block;
-    min-width: 2.4em;
-    padding: 0.05rem 0.35rem;
-    border-radius: var(--radius-pill);
-    font-size: 0.8rem;
+    font-size: 0.85rem;
     font-weight: 600;
     text-align: center;
+    font-variant-numeric: tabular-nums;
 }
 
 .luck-chip.luck-pos {
-    background: rgba(245, 158, 11, 0.16);
     color: #b45309;
+    font-weight: 800;
 }
 
 .luck-chip.luck-neg {
-    background: rgba(59, 130, 246, 0.16);
-    color: #1d4ed8;
+    color: #2563eb;
+    font-weight: 800;
 }
 
 .luck-chip.luck-neu {
-    background: var(--surface-2, #f1f5f9);
-    color: var(--text-muted);
+    color: var(--text-subtle);
+    font-weight: 600;
 }
 
 [data-theme="dark"] .luck-chip.luck-pos {
@@ -32530,6 +32571,27 @@ table.mid-table {
     color: var(--muted);
 }
 
+/* Standings page only: podium ranks (1/2/3) get the same bordered box as
+   .rank-plain so the seed column reads uniformly. rank_mark() and the
+   other boards keep their podium marks. Desktop-gated: the <=768px
+   scoreboard block keeps its bare-numeral seed treatment (gold for 1). */
+@media (min-width: 769px) {
+    .standings-table[data-page="standings"] .rank-first,
+    .standings-table[data-page="standings"] .rank-second,
+    .standings-table[data-page="standings"] .rank-third {
+        display: inline-grid;
+        place-items: center;
+        width: 22px;
+        height: 22px;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--border);
+        background: transparent;
+        font-weight: 800;
+        font-size: 0.78rem;
+        color: var(--muted);
+    }
+}
+
 /* Awards records grid - auto-fit for variable card count */
 .awards-records-grid {
     grid-template-columns: repeat(auto-fit, minmax(175px, 1fr)) !important;
@@ -45122,7 +45184,6 @@ a, button, [role="button"], [role="tab"], summary, label,
 .rz-active-chip,
 .rz-live-chip,
 .sched-rank-pos,
-.luck-chip,
 .rivalry-chip,
 .pill-arrow,
 .sc-pos-pill,
@@ -45140,7 +45201,6 @@ a, button, [role="button"], [role="tab"], summary, label,
 .otc-team-pill,
 .po-out-pill,
 .wl-count-pill,
-.luck-chip,
 .rz-lg-pill {
     border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
 }
@@ -46503,6 +46563,15 @@ a, button, [role="button"], [role="tab"], summary, label,
     background: color-mix(in srgb, var(--accent) 9%, transparent);
     border: 1px solid color-mix(in srgb, var(--accent) 16%, var(--border));
 }
+/* Division leader subline (standings page): plain muted text under the
+   team name; replaces the DIV chip in the full standings renderer. */
+.st-div-sub {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--text-subtle);
+    margin-top: 1px;
+}
+
 .st-div-lead {
     display: inline-flex;
     align-items: center;
@@ -46601,6 +46670,39 @@ a, button, [role="button"], [role="tab"], summary, label,
 }
 .standings-table[data-divisions="1"] tr.pp-out td {
     background: color-mix(in srgb, var(--text-subtle) 5%, transparent);
+}
+
+/* Playoff picture rework (standings PAGE table only): status lives in its
+   own column, so the old per-row left bars and row tints must not render
+   here, and neither must the division-leader navy inset (the leader is a
+   plain subline now). The shared rules above stay for any other surface
+   that still emits the pp-* row classes. */
+.standings-table[data-page="standings"] tr.pp-bye td:first-child,
+.standings-table[data-page="standings"] tr.pp-in td:first-child,
+.standings-table[data-page="standings"] tr.pp-clinched td:first-child,
+.standings-table[data-page="standings"] tr.pp-bubble td:first-child,
+.standings-table[data-page="standings"] tr.pp-out td:first-child,
+.standings-table[data-page="standings"] tr.st-div-leader td:first-child {
+    box-shadow: none;
+}
+
+.standings-table[data-page="standings"] tr.pp-bye td,
+.standings-table[data-page="standings"] tr.pp-bubble td,
+.standings-table[data-page="standings"] tr.pp-out td,
+.standings-table[data-page="standings"] tr.st-div-leader td {
+    background: transparent;
+}
+
+/* Eliminated rows keep their muted text on this table via the renderer's
+   .st-elim row class (the pp-out row class is no longer emitted here). */
+.standings-table[data-page="standings"] tr.st-elim td {
+    color: var(--text-muted);
+}
+
+.standings-table[data-page="standings"] tr.st-elim td.team,
+.standings-table[data-page="standings"] tr.st-elim .pp-team-name,
+.standings-table[data-page="standings"] tr.st-elim .team-clickable {
+    color: var(--text-muted);
 }
 
 /* Give team names room on the reworked standings page instead of the base
@@ -48486,7 +48588,7 @@ table.rz-bs-table thead th:not(:first-child) {
 }
 
 [data-theme="dark"] .luck-chip.luck-neu {
-    background: rgba(148, 163, 184, .14);
+    background: transparent;
 }
 
 [data-theme="dark"] .game-log-proj-badge {

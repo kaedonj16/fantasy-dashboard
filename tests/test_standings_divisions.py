@@ -172,7 +172,11 @@ def test_render_standings_splits_by_division():
     assert "East" in html and "West" in html
     assert "3 teams" not in html  # 2 teams each in this fixture
     assert "2 teams" in html
-    assert "st-div-lead" in html
+    # Division leaders carry a plain "Division leader" subline, not the
+    # old DIV chip.
+    assert "st-div-sub" in html
+    assert "Division leader" in html
+    assert "<span class='st-div-lead'" not in html
     # East block should appear before West (sorted by division id).
     assert html.index("East") < html.index("West")
     # Flat leagues stay flat.
@@ -180,6 +184,7 @@ def test_render_standings_splits_by_division():
     assert "st-div-row" not in flat
     assert 'data-divisions="1"' not in flat
     assert "st-div-lead" not in flat
+    assert "Division leader" not in flat
 
 
 def test_build_standings_map_uses_division_seeds():
