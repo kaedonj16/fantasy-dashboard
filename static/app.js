@@ -21731,7 +21731,9 @@ function _cmpLoadGameLogs(pid, position, containerId) {
 
 // Start/Sit compare (shared). Mirrors the Waivers page start/sit compare: a
 // START/TOSS-UP verdict on the unified start_score, the 0-100 position index as
-// the headline, and a per-player table of the same rows the Waivers compare
+// the headline (the raw start score when the compare crosses positions, since
+// the index is only relative to a player's own position), and a per-player
+// table of the same rows the Waivers compare
 // shows (Proj PPG, L4 PPG, Value, raw score, Floor-Ceil, Profile, Boom/Bust,
 // Opponent, Def vs pos, Matchup, Vegas total, Venue). The row chips are ported
 // from dashboard_services/pages/waivers_page.py so the two surfaces read the
@@ -21924,22 +21926,39 @@ function _buildStartSitTabHTML(players) {
   const twoUp = players.length === 2;
   const _row = twoUp ? _ssMidRow : _ssTableRow;
 
+  // Cross-position compare: the 0-100 index is relative to each player's own
+  // position, so side-by-side indexes can read as a tie (69 vs 69) while the
+  // verdict, decided on the raw start_score, is not close. When the players
+  // are at different positions the headline shows the raw start score, the
+  // number that actually decides the call, and the index leaves the headline
+  // entirely so it cannot be read as cross-position comparable. Same-position
+  // compares keep the index headline.
+  const _posSet = new Set(players.map(p => String((p && p.position) || '').toUpperCase()).filter(Boolean));
+  const crossPos = _posSet.size > 1;
+  const headlineFor = function (st) {
+    if (st.start_score == null) return null;
+    if (crossPos) return { big: Math.round(Number(st.start_score) * 10) / 10, cap: 'start score' };
+    const pct = st.start_score_pct;
+    const hasPct = pct != null && !isNaN(pct);
+    return hasPct
+      ? { big: Math.round(Number(pct)), cap: 'index (0 to 100)' }
+      : { big: Math.round(Number(st.start_score) * 10) / 10, cap: 'score' };
+  };
+
   // Column header per player: name, then the start/sit score at the top of the
   // column (the 0-100 position-relative index, or the raw score when the index
-  // could not be built), replacing the separate hero cards. Demotion chips
+  // could not be built or the compare crosses positions), replacing the
+  // separate hero cards. Demotion chips
   // (e.g. the specific weather condition) sit under the score.
   const heads = players.map(function (p) {
     const st = s(p);
     const nm = _ssEsc(p.name || p.full_name || 'Player');
     let scoreHtml;
-    if (st.start_score == null) {
+    const h = headlineFor(st);
+    if (!h) {
       scoreHtml = '<div class="ss-th-score ss-th-none">' + dash + '</div>';
     } else {
-      const pct = st.start_score_pct;
-      const hasPct = pct != null && !isNaN(pct);
-      const big = hasPct ? Math.round(Number(pct)) : (Math.round(Number(st.start_score) * 10) / 10);
-      const cap = hasPct ? 'index (0 to 100)' : 'score';
-      scoreHtml = '<div class="ss-th-score">' + big + '</div><div class="ss-th-cap">' + cap + '</div>';
+      scoreHtml = '<div class="ss-th-score">' + h.big + '</div><div class="ss-th-cap">' + h.cap + '</div>';
     }
     return '<th class="ss-th"><div class="ss-th-name">' + nm + '</div>' + scoreHtml + _ssDemoteChip(p) + '</th>';
   }).join('');
@@ -21957,12 +21976,9 @@ function _buildStartSitTabHTML(players) {
   // the demotion chip under it, both player names stacked in the center.
   const scoreFor = function (p) {
     const st = s(p);
-    if (st.start_score == null) return '<div class="mid-score" style="color:var(--muted)">' + dash + '</div>';
-    const pct = st.start_score_pct;
-    const hasPct = pct != null && !isNaN(pct);
-    const big = hasPct ? Math.round(Number(pct)) : (Math.round(Number(st.start_score) * 10) / 10);
-    const cap = hasPct ? 'index (0 to 100)' : 'score';
-    return '<div class="mid-score">' + big + '</div><div class="mid-cap">' + cap + '</div>';
+    const h = headlineFor(st);
+    if (!h) return '<div class="mid-score" style="color:var(--muted)">' + dash + '</div>';
+    return '<div class="mid-score">' + h.big + '</div><div class="mid-cap">' + h.cap + '</div>';
   };
   const nmOf = (p) => _ssEsc(p.name || p.full_name || 'Player');
   const midHead = twoUp
@@ -22025,11 +22041,16 @@ function _buildStartSitTabHTML(players) {
     : '<div class="ss-tbl-wrap"><table class="ss-tbl"><thead><tr><th class="ss-rowlbl" aria-hidden="true"></th>' + heads + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
 
   const introScore = twoUp ? 'The score at the top of each side ' : 'The score at the top of each column ';
-  return _SS_TAB_CSS
-    + '<div class="ss-tab-intro">The same read as the Start/Sit page compare. ' + introScore + 'is a 0 to 100 index relative to that player\'s own position (100 is the top weekly projection '
-    + 'there), so a QB and a WR are comparable. Rows are split into what actually moves the start/sit score '
+  const introTail = 'Rows are split into what actually moves the start/sit score '
     + 'and context that does not: value, opponent, and matchup do not change the score, because the weekly '
-    + 'projection already reflects the opponent. Best in each row is highlighted.</div>'
+    + 'projection already reflects the opponent. Best in each row is highlighted.</div>';
+  const intro = crossPos
+    ? '<div class="ss-tab-intro">The same read as the Start/Sit page compare. These players are at different positions, so the number at the top is the raw start score, and that score is what decides the call. The 0 to 100 index is relative to a player\'s own position, so it cannot be compared across positions. '
+      + introTail
+    : '<div class="ss-tab-intro">The same read as the Start/Sit page compare. ' + introScore + 'is a 0 to 100 index relative to that player\'s own position (100 is the top weekly projection '
+      + 'there), so a QB and a WR are comparable. ' + introTail;
+  return _SS_TAB_CSS
+    + intro
     + verdictHtml
     + table;
 }
