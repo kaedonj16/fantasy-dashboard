@@ -363,16 +363,72 @@ def test_portfolio_actions_no_projections_no_swap_no_crash(monkeypatch):
     assert data["scan"]["incomplete"] is False
 
 
-def test_portfolio_moves_card_retries_once_and_shows_incomplete_state():
+def _pf_leagues(n):
+    return [
+        {"league_id": f"L{i}", "platform": "sleeper", "season": 2026,
+         "name": f"League {i}"}
+        for i in range(1, n + 1)
+    ]
+
+
+def test_portfolio_actions_scan_total_covers_all_linked_leagues(monkeypatch):
+    """11 linked leagues, only 4 cached: total is the full 11, not the
+    attempted count, so the client's missed count (total - scanned)
+    includes the 7 cold leagues."""
+    leagues = _pf_leagues(11)
+    ctx = _pf_ctx(projections={"s1": 15.0, "b1": 9.0})
+    cached = {f"L{i}": ctx for i in range(1, 5)}
+    data = _pf_get(_pf_client(monkeypatch, cached, leagues))
+    scan = data["scan"]
+    assert scan["total"] == 11
+    assert scan["scanned"] == 4
+    assert scan["skipped_cold"] == 7
+    assert scan["skipped_no_roster"] == 0
+    # Buckets sum to the ATTEMPTED count (here all 11: the slice is 12).
+    assert scan["scanned"] + scan["skipped_cold"] + scan["skipped_no_roster"] == 11
+    assert scan["incomplete"] is True
+
+
+def test_portfolio_actions_all_eleven_leagues_scanned(monkeypatch):
+    """All 11 linked leagues are attempted (the slice is 12, not 8)."""
+    leagues = _pf_leagues(11)
+    ctx = _pf_ctx(projections={"s1": 15.0, "b1": 9.0})
+    cached = {f"L{i}": ctx for i in range(1, 12)}
+    data = _pf_get(_pf_client(monkeypatch, cached, leagues))
+    assert data["scan"]["total"] == 11
+    assert data["scan"]["scanned"] == 11
+    assert data["scan"]["incomplete"] is False
+
+
+def test_portfolio_actions_leagues_past_slice_count_toward_total(monkeypatch):
+    """13 linked, attempt slice 12: the 13th is never attempted but still
+    counts toward total, so the scan stays honestly incomplete."""
+    leagues = _pf_leagues(13)
+    ctx = _pf_ctx(projections={"s1": 15.0, "b1": 9.0})
+    cached = {f"L{i}": ctx for i in range(1, 14)}
+    data = _pf_get(_pf_client(monkeypatch, cached, leagues))
+    scan = data["scan"]
+    assert scan["total"] == 13
+    assert scan["scanned"] == 12
+    assert scan["skipped_cold"] == 0
+    assert scan["incomplete"] is True
+
+
+def test_portfolio_moves_card_retries_on_ladder_and_shows_incomplete_state():
     source = (ROOT / "app.py").read_text()
     fn = source.split("def build_portfolio_body")[1].split("\ndef ")[0]
-    # One retry, ~6s later, only when the scan reports incomplete. (6s, not
-    # the old reconcile loop's 5s: test_portfolio_leagues pins "},5000);"
-    # out of this function to keep that poll-and-reload pattern from returning.)
+    # Bounded retry ladder while the scan reports incomplete: cold league
+    # builds take far longer than one short retry. (No "},5000);" literal:
+    # test_portfolio_leagues pins it out of this function to keep the old
+    # 5s poll-and-reload pattern from returning.)
     assert "__pfMovesGo(attempt)" in fn
     assert "scan.incomplete" in fn
-    assert "__pfMovesGo(1)" in fn
-    assert "__pfMovesGo(1);},6000)" in fn
+    assert "var PF_RETRY=[6000,15000,30000];" in fn
+    assert "attempt<PF_RETRY.length" in fn
+    assert "__pfMovesGo(attempt+1)" in fn
+    assert "PF_RETRY[attempt]" in fn
+    # The single-retry shape from #2739 is gone.
+    assert "__pfMovesGo(1)" not in fn
     # Honest incomplete states: under the list and instead of all-caught-up.
     assert "Could not check" in fn
     assert "some moves may be missing" in fn
