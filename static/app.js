@@ -23706,6 +23706,15 @@ async function checkTradeOutcome(btn) {
   btn.textContent = 'Loading…';
   btn.disabled = true;
 
+  // Every failure shows the error in the (now visible) panel and restores
+  // the button label - never a stuck 'Loading…' or a 'Hide Outcome' on an
+  // error, and never an error written into a hidden element.
+  function showOutcomeError(msg) {
+    resultEl.innerHTML = `<p class="outcome-error">${msg}</p>`;
+    resultEl.style.display = 'block';
+    btn.textContent = 'Check Outcome';
+  }
+
   try {
     const teamsData = JSON.parse(btn.dataset.tradeTeams || '[]');
     const tradeDate = btn.dataset.tradeDate || '';
@@ -23714,19 +23723,28 @@ async function checkTradeOutcome(btn) {
     const firstTeam = teamsData[0] || {};
     const assets_received = firstTeam.gets || [];
     const assets_sent = firstTeam.sends || [];
-    
+
     // Validate that we have assets to analyze
     if (!assets_received.length && !assets_sent.length) {
       throw new Error('No trade assets found to analyze');
     }
-    
+
     const payload = {
       assets_received,
       assets_sent,
       trade_date: tradeDate,
     };
-
-    console.log('[trade-outcome] Sending payload:', payload);
+    // Value basis from the surface that rendered the button (activity /
+    // trade cards stamp it); absent attrs keep the server default basis.
+    if (btn.dataset.isSf != null) payload.is_sf = btn.dataset.isSf === '1';
+    if (btn.dataset.leagueSize) {
+      const ls = parseInt(btn.dataset.leagueSize, 10);
+      if (!Number.isNaN(ls)) payload.league_size = ls;
+    }
+    if (btn.dataset.tePremium != null && btn.dataset.tePremium !== '') {
+      const tep = parseFloat(btn.dataset.tePremium);
+      if (!Number.isNaN(tep)) payload.te_premium = tep;
+    }
 
     const res = await fetch('/api/trade-outcome', {
       method: 'POST',
@@ -23734,73 +23752,107 @@ async function checkTradeOutcome(btn) {
       body: JSON.stringify(payload),
     });
     if (!res.ok) {
-      resultEl.innerHTML = `<p class="outcome-error">Could not load outcome data.</p>`;
+      showOutcomeError('Could not load outcome data.');
       return;
     }
     const data = await res.json();
 
     if (!data.success) {
-      resultEl.innerHTML = `<p class="outcome-error">Could not load outcome data.</p>`;
-    } else {
-      const verdictCls = data.verdict === 'WIN' ? 'outcome-win' : data.verdict === 'LOSS' ? 'outcome-loss' : 'outcome-even';
-      const sign = data.net_delta_now >= 0 ? '+' : '';
-
-      function buildThenRow(r, tag, tagCls) {
-        if (r.is_pick || r.value_then == null) return '';
-        return `<div class="outcome-row"><span class="outcome-name">${r.name}</span><span class="outcome-tag ${tagCls}">${tag}</span><span class="outcome-val">${r.value_then.toFixed(0)}</span></div>`;
-      }
-
-      function buildNowRow(r, tag, tagCls) {
-        const deltaStr = r.delta != null ? (r.delta >= 0 ? ` (+${r.delta.toFixed(0)})` : ` (${r.delta.toFixed(0)})`) : '';
-        const cls = r.delta == null ? 'outcome-neutral' : (r.delta >= 0 ? 'outcome-plus' : 'outcome-minus');
-        return `<div class="outcome-row"><span class="outcome-name">${r.name}</span><span class="outcome-tag ${tagCls}">${tag}</span><span class="outcome-val ${cls}">${(r.value_now ?? 0).toFixed(0)}${deltaStr}</span></div>`;
-      }
-
-      let thenRows = '';
-      (data.received || []).forEach(r => { thenRows += buildThenRow(r, 'GOT', 'outcome-got'); });
-      (data.sent    || []).forEach(r => { thenRows += buildThenRow(r, 'GAVE', 'outcome-gave'); });
-
-      let nowRows = '';
-      (data.received || []).forEach(r => { nowRows += buildNowRow(r, 'GOT', 'outcome-got'); });
-      (data.sent    || []).forEach(r => { nowRows += buildNowRow(r, 'GAVE', 'outcome-gave'); });
-
-      const thenSection = thenRows ? `<div class="outcome-section-label">At Trade Date</div><div class="outcome-rows">${thenRows}</div>` : '';
-      const thenNote = data.then_estimated
-        ? '<div class="outcome-est-badge">Approximate (nearest board).</div>' : '';
-      resultEl.innerHTML = `
-        <div class="trade-outcome-wrap">
-          <div class="outcome-header">
-            <span class="outcome-verdict ${verdictCls}">${data.verdict}</span>
-            <span class="outcome-delta">${firstTeam.team_name || 'Team 1'}: ${sign}${data.net_delta_now.toFixed(0)} value since trade</span>
-          </div>
-          ${thenNote}
-          ${thenSection}
-          <div class="outcome-section-label outcome-section-label--current">Current Value</div>
-          <div class="outcome-rows">${nowRows}</div>
-          <div class="outcome-share"><button type="button" class="outcome-share-btn" onclick="shareTradeOutcome(this)">Share</button></div>
-        </div>`;
-      // Stash the frozen payload for shareTradeOutcome (verdict + per-asset
-      // then/now values + the two team names for the card).
-      resultEl._outcomeSharePayload = {
-        team_a: firstTeam.team_name || 'Team A',
-        team_b: (teamsData[1] && teamsData[1].team_name) || 'Opponent',
-        trade_date: tradeDate,
-        verdict: data.verdict,
-        net_delta_now: data.net_delta_now,
-        total_received_now: data.total_received_now,
-        total_sent_now: data.total_sent_now,
-        then_estimated: !!data.then_estimated,
-        received: data.received,
-        sent: data.sent,
-      };
+      showOutcomeError('Could not load outcome data.');
+      return;
     }
+
+    const verdictCls = data.verdict === 'WIN' ? 'outcome-win' : data.verdict === 'LOSS' ? 'outcome-loss' : 'outcome-even';
+    const teamLabel = firstTeam.team_name || 'Team 1';
+
+    function fmtSigned(v) {
+      return (v >= 0 ? '+' : '') + v.toFixed(0);
+    }
+
+    // Header: an unvalued asset means no grade at all; a complete
+    // since-trade comparison headlines the CHANGE; anything else is
+    // honestly labeled as the current net.
+    let headerHtml;
+    if (data.graded === false) {
+      const firstUnvalued = (data.unvalued_assets && data.unvalued_assets[0]) || {};
+      headerHtml = `
+        <div class="outcome-header">
+          <span class="outcome-delta">Can’t grade — ${firstUnvalued.name || 'A traded asset'} has no current value</span>
+        </div>`;
+    } else if (data.verdict_basis === 'since_trade' && data.net_change != null) {
+      headerHtml = `
+        <div class="outcome-header">
+          <span class="outcome-verdict ${verdictCls}">${data.verdict}</span>
+          <span class="outcome-delta">${teamLabel}: ${fmtSigned(data.net_change)} since trade</span>
+        </div>`;
+    } else {
+      headerHtml = `
+        <div class="outcome-header">
+          <span class="outcome-verdict ${verdictCls}">${data.verdict}</span>
+          <span class="outcome-delta">${teamLabel}: ${fmtSigned(data.net_delta_now)} current net</span>
+        </div>`;
+    }
+    const picksNote = (data.picks_in_trade && !data.then_complete)
+      ? '<div class="outcome-est-badge">Picks aren’t in the since-trade comparison — no trade-date pick values.</div>'
+      : '';
+
+    function buildThenRow(r, tag, tagCls) {
+      if (r.is_pick || r.value_then == null) return '';
+      return `<div class="outcome-row"><span class="outcome-name">${r.name}</span><span class="outcome-tag ${tagCls}">${tag}</span><span class="outcome-val">${r.value_then.toFixed(0)}</span></div>`;
+    }
+
+    function buildNowRow(r, tag, tagCls) {
+      if (r.value_now == null) {
+        return `<div class="outcome-row"><span class="outcome-name">${r.name}</span><span class="outcome-tag ${tagCls}">${tag}</span><span class="outcome-val outcome-neutral">—</span></div>`;
+      }
+      const deltaStr = r.delta != null ? (r.delta >= 0 ? ` (+${r.delta.toFixed(0)})` : ` (${r.delta.toFixed(0)})`) : '';
+      const cls = r.delta == null ? 'outcome-neutral' : (r.delta >= 0 ? 'outcome-plus' : 'outcome-minus');
+      return `<div class="outcome-row"><span class="outcome-name">${r.name}</span><span class="outcome-tag ${tagCls}">${tag}</span><span class="outcome-val ${cls}">${r.value_now.toFixed(0)}${deltaStr}</span></div>`;
+    }
+
+    let thenRows = '';
+    (data.received || []).forEach(r => { thenRows += buildThenRow(r, 'GOT', 'outcome-got'); });
+    (data.sent    || []).forEach(r => { thenRows += buildThenRow(r, 'GAVE', 'outcome-gave'); });
+
+    let nowRows = '';
+    (data.received || []).forEach(r => { nowRows += buildNowRow(r, 'GOT', 'outcome-got'); });
+    (data.sent    || []).forEach(r => { nowRows += buildNowRow(r, 'GAVE', 'outcome-gave'); });
+
+    const thenSection = thenRows ? `<div class="outcome-section-label">At Trade Date</div><div class="outcome-rows">${thenRows}</div>` : '';
+    const thenNote = data.then_estimated
+      ? '<div class="outcome-est-badge">Approximate (nearest board).</div>' : '';
+    resultEl.innerHTML = `
+      <div class="trade-outcome-wrap">
+        ${headerHtml}
+        ${picksNote}
+        ${thenNote}
+        ${thenSection}
+        <div class="outcome-section-label outcome-section-label--current">Current Value</div>
+        <div class="outcome-rows">${nowRows}</div>
+        <div class="outcome-share"><button type="button" class="outcome-share-btn" onclick="shareTradeOutcome(this)">Share</button></div>
+      </div>`;
+    // Stash the frozen payload for shareTradeOutcome (verdict + per-asset
+    // then/now values + the two team names for the card).
+    resultEl._outcomeSharePayload = {
+      team_a: firstTeam.team_name || 'Team A',
+      team_b: (teamsData[1] && teamsData[1].team_name) || 'Opponent',
+      trade_date: tradeDate,
+      verdict: data.verdict,
+      net_delta_now: data.net_delta_now,
+      net_change: data.net_change != null ? data.net_change : null,
+      verdict_basis: data.verdict_basis || 'current',
+      graded: data.graded !== false,
+      total_received_now: data.total_received_now,
+      total_sent_now: data.total_sent_now,
+      then_estimated: !!data.then_estimated,
+      received: data.received,
+      sent: data.sent,
+    };
 
     resultEl.style.display = 'block';
     btn.textContent = 'Hide Outcome';
   } catch (e) {
-    resultEl.innerHTML = `<p class="outcome-error">Error loading outcome.</p>`;
-    resultEl.style.display = 'block';
-    btn.textContent = 'Check Outcome';
+    showOutcomeError('Error loading outcome.');
   } finally {
     btn.disabled = false;
   }

@@ -23522,17 +23522,67 @@ def api_trade_outcome():
         logger.warning("[api-trade-outcome] 400 error: No assets provided. Payload: %s", payload)
         return jsonify({"error": "No assets provided", "debug": payload}), 400
 
+    # Optional value basis from the calling surface (activity card / trade
+    # card): price on the same basis the surface showed - SF column, league
+    # size column, TE premium. All sanitized; absent means the base 1QB
+    # 10-team column, as before.
+    _oc_is_sf = payload.get("is_sf") in (True, "true", "True", "1", 1)
+    try:
+        _oc_league_size = int(payload.get("league_size") or 10)
+    except (TypeError, ValueError):
+        _oc_league_size = 10
+    if _oc_league_size not in (8, 10, 12, 14):
+        _oc_league_size = 10
+    try:
+        _oc_te_premium = float(payload.get("te_premium") or 0.0)
+    except (TypeError, ValueError):
+        _oc_te_premium = 0.0
+    _oc_te_premium = min(max(_oc_te_premium, 0.0), 2.0)
+
     try:
         from concurrent.futures import ThreadPoolExecutor, as_completed
         from dashboard_services.picks import load_pick_value_table
+        from utils.trade import apply_te_premium as _oc_apply_tep
 
-        # Use the same value source as the player modal so all values are consistent.
+        # Use the same value source as the player modal so all values are
+        # consistent. A pid with no row (or a non-positive price on the
+        # selected basis) is UNVALUED: value_now stays None, never a
+        # silent 0 in the row or the totals.
         value_table = get_model_value_table_cached() or []
-        values_now = {
-            str(p["id"]): float(p.get("value") or 0)
-            for p in value_table
-            if isinstance(p, dict) and p.get("id") and float(p.get("value") or 0) > 0
-        }
+
+        def _oc_value_now(row: dict):
+            if _oc_is_sf:
+                candidates = []
+                if _oc_league_size in (8, 12, 14):
+                    candidates.append(f"sf_value_{_oc_league_size}")
+                candidates += ["sf_value", "value"]
+            else:
+                candidates = []
+                if _oc_league_size in (8, 12, 14):
+                    candidates.append(f"value_{_oc_league_size}")
+                candidates.append("value")
+            for _key in candidates:
+                _v = row.get(_key)
+                if _v is None:
+                    continue
+                try:
+                    _fv = float(_v)
+                except (TypeError, ValueError):
+                    continue
+                if _fv <= 0:
+                    return None
+                return _oc_apply_tep(
+                    _fv, row.get("position") or row.get("pos"), _oc_te_premium
+                )
+            return None
+
+        values_now = {}
+        for p in value_table:
+            if not isinstance(p, dict) or not p.get("id"):
+                continue
+            _vn = _oc_value_now(p)
+            if _vn is not None:
+                values_now[str(p["id"])] = _vn
 
         # Load pick values for pick asset handling
         pick_values = load_pick_value_table()
@@ -23589,8 +23639,13 @@ def api_trade_outcome():
                 logger.debug("trade-time value persist failed", exc_info=True)
             return round(best_val, 1), source
 
-        def get_pick_value(asset: dict) -> float:
-            """Get current pick value, preferring WLS-derived bucket values."""
+        def get_pick_value(asset: dict):
+            """Current pick value, preferring WLS-derived bucket values.
+
+            Returns None when the pick table has no entry for this
+            year/round in any form - the pick is unvalued, never priced
+            at an invented default.
+            """
             try:
                 rd = int(asset.get("pick_round") or 4)
             except (ValueError, TypeError):
@@ -23630,17 +23685,23 @@ def api_trade_outcome():
             if key in pick_values:
                 return float(pick_values[key])
 
-            return 10.0
+            return None
 
         all_assets = [("received", a) for a in assets_received] + [("sent", a) for a in assets_sent]
         all_pids = [(side, str(a.get("id") or ""), str(a.get("name") or a.get("id") or "")) for side, a in all_assets]
+        # Trade-date values exist for players only; picks never join the
+        # then fetch (their ids are not player ids and have no history).
+        player_pids = [
+            (side, pid, nm) for (side, pid, nm), (_s2, a) in zip(all_pids, all_assets)
+            if a.get("asset_type") != "pick"
+        ]
 
         # Fetch historical values in parallel - only store when we found a reliable snapshot
         then_values: dict[str, float] = {}
         then_sources: dict[str, str] = {}
         if trade_date:
-            with ThreadPoolExecutor(max_workers=min(len(all_pids), 8)) as pool:
-                futures = {pool.submit(get_value_at_trade, pid): pid for _, pid, _ in all_pids if pid}
+            with ThreadPoolExecutor(max_workers=max(1, min(len(player_pids), 8))) as pool:
+                futures = {pool.submit(get_value_at_trade, pid): pid for _, pid, _ in player_pids if pid}
                 for fut in as_completed(futures):
                     pid = futures[fut]
                     try:
@@ -23657,23 +23718,31 @@ def api_trade_outcome():
 
         received_rows = []
         sent_rows = []
+        unvalued_assets = []
         total_received_now = 0.0
         total_sent_now = 0.0
         total_received_then = 0.0
         total_sent_then = 0.0
+        # Players-only totals: net_change compares like with like, so picks
+        # (which never have a trade-date value) stay out of both sides.
+        pl_received_now = 0.0
+        pl_sent_now = 0.0
+        pl_received_then = 0.0
+        pl_sent_then = 0.0
+        picks_in_trade = False
 
-        def _pick_now_value(pid: str, asset: dict) -> float:
+        def _pick_now_value(pid: str, asset: dict):
             """Look up calibrated pick value trying multiple ID formats."""
             # Try as-is (e.g. "2026 1.01")
-            v = values_now.get(pid, 0.0)
+            v = values_now.get(pid)
             if v:
                 return v
             # Try underscore format (e.g. "2026_1_01")
             underscore_pid = pid.replace(" ", "_", 1).replace(".", "_", 1)
-            v = values_now.get(underscore_pid, 0.0)
+            v = values_now.get(underscore_pid)
             if v:
                 return v
-            # Fall back to pick table
+            # Fall back to pick table (None when it has no entry)
             return get_pick_value(asset)
 
         def _build_row(asset: dict, side: str) -> dict:
@@ -23685,51 +23754,102 @@ def api_trade_outcome():
                 then = None
                 then_src = ""
             else:
-                now = values_now.get(pid, 0.0)
+                now = values_now.get(pid)
                 then = then_values.get(pid, None) if trade_date else None
                 then_src = then_sources.get(pid, "") if trade_date else ""
+            if now is None:
+                unvalued_assets.append({"id": pid, "name": name, "side": side})
             return {
                 "id": pid, "name": name, "is_pick": is_pick,
-                "value_now": round(now, 1),
+                "value_now": round(now, 1) if now is not None else None,
                 "value_then": round(then, 1) if then is not None else None,
-                "delta": round(now - then, 1) if then is not None else None,
+                "delta": (
+                    round(now - then, 1)
+                    if now is not None and then is not None else None
+                ),
                 "then_estimated": then_src == "backfill-nearest",
                 "_now": now, "_then": then,
             }
 
         for asset in assets_received:
             row = _build_row(asset, "received")
-            total_received_now += row["_now"]
+            if row["is_pick"]:
+                picks_in_trade = True
+            if row["_now"] is not None:
+                total_received_now += row["_now"]
+                if not row["is_pick"]:
+                    pl_received_now += row["_now"]
             if row["_then"] is not None:
                 total_received_then += row["_then"]
+                pl_received_then += row["_then"]
             del row["_now"], row["_then"]
             received_rows.append(row)
 
         for asset in assets_sent:
             row = _build_row(asset, "sent")
-            total_sent_now += row["_now"]
+            if row["is_pick"]:
+                picks_in_trade = True
+            if row["_now"] is not None:
+                total_sent_now += row["_now"]
+                if not row["is_pick"]:
+                    pl_sent_now += row["_now"]
             if row["_then"] is not None:
                 total_sent_then += row["_then"]
+                pl_sent_then += row["_then"]
             del row["_now"], row["_then"]
             sent_rows.append(row)
 
         net_delta_now = round(total_received_now - total_sent_now, 1)
         net_delta_then = round(total_received_then - total_sent_then, 1)
 
-        # Verdict uses the shared fair-value band (same definition as the trade
-        # calculator) so the outcome analyzer can't contradict it.
+        graded = not unvalued_assets
+        player_rows = [
+            r for r in received_rows + sent_rows if not r.get("is_pick")
+        ]
+        then_complete = bool(
+            not picks_in_trade
+            and player_rows
+            and all(r.get("value_then") is not None for r in player_rows)
+        )
+        net_change = (
+            round((pl_received_now - pl_sent_now)
+                  - (pl_received_then - pl_sent_then), 1)
+            if then_complete else None
+        )
+        verdict_basis = "since_trade" if then_complete else "current"
+
+        # Verdict uses the shared fair-value band (same definition as the
+        # trade calculator) so the outcome analyzer can't contradict it.
+        # When the since-trade comparison is complete it grades the CHANGE
+        # (banded on the trade-date player totals); otherwise it grades
+        # the current net, as before. An unvalued asset means no verdict.
         from utils.trade_value import fair_value_band as _fair_value_band
-        _outcome_band = _fair_value_band(max(total_received_now, total_sent_now, 1.0))
-        if net_delta_now > _outcome_band:
-            verdict = "WIN"
-        elif net_delta_now < -_outcome_band:
-            verdict = "LOSS"
+        if not graded:
+            verdict = "UNGRADED"
         else:
-            verdict = "EVEN"
+            if then_complete:
+                _verdict_net = net_change
+                _verdict_base = max(pl_received_then, pl_sent_then, 1.0)
+            else:
+                _verdict_net = net_delta_now
+                _verdict_base = max(total_received_now, total_sent_now, 1.0)
+            _outcome_band = _fair_value_band(_verdict_base)
+            if _verdict_net > _outcome_band:
+                verdict = "WIN"
+            elif _verdict_net < -_outcome_band:
+                verdict = "LOSS"
+            else:
+                verdict = "EVEN"
 
         return jsonify({
             "success": True,
             "verdict": verdict,
+            "graded": graded,
+            "unvalued_assets": unvalued_assets,
+            "then_complete": then_complete,
+            "picks_in_trade": picks_in_trade,
+            "net_change": net_change,
+            "verdict_basis": verdict_basis,
             "net_delta_now": net_delta_now,
             "net_delta_then": net_delta_then,
             "total_received_now": round(total_received_now, 1),

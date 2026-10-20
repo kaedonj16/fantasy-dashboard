@@ -57,6 +57,20 @@ def build_activity_body(ctx: dict) -> str:
 
     players_values_raw = ctx.get("model_value_table") or []
     _tep = te_premium_from_settings(ctx.get("scoring_settings"))
+    # League size for pick bucketing / the consolidation adjustment: real
+    # roster count when the ctx carries it, else the standings map size.
+    _league_size = (
+        len(ctx.get("rosters") or []) or len(standings_map or {}) or 10
+    )
+    # Price BY PID first: the value table's name key (search_name) is written
+    # with the canonical normalize_name(), so any name-string matching must
+    # use that same normalization on both sides. A one-off normalization
+    # (lowercase + strip periods) misses every hyphenated / apostrophe /
+    # suffixed name the canonical form rewrites (Amon-Ra St. Brown,
+    # Ja'Marr Chase, Jaxon Smith-Njigba, Travis Etienne Jr., ...).
+    from utils.players import normalize_name as _normalize_name
+
+    player_val_by_pid: Dict[str, Tuple[float, str]] = {}
     player_val_by_key: Dict[Tuple[str, str, str], float] = {}
     player_val_by_key_np: Dict[Tuple[str, str], float] = {}
     rank_label_by_name: Dict[str, str] = {}
@@ -65,10 +79,10 @@ def build_activity_body(ctx: dict) -> str:
         for row in players_values_raw:
             if not isinstance(row, dict):
                 continue
-            raw_name = str(row.get("search_name") or "").strip()
+            raw_name = str(row.get("search_name") or row.get("name") or "").strip()
             if not raw_name:
                 continue
-            name_lower = raw_name.lower()
+            name_lower = _normalize_name(raw_name)
             pos = str(row.get("position") or row.get("pos") or "").strip().upper()
             team = str(row.get("team") or "").strip().upper()
             if not pos:
@@ -79,29 +93,42 @@ def build_activity_body(ctx: dict) -> str:
                 val = 0.0
             val = apply_te_premium(val, pos, _tep)
 
-            player_val_by_key[(name_lower, pos, team)] = val
-            player_val_by_key_np[(name_lower, pos)] = val
+            lbl = str(row.get("pos_rank_label") or pos)
+            pid_key = str(row.get("id") or "").strip()
+            if pid_key:
+                player_val_by_pid[pid_key] = (val, lbl)
+            if name_lower:
+                player_val_by_key[(name_lower, pos, team)] = val
+                player_val_by_key_np[(name_lower, pos)] = val
+                rank_label_by_name[name_lower] = lbl
 
-            lbl = row.get("pos_rank_label") or pos
-            rank_label_by_name[name_lower] = str(lbl)
+    def player_value(p: dict) -> tuple[float, str, bool]:
+        """(value, rank_label, valued) for a trade/waiver player dict.
 
-    def player_value(p: dict) -> tuple[float, str]:
+        ``valued`` is separate from the number: an unvalued asset is 0 for
+        summing, but callers must not grade a trade on it.
+        """
         name = str(p.get("name") or "").strip()
         pos = str(p.get("pos") or p.get("position") or "").strip().upper()
         team = str(p.get("team") or "").strip().upper()
         if not name or not pos:
-            return 0.0, ""
+            return 0.0, "", False
 
-        # Normalize to match search_name format (no periods, lowercase)
-        name_lower = name.lower().replace(".", "")
+        pid = str(p.get("pid") or p.get("player_id") or "").strip()
+        if pid and pid in player_val_by_pid:
+            val, lbl = player_val_by_pid[pid]
+            return val, lbl, val > 0
 
-        val = float(
-            player_val_by_key.get((name_lower, pos, team))
-            or player_val_by_key_np.get((name_lower, pos), 0.0)
-        )
+        name_lower = _normalize_name(name)
+        if (name_lower, pos, team) in player_val_by_key:
+            val = player_val_by_key[(name_lower, pos, team)]
+        elif (name_lower, pos) in player_val_by_key_np:
+            val = player_val_by_key_np[(name_lower, pos)]
+        else:
+            return 0.0, pos, False
 
         rank_label = rank_label_by_name.get(name_lower, pos)
-        return val, rank_label
+        return float(val), rank_label, float(val) > 0
 
     pick_values = load_pick_value_table() or {}
 
@@ -273,6 +300,42 @@ def build_activity_body(ctx: dict) -> str:
                 f"<span class='act-pos {pos_cls}'>{html.escape(pos_txt)}</span>{name}</span>"
             )
 
+        def _gets_chip(p) -> str:
+            """Summary chip for a received player: no +/- sign (the chip's
+            side of the ⇄ already says who received it)."""
+            name = html.escape(str(p.get("name") or "").strip())
+            if not name:
+                return ""
+            pos_txt, pos_cls = _pos_cls(p)
+            pid = str(p.get("pid") or p.get("player_id") or "").strip()
+            click_cls = " player-clickable" if pid else ""
+            click_attrs = (
+                f" style='cursor:pointer;'"
+                f" data-player-id='{html.escape(pid, quote=True)}' data-player-name='{name}'"
+                if pid else ""
+            )
+            return (
+                f"<span class='act-chip{click_cls}'{click_attrs}>"
+                f"<span class='act-pos {pos_cls}'>{html.escape(pos_txt)}</span>{name}</span>"
+            )
+
+        def _pick_chip(pick) -> str:
+            yr = _safe_int(pick.get("season"), 0)
+            rnd = _safe_int(pick.get("round"), 0)
+            exact_slot = None
+            if _activity_pick_order_is_final(yr, season):
+                exact_slot = resolve_exact_pick_slot(
+                    platform=platform,
+                    root_league_id=league_id,
+                    current_season=season,
+                    pick=pick,
+                )
+            label = _activity_pick_label(yr, rnd, season, exact_slot)
+            return (
+                "<span class='act-chip act-chip-pick'>"
+                f"<span class='act-pos pk'>PICK</span>{html.escape(label)}</span>"
+            )
+
         def _tm_img(tm) -> str:
             av = tm.get("avatar") or ""
             return (
@@ -307,7 +370,9 @@ def build_activity_body(ctx: dict) -> str:
 
             trade_count += 1
 
-            def render_player_row(p, io_class):
+            def render_received_row(p):
+                """One RECEIVED asset row (mock layout): no +/- circle - the
+                column's "Received" label carries the direction."""
                 name = str(p.get("name") or "").strip()
                 if name:
                     traded_asset_counts[name] = traded_asset_counts.get(name, 0) + 1
@@ -315,31 +380,37 @@ def build_activity_body(ctx: dict) -> str:
                     if _rp_pid:
                         traded_asset_pid.setdefault(name, _rp_pid)
 
-                val, pos_rank_label = player_value(p)
-                val_txt = f"{val:.1f}" if val > 0 else ""
-                val_html = f'<div class="player-trade-value">{val_txt}</div>' if val_txt else ""
-
+                val, pos_rank_label, valued = player_value(p)
                 pid = p.get("pid", "")
                 clickable_attrs = (
                     f" class='player-clickable' style='cursor:pointer;font-weight:600;'"
                     f" data-player-id='{pid}' data-player-name='{name}'"
                     if pid else " style='font-weight:600'"
                 )
+                team_txt = str(p.get("team", "") or "").strip()
+                sub_bits = " • ".join(
+                    b for b in (pos_rank_label, team_txt) if b
+                )
+                if valued:
+                    val_html = f'<div class="player-trade-value">{val:.1f}</div>'
+                else:
+                    sub_bits += (
+                        " • <span class='act-noval'>No current value</span>"
+                        if sub_bits else
+                        "<span class='act-noval'>No current value</span>"
+                    )
+                    val_html = '<div class="player-trade-value act-dash">—</div>'
 
                 return (
                     "<div class='player-activity'>"
-                    "<div style='gap: 10px;display: flex;align-items: center;'>"
-                    f"<span class='io {io_class}'>"
-                    f"{'+' if io_class == 'add' else '−'}</span>"
                     "<div>"
                     f"  <div{clickable_attrs}>{name}</div>"
-                    f"  <div style='color:var(--text-muted);font-size:13px'>{pos_rank_label} • {p.get('team', '')}</div>"
-                    "</div></div>"
+                    f"  <div style='color:var(--text-muted);font-size:13px'>{sub_bits}</div>"
+                    "</div>"
                     f"{val_html}</div>"
                 )
 
-            def render_pick_row(pick, io_class):
-                import json as _json
+            def render_received_pick_row(pick):
                 traded_asset_counts["Draft Pick"] = traded_asset_counts.get("Draft Pick", 0) + 1
 
                 yr = _safe_int(pick.get("season"), 0)
@@ -355,33 +426,18 @@ def build_activity_body(ctx: dict) -> str:
                 pick_label = _activity_pick_label(yr, rnd, season, exact_slot)
                 subline = pick_subline(pick, rid_to_name, users)
                 val = pick_value(pick, standings_map)
-                val_txt = f"{val:.1f}" if val > 0 else ""
-                val_html = f'<div class="player-trade-value">{val_txt}</div>' if val_txt else ""
-
-                _pv = pick_values
-                tier_vals = {
-                    "early": float(_pv.get(f"{yr}_{rnd}_early") or _pv.get(f"{yr}_{rnd}") or 0),
-                    "mid": float(_pv.get(f"{yr}_{rnd}_mid") or _pv.get(f"{yr}_{rnd}") or 0),
-                    "late": float(_pv.get(f"{yr}_{rnd}_late") or _pv.get(f"{yr}_{rnd}") or 0),
-                }
-                pick_data = _json.dumps({
-                    "label": pick_label,
-                    "season": yr,
-                    "round": rnd,
-                    "value": round(val, 1),
-                    "tiers": tier_vals,
-                }, separators=(",", ":"))
-                pick_data_attr = pick_data.replace('"', '&quot;')
+                if val > 0:
+                    val_html = f'<div class="player-trade-value">{val:.1f}</div>'
+                else:
+                    subline += " • <span class='act-noval'>No current value</span>"
+                    val_html = '<div class="player-trade-value act-dash">—</div>'
 
                 return (
                     "<div class='player-activity'>"
-                    "<div style='gap: 10px;display: flex;align-items: center;'>"
-                    f"<span class='io {io_class}'>"
-                    f"{'+' if io_class == 'add' else '−'}</span>"
                     "<div>"
                     f"  <div style='font-weight:600'>{pick_label}</div>"
                     f"  <div style='color:var(--text-muted);font-size:13px'>{subline}</div>"
-                    "</div></div>"
+                    "</div>"
                     f"{val_html}</div>"
                 )
 
@@ -397,6 +453,7 @@ def build_activity_body(ctx: dict) -> str:
                     picks_by_sender.setdefault(send, []).append(dp)
 
             side_map: Dict[int, Dict] = {}
+            unvalued_asset_names: list = []
             for tm in teams:
                 rid = tm.get("roster_id")
                 if rid is None:
@@ -405,8 +462,24 @@ def build_activity_body(ctx: dict) -> str:
                 in_picks = picks_by_receiver.get(rid, []) or []
 
                 in_player_pairs = [player_value(p) for p in in_players]
-                in_player_vals = [v for (v, _label) in in_player_pairs]
+                in_player_vals = [v for (v, _label, _vd) in in_player_pairs]
                 in_pick_vals = [pick_value(pk, standings_map) for pk in in_picks]
+
+                side_unvalued = []
+                for p, (_v, _lbl, _vd) in zip(in_players, in_player_pairs):
+                    if not _vd:
+                        nm = str(p.get("name") or "").strip() or "Unknown player"
+                        side_unvalued.append(nm)
+                        unvalued_asset_names.append(nm)
+                for pk, pv in zip(in_picks, in_pick_vals):
+                    if pv <= 0:
+                        lbl = _activity_pick_label(
+                            _safe_int(pk.get("season"), 0),
+                            _safe_int(pk.get("round"), 0),
+                            season,
+                        )
+                        side_unvalued.append(lbl)
+                        unvalued_asset_names.append(lbl)
 
                 raw_players_total = sum(in_player_vals)
                 raw_picks_total = sum(in_pick_vals)
@@ -418,9 +491,15 @@ def build_activity_body(ctx: dict) -> str:
                     "raw_picks_total": raw_picks_total,
                     "player_values": in_player_vals,
                     "asset_count": len(in_players) + len(in_picks),
-                    "breakdown": [],
+                    # ALL assets (players + picks) so the tier-stack recount
+                    # inside apply_tier_stack_adjustment sees the true counts.
+                    "breakdown": (
+                        [{"value": v} for v in in_player_vals]
+                        + [{"value": v} for v in in_pick_vals]
+                    ),
                     "adjustment": 0.0,
                     "effective_total": raw_total,
+                    "unvalued": side_unvalued,
                 }
 
             if len(side_map) == 2:
@@ -434,7 +513,11 @@ def build_activity_body(ctx: dict) -> str:
                 # misleadingly negative totals for both teams.
                 if (side_a["asset_count"] > 0 and side_b["asset_count"] > 0
                         and side_a["asset_count"] != side_b["asset_count"]):
-                    apply_tier_stack_adjustment(side_a, side_b)
+                    apply_tier_stack_adjustment(
+                        side_a, side_b,
+                        value_table=players_values_raw,
+                        league_size=_league_size,
+                    )
                 # Pre-compute zero-sum net values so both sides are mirrors of
                 # each other - exactly how trade-eval reports the result.
                 a_eff = side_a["effective_total"]
@@ -445,60 +528,91 @@ def build_activity_body(ctx: dict) -> str:
                 side_a["baseline"] = baseline_val
                 side_b["baseline"] = baseline_val
 
+            # A trade is only graded when EVERY asset on both sides priced.
+            # An unvalued asset used to count as a silent 0 and still earn a
+            # Strong win/loss verdict on the incomplete math.
+            graded = not unvalued_asset_names
+
             net_values = []
+            for tm in teams:
+                _si = side_map.get(tm.get("roster_id"))
+                net_values.append(
+                    (tm.get("name", ""), _si["net_total"] if _si else 0.0)
+                )
+
+            # Winner / verdict state shared by the collapsed pill, the column
+            # footers and the verdict bar below the columns.
+            winner_name = ""
+            winner_net = 0.0
+            winner_baseline = 300.0
+            if graded and len(net_values) == 2:
+                _wa, _wb = net_values[0], net_values[1]
+                _win_tm = _wa if _wa[1] >= _wb[1] else _wb
+                winner_name = str(_win_tm[0] or "")
+                winner_net = abs(float(_win_tm[1]))
+                _wsi = side_map.get(
+                    (teams[0] if _win_tm is _wa else teams[1]).get("roster_id")
+                )
+                if _wsi:
+                    winner_baseline = _wsi.get("baseline", 300.0)
+            _w_verdict_txt = verdict_from_net(
+                winner_net, winner_baseline
+            )[1]
+            is_fair = (
+                graded and len(net_values) == 2
+                and _w_verdict_txt == "Fair"
+            )
 
             cols = []
             for tm in teams:
                 roster_id = tm.get("roster_id")
 
+                # Received only (mock layout): the other column IS what this
+                # team sent, so sends are not repeated here with - rows.
                 gets_parts = []
                 for p in (tm.get("gets") or []):
-                    gets_parts.append(render_player_row(p, "add"))
-                gets_players = "".join(gets_parts)
-
-                gets_pick_parts = []
+                    gets_parts.append(render_received_row(p))
                 if roster_id is not None:
                     for pick in picks_by_receiver.get(roster_id, []):
-                        gets_pick_parts.append(render_pick_row(pick, "add"))
-                gets_picks = "".join(gets_pick_parts)
-                gets = gets_players + gets_picks
+                        gets_parts.append(render_received_pick_row(pick))
+                gets = "".join(gets_parts)
                 if not gets:
                     gets = "<div class='bract-empty-mini'>No incoming assets</div>"
 
-                sends_parts = []
-                for p in (tm.get("sends") or []):
-                    sends_parts.append(render_player_row(p, "drop"))
-                sends_players = "".join(sends_parts)
-
-                sends_pick_parts = []
-                if roster_id is not None:
-                    for pick in picks_by_sender.get(roster_id, []):
-                        sends_pick_parts.append(render_pick_row(pick, "drop"))
-                sends_picks = "".join(sends_pick_parts)
-                sends = sends_players + sends_picks
-
                 side_info = side_map.get(roster_id)
-                net_total = side_info["net_total"] if side_info else 0.0
-                baseline = side_info["baseline"] if side_info else 300.0
-                net_values.append((tm.get("name", ""), net_total))
-
-                verdict_cls, verdict_txt = verdict_from_net(net_total, baseline)
-                net_num_cls = (
-                    "bract-net-pos" if net_total > 0 else
-                    "bract-net-neg" if net_total < 0 else
-                    "bract-net-even"
-                )
-
-                total_html = (
-                    "<div class='trade-total-row bract-total-row'>"
-                    "<hr style='margin-top:8px;margin-bottom:8px;border:none;border-top:1px solid #e2e8f0;'>"
-                    "<div class='bract-total-head'>"
-                    "<span>Total Value</span>"
-                    f"<span class='{net_num_cls}'>{net_total:.0f}</span>"
-                    "</div>"
-                    f"<div class='bract-verdict {verdict_cls}'>{verdict_txt}</div>"
-                    "</div>"
-                )
+                if side_info and side_info.get("unvalued"):
+                    total_html = (
+                        "<div class='act-totals'>"
+                        "<div class='act-trow act-trow-eff'>"
+                        "<span>Received total</span><span class='act-dash'>—</span>"
+                        "</div></div>"
+                    )
+                elif side_info:
+                    _raw = side_info["raw_total"]
+                    _adj = float(side_info.get("adjustment") or 0.0)
+                    _trows = (
+                        "<div class='act-trow'>"
+                        f"<span>Received total</span><span>{_raw:.1f}</span>"
+                        "</div>"
+                    )
+                    if _adj != 0 and graded:
+                        _trows += (
+                            "<div class='act-trow act-trow-adj'>"
+                            f"<span>Consolidation adjustment</span><span>{_adj:+.1f}</span>"
+                            "</div>"
+                            "<div class='act-trow act-trow-eff'>"
+                            f"<span>Effective total</span><span>{side_info['effective_total']:.1f}</span>"
+                            "</div>"
+                        )
+                    else:
+                        _trows = (
+                            "<div class='act-trow act-trow-eff'>"
+                            f"<span>Received total</span><span>{_raw:.1f}</span>"
+                            "</div>"
+                        )
+                    total_html = f"<div class='act-totals'>{_trows}</div>"
+                else:
+                    total_html = ""
 
                 avatar = tm.get("avatar") or ""
                 img = (
@@ -513,15 +627,40 @@ def build_activity_body(ctx: dict) -> str:
                 cols.append(
                     "<div class='team-col'>"
                     f"  <header>{img}<div class='team-name team-clickable' style='cursor:pointer;' data-roster-id='{roster_id}' data-team-name='{esc_name_attr}'>{esc_name}</div></header>"
-                    f"  <div class='plist'>{gets}{sends}{total_html}</div>"
+                    "  <div class='act-recv'>Received</div>"
+                    f"  <div class='plist'>{gets}{total_html}</div>"
                     "</div>"
                 )
 
-            if len(net_values) == 2:
-                delta = abs(net_values[0][1] - net_values[1][1])
+            if graded and len(net_values) == 2:
+                # Single net, not abs(netA - netB) (which double-counts it).
+                delta = abs(net_values[0][1])
                 if delta > biggest_trade_delta:
                     biggest_trade_delta = delta
                     biggest_trade_label = f"{net_values[0][0]} vs {net_values[1][0]}"
+
+            # One verdict bar under both columns (mock layout).
+            if not graded:
+                verdict_bar_html = (
+                    "<div class='act-verdictbar act-verdictbar-none'>"
+                    f"<span>Can’t grade — {html.escape(unvalued_asset_names[0])} has no current value</span>"
+                    "</div>"
+                )
+            elif winner_name:
+                _bar_cls = "act-verdictbar-fair" if is_fair else "act-verdictbar-win"
+                _bar_txt = (
+                    "Net even" if is_fair
+                    else f"Net +{winner_net:.0f} to {html.escape(winner_name)}"
+                )
+                _bar_pill = (
+                    f"<span class='act-verdictbar-pill'>{_w_verdict_txt}</span>"
+                )
+                verdict_bar_html = (
+                    f"<div class='act-verdictbar {_bar_cls}'>"
+                    f"<span>{_bar_txt}</span>{_bar_pill}</div>"
+                )
+            else:
+                verdict_bar_html = ""
 
             when = _rel_time(txrow["ts"]) if pd.notna(txrow["ts"]) else ""
             # Build data payload for outcome check (sent/received per team)
@@ -623,26 +762,63 @@ def build_activity_body(ctx: dict) -> str:
 
             import json as _json
             outcome_json = _json.dumps(outcome_data).replace('"', '&quot;')
+            # Value basis for /api/trade-outcome so it prices on the same
+            # basis as this card (SF column, league size, TE premium).
+            try:
+                from utils.lineups import is_superflex_lineup as _is_sf_lineup
+                _outcome_is_sf = bool(
+                    _is_sf_lineup(ctx.get("roster_positions") or [])
+                )
+            except Exception:
+                _outcome_is_sf = False
             outcome_btn = (
                 f"<button class='outcome-check-btn' "
                 f"data-trade-teams='{outcome_json}' "
                 f"data-trade-date='{trade_date_str}' "
+                f"data-is-sf='{'1' if _outcome_is_sf else '0'}' "
+                f"data-league-size='{_league_size}' "
+                f"data-te-premium='{_tep}' "
                 f"onclick='checkTradeOutcome(this)'>Check Outcome</button>"
             )
             outcome_result_id = f"outcome_{trade_count}"
 
-            # Compact League Pulse summary row (expands to the full breakdown).
-            swing_html = ""
-            if len(net_values) == 2:
-                _sd = abs(net_values[0][1] - net_values[1][1])
-                if _sd > 0:
-                    swing_html = f"<span class='act-swing'>Δ {_sd:.0f}</span>"
+            # Compact League Pulse summary row (expands to the full
+            # breakdown). Chips are two-sided: team A's gets, then ⇄, then
+            # team B's gets - picks included on both sides (mock layout).
             team_a = teams[0] if teams else {}
             team_b = teams[1] if len(teams) > 1 else {}
-            a_gets = "".join(_player_chip(p, "add") for p in (team_a.get("gets") or []))
-            a_sends = "".join(_player_chip(p, "drop") for p in (team_a.get("sends") or []))
-            _sep = "<span class='act-arrow'>⇄</span>" if (a_gets and a_sends) else ""
-            trade_chips = a_gets + _sep + a_sends
+
+            def _side_gets_chips(tm) -> str:
+                rid = tm.get("roster_id")
+                parts = [_gets_chip(p) for p in (tm.get("gets") or [])]
+                if rid is not None:
+                    parts += [
+                        _pick_chip(pk)
+                        for pk in picks_by_receiver.get(rid, [])
+                    ]
+                parts = [c for c in parts if c]
+                if not parts:
+                    return "<span class='act-chip act-chip-none'>Nothing</span>"
+                return "".join(parts)
+
+            a_gets = _side_gets_chips(team_a)
+            b_gets = _side_gets_chips(team_b)
+            trade_chips = (
+                a_gets + "<span class='act-arrow'>⇄</span>" + b_gets
+                if team_b else a_gets
+            )
+
+            if not graded:
+                pill_html = "<span class='act-pill-none'>Not graded</span>"
+            elif is_fair:
+                pill_html = "<span class='act-pill-fair'>Fair trade</span>"
+            elif winner_name:
+                pill_html = (
+                    "<span class='act-pill-win'>"
+                    f"{html.escape(winner_name)} +{winner_net:.0f}</span>"
+                )
+            else:
+                pill_html = ""
             name_a = html.escape(str(team_a.get("name") or "Team A"))
             name_b = html.escape(str(team_b.get("name") or "Team B"))
             return (
@@ -656,11 +832,12 @@ def build_activity_body(ctx: dict) -> str:
                 "      </div>"
                 f"      <div class='act-chips'>{trade_chips}</div>"
                 "    </div>"
-                f"    <div class='act-rend'>{swing_html}<span class='act-caret'>▾</span></div>"
+                f"    <div class='act-rend'>{pill_html}<span class='act-caret'>▾</span></div>"
                 "  </summary>"
                 "  <div class='act-trade-body'>"
                 f"    <div class='meta'>{pill('Trade completed')} • {when}{outcome_btn}</div>"
                 f"    <div class='teams'>{''.join(cols)}</div>"
+                f"    {verdict_bar_html}"
                 f"    <div id='{outcome_result_id}' class='trade-outcome-result' style='display:none;'></div>"
                 "  </div>"
                 "</details>"
@@ -694,8 +871,8 @@ def build_activity_body(ctx: dict) -> str:
                     _wp_pid = str(p.get("pid") or p.get("player_id") or "").strip()
                     if _wp_pid:
                         traded_asset_pid.setdefault(name, _wp_pid)
-                val, _lbl = player_value(p)
-                total_val += val
+                val, _lbl, _valued = player_value(p)
+                total_val += val if _valued else 0.0
                 chip_parts.append(_player_chip(p, "add"))
             chips = "".join(c for c in chip_parts if c) or "<span class='act-chip'>No adds recorded</span>"
             val_txt = f"{total_val:.1f}" if total_val > 0 else ""
@@ -1010,6 +1187,28 @@ def build_activity_body(ctx: dict) -> str:
       .act-pulse .act-rend {{ display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }}
       .act-pulse .act-val {{ font-size: 13px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }}
       .act-pulse .act-swing {{ font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 12px; color: var(--win, #15803d); background: color-mix(in srgb, var(--win, #16a34a) 14%, transparent); font-variant-numeric: tabular-nums; }}
+      /* Trade card rebuild (mock): pick chips, winner pills, received-only
+         columns, honest totals and the single verdict bar. */
+      .act-pulse .act-chip-pick {{ border-style: dashed; }}
+      .act-pulse .act-chip-none {{ color: var(--text-muted); }}
+      .act-pulse .act-pill-win {{ font-size: 12px; font-weight: 800; padding: 3px 10px; border-radius: 12px; color: var(--win, #15803d); background: color-mix(in srgb, var(--win, #16a34a) 14%, transparent); font-variant-numeric: tabular-nums; white-space: nowrap; }}
+      .act-pulse .act-pill-none {{ font-size: 12px; font-weight: 800; padding: 3px 10px; border-radius: 12px; color: var(--text-muted); background: var(--accent-soft); white-space: nowrap; }}
+      .act-pulse .act-pill-fair {{ font-size: 12px; font-weight: 800; padding: 3px 10px; border-radius: 12px; color: var(--text-muted); background: var(--accent-soft); white-space: nowrap; }}
+      .act-pulse .act-recv {{ font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); margin: 2px 0 7px; }}
+      .act-pulse .act-noval {{ color: #b45309; font-weight: 600; }}
+      .act-pulse .act-dash {{ color: var(--text-subtle, var(--text-muted)); }}
+      .act-pulse .act-totals {{ border-top: 1px solid var(--border); margin-top: 10px; padding-top: 9px; }}
+      .act-pulse .act-trow {{ display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 14px; padding: 2px 0; color: var(--text); font-variant-numeric: tabular-nums; }}
+      .act-pulse .act-trow span:first-child {{ font-weight: 600; }}
+      .act-pulse .act-trow-adj, .act-pulse .act-trow-adj span:first-child {{ color: var(--text-muted); font-weight: 500; font-size: 13px; }}
+      .act-pulse .act-trow-eff span:first-child {{ font-weight: 800; }}
+      .act-pulse .act-trow-eff span:last-child {{ font-weight: 800; font-size: 15px; }}
+      .act-pulse .act-verdictbar {{ display: flex; align-items: center; justify-content: space-between; gap: 12px; border-radius: 10px; padding: 10px 14px; margin-top: 12px; font-size: 14px; font-weight: 700; color: var(--text); }}
+      .act-pulse .act-verdictbar-win {{ background: color-mix(in srgb, var(--win, #16a34a) 10%, transparent); }}
+      .act-pulse .act-verdictbar-fair {{ background: var(--accent-soft); }}
+      .act-pulse .act-verdictbar-none {{ background: rgba(245, 158, 11, .12); }}
+      .act-pulse .act-verdictbar-pill {{ font-size: 12px; font-weight: 800; padding: 3px 10px; border-radius: 12px; white-space: nowrap; color: var(--win, #15803d); background: color-mix(in srgb, var(--win, #16a34a) 16%, transparent); }}
+      .act-pulse .act-verdictbar-fair .act-verdictbar-pill {{ color: var(--text-muted); background: var(--card); }}
       /* Trade rows expand to the full breakdown via native <details> */
       .act-pulse details.act-trade {{ display: block; padding: 0; }}
       .act-pulse .act-trade-sum {{ display: grid; grid-template-columns: auto 1fr auto; gap: 11px; align-items: center; padding: 9px 10px; border-radius: 10px; cursor: pointer; list-style: none; }}
