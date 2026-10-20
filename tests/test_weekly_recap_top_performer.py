@@ -93,7 +93,7 @@ def test_scoreboard_contract_includes_modal_context_and_protected_mobile_score_l
 
 def test_completed_recap_cache_version_is_refreshed():
     source = (ROOT / "dashboard_services/ai/weekly_recap.py").read_text()
-    assert "v13_story" in source
+    assert "v14_story" in source
     assert "score_revision" in source
 
 

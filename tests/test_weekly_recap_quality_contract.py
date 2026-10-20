@@ -11,8 +11,14 @@ def test_recap_prompt_has_natural_record_and_power_rules():
     assert "Standings describe what has happened" in source
     assert "Power rank describes how strong a team looks" in source
     assert "rank_gap" in source
-    assert "v13_story" in source
+    assert "v14_story" in source
     assert "Do not recap the award cards" in source
+    # Streak codes must be translated, never copied into prose, and the
+    # payload must carry the human wording alongside the code.
+    assert "are data codes, never prose" in source
+    assert '"3-game win streak"' in source
+    assert "streak_label" in source
+    assert "_humanize_streak_codes" in source
 
 
 def test_lineup_selectors_share_one_historical_calculation():
