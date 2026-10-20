@@ -244,6 +244,59 @@ def test_sanitize_ai_prose_preserves_clean_prose():
     assert _sanitize_ai_prose(None) == ""
 
 
+def test_sanitize_ai_prose_humanizes_streak_codes():
+    """Streak codes are data, not prose: 'the W3 run' must read as a streak.
+
+    Regression: the Week 6 story rendered 'and the W3 run has them looking
+    steady' for a team on a 3-game win streak.
+    """
+    from dashboard_services.ai.weekly_recap import _sanitize_ai_prose
+
+    raw = ("Pittsburgh Pilots are still the cleanest story in the league right now. "
+           "They moved to 5-1 with a 152.3-96.1 win over Jeremiah pls save us, "
+           "and the W3 run has them looking steady.")
+    clean = _sanitize_ai_prose(raw)
+    assert "the 3-game win streak has them looking steady" in clean
+    assert "W3" not in clean
+    # The other shapes the model produces.
+    assert _sanitize_ai_prose("They are on W4 now.") == "They are on a 4-game win streak now."
+    assert _sanitize_ai_prose("Alpha is rolling (W2).") == "Alpha is rolling (2-game win streak)."
+    assert _sanitize_ai_prose("Bravo's L2 skid continues.") == "Bravo's 2-game losing streak continues."
+    assert _sanitize_ai_prose("Charlie carries a W5 into next week.") == \
+        "Charlie carries a 5-game win streak into next week."
+    # Records and week references are not streak codes.
+    assert _sanitize_ai_prose("They moved to 5-1 in Week 3.") == "They moved to 5-1 in Week 3."
+
+
+def test_streak_phrase_and_gotw_heat_wording():
+    from dashboard_services.ai.weekly_recap import _reason_bits, _streak_phrase
+
+    assert _streak_phrase("W3") == "3-game win streak"
+    assert _streak_phrase("L2") == "2-game losing streak"
+    assert _streak_phrase("W1") == "1-game win streak"
+    assert _streak_phrase("-") == ""
+    assert _streak_phrase(None) == ""
+    assert _streak_phrase("5-1") == ""
+
+    kw = dict(sa={"team": "Alpha", "streak": "W3"}, sb={"team": "Bravo", "streak": "L1"},
+              rank_a=1, rank_b=4, num_teams=10, win_prob=0.5, meetings=0,
+              stakes_label=None, is_playoff=False, round_label="", top_star=None)
+    heat = _reason_bits("heat", **kw)
+    assert heat == "Alpha is rolling (3-game win streak)"
+    assert "W3" not in heat
+
+
+def test_render_recap_html_humanizes_streak_codes():
+    from dashboard_services.ai.weekly_recap import _render_recap_html
+
+    html_out = _render_recap_html({
+        "headline": "Pilots keep rolling",
+        "paragraphs": ["They moved to 5-1, and the W3 run has them looking steady."],
+    })
+    assert "the 3-game win streak has them looking steady" in html_out
+    assert "W3" not in html_out
+
+
 def test_render_recap_html_sanitizes_paragraphs():
     """_render_recap_html never emits JSON artifacts even from dirty input."""
     from dashboard_services.ai.weekly_recap import _render_recap_html

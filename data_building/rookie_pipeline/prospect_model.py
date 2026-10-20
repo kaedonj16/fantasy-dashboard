@@ -1601,7 +1601,8 @@ def _season_has_role(season: Dict, position: Optional[str]) -> bool:
 
 def calc_durability_score(seasons: List[Dict],
                           position: Optional[str] = None,
-                          _inseason_year: Optional[int] = None) -> Optional[float]:
+                          _inseason_year: Optional[int] = None,
+                          _today=None) -> Optional[float]:
     """
     Durability: how often the player is available when the team plays.
 
@@ -1642,12 +1643,17 @@ def calc_durability_score(seasons: List[Dict],
     completed-season missed-games penalty.
 
     Returns None if no GP data (weight redistributed, like athleticism).
+
+    ``_today`` pins the calendar for tests and replays (the same override
+    prospect_model_v4 exposes as ``as_of``); production leaves it None and
+    reads the real date. The in-progress denominator is the current week,
+    so an unpinned caller's result legitimately moves as weeks pass.
     """
     if not seasons:
         return None
 
     from datetime import date as _d
-    today = _d.today()
+    today = _today or _d.today()
     current_year = today.year
     season_start = _d(current_year, 8, 25)
     current_week = 1 if today < season_start else min((today - season_start).days // 7 + 1, 16)
@@ -2335,6 +2341,7 @@ def score_prospect(
     position_weights_override: Optional[Dict[str, Dict[str, float]]] = None,
     _exclude_capital: bool = False,
     _active_season_year: Optional[int] = None,
+    _today=None,
 ) -> Dict[str, Any]:
     """
     Run all component scorers and produce a final prospect_score.
@@ -2464,7 +2471,8 @@ def score_prospect(
     recruiting_score    = calc_recruiting_score(prospect.get("recruiting"))
     environment_score   = calc_environment_adjustment(seasons, pos)
     durability_score    = calc_durability_score(seasons, position=pos,
-                                                _inseason_year=_inseason_year)
+                                                _inseason_year=_inseason_year,
+                                                _today=_today)
 
     # v3.2: draft capital is present only when a projected pick exists from
     # some source (mock consensus, actual pick, or the seed fallback). No

@@ -170,9 +170,17 @@ class TestFloorRedistribution:
 
 
 class TestPanelReproduction:
+    # The pins in this class were recorded in college week 8
+    # (Oct 13-19, 2026). Durability's in-progress denominator is the
+    # calendar's current week, so an unpinned reproduction drifts every
+    # week (week 9 priced Mestemaker's durability 70.37, not 75.0, and
+    # Green 78.36, not 78.38). Pin the clock to the recording week.
+    _AS_OF = date(2026, 10, 19)
+
     def test_green_pins(self):
-        complete = _score(GREEN, _dc("TE", 35))
-        inseason = _score(GREEN, _dc("TE", 35), _active_season_year=2026)
+        complete = _score(GREEN, _dc("TE", 35), _today=self._AS_OF)
+        inseason = _score(GREEN, _dc("TE", 35), _active_season_year=2026,
+                          _today=self._AS_OF)
         # Round 14 sim: 77.97 / 78.26. The deltas are the red-zone
         # recalibration: his 2025 season (7 TD / 433 yards = 1.62 per
         # 100) clears the new TE top tier, worth +0.41 complete and
@@ -184,7 +192,7 @@ class TestPanelReproduction:
         assert complete["durability_score"] == 69.44
 
     def test_mestemaker_durability_repair_grade_unchanged(self):
-        out = _score(MESTEMAKER, _dc("QB", 8))
+        out = _score(MESTEMAKER, _dc("QB", 8), _today=self._AS_OF)
         assert out["prospect_score"] == 79.80
         # v3.3 priced his 2-game, 41-attempt backup season as missed
         # time: durability 6.01. Excluded as a non-role season, his

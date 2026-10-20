@@ -327,9 +327,14 @@ class TestDurabilityRoleAware:
     def test_backup_season_is_not_an_injury_season(self):
         # Mestemaker's 2-game 2024 (41 attempts) is backup work: the
         # role test excludes it, so durability prices his two real
-        # seasons only.
+        # seasons only. as_of pins the calendar to college week 8
+        # (Oct 13-19, 2026), when this pin was recorded: the
+        # in-progress denominator is the current week, so unpinned
+        # the value drifts weekly (70.37 in week 9).
+        from datetime import date
         score = v4.calc_durability_v4(
-            copy.deepcopy(MESTEMAKER["seasons"]), "QB")
+            copy.deepcopy(MESTEMAKER["seasons"]), "QB",
+            as_of=date(2026, 10, 19))
         assert score == pytest.approx(75.0)
 
     def test_injured_starter_still_pays(self):

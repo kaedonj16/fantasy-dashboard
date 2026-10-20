@@ -45,7 +45,7 @@ def _recap_cache_key(league_id: str, season, source_week: int,
                      platform: str = "sleeper", score_revision: str = "") -> str:
     """Platform/version/revision-aware identity for the stable historical story."""
     suffix = f"_{score_revision}" if score_revision else ""
-    return f"weekly_recap_{str(platform).lower()}_{league_id}_{season}_w{source_week}_v13_story{suffix}"
+    return f"weekly_recap_{str(platform).lower()}_{league_id}_{season}_w{source_week}_v14_story{suffix}"
 
 
 def _gotw_cache_key(platform: str, league_id: str, season, target_week: int) -> str:
@@ -259,6 +259,43 @@ def _streak_for(results: list[str]) -> str:
         else:
             break
     return f"{last}{n}"
+
+
+_STREAK_WORDS = {"W": "win", "L": "losing", "T": "tie"}
+
+
+def _streak_phrase(code) -> str:
+    """Human wording for a streak code: 'W3' -> '3-game win streak'.
+
+    The code is data, never prose. Returns '' for anything that is not a
+    streak code (including the '-' no-games placeholder).
+    """
+    m = re.fullmatch(r"([WLT])(\d{1,2})", str(code or "").strip())
+    if not m:
+        return ""
+    return f"{int(m.group(2))}-game {_STREAK_WORDS[m.group(1)]} streak"
+
+
+def _humanize_streak_codes(text: str) -> str:
+    """Rewrite streak codes in prose as natural streak wording.
+
+    The model sometimes copies the payload's raw codes verbatim, producing
+    'the W3 run has them looking steady' instead of 'the 3-game win streak
+    has them looking steady'. Covers the shapes it actually produces:
+    'on W3', 'W3 run/streak/skid', a parenthesised '(W3)', and a bare code.
+    """
+    if not text:
+        return text
+    # "Team on W3" needs the article: "Team on a 3-game win streak".
+    t = re.sub(r"\bon (?:a |an )?([WLT]\d{1,2})\b",
+               lambda m: f"on a {_streak_phrase(m.group(1))}", text)
+    # A code followed by its own noun collapses into the phrase alone.
+    t = re.sub(r"\b([WLT]\d{1,2})\s+(?:run|streak|skid|slide|stretch)\b",
+               lambda m: _streak_phrase(m.group(1)), t)
+    # Any remaining bare code.
+    t = re.sub(r"\b([WLT]\d{1,2})\b",
+               lambda m: _streak_phrase(m.group(1)), t)
+    return t
 
 
 def _build_team_storylines(
@@ -688,7 +725,7 @@ def _reason_bits(
         if len(hot) == 2:
             return "Two red-hot teams collide"
         if hot:
-            return f"{hot[0]['team']} is rolling ({hot[0]['streak']})"
+            return f"{hot[0]['team']} is rolling ({_streak_phrase(hot[0]['streak'])})"
         return "A momentum swing game"
     if top_factor == "drama" and top_star:
         return f"Star on the shelf: {top_star['name']} ({top_star['status']})"
@@ -835,8 +872,8 @@ def _build_next_week_preview(
             "division": ("division lead on the line" if signals["division"] >= 1.0
                          else "a division game") if signals["division"] else None,
             "drama": f"{top_star['name']} ({top_star['status']}) in doubt" if top_star else None,
-            "heat": (f"{sa['team']} on {sa['streak']}" if _hot(sa) >= _hot(sb) and _hot(sa)
-                     else (f"{sb['team']} on {sb['streak']}" if _hot(sb) else None)),
+            "heat": (f"{sa['team']} on a {_streak_phrase(sa['streak'])}" if _hot(sa) >= _hot(sb) and _hot(sa)
+                     else (f"{sb['team']} on a {_streak_phrase(sb['streak'])}" if _hot(sb) else None)),
         }
         reasons = [phrase[k] for k in sorted(contrib, key=lambda k: -contrib[k])
                    if phrase.get(k) and contrib[k] > 0.05]
@@ -853,6 +890,8 @@ def _build_next_week_preview(
             "division_rank_a": sa.get("division_rank"), "division_rank_b": sb.get("division_rank"),
             "division_name_a": sa.get("division_name"), "division_name_b": sb.get("division_name"),
             "streak_a": sa.get("streak"), "streak_b": sb.get("streak"),
+            "streak_label_a": _streak_phrase(sa.get("streak")) or None,
+            "streak_label_b": _streak_phrase(sb.get("streak")) or None,
             "win_prob_a": round(win_prob * 100) if have_proj else None,
             "proj_a": round(_team_proj_total(left.get("starters"), proj_by_pid), 1) if have_proj else None,
             "proj_b": round(_team_proj_total(right.get("starters"), proj_by_pid), 1) if have_proj else None,
@@ -1006,6 +1045,7 @@ def build_weekly_recap_payload(
                 "rank_after": s["rank_after"],
                 "record_after": s["record_after"],
                 "streak": s["streak"],
+                "streak_label": _streak_phrase(s["streak"]) or None,
                 "won": s["won_this_week"],
                 "pts": round(s["this_week_pts"], 1) if s["this_week_pts"] is not None else None,
                 "opp_pts": round(s["opp_pts"], 1) if s["opp_pts"] is not None else None,
@@ -1020,8 +1060,10 @@ def build_weekly_recap_payload(
         "low_scorer":  {"team": low_scorer["team"],  "pts": round(low_scorer["this_week_pts"], 1)} if low_scorer and low_scorer["this_week_pts"] else None,
         "biggest_blowout": biggest_blowout,
         "upsets": upsets,
-        "hot_streaks": [{"team": s["team"], "streak": s["streak"]} for s in hot_streaks],
-        "cold_streaks": [{"team": s["team"], "streak": s["streak"]} for s in cold_streaks],
+        "hot_streaks": [{"team": s["team"], "streak": s["streak"],
+                         "streak_label": _streak_phrase(s["streak"]) or None} for s in hot_streaks],
+        "cold_streaks": [{"team": s["team"], "streak": s["streak"],
+                          "streak_label": _streak_phrase(s["streak"]) or None} for s in cold_streaks],
         "big_movers": [
             {"team": s["team"], "from": s["rank_before"], "to": s["rank_after"]}
             for s in big_movers
@@ -1072,6 +1114,7 @@ Hard rules:
 - Don't open with filler ("What a week", "Here's your recap"). Start with the actual news.
 - Grounded tone - not mean, not hype, just real.
 - Format records naturally as 2-0, never as tuples or "2, 0". Use a normal hyphen (-) for records.
+- Streak values like "W3" or "L2" are data codes, never prose. Never write them, and never write things like "the W3 run". Translate them, or use the supplied streak_label wording: W3 is "3-game win streak", L2 is "2-game losing streak", so write "and the 3-game win streak has them looking steady".
 """.strip()
 
     user_prompt = f"""
@@ -1170,7 +1213,9 @@ def _sanitize_ai_prose(text: str) -> str:
         t = t[:m.start()].rstrip().rstrip('"').strip()
     # 3. Drop non-prose characters (CJK brackets, non-Latin scripts, stray braces)
     t = _PROSE_CHAR_RE.sub("", t)
-    # 4. Collapse whitespace
+    # 4. Streak codes are data, not prose: 'the W3 run' -> 'the 3-game win streak'
+    t = _humanize_streak_codes(t)
+    # 5. Collapse whitespace
     t = re.sub(r"\s+", " ", t).strip()
     return t
 
@@ -1267,7 +1312,7 @@ def _render_next_week_html(preview: dict, looking_ahead: str,
     if looking_ahead and str(looking_ahead).strip():
         blurb_html = (
             f"<p class='br-gotw-blurb'>"
-            f"{html.escape(str(looking_ahead).replace('—', ','))}</p>"
+            f"{html.escape(_sanitize_ai_prose(str(looking_ahead)).replace('—', ','))}</p>"
         )
 
     # Notable outs: key players who are out, doubtful/questionable, or on bye
