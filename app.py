@@ -38220,14 +38220,27 @@ def build_portfolio_body(
         # Lazy-load the cross-league digest only after the page has finished
         # loading (and the browser is idle) so this best-effort, sometimes slow
         # request never competes with the initial dashboard render.
-        "function __pfMovesGo(){"
+        "function __pfMovesGo(attempt){"
         "window.brFetchWithTimeout('/api/portfolio-actions',{cache:'no-store',credentials:'same-origin'},15000).then(function(r){return r.json().then(function(d){return {status:r.status,d:d||{}};});})"
         ".then(function(res){"
         "if(res.status===403&&res.d.paywall){"
         "card.hidden=false;"
         "body.innerHTML=paywallHtml('Cross-league moves are a PRO feature.','Upgrade to PRO');return;}"
+        # Honest scan status: an incomplete scan means some leagues
+        # could not be checked (cold caches on the first pass). Retry
+        # exactly once after a short wait - the first request kicked the
+        # background warms, so the retry usually lands on warm caches -
+        # and never paint all-caught-up for a scan that did not finish.
+        "var scan=(res.d&&res.d.scan)||null;"
+        "if(scan&&scan.incomplete&&!attempt){"
+        "setTimeout(function(){__pfMovesGo(1);},6000);return;}"
+        "function pfIncompleteHtml(){"
+        "var missed=Math.max(0,(scan.total||0)-(scan.scanned||0));"
+        "return \"<div class='pf-moves-empty'><strong>Could not check \"+missed+\" of \"+(scan.total||0)+\" leagues yet.</strong> \""
+        "+\"Your leagues are still loading - check back in a moment.</div>\";}"
         "var acts=(res.d&&res.d.actions)||[];"
         "if(!acts.length){card.hidden=false;"
+        "if(scan&&scan.incomplete){body.innerHTML=pfIncompleteHtml();return;}"
         "body.innerHTML='<div class=\"pf-moves-empty\"><strong>You\\'re all caught up.</strong> "
         "No lineup, waiver, roster, or deadline moves need your attention across your leagues right now. "
         "Check back after games and waivers process.</div>';return;}"
@@ -38246,10 +38259,11 @@ def build_portfolio_body(
         "function pfRender(){"
         "var vis=pfVisible();"
         "if(!vis.length){"
+        "if(scan&&scan.incomplete){body.innerHTML=pfIncompleteHtml();return;}"
         "body.innerHTML='<div class=\"pf-moves-empty\"><strong>You\\'re all caught up.</strong> "
         "No lineup, waiver, roster, or deadline moves need your attention across your leagues right now. "
         "Check back after games and waivers process.</div>';return;}"
-        "body.innerHTML='<div class=\"pf-moves-list\">'+vis.map(function(a,idx){"
+        "var pfListHtml='<div class=\"pf-moves-list\">'+vis.map(function(a,idx){"
         "var k=kindKey(a.kind);"
         "var urg=String(a.urgency||'').toLowerCase();"
         "var urgCls=urg==='high'?'high':(urg==='medium'?'medium':'low');"
@@ -38269,6 +38283,8 @@ def build_portfolio_body(
         "+'<span class=\"pf-move-chevron\" aria-hidden=\"true\">›</span>'"
         "+'</a>';"
         "}).join('')+'</div>';"
+        "if(scan&&scan.incomplete){var missed2=Math.max(0,(scan.total||0)-(scan.scanned||0));pfListHtml+=\"<div class='pf-moves-empty'>Could not check \"+missed2+\" of \"+(scan.total||0)+\" leagues yet - some moves may be missing.</div>\";}"
+        "body.innerHTML=pfListHtml;"
         "}"
         "function pfPersist(a,method){"
         "try{fetch('/api/action-dismissals',{method:method,headers:{'Content-Type':'application/json'},credentials:'same-origin',"
