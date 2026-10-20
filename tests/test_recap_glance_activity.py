@@ -135,6 +135,27 @@ def test_notable_injuries_handles_missing_report():
     assert _notable_injuries(None, {"x"}) == []
 
 
+def test_notable_injuries_cap_keeps_highest_profile_losses():
+    df = _injury_df([
+        _inj_row("1", "lowout", "Low Out", "Out"),
+        _inj_row("1", "bigout", "Big Out", "Out", team="Team B"),
+        _inj_row("2", "ir1", "Ir Star", "IR", team="Team B"),
+        _inj_row("2", "q1", "Que Star", "Questionable", team="Team C"),
+        _inj_row("3", "q2", "Que Two", "Questionable", team="Team C"),
+        _inj_row("3", "d1", "Dbt Guy", "Active", injury="Doubtful", team="Team C"),
+    ])
+    pts = {"bigout": 24.5, "lowout": 3.0, "ir1": 9.0,
+           "q1": 30.0, "q2": 28.0, "d1": 12.0}
+
+    rows = _notable_injuries(
+        df, {"lowout", "bigout", "ir1", "q1", "q2", "d1"}, starter_pts=pts)
+
+    # Cap 4, high profile only: severity tiers lead (IR/Out, then
+    # Doubtful), recap-week points break the Out tie, and both
+    # Questionable starters fall off despite outscoring the Doubtful row.
+    assert [r["pid"] for r in rows] == ["bigout", "ir1", "lowout", "d1"]
+
+
 def _activity_df(rows):
     pd = pytest.importorskip("pandas")
     return pd.DataFrame(rows)
@@ -152,6 +173,31 @@ def test_recent_activity_filters_to_the_recap_week_newest_first():
     assert [r["kind"] for r in rows] == ["trade", "waiver"]
     assert _recent_activity(df, 9) == []
     assert _recent_activity(None, 4) == []
+
+
+def test_recent_activity_ranks_profile_over_recency_and_caps():
+    df = _activity_df([
+        {"kind": "waiver", "week": 4, "ts": None, "data": {"adds": [{"pos": "DEF"}]}},
+        {"kind": "waiver", "week": 4, "ts": None, "data": {"adds": [{"pos": "K"}]}},
+        {"kind": "waiver", "week": 4, "ts": None, "data": {"adds": [{"pos": "RB"}]}},
+        {"kind": "trade", "week": 4, "ts": None, "data": {"teams": []}},
+        {"kind": "waiver", "week": 4, "ts": None, "data": {"adds": [{"pos": "TE"}]}},
+        {"kind": "waiver", "week": 4, "ts": None, "data": {"adds": [{"pos": "QB"}]}},
+    ])
+
+    rows = _recent_activity(df, 4)
+
+    def _tag(row):
+        adds = row["data"].get("adds") or []
+        return (row["kind"], adds[0]["pos"] if adds else "")
+
+    # Cap 5, high profile only: the (oldest) trade still leads, skill
+    # adds follow in position order, and of the two routine adds the
+    # newer DEF survives while the K add is cut.
+    assert [_tag(r) for r in rows] == [
+        ("trade", ""), ("waiver", "RB"), ("waiver", "TE"),
+        ("waiver", "QB"), ("waiver", "DEF"),
+    ]
 
 
 def test_recap_source_contracts_for_new_sections():

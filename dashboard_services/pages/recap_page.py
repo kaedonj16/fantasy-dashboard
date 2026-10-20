@@ -216,12 +216,36 @@ def _starter_player_ids(matchups: list[dict]) -> set:
     return pids
 
 
+def _starter_points_by_pid(matchups: list[dict]) -> dict:
+    """pid -> fantasy points for actual starters in these lineups.
+
+    Same authority rules as _top_scorers_by_position: only historical
+    lineups speak and missing points stay missing (never coerced to 0).
+    Used as the profile signal when the Injury Report cap forces a choice
+    between same-severity injuries: the starter who produced the most in
+    the recap week is the bigger loss.
+    """
+    points: dict[str, float] = {}
+    for matchup in matchups or []:
+        for team in (matchup.get("left") or {}, matchup.get("right") or {}):
+            if team.get("lineup_is_historical") is not True:
+                continue
+            for player in team.get("starters") or []:
+                if not player or not player.get("pid"):
+                    continue
+                pts = player.get("pts")
+                if isinstance(pts, (int, float)) and not isinstance(pts, bool):
+                    points[str(player["pid"])] = float(pts)
+    return points
+
+
 _INJURY_SEVERITY = {"IR": 0, "OUT": 0, "PUP": 0, "NFI": 0,
                     "DOUBTFUL": 1, "SUSP": 2, "QUESTIONABLE": 3}
 _INJURY_SEVERE = {"IR", "OUT", "PUP", "NFI", "DOUBTFUL", "SUSP"}
 
 
-def _notable_injuries(injury_df, starter_pids: set, limit: int = 8) -> list[dict]:
+def _notable_injuries(injury_df, starter_pids: set, limit: int = 4,
+                      starter_pts: dict | None = None) -> list[dict]:
     """Players who got injured THIS week: rostered players on the current
     injury report who started in the recap week.
 
@@ -233,6 +257,14 @@ def _notable_injuries(injury_df, starter_pids: set, limit: int = 8) -> list[dict
     who were already out (long-term IR, multi-week absences) didn't start
     and stay off the list. Callers gate this to the latest recap week,
     where the snapshot reads as that week's injury news.
+
+    The section lives in the recap's right rail, whose height is shared
+    with Week at a Glance, so the list is capped at the highest-profile
+    losses (Kaedon's call, 2026-10-20): severity first (IR/OUT family,
+    then Doubtful, then Questionable), and within a severity tier the
+    starters who scored the most in the recap week rank first -- a
+    Questionable tail or a low-producing Out no longer pushes Lineup
+    Review down the page.
     """
     if injury_df is None:
         return []
@@ -272,15 +304,54 @@ def _notable_injuries(injury_df, starter_pids: set, limit: int = 8) -> list[dict
             "body": _clean(rec.get("Body")),
             "started": started,
         })
+    pts_by_pid = starter_pts or {}
+
+    def _profile_pts(row) -> float:
+        pts = pts_by_pid.get(row["pid"])
+        return pts if isinstance(pts, (int, float)) else -1.0
+
     rows.sort(key=lambda r: (_INJURY_SEVERITY.get(r["status"], 4),
-                             not r["started"], r["player"].casefold()))
+                             not r["started"], -_profile_pts(r),
+                             r["player"].casefold()))
     return rows[:limit]
 
 
-def _recent_activity(activity_df, week: int, limit: int = 10) -> list[dict]:
-    """One week's rows from the canonical season activity table
-    (build_week_activity: kind/week/ts/data). The producer already sorts
-    newest first; filtering preserves that order.
+def _activity_profile_rank(kind: str, data: dict) -> int:
+    """How headline-worthy one activity row is, lowest first.
+
+    Trades are the week's real news and always lead. Injury items are
+    player news. Waiver adds rank by the best position added: RB/WR adds
+    move lineups, TE adds less often, QB adds are format-dependent, and
+    K/DEF adds are routine churn that only makes the rail in a quiet
+    week. Unknown kinds trail.
+    """
+    if kind == "trade":
+        return 0
+    if kind == "injury":
+        return 1
+    if kind == "waiver":
+        positions = {str(p.get("pos") or "").strip().upper()
+                     for p in (data.get("adds") or []) if isinstance(p, dict)}
+        if positions & {"RB", "WR"}:
+            return 2
+        if "TE" in positions:
+            return 3
+        if "QB" in positions:
+            return 4
+        return 5
+    return 6
+
+
+def _recent_activity(activity_df, week: int, limit: int = 5) -> list[dict]:
+    """One week's highest-profile rows from the canonical season activity
+    table (build_week_activity: kind/week/ts/data).
+
+    The producer sorts newest first. The section lives in the recap's
+    right rail, whose height is shared with Week at a Glance, so instead
+    of taking the newest 10 of everything (Kaedon's call, 2026-10-20),
+    the week's rows are ranked by profile (trades, injury news, then
+    waiver adds by position added) with recency breaking ties inside a
+    tier, and capped at the top few.
     """
     if activity_df is None:
         return []
@@ -288,8 +359,8 @@ def _recent_activity(activity_df, week: int, limit: int = 10) -> list[dict]:
         records = activity_df.to_dict("records")
     except Exception:
         return []
-    rows: list[dict] = []
-    for rec in records:
+    ranked: list[tuple[int, int, dict]] = []
+    for idx, rec in enumerate(records):
         if not isinstance(rec, dict):
             continue
         try:
@@ -298,12 +369,12 @@ def _recent_activity(activity_df, week: int, limit: int = 10) -> list[dict]:
             continue
         if row_week != int(week):
             continue
-        rows.append({"kind": str(rec.get("kind") or ""),
-                     "ts": rec.get("ts"),
-                     "data": rec.get("data") or {}})
-        if len(rows) >= limit:
-            break
-    return rows
+        kind = str(rec.get("kind") or "")
+        data = rec.get("data") or {}
+        ranked.append((_activity_profile_rank(kind, data), idx,
+                       {"kind": kind, "ts": rec.get("ts"), "data": data}))
+    ranked.sort(key=lambda item: (item[0], item[1]))
+    return [row for _rank, _idx, row in ranked[:limit]]
 
 
 _RECAP_INJURIES_CSS = """<style>
@@ -1300,7 +1371,9 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     if not preview_mode and selected_week == available_weeks[-1]:
         try:
             ensure_injury_bits(ctx)
-            notable_injuries = _notable_injuries(ctx.get("injury_df"), starter_pids)
+            notable_injuries = _notable_injuries(
+                ctx.get("injury_df"), starter_pids,
+                starter_pts=_starter_points_by_pid(normalized_matchups))
         except Exception as exc:
             logger.warning("weekly recap injuries failed league=%s season=%s week=%s: %s",
                            ctx.get("league_id"), ctx.get("season"), selected_week, exc)
