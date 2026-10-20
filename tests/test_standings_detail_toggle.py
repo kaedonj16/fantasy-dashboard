@@ -74,16 +74,16 @@ def test_standings_row_order_and_format_unchanged():
     # Base 9 columns still first, in the same order; detail cols appended after.
     thead = html.split("<thead>")[1].split("</thead>")[0]
     headers = [h.split(">")[-1] for h in thead.split("</th>")[:-1]]
-    assert headers[:9] == ["Seed", "Team", "Record", "PF", "PA", "Trend",
-                           "Form", "Luck", "Exp. Seed"]
+    assert headers[:10] == ["Seed", "Team", "Status", "Record", "PF", "PA",
+                            "Trend", "Form", "Luck", "Exp. Seed"]
     # All-Play is the first detail column, right after Exp. Seed.
-    assert headers[9] == "All-Play"
-    assert len(headers) == 18
+    assert headers[10] == "All-Play"
+    assert len(headers) == 19
     # Seed order preserved (Alpha 10-2 before Bravo 7-5).
     assert html.index("Alpha") < html.index("Bravo")
 
 
-def test_full_width_rows_span_all_18_columns():
+def test_full_width_rows_span_all_19_columns():
     import app as appmod
     df = _team_stats()
     divisions = {"by_rid": {1: 1, 2: 2}, "names": {1: "East", 2: "West"},
@@ -92,7 +92,8 @@ def test_full_width_rows_span_all_18_columns():
         df, length=2, owner_to_rid={"Alpha": "1", "Bravo": "2"},
         divisions=divisions)
     assert "st-div-row" in html
-    assert "colspan='18'" in html
+    assert "colspan='19'" in html
+    assert "colspan='18'" not in html
     assert "colspan='9'" not in html
     assert 'colspan="11"' not in html and "colspan='11'" not in html
 

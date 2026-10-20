@@ -9608,19 +9608,14 @@ def render_standings(team_stats, length, all_play: dict = None,
             ctx_line = (
                 "<div class='pp-ctx'>"
                 f"<span class='pp-ctx-main'>{_adv}{_bye_txt}{_left_txt}</span>"
-                "<span class='pp-legend'>"
-                "<span class='pp-lg'><i class='pp-dot pp-d-bye'></i>Bye</span>"
-                "<span class='pp-lg'><i class='pp-dot pp-d-in'></i>Clinched / In</span>"
-                "<span class='pp-lg'><i class='pp-dot pp-d-bub'></i>Bubble</span>"
-                "<span class='pp-lg'><i class='pp-dot pp-d-out'></i>Eliminated</span>"
-                "</span></div>"
+                "</div>"
             )
         except Exception:
             logger.debug("[standings] playoff picture skipped", exc_info=True)
             pic_by_name, _spots = {}, None
 
-    _STATUS_CLS = {"bye": "pp-bye", "clinched": "pp-clinched", "in": "pp-in",
-                   "bubble": "pp-bubble", "eliminated": "pp-out"}
+    # Playoff status now renders as its own Status column (dot + word)
+    # instead of row bars / team-cell chips; see _pp_status_cell below.
 
     # ── Detail columns (revealed by the "Detailed" toggle; hidden by default
     # via .st-detail-col CSS) ──────────────────────────────────────────────
@@ -9637,19 +9632,29 @@ def render_standings(team_stats, length, all_play: dict = None,
     except Exception:
         _best_wk, _worst_wk = {}, {}
 
-    def _pp_tag(p):
+    def _pp_status_cell(p):
+        """Status column cell: colored dot + word from the playoff picture.
+
+        Returns the inner HTML for the cell; the wrapping <td> carries the
+        .pp-status-cell + modifier classes. Bubble teams inside the field
+        read "Bubble"; bubble teams outside it read their games back.
+        """
+        if not p:
+            return "pp-status-none", "<span class='muted'>&ndash;</span>"
         st = p["status"]
         if st == "bye":
-            return "<span class='pp-tag pp-t-bye'>BYE</span>"
-        if st == "clinched":
-            return "<span class='pp-tag pp-t-in'>CLINCHED</span>"
-        if st == "eliminated":
-            return "<span class='pp-tag pp-t-out'>OUT</span>"
-        if st == "bubble":
-            if p["seed"] > (_spots or 0) and p["games_back"] > 0:
-                return f"<span class='pp-tag pp-t-bub'>{p['games_back']:g} GB</span>"
-            return "<span class='pp-tag pp-t-bub'>BUBBLE</span>"
-        return ""  # "in" carries the green accent, no tag needed
+            mod, word = "pp-status-bye", "Bye"
+        elif st == "clinched":
+            mod, word = "pp-status-in", "Clinched"
+        elif st == "in":
+            mod, word = "pp-status-in", "In"
+        elif st == "eliminated":
+            mod, word = "pp-status-out", "Out"
+        else:  # bubble
+            mod = "pp-status-bub"
+            word = (f"{p['games_back']:g} GB" if p["seed"] > (_spots or 0)
+                    else "Bubble")
+        return mod, f"<i class='pp-sdot'></i>{word}"
 
     _prev_div = None
     _div_counts = {}
@@ -9669,7 +9674,7 @@ def render_standings(team_stats, length, all_play: dict = None,
         # Division section header between groups (skip when no divisions).
         if _use_div and div_id and div_id != _prev_div:
             _label = str(_div_names.get(div_id) or f"Division {div_id}")
-            rows.append(_standings_div_header(_label, _div_counts.get(div_id, 0), 18))
+            rows.append(_standings_div_header(_label, _div_counts.get(div_id, 0), 19))
             _prev_div = div_id
             _is_div_lead = True
 
@@ -9731,28 +9736,29 @@ def render_standings(team_stats, length, all_play: dict = None,
         _trcls = "st-div-leader" if _is_div_lead else ""
         _tdcls = "team"
         _mo_attr = ""
-        _div_lead_tag = (
-            "<span class='st-div-lead' title='Division leader'>DIV</span>"
+        # Division leader: a plain subline under the name, no chip.
+        _div_sub = (
+            "<div class='st-div-sub'>Division leader</div>"
             if _is_div_lead else ""
         )
+        _status_mod, _status_inner = _pp_status_cell(_p)
         if _p:
-            _trcls = (_trcls + " " + _STATUS_CLS.get(_p["status"], "")).strip()
+            if _p["status"] == "eliminated":
+                _trcls = (_trcls + " st-elim").strip()
             _tdcls = "team pp-team-cell"
-            _tag = _pp_tag(_p)
             # Clinch moment: a team that has locked a playoff spot gets a green
             # stamp + glow the first time its row scrolls into view.
             if _p["status"] in ("clinched", "bye"):
                 _mo_attr = ' data-br-moment="clinch"'
-            # Flex line: the name ellipsizes, the status tag never clips (wraps
-            # under the name on very tight widths rather than getting cut off).
+            # Flex line: the name ellipsizes rather than getting cut off.
             team_cell = (
                 f"<div class='pp-teamline'>"
                 f"{_clickable_team_name(owner, owner_to_rid, cls='pp-team-name')}"
-                f"{_div_lead_tag}{_tag}</div>"
+                f"</div>{_div_sub}"
             )
         else:
             team_cell = (
-                f"{_clickable_team_name(owner, owner_to_rid)}{_div_lead_tag}"
+                f"{_clickable_team_name(owner, owner_to_rid)}{_div_sub}"
             )
         # Mobile scoreboard sub-line under the team name (direction C):
         # division record, streak, then PF/PA. The overall record rides big
@@ -9803,6 +9809,7 @@ def render_standings(team_stats, length, all_play: dict = None,
             <tr class="{_trcls}"{_mo_attr} data-rk-key="{html.escape(owner, quote=True)}">
               <td class="num rank-cell">{rank_mark(int(row['Rank']), size=28, ring_others=False)}{mv_html}</td>
               <td class="{_tdcls}">{team_cell}</td>
+              <td class="pp-status-cell {_status_mod}">{_status_inner}</td>
               <td>{record}</td>
               <td>{row['PF']:.1f}</td>
               <td>{row['PA']:.1f}</td>
@@ -9822,21 +9829,12 @@ def render_standings(team_stats, length, all_play: dict = None,
             </tr>
         """)
 
-        # Clinch scenario for the teams straddling the line: one full-width row
-        # under the team, so the sentence never wraps inside the narrow cell.
-        if (_p and _p.get("scenario") and _p["status"] == "bubble"
-                and _p["seed"] in (_spots, (_spots or 0) + 1)):
-            rows.append(
-                "<tr class='pp-scnrow'><td colspan='18'>"
-                f"<div class='pp-scn'>{html.escape(_p['scenario'])}</div></td></tr>"
-            )
-
         # Overall playoff cut line only when teams are listed in seed order.
         # Division grouping would put the cut in the wrong visual place.
         if (not _use_div and _spots and int(row['Rank']) == _spots
                 and _spots < len(df)):
             rows.append(
-                "<tr class='pp-cutrow'><td colspan='18'>"
+                "<tr class='pp-cutrow'><td colspan='19'>"
                 "<div class='pp-cut'>Playoff line</div></td></tr>"
             )
 
@@ -9853,6 +9851,7 @@ def render_standings(team_stats, length, all_play: dict = None,
             <tr>
               <th scope="col">Seed</th>
               <th scope="col">Team</th>
+              <th scope="col">Status</th>
               <th scope="col">Record</th>
               <th scope="col">PF</th>
               <th scope="col">PA</th>
