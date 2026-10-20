@@ -597,6 +597,10 @@ def build_commissioner_body(ctx):
   .lh-verdict {{ font-size:15px; color:var(--muted); margin-top:10px; max-width:48ch; }}
   .lh-verdict b {{ color:var(--text); }}
   .lh-wrap {{ max-width:1000px; margin:0 auto; }}
+  /* This title is left-aligned with the content below it, so the global
+     centered h1::after sky bar (300px wide, margin auto) renders as a stray
+     floating bar under it. Suppress it, same opt-out as .wl-page-title. */
+  .lh-wrap > h1::after {{ display:none; }}
   .lh-bars {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px 34px; }}
   @media (max-width:640px) {{ .lh-bars {{ grid-template-columns:1fr; gap:15px; }} }}
   .lh-bar-row {{ display:flex; flex-direction:column; gap:7px; }}
@@ -774,6 +778,16 @@ def build_commissioner_body(ctx):
         from utils.league_invite import league_invite_path
         _inv = html.escape(league_invite_path(platform, season, league_id), quote=True)
         invite_card = f"""
+<style>
+  /* .card-header carries no horizontal padding while this card's body is
+     inset 18px, so the header text sat 18px left of the body copy. Line
+     them up, and drop the header's 50px min-height band. */
+  #lhLeagueInvite .card-header {{ padding:16px 18px 0; min-height:0; }}
+  /* dashboard.css defines no .btn class, so this button fell back to the
+     UA padding (1px 6px, 22px tall) next to the 33px invite input. Match
+     the input's height and type size. */
+  #lhInviteCopy {{ padding:8px 14px; font-size:13px; line-height:1.25; white-space:nowrap; }}
+</style>
 <div class="card" id="lhLeagueInvite" style="margin-bottom:16px;">
   <div class="card-header">
     <h3>Invite your league to PRO</h3>
@@ -809,7 +823,7 @@ def build_commissioner_body(ctx):
     except Exception:
         invite_card = ""
 
-    return f'<div class="lh-wrap"><h1 style="font-size:22px;font-weight:800;margin:0 0 8px;">League Health</h1><p class="lh-readonly" style="margin:0 0 12px;font-size:13px;color:var(--text-muted);">Read-only analytics for commissioners. Nothing here changes the league.</p>{invite_card}{health_html}{history_panel}{roster_table}{trade_card}</div>'
+    return f'<div class="lh-wrap"><h1 style="font-size:22px;font-weight:800;margin:0 0 8px;text-align:left;">League Health</h1><p class="lh-readonly" style="margin:0 0 12px;font-size:13px;color:var(--text-muted);">Read-only analytics for commissioners. Nothing here changes the league.</p>{invite_card}{health_html}{history_panel}{roster_table}{trade_card}</div>'
 
 
 # /<...>/league_health and /<...>/commissioner are served by routes/league_pages_bp.py.
