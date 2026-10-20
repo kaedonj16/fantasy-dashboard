@@ -233,16 +233,24 @@ def _normalize_name(name: str) -> str:
 def _load_cfbd_college_stats(
     draft_year: int,
     draft_class: List[Dict[str, Any]],
+    fetch_games_played: bool = False,
 ) -> Dict[str, List[Dict[str, Any]]]:
     """
     Fetch CFBD college stats for `draft_year` and match by name to the nflverse
     draft class.  Returns {player_id: [season_dict, ...]} using the prospect's
     player_id (gsis_id or name-slug) as key.
 
+    fetch_games_played is forwarded to ingestion.fetch_cfbd_college_stats.
+    Default False: the incumbent behavior (no /games/players calls,
+    season games_played stays None). The v4 path passes True: v4
+    prices per-game season legs and refuses to default games played,
+    so without the real counts its legs cannot price at all.
+
     Gracefully returns {} if CFBD_API_KEY is not set or the API is unreachable.
     """
     print(f"[backtest]   Fetching CFBD college stats for {draft_year} class…")
-    cfbd_raw = fetch_cfbd_college_stats(draft_year, skip_sagarin=True)
+    cfbd_raw = fetch_cfbd_college_stats(
+        draft_year, skip_sagarin=True, fetch_games_played=fetch_games_played)
     if not cfbd_raw:
         print("[backtest]   CFBD returned no data (key missing or API unreachable)")
         return {}
@@ -388,7 +396,12 @@ def _run_draft_class_backtest(
     athleticism = _load_combine_athleticism(draft_year)
     print(f"[backtest]   Combine data for {len(athleticism)} players")
 
-    college_stats = _load_cfbd_college_stats(draft_year, draft_class)
+    # v4 measures under the same conditions the reference artifact
+    # was derived under: real games-played counts fetched, per-game
+    # legs priced on them. The v3 path keeps the incumbent no-GP
+    # load, byte-identical to every run this harness has printed.
+    college_stats = _load_cfbd_college_stats(
+        draft_year, draft_class, fetch_games_played=(_MODEL_CHOICE == "v4"))
 
     prospects, consensus_map = _build_prospect_dicts(
         draft_class, athleticism, draft_year, college_stats
