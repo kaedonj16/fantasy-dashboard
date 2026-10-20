@@ -710,7 +710,7 @@ def api_portfolio_actions():
     """Cross-league action digest for My Leagues (roadmap R04).
 
     PRO-gated Front Office-style bullets across linked leagues. Best-effort:
-    scans up to 8 linked leagues for lineup issues and injury hints.
+    scans up to 12 linked leagues for lineup issues and injury hints.
     """
     from flask import jsonify, session
     from dashboard_services.subscriptions import has_premium_for_viewer
@@ -728,8 +728,11 @@ def api_portfolio_actions():
     from utils.scorezone_user import match_viewer_roster
 
     # Scan accounting: the client needs to tell "checked everything, nothing
-    # to do" apart from "checked nothing / only some leagues". Every league in
-    # the scanned slice lands in exactly one bucket below.
+    # to do" apart from "checked nothing / only some leagues". scan_total is
+    # set later to the full linked-league count; every ATTEMPTED league lands
+    # in exactly one bucket below (scanned / skipped_cold / skipped_no_roster),
+    # so scanned + skipped_* = attempted <= total, and incomplete holds
+    # whenever scanned < total (including leagues past the attempt slice).
     scan_total = 0
     scan_scanned = 0
     scan_skipped_cold = 0
@@ -816,13 +819,19 @@ def api_portfolio_actions():
     except Exception:
         _waiver_base_min = 25.0
 
-    for lg in (league_inputs or [])[:8]:
+    # The scan total covers ALL linked leagues, not just the attempted slice:
+    # a league the slice never reaches is still a league that was not checked,
+    # and the client's missed count (total - scanned) must include it.
+    scan_total = sum(
+        1 for lg in (league_inputs or []) if str(lg.get("league_id") or "")
+    )
+
+    for lg in (league_inputs or [])[:12]:
         lid = str(lg.get("league_id") or "")
         plat = str(lg.get("platform") or "sleeper").lower()
         lg_season = int(lg.get("season") or season)
         if not lid:
             continue
-        scan_total += 1
         try:
             lctx = get_league_ctx_from_cache(plat, lid, lg_season, allow_build=False) or {}
         except Exception:
@@ -1242,6 +1251,9 @@ _LIVE_MATCHUP_TTL = 30.0  # seconds
 _LIVE_MATCHUP_STALE_GRACE = 300.0  # seconds
 _LIVE_MATCHUP_LOCKS: dict = {}
 _LIVE_MATCHUP_LOCKS_GUARD = threading.Lock()
+# Keys with a background stale-while-revalidate rebuild in flight, so a burst
+# of card polls schedules at most one provider rebuild per league/week.
+_LIVE_MATCHUP_REBUILDING: set = set()
 
 
 def _live_matchup_lock(key):
@@ -1300,22 +1312,120 @@ def _finalized_fantasy_week(ctx: dict, roster_id: str, requested_week: int):
         return None
 
 
+def _compute_live_matchups(key, platform, resolved_league_id, season, week, ctx):
+    """Compute the live pieces for one league/week and store them in the cache.
+
+    The caller must hold the per-key lock (the synchronous build path) or be
+    the designated background rebuilder for the key (which takes the lock
+    itself first). ``ctx`` dicts are read, never mutated, so sharing the same
+    ctx object with a background thread matches the existing cross-thread use
+    under the lock."""
+    import time as _time
+
+    from dashboard_services.matchups import build_matchup_preview
+    from utils.utils import build_status_for_week
+
+    matchups = build_matchup_preview(
+        league_id=resolved_league_id,
+        week=week,
+        roster_map=ctx.get("roster_map") or {},
+        players_map=ctx.get("players") or {},
+        season=season,
+        platform=platform,
+    ) or []
+    status_by_pid = build_status_for_week(
+        season, week, ctx.get("players_index") or {}, ctx.get("teams_index") or {},
+    ) or {}
+    proj_bundle = build_projections_by_week(
+        season, week, ctx.get("raw_scoring_settings"),
+    ) or {}
+    proj_map = (proj_bundle.get(week) or {}).get("projections") or {}
+
+    result = (matchups, status_by_pid, proj_map)
+    _LIVE_MATCHUP_CACHE[key] = (_time.time(), result)
+    # Bound the cache: it is keyed per league/week, so it stays small, but prune
+    # stale entries opportunistically so it never grows without limit.
+    if len(_LIVE_MATCHUP_CACHE) > 200:
+        cutoff = _time.time() - _LIVE_MATCHUP_TTL
+        for k in [k for k, v in _LIVE_MATCHUP_CACHE.items() if v[0] < cutoff]:
+            _LIVE_MATCHUP_CACHE.pop(k, None)
+            _lk = _LIVE_MATCHUP_LOCKS.get(k)
+            if _lk is not None and not _lk.locked():
+                _LIVE_MATCHUP_LOCKS.pop(k, None)
+    return result
+
+
+def _schedule_live_matchup_rebuild(key, platform, resolved_league_id, season, week, ctx):
+    """Rebuild one league/week's live entry in a daemon thread (at most one
+    in flight per key). The requesting thread never waits on this: callers
+    serve the within-grace stale entry and let the rebuild land for the next
+    poll. The thread takes the per-key lock and re-checks freshness first --
+    a sibling may have just stored a fresh entry."""
+    import time as _time
+
+    if _live_matchup_lock(key).locked():
+        # A synchronous builder or an earlier rebuilder already holds the
+        # per-key lock and will store a fresh entry; queueing behind it
+        # would add nothing.
+        return
+    with _LIVE_MATCHUP_LOCKS_GUARD:
+        if key in _LIVE_MATCHUP_REBUILDING:
+            return
+        _LIVE_MATCHUP_REBUILDING.add(key)
+
+    def _run():
+        lock = _live_matchup_lock(key)
+        try:
+            with lock:
+                hit = _LIVE_MATCHUP_CACHE.get(key)
+                if hit and (_time.time() - hit[0]) < _LIVE_MATCHUP_TTL:
+                    return
+                _compute_live_matchups(
+                    key, platform, resolved_league_id, season, week, ctx,
+                )
+        except Exception:
+            logger.debug("[portfolio] live matchup background rebuild failed",
+                         exc_info=True)
+        finally:
+            with _LIVE_MATCHUP_LOCKS_GUARD:
+                _LIVE_MATCHUP_REBUILDING.discard(key)
+
+    try:
+        threading.Thread(
+            target=_run, name=f"live-matchup-{key[1]}-{key[3]}", daemon=True,
+        ).start()
+    except Exception:
+        with _LIVE_MATCHUP_LOCKS_GUARD:
+            _LIVE_MATCHUP_REBUILDING.discard(key)
+        logger.debug("[portfolio] live matchup rebuild spawn failed", exc_info=True)
+
+
 def _build_live_matchups(platform, resolved_league_id, season, week, ctx):
     """(matchups, status_by_pid, proj_map) for one league/week, TTL-cached.
 
-    Only the live pieces are cached -- the viewer's side is picked per request."""
+    Only the live pieces are cached -- the viewer's side is picked per request.
+    Stale-while-revalidate: a within-grace stale entry is served immediately
+    and refreshed by a background rebuild, so after the first build no card
+    request blocks on a provider rebuild. Only a missing or beyond-grace
+    entry pays the synchronous build below."""
     import time as _time
     key = (str(platform), str(resolved_league_id), int(season), int(week))
     hit = _LIVE_MATCHUP_CACHE.get(key)
     if hit and (_time.time() - hit[0]) < _LIVE_MATCHUP_TTL:
         return hit[1]
+    if hit and (_time.time() - hit[0]) < _LIVE_MATCHUP_TTL + _LIVE_MATCHUP_STALE_GRACE:
+        _schedule_live_matchup_rebuild(
+            key, platform, resolved_league_id, season, week, ctx,
+        )
+        return hit[1]
 
     lock = _live_matchup_lock(key)
     if not lock.acquire(blocking=False):
-        # Another thread is already rebuilding this league/week. Serve the
-        # last-good entry inside the grace window instead of queueing behind
-        # (or duplicating) a provider build that can outlast the card's
-        # client abort; with nothing usable cached, wait for the builder.
+        # Another thread is already building this league/week (synchronous
+        # path or the background rebuilder). Serve the last-good entry inside
+        # the grace window instead of queueing behind (or duplicating) a
+        # provider build that can outlast the card's client abort; with
+        # nothing usable cached, wait for the builder.
         if hit and (_time.time() - hit[0]) < _LIVE_MATCHUP_TTL + _LIVE_MATCHUP_STALE_GRACE:
             return hit[1]
         lock.acquire()
@@ -1333,38 +1443,9 @@ def _build_live_matchups(platform, resolved_league_id, season, week, ctx):
         hit = _LIVE_MATCHUP_CACHE.get(key)
         if hit and (_time.time() - hit[0]) < _LIVE_MATCHUP_TTL:
             return hit[1]
-
-        from dashboard_services.matchups import build_matchup_preview
-        from utils.utils import build_status_for_week
-
-        matchups = build_matchup_preview(
-            league_id=resolved_league_id,
-            week=week,
-            roster_map=ctx.get("roster_map") or {},
-            players_map=ctx.get("players") or {},
-            season=season,
-            platform=platform,
-        ) or []
-        status_by_pid = build_status_for_week(
-            season, week, ctx.get("players_index") or {}, ctx.get("teams_index") or {},
-        ) or {}
-        proj_bundle = build_projections_by_week(
-            season, week, ctx.get("raw_scoring_settings"),
-        ) or {}
-        proj_map = (proj_bundle.get(week) or {}).get("projections") or {}
-
-        result = (matchups, status_by_pid, proj_map)
-        _LIVE_MATCHUP_CACHE[key] = (_time.time(), result)
-        # Bound the cache: it is keyed per league/week, so it stays small, but prune
-        # stale entries opportunistically so it never grows without limit.
-        if len(_LIVE_MATCHUP_CACHE) > 200:
-            cutoff = _time.time() - _LIVE_MATCHUP_TTL
-            for k in [k for k, v in _LIVE_MATCHUP_CACHE.items() if v[0] < cutoff]:
-                _LIVE_MATCHUP_CACHE.pop(k, None)
-                _lk = _LIVE_MATCHUP_LOCKS.get(k)
-                if _lk is not None and not _lk.locked():
-                    _LIVE_MATCHUP_LOCKS.pop(k, None)
-        return result
+        return _compute_live_matchups(
+            key, platform, resolved_league_id, season, week, ctx,
+        )
     finally:
         lock.release()
 

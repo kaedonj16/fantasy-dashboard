@@ -97,6 +97,7 @@ def live_matchup_env(monkeypatch):
 
     pages._LIVE_MATCHUP_CACHE.clear()
     getattr(pages, "_LIVE_MATCHUP_LOCKS", {}).clear()
+    getattr(pages, "_LIVE_MATCHUP_REBUILDING", set()).clear()
     calls = {"build": 0}
 
     def _preview(**_kwargs):
@@ -140,6 +141,68 @@ def test_live_matchup_serves_stale_while_rebuild_in_flight(live_matchup_env):
     # immediately instead of paying a second parallel provider build.
     assert served is stale
     assert calls["build"] == 0
+
+
+def _wait_until(predicate, timeout=2.0):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.02)
+    return predicate()
+
+
+def test_live_matchup_stale_serves_immediately_and_rebuilds_in_background(
+        live_matchup_env, monkeypatch):
+    pages, calls = live_matchup_env
+    stale = ([{"stale": True}], {}, {})
+    # Past the 30s TTL but inside the stale grace window.
+    pages._LIVE_MATCHUP_CACHE[_key()] = (time.time() - 60, stale)
+    gate = threading.Event()
+    entered = threading.Event()
+
+    def _slow_preview(**_kwargs):
+        entered.set()
+        gate.wait(timeout=5)
+        calls["build"] += 1
+        return [{"left": {"roster_id": "1"}, "right": {"roster_id": "2"}}]
+
+    monkeypatch.setattr(
+        "dashboard_services.matchups.build_matchup_preview", _slow_preview)
+    try:
+        served = pages._build_live_matchups("sleeper", "L1", 2026, 6, CTX)
+        # The request returned the stale payload while the rebuild was still
+        # gated shut behind it: it never blocked on the provider build.
+        assert served is stale
+        assert entered.wait(timeout=2.0)  # a background rebuild was scheduled
+        assert pages._LIVE_MATCHUP_CACHE[_key()][1] is stale
+        assert calls["build"] == 0
+    finally:
+        gate.set()
+    # The rebuild lands in the background and replaces the entry.
+    assert _wait_until(lambda: pages._LIVE_MATCHUP_CACHE[_key()][1] is not stale)
+    assert _wait_until(lambda: _key() not in pages._LIVE_MATCHUP_REBUILDING)
+    assert calls["build"] == 1
+
+
+def test_live_matchup_no_entry_builds_synchronously(live_matchup_env):
+    pages, calls = live_matchup_env
+    served = pages._build_live_matchups("sleeper", "L1", 2026, 6, CTX)
+    assert served[0]  # preview payload, built on this thread
+    assert calls["build"] == 1
+    assert _key() in pages._LIVE_MATCHUP_CACHE
+    assert _key() not in pages._LIVE_MATCHUP_REBUILDING
+
+
+def test_live_matchup_fresh_entry_returns_without_compute(live_matchup_env):
+    pages, calls = live_matchup_env
+    fresh = ([{"fresh": True}], {}, {})
+    pages._LIVE_MATCHUP_CACHE[_key()] = (time.time(), fresh)
+    served = pages._build_live_matchups("sleeper", "L1", 2026, 6, CTX)
+    assert served is fresh
+    assert calls["build"] == 0
+    # A fresh entry schedules no background rebuild either.
+    assert _key() not in pages._LIVE_MATCHUP_REBUILDING
 
 
 def test_live_matchup_waits_for_builder_when_nothing_cached(live_matchup_env):

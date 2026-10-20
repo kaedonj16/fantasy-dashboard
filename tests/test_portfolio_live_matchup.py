@@ -57,7 +57,10 @@ def test_live_matchup_fetch_is_cached_and_current_week_only():
     source = (ROOT / "routes" / "user_pages_bp.py").read_text()
     assert "_LIVE_MATCHUP_CACHE" in source
     assert "_LIVE_MATCHUP_TTL" in source
-    builder = source.split("def _build_live_matchups")[1].split("\n@user_pages_bp.route")[0]
+    # The compute moved into _compute_live_matchups (shared by the synchronous
+    # build and the background stale-while-revalidate rebuild); the slice from
+    # there to the next route covers the whole fetch path.
+    builder = source.split("def _compute_live_matchups")[1].split("\n@user_pages_bp.route")[0]
     # One week's matchup + statuses, not a full-season rebuild.
     assert "build_matchup_preview" in builder
     assert "build_status_for_week" in builder

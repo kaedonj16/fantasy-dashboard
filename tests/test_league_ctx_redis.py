@@ -283,6 +283,44 @@ def test_corrupt_payload_is_a_miss(fake_redis, monkeypatch):
     assert app._league_ctx_redis_load(PLATFORM, LEAGUE_ID, SEASON) is None
 
 
+def test_best_effort_read_hydrates_from_redis(monkeypatch):
+    """allow_build=False on a worker with no local entry returns the ctx a
+    sibling worker persisted to Redis, without paying a local build."""
+    league_id = "redis-best-effort-hit"
+    key = app._cache_key(PLATFORM, SEASON, league_id)
+    app.DASHBOARD_CACHE.pop(key, None)
+    sentinel = {"league": {"name": "From Redis"}, "users": [], "rosters": []}
+    monkeypatch.setattr(app, "_league_ctx_redis_load", lambda *a: sentinel)
+    warmed = []
+    monkeypatch.setattr(app, "_warm_league_ctx_async", lambda *a: warmed.append(a))
+    try:
+        got = app.get_league_ctx_from_cache(
+            PLATFORM, league_id, SEASON, allow_build=False)
+    finally:
+        app.DASHBOARD_CACHE.pop(key, None)
+    assert got is sentinel
+    # A Redis hit needs no background warm: the league is already built.
+    assert warmed == []
+
+
+def test_best_effort_read_redis_miss_returns_empty_and_warms(monkeypatch):
+    """Redis miss on a cold worker keeps the old contract: return {} and kick
+    the background warm so the next poll can find the league built."""
+    league_id = "redis-best-effort-miss"
+    key = app._cache_key(PLATFORM, SEASON, league_id)
+    app.DASHBOARD_CACHE.pop(key, None)
+    monkeypatch.setattr(app, "_league_ctx_redis_load", lambda *a: None)
+    warmed = []
+    monkeypatch.setattr(app, "_warm_league_ctx_async", lambda *a: warmed.append(a))
+    try:
+        got = app.get_league_ctx_from_cache(
+            PLATFORM, league_id, SEASON, allow_build=False)
+    finally:
+        app.DASHBOARD_CACHE.pop(key, None)
+    assert got == {}
+    assert warmed == [(PLATFORM, league_id, SEASON)]
+
+
 def test_key_is_league_scoped_and_stable():
     assert store.ctx_key("sleeper", 2026, "a") == store.ctx_key("SLEEPER", 2026, "a")
     assert store.ctx_key("sleeper", 2026, "a") != store.ctx_key("sleeper", 2026, "b")

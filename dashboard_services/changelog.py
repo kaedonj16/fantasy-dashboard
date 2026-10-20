@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-10-19",
         "tag": "fix",
+        "text": "My Leagues This week's moves now checks all of your linked leagues, not just the first eight, and My Leagues live matchup scores now refresh in the background instead of making your cards wait on a rebuild.",
+        "link": "/portfolio"
+    },
+    {
+        "date": "2026-10-19",
+        "tag": "fix",
         "text": "My Leagues This week's moves no longer claims you are all caught up when it could not check some of your leagues: it now says how many leagues could not be checked yet, retries once while your leagues load, and includes start/bench swap alerts like the ones in your lineup-lock reminders.",
         "link": "/portfolio"
     },

@@ -14061,7 +14061,6 @@ def get_league_ctx_from_cache(
         # Best-effort readers opt out of the cold synchronous build. Serve
         # last-known-good if it is still within the stale window, otherwise
         # nothing, and warm the cache in the background for the next poll.
-        _warm_league_ctx_async(platform, league_id, season)
         old = (stale_entry or {}).get("ctx")
         old_ts = float((stale_entry or {}).get("ts") or 0)
         stale_window = _positive_env_int("LEAGUE_STALE_IF_ERROR_SECONDS", 21600)
@@ -14074,6 +14073,16 @@ def get_league_ctx_from_cache(
                 old.get("users") or [], old.get("rosters") or [], platform, league_id, season
             )
             return old
+        # No usable local entry: another worker may already have built this
+        # league and persisted the ctx to Redis. Hydrate from there (which
+        # also installs the ctx into this worker's local cache) so a
+        # best-effort reader on a cold worker shares cross-worker builds
+        # instead of reporting the league unchecked. Fail-soft: None here
+        # just falls through to the warm-and-empty behavior below.
+        redis_ctx = _league_ctx_redis_load(platform, league_id, season)
+        if redis_ctx:
+            return redis_ctx
+        _warm_league_ctx_async(platform, league_id, season)
         return {}
     try:
         key_lock, local_wait = _acquire_context_lock(
@@ -38227,13 +38236,17 @@ def build_portfolio_body(
         "card.hidden=false;"
         "body.innerHTML=paywallHtml('Cross-league moves are a PRO feature.','Upgrade to PRO');return;}"
         # Honest scan status: an incomplete scan means some leagues
-        # could not be checked (cold caches on the first pass). Retry
-        # exactly once after a short wait - the first request kicked the
-        # background warms, so the retry usually lands on warm caches -
-        # and never paint all-caught-up for a scan that did not finish.
+        # could not be checked (cold caches on the first pass). Cold league
+        # builds take 7-28s each and run at most 2 at a time per worker, so
+        # one short retry is not enough: retry on a bounded ladder while the
+        # scan stays incomplete (the first request kicked the background
+        # warms), then render the honest final state - and never paint
+        # all-caught-up for a scan that did not finish.
         "var scan=(res.d&&res.d.scan)||null;"
-        "if(scan&&scan.incomplete&&!attempt){"
-        "setTimeout(function(){__pfMovesGo(1);},6000);return;}"
+        "var PF_RETRY=[6000,15000,30000];"
+        "attempt=(typeof attempt==='number'&&attempt>0)?Math.floor(attempt):0;"
+        "if(scan&&scan.incomplete&&attempt<PF_RETRY.length){"
+        "setTimeout(function(){__pfMovesGo(attempt+1);},PF_RETRY[attempt]);return;}"
         "function pfIncompleteHtml(){"
         "var missed=Math.max(0,(scan.total||0)-(scan.scanned||0));"
         "return \"<div class='pf-moves-empty'><strong>Could not check \"+missed+\" of \"+(scan.total||0)+\" leagues yet.</strong> \""
