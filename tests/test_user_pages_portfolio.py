@@ -180,3 +180,217 @@ def test_portfolio_record_and_rank_falls_back_to_roster_settings():
     wins, losses, ties, pf, rank = portfolio_record_and_rank(lctx, "1", lctx["rosters"][0])
     assert wins == 2 and losses == 4
     assert rank == 3
+
+
+# ── /api/portfolio-actions: honest scan status + swap parity ────────────────
+#
+# The moves card used to paint "You're all caught up" for any empty actions
+# list, including scans that checked nothing (cold league caches). These
+# tests drive the real endpoint with stubbed league contexts.
+
+_PF_PLAYERS = {
+    "s1": {"full_name": "Starter Guy", "team": "BUF", "position": "RB",
+           "injury_status": ""},
+    "b1": {"full_name": "Bench Guy", "team": "MIA", "position": "RB",
+           "injury_status": ""},
+}
+_PF_LEAGUES = [
+    {"league_id": "L1", "platform": "sleeper", "season": 2026,
+     "name": "Test League"},
+]
+_FUTURE = 9999999999
+
+
+def _pf_ctx(projections=None, owner_id="owner-1"):
+    ctx = {
+        "rosters": [{
+            "roster_id": 1, "owner_id": owner_id, "starters": ["s1"],
+            "players": ["s1", "b1"], "reserve": [], "taxi": [],
+        }],
+        "league": {"name": "Test League", "settings": {}},
+        "users": [],
+        "roster_positions": ["RB", "BN"],
+        "players_index": {
+            "s1": {"position": "RB", "name": "Starter Guy", "team": "BUF"},
+            "b1": {"position": "RB", "name": "Bench Guy", "team": "MIA"},
+        },
+        "model_value_table": [],
+    }
+    if projections is not None:
+        ctx["proj_by_week"] = {7: {"projections": projections}}
+    return ctx
+
+
+def _pf_client(monkeypatch, ctx_by_lid, leagues=None, *, locked_teams=(),
+               fallback_proj=None):
+    pytest.importorskip("flask")
+    from flask import Flask
+
+    import dashboard_services.accounts
+    import dashboard_services.api
+    import dashboard_services.subscriptions
+    import routes.user_pages_bp as bp_mod
+    import utils.utils as uu
+    accounts = dashboard_services.accounts
+    ds_api = dashboard_services.api
+    subs = dashboard_services.subscriptions
+
+    games = []
+    for home, away in (("BUF", "NYJ"), ("MIA", "NE")):
+        games.append({
+            "home": home, "away": away,
+            "gameTime_epoch": 1 if home in locked_teams else _FUTURE,
+        })
+    monkeypatch.setattr(
+        bp_mod, "get_nfl_state",
+        lambda *a, **k: {"season": 2026, "week": 7, "season_type": "reg"})
+    monkeypatch.setattr(
+        bp_mod, "get_league_ctx_from_cache",
+        lambda plat, lid, season, allow_build=False: ctx_by_lid.get(lid, {}))
+    monkeypatch.setattr(
+        bp_mod, "get_model_value_table_cached", lambda *a, **k: [])
+    monkeypatch.setattr(
+        bp_mod, "build_projections_by_week",
+        lambda *a, **k: fallback_proj or {})
+    monkeypatch.setattr(
+        accounts, "resolve_my_leagues",
+        lambda uid, aid, season: (leagues or _PF_LEAGUES, 2026))
+    monkeypatch.setattr(subs, "has_premium_for_viewer", lambda *a, **k: True)
+    monkeypatch.setattr(ds_api, "get_nfl_players", lambda *a, **k: dict(_PF_PLAYERS))
+    monkeypatch.setattr(uu, "load_week_schedule", lambda season, week: games)
+
+    app = Flask(__name__)
+    app.secret_key = "test"
+    app.register_blueprint(bp_mod.user_pages_bp)
+    client = app.test_client()
+    with client.session_transaction() as sess:
+        sess["viewer_username"] = "tester"
+        sess["viewer_user_id"] = "owner-1"
+    return client
+
+
+def _pf_get(client):
+    resp = client.get("/api/portfolio-actions")
+    assert resp.status_code == 200
+    return resp.get_json()
+
+
+def test_portfolio_actions_cold_cache_reports_incomplete_scan(monkeypatch):
+    """Every league cold: empty actions must carry scan.incomplete, not a
+    bare empty the client would paint as all-caught-up."""
+    data = _pf_get(_pf_client(monkeypatch, {}))
+    assert data["actions"] == []
+    scan = data["scan"]
+    assert scan["total"] == 1
+    assert scan["scanned"] == 0
+    assert scan["skipped_cold"] == scan["total"]
+    assert scan["incomplete"] is True
+
+
+def test_portfolio_actions_complete_scan_reports_incomplete_false(monkeypatch):
+    ctx = _pf_ctx(projections={"s1": 15.0, "b1": 9.0})
+    data = _pf_get(_pf_client(monkeypatch, {"L1": ctx}))
+    assert data["actions"] == []
+    assert data["scan"] == {
+        "total": 1, "scanned": 1, "skipped_cold": 0,
+        "skipped_no_roster": 0, "incomplete": False,
+    }
+
+
+def test_portfolio_actions_unmatched_roster_counted_skipped(monkeypatch):
+    ctx = _pf_ctx(projections={"s1": 9.0, "b1": 15.0}, owner_id="someone-else")
+    data = _pf_get(_pf_client(monkeypatch, {"L1": ctx}))
+    assert data["actions"] == []
+    assert data["scan"]["skipped_no_roster"] == 1
+    assert data["scan"]["scanned"] == 0
+    assert data["scan"]["incomplete"] is True
+
+
+def test_portfolio_actions_partial_scan_keeps_actions_and_flags_incomplete(monkeypatch):
+    leagues = _PF_LEAGUES + [
+        {"league_id": "L2", "platform": "sleeper", "season": 2026,
+         "name": "Cold League"},
+    ]
+    ctx = _pf_ctx(projections={"s1": 9.0, "b1": 15.0})
+    data = _pf_get(_pf_client(monkeypatch, {"L1": ctx}, leagues))
+    assert data["scan"]["total"] == 2
+    assert data["scan"]["scanned"] == 1
+    assert data["scan"]["skipped_cold"] == 1
+    assert data["scan"]["incomplete"] is True
+    assert any(a["title"] == "Start Bench Guy over Starter Guy"
+               for a in data["actions"])
+
+
+def test_portfolio_actions_emits_bench_swap_alert(monkeypatch):
+    """Swap parity: a bench player out-projecting a starter by >= 2 produces
+    the same Start-X-over-Y action push / Next Steps generate."""
+    ctx = _pf_ctx(projections={"s1": 9.0, "b1": 15.0})
+    data = _pf_get(_pf_client(monkeypatch, {"L1": ctx}))
+    swaps = [a for a in data["actions"]
+             if a["title"] == "Start Bench Guy over Starter Guy"]
+    assert len(swaps) == 1
+    swap = swaps[0]
+    assert swap["kind"] == "lineup"
+    assert swap["detail"] == "Bench Guy projects 15.0 vs Starter Guy's 9.0"
+    assert swap["dismiss_key"] == "swap:s1>b1"
+    assert swap["href"].endswith("/waivers?tab=startsit")
+
+
+def test_portfolio_actions_swap_from_shared_fallback_projections(monkeypatch):
+    """No proj_by_week on the ctx: the shared build_projections_by_week
+    fallback (the push path's source) still yields the swap."""
+    ctx = _pf_ctx(projections=None)
+    fallback = {7: {"projections": {"s1": 9.0, "b1": 15.0}}}
+    data = _pf_get(_pf_client(monkeypatch, {"L1": ctx},
+                              fallback_proj=fallback))
+    assert any(a["title"] == "Start Bench Guy over Starter Guy"
+               for a in data["actions"])
+
+
+def test_portfolio_actions_swap_skipped_when_starter_game_locked(monkeypatch):
+    """A starter whose game already kicked off cannot be benched: no swap."""
+    ctx = _pf_ctx(projections={"s1": 9.0, "b1": 15.0})
+    data = _pf_get(_pf_client(monkeypatch, {"L1": ctx}, locked_teams=("BUF",)))
+    assert data["actions"] == []
+    assert data["scan"]["incomplete"] is False
+
+
+def test_portfolio_actions_no_projections_no_swap_no_crash(monkeypatch):
+    ctx = _pf_ctx(projections=None)
+    data = _pf_get(_pf_client(monkeypatch, {"L1": ctx}))
+    assert data["actions"] == []
+    assert data["scan"]["scanned"] == 1
+    assert data["scan"]["incomplete"] is False
+
+
+def test_portfolio_moves_card_retries_once_and_shows_incomplete_state():
+    source = (ROOT / "app.py").read_text()
+    fn = source.split("def build_portfolio_body")[1].split("\ndef ")[0]
+    # One retry, ~6s later, only when the scan reports incomplete. (6s, not
+    # the old reconcile loop's 5s: test_portfolio_leagues pins "},5000);"
+    # out of this function to keep that poll-and-reload pattern from returning.)
+    assert "__pfMovesGo(attempt)" in fn
+    assert "scan.incomplete" in fn
+    assert "__pfMovesGo(1)" in fn
+    assert "__pfMovesGo(1);},6000)" in fn
+    # Honest incomplete states: under the list and instead of all-caught-up.
+    assert "Could not check" in fn
+    assert "some moves may be missing" in fn
+    assert "still loading" in fn
+    # The true-empty state keeps its exact prior copy.
+    assert "all caught up" in fn.lower()
+    assert "No lineup, waiver, roster, or deadline moves need your attention" in fn
+
+
+def test_changelog_announces_moves_scan_honesty():
+    from dashboard_services.changelog import CHANGELOG
+
+    entry = next(
+        e for e in CHANGELOG
+        if "this week's moves" in e.get("text", "").lower()
+        and "could not check" in e.get("text", "").lower()
+    )
+    assert entry["tag"] == "fix"
+    assert "swap" in entry["text"].lower()
+    assert "—" not in entry["text"]
+    assert "–" not in entry["text"]

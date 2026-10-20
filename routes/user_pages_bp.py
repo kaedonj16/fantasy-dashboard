@@ -718,18 +718,38 @@ def api_portfolio_actions():
         calendar_action,
         injury_stash_action,
         lineup_actions_from_issues,
+        make_action,
         rank_cross_league_actions,
         roster_slot_action,
         select_waiver_add,
         waiver_pickup_action,
     )
-    from utils.lineup_issues import find_lineup_issues
+    from utils.lineup_issues import find_lineup_issues, projection_upgrades
     from utils.scorezone_user import match_viewer_roster
+
+    # Scan accounting: the client needs to tell "checked everything, nothing
+    # to do" apart from "checked nothing / only some leagues". Every league in
+    # the scanned slice lands in exactly one bucket below.
+    scan_total = 0
+    scan_scanned = 0
+    scan_skipped_cold = 0
+    scan_skipped_no_roster = 0
+
+    def _scan_payload(force_incomplete=False):
+        return {
+            "total": scan_total,
+            "scanned": scan_scanned,
+            "skipped_cold": scan_skipped_cold,
+            "skipped_no_roster": scan_skipped_no_roster,
+            "incomplete": bool(force_incomplete) or scan_scanned < scan_total,
+        }
 
     viewer_username = session.get("viewer_username")
     viewer_user_id = session.get("viewer_user_id")
     if (not viewer_username or not viewer_user_id) and not session.get("account_id"):
-        return jsonify({"actions": []})
+        # Nothing was scanned at all, so an empty list here is not "all
+        # caught up" - report it as incomplete.
+        return jsonify({"actions": [], "scan": _scan_payload(force_incomplete=True)})
 
     nfl_state = get_nfl_state() or {}
     season = int(nfl_state.get("season") or datetime.now().year)
@@ -739,7 +759,7 @@ def api_portfolio_actions():
             viewer_user_id, session.get("account_id"), season
         )
     except Exception:
-        return jsonify({"actions": []})
+        return jsonify({"actions": [], "scan": _scan_payload(force_incomplete=True)})
 
     def _portfolio_viewer_has_pro() -> bool:
         if has_premium_for_viewer(viewer_username, viewer_user_id, None, "sleeper", season):
@@ -760,6 +780,11 @@ def api_portfolio_actions():
     actions: list = []
     week = 0
     in_season = False
+    week_games: list = []
+    # Shared fallback projection map for the swap scan (Part C): built at most
+    # once per request, only for leagues whose ctx carries no proj_by_week.
+    shared_proj_map = None
+    shared_proj_tried = False
     try:
         from dashboard_services.api import get_nfl_players
         from utils.utils import load_week_schedule
@@ -768,7 +793,8 @@ def api_portfolio_actions():
         in_season = bool(week and nfl_state.get("season_type") in ("reg", "post"))
         teams_playing = set()
         if in_season:
-            for g in (load_week_schedule(season, week) or []):
+            week_games = list(load_week_schedule(season, week) or [])
+            for g in week_games:
                 for side in ("home", "away"):
                     t = str(g.get(side) or "").upper()
                     if t:
@@ -776,6 +802,7 @@ def api_portfolio_actions():
     except Exception:
         nfl_players = {}
         teams_playing = set()
+        week_games = []
 
     # Model value table (cached) powers the format-aware waiver pickup. Load it
     # once for all leagues rather than per-league.
@@ -795,14 +822,17 @@ def api_portfolio_actions():
         lg_season = int(lg.get("season") or season)
         if not lid:
             continue
+        scan_total += 1
         try:
             lctx = get_league_ctx_from_cache(plat, lid, lg_season, allow_build=False) or {}
         except Exception:
+            scan_skipped_cold += 1
             continue
         if not lctx:
             # Cold cache: a background warm was kicked. Skip this league for now so
             # the digest returns promptly instead of blocking on a cold build (the
             # old behavior serially built every league, taking 100s+ on a miss).
+            scan_skipped_cold += 1
             continue
         rosters = lctx.get("rosters") or []
         league_obj = lctx.get("league") or {}
@@ -832,7 +862,11 @@ def api_portfolio_actions():
                 ),
             )
         if not viewer_roster:
+            scan_skipped_no_roster += 1
             continue
+        # Roster matched: the scans below actually run for this league.
+        # Mid-scan sub-scan failures are best-effort and do not un-count it.
+        scan_scanned += 1
         starters = [str(p) for p in (viewer_roster.get("starters") or [])]
         if starters and nfl_players:
             info = {}
@@ -848,6 +882,114 @@ def api_portfolio_actions():
                 issues, platform=plat, season=lg_season,
                 league_id=lid, league_name=league_name,
             ))
+        # Bench-swap parity (Part C): the Start-X-over-Y alerts the push
+        # reminders and the league dashboard Next Steps produce. Same solver,
+        # same thresholds (min_gain 2.0, max 2 per league), locked players
+        # excluded from both sides. Best-effort like every other sub-scan.
+        if in_season and starters:
+            try:
+                proj_map = {}
+                pbw = lctx.get("proj_by_week") or {}
+                wk_proj = {}
+                if isinstance(pbw, dict):
+                    wk_proj = pbw.get(week) or pbw.get(str(week)) or {}
+                if isinstance(wk_proj, dict):
+                    proj_map = {
+                        str(k): v for k, v in (wk_proj.get("projections") or {}).items()
+                    }
+                if not proj_map:
+                    if not shared_proj_tried:
+                        shared_proj_tried = True
+                        try:
+                            _bpw = build_projections_by_week(season, week, None) or {}
+                            _wk = {}
+                            if isinstance(_bpw, dict):
+                                _wk = _bpw.get(week) or _bpw.get(str(week)) or {}
+                            if isinstance(_wk, dict):
+                                shared_proj_map = {
+                                    str(k): v
+                                    for k, v in (_wk.get("projections") or {}).items()
+                                } or None
+                        except Exception:
+                            shared_proj_map = None
+                    proj_map = dict(shared_proj_map or {})
+                if proj_map:
+                    from utils.lineups import locked_teams_from_games
+                    _reserve = {str(p) for p in (viewer_roster.get("reserve") or []) if p}
+                    _taxi = {str(p) for p in (viewer_roster.get("taxi") or []) if p}
+                    eligible = [
+                        str(p) for p in (viewer_roster.get("players") or [])
+                        if str(p) not in _reserve and str(p) not in _taxi
+                    ]
+                    _pidx = lctx.get("players_index") or {}
+                    pos_map = {}
+                    name_map = {}
+                    inj_map_swap = {}
+                    for _pid in eligible:
+                        _pl = nfl_players.get(_pid) or {}
+                        _meta = _pidx.get(_pid) or {}
+                        pos_map[_pid] = str(
+                            _pl.get("position") or _meta.get("position")
+                            or _meta.get("pos") or ""
+                        )
+                        name_map[_pid] = (
+                            _pl.get("full_name") or _meta.get("full_name")
+                            or _meta.get("name") or _pl.get("last_name") or ""
+                        )
+                        inj_map_swap[_pid] = str(_pl.get("injury_status") or "")
+                    for _pid in starters:
+                        if _pid not in name_map:
+                            _pl = nfl_players.get(_pid) or {}
+                            name_map[_pid] = (
+                                _pl.get("full_name") or _pl.get("last_name") or ""
+                            )
+                    locked_teams = locked_teams_from_games(week_games)
+                    locked_pids = {
+                        _pid for _pid in eligible
+                        if str((nfl_players.get(_pid) or {}).get("team") or "").upper()
+                        in locked_teams
+                    }
+                    swaps = projection_upgrades(
+                        starters, eligible, proj_map, pos_map,
+                        lctx.get("roster_positions") or [],
+                        min_gain=2.0, max_swaps=2,
+                        injury_status=inj_map_swap,
+                        locked_pids=locked_pids,
+                    )
+                    for _sw in swaps[:2]:
+                        _in = str(_sw.get("in") or "")
+                        _out = str(_sw.get("out") or "")
+                        if not _in or not _out:
+                            continue
+                        _in_name = name_map.get(_in) or f"Player {_in}"
+                        _out_name = name_map.get(_out) or f"Player {_out}"
+                        try:
+                            _in_proj = float(proj_map.get(_in) or 0)
+                            _out_proj = float(proj_map.get(_out) or 0)
+                        except (TypeError, ValueError):
+                            _in_proj = _out_proj = 0.0
+                        _gain = float(_sw.get("gain") or (_in_proj - _out_proj))
+                        # Severity: a 2pt gain is a real but modest nudge
+                        # (0.7); a 5pt+ gain is top priority (1.0).
+                        _sev = min(1.0, 0.5 + _gain / 10.0)
+                        actions.append(make_action(
+                            kind="lineup",
+                            platform=plat, season=lg_season, league_id=lid,
+                            league_name=league_name,
+                            title=f"Start {_in_name} over {_out_name}",
+                            detail=(
+                                f"{_in_name} projects {_in_proj:.1f} "
+                                f"vs {_out_name}'s {_out_proj:.1f}"
+                            ),
+                            href=(
+                                f"/{plat}/{int(lg_season)}/{lid}"
+                                "/waivers?tab=startsit"
+                            ),
+                            severity=_sev,
+                            dismiss_key=f"swap:{_out}>{_in}",
+                        ))
+            except Exception:
+                logger.debug("[portfolio-actions] swap scan failed", exc_info=True)
         # One injury stash/drop hint per league (active-roster candidates only;
         # players already in reserve/IR do not need a stash/move-to-IR tip).
         try:
@@ -1078,7 +1220,10 @@ def api_portfolio_actions():
             except Exception:
                 logger.debug("[portfolio-actions] calendar nudge failed", exc_info=True)
 
-    return jsonify({"actions": rank_cross_league_actions(actions, limit=8)})
+    return jsonify({
+        "actions": rank_cross_league_actions(actions, limit=8),
+        "scan": _scan_payload(),
+    })
 
 
 # ── Live matchup score for a My Leagues card ──────────────────────────────────
