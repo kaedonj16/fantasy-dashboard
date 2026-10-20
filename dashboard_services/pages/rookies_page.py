@@ -139,6 +139,17 @@ def build_prospects_body(is_admin: bool = False) -> str:
   /* Real h1 (was h2) with the exact specified values the h2 rendered with,
      so the swap changes semantics only, not the layout. */
   #rookiesTitle { font-size: 18px; font-weight: 700; margin: 0; text-align: left; }
+  /* The global h1::after is a 300px centered sky bar meant for standalone
+     hero titles; inside this card header it renders as a stray floating
+     bar between the title and the subtitle. Suppress it (same opt-out as
+     .wl-page-title / .compare-page-title in dashboard.css). */
+  #rookiesTitle::after { display: none; }
+  /* Export is the only .btn on this page and dashboard.css defines no
+     .btn/.btn-ghost/.btn-sm at all, so it fell back to the UA button
+     padding (1px 6px, 22px tall) in the global accent fill. Give it real
+     ghost-button geometry, scoped to this card. */
+  #prospectsCard .btn-ghost { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; min-height: 32px; background: transparent; border: 1px solid var(--border); border-radius: 8px; color: var(--text-muted); font-size: 13px; font-weight: 600; line-height: 1; white-space: nowrap; }
+  #prospectsCard .btn-ghost:hover { color: var(--text); border-color: var(--accent); }
 
   /* ===== Filter controls: players-board two-row bar ===== */
   .filter-controls-container { display: flex; flex-direction: column; gap: 10px; padding: 14px 0 12px; border-bottom: 1px solid var(--border); margin-bottom: 10px; }
