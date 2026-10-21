@@ -268,4 +268,8 @@ def test_player_details_payload_carries_breakout_call():
     app = (ROOT / "app.py").read_text(encoding="utf-8")
     assert '"has_breakout_call": bool(on_breakout_board or breakout_call)' in app
     assert '"breakout_call": breakout_call' in app
-    assert "breakout_call = breakout_call_history(player_id, season)" in app
+    # Speed v2: the per-open breakout_call_history lookup became a
+    # lookup against cached ID sets whose calls map is built from the
+    # same surfaced-ids source (earliest call per player).
+    assert "on_breakout_board, breakout_call = _breakout_flags_cached(" in app
+    assert "surfaced_player_ids_by_week" in app

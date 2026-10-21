@@ -14489,7 +14489,7 @@ def _load_season_snap_totals(season: int) -> dict:
 _WEEKSTAT_PTS_CACHE: dict = {}  # (season, scoring_sig, te_flag) -> (ts, newest_mtime, (pids, flat))
 _WEEKSTAT_NCOLS = 6
 _WEEKSTAT_PTS_MAX = 2
-_SEASON_RANK_MAX = 2
+_SEASON_RANK_MAX = 16  # scoring signatures x seasons coexist; was 2, which thrashed between leagues
 
 
 def _lru_cache_put(cache: dict, key, value, cap: int):
@@ -22946,6 +22946,260 @@ def _sleeper_stats_by_week(player_id: str, season_year: int) -> dict:
     return out
 
 
+def _eligibility_db_combined(pid: str):
+    """One DB round-trip for the modal eligibility DB checks, or None.
+
+    Combines the three EXISTS checks _player_nfl_eligibility used to run as
+    separate queries into a single SELECT. Returns (has_game_logs,
+    has_metrics) from the DB alone (disk fallbacks still live in the caller),
+    or None when the DB is unavailable / a table is missing / the row shape
+    is not the expected dict row -- the caller then runs its legacy
+    per-query path, so behavior on partial schemas is unchanged.
+    """
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            row = conn.execute(
+                """SELECT
+                     EXISTS(SELECT 1 FROM player_weekly_metrics
+                            WHERE player_id = %s) AS has_weekly,
+                     EXISTS(SELECT 1 FROM player_weekly_advanced_metrics
+                            WHERE player_id = %s) AS has_wadv,
+                     EXISTS(SELECT 1 FROM player_advanced_metrics p
+                            WHERE player_id = %s AND EXISTS (
+                              SELECT 1 FROM jsonb_each(to_jsonb(p) -
+                                ARRAY['id','player_id','position','season','as_of_date','nfl_team']) item
+                              WHERE item.key NOT LIKE 'rookie_eval_%'
+                                AND item.value <> 'null'::jsonb
+                            )) AS has_base""",
+                (pid, pid, pid),
+            ).fetchone()
+    except Exception:
+        return None
+    if isinstance(row, dict) and "has_weekly" in row:
+        games = bool(row.get("has_weekly"))
+        metrics = games or bool(row.get("has_wadv")) or bool(row.get("has_base"))
+        return games, metrics
+    if isinstance(row, (list, tuple)) and len(row) >= 3:
+        games = bool(row[0])
+        return games, games or bool(row[1]) or bool(row[2])
+    return None
+
+
+def _pd_aux_cache_active() -> bool:
+    """Aux modal caches (eligibility / completed weeks / breakout flags)
+    are a production path only, mirroring _player_details_cache_active:
+    tests exercise the real builders (and may toggle this on explicitly
+    to cover the caches themselves)."""
+    try:
+        return not app.testing
+    except Exception:
+        return False
+
+
+# Eligibility changes at most weekly (a player's first game / first metrics
+# row), so the per-player result is cached for an hour, shared across
+# workers via Redis when available. The modal only calls this on its
+# deferred path; the core payload never pays a DB round-trip for tab flags.
+_ELIGIBILITY_CACHE: dict = {}  # (player_id, season) -> (ts, (games, metrics))
+_ELIGIBILITY_TTL = 3600
+_ELIGIBILITY_MAX = 512
+
+
+def _player_nfl_eligibility_cached(player_id: str, season: int) -> tuple[bool, bool]:
+    """_player_nfl_eligibility behind in-process + shared (Redis) caches.
+
+    Never raises beyond what the underlying helper returns: on any cache
+    failure it simply computes. Cached values are (bool, bool) pairs.
+    """
+    pid = str(player_id)
+    key = (pid, int(season))
+    if not _pd_aux_cache_active():
+        _r = _player_nfl_eligibility(pid, int(season))
+        return (bool(_r[0]), bool(_r[1]))
+    now = time.time()
+    hit = _ELIGIBILITY_CACHE.get(key)
+    if hit and now - hit[0] < _ELIGIBILITY_TTL:
+        _ELIGIBILITY_CACHE[key] = _ELIGIBILITY_CACHE.pop(key)  # LRU refresh
+        return hit[1]
+    try:
+        from dashboard_services import player_details_store as _pd_store
+        _shared = _pd_store.get_json("elig", key, _ELIGIBILITY_TTL)
+        if _shared is not None and isinstance(_shared.get("payload"), list) \
+                and len(_shared["payload"]) == 2:
+            _val = (bool(_shared["payload"][0]), bool(_shared["payload"][1]))
+            _lru_cache_put(_ELIGIBILITY_CACHE, key, (_shared["ts"], _val),
+                           _ELIGIBILITY_MAX)
+            return _val
+    except Exception:
+        logger.debug("[player-eligibility] shared cache read failed", exc_info=True)
+    result = _player_nfl_eligibility(pid, int(season))
+    _val = (bool(result[0]), bool(result[1]))
+    _lru_cache_put(_ELIGIBILITY_CACHE, key, (now, _val), _ELIGIBILITY_MAX)
+    try:
+        from dashboard_services import player_details_store as _pd_store
+        _pd_store.set_json("elig", key, [bool(_val[0]), bool(_val[1])],
+                           now, _ELIGIBILITY_TTL)
+    except Exception:
+        logger.debug("[player-eligibility] shared cache write failed", exc_info=True)
+    return _val
+
+
+# Per-player completed weeks (team-history + schedule loads) feed only the
+# modal's deferred PPG correction, and a player's set changes at most when
+# one of his games goes final -- cache it (shared) instead of recomputing
+# it on every open.
+_COMPLETED_WEEKS_CACHE: dict = {}  # (player_id, season) -> (ts, [weeks])
+_COMPLETED_WEEKS_TTL = 600
+_COMPLETED_WEEKS_MAX = 512
+
+
+def _player_completed_weeks_cached(player_id: str, season: int) -> tuple:
+    """player_completed_weeks behind in-process + shared (Redis) caches."""
+    pid = str(player_id)
+    key = (pid, int(season))
+    if not _pd_aux_cache_active():
+        try:
+            from utils.season_qualification import player_completed_weeks
+            return tuple(int(w) for w in (
+                player_completed_weeks(pid, int(season)) or ()))
+        except Exception:
+            return ()
+    now = time.time()
+    hit = _COMPLETED_WEEKS_CACHE.get(key)
+    if hit and now - hit[0] < _COMPLETED_WEEKS_TTL:
+        _COMPLETED_WEEKS_CACHE[key] = _COMPLETED_WEEKS_CACHE.pop(key)
+        return tuple(hit[1])
+    try:
+        from dashboard_services import player_details_store as _pd_store
+        _shared = _pd_store.get_json("cw", key, _COMPLETED_WEEKS_TTL)
+        if _shared is not None and isinstance(_shared.get("payload"), list):
+            _weeks = tuple(int(w) for w in _shared["payload"])
+            _lru_cache_put(_COMPLETED_WEEKS_CACHE, key,
+                           (_shared["ts"], list(_weeks)), _COMPLETED_WEEKS_MAX)
+            return _weeks
+    except Exception:
+        logger.debug("[completed-weeks] shared cache read failed", exc_info=True)
+    try:
+        from utils.season_qualification import player_completed_weeks
+        _weeks = tuple(int(w) for w in (player_completed_weeks(pid, int(season)) or ()))
+    except Exception:
+        logger.debug("[completed-weeks] computation failed", exc_info=True)
+        return ()
+    _lru_cache_put(_COMPLETED_WEEKS_CACHE, key, (now, list(_weeks)),
+                   _COMPLETED_WEEKS_MAX)
+    try:
+        from dashboard_services import player_details_store as _pd_store
+        _pd_store.set_json("cw", key, list(_weeks), now, _COMPLETED_WEEKS_TTL)
+    except Exception:
+        logger.debug("[completed-weeks] shared cache write failed", exc_info=True)
+    return _weeks
+
+
+# Breakout tab flags: the board candidate ids and the season's surfaced-call
+# map are built once per TTL (one board build + one surfaced-ids call for
+# the whole pool) and shared across workers, instead of a board membership
+# scan + per-player history lookup on every modal open.
+_BREAKOUT_FLAGS_CACHE: dict = {}  # season -> (ts, {"board": [...], "calls": {...}})
+_BREAKOUT_FLAGS_TTL = 900
+
+
+def _breakout_id_sets(season: int):
+    """{"board": [ids], "calls": {pid: call}} for a season, or None.
+
+    Mirrors breakout_board_membership + breakout_call_history exactly:
+    board = the authoritative board's candidate ids; calls = each surfaced
+    player's EARLIEST call this season, with the same label rule.
+    Fail-soft: any failure returns None and the caller hides the tab,
+    which is the same end state the per-open lookups produced on failure.
+    """
+    key = int(season)
+    if not _pd_aux_cache_active():
+        return _build_breakout_id_sets(key)
+    now = time.time()
+    hit = _BREAKOUT_FLAGS_CACHE.get(key)
+    if hit and now - hit[0] < _BREAKOUT_FLAGS_TTL:
+        return hit[1]
+    try:
+        from dashboard_services import player_details_store as _pd_store
+        _shared = _pd_store.get_json("bo", (key,), _BREAKOUT_FLAGS_TTL)
+        if _shared is not None and isinstance(_shared.get("payload"), dict) \
+                and isinstance(_shared["payload"].get("board"), list) \
+                and isinstance(_shared["payload"].get("calls"), dict):
+            payload = _shared["payload"]
+            _BREAKOUT_FLAGS_CACHE[key] = (_shared["ts"], payload)
+            return payload
+    except Exception:
+        logger.debug("[breakout-flags] shared cache read failed", exc_info=True)
+    payload = _build_breakout_id_sets(key)
+    if payload is None:
+        return None
+    _BREAKOUT_FLAGS_CACHE[key] = (now, payload)
+    try:
+        from dashboard_services import player_details_store as _pd_store
+        _pd_store.set_json("bo", (key,), payload, now, _BREAKOUT_FLAGS_TTL)
+    except Exception:
+        logger.debug("[breakout-flags] shared cache write failed", exc_info=True)
+    return payload
+
+
+def _build_breakout_id_sets(season: int):
+    """Uncached build of the breakout ID sets (see _breakout_id_sets)."""
+    key = int(season)
+    try:
+        from dashboard_services.breakout_api import (
+            _call_for_week_label,
+            _resolve_bo_season,
+            get_breakout_board_candidates,
+        )
+        resolved = _resolve_bo_season(key) or key
+        board = get_breakout_board_candidates(resolved) or {}
+        board_ids = [
+            str(c.get("player_id")) for c in (board.get("candidates") or [])
+            if isinstance(c, dict) and c.get("player_id") is not None
+        ]
+        calls: dict = {}
+        try:
+            from data_building.breakout_engine.weekly_grading import (
+                surfaced_player_ids_by_week,
+            )
+            by_week = surfaced_player_ids_by_week(int(resolved)) or {}
+            for week in sorted(by_week, key=lambda w: int(w)):
+                for _pid in (by_week.get(week) or set()):
+                    _spid = str(_pid)
+                    if _spid not in calls:
+                        calls[_spid] = {
+                            "kind": "weekly",
+                            "season": int(resolved),
+                            "as_of_week": int(week),
+                            "label": _call_for_week_label(week),
+                        }
+        except Exception:
+            logger.debug("[breakout-flags] surfaced map failed", exc_info=True)
+        payload = {"board": board_ids, "calls": calls}
+    except Exception:
+        logger.debug("[breakout-flags] build failed", exc_info=True)
+        return None
+    return payload
+
+
+def _breakout_flags_cached(player_id: str, season: int):
+    """(on_breakout_board, breakout_call) from the cached ID sets.
+
+    Same contract as the direct lookups it replaces: the call is only
+    reported when the player is NOT on the current board.
+    """
+    payload = _breakout_id_sets(season)
+    if payload is None:
+        return False, None
+    pid = str(player_id)
+    on_board = pid in set(payload.get("board") or [])
+    if on_board:
+        return True, None
+    call = (payload.get("calls") or {}).get(pid)
+    return False, call if isinstance(call, dict) else None
+
+
 def _player_nfl_eligibility(player_id: str, season: int) -> tuple[bool, bool]:
     """Return ``(has_game_logs, has_any_metrics_row)`` for modal eligibility.
 
@@ -22956,7 +23210,11 @@ def _player_nfl_eligibility(player_id: str, season: int) -> tuple[bool, bool]:
     pid = str(player_id)
     has_game_logs = False
     has_metrics = False
-    try:
+    _combined = _eligibility_db_combined(pid)
+    if _combined is not None:
+        has_game_logs, has_metrics = _combined
+    else:
+      try:
         from dashboard_services.db import get_conn
         with get_conn() as conn:
             weekly = conn.execute(
@@ -22983,7 +23241,7 @@ def _player_nfl_eligibility(player_id: str, season: int) -> tuple[bool, bool]:
                 (pid,),
             ).fetchone()
             has_metrics = has_metrics or bool(base)
-    except Exception:
+      except Exception:
         # Missing tables / unavailable DB must not turn a real cached appearance
         # into a prospect-only modal.
         logger.debug("[player-eligibility] DB lookup failed", exc_info=True)
@@ -27064,7 +27322,8 @@ def api_since_last_visit():
 _PLAYER_INDICATORS_CACHE: dict = {}  # (table_ts, league_type, league_size, season) -> (ts, payload)
 
 _VALUE_HISTORY_CACHE: dict = {}  # (player_id, days, league_type, league_size) -> (ts, rows)
-_VALUE_HISTORY_MAX = 6  # ~45KB/player; keeps the hottest few modal opens cached
+_VALUE_HISTORY_MAX = 256  # ~45KB/player; shared via Redis too (see _cached_value_history)
+_VALUE_HISTORY_TTL = 3600  # values are rebuilt daily; an hour is safely fresh
 
 
 _TRADE_EVAL_IDMAP_CACHE: dict = {}  # (source, source_ts) -> (ts, players_by_id)
@@ -27104,14 +27363,33 @@ def _cached_value_history(player_id: str, *, days: int, league_type: str, league
         key = (str(player_id), int(days), str(league_type), int(league_size))
         now = time.time()
         hit = _VALUE_HISTORY_CACHE.get(key)
-        if hit and now - hit[0] < 600:
+        if hit and now - hit[0] < _VALUE_HISTORY_TTL:
             _VALUE_HISTORY_CACHE[key] = _VALUE_HISTORY_CACHE.pop(key)  # LRU refresh
             return hit[1]
+        # Shared cache: a sibling worker (or this worker before a recycle)
+        # may already have paid the DB query. Fail-soft: any Redis problem
+        # is just a miss.
+        try:
+            from dashboard_services import player_details_store as _pd_store
+            _shared = _pd_store.get_json("vh", key, _VALUE_HISTORY_TTL)
+            if _shared is not None and isinstance(_shared.get("payload"), list):
+                _rows = _shared["payload"]
+                _lru_cache_put(
+                    _VALUE_HISTORY_CACHE, key, (_shared["ts"], _rows),
+                    _VALUE_HISTORY_MAX)
+                return _rows
+        except Exception:
+            logger.debug("[value history] shared cache read failed", exc_info=True)
         rows = get_player_value_history(
             str(player_id), days=int(days),
             league_type=str(league_type), league_size=int(league_size),
         ) or []
         _lru_cache_put(_VALUE_HISTORY_CACHE, key, (now, rows), _VALUE_HISTORY_MAX)
+        try:
+            from dashboard_services import player_details_store as _pd_store
+            _pd_store.set_json("vh", key, rows, now, _VALUE_HISTORY_TTL)
+        except Exception:
+            logger.debug("[value history] shared cache write failed", exc_info=True)
         return rows
     except Exception:
         logger.debug("[value history] cache failed", exc_info=True)
@@ -27434,17 +27712,20 @@ def _compute_compare_baselines():
     return out
 
 
-# Short-TTL cache of built /api/player-details payloads, following the
+# Cache of built /api/player-details payloads, following the
 # _cached_value_history pattern. The response depends only on (player,
 # platform, league, season, league type/size, account, value-table version),
 # yet the build re-runs per-player league trades, eligibility, weekly-points
-# and start/sit work on every open (~0.4s warm, several seconds cold). The
-# client already caches each payload for 5 minutes per browser; the TTL
-# here matches that 5 minutes while making repeat opens (a reopened
-# modal, a second viewer of the same league) near-instant.
+# and start/sit work on every open (~0.4s warm, several seconds cold).
+#
+# Two layers: an in-process LRU plus a Redis-shared layer
+# (dashboard_services/player_details_store) so a payload built by one
+# gunicorn worker serves the other worker and survives worker recycles
+# (--max-requests). Values are rebuilt daily, so a 15-minute TTL is safely
+# fresh; the client still applies its own 5-minute cache on top.
 _PLAYER_DETAILS_CACHE: dict = {}  # key -> (ts, payload)
-_PLAYER_DETAILS_TTL = 300  # seconds, matching the client's 5-minute cache
-_PLAYER_DETAILS_MAX = 64  # ~4KB payloads, mirroring the client cache bound
+_PLAYER_DETAILS_TTL = 900  # seconds; values change daily, 15 min is safe
+_PLAYER_DETAILS_MAX = 512  # per-worker in-process bound (shared layer in Redis)
 
 
 def _player_details_cache_active() -> bool:
@@ -27457,32 +27738,244 @@ def _player_details_cache_active() -> bool:
 
 
 def _player_details_cache_get(key):
-    """Deep-copied cached payload for key, or None. Never raises."""
+    """Deep-copied cached payload for key, or None. Never raises.
+
+    In-process first, then the Redis-shared layer: a hit there is copied
+    into this worker's LRU (keeping the original build timestamp, so both
+    layers expire together) and returned.
+    """
     try:
         hit = _PLAYER_DETAILS_CACHE.get(key)
-        if not hit:
-            return None
-        ts, payload = hit
-        if time.time() - ts >= _PLAYER_DETAILS_TTL:
+        if hit:
+            ts, payload = hit
+            if time.time() - ts < _PLAYER_DETAILS_TTL:
+                _PLAYER_DETAILS_CACHE[key] = _PLAYER_DETAILS_CACHE.pop(key)  # LRU refresh
+                return json.loads(json.dumps(payload))
             _PLAYER_DETAILS_CACHE.pop(key, None)
-            return None
-        _PLAYER_DETAILS_CACHE[key] = _PLAYER_DETAILS_CACHE.pop(key)  # LRU refresh
-        return json.loads(json.dumps(payload))
+        try:
+            from dashboard_services import player_details_store as _pd_store
+            _shared = _pd_store.get_json("pd", key, _PLAYER_DETAILS_TTL)
+            if _shared is not None and isinstance(_shared.get("payload"), dict):
+                _payload = _shared["payload"]
+                _lru_cache_put(
+                    _PLAYER_DETAILS_CACHE, key,
+                    (_shared["ts"], json.loads(json.dumps(_payload))),
+                    _PLAYER_DETAILS_MAX,
+                )
+                return json.loads(json.dumps(_payload))
+        except Exception:
+            logger.debug("[player-details] shared cache read failed", exc_info=True)
+        return None
     except Exception:
         return None
 
 
 def _player_details_cache_put(key, payload) -> None:
-    """Store a deep copy of a built payload. Never raises; a payload that is
-    not JSON-round-trippable simply is not cached."""
+    """Store a deep copy of a built payload in both cache layers. Never
+    raises; a payload that is not JSON-round-trippable simply is not cached."""
     try:
+        _ts = time.time()
+        _copy = json.loads(json.dumps(payload))
         _lru_cache_put(
-            _PLAYER_DETAILS_CACHE, key,
-            (time.time(), json.loads(json.dumps(payload))),
-            _PLAYER_DETAILS_MAX,
+            _PLAYER_DETAILS_CACHE, key, (_ts, _copy), _PLAYER_DETAILS_MAX,
         )
+        try:
+            from dashboard_services import player_details_store as _pd_store
+            _pd_store.set_json("pd", key, _copy, _ts, _PLAYER_DETAILS_TTL)
+        except Exception:
+            logger.debug("[player-details] shared cache write failed", exc_info=True)
     except Exception:
         pass
+
+
+_DEFERRED_STATS_KEYS = (
+    "ppg", "ppg_rank", "ppg_ovr_rank", "ppg_season", "ppg_games",
+    "total_pts", "total_pts_rank", "total_pts_ovr_rank",
+    "scoring_data_status",
+)
+
+
+def _player_details_deferred_subset(response):
+    """The deferred section of a full player-details build.
+
+    Returned for slim+deferred requests: exactly the fields the modal
+    patches in after first paint (value history + trend, prospect data,
+    breakout flags, playoff SoS, tab eligibility, hero-corrected scoring),
+    with the same shapes the full payload carries.
+    """
+    if not isinstance(response, dict):
+        return {"player_id": None, "deferred": True}
+    _stats = response.get("stats") or {}
+    return {
+        "player_id": response.get("player_id"),
+        "deferred": True,
+        "value_history": response.get("value_history") or [],
+        "value_trend": response.get("value_trend"),
+        "prospect_data": response.get("prospect_data"),
+        "has_prospect_data": bool(response.get("has_prospect_data")),
+        "on_breakout_board": bool(response.get("on_breakout_board")),
+        "has_breakout_call": bool(response.get("has_breakout_call")),
+        "breakout_call": response.get("breakout_call"),
+        "playoff_sos": response.get("playoff_sos"),
+        "has_game_logs": bool(response.get("has_game_logs")),
+        "has_advanced_metrics": bool(response.get("has_advanced_metrics")),
+        "is_rookie": bool(response.get("is_rookie")),
+        "stats": {k: _stats.get(k) for k in _DEFERRED_STATS_KEYS},
+    }
+
+
+def _hero_scoring_correction(player_id, season, scoring_settings, pos):
+    """Per-player-weeks correction to the league-wide hero scoring, or None.
+
+    The core payload's PPG/total/ranks come from the shared league-wide
+    completed-weeks build. When the player's own completed weeks differ
+    (his Sunday game is final while tonight's MNF slate is not), the
+    deferred path recomputes his points from his own weeks -- with ranks
+    still taken from the shared league-wide rank arrays, exactly as the
+    old per-player build did. Returns the stats fields to override, or
+    None when no correction applies. Never raises.
+    """
+    try:
+        _weeks = _player_completed_weeks_cached(player_id, season)
+        if not _weeks:
+            return None
+        from utils.season_qualification import qualification_policy
+        _league_weeks = tuple(qualification_policy(int(season)).completed_weeks)
+        if tuple(_weeks) == _league_weeks:
+            return None
+        _wp = _load_season_weekly_points(
+            int(season), scoring_settings, weeks=tuple(_weeks))
+        if not _wp:
+            return None
+        _pts = _wp.get(str(player_id))
+        _games = len(_pts) if _pts is not None else 0
+        _out = {
+            "ppg": None, "ppg_rank": None, "ppg_ovr_rank": None,
+            "ppg_games": _games, "total_pts": None,
+            "total_pts_rank": None, "total_pts_ovr_rank": None,
+        }
+        if _pts is not None and _games:
+            from bisect import bisect_right as _br
+            from utils.fantasy_scoring import completed_points_summary
+            _summary = completed_points_summary(_pts)
+            _total_raw = _summary["total"]
+            _ppg_raw = _summary["ppg"]
+            _out["ppg"] = round(_ppg_raw, 1)
+            _out["total_pts"] = round(_total_raw, 1)
+            _rank_data = _season_rank_rows(int(season), scoring_settings) or {}
+            _pos = str(pos or "").upper()
+            _pos_ppg = (_rank_data.get("pos_ppg") or {}).get(_pos) or []
+            _pos_tot = (_rank_data.get("pos_total") or {}).get(_pos) or []
+            _all_ppg = _rank_data.get("all_ppg") or []
+            _all_tot = _rank_data.get("all_total") or []
+            _out["ppg_rank"] = 1 + (len(_pos_ppg) - _br(_pos_ppg, _ppg_raw))
+            _out["total_pts_rank"] = 1 + (len(_pos_tot) - _br(_pos_tot, _total_raw))
+            _out["ppg_ovr_rank"] = 1 + (len(_all_ppg) - _br(_all_ppg, _ppg_raw))
+            _out["total_pts_ovr_rank"] = 1 + (len(_all_tot) - _br(_all_tot, _total_raw))
+        return _out
+    except Exception:
+        logger.debug("[player-details] hero correction failed", exc_info=True)
+        return None
+
+
+def _prospect_data_for_player(player_id: str):
+    """Prospect (rookie-pipeline) row for one player, or None.
+
+    Extracted from api_player_details unchanged: the modal only needs this
+    on its deferred path (the Rookie tab's profile cards), so the core
+    payload never pays the rookie-rankings DB load. Rankings ride the
+    rookie pipeline's own _cache; the first deferred request per worker
+    (per class year) fills it, later ones are dict scans.
+    """
+    prospect_data = None
+    # Prospect history may remain attached after an NFL debut. The frontend
+    # uses has_game_logs/current draft class to decide whether to expose it.
+    try:
+        import re as _re
+        from dashboard_services.rookie_api import _cache as _rookie_cache
+        from data_building.rookie_pipeline.pipeline import get_active_rookie_class
+        from data_building.rookie_pipeline.value_translation import format_draft_capital
+
+        active_year = get_active_rookie_class()
+        found_row = None
+        for check_year in [active_year, active_year - 1]:
+            if check_year not in _rookie_cache:
+                from data_building.rookie_pipeline.pipeline import get_rookie_rankings_from_db
+                _rookie_cache[check_year] = get_rookie_rankings_from_db(check_year)
+            for r in _rookie_cache.get(check_year, []):
+                if str(r.get("sleeper_id") or "") == str(player_id):
+                    found_row = r
+                    break
+            if found_row:
+                break
+
+        # Fallback: match by name from players_index when sleeper_id not yet linked
+        if not found_row:
+            def _norm_name(n):
+                n = n.lower()
+                n = _re.sub(r"['\.\-]", "", n)
+                n = _re.sub(r"\b(jr|sr|ii|iii|iv)\b", "", n)
+                return _re.sub(r"\s+", " ", n).strip()
+
+            players_idx = get_players_index_global() or {}
+            idx_entry = players_idx.get(str(player_id)) or {}
+            idx_name = idx_entry.get("name", "")
+            if idx_name:
+                norm_target = _norm_name(idx_name)
+                for check_year in [active_year, active_year - 1]:
+                    for r in _rookie_cache.get(check_year, []):
+                        if _norm_name(r.get("name", "")) == norm_target:
+                            found_row = r
+                            # Cache the link so future calls use sleeper_id
+                            r["sleeper_id"] = str(player_id)
+                            break
+                    if found_row:
+                        break
+
+        if found_row:
+            def _sf(v):
+                try:
+                    return float(v) if v is not None else None
+                except (TypeError, ValueError):
+                    return None
+
+            prospect_data = {
+                "player_id": found_row.get("player_id"),
+                "draft_class_year": found_row.get("draft_class_year"),
+                "school": found_row.get("school"),
+                "prospect_score": _sf(found_row.get("prospect_score")),
+                "tier": found_row.get("tier"),
+                "tier_label": found_row.get("tier_label"),
+                "overall_rank": found_row.get("overall_rank"),
+                "position_rank": found_row.get("position_rank"),
+                "production_score": _sf(found_row.get("production_score")),
+                "efficiency_score": _sf(found_row.get("efficiency_score")),
+                "age_score": _sf(found_row.get("age_score")),
+                "breakout_profile_score": _sf(found_row.get("breakout_profile_score")),
+                "athleticism_score": _sf(found_row.get("athleticism_score")),
+                "competition_score": _sf(found_row.get("competition_score")),
+                "projected_draft_capital_score": _sf(found_row.get("projected_draft_capital_score")),
+                "confidence_score": _sf(found_row.get("confidence_score")),
+                "key_reasons": found_row.get("key_reasons"),
+                "rookie_value": _sf(found_row.get("rookie_value")),
+                "rookie_sf_value": _sf(found_row.get("rookie_sf_value")),
+                "projected_round": found_row.get("projected_round"),
+                "projected_pick": found_row.get("projected_pick"),
+                "num_mocks_used": found_row.get("num_mocks_used"),
+                "height_inches": found_row.get("height_inches"),
+                "weight_lbs": found_row.get("weight_lbs"),
+                "forty_yard": _sf(found_row.get("forty_yard")),
+                "ras_score": _sf(found_row.get("ras_score")),
+                "draft_capital_label": format_draft_capital(
+                    found_row.get("projected_round"),
+                    found_row.get("projected_pick"),
+                    found_row.get("projected_pick_low"),
+                    found_row.get("projected_pick_high"),
+                ),
+            }
+    except Exception as pe:
+        logger.info(f"[api_player_details] prospect lookup error: {pe}")
+    return prospect_data
 
 
 @app.route("/api/player-details/<player_id>")
@@ -27511,6 +28004,16 @@ def api_player_details(player_id: str):
         # In-this-league section lazy-load their own endpoints). Compare
         # does NOT pass slim and keeps the full payload unchanged.
         _slim = str(request.args.get("slim") or "").strip() == "1"
+        # Deferred mode (slim only): the modal's second request, fired in
+        # parallel with the core open, which returns only the sections the
+        # core payload defers (see _player_details_deferred_subset). A
+        # deferred request runs the full build internally, then subsets it.
+        _deferred = _slim and str(request.args.get("deferred") or "").strip() == "1"
+        # Core mode paints the modal: it must not pay for value-history /
+        # eligibility / prospect DB work, the breakout board, or playoff
+        # SoS. Full (non-slim, Compare) and deferred builds run everything.
+        _deferred_build = _deferred or not _slim
+        _core_build = _slim and not _deferred
         season = int(request.args.get("season", datetime.now().year))
         _modal_lt = str(request.args.get("league_type", "1qb")).strip().lower()
         try:
@@ -27534,10 +28037,12 @@ def api_player_details(player_id: str):
             _pd_cache_key = (
                 str(player_id), platform, str(league_id or ""), season,
                 _modal_lt, _modal_ls, str(session.get("account_id") or ""),
-                _MODEL_VALUE_CACHE_TS, _slim,
+                _MODEL_VALUE_CACHE_TS, _slim, _deferred,
             )
             _pd_cached = _player_details_cache_get(_pd_cache_key)
             if _pd_cached is not None:
+                if _deferred:
+                    return jsonify(_player_details_deferred_subset(_pd_cached))
                 return jsonify(_pd_cached)
         if league_id and _speculative:
             _entry = DASHBOARD_CACHE.get(_cache_key(platform, season, league_id))
@@ -27617,11 +28122,15 @@ def api_player_details(player_id: str):
                 break
 
         # Get FULL value history from database (not just 90 days).
-        # Cached per player (10-min TTL): reopening a modal skips the DB round-trip.
-        value_history = _cached_value_history(
-            player_id, days=365,
-            league_type=_modal_lt, league_size=_modal_ls,
-        )
+        # Deferred/full builds only: the core payload paints without the
+        # DB round-trip and the modal patches the chart in when the
+        # deferred payload lands. Cached per player (shared, 1h TTL).
+        value_history = []
+        if _deferred_build:
+            value_history = _cached_value_history(
+                player_id, days=365,
+                league_type=_modal_lt, league_size=_modal_ls,
+            )
 
         # Scale history to match FC/DP-corrected current values.
         # The history function returns value_1qb and value_sf separately;
@@ -27650,100 +28159,21 @@ def api_player_details(player_id: str):
         # Game logs remain lazy-loaded, but eligibility uses the same authoritative
         # DB/Sleeper-cache helper as /api/player-game-logs.
         game_logs_by_year = {}
-        has_game_logs, has_metrics_rows = _player_nfl_eligibility(player_id, season)
+        if _deferred_build:
+            has_game_logs, has_metrics_rows = _player_nfl_eligibility_cached(
+                player_id, season)
+        else:
+            # Core: neutral defaults; the deferred payload flips the tab
+            # flags in place when it lands.
+            has_game_logs, has_metrics_rows = False, False
         _metrics_position = str(player_meta.get("pos") or "").upper()
         has_advanced_metrics = _metrics_position in {"QB", "RB", "WR", "TE"} and (
             has_game_logs or has_metrics_rows
         )
         prospect_data = None
 
-        # Prospect history may remain attached after an NFL debut. The frontend
-        # uses has_game_logs/current draft class to decide whether to expose it.
-        try:
-            import re as _re
-            from dashboard_services.rookie_api import _cache as _rookie_cache
-            from data_building.rookie_pipeline.pipeline import get_active_rookie_class
-            from data_building.rookie_pipeline.value_translation import format_draft_capital
-
-            active_year = get_active_rookie_class()
-            found_row = None
-            for check_year in [active_year, active_year - 1]:
-                if check_year not in _rookie_cache:
-                    from data_building.rookie_pipeline.pipeline import get_rookie_rankings_from_db
-                    _rookie_cache[check_year] = get_rookie_rankings_from_db(check_year)
-                for r in _rookie_cache.get(check_year, []):
-                    if str(r.get("sleeper_id") or "") == str(player_id):
-                        found_row = r
-                        break
-                if found_row:
-                    break
-
-            # Fallback: match by name from players_index when sleeper_id not yet linked
-            if not found_row:
-                def _norm_name(n):
-                    n = n.lower()
-                    n = _re.sub(r"['\.\-]", "", n)
-                    n = _re.sub(r"\b(jr|sr|ii|iii|iv)\b", "", n)
-                    return _re.sub(r"\s+", " ", n).strip()
-
-                players_idx = get_players_index_global() or {}
-                idx_entry = players_idx.get(str(player_id)) or {}
-                idx_name = idx_entry.get("name", "")
-                if idx_name:
-                    norm_target = _norm_name(idx_name)
-                    for check_year in [active_year, active_year - 1]:
-                        for r in _rookie_cache.get(check_year, []):
-                            if _norm_name(r.get("name", "")) == norm_target:
-                                found_row = r
-                                # Cache the link so future calls use sleeper_id
-                                r["sleeper_id"] = str(player_id)
-                                break
-                        if found_row:
-                            break
-
-            if found_row:
-                def _sf(v):
-                    try:
-                        return float(v) if v is not None else None
-                    except (TypeError, ValueError):
-                        return None
-
-                prospect_data = {
-                    "player_id": found_row.get("player_id"),
-                    "draft_class_year": found_row.get("draft_class_year"),
-                    "school": found_row.get("school"),
-                    "prospect_score": _sf(found_row.get("prospect_score")),
-                    "tier": found_row.get("tier"),
-                    "tier_label": found_row.get("tier_label"),
-                    "overall_rank": found_row.get("overall_rank"),
-                    "position_rank": found_row.get("position_rank"),
-                    "production_score": _sf(found_row.get("production_score")),
-                    "efficiency_score": _sf(found_row.get("efficiency_score")),
-                    "age_score": _sf(found_row.get("age_score")),
-                    "breakout_profile_score": _sf(found_row.get("breakout_profile_score")),
-                    "athleticism_score": _sf(found_row.get("athleticism_score")),
-                    "competition_score": _sf(found_row.get("competition_score")),
-                    "projected_draft_capital_score": _sf(found_row.get("projected_draft_capital_score")),
-                    "confidence_score": _sf(found_row.get("confidence_score")),
-                    "key_reasons": found_row.get("key_reasons"),
-                    "rookie_value": _sf(found_row.get("rookie_value")),
-                    "rookie_sf_value": _sf(found_row.get("rookie_sf_value")),
-                    "projected_round": found_row.get("projected_round"),
-                    "projected_pick": found_row.get("projected_pick"),
-                    "num_mocks_used": found_row.get("num_mocks_used"),
-                    "height_inches": found_row.get("height_inches"),
-                    "weight_lbs": found_row.get("weight_lbs"),
-                    "forty_yard": _sf(found_row.get("forty_yard")),
-                    "ras_score": _sf(found_row.get("ras_score")),
-                    "draft_capital_label": format_draft_capital(
-                        found_row.get("projected_round"),
-                        found_row.get("projected_pick"),
-                        found_row.get("projected_pick_low"),
-                        found_row.get("projected_pick_high"),
-                    ),
-                }
-        except Exception as pe:
-            logger.info(f"[api_player_details] prospect lookup error: {pe}")
+        if _deferred_build:
+            prospect_data = _prospect_data_for_player(player_id)
 
         # ── Fantasy team ownership (only when league context is provided) ──
         fantasy_team = None
@@ -27796,20 +28226,19 @@ def api_player_details(player_id: str):
         _total_pts = _total_pts_rank = _total_pts_ovr_rank = None
         _scoring_data_status = "missing"
         try:
-            from utils.season_qualification import (
-                qualification_policy, player_completed_weeks,
-            )
+            from utils.season_qualification import qualification_policy
             _score_policy = qualification_policy(season)
-            # Per-player completed weeks: a finished Sunday game counts for
-            # the hero's games/PPG even when the rest of the NFL slate (e.g.
-            # tonight's MNF) isn't final yet. Falls back to the league-wide
-            # weeks when per-player team data is unavailable.
-            try:
-                _hero_weeks = tuple(player_completed_weeks(str(player_id), season))
-            except Exception:
-                _hero_weeks = ()
+            # The hero's points come from the ONE shared league-wide
+            # completed-weeks build (the same build _season_rank_rows
+            # uses), never a per-player week tuple: per-player tuples
+            # fragmented the weekly-points cache by bye / game-final
+            # differences and re-parsed + re-scored every week file per
+            # distinct tuple, per worker. The per-player nuance (a finished
+            # Sunday game counts even when tonight's MNF slate is not
+            # final league-wide) is preserved on the deferred/full build
+            # via _hero_scoring_correction below.
             _weekly_points = _load_season_weekly_points(
-                season, scoring_settings, weeks=_hero_weeks or None)
+                season, scoring_settings)
             _completed = tuple(_score_policy.completed_weeks)
             if not _completed:
                 _scoring_data_status = "no_completed_rounds"
@@ -27849,6 +28278,21 @@ def api_player_details(player_id: str):
                         _total_pts_ovr_rank = 1 + (len(_all_tot_vals) - _bisect_right(_all_tot_vals, _total_raw))
         except Exception:
             logger.debug("player scoring aggregation failed", exc_info=True)
+
+        # Deferred/full builds only: correct the hero to the player's own
+        # completed weeks when they differ from the league-wide set.
+        if _deferred_build and _scoring_data_status == "available":
+            _correction = _hero_scoring_correction(
+                player_id, season, scoring_settings,
+                str(player_meta.get("pos") or ""))
+            if _correction:
+                _ppg = _correction["ppg"]
+                _ppg_rank = _correction["ppg_rank"]
+                _ppg_ovr_rank = _correction["ppg_ovr_rank"]
+                _ppg_games = _correction["ppg_games"]
+                _total_pts = _correction["total_pts"]
+                _total_pts_rank = _correction["total_pts_rank"]
+                _total_pts_ovr_rank = _correction["total_pts_ovr_rank"]
 
         # TE-premium leagues make tight ends worth more. Scale a TE's value (and its
         # whole value history) so the modal shows the value as it counts in THIS
@@ -28163,48 +28607,49 @@ def api_player_details(player_id: str):
         # Sleeper playoff_week_start (through week 17); the aggregate and the
         # per-week rows are computed over the same set.
         playoff_sos = None
-        try:
-            _playoff_weeks = _PLAYOFF_WEEKS
-            if league_id:
-                try:
-                    # Reuse the ctx the ownership lookup already resolved
-                    # above: the accessor must be asked at most once per
-                    # request (cold-path contract, allow_build=False).
-                    _po_ctx = _spec_ctx if _speculative else (_ctx or {})
-                    _po_settings = (
-                        (_po_ctx or {}).get("league_settings")
-                        or ((_po_ctx or {}).get("league") or {}).get("settings")
-                        or (_po_ctx or {}).get("settings")
-                        or {}
-                    )
-                    _pws = int(_po_settings.get("playoff_week_start") or 0)
-                    if 1 <= _pws <= 17:
-                        _playoff_weeks = tuple(range(_pws, 18))
-                except Exception:
-                    logger.debug("[api_player_details] playoff weeks lookup skipped", exc_info=True)
-            _sos = _playoff_sos_for(
-                season, player_meta.get("team"), player_meta.get("pos"),
-                weeks=_playoff_weeks,
-            )
-            if _sos:
-                _sr, _st, _se = _sos
-                playoff_sos = {"rank": _sr, "total": _st, "ease": _se}
-                try:
-                    playoff_sos["weeks"] = _playoff_sos_weeks_for(
-                        season, player_meta.get("team"), player_meta.get("pos"),
-                        weeks=_playoff_weeks,
-                    )
-                except Exception:
-                    logger.debug("[api_player_details] playoff SoS weeks skipped", exc_info=True)
-                    playoff_sos["weeks"] = []
-                try:
-                    _fpts_max = _playoff_fpts_max(season, player_meta.get("pos"))
-                    if _fpts_max:
-                        playoff_sos["fpts_max"] = _fpts_max
-                except Exception:
-                    logger.debug("[api_player_details] playoff fpts max skipped", exc_info=True)
-        except Exception:
-            logger.debug("[api_player_details] playoff SoS skipped", exc_info=True)
+        if _deferred_build:
+            try:
+                _playoff_weeks = _PLAYOFF_WEEKS
+                if league_id:
+                    try:
+                        # Reuse the ctx the ownership lookup already resolved
+                        # above: the accessor must be asked at most once per
+                        # request (cold-path contract, allow_build=False).
+                        _po_ctx = _spec_ctx if _speculative else (_ctx or {})
+                        _po_settings = (
+                            (_po_ctx or {}).get("league_settings")
+                            or ((_po_ctx or {}).get("league") or {}).get("settings")
+                            or (_po_ctx or {}).get("settings")
+                            or {}
+                        )
+                        _pws = int(_po_settings.get("playoff_week_start") or 0)
+                        if 1 <= _pws <= 17:
+                            _playoff_weeks = tuple(range(_pws, 18))
+                    except Exception:
+                        logger.debug("[api_player_details] playoff weeks lookup skipped", exc_info=True)
+                _sos = _playoff_sos_for(
+                    season, player_meta.get("team"), player_meta.get("pos"),
+                    weeks=_playoff_weeks,
+                )
+                if _sos:
+                    _sr, _st, _se = _sos
+                    playoff_sos = {"rank": _sr, "total": _st, "ease": _se}
+                    try:
+                        playoff_sos["weeks"] = _playoff_sos_weeks_for(
+                            season, player_meta.get("team"), player_meta.get("pos"),
+                            weeks=_playoff_weeks,
+                        )
+                    except Exception:
+                        logger.debug("[api_player_details] playoff SoS weeks skipped", exc_info=True)
+                        playoff_sos["weeks"] = []
+                    try:
+                        _fpts_max = _playoff_fpts_max(season, player_meta.get("pos"))
+                        if _fpts_max:
+                            playoff_sos["fpts_max"] = _fpts_max
+                    except Exception:
+                        logger.debug("[api_player_details] playoff fpts max skipped", exc_info=True)
+            except Exception:
+                logger.debug("[api_player_details] playoff SoS skipped", exc_info=True)
 
         # Redraft values (same TE premium as dynasty) + ranks for the modal's
         # Dynasty/Redraft toggle. Ranks are computed from the shared value table
@@ -28353,11 +28798,14 @@ def api_player_details(player_id: str):
 
         # Header value-trend pill: classified from the scaled history above.
         # None (frontend hides the pill) when history is too thin to classify.
-        try:
-            value_trend = _value_trend_from_history(value_history)
-        except Exception:
-            logger.debug("[api_player_details] value trend skipped", exc_info=True)
-            value_trend = None
+        # Deferred/full builds only (it is derived from the value history).
+        value_trend = None
+        if _deferred_build:
+            try:
+                value_trend = _value_trend_from_history(value_history)
+            except Exception:
+                logger.debug("[api_player_details] value trend skipped", exc_info=True)
+                value_trend = None
 
         # Rookie tab visibility: years_exp is authoritative; the prospect
         # row's draft class is the fallback when Sleeper has no years_exp.
@@ -28373,19 +28821,17 @@ def api_player_details(player_id: str):
         # that week's card). Best-effort; any failure hides the tab.
         on_breakout_board = False
         breakout_call = None
-        try:
-            from dashboard_services.breakout_api import breakout_board_membership
-            on_breakout_board, _board = breakout_board_membership(player_id, season)
-            on_breakout_board = bool(on_breakout_board)
-        except Exception:
-            logger.debug("[api_player_details] breakout membership skipped", exc_info=True)
-            on_breakout_board = False
-        if not on_breakout_board:
+        if _deferred_build:
+            # Cached ID-set lookup (one board build + one surfaced-ids call
+            # per TTL for the whole pool, shared across workers) instead of
+            # a membership scan + per-player history lookup on every open.
             try:
-                from dashboard_services.breakout_api import breakout_call_history
-                breakout_call = breakout_call_history(player_id, season)
+                on_breakout_board, breakout_call = _breakout_flags_cached(
+                    player_id, season)
+                on_breakout_board = bool(on_breakout_board)
             except Exception:
-                logger.debug("[api_player_details] breakout history skipped", exc_info=True)
+                logger.debug("[api_player_details] breakout flags skipped", exc_info=True)
+                on_breakout_board = False
                 breakout_call = None
 
         response = {
@@ -28476,6 +28922,8 @@ def api_player_details(player_id: str):
         if _pd_cache_key is not None and not ownership_unknown:
             _player_details_cache_put(_pd_cache_key, response)
 
+        if _deferred:
+            return jsonify(_player_details_deferred_subset(response))
         return jsonify(response)
 
     except Exception as e:

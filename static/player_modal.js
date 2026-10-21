@@ -62,6 +62,80 @@ function _pmSmallFetch(key, url) {
   return entry.promise;
 }
 
+// Click-time early fetches: the modal's already-lazy section loads
+// (Recent Form game-logs, market ADP, In-this-league trades/acquisition,
+// the start/sit strip, and the deferred player-details payload) start
+// when the modal opens, in parallel with the core details request,
+// instead of chaining after it resolves. Promises are stashed by URL and
+// the section loaders consume them, so nothing fetches twice: the
+// loaders keep their exact URLs and end states.
+var _pmEarlyJson = new Map(); // url -> Promise<json|null>
+var _pmEarlyResp = new Map(); // url -> Promise<Response>
+function _pmEarlyBound(map) {
+  if (map.size > 24) map.delete(map.keys().next().value);
+}
+function _pmEarlyJsonFetch(url) {
+  if (!_pmEarlyJson.has(url)) {
+    _pmEarlyBound(_pmEarlyJson);
+    _pmEarlyJson.set(url, _pmFetch(url, 15000)
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .catch(function () { return null; }));
+  }
+  return _pmEarlyJson.get(url);
+}
+function _pmTakeEarlyJson(url) {
+  var p = _pmEarlyJson.get(url);
+  if (p) _pmEarlyJson.delete(url);
+  return p || null;
+}
+function _pmEarlyResponseFetch(url) {
+  if (!_pmEarlyResp.has(url)) {
+    _pmEarlyBound(_pmEarlyResp);
+    _pmEarlyResp.set(url, _pmFetch(url));
+  }
+  return _pmEarlyResp.get(url);
+}
+function _pmTakeEarlyResponse(url) {
+  var p = _pmEarlyResp.get(url);
+  if (p) _pmEarlyResp.delete(url);
+  return p || null;
+}
+function _pmStartEarlyFetches(playerId, descriptor) {
+  try {
+    var ctx = (descriptor && descriptor.ctx) || {};
+    var season = ctx.season, platform = ctx.platform, leagueId = ctx.leagueId;
+    // Market ADP through the shared small-fetch cache: the Overview ADP
+    // loader asks for the same key, so it adopts this in-flight request
+    // instead of starting a second one after first paint. (URL built by
+    // concatenation on purpose: the template-literal form stays unique
+    // to the loader.)
+    _pmSmallFetch('adp:' + playerId + ':' + season,
+      '/api/player-adp/' + encodeURIComponent(playerId) + '?season=' + encodeURIComponent(season));
+    // Recent Form game-logs: mirror _pmLoadRecentForm's URL construction
+    // exactly (pathname league, page league type/size) so the loader's
+    // registry lookup hits.
+    var pathParts = window.location.pathname.split('/').filter(function (x) { return x; });
+    var _season = pathParts[1] || season || new Date().getFullYear();
+    var _leagueId = pathParts[2] || null;
+    var _lt = (typeof brLeagueType === 'function') ? brLeagueType() : '';
+    var _ls = (typeof brLeagueSize === 'function') ? brLeagueSize() : '';
+    var logsUrl = '/api/player-game-logs/' + encodeURIComponent(playerId)
+      + '?season=' + _season + '&league_type=' + _lt + '&league_size=' + _ls;
+    if (_leagueId) logsUrl += '&league_id=' + _leagueId + '&platform=' + (pathParts[0] || 'sleeper');
+    _pmEarlyResponseFetch(logsUrl);
+    if (leagueId) {
+      var qs = '?platform=' + encodeURIComponent(platform) + '&league_id=' + encodeURIComponent(leagueId)
+        + '&season=' + encodeURIComponent(season);
+      _pmEarlyJsonFetch('/api/player-league-trades/' + encodeURIComponent(playerId) + qs + '&limit=10');
+      _pmEarlyJsonFetch('/api/player-acquisition/' + encodeURIComponent(playerId) + qs);
+      _pmEarlyJsonFetch('/api/player-startsit-strip?platform=' + encodeURIComponent(platform || 'sleeper')
+        + '&league_id=' + encodeURIComponent(leagueId)
+        + '&season=' + encodeURIComponent(season || '')
+        + '&player_id=' + encodeURIComponent(playerId));
+    }
+  } catch (e) { /* early fetches are an optimization only */ }
+}
+
 // Shared, bounded player-details request layer. Modal rendering and speculative
 // viewport warming intentionally meet here so cache identity and request ownership
 // cannot drift. This file is also concatenated into app-features.js.
@@ -196,6 +270,319 @@ function _pmSmallFetch(key, url) {
   };
 })();
 
+// Value-history chart renderer (Overview). Extracted from the
+// details render so the deferred payload can draw the chart in
+// place when the history arrives after first paint; the initial
+// render calls it exactly as the inline block did.
+function _pmRenderValueHistoryChart(data) {
+      // ── Render value history chart in Overview panel ───────────────────────
+      if (data.value_history && data.value_history.length > 0) {
+        const chartDiv = document.getElementById('playerValueChart');
+        if (chartDiv) {
+          const fullHistory = data.value_history;
+          const formatDateLabel = (dateStr) => {
+            if (!dateStr) return '';
+            const m = String(dateStr).match(/^(\d{4})-(\d{2})-(\d{2})/);
+            if (!m) return '';
+            const [, year, month, day] = m;
+            const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            return `${monthNames[parseInt(month, 10) - 1]} ${parseInt(day, 10)}`;
+          };
+          const parseHistDate = (s) => {
+            const m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+            return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
+          };
+          const latestD   = parseHistDate(fullHistory[fullHistory.length - 1].as_of_date);
+          const earliestD = parseHistDate(fullHistory[0].as_of_date);
+          const spanDays  = (latestD && earliestD) ? (latestD - earliestD) / 86400000 : 0;
+
+          // ── Direction 1 "momentum": range-aware summary above the chart ──────
+          // Trend is derived from the visible window, so it works even when the
+          // backend value_trend field is absent (it currently is). Delta / peak /
+          // floor track the selected range, so switching 1 Mo / 3 Mo / All
+          // re-answers "where is this value going" rather than just redrawing.
+          const _fmtVal = (v) => (typeof fmtInt === 'function')
+            ? fmtInt(Math.round(v)) : Math.round(v).toLocaleString('en-US');
+          const TREND_META = {
+            rising:     { icon: '↑', label: 'Rising',      color: 'var(--win)' },
+            recovering: { icon: '↗', label: 'Recovering',  color: '#3b82f6' },
+            peaked:     { icon: '↘', label: 'Cooling off', color: '#f59e0b' },
+            declining:  { icon: '↓', label: 'Declining',   color: 'var(--loss)' },
+            stable:     { icon: '→', label: 'Stable',      color: 'var(--text-muted)' },
+          };
+          function classifyTrend(vals) {
+            const n = vals.length;
+            if (n < 2) return null;
+            const first = vals[0], last = vals[n - 1];
+            const lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+            const pct = first ? (last - first) / first : 0;
+            if (Math.abs(pct) < 0.03) return TREND_META.stable;
+            if (pct > 0) {
+              // Climbed back up from a meaningful dip → recovering, else rising.
+              return (lo < last * 0.92 && last < hi * 0.995)
+                ? TREND_META.recovering : TREND_META.rising;
+            }
+            // Net down: off a recent high but holding above the low → cooling off.
+            return (hi > last * 1.08 && last > lo * 1.02)
+              ? TREND_META.peaked : TREND_META.declining;
+          }
+          function updateSummary(history) {
+            const el = document.getElementById('pmVhSummary');
+            if (!el) return;
+            const vals = history.map(d => Number(d.value_1qb ?? d.value)).filter(v => !isNaN(v));
+            if (vals.length < 2) { el.style.display = 'none'; el.innerHTML = ''; return; }
+            el.style.display = '';
+            const ysf2 = history.map(d => d.value_sf != null ? Number(d.value_sf) : null);
+            const dual = vals.some((v, i) => ysf2[i] != null && Math.abs(v - ysf2[i]) > 1);
+            const first = vals[0], last = vals[vals.length - 1];
+            const peak = Math.max.apply(null, vals), floor = Math.min.apply(null, vals);
+            const diff = last - first;
+            const pct = first ? diff / first * 100 : 0;
+            const dir = pct > 0.5 ? 'up' : pct < -0.5 ? 'down' : 'flat';
+            const arrow = dir === 'up' ? '▲' : dir === 'down' ? '▼' : '→';
+            const sign = diff > 0 ? '+' : diff < 0 ? '−' : '';
+            const activeBtn = document.querySelector('.pvc-range-bar .pvc-range-btn.is-active');
+            const rangeLbl = activeBtn ? activeBtn.textContent.trim() : '';
+            const t = classifyTrend(vals);
+            const trendPill = t
+              ? `<span class="pm-vh-trend" style="color:${t.color};background:color-mix(in srgb, ${t.color} 14%, transparent);">${t.icon} ${t.label}</span>`
+              : '';
+            el.innerHTML = `
+              <div class="pm-vh-now">
+                <span class="pm-vh-now-lbl">${dual ? '1QB value' : 'Value'}</span>
+                <span class="pm-vh-now-val">${_fmtVal(last)}</span>
+              </div>
+              <div class="pm-vh-move">
+                <div class="pm-vh-move-row">
+                  <span class="pm-vh-delta ${dir}">${arrow} ${sign}${_fmtVal(Math.abs(diff))} · ${sign}${Math.abs(pct).toFixed(1)}%</span>
+                  ${trendPill}
+                </div>
+                ${rangeLbl ? `<span class="pm-vh-range">over ${rangeLbl}</span>` : ''}
+              </div>
+              <div class="pm-vh-extremes">
+                <div class="pm-vh-ext"><span class="pm-vh-ext-k">Peak</span><span class="pm-vh-ext-v">${_fmtVal(peak)}</span></div>
+                <div class="pm-vh-ext"><span class="pm-vh-ext-k">Floor</span><span class="pm-vh-ext-v">${_fmtVal(floor)}</span></div>
+              </div>`;
+          }
+
+          let _vhLastHistory = fullHistory;
+          function renderChart(history) {
+            _vhLastHistory = history;
+            updateSummary(history);
+            const n = history.length;
+            const xIdx  = history.map((_, i) => i);            // numeric x for clean tick control
+            const dates = history.map(d => formatDateLabel(d.as_of_date));
+
+            // A date with no SF value stays a gap (null) so Plotly breaks
+            // the SF line there. Substituting the primary value (the old
+            // ?? d.value fallback) drew invented plunges to the 1QB line.
+            const y1qb = history.map(d => (d.value_1qb ?? d.value) != null ? Number(d.value_1qb ?? d.value) : null);
+            const ysf  = history.map(d => d.value_sf != null ? Number(d.value_sf) : null);
+
+            // Show both 1QB and Superflex lines whenever they genuinely diverge.
+            // Both columns are EMA-smoothed at the data layer (smooth_value_history.py),
+            // so the SF series is already clean; for players where SF tracks 1QB the
+            // two coincide and we fall back to a single "Value" line.
+            const hasDualSeries = y1qb.some((v, i) => v != null && ysf[i] != null && Math.abs(v - ysf[i]) > 1);
+
+            const allY = (hasDualSeries ? [...y1qb, ...ysf] : y1qb).filter(v => v != null);
+            const yMin = Math.min(...allY);
+            const yMax = Math.max(...allY);
+            const yRange = yMax - yMin;
+            const yPad = Math.max(yRange * 0.15, 20);
+            // Floor: no tighter than (currentValue - 200), so small wiggles don't look huge
+            const currentVal = (hasDualSeries ? ysf[ysf.length - 1] : y1qb[y1qb.length - 1]) ?? yMax;
+            const yFloor = Math.max(0, currentVal - 200);
+
+            // 3-4 evenly spaced date ticks (deduped) so labels never collide.
+            const tickCount = Math.max(2, Math.min(4, n));
+            const tickvals = [];
+            if (n <= 1) { tickvals.push(0); }
+            else {
+              for (let i = 0; i < tickCount; i++) {
+                const idx = Math.round(i * (n - 1) / (tickCount - 1));
+                if (!tickvals.includes(idx)) tickvals.push(idx);
+              }
+            }
+            const ticktext = tickvals.map(i => dates[i]);
+
+            const rootStyle = getComputedStyle(document.documentElement);
+            const mutedColor = rootStyle.getPropertyValue('--text-muted').trim() || '#6b7280';
+            const gridColor = rootStyle.getPropertyValue('--border').trim() || 'rgba(127,127,127,.18)';
+            // Matches the .pm-adp-dot border (source-card surface) so the chart's
+            // end markers read like the ADP dots.
+            const rowColor = rootStyle.getPropertyValue('--row').trim() || '#ffffff';
+
+            const hover1qb = dates.map((date, i) => `<b>${date}</b><br>1QB: ${y1qb[i]?.toFixed(1) || ''}`);
+            const hoverSF  = dates.map((date, i) => `<b>${date}</b><br>SF: ${ysf[i]?.toFixed(1) || ''}`);
+
+            const trace1qb = {
+              x: xIdx, y: y1qb,
+              type: 'scatter', mode: 'lines', name: '1QB',
+              line: { color: '#3b82f6', width: 2.5, shape: 'spline', smoothing: 1.3 },
+              fill: hasDualSeries ? 'none' : 'tozeroy',
+              fillcolor: 'rgba(59, 130, 246, 0.08)',
+              hovertemplate: '%{text}<extra></extra>',
+              text: hover1qb,
+            };
+            const traceSF = {
+              x: xIdx, y: ysf,
+              type: 'scatter', mode: 'lines', name: 'SF',
+              line: { color: '#f59e0b', width: 2.5, shape: 'spline', smoothing: 1.3 },
+              fill: 'none',
+              hovertemplate: '%{text}<extra></extra>',
+              text: hoverSF,
+            };
+
+            const lineTraces = hasDualSeries ? [trace1qb, traceSF] : [
+              { ...trace1qb, name: 'Value', text: dates.map((date, i) => `<b>${date}</b><br>Value: ${y1qb[i]?.toFixed(1) || ''}`) }
+            ];
+            // A single marker at the latest point of each line -- echoes the
+            // ADP source dots (colored fill, surface-colored ring) so the two
+            // blocks share a visual language. A series ending in gap dates
+            // marks its last real point instead.
+            const endDot = (color, yArr) => {
+              let idx = yArr.length - 1;
+              while (idx > 0 && yArr[idx] == null) idx--;
+              return {
+                x: [xIdx[idx]], y: [yArr[idx]],
+                type: 'scatter', mode: 'markers', showlegend: false, hoverinfo: 'skip',
+                marker: { color, size: 8, line: { color: rowColor, width: 2 } },
+              };
+            };
+            // Peak & floor markers on the primary (1QB) series -- Direction 1
+            // "momentum": make the high-water mark and the trough self-evident.
+            // Skipped when they land on the current point (the end dot already
+            // marks it) or when the series is flat / too short.
+            const winC  = rootStyle.getPropertyValue('--win').trim()  || '#16a34a';
+            const lossC = rootStyle.getPropertyValue('--loss').trim() || '#ef4444';
+            let peakIdx = -1, floorIdx = -1, peakV = -Infinity, floorV = Infinity;
+            y1qb.forEach((v, i) => {
+              if (v == null) return;
+              if (v > peakV) { peakV = v; peakIdx = i; }
+              if (v < floorV) { floorV = v; floorIdx = i; }
+            });
+            const extremeDot = (idx, color) => ({
+              x: [xIdx[idx]], y: [y1qb[idx]],
+              type: 'scatter', mode: 'markers', showlegend: false, hoverinfo: 'skip',
+              marker: { color, size: 7, line: { color: rowColor, width: 2 } },
+            });
+            const extremeMarkers = [];
+            if (n > 2 && peakIdx !== floorIdx) {
+              if (peakIdx  !== n - 1) extremeMarkers.push(extremeDot(peakIdx, winC));
+              if (floorIdx !== n - 1) extremeMarkers.push(extremeDot(floorIdx, lossC));
+            }
+
+            const traces = lineTraces.concat(
+              hasDualSeries
+                ? [endDot('#3b82f6', y1qb), endDot('#f59e0b', ysf)]
+                : [endDot('#3b82f6', y1qb)]
+            ).concat(extremeMarkers);
+
+            const isMobile = window.innerWidth <= 768;
+            const chartHeight = isMobile ? 200 : 250;
+            const xPad = Math.max(n * 0.02, 0.5);
+
+            const layout = {
+              // r needs to fit half of the last (right-most) date label, which is
+              // centered on the final data point at the plot's right edge -- too
+              // small and the last date clips off.
+              margin: { l: 36, r: 34, t: 10, b: 26 },
+              height: chartHeight,
+              paper_bgcolor: 'transparent',
+              plot_bgcolor: 'transparent',
+              showlegend: hasDualSeries,
+              legend: { orientation: 'h', x: 0.5, xanchor: 'center', y: 1.14, font: { size: 11, color: mutedColor } },
+              xaxis: {
+                showgrid: false,
+                zeroline: false,
+                tickmode: 'array',
+                tickvals: tickvals,
+                ticktext: ticktext,
+                tickangle: 0,
+                tickfont: { size: 11, color: mutedColor },
+                fixedrange: true,
+                range: [-xPad, (n - 1) + xPad],
+              },
+              yaxis: {
+                showgrid: true,
+                gridcolor: gridColor,
+                griddash: 'dot',
+                gridwidth: 1,
+                zeroline: false,
+                showticklabels: true,
+                range: [Math.min(yMin - yPad, yFloor), yMax + yPad],
+                tickfont: { size: 11, color: mutedColor },
+                nticks: 4,
+              },
+              hovermode: 'closest',
+            };
+
+            // A failed draw must never leave a silent grey box: the lazy
+            // Plotly load can reject (CDN stall) or be absent, and newPlot
+            // itself can throw on a degenerate container. Every failure
+            // path lands on a compact in-section error + Retry that
+            // redraws, and a resolved draw is verified to have actually
+            // produced a plot before it counts as success.
+            const _vhDrawFailed = function () {
+              if (!chartDiv.isConnected) return;
+              if (window.brErrorState) {
+                window.brErrorState(chartDiv, 'Could not load value history.', function () { renderChart(_vhLastHistory); }, { compact: true });
+              }
+            };
+            if (window.ensurePlotly) {
+              window.ensurePlotly().then(function () {
+                // Pin the container to the chart height before drawing. With
+                // responsive: true Plotly runs autosize, so any later resize
+                // (tab switch, window resize) re-derives the plot height from
+                // the container's current box, padding included, and a
+                // first-open drawing could come out at the wrong height with
+                // the x labels pushed below the card. A pinned height makes
+                // the draw and every later resize measure the same height.
+                chartDiv.style.height = chartHeight + 'px';
+                return Plotly.newPlot('playerValueChart', traces, layout, {
+                  displayModeBar: false,
+                  responsive: true
+                });
+              }).then(function () {
+                if (!chartDiv.querySelector('.main-svg') && !chartDiv._fullLayout) _vhDrawFailed();
+              }).catch(_vhDrawFailed);
+            } else {
+              _vhDrawFailed();
+            }
+          }
+
+          // Time-range filter -- only show ranges the data actually spans (e.g. a
+          // player with 2 weeks of history gets no "3 Mo"/"1 Yr" buttons).
+          const RANGES = [{ label: '1 Mo', days: 30 }, { label: '3 Mo', days: 90 }, { label: '1 Yr', days: 365 }];
+          const applicable = RANGES.filter(r => spanDays > r.days);
+          if (applicable.length && latestD) {
+            const subsetFor = (days) => {
+              if (!isFinite(days)) return fullHistory;
+              const cutoff = latestD.getTime() - days * 86400000;
+              const sub = fullHistory.filter(d => { const dd = parseHistDate(d.as_of_date); return dd && dd.getTime() >= cutoff; });
+              return sub.length ? sub : fullHistory;
+            };
+            const ranges = applicable.concat([{ label: 'All', days: Infinity }]);
+            const bar = document.createElement('div');
+            bar.className = 'otc-day-filters pvc-range-bar';
+            bar.innerHTML = ranges.map(r =>
+              `<button type="button" class="otc-day-filter pvc-range-btn${r.days === Infinity ? ' is-active' : ''}" data-days="${r.days}">${r.label}</button>`
+            ).join('');
+            chartDiv.parentNode.insertBefore(bar, chartDiv);
+            bar.addEventListener('click', (e) => {
+              const b = e.target.closest('.pvc-range-btn');
+              if (!b) return;
+              bar.querySelectorAll('.pvc-range-btn').forEach(x => x.classList.toggle('is-active', x === b));
+              renderChart(subsetFor(parseFloat(b.getAttribute('data-days'))));
+            });
+          }
+
+          renderChart(fullHistory);
+        }
+      }
+}
+
 function openPlayerModal(playerId, playerName, opts) {
   opts = opts || {};
   if (!opts.teamNavigation) {
@@ -227,6 +614,14 @@ function openPlayerModal(playerId, playerName, opts) {
   const season = _detailsDescriptor.ctx.season;
   const leagueId = _detailsDescriptor.ctx.leagueId || null;
   const apiUrl = _detailsDescriptor.url;
+
+  // Fire the lazy section fetches and the deferred details payload NOW,
+  // in parallel with the core request below; the section loaders adopt
+  // these in-flight promises instead of starting cold after first paint.
+  try { _pmStartEarlyFetches(playerId, _detailsDescriptor); } catch (_) {}
+  const _deferredPromise = _pmSmallFetch(
+    'deferred:' + playerId + ':' + _detailsDescriptor.ctx.season + ':' + (_detailsDescriptor.ctx.leagueId || ''),
+    _detailsDescriptor.url + '&deferred=1');
   
   // Create modal overlay
   const overlay = document.createElement('div');
@@ -647,20 +1042,23 @@ function openPlayerModal(playerId, playerName, opts) {
       // and we never silently replace the selected season with last season.
       const ppgCard = `<div class="pm-hero-stat">
             <div class="pm-hero-label">PPG${seasonLabel}</div>
-            <div class="pm-hero-val">${ppgVal != null ? Number(ppgVal).toFixed(1) : 'N/A'}</div>
-            <div class="pm-hero-sub">${gamesLabel}${ppgRank ? `POS : ${ppgRank} · OVR : ${ppgOvrRank ?? '–'}` : 'rank N/A'}</div>
+            <div class="pm-hero-val" id="pmHeroPpgVal">${ppgVal != null ? Number(ppgVal).toFixed(1) : 'N/A'}</div>
+            <div class="pm-hero-sub" id="pmHeroPpgSub">${gamesLabel}${ppgRank ? `POS : ${ppgRank} · OVR : ${ppgOvrRank ?? '–'}` : 'rank N/A'}</div>
           </div>`;
       const totalCard = `<div class="pm-hero-stat">
             <div class="pm-hero-label">Total Pts${seasonLabel}</div>
-            <div class="pm-hero-val">${totalPts != null ? fmtPts(totalPts) : 'N/A'}</div>
-            <div class="pm-hero-sub">${gamesLabel}${totalPtsRank ? `POS : ${totalPtsRank} · OVR : ${totalPtsOvrRank ?? '–'}` : 'rank N/A'}</div>
+            <div class="pm-hero-val" id="pmHeroTotalVal">${totalPts != null ? fmtPts(totalPts) : 'N/A'}</div>
+            <div class="pm-hero-sub" id="pmHeroTotalSub">${gamesLabel}${totalPtsRank ? `POS : ${totalPtsRank} · OVR : ${totalPtsOvrRank ?? '–'}` : 'rank N/A'}</div>
           </div>`;
 
       // ── Prospect Profile tab ─────────────────────────────────────────────────
       const pd = data.prospect_data;
       const hasProspectData = pd && pd.prospect_score != null;
+      // Builder form so the deferred payload can rebuild the panel in
+      // place when prospect data arrives after first paint.
+      const _buildProspectColHTML = function(pd) {
       let pdColHTML = '';
-      if (hasProspectData) {
+      if (pd && pd.prospect_score != null) {
         const pdConf  = parseFloat(pd.confidence_score || 0);
 
         // Profile facts: the old standalone Draft row and Measurables tile
@@ -807,13 +1205,17 @@ function openPlayerModal(playerId, playerName, opts) {
         `;
       }
 
+      return pdColHTML;
+      };
+      let pdColHTML = _buildProspectColHTML(pd);
+
       // ── Advanced Metrics / Prospect Profile + Value History flags ──
       const supportedMetricsPosition =
         ['QB', 'RB', 'WR', 'TE'].includes(String(pos || '').toUpperCase());
-      const hasMetrics =
+      let hasMetrics =
         supportedMetricsPosition &&
         (data.has_advanced_metrics === true || hasGameLogs);
-      const hasChart   = data.value_history && data.value_history.length > 0;
+      let hasChart   = data.value_history && data.value_history.length > 0;
 
       const vtTrendBadge = '';
 
@@ -993,7 +1395,9 @@ function openPlayerModal(playerId, playerName, opts) {
       // Playoff schedule card: rendered synchronously from the player-details
       // payload (data.playoff_sos). Stays out entirely when the payload has no
       // SOS rank or no per-week rows -- never a placeholder card.
-      const _ps = data.playoff_sos || null;
+      // Builder form so the deferred payload can insert the card in
+      // place when the playoff SoS arrives after first paint.
+      const _buildPlayoffCard = function(_ps) {
       const _psWeeks = (_ps && Array.isArray(_ps.weeks)) ? _ps.weeks.filter(w => w && w.week != null) : [];
       let playoffCard = '';
       if (_ps && _ps.rank != null && isFinite(Number(_ps.rank)) && _psWeeks.length) {
@@ -1035,6 +1439,10 @@ function openPlayerModal(playerId, playerName, opts) {
         </div>`;
       }
 
+      return playoffCard;
+      };
+      const playoffCard = _buildPlayoffCard(data.playoff_sos);
+
       const _h0 = _heroActive();
       const _heroCardCount = 2 + (ppgCard ? 1 : 0) + (totalCard ? 1 : 0);
       const heroGridStyle = `style="grid-template-columns:repeat(${_heroCardCount},1fr);"`;
@@ -1051,14 +1459,15 @@ function openPlayerModal(playerId, playerName, opts) {
           </div>
         </div>`;
       // Value History block (main column, below Recent Form).
-      const valueHistoryBlock = hasChart ? `
+      const _valueHistoryBlockHTML = function() { return hasChart ? `
           <div class="pm-ov-value">
           <hr class="pm-section-divider">
           <div class="pm-section-header"><span class="pm-section-label" id="pmValueHistoryLabel">${pmScoringType === 'redraft' ? 'Dynasty Value History' : 'Value History'}</span></div>
           <div class="pm-vh-summary" id="pmVhSummary" aria-live="polite"></div>
           <div class="player-modal-chart-container" id="playerValueChart" style="min-height:200px;"></div>
           </div>
-        ` : '';
+        ` : ''; };
+      const valueHistoryBlock = _valueHistoryBlockHTML();
 
       // Recent News block (right rail, bottom).
       const newsBlock = (data.position && data.position !== 'PICK') ? `
@@ -1130,7 +1539,8 @@ function openPlayerModal(playerId, playerName, opts) {
       const _advTitle = _posSet
         ? `<a href="${_metricsBase}?pos=${encodeURIComponent(_metricsPos)}&preset=${_posSet.preset}${_srch}" class="pm-section-label-link" title="Open ${_posSet.label} leaderboard">Advanced Metrics</a>`
         : 'Advanced Metrics';
-      const metricsHTML = hasMetrics ? `
+      const _metricsPanelHTML = function(_hm) {
+        return _hm ? `
         <div id="advancedMetricsSection">
           <div class="pm-section-header">
             <span class="pm-section-label">${_advTitle} <span id="advMetricsSeasonLabel" style="font-size:12px;opacity:.6;"></span><span class="adv-info-icon" onclick="advShowInfoTip(event)" aria-label="About metric tooltips">ⓘ</span></span>
@@ -1149,6 +1559,8 @@ function openPlayerModal(playerId, playerName, opts) {
           </div>
         </div>
       ` : _pmAdvEmptyHTML();
+      };
+      const metricsHTML = _metricsPanelHTML(hasMetrics);
 
       // ── Build Breakout panel HTML (lazy-loaded) ───────────────────────────
       const breakoutHTML = `
@@ -1390,8 +1802,9 @@ function openPlayerModal(playerId, playerName, opts) {
       pmPrefetchTabs();
 
       // ── Lazy-load prospect comparables for rookies ─────────────────────────
-      if (data.is_rookie === true && pd && pd.player_id) {
-        fetch(`/api/prospects/comparables/${encodeURIComponent(pd.player_id)}`)
+      const _pmLoadComparables = function(pdObj) {
+      if (data.is_rookie === true && pdObj && pdObj.player_id) {
+        fetch(`/api/prospects/comparables/${encodeURIComponent(pdObj.player_id)}`)
           .then(r => r.json())
           .then(cd => {
             const cb = document.getElementById('pmComparablesBody');
@@ -1423,6 +1836,9 @@ function openPlayerModal(playerId, playerName, opts) {
             if (cb) cb.innerHTML = '';
           });
       }
+
+      };
+      _pmLoadComparables(pd);
 
       // ── Lazy-load news into Overview panel ────────────────────────────────
       // The load is a named step with its own in-section error + Retry: a
@@ -1512,313 +1928,145 @@ function openPlayerModal(playerId, playerName, opts) {
       // (it offers the positional-tier averages as pickable opponents),
       // so it is no longer surfaced as a standalone header chip.
 
-      // ── Render value history chart in Overview panel ───────────────────────
-      if (data.value_history && data.value_history.length > 0) {
-        const chartDiv = document.getElementById('playerValueChart');
-        if (chartDiv) {
-          const fullHistory = data.value_history;
-          const formatDateLabel = (dateStr) => {
-            if (!dateStr) return '';
-            const m = String(dateStr).match(/^(\d{4})-(\d{2})-(\d{2})/);
-            if (!m) return '';
-            const [, year, month, day] = m;
-            const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-            return `${monthNames[parseInt(month, 10) - 1]} ${parseInt(day, 10)}`;
-          };
-          const parseHistDate = (s) => {
-            const m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
-            return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
-          };
-          const latestD   = parseHistDate(fullHistory[fullHistory.length - 1].as_of_date);
-          const earliestD = parseHistDate(fullHistory[0].as_of_date);
-          const spanDays  = (latestD && earliestD) ? (latestD - earliestD) / 86400000 : 0;
+      _pmRenderValueHistoryChart(data);
 
-          // ── Direction 1 "momentum": range-aware summary above the chart ──────
-          // Trend is derived from the visible window, so it works even when the
-          // backend value_trend field is absent (it currently is). Delta / peak /
-          // floor track the selected range, so switching 1 Mo / 3 Mo / All
-          // re-answers "where is this value going" rather than just redrawing.
-          const _fmtVal = (v) => (typeof fmtInt === 'function')
-            ? fmtInt(Math.round(v)) : Math.round(v).toLocaleString('en-US');
-          const TREND_META = {
-            rising:     { icon: '↑', label: 'Rising',      color: 'var(--win)' },
-            recovering: { icon: '↗', label: 'Recovering',  color: '#3b82f6' },
-            peaked:     { icon: '↘', label: 'Cooling off', color: '#f59e0b' },
-            declining:  { icon: '↓', label: 'Declining',   color: 'var(--loss)' },
-            stable:     { icon: '→', label: 'Stable',      color: 'var(--text-muted)' },
-          };
-          function classifyTrend(vals) {
-            const n = vals.length;
-            if (n < 2) return null;
-            const first = vals[0], last = vals[n - 1];
-            const lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
-            const pct = first ? (last - first) / first : 0;
-            if (Math.abs(pct) < 0.03) return TREND_META.stable;
-            if (pct > 0) {
-              // Climbed back up from a meaningful dip → recovering, else rising.
-              return (lo < last * 0.92 && last < hi * 0.995)
-                ? TREND_META.recovering : TREND_META.rising;
-            }
-            // Net down: off a recent high but holding above the low → cooling off.
-            return (hi > last * 1.08 && last > lo * 1.02)
-              ? TREND_META.peaked : TREND_META.declining;
+      // ── Deferred payload patch-in ──────────────────────────────────────
+      // The deferred player-details payload (fired at click, in parallel
+      // with the core) carries the sections the core defers: value history
+      // + trend, the prospect profile, the breakout flag, playoff SoS, tab
+      // eligibility, and the per-player-weeks hero correction. When it
+      // lands, patch the open modal in place. A missing/failed payload
+      // leaves the core render exactly as-is: sections simply stay
+      // absent (no placeholders, no error cards).
+      function _pmPatchDeferred(dfd) {
+        if (dfd.stats) data.stats = Object.assign({}, data.stats || {}, dfd.stats);
+        data.value_history = dfd.value_history || [];
+        data.value_trend = dfd.value_trend || null;
+        data.playoff_sos = dfd.playoff_sos || null;
+        data.has_game_logs = dfd.has_game_logs === true;
+        data.has_advanced_metrics = dfd.has_advanced_metrics === true;
+        if (dfd.is_rookie === true) data.is_rookie = true;
+
+        // Hero scoring correction (the player's own completed weeks).
+        if (dfd.stats) {
+          var _gl2 = dfd.stats.ppg_games != null ? (dfd.stats.ppg_games + 'G · ') : '';
+          var _pv = document.getElementById('pmHeroPpgVal');
+          var _psub = document.getElementById('pmHeroPpgSub');
+          var _tv2 = document.getElementById('pmHeroTotalVal');
+          var _tsub = document.getElementById('pmHeroTotalSub');
+          if (_pv) _pv.textContent = dfd.stats.ppg != null ? Number(dfd.stats.ppg).toFixed(1) : 'N/A';
+          if (_psub) _psub.textContent = _gl2 + (dfd.stats.ppg_rank
+            ? ('POS : ' + dfd.stats.ppg_rank + ' · OVR : ' + (dfd.stats.ppg_ovr_rank != null ? dfd.stats.ppg_ovr_rank : '–'))
+            : 'rank N/A');
+          if (_tv2) _tv2.textContent = dfd.stats.total_pts != null ? fmtPts(dfd.stats.total_pts) : 'N/A';
+          if (_tsub) _tsub.textContent = _gl2 + (dfd.stats.total_pts_rank
+            ? ('POS : ' + dfd.stats.total_pts_rank + ' · OVR : ' + (dfd.stats.total_pts_ovr_rank != null ? dfd.stats.total_pts_ovr_rank : '–'))
+            : 'rank N/A');
+          if (pmTabBar) {
+            pmTabBar.dataset.pmPpg = dfd.stats.ppg != null ? String(dfd.stats.ppg) : '';
+            pmTabBar.dataset.pmPpgRank = dfd.stats.ppg_rank != null ? String(dfd.stats.ppg_rank) : '';
           }
-          function updateSummary(history) {
-            const el = document.getElementById('pmVhSummary');
-            if (!el) return;
-            const vals = history.map(d => Number(d.value_1qb ?? d.value)).filter(v => !isNaN(v));
-            if (vals.length < 2) { el.style.display = 'none'; el.innerHTML = ''; return; }
-            el.style.display = '';
-            const ysf2 = history.map(d => d.value_sf != null ? Number(d.value_sf) : null);
-            const dual = vals.some((v, i) => ysf2[i] != null && Math.abs(v - ysf2[i]) > 1);
-            const first = vals[0], last = vals[vals.length - 1];
-            const peak = Math.max.apply(null, vals), floor = Math.min.apply(null, vals);
-            const diff = last - first;
-            const pct = first ? diff / first * 100 : 0;
-            const dir = pct > 0.5 ? 'up' : pct < -0.5 ? 'down' : 'flat';
-            const arrow = dir === 'up' ? '▲' : dir === 'down' ? '▼' : '→';
-            const sign = diff > 0 ? '+' : diff < 0 ? '−' : '';
-            const activeBtn = document.querySelector('.pvc-range-bar .pvc-range-btn.is-active');
-            const rangeLbl = activeBtn ? activeBtn.textContent.trim() : '';
-            const t = classifyTrend(vals);
-            const trendPill = t
-              ? `<span class="pm-vh-trend" style="color:${t.color};background:color-mix(in srgb, ${t.color} 14%, transparent);">${t.icon} ${t.label}</span>`
-              : '';
-            el.innerHTML = `
-              <div class="pm-vh-now">
-                <span class="pm-vh-now-lbl">${dual ? '1QB value' : 'Value'}</span>
-                <span class="pm-vh-now-val">${_fmtVal(last)}</span>
-              </div>
-              <div class="pm-vh-move">
-                <div class="pm-vh-move-row">
-                  <span class="pm-vh-delta ${dir}">${arrow} ${sign}${_fmtVal(Math.abs(diff))} · ${sign}${Math.abs(pct).toFixed(1)}%</span>
-                  ${trendPill}
-                </div>
-                ${rangeLbl ? `<span class="pm-vh-range">over ${rangeLbl}</span>` : ''}
-              </div>
-              <div class="pm-vh-extremes">
-                <div class="pm-vh-ext"><span class="pm-vh-ext-k">Peak</span><span class="pm-vh-ext-v">${_fmtVal(peak)}</span></div>
-                <div class="pm-vh-ext"><span class="pm-vh-ext-k">Floor</span><span class="pm-vh-ext-v">${_fmtVal(floor)}</span></div>
-              </div>`;
-          }
+        }
 
-          let _vhLastHistory = fullHistory;
-          function renderChart(history) {
-            _vhLastHistory = history;
-            updateSummary(history);
-            const n = history.length;
-            const xIdx  = history.map((_, i) => i);            // numeric x for clean tick control
-            const dates = history.map(d => formatDateLabel(d.as_of_date));
-
-            // A date with no SF value stays a gap (null) so Plotly breaks
-            // the SF line there. Substituting the primary value (the old
-            // ?? d.value fallback) drew invented plunges to the 1QB line.
-            const y1qb = history.map(d => (d.value_1qb ?? d.value) != null ? Number(d.value_1qb ?? d.value) : null);
-            const ysf  = history.map(d => d.value_sf != null ? Number(d.value_sf) : null);
-
-            // Show both 1QB and Superflex lines whenever they genuinely diverge.
-            // Both columns are EMA-smoothed at the data layer (smooth_value_history.py),
-            // so the SF series is already clean; for players where SF tracks 1QB the
-            // two coincide and we fall back to a single "Value" line.
-            const hasDualSeries = y1qb.some((v, i) => v != null && ysf[i] != null && Math.abs(v - ysf[i]) > 1);
-
-            const allY = (hasDualSeries ? [...y1qb, ...ysf] : y1qb).filter(v => v != null);
-            const yMin = Math.min(...allY);
-            const yMax = Math.max(...allY);
-            const yRange = yMax - yMin;
-            const yPad = Math.max(yRange * 0.15, 20);
-            // Floor: no tighter than (currentValue - 200), so small wiggles don't look huge
-            const currentVal = (hasDualSeries ? ysf[ysf.length - 1] : y1qb[y1qb.length - 1]) ?? yMax;
-            const yFloor = Math.max(0, currentVal - 200);
-
-            // 3-4 evenly spaced date ticks (deduped) so labels never collide.
-            const tickCount = Math.max(2, Math.min(4, n));
-            const tickvals = [];
-            if (n <= 1) { tickvals.push(0); }
-            else {
-              for (let i = 0; i < tickCount; i++) {
-                const idx = Math.round(i * (n - 1) / (tickCount - 1));
-                if (!tickvals.includes(idx)) tickvals.push(idx);
+        // Value-trend pill in the header meta row.
+        var _vt = dfd.value_trend;
+        if (_vt && _vt.class && _vt.class !== 'unknown') {
+          var _metaEl = document.getElementById('playerModalMeta');
+          if (_metaEl && !_metaEl.querySelector('.pm-trend-pill')) {
+            var _vtIcons = { rising: '↑', declining: '↓', stable: '→', volatile: '↕', peaked: '↘', recovering: '↗' };
+            var _vtIcon = _vtIcons[_vt.class] || '';
+            if (_vtIcon) {
+              var _slopeTxt = _vt.slope_pct_month != null
+                ? ' · ' + (_vt.slope_pct_month >= 0 ? '+' : '') + _vt.slope_pct_month.toFixed(1) + '%/mo' : '';
+              var _pill = document.createElement('span');
+              _pill.className = 'pm-trend-pill';
+              _pill.setAttribute('tabindex', '0');
+              _pill.setAttribute('data-trend-tip', (_vt.description || _vt.label) + _slopeTxt);
+              _pill.setAttribute('style', 'padding:1px 6px;border-radius:4px;background:' + _vt.color + '18;border:1px solid ' + _vt.color + '40;color:' + _vt.color + ';font-size:10px;font-weight:700;cursor:help;');
+              _pill.textContent = _vtIcon + ' ' + _vt.label;
+              var _metaRow = _metaEl.querySelector('div');
+              if (_metaRow) {
+                var _sep = document.createElement('span');
+                _sep.setAttribute('style', 'opacity:.35;margin:0 3px;');
+                _sep.textContent = '·';
+                _metaRow.appendChild(_sep);
+                _metaRow.appendChild(_pill);
               }
             }
-            const ticktext = tickvals.map(i => dates[i]);
+          }
+        }
 
-            const rootStyle = getComputedStyle(document.documentElement);
-            const mutedColor = rootStyle.getPropertyValue('--text-muted').trim() || '#6b7280';
-            const gridColor = rootStyle.getPropertyValue('--border').trim() || 'rgba(127,127,127,.18)';
-            // Matches the .pm-adp-dot border (source-card surface) so the chart's
-            // end markers read like the ADP dots.
-            const rowColor = rootStyle.getPropertyValue('--row').trim() || '#ffffff';
-
-            const hover1qb = dates.map((date, i) => `<b>${date}</b><br>1QB: ${y1qb[i]?.toFixed(1) || ''}`);
-            const hoverSF  = dates.map((date, i) => `<b>${date}</b><br>SF: ${ysf[i]?.toFixed(1) || ''}`);
-
-            const trace1qb = {
-              x: xIdx, y: y1qb,
-              type: 'scatter', mode: 'lines', name: '1QB',
-              line: { color: '#3b82f6', width: 2.5, shape: 'spline', smoothing: 1.3 },
-              fill: hasDualSeries ? 'none' : 'tozeroy',
-              fillcolor: 'rgba(59, 130, 246, 0.08)',
-              hovertemplate: '%{text}<extra></extra>',
-              text: hover1qb,
-            };
-            const traceSF = {
-              x: xIdx, y: ysf,
-              type: 'scatter', mode: 'lines', name: 'SF',
-              line: { color: '#f59e0b', width: 2.5, shape: 'spline', smoothing: 1.3 },
-              fill: 'none',
-              hovertemplate: '%{text}<extra></extra>',
-              text: hoverSF,
-            };
-
-            const lineTraces = hasDualSeries ? [trace1qb, traceSF] : [
-              { ...trace1qb, name: 'Value', text: dates.map((date, i) => `<b>${date}</b><br>Value: ${y1qb[i]?.toFixed(1) || ''}`) }
-            ];
-            // A single marker at the latest point of each line -- echoes the
-            // ADP source dots (colored fill, surface-colored ring) so the two
-            // blocks share a visual language. A series ending in gap dates
-            // marks its last real point instead.
-            const endDot = (color, yArr) => {
-              let idx = yArr.length - 1;
-              while (idx > 0 && yArr[idx] == null) idx--;
-              return {
-                x: [xIdx[idx]], y: [yArr[idx]],
-                type: 'scatter', mode: 'markers', showlegend: false, hoverinfo: 'skip',
-                marker: { color, size: 8, line: { color: rowColor, width: 2 } },
-              };
-            };
-            // Peak & floor markers on the primary (1QB) series -- Direction 1
-            // "momentum": make the high-water mark and the trough self-evident.
-            // Skipped when they land on the current point (the end dot already
-            // marks it) or when the series is flat / too short.
-            const winC  = rootStyle.getPropertyValue('--win').trim()  || '#16a34a';
-            const lossC = rootStyle.getPropertyValue('--loss').trim() || '#ef4444';
-            let peakIdx = -1, floorIdx = -1, peakV = -Infinity, floorV = Infinity;
-            y1qb.forEach((v, i) => {
-              if (v == null) return;
-              if (v > peakV) { peakV = v; peakIdx = i; }
-              if (v < floorV) { floorV = v; floorIdx = i; }
-            });
-            const extremeDot = (idx, color) => ({
-              x: [xIdx[idx]], y: [y1qb[idx]],
-              type: 'scatter', mode: 'markers', showlegend: false, hoverinfo: 'skip',
-              marker: { color, size: 7, line: { color: rowColor, width: 2 } },
-            });
-            const extremeMarkers = [];
-            if (n > 2 && peakIdx !== floorIdx) {
-              if (peakIdx  !== n - 1) extremeMarkers.push(extremeDot(peakIdx, winC));
-              if (floorIdx !== n - 1) extremeMarkers.push(extremeDot(floorIdx, lossC));
-            }
-
-            const traces = lineTraces.concat(
-              hasDualSeries
-                ? [endDot('#3b82f6', y1qb), endDot('#f59e0b', ysf)]
-                : [endDot('#3b82f6', y1qb)]
-            ).concat(extremeMarkers);
-
-            const isMobile = window.innerWidth <= 768;
-            const chartHeight = isMobile ? 200 : 250;
-            const xPad = Math.max(n * 0.02, 0.5);
-
-            const layout = {
-              // r needs to fit half of the last (right-most) date label, which is
-              // centered on the final data point at the plot's right edge -- too
-              // small and the last date clips off.
-              margin: { l: 36, r: 34, t: 10, b: 26 },
-              height: chartHeight,
-              paper_bgcolor: 'transparent',
-              plot_bgcolor: 'transparent',
-              showlegend: hasDualSeries,
-              legend: { orientation: 'h', x: 0.5, xanchor: 'center', y: 1.14, font: { size: 11, color: mutedColor } },
-              xaxis: {
-                showgrid: false,
-                zeroline: false,
-                tickmode: 'array',
-                tickvals: tickvals,
-                ticktext: ticktext,
-                tickangle: 0,
-                tickfont: { size: 11, color: mutedColor },
-                fixedrange: true,
-                range: [-xPad, (n - 1) + xPad],
-              },
-              yaxis: {
-                showgrid: true,
-                gridcolor: gridColor,
-                griddash: 'dot',
-                gridwidth: 1,
-                zeroline: false,
-                showticklabels: true,
-                range: [Math.min(yMin - yPad, yFloor), yMax + yPad],
-                tickfont: { size: 11, color: mutedColor },
-                nticks: 4,
-              },
-              hovermode: 'closest',
-            };
-
-            // A failed draw must never leave a silent grey box: the lazy
-            // Plotly load can reject (CDN stall) or be absent, and newPlot
-            // itself can throw on a degenerate container. Every failure
-            // path lands on a compact in-section error + Retry that
-            // redraws, and a resolved draw is verified to have actually
-            // produced a plot before it counts as success.
-            const _vhDrawFailed = function () {
-              if (!chartDiv.isConnected) return;
-              if (window.brErrorState) {
-                window.brErrorState(chartDiv, 'Could not load value history.', function () { renderChart(_vhLastHistory); }, { compact: true });
-              }
-            };
-            if (window.ensurePlotly) {
-              window.ensurePlotly().then(function () {
-                // Pin the container to the chart height before drawing. With
-                // responsive: true Plotly runs autosize, so any later resize
-                // (tab switch, window resize) re-derives the plot height from
-                // the container's current box, padding included, and a
-                // first-open drawing could come out at the wrong height with
-                // the x labels pushed below the card. A pinned height makes
-                // the draw and every later resize measure the same height.
-                chartDiv.style.height = chartHeight + 'px';
-                return Plotly.newPlot('playerValueChart', traces, layout, {
-                  displayModeBar: false,
-                  responsive: true
-                });
-              }).then(function () {
-                if (!chartDiv.querySelector('.main-svg') && !chartDiv._fullLayout) _vhDrawFailed();
-              }).catch(_vhDrawFailed);
-            } else {
-              _vhDrawFailed();
+        // Value history: insert the block ahead of the ADP block when the
+        // core payload had none, then draw the chart.
+        if (Array.isArray(dfd.value_history) && dfd.value_history.length) {
+          try { window.__pmVH = { pid: String(playerId), hist: dfd.value_history }; } catch (e) {}
+          if (!document.getElementById('playerValueChart')) {
+            hasChart = true;
+            var _mainCol = document.querySelector('.pm-ov-main');
+            var _adpEl = document.getElementById('pmAdpBlock');
+            if (_mainCol && _adpEl) {
+              var _wrap = document.createElement('div');
+              _wrap.innerHTML = _valueHistoryBlockHTML();
+              if (_wrap.firstElementChild) _mainCol.insertBefore(_wrap.firstElementChild, _adpEl);
             }
           }
+          _pmRenderValueHistoryChart(data);
+        }
 
-          // Time-range filter -- only show ranges the data actually spans (e.g. a
-          // player with 2 weeks of history gets no "3 Mo"/"1 Yr" buttons).
-          const RANGES = [{ label: '1 Mo', days: 30 }, { label: '3 Mo', days: 90 }, { label: '1 Yr', days: 365 }];
-          const applicable = RANGES.filter(r => spanDays > r.days);
-          if (applicable.length && latestD) {
-            const subsetFor = (days) => {
-              if (!isFinite(days)) return fullHistory;
-              const cutoff = latestD.getTime() - days * 86400000;
-              const sub = fullHistory.filter(d => { const dd = parseHistDate(d.as_of_date); return dd && dd.getTime() >= cutoff; });
-              return sub.length ? sub : fullHistory;
-            };
-            const ranges = applicable.concat([{ label: 'All', days: Infinity }]);
-            const bar = document.createElement('div');
-            bar.className = 'otc-day-filters pvc-range-bar';
-            bar.innerHTML = ranges.map(r =>
-              `<button type="button" class="otc-day-filter pvc-range-btn${r.days === Infinity ? ' is-active' : ''}" data-days="${r.days}">${r.label}</button>`
-            ).join('');
-            chartDiv.parentNode.insertBefore(bar, chartDiv);
-            bar.addEventListener('click', (e) => {
-              const b = e.target.closest('.pvc-range-btn');
-              if (!b) return;
-              bar.querySelectorAll('.pvc-range-btn').forEach(x => x.classList.toggle('is-active', x === b));
-              renderChart(subsetFor(parseFloat(b.getAttribute('data-days'))));
-            });
+        // Playoff schedule card: the rail's first card when present.
+        if (dfd.playoff_sos && !document.querySelector('.pm-ov-playoff')) {
+          var _railEl = document.querySelector('.pm-ov-rail');
+          var _pcHtml = _buildPlayoffCard(dfd.playoff_sos);
+          if (_railEl && _pcHtml) _railEl.insertAdjacentHTML('afterbegin', _pcHtml);
+        }
+
+        // Metrics tab eligibility.
+        var _hmNow = supportedMetricsPosition
+          && (dfd.has_advanced_metrics === true || dfd.has_game_logs === true);
+        if (_hmNow && !hasMetrics) {
+          hasMetrics = true;
+          var _mp = document.getElementById('pm-panel-metrics');
+          if (_mp) _mp.innerHTML = _metricsPanelHTML(true);
+        }
+        if (tabMetrics) {
+          tabMetrics.disabled = !hasMetrics;
+          tabMetrics.title = hasMetrics ? '' : 'No advanced metrics available for this player';
+          tabMetrics.classList.toggle('pm-tab-disabled', !hasMetrics);
+        }
+        if (pmTabBar) pmTabBar.dataset.pmHasMetrics = hasMetrics ? '1' : '';
+
+        // Rookie tab visibility; prospect panel content when it arrives.
+        if (tabProspect) {
+          tabProspect.style.display = dfd.is_rookie === true ? '' : 'none';
+          tabProspect.disabled = dfd.is_rookie !== true;
+        }
+        if (dfd.prospect_data && dfd.prospect_data.prospect_score != null) {
+          data.prospect_data = dfd.prospect_data;
+          var _pp2 = document.getElementById('pm-panel-prospect');
+          if (_pp2 && !(pd && pd.prospect_score != null)) {
+            _pp2.innerHTML = _buildProspectColHTML(dfd.prospect_data);
+            _pmLoadComparables(dfd.prospect_data);
           }
+        }
 
-          renderChart(fullHistory);
+        // Breakout tab: exists only with a real call (same hard rule as
+        // the core render); the panel lazy-fetches its card when opened.
+        if (tabBreakout) {
+          var _onBo = dfd.on_breakout_board === true || dfd.has_breakout_call === true;
+          tabBreakout.style.display = _onBo ? '' : 'none';
         }
       }
-
+      if (_deferredPromise) {
+        _deferredPromise.then(function(dfd) {
+          try {
+            if (!dfd || dfd.error) return;
+            if (!overlay.isConnected || overlay.dataset.closed === '1'
+                || document.querySelector('.player-modal-overlay') !== overlay
+                || overlay.dataset.playerId !== String(playerId)) return;
+            _pmPatchDeferred(dfd);
+          } catch (e) { /* deferred sections are best-effort */ }
+        }).catch(function() { /* deferred failure leaves the core render as-is */ });
+      }
     })
     .catch(err => {
       if (!overlay.isConnected || overlay.dataset.closed === '1'
@@ -2134,8 +2382,11 @@ function _pmLoadStartSitStrip(playerId, data, leagueId, platform, season) {
     + '&player_id=' + encodeURIComponent(playerId);
   var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
   var timer = ctrl ? setTimeout(function() { try { ctrl.abort(); } catch (e) {} }, 15000) : null;
-  fetch(url, ctrl ? { signal: ctrl.signal } : undefined)
-    .then(function(r) { return r.json(); })
+  var _earlyStrip = _pmTakeEarlyJson(url);
+  if (_earlyStrip && timer) { clearTimeout(timer); timer = null; }
+  var _stripData = _earlyStrip || fetch(url, ctrl ? { signal: ctrl.signal } : undefined)
+    .then(function(r) { return r.json(); });
+  _stripData
     .then(function(d) {
       if (timer) clearTimeout(timer);
       if (!document.body.contains(el)) return;
@@ -2201,8 +2452,8 @@ function _pmLoadInLeague(playerId, data, leagueId, platform, season) {
       '&season=' + encodeURIComponent(season);
     const tradesUrl = '/api/player-league-trades/' + encodeURIComponent(playerId) + qs + '&limit=10';
     const acqUrl = '/api/player-acquisition/' + encodeURIComponent(playerId) + qs;
-    tradesPromise = jget(tradesUrl);
-    acqPromise = jget(acqUrl);
+    tradesPromise = _pmTakeEarlyJson(tradesUrl) || jget(tradesUrl);
+    acqPromise = _pmTakeEarlyJson(acqUrl) || jget(acqUrl);
   }
 
   Promise.all([tradesPromise, acqPromise]).then(function (res) {
@@ -2304,7 +2555,7 @@ function _pmLoadRecentForm(playerId, season, pos) {
   const _ls = (typeof brLeagueSize === 'function') ? brLeagueSize() : '';
   let logsUrl = `/api/player-game-logs/${encodeURIComponent(playerId)}?season=${_season}&league_type=${_lt}&league_size=${_ls}`;
   if (_leagueId) logsUrl += `&league_id=${_leagueId}&platform=${_platform}`;
-  _pmFetch(logsUrl)
+  (_pmTakeEarlyResponse(logsUrl) || _pmFetch(logsUrl))
     .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
     .then(data => {
       // Stale-render guards, same as the neighboring lazy loaders: the

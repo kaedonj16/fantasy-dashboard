@@ -257,8 +257,11 @@ def test_payload_cache_separates_slim_from_full(monkeypatch):
 def test_payload_cache_constants_match_client_ttl():
     import app as appmod
 
-    assert appmod._PLAYER_DETAILS_TTL == 300
-    assert appmod._PLAYER_DETAILS_MAX == 64
+    # Speed v2: the shared (Redis) payload layer carries a 15-minute TTL
+    # (values rebuild daily) and a much larger per-worker bound; the
+    # client's own 5-minute cache still sits on top.
+    assert appmod._PLAYER_DETAILS_TTL == 900
+    assert appmod._PLAYER_DETAILS_MAX == 512
 
 
 def test_modal_descriptor_requests_slim_payload():
