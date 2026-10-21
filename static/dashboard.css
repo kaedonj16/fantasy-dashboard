@@ -24345,7 +24345,11 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
 .m-espn-badges-r { justify-self: end; }
 .m-espn-badges-c { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; text-align: center; justify-self: center; }
 .m-espn-badges .m-head-badges { margin-bottom: 0; min-height: 0; }
-.m-espn-score-row { display: grid; grid-template-columns: auto 1fr 1fr auto; gap: 12px; align-items: center; margin-bottom: 12px; }
+/* Avatar tracks are a fixed 52px, not auto: the row's geometry must not
+   depend on whether a team's logo exists or loads. With auto tracks, a
+   missing/hidden avatar collapses its track and the scores reflow into
+   the middle of the row. */
+.m-espn-score-row { display: grid; grid-template-columns: 52px 1fr 1fr 52px; gap: 12px; align-items: center; margin-bottom: 12px; }
 .m-espn-av { width: 52px; height: 52px; border-radius: 50%; object-fit: cover; background: var(--card-soft); flex-shrink: 0; }
 .m-espn-num { font-size: 32px; font-weight: 800; letter-spacing: -0.03em; line-height: 1; }
 .m-espn-num.m-proj-only { opacity: 0.55; }
