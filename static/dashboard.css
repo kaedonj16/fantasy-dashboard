@@ -9406,6 +9406,21 @@ select:focus {
     white-space: nowrap;
 }
 
+/* Verdict colors ride on modifier classes, not inline styles: the AI
+   HTML sanitizer strips style attributes before this markup reaches
+   the page. */
+.trade-ai-verdict-badge-accept {
+    background: #16a34a;
+}
+
+.trade-ai-verdict-badge-decline {
+    background: #dc2626;
+}
+
+.trade-ai-verdict-badge-counter {
+    background: #d97706;
+}
+
 .trade-ai-conf-pill {
     display: inline-flex;
     align-items: center;
@@ -9424,6 +9439,18 @@ select:focus {
     height: 6px;
     border-radius: 50%;
     display: inline-block;
+}
+
+.trade-ai-conf-dot-accept {
+    background: #16a34a;
+}
+
+.trade-ai-conf-dot-decline {
+    background: #dc2626;
+}
+
+.trade-ai-conf-dot-counter {
+    background: #d97706;
 }
 
 .trade-ai-body {
@@ -12924,6 +12951,394 @@ select:focus {
     color: var(--text-muted);
     margin-bottom: 12px;
 }
+
+/* Playoff Picture bracket (true tree): round columns left to right with
+   30px SVG connector columns between them. The SVG is stretched to the
+   column height, so every shape carries vector-effect="non-scaling-stroke"
+   and the 1.5px hairline weight stays true. */
+.pb-wrap {
+    padding: 12px 14px 14px;
+    color: var(--text);
+}
+
+.pb-ctx {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+}
+
+.pb-ctx b { color: var(--text); }
+
+.pb-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+}
+
+.pb-heads { display: flex; margin: 10px 0 8px; }
+
+.pb-head {
+    flex: 1 1 0;
+    text-align: center;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.pb-head--champ { flex: .78 1 0; }
+.pb-head-sp { flex: 0 0 30px; }
+.pb-head-wk { display: none; }
+
+.pb-cols { display: flex; align-items: stretch; }
+
+.pb-col {
+    flex: 1 1 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-around;
+    gap: 18px;
+    min-width: 0;
+}
+
+.pb-col--champ { flex: .78 1 0; justify-content: center; }
+
+.pb-conn { flex: 0 0 30px; position: relative; }
+
+.pb-conn svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+}
+
+.pb-conn line { stroke: #c9d6e3; stroke-width: 1.5; fill: none; }
+
+.pb-match {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 1px 4px rgba(18, 45, 75, .05);
+    padding: 8px;
+    width: 100%;
+}
+
+.pb-match--dashed { border-style: dashed; }
+
+.pb-mhead {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+    color: var(--text-subtle);
+    margin-bottom: 5px;
+}
+
+.pb-mright { display: inline-flex; align-items: center; }
+.pb-wk { letter-spacing: .02em; font-weight: 700; }
+
+.pb-hb {
+    color: #7c3aed;
+    background: rgba(124, 58, 237, .09);
+    border: 1px solid rgba(124, 58, 237, .22);
+    padding: 1px 6px;
+    border-radius: var(--radius-pill);
+    font-size: 9.5px;
+    font-weight: 800;
+    letter-spacing: .06em;
+    margin-right: 6px;
+}
+
+.pb-trow {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 0;
+    min-width: 0;
+}
+
+.pb-trow + .pb-trow { border-top: 1px solid var(--grid); }
+
+.pb-seed {
+    flex: 0 0 auto;
+    min-width: 20px;
+    height: 22px;
+    padding: 0 4px;
+    border-radius: 6px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: 11.5px;
+    font-weight: 800;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.pb-seed.top { background: var(--accent); color: #fff; }
+.pb-seed--ghost { visibility: hidden; }
+
+.pb-av {
+    position: relative;
+    flex: 0 0 auto;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: #dbe5ef;
+    color: var(--accent);
+    font-size: 10px;
+    font-weight: 800;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+.pb-av img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
+}
+
+.pb-av--tbd {
+    background: var(--card-soft);
+    border: 1.5px dashed var(--border);
+    color: var(--text-subtle);
+}
+
+.pb-tmain { min-width: 0; flex: 1; }
+
+.pb-tname {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--accent);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    letter-spacing: -.01em;
+}
+
+.pb-tname--tbd { color: var(--text-subtle); font-weight: 600; }
+
+.pb-tsub {
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 1px;
+}
+
+.pb-tsub.wrap { white-space: normal; line-height: 1.3; }
+
+.pb-tscore {
+    flex: 0 0 auto;
+    font-size: 13px;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.pb-trow--winner .pb-tname { font-weight: 800; }
+.pb-trow--winner .pb-tscore { color: var(--accent); font-weight: 800; }
+
+.pb-champ {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    text-align: center;
+    border: 1.5px dashed color-mix(in srgb, var(--gold) 45%, var(--border));
+    background: color-mix(in srgb, var(--gold) 6%, var(--card));
+    border-radius: 10px;
+    padding: 22px 10px;
+    width: 100%;
+    flex: 1;
+}
+
+.pb-ring {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    border: 2px solid var(--gold);
+    color: var(--gold);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 19px;
+    font-weight: 800;
+    overflow: hidden;
+}
+
+.pb-ring img { width: 100%; height: 100%; object-fit: cover; }
+
+.pb-cname { font-weight: 800; font-size: 14.5px; }
+.pb-csub { font-size: 11.5px; color: var(--text-muted); }
+
+.pb-places {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 16px;
+}
+
+.pb-place {
+    border: 1.5px dashed var(--border);
+    border-radius: 10px;
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.pb-plab {
+    font-size: 10.5px;
+    font-weight: 800;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--text-subtle);
+    white-space: nowrap;
+}
+
+.pb-place--long .pb-plab {
+    font-size: 12.5px;
+    font-weight: 600;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--text-muted);
+    white-space: normal;
+}
+
+.pb-pteams { font-size: 12.5px; color: var(--text-muted); }
+.pb-pteams b { color: var(--text); font-weight: 700; }
+
+.pb-tb {
+    margin-top: 22px;
+    border-top: 1px solid var(--border);
+    padding-top: 14px;
+}
+
+.pb-tb-head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 2px;
+}
+
+.pb-tb-title { font-size: 16px; font-weight: 800; }
+
+.pb-tb-badge {
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .07em;
+    color: #92400e;
+    background: #fef3c7;
+    border: 1px solid #fde68a;
+    padding: 2px 7px;
+    border-radius: var(--radius-pill);
+    text-transform: uppercase;
+}
+
+.pb-tb-sub { font-size: 12.5px; color: var(--text-muted); }
+
+.pb-scroll--losers .pb-champ {
+    border-color: var(--border);
+    background: var(--card-soft);
+}
+
+.pb-scroll--losers .pb-ring {
+    border-color: var(--text-subtle);
+    color: var(--text-subtle);
+}
+
+@media (max-width: 768px) {
+    .pb-scroll-inner { min-width: 800px; }
+    .pb-places { grid-template-columns: 1fr; }
+
+    /* Phone tree: names and slot sub-lines wrap whole instead of truncating,
+       and matches in a column share the column height so connector centers
+       stay exact even when one card grows a second line. */
+    .pb-tname { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.25; }
+    .pb-tsub { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.3; }
+    .pb-ctx-seg { white-space: nowrap; }
+    .pb-col .pb-match {
+        flex: 1 1 0;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+    }
+
+    /* Faded right edge: the sideways scroll reads as intentional, not cut off. */
+    .pb-scroll {
+        -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 26px), transparent);
+        mask-image: linear-gradient(to right, #000 calc(100% - 26px), transparent);
+    }
+
+    /* Placement strip: label on its own line above the pairing. */
+    .pb-place { flex-direction: column; align-items: flex-start; gap: 3px; }
+
+    /* M1 Sleeper tiles (brackets of 3 rounds or fewer): the whole tree fits
+       one screen. Match cards dissolve; every team row becomes its own tile
+       with the name on a full-width line. Weeks replace round names in the
+       column heads when the caller knows them; the champion column folds
+       away (the final is the championship; its winner tile goes gold). */
+    .pb-scroll--tiles { overflow-x: visible; -webkit-mask-image: none; mask-image: none; }
+    .pb-scroll--tiles .pb-scroll-inner { min-width: 0; }
+    .pb-scroll--tiles .pb-conn { flex-basis: 22px; }
+    .pb-scroll--tiles .pb-head-sp { flex-basis: 22px; }
+    .pb-scroll--tiles .pb-head:has(.pb-head-wk) .pb-head-rd { display: none; }
+    .pb-scroll--tiles .pb-head-wk { display: inline; }
+    .pb-scroll--tiles .pb-head--champ,
+    .pb-scroll--tiles .pb-heads > .pb-head-sp:last-of-type { display: none; }
+    .pb-scroll--tiles .pb-cols > .pb-conn:last-of-type,
+    .pb-scroll--tiles .pb-col--champ { display: none; }
+    .pb-scroll--tiles .pb-match {
+        background: none; border: 0; box-shadow: none; padding: 0; gap: 5px;
+    }
+    .pb-scroll--tiles .pb-mhead { display: none; }
+    .pb-scroll--tiles .pb-trow {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        box-shadow: 0 1px 3px rgba(18, 45, 75, .05);
+        padding: 6px 7px;
+        flex-wrap: wrap;
+    }
+    .pb-scroll--tiles .pb-trow + .pb-trow { border-top: 0; }
+    .pb-scroll--tiles .pb-tmain { flex: 1 1 100%; order: 3; }
+    .pb-scroll--tiles .pb-tscore { margin-left: auto; font-size: 11px; }
+    .pb-scroll--tiles .pb-tname { font-size: 11.5px; }
+    .pb-scroll--tiles .pb-tsub { display: none; }
+    .pb-scroll--tiles .pb-trow:has(.pb-tname--tbd) .pb-tsub {
+        display: block; font-size: 10px;
+    }
+    .pb-scroll--tiles .pb-trow--winner {
+        border-color: #e3d193; background: #fffdf3;
+    }
+    .pb-scroll--tiles .pb-seed {
+        min-width: 17px; height: 18px; font-size: 10px; border-radius: 5px;
+    }
+    .pb-scroll--tiles .pb-av { width: 20px; height: 20px; font-size: 8.5px; }
+}
+
+/* Big-moment build-in for the tree, mirroring .br-mo-play.bracket: columns
+   land left to right (cols sit at odd child positions between connectors). */
+.br-mo-play.pb-wrap .pb-col {
+    animation: brBrkCol .5s var(--ease-out) both;
+}
+
+.br-mo-play.pb-wrap .pb-col:nth-child(3) { animation-delay: .30s; }
+.br-mo-play.pb-wrap .pb-col:nth-child(5) { animation-delay: .55s; }
+.br-mo-play.pb-wrap .pb-col:nth-child(7) { animation-delay: .80s; }
 
 .m-slide, .matchup-carousel .m-slide {
     flex: 0 0 100%;
@@ -21557,6 +21972,44 @@ img, svg, canvas {
     font-size: 15px;
     line-height: 1.5;
 }
+/* Quiet bench-check line at the foot of the Next steps card: the
+   sub-threshold (< 5.0 left) post-week result. Not an action, so no
+   priority rail, count or dismiss; just the message and the link. */
+.ns-bench-note {
+    --alert-tone: var(--warning);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+}
+.ns-bench-note.ns-bench-ok {
+    --alert-tone: var(--win);
+}
+.ns-bench-note .la-em {
+    font-weight: 700;
+    color: var(--alert-tone);
+}
+.ns-bench-note .os-section-link {
+    flex: 0 0 auto;
+    color: var(--accent);
+}
+.ns-bench-note .os-section-link:focus-visible {
+    outline: 2px solid var(--alert-tone);
+    outline-offset: 3px;
+    border-radius: var(--radius-sm);
+}
+@media (max-width: 640px) {
+    .ns-bench-note {
+        flex-wrap: wrap;
+        gap: 6px 12px;
+    }
+    .ns-bench-note .os-section-link {
+        margin-left: auto;
+    }
+}
 .ns-empty-big {
     font-size: 28px;
     margin-bottom: 8px;
@@ -24345,7 +24798,11 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
 .m-espn-badges-r { justify-self: end; }
 .m-espn-badges-c { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; text-align: center; justify-self: center; }
 .m-espn-badges .m-head-badges { margin-bottom: 0; min-height: 0; }
-.m-espn-score-row { display: grid; grid-template-columns: auto 1fr 1fr auto; gap: 12px; align-items: center; margin-bottom: 12px; }
+/* Avatar tracks are a fixed 52px, not auto: the row's geometry must not
+   depend on whether a team's logo exists or loads. With auto tracks, a
+   missing/hidden avatar collapses its track and the scores reflow into
+   the middle of the row. */
+.m-espn-score-row { display: grid; grid-template-columns: 52px 1fr 1fr 52px; gap: 12px; align-items: center; margin-bottom: 12px; }
 .m-espn-av { width: 52px; height: 52px; border-radius: 50%; object-fit: cover; background: var(--card-soft); flex-shrink: 0; }
 .m-espn-num { font-size: 32px; font-weight: 800; letter-spacing: -0.03em; line-height: 1; }
 .m-espn-num.m-proj-only { opacity: 0.55; }
@@ -46299,6 +46756,7 @@ a, button, [role="button"], [role="tab"], summary, label,
     /* Playoff Picture view: the bracket fills the panel height; its
        rounds already stretch and center their matches. */
     .std-rework .card.power .bracket { flex: 1 1 auto; min-height: 0; }
+    .std-rework .card.power .pb-wrap { flex: 1 1 auto; min-height: 0; }
     /* Playoff Odds view: the odds table takes the leftover height
        and its rows grow into it. */
     .std-rework .card.power .po-wrap {
@@ -46336,6 +46794,45 @@ a, button, [role="button"], [role="tab"], summary, label,
     .std-rework #stDetailsInner .standings-table th,
     .std-rework #stDetailsInner .standings-table td.num { white-space: nowrap; }
     .std-rework .st-tblscroll > .standings-shares-table { min-width: 340px; }
+}
+
+/* ---- Value Share table stretch (desktop standings two-col) -------
+   Mirror of the power panel stretch for the left card's Value Share
+   tab: the card already stretches to the row height (set by the
+   power card), so the shares view grows through the same flex chain
+   — card, tab panels, shares panel, scroll wrapper — and the table
+   itself flexes, which distributes the leftover height evenly
+   across its rows instead of leaving dead space under the last one.
+   Desktop only: at 1024px and under the columns stack and the table
+   keeps its natural height. Placed after the canonical .st-tblscroll
+   rule above so that rule stays the first .st-tblscroll in the file. */
+@media (min-width: 1025px) {
+    .std-rework .standings-main .standings-col > .card {
+        display: flex; flex-direction: column;
+    }
+    .std-rework .standings-main .standings-col > .card > .card-tabs { flex: 1 1 auto; min-height: 0; }
+    .std-rework .standings-main .standings-col > .card .tab-panels {
+        flex: 1 1 auto; min-height: 0;
+        display: flex; flex-direction: column;
+    }
+    .std-rework .tab-panel.standings-shares-panel.active {
+        flex: 1 1 auto; min-height: 0;
+        display: flex; flex-direction: column;
+    }
+    .std-rework #stSharesInner {
+        flex: 1 1 auto; min-height: 0;
+        display: flex; flex-direction: column;
+    }
+    .std-rework .standings-shares {
+        flex: 1 1 auto; min-height: 0;
+        display: flex; flex-direction: column;
+    }
+    .std-rework .standings-shares-note { flex: 0 0 auto; }
+    .std-rework .standings-shares .st-tblscroll {
+        flex: 1 1 auto; min-height: 0;
+        display: flex; flex-direction: column;
+    }
+    .std-rework .standings-shares-table { flex: 1 1 auto; }
 }
 
 /* Avatar placeholder so a team without an image still occupies its grid cell

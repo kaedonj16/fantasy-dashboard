@@ -2159,12 +2159,34 @@ def render_matchup_slide(
         return rec if rec is not None else (0, 0, 0)
 
     def _espn_avatar(t) -> str:
-        """Avatar img for the ESPN score row (flanks the big scores)."""
+        """Avatar img for the ESPN score row (flanks the big scores).
+
+        A team with no logo -- or a logo URL that fails to load -- keeps
+        its avatar slot via the generated monogram crest (the same
+        last-resort identity team_avatar uses). Hiding a failed img with
+        display:none removes the grid item entirely: auto-placement then
+        packs both scores and the surviving avatar into the middle of
+        the row and leaves the right half empty, which is the lopsided
+        header Kaedon screenshotted for a logo-less ESPN team.
+        """
         ava = t.get("avatar") or ""
+        crest = ""
+        try:
+            from dashboard_services.team_crest import team_crest_data_uri
+            crest = team_crest_data_uri(t.get("name") or "Team")
+        except Exception:
+            crest = ""
         if not ava:
+            if crest:
+                return (f"<img class='m-espn-av' src='{crest}' alt='' "
+                        f"loading='lazy' decoding='async'>")
             return "<div class='m-espn-av'></div>"
-        return (f"<img class='m-espn-av' src='{ava}' alt='' loading='lazy' "
-                f"decoding='async' onerror=\"this.style.display='none'\">")
+        if crest:
+            return (f"<img class='m-espn-av' src='{html.escape(str(ava), quote=True)}' "
+                    f"alt='' loading='lazy' decoding='async' "
+                    f"onerror=\"this.onerror=null;this.src='{crest}'\">")
+        return (f"<img class='m-espn-av' src='{html.escape(str(ava), quote=True)}' "
+                f"alt='' loading='lazy' decoding='async'>")
 
     def _espn_score_block(t, side: str) -> str:
         """Big score number with a small 'proj X' line underneath (when useful)."""

@@ -5,8 +5,10 @@ Design rules pinned here:
   rows carry graded_at); a row without a readable graded_at is never
   new, but still counts toward the cumulative record.
 - The cumulative tables are calibration.summarize_bands over the
-  current version's rows, byte for byte, so the email can never
-  disagree with the sidebar or the calibrate CLI.
+  current version's rows with the report's one-graded rate floor, so
+  the counts always match the sidebar and the calibrate CLI while the
+  rates print next to them even in thin weeks (a zero-graded group
+  still shows n/a: there is no rate to print).
 - A conversion is suggested only when the sample guards clear and the
   fitted curve's 50% crossing sits 5+ points from EMERGING_MIN_SCORE;
   inversions and invalid confidence are Investigate lines, never
@@ -137,7 +139,8 @@ def test_cumulative_tables_match_calibration_summarize_bands():
                + _rows("miss", 11, score=35.0, conf=30.0))
     old_version = _rows("hit", 7, version="weekly-v5")
     report, _ = _render(current + old_version)
-    expected = cal.summarize_bands(current)
+    expected = cal.summarize_bands(
+        current, min_sample=wr.REPORT_MIN_RATE_SAMPLE)
     assert report["cumulative"]["overall"] == expected["overall"]
     assert report["cumulative"]["score_bands"] == expected["score_bands"]
     assert (report["cumulative"]["confidence_bands"]
@@ -227,12 +230,29 @@ def test_inversion_produces_investigate_not_convert():
 
 
 def test_below_guard_produces_no_changes_with_counts():
-    report, (_, body) = _render(_rows("hit", 50, score=55.0))
+    report, (_, body) = _render(_rows("hit", 29, score=55.0))
     plan = report["suggested_changes"]
     assert plan["conversions"] == [] and plan["investigations"] == []
     assert "No changes suggested this week." in body
-    assert "Insufficient data: 50 graded calls under weekly-v6" in body
-    assert "(need 200)" in body
+    assert "Insufficient data: 29 graded calls under weekly-v6" in body
+    assert "(need 30)" in body
+
+
+def test_thin_week_rates_print_next_to_counts():
+    # The old 10-graded display floor hid every rate below it as n/a;
+    # the report now prints the rate next to the counts so the reader
+    # can judge the sample. A zero-graded group stays n/a.
+    rows = (_rows("hit", 2, score=55.0, conf=80.0)
+            + _rows("miss", 1, score=35.0, conf=30.0))
+    report, (_, body) = _render(rows)
+    assert "3 calls graded: 2 hits, 0 partials, 1 misses" in body
+    assert "hit rate 66.7%" in body
+    overall = report["cumulative"]["overall"]
+    assert overall["hit_rate"] == pytest.approx(2 / 3, abs=1e-3)
+    bands = {b["band"]: b for b in report["cumulative"]["score_bands"]}
+    assert bands["42-59"]["hit_rate"] == pytest.approx(1.0)
+    assert bands["60+"]["hit_rate"] is None
+    assert "hit_rate=n/a" in body
 
 
 def _clean_rows():

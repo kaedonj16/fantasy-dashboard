@@ -4,8 +4,10 @@ This module builds the weekly self-learning report for the breakout
 engine: how the surfaced calls that finished grading recently actually
 did, the season record so far (from
 :mod:`data_building.breakout_engine.calibration`, the same helpers the
-sidebar Track Record and the calibrate CLI use, so every surface
-agrees), and a concrete suggested-changes plan Kaedon can hand back to
+sidebar Track Record and the calibrate CLI use, so the counts agree on
+every surface; the report passes its own one-graded rate floor so thin
+weeks still print rates next to those counts), and a concrete
+suggested-changes plan Kaedon can hand back to
 Muse to apply. It is pure analysis over grade-row dicts: it writes
 nothing and changes no scoring, threshold, weight, or version. Only
 surfaced calls (breakout score >= 30, not watchlist/monitored, per
@@ -54,6 +56,12 @@ from data_building.breakout_engine.weekly_grading import is_surfaced_row
 
 WINDOW_DAYS = 7
 NOTABLE_LIMIT = 5
+# The report prints a rate whenever at least one call in the group has
+# graded, right next to the counts, so the reader can judge a thin sample
+# themselves; calibration's own 10-graded display floor still governs
+# the sidebar and the calibrate CLI. A group with zero graded calls has
+# no rate to print and stays n/a.
+REPORT_MIN_RATE_SAMPLE = 1
 # How far the fitted 50% crossing must sit from EMERGING_MIN_SCORE
 # before the plan suggests converting the threshold to it.
 CONVERT_MIN_SHIFT = 5.0
@@ -278,8 +286,10 @@ def build_weekly_report(rows: Sequence[Dict[str, Any]], season: int,
     current = [r for r in rows
                if str(r.get("scoring_version") or "") == SCORING_VERSION]
     new_rows = newly_graded_rows(rows, as_of, window_days)
-    new_bucket = calibration.summarize_bands(new_rows)["overall"]
-    cumulative = calibration.summarize_bands(current)
+    new_bucket = calibration.summarize_bands(
+        new_rows, min_sample=REPORT_MIN_RATE_SAMPLE)["overall"]
+    cumulative = calibration.summarize_bands(
+        current, min_sample=REPORT_MIN_RATE_SAMPLE)
     return {
         "season": int(season),
         "as_of": as_of,

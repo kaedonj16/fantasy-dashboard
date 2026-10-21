@@ -14,7 +14,6 @@ def build_dashboard_body(ctx: dict) -> str:
         _owner_to_rid_map,
         _playoff_sim_cached,
         _playoff_tile_from_cache,
-        _render_bench_check,
         _render_season_review_card,
         _render_usage_movers,
         _losing_streak_trade_html,
@@ -82,8 +81,6 @@ def build_dashboard_body(ctx: dict) -> str:
         last_final_week = int(finalized_df["week"].max())
     else:
         last_final_week = 0
-
-    bench_check_html = _render_bench_check(ctx, viewer_roster_id, last_final_week)
 
     # Unified Next steps queue: one ranked action list across lineup,
     # waivers, and trades. Replaces the old waiver-only card.
@@ -158,7 +155,6 @@ def build_dashboard_body(ctx: dict) -> str:
         matchup_html = ""  # dashboard redesign: preview card uses slides[0]
     else:
         matchup_html = ""
-        bench_check_html = ""
         _dash_preview_slide = ""
 
     # League Awards: all-time history across seasons; fall back to the
@@ -512,9 +508,8 @@ def build_dashboard_body(ctx: dict) -> str:
     # follows the user across devices and is shared with the portfolio page.
     # localStorage remains the paint cache (and the whole store for guests).
     # Individual Next steps actions dismiss the same way, per action id
-    # (nsitem- keys in the same map). Always included: the bench-check card
-    # (rendered in the matchup panel) is dismissable too.
-    if _action_cards or (bench_check_html or "").strip():
+    # (nsitem- keys in the same map).
+    if _action_cards:
         import json as _json
 
         _dismiss_script = f"""
@@ -1232,8 +1227,6 @@ def build_dashboard_body(ctx: dict) -> str:
         {_bb_outlook_html}
 
         <div id="sinceLastVisitCard" class="slv-wrap" data-slv-init="1"></div>
-
-        {bench_check_html}
       </main>
 
       <aside class="os-right-col os-side-rail">

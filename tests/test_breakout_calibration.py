@@ -6,9 +6,10 @@ Design rules pinned here:
 - Bucket shape and the 10-graded rate floor mirror the grader exactly.
 - The isotonic fit is non-decreasing by construction; a partial verdict
   is worth 0.5 of a hit (expected-value style).
-- Findings never conclude anything below the sample guards (200 graded
-  for the current version, 30 graded per compared band) and never
-  recommend a change; zero rows is a sane input everywhere.
+- Findings never conclude anything below the sample guards (30 graded
+  for the current version, 5 graded per band in a monotonicity pair,
+  30 graded per band for the other comparisons) and never recommend a
+  change; zero rows is a sane input everywhere.
 """
 from __future__ import annotations
 
@@ -219,20 +220,60 @@ def test_findings_zero_rows():
 
 
 def test_findings_below_version_guard_reports_counts():
-    rows = _rows("hit", 30, score=50.0) + _rows("miss", 20, score=50.0)
+    rows = _rows("hit", 17, score=50.0) + _rows("miss", 12, score=50.0)
     out = cal.findings(rows)
     assert len(out) == 4
-    assert all(f.startswith("insufficient data: 50 graded calls under "
-                            "weekly-v6 (need 200)") for f in out)
+    assert all(f.startswith("insufficient data: 29 graded calls under "
+                            "weekly-v6 (need 30)") for f in out)
+
+
+def test_findings_gate_opens_at_exactly_30_graded():
+    # 30 graded calls, all in one score band: the version gate clears,
+    # so no finding is the gate's own insufficient-data line; each check
+    # reports its own result (here, thin-band insufficiency and the
+    # fitted curve's crossing).
+    rows = _rows("hit", 30, score=55.0, conf=80.0)
+    out = cal.findings(rows)
+    assert not any(f.startswith("insufficient data: 30 graded calls")
+                   for f in out)
+    assert any("fitted score curve reaches a 50% hit value" in f
+               for f in out)
+
+
+def test_findings_monotonicity_band_floor_is_five():
+    # Adjacent bands carrying exactly 5 graded calls each take part in
+    # the monotonicity comparison, even though the separation and
+    # confidence comparisons keep their 30-per-band floor.
+    rows = []
+    rows += _rows("miss", 5, score=30.0, conf=50.0)   # 18-41, value 0
+    rows += _rows("hit", 5, score=50.0, conf=50.0)    # 42-59, value 1
+    rows += _rows("hit", 20, score=80.0, conf=50.0)   # 60+, value 1
+    out = cal.findings(rows)
+    assert any("Hit value rises with score" in f for f in out)
+
+
+def test_findings_monotonicity_ignores_bands_under_five():
+    # A 4-graded band is not evidence either way: the perfect thin band
+    # above an all-miss thick band must not read as an inversion, and
+    # with only one qualifying band the check says so with the counts.
+    rows = (_rows("hit", 4, score=30.0, conf=50.0)
+            + _rows("miss", 26, score=50.0, conf=50.0))
+    out = cal.findings(rows)
+    assert not any("not monotonic" in f for f in out)
+    mono = [f for f in out if "monotonicity" in f]
+    assert mono and mono[0].startswith("insufficient data")
+    assert "only 1 of the 4 score bands have 5 or more graded calls" \
+        in mono[0]
+    assert "30 graded calls, need 30" in mono[0]
 
 
 def test_findings_version_defaults_to_the_most_graded():
-    rows = (_rows("hit", 150, version="weekly-v5")
-            + _rows("hit", 60, version="weekly-v6"))
+    rows = (_rows("hit", 25, version="weekly-v5")
+            + _rows("hit", 20, version="weekly-v6"))
     out = cal.findings(rows)
-    assert all("weekly-v5" in f and "150 graded calls" in f for f in out)
+    assert all("weekly-v5" in f and "25 graded calls" in f for f in out)
     out_v6 = cal.findings(rows, "weekly-v6")
-    assert all("weekly-v6" in f and "60 graded calls" in f for f in out_v6)
+    assert all("weekly-v6" in f and "20 graded calls" in f for f in out_v6)
 
 
 def test_findings_healthy_engine_all_positive():
@@ -271,13 +312,14 @@ def test_findings_confidence_flag_fires_when_backwards():
 
 
 def test_findings_thin_bands_stay_insufficient_per_check():
-    # 200 graded overall, but 170 sit in one band: band comparisons have
-    # no qualifying pair and must say so instead of concluding.
+    # 182 graded overall, but 170 sit in one band and the other score
+    # bands hold 4 graded calls each: band comparisons have no
+    # qualifying pair and must say so instead of concluding.
     rows = _rows("hit", 100, score=80.0, conf=50.0)
     rows += _rows("miss", 70, score=80.0, conf=50.0)
-    rows += _rows("hit", 10, score=10.0, conf=50.0)
-    rows += _rows("hit", 10, score=30.0, conf=50.0)
-    rows += _rows("hit", 10, score=50.0, conf=50.0)
+    rows += _rows("hit", 4, score=10.0, conf=50.0)
+    rows += _rows("hit", 4, score=30.0, conf=50.0)
+    rows += _rows("hit", 4, score=50.0, conf=50.0)
     out = cal.findings(rows)
     assert any(f.startswith("insufficient data") and "monotonicity" in f
                for f in out)

@@ -654,17 +654,22 @@ def _trade_ai_takeaway(summary: str) -> str:
     return takeaway or text
 
 
+# Verdict -> (CSS modifier suffix, glyph). The color itself lives in
+# dashboard.css under .trade-ai-verdict-badge-<suffix> /
+# .trade-ai-conf-dot-<suffix>: the AI HTML sanitizer strips inline style
+# attributes, so a color carried only in style="background:..." never
+# reaches the page (the badge rendered as white text on no background).
 _TRADE_AI_VERDICTS = {
-    "ACCEPT": ("#16a34a", "&#10003;"),
-    "DECLINE": ("#dc2626", "&#10005;"),
-    "COUNTER": ("#d97706", "&#8646;"),
+    "ACCEPT": ("accept", "&#10003;"),
+    "DECLINE": ("decline", "&#10005;"),
+    "COUNTER": ("counter", "&#8646;"),
 }
 
 
 def render_trade_ai_html(result: dict) -> str:
     raw_verdict = str(result.get("verdict") or "COUNTER").upper()
     verdict = html.escape(raw_verdict)
-    verdict_color, verdict_glyph = _TRADE_AI_VERDICTS.get(raw_verdict, _TRADE_AI_VERDICTS["COUNTER"])
+    verdict_mod, verdict_glyph = _TRADE_AI_VERDICTS.get(raw_verdict, _TRADE_AI_VERDICTS["COUNTER"])
     helps = result.get("helps") or []
     risks = result.get("risks") or []
     counter = html.escape(str(result.get("counter") or ""))
@@ -690,12 +695,12 @@ def render_trade_ai_html(result: dict) -> str:
     if conf_label:
         conf_html = (
             f'<div class="trade-ai-conf-pill">'
-            f'<span class="trade-ai-conf-dot" style="background:{verdict_color};"></span>'
+            f'<span class="trade-ai-conf-dot trade-ai-conf-dot-{verdict_mod}"></span>'
             f"{html.escape(conf_label)}</div>"
         )
     verdict_frag = f"""
       <div class="trade-ai-verdict-frag" data-verdict="{verdict}">
-        <div class="trade-ai-verdict-badge" style="background:{verdict_color};">{verdict_glyph} {verdict}</div>
+        <div class="trade-ai-verdict-badge trade-ai-verdict-badge-{verdict_mod}">{verdict_glyph} {verdict}</div>
         {conf_html}
       </div>
     """

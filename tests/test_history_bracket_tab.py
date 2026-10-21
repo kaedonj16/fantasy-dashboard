@@ -171,9 +171,9 @@ def test_main_tabs_render_bracket_with_data(offline_client):
     for tab in ("bracket", "awards", "recap", "rivalries"):
         assert f'data-tab="{tab}"' in body
     assert "Playoff Bracket" in body
-    assert "bracket-round" in body
+    assert "pb-match" in body
     # Winner (roster 1) gets the bold-winner class
-    assert "team-row--winner" in body
+    assert "pb-trow--winner" in body
 
 
 def test_bracket_tab_empty_state_without_bracket(offline_client):

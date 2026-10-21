@@ -87,17 +87,59 @@ def test_bye_alert_suppressed_when_swap_covers_player():
     assert 'str(i.get("pid") or "") in _swap_covered_pids' in src
 
 
-def test_bench_check_card_suppressed_when_next_steps_fires():
-    """The standalone bench-check card is suppressed at >= 5.0, when the
-    Next steps queue surfaces the same alert. No duplication between the
-    two surfaces."""
+def test_bench_check_note_suppressed_when_next_steps_fires():
+    """The quiet bench-check note is suppressed at >= 5.0, when the
+    Next steps queue surfaces the same alert as an action. No duplication
+    between the note and the action."""
     src = (ROOT / "app.py").read_text(encoding="utf-8")
-    start = src.find("def _render_bench_check")
+    start = src.find("def _next_steps_bench_check_note")
     end = src.find("def render_power_and_playoffs", start)
     body = src[start:end]
-    # Suppression guard: card returns empty at the Next steps threshold.
+    # Suppression guard: note returns empty at the Next steps threshold.
     assert "if left_on_bench >= 5.0:" in body
     assert 'return ""' in body
+
+
+def test_no_standalone_bench_check_card():
+    """The bench check never renders as its own dashboard card: the old
+    standalone renderer is gone and the dashboard page has no slot for it.
+    Its only surface is inside the Next steps card."""
+    src = (ROOT / "app.py").read_text(encoding="utf-8")
+    assert "def _render_bench_check" not in src
+    assert 'data-action-card="bench-check"' not in src
+    dash = (ROOT / "dashboard_services" / "pages" / "dashboard_page.py").read_text(encoding="utf-8")
+    assert "_render_bench_check" not in dash
+    assert "bench_check_html" not in dash
+
+
+def test_bench_check_note_is_quiet_line_not_action():
+    """The note renders inside both Next steps states (empty and with
+    actions), carries no per-item dismiss or count hooks, and the queue
+    count still derives only from the actions list."""
+    src = (ROOT / "app.py").read_text(encoding="utf-8")
+    note_start = src.find("def _next_steps_bench_check_note")
+    note_end = src.find("def render_power_and_playoffs", note_start)
+    note_body = src[note_start:note_end]
+    assert 'class="ns-bench-note' in note_body
+    assert "Lineup efficiency" in note_body
+    # Not an action: no dismiss control, no queue-item markup.
+    assert "data-dismiss" not in note_body
+    assert "data-ns-item" not in note_body
+    assert "<section" not in note_body
+    queue_start = src.find("def _render_next_steps_queue")
+    queue_end = src.find("def _nfl_regular_season_kickoff_ms", queue_start)
+    queue_body = src[queue_start:queue_end]
+    assert "bench_note_html = _next_steps_bench_check_note(" in queue_body
+    assert "{bench_note_html}" in queue_body
+    # Count is actions only; the note never joins the actions list.
+    assert "_n = len(actions)" in queue_body
+    assert "actions.append" not in note_body
+
+
+def test_bench_check_note_css():
+    css = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
+    assert ".ns-bench-note" in css
+    assert ".ns-bench-note.ns-bench-ok" in css
 
 
 def test_next_steps_item_dismiss_markup():
@@ -212,17 +254,18 @@ def test_next_steps_fit_frame_css():
 
 
 def test_bench_check_thresholds_agree():
-    """Both surfaces must agree on the 5.0 threshold: the card suppresses
-    exactly where the Next steps item fires, so there is no gap and no
-    overlap."""
+    """Both Next steps surfaces must agree on the 5.0 threshold: the quiet
+    note suppresses exactly where the Next steps action fires, so there is
+    no gap and no overlap."""
     src = (ROOT / "app.py").read_text(encoding="utf-8")
-    # Next steps item fires at >= 5.0.
+    # Next steps action fires at >= 5.0.
     ns_start = src.find("def _next_steps_bench_check_actions")
     ns_end = src.find("def _render_next_steps_queue", ns_start)
     ns_body = src[ns_start:ns_end]
     assert "if left < 5.0:" in ns_body
-    # Card still fires for 1.0-4.9 (nothing-bench message below 1.0).
-    card_start = src.find("def _render_bench_check")
-    card_end = src.find("def render_power_and_playoffs", card_start)
-    card_body = src[card_start:card_end]
-    assert "if left_on_bench < 1.0:" in card_body
+    # Note still fires for 1.0-4.9 (nothing-bench message below 1.0).
+    note_start = src.find("def _next_steps_bench_check_note")
+    note_end = src.find("def render_power_and_playoffs", note_start)
+    note_body = src[note_start:note_end]
+    assert "if left_on_bench >= 5.0:" in note_body
+    assert "if left_on_bench < 1.0:" in note_body
