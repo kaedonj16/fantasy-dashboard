@@ -46338,6 +46338,45 @@ a, button, [role="button"], [role="tab"], summary, label,
     .std-rework .st-tblscroll > .standings-shares-table { min-width: 340px; }
 }
 
+/* ---- Value Share table stretch (desktop standings two-col) -------
+   Mirror of the power panel stretch for the left card's Value Share
+   tab: the card already stretches to the row height (set by the
+   power card), so the shares view grows through the same flex chain
+   — card, tab panels, shares panel, scroll wrapper — and the table
+   itself flexes, which distributes the leftover height evenly
+   across its rows instead of leaving dead space under the last one.
+   Desktop only: at 1024px and under the columns stack and the table
+   keeps its natural height. Placed after the canonical .st-tblscroll
+   rule above so that rule stays the first .st-tblscroll in the file. */
+@media (min-width: 1025px) {
+    .std-rework .standings-main .standings-col > .card {
+        display: flex; flex-direction: column;
+    }
+    .std-rework .standings-main .standings-col > .card > .card-tabs { flex: 1 1 auto; min-height: 0; }
+    .std-rework .standings-main .standings-col > .card .tab-panels {
+        flex: 1 1 auto; min-height: 0;
+        display: flex; flex-direction: column;
+    }
+    .std-rework .tab-panel.standings-shares-panel.active {
+        flex: 1 1 auto; min-height: 0;
+        display: flex; flex-direction: column;
+    }
+    .std-rework #stSharesInner {
+        flex: 1 1 auto; min-height: 0;
+        display: flex; flex-direction: column;
+    }
+    .std-rework .standings-shares {
+        flex: 1 1 auto; min-height: 0;
+        display: flex; flex-direction: column;
+    }
+    .std-rework .standings-shares-note { flex: 0 0 auto; }
+    .std-rework .standings-shares .st-tblscroll {
+        flex: 1 1 auto; min-height: 0;
+        display: flex; flex-direction: column;
+    }
+    .std-rework .standings-shares-table { flex: 1 1 auto; }
+}
+
 /* Avatar placeholder so a team without an image still occupies its grid cell
    (otherwise the empty slot collapses the power-leaderboard row layout). */
 .pwr-noav { display: inline-block; background: var(--accent-soft); border: 1px solid var(--border); }
