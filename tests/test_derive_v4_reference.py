@@ -1,8 +1,9 @@
 """
-Tests for scripts/derive_v4_reference.py v1.3 behavior: the
+Tests for scripts/derive_v4_reference.py v1.4 behavior: the
 play-by-play targets stub, the per-class derive cache, the
 stat-coverage gate, and the games-played plumbing (live loads
-fetch GP; GP-less cache entries read as misses).
+fetch GP stateless; GP-less and pre-v1.4 cache entries read as
+misses).
 
 No network, no DB, no CFBD key: the backtest machinery and the
 current model's scorer are replaced with fakes via monkeypatch,
@@ -76,11 +77,13 @@ def _install_fake_machinery(monkeypatch, classes_map):
     monkeypatch.setattr(ingestion, "fetch_cfbd_targets_from_plays",
                         ingestion.fetch_cfbd_targets_from_plays)
 
-    counts = {"cfbd_loads": 0, "gp_flags": []}
+    counts = {"cfbd_loads": 0, "gp_flags": [], "stateless_flags": []}
 
-    def fake_cfbd(year, draft_class, fetch_games_played=False):
+    def fake_cfbd(year, draft_class, fetch_games_played=False,
+                  gp_stateless=False):
         counts["cfbd_loads"] += 1
         counts["gp_flags"].append(fetch_games_played)
+        counts["stateless_flags"].append(gp_stateless)
         return {}
 
     def fake_build(draft_class, athleticism, year, college_stats):
@@ -194,7 +197,7 @@ class TestCoverageGate:
         assert os.path.exists(out)
         assert counts["cfbd_loads"] == 1
         prov = artifact["provenance"]
-        assert prov["script"].endswith("v1.3")
+        assert prov["script"].endswith("v1.4")
         assert prov["class_coverage"] == {"2016": 1.0}
         assert "derive_cache" in prov and "coverage_gate" in prov
 
@@ -222,8 +225,11 @@ class TestGamesPlayed:
             [2016], str(tmp_path / "v4_reference.json"),
             cache_dir=str(tmp_path / "cache"))
         # The derive's live loads ask the backtest loader for real
-        # games-played counts - the whole point of v1.3.
+        # games-played counts - the whole point of v1.3 - fetched
+        # stateless since v1.4 (the tracked lookup's marks describe
+        # totals the derive never persists).
         assert counts["gp_flags"] == [True]
+        assert counts["stateless_flags"] == [True]
         assert "games_played" in artifact["provenance"]
 
     def test_gpless_cache_entry_reads_as_miss(self, tmp_path):
@@ -255,6 +261,27 @@ class TestGamesPlayed:
         drv._write_class_cache(cache_dir, 2016, prospects, rows,
                                games_played=True)
         assert drv._read_class_cache(cache_dir, 2016) is not None
+
+    def test_pre_v14_cache_version_reads_as_miss(self, tmp_path):
+        # CACHE_VERSION bumped to 2 in v1.4: an entry written by any
+        # earlier script - including a v1.3 run whose GP came from
+        # the poisoned tracker - is retired unread, however healthy
+        # its payload looks.
+        prospects = [drv._extract_prospect(_prospect(f"P{i}"))
+                     for i in range(3)]
+        rows = {p["player_id"]: drv._extract_component_row(_score_row(p))
+                for p in prospects}
+        cache_dir = str(tmp_path / "cache")
+        drv._write_class_cache(cache_dir, 2016, prospects, rows,
+                               games_played=True)
+        path = os.path.join(cache_dir, "2016.json")
+        with open(path, encoding="utf-8") as fh:
+            payload = json.load(fh)
+        assert payload["cache_version"] == drv.CACHE_VERSION == 2
+        payload["cache_version"] = 1
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh)
+        assert drv._read_class_cache(cache_dir, 2016) is None
 
 
 def _wr_prospect(pid, rec_yds, gp):

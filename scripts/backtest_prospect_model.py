@@ -234,6 +234,7 @@ def _load_cfbd_college_stats(
     draft_year: int,
     draft_class: List[Dict[str, Any]],
     fetch_games_played: bool = False,
+    gp_stateless: bool = False,
 ) -> Dict[str, List[Dict[str, Any]]]:
     """
     Fetch CFBD college stats for `draft_year` and match by name to the nflverse
@@ -246,11 +247,17 @@ def _load_cfbd_college_stats(
     prices per-game season legs and refuses to default games played,
     so without the real counts its legs cannot price at all.
 
+    gp_stateless is forwarded likewise (v4 path only): the GP lookup
+    then ignores the DB week tracker, because a backtest's GP totals
+    are never persisted - tracked marks would claim weeks whose
+    counts exist nowhere (the derive v1.3 failure).
+
     Gracefully returns {} if CFBD_API_KEY is not set or the API is unreachable.
     """
     print(f"[backtest]   Fetching CFBD college stats for {draft_year} class…")
     cfbd_raw = fetch_cfbd_college_stats(
-        draft_year, skip_sagarin=True, fetch_games_played=fetch_games_played)
+        draft_year, skip_sagarin=True, fetch_games_played=fetch_games_played,
+        gp_stateless=gp_stateless)
     if not cfbd_raw:
         print("[backtest]   CFBD returned no data (key missing or API unreachable)")
         return {}
@@ -397,11 +404,15 @@ def _run_draft_class_backtest(
     print(f"[backtest]   Combine data for {len(athleticism)} players")
 
     # v4 measures under the same conditions the reference artifact
-    # was derived under: real games-played counts fetched, per-game
-    # legs priced on them. The v3 path keeps the incumbent no-GP
-    # load, byte-identical to every run this harness has printed.
+    # was derived under: real games-played counts fetched STATELESS
+    # (the DB week tracker is the live pipeline's state; a backtest
+    # persists no GP totals for it to read back), per-game legs
+    # priced on them. The v3 path keeps the incumbent no-GP load,
+    # byte-identical to every run this harness has printed.
     college_stats = _load_cfbd_college_stats(
-        draft_year, draft_class, fetch_games_played=(_MODEL_CHOICE == "v4"))
+        draft_year, draft_class,
+        fetch_games_played=(_MODEL_CHOICE == "v4"),
+        gp_stateless=(_MODEL_CHOICE == "v4"))
 
     prospects, consensus_map = _build_prospect_dicts(
         draft_class, athleticism, draft_year, college_stats
