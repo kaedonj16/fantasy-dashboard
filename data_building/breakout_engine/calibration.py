@@ -54,9 +54,17 @@ MIN_RATE_SAMPLE = 10
 # Findings guards. Below these counts a check reports "insufficient data"
 # with the actual counts instead of a conclusion: small samples produce
 # noise, not signal, and a calibration finding a human might act on needs
-# more than the display floor.
-MIN_FINDING_GRADED = 200
+# more than the display floor. The version gate sits at 30 graded calls
+# (about a season's worth at the current surfacing pace) because findings
+# only ever feed a human-approved SCORING_VERSION bump; the per-band
+# floors for the separation and confidence comparisons stay at 30.
+MIN_FINDING_GRADED = 30
 MIN_FINDING_BAND_GRADED = 30
+# The monotonicity check compares adjacent score bands pairwise, so a
+# band joins it with far fewer graded calls than the other comparisons
+# need. Below this floor a band is reported as insufficient rather than
+# treated as evidence either way.
+MIN_MONOTONICITY_BAND_GRADED = 5
 
 # (label, lower bound inclusive, upper bound exclusive or None)
 SCORE_BANDS: Tuple[Tuple[str, float, Optional[float]], ...] = (
@@ -280,8 +288,10 @@ def findings(rows: Sequence[Dict[str, Any]],
     Checks run on the current scoring version's graded calls (the given
     ``scoring_version``, else the version with the most graded rows).
     Guards: below ``MIN_FINDING_GRADED`` graded calls for that version,
-    every check reports insufficient data; a band comparison also needs
-    ``MIN_FINDING_BAND_GRADED`` graded calls in each band it compares.
+    every check reports insufficient data; the monotonicity check needs
+    ``MIN_MONOTONICITY_BAND_GRADED`` graded calls in each band of an
+    adjacent pair, and the other band comparisons need
+    ``MIN_FINDING_BAND_GRADED`` graded calls in each band they compare.
     Findings state observed facts only: they never recommend a threshold
     or any other change.
     """
@@ -317,21 +327,33 @@ def findings(rows: Sequence[Dict[str, Any]],
     # (a) Monotonicity: hit value should not fall between adjacent score
     # bands that both carry enough graded calls.
     labels = [label for label, _lo, _hi in SCORE_BANDS]
+    qualifying = [label for label in labels
+                  if len(score_groups.get(label, []))
+                  >= MIN_MONOTONICITY_BAND_GRADED]
     pairs = []
     for lower, upper in zip(labels, labels[1:]):
         lower_rows = score_groups.get(lower, [])
         upper_rows = score_groups.get(upper, [])
-        if (len(lower_rows) >= MIN_FINDING_BAND_GRADED
-                and len(upper_rows) >= MIN_FINDING_BAND_GRADED):
+        if (len(lower_rows) >= MIN_MONOTONICITY_BAND_GRADED
+                and len(upper_rows) >= MIN_MONOTONICITY_BAND_GRADED):
             pairs.append((lower, lower_rows, upper, upper_rows))
     if not pairs:
         counts = ", ".join(
             f"{label} {len(score_groups.get(label, []))}" for label in labels)
-        out.append(_insufficient(
-            "score-band monotonicity",
-            f"no adjacent score-band pair has {MIN_FINDING_BAND_GRADED} "
-            f"graded calls in both bands under {scoring_version} "
-            f"(graded by band: {counts})"))
+        if len(qualifying) < 2:
+            detail = (
+                f"only {len(qualifying)} of the {len(labels)} score "
+                f"bands have {MIN_MONOTONICITY_BAND_GRADED} or more "
+                f"graded calls under {scoring_version} ({n_current} "
+                f"graded calls, need {MIN_FINDING_GRADED} with at least "
+                f"2 qualifying bands; graded by band: {counts})")
+        else:
+            detail = (
+                f"no adjacent score-band pair has "
+                f"{MIN_MONOTONICITY_BAND_GRADED} graded calls in both "
+                f"bands under {scoring_version} "
+                f"(graded by band: {counts})")
+        out.append(_insufficient("score-band monotonicity", detail))
     else:
         inversions = []
         for lower, lower_rows, upper, upper_rows in pairs:
