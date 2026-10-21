@@ -33,9 +33,9 @@ def test_home_platform_chips_label_yahoo_and_mfl():
     assert 'Yahoo <span class="home-chip-note">Soon</span>' not in APP_PY
     assert '<span class="home-platform-chip">MFL</span>' in APP_PY
     assert '<span class="home-platform-chip">Fleaflicker</span>' in APP_PY
-    assert 'data-platform="yahoo">Yahoo</button>' in APP_PY
-    assert 'data-platform="mfl">MFL</button>' in APP_PY
-    assert 'data-platform="fleaflicker">Fleaflicker</button>' in APP_PY
+    assert 'data-platform="yahoo"><span class="plat-name">Yahoo</span>' in APP_PY
+    assert 'data-platform="mfl"><span class="plat-name">MFL</span>' in APP_PY
+    assert 'data-platform="fleaflicker"><span class="plat-name">Fleaflicker</span>' in APP_PY
     assert 'MFL <span class="home-chip-note">Public leagues</span>' not in APP_PY
     assert 'MFL <span class="platform-limit">Public</span>' not in APP_PY
     assert "Sleeper, ESPN, Yahoo, MFL, and Fleaflicker." in APP_PY

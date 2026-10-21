@@ -42,8 +42,8 @@ def test_guides_are_long_form_with_sections():
 
 def test_homepage_editorial_precedes_connect_card_in_dom():
     source = (ROOT / "app.py").read_text()
-    hero = source.index("home-hero-left")
-    previews = source.index('<section class="home-previews">')
+    hero = source.index('<section class="home-hero')
+    previews = source.index("Built for the whole week")
     faq = source.index('<section class="faq">')
     card = source.index('<div class="home-hero-right">')
     # Hero intro first, then editorial sections, then the account machinery.

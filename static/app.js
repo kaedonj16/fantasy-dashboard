@@ -18256,6 +18256,146 @@ if (document.readyState === 'loading') {
 })();
 // [tooltip-positioner:end]
 
+// ── Guest landing rework: reveal, hero count-up, live demos ─────────────
+// Defined before the @public-js:core-end marker so the guest bundle
+// (public.js) carries it. Everything is element-guarded: it only runs on
+// the guest landing, and if any piece is missing the page stays static.
+(function landingRework() {
+  const onHome = document.querySelector(".home-page");
+  if (!onHome) return;
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  document.documentElement.classList.add("ld-js");
+
+  // Scroll-in reveals.
+  const rvEls = document.querySelectorAll(".ld-rv");
+  if (rvEls.length) {
+    if (reduceMotion || !("IntersectionObserver" in window)) {
+      rvEls.forEach((el) => el.classList.add("in"));
+    } else {
+      const io = new IntersectionObserver((entries) => {
+        entries.forEach((e) => {
+          if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); }
+        });
+      }, { threshold: 0.12 });
+      rvEls.forEach((el) => io.observe(el));
+    }
+  }
+
+  // Hero board: scores count up, win bar sweeps to its real split.
+  const scores = document.querySelectorAll(".ld-board-wrap [data-count]");
+  const track = document.querySelector(".ld-board-wrap .m-wp-track");
+  if (!reduceMotion && (scores.length || track)) {
+    const pctEls = document.querySelectorAll(".ld-board-wrap .m-wp-pct");
+    let target = 64;
+    if (track) {
+      const m = /#22c55e\s+([\d.]+)%/.exec(track.style.background || "");
+      if (m) target = parseFloat(m[1]);
+    }
+    const t0 = performance.now(), dur = 950;
+    const step = (now) => {
+      const p = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - p, 3);
+      scores.forEach((el) => {
+        const t = parseFloat(el.getAttribute("data-count"));
+        el.textContent = (t * e).toFixed(1);
+      });
+      if (track) {
+        const cur = 50 + (target - 50) * e;
+        track.style.background = `linear-gradient(to right,#22c55e ${cur}%,rgba(148,163,184,0.35) ${cur}%)`;
+        if (pctEls.length === 2) {
+          pctEls[0].textContent = `${Math.round(cur)}%`;
+          pctEls[1].textContent = `${Math.round(100 - cur)}%`;
+        }
+      }
+      if (p < 1) requestAnimationFrame(step);
+      else scores.forEach((el) => { el.textContent = parseFloat(el.getAttribute("data-count")).toFixed(1); });
+    };
+    requestAnimationFrame(step);
+  }
+
+  // Live demos (pools rendered server-side from the site's own data).
+  let data = null;
+  try {
+    const raw = document.getElementById("ldDemoData");
+    if (raw) data = JSON.parse(raw.textContent || "{}");
+  } catch (e) { data = null; }
+  const shuffle = (arr) => {
+    const a = (arr || []).slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  };
+  function runDemo(ids, pool, label) {
+    const qEl = document.getElementById(ids.q), optsEl = document.getElementById(ids.opts);
+    const vEl = document.getElementById(ids.v), nEl = document.getElementById(ids.n);
+    if (!qEl || !optsEl || !vEl || !nEl) return;
+    if (!pool || !pool.length) {
+      const sec = qEl.closest(".ld-sec");
+      if (sec) sec.style.display = "none";
+      return;
+    }
+    const order = shuffle(pool);
+    let idx = 0, cur = null, locked = false;
+    function render() {
+      locked = false;
+      const pair = order[idx % order.length];
+      const flip = Math.random() < 0.5;
+      const disp = flip ? [pair.b, pair.a] : [pair.a, pair.b];
+      const winner = pair.pick === 1 ? pair.b : pair.a;
+      cur = { pair, disp, winSide: disp.indexOf(winner) };
+      const L = disp[0], R = disp[1];
+      qEl.textContent = pair.q;
+      vEl.hidden = true; vEl.className = "ld-demo-verdict"; vEl.innerHTML = "";
+      nEl.hidden = true;
+      optsEl.innerHTML = "";
+      [L, R].forEach((pl, side) => {
+        const b = document.createElement("button");
+        b.type = "button"; b.className = "ld-opt";
+        b.innerHTML = `<div class="nm"></div><div class="meta"></div><div class="pr"></div>`;
+        b.querySelector(".nm").textContent = pl.n;
+        b.querySelector(".meta").textContent = pl.m;
+        const pr = b.querySelector(".pr");
+        if (label === "value") pr.textContent = "?";
+        else pr.innerHTML = `${pl.pr}<span>PROJ PTS</span>`;
+        b.addEventListener("click", () => answer(side, b));
+        optsEl.appendChild(b);
+      });
+    }
+    function countVal(el, target) {
+      if (reduceMotion) { el.innerHTML = `${Math.round(target).toLocaleString()}<span>VALUE</span>`; return; }
+      const t0 = performance.now(), dur = 600;
+      const step = (now) => {
+        const p = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - p, 3);
+        el.innerHTML = `${Math.round(target * e).toLocaleString()}<span>VALUE</span>`;
+        if (p < 1) requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    }
+    function answer(side, btn) {
+      if (locked) return;
+      locked = true;
+      const right = side === cur.winSide;
+      const opts = Array.from(optsEl.children);
+      opts.forEach((o, i) => {
+        o.classList.toggle("pick", o === btn);
+        o.classList.toggle("dim", o !== btn);
+        if (label === "value") countVal(o.querySelector(".pr"), cur.disp[i].v);
+      });
+      vEl.className = `ld-demo-verdict ${right ? "win" : "lose"}`;
+      vEl.innerHTML = `<b>${right ? "Called it." : "Not quite."}</b> ${cur.pair.why}`;
+      vEl.hidden = false;
+      nEl.hidden = false;
+    }
+    nEl.addEventListener("click", () => { idx += 1; render(); });
+    render();
+  }
+  if (data) {
+    runDemo({ q: "ldSsQ", opts: "ldSsOpts", v: "ldSsVerdict", n: "ldSsNext" }, data.start_sit_pairs, "startsit");
+    runDemo({ q: "ldValQ", opts: "ldValOpts", v: "ldValVerdict", n: "ldValNext" }, data.value_pairs, "value");
+  }
+})();
+
 // @public-js:core-end  (everything below is app/feature code; excluded from public.js)
 
 // R06.3 -- one in-app toast near lineup lock when starters need attention.
