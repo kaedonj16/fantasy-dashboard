@@ -1644,267 +1644,598 @@ def playoff_bracket(
         roster_avatar_map,
         match_scores=None,
         seed_map=None,
+        losers_bracket=None,
+        team_meta=None,
+        playoff_week_start=None,
 ):
+    """Render the Playoff Picture bracket as a true tree.
+
+    Round columns run left to right with 30px SVG connector columns between
+    them (hairline elbows, vector-effect="non-scaling-stroke" so the 1.5px
+    weight stays honest inside the vertically stretched SVG). Byes are a pill
+    in the semifinal head, never a fake Round 1 match. Placement games (fed
+    by loser links) render as a one-line strip under the tree. When a losers
+    bracket is provided it renders as a second, dashed tree (Toilet Bowl).
+
+    team_meta: {roster_id: {"record": "5-1", "pf": 998.9}} for row sub-lines.
+    playoff_week_start: first playoff week; round r shows
+    start + (r - first round of that bracket).
+    """
     if not winners_bracket:
         return "<div class='po-empty'>No playoff bracket available.</div>"
 
     match_scores = match_scores or {}
     seed_map = seed_map or {}
+    team_meta = team_meta or {}
 
     def _k(x):
         return str(x) if x is not None else None
 
-    def seed_key(rid):
-        if rid is None:
-            return 9999
-        s = seed_map.get(str(rid))
-        if s is None and isinstance(rid, (int, str)) and str(rid).isdigit():
-            s = seed_map.get(int(rid), None)
-        try:
-            rid_int = int(rid)
-        except Exception:
-            rid_int = 9999
-        return (s if s is not None else 9999, rid_int)
-
     roster_name = {_k(k): v for k, v in (roster_name_map or {}).items()}
+    avatar_by_name = dict(roster_avatar_map or {})
 
-    # --- figure out who is in the playoffs + byes ---------------------------
-    all_playoff_rids = set()
-    round1_rids = set()
-    for m in winners_bracket:
-        r = m.get("r")
-        for key in ("t1", "t2"):
-            rid = m.get(key)
-            if rid is not None:
-                all_playoff_rids.add(rid)
-                if r == 1:
-                    round1_rids.add(rid)
+    def name_of(rid):
+        key = _k(rid)
+        return roster_name.get(key) or f"Roster {key}"
 
-    # use this BEFORE we inject bye matches so we know "real" field size
-    playoff_field_size = len(all_playoff_rids)
+    def seed_of(rid):
+        if rid is None:
+            return None
+        s = seed_map.get(str(rid))
+        if s is None and str(rid).isdigit():
+            s = seed_map.get(int(rid))
+        try:
+            return int(s) if s is not None else None
+        except (TypeError, ValueError):
+            return None
 
-    bye_rids = all_playoff_rids - round1_rids
-    bye_rids_sorted = sorted(bye_rids, key=seed_key)
+    def meta_of(rid):
+        if rid is None:
+            return None
+        m = team_meta.get(str(rid))
+        if m is None and str(rid).isdigit():
+            m = team_meta.get(int(rid))
+        return m if isinstance(m, dict) else None
 
-    extended_bracket = list(winners_bracket)
-    round1_override = None
+    def winner_rid_of(match):
+        """Winner roster id, or None. Some producers store w as a
+        {'m': next_match} progression dict instead of a roster id; that is a
+        link, not a decided winner."""
+        if not isinstance(match, dict):
+            return None
+        w = match.get("w")
+        if w is None or isinstance(w, dict):
+            return None
+        return w
 
-    if bye_rids_sorted:
-        existing_ids = [m.get("m") for m in winners_bracket if isinstance(m.get("m"), int)]
-        next_m = max(existing_ids) + 1 if existing_ids else 1
+    def loser_rid_of(match):
+        if not isinstance(match, dict):
+            return None
+        l = match.get("l")
+        if l is None or isinstance(l, dict):
+            return None
+        return l
 
-        bye_matches = []
-        for rid in bye_rids_sorted:
-            bye_matches.append(
-                {
-                    "m": next_m,
-                    "r": 1,
-                    "w": None,
-                    "l": None,
-                    "t1": rid,
-                    "t2": None,
-                    "t1_from": None,
-                    "t2_from": None,
-                    "is_bye": True,
-                }
-            )
-            next_m += 1
+    def from_spec(match, side):
+        spec = match.get(f"{side}_from")
+        if isinstance(spec, dict) and spec:
+            return next(iter(spec.items()))
+        return None
 
-        r1_existing = [m for m in extended_bracket if m.get("r") == 1 and not m.get("is_bye")]
-        non_r1 = [m for m in extended_bracket if m.get("r") != 1]
-
-        if len(bye_matches) == 1:
-            new_r1 = bye_matches[:1] + r1_existing
-        elif len(bye_matches) >= 2:
-            middle_byes = bye_matches[1:-1]
-            new_r1 = [bye_matches[0]] + r1_existing + middle_byes + [bye_matches[-1]]
+    def ordinal(n):
+        if 10 <= n % 100 <= 20:
+            suf = "th"
         else:
-            new_r1 = r1_existing
+            suf = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+        return f"{n}{suf}"
 
-        extended_bracket = non_r1 + new_r1
-        round1_override = new_r1
+    def initials_of(name):
+        letters = []
+        for word in str(name).split():
+            for ch in word:
+                if ch.isalpha():
+                    letters.append(ch.upper())
+                    break
+            if len(letters) == 2:
+                break
+        return "".join(letters) or "?"
 
-    winners_bracket = extended_bracket
-    match_by_id = {m["m"]: m for m in winners_bracket if "m" in m}
+    def score_text(match, side):
+        mid = match.get("m")
+        sc = None
+        if mid is not None:
+            sc = match_scores.get(mid)
+            if sc is None:
+                sc = match_scores.get(str(mid))
+        if not isinstance(sc, dict):
+            return "&ndash;"
+        v = sc.get(f"{side}_score")
+        if isinstance(v, bool) or not isinstance(v, (int, float)):
+            return "&ndash;"
+        return f"{v:.2f}"
 
-    rounds: dict[int, list] = defaultdict(list)
-    for m in winners_bracket:
-        r = m.get("r")
-        if r is None:
-            continue
-        rounds[r].append(m)
+    # ------------------------------------------------------------------ tree
+    def build_tree(bracket, champ_label, final_name, losers=False):
+        entries = []
+        for i, m in enumerate(bracket or []):
+            if isinstance(m, dict) and m.get("r") is not None:
+                mid = m.get("m")
+                entries.append((mid if mid is not None else f"idx{i}", m))
+        if not entries:
+            return ""
+        by_id = {k: m for k, m in entries}
+        order_index = {k: i for i, (k, _) in enumerate(entries)}
 
-    if not rounds:
-        return "<div class='po-empty'>No playoff bracket available.</div>"
+        # Round labels adapt to the bracket's own span (as the old renderer).
+        total_rounds = max(m.get("r") for _, m in entries)
+        field_size = len({
+            rid for _, m in entries
+            for rid in (m.get("t1"), m.get("t2")) if rid is not None
+        })
 
-    if round1_override:
-        rounds[1] = round1_override
-
-    round_nums = sorted(rounds.keys())
-    for r in round_nums:
-        if r == 1 and round1_override:
-            continue
-        rounds[r].sort(key=lambda x: x.get("m", 0))
-
-    # --------- dynamic round labels based on size / number of rounds --------
-    total_rounds = max(round_nums)
-
-    def get_round_label(r: int) -> str:
-        """
-        Make the labels adapt to:
-        - 4-team playoffs (2 rounds): Semifinals -> Finals
-        - 6-team playoffs (3 rounds): Round 1 -> Semifinals -> Finals
-        - 8-team playoffs (3 rounds): Quarterfinals -> Semifinals -> Finals
-        - bigger fields: generic + last two rounds as Semis/Finals.
-        """
-        if total_rounds == 1:
-            # just a championship game
-            return "Finals"
-
-        # final is always "Finals"
-        if r == total_rounds:
-            return "Finals"
-
-        if total_rounds == 2:
-            # 4-team bracket: R1 = Semis, R2 = Finals
-            return "Semifinals"
-
-        if total_rounds == 3:
-            # 3-round bracket: handle 6-team vs 8-team naming
+        def round_label(r):
+            if total_rounds == 1:
+                return "Finals"
+            if r == total_rounds:
+                return "Finals"
+            if total_rounds == 2:
+                return "Semifinals"
+            if total_rounds == 3:
+                if r == total_rounds - 1:
+                    return "Semifinals"
+                return "Quarterfinals" if field_size >= 8 else "Round 1"
             if r == total_rounds - 1:
                 return "Semifinals"
-            # earliest round:
-            if playoff_field_size >= 8:
+            if r == total_rounds - 2:
                 return "Quarterfinals"
-            else:
-                return "Round 1"
+            return f"Round {r}"
 
-        # 4+ rounds: last two named, earlier ones generic / quarters
-        if r == total_rounds - 1:
-            return "Semifinals"
-        if r == total_rounds - 2:
-            return "Quarterfinals"
+        bracket_first_round = min(m.get("r") for _, m in entries)
 
-        return f"Round {r}"
+        # First round each roster appears in (drives the BYE pill + ctx).
+        first_seen = {}
+        for _, m in entries:
+            r = m.get("r")
+            for side in ("t1", "t2"):
+                rid = m.get(side)
+                if rid is not None:
+                    kk = _k(rid)
+                    if kk not in first_seen or r < first_seen[kk]:
+                        first_seen[kk] = r
+        bye_rids = {rid for rid, r in first_seen.items()
+                    if r > bracket_first_round}
+        num_byes = len(bye_rids)
 
-    # ---------------------- slot + HTML rendering ---------------------------
-    def resolve_slot(match, side_key):
-        rid = match.get(side_key)
-        from_spec = match.get(f"{side_key}_from")
+        # --- split main tree vs placement --------------------------------
+        referenced = set()
+        has_links = False
+        for _, m in entries:
+            for side in ("t1", "t2"):
+                fs = from_spec(m, side)
+                if fs:
+                    has_links = True
+                    referenced.add(fs[1])
 
-        if rid is not None:
-            key = _k(rid)
-            return {
-                "label": roster_name.get(key, f"Roster {key}"),
-                "avatar": roster_avatar_map.get(roster_name.get(key, "")),
-                "kind": "team",
-                "roster_id": str(rid),
-            }
+        def is_loser_fed(m):
+            return any((from_spec(m, s) or (None, None))[0] == "l"
+                       for s in ("t1", "t2"))
 
-        if isinstance(from_spec, dict) and from_spec:
-            src_type, src_mid = next(iter(from_spec.items()))
-            if src_type == "l":
-                return None
-            if src_type == "w":
-                src = match_by_id.get(src_mid, {})
-                t1_rid = src.get("t1")
-                t2_rid = src.get("t2")
-                team1 = roster_name.get(_k(t1_rid)) if t1_rid is not None else None
-                team2 = roster_name.get(_k(t2_rid)) if t2_rid is not None else None
-                if not team1 or not team2:
-                    return {"label": "TBD", "avatar": "", "kind": "empty"}
-                return {"label": f"{team1}/{team2}", "avatar": "", "kind": "from"}
+        max_round = total_rounds
+        cands = [k for k, m in entries
+                 if m.get("r") == max_round and not is_loser_fed(m)
+                 and k not in referenced]
+        if not cands:
+            cands = [k for k, m in entries
+                     if m.get("r") == max_round and not is_loser_fed(m)]
+        if not cands:
+            cands = [k for k, m in entries if m.get("r") == max_round]
+        final_key = sorted(cands, key=lambda k: order_index[k])[0]
 
-        other = "t2" if side_key == "t1" else "t1"
-        if match.get(other) is not None or match.get(f"{other}_from"):
-            return {"label": "BYE", "avatar": "", "kind": "bye"}
-
-        return {"label": "TBD", "avatar": "", "kind": "empty"}
-
-    def render_team_row(slot, score_text, top=False, winner_rid=None):
-        cls = "team-row"
-        if slot["kind"] == "bye":
-            cls += " bye"
-        if top:
-            cls += " top"
-        if (
-            winner_rid is not None
-            and slot.get("roster_id") is not None
-            and str(slot["roster_id"]) == str(winner_rid)
-        ):
-            cls += " team-row--winner"
-
-        if slot.get("avatar"):
-            img = (
-                f"<div class='team-avatar'><img src='{slot['avatar']}' "
-                "onerror=\"this.style.display='none'\"></div>"
-            )
+        if has_links:
+            main = set()
+            stack = [final_key]
+            while stack:
+                k = stack.pop()
+                if k in main or k not in by_id:
+                    continue
+                main.add(k)
+                for side in ("t1", "t2"):
+                    fs = from_spec(by_id[k], side)
+                    if fs and fs[0] == "w":
+                        stack.append(fs[1])
         else:
-            img = "<div class='team-avatar'></div>"
+            # No progression links at all (derived brackets): every match is
+            # a main-tree match in its round column.
+            main = set(by_id)
+        placement_keys = [k for k, _ in entries if k not in main]
 
-        rid = slot.get("roster_id")
-        clickable_attrs = (
-            f" class='team-name team-clickable' data-roster-id='{rid}' data-team-name='{slot['label']}'"
-            if rid else " class='team-name'"
-        )
+        # --- columns ------------------------------------------------------
+        main_entries = [(k, m) for k, m in entries if k in main]
+        cols = []
+        for r in sorted({m.get("r") for _, m in main_entries}):
+            col = [(k, m) for k, m in main_entries if m.get("r") == r]
+            col.sort(key=lambda km: order_index[km[0]])
+            cols.append((r, col))
+        # Order each column so feeders sit next to the match they feed.
+        for ci in range(len(cols) - 2, -1, -1):
+            consumer = {}
+            for j, (_, nm) in enumerate(cols[ci + 1][1]):
+                for side in ("t1", "t2"):
+                    fs = from_spec(nm, side)
+                    if fs and fs[0] == "w":
+                        consumer[fs[1]] = j
+            col = cols[ci][1]
+            col.sort(key=lambda km: (consumer.get(km[0], 999),
+                                     order_index[km[0]]))
+            cols[ci] = (cols[ci][0], col)
 
-        return (
-            f"<div class='{cls}'>"
-            f"  <div class='team-main'>"
-            f"    {img}"
-            f"    <div class='team-text'><div{clickable_attrs}>{slot['label']}</div></div>"
-            f"  </div>"
-            f"  <div class='team-score'>{score_text}</div>"
-            f"</div>"
-        )
+        # --- match names --------------------------------------------------
+        names = {}
+        for ci, (r, col) in enumerate(cols):
+            for j, (k, _m) in enumerate(col):
+                if k == final_key:
+                    names[k] = final_name
+                elif ci == 0:
+                    names[k] = f"Game {j + 1}"
+                elif len(col) > 1:
+                    lab = round_label(r)
+                    sing = lab[:-1] if lab.endswith("s") else lab
+                    names[k] = f"{sing} {j + 1}"
+                else:
+                    lab = round_label(r)
+                    names[k] = lab[:-1] if lab.endswith("s") else lab
+        for n, k in enumerate(placement_keys, 1):
+            p = by_id[k].get("p")
+            if isinstance(p, int) and not isinstance(p, bool) and p > 0:
+                names[k] = f"{ordinal(p)} Place"
+            else:
+                names[k] = f"Placement Game {n}"
 
-    html_rounds = []
-    for r in round_nums:
-        round_label = get_round_label(r)
-        matches = rounds[r]
-        match_html = []
-        for m in matches:
-            mid = m.get("m")
-            scores = match_scores.get(mid, {}) if mid is not None else {}
+        # --- slots --------------------------------------------------------
+        def direct_teams(m):
+            return [m.get(s) for s in ("t1", "t2") if m.get(s) is not None]
 
-            slot1 = resolve_slot(m, "t1")
-            slot2 = resolve_slot(m, "t2")
+        def team_row(match, side, rid):
+            winner = winner_rid_of(match)
+            is_win = winner is not None and _k(winner) == _k(rid)
+            nm = name_of(rid)
+            s = seed_of(rid)
+            pill = ""
+            if s is not None:
+                top = " top" if s <= num_byes else ""
+                pill = f"<span class='pb-seed{top}'>{s}</span>"
+            initials = initials_of(nm)
+            av_url = avatar_by_name.get(nm)
+            if av_url:
+                av = (f"<span class='pb-av'>{initials}"
+                      f"<img src='{av_url}' alt='' loading='lazy' "
+                      f"onerror=\"this.remove()\"></span>")
+            else:
+                av = f"<span class='pb-av'>{initials}</span>"
+            click = (f"<span class='team-name team-clickable' "
+                     f"data-roster-id='{_k(rid)}' data-team-name='{nm}'>"
+                     f"{nm}</span>")
+            sub = ""
+            meta = meta_of(rid)
+            if meta:
+                parts = []
+                if meta.get("record"):
+                    parts.append(str(meta["record"]))
+                if meta.get("pf") is not None:
+                    try:
+                        parts.append(f"{float(meta['pf']):,.1f} PF")
+                    except (TypeError, ValueError):
+                        pass
+                if parts:
+                    sub = (f"<div class='pb-tsub'>"
+                           f"{' &middot; '.join(parts)}</div>")
+            cls = "pb-trow pb-trow--winner" if is_win else "pb-trow"
+            return (f"<div class='{cls}'>{pill}{av}<div class='pb-tmain'>"
+                    f"<div class='pb-tname'>{click}</div>{sub}</div>"
+                    f"<span class='pb-tscore'>{score_text(match, side)}</span>"
+                    f"</div>")
 
-            if slot1 is None or slot2 is None:
-                continue
+        def from_subline(src_m):
+            teams = direct_teams(src_m)
+            if len(teams) >= 2:
+                parts = []
+                for rid in teams[:2]:
+                    s = seed_of(rid)
+                    nm = name_of(rid)
+                    parts.append(f"#{s} {nm}" if s is not None else nm)
+                return " or ".join(parts), True
+            if len(teams) == 1:
+                return f"{name_of(teams[0])} side", False
+            return None, False
 
-            s1 = scores.get("t1_score")
-            s2 = scores.get("t2_score")
-            s1_txt = f"{s1:.2f}" if isinstance(s1, (int, float)) else "–"
-            s2_txt = f"{s2:.2f}" if isinstance(s2, (int, float)) else "–"
+        def tbd_row(match, side, kind_word):
+            label = "TBD"
+            sub = ""
+            fs = from_spec(match, side)
+            if fs:
+                src_m = by_id.get(fs[1])
+                label = f"{kind_word} of {names.get(fs[1], 'TBD')}"
+                if src_m is not None:
+                    txt, wrap = from_subline(src_m)
+                    if txt:
+                        wcls = " wrap" if wrap else ""
+                        sub = f"<div class='pb-tsub{wcls}'>{txt}</div>"
+            pill = ("<span class='pb-seed pb-seed--ghost'></span>"
+                    if seed_map else "")
+            letter = {"Winner": "W", "Loser": "L"}.get(kind_word, "T")
+            return (f"<div class='pb-trow'>{pill}"
+                    f"<span class='pb-av pb-av--tbd'>{letter}</span>"
+                    f"<div class='pb-tmain'>"
+                    f"<div class='pb-tname pb-tname--tbd'>{label}</div>{sub}"
+                    f"</div>"
+                    f"<span class='pb-tscore'>{score_text(match, side)}</span>"
+                    f"</div>")
 
-            if slot1["kind"] == "bye":
-                s1_txt = "-"
-            if slot2["kind"] == "bye":
-                s2_txt = "-"
+        def slot_row(match, side):
+            rid = match.get(side)
+            if rid is not None:
+                return team_row(match, side, rid)
+            fs = from_spec(match, side)
+            if fs:
+                kind = "Winner" if fs[0] == "w" else "Loser"
+                src_m = by_id.get(fs[1])
+                if src_m is not None:
+                    decided = (winner_rid_of(src_m) if fs[0] == "w"
+                               else loser_rid_of(src_m))
+                    if decided is not None:
+                        return team_row(match, side, decided)
+                return tbd_row(match, side, kind)
+            return tbd_row(match, side, None)
 
-            match_html.append(
-                "<div class='bracket-match'>"
-                f"  {render_team_row(slot1, s1_txt, top=True, winner_rid=m.get('w'))}"
-                f"  {render_team_row(slot2, s2_txt, top=False, winner_rid=m.get('w'))}"
-                "</div>"
-            )
+        def slot_side_text(match, side):
+            rid = match.get(side)
+            if rid is not None:
+                return name_of(rid)
+            fs = from_spec(match, side)
+            if fs:
+                src_m = by_id.get(fs[1])
+                if src_m is not None:
+                    decided = (winner_rid_of(src_m) if fs[0] == "w"
+                               else loser_rid_of(src_m))
+                    if decided is not None:
+                        return name_of(decided)
+                kind = "Winner" if fs[0] == "w" else "Loser"
+                return f"{kind} of {names.get(fs[1], 'TBD')}"
+            return "TBD"
 
-        if match_html:
-            html_rounds.append(
-                f"<div class='bracket-round round-{r}'>"
-                f"  <div class='round-title'>{round_label}</div>"
-                f"  <div class='round-body'>{''.join(match_html)}</div>"
-                f"</div>"
-            )
+        # --- match cards --------------------------------------------------
+        def week_text(r):
+            if not playoff_week_start:
+                return ""
+            wk = playoff_week_start + (r - bracket_first_round)
+            return f"<span class='pb-wk'>Week {wk}</span>"
 
-    if not html_rounds:
+        def match_card(k, m):
+            r = m.get("r")
+            bye = ""
+            if r is not None and r > bracket_first_round:
+                for side in ("t1", "t2"):
+                    rid = m.get(side)
+                    if rid is not None and first_seen.get(_k(rid)) == r:
+                        bye = "<span class='pb-hb'>BYE</span>"
+                        break
+            wk = week_text(r) if r is not None else ""
+            right = (f"<span class='pb-mright'>{bye}{wk}</span>"
+                     if (bye or wk) else "")
+            dashed = " pb-match--dashed" if losers else ""
+            return (f"<div class='pb-match{dashed}'>"
+                    f"<div class='pb-mhead'><span>{names.get(k, '')}</span>"
+                    f"{right}</div>"
+                    f"{slot_row(m, 't1')}{slot_row(m, 't2')}</div>")
+
+        def champ_slot():
+            fm = by_id[final_key]
+            wk = ""
+            if playoff_week_start:
+                wk = (f" &middot; Week "
+                      f"{playoff_week_start + (fm.get('r') - bracket_first_round)}")
+            w = winner_rid_of(fm)
+            if w is not None:
+                nm = name_of(w)
+                av_url = avatar_by_name.get(nm)
+                if av_url:
+                    ring = (f"<div class='pb-ring'>"
+                            f"<img src='{av_url}' alt=''></div>")
+                else:
+                    ring = "<div class='pb-ring'>&#9733;</div>"
+                return (f"<div class='pb-champ'>{ring}"
+                        f"<div class='pb-cname'>{nm}</div>"
+                        f"<div class='pb-csub'>{champ_label}{wk}</div></div>")
+            return (f"<div class='pb-champ'>"
+                    f"<div class='pb-ring'>&#9733;</div>"
+                    f"<div class='pb-cname'>{champ_label}</div>"
+                    f"<div class='pb-csub'>TBD{wk}</div></div>")
+
+        # --- connectors ---------------------------------------------------
+        def connector(left_col, right_col, champ_dest=False):
+            lines = []
+            n_left = len(left_col)
+            for j, (rk, rm) in enumerate(right_col):
+                dest = (50.0 if champ_dest
+                        else (2 * j + 1) / (2 * len(right_col)) * 100)
+                feeders = []
+                if champ_dest:
+                    for i, (lk, _lm) in enumerate(left_col):
+                        if lk == rk:
+                            feeders.append(
+                                (2 * i + 1) / (2 * n_left) * 100)
+                else:
+                    for side in ("t1", "t2"):
+                        fs = from_spec(rm, side)
+                        if fs and fs[0] == "w":
+                            for i, (lk, _lm) in enumerate(left_col):
+                                if lk == fs[1]:
+                                    feeders.append(
+                                        (2 * i + 1) / (2 * n_left) * 100)
+                feeders = sorted(set(feeders))
+                if not feeders:
+                    continue
+                for f in feeders:
+                    lines.append(
+                        f"<line x1='0' y1='{f:.2f}' x2='15' y2='{f:.2f}' "
+                        f"vector-effect='non-scaling-stroke'/>")
+                lo = min(feeders + [dest])
+                hi = max(feeders + [dest])
+                if hi - lo > 0.01:
+                    lines.append(
+                        f"<line x1='15' y1='{lo:.2f}' x2='15' y2='{hi:.2f}' "
+                        f"vector-effect='non-scaling-stroke'/>")
+                lines.append(
+                    f"<line x1='15' y1='{dest:.2f}' x2='30' y2='{dest:.2f}' "
+                    f"vector-effect='non-scaling-stroke'/>")
+            if not lines:
+                return "<div class='pb-conn'></div>"
+            return ("<div class='pb-conn'>"
+                    "<svg viewBox='0 0 30 100' preserveAspectRatio='none'>"
+                    + "".join(lines) + "</svg></div>")
+
+        # --- assemble -----------------------------------------------------
+        show_champ = len(cols) >= 2
+        head_parts = []
+        col_parts = []
+        for ci, (r, col) in enumerate(cols):
+            wk_html = ""
+            if playoff_week_start:
+                wk_html = (f"<span class='pb-head-wk'>Week "
+                           f"{playoff_week_start + (r - bracket_first_round)}"
+                           f"</span>")
+            head_parts.append(
+                f"<div class='pb-head'><span class='pb-head-rd'>"
+                f"{round_label(r)}</span>{wk_html}</div>")
+            col_parts.append(
+                "<div class='pb-col'>"
+                + "".join(match_card(k, m) for k, m in col) + "</div>")
+            if ci < len(cols) - 1:
+                head_parts.append("<div class='pb-head-sp'></div>")
+                col_parts.append(connector(col, cols[ci + 1][1]))
+            elif show_champ:
+                head_parts.append("<div class='pb-head-sp'></div>")
+                head_parts.append(
+                    f"<div class='pb-head pb-head--champ'>{champ_label}</div>")
+                col_parts.append(connector(
+                    col, [(final_key, by_id[final_key])], champ_dest=True))
+                col_parts.append(
+                    f"<div class='pb-col pb-col--champ'>{champ_slot()}</div>")
+        scroll_cls = "pb-scroll pb-scroll--losers" if losers else "pb-scroll"
+        if len(cols) <= 3:
+            # Phone tile layout (M1) only fits brackets up to 3 rounds;
+            # bigger fields keep the sideways-scrolling tree.
+            scroll_cls += " pb-scroll--tiles"
+        tree_html = (
+            f"<div class='{scroll_cls}'><div class='pb-scroll-inner'>"
+            f"<div class='pb-heads'>{''.join(head_parts)}</div>"
+            f"<div class='pb-cols'>{''.join(col_parts)}</div>"
+            f"</div></div>")
+
+        # --- placement strip ----------------------------------------------
+        strip_html = ""
+        if placement_keys:
+            def _strip_key(k):
+                p = by_id[k].get("p")
+                if isinstance(p, int) and not isinstance(p, bool) and p > 0:
+                    return (0, p, order_index[k])
+                return (1, 0, order_index[k])
+
+            items = []
+            for k in sorted(placement_keys, key=_strip_key):
+                m = by_id[k]
+                s1 = slot_side_text(m, "t1")
+                s2 = slot_side_text(m, "t2")
+                wk = ""
+                if playoff_week_start:
+                    wk = (f"Week {playoff_week_start + (m.get('r') - bracket_first_round)}")
+                p = m.get("p")
+                if isinstance(p, int) and not isinstance(p, bool) and p > 0:
+                    teams = f"{s1} vs <b>{s2}</b>"
+                    if wk:
+                        teams += f" &middot; {wk}"
+                    items.append(
+                        f"<div class='pb-place'>"
+                        f"<span class='pb-plab'>{ordinal(p)} Place</span>"
+                        f"<span class='pb-pteams'>{teams}</span></div>")
+                else:
+                    lab = f"{s1} vs {s2}"
+                    wk_html = (f"<span class='pb-pteams'>{wk}</span>"
+                               if wk else "")
+                    items.append(
+                        f"<div class='pb-place pb-place--long'>"
+                        f"<span class='pb-plab'>{lab}</span>{wk_html}</div>")
+            strip_html = f"<div class='pb-places'>{''.join(items)}</div>"
+
+        return tree_html + strip_html
+
+    winners_html = build_tree(winners_bracket, "Champion", "Championship")
+    if not winners_html:
         return "<div class='po-empty'>No playoff bracket available.</div>"
 
-    # data-br-moment="bracket": the rounds build in left-to-right when the
-    # bracket first scrolls into view (see the big-moment CSS in dashboard.css).
-    return "<div class='bracket' data-br-moment='bracket'>" + "".join(html_rounds) + "</div>"
+    # Context line (dashboard only: needs team_meta).
+    ctx_html = ""
+    if team_meta:
+        field_rids = {
+            m.get(s) for m in winners_bracket if isinstance(m, dict)
+            for s in ("t1", "t2") if m.get(s) is not None
+        }
+        rounds_present = [m.get("r") for m in winners_bracket
+                          if isinstance(m, dict) and m.get("r") is not None]
+        first_round = min(rounds_present) if rounds_present else None
+        first_seen = {}
+        for m in winners_bracket:
+            if not isinstance(m, dict) or m.get("r") is None:
+                continue
+            for s in ("t1", "t2"):
+                rid = m.get(s)
+                if rid is not None:
+                    kk = _k(rid)
+                    if kk not in first_seen or m["r"] < first_seen[kk]:
+                        first_seen[kk] = m["r"]
+        bye_seeds = sorted(
+            s for s in (
+                seed_of(rid)
+                for rid, r in first_seen.items()
+                if first_round is not None and r > first_round
+            )
+            if s is not None
+        )
+        ctx_segs = [f"{len(field_rids)} playoff teams"]
+        if bye_seeds and bye_seeds == list(range(1, len(bye_seeds) + 1)):
+            ctx_segs.append(f"Top {len(bye_seeds)} get a bye")
+        any_winner = any(
+            isinstance(m, dict) and winner_rid_of(m) is not None
+            for m in winners_bracket)
+        if not any_winner and not match_scores:
+            ctx_segs.insert(0, "<b>If playoffs started today</b>")
+        ctx_text = " &middot; ".join(
+            f"<span class='pb-ctx-seg'>{s}</span>" for s in ctx_segs)
+        ctx_html = f"<div class='pb-ctx'>{ctx_text}</div>"
 
+    losers_html = ""
+    if losers_bracket:
+        tree = build_tree(losers_bracket, "Toilet Bowl Champ",
+                          "Toilet Bowl Final", losers=True)
+        if tree:
+            sub = ""
+            if team_meta:
+                lfield = len({
+                    m.get(s) for m in losers_bracket if isinstance(m, dict)
+                    for s in ("t1", "t2") if m.get(s) is not None
+                })
+                sub = (f"<div class='pb-tb-sub'>{lfield} teams that missed "
+                       f"the playoffs</div>")
+            losers_html = (
+                "<div class='pb-tb'><div class='pb-tb-head'>"
+                "<span class='pb-tb-title'>Toilet Bowl</span>"
+                "<span class='pb-tb-badge'>Consolation</span></div>"
+                f"{sub}{tree}</div>")
+
+    # data-br-moment="bracket": the columns build in left-to-right when the
+    # bracket first scrolls into view (see the big-moment CSS in dashboard.css).
+    return (f"<div class='pb-wrap' data-br-moment='bracket'>"
+            f"{ctx_html}{winners_html}{losers_html}</div>")
 
 def seed_top_n_from_team_stats(team_stats, roster_map, playoff_size: int = 6):
     """

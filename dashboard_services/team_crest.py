@@ -8,9 +8,9 @@ sits next to a photo.
 """
 from __future__ import annotations
 
+import base64
 import html
 import re
-from urllib.parse import quote
 
 # Mid-saturation hues that stay legible on both the light and dark card grounds.
 # Index chosen by a stable hash of the name so a team always gets the same color.
@@ -90,6 +90,14 @@ def team_crest_data_uri(name: str) -> str:
     the transparent corners -- the shield stays whole. Colors are pre-computed to
     plain hex (no color-mix/currentColor), since an SVG loaded as an image renders
     without the page's CSS context.
+
+    The payload is base64 rather than percent-encoded. A percent-encoded SVG
+    leaks its internals into the surrounding page text, where markup byte
+    sequences collide with rendered content: the lightened teal stop encodes
+    as "%233da9a0", which made rendered-page scans see a "233" that was never
+    a displayed stat (it broke the pre-kickoff stale-stat guards once the
+    matchup header started embedding crests). Base64 keeps the payload
+    opaque; the decoded SVG is identical either way.
     """
     initials = html.escape(crest_initials(name))
     base = _color_for(name)
@@ -106,4 +114,5 @@ def team_crest_data_uri(name: str) -> str:
         f'{initials}</text>'
         '</svg>'
     )
-    return "data:image/svg+xml," + quote(svg, safe="")
+    return ("data:image/svg+xml;base64,"
+            + base64.b64encode(svg.encode("utf-8")).decode("ascii"))

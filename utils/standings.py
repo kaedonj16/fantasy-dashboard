@@ -819,6 +819,83 @@ def project_bracket_from_seeds(
     return games
 
 
+def _canonical_seed_order(size: int) -> List[int]:
+    """Bracket slot order for a ``size``-slot single-elim bracket.
+
+    Recursive standard seeding: order(2n) interleaves each seed s from
+    order(n) with its complement 2n+1-s, so adjacent pairs sum to size+1
+    (size 8 -> [1, 8, 4, 5, 2, 7, 3, 6]).
+    """
+    if size <= 1:
+        return [1]
+    prev = _canonical_seed_order(size // 2)
+    out: List[int] = []
+    for s in prev:
+        out.append(s)
+        out.append(size + 1 - s)
+    return out
+
+
+def build_full_bracket(
+    seed_roster_ids: Sequence[Any],
+) -> List[Dict[str, Any]]:
+    """Complete projected single-elim bracket for a seeded field.
+
+    ``seed_roster_ids`` is the field in seed order (index 0 = #1 seed). The
+    bracket size is the next power of two; the top (size - field) seeds get
+    byes into round 2. First-round pairs follow canonical bracket seed
+    order; later rounds are wired with t1_from/t2_from {"w": match_id}.
+    Returns matches in the Sleeper bracket shape
+    {r, m, t1, t2, t1_from, t2_from, w, l} for any field size >= 2.
+    """
+    seeds = list(seed_roster_ids or [])
+    field = len(seeds)
+    if field < 2:
+        return []
+
+    import math
+    size = 1 << int(math.ceil(math.log2(field)))
+    order = _canonical_seed_order(size)
+
+    # Slot occupants in bracket order; seeds beyond the field are bye slots.
+    slots: List[Any] = [
+        seeds[s - 1] if s <= field else None for s in order
+    ]
+
+    matches: List[Dict[str, Any]] = []
+    mid = 1
+    # Each entry is ("team", rid) or ("match", match_id) advancing onward.
+    entries: List[tuple] = [("team", rid) for rid in slots]
+    rnd = 1
+    while len(entries) > 1:
+        nxt: List[tuple] = []
+        for i in range(0, len(entries), 2):
+            a, b = entries[i], entries[i + 1]
+            if a[0] == "team" and a[1] is None:
+                nxt.append(b)  # bye: the other side advances untouched
+                continue
+            if b[0] == "team" and b[1] is None:
+                nxt.append(a)
+                continue
+            match = {
+                "r": rnd,
+                "m": mid,
+                "t1": a[1] if a[0] == "team" else None,
+                "t2": b[1] if b[0] == "team" else None,
+                "t1_from": {"w": a[1]} if a[0] == "match" else None,
+                "t2_from": {"w": b[1]} if b[0] == "match" else None,
+                "w": None,
+                "l": None,
+                "projected": True,
+            }
+            matches.append(match)
+            nxt.append(("match", mid))
+            mid += 1
+        entries = nxt
+        rnd += 1
+    return matches
+
+
 def derive_or_project_bracket(
     *,
     matchups_by_week: Optional[Dict[Any, Sequence[dict]]] = None,
