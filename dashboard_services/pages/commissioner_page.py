@@ -596,7 +596,7 @@ def build_commissioner_body(ctx):
   .lh-pill {{ display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:800; letter-spacing:.03em; padding:4px 10px; border-radius:8px; text-transform:uppercase; }}
   .lh-verdict {{ font-size:15px; color:var(--muted); margin-top:10px; max-width:48ch; }}
   .lh-verdict b {{ color:var(--text); }}
-  .lh-wrap {{ max-width:1000px; margin:0 auto; }}
+  .lh-wrap {{ max-width:1180px; margin:0 auto; }}
   /* This title is left-aligned with the content below it, so the global
      centered h1::after sky bar (300px wide, margin auto) renders as a stray
      floating bar under it. Suppress it, same opt-out as .wl-page-title. */
@@ -823,7 +823,7 @@ def build_commissioner_body(ctx):
     except Exception:
         invite_card = ""
 
-    return f'<div class="lh-wrap"><h1 style="font-size:22px;font-weight:800;margin:0 0 8px;text-align:left;">League Health</h1><p class="lh-readonly" style="margin:0 0 12px;font-size:13px;color:var(--text-muted);">Read-only analytics for commissioners. Nothing here changes the league.</p>{invite_card}{health_html}{history_panel}{roster_table}{trade_card}</div>'
+    return f'<div class="lh-wrap"><h1 class="page-title" style="margin-bottom:8px;">League Health</h1><p class="lh-readonly" style="margin:0 0 12px;font-size:13px;color:var(--text-muted);">Read-only analytics for commissioners. Nothing here changes the league.</p>{invite_card}{health_html}{history_panel}{roster_table}{trade_card}</div>'
 
 
 # /<...>/league_health and /<...>/commissioner are served by routes/league_pages_bp.py.

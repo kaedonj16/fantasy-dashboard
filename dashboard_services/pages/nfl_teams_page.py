@@ -110,7 +110,7 @@ table.nt-rank tbody tr.nt-sel td.nt-teamcol{{background:var(--accent-soft)}}
 .nt-backrow{{margin:0 0 12px}}
 .nt-back{{background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:999px;padding:10px 18px;font-size:15px;font-weight:700;cursor:pointer;min-height:44px;font-family:inherit}}
 .nt-back:active{{transform:scale(.98)}}
-.nt-phead2{{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--border)}}
+.nt-phead2{{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:16px 18px 14px;border-bottom:1px solid var(--border)}}
 .nt-pid{{display:flex;align-items:center;gap:12px}}
 .nt-pid h2{{margin:0;font-size:18px}}
 .nt-pid .nt-meta{{margin:2px 0 0;font-size:13px;color:var(--text-muted)}}
@@ -144,9 +144,9 @@ table.nt-rank tbody tr.nt-sel td.nt-teamcol{{background:var(--accent-soft)}}
 /* Non-selected scatter marks: greyed out so the selected team pops. */
 .nt-mark-dim{{filter:grayscale(1);opacity:.55}}
 .nt-chips{{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px}}
-.nt-chip{{background:var(--card-soft);border-radius:10px;padding:12px;text-align:center}}
-.nt-chip .nt-clab{{font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em}}
-.nt-chip .nt-cval{{font-size:28px;font-weight:800;margin:2px 0}}
+.nt-chip{{background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;text-align:left}}
+.nt-chip .nt-clab{{font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em}}
+.nt-chip .nt-cval{{font-size:28px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums;margin:4px 0 2px}}
 .nt-chip .nt-crk{{font-size:11px;color:var(--text-muted)}}
 details.nt-method{{border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:13px}}
 details.nt-method summary{{cursor:pointer;font-weight:700;min-height:32px}}
@@ -857,7 +857,7 @@ function renderProfile(){{
     if(g.result==="W")rec.w++;else if(g.result==="L")rec.l++;else rec.t++;
   }});
   var recHtml=(rec.w+rec.l+rec.t)>0?'<span class="nt-record">'+esc(rec.w+"-"+rec.l+(rec.t?"-"+rec.t:""))+'</span>':"";
-  var h=backRow()+'<div class="nt-pcard"><div class="nt-phead2 nt-herohead" style="background:color-mix(in srgb,'+esc(tcolor)+' 10%,transparent);box-shadow:inset 0 3px 0 '+esc(tcolor)+'">'+
+  var h=backRow()+'<div class="nt-pcard"><div class="nt-phead2 nt-herohead" style="box-shadow:inset 0 3px 0 '+esc(tcolor)+'">'+
     '<div class="nt-pid">'+logoHTML(t,true)+
     '<div><h2>'+esc(t.city)+' '+esc(t.name)+recHtml+'</h2><p class="nt-meta">'+esc(d.season_label||"")+' &middot; Bye week '+esc(String(t.bye_week==null?"?":t.bye_week))+' &middot; Next: '+esc(nextTxt)+'</p></div></div></div>';
   h+='<div class="nt-pbody"><div class="nt-pgrid">';
