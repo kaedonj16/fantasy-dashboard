@@ -691,14 +691,15 @@ _DRAFT_ROOM_HTML = r"""
     max-width: 1640px; margin: 0 auto; padding: 14px 14px 48px;
   }
   .dr-hero { margin: 2px 0 18px; }
-  .dr-hero-centered { text-align: center; }
+  .dr-hero-centered { text-align: left; }
   .dr-hero-centered .dr-title { margin: 0 0 10px; }
-  .dr-hero-centered .dr-hero-actions { justify-content: center; }
+  .dr-hero-centered .dr-hero-actions { justify-content: flex-start; }
 
   .dr-title {
-    font-size: 24px; font-weight: 800; color: var(--text);
-    margin: 0 0 4px; letter-spacing: -0.02em; line-height: 1.15;
+    font-size: 22px; font-weight: 800; color: var(--text);
+    margin: 0 0 4px; letter-spacing: -0.02em; line-height: 1.15; text-align: left;
   }
+  .dr-title::after { content: none; display: none; }
   .dr-sub {
     font-size: 13px; color: var(--text-muted); margin: 0; max-width: 560px; line-height: 1.5;
   }
@@ -1025,7 +1026,8 @@ _DRAFT_ROOM_HTML = r"""
   .dr-sim-speed { padding: 6px 8px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg);
     color: var(--text); font-size: 13px; font-weight: 600; }
   .dr-btn {
-    padding: 9px 16px; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; height: 32px;
+    padding: 0 16px; border-radius: var(--radius-pill, 8px); font-size: 13px; font-weight: 700; cursor: pointer;
     border: 1px solid var(--border); background: var(--bg); color: var(--text); white-space: nowrap;
     transition: background .15s, border-color .15s, color .15s, box-shadow .15s, transform .15s;
   }
@@ -1037,7 +1039,7 @@ _DRAFT_ROOM_HTML = r"""
     box-shadow: 0 6px 16px color-mix(in srgb, var(--accent) 28%, transparent);
     transform: translateY(-1px);
   }
-  .dr-btn-ghost { background: transparent; font-weight: 600; }
+  .dr-btn-ghost { background: transparent; font-weight: 700; }
   /* Settings gear button -- sits beside the side-panel tabs -- + dropdown panel */
   .dr-side-opts { position: relative; flex: 0 0 auto; display: flex; align-items: stretch; }
   .dr-opts-trigger { display: flex; align-items: center; justify-content: center; gap: 5px;
@@ -2631,7 +2633,8 @@ _DRAFT_HISTORY_HTML = r"""
 <style>
   .dr-wrap { max-width: 900px; margin: 0 auto; padding: 14px 14px 48px; }
   .dr-hero { margin-bottom: 18px; }
-  .dr-title { font-size: 24px; font-weight: 800; color: var(--text); margin: 0 0 4px; letter-spacing: -0.02em; }
+  .dr-title { font-size: 22px; font-weight: 800; color: var(--text); margin: 0 0 4px; letter-spacing: -0.02em; text-align: left; }
+  .dr-title::after { content: none; display: none; }
   .dr-sub { font-size: 15px; color: var(--text-muted); margin: 0; line-height: 1.5; max-width: 520px; }
   .dr-hero-actions { display: inline-flex; gap: 8px; margin-top: 12px; }
   .dr-hero-link {

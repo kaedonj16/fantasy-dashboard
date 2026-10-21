@@ -19274,18 +19274,18 @@ function createRkModalIfMissing() {
         margin-bottom: 10px;
       }
       .rk-hero-stat {
-        background: var(--card-bg);
+        background: var(--bg-alt);
         border: 1px solid var(--border);
-        border-radius: 10px;
+        border-radius: var(--radius);
         padding: 12px 14px;
-        text-align: center;
+        text-align: left;
       }
       .rk-hero-primary {
-        background: var(--accent-soft);
-        border-color: transparent;
+        background: color-mix(in srgb, var(--accent) 10%, transparent);
+        border-color: color-mix(in srgb, var(--accent) 45%, transparent);
       }
       .rk-hero-label {
-        font-size: 10px;
+        font-size: 11px;
         font-weight: 700;
         color: var(--text-muted);
         text-transform: uppercase;
@@ -19293,7 +19293,7 @@ function createRkModalIfMissing() {
         margin-bottom: 4px;
       }
       .rk-hero-val {
-        font-size: 26px;
+        font-size: 28px;
         font-weight: 700;
         color: var(--text);
         line-height: 1;

@@ -71,7 +71,8 @@ def _graphs_style() -> str:
     light fallbacks so cards read in both themes."""
     return """<style>
 .gs-head{margin:0 0 4px;}
-.gs-head h1{font-size:22px;font-weight:800;margin:0 0 2px;}
+.gs-head h1{font-size:22px;font-weight:800;margin:0 0 2px;text-align:left;}
+.gs-head h1::after{content:none;display:none;}
 .gs-head p{font-size:13px;color:var(--text-muted,#64748b);margin:0 0 14px;}
 .gs-tabs{display:flex;gap:8px;margin-bottom:16px;overflow-x:auto;padding-bottom:2px;}
 .gs-tab{padding:8px 16px;border-radius:8px;font-size:13px;font-weight:700;background:var(--card,#fff);border:1px solid var(--border,#e2e8f0);color:var(--text-muted,#64748b);white-space:nowrap;cursor:pointer;font-family:inherit;}

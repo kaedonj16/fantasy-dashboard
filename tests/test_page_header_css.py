@@ -33,8 +33,11 @@ def test_rookies_title_suppresses_global_h1_bar_and_export_button_is_styled():
 def test_league_health_title_left_aligned_without_global_h1_bar():
     src = _read("dashboard_services/pages/commissioner_page.py")
     # The subtitle and content are left-aligned; the h1 must be too (the
-    # global h1 rule centers it).
-    assert 'margin:0 0 8px;text-align:left;">League Health</h1>' in src
+    # global h1 rule centers it). The title now uses the shared .page-title
+    # class, which carries the left-align + bar opt-out in dashboard.css.
+    assert '<h1 class="page-title" style="margin-bottom:8px;">League Health</h1>' in src
+    css = _read("static/dashboard.css")
+    assert ".page-title::after { content: none; display: none; }" in css
     # Opt-out from the global centered h1::after sky bar, in the page's own
     # always-rendered style block.
     assert ".lh-wrap > h1::after {{ display:none; }}" in src
