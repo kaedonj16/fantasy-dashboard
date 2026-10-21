@@ -21,7 +21,9 @@ JS = (ROOT / "static" / "player_modal.js").read_text(encoding="utf-8")
 
 
 def _playoff_block() -> str:
-    start = JS.index("const _ps = data.playoff_sos")
+    # The card renderer is a builder now (deferred patch-in reuses it);
+    # the rank-bar math lives inside it, ahead of the hero marker.
+    start = JS.index("const _buildPlayoffCard = function(_ps) {")
     end = JS.index("const _h0 = _heroActive();", start)
     return JS[start:end]
 
