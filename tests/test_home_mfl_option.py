@@ -6,8 +6,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_mfl_and_fleaflicker_are_platform_options_on_the_home_page():
     source = (ROOT / "app.py").read_text()
-    assert '<button type="button" class="platform-btn" data-platform="mfl">MFL</button>' in source
-    assert '<button type="button" class="platform-btn" data-platform="fleaflicker">Fleaflicker</button>' in source
+    assert '<button type="button" class="platform-btn" data-platform="mfl"><span class="plat-name">MFL</span>' in source
+    assert '<button type="button" class="platform-btn" data-platform="fleaflicker"><span class="plat-name">Fleaflicker</span>' in source
     assert 'id="mflFlow"' in source
     assert 'id="fleaflickerFlow"' in source
     assert 'data-mfl-method="public"' in source

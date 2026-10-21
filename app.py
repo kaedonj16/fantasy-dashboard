@@ -1472,6 +1472,29 @@ def _espn_otp_ui_enabled() -> bool:
         return False
 
 
+def _landing_demo_json() -> str:
+    """Live demo pools for the guest landing (start/sit + value pairs).
+
+    Built from the site's own values/ratings via dashboard_services.landing_demos;
+    any failure yields empty pools and the demo cards stay hidden.
+    """
+    try:
+        import json as _json
+
+        from dashboard_services.landing_demos import build_landing_demo_data
+
+        return _json.dumps(build_landing_demo_data())
+    except Exception:
+        return '{"value_pairs": [], "start_sit_pairs": [], "week_label": "This week"}'
+
+
+_LANDING_BG_SVG = """<svg class="ld-bg" viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs><linearGradient id="ldAfill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3b82f6" stop-opacity=".07"/><stop offset="1" stop-color="#3b82f6" stop-opacity="0"/></linearGradient></defs><path d="M0,535 L62,551 L124,547 L186,563 L248,556 L310,544 L372,514 L434,473 L496,480 L558,485 L620,438 L682,386 L744,342 L806,303 L868,325 L930,287 L992,316 L1000,1000 L0,1000 Z" fill="url(#ldAfill)"/><rect class="ld-bar" style="animation-delay:0.90s" x="36" y="752" width="30" height="128" rx="5" fill="#122d4b" opacity=".08"/><rect class="ld-bar" style="animation-delay:0.97s" x="104" y="656" width="30" height="224" rx="5" fill="#122d4b" opacity=".08"/><rect class="ld-bar" style="animation-delay:1.04s" x="172" y="733" width="30" height="147" rx="5" fill="#122d4b" opacity=".08"/><rect class="ld-bar" style="animation-delay:1.11s" x="240" y="792" width="30" height="88" rx="5" fill="#122d4b" opacity=".08"/><rect class="ld-bar" style="animation-delay:1.18s" x="308" y="745" width="30" height="135" rx="5" fill="#122d4b" opacity=".08"/><rect class="ld-bar" style="animation-delay:1.25s" x="376" y="709" width="30" height="171" rx="5" fill="#16a34a" opacity=".20"/><rect class="ld-bar" style="animation-delay:1.32s" x="444" y="780" width="30" height="100" rx="5" fill="#122d4b" opacity=".08"/><rect class="ld-bar" style="animation-delay:1.39s" x="512" y="704" width="30" height="176" rx="5" fill="#122d4b" opacity=".08"/><rect class="ld-bar" style="animation-delay:1.46s" x="580" y="820" width="30" height="60" rx="5" fill="#122d4b" opacity=".08"/><rect class="ld-bar" style="animation-delay:1.53s" x="648" y="753" width="30" height="127" rx="5" fill="#122d4b" opacity=".08"/><rect class="ld-bar" style="animation-delay:1.60s" x="716" y="692" width="30" height="188" rx="5" fill="#0284c7" opacity=".18"/><rect class="ld-bar" style="animation-delay:1.67s" x="784" y="775" width="30" height="105" rx="5" fill="#122d4b" opacity=".08"/><rect class="ld-bar" style="animation-delay:1.74s" x="852" y="691" width="30" height="189" rx="5" fill="#122d4b" opacity=".08"/><rect class="ld-bar" style="animation-delay:1.81s" x="920" y="793" width="30" height="87" rx="5" fill="#122d4b" opacity=".08"/><path class="ld-line2" d="M0,706 L62,734 L124,694 L186,695 L248,695 L310,723 L372,734 L434,753 L496,737 L558,759 L620,712 L682,751 L744,795 L806,761 L868,800 L930,820 L992,868" pathLength="100" fill="none" stroke="#14b8a6" stroke-width="1.8" opacity=".13"/><circle cx="992" cy="868" r="3.5" fill="#64748b" opacity=".6"/><path class="ld-line1" d="M0,535 L62,551 L124,547 L186,563 L248,556 L310,544 L372,514 L434,473 L496,480 L558,485 L620,438 L682,386 L744,342 L806,303 L868,325 L930,287 L992,316" pathLength="100" fill="none" stroke="#3b82f6" stroke-width="2.2" opacity=".18"/><circle cx="662" cy="124" r="2" fill="#8b5cf6" opacity="0.04"/><circle cx="236" cy="152" r="3" fill="#3b82f6" opacity="0.07"/><circle cx="766" cy="923" r="3" fill="#3b82f6" opacity="0.07"/><circle cx="440" cy="42" r="2" fill="#3b82f6" opacity="0.04"/><circle cx="246" cy="527" r="3" fill="#38bdf8" opacity="0.07"/><circle cx="211" cy="743" r="3" fill="#c92c68" opacity="0.05"/><circle cx="233" cy="469" r="3" fill="#8b5cf6" opacity="0.04"/><circle cx="785" cy="835" r="2" fill="#ef4444" opacity="0.05"/><circle cx="292" cy="169" r="2" fill="#4f46e5" opacity="0.04"/><circle cx="102" cy="399" r="2" fill="#4f46e5" opacity="0.05"/><circle cx="626" cy="280" r="2" fill="#14b8a6" opacity="0.07"/><circle cx="135" cy="954" r="2" fill="#3b82f6" opacity="0.07"/><circle cx="308" cy="859" r="3" fill="#4f46e5" opacity="0.07"/><circle cx="204" cy="731" r="2" fill="#38bdf8" opacity="0.07"/><circle cx="241" cy="801" r="2" fill="#3b82f6" opacity="0.04"/><circle cx="895" cy="113" r="2" fill="#8b5cf6" opacity="0.05"/><circle cx="658" cy="864" r="2" fill="#22c55e" opacity="0.05"/><circle cx="371" cy="224" r="3" fill="#8b5cf6" opacity="0.07"/><circle cx="967" cy="709" r="3" fill="#3b82f6" opacity="0.07"/><circle cx="658" cy="185" r="3" fill="#f59e0b" opacity="0.04"/><circle cx="481" cy="398" r="2" fill="#c92c68" opacity="0.04"/><circle cx="709" cy="342" r="2" fill="#f59e0b" opacity="0.04"/><circle cx="832" cy="333" r="2" fill="#8b5cf6" opacity="0.04"/><circle cx="224" cy="945" r="3" fill="#4f46e5" opacity="0.04"/><circle cx="679" cy="521" r="2" fill="#14b8a6" opacity="0.04"/><circle cx="279" cy="152" r="2" fill="#c92c68" opacity="0.07"/><circle cx="930" cy="287" r="4.5" fill="#16a34a" opacity=".85"/><circle class="ld-pulse" r="4.5" fill="#0284c7" opacity=".6"><animateMotion begin="1s" dur="11s" repeatCount="indefinite" path="M0,535 L62,551 L124,547 L186,563 L248,556 L310,544 L372,514 L434,473 L496,480 L558,485 L620,438 L682,386 L744,342 L806,303 L868,325 L930,287 L992,316"/></circle></svg>"""
+
+
+def _landing_bg_svg() -> str:
+    return _LANDING_BG_SVG
+
+
 HOME_TICKER_HTML = """
 <div class="home-ticker-band" id="homeTicker" aria-hidden="true">
   <span class="home-ticker-tag"><span class="home-ticker-dot"></span>LIVE VALUES</span>
@@ -1481,19 +1504,23 @@ HOME_TICKER_HTML = """
 
 FORM_BODY = """
 <div class="home-page">
-  <section class="home-hero">
-    <div class="home-hero-left">
-      <p class="home-brand">BR Fantasy</p>
-      <h1 class="home-title">Your dynasty league,<br><span class="home-rot" aria-label="decoded"><span class="home-rot-track"><span>decoded.</span><span>dominated.</span><span>decoded.</span></span></span></h1>
-      <p class="home-subtitle">
-        Trade values, AI analysis, and league tools for Sleeper, ESPN, Yahoo, MFL, and Fleaflicker.
-      </p>
+{{ landing_bg_svg | safe }}
+  <section class="home-hero ld-hero">
+    <div class="ld-hero-card">
+      <h1 class="ld-hero-title">Your dynasty league, <span class="ld-accent">decoded.</span></h1>
+      <p class="home-subtitle">Live matchup board, start/sit verdicts and trade values, wired to your league&#x27;s real scoring.</p>
       <p class="home-hero-editorial">
         Original dynasty strategy, daily player values, and league dashboards.
         No account needed to read the <a href="/guides">guides</a>, browse
         <a href="/rankings/dynasty">dynasty rankings</a>, or use the
         <a href="/dynasty-trade-value-chart">trade value chart</a>.
       </p>
+      <div class="ld-hero-ctas">
+        <a class="ld-btn ld-btn-navy" href="#homeCardTitle">Connect your league</a>
+        <a class="ld-btn ld-btn-royal" href="/players">Player rankings</a>
+        <a class="ld-btn ld-btn-sky" href="/trade">Trade calculator</a>
+      </div>
+      <p class="ld-hero-note"><strong>Free for your first league</strong> &middot; Read-only &middot; 2-minute setup</p>
       <div class="home-platform-row" aria-label="Supported platforms">
         <span class="home-platform-chip">Sleeper</span>
         <span class="home-platform-chip">ESPN</span>
@@ -1502,41 +1529,13 @@ FORM_BODY = """
         <span class="home-platform-chip">Fleaflicker</span>
       </div>
     </div>
-
-</section>
-
-  {% if not session.get('account_id') %}
-<div class="trust-strip">
-  <div class="trust-inner">
-    <span class="trust-item"><span class="trust-check">✓</span>Free to start</span>
-    <span class="trust-item"><span class="trust-check">✓</span>No account needed to look around</span>
-    <span class="trust-item"><span class="trust-check">✓</span>Read-only. Never touches your lineups</span>
-    <span class="trust-item"><span class="trust-check">✓</span>5 platforms &middot; 133 metrics &middot; 32 NFL teams</span>
-  </div>
-</div>
-
-<section class="home-previews">
-  <div class="home-previews-inner">
-    <header class="home-previews-head">
-      <span class="home-previews-eyebrow">See a live demo</span>
-      <h2 class="home-previews-title">This is what Sundays look like here</h2>
-      <p class="home-previews-lead">A peek at the tools your league gets. Connect a league to see them loaded with your teams and players.</p>
-    </header>
-
-    <div class="home-bento">
-      <div class="home-bento-hero">
-      <div class="home-preview-copy">
-        <span class="home-preview-eyebrow">Matchup Board</span>
-        <h3 class="home-preview-title">Your matchup, rebuilt for your phone</h3>
-        <p class="home-preview-desc">Live scores, win probability, and every starter's projection in a board designed for game day. No pinching, no sideways scrolling.</p>
-      </div>
-      <div class="home-preview-visual">
-        <div class="hp-mb">
+    <div class="ld-board-wrap">
+      <div class="hp-mb">
           <div class="hp-mb-head">
-            <div><div class="hp-mb-team">You</div><div class="hp-mb-score">132.4</div></div>
-            <div class="is-right"><div class="hp-mb-team">Opp</div><div class="hp-mb-score">128.9</div></div>
+            <div><div class="hp-mb-team">Caleb&#x27;s Casting Couch</div><div class="hp-mb-score" data-count="132.4">132.4</div></div>
+            <div class="is-right"><div class="hp-mb-team">Pittsburgh Pilots</div><div class="hp-mb-score" data-count="128.9">128.9</div></div>
           </div>
-          <div class="m-win-bar" role="img" aria-label="Win probability: You 64 percent, Opp 36 percent">
+          <div class="m-win-bar" role="img" aria-label="Win probability: Caleb&#x27;s Casting Couch 64 percent, Pittsburgh Pilots 36 percent">
             <span class="m-wp-pct" style="color:#22c55e;">64%</span>
             <div class="m-wp-track" style="background:linear-gradient(to right,#22c55e 64%,rgba(148,163,184,0.35) 64%);"></div>
             <span class="m-wp-pct" style="color:var(--text-muted);text-align:right;">36%</span>
@@ -1592,320 +1591,124 @@ FORM_BODY = """
               <div class="mb-score"><span class="mb-a">12.3</span><span class="mb-pj">19.1</span></div>
             </div></div>
           </div>
-        </div>
-      </div>
-      </div>
-
-      <div class="home-bento-cell">
-      <div class="home-preview-copy">
-        <span class="home-preview-eyebrow">ScoreZone</span>
-        <h3 class="home-preview-title">Every snap, one screen</h3>
-        <p class="home-preview-desc">Live NFL scores, scoring plays, and your players' fantasy points as they happen. Tap any game for the full box score.</p>
-      </div>
-      <div class="home-preview-visual">
-        <div class="hp-rz">
-          <div class="rz-game-strip"><div class="rz-game-strip-scroll" role="group" aria-label="NFL games">
-            <button type="button" class="rz-game-pill is-live is-selected" aria-pressed="true" aria-label="KC 24 at BUF 27, Q4 2:14">
-              <span class="rz-gp-team away"><span class="rz-gp-logo rz-gp-logo-txt">KC</span><span class="rz-gp-abv">KC</span><span class="rz-gp-score">24</span></span>
-              <span class="rz-gp-status">Q4 2:14</span>
-              <span class="rz-gp-team home"><span class="rz-gp-logo rz-gp-logo-txt">BUF</span><span class="rz-gp-abv">BUF</span><span class="rz-gp-score">27</span></span>
-            </button>
-            <button type="button" class="rz-game-pill is-live" aria-pressed="false" aria-label="DET 17 at GB 14, Q3 5:41">
-              <span class="rz-gp-team away"><span class="rz-gp-logo rz-gp-logo-txt">DET</span><span class="rz-gp-abv">DET</span><span class="rz-gp-score">17</span></span>
-              <span class="rz-gp-status">Q3 5:41</span>
-              <span class="rz-gp-team home"><span class="rz-gp-logo rz-gp-logo-txt">GB</span><span class="rz-gp-abv">GB</span><span class="rz-gp-score">14</span></span>
-            </button>
-            <button type="button" class="rz-game-pill is-final" aria-pressed="false" aria-label="PHI 31 at DAL 24, FINAL">
-              <span class="rz-gp-team away"><span class="rz-gp-logo rz-gp-logo-txt">PHI</span><span class="rz-gp-abv">PHI</span><span class="rz-gp-score">31</span></span>
-              <span class="rz-gp-status">FINAL</span>
-              <span class="rz-gp-team home"><span class="rz-gp-logo rz-gp-logo-txt">DAL</span><span class="rz-gp-abv">DAL</span><span class="rz-gp-score">24</span></span>
-            </button>
-          </div></div>
-          <div class="rz-player-row">
-            <span class="rz-pos-badge rz-pos-QB">QB</span>
-            <div class="rz-player-info"><div class="rz-player-name">Josh Allen</div><div class="rz-player-meta"><span class="rz-live-dot-sm"></span><span class="rz-meta-game live">Q4 2:14</span></div></div>
-            <div class="rz-player-pts live-pts">28.4</div>
+        
+          <div class="mb-row">
+            <div class="mb-cell mb-cell-l"><div class="mb-cell-row">
+              <div class="mb-info">
+                <div class="p-name-line mb-nameline"><span class="pname">Sam LaPorta</span><span class="meta p-team mb-team">DET &bull; TE</span></div>
+                <span class="meta p-game-line mb-game">vs CLE</span>
+              </div>
+              <div class="mb-score"><span class="mb-a mb-win">11.2</span><span class="mb-pj">12.6</span></div>
+            </div></div>
+            <div class="mb-pos"><span class="pos-badge TE">TE</span></div>
+            <div class="mb-cell mb-cell-r"><div class="mb-cell-row">
+              <div class="mb-info">
+                <div class="p-name-line mb-nameline"><span class="pname">Mark Andrews</span><span class="meta p-team mb-team">BAL &bull; TE</span></div>
+                <span class="meta p-game-line mb-game">@ KC</span>
+              </div>
+              <div class="mb-score"><span class="mb-a">9.8</span><span class="mb-pj">11.4</span></div>
+            </div></div>
           </div>
-          <div class="rz-player-row">
-            <span class="rz-pos-badge rz-pos-RB">RB</span>
-            <div class="rz-player-info"><div class="rz-player-name">Jahmyr Gibbs</div><div class="rz-player-meta"><span class="rz-live-dot-sm"></span><span class="rz-meta-game live">Q3 5:41</span></div></div>
-            <div class="rz-player-pts live-pts">21.7</div>
-          </div>
-          <div class="rz-player-row">
-            <span class="rz-pos-badge rz-pos-WR">WR</span>
-            <div class="rz-player-info"><div class="rz-player-name">Drake London</div><div class="rz-player-meta"><span class="rz-meta-game final">Final</span></div></div>
-            <div class="rz-player-pts">18.9</div>
+          <div class="mb-row">
+            <div class="mb-cell mb-cell-l"><div class="mb-cell-row">
+              <div class="mb-info">
+                <div class="p-name-line mb-nameline"><span class="pname">Justin Herbert</span><span class="meta p-team mb-team">LAC &bull; SF</span></div>
+                <span class="meta p-game-line mb-game">vs DEN</span>
+              </div>
+              <div class="mb-score"><span class="mb-a">17.8</span><span class="mb-pj">20.1</span></div>
+            </div></div>
+            <div class="mb-pos"><span class="pos-badge SF">SF</span></div>
+            <div class="mb-cell mb-cell-r"><div class="mb-cell-row">
+              <div class="mb-info">
+                <div class="p-name-line mb-nameline"><span class="pname">Joe Burrow</span><span class="meta p-team mb-team">CIN &bull; SF</span></div>
+                <span class="meta p-game-line mb-game">vs PIT</span>
+              </div>
+              <div class="mb-score"><span class="mb-a mb-win">19.5</span><span class="mb-pj">21.0</span></div>
+            </div></div>
           </div>
         </div>
-      </div>
     </div>
+  </section>
 
-      <div class="home-bento-cell">
-      <div class="home-preview-copy">
-        <span class="home-preview-eyebrow">Start/Sit</span>
-        <h3 class="home-preview-title">Set your lineup with confidence</h3>
-        <p class="home-preview-desc">A verdict, a projection, and the matchup case for every starter. Tap any row for the full evidence: usage, Vegas, and QB situation.</p>
-      </div>
-      <div class="home-preview-visual">
-        <div class="wv-cx-group">
-          <div class="wv-cx-group-head">
-            <div class="wv-cx-group-title">RB <span>(2 starters)</span></div>
-            <div class="wv-cx-verdict">Start <b>Gibbs</b> and <b>Jeanty</b>. Flex <b>London</b> over <b>Kamara</b>.</div>
-          </div>
-          <div class="wv-cx-card">
-            <div class="wv-cx-row-wrap">
-              <button type="button" class="wv-cx-row" aria-expanded="false">
-                <span class="wv-cx-badge wv-cx-start">START</span>
-                <span class="wv-cx-main">
-                  <span class="wv-cx-name">Jahmyr Gibbs</span>
-                  <span class="wv-cx-why">vs CLE <span class="wv-cx-chip">#4 easiest</span></span>
-                </span>
-                <span class="wv-cx-proj"><span class="wv-cx-proj-num">18.4</span><span class="wv-cx-proj-lbl">PROJ</span></span>
-                <span class="wv-cx-chev" aria-hidden="true">&rsaquo;</span>
-              </button>
-            </div>
-            <div class="wv-cx-row-wrap">
-              <button type="button" class="wv-cx-row" aria-expanded="false">
-                <span class="wv-cx-badge wv-cx-start">START</span>
-                <span class="wv-cx-main">
-                  <span class="wv-cx-name">Ashton Jeanty</span>
-                  <span class="wv-cx-why">vs CHI <span class="wv-cx-chip">#11 favorable</span></span>
-                </span>
-                <span class="wv-cx-proj"><span class="wv-cx-proj-num">15.2</span><span class="wv-cx-proj-lbl">PROJ</span></span>
-                <span class="wv-cx-chev" aria-hidden="true">&rsaquo;</span>
-              </button>
-            </div>
-            <div class="wv-cx-benchline">BENCH LINE</div>
-            <div class="wv-cx-row-wrap">
-              <button type="button" class="wv-cx-row" aria-expanded="false">
-                <span class="wv-cx-badge wv-cx-sit">SIT</span>
-                <span class="wv-cx-main">
-                  <span class="wv-cx-name">Alvin Kamara</span>
-                  <span class="wv-cx-why">@ TB <span class="wv-cx-chip bad">#24 hardest</span></span>
-                </span>
-                <span class="wv-cx-proj"><span class="wv-cx-proj-num">9.3</span><span class="wv-cx-proj-lbl">PROJ</span></span>
-                <span class="wv-cx-chev" aria-hidden="true">&rsaquo;</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-      <div class="home-bento-cell">
-      <div class="home-preview-copy">
-        <span class="home-preview-eyebrow">Wrapped</span>
-        <h3 class="home-preview-title">Your season, wrapped</h3>
-        <p class="home-preview-desc">A shareable recap of your year. Best weeks, biggest duds, and the moments your league will never stop arguing about.</p>
-      </div>
-      <div class="home-preview-visual">
-        <div class="hm-deck wrapped-deck" id="tourDeck">
-          <section class="hm-slide is-active">
-            <div class="wrapped-kicker"><span class="wrapped-kicker-rule"></span><span class="wrapped-kicker-txt">Season Wrapped</span></div>
-            <div class="wrapped-num"><span class="wrapped-big">1,284</span><span class="wrapped-unit">pts</span></div>
-            <div class="wrapped-name">Points scored</div>
-            <div class="wrapped-sub">3rd place in Blackedraw</div>
-          </section>
-          <section class="hm-slide">
-            <div class="wrapped-kicker"><span class="wrapped-kicker-rule"></span><span class="wrapped-kicker-txt">Best week</span></div>
-            <div class="wrapped-num"><span class="wrapped-big">146.2</span></div>
-            <div class="wrapped-name">Week 9</div>
-            <div class="wrapped-sub">Never forget it.</div>
-          </section>
-          <section class="hm-slide">
-            <div class="wrapped-kicker"><span class="wrapped-kicker-rule"></span><span class="wrapped-kicker-txt">Biggest dud</span></div>
-            <div class="wrapped-num"><span class="wrapped-big">4.1</span><span class="wrapped-unit">pts</span></div>
-            <div class="wrapped-name">Your first-round pick</div>
-            <div class="wrapped-sub">Week 6. We do not talk about Week 6.</div>
-          </section>
-        </div>
-        <div class="hm-dots" id="tourDots">
-          <span class="hm-dot is-active"></span><span class="hm-dot"></span><span class="hm-dot"></span>
-        </div>
-      </div>
-      </div>
-    </div>
-
-    <div class="home-preview-block">
-      <div class="home-preview-copy">
-        <span class="home-preview-eyebrow">Trade Strategy <span class="home-preview-pro">PRO</span></span>
-        <h3 class="home-preview-title">Know the trade before you offer it</h3>
-        <p class="home-preview-desc">Archetype-driven suggestions with Monte Carlo win probability. See exactly how each trade shifts your playoff odds, before you send it.</p>
-      </div>
-      <div class="home-preview-visual">
-        <div class="otc-real-trade-card">
-          <div class="otc-rt-body">
-            <div class="otc-rt-side">
-              <div class="otc-rt-label">You Get</div>
-              <div class="otc-rt-asset"><span class="otc-rt-pos" style="background:#8b5cf618;color:#8b5cf6;">TE</span><span class="otc-rt-name">Trey McBride</span></div>
-            </div>
-            <div class="otc-rt-divider"></div>
-            <div class="otc-rt-side">
-              <div class="otc-rt-label">You Give</div>
-              <div class="otc-rt-asset"><span class="otc-rt-pos" style="background:#22c55e18;color:#22c55e;">RB</span><span class="otc-rt-name">Brian Robinson Jr.</span></div>
-              <div class="otc-rt-asset"><span class="otc-rt-pos" style="background:#6366f112;color:#6366f1;">PICK</span><span class="otc-rt-name">2027 R2 pick</span></div>
-            </div>
-          </div>
-          <div class="otc-rt-footer">
-            <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;min-width:0;">
-              <span class="otc-grade">Steal</span>
-              <span class="otc-delta wk">+1.8% wk</span>
-              <span class="otc-delta po">+4.2% po</span>
-            </div>
-            <button type="button" class="sugg-target-get-btn otc-sugg-pkg-load-btn">Analyze</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="tour-cta">
-      <p>Every one of these loads with <strong>your</strong> teams and players.</p>
-      <a href="#homeCardTitle" class="tour-cta-btn">Connect your league</a>
-    </div>
+  {% if not session.get('account_id') %}
+<section class="ld-sec">
+  <div class="ld-card ld-rv">
+    <h2 class="ld-sec-h">Built for the whole week</h2>
+    <div class="ld-strip"><span class="ld-dot" style="--d:#ef4444"></span><div class="ld-strip-main"><strong>ScoreZone</strong><span>Every NFL game and your players&#x27; points, live on one screen.</span></div><span class="ld-strip-stat" style="color:#ef4444">13 games</span></div>
+    <div class="ld-strip"><span class="ld-dot" style="--d:#16a34a"></span><div class="ld-strip-main"><strong>Start / Sit</strong><span>A verdict, a projection and the matchup case for every starter.</span></div><span class="ld-strip-stat" style="color:#16a34a">Start Gibbs</span></div>
+    <div class="ld-strip"><span class="ld-dot" style="--d:#4f46e5"></span><div class="ld-strip-main"><strong>Trade Strategy</strong><span>See how a trade moves your playoff odds before you send it. <em class="ld-pro-tag">PRO</em></span></div><span class="ld-strip-stat" style="color:#4f46e5">+6.2% odds</span></div>
+    <div class="ld-strip"><span class="ld-dot" style="--d:#ca8a04"></span><div class="ld-strip-main"><strong>Weekly Wrapped</strong><span>Your week, told back as a story with the receipts. Only the AI storyline is PRO; the rest stays free.</span></div><span class="ld-strip-stat" style="color:#ca8a04">New</span></div>
   </div>
 </section>
 
-<section class="home-testimonials" aria-label="What managers say">
-  <div class="home-testimonials-inner">
-    <h2 class="home-testimonials-title">Managers are talking</h2>
-    <div class="home-testimonials-grid">
-      <figure class="home-testimonial">
-        <blockquote>THATS ACTUALLY SO SICK BRO</blockquote>
-        <figcaption><strong>Jayden Waddell</strong><span>Pittsburgh Pilots &middot; on the weekly recap</span></figcaption>
-      </figure>
-    </div>
+<section class="ld-sec">
+  <div class="ld-card ld-rv">
+    <div class="ld-demo-head"><h2 class="ld-sec-h">Try a start/sit call</h2><span class="ld-demo-tag">LIVE DEMO</span></div>
+    <p class="ld-demo-q" id="ldSsQ"></p>
+    <div class="ld-demo-opts" id="ldSsOpts"></div>
+    <div class="ld-demo-verdict" id="ldSsVerdict" hidden></div>
+    <div class="ld-demo-foot"><button type="button" class="ld-mini-btn" id="ldSsNext" hidden>Try another</button><span class="ld-demo-note">Projections from our start/sit board, matchup ratings from our ratings model. The full tool makes this call for your whole lineup.</span></div>
   </div>
 </section>
 
-  <script>
-  (function() {
-    var deck = document.getElementById('tourDeck');
-    if (!deck) return;
-    var slides = deck.querySelectorAll('.hm-slide');
-    var dots = document.querySelectorAll('#tourDots .hm-dot');
-    if (!slides.length) return;
-    var i = 0;
-    setInterval(function() {
-      slides[i].classList.remove('is-active');
-      if (dots[i]) dots[i].classList.remove('is-active');
-      i = (i + 1) % slides.length;
-      slides[i].classList.add('is-active');
-      if (dots[i]) dots[i].classList.add('is-active');
-    }, 3200);
-  })();
-  </script>
+<section class="ld-sec">
+  <div class="ld-card ld-rv">
+    <div class="ld-demo-head"><h2 class="ld-sec-h">Who&#x27;s more valuable?</h2><span class="ld-demo-tag">LIVE DEMO</span></div>
+    <p class="ld-demo-q" id="ldValQ"></p>
+    <div class="ld-demo-opts" id="ldValOpts"></div>
+    <div class="ld-demo-verdict" id="ldValVerdict" hidden></div>
+    <div class="ld-demo-foot"><button type="button" class="ld-mini-btn" id="ldValNext" hidden>Try another</button><span class="ld-demo-note">Dynasty superflex values from our values board, the same numbers as the ticker up top.</span></div>
+  </div>
+</section>
+<script type="application/json" id="ldDemoData">{{ landing_demo_json | safe }}</script>
+
+<section class="ld-sec">
+  <figure class="ld-quote ld-rv">
+    <blockquote>&ldquo;THATS ACTUALLY <span>SO SICK</span> BRO&rdquo;</blockquote>
+    <figcaption><strong>Jayden Waddell</strong> &middot; Pittsburgh Pilots, on the weekly recap</figcaption>
+  </figure>
+</section>
+
   {% endif %}
 
-  <section class="home-pro" id="homeProSignup" aria-labelledby="homeProTitle">
-    <div class="home-pro-inner">
-      <header class="home-pro-head">
-        <span class="home-pro-eyebrow">Get PRO</span>
-        <h2 class="home-pro-title" id="homeProTitle">The tools that decide trades, waivers, and playoffs</h2>
-        <p class="home-pro-lead"><strong>From $10 a year.</strong> PRO unlocks roster-aware analysis built for your league, not generic advice. Pick a plan, connect your league, done.</p>
-      </header>
-      <ul class="home-pro-benefits">
-        <li>
-          <span class="home-pro-benefit-icon" aria-hidden="true"><i class="fa-solid fa-handshake"></i></span>
-          <strong>Trade Strategy</strong>
-          <span>See exactly how each trade shifts your playoff odds before you send it</span>
-        </li>
-        <li>
-          <span class="home-pro-benefit-icon" aria-hidden="true"><i class="fa-solid fa-chart-line"></i></span>
-          <strong>Trade Intelligence</strong>
-          <span>Buy low and sell high on live market values from real trades</span>
-        </li>
-        <li>
-          <span class="home-pro-benefit-icon" aria-hidden="true"><i class="fa-solid fa-fire"></i></span>
-          <strong>Breakout Engine</strong>
-          <span>Next week's breakouts, flagged before your league notices</span>
-        </li>
-        <li>
-          <span class="home-pro-benefit-icon" aria-hidden="true"><i class="fa-solid fa-trophy"></i></span>
-          <strong>Playoff Impact</strong>
-          <span>Week-by-week simulations of your path to the playoffs</span>
-        </li>
-        <li>
-          <span class="home-pro-benefit-icon" aria-hidden="true"><i class="fa-solid fa-briefcase"></i></span>
-          <strong>Front Office Report</strong>
-          <span>A weekly GM memo on your roster needs and next moves</span>
-        </li>
-        <li>
-          <span class="home-pro-benefit-icon" aria-hidden="true"><i class="fa-solid fa-newspaper"></i></span>
-          <strong>Weekly Recap</strong>
-          <span>What happened in your league, written for managers. Only the AI storyline is PRO; the rest stays free</span>
-        </li>
-        <li>
-          <span class="home-pro-benefit-icon" aria-hidden="true"><i class="fa-solid fa-clipboard-list"></i></span>
-          <strong>Custom Draft Board</strong>
-          <span>Your board, your values, with a live overlay on draft day</span>
-        </li>
-        <li>
-          <span class="home-pro-benefit-icon" aria-hidden="true"><i class="fa-solid fa-magnifying-glass-chart"></i></span>
-          <strong>Draft Grades</strong>
-          <span>Grade every pick and see how the class actually landed</span>
-        </li>
+  <section class="home-pro ld-pro" id="homeProSignup" aria-labelledby="homeProTitle">
+    <div class="ld-pro-main">
+      <span class="ld-pro-kicker">BR FANTASY PRO</span>
+      <h2 class="home-pro-title" id="homeProTitle">The tools that decide trades, waivers, and playoffs</h2>
+      <p class="home-pro-lead"><strong>From $10 a year.</strong> PRO unlocks roster-aware analysis built for your league, not generic advice.</p>
+      <ul class="ld-pro-grid">
+      <li><span class="ld-pro-dot" style="--d:#4f46e5"></span><div><strong>Trade Strategy</strong><span>See exactly how each trade shifts your playoff odds before you send it</span></div></li>
+      <li><span class="ld-pro-dot" style="--d:#0284c7"></span><div><strong>Trade Intelligence</strong><span>Buy low and sell high on live market values from real trades</span></div></li>
+      <li><span class="ld-pro-dot" style="--d:#ea580c"></span><div><strong>Breakout Engine</strong><span>Next week&#x27;s breakouts, flagged before your league notices</span></div></li>
+      <li><span class="ld-pro-dot" style="--d:#ca8a04"></span><div><strong>Playoff Impact</strong><span>Week-by-week simulations of your path to the playoffs</span></div></li>
+      <li><span class="ld-pro-dot" style="--d:#122d4b"></span><div><strong>Front Office Report</strong><span>A weekly GM memo on your roster needs and next moves</span></div></li>
+      <li><span class="ld-pro-dot" style="--d:#8b5cf6"></span><div><strong>Draft Grades</strong><span>Grade every pick and see how the class actually landed</span></div></li>
       </ul>
-      <div class="home-pro-cta-row">
-        <button type="button" class="home-pro-open-btn" data-home-pro-open>Get PRO</button>
-        <span class="home-pro-cta-note">$10/year. Cancel anytime. A Google account is required to subscribe.</span>
-      </div>
+    </div>
+    <div class="ld-pro-side">
+      <div class="ld-pro-price">$10</div>
+      <p>per year &middot; all PRO tools, every league</p>
+      <button type="button" class="ld-btn ld-btn-navy" data-home-pro-open>Get PRO</button>
+      <span class="home-pro-cta-note">$10/year. Cancel anytime. A Google account is required to subscribe.</span>
     </div>
   </section>
 
   {% if not session.get('account_id') %}
 
 
-<section class="freeband">
-  <div class="freeband-inner" style="text-align:center">
-    <span class="section-kicker">Try it right now</span>
-    <h2 class="section-title">Free tools, no league required</h2>
-    <p class="section-lead">A whole wing of the site works without connecting anything. These are the live pages, not screenshots.</p>
-    <div class="freeband-grid" style="text-align:left">
-      <div class="freeband-card">
-        <h4>Dynasty rankings</h4>
-        <p>Redraft and dynasty ranks with trend arrows, updated as news breaks.</p>
-        <a href="/rankings/dynasty">Open the live rankings</a>
-      </div>
-      <div class="freeband-card">
-        <h4>Trade value chart</h4>
-        <p>Every player's market value on one chart, so you stop losing trades.</p>
-        <a href="/dynasty-trade-value-chart">Open the live chart</a>
-      </div>
-      <div class="freeband-card">
-        <h4>Strategy guides</h4>
-        <p>Original dynasty strategy writeups, from startup drafts to rebuilds.</p>
-        <a href="/guides">Read the guides</a>
-      </div>
-      <div class="freeband-card">
-        <h4>NFL Teams</h4>
-        <p>All 32 teams graded honestly: real per-game offense ranks and O-line grades.</p>
-        <a href="/nfl-teams">Explore NFL Teams</a>
-      </div>
+<section class="freeband ld-free">
+  <div class="ld-card ld-rv">
+    <h2 class="ld-sec-h">Free, no league required</h2>
+    <div class="ld-free-grid">
+      <a class="ld-free-row" href="/rankings/dynasty"><strong>Dynasty rankings</strong><span class="ld-arrow" style="color:#3b82f6">&rarr;</span></a>
+      <a class="ld-free-row" href="/dynasty-trade-value-chart"><strong>Trade value chart</strong><span class="ld-arrow" style="color:#14b8a6">&rarr;</span></a>
+      <a class="ld-free-row" href="/guides"><strong>Strategy guides</strong><span class="ld-arrow" style="color:#8b5cf6">&rarr;</span></a>
+      <a class="ld-free-row" href="/nfl-teams"><strong>NFL Teams</strong><span class="ld-arrow" style="color:#ea580c">&rarr;</span></a>
     </div>
   </div>
 </section>
 
-<section class="how">
-  <span class="section-kicker">How it works</span>
-  <h2 class="section-title">Three steps to game day</h2>
-  <div class="how-steps">
-    <div class="how-step">
-      <span class="how-num">1</span>
-      <h4>Connect your league</h4>
-      <p>Pick your platform and paste your league ID. Read-only, nothing changes on your host site.</p>
-    </div>
-    <div class="how-step">
-      <span class="how-num">2</span>
-      <h4>Claim your team</h4>
-      <p>Tell us which team is yours so every tool, projection, and alert is about your roster.</p>
-    </div>
-    <div class="how-step">
-      <span class="how-num">3</span>
-      <h4>Run your Sunday</h4>
-      <p>Matchups, ScoreZone, start/sit, and waivers, all wired to your league's real scoring.</p>
-    </div>
-  </div>
-</section>
+
 
 <section class="faq">
   <div style="text-align:center; margin-bottom: 12px;">
@@ -1922,7 +1725,7 @@ FORM_BODY = """
   </details>
   <details class="faq-item">
     <summary><h4>Which platforms work?</h4><span class="faq-plus">+</span></summary>
-    <p>Sleeper, ESPN, Yahoo, MFL, and Fleaflicker, for redraft and dynasty.</p>
+    <p>Sleeper, ESPN, Yahoo, MFL, and Fleaflicker. Both redraft and dynasty leagues work.</p>
   </details>
   <details class="faq-item">
     <summary><h4>Do my leaguemates need accounts?</h4><span class="faq-plus">+</span></summary>
@@ -1934,6 +1737,10 @@ FORM_BODY = """
        order so crawlers meet hero/editorial content before account machinery.
        Grid placement in dashboard.css keeps it visually beside the hero. -->
     <div class="home-hero-right">
+      <div class="ld-connect-head">
+        <h2>Connect your league</h2>
+        <p>Three steps: pick your platform, connect, choose your team.</p>
+      </div>
       <div class="home-card">
         <h2 class="home-card-title" id="homeCardTitle">{% if session.get('account_id') %}Your leagues{% else %}Get started{% endif %}</h2>
 
@@ -1973,11 +1780,11 @@ FORM_BODY = """
         <div class="row">
           <label for="platformSelect">Platform</label>
           <div class="platform-selector">
-            <button type="button" class="platform-btn active" data-platform="sleeper">Sleeper</button>
-            <button type="button" class="platform-btn" data-platform="espn">ESPN</button>
-            <button type="button" class="platform-btn" data-platform="yahoo">Yahoo</button>
-            <button type="button" class="platform-btn" data-platform="mfl">MFL</button>
-            <button type="button" class="platform-btn" data-platform="fleaflicker">Fleaflicker</button>
+            <button type="button" class="platform-btn active" data-platform="sleeper"><span class="plat-name">Sleeper</span><span class="plat-desc">Paste a link or use your username</span></button>
+            <button type="button" class="platform-btn" data-platform="espn"><span class="plat-name">ESPN</span><span class="plat-desc">Link or league ID, public or private</span></button>
+            <button type="button" class="platform-btn" data-platform="yahoo"><span class="plat-name">Yahoo</span><span class="plat-desc">Connect your Yahoo account</span></button>
+            <button type="button" class="platform-btn" data-platform="mfl"><span class="plat-name">MFL</span><span class="plat-desc">Link or league ID and season</span></button>
+            <button type="button" class="platform-btn" data-platform="fleaflicker"><span class="plat-name">Fleaflicker</span><span class="plat-desc">Link or league ID and season</span></button>
           </div>
         </div>
 
@@ -2268,27 +2075,9 @@ FORM_BODY = """
         </p>
         </div>
       </div>
-      <figure class="home-hero-proof">
-        <blockquote>THATS ACTUALLY SO SICK BRO</blockquote>
-        <figcaption><strong>Jayden Waddell</strong><span>Pittsburgh Pilots, on the weekly recap</span></figcaption>
-      </figure>
-      <p class="home-pro-hero-cta">
-        <button type="button" class="home-pro-open-btn" data-home-pro-open>Get PRO</button>
-        <span>See what PRO includes. A Google account is required to subscribe.</span>
-      </p>
     </div>
   
-<section class="indie">
-  <p>Built by a fantasy manager, not a media company.<span>Designed for leagues like yours. Tuned every week of the season.</span></p>
-</section>
-
-<section class="final-cta">
-  <div class="final-cta-inner">
-    <h2>Your league has a story. Start reading it.</h2>
-    <p>Connect a league and see your matchup board in under a minute.</p>
-    <a href="#homeCardTitle" class="tour-cta-btn">Connect your league</a>
-  </div>
-</section>  {% endif %}
+{% endif %}
 
   <div class="home-content-wrapper">
     <section class="home-feature-list-card">
@@ -22049,6 +21838,8 @@ def index():
                 recent_updates=generate_recent_updates_html(),
                 yahoo_enabled=_yahoo_ui_enabled(),
                 espn_otp_enabled=_espn_otp_ui_enabled(),
+                landing_demo_json=_landing_demo_json(),
+                landing_bg_svg=_landing_bg_svg(),
             )
             return render_page("BR Fantasy Dashboard", None, "home", body_html, lite_js=True)
 
@@ -22076,6 +21867,8 @@ def index():
                         recent_updates=generate_recent_updates_html(),
                         yahoo_enabled=_yahoo_ui_enabled(),
                         espn_otp_enabled=_espn_otp_ui_enabled(),
+                        landing_demo_json=_landing_demo_json(),
+                        landing_bg_svg=_landing_bg_svg(),
                     )
                     return render_page("BR Fantasy Dashboard", None, "home", body_html, lite_js=True)
 
@@ -22147,6 +21940,8 @@ def index():
         recent_updates=generate_recent_updates_html(),
         yahoo_enabled=_yahoo_ui_enabled(),
         espn_otp_enabled=_espn_otp_ui_enabled(),
+        landing_demo_json=_landing_demo_json(),
+        landing_bg_svg=_landing_bg_svg(),
     )
     return render_page(
         "BR Fantasy - Free Fantasy Football Trade Calculator & Dynasty Tools",

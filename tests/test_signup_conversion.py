@@ -25,27 +25,38 @@ QUOTE = "THATS ACTUALLY SO SICK BRO"
 
 
 def _hero() -> str:
-    # AdSense Tier 2 moved the connect card (.home-hero-right) after the
-    # editorial sections in DOM order; CSS grid/flex placement keeps it
-    # visually co-located with the hero. The funnel assertions cover the hero
-    # section plus the relocated card, which together hold exactly the content
-    # the old in-hero card held.
-    hero_start = APP_PY.index('<section class="home-hero">')
+    # A+ landing: the hero section (headline card + matchup board) plus the
+    # connect card (.home-hero-right), which sits after the editorial
+    # sections in DOM order (AdSense Tier 2). Together they hold the funnel
+    # content the old in-hero card held.
+    hero_start = APP_PY.index('<section class="home-hero')
     hero_end = APP_PY.index("</section>", hero_start) + len("</section>")
     card_start = APP_PY.index('<div class="home-hero-right">', hero_end)
-    card_end = APP_PY.index('<section class="indie">', card_start)
+    card_end = APP_PY.index('<div class="home-content-wrapper">', card_start)
     return APP_PY[hero_start:hero_end] + APP_PY[card_start:card_end]
+
+
+def _plain(text: str) -> str:
+    """Tag-stripped, entity-unescaped text (the quote is styled with a span)."""
+    import html as _html
+    import re as _re
+
+    return _html.unescape(_re.sub(r"<[^>]+>", "", text))
 
 
 # ── Hero funnel order: free path (Get started) before the PRO CTA ────────────
 
 def test_get_started_card_comes_before_pro_cta():
+    # A+ funnel: editorial sections, the quote, and the PRO pitch all precede
+    # the connect card in DOM order; the card itself leads with Get started.
     hero = _hero()
     assert "Get started" in hero
-    assert "home-pro-hero-cta" in hero
-    assert hero.index("Get started") < hero.index("home-pro-hero-cta")
-    left = hero[hero.index("home-hero-left"):hero.index("home-hero-right")]
-    assert "home-pro-hero-cta" not in left
+    body = APP_PY[APP_PY.index("FORM_BODY"):]
+    order = [body.index(marker) for marker in (
+        "Built for the whole week", "ld-quote", 'id="homeProSignup"',
+        '<section class="freeband', '<section class="faq">',
+        '<div class="home-hero-right">')]
+    assert order == sorted(order)
 
 
 def test_right_column_stacks_card_over_cta():
@@ -57,13 +68,11 @@ def test_right_column_stacks_card_over_cta():
 # ── Social proof near CTAs: verbatim testimonial, never invented numbers ──────
 
 def test_hero_has_testimonial_near_cta():
-    hero = _hero()
-    assert "home-hero-proof" in hero
-    assert QUOTE in hero
-    assert "Jayden Waddell" in hero
-    # Proof sits between the Get started card and the PRO CTA.
-    assert hero.index("home-hero-proof") < hero.index("home-pro-hero-cta")
-
+    # The quote now lives in its own section between the demos and PRO.
+    assert "ld-quote" in APP_PY
+    assert QUOTE in _plain(APP_PY)
+    assert "Jayden Waddell" in APP_PY
+    assert APP_PY.index("ld-quote") < APP_PY.index('id="homeProSignup"')
 
 def test_pricing_page_has_testimonial_near_plan_ctas():
     assert "pricing-proof" in BILLING_PY
@@ -72,18 +81,20 @@ def test_pricing_page_has_testimonial_near_plan_ctas():
 
 
 def test_social_proof_uses_the_existing_verbatim_quote():
-    # The quote must match the one in the hero proof, character for character:
-    # no paraphrase, no invented attribution. (The duplicate quotes section was removed.)
+    # The quote must match the site's testimonial character for character:
+    # no paraphrase, no invented attribution. It renders once, in the
+    # landing's quote section (styled with a span, so compare plain text).
     assert '<section class="quotes">' not in APP_PY
-    hero = _hero()
-    assert hero.count(QUOTE) == 1
-    assert "Jayden Waddell" in hero
+    assert "home-hero-proof" not in APP_PY
+    assert _plain(APP_PY).count(QUOTE) == 1
+    assert "Jayden Waddell" in APP_PY
+
 
 
 def test_no_invented_user_counts_in_new_proof():
-    hero = _hero()
+    quote = APP_PY[APP_PY.index("ld-quote"):APP_PY.index("</figure>", APP_PY.index("ld-quote"))]
     for snippet in ("managers strong", "happy managers", "users", "members"):
-        assert snippet not in hero[hero.index("home-hero-proof"):hero.index("home-pro-hero-cta")]
+        assert snippet not in quote
 
 
 def test_no_em_dashes_in_new_copy():
@@ -111,7 +122,7 @@ def test_guest_access_still_prominent():
     assert "No account needed to look around" in hero
     assert "Connect your league below" in hero
     # The free trust strip right under the hero is untouched.
-    assert "No account needed to look around</span>" in APP_PY
+    assert "Connect your league below. No account needed to look around." in APP_PY
 
 
 def test_oauth_state_nonce_pkce_untouched():
