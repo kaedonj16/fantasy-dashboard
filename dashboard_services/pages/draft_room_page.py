@@ -2407,7 +2407,7 @@ _DRAFT_ROOM_HTML = r"""
   .dr-cap-pill-traded { background:color-mix(in srgb, var(--warning) 16%, transparent); }
   .dr-cap-addbtn { width:26px; height:26px; flex-shrink:0; border:none; border-radius:7px;
     background:rgba(127,127,127,.1); color:var(--text-muted); font-size:18px; font-weight:600; line-height:1;
-    cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0; transition:all .12s; }
+    cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0; transition:transform .12s ease,opacity .12s ease,background-color .12s ease,color .12s ease,border-color .12s ease,box-shadow .12s ease; }
   .dr-cap-addbtn:hover { background:var(--accent,#38bdf8); color:#fff; }
   .dr-cap-row.is-open .dr-cap-addbtn { background:var(--accent,#38bdf8); color:#fff; }
   .dr-cap-picker { display:flex; align-items:center; gap:10px; padding:4px 8px 10px 72px; }
@@ -2415,7 +2415,7 @@ _DRAFT_ROOM_HTML = r"""
     letter-spacing:.04em; flex-shrink:0; }
   .dr-cap-slots { display:flex; flex-wrap:wrap; gap:5px; }
   .dr-cap-slot { width:28px; height:28px; border:1px solid var(--border); border-radius:7px; background:var(--card);
-    color:var(--text-muted); font-size:11px; font-weight:700; cursor:pointer; transition:all .12s; padding:0; }
+    color:var(--text-muted); font-size:11px; font-weight:700; cursor:pointer; transition:transform .12s ease,opacity .12s ease,background-color .12s ease,color .12s ease,border-color .12s ease,box-shadow .12s ease; padding:0; }
   .dr-cap-slot:hover { border-color:var(--accent,#38bdf8); color:var(--accent,#38bdf8); }
   .dr-cap-slot.home { border-style:dashed; }
   .dr-cap-slot.on { background:var(--accent,#38bdf8); border-color:var(--accent,#38bdf8); color:#fff; }
@@ -2468,7 +2468,7 @@ _DRAFT_ROOM_HTML = r"""
   /* ── Compare button in rows ── */
   .dr-cmp-btn { background: none; border: none; cursor: pointer; font-size: 11px; font-weight: 800;
     line-height: 1; color: var(--text-muted); padding: 3px 5px; border-radius: 5px;
-    border: 1px solid transparent; transition: all .12s; flex-shrink: 0; letter-spacing: .02em; }
+    border: 1px solid transparent; transition: transform .12s ease,opacity .12s ease,background-color .12s ease,color .12s ease,border-color .12s ease,box-shadow .12s ease; flex-shrink: 0; letter-spacing: .02em; }
   .dr-cmp-btn:hover, .dr-cmp-btn.on { color: var(--accent,#38bdf8); border-color: var(--accent,#38bdf8);
     background: color-mix(in srgb, var(--accent) 10%, transparent); }
   /* ── Player comparison overlay ── */

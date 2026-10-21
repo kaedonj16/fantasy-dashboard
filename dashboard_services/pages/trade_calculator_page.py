@@ -799,7 +799,7 @@ def build_trade_calculator_body(
             .otc-mode-btn {{
               padding:5px 14px;font-size:13px;font-weight:700;
               border:none;border-radius:7px;background:transparent;
-              color:var(--text-muted);cursor:pointer;transition:all .15s;
+              color:var(--text-muted);cursor:pointer;transition:transform .15s ease,opacity .15s ease,background-color .15s ease,color .15s ease,border-color .15s ease,box-shadow .15s ease;
             }}
             .otc-mode-btn:hover:not(.is-active) {{ color:var(--text); }}
             .otc-mode-btn.is-active {{
@@ -820,7 +820,7 @@ def build_trade_calculator_body(
               padding:6px 16px;font-size:13px;font-weight:600;
               border-radius:20px;border:1px solid var(--border);
               background:var(--card);color:var(--text-muted);
-              cursor:pointer;transition:all .15s;
+              cursor:pointer;transition:transform .15s ease,opacity .15s ease,background-color .15s ease,color .15s ease,border-color .15s ease,box-shadow .15s ease;
               white-space:nowrap;flex-shrink:0;
             }}
             .otc-arch-chip:hover {{ border-color:var(--accent);color:var(--text); }}
@@ -888,7 +888,7 @@ def build_trade_calculator_body(
             .otc-sugg-subtab {{
               padding:6px 18px;font-size:13px;font-weight:700;
               border:none;border-radius:7px;background:transparent;
-              color:var(--text-muted);cursor:pointer;transition:all .15s;
+              color:var(--text-muted);cursor:pointer;transition:transform .15s ease,opacity .15s ease,background-color .15s ease,color .15s ease,border-color .15s ease,box-shadow .15s ease;
               white-space:nowrap;
             }}
             .otc-sugg-subtab:hover:not(.is-active) {{ color:var(--text); }}

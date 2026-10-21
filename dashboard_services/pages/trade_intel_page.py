@@ -185,7 +185,7 @@ def build_trade_intel_body(
         cursor: pointer;
         font-size: 13px;
         font-weight: 500;
-        transition: all .15s;
+        transition: transform .15s ease,opacity .15s ease,background-color .15s ease,color .15s ease,border-color .15s ease,box-shadow .15s ease;
       }}
       .ti-tab.active {{
         background: var(--card);
@@ -307,7 +307,7 @@ def build_trade_intel_body(
         cursor: pointer;
         font-size: 13px;
         font-weight: 500;
-        transition: all .15s;
+        transition: transform .15s ease,opacity .15s ease,background-color .15s ease,color .15s ease,border-color .15s ease,box-shadow .15s ease;
         display: flex;
         align-items: center;
         gap: 4px;

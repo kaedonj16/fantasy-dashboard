@@ -612,7 +612,7 @@ def page_trade_database(platform: str, season: int, league_id: str):
       .ti-pagination-btn {{
         padding: 6px 12px; border: 1px solid var(--border); border-radius: 6px;
         background: var(--card); color: var(--text); cursor: pointer;
-        font-size: 13px; font-weight: 500; transition: all .15s;
+        font-size: 13px; font-weight: 500; transition: transform .15s ease,opacity .15s ease,background-color .15s ease,color .15s ease,border-color .15s ease,box-shadow .15s ease;
         display: flex; align-items: center; gap: 4px;
       }}
       .ti-pagination-btn:hover:not(:disabled) {{ background: var(--bg-alt); border-color: var(--accent, #3b82f6); }}

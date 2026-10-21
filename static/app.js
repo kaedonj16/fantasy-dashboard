@@ -638,7 +638,7 @@ document.body.scrollTop = 0;
     function focusAt(i){ var all=enabled(); if(!all.length)return; focusIndex=Math.max(0,Math.min(i,all.length-1)); all.forEach(function(e,n){e.classList.toggle('is-focused',n===focusIndex);}); trigger.setAttribute('aria-activedescendant',all[focusIndex].id); all[focusIndex].scrollIntoView({block:'nearest'}); }
     function position(){ var r=trigger.getBoundingClientRect(), vv=window.visualViewport, vh=vv?vv.height:innerHeight, vw=vv?vv.width:innerWidth, below=vh-r.bottom-8, above=r.top-8, up=above>below&&below<120; list.style.minWidth=r.width+'px'; list.style.maxWidth=Math.max(160,vw-16)+'px'; list.style.left=Math.max(8,Math.min(r.left,vw-(list.offsetWidth||r.width)-8))+'px'; list.style.top=up?'auto':(r.bottom+4)+'px'; list.style.bottom=up?(vh-r.top+4)+'px':'auto'; list.style.maxHeight=Math.max(80,Math.min(280,up?above:below))+'px'; }
     function open(){ if(isOpen||sel.disabled)return; if(openWrap&&openWrap!==wrap)openWrap._csdClose(); openWrap=wrap; isOpen=true; wrap.classList.add('is-open'); trigger.setAttribute('aria-expanded','true'); list.style.display='block'; position(); requestAnimationFrame(function(){list.classList.add('is-visible');}); var all=enabled(), ix=all.findIndex(function(e){return e.dataset.value===sel.value;}); focusAt(ix<0?0:ix); }
-    function close(){ if(!isOpen)return; isOpen=false; if(openWrap===wrap)openWrap=null; wrap.classList.remove('is-open'); trigger.setAttribute('aria-expanded','false'); trigger.removeAttribute('aria-activedescendant'); list.classList.remove('is-visible'); setTimeout(function(){if(!isOpen)list.style.display='none';},150); }
+    function close(instant){ if(!isOpen)return; isOpen=false; if(openWrap===wrap)openWrap=null; wrap.classList.remove('is-open'); trigger.setAttribute('aria-expanded','false'); trigger.removeAttribute('aria-activedescendant'); list.classList.remove('is-visible'); if(instant){ list.style.display='none'; } else { setTimeout(function(){if(!isOpen)list.style.display='none';},150); } }
     function pick(el){ if(!el||el.classList.contains('is-disabled')||sel.disabled)return; sel.value=el.dataset.value; sel.dispatchEvent(new Event('change',{bubbles:true})); sync(); close(); trigger.focus(); }
     trigger.addEventListener('click',function(e){e.stopPropagation();isOpen?close():open();});
     list.addEventListener('click',function(e){pick(e.target.closest('.csd-option'));});
@@ -646,7 +646,7 @@ document.body.scrollTop = 0;
       if(k==='ArrowDown'||k==='ArrowUp'){e.preventDefault();if(!isOpen)open();else focusAt(focusIndex+(k==='ArrowDown'?1:-1));}
       else if(k==='Home'||k==='End'){e.preventDefault();if(!isOpen)open();focusAt(k==='Home'?0:all.length-1);}
       else if(k==='Enter'||k===' '){e.preventDefault();if(isOpen)pick(all[focusIndex]);else open();}
-      else if(k==='Escape'){e.preventDefault();close();trigger.focus();} else if(k==='Tab')close();
+      else if(k==='Escape'){e.preventDefault();close(true);trigger.focus();} else if(k==='Tab')close();
       else if(k.length===1&&!e.ctrlKey&&!e.metaKey&&!e.altKey){ typeBuffer+=k.toLowerCase(); clearTimeout(typeTimer); typeTimer=setTimeout(function(){typeBuffer='';},600); var ix=all.findIndex(function(x){return x.textContent.trim().toLowerCase().startsWith(typeBuffer);}); if(ix>=0){e.preventDefault();if(!isOpen)open();focusAt(ix);} }
     });
     // Preserve native label activation after the select is visually replaced.
@@ -2589,7 +2589,7 @@ window.emptyState = emptyState;
     for (var m = 0; m < liveScores.length && m < scoreTargets.length; m++) {
       var s = scoreTargets[m];
       if (!isNaN(s.from) && !isNaN(s.to) && s.from !== s.to) {
-        window.brCountUp(numNode(liveScores[m]), { from: s.from, to: s.to, dp: 1, dur: 1200 });
+        window.brCountUp(numNode(liveScores[m]), { from: s.from, to: s.to, dp: 1, dur: 500 });
       }
     }
   };
@@ -2611,7 +2611,7 @@ window.emptyState = emptyState;
     // Cancel any count-up still running on this element so rapid updates
     // (e.g. adding several trade pieces quickly) don't fight each other.
     var run = (el._brCountRun || 0) + 1; el._brCountRun = run;
-    var dur = opts.dur || 900, st = null;
+    var dur = opts.dur || 400, st = null;
     (function tick(now) {
       if (el._brCountRun !== run) return;
       if (st === null) st = now;
@@ -2937,11 +2937,19 @@ window.emptyState = emptyState;
       // Stagger the main container's direct children (cards/sections) so they
       // fade-and-rise in. Staggering children -- rather than transforming the
       // whole page -- avoids creating a containing block for any fixed/sticky
-      // descendants during the animation.
+      // descendants during the animation. Like the nav below, this is a
+      // first-impression flourish: once per browser session, not a ~0.9s
+      // replay on every navigation (a page load is the highest-frequency
+      // "animation" on the site, so it earns the strictest budget).
       var main = document.getElementById('page-root') ||
                  document.querySelector('main.page-main, main.os-main-col');
       if (main && !main.classList.contains('br-stagger')) {
-        main.classList.add('br-stagger');
+        var pageEntered = false;
+        try { pageEntered = !!sessionStorage.getItem('brPageEntered'); } catch (e) {}
+        if (!pageEntered) {
+          main.classList.add('br-stagger');
+          try { sessionStorage.setItem('brPageEntered', '1'); } catch (e) {}
+        }
       }
       // Nav pills: a gentle staggered entrance, but only once per browser
       // session. The nav is link-based (full page loads), so replaying it on
@@ -5268,7 +5276,7 @@ function showLoginGate(target, opts) {
           var runAfter = pendingAfter;
           pendingAfter = null;
           if (runAfter) runAfter();
-        }, 400);
+        }, 200);
       }
 
       // Minimize: collapse to the launcher with the conversation fully
@@ -5310,6 +5318,29 @@ function showLoginGate(target, opts) {
         threadEl.scrollTop = 0;
         if (state.view !== 'thread') showThread();
       }
+
+      // Escape minimizes with the exact minimizePopup semantics, but
+      // INSTANTLY: keyboard-initiated actions never play an exit
+      // animation. If a click-initiated collapse is already in flight,
+      // leave it alone - its pending `after` (e.g. the close reset)
+      // owns the outcome.
+      function minimizePopupInstant() {
+        if (popup.hidden || exitTimer) return;
+        // A modal stacked above the assistant owns this Escape.
+        if (document.querySelector('.player-modal-overlay, .for-modal-overlay')) return;
+        state.savedScroll = threadEl.scrollTop;
+        state.popupState = 'minimized';
+        saveSession();
+        if (state.busy) launcherTyping.hidden = false;
+        kbListen(false);
+        scrim.hidden = true;
+        scrim.classList.remove('br-asst-enter');
+        popup.classList.remove('br-asst-enter', 'br-asst-exit');
+        popup.hidden = true;
+      }
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') minimizePopupInstant();
+      });
 
       launcher.addEventListener('click', function () {
         if (popup.hidden) openPopup(false); else minimizePopup();
@@ -5363,13 +5394,13 @@ function showLoginGate(target, opts) {
           // Spring back: keep the dragged offset as the transition's
           // start value, then drive the transform home on the glide
           // curve and clean up when it lands.
-          popup.style.transition = 'transform .38s cubic-bezier(0.22, 1, 0.36, 1)';
+          popup.style.transition = 'transform .28s cubic-bezier(0.22, 1, 0.36, 1)';
           void popup.offsetWidth;
           popup.style.transform = 'translateY(0px)';
           setTimeout(function () {
             popup.style.transition = '';
             popup.style.transform = '';
-          }, 400);
+          }, 300);
           return;
         }
         popup.style.transform = '';
@@ -18135,6 +18166,7 @@ if (document.readyState === 'loading') {
   function _show(el) {
     var text = el.getAttribute('data-tooltip');
     if (!text) return;
+    if (typeof _cancelPending === 'function') _cancelPending();
     anchor = el;
     var t = _tipEl();
     t.textContent = text;
@@ -18142,7 +18174,18 @@ if (document.readyState === 'loading') {
     _position();
   }
 
+  var showTimer = null;
+  var pendingEl = null;
+  var lastHideAt = 0;
+
+  function _cancelPending() {
+    if (showTimer) { clearTimeout(showTimer); showTimer = null; }
+    pendingEl = null;
+  }
+
   function _hide() {
+    _cancelPending();
+    if (anchor) lastHideAt = Date.now();
     anchor = null;
     if (tip) tip.style.display = 'none';
   }
@@ -18159,10 +18202,27 @@ if (document.readyState === 'loading') {
   document.addEventListener('mouseover', function (e) {
     if (_coarsePointer()) return; // touch uses the tap path below
     var el = _anchorOf(e.target);
-    if (el && el !== anchor) _show(el);
+    if (!el || el === anchor || el === pendingEl) return;
+    // First tooltip in a browsing pass waits 350ms, so sweeping the
+    // mouse across labelled controls does not flash tips. Once one has
+    // shown, the next opens instantly (skip-delay), and re-entering
+    // within 1.5s of a hide still counts as the same pass.
+    if (anchor || (Date.now() - lastHideAt) < 1500) { _show(el); return; }
+    _cancelPending();
+    pendingEl = el;
+    showTimer = setTimeout(function () {
+      showTimer = null;
+      var p = pendingEl;
+      pendingEl = null;
+      if (p) _show(p);
+    }, 350);
   });
   document.addEventListener('mouseout', function (e) {
     if (_coarsePointer()) return; // synthetic post-tap mouse events; taps own visibility
+    if (pendingEl && _anchorOf(e.target) === pendingEl &&
+        !(e.relatedTarget && pendingEl.contains(e.relatedTarget))) {
+      _cancelPending();
+    }
     if (!anchor) return;
     if (e.relatedTarget && anchor.contains(e.relatedTarget)) return;
     if (_anchorOf(e.target) === anchor) _hide();

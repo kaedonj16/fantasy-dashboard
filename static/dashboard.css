@@ -672,13 +672,32 @@ table, .standings-table, .mini-value, .mini-stat, .sr-stat-value,
     }
 }
 
-/* Honor reduced-motion preferences globally. */
+/* Honor reduced-motion preferences globally: movement goes, fades stay.
+   Keyframe animations collapse to their end state (0.01ms rather than 0s
+   so animationend listeners still fire). Transitions are NOT zeroed:
+   their property list is restricted to non-movement properties, so
+   opacity and color fades - which aid comprehension - keep working
+   while transform and layout transitions land instantly. (visibility is
+   deliberately excluded: it must flip instantly both ways, or a sheet
+   opening under reduced motion would stay invisible until its old
+   duration elapsed.) Fade-only overlay keyframes opt back in below.
+   Per-component reduced-motion blocks may still be stricter. This is
+   the single global block; do not add a second one. */
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {
         animation-duration: 0.01ms !important;
         animation-iteration-count: 1 !important;
-        transition-duration: 0.01ms !important;
         scroll-behavior: auto !important;
+    }
+
+    *, *::before, *::after {
+        transition-property: opacity, color, background-color, border-color, box-shadow, outline-color, text-decoration-color !important;
+    }
+
+    /* Fade-only entrances keep a short fade. */
+    .player-modal-overlay,
+    .for-modal-overlay {
+        animation-duration: 0.2s !important;
     }
 }
 
@@ -1171,7 +1190,7 @@ ul {
 .nav-pill-chevron {
     font-size: 11px;
     opacity: 0.7;
-    transition: transform 0.15s ease;
+    transition: transform 0.15s var(--ease-out);
     display: inline-block;
 }
 
@@ -1378,7 +1397,7 @@ ul {
     font-size: 18px !important;
     cursor: pointer;
     box-shadow: var(--shadow-sm);
-    transition: all 0.2s ease;
+    transition: transform 0.2s var(--ease-out, cubic-bezier(.2, .8, .3, 1)), opacity 0.2s ease, background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .changelog-bell-btn:hover {
@@ -1444,7 +1463,7 @@ ul {
     font-size: 18px !important;
     cursor: pointer;
     box-shadow: var(--shadow-sm);
-    transition: all 0.2s ease;
+    transition: transform 0.2s var(--ease-out, cubic-bezier(.2, .8, .3, 1)), opacity 0.2s ease, background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
     padding: 0;
 }
 
@@ -1792,7 +1811,7 @@ html[data-theme="dark"] img[src*="discord-brands-solid.png"] {
     border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: 16px;
-    transition: all 0.2s ease;
+    transition: transform 0.2s var(--ease-out, cubic-bezier(.2, .8, .3, 1)), opacity 0.2s ease, background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .breakout-card:hover {
@@ -2298,7 +2317,7 @@ html[data-theme="dark"] img[src*="discord-brands-solid.png"] {
 .bo-hit-def-chev {
     flex: 0 0 auto;
     color: var(--text-muted);
-    transition: transform 0.18s ease;
+    transition: transform 0.18s var(--ease-out);
 }
 
 .bo-hit-def-toggle[aria-expanded="true"] .bo-hit-def-chev {
@@ -2377,7 +2396,7 @@ html[data-theme="dark"] img[src*="discord-brands-solid.png"] {
     font-size: 15px;
     opacity: 0;
     transform: translateX(-4px);
-    transition: all 0.2s ease;
+    transition: transform 0.2s var(--ease-out, cubic-bezier(.2, .8, .3, 1)), opacity 0.2s ease, background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .changelog-entry:hover .changelog-entry-top::after {
@@ -3076,7 +3095,7 @@ html[data-theme="dark"] img[src*="discord-brands-solid.png"] {
     font-size: 13px;
     font-weight: 700;
     text-decoration: none;
-    transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+    transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s var(--ease-out);
 }
 
 .os-do-next-draft-link:hover {
@@ -3239,7 +3258,7 @@ html[data-theme="dark"] img[src*="discord-brands-solid.png"] {
     border-right: 3.5px solid transparent;
     border-top: 4px solid currentColor;
     opacity: 0.65;
-    transition: transform 0.15s ease;
+    transition: transform 0.15s var(--ease-out);
 }
 
 .pm-actions-menu.open .pm-actions-chevron,
@@ -3349,7 +3368,7 @@ html[data-theme="dark"] img[src*="discord-brands-solid.png"] {
     font-size: 13px;
     font-weight: 600;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: transform 0.2s var(--ease-out, cubic-bezier(.2, .8, .3, 1)), opacity 0.2s ease, background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .league-switcher:hover {
@@ -3440,7 +3459,7 @@ html[data-theme="dark"] img[src*="discord-brands-solid.png"] {
     flex: 0 0 auto;
     color: var(--text-muted);
     font-size: 11px;
-    transition: transform 0.18s ease;
+    transition: transform 0.18s var(--ease-out);
 }
 
 .ls-list.open .ls-toggle-chev {
@@ -3861,7 +3880,7 @@ html[data-theme="dark"] img[src*="discord-brands-solid.png"] {
     letter-spacing: 0.2px;
     box-shadow: 0 10px 18px rgba(0, 0, 0, 0.25),
     inset 0 1px 0 rgba(255, 255, 255, 0.05);
-    transition: transform .12s ease, border-color .12s ease, box-shadow .12s ease, background .12s ease, color .12s ease;
+    transition: transform .12s var(--ease-out), border-color .12s ease, box-shadow .12s ease, background .12s ease, color .12s ease;
 }
 
 .platform-btn img {
@@ -3994,7 +4013,7 @@ label {
     font-size: 15px;
     font-weight: 600;
     cursor: pointer;
-    transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+    transition: background 0.15s ease, transform 0.15s var(--ease-out), box-shadow 0.15s ease;
 }
 
 .otc-btn:active {
@@ -4073,7 +4092,7 @@ button {
     font-weight: 600;
     cursor: pointer;
     font-size: 15px;
-    transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+    transition: background 0.15s ease, transform 0.15s var(--ease-out), box-shadow 0.15s ease;
 }
 
 button:active {
@@ -4344,7 +4363,7 @@ button:hover {
     border-radius: var(--radius-pill);
     background: var(--card);
     box-shadow: var(--shadow-sm);
-    transition: transform 0.2s ease;
+    transition: transform 0.2s var(--ease-out);
 }
 .st-detail-toggle input:checked + .st-detail-switch {
     background: var(--accent);
@@ -5614,7 +5633,7 @@ thead th {
     font-size: 13px;
     color: var(--brand-blue);
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: transform 0.2s var(--ease-out, cubic-bezier(.2, .8, .3, 1)), opacity 0.2s ease, background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .otc-add-pick-btn, .otc-clear-btn {
@@ -5657,7 +5676,7 @@ thead th {
     padding: 8px;
     cursor: pointer;
     color: var(--text);
-    transition: all 0.2s ease;
+    transition: transform 0.2s var(--ease-out, cubic-bezier(.2, .8, .3, 1)), opacity 0.2s ease, background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -5700,7 +5719,7 @@ thead th {
     background: var(--row);
     color: var(--text);
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: transform 0.2s var(--ease-out, cubic-bezier(.2, .8, .3, 1)), opacity 0.2s ease, background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
     min-width: 200px;
 }
 
@@ -6381,7 +6400,7 @@ strong + .player-badge,
     color: white;
     flex-shrink: 0;
     box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
-    transition: all 0.2s ease;
+    transition: transform 0.2s var(--ease-out, cubic-bezier(.2, .8, .3, 1)), opacity 0.2s ease, background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .otc-breakout-row:hover .otc-breakout-badge {
@@ -6413,7 +6432,7 @@ strong + .player-badge,
 .breakout-player-name.player-clickable {
     font-weight: 600;
     color: var(--text);
-    transition: all 0.2s ease;
+    transition: transform 0.2s var(--ease-out, cubic-bezier(.2, .8, .3, 1)), opacity 0.2s ease, background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .breakout-player-name.player-clickable:hover {
@@ -6471,7 +6490,7 @@ strong + .player-badge,
 .otc-title-arrow {
     color: var(--accent);
     font-weight: 700;
-    transition: transform .15s ease;
+    transition: transform .15s var(--ease-out);
 }
 
 .otc-mini-section-title-link:hover .otc-title-arrow,
@@ -6526,7 +6545,7 @@ strong + .player-badge,
     color: #64748b;
     border-radius: var(--radius-sm);
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: transform 0.2s var(--ease-out, cubic-bezier(.2, .8, .3, 1)), opacity 0.2s ease, background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .otc-mini-tab:hover {
@@ -6564,7 +6583,7 @@ strong + .player-badge,
     color: #64748b;
     border-radius: var(--radius-sm);
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: transform 0.2s var(--ease-out, cubic-bezier(.2, .8, .3, 1)), opacity 0.2s ease, background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 #teamsAnalyticsTabs .tab-btn:hover {
@@ -6611,7 +6630,7 @@ strong + .player-badge,
 
 .otc-movers-panel {
     padding: 12px 14px;
-    transition: all 0.3s ease;
+    transition: transform 0.3s var(--ease-out, cubic-bezier(.2, .8, .3, 1)), opacity 0.3s ease, background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
 .otc-movers-loading {
@@ -6884,7 +6903,7 @@ strong + .player-badge,
     color: var(--text-muted);
     font-size: 15px;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: transform 0.2s var(--ease-out, cubic-bezier(.2, .8, .3, 1)), opacity 0.2s ease, background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .otc-info-btn:hover {
@@ -8356,7 +8375,7 @@ strong + .player-badge,
     font-weight: 500;
     min-width: 200px;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: transform 0.2s var(--ease-out, cubic-bezier(.2, .8, .3, 1)), opacity 0.2s ease, background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
@@ -8505,7 +8524,7 @@ a.otc-value-name:hover {
     border-radius: var(--radius);
     background: var(--card);
     padding: 10px;
-    transition: transform 140ms ease, background 140ms ease, border-color 140ms ease;
+    transition: transform 140ms var(--ease-out), background 140ms ease, border-color 140ms ease;
     grid-template-columns: 42px minmax(0, 1fr);
 }
 
@@ -8682,7 +8701,7 @@ a.otc-value-name:hover {
     border-radius: var(--radius);
     background: var(--card);
     cursor: pointer;
-    transition: all 0.2s;
+    transition: transform 0.2s var(--ease-out, cubic-bezier(.2, .8, .3, 1)), opacity 0.2s ease, background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
     font-weight: 500;
     font-size: var(--text-sm);
     white-space: nowrap;
@@ -8887,7 +8906,7 @@ select:focus {
     color: var(--text-muted);
     display: inline-flex;
     align-items: center;
-    transition: transform 0.2s ease;
+    transition: transform 0.2s var(--ease-out);
 }
 
 .csd-wrap.is-open .csd-arrow {
@@ -8911,7 +8930,7 @@ select:focus {
     scrollbar-width: thin;
     opacity: 0;
     transform: translateY(-6px);
-    transition: opacity 0.14s ease, transform 0.14s ease;
+    transition: opacity 0.14s ease, transform 0.14s var(--ease-out);
 }
 
 .csd-list.is-visible {
@@ -9832,7 +9851,7 @@ select:focus {
     background: var(--bg);
     color: var(--text);
     cursor: pointer;
-    transition: all 0.2s;
+    transition: transform 0.2s var(--ease-out, cubic-bezier(.2, .8, .3, 1)), opacity 0.2s ease, background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .recap-team-dropdown:hover {
@@ -9857,7 +9876,7 @@ select:focus {
     border: none;
     border-radius: var(--radius);
     cursor: pointer;
-    transition: all 0.2s;
+    transition: transform 0.2s var(--ease-out, cubic-bezier(.2, .8, .3, 1)), opacity 0.2s ease, background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
     box-shadow: 0 2px 8px rgba(59, 130, 246, 0.25);
     white-space: nowrap;
 }
@@ -10656,7 +10675,7 @@ select:focus {
     padding: 4px;
     font-size: 22px;
     line-height: 1;
-    transition: transform 0.2s ease, color 0.2s ease;
+    transition: transform 0.2s var(--ease-out), color 0.2s ease;
 }
 
 .card-collapse-toggle:hover {
@@ -10710,7 +10729,7 @@ select:focus {
 .os-section-title-arrow {
     color: var(--accent);
     font-weight: 700;
-    transition: transform .15s ease;
+    transition: transform .15s var(--ease-out);
 }
 
 .os-section-title-link:hover .os-section-title-arrow,
@@ -10727,7 +10746,7 @@ select:focus {
     border-radius: var(--radius);
     background: var(--row);
     padding: 14px 14px 12px;
-    transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
+    transition: transform 140ms var(--ease-out), box-shadow 140ms ease, border-color 140ms ease;
 }
 
 .os-snapshot-card:hover {
@@ -14065,7 +14084,7 @@ a.signed-home-league:hover {
     font-size: 15px;
     font-weight: 600;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: transform 0.2s var(--ease-out, cubic-bezier(.2, .8, .3, 1)), opacity 0.2s ease, background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
     height: auto;
     flex: none;
 }
@@ -14172,7 +14191,7 @@ a.signed-home-league:hover {
     padding: 20px;
     box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
     border: 1px solid rgba(148, 163, 184, 0.3);
-    transition: all 0.2s ease;
+    transition: transform 0.2s var(--ease-out, cubic-bezier(.2, .8, .3, 1)), opacity 0.2s ease, background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .home-feature-card:hover {
@@ -14410,7 +14429,7 @@ a.signed-home-league:hover {
     border: 1px solid #e5e7eb;
     border-radius: var(--radius);
     padding: 16px;
-    transition: all 0.2s ease;
+    transition: transform 0.2s var(--ease-out, cubic-bezier(.2, .8, .3, 1)), opacity 0.2s ease, background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .home-update-card:hover {
@@ -14640,7 +14659,7 @@ a.signed-home-league:hover {
     font-size: 15px;
     font-weight: 600;
     text-decoration: none;
-    transition: border-color 0.15s ease, transform 0.15s ease;
+    transition: border-color 0.15s ease, transform 0.15s var(--ease-out);
 }
 
 .home-publisher-links a:hover {
@@ -14993,7 +15012,7 @@ a.signed-home-league:hover {
     border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: 12px;
-    transition: all 0.15s ease;
+    transition: transform 0.15s var(--ease-out, cubic-bezier(.2, .8, .3, 1)), opacity 0.15s ease, background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .home-update-item:hover {
@@ -15341,7 +15360,7 @@ a.signed-home-league:hover {
     border-left: 4px solid transparent;
     border-right: 4px solid transparent;
     border-top: 5px solid currentColor;
-    transition: transform .18s ease;
+    transition: transform .18s var(--ease-out);
 }
 
 .dr-keeper-view.is-open .dr-keeper-caret {
@@ -16941,7 +16960,7 @@ html[data-theme="dark"] .podium .bar {
 
 .pos-row-toggle {
     display: inline-block;
-    transition: transform 0.15s ease;
+    transition: transform 0.15s var(--ease-out);
 }
 
 .pos-row.pos-strongest {
@@ -21824,7 +21843,7 @@ img, svg, canvas {
     display: flex;
     flex-direction: column;
     transform: scale(0.95);
-    animation: scaleIn 0.3s ease forwards;
+    animation: scaleIn 0.3s var(--ease-out) forwards;
 }
 
 [data-theme="dark"] .player-modal {
@@ -21948,7 +21967,7 @@ img, svg, canvas {
     cursor: pointer;
     color: var(--text-muted);
     font-size: 22px;
-    transition: all 0.2s ease;
+    transition: transform 0.2s var(--ease-out, cubic-bezier(.2, .8, .3, 1)), opacity 0.2s ease, background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
     flex-shrink: 0;
 }
 
@@ -22231,7 +22250,7 @@ img, svg, canvas {
 .game-log-year-toggle {
     font-size: 11px;
     color: var(--text-muted);
-    transition: transform 0.2s ease;
+    transition: transform 0.2s var(--ease-out);
     width: 12px;
     display: inline-block;
 }
@@ -23889,7 +23908,7 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
     display: flex;
     flex-direction: column;
     transform: scale(0.95);
-    animation: scaleIn 0.3s ease forwards;
+    animation: scaleIn 0.3s var(--ease-out) forwards;
     z-index: var(--z-modal);
     position: relative;
     margin: 20px;
@@ -24021,7 +24040,7 @@ td.t-g, td.t-o, td.t-r { font-weight: 700; }
     align-items: center;
     justify-content: center;
     border-radius: var(--radius);
-    transition: all 0.2s;
+    transition: transform 0.2s var(--ease-out, cubic-bezier(.2, .8, .3, 1)), opacity 0.2s ease, background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
     flex-shrink: 0;
     align-self: flex-start;
 }
@@ -24487,7 +24506,7 @@ a.pm-avail-row:hover { background: var(--row); }
     align-items: center;
     justify-content: center;
     border-radius: var(--radius);
-    transition: all 0.2s;
+    transition: transform 0.2s var(--ease-out, cubic-bezier(.2, .8, .3, 1)), opacity 0.2s ease, background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 .tm-menu-trigger:hover {
     background: var(--bg-alt);
@@ -25316,7 +25335,7 @@ a.pm-avail-row:hover { background: var(--row); }
 }
 
 .tm2-bl-chev { color: var(--text-muted); font-size: 11px; }
-.tm2-bl-chev i { transition: transform .15s ease; }
+.tm2-bl-chev i { transition: transform .15s var(--ease-out); }
 .tm2-group.tm2-open .tm2-bl-chev i { transform: rotate(180deg); }
 
 .tm2-bench-div {
@@ -25823,7 +25842,7 @@ img.tm-sched-avatar {
     flex-shrink: 0;
     color: var(--text-muted);
     font-size: 13px;
-    transition: transform .18s ease;
+    transition: transform .18s var(--ease-out);
     margin-left: 2px;
 }
 
@@ -27399,7 +27418,7 @@ tr.team-clickable {
     font-size: 13px;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.13s;
+    transition: transform 0.13s var(--ease-out, cubic-bezier(.2, .8, .3, 1)), opacity 0.13s ease, background-color 0.13s ease, color 0.13s ease, border-color 0.13s ease, box-shadow 0.13s ease;
     white-space: nowrap;
 }
 
@@ -28800,7 +28819,7 @@ table.mid-table {
     height: 16px;
     color: var(--text-muted);
     flex-shrink: 0;
-    transition: transform 0.2s ease;
+    transition: transform 0.2s var(--ease-out);
 }
 
 .draft-acc-item.open .draft-acc-chevron {
@@ -29160,7 +29179,7 @@ table.mid-table {
     font-size: 11px;
     font-weight: 600;
     cursor: pointer;
-    transition: all 0.12s;
+    transition: transform 0.12s var(--ease-out, cubic-bezier(.2, .8, .3, 1)), opacity 0.12s ease, background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
     white-space: nowrap;
 }
 
@@ -31413,7 +31432,7 @@ table.mid-table {
     border: 1px solid var(--border);
     font-size: 13px;
     color: var(--text);
-    transition: border-color .15s ease, transform .15s ease;
+    transition: border-color .15s ease, transform .15s var(--ease-out);
 }
 
 .wl-alert-item:hover {
@@ -31528,7 +31547,7 @@ table.mid-table {
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
-    transition: opacity .25s ease, transform .25s ease, visibility .25s ease;
+    transition: opacity .25s ease, transform .25s var(--ease-out), visibility .25s ease;
 }
 
 .offline-bar.offline-bar-show {
@@ -31894,7 +31913,7 @@ table.mid-table {
     background: var(--card);
     border: 1px solid var(--border);
     color: var(--text);
-    transition: border-color .15s ease, background .15s ease, transform .1s ease;
+    transition: border-color .15s ease, background .15s ease, transform .1s var(--ease-out);
 }
 
 .compare-action-btn:hover {
@@ -31950,7 +31969,7 @@ table.mid-table {
     font-size: 13px;
     font-weight: 600;
     color: var(--text-muted);
-    transition: border-color .15s ease, transform .1s ease, box-shadow .15s ease;
+    transition: border-color .15s ease, transform .1s var(--ease-out), box-shadow .15s ease;
 }
 
 .compare-feature:hover {
@@ -32046,7 +32065,7 @@ table.mid-table {
     overflow: hidden;
     background: var(--card);
     border: 1px solid var(--border);
-    transition: border-color .15s ease, transform .12s ease, box-shadow .15s ease, background .15s ease;
+    transition: border-color .15s ease, transform .12s var(--ease-out), box-shadow .15s ease, background .15s ease;
 }
 
 .compare-chip:hover {
@@ -32623,7 +32642,7 @@ table.mid-table {
     gap: 5px;
     position: relative;
     overflow: hidden;
-    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    transition: transform 0.15s var(--ease-out), box-shadow 0.15s ease;
 }
 
 .fun-award-item:hover {
@@ -33616,7 +33635,7 @@ button:disabled {
     cursor: pointer;
     text-decoration: none;
     display: inline-block;
-    transition: all 0.12s;
+    transition: transform 0.12s var(--ease-out, cubic-bezier(.2, .8, .3, 1)), opacity 0.12s ease, background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
 }
 
 .login-gate-btn-secondary:hover {
@@ -34043,7 +34062,7 @@ button:disabled {
     box-shadow: 0 4px 20px rgba(0, 0, 0, .3);
     opacity: 0;
     transform: translateY(10px);
-    transition: opacity .22s ease, transform .22s ease;
+    transition: opacity .22s ease, transform .22s var(--ease-out);
     pointer-events: auto;
     /* Long messages (e.g. the multi-sentence Yahoo OAuth errors) must wrap
      instead of overflowing off-screen on a phone. */
@@ -34107,7 +34126,7 @@ button:disabled {
     gap: 16px;
     width: clamp(280px, 90vw, 400px);
     opacity: 0;
-    transition: opacity .3s ease, transform .3s ease;
+    transition: opacity .3s ease, transform .3s var(--ease-out);
 }
 
 #pwa-install-banner.pwa-banner-visible {
@@ -34192,7 +34211,7 @@ button:disabled {
     gap: 8px;
     font-size: 13px;
     opacity: 0;
-    transition: opacity .25s ease, transform .25s ease;
+    transition: opacity .25s ease, transform .25s var(--ease-out);
     white-space: nowrap;
 }
 
@@ -34249,7 +34268,7 @@ button:disabled {
     gap: 16px;
     width: clamp(280px, 90vw, 400px);
     opacity: 0;
-    transition: opacity .3s ease, transform .3s ease;
+    transition: opacity .3s ease, transform .3s var(--ease-out);
 }
 
 #push-notif-banner.pwa-banner-visible {
@@ -34277,7 +34296,7 @@ button:disabled {
     gap: 16px;
     width: clamp(280px, 90vw, 400px);
     opacity: 0;
-    transition: opacity .3s ease, transform .3s ease;
+    transition: opacity .3s ease, transform .3s var(--ease-out);
 }
 
 #push-reprompt-banner.pwa-banner-visible {
@@ -34321,7 +34340,7 @@ button:disabled {
     padding: 14px 16px 12px;
     opacity: 0;
     transform: translateY(14px);
-    transition: opacity .25s ease, transform .25s ease;
+    transition: opacity .25s ease, transform .25s var(--ease-out);
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -35400,7 +35419,7 @@ button:disabled {
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
     opacity: 0;
     transform: translateY(8px);
-    transition: opacity 0.22s ease, transform 0.22s ease;
+    transition: opacity 0.22s ease, transform 0.22s var(--ease-out);
     pointer-events: auto;
 }
 
@@ -35429,7 +35448,7 @@ button:disabled {
     font-weight: 500;
     color: var(--text-muted);
     cursor: pointer;
-    transition: all 0.15s;
+    transition: transform 0.15s var(--ease-out, cubic-bezier(.2, .8, .3, 1)), opacity 0.15s ease, background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
     white-space: nowrap;
 }
 
@@ -37635,7 +37654,7 @@ button:disabled {
     border: 1px solid var(--rz-border);
     border-radius: var(--radius);
     background: var(--rz-surface);
-    transition: all .15s;
+    transition: transform .15s var(--ease-out, cubic-bezier(.2, .8, .3, 1)), opacity .15s ease, background-color .15s ease, color .15s ease, border-color .15s ease, box-shadow .15s ease;
     letter-spacing: .03em;
 }
 
@@ -37671,7 +37690,7 @@ button:disabled {
     padding: 9px 6px;
     border-radius: var(--radius);
     cursor: pointer;
-    transition: all .15s;
+    transition: transform .15s var(--ease-out, cubic-bezier(.2, .8, .3, 1)), opacity .15s ease, background-color .15s ease, color .15s ease, border-color .15s ease, box-shadow .15s ease;
 }
 
 .rz-scope-btn.active {
@@ -38539,7 +38558,7 @@ button:disabled {
     padding: 8px 4px;
     cursor: pointer;
     border-radius: var(--radius);
-    transition: all .15s;
+    transition: transform .15s var(--ease-out, cubic-bezier(.2, .8, .3, 1)), opacity .15s ease, background-color .15s ease, color .15s ease, border-color .15s ease, box-shadow .15s ease;
     text-align: center;
     white-space: nowrap;
 }
@@ -39639,7 +39658,7 @@ button:disabled {
     font-size: 13px;
     font-weight: 700;
     cursor: pointer;
-    transition: all .15s;
+    transition: transform .15s var(--ease-out, cubic-bezier(.2, .8, .3, 1)), opacity .15s ease, background-color .15s ease, color .15s ease, border-color .15s ease, box-shadow .15s ease;
 }
 
 .rz-page-btn:hover:not(.disabled) {
@@ -39676,7 +39695,7 @@ button:disabled {
     font-size: 13px;
     cursor: pointer;
     font-weight: 700;
-    transition: all .15s;
+    transition: transform .15s var(--ease-out, cubic-bezier(.2, .8, .3, 1)), opacity .15s ease, background-color .15s ease, color .15s ease, border-color .15s ease, box-shadow .15s ease;
 }
 
 .rz-filter-toggle.open, .rz-filter-toggle:hover {
@@ -39846,7 +39865,7 @@ button:disabled {
     background: transparent;
     color: var(--rz-muted);
     cursor: pointer;
-    transition: all .15s;
+    transition: transform .15s var(--ease-out, cubic-bezier(.2, .8, .3, 1)), opacity .15s ease, background-color .15s ease, color .15s ease, border-color .15s ease, box-shadow .15s ease;
     white-space: nowrap;
 }
 
@@ -39872,7 +39891,7 @@ button:disabled {
     background: transparent;
     color: var(--rz-muted);
     cursor: pointer;
-    transition: all .15s;
+    transition: transform .15s var(--ease-out, cubic-bezier(.2, .8, .3, 1)), opacity .15s ease, background-color .15s ease, color .15s ease, border-color .15s ease, box-shadow .15s ease;
     white-space: nowrap;
 }
 .rz-bigplays-btn.active {
@@ -41536,20 +41555,8 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     }
 }
 
-/* ── Global reduced-motion safeguard ──────────────────────────────────────────
-   Honors the OS "reduce motion" setting across all animated UI (fire/ice
-   pulses, spinners, transitions, smooth scrolling). Near-instant (0.01ms)
-   rather than 0s so animationend/transitionend listeners still fire. */
-@media (prefers-reduced-motion: reduce) {
-    *,
-    *::before,
-    *::after {
-        animation-duration: 0.01ms !important;
-        animation-iteration-count: 1 !important;
-        transition-duration: 0.01ms !important;
-        scroll-behavior: auto !important;
-    }
-}
+/* The global reduced-motion block lives near the top of this file
+   (movement off, fades kept). Do not add a second global block here. */
 
 /* ── Trade calculator settings dropdown ───────────────────────────────────────
    Groups league size / format / TE-premium / roster-filter behind a button so
@@ -41584,7 +41591,7 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
 .otc-settings-gear {
     font-size: 15px;
     line-height: 1;
-    transition: transform .25s ease;
+    transition: transform .25s var(--ease-out);
     flex-shrink: 0;
 }
 
@@ -43078,7 +43085,7 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     border-radius: var(--radius);
     background: linear-gradient(120deg, #7c3aed, #db2777 55%, #f59e0b);
     box-shadow: 0 6px 20px rgba(124, 58, 237, .35);
-    transition: transform .15s ease, box-shadow .15s ease;
+    transition: transform .15s var(--ease-out), box-shadow .15s ease;
 }
 
 .wrapped-launch:hover {
@@ -43298,7 +43305,7 @@ table.rz-bs-table tr[data-pid]:not([data-pid=""]) td.rz-bs-pname { cursor: point
     text-align: center;
     opacity: 0;
     pointer-events: none;
-    transition: opacity .25s ease, transform .25s ease;
+    transition: opacity .25s ease, transform .25s var(--ease-out);
 }
 
 .wrapped-toast.show {
@@ -44201,7 +44208,7 @@ a, button, [role="button"], [role="tab"], summary, label,
    A quick, small scale reads as a real button press. */
 @media (pointer: coarse) {
     button, [role="button"], [role="tab"], .pos-pill, .settings-toggle {
-        transition: transform .08s ease;
+        transition: transform .08s var(--ease-out);
     }
 
     button:active, [role="button"]:active, [role="tab"]:active,
@@ -44425,7 +44432,7 @@ a, button, [role="button"], [role="tab"], summary, label,
         font-weight: 600;
         letter-spacing: .03em;
         -webkit-tap-highlight-color: transparent;
-        transition: color .12s ease, transform .08s ease;
+        transition: color .12s ease, transform .08s var(--ease-out);
     }
 
     .br-tabbar-item .nav-svg-icon {
@@ -44742,7 +44749,7 @@ a, button, [role="button"], [role="tab"], summary, label,
     .br-sheet-acct-chev {
         margin-left: auto;
         color: var(--text-muted);
-        transition: transform .18s ease;
+        transition: transform .18s var(--ease-out);
         flex: 0 0 auto;
     }
 
@@ -46374,7 +46381,7 @@ a, button, [role="button"], [role="tab"], summary, label,
 /* Keep .pos-name a real table-cell (a display:flex td drops out of the table
    layout and lets the column stretch). Lay the chevron + chip out inline. */
 .team-strength-card .pos-name { width: 74px; white-space: nowrap; }
-.team-strength-card .pos-row-toggle { display: inline-block; vertical-align: middle; margin-right: 5px; font-size: 11px; color: var(--text-subtle); transition: transform .15s ease; }
+.team-strength-card .pos-row-toggle { display: inline-block; vertical-align: middle; margin-right: 5px; font-size: 11px; color: var(--text-subtle); transition: transform .15s var(--ease-out); }
 .team-strength-card .tc-pos-chip { display: inline-flex; align-items: center; justify-content: center; vertical-align: middle; width: 38px; padding: 4px 0; border-radius: var(--radius-pill); text-align: center; font-weight: 700; font-size: 13px; letter-spacing: .02em; color: #fff; background: var(--p, #64748b); }
 .team-strength-card .tc-pos-chip-cap { color: var(--text); background: color-mix(in srgb, var(--p) 22%, var(--card)); }
 /* The bar cell is the flexible column (width:100% in an auto table grabs the
@@ -47732,7 +47739,7 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 .faq .faq-item summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; cursor: pointer; list-style: none; }
 .faq .faq-item summary::-webkit-details-marker { display: none; }
 .faq .faq-item summary h4 { margin: 0; font-size: 15px; font-weight: 700; }
-.faq .faq-item .faq-plus { flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--card-soft); border: 1px solid var(--border); font-size: 18px; line-height: 1; transition: transform .2s ease; }
+.faq .faq-item .faq-plus { flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--card-soft); border: 1px solid var(--border); font-size: 18px; line-height: 1; transition: transform .2s var(--ease-out); }
 .faq .faq-item[open] .faq-plus { transform: rotate(45deg); }
 .faq .faq-item p { margin: 0; font-size: 15px; color: var(--text-muted); line-height: 1.6; }
 .faq .faq-item[open] p { padding-top: 10px; }
@@ -47768,7 +47775,7 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 .quotes-single .quote-card blockquote::before { margin-left: auto; margin-right: auto; }
 /* Wrapped auto-play deck */
 .hm-deck { position: relative; min-height: 220px; }
-.hm-slide { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; opacity: 0; transform: translateY(8px); transition: opacity 0.5s ease, transform 0.5s ease; pointer-events: none; }
+.hm-slide { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; opacity: 0; transform: translateY(8px); transition: opacity 0.5s var(--ease-out), transform 0.5s var(--ease-out); pointer-events: none; }
 .hm-slide.is-active { opacity: 1; transform: none; pointer-events: auto; }
 .hm-dots { display: flex; gap: 6px; justify-content: center; margin-top: 16px; }
 .hm-dot { width: 6px; height: 6px; border-radius: var(--radius-sm); background: var(--border); transition: background 0.3s, width 0.3s; }
@@ -49180,7 +49187,7 @@ em.gneg { background: var(--loss); }
     background: var(--card);
     z-index: 50;
     transform: translateX(105%);
-    transition: transform .28s ease;
+    transition: transform .28s var(--ease-out);
     box-shadow: -8px 0 30px rgba(15, 42, 74, .15);
     display: flex;
     flex-direction: column;
@@ -49572,7 +49579,7 @@ em.gneg { background: var(--loss); }
 }
 /* Mode flip: outgoing grid fades, incoming cards stagger up */
 .teams-grid {
-    transition: opacity .14s ease, transform .14s ease;
+    transition: opacity .14s ease, transform .14s var(--ease-out);
 }
 .teams-grid.mode-leave {
     opacity: 0;
@@ -50665,13 +50672,13 @@ em.gneg { background: var(--loss); }
     to { opacity: 1; }
 }
 .br-asst-popup.br-asst-enter {
-    animation: br-asst-in .38s cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation: br-asst-in .28s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 .br-asst-popup.br-asst-exit {
-    animation: br-asst-out .38s cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation: br-asst-out .18s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 .br-asst-scrim.br-asst-enter {
-    animation: br-asst-fade .38s cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation: br-asst-fade .28s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 .br-asst-grab {
     display: none;
@@ -51084,7 +51091,7 @@ em.gneg { background: var(--loss); }
 }
 .br-asst-receipt-toggle .br-asst-chev {
     display: inline-flex;
-    transition: transform .38s cubic-bezier(0.22, 1, 0.36, 1);
+    transition: transform .2s cubic-bezier(0.22, 1, 0.36, 1);
 }
 .br-asst-receipt-toggle .br-asst-chev svg {
     width: 9px;
@@ -51097,7 +51104,7 @@ em.gneg { background: var(--loss); }
 .br-asst-receipt-rows {
     display: grid;
     grid-template-rows: 1fr;
-    transition: grid-template-rows .38s cubic-bezier(0.22, 1, 0.36, 1);
+    transition: grid-template-rows .2s cubic-bezier(0.22, 1, 0.36, 1);
 }
 .br-asst-receipts.br-asst-collapsed .br-asst-receipt-rows {
     grid-template-rows: 0fr;
@@ -51543,6 +51550,67 @@ button.br-asst-actlink {
     }
 }
 /* == BR ASSISTANT END == */
+
+/* == MOBILE INPUT & HOVER PACK =============================================
+   Three touch rules from the mobile-native checklist:
+   1. touch-action: manipulation on tappables, so a tap registers with no
+      double-tap-zoom delay. Surfaces that own their gestures (the
+      assistant sheet grab/head, week-bar grips) set touch-action: none on
+      their own class rules, which outrank these element selectors.
+   2. Decorative hover lifts/pops are disabled where hover cannot exist:
+      on touch, :hover sticks after a tap until the next tap elsewhere, so
+      a card would sit lifted for no reason. Only pure decoration is
+      listed; state indicators (chevrons, gears, title arrows), the
+      tooltip centering transform, and underline sweeps are deliberately
+      NOT here - their transforms carry meaning or geometry.
+   3. On coarse pointers, text inputs render at 16px: iOS Safari zooms
+      the page into any focused input under 16px and does not zoom back
+      out. Fix the size, never disable zoom. The :not() guards give the
+      element rule enough specificity to beat class-set sizes; the named
+      classes below pin the known sub-16px fields explicitly. */
+button, a, [role="button"], input, select, textarea, label, summary {
+    touch-action: manipulation;
+}
+
+@media (hover: none), (pointer: coarse) {
+    .breakout-card:hover,
+    .os-do-next-draft-link:hover,
+    .platform-btn:hover,
+    .otc-breakout-row:hover .otc-breakout-badge,
+    .otc-team-select-dropdown:hover,
+    .otc-value-row:hover,
+    .recap-generate-btn:hover:not(:disabled),
+    .os-snapshot-card:hover,
+    a.signed-home-league:hover,
+    .home-feature-card:hover,
+    .home-update-card:hover,
+    .home-publisher-links a:hover,
+    .player-modal-watchlist-btn:hover,
+    .wl-alert-item:hover,
+    .compare-feature:hover,
+    .compare-chip:hover,
+    .compare-suggest-chip:hover,
+    .awards-page-nav-link:hover,
+    .fun-award-item:hover,
+    .wrapped-launch:hover {
+        transform: none;
+    }
+}
+
+@media (pointer: coarse) {
+    input:not([type="checkbox"]):not([type="radio"]),
+    select,
+    textarea {
+        font-size: 16px;
+    }
+
+    .br-asst-input,
+    .nav-search-input,
+    .pm-wl-note-input,
+    .league-switcher {
+        font-size: 16px;
+    }
+}
 
 /* ============================================================
    MERGED: icons.css (PNG-based icon system)

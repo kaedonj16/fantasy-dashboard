@@ -47,7 +47,7 @@
     function focusAt(i){ var all=enabled(); if(!all.length)return; focusIndex=Math.max(0,Math.min(i,all.length-1)); all.forEach(function(e,n){e.classList.toggle('is-focused',n===focusIndex);}); trigger.setAttribute('aria-activedescendant',all[focusIndex].id); all[focusIndex].scrollIntoView({block:'nearest'}); }
     function position(){ var r=trigger.getBoundingClientRect(), vv=window.visualViewport, vh=vv?vv.height:innerHeight, vw=vv?vv.width:innerWidth, below=vh-r.bottom-8, above=r.top-8, up=above>below&&below<120; list.style.minWidth=r.width+'px'; list.style.maxWidth=Math.max(160,vw-16)+'px'; list.style.left=Math.max(8,Math.min(r.left,vw-(list.offsetWidth||r.width)-8))+'px'; list.style.top=up?'auto':(r.bottom+4)+'px'; list.style.bottom=up?(vh-r.top+4)+'px':'auto'; list.style.maxHeight=Math.max(80,Math.min(280,up?above:below))+'px'; }
     function open(){ if(isOpen||sel.disabled)return; if(openWrap&&openWrap!==wrap)openWrap._csdClose(); openWrap=wrap; isOpen=true; wrap.classList.add('is-open'); trigger.setAttribute('aria-expanded','true'); list.style.display='block'; position(); requestAnimationFrame(function(){list.classList.add('is-visible');}); var all=enabled(), ix=all.findIndex(function(e){return e.dataset.value===sel.value;}); focusAt(ix<0?0:ix); }
-    function close(){ if(!isOpen)return; isOpen=false; if(openWrap===wrap)openWrap=null; wrap.classList.remove('is-open'); trigger.setAttribute('aria-expanded','false'); trigger.removeAttribute('aria-activedescendant'); list.classList.remove('is-visible'); setTimeout(function(){if(!isOpen)list.style.display='none';},150); }
+    function close(instant){ if(!isOpen)return; isOpen=false; if(openWrap===wrap)openWrap=null; wrap.classList.remove('is-open'); trigger.setAttribute('aria-expanded','false'); trigger.removeAttribute('aria-activedescendant'); list.classList.remove('is-visible'); if(instant){ list.style.display='none'; } else { setTimeout(function(){if(!isOpen)list.style.display='none';},150); } }
     function pick(el){ if(!el||el.classList.contains('is-disabled')||sel.disabled)return; sel.value=el.dataset.value; sel.dispatchEvent(new Event('change',{bubbles:true})); sync(); close(); trigger.focus(); }
     trigger.addEventListener('click',function(e){e.stopPropagation();isOpen?close():open();});
     list.addEventListener('click',function(e){pick(e.target.closest('.csd-option'));});
@@ -55,7 +55,7 @@
       if(k==='ArrowDown'||k==='ArrowUp'){e.preventDefault();if(!isOpen)open();else focusAt(focusIndex+(k==='ArrowDown'?1:-1));}
       else if(k==='Home'||k==='End'){e.preventDefault();if(!isOpen)open();focusAt(k==='Home'?0:all.length-1);}
       else if(k==='Enter'||k===' '){e.preventDefault();if(isOpen)pick(all[focusIndex]);else open();}
-      else if(k==='Escape'){e.preventDefault();close();trigger.focus();} else if(k==='Tab')close();
+      else if(k==='Escape'){e.preventDefault();close(true);trigger.focus();} else if(k==='Tab')close();
       else if(k.length===1&&!e.ctrlKey&&!e.metaKey&&!e.altKey){ typeBuffer+=k.toLowerCase(); clearTimeout(typeTimer); typeTimer=setTimeout(function(){typeBuffer='';},600); var ix=all.findIndex(function(x){return x.textContent.trim().toLowerCase().startsWith(typeBuffer);}); if(ix>=0){e.preventDefault();if(!isOpen)open();focusAt(ix);} }
     });
     // Preserve native label activation after the select is visually replaced.

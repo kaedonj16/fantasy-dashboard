@@ -424,7 +424,7 @@ def build_players_shell() -> str:
         align-items: center;
         gap: 6px;
         white-space: nowrap;
-        transition: all 0.12s;
+        transition: transform 0.12s ease,opacity 0.12s ease,background-color 0.12s ease,color 0.12s ease,border-color 0.12s ease,box-shadow 0.12s ease;
       }
       .filter-settings-btn:hover {
         background: var(--accent-soft);
@@ -473,7 +473,7 @@ def build_players_shell() -> str:
         font-size: 13px;
         font-weight: 600;
         cursor: pointer;
-        transition: all 0.12s;
+        transition: transform 0.12s ease,opacity 0.12s ease,background-color 0.12s ease,color 0.12s ease,border-color 0.12s ease,box-shadow 0.12s ease;
       }
       .settings-toggle.active {
         background: var(--accent);
