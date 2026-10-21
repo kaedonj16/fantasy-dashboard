@@ -259,14 +259,16 @@ def test_minimize_and_close_are_distinct():
 
 
 def test_panel_motion_and_typing_indicator():
-    # Enter/exit motion rides the Next Steps glide curve at .38s, with
-    # a sheet variant on mobile and a reduced-motion guard.
+    # Enter/exit motion rides the Next Steps glide curve, asymmetric
+    # (.28s in, .18s out: the system response snaps faster than the
+    # deliberate entry) and under the 300ms UI budget, with a sheet
+    # variant on mobile and a reduced-motion guard.
     assert "@keyframes br-asst-in" in ASSISTANT_CSS
     assert "@keyframes br-asst-out" in ASSISTANT_CSS
     enter = _rule(ASSISTANT_CSS, ".br-asst-popup.br-asst-enter")
-    assert ".38s" in enter and "cubic-bezier(0.22, 1, 0.36, 1)" in enter
+    assert ".28s" in enter and "cubic-bezier(0.22, 1, 0.36, 1)" in enter
     exit_rule = _rule(ASSISTANT_CSS, ".br-asst-popup.br-asst-exit")
-    assert ".38s" in exit_rule and "cubic-bezier(0.22, 1, 0.36, 1)" in exit_rule
+    assert ".18s" in exit_rule and "cubic-bezier(0.22, 1, 0.36, 1)" in exit_rule
     media = ASSISTANT_CSS[ASSISTANT_CSS.index("@media (max-width: 768px)"):]
     assert "animation-name: br-asst-sheet-in" in media
     assert "animation-name: br-asst-sheet-out" in media

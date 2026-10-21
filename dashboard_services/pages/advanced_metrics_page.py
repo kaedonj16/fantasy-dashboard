@@ -894,7 +894,7 @@ def build_advanced_metrics_body(
       .am-pos {
         padding:6px 14px; border-radius:8px; border:1px solid var(--border);
         background:var(--card); color:var(--text-muted); cursor:pointer;
-        font-size:13px; font-weight:600; transition:all .15s; white-space:nowrap;
+        font-size:13px; font-weight:600; transition:transform .15s ease,opacity .15s ease,background-color .15s ease,color .15s ease,border-color .15s ease,box-shadow .15s ease; white-space:nowrap;
       }
       .am-pos.active { background:var(--text); color:var(--card); border-color:var(--text); }
       /* Dark: --text is near-white, so the inverted fill glares. Raised

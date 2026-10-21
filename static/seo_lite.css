@@ -372,7 +372,7 @@ html[data-theme="dark"] .fp-discord-icon {
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.2s ease;
+    transition: transform 0.2s var(--ease-out, cubic-bezier(.2, .8, .3, 1)), opacity 0.2s ease, background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
     font-size: var(--fs-title);
     padding: 0;
     -webkit-tap-highlight-color: transparent;
