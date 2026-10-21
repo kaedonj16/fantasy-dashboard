@@ -197,7 +197,7 @@ class TestCoverageGate:
         assert os.path.exists(out)
         assert counts["cfbd_loads"] == 1
         prov = artifact["provenance"]
-        assert prov["script"].endswith("v1.4")
+        assert prov["script"].endswith("v1.5")
         assert prov["class_coverage"] == {"2016": 1.0}
         assert "derive_cache" in prov and "coverage_gate" in prov
 
