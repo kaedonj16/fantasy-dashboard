@@ -10319,22 +10319,25 @@ def _bench_check_metrics(ctx: dict, viewer_roster_id, last_final_week: int):
         return None
 
 
-def _render_bench_check(ctx: dict, viewer_roster_id, last_final_week: int) -> str:
-    """One-line post-week feedback: how many points the viewer's optimal lineup
-    left on the bench in the last finalized week, linking to the Lineup
-    Efficiency page. Empty string when there's nothing to say."""
+def _next_steps_bench_check_note(ctx: dict, viewer_roster_id, last_final_week: int) -> str:
+    """Quiet bench-check line for the Next steps card: how many points the
+    viewer's optimal lineup left on the bench in the last finalized week,
+    linking to the Lineup Efficiency page.
+
+    Only the sub-threshold outcomes render here (< 5.0): at >= 5.0 the
+    bench check surfaces as a real Next steps action instead (see
+    _next_steps_bench_check_actions). The note is not an action: it is
+    never counted in the queue total and carries no dismiss control.
+    Empty string when there's nothing to say."""
+    if not viewer_roster_id or not last_final_week:
+        return ""
     m = _bench_check_metrics(ctx, viewer_roster_id, last_final_week)
     if not m:
         return ""
     try:
         week = m["week"]
-        opt_pts = m["opt_pts"]
-        actual = m["actual"]
         left_on_bench = m["left_on_bench"]
         eff_url = m["eff_url"]
-        # The Next steps queue surfaces the bench check at >= 5.0 (see
-        # _next_steps_bench_check_actions). Suppress the standalone card there
-        # so the alert appears in only one place.
         if left_on_bench >= 5.0:
             return ""
         if left_on_bench < 1.0:
@@ -10365,20 +10368,16 @@ def _render_bench_check(ctx: dict, viewer_roster_id, last_final_week: int) -> st
             except Exception:
                 warn_html = ""
 
-        tone_cls = " bench-miss" if warn_html else (" bench-ok" if left_on_bench < 1.0 else " bench-miss")
-        return f"""
-        <section class="os-card os-action-card bench-check-card{tone_cls}" data-action-card="bench-check">
-          <div class="bench-check-row">
-            <span class="bench-check-msg">{msg}</span>
-            <span class="os-card-actions">
-              <a class="os-section-link" href="{eff_url}">Lineup efficiency &rarr;</a>
-              <button type="button" class="os-action-dismiss" data-dismiss-card="bench-check" aria-label="Dismiss">&times;</button>
-            </span>
-          </div>
-          {warn_html}
-        </section>"""
+        tone_cls = " ns-bench-miss" if warn_html else (" ns-bench-ok" if left_on_bench < 1.0 else " ns-bench-miss")
+        return (
+            f'<div class="ns-bench-note{tone_cls}">'
+            f'<span class="bench-check-msg">{msg}</span>'
+            f'<a class="os-section-link" href="{eff_url}">Lineup efficiency &rarr;</a>'
+            f'</div>'
+            f'{warn_html}'
+        )
     except Exception:
-        logger.debug("bench check failed", exc_info=True)
+        logger.debug("bench check note failed", exc_info=True)
         return ""
 
 
@@ -12793,6 +12792,11 @@ def _render_next_steps_queue(
     actions.extend(_next_steps_roster_actions(ctx, viewer_roster_id))
     actions.extend(_next_steps_bench_check_actions(ctx, viewer_roster_id, last_final_week))
 
+    # Sub-threshold bench check (< 5.0) rides along as a quiet line at the
+    # foot of this card, never as a counted action. Empty when the bench
+    # check is an action (>= 5.0) or has nothing to say.
+    bench_note_html = _next_steps_bench_check_note(ctx, viewer_roster_id, last_final_week)
+
     # Rank by score (expected impact), highest first.
     actions.sort(key=lambda a: -(a.get("score") or 0))
     if not actions:
@@ -12812,6 +12816,7 @@ def _render_next_steps_queue(
             <div class="ns-empty-big">&#10003;</div>
             <div>You are all set for Week {int(current_week or 0)}.<br>No urgent actions right now.</div>
           </div>
+          {bench_note_html}
         </section>"""
 
     _shown = actions[:preview_limit] if len(actions) > preview_limit else actions
@@ -12893,7 +12898,7 @@ def _render_next_steps_queue(
             {_items_html}
           </div>""" + (
             f'<div class="ns-list ns-hidden" id="ns-body-extra">{_hidden_html}</div>' if show_expand else ""
-        ) + f"""
+        ) + bench_note_html + f"""
         </section>"""
 
 

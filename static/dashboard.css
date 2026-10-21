@@ -21557,6 +21557,44 @@ img, svg, canvas {
     font-size: 15px;
     line-height: 1.5;
 }
+/* Quiet bench-check line at the foot of the Next steps card: the
+   sub-threshold (< 5.0 left) post-week result. Not an action, so no
+   priority rail, count or dismiss; just the message and the link. */
+.ns-bench-note {
+    --alert-tone: var(--warning);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+}
+.ns-bench-note.ns-bench-ok {
+    --alert-tone: var(--win);
+}
+.ns-bench-note .la-em {
+    font-weight: 700;
+    color: var(--alert-tone);
+}
+.ns-bench-note .os-section-link {
+    flex: 0 0 auto;
+    color: var(--accent);
+}
+.ns-bench-note .os-section-link:focus-visible {
+    outline: 2px solid var(--alert-tone);
+    outline-offset: 3px;
+    border-radius: var(--radius-sm);
+}
+@media (max-width: 640px) {
+    .ns-bench-note {
+        flex-wrap: wrap;
+        gap: 6px 12px;
+    }
+    .ns-bench-note .os-section-link {
+        margin-left: auto;
+    }
+}
 .ns-empty-big {
     font-size: 28px;
     margin-bottom: 8px;
