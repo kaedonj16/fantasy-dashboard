@@ -1107,7 +1107,74 @@ def _mark_weeks_fetched(kind: str, season: int, team: str, weeks: List[int]) -> 
         print(f"[ingestion] WARNING: could not record fetched {kind} weeks for {season}: {exc}")
 
 
-def fetch_cfbd_games_played(draft_year: int) -> Dict[str, Dict[int, int]]:
+def _fetch_games_played_stateless(years: List[int],
+                                  today: datetime.date) -> Dict[str, Dict[int, int]]:
+    """
+    Stateless GP counts: fetch every candidate week for `years` live
+    and count distinct game ids per player per season. No DB reads,
+    no week marks, no stored totals - the caller owns the result and
+    nothing persists. Used by the v4 derive / gate backtest, whose
+    population is historical drafted classes: the tracked path's
+    stored totals are keyed to the live pipeline's current-class
+    rows, so for historical players the tracker can only ever report
+    "already fetched" over an empty store (the derive v1.3 failure:
+    weeks marked by a run whose in-memory totals died with it).
+    Counting mirrors the tracked path exactly (same payload walk,
+    same distinct-game-id semantics, same 3-empty-week early stop
+    on finished seasons, same light sleep between week calls).
+    """
+    result: Dict[str, Dict[int, int]] = {}   # name_lower → {yr: count}
+    for yr in years:
+        player_games: Dict[str, set] = {}   # name_lower → set of game_ids
+        empty_streak = 0
+        for week in _candidate_weeks(yr, today):
+            try:
+                data = _cfbd_get(
+                    "/games/players",
+                    {"year": yr, "week": week, "seasonType": "both"},
+                    retries=2,
+                )
+            except Exception as exc:
+                print(f"[cfbd_gp] Week {week} error: {exc}")
+                continue
+
+            if data is None:
+                # API failure (after retries): counts for this week
+                # stay missing; nothing is recorded anywhere.
+                print(f"[cfbd_gp] {yr} week {week}: fetch failed (stateless)")
+                continue
+
+            if not data:
+                empty_streak += 1
+                if empty_streak >= 3 and yr < today.year:
+                    # 3 consecutive empty weeks on a finished season =
+                    # the season has ended; stop early, as tracked.
+                    break
+                continue
+
+            empty_streak = 0
+            for game_obj in data:
+                game_id = game_obj.get("id")
+                if not game_id:
+                    continue
+                for team in (game_obj.get("teams") or []):
+                    for category in (team.get("categories") or []):
+                        for stat_type in (category.get("types") or []):
+                            for athlete in (stat_type.get("athletes") or []):
+                                a_name = (athlete.get("name") or "").lower().strip()
+                                if a_name:
+                                    player_games.setdefault(a_name, set()).add(game_id)
+
+            time.sleep(0.2)   # light rate-limiting between week calls
+
+        for player_name, game_ids in player_games.items():
+            if game_ids:
+                result.setdefault(player_name, {})[yr] = len(game_ids)
+    return result
+
+
+def fetch_cfbd_games_played(draft_year: int,
+                            stateless: bool = False) -> Dict[str, Dict[int, int]]:
     """
     Fetch exact games played per player per season via CFBD /games/players.
 
@@ -1124,6 +1191,13 @@ def fetch_cfbd_games_played(draft_year: int) -> Dict[str, Dict[int, int]]:
     fetch comes back empty at that boundary is left unmarked so it is retried
     on the next run once games exist.  When in doubt, a week is NOT marked.
 
+    stateless=True bypasses the tracker entirely (see
+    _fetch_games_played_stateless): every candidate week is fetched
+    live, counts are returned in memory only, and NO week is marked
+    and NO stored total is read. The derive / backtest path needs
+    this: its totals are never persisted, so the tracked path's
+    marks would claim weeks whose counts no longer exist anywhere.
+
     Returns:
         {player_name_lower: {year: games_played_total}}
     """
@@ -1134,6 +1208,9 @@ def fetch_cfbd_games_played(draft_year: int) -> Dict[str, Dict[int, int]]:
     years  = [draft_year - 1, draft_year - 2, draft_year - 3]
     result: Dict[str, Dict[int, int]] = {}   # name_lower → {yr: total count}
     today  = _today()
+
+    if stateless:
+        return _fetch_games_played_stateless(years, today)
 
     # Stored season totals + which weeks produced them.
     db_games = _get_existing_games_played(draft_year, years)
@@ -1666,6 +1743,7 @@ def fetch_cfbd_college_stats(
     fetch_games_played: bool = False,
     skip_sagarin: bool = False,
     player_ids: Optional[List[str]] = None,
+    gp_stateless: bool = False,
 ) -> Dict[str, List[Dict]]:
     """
     Fetch college stats from CFBD for the 3 seasons before `draft_year`.
@@ -1678,6 +1756,12 @@ def fetch_cfbd_college_stats(
             /games/players endpoint (51 extra API calls per draft class).
             Default False to conserve rate-limit budget; per-game rates fall
             back to assuming 12 games when disabled.
+        gp_stateless: Forwarded to fetch_cfbd_games_played; only
+            meaningful with fetch_games_played=True. Stateless GP
+            ignores the DB week tracker (no reads, no marks) - the
+            derive / backtest mode, whose GP totals are never
+            persisted. Default False = the live pipeline's tracked,
+            week-incremental behavior.
     """
 
     if not CFBD_KEY:
@@ -1722,7 +1806,8 @@ def fetch_cfbd_college_stats(
         if fetch_games_played:
             print("[cfbd] Fetching games played from /games/players endpoint")
             try:
-                games_played_map = fetch_cfbd_games_played(draft_year)
+                games_played_map = fetch_cfbd_games_played(
+                    draft_year, stateless=gp_stateless)
                 print(f"[cfbd] Games played resolved for {len(games_played_map)} players")
             except Exception as exc:
                 print(f"[cfbd] WARNING: games-played fetch failed ({exc}), will default to None")

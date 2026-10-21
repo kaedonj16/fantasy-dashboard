@@ -82,6 +82,22 @@ anchors for exactly this reason. Cache entries record whether
 they were built with games played ("games_played": true); a
 GP-less entry (anything written before v1.3) reads as a miss and
 re-fetches live.
+
+STATELESS GP (v1.4): the v1.3 loads still pooled zero - the GP
+lookup is a DB-tracked incremental system built for the live
+pipeline (rookie_stat_fetched_weeks marks + stored totals), and
+the derive never persists totals: the first v1.3 run marked every
+historical week fetched, its process died, the totals evaporated,
+and every later run read the marks over an empty store and
+resolved GP for 0 players. Live loads now fetch GP STATELESS
+(gp_stateless=True): no tracker reads, no week marks, counts live
+in this process only - matching how the derive treats everything
+else it fetches. CACHE_VERSION bumped to 2, so every pre-v1.4
+cache entry (including any a tracker-poisoned run wrote) reads
+as a miss. scripts/cleanup_derive_gp_marks.py removes the
+derive-written week marks (kind='gp', season <= 2022 only; 2023
+is shared with the live pipeline's current-class tracking and
+is deliberately left alone).
 """
 
 from __future__ import annotations
@@ -102,7 +118,7 @@ sys.path.insert(0, _REPO_ROOT)
 sys.path.insert(0, os.path.join(_REPO_ROOT, "scripts"))
 sys.path.insert(0, os.path.join(_REPO_ROOT, "tests"))
 
-SCRIPT_VERSION = "1.3"
+SCRIPT_VERSION = "1.4"
 POPULATION_DEFINITION = (
     "Drafted skill-position players (QB/RB/WR/TE), classes {classes}, "
     "from the nflverse draft list; college seasons from CFBD via the "
@@ -334,7 +350,8 @@ def print_summary(artifact: Dict[str, Any], out_path: str) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────
-# Per-class derive cache + coverage gate (script v1.2; GP-aware v1.3)
+# Per-class derive cache + coverage gate (script v1.2; GP-aware v1.3;
+# stateless GP + cache v2 in v1.4)
 #
 # The cache holds, per class, exactly the per-player fields
 # build_reference() consumes, JSON-normalized at load time on the
@@ -343,7 +360,7 @@ def print_summary(artifact: Dict[str, Any], out_path: str) -> None:
 # ─────────────────────────────────────────────────────────────────────
 
 CACHE_DIR = os.path.join(_REPO_ROOT, "derive_cache", "v4")
-CACHE_VERSION = 1
+CACHE_VERSION = 2
 COVERAGE_FLOOR = 0.50
 # The prospect fields build_reference() reads. "seasons" and
 # "athleticism" are cached whole: their consumers (the v4 leg
@@ -419,7 +436,9 @@ def _read_class_cache(cache_dir: str,
     instead. GP-less entries (written before script v1.3, when live
     loads never fetched games played) carry no "games_played"
     marker; serving one would silently re-derive the empty-leg
-    artifact v1.3 exists to fix."""
+    artifact v1.3 exists to fix. CACHE_VERSION 2 (v1.4) retires
+    every v1 entry unread, including any a tracker-poisoned v1.3
+    run managed to write."""
     path = _cache_path(cache_dir, year)
     if not os.path.exists(path):
         return None
@@ -495,11 +514,14 @@ def _load_class_live(year: int, bt: Any, pm: Any,
     extracted (cache-shaped) form build_reference() consumes."""
     draft_class = bt._load_draft_class(year)
     athleticism = bt._load_combine_athleticism(year)
-    # Real games-played counts: v4's season-leg pools gate on
-    # GP >= 4 and v4 never defaults GP, so a load without them
-    # pools zero legs (the v1.2 artifact's failure mode).
+    # Real games-played counts, fetched stateless: v4's season-leg
+    # pools gate on GP >= 4 and v4 never defaults GP, so a load
+    # without them pools zero legs (the v1.2 artifact's failure
+    # mode) - and the tracked GP lookup can never supply them here,
+    # because the derive persists no GP totals for its marks to
+    # describe (the v1.3 failure mode).
     college_stats = bt._load_cfbd_college_stats(
-        year, draft_class, fetch_games_played=True)
+        year, draft_class, fetch_games_played=True, gp_stateless=True)
     prospects, consensus = bt._build_prospect_dicts(
         draft_class, athleticism, year, college_stats)
     for p in prospects:
@@ -599,11 +621,14 @@ def run_real(classes: List[int], out_path: str, use_cache: bool = True,
                          "classes load from disk with zero CFBD calls "
                          "unless --no-cache; classes below the "
                          "coverage floor are never cached; entries "
-                         "record games_played=true and GP-less "
-                         "entries (pre-v1.3) read as misses"),
+                         "record games_played=true and GP-less or "
+                         "pre-v1.4 entries read as misses"),
         "games_played": ("live class loads fetched exact "
                          "games-played counts via CFBD "
-                         "/games/players (fetch_games_played=True); "
+                         "/games/players (fetch_games_played=True, "
+                         "gp_stateless=True: the DB week tracker is "
+                         "ignored - no reads, no marks - because "
+                         "the derive persists no GP totals); "
                          "season-leg pools gate on GP >= 4 and no "
                          "games-played value is ever defaulted"),
         "coverage_gate": ("artifact refused when any class's "

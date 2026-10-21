@@ -53,7 +53,8 @@ class TestBacktestLoaderFlag:
     def test_default_is_no_games_played(self, monkeypatch):
         calls = self._capture(monkeypatch, {})
         assert bt._load_cfbd_college_stats(2024, []) == {}
-        assert calls == [{"skip_sagarin": True, "fetch_games_played": False}]
+        assert calls == [{"skip_sagarin": True, "fetch_games_played": False,
+                          "gp_stateless": False}]
 
     def test_flag_forwarded_and_seasons_pass_through(self, monkeypatch):
         season = {"season": 2023, "games_played": 12,
@@ -62,7 +63,8 @@ class TestBacktestLoaderFlag:
         draft_class = [{"gsis_id": "00-0030000", "name": "Test Receiver"}]
         out = bt._load_cfbd_college_stats(
             2024, draft_class, fetch_games_played=True)
-        assert calls == [{"skip_sagarin": True, "fetch_games_played": True}]
+        assert calls == [{"skip_sagarin": True, "fetch_games_played": True,
+                          "gp_stateless": False}]
         # The loader matches by name and hands the season dicts -
         # games_played included - through untouched.
         assert out == {"00-0030000": [season]}
@@ -70,14 +72,18 @@ class TestBacktestLoaderFlag:
 
 class TestV4BacktestRequestsGamesPlayed:
     """_run_draft_class_backtest is the shared class runner; the GP
-    flag it passes the loader must follow the model under test."""
+    flags it passes the loader must follow the model under test.
+    v4 also passes gp_stateless=True: a backtest persists no GP
+    totals, so the tracked lookup's marks would describe totals
+    that exist nowhere (the derive v1.3 failure)."""
 
     @pytest.mark.parametrize("model,expected", [("v3", False), ("v4", True)])
     def test_flag_follows_model_choice(self, monkeypatch, model, expected):
         seen = []
 
-        def fake_load(year, draft_class, fetch_games_played=False):
-            seen.append(fetch_games_played)
+        def fake_load(year, draft_class, fetch_games_played=False,
+                      gp_stateless=False):
+            seen.append((fetch_games_played, gp_stateless))
             raise RuntimeError("stop after the stats load")
 
         monkeypatch.setattr(bt, "_MODEL_CHOICE", model)
@@ -89,7 +95,7 @@ class TestV4BacktestRequestsGamesPlayed:
         monkeypatch.setattr(bt, "_load_cfbd_college_stats", fake_load)
         with pytest.raises(RuntimeError, match="stop after the stats load"):
             bt._run_draft_class_backtest(2024)
-        assert seen == [expected]
+        assert seen == [(expected, expected)]
 
 
 # ─────────────────────────────────────────────────────────────────────
