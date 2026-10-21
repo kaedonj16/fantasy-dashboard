@@ -60,12 +60,31 @@ backtest wrapper: that crawl walks every team x season, 400s on
 old seasons, and takes hours, while targets enter this artifact
 only through the same thin distributions the other tools accept.
 
-RESUMABLE: each class, once loaded and scored, is cached to
-derive_cache/v4/<year>.json holding exactly the per-player fields
-build_reference() consumes. A later run loads cached classes from
-disk with zero CFBD calls; --no-cache forces live loads. Classes
-whose stat coverage is below the gate floor are never cached, so
-a rerun re-fetches only the classes that need it.
+RESUMABLE: each class, once loaded and scored, is cached holding
+exactly the per-player fields build_reference() consumes. A later
+run loads cached classes with zero CFBD calls; --no-cache forces
+live loads. Classes whose stat coverage is below the gate floor
+are never cached, so a rerun re-fetches only the classes that
+need it.
+
+DB-BACKED STATE (v1.5): the cache backend is Postgres whenever
+DATABASE_URL is set (every Render shell), files otherwise (local
+runs/tests). Files written to the app tree from a Render shell do
+not persist - shell containers recycle and take the overlay with
+them; the file cache AND a completed artifact vanished within
+minutes, three separate times, while /tmp and Postgres survived.
+The reference-population build survived identical chaos only
+because it commits per-year to Postgres; the derive now does the
+same. Cache rows live in prospect_v4_derive_cache (one upsert per
+class, committed immediately); payloads are byte-identical to the
+file cache's, and miss semantics (version, GP marker, sub-floor)
+are shared code, so the backends can never drift. The finished
+artifact is ALSO upserted into prospect_v4_reference_artifact
+(single row) in the same run; scripts/print_v4_reference.py reads
+it back out for transfer. A failed artifact store only warns -
+the file remains the fallback record and the run's exit follows
+the coverage gate; a failed cache read/write degrades to live
+loads with a warning and never crashes a class.
 
 COVERAGE GATE: if any class's stat-matched fraction (prospects
 with college seasons / prospects in the class) is below 0.50, the
@@ -118,7 +137,7 @@ sys.path.insert(0, _REPO_ROOT)
 sys.path.insert(0, os.path.join(_REPO_ROOT, "scripts"))
 sys.path.insert(0, os.path.join(_REPO_ROOT, "tests"))
 
-SCRIPT_VERSION = "1.4"
+SCRIPT_VERSION = "1.5"
 POPULATION_DEFINITION = (
     "Drafted skill-position players (QB/RB/WR/TE), classes {classes}, "
     "from the nflverse draft list; college seasons from CFBD via the "
@@ -351,7 +370,7 @@ def print_summary(artifact: Dict[str, Any], out_path: str) -> None:
 
 # ─────────────────────────────────────────────────────────────────────
 # Per-class derive cache + coverage gate (script v1.2; GP-aware v1.3;
-# stateless GP + cache v2 in v1.4)
+# stateless GP + cache v2 in v1.4; Postgres backend in v1.5)
 #
 # The cache holds, per class, exactly the per-player fields
 # build_reference() consumes, JSON-normalized at load time on the
@@ -427,25 +446,15 @@ def _write_class_cache(cache_dir: str, year: int,
     return path
 
 
-def _read_class_cache(cache_dir: str,
-                      year: int) -> Optional[Any]:
-    """(prospects, component_rows) for a cached class, else None.
-    A missing, unreadable, stale-version, sub-floor, or GP-less
-    cache is a miss: sub-floor entries in particular must never
-    short-circuit the coverage gate, so the class re-fetches live
-    instead. GP-less entries (written before script v1.3, when live
-    loads never fetched games played) carry no "games_played"
-    marker; serving one would silently re-derive the empty-leg
-    artifact v1.3 exists to fix. CACHE_VERSION 2 (v1.4) retires
-    every v1 entry unread, including any a tracker-poisoned v1.3
-    run managed to write."""
-    path = _cache_path(cache_dir, year)
-    if not os.path.exists(path):
-        return None
-    try:
-        with open(path, "r", encoding="utf-8") as fh:
-            payload = json.load(fh)
-    except (OSError, ValueError):
+def _cache_hit(payload: Any, year: int) -> Optional[Any]:
+    """(prospects, component_rows) if `payload` is a servable cache
+    entry for `year`, else None. The miss rules are shared verbatim
+    by the file and Postgres backends: stale version, wrong year,
+    GP-less (no "games_played": true marker - serving one would
+    silently re-derive the empty-leg artifact v1.3 exists to fix),
+    and sub-floor (a starved entry must never short-circuit the
+    coverage gate; the class re-fetches live instead)."""
+    if not isinstance(payload, dict):
         return None
     if (payload.get("cache_version") != CACHE_VERSION
             or payload.get("year") != year):
@@ -456,6 +465,153 @@ def _read_class_cache(cache_dir: str,
     if _matched_fraction(prospects) < COVERAGE_FLOOR:
         return None
     return prospects, payload.get("component_rows") or {}
+
+
+def _read_class_cache(cache_dir: str,
+                      year: int) -> Optional[Any]:
+    """File-backend read: (prospects, component_rows) for a cached
+    class, else None (see _cache_hit for the miss rules)."""
+    path = _cache_path(cache_dir, year)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            payload = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    return _cache_hit(payload, year)
+
+
+# ── Postgres backend (v1.5) ──────────────────────────────────────
+# Active whenever DATABASE_URL is set (see _cache_backend). The
+# payload stored per class is exactly the dict the file backend
+# writes, so _cache_hit validates both. Cache DB failures degrade
+# to live loads with a warning: the cache is an accelerator, never
+# a single point of failure for a class.
+
+_CACHE_DDL = """
+CREATE TABLE IF NOT EXISTS prospect_v4_derive_cache (
+    class_year int NOT NULL,
+    cache_version int NOT NULL,
+    games_played boolean NOT NULL DEFAULT false,
+    payload jsonb NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (class_year, cache_version)
+)
+"""
+
+_CACHE_UPSERT_SQL = """
+INSERT INTO prospect_v4_derive_cache
+    (class_year, cache_version, games_played, payload, created_at)
+VALUES (%s, %s, %s, %s::jsonb, now())
+ON CONFLICT (class_year, cache_version) DO UPDATE SET
+    games_played = EXCLUDED.games_played,
+    payload = EXCLUDED.payload,
+    created_at = now()
+"""
+
+_CACHE_SELECT_SQL = """
+SELECT payload FROM prospect_v4_derive_cache
+WHERE class_year = %s AND cache_version = %s
+"""
+
+_ARTIFACT_DDL = """
+CREATE TABLE IF NOT EXISTS prospect_v4_reference_artifact (
+    id int PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    script_version text NOT NULL,
+    generated_at timestamptz NOT NULL DEFAULT now(),
+    artifact jsonb NOT NULL
+)
+"""
+
+_ARTIFACT_UPSERT_SQL = """
+INSERT INTO prospect_v4_reference_artifact
+    (id, script_version, generated_at, artifact)
+VALUES (1, %s, now(), %s::jsonb)
+ON CONFLICT (id) DO UPDATE SET
+    script_version = EXCLUDED.script_version,
+    generated_at = EXCLUDED.generated_at,
+    artifact = EXCLUDED.artifact
+"""
+
+
+def _connect():
+    """Fresh psycopg connection from DATABASE_URL (isolated so
+    tests can substitute a fake), as in
+    scripts/cleanup_derive_gp_marks.py."""
+    import psycopg
+
+    return psycopg.connect(os.environ["DATABASE_URL"])
+
+
+def _cache_backend() -> str:
+    """"db" (Postgres) when DATABASE_URL is set - every Render
+    shell - else "file" (local runs and tests)."""
+    return "db" if os.environ.get("DATABASE_URL", "").strip() else "file"
+
+
+def _read_class_cache_db(year: int) -> Optional[Any]:
+    """Postgres-backend read with the file backend's miss rules.
+    Any DB failure is a miss with a warning, never a crash."""
+    try:
+        with _connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(_CACHE_DDL)
+                cur.execute(_CACHE_SELECT_SQL, (year, CACHE_VERSION))
+                row = cur.fetchone()
+            conn.commit()
+    except Exception as exc:
+        print(f"[{year}] derive cache (postgres) read failed "
+              f"({exc!r}); loading live")
+        return None
+    if row is None:
+        return None
+    payload = row[0]
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except ValueError:
+            return None
+    return _cache_hit(payload, year)
+
+
+def _write_class_cache_db(year: int, prospects: List[Dict[str, Any]],
+                          component_rows: Dict[str, Dict[str, Any]],
+                          games_played: bool = True) -> bool:
+    """Postgres-backend write: one class, one upsert, committed
+    immediately (mirrors the reference-population build's per-year
+    commits, which is what let it survive shell recycling). A
+    failure only warns - the class's data is already in memory for
+    this run; a rerun simply re-fetches it."""
+    payload = {"cache_version": CACHE_VERSION, "year": year,
+               "games_played": bool(games_played),
+               "prospects": prospects, "component_rows": component_rows}
+    try:
+        with _connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(_CACHE_DDL)
+                cur.execute(_CACHE_UPSERT_SQL,
+                            (year, CACHE_VERSION, bool(games_played),
+                             json.dumps(payload)))
+            conn.commit()
+    except Exception as exc:
+        print(f"[{year}] WARNING: derive cache (postgres) write "
+              f"failed ({exc!r}); the run continues uncached")
+        return False
+    return True
+
+
+def _store_artifact_db(artifact: Dict[str, Any]) -> None:
+    """Upsert the finished artifact into
+    prospect_v4_reference_artifact (single latest row). Raises on
+    failure; run_real decides what a failure means (warn loudly,
+    keep the file, exit per the gate)."""
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(_ARTIFACT_DDL)
+            cur.execute(_ARTIFACT_UPSERT_SQL,
+                        (SCRIPT_VERSION, json.dumps(artifact)))
+        conn.commit()
 
 
 def _disable_plays_targets() -> None:
@@ -549,6 +705,9 @@ def run_real(classes: List[int], out_path: str, use_cache: bool = True,
     from data_building.rookie_pipeline import prospect_model as pm
 
     cache_dir = cache_dir or CACHE_DIR
+    backend = _cache_backend()
+    print(f"derive cache backend: "
+          f"{'postgres' if backend == 'db' else 'file'}")
     population: List[Dict[str, Any]] = []
     component_rows: Dict[str, Dict[str, Any]] = {}
     coverage: Dict[int, float] = {}
@@ -557,7 +716,10 @@ def run_real(classes: List[int], out_path: str, use_cache: bool = True,
     composites: Optional[Dict[str, float]] = None
 
     for year in classes:
-        cached = _read_class_cache(cache_dir, year) if use_cache else None
+        cached = None
+        if use_cache:
+            cached = (_read_class_cache_db(year) if backend == "db"
+                      else _read_class_cache(cache_dir, year))
         if cached is not None:
             prospects, rows = cached
             print(f"[{year}] from derive cache: {len(prospects)} prospects")
@@ -578,8 +740,12 @@ def run_real(classes: List[int], out_path: str, use_cache: bool = True,
                     s.get("games_played") is not None
                     for p in prospects
                     for s in (p.get("seasons") or []))
-                _write_class_cache(cache_dir, year, prospects, rows,
-                                   games_played=has_gp)
+                if backend == "db":
+                    _write_class_cache_db(year, prospects, rows,
+                                          games_played=has_gp)
+                else:
+                    _write_class_cache(cache_dir, year, prospects, rows,
+                                       games_played=has_gp)
                 print(f"[{year}] derive cache written")
             else:
                 print(f"[{year}] derive cache skipped: stat coverage "
@@ -616,13 +782,16 @@ def run_real(classes: List[int], out_path: str, use_cache: bool = True,
         "fixture_sample": False,
         "class_coverage": {str(y): round(coverage[y], 4)
                            for y in classes},
-        "derive_cache": ("per-class cache under derive_cache/v4 "
-                         f"(cache_version {CACHE_VERSION}); cached "
-                         "classes load from disk with zero CFBD calls "
-                         "unless --no-cache; classes below the "
-                         "coverage floor are never cached; entries "
-                         "record games_played=true and GP-less or "
-                         "pre-v1.4 entries read as misses"),
+        "derive_cache": ("per-class cache "
+                         f"(cache_version {CACHE_VERSION}) in "
+                         + ("postgres table prospect_v4_derive_cache"
+                            if backend == "db"
+                            else "derive_cache/v4 files")
+                         + "; cached classes load with zero CFBD "
+                         "calls unless --no-cache; classes below "
+                         "the coverage floor are never cached; "
+                         "entries record games_played=true and "
+                         "GP-less entries read as misses"),
         "games_played": ("live class loads fetched exact "
                          "games-played counts via CFBD "
                          "/games/players (fetch_games_played=True, "
@@ -640,6 +809,20 @@ def run_real(classes: List[int], out_path: str, use_cache: bool = True,
                                dict(pm._KNOT_MARKS), provenance)
     with open(out_path, "w", encoding="utf-8") as fh:
         json.dump(artifact, fh, indent=2)
+    if backend == "db":
+        # The file alone is not a durable record on Render (shell
+        # filesystems recycle); the Postgres copy is. A failed
+        # store must not lose a completed derive: warn loudly and
+        # let the run exit per the gate outcome above.
+        try:
+            _store_artifact_db(artifact)
+            print("artifact also stored in postgres "
+                  "(prospect_v4_reference_artifact); retrieve with "
+                  "scripts/print_v4_reference.py")
+        except Exception as exc:
+            print(f"WARNING: artifact written to {out_path} but "
+                  f"the postgres store FAILED ({exc!r}); retrieve "
+                  f"the file before this shell is recycled")
     return artifact
 
 
