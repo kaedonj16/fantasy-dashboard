@@ -10395,6 +10395,7 @@ def render_power_and_playoffs(
         seed_map_override=None,
         power_rankings=None,
         prev_power_ranks=None,
+        playoff_week_start=None,
 ) -> str:
     """
     Single card that shows:
@@ -10410,6 +10411,8 @@ def render_power_and_playoffs(
         (legacy team-name keys still accepted). Drives the constant
         week-over-week movement arrows (green up / red down /
         grey dash when unchanged or unknown).
+    playoff_week_start: first playoff week from league settings; labels the
+        bracket match heads with their week (None hides the week labels).
     """
     if team_stats is None or team_stats.empty:
         return ""
@@ -10656,11 +10659,84 @@ def render_power_and_playoffs(
 
     seed_map = seed_map_override if seed_map_override is not None else seed_top6_from_team_stats(team_stats, roster_map)
 
+    # ---- Losers (Toilet Bowl) bracket + team meta for the tree ----
+    # Skipped entirely when a bracket_override is supplied (the offseason
+    # synthetic card predates the losers tree and passes no real field).
+    losers_bracket = None
+    team_meta = None
+    bracket_seed_map = seed_map
+    if bracket_override is None:
+        try:
+            lb = get_bracket(platform, league_id, "losers", season) or []
+        except Exception:
+            logger.debug(
+                "losers bracket unavailable platform=%s league=%s season=%s",
+                platform, league_id, season, exc_info=True,
+            )
+            lb = []
+        try:
+            _o2r_meta = {str(k).strip(): str(v) for k, v in _o2r.items()}
+            team_meta = {}
+            _order_rows = []
+            for _, _row in team_stats.iterrows():
+                _owner = str(_row.get("owner") or "").strip()
+                _rid = _o2r_meta.get(_owner)
+                if _rid is None:
+                    continue
+                team_meta[_rid] = {
+                    "record": _pwr_record(_row),
+                    "pf": safe_float(_row.get("PF"), 0.0),
+                }
+                _order_rows.append((
+                    _rid,
+                    safe_int(_row.get("Wins"), 0),
+                    safe_float(_row.get("PF"), 0.0),
+                ))
+            _order_rows.sort(key=lambda x: (-x[1], -x[2]))
+            _full_order = [_r for _r, _w, _p in _order_rows]
+
+            # Projection state (no winners-bracket match decided yet) and
+            # the platform exposed no losers bracket: project one from the
+            # teams outside the winners field, in standings order.
+            if not lb and not any(m.get("w") is not None for m in wb):
+                _winners_field = {
+                    str(m.get(k)) for m in wb for k in ("t1", "t2")
+                    if m.get(k) is not None
+                }
+                _losers_rids = [r for r in _full_order
+                                 if r not in _winners_field]
+                if len(_losers_rids) >= 2:
+                    from utils.standings import build_full_bracket
+                    lb = build_full_bracket(_losers_rids)
+            if lb:
+                losers_bracket = lb
+                # Seed pills for the losers tree come from the full
+                # standings order; existing winners seeds win.
+                _loser_rids = {
+                    str(m.get(k)) for m in lb for k in ("t1", "t2")
+                    if m.get(k) is not None
+                }
+                bracket_seed_map = dict(seed_map or {})
+                for _i, _rid in enumerate(_full_order):
+                    if _rid in _loser_rids:
+                        bracket_seed_map.setdefault(_rid, _i + 1)
+        except Exception:
+            logger.debug(
+                "losers bracket projection failed platform=%s league=%s",
+                platform, league_id, exc_info=True,
+            )
+            losers_bracket = None
+            team_meta = None
+            bracket_seed_map = seed_map
+
     bracket_html = playoff_bracket(
         wb,
         roster_name_map=roster_map,
         roster_avatar_map=roster_avatar_map,
-        seed_map=seed_map,
+        seed_map=bracket_seed_map,
+        losers_bracket=losers_bracket,
+        team_meta=team_meta,
+        playoff_week_start=playoff_week_start,
     )
 
     # Check if playoff bracket is available
@@ -11538,6 +11614,10 @@ def _standings_panels(ctx: dict, power_rankings=None, prev_power_ranks=None) -> 
         divisions=_div_info, detailed_df=detailed_df, efficiency=_eff_by_rid,
     )
 
+    try:
+        _pws = int(_settings.get("playoff_week_start") or 0) or None
+    except (TypeError, ValueError):
+        _pws = None
     power_html = render_power_and_playoffs(
         team_stats,
         roster_map,
@@ -11546,6 +11626,7 @@ def _standings_panels(ctx: dict, power_rankings=None, prev_power_ranks=None) -> 
         ctx["season"],
         power_rankings=power_rankings,
         prev_power_ranks=prev_power_ranks,
+        playoff_week_start=_pws,
     )
     # Roster values only feed the preseason tiles (records all 0-0); skip the DB
     # read once games are being played and the game-derived tiles take over.

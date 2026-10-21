@@ -11,10 +11,11 @@ from utils.standings import (  # noqa: F401,F403
     _winner_loser,
     derive_bracket_from_matchups,
     project_bracket_from_seeds,
+    build_full_bracket,
     derive_or_project_bracket,
 )
 
-__all__ = ['_rid', '_mid', '_pts', 'pair_matchup_sides', '_winner_loser', 'derive_bracket_from_matchups', 'project_bracket_from_seeds', 'derive_or_project_bracket']
+__all__ = ['_rid', '_mid', '_pts', 'pair_matchup_sides', '_winner_loser', 'derive_bracket_from_matchups', 'project_bracket_from_seeds', 'build_full_bracket', 'derive_or_project_bracket']
 
 
 # --- monkeypatch propagation (see utils/_shim.py) ---
