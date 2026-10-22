@@ -134,6 +134,10 @@ def test_derive_start_sit_inputs_played_weeks(tmp_path, monkeypatch):
     assert inp["played_games"] == 4  # the phantom week is not a game
     assert inp["season_ppg"] == pytest.approx(sum(scored) / 4)
     assert inp["recent_ppg"] == pytest.approx(sum(scored[-3:]) / 3)
+    # Display-only L4 (the compare rows labeled "L4 PPG"): last 4 played,
+    # which here is every played week and differs from the last-3 input.
+    assert inp["last4_ppg"] == pytest.approx(sum(scored[-4:]) / 4)
+    assert inp["last4_ppg"] != pytest.approx(inp["recent_ppg"])
     # Opportunities per played week: 10, 14, 18, 22.
     assert inp["usage_season_avg"] == pytest.approx(16.0)
     assert inp["usage_delta"] == pytest.approx(2.0)
@@ -263,6 +267,7 @@ def _patch_build_deps(monkeypatch, tmp_path):
     monkeypatch.setattr(ssb, "derive_start_sit_inputs",
                         lambda season, scoring: {
                             "1": {"season_ppg": 10.0, "recent_ppg": 10.0,
+                                  "last4_ppg": 12.0,
                                   "usage_delta": 2.5, "usage_season_avg": 18.0,
                                   "played_games": 4}})
     import utils.consistency as cons
@@ -307,6 +312,7 @@ def test_build_writes_bundles_for_all_variants(tmp_path, monkeypatch):
     assert ppr["proj_pts"] == 14.2
     assert ppr["season_ppg"] == 10.0
     assert ppr["recent_ppg"] == 10.0
+    assert ppr["last4_ppg"] == 12.0
     assert ppr["bust_rate"] == 0.25
     assert ppr["usage_delta"] == 2.5
     assert ppr["usage_season_avg"] == 18.0

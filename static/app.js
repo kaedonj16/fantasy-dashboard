@@ -22368,7 +22368,7 @@ function _buildStartSitTabHTML(players) {
   // Compact WHY: the factors that moved each player's score most. Display
   // only, drawn from the same score_factors the verdict uses.
   const rWhy = _row('WHY', players.map(p => { const w = _ssWhyLine(p); return { num: null, html: w ? '<span class="ss-why">' + _ssEsc(w) + '</span>' : dash }; }), null);
-  const rL4 = _row('L4 PPG', players.map(p => { const n = _ssNum(ss(p).recent_ppg) != null ? _ssNum(ss(p).recent_ppg) : _ssNum(s(p).ppg); return { num: n, html: n != null ? n : dash }; }), 'max');
+  const rL4 = _row('L4 PPG', players.map(p => { const n = _ssNum(ss(p).last4_ppg) != null ? _ssNum(ss(p).last4_ppg) : _ssNum(s(p).ppg); return { num: n, html: n != null ? n : dash }; }), 'max');
   const rFloor = _row('Floor&ndash;Ceil', players.map(p => { const c = cons(p); return { num: c ? _ssNum(c.floor) : null, html: c ? (c.floor + '&ndash;' + c.ceiling) : dash }; }), 'max');
   const rProfile = _row('Profile', players.map(p => { const c = cons(p); return { num: null, html: _ssProfileChip(c) || dash }; }), null);
   const rBoom = _row('Boom / Bust', players.map(p => { const c = cons(p); return { num: null, html: (c && !c.small_sample) ? (Math.round(c.boom_rate * 100) + '% / ' + Math.round(c.bust_rate * 100) + '%') : dash }; }), null);

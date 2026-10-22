@@ -14666,6 +14666,7 @@ def _startsit_compare_extras(pid, pos, team, season, week, scoring_settings, *,
     out = {
         "proj_pts": (round(float(proj_pts), 1) if proj_pts else None),
         "recent_ppg": None,
+        "last4_ppg": None,
         "consistency": None,
         "opponent": opponent or None,
         "opponent_label": opponent_label,
@@ -14686,7 +14687,9 @@ def _startsit_compare_extras(pid, pos, team, season, week, scoring_settings, *,
     # PPR): the played-week derivation shared with the bundle build and the
     # Start/Sit page (last 3 played weeks; a week counts only when its stat
     # row carries a points line). The same derivation supplies the rating's
-    # usage delta and played-game count for the modal's start score.
+    # usage delta and played-game count for the modal's start score, plus
+    # last4_ppg (last 4 played weeks, display only) for the compare row
+    # labeled "L4 PPG": that row must never show the last-3 form input.
     try:
         from data_building.start_score_bundle import (
             derive_start_sit_inputs as _derive_ss_extras,
@@ -14694,6 +14697,8 @@ def _startsit_compare_extras(pid, pos, team, season, week, scoring_settings, *,
         _din = (_derive_ss_extras(int(season), scoring_settings) or {}).get(str(pid)) or {}
         if _din.get("played_games"):
             out["recent_ppg"] = round(_din["recent_ppg"], 1)
+            if _din.get("last4_ppg") is not None:
+                out["last4_ppg"] = round(_din["last4_ppg"], 1)
         out["usage_delta"] = _din.get("usage_delta")
         out["usage_season_avg"] = _din.get("usage_season_avg")
         out["played_games"] = _din.get("played_games")
@@ -15160,7 +15165,8 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
     # Skipped when precomputed bundles cover the roster (the inputs come
     # from the bundle instead).
     season_ppg: dict = {}
-    recent_ppg_map: dict = {}  # last 3 played weeks
+    recent_ppg_map: dict = {}  # last 3 played weeks (the rating's form input)
+    last4_ppg_map: dict = {}  # last 4 played weeks (display only, "L4 PPG")
     _ss_derived: dict = {}
     if not _ss_use_bundles:
         try:
@@ -15172,8 +15178,32 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
                 if _inp.get("played_games"):
                     season_ppg[str(_pid)] = round(_inp["season_ppg"], 1)
                     recent_ppg_map[str(_pid)] = round(_inp["recent_ppg"], 1)
+                    if _inp.get("last4_ppg") is not None:
+                        last4_ppg_map[str(_pid)] = round(_inp["last4_ppg"], 1)
         except Exception:
             logger.debug("suppressed exception", exc_info=True)
+
+    # Lazy last-4 lookup for bundle rows built before bundles carried
+    # last4_ppg: one cached derivation serves every stale row, so an old
+    # bundle can never make the "L4 PPG" displays fall back to the last-3
+    # form input.
+    _ss_last4_lazy: dict = {"done": False, "map": {}}
+
+    def _last4_for(pid: str):
+        if pid in last4_ppg_map:
+            return last4_ppg_map[pid]
+        if not _ss_last4_lazy["done"]:
+            _ss_last4_lazy["done"] = True
+            try:
+                from data_building.start_score_bundle import (
+                    derive_start_sit_inputs as _derive_ss_l4,
+                )
+                for _pid, _inp in (_derive_ss_l4(season, _ss_scoring) or {}).items():
+                    if _inp.get("played_games") and _inp.get("last4_ppg") is not None:
+                        _ss_last4_lazy["map"][str(_pid)] = round(_inp["last4_ppg"], 1)
+            except Exception:
+                logger.debug("suppressed exception", exc_info=True)
+        return _ss_last4_lazy["map"].get(pid)
 
     # ── Weekly usage trends: rising/falling role nudges close calls ──────────
     # Skipped when precomputed bundles cover the roster (usage inputs come
@@ -15273,9 +15303,15 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
         if _bun is not None:
             s_ppg = _bun.get("season_ppg") or 0.0
             recent_ppg = _bun.get("recent_ppg") or 0.0
+            # Display-only L4: fresh bundles carry it; a stale bundle
+            # without it gets the lazily derived value, never recent_ppg.
+            last4_ppg = _bun.get("last4_ppg")
+            if last4_ppg is None:
+                last4_ppg = _last4_for(pid) or 0.0
         else:
             s_ppg = season_ppg.get(pid, 0.0)
             recent_ppg = recent_ppg_map.get(pid, 0.0)
+            last4_ppg = last4_ppg_map.get(pid, 0.0)
         full_player = players_full.get(pid) or {}
         raw_status = str(full_player.get("injury_status") or full_player.get("status") or "").strip()
         injury_status = None if raw_status in {"", "active", "Active", "ACT"} else raw_status
@@ -15431,6 +15467,7 @@ def _build_start_sit_options(platform: str, league_id: str, season: int,
             "on_bye": on_bye,
             "season_ppg": round(s_ppg, 1),
             "recent_ppg": recent_ppg,
+            "last4_ppg": round(float(last4_ppg or 0.0), 1),
             "proj_pts": proj_pts,
             "fpts_against": fpts_vs,
             "def_rank": def_rank,

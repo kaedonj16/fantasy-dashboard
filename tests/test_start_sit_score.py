@@ -160,11 +160,31 @@ def test_form_usage_inputs_played_weeks():
     assert out["played_games"] == 4
     assert out["season_ppg"] == 25.0
     assert out["recent_ppg"] == 30.0
+    assert out["last4_ppg"] == 25.0
     assert out["usage_season_avg"] == 6.5
     assert out["usage_delta"] == 0.5
     empty = form_usage_inputs([], [])
     assert empty["played_games"] == 0
     assert empty["usage_delta"] is None
+    assert empty["last4_ppg"] == 0.0
+
+
+def test_form_usage_inputs_last4_is_not_the_last3_form_input():
+    """The compare row labeled "L4 PPG" must be a true last-4 average,
+    distinct from the last-3 form input. Real case (Blackedraw scoring,
+    2026 Weeks 1-6, flagged live 2026-10-22): the compare showed
+    Stroud 22.3 / Maye 29.8 under an "L4 PPG" label; those are the
+    last-3 averages. The true last-4 averages are 19.7 / 23.3."""
+    from utils.start_sit_score import form_usage_inputs
+    stroud = form_usage_inputs([16.46, 17.02, 11.68, 23.08, 20.94, 22.98])
+    assert round(stroud["recent_ppg"], 1) == 22.3
+    assert round(stroud["last4_ppg"], 1) == 19.7
+    maye = form_usage_inputs([9.82, 8.02, 3.76, 26.16, 39.46, 23.80])
+    assert round(maye["recent_ppg"], 1) == 29.8
+    assert round(maye["last4_ppg"], 1) == 23.3
+    # Fewer than 4 played weeks: last-4 averages what exists.
+    short = form_usage_inputs([10.0, 20.0])
+    assert short["last4_ppg"] == 15.0
 
 
 def test_usage_value_from_stats():

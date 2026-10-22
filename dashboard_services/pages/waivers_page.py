@@ -2165,7 +2165,7 @@ function wvStatsRow(p) {{
   // Proj PPG is pulled out of the strip and rendered as the card's hero number
   // (see the card template), so it is intentionally not pushed here.
   const g1 = [];
-  if (p.recent_ppg > 0) g1.push(chip('L4 PPG', p.recent_ppg));
+  if (p.last4_ppg > 0) g1.push(chip('L4 PPG', p.last4_ppg));
   if (p.value > 0)      g1.push(chip('Value', Math.round(p.value)));
   if (p.market_signal) {{
     const d = p.market_signal.delta;
@@ -2934,7 +2934,7 @@ function wvCmpDerive(p) {{
   }}
   return {{
     proj:     p.proj_pts > 0 ? p.proj_pts : null,
-    l4:       p.recent_ppg > 0 ? p.recent_ppg : (p.season_ppg > 0 ? p.season_ppg : null),
+    l4:       p.last4_ppg > 0 ? p.last4_ppg : (p.season_ppg > 0 ? p.season_ppg : null),
     floorNum: cOk ? c.floor : null,
     flCeil:   cOk ? (c.floor + '–' + c.ceiling + yr) : '–',
     profile:  cOk ? `<span class="wv-ss-cons wv-ss-cons-${{pk}}">${{c.label}}</span>` : '–',
@@ -3333,8 +3333,8 @@ function wvSsEvidence(p) {{
   if (c && !c.small_sample && c.floor != null && c.ceiling != null) {{
     ev.push(`<div class="wv-cx-ev"><span class="k">FLOOR - CEIL</span><span class="v">${{c.floor}} - ${{c.ceiling}}</span></div>`);
   }}
-  if (p.recent_ppg > 0) {{
-    ev.push(`<div class="wv-cx-ev"><span class="k">L4 PPG</span><span class="v">${{p.recent_ppg}}</span></div>`);
+  if (p.last4_ppg > 0) {{
+    ev.push(`<div class="wv-cx-ev"><span class="k">L4 PPG</span><span class="v">${{p.last4_ppg}}</span></div>`);
   }}
   if (p.implied_total != null) {{
     ev.push(`<div class="wv-cx-ev"><span class="k">VEGAS</span><span class="v">${{p.implied_total}} implied</span></div>`);
