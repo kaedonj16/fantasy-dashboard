@@ -466,18 +466,23 @@ def form_usage_inputs(played_points, played_usage=None) -> dict:
     :func:`usage_value_from_stats`); entries may be None.
 
     Returns season PPG (all played weeks), recent PPG (last 3 played
-    weeks), the absolute usage delta (recent - season, per game), the
-    season usage average, and the played-game count the shrinkage uses.
+    weeks, the form input the rating scores on), last-4 PPG (last 4
+    played weeks, DISPLAY ONLY: the compare surfaces label a row "L4
+    PPG", so they must show this number, never the last-3 form input),
+    the absolute usage delta (recent - season, per game), the season
+    usage average, and the played-game count the shrinkage uses.
     """
     pts = [float(p) for p in (played_points or [])]
     n = len(pts)
-    out = {"season_ppg": 0.0, "recent_ppg": 0.0, "usage_delta": None,
-           "usage_season_avg": None, "played_games": n}
+    out = {"season_ppg": 0.0, "recent_ppg": 0.0, "last4_ppg": 0.0,
+           "usage_delta": None, "usage_season_avg": None, "played_games": n}
     if not n:
         return out
     recent_pts = pts[-3:]
     out["season_ppg"] = sum(pts) / n
     out["recent_ppg"] = sum(recent_pts) / len(recent_pts)
+    last4_pts = pts[-4:]
+    out["last4_ppg"] = sum(last4_pts) / len(last4_pts)
     usage = [u for u in (played_usage or []) if u is not None]
     if usage:
         season_avg = sum(usage) / len(usage)

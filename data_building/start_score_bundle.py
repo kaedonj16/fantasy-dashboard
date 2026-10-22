@@ -268,6 +268,9 @@ def derive_start_sit_inputs(season: int, scoring_settings: dict) -> Dict[str, di
     the Start/Sit page's live path uses), recent form is the last 3 played
     weeks, and the usage delta is the absolute per-game change of the
     position's volume metric (see ``utils.start_sit.form_usage_inputs``).
+    The derivation also carries ``last4_ppg`` (last 4 played weeks):
+    display-only, for the compare rows labeled "L4 PPG"; the rating
+    itself never reads it.
 
     This is the single derivation the bundle build and the Start/Sit page's
     live fallback share, so both paths feed ``compute_start_score`` identical
@@ -582,6 +585,7 @@ def build_start_score_bundles(season: int = None, week: int = None) -> dict:
                 _inp = (pv.get("derived") or {}).get(pid) or {}
                 season_ppg = round(float(_inp.get("season_ppg") or 0.0), 1)
                 recent_ppg = round(float(_inp.get("recent_ppg") or 0.0), 1)
+                last4_ppg = round(float(_inp.get("last4_ppg") or 0.0), 1)
                 bust_rate = None
                 try:
                     cur = pv["weekly"].get(pid) or []
@@ -600,6 +604,7 @@ def build_start_score_bundles(season: int = None, week: int = None) -> dict:
                     "on_bye": bool(on_bye),
                     "proj_pts": round(proj_pts, 1),
                     "recent_ppg": recent_ppg,
+                    "last4_ppg": last4_ppg,
                     "season_ppg": season_ppg,
                     "bust_rate": bust_rate,
                     # Rating inputs from the played-week derivation (NOT the
@@ -787,6 +792,7 @@ def load_start_score_bundles_for_scoring(
             nb["proj_pts"] = round(proj_pts, 1)
             _inp = derived.get(pid) or {}
             nb["recent_ppg"] = round(float(_inp.get("recent_ppg") or 0.0), 1)
+            nb["last4_ppg"] = round(float(_inp.get("last4_ppg") or 0.0), 1)
             nb["season_ppg"] = round(float(_inp.get("season_ppg") or 0.0), 1)
             nb["usage_delta"] = (
                 round(float(_inp["usage_delta"]), 1)
