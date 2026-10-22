@@ -30,6 +30,7 @@ CRON_STEPS = (
     "build_weekly_rookie_data",
     "build_prospect_targets",
     "derive_v4_reference",
+    "rookie_pipeline_full",
     "trade_intel_discovery",
     "trade_intel_crawl",
     "trade_intel_analytics",
@@ -231,12 +232,34 @@ class _CronStepFailures(Exception):
         )
 
 
+# ---------------------------------------------------------------------------
+# CRON_ONLY single-step gate
+# ---------------------------------------------------------------------------
+# CRON_ONLY=<step name> makes main() run ONLY that step: a manual trigger
+# can drive one step (e.g. the resumable v4 derive) without paying for the
+# full ~2-hour daily job. The name must be one of CRON_STEPS; main()
+# validates it before any work, so an unknown name runs NOTHING (a typo
+# can never silently launch the full job). Unset/empty = the full daily
+# run, unchanged. REMOVE the variable after the single-step run: while it
+# is set, scheduled runs also run only that one step.
+
+def _cron_only_step() -> Optional[str]:
+    """The CRON_ONLY step name, or None when the full daily run applies."""
+    return os.environ.get("CRON_ONLY", "").strip() or None
+
+
 def _run_step(code: str, step_name: str, timeout: int = 3600) -> bool:
     """
     Run Python code in a fresh interpreter subprocess.
     stdout/stderr flow through. Returns True on success.
     Memory from the subprocess is fully released when it exits.
     """
+    _only = _cron_only_step()
+    if _only is not None and step_name != _only:
+        # Single-step mode: not a failure and not a skip worth a health
+        # row - the step simply is not part of this run.
+        print(f"[cron] CRON_ONLY={_only} - skipping {step_name}")
+        return True
     print(f"[cron] -> {step_name}")
     try:
         result = subprocess.run(
@@ -507,7 +530,154 @@ def run_derive_v4_reference() -> dict:
         return summary
 
 
+# ---------------------------------------------------------------------------
+# rookie_pipeline_full - the whole rookie stack as ONE triggerable step
+# ---------------------------------------------------------------------------
+# A manual CRON_ONLY=rookie_pipeline_full run executes the rookie stack
+# end to end, without the daily job's Sunday/window gates: prospect
+# targets (Step 6a), evaluation + grading for the active class (Step 6),
+# the reference-population build behind the percentile pools, and the v4
+# derive (Step 6c). Each stage is fail-soft - a failing stage logs, is
+# marked in the summary, and the next stage still runs; any stage failure
+# makes the step's health "error" and joins the end-of-run failure
+# report, the way a failed _run_step is recorded. This step is NOT part
+# of the normal daily sequence (the individual steps already run there);
+# main() calls it only when CRON_ONLY names it.
+
+ROOKIE_FULL_STEP = "rookie_pipeline_full"
+
+
+def _rookie_full_refpop() -> bool:
+    """Reference-population build in a subprocess (repo-root cwd,
+    inherited env), mirroring _derive_v4_run's isolation. The script is
+    resumable: it skips years whose stored rows already cover the class.
+    """
+    print("[cron] rookie_pipeline_full -> reference population build")
+    try:
+        result = subprocess.run(
+            [sys.executable, "scripts/build_reference_population.py"],
+            cwd=str(ROOT_DIR),
+            env=os.environ.copy(),
+            timeout=3600,
+        )
+        if result.returncode != 0:
+            print(f"[cron] rookie_pipeline_full reference population "
+                  f"exited with code {result.returncode}")
+            return False
+        return True
+    except Exception as e:
+        print(f"[cron] rookie_pipeline_full reference population "
+              f"failed to launch: {e}")
+        return False
+
+
+def run_rookie_pipeline_full() -> dict:
+    """Run the four rookie-stack stages in order, each fail-soft.
+
+    Returns {"status": "ok"|"error", "stages": {stage: "ok"|"skipped"|
+    "error"}}. Pipeline stages are "skipped" under ROOKIE_PIPELINE_PAUSED
+    (Step 6a's rule: a paused pipeline means no prospect work at all).
+    The derive stage also records the derive step's own health row,
+    exactly as main() does for the standalone Step 6c; the derive's
+    convergence status (error until the artifact is stored) lives on
+    that row, per Step 6c's design, and does not fail this step - only
+    a derive call that raises does.
+    """
+    summary: dict = {"status": "ok", "stages": {}}
+    failed: list = []
+
+    def _stage(name: str, fn) -> None:
+        try:
+            ok = bool(fn())
+        except Exception as e:
+            print(f"[cron] rookie_pipeline_full {name} failed (non-fatal): {e}")
+            ok = False
+        summary["stages"][name] = "ok" if ok else "error"
+        if not ok:
+            failed.append(name)
+
+    paused = (os.environ.get("ROOKIE_PIPELINE_PAUSED") or "0").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
+
+    _year_box: dict = {}
+
+    def _active_year():
+        if "year" not in _year_box:
+            from data_building.rookie_pipeline.pipeline import get_active_rookie_class
+            _year_box["year"] = get_active_rookie_class()
+        return _year_box["year"]
+
+    if paused:
+        print("[cron] rookie_pipeline_full: ROOKIE_PIPELINE_PAUSED - "
+              "skipping prospect targets + evaluation/grading")
+        summary["stages"]["build_prospect_targets"] = "skipped"
+        summary["stages"]["build_weekly_rookie_data"] = "skipped"
+    else:
+        def _targets() -> bool:
+            from data_building.rookie_pipeline.ingestion import run_daily_prospect_targets
+            result = run_daily_prospect_targets(_active_year())
+            print(f"[cron] rookie_pipeline_full prospect targets: {result}")
+            return True
+
+        _stage("build_prospect_targets", _targets)
+
+        def _eval_grading() -> bool:
+            from data_building.rookie_pipeline.rookie_evaluation_pipeline import (
+                run_rookie_evaluation_pipeline,
+            )
+            from data_building.rookie_pipeline.pipeline import run_rookie_pipeline
+            year = _active_year()
+            eval_result = run_rookie_evaluation_pipeline(year)
+            print(f"[cron] rookie_pipeline_full eval: "
+                  f"{eval_result.get('profile_count', 0)} profiles")
+            result = run_rookie_pipeline(year)
+            print(f"[cron] rookie_pipeline_full grading: "
+                  f"{len(result.get('prospects', []))} prospects")
+            return True
+
+        _stage("build_weekly_rookie_data", _eval_grading)
+
+    _stage("reference_population", _rookie_full_refpop)
+
+    def _derive() -> bool:
+        derive_summary = run_derive_v4_reference()
+        record_pipeline_health(DERIVE_V4_STEP, derive_summary["status"])
+        print(f"[cron] rookie_pipeline_full derive status: {derive_summary['status']}")
+        return True
+
+    _stage(DERIVE_V4_STEP, _derive)
+
+    if failed:
+        summary["status"] = "error"
+        _FAILED_STEPS.append(
+            (ROOKIE_FULL_STEP, "stage(s) failed: " + ", ".join(failed))
+        )
+    print(f"[cron] rookie_pipeline_full: stages={summary['stages']} "
+          f"status={summary['status']}")
+    return summary
+
+
 def main():
+    # CRON_ONLY single-step gate: validate BEFORE any work so an unknown
+    # name runs nothing at all (never the full job by accident).
+    cron_only = _cron_only_step()
+    if cron_only is not None and cron_only not in CRON_STEPS:
+        _msg = (
+            f"[cron] ERROR: CRON_ONLY={cron_only!r} is not a known cron step; "
+            f"running NOTHING. Valid steps: {', '.join(CRON_STEPS)}"
+        )
+        print(_msg)
+        logging.getLogger(__name__).error(_msg)
+        return
+    if cron_only is not None:
+        print("=" * 72)
+        print(f"[cron] *** CRON_ONLY={cron_only} - SINGLE-STEP MODE: "
+              "only this step will run ***")
+        print("[cron] *** Remove CRON_ONLY after this run, or scheduled "
+              "runs will also run only this step ***")
+        print("=" * 72)
+
     state = get_nfl_state() or {}
     season = int(state.get("season") or calendar_nfl_season())
     week = int(state.get("week") or 0)
@@ -1221,8 +1391,22 @@ print(f"[cron] Prospect accuracy: {stats}")
     # class subprocess at a time, the assembly stores the artifact, and
     # every later run is a one-query skip. Fail-soft: the step never
     # raises and never touches _FAILED_STEPS - health carries the state.
-    _derive_v4_summary = run_derive_v4_reference()
-    record_pipeline_health("derive_v4_reference", _derive_v4_summary["status"])
+    if cron_only in (None, DERIVE_V4_STEP):
+        _derive_v4_summary = run_derive_v4_reference()
+        record_pipeline_health("derive_v4_reference", _derive_v4_summary["status"])
+    else:
+        print(f"[cron] CRON_ONLY={cron_only} - skipping derive_v4_reference")
+
+    # ------------------------------------------------------------------ #
+    # Step 6d: rookie_pipeline_full (CRON_ONLY trigger only)              #
+    # ------------------------------------------------------------------ #
+    # The consolidated rookie stack (targets -> evaluation/grading ->
+    # reference population -> v4 derive) as one manually triggered step.
+    # Not part of the normal daily sequence: the individual steps above
+    # already cover it there. Runs only when CRON_ONLY names it.
+    if cron_only == ROOKIE_FULL_STEP:
+        _rookie_full_summary = run_rookie_pipeline_full()
+        record_pipeline_health(ROOKIE_FULL_STEP, _rookie_full_summary["status"])
 
     # ------------------------------------------------------------------ #
     # Step 7: Trade intel discovery + crawl + analytics                  #
