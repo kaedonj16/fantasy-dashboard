@@ -525,6 +525,75 @@ def _broadcast_owner(league_id, owner_id, title, body, url="/", tag="update", no
         return 0
 
 
+def _yahoo_binding_account_ids(league_id, season, roster_id):
+    """Account ids whose saved Yahoo team binding owns ``roster_id``.
+
+    user_leagues is the only trustworthy Yahoo ownership record: the Yahoo
+    API stamps the fetching caller's guid on every roster's owner_id, so the
+    payload itself can never say whose team a roster is. When the caller
+    knows the season, bindings saved for that season win; otherwise the
+    newest season's binding for the league+team is used, so a stale
+    prior-season row cannot outrank the current one.
+    """
+    from dashboard_services.db import get_conn
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT account_id, season FROM user_leagues "
+            "WHERE platform = 'yahoo' AND league_id = %s AND team_id = %s",
+            (str(league_id), str(roster_id)),
+        ).fetchall()
+    if not rows:
+        return []
+
+    def _season(row):
+        try:
+            return int(row["season"] or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    chosen = []
+    if season:
+        chosen = [r for r in rows if _season(r) == int(season)]
+    if not chosen:
+        newest = max(_season(r) for r in rows)
+        chosen = [r for r in rows if _season(r) == newest]
+    return list({str(r["account_id"]) for r in chosen})
+
+
+def _broadcast_yahoo_roster(league_id, season, roster_id, title, body, url="/", tag="update", notif_type=None):
+    """Send to the subscriber(s) whose saved Yahoo binding owns a roster.
+
+    A Yahoo roster belongs to a subscriber iff that subscriber's saved
+    user_leagues binding (platform yahoo, this league) has team_id equal to
+    the roster's roster_id; delivery goes to that account's push
+    subscriptions (push_subscriptions.account_key is the account id). There
+    is deliberately no fallback: no binding means nobody is notified -- a
+    wrong-team touchdown alert is worse than a missed one, and guid matching
+    is meaningless for Yahoo (every roster carries the fetching caller's
+    guid).
+    """
+    if not roster_id:
+        return 0
+    try:
+        account_ids = _yahoo_binding_account_ids(league_id, season, roster_id)
+        if not account_ids:
+            return 0
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            rows = conn.execute(
+                "SELECT endpoint, p256dh, auth, prefs, platform, account_key FROM push_subscriptions "
+                "WHERE league_id = %s AND account_key = ANY(%s)",
+                (str(league_id), account_ids)
+            ).fetchall()
+        if not rows:
+            return 0
+        return _send_with_digest(rows, title, body, url, tag,
+                                 notif_type=notif_type, league_id=str(league_id))
+    except Exception as exc:
+        logger.warning("[push] broadcast_yahoo_roster failed: %s", exc)
+        return 0
+
+
 def _app_state_get(conn, key):
     row = conn.execute("SELECT value FROM app_state WHERE key = %s", (key,)).fetchone()
     return row["value"] if row else None
@@ -621,7 +690,11 @@ def notify_scorezone_scores(league_id, platform, pbp_by_game, player_info,
     fantasy owner, reusing push_subscriptions + VAPID via ``_broadcast_owner``.
 
     Owner targeting: canonical player → league roster → roster owner → that
-    owner's push subscriptions (never a league-wide broadcast). Only players
+    owner's push subscriptions (never a league-wide broadcast). Yahoo is the
+    one exception: its payload stamps the fetching caller's guid on every
+    roster's owner_id, so Yahoo targets the roster and delivers through the
+    saved user_leagues team binding instead (see _broadcast_yahoo_roster).
+    Only players
     in a starting lineup trigger an alert -- bench players' touchdowns stay
     quiet. A passing TD is
     two contributions (QB pass_td + WR rec_td) grouped under one canonical NFL
@@ -643,6 +716,7 @@ def notify_scorezone_scores(league_id, platform, pbp_by_game, player_info,
         return 0
 
     sent = 0
+    is_yahoo = str(platform or "").lower() == "yahoo"
     league_name = _league_display_name(platform, league_id, season)
     for gid, plays in (pbp_by_game or {}).items():
         # Group scoring contributions by canonical NFL play, then by owner.
@@ -659,26 +733,38 @@ def notify_scorezone_scores(league_id, platform, pbp_by_game, player_info,
             by_play.setdefault(play_key, []).append(play)
 
         for play_key, rows in by_play.items():
-            # owner_id → best scoring contribution for that owner on this play.
+            # target → best scoring contribution for that target on this play.
+            # The target is the roster owner_id, except for Yahoo: Yahoo
+            # stamps the fetching caller's guid on every roster's owner_id,
+            # so guid grouping would hand every touchdown in the league to
+            # the one subscriber whose token fetched the rosters. Yahoo
+            # targets the roster itself and delivery resolves through the
+            # saved user_leagues team binding (_broadcast_yahoo_roster).
             owner_rows: dict = {}
             for play in rows:
                 pid = str(play.get("pid"))
                 owner_id, roster_id, is_starter = _scorezone_roster_owner(pid, rosters)
-                if not owner_id:
-                    continue
+                if is_yahoo:
+                    if not roster_id:
+                        continue
+                    target = f"yahoo:{roster_id}"
+                else:
+                    if not owner_id:
+                        continue
+                    target = owner_id
                 if not is_starter:
                     # Bench player: TD alerts only go out for starting-lineup
                     # players, so a scorer riding someone's pine stays quiet.
                     logger.debug("[scorezone-alert] play=%s type=td owner=%s dedupe=benched",
-                                 f"{gid}:{play_key}", owner_id)
+                                 f"{gid}:{play_key}", target)
                     continue
                 sl = play.get("stat_line") or {}
                 is_scorer = bool(sl.get("rush_td") or sl.get("rec_td")
                                  or sl.get("pass_td") or sl.get("def_td"))
-                cur = owner_rows.get(owner_id)
+                cur = owner_rows.get(target)
                 # Prefer the explicit TD scorer over a merely-present contributor.
                 if cur is None or (is_scorer and not cur[1]):
-                    owner_rows[owner_id] = (play, is_scorer)
+                    owner_rows[target] = (play, is_scorer, roster_id)
 
             if not owner_rows:
                 # No rostered owner for any scorer on this play: never broadcast
@@ -687,8 +773,9 @@ def notify_scorezone_scores(league_id, platform, pbp_by_game, player_info,
                              f"{gid}:{play_key}")
                 continue
 
-            for owner_id, (play, _is_scorer) in owner_rows.items():
-                event_key = f"redzone_td:{league_id}:{gid}:{play_key}:{owner_id}"
+            for target, (play, _is_scorer, target_roster_id) in owner_rows.items():
+                owner_id = target
+                event_key = f"redzone_td:{league_id}:{gid}:{play_key}:{target}"
                 try:
                     with get_conn() as conn:
                         claimed = _app_state_claim(conn, event_key)
@@ -717,14 +804,24 @@ def notify_scorezone_scores(league_id, platform, pbp_by_game, player_info,
                     body = desc or "Touchdown!"
                 url = (f"/{platform}/{season}/{league_id}/scorezone" if season
                        else f"/{platform}/{league_id}/scorezone")
-                n = _broadcast_owner(
-                    league_id, owner_id,
-                    title=title,
-                    body=body,
-                    url=url,
-                    tag=f"rz-td-{gid}-{play_key}",
-                    notif_type="redzone_scores",
-                )
+                if is_yahoo:
+                    n = _broadcast_yahoo_roster(
+                        league_id, season, target_roster_id,
+                        title=title,
+                        body=body,
+                        url=url,
+                        tag=f"rz-td-{gid}-{play_key}",
+                        notif_type="redzone_scores",
+                    )
+                else:
+                    n = _broadcast_owner(
+                        league_id, owner_id,
+                        title=title,
+                        body=body,
+                        url=url,
+                        tag=f"rz-td-{gid}-{play_key}",
+                        notif_type="redzone_scores",
+                    )
                 sent += (n or 0)
                 logger.info("[scorezone-alert] play=%s type=td owner=%s dedupe=sent recipients=%d",
                             f"{gid}:{play_key}", owner_id, n or 0)
