@@ -84,13 +84,13 @@ def _team_stats():
     ])
 
 
-def _render(_third_party_stubs, **kw):
+def _render(_third_party_stubs, df=None, **kw):
     pytest.importorskip("flask")
     import app as appmod
     o2r = {name: str(i + 1) for i, name in enumerate(
         ["Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot"])}
     return appmod.render_standings(
-        _team_stats(), length=6, owner_to_rid=o2r,
+        _team_stats() if df is None else df, length=6, owner_to_rid=o2r,
         playoff_spots=2, total_regular_weeks=14, **kw)
 
 
@@ -108,6 +108,20 @@ def test_status_column_header_and_cells(_third_party_stubs):
     assert "<i class='pp-sdot'></i>Bubble</td>" in html
     # Outside bubble team: games back instead of the word.
     assert "<i class='pp-sdot'></i>1 GB</td>" in html
+
+
+def test_outside_team_level_on_record_reads_bubble_not_0gb(_third_party_stubs):
+    # Charlie level with the cut (Bravo, 4-2) on record, out only on PF:
+    # games_back is 0, which must read "Bubble", never "0 GB".
+    df = _team_stats()
+    mask = df["owner"] == "Charlie"
+    df.loc[mask, ["Wins", "Losses", "PF", "Win%"]] = [4, 2, 700.0, 0.667]
+    html = _render(_third_party_stubs, df=df)
+    assert "0 GB" not in html
+    charlie_row = html.split('data-rk-key="Charlie"')[1].split("</tr>")[0]
+    assert "<i class='pp-sdot'></i>Bubble</td>" in charlie_row
+    # A team genuinely behind on record still reads its games back.
+    assert "<i class='pp-sdot'></i>2 GB</td>" in html
 
 
 def test_no_chips_scenarios_or_legend(_third_party_stubs):
