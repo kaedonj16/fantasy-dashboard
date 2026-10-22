@@ -380,6 +380,100 @@ def _nflverse_games_rows() -> list[dict]:
         return []
 
 
+_NFLVERSE_INJURIES_URL = ("https://github.com/nflverse/nflverse-data/releases/"
+                          "download/injuries/injuries_{season}.csv")
+_NFLVERSE_ROSTERS_URL = ("https://github.com/nflverse/nflverse-data/releases/"
+                         "download/weekly_rosters/roster_weekly_{season}.csv")
+_nflverse_injury_lock = threading.Lock()
+_INJURY_HISTORY_CACHE: dict = {}
+
+
+def _nflverse_release_csv_rows(url: str, filename: str):
+    """Rows of one nflverse release CSV, disk-cached exactly like the games
+    file (6h TTL, a stale copy beats nothing). Returns None when no copy is
+    available at all, so callers can tell 'history unknown' apart from
+    'history loaded, player simply absent from it'."""
+    import csv
+
+    from utils.utils import CACHE_DIR
+
+    path = CACHE_DIR / filename
+    fresh = path.exists() and (time.time() - path.stat().st_mtime) < _NFLVERSE_GAMES_TTL
+    if not fresh:
+        with _nflverse_injury_lock:
+            fresh = path.exists() and (time.time() - path.stat().st_mtime) < _NFLVERSE_GAMES_TTL
+            if not fresh:
+                try:
+                    resp = _session.get(url, timeout=(3.05, 30.0))
+                    resp.raise_for_status()
+                    tmp = path.with_name(path.name + ".tmp")
+                    tmp.write_bytes(resp.content)
+                    tmp.replace(path)
+                except Exception:
+                    log.warning("nflverse %s download failed", filename, exc_info=True)
+    if not path.exists():
+        return None
+    try:
+        with path.open("r", encoding="utf-8", newline="") as f:
+            return list(csv.DictReader(f))
+    except Exception:
+        log.warning("nflverse %s unreadable", filename, exc_info=True)
+        return None
+
+
+def nflverse_injury_history(season: int):
+    """Weekly Out / reserve history for one season from the official record.
+
+    Returns {"out": {gsis_id: {week, ...}}, "res": {player_key: {week, ...}}}
+    built from the nflverse injury reports (report_status "Out") and weekly
+    rosters (status "RES"; reserve weeks are keyed by gsis_id AND sleeper_id
+    because the roster file carries both). Returns None when the injury
+    report file is unavailable (no cache and the download failed): the
+    history is then UNKNOWN, never evidence a player was healthy. A missing
+    roster file only disables the reserve arm. Cached per process."""
+    try:
+        season = int(season)
+    except (TypeError, ValueError):
+        return None
+    if season in _INJURY_HISTORY_CACHE:
+        return _INJURY_HISTORY_CACHE[season]
+    inj_rows = _nflverse_release_csv_rows(
+        _NFLVERSE_INJURIES_URL.format(season=season),
+        f"nflverse_injuries_{season}.csv")
+    if inj_rows is None:
+        return None
+    out: dict = {}
+    for row in inj_rows:
+        if str(row.get("report_status") or "").strip() != "Out":
+            continue
+        gsis = str(row.get("gsis_id") or "").strip()
+        try:
+            wk = int(row.get("week") or 0)
+        except (TypeError, ValueError):
+            continue
+        if gsis and wk:
+            out.setdefault(gsis, set()).add(wk)
+    res: dict = {}
+    roster_rows = _nflverse_release_csv_rows(
+        _NFLVERSE_ROSTERS_URL.format(season=season),
+        f"nflverse_roster_weekly_{season}.csv")
+    for row in roster_rows or []:
+        if str(row.get("status") or "").strip().upper() != "RES":
+            continue
+        try:
+            wk = int(row.get("week") or 0)
+        except (TypeError, ValueError):
+            continue
+        if not wk:
+            continue
+        for key in {str(row.get("gsis_id") or "").strip(),
+                    str(row.get("sleeper_id") or "").strip()} - {""}:
+            res.setdefault(key, set()).add(wk)
+    history = {"out": out, "res": res}
+    _INJURY_HISTORY_CACHE[season] = history
+    return history
+
+
 def _nflverse_scoreboard_for_date(game_date: str) -> list[dict]:
     """Final-score game dicts for one YYYYMMDD date, in the normalized
     scoreboard shape, sourced from the nflverse schedule.

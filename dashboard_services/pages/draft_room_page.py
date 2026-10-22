@@ -2623,6 +2623,7 @@ _DRAFT_HISTORY_HTML = r"""
     <p class="dr-sub">Every draft in your league's history. Open any board to review the picks pick-by-pick.</p>
     <div class="dr-hero-actions">
       <a class="dr-hero-link" id="drHistToRoom" href="/draft">&larr; Draft Room</a>
+      <a class="dr-hero-link" id="drHistToRecap" href="/draft/recap" hidden>Draft Recap</a>
     </div>
   </div>
   <div id="drHistList" class="dr-hist-list">
@@ -2681,6 +2682,13 @@ _DRAFT_HISTORY_HTML = r"""
   // Point the hero's Draft Room link at the league-scoped board when available.
   var _toRoom = document.getElementById('drHistToRoom');
   if (_toRoom && cfg.base) _toRoom.setAttribute('href', cfg.base);
+  // Draft Recap grades the league's most recent draft by actual performance;
+  // only meaningful with a league context (cfg.base is the league draft URL).
+  var _toRecap = document.getElementById('drHistToRecap');
+  if (_toRecap && cfg.hasLeague && cfg.base) {
+    _toRecap.setAttribute('href', cfg.base + '/recap');
+    _toRecap.hidden = false;
+  }
 
   function esc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){
     return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); }
