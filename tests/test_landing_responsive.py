@@ -49,3 +49,47 @@ def test_landing_stacks_on_phones(sheet):
     assert block, f"no max-width:1024px block in {sheet}"
     for rule in REQUIRED:
         assert rule in block, f"{sheet} lost its phone stacking rule: {rule}"
+
+
+# The signed-in home kept the old dark-card palette after the card went
+# white, so the greeting and league rows rendered white-on-white, and its
+# author display:flex beat the [hidden] attribute, so card states stacked
+# instead of switching. Pin the light re-skin and the hidden enforcement.
+SIGNED_IN_LIGHT_RULES = [
+    'html:not([data-theme="dark"]) .home-card .signed-in-home-greeting { color: #64748b; }',
+    'html:not([data-theme="dark"]) .home-card .signed-home-league { background: #f1f5f9; border-color: #e2e8f0; color: #122d4b; }',
+    'html:not([data-theme="dark"]) .home-card .signed-home-league-open { color: #2563eb; }',
+    'html:not([data-theme="dark"]) .home-card .connection-attention { color: #dc2626; }',
+    'html:not([data-theme="dark"]) .home-card .home-reset-user { color: #64748b; }',
+    'html:not([data-theme="dark"]) .home-card #signedInAddLeague { background: #122d4b; border-color: #122d4b; color: #fff; }',
+    'html:not([data-theme="dark"]) .home-card .home-connect-back { color: #2563eb; }',
+]
+
+
+@pytest.mark.parametrize("sheet", ["static/landing_lite.css", "static/dashboard.css"])
+def test_signed_in_home_readable_on_white_card(sheet):
+    css = (ROOT / sheet).read_text()
+    for rule in SIGNED_IN_LIGHT_RULES:
+        assert rule in css, f"{sheet} lost its signed-in light rule: {rule}"
+
+
+@pytest.mark.parametrize("sheet", ["static/landing_lite.css", "static/dashboard.css"])
+def test_reconnect_button_keeps_league_name_visible(sheet):
+    css = (ROOT / sheet).read_text()
+    start = css.index(".reconnect-home-espn {")
+    block = css[start:css.index("}", start)]
+    assert "width: auto !important" in block, (
+        f"{sheet}: the Reconnect button must not take the row's full width "
+        "or the league name beside it is squeezed out"
+    )
+
+
+@pytest.mark.parametrize("sheet", ["static/landing_lite.css", "static/dashboard.css"])
+def test_home_card_state_regions_hide_when_hidden(sheet):
+    css = (ROOT / sheet).read_text()
+    for selector in ("#signedInHome[hidden]", ".home-account-entry[hidden]",
+                     ".saved-viewer-cta[hidden]", "#connectLeagueFlow[hidden]"):
+        assert selector in css, f"{sheet} does not force-hide {selector}"
+    assert css.count("display: none !important") >= 2, (
+        f"{sheet} lost a display:none !important hidden enforcement"
+    )
